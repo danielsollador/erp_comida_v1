@@ -1,4 +1,4 @@
-import type { Pedido, PedidoItem, Producto } from './types'
+import type { Ingrediente, Pedido, PedidoItem, Producto, SugerenciaCompra } from './types'
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -32,6 +32,16 @@ export const api = {
       body: JSON.stringify({ metodo_pago }),
     }),
   anularPedido: (pedidoId: number) => req<Pedido>(`/pedidos/${pedidoId}/anular`, { method: 'POST' }),
+
+  listarIngredientes: () => req<Ingrediente[]>('/inventario/ingredientes'),
+  actualizarIngrediente: (id: number, i: Omit<Ingrediente, 'id'>) =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
+  registrarCompra: (id: number, cantidad: number) =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}/comprar`, {
+      method: 'POST',
+      body: JSON.stringify({ cantidad }),
+    }),
+  sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
 }
 
 export type WsEvent = { event: 'pedido_nuevo' | 'pedido_actualizado' | 'pedido_pagado'; data: Pedido }
@@ -62,4 +72,4 @@ export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
   }
 }
 
-export type { Pedido, PedidoItem, Producto }
+export type { Ingrediente, Pedido, PedidoItem, Producto, SugerenciaCompra }

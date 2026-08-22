@@ -21,6 +21,55 @@ class Producto(ProductoBase):
         from_attributes = True
 
 
+class IngredienteBase(BaseModel):
+    nombre: str
+    unidad: str
+    stock_actual: float = 0
+    stock_minimo: float = 0
+    stock_objetivo: float = 0
+
+
+class IngredienteCreate(IngredienteBase):
+    pass
+
+
+class Ingrediente(IngredienteBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ComprarIngredienteRequest(BaseModel):
+    cantidad: float
+
+
+class RecetaItemInput(BaseModel):
+    ingrediente_id: int
+    cantidad_por_unidad: float
+
+
+class RecetaItem(BaseModel):
+    id: int
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    cantidad_por_unidad: float
+
+    class Config:
+        from_attributes = True
+
+
+class SugerenciaCompra(BaseModel):
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    stock_actual: float
+    stock_minimo: float
+    cantidad_sugerida: float
+    razon: str
+
+
 class PedidoItemCreate(BaseModel):
     producto_id: int
     cantidad: int = 1

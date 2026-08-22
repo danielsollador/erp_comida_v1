@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes, Link } from 'react-router-dom'
 import POS from './pages/POS'
 import Cocina from './pages/Cocina'
+import Inventario from './pages/Inventario'
 
 function Inicio() {
   return (
@@ -17,6 +18,12 @@ function Inicio() {
       >
         Cocina
       </Link>
+      <Link
+        to="/inventario"
+        className="bg-indigo-600 text-white shadow rounded-2xl p-10 text-xl font-medium hover:scale-105 transition"
+      >
+        Inventario
+      </Link>
     </div>
   )
 }
@@ -28,6 +35,7 @@ export default function App() {
         <Route path="/" element={<Inicio />} />
         <Route path="/pos" element={<POS />} />
         <Route path="/cocina" element={<Cocina />} />
+        <Route path="/inventario" element={<Inventario />} />
       </Routes>
     </BrowserRouter>
   )

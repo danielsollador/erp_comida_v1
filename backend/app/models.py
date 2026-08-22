@@ -16,6 +16,29 @@ class Producto(Base):
     activo = Column(Boolean, default=True)
 
 
+class Ingrediente(Base):
+    __tablename__ = "ingredientes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    unidad = Column(String, nullable=False)  # kg | unidad | litro
+    stock_actual = Column(Float, default=0)
+    stock_minimo = Column(Float, default=0)
+    stock_objetivo = Column(Float, default=0)  # nivel al que se repone al comprar
+
+
+class RecetaItem(Base):
+    __tablename__ = "receta_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    cantidad_por_unidad = Column(Float, nullable=False)  # cuanto insumo consume 1 unidad del producto
+
+    producto = relationship("Producto")
+    ingrediente = relationship("Ingrediente")
+
+
 class Pedido(Base):
     __tablename__ = "pedidos"
 

@@ -16,6 +16,25 @@ export type PedidoItem = {
   preparado: boolean
 }
 
+export type Ingrediente = {
+  id: number
+  nombre: string
+  unidad: string
+  stock_actual: number
+  stock_minimo: number
+  stock_objetivo: number
+}
+
+export type SugerenciaCompra = {
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  stock_actual: number
+  stock_minimo: number
+  cantidad_sugerida: number
+  razon: string
+}
+
 export type Pedido = {
   id: number
   numero: number

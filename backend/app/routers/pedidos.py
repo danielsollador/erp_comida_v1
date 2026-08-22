@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -84,6 +84,20 @@ async def marcar_item_preparado(item_id: int, db: Session = Depends(get_db)):
     return resultado
 
 
+def _descontar_insumos(pedido: models.Pedido, db: Session) -> None:
+    producto_ids = [item.producto_id for item in pedido.items]
+    recetas = (
+        db.query(models.RecetaItem).filter(models.RecetaItem.producto_id.in_(producto_ids)).all()
+    )
+    recetas_por_producto: Dict[int, List[models.RecetaItem]] = {}
+    for receta in recetas:
+        recetas_por_producto.setdefault(receta.producto_id, []).append(receta)
+
+    for item in pedido.items:
+        for receta in recetas_por_producto.get(item.producto_id, []):
+            receta.ingrediente.stock_actual -= receta.cantidad_por_unidad * item.cantidad
+
+
 @router.post("/{pedido_id}/cobrar", response_model=schemas.Pedido)
 async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session = Depends(get_db)):
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
@@ -92,6 +106,7 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
     pedido.estado = "pagado"
     pedido.metodo_pago = body.metodo_pago
     pedido.cerrado_en = datetime.datetime.utcnow()
+    _descontar_insumos(pedido, db)
     db.commit()
     db.refresh(pedido)
 
