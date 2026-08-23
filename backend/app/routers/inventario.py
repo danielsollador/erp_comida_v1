@@ -44,7 +44,57 @@ def registrar_compra(
     db_ingrediente = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
     if not db_ingrediente:
         raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
+    if body.cantidad <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
+
     db_ingrediente.stock_actual += body.cantidad
+    # Si informa cuanto pago, el costo unitario se mantiene solo al dia.
+    if body.costo_total is not None and body.costo_total > 0:
+        db_ingrediente.costo_unitario = round(body.costo_total / body.cantidad, 4)
+    db.commit()
+    db.refresh(db_ingrediente)
+    return db_ingrediente
+
+
+@router.post("/ingredientes/{ingrediente_id}/merma", response_model=schemas.Ingrediente)
+def registrar_merma(
+    ingrediente_id: int, body: schemas.MermaRequest, db: Session = Depends(get_db)
+):
+    """Lo que se daño, quemó o botó. Sin esto el stock del sistema nunca cuadra."""
+    db_ingrediente = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
+    if not db_ingrediente:
+        raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
+    if body.cantidad <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
+
+    db_ingrediente.stock_actual -= body.cantidad
+    db.add(
+        models.Merma(
+            ingrediente_id=ingrediente_id, cantidad=body.cantidad, motivo=body.motivo
+        )
+    )
+    db.commit()
+    db.refresh(db_ingrediente)
+    return db_ingrediente
+
+
+@router.post("/ingredientes/{ingrediente_id}/ajustar", response_model=schemas.Ingrediente)
+def ajustar_stock(
+    ingrediente_id: int, body: schemas.AjusteStockRequest, db: Session = Depends(get_db)
+):
+    """Conteo fisico: lo que dice la balanza manda sobre lo que dice el sistema."""
+    db_ingrediente = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
+    if not db_ingrediente:
+        raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
+
+    faltante = db_ingrediente.stock_actual - body.stock_real
+    if faltante > 0:
+        db.add(
+            models.Merma(
+                ingrediente_id=ingrediente_id, cantidad=faltante, motivo=body.motivo
+            )
+        )
+    db_ingrediente.stock_actual = body.stock_real
     db.commit()
     db.refresh(db_ingrediente)
     return db_ingrediente

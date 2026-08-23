@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
 
 router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
@@ -20,10 +21,21 @@ def listar_pedidos(estado: Optional[str] = None, db: Session = Depends(get_db)):
 
 
 def _siguiente_numero(db: Session) -> int:
-    hoy = datetime.datetime.utcnow().date()
-    inicio = datetime.datetime(hoy.year, hoy.month, hoy.day)
+    inicio = inicio_del_dia(hoy())
     count = db.query(models.Pedido).filter(models.Pedido.creado_en >= inicio).count()
     return count + 1
+
+
+def _costo_por_variante(variante_ids: List[int], db: Session) -> Dict[int, float]:
+    """Costo de insumos de cada variante segun su receta y el costo actual."""
+    recetas = (
+        db.query(models.RecetaItem).filter(models.RecetaItem.variante_id.in_(variante_ids)).all()
+    )
+    costos: Dict[int, float] = {}
+    for receta in recetas:
+        aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_unitario or 0)
+        costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
+    return costos
 
 
 @router.post("", response_model=schemas.Pedido)
@@ -37,6 +49,8 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
             models.Variante.id.in_([i.variante_id for i in pedido.items])
         )
     }
+
+    costos = _costo_por_variante(list(variantes.keys()), db)
 
     db_pedido = models.Pedido(numero=_siguiente_numero(db), nota=pedido.nota)
     db.add(db_pedido)
@@ -55,6 +69,7 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
                 variante_id=variante.id,
                 nombre=nombre,
                 precio_unitario=variante.precio,
+                costo_unitario=round(costos.get(variante.id, 0), 4),
                 cantidad=item.cantidad,
                 nota=item.nota,
             )
@@ -122,9 +137,15 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    # Sin esta guarda, un doble toque en "Cobrar" descuenta el inventario dos veces.
+    if pedido.estado == "pagado":
+        raise HTTPException(status_code=409, detail="Este pedido ya fue cobrado")
+    if pedido.estado == "anulado":
+        raise HTTPException(status_code=409, detail="No se puede cobrar un pedido anulado")
+
     pedido.estado = "pagado"
     pedido.metodo_pago = body.metodo_pago
-    pedido.cerrado_en = datetime.datetime.utcnow()
+    pedido.cerrado_en = ahora()
     _descontar_insumos(pedido, db)
     db.commit()
     db.refresh(pedido)
@@ -139,6 +160,13 @@ async def anular_pedido(pedido_id: int, db: Session = Depends(get_db)):
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    # Anular algo ya cobrado descuadraria la caja del dia en silencio.
+    if pedido.estado == "pagado":
+        raise HTTPException(
+            status_code=409,
+            detail="Este pedido ya fue cobrado. Para devolver el dinero registra la salida en Gastos.",
+        )
+
     pedido.estado = "anulado"
     db.commit()
     db.refresh(pedido)

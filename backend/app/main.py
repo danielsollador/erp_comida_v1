@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import models
 from .database import Base, engine
-from .routers import caja, config, inventario, menu, pedidos
+from .routers import caja, config, inventario, menu, pedidos, reportes
 from .seed import seed_if_empty
 from .ws_manager import manager
 
@@ -24,6 +24,7 @@ app.include_router(pedidos.router)
 app.include_router(inventario.router)
 app.include_router(config.router)
 app.include_router(caja.router)
+app.include_router(reportes.router)
 
 
 @app.websocket("/ws")

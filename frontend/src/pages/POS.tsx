@@ -75,14 +75,25 @@ export default function POS() {
 
   async function confirmarCobro(metodo: string) {
     if (!cobrando) return
-    await api.cobrarPedido(cobrando.id, metodo)
-    setCobrando(null)
+    setError('')
+    try {
+      await api.cobrarPedido(cobrando.id, metodo)
+      setCobrando(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cobrar')
+      setCobrando(null)
+    }
     refrescarPedidos()
   }
 
   async function anular(pedidoId: number) {
     if (!window.confirm('Anular este pedido?')) return
-    await api.anularPedido(pedidoId)
+    setError('')
+    try {
+      await api.anularPedido(pedidoId)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo anular')
+    }
     refrescarPedidos()
   }
 

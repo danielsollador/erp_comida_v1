@@ -63,6 +63,7 @@ class IngredienteBase(BaseModel):
     stock_actual: float = 0
     stock_minimo: float = 0
     stock_objetivo: float = 0
+    costo_unitario: float = 0
 
 
 class IngredienteCreate(IngredienteBase):
@@ -78,6 +79,35 @@ class Ingrediente(IngredienteBase):
 
 class ComprarIngredienteRequest(BaseModel):
     cantidad: float
+    costo_total: Optional[float] = None  # si se informa, actualiza el costo unitario
+
+
+class MermaRequest(BaseModel):
+    cantidad: float
+    motivo: str = ""
+
+
+class AjusteStockRequest(BaseModel):
+    stock_real: float
+    motivo: str = "Conteo fisico"
+
+
+class GastoBase(BaseModel):
+    descripcion: str
+    categoria: str = "Operativo"
+    monto: float
+
+
+class GastoCreate(GastoBase):
+    pass
+
+
+class Gasto(GastoBase):
+    id: int
+    fecha: datetime.datetime
+
+    class Config:
+        from_attributes = True
 
 
 class RecetaItemInput(BaseModel):
@@ -163,6 +193,45 @@ class ResumenCaja(BaseModel):
     por_metodo_pago: dict
     efectivo_esperado: float
     cantidad_pedidos: int
+
+
+class PuntoSerie(BaseModel):
+    etiqueta: str
+    ventas: float
+    pedidos: int
+
+
+class ProductoVendido(BaseModel):
+    nombre: str
+    unidades: int
+    ingresos: float
+    costo: float
+    ganancia: float
+    margen_pct: float
+
+
+class Insight(BaseModel):
+    tipo: str  # bueno | alerta | info
+    titulo: str
+    detalle: str
+
+
+class ReporteResumen(BaseModel):
+    periodo: str
+    etiqueta: str
+    ventas: float
+    pedidos: int
+    ticket_promedio: float
+    costo_insumos: float
+    ganancia_bruta: float
+    margen_pct: float
+    gastos: float
+    ganancia_neta: float
+    pedidos_anulados: int
+    por_metodo_pago: dict
+    serie: List[PuntoSerie]
+    top_productos: List[ProductoVendido]
+    insights: List[Insight]
 
 
 class CierreCaja(BaseModel):

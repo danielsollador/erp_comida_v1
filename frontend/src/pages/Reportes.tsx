@@ -1,0 +1,256 @@
+import { useEffect, useState } from 'react'
+import NavBar from '../components/NavBar'
+import { api } from '../lib/api'
+import type { Insight, Periodo, ReporteResumen } from '../lib/types'
+
+const PERIODOS: { valor: Periodo; texto: string }[] = [
+  { valor: 'dia', texto: 'Hoy' },
+  { valor: 'semana', texto: 'Esta semana' },
+  { valor: 'mes', texto: 'Este mes' },
+]
+
+const ESTILO_INSIGHT: Record<Insight['tipo'], { caja: string; icono: string }> = {
+  bueno: { caja: 'bg-emerald-50 border-emerald-200 text-emerald-900', icono: '✓' },
+  alerta: { caja: 'bg-amber-50 border-amber-200 text-amber-900', icono: '!' },
+  info: { caja: 'bg-sky-50 border-sky-200 text-sky-900', icono: 'i' },
+}
+
+export default function Reportes() {
+  const [periodo, setPeriodo] = useState<Periodo>('dia')
+  const [datos, setDatos] = useState<ReporteResumen | null>(null)
+  const [cargando, setCargando] = useState(true)
+
+  useEffect(() => {
+    setCargando(true)
+    api.reporte(periodo).then((r) => {
+      setDatos(r)
+      setCargando(false)
+    })
+  }, [periodo])
+
+  const maxVenta = datos ? Math.max(...datos.serie.map((s) => s.ventas), 0) : 0
+
+  return (
+    <div className="min-h-screen bg-neutral-50">
+      <NavBar titulo="Reportes" />
+
+      <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2">
+        {PERIODOS.map((p) => (
+          <button
+            key={p.valor}
+            onClick={() => setPeriodo(p.valor)}
+            className={`px-4 py-2 rounded-full text-sm font-semibold border transition ${
+              periodo === p.valor
+                ? 'bg-neutral-900 border-neutral-900 text-white'
+                : 'bg-white border-neutral-200 text-neutral-500'
+            }`}
+          >
+            {p.texto}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-4 max-w-4xl mx-auto space-y-5">
+        {cargando && <p className="text-neutral-400 text-sm">Cargando...</p>}
+
+        {datos && !cargando && (
+          <>
+            <p className="text-sm text-neutral-500 capitalize">{datos.etiqueta}</p>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Kpi titulo="Ventas" valor={`$${datos.ventas.toFixed(2)}`} destacado />
+              <Kpi
+                titulo="Ganancia neta"
+                valor={`$${datos.ganancia_neta.toFixed(2)}`}
+                tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
+                destacado
+              />
+              <Kpi titulo="Pedidos" valor={String(datos.pedidos)} />
+              <Kpi titulo="Ticket promedio" valor={`$${datos.ticket_promedio.toFixed(2)}`} />
+            </div>
+
+            {datos.insights.length > 0 && (
+              <div className="space-y-2">
+                <h2 className="font-semibold flex items-center gap-2">
+                  🤖 Analisis del negocio
+                </h2>
+                {datos.insights.map((ins, idx) => {
+                  const estilo = ESTILO_INSIGHT[ins.tipo]
+                  return (
+                    <div key={idx} className={`border rounded-xl p-3 flex gap-3 ${estilo.caja}`}>
+                      <span className="font-bold shrink-0 w-5 h-5 rounded-full bg-white/70 flex items-center justify-center text-xs">
+                        {estilo.icono}
+                      </span>
+                      <div>
+                        <div className="font-semibold text-sm">{ins.titulo}</div>
+                        <div className="text-sm opacity-80">{ins.detalle}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+              <h2 className="font-semibold mb-1">De donde sale la ganancia</h2>
+              <p className="text-xs text-neutral-500 mb-3">
+                Ventas menos lo que costaron los insumos y los gastos del periodo.
+              </p>
+              <Linea etiqueta="Ventas" monto={datos.ventas} />
+              <Linea etiqueta="Costo de insumos" monto={-datos.costo_insumos} />
+              <Linea
+                etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
+                monto={datos.ganancia_bruta}
+                subtotal
+              />
+              <Linea etiqueta="Gastos" monto={-datos.gastos} />
+              <Linea etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
+            </div>
+
+            {datos.serie.length > 0 && (
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <h2 className="font-semibold mb-4">
+                  Ventas por {datos.periodo === 'dia' ? 'hora' : 'dia'}
+                </h2>
+                <div className="flex items-end gap-1.5 h-40 overflow-x-auto">
+                  {datos.serie.map((punto) => {
+                    const alturaPct = maxVenta > 0 ? (punto.ventas / maxVenta) * 100 : 0
+                    return (
+                      <div
+                        key={punto.etiqueta}
+                        className="flex-1 min-w-[28px] flex flex-col items-center justify-end h-full gap-1"
+                        title={`${punto.etiqueta}: $${punto.ventas.toFixed(2)} en ${punto.pedidos} pedidos`}
+                      >
+                        <span className="text-[10px] text-neutral-500 tabular-nums">
+                          {punto.ventas > 0 ? `$${punto.ventas.toFixed(0)}` : ''}
+                        </span>
+                        <div
+                          className="w-full bg-neutral-900 rounded-t-md min-h-[2px]"
+                          style={{ height: `${alturaPct}%` }}
+                        />
+                        <span className="text-[10px] text-neutral-500 whitespace-nowrap">
+                          {punto.etiqueta}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {datos.top_productos.length > 0 && (
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4 overflow-x-auto">
+                <h2 className="font-semibold mb-3">Que se vendio</h2>
+                <table className="w-full text-sm min-w-[420px]">
+                  <thead className="text-neutral-500 text-xs uppercase">
+                    <tr>
+                      <th className="text-left py-2">Producto</th>
+                      <th className="text-right py-2">Uds</th>
+                      <th className="text-right py-2">Ingresos</th>
+                      <th className="text-right py-2">Ganancia</th>
+                      <th className="text-right py-2">Margen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {datos.top_productos.map((p) => (
+                      <tr key={p.nombre} className="border-t border-neutral-100">
+                        <td className="py-2 font-medium">{p.nombre}</td>
+                        <td className="text-right py-2 tabular-nums">{p.unidades}</td>
+                        <td className="text-right py-2 tabular-nums">${p.ingresos.toFixed(2)}</td>
+                        <td className="text-right py-2 tabular-nums">${p.ganancia.toFixed(2)}</td>
+                        <td
+                          className={`text-right py-2 tabular-nums font-semibold ${
+                            p.margen_pct >= 50
+                              ? 'text-emerald-600'
+                              : p.margen_pct >= 30
+                                ? 'text-amber-600'
+                                : 'text-red-600'
+                          }`}
+                        >
+                          {p.margen_pct.toFixed(0)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <h2 className="font-semibold mb-2">Como te pagaron</h2>
+                {Object.entries(datos.por_metodo_pago).map(([metodo, monto]) => (
+                  <div key={metodo} className="flex justify-between text-sm py-1">
+                    <span className="text-neutral-600">{metodo}</span>
+                    <span className="font-medium tabular-nums">${monto.toFixed(2)}</span>
+                  </div>
+                ))}
+                {Object.keys(datos.por_metodo_pago).length === 0 && (
+                  <p className="text-neutral-400 text-sm">Sin cobros en el periodo.</p>
+                )}
+              </div>
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <h2 className="font-semibold mb-2">Pedidos anulados</h2>
+                <p className="text-3xl font-bold tabular-nums">{datos.pedidos_anulados}</p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Si este numero crece, revisa que esta fallando al tomar los pedidos.
+                </p>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Kpi({
+  titulo,
+  valor,
+  destacado = false,
+  tono,
+}: {
+  titulo: string
+  valor: string
+  destacado?: boolean
+  tono?: 'bueno' | 'malo'
+}) {
+  const color = tono === 'malo' ? 'text-red-600' : tono === 'bueno' ? 'text-emerald-600' : ''
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+      <div className="text-xs text-neutral-500">{titulo}</div>
+      <div className={`font-bold tabular-nums ${destacado ? 'text-2xl' : 'text-xl'} ${color}`}>
+        {valor}
+      </div>
+    </div>
+  )
+}
+
+function Linea({
+  etiqueta,
+  monto,
+  subtotal = false,
+  total = false,
+}: {
+  etiqueta: string
+  monto: number
+  subtotal?: boolean
+  total?: boolean
+}) {
+  return (
+    <div
+      className={`flex justify-between py-1.5 ${
+        subtotal || total ? 'border-t border-neutral-200 mt-1 pt-2' : ''
+      } ${total ? 'font-bold text-base' : subtotal ? 'font-semibold' : 'text-sm'}`}
+    >
+      <span className={monto < 0 ? 'text-neutral-600' : ''}>{etiqueta}</span>
+      <span
+        className={`tabular-nums ${
+          total && monto < 0 ? 'text-red-600' : monto < 0 ? 'text-neutral-600' : ''
+        }`}
+      >
+        {monto < 0 ? '-' : ''}${Math.abs(monto).toFixed(2)}
+      </span>
+    </div>
+  )
+}

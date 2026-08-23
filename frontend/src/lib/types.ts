@@ -38,6 +38,56 @@ export type Ingrediente = {
   stock_actual: number
   stock_minimo: number
   stock_objetivo: number
+  costo_unitario: number
+}
+
+export type Gasto = {
+  id: number
+  descripcion: string
+  categoria: string
+  monto: number
+  fecha: string
+}
+
+export type PuntoSerie = {
+  etiqueta: string
+  ventas: number
+  pedidos: number
+}
+
+export type ProductoVendido = {
+  nombre: string
+  unidades: number
+  ingresos: number
+  costo: number
+  ganancia: number
+  margen_pct: number
+}
+
+export type Insight = {
+  tipo: 'bueno' | 'alerta' | 'info'
+  titulo: string
+  detalle: string
+}
+
+export type Periodo = 'dia' | 'semana' | 'mes'
+
+export type ReporteResumen = {
+  periodo: Periodo
+  etiqueta: string
+  ventas: number
+  pedidos: number
+  ticket_promedio: number
+  costo_insumos: number
+  ganancia_bruta: number
+  margen_pct: number
+  gastos: number
+  ganancia_neta: number
+  pedidos_anulados: number
+  por_metodo_pago: Record<string, number>
+  serie: PuntoSerie[]
+  top_productos: ProductoVendido[]
+  insights: Insight[]
 }
 
 export type SugerenciaCompra = {

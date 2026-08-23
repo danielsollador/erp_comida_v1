@@ -4,7 +4,12 @@ import { api, connectWs } from '../lib/api'
 import type { Pedido } from '../lib/types'
 
 function minutosDesde(iso: string): number {
-  const fecha = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`)
+  // El backend guarda hora local del local comercial, sin zona horaria.
+  // Un string ISO sin offset se parsea como hora local, que es justo lo que
+  // queremos; solo hay que recortar los microsegundos que JS no entiende.
+  const limpio = iso.replace(/(\.\d{3})\d+$/, '$1')
+  const fecha = new Date(limpio)
+  if (Number.isNaN(fecha.getTime())) return 0
   return Math.max(0, Math.floor((Date.now() - fecha.getTime()) / 60000))
 }
 

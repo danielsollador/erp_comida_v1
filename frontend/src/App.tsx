@@ -4,13 +4,15 @@ import Cocina from './pages/Cocina'
 import Inventario from './pages/Inventario'
 import Menu from './pages/Menu'
 import Caja from './pages/Caja'
+import Reportes from './pages/Reportes'
 
 const ACCESOS = [
   { to: '/pos', icono: '🛒', titulo: 'Punto de venta', desc: 'Armar y cobrar pedidos' },
   { to: '/cocina', icono: '🍳', titulo: 'Cocina', desc: 'Comandas en tiempo real' },
+  { to: '/reportes', icono: '📊', titulo: 'Reportes', desc: 'Dia, semana y mes' },
   { to: '/menu', icono: '📋', titulo: 'Menu', desc: 'Productos y precios' },
   { to: '/inventario', icono: '📦', titulo: 'Inventario', desc: 'Insumos y compras' },
-  { to: '/caja', icono: '💵', titulo: 'Cierre de caja', desc: 'Cuadre del dia' },
+  { to: '/caja', icono: '💵', titulo: 'Cierre de caja', desc: 'Cuadre y gastos' },
 ]
 
 function Inicio() {
@@ -47,6 +49,7 @@ export default function App() {
         <Route path="/inventario" element={<Inventario />} />
         <Route path="/menu" element={<Menu />} />
         <Route path="/caja" element={<Caja />} />
+        <Route path="/reportes" element={<Reportes />} />
       </Routes>
     </BrowserRouter>
   )

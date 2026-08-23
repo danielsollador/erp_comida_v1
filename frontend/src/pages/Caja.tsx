@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
-import type { CierreCaja, Configuracion, ResumenCaja } from '../lib/types'
+import type { CierreCaja, Configuracion, Gasto, ResumenCaja } from '../lib/types'
+
+const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
 
 export default function Caja() {
   const [resumen, setResumen] = useState<ResumenCaja | null>(null)
@@ -11,6 +13,10 @@ export default function Caja() {
   const [nota, setNota] = useState('')
   const [cierres, setCierres] = useState<CierreCaja[]>([])
   const [resultado, setResultado] = useState<CierreCaja | null>(null)
+  const [gastos, setGastos] = useState<Gasto[]>([])
+  const [gastoDesc, setGastoDesc] = useState('')
+  const [gastoMonto, setGastoMonto] = useState('')
+  const [gastoCategoria, setGastoCategoria] = useState(CATEGORIAS_GASTO[0])
 
   useEffect(() => {
     cargar()
@@ -23,7 +29,26 @@ export default function Caja() {
       setTasaInput(String(c.tasa_bcv))
     })
     api.listarCierres().then(setCierres)
+    api.listarGastos().then(setGastos)
   }
+
+  async function agregarGasto() {
+    const monto = Number(gastoMonto)
+    if (!gastoDesc.trim() || !Number.isFinite(monto) || monto <= 0) return
+    await api.crearGasto(gastoDesc.trim(), gastoCategoria, monto)
+    setGastoDesc('')
+    setGastoMonto('')
+    cargar()
+  }
+
+  async function borrarGasto(id: number) {
+    await api.eliminarGasto(id)
+    cargar()
+  }
+
+  const hoyISO = new Date().toDateString()
+  const gastosHoy = gastos.filter((g) => new Date(g.fecha).toDateString() === hoyISO)
+  const totalGastosHoy = gastosHoy.reduce((s, g) => s + g.monto, 0)
 
   async function guardarTasa() {
     const tasa = Number(tasaInput)
@@ -98,12 +123,82 @@ export default function Caja() {
         )}
 
         <div className="bg-white rounded-2xl shadow p-4">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="font-semibold">Gastos de hoy</h2>
+            <span className="font-bold">${totalGastosHoy.toFixed(2)}</span>
+          </div>
+          <p className="text-xs text-neutral-500 mb-3">
+            Todo lo que sale de la gaveta: gas, bolsas, un adelanto, el mandado. Se descuenta del
+            efectivo esperado y de la ganancia.
+          </p>
+
+          <div className="space-y-1 mb-3">
+            {gastosHoy.map((g) => (
+              <div key={g.id} className="flex justify-between items-center text-sm">
+                <span>
+                  {g.descripcion}{' '}
+                  <span className="text-xs text-neutral-400">({g.categoria})</span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="font-medium">${g.monto.toFixed(2)}</span>
+                  <button onClick={() => borrarGasto(g.id)} className="text-red-400 text-xs">
+                    x
+                  </button>
+                </span>
+              </div>
+            ))}
+            {gastosHoy.length === 0 && (
+              <p className="text-neutral-400 text-sm">Sin gastos registrados hoy.</p>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              value={gastoDesc}
+              onChange={(e) => setGastoDesc(e.target.value)}
+              placeholder="Ej. Bombona de gas"
+              className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+            />
+            <select
+              value={gastoCategoria}
+              onChange={(e) => setGastoCategoria(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+            >
+              {CATEGORIAS_GASTO.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <input
+              value={gastoMonto}
+              onChange={(e) => setGastoMonto(e.target.value)}
+              type="number"
+              step="0.01"
+              placeholder="$"
+              className="w-20 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+            />
+            <button
+              onClick={agregarGasto}
+              className="bg-neutral-900 text-white px-3 py-2 rounded-lg text-sm font-medium"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow p-4">
           <h2 className="font-semibold mb-2">Contar efectivo fisico</h2>
           <p className="text-sm text-neutral-500 mb-3">
             Efectivo esperado segun el sistema:{' '}
             <span className="font-semibold text-neutral-800">
               ${resumen?.efectivo_esperado.toFixed(2) ?? '0.00'}
             </span>
+            {totalGastosHoy > 0 && (
+              <span className="block text-xs mt-1">
+                (ventas en efectivo menos ${totalGastosHoy.toFixed(2)} de gastos)
+              </span>
+            )}
           </p>
           <div className="flex gap-2 mb-2">
             <input

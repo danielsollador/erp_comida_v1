@@ -1,9 +1,8 @@
-import datetime
-
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from .database import Base
+from .timeutils import ahora
 
 
 class Categoria(Base):
@@ -49,6 +48,7 @@ class Ingrediente(Base):
     stock_actual = Column(Float, default=0)
     stock_minimo = Column(Float, default=0)
     stock_objetivo = Column(Float, default=0)  # nivel al que se repone al comprar
+    costo_unitario = Column(Float, default=0)  # cuanto cuesta 1 unidad de medida (ej. 1 kg)
 
 
 class RecetaItem(Base):
@@ -70,11 +70,33 @@ class Configuracion(Base):
     tasa_bcv = Column(Float, default=0)
 
 
+class Gasto(Base):
+    __tablename__ = "gastos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    descripcion = Column(String, nullable=False)
+    categoria = Column(String, default="Operativo")  # Insumos | Servicios | Sueldos | Otros
+    monto = Column(Float, nullable=False)
+    fecha = Column(DateTime, default=ahora)
+
+
+class Merma(Base):
+    __tablename__ = "mermas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)
+    motivo = Column(String, default="")
+    fecha = Column(DateTime, default=ahora)
+
+    ingrediente = relationship("Ingrediente")
+
+
 class CierreCaja(Base):
     __tablename__ = "cierres_caja"
 
     id = Column(Integer, primary_key=True, index=True)
-    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    fecha = Column(DateTime, default=ahora)
     total_sistema = Column(Float, nullable=False)
     efectivo_esperado = Column(Float, nullable=False)
     efectivo_contado = Column(Float, nullable=False)
@@ -90,7 +112,7 @@ class Pedido(Base):
     estado = Column(String, default="pendiente")  # pendiente | listo | pagado | anulado
     nota = Column(String, default="")
     metodo_pago = Column(String, nullable=True)
-    creado_en = Column(DateTime, default=datetime.datetime.utcnow)
+    creado_en = Column(DateTime, default=ahora)
     cerrado_en = Column(DateTime, nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
@@ -108,6 +130,9 @@ class PedidoItem(Base):
     variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
     nombre = Column(String, nullable=False)
     precio_unitario = Column(Float, nullable=False)
+    # Costo de insumos congelado al momento de la venta: si manana sube el queso,
+    # los reportes de meses pasados siguen mostrando el margen real de entonces.
+    costo_unitario = Column(Float, default=0)
     cantidad = Column(Integer, default=1)
     nota = Column(String, default="")
     preparado = Column(Boolean, default=False)

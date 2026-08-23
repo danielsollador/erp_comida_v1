@@ -2,10 +2,13 @@ import type {
   Categoria,
   CierreCaja,
   Configuracion,
+  Gasto,
   Ingrediente,
   Pedido,
   PedidoItem,
+  Periodo,
   Producto,
+  ReporteResumen,
   ResumenCaja,
   SugerenciaCompra,
   Variante,
@@ -17,8 +20,16 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   })
   if (!res.ok) {
-    const detail = await res.text()
-    throw new Error(detail || `Error ${res.status}`)
+    // FastAPI devuelve {"detail": "..."}; mostrar ese texto y no el JSON crudo.
+    const texto = await res.text()
+    let mensaje = texto || `Error ${res.status}`
+    try {
+      const cuerpo = JSON.parse(texto)
+      if (typeof cuerpo?.detail === 'string') mensaje = cuerpo.detail
+    } catch {
+      // respuesta no-JSON: se usa el texto tal cual
+    }
+    throw new Error(mensaje)
   }
   return res.json()
 }
@@ -73,12 +84,32 @@ export const api = {
   listarIngredientes: () => req<Ingrediente[]>('/inventario/ingredientes'),
   actualizarIngrediente: (id: number, i: Omit<Ingrediente, 'id'>) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
-  registrarCompra: (id: number, cantidad: number) =>
+  registrarCompra: (id: number, cantidad: number, costo_total?: number) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/comprar`, {
       method: 'POST',
-      body: JSON.stringify({ cantidad }),
+      body: JSON.stringify({ cantidad, costo_total: costo_total ?? null }),
+    }),
+  registrarMerma: (id: number, cantidad: number, motivo: string) =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}/merma`, {
+      method: 'POST',
+      body: JSON.stringify({ cantidad, motivo }),
+    }),
+  ajustarStock: (id: number, stock_real: number) =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}/ajustar`, {
+      method: 'POST',
+      body: JSON.stringify({ stock_real, motivo: 'Conteo fisico' }),
     }),
   sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
+
+  listarGastos: () => req<Gasto[]>('/caja/gastos'),
+  crearGasto: (descripcion: string, categoria: string, monto: number) =>
+    req<Gasto>('/caja/gastos', {
+      method: 'POST',
+      body: JSON.stringify({ descripcion, categoria, monto }),
+    }),
+  eliminarGasto: (id: number) => req(`/caja/gastos/${id}`, { method: 'DELETE' }),
+
+  reporte: (periodo: Periodo) => req<ReporteResumen>(`/reportes/resumen?periodo=${periodo}`),
 
   obtenerConfig: () => req<Configuracion>('/config'),
   actualizarConfig: (tasa_bcv: number) =>
@@ -122,10 +153,13 @@ export type {
   Categoria,
   CierreCaja,
   Configuracion,
+  Gasto,
   Ingrediente,
   Pedido,
   PedidoItem,
+  Periodo,
   Producto,
+  ReporteResumen,
   ResumenCaja,
   SugerenciaCompra,
   Variante,
