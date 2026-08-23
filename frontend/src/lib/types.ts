@@ -57,6 +57,7 @@ export type Pedido = {
   nota: string
   metodo_pago: string | null
   total: number
+  creado_en: string
   items: PedidoItem[]
 }
 

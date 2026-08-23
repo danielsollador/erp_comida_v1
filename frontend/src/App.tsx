@@ -5,40 +5,33 @@ import Inventario from './pages/Inventario'
 import Menu from './pages/Menu'
 import Caja from './pages/Caja'
 
+const ACCESOS = [
+  { to: '/pos', icono: '🛒', titulo: 'Punto de venta', desc: 'Armar y cobrar pedidos' },
+  { to: '/cocina', icono: '🍳', titulo: 'Cocina', desc: 'Comandas en tiempo real' },
+  { to: '/menu', icono: '📋', titulo: 'Menu', desc: 'Productos y precios' },
+  { to: '/inventario', icono: '📦', titulo: 'Inventario', desc: 'Insumos y compras' },
+  { to: '/caja', icono: '💵', titulo: 'Cierre de caja', desc: 'Cuadre del dia' },
+]
+
 function Inicio() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-100">
-      <div className="flex flex-wrap justify-center gap-6 max-w-3xl p-6">
-        <Link
-          to="/pos"
-          className="bg-white shadow rounded-2xl p-10 text-xl font-medium hover:scale-105 transition"
-        >
-          Punto de venta
-        </Link>
-        <Link
-          to="/cocina"
-          className="bg-neutral-900 text-white shadow rounded-2xl p-10 text-xl font-medium hover:scale-105 transition"
-        >
-          Cocina
-        </Link>
-        <Link
-          to="/inventario"
-          className="bg-indigo-600 text-white shadow rounded-2xl p-10 text-xl font-medium hover:scale-105 transition"
-        >
-          Inventario
-        </Link>
-        <Link
-          to="/menu"
-          className="bg-amber-500 text-white shadow rounded-2xl p-10 text-xl font-medium hover:scale-105 transition"
-        >
-          Menu
-        </Link>
-        <Link
-          to="/caja"
-          className="bg-blue-600 text-white shadow rounded-2xl p-10 text-xl font-medium hover:scale-105 transition"
-        >
-          Cierre de caja
-        </Link>
+    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+      <div className="max-w-3xl w-full p-6">
+        <h1 className="text-2xl font-bold text-center mb-1">Punto de venta</h1>
+        <p className="text-center text-neutral-500 mb-8">Elige una seccion</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {ACCESOS.map((a) => (
+            <Link
+              key={a.to}
+              to={a.to}
+              className="bg-white border border-neutral-200 shadow-sm rounded-2xl p-6 flex flex-col items-center text-center gap-2 hover:shadow-md hover:-translate-y-0.5 transition"
+            >
+              <span className="text-4xl">{a.icono}</span>
+              <span className="font-semibold">{a.titulo}</span>
+              <span className="text-xs text-neutral-500">{a.desc}</span>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   )

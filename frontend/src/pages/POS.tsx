@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api, connectWs } from '../lib/api'
+import { colorCategoria } from '../lib/theme'
 import type { Categoria, Pedido, Producto, Variante } from '../lib/types'
 
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
@@ -8,6 +9,7 @@ type Carrito = Record<number, CarritoEntry>
 
 export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [categoriaActiva, setCategoriaActiva] = useState<number | null>(null)
   const [carrito, setCarrito] = useState<Carrito>({})
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
@@ -15,7 +17,10 @@ export default function POS() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    api.listarCategorias().then(setCategorias)
+    api.listarCategorias().then((cats) => {
+      setCategorias(cats)
+      if (cats.length > 0) setCategoriaActiva(cats[0].id)
+    })
     api.obtenerConfig().then((c) => setTasaBcv(c.tasa_bcv))
     refrescarPedidos()
     const disconnect = connectWs(() => refrescarPedidos())
@@ -81,47 +86,74 @@ export default function POS() {
     refrescarPedidos()
   }
 
+  const categoria = categorias.find((c) => c.id === categoriaActiva)
+
   return (
-    <div className="min-h-screen bg-neutral-100">
+    <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Punto de venta" />
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px]">
+
+      {categorias.length > 0 && (
+        <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
+          {categorias.map((cat) => {
+            const color = colorCategoria(cat.id)
+            const activa = cat.id === categoriaActiva
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setCategoriaActiva(cat.id)}
+                className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold border transition ${
+                  activa
+                    ? `${color.bg} ${color.border} ${color.text}`
+                    : 'bg-white border-neutral-200 text-neutral-500'
+                }`}
+              >
+                {cat.nombre}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px]">
         <div className="p-4 overflow-y-auto">
-          {categorias.map((cat) => (
-            <div key={cat.id} className="mb-6">
-              <h2 className="text-sm font-medium uppercase text-neutral-500 mb-2">{cat.nombre}</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {cat.productos
-                  .filter((p) => p.activo)
-                  .flatMap((p) =>
-                    p.variantes
-                      .filter((v) => v.activo)
-                      .map((v) => (
+          {categoria && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+              {categoria.productos
+                .filter((p) => p.activo)
+                .flatMap((p) =>
+                  p.variantes
+                    .filter((v) => v.activo)
+                    .map((v) => {
+                      const color = colorCategoria(categoria.id)
+                      return (
                         <button
                           key={v.id}
                           onClick={() => agregar(p, v)}
-                          className="bg-white rounded-xl shadow p-4 text-left active:scale-95 transition"
+                          className={`rounded-2xl border-2 p-4 text-left active:scale-95 transition shadow-sm ${color.bg} ${color.border}`}
                         >
-                          <div className="font-medium">
+                          <div className={`font-semibold ${color.text}`}>
                             {v.nombre === 'Regular' ? p.nombre : `${p.nombre} - ${v.nombre}`}
                           </div>
-                          <div className="text-neutral-500">${v.precio.toFixed(2)}</div>
+                          <div className="text-neutral-700 font-medium mt-1">
+                            ${v.precio.toFixed(2)}
+                          </div>
                         </button>
-                      )),
-                  )}
-              </div>
+                      )
+                    }),
+                )}
             </div>
-          ))}
+          )}
 
-          <h2 className="text-sm font-medium uppercase text-neutral-500 mt-8 mb-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-2">
             Pedidos en curso
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {pedidosActivos.map((pedido) => (
-              <div key={pedido.id} className="bg-white rounded-xl shadow p-4">
+              <div key={pedido.id} className="bg-white rounded-2xl shadow-sm border border-neutral-200 p-4">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-semibold">#{pedido.numero}</span>
+                  <span className="font-bold text-lg">#{pedido.numero}</span>
                   <span
-                    className={`text-xs px-2 py-1 rounded-full ${
+                    className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                       pedido.estado === 'listo'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-amber-100 text-amber-700'
@@ -138,14 +170,14 @@ export default function POS() {
                   ))}
                 </ul>
                 <div className="flex justify-between items-center">
-                  <span className="font-medium">${pedido.total.toFixed(2)}</span>
+                  <span className="font-semibold">${pedido.total.toFixed(2)}</span>
                   <div className="flex gap-2">
-                    <button onClick={() => anular(pedido.id)} className="text-red-500 text-xs">
+                    <button onClick={() => anular(pedido.id)} className="text-red-500 text-xs font-medium">
                       Anular
                     </button>
                     <button
                       onClick={() => setCobrando(pedido)}
-                      className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg"
+                      className="bg-neutral-900 text-white text-sm px-4 py-2 rounded-xl font-medium"
                     >
                       Cobrar
                     </button>
@@ -159,14 +191,14 @@ export default function POS() {
           </div>
         </div>
 
-        <div className="bg-white border-l border-neutral-200 p-4 flex flex-col">
-          <h2 className="font-semibold mb-3">Comanda actual</h2>
+        <div className="bg-white border-l border-neutral-200 p-4 flex flex-col lg:sticky lg:top-[105px] lg:h-[calc(100vh-105px)]">
+          <h2 className="font-semibold mb-3 text-lg">Comanda actual</h2>
           {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-          <div className="flex-1 overflow-y-auto space-y-2">
+          <div className="flex-1 overflow-y-auto space-y-3">
             {Object.values(carrito).map(({ producto, variante, cantidad }) => (
               <div key={variante.id} className="flex justify-between items-center">
                 <div>
-                  <div className="text-sm font-medium">
+                  <div className="text-sm font-semibold">
                     {variante.nombre === 'Regular' ? producto.nombre : `${producto.nombre} - ${variante.nombre}`}
                   </div>
                   <div className="text-xs text-neutral-500">${variante.precio.toFixed(2)} c/u</div>
@@ -174,14 +206,14 @@ export default function POS() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => quitar(variante.id)}
-                    className="w-7 h-7 rounded-full bg-neutral-200"
+                    className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold"
                   >
                     -
                   </button>
-                  <span className="w-5 text-center">{cantidad}</span>
+                  <span className="w-6 text-center font-medium">{cantidad}</span>
                   <button
                     onClick={() => agregar(producto, variante)}
-                    className="w-7 h-7 rounded-full bg-neutral-200"
+                    className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold"
                   >
                     +
                   </button>
@@ -193,14 +225,14 @@ export default function POS() {
             )}
           </div>
           <div className="border-t border-neutral-200 pt-3 mt-3">
-            <div className="flex justify-between font-semibold mb-3">
-              <span>Total</span>
+            <div className="flex justify-between items-baseline font-bold text-xl mb-3">
+              <span className="text-sm font-medium text-neutral-500">Total</span>
               <span>${totalCarrito.toFixed(2)}</span>
             </div>
             <button
               onClick={enviarComanda}
               disabled={Object.keys(carrito).length === 0}
-              className="w-full bg-neutral-900 text-white rounded-xl py-3 font-medium disabled:opacity-30"
+              className="w-full bg-neutral-900 text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-30"
             >
               Enviar comanda a cocina
             </button>
@@ -209,10 +241,10 @@ export default function POS() {
       </div>
 
       {cobrando && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
-          <div className="bg-white rounded-2xl p-6 w-80">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-30">
+          <div className="bg-white rounded-3xl p-6 w-80 shadow-xl">
             <h3 className="font-semibold mb-1">Cobrar pedido #{cobrando.numero}</h3>
-            <p className="text-2xl font-bold">${cobrando.total.toFixed(2)}</p>
+            <p className="text-3xl font-bold">${cobrando.total.toFixed(2)}</p>
             {tasaBcv > 0 && (
               <p className="text-neutral-500 mb-3">
                 Bs {(cobrando.total * tasaBcv).toLocaleString('es-VE', { maximumFractionDigits: 2 })}{' '}
@@ -229,7 +261,7 @@ export default function POS() {
                 <button
                   key={m}
                   onClick={() => confirmarCobro(m)}
-                  className="bg-neutral-100 hover:bg-neutral-200 rounded-lg py-2 text-sm"
+                  className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-3 text-sm font-medium"
                 >
                   {m}
                 </button>

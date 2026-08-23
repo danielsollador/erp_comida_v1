@@ -1,3 +1,4 @@
+import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel
@@ -136,6 +137,7 @@ class Pedido(BaseModel):
     nota: str
     metodo_pago: Optional[str]
     total: float
+    creado_en: datetime.datetime
     items: List[PedidoItem]
 
     class Config:
