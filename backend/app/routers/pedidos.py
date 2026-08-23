@@ -64,7 +64,7 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
     db.refresh(db_pedido)
 
     resultado = schemas.Pedido.model_validate(db_pedido)
-    await manager.broadcast("pedido_nuevo", resultado.model_dump())
+    await manager.broadcast("pedido_nuevo", resultado.model_dump(mode="json"))
     return resultado
 
 
@@ -83,7 +83,7 @@ async def marcar_item_preparado(item_id: int, db: Session = Depends(get_db)):
         db.refresh(pedido)
 
     resultado = schemas.Pedido.model_validate(pedido)
-    await manager.broadcast("pedido_actualizado", resultado.model_dump())
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado
 
 
@@ -99,7 +99,7 @@ async def marcar_pedido_listo(pedido_id: int, db: Session = Depends(get_db)):
     db.refresh(pedido)
 
     resultado = schemas.Pedido.model_validate(pedido)
-    await manager.broadcast("pedido_actualizado", resultado.model_dump())
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado
 
 
@@ -130,7 +130,7 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
     db.refresh(pedido)
 
     resultado = schemas.Pedido.model_validate(pedido)
-    await manager.broadcast("pedido_pagado", resultado.model_dump())
+    await manager.broadcast("pedido_pagado", resultado.model_dump(mode="json"))
     return resultado
 
 
@@ -144,5 +144,5 @@ async def anular_pedido(pedido_id: int, db: Session = Depends(get_db)):
     db.refresh(pedido)
 
     resultado = schemas.Pedido.model_validate(pedido)
-    await manager.broadcast("pedido_actualizado", resultado.model_dump())
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado

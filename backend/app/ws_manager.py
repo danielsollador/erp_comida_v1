@@ -17,7 +17,7 @@ class ConnectionManager:
             self.active.remove(websocket)
 
     async def broadcast(self, event: str, data: dict):
-        message = json.dumps({"event": event, "data": data})
+        message = json.dumps({"event": event, "data": data}, default=str)
         stale = []
         for ws in self.active:
             try:
