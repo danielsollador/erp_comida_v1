@@ -115,6 +115,12 @@ export type Configuracion = {
   tasa_bcv: number
 }
 
+export type Respaldo = {
+  nombre: string
+  tamano_kb: number
+  creado_en: string
+}
+
 export type ResumenCaja = {
   fecha: string
   total_ventas: number

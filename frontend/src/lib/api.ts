@@ -9,6 +9,7 @@ import type {
   Periodo,
   Producto,
   ReporteResumen,
+  Respaldo,
   ResumenCaja,
   SugerenciaCompra,
   Variante,
@@ -111,6 +112,9 @@ export const api = {
 
   reporte: (periodo: Periodo) => req<ReporteResumen>(`/reportes/resumen?periodo=${periodo}`),
 
+  listarRespaldos: () => req<Respaldo[]>('/respaldos'),
+  crearRespaldo: () => req<{ ok: boolean; archivo: string }>('/respaldos/crear', { method: 'POST' }),
+
   obtenerConfig: () => req<Configuracion>('/config'),
   actualizarConfig: (tasa_bcv: number) =>
     req<Configuracion>('/config', { method: 'PUT', body: JSON.stringify({ tasa_bcv }) }),
@@ -160,6 +164,7 @@ export type {
   Periodo,
   Producto,
   ReporteResumen,
+  Respaldo,
   ResumenCaja,
   SugerenciaCompra,
   Variante,

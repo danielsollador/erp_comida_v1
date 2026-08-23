@@ -5,6 +5,7 @@ import Inventario from './pages/Inventario'
 import Menu from './pages/Menu'
 import Caja from './pages/Caja'
 import Reportes from './pages/Reportes'
+import Sistema from './pages/Sistema'
 
 const ACCESOS = [
   { to: '/pos', icono: '🛒', titulo: 'Punto de venta', desc: 'Armar y cobrar pedidos' },
@@ -13,6 +14,7 @@ const ACCESOS = [
   { to: '/menu', icono: '📋', titulo: 'Menu', desc: 'Productos y precios' },
   { to: '/inventario', icono: '📦', titulo: 'Inventario', desc: 'Insumos y compras' },
   { to: '/caja', icono: '💵', titulo: 'Cierre de caja', desc: 'Cuadre y gastos' },
+  { to: '/sistema', icono: '🛡️', titulo: 'Sistema', desc: 'Respaldo de datos' },
 ]
 
 function Inicio() {
@@ -50,6 +52,7 @@ export default function App() {
         <Route path="/menu" element={<Menu />} />
         <Route path="/caja" element={<Caja />} />
         <Route path="/reportes" element={<Reportes />} />
+        <Route path="/sistema" element={<Sistema />} />
       </Routes>
     </BrowserRouter>
   )
