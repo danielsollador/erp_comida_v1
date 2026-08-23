@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
 import type { Ingrediente, SugerenciaCompra } from '../lib/types'
 
@@ -27,8 +28,9 @@ export default function Inventario() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100 p-4 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-4">Inventario de insumos</h1>
+    <div className="min-h-screen bg-neutral-100">
+      <NavBar titulo="Inventario de insumos" />
+      <div className="p-4 max-w-3xl mx-auto">
 
       <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 mb-6">
         <h2 className="font-semibold text-indigo-900 mb-2">🤖 Asistente de compras</h2>
@@ -94,6 +96,7 @@ export default function Inventario() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   )

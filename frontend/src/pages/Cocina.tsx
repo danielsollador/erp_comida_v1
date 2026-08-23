@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import NavBar from '../components/NavBar'
 import { api, connectWs } from '../lib/api'
 import type { Pedido } from '../lib/types'
 
@@ -20,13 +21,26 @@ export default function Cocina() {
     refrescar()
   }
 
+  async function marcarTodoListo(pedidoId: number) {
+    await api.marcarPedidoListo(pedidoId)
+    refrescar()
+  }
+
   return (
-    <div className="min-h-screen bg-neutral-900 text-white p-6">
-      <h1 className="text-3xl font-semibold mb-6">Cocina</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="min-h-screen bg-neutral-900 text-white">
+      <NavBar titulo="Cocina" dark />
+      <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {pedidos.map((pedido) => (
           <div key={pedido.id} className="bg-neutral-800 rounded-2xl p-5">
-            <div className="text-xl font-bold mb-3">Pedido #{pedido.numero}</div>
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-xl font-bold">Pedido #{pedido.numero}</span>
+              <button
+                onClick={() => marcarTodoListo(pedido.id)}
+                className="text-xs bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded-lg font-medium"
+              >
+                Marcar todo listo
+              </button>
+            </div>
             <ul className="space-y-2">
               {pedido.items.map((item) => (
                 <li key={item.id}>

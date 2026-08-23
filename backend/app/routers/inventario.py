@@ -50,10 +50,10 @@ def registrar_compra(
     return db_ingrediente
 
 
-@router.get("/recetas/{producto_id}", response_model=List[schemas.RecetaItem])
-def ver_receta(producto_id: int, db: Session = Depends(get_db)):
+@router.get("/recetas/{variante_id}", response_model=List[schemas.RecetaItem])
+def ver_receta(variante_id: int, db: Session = Depends(get_db)):
     items = (
-        db.query(models.RecetaItem).filter(models.RecetaItem.producto_id == producto_id).all()
+        db.query(models.RecetaItem).filter(models.RecetaItem.variante_id == variante_id).all()
     )
     return [
         schemas.RecetaItem(
@@ -67,25 +67,25 @@ def ver_receta(producto_id: int, db: Session = Depends(get_db)):
     ]
 
 
-@router.put("/recetas/{producto_id}", response_model=List[schemas.RecetaItem])
+@router.put("/recetas/{variante_id}", response_model=List[schemas.RecetaItem])
 def actualizar_receta(
-    producto_id: int, items: List[schemas.RecetaItemInput], db: Session = Depends(get_db)
+    variante_id: int, items: List[schemas.RecetaItemInput], db: Session = Depends(get_db)
 ):
-    producto = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
-    if not producto:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    variante = db.query(models.Variante).filter(models.Variante.id == variante_id).first()
+    if not variante:
+        raise HTTPException(status_code=404, detail="Variante no encontrada")
 
-    db.query(models.RecetaItem).filter(models.RecetaItem.producto_id == producto_id).delete()
+    db.query(models.RecetaItem).filter(models.RecetaItem.variante_id == variante_id).delete()
     for item in items:
         db.add(
             models.RecetaItem(
-                producto_id=producto_id,
+                variante_id=variante_id,
                 ingrediente_id=item.ingrediente_id,
                 cantidad_por_unidad=item.cantidad_por_unidad,
             )
         )
     db.commit()
-    return ver_receta(producto_id, db)
+    return ver_receta(variante_id, db)
 
 
 @router.get("/sugerencias", response_model=List[schemas.SugerenciaCompra])

@@ -1,14 +1,29 @@
-export type Producto = {
+export type Variante = {
   id: number
+  producto_id: number
   nombre: string
-  categoria: string
   precio: number
   activo: boolean
 }
 
+export type Producto = {
+  id: number
+  categoria_id: number
+  nombre: string
+  activo: boolean
+  variantes: Variante[]
+}
+
+export type Categoria = {
+  id: number
+  nombre: string
+  orden: number
+  productos: Producto[]
+}
+
 export type PedidoItem = {
   id: number
-  producto_id: number
+  variante_id: number
   nombre: string
   precio_unitario: number
   cantidad: number
@@ -43,4 +58,26 @@ export type Pedido = {
   metodo_pago: string | null
   total: number
   items: PedidoItem[]
+}
+
+export type Configuracion = {
+  tasa_bcv: number
+}
+
+export type ResumenCaja = {
+  fecha: string
+  total_ventas: number
+  por_metodo_pago: Record<string, number>
+  efectivo_esperado: number
+  cantidad_pedidos: number
+}
+
+export type CierreCaja = {
+  id: number
+  fecha: string
+  total_sistema: number
+  efectivo_esperado: number
+  efectivo_contado: number
+  diferencia: number
+  nota: string
 }

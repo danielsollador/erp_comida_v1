@@ -6,14 +6,38 @@ from sqlalchemy.orm import relationship
 from .database import Base
 
 
+class Categoria(Base):
+    __tablename__ = "categorias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    orden = Column(Integer, default=0)
+
+    productos = relationship("Producto", back_populates="categoria", cascade="all, delete-orphan")
+
+
 class Producto(Base):
     __tablename__ = "productos"
 
     id = Column(Integer, primary_key=True, index=True)
+    categoria_id = Column(Integer, ForeignKey("categorias.id"), nullable=False)
     nombre = Column(String, nullable=False)
-    categoria = Column(String, nullable=False)  # bebida | comida | postre
+    activo = Column(Boolean, default=True)
+
+    categoria = relationship("Categoria", back_populates="productos")
+    variantes = relationship("Variante", back_populates="producto", cascade="all, delete-orphan")
+
+
+class Variante(Base):
+    __tablename__ = "variantes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    nombre = Column(String, nullable=False)  # ej. "Grande", "Carne", "Regular"
     precio = Column(Float, nullable=False)
     activo = Column(Boolean, default=True)
+
+    producto = relationship("Producto", back_populates="variantes")
 
 
 class Ingrediente(Base):
@@ -31,12 +55,31 @@ class RecetaItem(Base):
     __tablename__ = "receta_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
     ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
-    cantidad_por_unidad = Column(Float, nullable=False)  # cuanto insumo consume 1 unidad del producto
+    cantidad_por_unidad = Column(Float, nullable=False)  # cuanto insumo consume 1 unidad vendida
 
-    producto = relationship("Producto")
+    variante = relationship("Variante")
     ingrediente = relationship("Ingrediente")
+
+
+class Configuracion(Base):
+    __tablename__ = "configuracion"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tasa_bcv = Column(Float, default=0)
+
+
+class CierreCaja(Base):
+    __tablename__ = "cierres_caja"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    total_sistema = Column(Float, nullable=False)
+    efectivo_esperado = Column(Float, nullable=False)
+    efectivo_contado = Column(Float, nullable=False)
+    diferencia = Column(Float, nullable=False)
+    nota = Column(String, default="")
 
 
 class Pedido(Base):
@@ -62,7 +105,7 @@ class PedidoItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
-    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
     nombre = Column(String, nullable=False)
     precio_unitario = Column(Float, nullable=False)
     cantidad = Column(Integer, default=1)

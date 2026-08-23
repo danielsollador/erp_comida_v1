@@ -3,19 +3,54 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 
-class ProductoBase(BaseModel):
+class VarianteBase(BaseModel):
     nombre: str
-    categoria: str
     precio: float
     activo: bool = True
 
 
-class ProductoCreate(ProductoBase):
+class VarianteCreate(VarianteBase):
     pass
+
+
+class Variante(VarianteBase):
+    id: int
+    producto_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ProductoBase(BaseModel):
+    nombre: str
+    categoria_id: int
+    activo: bool = True
+
+
+class ProductoCreate(ProductoBase):
+    variantes: List[VarianteCreate] = []
 
 
 class Producto(ProductoBase):
     id: int
+    variantes: List[Variante] = []
+
+    class Config:
+        from_attributes = True
+
+
+class CategoriaBase(BaseModel):
+    nombre: str
+    orden: int = 0
+
+
+class CategoriaCreate(CategoriaBase):
+    pass
+
+
+class Categoria(CategoriaBase):
+    id: int
+    productos: List[Producto] = []
 
     class Config:
         from_attributes = True
@@ -71,7 +106,7 @@ class SugerenciaCompra(BaseModel):
 
 
 class PedidoItemCreate(BaseModel):
-    producto_id: int
+    variante_id: int
     cantidad: int = 1
     nota: str = ""
 
@@ -83,7 +118,7 @@ class PedidoCreate(BaseModel):
 
 class PedidoItem(BaseModel):
     id: int
-    producto_id: int
+    variante_id: int
     nombre: str
     precio_unitario: float
     cantidad: int
@@ -109,3 +144,33 @@ class Pedido(BaseModel):
 
 class CobrarRequest(BaseModel):
     metodo_pago: str
+
+
+class Configuracion(BaseModel):
+    tasa_bcv: float
+
+
+class CierreCajaRequest(BaseModel):
+    efectivo_contado: float
+    nota: str = ""
+
+
+class ResumenCaja(BaseModel):
+    fecha: str
+    total_ventas: float
+    por_metodo_pago: dict
+    efectivo_esperado: float
+    cantidad_pedidos: int
+
+
+class CierreCaja(BaseModel):
+    id: int
+    fecha: str
+    total_sistema: float
+    efectivo_esperado: float
+    efectivo_contado: float
+    diferencia: float
+    nota: str
+
+    class Config:
+        from_attributes = True

@@ -1,16 +1,18 @@
 from .database import SessionLocal
-from .models import Ingrediente, Producto, RecetaItem
+from .models import Categoria, Ingrediente, Producto, RecetaItem, Variante
 
-PRODUCTOS_DEMO = [
-    ("Empanada de carne", "comida", 1.5),
-    ("Empanada de pollo", "comida", 1.5),
-    ("Empanada de queso", "comida", 1.3),
-    ("Pastelito de carne", "comida", 1.2),
-    ("Pastelito de queso", "comida", 1.2),
-    ("Cafe", "bebida", 1.0),
-    ("Jugo natural", "bebida", 1.5),
-    ("Refresco", "bebida", 1.0),
-]
+# nombre categoria -> [(nombre producto, [(nombre variante, precio), ...])]
+MENU_DEMO = {
+    "Bebidas": [
+        ("Cafe", [("Pequeno", 0.8), ("Grande", 1.2)]),
+        ("Jugo natural", [("Regular", 1.5)]),
+        ("Refresco", [("Regular", 1.0)]),
+    ],
+    "Comida": [
+        ("Empanada", [("Carne", 1.5), ("Pollo", 1.5), ("Queso", 1.3)]),
+        ("Pastelito", [("Carne", 1.2), ("Queso", 1.2)]),
+    ],
+}
 
 # nombre, unidad, stock_actual, stock_minimo, stock_objetivo
 INGREDIENTES_DEMO = [
@@ -24,25 +26,34 @@ INGREDIENTES_DEMO = [
     ("Refresco concentrado", "litro", 4.0, 2.0, 6.0),
 ]
 
-# nombre producto -> [(nombre ingrediente, cantidad por unidad vendida)]
+# (producto, variante) -> [(nombre ingrediente, cantidad por unidad vendida)]
 RECETAS_DEMO = {
-    "Empanada de carne": [("Harina", 0.06), ("Carne molida", 0.04)],
-    "Empanada de pollo": [("Harina", 0.06), ("Pollo", 0.04)],
-    "Empanada de queso": [("Harina", 0.06), ("Queso", 0.05)],
-    "Pastelito de carne": [("Harina", 0.03), ("Carne molida", 0.02)],
-    "Pastelito de queso": [("Harina", 0.03), ("Queso", 0.03)],
-    "Cafe": [("Cafe molido", 0.02), ("Azucar", 0.01)],
-    "Jugo natural": [("Naranja", 0.3)],
-    "Refresco": [("Refresco concentrado", 0.35)],
+    ("Empanada", "Carne"): [("Harina", 0.06), ("Carne molida", 0.04)],
+    ("Empanada", "Pollo"): [("Harina", 0.06), ("Pollo", 0.04)],
+    ("Empanada", "Queso"): [("Harina", 0.06), ("Queso", 0.05)],
+    ("Pastelito", "Carne"): [("Harina", 0.03), ("Carne molida", 0.02)],
+    ("Pastelito", "Queso"): [("Harina", 0.03), ("Queso", 0.03)],
+    ("Cafe", "Pequeno"): [("Cafe molido", 0.015), ("Azucar", 0.008)],
+    ("Cafe", "Grande"): [("Cafe molido", 0.025), ("Azucar", 0.012)],
+    ("Jugo natural", "Regular"): [("Naranja", 0.3)],
+    ("Refresco", "Regular"): [("Refresco concentrado", 0.35)],
 }
 
 
 def seed_if_empty():
     db = SessionLocal()
     try:
-        if db.query(Producto).count() == 0:
-            for nombre, categoria, precio in PRODUCTOS_DEMO:
-                db.add(Producto(nombre=nombre, categoria=categoria, precio=precio))
+        if db.query(Categoria).count() == 0:
+            for orden, (categoria_nombre, productos) in enumerate(MENU_DEMO.items()):
+                categoria = Categoria(nombre=categoria_nombre, orden=orden)
+                db.add(categoria)
+                db.flush()
+                for producto_nombre, variantes in productos:
+                    producto = Producto(categoria_id=categoria.id, nombre=producto_nombre)
+                    db.add(producto)
+                    db.flush()
+                    for variante_nombre, precio in variantes:
+                        db.add(Variante(producto_id=producto.id, nombre=variante_nombre, precio=precio))
             db.commit()
 
         if db.query(Ingrediente).count() == 0:
@@ -59,11 +70,14 @@ def seed_if_empty():
             db.commit()
 
         if db.query(RecetaItem).count() == 0:
-            productos = {p.nombre: p for p in db.query(Producto).all()}
+            variantes = {
+                (v.producto.nombre, v.nombre): v
+                for v in db.query(Variante).all()
+            }
             ingredientes = {i.nombre: i for i in db.query(Ingrediente).all()}
-            for producto_nombre, items in RECETAS_DEMO.items():
-                producto = productos.get(producto_nombre)
-                if not producto:
+            for (producto_nombre, variante_nombre), items in RECETAS_DEMO.items():
+                variante = variantes.get((producto_nombre, variante_nombre))
+                if not variante:
                     continue
                 for ingrediente_nombre, cantidad in items:
                     ingrediente = ingredientes.get(ingrediente_nombre)
@@ -71,7 +85,7 @@ def seed_if_empty():
                         continue
                     db.add(
                         RecetaItem(
-                            producto_id=producto.id,
+                            variante_id=variante.id,
                             ingrediente_id=ingrediente.id,
                             cantidad_por_unidad=cantidad,
                         )
