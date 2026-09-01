@@ -245,3 +245,71 @@ class CierreCaja(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ------------------------------------------------------------------ tasas
+class EstadoTasa(BaseModel):
+    fecha: str
+    bcv: Optional[float]
+    eur: Optional[float]
+    paralelo: Optional[float]
+    brecha_pct: Optional[float]
+    variacion_semana_pct: Optional[float]
+    origen: Optional[str]  # auto | manual
+    actualizado_en: Optional[str]
+    en_vivo: bool
+    fuente_actualizada: Optional[str]
+    desactualizada: bool
+
+
+class TasaManual(BaseModel):
+    bcv: float
+    paralelo: Optional[float] = None
+
+
+class PuntoTasa(BaseModel):
+    fecha: str
+    bcv: float
+    paralelo: Optional[float]
+    origen: str
+
+
+# ------------------------------------------------------------------ combos
+class ParCombo(BaseModel):
+    producto: str
+    acompanante: str
+    juntos: int
+    confianza_pct: float
+    lift: float
+
+
+class Acompanamiento(BaseModel):
+    con_bebida: int
+    sin_bebida: int
+    con_bebida_pct: float
+    sin_bebida_pct: float
+
+
+class OportunidadCombo(BaseModel):
+    pedidos_sin_bebida: int
+    ticket_bebida: float
+    venta_potencial: float
+    ganancia_potencial: float
+    conversion_supuesta_pct: int
+
+
+class ReporteCombos(BaseModel):
+    periodo: str
+    etiqueta: str
+    pedidos_analizados: int
+    suficientes_datos: bool
+    pares: List[ParCombo]
+    acompanamiento: Optional[Acompanamiento]
+    oportunidad: Optional[OportunidadCombo]
+
+
+class Sugerencia(BaseModel):
+    variante_id: int
+    etiqueta: str
+    precio: float
+    es_bebida: bool

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api, connectWs } from '../lib/api'
+import { fmtBs, useMoneda } from '../lib/moneda'
 import { colorCategoria } from '../lib/theme'
-import type { Categoria, Pedido, Producto, Variante } from '../lib/types'
+import type { Categoria, Pedido, Producto, Sugerencia, Variante } from '../lib/types'
 
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
 type Carrito = Record<number, CarritoEntry>
@@ -13,15 +14,16 @@ export default function POS() {
   const [carrito, setCarrito] = useState<Carrito>({})
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
-  const [tasaBcv, setTasaBcv] = useState(0)
+  const [sugerencias, setSugerencias] = useState<Sugerencia[]>([])
   const [error, setError] = useState('')
+  const { tasa, fmt } = useMoneda()
+  const tasaBcv = tasa?.bcv ?? 0
 
   useEffect(() => {
     api.listarCategorias().then((cats) => {
       setCategorias(cats)
       if (cats.length > 0) setCategoriaActiva(cats[0].id)
     })
-    api.obtenerConfig().then((c) => setTasaBcv(c.tasa_bcv))
     refrescarPedidos()
     const disconnect = connectWs(() => refrescarPedidos())
     return disconnect
@@ -34,6 +36,26 @@ export default function POS() {
     )
   }
 
+  // Que ofrecerle al cliente segun lo que ya lleva. Se recalcula en cada
+  // cambio del carrito, que es justo cuando el cajero esta mirando la pantalla.
+  const idsCarrito = Object.keys(carrito).join(',')
+  useEffect(() => {
+    const ids = Object.values(carrito).map((c) => c.variante.id)
+    if (ids.length === 0) {
+      setSugerencias([])
+      return
+    }
+    let vigente = true
+    api
+      .sugerencias(ids)
+      .then((s) => vigente && setSugerencias(s))
+      .catch(() => vigente && setSugerencias([]))
+    return () => {
+      vigente = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsCarrito])
+
   const totalCarrito = useMemo(
     () => Object.values(carrito).reduce((sum, c) => sum + c.variante.precio * c.cantidad, 0),
     [carrito],
@@ -44,6 +66,18 @@ export default function POS() {
       ...c,
       [variante.id]: { producto, variante, cantidad: (c[variante.id]?.cantidad ?? 0) + 1 },
     }))
+  }
+
+  function agregarSugerencia(sug: Sugerencia) {
+    for (const cat of categorias) {
+      for (const producto of cat.productos) {
+        const variante = producto.variantes.find((v) => v.id === sug.variante_id)
+        if (variante) {
+          agregar(producto, variante)
+          return
+        }
+      }
+    }
   }
 
   function quitar(varianteId: number) {
@@ -146,7 +180,7 @@ export default function POS() {
                             {v.nombre === 'Regular' ? p.nombre : `${p.nombre} - ${v.nombre}`}
                           </div>
                           <div className="text-neutral-700 font-medium mt-1">
-                            ${v.precio.toFixed(2)}
+                            {fmt(v.precio)}
                           </div>
                         </button>
                       )
@@ -181,7 +215,7 @@ export default function POS() {
                   ))}
                 </ul>
                 <div className="flex justify-between items-center">
-                  <span className="font-semibold">${pedido.total.toFixed(2)}</span>
+                  <span className="font-semibold">{fmt(pedido.total)}</span>
                   <div className="flex gap-2">
                     <button onClick={() => anular(pedido.id)} className="text-red-500 text-xs font-medium">
                       Anular
@@ -212,7 +246,7 @@ export default function POS() {
                   <div className="text-sm font-semibold">
                     {variante.nombre === 'Regular' ? producto.nombre : `${producto.nombre} - ${variante.nombre}`}
                   </div>
-                  <div className="text-xs text-neutral-500">${variante.precio.toFixed(2)} c/u</div>
+                  <div className="text-xs text-neutral-500">{fmt(variante.precio)} c/u</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -235,10 +269,31 @@ export default function POS() {
               <p className="text-neutral-400 text-sm">Toca un producto para agregarlo.</p>
             )}
           </div>
+          {sugerencias.length > 0 && (
+            <div className="border-t border-neutral-200 pt-3 mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">
+                {sugerencias.some((s) => s.es_bebida) ? 'Ofrecele algo de tomar' : 'Suele ir con'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {sugerencias.map((sug) => (
+                  <button
+                    key={sug.variante_id}
+                    onClick={() => agregarSugerencia(sug)}
+                    className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 active:scale-95 transition"
+                  >
+                    <span aria-hidden>+</span>
+                    <span>{sug.etiqueta}</span>
+                    <span className="tabular-nums text-emerald-600">{fmt(sug.precio)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="border-t border-neutral-200 pt-3 mt-3">
             <div className="flex justify-between items-baseline font-bold text-xl mb-3">
               <span className="text-sm font-medium text-neutral-500">Total</span>
-              <span>${totalCarrito.toFixed(2)}</span>
+              <span>{fmt(totalCarrito)}</span>
             </div>
             <button
               onClick={enviarComanda}
@@ -258,13 +313,20 @@ export default function POS() {
             <p className="text-3xl font-bold">${cobrando.total.toFixed(2)}</p>
             {tasaBcv > 0 && (
               <p className="text-neutral-500 mb-3">
-                Bs {(cobrando.total * tasaBcv).toLocaleString('es-VE', { maximumFractionDigits: 2 })}{' '}
-                <span className="text-xs">(tasa {tasaBcv})</span>
+                {fmtBs(cobrando.total * tasaBcv)}{' '}
+                <span className="text-xs">
+                  (tasa {tasaBcv}
+                  {tasa?.origen === 'manual' ? ', manual' : ''})
+                </span>
               </p>
             )}
             {tasaBcv === 0 && (
               <p className="text-amber-600 text-xs mb-3">
-                Tasa BCV sin configurar - ve a Cierre de caja para fijarla.
+                Sin tasa de cambio cargada -{' '}
+                <a href="/tasa" className="underline font-medium">
+                  configurala aqui
+                </a>
+                .
               </p>
             )}
             <div className="grid grid-cols-2 gap-2 mb-3 mt-2">

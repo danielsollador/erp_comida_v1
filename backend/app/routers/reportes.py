@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import combos, models, schemas
 from ..database import get_db
 from ..timeutils import rango_periodo
 
@@ -310,3 +310,20 @@ def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
             db, periodo, ventas, costo, gastos, pedidos, productos, serie, ventas_previas
         ),
     )
+
+
+@router.get("/combos", response_model=schemas.ReporteCombos)
+def reporte_combos(periodo: str = "mes", db: Session = Depends(get_db)):
+    """Que se vende junto y cuanto se pierde por no ofrecer el acompanante.
+
+    El periodo por defecto es el mes: la canasta necesita volumen para que los
+    porcentajes signifiquen algo, y un solo dia rara vez lo tiene.
+    """
+    if periodo not in ("dia", "semana", "mes"):
+        periodo = "mes"
+
+    inicio, fin, etiqueta = rango_periodo(periodo)
+    pedidos = _pedidos_pagados(db, inicio, fin)
+    analisis = combos.analizar(db, pedidos)
+
+    return schemas.ReporteCombos(periodo=periodo, etiqueta=etiqueta, **analisis)
