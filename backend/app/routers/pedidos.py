@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import combos, models, schemas, tasas
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -146,6 +146,11 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
     pedido.estado = "pagado"
     pedido.metodo_pago = body.metodo_pago
     pedido.cerrado_en = ahora()
+    # Se congela la tasa del momento del cobro: el reporte en bolivares de la
+    # semana pasada tiene que seguir mostrando los Bs que entraron entonces, no
+    # los que darian los mismos dolares a la tasa de hoy.
+    vigente = tasas.tasa_vigente(db)
+    pedido.tasa_bcv = vigente.bcv if vigente else None
     _descontar_insumos(pedido, db)
     db.commit()
     db.refresh(pedido)
@@ -174,3 +179,19 @@ async def anular_pedido(pedido_id: int, db: Session = Depends(get_db)):
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado
+
+
+@router.get("/sugerencias", response_model=List[schemas.Sugerencia])
+def sugerencias(variantes: str = "", db: Session = Depends(get_db)):
+    """Que ofrecerle al cliente para completar la comanda que se esta armando.
+
+    `variantes` llega como lista separada por comas ("3,7") porque el POS la
+    arma desde las teclas del carrito en cada toque.
+    """
+    try:
+        ids = [int(v) for v in variantes.split(",") if v.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Lista de variantes invalida")
+    if not ids:
+        return []
+    return combos.sugerir(db, ids)

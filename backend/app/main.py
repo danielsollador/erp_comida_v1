@@ -1,29 +1,46 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import models
+from . import models  # noqa: F401  (registra las tablas en Base)
 from .backup import crear_respaldo, iniciar_respaldos_automaticos
 from .database import Base, engine
-from .routers import caja, config, inventario, menu, pedidos, reportes, respaldos
+from .migrations import aplicar as aplicar_migraciones
+from .routers import caja, config, inventario, menu, pedidos, reportes, respaldos, tasas
 from .seed import seed_if_empty
+from .settings import BACKUP_ON_STARTUP, CORS_ORIGINS
+from .tasas import iniciar_refresco_automatico
 from .ws_manager import manager
 
-Base.metadata.create_all(bind=engine)
-seed_if_empty()
 
-# Un respaldo apenas arranca (por si el servidor no lleva 6 horas prendido
-# desde el ultimo) y luego uno automatico cada pocas horas, en segundo plano.
-try:
-    crear_respaldo()
-except Exception as e:
-    print(f"[backup] fallo el respaldo inicial: {e}")
-iniciar_respaldos_automaticos()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Arranque: tablas, datos de ejemplo si la base esta vacia, y respaldos.
+    Base.metadata.create_all(bind=engine)
+    aplicar_migraciones()
+    seed_if_empty()
 
-app = FastAPI(title="ERP Venta de Comida - Nivel 1")
+    # Un respaldo apenas arranca (por si el servidor no lleva 6 horas prendido
+    # desde el ultimo) y luego uno automatico cada pocas horas, en background.
+    if BACKUP_ON_STARTUP:
+        try:
+            crear_respaldo()
+        except Exception as e:
+            print(f"[backup] fallo el respaldo inicial: {e}")
+    iniciar_respaldos_automaticos()
+
+    # Tasa de cambio: se refresca sola contra BCV y Binance. Si no hay internet
+    # el local sigue vendiendo con la ultima tasa conocida o con la manual.
+    iniciar_refresco_automatico()
+    yield
+
+
+app = FastAPI(title="ERP Venta de Comida - Nivel 1", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -35,6 +52,13 @@ app.include_router(config.router)
 app.include_router(caja.router)
 app.include_router(reportes.router)
 app.include_router(respaldos.router)
+app.include_router(tasas.router)
+
+
+@app.get("/api/health", tags=["infra"])
+def health():
+    """Usado por el HEALTHCHECK de Docker y por compose (depends_on)."""
+    return {"status": "ok"}
 
 
 @app.websocket("/ws")

@@ -1,0 +1,62 @@
+# Produccion / demo: una sola puerta de entrada (nginx) en ${APP_PORT}.
+# Levantar con:  docker compose up -d --build
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: erp-comida-backend:latest
+    restart: unless-stopped
+    environment:
+      ERP_DATA_DIR: /data
+      ERP_BACKUP_INTERVAL_HOURS: ${ERP_BACKUP_INTERVAL_HOURS:-6}
+      ERP_BACKUP_KEEP: ${ERP_BACKUP_KEEP:-60}
+      ERP_CORS_ORIGINS: ${ERP_CORS_ORIGINS:-*}
+      TZ: ${TZ:-America/Caracas}
+    volumes:
+      # La base y los respaldos viven en un volumen: se puede reconstruir la
+      # imagen mil veces sin perder ventas ni inventario.
+      - erp_data:/data
+    # El backend no se expone al host: solo nginx habla con el.
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ./frontend
+    image: erp-comida-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8090}:8080"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  erp_data:
+    name: erp_comida_data

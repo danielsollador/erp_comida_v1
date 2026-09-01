@@ -7,7 +7,8 @@ const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
 
 export default function Caja() {
   const [resumen, setResumen] = useState<ResumenCaja | null>(null)
-  const [config, setConfig] = useState<Configuracion>({ tasa_bcv: 0 })
+  // El valor solo se usa via tasaInput; se guarda el setter para refrescarlo.
+  const [, setConfig] = useState<Configuracion>({ tasa_bcv: 0 })
   const [tasaInput, setTasaInput] = useState('')
   const [contado, setContado] = useState('')
   const [nota, setNota] = useState('')

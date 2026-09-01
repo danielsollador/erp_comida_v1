@@ -1,0 +1,38 @@
+# Desarrollo con recarga en caliente:
+#   docker compose -f docker-compose.dev.yml up --build
+# Front en http://localhost:5181 (Vite) proxeando /api y /ws al backend.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      --reload-dir /app/app
+    environment:
+      ERP_DATA_DIR: /data
+      ERP_BACKUP_ON_STARTUP: "0"   # en dev no ensuciar con respaldos cada rato
+      TZ: ${TZ:-America/Caracas}
+    volumes:
+      - ./backend/app:/app/app:ro   # editar en el host se refleja al instante
+      - erp_data_dev:/data
+    ports:
+      - "${BACKEND_PORT:-8011}:8000"
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev"
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "${FRONTEND_PORT:-5181}:5181"
+    depends_on:
+      - backend
+
+volumes:
+  erp_data_dev:
+  frontend_node_modules:

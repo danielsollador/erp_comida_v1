@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
-import type { Insight, Periodo, ReporteResumen } from '../lib/types'
+import { useMoneda } from '../lib/moneda'
+import type { Insight, Periodo, ReporteCombos, ReporteResumen } from '../lib/types'
 
 const PERIODOS: { valor: Periodo; texto: string }[] = [
   { valor: 'dia', texto: 'Hoy' },
@@ -18,7 +19,9 @@ const ESTILO_INSIGHT: Record<Insight['tipo'], { caja: string; icono: string }> =
 export default function Reportes() {
   const [periodo, setPeriodo] = useState<Periodo>('dia')
   const [datos, setDatos] = useState<ReporteResumen | null>(null)
+  const [combos, setCombos] = useState<ReporteCombos | null>(null)
   const [cargando, setCargando] = useState(true)
+  const { fmt } = useMoneda()
 
   useEffect(() => {
     setCargando(true)
@@ -26,6 +29,7 @@ export default function Reportes() {
       setDatos(r)
       setCargando(false)
     })
+    api.reporteCombos(periodo).then(setCombos).catch(() => setCombos(null))
   }, [periodo])
 
   const maxVenta = datos ? Math.max(...datos.serie.map((s) => s.ventas), 0) : 0
@@ -197,6 +201,8 @@ export default function Reportes() {
                 </p>
               </div>
             </div>
+
+            <SeccionCombos combos={combos} fmt={fmt} />
           </>
         )}
       </div>
@@ -251,6 +257,120 @@ function Linea({
       >
         {monto < 0 ? '-' : ''}${Math.abs(monto).toFixed(2)}
       </span>
+    </div>
+  )
+}
+
+
+function SeccionCombos({
+  combos,
+  fmt,
+}: {
+  combos: ReporteCombos | null
+  fmt: (usd: number | null | undefined, decimales?: number) => string
+}) {
+  if (!combos) return null
+
+  if (!combos.suficientes_datos) {
+    return (
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <h2 className="font-semibold mb-1">Que se vende junto</h2>
+        <p className="text-sm text-neutral-500">
+          Llevas {combos.pedidos_analizados} pedido(s) cobrados en este periodo. Con unos cuantos
+          mas el sistema puede decirte que productos salen juntos y que ofrecer en caja.
+        </p>
+      </div>
+    )
+  }
+
+  const acomp = combos.acompanamiento
+  const oport = combos.oportunidad
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <h2 className="font-semibold mb-1">Que se vende junto</h2>
+        <p className="text-xs text-neutral-500 mb-3">
+          Sobre {combos.pedidos_analizados} pedidos cobrados. La confianza es: de cada 100 pedidos
+          con el primer producto, cuantos llevaron tambien el segundo.
+        </p>
+
+        {combos.pares.length > 0 ? (
+          <div className="overflow-x-auto -mx-4 px-4">
+            <table className="w-full text-sm min-w-[26rem]">
+              <thead className="text-neutral-500 text-xs uppercase">
+                <tr>
+                  <th className="text-left pb-2">Combinacion</th>
+                  <th className="text-right pb-2">Veces</th>
+                  <th className="text-right pb-2">Confianza</th>
+                </tr>
+              </thead>
+              <tbody>
+                {combos.pares.map((par) => (
+                  <tr key={`${par.producto}-${par.acompanante}`} className="border-t border-neutral-100">
+                    <td className="py-2">
+                      <span className="font-medium">{par.producto}</span>
+                      <span className="text-neutral-400"> + </span>
+                      <span className="font-medium">{par.acompanante}</span>
+                    </td>
+                    <td className="text-right py-2 tabular-nums text-neutral-500">{par.juntos}</td>
+                    <td className="text-right py-2 tabular-nums font-medium">
+                      {par.confianza_pct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-neutral-400 text-sm">
+            Todavia no hay un par que se repita lo suficiente como para llamarlo patron.
+          </p>
+        )}
+      </div>
+
+      {acomp && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+          <h2 className="font-semibold mb-3">Cuantos se van sin bebida</h2>
+          <div className="flex h-3 rounded-full overflow-hidden bg-neutral-100 mb-2">
+            <div
+              className="bg-emerald-500"
+              style={{ width: `${acomp.con_bebida_pct}%` }}
+              title={`${acomp.con_bebida_pct}% con bebida`}
+            />
+            <div
+              className="bg-amber-400"
+              style={{ width: `${acomp.sin_bebida_pct}%` }}
+              title={`${acomp.sin_bebida_pct}% sin bebida`}
+            />
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-emerald-700 font-medium tabular-nums">
+              {acomp.con_bebida_pct}% con bebida
+            </span>
+            <span className="text-amber-700 font-medium tabular-nums">
+              {acomp.sin_bebida_pct}% sin bebida
+            </span>
+          </div>
+
+          {oport && (
+            <div className="mt-3 pt-3 border-t border-neutral-100">
+              <p className="text-sm text-neutral-700">
+                <span className="font-semibold">{oport.pedidos_sin_bebida} pedidos</span> salieron
+                sin nada de tomar. Si el cajero lograra convencer a{' '}
+                {oport.conversion_supuesta_pct} de cada 100, serian{' '}
+                <span className="font-semibold text-emerald-700">
+                  {fmt(oport.venta_potencial)}
+                </span>{' '}
+                mas de venta y {fmt(oport.ganancia_potencial)} de ganancia en este periodo.
+              </p>
+              <p className="text-xs text-neutral-400 mt-1">
+                El punto de venta ya sugiere la bebida sola mientras se arma la comanda.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

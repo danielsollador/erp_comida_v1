@@ -1,5 +1,6 @@
 import type {
   Categoria,
+  EstadoTasa,
   CierreCaja,
   Configuracion,
   Gasto,
@@ -9,8 +10,11 @@ import type {
   Periodo,
   Producto,
   ReporteResumen,
+  PuntoTasa,
+  ReporteCombos,
   Respaldo,
   ResumenCaja,
+  Sugerencia,
   SugerenciaCompra,
   Variante,
 } from './types'
@@ -119,6 +123,17 @@ export const api = {
   actualizarConfig: (tasa_bcv: number) =>
     req<Configuracion>('/config', { method: 'PUT', body: JSON.stringify({ tasa_bcv }) }),
 
+  reporteCombos: (periodo: Periodo) => req<ReporteCombos>(`/reportes/combos?periodo=${periodo}`),
+  sugerencias: (varianteIds: number[]) =>
+    req<Sugerencia[]>(`/pedidos/sugerencias?variantes=${varianteIds.join(',')}`),
+
+  estadoTasa: () => req<EstadoTasa>('/tasas'),
+  refrescarTasa: (forzar = false) =>
+    req<EstadoTasa>(`/tasas/refrescar?forzar=${forzar}`, { method: 'POST' }),
+  fijarTasa: (bcv: number, paralelo?: number) =>
+    req<EstadoTasa>('/tasas', { method: 'PUT', body: JSON.stringify({ bcv, paralelo }) }),
+  historialTasa: (dias = 30) => req<PuntoTasa[]>(`/tasas/historial?dias=${dias}`),
+
   resumenCaja: () => req<ResumenCaja>('/caja/resumen'),
   cerrarCaja: (efectivo_contado: number, nota = '') =>
     req<CierreCaja>('/caja/cerrar', { method: 'POST', body: JSON.stringify({ efectivo_contado, nota }) }),
@@ -157,6 +172,7 @@ export type {
   Categoria,
   CierreCaja,
   Configuracion,
+  EstadoTasa,
   Gasto,
   Ingrediente,
   Pedido,
@@ -164,8 +180,11 @@ export type {
   Periodo,
   Producto,
   ReporteResumen,
+  PuntoTasa,
+  ReporteCombos,
   Respaldo,
   ResumenCaja,
+  Sugerencia,
   SugerenciaCompra,
   Variante,
 }

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -63,6 +63,24 @@ class RecetaItem(Base):
     ingrediente = relationship("Ingrediente")
 
 
+class TasaCambio(Base):
+    """Tasas del dia en Bs. Una fila por fecha, con historico.
+
+    `origen` decide quien manda: una tasa cargada a mano por el dueno ('manual')
+    nunca es pisada por el refresco automatico. En Venezuela el dueno a veces
+    cobra a una tasa propia -distinta del BCV- y el sistema tiene que respetarla.
+    """
+
+    __tablename__ = "tasas_cambio"
+
+    fecha = Column(Date, primary_key=True)
+    bcv = Column(Float, nullable=False)  # Bs por USD (oficial BCV)
+    eur = Column(Float, nullable=True)  # Bs por EUR (oficial BCV)
+    paralelo = Column(Float, nullable=True)  # Bs por USDT (Binance P2P)
+    origen = Column(String, default="auto")  # auto | manual
+    actualizado_en = Column(DateTime, default=ahora)
+
+
 class Configuracion(Base):
     __tablename__ = "configuracion"
 
@@ -114,6 +132,10 @@ class Pedido(Base):
     metodo_pago = Column(String, nullable=True)
     creado_en = Column(DateTime, default=ahora)
     cerrado_en = Column(DateTime, nullable=True)
+    # Tasa BCV vigente al momento de cobrar. Se congela igual que el costo de
+    # insumos: si manana la tasa se mueve, el reporte de ayer sigue mostrando
+    # los bolivares que de verdad entraron en la gaveta.
+    tasa_bcv = Column(Float, nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
 

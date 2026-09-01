@@ -138,3 +138,64 @@ export type CierreCaja = {
   diferencia: number
   nota: string
 }
+
+export type EstadoTasa = {
+  fecha: string
+  bcv: number | null
+  eur: number | null
+  paralelo: number | null
+  brecha_pct: number | null
+  variacion_semana_pct: number | null
+  origen: 'auto' | 'manual' | null
+  actualizado_en: string | null
+  en_vivo: boolean
+  fuente_actualizada: string | null
+  desactualizada: boolean
+}
+
+export type PuntoTasa = {
+  fecha: string
+  bcv: number
+  paralelo: number | null
+  origen: string
+}
+
+export type ParCombo = {
+  producto: string
+  acompanante: string
+  juntos: number
+  confianza_pct: number
+  lift: number
+}
+
+export type Acompanamiento = {
+  con_bebida: number
+  sin_bebida: number
+  con_bebida_pct: number
+  sin_bebida_pct: number
+}
+
+export type OportunidadCombo = {
+  pedidos_sin_bebida: number
+  ticket_bebida: number
+  venta_potencial: number
+  ganancia_potencial: number
+  conversion_supuesta_pct: number
+}
+
+export type ReporteCombos = {
+  periodo: Periodo
+  etiqueta: string
+  pedidos_analizados: number
+  suficientes_datos: boolean
+  pares: ParCombo[]
+  acompanamiento: Acompanamiento | null
+  oportunidad: OportunidadCombo | null
+}
+
+export type Sugerencia = {
+  variante_id: number
+  etiqueta: string
+  precio: number
+  es_bebida: boolean
+}
