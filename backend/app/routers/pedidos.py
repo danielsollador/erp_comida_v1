@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import combos, models, schemas, tasas
+from .. import combos, contabilidad, models, schemas, tasas
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -152,6 +152,7 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
     vigente = tasas.tasa_vigente(db)
     pedido.tasa_bcv = vigente.bcv if vigente else None
     _descontar_insumos(pedido, db)
+    contabilidad.registrar_venta(db, pedido)
     db.commit()
     db.refresh(pedido)
 

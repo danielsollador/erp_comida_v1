@@ -7,6 +7,7 @@ import Caja from './pages/Caja'
 import Reportes from './pages/Reportes'
 import Sistema from './pages/Sistema'
 import Tasa from './pages/Tasa'
+import Contabilidad from './pages/Contabilidad'
 import { MonedaProvider } from './lib/moneda'
 
 const ACCESOS = [
@@ -17,6 +18,7 @@ const ACCESOS = [
   { to: '/inventario', icono: '📦', titulo: 'Inventario', desc: 'Insumos y compras' },
   { to: '/caja', icono: '💵', titulo: 'Cierre de caja', desc: 'Cuadre y gastos' },
   { to: '/tasa', icono: '💱', titulo: 'Tasa de cambio', desc: 'BCV, paralelo y manual' },
+  { to: '/contabilidad', icono: '🧮', titulo: 'Contabilidad', desc: 'Plan de cuentas y libros' },
   { to: '/sistema', icono: '🛡️', titulo: 'Sistema', desc: 'Respaldo de datos' },
 ]
 
@@ -58,6 +60,7 @@ export default function App() {
           <Route path="/reportes" element={<Reportes />} />
           <Route path="/sistema" element={<Sistema />} />
           <Route path="/tasa" element={<Tasa />} />
+          <Route path="/contabilidad" element={<Contabilidad />} />
         </Routes>
       </BrowserRouter>
     </MonedaProvider>

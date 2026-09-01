@@ -122,6 +122,58 @@ class CierreCaja(Base):
     nota = Column(String, default="")
 
 
+class CuentaContable(Base):
+    """Plan de cuentas. Estructura minima tipo Odoo: codigo, tipo, naturaleza.
+
+    `naturaleza` decide de que lado crece la cuenta: una cuenta deudora (activo,
+    costo, gasto) aumenta con debitos; una acreedora (pasivo, patrimonio,
+    ingreso) aumenta con creditos. Sin esto no se puede calcular un saldo.
+    """
+
+    __tablename__ = "cuentas_contables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    codigo = Column(String, unique=True, nullable=False)
+    nombre = Column(String, nullable=False)
+    tipo = Column(String, nullable=False)  # activo|pasivo|patrimonio|ingreso|costo|gasto
+    naturaleza = Column(String, nullable=False)  # deudora|acreedora
+    activa = Column(Boolean, default=True)
+
+
+class AsientoContable(Base):
+    """Un asiento de diario: uno o mas movimientos que deben cuadrar (debe=haber).
+
+    `origen` y `referencia_id` trazan el asiento hasta el documento que lo
+    genero (una venta, un gasto...) para poder auditar de donde salio cada
+    numero sin adivinar.
+    """
+
+    __tablename__ = "asientos_contables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(DateTime, default=ahora)
+    descripcion = Column(String, nullable=False)
+    origen = Column(String, default="manual")  # manual|venta|compra_insumo|gasto|merma
+    referencia_id = Column(Integer, nullable=True)
+
+    movimientos = relationship(
+        "MovimientoContable", back_populates="asiento", cascade="all, delete-orphan"
+    )
+
+
+class MovimientoContable(Base):
+    __tablename__ = "movimientos_contables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asiento_id = Column(Integer, ForeignKey("asientos_contables.id"), nullable=False)
+    cuenta_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=False)
+    debe = Column(Float, default=0)
+    haber = Column(Float, default=0)
+
+    asiento = relationship("AsientoContable", back_populates="movimientos")
+    cuenta = relationship("CuentaContable")
+
+
 class Pedido(Base):
     __tablename__ = "pedidos"
 

@@ -313,3 +313,103 @@ class Sugerencia(BaseModel):
     etiqueta: str
     precio: float
     es_bebida: bool
+
+
+# ------------------------------------------------------------ contabilidad
+class CuentaContableBase(BaseModel):
+    codigo: str
+    nombre: str
+    tipo: str
+    naturaleza: str
+    activa: bool = True
+
+
+class CuentaContableCreate(CuentaContableBase):
+    pass
+
+
+class CuentaContable(CuentaContableBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class LineaAsientoInput(BaseModel):
+    cuenta_id: int
+    debe: float = 0
+    haber: float = 0
+
+
+class AsientoCreate(BaseModel):
+    descripcion: str
+    lineas: List[LineaAsientoInput]
+
+
+class MovimientoContable(BaseModel):
+    id: int
+    cuenta_id: int
+    cuenta_codigo: str
+    cuenta_nombre: str
+    debe: float
+    haber: float
+
+    class Config:
+        from_attributes = True
+
+
+class AsientoContable(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    descripcion: str
+    origen: str
+    referencia_id: Optional[int]
+    movimientos: List[MovimientoContable]
+
+    class Config:
+        from_attributes = True
+
+
+class FilaMayor(BaseModel):
+    asiento_id: int
+    fecha: datetime.datetime
+    descripcion: str
+    origen: str
+    debe: float
+    haber: float
+    saldo: float
+
+
+class FilaBalanceComprobacion(BaseModel):
+    cuenta_id: int
+    codigo: str
+    nombre: str
+    tipo: str
+    debe: float
+    haber: float
+    saldo: float
+
+
+class EstadoResultados(BaseModel):
+    periodo: str
+    etiqueta: str
+    ingresos: float
+    costos: float
+    utilidad_bruta: float
+    gastos: float
+    utilidad_neta: float
+    detalle_ingresos: List[FilaBalanceComprobacion]
+    detalle_costos: List[FilaBalanceComprobacion]
+    detalle_gastos: List[FilaBalanceComprobacion]
+
+
+class BalanceGeneral(BaseModel):
+    fecha: str
+    activos: List[FilaBalanceComprobacion]
+    pasivos: List[FilaBalanceComprobacion]
+    patrimonio: List[FilaBalanceComprobacion]
+    utilidad_acumulada: float
+    total_activos: float
+    total_pasivos: float
+    total_patrimonio: float
+    cuadra: bool

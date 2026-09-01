@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import contabilidad, models, schemas
 from ..database import get_db
 
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
@@ -47,10 +47,20 @@ def registrar_compra(
     if body.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
 
+    # Valor de la compra para el asiento contable: lo que se pago, o si no se
+    # informo, se estima con el costo unitario que ya tenia el insumo.
+    valor = (
+        body.costo_total
+        if body.costo_total is not None and body.costo_total > 0
+        else body.cantidad * (db_ingrediente.costo_unitario or 0)
+    )
+
     db_ingrediente.stock_actual += body.cantidad
     # Si informa cuanto pago, el costo unitario se mantiene solo al dia.
     if body.costo_total is not None and body.costo_total > 0:
         db_ingrediente.costo_unitario = round(body.costo_total / body.cantidad, 4)
+    db.flush()
+    contabilidad.registrar_compra_insumo(db, db_ingrediente, round(valor, 2), db_ingrediente.id)
     db.commit()
     db.refresh(db_ingrediente)
     return db_ingrediente
@@ -68,10 +78,13 @@ def registrar_merma(
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
 
     db_ingrediente.stock_actual -= body.cantidad
-    db.add(
-        models.Merma(
-            ingrediente_id=ingrediente_id, cantidad=body.cantidad, motivo=body.motivo
-        )
+    db_merma = models.Merma(
+        ingrediente_id=ingrediente_id, cantidad=body.cantidad, motivo=body.motivo
+    )
+    db.add(db_merma)
+    db.flush()
+    contabilidad.registrar_merma(
+        db, db_ingrediente, round(body.cantidad * (db_ingrediente.costo_unitario or 0), 2), db_merma.id
     )
     db.commit()
     db.refresh(db_ingrediente)
@@ -89,10 +102,13 @@ def ajustar_stock(
 
     faltante = db_ingrediente.stock_actual - body.stock_real
     if faltante > 0:
-        db.add(
-            models.Merma(
-                ingrediente_id=ingrediente_id, cantidad=faltante, motivo=body.motivo
-            )
+        db_merma = models.Merma(
+            ingrediente_id=ingrediente_id, cantidad=faltante, motivo=body.motivo
+        )
+        db.add(db_merma)
+        db.flush()
+        contabilidad.registrar_merma(
+            db, db_ingrediente, round(faltante * (db_ingrediente.costo_unitario or 0), 2), db_merma.id
         )
     db_ingrediente.stock_actual = body.stock_real
     db.commit()

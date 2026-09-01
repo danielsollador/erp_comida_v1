@@ -10,8 +10,9 @@ import datetime
 import random
 import sys
 
+from app import contabilidad
 from app.database import SessionLocal
-from app.models import Gasto, Pedido, PedidoItem, RecetaItem, Variante
+from app.models import AsientoContable, Gasto, MovimientoContable, Pedido, PedidoItem, RecetaItem, Variante
 
 random.seed(7)
 
@@ -21,11 +22,13 @@ PESO_POR_HORA = {7: 3, 8: 6, 9: 5, 10: 4, 11: 3, 12: 5, 13: 4, 15: 3, 16: 4, 17:
 
 
 def limpiar(db):
+    db.query(MovimientoContable).delete()
+    db.query(AsientoContable).delete()
     db.query(PedidoItem).delete()
     db.query(Pedido).delete()
     db.query(Gasto).delete()
     db.commit()
-    print("Ventas y gastos borrados.")
+    print("Ventas, gastos y asientos contables borrados (el plan de cuentas queda intacto).")
 
 
 def generar(db, dias=45):
@@ -96,27 +99,32 @@ def generar(db, dias=45):
                         preparado=True,
                     )
                 )
+            db.flush()
+            db.refresh(pedido)
+            contabilidad.registrar_venta(db, pedido)
             total_pedidos += 1
 
         # Gastos tipicos del dia a dia.
         if fecha.weekday() == 0:
-            db.add(
-                Gasto(
-                    descripcion="Bombona de gas",
-                    categoria="Servicios",
-                    monto=12.0,
-                    fecha=datetime.datetime(fecha.year, fecha.month, fecha.day, 8, 0),
-                )
+            gasto = Gasto(
+                descripcion="Bombona de gas",
+                categoria="Servicios",
+                monto=12.0,
+                fecha=datetime.datetime(fecha.year, fecha.month, fecha.day, 8, 0),
             )
+            db.add(gasto)
+            db.flush()
+            contabilidad.registrar_gasto(db, gasto)
         if fecha.day in (1, 15):
-            db.add(
-                Gasto(
-                    descripcion="Pago ayudante",
-                    categoria="Sueldos",
-                    monto=60.0,
-                    fecha=datetime.datetime(fecha.year, fecha.month, fecha.day, 18, 0),
-                )
+            gasto = Gasto(
+                descripcion="Pago ayudante",
+                categoria="Sueldos",
+                monto=60.0,
+                fecha=datetime.datetime(fecha.year, fecha.month, fecha.day, 18, 0),
             )
+            db.add(gasto)
+            db.flush()
+            contabilidad.registrar_gasto(db, gasto)
 
     db.commit()
     print(f"Listo: {total_pedidos} pedidos generados en los ultimos {dias} dias.")

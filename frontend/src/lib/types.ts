@@ -111,6 +111,78 @@ export type Pedido = {
   items: PedidoItem[]
 }
 
+export type CuentaContable = {
+  id: number
+  codigo: string
+  nombre: string
+  tipo: 'activo' | 'pasivo' | 'patrimonio' | 'ingreso' | 'costo' | 'gasto'
+  naturaleza: 'deudora' | 'acreedora'
+  activa: boolean
+}
+
+export type MovimientoContable = {
+  id: number
+  cuenta_id: number
+  cuenta_codigo: string
+  cuenta_nombre: string
+  debe: number
+  haber: number
+}
+
+export type AsientoContable = {
+  id: number
+  fecha: string
+  descripcion: string
+  origen: string
+  referencia_id: number | null
+  movimientos: MovimientoContable[]
+}
+
+export type FilaMayor = {
+  asiento_id: number
+  fecha: string
+  descripcion: string
+  origen: string
+  debe: number
+  haber: number
+  saldo: number
+}
+
+export type FilaBalanceComprobacion = {
+  cuenta_id: number
+  codigo: string
+  nombre: string
+  tipo: string
+  debe: number
+  haber: number
+  saldo: number
+}
+
+export type EstadoResultadosContable = {
+  periodo: Periodo
+  etiqueta: string
+  ingresos: number
+  costos: number
+  utilidad_bruta: number
+  gastos: number
+  utilidad_neta: number
+  detalle_ingresos: FilaBalanceComprobacion[]
+  detalle_costos: FilaBalanceComprobacion[]
+  detalle_gastos: FilaBalanceComprobacion[]
+}
+
+export type BalanceGeneral = {
+  fecha: string
+  activos: FilaBalanceComprobacion[]
+  pasivos: FilaBalanceComprobacion[]
+  patrimonio: FilaBalanceComprobacion[]
+  utilidad_acumulada: number
+  total_activos: number
+  total_pasivos: number
+  total_patrimonio: number
+  cuadra: boolean
+}
+
 export type Configuracion = {
   tasa_bcv: number
 }

@@ -5,9 +5,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import models  # noqa: F401  (registra las tablas en Base)
 from .backup import crear_respaldo, iniciar_respaldos_automaticos
-from .database import Base, engine
+from .contabilidad import seed_plan_de_cuentas
+from .database import Base, SessionLocal, engine
 from .migrations import aplicar as aplicar_migraciones
-from .routers import caja, config, inventario, menu, pedidos, reportes, respaldos, tasas
+from .routers import (
+    caja,
+    config,
+    contabilidad as contabilidad_router,
+    inventario,
+    menu,
+    pedidos,
+    reportes,
+    respaldos,
+    tasas,
+)
 from .seed import seed_if_empty
 from .settings import BACKUP_ON_STARTUP, CORS_ORIGINS
 from .tasas import iniciar_refresco_automatico
@@ -20,6 +31,8 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     aplicar_migraciones()
     seed_if_empty()
+    with SessionLocal() as db:
+        seed_plan_de_cuentas(db)
 
     # Un respaldo apenas arranca (por si el servidor no lleva 6 horas prendido
     # desde el ultimo) y luego uno automatico cada pocas horas, en background.
@@ -53,6 +66,7 @@ app.include_router(caja.router)
 app.include_router(reportes.router)
 app.include_router(respaldos.router)
 app.include_router(tasas.router)
+app.include_router(contabilidad_router.router)
 
 
 @app.get("/api/health", tags=["infra"])

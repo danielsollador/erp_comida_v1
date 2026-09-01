@@ -1,8 +1,14 @@
 import type {
+  AsientoContable,
+  BalanceGeneral,
   Categoria,
   EstadoTasa,
   CierreCaja,
   Configuracion,
+  CuentaContable,
+  EstadoResultadosContable,
+  FilaBalanceComprobacion,
+  FilaMayor,
   Gasto,
   Ingrediente,
   Pedido,
@@ -138,6 +144,22 @@ export const api = {
   cerrarCaja: (efectivo_contado: number, nota = '') =>
     req<CierreCaja>('/caja/cerrar', { method: 'POST', body: JSON.stringify({ efectivo_contado, nota }) }),
   listarCierres: () => req<CierreCaja[]>('/caja/cierres'),
+
+  planCuentas: () => req<CuentaContable[]>('/contabilidad/plan-cuentas'),
+  crearCuenta: (c: Omit<CuentaContable, 'id'>) =>
+    req<CuentaContable>('/contabilidad/plan-cuentas', { method: 'POST', body: JSON.stringify(c) }),
+  listarAsientos: (limite = 100) => req<AsientoContable[]>(`/contabilidad/asientos?limite=${limite}`),
+  crearAsiento: (descripcion: string, lineas: { cuenta_id: number; debe: number; haber: number }[]) =>
+    req<AsientoContable>('/contabilidad/asientos', {
+      method: 'POST',
+      body: JSON.stringify({ descripcion, lineas }),
+    }),
+  eliminarAsiento: (id: number) => req(`/contabilidad/asientos/${id}`, { method: 'DELETE' }),
+  libroMayor: (cuentaId: number) => req<FilaMayor[]>(`/contabilidad/mayor/${cuentaId}`),
+  balanceComprobacion: () => req<FilaBalanceComprobacion[]>('/contabilidad/balance-comprobacion'),
+  estadoResultadosContable: (periodo: Periodo) =>
+    req<EstadoResultadosContable>(`/contabilidad/estado-resultados?periodo=${periodo}`),
+  balanceGeneral: () => req<BalanceGeneral>('/contabilidad/balance-general'),
 }
 
 export type WsEvent = { event: 'pedido_nuevo' | 'pedido_actualizado' | 'pedido_pagado'; data: Pedido }
@@ -169,10 +191,16 @@ export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
 }
 
 export type {
+  AsientoContable,
+  BalanceGeneral,
   Categoria,
   CierreCaja,
   Configuracion,
+  CuentaContable,
+  EstadoResultadosContable,
   EstadoTasa,
+  FilaBalanceComprobacion,
+  FilaMayor,
   Gasto,
   Ingrediente,
   Pedido,

@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import contabilidad, models, schemas
 from ..database import get_db
 from ..timeutils import hoy, inicio_del_dia
 
@@ -113,6 +113,8 @@ def crear_gasto(gasto: schemas.GastoCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
     db_gasto = models.Gasto(**gasto.model_dump())
     db.add(db_gasto)
+    db.flush()
+    contabilidad.registrar_gasto(db, db_gasto)
     db.commit()
     db.refresh(db_gasto)
     return db_gasto
@@ -123,6 +125,10 @@ def eliminar_gasto(gasto_id: int, db: Session = Depends(get_db)):
     db_gasto = db.query(models.Gasto).filter(models.Gasto.id == gasto_id).first()
     if not db_gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
+    # Sin esto el asiento contable del gasto queda huerfano en los libros.
+    db.query(models.AsientoContable).filter(
+        models.AsientoContable.origen == "gasto", models.AsientoContable.referencia_id == gasto_id
+    ).delete()
     db.delete(db_gasto)
     db.commit()
     return {"ok": True}
