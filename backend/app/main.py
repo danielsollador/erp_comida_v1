@@ -10,8 +10,10 @@ from .database import Base, SessionLocal, engine
 from .migrations import aplicar as aplicar_migraciones
 from .routers import (
     caja,
+    compras,
     config,
     contabilidad as contabilidad_router,
+    impuestos as impuestos_router,
     inventario,
     menu,
     pedidos,
@@ -67,6 +69,8 @@ app.include_router(reportes.router)
 app.include_router(respaldos.router)
 app.include_router(tasas.router)
 app.include_router(contabilidad_router.router)
+app.include_router(compras.router)
+app.include_router(impuestos_router.router)
 
 
 @app.get("/api/health", tags=["infra"])

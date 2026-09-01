@@ -20,6 +20,9 @@ log = logging.getLogger("erp.migrations")
 # (tabla, columna, tipo SQL) - se agregan si faltan.
 COLUMNAS = [
     ("pedidos", "tasa_bcv", "FLOAT"),
+    ("pedidos", "facturado", "BOOLEAN DEFAULT 0"),
+    ("pedidos", "numero_factura", "VARCHAR"),
+    ("pedidos", "tasa_iva", "FLOAT"),
 ]
 
 

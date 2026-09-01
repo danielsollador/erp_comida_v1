@@ -8,6 +8,8 @@ import Reportes from './pages/Reportes'
 import Sistema from './pages/Sistema'
 import Tasa from './pages/Tasa'
 import Contabilidad from './pages/Contabilidad'
+import Compras from './pages/Compras'
+import Impuestos from './pages/Impuestos'
 import { MonedaProvider } from './lib/moneda'
 
 const ACCESOS = [
@@ -16,9 +18,11 @@ const ACCESOS = [
   { to: '/reportes', icono: '📊', titulo: 'Reportes', desc: 'Dia, semana y mes' },
   { to: '/menu', icono: '📋', titulo: 'Menu', desc: 'Productos y precios' },
   { to: '/inventario', icono: '📦', titulo: 'Inventario', desc: 'Insumos y compras' },
+  { to: '/compras', icono: '🧾', titulo: 'Compras', desc: 'Facturas de proveedor' },
   { to: '/caja', icono: '💵', titulo: 'Cierre de caja', desc: 'Cuadre y gastos' },
   { to: '/tasa', icono: '💱', titulo: 'Tasa de cambio', desc: 'BCV, paralelo y manual' },
   { to: '/contabilidad', icono: '🧮', titulo: 'Contabilidad', desc: 'Plan de cuentas y libros' },
+  { to: '/impuestos', icono: '🏛️', titulo: 'Impuestos', desc: 'Libro de ventas y compras' },
   { to: '/sistema', icono: '🛡️', titulo: 'Sistema', desc: 'Respaldo de datos' },
 ]
 
@@ -61,6 +65,8 @@ export default function App() {
           <Route path="/sistema" element={<Sistema />} />
           <Route path="/tasa" element={<Tasa />} />
           <Route path="/contabilidad" element={<Contabilidad />} />
+          <Route path="/compras" element={<Compras />} />
+          <Route path="/impuestos" element={<Impuestos />} />
         </Routes>
       </BrowserRouter>
     </MonedaProvider>

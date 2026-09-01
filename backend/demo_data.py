@@ -10,15 +10,32 @@ import datetime
 import random
 import sys
 
-from app import contabilidad
+from app import contabilidad, impuestos
 from app.database import SessionLocal
-from app.models import AsientoContable, Gasto, MovimientoContable, Pedido, PedidoItem, RecetaItem, Variante
+from app.models import (
+    AsientoContable,
+    FacturaCompra,
+    Gasto,
+    MovimientoContable,
+    Pedido,
+    PedidoItem,
+    RecetaItem,
+    Variante,
+)
 
 random.seed(7)
 
 METODOS = ["Efectivo", "Efectivo", "Efectivo", "Pago movil", "Tarjeta", "Transferencia"]
 # Curva tipica de una venta de desayuno/merienda.
 PESO_POR_HORA = {7: 3, 8: 6, 9: 5, 10: 4, 11: 3, 12: 5, 13: 4, 15: 3, 16: 4, 17: 3}
+# No todo el que compra pide factura - asi es el negocio real que describio el
+# dueno. Se simula esa misma mezcla en el historico.
+PROB_FACTURADO = 0.35
+PROVEEDORES = [
+    ("Distribuidora Cafe y Mas C.A.", "J-30012345-6"),
+    ("Panaderia El Trigo", "J-30098765-4"),
+    ("Carnes La Fresca", "J-30011122-3"),
+]
 
 
 def limpiar(db):
@@ -27,8 +44,9 @@ def limpiar(db):
     db.query(PedidoItem).delete()
     db.query(Pedido).delete()
     db.query(Gasto).delete()
+    db.query(FacturaCompra).delete()
     db.commit()
-    print("Ventas, gastos y asientos contables borrados (el plan de cuentas queda intacto).")
+    print("Ventas, gastos, facturas y asientos contables borrados (el plan de cuentas queda intacto).")
 
 
 def generar(db, dias=45):
@@ -48,6 +66,8 @@ def generar(db, dias=45):
 
     hoy = datetime.date.today()
     total_pedidos = 0
+    numero_factura = 100
+    tasa_iva_actual = impuestos.tasa_iva(db)
 
     for delta in range(dias, -1, -1):
         fecha = hoy - datetime.timedelta(days=delta)
@@ -74,12 +94,19 @@ def generar(db, dias=45):
             momento = datetime.datetime(
                 fecha.year, fecha.month, fecha.day, hora, random.randint(0, 59)
             )
+            facturado = random.random() < PROB_FACTURADO
+            if facturado:
+                numero_factura += 1
+
             pedido = Pedido(
                 numero=numero,
                 estado="pagado",
                 metodo_pago=random.choice(METODOS),
                 creado_en=momento,
                 cerrado_en=momento + datetime.timedelta(minutes=random.randint(3, 12)),
+                facturado=facturado,
+                numero_factura=f"00-{numero_factura}" if facturado else None,
+                tasa_iva=tasa_iva_actual if facturado else None,
             )
             db.add(pedido)
             db.flush()
@@ -125,6 +152,26 @@ def generar(db, dias=45):
             db.add(gasto)
             db.flush()
             contabilidad.registrar_gasto(db, gasto)
+
+        # Compra de insumos a proveedor con factura, cada semana (surtido tipico).
+        if fecha.weekday() == 2:
+            proveedor, rif = random.choice(PROVEEDORES)
+            base = round(random.uniform(25, 45), 2)
+            iva = round(base * tasa_iva_actual / 100, 2)
+            numero_factura += 1
+            factura = FacturaCompra(
+                numero_factura=f"F-{numero_factura}",
+                proveedor_nombre=proveedor,
+                proveedor_rif=rif,
+                fecha=datetime.datetime(fecha.year, fecha.month, fecha.day, 9, 30),
+                categoria="Insumos",
+                forma_pago="Efectivo",
+                base_imponible=base,
+                iva=iva,
+            )
+            db.add(factura)
+            db.flush()
+            contabilidad.registrar_factura_compra(db, factura)
 
     db.commit()
     print(f"Listo: {total_pedidos} pedidos generados en los ultimos {dias} dias.")

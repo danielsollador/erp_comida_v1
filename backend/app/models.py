@@ -110,6 +110,40 @@ class Merma(Base):
     ingrediente = relationship("Ingrediente")
 
 
+class ConfiguracionFiscal(Base):
+    __tablename__ = "configuracion_fiscal"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tasa_iva = Column(Float, default=16.0)  # alicuota general de IVA en Venezuela
+
+
+class FacturaCompra(Base):
+    """Factura de un proveedor. Alimenta el Libro de Compras y contabiliza sola.
+
+    Es un registro fiscal/contable a nivel de factura completa (no por
+    insumo) - separado a proposito de "Registrar compra" en Inventario, que
+    solo ajusta el stock de un ingrediente. Una factura puede cubrir varios
+    insumos a la vez y el dueno no siempre la carga el mismo dia que compra.
+    """
+
+    __tablename__ = "facturas_compra"
+
+    id = Column(Integer, primary_key=True, index=True)
+    numero_factura = Column(String, nullable=False)
+    proveedor_nombre = Column(String, nullable=False)
+    proveedor_rif = Column(String, nullable=True)
+    fecha = Column(DateTime, default=ahora)
+    categoria = Column(String, default="Insumos")  # Insumos|Servicios|Activos|Otros
+    forma_pago = Column(String, default="Efectivo")  # Efectivo|Banco|Credito
+    base_imponible = Column(Float, nullable=False)
+    iva = Column(Float, default=0)
+    descripcion = Column(String, default="")
+
+    @property
+    def total(self):
+        return round(self.base_imponible + self.iva, 2)
+
+
 class CierreCaja(Base):
     __tablename__ = "cierres_caja"
 
@@ -188,6 +222,14 @@ class Pedido(Base):
     # insumos: si manana la tasa se mueve, el reporte de ayer sigue mostrando
     # los bolivares que de verdad entraron en la gaveta.
     tasa_bcv = Column(Float, nullable=True)
+    # No todas las ventas se facturan - el dueno decide cual factura a mano al
+    # cobrar. Solo las facturadas cuentan para el SENIAT (Libro de Ventas e
+    # IVA debito fiscal); las demas quedan igual que hoy, sin IVA.
+    facturado = Column(Boolean, default=False)
+    numero_factura = Column(String, nullable=True)
+    # Igual que tasa_bcv: se congela la tasa de IVA del dia para que el Libro
+    # de Ventas de un mes cerrado no cambie si despues sube la alicuota.
+    tasa_iva = Column(Float, nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
 

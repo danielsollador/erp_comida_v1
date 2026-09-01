@@ -5,12 +5,16 @@ import type {
   EstadoTasa,
   CierreCaja,
   Configuracion,
+  ConfiguracionFiscal,
   CuentaContable,
   EstadoResultadosContable,
+  FacturaCompra,
   FilaBalanceComprobacion,
   FilaMayor,
   Gasto,
   Ingrediente,
+  LibroCompras,
+  LibroVentas,
   Pedido,
   PedidoItem,
   Periodo,
@@ -20,6 +24,7 @@ import type {
   ReporteCombos,
   Respaldo,
   ResumenCaja,
+  ResumenIva,
   Sugerencia,
   SugerenciaCompra,
   Variante,
@@ -85,10 +90,10 @@ export const api = {
     req<Pedido>(`/pedidos/items/${itemId}/preparado`, { method: 'POST' }),
   marcarPedidoListo: (pedidoId: number) =>
     req<Pedido>(`/pedidos/${pedidoId}/marcar-listo`, { method: 'POST' }),
-  cobrarPedido: (pedidoId: number, metodo_pago: string) =>
+  cobrarPedido: (pedidoId: number, metodo_pago: string, facturado = false, numero_factura?: string) =>
     req<Pedido>(`/pedidos/${pedidoId}/cobrar`, {
       method: 'POST',
-      body: JSON.stringify({ metodo_pago }),
+      body: JSON.stringify({ metodo_pago, facturado, numero_factura: numero_factura || null }),
     }),
   anularPedido: (pedidoId: number) => req<Pedido>(`/pedidos/${pedidoId}/anular`, { method: 'POST' }),
 
@@ -160,6 +165,26 @@ export const api = {
   estadoResultadosContable: (periodo: Periodo) =>
     req<EstadoResultadosContable>(`/contabilidad/estado-resultados?periodo=${periodo}`),
   balanceGeneral: () => req<BalanceGeneral>('/contabilidad/balance-general'),
+
+  listarFacturasCompra: (dias = 60) => req<FacturaCompra[]>(`/compras/facturas?dias=${dias}`),
+  crearFacturaCompra: (f: {
+    numero_factura: string
+    proveedor_nombre: string
+    proveedor_rif?: string
+    categoria: string
+    forma_pago: string
+    base_imponible: number
+    iva: number
+    descripcion?: string
+  }) => req<FacturaCompra>('/compras/facturas', { method: 'POST', body: JSON.stringify(f) }),
+  eliminarFacturaCompra: (id: number) => req(`/compras/facturas/${id}`, { method: 'DELETE' }),
+
+  configFiscal: () => req<ConfiguracionFiscal>('/impuestos/config'),
+  actualizarConfigFiscal: (tasa_iva: number) =>
+    req<ConfiguracionFiscal>('/impuestos/config', { method: 'PUT', body: JSON.stringify({ tasa_iva }) }),
+  libroVentas: (periodo: Periodo) => req<LibroVentas>(`/impuestos/libro-ventas?periodo=${periodo}`),
+  libroCompras: (periodo: Periodo) => req<LibroCompras>(`/impuestos/libro-compras?periodo=${periodo}`),
+  resumenIva: (periodo: Periodo) => req<ResumenIva>(`/impuestos/resumen?periodo=${periodo}`),
 }
 
 export type WsEvent = { event: 'pedido_nuevo' | 'pedido_actualizado' | 'pedido_pagado'; data: Pedido }
@@ -196,13 +221,17 @@ export type {
   Categoria,
   CierreCaja,
   Configuracion,
+  ConfiguracionFiscal,
   CuentaContable,
   EstadoResultadosContable,
   EstadoTasa,
+  FacturaCompra,
   FilaBalanceComprobacion,
   FilaMayor,
   Gasto,
   Ingrediente,
+  LibroCompras,
+  LibroVentas,
   Pedido,
   PedidoItem,
   Periodo,
@@ -212,6 +241,7 @@ export type {
   ReporteCombos,
   Respaldo,
   ResumenCaja,
+  ResumenIva,
   Sugerencia,
   SugerenciaCompra,
   Variante,

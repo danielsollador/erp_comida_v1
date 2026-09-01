@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import combos, contabilidad, models, schemas, tasas
+from .. import combos, contabilidad, impuestos, models, schemas, tasas
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -146,11 +146,17 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
     pedido.estado = "pagado"
     pedido.metodo_pago = body.metodo_pago
     pedido.cerrado_en = ahora()
+    # No todas las ventas se facturan - el dueno decide cual factura a mano
+    # aqui mismo, al cobrar. Solo esa entra al Libro de Ventas y genera IVA.
+    pedido.facturado = body.facturado
+    pedido.numero_factura = body.numero_factura if body.facturado else None
     # Se congela la tasa del momento del cobro: el reporte en bolivares de la
     # semana pasada tiene que seguir mostrando los Bs que entraron entonces, no
-    # los que darian los mismos dolares a la tasa de hoy.
+    # los que darian los mismos dolares a la tasa de hoy. Igual con el IVA: si
+    # sube la alicuota despues, un mes ya facturado no debe recalcularse solo.
     vigente = tasas.tasa_vigente(db)
     pedido.tasa_bcv = vigente.bcv if vigente else None
+    pedido.tasa_iva = impuestos.tasa_iva(db) if body.facturado else None
     _descontar_insumos(pedido, db)
     contabilidad.registrar_venta(db, pedido)
     db.commit()

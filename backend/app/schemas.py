@@ -168,6 +168,8 @@ class Pedido(BaseModel):
     metodo_pago: Optional[str]
     total: float
     creado_en: datetime.datetime
+    facturado: bool = False
+    numero_factura: Optional[str] = None
     items: List[PedidoItem]
 
     class Config:
@@ -176,6 +178,8 @@ class Pedido(BaseModel):
 
 class CobrarRequest(BaseModel):
     metodo_pago: str
+    facturado: bool = False
+    numero_factura: Optional[str] = None
 
 
 class Configuracion(BaseModel):
@@ -413,3 +417,83 @@ class BalanceGeneral(BaseModel):
     total_pasivos: float
     total_patrimonio: float
     cuadra: bool
+
+
+# ------------------------------------------------------------------ compras
+class FacturaCompraBase(BaseModel):
+    numero_factura: str
+    proveedor_nombre: str
+    proveedor_rif: Optional[str] = None
+    categoria: str = "Insumos"  # Insumos|Servicios|Activos|Otros
+    forma_pago: str = "Efectivo"  # Efectivo|Banco|Credito
+    base_imponible: float
+    iva: float = 0
+    descripcion: str = ""
+
+
+class FacturaCompraCreate(FacturaCompraBase):
+    fecha: Optional[datetime.datetime] = None
+
+
+class FacturaCompra(FacturaCompraBase):
+    id: int
+    fecha: datetime.datetime
+    total: float
+
+    class Config:
+        from_attributes = True
+
+
+# ----------------------------------------------------------------- impuestos
+class ConfiguracionFiscal(BaseModel):
+    tasa_iva: float
+
+
+class FilaLibroVentas(BaseModel):
+    pedido_id: int
+    fecha: datetime.datetime
+    numero_factura: str
+    cliente: str
+    base_imponible: float
+    iva: float
+    total: float
+
+
+class LibroVentas(BaseModel):
+    periodo: str
+    etiqueta: str
+    tasa_iva: float
+    filas: List[FilaLibroVentas]
+    total_base: float
+    total_iva: float
+    total_general: float
+    ventas_no_facturadas: int
+    monto_no_facturado: float
+
+
+class FilaLibroCompras(BaseModel):
+    factura_id: int
+    fecha: datetime.datetime
+    numero_factura: str
+    proveedor_nombre: str
+    proveedor_rif: Optional[str]
+    base_imponible: float
+    iva: float
+    total: float
+
+
+class LibroCompras(BaseModel):
+    periodo: str
+    etiqueta: str
+    filas: List[FilaLibroCompras]
+    total_base: float
+    total_iva: float
+    total_general: float
+
+
+class ResumenIva(BaseModel):
+    periodo: str
+    etiqueta: str
+    iva_debito: float
+    iva_credito: float
+    iva_a_pagar: float

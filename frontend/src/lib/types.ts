@@ -108,6 +108,8 @@ export type Pedido = {
   metodo_pago: string | null
   total: number
   creado_en: string
+  facturado: boolean
+  numero_factura: string | null
   items: PedidoItem[]
 }
 
@@ -270,4 +272,72 @@ export type Sugerencia = {
   etiqueta: string
   precio: number
   es_bebida: boolean
+}
+
+export type FacturaCompra = {
+  id: number
+  numero_factura: string
+  proveedor_nombre: string
+  proveedor_rif: string | null
+  fecha: string
+  categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
+  forma_pago: 'Efectivo' | 'Banco' | 'Credito'
+  base_imponible: number
+  iva: number
+  descripcion: string
+  total: number
+}
+
+export type ConfiguracionFiscal = {
+  tasa_iva: number
+}
+
+export type FilaLibroVentas = {
+  pedido_id: number
+  fecha: string
+  numero_factura: string
+  cliente: string
+  base_imponible: number
+  iva: number
+  total: number
+}
+
+export type LibroVentas = {
+  periodo: Periodo
+  etiqueta: string
+  tasa_iva: number
+  filas: FilaLibroVentas[]
+  total_base: number
+  total_iva: number
+  total_general: number
+  ventas_no_facturadas: number
+  monto_no_facturado: number
+}
+
+export type FilaLibroCompras = {
+  factura_id: number
+  fecha: string
+  numero_factura: string
+  proveedor_nombre: string
+  proveedor_rif: string | null
+  base_imponible: number
+  iva: number
+  total: number
+}
+
+export type LibroCompras = {
+  periodo: Periodo
+  etiqueta: string
+  filas: FilaLibroCompras[]
+  total_base: number
+  total_iva: number
+  total_general: number
+}
+
+export type ResumenIva = {
+  periodo: Periodo
+  etiqueta: string
+  iva_debito: number
+  iva_credito: number
+  iva_a_pagar: number
 }

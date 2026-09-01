@@ -14,6 +14,8 @@ export default function POS() {
   const [carrito, setCarrito] = useState<Carrito>({})
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
+  const [facturar, setFacturar] = useState(false)
+  const [numeroFactura, setNumeroFactura] = useState('')
   const [sugerencias, setSugerencias] = useState<Sugerencia[]>([])
   const [error, setError] = useState('')
   const { tasa, fmt } = useMoneda()
@@ -111,8 +113,10 @@ export default function POS() {
     if (!cobrando) return
     setError('')
     try {
-      await api.cobrarPedido(cobrando.id, metodo)
+      await api.cobrarPedido(cobrando.id, metodo, facturar, numeroFactura)
       setCobrando(null)
+      setFacturar(false)
+      setNumeroFactura('')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cobrar')
       setCobrando(null)
@@ -329,7 +333,24 @@ export default function POS() {
                 .
               </p>
             )}
-            <div className="grid grid-cols-2 gap-2 mb-3 mt-2">
+            <label className="flex items-center gap-2 mt-3 text-sm">
+              <input
+                type="checkbox"
+                checked={facturar}
+                onChange={(e) => setFacturar(e.target.checked)}
+                className="w-4 h-4"
+              />
+              Facturar esta venta
+            </label>
+            {facturar && (
+              <input
+                value={numeroFactura}
+                onChange={(e) => setNumeroFactura(e.target.value)}
+                placeholder="N. de factura (opcional)"
+                className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mt-2"
+              />
+            )}
+            <div className="grid grid-cols-2 gap-2 mb-3 mt-3">
               {['Efectivo', 'Tarjeta', 'Pago movil', 'Transferencia'].map((m) => (
                 <button
                   key={m}
@@ -340,7 +361,14 @@ export default function POS() {
                 </button>
               ))}
             </div>
-            <button onClick={() => setCobrando(null)} className="text-sm text-neutral-500">
+            <button
+              onClick={() => {
+                setCobrando(null)
+                setFacturar(false)
+                setNumeroFactura('')
+              }}
+              className="text-sm text-neutral-500"
+            >
               Cancelar
             </button>
           </div>

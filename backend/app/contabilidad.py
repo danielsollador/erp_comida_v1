@@ -18,7 +18,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from . import models
+from . import impuestos, models
 from .timeutils import ahora
 
 log = logging.getLogger("erp.contabilidad")
@@ -27,10 +27,12 @@ log = logging.getLogger("erp.contabilidad")
 PLAN_DE_CUENTAS = [
     ("1010", "Caja (efectivo)", "activo", "deudora"),
     ("1020", "Banco / pagos electronicos", "activo", "deudora"),
+    ("1030", "IVA credito fiscal", "activo", "deudora"),
     ("1040", "Inventario de insumos", "activo", "deudora"),
     ("1050", "Equipos y mobiliario", "activo", "deudora"),
     ("2010", "Cuentas por pagar a proveedores", "pasivo", "acreedora"),
     ("2020", "Impuestos por pagar", "pasivo", "acreedora"),
+    ("2030", "IVA debito fiscal", "pasivo", "acreedora"),
     ("3010", "Capital del propietario", "patrimonio", "acreedora"),
     ("3020", "Utilidades retenidas", "patrimonio", "acreedora"),
     ("4010", "Ventas", "ingreso", "acreedora"),
@@ -47,17 +49,38 @@ CUENTA_POR_METODO_PAGO = {
     "Transferencia": "1020",
 }
 
+# Categoria de la factura de compra -> cuenta donde se contabiliza el gasto/activo.
+CUENTA_POR_CATEGORIA_COMPRA = {
+    "Insumos": "1040",
+    "Servicios": "6010",
+    "Activos": "1050",
+    "Otros": "6010",
+}
+
+# Forma de pago de la factura de compra -> cuenta que sale (o la deuda que entra).
+CUENTA_PAGO_COMPRA = {
+    "Efectivo": "1010",
+    "Banco": "1020",
+    "Credito": "2010",
+}
+
 
 def seed_plan_de_cuentas(db: Session) -> None:
-    if db.query(models.CuentaContable).count() > 0:
-        return
+    """Idempotente: agrega las cuentas que falten sin duplicar las que ya existen.
+
+    Asi una instalacion que arranco antes de que existiera el IVA en el plan
+    de cuentas recibe 1030/2030 solas la proxima vez que arranca el backend,
+    sin perder ni un asiento de los que ya tenia.
+    """
+    existentes = {c.codigo for c in db.query(models.CuentaContable).all()}
+    agregadas = False
     for codigo, nombre, tipo, naturaleza in PLAN_DE_CUENTAS:
-        db.add(
-            models.CuentaContable(
-                codigo=codigo, nombre=nombre, tipo=tipo, naturaleza=naturaleza
-            )
-        )
-    db.commit()
+        if codigo in existentes:
+            continue
+        db.add(models.CuentaContable(codigo=codigo, nombre=nombre, tipo=tipo, naturaleza=naturaleza))
+        agregadas = True
+    if agregadas:
+        db.commit()
 
 
 def _cuenta(db: Session, codigo: str) -> models.CuentaContable:
@@ -109,7 +132,15 @@ def registrar_venta(db: Session, pedido: models.Pedido) -> None:
     costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
     cuenta_cobro = CUENTA_POR_METODO_PAGO.get(pedido.metodo_pago or "", "1010")
 
-    lineas = [(cuenta_cobro, total, 0.0), ("4010", 0.0, total)]
+    if pedido.facturado:
+        # Solo lo facturado le debe IVA al fisco. La alicuota ya viene congelada
+        # en el pedido (se fija al cobrar) para que un Libro de Ventas de un
+        # mes cerrado no cambie si despues sube el IVA.
+        base, iva = impuestos.desglosar(total, pedido.tasa_iva or impuestos.IVA_DEFAULT)
+        lineas = [(cuenta_cobro, total, 0.0), ("4010", 0.0, base), ("2030", 0.0, iva)]
+    else:
+        lineas = [(cuenta_cobro, total, 0.0), ("4010", 0.0, total)]
+
     if costo > 0:
         lineas += [("5010", costo, 0.0), ("1040", 0.0, costo)]
 
@@ -145,6 +176,25 @@ def registrar_compra_insumo(
         [("1040", valor, 0.0), ("1010", 0.0, valor)],
         origen="compra_insumo",
         referencia_id=referencia_id,
+    )
+
+
+def registrar_factura_compra(db: Session, factura: models.FacturaCompra) -> None:
+    cuenta_concepto = CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
+    cuenta_pago = CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010")
+
+    lineas = [(cuenta_concepto, factura.base_imponible, 0.0)]
+    if factura.iva > 0:
+        lineas.append(("1030", factura.iva, 0.0))
+    lineas.append((cuenta_pago, 0.0, factura.total))
+
+    crear_asiento(
+        db,
+        f"Compra: {factura.proveedor_nombre} (fact. {factura.numero_factura})",
+        lineas,
+        origen="factura_compra",
+        referencia_id=factura.id,
+        fecha=factura.fecha,
     )
 
 
