@@ -24,10 +24,15 @@ import sqlite3
 import threading
 import time
 
-BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backups")
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "comida.db")
-INTERVALO_HORAS = 6
-MANTENER_RESPALDOS = 60  # ~15 dias a razon de 4 al dia
+from .settings import (
+    BACKUP_DIR,
+    BACKUP_INTERVAL_HOURS,
+    BACKUP_KEEP,
+    DB_PATH,
+)
+
+INTERVALO_HORAS = BACKUP_INTERVAL_HOURS
+MANTENER_RESPALDOS = BACKUP_KEEP  # por defecto ~15 dias a razon de 4 al dia
 
 
 def crear_respaldo() -> str:
