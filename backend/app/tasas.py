@@ -10,6 +10,7 @@ import datetime
 import logging
 import threading
 import time
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -22,7 +23,7 @@ log = logging.getLogger("erp.tasas")
 INTERVALO_REFRESCO_MIN = 30
 
 
-def tasa_vigente(db: Session) -> models.TasaCambio | None:
+def tasa_vigente(db: Session) -> Optional[models.TasaCambio]:
     """La tasa mas reciente que no sea del futuro.
 
     Se busca "la ultima hasta hoy" y no "la de hoy" a proposito: si el local
@@ -80,7 +81,7 @@ def refrescar(db: Session, forzar: bool = False) -> bool:
     return True
 
 
-def fijar_manual(db: Session, bcv: float, paralelo: float | None = None) -> models.TasaCambio:
+def fijar_manual(db: Session, bcv: float, paralelo: Optional[float] = None) -> models.TasaCambio:
     """El dueno fija la tasa con la que quiere cobrar hoy."""
     fecha = hoy()
     fila = db.query(models.TasaCambio).filter(models.TasaCambio.fecha == fecha).first()
