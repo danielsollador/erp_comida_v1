@@ -1,7 +1,19 @@
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { MonedaToggle } from '../lib/moneda'
 
-export default function NavBar({ titulo, dark = false }: { titulo: string; dark?: boolean }) {
+export default function NavBar({
+  titulo,
+  dark = false,
+  moneda = true,
+  acciones,
+}: {
+  titulo: string
+  dark?: boolean
+  /** El selector de moneda solo tiene sentido donde se ven precios. */
+  moneda?: boolean
+  acciones?: ReactNode
+}) {
   return (
     <div
       className={`flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20 ${
@@ -20,8 +32,9 @@ export default function NavBar({ titulo, dark = false }: { titulo: string; dark?
       </Link>
       <div className="w-px h-6 bg-current opacity-15" />
       <h1 className="font-semibold text-lg tracking-tight">{titulo}</h1>
-      <div className="ml-auto">
-        <MonedaToggle dark={dark} />
+      <div className="ml-auto flex items-center gap-2">
+        {acciones}
+        {moneda && <MonedaToggle dark={dark} />}
       </div>
     </div>
   )

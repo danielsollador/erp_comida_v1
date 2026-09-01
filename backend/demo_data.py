@@ -142,11 +142,14 @@ def generar(db, dias=45):
             db.add(gasto)
             db.flush()
             contabilidad.registrar_gasto(db, gasto)
-        if fecha.day in (1, 15):
+        # Pago semanal al ayudante (sabado), como se acostumbra en un local chico.
+        # Se reparte por semana a proposito: un pago quincenal grande distorsiona
+        # la vista "Esta semana" apenas arranca el mes.
+        if fecha.weekday() == 5:
             gasto = Gasto(
                 descripcion="Pago ayudante",
                 categoria="Sueldos",
-                monto=60.0,
+                monto=30.0,
                 fecha=datetime.datetime(fecha.year, fecha.month, fecha.day, 18, 0),
             )
             db.add(gasto)

@@ -59,7 +59,7 @@ export default function Reportes() {
 
         {datos && !cargando && (
           <>
-            <p className="text-sm text-neutral-500 capitalize">{datos.etiqueta}</p>
+            <p className="text-sm text-neutral-500">{datos.etiqueta}</p>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi titulo="Ventas" valor={`$${datos.ventas.toFixed(2)}`} destacado />

@@ -163,10 +163,12 @@ export default function POS() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px]">
+      {/* md (768px) y no lg: una tablet en vertical ya muestra el carrito al
+          lado, sin obligar al cajero a bajar para ver el total y cobrar. */}
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_330px] lg:grid-cols-[1fr_380px]">
         <div className="p-4 overflow-y-auto">
           {categoria && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
               {categoria.productos
                 .filter((p) => p.activo)
                 .flatMap((p) =>
@@ -178,12 +180,12 @@ export default function POS() {
                         <button
                           key={v.id}
                           onClick={() => agregar(p, v)}
-                          className={`rounded-2xl border-2 p-4 text-left active:scale-95 transition shadow-sm ${color.bg} ${color.border}`}
+                          className={`rounded-2xl border-2 p-5 min-h-[104px] flex flex-col justify-between text-left active:scale-95 transition shadow-sm ${color.bg} ${color.border}`}
                         >
-                          <div className={`font-semibold ${color.text}`}>
+                          <div className={`font-semibold text-lg leading-tight ${color.text}`}>
                             {v.nombre === 'Regular' ? p.nombre : `${p.nombre} - ${v.nombre}`}
                           </div>
-                          <div className="text-neutral-700 font-medium mt-1">
+                          <div className="text-neutral-700 font-bold text-lg mt-2">
                             {fmt(v.precio)}
                           </div>
                         </button>
@@ -218,10 +220,13 @@ export default function POS() {
                     </li>
                   ))}
                 </ul>
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold">{fmt(pedido.total)}</span>
-                  <div className="flex gap-2">
-                    <button onClick={() => anular(pedido.id)} className="text-red-500 text-xs font-medium">
+                <div className="flex justify-between items-center gap-3">
+                  <span className="font-semibold whitespace-nowrap">{fmt(pedido.total)}</span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      onClick={() => anular(pedido.id)}
+                      className="text-red-500 text-xs font-medium"
+                    >
                       Anular
                     </button>
                     <button
@@ -240,29 +245,44 @@ export default function POS() {
           </div>
         </div>
 
-        <div className="bg-white border-l border-neutral-200 p-4 flex flex-col lg:sticky lg:top-[105px] lg:h-[calc(100vh-105px)]">
-          <h2 className="font-semibold mb-3 text-lg">Comanda actual</h2>
+        <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:sticky md:top-[105px] md:h-[calc(100vh-105px)]">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-lg">Comanda actual</h2>
+            {Object.keys(carrito).length > 0 && (
+              <button
+                onClick={() => setCarrito({})}
+                className="text-xs font-medium text-neutral-400 hover:text-red-500"
+              >
+                Vaciar
+              </button>
+            )}
+          </div>
           {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
           <div className="flex-1 overflow-y-auto space-y-3">
             {Object.values(carrito).map(({ producto, variante, cantidad }) => (
-              <div key={variante.id} className="flex justify-between items-center">
-                <div>
-                  <div className="text-sm font-semibold">
+              <div key={variante.id} className="flex justify-between items-center gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold truncate">
                     {variante.nombre === 'Regular' ? producto.nombre : `${producto.nombre} - ${variante.nombre}`}
                   </div>
-                  <div className="text-xs text-neutral-500">{fmt(variante.precio)} c/u</div>
+                  <div className="text-xs text-neutral-500">
+                    {cantidad} x {fmt(variante.precio)} ={' '}
+                    <span className="font-semibold text-neutral-700">
+                      {fmt(variante.precio * cantidad)}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => quitar(variante.id)}
-                    className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold"
+                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
                   >
                     -
                   </button>
-                  <span className="w-6 text-center font-medium">{cantidad}</span>
+                  <span className="w-6 text-center font-semibold tabular-nums">{cantidad}</span>
                   <button
                     onClick={() => agregar(producto, variante)}
-                    className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold"
+                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
                   >
                     +
                   </button>

@@ -53,6 +53,16 @@ export default function Contabilidad() {
   )
 }
 
+// El `origen` viene en snake_case desde la API; en pantalla se lee en castellano.
+const ORIGEN_LABEL: Record<string, string> = {
+  manual: 'Manual',
+  venta: 'Venta',
+  gasto: 'Gasto',
+  merma: 'Merma',
+  compra_insumo: 'Compra de insumo',
+  factura_compra: 'Factura de compra',
+}
+
 const TIPO_LABEL: Record<string, string> = {
   activo: 'Activo',
   pasivo: 'Pasivo',
@@ -347,7 +357,7 @@ function Diario() {
               <tr key={a.id} className="border-t border-neutral-100 align-top">
                 <td className="p-3 whitespace-nowrap">{new Date(a.fecha).toLocaleDateString('es-VE')}</td>
                 <td className="p-3 font-medium">{a.descripcion}</td>
-                <td className="p-3 text-neutral-500 capitalize">{a.origen}</td>
+                <td className="p-3 text-neutral-500">{ORIGEN_LABEL[a.origen] ?? a.origen}</td>
                 <td className="p-3">
                   {a.movimientos.map((m) => (
                     <div key={m.id} className="text-xs text-neutral-600">
@@ -453,7 +463,7 @@ function EstadoResultados() {
       </div>
       {datos && (
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <p className="text-sm text-neutral-500 mb-3 capitalize">{datos.etiqueta}</p>
+          <p className="text-sm text-neutral-500 mb-3">{datos.etiqueta}</p>
           <Linea etiqueta="Ingresos por ventas" monto={datos.ingresos} />
           <Linea etiqueta="Costo de ventas" monto={-datos.costos} />
           <Linea etiqueta="Utilidad bruta" monto={datos.utilidad_bruta} subtotal />
