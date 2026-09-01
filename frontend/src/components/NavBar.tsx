@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { MonedaToggle } from '../lib/moneda'
 
 export default function NavBar({ titulo, dark = false }: { titulo: string; dark?: boolean }) {
   return (
@@ -19,6 +20,9 @@ export default function NavBar({ titulo, dark = false }: { titulo: string; dark?
       </Link>
       <div className="w-px h-6 bg-current opacity-15" />
       <h1 className="font-semibold text-lg tracking-tight">{titulo}</h1>
+      <div className="ml-auto">
+        <MonedaToggle dark={dark} />
+      </div>
     </div>
   )
 }

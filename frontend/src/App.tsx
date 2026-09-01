@@ -6,6 +6,8 @@ import Menu from './pages/Menu'
 import Caja from './pages/Caja'
 import Reportes from './pages/Reportes'
 import Sistema from './pages/Sistema'
+import Tasa from './pages/Tasa'
+import { MonedaProvider } from './lib/moneda'
 
 const ACCESOS = [
   { to: '/pos', icono: '🛒', titulo: 'Punto de venta', desc: 'Armar y cobrar pedidos' },
@@ -14,6 +16,7 @@ const ACCESOS = [
   { to: '/menu', icono: '📋', titulo: 'Menu', desc: 'Productos y precios' },
   { to: '/inventario', icono: '📦', titulo: 'Inventario', desc: 'Insumos y compras' },
   { to: '/caja', icono: '💵', titulo: 'Cierre de caja', desc: 'Cuadre y gastos' },
+  { to: '/tasa', icono: '💱', titulo: 'Tasa de cambio', desc: 'BCV, paralelo y manual' },
   { to: '/sistema', icono: '🛡️', titulo: 'Sistema', desc: 'Respaldo de datos' },
 ]
 
@@ -43,17 +46,20 @@ function Inicio() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Inicio />} />
-        <Route path="/pos" element={<POS />} />
-        <Route path="/cocina" element={<Cocina />} />
-        <Route path="/inventario" element={<Inventario />} />
-        <Route path="/menu" element={<Menu />} />
-        <Route path="/caja" element={<Caja />} />
-        <Route path="/reportes" element={<Reportes />} />
-        <Route path="/sistema" element={<Sistema />} />
-      </Routes>
-    </BrowserRouter>
+    <MonedaProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Inicio />} />
+          <Route path="/pos" element={<POS />} />
+          <Route path="/cocina" element={<Cocina />} />
+          <Route path="/inventario" element={<Inventario />} />
+          <Route path="/menu" element={<Menu />} />
+          <Route path="/caja" element={<Caja />} />
+          <Route path="/reportes" element={<Reportes />} />
+          <Route path="/sistema" element={<Sistema />} />
+          <Route path="/tasa" element={<Tasa />} />
+        </Routes>
+      </BrowserRouter>
+    </MonedaProvider>
   )
 }
