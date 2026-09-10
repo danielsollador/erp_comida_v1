@@ -1,7 +1,7 @@
 import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class VarianteBase(BaseModel):
@@ -64,6 +64,10 @@ class IngredienteBase(BaseModel):
     stock_minimo: float = 0
     stock_objetivo: float = 0
     costo_unitario: float = 0
+    # % utilizable despues de preparar (100 = sin merma de cocina). Fuera de
+    # (0, 100] no tiene sentido fisico: 0 o negativo es "no rinde nada" y mas
+    # de 100 diria que sale mas producto util del que se compro.
+    rendimiento_pct: float = Field(default=100, gt=0, le=100)
 
 
 class IngredienteCreate(IngredienteBase):
@@ -72,6 +76,7 @@ class IngredienteCreate(IngredienteBase):
 
 class Ingrediente(IngredienteBase):
     id: int
+    costo_efectivo: float  # costo_unitario / rendimiento - lo que de verdad cuesta 1 unidad usable
 
     class Config:
         from_attributes = True
@@ -420,25 +425,52 @@ class BalanceGeneral(BaseModel):
 
 
 # ------------------------------------------------------------------ compras
+class LineaFacturaInput(BaseModel):
+    ingrediente_id: int
+    cantidad: float
+    costo_unitario: float  # precio pagado por 1 unidad de medida, SIN IVA
+
+
+class LineaFactura(BaseModel):
+    id: int
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    cantidad: float
+    costo_unitario: float
+    subtotal: float
+
+    class Config:
+        from_attributes = True
+
+
 class FacturaCompraBase(BaseModel):
     numero_factura: str
     proveedor_nombre: str
     proveedor_rif: Optional[str] = None
     categoria: str = "Insumos"  # Insumos|Servicios|Activos|Otros
     forma_pago: str = "Efectivo"  # Efectivo|Banco|Credito
-    base_imponible: float
-    iva: float = 0
     descripcion: str = ""
 
 
 class FacturaCompraCreate(FacturaCompraBase):
     fecha: Optional[datetime.datetime] = None
+    # Con renglones (compra de insumos): la base sale de sumar los renglones,
+    # y cada uno actualiza el stock y el costo promedio de su ingrediente.
+    items: List[LineaFacturaInput] = []
+    # Sin renglones (servicios, activos, cualquier compra que no sea insumo
+    # puntual): se carga la base a mano, como antes.
+    base_imponible: Optional[float] = None
+    iva: float = 0
 
 
 class FacturaCompra(FacturaCompraBase):
     id: int
     fecha: datetime.datetime
+    base_imponible: float
+    iva: float
     total: float
+    items: List[LineaFactura] = []
 
     class Config:
         from_attributes = True

@@ -23,6 +23,7 @@ COLUMNAS = [
     ("pedidos", "facturado", "BOOLEAN DEFAULT 0"),
     ("pedidos", "numero_factura", "VARCHAR"),
     ("pedidos", "tasa_iva", "FLOAT"),
+    ("ingredientes", "rendimiento_pct", "FLOAT DEFAULT 100"),
 ]
 
 

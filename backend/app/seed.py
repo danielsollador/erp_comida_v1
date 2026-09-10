@@ -14,16 +14,17 @@ MENU_DEMO = {
     ],
 }
 
-# nombre, unidad, stock_actual, stock_minimo, stock_objetivo, costo por unidad de medida
+# nombre, unidad, stock_actual, stock_minimo, stock_objetivo, costo por unidad
+# de medida, % que rinde util despues de preparar (100 = sin merma de cocina)
 INGREDIENTES_DEMO = [
-    ("Harina", "kg", 5.0, 2.0, 10.0, 1.20),
-    ("Queso", "kg", 1.0, 1.0, 3.0, 6.50),
-    ("Carne molida", "kg", 2.0, 1.0, 4.0, 7.00),
-    ("Pollo", "kg", 2.0, 1.0, 4.0, 4.50),
-    ("Cafe molido", "kg", 0.5, 0.3, 1.0, 12.00),
-    ("Azucar", "kg", 2.0, 0.5, 3.0, 1.10),
-    ("Naranja", "kg", 3.0, 1.0, 5.0, 1.50),
-    ("Refresco concentrado", "litro", 4.0, 2.0, 6.0, 1.80),
+    ("Harina", "kg", 5.0, 2.0, 10.0, 1.20, 100),
+    ("Queso", "kg", 1.0, 1.0, 3.0, 6.50, 100),
+    ("Carne molida", "kg", 2.0, 1.0, 4.0, 7.00, 92),  # pierde grasa al cocinar
+    ("Pollo", "kg", 2.0, 1.0, 4.0, 4.50, 88),  # hueso, piel, cocina
+    ("Cafe molido", "kg", 0.5, 0.3, 1.0, 12.00, 100),
+    ("Azucar", "kg", 2.0, 0.5, 3.0, 1.10, 100),
+    ("Naranja", "kg", 3.0, 1.0, 5.0, 1.50, 45),  # la cascara y la pulpa no rinden jugo
+    ("Refresco concentrado", "litro", 4.0, 2.0, 6.0, 1.80, 100),
 ]
 
 # (producto, variante) -> [(nombre ingrediente, cantidad por unidad vendida)]
@@ -57,7 +58,7 @@ def seed_if_empty():
             db.commit()
 
         if db.query(Ingrediente).count() == 0:
-            for nombre, unidad, actual, minimo, objetivo, costo in INGREDIENTES_DEMO:
+            for nombre, unidad, actual, minimo, objetivo, costo, rendimiento in INGREDIENTES_DEMO:
                 db.add(
                     Ingrediente(
                         nombre=nombre,
@@ -66,6 +67,7 @@ def seed_if_empty():
                         stock_minimo=minimo,
                         stock_objetivo=objetivo,
                         costo_unitario=costo,
+                        rendimiento_pct=rendimiento,
                     )
                 )
             db.commit()

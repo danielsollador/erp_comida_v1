@@ -34,7 +34,9 @@ export default function Inventario() {
     if (!Number.isFinite(cantidad) || cantidad <= 0) return
 
     const textoCosto = window.prompt(
-      `Cuanto pagaste en total por esos ${cantidad} ${ing.unidad}? (deja vacio si no quieres actualizar el costo)`,
+      `Cuanto pagaste en total por esos ${cantidad} ${ing.unidad}, SIN IVA? ` +
+        `(deja vacio si no quieres actualizar el costo - el IVA no cuenta aqui, ya que no es parte ` +
+        `del costo real del insumo)`,
     )
     const costoTotal = textoCosto ? Number(textoCosto) : undefined
     accion(() =>
@@ -68,13 +70,25 @@ export default function Inventario() {
 
   function cambiarCosto(ing: Ingrediente) {
     const texto = window.prompt(
-      `Cuanto te cuesta 1 ${ing.unidad} de ${ing.nombre}?`,
+      `Cuanto te cuesta 1 ${ing.unidad} de ${ing.nombre} (sin IVA)?`,
       String(ing.costo_unitario),
     )
     if (texto === null) return
     const costo = Number(texto)
     if (!Number.isFinite(costo) || costo < 0) return
     accion(() => api.actualizarIngrediente(ing.id, { ...ing, costo_unitario: costo }))
+  }
+
+  function cambiarRendimiento(ing: Ingrediente) {
+    const texto = window.prompt(
+      `De cada ${ing.unidad} de ${ing.nombre} que compras, que % te queda utilizable ` +
+        `despues de limpiar/cocinar? (100 = no se pierde nada)`,
+      String(ing.rendimiento_pct),
+    )
+    if (texto === null) return
+    const pct = Number(texto)
+    if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return
+    accion(() => api.actualizarIngrediente(ing.id, { ...ing, rendimiento_pct: pct }))
   }
 
   const sinCosto = ingredientes.filter((i) => !i.costo_unitario)
@@ -131,7 +145,9 @@ export default function Inventario() {
                 <th className="text-left p-3">Insumo</th>
                 <th className="text-right p-3">Stock</th>
                 <th className="text-right p-3">Minimo</th>
-                <th className="text-right p-3">Costo</th>
+                <th className="text-right p-3">Costo compra</th>
+                <th className="text-right p-3">Rendimiento</th>
+                <th className="text-right p-3">Costo real</th>
                 <th className="p-3 text-right">Acciones</th>
               </tr>
             </thead>
@@ -159,6 +175,20 @@ export default function Inventario() {
                       {ing.costo_unitario ? `$${ing.costo_unitario.toFixed(2)}` : 'cargar'}
                     </button>
                   </td>
+                  <td className="text-right p-3">
+                    <button
+                      onClick={() => cambiarRendimiento(ing)}
+                      className={`tabular-nums ${
+                        ing.rendimiento_pct < 100 ? 'text-amber-600 font-medium' : 'text-neutral-400'
+                      }`}
+                      title="% utilizable despues de preparar (limpiar, pelar, cocinar)"
+                    >
+                      {ing.rendimiento_pct}%
+                    </button>
+                  </td>
+                  <td className="text-right p-3 tabular-nums font-semibold">
+                    ${ing.costo_efectivo.toFixed(2)}
+                  </td>
                   <td className="p-3">
                     <div className="flex gap-2 justify-end whitespace-nowrap">
                       <button onClick={() => comprar(ing)} className="text-blue-600 font-medium">
@@ -182,6 +212,12 @@ export default function Inventario() {
           <span className="font-semibold">Compra:</span> entra mercancia.{' '}
           <span className="font-semibold">Merma:</span> se daño o se boto.{' '}
           <span className="font-semibold">Contar:</span> ajusta el sistema a lo que hay de verdad.
+          <br />
+          <span className="font-semibold">Costo compra:</span> lo que pagas por 1 unidad.{' '}
+          <span className="font-semibold">Rendimiento:</span> cuanto de eso queda utilizable despues
+          de preparar (100% si no se pierde nada, ej. harina o queso).{' '}
+          <span className="font-semibold">Costo real:</span> lo que de verdad cuesta 1 unidad
+          utilizable - el numero que usan las recetas y los margenes.
         </p>
       </div>
     </div>

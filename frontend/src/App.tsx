@@ -11,6 +11,7 @@ import Contabilidad from './pages/Contabilidad'
 import Compras from './pages/Compras'
 import Impuestos from './pages/Impuestos'
 import Inicio from './pages/Inicio'
+import Recetas from './pages/Recetas'
 import { MonedaProvider } from './lib/moneda'
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/contabilidad" element={<Contabilidad />} />
           <Route path="/compras" element={<Compras />} />
           <Route path="/impuestos" element={<Impuestos />} />
+          <Route path="/recetas" element={<Recetas />} />
         </Routes>
       </BrowserRouter>
     </MonedaProvider>

@@ -39,6 +39,16 @@ export type Ingrediente = {
   stock_minimo: number
   stock_objetivo: number
   costo_unitario: number
+  rendimiento_pct: number
+  costo_efectivo: number
+}
+
+export type RecetaItem = {
+  id: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  cantidad_por_unidad: number
 }
 
 export type Gasto = {
@@ -274,6 +284,16 @@ export type Sugerencia = {
   es_bebida: boolean
 }
 
+export type LineaFactura = {
+  id: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  cantidad: number
+  costo_unitario: number
+  subtotal: number
+}
+
 export type FacturaCompra = {
   id: number
   numero_factura: string
@@ -286,6 +306,7 @@ export type FacturaCompra = {
   iva: number
   descripcion: string
   total: number
+  items: LineaFactura[]
 }
 
 export type ConfiguracionFiscal = {

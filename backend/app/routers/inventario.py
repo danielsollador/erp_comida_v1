@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import contabilidad, models, schemas
+from .. import contabilidad, costeo, models, schemas
 from ..database import get_db
 
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
@@ -47,18 +47,19 @@ def registrar_compra(
     if body.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
 
-    # Valor de la compra para el asiento contable: lo que se pago, o si no se
-    # informo, se estima con el costo unitario que ya tenia el insumo.
-    valor = (
-        body.costo_total
-        if body.costo_total is not None and body.costo_total > 0
-        else body.cantidad * (db_ingrediente.costo_unitario or 0)
-    )
-
-    db_ingrediente.stock_actual += body.cantidad
-    # Si informa cuanto pago, el costo unitario se mantiene solo al dia.
+    # Costo de esta compra puntual: lo que se pago, o si no se informo, se
+    # asume el mismo costo promedio que ya tenia (compra informal sin dato).
     if body.costo_total is not None and body.costo_total > 0:
-        db_ingrediente.costo_unitario = round(body.costo_total / body.cantidad, 4)
+        costo_de_esta_compra = round(body.costo_total / body.cantidad, 4)
+        valor = round(body.costo_total, 2)
+    else:
+        costo_de_esta_compra = db_ingrediente.costo_unitario or 0
+        valor = round(body.cantidad * costo_de_esta_compra, 2)
+
+    # El costo del insumo se PROMEDIA con lo que ya habia, no se pisa - ver
+    # costeo.py. Asi el costo (y el margen que se le muestra al dueno) no
+    # salta de golpe cada vez que un proveedor sube el precio.
+    costeo.registrar_entrada(db_ingrediente, body.cantidad, costo_de_esta_compra)
     db.flush()
     contabilidad.registrar_compra_insumo(db, db_ingrediente, round(valor, 2), db_ingrediente.id)
     db.commit()

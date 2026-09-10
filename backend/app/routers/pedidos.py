@@ -27,13 +27,19 @@ def _siguiente_numero(db: Session) -> int:
 
 
 def _costo_por_variante(variante_ids: List[int], db: Session) -> Dict[int, float]:
-    """Costo de insumos de cada variante segun su receta y el costo actual."""
+    """Costo real de insumos de cada variante, segun su receta.
+
+    Usa costo_efectivo (costo_unitario ajustado por rendimiento de cocina), no
+    costo_unitario a secas - si 1kg de carne rinde 85% despues de limpiarla,
+    el costo real por kg utilizable es mayor al precio de compra, y el margen
+    que se le muestra al dueno tiene que reflejar eso.
+    """
     recetas = (
         db.query(models.RecetaItem).filter(models.RecetaItem.variante_id.in_(variante_ids)).all()
     )
     costos: Dict[int, float] = {}
     for receta in recetas:
-        aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_unitario or 0)
+        aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_efectivo or 0)
         costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
     return costos
 

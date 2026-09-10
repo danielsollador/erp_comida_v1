@@ -22,6 +22,7 @@ import type {
   ReporteResumen,
   PuntoTasa,
   ReporteCombos,
+  RecetaItem,
   Respaldo,
   ResumenCaja,
   ResumenIva,
@@ -98,7 +99,7 @@ export const api = {
   anularPedido: (pedidoId: number) => req<Pedido>(`/pedidos/${pedidoId}/anular`, { method: 'POST' }),
 
   listarIngredientes: () => req<Ingrediente[]>('/inventario/ingredientes'),
-  actualizarIngrediente: (id: number, i: Omit<Ingrediente, 'id'>) =>
+  actualizarIngrediente: (id: number, i: Omit<Ingrediente, 'id' | 'costo_efectivo'>) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
   registrarCompra: (id: number, cantidad: number, costo_total?: number) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/comprar`, {
@@ -116,6 +117,10 @@ export const api = {
       body: JSON.stringify({ stock_real, motivo: 'Conteo fisico' }),
     }),
   sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
+
+  verReceta: (varianteId: number) => req<RecetaItem[]>(`/inventario/recetas/${varianteId}`),
+  actualizarReceta: (varianteId: number, items: { ingrediente_id: number; cantidad_por_unidad: number }[]) =>
+    req<RecetaItem[]>(`/inventario/recetas/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
 
   listarGastos: () => req<Gasto[]>('/caja/gastos'),
   crearGasto: (descripcion: string, categoria: string, monto: number) =>
@@ -173,9 +178,13 @@ export const api = {
     proveedor_rif?: string
     categoria: string
     forma_pago: string
-    base_imponible: number
-    iva: number
     descripcion?: string
+    // Con renglones (compra de insumos): cada uno actualiza stock y costo
+    // promedio de su ingrediente, y la base se calcula sola sumandolos.
+    items?: { ingrediente_id: number; cantidad: number; costo_unitario: number }[]
+    // Sin renglones (servicios, activos...): se carga la base a mano.
+    base_imponible?: number
+    iva?: number
   }) => req<FacturaCompra>('/compras/facturas', { method: 'POST', body: JSON.stringify(f) }),
   eliminarFacturaCompra: (id: number) => req(`/compras/facturas/${id}`, { method: 'DELETE' }),
 
@@ -239,6 +248,7 @@ export type {
   ReporteResumen,
   PuntoTasa,
   ReporteCombos,
+  RecetaItem,
   Respaldo,
   ResumenCaja,
   ResumenIva,

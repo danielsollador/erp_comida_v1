@@ -10,12 +10,14 @@ import datetime
 import random
 import sys
 
-from app import contabilidad, impuestos
+from app import contabilidad, costeo, impuestos
 from app.database import SessionLocal
 from app.models import (
     AsientoContable,
     FacturaCompra,
+    FacturaCompraItem,
     Gasto,
+    Ingrediente,
     MovimientoContable,
     Pedido,
     PedidoItem,
@@ -36,6 +38,13 @@ PROVEEDORES = [
     ("Panaderia El Trigo", "J-30098765-4"),
     ("Carnes La Fresca", "J-30011122-3"),
 ]
+# Que insumos vende tipicamente cada proveedor, para que la factura de ejemplo
+# tenga sentido (el de carnes no te vende harina).
+SURTIDO_POR_PROVEEDOR = {
+    "Distribuidora Cafe y Mas C.A.": ["Cafe molido", "Azucar"],
+    "Panaderia El Trigo": ["Harina"],
+    "Carnes La Fresca": ["Carne molida", "Pollo"],
+}
 
 
 def limpiar(db):
@@ -44,6 +53,8 @@ def limpiar(db):
     db.query(PedidoItem).delete()
     db.query(Pedido).delete()
     db.query(Gasto).delete()
+    # Los renglones primero: un DELETE masivo no dispara el cascade de SQLAlchemy.
+    db.query(FacturaCompraItem).delete()
     db.query(FacturaCompra).delete()
     db.commit()
     print("Ventas, gastos, facturas y asientos contables borrados (el plan de cuentas queda intacto).")
@@ -59,9 +70,11 @@ def generar(db, dias=45):
         print("No hay menu cargado. Arranca la app una vez para que se cree el menu demo.")
         return
 
+    ingredientes = {i.nombre: i for i in db.query(Ingrediente).all()}
+
     costos = {}
     for receta in db.query(RecetaItem).all():
-        aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_unitario or 0)
+        aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_efectivo or 0)
         costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
 
     hoy = datetime.date.today()
@@ -157,10 +170,11 @@ def generar(db, dias=45):
             contabilidad.registrar_gasto(db, gasto)
 
         # Compra de insumos a proveedor con factura, cada semana (surtido tipico).
+        # Con renglones por insumo: la misma factura reabastece el stock real
+        # y recalcula el costo promedio de cada uno - el flujo unificado, no
+        # el atajo de antes de cargar solo un monto suelto.
         if fecha.weekday() == 2:
             proveedor, rif = random.choice(PROVEEDORES)
-            base = round(random.uniform(25, 45), 2)
-            iva = round(base * tasa_iva_actual / 100, 2)
             numero_factura += 1
             factura = FacturaCompra(
                 numero_factura=f"F-{numero_factura}",
@@ -169,10 +183,34 @@ def generar(db, dias=45):
                 fecha=datetime.datetime(fecha.year, fecha.month, fecha.day, 9, 30),
                 categoria="Insumos",
                 forma_pago="Efectivo",
-                base_imponible=base,
-                iva=iva,
+                base_imponible=0,  # se calcula abajo, sumando los renglones reales
+                iva=0,
             )
             db.add(factura)
+            db.flush()
+
+            base_total = 0.0
+            for nombre_insumo in SURTIDO_POR_PROVEEDOR[proveedor]:
+                ingrediente = ingredientes.get(nombre_insumo)
+                if not ingrediente:
+                    continue
+                cantidad = round(random.uniform(3, 8), 2)
+                # Variacion natural de precio compra a compra, para que el
+                # costo promedio ponderado tenga algo real que promediar.
+                costo_compra = round(ingrediente.costo_unitario * random.uniform(0.95, 1.08), 4)
+                db.add(
+                    FacturaCompraItem(
+                        factura_id=factura.id,
+                        ingrediente_id=ingrediente.id,
+                        cantidad=cantidad,
+                        costo_unitario=costo_compra,
+                    )
+                )
+                costeo.registrar_entrada(ingrediente, cantidad, costo_compra)
+                base_total += round(cantidad * costo_compra, 2)
+
+            factura.base_imponible = round(base_total, 2)
+            factura.iva = round(base_total * tasa_iva_actual / 100, 2)
             db.flush()
             contabilidad.registrar_factura_compra(db, factura)
 

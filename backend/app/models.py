@@ -48,7 +48,28 @@ class Ingrediente(Base):
     stock_actual = Column(Float, default=0)
     stock_minimo = Column(Float, default=0)
     stock_objetivo = Column(Float, default=0)  # nivel al que se repone al comprar
-    costo_unitario = Column(Float, default=0)  # cuanto cuesta 1 unidad de medida (ej. 1 kg)
+    # Costo promedio ponderado: cada compra lo recalcula con lo que ya habia en
+    # stock, no lo pisa. Asi un insumo que se compro mas barato el lunes y mas
+    # caro el jueves no salta de golpe al ultimo precio pagado.
+    costo_unitario = Column(Float, default=0)  # costo promedio por 1 unidad de medida (ej. 1 kg), SIN IVA
+    # % de lo comprado que de verdad queda utilizable despues de preparar (se
+    # pierde grasa, cascara, agua al cocinar...). 100 = sin merma de cocina.
+    # Distinto de la Merma (que es lo que se dano o se boto): esto es perdida
+    # normal e inevitable del proceso, no un accidente.
+    rendimiento_pct = Column(Float, default=100.0)
+
+    @property
+    def costo_efectivo(self):
+        """Costo real por unidad UTILIZABLE, una vez descontada la merma de cocina.
+
+        Es el numero que hay que usar para costear recetas y margenes - el
+        costo_unitario a secas subestima el costo real de cualquier insumo que
+        rinda menos de 100% (ej. carne, vegetales que se pelan).
+        """
+        rendimiento = self.rendimiento_pct or 100.0
+        if rendimiento <= 0:
+            return self.costo_unitario
+        return round(self.costo_unitario / (rendimiento / 100), 6)
 
 
 class RecetaItem(Base):
@@ -142,6 +163,36 @@ class FacturaCompra(Base):
     @property
     def total(self):
         return round(self.base_imponible + self.iva, 2)
+
+    items = relationship("FacturaCompraItem", back_populates="factura", cascade="all, delete-orphan")
+
+
+class FacturaCompraItem(Base):
+    """Un renglon de la factura: X kg de tal insumo a tal precio.
+
+    Es la pieza que unifica Compras con Inventario. Antes eran dos mundos
+    separados (cargabas la factura para el libro fiscal por un lado, y le
+    sumabas stock a un insumo por otro, a mano, sin que se hablaran). Con
+    renglones, una sola factura hace las dos cosas: alimenta el Libro de
+    Compras Y actualiza el stock/costo promedio del insumo, con la MISMA
+    base imponible (sin IVA) en ambos lados - asi el costo de receta nunca
+    queda inflado con el IVA, que no es un costo real sino credito fiscal.
+    """
+
+    __tablename__ = "factura_compra_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    factura_id = Column(Integer, ForeignKey("facturas_compra.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)
+    costo_unitario = Column(Float, nullable=False)  # precio pagado por 1 unidad de medida, SIN IVA
+
+    factura = relationship("FacturaCompra", back_populates="items")
+    ingrediente = relationship("Ingrediente")
+
+    @property
+    def subtotal(self):
+        return round(self.cantidad * self.costo_unitario, 2)
 
 
 class CierreCaja(Base):

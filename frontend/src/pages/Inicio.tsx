@@ -36,6 +36,7 @@ const PRINCIPALES = [
 
 const SECUNDARIAS = [
   { to: '/menu', icono: '📋', titulo: 'Menu' },
+  { to: '/recetas', icono: '🧑‍🍳', titulo: 'Recetas' },
   { to: '/inventario', icono: '📦', titulo: 'Inventario' },
   { to: '/compras', icono: '🧾', titulo: 'Compras' },
   { to: '/caja', icono: '💵', titulo: 'Cierre de caja' },
