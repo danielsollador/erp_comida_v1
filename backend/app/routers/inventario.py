@@ -68,8 +68,17 @@ def registrar_compra(
     # costeo.py. Asi el costo (y el margen que se le muestra al dueno) no
     # salta de golpe cada vez que un proveedor sube el precio.
     costeo.registrar_entrada(db_ingrediente, body.cantidad, costo_de_esta_compra)
+    # Cada compra suelta queda como un registro propio. Antes el asiento usaba
+    # el id del ingrediente como referencia, asi que todas las compras del mismo
+    # insumo compartian referencia y ninguna se podia rastrear.
+    compra = models.CompraSuelta(
+        ingrediente_id=db_ingrediente.id,
+        cantidad=body.cantidad,
+        costo_unitario=costo_de_esta_compra,
+    )
+    db.add(compra)
     db.flush()
-    contabilidad.registrar_compra_insumo(db, db_ingrediente, round(valor, 2), db_ingrediente.id)
+    contabilidad.registrar_compra_insumo(db, db_ingrediente, round(valor, 2), compra.id)
     db.commit()
     db.refresh(db_ingrediente)
     return db_ingrediente

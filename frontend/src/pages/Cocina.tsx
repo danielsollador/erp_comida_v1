@@ -121,6 +121,19 @@ export default function Cocina() {
     refrescar()
   }
 
+  // La cocina es quien sabe si la comida alcanzo a hacerse, y hasta ahora solo
+  // el POS podia anular. Se pregunta explicitamente porque de eso depende si el
+  // insumo vuelve al inventario o se registra como merma.
+  async function anular(pedido: Pedido) {
+    const yaHecha = pedido.items.some((i) => i.preparado)
+    const texto = yaHecha
+      ? `Anular la comanda #${pedido.numero}? Ya hay items preparados: lo hecho se registra como merma.`
+      : `Anular la comanda #${pedido.numero}? Los insumos vuelven al inventario.`
+    if (!window.confirm(texto)) return
+    await api.anularPedido(pedido.id, yaHecha)
+    refrescar()
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
       <NavBar
@@ -210,6 +223,12 @@ export default function Cocina() {
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3.5 rounded-xl font-bold text-base"
               >
                 Marcar todo listo
+              </button>
+              <button
+                onClick={() => anular(pedido)}
+                className="w-full mt-2 text-neutral-500 hover:text-red-400 py-1.5 text-sm font-medium"
+              >
+                Anular comanda
               </button>
             </div>
           )

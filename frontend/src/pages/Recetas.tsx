@@ -60,13 +60,20 @@ export default function Recetas() {
     setFilas((prev) => prev.map((f, idx) => (idx === i ? { ...f, ...cambios } : f)))
   }
 
-  // "De 1 kg salen 20 unidades" -> 0.05 kg por unidad. Es solo una forma mas
-  // natural de escribir la misma fraccion que ya usa la receta.
+  // "De 1 kg COMPRADO salen 20 unidades" -> cuanto insumo UTILIZABLE lleva cada
+  // una. El dueno mide sobre lo que compra (es lo unico que puede pesar), pero
+  // la receta guarda cantidad utilizable, que es lo que el sistema multiplica
+  // por el costo real. Sin multiplicar por el rendimiento aca, la merma de
+  // cocina se contaria dos veces: una en este numero y otra en costo_efectivo.
   function aplicarRendimiento(i: number) {
     const de = Number(filas[i].rendimientoDe)
     const salen = Number(filas[i].rendimientoSalen)
     if (!Number.isFinite(de) || de <= 0 || !Number.isFinite(salen) || salen <= 0) return
-    actualizarFila(i, { cantidad_por_unidad: String(round6(de / salen)) })
+    const ing = mapaIngredientes.get(filas[i].ingrediente_id)
+    const rendimiento = (ing?.rendimiento_pct ?? 100) / 100
+    actualizarFila(i, {
+      cantidad_por_unidad: String(round6((de * rendimiento) / salen)),
+    })
   }
 
   function round6(n: number) {
@@ -203,30 +210,40 @@ export default function Recetas() {
                       </div>
 
                       {f.modoRendimiento ? (
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
-                          <span>De</span>
-                          <input
-                            value={f.rendimientoDe}
-                            onChange={(e) => actualizarFila(i, { rendimientoDe: e.target.value })}
-                            type="number"
-                            step="0.01"
-                            className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
-                          />
-                          <span>{ing?.unidad ?? 'unidad'} salen</span>
-                          <input
-                            value={f.rendimientoSalen}
-                            onChange={(e) => actualizarFila(i, { rendimientoSalen: e.target.value })}
-                            type="number"
-                            step="1"
-                            className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
-                          />
-                          <span>unidades</span>
-                          <button
-                            onClick={() => aplicarRendimiento(i)}
-                            className="bg-neutral-100 hover:bg-neutral-200 rounded-lg px-2 py-1 text-xs font-medium"
-                          >
-                            Calcular
-                          </button>
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span>De</span>
+                            <input
+                              value={f.rendimientoDe}
+                              onChange={(e) => actualizarFila(i, { rendimientoDe: e.target.value })}
+                              type="number"
+                              step="0.01"
+                              className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
+                            />
+                            <span>{ing?.unidad ?? 'unidad'} que compras salen</span>
+                            <input
+                              value={f.rendimientoSalen}
+                              onChange={(e) =>
+                                actualizarFila(i, { rendimientoSalen: e.target.value })
+                              }
+                              type="number"
+                              step="1"
+                              className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
+                            />
+                            <span>unidades</span>
+                            <button
+                              onClick={() => aplicarRendimiento(i)}
+                              className="bg-neutral-100 hover:bg-neutral-200 rounded-lg px-2 py-1 text-xs font-medium"
+                            >
+                              Calcular
+                            </button>
+                          </div>
+                          {ing && ing.rendimiento_pct < 100 && (
+                            <p className="text-xs text-amber-700">
+                              Mide sobre lo que compras, sin limpiar. El {ing.rendimiento_pct}% de
+                              rendimiento de {ing.nombre} ya se descuenta solo.
+                            </p>
+                          )}
                         </div>
                       ) : null}
 
@@ -234,7 +251,7 @@ export default function Recetas() {
                         <input
                           value={f.cantidad_por_unidad}
                           onChange={(e) => actualizarFila(i, { cantidad_por_unidad: e.target.value })}
-                          placeholder={`Cantidad por unidad vendida${ing ? ` (${ing.unidad})` : ''}`}
+                          placeholder={`Cantidad utilizable por unidad${ing ? ` (${ing.unidad})` : ''}`}
                           type="number"
                           step="0.0001"
                           className="flex-1 border border-neutral-300 rounded-lg px-2 py-1.5"

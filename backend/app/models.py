@@ -122,6 +122,25 @@ class Gasto(Base):
     fecha = Column(DateTime, default=ahora)
 
 
+class CompraSuelta(Base):
+    """Compra de insumo sin factura de proveedor (el mandado del dia).
+
+    Existe para que cada entrada de inventario tenga su propio registro al que
+    apuntar desde el asiento contable. Las compras con factura viven en
+    FacturaCompraItem; esta es la via informal, que el negocio usa igual.
+    """
+
+    __tablename__ = "compras_sueltas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)
+    costo_unitario = Column(Float, nullable=False)
+    fecha = Column(DateTime, default=ahora)
+
+    ingrediente = relationship("Ingrediente")
+
+
 class Merma(Base):
     __tablename__ = "mermas"
 
