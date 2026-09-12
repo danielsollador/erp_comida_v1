@@ -73,6 +73,23 @@ export type ProductoVendido = {
   costo: number
   ganancia: number
   margen_pct: number
+  /** Sin receta cargada: el costo es 0 y el margen no significa nada. */
+  sin_receta: boolean
+}
+
+export type CambioPrecio = {
+  id: number
+  variante_id: number
+  precio_anterior: number
+  precio_nuevo: number
+  fecha: string
+}
+
+export type CostoVariante = {
+  variante_id: number
+  costo: number | null
+  margen_pct: number | null
+  sin_receta: boolean
 }
 
 export type Insight = {

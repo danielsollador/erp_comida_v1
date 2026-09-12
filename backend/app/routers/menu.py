@@ -104,11 +104,67 @@ def actualizar_variante(variante_id: int, variante: schemas.VarianteCreate, db: 
     db_variante = db.query(models.Variante).filter(models.Variante.id == variante_id).first()
     if not db_variante:
         raise HTTPException(status_code=404, detail="Variante no encontrada")
+
+    precio_anterior = db_variante.precio
     for key, value in variante.model_dump().items():
         setattr(db_variante, key, value)
+
+    # Queda el rastro del cambio: antes el precio se sobrescribia sin dejar
+    # forma de saber cuando se movio ni desde cuanto.
+    if round(precio_anterior, 4) != round(db_variante.precio, 4):
+        db.add(
+            models.CambioPrecio(
+                variante_id=variante_id,
+                precio_anterior=precio_anterior,
+                precio_nuevo=db_variante.precio,
+            )
+        )
+
     db.commit()
     db.refresh(db_variante)
     return db_variante
+
+
+@router.get("/variantes/{variante_id}/precios", response_model=List[schemas.CambioPrecio])
+def historial_precios(variante_id: int, db: Session = Depends(get_db)):
+    return (
+        db.query(models.CambioPrecio)
+        .filter(models.CambioPrecio.variante_id == variante_id)
+        .order_by(models.CambioPrecio.id.desc())
+        .limit(20)
+        .all()
+    )
+
+
+@router.get("/costos", response_model=List[schemas.CostoVariante])
+def costos_por_variante(db: Session = Depends(get_db)):
+    """Cuanto cuesta producir cada variante y que margen deja a su precio actual.
+
+    El menu necesita este dato para no dejar fijar un precio por debajo del
+    costo a ciegas: el sistema ya sabe cuanto cuesta el producto, solo que
+    hasta ahora no lo miraba al momento de ponerle precio.
+    """
+    costos = {}
+    for receta in db.query(models.RecetaItem).all():
+        aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_efectivo or 0)
+        costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
+
+    filas = []
+    for v in db.query(models.Variante).all():
+        costo = costos.get(v.id)
+        filas.append(
+            schemas.CostoVariante(
+                variante_id=v.id,
+                costo=round(costo, 4) if costo is not None else None,
+                margen_pct=(
+                    round((v.precio - costo) / v.precio * 100, 1)
+                    if costo is not None and v.precio > 0
+                    else None
+                ),
+                sin_receta=costo is None,
+            )
+        )
+    return filas
 
 
 @router.delete("/variantes/{variante_id}")

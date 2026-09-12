@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
-import type { Categoria } from '../lib/types'
+import type { Categoria, CostoVariante } from '../lib/types'
 
 export default function Menu() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [nuevaCategoria, setNuevaCategoria] = useState('')
+  // Cuanto cuesta producir cada variante: el precio se fija mirando esto, no a
+  // ciegas. Antes se podia poner un precio por debajo del costo sin que nada
+  // lo dijera, y la perdida quedaba escondida en el promedio del reporte.
+  const [costos, setCostos] = useState<Map<number, CostoVariante>>(new Map())
 
   useEffect(() => {
     cargar()
@@ -13,6 +17,7 @@ export default function Menu() {
 
   function cargar() {
     api.listarCategorias().then(setCategorias)
+    api.costosVariantes().then((cs) => setCostos(new Map(cs.map((c) => [c.variante_id, c]))))
   }
 
   async function agregarCategoria() {
@@ -33,7 +38,13 @@ export default function Menu() {
       <NavBar titulo="Menu" />
       <div className="p-4 max-w-2xl mx-auto space-y-6">
         {categorias.map((cat) => (
-          <CategoriaCard key={cat.id} categoria={cat} onCambio={cargar} onBorrar={borrarCategoria} />
+          <CategoriaCard
+            key={cat.id}
+            categoria={cat}
+            costos={costos}
+            onCambio={cargar}
+            onBorrar={borrarCategoria}
+          />
         ))}
 
         <div className="bg-white rounded-2xl shadow p-4 flex gap-2">
@@ -57,10 +68,12 @@ export default function Menu() {
 
 function CategoriaCard({
   categoria,
+  costos,
   onCambio,
   onBorrar,
 }: {
   categoria: Categoria
+  costos: Map<number, CostoVariante>
   onCambio: () => void
   onBorrar: (id: number) => void
 }) {
@@ -84,7 +97,12 @@ function CategoriaCard({
 
       <div className="space-y-3">
         {categoria.productos.map((producto) => (
-          <ProductoRow key={producto.id} producto={producto} onCambio={onCambio} />
+          <ProductoRow
+            key={producto.id}
+            producto={producto}
+            costos={costos}
+            onCambio={onCambio}
+          />
         ))}
       </div>
 
@@ -108,9 +126,11 @@ function CategoriaCard({
 
 function ProductoRow({
   producto,
+  costos,
   onCambio,
 }: {
   producto: Categoria['productos'][number]
+  costos: Map<number, CostoVariante>
   onCambio: () => void
 }) {
   const [nuevaVariante, setNuevaVariante] = useState('')
@@ -126,10 +146,26 @@ function ProductoRow({
   }
 
   async function cambiarPrecio(varianteId: number, nombre: string, precioActual: number) {
-    const texto = window.prompt(`Nuevo precio para ${nombre}`, String(precioActual))
+    // El costo va en la pregunta, no despues: es el dato que decide si el
+    // precio tiene sentido, y el sistema ya lo tiene.
+    const info = costos.get(varianteId)
+    const contexto = info?.costo
+      ? `\n\nProducirlo cuesta $${info.costo.toFixed(2)}. A $${precioActual.toFixed(2)} te deja ${info.margen_pct?.toFixed(0)}% de margen.`
+      : '\n\n(Este producto no tiene receta, asi que no se sabe cuanto cuesta producirlo.)'
+    const texto = window.prompt(`Nuevo precio para ${nombre}${contexto}`, String(precioActual))
     if (texto === null) return
     const precio = Number(texto)
     if (!Number.isFinite(precio) || precio < 0) return
+
+    if (info?.costo && precio < info.costo) {
+      const perdida = (info.costo - precio).toFixed(2)
+      const seguir = window.confirm(
+        `A $${precio.toFixed(2)} venderias por DEBAJO del costo ($${info.costo.toFixed(2)}): ` +
+          `pierdes $${perdida} en cada una.\n\nPonerlo igual?`,
+      )
+      if (!seguir) return
+    }
+
     await api.actualizarVariante(varianteId, nombre, precio)
     onCambio()
   }
@@ -154,23 +190,50 @@ function ProductoRow({
         </button>
       </div>
       <div className="flex flex-wrap gap-2 mb-2">
-        {producto.variantes.map((v) => (
+        {producto.variantes.map((v) => {
+          const info = costos.get(v.id)
+          const bajoCosto = info?.costo != null && v.precio < info.costo
+          return (
           <span
             key={v.id}
-            className="bg-neutral-100 rounded-full px-3 py-1 text-xs flex items-center gap-2"
+            className={`rounded-full px-3 py-1 text-xs flex items-center gap-2 ${
+              bajoCosto ? 'bg-red-50 ring-1 ring-red-300' : 'bg-neutral-100'
+            }`}
           >
             <button onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}>
               {v.nombre === 'Regular' && producto.variantes.length === 1
                 ? `$${v.precio.toFixed(2)}`
                 : `${v.nombre}: $${v.precio.toFixed(2)}`}
             </button>
+            {/* El margen a la vista: sin esto habia que abrir cada producto
+                para saber si el precio todavia tiene sentido. */}
+            {info?.margen_pct != null && (
+              <span
+                className={`tabular-nums ${
+                  bajoCosto
+                    ? 'text-red-600 font-semibold'
+                    : info.margen_pct >= 50
+                      ? 'text-emerald-600'
+                      : 'text-amber-600'
+                }`}
+                title={`Cuesta $${info.costo?.toFixed(2)} producirlo`}
+              >
+                {bajoCosto ? '¡a perdida!' : `${info.margen_pct.toFixed(0)}%`}
+              </span>
+            )}
+            {info?.sin_receta && (
+              <span className="text-amber-700" title="Sin receta: no se sabe cuanto cuesta">
+                sin receta
+              </span>
+            )}
             {producto.variantes.length > 1 && (
               <button onClick={() => borrarVariante(v.id)} className="text-red-400">
                 x
               </button>
             )}
           </span>
-        ))}
+          )
+        })}
       </div>
       <div className="flex gap-2">
         <input

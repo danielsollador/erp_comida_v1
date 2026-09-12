@@ -122,6 +122,26 @@ class Gasto(Base):
     fecha = Column(DateTime, default=ahora)
 
 
+class CambioPrecio(Base):
+    """Cada vez que se mueve el precio de venta de una variante.
+
+    Con inflacion los precios se tocan seguido y hoy no quedaba rastro de
+    cuando ni de cuanto: `Variante.precio` se sobrescribia y listo. Sirve para
+    responder "subi el precio, que paso con las ventas" y como control basico,
+    ya que cualquiera con la tablet puede cambiarlos.
+    """
+
+    __tablename__ = "cambios_precio"
+
+    id = Column(Integer, primary_key=True, index=True)
+    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
+    precio_anterior = Column(Float, nullable=False)
+    precio_nuevo = Column(Float, nullable=False)
+    fecha = Column(DateTime, default=ahora)
+
+    variante = relationship("Variante")
+
+
 class CompraSuelta(Base):
     """Compra de insumo sin factura de proveedor (el mandado del dia).
 

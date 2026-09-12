@@ -22,6 +22,24 @@ class Variante(VarianteBase):
         from_attributes = True
 
 
+class CambioPrecio(BaseModel):
+    id: int
+    variante_id: int
+    precio_anterior: float
+    precio_nuevo: float
+    fecha: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CostoVariante(BaseModel):
+    variante_id: int
+    costo: Optional[float] = None  # None = sin receta cargada
+    margen_pct: Optional[float] = None
+    sin_receta: bool = False
+
+
 class ProductoBase(BaseModel):
     nombre: str
     categoria_id: int
@@ -256,6 +274,9 @@ class ProductoVendido(BaseModel):
     costo: float
     ganancia: float
     margen_pct: float
+    # Sin receta el costo entra como cero: el margen que saldria seria 100% y
+    # no significa nada. Se marca para no mostrarlo como si fuera bueno.
+    sin_receta: bool = False
 
 
 class Insight(BaseModel):

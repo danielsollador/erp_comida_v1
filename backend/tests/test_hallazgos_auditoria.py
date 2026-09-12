@@ -281,6 +281,112 @@ def test_el_asiento_de_apertura_registra_el_inventario_inicial(db, insumo):
     assert saldo(db, "1040") == 80.0
 
 
+# ------------------------------------------- Y/Z: producto sin receta (caso 9)
+def test_un_producto_sin_receta_no_pasa_por_margen_perfecto(client, db, variante):
+    """Vendia con costo 0 y margen 100%, salia como producto estrella, y de
+    paso hundia el food cost hasta convertir la alerta en felicitacion."""
+    sin_receta = models.Variante(
+        producto_id=variante.producto_id, nombre="Sin receta", precio=100.0
+    )
+    db.add(sin_receta)
+    db.commit()
+
+    for vid in (variante.id, sin_receta.id):
+        pedido = client.post(
+            "/api/pedidos", json={"items": [{"variante_id": vid, "cantidad": 1}], "nota": ""}
+        ).json()
+        client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+
+    r = client.get("/api/reportes/resumen?periodo=mes").json()
+    marcado = next(p for p in r["top_productos"] if p["nombre"].endswith("Sin receta"))
+    assert marcado["sin_receta"] is True
+    assert marcado["margen_pct"] == 0  # no se reporta el 100% ficticio
+
+    titulos = " ".join(i["titulo"] for i in r["insights"])
+    assert "sin receta" in titulos
+
+    # El food cost se mide solo sobre lo que tiene costo conocido: 0.1 kg
+    # utilizables a $10 (=$8 con 80% de rendimiento) sobre $5 de venta medible
+    # da 20%. Contando los $100 del producto fantasma daria 1%, que es
+    # exactamente como una alerta se volvia felicitacion.
+    food_cost = next(i for i in r["insights"] if "insumos" in i["titulo"].lower())
+    assert "20%" in food_cost["titulo"]
+
+
+def test_la_salud_contable_avisa_de_ventas_sin_receta(client, db, variante):
+    contabilidad.asiento_de_apertura(db)
+    sin_receta = models.Variante(producto_id=variante.producto_id, nombre="Fantasma", precio=9.0)
+    db.add(sin_receta)
+    db.commit()
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": sin_receta.id, "cantidad": 1}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+
+    salud = client.get("/api/contabilidad/salud").json()
+    assert salud["sano"] is False
+    assert "sin receta" in " ".join(p["titulo"] for p in salud["problemas"])
+
+
+# ------------------------------------------- DD/EE: precios (caso 10)
+def test_subir_el_precio_no_toca_el_historico(client, db, variante):
+    """El precio se congela por venta igual que el costo."""
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 2}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+    antes = client.get("/api/reportes/resumen?periodo=mes").json()["ventas"]
+
+    client.put(
+        f"/api/menu/variantes/{variante.id}",
+        json={"nombre": variante.nombre, "precio": 99.0, "activo": True},
+    )
+    assert client.get("/api/reportes/resumen?periodo=mes").json()["ventas"] == antes
+
+
+def test_cambiar_el_precio_deja_historial(client, variante):
+    """Antes se sobrescribia y no quedaba forma de saber cuando ni desde cuanto."""
+    assert client.get(f"/api/menu/variantes/{variante.id}/precios").json() == []
+
+    client.put(
+        f"/api/menu/variantes/{variante.id}",
+        json={"nombre": variante.nombre, "precio": 6.0, "activo": True},
+    )
+    historial = client.get(f"/api/menu/variantes/{variante.id}/precios").json()
+    assert len(historial) == 1
+    assert historial[0]["precio_anterior"] == 5.0 and historial[0]["precio_nuevo"] == 6.0
+
+    # guardar el mismo precio no ensucia el historial
+    client.put(
+        f"/api/menu/variantes/{variante.id}",
+        json={"nombre": variante.nombre, "precio": 6.0, "activo": True},
+    )
+    assert len(client.get(f"/api/menu/variantes/{variante.id}/precios").json()) == 1
+
+
+def test_se_avisa_de_los_productos_vendidos_bajo_costo(client, variante):
+    """Con inflacion el costo sube solo y el precio no: el margen promedio del
+    mes esconde que ya se esta vendiendo a perdida."""
+    costos = client.get("/api/menu/costos").json()
+    costo = next(c for c in costos if c["variante_id"] == variante.id)["costo"]
+    assert costo == 1.0  # 0.1 kg utilizables a $10 (=$8 con 80% de rendimiento)
+
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 1}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+    titulos = " ".join(i["titulo"] for i in client.get("/api/reportes/resumen?periodo=mes").json()["insights"])
+    assert "debajo de su costo" not in titulos
+
+    client.put(
+        f"/api/menu/variantes/{variante.id}",
+        json={"nombre": variante.nombre, "precio": 0.5, "activo": True},
+    )
+    insights = client.get("/api/reportes/resumen?periodo=mes").json()["insights"]
+    alerta = next(i for i in insights if "debajo de su costo" in i["titulo"])
+    assert "$0.50" in alerta["detalle"] and "$1.00" in alerta["detalle"]
+
+
 # ----------------------------------------------------- menores: numeracion
 def test_no_se_repite_el_numero_de_factura(client, variante):
     """Dos facturas con el mismo numero en el Libro de Ventas es un problema

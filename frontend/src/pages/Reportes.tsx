@@ -181,20 +181,39 @@ export default function Reportes() {
                   <tbody>
                     {datos.top_productos.map((p) => (
                       <tr key={p.nombre} className="border-t border-neutral-100">
-                        <td className="py-2 font-medium">{p.nombre}</td>
+                        <td className="py-2 font-medium">
+                          {p.nombre}
+                          {p.sin_receta && (
+                            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                              sin receta
+                            </span>
+                          )}
+                        </td>
                         <td className="text-right py-2 tabular-nums">{p.unidades}</td>
                         <td className="text-right py-2 tabular-nums">${p.ingresos.toFixed(2)}</td>
-                        <td className="text-right py-2 tabular-nums">${p.ganancia.toFixed(2)}</td>
+                        {/* Sin receta no hay costo, asi que la ganancia seria
+                            todo el ingreso y el margen 100%: mostrarlos como
+                            numeros validos hacia pasar por producto estrella
+                            justo al que no se sabe cuanto cuesta. */}
+                        <td className="text-right py-2 tabular-nums">
+                          {p.sin_receta ? (
+                            <span className="text-neutral-400">—</span>
+                          ) : (
+                            `$${p.ganancia.toFixed(2)}`
+                          )}
+                        </td>
                         <td
                           className={`text-right py-2 tabular-nums font-semibold ${
-                            p.margen_pct >= 50
-                              ? 'text-emerald-600'
-                              : p.margen_pct >= 30
-                                ? 'text-amber-600'
-                                : 'text-red-600'
+                            p.sin_receta
+                              ? 'text-neutral-400'
+                              : p.margen_pct >= 50
+                                ? 'text-emerald-600'
+                                : p.margen_pct >= 30
+                                  ? 'text-amber-600'
+                                  : 'text-red-600'
                           }`}
                         >
-                          {p.margen_pct.toFixed(0)}%
+                          {p.sin_receta ? '?' : `${p.margen_pct.toFixed(0)}%`}
                         </td>
                       </tr>
                     ))}

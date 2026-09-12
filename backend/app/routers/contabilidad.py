@@ -308,7 +308,31 @@ def salud_contable(db: Session = Depends(get_db)):
                 )
             )
 
-    # 4. Insumos con stock negativo.
+    # 4. Ventas de productos sin receta: reconocen ingreso sin ningun costo,
+    #    asi que inflan la utilidad. No descuadran nada, por eso ninguna otra
+    #    validacion los ve: el problema es que falta el vinculo, no que dos
+    #    datos discrepen.
+    con_receta = {r.variante_id for r in db.query(models.RecetaItem.variante_id).distinct()}
+    vendidas_sin_receta = {
+        item.nombre
+        for item in db.query(models.PedidoItem)
+        .join(models.Pedido)
+        .filter(models.Pedido.estado == "pagado")
+        .all()
+        if item.variante_id not in con_receta
+    }
+    if vendidas_sin_receta:
+        nombres = ", ".join(sorted(vendidas_sin_receta)[:4])
+        problemas.append(
+            schemas.ProblemaContable(
+                gravedad="aviso",
+                titulo=f"{len(vendidas_sin_receta)} producto(s) vendidos sin receta",
+                detalle=f"{nombres}. Se registro el ingreso pero ningun costo de ventas, "
+                "asi que la utilidad queda sobrestimada. Cargales la receta.",
+            )
+        )
+
+    # 5. Insumos con stock negativo.
     negativos = [i for i in db.query(models.Ingrediente).all() if (i.stock_actual or 0) < 0]
     if negativos:
         nombres = ", ".join(i.nombre for i in negativos[:4])

@@ -1,7 +1,9 @@
 import type {
   AsientoContable,
   BalanceGeneral,
+  CambioPrecio,
   Categoria,
+  CostoVariante,
   EstadoTasa,
   CierreCaja,
   Configuracion,
@@ -84,6 +86,9 @@ export const api = {
       body: JSON.stringify({ nombre, precio, activo }),
     }),
   eliminarVariante: (id: number) => req(`/menu/variantes/${id}`, { method: 'DELETE' }),
+  costosVariantes: () => req<CostoVariante[]>('/menu/costos'),
+  historialPrecios: (varianteId: number) =>
+    req<CambioPrecio[]>(`/menu/variantes/${varianteId}/precios`),
 
   listarPedidos: (estado?: string) =>
     req<Pedido[]>(`/pedidos${estado ? `?estado=${estado}` : ''}`),
@@ -251,7 +256,9 @@ export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
 export type {
   AsientoContable,
   BalanceGeneral,
+  CambioPrecio,
   Categoria,
+  CostoVariante,
   CierreCaja,
   Configuracion,
   ConfiguracionFiscal,

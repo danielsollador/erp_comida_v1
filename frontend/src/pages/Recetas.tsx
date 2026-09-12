@@ -26,8 +26,20 @@ export default function Recetas() {
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
 
+  // Que variantes ya tienen receta: sin esto la lista se ve igual para todas y
+  // el dueno no tiene forma de saber cual le falta, que es justo la que despues
+  // aparece con margen 100% en Reportes.
+  const [conReceta, setConReceta] = useState<Set<number>>(new Set())
+
   useEffect(() => {
-    api.listarCategorias().then(setCategorias)
+    api.listarCategorias().then(async (cats) => {
+      setCategorias(cats)
+      const ids = cats.flatMap((c) => c.productos.flatMap((p) => p.variantes.map((v) => v.id)))
+      const recetas = await Promise.all(
+        ids.map((id) => api.verReceta(id).then((r) => [id, r.length > 0] as const).catch(() => [id, false] as const)),
+      )
+      setConReceta(new Set(recetas.filter(([, tiene]) => tiene).map(([id]) => id)))
+    })
     api.listarIngredientes().then(setIngredientes)
   }, [])
 
@@ -101,6 +113,7 @@ export default function Recetas() {
     setGuardando(true)
     try {
       await api.actualizarReceta(abierta.id, items)
+      setConReceta((prev) => new Set(prev).add(abierta.id))
       cerrar()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar la receta')
@@ -141,16 +154,24 @@ export default function Recetas() {
               {cat.productos.map((p) =>
                 p.variantes.map((v) => {
                   const nombre = v.nombre === 'Regular' ? p.nombre : `${p.nombre} - ${v.nombre}`
+                  const falta = !conReceta.has(v.id)
                   return (
                     <button
                       key={v.id}
                       onClick={() => abrir(v, nombre)}
-                      className={`w-full flex justify-between items-center px-3 py-2 rounded-lg text-sm text-left ${
+                      className={`w-full flex justify-between items-center gap-2 px-3 py-2 rounded-lg text-sm text-left ${
                         abierta?.id === v.id ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
                       }`}
                     >
-                      <span>{nombre}</span>
-                      <span className="tabular-nums opacity-70">${v.precio.toFixed(2)}</span>
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="truncate">{nombre}</span>
+                        {falta && abierta?.id !== v.id && (
+                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                            sin receta
+                          </span>
+                        )}
+                      </span>
+                      <span className="tabular-nums opacity-70 shrink-0">${v.precio.toFixed(2)}</span>
                     </button>
                   )
                 }),

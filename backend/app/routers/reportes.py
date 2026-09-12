@@ -135,22 +135,31 @@ def _serie(periodo: str, pedidos, inicio: datetime.datetime, fin: datetime.datet
     ]
 
 
-def _top_productos(pedidos) -> List[schemas.ProductoVendido]:
+def _variantes_con_receta(db: Session) -> set:
+    return {r.variante_id for r in db.query(models.RecetaItem.variante_id).distinct()}
+
+
+def _top_productos(pedidos, con_receta: set) -> List[schemas.ProductoVendido]:
     agregado: Dict[str, Dict[str, float]] = {}
     for p in pedidos:
         for i in p.items:
             entrada = agregado.setdefault(
-                i.nombre, {"unidades": 0, "ingresos": 0.0, "costo": 0.0}
+                i.nombre, {"unidades": 0, "ingresos": 0.0, "costo": 0.0, "sin_receta": False}
             )
             entrada["unidades"] += i.cantidad
             entrada["ingresos"] += i.precio_unitario * i.cantidad
             entrada["costo"] += (i.costo_unitario or 0) * i.cantidad
+            # Sin receta no hay costo que calcular, y el margen que saldria
+            # (100%) es ficticio. Hay que poder distinguirlo de un margen bueno.
+            if i.variante_id not in con_receta:
+                entrada["sin_receta"] = True
 
     productos = []
     for nombre, datos in agregado.items():
         ingresos = round(datos["ingresos"], 2)
         costo = round(datos["costo"], 2)
         ganancia = round(ingresos - costo, 2)
+        sin_receta = bool(datos["sin_receta"])
         productos.append(
             schemas.ProductoVendido(
                 nombre=nombre,
@@ -158,7 +167,10 @@ def _top_productos(pedidos) -> List[schemas.ProductoVendido]:
                 ingresos=ingresos,
                 costo=costo,
                 ganancia=ganancia,
-                margen_pct=round(ganancia / ingresos * 100, 1) if ingresos else 0.0,
+                # Un margen calculado sobre costo cero no significa nada, asi
+                # que no se reporta como si fuera un dato bueno.
+                margen_pct=0.0 if sin_receta else (round(ganancia / ingresos * 100, 1) if ingresos else 0.0),
+                sin_receta=sin_receta,
             )
         )
     productos.sort(key=lambda x: x.ingresos, reverse=True)
@@ -215,15 +227,36 @@ def _insights(
                 )
             )
 
+    # Productos sin receta: su costo entra como cero, asi que hunden el food
+    # cost y lo pueden hacer pasar de alerta a felicitacion. Se avisa ANTES de
+    # opinar sobre el margen, y el food cost se calcula solo sobre lo que si
+    # tiene costo conocido.
+    sin_receta = [p for p in productos if p.sin_receta]
+    ventas_medibles = round(ventas - sum(p.ingresos for p in sin_receta), 2)
+    if sin_receta:
+        nombres = ", ".join(p.nombre for p in sin_receta[:3])
+        insights.append(
+            schemas.Insight(
+                tipo="alerta",
+                titulo=f"{len(sin_receta)} producto(s) sin receta: su ganancia no es real",
+                detalle=(
+                    f"{nombres}. Vendiste ${sum(p.ingresos for p in sin_receta):.2f} sin saber "
+                    "cuanto costo producirlo, asi que aparece como ganancia pura. Cargale la "
+                    "receta en Recetas para ver el margen de verdad."
+                ),
+            )
+        )
+
     # Food cost: en comida rapida sobre 35% del precio de venta aprieta el margen.
-    if costo > 0 and ventas > 0:
-        food_cost = costo / ventas * 100
+    if costo > 0 and ventas_medibles > 0:
+        food_cost = costo / ventas_medibles * 100
+        sobre = " (sobre los productos con receta cargada)" if sin_receta else ""
         if food_cost > 35:
             insights.append(
                 schemas.Insight(
                     tipo="alerta",
                     titulo=f"Los insumos se llevan {food_cost:.0f}% de la venta",
-                    detalle="Arriba de 35% el margen se aprieta. Revisa precios de venta o el costo de tus insumos.",
+                    detalle=f"Arriba de 35% el margen se aprieta{sobre}. Revisa precios de venta o el costo de tus insumos.",
                 )
             )
         else:
@@ -231,7 +264,7 @@ def _insights(
                 schemas.Insight(
                     tipo="bueno",
                     titulo=f"Costo de insumos en {food_cost:.0f}%",
-                    detalle="Esta en rango sano para comida rapida (referencia: menos de 35%).",
+                    detalle=f"Esta en rango sano para comida rapida{sobre} (referencia: menos de 35%).",
                 )
             )
     elif costo == 0:
@@ -253,7 +286,10 @@ def _insights(
                 detalle=f"{estrella.unidades} unidades, ${estrella.ingresos:.2f} en ventas.",
             )
         )
-        con_costo = [p for p in productos if p.costo > 0]
+        # Solo se opina del margen de lo que tiene costo conocido; de los que
+        # no lo tienen ya avisa el insight de arriba, que es mas util que un
+        # margen inventado.
+        con_costo = [p for p in productos if p.costo > 0 and not p.sin_receta]
         if con_costo:
             peor = min(con_costo, key=lambda p: p.margen_pct)
             if peor.margen_pct < 30:
@@ -289,6 +325,34 @@ def _insights(
                     detalle=f"${gastos:.2f} en gastos contra ${ventas:.2f} vendidos.",
                 )
             )
+
+    # Precio por debajo del costo. Se mira el precio de HOY contra el costo de
+    # HOY, no el margen del periodo: con inflacion el costo sube solo por el
+    # promedio ponderado mientras el precio solo sube cuando el dueno lo toca,
+    # y el margen promedio del mes esconde las ventas que ya van a perdida.
+    a_perdida = []
+    for variante in db.query(models.Variante).filter(models.Variante.activo.is_(True)).all():
+        costo_actual = sum(
+            r.cantidad_por_unidad * (r.ingrediente.costo_efectivo or 0)
+            for r in db.query(models.RecetaItem).filter_by(variante_id=variante.id).all()
+        )
+        if costo_actual > 0 and variante.precio < costo_actual:
+            nombre = variante.producto.nombre
+            if variante.nombre and variante.nombre.lower() != "regular":
+                nombre = f"{nombre} - {variante.nombre}"
+            a_perdida.append((nombre, variante.precio, costo_actual))
+
+    if a_perdida:
+        detalle = "; ".join(
+            f"{n} se vende a ${p:.2f} y cuesta ${c:.2f}" for n, p, c in a_perdida[:3]
+        )
+        insights.append(
+            schemas.Insight(
+                tipo="alerta",
+                titulo=f"{len(a_perdida)} producto(s) se venden por debajo de su costo",
+                detalle=f"{detalle}. Pierdes dinero en cada una que vendes: subi el precio o revisa la receta.",
+            )
+        )
 
     # Insumos por agotarse.
     bajos = [
@@ -358,7 +422,7 @@ def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
         por_metodo[metodo] = round(por_metodo.get(metodo, 0) + p.total, 2)
 
     serie = _serie(periodo, pedidos, inicio, fin)
-    productos = _top_productos(pedidos)
+    productos = _top_productos(pedidos, _variantes_con_receta(db))
 
     return schemas.ReporteResumen(
         periodo=periodo,
