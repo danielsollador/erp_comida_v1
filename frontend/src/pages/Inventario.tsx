@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
-import type { Ingrediente, SugerenciaCompra } from '../lib/types'
+import type { Ingrediente, Merma, SugerenciaCompra } from '../lib/types'
 
 export default function Inventario() {
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [sugerencias, setSugerencias] = useState<SugerenciaCompra[]>([])
+  const [mermas, setMermas] = useState<Merma[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -15,6 +16,16 @@ export default function Inventario() {
   function cargar() {
     api.listarIngredientes().then(setIngredientes)
     api.sugerenciasCompra().then(setSugerencias)
+    api.listarMermas().then(setMermas)
+  }
+
+  async function revertirMerma(m: Merma) {
+    const texto =
+      `Revertir esta merma? Vuelven ${m.cantidad.toFixed(3)} ${m.unidad} de ` +
+      `${m.ingrediente_nombre} al inventario.\n\n` +
+      'La merma original no se borra: queda marcada como revertida con su asiento de reverso.'
+    if (!window.confirm(texto)) return
+    accion(() => api.revertirMerma(m.id))
   }
 
   async function accion(fn: () => Promise<unknown>) {
@@ -206,6 +217,58 @@ export default function Inventario() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Sin esta lista el dueno no podia ver cuanto se perdia ni corregir
+            una merma duplicada: era la unica perdida del sistema sin historial. */}
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+          <div className="flex justify-between items-baseline mb-1">
+            <h2 className="font-semibold">Perdidas registradas</h2>
+            <span className="text-sm text-neutral-500">
+              ultimos 30 dias:{' '}
+              <span className="font-semibold text-neutral-800">
+                ${mermas.filter((m) => !m.revertida).reduce((s, m) => s + m.valor, 0).toFixed(2)}
+              </span>
+            </span>
+          </div>
+          <p className="text-xs text-neutral-500 mb-3">
+            Todo lo que se boto, se daño o falto en un conteo. Si registraste una por error,
+            revertila: no se borra, queda el reverso asentado.
+          </p>
+          {mermas.length === 0 && (
+            <p className="text-sm text-neutral-400">Sin perdidas registradas. Bien ahi.</p>
+          )}
+          <div className="space-y-1">
+            {mermas.map((m) => (
+              <div
+                key={m.id}
+                className={`flex flex-wrap items-center gap-2 text-sm rounded-lg px-2 py-1.5 ${
+                  m.revertida ? 'opacity-50' : 'hover:bg-neutral-50'
+                }`}
+              >
+                <span className="text-xs text-neutral-400 w-20 shrink-0">
+                  {new Date(m.fecha).toLocaleDateString('es-VE')}
+                </span>
+                <span className="flex-1 min-w-[140px]">
+                  {m.cantidad.toFixed(3)} {m.unidad} de {m.ingrediente_nombre}
+                  {m.motivo && <span className="text-neutral-400"> · {m.motivo}</span>}
+                </span>
+                <span className="tabular-nums font-medium text-red-600 w-16 text-right">
+                  ${m.valor.toFixed(2)}
+                </span>
+                {m.revertida ? (
+                  <span className="text-xs text-neutral-500 w-20 text-right">revertida</span>
+                ) : (
+                  <button
+                    onClick={() => revertirMerma(m)}
+                    className="text-xs text-blue-600 font-medium w-20 text-right"
+                  >
+                    Revertir
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         <p className="text-xs text-neutral-500">

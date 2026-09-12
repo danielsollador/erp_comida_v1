@@ -34,6 +34,16 @@ type Ctx = {
   tasa: EstadoTasa | null
   /** Convierte un monto en USD a la vista elegida y lo formatea. */
   fmt: (usd: number | null | undefined, decimales?: number) => string
+  /**
+   * Igual que `fmt`, pero para montos historicos: usa la tasa a la que se
+   * cobro ese pedido, no la de hoy. Sin esto el reporte en bolivares del mes
+   * pasado se movia solo cada vez que subia el dolar.
+   */
+  fmtCongelado: (
+    usd: number | null | undefined,
+    tasaCongelada: number | null | undefined,
+    decimales?: number,
+  ) => string
   sufijo: string
   recargar: () => void
 }
@@ -43,6 +53,7 @@ const MonedaCtx = createContext<Ctx>({
   setVista: () => {},
   tasa: null,
   fmt: (v) => `$${(v ?? 0).toFixed(2)}`,
+  fmtCongelado: (v) => `$${(v ?? 0).toFixed(2)}`,
   sufijo: 'USD',
   recargar: () => {},
 })
@@ -85,25 +96,41 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
     setVistaState(v)
   }
 
-  const fmt = (usd: number | null | undefined, decimales?: number) => {
+  // `tasaBase` permite pasar la tasa congelada de un pedido viejo; si no se
+  // pasa ninguna se usa la vigente, que es lo correcto para precios de menu.
+  const formatear = (
+    usd: number | null | undefined,
+    decimales: number | undefined,
+    tasaBase: number | null | undefined,
+  ) => {
     if (usd === null || usd === undefined) return '—'
     const d = decimales ?? 2
+    const bcv = tasaBase ?? tasa?.bcv
     switch (vista) {
       case 'bs':
         // Sin tasa no se convierte: mostrar un numero en dolares bajo etiqueta
         // de bolivares seria mentir sobre la cifra que el cliente va a pagar.
-        return tasa?.bcv ? fmtBs(usd * tasa.bcv, 2) : '…'
+        return bcv ? fmtBs(usd * bcv, 2) : '…'
       case 'usd_calle':
-        return tasa?.bcv && tasa?.paralelo
-          ? `$${((usd * tasa.bcv) / tasa.paralelo).toFixed(d)}`
-          : '…'
+        return bcv && tasa?.paralelo ? `$${((usd * bcv) / tasa.paralelo).toFixed(d)}` : '…'
       default:
         return `$${usd.toFixed(d)}`
     }
   }
 
+  const fmt = (usd: number | null | undefined, decimales?: number) =>
+    formatear(usd, decimales, null)
+
+  const fmtCongelado = (
+    usd: number | null | undefined,
+    tasaCongelada: number | null | undefined,
+    decimales?: number,
+  ) => formatear(usd, decimales, tasaCongelada)
+
   return (
-    <MonedaCtx.Provider value={{ vista, setVista, tasa, fmt, sufijo: SUFIJOS[vista], recargar }}>
+    <MonedaCtx.Provider
+      value={{ vista, setVista, tasa, fmt, fmtCongelado, sufijo: SUFIJOS[vista], recargar }}
+    >
       {children}
     </MonedaCtx.Provider>
   )

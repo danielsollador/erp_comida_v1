@@ -9,6 +9,7 @@ import type {
   FilaBalanceComprobacion,
   FilaMayor,
   Periodo,
+  SaludContable,
 } from '../lib/types'
 
 const TABS = [
@@ -23,6 +24,11 @@ type Tab = (typeof TABS)[number]['id']
 
 export default function Contabilidad() {
   const [tab, setTab] = useState<Tab>('plan')
+  const [salud, setSalud] = useState<SaludContable | null>(null)
+
+  useEffect(() => {
+    api.saludContable().then(setSalud).catch(() => setSalud(null))
+  }, [])
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -43,6 +49,46 @@ export default function Contabilidad() {
         ))}
       </div>
       <div className="p-4 max-w-4xl mx-auto">
+        {/* El "cuadra" del balance nunca falla (es una identidad de la partida
+            doble). Estos chequeos si pueden fallar, y son los que avisan que
+            los libros dejaron de reflejar la realidad. */}
+        {salud && !salud.sano && (
+          <div className="mb-4 space-y-2">
+            {salud.problemas.map((p, i) => (
+              <div
+                key={i}
+                className={`rounded-xl border p-3 ${
+                  p.gravedad === 'grave'
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-amber-50 border-amber-200'
+                }`}
+              >
+                <p
+                  className={`text-sm font-semibold ${
+                    p.gravedad === 'grave' ? 'text-red-800' : 'text-amber-800'
+                  }`}
+                >
+                  {p.titulo}
+                </p>
+                <p
+                  className={`text-xs mt-0.5 ${
+                    p.gravedad === 'grave' ? 'text-red-700' : 'text-amber-700'
+                  }`}
+                >
+                  {p.detalle}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+        {salud?.sano && (
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <p className="text-sm text-emerald-800">
+              Libros sanos: sin movimientos huerfanos, sin activos en negativo, e inventario
+              contable acorde a las existencias reales.
+            </p>
+          </div>
+        )}
         {tab === 'plan' && <PlanCuentas />}
         {tab === 'diario' && <Diario />}
         {tab === 'comprobacion' && <BalanceComprobacion />}

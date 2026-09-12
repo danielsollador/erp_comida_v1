@@ -105,7 +105,25 @@ export default function POS() {
       setCarrito({})
       refrescarPedidos()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al enviar la comanda')
+      const mensaje = e instanceof Error ? e.message : 'Error al enviar la comanda'
+      // El backend bloquea la venta si no hay insumos, pero el conteo del
+      // sistema puede estar atrasado y el cajero tiene un cliente enfrente.
+      // Se le muestra que falta y el decide; nunca se vende a ciegas.
+      if (mensaje.startsWith('No alcanza el inventario')) {
+        if (window.confirm(`${mensaje}.\n\nVender igual? (revisa el inventario despues)`)) {
+          try {
+            await api.crearPedido(items, true)
+            setCarrito({})
+            refrescarPedidos()
+            return
+          } catch (e2) {
+            setError(e2 instanceof Error ? e2.message : 'Error al enviar la comanda')
+            return
+          }
+        }
+        return
+      }
+      setError(mensaje)
     }
   }
 
@@ -124,11 +142,18 @@ export default function POS() {
     refrescarPedidos()
   }
 
-  async function anular(pedidoId: number) {
-    if (!window.confirm('Anular este pedido?')) return
+  async function anular(pedido: Pedido) {
+    // Lo que pasa con los insumos depende de esto, asi que se pregunta en vez
+    // de asumir: si la comida ya se hizo, se botó y hay que registrarla como
+    // merma; si no, el stock vuelve al inventario.
+    const yaHecha = pedido.estado === 'listo' || pedido.items.some((i) => i.preparado)
+    const texto = yaHecha
+      ? 'La cocina ya preparo este pedido. Al anularlo se registra la comida como merma. Continuar?'
+      : 'Anular este pedido? Los insumos vuelven al inventario.'
+    if (!window.confirm(texto)) return
     setError('')
     try {
-      await api.anularPedido(pedidoId)
+      await api.anularPedido(pedido.id, yaHecha)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo anular')
     }
@@ -224,7 +249,7 @@ export default function POS() {
                   <span className="font-semibold whitespace-nowrap">{fmt(pedido.total)}</span>
                   <div className="flex items-center gap-3 shrink-0">
                     <button
-                      onClick={() => anular(pedido.id)}
+                      onClick={() => anular(pedido)}
                       className="text-red-500 text-xs font-medium"
                     >
                       Anular

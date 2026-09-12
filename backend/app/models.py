@@ -116,6 +116,9 @@ class Gasto(Base):
     descripcion = Column(String, nullable=False)
     categoria = Column(String, default="Operativo")  # Insumos | Servicios | Sueldos | Otros
     monto = Column(Float, nullable=False)
+    # De donde salio la plata. Sin esto un sueldo pagado por transferencia
+    # bajaba igual el efectivo esperado del cierre de caja.
+    metodo_pago = Column(String, default="Efectivo")  # Efectivo | Banco
     fecha = Column(DateTime, default=ahora)
 
 
@@ -126,6 +129,9 @@ class Merma(Base):
     ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
     cantidad = Column(Float, nullable=False)
     motivo = Column(String, default="")
+    # Una merma mal cargada se revierte con un asiento de reverso, no se borra:
+    # el error queda documentado igual que en Compras.
+    revertida = Column(Boolean, default=False)
     fecha = Column(DateTime, default=ahora)
 
     ingrediente = relationship("Ingrediente")
@@ -159,6 +165,11 @@ class FacturaCompra(Base):
     base_imponible = Column(Float, nullable=False)
     iva = Column(Float, default=0)
     descripcion = Column(String, default="")
+    # Solo relevante para forma_pago="Credito": Efectivo/Banco se dan por
+    # pagadas al momento de cargarlas, porque la plata ya salio ahi mismo.
+    pagada = Column(Boolean, default=True)
+    fecha_vencimiento = Column(DateTime, nullable=True)
+    fecha_pago = Column(DateTime, nullable=True)
 
     @property
     def total(self):

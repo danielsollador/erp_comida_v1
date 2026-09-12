@@ -39,6 +39,7 @@ PLAN_DE_CUENTAS = [
     ("5010", "Costo de ventas (insumos)", "costo", "deudora"),
     ("6010", "Gastos operativos", "gasto", "deudora"),
     ("6020", "Perdida por merma", "gasto", "deudora"),
+    ("6030", "Faltante / sobrante de caja", "gasto", "deudora"),
 ]
 
 # Metodo de pago del pedido -> cuenta donde entra el dinero.
@@ -64,6 +65,13 @@ CUENTA_PAGO_COMPRA = {
     "Credito": "2010",
 }
 
+# Con que se salda despues una factura que quedo a credito. No incluye
+# "Credito" - no se puede pagar una deuda con otra deuda.
+CUENTA_LIQUIDACION_CREDITO = {
+    "Efectivo": "1010",
+    "Banco": "1020",
+}
+
 
 def seed_plan_de_cuentas(db: Session) -> None:
     """Idempotente: agrega las cuentas que falten sin duplicar las que ya existen.
@@ -81,6 +89,41 @@ def seed_plan_de_cuentas(db: Session) -> None:
         agregadas = True
     if agregadas:
         db.commit()
+
+
+def asiento_de_apertura(db: Session) -> None:
+    """Registra el inventario con que arranca el negocio contra su capital.
+
+    Sin esto los libros empiezan en cero mientras el local ya tiene mercancia:
+    la primera venta saca costo de una cuenta de inventario vacia y `1040` se
+    va a negativo, un activo imposible que ademas el Balance General no
+    detecta (cuadra igual, porque la diferencia la absorbe el patrimonio).
+
+    Idempotente: si ya existe un asiento de apertura, no hace nada.
+    """
+    ya_existe = (
+        db.query(models.AsientoContable).filter(models.AsientoContable.origen == "apertura").first()
+    )
+    if ya_existe:
+        return
+
+    valor = round(
+        sum(
+            (i.stock_actual or 0) * (i.costo_unitario or 0)
+            for i in db.query(models.Ingrediente).all()
+        ),
+        2,
+    )
+    if valor <= 0:
+        return
+
+    crear_asiento(
+        db,
+        "Apertura: inventario inicial",
+        [("1040", valor, 0.0), ("3010", 0.0, valor)],
+        origen="apertura",
+    )
+    db.commit()
 
 
 def _cuenta(db: Session, codigo: str) -> models.CuentaContable:
@@ -155,13 +198,92 @@ def registrar_venta(db: Session, pedido: models.Pedido) -> None:
 
 
 def registrar_gasto(db: Session, gasto: models.Gasto) -> None:
+    cuenta_pago = "1020" if gasto.metodo_pago == "Banco" else "1010"
     crear_asiento(
         db,
         f"Gasto: {gasto.descripcion}",
-        [("6010", gasto.monto, 0.0), ("1010", 0.0, gasto.monto)],
+        [("6010", gasto.monto, 0.0), (cuenta_pago, 0.0, gasto.monto)],
         origen="gasto",
         referencia_id=gasto.id,
         fecha=gasto.fecha,
+    )
+
+
+def saldos_por_tipo(db: Session, inicio, fin) -> dict:
+    """{ingreso, costo, gasto} del periodo, tal como los ve el libro.
+
+    Es la fuente unica para "cuanto gane": Reportes mostraba su propia version
+    (ventas brutas con IVA adentro y sin contar mermas) y daba un numero
+    distinto al del Estado de Resultados por el mismo periodo.
+    """
+    totales = {"ingreso": 0.0, "costo": 0.0, "gasto": 0.0}
+    cuentas = (
+        db.query(models.CuentaContable)
+        .filter(models.CuentaContable.tipo.in_(list(totales)))
+        .all()
+    )
+    for cuenta in cuentas:
+        movimientos = (
+            db.query(models.MovimientoContable)
+            .join(models.AsientoContable)
+            .filter(
+                models.MovimientoContable.cuenta_id == cuenta.id,
+                models.AsientoContable.fecha >= inicio,
+                models.AsientoContable.fecha < fin,
+            )
+            .all()
+        )
+        debe = sum(m.debe for m in movimientos)
+        haber = sum(m.haber for m in movimientos)
+        saldo = debe - haber if cuenta.naturaleza == "deudora" else haber - debe
+        totales[cuenta.tipo] += saldo
+    return {k: round(v, 2) for k, v in totales.items()}
+
+
+def movimiento_efectivo(db: Session, inicio, fin) -> float:
+    """Neto que entro (+) o salio (-) de la gaveta en el rango, segun los libros.
+
+    Es LA fuente de verdad del efectivo: incluye ventas cobradas en efectivo,
+    gastos, pagos a proveedores y compras sueltas, sin que Caja tenga que
+    conocer cada una de esas vias. Antes Caja restaba solo los Gastos y por eso
+    mostraba faltantes que no existian.
+    """
+    cuenta = _cuenta(db, "1010")
+    movimientos = (
+        db.query(models.MovimientoContable)
+        .join(models.AsientoContable)
+        .filter(
+            models.MovimientoContable.cuenta_id == cuenta.id,
+            models.AsientoContable.fecha >= inicio,
+            models.AsientoContable.fecha < fin,
+        )
+        .all()
+    )
+    return round(sum(m.debe - m.haber for m in movimientos), 2)
+
+
+def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
+    """Lleva a los libros el faltante o sobrante del conteo fisico.
+
+    Sin esto, `1010 Caja` nunca se concilia con lo que de verdad hay en la
+    gaveta: la diferencia quedaba solo como una nota en la tabla de cierres.
+    """
+    diferencia = round(cierre.diferencia, 2)
+    if abs(diferencia) < 0.01:
+        return
+    if diferencia < 0:  # falta plata: sale de caja y se reconoce como perdida
+        lineas = [("6030", abs(diferencia), 0.0), ("1010", 0.0, abs(diferencia))]
+        texto = "Faltante de caja"
+    else:  # sobra plata: entra a caja y baja el gasto acumulado del rubro
+        lineas = [("1010", diferencia, 0.0), ("6030", 0.0, diferencia)]
+        texto = "Sobrante de caja"
+    crear_asiento(
+        db,
+        f"{texto} del {cierre.fecha.date()}",
+        lineas,
+        origen="cierre_caja",
+        referencia_id=cierre.id,
+        fecha=cierre.fecha,
     )
 
 
@@ -198,6 +320,21 @@ def registrar_factura_compra(db: Session, factura: models.FacturaCompra) -> None
     )
 
 
+def registrar_pago_factura(db: Session, factura: models.FacturaCompra, forma_pago: str) -> None:
+    """Salda una factura que habia quedado a credito: baja la deuda (2010) y
+    sale la plata de donde de verdad salio. Sin esto, `2010 Cuentas por
+    pagar` solo crece y nunca refleja que ya se le pago al proveedor.
+    """
+    cuenta_pago = CUENTA_LIQUIDACION_CREDITO.get(forma_pago, "1010")
+    crear_asiento(
+        db,
+        f"Pago factura {factura.numero_factura} ({factura.proveedor_nombre})",
+        [("2010", factura.total, 0.0), (cuenta_pago, 0.0, factura.total)],
+        origen="pago_factura",
+        referencia_id=factura.id,
+    )
+
+
 def registrar_merma(db: Session, ingrediente: models.Ingrediente, valor: float, referencia_id: int) -> None:
     if valor <= 0:
         return
@@ -206,5 +343,40 @@ def registrar_merma(db: Session, ingrediente: models.Ingrediente, valor: float, 
         f"Merma de {ingrediente.nombre}",
         [("6020", valor, 0.0), ("1040", 0.0, valor)],
         origen="merma",
+        referencia_id=referencia_id,
+    )
+
+
+def registrar_reverso_merma(
+    db: Session, ingrediente: models.Ingrediente, valor: float, referencia_id: int
+) -> None:
+    """Contra-asiento de una merma mal cargada: devuelve el valor al inventario."""
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Reverso de merma de {ingrediente.nombre}",
+        [("1040", valor, 0.0), ("6020", 0.0, valor)],
+        origen="reverso_merma",
+        referencia_id=referencia_id,
+    )
+
+
+def registrar_sobrante_inventario(
+    db: Session, ingrediente: models.Ingrediente, valor: float, referencia_id: int
+) -> None:
+    """El conteo fisico encontro mas mercancia de la que decia el sistema.
+
+    Entra al inventario contra la cuenta de merma (baja la perdida acumulada),
+    porque un sobrante casi siempre es una merma o un consumo mal registrado
+    antes, no mercancia que aparecio de la nada.
+    """
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Sobrante de inventario: {ingrediente.nombre}",
+        [("1040", valor, 0.0), ("6020", 0.0, valor)],
+        origen="ajuste_inventario",
         referencia_id=referencia_id,
     )

@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from .. import combos, models, schemas
+from .. import combos, contabilidad, impuestos, models, schemas
 from ..database import get_db
 from ..timeutils import rango_periodo
 
@@ -34,13 +34,65 @@ def _totales(pedidos) -> Tuple[float, float]:
     return ventas, costo
 
 
-def _gastos_periodo(db: Session, inicio: datetime.datetime, fin: datetime.datetime) -> float:
-    gastos = (
-        db.query(models.Gasto)
-        .filter(models.Gasto.fecha >= inicio, models.Gasto.fecha < fin)
+def _pedidos_anulados(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
+    return (
+        db.query(models.Pedido)
+        .filter(
+            models.Pedido.estado == "anulado",
+            models.Pedido.creado_en >= inicio,
+            models.Pedido.creado_en < fin,
+        )
         .all()
     )
-    return sum(g.monto for g in gastos)
+
+
+def _valor_anulado(db: Session, inicio: datetime.datetime, fin: datetime.datetime) -> float:
+    """Cuanto dinero de venta se perdio en anulaciones.
+
+    Contar cuantos pedidos se anularon no le dice nada al dueno; lo que importa
+    es si eso le esta costando plata.
+    """
+    return round(sum(p.total for p in _pedidos_anulados(db, inicio, fin)), 2)
+
+
+def _merma_periodo(db: Session, inicio: datetime.datetime, fin: datetime.datetime) -> float:
+    """Valor de lo que se boto en el periodo, segun la cuenta 6020."""
+    cuenta = (
+        db.query(models.CuentaContable).filter(models.CuentaContable.codigo == "6020").first()
+    )
+    if not cuenta:
+        return 0.0
+    movimientos = (
+        db.query(models.MovimientoContable)
+        .join(models.AsientoContable)
+        .filter(
+            models.MovimientoContable.cuenta_id == cuenta.id,
+            models.AsientoContable.fecha >= inicio,
+            models.AsientoContable.fecha < fin,
+        )
+        .all()
+    )
+    return round(sum(m.debe - m.haber for m in movimientos), 2)
+
+
+def _ventas_en_bs(pedidos) -> float:
+    """Bolivares que de verdad entraron, cada venta a la tasa de SU dia.
+
+    Convertir el total en dolares a la tasa de hoy haria que el historico en
+    bolivares cambiara solo cada vez que se mueve el dolar.
+    """
+    return round(sum(p.total * (p.tasa_bcv or 0) for p in pedidos), 2)
+
+
+def _iva_cobrado(pedidos) -> float:
+    """IVA contenido en las ventas facturadas: entro a la caja pero no es del negocio."""
+    total = 0.0
+    for p in pedidos:
+        if not p.facturado:
+            continue
+        _base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
+        total += iva
+    return round(total, 2)
 
 
 def _serie(periodo: str, pedidos, inicio: datetime.datetime, fin: datetime.datetime):
@@ -123,6 +175,7 @@ def _insights(
     productos: List[schemas.ProductoVendido],
     serie: List[schemas.PuntoSerie],
     ventas_previas: float,
+    merma: float = 0,
 ) -> List[schemas.Insight]:
     """Analisis deterministico: sin llamadas a ningun modelo, sin costo variable."""
     insights: List[schemas.Insight] = []
@@ -253,6 +306,21 @@ def _insights(
             )
         )
 
+    # Merma: se paga igual que un insumo vendido, pero no deja ingreso. Antes no
+    # aparecia en ningun reporte, solo en el libro contable.
+    if merma > 0 and ventas > 0:
+        peso_merma = merma / ventas * 100
+        insights.append(
+            schemas.Insight(
+                tipo="alerta" if peso_merma > 3 else "info",
+                titulo=f"Perdiste ${merma:.2f} en merma",
+                detalle=(
+                    f"Es el {peso_merma:.1f}% de lo que vendiste. "
+                    "Revisa Inventario para ver que se esta botando."
+                ),
+            )
+        )
+
     return insights
 
 
@@ -264,24 +332,25 @@ def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
     inicio, fin, etiqueta = rango_periodo(periodo)
     pedidos = _pedidos_pagados(db, inicio, fin)
 
-    ventas, costo = _totales(pedidos)
-    gastos = _gastos_periodo(db, inicio, fin)
-    ganancia_bruta = ventas - costo
+    # Las ventas brutas (lo que entro por caja) salen de los pedidos, porque es
+    # el numero que el dueno reconoce. Pero la GANANCIA sale de la contabilidad:
+    # el IVA cobrado no es ingreso suyo, y las mermas si son perdida aunque no
+    # sean un "gasto" de la tabla de gastos. Antes Reportes calculaba los dos
+    # por su cuenta y daba 8% mas de ganancia que el Estado de Resultados.
+    ventas, _costo_pedidos = _totales(pedidos)
+    iva_cobrado = _iva_cobrado(pedidos)
+    libro = contabilidad.saldos_por_tipo(db, inicio, fin)
+    ingresos_netos = libro["ingreso"]
+    costo = libro["costo"]
+    gastos = libro["gasto"]
+    ganancia_bruta = round(ingresos_netos - costo, 2)
 
     # Mismo tamano de ventana, inmediatamente anterior.
     duracion = fin - inicio
     pedidos_previos = _pedidos_pagados(db, inicio - duracion, inicio)
     ventas_previas, _ = _totales(pedidos_previos)
 
-    anulados = (
-        db.query(models.Pedido)
-        .filter(
-            models.Pedido.estado == "anulado",
-            models.Pedido.creado_en >= inicio,
-            models.Pedido.creado_en < fin,
-        )
-        .count()
-    )
+    anulados = len(_pedidos_anulados(db, inicio, fin))
 
     por_metodo: Dict[str, float] = {}
     for p in pedidos:
@@ -295,19 +364,32 @@ def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
         periodo=periodo,
         etiqueta=etiqueta,
         ventas=round(ventas, 2),
+        ventas_bs=_ventas_en_bs(pedidos),
+        iva_cobrado=iva_cobrado,
+        ingresos_netos=ingresos_netos,
         pedidos=len(pedidos),
         ticket_promedio=round(ventas / len(pedidos), 2) if pedidos else 0.0,
         costo_insumos=round(costo, 2),
-        ganancia_bruta=round(ganancia_bruta, 2),
-        margen_pct=round(ganancia_bruta / ventas * 100, 1) if ventas else 0.0,
+        ganancia_bruta=ganancia_bruta,
+        margen_pct=round(ganancia_bruta / ingresos_netos * 100, 1) if ingresos_netos else 0.0,
         gastos=round(gastos, 2),
         ganancia_neta=round(ganancia_bruta - gastos, 2),
+        valor_anulado=_valor_anulado(db, inicio, fin),
         pedidos_anulados=anulados,
         por_metodo_pago=por_metodo,
         serie=serie,
         top_productos=productos[:10],
         insights=_insights(
-            db, periodo, ventas, costo, gastos, pedidos, productos, serie, ventas_previas
+            db,
+            periodo,
+            ventas,
+            costo,
+            gastos,
+            pedidos,
+            productos,
+            serie,
+            ventas_previas,
+            merma=_merma_periodo(db, inicio, fin),
         ),
     )
 

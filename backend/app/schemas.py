@@ -92,6 +92,21 @@ class MermaRequest(BaseModel):
     motivo: str = ""
 
 
+class Merma(BaseModel):
+    id: int
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    cantidad: float
+    valor: float
+    motivo: str
+    fecha: datetime.datetime
+    revertida: bool
+
+    class Config:
+        from_attributes = True
+
+
 class AjusteStockRequest(BaseModel):
     stock_real: float
     motivo: str = "Conteo fisico"
@@ -101,6 +116,7 @@ class GastoBase(BaseModel):
     descripcion: str
     categoria: str = "Operativo"
     monto: float
+    metodo_pago: str = "Efectivo"  # Efectivo | Banco
 
 
 class GastoCreate(GastoBase):
@@ -138,6 +154,9 @@ class SugerenciaCompra(BaseModel):
     stock_actual: float
     stock_minimo: float
     cantidad_sugerida: float
+    # Cuantos dias aguanta al ritmo de venta real. None = todavia no hay
+    # historial de consumo de ese insumo.
+    dias_restantes: Optional[float] = None
     razon: str
 
 
@@ -150,6 +169,15 @@ class PedidoItemCreate(BaseModel):
 class PedidoCreate(BaseModel):
     items: List[PedidoItemCreate]
     nota: str = ""
+    # El POS lo manda en true cuando el cajero ya vio el aviso de "no alcanza
+    # el inventario" y decidio vender igual (el conteo del sistema puede estar
+    # atrasado). Por defecto no se deja, para no vender lo que no hay.
+    permitir_sin_stock: bool = False
+
+
+class AnularRequest(BaseModel):
+    # None = que el sistema lo deduzca del estado del pedido.
+    comida_preparada: Optional[bool] = None
 
 
 class PedidoItem(BaseModel):
@@ -175,6 +203,10 @@ class Pedido(BaseModel):
     creado_en: datetime.datetime
     facturado: bool = False
     numero_factura: Optional[str] = None
+    # Tasa a la que se cobro. Se expone para que la pantalla muestre los
+    # bolivares que de verdad entraron ese dia, y no los que darian esos
+    # dolares a la tasa de hoy.
+    tasa_bcv: Optional[float] = None
     items: List[PedidoItem]
 
     class Config:
@@ -200,7 +232,14 @@ class ResumenCaja(BaseModel):
     fecha: str
     total_ventas: float
     por_metodo_pago: dict
+    # Lo que quedo en la gaveta de dias anteriores: la caja no arranca en cero
+    # cada manana.
+    saldo_anterior: float = 0
     efectivo_esperado: float
+    # Lo que salio de la gaveta hoy sin ser una venta (gastos, pagos a
+    # proveedores, compras sueltas). Se muestra para que el faltante deje de
+    # parecer inexplicable.
+    salidas_efectivo: float = 0
     cantidad_pedidos: int
 
 
@@ -228,15 +267,21 @@ class Insight(BaseModel):
 class ReporteResumen(BaseModel):
     periodo: str
     etiqueta: str
-    ventas: float
+    ventas: float  # bruto que entro por caja, incluido el IVA de lo facturado
+    # Bolivares reales del periodo: cada venta a la tasa del dia en que se
+    # cobro. No es `ventas` por la tasa de hoy.
+    ventas_bs: float = 0
+    iva_cobrado: float = 0  # parte de `ventas` que le pertenece al SENIAT
+    ingresos_netos: float = 0  # ventas - iva_cobrado; es el ingreso real del negocio
     pedidos: int
     ticket_promedio: float
     costo_insumos: float
     ganancia_bruta: float
     margen_pct: float
-    gastos: float
+    gastos: float  # incluye mermas y faltantes de caja, no solo la tabla de gastos
     ganancia_neta: float
     pedidos_anulados: int
+    valor_anulado: float = 0
     por_metodo_pago: dict
     serie: List[PuntoSerie]
     top_productos: List[ProductoVendido]
@@ -412,6 +457,17 @@ class EstadoResultados(BaseModel):
     detalle_gastos: List[FilaBalanceComprobacion]
 
 
+class ProblemaContable(BaseModel):
+    gravedad: str  # grave | aviso
+    titulo: str
+    detalle: str
+
+
+class SaludContable(BaseModel):
+    sano: bool
+    problemas: List[ProblemaContable]
+
+
 class BalanceGeneral(BaseModel):
     fecha: str
     activos: List[FilaBalanceComprobacion]
@@ -462,6 +518,9 @@ class FacturaCompraCreate(FacturaCompraBase):
     # puntual): se carga la base a mano, como antes.
     base_imponible: Optional[float] = None
     iva: float = 0
+    # Solo tiene sentido si forma_pago="Credito": para cuando el dueno se
+    # comprometio a pagar, y poder avisar si ya se paso la fecha.
+    fecha_vencimiento: Optional[datetime.datetime] = None
 
 
 class FacturaCompra(FacturaCompraBase):
@@ -470,10 +529,17 @@ class FacturaCompra(FacturaCompraBase):
     base_imponible: float
     iva: float
     total: float
+    pagada: bool
+    fecha_vencimiento: Optional[datetime.datetime] = None
+    fecha_pago: Optional[datetime.datetime] = None
     items: List[LineaFactura] = []
 
     class Config:
         from_attributes = True
+
+
+class PagoFacturaRequest(BaseModel):
+    forma_pago: str = "Efectivo"  # Efectivo|Banco - con que se salda la deuda
 
 
 # ----------------------------------------------------------------- impuestos

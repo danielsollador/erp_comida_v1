@@ -32,9 +32,11 @@ async def lifespan(app: FastAPI):
     # Arranque: tablas, datos de ejemplo si la base esta vacia, y respaldos.
     Base.metadata.create_all(bind=engine)
     aplicar_migraciones()
-    seed_if_empty()
+    # El plan de cuentas va PRIMERO: el seed del inventario inicial genera su
+    # asiento de apertura y necesita que las cuentas ya existan.
     with SessionLocal() as db:
         seed_plan_de_cuentas(db)
+    seed_if_empty()
 
     # Un respaldo apenas arranca (por si el servidor no lleva 6 horas prendido
     # desde el ultimo) y luego uno automatico cada pocas horas, en background.

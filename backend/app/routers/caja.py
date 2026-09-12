@@ -29,14 +29,27 @@ def _pedidos_pagados_hoy(db: Session):
     )
 
 
-def _gastos_efectivo_hoy(db: Session) -> float:
+def _salidas_efectivo_hoy(db: Session) -> float:
+    """Todo lo que salio de la gaveta hoy que no fue una venta, segun los libros."""
     inicio, fin = _rango_hoy()
-    gastos = (
-        db.query(models.Gasto)
-        .filter(models.Gasto.fecha >= inicio, models.Gasto.fecha < fin)
-        .all()
+    ventas_efectivo = sum(
+        p.total for p in _pedidos_pagados_hoy(db) if p.metodo_pago == "Efectivo"
     )
-    return sum(g.monto for g in gastos)
+    # neto = entradas - salidas. Las unicas entradas son las ventas en efectivo,
+    # asi que lo demas que movio la cuenta son salidas.
+    neto = contabilidad.movimiento_efectivo(db, inicio, fin)
+    return round(ventas_efectivo - neto, 2)
+
+
+def _saldo_anterior(db: Session) -> float:
+    """Lo que quedo en la gaveta de dias anteriores.
+
+    La caja no arranca en cero cada manana: si ayer sobro plata, hoy sigue ahi.
+    Sin esto, un dia en que se le paga al proveedor mas de lo que se vendio en
+    efectivo mostraba un "deberia haber" negativo, que no significa nada.
+    """
+    inicio, _fin = _rango_hoy()
+    return contabilidad.movimiento_efectivo(db, datetime.datetime.min, inicio)
 
 
 @router.get("/resumen", response_model=schemas.ResumenCaja)
@@ -49,20 +62,44 @@ def resumen_caja(db: Session = Depends(get_db)):
         por_metodo[metodo] = por_metodo.get(metodo, 0) + pedido.total
         total += pedido.total
 
-    # Lo que debe haber fisicamente en la gaveta = efectivo cobrado - gastos pagados en efectivo.
-    efectivo_esperado = por_metodo.get("Efectivo", 0) - _gastos_efectivo_hoy(db)
+    # Lo que debe haber en la gaveta lo dice la contabilidad, no un calculo
+    # aparte: el saldo de la cuenta 1010 ya incluye ventas en efectivo, gastos,
+    # pagos a proveedores y compras sueltas. Cuando Caja llevaba su propia
+    # cuenta solo restaba Gastos, y los dias de pagar al proveedor mostraba un
+    # faltante inexistente (medido: hasta $93.95 en un dia).
+    saldo_anterior = _saldo_anterior(db)
+    salidas = _salidas_efectivo_hoy(db)
+    efectivo_esperado = round(
+        saldo_anterior + por_metodo.get("Efectivo", 0) - salidas, 2
+    )
 
     return schemas.ResumenCaja(
         fecha=hoy().isoformat(),
         total_ventas=round(total, 2),
         por_metodo_pago={k: round(v, 2) for k, v in por_metodo.items()},
-        efectivo_esperado=round(efectivo_esperado, 2),
+        saldo_anterior=saldo_anterior,
+        efectivo_esperado=efectivo_esperado,
+        salidas_efectivo=salidas,
         cantidad_pedidos=len(pedidos),
     )
 
 
 @router.post("/cerrar", response_model=schemas.CierreCaja)
 def cerrar_caja(body: schemas.CierreCajaRequest, db: Session = Depends(get_db)):
+    inicio, fin = _rango_hoy()
+    # Cerrar dos veces el mismo dia ahora genera dos asientos de diferencia y
+    # descuadraria la caja contra si misma.
+    ya_cerrada = (
+        db.query(models.CierreCaja)
+        .filter(models.CierreCaja.fecha >= inicio, models.CierreCaja.fecha < fin)
+        .first()
+    )
+    if ya_cerrada:
+        raise HTTPException(
+            status_code=409,
+            detail="La caja de hoy ya fue cerrada. Para corregir, registra la diferencia como un gasto o un ajuste.",
+        )
+
     resumen = resumen_caja(db)
     diferencia = round(body.efectivo_contado - resumen.efectivo_esperado, 2)
     db_cierre = models.CierreCaja(
@@ -73,6 +110,10 @@ def cerrar_caja(body: schemas.CierreCajaRequest, db: Session = Depends(get_db)):
         nota=body.nota,
     )
     db.add(db_cierre)
+    db.flush()
+    # El faltante/sobrante tambien va a los libros: si no, 1010 nunca se
+    # concilia con lo que de verdad hay en la gaveta.
+    contabilidad.registrar_diferencia_caja(db, db_cierre)
     db.commit()
     db.refresh(db_cierre)
     return _a_schema(db_cierre)
@@ -125,10 +166,18 @@ def eliminar_gasto(gasto_id: int, db: Session = Depends(get_db)):
     db_gasto = db.query(models.Gasto).filter(models.Gasto.id == gasto_id).first()
     if not db_gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
-    # Sin esto el asiento contable del gasto queda huerfano en los libros.
-    db.query(models.AsientoContable).filter(
-        models.AsientoContable.origen == "gasto", models.AsientoContable.referencia_id == gasto_id
-    ).delete()
+    # Uno por uno con db.delete(): un DELETE masivo sobre el query NO dispara el
+    # cascade del ORM y dejaria vivos los movimientos del asiento, que el balance
+    # de comprobacion sigue sumando aunque el asiento ya no exista.
+    for asiento in (
+        db.query(models.AsientoContable)
+        .filter(
+            models.AsientoContable.origen == "gasto",
+            models.AsientoContable.referencia_id == gasto_id,
+        )
+        .all()
+    ):
+        db.delete(asiento)
     db.delete(db_gasto)
     db.commit()
     return {"ok": True}

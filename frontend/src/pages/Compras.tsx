@@ -26,8 +26,15 @@ export default function Compras() {
   // Sin insumos (servicios, activos...): un monto suelto, como antes.
   const [base, setBase] = useState('')
   const [iva, setIva] = useState('')
+  const [fechaVencimiento, setFechaVencimiento] = useState('')
+
+  // Con que forma de pago se va a saldar cada factura a credito pendiente -
+  // una por fila, para el boton "Marcar pagada" de cuentas por pagar.
+  const [liquidacion, setLiquidacion] = useState<Record<number, string>>({})
+  const [pagando, setPagando] = useState<number | null>(null)
 
   const esInsumos = categoria === 'Insumos'
+  const esCredito = formaPago === 'Credito'
 
   useEffect(() => {
     cargar()
@@ -102,6 +109,7 @@ export default function Compras() {
     setLineas([{ ingrediente_id: 0, cantidad: '', costo_unitario: '' }])
     setBase('')
     setIva('')
+    setFechaVencimiento('')
   }
 
   async function agregarFactura() {
@@ -133,6 +141,7 @@ export default function Compras() {
           descripcion: descripcion.trim(),
           items,
           iva: ivaLineas,
+          fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
         })
       } else {
         const baseNum = Number(base)
@@ -149,6 +158,7 @@ export default function Compras() {
           descripcion: descripcion.trim(),
           base_imponible: baseNum,
           iva: Number(iva) || 0,
+          fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
         })
       }
       limpiarFormulario()
@@ -174,6 +184,35 @@ export default function Compras() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo borrar')
     }
+  }
+
+  async function marcarPagada(f: FacturaCompra) {
+    setError('')
+    setPagando(f.id)
+    try {
+      await api.pagarFacturaCompra(f.id, liquidacion[f.id] || 'Efectivo')
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar el pago')
+    } finally {
+      setPagando(null)
+    }
+  }
+
+  const hoy = new Date()
+  const pendientes = facturas
+    .filter((f) => f.forma_pago === 'Credito' && !f.pagada)
+    .sort((a, b) => {
+      const va = a.fecha_vencimiento ? new Date(a.fecha_vencimiento).getTime() : Infinity
+      const vb = b.fecha_vencimiento ? new Date(b.fecha_vencimiento).getTime() : Infinity
+      return va - vb
+    })
+  const totalPendiente = pendientes.reduce((sum, f) => sum + f.total, 0)
+
+  function diasVencida(f: FacturaCompra): number | null {
+    if (!f.fecha_vencimiento) return null
+    const dias = Math.floor((hoy.getTime() - new Date(f.fecha_vencimiento).getTime()) / 86400000)
+    return dias
   }
 
   return (
@@ -236,6 +275,17 @@ export default function Compras() {
               placeholder="Descripcion (opcional)"
               className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
+            {esCredito && (
+              <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
+                Vence
+                <input
+                  value={fechaVencimiento}
+                  onChange={(e) => setFechaVencimiento(e.target.value)}
+                  type="date"
+                  className="flex-1 outline-none text-neutral-800"
+                />
+              </label>
+            )}
           </div>
 
           {esInsumos ? (
@@ -336,6 +386,59 @@ export default function Compras() {
           </button>
         </div>
 
+        {pendientes.length > 0 && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+            <div className="flex justify-between items-baseline mb-3">
+              <h2 className="font-semibold">Cuentas por pagar</h2>
+              <span className="text-sm text-neutral-500">
+                Debemos <span className="font-semibold text-neutral-800">${totalPendiente.toFixed(2)}</span>
+              </span>
+            </div>
+            <div className="space-y-2">
+              {pendientes.map((f) => {
+                const dias = diasVencida(f)
+                const vencida = dias !== null && dias > 0
+                return (
+                  <div
+                    key={f.id}
+                    className={`flex flex-wrap items-center gap-2 rounded-lg p-2 text-sm ${
+                      vencida ? 'bg-red-50' : 'bg-neutral-50'
+                    }`}
+                  >
+                    <span className="font-medium flex-1 min-w-[140px]">{f.proveedor_nombre}</span>
+                    <span className="text-neutral-500 font-mono text-xs">{f.numero_factura}</span>
+                    <span
+                      className={`text-xs ${vencida ? 'text-red-600 font-semibold' : 'text-neutral-500'}`}
+                    >
+                      {f.fecha_vencimiento
+                        ? vencida
+                          ? `Vencida hace ${dias} dias`
+                          : `Vence ${new Date(f.fecha_vencimiento).toLocaleDateString('es-VE')}`
+                        : 'Sin fecha de vencimiento'}
+                    </span>
+                    <span className="font-semibold tabular-nums w-20 text-right">${f.total.toFixed(2)}</span>
+                    <select
+                      value={liquidacion[f.id] || 'Efectivo'}
+                      onChange={(e) => setLiquidacion((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                      className="border border-neutral-300 rounded-lg px-2 py-1 text-xs"
+                    >
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Banco">Banco</option>
+                    </select>
+                    <button
+                      onClick={() => marcarPagada(f)}
+                      disabled={pagando === f.id}
+                      className="bg-neutral-900 text-white rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50"
+                    >
+                      Marcar pagada
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
@@ -347,6 +450,7 @@ export default function Compras() {
                 <th className="text-right p-3">Base</th>
                 <th className="text-right p-3">IVA</th>
                 <th className="text-right p-3">Total</th>
+                <th className="text-left p-3">Estado</th>
                 <th className="p-3" />
               </tr>
             </thead>
@@ -373,6 +477,21 @@ export default function Compras() {
                   <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
                   <td className="text-right p-3 tabular-nums font-semibold">{f.total.toFixed(2)}</td>
                   <td className="p-3">
+                    {f.forma_pago === 'Credito' ? (
+                      <span
+                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          f.pagada
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {f.pagada ? 'Pagada' : 'Pendiente'}
+                      </span>
+                    ) : (
+                      <span className="text-neutral-300 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="p-3">
                     <button onClick={() => borrar(f)} className="text-red-500 text-xs">
                       Borrar
                     </button>
@@ -381,7 +500,7 @@ export default function Compras() {
               ))}
               {facturas.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-neutral-400 py-4 text-center">
+                  <td colSpan={9} className="text-neutral-400 py-4 text-center">
                     Sin facturas cargadas todavia.
                   </td>
                 </tr>

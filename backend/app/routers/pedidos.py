@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import combos, contabilidad, impuestos, models, schemas, tasas
+from .. import combos, contabilidad, costeo, impuestos, models, schemas, tasas
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -21,9 +21,17 @@ def listar_pedidos(estado: Optional[str] = None, db: Session = Depends(get_db)):
 
 
 def _siguiente_numero(db: Session) -> int:
+    """Numero de comanda del dia. Sigue al ultimo asignado, no a la cantidad de
+    pedidos: contar pedidos repetia el numero apenas se anulaba o borraba uno,
+    y en cocina dos comandas con el mismo numero es un problema real."""
     inicio = inicio_del_dia(hoy())
-    count = db.query(models.Pedido).filter(models.Pedido.creado_en >= inicio).count()
-    return count + 1
+    ultimo = (
+        db.query(models.Pedido)
+        .filter(models.Pedido.creado_en >= inicio)
+        .order_by(models.Pedido.numero.desc())
+        .first()
+    )
+    return (ultimo.numero + 1) if ultimo else 1
 
 
 def _costo_por_variante(variante_ids: List[int], db: Session) -> Dict[int, float]:
@@ -44,6 +52,34 @@ def _costo_por_variante(variante_ids: List[int], db: Session) -> Dict[int, float
     return costos
 
 
+def _recetas_por_variante(variante_ids: List[int], db: Session) -> Dict[int, List[models.RecetaItem]]:
+    recetas = (
+        db.query(models.RecetaItem).filter(models.RecetaItem.variante_id.in_(variante_ids)).all()
+    )
+    por_variante: Dict[int, List[models.RecetaItem]] = {}
+    for receta in recetas:
+        por_variante.setdefault(receta.variante_id, []).append(receta)
+    return por_variante
+
+
+def _consumo_del_pedido(items, recetas_por_variante) -> Dict[models.Ingrediente, float]:
+    """Cuanto sale del inventario por cada insumo para producir el pedido."""
+    consumo: Dict[models.Ingrediente, float] = {}
+    for item in items:
+        for receta in recetas_por_variante.get(item.variante_id, []):
+            bruto = costeo.consumo_bruto(receta, item.cantidad)
+            consumo[receta.ingrediente] = consumo.get(receta.ingrediente, 0) + bruto
+    return consumo
+
+
+def _faltantes(consumo: Dict[models.Ingrediente, float]) -> List[str]:
+    return [
+        f"{ing.nombre} (quedan {ing.stock_actual:g} {ing.unidad}, hacen falta {cantidad:.3g})"
+        for ing, cantidad in consumo.items()
+        if (ing.stock_actual or 0) < cantidad
+    ]
+
+
 @router.post("", response_model=schemas.Pedido)
 async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_db)):
     if not pedido.items:
@@ -55,17 +91,31 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
             models.Variante.id.in_([i.variante_id for i in pedido.items])
         )
     }
+    for item in pedido.items:
+        if item.variante_id not in variantes:
+            raise HTTPException(status_code=404, detail=f"Variante {item.variante_id} no existe")
 
     costos = _costo_por_variante(list(variantes.keys()), db)
+    recetas = _recetas_por_variante(list(variantes.keys()), db)
+    consumo = _consumo_del_pedido(pedido.items, recetas)
+
+    # El inventario se mueve ACA, no al cobrar: la cocina empieza a gastar
+    # insumos apenas le llega la comanda. Descontar al cobrar dejaba una
+    # ventana donde el sistema creia tener lo que ya estaba en el sarten, y
+    # hacia que un pedido anulado despues de prepararse no descontara nada.
+    faltantes = _faltantes(consumo)
+    if faltantes and not pedido.permitir_sin_stock:
+        raise HTTPException(
+            status_code=409,
+            detail="No alcanza el inventario para: " + "; ".join(faltantes),
+        )
 
     db_pedido = models.Pedido(numero=_siguiente_numero(db), nota=pedido.nota)
     db.add(db_pedido)
     db.flush()
 
     for item in pedido.items:
-        variante = variantes.get(item.variante_id)
-        if not variante:
-            raise HTTPException(status_code=404, detail=f"Variante {item.variante_id} no existe")
+        variante = variantes[item.variante_id]
         nombre = variante.producto.nombre
         if variante.nombre and variante.nombre.lower() != "regular":
             nombre = f"{nombre} - {variante.nombre}"
@@ -80,6 +130,9 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
                 nota=item.nota,
             )
         )
+
+    for ingrediente, cantidad in consumo.items():
+        ingrediente.stock_actual = (ingrediente.stock_actual or 0) - cantidad
 
     db.commit()
     db.refresh(db_pedido)
@@ -124,20 +177,6 @@ async def marcar_pedido_listo(pedido_id: int, db: Session = Depends(get_db)):
     return resultado
 
 
-def _descontar_insumos(pedido: models.Pedido, db: Session) -> None:
-    variante_ids = [item.variante_id for item in pedido.items]
-    recetas = (
-        db.query(models.RecetaItem).filter(models.RecetaItem.variante_id.in_(variante_ids)).all()
-    )
-    recetas_por_variante: Dict[int, List[models.RecetaItem]] = {}
-    for receta in recetas:
-        recetas_por_variante.setdefault(receta.variante_id, []).append(receta)
-
-    for item in pedido.items:
-        for receta in recetas_por_variante.get(item.variante_id, []):
-            receta.ingrediente.stock_actual -= receta.cantidad_por_unidad * item.cantidad
-
-
 @router.post("/{pedido_id}/cobrar", response_model=schemas.Pedido)
 async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session = Depends(get_db)):
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
@@ -148,6 +187,24 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
         raise HTTPException(status_code=409, detail="Este pedido ya fue cobrado")
     if pedido.estado == "anulado":
         raise HTTPException(status_code=409, detail="No se puede cobrar un pedido anulado")
+
+    if body.facturado and body.numero_factura:
+        # El numero lo transcribe el dueno de su talonario. Repetirlo mete dos
+        # facturas con el mismo numero en el Libro de Ventas, y eso es un
+        # problema fiscal, no cosmetico.
+        repetido = (
+            db.query(models.Pedido)
+            .filter(
+                models.Pedido.numero_factura == body.numero_factura,
+                models.Pedido.id != pedido_id,
+            )
+            .first()
+        )
+        if repetido:
+            raise HTTPException(
+                status_code=409,
+                detail=f"La factura {body.numero_factura} ya se uso en el pedido #{repetido.numero}.",
+            )
 
     pedido.estado = "pagado"
     pedido.metodo_pago = body.metodo_pago
@@ -163,7 +220,8 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
     vigente = tasas.tasa_vigente(db)
     pedido.tasa_bcv = vigente.bcv if vigente else None
     pedido.tasa_iva = impuestos.tasa_iva(db) if body.facturado else None
-    _descontar_insumos(pedido, db)
+    # El stock ya se descontó al crear la comanda. Aca solo se reconoce el
+    # costo contra el ingreso, que es cuando corresponde registrarlo.
     contabilidad.registrar_venta(db, pedido)
     db.commit()
     db.refresh(pedido)
@@ -174,7 +232,9 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
 
 
 @router.post("/{pedido_id}/anular", response_model=schemas.Pedido)
-async def anular_pedido(pedido_id: int, db: Session = Depends(get_db)):
+async def anular_pedido(
+    pedido_id: int, body: Optional[schemas.AnularRequest] = None, db: Session = Depends(get_db)
+):
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
@@ -184,6 +244,37 @@ async def anular_pedido(pedido_id: int, db: Session = Depends(get_db)):
             status_code=409,
             detail="Este pedido ya fue cobrado. Para devolver el dinero registra la salida en Gastos.",
         )
+    if pedido.estado == "anulado":
+        raise HTTPException(status_code=409, detail="Este pedido ya estaba anulado")
+
+    # Lo que pasa con los insumos depende de si la cocina alcanzo a hacerlo:
+    #  - todavia no lo tocaron -> la comida no existe, el stock vuelve;
+    #  - ya lo prepararon      -> se boto comida de verdad, es una merma y hay
+    #                             que reconocerla como perdida, no devolverla.
+    if body is not None and body.comida_preparada is not None:
+        preparada = body.comida_preparada
+    else:
+        preparada = pedido.estado == "listo" or any(i.preparado for i in pedido.items)
+
+    recetas = _recetas_por_variante([i.variante_id for i in pedido.items], db)
+    consumo = _consumo_del_pedido(pedido.items, recetas)
+
+    if preparada:
+        for ingrediente, cantidad in consumo.items():
+            valor = round(cantidad * (ingrediente.costo_unitario or 0), 2)
+            if valor <= 0:
+                continue
+            db_merma = models.Merma(
+                ingrediente_id=ingrediente.id,
+                cantidad=cantidad,
+                motivo=f"Pedido #{pedido.numero} anulado despues de prepararse",
+            )
+            db.add(db_merma)
+            db.flush()
+            contabilidad.registrar_merma(db, ingrediente, valor, db_merma.id)
+    else:
+        for ingrediente, cantidad in consumo.items():
+            ingrediente.stock_actual = (ingrediente.stock_actual or 0) + cantidad
 
     pedido.estado = "anulado"
     db.commit()

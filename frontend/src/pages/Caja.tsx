@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import type { CierreCaja, Configuracion, Gasto, ResumenCaja } from '../lib/types'
 
 const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
+const METODOS_GASTO = ['Efectivo', 'Banco']
 
 export default function Caja() {
   const [resumen, setResumen] = useState<ResumenCaja | null>(null)
@@ -18,6 +19,8 @@ export default function Caja() {
   const [gastoDesc, setGastoDesc] = useState('')
   const [gastoMonto, setGastoMonto] = useState('')
   const [gastoCategoria, setGastoCategoria] = useState(CATEGORIAS_GASTO[0])
+  const [gastoMetodo, setGastoMetodo] = useState(METODOS_GASTO[0])
+  const [error, setError] = useState('')
 
   useEffect(() => {
     cargar()
@@ -36,7 +39,7 @@ export default function Caja() {
   async function agregarGasto() {
     const monto = Number(gastoMonto)
     if (!gastoDesc.trim() || !Number.isFinite(monto) || monto <= 0) return
-    await api.crearGasto(gastoDesc.trim(), gastoCategoria, monto)
+    await api.crearGasto(gastoDesc.trim(), gastoCategoria, monto, gastoMetodo)
     setGastoDesc('')
     setGastoMonto('')
     cargar()
@@ -61,11 +64,16 @@ export default function Caja() {
   async function hacerCierre() {
     const valor = Number(contado)
     if (!Number.isFinite(valor) || valor < 0) return
-    const cierre = await api.cerrarCaja(valor, nota)
-    setResultado(cierre)
-    setContado('')
-    setNota('')
-    cargar()
+    setError('')
+    try {
+      const cierre = await api.cerrarCaja(valor, nota)
+      setResultado(cierre)
+      setContado('')
+      setNota('')
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cerrar la caja')
+    }
   }
 
   return (
@@ -129,8 +137,8 @@ export default function Caja() {
             <span className="font-bold">${totalGastosHoy.toFixed(2)}</span>
           </div>
           <p className="text-xs text-neutral-500 mb-3">
-            Todo lo que sale de la gaveta: gas, bolsas, un adelanto, el mandado. Se descuenta del
-            efectivo esperado y de la ganancia.
+            Gas, bolsas, un adelanto, el mandado. Si lo pagaste en efectivo se descuenta de la
+            gaveta; si fue por transferencia, no.
           </p>
 
           <div className="space-y-1 mb-3">
@@ -138,7 +146,10 @@ export default function Caja() {
               <div key={g.id} className="flex justify-between items-center text-sm">
                 <span>
                   {g.descripcion}{' '}
-                  <span className="text-xs text-neutral-400">({g.categoria})</span>
+                  <span className="text-xs text-neutral-400">
+                    ({g.categoria}
+                    {g.metodo_pago === 'Banco' ? ' · banco' : ''})
+                  </span>
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="font-medium">${g.monto.toFixed(2)}</span>
@@ -171,6 +182,18 @@ export default function Caja() {
                 </option>
               ))}
             </select>
+            <select
+              value={gastoMetodo}
+              onChange={(e) => setGastoMetodo(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+              title="De donde salio la plata"
+            >
+              {METODOS_GASTO.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
             <input
               value={gastoMonto}
               onChange={(e) => setGastoMonto(e.target.value)}
@@ -190,17 +213,39 @@ export default function Caja() {
 
         <div className="bg-white rounded-2xl shadow p-4">
           <h2 className="font-semibold mb-2">Contar efectivo fisico</h2>
-          <p className="text-sm text-neutral-500 mb-3">
-            Efectivo esperado segun el sistema:{' '}
-            <span className="font-semibold text-neutral-800">
-              ${resumen?.efectivo_esperado.toFixed(2) ?? '0.00'}
-            </span>
-            {totalGastosHoy > 0 && (
-              <span className="block text-xs mt-1">
-                (ventas en efectivo menos ${totalGastosHoy.toFixed(2)} de gastos)
-              </span>
+          {/* El desglose importa: antes solo se restaban los gastos, y los dias
+              que se le pagaba al proveedor el cierre mostraba un faltante que
+              no existia. Ahora sale de la contabilidad e incluye TODO lo que
+              salio de la gaveta, con el detalle a la vista. */}
+          <div className="bg-neutral-50 rounded-xl p-3 text-sm mb-3 space-y-1">
+            {(resumen?.saldo_anterior ?? 0) !== 0 && (
+              <div className="flex justify-between text-neutral-600">
+                <span>Quedaba de dias anteriores</span>
+                <span className="tabular-nums">${(resumen?.saldo_anterior ?? 0).toFixed(2)}</span>
+              </div>
             )}
-          </p>
+            <div className="flex justify-between">
+              <span className="text-neutral-600">Ventas cobradas en efectivo</span>
+              <span className="tabular-nums">
+                ${(resumen?.por_metodo_pago?.['Efectivo'] ?? 0).toFixed(2)}
+              </span>
+            </div>
+            {(resumen?.salidas_efectivo ?? 0) !== 0 && (
+              <div className="flex justify-between text-neutral-600">
+                <span>Salidas de efectivo (gastos, proveedores, compras)</span>
+                <span className="tabular-nums text-red-600">
+                  −${(resumen?.salidas_efectivo ?? 0).toFixed(2)}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between font-semibold pt-1 border-t border-neutral-200">
+              <span>Deberia haber en la gaveta</span>
+              <span className="tabular-nums">
+                ${resumen?.efectivo_esperado.toFixed(2) ?? '0.00'}
+              </span>
+            </div>
+          </div>
+          {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
           <div className="flex gap-2 mb-2">
             <input
               value={contado}

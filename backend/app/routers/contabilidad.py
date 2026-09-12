@@ -233,6 +233,97 @@ def estado_resultados(periodo: str = "mes", db: Session = Depends(get_db)):
     )
 
 
+@router.get("/salud", response_model=schemas.SaludContable)
+def salud_contable(db: Session = Depends(get_db)):
+    """Chequeos que SI pueden fallar.
+
+    El `cuadra` del Balance General es una tautologia: la utilidad acumulada se
+    calcula como residuo y cada asiento ya nace balanceado, asi que siempre da
+    true - incluso con el inventario contable en negativo. Esto revisa lo que
+    de verdad puede estar mal.
+    """
+    problemas: List[schemas.ProblemaContable] = []
+
+    # 1. Movimientos sin asiento (los dejaba un borrado masivo mal hecho).
+    huerfanos = (
+        db.query(models.MovimientoContable)
+        .outerjoin(
+            models.AsientoContable,
+            models.MovimientoContable.asiento_id == models.AsientoContable.id,
+        )
+        .filter(models.AsientoContable.id.is_(None))
+        .count()
+    )
+    if huerfanos:
+        problemas.append(
+            schemas.ProblemaContable(
+                gravedad="grave",
+                titulo=f"{huerfanos} movimiento(s) contable(s) sin asiento",
+                detalle="Quedaron de un borrado incompleto. Suman en el balance pero no "
+                "aparecen en el diario. Hay que eliminarlos.",
+            )
+        )
+
+    # 2. Cuentas de activo en negativo: no existen fisicamente.
+    for cuenta, debe, haber in _balance_por_cuenta(db):
+        if cuenta.tipo != "activo":
+            continue
+        saldo = _saldo(cuenta, debe, haber)
+        if saldo < -0.01:
+            problemas.append(
+                schemas.ProblemaContable(
+                    gravedad="grave",
+                    titulo=f"{cuenta.codigo} {cuenta.nombre} en negativo (${saldo:,.2f})",
+                    detalle="Un activo no puede ser negativo. Suele indicar que falta el "
+                    "asiento de apertura o que salio mas mercancia de la que entro.",
+                )
+            )
+
+    # 3. Inventario contable contra el valor real de las existencias.
+    cuenta_inv = (
+        db.query(models.CuentaContable).filter(models.CuentaContable.codigo == "1040").first()
+    )
+    if cuenta_inv:
+        movimientos = (
+            db.query(models.MovimientoContable)
+            .filter(models.MovimientoContable.cuenta_id == cuenta_inv.id)
+            .all()
+        )
+        contable = round(sum(m.debe - m.haber for m in movimientos), 2)
+        fisico = round(
+            sum(
+                (i.stock_actual or 0) * (i.costo_unitario or 0)
+                for i in db.query(models.Ingrediente).all()
+            ),
+            2,
+        )
+        diferencia = round(fisico - contable, 2)
+        if abs(diferencia) > max(1.0, abs(contable) * 0.02):
+            problemas.append(
+                schemas.ProblemaContable(
+                    gravedad="grave" if abs(diferencia) > abs(contable) * 0.1 else "aviso",
+                    titulo=f"Inventario descuadrado en ${diferencia:,.2f}",
+                    detalle=f"Los libros dicen ${contable:,.2f} y las existencias valen "
+                    f"${fisico:,.2f}. Revisa conteos y mermas.",
+                )
+            )
+
+    # 4. Insumos con stock negativo.
+    negativos = [i for i in db.query(models.Ingrediente).all() if (i.stock_actual or 0) < 0]
+    if negativos:
+        nombres = ", ".join(i.nombre for i in negativos[:4])
+        problemas.append(
+            schemas.ProblemaContable(
+                gravedad="grave",
+                titulo=f"{len(negativos)} insumo(s) con stock negativo",
+                detalle=f"{nombres}. Se vendio mas de lo que habia cargado. Haz un conteo "
+                "fisico para corregirlo antes de la proxima compra.",
+            )
+        )
+
+    return schemas.SaludContable(sano=not problemas, problemas=problemas)
+
+
 @router.get("/balance-general", response_model=schemas.BalanceGeneral)
 def balance_general(db: Session = Depends(get_db)):
     grupos = {"activo": [], "pasivo": [], "patrimonio": []}

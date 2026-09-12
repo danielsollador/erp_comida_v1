@@ -56,6 +56,7 @@ export type Gasto = {
   descripcion: string
   categoria: string
   monto: number
+  metodo_pago: 'Efectivo' | 'Banco'
   fecha: string
 }
 
@@ -86,6 +87,9 @@ export type ReporteResumen = {
   periodo: Periodo
   etiqueta: string
   ventas: number
+  ventas_bs: number
+  iva_cobrado: number
+  ingresos_netos: number
   pedidos: number
   ticket_promedio: number
   costo_insumos: number
@@ -94,10 +98,34 @@ export type ReporteResumen = {
   gastos: number
   ganancia_neta: number
   pedidos_anulados: number
+  valor_anulado: number
   por_metodo_pago: Record<string, number>
   serie: PuntoSerie[]
   top_productos: ProductoVendido[]
   insights: Insight[]
+}
+
+export type ProblemaContable = {
+  gravedad: 'grave' | 'aviso'
+  titulo: string
+  detalle: string
+}
+
+export type SaludContable = {
+  sano: boolean
+  problemas: ProblemaContable[]
+}
+
+export type Merma = {
+  id: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  cantidad: number
+  valor: number
+  motivo: string
+  fecha: string
+  revertida: boolean
 }
 
 export type SugerenciaCompra = {
@@ -107,6 +135,7 @@ export type SugerenciaCompra = {
   stock_actual: number
   stock_minimo: number
   cantidad_sugerida: number
+  dias_restantes: number | null
   razon: string
 }
 
@@ -120,6 +149,8 @@ export type Pedido = {
   creado_en: string
   facturado: boolean
   numero_factura: string | null
+  /** Tasa a la que se cobro. Para montos historicos manda esta, no la de hoy. */
+  tasa_bcv: number | null
   items: PedidoItem[]
 }
 
@@ -209,7 +240,9 @@ export type ResumenCaja = {
   fecha: string
   total_ventas: number
   por_metodo_pago: Record<string, number>
+  saldo_anterior: number
   efectivo_esperado: number
+  salidas_efectivo: number
   cantidad_pedidos: number
 }
 
@@ -306,6 +339,9 @@ export type FacturaCompra = {
   iva: number
   descripcion: string
   total: number
+  pagada: boolean
+  fecha_vencimiento: string | null
+  fecha_pago: string | null
   items: LineaFactura[]
 }
 

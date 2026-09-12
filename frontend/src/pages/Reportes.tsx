@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
-import { useMoneda } from '../lib/moneda'
+import { fmtBs, useMoneda } from '../lib/moneda'
 import type { Insight, Periodo, ReporteCombos, ReporteResumen } from '../lib/types'
 
 const PERIODOS: { valor: Periodo; texto: string }[] = [
@@ -61,6 +61,15 @@ export default function Reportes() {
           <>
             <p className="text-sm text-neutral-500">{datos.etiqueta}</p>
 
+            {/* Los bolivares del periodo salen de sumar cada venta a la tasa
+                de SU dia. Convertir el total en dolares a la tasa de hoy haria
+                que el historico se moviera solo cada vez que sube el dolar. */}
+            {datos.ventas_bs > 0 && (
+              <p className="text-xs text-neutral-500 -mt-2">
+                Equivalen a {fmtBs(datos.ventas_bs)} cobrados, cada venta a la tasa de su dia.
+              </p>
+            )}
+
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi titulo="Ventas" valor={`$${datos.ventas.toFixed(2)}`} destacado />
               <Kpi
@@ -98,17 +107,31 @@ export default function Reportes() {
             <div className="bg-white rounded-2xl border border-neutral-200 p-4">
               <h2 className="font-semibold mb-1">De donde sale la ganancia</h2>
               <p className="text-xs text-neutral-500 mb-3">
-                Ventas menos lo que costaron los insumos y los gastos del periodo.
+                Los mismos numeros del Estado de Resultados en Contabilidad.
               </p>
-              <Linea etiqueta="Ventas" monto={datos.ventas} />
+              <Linea etiqueta="Ventas cobradas" monto={datos.ventas} />
+              {datos.iva_cobrado > 0 && (
+                <>
+                  {/* El IVA entra por caja pero se le debe al SENIAT: contarlo
+                      como ingreso inflaba la ganancia mostrada. */}
+                  <Linea etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
+                  <Linea etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
+                </>
+              )}
               <Linea etiqueta="Costo de insumos" monto={-datos.costo_insumos} />
               <Linea
                 etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
                 monto={datos.ganancia_bruta}
                 subtotal
               />
-              <Linea etiqueta="Gastos" monto={-datos.gastos} />
+              <Linea etiqueta="Gastos, mermas y faltantes" monto={-datos.gastos} />
               <Linea etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
+              {datos.pedidos_anulados > 0 && (
+                <p className="text-xs text-amber-700 mt-3 bg-amber-50 rounded-lg px-3 py-2">
+                  Ademas se anularon {datos.pedidos_anulados} pedido(s) por $
+                  {datos.valor_anulado.toFixed(2)} que no llegaron a venderse.
+                </p>
+              )}
             </div>
 
             {datos.serie.length > 0 && (

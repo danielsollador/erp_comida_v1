@@ -15,6 +15,7 @@ import type {
   Ingrediente,
   LibroCompras,
   LibroVentas,
+  Merma,
   Pedido,
   PedidoItem,
   Periodo,
@@ -26,6 +27,7 @@ import type {
   Respaldo,
   ResumenCaja,
   ResumenIva,
+  SaludContable,
   Sugerencia,
   SugerenciaCompra,
   Variante,
@@ -85,8 +87,15 @@ export const api = {
 
   listarPedidos: (estado?: string) =>
     req<Pedido[]>(`/pedidos${estado ? `?estado=${estado}` : ''}`),
-  crearPedido: (items: { variante_id: number; cantidad: number; nota?: string }[], nota = '') =>
-    req<Pedido>('/pedidos', { method: 'POST', body: JSON.stringify({ items, nota }) }),
+  crearPedido: (
+    items: { variante_id: number; cantidad: number; nota?: string }[],
+    permitir_sin_stock = false,
+    nota = '',
+  ) =>
+    req<Pedido>('/pedidos', {
+      method: 'POST',
+      body: JSON.stringify({ items, nota, permitir_sin_stock }),
+    }),
   marcarItemPreparado: (itemId: number) =>
     req<Pedido>(`/pedidos/items/${itemId}/preparado`, { method: 'POST' }),
   marcarPedidoListo: (pedidoId: number) =>
@@ -96,7 +105,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ metodo_pago, facturado, numero_factura: numero_factura || null }),
     }),
-  anularPedido: (pedidoId: number) => req<Pedido>(`/pedidos/${pedidoId}/anular`, { method: 'POST' }),
+  anularPedido: (pedidoId: number, comida_preparada?: boolean) =>
+    req<Pedido>(`/pedidos/${pedidoId}/anular`, {
+      method: 'POST',
+      body: JSON.stringify({ comida_preparada: comida_preparada ?? null }),
+    }),
 
   listarIngredientes: () => req<Ingrediente[]>('/inventario/ingredientes'),
   actualizarIngrediente: (id: number, i: Omit<Ingrediente, 'id' | 'costo_efectivo'>) =>
@@ -117,16 +130,19 @@ export const api = {
       body: JSON.stringify({ stock_real, motivo: 'Conteo fisico' }),
     }),
   sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
+  listarMermas: (dias = 30) => req<Merma[]>(`/inventario/mermas?dias=${dias}`),
+  revertirMerma: (id: number) =>
+    req<Ingrediente>(`/inventario/mermas/${id}/revertir`, { method: 'POST' }),
 
   verReceta: (varianteId: number) => req<RecetaItem[]>(`/inventario/recetas/${varianteId}`),
   actualizarReceta: (varianteId: number, items: { ingrediente_id: number; cantidad_por_unidad: number }[]) =>
     req<RecetaItem[]>(`/inventario/recetas/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
 
   listarGastos: () => req<Gasto[]>('/caja/gastos'),
-  crearGasto: (descripcion: string, categoria: string, monto: number) =>
+  crearGasto: (descripcion: string, categoria: string, monto: number, metodo_pago = 'Efectivo') =>
     req<Gasto>('/caja/gastos', {
       method: 'POST',
-      body: JSON.stringify({ descripcion, categoria, monto }),
+      body: JSON.stringify({ descripcion, categoria, monto, metodo_pago }),
     }),
   eliminarGasto: (id: number) => req(`/caja/gastos/${id}`, { method: 'DELETE' }),
 
@@ -170,6 +186,7 @@ export const api = {
   estadoResultadosContable: (periodo: Periodo) =>
     req<EstadoResultadosContable>(`/contabilidad/estado-resultados?periodo=${periodo}`),
   balanceGeneral: () => req<BalanceGeneral>('/contabilidad/balance-general'),
+  saludContable: () => req<SaludContable>('/contabilidad/salud'),
 
   listarFacturasCompra: (dias = 60) => req<FacturaCompra[]>(`/compras/facturas?dias=${dias}`),
   crearFacturaCompra: (f: {
@@ -185,8 +202,15 @@ export const api = {
     // Sin renglones (servicios, activos...): se carga la base a mano.
     base_imponible?: number
     iva?: number
+    // Solo si forma_pago es "Credito".
+    fecha_vencimiento?: string
   }) => req<FacturaCompra>('/compras/facturas', { method: 'POST', body: JSON.stringify(f) }),
   eliminarFacturaCompra: (id: number) => req(`/compras/facturas/${id}`, { method: 'DELETE' }),
+  pagarFacturaCompra: (id: number, forma_pago: string) =>
+    req<FacturaCompra>(`/compras/facturas/${id}/pagar`, {
+      method: 'POST',
+      body: JSON.stringify({ forma_pago }),
+    }),
 
   configFiscal: () => req<ConfiguracionFiscal>('/impuestos/config'),
   actualizarConfigFiscal: (tasa_iva: number) =>
@@ -241,6 +265,7 @@ export type {
   Ingrediente,
   LibroCompras,
   LibroVentas,
+  Merma,
   Pedido,
   PedidoItem,
   Periodo,
@@ -252,6 +277,7 @@ export type {
   Respaldo,
   ResumenCaja,
   ResumenIva,
+  SaludContable,
   Sugerencia,
   SugerenciaCompra,
   Variante,

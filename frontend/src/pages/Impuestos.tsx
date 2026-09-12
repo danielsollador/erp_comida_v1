@@ -20,7 +20,8 @@ export default function Impuestos() {
   const [ventas, setVentas] = useState<LibroVentas | null>(null)
   const [compras, setCompras] = useState<LibroCompras | null>(null)
   const [resumen, setResumen] = useState<ResumenIva | null>(null)
-  const [fiscal, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
+  // El valor solo se usa via tasaInput; se guarda el setter para refrescarlo.
+  const [, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
   const [tasaInput, setTasaInput] = useState('')
 
   useEffect(() => {

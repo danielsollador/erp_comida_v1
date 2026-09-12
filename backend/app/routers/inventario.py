@@ -1,3 +1,4 @@
+import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import contabilidad, costeo, models, schemas
 from ..database import get_db
+from ..timeutils import hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
 
@@ -30,7 +32,13 @@ def actualizar_ingrediente(
     db_ingrediente = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
     if not db_ingrediente:
         raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
-    for key, value in ingrediente.model_dump().items():
+
+    # El stock NO se toca por aca: moverlo sin asiento separa el inventario
+    # contable del real en silencio. Para eso esta "Contar" (ajustar_stock),
+    # que registra la merma o el sobrante como corresponde.
+    datos = ingrediente.model_dump()
+    datos.pop("stock_actual", None)
+    for key, value in datos.items():
         setattr(db_ingrediente, key, value)
     db.commit()
     db.refresh(db_ingrediente)
@@ -101,20 +109,78 @@ def ajustar_stock(
     if not db_ingrediente:
         raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
 
-    faltante = db_ingrediente.stock_actual - body.stock_real
+    faltante = (db_ingrediente.stock_actual or 0) - body.stock_real
+    valor = round(abs(faltante) * (db_ingrediente.costo_unitario or 0), 2)
     if faltante > 0:
         db_merma = models.Merma(
             ingrediente_id=ingrediente_id, cantidad=faltante, motivo=body.motivo
         )
         db.add(db_merma)
         db.flush()
-        contabilidad.registrar_merma(
-            db, db_ingrediente, round(faltante * (db_ingrediente.costo_unitario or 0), 2), db_merma.id
-        )
+        contabilidad.registrar_merma(db, db_ingrediente, valor, db_merma.id)
+    elif faltante < 0 and valor > 0:
+        # Sobra mercancia respecto al sistema. Antes se subia el stock en
+        # silencio, sin asiento: el inventario contable quedaba por debajo del
+        # real para siempre (era la unica salida para corregir una merma
+        # duplicada, y dejaba los libros peor que antes).
+        contabilidad.registrar_sobrante_inventario(db, db_ingrediente, valor, ingrediente_id)
+
     db_ingrediente.stock_actual = body.stock_real
     db.commit()
     db.refresh(db_ingrediente)
     return db_ingrediente
+
+
+@router.get("/mermas", response_model=List[schemas.Merma])
+def listar_mermas(dias: int = 30, db: Session = Depends(get_db)):
+    """Historial de lo que se perdio. Sin esto el dueno no puede auditar su
+    perdida mas sensible ni darse cuenta de un registro duplicado."""
+    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+    mermas = (
+        db.query(models.Merma)
+        .filter(models.Merma.fecha >= desde)
+        .order_by(models.Merma.id.desc())
+        .all()
+    )
+    return [
+        schemas.Merma(
+            id=m.id,
+            ingrediente_id=m.ingrediente_id,
+            ingrediente_nombre=m.ingrediente.nombre,
+            unidad=m.ingrediente.unidad,
+            cantidad=m.cantidad,
+            valor=round(m.cantidad * (m.ingrediente.costo_unitario or 0), 2),
+            motivo=m.motivo,
+            fecha=m.fecha,
+            revertida=m.revertida,
+        )
+        for m in mermas
+    ]
+
+
+@router.post("/mermas/{merma_id}/revertir", response_model=schemas.Ingrediente)
+def revertir_merma(merma_id: int, db: Session = Depends(get_db)):
+    """Deshace una merma mal registrada SIN borrarla.
+
+    Se devuelve el stock y se genera un asiento de reverso. La merma original
+    queda marcada, no se borra: un error documentado vale mas que un error
+    desaparecido, y es la misma disciplina que ya aplicamos en Compras.
+    """
+    merma = db.query(models.Merma).filter(models.Merma.id == merma_id).first()
+    if not merma:
+        raise HTTPException(status_code=404, detail="Merma no encontrada")
+    if merma.revertida:
+        raise HTTPException(status_code=409, detail="Esta merma ya fue revertida")
+
+    ingrediente = merma.ingrediente
+    valor = round(merma.cantidad * (ingrediente.costo_unitario or 0), 2)
+    ingrediente.stock_actual = (ingrediente.stock_actual or 0) + merma.cantidad
+    merma.revertida = True
+    if valor > 0:
+        contabilidad.registrar_reverso_merma(db, ingrediente, valor, merma.id)
+    db.commit()
+    db.refresh(ingrediente)
+    return ingrediente
 
 
 @router.get("/recetas/{variante_id}", response_model=List[schemas.RecetaItem])
@@ -155,29 +221,77 @@ def actualizar_receta(
     return ver_receta(variante_id, db)
 
 
+def _consumo_diario(db: Session, dias: int = 14) -> dict:
+    """Cuanto se gasta al dia de cada insumo, segun lo que se vendio de verdad.
+
+    Con esto la sugerencia deja de ser "ya cruzaste el minimo" (que avisa
+    tarde) y pasa a ser "esto te dura N dias", que es lo que deja comprar a
+    tiempo.
+    """
+    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+    pedidos = (
+        db.query(models.Pedido)
+        .filter(models.Pedido.estado == "pagado", models.Pedido.cerrado_en >= desde)
+        .all()
+    )
+    recetas = {}
+    for receta in db.query(models.RecetaItem).all():
+        recetas.setdefault(receta.variante_id, []).append(receta)
+
+    consumo = {}
+    for pedido in pedidos:
+        for item in pedido.items:
+            for receta in recetas.get(item.variante_id, []):
+                consumo[receta.ingrediente_id] = consumo.get(
+                    receta.ingrediente_id, 0
+                ) + costeo.consumo_bruto(receta, item.cantidad)
+    return {ing_id: total / dias for ing_id, total in consumo.items()}
+
+
 @router.get("/sugerencias", response_model=List[schemas.SugerenciaCompra])
 def sugerencias_compra(db: Session = Depends(get_db)):
+    consumo_diario = _consumo_diario(db)
     sugerencias = []
     for ing in db.query(models.Ingrediente).all():
-        if ing.stock_actual <= ing.stock_minimo:
-            objetivo = max(ing.stock_objetivo, ing.stock_minimo)
-            cantidad = round(max(objetivo - ing.stock_actual, 0), 2)
-            if cantidad <= 0:
-                continue
+        por_dia = consumo_diario.get(ing.id, 0)
+        dias_restantes = (ing.stock_actual / por_dia) if por_dia > 0 else None
+        bajo_minimo = ing.stock_actual <= ing.stock_minimo
+        # Se avisa tambien si el consumo real dice que no llega a la proxima
+        # semana, aunque todavia no haya cruzado el minimo.
+        se_acaba_pronto = dias_restantes is not None and dias_restantes <= 7
+
+        if not bajo_minimo and not se_acaba_pronto:
+            continue
+
+        objetivo = max(ing.stock_objetivo, ing.stock_minimo)
+        if por_dia > 0:
+            # Al menos dos semanas de consumo real, que es como compra el local.
+            objetivo = max(objetivo, por_dia * 14)
+        cantidad = round(max(objetivo - ing.stock_actual, 0), 2)
+        if cantidad <= 0:
+            continue
+
+        if dias_restantes is not None:
+            razon = (
+                f"Quedan {ing.stock_actual:g} {ing.unidad}. Al ritmo de las ultimas 2 semanas "
+                f"({por_dia:.2f} {ing.unidad}/dia) te duran {dias_restantes:.1f} dias."
+            )
+        else:
             razon = (
                 f"Quedan {ing.stock_actual:g} {ing.unidad}, por debajo del minimo de "
-                f"{ing.stock_minimo:g} {ing.unidad}. Se recomienda comprar para volver a "
-                f"{objetivo:g} {ing.unidad}."
+                f"{ing.stock_minimo:g} {ing.unidad}."
             )
-            sugerencias.append(
-                schemas.SugerenciaCompra(
-                    ingrediente_id=ing.id,
-                    ingrediente_nombre=ing.nombre,
-                    unidad=ing.unidad,
-                    stock_actual=ing.stock_actual,
-                    stock_minimo=ing.stock_minimo,
-                    cantidad_sugerida=cantidad,
-                    razon=razon,
-                )
+        sugerencias.append(
+            schemas.SugerenciaCompra(
+                ingrediente_id=ing.id,
+                ingrediente_nombre=ing.nombre,
+                unidad=ing.unidad,
+                stock_actual=ing.stock_actual,
+                stock_minimo=ing.stock_minimo,
+                cantidad_sugerida=cantidad,
+                dias_restantes=round(dias_restantes, 1) if dias_restantes is not None else None,
+                razon=razon,
             )
+        )
+    sugerencias.sort(key=lambda s: s.dias_restantes if s.dias_restantes is not None else 999)
     return sugerencias

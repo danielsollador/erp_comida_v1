@@ -1,3 +1,4 @@
+from . import contabilidad
 from .database import SessionLocal
 from .models import Categoria, Ingrediente, Producto, RecetaItem, Variante
 
@@ -16,15 +17,18 @@ MENU_DEMO = {
 
 # nombre, unidad, stock_actual, stock_minimo, stock_objetivo, costo por unidad
 # de medida, % que rinde util despues de preparar (100 = sin merma de cocina)
+# Las cantidades son las de un local que abre con una semana de inventario: el
+# stock inicial se consume de verdad con cada venta, asi que arrancar con medio
+# kilo de cafe dejaria el inventario en negativo el primer dia.
 INGREDIENTES_DEMO = [
-    ("Harina", "kg", 5.0, 2.0, 10.0, 1.20, 100),
-    ("Queso", "kg", 1.0, 1.0, 3.0, 6.50, 100),
-    ("Carne molida", "kg", 2.0, 1.0, 4.0, 7.00, 92),  # pierde grasa al cocinar
-    ("Pollo", "kg", 2.0, 1.0, 4.0, 4.50, 88),  # hueso, piel, cocina
-    ("Cafe molido", "kg", 0.5, 0.3, 1.0, 12.00, 100),
-    ("Azucar", "kg", 2.0, 0.5, 3.0, 1.10, 100),
-    ("Naranja", "kg", 3.0, 1.0, 5.0, 1.50, 45),  # la cascara y la pulpa no rinden jugo
-    ("Refresco concentrado", "litro", 4.0, 2.0, 6.0, 1.80, 100),
+    ("Harina", "kg", 30.0, 6.0, 35.0, 1.20, 100),
+    ("Queso", "kg", 8.0, 2.0, 10.0, 6.50, 100),
+    ("Carne molida", "kg", 12.0, 3.0, 15.0, 7.00, 92),  # pierde grasa al cocinar
+    ("Pollo", "kg", 12.0, 3.0, 15.0, 4.50, 88),  # hueso, piel, cocina
+    ("Cafe molido", "kg", 4.0, 1.0, 5.0, 12.00, 100),
+    ("Azucar", "kg", 8.0, 2.0, 10.0, 1.10, 100),
+    ("Naranja", "kg", 40.0, 10.0, 50.0, 1.50, 45),  # la cascara y la pulpa no rinden jugo
+    ("Refresco concentrado", "litro", 30.0, 8.0, 35.0, 1.80, 100),
 ]
 
 # (producto, variante) -> [(nombre ingrediente, cantidad por unidad vendida)]
@@ -71,6 +75,10 @@ def seed_if_empty():
                     )
                 )
             db.commit()
+            # El negocio arranca con mercancia que vale plata; si los libros
+            # arrancan en cero, la cuenta de inventario se va a negativo apenas
+            # se venda de ese stock inicial y el balance queda mintiendo.
+            contabilidad.asiento_de_apertura(db)
 
         if db.query(RecetaItem).count() == 0:
             variantes = {
