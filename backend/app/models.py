@@ -122,6 +122,34 @@ class Gasto(Base):
     fecha = Column(DateTime, default=ahora)
 
 
+class ActivoFijo(Base):
+    """Un bien que se usa por años: nevera, horno, mesas, la tablet.
+
+    Se crea solo al cargar una factura de categoria Activos. Sin esto, la
+    compra entraba a 1050 y se quedaba ahi para siempre: el balance mostraba
+    una nevera de cinco años valiendo lo mismo que el dia que se compro, y el
+    desgaste nunca llegaba al estado de resultados.
+    """
+
+    __tablename__ = "activos_fijos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    valor = Column(Float, nullable=False)  # costo sin IVA, que es lo que se deprecia
+    fecha_compra = Column(DateTime, default=ahora)
+    vida_util_meses = Column(Integer, default=60)  # 5 años es lo tipico para equipo de cocina
+    factura_id = Column(Integer, ForeignKey("facturas_compra.id"), nullable=True)
+    dado_de_baja = Column(Boolean, default=False)
+    fecha_baja = Column(DateTime, nullable=True)
+    motivo_baja = Column(String, default="")
+
+    @property
+    def cuota_mensual(self):
+        if not self.vida_util_meses:
+            return 0.0
+        return round(self.valor / self.vida_util_meses, 2)
+
+
 class CambioPrecio(Base):
     """Cada vez que se mueve el precio de venta de una variante.
 

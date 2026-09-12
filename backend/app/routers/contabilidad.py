@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import contabilidad, models, schemas
 from ..database import get_db
-from ..timeutils import hoy, rango_periodo
+from ..timeutils import ahora, hoy, rango_periodo
 
 router = APIRouter(prefix="/api/contabilidad", tags=["contabilidad"])
 
@@ -178,6 +178,9 @@ def balance_comprobacion(db: Session = Depends(get_db)):
 def estado_resultados(periodo: str = "mes", db: Session = Depends(get_db)):
     if periodo not in ("dia", "semana", "mes"):
         periodo = "mes"
+    # Los equipos se gastan con el uso aunque nadie abra el sistema: se
+    # completan las cuotas pendientes antes de leer los numeros.
+    contabilidad.asentar_depreciacion_pendiente(db)
     inicio, fin, etiqueta = rango_periodo(periodo)
 
     cuentas = (
@@ -233,6 +236,87 @@ def estado_resultados(periodo: str = "mes", db: Session = Depends(get_db)):
     )
 
 
+def _activo_a_schema(db: Session, activo: models.ActivoFijo) -> schemas.ActivoFijo:
+    acumulada = contabilidad.depreciacion_acumulada(db, activo)
+    meses = (
+        db.query(models.AsientoContable)
+        .filter_by(origen="depreciacion", referencia_id=activo.id)
+        .count()
+    )
+    return schemas.ActivoFijo(
+        id=activo.id,
+        nombre=activo.nombre,
+        valor=activo.valor,
+        fecha_compra=activo.fecha_compra,
+        vida_util_meses=activo.vida_util_meses,
+        cuota_mensual=activo.cuota_mensual,
+        depreciacion_acumulada=acumulada,
+        valor_en_libros=round(activo.valor - acumulada, 2),
+        meses_depreciados=meses,
+        dado_de_baja=activo.dado_de_baja,
+        fecha_baja=activo.fecha_baja,
+        motivo_baja=activo.motivo_baja or "",
+    )
+
+
+@router.get("/activos", response_model=List[schemas.ActivoFijo])
+def listar_activos(db: Session = Depends(get_db)):
+    contabilidad.asentar_depreciacion_pendiente(db)
+    activos = db.query(models.ActivoFijo).order_by(models.ActivoFijo.id.desc()).all()
+    return [_activo_a_schema(db, a) for a in activos]
+
+
+@router.put("/activos/{activo_id}", response_model=schemas.ActivoFijo)
+def actualizar_activo(
+    activo_id: int, body: schemas.ActualizarActivoRequest, db: Session = Depends(get_db)
+):
+    activo = db.query(models.ActivoFijo).filter(models.ActivoFijo.id == activo_id).first()
+    if not activo:
+        raise HTTPException(status_code=404, detail="Activo no encontrado")
+    if activo.dado_de_baja:
+        raise HTTPException(status_code=409, detail="Este activo ya fue dado de baja")
+    if body.nombre is not None:
+        activo.nombre = body.nombre
+    if body.vida_util_meses is not None:
+        ya = (
+            db.query(models.AsientoContable)
+            .filter_by(origen="depreciacion", referencia_id=activo.id)
+            .count()
+        )
+        if body.vida_util_meses < ya:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya se depreciaron {ya} meses de este bien: la vida util no puede ser menor.",
+            )
+        activo.vida_util_meses = body.vida_util_meses
+    db.commit()
+    contabilidad.asentar_depreciacion_pendiente(db)
+    db.refresh(activo)
+    return _activo_a_schema(db, activo)
+
+
+@router.post("/activos/{activo_id}/baja", response_model=schemas.ActivoFijo)
+def dar_de_baja_activo(
+    activo_id: int, body: schemas.BajaActivoRequest, db: Session = Depends(get_db)
+):
+    """Se daño, se vendio o se lo robaron: sale de los libros."""
+    activo = db.query(models.ActivoFijo).filter(models.ActivoFijo.id == activo_id).first()
+    if not activo:
+        raise HTTPException(status_code=404, detail="Activo no encontrado")
+    if activo.dado_de_baja:
+        raise HTTPException(status_code=409, detail="Este activo ya fue dado de baja")
+
+    contabilidad.asentar_depreciacion_pendiente(db)
+    acumulada = contabilidad.depreciacion_acumulada(db, activo)
+    activo.dado_de_baja = True
+    activo.fecha_baja = ahora()
+    activo.motivo_baja = body.motivo
+    contabilidad.registrar_baja_activo(db, activo, acumulada)
+    db.commit()
+    db.refresh(activo)
+    return _activo_a_schema(db, activo)
+
+
 @router.get("/salud", response_model=schemas.SaludContable)
 def salud_contable(db: Session = Depends(get_db)):
     """Chequeos que SI pueden fallar.
@@ -242,7 +326,25 @@ def salud_contable(db: Session = Depends(get_db)):
     true - incluso con el inventario contable en negativo. Esto revisa lo que
     de verdad puede estar mal.
     """
+    contabilidad.asentar_depreciacion_pendiente(db)
     problemas: List[schemas.ProblemaContable] = []
+
+    # Activos totalmente depreciados que siguen en uso: no es un error, pero el
+    # dueno deberia saber que ese equipo ya cumplio su vida util contable.
+    agotados = [
+        a
+        for a in db.query(models.ActivoFijo).filter(models.ActivoFijo.dado_de_baja.is_(False)).all()
+        if contabilidad.depreciacion_acumulada(db, a) >= a.valor - 0.01
+    ]
+    if agotados:
+        problemas.append(
+            schemas.ProblemaContable(
+                gravedad="aviso",
+                titulo=f"{len(agotados)} equipo(s) ya terminaron de depreciarse",
+                detalle=", ".join(a.nombre for a in agotados[:4])
+                + ". Contablemente ya no valen nada. Si alguno se daño o lo vendiste, dalo de baja.",
+            )
+        )
 
     # 1. Movimientos sin asiento (los dejaba un borrado masivo mal hecho).
     huerfanos = (
@@ -264,9 +366,10 @@ def salud_contable(db: Session = Depends(get_db)):
             )
         )
 
-    # 2. Cuentas de activo en negativo: no existen fisicamente.
+    # 2. Cuentas de activo en negativo: no existen fisicamente. Se excluyen las
+    #    contra-cuentas, cuyo saldo negativo es correcto por diseño.
     for cuenta, debe, haber in _balance_por_cuenta(db):
-        if cuenta.tipo != "activo":
+        if cuenta.tipo != "activo" or cuenta.codigo in contabilidad.CUENTAS_CONTRA:
             continue
         saldo = _saldo(cuenta, debe, haber)
         if saldo < -0.01:
@@ -350,6 +453,7 @@ def salud_contable(db: Session = Depends(get_db)):
 
 @router.get("/balance-general", response_model=schemas.BalanceGeneral)
 def balance_general(db: Session = Depends(get_db)):
+    contabilidad.asentar_depreciacion_pendiente(db)
     grupos = {"activo": [], "pasivo": [], "patrimonio": []}
     utilidad_acumulada = 0.0
 

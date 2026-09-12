@@ -478,6 +478,30 @@ class EstadoResultados(BaseModel):
     detalle_gastos: List[FilaBalanceComprobacion]
 
 
+class ActivoFijo(BaseModel):
+    id: int
+    nombre: str
+    valor: float
+    fecha_compra: datetime.datetime
+    vida_util_meses: int
+    cuota_mensual: float
+    depreciacion_acumulada: float
+    valor_en_libros: float
+    meses_depreciados: int
+    dado_de_baja: bool
+    fecha_baja: Optional[datetime.datetime] = None
+    motivo_baja: str = ""
+
+
+class BajaActivoRequest(BaseModel):
+    motivo: str = ""
+
+
+class ActualizarActivoRequest(BaseModel):
+    nombre: Optional[str] = None
+    vida_util_meses: Optional[int] = Field(default=None, gt=0, le=600)
+
+
 class ProblemaContable(BaseModel):
     gravedad: str  # grave | aviso
     titulo: str
@@ -542,6 +566,9 @@ class FacturaCompraCreate(FacturaCompraBase):
     # Solo tiene sentido si forma_pago="Credito": para cuando el dueno se
     # comprometio a pagar, y poder avisar si ya se paso la fecha.
     fecha_vencimiento: Optional[datetime.datetime] = None
+    # Solo para categoria="Activos": en cuantos meses se gasta el bien.
+    # 60 (5 años) es lo tipico para equipo de cocina.
+    vida_util_meses: Optional[int] = None
 
 
 class FacturaCompra(FacturaCompraBase):

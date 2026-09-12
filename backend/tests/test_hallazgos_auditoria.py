@@ -387,6 +387,107 @@ def test_se_avisa_de_los_productos_vendidos_bajo_costo(client, variante):
     assert "$0.50" in alerta["detalle"] and "$1.00" in alerta["detalle"]
 
 
+# ------------------------------------------- GG/HH: activos fijos (caso 11)
+def _comprar_nevera(client, meses=60, hace_meses=0):
+    factura = client.post(
+        "/api/compras/facturas",
+        json={
+            "numero_factura": "NEV-1",
+            "proveedor_nombre": "Refrigeracion",
+            "categoria": "Activos",
+            "forma_pago": "Banco",
+            "descripcion": "Nevera exhibidora",
+            "base_imponible": 600,
+            "iva": 96,
+            "vida_util_meses": meses,
+            "fecha": (datetime.datetime.now() - datetime.timedelta(days=31 * hace_meses)).isoformat(),
+        },
+    ).json()
+    return factura
+
+
+def test_comprar_un_activo_lo_registra_para_depreciar(client, db):
+    """Antes entraba a 1050 y se quedaba ahi a valor de compra para siempre."""
+    _comprar_nevera(client)
+    activos = client.get("/api/contabilidad/activos").json()
+    assert len(activos) == 1
+    a = activos[0]
+    assert a["nombre"] == "Nevera exhibidora"
+    assert a["valor"] == 600 and a["vida_util_meses"] == 60
+    assert a["cuota_mensual"] == 10.0  # 600 / 60
+    assert saldo(db, "1050") == 600.0
+
+
+def test_la_depreciacion_se_pone_al_dia_sola(client, db):
+    """Se asienta al consultar los libros, sin tareas en background: un local
+    que estuvo un mes sin abrir el sistema se pone al dia al mirarlos."""
+    _comprar_nevera(client, meses=60, hace_meses=7)
+
+    a = client.get("/api/contabilidad/activos").json()[0]
+    assert a["meses_depreciados"] == 7
+    assert a["depreciacion_acumulada"] == 70.0
+    assert a["valor_en_libros"] == 530.0
+    # la contra-cuenta resta del activo, por eso su saldo es negativo
+    assert saldo(db, "1051") == -70.0
+    assert saldo(db, "6040") == 70.0
+
+    # idempotente: volver a consultar no duplica cuotas
+    assert client.get("/api/contabilidad/activos").json()[0]["meses_depreciados"] == 7
+
+
+def test_la_depreciacion_llega_al_estado_de_resultados(client):
+    """El desgaste del equipo es un gasto real: antes nunca aparecia."""
+    _comprar_nevera(client, meses=12, hace_meses=2)
+    er = client.get("/api/contabilidad/estado-resultados?periodo=mes").json()
+    codigos = {f["codigo"] for f in er["detalle_gastos"]}
+    assert "6040" in codigos
+
+
+def test_la_depreciacion_no_pasa_del_valor_del_bien(client, db):
+    _comprar_nevera(client, meses=6, hace_meses=24)  # vida cumplida hace rato
+    a = client.get("/api/contabilidad/activos").json()[0]
+    assert a["meses_depreciados"] == 6
+    assert a["depreciacion_acumulada"] == 600.0
+    assert a["valor_en_libros"] == 0.0
+
+
+def test_dar_de_baja_saca_el_equipo_de_los_libros(client, db):
+    """Si se daño o se vendio, lo que quedaba sin depreciar es perdida."""
+    _comprar_nevera(client, meses=60, hace_meses=10)
+    activo = client.get("/api/contabilidad/activos").json()[0]
+    assert activo["valor_en_libros"] == 500.0
+
+    r = client.post(f"/api/contabilidad/activos/{activo['id']}/baja", json={"motivo": "Se daño"})
+    assert r.status_code == 200
+    assert saldo(db, "1050") == 0.0  # ya no esta en el balance
+    assert saldo(db, "1051") == 0.0  # su depreciacion acumulada tambien se va
+    assert saldo(db, "6040") == 600.0  # 100 depreciados + 500 de perdida
+
+    # no se puede dar de baja dos veces
+    assert client.post(
+        f"/api/contabilidad/activos/{activo['id']}/baja", json={"motivo": "otra vez"}
+    ).status_code == 409
+
+
+def test_la_depreciacion_acumulada_no_se_reporta_como_descuadre(client, db, insumo):
+    """1051 es una contra-cuenta: su saldo negativo RESTA del activo y es
+    correcto. El chequeo de activos en negativo no debe confundirlas."""
+    contabilidad.asiento_de_apertura(db)
+    _comprar_nevera(client, meses=60, hace_meses=6)
+
+    # consultar la salud es lo que pone al dia la depreciacion
+    salud = client.get("/api/contabilidad/salud").json()
+    assert saldo(db, "1051") < 0
+    assert "1051" not in " ".join(p["titulo"] for p in salud["problemas"])
+
+
+def test_no_se_puede_acortar_la_vida_util_por_debajo_de_lo_ya_depreciado(client):
+    _comprar_nevera(client, meses=60, hace_meses=8)
+    activo = client.get("/api/contabilidad/activos").json()[0]
+    r = client.put(f"/api/contabilidad/activos/{activo['id']}", json={"vida_util_meses": 3})
+    assert r.status_code == 409
+
+
 # ----------------------------------------------------- menores: numeracion
 def test_no_se_repite_el_numero_de_factura(client, variante):
     """Dos facturas con el mismo numero en el Libro de Ventas es un problema

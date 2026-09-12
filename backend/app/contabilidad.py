@@ -13,6 +13,8 @@ acumulan sin resetear, y el Balance General los sube a Patrimonio como
 que hace cualquier sistema chico que no corta el año fiscal por software.
 """
 
+import calendar
+import datetime
 import logging
 from typing import List, Optional, Tuple
 
@@ -30,6 +32,9 @@ PLAN_DE_CUENTAS = [
     ("1030", "IVA credito fiscal", "activo", "deudora"),
     ("1040", "Inventario de insumos", "activo", "deudora"),
     ("1050", "Equipos y mobiliario", "activo", "deudora"),
+    # Contra-cuenta de activo (ver CUENTAS_CONTRA): se acredita, asi que su
+    # saldo sale negativo y resta del total de activos, como debe presentarse.
+    ("1051", "Depreciacion acumulada", "activo", "deudora"),
     ("2010", "Cuentas por pagar a proveedores", "pasivo", "acreedora"),
     ("2020", "Impuestos por pagar", "pasivo", "acreedora"),
     ("2030", "IVA debito fiscal", "pasivo", "acreedora"),
@@ -40,7 +45,13 @@ PLAN_DE_CUENTAS = [
     ("6010", "Gastos operativos", "gasto", "deudora"),
     ("6020", "Perdida por merma", "gasto", "deudora"),
     ("6030", "Faltante / sobrante de caja", "gasto", "deudora"),
+    ("6040", "Depreciacion", "gasto", "deudora"),
 ]
+
+# Cuentas que viven dentro de un grupo pero con el saldo invertido a proposito:
+# la depreciacion acumulada es un activo que RESTA. Su saldo negativo es
+# correcto y no debe reportarse como un descuadre.
+CUENTAS_CONTRA = {"1051"}
 
 # Metodo de pago del pedido -> cuenta donde entra el dinero.
 CUENTA_POR_METODO_PAGO = {
@@ -332,6 +343,104 @@ def registrar_pago_factura(db: Session, factura: models.FacturaCompra, forma_pag
         [("2010", factura.total, 0.0), (cuenta_pago, 0.0, factura.total)],
         origen="pago_factura",
         referencia_id=factura.id,
+    )
+
+
+def _sumar_meses(fecha: datetime.datetime, meses: int) -> datetime.datetime:
+    mes = fecha.month - 1 + meses
+    anio = fecha.year + mes // 12
+    mes = mes % 12 + 1
+    dia = min(fecha.day, calendar.monthrange(anio, mes)[1])
+    return fecha.replace(year=anio, month=mes, day=dia)
+
+
+def _meses_cumplidos(desde: datetime.datetime, hasta: datetime.datetime) -> int:
+    meses = (hasta.year - desde.year) * 12 + (hasta.month - desde.month)
+    if hasta.day < desde.day:
+        meses -= 1
+    return max(meses, 0)
+
+
+def asentar_depreciacion_pendiente(db: Session) -> int:
+    """Registra las cuotas de depreciacion que ya se cumplieron y faltan.
+
+    Es idempotente y se llama al consultar la contabilidad, no desde una tarea
+    en background: cuenta cuantas cuotas ya tiene asentadas cada activo y
+    completa las que falten. Un local que estuvo un mes sin abrir el sistema
+    se pone al dia solo la proxima vez que mire sus libros.
+    """
+    activos = db.query(models.ActivoFijo).filter(models.ActivoFijo.dado_de_baja.is_(False)).all()
+    ahora_ = ahora()
+    nuevos = 0
+
+    for activo in activos:
+        if not activo.vida_util_meses or activo.valor <= 0:
+            continue
+        cumplidos = _meses_cumplidos(activo.fecha_compra, ahora_)
+        objetivo = min(cumplidos, activo.vida_util_meses)
+        ya = (
+            db.query(models.AsientoContable)
+            .filter_by(origen="depreciacion", referencia_id=activo.id)
+            .count()
+        )
+        if ya >= objetivo:
+            continue
+
+        cuota = activo.cuota_mensual
+        for numero in range(ya + 1, objetivo + 1):
+            # En la ultima cuota se ajusta el redondeo para que lo depreciado
+            # sume exactamente el valor del bien y no quede un resto colgado.
+            monto = (
+                round(activo.valor - cuota * (activo.vida_util_meses - 1), 2)
+                if numero == activo.vida_util_meses
+                else cuota
+            )
+            if monto <= 0:
+                continue
+            crear_asiento(
+                db,
+                f"Depreciacion de {activo.nombre} ({numero}/{activo.vida_util_meses})",
+                [("6040", monto, 0.0), ("1051", 0.0, monto)],
+                origen="depreciacion",
+                referencia_id=activo.id,
+                fecha=_sumar_meses(activo.fecha_compra, numero),
+            )
+            nuevos += 1
+
+    if nuevos:
+        db.commit()
+    return nuevos
+
+
+def depreciacion_acumulada(db: Session, activo: models.ActivoFijo) -> float:
+    """Cuanto se le ha depreciado ya a ese bien, segun los asientos existentes."""
+    asientos = (
+        db.query(models.AsientoContable)
+        .filter_by(origen="depreciacion", referencia_id=activo.id)
+        .all()
+    )
+    return round(sum(m.debe for a in asientos for m in a.movimientos), 2)
+
+
+def registrar_baja_activo(db: Session, activo: models.ActivoFijo, acumulada: float) -> None:
+    """Saca el bien de los libros: se daño, se vendio o se robo.
+
+    Lo ya depreciado se revierte y lo que quedaba por depreciar se reconoce de
+    golpe como perdida, que es lo que de verdad paso.
+    """
+    valor_en_libros = round(activo.valor - acumulada, 2)
+    lineas = []
+    if acumulada > 0:
+        lineas.append(("1051", acumulada, 0.0))
+    if valor_en_libros > 0:
+        lineas.append(("6040", valor_en_libros, 0.0))
+    lineas.append(("1050", 0.0, activo.valor))
+    crear_asiento(
+        db,
+        f"Baja de {activo.nombre}: {activo.motivo_baja or 'sin motivo'}",
+        lineas,
+        origen="baja_activo",
+        referencia_id=activo.id,
     )
 
 

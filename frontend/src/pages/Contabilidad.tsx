@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
 import type {
+  ActivoFijo,
   AsientoContable,
   BalanceGeneral,
   CuentaContable,
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'comprobacion', texto: 'Balance de comprobacion' },
   { id: 'resultados', texto: 'Estado de resultados' },
   { id: 'general', texto: 'Balance general' },
+  { id: 'activos', texto: 'Equipos' },
 ] as const
 
 type Tab = (typeof TABS)[number]['id']
@@ -94,6 +96,7 @@ export default function Contabilidad() {
         {tab === 'comprobacion' && <BalanceComprobacion />}
         {tab === 'resultados' && <EstadoResultados />}
         {tab === 'general' && <BalanceGeneralVista />}
+        {tab === 'activos' && <Activos />}
       </div>
     </div>
   )
@@ -107,6 +110,13 @@ const ORIGEN_LABEL: Record<string, string> = {
   merma: 'Merma',
   compra_insumo: 'Compra de insumo',
   factura_compra: 'Factura de compra',
+  pago_factura: 'Pago a proveedor',
+  cierre_caja: 'Cierre de caja',
+  apertura: 'Apertura',
+  reverso_merma: 'Reverso de merma',
+  ajuste_inventario: 'Ajuste de inventario',
+  depreciacion: 'Depreciacion',
+  baja_activo: 'Baja de equipo',
 }
 
 const TIPO_LABEL: Record<string, string> = {
@@ -599,6 +609,163 @@ function BalanceGeneralVista() {
         <div className="flex justify-between mt-1 font-bold">
           <span>Total patrimonio</span>
           <span className="tabular-nums">${datos.total_patrimonio.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Equipos que se gastan con los años: nevera, horno, mesas.
+ *
+ * Antes una compra de activos entraba a 1050 y se quedaba ahi a valor de
+ * compra para siempre: el desgaste nunca llegaba al estado de resultados y el
+ * balance mostraba equipos viejos valiendo como nuevos. La depreciacion se
+ * asienta sola al abrir esta pantalla (o cualquier estado financiero).
+ */
+function Activos() {
+  const [activos, setActivos] = useState<ActivoFijo[]>([])
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    cargar()
+  }, [])
+
+  function cargar() {
+    api.listarActivos().then(setActivos).catch(() => setActivos([]))
+  }
+
+  async function accion(fn: () => Promise<unknown>) {
+    setError('')
+    try {
+      await fn()
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ocurrio un error')
+    }
+  }
+
+  function cambiarVida(a: ActivoFijo) {
+    const texto = window.prompt(
+      `Cuantos meses dura ${a.nombre}?\n\nA ${a.vida_util_meses} meses se gasta $${a.cuota_mensual.toFixed(2)} al mes.`,
+      String(a.vida_util_meses),
+    )
+    if (texto === null) return
+    const meses = Number(texto)
+    if (!Number.isFinite(meses) || meses <= 0) return
+    accion(() => api.actualizarActivo(a.id, { vida_util_meses: meses }))
+  }
+
+  function darDeBaja(a: ActivoFijo) {
+    const motivo = window.prompt(
+      `Dar de baja ${a.nombre}?\n\nLe quedan $${a.valor_en_libros.toFixed(2)} sin depreciar, ` +
+        `que se van a reconocer como perdida de una vez.\n\nQue paso?`,
+      'Se daño',
+    )
+    if (motivo === null) return
+    accion(() => api.darDeBajaActivo(a.id, motivo))
+  }
+
+  const enUso = activos.filter((a) => !a.dado_de_baja)
+  const valorLibros = enUso.reduce((s, a) => s + a.valor_en_libros, 0)
+  const cuotaMes = enUso
+    .filter((a) => a.meses_depreciados < a.vida_util_meses)
+    .reduce((s, a) => s + a.cuota_mensual, 0)
+
+  return (
+    <div className="space-y-4">
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <div className="flex flex-wrap justify-between gap-3 mb-1">
+          <h2 className="font-semibold">Equipos y mobiliario</h2>
+          <span className="text-sm text-neutral-500">
+            valen hoy{' '}
+            <span className="font-semibold text-neutral-800 tabular-nums">
+              ${valorLibros.toFixed(2)}
+            </span>
+            {cuotaMes > 0 && (
+              <>
+                {' '}· se gastan{' '}
+                <span className="font-semibold text-neutral-800 tabular-nums">
+                  ${cuotaMes.toFixed(2)}
+                </span>{' '}
+                al mes
+              </>
+            )}
+          </span>
+        </div>
+        <p className="text-xs text-neutral-500 mb-3">
+          Cada equipo se va convirtiendo en gasto a lo largo de su vida util. Ese desgaste ya
+          esta descontado de la ganancia que ves en Reportes.
+        </p>
+
+        {activos.length === 0 && (
+          <p className="text-sm text-neutral-400">
+            Sin equipos registrados. Se crean solos al cargar una factura de categoria Activos en
+            Compras.
+          </p>
+        )}
+
+        <div className="space-y-2">
+          {activos.map((a) => {
+            const pct = a.valor > 0 ? (a.depreciacion_acumulada / a.valor) * 100 : 0
+            const agotado = a.meses_depreciados >= a.vida_util_meses
+            return (
+              <div
+                key={a.id}
+                className={`border rounded-xl p-3 ${
+                  a.dado_de_baja ? 'border-neutral-200 opacity-50' : 'border-neutral-200'
+                }`}
+              >
+                <div className="flex flex-wrap justify-between items-baseline gap-2 mb-2">
+                  <span className="font-medium">
+                    {a.nombre}
+                    {a.dado_de_baja && (
+                      <span className="ml-2 text-xs text-neutral-500">
+                        dado de baja{a.motivo_baja ? `: ${a.motivo_baja}` : ''}
+                      </span>
+                    )}
+                    {!a.dado_de_baja && agotado && (
+                      <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                        ya depreciado
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-sm tabular-nums">
+                    <span className="text-neutral-400">${a.valor.toFixed(2)}</span>
+                    {' → '}
+                    <span className="font-semibold">${a.valor_en_libros.toFixed(2)}</span>
+                  </span>
+                </div>
+
+                {!a.dado_de_baja && (
+                  <>
+                    <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden mb-2">
+                      <div
+                        className={`h-full ${agotado ? 'bg-amber-400' : 'bg-neutral-700'}`}
+                        style={{ width: `${Math.min(pct, 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex flex-wrap justify-between gap-2 text-xs text-neutral-500">
+                      <span>
+                        {a.meses_depreciados} de {a.vida_util_meses} meses · $
+                        {a.cuota_mensual.toFixed(2)}/mes
+                      </span>
+                      <span className="flex gap-3">
+                        <button onClick={() => cambiarVida(a)} className="text-blue-600 font-medium">
+                          Cambiar duracion
+                        </button>
+                        <button onClick={() => darDeBaja(a)} className="text-red-500 font-medium">
+                          Dar de baja
+                        </button>
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>

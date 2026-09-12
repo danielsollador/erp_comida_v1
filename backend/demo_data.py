@@ -13,8 +13,11 @@ import sys
 from app import contabilidad, costeo, impuestos, tasas
 from app.database import SessionLocal
 from app.models import (
+    ActivoFijo,
     AsientoContable,
+    CambioPrecio,
     CierreCaja,
+    CompraSuelta,
     FacturaCompra,
     FacturaCompraItem,
     Gasto,
@@ -53,6 +56,14 @@ SURTIDO_POR_PROVEEDOR = {
     "Fruteria La Guacamaya": ["Naranja"],
 }
 
+# Equipos comprados antes del periodo que genera el demo: se deprecian solos y
+# muestran el modulo funcionando con historia, no recien estrenado.
+# (numero, proveedor, descripcion, base, iva, vida_util_meses, dias_atras)
+EQUIPOS_DEMO = [
+    ("EQ-001", "Refrigeracion Caracas", "Nevera exhibidora 2 puertas", 800.0, 128.0, 60, 243),
+    ("EQ-002", "Equipos Gastronomicos CA", "Horno industrial 4 bandejas", 450.0, 72.0, 84, 500),
+]
+
 
 def limpiar(db):
     db.query(MovimientoContable).delete()
@@ -62,6 +73,9 @@ def limpiar(db):
     db.query(Gasto).delete()
     db.query(Merma).delete()
     db.query(CierreCaja).delete()
+    db.query(ActivoFijo).delete()
+    db.query(CompraSuelta).delete()
+    db.query(CambioPrecio).delete()
     # Los renglones primero: un DELETE masivo no dispara el cascade de SQLAlchemy.
     db.query(FacturaCompraItem).delete()
     db.query(FacturaCompra).delete()
@@ -125,6 +139,37 @@ def generar(db, dias=45):
             )
 
     hoy = datetime.date.today()
+
+    # Los equipos se cargan primero, con fecha anterior al historico de ventas:
+    # asi llegan al presente con varios meses ya depreciados.
+    for numero, proveedor, desc, base, iva, meses, dias_atras in EQUIPOS_DEMO:
+        fecha_compra = datetime.datetime.now() - datetime.timedelta(days=dias_atras)
+        factura = FacturaCompra(
+            numero_factura=numero,
+            proveedor_nombre=proveedor,
+            fecha=fecha_compra,
+            categoria="Activos",
+            forma_pago="Banco",
+            descripcion=desc,
+            base_imponible=base,
+            iva=iva,
+            pagada=True,
+            fecha_pago=fecha_compra,
+        )
+        db.add(factura)
+        db.flush()
+        contabilidad.registrar_factura_compra(db, factura)
+        db.add(
+            ActivoFijo(
+                nombre=desc,
+                valor=base,
+                fecha_compra=fecha_compra,
+                vida_util_meses=meses,
+                factura_id=factura.id,
+            )
+        )
+    db.commit()
+
     total_pedidos = 0
     numero_factura = 100
     # Contador aparte para las compras semanales: numero_factura tambien lo
@@ -311,7 +356,9 @@ def generar(db, dias=45):
                 db.flush()
 
     db.commit()
+    cuotas = contabilidad.asentar_depreciacion_pendiente(db)
     print(f"Listo: {total_pedidos} pedidos generados en los ultimos {dias} dias.")
+    print(f"       {len(EQUIPOS_DEMO)} equipos con {cuotas} cuotas de depreciacion asentadas.")
 
 
 if __name__ == "__main__":

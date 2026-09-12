@@ -1,4 +1,5 @@
 import type {
+  ActivoFijo,
   AsientoContable,
   BalanceGeneral,
   CambioPrecio,
@@ -192,6 +193,14 @@ export const api = {
     req<EstadoResultadosContable>(`/contabilidad/estado-resultados?periodo=${periodo}`),
   balanceGeneral: () => req<BalanceGeneral>('/contabilidad/balance-general'),
   saludContable: () => req<SaludContable>('/contabilidad/salud'),
+  listarActivos: () => req<ActivoFijo[]>('/contabilidad/activos'),
+  actualizarActivo: (id: number, cambios: { nombre?: string; vida_util_meses?: number }) =>
+    req<ActivoFijo>(`/contabilidad/activos/${id}`, { method: 'PUT', body: JSON.stringify(cambios) }),
+  darDeBajaActivo: (id: number, motivo: string) =>
+    req<ActivoFijo>(`/contabilidad/activos/${id}/baja`, {
+      method: 'POST',
+      body: JSON.stringify({ motivo }),
+    }),
 
   listarFacturasCompra: (dias = 60) => req<FacturaCompra[]>(`/compras/facturas?dias=${dias}`),
   crearFacturaCompra: (f: {
@@ -209,6 +218,8 @@ export const api = {
     iva?: number
     // Solo si forma_pago es "Credito".
     fecha_vencimiento?: string
+    // Solo si categoria es "Activos": en cuantos meses se gasta el equipo.
+    vida_util_meses?: number
   }) => req<FacturaCompra>('/compras/facturas', { method: 'POST', body: JSON.stringify(f) }),
   eliminarFacturaCompra: (id: number) => req(`/compras/facturas/${id}`, { method: 'DELETE' }),
   pagarFacturaCompra: (id: number, forma_pago: string) =>
@@ -254,6 +265,7 @@ export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
 }
 
 export type {
+  ActivoFijo,
   AsientoContable,
   BalanceGeneral,
   CambioPrecio,

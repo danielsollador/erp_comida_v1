@@ -122,6 +122,21 @@ export type ReporteResumen = {
   insights: Insight[]
 }
 
+export type ActivoFijo = {
+  id: number
+  nombre: string
+  valor: number
+  fecha_compra: string
+  vida_util_meses: number
+  cuota_mensual: number
+  depreciacion_acumulada: number
+  valor_en_libros: number
+  meses_depreciados: number
+  dado_de_baja: boolean
+  fecha_baja: string | null
+  motivo_baja: string
+}
+
 export type ProblemaContable = {
   gravedad: 'grave' | 'aviso'
   titulo: string

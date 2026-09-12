@@ -118,6 +118,20 @@ def crear_factura(factura: schemas.FacturaCompraCreate, db: Session = Depends(ge
 
     db.flush()
     contabilidad.registrar_factura_compra(db, db_factura)
+
+    # Una compra de activos crea el bien para que empiece a depreciarse. Antes
+    # entraba a 1050 y se quedaba ahi a valor de compra para siempre.
+    if db_factura.categoria == "Activos":
+        db.add(
+            models.ActivoFijo(
+                nombre=db_factura.descripcion or f"Activo (fact. {db_factura.numero_factura})",
+                valor=db_factura.base_imponible,
+                fecha_compra=db_factura.fecha,
+                vida_util_meses=factura.vida_util_meses or 60,
+                factura_id=db_factura.id,
+            )
+        )
+
     db.commit()
     db.refresh(db_factura)
     return _a_schema(db_factura)

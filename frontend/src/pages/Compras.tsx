@@ -27,6 +27,8 @@ export default function Compras() {
   const [base, setBase] = useState('')
   const [iva, setIva] = useState('')
   const [fechaVencimiento, setFechaVencimiento] = useState('')
+  // Cuantos meses dura el equipo. Define la cuota de depreciacion mensual.
+  const [vidaUtil, setVidaUtil] = useState('60')
 
   // Con que forma de pago se va a saldar cada factura a credito pendiente -
   // una por fila, para el boton "Marcar pagada" de cuentas por pagar.
@@ -35,6 +37,7 @@ export default function Compras() {
 
   const esInsumos = categoria === 'Insumos'
   const esCredito = formaPago === 'Credito'
+  const esActivo = categoria === 'Activos'
 
   useEffect(() => {
     cargar()
@@ -159,6 +162,7 @@ export default function Compras() {
           base_imponible: baseNum,
           iva: Number(iva) || 0,
           fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
+          vida_util_meses: esActivo ? Number(vidaUtil) || 60 : undefined,
         })
       }
       limpiarFormulario()
@@ -284,6 +288,21 @@ export default function Compras() {
                   type="date"
                   className="flex-1 outline-none text-neutral-800"
                 />
+              </label>
+            )}
+            {/* Un equipo se gasta con los años: sin este dato entraba al
+                balance a valor de compra y se quedaba ahi para siempre. */}
+            {esActivo && (
+              <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
+                Dura
+                <input
+                  value={vidaUtil}
+                  onChange={(e) => setVidaUtil(e.target.value)}
+                  type="number"
+                  min="1"
+                  className="w-16 outline-none text-neutral-800 text-right"
+                />
+                meses
               </label>
             )}
           </div>
