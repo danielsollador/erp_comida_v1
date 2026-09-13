@@ -15,7 +15,28 @@ Factura de compra. Vivir en un solo lugar es lo que garantiza que ambos
 caminos calculen el costo exactamente igual.
 """
 
+import threading
+from contextlib import contextmanager
+
 from . import models
+
+# Tocar el stock es leer-calcular-escribir, y eso no es atomico. FastAPI corre
+# los endpoints sincronos en un threadpool, asi que dos compras simultaneas del
+# mismo insumo leian el mismo stock y la ultima pisaba a la anterior: de 10
+# compras de 1 kg entraba 1 sola, mientras la contabilidad registraba las 10.
+#
+# Este candado sirve mientras la app corra en un proceso, que es el caso hoy.
+# Con varios procesos (o varias instancias en la nube) haria falta ademas
+# bloqueo a nivel de base: por eso los SELECT usan `with_for_update()`, que
+# SQLite ignora pero Postgres si respeta.
+_candado_inventario = threading.Lock()
+
+
+@contextmanager
+def bloqueo_inventario():
+    """Serializa las modificaciones de stock dentro de este proceso."""
+    with _candado_inventario:
+        yield
 
 
 def consumo_bruto(receta: models.RecetaItem, unidades: float) -> float:

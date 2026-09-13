@@ -11,6 +11,26 @@ from ..timeutils import hoy, inicio_del_dia
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
 
 
+def _ingrediente_para_actualizar(db: Session, ingrediente_id: int) -> models.Ingrediente:
+    """Trae el insumo listo para modificarle el stock.
+
+    `with_for_update()` no hace nada en SQLite pero sí bloquea la fila en
+    Postgres, que es a donde iria esto si algun dia corre en la nube con varias
+    instancias: ahi el candado de proceso ya no alcanza.
+    """
+    # La sesion pudo haber leido este insumo antes de que otro hilo lo tocara.
+    db.expire_all()
+    ingrediente = (
+        db.query(models.Ingrediente)
+        .filter(models.Ingrediente.id == ingrediente_id)
+        .with_for_update()
+        .first()
+    )
+    if not ingrediente:
+        raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
+    return ingrediente
+
+
 @router.get("/ingredientes", response_model=List[schemas.Ingrediente])
 def listar_ingredientes(db: Session = Depends(get_db)):
     return db.query(models.Ingrediente).order_by(models.Ingrediente.nombre).all()
@@ -49,39 +69,42 @@ def actualizar_ingrediente(
 def registrar_compra(
     ingrediente_id: int, body: schemas.ComprarIngredienteRequest, db: Session = Depends(get_db)
 ):
-    db_ingrediente = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
-    if not db_ingrediente:
-        raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
     if body.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
 
-    # Costo de esta compra puntual: lo que se pago, o si no se informo, se
-    # asume el mismo costo promedio que ya tenia (compra informal sin dato).
-    if body.costo_total is not None and body.costo_total > 0:
-        costo_de_esta_compra = round(body.costo_total / body.cantidad, 4)
-        valor = round(body.costo_total, 2)
-    else:
-        costo_de_esta_compra = db_ingrediente.costo_unitario or 0
-        valor = round(body.cantidad * costo_de_esta_compra, 2)
+    # Leer el stock, promediar y escribirlo es una sola operacion logica: sin
+    # el candado, dos compras simultaneas leian el mismo stock y la ultima
+    # pisaba a la anterior (medido: de 10 compras de 1 kg entro 1 sola).
+    with costeo.bloqueo_inventario():
+        db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
 
-    # El costo del insumo se PROMEDIA con lo que ya habia, no se pisa - ver
-    # costeo.py. Asi el costo (y el margen que se le muestra al dueno) no
-    # salta de golpe cada vez que un proveedor sube el precio.
-    costeo.registrar_entrada(db_ingrediente, body.cantidad, costo_de_esta_compra)
-    # Cada compra suelta queda como un registro propio. Antes el asiento usaba
-    # el id del ingrediente como referencia, asi que todas las compras del mismo
-    # insumo compartian referencia y ninguna se podia rastrear.
-    compra = models.CompraSuelta(
-        ingrediente_id=db_ingrediente.id,
-        cantidad=body.cantidad,
-        costo_unitario=costo_de_esta_compra,
-    )
-    db.add(compra)
-    db.flush()
-    contabilidad.registrar_compra_insumo(db, db_ingrediente, round(valor, 2), compra.id)
-    db.commit()
-    db.refresh(db_ingrediente)
-    return db_ingrediente
+        # Costo de esta compra puntual: lo que se pago, o si no se informo, se
+        # asume el mismo costo promedio que ya tenia (compra informal sin dato).
+        if body.costo_total is not None and body.costo_total > 0:
+            costo_de_esta_compra = round(body.costo_total / body.cantidad, 4)
+            valor = round(body.costo_total, 2)
+        else:
+            costo_de_esta_compra = db_ingrediente.costo_unitario or 0
+            valor = round(body.cantidad * costo_de_esta_compra, 2)
+
+        # El costo del insumo se PROMEDIA con lo que ya habia, no se pisa - ver
+        # costeo.py. Asi el costo (y el margen que se le muestra al dueno) no
+        # salta de golpe cada vez que un proveedor sube el precio.
+        costeo.registrar_entrada(db_ingrediente, body.cantidad, costo_de_esta_compra)
+        # Cada compra suelta queda como un registro propio. Antes el asiento usaba
+        # el id del ingrediente como referencia, asi que todas las compras del mismo
+        # insumo compartian referencia y ninguna se podia rastrear.
+        compra = models.CompraSuelta(
+            ingrediente_id=db_ingrediente.id,
+            cantidad=body.cantidad,
+            costo_unitario=costo_de_esta_compra,
+        )
+        db.add(compra)
+        db.flush()
+        contabilidad.registrar_compra_insumo(db, db_ingrediente, round(valor, 2), compra.id)
+        db.commit()
+        db.refresh(db_ingrediente)
+        return db_ingrediente
 
 
 @router.post("/ingredientes/{ingrediente_id}/merma", response_model=schemas.Ingrediente)
@@ -89,24 +112,26 @@ def registrar_merma(
     ingrediente_id: int, body: schemas.MermaRequest, db: Session = Depends(get_db)
 ):
     """Lo que se daño, quemó o botó. Sin esto el stock del sistema nunca cuadra."""
-    db_ingrediente = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
-    if not db_ingrediente:
-        raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
     if body.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
 
-    db_ingrediente.stock_actual -= body.cantidad
-    db_merma = models.Merma(
-        ingrediente_id=ingrediente_id, cantidad=body.cantidad, motivo=body.motivo
-    )
-    db.add(db_merma)
-    db.flush()
-    contabilidad.registrar_merma(
-        db, db_ingrediente, round(body.cantidad * (db_ingrediente.costo_unitario or 0), 2), db_merma.id
-    )
-    db.commit()
-    db.refresh(db_ingrediente)
-    return db_ingrediente
+    with costeo.bloqueo_inventario():
+        db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
+        db_ingrediente.stock_actual -= body.cantidad
+        db_merma = models.Merma(
+            ingrediente_id=ingrediente_id, cantidad=body.cantidad, motivo=body.motivo
+        )
+        db.add(db_merma)
+        db.flush()
+        contabilidad.registrar_merma(
+            db,
+            db_ingrediente,
+            round(body.cantidad * (db_ingrediente.costo_unitario or 0), 2),
+            db_merma.id,
+        )
+        db.commit()
+        db.refresh(db_ingrediente)
+        return db_ingrediente
 
 
 @router.post("/ingredientes/{ingrediente_id}/ajustar", response_model=schemas.Ingrediente)
@@ -114,30 +139,29 @@ def ajustar_stock(
     ingrediente_id: int, body: schemas.AjusteStockRequest, db: Session = Depends(get_db)
 ):
     """Conteo fisico: lo que dice la balanza manda sobre lo que dice el sistema."""
-    db_ingrediente = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
-    if not db_ingrediente:
-        raise HTTPException(status_code=404, detail="Ingrediente no encontrado")
+    with costeo.bloqueo_inventario():
+        db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
 
-    faltante = (db_ingrediente.stock_actual or 0) - body.stock_real
-    valor = round(abs(faltante) * (db_ingrediente.costo_unitario or 0), 2)
-    if faltante > 0:
-        db_merma = models.Merma(
-            ingrediente_id=ingrediente_id, cantidad=faltante, motivo=body.motivo
-        )
-        db.add(db_merma)
-        db.flush()
-        contabilidad.registrar_merma(db, db_ingrediente, valor, db_merma.id)
-    elif faltante < 0 and valor > 0:
-        # Sobra mercancia respecto al sistema. Antes se subia el stock en
-        # silencio, sin asiento: el inventario contable quedaba por debajo del
-        # real para siempre (era la unica salida para corregir una merma
-        # duplicada, y dejaba los libros peor que antes).
-        contabilidad.registrar_sobrante_inventario(db, db_ingrediente, valor, ingrediente_id)
+        faltante = (db_ingrediente.stock_actual or 0) - body.stock_real
+        valor = round(abs(faltante) * (db_ingrediente.costo_unitario or 0), 2)
+        if faltante > 0:
+            db_merma = models.Merma(
+                ingrediente_id=ingrediente_id, cantidad=faltante, motivo=body.motivo
+            )
+            db.add(db_merma)
+            db.flush()
+            contabilidad.registrar_merma(db, db_ingrediente, valor, db_merma.id)
+        elif faltante < 0 and valor > 0:
+            # Sobra mercancia respecto al sistema. Antes se subia el stock en
+            # silencio, sin asiento: el inventario contable quedaba por debajo del
+            # real para siempre (era la unica salida para corregir una merma
+            # duplicada, y dejaba los libros peor que antes).
+            contabilidad.registrar_sobrante_inventario(db, db_ingrediente, valor, ingrediente_id)
 
-    db_ingrediente.stock_actual = body.stock_real
-    db.commit()
-    db.refresh(db_ingrediente)
-    return db_ingrediente
+        db_ingrediente.stock_actual = body.stock_real
+        db.commit()
+        db.refresh(db_ingrediente)
+        return db_ingrediente
 
 
 @router.get("/mermas", response_model=List[schemas.Merma])
@@ -175,21 +199,22 @@ def revertir_merma(merma_id: int, db: Session = Depends(get_db)):
     queda marcada, no se borra: un error documentado vale mas que un error
     desaparecido, y es la misma disciplina que ya aplicamos en Compras.
     """
-    merma = db.query(models.Merma).filter(models.Merma.id == merma_id).first()
-    if not merma:
-        raise HTTPException(status_code=404, detail="Merma no encontrada")
-    if merma.revertida:
-        raise HTTPException(status_code=409, detail="Esta merma ya fue revertida")
+    with costeo.bloqueo_inventario():
+        merma = db.query(models.Merma).filter(models.Merma.id == merma_id).first()
+        if not merma:
+            raise HTTPException(status_code=404, detail="Merma no encontrada")
+        if merma.revertida:
+            raise HTTPException(status_code=409, detail="Esta merma ya fue revertida")
 
-    ingrediente = merma.ingrediente
-    valor = round(merma.cantidad * (ingrediente.costo_unitario or 0), 2)
-    ingrediente.stock_actual = (ingrediente.stock_actual or 0) + merma.cantidad
-    merma.revertida = True
-    if valor > 0:
-        contabilidad.registrar_reverso_merma(db, ingrediente, valor, merma.id)
-    db.commit()
-    db.refresh(ingrediente)
-    return ingrediente
+        ingrediente = _ingrediente_para_actualizar(db, merma.ingrediente_id)
+        valor = round(merma.cantidad * (ingrediente.costo_unitario or 0), 2)
+        ingrediente.stock_actual = (ingrediente.stock_actual or 0) + merma.cantidad
+        merma.revertida = True
+        if valor > 0:
+            contabilidad.registrar_reverso_merma(db, ingrediente, valor, merma.id)
+        db.commit()
+        db.refresh(ingrediente)
+        return ingrediente
 
 
 @router.get("/recetas/{variante_id}", response_model=List[schemas.RecetaItem])

@@ -57,6 +57,14 @@ def listar_facturas(dias: int = 60, db: Session = Depends(get_db)):
 
 @router.post("/facturas", response_model=schemas.FacturaCompra)
 def crear_factura(factura: schemas.FacturaCompraCreate, db: Session = Depends(get_db)):
+    # Los renglones mueven stock igual que una compra suelta, asi que entran
+    # por el mismo candado: sin el, dos facturas cargadas a la vez se pisaban
+    # el promedio ponderado del mismo insumo.
+    with costeo.bloqueo_inventario():
+        return _crear_factura(factura, db)
+
+
+def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas.FacturaCompra:
     if factura.iva < 0:
         raise HTTPException(status_code=400, detail="El IVA no puede ser negativo")
 
@@ -64,11 +72,12 @@ def crear_factura(factura: schemas.FacturaCompraCreate, db: Session = Depends(ge
         # Con renglones: la base la calcula el sistema sumando lo que de
         # verdad se compro, no lo que alguien tipeo aparte - evita que un
         # numero de cabecera quede desincronizado de sus propios renglones.
+        db.expire_all()  # otro hilo pudo haber movido el stock de estos insumos
         ingredientes = {
             i.id: i
-            for i in db.query(models.Ingrediente).filter(
-                models.Ingrediente.id.in_([it.ingrediente_id for it in factura.items])
-            )
+            for i in db.query(models.Ingrediente)
+            .filter(models.Ingrediente.id.in_([it.ingrediente_id for it in factura.items]))
+            .with_for_update()
         }
         for item in factura.items:
             if item.ingrediente_id not in ingredientes:

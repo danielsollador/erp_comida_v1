@@ -6,6 +6,8 @@ detectar mirando la pantalla.
 """
 
 import datetime
+import threading
+import time
 
 from app import contabilidad, costeo, models
 from tests.conftest import saldo
@@ -777,6 +779,56 @@ def test_anular_preparado_con_receta_cambiada_valora_bien_la_merma(client, db, v
     mermas = client.get("/api/inventario/mermas").json()
     assert len(mermas) == 1
     assert mermas[0]["cantidad"] == 1.25  # lo que salio, no lo que diria la receta nueva
+
+
+# ------------------------------------------- OO: concurrencia (caso 15)
+def test_el_bloqueo_de_inventario_serializa_lecturas_y_escrituras():
+    """Mover stock es leer-calcular-escribir, y eso no es atomico.
+
+    FastAPI corre los endpoints sincronos en un threadpool, asi que dos
+    compras del mismo insumo leian el mismo stock y la ultima pisaba a la
+    anterior: medido contra la API, de 10 compras de 1 kg entraba 1 sola
+    mientras la contabilidad registraba las 10.
+
+    Aca se prueba el candado en si: el escenario completo contra la API
+    necesita varios hilos con su propia sesion, que TestClient no da.
+    """
+    compartido = {"valor": 0}
+
+    def sumar_con_ventana():
+        with costeo.bloqueo_inventario():
+            leido = compartido["valor"]
+            time.sleep(0.001)  # ventana donde otro hilo podria colarse
+            compartido["valor"] = leido + 1
+
+    hilos = [threading.Thread(target=sumar_con_ventana) for _ in range(20)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+
+    assert compartido["valor"] == 20  # sin candado quedarian menos
+
+
+def test_el_bloqueo_se_libera_aunque_falle_la_operacion():
+    """Si un error dejara el candado tomado, el inventario quedaria trabado
+    para todo el local hasta reiniciar."""
+    try:
+        with costeo.bloqueo_inventario():
+            raise ValueError("algo salio mal")
+    except ValueError:
+        pass
+
+    tomado = []
+
+    def intentar():
+        with costeo.bloqueo_inventario():
+            tomado.append(True)
+
+    h = threading.Thread(target=intentar)
+    h.start()
+    h.join(timeout=2)
+    assert tomado == [True]
 
 
 # ----------------------------------------------------- menores: numeracion
