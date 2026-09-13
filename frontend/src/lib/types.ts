@@ -277,6 +277,40 @@ export type Respaldo = {
   creado_en: string
 }
 
+export type EstadoRespaldos = {
+  ultimo_respaldo: string | null
+  cantidad: number
+  /** Hasta que fecha se puede volver atras de verdad. */
+  dia_mas_viejo: string | null
+  ultima_descarga: string | null
+  /** Hace cuanto nadie saca una copia de esta maquina. null = nunca. */
+  dias_sin_descargar: number | null
+  /** Carpeta externa (USB/Drive) donde se copia el ultimo respaldo. */
+  copia_externa: string | null
+  restauracion_reciente: Restauracion | null
+}
+
+export type PrevisualizacionRestauracion = {
+  valido: boolean
+  motivo: string
+  /** Fecha de la ultima venta que tiene el respaldo. */
+  corte: string | null
+  pedidos_en_el_respaldo: number
+  /** null = no se pudo medir. NO es cero: hay que advertirlo, no tranquilizar. */
+  pedidos_que_se_pierden: number | null
+  monto_que_se_pierde: number | null
+}
+
+export type Restauracion = {
+  fecha: string
+  restaurado_desde: string
+  /** Copia de la base que habia ANTES, por si restaurar fue el error. */
+  respaldo_previo: string
+  pedidos_perdidos: number | null
+  monto_perdido: number | null
+  corte: string | null
+}
+
 export type ResumenCaja = {
   fecha: string
   total_ventas: number

@@ -4,7 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import models  # noqa: F401  (registra las tablas en Base)
-from .backup import crear_respaldo, iniciar_respaldos_automaticos
+from .backup import iniciar_respaldos_automaticos, respaldo_si_hace_falta
 from .contabilidad import seed_plan_de_cuentas
 from .database import Base, SessionLocal, engine
 from .migrations import aplicar as aplicar_migraciones
@@ -38,11 +38,12 @@ async def lifespan(app: FastAPI):
         seed_plan_de_cuentas(db)
     seed_if_empty()
 
-    # Un respaldo apenas arranca (por si el servidor no lleva 6 horas prendido
-    # desde el ultimo) y luego uno automatico cada pocas horas, en background.
+    # Un respaldo al arrancar SOLO si el ultimo ya tiene sus horas encima. Con
+    # un respaldo incondicional por arranque, cada corte de luz se comia una
+    # copia de la retencion y la historia se evaporaba sin que nadie lo viera.
     if BACKUP_ON_STARTUP:
         try:
-            crear_respaldo()
+            respaldo_si_hace_falta()
         except Exception as e:
             print(f"[backup] fallo el respaldo inicial: {e}")
     iniciar_respaldos_automaticos()

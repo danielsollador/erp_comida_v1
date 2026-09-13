@@ -55,7 +55,9 @@ Copiar `.env.example` a `.env` y ajustar. Variables disponibles:
 | `APP_PORT` | `8090` | puerto del host |
 | `TZ` | `America/Caracas` | zona horaria (afecta cierres y reportes por dia) |
 | `ERP_BACKUP_INTERVAL_HOURS` | `6` | cada cuanto respalda solo |
-| `ERP_BACKUP_KEEP` | `60` | cuantos respaldos conserva |
+| `ERP_BACKUP_RETENER_RECIENTES` | `8` | ultimos respaldos que siempre se conservan |
+| `ERP_BACKUP_RETENER_DIAS` | `30` | dias de historia (el ultimo respaldo de cada dia) |
+| `ERP_BACKUP_MIRROR_DIR` | vacio | carpeta externa (USB/Drive) con copia del ultimo respaldo |
 | `ERP_CORS_ORIGINS` | `*` | origenes permitidos (irrelevante detras de nginx) |
 
 ## Buenas practicas aplicadas

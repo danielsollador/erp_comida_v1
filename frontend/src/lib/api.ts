@@ -30,6 +30,9 @@ import type {
   ReporteCombos,
   RecetaItem,
   Respaldo,
+  EstadoRespaldos,
+  PrevisualizacionRestauracion,
+  Restauracion,
   ResumenCaja,
   ResumenIva,
   RetiroPropietario,
@@ -185,6 +188,36 @@ export const api = {
 
   listarRespaldos: () => req<Respaldo[]>('/respaldos'),
   crearRespaldo: () => req<{ ok: boolean; archivo: string }>('/respaldos/crear', { method: 'POST' }),
+  estadoRespaldos: () => req<EstadoRespaldos>('/respaldos/estado'),
+  previsualizarRestauracion: (nombre: string) =>
+    req<PrevisualizacionRestauracion>(`/respaldos/${nombre}/previsualizar`),
+  restaurarRespaldo: (nombre: string) =>
+    req<Restauracion>(`/respaldos/${nombre}/restaurar`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmar: true }),
+    }),
+  restaurarDesdeArchivo: async (archivo: File) => {
+    // multipart: el navegador pone el Content-Type con su boundary, por eso
+    // no se usa `req`, que fuerza application/json.
+    const datos = new FormData()
+    datos.append('archivo', archivo)
+    const res = await fetch('/api/respaldos/restaurar-archivo?confirmar=true', {
+      method: 'POST',
+      body: datos,
+    })
+    const texto = await res.text()
+    if (!res.ok) {
+      let mensaje = texto || `Error ${res.status}`
+      try {
+        const cuerpo = JSON.parse(texto)
+        if (typeof cuerpo?.detail === 'string') mensaje = cuerpo.detail
+      } catch {
+        // respuesta no-JSON
+      }
+      throw new Error(mensaje)
+    }
+    return JSON.parse(texto) as Restauracion
+  },
 
   obtenerConfig: () => req<Configuracion>('/config'),
   actualizarConfig: (tasa_bcv: number) =>
@@ -344,6 +377,9 @@ export type {
   ReporteCombos,
   RecetaItem,
   Respaldo,
+  EstadoRespaldos,
+  PrevisualizacionRestauracion,
+  Restauracion,
   ResumenCaja,
   ResumenIva,
   RetiroPropietario,

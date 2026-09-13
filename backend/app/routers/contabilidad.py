@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
-from .. import contabilidad, models, schemas
+from .. import backup, contabilidad, models, schemas
 from ..database import get_db
 from ..timeutils import ahora, hoy, rango_periodo
 
@@ -330,6 +330,31 @@ def salud_contable(db: Session = Depends(get_db)):
     """
     contabilidad.asentar_depreciacion_pendiente(db)
     problemas: List[schemas.ProblemaContable] = []
+
+    # Se restauro un respaldo hace poco: la contabilidad volvio atras pero la
+    # plata en la gaveta no. El faltante del cierre de hoy no es un faltante.
+    # El registro vive fuera de la base, porque la restauracion borra la base.
+    reciente = backup.estado().get("restauracion_reciente")
+    if reciente:
+        problemas.append(
+            schemas.ProblemaContable(
+                gravedad="grave",
+                titulo="Se restauro un respaldo en las ultimas 24 horas",
+                detalle=(
+                    "El {} se restauro desde {}. {} "
+                    "Esas ventas hay que volver a cargarlas; mientras tanto el efectivo "
+                    "contado va a dar de mas y los reportes de mas abajo van de menos."
+                ).format(
+                    reciente["fecha"][:16].replace("T", " "),
+                    reciente["restaurado_desde"],
+                    "No se pudo medir cuanto se perdio."
+                    if reciente.get("pedidos_perdidos") is None
+                    else "Se perdieron {} pedido(s) por ${:.2f}.".format(
+                        reciente["pedidos_perdidos"], reciente["monto_perdido"]
+                    ),
+                ),
+            )
+        )
 
     # Activos totalmente depreciados que siguen en uso: no es un error, pero el
     # dueno deberia saber que ese equipo ya cumplio su vida util contable.

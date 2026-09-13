@@ -10,7 +10,11 @@ services:
     environment:
       ERP_DATA_DIR: /data
       ERP_BACKUP_INTERVAL_HOURS: ${ERP_BACKUP_INTERVAL_HOURS:-6}
-      ERP_BACKUP_KEEP: ${ERP_BACKUP_KEEP:-60}
+      ERP_BACKUP_RETENER_RECIENTES: ${ERP_BACKUP_RETENER_RECIENTES:-8}
+      ERP_BACKUP_RETENER_DIAS: ${ERP_BACKUP_RETENER_DIAS:-30}
+      # Carpeta montada desde el host (USB, Drive) donde queda copia del ultimo
+      # respaldo. Sin esto los respaldos viven en el mismo volumen que la base.
+      ERP_BACKUP_MIRROR_DIR: ${ERP_BACKUP_MIRROR_DIR:-}
       ERP_CORS_ORIGINS: ${ERP_CORS_ORIGINS:-*}
       TZ: ${TZ:-America/Caracas}
     volumes:

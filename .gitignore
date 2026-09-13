@@ -5,3 +5,4 @@ __pycache__/
 *.db
 backups/
 .env
+backend/respaldos_estado.json
