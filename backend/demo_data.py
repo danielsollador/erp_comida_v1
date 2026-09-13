@@ -10,7 +10,7 @@ import datetime
 import random
 import sys
 
-from app import contabilidad, costeo, impuestos, tasas
+from app import contabilidad, costeo, impuestos, schemas, tasas
 from app.database import SessionLocal
 from app.models import (
     ActivoFijo,
@@ -18,6 +18,7 @@ from app.models import (
     CambioPrecio,
     CierreCaja,
     CompraSuelta,
+    DeclaracionIva,
     FacturaCompra,
     FacturaCompraItem,
     Gasto,
@@ -76,6 +77,7 @@ def limpiar(db):
     db.query(ActivoFijo).delete()
     db.query(CompraSuelta).delete()
     db.query(CambioPrecio).delete()
+    db.query(DeclaracionIva).delete()
     # Los renglones primero: un DELETE masivo no dispara el cascade de SQLAlchemy.
     db.query(FacturaCompraItem).delete()
     db.query(FacturaCompra).delete()
@@ -94,6 +96,24 @@ def limpiar(db):
     # Y se vuelve a abrir la contabilidad con ese inventario inicial.
     contabilidad.asiento_de_apertura(db)
     print("Ventas, gastos, facturas y asientos borrados; inventario y apertura restablecidos.")
+
+
+def _declarar_meses_cerrados(db, dejar_pendiente=1):
+    """Presenta las declaraciones de IVA de los meses ya cerrados.
+
+    Usa los mismos endpoints que usaria el dueno, para que el historico del
+    demo sea el que produce el flujo real y no datos inventados aparte.
+    """
+    from app.routers import impuestos as router_impuestos
+
+    pendientes = router_impuestos.periodos_pendientes(db)
+    if dejar_pendiente:
+        pendientes = pendientes[:-dejar_pendiente]
+    for p in pendientes:
+        router_impuestos.declarar_iva(
+            schemas.DeclararIvaRequest(anio=p.anio, mes=p.mes), db
+        )
+    return len(pendientes)
 
 
 def generar(db, dias=45):
@@ -357,8 +377,15 @@ def generar(db, dias=45):
 
     db.commit()
     cuotas = contabilidad.asentar_depreciacion_pendiente(db)
+
+    # Se declaran los meses cerrados salvo el ultimo, para que la pantalla de
+    # impuestos muestre las dos mitades: historial presentado y un periodo
+    # todavia pendiente de declarar.
+    declaradas = _declarar_meses_cerrados(db, dejar_pendiente=1)
+
     print(f"Listo: {total_pedidos} pedidos generados en los ultimos {dias} dias.")
     print(f"       {len(EQUIPOS_DEMO)} equipos con {cuotas} cuotas de depreciacion asentadas.")
+    print(f"       {declaradas} declaraciones de IVA presentadas.")
 
 
 if __name__ == "__main__":

@@ -423,6 +423,34 @@ export type LibroCompras = {
   total_general: number
 }
 
+export type DeclaracionIva = {
+  id: number
+  anio: number
+  mes: number
+  periodo: string
+  etiqueta: string
+  iva_debito: number
+  iva_credito: number
+  /** Excedente de credito fiscal que venia del mes anterior. */
+  credito_arrastrado: number
+  credito_usado: number
+  iva_a_pagar: number
+  /** Lo que sobra y pasa al mes siguiente. */
+  credito_excedente: number
+  fecha_declaracion: string
+  pagada: boolean
+  fecha_pago: string | null
+  forma_pago: string | null
+}
+
+export type PeriodoPendiente = {
+  anio: number
+  mes: number
+  etiqueta: string
+  iva_debito: number
+  iva_credito: number
+}
+
 export type ResumenIva = {
   periodo: Periodo
   etiqueta: string

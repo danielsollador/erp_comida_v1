@@ -444,6 +444,46 @@ def registrar_baja_activo(db: Session, activo: models.ActivoFijo, acumulada: flo
     )
 
 
+def registrar_declaracion_iva(db: Session, declaracion: models.DeclaracionIva) -> None:
+    """Cierra el IVA del mes contra las cuentas fiscales.
+
+    Se cancela el debito del periodo contra el credito que alcanzo a cubrirlo;
+    lo que falte queda como deuda en 2020 hasta que se pague. Si sobro credito,
+    el sobrante se queda en 1030 y sirve para el mes siguiente: el arrastre
+    sale solo, sin necesidad de moverlo.
+    """
+    lineas = []
+    if declaracion.iva_debito > 0:
+        lineas.append(("2030", declaracion.iva_debito, 0.0))
+    if declaracion.credito_usado > 0:
+        lineas.append(("1030", 0.0, declaracion.credito_usado))
+    if declaracion.iva_a_pagar > 0:
+        lineas.append(("2020", 0.0, declaracion.iva_a_pagar))
+    if not lineas:
+        return
+    crear_asiento(
+        db,
+        f"Declaracion de IVA {declaracion.periodo}",
+        lineas,
+        origen="declaracion_iva",
+        referencia_id=declaracion.id,
+    )
+
+
+def registrar_pago_iva(db: Session, declaracion: models.DeclaracionIva, forma_pago: str) -> None:
+    """Paga al SENIAT lo declarado: baja la deuda y sale la plata."""
+    if declaracion.iva_a_pagar <= 0:
+        return
+    cuenta_pago = "1020" if forma_pago == "Banco" else "1010"
+    crear_asiento(
+        db,
+        f"Pago de IVA {declaracion.periodo}",
+        [("2020", declaracion.iva_a_pagar, 0.0), (cuenta_pago, 0.0, declaracion.iva_a_pagar)],
+        origen="pago_iva",
+        referencia_id=declaracion.id,
+    )
+
+
 def registrar_merma(db: Session, ingrediente: models.Ingrediente, valor: float, referencia_id: int) -> None:
     if valor <= 0:
         return

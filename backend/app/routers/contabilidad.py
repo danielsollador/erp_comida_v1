@@ -1,3 +1,4 @@
+import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -435,7 +436,36 @@ def salud_contable(db: Session = Depends(get_db)):
             )
         )
 
-    # 5. Insumos con stock negativo.
+    # 5. Ventas facturadas dentro de un periodo de IVA ya declarado: cambian un
+    #    numero que ya se le presento al SENIAT.
+    for declaracion in db.query(models.DeclaracionIva).all():
+        inicio = datetime.datetime(declaracion.anio, declaracion.mes, 1)
+        fin = datetime.datetime(
+            declaracion.anio + (declaracion.mes // 12), (declaracion.mes % 12) + 1, 1
+        )
+        posteriores = (
+            db.query(models.Pedido)
+            .filter(
+                models.Pedido.estado == "pagado",
+                models.Pedido.facturado.is_(True),
+                models.Pedido.cerrado_en >= inicio,
+                models.Pedido.cerrado_en < fin,
+                models.Pedido.creado_en > declaracion.fecha_declaracion,
+            )
+            .count()
+        )
+        if posteriores:
+            problemas.append(
+                schemas.ProblemaContable(
+                    gravedad="grave",
+                    titulo=f"{posteriores} venta(s) facturada(s) en {declaracion.periodo}, ya declarado",
+                    detalle="Se cargaron despues de declarar ese periodo, asi que el Libro de "
+                    "Ventas ya no coincide con lo que se presento. Habria que hacer una "
+                    "declaracion sustitutiva.",
+                )
+            )
+
+    # 6. Insumos con stock negativo.
     negativos = [i for i in db.query(models.Ingrediente).all() if (i.stock_actual or 0) < 0]
     if negativos:
         nombres = ", ".join(i.nombre for i in negativos[:4])

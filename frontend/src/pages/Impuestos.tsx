@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
-import type { ConfiguracionFiscal, LibroCompras, LibroVentas, Periodo, ResumenIva } from '../lib/types'
+import type {
+  ConfiguracionFiscal,
+  DeclaracionIva,
+  LibroCompras,
+  LibroVentas,
+  Periodo,
+  PeriodoPendiente,
+  ResumenIva,
+} from '../lib/types'
 
 const PERIODOS: { valor: Periodo; texto: string }[] = [
   { valor: 'dia', texto: 'Hoy' },
@@ -12,6 +20,7 @@ const PERIODOS: { valor: Periodo; texto: string }[] = [
 const TABS = [
   { id: 'ventas', texto: 'Libro de ventas' },
   { id: 'compras', texto: 'Libro de compras' },
+  { id: 'declaraciones', texto: 'Declaraciones' },
 ] as const
 
 export default function Impuestos() {
@@ -222,6 +231,165 @@ export default function Impuestos() {
             </table>
           </div>
         )}
+
+        {tab === 'declaraciones' && <Declaraciones />}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Declaraciones mensuales de IVA.
+ *
+ * Antes las dos cuentas de IVA solo crecian: nunca se neteaban ni se saldaban,
+ * asi que el balance mostraba como deuda todo el debito acumulado desde
+ * siempre. Declarar un mes lo cierra contra el credito fiscal y deja la
+ * diferencia como deuda real hasta que se paga.
+ */
+function Declaraciones() {
+  const [declaraciones, setDeclaraciones] = useState<DeclaracionIva[]>([])
+  const [pendientes, setPendientes] = useState<PeriodoPendiente[]>([])
+  const [error, setError] = useState('')
+  const [ocupado, setOcupado] = useState(false)
+
+  useEffect(() => {
+    cargar()
+  }, [])
+
+  function cargar() {
+    api.listarDeclaraciones().then(setDeclaraciones).catch(() => setDeclaraciones([]))
+    api.periodosPendientes().then(setPendientes).catch(() => setPendientes([]))
+  }
+
+  async function accion(fn: () => Promise<unknown>) {
+    setError('')
+    setOcupado(true)
+    try {
+      await fn()
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ocurrio un error')
+    } finally {
+      setOcupado(false)
+    }
+  }
+
+  function declarar(p: PeriodoPendiente) {
+    const neto = p.iva_debito - p.iva_credito
+    const resumen =
+      neto > 0
+        ? `Quedaria por pagar hasta $${neto.toFixed(2)} (menos el credito que venga arrastrado).`
+        : `El credito fiscal cubre el debito: no se paga nada y sobran $${Math.abs(neto).toFixed(2)} para el mes siguiente.`
+    if (!window.confirm(`Declarar ${p.etiqueta}?\n\nIVA cobrado en ventas: $${p.iva_debito.toFixed(2)}\nIVA pagado en compras: $${p.iva_credito.toFixed(2)}\n\n${resumen}`))
+      return
+    accion(() => api.declararIva(p.anio, p.mes))
+  }
+
+  function pagar(d: DeclaracionIva) {
+    const forma = window.confirm(
+      `Pagar $${d.iva_a_pagar.toFixed(2)} de IVA de ${d.etiqueta}.\n\nAceptar = por banco · Cancelar = en efectivo`,
+    )
+      ? 'Banco'
+      : 'Efectivo'
+    accion(() => api.pagarDeclaracion(d.id, forma))
+  }
+
+  const porPagar = declaraciones.filter((d) => !d.pagada && d.iva_a_pagar > 0)
+  const ultima = declaraciones[0]
+
+  return (
+    <div className="space-y-4">
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+
+      {pendientes.length > 0 && (
+        <div className="bg-white rounded-2xl border border-amber-300 p-4">
+          <h2 className="font-semibold mb-1">Meses cerrados sin declarar</h2>
+          <p className="text-xs text-neutral-500 mb-3">
+            Solo aparecen meses que ya terminaron: el mes en curso todavia puede recibir ventas.
+          </p>
+          <div className="space-y-2">
+            {pendientes.map((p) => (
+              <div
+                key={`${p.anio}-${p.mes}`}
+                className="flex flex-wrap items-center gap-3 bg-amber-50 rounded-lg p-2 text-sm"
+              >
+                <span className="font-medium flex-1 min-w-[120px]">{p.etiqueta}</span>
+                <span className="text-neutral-600 tabular-nums text-xs">
+                  debito ${p.iva_debito.toFixed(2)} · credito ${p.iva_credito.toFixed(2)}
+                </span>
+                <button
+                  onClick={() => declarar(p)}
+                  disabled={ocupado}
+                  className="bg-neutral-900 text-white rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50"
+                >
+                  Declarar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ultima && ultima.credito_excedente > 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-emerald-800">
+          Tienes ${ultima.credito_excedente.toFixed(2)} de credito fiscal a favor de{' '}
+          {ultima.etiqueta}: se descuentan del IVA del mes siguiente.
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <div className="flex flex-wrap justify-between gap-2 mb-3">
+          <h2 className="font-semibold">Declaraciones presentadas</h2>
+          {porPagar.length > 0 && (
+            <span className="text-sm text-red-600 font-medium">
+              {porPagar.length} sin pagar por $
+              {porPagar.reduce((s, d) => s + d.iva_a_pagar, 0).toFixed(2)}
+            </span>
+          )}
+        </div>
+
+        {declaraciones.length === 0 && (
+          <p className="text-sm text-neutral-400">
+            Sin declaraciones todavia. Se declara cada mes una vez cerrado.
+          </p>
+        )}
+
+        <div className="space-y-2">
+          {declaraciones.map((d) => (
+            <div key={d.id} className="border border-neutral-200 rounded-xl p-3 text-sm">
+              <div className="flex flex-wrap justify-between items-baseline gap-2 mb-1">
+                <span className="font-medium">{d.etiqueta}</span>
+                {d.iva_a_pagar > 0 ? (
+                  d.pagada ? (
+                    <span className="text-xs text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 font-medium">
+                      pagada · {d.forma_pago}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <span className="font-semibold tabular-nums text-red-600">
+                        ${d.iva_a_pagar.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={() => pagar(d)}
+                        disabled={ocupado}
+                        className="bg-neutral-900 text-white rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50"
+                      >
+                        Registrar pago
+                      </button>
+                    </span>
+                  )
+                ) : (
+                  <span className="text-xs text-neutral-500">sin IVA por pagar</span>
+                )}
+              </div>
+              <div className="text-xs text-neutral-500 tabular-nums">
+                debito ${d.iva_debito.toFixed(2)} · credito ${d.iva_credito.toFixed(2)}
+                {d.credito_arrastrado > 0 && ` (+ $${d.credito_arrastrado.toFixed(2)} arrastrado)`}
+                {d.credito_excedente > 0 && ` · sobran $${d.credito_excedente.toFixed(2)}`}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

@@ -637,6 +637,41 @@ class LibroCompras(BaseModel):
     total_general: float
 
 
+class DeclaracionIva(BaseModel):
+    id: int
+    anio: int
+    mes: int
+    periodo: str
+    etiqueta: str
+    iva_debito: float
+    iva_credito: float
+    credito_arrastrado: float  # excedente que venia del mes anterior
+    credito_usado: float
+    iva_a_pagar: float
+    credito_excedente: float  # lo que pasa al mes siguiente
+    fecha_declaracion: datetime.datetime
+    pagada: bool
+    fecha_pago: Optional[datetime.datetime] = None
+    forma_pago: Optional[str] = None
+
+
+class PeriodoPendiente(BaseModel):
+    anio: int
+    mes: int
+    etiqueta: str
+    iva_debito: float
+    iva_credito: float
+
+
+class DeclararIvaRequest(BaseModel):
+    anio: int
+    mes: int
+
+
+class PagoIvaRequest(BaseModel):
+    forma_pago: str = "Banco"
+
+
 class ResumenIva(BaseModel):
     periodo: str
     etiqueta: str

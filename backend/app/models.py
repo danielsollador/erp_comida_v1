@@ -122,6 +122,38 @@ class Gasto(Base):
     fecha = Column(DateTime, default=ahora)
 
 
+class DeclaracionIva(Base):
+    """Declaracion mensual de IVA ya presentada al SENIAT.
+
+    Sin esto las dos cuentas de IVA solo crecian: el balance decia que el
+    negocio debia todo el debito acumulado desde siempre y tenia a favor todo
+    el credito, cuando los meses cerrados ya estaban declarados y pagados.
+
+    El excedente de credito fiscal (cuando se compro mas de lo que se facturo)
+    se arrastra al mes siguiente, que es como funciona de verdad.
+    """
+
+    __tablename__ = "declaraciones_iva"
+
+    id = Column(Integer, primary_key=True, index=True)
+    anio = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    iva_debito = Column(Float, default=0)  # cobrado en ventas facturadas del mes
+    iva_credito = Column(Float, default=0)  # pagado en compras del mes
+    credito_arrastrado = Column(Float, default=0)  # excedente que venia del mes anterior
+    credito_usado = Column(Float, default=0)
+    iva_a_pagar = Column(Float, default=0)
+    credito_excedente = Column(Float, default=0)  # lo que pasa al mes siguiente
+    fecha_declaracion = Column(DateTime, default=ahora)
+    pagada = Column(Boolean, default=False)
+    fecha_pago = Column(DateTime, nullable=True)
+    forma_pago = Column(String, nullable=True)  # Efectivo | Banco
+
+    @property
+    def periodo(self):
+        return f"{self.anio}-{self.mes:02d}"
+
+
 class ActivoFijo(Base):
     """Un bien que se usa por años: nevera, horno, mesas, la tablet.
 

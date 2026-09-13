@@ -10,6 +10,7 @@ import type {
   Configuracion,
   ConfiguracionFiscal,
   CuentaContable,
+  DeclaracionIva,
   EstadoResultadosContable,
   FacturaCompra,
   FilaBalanceComprobacion,
@@ -21,6 +22,7 @@ import type {
   Merma,
   Pedido,
   PedidoItem,
+  PeriodoPendiente,
   Periodo,
   Producto,
   ReporteResumen,
@@ -234,6 +236,18 @@ export const api = {
   libroVentas: (periodo: Periodo) => req<LibroVentas>(`/impuestos/libro-ventas?periodo=${periodo}`),
   libroCompras: (periodo: Periodo) => req<LibroCompras>(`/impuestos/libro-compras?periodo=${periodo}`),
   resumenIva: (periodo: Periodo) => req<ResumenIva>(`/impuestos/resumen?periodo=${periodo}`),
+  listarDeclaraciones: () => req<DeclaracionIva[]>('/impuestos/declaraciones'),
+  periodosPendientes: () => req<PeriodoPendiente[]>('/impuestos/periodos-pendientes'),
+  declararIva: (anio: number, mes: number) =>
+    req<DeclaracionIva>('/impuestos/declaraciones', {
+      method: 'POST',
+      body: JSON.stringify({ anio, mes }),
+    }),
+  pagarDeclaracion: (id: number, forma_pago: string) =>
+    req<DeclaracionIva>(`/impuestos/declaraciones/${id}/pagar`, {
+      method: 'POST',
+      body: JSON.stringify({ forma_pago }),
+    }),
 }
 
 export type WsEvent = { event: 'pedido_nuevo' | 'pedido_actualizado' | 'pedido_pagado'; data: Pedido }
@@ -275,6 +289,7 @@ export type {
   Configuracion,
   ConfiguracionFiscal,
   CuentaContable,
+  DeclaracionIva,
   EstadoResultadosContable,
   EstadoTasa,
   FacturaCompra,
@@ -287,6 +302,7 @@ export type {
   Merma,
   Pedido,
   PedidoItem,
+  PeriodoPendiente,
   Periodo,
   Producto,
   ReporteResumen,

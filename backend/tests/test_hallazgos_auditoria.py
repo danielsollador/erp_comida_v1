@@ -488,6 +488,163 @@ def test_no_se_puede_acortar_la_vida_util_por_debajo_de_lo_ya_depreciado(client)
     assert r.status_code == 409
 
 
+# ------------------------------------------- JJ/KK: declaracion de IVA (caso 12)
+def _mes_pasado():
+    hoy_ = datetime.date.today()
+    return (hoy_.year - 1, 12) if hoy_.month == 1 else (hoy_.year, hoy_.month - 1)
+
+
+def _venta_facturada(client, db, variante, total_deseado, cuando):
+    """Una venta facturada en una fecha dada, para armar el debito del mes.
+
+    El precio se fija ANTES de cobrar: el asiento contable se genera al cobrar,
+    asi que tocarlo despues dejaria los libros diciendo una cosa y el Libro de
+    Ventas otra (algo que la app no permite hacer, pero el test si).
+    """
+    pedido = client.post(
+        "/api/pedidos",
+        json={"items": [{"variante_id": variante.id, "cantidad": 1}], "nota": "", "permitir_sin_stock": True},
+    ).json()
+    p = db.query(models.Pedido).filter_by(id=pedido["id"]).first()
+    p.items[0].precio_unitario = total_deseado
+    db.commit()
+
+    client.post(
+        f"/api/pedidos/{pedido['id']}/cobrar",
+        json={"metodo_pago": "Efectivo", "facturado": True, "numero_factura": f"F-{pedido['id']}"},
+    )
+    p.cerrado_en = cuando
+    db.commit()
+    return p
+
+
+def test_no_se_puede_declarar_un_mes_que_no_termino(client):
+    hoy_ = datetime.date.today()
+    r = client.post("/api/impuestos/declaraciones", json={"anio": hoy_.year, "mes": hoy_.month})
+    assert r.status_code == 400
+    assert "todavia no termina" in r.json()["detail"]
+
+
+def test_declarar_cierra_el_iva_del_mes_contra_las_cuentas_fiscales(client, db, variante):
+    """Antes 2030 y 1030 solo crecian: el balance mostraba como deuda todo el
+    debito acumulado desde siempre."""
+    anio, mes = _mes_pasado()
+    _venta_facturada(client, db, variante, 1160.0, datetime.datetime(anio, mes, 15))
+    # una compra del mismo mes, con menos IVA que la venta
+    factura = client.post(
+        "/api/compras/facturas",
+        json={"numero_factura": "C-1", "proveedor_nombre": "Prov", "categoria": "Servicios",
+              "forma_pago": "Banco", "base_imponible": 100, "iva": 16,
+              "fecha": datetime.datetime(anio, mes, 10).isoformat()},
+    ).json()
+    assert factura["iva"] == 16
+
+    debito_antes, credito_antes = saldo(db, "2030"), saldo(db, "1030")
+    assert debito_antes == 160.0 and credito_antes == 16.0
+
+    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    assert d["iva_debito"] == 160.0
+    assert d["iva_credito"] == 16.0
+    assert d["credito_usado"] == 16.0
+    assert d["iva_a_pagar"] == 144.0
+    assert d["credito_excedente"] == 0.0
+
+    # las cuentas de IVA quedaron saldadas y la deuda paso a 2020
+    assert saldo(db, "2030") == 0.0
+    assert saldo(db, "1030") == 0.0
+    assert saldo(db, "2020") == 144.0
+    assert d["pagada"] is False
+
+
+def test_el_credito_que_sobra_se_arrastra_al_mes_siguiente(client, db, variante):
+    """Si se compro mas de lo que se facturo, el excedente no se pierde."""
+    anio, mes = _mes_pasado()
+    mes_previo, anio_previo = (mes - 1, anio) if mes > 1 else (12, anio - 1)
+
+    # mes previo: solo compras -> todo queda como credito a favor
+    client.post(
+        "/api/compras/facturas",
+        json={"numero_factura": "C-0", "proveedor_nombre": "Prov", "categoria": "Servicios",
+              "forma_pago": "Banco", "base_imponible": 500, "iva": 80,
+              "fecha": datetime.datetime(anio_previo, mes_previo, 5).isoformat()},
+    )
+    d0 = client.post(
+        "/api/impuestos/declaraciones", json={"anio": anio_previo, "mes": mes_previo}
+    ).json()
+    assert d0["iva_a_pagar"] == 0.0
+    assert d0["credito_excedente"] == 80.0
+    assert saldo(db, "1030") == 80.0  # el sobrante se queda en la cuenta
+
+    # mes siguiente: una venta con $100 de IVA
+    _venta_facturada(client, db, variante, 725.0, datetime.datetime(anio, mes, 15))
+    d1 = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    assert d1["credito_arrastrado"] == 80.0
+    assert d1["iva_debito"] == 100.0
+    assert d1["credito_usado"] == 80.0
+    assert d1["iva_a_pagar"] == 20.0  # 100 de debito - 80 arrastrados
+    assert saldo(db, "1030") == 0.0
+
+
+def test_un_mes_con_solo_compras_tambien_se_declara(client, db):
+    """Un mes sin ventas pero con compras genera credito fiscal, y hay que
+    declararlo para poder arrastrarlo. Antes la lista arrancaba en la primera
+    venta, asi que el IVA de los equipos comprados antes de abrir se quedaba
+    fuera de todo periodo."""
+    anio, mes = _mes_pasado()
+    client.post(
+        "/api/compras/facturas",
+        json={"numero_factura": "EQ-9", "proveedor_nombre": "Prov", "categoria": "Activos",
+              "forma_pago": "Banco", "descripcion": "Congelador", "base_imponible": 300, "iva": 48,
+              "fecha": datetime.datetime(anio, mes, 3).isoformat()},
+    )
+    pendientes = client.get("/api/impuestos/periodos-pendientes").json()
+    assert any(p["anio"] == anio and p["mes"] == mes for p in pendientes)
+
+    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    assert d["iva_credito"] == 48.0
+    assert d["iva_a_pagar"] == 0.0
+    assert d["credito_excedente"] == 48.0
+
+
+def test_no_se_declara_dos_veces_el_mismo_periodo(client, db, variante):
+    anio, mes = _mes_pasado()
+    _venta_facturada(client, db, variante, 116.0, datetime.datetime(anio, mes, 15))
+    client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes})
+    r = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes})
+    assert r.status_code == 409
+
+
+def test_pagar_el_iva_salda_la_deuda_y_saca_la_plata(client, db, variante):
+    anio, mes = _mes_pasado()
+    _venta_facturada(client, db, variante, 1160.0, datetime.datetime(anio, mes, 15))
+    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    assert saldo(db, "2020") == 160.0
+
+    pagada = client.post(f"/api/impuestos/declaraciones/{d['id']}/pagar", json={"forma_pago": "Banco"}).json()
+    assert pagada["pagada"] is True
+    assert saldo(db, "2020") == 0.0  # la deuda con el SENIAT se cancelo
+    assert saldo(db, "1020") == -160.0  # salio del banco
+
+    # no se paga dos veces
+    assert client.post(
+        f"/api/impuestos/declaraciones/{d['id']}/pagar", json={"forma_pago": "Banco"}
+    ).status_code == 409
+
+
+def test_la_salud_avisa_de_ventas_en_un_periodo_ya_declarado(client, db, variante):
+    """Una venta que aparece despues de declarar cambia un Libro de Ventas que
+    ya se le presento al SENIAT."""
+    anio, mes = _mes_pasado()
+    _venta_facturada(client, db, variante, 116.0, datetime.datetime(anio, mes, 10))
+    client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes})
+    assert "ya declarado" not in str(client.get("/api/contabilidad/salud").json())
+
+    _venta_facturada(client, db, variante, 58.0, datetime.datetime(anio, mes, 20))
+    salud = client.get("/api/contabilidad/salud").json()
+    assert salud["sano"] is False
+    assert "ya declarado" in " ".join(p["titulo"] for p in salud["problemas"])
+
+
 # ----------------------------------------------------- menores: numeracion
 def test_no_se_repite_el_numero_de_factura(client, variante):
     """Dos facturas con el mismo numero en el Libro de Ventas es un problema
