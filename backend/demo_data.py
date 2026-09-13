@@ -26,6 +26,7 @@ from app.models import (
     Merma,
     MovimientoContable,
     Pedido,
+    PedidoConsumo,
     PedidoItem,
     RecetaItem,
     Variante,
@@ -70,6 +71,7 @@ def limpiar(db):
     db.query(MovimientoContable).delete()
     db.query(AsientoContable).delete()
     db.query(PedidoItem).delete()
+    db.query(PedidoConsumo).delete()
     db.query(Pedido).delete()
     db.query(Gasto).delete()
     db.query(Merma).delete()
@@ -149,13 +151,20 @@ def generar(db, dias=45):
     # stock negativo ni con una montana de inventario sin sentido.
     consumo_pendiente = {}
 
-    def consumir(variante_id, unidades):
+    def consumir(pedido_id, variante_id, unidades):
         """Descuenta del inventario lo que se gasto en producir esas unidades."""
         for r in recetas_por_variante.get(variante_id, []):
             bruto = costeo.consumo_bruto(r, unidades)
             r.ingrediente.stock_actual = (r.ingrediente.stock_actual or 0) - bruto
             consumo_pendiente[r.ingrediente.nombre] = (
                 consumo_pendiente.get(r.ingrediente.nombre, 0) + bruto
+            )
+            # Mismo registro que deja la app: lo que de verdad salio por ese
+            # pedido, independiente de como quede la receta despues.
+            db.add(
+                PedidoConsumo(
+                    pedido_id=pedido_id, ingrediente_id=r.ingrediente_id, cantidad=bruto
+                )
             )
 
     hoy = datetime.date.today()
@@ -272,7 +281,7 @@ def generar(db, dias=45):
                 )
                 # Vender gasta inventario: sin esto el stock del demo nunca
                 # bajaba y la cuenta 1040 se iba a negativo sola.
-                consumir(variante.id, unidades)
+                consumir(pedido.id, variante.id, unidades)
             db.flush()
             db.refresh(pedido)
             contabilidad.registrar_venta(db, pedido)

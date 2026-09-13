@@ -133,6 +133,14 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
 
     for ingrediente, cantidad in consumo.items():
         ingrediente.stock_actual = (ingrediente.stock_actual or 0) - cantidad
+        # Se deja constancia de lo que salio: si la receta cambia mientras el
+        # pedido esta en cocina, al anularlo hay que devolver esto y no lo que
+        # diria la receta nueva.
+        db.add(
+            models.PedidoConsumo(
+                pedido_id=db_pedido.id, ingrediente_id=ingrediente.id, cantidad=cantidad
+            )
+        )
 
     db.commit()
     db.refresh(db_pedido)
@@ -256,8 +264,11 @@ async def anular_pedido(
     else:
         preparada = pedido.estado == "listo" or any(i.preparado for i in pedido.items)
 
-    recetas = _recetas_por_variante([i.variante_id for i in pedido.items], db)
-    consumo = _consumo_del_pedido(pedido.items, recetas)
+    # Lo que se devuelve (o se pierde) es lo que de VERDAD salio al crear la
+    # comanda, no lo que diria la receta de hoy: si la receta cambio mientras
+    # el pedido estaba en cocina, recalcularla hacia aparecer o desaparecer
+    # inventario de la nada.
+    consumo = {c.ingrediente: c.cantidad for c in pedido.consumos}
 
     if preparada:
         for ingrediente, cantidad in consumo.items():

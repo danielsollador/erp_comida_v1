@@ -411,10 +411,30 @@ class Pedido(Base):
     tasa_iva = Column(Float, nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
+    consumos = relationship("PedidoConsumo", cascade="all, delete-orphan")
 
     @property
     def total(self):
         return sum(item.precio_unitario * item.cantidad for item in self.items)
+
+
+class PedidoConsumo(Base):
+    """Lo que de verdad salio del inventario por este pedido.
+
+    Se congela al crear la comanda, igual que el precio y el costo. Recalcular
+    desde la receta al anular daba numeros distintos si la receta habia
+    cambiado mientras tanto: se devolvia mas (o menos) de lo que se habia
+    descontado, y aparecia inventario de la nada.
+    """
+
+    __tablename__ = "pedido_consumos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)  # cantidad bruta, ya ajustada por rendimiento
+
+    ingrediente = relationship("Ingrediente")
 
 
 class PedidoItem(Base):

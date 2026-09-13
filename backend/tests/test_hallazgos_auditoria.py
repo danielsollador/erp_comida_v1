@@ -720,6 +720,65 @@ def test_el_retiro_no_descuadra_el_balance(client, db, variante):
     assert "3030" not in " ".join(p["titulo"] for p in salud["problemas"])
 
 
+# ------------------------------------------- NN: recetas cambiantes (caso 14)
+def test_cambiar_la_receta_no_toca_el_costo_historico(client, db, variante, insumo):
+    """El costo se congela por venta: subirle carne a la empanada hoy no puede
+    cambiar el margen del mes pasado."""
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 2}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+    costo_antes = client.get("/api/reportes/resumen?periodo=mes").json()["costo_insumos"]
+
+    client.put(
+        f"/api/inventario/recetas/{variante.id}",
+        json=[{"ingrediente_id": insumo.id, "cantidad_por_unidad": 0.5}],  # de 0.1 a 0.5
+    )
+    assert client.get("/api/reportes/resumen?periodo=mes").json()["costo_insumos"] == costo_antes
+
+
+def test_anular_devuelve_lo_que_salio_no_lo_que_dice_la_receta_nueva(client, db, variante, insumo):
+    """Si la receta cambia mientras el pedido esta en cocina, al anularlo se
+    devuelve lo que de verdad se descontó. Recalcular desde la receta nueva
+    hacia aparecer inventario de la nada."""
+    stock_inicial = insumo.stock_actual
+
+    client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 10}], "nota": ""}
+    ).json()
+    db.refresh(insumo)
+    descontado = round(stock_inicial - insumo.stock_actual, 6)
+    assert descontado == 1.25  # 10 x 0.1 kg utiles / 0.8 de rendimiento
+
+    # el dueno cambia la receta con el pedido todavia en cocina
+    client.put(
+        f"/api/inventario/recetas/{variante.id}",
+        json=[{"ingrediente_id": insumo.id, "cantidad_por_unidad": 0.5}],
+    )
+
+    pedido_id = client.get("/api/pedidos?estado=pendiente").json()[0]["id"]
+    client.post(f"/api/pedidos/{pedido_id}/anular", json={"comida_preparada": False})
+
+    db.refresh(insumo)
+    assert insumo.stock_actual == stock_inicial  # ni un gramo de mas ni de menos
+
+
+def test_anular_preparado_con_receta_cambiada_valora_bien_la_merma(client, db, variante, insumo):
+    client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 10}], "nota": ""}
+    )
+    client.put(
+        f"/api/inventario/recetas/{variante.id}",
+        json=[{"ingrediente_id": insumo.id, "cantidad_por_unidad": 0.5}],
+    )
+    pedido_id = client.get("/api/pedidos?estado=pendiente").json()[0]["id"]
+    client.post(f"/api/pedidos/{pedido_id}/anular", json={"comida_preparada": True})
+
+    mermas = client.get("/api/inventario/mermas").json()
+    assert len(mermas) == 1
+    assert mermas[0]["cantidad"] == 1.25  # lo que salio, no lo que diria la receta nueva
+
+
 # ----------------------------------------------------- menores: numeracion
 def test_no_se_repite_el_numero_de_factura(client, variante):
     """Dos facturas con el mismo numero en el Libro de Ventas es un problema
