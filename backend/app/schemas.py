@@ -241,6 +241,23 @@ class Configuracion(BaseModel):
     tasa_bcv: float
 
 
+class RetiroCreate(BaseModel):
+    monto: float
+    metodo_pago: str = "Efectivo"  # Efectivo | Banco
+    nota: str = ""
+
+
+class RetiroPropietario(BaseModel):
+    id: int
+    monto: float
+    metodo_pago: str
+    nota: str
+    fecha: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+
 class CierreCajaRequest(BaseModel):
     efectivo_contado: float
     nota: str = ""
@@ -258,6 +275,9 @@ class ResumenCaja(BaseModel):
     # proveedores, compras sueltas). Se muestra para que el faltante deje de
     # parecer inexplicable.
     salidas_efectivo: float = 0
+    # Parte de `salidas_efectivo` que se llevo el dueno. Se muestra aparte
+    # porque no es un gasto del negocio.
+    retiros_hoy: float = 0
     cantidad_pedidos: int
 
 

@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
-import type { CierreCaja, Configuracion, Gasto, ResumenCaja } from '../lib/types'
+import type {
+  CierreCaja,
+  Configuracion,
+  Gasto,
+  ResumenCaja,
+  RetiroPropietario,
+} from '../lib/types'
 
 const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
 const METODOS_GASTO = ['Efectivo', 'Banco']
@@ -20,6 +26,7 @@ export default function Caja() {
   const [gastoMonto, setGastoMonto] = useState('')
   const [gastoCategoria, setGastoCategoria] = useState(CATEGORIAS_GASTO[0])
   const [gastoMetodo, setGastoMetodo] = useState(METODOS_GASTO[0])
+  const [retiros, setRetiros] = useState<RetiroPropietario[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -34,6 +41,34 @@ export default function Caja() {
     })
     api.listarCierres().then(setCierres)
     api.listarGastos().then(setGastos)
+    api.listarRetiros().then(setRetiros).catch(() => setRetiros([]))
+  }
+
+  // Sacar plata del negocio NO es un gasto: es capital del dueno que sale, asi
+  // que va contra patrimonio y no baja la ganancia. Antes la unica via era
+  // cargarlo como Gasto, que hacia ver al negocio menos rentable de lo que es.
+  async function registrarRetiro() {
+    const texto = window.prompt(
+      `Cuanto se lleva el dueno?\n\nEn la gaveta deberia haber $${resumen?.efectivo_esperado.toFixed(2) ?? '0.00'}.\n\n` +
+        'Esto no cuenta como gasto del negocio: sale del patrimonio.',
+    )
+    if (texto === null) return
+    const monto = Number(texto)
+    if (!Number.isFinite(monto) || monto <= 0) return
+    const porBanco = window.confirm('Aceptar = sale del banco · Cancelar = sale de la gaveta')
+    setError('')
+    try {
+      await api.crearRetiro(monto, porBanco ? 'Banco' : 'Efectivo', '')
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar el retiro')
+    }
+  }
+
+  async function borrarRetiro(id: number) {
+    if (!window.confirm('Borrar este retiro?')) return
+    await api.eliminarRetiro(id)
+    cargar()
   }
 
   async function agregarGasto() {
@@ -211,6 +246,45 @@ export default function Caja() {
           </div>
         </div>
 
+        {/* Separado de Gastos a proposito: el dueno sacando su plata no es un
+            gasto del negocio y no debe bajar la ganancia. */}
+        <div className="bg-white rounded-2xl shadow p-4">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="font-semibold">Retiros del dueño</h2>
+            <button
+              onClick={registrarRetiro}
+              className="bg-neutral-100 hover:bg-neutral-200 px-3 py-1.5 rounded-lg text-sm font-medium"
+            >
+              Registrar retiro
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 mb-3">
+            Plata que te llevas del negocio. No cuenta como gasto ni baja la ganancia: sale de tu
+            patrimonio.
+          </p>
+          <div className="space-y-1">
+            {retiros.slice(0, 5).map((r) => (
+              <div key={r.id} className="flex justify-between items-center text-sm">
+                <span className="text-neutral-600">
+                  {new Date(r.fecha).toLocaleDateString('es-VE')}
+                  {r.metodo_pago === 'Banco' && (
+                    <span className="text-xs text-neutral-400"> · banco</span>
+                  )}
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="font-medium tabular-nums">${r.monto.toFixed(2)}</span>
+                  <button onClick={() => borrarRetiro(r.id)} className="text-red-400 text-xs">
+                    x
+                  </button>
+                </span>
+              </div>
+            ))}
+            {retiros.length === 0 && (
+              <p className="text-neutral-400 text-sm">Sin retiros registrados.</p>
+            )}
+          </div>
+        </div>
+
         <div className="bg-white rounded-2xl shadow p-4">
           <h2 className="font-semibold mb-2">Contar efectivo fisico</h2>
           {/* El desglose importa: antes solo se restaban los gastos, y los dias
@@ -232,7 +306,12 @@ export default function Caja() {
             </div>
             {(resumen?.salidas_efectivo ?? 0) !== 0 && (
               <div className="flex justify-between text-neutral-600">
-                <span>Salidas de efectivo (gastos, proveedores, compras)</span>
+                <span>
+                  Salidas de efectivo (gastos, proveedores, compras
+                  {(resumen?.retiros_hoy ?? 0) > 0 &&
+                    `, ${(resumen?.retiros_hoy ?? 0).toFixed(2)} de retiros`}
+                  )
+                </span>
                 <span className="tabular-nums text-red-600">
                   −${(resumen?.salidas_efectivo ?? 0).toFixed(2)}
                 </span>

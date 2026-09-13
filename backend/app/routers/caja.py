@@ -29,6 +29,20 @@ def _pedidos_pagados_hoy(db: Session):
     )
 
 
+def _retiros_hoy(db: Session) -> float:
+    inicio, fin = _rango_hoy()
+    retiros = (
+        db.query(models.RetiroPropietario)
+        .filter(
+            models.RetiroPropietario.fecha >= inicio,
+            models.RetiroPropietario.fecha < fin,
+            models.RetiroPropietario.metodo_pago == "Efectivo",
+        )
+        .all()
+    )
+    return round(sum(r.monto for r in retiros), 2)
+
+
 def _salidas_efectivo_hoy(db: Session) -> float:
     """Todo lo que salio de la gaveta hoy que no fue una venta, segun los libros."""
     inicio, fin = _rango_hoy()
@@ -80,6 +94,7 @@ def resumen_caja(db: Session = Depends(get_db)):
         saldo_anterior=saldo_anterior,
         efectivo_esperado=efectivo_esperado,
         salidas_efectivo=salidas,
+        retiros_hoy=_retiros_hoy(db),
         cantidad_pedidos=len(pedidos),
     )
 
@@ -129,6 +144,56 @@ def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
         diferencia=c.diferencia,
         nota=c.nota,
     )
+
+
+@router.get("/retiros", response_model=List[schemas.RetiroPropietario])
+def listar_retiros(dias: int = 30, db: Session = Depends(get_db)):
+    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+    return (
+        db.query(models.RetiroPropietario)
+        .filter(models.RetiroPropietario.fecha >= desde)
+        .order_by(models.RetiroPropietario.id.desc())
+        .all()
+    )
+
+
+@router.post("/retiros", response_model=schemas.RetiroPropietario)
+def crear_retiro(body: schemas.RetiroCreate, db: Session = Depends(get_db)):
+    """El dueno se lleva plata del negocio.
+
+    Va contra patrimonio, no contra resultados: no es un gasto del negocio
+    sino capital que sale, asi que no debe bajar la ganancia.
+    """
+    if body.monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
+    if body.metodo_pago not in ("Efectivo", "Banco"):
+        raise HTTPException(status_code=400, detail="El retiro sale de Efectivo o de Banco")
+
+    retiro = models.RetiroPropietario(
+        monto=body.monto, metodo_pago=body.metodo_pago, nota=body.nota
+    )
+    db.add(retiro)
+    db.flush()
+    contabilidad.registrar_retiro(db, retiro)
+    db.commit()
+    db.refresh(retiro)
+    return retiro
+
+
+@router.delete("/retiros/{retiro_id}")
+def eliminar_retiro(retiro_id: int, db: Session = Depends(get_db)):
+    retiro = db.query(models.RetiroPropietario).filter(models.RetiroPropietario.id == retiro_id).first()
+    if not retiro:
+        raise HTTPException(status_code=404, detail="Retiro no encontrado")
+    for asiento in (
+        db.query(models.AsientoContable)
+        .filter_by(origen="retiro", referencia_id=retiro_id)
+        .all()
+    ):
+        db.delete(asiento)
+    db.delete(retiro)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/cierres", response_model=List[schemas.CierreCaja])

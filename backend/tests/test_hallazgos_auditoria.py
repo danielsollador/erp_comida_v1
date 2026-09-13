@@ -645,6 +645,81 @@ def test_la_salud_avisa_de_ventas_en_un_periodo_ya_declarado(client, db, variant
     assert "ya declarado" in " ".join(p["titulo"] for p in salud["problemas"])
 
 
+# ------------------------------------------- caja: cierres y retiros (caso 13)
+def test_el_faltante_deja_la_caja_en_lo_que_se_conto(client, db, variante):
+    """El dia siguiente tiene que arrancar del dinero que hay de verdad, no del
+    que el sistema creia que habia."""
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+
+    esperado = client.get("/api/caja/resumen").json()["efectivo_esperado"]
+    assert esperado == 20.0
+
+    cierre = client.post(
+        "/api/caja/cerrar", json={"efectivo_contado": 15.0, "nota": "faltaron 5"}
+    ).json()
+    assert cierre["diferencia"] == -5.0
+    assert saldo(db, "6030") == 5.0  # el faltante es una perdida reconocida
+    assert saldo(db, "1010") == 15.0  # la caja quedo en lo contado
+
+
+def test_no_se_cierra_la_caja_dos_veces_el_mismo_dia(client, variante):
+    client.post("/api/caja/cerrar", json={"efectivo_contado": 0.0, "nota": ""})
+    r = client.post("/api/caja/cerrar", json={"efectivo_contado": 0.0, "nota": ""})
+    assert r.status_code == 409
+
+
+def test_un_sobrante_netea_contra_los_faltantes(client, db, variante):
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+    client.post("/api/caja/cerrar", json={"efectivo_contado": 23.0, "nota": "sobraron 3"})
+    assert saldo(db, "6030") == -3.0  # un sobrante baja el gasto acumulado
+    assert saldo(db, "1010") == 23.0
+
+
+def test_el_retiro_del_dueno_no_es_un_gasto(client, db, variante):
+    """Sacar plata del negocio sale del patrimonio, no de la ganancia. Antes la
+    unica via era cargarlo como Gasto, que hacia ver al negocio menos rentable
+    de lo que es."""
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+    utilidad_antes = client.get("/api/contabilidad/estado-resultados?periodo=mes").json()["utilidad_neta"]
+
+    r = client.post("/api/caja/retiros", json={"monto": 12.0, "metodo_pago": "Efectivo"})
+    assert r.status_code == 200
+
+    er = client.get("/api/contabilidad/estado-resultados?periodo=mes").json()
+    assert er["utilidad_neta"] == utilidad_antes  # la ganancia no se movio
+    assert saldo(db, "3030") == -12.0  # resta del patrimonio
+    assert saldo(db, "1010") == 8.0  # salio de la gaveta
+
+    # y la caja lo cuenta como salida de efectivo
+    resumen = client.get("/api/caja/resumen").json()
+    assert resumen["retiros_hoy"] == 12.0
+    assert resumen["efectivo_esperado"] == 8.0
+
+
+def test_el_retiro_no_descuadra_el_balance(client, db, variante):
+    contabilidad.asiento_de_apertura(db)
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+    client.post("/api/caja/retiros", json={"monto": 12.0, "metodo_pago": "Efectivo"})
+
+    bg = client.get("/api/contabilidad/balance-general").json()
+    assert bg["cuadra"] is True
+    # 3030 es contra-patrimonio: su saldo negativo es correcto y no se reporta
+    salud = client.get("/api/contabilidad/salud").json()
+    assert "3030" not in " ".join(p["titulo"] for p in salud["problemas"])
+
+
 # ----------------------------------------------------- menores: numeracion
 def test_no_se_repite_el_numero_de_factura(client, variante):
     """Dos facturas con el mismo numero en el Libro de Ventas es un problema

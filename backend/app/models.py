@@ -122,6 +122,24 @@ class Gasto(Base):
     fecha = Column(DateTime, default=ahora)
 
 
+class RetiroPropietario(Base):
+    """Plata que el dueno saca del negocio para el.
+
+    En un local chico esto pasa casi todos los dias y no habia donde
+    registrarlo: o la caja acumulaba en los libros mientras la gaveta estaba
+    vacia, o se cargaba como Gasto y hacia ver al negocio menos rentable de lo
+    que es. No es gasto, es capital que sale.
+    """
+
+    __tablename__ = "retiros_propietario"
+
+    id = Column(Integer, primary_key=True, index=True)
+    monto = Column(Float, nullable=False)
+    metodo_pago = Column(String, default="Efectivo")  # Efectivo | Banco
+    nota = Column(String, default="")
+    fecha = Column(DateTime, default=ahora)
+
+
 class DeclaracionIva(Base):
     """Declaracion mensual de IVA ya presentada al SENIAT.
 

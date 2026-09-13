@@ -32,6 +32,7 @@ import type {
   Respaldo,
   ResumenCaja,
   ResumenIva,
+  RetiroPropietario,
   SaludContable,
   Sugerencia,
   SugerenciaCompra,
@@ -178,6 +179,13 @@ export const api = {
   cerrarCaja: (efectivo_contado: number, nota = '') =>
     req<CierreCaja>('/caja/cerrar', { method: 'POST', body: JSON.stringify({ efectivo_contado, nota }) }),
   listarCierres: () => req<CierreCaja[]>('/caja/cierres'),
+  listarRetiros: (dias = 30) => req<RetiroPropietario[]>(`/caja/retiros?dias=${dias}`),
+  crearRetiro: (monto: number, metodo_pago: string, nota = '') =>
+    req<RetiroPropietario>('/caja/retiros', {
+      method: 'POST',
+      body: JSON.stringify({ monto, metodo_pago, nota }),
+    }),
+  eliminarRetiro: (id: number) => req(`/caja/retiros/${id}`, { method: 'DELETE' }),
 
   planCuentas: () => req<CuentaContable[]>('/contabilidad/plan-cuentas'),
   crearCuenta: (c: Omit<CuentaContable, 'id'>) =>
@@ -312,6 +320,7 @@ export type {
   Respaldo,
   ResumenCaja,
   ResumenIva,
+  RetiroPropietario,
   SaludContable,
   Sugerencia,
   SugerenciaCompra,

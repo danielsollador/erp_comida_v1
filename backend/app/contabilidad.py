@@ -40,6 +40,9 @@ PLAN_DE_CUENTAS = [
     ("2030", "IVA debito fiscal", "pasivo", "acreedora"),
     ("3010", "Capital del propietario", "patrimonio", "acreedora"),
     ("3020", "Utilidades retenidas", "patrimonio", "acreedora"),
+    # Contra-cuenta de patrimonio (ver CUENTAS_CONTRA): se debita, su saldo
+    # sale negativo y resta del patrimonio, que es lo que hace un retiro.
+    ("3030", "Retiros del propietario", "patrimonio", "acreedora"),
     ("4010", "Ventas", "ingreso", "acreedora"),
     ("5010", "Costo de ventas (insumos)", "costo", "deudora"),
     ("6010", "Gastos operativos", "gasto", "deudora"),
@@ -49,9 +52,10 @@ PLAN_DE_CUENTAS = [
 ]
 
 # Cuentas que viven dentro de un grupo pero con el saldo invertido a proposito:
-# la depreciacion acumulada es un activo que RESTA. Su saldo negativo es
-# correcto y no debe reportarse como un descuadre.
-CUENTAS_CONTRA = {"1051"}
+# la depreciacion acumulada es un activo que RESTA, y los retiros del dueno son
+# patrimonio que RESTA. Su saldo negativo es correcto y no debe reportarse como
+# un descuadre.
+CUENTAS_CONTRA = {"1051", "3030"}
 
 # Metodo de pago del pedido -> cuenta donde entra el dinero.
 CUENTA_POR_METODO_PAGO = {
@@ -271,6 +275,25 @@ def movimiento_efectivo(db: Session, inicio, fin) -> float:
         .all()
     )
     return round(sum(m.debe - m.haber for m in movimientos), 2)
+
+
+def registrar_retiro(db: Session, retiro: models.RetiroPropietario) -> None:
+    """El dueno saca plata del negocio para el.
+
+    No es un gasto: no se consumio nada para producir, es capital que sale. Por
+    eso va contra patrimonio y no toca la utilidad. Registrarlo como Gasto, que
+    era la unica via posible antes, hacia ver al negocio menos rentable de lo
+    que es y dejaba el patrimonio sin reflejar lo retirado.
+    """
+    cuenta_origen = "1020" if retiro.metodo_pago == "Banco" else "1010"
+    crear_asiento(
+        db,
+        f"Retiro del propietario{': ' + retiro.nota if retiro.nota else ''}",
+        [("3030", retiro.monto, 0.0), (cuenta_origen, 0.0, retiro.monto)],
+        origen="retiro",
+        referencia_id=retiro.id,
+        fecha=retiro.fecha,
+    )
 
 
 def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:

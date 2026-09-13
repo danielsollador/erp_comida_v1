@@ -275,7 +275,17 @@ export type ResumenCaja = {
   saldo_anterior: number
   efectivo_esperado: number
   salidas_efectivo: number
+  /** Parte de salidas_efectivo que se llevo el dueno (no es gasto del negocio). */
+  retiros_hoy: number
   cantidad_pedidos: number
+}
+
+export type RetiroPropietario = {
+  id: number
+  monto: number
+  metodo_pago: 'Efectivo' | 'Banco'
+  nota: string
+  fecha: string
 }
 
 export type CierreCaja = {
