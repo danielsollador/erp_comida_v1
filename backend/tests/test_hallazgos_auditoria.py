@@ -831,6 +831,115 @@ def test_el_bloqueo_se_libera_aunque_falle_la_operacion():
     assert tomado == [True]
 
 
+# ------------------------------------------- PP..TT: devoluciones (caso 16)
+def _vender(client, variante, facturado=False, numero_factura=None, cantidad=2):
+    pedido = client.post(
+        "/api/pedidos",
+        json={"items": [{"variante_id": variante.id, "cantidad": cantidad}], "nota": ""},
+    ).json()
+    client.post(
+        f"/api/pedidos/{pedido['id']}/cobrar",
+        json={
+            "metodo_pago": "Efectivo",
+            "facturado": facturado,
+            "numero_factura": numero_factura,
+        },
+    )
+    return pedido
+
+
+def test_devolver_revierte_el_ingreso_y_el_iva(client, db, variante):
+    """Cargarlo como Gasto -la unica via antes- dejaba el ingreso contado y el
+    IVA debiendose al SENIAT por una venta que no existio."""
+    base_ingresos = saldo(db, "4010")
+    pedido = _vender(client, variante, facturado=True, numero_factura="00-1")
+    assert saldo(db, "4010") > base_ingresos
+    assert saldo(db, "2030") > 0
+    caja_con_venta = saldo(db, "1010")
+
+    r = client.post(
+        f"/api/pedidos/{pedido['id']}/devolver",
+        json={"recuperable": False, "nota_credito": "NC-1", "motivo": "mala"},
+    )
+    assert r.status_code == 200
+
+    assert saldo(db, "4010") == base_ingresos  # el ingreso se fue
+    assert saldo(db, "2030") == 0.0  # ya no se debe IVA por esa venta
+    assert saldo(db, "1010") == round(caja_con_venta - pedido["total"], 2)  # se devolvio la plata
+
+
+def test_la_venta_devuelta_sale_del_libro_de_ventas(client, db, variante):
+    pedido = _vender(client, variante, facturado=True, numero_factura="00-2")
+    assert len(client.get("/api/impuestos/libro-ventas?periodo=mes").json()["filas"]) == 1
+
+    client.post(
+        f"/api/pedidos/{pedido['id']}/devolver",
+        json={"recuperable": False, "nota_credito": "NC-2"},
+    )
+    libro = client.get("/api/impuestos/libro-ventas?periodo=mes").json()
+    assert libro["filas"] == []
+    assert libro["total_iva"] == 0.0
+
+
+def test_una_venta_facturada_necesita_nota_de_credito(client, variante):
+    """Sin ella la factura no puede salir del Libro de Ventas."""
+    pedido = _vender(client, variante, facturado=True, numero_factura="00-3")
+    r = client.post(f"/api/pedidos/{pedido['id']}/devolver", json={"recuperable": False})
+    assert r.status_code == 400
+    assert "nota de credito" in r.json()["detail"]
+
+
+def test_la_comida_botada_pasa_de_costo_de_ventas_a_merma(client, db, variante):
+    pedido = _vender(client, variante)
+    costo = saldo(db, "5010")
+    assert costo > 0
+
+    client.post(f"/api/pedidos/{pedido['id']}/devolver", json={"recuperable": False})
+    assert saldo(db, "5010") == 0.0  # ya no es costo de una venta
+    assert saldo(db, "6020") == costo  # es perdida por merma
+
+
+def test_la_comida_recuperable_vuelve_al_inventario(client, db, variante, insumo):
+    stock_inicial = insumo.stock_actual
+    pedido = _vender(client, variante)
+    db.refresh(insumo)
+    assert insumo.stock_actual < stock_inicial
+
+    client.post(f"/api/pedidos/{pedido['id']}/devolver", json={"recuperable": True})
+    db.refresh(insumo)
+    assert insumo.stock_actual == stock_inicial
+    assert saldo(db, "6020") == 0.0  # no hubo merma: se puede volver a vender
+
+
+def test_la_venta_devuelta_no_cuenta_en_reportes(client, db, variante):
+    pedido = _vender(client, variante)
+    antes = client.get("/api/reportes/resumen?periodo=mes").json()
+    assert antes["pedidos"] == 1
+
+    client.post(f"/api/pedidos/{pedido['id']}/devolver", json={"recuperable": False})
+    despues = client.get("/api/reportes/resumen?periodo=mes").json()
+    assert despues["pedidos"] == 0
+    assert despues["ventas"] == 0
+    assert despues["devoluciones"] == 1
+    assert despues["valor_devuelto"] == pedido["total"]
+
+
+def test_no_se_devuelve_dos_veces_ni_algo_sin_cobrar(client, variante):
+    pedido = _vender(client, variante)
+    client.post(f"/api/pedidos/{pedido['id']}/devolver", json={"recuperable": False})
+    assert (
+        client.post(f"/api/pedidos/{pedido['id']}/devolver", json={"recuperable": False}).status_code
+        == 409
+    )
+
+    sin_cobrar = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 1}], "nota": ""}
+    ).json()
+    r = client.post(f"/api/pedidos/{sin_cobrar['id']}/devolver", json={"recuperable": False})
+    assert r.status_code == 409
+    assert "anulalo" in r.json()["detail"]
+
+
 # ----------------------------------------------------- menores: numeracion
 def test_no_se_repite_el_numero_de_factura(client, variante):
     """Dos facturas con el mismo numero en el Libro de Ventas es un problema

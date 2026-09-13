@@ -114,6 +114,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ metodo_pago, facturado, numero_factura: numero_factura || null }),
     }),
+  devolverPedido: (
+    pedidoId: number,
+    opciones: { recuperable: boolean; nota_credito?: string; motivo?: string },
+  ) =>
+    req<Pedido>(`/pedidos/${pedidoId}/devolver`, {
+      method: 'POST',
+      body: JSON.stringify({
+        recuperable: opciones.recuperable,
+        nota_credito: opciones.nota_credito ?? null,
+        motivo: opciones.motivo ?? '',
+      }),
+    }),
   anularPedido: (pedidoId: number, comida_preparada?: boolean) =>
     req<Pedido>(`/pedidos/${pedidoId}/anular`, {
       method: 'POST',

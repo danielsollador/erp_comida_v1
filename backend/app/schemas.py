@@ -198,6 +198,15 @@ class AnularRequest(BaseModel):
     comida_preparada: Optional[bool] = None
 
 
+class DevolucionRequest(BaseModel):
+    # True: la comida vuelve al inventario (venia sellada, no se abrio).
+    # False: se boto, y el costo pasa de costo de ventas a merma.
+    recuperable: bool = False
+    # Obligatorio si la venta se facturo: es lo que la saca del Libro de Ventas.
+    nota_credito: Optional[str] = None
+    motivo: str = ""
+
+
 class PedidoItem(BaseModel):
     id: int
     variante_id: int
@@ -225,6 +234,8 @@ class Pedido(BaseModel):
     # bolivares que de verdad entraron ese dia, y no los que darian esos
     # dolares a la tasa de hoy.
     tasa_bcv: Optional[float] = None
+    devuelto: bool = False
+    nota_credito: Optional[str] = None
     items: List[PedidoItem]
 
     class Config:
@@ -323,6 +334,10 @@ class ReporteResumen(BaseModel):
     ganancia_neta: float
     pedidos_anulados: int
     valor_anulado: float = 0
+    # Ventas que el cliente devolvio: ya no cuentan como venta, pero el dueno
+    # necesita saber cuantas fueron.
+    devoluciones: int = 0
+    valor_devuelto: float = 0
     por_metodo_pago: dict
     serie: List[PuntoSerie]
     top_productos: List[ProductoVendido]

@@ -14,12 +14,27 @@ DIAS_ES = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
 
 
 def _pedidos_pagados(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
+    """Ventas efectivas del periodo. Las devueltas no cuentan: el cliente
+    trajo la comida de vuelta, asi que no hubo venta."""
     return (
         db.query(models.Pedido)
         .filter(
             models.Pedido.estado == "pagado",
+            models.Pedido.devuelto.is_(False),
             models.Pedido.cerrado_en >= inicio,
             models.Pedido.cerrado_en < fin,
+        )
+        .all()
+    )
+
+
+def _devoluciones(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
+    return (
+        db.query(models.Pedido)
+        .filter(
+            models.Pedido.devuelto.is_(True),
+            models.Pedido.fecha_devolucion >= inicio,
+            models.Pedido.fecha_devolucion < fin,
         )
         .all()
     )
@@ -415,6 +430,7 @@ def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
     ventas_previas, _ = _totales(pedidos_previos)
 
     anulados = len(_pedidos_anulados(db, inicio, fin))
+    devoluciones = _devoluciones(db, inicio, fin)
 
     por_metodo: Dict[str, float] = {}
     for p in pedidos:
@@ -440,6 +456,8 @@ def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
         ganancia_neta=round(ganancia_bruta - gastos, 2),
         valor_anulado=_valor_anulado(db, inicio, fin),
         pedidos_anulados=anulados,
+        devoluciones=len(devoluciones),
+        valor_devuelto=round(sum(p.total for p in devoluciones), 2),
         por_metodo_pago=por_metodo,
         serie=serie,
         top_productos=productos[:10],

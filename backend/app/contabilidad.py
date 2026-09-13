@@ -212,6 +212,45 @@ def registrar_venta(db: Session, pedido: models.Pedido) -> None:
     )
 
 
+def registrar_devolucion(
+    db: Session, pedido: models.Pedido, recuperable: bool
+) -> None:
+    """Deshace una venta cobrada: el cliente trajo la comida y se le pago.
+
+    Se revierte todo lo que genero la venta -ingreso, IVA debito y la plata que
+    entro- en vez de anotar la salida como un gasto, que era lo unico posible
+    antes: por esa via el ingreso quedaba contado, el IVA se seguia debiendo al
+    SENIAT por algo que no se vendio, y la perdida mostrada no era la real.
+
+    El costo de los insumos no desaparece: si la comida se puede revender
+    vuelve al inventario, y si se boto pasa de costo de ventas a merma, que es
+    lo que de verdad fue.
+    """
+    total = round(pedido.total, 2)
+    costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
+    cuenta_cobro = CUENTA_POR_METODO_PAGO.get(pedido.metodo_pago or "", "1010")
+
+    if pedido.facturado:
+        base, iva = impuestos.desglosar(total, pedido.tasa_iva or impuestos.IVA_DEFAULT)
+        lineas = [("4010", base, 0.0), ("2030", iva, 0.0), (cuenta_cobro, 0.0, total)]
+    else:
+        lineas = [("4010", total, 0.0), (cuenta_cobro, 0.0, total)]
+
+    if costo > 0:
+        # El costo sale de "costo de ventas" porque ya no hay venta. Si la
+        # comida se recupera vuelve al inventario; si no, es perdida por merma.
+        destino = "1040" if recuperable else "6020"
+        lineas += [(destino, costo, 0.0), ("5010", 0.0, costo)]
+
+    crear_asiento(
+        db,
+        f"Devolucion pedido #{pedido.numero}",
+        lineas,
+        origen="devolucion",
+        referencia_id=pedido.id,
+    )
+
+
 def registrar_gasto(db: Session, gasto: models.Gasto) -> None:
     cuenta_pago = "1020" if gasto.metodo_pago == "Banco" else "1010"
     crear_asiento(

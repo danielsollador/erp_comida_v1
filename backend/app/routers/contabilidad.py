@@ -465,6 +465,30 @@ def salud_contable(db: Session = Depends(get_db)):
                 )
             )
 
+        # Una devolucion tambien cambia el Libro de Ventas de ese mes: la
+        # factura sale y el IVA debito baja.
+        devueltas = (
+            db.query(models.Pedido)
+            .filter(
+                models.Pedido.devuelto.is_(True),
+                models.Pedido.facturado.is_(True),
+                models.Pedido.cerrado_en >= inicio,
+                models.Pedido.cerrado_en < fin,
+                models.Pedido.fecha_devolucion > declaracion.fecha_declaracion,
+            )
+            .count()
+        )
+        if devueltas:
+            problemas.append(
+                schemas.ProblemaContable(
+                    gravedad="grave",
+                    titulo=f"{devueltas} devolucion(es) de ventas de {declaracion.periodo}, ya declarado",
+                    detalle="Esas facturas salieron del Libro de Ventas despues de presentarlo, "
+                    "asi que el IVA declarado quedo de mas. Hace falta una declaracion "
+                    "sustitutiva para recuperarlo.",
+                )
+            )
+
     # 6. Insumos con stock negativo.
     negativos = [i for i in db.query(models.Ingrediente).all() if (i.stock_actual or 0) < 0]
     if negativos:

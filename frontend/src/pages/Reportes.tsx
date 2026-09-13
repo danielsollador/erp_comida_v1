@@ -126,10 +126,21 @@ export default function Reportes() {
               />
               <Linea etiqueta="Gastos, mermas y faltantes" monto={-datos.gastos} />
               <Linea etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
-              {datos.pedidos_anulados > 0 && (
+              {(datos.pedidos_anulados > 0 || datos.devoluciones > 0) && (
                 <p className="text-xs text-amber-700 mt-3 bg-amber-50 rounded-lg px-3 py-2">
-                  Ademas se anularon {datos.pedidos_anulados} pedido(s) por $
-                  {datos.valor_anulado.toFixed(2)} que no llegaron a venderse.
+                  {datos.pedidos_anulados > 0 && (
+                    <>
+                      Se anularon {datos.pedidos_anulados} pedido(s) por $
+                      {datos.valor_anulado.toFixed(2)} que no llegaron a venderse.
+                    </>
+                  )}
+                  {datos.devoluciones > 0 && (
+                    <>
+                      {datos.pedidos_anulados > 0 && ' '}
+                      {datos.devoluciones} venta(s) por ${datos.valor_devuelto.toFixed(2)} fueron
+                      devueltas por el cliente y ya no cuentan arriba.
+                    </>
+                  )}
                 </p>
               )}
             </div>

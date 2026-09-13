@@ -116,6 +116,8 @@ export type ReporteResumen = {
   ganancia_neta: number
   pedidos_anulados: number
   valor_anulado: number
+  devoluciones: number
+  valor_devuelto: number
   por_metodo_pago: Record<string, number>
   serie: PuntoSerie[]
   top_productos: ProductoVendido[]
@@ -183,6 +185,9 @@ export type Pedido = {
   numero_factura: string | null
   /** Tasa a la que se cobro. Para montos historicos manda esta, no la de hoy. */
   tasa_bcv: number | null
+  /** El cliente trajo la comida de vuelta: la venta se revirtio entera. */
+  devuelto: boolean
+  nota_credito: string | null
   items: PedidoItem[]
 }
 

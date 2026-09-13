@@ -239,6 +239,54 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
     return resultado
 
 
+@router.post("/{pedido_id}/devolver", response_model=schemas.Pedido)
+async def devolver_pedido(
+    pedido_id: int, body: schemas.DevolucionRequest, db: Session = Depends(get_db)
+):
+    """El cliente trajo la comida de vuelta y se le devuelve la plata.
+
+    Distinto de anular: anular es para un pedido que nunca se cobro. Aca ya
+    hubo venta, asi que hay que deshacerla entera. Antes la unica salida era
+    registrar la devolucion como un Gasto, y eso dejaba el ingreso contado, el
+    IVA debiendose por una venta que no existio y la factura en el Libro de
+    Ventas.
+    """
+    pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    if pedido.estado != "pagado":
+        raise HTTPException(
+            status_code=409,
+            detail="Solo se devuelve un pedido ya cobrado. Si todavia no se cobro, anulalo.",
+        )
+    if pedido.devuelto:
+        raise HTTPException(status_code=409, detail="Este pedido ya fue devuelto")
+    if pedido.facturado and not body.nota_credito:
+        raise HTTPException(
+            status_code=400,
+            detail="Esta venta se facturo: hace falta el numero de la nota de credito para sacarla del Libro de Ventas.",
+        )
+
+    contabilidad.registrar_devolucion(db, pedido, body.recuperable)
+
+    # La comida que se puede revender vuelve al inventario; la que se boto ya
+    # quedo reconocida como merma en el asiento.
+    if body.recuperable:
+        for consumo in pedido.consumos:
+            consumo.ingrediente.stock_actual = (consumo.ingrediente.stock_actual or 0) + consumo.cantidad
+
+    pedido.devuelto = True
+    pedido.fecha_devolucion = ahora()
+    pedido.nota_credito = body.nota_credito
+    pedido.motivo_devolucion = body.motivo
+    db.commit()
+    db.refresh(pedido)
+
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
 @router.post("/{pedido_id}/anular", response_model=schemas.Pedido)
 async def anular_pedido(
     pedido_id: int, body: Optional[schemas.AnularRequest] = None, db: Session = Depends(get_db)
@@ -250,7 +298,7 @@ async def anular_pedido(
     if pedido.estado == "pagado":
         raise HTTPException(
             status_code=409,
-            detail="Este pedido ya fue cobrado. Para devolver el dinero registra la salida en Gastos.",
+            detail="Este pedido ya fue cobrado. Si el cliente devolvio la comida, usa Devolver.",
         )
     if pedido.estado == "anulado":
         raise HTTPException(status_code=409, detail="Este pedido ya estaba anulado")

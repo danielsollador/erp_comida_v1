@@ -409,6 +409,14 @@ class Pedido(Base):
     # Igual que tasa_bcv: se congela la tasa de IVA del dia para que el Libro
     # de Ventas de un mes cerrado no cambie si despues sube la alicuota.
     tasa_iva = Column(Float, nullable=True)
+    # El cliente trajo la comida de vuelta y se le devolvio la plata. La venta
+    # se revierte entera: deja de contar como ingreso, deja de deber IVA y sale
+    # del Libro de Ventas. Si estaba facturada, el numero de la nota de credito
+    # que el dueno emitio a mano.
+    devuelto = Column(Boolean, default=False)
+    fecha_devolucion = Column(DateTime, nullable=True)
+    nota_credito = Column(String, nullable=True)
+    motivo_devolucion = Column(String, default="")
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     consumos = relationship("PedidoConsumo", cascade="all, delete-orphan")

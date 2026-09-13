@@ -13,6 +13,7 @@ export default function POS() {
   const [categoriaActiva, setCategoriaActiva] = useState<number | null>(null)
   const [carrito, setCarrito] = useState<Carrito>({})
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
+  const [ventasRecientes, setVentasRecientes] = useState<Pedido[]>([])
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
   const [facturar, setFacturar] = useState(false)
   const [numeroFactura, setNumeroFactura] = useState('')
@@ -36,6 +37,45 @@ export default function POS() {
       ([pendientes, listos]) =>
         setPedidosActivos([...listos, ...pendientes].sort((a, b) => a.numero - b.numero)),
     )
+    // Las ultimas ventas quedan a mano por si el cliente vuelve con la comida:
+    // devolver una venta cobrada es distinto de anular una que nunca se cobro.
+    api
+      .listarPedidos('pagado')
+      .then((ps) => setVentasRecientes(ps.slice(0, 6)))
+      .catch(() => setVentasRecientes([]))
+  }
+
+  async function devolver(pedido: Pedido) {
+    const motivo = window.prompt(
+      `Devolver el pedido #${pedido.numero} por ${fmt(pedido.total)}?\n\n` +
+        'Se le regresa la plata al cliente y la venta se revierte entera: deja de contar como ' +
+        'ingreso y deja de deber IVA.\n\nQue paso?',
+      'La comida estaba mala',
+    )
+    if (motivo === null) return
+
+    // Define si el costo vuelve al inventario o se reconoce como merma.
+    const recuperable = window.confirm(
+      'La comida se puede volver a vender?\n\nAceptar = si, vuelve al inventario\nCancelar = no, se bota (se registra como merma)',
+    )
+
+    let nota_credito: string | undefined
+    if (pedido.facturado) {
+      // Sin la nota de credito la factura no puede salir del Libro de Ventas.
+      const nc = window.prompt(
+        `Esta venta se facturo (${pedido.numero_factura}).\n\nNumero de la nota de credito que emitiste:`,
+      )
+      if (!nc) return
+      nota_credito = nc
+    }
+
+    setError('')
+    try {
+      await api.devolverPedido(pedido.id, { recuperable, nota_credito, motivo })
+      refrescarPedidos()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo devolver')
+    }
   }
 
   // Que ofrecerle al cliente segun lo que ya lleva. Se recalcula en cada
@@ -268,6 +308,50 @@ export default function POS() {
               <p className="text-neutral-400 text-sm">No hay pedidos activos.</p>
             )}
           </div>
+
+          {/* A mano por si el cliente vuelve con la comida. Devolver una venta
+              cobrada revierte el ingreso y el IVA; anular es solo para las que
+              nunca se cobraron. */}
+          {ventasRecientes.length > 0 && (
+            <div className="mt-6">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">
+                Ultimas ventas
+              </h2>
+              <div className="space-y-1">
+                {ventasRecientes.map((v) => (
+                  <div
+                    key={v.id}
+                    className={`flex items-center justify-between gap-2 text-sm rounded-lg px-2.5 py-1.5 ${
+                      v.devuelto ? 'bg-neutral-100 opacity-60' : 'bg-white border border-neutral-200'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="font-medium">#{v.numero}</span>
+                      <span className="text-neutral-500 truncate">
+                        {v.items.map((i) => `${i.cantidad}x ${i.nombre}`).join(', ')}
+                      </span>
+                      {v.facturado && !v.devuelto && (
+                        <span className="text-[10px] text-neutral-400 shrink-0">facturada</span>
+                      )}
+                    </span>
+                    <span className="flex items-center gap-3 shrink-0">
+                      <span className="tabular-nums">{fmt(v.total)}</span>
+                      {v.devuelto ? (
+                        <span className="text-xs text-neutral-500">devuelta</span>
+                      ) : (
+                        <button
+                          onClick={() => devolver(v)}
+                          className="text-xs font-medium text-amber-700"
+                        >
+                          Devolver
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:sticky md:top-[105px] md:h-[calc(100vh-105px)]">

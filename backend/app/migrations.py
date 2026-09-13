@@ -29,6 +29,10 @@ COLUMNAS = [
     ("facturas_compra", "fecha_pago", "DATETIME"),
     ("gastos", "metodo_pago", "VARCHAR DEFAULT 'Efectivo'"),
     ("mermas", "revertida", "BOOLEAN DEFAULT 0"),
+    ("pedidos", "devuelto", "BOOLEAN DEFAULT 0"),
+    ("pedidos", "fecha_devolucion", "DATETIME"),
+    ("pedidos", "nota_credito", "VARCHAR"),
+    ("pedidos", "motivo_devolucion", "VARCHAR DEFAULT ''"),
 ]
 
 

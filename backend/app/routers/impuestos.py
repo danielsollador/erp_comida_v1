@@ -31,6 +31,7 @@ def _totales_iva_del_rango(db: Session, inicio, fin) -> Tuple[float, float]:
         .filter(
             models.Pedido.estado == "pagado",
             models.Pedido.facturado.is_(True),
+            models.Pedido.devuelto.is_(False),
             models.Pedido.cerrado_en >= inicio,
             models.Pedido.cerrado_en < fin,
         )
@@ -56,11 +57,14 @@ def libro_ventas(periodo: str = "mes", db: Session = Depends(get_db)):
         periodo = "mes"
     inicio, fin, etiqueta = rango_periodo(periodo)
 
+    # Una venta devuelta sale del Libro: el dueno emitio una nota de credito y
+    # esa factura ya no representa una venta.
     pedidos_facturados = (
         db.query(models.Pedido)
         .filter(
             models.Pedido.estado == "pagado",
             models.Pedido.facturado.is_(True),
+            models.Pedido.devuelto.is_(False),
             models.Pedido.cerrado_en >= inicio,
             models.Pedido.cerrado_en < fin,
         )
@@ -72,6 +76,7 @@ def libro_ventas(periodo: str = "mes", db: Session = Depends(get_db)):
         .filter(
             models.Pedido.estado == "pagado",
             models.Pedido.facturado.is_(False),
+            models.Pedido.devuelto.is_(False),
             models.Pedido.cerrado_en >= inicio,
             models.Pedido.cerrado_en < fin,
         )
