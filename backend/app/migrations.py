@@ -33,6 +33,7 @@ COLUMNAS = [
     ("pedidos", "fecha_devolucion", "DATETIME"),
     ("pedidos", "nota_credito", "VARCHAR"),
     ("pedidos", "motivo_devolucion", "VARCHAR DEFAULT ''"),
+    ("categorias", "activo", "BOOLEAN DEFAULT 1"),
 ]
 
 

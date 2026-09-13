@@ -61,6 +61,7 @@ class Producto(ProductoBase):
 class CategoriaBase(BaseModel):
     nombre: str
     orden: int = 0
+    activo: bool = True
 
 
 class CategoriaCreate(CategoriaBase):

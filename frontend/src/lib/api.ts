@@ -69,6 +69,8 @@ export const api = {
       body: JSON.stringify({ nombre, orden }),
     }),
   eliminarCategoria: (id: number) => req(`/menu/categorias/${id}`, { method: 'DELETE' }),
+  reactivarCategoria: (id: number) =>
+    req<Categoria>(`/menu/categorias/${id}/reactivar`, { method: 'POST' }),
 
   crearProducto: (categoria_id: number, nombre: string, variantes: { nombre: string; precio: number }[]) =>
     req<Producto>('/menu/productos', {

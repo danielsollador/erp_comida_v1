@@ -18,6 +18,8 @@ export type Categoria = {
   id: number
   nombre: string
   orden: number
+  /** Retirada del menu. Sus ventas historicas se conservan igual. */
+  activo: boolean
   productos: Producto[]
 }
 

@@ -6,7 +6,7 @@ tests nunca tocan `comida.db` ni dependen del historico del local.
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -22,6 +22,16 @@ def db():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # Misma configuracion que produccion (ver database.py): sin esto los tests
+    # correrian sin claves foraneas y no verian los errores que la app si
+    # atraparia al correr de verdad.
+    @event.listens_for(engine, "connect")
+    def _activar_claves_foraneas(conexion, _registro):
+        cursor = conexion.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(bind=engine)
     Sesion = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     sesion = Sesion()

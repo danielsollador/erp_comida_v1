@@ -9,6 +9,8 @@ import datetime
 import threading
 import time
 
+from sqlalchemy import text
+
 from app import contabilidad, costeo, models
 from tests.conftest import saldo
 
@@ -938,6 +940,94 @@ def test_no_se_devuelve_dos_veces_ni_algo_sin_cobrar(client, variante):
     r = client.post(f"/api/pedidos/{sin_cobrar['id']}/devolver", json={"recuperable": False})
     assert r.status_code == 409
     assert "anulalo" in r.json()["detail"]
+
+
+# ------------------------------------------- UU..XX: borrar del menu (caso 17)
+def test_quitar_una_categoria_no_destruye_sus_ventas(client, db, variante):
+    """Borraba en duro y el cascade se llevaba productos y variantes, dejando
+    las lineas de venta apuntando a registros inexistentes (419 en la prueba
+    real). Ahora se desactiva, igual que producto y variante."""
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 2}], "nota": ""}
+    ).json()
+    client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
+    ventas_antes = client.get("/api/reportes/resumen?periodo=mes").json()["ventas"]
+
+    categoria_id = db.query(models.Categoria).first().id
+    assert client.delete(f"/api/menu/categorias/{categoria_id}").status_code == 200
+
+    # la variante sigue existiendo y la venta tambien
+    assert db.query(models.Variante).filter_by(id=variante.id).first() is not None
+    assert client.get("/api/reportes/resumen?periodo=mes").json()["ventas"] == ventas_antes
+
+    huerfanos = db.execute(
+        text(
+            "SELECT COUNT(1) FROM pedido_items t "
+            "LEFT JOIN variantes v ON v.id = t.variante_id WHERE v.id IS NULL"
+        )
+    ).scalar()
+    assert huerfanos == 0
+
+
+def test_la_categoria_retirada_y_sus_productos_salen_del_menu(client, db, variante):
+    categoria_id = db.query(models.Categoria).first().id
+    client.delete(f"/api/menu/categorias/{categoria_id}")
+
+    cats = client.get("/api/menu/categorias").json()
+    cat = next(c for c in cats if c["id"] == categoria_id)
+    assert cat["activo"] is False
+    assert all(p["activo"] is False for p in cat["productos"])
+
+
+def test_se_puede_volver_a_activar_una_categoria(client, db, variante):
+    """Quitar algo del menu por error tenia que tener vuelta atras."""
+    categoria_id = db.query(models.Categoria).first().id
+    client.delete(f"/api/menu/categorias/{categoria_id}")
+
+    assert client.post(f"/api/menu/categorias/{categoria_id}/reactivar").status_code == 200
+    cats = client.get("/api/menu/categorias").json()
+    cat = next(c for c in cats if c["id"] == categoria_id)
+    assert cat["activo"] is True
+    assert all(p["activo"] is True for p in cat["productos"])
+
+
+def test_la_base_rechaza_referencias_a_registros_inexistentes(db):
+    """SQLite ignora las claves foraneas salvo que se le active el PRAGMA."""
+    assert db.execute(text("PRAGMA foreign_keys")).scalar() == 1
+
+    import sqlalchemy.exc
+
+    try:
+        db.execute(
+            text("INSERT INTO receta_items (variante_id, ingrediente_id, cantidad_por_unidad) "
+                 "VALUES (99999, 99999, 1)")
+        )
+        db.commit()
+        rechazado = False
+    except sqlalchemy.exc.IntegrityError:
+        db.rollback()
+        rechazado = True
+    assert rechazado
+
+
+def test_la_salud_detecta_filas_huerfanas(client, db, variante, insumo):
+    contabilidad.asiento_de_apertura(db)
+    assert client.get("/api/contabilidad/salud").json()["sano"] is True
+
+    # se fabrica una huerfana saltandose las claves foraneas, como haria una
+    # base que venia de antes de activarlas
+    db.execute(text("PRAGMA foreign_keys=OFF"))
+    db.execute(
+        text("INSERT INTO receta_items (variante_id, ingrediente_id, cantidad_por_unidad) "
+             "VALUES (99999, :ing, 1)"),
+        {"ing": insumo.id},
+    )
+    db.commit()
+    db.execute(text("PRAGMA foreign_keys=ON"))
+
+    salud = client.get("/api/contabilidad/salud").json()
+    assert salud["sano"] is False
+    assert "ya no existen" in " ".join(p["titulo"] for p in salud["problemas"])
 
 
 # ----------------------------------------------------- menores: numeracion

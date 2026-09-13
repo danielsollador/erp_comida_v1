@@ -43,12 +43,36 @@ def actualizar_categoria(categoria_id: int, categoria: schemas.CategoriaCreate, 
 
 @router.delete("/categorias/{categoria_id}")
 def eliminar_categoria(categoria_id: int, db: Session = Depends(get_db)):
+    """Saca la categoria del menu sin destruir el historico.
+
+    Antes borraba en duro y el cascade se llevaba productos y variantes, pero
+    las ventas ya cobradas apuntan a esas variantes: quedaban huerfanas y el
+    dueno no tenia forma de recuperar lo borrado. Se desactiva, igual que
+    producto y variante.
+    """
     db_categoria = db.query(models.Categoria).filter(models.Categoria.id == categoria_id).first()
     if not db_categoria:
         raise HTTPException(status_code=404, detail="Categoria no encontrada")
-    db.delete(db_categoria)
+    db_categoria.activo = False
+    for producto in db_categoria.productos:
+        producto.activo = False
     db.commit()
     return {"ok": True}
+
+
+@router.post("/categorias/{categoria_id}/reactivar", response_model=schemas.Categoria)
+def reactivar_categoria(categoria_id: int, db: Session = Depends(get_db)):
+    """Deshace el retiro del menu. Sin esto, quitar una categoria por error no
+    tendria vuelta atras."""
+    db_categoria = db.query(models.Categoria).filter(models.Categoria.id == categoria_id).first()
+    if not db_categoria:
+        raise HTTPException(status_code=404, detail="Categoria no encontrada")
+    db_categoria.activo = True
+    for producto in db_categoria.productos:
+        producto.activo = True
+    db.commit()
+    db.refresh(db_categoria)
+    return db_categoria
 
 
 @router.post("/productos", response_model=schemas.Producto)

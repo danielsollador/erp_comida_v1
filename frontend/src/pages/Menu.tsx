@@ -28,8 +28,23 @@ export default function Menu() {
   }
 
   async function borrarCategoria(id: number) {
-    if (!window.confirm('Esto borra la categoria y todos sus productos. Continuar?')) return
+    const cat = categorias.find((c) => c.id === id)
+    const productos = cat?.productos.length ?? 0
+    if (
+      !window.confirm(
+        `Quitar "${cat?.nombre}" del menu?\n\n` +
+          `Deja de aparecer en el punto de venta junto con sus ${productos} producto(s), ` +
+          'pero las ventas que ya se hicieron se conservan intactas.\n\n' +
+          'Se puede volver a activar despues.',
+      )
+    )
+      return
     await api.eliminarCategoria(id)
+    cargar()
+  }
+
+  async function reactivarCategoria(id: number) {
+    await api.reactivarCategoria(id)
     cargar()
   }
 
@@ -37,15 +52,46 @@ export default function Menu() {
     <div className="min-h-screen bg-neutral-100">
       <NavBar titulo="Menu" />
       <div className="p-4 max-w-2xl mx-auto space-y-6">
-        {categorias.map((cat) => (
-          <CategoriaCard
-            key={cat.id}
-            categoria={cat}
-            costos={costos}
-            onCambio={cargar}
-            onBorrar={borrarCategoria}
-          />
-        ))}
+        {categorias
+          .filter((c) => c.activo)
+          .map((cat) => (
+            <CategoriaCard
+              key={cat.id}
+              categoria={cat}
+              costos={costos}
+              onCambio={cargar}
+              onBorrar={borrarCategoria}
+            />
+          ))}
+
+        {/* Retiradas del menu, no borradas: sus ventas siguen en el historico
+            y se pueden volver a activar. */}
+        {categorias.some((c) => !c.activo) && (
+          <div className="bg-white rounded-2xl shadow p-4">
+            <h2 className="font-semibold mb-1">Fuera del menu</h2>
+            <p className="text-xs text-neutral-500 mb-3">
+              No aparecen en el punto de venta. Sus ventas anteriores se conservan.
+            </p>
+            <div className="space-y-1">
+              {categorias
+                .filter((c) => !c.activo)
+                .map((c) => (
+                  <div key={c.id} className="flex justify-between items-center text-sm">
+                    <span>
+                      {c.nombre}
+                      <span className="text-xs text-neutral-400"> · {c.productos.length} producto(s)</span>
+                    </span>
+                    <button
+                      onClick={() => reactivarCategoria(c.id)}
+                      className="text-blue-600 text-xs font-medium"
+                    >
+                      Volver a activar
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl shadow p-4 flex gap-2">
           <input

@@ -2,6 +2,7 @@ import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
 from .. import contabilidad, models, schemas
@@ -364,6 +365,36 @@ def salud_contable(db: Session = Depends(get_db)):
                 titulo=f"{huerfanos} movimiento(s) contable(s) sin asiento",
                 detalle="Quedaron de un borrado incompleto. Suman en el balance pero no "
                 "aparecen en el diario. Hay que eliminarlos.",
+            )
+        )
+
+    # 1-bis. Filas apuntando a registros que ya no existen. Con las claves
+    #    foraneas activas no deberian aparecer nuevas, pero una base que venia
+    #    de antes puede traerlas y nada mas las detecta.
+    sueltas = []
+    for tabla, columna, destino, que_es in [
+        ("pedido_items", "variante_id", "variantes", "lineas de venta"),
+        ("receta_items", "variante_id", "variantes", "lineas de receta"),
+        ("pedido_consumos", "ingrediente_id", "ingredientes", "consumos de pedido"),
+        ("mermas", "ingrediente_id", "ingredientes", "mermas"),
+    ]:
+        cuantas = db.execute(
+            text(
+                f"SELECT COUNT(1) FROM {tabla} t "
+                f"LEFT JOIN {destino} d ON d.id = t.{columna} WHERE d.id IS NULL"
+            )
+        ).scalar()
+        if cuantas:
+            sueltas.append(f"{cuantas} {que_es}")
+    if sueltas:
+        problemas.append(
+            schemas.ProblemaContable(
+                gravedad="grave",
+                titulo="Hay registros apuntando a datos que ya no existen",
+                detalle=", ".join(sueltas)
+                + ". Suele venir de haber borrado un producto o categoria que ya tenia "
+                "movimiento. Los reportes historicos siguen funcionando porque guardan "
+                "nombre y costo propios, pero conviene revisarlo.",
             )
         )
 

@@ -11,6 +11,10 @@ class Categoria(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String, nullable=False)
     orden = Column(Integer, default=0)
+    # Se desactiva, no se borra: igual que producto y variante. Borrarla en
+    # duro arrastraba sus productos por cascade y dejaba las ventas historicas
+    # apuntando a variantes inexistentes (419 filas huerfanas en la prueba).
+    activo = Column(Boolean, default=True)
 
     productos = relationship("Producto", back_populates="categoria", cascade="all, delete-orphan")
 

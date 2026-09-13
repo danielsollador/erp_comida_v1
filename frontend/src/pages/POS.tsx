@@ -23,7 +23,10 @@ export default function POS() {
   const tasaBcv = tasa?.bcv ?? 0
 
   useEffect(() => {
-    api.listarCategorias().then((cats) => {
+    // Solo lo que esta en el menu hoy: una categoria retirada conserva sus
+    // ventas historicas pero no se debe poder seguir vendiendo.
+    api.listarCategorias().then((todas) => {
+      const cats = todas.filter((c) => c.activo)
       setCategorias(cats)
       if (cats.length > 0) setCategoriaActiva(cats[0].id)
     })
