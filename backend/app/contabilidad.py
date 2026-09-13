@@ -185,19 +185,33 @@ def crear_asiento(
     return asiento
 
 
+def _lineas_de_cobro(pedido: models.Pedido, signo: float = 1.0) -> List[Tuple[str, float, float]]:
+    """Una linea por cada forma en que se pago, a su cuenta correspondiente.
+
+    Un pago mixto entra parte a caja y parte a banco: mandarlo todo a una sola
+    cuenta hacia que el cierre de caja mostrara un faltante inexistente.
+    """
+    lineas = []
+    for pago in pedido.pagos:
+        cuenta = CUENTA_POR_METODO_PAGO.get(pago.metodo, "1010")
+        monto = round(pago.monto, 2)
+        lineas.append((cuenta, monto, 0.0) if signo > 0 else (cuenta, 0.0, monto))
+    return lineas
+
+
 def registrar_venta(db: Session, pedido: models.Pedido) -> None:
     total = round(pedido.total, 2)
     costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
-    cuenta_cobro = CUENTA_POR_METODO_PAGO.get(pedido.metodo_pago or "", "1010")
 
+    lineas = _lineas_de_cobro(pedido)
     if pedido.facturado:
         # Solo lo facturado le debe IVA al fisco. La alicuota ya viene congelada
         # en el pedido (se fija al cobrar) para que un Libro de Ventas de un
         # mes cerrado no cambie si despues sube el IVA.
         base, iva = impuestos.desglosar(total, pedido.tasa_iva or impuestos.IVA_DEFAULT)
-        lineas = [(cuenta_cobro, total, 0.0), ("4010", 0.0, base), ("2030", 0.0, iva)]
+        lineas += [("4010", 0.0, base), ("2030", 0.0, iva)]
     else:
-        lineas = [(cuenta_cobro, total, 0.0), ("4010", 0.0, total)]
+        lineas += [("4010", 0.0, total)]
 
     if costo > 0:
         lineas += [("5010", costo, 0.0), ("1040", 0.0, costo)]
@@ -228,13 +242,15 @@ def registrar_devolucion(
     """
     total = round(pedido.total, 2)
     costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
-    cuenta_cobro = CUENTA_POR_METODO_PAGO.get(pedido.metodo_pago or "", "1010")
 
+    # La plata vuelve por donde entro: si se pago mitad efectivo y mitad pago
+    # movil, se devuelve en esa misma proporcion.
     if pedido.facturado:
         base, iva = impuestos.desglosar(total, pedido.tasa_iva or impuestos.IVA_DEFAULT)
-        lineas = [("4010", base, 0.0), ("2030", iva, 0.0), (cuenta_cobro, 0.0, total)]
+        lineas = [("4010", base, 0.0), ("2030", iva, 0.0)]
     else:
-        lineas = [("4010", total, 0.0), (cuenta_cobro, 0.0, total)]
+        lineas = [("4010", total, 0.0)]
+    lineas += _lineas_de_cobro(pedido, signo=-1)
 
     if costo > 0:
         # El costo sale de "costo de ventas" porque ya no hay venta. Si la

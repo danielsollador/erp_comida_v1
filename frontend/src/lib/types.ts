@@ -190,6 +190,8 @@ export type Pedido = {
   /** El cliente trajo la comida de vuelta: la venta se revirtio entera. */
   devuelto: boolean
   nota_credito: string | null
+  /** Un pedido puede pagarse con varias formas a la vez. */
+  pagos: { metodo: string; monto: number }[]
   items: PedidoItem[]
 }
 

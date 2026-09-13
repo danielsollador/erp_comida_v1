@@ -46,8 +46,12 @@ def _retiros_hoy(db: Session) -> float:
 def _salidas_efectivo_hoy(db: Session) -> float:
     """Todo lo que salio de la gaveta hoy que no fue una venta, segun los libros."""
     inicio, fin = _rango_hoy()
+    # Por pago y no por pedido: en una venta mixta solo parte entro a la gaveta.
     ventas_efectivo = sum(
-        p.total for p in _pedidos_pagados_hoy(db) if p.metodo_pago == "Efectivo"
+        pago.monto
+        for p in _pedidos_pagados_hoy(db)
+        for pago in p.pagos
+        if pago.metodo == "Efectivo"
     )
     # neto = entradas - salidas. Las unicas entradas son las ventas en efectivo,
     # asi que lo demas que movio la cuenta son salidas.
@@ -72,9 +76,11 @@ def resumen_caja(db: Session = Depends(get_db)):
     por_metodo: dict = {}
     total = 0.0
     for pedido in pedidos:
-        metodo = pedido.metodo_pago or "Sin especificar"
-        por_metodo[metodo] = por_metodo.get(metodo, 0) + pedido.total
         total += pedido.total
+        # Se desglosa por pago, no por pedido: una venta mixta aporta a dos
+        # metodos distintos y antes aparecia entera bajo una etiqueta inventada.
+        for pago in pedido.pagos:
+            por_metodo[pago.metodo] = por_metodo.get(pago.metodo, 0) + pago.monto
 
     # Lo que debe haber en la gaveta lo dice la contabilidad, no un calculo
     # aparte: el saldo de la cuenta 1010 ya incluye ventas en efectivo, gastos,

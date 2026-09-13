@@ -5,6 +5,10 @@ import { fmtBs, useMoneda } from '../lib/moneda'
 import { colorCategoria } from '../lib/theme'
 import type { Categoria, Pedido, Producto, Sugerencia, Variante } from '../lib/types'
 
+// Las mismas que reconoce la contabilidad; cualquier otra cosa la rechaza el
+// backend en vez de mandarla a Caja por defecto.
+const METODOS_PAGO = ['Efectivo', 'Pago movil', 'Tarjeta', 'Transferencia']
+
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
 type Carrito = Record<number, CarritoEntry>
 
@@ -14,6 +18,9 @@ export default function POS() {
   const [carrito, setCarrito] = useState<Carrito>({})
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
   const [ventasRecientes, setVentasRecientes] = useState<Pedido[]>([])
+  const [pagoMixto, setPagoMixto] = useState(false)
+  const [metodoParcial, setMetodoParcial] = useState(METODOS_PAGO[0])
+  const [montoParcial, setMontoParcial] = useState('')
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
   const [facturar, setFacturar] = useState(false)
   const [numeroFactura, setNumeroFactura] = useState('')
@@ -170,19 +177,35 @@ export default function POS() {
     }
   }
 
-  async function confirmarCobro(metodo: string) {
+  async function cobrar(metodo: string, pagos?: { metodo: string; monto: number }[]) {
     if (!cobrando) return
     setError('')
     try {
-      await api.cobrarPedido(cobrando.id, metodo, facturar, numeroFactura)
+      await api.cobrarPedido(cobrando.id, metodo, facturar, numeroFactura, pagos)
       setCobrando(null)
       setFacturar(false)
       setNumeroFactura('')
+      setPagoMixto(false)
+      setMontoParcial('')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cobrar')
       setCobrando(null)
     }
     refrescarPedidos()
+  }
+
+  const confirmarCobro = (metodo: string) => cobrar(metodo)
+
+  // El resto del total va al segundo metodo, calculado acá para que los dos
+  // pagos sumen exacto y el backend no lo rechace por centavos.
+  function confirmarCobroMixto(segundoMetodo: string) {
+    if (!cobrando) return
+    const primero = Number(montoParcial)
+    const resto = Math.round((cobrando.total - primero) * 100) / 100
+    cobrar('Mixto', [
+      { metodo: metodoParcial, monto: primero },
+      { metodo: segundoMetodo, monto: resto },
+    ])
   }
 
   async function anular(pedido: Pedido) {
@@ -482,22 +505,88 @@ export default function POS() {
                 className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mt-2"
               />
             )}
-            <div className="grid grid-cols-2 gap-2 mb-3 mt-3">
-              {['Efectivo', 'Tarjeta', 'Pago movil', 'Transferencia'].map((m) => (
+            {/* Pago partido: el cliente da algo en efectivo y el resto por
+                otra via. Antes habia que elegir un metodo solo y la caja
+                quedaba esperando plata que nunca entro a la gaveta. */}
+            {!pagoMixto ? (
+              <>
+                <div className="grid grid-cols-2 gap-2 mb-2 mt-3">
+                  {METODOS_PAGO.map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => confirmarCobro(m)}
+                      className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-3 text-sm font-medium"
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
                 <button
-                  key={m}
-                  onClick={() => confirmarCobro(m)}
-                  className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-3 text-sm font-medium"
+                  onClick={() => setPagoMixto(true)}
+                  className="w-full text-sm font-medium text-blue-600 mb-3 py-1"
                 >
-                  {m}
+                  Paga con dos formas
                 </button>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="mt-3 mb-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <select
+                    value={metodoParcial}
+                    onChange={(e) => setMetodoParcial(e.target.value)}
+                    className="flex-1 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+                  >
+                    {METODOS_PAGO.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={montoParcial}
+                    onChange={(e) => setMontoParcial(e.target.value)}
+                    type="number"
+                    step="0.01"
+                    placeholder="Monto"
+                    className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+                  />
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Falta por cubrir:{' '}
+                  <span className="font-semibold tabular-nums text-neutral-800">
+                    ${Math.max(cobrando.total - (Number(montoParcial) || 0), 0).toFixed(2)}
+                  </span>{' '}
+                  con:
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {METODOS_PAGO.filter((m) => m !== metodoParcial).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => confirmarCobroMixto(m)}
+                      disabled={
+                        !(Number(montoParcial) > 0 && Number(montoParcial) < cobrando.total)
+                      }
+                      className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-2.5 text-sm font-medium disabled:opacity-30"
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setPagoMixto(false)}
+                  className="w-full text-xs text-neutral-500 pt-1"
+                >
+                  Volver a un solo pago
+                </button>
+              </div>
+            )}
             <button
               onClick={() => {
                 setCobrando(null)
                 setFacturar(false)
                 setNumeroFactura('')
+                setPagoMixto(false)
+                setMontoParcial('')
               }}
               className="text-sm text-neutral-500"
             >

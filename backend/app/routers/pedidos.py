@@ -214,8 +214,31 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
                 detail=f"La factura {body.numero_factura} ya se uso en el pedido #{repetido.numero}.",
             )
 
+    # Un pago puede venir partido: $5 en efectivo y el resto por pago movil es
+    # cosa de todos los dias. Sin esto habia que elegir un metodo y mentir, y
+    # el cierre de caja mostraba un faltante que no existia.
+    pagos = body.pagos or [schemas.PagoInput(metodo=body.metodo_pago, monto=pedido.total)]
+    for pago in pagos:
+        if pago.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Forma de pago desconocida: '{pago.metodo}'. "
+                f"Validas: {', '.join(sorted(contabilidad.CUENTA_POR_METODO_PAGO))}.",
+            )
+        if pago.monto <= 0:
+            raise HTTPException(status_code=400, detail="Cada pago debe ser mayor a cero")
+    if abs(round(sum(p.monto for p in pagos), 2) - round(pedido.total, 2)) > 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Los pagos suman ${sum(p.monto for p in pagos):.2f} y el pedido es de ${pedido.total:.2f}.",
+        )
+
     pedido.estado = "pagado"
-    pedido.metodo_pago = body.metodo_pago
+    # El campo resumen sigue existiendo para mostrar de un vistazo como se pago.
+    pedido.metodo_pago = pagos[0].metodo if len(pagos) == 1 else "Mixto"
+    for pago in pagos:
+        db.add(models.PagoPedido(pedido_id=pedido.id, metodo=pago.metodo, monto=round(pago.monto, 2)))
+    db.flush()
     pedido.cerrado_en = ahora()
     # No todas las ventas se facturan - el dueno decide cual factura a mano
     # aqui mismo, al cobrar. Solo esa entra al Libro de Ventas y genera IVA.

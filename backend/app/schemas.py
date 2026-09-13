@@ -179,6 +179,19 @@ class SugerenciaCompra(BaseModel):
     razon: str
 
 
+class PagoInput(BaseModel):
+    metodo: str  # Efectivo | Pago movil | Tarjeta | Transferencia
+    monto: float
+
+
+class Pago(BaseModel):
+    metodo: str
+    monto: float
+
+    class Config:
+        from_attributes = True
+
+
 class PedidoItemCreate(BaseModel):
     variante_id: int
     cantidad: int = 1
@@ -237,6 +250,7 @@ class Pedido(BaseModel):
     tasa_bcv: Optional[float] = None
     devuelto: bool = False
     nota_credito: Optional[str] = None
+    pagos: List[Pago] = []
     items: List[PedidoItem]
 
     class Config:
@@ -245,6 +259,9 @@ class Pedido(BaseModel):
 
 class CobrarRequest(BaseModel):
     metodo_pago: str
+    # Pago partido entre varias formas. Si no viene, se asume que todo el
+    # pedido se pago con `metodo_pago`.
+    pagos: Optional[List[PagoInput]] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
 

@@ -25,6 +25,7 @@ from app.models import (
     Ingrediente,
     Merma,
     MovimientoContable,
+    PagoPedido,
     Pedido,
     PedidoConsumo,
     PedidoItem,
@@ -72,6 +73,7 @@ def limpiar(db):
     db.query(AsientoContable).delete()
     db.query(PedidoItem).delete()
     db.query(PedidoConsumo).delete()
+    db.query(PagoPedido).delete()
     db.query(Pedido).delete()
     db.query(Gasto).delete()
     db.query(Merma).delete()
@@ -284,6 +286,23 @@ def generar(db, dias=45):
                 consumir(pedido.id, variante.id, unidades)
             db.flush()
             db.refresh(pedido)
+
+            # Una de cada diez ventas se paga partida (parte efectivo, parte
+            # pago movil), que es lo normal cuando al cliente no le alcanza el
+            # efectivo justo.
+            if random.random() < 0.10 and pedido.total >= 2:
+                en_efectivo = round(pedido.total * random.uniform(0.25, 0.6), 2)
+                reparto = [
+                    ("Efectivo", en_efectivo),
+                    ("Pago movil", round(pedido.total - en_efectivo, 2)),
+                ]
+                pedido.metodo_pago = "Mixto"
+            else:
+                reparto = [(pedido.metodo_pago, round(pedido.total, 2))]
+            for metodo, monto in reparto:
+                db.add(PagoPedido(pedido_id=pedido.id, metodo=metodo, monto=monto))
+            db.flush()
+
             contabilidad.registrar_venta(db, pedido)
             total_pedidos += 1
 

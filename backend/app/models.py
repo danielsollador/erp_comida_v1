@@ -424,10 +424,28 @@ class Pedido(Base):
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     consumos = relationship("PedidoConsumo", cascade="all, delete-orphan")
+    pagos = relationship("PagoPedido", cascade="all, delete-orphan")
 
     @property
     def total(self):
         return sum(item.precio_unitario * item.cantidad for item in self.items)
+
+
+class PagoPedido(Base):
+    """Cada forma en que se pago un pedido, con su monto.
+
+    Un cliente que da $5 en efectivo y el resto por pago movil es cosa de todos
+    los dias. Con un solo campo de texto habia que elegir uno y mentir: los
+    $15 completos entraban a Caja y el cierre mostraba un faltante de $10 que
+    no existia.
+    """
+
+    __tablename__ = "pagos_pedido"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
+    metodo = Column(String, nullable=False)  # Efectivo | Pago movil | Tarjeta | Transferencia
+    monto = Column(Float, nullable=False)
 
 
 class PedidoConsumo(Base):

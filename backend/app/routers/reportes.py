@@ -434,8 +434,10 @@ def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
 
     por_metodo: Dict[str, float] = {}
     for p in pedidos:
-        metodo = p.metodo_pago or "Sin especificar"
-        por_metodo[metodo] = round(por_metodo.get(metodo, 0) + p.total, 2)
+        # Por pago y no por pedido: una venta mixta reparte su monto entre dos
+        # metodos en vez de aparecer entera bajo una etiqueta combinada.
+        for pago in p.pagos:
+            por_metodo[pago.metodo] = round(por_metodo.get(pago.metodo, 0) + pago.monto, 2)
 
     serie = _serie(periodo, pedidos, inicio, fin)
     productos = _top_productos(pedidos, _variantes_con_receta(db))

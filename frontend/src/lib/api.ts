@@ -111,10 +111,22 @@ export const api = {
     req<Pedido>(`/pedidos/items/${itemId}/preparado`, { method: 'POST' }),
   marcarPedidoListo: (pedidoId: number) =>
     req<Pedido>(`/pedidos/${pedidoId}/marcar-listo`, { method: 'POST' }),
-  cobrarPedido: (pedidoId: number, metodo_pago: string, facturado = false, numero_factura?: string) =>
+  cobrarPedido: (
+    pedidoId: number,
+    metodo_pago: string,
+    facturado = false,
+    numero_factura?: string,
+    // Pago partido entre varias formas; si se omite, todo va a `metodo_pago`.
+    pagos?: { metodo: string; monto: number }[],
+  ) =>
     req<Pedido>(`/pedidos/${pedidoId}/cobrar`, {
       method: 'POST',
-      body: JSON.stringify({ metodo_pago, facturado, numero_factura: numero_factura || null }),
+      body: JSON.stringify({
+        metodo_pago,
+        facturado,
+        numero_factura: numero_factura || null,
+        pagos: pagos ?? null,
+      }),
     }),
   devolverPedido: (
     pedidoId: number,

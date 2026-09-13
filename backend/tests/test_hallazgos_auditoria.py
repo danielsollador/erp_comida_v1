@@ -1030,6 +1030,77 @@ def test_la_salud_detecta_filas_huerfanas(client, db, variante, insumo):
     assert "ya no existen" in " ".join(p["titulo"] for p in salud["problemas"])
 
 
+# ------------------------------------------- YY/ZZ: pago mixto (caso 18)
+def test_un_pago_partido_va_a_la_cuenta_que_corresponde(client, db, variante):
+    """Con un solo campo de metodo habia que elegir uno y mentir: los $20
+    completos entraban a Caja y el cierre mostraba un faltante de $12 que no
+    existia."""
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
+    ).json()
+    assert pedido["total"] == 20.0
+
+    r = client.post(
+        f"/api/pedidos/{pedido['id']}/cobrar",
+        json={
+            "metodo_pago": "Mixto",
+            "pagos": [
+                {"metodo": "Efectivo", "monto": 8.0},
+                {"metodo": "Pago movil", "monto": 12.0},
+            ],
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["metodo_pago"] == "Mixto"
+
+    assert saldo(db, "1010") == 8.0  # solo lo que entro a la gaveta
+    assert saldo(db, "1020") == 12.0
+    assert saldo(db, "4010") == 20.0
+
+    caja = client.get("/api/caja/resumen").json()
+    assert caja["efectivo_esperado"] == 8.0
+    assert caja["por_metodo_pago"] == {"Efectivo": 8.0, "Pago movil": 12.0}
+
+
+def test_los_pagos_tienen_que_sumar_el_total(client, variante):
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
+    ).json()
+    r = client.post(
+        f"/api/pedidos/{pedido['id']}/cobrar",
+        json={"metodo_pago": "Mixto", "pagos": [{"metodo": "Efectivo", "monto": 5.0}]},
+    )
+    assert r.status_code == 400
+    assert "suman" in r.json()["detail"]
+
+
+def test_una_forma_de_pago_desconocida_se_rechaza(client, variante):
+    """Antes cualquier texto pasaba, y lo que no estuviera en el mapa caia a
+    Caja por defecto: un typo mandaba plata del banco a la gaveta."""
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 1}], "nota": ""}
+    ).json()
+    r = client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Pago Movil"})
+    assert r.status_code == 400
+    assert "desconocida" in r.json()["detail"]
+
+
+def test_devolver_una_venta_mixta_regresa_por_donde_entro(client, db, variante):
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
+    ).json()
+    client.post(
+        f"/api/pedidos/{pedido['id']}/cobrar",
+        json={"metodo_pago": "Mixto", "pagos": [
+            {"metodo": "Efectivo", "monto": 8.0}, {"metodo": "Pago movil", "monto": 12.0}]},
+    )
+    client.post(f"/api/pedidos/{pedido['id']}/devolver", json={"recuperable": False})
+
+    assert saldo(db, "1010") == 0.0  # se devolvieron los 8 de la gaveta
+    assert saldo(db, "1020") == 0.0  # y los 12 del banco
+    assert saldo(db, "4010") == 0.0
+
+
 # ----------------------------------------------------- menores: numeracion
 def test_no_se_repite_el_numero_de_factura(client, variante):
     """Dos facturas con el mismo numero en el Libro de Ventas es un problema
