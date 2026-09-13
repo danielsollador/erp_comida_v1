@@ -34,7 +34,13 @@ TTL = timedelta(minutes=10)
 _INTERMEDIO = os.path.join(os.path.dirname(__file__), "certs", "sectigo_bcv_intermediate.pem")
 
 _lock = threading.Lock()
-_cache = {"at": None, "anclas": None}
+# `at` es el ultimo intento (exitoso o no) y manda sobre el TTL; `ok_at` es la
+# ultima vez que de verdad se hablo con las fuentes, y es lo que decide si el
+# indicador de "en vivo" puede seguir en verde.
+_cache = {"at": None, "ok_at": None, "anclas": None}
+
+# Pasado este tiempo sin contacto, la tasa se muestra como posiblemente vieja.
+MINUTOS_PARA_CONSIDERAR_CAIDA = 45
 
 
 def _contexto_bcv():
@@ -149,7 +155,13 @@ def _fetch():
 
 
 def obtener_anclas(forzar: bool = False):
-    """Tasas reales con cache de 10 min. None si nunca hubo conexion."""
+    """Tasas reales con cache de 10 min. None si nunca hubo conexion.
+
+    OJO: esto puede salir a la red y tardar hasta 45 segundos si las fuentes
+    cuelgan (20s BCV + 10s DolarAPI + 15s Binance, en secuencia). No llamarlo
+    desde algo que atienda una peticion del usuario: para eso esta
+    `anclas_en_cache()`, que nunca toca la red.
+    """
     ahora = datetime.now()
     with _lock:
         fresco = _cache["at"] is not None and ahora - _cache["at"] < TTL
@@ -161,12 +173,39 @@ def obtener_anclas(forzar: bool = False):
         log.warning("No se pudo obtener tasas reales: %s", e)
         anclas = None
     with _lock:
-        # un fallo transitorio no borra un valor bueno anterior
+        # un fallo transitorio no borra un valor bueno anterior, pero si se
+        # anota cuando fue la ultima vez que de verdad hubo conexion: sin eso
+        # el indicador de "en vivo" seguia en verde con dias sin internet.
         if anclas or not _cache["anclas"]:
             _cache["anclas"] = anclas
+        if anclas:
+            _cache["ok_at"] = ahora
         _cache["at"] = ahora
         return _cache["anclas"]
 
 
+def anclas_en_cache():
+    """Lo ultimo que se logro bajar, sin tocar la red. Seguro de llamar desde
+    un endpoint."""
+    with _lock:
+        return _cache["anclas"]
+
+
+def minutos_desde_ultima_conexion():
+    """Hace cuanto se hablo con las fuentes por ultima vez. None si nunca."""
+    with _lock:
+        ok_at = _cache.get("ok_at")
+    if not ok_at:
+        return None
+    return round((datetime.now() - ok_at).total_seconds() / 60, 1)
+
+
 def hay_conexion() -> bool:
-    return obtener_anclas() is not None
+    """Si hubo contacto real con las fuentes hace poco.
+
+    Antes preguntaba por el cache, que conserva el ultimo valor bueno para
+    siempre: el puntito verde decia "conectado" con el internet caido desde
+    hacia horas.
+    """
+    minutos = minutos_desde_ultima_conexion()
+    return minutos is not None and minutos <= MINUTOS_PARA_CONSIDERAR_CAIDA

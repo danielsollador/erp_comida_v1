@@ -127,7 +127,12 @@ def estado(db: Session) -> dict:
     variacion = (
         round((bcv / semana.bcv - 1) * 100, 2) if bcv and semana and semana.bcv else None
     )
-    anclas = rates.obtener_anclas() or {}
+    # Solo lo que ya esta en memoria: bajar tasas aca podia colgar la peticion
+    # hasta 45 segundos si las fuentes no responden, y este endpoint lo llama
+    # el encabezado de TODAS las pantallas. Del refresco se encarga el hilo de
+    # fondo, que si puede darse el lujo de esperar.
+    anclas = rates.anclas_en_cache() or {}
+    minutos_sin_contacto = rates.minutos_desde_ultima_conexion()
 
     return {
         "fecha": fila.fecha.isoformat() if fila else hoy().isoformat(),
@@ -138,9 +143,14 @@ def estado(db: Session) -> dict:
         "variacion_semana_pct": variacion,
         "origen": fila.origen if fila else None,
         "actualizado_en": fila.actualizado_en.isoformat() if fila and fila.actualizado_en else None,
-        "en_vivo": bool(anclas),
+        "en_vivo": rates.hay_conexion(),
+        "minutos_sin_contacto": minutos_sin_contacto,
         "fuente_actualizada": anclas.get("actualizado"),
-        "desactualizada": bool(fila and fila.fecha < hoy()),
+        # Vieja si es de otro dia, o si hace rato que no se logra hablar con
+        # las fuentes: con el dolar moviendose, una tasa de hace horas ya
+        # miente aunque sea del mismo dia.
+        "desactualizada": bool(fila and fila.fecha < hoy())
+        or (minutos_sin_contacto is None or minutos_sin_contacto > rates.MINUTOS_PARA_CONSIDERAR_CAIDA),
     }
 
 

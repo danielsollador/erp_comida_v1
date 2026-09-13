@@ -215,12 +215,24 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
             : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
         }`}
       >
-        {tasa?.en_vivo && (
+        {/* El punto solo se pone verde si de verdad hubo contacto hace poco.
+            Antes se quedaba verde con dias sin internet, porque preguntaba por
+            un cache que nunca olvida el ultimo valor bueno. */}
+        {tasa?.en_vivo ? (
           <span
             className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
             title="Conectado al BCV y a Binance P2P"
           />
-        )}
+        ) : tasa?.bcv ? (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+            title={
+              tasa.minutos_sin_contacto == null
+                ? 'Sin contacto con las fuentes: la tasa puede estar vieja'
+                : `Sin internet hace ${Math.round(tasa.minutos_sin_contacto)} min: la tasa puede estar vieja`
+            }
+          />
+        ) : null}
         <span className={dark ? 'text-white' : 'text-neutral-900'}>{activa.simbolo}</span>
         <span className="hidden sm:inline">{activa.nombre}</span>
         {activa.detalleTasa && (
@@ -280,7 +292,9 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
                 ? 'Fuente real · bcv.org.ve y Binance P2P'
                 : tasa?.origen === 'manual'
                   ? 'Tasa cargada a mano'
-                  : 'Sin conexion a las fuentes'}
+                  : tasa?.minutos_sin_contacto != null
+                    ? `Sin internet hace ${Math.round(tasa.minutos_sin_contacto)} min · se sigue usando la ultima tasa`
+                    : 'Sin conexion a las fuentes'}
             </span>
             <a href="/tasa" className="font-medium text-blue-600">
               Gestionar

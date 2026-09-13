@@ -1101,6 +1101,74 @@ def test_devolver_una_venta_mixta_regresa_por_donde_entro(client, db, variante):
     assert saldo(db, "4010") == 0.0
 
 
+# ------------------------------------------- AAA..CCC: sin internet (caso 19)
+def test_el_estado_de_la_tasa_no_sale_a_la_red(client, db, monkeypatch):
+    """`estado()` lo llama el encabezado de TODAS las pantallas. Si de ahi se
+    bajan tasas, una fuente colgada bloquea la peticion hasta 45 segundos
+    (20s BCV + 10s DolarAPI + 15s Binance, en secuencia)."""
+    from app import rates
+
+    def explotar(*_a, **_k):
+        raise AssertionError("estado() no debe tocar la red")
+
+    monkeypatch.setattr(rates, "_fetch", explotar)
+    db.add(models.TasaCambio(fecha=datetime.date.today(), bcv=800.0, origen="auto"))
+    db.commit()
+
+    r = client.get("/api/tasas")
+    assert r.status_code == 200
+    assert r.json()["bcv"] == 800.0
+
+
+def test_el_indicador_de_en_vivo_se_apaga_sin_contacto(monkeypatch):
+    """El cache conserva el ultimo valor bueno a proposito, pero eso hacia que
+    el puntito verde dijera 'conectado' con dias sin internet."""
+    from app import rates
+
+    monkeypatch.setattr(rates, "_fetch", lambda: {"bcv": 800.0, "paralelo": 900.0})
+    rates._cache.update({"at": None, "ok_at": None, "anclas": None})
+    assert rates.obtener_anclas() is not None
+    assert rates.hay_conexion() is True
+
+    # se cae la red: el valor viejo se conserva, pero el contacto no
+    monkeypatch.setattr(rates, "_fetch", lambda: (_ for _ in ()).throw(OSError("sin red")))
+    rates._cache["at"] = None
+    rates._cache["ok_at"] = datetime.datetime.now() - datetime.timedelta(
+        minutes=rates.MINUTOS_PARA_CONSIDERAR_CAIDA + 10
+    )
+    assert rates.obtener_anclas() is not None  # sigue sirviendo la ultima tasa
+    assert rates.hay_conexion() is False  # pero ya no dice que esta conectado
+
+
+def test_se_puede_vender_y_cerrar_caja_sin_internet(client, db, variante, monkeypatch):
+    """La premisa de todo el proyecto: que el local siga vendiendo."""
+    from app import rates
+
+    monkeypatch.setattr(rates, "_fetch", lambda: (_ for _ in ()).throw(OSError("sin red")))
+    rates._cache.update({"at": None, "ok_at": None, "anclas": None})
+    db.add(models.TasaCambio(fecha=datetime.date.today(), bcv=800.0, origen="auto"))
+    db.commit()
+
+    pedido = client.post(
+        "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 2}], "nota": ""}
+    ).json()
+    cobrado = client.post(
+        f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"}
+    ).json()
+    assert cobrado["estado"] == "pagado"
+    assert cobrado["tasa_bcv"] == 800.0  # se congela la ultima conocida
+
+    assert client.get("/api/caja/resumen").json()["efectivo_esperado"] == 10.0
+    assert client.get("/api/reportes/resumen?periodo=dia").json()["ventas"] == 10.0
+    assert client.get("/api/contabilidad/estado-resultados?periodo=mes").status_code == 200
+
+    # y la pantalla lo dice: tasa servida, pero avisando que puede estar vieja
+    estado = client.get("/api/tasas").json()
+    assert estado["bcv"] == 800.0
+    assert estado["en_vivo"] is False
+    assert estado["desactualizada"] is True
+
+
 # ----------------------------------------------------- menores: numeracion
 def test_no_se_repite_el_numero_de_factura(client, variante):
     """Dos facturas con el mismo numero en el Libro de Ventas es un problema

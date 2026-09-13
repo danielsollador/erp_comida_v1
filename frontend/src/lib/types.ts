@@ -317,6 +317,8 @@ export type EstadoTasa = {
   origen: 'auto' | 'manual' | null
   actualizado_en: string | null
   en_vivo: boolean
+  /** Hace cuanto se hablo con BCV/Binance. null = nunca desde que arranco. */
+  minutos_sin_contacto: number | null
   fuente_actualizada: string | null
   desactualizada: boolean
 }

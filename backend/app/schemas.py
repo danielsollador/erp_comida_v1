@@ -386,6 +386,8 @@ class EstadoTasa(BaseModel):
     origen: Optional[str]  # auto | manual
     actualizado_en: Optional[str]
     en_vivo: bool
+    # Hace cuanto se hablo con BCV/Binance. None = nunca desde que arranco.
+    minutos_sin_contacto: Optional[float] = None
     fuente_actualizada: Optional[str]
     desactualizada: bool
 
