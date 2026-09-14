@@ -278,6 +278,17 @@ class RecetaItem(BaseModel):
         from_attributes = True
 
 
+class CambioReceta(BaseModel):
+    id: int
+    variante_id: int
+    composicion: str
+    costo_resultante: float
+    fecha: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+
 class SugerenciaCompra(BaseModel):
     ingrediente_id: int
     ingrediente_nombre: str
@@ -313,9 +324,17 @@ class Pago(BaseModel):
 
 
 class PedidoItemCreate(BaseModel):
-    variante_id: int
+    """Un renglon del pedido: del menu, o venta libre.
+
+    Del menu: `variante_id`. Venta libre: `nombre_libre` y `precio_libre`, para
+    cobrar algo no catalogado sin tener que crearlo en el menu primero.
+    """
+
+    variante_id: Optional[int] = None
     cantidad: int = 1
     nota: str = ""
+    nombre_libre: Optional[str] = None
+    precio_libre: Optional[float] = None
 
 
 class PedidoCreate(BaseModel):
@@ -344,7 +363,8 @@ class DevolucionRequest(BaseModel):
 
 class PedidoItem(BaseModel):
     id: int
-    variante_id: int
+    # None = venta libre, no esta en el menu.
+    variante_id: Optional[int] = None
     nombre: str
     precio_unitario: float
     cantidad: int

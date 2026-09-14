@@ -128,6 +128,26 @@ class RecetaItem(Base):
     ingrediente = relationship("Ingrediente")
 
 
+class CambioReceta(Base):
+    """Historial de como cambio la receta de un producto.
+
+    Los precios de venta si tenian historial (CambioPrecio) pero las recetas
+    no, asi que no habia como responder "por que cambio mi costo en marzo".
+    Se guarda la composicion completa, no el delta: es lo que permite
+    reconstruir el costo de una epoca sin ir sumando diferencias.
+    """
+
+    __tablename__ = "cambios_receta"
+
+    id = Column(Integer, primary_key=True, index=True)
+    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
+    # "Queso 0.1 kg; Harina 0.05 kg" - legible, para que el dueno lo entienda.
+    composicion = Column(String, default="")
+    costo_resultante = Column(Float, default=0)
+    fecha = Column(DateTime, default=ahora)
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+
+
 class TasaCambio(Base):
     """Tasas del dia en Bs. Una fila por fecha, con historico.
 
@@ -697,7 +717,11 @@ class PedidoItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
-    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
+    # Nullable para la venta libre: el encargo especial, el combo armado a mano,
+    # el producto de temporada. Antes habia que crearlo en el menu para poder
+    # cobrarlo, y ahi se quedaba para siempre ensuciando el catalogo - lo que
+    # en la practica empujaba a no registrar la venta.
+    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=True)
     nombre = Column(String, nullable=False)
     precio_unitario = Column(Float, nullable=False)
     # Costo de insumos congelado al momento de la venta: si manana sube el queso,

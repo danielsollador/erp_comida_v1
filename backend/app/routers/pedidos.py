@@ -86,19 +86,35 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
     if not pedido.items:
         raise HTTPException(status_code=400, detail="El pedido necesita al menos un item")
 
+    # Venta libre: renglones que no estan en el menu. No mueven inventario
+    # (no tienen receta) y su costo queda en cero, que es honesto: el sistema
+    # no sabe cuanto costo producir algo que no tiene cargado.
+    del_menu = [i for i in pedido.items if i.variante_id is not None]
+    libres = [i for i in pedido.items if i.variante_id is None]
+    for item in libres:
+        if not (item.nombre_libre or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Una venta libre necesita un nombre para que quede en el ticket",
+            )
+        if not item.precio_libre or item.precio_libre <= 0:
+            raise HTTPException(
+                status_code=400, detail="Una venta libre necesita su precio"
+            )
+
     variantes = {
         v.id: v
         for v in db.query(models.Variante).filter(
-            models.Variante.id.in_([i.variante_id for i in pedido.items])
+            models.Variante.id.in_([i.variante_id for i in del_menu])
         )
     }
-    for item in pedido.items:
+    for item in del_menu:
         if item.variante_id not in variantes:
             raise HTTPException(status_code=404, detail=f"Variante {item.variante_id} no existe")
 
     costos = _costo_por_variante(list(variantes.keys()), db)
     recetas = _recetas_por_variante(list(variantes.keys()), db)
-    consumo = _consumo_del_pedido(pedido.items, recetas)
+    consumo = _consumo_del_pedido(del_menu, recetas)
 
     # El inventario se mueve ACA, no al cobrar: la cocina empieza a gastar
     # insumos apenas le llega la comanda. Descontar al cobrar dejaba una
@@ -116,6 +132,19 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
     db.flush()
 
     for item in pedido.items:
+        if item.variante_id is None:
+            db.add(
+                models.PedidoItem(
+                    pedido_id=db_pedido.id,
+                    variante_id=None,
+                    nombre=item.nombre_libre.strip(),
+                    precio_unitario=round(item.precio_libre, 2),
+                    costo_unitario=0,
+                    cantidad=item.cantidad,
+                    nota=item.nota,
+                )
+            )
+            continue
         variante = variantes[item.variante_id]
         nombre = variante.producto.nombre
         if variante.nombre and variante.nombre.lower() != "regular":
@@ -359,6 +388,21 @@ async def devolver_pedido(
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado
+
+
+@router.get("/olvidados", response_model=List[schemas.Pedido])
+def pedidos_olvidados(horas: int = 24, db: Session = Depends(get_db)):
+    """Comandas abiertas hace demasiado. Su inventario ya salio."""
+    limite = ahora() - datetime.timedelta(hours=horas)
+    return (
+        db.query(models.Pedido)
+        .filter(
+            models.Pedido.estado.in_(("pendiente", "listo")),
+            models.Pedido.creado_en < limite,
+        )
+        .order_by(models.Pedido.creado_en)
+        .all()
+    )
 
 
 @router.get("/{pedido_id}/ticket", response_model=schemas.Ticket)

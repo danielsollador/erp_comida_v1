@@ -605,6 +605,30 @@ def salud_contable(db: Session = Depends(get_db)):
             )
         )
 
+    # 4c. Comandas viejas que nadie cobro. El stock salio al crearlas, asi que
+    #     es mercancia que se fue sin que nadie la pagara, y no aparecia en
+    #     ningun reporte ni alerta: solo en la lista de pendientes.
+    limite = ahora() - datetime.timedelta(hours=24)
+    olvidadas = (
+        db.query(models.Pedido)
+        .filter(
+            models.Pedido.estado.in_(("pendiente", "listo")),
+            models.Pedido.creado_en < limite,
+        )
+        .all()
+    )
+    if olvidadas:
+        valor = round(sum(p.total for p in olvidadas), 2)
+        problemas.append(
+            schemas.ProblemaContable(
+                gravedad="aviso",
+                titulo=f"{len(olvidadas)} comanda(s) de mas de un dia sin cobrar",
+                detalle=f"Suman ${valor:.2f} y su inventario ya salio al crearlas. "
+                "Cobralas o anulalas: mientras sigan abiertas, esa mercancia se "
+                "fue sin que nadie la pagara.",
+            )
+        )
+
     # 5. Ventas facturadas dentro de un periodo de IVA ya declarado: cambian un
     #    numero que ya se le presento al SENIAT.
     for declaracion in db.query(models.DeclaracionIva).all():

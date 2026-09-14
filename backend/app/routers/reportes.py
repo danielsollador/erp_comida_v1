@@ -283,11 +283,14 @@ def _top_productos(pedidos, con_receta: set) -> List[schemas.ProductoVendido]:
     dos lineas. El nombre congelado sigue siendo el que se muestra (el ticket
     de ayer decia eso), pero ya no es la clave.
     """
-    agregado: Dict[int, Dict[str, float]] = {}
+    agregado: Dict[object, Dict[str, float]] = {}
     for p in pedidos:
         for i in p.items:
+            # La venta libre no tiene variante: se agrupa por su nombre, que es
+            # lo unico que la identifica.
+            clave = i.variante_id if i.variante_id is not None else ("libre", i.nombre)
             entrada = agregado.setdefault(
-                i.variante_id,
+                clave,
                 {
                     "nombre": i.nombre,
                     "unidades": 0,

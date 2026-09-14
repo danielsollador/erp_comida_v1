@@ -61,6 +61,10 @@ PLAN_DE_CUENTAS = [
     ("5010", "Costo de ventas (insumos)", "costo", "deudora"),
     ("6010", "Gastos operativos", "gasto", "deudora"),
     ("6020", "Perdida por merma", "gasto", "deudora"),
+    # Lo que consume el personal sale del inventario sin venta, pero no es una
+    # perdida: es un costo laboral autorizado. Mezclarlo con la merma
+    # contaminaba el indicador que sirve para vigilar desperdicio y robo.
+    ("6025", "Consumo del personal", "gasto", "deudora"),
     ("6030", "Faltante / sobrante de caja", "gasto", "deudora"),
     ("6040", "Depreciacion", "gasto", "deudora"),
 ]
@@ -863,6 +867,21 @@ def registrar_merma(db: Session, ingrediente: models.Ingrediente, valor: float, 
         f"Merma de {ingrediente.nombre}",
         [("6020", valor, 0.0), ("1040", 0.0, valor)],
         origen="merma",
+        referencia_id=referencia_id,
+    )
+
+
+def registrar_consumo_personal(
+    db: Session, ingrediente: models.Ingrediente, valor: float, referencia_id: int, nota: str = ""
+) -> None:
+    """Comida del personal: sale del inventario contra gasto de personal."""
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Consumo del personal: {ingrediente.nombre}{f' ({nota})' if nota else ''}",
+        [("6025", valor, 0.0), ("1040", 0.0, valor)],
+        origen="consumo_personal",
         referencia_id=referencia_id,
     )
 

@@ -240,6 +240,29 @@ def ajustar_stock(
         return db_ingrediente
 
 
+@router.post("/ingredientes/{ingrediente_id}/consumo-personal", response_model=schemas.Ingrediente)
+def consumo_personal(
+    ingrediente_id: int, body: schemas.MermaRequest, db: Session = Depends(get_db)
+):
+    """El empleado se comio una empanada.
+
+    Sale inventario sin venta, pero NO es merma: una merma es plata que se
+    perdio y sirve para detectar desperdicio o robo. Esto es un costo laboral
+    autorizado, y mezclarlo con la merma contamina justo el indicador que el
+    dueno usa para vigilar la cocina.
+    """
+    if body.cantidad <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
+    with costeo.bloqueo_inventario():
+        ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
+        valor = round(body.cantidad * (ingrediente.costo_unitario or 0), 2)
+        ingrediente.stock_actual = round((ingrediente.stock_actual or 0) - body.cantidad, 4)
+        contabilidad.registrar_consumo_personal(db, ingrediente, valor, ingrediente_id, body.motivo)
+        db.commit()
+        db.refresh(ingrediente)
+        return _con_reposicion(ingrediente, reposicion.costos_reposicion(db))
+
+
 @router.get("/sobrantes", response_model=List[schemas.SobranteInventario])
 def listar_sobrantes(dias: int = 30, db: Session = Depends(get_db)):
     desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
@@ -380,8 +403,46 @@ def actualizar_receta(
                 cantidad_por_unidad=item.cantidad_por_unidad,
             )
         )
+    db.flush()
+
+    # Los precios de venta tenian historial y las recetas no: no habia como
+    # responder "por que cambio mi costo en marzo". Se guarda la composicion
+    # completa y su costo, para poder leerla sin reconstruir deltas.
+    partes = []
+    costo = 0.0
+    for item in items:
+        ingrediente = (
+            db.query(models.Ingrediente)
+            .filter(models.Ingrediente.id == item.ingrediente_id)
+            .first()
+        )
+        if ingrediente is None:
+            continue
+        partes.append(
+            f"{ingrediente.nombre} {item.cantidad_por_unidad:g} {ingrediente.unidad}"
+        )
+        costo += item.cantidad_por_unidad * (ingrediente.costo_efectivo or 0)
+    db.add(
+        models.CambioReceta(
+            variante_id=variante_id,
+            composicion="; ".join(partes) or "(sin receta)",
+            costo_resultante=round(costo, 4),
+        )
+    )
     db.commit()
     return ver_receta(variante_id, db)
+
+
+@router.get("/recetas/{variante_id}/historial", response_model=List[schemas.CambioReceta])
+def historial_receta(variante_id: int, db: Session = Depends(get_db)):
+    """Como ha cambiado la receta de ese producto, y que costo dejaba cada una."""
+    return (
+        db.query(models.CambioReceta)
+        .filter(models.CambioReceta.variante_id == variante_id)
+        .order_by(models.CambioReceta.id.desc())
+        .limit(30)
+        .all()
+    )
 
 
 def _consumo_diario(db: Session, dias: int = 14) -> dict:
