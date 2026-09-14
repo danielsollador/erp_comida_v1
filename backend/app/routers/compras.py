@@ -171,6 +171,260 @@ def pagar_factura(factura_id: int, pago: schemas.PagoFacturaRequest, db: Session
     return _a_schema(db_factura)
 
 
+@router.get("/facturas/{factura_id}/notas-credito", response_model=List[schemas.NotaCreditoCompra])
+def listar_notas_credito(factura_id: int, db: Session = Depends(get_db)):
+    factura = _factura_o_404(db, factura_id)
+    return [_nota_a_schema(n) for n in factura.notas_credito]
+
+
+@router.post("/facturas/{factura_id}/notas-credito", response_model=schemas.NotaCreditoCompra)
+def crear_nota_credito(
+    factura_id: int, body: schemas.NotaCreditoCompraCreate, db: Session = Depends(get_db)
+):
+    """Nota de credito del proveedor: el espejo de la devolucion de venta.
+
+    Antes no existia. Si el proveedor facturaba 10 kg y mandaba 8, la factura
+    no se podia borrar (con razon: deshacer un promedio ponderado ya mezclado
+    es peligroso) y la unica salida que ofrecia el mensaje de error era un
+    ajuste de inventario, que registra la diferencia como MERMA. Eso dejaba
+    tres cosas mal a la vez: una perdida que no ocurrio, credito fiscal de mas
+    en el Libro de Compras, y una deuda inflada con el proveedor.
+
+    Son dos casos con asientos distintos:
+      - devolucion: la mercancia vuelve. Sale stock y sale valor; el costo por
+        unidad no se mueve, porque lo que se devuelve costaba lo mismo.
+      - descuento: te quedas la mercancia y rebajan el precio. El stock no se
+        toca y el costo por unidad BAJA, que es lo que de verdad paso.
+    """
+    with costeo.bloqueo_inventario():
+        factura = _factura_o_404(db, factura_id)
+
+        if body.tipo not in ("devolucion", "descuento"):
+            raise HTTPException(
+                status_code=400, detail="El tipo debe ser 'devolucion' o 'descuento'"
+            )
+
+        fecha = body.fecha or ahora()
+        _bloquear_si_periodo_declarado(db, fecha, factura)
+
+        if body.tipo == "devolucion":
+            base, lineas = _lineas_de_devolucion(db, factura, body)
+        else:
+            base, lineas = _base_de_descuento(body), []
+
+        if base <= 0:
+            raise HTTPException(status_code=400, detail="La nota de credito debe ser mayor a cero")
+
+        disponible = round(factura.base_neta, 2)
+        if base > disponible + 0.01:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"La nota es por ${base:.2f} pero de esa factura solo quedan "
+                    f"${disponible:.2f} sin acreditar."
+                ),
+            )
+
+        # Si no lo dicen, el IVA se prorratea al mismo porcentaje de la factura:
+        # acreditar base sin acreditar su IVA dejaria credito fiscal de mas.
+        if body.iva is not None:
+            iva = round(body.iva, 2)
+        elif factura.base_imponible:
+            iva = round(factura.iva * (base / factura.base_imponible), 2)
+        else:
+            iva = 0.0
+
+        nota = models.NotaCreditoCompra(
+            factura_id=factura.id,
+            numero=body.numero,
+            tipo=body.tipo,
+            fecha=fecha,
+            base_imponible=round(base, 2),
+            iva=iva,
+            motivo=body.motivo,
+        )
+        db.add(nota)
+        db.flush()
+
+        for ingrediente, cantidad, costo in lineas:
+            db.add(
+                models.NotaCreditoCompraItem(
+                    nota_id=nota.id,
+                    ingrediente_id=ingrediente.id,
+                    cantidad=cantidad,
+                    costo_unitario=costo,
+                )
+            )
+            # La mercancia se va: sale del stock al costo al que entro. El
+            # promedio ponderado no se toca, porque lo devuelto costaba
+            # exactamente lo que el resto de esa factura.
+            ingrediente.stock_actual = round((ingrediente.stock_actual or 0) - cantidad, 4)
+
+        if body.tipo == "descuento":
+            _abaratar_insumos(db, factura, base)
+
+        cuenta = contabilidad.CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
+        contabilidad.registrar_nota_credito_compra(db, nota, cuenta)
+        db.commit()
+        db.refresh(nota)
+        return _nota_a_schema(nota)
+
+
+def _factura_o_404(db: Session, factura_id: int) -> models.FacturaCompra:
+    factura = (
+        db.query(models.FacturaCompra)
+        .options(joinedload(models.FacturaCompra.items))
+        .filter(models.FacturaCompra.id == factura_id)
+        .first()
+    )
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    return factura
+
+
+def _bloquear_si_periodo_declarado(
+    db: Session, fecha: datetime.datetime, factura: models.FacturaCompra
+):
+    """Una nota de credito cambia el Libro de Compras del mes de la factura.
+
+    Si ese mes ya se le presento al SENIAT, reescribirlo en silencio seria
+    peor que el problema: hace falta una declaracion sustitutiva. Mismo
+    criterio que ya se aplica a las devoluciones de venta.
+    """
+    declarada = (
+        db.query(models.DeclaracionIva)
+        .filter(
+            models.DeclaracionIva.anio == factura.fecha.year,
+            models.DeclaracionIva.mes == factura.fecha.month,
+        )
+        .first()
+    )
+    if declarada:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"El IVA de {declarada.periodo} ya fue declarado y esta nota cambiaria "
+                "ese Libro de Compras. Anula esa declaracion primero (Impuestos) y "
+                "vuelve a declarar el periodo con la nota ya cargada."
+            ),
+        )
+
+
+def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
+    """Valida los renglones devueltos contra los de la factura."""
+    if not body.items:
+        raise HTTPException(
+            status_code=400,
+            detail="Una devolucion necesita decir que insumos vuelven y cuanto de cada uno",
+        )
+
+    por_ingrediente = {i.ingrediente_id: i for i in factura.items}
+    ya_devuelto = {}
+    for nota in factura.notas_credito:
+        for item in nota.items:
+            ya_devuelto[item.ingrediente_id] = (
+                ya_devuelto.get(item.ingrediente_id, 0) + item.cantidad
+            )
+
+    base = 0.0
+    lineas = []
+    for pedido_item in body.items:
+        linea = por_ingrediente.get(pedido_item.ingrediente_id)
+        if linea is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El insumo {pedido_item.ingrediente_id} no esta en esa factura",
+            )
+        if pedido_item.cantidad <= 0:
+            raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
+
+        restante = linea.cantidad - ya_devuelto.get(pedido_item.ingrediente_id, 0)
+        if pedido_item.cantidad > restante + 0.0001:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"De {linea.ingrediente.nombre} la factura trae {linea.cantidad} "
+                    f"{linea.ingrediente.unidad} y quedan {round(restante, 4)} por devolver."
+                ),
+            )
+        ingrediente = (
+            db.query(models.Ingrediente)
+            .filter(models.Ingrediente.id == pedido_item.ingrediente_id)
+            .with_for_update()
+            .first()
+        )
+        base += pedido_item.cantidad * linea.costo_unitario
+        lineas.append((ingrediente, pedido_item.cantidad, linea.costo_unitario))
+
+    return round(base, 2), lineas
+
+
+def _base_de_descuento(body) -> float:
+    if body.base_imponible is None or body.base_imponible <= 0:
+        raise HTTPException(
+            status_code=400, detail="Un descuento necesita el monto acreditado (base imponible)"
+        )
+    return round(body.base_imponible, 2)
+
+
+def _abaratar_insumos(db: Session, factura: models.FacturaCompra, rebaja: float):
+    """Un descuento hace que lo comprado haya costado menos.
+
+    Se reparte la rebaja entre los renglones de la factura en proporcion a lo
+    que pesa cada uno, y se le baja el costo promedio al insumo por la parte
+    que todavia esta en el deposito. Sin esto el costo quedaba inflado para
+    siempre y el margen del menu mentia hacia abajo.
+    """
+    if not factura.items or factura.base_imponible <= 0:
+        return
+    for linea in factura.items:
+        peso = (linea.cantidad * linea.costo_unitario) / factura.base_imponible
+        rebaja_linea = rebaja * peso
+        ingrediente = (
+            db.query(models.Ingrediente)
+            .filter(models.Ingrediente.id == linea.ingrediente_id)
+            .with_for_update()
+            .first()
+        )
+        if ingrediente is None or (ingrediente.stock_actual or 0) <= 0:
+            continue
+        # Solo se abarata lo que queda en existencia: lo ya vendido se costeo
+        # con el precio de entonces y su margen historico esta congelado.
+        en_deposito = min(linea.cantidad, ingrediente.stock_actual)
+        if en_deposito <= 0:
+            continue
+        baja_unitaria = (rebaja_linea * (en_deposito / linea.cantidad)) / ingrediente.stock_actual
+        ingrediente.costo_unitario = round(
+            max((ingrediente.costo_unitario or 0) - baja_unitaria, 0), 4
+        )
+
+
+def _nota_a_schema(n: models.NotaCreditoCompra) -> schemas.NotaCreditoCompra:
+    return schemas.NotaCreditoCompra(
+        id=n.id,
+        factura_id=n.factura_id,
+        numero=n.numero,
+        tipo=n.tipo,
+        fecha=n.fecha,
+        base_imponible=n.base_imponible,
+        iva=n.iva,
+        total=n.total,
+        motivo=n.motivo or "",
+        items=[
+            schemas.NotaCreditoItem(
+                id=i.id,
+                ingrediente_id=i.ingrediente_id,
+                ingrediente_nombre=i.ingrediente.nombre,
+                unidad=i.ingrediente.unidad,
+                cantidad=i.cantidad,
+                costo_unitario=i.costo_unitario,
+                subtotal=round(i.cantidad * i.costo_unitario, 2),
+            )
+            for i in n.items
+        ],
+    )
+
+
 @router.delete("/facturas/{factura_id}")
 def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
     db_factura = (

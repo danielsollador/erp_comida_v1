@@ -297,6 +297,26 @@ class FacturaCompra(Base):
         return round(self.base_imponible + self.iva, 2)
 
     items = relationship("FacturaCompraItem", back_populates="factura", cascade="all, delete-orphan")
+    notas_credito = relationship(
+        "NotaCreditoCompra", back_populates="factura", cascade="all, delete-orphan"
+    )
+
+    @property
+    def base_neta(self) -> float:
+        """Base imponible despues de las notas de credito del proveedor.
+
+        Es la que va al Libro de Compras: declarar la base bruta seria deducir
+        credito fiscal que ya no corresponde.
+        """
+        return round(self.base_imponible - sum(n.base_imponible or 0 for n in self.notas_credito), 2)
+
+    @property
+    def iva_neto(self) -> float:
+        return round(self.iva - sum(n.iva or 0 for n in self.notas_credito), 2)
+
+    @property
+    def total_neto(self) -> float:
+        return round(self.base_neta + self.iva_neto, 2)
 
 
 class FacturaCompraItem(Base):
@@ -337,6 +357,90 @@ class CierreCaja(Base):
     efectivo_contado = Column(Float, nullable=False)
     diferencia = Column(Float, nullable=False)
     nota = Column(String, default="")
+    # Un digito de mas al contar (1000 en vez de 100) metia un sobrante
+    # ficticio en los libros para siempre: no habia borrar ni volver a cerrar.
+    # El cierre no se borra - se anula con su contra-asiento y queda el rastro
+    # de que hubo un error, que es lo que un libro contable debe mostrar.
+    anulado = Column(Boolean, default=False)
+    fecha_anulacion = Column(DateTime, nullable=True)
+    motivo_anulacion = Column(String, default="")
+
+
+class SobranteInventario(Base):
+    """Conteo fisico que encontro MAS mercancia de la que decia el sistema.
+
+    El faltante ya tenia su fila (Merma) y por lo tanto su boton de revertir;
+    el sobrante solo generaba un asiento referenciado por `ingrediente_id`, sin
+    fila propia. Eso dejaba dos agujeros: no habia como deshacer un conteo mal
+    tecleado hacia arriba, y dos sobrantes del mismo insumo compartian
+    referencia contable (el mismo bug que ya se corrigio en compras sueltas).
+    """
+
+    __tablename__ = "sobrantes_inventario"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)
+    motivo = Column(String, default="")
+    fecha = Column(DateTime, default=ahora)
+    revertido = Column(Boolean, default=False)
+
+    ingrediente = relationship("Ingrediente")
+
+
+class NotaCreditoCompra(Base):
+    """Nota de credito del proveedor contra una factura de compra.
+
+    Espejo de la devolucion de venta. Son dos casos distintos y el asiento
+    cambia con cada uno:
+
+      - devolucion: la mercancia vuelve al proveedor (te mando 8 de 10). Sale
+        stock y sale valor; el costo por unidad no se mueve.
+      - descuento: te quedas la mercancia y te rebajan el precio. El stock no
+        se toca, baja el valor, y el costo por unidad BAJA.
+
+    Sin esto, el Libro de Compras seguia declarando credito fiscal que ya no
+    corresponde (deduccion indebida ante el SENIAT) y `2010 Cuentas por pagar`
+    le hacia pagar de mas al proveedor.
+    """
+
+    __tablename__ = "notas_credito_compra"
+
+    id = Column(Integer, primary_key=True, index=True)
+    factura_id = Column(Integer, ForeignKey("facturas_compra.id"), nullable=False)
+    numero = Column(String, nullable=False)  # el numero que emitio el proveedor
+    tipo = Column(String, nullable=False)  # devolucion | descuento
+    fecha = Column(DateTime, default=ahora)
+    base_imponible = Column(Float, nullable=False)
+    iva = Column(Float, default=0)
+    motivo = Column(String, default="")
+
+    factura = relationship("FacturaCompra", back_populates="notas_credito")
+    items = relationship(
+        "NotaCreditoCompraItem", back_populates="nota", cascade="all, delete-orphan"
+    )
+
+    @property
+    def total(self) -> float:
+        return round((self.base_imponible or 0) + (self.iva or 0), 2)
+
+
+class NotaCreditoCompraItem(Base):
+    """Renglon de la nota de credito: cuanto de cada insumo se devuelve.
+
+    Solo aplica al tipo `devolucion`; un descuento no mueve cantidades.
+    """
+
+    __tablename__ = "nota_credito_compra_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nota_id = Column(Integer, ForeignKey("notas_credito_compra.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)
+    costo_unitario = Column(Float, nullable=False)
+
+    nota = relationship("NotaCreditoCompra", back_populates="items")
+    ingrediente = relationship("Ingrediente")
 
 
 class CuentaContable(Base):

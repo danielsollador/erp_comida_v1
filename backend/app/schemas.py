@@ -187,6 +187,27 @@ class Merma(BaseModel):
         from_attributes = True
 
 
+class SobranteInventario(BaseModel):
+    """Conteo que encontro mas mercancia de la que decia el sistema.
+
+    Espejo de la merma, para que el mismo error de tecleo tenga vuelta atras
+    en las dos direcciones.
+    """
+
+    id: int
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    cantidad: float
+    valor: float
+    motivo: str
+    fecha: datetime.datetime
+    revertido: bool
+
+    class Config:
+        from_attributes = True
+
+
 class AjusteStockRequest(BaseModel):
     stock_real: float
     motivo: str = "Conteo fisico"
@@ -431,9 +452,16 @@ class CierreCaja(BaseModel):
     efectivo_contado: float
     diferencia: float
     nota: str
+    # Un cierre mal contado no se borra: se anula y queda el rastro.
+    anulado: bool = False
+    motivo_anulacion: str = ""
 
     class Config:
         from_attributes = True
+
+
+class AnularCierreRequest(BaseModel):
+    motivo: str = ""
 
 
 # ------------------------------------------------------------------ tasas
@@ -707,6 +735,53 @@ class PagoFacturaRequest(BaseModel):
 
 
 # ----------------------------------------------------------------- impuestos
+class NotaCreditoItemCreate(BaseModel):
+    ingrediente_id: int
+    cantidad: float
+
+
+class NotaCreditoCompraCreate(BaseModel):
+    """Nota de credito que emite el proveedor sobre una factura ya cargada.
+
+    `tipo` decide todo lo demas:
+      - devolucion: la mercancia vuelve. Hay que decir de que insumos y cuanto
+        (`items`); el sistema calcula la base con el precio de la factura.
+      - descuento: te quedas la mercancia y rebajan el precio. Se informa
+        `base_imponible` y el costo del insumo BAJA.
+    """
+
+    numero: str
+    tipo: str  # devolucion | descuento
+    motivo: str = ""
+    fecha: Optional[datetime.datetime] = None
+    base_imponible: Optional[float] = None  # solo para 'descuento'
+    iva: Optional[float] = None  # si se omite, se prorratea el de la factura
+    items: List[NotaCreditoItemCreate] = []
+
+
+class NotaCreditoItem(BaseModel):
+    id: int
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    cantidad: float
+    costo_unitario: float
+    subtotal: float
+
+
+class NotaCreditoCompra(BaseModel):
+    id: int
+    factura_id: int
+    numero: str
+    tipo: str
+    fecha: datetime.datetime
+    base_imponible: float
+    iva: float
+    total: float
+    motivo: str
+    items: List[NotaCreditoItem] = []
+
+
 class ConfiguracionFiscal(BaseModel):
     tasa_iva: float
 

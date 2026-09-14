@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import contabilidad, models, schemas
 from ..database import get_db
-from ..timeutils import hoy, inicio_del_dia
+from ..timeutils import ahora, hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/caja", tags=["caja"])
 
@@ -112,13 +112,17 @@ def cerrar_caja(body: schemas.CierreCajaRequest, db: Session = Depends(get_db)):
     # descuadraria la caja contra si misma.
     ya_cerrada = (
         db.query(models.CierreCaja)
-        .filter(models.CierreCaja.fecha >= inicio, models.CierreCaja.fecha < fin)
+        .filter(
+            models.CierreCaja.fecha >= inicio,
+            models.CierreCaja.fecha < fin,
+            models.CierreCaja.anulado.is_(False),
+        )
         .first()
     )
     if ya_cerrada:
         raise HTTPException(
             status_code=409,
-            detail="La caja de hoy ya fue cerrada. Para corregir, registra la diferencia como un gasto o un ajuste.",
+            detail="La caja de hoy ya fue cerrada. Si el conteo quedo mal, anula ese cierre y vuelve a cerrar.",
         )
 
     resumen = resumen_caja(db)
@@ -140,6 +144,36 @@ def cerrar_caja(body: schemas.CierreCajaRequest, db: Session = Depends(get_db)):
     return _a_schema(db_cierre)
 
 
+@router.post("/cierres/{cierre_id}/anular", response_model=schemas.CierreCaja)
+def anular_cierre(
+    cierre_id: int, body: schemas.AnularCierreRequest, db: Session = Depends(get_db)
+):
+    """Deshace un cierre mal contado.
+
+    Un digito de mas al teclear el efectivo (1000 en vez de 100) metia un
+    sobrante ficticio en los libros que no habia forma de sacar: no existia
+    borrar y volver a cerrar devolvia 409. El error ademas se arrastraba a los
+    dias siguientes, porque la caja de manana arranca del saldo de hoy.
+
+    El cierre no se borra, se anula: queda la fila con su motivo y un
+    contra-asiento que revierte la diferencia. Despues se puede volver a
+    cerrar el dia con el conteo bueno.
+    """
+    cierre = db.query(models.CierreCaja).filter(models.CierreCaja.id == cierre_id).first()
+    if not cierre:
+        raise HTTPException(status_code=404, detail="Cierre no encontrado")
+    if cierre.anulado:
+        raise HTTPException(status_code=409, detail="Ese cierre ya estaba anulado")
+
+    contabilidad.registrar_reverso_diferencia_caja(db, cierre)
+    cierre.anulado = True
+    cierre.fecha_anulacion = ahora()
+    cierre.motivo_anulacion = body.motivo
+    db.commit()
+    db.refresh(cierre)
+    return _a_schema(cierre)
+
+
 def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
     return schemas.CierreCaja(
         id=c.id,
@@ -149,6 +183,8 @@ def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
         efectivo_contado=c.efectivo_contado,
         diferencia=c.diferencia,
         nota=c.nota,
+        anulado=bool(c.anulado),
+        motivo_anulacion=c.motivo_anulacion or "",
     )
 
 

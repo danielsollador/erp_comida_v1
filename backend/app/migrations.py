@@ -34,6 +34,9 @@ COLUMNAS = [
     ("pedidos", "nota_credito", "VARCHAR"),
     ("pedidos", "motivo_devolucion", "VARCHAR DEFAULT ''"),
     ("categorias", "activo", "BOOLEAN DEFAULT 1"),
+    ("cierres_caja", "anulado", "BOOLEAN DEFAULT 0"),
+    ("cierres_caja", "fecha_anulacion", "DATETIME"),
+    ("cierres_caja", "motivo_anulacion", "VARCHAR DEFAULT ''"),
 ]
 
 

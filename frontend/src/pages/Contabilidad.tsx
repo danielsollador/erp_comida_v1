@@ -115,6 +115,12 @@ const ORIGEN_LABEL: Record<string, string> = {
   apertura: 'Apertura',
   reverso_merma: 'Reverso de merma',
   ajuste_inventario: 'Ajuste de inventario',
+  sobrante_inventario: 'Sobrante de inventario',
+  reverso_sobrante: 'Reverso de sobrante',
+  reverso_cierre_caja: 'Anulacion de cierre de caja',
+  reverso_baja_activo: 'Anulacion de baja de activo',
+  reverso_declaracion_iva: 'Anulacion de declaracion de IVA',
+  nota_credito_compra: 'Nota de credito del proveedor',
   depreciacion: 'Depreciacion',
   baja_activo: 'Baja de equipo',
 }

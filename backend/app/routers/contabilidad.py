@@ -319,6 +319,34 @@ def dar_de_baja_activo(
     return _activo_a_schema(db, activo)
 
 
+@router.post("/activos/{activo_id}/reactivar", response_model=schemas.ActivoFijo)
+def reactivar_activo(activo_id: int, db: Session = Depends(get_db)):
+    """Revive un bien dado de baja por error.
+
+    Marcar la nevera equivocada lo sacaba de los libros para siempre: el PUT
+    devolvia 409 y no habia otra via. El contra-asiento devuelve el bien con
+    su valor bruto y su depreciacion acumulada tal como estaban, y desde ahi
+    sigue depreciandose solo.
+    """
+    activo = db.query(models.ActivoFijo).filter(models.ActivoFijo.id == activo_id).first()
+    if not activo:
+        raise HTTPException(status_code=404, detail="Activo no encontrado")
+    if not activo.dado_de_baja:
+        raise HTTPException(status_code=409, detail="Este activo no esta dado de baja")
+
+    # Los asientos de depreciacion siguen vivos (la baja no los borro, les hizo
+    # un contra-asiento aparte), asi que la acumulada se lee igual que siempre.
+    acumulada = contabilidad.depreciacion_acumulada(db, activo)
+    contabilidad.registrar_reverso_baja_activo(db, activo, acumulada)
+    activo.dado_de_baja = False
+    activo.fecha_baja = None
+    activo.motivo_baja = ""
+    db.commit()
+    contabilidad.asentar_depreciacion_pendiente(db)
+    db.refresh(activo)
+    return _activo_a_schema(db, activo)
+
+
 @router.get("/salud", response_model=schemas.SaludContable)
 def salud_contable(db: Session = Depends(get_db)):
     """Chequeos que SI pueden fallar.
@@ -489,6 +517,26 @@ def salud_contable(db: Session = Depends(get_db)):
                 titulo=f"{len(vendidas_sin_receta)} producto(s) vendidos sin receta",
                 detalle=f"{nombres}. Se registro el ingreso pero ningun costo de ventas, "
                 "asi que la utilidad queda sobrestimada. Cargales la receta.",
+            )
+        )
+
+    # 4b. Facturas de compra donde lo recibido no coincide con lo facturado y
+    #     nadie cargo la nota de credito del proveedor.
+    sin_acreditar = []
+    for factura in db.query(models.FacturaCompra).filter_by(categoria="Insumos").all():
+        if not factura.items:
+            continue
+        recibido = sum(i.cantidad * i.costo_unitario for i in factura.items)
+        if abs(recibido - factura.base_imponible) > 0.01:
+            sin_acreditar.append(factura)
+    if sin_acreditar:
+        problemas.append(
+            schemas.ProblemaContable(
+                gravedad="aviso",
+                titulo=f"{len(sin_acreditar)} factura(s) con renglones que no suman su base",
+                detalle="Si el proveedor facturo mas de lo que mando, carga su nota de "
+                "credito en Compras: si no, declaras credito fiscal de mas y le "
+                "pagas de mas.",
             )
         )
 

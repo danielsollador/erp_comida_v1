@@ -42,8 +42,10 @@ def _totales_iva_del_rango(db: Session, inicio, fin) -> Tuple[float, float]:
         _base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
         debito += iva
 
+    # Neto de notas de credito: declarar el IVA bruto de una factura que el
+    # proveedor ya acredito es deduccion indebida ante el SENIAT.
     credito = sum(
-        f.iva
+        f.iva_neto
         for f in db.query(models.FacturaCompra)
         .filter(models.FacturaCompra.fecha >= inicio, models.FacturaCompra.fecha < fin)
         .all()
@@ -131,11 +133,14 @@ def libro_compras(periodo: str = "mes", db: Session = Depends(get_db)):
             numero_factura=f.numero_factura,
             proveedor_nombre=f.proveedor_nombre,
             proveedor_rif=f.proveedor_rif,
-            base_imponible=f.base_imponible,
-            iva=f.iva,
-            total=f.total,
+            base_imponible=f.base_neta,
+            iva=f.iva_neto,
+            total=f.total_neto,
         )
         for f in facturas
+        # Una factura acreditada por completo sale del libro, igual que una
+        # venta devuelta sale del Libro de Ventas.
+        if f.total_neto > 0.01
     ]
 
     return schemas.LibroCompras(
@@ -339,3 +344,51 @@ def pagar_declaracion(
     db.commit()
     db.refresh(declaracion)
     return _a_schema(declaracion)
+
+
+@router.post("/declaraciones/{declaracion_id}/anular")
+def anular_declaracion(declaracion_id: int, db: Session = Depends(get_db)):
+    """Deshace una declaracion mal hecha y libera el periodo.
+
+    Antes no habia salida: no existia borrar y volver a declarar el mismo mes
+    devolvia 409. Se revierten los asientos (el de la declaracion y el del
+    pago, si lo hubo), se borra la fila y el mes vuelve a la lista de
+    pendientes para declararlo bien.
+
+    Solo se puede anular la ULTIMA declaracion: el excedente de credito fiscal
+    se arrastra en cadena, asi que anular un mes con meses posteriores ya
+    declarados dejaria mal el arrastre de todos los siguientes.
+    """
+    declaracion = (
+        db.query(models.DeclaracionIva).filter(models.DeclaracionIva.id == declaracion_id).first()
+    )
+    if not declaracion:
+        raise HTTPException(status_code=404, detail="Declaracion no encontrada")
+
+    posterior = (
+        db.query(models.DeclaracionIva)
+        .filter(
+            (models.DeclaracionIva.anio > declaracion.anio)
+            | (
+                (models.DeclaracionIva.anio == declaracion.anio)
+                & (models.DeclaracionIva.mes > declaracion.mes)
+            )
+        )
+        .order_by(models.DeclaracionIva.anio, models.DeclaracionIva.mes)
+        .first()
+    )
+    if posterior:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Primero hay que anular {MESES_ES[posterior.mes - 1]} {posterior.anio}: "
+                "el credito fiscal se arrastra de un mes al siguiente y anular este "
+                "dejaria mal el de los meses posteriores."
+            ),
+        )
+
+    contabilidad.registrar_reverso_declaracion_iva(db, declaracion)
+    etiqueta = f"{MESES_ES[declaracion.mes - 1]} {declaracion.anio}"
+    db.delete(declaracion)
+    db.commit()
+    return {"ok": True, "periodo": etiqueta}

@@ -217,12 +217,78 @@ def ajustar_stock(
             # silencio, sin asiento: el inventario contable quedaba por debajo del
             # real para siempre (era la unica salida para corregir una merma
             # duplicada, y dejaba los libros peor que antes).
-            contabilidad.registrar_sobrante_inventario(db, db_ingrediente, valor, ingrediente_id)
+            #
+            # Y despues, con asiento pero sin fila propia: el faltante se podia
+            # revertir (queda como Merma) y el sobrante no, aunque el error de
+            # tecleo es el mismo. Ahora cada sobrante tiene su registro, con su
+            # propia referencia contable - dos sobrantes del mismo insumo ya no
+            # comparten referencia.
+            db_sobrante = models.SobranteInventario(
+                ingrediente_id=ingrediente_id, cantidad=abs(faltante), motivo=body.motivo
+            )
+            db.add(db_sobrante)
+            db.flush()
+            contabilidad.registrar_sobrante_inventario(
+                db, db_ingrediente, valor, db_sobrante.id
+            )
 
         db_ingrediente.stock_actual = body.stock_real
         db.commit()
         db.refresh(db_ingrediente)
         return db_ingrediente
+
+
+@router.get("/sobrantes", response_model=List[schemas.SobranteInventario])
+def listar_sobrantes(dias: int = 30, db: Session = Depends(get_db)):
+    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+    sobrantes = (
+        db.query(models.SobranteInventario)
+        .filter(models.SobranteInventario.fecha >= desde)
+        .order_by(models.SobranteInventario.id.desc())
+        .all()
+    )
+    return [
+        schemas.SobranteInventario(
+            id=s.id,
+            ingrediente_id=s.ingrediente_id,
+            ingrediente_nombre=s.ingrediente.nombre,
+            unidad=s.ingrediente.unidad,
+            cantidad=s.cantidad,
+            valor=round(s.cantidad * (s.ingrediente.costo_unitario or 0), 2),
+            motivo=s.motivo or "",
+            fecha=s.fecha.isoformat(),
+            revertido=bool(s.revertido),
+        )
+        for s in sobrantes
+    ]
+
+
+@router.post("/sobrantes/{sobrante_id}/revertir", response_model=schemas.Ingrediente)
+def revertir_sobrante(sobrante_id: int, db: Session = Depends(get_db)):
+    """Deshace un conteo mal tecleado hacia arriba (500 en vez de 50).
+
+    El faltante siempre tuvo vuelta atras porque quedaba como Merma; el
+    sobrante no, aunque es el mismo dedo en el mismo formulario.
+    """
+    with costeo.bloqueo_inventario():
+        sobrante = (
+            db.query(models.SobranteInventario)
+            .filter(models.SobranteInventario.id == sobrante_id)
+            .first()
+        )
+        if not sobrante:
+            raise HTTPException(status_code=404, detail="Sobrante no encontrado")
+        if sobrante.revertido:
+            raise HTTPException(status_code=409, detail="Ese sobrante ya fue revertido")
+
+        ingrediente = _ingrediente_para_actualizar(db, sobrante.ingrediente_id)
+        valor = round(sobrante.cantidad * (ingrediente.costo_unitario or 0), 2)
+        ingrediente.stock_actual = round((ingrediente.stock_actual or 0) - sobrante.cantidad, 4)
+        contabilidad.registrar_reverso_sobrante_inventario(db, ingrediente, valor, sobrante.id)
+        sobrante.revertido = True
+        db.commit()
+        db.refresh(ingrediente)
+        return _con_reposicion(ingrediente, reposicion.costos_reposicion(db))
 
 
 @router.get("/mermas", response_model=List[schemas.Merma])

@@ -376,6 +376,122 @@ def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
     )
 
 
+def registrar_reverso_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
+    """Deshace el faltante/sobrante de un cierre mal contado.
+
+    El cierre no se borra: se anula. Borrarlo dejaria los libros limpios pero
+    mudos sobre lo que paso, y un error de conteo es justo lo que un dueno
+    quiere poder auditar despues.
+    """
+    diferencia = round(cierre.diferencia, 2)
+    if abs(diferencia) < 0.01:
+        return
+    if diferencia < 0:  # se habia reconocido un faltante: se devuelve a caja
+        lineas = [("1010", abs(diferencia), 0.0), ("6030", 0.0, abs(diferencia))]
+    else:  # se habia reconocido un sobrante: sale de caja
+        lineas = [("6030", diferencia, 0.0), ("1010", 0.0, diferencia)]
+    crear_asiento(
+        db,
+        f"Anulacion del cierre del {cierre.fecha.date()}",
+        lineas,
+        origen="reverso_cierre_caja",
+        referencia_id=cierre.id,
+    )
+
+
+def registrar_reverso_sobrante_inventario(
+    db: Session, ingrediente: models.Ingrediente, valor: float, referencia_id: int
+) -> None:
+    """Contra-asiento de un conteo mal tecleado hacia arriba."""
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Reverso de sobrante de {ingrediente.nombre}",
+        [("6020", valor, 0.0), ("1040", 0.0, valor)],
+        origen="reverso_sobrante",
+        referencia_id=referencia_id,
+    )
+
+
+def registrar_reverso_baja_activo(db: Session, activo: models.ActivoFijo, acumulada: float) -> None:
+    """Revive un bien dado de baja por error: vuelve a los libros como estaba.
+
+    Es el contra-asiento exacto de `registrar_baja_activo`, no una compra
+    nueva: el bien recupera su valor bruto y su depreciacion acumulada.
+    """
+    valor_en_libros = round(activo.valor - acumulada, 2)
+    lineas = [("1050", activo.valor, 0.0)]
+    if acumulada > 0:
+        lineas.append(("1051", 0.0, acumulada))
+    if valor_en_libros > 0:
+        lineas.append(("6040", 0.0, valor_en_libros))
+    crear_asiento(
+        db,
+        f"Anulacion de la baja de {activo.nombre}",
+        lineas,
+        origen="reverso_baja_activo",
+        referencia_id=activo.id,
+    )
+
+
+def registrar_reverso_declaracion_iva(db: Session, declaracion: models.DeclaracionIva) -> None:
+    """Deshace una declaracion mal hecha, devolviendo el IVA a sus cuentas."""
+    for asiento in (
+        db.query(models.AsientoContable)
+        .filter(
+            models.AsientoContable.origen.in_(("declaracion_iva", "pago_iva")),
+            models.AsientoContable.referencia_id == declaracion.id,
+        )
+        .all()
+    ):
+        lineas = [
+            (m.cuenta.codigo, m.haber, m.debe) for m in asiento.movimientos if m.cuenta is not None
+        ]
+        if not lineas:
+            continue
+        crear_asiento(
+            db,
+            f"Anulacion: {asiento.descripcion}",
+            lineas,
+            origen="reverso_declaracion_iva",
+            referencia_id=declaracion.id,
+        )
+
+
+def registrar_nota_credito_compra(
+    db: Session, nota: models.NotaCreditoCompra, cuenta_concepto: str
+) -> None:
+    """Asiento espejo de la compra, por lo que el proveedor acredita.
+
+    Baja el inventario (o el gasto, segun la categoria de la factura), baja el
+    credito fiscal que ya no corresponde, y baja lo que se le debe al
+    proveedor. Si la factura ya estaba pagada, lo que baja no es la deuda sino
+    que entra la plata de vuelta.
+    """
+    factura = nota.factura
+    lineas = []
+    if nota.base_imponible > 0:
+        lineas.append((cuenta_concepto, 0.0, nota.base_imponible))
+    if nota.iva > 0:
+        lineas.append(("1030", 0.0, nota.iva))
+
+    if factura.forma_pago == "Credito" and not factura.pagada:
+        contrapartida = "2010"  # todavia se le debe: baja la deuda
+    else:
+        contrapartida = CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010")
+    lineas.append((contrapartida, nota.total, 0.0))
+
+    crear_asiento(
+        db,
+        f"Nota de credito {nota.numero} sobre factura {factura.numero_factura}",
+        lineas,
+        origen="nota_credito_compra",
+        referencia_id=nota.id,
+        fecha=nota.fecha,
+    )
+
+
 def registrar_compra_insumo(
     db: Session, ingrediente: models.Ingrediente, valor: float, referencia_id: int
 ) -> None:
@@ -597,6 +713,11 @@ def registrar_sobrante_inventario(
     Entra al inventario contra la cuenta de merma (baja la perdida acumulada),
     porque un sobrante casi siempre es una merma o un consumo mal registrado
     antes, no mercancia que aparecio de la nada.
+
+    El origen cambio de "ajuste_inventario" a "sobrante_inventario" cuando el
+    sobrante paso a tener fila propia: `referencia_id` ya no es el ingrediente
+    sino el sobrante. Los asientos viejos conservan el origen viejo a proposito,
+    para que nadie los lea con la semantica nueva.
     """
     if valor <= 0:
         return
@@ -604,6 +725,6 @@ def registrar_sobrante_inventario(
         db,
         f"Sobrante de inventario: {ingrediente.nombre}",
         [("1040", valor, 0.0), ("6020", 0.0, valor)],
-        origen="ajuste_inventario",
+        origen="sobrante_inventario",
         referencia_id=referencia_id,
     )
