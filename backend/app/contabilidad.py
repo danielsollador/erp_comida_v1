@@ -27,7 +27,13 @@ log = logging.getLogger("erp.contabilidad")
 
 # codigo, nombre, tipo, naturaleza
 PLAN_DE_CUENTAS = [
-    ("1010", "Caja (efectivo)", "activo", "deudora"),
+    ("1010", "Caja en bolivares", "activo", "deudora"),
+    # Los billetes verdes son otra gaveta fisica y otro arqueo: mezclarlos con
+    # los bolivares en una sola cuenta hacia imposible cuadrar la caja, porque
+    # el sistema decia "esperado $10" tanto si habia un billete de $10 como si
+    # habia Bs 400.
+    ("1011", "Caja en divisas (efectivo $)", "activo", "deudora"),
+    ("1015", "Cuentas por cobrar a clientes", "activo", "deudora"),
     ("1020", "Banco / pagos electronicos", "activo", "deudora"),
     ("1030", "IVA credito fiscal", "activo", "deudora"),
     ("1040", "Inventario de insumos", "activo", "deudora"),
@@ -38,12 +44,20 @@ PLAN_DE_CUENTAS = [
     ("2010", "Cuentas por pagar a proveedores", "pasivo", "acreedora"),
     ("2020", "Impuestos por pagar", "pasivo", "acreedora"),
     ("2030", "IVA debito fiscal", "pasivo", "acreedora"),
+    # La propina es del empleado, no del negocio: entra a la gaveta pero se
+    # debe. Sin esta cuenta el cierre la reportaba como sobrante y terminaba
+    # engordando la utilidad (y pagando impuesto sobre plata ajena).
+    ("2040", "Propinas por entregar", "pasivo", "acreedora"),
     ("3010", "Capital del propietario", "patrimonio", "acreedora"),
     ("3020", "Utilidades retenidas", "patrimonio", "acreedora"),
     # Contra-cuenta de patrimonio (ver CUENTAS_CONTRA): se debita, su saldo
     # sale negativo y resta del patrimonio, que es lo que hace un retiro.
     ("3030", "Retiros del propietario", "patrimonio", "acreedora"),
     ("4010", "Ventas", "ingreso", "acreedora"),
+    # Contra-cuenta de ingreso (ver CUENTAS_CONTRA): conserva la venta bruta y
+    # muestra aparte cuanto se regalo en rebajas, que es informacion que el
+    # dueno necesita y que bajar el precio del menu destruia.
+    ("4020", "Descuentos concedidos", "ingreso", "acreedora"),
     ("5010", "Costo de ventas (insumos)", "costo", "deudora"),
     ("6010", "Gastos operativos", "gasto", "deudora"),
     ("6020", "Perdida por merma", "gasto", "deudora"),
@@ -55,15 +69,28 @@ PLAN_DE_CUENTAS = [
 # la depreciacion acumulada es un activo que RESTA, y los retiros del dueno son
 # patrimonio que RESTA. Su saldo negativo es correcto y no debe reportarse como
 # un descuadre.
-CUENTAS_CONTRA = {"1051", "3030"}
+CUENTAS_CONTRA = {"1051", "3030", "4020"}
 
 # Metodo de pago del pedido -> cuenta donde entra el dinero.
 CUENTA_POR_METODO_PAGO = {
+    # "Efectivo" se conserva como sinonimo de bolivares por las ventas que ya
+    # estan cargadas: renombrarlo a secas dejaria huerfano todo el historico.
     "Efectivo": "1010",
+    "Efectivo Bs": "1010",
+    "Efectivo $": "1011",
     "Tarjeta": "1020",
     "Pago movil": "1020",
     "Transferencia": "1020",
+    # El cliente se lleva la comida y paga despues. No entra plata: nace una
+    # cuenta por cobrar. Antes habia que elegir entre no registrar la venta
+    # (y descuadrar el inventario) o marcarla cobrada (y descuadrar la caja).
+    "Fiado": "1015",
 }
+
+# Las gavetas fisicas que se cuentan al cerrar. El resto de los metodos no se
+# arquea: su saldo lo dice el banco, no un conteo.
+CUENTAS_DE_EFECTIVO = {"1010": "bolivares", "1011": "divisas"}
+METODOS_DE_EFECTIVO = {"Efectivo", "Efectivo Bs", "Efectivo $"}
 
 # Categoria de la factura de compra -> cuenta donde se contabiliza el gasto/activo.
 CUENTA_POR_CATEGORIA_COMPRA = {
@@ -190,10 +217,27 @@ def _lineas_de_cobro(pedido: models.Pedido, signo: float = 1.0) -> List[Tuple[st
 
     Un pago mixto entra parte a caja y parte a banco: mandarlo todo a una sola
     cuenta hacia que el cierre de caja mostrara un faltante inexistente.
+
+    El vuelto se registra aparte cuando sale por una gaveta distinta de la que
+    recibio la plata: pagar en divisas y dar el vuelto en bolivares mueve dos
+    cajas, y si solo se anota el neto ninguna de las dos cuadra al cerrar.
     """
     lineas = []
     for pago in pedido.pagos:
         cuenta = CUENTA_POR_METODO_PAGO.get(pago.metodo, "1010")
+        vuelto = round(pago.vuelto_monto or 0, 2)
+        cuenta_vuelto = CUENTA_POR_METODO_PAGO.get(pago.vuelto_metodo or pago.metodo, cuenta)
+
+        if vuelto > 0 and cuenta_vuelto != cuenta:
+            entra = round(pago.monto + vuelto, 2)
+            if signo > 0:
+                lineas.append((cuenta, entra, 0.0))
+                lineas.append((cuenta_vuelto, 0.0, vuelto))
+            else:
+                lineas.append((cuenta, 0.0, entra))
+                lineas.append((cuenta_vuelto, vuelto, 0.0))
+            continue
+
         monto = round(pago.monto, 2)
         lineas.append((cuenta, monto, 0.0) if signo > 0 else (cuenta, 0.0, monto))
     return lineas
@@ -201,17 +245,38 @@ def _lineas_de_cobro(pedido: models.Pedido, signo: float = 1.0) -> List[Tuple[st
 
 def registrar_venta(db: Session, pedido: models.Pedido) -> None:
     total = round(pedido.total, 2)
+    descuento = round(pedido.descuento or 0, 2)
+    propina = round(pedido.propina or 0, 2)
     costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
 
     lineas = _lineas_de_cobro(pedido)
+
+    # La propina entro a la gaveta con el resto del pago, pero no es venta: se
+    # le debe al empleado hasta que se le entrega.
+    if propina > 0:
+        lineas += [("2040", 0.0, propina)]
+
+    # La venta se reconoce BRUTA y el descuento se muestra aparte: asi el dueno
+    # puede ver cuanto regalo en rebajas, que es informacion que se perdia
+    # cuando la unica via era bajarle el precio al menu.
+    bruto = round(total + descuento, 2)
     if pedido.facturado:
-        # Solo lo facturado le debe IVA al fisco. La alicuota ya viene congelada
-        # en el pedido (se fija al cobrar) para que un Libro de Ventas de un
-        # mes cerrado no cambie si despues sube el IVA.
+        # Solo lo facturado le debe IVA al fisco, y sobre lo que de verdad se
+        # cobro: el IVA se desglosa del neto, no del precio de lista. La
+        # alicuota ya viene congelada en el pedido (se fija al cobrar) para que
+        # un Libro de Ventas de un mes cerrado no cambie si despues sube el IVA.
         base, iva = impuestos.desglosar(total, pedido.tasa_iva or impuestos.IVA_DEFAULT)
-        lineas += [("4010", 0.0, base), ("2030", 0.0, iva)]
+        base_bruta, _ = impuestos.desglosar(bruto, pedido.tasa_iva or impuestos.IVA_DEFAULT)
+        lineas += [("4010", 0.0, base_bruta), ("2030", 0.0, iva)]
+        if descuento > 0:
+            # El descuento se reconoce neto de IVA, porque 4010 tambien es
+            # neto: la diferencia entre las dos bases es exactamente lo que
+            # cuadra el asiento.
+            lineas += [("4020", round(base_bruta - base, 2), 0.0)]
     else:
-        lineas += [("4010", 0.0, total)]
+        lineas += [("4010", 0.0, bruto)]
+        if descuento > 0:
+            lineas += [("4020", descuento, 0.0)]
 
     if costo > 0:
         lineas += [("5010", costo, 0.0), ("1040", 0.0, costo)]
@@ -310,15 +375,26 @@ def saldos_por_tipo(db: Session, inicio, fin) -> dict:
     return {k: round(v, 2) for k, v in totales.items()}
 
 
-def movimiento_efectivo(db: Session, inicio, fin) -> float:
-    """Neto que entro (+) o salio (-) de la gaveta en el rango, segun los libros.
+def saldo_de_cuenta(db: Session, codigo: str) -> float:
+    """Saldo acumulado de una cuenta, con el signo de su naturaleza."""
+    cuenta = _cuenta(db, codigo)
+    movimientos = db.query(models.MovimientoContable).filter_by(cuenta_id=cuenta.id).all()
+    total = sum(m.debe - m.haber for m in movimientos)
+    return round(total if cuenta.naturaleza == "deudora" else -total, 2)
+
+
+def movimiento_efectivo(db: Session, inicio, fin, codigo: str = "1010") -> float:
+    """Neto que entro (+) o salio (-) de esa gaveta en el rango, segun los libros.
 
     Es LA fuente de verdad del efectivo: incluye ventas cobradas en efectivo,
     gastos, pagos a proveedores y compras sueltas, sin que Caja tenga que
     conocer cada una de esas vias. Antes Caja restaba solo los Gastos y por eso
     mostraba faltantes que no existian.
+
+    `codigo` elige la gaveta: 1010 son los bolivares y 1011 las divisas. Son
+    dos monedas y dos conteos fisicos distintos.
     """
-    cuenta = _cuenta(db, "1010")
+    cuenta = _cuenta(db, codigo)
     movimientos = (
         db.query(models.MovimientoContable)
         .join(models.AsientoContable)
@@ -330,6 +406,39 @@ def movimiento_efectivo(db: Session, inicio, fin) -> float:
         .all()
     )
     return round(sum(m.debe - m.haber for m in movimientos), 2)
+
+
+def registrar_entrega_propinas(
+    db: Session, monto: float, metodo_pago: str, referencia_id: int, nota: str = ""
+) -> None:
+    """Se le entrega al empleado la propina que estaba en la gaveta.
+
+    Cancela el pasivo 2040 contra la caja de donde sale la plata. No toca
+    resultados: nunca fue ingreso del negocio.
+    """
+    cuenta = CUENTA_POR_METODO_PAGO.get(metodo_pago, "1010")
+    crear_asiento(
+        db,
+        f"Entrega de propinas{f': {nota}' if nota else ''}",
+        [("2040", monto, 0.0), (cuenta, 0.0, monto)],
+        origen="entrega_propinas",
+        referencia_id=referencia_id,
+    )
+
+
+def registrar_cobro_fiado(
+    db: Session, pedido: models.Pedido, monto: float, metodo_pago: str
+) -> None:
+    """El cliente vino a pagar lo que debia: la cuenta por cobrar se convierte
+    en plata."""
+    cuenta = CUENTA_POR_METODO_PAGO.get(metodo_pago, "1010")
+    crear_asiento(
+        db,
+        f"Cobro de fiado pedido #{pedido.numero} ({pedido.cliente or 'sin nombre'})",
+        [(cuenta, monto, 0.0), ("1015", 0.0, monto)],
+        origen="cobro_fiado",
+        referencia_id=pedido.id,
+    )
 
 
 def registrar_retiro(db: Session, retiro: models.RetiroPropietario) -> None:

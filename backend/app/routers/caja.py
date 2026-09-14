@@ -43,20 +43,44 @@ def _retiros_hoy(db: Session) -> float:
     return round(sum(r.monto for r in retiros), 2)
 
 
-def _salidas_efectivo_hoy(db: Session) -> float:
-    """Todo lo que salio de la gaveta hoy que no fue una venta, segun los libros."""
+# Metodos que caen en cada gaveta. "Efectivo" a secas es historico: antes de
+# separar bolivares de divisas todo el efectivo iba a la misma cuenta.
+METODOS_POR_GAVETA = {
+    "1010": ("Efectivo", "Efectivo Bs"),
+    "1011": ("Efectivo $",),
+}
+
+
+def _entradas_de_gaveta_hoy(db: Session, codigo: str) -> float:
+    """Lo que entro a esa gaveta por ventas, contando lo recibido y el vuelto.
+
+    Con un billete de $20 por una compra de $10 entran 20 y salen 10: si solo
+    se cuenta el neto, el conteo fisico nunca cuadra cuando el vuelto sale por
+    la otra gaveta.
+    """
+    metodos = METODOS_POR_GAVETA.get(codigo, ())
+    total = 0.0
+    for pedido in _pedidos_pagados_hoy(db):
+        for pago in pedido.pagos:
+            if pago.metodo in metodos:
+                total += (pago.recibido or pago.monto)
+            # Vuelto entregado desde ESTA gaveta por un pago que entro en otra.
+            if pago.vuelto_monto and pago.vuelto_metodo in metodos and pago.metodo not in metodos:
+                total -= pago.vuelto_monto
+    return round(total, 2)
+
+
+def _salidas_gaveta_hoy(db: Session, codigo: str) -> float:
+    """Todo lo que salio de esa gaveta hoy que no fue una venta, segun los libros."""
     inicio, fin = _rango_hoy()
-    # Por pago y no por pedido: en una venta mixta solo parte entro a la gaveta.
-    ventas_efectivo = sum(
-        pago.monto
-        for p in _pedidos_pagados_hoy(db)
-        for pago in p.pagos
-        if pago.metodo == "Efectivo"
-    )
     # neto = entradas - salidas. Las unicas entradas son las ventas en efectivo,
     # asi que lo demas que movio la cuenta son salidas.
-    neto = contabilidad.movimiento_efectivo(db, inicio, fin)
-    return round(ventas_efectivo - neto, 2)
+    neto = contabilidad.movimiento_efectivo(db, inicio, fin, codigo)
+    return round(_entradas_de_gaveta_hoy(db, codigo) - neto, 2)
+
+
+def _salidas_efectivo_hoy(db: Session) -> float:
+    return _salidas_gaveta_hoy(db, "1010")
 
 
 def _saldo_anterior(db: Session) -> float:
@@ -68,6 +92,25 @@ def _saldo_anterior(db: Session) -> float:
     """
     inicio, _fin = _rango_hoy()
     return contabilidad.movimiento_efectivo(db, datetime.datetime.min, inicio)
+
+
+def _saldo_anterior_de(db: Session, codigo: str) -> float:
+    inicio, _fin = _rango_hoy()
+    return contabilidad.movimiento_efectivo(db, datetime.datetime.min, inicio, codigo)
+
+
+def _gaveta(db: Session, codigo: str, etiqueta: str) -> schemas.Gaveta:
+    saldo_anterior = _saldo_anterior_de(db, codigo)
+    entradas = _entradas_de_gaveta_hoy(db, codigo)
+    salidas = _salidas_gaveta_hoy(db, codigo)
+    return schemas.Gaveta(
+        codigo=codigo,
+        etiqueta=etiqueta,
+        saldo_anterior=saldo_anterior,
+        entradas_hoy=entradas,
+        salidas_hoy=salidas,
+        esperado=round(saldo_anterior + entradas - salidas, 2),
+    )
 
 
 @router.get("/resumen", response_model=schemas.ResumenCaja)
@@ -87,11 +130,13 @@ def resumen_caja(db: Session = Depends(get_db)):
     # pagos a proveedores y compras sueltas. Cuando Caja llevaba su propia
     # cuenta solo restaba Gastos, y los dias de pagar al proveedor mostraba un
     # faltante inexistente (medido: hasta $93.95 en un dia).
-    saldo_anterior = _saldo_anterior(db)
-    salidas = _salidas_efectivo_hoy(db)
-    efectivo_esperado = round(
-        saldo_anterior + por_metodo.get("Efectivo", 0) - salidas, 2
-    )
+    # El esperado de la gaveta de bolivares sale del mismo calculo que la
+    # gaveta: sumar `por_metodo["Efectivo"]` se quedaba corto desde que existen
+    # "Efectivo Bs", el vuelto y la propina.
+    bolivares = _gaveta(db, "1010", "Bolivares")
+    saldo_anterior = bolivares.saldo_anterior
+    salidas = bolivares.salidas_hoy
+    efectivo_esperado = bolivares.esperado
 
     return schemas.ResumenCaja(
         fecha=hoy().isoformat(),
@@ -102,6 +147,16 @@ def resumen_caja(db: Session = Depends(get_db)):
         salidas_efectivo=salidas,
         retiros_hoy=_retiros_hoy(db),
         cantidad_pedidos=len(pedidos),
+        # Dos monedas, dos montones de billetes, dos conteos. Un solo numero
+        # hacia imposible arquear: decia "esperado $10" tanto si en la gaveta
+        # habia un billete verde como si habia Bs 400.
+        gavetas=[bolivares, _gaveta(db, "1011", "Divisas ($)")],
+        propinas_por_entregar=round(contabilidad.saldo_de_cuenta(db, "2040"), 2),
+        fiado_por_cobrar=round(contabilidad.saldo_de_cuenta(db, "1015"), 2),
+        propinas_hoy=round(
+            sum(p.propina or 0 for p in pedidos), 2
+        ),
+        descuentos_hoy=round(sum(p.descuento or 0 for p in pedidos), 2),
     )
 
 
@@ -127,11 +182,18 @@ def cerrar_caja(body: schemas.CierreCajaRequest, db: Session = Depends(get_db)):
 
     resumen = resumen_caja(db)
     diferencia = round(body.efectivo_contado - resumen.efectivo_esperado, 2)
+    # La gaveta de divisas se cuenta aparte: son otros billetes.
+    divisas = next((g for g in resumen.gavetas if g.codigo == "1011"), None)
+    divisas_esperado = divisas.esperado if divisas else 0.0
+    divisas_contado = round(body.divisas_contado or 0, 2)
     db_cierre = models.CierreCaja(
         total_sistema=resumen.total_ventas,
         efectivo_esperado=resumen.efectivo_esperado,
         efectivo_contado=body.efectivo_contado,
         diferencia=diferencia,
+        divisas_esperado=divisas_esperado,
+        divisas_contado=divisas_contado,
+        divisas_diferencia=round(divisas_contado - divisas_esperado, 2),
         nota=body.nota,
     )
     db.add(db_cierre)
@@ -185,7 +247,96 @@ def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
         nota=c.nota,
         anulado=bool(c.anulado),
         motivo_anulacion=c.motivo_anulacion or "",
+        divisas_esperado=round(c.divisas_esperado or 0, 2),
+        divisas_contado=round(c.divisas_contado or 0, 2),
+        divisas_diferencia=round(c.divisas_diferencia or 0, 2),
     )
+
+
+@router.get("/propinas", response_model=schemas.PropinasPendientes)
+def propinas_pendientes(db: Session = Depends(get_db)):
+    """Cuanta propina hay en la gaveta que todavia no se le ha dado a nadie."""
+    return schemas.PropinasPendientes(
+        por_entregar=round(contabilidad.saldo_de_cuenta(db, "2040"), 2)
+    )
+
+
+@router.post("/propinas/entregar")
+def entregar_propinas(body: schemas.EntregarPropinasRequest, db: Session = Depends(get_db)):
+    """Se le entrega al empleado la propina que estaba en la gaveta.
+
+    Antes no habia donde meterla: el cobro rechazaba un pago mayor al total, y
+    si la propina se quedaba en la gaveta el cierre la reportaba como sobrante
+    y terminaba como ingreso del negocio - pagando impuesto sobre plata ajena.
+    """
+    pendiente = contabilidad.saldo_de_cuenta(db, "2040")
+    monto = round(body.monto, 2)
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
+    if monto > pendiente + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Solo hay ${pendiente:.2f} de propinas por entregar.",
+        )
+    if body.metodo_pago not in contabilidad.CUENTA_POR_METODO_PAGO:
+        raise HTTPException(status_code=400, detail="Forma de pago desconocida")
+
+    contabilidad.registrar_entrega_propinas(db, monto, body.metodo_pago, 0, body.nota)
+    db.commit()
+    return {"ok": True, "entregado": monto, "queda": round(pendiente - monto, 2)}
+
+
+@router.get("/fiado", response_model=List[schemas.CuentaPorCobrar])
+def listar_fiado(db: Session = Depends(get_db)):
+    """Quien le debe al negocio y desde cuando."""
+    pedidos = (
+        db.query(models.Pedido)
+        .join(models.PagoPedido)
+        .filter(
+            models.PagoPedido.metodo == "Fiado",
+            models.Pedido.fiado_saldado.is_(False),
+            models.Pedido.devuelto.is_(False),
+        )
+        .order_by(models.Pedido.cerrado_en)
+        .all()
+    )
+    ahora_ = ahora()
+    filas = []
+    for p in pedidos:
+        monto = round(sum(pg.monto for pg in p.pagos if pg.metodo == "Fiado"), 2)
+        fecha = p.cerrado_en or p.creado_en
+        filas.append(
+            schemas.CuentaPorCobrar(
+                pedido_id=p.id,
+                numero=p.numero,
+                cliente=p.cliente or "Sin nombre",
+                monto=monto,
+                fecha=fecha,
+                dias=(ahora_ - fecha).days,
+            )
+        )
+    return filas
+
+
+@router.post("/fiado/{pedido_id}/cobrar")
+def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session = Depends(get_db)):
+    """El cliente vino a pagar lo que debia."""
+    pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    if pedido.fiado_saldado:
+        raise HTTPException(status_code=409, detail="Ese fiado ya fue cobrado")
+    monto = round(sum(p.monto for p in pedido.pagos if p.metodo == "Fiado"), 2)
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="Ese pedido no quedo fiado")
+    if body.metodo_pago == "Fiado" or body.metodo_pago not in contabilidad.CUENTA_POR_METODO_PAGO:
+        raise HTTPException(status_code=400, detail="Forma de cobro invalida")
+
+    contabilidad.registrar_cobro_fiado(db, pedido, monto, body.metodo_pago)
+    pedido.fiado_saldado = True
+    pedido.fecha_cobro_fiado = ahora()
+    db.commit()
+    return {"ok": True, "cobrado": monto, "cliente": pedido.cliente}
 
 
 @router.get("/retiros", response_model=List[schemas.RetiroPropietario])

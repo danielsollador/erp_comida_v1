@@ -214,10 +214,28 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
                 detail=f"La factura {body.numero_factura} ya se uso en el pedido #{repetido.numero}.",
             )
 
+    # El descuento y la propina se fijan ANTES de armar los pagos: los dos
+    # cambian cuanta plata entra a la gaveta.
+    if body.descuento < 0:
+        raise HTTPException(status_code=400, detail="El descuento no puede ser negativo")
+    if body.descuento > pedido.subtotal + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El descuento (${body.descuento:.2f}) es mayor que el pedido "
+            f"(${pedido.subtotal:.2f}).",
+        )
+    if body.propina < 0:
+        raise HTTPException(status_code=400, detail="La propina no puede ser negativa")
+    pedido.descuento = round(body.descuento, 2)
+    pedido.motivo_descuento = body.motivo_descuento
+    pedido.propina = round(body.propina, 2)
+    pedido.cliente = body.cliente
+
     # Un pago puede venir partido: $5 en efectivo y el resto por pago movil es
     # cosa de todos los dias. Sin esto habia que elegir un metodo y mentir, y
     # el cierre de caja mostraba un faltante que no existia.
-    pagos = body.pagos or [schemas.PagoInput(metodo=body.metodo_pago, monto=pedido.total)]
+    a_cobrar = pedido.a_cobrar
+    pagos = body.pagos or [schemas.PagoInput(metodo=body.metodo_pago, monto=a_cobrar)]
     for pago in pagos:
         if pago.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
             raise HTTPException(
@@ -227,17 +245,42 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
             )
         if pago.monto <= 0:
             raise HTTPException(status_code=400, detail="Cada pago debe ser mayor a cero")
-    if abs(round(sum(p.monto for p in pagos), 2) - round(pedido.total, 2)) > 0.01:
+        if pago.recibido is not None and pago.recibido + 0.01 < pago.monto:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Recibiste ${pago.recibido:.2f} por un pago de ${pago.monto:.2f}.",
+            )
+        if pago.vuelto_metodo and pago.vuelto_metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
+            raise HTTPException(
+                status_code=400, detail=f"Forma de vuelto desconocida: '{pago.vuelto_metodo}'"
+            )
+    if abs(round(sum(p.monto for p in pagos), 2) - round(a_cobrar, 2)) > 0.01:
+        detalle = f"Los pagos suman ${sum(p.monto for p in pagos):.2f} y hay que cobrar ${a_cobrar:.2f}"
+        if pedido.propina:
+            detalle += f" (${pedido.total:.2f} de comida + ${pedido.propina:.2f} de propina)"
+        raise HTTPException(status_code=400, detail=detalle + ".")
+
+    if any(p.metodo == "Fiado" for p in pagos) and not body.cliente.strip():
         raise HTTPException(
             status_code=400,
-            detail=f"Los pagos suman ${sum(p.monto for p in pagos):.2f} y el pedido es de ${pedido.total:.2f}.",
+            detail="Para fiar hace falta el nombre del cliente: si no, no hay a quien cobrarle.",
         )
 
     pedido.estado = "pagado"
     # El campo resumen sigue existiendo para mostrar de un vistazo como se pago.
     pedido.metodo_pago = pagos[0].metodo if len(pagos) == 1 else "Mixto"
     for pago in pagos:
-        db.add(models.PagoPedido(pedido_id=pedido.id, metodo=pago.metodo, monto=round(pago.monto, 2)))
+        vuelto = round(max((pago.recibido or pago.monto) - pago.monto, 0), 2)
+        db.add(
+            models.PagoPedido(
+                pedido_id=pedido.id,
+                metodo=pago.metodo,
+                monto=round(pago.monto, 2),
+                recibido=round(pago.recibido, 2) if pago.recibido is not None else None,
+                vuelto_metodo=(pago.vuelto_metodo or pago.metodo) if vuelto > 0 else None,
+                vuelto_monto=vuelto,
+            )
+        )
     db.flush()
     pedido.cerrado_en = ahora()
     # No todas las ventas se facturan - el dueno decide cual factura a mano

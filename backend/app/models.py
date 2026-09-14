@@ -364,6 +364,11 @@ class CierreCaja(Base):
     anulado = Column(Boolean, default=False)
     fecha_anulacion = Column(DateTime, nullable=True)
     motivo_anulacion = Column(String, default="")
+    # La segunda gaveta: billetes verdes. Se cuenta aparte porque es otra
+    # moneda; los campos de arriba siguen siendo los bolivares.
+    divisas_esperado = Column(Float, default=0)
+    divisas_contado = Column(Float, default=0)
+    divisas_diferencia = Column(Float, default=0)
 
 
 class SobranteInventario(Base):
@@ -525,6 +530,18 @@ class Pedido(Base):
     fecha_devolucion = Column(DateTime, nullable=True)
     nota_credito = Column(String, nullable=True)
     motivo_devolucion = Column(String, default="")
+    # Rebaja concedida a ESTE cliente. Antes la unica via era bajarle el precio
+    # al menu, que se lo bajaba a todos y ademas dejaba la base imponible del
+    # IVA sobre un precio que no se cobro.
+    descuento = Column(Float, default=0)
+    motivo_descuento = Column(String, default="")
+    # Plata del empleado que pasa por la gaveta. No es ingreso del negocio: va
+    # a un pasivo (2040) hasta que se le entrega.
+    propina = Column(Float, default=0)
+    # Para el fiado: a quien se le dio. Sin nombre no hay a quien cobrarle.
+    cliente = Column(String, default="")
+    fiado_saldado = Column(Boolean, default=False)
+    fecha_cobro_fiado = Column(DateTime, nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     consumos = relationship("PedidoConsumo", cascade="all, delete-orphan")
@@ -532,7 +549,22 @@ class Pedido(Base):
 
     @property
     def total(self):
-        return sum(item.precio_unitario * item.cantidad for item in self.items)
+        """Lo que el cliente paga por la comida, ya con el descuento aplicado.
+
+        La propina NO entra aca: no es venta del negocio sino plata del
+        empleado que pasa por la gaveta (ver `2040 Propinas por entregar`).
+        """
+        return round(max(self.subtotal - (self.descuento or 0), 0), 2)
+
+    @property
+    def subtotal(self):
+        """Precio de lista, antes de descuentos. Es la venta bruta."""
+        return round(sum(item.precio_unitario * item.cantidad for item in self.items), 2)
+
+    @property
+    def a_cobrar(self):
+        """Lo que se recibe en la gaveta: la comida mas la propina."""
+        return round(self.total + (self.propina or 0), 2)
 
 
 class PagoPedido(Base):
@@ -548,8 +580,16 @@ class PagoPedido(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
-    metodo = Column(String, nullable=False)  # Efectivo | Pago movil | Tarjeta | Transferencia
+    metodo = Column(String, nullable=False)  # ver contabilidad.CUENTA_POR_METODO_PAGO
     monto = Column(Float, nullable=False)
+    # Lo que el cliente entrego de verdad. Con un billete de $20 por una compra
+    # de $10 entran $20 a la gaveta y salen $10: si solo se registra el monto,
+    # el arqueo nunca cuadra. Y si el vuelto se da en otra moneda (pago en
+    # divisas, vuelto en bolivares) el movimiento entre las dos cajas no
+    # quedaba en ninguna parte.
+    recibido = Column(Float, nullable=True)
+    vuelto_metodo = Column(String, nullable=True)
+    vuelto_monto = Column(Float, default=0)
 
 
 class PedidoConsumo(Base):

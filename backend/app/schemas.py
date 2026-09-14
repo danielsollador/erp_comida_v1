@@ -262,13 +262,21 @@ class SugerenciaCompra(BaseModel):
 
 
 class PagoInput(BaseModel):
-    metodo: str  # Efectivo | Pago movil | Tarjeta | Transferencia
+    metodo: str  # ver contabilidad.CUENTA_POR_METODO_PAGO
     monto: float
+    # Lo que el cliente entrego. Si es mayor que el monto, la diferencia es
+    # vuelto; `vuelto_metodo` dice por que gaveta salio (pagar en divisas y dar
+    # el vuelto en bolivares mueve dos cajas distintas).
+    recibido: Optional[float] = None
+    vuelto_metodo: Optional[str] = None
 
 
 class Pago(BaseModel):
     metodo: str
     monto: float
+    recibido: Optional[float] = None
+    vuelto_metodo: Optional[str] = None
+    vuelto_monto: float = 0
 
     class Config:
         from_attributes = True
@@ -332,6 +340,16 @@ class Pedido(BaseModel):
     tasa_bcv: Optional[float] = None
     devuelto: bool = False
     nota_credito: Optional[str] = None
+    # Precio de lista antes de rebajas; `total` ya viene con el descuento.
+    subtotal: float = 0
+    descuento: float = 0
+    motivo_descuento: str = ""
+    # Plata del empleado que pasa por la gaveta: no suma a `total` ni al IVA.
+    propina: float = 0
+    # `total` + propina: lo que de verdad se recibe al cobrar.
+    a_cobrar: float = 0
+    cliente: str = ""
+    fiado_saldado: bool = False
     pagos: List[Pago] = []
     items: List[PedidoItem]
 
@@ -346,10 +364,38 @@ class CobrarRequest(BaseModel):
     pagos: Optional[List[PagoInput]] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
+    # Rebaja a ESTE cliente. Antes habia que bajarle el precio al menu, que se
+    # lo bajaba a todos y declaraba IVA sobre un precio que no se cobro.
+    descuento: float = 0
+    motivo_descuento: str = ""
+    # Plata del empleado. No suma a la venta ni al IVA: entra a la gaveta y se
+    # debe (2040) hasta que se le entrega.
+    propina: float = 0
+    # Para el fiado: sin nombre no hay a quien cobrarle.
+    cliente: str = ""
 
 
 class Configuracion(BaseModel):
     tasa_bcv: float
+
+
+class EntregarPropinasRequest(BaseModel):
+    monto: float
+    metodo_pago: str = "Efectivo Bs"
+    nota: str = ""
+
+
+class SaldarFiadoRequest(BaseModel):
+    metodo_pago: str = "Efectivo Bs"
+
+
+class CuentaPorCobrar(BaseModel):
+    pedido_id: int
+    numero: int
+    cliente: str
+    monto: float
+    fecha: datetime.datetime
+    dias: int
 
 
 class RetiroCreate(BaseModel):
@@ -370,8 +416,28 @@ class RetiroPropietario(BaseModel):
 
 
 class CierreCajaRequest(BaseModel):
-    efectivo_contado: float
+    efectivo_contado: float  # bolivares
+    divisas_contado: float = 0  # billetes en dolares, se cuentan aparte
     nota: str = ""
+
+
+class PropinasPendientes(BaseModel):
+    por_entregar: float
+
+
+class Gaveta(BaseModel):
+    """Una caja fisica que se cuenta al cerrar.
+
+    Bolivares y divisas son dos montones de billetes distintos: con un solo
+    numero el arqueo era imposible.
+    """
+
+    codigo: str
+    etiqueta: str
+    saldo_anterior: float
+    entradas_hoy: float
+    salidas_hoy: float
+    esperado: float
 
 
 class ResumenCaja(BaseModel):
@@ -390,6 +456,12 @@ class ResumenCaja(BaseModel):
     # porque no es un gasto del negocio.
     retiros_hoy: float = 0
     cantidad_pedidos: int
+    gavetas: List[Gaveta] = []
+    # Plata de terceros que esta en la gaveta: no es del negocio.
+    propinas_por_entregar: float = 0
+    fiado_por_cobrar: float = 0
+    propinas_hoy: float = 0
+    descuentos_hoy: float = 0
 
 
 class PuntoSerie(BaseModel):
@@ -455,6 +527,9 @@ class CierreCaja(BaseModel):
     # Un cierre mal contado no se borra: se anula y queda el rastro.
     anulado: bool = False
     motivo_anulacion: str = ""
+    divisas_esperado: float = 0
+    divisas_contado: float = 0
+    divisas_diferencia: float = 0
 
     class Config:
         from_attributes = True

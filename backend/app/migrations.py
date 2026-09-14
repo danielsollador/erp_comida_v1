@@ -37,6 +37,18 @@ COLUMNAS = [
     ("cierres_caja", "anulado", "BOOLEAN DEFAULT 0"),
     ("cierres_caja", "fecha_anulacion", "DATETIME"),
     ("cierres_caja", "motivo_anulacion", "VARCHAR DEFAULT ''"),
+    ("cierres_caja", "divisas_esperado", "FLOAT DEFAULT 0"),
+    ("cierres_caja", "divisas_contado", "FLOAT DEFAULT 0"),
+    ("cierres_caja", "divisas_diferencia", "FLOAT DEFAULT 0"),
+    ("pedidos", "descuento", "FLOAT DEFAULT 0"),
+    ("pedidos", "motivo_descuento", "VARCHAR DEFAULT ''"),
+    ("pedidos", "propina", "FLOAT DEFAULT 0"),
+    ("pedidos", "cliente", "VARCHAR DEFAULT ''"),
+    ("pedidos", "fiado_saldado", "BOOLEAN DEFAULT 0"),
+    ("pedidos", "fecha_cobro_fiado", "DATETIME"),
+    ("pagos_pedido", "recibido", "FLOAT"),
+    ("pagos_pedido", "vuelto_metodo", "VARCHAR"),
+    ("pagos_pedido", "vuelto_monto", "FLOAT DEFAULT 0"),
 ]
 
 
