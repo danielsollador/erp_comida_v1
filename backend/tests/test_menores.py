@@ -163,3 +163,80 @@ def test_dos_ventas_libres_con_el_mismo_nombre_se_agrupan(client, variante):
     ]
     assert len(filas) == 1
     assert filas[0]["unidades"] == 2
+
+
+# ------------------------------------------------- migracion: relajar NOT NULL
+def test_la_migracion_relaja_not_null_sin_perder_filas(tmp_path, monkeypatch):
+    """La venta libre guarda variante_id en NULL, pero en una base que ya venia
+    de antes la columna seguia siendo NOT NULL: los tests pasaban (crean las
+    tablas de cero) y el endpoint reventaba en produccion.
+
+    Un primer intento de esta migracion fallo a mitad y dejo la tabla viva
+    vacia con las filas en la copia. Este test fija que eso no vuelva a pasar.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    from app import migrations
+
+    ruta = tmp_path / "vieja.db"
+    con = sqlite3.connect(str(ruta))
+    con.executescript(
+        """
+        CREATE TABLE pedidos (id INTEGER PRIMARY KEY);
+        CREATE TABLE variantes (id INTEGER PRIMARY KEY);
+        CREATE TABLE pedido_items (
+            id INTEGER NOT NULL PRIMARY KEY,
+            pedido_id INTEGER NOT NULL,
+            variante_id INTEGER NOT NULL,
+            nombre VARCHAR NOT NULL,
+            precio_unitario FLOAT NOT NULL,
+            costo_unitario FLOAT, cantidad INTEGER, nota VARCHAR, preparado BOOLEAN);
+        CREATE INDEX ix_pedido_items_id ON pedido_items (id);
+        INSERT INTO pedidos VALUES (1);
+        INSERT INTO variantes VALUES (1);
+        INSERT INTO pedido_items VALUES (1, 1, 1, 'Empanada', 5.0, 1.0, 2, '', 0);
+        """
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(migrations, "engine", create_engine(f"sqlite:///{ruta}"))
+    migrations._relajar_not_null("pedido_items", "variante_id")
+
+    con = sqlite3.connect(str(ruta))
+    try:
+        notnull = [r[3] for r in con.execute("PRAGMA table_info(pedido_items)")
+                   if r[1] == "variante_id"][0]
+        assert notnull == 0, "la columna acepta NULL"
+        assert con.execute("SELECT COUNT(*) FROM pedido_items").fetchone()[0] == 1
+        assert con.execute("SELECT nombre FROM pedido_items").fetchone()[0] == "Empanada"
+        sobrantes = [
+            r[0]
+            for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE name LIKE '%migrando%'"
+            )
+        ]
+        assert sobrantes == [], "no queda tabla temporal"
+        # y la venta libre ya entra
+        con.execute(
+            "INSERT INTO pedido_items (pedido_id, variante_id, nombre, precio_unitario) "
+            "VALUES (1, NULL, 'Torta por encargo', 25.0)"
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def test_la_venta_libre_no_se_reporta_como_fila_huerfana(client, variante):
+    """No apunta a ninguna variante porque el producto no esta en el menu: eso
+    es correcto, no una referencia rota."""
+    p = client.post(
+        "/api/pedidos",
+        json={"items": [{"nombre_libre": "Torta", "precio_libre": 25.0, "cantidad": 1}]},
+    ).json()
+    client.post(f"/api/pedidos/{p['id']}/cobrar", json={"metodo_pago": "Efectivo Bs"})
+
+    salud = client.get("/api/contabilidad/salud").json()
+    assert not any("ya no existen" in pr["titulo"] for pr in salud["problemas"])

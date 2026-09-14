@@ -496,10 +496,14 @@ def salud_contable(db: Session = Depends(get_db)):
         ("pedido_consumos", "ingrediente_id", "ingredientes", "consumos de pedido"),
         ("mermas", "ingrediente_id", "ingredientes", "mermas"),
     ]:
+        # `t.{columna} IS NOT NULL` es lo que distingue una fila rota de una
+        # que legitimamente no apunta a nada: la venta libre no tiene variante
+        # porque el producto no esta en el menu, y no es un huerfano.
         cuantas = db.execute(
             text(
                 f"SELECT COUNT(1) FROM {tabla} t "
-                f"LEFT JOIN {destino} d ON d.id = t.{columna} WHERE d.id IS NULL"
+                f"LEFT JOIN {destino} d ON d.id = t.{columna} "
+                f"WHERE t.{columna} IS NOT NULL AND d.id IS NULL"
             )
         ).scalar()
         if cuantas:
