@@ -240,3 +240,16 @@ def test_la_venta_libre_no_se_reporta_como_fila_huerfana(client, variante):
 
     salud = client.get("/api/contabilidad/salud").json()
     assert not any("ya no existen" in pr["titulo"] for pr in salud["problemas"])
+
+
+def test_la_venta_libre_no_se_reporta_como_producto_sin_receta(client, variante):
+    """Nunca va a tener receta: seria un aviso imposible de resolver, y eso
+    entrena al dueno a ignorar la pantalla de salud."""
+    p = client.post(
+        "/api/pedidos",
+        json={"items": [{"nombre_libre": "Torta", "precio_libre": 25.0, "cantidad": 1}]},
+    ).json()
+    client.post(f"/api/pedidos/{p['id']}/cobrar", json={"metodo_pago": "Efectivo Bs"})
+
+    salud = client.get("/api/contabilidad/salud").json()
+    assert not any("sin receta" in pr["titulo"] for pr in salud["problemas"])

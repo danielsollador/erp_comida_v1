@@ -576,7 +576,10 @@ def salud_contable(db: Session = Depends(get_db)):
         .join(models.Pedido)
         .filter(models.Pedido.estado == "pagado")
         .all()
-        if item.variante_id not in con_receta
+        # La venta libre no tiene receta por diseño (el producto no esta en el
+        # menu): reportarla aqui seria un aviso que nunca se puede resolver, y
+        # eso entrena al dueno a ignorar la pantalla de salud.
+        if item.variante_id is not None and item.variante_id not in con_receta
     }
     if vendidas_sin_receta:
         nombres = ", ".join(sorted(vendidas_sin_receta)[:4])
