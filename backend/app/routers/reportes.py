@@ -113,6 +113,22 @@ def _margenes_de_reposicion(db: Session) -> List[dict]:
         )
     return filas
 
+def _mediana(valores: List[float]) -> float:
+    """El ticket del cliente del medio.
+
+    El promedio lo mueve un solo pedido grande: 40 ventas de $2 mas un catering
+    de $200 daban un "ticket promedio" de $6.83, que no es lo que gasta nadie.
+    La mediana sigue diciendo $2.00, que es la verdad del mostrador.
+    """
+    if not valores:
+        return 0.0
+    ordenados = sorted(valores)
+    mitad = len(ordenados) // 2
+    if len(ordenados) % 2:
+        return round(ordenados[mitad], 2)
+    return round((ordenados[mitad - 1] + ordenados[mitad]) / 2, 2)
+
+
 DIAS_ES = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
 
 
@@ -258,22 +274,45 @@ def _variantes_con_receta(db: Session) -> set:
 
 
 def _top_productos(pedidos, con_receta: set) -> List[schemas.ProductoVendido]:
-    agregado: Dict[str, Dict[str, float]] = {}
+    """Agrupa por variante, NO por el nombre congelado del item.
+
+    Agrupar por nombre rompia en las dos direcciones: dos productos distintos
+    con el mismo nombre (uno en Desayuno a $10 y otro en Merienda a $4) se
+    fundian en una linea cuyo margen -96.3% en la prueba- no era el de ninguno
+    de los dos; y renombrar un producto a mitad de mes partia su historico en
+    dos lineas. El nombre congelado sigue siendo el que se muestra (el ticket
+    de ayer decia eso), pero ya no es la clave.
+    """
+    agregado: Dict[int, Dict[str, float]] = {}
     for p in pedidos:
         for i in p.items:
             entrada = agregado.setdefault(
-                i.nombre, {"unidades": 0, "ingresos": 0.0, "costo": 0.0, "sin_receta": False}
+                i.variante_id,
+                {
+                    "nombre": i.nombre,
+                    "unidades": 0,
+                    "ingresos": 0.0,
+                    "costo": 0.0,
+                    "sin_receta": False,
+                },
             )
+            # Si el producto se renombro, manda el nombre mas reciente: es el
+            # que el dueno reconoce hoy en la pantalla.
+            entrada["nombre"] = i.nombre
             entrada["unidades"] += i.cantidad
             entrada["ingresos"] += i.precio_unitario * i.cantidad
             entrada["costo"] += (i.costo_unitario or 0) * i.cantidad
-            # Sin receta no hay costo que calcular, y el margen que saldria
-            # (100%) es ficticio. Hay que poder distinguirlo de un margen bueno.
-            if i.variante_id not in con_receta:
+            # Lo que decide si el margen es confiable es si ESA venta tuvo
+            # costo, no si el producto tiene receta HOY. Con la receta de hoy,
+            # borrarla reescribia a 0% el margen de ventas que si lo tuvieron,
+            # y cargarla despues presentaba como dato bueno un 100% inventado
+            # sobre ventas que se hicieron sin costo.
+            if not (i.costo_unitario or 0):
                 entrada["sin_receta"] = True
 
     productos = []
-    for nombre, datos in agregado.items():
+    for _variante_id, datos in agregado.items():
+        nombre = datos["nombre"]
         ingresos = round(datos["ingresos"], 2)
         costo = round(datos["costo"], 2)
         ganancia = round(ingresos - costo, 2)
@@ -422,16 +461,26 @@ def _insights(
                     )
                 )
 
-    # Mejor momento de venta.
+    # Mejor momento de venta. Se decide por CLIENTES atendidos, no por monto:
+    # este dato sirve para saber cuando reforzar personal, y una hora con un
+    # solo pedido grande le ganaba a una hora con treinta clientes.
     if serie:
-        mejor = max(serie, key=lambda s: s.ventas)
-        if mejor.ventas > 0:
+        mejor = max(serie, key=lambda s: (s.pedidos, s.ventas))
+        if mejor.pedidos > 0:
             etiqueta = "hora" if periodo == "dia" else "dia"
+            mas_plata = max(serie, key=lambda s: s.ventas)
+            detalle = (
+                f"{mejor.pedidos} pedido(s) por ${mejor.ventas:.2f}. "
+                "Asegura tener personal e inventario en ese momento."
+            )
+            if mas_plata.etiqueta != mejor.etiqueta and mas_plata.ventas > mejor.ventas:
+                detalle += (
+                    f" (La {etiqueta} de mas facturacion fue otra: {mas_plata.etiqueta}, "
+                    f"${mas_plata.ventas:.2f} en {mas_plata.pedidos} pedido(s).)"
+                )
             insights.append(
                 schemas.Insight(
-                    tipo="info",
-                    titulo=f"Mejor {etiqueta}: {mejor.etiqueta}",
-                    detalle=f"${mejor.ventas:.2f} en {mejor.pedidos} pedidos. Asegura tener personal e inventario en ese momento.",
+                    tipo="info", titulo=f"Mejor {etiqueta}: {mejor.etiqueta}", detalle=detalle
                 )
             )
 
@@ -474,6 +523,25 @@ def _insights(
                 detalle=f"{detalle}. Pierdes dinero en cada una que vendes: subi el precio o revisa la receta.",
             )
         )
+
+    # Un pedido que pesa demasiado en el dia distorsiona todos los promedios.
+    # Decirlo es mas util que corregir el numero en silencio.
+    if len(pedidos) > 3 and ventas > 0:
+        mayor = max(pedidos, key=lambda p: p.total)
+        peso = mayor.total / ventas * 100
+        if peso >= 30:
+            mediana = _mediana([p.total for p in pedidos])
+            insights.append(
+                schemas.Insight(
+                    tipo="info",
+                    titulo=f"Un solo pedido fue el {peso:.0f}% de la venta",
+                    detalle=(
+                        f"El pedido #{mayor.numero} de ${mayor.total:.2f} mueve todos los "
+                        f"promedios del dia. El cliente tipico gasto ${mediana:.2f} "
+                        "(esa es la mediana, no el promedio)."
+                    ),
+                )
+            )
 
     insights.extend(_avisos_de_costos(db))
 
@@ -559,6 +627,7 @@ def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
         ingresos_netos=ingresos_netos,
         pedidos=len(pedidos),
         ticket_promedio=round(ventas / len(pedidos), 2) if pedidos else 0.0,
+        ticket_mediano=_mediana([p.total for p in pedidos]),
         costo_insumos=round(costo, 2),
         ganancia_bruta=ganancia_bruta,
         margen_pct=round(ganancia_bruta / ingresos_netos * 100, 1) if ingresos_netos else 0.0,

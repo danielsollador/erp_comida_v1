@@ -32,6 +32,33 @@ SALTO_QUE_IMPORTA_PCT = 15.0
 # Margen que se considera "ya no vale la pena venderlo".
 MARGEN_FLACO_PCT = 20.0
 
+# Un salto de este tamano en el costo unitario casi nunca es inflacion: es un
+# error de unidad. Comprar un saco de 50 kg y teclear "cantidad 1" deja el
+# costo 50x inflado y el stock 50x corto, y el menu pasa a decir que vendes a
+# perdida un producto que te deja 96%.
+SALTO_SOSPECHOSO_PCT = 200.0
+
+
+def salto_sospechoso(costo_nuevo: float, costo_anterior: float) -> Optional[dict]:
+    """Detecta un costo que parece error de unidad, no cambio de precio.
+
+    Devuelve el factor y una sugerencia en criollo, o None si el salto entra
+    dentro de lo que la inflacion puede explicar.
+    """
+    if not costo_anterior or not costo_nuevo or costo_nuevo <= costo_anterior:
+        return None
+    factor = costo_nuevo / costo_anterior
+    if (factor - 1) * 100 < SALTO_SOSPECHOSO_PCT:
+        return None
+    return {
+        "factor": round(factor, 1),
+        "mensaje": (
+            "Ese precio es {:.0f} veces el anterior. Si compraste por saco, bulto o "
+            "caja, la cantidad va en la unidad del insumo: un saco de 50 kg son "
+            "50, no 1."
+        ).format(factor),
+    }
+
 
 def historial_de_costos(db: Session, ingrediente_id: int, limite: int = 24) -> List[dict]:
     """Cada compra de ese insumo, de la mas nueva a la mas vieja.

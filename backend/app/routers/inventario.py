@@ -152,12 +152,14 @@ def registrar_compra(
         # promedio por fin refleje la subida. Para entonces ya vendiste
         # semanas con el margen viejo en pantalla y el nuevo en la realidad.
         revisar = salto is not None and salto >= reposicion.SALTO_QUE_IMPORTA_PCT
+        sospecha = reposicion.salto_sospechoso(costo_de_esta_compra, costo_anterior)
         return schemas.ImpactoDeCompra(
             ingrediente=_con_reposicion(db_ingrediente, reposicion.costos_reposicion(db)),
             costo_anterior=round(costo_anterior, 4),
             costo_pagado=round(costo_de_esta_compra, 4),
             salto_pct=salto,
             revisar_precios=revisar,
+            posible_error_de_unidad=sospecha["mensaje"] if sospecha else None,
             productos=(
                 reposicion.impacto_en_productos(
                     db, db_ingrediente.id, costo_de_esta_compra, costo_anterior

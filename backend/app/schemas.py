@@ -145,6 +145,9 @@ class ImpactoDeCompra(BaseModel):
     salto_pct: Optional[float] = None
     # True si el salto es lo bastante grande como para revisar precios.
     revisar_precios: bool = False
+    # Aviso cuando el salto parece error de unidad (un saco tecleado como 1)
+    # en vez de subida de precio. None = el salto es creible.
+    posible_error_de_unidad: Optional[str] = None
     productos: List[ImpactoEnProducto] = []
 
 
@@ -499,6 +502,9 @@ class ReporteResumen(BaseModel):
     ingresos_netos: float = 0  # ventas - iva_cobrado; es el ingreso real del negocio
     pedidos: int
     ticket_promedio: float
+    # Lo que gasta el cliente del medio. El promedio lo mueve un solo pedido
+    # grande; la mediana describe el mostrador de verdad.
+    ticket_mediano: float = 0
     costo_insumos: float
     ganancia_bruta: float
     margen_pct: float
