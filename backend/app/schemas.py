@@ -4,6 +4,32 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class OperadorCreate(BaseModel):
+    nombre: str
+    rol: str = "cajero"  # cajero | dueno
+    punto_venta: str = ""
+
+
+class Operador(OperadorCreate):
+    id: int
+    activo: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class PuntoVentaCreate(BaseModel):
+    nombre: str
+
+
+class PuntoVenta(PuntoVentaCreate):
+    id: int
+    activo: bool = True
+
+    class Config:
+        from_attributes = True
+
+
 class VarianteBase(BaseModel):
     nombre: str
     precio: float
@@ -173,6 +199,7 @@ class ComprarIngredienteRequest(BaseModel):
 class MermaRequest(BaseModel):
     cantidad: float
     motivo: str = ""
+    operador_id: Optional[int] = None
 
 
 class Merma(BaseModel):
@@ -303,6 +330,7 @@ class PedidoCreate(BaseModel):
 class AnularRequest(BaseModel):
     # None = que el sistema lo deduzca del estado del pedido.
     comida_preparada: Optional[bool] = None
+    operador_id: Optional[int] = None
 
 
 class DevolucionRequest(BaseModel):
@@ -353,6 +381,10 @@ class Pedido(BaseModel):
     a_cobrar: float = 0
     cliente: str = ""
     fiado_saldado: bool = False
+    # Trazabilidad: quien cobro, desde que caja, y quien anulo si se anulo.
+    operador: str = ""
+    punto_venta: str = ""
+    anulado_por: str = ""
     pagos: List[Pago] = []
     items: List[PedidoItem]
 
@@ -376,6 +408,42 @@ class CobrarRequest(BaseModel):
     propina: float = 0
     # Para el fiado: sin nombre no hay a quien cobrarle.
     cliente: str = ""
+    # Quien cobra y desde que caja. Opcional: una instalacion sin operadores
+    # cargados sigue funcionando igual.
+    operador_id: Optional[int] = None
+    punto_venta_id: Optional[int] = None
+
+
+class TicketLinea(BaseModel):
+    nombre: str
+    cantidad: int
+    precio_unitario: float
+    subtotal: float
+
+
+class Ticket(BaseModel):
+    """Datos del comprobante impreso. La pantalla los maqueta e imprime."""
+
+    pedido_id: int
+    numero: int
+    fecha: datetime.datetime
+    estado: str
+    items: List[TicketLinea] = []
+    subtotal: float
+    descuento: float = 0
+    propina: float = 0
+    total: float
+    a_cobrar: float
+    tasa_bcv: Optional[float] = None
+    total_bs: Optional[float] = None
+    facturado: bool = False
+    numero_factura: Optional[str] = None
+    base_imponible: Optional[float] = None
+    iva: Optional[float] = None
+    pagos: List[Pago] = []
+    cliente: str = ""
+    operador: str = ""
+    punto_venta: str = ""
 
 
 class Configuracion(BaseModel):
@@ -405,6 +473,7 @@ class RetiroCreate(BaseModel):
     monto: float
     metodo_pago: str = "Efectivo"  # Efectivo | Banco
     nota: str = ""
+    operador_id: Optional[int] = None
 
 
 class RetiroPropietario(BaseModel):
@@ -422,6 +491,9 @@ class CierreCajaRequest(BaseModel):
     efectivo_contado: float  # bolivares
     divisas_contado: float = 0  # billetes en dolares, se cuentan aparte
     nota: str = ""
+    operador_id: Optional[int] = None
+    # Con dos pisos hay dos gavetas: cada una cierra la suya.
+    punto_venta_id: Optional[int] = None
 
 
 class PropinasPendientes(BaseModel):
@@ -533,6 +605,8 @@ class CierreCaja(BaseModel):
     # Un cierre mal contado no se borra: se anula y queda el rastro.
     anulado: bool = False
     motivo_anulacion: str = ""
+    operador: str = ""
+    punto_venta: str = ""
     divisas_esperado: float = 0
     divisas_contado: float = 0
     divisas_diferencia: float = 0
@@ -725,6 +799,19 @@ class BajaActivoRequest(BaseModel):
 class ActualizarActivoRequest(BaseModel):
     nombre: Optional[str] = None
     vida_util_meses: Optional[int] = Field(default=None, gt=0, le=600)
+
+
+class CerrarEjercicioRequest(BaseModel):
+    anio: int
+
+
+class ActivoExistenteCreate(BaseModel):
+    """Un bien que ya existia antes de instalar el ERP."""
+
+    nombre: str
+    valor: float
+    vida_util_meses: int = 60
+    fecha_compra: Optional[datetime.datetime] = None
 
 
 class ProblemaContable(BaseModel):

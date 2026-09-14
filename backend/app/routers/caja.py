@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from .. import contabilidad, models, schemas
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
+from . import operadores
 
 router = APIRouter(prefix="/api/caja", tags=["caja"])
 
@@ -165,19 +166,27 @@ def cerrar_caja(body: schemas.CierreCajaRequest, db: Session = Depends(get_db)):
     inicio, fin = _rango_hoy()
     # Cerrar dos veces el mismo dia ahora genera dos asientos de diferencia y
     # descuadraria la caja contra si misma.
+    quien = operadores.resolver(db, body.operador_id)
+    punto = operadores.resolver_punto(db, body.punto_venta_id)
+
+    # Cada caja cierra la suya: con dos pisos, el segundo cierre del dia no es
+    # un duplicado sino la otra gaveta. Antes devolvia 409 y la caja de arriba
+    # no podia cuadrar lo suyo.
     ya_cerrada = (
         db.query(models.CierreCaja)
         .filter(
             models.CierreCaja.fecha >= inicio,
             models.CierreCaja.fecha < fin,
             models.CierreCaja.anulado.is_(False),
+            models.CierreCaja.punto_venta_id == (punto.id if punto else None),
         )
         .first()
     )
     if ya_cerrada:
+        cual = f"La caja de {punto.nombre}" if punto else "La caja de hoy"
         raise HTTPException(
             status_code=409,
-            detail="La caja de hoy ya fue cerrada. Si el conteo quedo mal, anula ese cierre y vuelve a cerrar.",
+            detail=f"{cual} ya fue cerrada hoy. Si el conteo quedo mal, anula ese cierre y vuelve a cerrar.",
         )
 
     resumen = resumen_caja(db)
@@ -195,6 +204,8 @@ def cerrar_caja(body: schemas.CierreCajaRequest, db: Session = Depends(get_db)):
         divisas_contado=divisas_contado,
         divisas_diferencia=round(divisas_contado - divisas_esperado, 2),
         nota=body.nota,
+        operador_id=quien.id if quien else None,
+        punto_venta_id=punto.id if punto else None,
     )
     db.add(db_cierre)
     db.flush()
@@ -247,6 +258,8 @@ def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
         nota=c.nota,
         anulado=bool(c.anulado),
         motivo_anulacion=c.motivo_anulacion or "",
+        operador=c.operador,
+        punto_venta=c.punto_venta,
         divisas_esperado=round(c.divisas_esperado or 0, 2),
         divisas_contado=round(c.divisas_contado or 0, 2),
         divisas_diferencia=round(c.divisas_diferencia or 0, 2),

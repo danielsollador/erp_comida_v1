@@ -347,6 +347,71 @@ def reactivar_activo(activo_id: int, db: Session = Depends(get_db)):
     return _activo_a_schema(db, activo)
 
 
+@router.post("/cerrar-ejercicio")
+def cerrar_ejercicio(body: schemas.CerrarEjercicioRequest, db: Session = Depends(get_db)):
+    """Cierra el ano fiscal y manda el resultado a Utilidades retenidas."""
+    hoy_ = hoy()
+    if body.anio >= hoy_.year:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El {body.anio} todavia no termina: cerrarlo fijaria un resultado que aun puede cambiar.",
+        )
+    resultado = contabilidad.cerrar_ejercicio(db, body.anio)
+    if not resultado["ok"]:
+        raise HTTPException(status_code=409, detail=resultado["motivo"])
+    return resultado
+
+
+@router.get("/ejercicios-cerrados")
+def ejercicios_cerrados(db: Session = Depends(get_db)):
+    asientos = (
+        db.query(models.AsientoContable)
+        .filter(models.AsientoContable.origen == "cierre_ejercicio")
+        .order_by(models.AsientoContable.referencia_id.desc())
+        .all()
+    )
+    return [{"anio": a.referencia_id, "descripcion": a.descripcion} for a in asientos]
+
+
+@router.post("/activos", response_model=schemas.ActivoFijo)
+def registrar_activo_existente(body: schemas.ActivoExistenteCreate, db: Session = Depends(get_db)):
+    """Un bien que el negocio ya tenia antes de instalar el ERP.
+
+    Los activos solo nacian de una factura de compra, asi que el horno que el
+    dueno compro hace tres años no existia contablemente: el balance
+    subestimaba los activos y ese equipo nunca se depreciaba.
+
+    Entra contra capital, no contra caja: no se esta comprando nada hoy, se
+    esta reconociendo algo que ya estaba.
+    """
+    if body.valor <= 0:
+        raise HTTPException(status_code=400, detail="El valor debe ser mayor a cero")
+    if body.vida_util_meses <= 0:
+        raise HTTPException(status_code=400, detail="La vida util debe ser mayor a cero")
+
+    activo = models.ActivoFijo(
+        nombre=body.nombre,
+        valor=body.valor,
+        fecha_compra=body.fecha_compra or ahora(),
+        vida_util_meses=body.vida_util_meses,
+    )
+    db.add(activo)
+    db.flush()
+    contabilidad.crear_asiento(
+        db,
+        f"Alta de {activo.nombre} (bien preexistente)",
+        [("1050", activo.valor, 0.0), ("3010", 0.0, activo.valor)],
+        origen="alta_activo",
+        referencia_id=activo.id,
+        fecha=activo.fecha_compra,
+    )
+    db.commit()
+    # Desde su fecha de compra ya le tocaban cuotas: se asientan al leerlo.
+    contabilidad.asentar_depreciacion_pendiente(db)
+    db.refresh(activo)
+    return _activo_a_schema(db, activo)
+
+
 @router.get("/salud", response_model=schemas.SaludContable)
 def salud_contable(db: Session = Depends(get_db)):
     """Chequeos que SI pueden fallar.

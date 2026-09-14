@@ -2,12 +2,13 @@ import datetime
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from .. import combos, contabilidad, costeo, impuestos, models, schemas, tasas
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
+from . import operadores
 
 router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
 
@@ -266,6 +267,13 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
             detail="Para fiar hace falta el nombre del cliente: si no, no hay a quien cobrarle.",
         )
 
+    # Quien cobro y desde que caja. Sin esto, con dos tablets no habia forma de
+    # saber cuanto entro por cada gaveta ni quien atendio.
+    operador = operadores.resolver(db, body.operador_id)
+    punto = operadores.resolver_punto(db, body.punto_venta_id)
+    pedido.operador_id = operador.id if operador else None
+    pedido.punto_venta_id = punto.id if punto else None
+
     pedido.estado = "pagado"
     # El campo resumen sigue existiendo para mostrar de un vistazo como se pago.
     pedido.metodo_pago = pagos[0].metodo if len(pagos) == 1 else "Mixto"
@@ -353,6 +361,77 @@ async def devolver_pedido(
     return resultado
 
 
+@router.get("/{pedido_id}/ticket", response_model=schemas.Ticket)
+def ticket(pedido_id: int, db: Session = Depends(get_db)):
+    """Los datos del comprobante que el cliente se lleva.
+
+    No habia impresion de ninguna clase en todo el sistema: el cliente no podia
+    llevarse nada, la cocina no tenia respaldo en papel si se caia la tablet, y
+    una factura impresa -que en Venezuela puede exigirse- no tenia por donde
+    salir. El backend entrega los datos ya calculados y la pantalla los imprime
+    con el dialogo del navegador, que es lo que funciona con cualquier
+    impresora termica sin drivers ni servicios extra.
+    """
+    pedido = (
+        db.query(models.Pedido)
+        .options(joinedload(models.Pedido.items))
+        .filter(models.Pedido.id == pedido_id)
+        .first()
+    )
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    vigente = tasas.tasa_vigente(db)
+    tasa = pedido.tasa_bcv or (vigente.bcv if vigente else None)
+    base = iva = None
+    if pedido.facturado:
+        base, iva = impuestos.desglosar(
+            pedido.total, pedido.tasa_iva or impuestos.IVA_DEFAULT
+        )
+
+    return schemas.Ticket(
+        pedido_id=pedido.id,
+        numero=pedido.numero,
+        fecha=pedido.cerrado_en or pedido.creado_en,
+        estado=pedido.estado,
+        items=[
+            schemas.TicketLinea(
+                nombre=i.nombre,
+                cantidad=i.cantidad,
+                precio_unitario=round(i.precio_unitario, 2),
+                subtotal=round(i.precio_unitario * i.cantidad, 2),
+            )
+            for i in pedido.items
+        ],
+        subtotal=pedido.subtotal,
+        descuento=round(pedido.descuento or 0, 2),
+        propina=round(pedido.propina or 0, 2),
+        total=pedido.total,
+        a_cobrar=pedido.a_cobrar,
+        # Lo que el cliente de verdad paga esta en bolivares: mostrar solo
+        # dolares en el ticket obliga a sacar la cuenta a mano en el mostrador.
+        tasa_bcv=tasa,
+        total_bs=round(pedido.a_cobrar * tasa, 2) if tasa else None,
+        facturado=bool(pedido.facturado),
+        numero_factura=pedido.numero_factura,
+        base_imponible=base,
+        iva=iva,
+        pagos=[
+            schemas.Pago(
+                metodo=p.metodo,
+                monto=p.monto,
+                recibido=p.recibido,
+                vuelto_metodo=p.vuelto_metodo,
+                vuelto_monto=p.vuelto_monto or 0,
+            )
+            for p in pedido.pagos
+        ],
+        cliente=pedido.cliente or "",
+        operador=pedido.operador,
+        punto_venta=pedido.punto_venta,
+    )
+
+
 @router.post("/{pedido_id}/anular", response_model=schemas.Pedido)
 async def anular_pedido(
     pedido_id: int, body: Optional[schemas.AnularRequest] = None, db: Session = Depends(get_db)
@@ -368,6 +447,12 @@ async def anular_pedido(
         )
     if pedido.estado == "anulado":
         raise HTTPException(status_code=409, detail="Este pedido ya estaba anulado")
+
+    # Quien anulo. Es la operacion que un dueno ausente mas necesita poder
+    # revisar: anular es la via por la que se va comida sin cobrar.
+    if body is not None:
+        quien = operadores.resolver(db, body.operador_id)
+        pedido.anulado_por_id = quien.id if quien else None
 
     # Lo que pasa con los insumos depende de si la cocina alcanzo a hacerlo:
     #  - todavia no lo tocaron -> la comida no existe, el stock vuelve;

@@ -580,11 +580,13 @@ def _insights(
 
 
 @router.get("/resumen", response_model=schemas.ReporteResumen)
-def resumen(periodo: str = "dia", db: Session = Depends(get_db)):
+def resumen(
+    periodo: str = "dia", anio: int = None, mes: int = None, db: Session = Depends(get_db)
+):
     if periodo not in ("dia", "semana", "mes"):
         periodo = "dia"
 
-    inicio, fin, etiqueta = rango_periodo(periodo)
+    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
     pedidos = _pedidos_pagados(db, inicio, fin)
 
     # Las ventas brutas (lo que entro por caja) salen de los pedidos, porque es
@@ -665,7 +667,7 @@ def reporte_combos(periodo: str = "mes", db: Session = Depends(get_db)):
     if periodo not in ("dia", "semana", "mes"):
         periodo = "mes"
 
-    inicio, fin, etiqueta = rango_periodo(periodo)
+    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
     pedidos = _pedidos_pagados(db, inicio, fin)
     analisis = combos.analizar(db, pedidos)
 

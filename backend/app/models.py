@@ -5,6 +5,46 @@ from .database import Base
 from .timeutils import ahora
 
 
+class Operador(Base):
+    """Quien esta en la caja. No es seguridad, es trazabilidad.
+
+    El sistema era completamente anonimo: un pedido anulado, un precio
+    cambiado, plata retirada de la gaveta - nada tenia nombre detras. Para un
+    dueno que no esta siempre en el local ese era el hueco mas grande, y ademas
+    empeoraba todo lo demas: un cierre mal contado no solo no se podia
+    corregir, tampoco se sabia quien lo hizo.
+
+    Sin contrasenas a proposito: en un mostrador con una tablet compartida, un
+    login con clave se convierte en "todos usan el del dueno". Se elige quien
+    esta en el turno y queda registrado; el control real es que el dueno pueda
+    ver despues quien hizo que.
+    """
+
+    __tablename__ = "operadores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    rol = Column(String, default="cajero")  # cajero | dueno
+    activo = Column(Boolean, default=True)
+    # En que punto de venta esta: el local tiene dos pisos y dos gavetas.
+    punto_venta = Column(String, default="")
+
+
+class PuntoVenta(Base):
+    """Una caja fisica. El local tiene dos pisos y dos gavetas.
+
+    Con un solo `efectivo_esperado` y un solo cierre por dia, la caja del piso
+    2 no podia cuadrar ni cerrar lo suyo: si faltaba plata no habia forma de
+    saber en cual gaveta.
+    """
+
+    __tablename__ = "puntos_venta"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    activo = Column(Boolean, default=True)
+
+
 class Categoria(Base):
     __tablename__ = "categorias"
 
@@ -124,6 +164,7 @@ class Gasto(Base):
     # bajaba igual el efectivo esperado del cierre de caja.
     metodo_pago = Column(String, default="Efectivo")  # Efectivo | Banco
     fecha = Column(DateTime, default=ahora)
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
 
 
 class RetiroPropietario(Base):
@@ -142,6 +183,7 @@ class RetiroPropietario(Base):
     metodo_pago = Column(String, default="Efectivo")  # Efectivo | Banco
     nota = Column(String, default="")
     fecha = Column(DateTime, default=ahora)
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
 
 
 class DeclaracionIva(Base):
@@ -254,6 +296,7 @@ class Merma(Base):
     # el error queda documentado igual que en Compras.
     revertida = Column(Boolean, default=False)
     fecha = Column(DateTime, default=ahora)
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
 
     ingrediente = relationship("Ingrediente")
 
@@ -357,6 +400,8 @@ class CierreCaja(Base):
     efectivo_contado = Column(Float, nullable=False)
     diferencia = Column(Float, nullable=False)
     nota = Column(String, default="")
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    punto_venta_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=True)
     # Un digito de mas al contar (1000 en vez de 100) metia un sobrante
     # ficticio en los libros para siempre: no habia borrar ni volver a cerrar.
     # El cierre no se borra - se anula con su contra-asiento y queda el rastro
@@ -369,6 +414,20 @@ class CierreCaja(Base):
     divisas_esperado = Column(Float, default=0)
     divisas_contado = Column(Float, default=0)
     divisas_diferencia = Column(Float, default=0)
+    # Quien conto y que gaveta cerro. Con dos pisos son dos cierres distintos.
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    punto_venta_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=True)
+
+    operador_rel = relationship("Operador")
+    punto_venta_rel = relationship("PuntoVenta")
+
+    @property
+    def operador(self) -> str:
+        return self.operador_rel.nombre if self.operador_rel else ""
+
+    @property
+    def punto_venta(self) -> str:
+        return self.punto_venta_rel.nombre if self.punto_venta_rel else ""
 
 
 class SobranteInventario(Base):
@@ -542,8 +601,30 @@ class Pedido(Base):
     cliente = Column(String, default="")
     fiado_saldado = Column(Boolean, default=False)
     fecha_cobro_fiado = Column(DateTime, nullable=True)
+    # Quien lo cobro y desde que caja. Sin esto no habia forma de saber quien
+    # anulo un pedido ni cuanto entro por cada gaveta con dos tablets.
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    punto_venta_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=True)
+    anulado_por_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
+    operador_rel = relationship("Operador", foreign_keys=[operador_id])
+    anulado_por_rel = relationship("Operador", foreign_keys=[anulado_por_id])
+    punto_venta_rel = relationship("PuntoVenta")
+
+    # Nombres para la pantalla. Se exponen como texto para que el historico
+    # siga legible aunque despues se desactive al operador.
+    @property
+    def operador(self) -> str:
+        return self.operador_rel.nombre if self.operador_rel else ""
+
+    @property
+    def anulado_por(self) -> str:
+        return self.anulado_por_rel.nombre if self.anulado_por_rel else ""
+
+    @property
+    def punto_venta(self) -> str:
+        return self.punto_venta_rel.nombre if self.punto_venta_rel else ""
     consumos = relationship("PedidoConsumo", cascade="all, delete-orphan")
     pagos = relationship("PagoPedido", cascade="all, delete-orphan")
 

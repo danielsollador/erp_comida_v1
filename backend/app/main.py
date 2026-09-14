@@ -16,6 +16,7 @@ from .routers import (
     impuestos as impuestos_router,
     inventario,
     menu,
+    operadores,
     pedidos,
     reportes,
     respaldos,
@@ -64,6 +65,8 @@ app.add_middleware(
 )
 
 app.include_router(menu.router)
+app.include_router(operadores.router)
+app.include_router(operadores.puntos)
 app.include_router(pedidos.router)
 app.include_router(inventario.router)
 app.include_router(config.router)

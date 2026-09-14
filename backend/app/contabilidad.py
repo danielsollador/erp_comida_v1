@@ -408,6 +408,74 @@ def movimiento_efectivo(db: Session, inicio, fin, codigo: str = "1010") -> float
     return round(sum(m.debe - m.haber for m in movimientos), 2)
 
 
+def cerrar_ejercicio(db: Session, anio: int) -> dict:
+    """Cierra el ano: manda el resultado a Utilidades retenidas.
+
+    Sin esto, `utilidad_acumulada` del Balance General se calculaba como residuo
+    sobre TODA la historia: en el segundo ano mezclaba el resultado de 2025 -que
+    ya deberia estar volcado- con el de 2026 en curso, y el dueno no podia
+    responder "cuanto gane el ano pasado" ni presentar un balance de cierre.
+
+    Idempotente: si ese ano ya se cerro, no hace nada.
+    """
+    ya = (
+        db.query(models.AsientoContable)
+        .filter(
+            models.AsientoContable.origen == "cierre_ejercicio",
+            models.AsientoContable.referencia_id == anio,
+        )
+        .first()
+    )
+    if ya:
+        return {"ok": False, "motivo": f"El ejercicio {anio} ya estaba cerrado."}
+
+    inicio = datetime.datetime(anio, 1, 1)
+    fin = datetime.datetime(anio + 1, 1, 1)
+
+    lineas = []
+    resultado = 0.0
+    for cuenta in db.query(models.CuentaContable).all():
+        if cuenta.tipo not in ("ingreso", "costo", "gasto"):
+            continue
+        movimientos = (
+            db.query(models.MovimientoContable)
+            .join(models.AsientoContable)
+            .filter(
+                models.MovimientoContable.cuenta_id == cuenta.id,
+                models.AsientoContable.fecha >= inicio,
+                models.AsientoContable.fecha < fin,
+            )
+            .all()
+        )
+        neto = round(sum(m.debe - m.haber for m in movimientos), 2)
+        if abs(neto) < 0.01:
+            continue
+        # Se cierra cada cuenta contra su propio saldo: si quedo con saldo
+        # acreedor se debita, y al reves. El neto es el resultado del ano.
+        lineas.append((cuenta.codigo, -neto, 0.0) if neto < 0 else (cuenta.codigo, 0.0, neto))
+        resultado -= neto  # ingresos (haber) suman, costos/gastos (debe) restan
+
+    if not lineas:
+        return {"ok": False, "motivo": f"El ejercicio {anio} no tiene movimientos que cerrar."}
+
+    resultado = round(resultado, 2)
+    if resultado >= 0:
+        lineas.append(("3020", 0.0, resultado))
+    else:
+        lineas.append(("3020", abs(resultado), 0.0))
+
+    crear_asiento(
+        db,
+        f"Cierre del ejercicio {anio}",
+        lineas,
+        origen="cierre_ejercicio",
+        referencia_id=anio,
+        fecha=datetime.datetime(anio, 12, 31, 23, 59, 59),
+    )
+    db.commit()
+    return {"ok": True, "anio": anio, "resultado": resultado}
+
+
 def registrar_entrega_propinas(
     db: Session, monto: float, metodo_pago: str, referencia_id: int, nota: str = ""
 ) -> None:

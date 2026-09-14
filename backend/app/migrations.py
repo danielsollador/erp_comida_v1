@@ -49,6 +49,17 @@ COLUMNAS = [
     ("pagos_pedido", "recibido", "FLOAT"),
     ("pagos_pedido", "vuelto_metodo", "VARCHAR"),
     ("pagos_pedido", "vuelto_monto", "FLOAT DEFAULT 0"),
+    # Trazabilidad: quien hizo que. Nullable a proposito - todo lo cargado
+    # antes de que existieran los operadores no tiene a quien atribuirse, y
+    # inventarle un autor seria peor que dejarlo en blanco.
+    ("pedidos", "operador_id", "INTEGER"),
+    ("pedidos", "punto_venta_id", "INTEGER"),
+    ("pedidos", "anulado_por_id", "INTEGER"),
+    ("cierres_caja", "operador_id", "INTEGER"),
+    ("cierres_caja", "punto_venta_id", "INTEGER"),
+    ("retiros_propietario", "operador_id", "INTEGER"),
+    ("mermas", "operador_id", "INTEGER"),
+    ("gastos", "operador_id", "INTEGER"),
 ]
 
 

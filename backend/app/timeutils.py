@@ -37,8 +37,26 @@ def hoy() -> datetime.date:
     return datetime.datetime.now().date()
 
 
-def rango_periodo(periodo: str):
-    """Devuelve (inicio, fin_exclusivo, etiqueta) para dia | semana | mes."""
+def rango_de_mes(anio: int, mes: int):
+    """(inicio, fin_exclusivo, etiqueta) de un mes cualquiera, presente o pasado.
+
+    Sin esto los reportes solo sabian "hoy / esta semana / este mes": no habia
+    forma de ver diciembre, ni de re-emitir el Libro de Ventas de un mes ya
+    cerrado - que el SENIAT pide por periodo.
+    """
+    inicio = datetime.datetime(anio, mes, 1)
+    fin = datetime.datetime(anio + (mes // 12), (mes % 12) + 1, 1)
+    return inicio, fin, f"{MESES_ES[mes - 1]} {anio}"
+
+
+def rango_periodo(periodo: str, anio: int = None, mes: int = None):
+    """Devuelve (inicio, fin_exclusivo, etiqueta) para dia | semana | mes.
+
+    Con `anio` y `mes` devuelve ese mes concreto, aunque ya haya terminado.
+    """
+    if anio and mes:
+        return rango_de_mes(anio, mes)
+
     dia_actual = hoy()
 
     if periodo == "semana":

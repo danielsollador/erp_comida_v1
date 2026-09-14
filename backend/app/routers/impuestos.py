@@ -54,10 +54,20 @@ def _totales_iva_del_rango(db: Session, inicio, fin) -> Tuple[float, float]:
 
 
 @router.get("/libro-ventas", response_model=schemas.LibroVentas)
-def libro_ventas(periodo: str = "mes", db: Session = Depends(get_db)):
+def libro_ventas(
+    periodo: str = "mes",
+    anio: int = None,
+    mes: int = None,
+    db: Session = Depends(get_db),
+):
+    """Con `anio` y `mes` emite el libro de un periodo ya cerrado.
+
+    Es requisito fiscal poder re-emitirlo: el SENIAT lo pide por periodo y el
+    sistema solo sabia emitir el mes en curso.
+    """
     if periodo not in ("dia", "semana", "mes"):
         periodo = "mes"
-    inicio, fin, etiqueta = rango_periodo(periodo)
+    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
 
     # Una venta devuelta sale del Libro: el dueno emitio una nota de credito y
     # esa factura ya no representa una venta.
@@ -114,10 +124,15 @@ def libro_ventas(periodo: str = "mes", db: Session = Depends(get_db)):
 
 
 @router.get("/libro-compras", response_model=schemas.LibroCompras)
-def libro_compras(periodo: str = "mes", db: Session = Depends(get_db)):
+def libro_compras(
+    periodo: str = "mes",
+    anio: int = None,
+    mes: int = None,
+    db: Session = Depends(get_db),
+):
     if periodo not in ("dia", "semana", "mes"):
         periodo = "mes"
-    inicio, fin, etiqueta = rango_periodo(periodo)
+    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
 
     facturas = (
         db.query(models.FacturaCompra)
@@ -154,9 +169,11 @@ def libro_compras(periodo: str = "mes", db: Session = Depends(get_db)):
 
 
 @router.get("/resumen", response_model=schemas.ResumenIva)
-def resumen_iva(periodo: str = "mes", db: Session = Depends(get_db)):
-    ventas = libro_ventas(periodo, db)
-    compras = libro_compras(periodo, db)
+def resumen_iva(
+    periodo: str = "mes", anio: int = None, mes: int = None, db: Session = Depends(get_db)
+):
+    ventas = libro_ventas(periodo, anio, mes, db)
+    compras = libro_compras(periodo, anio, mes, db)
     return schemas.ResumenIva(
         periodo=periodo,
         etiqueta=ventas.etiqueta,
