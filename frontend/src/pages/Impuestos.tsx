@@ -285,6 +285,22 @@ function Declaraciones() {
     accion(() => api.declararIva(p.anio, p.mes))
   }
 
+  function anular(d: DeclaracionIva) {
+    // No existia borrar y re-declarar el mismo mes daba 409: una declaracion
+    // mal hecha se quedaba mal para siempre.
+    if (
+      !window.confirm(
+        `Anular la declaracion de ${d.etiqueta}?
+
+` +
+          'Se revierten sus asientos (y el del pago, si lo hubo) y el periodo vuelve a ' +
+          'quedar pendiente para declararlo bien.',
+      )
+    )
+      return
+    accion(() => api.anularDeclaracion(d.id))
+  }
+
   function pagar(d: DeclaracionIva) {
     const forma = window.confirm(
       `Pagar $${d.iva_a_pagar.toFixed(2)} de IVA de ${d.etiqueta}.\n\nAceptar = por banco · Cancelar = en efectivo`,
@@ -358,7 +374,19 @@ function Declaraciones() {
           {declaraciones.map((d) => (
             <div key={d.id} className="border border-neutral-200 rounded-xl p-3 text-sm">
               <div className="flex flex-wrap justify-between items-baseline gap-2 mb-1">
-                <span className="font-medium">{d.etiqueta}</span>
+                <span className="font-medium">
+                  {d.etiqueta}
+                  {/* Una declaracion mal hecha se quedaba mal para siempre: no
+                      existia borrar y re-declarar el mes devolvia 409. */}
+                  <button
+                    onClick={() => anular(d)}
+                    disabled={ocupado}
+                    className="ml-2 text-xs font-medium text-red-500 disabled:opacity-40"
+                    title="Revierte sus asientos y libera el periodo"
+                  >
+                    Anular
+                  </button>
+                </span>
                 {d.iva_a_pagar > 0 ? (
                   d.pagada ? (
                     <span className="text-xs text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 font-medium">

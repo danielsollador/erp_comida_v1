@@ -79,7 +79,18 @@ export default function Reportes() {
                 destacado
               />
               <Kpi titulo="Pedidos" valor={String(datos.pedidos)} />
-              <Kpi titulo="Ticket promedio" valor={`$${datos.ticket_promedio.toFixed(2)}`} />
+              {/* La mediana va al lado del promedio a proposito: un solo
+                  pedido grande (un catering) mueve el promedio a un numero que
+                  no gasta ningun cliente, y el dueno decide sobre eso. */}
+              <Kpi
+                titulo="Ticket promedio"
+                valor={`$${datos.ticket_promedio.toFixed(2)}`}
+                nota={
+                  Math.abs(datos.ticket_mediano - datos.ticket_promedio) > 0.01
+                    ? `el cliente tipico gasto $${datos.ticket_mediano.toFixed(2)}`
+                    : undefined
+                }
+              />
             </div>
 
             {datos.insights.length > 0 && (
@@ -268,11 +279,14 @@ function Kpi({
   valor,
   destacado = false,
   tono,
+  nota,
 }: {
   titulo: string
   valor: string
   destacado?: boolean
   tono?: 'bueno' | 'malo'
+  /** Aclaracion bajo el numero, cuando el numero solo puede enganar. */
+  nota?: string
 }) {
   const color = tono === 'malo' ? 'text-red-600' : tono === 'bueno' ? 'text-emerald-600' : ''
   return (
@@ -281,6 +295,7 @@ function Kpi({
       <div className={`font-bold tabular-nums ${destacado ? 'text-2xl' : 'text-xl'} ${color}`}>
         {valor}
       </div>
+      {nota && <div className="mt-0.5 text-[11px] leading-snug text-amber-700">{nota}</div>}
     </div>
   )
 }

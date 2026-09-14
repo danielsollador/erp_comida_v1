@@ -3,6 +3,8 @@ import NavBar from '../components/NavBar'
 import { api } from '../lib/api'
 import type {
   EstadoRespaldos,
+  Operador,
+  PuntoVenta,
   PrevisualizacionRestauracion,
   Respaldo,
   Restauracion,
@@ -18,6 +20,8 @@ export default function Sistema() {
   const [candidato, setCandidato] = useState<Candidato | null>(null)
   const [restaurando, setRestaurando] = useState(false)
   const [hecho, setHecho] = useState<Restauracion | null>(null)
+  const [operadores, setOperadores] = useState<Operador[]>([])
+  const [puntos, setPuntos] = useState<PuntoVenta[]>([])
   const [error, setError] = useState('')
   const archivoRef = useRef<HTMLInputElement>(null)
 
@@ -28,6 +32,46 @@ export default function Sistema() {
   function cargar() {
     api.listarRespaldos().then(setRespaldos).catch(() => {})
     api.estadoRespaldos().then(setEstado).catch(() => {})
+    api.listarOperadores().then(setOperadores).catch(() => {})
+    api.listarPuntosVenta().then(setPuntos).catch(() => {})
+  }
+
+  async function agregarOperador() {
+    const nombre = window.prompt('Nombre de quien atiende la caja')
+    if (!nombre?.trim()) return
+    setError('')
+    try {
+      await api.crearOperador(nombre.trim())
+      cargar()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function quitarOperador(o: Operador) {
+    if (!window.confirm(`Quitar a ${o.nombre}?
+
+Sus pedidos y cierres siguen registrados a su nombre.`))
+      return
+    setError('')
+    try {
+      await api.desactivarOperador(o.id)
+      cargar()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function agregarPunto() {
+    const nombre = window.prompt('Nombre de la caja (ej. Piso 2)')
+    if (!nombre?.trim()) return
+    setError('')
+    try {
+      await api.crearPuntoVenta(nombre.trim())
+      cargar()
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
 
   async function crearAhora() {
@@ -129,6 +173,60 @@ export default function Sistema() {
             {error}
           </div>
         )}
+
+        {/* Quien atiende la caja. No es seguridad -no hay contrasenas- sino
+            trazabilidad: antes el sistema era completamente anonimo y un
+            pedido anulado o una gaveta mal contada no tenian nombre detras. */}
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-semibold">Quien atiende</h2>
+            <button onClick={agregarOperador} className="text-sm font-medium text-blue-600">
+              + Agregar
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 mt-1">
+            Se elige el turno una vez en el POS y queda registrado en cada pedido, anulacion,
+            retiro y cierre de caja.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {operadores.map((o) => (
+              <span
+                key={o.id}
+                className="flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1 text-sm"
+              >
+                {o.nombre}
+                <button onClick={() => quitarOperador(o)} className="text-red-400 text-xs">
+                  x
+                </button>
+              </span>
+            ))}
+            {operadores.length === 0 && (
+              <span className="text-sm text-neutral-400">
+                Nadie cargado todavia: los pedidos quedan sin nombre.
+              </span>
+            )}
+          </div>
+
+          <div className="mt-4 flex items-baseline justify-between">
+            <h3 className="font-medium text-sm">Cajas</h3>
+            <button onClick={agregarPunto} className="text-sm font-medium text-blue-600">
+              + Agregar
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 mt-1">
+            Si el local tiene dos pisos, cada caja cuenta y cierra su propia gaveta.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {puntos.map((pv) => (
+              <span key={pv.id} className="rounded-full bg-neutral-100 px-3 py-1 text-sm">
+                {pv.nombre}
+              </span>
+            ))}
+            {puntos.length === 0 && (
+              <span className="text-sm text-neutral-400">Una sola caja.</span>
+            )}
+          </div>
+        </div>
 
         <div
           className={`rounded-2xl border p-4 ${
@@ -275,7 +373,7 @@ export default function Sistema() {
                 <>
                   <p className="font-medium text-amber-900">
                     Vas a perder {candidato.previo.pedidos_que_se_pierden} pedido(s) por $
-                    {candidato.previo.monto_que_se_pierde.toFixed(2)}.
+                    {(candidato.previo.monto_que_se_pierde ?? 0).toFixed(2)}.
                   </p>
                   <p className="text-amber-800 mt-1">
                     Es todo lo cobrado despues de{' '}

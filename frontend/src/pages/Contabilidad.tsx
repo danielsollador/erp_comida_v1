@@ -662,6 +662,61 @@ function Activos() {
     accion(() => api.actualizarActivo(a.id, { vida_util_meses: meses }))
   }
 
+  function reactivar(a: ActivoFijo) {
+    // Marcar el equipo equivocado lo sacaba de los libros para siempre: el
+    // PUT devolvia 409 y no habia otra via.
+    if (
+      !window.confirm(
+        `Devolver ${a.nombre} a los libros?\n\n` +
+          'Vuelve con su valor y su depreciacion acumulada tal como estaban, no como equipo nuevo.',
+      )
+    )
+      return
+    accion(() => api.reactivarActivo(a.id))
+  }
+
+  function altaExistente() {
+    // Los activos solo nacian de una factura de compra: el horno que el dueno
+    // tenia desde antes de instalar el ERP no existia contablemente, asi que
+    // el balance subestimaba los activos y ese equipo nunca se depreciaba.
+    const nombre = window.prompt('Que equipo ya tenias antes de usar el sistema?')
+    if (!nombre) return
+    const valorTxt = window.prompt(`Cuanto vale ${nombre} hoy, aproximadamente?`)
+    if (!valorTxt) return
+    const valor = Number(valorTxt)
+    if (!Number.isFinite(valor) || valor <= 0) return
+    const meses = Number(window.prompt('En cuantos meses se gasta? (60 = cinco años)', '60')) || 60
+    const fecha = window.prompt('Cuando lo compraste? (AAAA-MM-DD, aproximado)') || ''
+    accion(() =>
+      api.registrarActivoExistente({
+        nombre,
+        valor,
+        vida_util_meses: meses,
+        fecha_compra: fecha ? `${fecha}T00:00:00` : undefined,
+      }),
+    )
+  }
+
+  async function cerrarAnio() {
+    const anio = new Date().getFullYear() - 1
+    if (
+      !window.confirm(
+        `Cerrar el ejercicio ${anio}?\n\n` +
+          'Su resultado pasa a Utilidades retenidas y las cuentas de ingresos, costos y ' +
+          'gastos de ese año quedan en cero. Sin esto, la utilidad acumulada del balance ' +
+          'mezcla todos los años en un solo numero.',
+      )
+    )
+      return
+    try {
+      const r = await api.cerrarEjercicio(anio)
+      window.alert(`Ejercicio ${r.anio} cerrado. Resultado del año: $${r.resultado.toFixed(2)}`)
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cerrar el ejercicio')
+    }
+  }
+
   function darDeBaja(a: ActivoFijo) {
     const motivo = window.prompt(
       `Dar de baja ${a.nombre}?\n\nLe quedan $${a.valor_en_libros.toFixed(2)} sin depreciar, ` +
@@ -684,7 +739,23 @@ function Activos() {
 
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
         <div className="flex flex-wrap justify-between gap-3 mb-1">
-          <h2 className="font-semibold">Equipos y mobiliario</h2>
+          <h2 className="font-semibold">
+            Equipos y mobiliario
+            <button
+              onClick={altaExistente}
+              className="ml-3 text-sm font-medium text-blue-600"
+              title="Un equipo que ya tenias antes de instalar el sistema"
+            >
+              + ya lo tenia
+            </button>
+            <button
+              onClick={cerrarAnio}
+              className="ml-3 text-sm font-medium text-neutral-500"
+              title="Manda el resultado del año pasado a Utilidades retenidas"
+            >
+              Cerrar ejercicio
+            </button>
+          </h2>
           <span className="text-sm text-neutral-500">
             valen hoy{' '}
             <span className="font-semibold text-neutral-800 tabular-nums">
@@ -727,6 +798,14 @@ function Activos() {
                 <div className="flex flex-wrap justify-between items-baseline gap-2 mb-2">
                   <span className="font-medium">
                     {a.nombre}
+                    {a.dado_de_baja && (
+                      <button
+                        onClick={() => reactivar(a)}
+                        className="ml-2 text-xs font-medium text-blue-600"
+                      >
+                        Fue un error, devolverlo
+                      </button>
+                    )}
                     {a.dado_de_baja && (
                       <span className="ml-2 text-xs text-neutral-500">
                         dado de baja{a.motivo_baja ? `: ${a.motivo_baja}` : ''}

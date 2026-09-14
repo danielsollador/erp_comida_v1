@@ -23,9 +23,24 @@ export type Categoria = {
   productos: Producto[]
 }
 
+export type Operador = {
+  id: number
+  nombre: string
+  rol: string
+  punto_venta: string
+  activo: boolean
+}
+
+export type PuntoVenta = {
+  id: number
+  nombre: string
+  activo: boolean
+}
+
 export type PedidoItem = {
   id: number
-  variante_id: number
+  /** null = venta libre, no esta en el menu. */
+  variante_id: number | null
   nombre: string
   precio_unitario: number
   cantidad: number
@@ -79,6 +94,8 @@ export type ImpactoDeCompra = {
   costo_pagado: number
   salto_pct: number | null
   revisar_precios: boolean
+  /** Aviso cuando el salto parece error de unidad (un saco tecleado como 1). */
+  posible_error_de_unidad: string | null
   productos: ImpactoEnProducto[]
 }
 
@@ -168,6 +185,8 @@ export type ReporteResumen = {
   ingresos_netos: number
   pedidos: number
   ticket_promedio: number
+  /** Lo que gasta el cliente del medio: el promedio lo mueve un solo pedido. */
+  ticket_mediano: number
   costo_insumos: number
   ganancia_bruta: number
   margen_pct: number
@@ -247,9 +266,117 @@ export type Pedido = {
   /** El cliente trajo la comida de vuelta: la venta se revirtio entera. */
   devuelto: boolean
   nota_credito: string | null
+  /** Precio de lista antes de rebajas; `total` ya viene con el descuento. */
+  subtotal: number
+  descuento: number
+  motivo_descuento: string
+  /** Plata del empleado: no suma a la venta ni al IVA. */
+  propina: number
+  /** `total` + propina: lo que de verdad se recibe. */
+  a_cobrar: number
+  cliente: string
+  fiado_saldado: boolean
+  operador: string
+  punto_venta: string
+  anulado_por: string
   /** Un pedido puede pagarse con varias formas a la vez. */
-  pagos: { metodo: string; monto: number }[]
+  pagos: {
+    metodo: string
+    monto: number
+    recibido: number | null
+    vuelto_metodo: string | null
+    vuelto_monto: number
+  }[]
   items: PedidoItem[]
+}
+
+export type Gaveta = {
+  codigo: string
+  etiqueta: string
+  saldo_anterior: number
+  entradas_hoy: number
+  salidas_hoy: number
+  esperado: number
+}
+
+export type CuentaPorCobrar = {
+  pedido_id: number
+  numero: number
+  cliente: string
+  monto: number
+  fecha: string
+  dias: number
+}
+
+export type TicketLinea = {
+  nombre: string
+  cantidad: number
+  precio_unitario: number
+  subtotal: number
+}
+
+export type Ticket = {
+  pedido_id: number
+  numero: number
+  fecha: string
+  estado: string
+  items: TicketLinea[]
+  subtotal: number
+  descuento: number
+  propina: number
+  total: number
+  a_cobrar: number
+  tasa_bcv: number | null
+  total_bs: number | null
+  facturado: boolean
+  numero_factura: string | null
+  base_imponible: number | null
+  iva: number | null
+  pagos: { metodo: string; monto: number; recibido: number | null; vuelto_monto: number }[]
+  cliente: string
+  operador: string
+  punto_venta: string
+}
+
+export type CambioReceta = {
+  id: number
+  variante_id: number
+  composicion: string
+  costo_resultante: number
+  fecha: string
+}
+
+export type SobranteInventario = {
+  id: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  cantidad: number
+  valor: number
+  motivo: string
+  fecha: string
+  revertido: boolean
+}
+
+export type NotaCreditoCompra = {
+  id: number
+  factura_id: number
+  numero: string
+  tipo: 'devolucion' | 'descuento'
+  fecha: string
+  base_imponible: number
+  iva: number
+  total: number
+  motivo: string
+  items: {
+    id: number
+    ingrediente_id: number
+    ingrediente_nombre: string
+    unidad: string
+    cantidad: number
+    costo_unitario: number
+    subtotal: number
+  }[]
 }
 
 export type CuentaContable = {
@@ -378,6 +505,13 @@ export type ResumenCaja = {
   /** Parte de salidas_efectivo que se llevo el dueno (no es gasto del negocio). */
   retiros_hoy: number
   cantidad_pedidos: number
+  /** Bolivares y divisas son dos montones de billetes: dos conteos. */
+  gavetas: Gaveta[]
+  /** Plata en la gaveta que no es del negocio. */
+  propinas_por_entregar: number
+  fiado_por_cobrar: number
+  propinas_hoy: number
+  descuentos_hoy: number
 }
 
 export type RetiroPropietario = {
@@ -396,6 +530,14 @@ export type CierreCaja = {
   efectivo_contado: number
   diferencia: number
   nota: string
+  /** Un cierre mal contado no se borra: se anula y queda el rastro. */
+  anulado: boolean
+  motivo_anulacion: string
+  operador: string
+  punto_venta: string
+  divisas_esperado: number
+  divisas_contado: number
+  divisas_diferencia: number
 }
 
 export type EstadoTasa = {

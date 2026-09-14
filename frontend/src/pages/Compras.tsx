@@ -172,6 +172,63 @@ export default function Compras() {
     }
   }
 
+  async function notaCredito(f: FacturaCompra) {
+    // El espejo de la devolucion de venta. Sin esto, el unico camino era un
+    // ajuste de inventario, que registra la diferencia como MERMA: una perdida
+    // que no ocurrio, credito fiscal de mas en el Libro de Compras y una deuda
+    // inflada con el proveedor.
+    const tipo = window.confirm(
+      `Nota de credito de ${f.proveedor_nombre} sobre la factura ${f.numero_factura}.\n\n` +
+        'Aceptar = DEVOLUCION (la mercancia vuelve al proveedor)\n' +
+        'Cancelar = DESCUENTO (te quedas la mercancia y te rebajan el precio)',
+    )
+      ? 'devolucion'
+      : 'descuento'
+
+    const numero = window.prompt('Numero de la nota de credito que emitio el proveedor')
+    if (!numero) return
+    const motivo = window.prompt('Motivo (mando menos, llego dañado, descuento...)') ?? ''
+
+    if (tipo === 'descuento') {
+      const montoTxt = window.prompt('Cuanto te acreditaron, sin IVA?')
+      if (!montoTxt) return
+      const base = Number(montoTxt)
+      if (!Number.isFinite(base) || base <= 0) return
+      await accionFactura(() =>
+        api.crearNotaCredito(f.id, { numero, tipo, motivo, base_imponible: base }),
+      )
+      return
+    }
+
+    // Devolucion: hay que decir de que insumos y cuanto vuelve de cada uno.
+    const items: { ingrediente_id: number; cantidad: number }[] = []
+    for (const it of f.items) {
+      const txt = window.prompt(
+        `Cuanto vuelve de ${it.ingrediente_nombre}? (la factura trae ${it.cantidad} ${it.unidad})`,
+        '0',
+      )
+      if (txt === null) return
+      const cantidad = Number(txt)
+      if (Number.isFinite(cantidad) && cantidad > 0) {
+        items.push({ ingrediente_id: it.ingrediente_id, cantidad })
+      }
+    }
+    if (items.length === 0) {
+      window.alert('No se indico ninguna cantidad a devolver.')
+      return
+    }
+    await accionFactura(() => api.crearNotaCredito(f.id, { numero, tipo, motivo, items }))
+  }
+
+  async function accionFactura(fn: () => Promise<unknown>) {
+    try {
+      await fn()
+      cargar()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'No se pudo registrar la nota de credito')
+    }
+  }
+
   async function borrar(f: FacturaCompra) {
     const aviso =
       f.items.length > 0
@@ -494,7 +551,16 @@ export default function Compras() {
                   </td>
                   <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
                   <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
-                  <td className="text-right p-3 tabular-nums font-semibold">{f.total.toFixed(2)}</td>
+                  <td className="text-right p-3 tabular-nums font-semibold">
+                    {f.total.toFixed(2)}
+                    <button
+                      onClick={() => notaCredito(f)}
+                      className="block w-full text-right text-[11px] font-medium text-blue-600"
+                      title="El proveedor mando menos, o te dio un descuento"
+                    >
+                      Nota de credito
+                    </button>
+                  </td>
                   <td className="p-3">
                     {f.forma_pago === 'Credito' ? (
                       <span

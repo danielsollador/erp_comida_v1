@@ -7,6 +7,7 @@ import type {
   InflacionInsumos,
   Ingrediente,
   Merma,
+  SobranteInventario,
   SugerenciaCompra,
 } from '../lib/types'
 
@@ -14,6 +15,7 @@ export default function Inventario() {
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [sugerencias, setSugerencias] = useState<SugerenciaCompra[]>([])
   const [mermas, setMermas] = useState<Merma[]>([])
+  const [sobrantes, setSobrantes] = useState<SobranteInventario[]>([])
   const [inflacion, setInflacion] = useState<InflacionInsumos | null>(null)
   // Lo que hay que ponerle delante al dueno cuando un insumo pega un salto.
   const [impacto, setImpacto] = useState<ImpactoDeCompra | null>(null)
@@ -30,6 +32,7 @@ export default function Inventario() {
     api.listarIngredientes().then(setIngredientes)
     api.sugerenciasCompra().then(setSugerencias)
     api.listarMermas().then(setMermas)
+    api.listarSobrantes().then(setSobrantes).catch(() => {})
     api.inflacionInsumos().then(setInflacion).catch(() => setInflacion(null))
   }
 
@@ -84,6 +87,26 @@ export default function Inventario() {
       // en pantalla y el nuevo en la realidad.
       if (resultado.revisar_precios) setImpacto(resultado)
     })
+  }
+
+  async function revertirSobrante(sb: SobranteInventario) {
+    const texto =
+      `Revertir este conteo? Salen ${sb.cantidad.toFixed(3)} ${sb.unidad} de ` +
+      `${sb.ingrediente_nombre} que habian entrado por un conteo hacia arriba.\n\n` +
+      'El sobrante no se borra: queda marcado como revertido con su contra-asiento.'
+    if (!window.confirm(texto)) return
+    accion(() => api.revertirSobrante(sb.id))
+  }
+
+  function consumoPersonal(ing: Ingrediente) {
+    // No es merma: una merma es plata perdida y sirve para detectar
+    // desperdicio o robo. Esto es un costo laboral autorizado.
+    const texto = window.prompt(`Cuanto de ${ing.nombre} se consumio el personal? (${ing.unidad})`)
+    if (!texto) return
+    const cantidad = Number(texto)
+    if (!Number.isFinite(cantidad) || cantidad <= 0) return
+    const motivo = window.prompt('Para quien / que turno?') ?? ''
+    accion(() => api.consumoPersonal(ing.id, cantidad, motivo))
   }
 
   function merma(ing: Ingrediente) {
@@ -289,6 +312,13 @@ export default function Inventario() {
                       <button onClick={() => merma(ing)} className="text-red-500 font-medium">
                         Merma
                       </button>
+                      <button
+                        onClick={() => consumoPersonal(ing)}
+                        className="text-violet-600 font-medium"
+                        title="Se lo comio el personal: costo laboral, no perdida"
+                      >
+                        Personal
+                      </button>
                       <button onClick={() => ajustar(ing)} className="text-neutral-500 font-medium">
                         Contar
                       </button>
@@ -352,9 +382,47 @@ export default function Inventario() {
           </div>
         </div>
 
+        {/* El faltante siempre tuvo vuelta atras (queda como merma); el
+            sobrante no, aunque es el mismo dedo en el mismo formulario. */}
+        {sobrantes.length > 0 && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+            <h2 className="font-semibold mb-1">Conteos que sumaron stock</h2>
+            <p className="text-xs text-neutral-500 mb-3">
+              Entraron al inventario por un conteo fisico hacia arriba. Si fue un error de
+              tecleo, se puede revertir.
+            </p>
+            <div className="space-y-2 text-sm">
+              {sobrantes.map((sb) => (
+                <div key={sb.id} className="flex items-center justify-between gap-2">
+                  <span className={sb.revertido ? 'text-neutral-400 line-through' : ''}>
+                    {sb.ingrediente_nombre}
+                    <span className="ml-1 text-xs text-neutral-400">
+                      +{sb.cantidad.toFixed(3)} {sb.unidad} ·{' '}
+                      {new Date(sb.fecha).toLocaleDateString('es-VE')}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="tabular-nums">${sb.valor.toFixed(2)}</span>
+                    {!sb.revertido && (
+                      <button
+                        onClick={() => revertirSobrante(sb)}
+                        className="text-xs font-medium text-blue-600"
+                      >
+                        Revertir
+                      </button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <p className="text-xs text-neutral-500">
           <span className="font-semibold">Compra:</span> entra mercancia.{' '}
           <span className="font-semibold">Merma:</span> se daño o se boto.{' '}
+          <span className="font-semibold">Personal:</span> se lo comio un empleado (es costo
+          laboral, no perdida: no ensucia el indicador de merma).{' '}
           <span className="font-semibold">Contar:</span> ajusta el sistema a lo que hay de verdad.
           <br />
           <span className="font-semibold">Costo compra:</span> lo que pagas por 1 unidad.{' '}
@@ -381,6 +449,13 @@ export default function Inventario() {
               Pagaste ${impacto.costo_pagado.toFixed(2)} por {impacto.ingrediente.unidad}; la
               compra anterior fue a ${impacto.costo_anterior.toFixed(2)}.
             </p>
+            {/* Un salto de 200% o mas casi nunca es inflacion: es un saco
+                tecleado como 1, y deja el costo 50x inflado. */}
+            {impacto.posible_error_de_unidad && (
+              <div className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                <b>Revisa la cantidad.</b> {impacto.posible_error_de_unidad}
+              </div>
+            )}
             <p className="text-xs text-neutral-500 mt-2">
               El costo promedio quedo en ${impacto.ingrediente.costo_unitario.toFixed(2)} porque
               mezcla lo que ya tenias. Los margenes de abajo son los de verdad: los que te quedan

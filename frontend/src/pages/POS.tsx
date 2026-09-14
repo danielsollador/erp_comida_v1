@@ -3,11 +3,23 @@ import NavBar from '../components/NavBar'
 import { api, connectWs } from '../lib/api'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { colorCategoria } from '../lib/theme'
-import type { Categoria, Pedido, Producto, Sugerencia, Variante } from '../lib/types'
+import type {
+  Categoria,
+  Operador,
+  Pedido,
+  Producto,
+  PuntoVenta,
+  Sugerencia,
+  Variante,
+} from '../lib/types'
 
 // Las mismas que reconoce la contabilidad; cualquier otra cosa la rechaza el
-// backend en vez de mandarla a Caja por defecto.
-const METODOS_PAGO = ['Efectivo', 'Pago movil', 'Tarjeta', 'Transferencia']
+// backend en vez de mandarla a Caja por defecto. Bolivares y divisas van
+// separados porque son dos gavetas fisicas distintas y se cuentan aparte.
+const METODOS_PAGO = ['Efectivo Bs', 'Efectivo $', 'Pago movil', 'Tarjeta', 'Transferencia']
+const METODOS_EFECTIVO = ['Efectivo Bs', 'Efectivo $']
+const CLAVE_OPERADOR = 'erp-operador'
+const CLAVE_PUNTO = 'erp-punto-venta'
 
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
 type Carrito = Record<number, CarritoEntry>
@@ -25,9 +37,36 @@ export default function POS() {
   const [facturar, setFacturar] = useState(false)
   const [numeroFactura, setNumeroFactura] = useState('')
   const [sugerencias, setSugerencias] = useState<Sugerencia[]>([])
+  // Lo que cambia cuanta plata entra: rebaja al cliente y propina del mesonero.
+  const [descuento, setDescuento] = useState('')
+  const [motivoDescuento, setMotivoDescuento] = useState('')
+  const [propina, setPropina] = useState('')
+  const [cliente, setCliente] = useState('')
+  // Con un billete grande, entra mas de lo que cuesta y sale el vuelto.
+  const [recibido, setRecibido] = useState('')
+  const [vueltoEn, setVueltoEn] = useState('')
+  // Quien esta en la caja y en cual. Se recuerda en la tablet: se elige una vez
+  // por turno, no en cada venta.
+  const [operadores, setOperadores] = useState<Operador[]>([])
+  const [puntos, setPuntos] = useState<PuntoVenta[]>([])
+  const [operadorId, setOperadorId] = useState<number | null>(() => {
+    const v = localStorage.getItem(CLAVE_OPERADOR)
+    return v ? Number(v) : null
+  })
+  const [puntoId, setPuntoId] = useState<number | null>(() => {
+    const v = localStorage.getItem(CLAVE_PUNTO)
+    return v ? Number(v) : null
+  })
   const [error, setError] = useState('')
+  const [ultimaVenta, setUltimaVenta] = useState<Pedido | null>(null)
   const { tasa, fmt } = useMoneda()
   const tasaBcv = tasa?.bcv ?? 0
+
+  // Lo que de verdad se recibe: la comida menos el descuento, mas la propina.
+  const subtotalCobro = cobrando?.total ?? 0
+  const descuentoNum = Math.min(Number(descuento) || 0, subtotalCobro)
+  const aCobrar = Math.round((subtotalCobro - descuentoNum + (Number(propina) || 0)) * 100) / 100
+  const vuelto = Math.max(Math.round(((Number(recibido) || 0) - aCobrar) * 100) / 100, 0)
 
   useEffect(() => {
     // Solo lo que esta en el menu hoy: una categoria retirada conserva sus
@@ -38,6 +77,8 @@ export default function POS() {
       if (cats.length > 0) setCategoriaActiva(cats[0].id)
     })
     refrescarPedidos()
+    api.listarOperadores().then(setOperadores).catch(() => {})
+    api.listarPuntosVenta().then(setPuntos).catch(() => {})
     const disconnect = connectWs(() => refrescarPedidos())
     return disconnect
   }, [])
@@ -177,16 +218,37 @@ export default function POS() {
     }
   }
 
-  async function cobrar(metodo: string, pagos?: { metodo: string; monto: number }[]) {
+  function limpiarCobro() {
+    setCobrando(null)
+    setFacturar(false)
+    setNumeroFactura('')
+    setPagoMixto(false)
+    setMontoParcial('')
+    setDescuento('')
+    setMotivoDescuento('')
+    setPropina('')
+    setCliente('')
+    setRecibido('')
+    setVueltoEn('')
+  }
+
+  async function cobrar(
+    metodo: string,
+    pagos?: { metodo: string; monto: number; recibido?: number; vuelto_metodo?: string }[],
+  ) {
     if (!cobrando) return
     setError('')
     try {
-      await api.cobrarPedido(cobrando.id, metodo, facturar, numeroFactura, pagos)
-      setCobrando(null)
-      setFacturar(false)
-      setNumeroFactura('')
-      setPagoMixto(false)
-      setMontoParcial('')
+      const cobrado = await api.cobrarPedido(cobrando.id, metodo, facturar, numeroFactura, pagos, {
+        descuento: Number(descuento) || 0,
+        motivo_descuento: motivoDescuento,
+        propina: Number(propina) || 0,
+        cliente,
+        operador_id: operadorId,
+        punto_venta_id: puntoId,
+      })
+      limpiarCobro()
+      setUltimaVenta(cobrado)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cobrar')
       setCobrando(null)
@@ -194,18 +256,100 @@ export default function POS() {
     refrescarPedidos()
   }
 
-  const confirmarCobro = (metodo: string) => cobrar(metodo)
+  function confirmarCobro(metodo: string) {
+    // Si el cajero anoto con cuanto le pagaron, se manda: sin eso la gaveta no
+    // cuadra cuando hubo vuelto, y menos si el vuelto salio en otra moneda.
+    const entregado = Number(recibido) || 0
+    if (entregado > aCobrar + 0.001) {
+      cobrar(metodo, [
+        {
+          metodo,
+          monto: aCobrar,
+          recibido: entregado,
+          vuelto_metodo: vueltoEn || metodo,
+        },
+      ])
+      return
+    }
+    cobrar(metodo)
+  }
 
   // El resto del total va al segundo metodo, calculado acá para que los dos
   // pagos sumen exacto y el backend no lo rechace por centavos.
   function confirmarCobroMixto(segundoMetodo: string) {
     if (!cobrando) return
     const primero = Number(montoParcial)
-    const resto = Math.round((cobrando.total - primero) * 100) / 100
+    const resto = Math.round((aCobrar - primero) * 100) / 100
     cobrar('Mixto', [
       { metodo: metodoParcial, monto: primero },
       { metodo: segundoMetodo, monto: resto },
     ])
+  }
+
+  function elegirOperador(id: number | null) {
+    setOperadorId(id)
+    if (id) localStorage.setItem(CLAVE_OPERADOR, String(id))
+    else localStorage.removeItem(CLAVE_OPERADOR)
+  }
+
+  function elegirPunto(id: number | null) {
+    setPuntoId(id)
+    if (id) localStorage.setItem(CLAVE_PUNTO, String(id))
+    else localStorage.removeItem(CLAVE_PUNTO)
+  }
+
+  async function imprimirTicket(pedidoId: number) {
+    try {
+      const t = await api.ticket(pedidoId)
+      const ventana = window.open('', '_blank', 'width=320,height=600')
+      if (!ventana) return
+      const linea = (izq: string, der: string) =>
+        `<div class="l"><span>${izq}</span><span>${der}</span></div>`
+      ventana.document.write(`
+        <html><head><title>Ticket ${t.numero}</title><style>
+          body{font-family:ui-monospace,monospace;font-size:12px;width:280px;margin:0;padding:8px}
+          h1{font-size:14px;text-align:center;margin:0 0 2px}
+          .c{text-align:center}.l{display:flex;justify-content:space-between}
+          hr{border:none;border-top:1px dashed #000;margin:6px 0}
+          .tot{font-size:15px;font-weight:bold}
+          @media print{body{width:auto}}
+        </style></head><body>
+        <h1>Pedido #${t.numero}</h1>
+        <div class="c">${new Date(t.fecha).toLocaleString('es-VE')}</div>
+        ${t.operador ? `<div class="c">Le atendio: ${t.operador}</div>` : ''}
+        ${t.punto_venta ? `<div class="c">${t.punto_venta}</div>` : ''}
+        <hr>
+        ${t.items
+          .map((i) => linea(`${i.cantidad} x ${i.nombre}`, `$${i.subtotal.toFixed(2)}`))
+          .join('')}
+        <hr>
+        ${t.descuento ? linea('Subtotal', `$${t.subtotal.toFixed(2)}`) : ''}
+        ${t.descuento ? linea('Descuento', `-$${t.descuento.toFixed(2)}`) : ''}
+        ${t.propina ? linea('Propina', `$${t.propina.toFixed(2)}`) : ''}
+        <div class="l tot"><span>TOTAL</span><span>$${t.a_cobrar.toFixed(2)}</span></div>
+        ${t.total_bs ? linea('En bolivares', fmtBs(t.total_bs)) : ''}
+        ${t.tasa_bcv ? `<div class="c" style="font-size:10px">tasa ${t.tasa_bcv}</div>` : ''}
+        ${t.facturado && t.base_imponible != null ? '<hr>' : ''}
+        ${t.facturado && t.base_imponible != null ? linea('Base imponible', `$${t.base_imponible.toFixed(2)}`) : ''}
+        ${t.facturado && t.iva != null ? linea('IVA', `$${t.iva.toFixed(2)}`) : ''}
+        ${t.numero_factura ? `<div class="c">Factura ${t.numero_factura}</div>` : ''}
+        <hr>
+        ${t.pagos
+          .map(
+            (p) =>
+              linea(p.metodo, `$${p.monto.toFixed(2)}`) +
+              (p.vuelto_monto ? linea('Vuelto', `$${p.vuelto_monto.toFixed(2)}`) : ''),
+          )
+          .join('')}
+        ${t.cliente ? `<div class="c">Cliente: ${t.cliente}</div>` : ''}
+        <hr><div class="c">Gracias por su compra</div>
+        </body></html>`)
+      ventana.document.close()
+      ventana.focus()
+      ventana.print()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo generar el ticket')
+    }
   }
 
   async function anular(pedido: Pedido) {
@@ -219,7 +363,7 @@ export default function POS() {
     if (!window.confirm(texto)) return
     setError('')
     try {
-      await api.anularPedido(pedido.id, yaHecha)
+      await api.anularPedido(pedido.id, yaHecha, operadorId)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo anular')
     }
@@ -338,6 +482,52 @@ export default function POS() {
           {/* A mano por si el cliente vuelve con la comida. Devolver una venta
               cobrada revierte el ingreso y el IVA; anular es solo para las que
               nunca se cobraron. */}
+          {/* Quien esta en la caja y en cual. Se elige una vez por turno y la
+              tablet lo recuerda: antes el sistema era completamente anonimo y
+              no habia forma de saber quien anulo un pedido o conto la gaveta. */}
+          {(operadores.length > 0 || puntos.length > 0) && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 mb-3">
+              {operadores.length > 0 && (
+                <label className="flex items-center gap-1">
+                  Turno de
+                  <select
+                    value={operadorId ?? ''}
+                    onChange={(e) => elegirOperador(e.target.value ? Number(e.target.value) : null)}
+                    className={`rounded-lg border px-2 py-1 ${
+                      operadorId
+                        ? 'border-neutral-300 text-neutral-900'
+                        : 'border-amber-300 bg-amber-50 text-amber-800'
+                    }`}
+                  >
+                    <option value="">sin elegir</option>
+                    {operadores.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {puntos.length > 0 && (
+                <label className="flex items-center gap-1">
+                  Caja
+                  <select
+                    value={puntoId ?? ''}
+                    onChange={(e) => elegirPunto(e.target.value ? Number(e.target.value) : null)}
+                    className="rounded-lg border border-neutral-300 px-2 py-1 text-neutral-900"
+                  >
+                    <option value="">principal</option>
+                    {puntos.map((pv) => (
+                      <option key={pv.id} value={pv.id}>
+                        {pv.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
+
           {ventasRecientes.length > 0 && (
             <div className="mt-6">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">
@@ -465,14 +655,40 @@ export default function POS() {
         </div>
       </div>
 
+      {/* El comprobante del cliente. No habia impresion de ninguna clase en
+          todo el sistema. */}
+      {ultimaVenta && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl bg-neutral-900 px-4 py-3 text-white shadow-xl">
+          <span className="text-sm">
+            Cobrado #{ultimaVenta.numero} - ${ultimaVenta.a_cobrar.toFixed(2)}
+          </span>
+          <button
+            onClick={() => imprimirTicket(ultimaVenta.id)}
+            className="rounded-lg bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25"
+          >
+            Imprimir ticket
+          </button>
+          <button onClick={() => setUltimaVenta(null)} className="text-white/60 text-sm">
+            x
+          </button>
+        </div>
+      )}
+
       {cobrando && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-30">
           <div className="bg-white rounded-3xl p-6 w-80 shadow-xl">
             <h3 className="font-semibold mb-1">Cobrar pedido #{cobrando.numero}</h3>
-            <p className="text-3xl font-bold">${cobrando.total.toFixed(2)}</p>
+            <p className="text-3xl font-bold">${aCobrar.toFixed(2)}</p>
+            {(descuentoNum > 0 || Number(propina) > 0) && (
+              <p className="text-xs text-neutral-500">
+                ${cobrando.total.toFixed(2)} de comida
+                {descuentoNum > 0 && ` - $${descuentoNum.toFixed(2)} de descuento`}
+                {Number(propina) > 0 && ` + $${Number(propina).toFixed(2)} de propina`}
+              </p>
+            )}
             {tasaBcv > 0 && (
               <p className="text-neutral-500 mb-3">
-                {fmtBs(cobrando.total * tasaBcv)}{' '}
+                {fmtBs(aCobrar * tasaBcv)}{' '}
                 <span className="text-xs">
                   (tasa {tasaBcv}
                   {tasa?.origen === 'manual' ? ', manual' : ''})
@@ -505,6 +721,92 @@ export default function POS() {
                 className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mt-2"
               />
             )}
+            {/* Rebaja a ESTE cliente. Antes la unica via era bajarle el
+                precio al menu, que se lo bajaba a todos y ademas declaraba IVA
+                sobre un precio que no se cobro. */}
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <label className="text-xs text-neutral-500">
+                Descuento
+                <input
+                  value={descuento}
+                  onChange={(e) => setDescuento(e.target.value)}
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
+                />
+              </label>
+              {/* La propina no es venta: entra a la gaveta y se le debe al
+                  empleado hasta que se le entrega. */}
+              <label className="text-xs text-neutral-500">
+                Propina
+                <input
+                  value={propina}
+                  onChange={(e) => setPropina(e.target.value)}
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
+                />
+              </label>
+            </div>
+            {descuentoNum > 0 && (
+              <input
+                value={motivoDescuento}
+                onChange={(e) => setMotivoDescuento(e.target.value)}
+                placeholder="Motivo del descuento"
+                className="w-full border border-neutral-300 rounded-lg px-3 py-1.5 text-sm mt-2"
+              />
+            )}
+
+            {/* Con cuanto pago: si dio un billete grande, entra mas de lo que
+                cuesta y sale el vuelto. Sin anotarlo, la gaveta no cuadra -- y
+                menos si el vuelto sale en la otra moneda. */}
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <label className="text-xs text-neutral-500">
+                Con cuanto pago
+                <input
+                  value={recibido}
+                  onChange={(e) => setRecibido(e.target.value)}
+                  type="number"
+                  step="0.01"
+                  placeholder="opcional"
+                  className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
+                />
+              </label>
+              {vuelto > 0 && (
+                <label className="text-xs text-neutral-500">
+                  Vuelto en
+                  <select
+                    value={vueltoEn}
+                    onChange={(e) => setVueltoEn(e.target.value)}
+                    className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
+                  >
+                    <option value="">misma forma</option>
+                    {METODOS_EFECTIVO.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            {vuelto > 0 && (
+              <p className="mt-1 text-sm font-semibold text-emerald-700 tabular-nums">
+                Vuelto: ${vuelto.toFixed(2)}
+                {tasaBcv > 0 && vueltoEn === 'Efectivo Bs' && ` - ${fmtBs(vuelto * tasaBcv)}`}
+              </p>
+            )}
+
+            {/* Fiado: sin nombre no hay a quien cobrarle. */}
+            <input
+              value={cliente}
+              onChange={(e) => setCliente(e.target.value)}
+              placeholder="Cliente (obligatorio si es fiado)"
+              className="w-full border border-neutral-300 rounded-lg px-3 py-1.5 text-sm mt-2"
+            />
+
             {/* Pago partido: el cliente da algo en efectivo y el resto por
                 otra via. Antes habia que elegir un metodo solo y la caja
                 quedaba esperando plata que nunca entro a la gaveta. */}
@@ -520,6 +822,15 @@ export default function POS() {
                       {m}
                     </button>
                   ))}
+                  {/* No entra plata: nace una cuenta por cobrar. */}
+                  <button
+                    onClick={() => confirmarCobro('Fiado')}
+                    disabled={!cliente.trim()}
+                    title={cliente.trim() ? '' : 'Escribe el nombre del cliente primero'}
+                    className="bg-amber-100 hover:bg-amber-200 rounded-xl py-3 text-sm font-medium disabled:opacity-40"
+                  >
+                    Fiado
+                  </button>
                 </div>
                 <button
                   onClick={() => setPagoMixto(true)}
@@ -554,17 +865,17 @@ export default function POS() {
                 <p className="text-xs text-neutral-500">
                   Falta por cubrir:{' '}
                   <span className="font-semibold tabular-nums text-neutral-800">
-                    ${Math.max(cobrando.total - (Number(montoParcial) || 0), 0).toFixed(2)}
+                    ${Math.max(aCobrar - (Number(montoParcial) || 0), 0).toFixed(2)}
                   </span>{' '}
                   con:
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  {METODOS_PAGO.filter((m) => m !== metodoParcial).map((m) => (
+                  {[...METODOS_PAGO, 'Fiado'].filter((m) => m !== metodoParcial).map((m) => (
                     <button
                       key={m}
                       onClick={() => confirmarCobroMixto(m)}
                       disabled={
-                        !(Number(montoParcial) > 0 && Number(montoParcial) < cobrando.total)
+                        !(Number(montoParcial) > 0 && Number(montoParcial) < aCobrar)
                       }
                       className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-2.5 text-sm font-medium disabled:opacity-30"
                     >
@@ -580,16 +891,7 @@ export default function POS() {
                 </button>
               </div>
             )}
-            <button
-              onClick={() => {
-                setCobrando(null)
-                setFacturar(false)
-                setNumeroFactura('')
-                setPagoMixto(false)
-                setMontoParcial('')
-              }}
-              className="text-sm text-neutral-500"
-            >
+            <button onClick={limpiarCobro} className="text-sm text-neutral-500">
               Cancelar
             </button>
           </div>

@@ -4,7 +4,9 @@ import { api } from '../lib/api'
 import type {
   CierreCaja,
   Configuracion,
+  CuentaPorCobrar,
   Gasto,
+  PuntoVenta,
   ResumenCaja,
   RetiroPropietario,
 } from '../lib/types'
@@ -27,6 +29,14 @@ export default function Caja() {
   const [gastoCategoria, setGastoCategoria] = useState(CATEGORIAS_GASTO[0])
   const [gastoMetodo, setGastoMetodo] = useState(METODOS_GASTO[0])
   const [retiros, setRetiros] = useState<RetiroPropietario[]>([])
+  // La otra gaveta: billetes verdes. Son otra moneda y otro conteo.
+  const [contadoDivisas, setContadoDivisas] = useState('')
+  const [fiado, setFiado] = useState<CuentaPorCobrar[]>([])
+  const [puntos, setPuntos] = useState<PuntoVenta[]>([])
+  const [puntoId, setPuntoId] = useState<number | null>(() => {
+    const v = localStorage.getItem('erp-punto-venta')
+    return v ? Number(v) : null
+  })
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -42,6 +52,8 @@ export default function Caja() {
     api.listarCierres().then(setCierres)
     api.listarGastos().then(setGastos)
     api.listarRetiros().then(setRetiros).catch(() => setRetiros([]))
+    api.listarFiado().then(setFiado).catch(() => {})
+    api.listarPuntosVenta().then(setPuntos).catch(() => {})
   }
 
   // Sacar plata del negocio NO es un gasto: es capital del dueno que sale, asi
@@ -96,14 +108,69 @@ export default function Caja() {
     setConfig(c)
   }
 
+  async function anularCierre(id: number) {
+    const motivo = window.prompt(
+      'Por que se anula este cierre? (queda registrado)\n\n' +
+        'El cierre no se borra: se revierte su diferencia y el dia se puede volver a cerrar.',
+    )
+    if (motivo === null) return
+    setError('')
+    try {
+      await api.anularCierre(id, motivo)
+      setResultado(null)
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo anular el cierre')
+    }
+  }
+
+  async function entregarPropinas() {
+    const pendiente = resumen?.propinas_por_entregar ?? 0
+    const texto = window.prompt(
+      `Cuanta propina se entrega? Hay $${pendiente.toFixed(2)} en la gaveta.`,
+      pendiente.toFixed(2),
+    )
+    if (!texto) return
+    const monto = Number(texto)
+    if (!Number.isFinite(monto) || monto <= 0) return
+    const nota_ = window.prompt('A quien? (queda en el asiento)') ?? ''
+    setError('')
+    try {
+      await api.entregarPropinas(monto, 'Efectivo Bs', nota_)
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo entregar')
+    }
+  }
+
+  async function cobrarFiado(cuenta: CuentaPorCobrar) {
+    const metodo = window.prompt(
+      `Como paga ${cuenta.cliente} los $${cuenta.monto.toFixed(2)}?\n\n` +
+        'Escribe: Efectivo Bs, Efectivo $, Pago movil, Tarjeta o Transferencia',
+      'Efectivo Bs',
+    )
+    if (!metodo) return
+    setError('')
+    try {
+      await api.cobrarFiado(cuenta.pedido_id, metodo)
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cobrar')
+    }
+  }
+
   async function hacerCierre() {
     const valor = Number(contado)
     if (!Number.isFinite(valor) || valor < 0) return
     setError('')
     try {
-      const cierre = await api.cerrarCaja(valor, nota)
+      const cierre = await api.cerrarCaja(valor, nota, {
+        divisas_contado: Number(contadoDivisas) || 0,
+        punto_venta_id: puntoId,
+      })
       setResultado(cierre)
       setContado('')
+      setContadoDivisas('')
       setNota('')
       cargar()
     } catch (e) {
@@ -285,8 +352,98 @@ export default function Caja() {
           </div>
         </div>
 
+        {/* Plata que esta en la gaveta y NO es del negocio. Antes la propina
+            aparecia como sobrante y terminaba engordando la utilidad, y el
+            fiado no tenia donde registrarse. */}
+        {((resumen?.propinas_por_entregar ?? 0) > 0 || fiado.length > 0) && (
+          <div className="bg-white rounded-2xl shadow p-4 space-y-3">
+            <h2 className="font-semibold">Plata que no es del negocio</h2>
+            {(resumen?.propinas_por_entregar ?? 0) > 0 && (
+              <div className="flex items-center justify-between rounded-xl bg-violet-50 border border-violet-200 p-3">
+                <div>
+                  <div className="font-medium text-violet-900">Propinas por entregar</div>
+                  <div className="text-xs text-violet-700">
+                    Esta en la gaveta pero es del empleado, no ingreso tuyo.
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold tabular-nums text-violet-900">
+                    ${(resumen?.propinas_por_entregar ?? 0).toFixed(2)}
+                  </span>
+                  <button
+                    onClick={entregarPropinas}
+                    className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white"
+                  >
+                    Entregar
+                  </button>
+                </div>
+              </div>
+            )}
+            {fiado.length > 0 && (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+                <div className="flex justify-between font-medium text-amber-900">
+                  <span>Fiado por cobrar</span>
+                  <span className="tabular-nums">
+                    ${(resumen?.fiado_por_cobrar ?? 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {fiado.map((f) => (
+                    <div
+                      key={f.pedido_id}
+                      className="flex items-center justify-between gap-2 text-sm text-amber-900"
+                    >
+                      <span className="truncate">
+                        {f.cliente}
+                        <span className="ml-1 text-xs text-amber-700">
+                          #{f.numero} · hace {f.dias} dia(s)
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="font-semibold tabular-nums">${f.monto.toFixed(2)}</span>
+                        <button
+                          onClick={() => cobrarFiado(f)}
+                          className="rounded-lg border border-amber-400 px-2 py-1 text-xs font-medium"
+                        >
+                          Cobrar
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl shadow p-4">
-          <h2 className="font-semibold mb-2">Contar efectivo fisico</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+            <h2 className="font-semibold">Contar efectivo fisico</h2>
+            {/* Con dos pisos hay dos gavetas y cada una cierra la suya: antes
+                el segundo cierre del dia devolvia 409. */}
+            {puntos.length > 0 && (
+              <label className="text-xs text-neutral-500 flex items-center gap-1">
+                Cerrando la caja
+                <select
+                  value={puntoId ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value ? Number(e.target.value) : null
+                    setPuntoId(v)
+                    if (v) localStorage.setItem('erp-punto-venta', String(v))
+                    else localStorage.removeItem('erp-punto-venta')
+                  }}
+                  className="rounded-lg border border-neutral-300 px-2 py-1 text-neutral-900"
+                >
+                  <option value="">principal</option>
+                  {puntos.map((pv) => (
+                    <option key={pv.id} value={pv.id}>
+                      {pv.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
           {/* El desglose importa: antes solo se restaban los gastos, y los dias
               que se le pagaba al proveedor el cierre mostraba un faltante que
               no existia. Ahora sale de la contabilidad e incluye TODO lo que
@@ -299,9 +456,13 @@ export default function Caja() {
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-neutral-600">Ventas cobradas en efectivo</span>
+              <span className="text-neutral-600">Ventas cobradas en bolivares</span>
               <span className="tabular-nums">
-                ${(resumen?.por_metodo_pago?.['Efectivo'] ?? 0).toFixed(2)}
+                $
+                {(
+                  (resumen?.por_metodo_pago?.['Efectivo'] ?? 0) +
+                  (resumen?.por_metodo_pago?.['Efectivo Bs'] ?? 0)
+                ).toFixed(2)}
               </span>
             </div>
             {(resumen?.salidas_efectivo ?? 0) !== 0 && (
@@ -334,6 +495,27 @@ export default function Caja() {
               placeholder="Cuanto efectivo hay en caja"
               className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
+          {/* La gaveta de divisas se cuenta aparte: son otros billetes, en otra
+              moneda. Con un solo numero el arqueo era imposible. */}
+          {(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0) !== 0 && (
+            <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <div className="flex justify-between text-sm font-medium text-emerald-900">
+                <span>Deberia haber en billetes de dolar</span>
+                <span className="tabular-nums">
+                  ${(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0).toFixed(2)}
+                </span>
+              </div>
+              <input
+                value={contadoDivisas}
+                onChange={(e) => setContadoDivisas(e.target.value)}
+                type="number"
+                step="0.01"
+                placeholder="Cuantos dolares contaste"
+                className="mt-2 w-full rounded-lg border border-emerald-300 px-3 py-2 text-sm"
+              />
+            </div>
+          )}
+
           </div>
           <input
             value={nota}
@@ -376,12 +558,28 @@ export default function Caja() {
                   <th className="text-right py-1">Sistema</th>
                   <th className="text-right py-1">Contado</th>
                   <th className="text-right py-1">Diferencia</th>
+                  <th className="py-1" />
                 </tr>
               </thead>
               <tbody>
                 {cierres.map((c) => (
-                  <tr key={c.id} className="border-t border-neutral-100">
-                    <td className="py-1">{new Date(c.fecha).toLocaleString('es-VE')}</td>
+                  <tr
+                    key={c.id}
+                    className={`border-t border-neutral-100 ${c.anulado ? 'opacity-50' : ''}`}
+                  >
+                    <td className="py-1">
+                      {new Date(c.fecha).toLocaleString('es-VE')}
+                      {(c.operador || c.punto_venta) && (
+                        <span className="block text-[11px] text-neutral-400">
+                          {[c.punto_venta, c.operador].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                      {c.anulado && (
+                        <span className="block text-[11px] text-red-500">
+                          anulado{c.motivo_anulacion ? `: ${c.motivo_anulacion}` : ''}
+                        </span>
+                      )}
+                    </td>
                     <td className="text-right py-1">${c.efectivo_esperado.toFixed(2)}</td>
                     <td className="text-right py-1">${c.efectivo_contado.toFixed(2)}</td>
                     <td
@@ -393,8 +591,25 @@ export default function Caja() {
                             : 'text-amber-600'
                       }`}
                     >
-                      {c.diferencia > 0 ? '+' : ''}
-                      {c.diferencia.toFixed(2)}
+                      {c.anulado ? '—' : `${c.diferencia > 0 ? '+' : ''}${c.diferencia.toFixed(2)}`}
+                      {!c.anulado && c.divisas_diferencia !== 0 && (
+                        <span className="block text-[11px]">
+                          divisas {c.divisas_diferencia > 0 ? '+' : ''}
+                          {c.divisas_diferencia.toFixed(2)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1 text-right">
+                      {/* Un digito de mas al contar metia un sobrante ficticio
+                          en los libros para siempre: no habia como corregirlo. */}
+                      {!c.anulado && (
+                        <button
+                          onClick={() => anularCierre(c.id)}
+                          className="text-xs font-medium text-red-500"
+                        >
+                          Anular
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

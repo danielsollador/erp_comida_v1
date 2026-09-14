@@ -3,8 +3,15 @@ import type {
   AsientoContable,
   BalanceGeneral,
   CambioPrecio,
+  CambioReceta,
   Categoria,
   CompraDeInsumo,
+  CuentaPorCobrar,
+  NotaCreditoCompra,
+  Operador,
+  PuntoVenta,
+  SobranteInventario,
+  Ticket,
   CostoVariante,
   ImpactoDeCompra,
   InflacionInsumos,
@@ -105,7 +112,14 @@ export const api = {
   listarPedidos: (estado?: string) =>
     req<Pedido[]>(`/pedidos${estado ? `?estado=${estado}` : ''}`),
   crearPedido: (
-    items: { variante_id: number; cantidad: number; nota?: string }[],
+    items: {
+      variante_id?: number
+      cantidad: number
+      nota?: string
+      // Venta libre: cobrar algo que no esta en el menu sin ensuciarlo.
+      nombre_libre?: string
+      precio_libre?: number
+    }[],
     permitir_sin_stock = false,
     nota = '',
   ) =>
@@ -123,7 +137,20 @@ export const api = {
     facturado = false,
     numero_factura?: string,
     // Pago partido entre varias formas; si se omite, todo va a `metodo_pago`.
-    pagos?: { metodo: string; monto: number }[],
+    pagos?: {
+      metodo: string
+      monto: number
+      recibido?: number
+      vuelto_metodo?: string
+    }[],
+    extra?: {
+      descuento?: number
+      motivo_descuento?: string
+      propina?: number
+      cliente?: string
+      operador_id?: number | null
+      punto_venta_id?: number | null
+    },
   ) =>
     req<Pedido>(`/pedidos/${pedidoId}/cobrar`, {
       method: 'POST',
@@ -132,8 +159,16 @@ export const api = {
         facturado,
         numero_factura: numero_factura || null,
         pagos: pagos ?? null,
+        descuento: extra?.descuento ?? 0,
+        motivo_descuento: extra?.motivo_descuento ?? '',
+        propina: extra?.propina ?? 0,
+        cliente: extra?.cliente ?? '',
+        operador_id: extra?.operador_id ?? null,
+        punto_venta_id: extra?.punto_venta_id ?? null,
       }),
     }),
+  ticket: (pedidoId: number) => req<Ticket>(`/pedidos/${pedidoId}/ticket`),
+  pedidosOlvidados: (horas = 24) => req<Pedido[]>(`/pedidos/olvidados?horas=${horas}`),
   devolverPedido: (
     pedidoId: number,
     opciones: { recuperable: boolean; nota_credito?: string; motivo?: string },
@@ -146,11 +181,22 @@ export const api = {
         motivo: opciones.motivo ?? '',
       }),
     }),
-  anularPedido: (pedidoId: number, comida_preparada?: boolean) =>
+  anularPedido: (pedidoId: number, comida_preparada?: boolean, operador_id?: number | null) =>
     req<Pedido>(`/pedidos/${pedidoId}/anular`, {
       method: 'POST',
-      body: JSON.stringify({ comida_preparada: comida_preparada ?? null }),
+      body: JSON.stringify({
+        comida_preparada: comida_preparada ?? null,
+        operador_id: operador_id ?? null,
+      }),
     }),
+
+  listarOperadores: () => req<Operador[]>('/operadores'),
+  crearOperador: (nombre: string, rol = 'cajero') =>
+    req<Operador>('/operadores', { method: 'POST', body: JSON.stringify({ nombre, rol }) }),
+  desactivarOperador: (id: number) => req(`/operadores/${id}`, { method: 'DELETE' }),
+  listarPuntosVenta: () => req<PuntoVenta[]>('/puntos-venta'),
+  crearPuntoVenta: (nombre: string) =>
+    req<PuntoVenta>('/puntos-venta', { method: 'POST', body: JSON.stringify({ nombre }) }),
 
   listarIngredientes: () => req<Ingrediente[]>('/inventario/ingredientes'),
   actualizarIngrediente: (id: number, i: Omit<Ingrediente, 'id' | 'costo_efectivo'>) =>
@@ -164,6 +210,17 @@ export const api = {
     req<CompraDeInsumo[]>(`/inventario/ingredientes/${id}/costos`),
   inflacionInsumos: (dias = 30) =>
     req<InflacionInsumos | null>(`/inventario/inflacion?dias=${dias}`),
+  consumoPersonal: (id: number, cantidad: number, motivo: string) =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}/consumo-personal`, {
+      method: 'POST',
+      body: JSON.stringify({ cantidad, motivo }),
+    }),
+  listarSobrantes: () => req<SobranteInventario[]>('/inventario/sobrantes'),
+  revertirSobrante: (id: number) =>
+    req<Ingrediente>(`/inventario/sobrantes/${id}/revertir`, { method: 'POST' }),
+  historialReceta: (varianteId: number) =>
+    req<CambioReceta[]>(`/inventario/recetas/${varianteId}/historial`),
+
   registrarMerma: (id: number, cantidad: number, motivo: string) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/merma`, {
       method: 'POST',
@@ -192,6 +249,43 @@ export const api = {
   eliminarGasto: (id: number) => req(`/caja/gastos/${id}`, { method: 'DELETE' }),
 
   reporte: (periodo: Periodo) => req<ReporteResumen>(`/reportes/resumen?periodo=${periodo}`),
+
+  notasCreditoCompra: (facturaId: number) =>
+    req<NotaCreditoCompra[]>(`/compras/facturas/${facturaId}/notas-credito`),
+  crearNotaCredito: (
+    facturaId: number,
+    datos: {
+      numero: string
+      tipo: 'devolucion' | 'descuento'
+      motivo?: string
+      base_imponible?: number
+      iva?: number
+      items?: { ingrediente_id: number; cantidad: number }[]
+    },
+  ) =>
+    req<NotaCreditoCompra>(`/compras/facturas/${facturaId}/notas-credito`, {
+      method: 'POST',
+      body: JSON.stringify(datos),
+    }),
+  reactivarActivo: (id: number) =>
+    req<ActivoFijo>(`/contabilidad/activos/${id}/reactivar`, { method: 'POST' }),
+  registrarActivoExistente: (datos: {
+    nombre: string
+    valor: number
+    vida_util_meses: number
+    fecha_compra?: string
+  }) => req<ActivoFijo>('/contabilidad/activos', { method: 'POST', body: JSON.stringify(datos) }),
+  anularDeclaracion: (id: number) =>
+    req<{ ok: boolean; periodo: string }>(`/impuestos/declaraciones/${id}/anular`, {
+      method: 'POST',
+    }),
+  cerrarEjercicio: (anio: number) =>
+    req<{ ok: boolean; anio: number; resultado: number }>('/contabilidad/cerrar-ejercicio', {
+      method: 'POST',
+      body: JSON.stringify({ anio }),
+    }),
+  ejerciciosCerrados: () =>
+    req<{ anio: number; descripcion: string }[]>('/contabilidad/ejercicios-cerrados'),
 
   listarRespaldos: () => req<Respaldo[]>('/respaldos'),
   crearRespaldo: () => req<{ ok: boolean; archivo: string }>('/respaldos/crear', { method: 'POST' }),
@@ -242,8 +336,39 @@ export const api = {
   historialTasa: (dias = 30) => req<PuntoTasa[]>(`/tasas/historial?dias=${dias}`),
 
   resumenCaja: () => req<ResumenCaja>('/caja/resumen'),
-  cerrarCaja: (efectivo_contado: number, nota = '') =>
-    req<CierreCaja>('/caja/cerrar', { method: 'POST', body: JSON.stringify({ efectivo_contado, nota }) }),
+  anularCierre: (id: number, motivo: string) =>
+    req<CierreCaja>(`/caja/cierres/${id}/anular`, {
+      method: 'POST',
+      body: JSON.stringify({ motivo }),
+    }),
+  propinasPendientes: () => req<{ por_entregar: number }>('/caja/propinas'),
+  entregarPropinas: (monto: number, metodo_pago = 'Efectivo Bs', nota = '') =>
+    req<{ ok: boolean; entregado: number; queda: number }>('/caja/propinas/entregar', {
+      method: 'POST',
+      body: JSON.stringify({ monto, metodo_pago, nota }),
+    }),
+  listarFiado: () => req<CuentaPorCobrar[]>('/caja/fiado'),
+  cobrarFiado: (pedidoId: number, metodo_pago = 'Efectivo Bs') =>
+    req<{ ok: boolean; cobrado: number; cliente: string }>(`/caja/fiado/${pedidoId}/cobrar`, {
+      method: 'POST',
+      body: JSON.stringify({ metodo_pago }),
+    }),
+
+  cerrarCaja: (
+    efectivo_contado: number,
+    nota = '',
+    extra?: { divisas_contado?: number; operador_id?: number | null; punto_venta_id?: number | null },
+  ) =>
+    req<CierreCaja>('/caja/cerrar', {
+      method: 'POST',
+      body: JSON.stringify({
+        efectivo_contado,
+        nota,
+        divisas_contado: extra?.divisas_contado ?? 0,
+        operador_id: extra?.operador_id ?? null,
+        punto_venta_id: extra?.punto_venta_id ?? null,
+      }),
+    }),
   listarCierres: () => req<CierreCaja[]>('/caja/cierres'),
   listarRetiros: (dias = 30) => req<RetiroPropietario[]>(`/caja/retiros?dias=${dias}`),
   crearRetiro: (monto: number, metodo_pago: string, nota = '') =>
