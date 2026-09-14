@@ -4,11 +4,114 @@ from typing import Dict, List, Tuple
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from .. import combos, contabilidad, impuestos, models, schemas
+from .. import combos, contabilidad, impuestos, models, reposicion, schemas
 from ..database import get_db
 from ..timeutils import rango_periodo
 
 router = APIRouter(prefix="/api/reportes", tags=["reportes"])
+
+
+def _avisos_de_costos(db: Session) -> List[schemas.Insight]:
+    """Avisos que salen de lo que PAGAS, no de lo que vendiste.
+
+    El costo promedio ponderado tarda semanas en reflejar una subida, asi que
+    el margen en pantalla se ve bien mientras el negocio ya esta vendiendo por
+    debajo de lo que le cuesta reponer. Esto mira el ultimo precio pagado, que
+    si se entera el mismo dia.
+    """
+    avisos: List[schemas.Insight] = []
+
+    inflacion = reposicion.inflacion_de_insumos(db, dias=30)
+    if inflacion and inflacion["cambio_pct"] >= reposicion.SALTO_QUE_IMPORTA_PCT:
+        detalle = "; ".join(
+            f"{i['nombre']} +{i['cambio_pct']:.0f}%" for i in inflacion["insumos"][:3]
+        )
+        avisos.append(
+            schemas.Insight(
+                tipo="alerta",
+                titulo=f"Tus insumos subieron {inflacion['cambio_pct']:.0f}% en 30 dias",
+                detalle=(
+                    f"{detalle}. Si tus precios no subieron parecido, estas vendiendo "
+                    "mas barato de lo que te va a costar reponer. Revisa el Menu: "
+                    "ahi esta el precio sugerido de cada producto."
+                ),
+            )
+        )
+
+    # El acantilado: productos cuyo margen aguanta con el inventario viejo pero
+    # no con lo que cuesta reponer. Cuando ese stock se acabe, el margen cae de
+    # golpe - y hasta ahora no se veia venir.
+    apretados = [
+        f
+        for f in _margenes_de_reposicion(db)
+        if f["margen_pct"] is not None
+        and f["margen_reposicion_pct"] is not None
+        and f["margen_pct"] >= reposicion.MARGEN_FLACO_PCT
+        and f["margen_reposicion_pct"] < reposicion.MARGEN_FLACO_PCT
+    ]
+    if apretados:
+        detalle = "; ".join(
+            f"{f['nombre']} pasa de {f['margen_pct']:.0f}% a {f['margen_reposicion_pct']:.0f}%"
+            for f in apretados[:3]
+        )
+        avisos.append(
+            schemas.Insight(
+                tipo="alerta",
+                titulo=f"{len(apretados)} producto(s) dejan de ser rentables al reponer",
+                detalle=(
+                    f"{detalle}. El margen que ves sale del inventario que compraste "
+                    "barato; cuando se acabe, ese es el margen que te queda."
+                ),
+            )
+        )
+
+    return avisos
+
+
+def _margenes_de_reposicion(db: Session) -> List[dict]:
+    """Margen contable vs margen a precios de hoy, por producto activo."""
+    ultimos = reposicion.costos_reposicion(db)
+    promedio: Dict[int, float] = {}
+    hoy_cuesta: Dict[int, float] = {}
+
+    for receta in db.query(models.RecetaItem).all():
+        ingrediente = receta.ingrediente
+        if ingrediente is None:
+            continue
+        promedio[receta.variante_id] = promedio.get(receta.variante_id, 0) + (
+            receta.cantidad_por_unidad * (ingrediente.costo_efectivo or 0)
+        )
+        ultimo = ultimos.get(receta.ingrediente_id)
+        efectivo = (
+            reposicion.costo_efectivo_de(ultimo["costo"], ingrediente.rendimiento_pct)
+            if ultimo
+            else (ingrediente.costo_efectivo or 0)
+        )
+        hoy_cuesta[receta.variante_id] = hoy_cuesta.get(receta.variante_id, 0) + (
+            receta.cantidad_por_unidad * efectivo
+        )
+
+    filas = []
+    for variante in db.query(models.Variante).filter(models.Variante.activo.is_(True)).all():
+        costo = promedio.get(variante.id)
+        costo_hoy = hoy_cuesta.get(variante.id)
+        if costo is None or not variante.precio:
+            continue
+        nombre = variante.producto.nombre if variante.producto else ""
+        if variante.nombre and variante.nombre.lower() != "regular":
+            nombre = f"{nombre} - {variante.nombre}".strip(" -")
+        filas.append(
+            {
+                "nombre": nombre,
+                "margen_pct": round((variante.precio - costo) / variante.precio * 100, 1),
+                "margen_reposicion_pct": (
+                    round((variante.precio - costo_hoy) / variante.precio * 100, 1)
+                    if costo_hoy is not None
+                    else None
+                ),
+            }
+        )
+    return filas
 
 DIAS_ES = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
 
@@ -216,7 +319,10 @@ def _insights(
                 detalle=f"No hay pedidos cobrados {nombre_periodo}. Cobra un pedido para empezar a ver numeros.",
             )
         )
-        return insights
+        # Que tus insumos suban importa igual, hayas vendido hoy o no: es
+        # justamente el dia flojo cuando te alcanza el tiempo para revisar
+        # precios. Estos avisos no dependen de las ventas del periodo.
+        return insights + _avisos_de_costos(db)
 
     # Comparativa contra el periodo anterior. El periodo en curso siempre esta
     # incompleto, asi que se avisa para no leer una caida donde solo falta tiempo.
@@ -368,6 +474,8 @@ def _insights(
                 detalle=f"{detalle}. Pierdes dinero en cada una que vendes: subi el precio o revisa la receta.",
             )
         )
+
+    insights.extend(_avisos_de_costos(db))
 
     # Insumos por agotarse.
     bajos = [

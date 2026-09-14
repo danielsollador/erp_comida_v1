@@ -195,8 +195,22 @@ function ProductoRow({
     // El costo va en la pregunta, no despues: es el dato que decide si el
     // precio tiene sentido, y el sistema ya lo tiene.
     const info = costos.get(varianteId)
+    // El costo promedio mira hacia atras. Para poner un precio hoy lo que
+    // manda es cuanto cuesta reponer los insumos, que con inflacion puede ser
+    // varias veces mas. Si difieren, se muestran los dos y el precio sugerido.
+    const seEncarecio =
+      info?.costo != null &&
+      info.costo_reposicion != null &&
+      info.costo_reposicion > info.costo * 1.05
     const contexto = info?.costo
-      ? `\n\nProducirlo cuesta $${info.costo.toFixed(2)}. A $${precioActual.toFixed(2)} te deja ${info.margen_pct?.toFixed(0)}% de margen.`
+      ? `\n\nProducirlo cuesta $${info.costo.toFixed(2)}. A $${precioActual.toFixed(2)} te deja ${info.margen_pct?.toFixed(0)}% de margen.` +
+        (seEncarecio
+          ? `\n\nOJO: con los precios de HOY cuesta $${info.costo_reposicion!.toFixed(2)}, ` +
+            `y a $${precioActual.toFixed(2)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.` +
+            (info.precio_sugerido != null
+              ? `\nPara mantener tu margen tendrias que cobrar $${info.precio_sugerido.toFixed(2)}.`
+              : '')
+          : '')
       : '\n\n(Este producto no tiene receta, asi que no se sabe cuanto cuesta producirlo.)'
     const texto = window.prompt(`Nuevo precio para ${nombre}${contexto}`, String(precioActual))
     if (texto === null) return
@@ -239,6 +253,14 @@ function ProductoRow({
         {producto.variantes.map((v) => {
           const info = costos.get(v.id)
           const bajoCosto = info?.costo != null && v.precio < info.costo
+          // El acantilado: el margen aguanta con el inventario viejo, pero no
+          // con lo que cuesta reponer. Cuando ese stock se acabe, el margen que
+          // queda es el de la derecha - y hasta ahora no se veia venir.
+          const seDesploma =
+            !bajoCosto &&
+            info?.margen_pct != null &&
+            info.margen_reposicion_pct != null &&
+            info.margen_reposicion_pct < info.margen_pct - 5
           return (
           <span
             key={v.id}
@@ -265,6 +287,23 @@ function ProductoRow({
                 title={`Cuesta $${info.costo?.toFixed(2)} producirlo`}
               >
                 {bajoCosto ? '¡a perdida!' : `${info.margen_pct.toFixed(0)}%`}
+              </span>
+            )}
+            {seDesploma && (
+              <span
+                className={`tabular-nums ${
+                  info!.margen_reposicion_pct! < 0
+                    ? 'text-red-600 font-semibold'
+                    : 'text-orange-600'
+                }`}
+                title={
+                  `Con los precios de hoy cuesta $${info!.costo_reposicion?.toFixed(2)} producirlo. ` +
+                  (info!.precio_sugerido != null
+                    ? `Para mantener tu margen: $${info!.precio_sugerido.toFixed(2)}.`
+                    : '')
+                }
+              >
+                → {info!.margen_reposicion_pct!.toFixed(0)}%
               </span>
             )}
             {info?.sin_receta && (

@@ -4,7 +4,10 @@ import type {
   BalanceGeneral,
   CambioPrecio,
   Categoria,
+  CompraDeInsumo,
   CostoVariante,
+  ImpactoDeCompra,
+  InflacionInsumos,
   EstadoTasa,
   CierreCaja,
   Configuracion,
@@ -153,10 +156,14 @@ export const api = {
   actualizarIngrediente: (id: number, i: Omit<Ingrediente, 'id' | 'costo_efectivo'>) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
   registrarCompra: (id: number, cantidad: number, costo_total?: number) =>
-    req<Ingrediente>(`/inventario/ingredientes/${id}/comprar`, {
+    req<ImpactoDeCompra>(`/inventario/ingredientes/${id}/comprar`, {
       method: 'POST',
       body: JSON.stringify({ cantidad, costo_total: costo_total ?? null }),
     }),
+  historialCostos: (id: number) =>
+    req<CompraDeInsumo[]>(`/inventario/ingredientes/${id}/costos`),
+  inflacionInsumos: (dias = 30) =>
+    req<InflacionInsumos | null>(`/inventario/inflacion?dias=${dias}`),
   registrarMerma: (id: number, cantidad: number, motivo: string) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/merma`, {
       method: 'POST',

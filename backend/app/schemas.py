@@ -38,6 +38,13 @@ class CostoVariante(BaseModel):
     costo: Optional[float] = None  # None = sin receta cargada
     margen_pct: Optional[float] = None
     sin_receta: bool = False
+    # Lo que costaria producirlo con los precios de HOY (ultimo costo pagado
+    # por cada insumo), no con el promedio ponderado. En un pais con inflacion
+    # el margen que importa para fijar precios es este, no el contable.
+    costo_reposicion: Optional[float] = None
+    margen_reposicion_pct: Optional[float] = None
+    # A cuanto habria que venderlo para conservar el margen contable actual.
+    precio_sugerido: Optional[float] = None
 
 
 class ProductoBase(BaseModel):
@@ -96,9 +103,63 @@ class IngredienteCreate(IngredienteBase):
 class Ingrediente(IngredienteBase):
     id: int
     costo_efectivo: float  # costo_unitario / rendimiento - lo que de verdad cuesta 1 unidad usable
+    # Ultimo precio pagado por este insumo. El `costo_unitario` de arriba es el
+    # promedio ponderado (lo que costo lo que hay en el deposito); esto es lo
+    # que cuesta REPONERLO hoy. Se separan porque responden preguntas distintas.
+    costo_reposicion: Optional[float] = None
+    ultima_compra: Optional[datetime.datetime] = None
+    # Cuanto subestima el promedio al costo de reponer, en %.
+    variacion_pct: Optional[float] = None
 
     class Config:
         from_attributes = True
+
+
+class CompraDeInsumo(BaseModel):
+    fecha: datetime.datetime
+    cantidad: float
+    costo_unitario: float
+    origen: str  # factura | compra suelta
+    referencia: str = ""
+
+
+class ImpactoEnProducto(BaseModel):
+    variante_id: int
+    nombre: str
+    precio: float
+    costo_antes: float
+    costo_despues: float
+    margen_antes_pct: Optional[float] = None
+    margen_despues_pct: Optional[float] = None
+    precio_sugerido: Optional[float] = None
+    a_perdida: bool = False
+    margen_flaco: bool = False
+
+
+class ImpactoDeCompra(BaseModel):
+    """Lo que hay que decirle al dueno EN EL MOMENTO de registrar la compra."""
+
+    ingrediente: Ingrediente
+    costo_anterior: float
+    costo_pagado: float
+    salto_pct: Optional[float] = None
+    # True si el salto es lo bastante grande como para revisar precios.
+    revisar_precios: bool = False
+    productos: List[ImpactoEnProducto] = []
+
+
+class InsumoInflacion(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    costo_inicial: float
+    costo_actual: float
+    cambio_pct: float
+
+
+class InflacionInsumos(BaseModel):
+    dias: int
+    cambio_pct: float
+    insumos: List[InsumoInflacion] = []
 
 
 class ComprarIngredienteRequest(BaseModel):

@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from .. import models, schemas
+from .. import models, reposicion, schemas
 from ..database import get_db
 
 router = APIRouter(prefix="/api/menu", tags=["menu"])
@@ -168,24 +168,58 @@ def costos_por_variante(db: Session = Depends(get_db)):
     costo a ciegas: el sistema ya sabe cuanto cuesta el producto, solo que
     hasta ahora no lo miraba al momento de ponerle precio.
     """
+    # Dos costos por producto, porque son dos preguntas distintas:
+    #   - `costos`: promedio ponderado, lo que costo lo que ya esta vendido.
+    #   - `reponer`: ultimo precio pagado, lo que cuesta producirlo mañana.
+    # Fijar precios mirando solo el primero es como un negocio se descapitaliza
+    # sin enterarse: la caja cuadra, el reporte dice que ganaste, y cuando vas
+    # a comprar no te alcanza para la misma cantidad.
+    ultimos = reposicion.costos_reposicion(db)
     costos = {}
+    reponer = {}
     for receta in db.query(models.RecetaItem).all():
-        aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_efectivo or 0)
+        ingrediente = receta.ingrediente
+        aporte = receta.cantidad_por_unidad * (ingrediente.costo_efectivo or 0)
         costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
+
+        ultimo = ultimos.get(receta.ingrediente_id)
+        efectivo_hoy = (
+            reposicion.costo_efectivo_de(ultimo["costo"], ingrediente.rendimiento_pct)
+            if ultimo
+            else (ingrediente.costo_efectivo or 0)  # sin compras: el promedio es lo que hay
+        )
+        reponer[receta.variante_id] = reponer.get(receta.variante_id, 0) + (
+            receta.cantidad_por_unidad * efectivo_hoy
+        )
 
     filas = []
     for v in db.query(models.Variante).all():
         costo = costos.get(v.id)
+        costo_hoy = reponer.get(v.id)
+        margen = (
+            round((v.precio - costo) / v.precio * 100, 1)
+            if costo is not None and v.precio > 0
+            else None
+        )
         filas.append(
             schemas.CostoVariante(
                 variante_id=v.id,
                 costo=round(costo, 4) if costo is not None else None,
-                margen_pct=(
-                    round((v.precio - costo) / v.precio * 100, 1)
-                    if costo is not None and v.precio > 0
+                margen_pct=margen,
+                sin_receta=costo is None,
+                costo_reposicion=round(costo_hoy, 4) if costo_hoy is not None else None,
+                margen_reposicion_pct=(
+                    round((v.precio - costo_hoy) / v.precio * 100, 1)
+                    if costo_hoy is not None and v.precio > 0
                     else None
                 ),
-                sin_receta=costo is None,
+                # El precio que conserva el margen que el dueno ya tenia, no un
+                # margen inventado por el sistema.
+                precio_sugerido=(
+                    reposicion.precio_para_margen(costo_hoy, margen)
+                    if costo_hoy is not None and margen is not None and margen < 100
+                    else None
+                ),
             )
         )
     return filas

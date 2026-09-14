@@ -1,10 +1,10 @@
 import datetime
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import contabilidad, costeo, models, schemas
+from .. import contabilidad, costeo, models, reposicion, schemas
 from ..database import get_db
 from ..timeutils import hoy, inicio_del_dia
 
@@ -33,7 +33,45 @@ def _ingrediente_para_actualizar(db: Session, ingrediente_id: int) -> models.Ing
 
 @router.get("/ingredientes", response_model=List[schemas.Ingrediente])
 def listar_ingredientes(db: Session = Depends(get_db)):
-    return db.query(models.Ingrediente).order_by(models.Ingrediente.nombre).all()
+    ingredientes = db.query(models.Ingrediente).order_by(models.Ingrediente.nombre).all()
+    return [_con_reposicion(i, reposicion.costos_reposicion(db)) for i in ingredientes]
+
+
+def _con_reposicion(ingrediente: models.Ingrediente, ultimos: dict) -> schemas.Ingrediente:
+    """Le pega al insumo lo que costaria reponerlo hoy.
+
+    `costo_unitario` es el promedio ponderado (lo que costo lo que hay en el
+    deposito); esto es lo que cuesta comprar mas. Mientras el promedio no se
+    mueve, el dueno cree que su margen sigue igual.
+    """
+    salida = schemas.Ingrediente.model_validate(ingrediente)
+    ultimo = ultimos.get(ingrediente.id)
+    if ultimo:
+        salida.costo_reposicion = round(ultimo["costo"], 4)
+        salida.ultima_compra = ultimo["fecha"]
+        salida.variacion_pct = reposicion.variacion_pct(
+            ultimo["costo"], ingrediente.costo_unitario
+        )
+    return salida
+
+
+@router.get("/ingredientes/{ingrediente_id}/costos", response_model=List[schemas.CompraDeInsumo])
+def historial_de_costos(ingrediente_id: int, db: Session = Depends(get_db)):
+    """Cuanto ha costado este insumo, compra por compra.
+
+    El dato existia desde el primer dia en cada linea de factura y en cada
+    compra suelta; no habia por donde verlo. En un pais con inflacion, la curva
+    del costo de tus insumos es informacion de primera necesidad.
+    """
+    if not db.query(models.Ingrediente).filter_by(id=ingrediente_id).first():
+        raise HTTPException(status_code=404, detail="Insumo no encontrado")
+    return reposicion.historial_de_costos(db, ingrediente_id)
+
+
+@router.get("/inflacion", response_model=Optional[schemas.InflacionInsumos])
+def inflacion(dias: int = 30, db: Session = Depends(get_db)):
+    """Cuanto subio la canasta de insumos. None si no hay con que comparar."""
+    return reposicion.inflacion_de_insumos(db, dias)
 
 
 @router.post("/ingredientes", response_model=schemas.Ingrediente)
@@ -65,7 +103,7 @@ def actualizar_ingrediente(
     return db_ingrediente
 
 
-@router.post("/ingredientes/{ingrediente_id}/comprar", response_model=schemas.Ingrediente)
+@router.post("/ingredientes/{ingrediente_id}/comprar", response_model=schemas.ImpactoDeCompra)
 def registrar_compra(
     ingrediente_id: int, body: schemas.ComprarIngredienteRequest, db: Session = Depends(get_db)
 ):
@@ -87,6 +125,11 @@ def registrar_compra(
             costo_de_esta_compra = db_ingrediente.costo_unitario or 0
             valor = round(body.cantidad * costo_de_esta_compra, 2)
 
+        # Se calcula ANTES de promediar: despues de mezclar, el costo anterior
+        # ya no se puede reconstruir.
+        costo_anterior = db_ingrediente.costo_unitario or 0
+        salto = reposicion.variacion_pct(costo_de_esta_compra, costo_anterior)
+
         # El costo del insumo se PROMEDIA con lo que ya habia, no se pisa - ver
         # costeo.py. Asi el costo (y el margen que se le muestra al dueno) no
         # salta de golpe cada vez que un proveedor sube el precio.
@@ -104,7 +147,25 @@ def registrar_compra(
         contabilidad.registrar_compra_insumo(db, db_ingrediente, round(valor, 2), compra.id)
         db.commit()
         db.refresh(db_ingrediente)
-        return db_ingrediente
+
+        # Aviso en el momento de la compra, no un mes despues cuando el
+        # promedio por fin refleje la subida. Para entonces ya vendiste
+        # semanas con el margen viejo en pantalla y el nuevo en la realidad.
+        revisar = salto is not None and salto >= reposicion.SALTO_QUE_IMPORTA_PCT
+        return schemas.ImpactoDeCompra(
+            ingrediente=_con_reposicion(db_ingrediente, reposicion.costos_reposicion(db)),
+            costo_anterior=round(costo_anterior, 4),
+            costo_pagado=round(costo_de_esta_compra, 4),
+            salto_pct=salto,
+            revisar_precios=revisar,
+            productos=(
+                reposicion.impacto_en_productos(
+                    db, db_ingrediente.id, costo_de_esta_compra, costo_anterior
+                )
+                if revisar
+                else []
+            ),
+        )
 
 
 @router.post("/ingredientes/{ingrediente_id}/merma", response_model=schemas.Ingrediente)

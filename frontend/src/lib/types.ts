@@ -40,9 +40,60 @@ export type Ingrediente = {
   stock_actual: number
   stock_minimo: number
   stock_objetivo: number
+  /** Promedio ponderado: lo que costo el stock que hay en el deposito. */
   costo_unitario: number
   rendimiento_pct: number
   costo_efectivo: number
+  /** Ultimo precio pagado: lo que cuesta REPONERLO hoy. null = nunca comprado. */
+  costo_reposicion: number | null
+  ultima_compra: string | null
+  /** Cuanto subestima el promedio al costo de reponer, en %. */
+  variacion_pct: number | null
+}
+
+export type CompraDeInsumo = {
+  fecha: string
+  cantidad: number
+  costo_unitario: number
+  origen: string
+  referencia: string
+}
+
+export type ImpactoEnProducto = {
+  variante_id: number
+  nombre: string
+  precio: number
+  costo_antes: number
+  costo_despues: number
+  margen_antes_pct: number | null
+  margen_despues_pct: number | null
+  /** Precio que conserva el margen que tenia antes de la subida. */
+  precio_sugerido: number | null
+  a_perdida: boolean
+  margen_flaco: boolean
+}
+
+export type ImpactoDeCompra = {
+  ingrediente: Ingrediente
+  costo_anterior: number
+  costo_pagado: number
+  salto_pct: number | null
+  revisar_precios: boolean
+  productos: ImpactoEnProducto[]
+}
+
+export type InsumoInflacion = {
+  ingrediente_id: number
+  nombre: string
+  costo_inicial: number
+  costo_actual: number
+  cambio_pct: number
+}
+
+export type InflacionInsumos = {
+  dias: number
+  cambio_pct: number
+  insumos: InsumoInflacion[]
 }
 
 export type RecetaItem = {
@@ -89,9 +140,15 @@ export type CambioPrecio = {
 
 export type CostoVariante = {
   variante_id: number
+  /** Costo contable: promedio ponderado del inventario que ya compraste. */
   costo: number | null
   margen_pct: number | null
   sin_receta: boolean
+  /** Lo que costaria producirlo con los precios de hoy. */
+  costo_reposicion: number | null
+  margen_reposicion_pct: number | null
+  /** Precio que conserva el margen actual si tuvieras que reponer hoy. */
+  precio_sugerido: number | null
 }
 
 export type Insight = {
