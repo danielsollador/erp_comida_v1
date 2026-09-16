@@ -9,13 +9,50 @@ y una caja detras, para que el dueno pueda revisarlo despues.
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..acceso import auth, permisos
 from ..database import get_db
 
 router = APIRouter(prefix="/api/operadores", tags=["operadores"])
+
+
+def del_turno(db: Session, request: Request, operador_id: Optional[int] = None) -> Optional[models.Operador]:
+    """El operador de ESTA accion: quien tiene la sesion abierta.
+
+    Desde que el ERP tiene login, "quien esta en la caja" ya no se elige en un
+    desplegable: es quien entro con su clave. A cada usuario le corresponde un
+    operador con su mismo nombre, que se crea la primera vez que hace algo y se
+    reactiva si estaba dado de baja. Asi los pedidos, cierres y retiros siguen
+    apuntando a la tabla de operadores --con su historial intacto-- y el nombre
+    que aparece es el de la cuenta con la que se entro.
+
+    El `operador_id` que mande la tablet solo se usa si NO hay sesion (una
+    instalacion vieja sin login), y ni asi puede ser uno inactivo.
+    """
+    usuario = auth.quien(request)
+    if not usuario:
+        return resolver(db, operador_id)
+    operador = (
+        db.query(models.Operador)
+        .filter(func.lower(models.Operador.nombre) == usuario.lower())
+        .first()
+    )
+    if operador is None:
+        rol = getattr(request.state, "sesion", {}).get("rol")
+        operador = models.Operador(
+            nombre=usuario,
+            rol="dueno" if permisos.administra(rol) else "cajero",
+            activo=True,
+        )
+        db.add(operador)
+        db.flush()
+    elif not operador.activo:
+        operador.activo = True
+    return operador
 
 
 def resolver(db: Session, operador_id: Optional[int]) -> Optional[models.Operador]:

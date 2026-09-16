@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type {
   CierreCaja,
@@ -12,7 +14,7 @@ import type {
 } from '../lib/types'
 
 const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
-const METODOS_GASTO = ['Efectivo', 'Banco']
+const METODOS_GASTO = ['Efectivo', 'Efectivo $', 'Banco']
 
 export default function Caja() {
   const [resumen, setResumen] = useState<ResumenCaja | null>(null)
@@ -22,6 +24,19 @@ export default function Caja() {
   const [contado, setContado] = useState('')
   const [nota, setNota] = useState('')
   const [cierres, setCierres] = useState<CierreCaja[]>([])
+  // El ultimo cierre arriba; pero ordenar por Diferencia pone de primeras las
+  // cuadraturas que no dieron, que es lo que un dueno viene a buscar aqui.
+  const orden = useOrden<CierreCaja>(
+    {
+      fecha: (c) => new Date(c.fecha),
+      sistema: (c) => c.total_sistema,
+      contado: (c) => c.efectivo_contado,
+      // Por valor absoluto: da igual si falto o sobro, lo que importa es
+      // cuanto se despego de lo que decia el sistema.
+      diferencia: (c) => Math.abs(c.diferencia),
+    },
+    '-fecha',
+  )
   const [resultado, setResultado] = useState<CierreCaja | null>(null)
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [gastoDesc, setGastoDesc] = useState('')
@@ -179,12 +194,12 @@ export default function Caja() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100">
+    <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Cierre de caja" />
-      <div className="p-4 max-w-2xl mx-auto space-y-6">
-        <div className="bg-white rounded-2xl shadow p-4">
+      <Pagina ancho="media">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Tasa BCV (Bs por USD)</h2>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               value={tasaInput}
               onChange={(e) => setTasaInput(e.target.value)}
@@ -207,7 +222,7 @@ export default function Caja() {
         </div>
 
         {resumen && (
-          <div className="bg-white rounded-2xl shadow p-4">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-3">Ventas de hoy ({resumen.fecha})</h2>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div className="bg-neutral-50 rounded-xl p-3">
@@ -233,7 +248,7 @@ export default function Caja() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow p-4">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <div className="flex justify-between items-center mb-2">
             <h2 className="font-semibold">Gastos de hoy</h2>
             <span className="font-bold">${totalGastosHoy.toFixed(2)}</span>
@@ -255,7 +270,7 @@ export default function Caja() {
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="font-medium">${g.monto.toFixed(2)}</span>
-                  <button onClick={() => borrarGasto(g.id)} className="text-red-400 text-xs">
+                  <button onClick={() => borrarGasto(g.id)} className="text-peligro-400 text-xs">
                     x
                   </button>
                 </span>
@@ -266,7 +281,7 @@ export default function Caja() {
             )}
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               value={gastoDesc}
               onChange={(e) => setGastoDesc(e.target.value)}
@@ -315,7 +330,7 @@ export default function Caja() {
 
         {/* Separado de Gastos a proposito: el dueno sacando su plata no es un
             gasto del negocio y no debe bajar la ganancia. */}
-        <div className="bg-white rounded-2xl shadow p-4">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <div className="flex justify-between items-center mb-2">
             <h2 className="font-semibold">Retiros del dueño</h2>
             <button
@@ -340,7 +355,7 @@ export default function Caja() {
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="font-medium tabular-nums">${r.monto.toFixed(2)}</span>
-                  <button onClick={() => borrarRetiro(r.id)} className="text-red-400 text-xs">
+                  <button onClick={() => borrarRetiro(r.id)} className="text-peligro-400 text-xs">
                     x
                   </button>
                 </span>
@@ -356,23 +371,23 @@ export default function Caja() {
             aparecia como sobrante y terminaba engordando la utilidad, y el
             fiado no tenia donde registrarse. */}
         {((resumen?.propinas_por_entregar ?? 0) > 0 || fiado.length > 0) && (
-          <div className="bg-white rounded-2xl shadow p-4 space-y-3">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
             <h2 className="font-semibold">Plata que no es del negocio</h2>
             {(resumen?.propinas_por_entregar ?? 0) > 0 && (
-              <div className="flex items-center justify-between rounded-xl bg-violet-50 border border-violet-200 p-3">
+              <div className="flex items-center justify-between rounded-xl bg-acento-50 border border-acento-200 p-3">
                 <div>
-                  <div className="font-medium text-violet-900">Propinas por entregar</div>
-                  <div className="text-xs text-violet-700">
+                  <div className="font-medium text-acento-900">Propinas por entregar</div>
+                  <div className="text-xs text-acento-700">
                     Esta en la gaveta pero es del empleado, no ingreso tuyo.
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-semibold tabular-nums text-violet-900">
+                  <span className="font-semibold tabular-nums text-acento-900">
                     ${(resumen?.propinas_por_entregar ?? 0).toFixed(2)}
                   </span>
                   <button
                     onClick={entregarPropinas}
-                    className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white"
+                    className="rounded-lg bg-acento-600 px-3 py-1.5 text-sm font-medium text-white"
                   >
                     Entregar
                   </button>
@@ -380,8 +395,8 @@ export default function Caja() {
               </div>
             )}
             {fiado.length > 0 && (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
-                <div className="flex justify-between font-medium text-amber-900">
+              <div className="rounded-xl bg-aviso-50 border border-aviso-200 p-3">
+                <div className="flex justify-between font-medium text-aviso-900">
                   <span>Fiado por cobrar</span>
                   <span className="tabular-nums">
                     ${(resumen?.fiado_por_cobrar ?? 0).toFixed(2)}
@@ -391,11 +406,11 @@ export default function Caja() {
                   {fiado.map((f) => (
                     <div
                       key={f.pedido_id}
-                      className="flex items-center justify-between gap-2 text-sm text-amber-900"
+                      className="flex items-center justify-between gap-2 text-sm text-aviso-900"
                     >
                       <span className="truncate">
                         {f.cliente}
-                        <span className="ml-1 text-xs text-amber-700">
+                        <span className="ml-1 text-xs text-aviso-700">
                           #{f.numero} · hace {f.dias} dia(s)
                         </span>
                       </span>
@@ -403,7 +418,7 @@ export default function Caja() {
                         <span className="font-semibold tabular-nums">${f.monto.toFixed(2)}</span>
                         <button
                           onClick={() => cobrarFiado(f)}
-                          className="rounded-lg border border-amber-400 px-2 py-1 text-xs font-medium"
+                          className="rounded-lg border border-aviso-400 px-2 py-1 text-xs font-medium"
                         >
                           Cobrar
                         </button>
@@ -416,7 +431,7 @@ export default function Caja() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow p-4">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
             <h2 className="font-semibold">Contar efectivo fisico</h2>
             {/* Con dos pisos hay dos gavetas y cada una cierra la suya: antes
@@ -473,7 +488,7 @@ export default function Caja() {
                     `, ${(resumen?.retiros_hoy ?? 0).toFixed(2)} de retiros`}
                   )
                 </span>
-                <span className="tabular-nums text-red-600">
+                <span className="tabular-nums text-peligro-600">
                   −${(resumen?.salidas_efectivo ?? 0).toFixed(2)}
                 </span>
               </div>
@@ -485,7 +500,7 @@ export default function Caja() {
               </span>
             </div>
           </div>
-          {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+          {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
           <div className="flex gap-2 mb-2">
             <input
               value={contado}
@@ -498,8 +513,8 @@ export default function Caja() {
           {/* La gaveta de divisas se cuenta aparte: son otros billetes, en otra
               moneda. Con un solo numero el arqueo era imposible. */}
           {(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0) !== 0 && (
-            <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-              <div className="flex justify-between text-sm font-medium text-emerald-900">
+            <div className="mt-3 rounded-xl border border-exito-200 bg-exito-50 p-3">
+              <div className="flex justify-between text-sm font-medium text-exito-900">
                 <span>Deberia haber en billetes de dolar</span>
                 <span className="tabular-nums">
                   ${(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0).toFixed(2)}
@@ -511,7 +526,7 @@ export default function Caja() {
                 type="number"
                 step="0.01"
                 placeholder="Cuantos dolares contaste"
-                className="mt-2 w-full rounded-lg border border-emerald-300 px-3 py-2 text-sm"
+                className="mt-2 w-full rounded-lg border border-exito-300 px-3 py-2 text-sm"
               />
             </div>
           )}
@@ -526,7 +541,7 @@ export default function Caja() {
           <button
             onClick={hacerCierre}
             disabled={!contado}
-            className="w-full bg-blue-600 text-white rounded-xl py-3 font-medium disabled:opacity-30"
+            className="w-full bg-neutral-900 text-white rounded-xl py-3 font-medium disabled:opacity-30"
           >
             Cerrar caja
           </button>
@@ -535,8 +550,8 @@ export default function Caja() {
             <div
               className={`mt-4 rounded-xl p-3 text-sm ${
                 resultado.diferencia === 0
-                  ? 'bg-green-50 text-green-800'
-                  : 'bg-amber-50 text-amber-800'
+                  ? 'bg-exito-50 text-exito-800'
+                  : 'bg-aviso-50 text-aviso-800'
               }`}
             >
               {resultado.diferencia === 0 && 'Cuadra exacto. Buen cierre.'}
@@ -549,20 +564,21 @@ export default function Caja() {
         </div>
 
         {cierres.length > 0 && (
-          <div className="bg-white rounded-2xl shadow p-4">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-2">Historial de cierres</h2>
+            <Tabla orden={orden}>
             <table className="w-full text-sm">
               <thead className="text-neutral-500">
                 <tr>
-                  <th className="text-left py-1">Fecha</th>
-                  <th className="text-right py-1">Sistema</th>
-                  <th className="text-right py-1">Contado</th>
-                  <th className="text-right py-1">Diferencia</th>
-                  <th className="py-1" />
+                  <Th clave="fecha" className="py-1 px-0">Fecha</Th>
+                  <Th clave="sistema" alinear="derecha" className="py-1 px-0">Sistema</Th>
+                  <Th clave="contado" alinear="derecha" className="py-1 px-0">Contado</Th>
+                  <Th clave="diferencia" alinear="derecha" className="py-1 px-0">Diferencia</Th>
+                  <Th className="py-1 px-0" />
                 </tr>
               </thead>
               <tbody>
-                {cierres.map((c) => (
+                {orden.ordenar(cierres).map((c) => (
                   <tr
                     key={c.id}
                     className={`border-t border-neutral-100 ${c.anulado ? 'opacity-50' : ''}`}
@@ -575,7 +591,7 @@ export default function Caja() {
                         </span>
                       )}
                       {c.anulado && (
-                        <span className="block text-[11px] text-red-500">
+                        <span className="block text-[11px] text-peligro-500">
                           anulado{c.motivo_anulacion ? `: ${c.motivo_anulacion}` : ''}
                         </span>
                       )}
@@ -585,10 +601,10 @@ export default function Caja() {
                     <td
                       className={`text-right py-1 font-medium ${
                         c.diferencia === 0
-                          ? 'text-green-600'
+                          ? 'text-exito-600'
                           : c.diferencia < 0
-                            ? 'text-red-600'
-                            : 'text-amber-600'
+                            ? 'text-peligro-600'
+                            : 'text-aviso-600'
                       }`}
                     >
                       {c.anulado ? '—' : `${c.diferencia > 0 ? '+' : ''}${c.diferencia.toFixed(2)}`}
@@ -605,7 +621,7 @@ export default function Caja() {
                       {!c.anulado && (
                         <button
                           onClick={() => anularCierre(c.id)}
-                          className="text-xs font-medium text-red-500"
+                          className="text-xs font-medium text-peligro-500"
                         >
                           Anular
                         </button>
@@ -615,9 +631,10 @@ export default function Caja() {
                 ))}
               </tbody>
             </table>
+            </Tabla>
           </div>
         )}
-      </div>
+      </Pagina>
     </div>
   )
 }

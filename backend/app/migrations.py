@@ -8,18 +8,26 @@ primer despliegue se anaden aca, de forma idempotente.
 Cada paso pregunta primero si la columna ya esta: correr esto mil veces es
 inofensivo.
 
-Tampoco puede RELAJAR un NOT NULL: SQLite no tiene ALTER COLUMN, hace falta
-reconstruir la tabla. Eso vive en `RELAJAR_NOT_NULL` y salio de un fallo real:
-la venta libre guarda `pedido_items.variante_id` en NULL, y en una base que ya
-venia de antes la columna seguia siendo NOT NULL, asi que el endpoint reventaba
-con IntegrityError aunque los tests -que crean las tablas de cero- pasaran.
+DOS MOTORES. En produccion la base es PostgreSQL; en desarrollo sin Docker y
+en las pruebas, SQLite. Los tipos de la lista estan escritos en el dialecto de
+SQLite (que es el que existia) y se traducen al de PostgreSQL al aplicar:
+`DATETIME` -> `TIMESTAMP`, `BOOLEAN DEFAULT 1` -> `DEFAULT TRUE`.
+
+Relajar un NOT NULL tambien depende del motor: PostgreSQL tiene `ALTER COLUMN
+... DROP NOT NULL`; SQLite no tiene ALTER COLUMN y hay que reconstruir la
+tabla. Eso vive en `RELAJAR_NOT_NULL` y salio de un fallo real: la venta libre
+guarda `pedido_items.variante_id` en NULL, y en una base que ya venia de antes
+la columna seguia siendo NOT NULL, asi que el endpoint reventaba con
+IntegrityError aunque los tests -que crean las tablas de cero- pasaran.
 """
 
 import logging
+import re
 
 from sqlalchemy import inspect, text
 
 from .database import engine
+from .settings import ES_POSTGRES
 
 log = logging.getLogger("erp.migrations")
 
@@ -69,21 +77,37 @@ COLUMNAS = [
 ]
 
 
-# (tabla, columna) que dejaron de ser obligatorias. Se reconstruye la tabla
-# copiando los datos: es el unico camino en SQLite.
+# (tabla, columna) que dejaron de ser obligatorias.
 RELAJAR_NOT_NULL = [
     ("pedido_items", "variante_id"),
 ]
 
 
-def _es_not_null(con, tabla: str, columna: str) -> bool:
-    for fila in con.execute(text(f"PRAGMA table_info({tabla})")):
-        if fila[1] == columna:
-            return bool(fila[3])
+def _tipo_sql(tipo: str) -> str:
+    """El tipo de la lista, en el dialecto del motor que toca."""
+    if not ES_POSTGRES:
+        return tipo
+    t = tipo.replace("DATETIME", "TIMESTAMP")
+    t = re.sub(r"\bFLOAT\b", "DOUBLE PRECISION", t)
+    t = re.sub(r"BOOLEAN DEFAULT 1\b", "BOOLEAN DEFAULT TRUE", t)
+    t = re.sub(r"BOOLEAN DEFAULT 0\b", "BOOLEAN DEFAULT FALSE", t)
+    return t
+
+
+def _es_not_null(inspector, tabla: str, columna: str) -> bool:
+    for col in inspector.get_columns(tabla):
+        if col["name"] == columna:
+            return not col.get("nullable", True)
     return False
 
 
-def _relajar_not_null(tabla: str, columna: str) -> None:
+def _relajar_not_null_postgres(tabla: str, columna: str) -> None:
+    with engine.begin() as con:
+        con.execute(text(f'ALTER TABLE "{tabla}" ALTER COLUMN "{columna}" DROP NOT NULL'))
+    log.info("Columna %s.%s ahora acepta NULL", tabla, columna)
+
+
+def _relajar_not_null_sqlite(tabla: str, columna: str) -> None:
     """Reconstruye la tabla para que esa columna acepte NULL.
 
     SQLite no tiene ALTER COLUMN: hay que copiar a una tabla nueva. Es el
@@ -150,6 +174,16 @@ def _relajar_not_null(tabla: str, columna: str) -> None:
             log.error("Reconstruccion de %s dejo %d fila(s) huerfanas", tabla, len(rotas))
 
 
+def _relajar_not_null(tabla: str, columna: str) -> None:
+    """Segun el motor. Las pruebas la llaman con un engine de SQLite de
+    mentira, asi que la decision se toma por la configuracion y no por el
+    engine que haya en ese momento."""
+    if ES_POSTGRES:
+        _relajar_not_null_postgres(tabla, columna)
+    else:
+        _relajar_not_null_sqlite(tabla, columna)
+
+
 def aplicar():
     inspector = inspect(engine)
     tablas = set(inspector.get_table_names())
@@ -161,20 +195,22 @@ def aplicar():
             existentes = {c["name"] for c in inspector.get_columns(tabla)}
             if columna in existentes:
                 continue
-            con.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}"))
+            con.execute(text(f'ALTER TABLE "{tabla}" ADD COLUMN "{columna}" {_tipo_sql(tipo)}'))
             log.info("Columna agregada: %s.%s", tabla, columna)
             if tabla == "facturas_compra" and columna == "pagada":
                 # El DEFAULT 1 de arriba es correcto para Efectivo/Banco, pero
                 # una factura a credito que ya existia antes de esta migracion
                 # todavia se debe - no se puede asumir pagada solo por default.
+                falso = "FALSE" if ES_POSTGRES else "0"
                 con.execute(
-                    text("UPDATE facturas_compra SET pagada = 0 WHERE forma_pago = 'Credito'")
+                    text(f"UPDATE facturas_compra SET pagada = {falso} WHERE forma_pago = 'Credito'")
                 )
 
+    # El inspector cachea lo que leyo; para lo que sigue hace falta uno nuevo.
+    inspector = inspect(engine)
     for tabla, columna in RELAJAR_NOT_NULL:
         if tabla not in tablas:
             continue
-        with engine.connect() as con:
-            hace_falta = _es_not_null(con, tabla, columna)
-        if hace_falta:
-            _relajar_not_null(tabla, columna)
+        if not _es_not_null(inspector, tabla, columna):
+            continue
+        _relajar_not_null(tabla, columna)

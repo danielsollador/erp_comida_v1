@@ -1,7 +1,13 @@
-"""Base de datos limpia y aislada por test.
+"""Base de datos limpia y aislada por test, y una sesion abierta.
 
 Se monta SQLite en memoria y se sobreescribe la dependencia `get_db`, asi los
 tests nunca tocan `comida.db` ni dependen del historico del local.
+
+EL ERP ESTA DETRAS DE UN LOGIN. El middleware de `main.py` cierra todas las
+rutas salvo las del propio acceso, asi que el cliente de pruebas entra primero,
+igual que un navegador. Se llama al endpoint de login en vez de parchear la
+comprobacion: si se parcheara, el dia que el middleware se rompa los tests
+seguirian verdes y el ERP quedaria abierto sin que nada avise.
 """
 
 import pytest
@@ -10,9 +16,48 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import contabilidad, models
+from app import contabilidad, models, settings
+from app.acceso import auth, sesion, usuarios
 from app.database import Base, get_db
 from app.main import app
+
+USUARIO_TEST = "admin"
+CLAVE_TEST = "clave-de-prueba-larga"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _almacen_aislado(tmp_path_factory):
+    """Los usuarios de prueba van a un directorio temporal: correr la suite en
+    la maquina de alguien no puede crearle cuentas ni pisarle las suyas.
+
+    De alcance `session` a proposito: un almacen recreado en cada test le
+    borraria el usuario al cliente que ya habia entrado.
+    """
+    d = tmp_path_factory.mktemp("compartido")
+    usuarios.SHARED_DIR = d
+    usuarios.USERS_FILE = d / "users.json"
+    # Secreto fijo y de prueba: sin esto cada ejecucion crea uno en el
+    # directorio compartido de verdad.
+    sesion._CLAVE = b"secreto-de-pruebas-no-usar-en-produccion"
+    settings.ES_HUB = False
+    usuarios.crear(USUARIO_TEST, CLAVE_TEST, rol="admin")
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _sin_limite_de_intentos():
+    """El limite del login cuenta por IP y en memoria. Entre tests la IP es
+    siempre la misma; sin esto empezarian a fallar por 429."""
+    auth._hits.clear()
+    yield
+    auth._hits.clear()
+
+
+def entrar(cliente, usuario: str = USUARIO_TEST, clave: str = CLAVE_TEST):
+    """Abre sesion sobre un cliente ya creado y lo devuelve."""
+    r = cliente.post("/api/acceso/login", json={"usuario": usuario, "clave": clave})
+    assert r.status_code == 200, f"el login de los tests fallo: {r.text}"
+    return cliente
 
 
 @pytest.fixture()
@@ -34,19 +79,31 @@ def db():
 
     Base.metadata.create_all(bind=engine)
     Sesion = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    sesion = Sesion()
-    contabilidad.seed_plan_de_cuentas(sesion)
+    sesion_db = Sesion()
+    contabilidad.seed_plan_de_cuentas(sesion_db)
     try:
-        yield sesion
+        yield sesion_db
     finally:
-        sesion.close()
+        sesion_db.close()
         Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture()
-def client(db):
+def fuera(db):
+    """Cliente SIN sesion, con los usuarios ya creados."""
     app.dependency_overrides[get_db] = lambda: db
     with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def client(db):
+    """El habitual: con sesion de administrador. Es lo que necesita casi toda
+    la suite, que prueba datos y no la puerta."""
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as c:
+        entrar(c)
         yield c
     app.dependency_overrides.clear()
 

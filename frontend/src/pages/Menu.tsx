@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type { Categoria, CostoVariante } from '../lib/types'
 
@@ -49,9 +50,9 @@ export default function Menu() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100">
+    <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Menu" />
-      <div className="p-4 max-w-2xl mx-auto space-y-6">
+      <Pagina ancho="media">
         {categorias
           .filter((c) => c.activo)
           .map((cat) => (
@@ -67,7 +68,7 @@ export default function Menu() {
         {/* Retiradas del menu, no borradas: sus ventas siguen en el historico
             y se pueden volver a activar. */}
         {categorias.some((c) => !c.activo) && (
-          <div className="bg-white rounded-2xl shadow p-4">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-1">Fuera del menu</h2>
             <p className="text-xs text-neutral-500 mb-3">
               No aparecen en el punto de venta. Sus ventas anteriores se conservan.
@@ -83,7 +84,7 @@ export default function Menu() {
                     </span>
                     <button
                       onClick={() => reactivarCategoria(c.id)}
-                      className="text-blue-600 text-xs font-medium"
+                      className="text-acento-600 text-xs font-medium"
                     >
                       Volver a activar
                     </button>
@@ -93,7 +94,7 @@ export default function Menu() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow p-4 flex gap-2">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex gap-2">
           <input
             value={nuevaCategoria}
             onChange={(e) => setNuevaCategoria(e.target.value)}
@@ -107,7 +108,7 @@ export default function Menu() {
             Agregar
           </button>
         </div>
-      </div>
+      </Pagina>
     </div>
   )
 }
@@ -133,10 +134,10 @@ function CategoriaCard({
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow p-4">
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <div className="flex justify-between items-center mb-3">
         <h2 className="font-semibold text-lg">{categoria.nombre}</h2>
-        <button onClick={() => onBorrar(categoria.id)} className="text-red-500 text-xs">
+        <button onClick={() => onBorrar(categoria.id)} className="text-peligro-500 text-xs">
           Borrar categoria
         </button>
       </div>
@@ -245,7 +246,7 @@ function ProductoRow({
     <div className="border border-neutral-200 rounded-xl p-3">
       <div className="flex justify-between items-center mb-2">
         <span className="font-medium">{producto.nombre}</span>
-        <button onClick={borrarProducto} className="text-red-500 text-xs">
+        <button onClick={borrarProducto} className="text-peligro-500 text-xs">
           Quitar
         </button>
       </div>
@@ -265,7 +266,7 @@ function ProductoRow({
           <span
             key={v.id}
             className={`rounded-full px-3 py-1 text-xs flex items-center gap-2 ${
-              bajoCosto ? 'bg-red-50 ring-1 ring-red-300' : 'bg-neutral-100'
+              bajoCosto ? 'bg-peligro-50 ring-1 ring-peligro-300' : 'bg-neutral-100'
             }`}
           >
             <button onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}>
@@ -279,10 +280,10 @@ function ProductoRow({
               <span
                 className={`tabular-nums ${
                   bajoCosto
-                    ? 'text-red-600 font-semibold'
+                    ? 'text-peligro-600 font-semibold'
                     : info.margen_pct >= 50
-                      ? 'text-emerald-600'
-                      : 'text-amber-600'
+                      ? 'text-exito-600'
+                      : 'text-aviso-600'
                 }`}
                 title={`Cuesta $${info.costo?.toFixed(2)} producirlo`}
               >
@@ -293,8 +294,8 @@ function ProductoRow({
               <span
                 className={`tabular-nums ${
                   info!.margen_reposicion_pct! < 0
-                    ? 'text-red-600 font-semibold'
-                    : 'text-orange-600'
+                    ? 'text-peligro-600 font-semibold'
+                    : 'text-aviso-600'
                 }`}
                 title={
                   `Con los precios de hoy cuesta $${info!.costo_reposicion?.toFixed(2)} producirlo. ` +
@@ -307,12 +308,12 @@ function ProductoRow({
               </span>
             )}
             {info?.sin_receta && (
-              <span className="text-amber-700" title="Sin receta: no se sabe cuanto cuesta">
+              <span className="text-aviso-700" title="Sin receta: no se sabe cuanto cuesta">
                 sin receta
               </span>
             )}
             {producto.variantes.length > 1 && (
-              <button onClick={() => borrarVariante(v.id)} className="text-red-400">
+              <button onClick={() => borrarVariante(v.id)} className="text-peligro-400">
                 x
               </button>
             )}
@@ -320,7 +321,7 @@ function ProductoRow({
           )
         })}
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <input
           value={nuevaVariante}
           onChange={(e) => setNuevaVariante(e.target.value)}

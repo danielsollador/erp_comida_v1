@@ -351,8 +351,11 @@ def pagar_declaracion(
             status_code=400,
             detail="Este periodo no dejo IVA por pagar: el credito fiscal cubrio el debito.",
         )
-    if body.forma_pago not in ("Efectivo", "Banco"):
-        raise HTTPException(status_code=400, detail="La forma de pago debe ser Efectivo o Banco")
+    if not contabilidad.metodo_de_pago_valido(body.forma_pago):
+        raise HTTPException(
+            status_code=400,
+            detail="El IVA se paga desde el Banco o desde una gaveta (Efectivo Bs, Efectivo $)",
+        )
 
     contabilidad.registrar_pago_iva(db, declaracion, body.forma_pago)
     declaracion.pagada = True

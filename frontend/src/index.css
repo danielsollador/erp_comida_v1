@@ -1,10 +1,903 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: light;
+/* `alto:` = pantalla alta (una tablet en vertical). Ahi las fichas del inicio
+   crecen para llenar el alto y les cabe una linea de descripcion; en una
+   pantalla apaisada esa linea las desbordaria y se esconde. */
+@custom-variant alto (@media (min-height: 1100px));
+
+/* `bajo:` = pantalla corta (una tablet de 1024x768 apaisada, un portatil
+   chico). El inicio tiene que caber ENTERO sin desplazarse, y en 768 px de
+   alto no caben los rellenos y los iconos de una pantalla de 1032: se
+   aprietan un escalon. Desde 640 px de ancho para no tocar el telefono, que
+   se desplaza de todas formas. */
+@custom-variant bajo (@media (max-height: 850px) and (min-width: 640px));
+
+/*
+  SISTEMA DE DISEÑO DE VERTIGO PRO
+  ================================
+
+  Una sola fuente de verdad para lo que hace que el ERP se vea de Vertigo y no
+  de una plantilla: la paleta calida de papel y grafito, el acento de cobre
+  --sacado del logo de Savora, que es lo que se ve arriba de cada pantalla--,
+  las tres tipografias (Sora para titulos, Manrope para texto, JetBrains Mono
+  para cifras) y los radios y sombras.
+
+  UNA PALETA CENTRAL, CINCO FAMILIAS. Neutros (papel/tinta) y cuatro colores
+  con nombre de lo que significan: `acento` (la marca: enlaces, lo activo, lo
+  destacado), `exito` (cuadra, listo, pagado), `aviso` (ojo: stock bajo, hay
+  que cerrar caja) y `peligro` (anular, borrar, falta plata). Las pantallas
+  NO usan `emerald`, `amber`, `red`, `blue`, `violet`... de Tailwind: cada
+  color que se ve sale de estas cinco familias, y las cuatro de estado se
+  generan con la MISMA tabla de luminosidad y croma, solo cambia el matiz.
+  Asi un `bg-aviso-50` pesa lo mismo que un `bg-exito-50` y las cajas de
+  estado de Caja, Inventario y Reportes se ven de la misma familia.
+
+  TODO PASA POR LAS VARIABLES DE TAILWIND. Las trece pantallas estan escritas
+  con utilidades (`bg-white`, `border-neutral-200`, `bg-neutral-900`...), y
+  Tailwind 4 compila cada una a `var(--color-*)`. Redefinir esas variables aqui
+  cambia el aplicativo entero sin tocar una pantalla: `bg-neutral-50` deja de
+  ser un gris de laboratorio y pasa a ser papel; `bg-neutral-900` es tinta.
+
+  MODO OSCURO: la misma escala invertida, con las superficies en grafito
+  azulado (no negro puro) para que las tarjetas blancas del codigo se vuelvan
+  paneles oscuros con relieve. Los colores de estado se llevan a la version que
+  se lee sobre fondo oscuro: lavados (50-100) oscuros, tintas (600-900) claras.
+
+  EL CAMBIO DE TEMA NO USA `transition` POR NODO. Antes, `html.animando *`
+  ponia una transicion a cada elemento: el navegador recalculaba y repintaba
+  los 1.600 nodos del POS en cada fotograma, y de ahi los saltos de FPS. Ahora
+  el cambio lo hace el compositor con View Transitions (una foto del antes y
+  otra del despues, reveladas en circulo desde el boton). Un solo fotograma de
+  trabajo real, el resto es GPU. Ver `lib/tema.tsx`.
+*/
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Sora", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
+
+  /* Papel y grafito: neutros con un punto de calidez, nunca gris puro. */
+  --color-neutral-50: #f6f4ef;
+  --color-neutral-100: #eeebe4;
+  --color-neutral-200: #e2ded5;
+  --color-neutral-300: #cdc7bc;
+  --color-neutral-400: #98948b;
+  --color-neutral-500: #6d6b66;
+  --color-neutral-600: #54524e;
+  --color-neutral-700: #3e3d3a;
+  --color-neutral-800: #292927;
+  --color-neutral-900: #17181b;
+  --color-neutral-950: #0e0f12;
+
+  /* Las cuatro familias de color. Mismo L y C por tono, distinto matiz:
+     acento 42 (el cobre del logo), exito 152, aviso 72, peligro 24. */
+  --color-acento-50: oklch(97% 0.012 42);
+  --color-acento-100: oklch(94% 0.025 42);
+  --color-acento-200: oklch(88% 0.051 42);
+  --color-acento-300: oklch(79% 0.081 42);
+  --color-acento-400: oklch(69% 0.106 42);
+  --color-acento-500: oklch(60% 0.123 42);
+  --color-acento-600: oklch(51% 0.119 42);
+  --color-acento-700: oklch(44% 0.102 42);
+  --color-acento-800: oklch(37% 0.085 42);
+  --color-acento-900: oklch(30% 0.064 42);
+
+  --color-exito-50: oklch(97% 0.014 152);
+  --color-exito-100: oklch(94% 0.03 152);
+  --color-exito-200: oklch(88% 0.06 152);
+  --color-exito-300: oklch(79% 0.095 152);
+  --color-exito-400: oklch(69% 0.125 152);
+  --color-exito-500: oklch(60% 0.145 152);
+  --color-exito-600: oklch(51% 0.14 152);
+  --color-exito-700: oklch(44% 0.12 152);
+  --color-exito-800: oklch(37% 0.1 152);
+  --color-exito-900: oklch(30% 0.075 152);
+
+  --color-aviso-50: oklch(97% 0.015 72);
+  --color-aviso-100: oklch(94% 0.033 72);
+  --color-aviso-200: oklch(88% 0.066 72);
+  --color-aviso-300: oklch(79% 0.105 72);
+  --color-aviso-400: oklch(69% 0.138 72);
+  --color-aviso-500: oklch(60% 0.16 72);
+  --color-aviso-600: oklch(51% 0.154 72);
+  --color-aviso-700: oklch(44% 0.132 72);
+  --color-aviso-800: oklch(37% 0.11 72);
+  --color-aviso-900: oklch(30% 0.083 72);
+
+  --color-peligro-50: oklch(97% 0.018 24);
+  --color-peligro-100: oklch(94% 0.039 24);
+  --color-peligro-200: oklch(88% 0.078 24);
+  --color-peligro-300: oklch(79% 0.124 24);
+  --color-peligro-400: oklch(69% 0.163 24);
+  --color-peligro-500: oklch(60% 0.189 24);
+  --color-peligro-600: oklch(51% 0.182 24);
+  --color-peligro-700: oklch(44% 0.156 24);
+  --color-peligro-800: oklch(37% 0.13 24);
+  --color-peligro-900: oklch(30% 0.098 24);
+
+  --radius-lg: 0.7rem;
+  --radius-xl: 0.9rem;
+  --radius-2xl: 1.15rem;
+
+  --shadow-sm: 0 1px 2px rgb(23 24 27 / 0.05), 0 1px 1px rgb(23 24 27 / 0.03);
+  --shadow: 0 1px 2px rgb(23 24 27 / 0.06), 0 4px 12px -4px rgb(23 24 27 / 0.08);
+  --shadow-md: 0 2px 6px -2px rgb(23 24 27 / 0.08), 0 10px 24px -8px rgb(23 24 27 / 0.14);
+  --shadow-lg: 0 20px 48px -18px rgb(23 24 27 / 0.24), 0 4px 10px -4px rgb(23 24 27 / 0.08);
 }
 
+:root {
+  color-scheme: light;
+  /* Tokens semanticos que las pantallas nuevas usan por nombre. */
+  --vp-papel: var(--color-neutral-50);
+  --vp-superficie: #ffffff;
+  --vp-tinta: var(--color-neutral-900);
+  --vp-acento: var(--color-acento-600);
+  --vp-acento-tinta: #ffffff;
+  --vp-acento-suave: var(--color-acento-50);
+  --vp-textura: rgb(23 24 27 / 0.05);
+}
+
+/*
+  La paleta oscura. La cocina tambien la sigue: iba oscura siempre --menos
+  brillo detras del fogon-- pero era la unica pantalla que no obedecia al
+  interruptor, y de dia, con el local iluminado, se veia como de otro
+  aplicativo. Quien quiera la cocina oscura pone el modo oscuro, como en todo
+  lo demas.
+*/
+html[data-tema="oscuro"] {
+  color-scheme: dark;
+
+  --vp-superficie: #161920;
+  --vp-acento: var(--color-acento-400);
+  --vp-acento-tinta: #0e0f12;
+  --vp-acento-suave: var(--color-acento-50);
+  --vp-textura: rgb(255 255 255 / 0.045);
+
+  --color-white: #161920;
+  --color-black: #f4f5f8;
+  --color-neutral-50: #0e1014;
+  --color-neutral-100: #1b1e26;
+  --color-neutral-200: #262a33;
+  --color-neutral-300: #333844;
+  --color-neutral-400: #7c8290;
+  --color-neutral-500: #a1a7b4;
+  --color-neutral-600: #bbc0ca;
+  --color-neutral-700: #d1d5dd;
+  --color-neutral-800: #e3e6ec;
+  --color-neutral-900: #f1f3f7;
+  --color-neutral-950: #f8f9fb;
+
+  /* Las cuatro familias, invertidas: los lavados (50-100) oscuros para las
+     cajas, las tintas (600-900) claras para el texto. */
+  --color-acento-50: oklch(25% 0.025 42);
+  --color-acento-100: oklch(29% 0.038 42);
+  --color-acento-200: oklch(36% 0.051 42);
+  --color-acento-300: oklch(47% 0.076 42);
+  --color-acento-400: oklch(62% 0.102 42);
+  --color-acento-500: oklch(70% 0.119 42);
+  --color-acento-600: oklch(77% 0.111 42);
+  --color-acento-700: oklch(82% 0.093 42);
+  --color-acento-800: oklch(87% 0.076 42);
+  --color-acento-900: oklch(92% 0.051 42);
+
+  --color-exito-50: oklch(25% 0.03 152);
+  --color-exito-100: oklch(29% 0.045 152);
+  --color-exito-200: oklch(36% 0.06 152);
+  --color-exito-300: oklch(47% 0.09 152);
+  --color-exito-400: oklch(62% 0.12 152);
+  --color-exito-500: oklch(70% 0.14 152);
+  --color-exito-600: oklch(77% 0.13 152);
+  --color-exito-700: oklch(82% 0.11 152);
+  --color-exito-800: oklch(87% 0.09 152);
+  --color-exito-900: oklch(92% 0.06 152);
+
+  --color-aviso-50: oklch(25% 0.033 72);
+  --color-aviso-100: oklch(29% 0.05 72);
+  --color-aviso-200: oklch(36% 0.066 72);
+  --color-aviso-300: oklch(47% 0.099 72);
+  --color-aviso-400: oklch(62% 0.132 72);
+  --color-aviso-500: oklch(70% 0.154 72);
+  --color-aviso-600: oklch(77% 0.143 72);
+  --color-aviso-700: oklch(82% 0.121 72);
+  --color-aviso-800: oklch(87% 0.099 72);
+  --color-aviso-900: oklch(92% 0.066 72);
+
+  --color-peligro-50: oklch(25% 0.039 24);
+  --color-peligro-100: oklch(29% 0.058 24);
+  --color-peligro-200: oklch(36% 0.078 24);
+  --color-peligro-300: oklch(47% 0.117 24);
+  --color-peligro-400: oklch(62% 0.156 24);
+  --color-peligro-500: oklch(70% 0.182 24);
+  --color-peligro-600: oklch(77% 0.169 24);
+  --color-peligro-700: oklch(82% 0.143 24);
+  --color-peligro-800: oklch(87% 0.117 24);
+  --color-peligro-900: oklch(92% 0.078 24);
+}
+
+
+/* ── Cambio de tema: el compositor, no el layout ──────────────────────────── */
+
+/* La foto vieja se queda quieta y la nueva se revela en circulo desde el boton
+   que se pulso (`--vp-x/--vp-y` los pone `lib/tema.tsx`). Nada de esto toca el
+   DOM durante la animacion: son dos imagenes que el compositor funde. */
+::view-transition-old(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(root) {
+  animation: vp-revelar 0.52s cubic-bezier(0.2, 0.7, 0.2, 1);
+  mix-blend-mode: normal;
+}
+
+@keyframes vp-revelar {
+  from {
+    clip-path: circle(0px at var(--vp-x, 50%) var(--vp-y, 50%));
+  }
+  to {
+    clip-path: circle(var(--vp-radio, 160vmax) at var(--vp-x, 50%) var(--vp-y, 50%));
+  }
+}
+
+/* Respaldo sin View Transitions (Firefox viejo): solo los contenedores
+   grandes, nunca cada nodo. Se pierde el degradado fino de cada tarjeta, pero
+   el cambio es fluido -- y fluido y algo mas brusco se ve mejor que suave a
+   tirones. */
+html.vp-cambiando-tema body,
+html.vp-cambiando-tema header,
+html.vp-cambiando-tema main,
+html.vp-cambiando-tema aside,
+html.vp-cambiando-tema section,
+html.vp-cambiando-tema table {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+  html.vp-cambiando-tema * {
+    transition: none !important;
+  }
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-neutral-50);
+    color: var(--color-neutral-900);
+    min-height: 100vh;
+  }
+
+  /* La textura de fondo: una luz de acento arriba a la izquierda y un punteado
+     fino. Es lo que hace que el papel no sea un color plano, y se ve tanto en
+     claro como en oscuro. Fija y sin eventos: no cuesta layout ni estorba. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      radial-gradient(60rem 36rem at -10% -20%, color-mix(in oklab, var(--vp-acento) 13%, transparent), transparent 60%),
+      radial-gradient(var(--vp-textura) 0.8px, transparent 0.8px);
+    background-size: auto, 22px 22px;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  /* Las cifras van en mono con digitos tabulares: en una tabla de ventas los
+     numeros se alinean en columna y el ojo compara de un vistazo. */
+  .tabular-nums,
+  [class~="tabular-nums"] {
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum", "zero";
+    font-size: 0.94em;
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--vp-acento) 28%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--vp-acento);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  input, select, textarea {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--vp-acento) !important;
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--vp-acento) 22%, transparent);
+  }
+  input::placeholder, textarea::placeholder {
+    color: var(--color-neutral-400);
+  }
+
+  /* Todo boton responde al toque: se hunde un pelo al pulsar. Es la señal mas
+     barata de que el clic entro, y en una tablet de mostrador es la que
+     evita el doble toque. */
+  button {
+    transition:
+      transform 0.12s cubic-bezier(0.2, 0.7, 0.2, 1),
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease,
+      box-shadow 0.15s ease,
+      opacity 0.15s ease;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* Los botones principales del codigo son `bg-neutral-900 text-white`: se
+     les da relieve y un brillo superior sin tocar las trece pantallas. */
+  button[class~="bg-neutral-900"] {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.12),
+      0 1px 2px rgb(23 24 27 / 0.2),
+      0 6px 16px -8px rgb(23 24 27 / 0.35);
+  }
+  button[class~="bg-neutral-900"]:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+
+  /* Las tarjetas (`rounded-2xl` + borde) se levantan al pasar el cursor. */
+  [class~="rounded-2xl"][class~="border"] {
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  /* Barras de desplazamiento finas y del color de la linea. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-neutral-300) transparent;
+  }
+
+  /* Cada pantalla entra con un fundido corto que baja a su sitio.
+     `.min-h-screen` es la raiz de todas las paginas; con esto la navegacion
+     entre modulos se siente como un solo aplicativo y no como recargas. El
+     desplazamiento es hacia ARRIBA (-6px) a proposito: lo que sobresale por
+     arriba no es desplazable, lo que sobresale por abajo si, y con +6px el
+     inicio --que cabe exacto en la tablet-- mostraba una barra de scroll
+     durante los 320 ms de la entrada. */
+  /* OJO con el modo de relleno. Con `both`, al terminar la animacion el
+     `transform` de los fotogramas se queda aplicado como matriz identidad, y
+     un `transform` --aunque no mueva nada-- convierte al elemento en el
+     bloque contenedor de todo `position: fixed` que lleve dentro. Resultado:
+     los modales y el aviso de "Cobrado #N" se posicionaban contra la pagina y
+     no contra la pantalla; en el telefono el dialogo de cobro quedaba 145 px
+     mas abajo del borde inferior, con el boton de Cobrar fuera. Con
+     `backwards` --y con el fotograma final escrito abajo-- el relleno se
+     suelta al terminar y la pantalla vuelve a ser un elemento normal. */
+  .min-h-screen {
+    animation: vp-entrar 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  }
+  /* El `to` va escrito aunque parezca redundante: sin el, el fotograma final
+     es implicito y el navegador deja el `transform` del `from` puesto para
+     siempre cuando el relleno es `forwards`. */
+  @keyframes vp-entrar {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .min-h-screen { animation: none; }
+    button { transition: none; }
+  }
+}
+
+/* ── Piezas propias del shell (barra lateral, marca) ─────────────────────── */
+
+@layer components {
+  /* El rombo de Vertigo: el mismo que llevan el login y el hub. */
+  .vp-rombo {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: var(--vp-acento);
+    transform: rotate(45deg);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--vp-acento) 18%, transparent);
+  }
+
+  /* El logo del local (lo declara su ficha en `locales/`). Viene en tinta
+     oscura sobre transparente; en modo oscuro se aclara con el mismo filtro
+     que usa login.html, para que sea el mismo logo en las dos puertas. */
+  .vp-logo {
+    display: inline-block;
+    width: auto;
+    object-fit: contain;
+  }
+  html[data-tema="oscuro"] .vp-logo,
+  .vp-logo-claro {
+    filter: brightness(1.9) saturate(0.85) contrast(1.05);
+  }
+
+  /* El mosaico del inicio: una rejilla que NUNCA deja huecos. `grid` con
+     columnas fijas deja celdas vacias cuando los modulos no son multiplo de
+     las columnas (siete modulos en cinco columnas: tres huecos); con flex las
+     ultimas fichas se ensanchan y la fila queda completa. Y como el mosaico
+     recibe el alto que sobra de la pantalla, `align-content: stretch` reparte
+     ese alto entre las filas: en una tablet en vertical las fichas crecen en
+     vez de dejar media pantalla en blanco. `--cols-sm/--cols-lg` los pone la
+     pantalla segun cuantos modulos tiene, eligiendo un divisor exacto. */
+  .vp-mosaico {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: stretch;
+    gap: 0.75rem;
+    --cols: 2;
+  }
+  .vp-mosaico > * {
+    flex: 1 1 calc(100% / var(--cols) - 1rem);
+    min-width: 0;
+  }
+  @media (min-width: 640px) {
+    .vp-mosaico {
+      gap: 1rem;
+      --cols: var(--cols-sm, 3);
+    }
+  }
+  @media (min-width: 1024px) {
+    .vp-mosaico {
+      --cols: var(--cols-lg, 5);
+    }
+  }
+  @media (max-height: 850px) and (min-width: 640px) {
+    .vp-mosaico {
+      gap: 0.75rem;
+    }
+  }
+
+  .vp-rail {
+    background: color-mix(in oklab, var(--vp-superficie) 88%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-right: 1px solid var(--color-neutral-200);
+  }
+
+  .vp-rail-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    color: var(--color-neutral-500);
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+  }
+  .vp-rail-item:hover {
+    background: var(--color-neutral-100);
+    color: var(--color-neutral-900);
+  }
+  .vp-rail-item[aria-current="page"] {
+    background: var(--vp-acento-suave);
+    color: var(--vp-acento);
+  }
+  .vp-rail-item[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: -12px;
+    top: 12px;
+    bottom: 12px;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--vp-acento);
+  }
+  /* La etiqueta flotante del icono. Sin ella un rail de solo iconos obliga a
+     adivinar; con ella, a quien ya conoce el sistema no le estorba. */
+  .vp-rail-item .vp-tip {
+    position: absolute;
+    left: calc(100% + 10px);
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--color-neutral-900);
+    color: var(--color-neutral-50);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-4px);
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    z-index: 40;
+  }
+  .vp-rail-item:hover .vp-tip,
+  .vp-rail-item:focus-visible .vp-tip {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .vp-glass {
+    background: color-mix(in oklab, var(--vp-superficie) 82%, transparent);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  }
+
+  .vp-etiqueta {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-neutral-400);
+  }
+
+  /* Boton de acento: el unico sitio donde el cobre es fondo. */
+  .vp-boton-acento {
+    background: var(--vp-acento);
+    color: var(--vp-acento-tinta);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.18),
+      0 8px 20px -10px color-mix(in oklab, var(--vp-acento) 70%, transparent);
+  }
+  .vp-boton-acento:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HOMOLOGACION DE LOS MODULOS
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Las trece pantallas se escribieron en momentos distintos y cada una eligio
+   sus formas: las tarjetas van con `shadow` en unas y con `border` en otras,
+   los campos existen en tres radios (`rounded-lg`, `rounded-xl`, `rounded-2xl`)
+   y los botones en cuatro, con `font-medium` o `font-semibold` segun el dia.
+   Nada de eso se nota mirando una pantalla sola; se nota al pasar de Caja a
+   Compras y sentir que son dos aplicativos.
+
+   Este bloque le pone UNA forma a cada cosa -- campo, boton, tarjeta, tabla,
+   etiqueta -- sin tocar las 6.500 lineas de TSX: se apoya en las clases que
+   las pantallas ya tienen.
+
+   VA FUERA DE `@layer` A PROPOSITO. En Tailwind 4 las utilidades viven en la
+   capa `utilities`, que gana sobre `base` y `components` sin importar la
+   especificidad; el CSS sin capa gana sobre todas ellas. Es la unica forma de
+   que `border-radius` de aqui mande sobre un `rounded-lg` escrito en el TSX.
+   Cada regla se limita con `:where()` o con un atributo para no volverse un
+   martillo: lo que la pantalla pidio explicitamente (un `rounded-full`, un
+   `text-lg`) sigue mandando.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Campos: una sola forma, una sola tipografia ──────────────────────────── */
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea {
+  font-family: var(--font-sans);
+  border-radius: 0.65rem;
+  border-color: var(--color-neutral-300);
+  background-color: var(--vp-superficie);
+  color: var(--color-neutral-900);
+}
+
+/* Las cifras que se teclean van en mono tabular, igual que las que se leen en
+   las tablas: al cajero le cuadra la columna con lo que acaba de escribir. */
+input[type="number"] {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum", "zero";
+  letter-spacing: -0.01em;
+}
+
+/* El desplegable nativo pinta su flecha en gris del sistema; esta va con el
+   color de la tinta y deja sitio a la derecha para que no pise al texto. */
+select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 1rem center, right 0.7rem center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2rem;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background-color: var(--color-neutral-100);
+  color: var(--color-neutral-400);
+  cursor: not-allowed;
+}
+
+/* ── Botones: mismo radio y mismo peso ────────────────────────────────────── */
+
+/* Solo los que declaran un radio cuadrado. Los `rounded-full` son pastillas e
+   iconos y tienen que seguir siendo redondos. */
+button:where([class~="rounded-lg"], [class~="rounded-xl"], [class~="rounded-2xl"]),
+a:where([class~="rounded-lg"], [class~="rounded-xl"]):where([class*="bg-neutral-900"], [class*="bg-white"]) {
+  border-radius: 0.65rem;
+}
+
+button:where([class~="font-medium"], [class~="font-semibold"]) {
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+/* Un boton deshabilitado no se hunde ni se ilumina: no hay nada que confirmar. */
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* El destructivo se reconoce sin leerlo. */
+button:where([class*="text-peligro-6"], [class*="text-peligro-5"]):hover:not(:disabled) {
+  background-color: var(--color-peligro-50);
+}
+
+/* ── Tarjetas: borde siempre, sombra de apoyo ─────────────────────────────── */
+
+/* Once tarjetas llevaban `shadow` sin borde y veintiseis borde sin sombra: de
+   lejos parecian dos componentes distintos. El borde es el que define la
+   superficie (y el unico que se ve en modo oscuro); la sombra solo la separa
+   del papel. */
+:where([class~="rounded-2xl"], [class~="rounded-xl"]):where([class~="bg-white"]) {
+  border: 1px solid var(--color-neutral-200);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Tablas: un solo encabezado para todo el ERP ──────────────────────────── */
+
+:where(.min-h-screen) table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+:where(.min-h-screen) thead {
+  background-color: var(--color-neutral-50);
+}
+
+:where(.min-h-screen) th {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-neutral-500);
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--color-neutral-200);
+  white-space: nowrap;
+}
+
+:where(.min-h-screen) td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--color-neutral-100);
+  vertical-align: middle;
+}
+
+:where(.min-h-screen) tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* La fila bajo el cursor se aclara: en una tabla de treinta movimientos es lo
+   que evita perder el renglon al mirar de la fecha al monto. */
+:where(.min-h-screen) tbody tr:hover td {
+  background-color: color-mix(in oklab, var(--color-neutral-100) 60%, transparent);
+}
+
+/* ── Etiquetas de seccion ─────────────────────────────────────────────────── */
+
+/* Cada pantalla escribio la suya con un gris y un tracking distintos. */
+:where([class~="uppercase"]):where([class~="tracking-wide"], [class~="tracking-wider"]) {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--color-neutral-400);
+}
+
+/* ── Titulos ──────────────────────────────────────────────────────────────── */
+
+/* La familia ya la pone `@layer base`; aqui el peso y el interletrado, que
+   venian en cinco combinaciones. El tamaño NO se toca: si una pantalla pidio
+   `text-lg` para su titulo principal, esa intencion se respeta. */
+:where(.min-h-screen) h2 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+:where(.min-h-screen) h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ── Responsive: las tablas nunca desbordan la pantalla ───────────────────── */
+
+/*
+  Cuatro pantallas (Caja, Sistema, Tasa, Usuarios) tenian su tabla sin
+  contenedor de scroll, y en un telefono de 375 px eso no recorta: estira el
+  documento entero y deja toda la pagina desplazandose en horizontal.
+
+  `:has(> table)` le da el scroll al contenedor de la tabla, sea cual sea, sin
+  tener que envolver cada una a mano en las trece pantallas. Es la unica regla
+  del archivo que depende de `:has()`; donde no exista, la tabla se comporta
+  como antes y el resto del sistema de diseño no se entera.
+*/
+:where(.min-h-screen) :has(> table) {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* Que se vea que hay mas tabla a la derecha: una sombra en el borde que
+   desaparece sola al llegar al final. */
+:where(.min-h-screen) :has(> table) {
+  background:
+    linear-gradient(to right, var(--vp-superficie) 30%, transparent),
+    linear-gradient(to left, var(--vp-superficie) 30%, transparent) right,
+    radial-gradient(farthest-side at 0 50%, rgb(23 24 27 / 0.12), transparent) 0,
+    radial-gradient(farthest-side at 100% 50%, rgb(23 24 27 / 0.12), transparent) right;
+  background-repeat: no-repeat;
+  background-size: 32px 100%, 32px 100%, 12px 100%, 12px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* En un telefono el ERP se lee con el pulgar: los objetivos tactiles de las
+   tablas y las acciones en linea no bajan de 40 px de alto. */
+@media (max-width: 640px) {
+  :where(.min-h-screen) th,
+  :where(.min-h-screen) td {
+    padding: 0.5rem 0.625rem;
+  }
+  :where(.min-h-screen) button:not([class*="w-"]) {
+    min-height: 40px;
+  }
+}
+
+/* ── Tablas: ordenar por columna ──────────────────────────────────────────── */
+
+/* El titulo de una columna ordenable hereda la tipografia del `th` para que
+   no se note que por dentro es un boton: lo unico que cambia es que responde
+   al clic y muestra por donde va el orden. */
+.vp-orden {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 0.25rem;
+}
+.vp-orden:hover {
+  color: var(--color-neutral-900);
+}
+
+/* Entre el telefono y el escritorio grande --o sea, en toda tablet-- la tabla
+   se aprieta un poco antes de rendirse y pedir scroll horizontal. Ocho
+   columnas a 12 px de relleno por lado son 192 px gastados solo en aire. */
+@media (min-width: 641px) and (max-width: 1279px) {
+  :where(.min-h-screen) .vp-tabla th,
+  :where(.min-h-screen) .vp-tabla td {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+}
+
+/* ── Tablas en telefono: fichas apiladas ──────────────────────────────────── */
+
+/*
+  La regla del negocio es que una tabla se vea COMPLETA. Ocho columnas en un
+  telefono no caben de ninguna manera, y en una tablet en vertical tampoco: o
+  se corta, o se esconden columnas, o se deja scroll horizontal --y con scroll
+  horizontal la mitad de la gente ni se entera de que hay mas datos a la
+  derecha.
+
+  Cuando no cabe, la tabla deja de ser una rejilla y cada fila pasa a ser una
+  ficha con sus rotulos: no falta ni un dato y no hay nada que descubrir
+  deslizando. El rotulo de cada celda lo pone `Tabla.tsx`, copiado del
+  `thead`, para no escribirlo a mano en noventa celdas.
+
+  No es un punto de quiebre fijo sino una MEDIDA: `Tabla.tsx` compara lo que
+  la tabla necesita con lo que hay y pone `.vp-apilada` si no da. Asi cada
+  tabla decide sola --la de cuatro columnas sigue siendo rejilla en un
+  telefono grande justo donde la de ocho ya se apilo-- y una columna nueva no
+  obliga a revisar ningun breakpoint.
+*/
+.vp-tabla.vp-apilada {
+  overflow-x: visible;
+  background: none;
+}
+.vp-tabla.vp-apilada table,
+.vp-tabla.vp-apilada tfoot,
+.vp-tabla.vp-apilada tr {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.vp-tabla.vp-apilada thead {
+  display: none;
+}
+/* Las fichas en rejilla, no en una columna: en una tablet en vertical caben
+   dos y no hay por que dejar media pantalla en blanco. El `gap` de 1 px sobre
+   el color de la linea hace de separador; asi no hay tarjetas dentro de la
+   tarjeta. */
+.vp-tabla.vp-apilada tbody {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 1px;
+  background: var(--color-neutral-200);
+}
+.vp-tabla.vp-apilada tbody tr,
+.vp-tabla.vp-apilada tfoot tr {
+  padding: 0.625rem 0.875rem;
+  background: var(--vp-superficie);
+}
+/* "Todavia no hay nada" y los totales del pie no son una ficha mas: cruzan
+   la rejilla entera. */
+.vp-tabla.vp-apilada tbody tr:has(td[colspan]) {
+  grid-column: 1 / -1;
+}
+.vp-tabla.vp-apilada tfoot tr {
+  border-top: 1px solid var(--color-neutral-200);
+}
+.vp-tabla.vp-apilada td {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.1875rem 0;
+  border: 0;
+  text-align: right;
+}
+.vp-tabla.vp-apilada td[data-etiqueta]::before {
+  content: attr(data-etiqueta);
+  flex: 0 0 auto;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-500);
+}
+/* La primera celda es el nombre de la fila (el insumo, el proveedor, la
+   fecha): hace de titulo de la ficha, y un titulo no lleva rotulo. */
+.vp-tabla.vp-apilada tbody td:first-child {
+  justify-content: flex-start;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  padding-bottom: 0.25rem;
+}
+.vp-tabla.vp-apilada tbody td:first-child::before {
+  content: none;
+}
+/* Una celda combinada --"no hay nada registrado", el total del pie-- no es
+   de ninguna columna: ocupa la ficha entera. */
+.vp-tabla.vp-apilada td[colspan] {
+  display: block;
+  text-align: center;
+}
+/* Una columna que en la rejilla se escondia por falta de sitio aqui si
+   cabe, y la regla es que no falte nada. */
+.vp-tabla.vp-apilada td.hidden {
+  display: flex;
+}
+
+/* Nada del ERP puede desplazar la pagina en horizontal: si algo se pasa, que
+   scrollee su propio contenedor. */
+html,
 body {
-  margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: clip;
 }

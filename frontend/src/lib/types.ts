@@ -712,3 +712,36 @@ export type ResumenIva = {
   iva_credito: number
   iva_a_pagar: number
 }
+
+// ------------------------------------------------------------------ acceso
+export type Rol = 'admin' | 'dueno' | 'caja' | 'cocina'
+
+export type EstadoAcceso = {
+  autenticado: boolean
+  es_hub: boolean
+  /** Direccion del hub (vertigopro.tech). Vacia en el propio hub. */
+  hub_url: string
+  local: { slug: string; nombre: string; dominio: string; url: string; logo: string; favicon: string }
+  locales: { slug: string; nombre: string; descripcion: string; url: string; dominio: string }[]
+  usuario: string | null
+  rol: Rol | null
+  /** Lo dice el servidor; el frontend no deduce permisos del rol. */
+  puede: { vertigo: boolean; administrar: boolean; operar: boolean; cocina: boolean }
+  configurado: boolean
+  problema: string | null
+}
+
+export type Usuario = {
+  usuario: string
+  rol: Rol
+  locales: string[]
+  creado: number | null
+  ultimo_acceso: number | null
+}
+
+export type ListaUsuarios = {
+  usuarios: Usuario[]
+  yo: string
+  roles: { rol: Rol; descripcion: string }[]
+  locales: { slug: string; nombre: string }[]
+}

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
+import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
+import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Boton, Modal, Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type {
   CompraDeInsumo,
@@ -11,8 +14,57 @@ import type {
   SugerenciaCompra,
 } from '../lib/types'
 
+type CompraConVariacion = CompraDeInsumo & { cambio: number | null }
+
+/**
+ * Cuanto subio o bajo el costo respecto a la compra ANTERIOR EN EL TIEMPO.
+ *
+ * Antes se calculaba contra la fila de al lado en la pantalla, que solo era la
+ * compra anterior mientras la tabla estuviera en orden de fecha. Ahora que se
+ * puede ordenar por costo o por cantidad, esa cuenta habria dado porcentajes
+ * inventados: el cambio pertenece a la compra, no a la posicion en la lista.
+ */
+function conVariacion(compras: CompraDeInsumo[]): CompraConVariacion[] {
+  const cronologico = [...compras].sort(
+    (a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime(),
+  )
+  const cambios = new Map<CompraDeInsumo, number | null>()
+  for (const [i, c] of cronologico.entries()) {
+    const previa = cronologico[i - 1]
+    cambios.set(
+      c,
+      previa && previa.costo_unitario ? (c.costo_unitario / previa.costo_unitario - 1) * 100 : null,
+    )
+  }
+  return compras.map((c) => ({ ...c, cambio: cambios.get(c) ?? null }))
+}
+
 export default function Inventario() {
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
+  // Abre por nombre, que es como se busca un insumo; pero el dueno entra aqui
+  // a ver que se esta acabando y que subio de precio, y eso son dos clics en
+  // "Stock" y en "Reponer".
+  const orden = useOrden<Ingrediente>(
+    {
+      nombre: (i) => i.nombre,
+      stock: (i) => i.stock_actual,
+      minimo: (i) => i.stock_minimo,
+      costo: (i) => i.costo_unitario,
+      reponer: (i) => i.costo_reposicion,
+      rendimiento: (i) => i.rendimiento_pct,
+      real: (i) => i.costo_efectivo,
+    },
+    'nombre',
+  )
+  const ordenHistorial = useOrden<CompraConVariacion>(
+    {
+      fecha: (c) => new Date(c.fecha),
+      cantidad: (c) => c.cantidad,
+      costo: (c) => c.costo_unitario,
+      cambio: (c) => c.cambio,
+    },
+    '-fecha',
+  )
   const [sugerencias, setSugerencias] = useState<SugerenciaCompra[]>([])
   const [mermas, setMermas] = useState<Merma[]>([])
   const [sobrantes, setSobrantes] = useState<SobranteInventario[]>([])
@@ -157,17 +209,19 @@ export default function Inventario() {
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Inventario de insumos" />
-      <div className="p-4 max-w-4xl mx-auto space-y-5">
+      <Pagina>
         {error && (
-          <p className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
+          <p className="bg-peligro-50 border border-peligro-200 text-peligro-700 rounded-xl p-3 text-sm">
             {error}
           </p>
         )}
 
-        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
-          <h2 className="font-semibold text-indigo-900 mb-2">🤖 Asistente de compras</h2>
+        <div className="bg-acento-50 border border-acento-200 rounded-2xl p-4">
+          <h2 className="font-semibold text-acento-900 mb-2 flex items-center gap-2">
+            <Icono nombre="chispa" size={17} /> Asistente de compras
+          </h2>
           {sugerencias.length === 0 && (
-            <p className="text-sm text-indigo-700">
+            <p className="text-sm text-acento-700">
               Todo el inventario esta por encima del minimo. Nada que comprar por ahora.
             </p>
           )}
@@ -192,11 +246,11 @@ export default function Inventario() {
         {/* El numero que dice si tus precios se estan quedando atras. El costo
             promedio no lo muestra: mezcla lo caro nuevo con lo barato viejo. */}
         {inflacion && inflacion.cambio_pct >= 15 && (
-          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
-            <h2 className="font-semibold text-orange-900">
+          <div className="bg-aviso-50 border border-aviso-200 rounded-2xl p-4">
+            <h2 className="font-semibold text-aviso-900">
               Tus insumos subieron {inflacion.cambio_pct.toFixed(0)}% en {inflacion.dias} dias
             </h2>
-            <ul className="mt-2 space-y-1 text-sm text-orange-900">
+            <ul className="mt-2 space-y-1 text-sm text-aviso-900">
               {inflacion.insumos.slice(0, 5).map((i) => (
                 <li key={i.ingrediente_id} className="flex justify-between gap-3">
                   <span>{i.nombre}</span>
@@ -207,7 +261,7 @@ export default function Inventario() {
                 </li>
               ))}
             </ul>
-            <p className="text-xs text-orange-700 mt-2">
+            <p className="text-xs text-aviso-700 mt-2">
               Si tus precios no subieron parecido, cada venta te deja menos de lo que necesitas
               para reponer. En Menu esta el precio sugerido de cada producto.
             </p>
@@ -215,7 +269,7 @@ export default function Inventario() {
         )}
 
         {sinCosto.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900">
+          <div className="bg-aviso-50 border border-aviso-200 rounded-2xl p-4 text-sm text-aviso-900">
             <span className="font-semibold">
               {sinCosto.length} insumo(s) sin costo cargado.
             </span>{' '}
@@ -224,29 +278,29 @@ export default function Inventario() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
+        <Tabla orden={orden} className="bg-white rounded-2xl border border-neutral-200">
+          <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
-                <th className="text-left p-3">Insumo</th>
-                <th className="text-right p-3">Stock</th>
-                <th className="text-right p-3">Minimo</th>
-                <th className="text-right p-3">Costo compra</th>
+                <Th clave="nombre">Insumo</Th>
+                <Th clave="stock" alinear="derecha">Stock</Th>
+                <Th clave="minimo" alinear="derecha">Minimo</Th>
+                <Th clave="costo" alinear="derecha">Costo compra</Th>
                 {/* El promedio ponderado no dice cuanto cuesta comprar mas: esa
                     es la cuenta que importa para poner precios. */}
-                <th className="text-right p-3">Reponer</th>
-                <th className="text-right p-3">Rendimiento</th>
-                <th className="text-right p-3">Costo real</th>
-                <th className="p-3 text-right">Acciones</th>
+                <Th clave="reponer" alinear="derecha">Reponer</Th>
+                <Th clave="rendimiento" alinear="derecha">Rendimiento</Th>
+                <Th clave="real" alinear="derecha">Costo real</Th>
+                <Th alinear="derecha">Acciones</Th>
               </tr>
             </thead>
             <tbody>
-              {ingredientes.map((ing) => (
+              {orden.ordenar(ingredientes).map((ing) => (
                 <tr key={ing.id} className="border-t border-neutral-100">
                   <td className="p-3 font-medium">{ing.nombre}</td>
                   <td
                     className={`text-right p-3 tabular-nums ${
-                      ing.stock_actual <= ing.stock_minimo ? 'text-red-600 font-semibold' : ''
+                      ing.stock_actual <= ing.stock_minimo ? 'text-peligro-600 font-semibold' : ''
                     }`}
                   >
                     {Number(ing.stock_actual.toFixed(3))} {ing.unidad}
@@ -258,7 +312,7 @@ export default function Inventario() {
                     <button
                       onClick={() => cambiarCosto(ing)}
                       className={`tabular-nums ${
-                        ing.costo_unitario ? 'text-neutral-700' : 'text-amber-600 font-semibold'
+                        ing.costo_unitario ? 'text-neutral-700' : 'text-aviso-600 font-semibold'
                       }`}
                     >
                       {ing.costo_unitario ? `$${ing.costo_unitario.toFixed(2)}` : 'cargar'}
@@ -274,14 +328,14 @@ export default function Inventario() {
                         <span
                           className={
                             ing.variacion_pct != null && ing.variacion_pct >= 15
-                              ? 'text-orange-600 font-semibold'
+                              ? 'text-aviso-600 font-semibold'
                               : 'text-neutral-700'
                           }
                         >
                           ${ing.costo_reposicion.toFixed(2)}
                         </span>
                         {ing.variacion_pct != null && ing.variacion_pct >= 15 && (
-                          <span className="block text-[11px] text-orange-600">
+                          <span className="block text-[11px] text-aviso-600">
                             +{ing.variacion_pct.toFixed(0)}%
                           </span>
                         )}
@@ -294,7 +348,7 @@ export default function Inventario() {
                     <button
                       onClick={() => cambiarRendimiento(ing)}
                       className={`tabular-nums ${
-                        ing.rendimiento_pct < 100 ? 'text-amber-600 font-medium' : 'text-neutral-400'
+                        ing.rendimiento_pct < 100 ? 'text-aviso-600 font-medium' : 'text-neutral-400'
                       }`}
                       title="% utilizable despues de preparar (limpiar, pelar, cocinar)"
                     >
@@ -305,16 +359,16 @@ export default function Inventario() {
                     ${ing.costo_efectivo.toFixed(2)}
                   </td>
                   <td className="p-3">
-                    <div className="flex gap-2 justify-end whitespace-nowrap">
-                      <button onClick={() => comprar(ing)} className="text-blue-600 font-medium">
+                    <div className="flex gap-2 xl:gap-3 justify-end whitespace-nowrap text-xs xl:text-sm">
+                      <button onClick={() => comprar(ing)} className="text-acento-600 font-medium">
                         Compra
                       </button>
-                      <button onClick={() => merma(ing)} className="text-red-500 font-medium">
+                      <button onClick={() => merma(ing)} className="text-peligro-500 font-medium">
                         Merma
                       </button>
                       <button
                         onClick={() => consumoPersonal(ing)}
-                        className="text-violet-600 font-medium"
+                        className="text-acento-600 font-medium"
                         title="Se lo comio el personal: costo laboral, no perdida"
                       >
                         Personal
@@ -328,7 +382,7 @@ export default function Inventario() {
               ))}
             </tbody>
           </table>
-        </div>
+        </Tabla>
 
         {/* Sin esta lista el dueno no podia ver cuanto se perdia ni corregir
             una merma duplicada: era la unica perdida del sistema sin historial. */}
@@ -364,7 +418,7 @@ export default function Inventario() {
                   {m.cantidad.toFixed(3)} {m.unidad} de {m.ingrediente_nombre}
                   {m.motivo && <span className="text-neutral-400"> · {m.motivo}</span>}
                 </span>
-                <span className="tabular-nums font-medium text-red-600 w-16 text-right">
+                <span className="tabular-nums font-medium text-peligro-600 w-16 text-right">
                   ${m.valor.toFixed(2)}
                 </span>
                 {m.revertida ? (
@@ -372,7 +426,7 @@ export default function Inventario() {
                 ) : (
                   <button
                     onClick={() => revertirMerma(m)}
-                    className="text-xs text-blue-600 font-medium w-20 text-right"
+                    className="text-xs text-acento-600 font-medium w-20 text-right"
                   >
                     Revertir
                   </button>
@@ -406,7 +460,7 @@ export default function Inventario() {
                     {!sb.revertido && (
                       <button
                         onClick={() => revertirSobrante(sb)}
-                        className="text-xs font-medium text-blue-600"
+                        className="text-xs font-medium text-acento-600"
                       >
                         Revertir
                       </button>
@@ -435,137 +489,128 @@ export default function Inventario() {
           te va a costar comprar mas, y por eso es el numero para poner precios: el costo de
           compra es un promedio que todavia arrastra lo que compraste barato.
         </p>
-      </div>
+      </Pagina>
 
       {/* El aviso llega en el momento de la compra, no cuando el promedio por
           fin se mueva - para entonces ya vendiste semanas al precio viejo. */}
       {impacto && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-5 max-h-[85vh] overflow-y-auto">
-            <h3 className="font-semibold text-lg">
-              {impacto.ingrediente.nombre} subio {impacto.salto_pct?.toFixed(0)}%
-            </h3>
-            <p className="text-sm text-neutral-600 mt-1">
-              Pagaste ${impacto.costo_pagado.toFixed(2)} por {impacto.ingrediente.unidad}; la
-              compra anterior fue a ${impacto.costo_anterior.toFixed(2)}.
-            </p>
-            {/* Un salto de 200% o mas casi nunca es inflacion: es un saco
-                tecleado como 1, y deja el costo 50x inflado. */}
-            {impacto.posible_error_de_unidad && (
-              <div className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-                <b>Revisa la cantidad.</b> {impacto.posible_error_de_unidad}
-              </div>
-            )}
-            <p className="text-xs text-neutral-500 mt-2">
-              El costo promedio quedo en ${impacto.ingrediente.costo_unitario.toFixed(2)} porque
-              mezcla lo que ya tenias. Los margenes de abajo son los de verdad: los que te quedan
-              si tienes que reponer a este precio.
-            </p>
+        <Modal
+          titulo={`${impacto.ingrediente.nombre} subio ${impacto.salto_pct?.toFixed(0)}%`}
+          onCerrar={() => setImpacto(null)}
+          pie={<Boton onClick={() => setImpacto(null)}>Entendido</Boton>}
+        >
+          <p className="text-sm text-neutral-600 mt-1">
+            Pagaste ${impacto.costo_pagado.toFixed(2)} por {impacto.ingrediente.unidad}; la
+            compra anterior fue a ${impacto.costo_anterior.toFixed(2)}.
+          </p>
+          {/* Un salto de 200% o mas casi nunca es inflacion: es un saco
+              tecleado como 1, y deja el costo 50x inflado. */}
+          {impacto.posible_error_de_unidad && (
+            <div className="mt-3 rounded-xl border border-peligro-300 bg-peligro-50 p-3 text-sm text-peligro-800">
+              <b>Revisa la cantidad.</b> {impacto.posible_error_de_unidad}
+            </div>
+          )}
+          <p className="text-xs text-neutral-500 mt-2">
+            El costo promedio quedo en ${impacto.ingrediente.costo_unitario.toFixed(2)} porque
+            mezcla lo que ya tenias. Los margenes de abajo son los de verdad: los que te quedan
+            si tienes que reponer a este precio.
+          </p>
 
-            {impacto.productos.length > 0 ? (
-              <div className="mt-4 space-y-2">
-                {impacto.productos.map((p) => (
-                  <div
-                    key={p.variante_id}
-                    className={`rounded-xl border p-3 text-sm ${
-                      p.a_perdida
-                        ? 'bg-red-50 border-red-200'
-                        : p.margen_flaco
-                          ? 'bg-amber-50 border-amber-200'
-                          : 'bg-neutral-50 border-neutral-200'
-                    }`}
-                  >
-                    <div className="flex justify-between gap-2 font-medium">
-                      <span>{p.nombre}</span>
-                      <span className="tabular-nums whitespace-nowrap">
-                        ${p.precio.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="text-neutral-600 mt-1">
-                      margen {p.margen_antes_pct?.toFixed(0)}% →{' '}
-                      <b className={p.a_perdida ? 'text-red-700' : ''}>
-                        {p.margen_despues_pct?.toFixed(0)}%
-                      </b>
-                      {p.a_perdida && ' · lo vendes a perdida'}
-                    </div>
-                    {p.precio_sugerido != null && (
-                      <div className="text-neutral-700 mt-1">
-                        Para mantener tu margen:{' '}
-                        <b className="tabular-nums">${p.precio_sugerido.toFixed(2)}</b>
-                      </div>
-                    )}
+          {impacto.productos.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              {impacto.productos.map((p) => (
+                <div
+                  key={p.variante_id}
+                  className={`rounded-xl border p-3 text-sm ${
+                    p.a_perdida
+                      ? 'bg-peligro-50 border-peligro-200'
+                      : p.margen_flaco
+                        ? 'bg-aviso-50 border-aviso-200'
+                        : 'bg-neutral-50 border-neutral-200'
+                  }`}
+                >
+                  <div className="flex justify-between gap-2 font-medium">
+                    <span>{p.nombre}</span>
+                    <span className="tabular-nums whitespace-nowrap">
+                      ${p.precio.toFixed(2)}
+                    </span>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-neutral-600">
-                Ningun producto del menu usa este insumo todavia.
-              </p>
-            )}
+                  <div className="text-neutral-600 mt-1">
+                    margen {p.margen_antes_pct?.toFixed(0)}% →{' '}
+                    <b className={p.a_perdida ? 'text-peligro-700' : ''}>
+                      {p.margen_despues_pct?.toFixed(0)}%
+                    </b>
+                    {p.a_perdida && ' · lo vendes a perdida'}
+                  </div>
+                  {p.precio_sugerido != null && (
+                    <div className="text-neutral-700 mt-1">
+                      Para mantener tu margen:{' '}
+                      <b className="tabular-nums">${p.precio_sugerido.toFixed(2)}</b>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-neutral-600">
+              Ningun producto del menu usa este insumo todavia.
+            </p>
+          )}
 
-            <button
-              onClick={() => setImpacto(null)}
-              className="mt-5 w-full bg-neutral-900 text-white rounded-xl py-3 font-medium"
-            >
-              Entendido
-            </button>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* La curva de inflacion de cada insumo estaba en las facturas desde el
           primer dia; no habia por donde verla. */}
       {historial && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto">
-            <h3 className="font-semibold text-lg">Costo de {historial.ing.nombre}</h3>
-            <p className="text-sm text-neutral-500 mb-3">
-              Lo que has pagado por {historial.ing.unidad}, compra por compra.
-            </p>
-            {historial.compras.length === 0 ? (
-              <p className="text-sm text-neutral-500">Todavia no hay compras registradas.</p>
-            ) : (
+        <Modal
+          titulo={`Costo de ${historial.ing.nombre}`}
+          ayuda={`Lo que has pagado por ${historial.ing.unidad}, compra por compra.`}
+          onCerrar={() => setHistorial(null)}
+          ancho="sm"
+          pie={<Boton tono="suave" onClick={() => setHistorial(null)}>Cerrar</Boton>}
+        >
+          {historial.compras.length === 0 ? (
+            <p className="text-sm text-neutral-500">Todavia no hay compras registradas.</p>
+          ) : (
+            <Tabla orden={ordenHistorial}>
               <table className="w-full text-sm">
+                <thead className="text-neutral-500 text-xs uppercase">
+                  <tr>
+                    <Th clave="fecha" className="py-1 px-0">Fecha</Th>
+                    <Th clave="cantidad" alinear="derecha" className="py-1 px-0">Cantidad</Th>
+                    <Th clave="costo" alinear="derecha" className="py-1 px-0">Costo</Th>
+                    <Th clave="cambio" alinear="derecha" className="py-1 px-0">Cambio</Th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {historial.compras.map((c, i) => {
-                    const anterior = historial.compras[i + 1]
-                    const cambio = anterior
-                      ? (c.costo_unitario / anterior.costo_unitario - 1) * 100
-                      : null
-                    return (
-                      <tr key={`${c.fecha}-${i}`} className="border-t border-neutral-100">
-                        <td className="py-2">
-                          {new Date(c.fecha).toLocaleDateString('es-VE')}
-                          <span className="block text-[11px] text-neutral-400">{c.origen}</span>
-                        </td>
-                        <td className="py-2 text-right text-neutral-500 tabular-nums">
-                          {Number(c.cantidad.toFixed(3))} {historial.ing.unidad}
-                        </td>
-                        <td className="py-2 text-right tabular-nums font-medium">
-                          ${c.costo_unitario.toFixed(2)}
-                        </td>
-                        <td className="py-2 text-right tabular-nums w-16">
-                          {cambio != null && Math.abs(cambio) >= 1 && (
-                            <span className={cambio > 0 ? 'text-orange-600' : 'text-emerald-600'}>
-                              {cambio > 0 ? '+' : ''}
-                              {cambio.toFixed(0)}%
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {ordenHistorial.ordenar(conVariacion(historial.compras)).map((c, i) => (
+                    <tr key={`${c.fecha}-${i}`} className="border-t border-neutral-100">
+                      <td className="py-2">
+                        {new Date(c.fecha).toLocaleDateString('es-VE')}
+                        <span className="block text-[11px] text-neutral-400">{c.origen}</span>
+                      </td>
+                      <td className="py-2 text-right text-neutral-500 tabular-nums">
+                        {Number(c.cantidad.toFixed(3))} {historial.ing.unidad}
+                      </td>
+                      <td className="py-2 text-right tabular-nums font-medium">
+                        ${c.costo_unitario.toFixed(2)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums w-16">
+                        {c.cambio != null && Math.abs(c.cambio) >= 1 && (
+                          <span className={c.cambio > 0 ? 'text-aviso-600' : 'text-exito-600'}>
+                            {c.cambio > 0 ? '+' : ''}
+                            {c.cambio.toFixed(0)}%
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
-            )}
-            <button
-              onClick={() => setHistorial(null)}
-              className="mt-5 w-full border border-neutral-300 rounded-xl py-3 font-medium"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
+            </Tabla>
+          )}
+        </Modal>
       )}
     </div>
   )

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<title>Vertigo Pro</title>
+<!--
+  La pantalla del HUB (vertigopro.tech).
+
+  Para Vertigo es la cartera: todos los locales, si estan vivos, quien tiene
+  acceso a cada uno, y la administracion de cuentas. Para un dueño con varios
+  locales es elegir a cual entrar. Quien tiene UN local nunca llega aqui: el
+  login lo manda directo con un pase.
+
+  HTML plano, sin el paquete de React: nginx solo lo sirve con sesion, pero
+  aun asi no arrastra nada del ERP.
+-->
+<style>
+  /* Los mismos tokens del sistema de diseño del ERP (src/index.css). */
+  :root {
+    --tinta: #17181b; --tinta-suave: #3e3d3a; --apagado: #6d6b66; --tenue: #98948b;
+    --linea: #e2ded5; --fondo: #f6f4ef; --sup: #ffffff; --acento: #5b4ae0;
+    --acento-txt: #ffffff; --ok: #15803d; --ok-lav: #dcfce7; --mal: #b91c1c;
+    --mal-lav: #fee2e2; --ojo: #a16207; --ojo-lav: #fef3c7; --foco: rgba(91,74,224,.22);
+    --textura: rgba(23,24,27,.05);
+  }
+  html[data-tema="oscuro"] {
+    --tinta: #f1f3f7; --tinta-suave: #d1d5dd; --apagado: #a1a7b4; --tenue: #7c8290;
+    --linea: #262a33; --fondo: #0e1014; --sup: #161920; --acento: #8b80ff;
+    --acento-txt: #0e0f12; --ok: #86efac; --ok-lav: #14321f; --mal: #fca5a5;
+    --mal-lav: #3a1414; --ojo: #fcd34d; --ojo-lav: #3a2c0a; --foco: rgba(139,128,255,.25);
+    --textura: rgba(255,255,255,.045);
+  }
+  html { color-scheme: light; }
+  html[data-tema="oscuro"] { color-scheme: dark; }
+  ::view-transition-old(root) { animation: none; mix-blend-mode: normal; }
+  ::view-transition-new(root) { animation: vp-revelar .52s cubic-bezier(.2,.7,.2,1); mix-blend-mode: normal; }
+  @keyframes vp-revelar {
+    from { clip-path: circle(0px at var(--vp-x, 50%) var(--vp-y, 50%)); }
+    to { clip-path: circle(var(--vp-radio, 160vmax) at var(--vp-x, 50%) var(--vp-y, 50%)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--fondo); color: var(--tinta);
+    font-family: "Manrope", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(60rem 36rem at -10% -20%, color-mix(in oklab, var(--acento) 13%, transparent), transparent 60%),
+      radial-gradient(var(--textura) .8px, transparent .8px);
+    background-size: auto, 22px 22px;
+    background-attachment: fixed;
+  }
+  h1, h2, .local .nombre { font-family: "Sora", "Manrope", sans-serif; }
+  header {
+    display: flex; align-items: center; gap: 10px; padding: 14px 20px;
+    border-bottom: 1px solid var(--linea); background: var(--sup); position: sticky; top: 0; z-index: 5;
+  }
+  .marca {
+    display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--apagado);
+  }
+  .marca .punto { width: 9px; height: 9px; border-radius: 3px; background: var(--acento); transform: rotate(45deg); }
+  .quien { margin-left: auto; font-size: 13px; color: var(--apagado); }
+  .quien b { color: var(--tinta); font-weight: 600; }
+  button, .btn {
+    font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--linea); background: transparent; color: var(--tinta);
+  }
+  button:hover, .btn:hover { border-color: var(--apagado); }
+  button.primario { background: var(--acento); color: var(--acento-txt); border-color: var(--acento); font-weight: 600; }
+  button.primario:hover { opacity: .9; }
+  button.peligro { color: var(--mal); }
+  button:disabled { opacity: .5; cursor: default; }
+  .tema { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; border-radius: 999px; color: var(--tenue); }
+  .tema svg { width: 15px; height: 15px; }
+  main { max-width: 960px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 24px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  .sub { color: var(--apagado); margin: 0 0 22px; font-size: 14px; }
+  .rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .local {
+    display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border-radius: 18px;
+    background: var(--sup); border: 1px solid var(--linea); color: inherit; text-decoration: none;
+    transition: transform .12s ease, box-shadow .12s ease; position: relative;
+  }
+  a.local:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+  .local .cab { display: flex; align-items: center; gap: 10px; }
+  .local img { height: 28px; width: auto; max-width: 140px; object-fit: contain; }
+  html[data-tema="oscuro"] .local img { filter: brightness(1.9) saturate(.85) contrast(1.05); }
+  .local .nombre { font-size: 18px; font-weight: 600; }
+  .local .desc { font-size: 13px; color: var(--apagado); }
+  .local .pie { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; color: var(--apagado); }
+  .estado { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
+  .estado::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .estado.ok { color: var(--ok); background: var(--ok-lav); }
+  .estado.mal { color: var(--mal); background: var(--mal-lav); }
+  .estado.ojo { color: var(--ojo); background: var(--ojo-lav); }
+  .vacio { padding: 28px; border-radius: 18px; border: 1px dashed var(--linea); color: var(--apagado); text-align: center; }
+  .seccion { margin-top: 36px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--linea); }
+  .tabs button { border: none; border-radius: 0; padding: 10px 14px; color: var(--apagado); border-bottom: 2px solid transparent; }
+  .tabs button.activa { color: var(--tinta); border-bottom-color: var(--acento); font-weight: 600; }
+  .tarjeta { background: var(--sup); border: 1px solid var(--linea); border-radius: 18px; padding: 18px 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--apagado); padding: 8px 10px; border-bottom: 1px solid var(--linea); }
+  td { padding: 10px; border-bottom: 1px solid var(--linea); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  select, input {
+    font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 10px;
+    border: 1px solid var(--linea); background: var(--sup); color: var(--tinta);
+  }
+  select:focus, input:focus { outline: none; border-color: var(--acento); box-shadow: 0 0 0 3px var(--foco); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--linea); cursor: pointer; user-select: none; }
+  .chip input { margin: 0; }
+  .chip.on { background: var(--acento); color: var(--acento-txt); border-color: var(--acento); }
+  .pastilla { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--fondo); border: 1px solid var(--linea); color: var(--tinta-suave); }
+  .acciones { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .acciones button { padding: 6px 10px; font-size: 12px; }
+  .form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items: end; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--linea); }
+  .form label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--apagado); font-weight: 600; }
+  .form .ancho { grid-column: 1 / -1; }
+  .aviso { margin: 12px 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; display: none; }
+  .aviso.visible { display: block; }
+  .aviso.bien { color: var(--ok); background: var(--ok-lav); }
+  .aviso.mal { color: var(--mal); background: var(--mal-lav); }
+  .muted { color: var(--apagado); font-size: 12px; }
+  @media (max-width: 640px) { .oculto-movil { display: none; } }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("vertigo_tema");
+      if (!t) t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
+      document.documentElement.dataset.tema = t;
+    } catch (e) { document.documentElement.dataset.tema = "claro"; }
+  })();
+</script>
+</head>
+<body>
+  <header>
+    <div class="marca"><span class="punto"></span> Vertigo Pro</div>
+    <div class="quien" id="quien"></div>
+    <button class="tema" id="tema" type="button" aria-label="Cambiar entre modo claro y oscuro"></button>
+    <button id="salir" type="button">Salir</button>
+  </header>
+  <main>
+    <h1 id="titulo">Locales</h1>
+    <p class="sub" id="sub">Elige a cual entrar.</p>
+    <div class="rejilla" id="rejilla"></div>
+
+    <section class="seccion" id="admin" hidden>
+      <h2>Administración</h2>
+      <div class="tabs">
+        <button type="button" data-tab="usuarios" class="activa">Cuentas</button>
+        <button type="button" data-tab="locales">Locales</button>
+      </div>
+      <div class="aviso" id="aviso" role="status"></div>
+      <div class="tarjeta" id="panel"></div>
+    </section>
+  </main>
+
+<script>
+(function () {
+  var raiz = document.documentElement;
+  var rejilla = document.getElementById("rejilla");
+  var sub = document.getElementById("sub");
+  var admin = document.getElementById("admin");
+  var panel = document.getElementById("panel");
+  var aviso = document.getElementById("aviso");
+
+  // ---------- tema ----------
+  var SOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/></svg>';
+  var LUNA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.2A8.6 8.6 0 1 1 9.8 3.5a6.9 6.9 0 0 0 10.7 10.7z"/></svg>';
+  var btnTema = document.getElementById("tema");
+  function pintarBoton() { btnTema.innerHTML = raiz.dataset.tema === "oscuro" ? SOL : LUNA; }
+  pintarBoton();
+  btnTema.addEventListener("click", function () {
+    var nuevo = raiz.dataset.tema === "oscuro" ? "claro" : "oscuro";
+    var aplicar = function () {
+      raiz.dataset.tema = nuevo;
+      try { localStorage.setItem("vertigo_tema", nuevo); } catch (e) {}
+      pintarBoton();
+      if (typeof dibujarAdmin === "function" && !admin.hidden) dibujarAdmin();
+    };
+    if (document.startViewTransition && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      var r = btnTema.getBoundingClientRect();
+      var x = r.left + r.width / 2, y = r.top + r.height / 2;
+      var radio = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      raiz.style.setProperty("--vp-x", x + "px");
+      raiz.style.setProperty("--vp-y", y + "px");
+      raiz.style.setProperty("--vp-radio", Math.ceil(radio) + "px");
+      document.startViewTransition(aplicar);
+    } else {
+      aplicar();
+    }
+  });
+
+  document.getElementById("salir").addEventListener("click", function () {
+    fetch("/api/acceso/logout", { method: "POST", credentials: "same-origin" })
+      .then(function () { window.location.replace("/login.html"); })
+      .catch(function () { window.location.replace("/login.html"); });
+  });
+
+  // ---------- utilidades ----------
+  function esc(t) { var d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+  function pedir(url, opts) {
+    opts = opts || {};
+    opts.credentials = "same-origin";
+    if (opts.body && !opts.headers) opts.headers = { "Content-Type": "application/json" };
+    return fetch(url, opts).then(function (r) {
+      if (r.status === 401) { window.location.replace("/login.html"); throw new Error("Sesión requerida."); }
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        if (!r.ok) throw new Error((d && d.detail) || ("Error " + r.status));
+        return d;
+      });
+    });
+  }
+  function mostrar(texto, bien) {
+    aviso.textContent = texto;
+    aviso.className = "aviso visible " + (bien ? "bien" : "mal");
+    clearTimeout(mostrar._t);
+    mostrar._t = setTimeout(function () { aviso.className = "aviso"; }, 4000);
+  }
+  var NOMBRE_ROL = { admin: "Vertigo", dueno: "Dueño", caja: "Caja", cocina: "Cocina" };
+
+  // A donde lleva la tarjeta. Hay DOS direcciones por local: desarrollo
+  // (localhost) y produccion (el subdominio). Se elige por donde se este viendo
+  // ESTA pantalla, asi la misma imagen sirve en los dos sitios.
+  function destino(m) {
+    var local = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "[::1]";
+    return (local ? m.url : (m.dominio || m.url)) || "";
+  }
+
+  // Ir a un local SIN volver a poner la clave: se pide un pase para ese local y
+  // el ERP de destino lo canjea por su propia cookie. Dura un minuto y se gasta
+  // una vez. Si algo falla se va igual, sin pase: alli habra un login.
+  function irA(m, ev) {
+    var url = destino(m);
+    if (!url) return;
+    if (ev) ev.preventDefault();
+    pedir("/api/acceso/pase", { method: "POST", body: JSON.stringify({ local: m.slug }) })
+      .then(function (d) { location.href = url.replace(/\/$/, "") + "/api/acceso/entrar?pase=" + encodeURIComponent(d.pase); })
+      .catch(function () { location.href = url; });
+  }
+
+  function tarjeta(m, cartera) {
+    var a = document.createElement("a");
+    a.className = "local";
+    var ir = destino(m);
+    a.href = ir || "#";
+    var cab = m.logo
+      ? '<img src="' + esc(m.logo) + '" alt="' + esc(m.nombre) + '">'
+      : '<span class="nombre">' + esc(m.nombre) + '</span>';
+    var pie = '<span>' + esc(ir.replace(/^https?:\/\//, "")) + '</span>';
+    if (cartera) {
+      var s = cartera.salud || {};
+      var clase = s.estado === "ok" ? "ok" : (s.estado === "caido" || s.estado === "error" ? "mal" : "ojo");
+      var texto = s.estado === "ok" ? "en linea" : (s.estado === "caido" ? "caido" : (s.estado === "error" ? "con error" : "sin revisar"));
+      pie += '<span class="estado ' + clase + '" title="' + esc(s.detalle || "") + '">' + texto + '</span>';
+    }
+    a.innerHTML = '<div class="cab">' + cab + '</div>'
+      + '<span class="desc">' + esc(m.descripcion || "") + '</span>'
+      + (cartera ? '<span class="muted">' + cartera.usuarios + ' cuenta' + (cartera.usuarios === 1 ? "" : "s")
+          + (cartera.duenos && cartera.duenos.length ? ' · dueño: ' + esc(cartera.duenos.join(", ")) : "") + '</span>' : "")
+      + '<div class="pie">' + pie + '</div>';
+    if (ir) a.addEventListener("click", function (ev) {
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
+      irA(m, ev);
+    });
+    return a;
+  }
+
+  // ---------- administracion (solo Vertigo) ----------
+  var TAB = "usuarios";
+  var LOCALES = [];
+  document.querySelectorAll(".tabs button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      TAB = b.dataset.tab;
+      document.querySelectorAll(".tabs button").forEach(function (x) { x.classList.toggle("activa", x === b); });
+      location.hash = "admin/" + TAB;
+      dibujarAdmin();
+    });
+  });
+
+  function dibujarAdmin() {
+    panel.innerHTML = '<span class="muted">Cargando…</span>';
+    if (TAB === "locales") return dibujarLocales();
+    return dibujarUsuarios();
+  }
+
+  function dibujarLocales() {
+    pedir("/api/agencia").then(function (d) {
+      var filas = (d.locales || []).map(function (m) {
+        var s = m.salud || {};
+        var clase = s.estado === "ok" ? "ok" : (s.estado === "caido" || s.estado === "error" ? "mal" : "ojo");
+        return '<tr>'
+          + '<td><b>' + esc(m.nombre) + '</b><div class="muted">' + esc(m.slug) + '</div></td>'
+          + '<td class="oculto-movil"><a href="' + esc(m.dominio || m.url) + '" target="_blank" rel="noopener">' + esc((m.dominio || m.url).replace(/^https?:\/\//, "")) + '</a></td>'
+          + '<td><span class="estado ' + clase + '" title="' + esc(s.detalle || "") + '">' + esc(s.estado) + '</span></td>'
+          + '<td>' + m.usuarios + '<div class="muted">' + ["dueno", "caja", "cocina"].map(function (r) { return (m.por_rol[r] || 0) + " " + NOMBRE_ROL[r].toLowerCase(); }).join(" · ") + '</div></td>'
+          + '<td class="acciones"><button type="button" data-ir="' + esc(m.slug) + '">Entrar</button></td>'
+          + '</tr>';
+      }).join("");
+      panel.innerHTML = '<table><thead><tr><th>Local</th><th class="oculto-movil">Dominio</th><th>Estado</th><th>Cuentas</th><th></th></tr></thead><tbody>'
+        + (filas || '<tr><td colspan="5" class="muted">Ningun local en la carpeta <code>locales/</code>.</td></tr>') + '</tbody></table>'
+        + '<p class="muted" style="margin-top:12px">Equipo Vertigo: ' + esc((d.vertigo || []).join(", ") || "—")
+        + ' · ' + d.total_usuarios + ' cuentas en total. Para añadir un local: una ficha JSON en <code>locales/</code>, su subdominio y sus dos servicios en el compose.</p>';
+      panel.querySelectorAll("[data-ir]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var m = (d.locales || []).filter(function (x) { return x.slug === b.dataset.ir; })[0];
+          if (m) irA(m);
+        });
+      });
+    }).catch(function (e) { panel.innerHTML = '<span class="muted">' + esc(e.message) + '</span>'; });
+  }
+
+  function chipsLocales(elegidos, nombre) {
+    return '<div class="chips" data-chips="' + esc(nombre) + '">' + LOCALES.map(function (m) {
+      var on = elegidos.indexOf(m.slug) !== -1;
+      return '<label class="chip' + (on ? " on" : "") + '"><input type="checkbox" value="' + esc(m.slug) + '"' + (on ? " checked" : "") + '> ' + esc(m.nombre) + '</label>';
+    }).join("") + '</div>';
+  }
+  function leerChips(cont) {
+    return Array.prototype.map.call(cont.querySelectorAll("input:checked"), function (i) { return i.value; });
+  }
+  panel.addEventListener("change", function (ev) {
+    if (ev.target.matches(".chip input")) ev.target.closest(".chip").classList.toggle("on", ev.target.checked);
+  });
+
+  function dibujarUsuarios() {
+    pedir("/api/usuarios").then(function (d) {
+      LOCALES = d.locales || [];
+      var roles = d.roles || [];
+      var opciones = function (rol) {
+        return roles.map(function (r) { return '<option value="' + r.rol + '"' + (r.rol === rol ? " selected" : "") + '>' + esc(NOMBRE_ROL[r.rol] || r.rol) + '</option>'; }).join("");
+      };
+      var filas = (d.usuarios || []).map(function (u) {
+        var yo = u.usuario === d.yo;
+        var cuando = u.ultimo_acceso ? new Date(u.ultimo_acceso * 1000).toLocaleString("es-VE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "todavia no entro";
+        var locales = u.rol === "admin" ? '<span class="pastilla">todos los locales</span>' : chipsLocales(u.locales || [], u.usuario);
+        return '<tr data-u="' + esc(u.usuario) + '">'
+          + '<td><b>' + esc(u.usuario) + '</b>' + (yo ? ' <span class="muted">(tu)</span>' : "") + '<div class="muted">' + esc(cuando) + '</div></td>'
+          + '<td><select data-rol' + (yo ? " disabled" : "") + '>' + opciones(u.rol) + '</select></td>'
+          + '<td>' + locales + (u.rol !== "admin" ? '<div style="margin-top:6px"><button type="button" data-guardar-locales>Guardar locales</button></div>' : "") + '</td>'
+          + '<td class="acciones"><button type="button" data-clave>Clave</button>' + (yo ? "" : '<button type="button" class="peligro" data-borrar>Borrar</button>') + '</td>'
+          + '</tr>';
+      }).join("");
+      panel.innerHTML = '<table><thead><tr><th>Cuenta</th><th>Rol</th><th>Locales</th><th></th></tr></thead><tbody>'
+        + (filas || '<tr><td colspan="4" class="muted">Sin cuentas.</td></tr>') + '</tbody></table>'
+        + '<form class="form" id="alta">'
+        + '<label>Usuario<input name="usuario" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="ej. maria"></label>'
+        + '<label>Rol<select name="rol">' + opciones("dueno") + '</select></label>'
+        + '<label>Contraseña (8 o mas)<input name="clave" type="password" required minlength="8" autocomplete="new-password"></label>'
+        + '<label>Repetir<input name="clave2" type="password" required minlength="8" autocomplete="new-password"></label>'
+        + '<div class="ancho"><div class="muted" style="margin-bottom:6px">Locales a los que entra (Vertigo no necesita ninguno)</div>' + chipsLocales([], "alta") + '</div>'
+        + '<div class="ancho"><button type="submit" class="primario">Crear cuenta</button></div>'
+        + '</form>';
+
+      panel.querySelectorAll("tr[data-u]").forEach(function (tr) {
+        var u = tr.dataset.u;
+        var sel = tr.querySelector("[data-rol]");
+        if (sel) sel.addEventListener("change", function () {
+          pedir("/api/usuarios/" + encodeURIComponent(u) + "/rol", { method: "PUT", body: JSON.stringify({ rol: sel.value }) })
+            .then(function () { mostrar(u + " ahora es " + (NOMBRE_ROL[sel.value] || sel.value).toLowerCase() + ". Sus sesiones abiertas se cerraron.", true); dibujarUsuarios(); })
+            .catch(function (e) { mostrar(e.message, false); dibujarUsuarios(); });
+        });
+        var gl = tr.querySelector("[data-guardar-locales]");
+        if (gl) gl.addEventListener("click", function () {
+          var elegidos = leerChips(tr.querySelector("[data-chips]"));
+          pedir("/api/usuarios/" + encodeURIComponent(u) + "/locales", { method: "PUT", body: JSON.stringify({ locales: elegidos }) })
+            .then(function () { mostrar("Locales de " + u + " guardados.", true); })
+            .catch(function (e) { mostrar(e.message, false); });
+        });
+        tr.querySelector("[data-clave]").addEventListener("click", function () {
+          var nueva = window.prompt("Clave nueva para " + u + " (8 o mas). Tendra que entrar de nuevo.");
+          if (!nueva) return;
+          pedir("/api/usuarios/" + encodeURIComponent(u) + "/clave", { method: "POST", body: JSON.stringify({ clave: nueva }) })
+            .then(function () { mostrar("Clave de " + u + " cambiada.", true); })
+            .catch(function (e) { mostrar(e.message, false); });
+        });
+        var b = tr.querySelector("[data-borrar]");
+        if (b) b.addEventListener("click", function () {
+          if (!window.confirm("Borrar la cuenta «" + u + "»? Lo que hizo queda en el historial; solo deja de poder entrar.")) return;
+          pedir("/api/usuarios/" + encodeURIComponent(u), { method: "DELETE" })
+            .then(function () { mostrar("Cuenta «" + u + "» borrada.", true); dibujarUsuarios(); })
+            .catch(function (e) { mostrar(e.message, false); });
+        });
+      });
+
+      document.getElementById("alta").addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var f = ev.target;
+        if (f.clave.value !== f.clave2.value) { mostrar("Las dos contraseñas no coinciden.", false); return; }
+        var cuerpo = { usuario: f.usuario.value, clave: f.clave.value, rol: f.rol.value, locales: leerChips(f.querySelector("[data-chips]")) };
+        pedir("/api/usuarios", { method: "POST", body: JSON.stringify(cuerpo) })
+          .then(function (u) { mostrar("Cuenta «" + u.usuario + "» creada.", true); dibujarUsuarios(); })
+          .catch(function (e) { mostrar(e.message, false); });
+      });
+    }).catch(function (e) { panel.innerHTML = '<span class="muted">' + esc(e.message) + '</span>'; });
+  }
+
+  // ---------- arranque ----------
+  fetch("/api/acceso/estado", { credentials: "same-origin" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.autenticado) { window.location.replace("/login.html"); return; }
+      document.getElementById("quien").innerHTML = "<b>" + esc(d.usuario) + "</b> · " + esc(NOMBRE_ROL[d.rol] || d.rol);
+      var locales = d.locales || [];
+      var vertigo = d.puede && d.puede.vertigo;
+
+      if (!vertigo) {
+        // Un dueño con varios locales: elige. Con uno solo, directo.
+        if (locales.length === 1 && destino(locales[0])) { irA(locales[0]); return; }
+        if (!locales.length) {
+          rejilla.innerHTML = '<div class="vacio">Tu usuario no tiene ningun local asignado. Pidele a Vertigo que te asigne uno.</div>';
+          sub.textContent = "Sin locales asignados";
+          return;
+        }
+        sub.textContent = locales.length + " locales";
+        locales.forEach(function (m) { rejilla.appendChild(tarjeta(m, null)); });
+        return;
+      }
+
+      // Vertigo: la cartera con su salud, y la administracion debajo.
+      document.getElementById("titulo").textContent = "Cartera";
+      sub.textContent = locales.length + " local" + (locales.length === 1 ? "" : "es") + " · administracion de Vertigo Pro";
+      admin.hidden = false;
+      var m = /^#admin\/(usuarios|locales)/.exec(location.hash || "");
+      if (m) {
+        TAB = m[1];
+        document.querySelectorAll(".tabs button").forEach(function (x) { x.classList.toggle("activa", x.dataset.tab === TAB); });
+      }
+      pedir("/api/agencia").then(function (c) {
+        var porSlug = {};
+        (c.locales || []).forEach(function (x) { porSlug[x.slug] = x; });
+        rejilla.innerHTML = "";
+        locales.forEach(function (l) { rejilla.appendChild(tarjeta(l, porSlug[l.slug] || null)); });
+        if (!locales.length) rejilla.innerHTML = '<div class="vacio">Ningun local todavia.</div>';
+      }).catch(function () {
+        locales.forEach(function (l) { rejilla.appendChild(tarjeta(l, null)); });
+      });
+      dibujarAdmin();
+    })
+    .catch(function () {
+      rejilla.innerHTML = '<div class="vacio">No se pudo hablar con el servidor. Recarga en unos segundos.</div>';
+    });
+})();
+</script>
+</body>
+</html>

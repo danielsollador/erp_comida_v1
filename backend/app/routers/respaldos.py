@@ -88,7 +88,8 @@ async def restaurar_desde_archivo(archivo: UploadFile = File(...), confirmar: bo
         raise HTTPException(status_code=400, detail="Falta confirmar la restauracion")
 
     marca = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    destino = os.path.join(backup.BACKUP_DIR, f"comida_{marca}_subido.db")
+    # La extension la decide el motor: `.dump` de PostgreSQL en produccion.
+    destino = os.path.join(backup.BACKUP_DIR, f"{backup.PREFIJO}{marca}_subido{backup.EXTENSION}")
     os.makedirs(backup.BACKUP_DIR, exist_ok=True)
     try:
         with open(destino, "wb") as f:

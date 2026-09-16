@@ -1,0 +1,11 @@
+{
+  "slug": "savora",
+  "nombre": "Sávora",
+  "descripcion": "Pastelitos y tradición · punto de venta, cocina, inventario y caja",
+  "color": "#5a3a2e",
+  "url": "http://localhost:8090",
+  "dominio": "https://savora.vertigopro.tech",
+  "interno": "http://backend:8000",
+  "logo": "/logo-savora.png",
+  "favicon": "/favicon-savora.png"
+}

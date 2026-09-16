@@ -144,7 +144,14 @@ def registrar_compra(
         )
         db.add(compra)
         db.flush()
-        contabilidad.registrar_compra_insumo(db, db_ingrediente, round(valor, 2), compra.id)
+        if not contabilidad.metodo_de_pago_valido(body.metodo_pago):
+            raise HTTPException(
+                status_code=400,
+                detail="La compra se paga desde una gaveta (Efectivo Bs, Efectivo $) o del Banco",
+            )
+        contabilidad.registrar_compra_insumo(
+            db, db_ingrediente, round(valor, 2), compra.id, body.metodo_pago
+        )
         db.commit()
         db.refresh(db_ingrediente)
 

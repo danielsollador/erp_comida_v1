@@ -18,6 +18,7 @@ import datetime
 import logging
 from typing import List, Optional, Tuple
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from . import impuestos, models
@@ -85,6 +86,7 @@ CUENTA_POR_METODO_PAGO = {
     "Tarjeta": "1020",
     "Pago movil": "1020",
     "Transferencia": "1020",
+    "Banco": "1020",
     # El cliente se lleva la comida y paga despues. No entra plata: nace una
     # cuenta por cobrar. Antes habia que elegir entre no registrar la venta
     # (y descuadrar el inventario) o marcarla cobrada (y descuadrar la caja).
@@ -96,6 +98,24 @@ CUENTA_POR_METODO_PAGO = {
 CUENTAS_DE_EFECTIVO = {"1010": "bolivares", "1011": "divisas"}
 METODOS_DE_EFECTIVO = {"Efectivo", "Efectivo Bs", "Efectivo $"}
 
+# Con que se PAGA algo (un gasto, un retiro, una factura, el IVA, una compra
+# suelta): la plata sale de una de las dos gavetas o del banco. Es la misma
+# tabla que la de cobros menos el fiado, que no es plata. Se centraliza aca
+# porque cada modulo tenia la suya --"Efectivo o Banco"-- y ninguna sabia que
+# existia la gaveta de dolares: los verdes entraban por ventas y nunca podian
+# salir, asi que 1011 solo crecia y la de bolivares mostraba faltantes cuando
+# al proveedor se le pagaba en dolares, que es lo normal en Venezuela.
+METODOS_DE_PAGO = {m: c for m, c in CUENTA_POR_METODO_PAGO.items() if m != "Fiado"}
+
+
+def cuenta_de_pago(metodo: Optional[str], por_defecto: str = "1010") -> str:
+    """La cuenta de la que sale la plata segun como se pago."""
+    return METODOS_DE_PAGO.get(metodo or "", por_defecto)
+
+
+def metodo_de_pago_valido(metodo: Optional[str]) -> bool:
+    return (metodo or "") in METODOS_DE_PAGO
+
 # Categoria de la factura de compra -> cuenta donde se contabiliza el gasto/activo.
 CUENTA_POR_CATEGORIA_COMPRA = {
     "Insumos": "1040",
@@ -106,17 +126,13 @@ CUENTA_POR_CATEGORIA_COMPRA = {
 
 # Forma de pago de la factura de compra -> cuenta que sale (o la deuda que entra).
 CUENTA_PAGO_COMPRA = {
-    "Efectivo": "1010",
-    "Banco": "1020",
+    **METODOS_DE_PAGO,
     "Credito": "2010",
 }
 
 # Con que se salda despues una factura que quedo a credito. No incluye
 # "Credito" - no se puede pagar una deuda con otra deuda.
-CUENTA_LIQUIDACION_CREDITO = {
-    "Efectivo": "1010",
-    "Banco": "1020",
-}
+CUENTA_LIQUIDACION_CREDITO = dict(METODOS_DE_PAGO)
 
 
 def seed_plan_de_cuentas(db: Session) -> None:
@@ -181,6 +197,57 @@ def _cuenta(db: Session, codigo: str) -> models.CuentaContable:
     return cuenta
 
 
+class ErrorEjercicioCerrado(ValueError):
+    """Se intento tocar un asiento de un año que ya se cerro."""
+
+    def __init__(self, anio: int, que: str = "ese asiento"):
+        self.anio = anio
+        super().__init__(
+            f"El ejercicio {anio} ya esta cerrado y su resultado se llevo a Utilidades "
+            f"retenidas: {que} no se puede borrar. Si hay que corregirlo, registra un "
+            f"asiento de ajuste en el ejercicio abierto."
+        )
+
+
+def ultimo_ejercicio_cerrado(db: Session) -> Optional[int]:
+    """El ultimo año con asiento de cierre, o None si nunca se cerro ninguno."""
+    return (
+        db.query(func.max(models.AsientoContable.referencia_id))
+        .filter(models.AsientoContable.origen == "cierre_ejercicio")
+        .scalar()
+    )
+
+
+def asegurar_ejercicio_abierto(db: Session, fecha: Optional[datetime.datetime], que: str) -> None:
+    """Para BORRAR: un asiento de un año cerrado no se toca. Los libros de un
+    ejercicio cerrado son inamovibles; si no, el resultado que ya se llevo a
+    Utilidades retenidas cambiaria sin que ningun asiento lo cuente."""
+    if fecha is None:
+        return
+    cerrado = ultimo_ejercicio_cerrado(db)
+    if cerrado is not None and fecha.year <= cerrado:
+        raise ErrorEjercicioCerrado(fecha.year, que)
+
+
+def fecha_contable(db: Session, fecha: Optional[datetime.datetime], descripcion: str):
+    """Para ASENTAR: la fecha con la que un asiento entra a los libros.
+
+    Cargar hoy una factura del año pasado, o completar la depreciacion
+    atrasada de un equipo, no puede reescribir un ejercicio ya cerrado. El
+    asiento cae en el primer instante del ejercicio abierto y la descripcion
+    dice de que fecha era, que es como se registra un ajuste de ejercicios
+    anteriores: en el periodo en que se descubre, no en el que ya se firmo.
+    """
+    fecha = fecha or ahora()
+    cerrado = ultimo_ejercicio_cerrado(db)
+    if cerrado is not None and fecha.year <= cerrado:
+        nueva = datetime.datetime(cerrado + 1, 1, 1, 0, 0, 0)
+        return nueva, (
+            f"{descripcion} (corresponde al {fecha:%Y-%m-%d}; ejercicio {fecha.year} cerrado)"
+        )
+    return fecha, descripcion
+
+
 def crear_asiento(
     db: Session,
     descripcion: str,
@@ -199,6 +266,11 @@ def crear_asiento(
     if total_debe == 0:
         raise ValueError(f"Asiento sin monto: {descripcion}")
 
+    # El propio asiento de cierre se fecha el 31 de diciembre del año que
+    # cierra; todo lo demas respeta los ejercicios ya cerrados.
+    if origen != "cierre_ejercicio":
+        fecha, descripcion = fecha_contable(db, fecha, descripcion)
+
     asiento = models.AsientoContable(
         fecha=fecha or ahora(), descripcion=descripcion, origen=origen, referencia_id=referencia_id
     )
@@ -216,7 +288,9 @@ def crear_asiento(
     return asiento
 
 
-def _lineas_de_cobro(pedido: models.Pedido, signo: float = 1.0) -> List[Tuple[str, float, float]]:
+def _lineas_de_cobro(
+    pedido: models.Pedido, signo: float = 1.0, cuenta_fiado: Optional[str] = None
+) -> List[Tuple[str, float, float]]:
     """Una linea por cada forma en que se pago, a su cuenta correspondiente.
 
     Un pago mixto entra parte a caja y parte a banco: mandarlo todo a una sola
@@ -225,10 +299,16 @@ def _lineas_de_cobro(pedido: models.Pedido, signo: float = 1.0) -> List[Tuple[st
     El vuelto se registra aparte cuando sale por una gaveta distinta de la que
     recibio la plata: pagar en divisas y dar el vuelto en bolivares mueve dos
     cajas, y si solo se anota el neto ninguna de las dos cuadra al cerrar.
+
+    `cuenta_fiado` sirve al REVERTIR: si el fiado ya se cobro, la plata que se
+    devuelve sale de donde entro al cobrarlo, no de la cuenta por cobrar (que
+    quedaria en negativo, como si el cliente nos debiera menos que nada).
     """
     lineas = []
     for pago in pedido.pagos:
         cuenta = CUENTA_POR_METODO_PAGO.get(pago.metodo, "1010")
+        if pago.metodo == "Fiado" and cuenta_fiado:
+            cuenta = cuenta_fiado
         vuelto = round(pago.vuelto_monto or 0, 2)
         cuenta_vuelto = CUENTA_POR_METODO_PAGO.get(pago.vuelto_metodo or pago.metodo, cuenta)
 
@@ -310,16 +390,37 @@ def registrar_devolucion(
     lo que de verdad fue.
     """
     total = round(pedido.total, 2)
+    descuento = round(pedido.descuento or 0, 2)
+    propina = round(pedido.propina or 0, 2)
     costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
+    bruto = round(total + descuento, 2)
+
+    # ES EL ESPEJO EXACTO DE `registrar_venta`. La venta se reconocio bruta con
+    # el descuento aparte, asi que la devolucion revierte las dos: si no,
+    # "Descuentos concedidos" seguia diciendo que se regalo algo en una venta
+    # que ya no existe. Y la propina que el cliente dejo tambien vuelve: la
+    # plata sale completa por donde entro, y el negocio deja de deberle al
+    # empleado una propina que ya se devolvio. Sin esa linea el asiento no
+    # cuadraba y la devolucion reventaba con un 500.
+    if pedido.facturado:
+        tasa = pedido.tasa_iva or impuestos.IVA_DEFAULT
+        base, iva = impuestos.desglosar(total, tasa)
+        base_bruta, _ = impuestos.desglosar(bruto, tasa)
+        lineas = [("4010", base_bruta, 0.0), ("2030", iva, 0.0)]
+        if descuento > 0:
+            lineas.append(("4020", 0.0, round(base_bruta - base, 2)))
+    else:
+        lineas = [("4010", bruto, 0.0)]
+        if descuento > 0:
+            lineas.append(("4020", 0.0, descuento))
+    if propina > 0:
+        lineas.append(("2040", propina, 0.0))
 
     # La plata vuelve por donde entro: si se pago mitad efectivo y mitad pago
-    # movil, se devuelve en esa misma proporcion.
-    if pedido.facturado:
-        base, iva = impuestos.desglosar(total, pedido.tasa_iva or impuestos.IVA_DEFAULT)
-        lineas = [("4010", base, 0.0), ("2030", iva, 0.0)]
-    else:
-        lineas = [("4010", total, 0.0)]
-    lineas += _lineas_de_cobro(pedido, signo=-1)
+    # movil, se devuelve en esa misma proporcion. Si estaba fiado y el cliente
+    # ya lo habia pagado, sale de donde entro ese pago; si todavia lo debia,
+    # simplemente deja de deberlo.
+    lineas += _lineas_de_cobro(pedido, signo=-1, cuenta_fiado=_cuenta_del_cobro_fiado(db, pedido))
 
     if costo > 0:
         # El costo sale de "costo de ventas" porque ya no hay venta. Si la
@@ -336,8 +437,27 @@ def registrar_devolucion(
     )
 
 
+def _cuenta_del_cobro_fiado(db: Session, pedido: models.Pedido) -> Optional[str]:
+    """Si el fiado de este pedido ya se cobro, la cuenta a la que entro esa
+    plata (la que se debito en el asiento de cobro). None si sigue pendiente."""
+    if not pedido.fiado_saldado:
+        return None
+    asiento = (
+        db.query(models.AsientoContable)
+        .filter_by(origen="cobro_fiado", referencia_id=pedido.id)
+        .order_by(models.AsientoContable.id.desc())
+        .first()
+    )
+    if asiento is None:
+        return "1010"
+    for m in asiento.movimientos:
+        if m.debe and m.cuenta is not None:
+            return m.cuenta.codigo
+    return "1010"
+
+
 def registrar_gasto(db: Session, gasto: models.Gasto) -> None:
-    cuenta_pago = "1020" if gasto.metodo_pago == "Banco" else "1010"
+    cuenta_pago = cuenta_de_pago(gasto.metodo_pago)
     crear_asiento(
         db,
         f"Gasto: {gasto.descripcion}",
@@ -362,28 +482,39 @@ def saldos_por_tipo(db: Session, inicio, fin) -> dict:
         .all()
     )
     for cuenta in cuentas:
-        movimientos = (
-            db.query(models.MovimientoContable)
-            .join(models.AsientoContable)
-            .filter(
-                models.MovimientoContable.cuenta_id == cuenta.id,
-                models.AsientoContable.fecha >= inicio,
-                models.AsientoContable.fecha < fin,
-            )
-            .all()
-        )
-        debe = sum(m.debe for m in movimientos)
-        haber = sum(m.haber for m in movimientos)
+        debe, haber = sumas_de_cuenta(db, cuenta.id, inicio, fin)
         saldo = debe - haber if cuenta.naturaleza == "deudora" else haber - debe
         totales[cuenta.tipo] += saldo
     return {k: round(v, 2) for k, v in totales.items()}
 
 
+def sumas_de_cuenta(db: Session, cuenta_id: int, inicio=None, fin=None) -> Tuple[float, float]:
+    """(debe, haber) de una cuenta, sumados EN la base y no en Python.
+
+    Traer cada movimiento a memoria para sumarlo funcionaba con cien asientos;
+    con un año de ventas son decenas de miles de filas por cuenta, y el
+    balance general las recorria todas en cada pantalla. La base suma en una
+    consulta lo que Python sumaba en un bucle.
+    """
+    consulta = db.query(
+        func.coalesce(func.sum(models.MovimientoContable.debe), 0.0),
+        func.coalesce(func.sum(models.MovimientoContable.haber), 0.0),
+    ).filter(models.MovimientoContable.cuenta_id == cuenta_id)
+    if inicio is not None or fin is not None:
+        consulta = consulta.join(models.AsientoContable)
+        if inicio is not None:
+            consulta = consulta.filter(models.AsientoContable.fecha >= inicio)
+        if fin is not None:
+            consulta = consulta.filter(models.AsientoContable.fecha < fin)
+    debe, haber = consulta.one()
+    return round(float(debe or 0), 2), round(float(haber or 0), 2)
+
+
 def saldo_de_cuenta(db: Session, codigo: str) -> float:
     """Saldo acumulado de una cuenta, con el signo de su naturaleza."""
     cuenta = _cuenta(db, codigo)
-    movimientos = db.query(models.MovimientoContable).filter_by(cuenta_id=cuenta.id).all()
-    total = sum(m.debe - m.haber for m in movimientos)
+    debe, haber = sumas_de_cuenta(db, cuenta.id)
+    total = debe - haber
     return round(total if cuenta.naturaleza == "deudora" else -total, 2)
 
 
@@ -399,17 +530,8 @@ def movimiento_efectivo(db: Session, inicio, fin, codigo: str = "1010") -> float
     dos monedas y dos conteos fisicos distintos.
     """
     cuenta = _cuenta(db, codigo)
-    movimientos = (
-        db.query(models.MovimientoContable)
-        .join(models.AsientoContable)
-        .filter(
-            models.MovimientoContable.cuenta_id == cuenta.id,
-            models.AsientoContable.fecha >= inicio,
-            models.AsientoContable.fecha < fin,
-        )
-        .all()
-    )
-    return round(sum(m.debe - m.haber for m in movimientos), 2)
+    debe, haber = sumas_de_cuenta(db, cuenta.id, inicio, fin)
+    return round(debe - haber, 2)
 
 
 def cerrar_ejercicio(db: Session, anio: int) -> dict:
@@ -521,7 +643,7 @@ def registrar_retiro(db: Session, retiro: models.RetiroPropietario) -> None:
     era la unica via posible antes, hacia ver al negocio menos rentable de lo
     que es y dejaba el patrimonio sin reflejar lo retirado.
     """
-    cuenta_origen = "1020" if retiro.metodo_pago == "Banco" else "1010"
+    cuenta_origen = cuenta_de_pago(retiro.metodo_pago)
     crear_asiento(
         db,
         f"Retiro del propietario{': ' + retiro.nota if retiro.nota else ''}",
@@ -538,46 +660,55 @@ def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
     Sin esto, `1010 Caja` nunca se concilia con lo que de verdad hay en la
     gaveta: la diferencia quedaba solo como una nota en la tabla de cierres.
     """
-    diferencia = round(cierre.diferencia, 2)
-    if abs(diferencia) < 0.01:
-        return
-    if diferencia < 0:  # falta plata: sale de caja y se reconoce como perdida
-        lineas = [("6030", abs(diferencia), 0.0), ("1010", 0.0, abs(diferencia))]
-        texto = "Faltante de caja"
-    else:  # sobra plata: entra a caja y baja el gasto acumulado del rubro
-        lineas = [("1010", diferencia, 0.0), ("6030", 0.0, diferencia)]
-        texto = "Sobrante de caja"
-    crear_asiento(
-        db,
-        f"{texto} del {cierre.fecha.date()}",
-        lineas,
-        origen="cierre_caja",
-        referencia_id=cierre.id,
-        fecha=cierre.fecha,
-    )
+    # LAS DOS GAVETAS. Se contaban las dos pero solo la de bolivares se
+    # conciliaba: un faltante en dolares quedaba anotado en la fila del cierre
+    # y la cuenta 1011 seguia diciendo que la plata estaba ahi.
+    for codigo, nombre, diferencia in (
+        ("1010", "caja", round(cierre.diferencia or 0, 2)),
+        ("1011", "divisas", round(cierre.divisas_diferencia or 0, 2)),
+    ):
+        if abs(diferencia) < 0.01:
+            continue
+        if diferencia < 0:  # falta plata: sale de caja y se reconoce como perdida
+            lineas = [("6030", abs(diferencia), 0.0), (codigo, 0.0, abs(diferencia))]
+            texto = f"Faltante de {nombre}"
+        else:  # sobra plata: entra a caja y baja el gasto acumulado del rubro
+            lineas = [(codigo, diferencia, 0.0), ("6030", 0.0, diferencia)]
+            texto = f"Sobrante de {nombre}"
+        crear_asiento(
+            db,
+            f"{texto} del {cierre.fecha.date()}",
+            lineas,
+            origen="cierre_caja",
+            referencia_id=cierre.id,
+            fecha=cierre.fecha,
+        )
 
 
 def registrar_reverso_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
-    """Deshace el faltante/sobrante de un cierre mal contado.
+    """Deshace el faltante/sobrante de un cierre mal contado, en las dos gavetas.
 
     El cierre no se borra: se anula. Borrarlo dejaria los libros limpios pero
     mudos sobre lo que paso, y un error de conteo es justo lo que un dueno
     quiere poder auditar despues.
     """
-    diferencia = round(cierre.diferencia, 2)
-    if abs(diferencia) < 0.01:
-        return
-    if diferencia < 0:  # se habia reconocido un faltante: se devuelve a caja
-        lineas = [("1010", abs(diferencia), 0.0), ("6030", 0.0, abs(diferencia))]
-    else:  # se habia reconocido un sobrante: sale de caja
-        lineas = [("6030", diferencia, 0.0), ("1010", 0.0, diferencia)]
-    crear_asiento(
-        db,
-        f"Anulacion del cierre del {cierre.fecha.date()}",
-        lineas,
-        origen="reverso_cierre_caja",
-        referencia_id=cierre.id,
-    )
+    for codigo, nombre, diferencia in (
+        ("1010", "caja", round(cierre.diferencia or 0, 2)),
+        ("1011", "divisas", round(cierre.divisas_diferencia or 0, 2)),
+    ):
+        if abs(diferencia) < 0.01:
+            continue
+        if diferencia < 0:  # se habia reconocido un faltante: se devuelve a caja
+            lineas = [(codigo, abs(diferencia), 0.0), ("6030", 0.0, abs(diferencia))]
+        else:  # se habia reconocido un sobrante: sale de caja
+            lineas = [("6030", diferencia, 0.0), (codigo, 0.0, diferencia)]
+        crear_asiento(
+            db,
+            f"Anulacion del cierre del {cierre.fecha.date()} ({nombre})",
+            lineas,
+            origen="reverso_cierre_caja",
+            referencia_id=cierre.id,
+        )
 
 
 def registrar_reverso_sobrante_inventario(
@@ -674,14 +805,21 @@ def registrar_nota_credito_compra(
 
 
 def registrar_compra_insumo(
-    db: Session, ingrediente: models.Ingrediente, valor: float, referencia_id: int
+    db: Session,
+    ingrediente: models.Ingrediente,
+    valor: float,
+    referencia_id: int,
+    metodo_pago: Optional[str] = None,
 ) -> None:
     if valor <= 0:
         return  # sin costo informado no hay nada que contabilizar
+    # De donde salio la plata. Salia SIEMPRE de la gaveta de bolivares, aunque
+    # se hubiera pagado por transferencia o con los dolares de la otra gaveta,
+    # y el cierre del dia mostraba un faltante que no existia.
     crear_asiento(
         db,
         f"Compra de {ingrediente.nombre}",
-        [("1040", valor, 0.0), ("1010", 0.0, valor)],
+        [("1040", valor, 0.0), (cuenta_de_pago(metodo_pago), 0.0, valor)],
         origen="compra_insumo",
         referencia_id=referencia_id,
     )
@@ -849,7 +987,7 @@ def registrar_pago_iva(db: Session, declaracion: models.DeclaracionIva, forma_pa
     """Paga al SENIAT lo declarado: baja la deuda y sale la plata."""
     if declaracion.iva_a_pagar <= 0:
         return
-    cuenta_pago = "1020" if forma_pago == "Banco" else "1010"
+    cuenta_pago = cuenta_de_pago(forma_pago, por_defecto="1020")
     crear_asiento(
         db,
         f"Pago de IVA {declaracion.periodo}",

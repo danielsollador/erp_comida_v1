@@ -194,6 +194,9 @@ class InflacionInsumos(BaseModel):
 class ComprarIngredienteRequest(BaseModel):
     cantidad: float
     costo_total: Optional[float] = None  # si se informa, actualiza el costo unitario
+    # De donde salio la plata: Efectivo Bs | Efectivo $ | Banco (y sinonimos de
+    # contabilidad.METODOS_DE_PAGO). Salia siempre de la gaveta de bolivares.
+    metodo_pago: str = "Efectivo Bs"
 
 
 class MermaRequest(BaseModel):

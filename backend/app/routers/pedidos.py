@@ -1,7 +1,7 @@
 import datetime
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session, joinedload
 
 from .. import combos, contabilidad, costeo, impuestos, models, schemas, tasas
@@ -82,7 +82,9 @@ def _faltantes(consumo: Dict[models.Ingrediente, float]) -> List[str]:
 
 
 @router.post("", response_model=schemas.Pedido)
-async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_db)):
+async def crear_pedido(
+    pedido: schemas.PedidoCreate, request: Request, db: Session = Depends(get_db)
+):
     if not pedido.items:
         raise HTTPException(status_code=400, detail="El pedido necesita al menos un item")
 
@@ -127,7 +129,14 @@ async def crear_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_d
             detail="No alcanza el inventario para: " + "; ".join(faltantes),
         )
 
-    db_pedido = models.Pedido(numero=_siguiente_numero(db), nota=pedido.nota)
+    # Quien tomo la comanda: la sesion con la que se entro. Al cobrar se vuelve
+    # a anotar quien cobro, que puede ser otra persona.
+    quien_toma = operadores.del_turno(db, request)
+    db_pedido = models.Pedido(
+        numero=_siguiente_numero(db),
+        nota=pedido.nota,
+        operador_id=quien_toma.id if quien_toma else None,
+    )
     db.add(db_pedido)
     db.flush()
 
@@ -216,7 +225,9 @@ async def marcar_pedido_listo(pedido_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{pedido_id}/cobrar", response_model=schemas.Pedido)
-async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session = Depends(get_db)):
+async def cobrar_pedido(
+    pedido_id: int, body: schemas.CobrarRequest, request: Request, db: Session = Depends(get_db)
+):
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
@@ -298,7 +309,7 @@ async def cobrar_pedido(pedido_id: int, body: schemas.CobrarRequest, db: Session
 
     # Quien cobro y desde que caja. Sin esto, con dos tablets no habia forma de
     # saber cuanto entro por cada gaveta ni quien atendio.
-    operador = operadores.resolver(db, body.operador_id)
+    operador = operadores.del_turno(db, request, body.operador_id)
     punto = operadores.resolver_punto(db, body.punto_venta_id)
     pedido.operador_id = operador.id if operador else None
     pedido.punto_venta_id = punto.id if punto else None
@@ -478,7 +489,10 @@ def ticket(pedido_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{pedido_id}/anular", response_model=schemas.Pedido)
 async def anular_pedido(
-    pedido_id: int, body: Optional[schemas.AnularRequest] = None, db: Session = Depends(get_db)
+    pedido_id: int,
+    request: Request,
+    body: Optional[schemas.AnularRequest] = None,
+    db: Session = Depends(get_db),
 ):
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
@@ -494,9 +508,8 @@ async def anular_pedido(
 
     # Quien anulo. Es la operacion que un dueno ausente mas necesita poder
     # revisar: anular es la via por la que se va comida sin cobrar.
-    if body is not None:
-        quien = operadores.resolver(db, body.operador_id)
-        pedido.anulado_por_id = quien.id if quien else None
+    quien = operadores.del_turno(db, request, body.operador_id if body else None)
+    pedido.anulado_por_id = quien.id if quien else None
 
     # Lo que pasa con los insumos depende de si la cocina alcanzo a hacerlo:
     #  - todavia no lo tocaron -> la comida no existe, el stock vuelve;

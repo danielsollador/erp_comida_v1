@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Boton, Modal, Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type { Categoria, Ingrediente, RecetaItem, Variante } from '../lib/types'
 
@@ -141,7 +142,7 @@ export default function Recetas() {
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Recetas y costo por producto" />
-      <div className="p-4 max-w-3xl mx-auto space-y-4">
+      <Pagina ancho="media">
         <p className="text-sm text-neutral-500">
           Define de que insumos y cuanto lleva cada producto. El costo y el margen que ves en
           Reportes salen de esto.
@@ -166,7 +167,7 @@ export default function Recetas() {
                       <span className="flex items-center gap-2 min-w-0">
                         <span className="truncate">{nombre}</span>
                         {falta && abierta?.id !== v.id && (
-                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
                             sin receta
                           </span>
                         )}
@@ -181,145 +182,138 @@ export default function Recetas() {
         ))}
 
         {abierta && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-30 p-4">
-            <div className="bg-white rounded-2xl p-5 w-full max-w-xl max-h-[90vh] overflow-y-auto">
-              <div className="flex justify-between items-start mb-1">
-                <h3 className="font-semibold text-lg">{nombreAbierta}</h3>
-                <button onClick={cerrar} className="text-neutral-400 text-sm">
-                  cerrar
-                </button>
-              </div>
-              <p className="text-xs text-neutral-500 mb-4">Precio de venta: ${precio.toFixed(2)}</p>
-              {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+          <Modal
+            titulo={nombreAbierta}
+            ayuda={`Precio de venta: $${precio.toFixed(2)}`}
+            onCerrar={cerrar}
+            pie={
+              <Boton onClick={guardar} disabled={guardando}>
+                Guardar receta
+              </Boton>
+            }
+          >
+            {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
 
-              <div className="space-y-3 mb-3">
-                {filas.map((f, i) => {
-                  const ing = mapaIngredientes.get(f.ingrediente_id)
-                  return (
-                    <div key={i} className="border border-neutral-200 rounded-xl p-3">
-                      <div className="flex gap-2 items-center mb-2">
-                        <select
-                          value={f.ingrediente_id}
-                          onChange={(e) => actualizarFila(i, { ingrediente_id: Number(e.target.value) })}
-                          className="flex-1 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                        >
-                          <option value={0}>Insumo...</option>
-                          {ingredientes.map((ing2) => (
-                            <option key={ing2.id} value={ing2.id}>
-                              {ing2.nombre} ({ing2.unidad})
-                            </option>
-                          ))}
-                        </select>
-                        <button onClick={() => quitarFila(i)} className="text-red-400 text-sm px-1">
-                          x
-                        </button>
-                      </div>
+            <div className="space-y-3 mb-3">
+              {filas.map((f, i) => {
+                const ing = mapaIngredientes.get(f.ingrediente_id)
+                return (
+                  <div key={i} className="border border-neutral-200 rounded-xl p-3">
+                    <div className="flex gap-2 items-center mb-2">
+                      <select
+                        value={f.ingrediente_id}
+                        onChange={(e) => actualizarFila(i, { ingrediente_id: Number(e.target.value) })}
+                        className="flex-1 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
+                      >
+                        <option value={0}>Insumo...</option>
+                        {ingredientes.map((ing2) => (
+                          <option key={ing2.id} value={ing2.id}>
+                            {ing2.nombre} ({ing2.unidad})
+                          </option>
+                        ))}
+                      </select>
+                      <button onClick={() => quitarFila(i)} className="text-peligro-400 text-sm px-1">
+                        x
+                      </button>
+                    </div>
 
-                      <div className="flex gap-3 items-center mb-2 text-xs">
-                        <button
-                          onClick={() => actualizarFila(i, { modoRendimiento: false })}
-                          className={`font-medium ${!f.modoRendimiento ? 'text-neutral-900' : 'text-neutral-400'}`}
-                        >
-                          Cantidad directa
-                        </button>
-                        <button
-                          onClick={() => actualizarFila(i, { modoRendimiento: true })}
-                          className={`font-medium ${f.modoRendimiento ? 'text-neutral-900' : 'text-neutral-400'}`}
-                        >
-                          De X sale Y
-                        </button>
-                      </div>
+                    <div className="flex gap-3 items-center mb-2 text-xs">
+                      <button
+                        onClick={() => actualizarFila(i, { modoRendimiento: false })}
+                        className={`font-medium ${!f.modoRendimiento ? 'text-neutral-900' : 'text-neutral-400'}`}
+                      >
+                        Cantidad directa
+                      </button>
+                      <button
+                        onClick={() => actualizarFila(i, { modoRendimiento: true })}
+                        className={`font-medium ${f.modoRendimiento ? 'text-neutral-900' : 'text-neutral-400'}`}
+                      >
+                        De X sale Y
+                      </button>
+                    </div>
 
-                      {f.modoRendimiento ? (
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2 text-sm">
-                            <span>De</span>
-                            <input
-                              value={f.rendimientoDe}
-                              onChange={(e) => actualizarFila(i, { rendimientoDe: e.target.value })}
-                              type="number"
-                              step="0.01"
-                              className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
-                            />
-                            <span>{ing?.unidad ?? 'unidad'} que compras salen</span>
-                            <input
-                              value={f.rendimientoSalen}
-                              onChange={(e) =>
-                                actualizarFila(i, { rendimientoSalen: e.target.value })
-                              }
-                              type="number"
-                              step="1"
-                              className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
-                            />
-                            <span>unidades</span>
-                            <button
-                              onClick={() => aplicarRendimiento(i)}
-                              className="bg-neutral-100 hover:bg-neutral-200 rounded-lg px-2 py-1 text-xs font-medium"
-                            >
-                              Calcular
-                            </button>
-                          </div>
-                          {ing && ing.rendimiento_pct < 100 && (
-                            <p className="text-xs text-amber-700">
-                              Mide sobre lo que compras, sin limpiar. El {ing.rendimiento_pct}% de
-                              rendimiento de {ing.nombre} ya se descuenta solo.
-                            </p>
-                          )}
+                    {f.modoRendimiento ? (
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <span>De</span>
+                          <input
+                            value={f.rendimientoDe}
+                            onChange={(e) => actualizarFila(i, { rendimientoDe: e.target.value })}
+                            type="number"
+                            step="0.01"
+                            className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
+                          />
+                          <span>{ing?.unidad ?? 'unidad'} que compras salen</span>
+                          <input
+                            value={f.rendimientoSalen}
+                            onChange={(e) =>
+                              actualizarFila(i, { rendimientoSalen: e.target.value })
+                            }
+                            type="number"
+                            step="1"
+                            className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
+                          />
+                          <span>unidades</span>
+                          <button
+                            onClick={() => aplicarRendimiento(i)}
+                            className="bg-neutral-100 hover:bg-neutral-200 rounded-lg px-2 py-1 text-xs font-medium"
+                          >
+                            Calcular
+                          </button>
                         </div>
-                      ) : null}
-
-                      <div className="flex items-center gap-2 mt-2 text-sm">
-                        <input
-                          value={f.cantidad_por_unidad}
-                          onChange={(e) => actualizarFila(i, { cantidad_por_unidad: e.target.value })}
-                          placeholder={`Cantidad utilizable por unidad${ing ? ` (${ing.unidad})` : ''}`}
-                          type="number"
-                          step="0.0001"
-                          className="flex-1 border border-neutral-300 rounded-lg px-2 py-1.5"
-                        />
-                        {ing && Number(f.cantidad_por_unidad) > 0 && (
-                          <span className="text-xs text-neutral-500 whitespace-nowrap">
-                            = ${(Number(f.cantidad_por_unidad) * ing.costo_efectivo).toFixed(3)}
-                          </span>
+                        {ing && ing.rendimiento_pct < 100 && (
+                          <p className="text-xs text-aviso-700">
+                            Mide sobre lo que compras, sin limpiar. El {ing.rendimiento_pct}% de
+                            rendimiento de {ing.nombre} ya se descuenta solo.
+                          </p>
                         )}
                       </div>
+                    ) : null}
+
+                    <div className="flex items-center gap-2 mt-2 text-sm">
+                      <input
+                        value={f.cantidad_por_unidad}
+                        onChange={(e) => actualizarFila(i, { cantidad_por_unidad: e.target.value })}
+                        placeholder={`Cantidad utilizable por unidad${ing ? ` (${ing.unidad})` : ''}`}
+                        type="number"
+                        step="0.0001"
+                        className="flex-1 border border-neutral-300 rounded-lg px-2 py-1.5"
+                      />
+                      {ing && Number(f.cantidad_por_unidad) > 0 && (
+                        <span className="text-xs text-neutral-500 whitespace-nowrap">
+                          = ${(Number(f.cantidad_por_unidad) * ing.costo_efectivo).toFixed(3)}
+                        </span>
+                      )}
                     </div>
-                  )
-                })}
-              </div>
-
-              <button onClick={agregarFila} className="text-sm text-neutral-500 font-medium mb-4">
-                + insumo
-              </button>
-
-              <div className="bg-neutral-50 rounded-xl p-3 text-sm space-y-1 mb-4">
-                <div className="flex justify-between text-neutral-500">
-                  <span>Costo teorico (sin merma de cocina)</span>
-                  <span className="tabular-nums">${costoTeorico.toFixed(3)}</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span>Costo real</span>
-                  <span className="tabular-nums">${costoReal.toFixed(3)}</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span>Margen a este precio</span>
-                  <span className={`tabular-nums ${margenReal < 30 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    {margenReal.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-
-              <button
-                onClick={guardar}
-                disabled={guardando}
-                className="w-full bg-neutral-900 text-white rounded-xl py-3 font-semibold disabled:opacity-50"
-              >
-                Guardar receta
-              </button>
+                  </div>
+                )
+              })}
             </div>
-          </div>
+
+            <button onClick={agregarFila} className="text-sm text-neutral-500 font-medium mb-4">
+              + insumo
+            </button>
+
+            <div className="bg-neutral-50 rounded-xl p-3 text-sm space-y-1">
+              <div className="flex justify-between text-neutral-500">
+                <span>Costo teorico (sin merma de cocina)</span>
+                <span className="tabular-nums">${costoTeorico.toFixed(3)}</span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span>Costo real</span>
+                <span className="tabular-nums">${costoReal.toFixed(3)}</span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span>Margen a este precio</span>
+                <span className={`tabular-nums ${margenReal < 30 ? 'text-aviso-600' : 'text-exito-600'}`}>
+                  {margenReal.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+          </Modal>
         )}
-      </div>
+      </Pagina>
     </div>
   )
 }

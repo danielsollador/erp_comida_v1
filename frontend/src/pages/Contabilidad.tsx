@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type {
   ActivoFijo,
@@ -50,7 +52,7 @@ export default function Contabilidad() {
           </button>
         ))}
       </div>
-      <div className="p-4 max-w-4xl mx-auto">
+      <Pagina>
         {/* El "cuadra" del balance nunca falla (es una identidad de la partida
             doble). Estos chequeos si pueden fallar, y son los que avisan que
             los libros dejaron de reflejar la realidad. */}
@@ -61,20 +63,20 @@ export default function Contabilidad() {
                 key={i}
                 className={`rounded-xl border p-3 ${
                   p.gravedad === 'grave'
-                    ? 'bg-red-50 border-red-200'
-                    : 'bg-amber-50 border-amber-200'
+                    ? 'bg-peligro-50 border-peligro-200'
+                    : 'bg-aviso-50 border-aviso-200'
                 }`}
               >
                 <p
                   className={`text-sm font-semibold ${
-                    p.gravedad === 'grave' ? 'text-red-800' : 'text-amber-800'
+                    p.gravedad === 'grave' ? 'text-peligro-800' : 'text-aviso-800'
                   }`}
                 >
                   {p.titulo}
                 </p>
                 <p
                   className={`text-xs mt-0.5 ${
-                    p.gravedad === 'grave' ? 'text-red-700' : 'text-amber-700'
+                    p.gravedad === 'grave' ? 'text-peligro-700' : 'text-aviso-700'
                   }`}
                 >
                   {p.detalle}
@@ -84,8 +86,8 @@ export default function Contabilidad() {
           </div>
         )}
         {salud?.sano && (
-          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-            <p className="text-sm text-emerald-800">
+          <div className="mb-4 rounded-xl border border-exito-200 bg-exito-50 px-3 py-2">
+            <p className="text-sm text-exito-800">
               Libros sanos: sin movimientos huerfanos, sin activos en negativo, e inventario
               contable acorde a las existencias reales.
             </p>
@@ -97,7 +99,7 @@ export default function Contabilidad() {
         {tab === 'resultados' && <EstadoResultados />}
         {tab === 'general' && <BalanceGeneralVista />}
         {tab === 'activos' && <Activos />}
-      </div>
+      </Pagina>
     </div>
   )
 }
@@ -137,6 +139,27 @@ const TIPO_LABEL: Record<string, string> = {
 function PlanCuentas() {
   const [cuentas, setCuentas] = useState<CuentaContable[]>([])
   const [mayor, setMayor] = useState<{ cuenta: CuentaContable; filas: FilaMayor[] } | null>(null)
+  // El plan abre por codigo, que es el orden contable de toda la vida; pero
+  // buscar "Gastos" por nombre o agrupar por tipo es un clic.
+  const ordenCuentas = useOrden<CuentaContable>(
+    {
+      codigo: (c) => c.codigo,
+      nombre: (c) => c.nombre,
+      tipo: (c) => TIPO_LABEL[c.tipo] ?? c.tipo,
+      naturaleza: (c) => c.naturaleza,
+    },
+    'codigo',
+  )
+  const ordenMayor = useOrden<FilaMayor>(
+    {
+      fecha: (f) => new Date(f.fecha),
+      descripcion: (f) => f.descripcion,
+      debe: (f) => f.debe,
+      haber: (f) => f.haber,
+      saldo: (f) => f.saldo,
+    },
+    'fecha',
+  )
   const [nuevoCodigo, setNuevoCodigo] = useState('')
   const [nuevoNombre, setNuevoNombre] = useState('')
   const [nuevoTipo, setNuevoTipo] = useState('gasto')
@@ -177,18 +200,18 @@ function PlanCuentas() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+      <Tabla orden={ordenCuentas} className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
             <tr>
-              <th className="text-left p-3">Codigo</th>
-              <th className="text-left p-3">Nombre</th>
-              <th className="text-left p-3">Tipo</th>
-              <th className="text-left p-3">Naturaleza</th>
+              <Th clave="codigo">Codigo</Th>
+              <Th clave="nombre">Nombre</Th>
+              <Th clave="tipo">Tipo</Th>
+              <Th clave="naturaleza">Naturaleza</Th>
             </tr>
           </thead>
           <tbody>
-            {cuentas.map((c) => (
+            {ordenCuentas.ordenar(cuentas).map((c) => (
               <tr
                 key={c.id}
                 onClick={() => verMayor(c)}
@@ -202,11 +225,11 @@ function PlanCuentas() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Tabla>
 
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
         <h2 className="font-semibold mb-2">Agregar cuenta</h2>
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+        {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
         <div className="flex flex-wrap gap-2">
           <input
             value={nuevoCodigo}
@@ -250,18 +273,23 @@ function PlanCuentas() {
               cerrar
             </button>
           </div>
+          {/* OJO con el Saldo: es el saldo DESPUES de ese movimiento, o sea que
+              solo se lee como acumulado en orden cronologico --que es como
+              abre--. Ordenado por otra columna sigue siendo cierto por fila,
+              pero deja de sumarse hacia abajo. */}
+          <Tabla orden={ordenMayor}>
           <table className="w-full text-sm">
             <thead className="text-neutral-500 text-xs uppercase">
               <tr>
-                <th className="text-left py-1">Fecha</th>
-                <th className="text-left py-1">Descripcion</th>
-                <th className="text-right py-1">Debe</th>
-                <th className="text-right py-1">Haber</th>
-                <th className="text-right py-1">Saldo</th>
+                <Th clave="fecha" className="py-1 px-0">Fecha</Th>
+                <Th clave="descripcion" className="py-1 px-0">Descripcion</Th>
+                <Th clave="debe" alinear="derecha" className="py-1 px-0">Debe</Th>
+                <Th clave="haber" alinear="derecha" className="py-1 px-0">Haber</Th>
+                <Th clave="saldo" alinear="derecha" className="py-1 px-0">Saldo</Th>
               </tr>
             </thead>
             <tbody>
-              {mayor.filas.map((f, i) => (
+              {ordenMayor.ordenar(mayor.filas).map((f, i) => (
                 <tr key={i} className="border-t border-neutral-100">
                   <td className="py-1">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
                   <td className="py-1">{f.descripcion}</td>
@@ -279,6 +307,7 @@ function PlanCuentas() {
               )}
             </tbody>
           </table>
+          </Tabla>
         </div>
       )}
     </div>
@@ -287,6 +316,16 @@ function PlanCuentas() {
 
 function Diario() {
   const [asientos, setAsientos] = useState<AsientoContable[]>([])
+  // Lo ultimo asentado arriba; por Origen se separa de un vistazo lo que
+  // escribio una persona a mano de lo que asento el sistema solo.
+  const ordenAsientos = useOrden<AsientoContable>(
+    {
+      fecha: (a) => new Date(a.fecha),
+      descripcion: (a) => a.descripcion,
+      origen: (a) => ORIGEN_LABEL[a.origen] ?? a.origen,
+    },
+    '-fecha',
+  )
   const [cuentas, setCuentas] = useState<CuentaContable[]>([])
   const [error, setError] = useState('')
   const [nuevaDescripcion, setNuevaDescripcion] = useState('')
@@ -348,7 +387,7 @@ function Diario() {
           crear - solo para consultar. Este formulario es para lo que no encaja en ningun flujo,
           por ejemplo un aporte de capital.
         </p>
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+        {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
         <input
           value={nuevaDescripcion}
           onChange={(e) => setNuevaDescripcion(e.target.value)}
@@ -387,7 +426,7 @@ function Diario() {
             />
           </div>
         ))}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setLineas((prev) => [...prev, { cuenta_id: 0, debe: '', haber: '' }])}
             className="text-sm text-neutral-500"
@@ -403,19 +442,19 @@ function Diario() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+      <Tabla orden={ordenAsientos} className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
             <tr>
-              <th className="text-left p-3">Fecha</th>
-              <th className="text-left p-3">Descripcion</th>
-              <th className="text-left p-3">Origen</th>
-              <th className="text-left p-3">Movimientos</th>
-              <th className="p-3" />
+              <Th clave="fecha">Fecha</Th>
+              <Th clave="descripcion">Descripcion</Th>
+              <Th clave="origen">Origen</Th>
+              <Th>Movimientos</Th>
+              <Th />
             </tr>
           </thead>
           <tbody>
-            {asientos.map((a) => (
+            {ordenAsientos.ordenar(asientos).map((a) => (
               <tr key={a.id} className="border-t border-neutral-100 align-top">
                 <td className="p-3 whitespace-nowrap">{new Date(a.fecha).toLocaleDateString('es-VE')}</td>
                 <td className="p-3 font-medium">{a.descripcion}</td>
@@ -430,7 +469,7 @@ function Diario() {
                 </td>
                 <td className="p-3">
                   {a.origen === 'manual' && (
-                    <button onClick={() => borrar(a.id)} className="text-red-500 text-xs">
+                    <button onClick={() => borrar(a.id)} className="text-peligro-500 text-xs">
                       Borrar
                     </button>
                   )}
@@ -439,7 +478,7 @@ function Diario() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Tabla>
     </div>
   )
 }
@@ -447,18 +486,28 @@ function Diario() {
 function TablaCuentas({ filas }: { filas: FilaBalanceComprobacion[] }) {
   const totalDebe = filas.reduce((s, f) => s + f.debe, 0)
   const totalHaber = filas.reduce((s, f) => s + f.haber, 0)
+  const orden = useOrden<FilaBalanceComprobacion>(
+    {
+      cuenta: (f) => f.codigo,
+      debe: (f) => f.debe,
+      haber: (f) => f.haber,
+      saldo: (f) => f.saldo,
+    },
+    'cuenta',
+  )
   return (
+    <Tabla orden={orden}>
     <table className="w-full text-sm">
       <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
         <tr>
-          <th className="text-left p-3">Cuenta</th>
-          <th className="text-right p-3">Debe</th>
-          <th className="text-right p-3">Haber</th>
-          <th className="text-right p-3">Saldo</th>
+          <Th clave="cuenta">Cuenta</Th>
+          <Th clave="debe" alinear="derecha">Debe</Th>
+          <Th clave="haber" alinear="derecha">Haber</Th>
+          <Th clave="saldo" alinear="derecha">Saldo</Th>
         </tr>
       </thead>
       <tbody>
-        {filas.map((f) => (
+        {orden.ordenar(filas).map((f) => (
           <tr key={f.cuenta_id} className="border-t border-neutral-100">
             <td className="p-3">
               <span className="font-mono text-xs text-neutral-400 mr-2">{f.codigo}</span>
@@ -477,6 +526,7 @@ function TablaCuentas({ filas }: { filas: FilaBalanceComprobacion[] }) {
         </tr>
       </tbody>
     </table>
+    </Tabla>
   )
 }
 
@@ -510,7 +560,7 @@ function EstadoResultados() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {PERIODOS.map((p) => (
           <button
             key={p.valor}
@@ -556,7 +606,7 @@ function Linea({
     >
       <span>{etiqueta}</span>
       <span
-        className={`tabular-nums ${total ? (monto < 0 ? 'text-red-600' : 'text-emerald-600') : ''}`}
+        className={`tabular-nums ${total ? (monto < 0 ? 'text-peligro-600' : 'text-exito-600') : ''}`}
       >
         {monto < 0 ? '-' : ''}${Math.abs(monto).toFixed(2)}
       </span>
@@ -577,7 +627,7 @@ function BalanceGeneralVista() {
     <div className="space-y-4">
       <div
         className={`rounded-2xl p-4 text-sm font-medium ${
-          datos.cuadra ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'
+          datos.cuadra ? 'bg-exito-50 text-exito-800' : 'bg-peligro-50 text-peligro-800'
         }`}
       >
         {datos.cuadra
@@ -735,7 +785,7 @@ function Activos() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && <p className="text-peligro-600 text-sm">{error}</p>}
 
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
         <div className="flex flex-wrap justify-between gap-3 mb-1">
@@ -743,7 +793,7 @@ function Activos() {
             Equipos y mobiliario
             <button
               onClick={altaExistente}
-              className="ml-3 text-sm font-medium text-blue-600"
+              className="ml-3 text-sm font-medium text-acento-600"
               title="Un equipo que ya tenias antes de instalar el sistema"
             >
               + ya lo tenia
@@ -801,7 +851,7 @@ function Activos() {
                     {a.dado_de_baja && (
                       <button
                         onClick={() => reactivar(a)}
-                        className="ml-2 text-xs font-medium text-blue-600"
+                        className="ml-2 text-xs font-medium text-acento-600"
                       >
                         Fue un error, devolverlo
                       </button>
@@ -812,7 +862,7 @@ function Activos() {
                       </span>
                     )}
                     {!a.dado_de_baja && agotado && (
-                      <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                      <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
                         ya depreciado
                       </span>
                     )}
@@ -828,7 +878,7 @@ function Activos() {
                   <>
                     <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden mb-2">
                       <div
-                        className={`h-full ${agotado ? 'bg-amber-400' : 'bg-neutral-700'}`}
+                        className={`h-full ${agotado ? 'bg-aviso-400' : 'bg-neutral-700'}`}
                         style={{ width: `${Math.min(pct, 100)}%` }}
                       />
                     </div>
@@ -838,10 +888,10 @@ function Activos() {
                         {a.cuota_mensual.toFixed(2)}/mes
                       </span>
                       <span className="flex gap-3">
-                        <button onClick={() => cambiarVida(a)} className="text-blue-600 font-medium">
+                        <button onClick={() => cambiarVida(a)} className="text-acento-600 font-medium">
                           Cambiar duracion
                         </button>
-                        <button onClick={() => darDeBaja(a)} className="text-red-500 font-medium">
+                        <button onClick={() => darDeBaja(a)} className="text-peligro-500 font-medium">
                           Dar de baja
                         </button>
                       </span>

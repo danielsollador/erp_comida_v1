@@ -39,13 +39,18 @@ def vender(client, variante, cantidad=1, **extra):
 
 
 # ------------------------------------------------- H106: quien hizo que
+#
+# Desde que el ERP tiene login, el operador ya no se elige en la tablet: es
+# quien entro con su clave (el `client` de las pruebas entra como "admin"). El
+# `operador_id` que mande el cuerpo se ignora cuando hay sesion -- si mandara,
+# una cajera podria cargarle sus anulaciones a otra. Ver `operadores.del_turno`.
 def test_el_pedido_queda_con_el_nombre_de_quien_cobro(client, variante, cajero, piso2):
     """El sistema era completamente anonimo: ni una tabla de usuarios ni un
     campo de autoria en ninguna de las seis tablas que importan."""
     cobrado = vender(
         client, variante, cantidad=2, operador_id=cajero["id"], punto_venta_id=piso2["id"]
     )
-    assert cobrado["operador"] == "Yoli"
+    assert cobrado["operador"] == "admin", "quien cobro es quien entro, no el id de la tablet"
     assert cobrado["punto_venta"] == "Piso 2"
 
 
@@ -59,7 +64,7 @@ def test_se_registra_quien_anulo_un_pedido(client, variante, cajero):
         f"/api/pedidos/{p['id']}/anular",
         json={"comida_preparada": False, "operador_id": cajero["id"]},
     ).json()
-    assert anulado["anulado_por"] == "Yoli"
+    assert anulado["anulado_por"] == "admin"
 
 
 def test_el_cierre_queda_con_el_nombre_de_quien_conto(client, variante, cajero, piso2):
@@ -68,11 +73,14 @@ def test_el_cierre_queda_con_el_nombre_de_quien_conto(client, variante, cajero, 
         "/api/caja/cerrar",
         json={"efectivo_contado": 10.0, "operador_id": cajero["id"], "punto_venta_id": piso2["id"]},
     ).json()
-    assert cierre["operador"] == "Yoli"
+    assert cierre["operador"] == "admin"
     assert cierre["punto_venta"] == "Piso 2"
 
 
-def test_un_operador_desactivado_no_puede_seguir_cobrando(client, variante, cajero):
+def test_un_operador_desactivado_de_la_tablet_no_manda_sobre_la_sesion(client, variante, cajero):
+    """Antes un operador dado de baja bloqueaba el cobro (409). Ahora el id de
+    la tablet no decide nada: cobra quien tiene la sesion, y el operador que
+    corresponde a esa cuenta se reactiva solo si estaba de baja."""
     client.delete(f"/api/operadores/{cajero['id']}")
     p = client.post(
         "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 1}]}
@@ -81,15 +89,15 @@ def test_un_operador_desactivado_no_puede_seguir_cobrando(client, variante, caje
         f"/api/pedidos/{p['id']}/cobrar",
         json={"metodo_pago": "Efectivo Bs", "operador_id": cajero["id"]},
     )
-    assert r.status_code == 409
+    assert r.status_code == 200
+    assert r.json()["operador"] == "admin"
 
 
-def test_sin_operador_el_sistema_sigue_funcionando(client, variante):
-    """Una instalacion que nunca cargo operadores no se puede quedar trancada,
-    y lo cargado antes no tiene a quien atribuirse."""
+def test_sin_operador_en_el_cuerpo_el_pedido_igual_tiene_nombre(client, variante):
+    """La tablet no tiene que mandar nada: la sesion ya dice quien es."""
     cobrado = vender(client, variante, cantidad=2)
     assert cobrado["estado"] == "pagado"
-    assert cobrado["operador"] == ""
+    assert cobrado["operador"] == "admin"
 
 
 # ------------------------------------------------- H103/H104: dos cajas
@@ -223,7 +231,7 @@ def test_el_ticket_trae_lo_que_el_cliente_necesita_ver(client, db, variante, caj
     assert t["propina"] == 2.0
     assert t["total"] == 9.0
     assert t["a_cobrar"] == 11.0
-    assert t["operador"] == "Yoli"
+    assert t["operador"] == "admin"
     assert t["pagos"][0]["recibido"] == 20.0
     assert t["pagos"][0]["vuelto_monto"] == 9.0
 

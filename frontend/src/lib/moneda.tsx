@@ -220,12 +220,12 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
             un cache que nunca olvida el ultimo valor bueno. */}
         {tasa?.en_vivo ? (
           <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-exito-500"
             title="Conectado al BCV y a Binance P2P"
           />
         ) : tasa?.bcv ? (
           <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-aviso-500"
             title={
               tasa.minutos_sin_contacto == null
                 ? 'Sin contacto con las fuentes: la tasa puede estar vieja'
@@ -296,7 +296,7 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
                     ? `Sin internet hace ${Math.round(tasa.minutos_sin_contacto)} min · se sigue usando la ultima tasa`
                     : 'Sin conexion a las fuentes'}
             </span>
-            <a href="/tasa" className="font-medium text-blue-600">
+            <a href="/tasa" className="font-medium text-acento-600">
               Gestionar
             </a>
           </div>

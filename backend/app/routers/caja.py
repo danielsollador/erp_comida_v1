@@ -1,7 +1,7 @@
 import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from .. import contabilidad, models, schemas
@@ -37,7 +37,7 @@ def _retiros_hoy(db: Session) -> float:
         .filter(
             models.RetiroPropietario.fecha >= inicio,
             models.RetiroPropietario.fecha < fin,
-            models.RetiroPropietario.metodo_pago == "Efectivo",
+            models.RetiroPropietario.metodo_pago.in_(METODOS_POR_GAVETA["1010"]),
         )
         .all()
     )
@@ -116,7 +116,11 @@ def _gaveta(db: Session, codigo: str, etiqueta: str) -> schemas.Gaveta:
 
 @router.get("/resumen", response_model=schemas.ResumenCaja)
 def resumen_caja(db: Session = Depends(get_db)):
-    pedidos = _pedidos_pagados_hoy(db)
+    # Las devueltas no son ventas: el cliente trajo la comida y se le devolvio
+    # la plata. Siguen en `_pedidos_pagados_hoy` porque la plata SI entro y
+    # salio de la gaveta (eso lo cuadra el calculo de las gavetas), pero no
+    # cuentan en "ventas de hoy" ni en el desglose por forma de pago.
+    pedidos = [p for p in _pedidos_pagados_hoy(db) if not p.devuelto]
     por_metodo: dict = {}
     total = 0.0
     for pedido in pedidos:
@@ -162,11 +166,13 @@ def resumen_caja(db: Session = Depends(get_db)):
 
 
 @router.post("/cerrar", response_model=schemas.CierreCaja)
-def cerrar_caja(body: schemas.CierreCajaRequest, db: Session = Depends(get_db)):
+def cerrar_caja(
+    body: schemas.CierreCajaRequest, request: Request, db: Session = Depends(get_db)
+):
     inicio, fin = _rango_hoy()
     # Cerrar dos veces el mismo dia ahora genera dos asientos de diferencia y
     # descuadraria la caja contra si misma.
-    quien = operadores.resolver(db, body.operador_id)
+    quien = operadores.del_turno(db, request, body.operador_id)
     punto = operadores.resolver_punto(db, body.punto_venta_id)
 
     # Cada caja cierra la suya: con dos pisos, el segundo cierre del dia no es
@@ -372,8 +378,11 @@ def crear_retiro(body: schemas.RetiroCreate, db: Session = Depends(get_db)):
     """
     if body.monto <= 0:
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
-    if body.metodo_pago not in ("Efectivo", "Banco"):
-        raise HTTPException(status_code=400, detail="El retiro sale de Efectivo o de Banco")
+    if not contabilidad.metodo_de_pago_valido(body.metodo_pago):
+        raise HTTPException(
+            status_code=400,
+            detail="El retiro sale de una gaveta (Efectivo Bs, Efectivo $) o del Banco",
+        )
 
     retiro = models.RetiroPropietario(
         monto=body.monto, metodo_pago=body.metodo_pago, nota=body.nota
@@ -391,6 +400,7 @@ def eliminar_retiro(retiro_id: int, db: Session = Depends(get_db)):
     retiro = db.query(models.RetiroPropietario).filter(models.RetiroPropietario.id == retiro_id).first()
     if not retiro:
         raise HTTPException(status_code=404, detail="Retiro no encontrado")
+    _solo_si_el_ejercicio_esta_abierto(db, retiro.fecha, "ese retiro")
     for asiento in (
         db.query(models.AsientoContable)
         .filter_by(origen="retiro", referencia_id=retiro_id)
@@ -419,10 +429,23 @@ def listar_gastos(dias: int = 30, db: Session = Depends(get_db)):
     )
 
 
+def _solo_si_el_ejercicio_esta_abierto(db: Session, fecha, que: str) -> None:
+    """Borrar algo de un año cerrado cambiaria un resultado ya firmado. 409."""
+    try:
+        contabilidad.asegurar_ejercicio_abierto(db, fecha, que)
+    except contabilidad.ErrorEjercicioCerrado as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
 @router.post("/gastos", response_model=schemas.Gasto)
 def crear_gasto(gasto: schemas.GastoCreate, db: Session = Depends(get_db)):
     if gasto.monto <= 0:
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
+    if not contabilidad.metodo_de_pago_valido(gasto.metodo_pago):
+        raise HTTPException(
+            status_code=400,
+            detail="El gasto sale de una gaveta (Efectivo Bs, Efectivo $) o del Banco",
+        )
     db_gasto = models.Gasto(**gasto.model_dump())
     db.add(db_gasto)
     db.flush()
@@ -437,6 +460,7 @@ def eliminar_gasto(gasto_id: int, db: Session = Depends(get_db)):
     db_gasto = db.query(models.Gasto).filter(models.Gasto.id == gasto_id).first()
     if not db_gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
+    _solo_si_el_ejercicio_esta_abierto(db, db_gasto.fecha, "ese gasto")
     # Uno por uno con db.delete(): un DELETE masivo sobre el query NO dispara el
     # cascade del ORM y dejaria vivos los movimientos del asiento, que el balance
     # de comprobacion sigue sumando aunque el asiento ya no exista.

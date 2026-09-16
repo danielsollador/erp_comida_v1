@@ -24,9 +24,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     ERP_DATA_DIR=/data
 
-# curl solo para el HEALTHCHECK (unos pocos MB, vale la pena).
+# curl para el HEALTHCHECK, y el cliente de PostgreSQL 16 (pg_dump/pg_restore)
+# para los respaldos. Se instala del repositorio oficial de PostgreSQL y no
+# del de Debian: pg_dump se niega a volcar un servidor mas nuevo que el, y la
+# version de Debian va varias por detras del `postgres:16` del compose.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+       | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y --auto-remove gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # Usuario sin privilegios: si alguien logra ejecutar codigo dentro del
@@ -39,7 +50,13 @@ WORKDIR /app
 COPY --chown=appuser:appuser app ./app
 
 # /data es el volumen: base de datos + respaldos viven aca, fuera de la imagen.
-RUN mkdir -p /data && chown -R appuser:appuser /data
+# /compartido es el otro: usuarios y secreto de sesion, comun al hub y al
+# panel. Los dos se crean en la imagen CON el dueño correcto: un volumen nuevo
+# hereda el dueño de la carpeta de la imagen, y si la carpeta no existe Docker
+# la crea de root -- y el proceso, que corre como appuser, no puede escribir
+# users.json. Paso en el primer despliegue: el login quedo en "el servidor no
+# puede escribir en /compartido".
+RUN mkdir -p /data /compartido && chown -R appuser:appuser /data /compartido
 VOLUME ["/data"]
 
 USER appuser

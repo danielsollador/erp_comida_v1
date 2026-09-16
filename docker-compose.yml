@@ -1,14 +1,81 @@
 # Produccion / demo: una sola puerta de entrada (nginx) en ${APP_PORT}.
 # Levantar con:  docker compose up -d --build
+#
+# Para el servidor publico se combina con docker-compose.prod.yml, que quita el
+# puerto, pone Traefik y añade el hub del dominio raiz.
+#
+# LA BASE ES POSTGRESQL. Una instancia (`db`), una base (`vertigo`) y un
+# ESQUEMA por local: el backend de Savora trabaja en `savora`, el hub en `hub`.
+# Hace falta `POSTGRES_PASSWORD` en el `.env`; sin ella el compose se niega a
+# arrancar en vez de levantar una base con clave vacia.
+
+# EL NOMBRE DEL PROYECTO, FIJO. Sin esto Compose lo saca del nombre de la
+# carpeta, y de ahi salen los nombres de las redes y de los volumenes sin
+# `name:` explicito: renombrar la carpeta dejaria los datos en un volumen
+# huerfano mientras el ERP arranca con uno vacio.
+name: erp_comida
+
+# Lo que TODO backend necesita para hablar con la base y respaldarla.
+x-db-env: &db-env
+  ERP_DATABASE_URL: postgresql+psycopg://vertigo:${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}@db:5432/vertigo
 
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vertigo
+      POSTGRES_USER: vertigo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      # Solo UTF-8 y ordenacion neutra: los nombres con acentos se ordenan
+      # igual en cualquier maquina.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+      TZ: ${TZ:-America/Caracas}
+      PGTZ: ${TZ:-America/Caracas}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    # NO se publica al host: solo los backends hablan con la base.
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vertigo -d vertigo"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend:
     build:
       context: ./backend
     image: erp-comida-backend:latest
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
+      <<: *db-env
+      # El esquema de ESTE local dentro de la base.
+      ERP_DB_SCHEMA: ${ERP_LOCAL:-savora}
+      # Respaldos y estado del aplicativo (no la base: esa vive en `db`).
       ERP_DATA_DIR: /data
+      # Usuarios y secreto de sesion, en un volumen COMPARTIDO con el hub.
+      ERP_SHARED_DIR: /compartido
+      ERP_LOCALES_DIR: /locales
+      # Que local sirve este panel: su ficha es locales/<slug>.json.
+      ERP_LOCAL: ${ERP_LOCAL:-savora}
+      # Vacio = se genera uno la primera vez y se guarda en el volumen.
+      ERP_SESSION_SECRET: ${ERP_SESSION_SECRET:-}
+      # Siembra OPCIONAL del primer administrador. Sin esto, la primera visita
+      # pide crearlo desde el navegador.
+      ERP_APP_USER: ${ERP_APP_USER:-admin}
+      ERP_APP_PASSWORD: ${ERP_APP_PASSWORD:-}
       ERP_BACKUP_INTERVAL_HOURS: ${ERP_BACKUP_INTERVAL_HOURS:-6}
       ERP_BACKUP_RETENER_RECIENTES: ${ERP_BACKUP_RETENER_RECIENTES:-8}
       ERP_BACKUP_RETENER_DIAS: ${ERP_BACKUP_RETENER_DIAS:-30}
@@ -18,9 +85,13 @@ services:
       ERP_CORS_ORIGINS: ${ERP_CORS_ORIGINS:-*}
       TZ: ${TZ:-America/Caracas}
     volumes:
-      # La base y los respaldos viven en un volumen: se puede reconstruir la
-      # imagen mil veces sin perder ventas ni inventario.
+      # Respaldos (pg_dump) y estado: se puede reconstruir la imagen mil veces
+      # sin perderlos.
       - erp_data:/data
+      - compartido:/compartido
+      # Las fichas de los locales. Montadas y de solo lectura: se corrige un
+      # nombre o un dominio sin reconstruir la imagen.
+      - ./locales:/locales:ro
     # El backend no se expone al host: solo nginx habla con el.
     expose:
       - "8000"
@@ -29,7 +100,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
     security_opt:
       - no-new-privileges:true
     logging:
@@ -46,6 +117,11 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      # A que backend le pregunta nginx si hay sesion y a donde reenvia /api.
+      # Es el nombre del servicio; la plantilla de nginx lo resuelve en cada
+      # peticion (ver nginx.conf.template).
+      BACKEND_HOST: backend
     ports:
       - "${APP_PORT:-8090}:8080"
     security_opt:
@@ -55,6 +131,16 @@ services:
       - /tmp
       - /var/cache/nginx
       - /var/run
+    volumes:
+      # Donde envsubst deja la configuracion final de la plantilla. Va en un
+      # tmpfs con MODO EXPLICITO: Docker copia el modo de la carpeta de la
+      # imagen (775) pero la monta de root, y nginx (uid 101) no podia
+      # escribir. El sintoma: "conf.d is not writable", nginx arrancaba sin
+      # ningun `server` y el healthcheck nunca pasaba.
+      - type: tmpfs
+        target: /etc/nginx/conf.d
+        tmpfs:
+          mode: 0o1777
     logging:
       driver: json-file
       options:
@@ -62,5 +148,13 @@ services:
         max-file: "3"
 
 volumes:
+  # Los datos de PostgreSQL: TODOS los esquemas (locales y hub).
+  pg_data:
+    name: erp_comida_pg
+  # Respaldos y estado del backend de Savora.
   erp_data:
     name: erp_comida_data
+  # Usuarios y secreto de firma. Es el unico estado que cruza el panel y el
+  # hub, y a proposito: la misma persona entra por los dos dominios.
+  compartido:
+    name: erp_comida_compartido

@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react'
+import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
+import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import { fmtBs, useMoneda } from '../lib/moneda'
-import type { Insight, Periodo, ReporteCombos, ReporteResumen } from '../lib/types'
+import type {
+  Insight,
+  ParCombo,
+  Periodo,
+  ProductoVendido,
+  ReporteCombos,
+  ReporteResumen,
+} from '../lib/types'
 
 const PERIODOS: { valor: Periodo; texto: string }[] = [
   { valor: 'dia', texto: 'Hoy' },
@@ -11,14 +21,24 @@ const PERIODOS: { valor: Periodo; texto: string }[] = [
 ]
 
 const ESTILO_INSIGHT: Record<Insight['tipo'], { caja: string; icono: string }> = {
-  bueno: { caja: 'bg-emerald-50 border-emerald-200 text-emerald-900', icono: '✓' },
-  alerta: { caja: 'bg-amber-50 border-amber-200 text-amber-900', icono: '!' },
-  info: { caja: 'bg-sky-50 border-sky-200 text-sky-900', icono: 'i' },
+  bueno: { caja: 'bg-exito-50 border-exito-200 text-exito-900', icono: '✓' },
+  alerta: { caja: 'bg-aviso-50 border-aviso-200 text-aviso-900', icono: '!' },
+  info: { caja: 'bg-acento-50 border-acento-200 text-acento-900', icono: 'i' },
 }
 
 export default function Reportes() {
   const [periodo, setPeriodo] = useState<Periodo>('dia')
   const [datos, setDatos] = useState<ReporteResumen | null>(null)
+  // Llega ordenado por ingresos, que es el ranking que el backend arma; aqui
+  // se puede dar vuelta a la pregunta: que dejo mas GANANCIA, o que tiene el
+  // margen mas flaco, que casi nunca es el mismo producto.
+  const ordenProductos = useOrden<ProductoVendido>({
+    producto: (p) => p.nombre,
+    uds: (p) => p.unidades,
+    ingresos: (p) => p.ingresos,
+    ganancia: (p) => p.ganancia,
+    margen: (p) => p.margen_pct,
+  })
   const [combos, setCombos] = useState<ReporteCombos | null>(null)
   const [cargando, setCargando] = useState(true)
   const { fmt } = useMoneda()
@@ -54,7 +74,7 @@ export default function Reportes() {
         ))}
       </div>
 
-      <div className="p-4 max-w-4xl mx-auto space-y-5">
+      <Pagina>
         {cargando && <p className="text-neutral-400 text-sm">Cargando...</p>}
 
         {datos && !cargando && (
@@ -96,7 +116,7 @@ export default function Reportes() {
             {datos.insights.length > 0 && (
               <div className="space-y-2">
                 <h2 className="font-semibold flex items-center gap-2">
-                  🤖 Analisis del negocio
+                  <Icono nombre="chispa" size={17} className="text-acento-600" /> Análisis del negocio
                 </h2>
                 {datos.insights.map((ins, idx) => {
                   const estilo = ESTILO_INSIGHT[ins.tipo]
@@ -138,7 +158,7 @@ export default function Reportes() {
               <Linea etiqueta="Gastos, mermas y faltantes" monto={-datos.gastos} />
               <Linea etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
               {(datos.pedidos_anulados > 0 || datos.devoluciones > 0) && (
-                <p className="text-xs text-amber-700 mt-3 bg-amber-50 rounded-lg px-3 py-2">
+                <p className="text-xs text-aviso-700 mt-3 bg-aviso-50 rounded-lg px-3 py-2">
                   {datos.pedidos_anulados > 0 && (
                     <>
                       Se anularon {datos.pedidos_anulados} pedido(s) por $
@@ -188,25 +208,26 @@ export default function Reportes() {
             )}
 
             {datos.top_productos.length > 0 && (
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4 overflow-x-auto">
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
                 <h2 className="font-semibold mb-3">Que se vendio</h2>
-                <table className="w-full text-sm min-w-[420px]">
+                <Tabla orden={ordenProductos}>
+                <table className="w-full text-sm">
                   <thead className="text-neutral-500 text-xs uppercase">
                     <tr>
-                      <th className="text-left py-2">Producto</th>
-                      <th className="text-right py-2">Uds</th>
-                      <th className="text-right py-2">Ingresos</th>
-                      <th className="text-right py-2">Ganancia</th>
-                      <th className="text-right py-2">Margen</th>
+                      <Th clave="producto" className="py-2 px-0">Producto</Th>
+                      <Th clave="uds" alinear="derecha" className="py-2 px-0">Uds</Th>
+                      <Th clave="ingresos" alinear="derecha" className="py-2 px-0">Ingresos</Th>
+                      <Th clave="ganancia" alinear="derecha" className="py-2 px-0">Ganancia</Th>
+                      <Th clave="margen" alinear="derecha" className="py-2 px-0">Margen</Th>
                     </tr>
                   </thead>
                   <tbody>
-                    {datos.top_productos.map((p) => (
+                    {ordenProductos.ordenar(datos.top_productos).map((p) => (
                       <tr key={p.nombre} className="border-t border-neutral-100">
                         <td className="py-2 font-medium">
                           {p.nombre}
                           {p.sin_receta && (
-                            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
                               sin receta
                             </span>
                           )}
@@ -229,10 +250,10 @@ export default function Reportes() {
                             p.sin_receta
                               ? 'text-neutral-400'
                               : p.margen_pct >= 50
-                                ? 'text-emerald-600'
+                                ? 'text-exito-600'
                                 : p.margen_pct >= 30
-                                  ? 'text-amber-600'
-                                  : 'text-red-600'
+                                  ? 'text-aviso-600'
+                                  : 'text-peligro-600'
                           }`}
                         >
                           {p.sin_receta ? '?' : `${p.margen_pct.toFixed(0)}%`}
@@ -241,6 +262,7 @@ export default function Reportes() {
                     ))}
                   </tbody>
                 </table>
+                </Tabla>
               </div>
             )}
 
@@ -269,7 +291,7 @@ export default function Reportes() {
             <SeccionCombos combos={combos} fmt={fmt} />
           </>
         )}
-      </div>
+      </Pagina>
     </div>
   )
 }
@@ -288,14 +310,14 @@ function Kpi({
   /** Aclaracion bajo el numero, cuando el numero solo puede enganar. */
   nota?: string
 }) {
-  const color = tono === 'malo' ? 'text-red-600' : tono === 'bueno' ? 'text-emerald-600' : ''
+  const color = tono === 'malo' ? 'text-peligro-600' : tono === 'bueno' ? 'text-exito-600' : ''
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <div className="text-xs text-neutral-500">{titulo}</div>
       <div className={`font-bold tabular-nums ${destacado ? 'text-2xl' : 'text-xl'} ${color}`}>
         {valor}
       </div>
-      {nota && <div className="mt-0.5 text-[11px] leading-snug text-amber-700">{nota}</div>}
+      {nota && <div className="mt-0.5 text-[11px] leading-snug text-aviso-700">{nota}</div>}
     </div>
   )
 }
@@ -320,7 +342,7 @@ function Linea({
       <span className={monto < 0 ? 'text-neutral-600' : ''}>{etiqueta}</span>
       <span
         className={`tabular-nums ${
-          total && monto < 0 ? 'text-red-600' : monto < 0 ? 'text-neutral-600' : ''
+          total && monto < 0 ? 'text-peligro-600' : monto < 0 ? 'text-neutral-600' : ''
         }`}
       >
         {monto < 0 ? '-' : ''}${Math.abs(monto).toFixed(2)}
@@ -337,6 +359,14 @@ function SeccionCombos({
   combos: ReporteCombos | null
   fmt: (usd: number | null | undefined, decimales?: number) => string
 }) {
+  // Antes de cualquier `return`: los hooks no pueden quedar detras de una
+  // salida temprana o React pierde la cuenta entre pintadas.
+  const ordenCombos = useOrden<ParCombo>({
+    combinacion: (p) => `${p.producto} ${p.acompanante}`,
+    veces: (p) => p.juntos,
+    confianza: (p) => p.confianza_pct,
+  })
+
   if (!combos) return null
 
   if (!combos.suficientes_datos) {
@@ -364,17 +394,17 @@ function SeccionCombos({
         </p>
 
         {combos.pares.length > 0 ? (
-          <div className="overflow-x-auto -mx-4 px-4">
-            <table className="w-full text-sm min-w-[26rem]">
+          <Tabla orden={ordenCombos}>
+            <table className="w-full text-sm">
               <thead className="text-neutral-500 text-xs uppercase">
                 <tr>
-                  <th className="text-left pb-2">Combinacion</th>
-                  <th className="text-right pb-2">Veces</th>
-                  <th className="text-right pb-2">Confianza</th>
+                  <Th clave="combinacion" className="pb-2 px-0">Combinacion</Th>
+                  <Th clave="veces" alinear="derecha" className="pb-2 px-0">Veces</Th>
+                  <Th clave="confianza" alinear="derecha" className="pb-2 px-0">Confianza</Th>
                 </tr>
               </thead>
               <tbody>
-                {combos.pares.map((par) => (
+                {ordenCombos.ordenar(combos.pares).map((par) => (
                   <tr key={`${par.producto}-${par.acompanante}`} className="border-t border-neutral-100">
                     <td className="py-2">
                       <span className="font-medium">{par.producto}</span>
@@ -389,7 +419,7 @@ function SeccionCombos({
                 ))}
               </tbody>
             </table>
-          </div>
+          </Tabla>
         ) : (
           <p className="text-neutral-400 text-sm">
             Todavia no hay un par que se repita lo suficiente como para llamarlo patron.
@@ -402,21 +432,21 @@ function SeccionCombos({
           <h2 className="font-semibold mb-3">Cuantos se van sin bebida</h2>
           <div className="flex h-3 rounded-full overflow-hidden bg-neutral-100 mb-2">
             <div
-              className="bg-emerald-500"
+              className="bg-exito-500"
               style={{ width: `${acomp.con_bebida_pct}%` }}
               title={`${acomp.con_bebida_pct}% con bebida`}
             />
             <div
-              className="bg-amber-400"
+              className="bg-aviso-400"
               style={{ width: `${acomp.sin_bebida_pct}%` }}
               title={`${acomp.sin_bebida_pct}% sin bebida`}
             />
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-emerald-700 font-medium tabular-nums">
+            <span className="text-exito-700 font-medium tabular-nums">
               {acomp.con_bebida_pct}% con bebida
             </span>
-            <span className="text-amber-700 font-medium tabular-nums">
+            <span className="text-aviso-700 font-medium tabular-nums">
               {acomp.sin_bebida_pct}% sin bebida
             </span>
           </div>
@@ -427,7 +457,7 @@ function SeccionCombos({
                 <span className="font-semibold">{oport.pedidos_sin_bebida} pedidos</span> salieron
                 sin nada de tomar. Si el cajero lograra convencer a{' '}
                 {oport.conversion_supuesta_pct} de cada 100, serian{' '}
-                <span className="font-semibold text-emerald-700">
+                <span className="font-semibold text-exito-700">
                   {fmt(oport.venta_potencial)}
                 </span>{' '}
                 mas de venta y {fmt(oport.ganancia_potencial)} de ganancia en este periodo.

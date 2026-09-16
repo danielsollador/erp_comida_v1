@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Boton, Modal, Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type {
   EstadoRespaldos,
-  Operador,
   PuntoVenta,
   PrevisualizacionRestauracion,
   Respaldo,
@@ -15,12 +16,16 @@ type Candidato = { respaldo: Respaldo; previo: PrevisualizacionRestauracion }
 
 export default function Sistema() {
   const [respaldos, setRespaldos] = useState<Respaldo[]>([])
+  // El mas reciente primero: es el que se restaura en el 99% de los casos.
+  const orden = useOrden<Respaldo>(
+    { fecha: (r) => new Date(r.creado_en), tamano: (r) => r.tamano_kb },
+    '-fecha',
+  )
   const [estado, setEstado] = useState<EstadoRespaldos | null>(null)
   const [creando, setCreando] = useState(false)
   const [candidato, setCandidato] = useState<Candidato | null>(null)
   const [restaurando, setRestaurando] = useState(false)
   const [hecho, setHecho] = useState<Restauracion | null>(null)
-  const [operadores, setOperadores] = useState<Operador[]>([])
   const [puntos, setPuntos] = useState<PuntoVenta[]>([])
   const [error, setError] = useState('')
   const archivoRef = useRef<HTMLInputElement>(null)
@@ -32,34 +37,7 @@ export default function Sistema() {
   function cargar() {
     api.listarRespaldos().then(setRespaldos).catch(() => {})
     api.estadoRespaldos().then(setEstado).catch(() => {})
-    api.listarOperadores().then(setOperadores).catch(() => {})
     api.listarPuntosVenta().then(setPuntos).catch(() => {})
-  }
-
-  async function agregarOperador() {
-    const nombre = window.prompt('Nombre de quien atiende la caja')
-    if (!nombre?.trim()) return
-    setError('')
-    try {
-      await api.crearOperador(nombre.trim())
-      cargar()
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }
-
-  async function quitarOperador(o: Operador) {
-    if (!window.confirm(`Quitar a ${o.nombre}?
-
-Sus pedidos y cierres siguen registrados a su nombre.`))
-      return
-    setError('')
-    try {
-      await api.desactivarOperador(o.id)
-      cargar()
-    } catch (e) {
-      setError((e as Error).message)
-    }
   }
 
   async function agregarPunto() {
@@ -138,28 +116,28 @@ Sus pedidos y cierres siguen registrados a su nombre.`))
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Sistema" />
-      <div className="p-4 max-w-2xl mx-auto space-y-5">
+      <Pagina ancho="media">
         {/* Restaurar deja la caja del dia descuadrada: la plata fisica es la de
             ahora, la base volvio a hace unas horas. Hay que decirlo, no
             esconderlo detras de un "listo". */}
         {(hecho || estado?.restauracion_reciente) && (
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-            <h2 className="font-semibold text-blue-900">Se restauro un respaldo</h2>
+          <div className="rounded-2xl border border-acento-200 bg-acento-50 p-4">
+            <h2 className="font-semibold text-acento-900">Se restauro un respaldo</h2>
             {(() => {
               const r = hecho ?? estado!.restauracion_reciente!
               return (
                 <>
-                  <p className="text-sm text-blue-900 mt-1">
+                  <p className="text-sm text-acento-900 mt-1">
                     {new Date(r.fecha).toLocaleString('es-VE')} · desde {r.restaurado_desde}
                   </p>
-                  <p className="text-sm text-blue-900 mt-1">
+                  <p className="text-sm text-acento-900 mt-1">
                     {r.pedidos_perdidos == null
                       ? 'No se pudo medir cuanto se perdio.'
                       : `Se perdieron ${r.pedidos_perdidos} pedido(s) por $${(r.monto_perdido ?? 0).toFixed(2)}.`}{' '}
                     Vuelve a cargar las ventas que se hicieron despues, o el cierre de caja de
                     hoy va a dar un faltante que no es faltante.
                   </p>
-                  <p className="text-xs text-blue-700 mt-1">
+                  <p className="text-xs text-acento-700 mt-1">
                     La base que habia antes quedo guardada como {r.respaldo_previo}.
                   </p>
                 </>
@@ -169,50 +147,25 @@ Sus pedidos y cierres siguen registrados a su nombre.`))
         )}
 
         {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="rounded-2xl border border-peligro-200 bg-peligro-50 p-4 text-sm text-peligro-800">
             {error}
           </div>
         )}
 
-        {/* Quien atiende la caja. No es seguridad -no hay contrasenas- sino
-            trazabilidad: antes el sistema era completamente anonimo y un
-            pedido anulado o una gaveta mal contada no tenian nombre detras. */}
+        {/* Las cajas fisicas (una por piso). Quien atiende ya no se carga aqui:
+            cada persona entra con su usuario y el sistema lo anota solo en cada
+            pedido, anulacion, retiro y cierre. Las cuentas van en Usuarios. */}
         <div className="rounded-2xl border border-neutral-200 bg-white p-4">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-semibold">Quien atiende</h2>
-            <button onClick={agregarOperador} className="text-sm font-medium text-blue-600">
+            <h2 className="font-semibold">Cajas</h2>
+            <button onClick={agregarPunto} className="text-sm font-medium text-acento-600">
               + Agregar
             </button>
           </div>
           <p className="text-xs text-neutral-500 mt-1">
-            Se elige el turno una vez en el POS y queda registrado en cada pedido, anulacion,
-            retiro y cierre de caja.
+            Con dos pisos hay dos gavetas y cada una cierra la suya. Quien cobra queda registrado
+            solo, con el usuario con el que entro.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {operadores.map((o) => (
-              <span
-                key={o.id}
-                className="flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1 text-sm"
-              >
-                {o.nombre}
-                <button onClick={() => quitarOperador(o)} className="text-red-400 text-xs">
-                  x
-                </button>
-              </span>
-            ))}
-            {operadores.length === 0 && (
-              <span className="text-sm text-neutral-400">
-                Nadie cargado todavia: los pedidos quedan sin nombre.
-              </span>
-            )}
-          </div>
-
-          <div className="mt-4 flex items-baseline justify-between">
-            <h3 className="font-medium text-sm">Cajas</h3>
-            <button onClick={agregarPunto} className="text-sm font-medium text-blue-600">
-              + Agregar
-            </button>
-          </div>
           <p className="text-xs text-neutral-500 mt-1">
             Si el local tiene dos pisos, cada caja cuenta y cierra su propia gaveta.
           </p>
@@ -231,8 +184,8 @@ Sus pedidos y cierres siguen registrados a su nombre.`))
         <div
           className={`rounded-2xl border p-4 ${
             horasDesdeUltimo !== null && horasDesdeUltimo <= 8
-              ? 'bg-emerald-50 border-emerald-200'
-              : 'bg-amber-50 border-amber-200'
+              ? 'bg-exito-50 border-exito-200'
+              : 'bg-aviso-50 border-aviso-200'
           }`}
         >
           <h2 className="font-semibold mb-1">Respaldo de la base de datos</h2>
@@ -258,7 +211,7 @@ Sus pedidos y cierres siguen registrados a su nombre.`))
             es lo unico que si, y antes nadie llevaba la cuenta de si se hacia. */}
         <div
           className={`rounded-2xl border p-4 ${
-            descargaVencida ? 'bg-red-50 border-red-200' : 'bg-white border-neutral-200'
+            descargaVencida ? 'bg-peligro-50 border-peligro-200' : 'bg-white border-neutral-200'
           }`}
         >
           <h2 className="font-semibold mb-1">Copia fuera de esta maquina</h2>
@@ -285,17 +238,17 @@ Sus pedidos y cierres siguen registrados a su nombre.`))
           {creando ? 'Generando...' : 'Generar respaldo ahora'}
         </button>
 
-        <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+        <Tabla orden={orden} className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
-                <th className="text-left p-3">Fecha</th>
-                <th className="text-right p-3">Tamano</th>
-                <th className="p-3" />
+                <Th clave="fecha">Fecha</Th>
+                <Th clave="tamano" alinear="derecha">Tamano</Th>
+                <Th />
               </tr>
             </thead>
             <tbody>
-              {respaldos.map((r) => (
+              {orden.ordenar(respaldos).map((r) => (
                 <tr key={r.nombre} className="border-t border-neutral-100">
                   <td className="p-3">{new Date(r.creado_en).toLocaleString('es-VE')}</td>
                   <td className="text-right p-3 tabular-nums">{r.tamano_kb} KB</td>
@@ -303,7 +256,7 @@ Sus pedidos y cierres siguen registrados a su nombre.`))
                     <a
                       href={`/api/respaldos/${r.nombre}/descargar`}
                       onClick={() => setTimeout(cargar, 1500)}
-                      className="text-blue-600 font-medium"
+                      className="text-acento-600 font-medium"
                     >
                       Descargar
                     </a>
@@ -325,7 +278,7 @@ Sus pedidos y cierres siguen registrados a su nombre.`))
               )}
             </tbody>
           </table>
-        </div>
+        </Tabla>
 
         {/* Si murio el disco, la lista de arriba esta vacia y el unico respaldo
             que existe es el que alguien se llevo en el telefono. */}
@@ -351,68 +304,61 @@ Sus pedidos y cierres siguen registrados a su nombre.`))
             className="text-sm w-full"
           />
         </div>
-      </div>
+      </Pagina>
 
       {candidato && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md p-5">
-            <h3 className="font-semibold text-lg">Restaurar este respaldo</h3>
-            <p className="text-sm text-neutral-600 mt-1">
-              Del {new Date(candidato.respaldo.creado_en).toLocaleString('es-VE')}
-            </p>
-
-            {/* El dueno no decide viendo un nombre de archivo: decide viendo
-                cuantos pedidos y cuanta plata desaparecen. */}
-            <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm">
-              {candidato.previo.pedidos_que_se_pierden == null ? (
-                <p className="font-medium text-amber-900">
-                  No se pudo calcular cuanto se pierde. Puede ser mucho: revisa las ventas de
-                  hoy antes de restaurar.
-                </p>
-              ) : candidato.previo.pedidos_que_se_pierden > 0 ? (
-                <>
-                  <p className="font-medium text-amber-900">
-                    Vas a perder {candidato.previo.pedidos_que_se_pierden} pedido(s) por $
-                    {(candidato.previo.monto_que_se_pierde ?? 0).toFixed(2)}.
-                  </p>
-                  <p className="text-amber-800 mt-1">
-                    Es todo lo cobrado despues de{' '}
-                    {candidato.previo.corte
-                      ? new Date(candidato.previo.corte).toLocaleString('es-VE')
-                      : 'el inicio'}
-                    . Tambien se pierden las compras, gastos y mermas de ese rato.
-                  </p>
-                </>
-              ) : (
-                <p className="text-amber-900">
-                  No hay ventas posteriores a este respaldo: no se pierden pedidos.
-                </p>
-              )}
-            </div>
-
-            <p className="text-xs text-neutral-500 mt-3">
-              Antes de reemplazar, el sistema guarda una copia de la base actual. Si restaurar
-              fue el error, se puede volver desde esa copia.
-            </p>
-
-            <div className="flex gap-2 mt-5">
-              <button
-                onClick={() => setCandidato(null)}
-                disabled={restaurando}
-                className="flex-1 border border-neutral-300 rounded-xl py-3 font-medium disabled:opacity-50"
-              >
+        <Modal
+          titulo="Restaurar este respaldo"
+          ayuda={`Del ${new Date(candidato.respaldo.creado_en).toLocaleString('es-VE')}`}
+          onCerrar={() => (restaurando ? null : setCandidato(null))}
+          ancho="sm"
+          pie={
+            <>
+              <Boton tono="suave" onClick={() => setCandidato(null)} disabled={restaurando}>
                 Cancelar
-              </button>
-              <button
-                onClick={confirmar}
-                disabled={restaurando}
-                className="flex-1 bg-red-600 text-white rounded-xl py-3 font-medium disabled:opacity-50"
-              >
+              </Boton>
+              <Boton tono="peligro-fuerte" onClick={confirmar} disabled={restaurando}>
                 {restaurando ? 'Restaurando...' : 'Si, restaurar'}
-              </button>
-            </div>
+              </Boton>
+            </>
+          }
+        >
+
+          {/* El dueno no decide viendo un nombre de archivo: decide viendo
+              cuantos pedidos y cuanta plata desaparecen. */}
+          <div className="mt-4 rounded-xl bg-aviso-50 border border-aviso-200 p-3 text-sm">
+            {candidato.previo.pedidos_que_se_pierden == null ? (
+              <p className="font-medium text-aviso-900">
+                No se pudo calcular cuanto se pierde. Puede ser mucho: revisa las ventas de
+                hoy antes de restaurar.
+              </p>
+            ) : candidato.previo.pedidos_que_se_pierden > 0 ? (
+              <>
+                <p className="font-medium text-aviso-900">
+                  Vas a perder {candidato.previo.pedidos_que_se_pierden} pedido(s) por $
+                  {(candidato.previo.monto_que_se_pierde ?? 0).toFixed(2)}.
+                </p>
+                <p className="text-aviso-800 mt-1">
+                  Es todo lo cobrado despues de{' '}
+                  {candidato.previo.corte
+                    ? new Date(candidato.previo.corte).toLocaleString('es-VE')
+                    : 'el inicio'}
+                  . Tambien se pierden las compras, gastos y mermas de ese rato.
+                </p>
+              </>
+            ) : (
+              <p className="text-aviso-900">
+                No hay ventas posteriores a este respaldo: no se pierden pedidos.
+              </p>
+            )}
           </div>
-        </div>
+
+          <p className="text-xs text-neutral-500 mt-3">
+            Antes de reemplazar, el sistema guarda una copia de la base actual. Si restaurar
+            fue el error, se puede volver desde esa copia.
+          </p>
+
+        </Modal>
       )}
     </div>
   )

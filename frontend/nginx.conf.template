@@ -1,0 +1,213 @@
+# nginx hace de puerta unica: sirve el SPA compilado y reenvia /api y /ws al
+# backend. Y ANTES de servir cualquier archivo del panel le pregunta al backend
+# si hay sesion (`auth_request`). Es lo que separa un login de verdad de una
+# cortina: un login hecho solo en React esconde la PANTALLA pero no el CODIGO,
+# porque para dibujar el formulario el navegador ya descargo el paquete entero.
+#
+# ES UNA PLANTILLA. La imagen la pasa por `envsubst` al arrancar y sustituye
+# SOLO `${BACKEND_HOST}` y `${PAGINA_INICIO}` (ver el filtro en el Dockerfile):
+# el resto de `$variables` son de nginx y tienen que quedar intactas.
+
+server {
+  # 8080: la imagen nginx-unprivileged corre como usuario 101 y no puede abrir
+  # puertos por debajo de 1024.
+  listen 8080;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+  server_tokens off;
+
+  # Los redirects salen RELATIVOS. Sin esto nginx los arma con su puerto de
+  # escucha interno (8080) y el navegador se va a un puerto que no existe.
+  absolute_redirect off;
+
+  # LA IP REAL DEL CLIENTE. Delante hay Traefik en red de host, asi que la
+  # conexion siempre llega desde la pasarela de Docker y `$remote_addr` era la
+  # misma para todo el mundo: veinte intentos fallidos de cualquiera bloqueaban
+  # el login para todos. Se confia solo en las redes privadas de un proxy
+  # nuestro; Traefik descarta el X-Forwarded-For que traiga el cliente.
+  set_real_ip_from 127.0.0.1;
+  set_real_ip_from 10.0.0.0/8;
+  set_real_ip_from 172.16.0.0/12;
+  set_real_ip_from 192.168.0.0/16;
+  real_ip_header X-Forwarded-For;
+  real_ip_recursive on;
+
+  # CABECERAS DE SEGURIDAD. En nginx, un `add_header` dentro de un `location`
+  # ANULA todos los del servidor, asi que se repiten en cada bloque que pone
+  # las suyas. `always` para que salgan tambien en los 401 y 404.
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+  add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  # NGINX TIENE QUE VOLVER A RESOLVER EL NOMBRE DEL BACKEND. Con un nombre
+  # literal lo resuelve UNA vez al arrancar; Docker reparte las IPs por orden
+  # de arranque y un `up -d` que recree el backend lo deja apuntando a otro
+  # contenedor. 127.0.0.11 es el DNS interno de Docker, y el destino va en una
+  # VARIABLE a proposito: solo asi consulta en cada peticion.
+  resolver 127.0.0.11 valid=10s ipv6=off;
+  set $destino "http://${BACKEND_HOST}:8000";
+
+  gzip on;
+  gzip_vary on;
+  gzip_comp_level 6;
+  gzip_min_length 1024;
+  gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+  # Los respaldos que se descargan pueden pesar; no cortar la respuesta.
+  client_max_body_size 25m;
+  proxy_read_timeout 120s;
+
+  location = /healthz {
+    access_log off;
+    add_header Content-Type text/plain;
+    return 200 "ok\n";
+  }
+
+  # ── La puerta ────────────────────────────────────────────────────────────
+  # Sub-peticion interna al backend por cada archivo del panel: 200 o 401
+  # mirando la cookie de sesion, y nginx decide si sirve el archivo.
+  location = /_auth {
+    internal;
+    proxy_pass $destino/api/acceso/check;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  # Pagina de login. Es el UNICO archivo del panel que se sirve sin sesion, y
+  # es HTML plano con su CSS y su JS dentro: no carga nada del paquete de React.
+  location = /login.html {
+    auth_request off;
+    add_header Cache-Control "no-cache";
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  }
+
+  # Los iconos, sin sesion: el navegador los pide al cargar CUALQUIER pagina,
+  # incluida la de acceso, y ahi todavia no hay cookie. No filtran nada.
+  location ~* ^/(favicon[\w-]*\.(png|svg|ico)|apple-touch[\w-]*\.png|logo-[\w-]*\.png|icons\.svg)$ {
+    auth_request off;
+    expires 7d;
+    add_header Cache-Control "public";
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    access_log off;
+  }
+
+  # Assets con hash en el nombre: se pueden cachear para siempre. Con sesion.
+  location /assets/ {
+    auth_request /_auth;
+    error_page 401 403 = @al_login;
+    error_page 500 502 503 504 = @sin_backend;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    access_log off;
+  }
+
+  # Sin sesion, todo lleva al login. 302 y no 401 para que el navegador lo
+  # muestre en vez de dejar la pestaña en blanco con un error.
+  location @al_login {
+    return 302 /login.html;
+  }
+
+  # El backend no contesta. Va a un destino DISTINTO y con una marca en la
+  # direccion: sin ella, una averia del servidor se vivia como un rebote mudo al
+  # login, y nada decia nunca que el problema no era la clave.
+  location @sin_backend {
+    return 302 /login.html?fallo=servidor;
+  }
+
+  # LA RAIZ NO ES LA MISMA PAGINA EN EL HUB QUE EN UN PANEL. La imagen es la
+  # misma y lleva las dos dentro: `index.html` es el ERP de React,
+  # `inicio.html` es la eleccion de local. Lo pone el compose en PAGINA_INICIO.
+  location = / {
+    auth_request /_auth;
+    error_page 401 403 = @al_login;
+    error_page 500 502 503 504 = @sin_backend;
+    add_header Cache-Control "no-cache";
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    try_files ${PAGINA_INICIO} =404;
+  }
+
+  # SPA: cualquier ruta de react-router cae en index.html. El index NO se
+  # cachea: es el unico archivo con nombre fijo y es el que apunta a los
+  # assets con hash.
+  location / {
+    auth_request /_auth;
+    error_page 401 403 = @al_login;
+    error_page 500 502 503 504 = @sin_backend;
+    add_header Cache-Control "no-cache";
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    try_files $uri $uri/ /index.html;
+  }
+
+  # Los endpoints de acceso NO pueden pedir sesion: son los que la crean.
+  location /api/acceso/ {
+    auth_request off;
+    proxy_pass $destino$request_uri;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location = /api/health {
+    auth_request off;
+    access_log off;
+    proxy_pass $destino$request_uri;
+  }
+
+  # Los datos, con sesion. Aca se responde 401 y no se redirige: quien llama es
+  # JavaScript, y un 302 a una pagina HTML le llegaria como una respuesta
+  # valida con basura dentro. Es la segunda de dos cerraduras: el backend
+  # valida la sesion por su cuenta (ver `main.py`).
+  location /api/ {
+    auth_request /_auth;
+    proxy_pass $destino$request_uri;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    # SOBREESCRIBE lo que mande el cliente y encadena la IP real al final: sin
+    # esto, rotando la cabecera se conseguia un cubo de limite nuevo cada vez.
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+  }
+
+  # WebSocket para la pantalla de cocina / POS en tiempo real. Tambien con
+  # sesion: sin esto, cada comanda con sus items se podia escuchar sin entrar.
+  location = /ws {
+    auth_request /_auth;
+    proxy_pass $destino;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+  }
+}

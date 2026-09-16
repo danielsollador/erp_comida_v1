@@ -98,6 +98,10 @@ def eliminar_asiento(asiento_id: int, db: Session = Depends(get_db)):
             status_code=409,
             detail="Este asiento lo genero el sistema automaticamente. Borralo desde donde se origino (la venta, el gasto...).",
         )
+    try:
+        contabilidad.asegurar_ejercicio_abierto(db, asiento.fecha, "ese asiento")
+    except contabilidad.ErrorEjercicioCerrado as e:
+        raise HTTPException(status_code=409, detail=str(e))
     db.delete(asiento)
     db.commit()
     return {"ok": True}
@@ -143,17 +147,7 @@ def libro_mayor(cuenta_id: int, db: Session = Depends(get_db)):
 def _balance_por_cuenta(db: Session):
     """(cuenta, debe_total, haber_total) para cada cuenta con al menos un movimiento."""
     cuentas = db.query(models.CuentaContable).order_by(models.CuentaContable.codigo).all()
-    resultado = []
-    for cuenta in cuentas:
-        movimientos = (
-            db.query(models.MovimientoContable)
-            .filter(models.MovimientoContable.cuenta_id == cuenta.id)
-            .all()
-        )
-        debe = round(sum(m.debe for m in movimientos), 2)
-        haber = round(sum(m.haber for m in movimientos), 2)
-        resultado.append((cuenta, debe, haber))
-    return resultado
+    return [(cuenta, *contabilidad.sumas_de_cuenta(db, cuenta.id)) for cuenta in cuentas]
 
 
 @router.get("/balance-comprobacion", response_model=List[schemas.FilaBalanceComprobacion])
@@ -177,13 +171,18 @@ def balance_comprobacion(db: Session = Depends(get_db)):
 
 
 @router.get("/estado-resultados", response_model=schemas.EstadoResultados)
-def estado_resultados(periodo: str = "mes", db: Session = Depends(get_db)):
+def estado_resultados(
+    periodo: str = "mes", anio: int = None, mes: int = None, db: Session = Depends(get_db)
+):
+    """Con `anio` y `mes` responde por un mes ya pasado: "cuanto gane en
+    junio" no se podia contestar aunque Reportes y los libros fiscales ya
+    aceptaban esos parametros."""
     if periodo not in ("dia", "semana", "mes"):
         periodo = "mes"
     # Los equipos se gastan con el uso aunque nadie abra el sistema: se
     # completan las cuotas pendientes antes de leer los numeros.
     contabilidad.asentar_depreciacion_pendiente(db)
-    inicio, fin, etiqueta = rango_periodo(periodo)
+    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
 
     cuentas = (
         db.query(models.CuentaContable)
@@ -193,18 +192,7 @@ def estado_resultados(periodo: str = "mes", db: Session = Depends(get_db)):
 
     por_tipo = {"ingreso": [], "costo": [], "gasto": []}
     for cuenta in cuentas:
-        movimientos = (
-            db.query(models.MovimientoContable)
-            .join(models.AsientoContable)
-            .filter(
-                models.MovimientoContable.cuenta_id == cuenta.id,
-                models.AsientoContable.fecha >= inicio,
-                models.AsientoContable.fecha < fin,
-            )
-            .all()
-        )
-        debe = round(sum(m.debe for m in movimientos), 2)
-        haber = round(sum(m.haber for m in movimientos), 2)
+        debe, haber = contabilidad.sumas_de_cuenta(db, cuenta.id, inicio, fin)
         if debe == 0 and haber == 0:
             continue
         por_tipo[cuenta.tipo].append(

@@ -1,0 +1,160 @@
+# PRODUCCION. Se usa JUNTO al compose base, no en su lugar:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# El de al lado define la base, el ERP del local y su nginx; este añade lo que
+# separa una maquina de desarrollo de un servidor publico: Traefik, TLS, el
+# dominio real, y el HUB del dominio raiz.
+#
+# NO PUBLICA NINGUN PUERTO. Todo entra por Traefik con certificado. El `ports`
+# del archivo base se anula con `!override` (Compose >= 2.24; el servidor tiene
+# 5.x): un `8090:8080` en produccion seria el ERP por HTTP plano en la IP.
+#
+# COMO ESTA MONTADO ESTE SERVIDOR (comprobado, no supuesto)
+# ---------------------------------------------------------
+# Traefik corre en `network_mode: host` y descubre los contenedores por el
+# socket de Docker: los alcanza por su IP de bridge, asi que NO hay ninguna red
+# que compartir con el. Basta con que el contenedor tenga las etiquetas. La
+# redireccion http->https es global del entrypoint, por eso cada dominio lleva
+# UN router (websecure) y no dos. Y Traefik FILTRA los contenedores que no
+# estan `healthy`: un frontend con el healthcheck fallando no recibe router ni
+# certificado.
+#
+# UN ROUTER POR DOMINIO, nunca uno con dos hosts: con `Host(a) || Host(b)`
+# Traefik pide UN certificado para ambos y Let's Encrypt lo emite todo o nada.
+#
+# LOS DOS DOMINIOS
+# ----------------
+#   savora.vertigopro.tech  -> el ERP de Savora (frontend + backend).
+#   vertigopro.tech         -> el hub: login, redireccion al local con un pase,
+#                              y la administracion de Vertigo (locales, cuentas).
+#
+# Comparten la base (cada uno en su esquema) y el volumen `compartido`
+# (usuarios + secreto de sesion): es lo que hace que una cuenta valga en los
+# dos y que un pase emitido por el hub lo pueda validar el panel.
+
+services:
+  # ───────────────────────────── Savora ─────────────────────────────────
+  backend:
+    environment:
+      ERP_CORS_ORIGINS: https://savora.vertigopro.tech
+      # A donde vuelve el enlace "Vertigo Pro" del panel.
+      ERP_HUB_URL: https://vertigopro.tech
+    labels:
+      # El backend no se publica: se llega a el por el nginx del frontend, que
+      # es quien comprueba la sesion antes de dejar pasar.
+      - "traefik.enable=false"
+
+  frontend:
+    ports: !override []
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.savora.rule=Host(`savora.vertigopro.tech`)"
+      - "traefik.http.routers.savora.entrypoints=websecure"
+      - "traefik.http.routers.savora.tls.certresolver=letsencrypt"
+      # El puerto INTERNO del contenedor: nginx-unprivileged escucha en 8080,
+      # no en 80. Sin esta linea Traefik prueba el 80 y da 502.
+      - "traefik.http.services.savora.loadbalancer.server.port=8080"
+
+  db:
+    labels:
+      - "traefik.enable=false"
+
+  # ───────────────────────────── El hub ─────────────────────────────────
+  #
+  # La misma imagen del backend con ERP_ES_HUB=true: solo sirve /api/acceso,
+  # /api/usuarios y /api/agencia, no siembra menu ni respalda ni consulta la
+  # tasa. Trabaja en el esquema `hub` de la misma base.
+  hub-backend:
+    image: erp-comida-backend:latest
+    # La imagen la construye el servicio `backend`; este la reutiliza y no
+    # intenta bajarla de ningun registro.
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment:
+      ERP_ES_HUB: "true"
+      ERP_DATABASE_URL: postgresql+psycopg://vertigo:${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}@db:5432/vertigo
+      ERP_DB_SCHEMA: hub
+      ERP_DATA_DIR: /data
+      ERP_SHARED_DIR: /compartido
+      ERP_LOCALES_DIR: /locales
+      ERP_SESSION_SECRET: ${ERP_SESSION_SECRET:-}
+      ERP_CORS_ORIGINS: https://vertigopro.tech
+      ERP_BACKUP_ON_STARTUP: "0"
+      TZ: ${TZ:-America/Caracas}
+    volumes:
+      - hub_data:/data
+      - compartido:/compartido
+      - ./locales:/locales:ro
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=false"
+
+  hub-frontend:
+    image: erp-comida-frontend:latest
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      hub-backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    environment:
+      # A que backend pregunta. Es lo unico que distingue a un frontend de
+      # otro: la imagen es la misma. Nombre del SERVICIO: dentro de este
+      # compose es unico.
+      BACKEND_HOST: hub-backend
+      # En el hub, la raiz es la eleccion de local y no el ERP de un cliente.
+      PAGINA_INICIO: /inicio.html
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    volumes:
+      # Igual que en el frontend de Savora: tmpfs con modo explicito para que
+      # nginx (uid 101) pueda escribir la configuracion renderizada.
+      - type: tmpfs
+        target: /etc/nginx/conf.d
+        tmpfs:
+          mode: 0o1777
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hub.rule=Host(`vertigopro.tech`)"
+      - "traefik.http.routers.hub.entrypoints=websecure"
+      - "traefik.http.routers.hub.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.hub-www.rule=Host(`www.vertigopro.tech`)"
+      - "traefik.http.routers.hub-www.entrypoints=websecure"
+      - "traefik.http.routers.hub-www.tls.certresolver=letsencrypt"
+      - "traefik.http.services.hub.loadbalancer.server.port=8080"
+
+volumes:
+  # Estado del backend del hub (respaldos apagados: no guarda ventas de nadie).
+  hub_data:
+    name: erp_comida_hub_data

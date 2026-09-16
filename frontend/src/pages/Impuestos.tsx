@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type {
   ConfiguracionFiscal,
   DeclaracionIva,
+  FilaLibroCompras,
+  FilaLibroVentas,
   LibroCompras,
   LibroVentas,
   Periodo,
@@ -25,6 +29,32 @@ const TABS = [
 
 export default function Impuestos() {
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>('ventas')
+  // Los libros del SENIAT se entregan por fecha, pero revisar una factura
+  // concreta o la venta mas grande del mes es buscar, no leer: por eso
+  // tambien se ordenan por numero de factura, por cliente o por monto.
+  const ordenVentas = useOrden<FilaLibroVentas>(
+    {
+      fecha: (f) => f.fecha,
+      factura: (f) => f.numero_factura,
+      cliente: (f) => f.cliente,
+      base: (f) => f.base_imponible,
+      iva: (f) => f.iva,
+      total: (f) => f.total,
+    },
+    'fecha',
+  )
+  const ordenCompras = useOrden<FilaLibroCompras>(
+    {
+      fecha: (f) => f.fecha,
+      factura: (f) => f.numero_factura,
+      proveedor: (f) => f.proveedor_nombre,
+      rif: (f) => f.proveedor_rif,
+      base: (f) => f.base_imponible,
+      iva: (f) => f.iva,
+      total: (f) => f.total,
+    },
+    'fecha',
+  )
   const [periodo, setPeriodo] = useState<Periodo>('mes')
   const [ventas, setVentas] = useState<LibroVentas | null>(null)
   const [compras, setCompras] = useState<LibroCompras | null>(null)
@@ -72,10 +102,10 @@ export default function Impuestos() {
         ))}
       </div>
 
-      <div className="p-4 max-w-4xl mx-auto space-y-5">
+      <Pagina>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Alicuota de IVA</h2>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               value={tasaInput}
               onChange={(e) => setTasaInput(e.target.value)}
@@ -98,7 +128,7 @@ export default function Impuestos() {
         </div>
 
         {resumen && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Kpi titulo="IVA debito (ventas)" valor={resumen.iva_debito} />
             <Kpi titulo="IVA credito (compras)" valor={resumen.iva_credito} />
             <Kpi
@@ -109,7 +139,7 @@ export default function Impuestos() {
           </div>
         )}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -126,26 +156,26 @@ export default function Impuestos() {
         {tab === 'ventas' && ventas && (
           <div className="space-y-3">
             {ventas.ventas_no_facturadas > 0 && (
-              <p className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-sm">
+              <p className="bg-aviso-50 border border-aviso-200 text-aviso-900 rounded-xl p-3 text-sm">
                 Ademas hubo <strong>{ventas.ventas_no_facturadas}</strong> venta(s) sin facturar por
                 ${ventas.monto_no_facturado.toFixed(2)} en este periodo - no entran aqui porque el
                 dueno no las declaro con factura.
               </p>
             )}
-            <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
-              <table className="w-full text-sm min-w-[560px]">
+            <Tabla orden={ordenVentas} className="bg-white rounded-2xl border border-neutral-200">
+              <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                   <tr>
-                    <th className="text-left p-3">Fecha</th>
-                    <th className="text-left p-3">Factura</th>
-                    <th className="text-left p-3">Cliente</th>
-                    <th className="text-right p-3">Base</th>
-                    <th className="text-right p-3">IVA</th>
-                    <th className="text-right p-3">Total</th>
+                    <Th clave="fecha">Fecha</Th>
+                    <Th clave="factura">Factura</Th>
+                    <Th clave="cliente">Cliente</Th>
+                    <Th clave="base" alinear="derecha">Base</Th>
+                    <Th clave="iva" alinear="derecha">IVA</Th>
+                    <Th clave="total" alinear="derecha">Total</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ventas.filas.map((f) => (
+                  {ordenVentas.ordenar(ventas.filas).map((f) => (
                     <tr key={f.pedido_id} className="border-t border-neutral-100">
                       <td className="p-3 whitespace-nowrap">
                         {new Date(f.fecha).toLocaleDateString('es-VE')}
@@ -178,26 +208,26 @@ export default function Impuestos() {
                   </tfoot>
                 )}
               </table>
-            </div>
+            </Tabla>
           </div>
         )}
 
         {tab === 'compras' && compras && (
-          <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
+          <Tabla orden={ordenCompras} className="bg-white rounded-2xl border border-neutral-200">
+            <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                 <tr>
-                  <th className="text-left p-3">Fecha</th>
-                  <th className="text-left p-3">Factura</th>
-                  <th className="text-left p-3">Proveedor</th>
-                  <th className="text-left p-3">RIF</th>
-                  <th className="text-right p-3">Base</th>
-                  <th className="text-right p-3">IVA</th>
-                  <th className="text-right p-3">Total</th>
+                  <Th clave="fecha">Fecha</Th>
+                  <Th clave="factura">Factura</Th>
+                  <Th clave="proveedor">Proveedor</Th>
+                  <Th clave="rif">RIF</Th>
+                  <Th clave="base" alinear="derecha">Base</Th>
+                  <Th clave="iva" alinear="derecha">IVA</Th>
+                  <Th clave="total" alinear="derecha">Total</Th>
                 </tr>
               </thead>
               <tbody>
-                {compras.filas.map((f) => (
+                {ordenCompras.ordenar(compras.filas).map((f) => (
                   <tr key={f.factura_id} className="border-t border-neutral-100">
                     <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
                     <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
@@ -229,11 +259,11 @@ export default function Impuestos() {
                 </tfoot>
               )}
             </table>
-          </div>
+          </Tabla>
         )}
 
         {tab === 'declaraciones' && <Declaraciones />}
-      </div>
+      </Pagina>
     </div>
   )
 }
@@ -315,10 +345,10 @@ function Declaraciones() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && <p className="text-peligro-600 text-sm">{error}</p>}
 
       {pendientes.length > 0 && (
-        <div className="bg-white rounded-2xl border border-amber-300 p-4">
+        <div className="bg-white rounded-2xl border border-aviso-300 p-4">
           <h2 className="font-semibold mb-1">Meses cerrados sin declarar</h2>
           <p className="text-xs text-neutral-500 mb-3">
             Solo aparecen meses que ya terminaron: el mes en curso todavia puede recibir ventas.
@@ -327,7 +357,7 @@ function Declaraciones() {
             {pendientes.map((p) => (
               <div
                 key={`${p.anio}-${p.mes}`}
-                className="flex flex-wrap items-center gap-3 bg-amber-50 rounded-lg p-2 text-sm"
+                className="flex flex-wrap items-center gap-3 bg-aviso-50 rounded-lg p-2 text-sm"
               >
                 <span className="font-medium flex-1 min-w-[120px]">{p.etiqueta}</span>
                 <span className="text-neutral-600 tabular-nums text-xs">
@@ -347,7 +377,7 @@ function Declaraciones() {
       )}
 
       {ultima && ultima.credito_excedente > 0 && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-emerald-800">
+        <div className="bg-exito-50 border border-exito-200 rounded-xl px-3 py-2 text-sm text-exito-800">
           Tienes ${ultima.credito_excedente.toFixed(2)} de credito fiscal a favor de{' '}
           {ultima.etiqueta}: se descuentan del IVA del mes siguiente.
         </div>
@@ -357,7 +387,7 @@ function Declaraciones() {
         <div className="flex flex-wrap justify-between gap-2 mb-3">
           <h2 className="font-semibold">Declaraciones presentadas</h2>
           {porPagar.length > 0 && (
-            <span className="text-sm text-red-600 font-medium">
+            <span className="text-sm text-peligro-600 font-medium">
               {porPagar.length} sin pagar por $
               {porPagar.reduce((s, d) => s + d.iva_a_pagar, 0).toFixed(2)}
             </span>
@@ -381,7 +411,7 @@ function Declaraciones() {
                   <button
                     onClick={() => anular(d)}
                     disabled={ocupado}
-                    className="ml-2 text-xs font-medium text-red-500 disabled:opacity-40"
+                    className="ml-2 text-xs font-medium text-peligro-500 disabled:opacity-40"
                     title="Revierte sus asientos y libera el periodo"
                   >
                     Anular
@@ -389,12 +419,12 @@ function Declaraciones() {
                 </span>
                 {d.iva_a_pagar > 0 ? (
                   d.pagada ? (
-                    <span className="text-xs text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 font-medium">
+                    <span className="text-xs text-exito-700 bg-exito-50 rounded-full px-2 py-0.5 font-medium">
                       pagada · {d.forma_pago}
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
-                      <span className="font-semibold tabular-nums text-red-600">
+                      <span className="font-semibold tabular-nums text-peligro-600">
                         ${d.iva_a_pagar.toFixed(2)}
                       </span>
                       <button

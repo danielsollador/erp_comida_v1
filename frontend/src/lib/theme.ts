@@ -1,12 +1,16 @@
-// Paleta rotativa por categoria, inspirada en POS de referencia (Toast/Square):
-// colores pastel de alto contraste para escaneo rapido en pantalla tactil.
+// El color de cada categoria del POS, para encontrar "Bebidas" o "Dulces" de
+// un vistazo en la pantalla tactil sin leer las pestañas.
+//
+// Sale de la paleta central (index.css) y de ninguna otra parte: antes era un
+// arcoiris de Tailwind (cielo, rosa, violeta...) que no aparecia en ninguna
+// otra pantalla y hacia que el POS pareciera de otro aplicativo. Cinco tintes
+// bastan para distinguir categorias vecinas; con mas se pierde la paleta.
 const PALETA = [
-  { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-800', dot: 'bg-amber-400' },
-  { bg: 'bg-sky-50', border: 'border-sky-300', text: 'text-sky-800', dot: 'bg-sky-400' },
-  { bg: 'bg-rose-50', border: 'border-rose-300', text: 'text-rose-800', dot: 'bg-rose-400' },
-  { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-800', dot: 'bg-emerald-400' },
-  { bg: 'bg-violet-50', border: 'border-violet-300', text: 'text-violet-800', dot: 'bg-violet-400' },
-  { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-800', dot: 'bg-orange-400' },
+  { bg: 'bg-aviso-50', border: 'border-aviso-300', text: 'text-aviso-800', dot: 'bg-aviso-400' },
+  { bg: 'bg-acento-50', border: 'border-acento-300', text: 'text-acento-800', dot: 'bg-acento-400' },
+  { bg: 'bg-exito-50', border: 'border-exito-300', text: 'text-exito-800', dot: 'bg-exito-400' },
+  { bg: 'bg-neutral-100', border: 'border-neutral-300', text: 'text-neutral-800', dot: 'bg-neutral-400' },
+  { bg: 'bg-peligro-50', border: 'border-peligro-300', text: 'text-peligro-800', dot: 'bg-peligro-400' },
 ]
 
 export function colorCategoria(categoriaId: number) {

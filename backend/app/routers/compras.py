@@ -160,8 +160,11 @@ def pagar_factura(factura_id: int, pago: schemas.PagoFacturaRequest, db: Session
         raise HTTPException(status_code=400, detail="Esta factura no quedo a credito")
     if db_factura.pagada:
         raise HTTPException(status_code=409, detail="Esta factura ya esta pagada")
-    if pago.forma_pago not in ("Efectivo", "Banco"):
-        raise HTTPException(status_code=400, detail="La forma de pago debe ser Efectivo o Banco")
+    if not contabilidad.metodo_de_pago_valido(pago.forma_pago):
+        raise HTTPException(
+            status_code=400,
+            detail="La factura se paga desde una gaveta (Efectivo Bs, Efectivo $) o del Banco",
+        )
 
     contabilidad.registrar_pago_factura(db, db_factura, pago.forma_pago)
     db_factura.pagada = True
@@ -452,6 +455,23 @@ def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
             status_code=409,
             detail="Esta factura ya fue pagada y tiene un asiento de pago asociado, no se puede borrar.",
         )
+    # Un año cerrado no se toca: borrar una factura de 2025 cambiaria el
+    # resultado que ya se llevo a Utilidades retenidas.
+    try:
+        contabilidad.asegurar_ejercicio_abierto(db, db_factura.fecha, "esa factura")
+    except contabilidad.ErrorEjercicioCerrado as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    # La factura de un activo creo el bien. Borrarla sin borrar el bien lo
+    # dejaba vivo y depreciandose contra nada -- y con las claves foraneas
+    # activas ni siquiera eso: la base rechazaba el borrado con un 500.
+    for activo in db.query(models.ActivoFijo).filter_by(factura_id=factura_id).all():
+        if contabilidad.depreciacion_acumulada(db, activo) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=f"El equipo «{activo.nombre}» que nacio de esta factura ya lleva "
+                f"depreciacion asentada: dalo de baja desde Contabilidad en vez de borrar la factura.",
+            )
+        db.delete(activo)
     # Sin esto el asiento contable de la factura queda huerfano en los libros.
     # Uno por uno con db.delete(): un DELETE masivo sobre el query NO dispara el
     # cascade del ORM y dejaria vivos los movimientos, que el balance de

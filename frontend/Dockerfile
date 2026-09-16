@@ -18,7 +18,24 @@ RUN npm run build
 # escucha en el puerto 8080 (los puertos <1024 requieren privilegios).
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 
-COPY --chown=nginx:nginx nginx.conf /etc/nginx/conf.d/default.conf
+# PLANTILLA, no configuracion final. La misma imagen sirve al panel del local
+# y al hub, y lo que cambia entre ellos --a que backend preguntar y que pagina
+# es la raiz-- se lo pone el compose. Todo lo que caiga en /etc/nginx/templates
+# lo pasa la imagen por `envsubst` al arrancar y lo deja en /etc/nginx/conf.d
+# (que en compose es un tmpfs, porque el contenedor es de solo lectura).
+COPY --chown=nginx:nginx nginx.conf.template /etc/nginx/templates/default.conf.template
+
+# EL FILTRO ES OBLIGATORIO. Sin el, `envsubst` sustituye TODA variable que
+# encuentre, y la plantilla esta llena de variables de nginx ($host, $uri,
+# $proxy_add_x_forwarded_for...) que se reemplazarian por cadena vacia. nginx
+# arrancaria igual y se perderian la IP real y las cabeceras de proxy.
+ENV NGINX_ENVSUBST_FILTER='(BACKEND_HOST|PAGINA_INICIO)'
+
+# Que sirve la raiz: el ERP por defecto; `inicio.html` solo en el hub.
+ENV PAGINA_INICIO=/index.html
+# BACKEND_HOST sin valor por defecto A PROPOSITO: si falta, nginx no arranca y
+# se ve enseguida, en vez de hablar con el backend equivocado.
+
 COPY --from=builder --chown=nginx:nginx /app/dist /usr/share/nginx/html
 
 EXPOSE 8080

@@ -1,15 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type { ConfiguracionFiscal, FacturaCompra, Ingrediente } from '../lib/types'
 
 const CATEGORIAS = ['Insumos', 'Servicios', 'Activos', 'Otros']
-const FORMAS_PAGO = ['Efectivo', 'Banco', 'Credito']
+const FORMAS_PAGO = ['Efectivo', 'Efectivo $', 'Banco', 'Credito']
 
 type Linea = { ingrediente_id: number; cantidad: string; costo_unitario: string }
 
 export default function Compras() {
   const [facturas, setFacturas] = useState<FacturaCompra[]>([])
+  // Lo mas reciente arriba, que es lo que se acaba de cargar; pero ordenar por
+  // Estado junta lo pendiente de pagar, que es la otra razon para entrar aqui.
+  const orden = useOrden<FacturaCompra>(
+    {
+      fecha: (f) => new Date(f.fecha),
+      factura: (f) => f.numero_factura,
+      proveedor: (f) => f.proveedor_nombre,
+      base: (f) => f.base_imponible,
+      iva: (f) => f.iva,
+      total: (f) => f.total,
+      estado: (f) => (f.pagada ? 'Pagada' : 'Pendiente'),
+    },
+    '-fecha',
+  )
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [fiscal, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
   const [error, setError] = useState('')
@@ -279,7 +295,7 @@ export default function Compras() {
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Compras" />
-      <div className="p-4 max-w-4xl mx-auto space-y-5">
+      <Pagina>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Cargar factura de proveedor</h2>
           <p className="text-xs text-neutral-500 mb-3">
@@ -287,7 +303,7 @@ export default function Compras() {
               ? 'Cada renglon reabastece el stock del insumo y recalcula su costo promedio - no hace falta cargarlo aparte en Inventario.'
               : 'Alimenta el Libro de Compras y contabiliza sola: activos entran al balance, servicios van directo a gasto.'}
           </p>
-          {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+          {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
             <input
@@ -404,7 +420,7 @@ export default function Compras() {
                     </span>
                     <button
                       onClick={() => quitarLinea(i)}
-                      className="text-red-400 text-sm px-1"
+                      className="text-peligro-400 text-sm px-1"
                       disabled={lineas.length === 1}
                     >
                       x
@@ -430,7 +446,7 @@ export default function Compras() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
               <input
                 value={base}
                 onChange={(e) => actualizarBase(e.target.value)}
@@ -478,13 +494,13 @@ export default function Compras() {
                   <div
                     key={f.id}
                     className={`flex flex-wrap items-center gap-2 rounded-lg p-2 text-sm ${
-                      vencida ? 'bg-red-50' : 'bg-neutral-50'
+                      vencida ? 'bg-peligro-50' : 'bg-neutral-50'
                     }`}
                   >
                     <span className="font-medium flex-1 min-w-[140px]">{f.proveedor_nombre}</span>
                     <span className="text-neutral-500 font-mono text-xs">{f.numero_factura}</span>
                     <span
-                      className={`text-xs ${vencida ? 'text-red-600 font-semibold' : 'text-neutral-500'}`}
+                      className={`text-xs ${vencida ? 'text-peligro-600 font-semibold' : 'text-neutral-500'}`}
                     >
                       {f.fecha_vencimiento
                         ? vencida
@@ -515,23 +531,23 @@ export default function Compras() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
+        <Tabla orden={orden} className="bg-white rounded-2xl border border-neutral-200">
+          <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
-                <th className="text-left p-3">Fecha</th>
-                <th className="text-left p-3">Factura</th>
-                <th className="text-left p-3">Proveedor</th>
-                <th className="text-left p-3">Detalle</th>
-                <th className="text-right p-3">Base</th>
-                <th className="text-right p-3">IVA</th>
-                <th className="text-right p-3">Total</th>
-                <th className="text-left p-3">Estado</th>
-                <th className="p-3" />
+                <Th clave="fecha">Fecha</Th>
+                <Th clave="factura">Factura</Th>
+                <Th clave="proveedor">Proveedor</Th>
+                <Th>Detalle</Th>
+                <Th clave="base" alinear="derecha">Base</Th>
+                <Th clave="iva" alinear="derecha">IVA</Th>
+                <Th clave="total" alinear="derecha">Total</Th>
+                <Th clave="estado">Estado</Th>
+                <Th />
               </tr>
             </thead>
             <tbody>
-              {facturas.map((f) => (
+              {orden.ordenar(facturas).map((f) => (
                 <tr key={f.id} className="border-t border-neutral-100 align-top">
                   <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
                   <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
@@ -555,7 +571,7 @@ export default function Compras() {
                     {f.total.toFixed(2)}
                     <button
                       onClick={() => notaCredito(f)}
-                      className="block w-full text-right text-[11px] font-medium text-blue-600"
+                      className="block w-full text-right text-[11px] font-medium text-acento-600"
                       title="El proveedor mando menos, o te dio un descuento"
                     >
                       Nota de credito
@@ -566,8 +582,8 @@ export default function Compras() {
                       <span
                         className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                           f.pagada
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-amber-50 text-amber-700'
+                            ? 'bg-exito-50 text-exito-700'
+                            : 'bg-aviso-50 text-aviso-700'
                         }`}
                       >
                         {f.pagada ? 'Pagada' : 'Pendiente'}
@@ -577,7 +593,7 @@ export default function Compras() {
                     )}
                   </td>
                   <td className="p-3">
-                    <button onClick={() => borrar(f)} className="text-red-500 text-xs">
+                    <button onClick={() => borrar(f)} className="text-peligro-500 text-xs">
                       Borrar
                     </button>
                   </td>
@@ -592,8 +608,8 @@ export default function Compras() {
               )}
             </tbody>
           </table>
-        </div>
-      </div>
+        </Tabla>
+      </Pagina>
     </div>
   )
 }

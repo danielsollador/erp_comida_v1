@@ -21,6 +21,7 @@ import type {
   ConfiguracionFiscal,
   CuentaContable,
   DeclaracionIva,
+  EstadoAcceso,
   EstadoResultadosContable,
   FacturaCompra,
   FilaBalanceComprobacion,
@@ -29,6 +30,7 @@ import type {
   Ingrediente,
   LibroCompras,
   LibroVentas,
+  ListaUsuarios,
   Merma,
   Pedido,
   PedidoItem,
@@ -46,17 +48,28 @@ import type {
   ResumenCaja,
   ResumenIva,
   RetiroPropietario,
+  Rol,
   SaludContable,
   Sugerencia,
   SugerenciaCompra,
+  Usuario,
   Variante,
 } from './types'
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json' },
+    // La cookie de sesion viaja sola en el mismo origen; se declara igual para
+    // que un despliegue con el API en otro origen no la pierda en silencio.
+    credentials: 'same-origin',
     ...options,
   })
+  // Sesion caducada o cerrada en otra pestaña: al login, no a un error rojo.
+  // Las rutas del propio acceso no: alli el 401 es "clave incorrecta".
+  if (res.status === 401 && !path.startsWith('/acceso/')) {
+    window.location.replace('/login.html')
+    throw new Error('Sesión requerida.')
+  }
   if (!res.ok) {
     // FastAPI devuelve {"detail": "..."}; mostrar ese texto y no el JSON crudo.
     const texto = await res.text()
@@ -73,6 +86,32 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // --- acceso y usuarios ---
+  estadoAcceso: () => req<EstadoAcceso>('/acceso/estado'),
+  salir: () => req<{ ok: boolean }>('/acceso/logout', { method: 'POST' }),
+  pedirPase: (local: string) =>
+    req<{ pase: string }>('/acceso/pase', { method: 'POST', body: JSON.stringify({ local }) }),
+  listarUsuarios: () => req<ListaUsuarios>('/usuarios'),
+  crearUsuario: (u: { usuario: string; clave: string; rol: Rol; locales?: string[] }) =>
+    req<Usuario>('/usuarios', { method: 'POST', body: JSON.stringify(u) }),
+  cambiarRol: (usuario: string, rol: Rol) =>
+    req<Usuario>(`/usuarios/${encodeURIComponent(usuario)}/rol`, {
+      method: 'PUT',
+      body: JSON.stringify({ rol }),
+    }),
+  borrarUsuario: (usuario: string) =>
+    req<{ ok: boolean }>(`/usuarios/${encodeURIComponent(usuario)}`, { method: 'DELETE' }),
+  reiniciarClave: (usuario: string, clave: string) =>
+    req<{ ok: boolean }>(`/usuarios/${encodeURIComponent(usuario)}/clave`, {
+      method: 'POST',
+      body: JSON.stringify({ clave }),
+    }),
+  cambiarMiClave: (clave_actual: string, clave_nueva: string) =>
+    req<{ ok: boolean }>('/usuarios/mi/clave', {
+      method: 'POST',
+      body: JSON.stringify({ clave_actual, clave_nueva }),
+    }),
+
   listarCategorias: () => req<Categoria[]>('/menu/categorias'),
   crearCategoria: (nombre: string, orden = 0) =>
     req<Categoria>('/menu/categorias', { method: 'POST', body: JSON.stringify({ nombre, orden }) }),

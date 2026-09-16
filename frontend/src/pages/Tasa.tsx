@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import { fmtNum, useMoneda } from '../lib/moneda'
 import type { EstadoTasa, PuntoTasa } from '../lib/types'
@@ -8,6 +10,15 @@ export default function Tasa() {
   const { recargar } = useMoneda()
   const [estado, setEstado] = useState<EstadoTasa | null>(null)
   const [historial, setHistorial] = useState<PuntoTasa[]>([])
+  const orden = useOrden<PuntoTasa>(
+    {
+      fecha: (t) => t.fecha,
+      oficial: (t) => t.bcv,
+      paralelo: (t) => t.paralelo,
+      origen: (t) => t.origen,
+    },
+    '-fecha',
+  )
   const [manual, setManual] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState('')
@@ -57,7 +68,7 @@ export default function Tasa() {
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Tasa de cambio" />
-      <div className="p-4 max-w-2xl mx-auto space-y-5">
+      <Pagina ancho="media">
         {/* --------- tasa vigente --------- */}
         <div className="bg-white rounded-2xl border border-neutral-200 p-5">
           <div className="flex items-start justify-between gap-3 mb-3">
@@ -69,7 +80,7 @@ export default function Tasa() {
             </div>
             <span
               className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ${
-                esManual ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                esManual ? 'bg-aviso-100 text-aviso-700' : 'bg-exito-100 text-exito-700'
               }`}
             >
               {esManual ? 'Cargada a mano' : 'Automatica'}
@@ -84,7 +95,7 @@ export default function Tasa() {
           </div>
 
           {estado?.desactualizada && (
-            <p className="text-amber-600 text-sm mt-2">
+            <p className="text-aviso-600 text-sm mt-2">
               Esta tasa es del {new Date(estado.fecha + 'T00:00:00').toLocaleDateString('es-VE')}, no
               de hoy. Refresca o cargala a mano.
             </p>
@@ -121,8 +132,8 @@ export default function Tasa() {
           </p>
         </div>
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        {aviso && <p className="text-emerald-700 text-sm">{aviso}</p>}
+        {error && <p className="text-peligro-600 text-sm">{error}</p>}
+        {aviso && <p className="text-exito-700 text-sm">{aviso}</p>}
 
         {/* --------- controles --------- */}
         <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
@@ -133,7 +144,7 @@ export default function Tasa() {
               aqui. Manda sobre la automatica y no se pisa hasta que la devuelvas a automatico.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               inputMode="decimal"
               value={manual}
@@ -181,17 +192,18 @@ export default function Tasa() {
               pasada no cambia cuando la tasa se mueve.
             </p>
           </div>
+          <Tabla orden={orden}>
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
-                <th className="text-left p-3">Fecha</th>
-                <th className="text-right p-3">Oficial</th>
-                <th className="text-right p-3">Paralelo</th>
-                <th className="text-right p-3">Origen</th>
+                <Th clave="fecha">Fecha</Th>
+                <Th clave="oficial" alinear="derecha">Oficial</Th>
+                <Th clave="paralelo" alinear="derecha">Paralelo</Th>
+                <Th clave="origen" alinear="derecha">Origen</Th>
               </tr>
             </thead>
             <tbody>
-              {historial.map((t) => (
+              {orden.ordenar(historial).map((t) => (
                 <tr key={t.fecha} className="border-t border-neutral-100">
                   <td className="p-3">
                     {new Date(t.fecha + 'T00:00:00').toLocaleDateString('es-VE')}
@@ -204,7 +216,7 @@ export default function Tasa() {
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full ${
                         t.origen === 'manual'
-                          ? 'bg-amber-100 text-amber-700'
+                          ? 'bg-aviso-100 text-aviso-700'
                           : 'bg-neutral-100 text-neutral-500'
                       }`}
                     >
@@ -222,8 +234,9 @@ export default function Tasa() {
               )}
             </tbody>
           </table>
+          </Tabla>
         </div>
-      </div>
+      </Pagina>
     </div>
   )
 }

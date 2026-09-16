@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<title>Acceso · Vertigo Pro</title>
+<!--
+  Pagina de login, deliberadamente aparte del aplicativo.
+
+  Es HTML plano con su CSS y su JS dentro, y no carga NADA del paquete de
+  React. Ese es el punto: es el unico archivo que nginx sirve sin sesion, asi
+  que si arrastrara el paquete, servirla filtraria el aplicativo completo.
+-->
+<style>
+  /* Los mismos tokens del sistema de diseño del ERP (src/index.css): papel y
+     grafito, con el cobre del logo de Savora como unico acento (los mismos valores que `acento-600/700` y `acento-400/500` en src/index.css). */
+  :root {
+    --tinta: #17181b; --tinta-suave: #3e3d3a; --apagado: #6d6b66;
+    --tenue: #98948b; --linea: #e2ded5; --fondo: #f6f4ef; --sup: #ffffff;
+    --acento: oklch(51% 0.119 42); --acento-txt: #ffffff; --acento-hover: oklch(44% 0.102 42);
+    --foco: rgba(91,74,224,.22); --error: #b91c1c; --error-lav: #fef2f2;
+    --error-linea: #fecaca; --textura: rgba(23,24,27,.05);
+  }
+  /* El tema se elige con el interruptor y se recuerda; la preferencia del
+     sistema solo decide el valor inicial (ver el script del <head>). Misma
+     clave que el ERP: se elige una vez y vale para todo el producto. */
+  html[data-tema="oscuro"] {
+    --tinta: #f1f3f7; --tinta-suave: #d1d5dd; --apagado: #a1a7b4;
+    --tenue: #7c8290; --linea: #262a33; --fondo: #0e1014; --sup: #161920;
+    --acento: oklch(62% 0.106 42); --acento-txt: #0e0f12; --acento-hover: oklch(70% 0.119 42);
+    --foco: rgba(139,128,255,.25); --error: #fca5a5; --error-lav: #2a1414;
+    --error-linea: #7f1d1d; --textura: rgba(255,255,255,.045);
+  }
+  html { color-scheme: light; }
+  html[data-tema="oscuro"] { color-scheme: dark; }
+  /* El cambio de tema lo hace el compositor con View Transitions: la foto
+     nueva se revela en circulo desde el boton. Sin transiciones por nodo. */
+  ::view-transition-old(root) { animation: none; mix-blend-mode: normal; }
+  ::view-transition-new(root) {
+    animation: vp-revelar .52s cubic-bezier(.2,.7,.2,1); mix-blend-mode: normal;
+  }
+  @keyframes vp-revelar {
+    from { clip-path: circle(0px at var(--vp-x, 50%) var(--vp-y, 50%)); }
+    to { clip-path: circle(var(--vp-radio, 160vmax) at var(--vp-x, 50%) var(--vp-y, 50%)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: var(--fondo); color: var(--tinta); padding: 24px;
+    font-family: "Manrope", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(60rem 36rem at -10% -20%, color-mix(in oklab, var(--acento) 13%, transparent), transparent 60%),
+      radial-gradient(var(--textura) .8px, transparent .8px);
+    background-size: auto, 22px 22px;
+    background-attachment: fixed;
+  }
+  .caja {
+    position: relative; width: 100%; max-width: 360px; background: var(--sup);
+    border: 1px solid var(--linea); border-radius: 20px; padding: 32px 28px 26px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px rgba(0,0,0,.06);
+  }
+  .marca {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 22px;
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--apagado);
+  }
+  .marca .punto {
+    width: 9px; height: 9px; border-radius: 3px; background: var(--acento);
+    transform: rotate(45deg);
+  }
+  .logo {
+    display: block; max-width: 220px; max-height: 96px; margin: 2px 0 18px;
+    /* El wordmark es marron sobre transparente: en oscuro se aclara un poco
+       para que no se hunda en el fondo. */
+  }
+  html[data-tema="oscuro"] .logo { filter: brightness(1.9) saturate(.85) contrast(1.05); }
+  h1 { font-family: "Sora", "Manrope", sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px; }
+  .sub { font-size: 13px; color: var(--apagado); margin: 0 0 22px; line-height: 1.5; }
+  label {
+    display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--apagado); margin-bottom: 6px;
+  }
+  input {
+    width: 100%; padding: 12px 13px; font-size: 15px; font-family: inherit;
+    color: var(--tinta); background: var(--sup);
+    border: 1px solid var(--linea); border-radius: 12px; margin-bottom: 14px;
+  }
+  input:focus { outline: none; border-color: var(--acento); box-shadow: 0 0 0 3px var(--foco); }
+  form button {
+    width: 100%; padding: 13px; font-size: 15px; font-weight: 600;
+    font-family: inherit; color: var(--acento-txt); background: var(--acento);
+    border: none; border-radius: 12px; cursor: pointer; min-height: 46px;
+  }
+  form button:hover:not(:disabled) { background: var(--acento-hover); }
+  form button:disabled { opacity: .55; cursor: default; }
+  .aviso {
+    display: none; font-size: 13px; line-height: 1.5; padding: 10px 12px;
+    border-radius: 10px; margin-bottom: 14px; color: var(--error);
+    background: var(--error-lav); border: 1px solid var(--error-linea);
+  }
+  .aviso.visible { display: block; }
+  .pie { margin-top: 18px; font-size: 11px; color: var(--tenue); text-align: center; }
+  .tema {
+    position: absolute; top: 14px; right: 14px; width: 32px; height: 32px;
+    display: grid; place-items: center; padding: 0; border-radius: 999px;
+    border: 1px solid var(--linea); background: transparent;
+    color: var(--tenue); cursor: pointer;
+  }
+  .tema:hover { color: var(--tinta-suave); border-color: var(--apagado); }
+  .tema svg { width: 15px; height: 15px; }
+  .puntos span {
+    display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    background: currentColor; margin: 0 2px; animation: rebote 1.2s infinite;
+  }
+  .puntos span:nth-child(2) { animation-delay: .18s; }
+  .puntos span:nth-child(3) { animation-delay: .36s; }
+  @keyframes rebote {
+    0%, 60%, 100% { transform: translateY(0); opacity: .45; }
+    30%           { transform: translateY(-4px); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .puntos span { animation: none; } }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("vertigo_tema");
+      if (!t) {
+        t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "oscuro" : "claro";
+      }
+      document.documentElement.dataset.tema = t;
+    } catch (e) { document.documentElement.dataset.tema = "claro"; }
+  })();
+</script>
+</head>
+<body>
+  <main class="caja">
+    <button class="tema" id="tema" type="button" aria-label="Cambiar entre modo claro y oscuro"></button>
+    <div class="marca"><span class="punto"></span> Vertigo Pro</div>
+    <!-- El logo del local, si su ficha lo declara. Es lo primero que se ve del
+         producto: la puerta tiene que verse del negocio, no de la plataforma.
+         nginx lo sirve sin sesion (ver la regla de logo-*.png). -->
+    <img id="logo" class="logo" alt="" hidden>
+    <h1 id="titulo">Entrar</h1>
+    <p class="sub" id="sub">Sistema del local. Solo personal autorizado.</p>
+
+    <div class="aviso" id="aviso" role="alert"></div>
+
+    <form id="form" autocomplete="off">
+      <label for="usuario">Usuario</label>
+      <input id="usuario" name="usuario" type="text" required
+             autocapitalize="none" autocorrect="off" spellcheck="false"
+             autocomplete="username">
+
+      <label for="clave" id="lbl-clave">Contraseña</label>
+      <input id="clave" name="clave" type="password" required autocomplete="current-password">
+
+      <!-- Solo en instalacion: escribir la primera clave a ciegas y sin
+           repetirla deja el sistema cerrado con una clave que nadie sabe. -->
+      <div id="bloque-repetir" style="display:none">
+        <label for="clave2">Repetir contraseña</label>
+        <input id="clave2" name="clave2" type="password" autocomplete="new-password">
+      </div>
+
+      <button type="submit" id="boton">Entrar</button>
+    </form>
+
+    <div class="pie" id="pie">No compartas tu clave. Cada quien entra con la suya.</div>
+  </main>
+
+<script>
+(function () {
+  // ---------- Interruptor de tema ----------
+  var raiz = document.documentElement;
+  var btnTema = document.getElementById("tema");
+  var SOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/></svg>';
+  var LUNA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.2A8.6 8.6 0 1 1 9.8 3.5a6.9 6.9 0 0 0 10.7 10.7z"/></svg>';
+  function pintarBoton() {
+    // El icono dice a DONDE lleva pulsar, no donde estas.
+    btnTema.innerHTML = raiz.dataset.tema === "oscuro" ? SOL : LUNA;
+  }
+  pintarBoton();
+  btnTema.addEventListener("click", function () {
+    var nuevo = raiz.dataset.tema === "oscuro" ? "claro" : "oscuro";
+    var aplicar = function () {
+      raiz.dataset.tema = nuevo;
+      try { localStorage.setItem("vertigo_tema", nuevo); } catch (e) {}
+      pintarBoton();
+    };
+    // Con View Transitions el compositor revela el tema nuevo en circulo desde
+    // el boton; sin ellas, cambia de golpe (mejor brusco que a tirones).
+    if (document.startViewTransition && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      var r = btnTema.getBoundingClientRect();
+      var x = r.left + r.width / 2, y = r.top + r.height / 2;
+      var radio = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      raiz.style.setProperty("--vp-x", x + "px");
+      raiz.style.setProperty("--vp-y", y + "px");
+      raiz.style.setProperty("--vp-radio", Math.ceil(radio) + "px");
+      document.startViewTransition(aplicar);
+    } else {
+      aplicar();
+    }
+  });
+
+  var form = document.getElementById("form");
+  var boton = document.getElementById("boton");
+  var aviso = document.getElementById("aviso");
+  var usuario = document.getElementById("usuario");
+  var clave = document.getElementById("clave");
+  var clave2 = document.getElementById("clave2");
+  var bloqueRepetir = document.getElementById("bloque-repetir");
+  var titulo = document.getElementById("titulo");
+  var sub = document.getElementById("sub");
+  var lblClave = document.getElementById("lbl-clave");
+  var pie = document.getElementById("pie");
+
+  // Dos modos en la misma pantalla. `instalando` lo decide el servidor: si ya
+  // hay alguien creado, el endpoint de instalacion responde 409 para siempre.
+  var instalando = false;
+
+  function modoInstalacion() {
+    instalando = true;
+    titulo.textContent = "Primera vez";
+    sub.textContent = "Crea el usuario del dueño. Con el se crean los demas.";
+    lblClave.textContent = "Contraseña nueva (8 o mas)";
+    clave.setAttribute("autocomplete", "new-password");
+    bloqueRepetir.style.display = "";
+    clave2.setAttribute("required", "required");
+    boton.textContent = "Crear usuario";
+    pie.textContent = "Este usuario podra crear los de caja y cocina";
+    usuario.value = usuario.value || "admin";
+  }
+
+  /** Aviso que NO se borra al escribir, para problemas del servidor. */
+  function avisoFijo(texto) {
+    aviso.textContent = texto;
+    aviso.classList.add("visible");
+    boton.disabled = true;
+  }
+
+  // nginx manda aqui con esta marca cuando el backend no contesta.
+  if (location.search.indexOf("fallo=servidor") !== -1) {
+    avisoFijo("El servidor no esta respondiendo bien y por eso no se puede abrir "
+              + "el sistema. No es tu contraseña. Avisa a soporte.");
+  }
+
+  // Si este despliegue es el hub (vertigopro.tech) o el panel de un local. Lo
+  // dice el servidor --el mismo build sirve para los dos-- y decide a donde
+  // lleva el login. Por defecto NO es el hub.
+  var ES_HUB = false;
+
+  fetch("/api/acceso/estado", { credentials: "same-origin" })
+    .then(function (r) { if (!r.ok) throw new Error("sin estado"); return r.json(); })
+    .then(function (d) {
+      ES_HUB = !!(d && d.es_hub);
+      // Ya hay sesion: no se pide otra vez.
+      if (d && d.autenticado) {
+        window.location.replace(ES_HUB ? "/inicio.html" : "/");
+        return;
+      }
+      if (d && d.local && d.local.nombre && !ES_HUB) {
+        document.title = "Acceso · " + d.local.nombre;
+        if (d.local.logo) {
+          // Con logo, el nombre lo dice el logo: el titulo vuelve a "Entrar".
+          var logo = document.getElementById("logo");
+          logo.src = d.local.logo;
+          logo.alt = d.local.nombre;
+          logo.hidden = false;
+          titulo.textContent = "Entrar";
+        } else {
+          titulo.textContent = d.local.nombre;
+        }
+        if (d.local.favicon) {
+          var icono = document.querySelector('link[rel="icon"]');
+          if (icono) icono.href = d.local.favicon;
+        }
+      }
+      if (d && d.problema) { avisoFijo(d.problema); return; }
+      if (d && d.configurado === false) modoInstalacion();
+    })
+    .catch(function () {
+      avisoFijo("El servidor no esta respondiendo. Si acabas de desplegar, espera "
+                + "unos segundos y recarga.");
+    })
+    .then(function () { usuario.focus(); });
+
+  function error(texto) {
+    aviso.textContent = texto;
+    aviso.classList.add("visible");
+    boton.disabled = false;
+    boton.textContent = instalando ? "Crear usuario" : "Entrar";
+    clave.value = "";
+    if (clave2) clave2.value = "";
+    clave.focus();
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (instalando && clave.value !== clave2.value) {
+      error("Las dos contraseñas no coinciden.");
+      return;
+    }
+    aviso.classList.remove("visible");
+    boton.disabled = true;
+    boton.innerHTML = '<span class="puntos"><span></span><span></span><span></span></span>';
+
+    fetch(instalando ? "/api/acceso/setup" : "/api/acceso/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Sin esto el navegador descarta la cookie de sesion y el login entra en bucle.
+      credentials: "same-origin",
+      body: JSON.stringify({ usuario: usuario.value, clave: clave.value })
+    })
+      .then(function (r) {
+        if (r.ok) {
+          return r.json().catch(function () { return {}; }).then(function (d) {
+            // Si el servidor dice `redirigir`, se va AHI: es el hub mandando
+            // al ERP del local con un pase, sin abrir sesion aqui.
+            // `replace` y no `href`: el boton atras no vuelve al login.
+            if (d && d.redirigir) { window.location.replace(d.redirigir); return null; }
+            window.location.replace(ES_HUB ? "/inicio.html" : "/");
+            return null;
+          });
+        }
+        // 409 = el servidor y la pantalla no coinciden sobre si hay usuarios.
+        if (r.status === 409) {
+          if (instalando) { window.location.reload(); }
+          else { modoInstalacion(); error("El sistema todavia no tiene usuarios. Crea el primero."); }
+          return null;
+        }
+        return r.json().then(function (d) {
+          error((d && d.detail) || "No se pudo entrar.");
+        }, function () {
+          error(r.status === 429 ? "Demasiados intentos. Espera unos minutos." : "No se pudo entrar.");
+        });
+      })
+      .catch(function () { error("Sin conexion con el servidor."); });
+  });
+})();
+</script>
+</body>
+</html>
