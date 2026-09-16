@@ -122,7 +122,7 @@ def _ficha_rol(rol: str) -> dict:
 def _rol_asignable(s: dict, rol: str) -> str:
     rol = (rol or "").strip().lower()
     if rol not in permisos.roles_que_puede_asignar(s["rol"]):
-        raise HTTPException(403, f"Tu cuenta no puede asignar el rol «{rol}».")
+        raise HTTPException(403, f"Tu usuario no puede asignar el rol «{rol}».")
     return rol
 
 

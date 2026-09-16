@@ -101,11 +101,10 @@ def fijar_manual(db: Session, bcv: float, paralelo: Optional[float] = None) -> m
     return fila
 
 
-def historial(db: Session, dias: int = 30):
-    desde = hoy() - datetime.timedelta(days=dias)
+def historial(db: Session, desde: datetime.date, hasta_exclusivo: datetime.date):
     return (
         db.query(models.TasaCambio)
-        .filter(models.TasaCambio.fecha >= desde)
+        .filter(models.TasaCambio.fecha >= desde, models.TasaCambio.fecha < hasta_exclusivo)
         .order_by(models.TasaCambio.fecha.desc())
         .all()
     )

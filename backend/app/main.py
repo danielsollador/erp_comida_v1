@@ -28,6 +28,7 @@ from .routers import (
     respaldos,
     tasas,
     usuarios as usuarios_router,
+    ventas,
 )
 from .seed import seed_if_empty
 from .settings import BACKUP_ON_STARTUP, CORS_ORIGINS
@@ -195,6 +196,7 @@ app.include_router(inventario.router)
 app.include_router(config.router)
 app.include_router(caja.router)
 app.include_router(reportes.router)
+app.include_router(ventas.router)
 app.include_router(respaldos.router)
 app.include_router(tasas.router)
 app.include_router(contabilidad_router.router)

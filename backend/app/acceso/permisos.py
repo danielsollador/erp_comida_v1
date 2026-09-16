@@ -30,7 +30,7 @@ ROLES = ("admin", "dueno", "caja", "cocina")
 
 DESCRIPCION = {
     "admin": "Vertigo: administra todos los locales y crea dueños.",
-    "dueno": "Dueño: todo dentro de su local, incluidas las cuentas de su gente.",
+    "dueno": "Dueño: todo dentro de su local, incluidos los usuarios de su gente.",
     "caja": "Mostrador: vende, cobra, cierra caja, compras e inventario.",
     "cocina": "Cocina: solo ve las comandas y las marca listas.",
 }
@@ -58,6 +58,7 @@ MODULOS: dict[str, dict] = {
         "escribe_solo": ("/api/pedidos/items/", "/marcar-listo"),
     },
     "reportes": {"nombre": "Reportes", "rutas": (), "lectura": ("/api/reportes",)},
+    "ventas": {"nombre": "Ventas", "rutas": (), "lectura": ("/api/ventas",)},
     "menu": {"nombre": "Menú", "rutas": ("/api/menu",), "lectura": ("/api/inventario",)},
     "recetas": {
         "nombre": "Recetas",
@@ -92,8 +93,8 @@ _TODOS = tuple(MODULOS)
 MODULOS_POR_ROL: dict[str, tuple[str, ...]] = {
     "admin": _TODOS,
     "dueno": _TODOS,
-    "caja": ("pos", "cocina", "reportes", "menu", "recetas", "inventario", "compras",
-             "caja", "tasa"),
+    "caja": ("pos", "cocina", "reportes", "ventas", "menu", "recetas", "inventario",
+             "compras", "caja", "tasa"),
     "cocina": ("cocina",),
 }
 

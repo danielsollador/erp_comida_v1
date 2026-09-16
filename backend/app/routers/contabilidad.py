@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import backup, contabilidad, models, schemas
 from ..database import get_db
+from ..rango import Rango
 from ..timeutils import ahora, hoy, rango_periodo
 
 router = APIRouter(prefix="/api/contabilidad", tags=["contabilidad"])
@@ -55,14 +56,17 @@ def _asiento_a_schema(asiento: models.AsientoContable) -> schemas.AsientoContabl
 
 
 @router.get("/asientos", response_model=List[schemas.AsientoContable])
-def listar_asientos(limite: int = 100, db: Session = Depends(get_db)):
-    asientos = (
-        db.query(models.AsientoContable)
-        .options(joinedload(models.AsientoContable.movimientos).joinedload(models.MovimientoContable.cuenta))
-        .order_by(models.AsientoContable.id.desc())
-        .limit(limite)
-        .all()
+def listar_asientos(limite: int = 100, rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """El diario. Sin rango, los ultimos `limite` asientos; con rango, los del
+    periodo (y el limite sube para que quepa un mes entero)."""
+    q = db.query(models.AsientoContable).options(
+        joinedload(models.AsientoContable.movimientos).joinedload(models.MovimientoContable.cuenta)
     )
+    if rango.explicito:
+        inicio, fin, _ = rango.resolver(periodo="mes")
+        q = q.filter(models.AsientoContable.fecha >= inicio, models.AsientoContable.fecha < fin)
+        limite = max(limite, 2000)
+    asientos = q.order_by(models.AsientoContable.id.desc()).limit(limite).all()
     return [_asiento_a_schema(a) for a in asientos]
 
 
@@ -171,18 +175,15 @@ def balance_comprobacion(db: Session = Depends(get_db)):
 
 
 @router.get("/estado-resultados", response_model=schemas.EstadoResultados)
-def estado_resultados(
-    periodo: str = "mes", anio: int = None, mes: int = None, db: Session = Depends(get_db)
-):
+def estado_resultados(rango: Rango = Depends(), db: Session = Depends(get_db)):
     """Con `anio` y `mes` responde por un mes ya pasado: "cuanto gane en
     junio" no se podia contestar aunque Reportes y los libros fiscales ya
     aceptaban esos parametros."""
-    if periodo not in ("dia", "semana", "mes"):
-        periodo = "mes"
     # Los equipos se gastan con el uso aunque nadie abra el sistema: se
     # completan las cuotas pendientes antes de leer los numeros.
     contabilidad.asentar_depreciacion_pendiente(db)
-    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
+    inicio, fin, etiqueta = rango.resolver(periodo="mes")
+    periodo = rango.periodo or "rango"
 
     cuentas = (
         db.query(models.CuentaContable)

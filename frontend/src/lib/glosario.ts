@@ -5,8 +5,7 @@ import type { Explicacion } from '../components/Ayuda'
  *
  * Una entrada por columna de tabla y por cifra de tarjeta. Sale al pasar el
  * cursor por encima del título (ver `components/Ayuda.tsx`) y, en una tablet
- * --donde no hay cursor--, en el bloque "¿Qué significa cada columna?" que
- * cada tabla despliega debajo.
+ * --donde no hay cursor--, manteniendo el dedo sobre el título.
  *
  * Las cuatro partes de cada entrada responden siempre lo mismo: qué es, de
  * dónde sale el dato, cómo se calcula y para qué sirve. Escribir una
@@ -544,7 +543,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
       'Es plata quieta: no está en la gaveta ni en el banco, está en el estante. Si crece mientras las ventas no, estás comprando de más.',
   },
   'kpi.perdidas_30': {
-    que: 'Cuánto se perdió en los últimos 30 días.',
+    que: 'Cuánto se perdió en el período elegido arriba (30 días si no tocaste el filtro).',
     origen: 'Las mermas registradas y los faltantes que encontraron los conteos.',
     calculo: 'Suma del valor de las mermas no revertidas del período.',
     ejemplo:
@@ -619,6 +618,137 @@ export const GLOSARIO: Record<string, Explicacion> = {
     calculo: '(tasa de hoy ÷ tasa de hace 7 días − 1) × 100.',
     ejemplo:
       'Si subió 10% y tus precios en bolívares siguen iguales, cada venta de esta semana te deja 10% menos en dólares que la semana pasada.',
+  },
+  // ── Ventas: el historial ─────────────────────────────────────────────────
+  'ventas.numero': {
+    que: 'El número de comanda: el que salió en el ticket y el que gritó la cocina.',
+    origen: 'Lo asigna el punto de venta al crear el pedido. Empieza en 1 cada día.',
+    ejemplo: 'Se repite de un día a otro: la #12 de hoy y la #12 de ayer son ventas distintas. Con la fecha al lado no hay confusión.',
+  },
+  'ventas.fecha': fecha(
+    'Cuándo se cobró la venta. Si se anuló o sigue abierta, cuándo se tomó la comanda.',
+    'La hora del cobro, con el reloj del servidor del local.',
+    'Una venta devuelta sigue en el día en que se vendió (marcada como devuelta): quien busca "la venta del martes" la encuentra el martes.',
+  ),
+  'ventas.detalle': {
+    que: 'Lo que se vendió, resumido: cantidad y producto de cada renglón.',
+    origen: 'Los renglones del pedido con el nombre que tenía el producto ese día.',
+    ejemplo: '"2× Empanada, 1× Jugo". Toca la fila para ver cada renglón con su precio, la nota de cocina y el desglose del total.',
+  },
+  'ventas.estado': {
+    que: 'Qué pasó con la venta.',
+    origen: 'Del pedido y sus pagos.',
+    calculo:
+      'Cobrada: se pagó. Fiada: se entregó y todavía se debe. Devuelta: se cobró y el cliente trajo la comida de vuelta. Anulada: no llegó a venderse. Abierta: sigue en cocina o lista sin cobrar.',
+    ejemplo: 'Muchas anuladas es un problema de toma de pedidos; muchas fiadas, un problema de cobro. Cada estado apunta a otra cosa.',
+  },
+  'ventas.pago': {
+    que: 'Con qué se pagó.',
+    origen: 'Los pagos registrados al cobrar. Con pago mixto aparecen las dos formas.',
+    ejemplo: '"Efectivo $ + Pago móvil": el cliente dio unos dólares y completó por el teléfono. Es lo que hace que el cierre de caja cuadre por gaveta.',
+  },
+  'ventas.quien': {
+    que: 'Quién cobró, y desde qué caja.',
+    origen: 'El operador y el punto de venta elegidos al cobrar.',
+    ejemplo: 'Con dos tablets, saber cuánto vendió cada cajero y cuánto entró por cada gaveta. Si nadie eligió operador, queda vacío.',
+  },
+  'ventas.total': {
+    que: 'Lo que pagó el cliente por la comida, con el descuento ya aplicado.',
+    origen: 'La suma de los renglones menos la rebaja de esa venta.',
+    calculo: 'Precio de lista − descuento. La propina no entra: es plata del empleado.',
+    ejemplo: 'Tachado en las anuladas y devueltas: ese dinero no es venta. En bolívares, a la tasa del día en que se cobró, no a la de hoy.',
+  },
+
+  // ── Ventas: lo que se perdió ─────────────────────────────────────────────
+  'ventas_perdidas.numero': {
+    que: 'El número de comanda de la venta afectada.',
+    origen: 'El mismo número del historial.',
+    ejemplo: 'Sirve para ir a buscarla en el Historial y ver el detalle completo.',
+  },
+  'ventas_perdidas.fecha': fecha(
+    'Cuándo ocurrió la venta.',
+    'La hora del cobro o de la comanda.',
+    'Si las devoluciones se agrupan en el mismo turno, hay algo que revisar en cocina ese turno.',
+  ),
+  'ventas_perdidas.tipo': {
+    que: 'Qué clase de pérdida es.',
+    origen: 'Del estado de la venta.',
+    calculo:
+      'Devuelta: plata que salió de la caja. Descuento: rebaja concedida. Anulada: venta que nunca entró (se muestra, no se suma). Fiado por cobrar: se entregó y aún se debe.',
+    ejemplo: 'Solo devuelto + descuentos + merma cuentan como "Dinero perdido": lo anulado nunca fue tuyo y lo fiado todavía se puede cobrar.',
+  },
+  'ventas_perdidas.detalle': {
+    que: 'Lo que se vendió en esa venta.',
+    origen: 'Los renglones del pedido.',
+    ejemplo: 'Si el mismo producto se devuelve seguido, el problema es el producto, no el cliente.',
+  },
+  'ventas_perdidas.quien': {
+    que: 'Quién estaba en la caja. En las anuladas, quién la anuló.',
+    origen: 'El operador registrado al cobrar o al anular.',
+    ejemplo: 'Anulaciones concentradas en una persona merecen una conversación, no una acusación: puede ser que le toque el turno difícil.',
+  },
+  'ventas_perdidas.monto': {
+    que: 'Cuánto dinero representa esa fila.',
+    origen: 'El total de la venta (devueltas y anuladas), la rebaja (descuentos) o lo que falta por pagar (fiado).',
+    ejemplo: 'Ordena por esta columna para ver dónde está la plata grande.',
+  },
+
+  // Ventas: las cifras
+  'kpi.promedio_diario': {
+    que: 'Cuánto vendes al día, en promedio, en el período.',
+    origen: 'Las ventas cobradas y fiadas del período.',
+    calculo:
+      'Ventas ÷ días transcurridos. "Este mes" el día 3 divide entre 3, no entre 30: si no, el promedio se vería bajo todo el mes.',
+    ejemplo: 'Es el número para comparar meses de distinto largo, o para saber cuánto tienes que vender mañana para alcanzar la meta.',
+  },
+  'kpi.pedidos_por_dia': {
+    que: 'Cuántos clientes atiendes al día, en promedio.',
+    origen: 'Los pedidos cobrados del período.',
+    calculo: 'Pedidos ÷ días transcurridos.',
+    ejemplo: 'Si las ventas por día suben y esto no, estás vendiendo más caro a la misma gente. Si esto sube, estás trayendo más gente.',
+  },
+  'kpi.vs_anterior': {
+    que: 'Cuánto cambiaron las ventas contra el tramo inmediatamente anterior, del mismo largo.',
+    origen: 'Las ventas de este período y las del mismo número de días justo antes.',
+    calculo: '(Ventas de ahora − ventas de antes) ÷ ventas de antes × 100.',
+    ejemplo:
+      '"Este mes" el día 16 se compara con los 16 días anteriores, no con el mes pasado completo. Mientras el período no termina, la comparación va incompleta.',
+  },
+  'kpi.facturadas': {
+    que: 'Cuántas ventas del período se facturaron.',
+    origen: 'La casilla "facturar" al cobrar.',
+    ejemplo: 'Solo lo facturado entra al Libro de Ventas y declara IVA. El resto se vendió igual, pero el SENIAT no lo ve.',
+  },
+  'kpi.perdidas': {
+    que: 'La plata que se te fue en el período.',
+    origen: 'Las devoluciones, los descuentos y la merma de inventario (cuenta 6020 del libro).',
+    calculo: 'Devuelto + descuentos + merma. Lo anulado no se suma (nunca entró) ni lo fiado (todavía se puede cobrar).',
+    ejemplo: 'Por encima de 3–4% de lo vendido, en comida, algo se está botando o se está yendo por la puerta.',
+  },
+  'kpi.devueltas': {
+    que: 'Ventas que el cliente trajo de vuelta y se le devolvió la plata.',
+    origen: 'Las devoluciones registradas en el período (por la fecha en que se devolvieron).',
+    ejemplo: 'Cada una salió de la caja después de haber entrado. Si se facturó, lleva su nota de crédito.',
+  },
+  'kpi.descuentos': {
+    que: 'Lo que se dejó de cobrar por rebajas a clientes.',
+    origen: 'El descuento de cada venta cobrada.',
+    ejemplo: 'Un descuento razonable fideliza; muchos descuentos son un precio de lista que nadie paga.',
+  },
+  'kpi.merma_inventario': {
+    que: 'El valor de lo que se botó, se dañó o faltó en un conteo.',
+    origen: 'La cuenta 6020 del libro contable, que Inventario mueve con cada merma.',
+    ejemplo: 'Se pagó como cualquier insumo, pero no dejó ingreso. Los detalles están en Inventario › Pérdidas.',
+  },
+  'kpi.anuladas': {
+    que: 'Pedidos que se anularon antes de venderse.',
+    origen: 'Los pedidos en estado anulado del período.',
+    ejemplo: 'No es plata perdida (nunca entró), pero sí trabajo perdido. Si crece, revisa cómo se toman los pedidos.',
+  },
+  'kpi.fiado_pendiente': {
+    que: 'Ventas de este período que se entregaron y todavía no se han pagado.',
+    origen: 'Los pagos "Fiado" sin saldar de las ventas del período.',
+    ejemplo: 'Es venta hecha y plata que aún no está. Se cobra desde Cierre de caja › Fiado y propinas.',
   },
 }
 

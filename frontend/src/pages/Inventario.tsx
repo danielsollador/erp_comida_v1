@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango, nombreRango } from '../lib/fechas'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
@@ -95,6 +97,8 @@ const SECCIONES = [
 
 export default function Inventario() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  // Solo las perdidas tienen fecha; el stock y que comprar son "a hoy".
+  const [rango, setRango] = useRango('30d')
   const dialogo = useDialogo()
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [sugerencias, setSugerencias] = useState<SugerenciaCompra[]>([])
@@ -139,13 +143,13 @@ export default function Inventario() {
 
   useEffect(() => {
     cargar()
-  }, [])
+  }, [rango])
 
   function cargar() {
     api.listarIngredientes().then(setIngredientes)
     api.sugerenciasCompra().then(setSugerencias)
-    api.listarMermas().then(setMermas)
-    api.listarSobrantes().then(setSobrantes).catch(() => {})
+    api.listarMermas(rango).then(setMermas)
+    api.listarSobrantes(rango).then(setSobrantes).catch(() => {})
     api.inflacionInsumos().then(setInflacion).catch(() => setInflacion(null))
   }
 
@@ -315,7 +319,7 @@ export default function Inventario() {
   const bajoMinimo = activos.filter((i) => i.stock_actual <= i.stock_minimo)
   const sinCosto = activos.filter((i) => !i.costo_unitario)
   const valorDeposito = activos.reduce((s, i) => s + Math.max(i.stock_actual, 0) * (i.costo_unitario || 0), 0)
-  const perdidas30 = mermas.filter((m) => !m.revertida).reduce((s, m) => s + m.valor, 0)
+  const perdidas = mermas.filter((m) => !m.revertida).reduce((s, m) => s + m.valor, 0)
 
   const visibles = useMemo(() => {
     const q = buscar.trim().toLowerCase()
@@ -334,7 +338,7 @@ export default function Inventario() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={<FiltroFechas rango={rango} alCambiar={setRango} />} />
       <Pagina ancho="ancha">
         {error && <Aviso>{error}</Aviso>}
 
@@ -357,11 +361,11 @@ export default function Inventario() {
           />
           <Cifra titulo="Valor en depósito" ayuda="kpi.valor_deposito" valor={dinero(valorDeposito)} detalle="Stock × costo promedio, sin IVA" />
           <Cifra
-            titulo="Pérdidas 30 días"
+            titulo={`Pérdidas · ${nombreRango(rango).toLowerCase()}`}
             ayuda="kpi.perdidas_30"
-            valor={dinero(perdidas30)}
+            valor={dinero(perdidas)}
             detalle="Mermas y faltantes de conteo"
-            tono={perdidas30 > 0 ? 'alerta' : 'normal'}
+            tono={perdidas > 0 ? 'alerta' : 'normal'}
           />
         </div>
 
@@ -594,8 +598,8 @@ export default function Inventario() {
             una merma duplicada: era la unica perdida del sistema sin historial. */}
         <Seccion
           titulo="Pérdidas registradas"
-          ayuda="Todo lo que se botó, se dañó o faltó en un conteo, últimos 30 días. Una merma por error se revierte: no se borra, queda el reverso asentado."
-          accion={<span className="text-sm font-semibold tabular-nums">{dinero(perdidas30)}</span>}
+          ayuda={`Todo lo que se botó, se dañó o faltó en un conteo (${nombreRango(rango).toLowerCase()}). Una merma por error se revierte: no se borra, queda el reverso asentado.`}
+          accion={<span className="text-sm font-semibold tabular-nums">{dinero(perdidas)}</span>}
           plano
         >
           {mermas.length === 0 ? (

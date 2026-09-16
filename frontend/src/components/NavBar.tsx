@@ -21,6 +21,7 @@ export default function NavBar({
   dark = false,
   moneda = true,
   acciones,
+  filtro,
   secciones,
   seccion,
   alCambiarSeccion,
@@ -30,6 +31,8 @@ export default function NavBar({
   /** El selector de moneda solo tiene sentido donde se ven precios. */
   moneda?: boolean
   acciones?: ReactNode
+  /** El filtro de fechas (`<FiltroFechas>`), cuando la pantalla tiene periodo. */
+  filtro?: ReactNode
   /** Lo que se puede hacer en este modulo. Con una sola, no se muestra nada. */
   secciones?: Seccion[]
   seccion?: string
@@ -69,6 +72,7 @@ export default function NavBar({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {filtro}
           {acciones}
           {moneda && <MonedaToggle dark={dark} />}
           <TemaToggle dark={dark} />

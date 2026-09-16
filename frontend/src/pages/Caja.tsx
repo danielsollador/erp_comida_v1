@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango, etiquetaRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import Cajas from './partes/Cajas'
@@ -32,6 +34,10 @@ const SECCIONES = [
 
 export default function Caja() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  // Gastos, retiros e historial de cierres se ven por periodo; el cierre del
+  // dia es de hoy y el fiado es lo que se debe: ahi el filtro no aplica.
+  const [rango, setRango] = useRango('30d')
+  const conPeriodo = seccion === 'gastos' || seccion === 'historial'
   const [resumen, setResumen] = useState<ResumenCaja | null>(null)
   // El valor solo se usa via tasaInput; se guarda el setter para refrescarlo.
   const [, setConfig] = useState<Configuracion>({ tasa_bcv: 0 })
@@ -72,7 +78,7 @@ export default function Caja() {
 
   useEffect(() => {
     cargar()
-  }, [])
+  }, [rango])
 
   function cargar() {
     api.resumenCaja().then(setResumen)
@@ -80,9 +86,9 @@ export default function Caja() {
       setConfig(c)
       setTasaInput(String(c.tasa_bcv))
     })
-    api.listarCierres().then(setCierres)
-    api.listarGastos().then(setGastos)
-    api.listarRetiros().then(setRetiros).catch(() => setRetiros([]))
+    api.listarCierres(rango).then(setCierres)
+    api.listarGastos(rango).then(setGastos)
+    api.listarRetiros(rango).then(setRetiros).catch(() => setRetiros([]))
     api.listarFiado().then(setFiado).catch(() => {})
     api.listarPuntosVenta().then(setPuntos).catch(() => {})
   }
@@ -142,9 +148,8 @@ export default function Caja() {
     cargar()
   }
 
-  const hoyISO = new Date().toDateString()
-  const gastosHoy = gastos.filter((g) => new Date(g.fecha).toDateString() === hoyISO)
-  const totalGastosHoy = gastosHoy.reduce((s, g) => s + g.monto, 0)
+  // Los gastos ya vienen del periodo elegido arriba.
+  const totalGastos = gastos.reduce((s, g) => s + g.monto, 0)
 
   async function guardarTasa() {
     const tasa = Number(tasaInput)
@@ -232,7 +237,7 @@ export default function Caja() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Cierre de caja" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Cierre de caja" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={conPeriodo ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina ancho="media">
         {seccion === 'cierre' && (
           <>
@@ -425,8 +430,10 @@ export default function Caja() {
           <>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold">Gastos de hoy</h2>
-            <span className="font-bold">${totalGastosHoy.toFixed(2)}</span>
+            <h2 className="font-semibold">
+              Gastos <span className="text-neutral-400 font-normal text-sm">· {etiquetaRango(rango)}</span>
+            </h2>
+            <span className="font-bold">${totalGastos.toFixed(2)}</span>
           </div>
           <p className="text-xs text-neutral-500 mb-3">
             Gas, bolsas, un adelanto, el mandado. Si lo pagaste en efectivo se descuenta de la
@@ -434,9 +441,12 @@ export default function Caja() {
           </p>
 
           <div className="space-y-1 mb-3">
-            {gastosHoy.map((g) => (
+            {gastos.map((g) => (
               <div key={g.id} className="flex justify-between items-center text-sm">
                 <span>
+                  <span className="text-xs text-neutral-400 tabular-nums mr-1.5">
+                    {new Date(g.fecha).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })}
+                  </span>
                   {g.descripcion}{' '}
                   <span className="text-xs text-neutral-400">
                     ({g.categoria}
@@ -451,8 +461,8 @@ export default function Caja() {
                 </span>
               </div>
             ))}
-            {gastosHoy.length === 0 && (
-              <p className="text-neutral-400 text-sm">Sin gastos registrados hoy.</p>
+            {gastos.length === 0 && (
+              <p className="text-neutral-400 text-sm">Sin gastos en este periodo.</p>
             )}
           </div>
 
@@ -520,7 +530,7 @@ export default function Caja() {
             patrimonio.
           </p>
           <div className="space-y-1">
-            {retiros.slice(0, 5).map((r) => (
+            {retiros.map((r) => (
               <div key={r.id} className="flex justify-between items-center text-sm">
                 <span className="text-neutral-600">
                   {new Date(r.fecha).toLocaleDateString('es-VE')}
@@ -537,7 +547,7 @@ export default function Caja() {
               </div>
             ))}
             {retiros.length === 0 && (
-              <p className="text-neutral-400 text-sm">Sin retiros registrados.</p>
+              <p className="text-neutral-400 text-sm">Sin retiros en este periodo.</p>
             )}
           </div>
         </div>

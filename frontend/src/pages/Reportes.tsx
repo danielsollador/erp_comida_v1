@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango } from '../lib/fechas'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
@@ -11,17 +13,10 @@ import { fmtBs, useMoneda } from '../lib/moneda'
 import type {
   Insight,
   ParCombo,
-  Periodo,
   ProductoVendido,
   ReporteCombos,
   ReporteResumen,
 } from '../lib/types'
-
-const PERIODOS: { valor: Periodo; texto: string }[] = [
-  { valor: 'dia', texto: 'Hoy' },
-  { valor: 'semana', texto: 'Esta semana' },
-  { valor: 'mes', texto: 'Este mes' },
-]
 
 const ESTILO_INSIGHT: Record<Insight['tipo'], { caja: string; icono: string }> = {
   bueno: { caja: 'bg-exito-50 border-exito-200 text-exito-900', icono: '✓' },
@@ -37,7 +32,9 @@ const SECCIONES = [
 
 export default function Reportes() {
   const [seccion, irA] = useSeccion(SECCIONES)
-  const [periodo, setPeriodo] = useState<Periodo>('dia')
+  // Hoy por defecto: es lo que se mira al cerrar. El filtro del encabezado
+  // abre cualquier otro periodo, y queda en la URL.
+  const [rango, setRango] = useRango('hoy')
   const [datos, setDatos] = useState<ReporteResumen | null>(null)
   // Llega ordenado por ingresos, que es el ranking que el backend arma; aqui
   // se puede dar vuelta a la pregunta: que dejo mas GANANCIA, o que tiene el
@@ -55,34 +52,18 @@ export default function Reportes() {
 
   useEffect(() => {
     setCargando(true)
-    api.reporte(periodo).then((r) => {
+    api.reporte(rango).then((r) => {
       setDatos(r)
       setCargando(false)
     })
-    api.reporteCombos(periodo).then(setCombos).catch(() => setCombos(null))
-  }, [periodo])
+    api.reporteCombos(rango).then(setCombos).catch(() => setCombos(null))
+  }, [rango])
 
   const maxVenta = datos ? Math.max(...datos.serie.map((s) => s.ventas), 0) : 0
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Reportes" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
-
-      <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2">
-        {PERIODOS.map((p) => (
-          <button
-            key={p.valor}
-            onClick={() => setPeriodo(p.valor)}
-            className={`px-4 py-2 rounded-full text-sm font-semibold border transition ${
-              periodo === p.valor
-                ? 'bg-neutral-900 border-neutral-900 text-white'
-                : 'bg-white border-neutral-200 text-neutral-500'
-            }`}
-          >
-            {p.texto}
-          </button>
-        ))}
-      </div>
+      <NavBar titulo="Reportes" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={<FiltroFechas rango={rango} alCambiar={setRango} />} />
 
       <Pagina>
         {cargando && <p className="text-neutral-400 text-sm">Cargando...</p>}
@@ -194,7 +175,7 @@ export default function Reportes() {
             {datos.serie.length > 0 && (
               <div className="bg-white rounded-2xl border border-neutral-200 p-4">
                 <h2 className="font-semibold mb-4">
-                  Ventas por {datos.periodo === 'dia' ? 'hora' : 'dia'}
+                  Ventas por {datos.granularidad}
                 </h2>
                 <div className="flex items-end gap-1.5 h-40 overflow-x-auto">
                   {datos.serie.map((punto) => {

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import contabilidad, models, schemas
 from ..database import get_db
+from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
 from . import operadores
 
@@ -359,11 +360,11 @@ def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session =
 
 
 @router.get("/retiros", response_model=List[schemas.RetiroPropietario])
-def listar_retiros(dias: int = 30, db: Session = Depends(get_db)):
-    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+def listar_retiros(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    inicio, fin, _ = rango.resolver(dias=30)
     return (
         db.query(models.RetiroPropietario)
-        .filter(models.RetiroPropietario.fecha >= desde)
+        .filter(models.RetiroPropietario.fecha >= inicio, models.RetiroPropietario.fecha < fin)
         .order_by(models.RetiroPropietario.id.desc())
         .all()
     )
@@ -413,17 +414,24 @@ def eliminar_retiro(retiro_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/cierres", response_model=List[schemas.CierreCaja])
-def listar_cierres(db: Session = Depends(get_db)):
-    cierres = db.query(models.CierreCaja).order_by(models.CierreCaja.id.desc()).limit(30).all()
+def listar_cierres(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """Los cierres del periodo. Sin rango, los ultimos 30 dias."""
+    inicio, fin, _ = rango.resolver(dias=30)
+    cierres = (
+        db.query(models.CierreCaja)
+        .filter(models.CierreCaja.fecha >= inicio, models.CierreCaja.fecha < fin)
+        .order_by(models.CierreCaja.id.desc())
+        .all()
+    )
     return [_a_schema(c) for c in cierres]
 
 
 @router.get("/gastos", response_model=List[schemas.Gasto])
-def listar_gastos(dias: int = 30, db: Session = Depends(get_db)):
-    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+def listar_gastos(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    inicio, fin, _ = rango.resolver(dias=30)
     return (
         db.query(models.Gasto)
-        .filter(models.Gasto.fecha >= desde)
+        .filter(models.Gasto.fecha >= inicio, models.Gasto.fecha < fin)
         .order_by(models.Gasto.id.desc())
         .all()
     )

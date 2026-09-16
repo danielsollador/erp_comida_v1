@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
@@ -19,6 +21,8 @@ const SECCIONES = [
 
 export default function Compras() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  // Tres meses: una factura a credito se paga a 30 o 60 dias, y hay que verla.
+  const [rango, setRango] = useRango('90d')
   const [facturas, setFacturas] = useState<FacturaCompra[]>([])
   // Lo mas reciente arriba, que es lo que se acaba de cargar; pero ordenar por
   // Estado junta lo pendiente de pagar, que es la otra razon para entrar aqui.
@@ -66,10 +70,10 @@ export default function Compras() {
 
   useEffect(() => {
     cargar()
-  }, [])
+  }, [rango])
 
   function cargar() {
-    api.listarFacturasCompra().then(setFacturas)
+    api.listarFacturasCompra(rango).then(setFacturas)
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
     api.configFiscal().then(setFiscal)
   }
@@ -330,7 +334,7 @@ export default function Compras() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Compras" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Compras" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion === 'facturas' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina>
         {seccion === 'facturas' && (
           <>

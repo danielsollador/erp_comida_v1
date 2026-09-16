@@ -5,6 +5,7 @@ import Inventario from './pages/Inventario'
 import Menu from './pages/Menu'
 import Caja from './pages/Caja'
 import Reportes from './pages/Reportes'
+import Ventas from './pages/Ventas'
 import Tasa from './pages/Tasa'
 import Contabilidad from './pages/Contabilidad'
 import Compras from './pages/Compras'
@@ -65,6 +66,7 @@ export default function App() {
               <Route path="/inventario" element={<Requiere modulo="inventario"><Inventario /></Requiere>} />
               <Route path="/menu" element={<Requiere modulo="menu"><Menu /></Requiere>} />
               <Route path="/caja" element={<Requiere modulo="caja"><Caja /></Requiere>} />
+              <Route path="/ventas" element={<Requiere modulo="ventas"><Ventas /></Requiere>} />
               <Route path="/reportes" element={<Requiere modulo="reportes"><Reportes /></Requiere>} />
               <Route path="/tasa" element={<Requiere modulo="tasa"><Tasa /></Requiere>} />
               <Route path="/compras" element={<Requiere modulo="compras"><Compras /></Requiere>} />

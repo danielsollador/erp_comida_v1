@@ -9,11 +9,11 @@ import { api } from '../lib/api'
 import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
 
 /**
- * Las cuentas del local y lo que cada una puede abrir.
+ * Los usuarios del local y lo que cada uno puede abrir.
  *
  * Solo quien administra llega aqui (la ruta lo comprueba y el backend responde
  * 403 a los demas). El dueño ve y crea a SU gente y lo que crea nace en su
- * local. Vertigo, ademas, ve sus propias cuentas y reparte locales desde el
+ * local. Vertigo, ademas, ve sus propios usuarios y reparte locales desde el
  * hub. Los roles que se ofrecen los manda el servidor: un dueño no ve la
  * opcion de fabricar administradores.
  *
@@ -24,8 +24,8 @@ import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
  * solo toma pedidos, un encargado sin contabilidad-- se crea uno.
  */
 const SECCIONES = [
-  { id: 'cuentas', texto: 'Cuentas' },
-  { id: 'crear', texto: 'Crear cuenta' },
+  { id: 'usuarios', texto: 'Usuarios' },
+  { id: 'crear', texto: 'Crear usuario' },
   { id: 'roles', texto: 'Roles' },
   { id: 'crear-rol', texto: 'Crear rol' },
 ]
@@ -105,11 +105,11 @@ export default function Usuarios() {
         {error && <Aviso>{error}</Aviso>}
         {aviso && <Aviso tono="bien">{aviso}</Aviso>}
 
-        {seccion === 'cuentas' && (
+        {seccion === 'usuarios' && (
           <Seccion
             titulo={`Quién entra a ${estado.local.nombre}`}
-            ayuda="Cada persona entra con su cuenta: así el sistema sabe quién cobró, quién anuló y quién cerró la caja."
-            accion={<span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} cuentas` : ''}</span>}
+            ayuda="Cada persona entra con su usuario: así el sistema sabe quién cobró, quién anuló y quién cerró la caja."
+            accion={<span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} usuarios` : ''}</span>}
             plano
           >
             <Tabla orden={orden} glosario="usuarios">
@@ -138,7 +138,7 @@ export default function Usuarios() {
                   {lista && lista.usuarios.length === 0 && (
                     <tr>
                       <td colSpan={4}>
-                        <Vacio icono="usuarios" titulo="Sin cuentas todavía" />
+                        <Vacio icono="usuarios" titulo="Sin usuarios todavía" />
                       </td>
                     </tr>
                   )}
@@ -149,12 +149,12 @@ export default function Usuarios() {
         )}
 
         {seccion === 'crear' && (
-          <CrearCuenta
+          <CrearUsuario
             roles={roles}
             onCreado={(usuario) => {
               ok(`Usuario «${usuario}» creado.`)
               cargar()
-              irA('cuentas')
+              irA('usuarios')
             }}
             onError={setError}
           />
@@ -175,7 +175,7 @@ export default function Usuarios() {
           <CrearRol
             modulos={lista?.modulos ?? []}
             onCreado={(nombre) => {
-              ok(`Rol «${nombre}» creado. Ya se puede asignar a una cuenta.`)
+              ok(`Rol «${nombre}» creado. Ya se puede asignar a un usuario.`)
               cargar()
               irA('roles')
             }}
@@ -187,7 +187,7 @@ export default function Usuarios() {
   )
 }
 
-// ── Cuentas ────────────────────────────────────────────────────────────────
+// ── Usuarios ───────────────────────────────────────────────────────────────
 
 function FilaUsuario({
   u,
@@ -289,7 +289,7 @@ function FilaUsuario({
   )
 }
 
-function CrearCuenta({
+function CrearUsuario({
   roles,
   onCreado,
   onError,
@@ -328,7 +328,7 @@ function CrearCuenta({
   return (
     <form onSubmit={crear}>
       <Seccion
-        titulo="Nueva cuenta"
+        titulo="Nuevo usuario"
         ayuda="El usuario va en minúsculas y sin espacios; la clave, 8 caracteres como mínimo."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -382,7 +382,7 @@ function CrearCuenta({
 
         <div className="mt-4">
           <Boton type="submit" disabled={creando}>
-            {creando ? 'Creando…' : 'Crear cuenta'}
+            {creando ? 'Creando…' : 'Crear usuario'}
           </Boton>
         </div>
       </Seccion>
@@ -425,7 +425,7 @@ function ListaRoles({
     if (cuantos > 0) {
       await dialogo.avisar({
         titulo: `«${r.nombre}» está en uso`,
-        texto: `${cuantos} cuenta(s) tienen este rol. Cámbialas de rol primero y vuelve a borrarlo.`,
+        texto: `${cuantos} usuario(s) tienen este rol. Cámbialos de rol primero y vuelve a borrarlo.`,
         tono: 'ojo',
       })
       return
@@ -433,7 +433,7 @@ function ListaRoles({
     if (
       !(await dialogo.confirmar({
         titulo: `¿Borrar el rol «${r.nombre}»?`,
-        texto: 'Deja de poder asignarse a nuevas cuentas.',
+        texto: 'Deja de poder asignarse a nuevos usuarios.',
         aceptar: 'Borrar',
         peligro: true,
       }))
@@ -464,7 +464,7 @@ function ListaRoles({
                   <span className="font-semibold">{r.nombre}</span>
                   {!r.a_medida && <span className="ml-2 text-xs text-neutral-400">de fábrica</span>}
                   <span className="ml-2 text-xs text-neutral-400">
-                    {cuantos === 0 ? 'sin cuentas' : `${cuantos} cuenta(s)`}
+                    {cuantos === 0 ? 'sin usuarios' : `${cuantos} usuario(s)`}
                   </span>
                   {r.descripcion && <p className="text-xs text-neutral-500 mt-0.5">{r.descripcion}</p>}
                 </div>
@@ -564,7 +564,7 @@ function CrearRol({
         </div>
         <p className="text-xs text-neutral-500 mt-3">
           Lo que no marques, el sistema se lo niega: no es que la pantalla se esconda, es que el servidor
-          responde que no. Repartir cuentas no está en la lista a propósito: eso se queda contigo.
+          responde que no. Crear usuarios no está en la lista a propósito: eso se queda contigo.
         </p>
 
         <div className="mt-4">

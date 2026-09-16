@@ -205,11 +205,11 @@ export type Insight = {
   detalle: string
 }
 
-export type Periodo = 'dia' | 'semana' | 'mes'
-
 export type ReporteResumen = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
+  /** El paso de `serie`: hora | dia | semana | mes. Lo decide el tamaño del rango. */
+  granularidad: string
   ventas: number
   ventas_bs: number
   iva_cobrado: number
@@ -458,7 +458,7 @@ export type FilaBalanceComprobacion = {
 }
 
 export type EstadoResultadosContable = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   ingresos: number
   costos: number
@@ -618,7 +618,7 @@ export type OportunidadCombo = {
 }
 
 export type ReporteCombos = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   pedidos_analizados: number
   suficientes_datos: boolean
@@ -677,7 +677,7 @@ export type FilaLibroVentas = {
 }
 
 export type LibroVentas = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   tasa_iva: number
   filas: FilaLibroVentas[]
@@ -700,7 +700,7 @@ export type FilaLibroCompras = {
 }
 
 export type LibroCompras = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   filas: FilaLibroCompras[]
   total_base: number
@@ -737,7 +737,7 @@ export type PeriodoPendiente = {
 }
 
 export type ResumenIva = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   iva_debito: number
   iva_credito: number
@@ -806,4 +806,91 @@ export type DatosRol = {
   nombre: string
   descripcion: string
   modulos: string[]
+}
+
+// ── Ventas ──────────────────────────────────────────────────────────────────
+
+/** Que paso con una venta (ver `routers/ventas.py`). */
+export type EstadoVenta = 'cobrada' | 'fiada' | 'devuelta' | 'anulada' | 'abierta'
+
+export type VentaFila = {
+  id: number
+  numero: number
+  fecha: string
+  estado: EstadoVenta
+  cliente: string
+  /** "2× Empanada, 1× Jugo" */
+  detalle: string
+  unidades: number
+  subtotal: number
+  descuento: number
+  total: number
+  propina: number
+  total_bs: number | null
+  tasa_bcv: number | null
+  /** "Efectivo $ + Pago movil" */
+  pago: string
+  fiado_pendiente: number
+  fiado_saldado: boolean
+  facturado: boolean
+  numero_factura: string | null
+  operador: string
+  punto_venta: string
+  anulado_por: string
+  motivo_devolucion: string
+  nota_credito: string | null
+  nota: string
+  items: PedidoItem[]
+}
+
+export type ListaVentas = {
+  etiqueta: string
+  total: number
+  /** Habia mas filas de las que se devolvieron: el rango es demasiado grande. */
+  recortado: boolean
+  filas: VentaFila[]
+}
+
+export type PerdidasVentas = {
+  anuladas: number
+  valor_anulado: number
+  devueltas: number
+  valor_devuelto: number
+  con_descuento: number
+  valor_descuentos: number
+  merma_inventario: number
+  fiado_pendiente: number
+  valor_fiado_pendiente: number
+  /** devuelto + descuentos + merma: lo que si se perdio. */
+  total: number
+  pct_sobre_ventas: number
+}
+
+export type GrupoVentas = { nombre: string; ventas: number; pedidos: number }
+
+export type ResumenVentas = {
+  etiqueta: string
+  desde: string
+  hasta: string
+  /** Dias del rango que ya pasaron: el divisor de los promedios. */
+  dias: number
+  granularidad: string
+  ventas: number
+  ventas_bs: number
+  pedidos: number
+  unidades: number
+  ticket_promedio: number
+  ticket_mediano: number
+  promedio_diario: number
+  pedidos_por_dia: number
+  anterior: { ventas: number; pedidos: number; promedio_diario: number }
+  cambio_pct: number | null
+  perdidas: PerdidasVentas
+  por_metodo_pago: Record<string, number>
+  por_punto_venta: GrupoVentas[]
+  por_operador: GrupoVentas[]
+  facturadas: number
+  valor_facturado: number
+  serie: PuntoSerie[]
+  mejor: PuntoSerie | null
 }

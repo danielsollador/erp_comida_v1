@@ -39,7 +39,6 @@ import type {
   Pedido,
   PedidoItem,
   PeriodoPendiente,
-  Periodo,
   Producto,
   ReporteResumen,
   PuntoTasa,
@@ -58,7 +57,16 @@ import type {
   SugerenciaCompra,
   Usuario,
   Variante,
+  ListaVentas,
+  ResumenVentas,
 } from './types'
+import { queryRango, type Rango } from './fechas'
+
+/** `?desde=…&hasta=…` si hay rango; sin el, el endpoint usa su defecto. */
+const conRango = (r?: Rango, extra = '') => {
+  const partes = [r ? queryRango(r) : '', extra].filter(Boolean)
+  return partes.length ? `?${partes.join('&')}` : ''
+}
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -267,7 +275,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ cantidad, motivo }),
     }),
-  listarSobrantes: () => req<SobranteInventario[]>('/inventario/sobrantes'),
+  listarSobrantes: (r?: Rango) => req<SobranteInventario[]>(`/inventario/sobrantes${conRango(r)}`),
   revertirSobrante: (id: number) =>
     req<Ingrediente>(`/inventario/sobrantes/${id}/revertir`, { method: 'POST' }),
   historialReceta: (varianteId: number) =>
@@ -284,7 +292,7 @@ export const api = {
       body: JSON.stringify({ stock_real, motivo: 'Conteo fisico' }),
     }),
   sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
-  listarMermas: (dias = 30) => req<Merma[]>(`/inventario/mermas?dias=${dias}`),
+  listarMermas: (r?: Rango) => req<Merma[]>(`/inventario/mermas${conRango(r)}`),
   revertirMerma: (id: number) =>
     req<Ingrediente>(`/inventario/mermas/${id}/revertir`, { method: 'POST' }),
 
@@ -292,7 +300,7 @@ export const api = {
   actualizarReceta: (varianteId: number, items: { ingrediente_id: number; cantidad_por_unidad: number }[]) =>
     req<RecetaItem[]>(`/inventario/recetas/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
 
-  listarGastos: () => req<Gasto[]>('/caja/gastos'),
+  listarGastos: (r?: Rango) => req<Gasto[]>(`/caja/gastos${conRango(r)}`),
   crearGasto: (descripcion: string, categoria: string, monto: number, metodo_pago = 'Efectivo') =>
     req<Gasto>('/caja/gastos', {
       method: 'POST',
@@ -300,7 +308,7 @@ export const api = {
     }),
   eliminarGasto: (id: number) => req(`/caja/gastos/${id}`, { method: 'DELETE' }),
 
-  reporte: (periodo: Periodo) => req<ReporteResumen>(`/reportes/resumen?periodo=${periodo}`),
+  reporte: (r: Rango) => req<ReporteResumen>(`/reportes/resumen${conRango(r)}`),
 
   notasCreditoCompra: (facturaId: number) =>
     req<NotaCreditoCompra[]>(`/compras/facturas/${facturaId}/notas-credito`),
@@ -376,7 +384,10 @@ export const api = {
   actualizarConfig: (tasa_bcv: number) =>
     req<Configuracion>('/config', { method: 'PUT', body: JSON.stringify({ tasa_bcv }) }),
 
-  reporteCombos: (periodo: Periodo) => req<ReporteCombos>(`/reportes/combos?periodo=${periodo}`),
+  reporteCombos: (r: Rango) => req<ReporteCombos>(`/reportes/combos${conRango(r)}`),
+  ventas: (r: Rango, estado?: string) =>
+    req<ListaVentas>(`/ventas${conRango(r, estado ? `estado=${estado}` : '')}`),
+  resumenVentas: (r: Rango) => req<ResumenVentas>(`/ventas/resumen${conRango(r)}`),
   sugerencias: (varianteIds: number[]) =>
     req<Sugerencia[]>(`/pedidos/sugerencias?variantes=${varianteIds.join(',')}`),
 
@@ -385,7 +396,7 @@ export const api = {
     req<EstadoTasa>(`/tasas/refrescar?forzar=${forzar}`, { method: 'POST' }),
   fijarTasa: (bcv: number, paralelo?: number) =>
     req<EstadoTasa>('/tasas', { method: 'PUT', body: JSON.stringify({ bcv, paralelo }) }),
-  historialTasa: (dias = 30) => req<PuntoTasa[]>(`/tasas/historial?dias=${dias}`),
+  historialTasa: (r?: Rango) => req<PuntoTasa[]>(`/tasas/historial${conRango(r)}`),
 
   resumenCaja: () => req<ResumenCaja>('/caja/resumen'),
   anularCierre: (id: number, motivo: string) =>
@@ -421,8 +432,8 @@ export const api = {
         punto_venta_id: extra?.punto_venta_id ?? null,
       }),
     }),
-  listarCierres: () => req<CierreCaja[]>('/caja/cierres'),
-  listarRetiros: (dias = 30) => req<RetiroPropietario[]>(`/caja/retiros?dias=${dias}`),
+  listarCierres: (r?: Rango) => req<CierreCaja[]>(`/caja/cierres${conRango(r)}`),
+  listarRetiros: (r?: Rango) => req<RetiroPropietario[]>(`/caja/retiros${conRango(r)}`),
   crearRetiro: (monto: number, metodo_pago: string, nota = '') =>
     req<RetiroPropietario>('/caja/retiros', {
       method: 'POST',
@@ -433,7 +444,7 @@ export const api = {
   planCuentas: () => req<CuentaContable[]>('/contabilidad/plan-cuentas'),
   crearCuenta: (c: Omit<CuentaContable, 'id'>) =>
     req<CuentaContable>('/contabilidad/plan-cuentas', { method: 'POST', body: JSON.stringify(c) }),
-  listarAsientos: (limite = 100) => req<AsientoContable[]>(`/contabilidad/asientos?limite=${limite}`),
+  listarAsientos: (r?: Rango) => req<AsientoContable[]>(`/contabilidad/asientos${conRango(r)}`),
   crearAsiento: (descripcion: string, lineas: { cuenta_id: number; debe: number; haber: number }[]) =>
     req<AsientoContable>('/contabilidad/asientos', {
       method: 'POST',
@@ -442,8 +453,8 @@ export const api = {
   eliminarAsiento: (id: number) => req(`/contabilidad/asientos/${id}`, { method: 'DELETE' }),
   libroMayor: (cuentaId: number) => req<FilaMayor[]>(`/contabilidad/mayor/${cuentaId}`),
   balanceComprobacion: () => req<FilaBalanceComprobacion[]>('/contabilidad/balance-comprobacion'),
-  estadoResultadosContable: (periodo: Periodo) =>
-    req<EstadoResultadosContable>(`/contabilidad/estado-resultados?periodo=${periodo}`),
+  estadoResultadosContable: (r: Rango) =>
+    req<EstadoResultadosContable>(`/contabilidad/estado-resultados${conRango(r)}`),
   balanceGeneral: () => req<BalanceGeneral>('/contabilidad/balance-general'),
   saludContable: () => req<SaludContable>('/contabilidad/salud'),
   listarActivos: () => req<ActivoFijo[]>('/contabilidad/activos'),
@@ -455,7 +466,7 @@ export const api = {
       body: JSON.stringify({ motivo }),
     }),
 
-  listarFacturasCompra: (dias = 60) => req<FacturaCompra[]>(`/compras/facturas?dias=${dias}`),
+  listarFacturasCompra: (r?: Rango) => req<FacturaCompra[]>(`/compras/facturas${conRango(r)}`),
   crearFacturaCompra: (f: {
     numero_factura: string
     proveedor_nombre: string
@@ -484,9 +495,9 @@ export const api = {
   configFiscal: () => req<ConfiguracionFiscal>('/impuestos/config'),
   actualizarConfigFiscal: (tasa_iva: number) =>
     req<ConfiguracionFiscal>('/impuestos/config', { method: 'PUT', body: JSON.stringify({ tasa_iva }) }),
-  libroVentas: (periodo: Periodo) => req<LibroVentas>(`/impuestos/libro-ventas?periodo=${periodo}`),
-  libroCompras: (periodo: Periodo) => req<LibroCompras>(`/impuestos/libro-compras?periodo=${periodo}`),
-  resumenIva: (periodo: Periodo) => req<ResumenIva>(`/impuestos/resumen?periodo=${periodo}`),
+  libroVentas: (r: Rango) => req<LibroVentas>(`/impuestos/libro-ventas${conRango(r)}`),
+  libroCompras: (r: Rango) => req<LibroCompras>(`/impuestos/libro-compras${conRango(r)}`),
+  resumenIva: (r: Rango) => req<ResumenIva>(`/impuestos/resumen${conRango(r)}`),
   listarDeclaraciones: () => req<DeclaracionIva[]>('/impuestos/declaraciones'),
   periodosPendientes: () => req<PeriodoPendiente[]>('/impuestos/periodos-pendientes'),
   declararIva: (anio: number, mes: number) =>
@@ -554,7 +565,6 @@ export type {
   Pedido,
   PedidoItem,
   PeriodoPendiente,
-  Periodo,
   Producto,
   ReporteResumen,
   PuntoTasa,

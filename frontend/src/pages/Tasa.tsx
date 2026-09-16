@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango } from '../lib/fechas'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
@@ -16,6 +18,7 @@ const SECCIONES = [
 
 export default function Tasa() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  const [rango, setRango] = useRango('30d')
   const { recargar } = useMoneda()
   const [estado, setEstado] = useState<EstadoTasa | null>(null)
   const [historial, setHistorial] = useState<PuntoTasa[]>([])
@@ -35,14 +38,14 @@ export default function Tasa() {
 
   useEffect(() => {
     cargar()
-  }, [])
+  }, [rango])
 
   function cargar() {
     api.estadoTasa().then((e) => {
       setEstado(e)
       setManual(e.bcv ? String(e.bcv) : '')
     })
-    api.historialTasa(30).then(setHistorial)
+    api.historialTasa(rango).then(setHistorial)
   }
 
   async function accion(fn: () => Promise<EstadoTasa>, mensaje: string) {
@@ -55,7 +58,7 @@ export default function Tasa() {
       setManual(e.bcv ? String(e.bcv) : '')
       setAviso(mensaje)
       recargar()
-      api.historialTasa(30).then(setHistorial)
+      api.historialTasa(rango).then(setHistorial)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo actualizar la tasa')
     } finally {
@@ -76,7 +79,7 @@ export default function Tasa() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Tasa de cambio" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Tasa de cambio" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion === 'historial' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina ancho="media">
         {error && <p className="text-peligro-600 text-sm">{error}</p>}
         {aviso && <p className="text-exito-700 text-sm">{aviso}</p>}

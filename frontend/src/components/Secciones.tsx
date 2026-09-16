@@ -28,8 +28,14 @@ export function useSeccion(secciones: Seccion[]): [string, (id: string) => void]
   const pedida = params.get('s')
   const activa = secciones.some((s) => s.id === pedida) ? (pedida as string) : secciones[0].id
   // `replace`: elegir sección no llena el historial de pasos intermedios, pero
-  // la URL sí queda compartible.
-  const ir = (id: string) => setParams(id === secciones[0].id ? {} : { s: id }, { replace: true })
+  // la URL sí queda compartible. Los demás parámetros (el rango de fechas,
+  // `?r=`/`?d=`/`?h=`) se conservan: cambiar de sección no cambia el periodo.
+  const ir = (id: string) => {
+    const p = new URLSearchParams(params)
+    if (id === secciones[0].id) p.delete('s')
+    else p.set('s', id)
+    setParams(p, { replace: true })
+  }
   return [activa, ir]
 }
 

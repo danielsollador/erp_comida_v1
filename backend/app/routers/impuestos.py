@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import contabilidad, impuestos, models, schemas
 from ..database import get_db
+from ..rango import Rango
 from ..timeutils import ahora, hoy, rango_periodo
 
 router = APIRouter(prefix="/api/impuestos", tags=["impuestos"])
@@ -54,20 +55,14 @@ def _totales_iva_del_rango(db: Session, inicio, fin) -> Tuple[float, float]:
 
 
 @router.get("/libro-ventas", response_model=schemas.LibroVentas)
-def libro_ventas(
-    periodo: str = "mes",
-    anio: int = None,
-    mes: int = None,
-    db: Session = Depends(get_db),
-):
+def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
     """Con `anio` y `mes` emite el libro de un periodo ya cerrado.
 
     Es requisito fiscal poder re-emitirlo: el SENIAT lo pide por periodo y el
     sistema solo sabia emitir el mes en curso.
     """
-    if periodo not in ("dia", "semana", "mes"):
-        periodo = "mes"
-    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
+    inicio, fin, etiqueta = rango.resolver(periodo="mes")
+    periodo = rango.periodo or "rango"
 
     # Una venta devuelta sale del Libro: el dueno emitio una nota de credito y
     # esa factura ya no representa una venta.
@@ -124,15 +119,9 @@ def libro_ventas(
 
 
 @router.get("/libro-compras", response_model=schemas.LibroCompras)
-def libro_compras(
-    periodo: str = "mes",
-    anio: int = None,
-    mes: int = None,
-    db: Session = Depends(get_db),
-):
-    if periodo not in ("dia", "semana", "mes"):
-        periodo = "mes"
-    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
+def libro_compras(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    inicio, fin, etiqueta = rango.resolver(periodo="mes")
+    periodo = rango.periodo or "rango"
 
     facturas = (
         db.query(models.FacturaCompra)
@@ -169,11 +158,10 @@ def libro_compras(
 
 
 @router.get("/resumen", response_model=schemas.ResumenIva)
-def resumen_iva(
-    periodo: str = "mes", anio: int = None, mes: int = None, db: Session = Depends(get_db)
-):
-    ventas = libro_ventas(periodo, anio, mes, db)
-    compras = libro_compras(periodo, anio, mes, db)
+def resumen_iva(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    ventas = libro_ventas(rango, db)
+    compras = libro_compras(rango, db)
+    periodo = rango.periodo or "rango"
     return schemas.ResumenIva(
         periodo=periodo,
         etiqueta=ventas.etiqueta,

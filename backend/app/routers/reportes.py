@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import combos, contabilidad, impuestos, models, reposicion, schemas
 from ..database import get_db
-from ..timeutils import rango_periodo
+from ..rango import Rango, anterior, granularidad, serie as serie_del_rango
 
 router = APIRouter(prefix="/api/reportes", tags=["reportes"])
 
@@ -189,7 +189,7 @@ def _valor_anulado(db: Session, inicio: datetime.datetime, fin: datetime.datetim
     return round(sum(p.total for p in _pedidos_anulados(db, inicio, fin)), 2)
 
 
-def _merma_periodo(db: Session, inicio: datetime.datetime, fin: datetime.datetime) -> float:
+def merma_periodo(db: Session, inicio: datetime.datetime, fin: datetime.datetime) -> float:
     """Valor de lo que se boto en el periodo, segun la cuenta 6020."""
     cuenta = (
         db.query(models.CuentaContable).filter(models.CuentaContable.codigo == "6020").first()
@@ -230,43 +230,18 @@ def _iva_cobrado(pedidos) -> float:
 
 
 def _serie(periodo: str, pedidos, inicio: datetime.datetime, fin: datetime.datetime):
-    acumulado: Dict[str, Dict[str, float]] = {}
+    """Ventas a lo largo del rango, con el paso que le toca (ver `rango.serie`).
 
-    if periodo == "dia":
-        for p in pedidos:
-            clave = f"{p.cerrado_en.hour:02d}:00"
-            entrada = acumulado.setdefault(clave, {"ventas": 0.0, "pedidos": 0})
-            entrada["ventas"] += p.total
-            entrada["pedidos"] += 1
-        etiquetas = sorted(acumulado.keys())
-    else:
-        dia = inicio.date()
-        ultimo = (fin - datetime.timedelta(days=1)).date()
-        etiquetas = []
-        while dia <= ultimo:
-            clave = (
-                DIAS_ES[dia.weekday()] if periodo == "semana" else dia.strftime("%d")
-            )
-            acumulado[clave] = {"ventas": 0.0, "pedidos": 0}
-            etiquetas.append(clave)
+    La semana se sigue leyendo por dia de la semana ("Lun", "Mar"), que es como
+    la piensa quien atiende; lo demas lleva la fecha.
+    """
+    puntos = serie_del_rango(((p.cerrado_en, p.total) for p in pedidos), inicio, fin)
+    if periodo == "semana" and granularidad(inicio, fin) == "dia":
+        dia = inicio
+        for punto in puntos:
+            punto["etiqueta"] = DIAS_ES[dia.weekday()]
             dia += datetime.timedelta(days=1)
-        for p in pedidos:
-            fecha = p.cerrado_en.date()
-            clave = (
-                DIAS_ES[fecha.weekday()] if periodo == "semana" else fecha.strftime("%d")
-            )
-            if clave in acumulado:
-                acumulado[clave]["ventas"] += p.total
-                acumulado[clave]["pedidos"] += 1
-
-    return [
-        schemas.PuntoSerie(
-            etiqueta=e,
-            ventas=round(acumulado[e]["ventas"], 2),
-            pedidos=int(acumulado[e]["pedidos"]),
-        )
-        for e in etiquetas
-    ]
+    return [schemas.PuntoSerie(**p) for p in puntos]
 
 
 def _variantes_con_receta(db: Session) -> set:
@@ -346,12 +321,16 @@ def _insights(
     pedidos,
     productos: List[schemas.ProductoVendido],
     serie: List[schemas.PuntoSerie],
+    granularidad_serie: str,
     ventas_previas: float,
     merma: float = 0,
+    incompleto: bool = True,
 ) -> List[schemas.Insight]:
     """Analisis deterministico: sin llamadas a ningun modelo, sin costo variable."""
     insights: List[schemas.Insight] = []
-    nombre_periodo = {"dia": "hoy", "semana": "esta semana", "mes": "este mes"}[periodo]
+    nombre_periodo = {"dia": "hoy", "semana": "esta semana", "mes": "este mes"}.get(
+        periodo, "en este periodo"
+    )
 
     if not pedidos:
         insights.append(
@@ -370,8 +349,10 @@ def _insights(
     # incompleto, asi que se avisa para no leer una caida donde solo falta tiempo.
     if ventas_previas > 0:
         cambio = (ventas - ventas_previas) / ventas_previas * 100
-        anterior = {"dia": "ayer", "semana": "la semana pasada", "mes": "el mes pasado"}[periodo]
-        aclaracion = f" Ojo: {nombre_periodo} todavia no termina."
+        anterior = {"dia": "ayer", "semana": "la semana pasada", "mes": "el mes pasado"}.get(
+            periodo, "el periodo anterior"
+        )
+        aclaracion = f" Ojo: {nombre_periodo} todavia no termina." if incompleto else ""
         base = f"Vendiste ${ventas:.2f} contra ${ventas_previas:.2f} de {anterior}."
         if cambio >= 10:
             insights.append(
@@ -470,7 +451,9 @@ def _insights(
     if serie:
         mejor = max(serie, key=lambda s: (s.pedidos, s.ventas))
         if mejor.pedidos > 0:
-            etiqueta = "hora" if periodo == "dia" else "dia"
+            etiqueta = {"hora": "hora", "dia": "dia", "semana": "semana", "mes": "mes"}[
+                granularidad_serie
+            ]
             mas_plata = max(serie, key=lambda s: s.ventas)
             detalle = (
                 f"{mejor.pedidos} pedido(s) por ${mejor.ventas:.2f}. "
@@ -583,13 +566,12 @@ def _insights(
 
 
 @router.get("/resumen", response_model=schemas.ReporteResumen)
-def resumen(
-    periodo: str = "dia", anio: int = None, mes: int = None, db: Session = Depends(get_db)
-):
-    if periodo not in ("dia", "semana", "mes"):
-        periodo = "dia"
-
-    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
+def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """Los numeros del periodo. `desde`/`hasta` o, como antes, `periodo=`."""
+    inicio, fin, etiqueta = rango.resolver(periodo="dia")
+    # Las palabras ("hoy", "ayer") solo cuando se pidio con el boton; con un
+    # rango de fechas se habla de "este periodo".
+    periodo = rango.periodo if rango.periodo in ("dia", "semana", "mes") and rango.desde is None else "rango"
     pedidos = _pedidos_pagados(db, inicio, fin)
 
     # Las ventas brutas (lo que entro por caja) salen de los pedidos, porque es
@@ -606,8 +588,7 @@ def resumen(
     ganancia_bruta = round(ingresos_netos - costo, 2)
 
     # Mismo tamano de ventana, inmediatamente anterior.
-    duracion = fin - inicio
-    pedidos_previos = _pedidos_pagados(db, inicio - duracion, inicio)
+    pedidos_previos = _pedidos_pagados(db, *anterior(inicio, fin))
     ventas_previas, _ = _totales(pedidos_previos)
 
     anulados = len(_pedidos_anulados(db, inicio, fin))
@@ -626,6 +607,7 @@ def resumen(
     return schemas.ReporteResumen(
         periodo=periodo,
         etiqueta=etiqueta,
+        granularidad=granularidad(inicio, fin),
         ventas=round(ventas, 2),
         ventas_bs=_ventas_en_bs(pedidos),
         iva_cobrado=iva_cobrado,
@@ -654,24 +636,24 @@ def resumen(
             pedidos,
             productos,
             serie,
+            granularidad(inicio, fin),
             ventas_previas,
-            merma=_merma_periodo(db, inicio, fin),
+            merma=merma_periodo(db, inicio, fin),
+            # El periodo esta a medias si incluye hoy.
+            incompleto=fin > datetime.datetime.now(),
         ),
     )
 
 
 @router.get("/combos", response_model=schemas.ReporteCombos)
-def reporte_combos(periodo: str = "mes", db: Session = Depends(get_db)):
+def reporte_combos(rango: Rango = Depends(), db: Session = Depends(get_db)):
     """Que se vende junto y cuanto se pierde por no ofrecer el acompanante.
 
     El periodo por defecto es el mes: la canasta necesita volumen para que los
     porcentajes signifiquen algo, y un solo dia rara vez lo tiene.
     """
-    if periodo not in ("dia", "semana", "mes"):
-        periodo = "mes"
-
-    inicio, fin, etiqueta = rango_periodo(periodo, anio, mes)
+    inicio, fin, etiqueta = rango.resolver(periodo="mes")
     pedidos = _pedidos_pagados(db, inicio, fin)
     analisis = combos.analizar(db, pedidos)
 
-    return schemas.ReporteCombos(periodo=periodo, etiqueta=etiqueta, **analisis)
+    return schemas.ReporteCombos(periodo=rango.periodo or "rango", etiqueta=etiqueta, **analisis)

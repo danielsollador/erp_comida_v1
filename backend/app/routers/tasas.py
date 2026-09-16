@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from .. import schemas, tasas
 from ..database import get_db
+from ..rango import Rango
 
 router = APIRouter(prefix="/api/tasas", tags=["tasas"])
 
@@ -42,8 +43,9 @@ def fijar(body: schemas.TasaManual, db: Session = Depends(get_db)):
 
 
 @router.get("/historial", response_model=List[schemas.PuntoTasa])
-def historial(dias: int = 30, db: Session = Depends(get_db)):
-    dias = max(1, min(dias, 365))
+def historial(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """La tasa dia por dia. Sin rango, los ultimos 30 dias."""
+    inicio, fin, _ = rango.resolver(dias=30)
     return [
         schemas.PuntoTasa(
             fecha=t.fecha.isoformat(),
@@ -51,5 +53,5 @@ def historial(dias: int = 30, db: Session = Depends(get_db)):
             paralelo=t.paralelo,
             origen=t.origen or "auto",
         )
-        for t in tasas.historial(db, dias)
+        for t in tasas.historial(db, inicio.date(), fin.date())
     ]

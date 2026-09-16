@@ -13,6 +13,8 @@ export type NombreIcono =
   | 'pos'
   | 'cocina'
   | 'reportes'
+  | 'ventas'
+  | 'calendario'
   | 'menu'
   | 'recetas'
   | 'inventario'
@@ -39,6 +41,9 @@ const TRAZOS: Record<NombreIcono, string> = {
   cocina:
     'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z',
   reportes: 'M3 3v18h18M18 17V9M13 17V5M8 17v-3',
+  // Un recibo: la lista de lo vendido, con su linea de total.
+  ventas: 'M5 3h14v18l-2.3-1.5L14.3 21 12 19.5 9.7 21 7.3 19.5 5 21zM8 8h8M8 12h8M8 16h5',
+  calendario: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
   menu: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z',
   recetas: 'M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2M7 2v20M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7',
   inventario:
