@@ -334,7 +334,11 @@ export type CuentaPorCobrar = {
   pedido_id: number
   numero: number
   cliente: string
+  /** Lo que debe HOY: la venta menos lo que haya abonado. */
   monto: number
+  original: number
+  abonado: number
+  abonos: number
   fecha: string
   dias: number
 }

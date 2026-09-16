@@ -517,13 +517,21 @@ class EntregarPropinasRequest(BaseModel):
 
 class SaldarFiadoRequest(BaseModel):
     metodo_pago: str = "Efectivo Bs"
+    # Sin monto se cobra todo lo que queda, que es el caso comun y lo que
+    # hacia antes este endpoint. Con monto, es un abono.
+    monto: Optional[float] = None
+    operador_id: Optional[int] = None
 
 
 class CuentaPorCobrar(BaseModel):
     pedido_id: int
     numero: int
     cliente: str
+    # Lo que debe HOY. Si hubo abonos no es lo mismo que la venta.
     monto: float
+    original: float
+    abonado: float
+    abonos: int
     fecha: datetime.datetime
     dias: int
 

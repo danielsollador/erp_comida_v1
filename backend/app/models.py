@@ -215,6 +215,31 @@ class RetiroPropietario(Base):
     operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
 
 
+class AbonoFiado(Base):
+    """Un pago parcial contra una venta fiada.
+
+    Antes el fiado solo tenia dos estados: se debe todo o no se debe nada. En
+    la calle no funciona asi -la senora abona 5 el martes y 3 el viernes-, y
+    sin donde anotarlo la cajera terminaba cobrando el total de golpe o, peor,
+    llevando la cuenta en un cuaderno aparte que los libros no ven.
+
+    Cada abono es un hecho con su fecha y su forma de pago, no un booleano:
+    por eso son filas y no una columna `abonado` en el pedido. Lo que se debe
+    hoy se calcula restando estos abonos al monto fiado.
+    """
+
+    __tablename__ = "abonos_fiado"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False, index=True)
+    monto = Column(Float, nullable=False)
+    metodo_pago = Column(String, default="Efectivo Bs")
+    fecha = Column(DateTime, default=ahora)
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+
+    pedido = relationship("Pedido", back_populates="abonos")
+
+
 class DeclaracionIva(Base):
     """Declaracion mensual de IVA ya presentada al SENIAT.
 
@@ -656,6 +681,10 @@ class Pedido(Base):
         return self.punto_venta_rel.nombre if self.punto_venta_rel else ""
     consumos = relationship("PedidoConsumo", cascade="all, delete-orphan")
     pagos = relationship("PagoPedido", cascade="all, delete-orphan")
+    abonos = relationship(
+        "AbonoFiado", back_populates="pedido", cascade="all, delete-orphan",
+        order_by="AbonoFiado.fecha",
+    )
 
     @property
     def total(self):
@@ -675,6 +704,22 @@ class Pedido(Base):
     def a_cobrar(self):
         """Lo que se recibe en la gaveta: la comida mas la propina."""
         return round(self.total + (self.propina or 0), 2)
+
+    @property
+    def fiado_monto(self):
+        """Cuanto de este pedido quedo a credito."""
+        return round(sum(p.monto for p in self.pagos if p.metodo == "Fiado"), 2)
+
+    @property
+    def fiado_abonado(self):
+        return round(sum(a.monto for a in self.abonos), 2)
+
+    @property
+    def fiado_saldo(self):
+        """Lo que el cliente debe HOY. Una sola definicion para todos: la
+        pantalla de cuentas por cobrar, el cobro y los libros preguntaban lo
+        mismo y cada uno lo sumaba por su cuenta."""
+        return round(max(self.fiado_monto - self.fiado_abonado, 0), 2)
 
 
 class PagoPedido(Base):

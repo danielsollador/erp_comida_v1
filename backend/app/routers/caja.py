@@ -322,14 +322,19 @@ def listar_fiado(db: Session = Depends(get_db)):
     ahora_ = ahora()
     filas = []
     for p in pedidos:
-        monto = round(sum(pg.monto for pg in p.pagos if pg.metodo == "Fiado"), 2)
         fecha = p.cerrado_en or p.creado_en
         filas.append(
             schemas.CuentaPorCobrar(
                 pedido_id=p.id,
                 numero=p.numero,
                 cliente=p.cliente or "Sin nombre",
-                monto=monto,
+                # Lo que falta, no lo que se vendio: si abono la mitad, la
+                # pantalla tiene que decir la mitad o la cajera le cobra dos
+                # veces lo mismo.
+                monto=p.fiado_saldo,
+                original=p.fiado_monto,
+                abonado=p.fiado_abonado,
+                abonos=len(p.abonos),
                 fecha=fecha,
                 dias=(ahora_ - fecha).days,
             )
@@ -345,17 +350,52 @@ def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session =
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     if pedido.fiado_saldado:
         raise HTTPException(status_code=409, detail="Ese fiado ya fue cobrado")
-    monto = round(sum(p.monto for p in pedido.pagos if p.metodo == "Fiado"), 2)
-    if monto <= 0:
+    if pedido.devuelto:
+        raise HTTPException(status_code=409, detail="Ese pedido fue devuelto: ya no se debe")
+    saldo = pedido.fiado_saldo
+    if pedido.fiado_monto <= 0:
         raise HTTPException(status_code=400, detail="Ese pedido no quedo fiado")
+    if saldo <= 0:
+        raise HTTPException(status_code=409, detail="Ese fiado ya esta pago")
     if body.metodo_pago == "Fiado" or body.metodo_pago not in contabilidad.CUENTA_POR_METODO_PAGO:
         raise HTTPException(status_code=400, detail="Forma de cobro invalida")
 
-    contabilidad.registrar_cobro_fiado(db, pedido, monto, body.metodo_pago)
-    pedido.fiado_saldado = True
-    pedido.fecha_cobro_fiado = ahora()
+    monto = saldo if body.monto is None else round(body.monto, 2)
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="El abono tiene que ser mayor que cero")
+    if monto > saldo + 0.005:
+        # Cobrar de mas no es un abono, es un error de tecleo. Aceptarlo
+        # dejaria 1015 en negativo: el cliente nos deberia menos que nada.
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede cobrar {monto:.2f}: solo debe {saldo:.2f}",
+        )
+
+    restante = round(saldo - monto, 2)
+    # Por debajo de un centavo esta pago: perseguir 0.004 seria dejar la
+    # deuda viva para siempre por un redondeo.
+    if restante < 0.01:
+        restante = 0.0
+
+    db.add(models.AbonoFiado(
+        pedido_id=pedido.id,
+        monto=monto,
+        metodo_pago=body.metodo_pago,
+        operador_id=body.operador_id,
+        fecha=ahora(),
+    ))
+    contabilidad.registrar_cobro_fiado(db, pedido, monto, body.metodo_pago, saldo_restante=restante)
+    if restante <= 0:
+        pedido.fiado_saldado = True
+        pedido.fecha_cobro_fiado = ahora()
     db.commit()
-    return {"ok": True, "cobrado": monto, "cliente": pedido.cliente}
+    return {
+        "ok": True,
+        "cobrado": monto,
+        "queda": restante,
+        "saldado": restante <= 0,
+        "cliente": pedido.cliente,
+    }
 
 
 @router.get("/retiros", response_model=List[schemas.RetiroPropietario])

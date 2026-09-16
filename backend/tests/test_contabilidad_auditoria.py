@@ -27,9 +27,13 @@ import datetime
 import pytest
 
 from app import contabilidad, models
+from conftest import (  # noqa: F401  (`libros` se inyecta como fixture)
+    LOCAL_TOLERANCIA,
+    inventario_fisico,
+    libros_cuadrados,
+)
 from tests.conftest import saldo
 
-LOCAL_TOLERANCIA = 0.02
 
 
 # ── ayudantes ────────────────────────────────────────────────────────────────
@@ -57,57 +61,6 @@ def vender(client, variante, cantidad=1, **cuerpo):
 def gaveta(client, codigo):
     resumen = client.get("/api/caja/resumen").json()
     return next(g for g in resumen["gavetas"] if g["codigo"] == codigo)
-
-
-def inventario_fisico(db) -> float:
-    return round(
-        sum((i.stock_actual or 0) * (i.costo_unitario or 0) for i in db.query(models.Ingrediente).all()),
-        2,
-    )
-
-
-def libros_cuadrados(client, db):
-    """Lo que un contador revisa antes de firmar. Falla con el motivo."""
-    filas = client.get("/api/contabilidad/balance-comprobacion").json()
-    debe = round(sum(f["debe"] for f in filas), 2)
-    haber = round(sum(f["haber"] for f in filas), 2)
-    assert abs(debe - haber) < LOCAL_TOLERANCIA, f"balance de comprobacion: debe {debe} != haber {haber}"
-
-    bg = client.get("/api/contabilidad/balance-general").json()
-    assert bg["cuadra"], bg
-    for f in bg["activos"]:
-        if f["codigo"] in contabilidad.CUENTAS_CONTRA:
-            continue
-        assert f["saldo"] >= -LOCAL_TOLERANCIA, f"activo {f['codigo']} {f['nombre']} en negativo: {f['saldo']}"
-    for f in bg["pasivos"]:
-        assert f["saldo"] >= -LOCAL_TOLERANCIA, f"pasivo {f['codigo']} {f['nombre']} en negativo: {f['saldo']}"
-
-    contable = saldo(db, "1040")
-    fisico = inventario_fisico(db)
-    assert abs(contable - fisico) < LOCAL_TOLERANCIA, f"inventario: libros {contable} vs fisico {fisico}"
-
-    # Cada asiento cuadra por si solo (no solo la suma de todos).
-    for a in db.query(models.AsientoContable).all():
-        d = round(sum(m.debe for m in a.movimientos), 2)
-        h = round(sum(m.haber for m in a.movimientos), 2)
-        assert abs(d - h) < 0.011, f"asiento #{a.id} '{a.descripcion}' descuadrado: {d} vs {h}"
-
-
-@pytest.fixture()
-def libros(db, insumo, variante):
-    """Los libros arrancan como en un local real: con el inventario reconocido
-    y con plata en las gavetas y en el banco (el aporte inicial del dueño).
-    Sin eso, la primera compra en efectivo dejaria la caja en negativo, y el
-    negativo seria de la prueba, no del sistema."""
-    contabilidad.asiento_de_apertura(db)
-    contabilidad.crear_asiento(
-        db,
-        "Aporte inicial del dueño: caja chica y banco",
-        [("1010", 100.0, 0.0), ("1011", 20.0, 0.0), ("1020", 100.0, 0.0), ("3010", 0.0, 220.0)],
-        origen="manual",
-    )
-    db.commit()
-    return db
 
 
 def _a_2025(db, gasto_id: int, cuando=datetime.datetime(2025, 6, 15, 12, 0)):

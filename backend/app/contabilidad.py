@@ -289,7 +289,9 @@ def crear_asiento(
 
 
 def _lineas_de_cobro(
-    pedido: models.Pedido, signo: float = 1.0, cuenta_fiado: Optional[str] = None
+    pedido: models.Pedido,
+    signo: float = 1.0,
+    reparto_fiado: Optional[List[Tuple[str, float]]] = None,
 ) -> List[Tuple[str, float, float]]:
     """Una linea por cada forma en que se pago, a su cuenta correspondiente.
 
@@ -300,15 +302,31 @@ def _lineas_de_cobro(
     recibio la plata: pagar en divisas y dar el vuelto en bolivares mueve dos
     cajas, y si solo se anota el neto ninguna de las dos cuadra al cerrar.
 
-    `cuenta_fiado` sirve al REVERTIR: si el fiado ya se cobro, la plata que se
-    devuelve sale de donde entro al cobrarlo, no de la cuenta por cobrar (que
-    quedaria en negativo, como si el cliente nos debiera menos que nada).
+    `reparto_fiado` sirve al REVERTIR: dice donde esta parada hoy la plata de
+    un pedido fiado. Lo ya cobrado sale de la cuenta por donde entro -no de la
+    cuenta por cobrar, que quedaria en negativo, como si el cliente nos debiera
+    menos que nada- y lo que aun se debe simplemente se deja de deber. Con
+    abonos parciales son las dos cosas a la vez: por eso es una lista de
+    (cuenta, monto) y no una sola cuenta.
     """
     lineas = []
+    fiado_repartido = False
     for pago in pedido.pagos:
+        if pago.metodo == "Fiado" and reparto_fiado is not None:
+            # El reparto cubre TODO lo fiado del pedido de una vez, asi que si
+            # hubiera mas de una linea fiada solo se emite en la primera.
+            if not fiado_repartido:
+                for cuenta_r, monto_r in reparto_fiado:
+                    if round(monto_r, 2) <= 0:
+                        continue
+                    lineas.append(
+                        (cuenta_r, round(monto_r, 2), 0.0) if signo > 0
+                        else (cuenta_r, 0.0, round(monto_r, 2))
+                    )
+                fiado_repartido = True
+            continue
+
         cuenta = CUENTA_POR_METODO_PAGO.get(pago.metodo, "1010")
-        if pago.metodo == "Fiado" and cuenta_fiado:
-            cuenta = cuenta_fiado
         vuelto = round(pago.vuelto_monto or 0, 2)
         cuenta_vuelto = CUENTA_POR_METODO_PAGO.get(pago.vuelto_metodo or pago.metodo, cuenta)
 
@@ -419,8 +437,9 @@ def registrar_devolucion(
     # La plata vuelve por donde entro: si se pago mitad efectivo y mitad pago
     # movil, se devuelve en esa misma proporcion. Si estaba fiado y el cliente
     # ya lo habia pagado, sale de donde entro ese pago; si todavia lo debia,
-    # simplemente deja de deberlo.
-    lineas += _lineas_de_cobro(pedido, signo=-1, cuenta_fiado=_cuenta_del_cobro_fiado(db, pedido))
+    # simplemente deja de deberlo. Con abonos parciales pasan las dos cosas:
+    # se le devuelve lo que alcanzo a abonar y se le borra el resto.
+    lineas += _lineas_de_cobro(pedido, signo=-1, reparto_fiado=_reparto_del_fiado(db, pedido))
 
     if costo > 0:
         # El costo sale de "costo de ventas" porque ya no hay venta. Si la
@@ -437,23 +456,52 @@ def registrar_devolucion(
     )
 
 
-def _cuenta_del_cobro_fiado(db: Session, pedido: models.Pedido) -> Optional[str]:
-    """Si el fiado de este pedido ya se cobro, la cuenta a la que entro esa
-    plata (la que se debito en el asiento de cobro). None si sigue pendiente."""
-    if not pedido.fiado_saldado:
+def _reparto_del_fiado(
+    db: Session, pedido: models.Pedido
+) -> Optional[List[Tuple[str, float]]]:
+    """Donde esta parada hoy la plata de un pedido fiado, cuenta por cuenta.
+
+    Tres casos:
+      - Nadie abono nada: None, y el que llama trata el fiado como siempre
+        (todo sigue en cuentas por cobrar).
+      - Hubo abonos: cada uno esta en la cuenta por donde entro, y lo que
+        falta sigue en 1015.
+      - Fiado saldado ANTES de que existieran los abonos: no hay filas que
+        sumar, asi que se lee del asiento de cobro que quedo en los libros.
+        Sin esto, devolver una venta vieja ya cobrada sacaria la plata de una
+        gaveta que nunca la recibio.
+    """
+    total = pedido.fiado_monto
+    if total <= 0:
         return None
-    asiento = (
-        db.query(models.AsientoContable)
-        .filter_by(origen="cobro_fiado", referencia_id=pedido.id)
-        .order_by(models.AsientoContable.id.desc())
-        .first()
-    )
-    if asiento is None:
-        return "1010"
-    for m in asiento.movimientos:
-        if m.debe and m.cuenta is not None:
-            return m.cuenta.codigo
-    return "1010"
+
+    por_cuenta: dict = {}
+    for abono in pedido.abonos:
+        cuenta = CUENTA_POR_METODO_PAGO.get(abono.metodo_pago, "1010")
+        por_cuenta[cuenta] = round(por_cuenta.get(cuenta, 0.0) + abono.monto, 2)
+
+    if not por_cuenta:
+        if not pedido.fiado_saldado:
+            return None
+        asiento = (
+            db.query(models.AsientoContable)
+            .filter_by(origen="cobro_fiado", referencia_id=pedido.id)
+            .order_by(models.AsientoContable.id.desc())
+            .first()
+        )
+        cuenta = "1010"
+        if asiento is not None:
+            for m in asiento.movimientos:
+                if m.debe and m.cuenta is not None:
+                    cuenta = m.cuenta.codigo
+                    break
+        return [(cuenta, total)]
+
+    pendiente = round(total - sum(por_cuenta.values()), 2)
+    reparto = [(c, m) for c, m in por_cuenta.items()]
+    if pendiente > 0:
+        reparto.append(("1015", pendiente))
+    return reparto
 
 
 def registrar_gasto(db: Session, gasto: models.Gasto) -> None:
@@ -621,14 +669,27 @@ def registrar_entrega_propinas(
 
 
 def registrar_cobro_fiado(
-    db: Session, pedido: models.Pedido, monto: float, metodo_pago: str
+    db: Session, pedido: models.Pedido, monto: float, metodo_pago: str,
+    saldo_restante: float = 0.0,
 ) -> None:
     """El cliente vino a pagar lo que debia: la cuenta por cobrar se convierte
-    en plata."""
+    en plata.
+
+    Sirve igual para el pago completo y para un abono; lo unico que cambia es
+    lo que dice el asiento. Que la descripcion diga "abono" y cuanto queda
+    importa: quien lea el libro mayor dentro de seis meses tiene que entender
+    por que 1015 bajo 5 en vez de los 12 de la venta, sin ir a buscar el
+    pedido.
+    """
     cuenta = CUENTA_POR_METODO_PAGO.get(metodo_pago, "1010")
+    quien = pedido.cliente or "sin nombre"
+    if round(saldo_restante, 2) > 0:
+        detalle = f"Abono a fiado pedido #{pedido.numero} ({quien}), queda {saldo_restante:.2f}"
+    else:
+        detalle = f"Cobro de fiado pedido #{pedido.numero} ({quien})"
     crear_asiento(
         db,
-        f"Cobro de fiado pedido #{pedido.numero} ({pedido.cliente or 'sin nombre'})",
+        detalle,
         [(cuenta, monto, 0.0), ("1015", 0.0, monto)],
         origen="cobro_fiado",
         referencia_id=pedido.id,

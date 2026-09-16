@@ -400,11 +400,12 @@ export const api = {
       body: JSON.stringify({ monto, metodo_pago, nota }),
     }),
   listarFiado: () => req<CuentaPorCobrar[]>('/caja/fiado'),
-  cobrarFiado: (pedidoId: number, metodo_pago = 'Efectivo Bs') =>
-    req<{ ok: boolean; cobrado: number; cliente: string }>(`/caja/fiado/${pedidoId}/cobrar`, {
-      method: 'POST',
-      body: JSON.stringify({ metodo_pago }),
-    }),
+  /** Sin `monto` se cobra todo lo que queda; con monto, es un abono. */
+  cobrarFiado: (pedidoId: number, metodo_pago = 'Efectivo Bs', monto?: number) =>
+    req<{ ok: boolean; cobrado: number; queda: number; saldado: boolean; cliente: string }>(
+      `/caja/fiado/${pedidoId}/cobrar`,
+      { method: 'POST', body: JSON.stringify({ metodo_pago, monto }) },
+    ),
 
   cerrarCaja: (
     efectivo_contado: number,
