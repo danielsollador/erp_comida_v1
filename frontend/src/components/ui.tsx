@@ -41,7 +41,7 @@ export function Pagina({
   children: ReactNode
   className?: string
 }) {
-  const topes = { ancha: 'max-w-[100rem]', media: 'max-w-[69rem]', angosta: 'max-w-[42rem]' }
+  const topes = { ancha: 'max-w-[90rem]', media: 'max-w-[69rem]', angosta: 'max-w-[42rem]' }
   return (
     <div
       className={`${topes[ancho]} mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 space-y-5 lg:space-y-6 ${className}`}

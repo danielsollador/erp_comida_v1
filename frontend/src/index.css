@@ -12,6 +12,15 @@
    se desplaza de todas formas. */
 @custom-variant bajo (@media (max-height: 850px) and (min-width: 640px));
 
+/* `pc:` = un monitor de escritorio o un portatil grande (>= 1440 px; la
+   tablet mas ancha, un iPad de 13" apaisado, mide 1376). En PC el inicio NO
+   llena la pantalla: es un tablero normal, con margenes, ancho tope y letra
+   de tamaño de escritorio. Lo de "ocupar todo el espacio" es de la tablet,
+   donde se toca de pie y de lejos; en un monitor de 27" eso se ve enorme.
+   Va declarada la ultima a proposito: cuando fija la misma propiedad que
+   `lg:`, `alto:` o `bajo:`, manda ella. */
+@custom-variant pc (@media (min-width: 1440px));
+
 /*
   SISTEMA DE DISEÑO DE VERTIGO PRO
   ================================
@@ -471,6 +480,13 @@ html.vp-cambiando-tema table {
   @media (max-height: 850px) and (min-width: 640px) {
     .vp-mosaico {
       gap: 0.75rem;
+    }
+  }
+  /* Tablet en vertical: pocas columnas anchas (fichas en fila con su
+     descripcion), no cinco columnas de fichas flacas de 280 px de alto. */
+  @media (min-height: 1100px) and (max-width: 1439px) {
+    .vp-mosaico {
+      --cols: var(--cols-alto, 2);
     }
   }
 

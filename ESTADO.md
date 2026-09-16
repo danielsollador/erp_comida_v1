@@ -313,6 +313,15 @@ en fila y rellenos menores, para que 1024×768 quepa sin desplazar). Medido
 1366×768; en 375 la página se desplaza como siempre y nada desborda a lo
 ancho.
 
+**PC no es tablet.** Leider lo vio en un monitor de 1900 px y todo era
+enorme: el "llenar la pantalla" es para la tablet, que se mira de pie y de
+lejos. Desde 1440 px de ancho (`pc:`; el iPad de 13" apaisado mide 1376) el
+inicio es un tablero normal: ancho tope de 84 rem, letra de escritorio, fichas
+en fila y la página termina donde termina el contenido. Y en la tablet en
+vertical las fichas ya no son cinco columnas flacas sino dos anchas en fila,
+con su descripción. Las tres variantes propias (`alto:`, `bajo:`, `pc:`) van
+declaradas en ese orden y la última manda.
+
 Dos trampas de esta tanda: un `style={{ height }}` en línea le gana a las
 clases responsive (el logo salía de 26 px en todas partes; el alto va por
 clase), y las variantes `@custom-variant` ganan a `sm:/lg:` cuando fijan la
