@@ -2,11 +2,12 @@ import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import contabilidad, costeo, models, reposicion, schemas
+from .. import contabilidad, costeo, kardex, models, reposicion, schemas
 from ..database import get_db
-from ..timeutils import hoy, inicio_del_dia
+from ..timeutils import ahora, hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
 
@@ -68,6 +69,112 @@ def historial_de_costos(ingrediente_id: int, db: Session = Depends(get_db)):
     return reposicion.historial_de_costos(db, ingrediente_id)
 
 
+@router.get(
+    "/ingredientes/{ingrediente_id}/movimientos", response_model=schemas.ExtractoInsumo
+)
+def extracto(ingrediente_id: int, limite: int = 200, db: Session = Depends(get_db)):
+    """Que paso con este insumo, en orden. El extracto bancario del deposito.
+
+    Es la respuesta a "la carne bajo 3 kg hoy, explicame eso", que antes
+    obligaba a abrir cuatro pantallas y aun asi dejaba fuera el consumo del
+    personal y las compras sueltas.
+    """
+    ing = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
+    if not ing:
+        raise HTTPException(status_code=404, detail="Insumo no encontrado")
+
+    movs = kardex.movimientos_de(db, ingrediente_id, limite)
+    total = db.query(func.sum(models.MovimientoInventario.cantidad)).filter(
+        models.MovimientoInventario.ingrediente_id == ingrediente_id
+    ).scalar() or 0
+    saldo_libro = round(total, 4)
+    stock = round(ing.stock_actual or 0, 4)
+
+    return schemas.ExtractoInsumo(
+        ingrediente_id=ing.id,
+        nombre=ing.nombre,
+        unidad=ing.unidad,
+        stock_actual=stock,
+        saldo_segun_libro=saldo_libro,
+        # Se compara y se dice. Un descuadre aca significa que alguien movio el
+        # stock sin pasar por el kardex, y eso es un error de programacion que
+        # no se puede quedar callado.
+        cuadra=abs(saldo_libro - stock) < 0.001,
+        movimientos=[
+            schemas.MovimientoInventario(
+                id=m.id, fecha=m.fecha, tipo=m.tipo,
+                etiqueta=kardex.ETIQUETAS.get(m.tipo, m.tipo),
+                cantidad=m.cantidad, costo_unitario=m.costo_unitario,
+                valor=m.valor, saldo=m.saldo, origen=m.origen or "",
+                referencia_id=m.referencia_id,
+                operador=None, nota=m.nota or "",
+            )
+            for m in movs
+        ],
+    )
+
+
+@router.get("/existencias", response_model=schemas.InventarioEnFecha)
+def existencias_en_fecha(fecha: Optional[datetime.datetime] = None, db: Session = Depends(get_db)):
+    """Cuanto habia y cuanto valia el inventario en una fecha.
+
+    Antes esta pregunta -la que hace el contador para cerrar un mes- solo se
+    podia responder en total y reconstruyendo desde los asientos, nunca por
+    insumo. La valorizacion usa el costo del ULTIMO movimiento hasta esa
+    fecha, no el promedio de hoy: valorar existencias viejas con el costo
+    actual es contar la inflacion como si fuera mercancia.
+    """
+    corte = fecha or ahora()
+    filas = []
+    total = 0.0
+    for ing in db.query(models.Ingrediente).order_by(models.Ingrediente.nombre).all():
+        cantidad = kardex.existencia_a(db, ing.id, corte)
+        if abs(cantidad) < 0.00005:
+            continue
+        ultimo = (
+            db.query(models.MovimientoInventario)
+            .filter(
+                models.MovimientoInventario.ingrediente_id == ing.id,
+                models.MovimientoInventario.fecha <= corte,
+            )
+            .order_by(models.MovimientoInventario.fecha.desc(), models.MovimientoInventario.id.desc())
+            .first()
+        )
+        # Con el PROMEDIO de ese momento, que es el criterio de la cuenta 1040.
+        # Con el precio de la ultima compra, este informe y el balance daban
+        # numeros distintos por el mismo inventario.
+        costo = (ultimo.costo_promedio if ultimo else None) or ing.costo_unitario or 0
+        valor = round(cantidad * costo, 2)
+        total += valor
+        filas.append(schemas.ExistenciaEnFecha(
+            ingrediente_id=ing.id, nombre=ing.nombre, unidad=ing.unidad,
+            cantidad=cantidad, costo_unitario=round(costo, 4), valor=valor,
+        ))
+    return schemas.InventarioEnFecha(fecha=corte, total=round(total, 2), insumos=filas)
+
+
+@router.get("/consumo", response_model=List[schemas.ConsumoDeInsumo])
+def consumo(dias: int = 30, db: Session = Depends(get_db)):
+    """Cuanto se gasta de verdad por dia, medido, y para cuantos dias alcanza.
+
+    El minimo de cada insumo se pone a dedo una vez y se queda viejo. Esto se
+    mide solo: sale del libro de movimientos.
+    """
+    hasta = ahora()
+    desde = hasta - datetime.timedelta(days=dias)
+    filas = []
+    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all():
+        por_dia = kardex.consumo_por_dia(db, ing.id, desde, hasta)
+        stock = ing.stock_actual or 0
+        filas.append(schemas.ConsumoDeInsumo(
+            ingrediente_id=ing.id, nombre=ing.nombre, unidad=ing.unidad,
+            por_dia=por_dia,
+            dias_de_stock=round(stock / por_dia, 1) if por_dia > 0 else None,
+        ))
+    filas.sort(key=lambda f: (f.dias_de_stock is None, f.dias_de_stock))
+    return filas
+
+
 @router.get("/inflacion", response_model=Optional[schemas.InflacionInsumos])
 def inflacion(dias: int = 30, db: Session = Depends(get_db)):
     """Cuanto subio la canasta de insumos. None si no hay con que comparar."""
@@ -76,8 +183,21 @@ def inflacion(dias: int = 30, db: Session = Depends(get_db)):
 
 @router.post("/ingredientes", response_model=schemas.Ingrediente)
 def crear_ingrediente(ingrediente: schemas.IngredienteCreate, db: Session = Depends(get_db)):
-    db_ingrediente = models.Ingrediente(**ingrediente.model_dump())
+    datos = ingrediente.model_dump()
+    # Nace en cero y es el movimiento el que lo deja en su existencia. Dar de
+    # alta un insumo que ya tiene mercancia en el deposito TAMBIEN es un
+    # movimiento: esa mercancia entro alguna vez. Sin esa fila el extracto
+    # arranca en cero mientras el stock dice diez, y el libro no cuadra desde
+    # el primer dia.
+    inicial = datos.pop("stock_actual", 0) or 0
+    db_ingrediente = models.Ingrediente(stock_actual=0, **datos)
     db.add(db_ingrediente)
+    db.flush()
+    if inicial:
+        kardex.anotar(
+            db, db_ingrediente, inicial, kardex.AJUSTE,
+            origen="alta_insumo", nota="Existencia declarada al crear el insumo",
+        )
     db.commit()
     db.refresh(db_ingrediente)
     return db_ingrediente
@@ -133,10 +253,12 @@ def registrar_compra(
         # El costo del insumo se PROMEDIA con lo que ya habia, no se pisa - ver
         # costeo.py. Asi el costo (y el margen que se le muestra al dueno) no
         # salta de golpe cada vez que un proveedor sube el precio.
-        costeo.registrar_entrada(db_ingrediente, body.cantidad, costo_de_esta_compra)
         # Cada compra suelta queda como un registro propio. Antes el asiento usaba
         # el id del ingrediente como referencia, asi que todas las compras del mismo
         # insumo compartian referencia y ninguna se podia rastrear.
+        #
+        # Se crea ANTES de mover el stock porque el movimiento del kardex apunta
+        # a esta fila: sin id, el extracto diria "compra" sin decir cual.
         compra = models.CompraSuelta(
             ingrediente_id=db_ingrediente.id,
             cantidad=body.cantidad,
@@ -144,6 +266,11 @@ def registrar_compra(
         )
         db.add(compra)
         db.flush()
+        costeo.registrar_entrada(
+            db_ingrediente, body.cantidad, costo_de_esta_compra, db,
+            origen="compra_suelta", referencia_id=compra.id,
+            nota="Compra sin factura",
+        )
         if not contabilidad.metodo_de_pago_valido(body.metodo_pago):
             raise HTTPException(
                 status_code=400,
@@ -187,12 +314,15 @@ def registrar_merma(
 
     with costeo.bloqueo_inventario():
         db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
-        db_ingrediente.stock_actual -= body.cantidad
         db_merma = models.Merma(
             ingrediente_id=ingrediente_id, cantidad=body.cantidad, motivo=body.motivo
         )
         db.add(db_merma)
         db.flush()
+        kardex.anotar(
+            db, db_ingrediente, -body.cantidad, kardex.MERMA,
+            origen="merma", referencia_id=db_merma.id, nota=body.motivo,
+        )
         contabilidad.registrar_merma(
             db,
             db_ingrediente,
@@ -217,7 +347,9 @@ def _aplicar_conteo(
     faltante = sistema - stock_real
     valor = round(abs(faltante) * (ingrediente.costo_unitario or 0), 2)
     if faltante > 0:
-        db_merma = models.Merma(ingrediente_id=ingrediente.id, cantidad=faltante, motivo=motivo)
+        db_merma = models.Merma(
+            ingrediente_id=ingrediente.id, cantidad=faltante, motivo=motivo, por_conteo=True
+        )
         db.add(db_merma)
         db.flush()
         contabilidad.registrar_merma(db, ingrediente, valor, db_merma.id)
@@ -239,7 +371,14 @@ def _aplicar_conteo(
         db.flush()
         contabilidad.registrar_sobrante_inventario(db, ingrediente, valor, db_sobrante.id)
 
-    ingrediente.stock_actual = stock_real
+    # El ajuste se anota como UN movimiento por la diferencia, no fijando el
+    # numero: el libro tiene que poder explicar el salto igual que explica una
+    # venta. `anotar` mueve el stock, asi que aca no se asigna a mano.
+    if abs(stock_real - sistema) > 0.00005:
+        kardex.anotar(
+            db, ingrediente, stock_real - sistema, kardex.AJUSTE,
+            origen="conteo", nota=motivo,
+        )
     # Se vuelca ya: el siguiente insumo del lote vuelve a `expire_all()` y un
     # cambio sin volcar se perderia.
     db.flush()
@@ -316,7 +455,10 @@ def consumo_personal(
     with costeo.bloqueo_inventario():
         ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
         valor = round(body.cantidad * (ingrediente.costo_unitario or 0), 2)
-        ingrediente.stock_actual = round((ingrediente.stock_actual or 0) - body.cantidad, 4)
+        kardex.anotar(
+            db, ingrediente, -body.cantidad, kardex.CONSUMO_PERSONAL,
+            origen="consumo_personal", nota=body.motivo,
+        )
         contabilidad.registrar_consumo_personal(db, ingrediente, valor, ingrediente_id, body.motivo)
         db.commit()
         db.refresh(ingrediente)
@@ -368,7 +510,11 @@ def revertir_sobrante(sobrante_id: int, db: Session = Depends(get_db)):
 
         ingrediente = _ingrediente_para_actualizar(db, sobrante.ingrediente_id)
         valor = round(sobrante.cantidad * (ingrediente.costo_unitario or 0), 2)
-        ingrediente.stock_actual = round((ingrediente.stock_actual or 0) - sobrante.cantidad, 4)
+        kardex.anotar(
+            db, ingrediente, -sobrante.cantidad, kardex.REVERSO,
+            origen="sobrante_revertido", referencia_id=sobrante.id,
+            nota="Se deshace un sobrante de conteo",
+        )
         contabilidad.registrar_reverso_sobrante_inventario(db, ingrediente, valor, sobrante.id)
         sobrante.revertido = True
         db.commit()
@@ -387,6 +533,18 @@ def listar_mermas(dias: int = 30, db: Session = Depends(get_db)):
         .order_by(models.Merma.id.desc())
         .all()
     )
+    # El valor sale del movimiento, que lo lleva congelado. Calcularlo con el
+    # costo de HOY revaloraba una merma de hace tres meses al precio de hoy: el
+    # informe de perdidas se movia solo cada vez que subia un proveedor.
+    congelado = {
+        mv.referencia_id: abs(mv.valor)
+        for mv in db.query(models.MovimientoInventario)
+        .filter(
+            models.MovimientoInventario.origen == "merma",
+            models.MovimientoInventario.referencia_id.in_([m.id for m in mermas] or [0]),
+        )
+        .all()
+    }
     return [
         schemas.Merma(
             id=m.id,
@@ -394,10 +552,13 @@ def listar_mermas(dias: int = 30, db: Session = Depends(get_db)):
             ingrediente_nombre=m.ingrediente.nombre,
             unidad=m.ingrediente.unidad,
             cantidad=m.cantidad,
-            valor=round(m.cantidad * (m.ingrediente.costo_unitario or 0), 2),
+            valor=congelado.get(
+                m.id, round(m.cantidad * (m.ingrediente.costo_unitario or 0), 2)
+            ),
             motivo=m.motivo,
             fecha=m.fecha,
             revertida=m.revertida,
+            por_conteo=bool(m.por_conteo),
         )
         for m in mermas
     ]
@@ -420,7 +581,11 @@ def revertir_merma(merma_id: int, db: Session = Depends(get_db)):
 
         ingrediente = _ingrediente_para_actualizar(db, merma.ingrediente_id)
         valor = round(merma.cantidad * (ingrediente.costo_unitario or 0), 2)
-        ingrediente.stock_actual = (ingrediente.stock_actual or 0) + merma.cantidad
+        kardex.anotar(
+            db, ingrediente, merma.cantidad, kardex.REVERSO,
+            origen="merma_revertida", referencia_id=merma.id,
+            nota="Se deshace una merma",
+        )
         merma.revertida = True
         if valor > 0:
             contabilidad.registrar_reverso_merma(db, ingrediente, valor, merma.id)

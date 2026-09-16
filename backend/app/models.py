@@ -125,6 +125,51 @@ class Ingrediente(Base):
         return round(self.costo_unitario / (rendimiento / 100), 6)
 
 
+class MovimientoInventario(Base):
+    """Una fila por cada vez que un insumo entra o sale. Ver `kardex.py`.
+
+    `stock_actual` en el ingrediente sigue siendo el saldo vivo -se lee mil
+    veces al dia y no se va a calcular sumando todo cada vez-, pero deja de
+    ser la unica verdad: es la suma de esta tabla. Si los dos no coinciden,
+    ahora se puede demostrar cual esta mal y desde cuando.
+
+    El costo va congelado: el promedio del insumo cambia con cada compra, asi
+    que preguntarlo manana daria otro numero y el libro dejaria de cuadrar con
+    lo que se asento en su momento. Es el mismo criterio que con el precio y
+    el costo de una venta.
+    """
+
+    __tablename__ = "movimientos_inventario"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False, index=True)
+    fecha = Column(DateTime, default=ahora, index=True)
+    tipo = Column(String, nullable=False)  # ver kardex.py
+    # Con signo: positiva entra, negativa sale.
+    cantidad = Column(Float, nullable=False)
+    # A como se movio ESTA cantidad: el precio de esta compra, el costo al que
+    # salio esta venta.
+    costo_unitario = Column(Float, default=0)
+    valor = Column(Float, default=0)
+    # El promedio ponderado del insumo DESPUES de este movimiento. Es distinto
+    # del de arriba y hace falta para valorar existencias a una fecha pasada
+    # con el mismo criterio que usa la contabilidad. Sin esto, el inventario
+    # valorizado y la cuenta 1040 daban numeros parecidos pero distintos, y
+    # "parecido" en contabilidad es estar mal.
+    costo_promedio = Column(Float, default=0)
+    # Existencia que quedo despues de este movimiento. Guardarla permite leer
+    # el extracto sin recalcular, igual que la libreta del banco.
+    saldo = Column(Float, default=0)
+    # De donde vino: "pedido", "compra_suelta", "factura", "merma"... con el id
+    # de ese registro, para poder ir hasta el documento.
+    origen = Column(String, default="")
+    referencia_id = Column(Integer, nullable=True)
+    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    nota = Column(String, default="")
+
+    ingrediente = relationship("Ingrediente")
+
+
 class RecetaItem(Base):
     __tablename__ = "receta_items"
 
@@ -349,6 +394,12 @@ class Merma(Base):
     # Una merma mal cargada se revierte con un asiento de reverso, no se borra:
     # el error queda documentado igual que en Compras.
     revertida = Column(Boolean, default=False)
+    # Esta merma salio de un CONTEO, no de un accidente. Las dos bajan el
+    # stock y las dos llevan asiento, pero son dos problemas distintos: una
+    # dice "se nos cayo al piso" y la otra "el sistema estaba mal". Mezcladas
+    # en el informe de perdidas, el ajuste de un conteo se lee como si se
+    # hubiera botado comida, y el numero deja de servir para decidir nada.
+    por_conteo = Column(Boolean, default=False)
     fecha = Column(DateTime, default=ahora)
     operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
 

@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import contabilidad, models, settings
+from app import contabilidad, kardex, models, settings
 from app.acceso import auth, roles, sesion, usuarios
 from app.database import Base, get_db
 from app.main import app
@@ -116,13 +116,23 @@ def insumo(db):
     ingrediente = models.Ingrediente(
         nombre="Carne molida",
         unidad="kg",
-        stock_actual=10.0,
+        stock_actual=0,
         stock_minimo=1.0,
         stock_objetivo=15.0,
         costo_unitario=8.0,
         rendimiento_pct=80.0,  # de 1 kg comprado quedan 800 g utilizables
     )
     db.add(ingrediente)
+    db.flush()
+    # La existencia inicial se declara en el libro, igual que hace la
+    # migracion con el deposito de un local que ya venia lleno. Sin esto el
+    # extracto arrancaria en cero contra un stock de 10 y la invariante del
+    # kardex (libro == stock) se caeria en todas las pruebas por 10 kg que
+    # nadie movio.
+    kardex.anotar(
+        db, ingrediente, 10.0, kardex.AJUSTE,
+        origen="apertura_kardex", nota="Existencia al empezar",
+    )
     db.commit()
     db.refresh(ingrediente)
     return ingrediente

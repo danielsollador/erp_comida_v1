@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from .. import combos, contabilidad, costeo, impuestos, models, schemas, tasas
+from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -186,7 +186,12 @@ async def crear_pedido(
         )
 
     for ingrediente, cantidad in consumo.items():
-        ingrediente.stock_actual = (ingrediente.stock_actual or 0) - cantidad
+        kardex.anotar(
+            db, ingrediente, -cantidad, kardex.VENTA,
+            origen="pedido", referencia_id=db_pedido.id,
+            nota=f"Comanda #{db_pedido.numero}",
+            operador_id=quien_toma.id if quien_toma else None,
+        )
         # Se deja constancia de lo que salio: si la receta cambia mientras el
         # pedido esta en cocina, al anularlo hay que devolver esto y no lo que
         # diria la receta nueva.
@@ -417,7 +422,11 @@ async def devolver_pedido(
     # quedo reconocida como merma en el asiento.
     if body.recuperable:
         for consumo in pedido.consumos:
-            consumo.ingrediente.stock_actual = (consumo.ingrediente.stock_actual or 0) + consumo.cantidad
+            kardex.anotar(
+                db, consumo.ingrediente, consumo.cantidad, kardex.REVERSO,
+                origen="devolucion", referencia_id=pedido.id,
+                nota=f"Devolucion del pedido #{pedido.numero}: la comida se pudo revender",
+            )
 
     pedido.devuelto = True
     pedido.fecha_devolucion = ahora()
@@ -571,7 +580,11 @@ async def anular_pedido(
             contabilidad.registrar_merma(db, ingrediente, valor, db_merma.id)
     else:
         for ingrediente, cantidad in consumo.items():
-            ingrediente.stock_actual = (ingrediente.stock_actual or 0) + cantidad
+            kardex.anotar(
+                db, ingrediente, cantidad, kardex.REVERSO,
+                origen="pedido_anulado", referencia_id=pedido.id,
+                nota=f"Pedido #{pedido.numero} anulado antes de prepararse",
+            )
 
     pedido.estado = "anulado"
     db.commit()

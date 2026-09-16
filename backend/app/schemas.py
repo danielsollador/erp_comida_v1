@@ -196,6 +196,63 @@ class InflacionInsumos(BaseModel):
     insumos: List[InsumoInflacion] = []
 
 
+class MovimientoInventario(BaseModel):
+    """Una linea del extracto de un insumo."""
+
+    id: int
+    fecha: datetime.datetime
+    tipo: str
+    etiqueta: str          # "Venta", "Merma"... en palabras del local
+    cantidad: float        # con signo: positiva entra, negativa sale
+    costo_unitario: float
+    valor: float
+    saldo: float           # existencia que quedo despues
+    origen: str
+    referencia_id: Optional[int] = None
+    operador: Optional[str] = None
+    nota: str = ""
+
+    class Config:
+        from_attributes = True
+
+
+class ExtractoInsumo(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    stock_actual: float
+    # Lo que suman los movimientos. Si no coincide con `stock_actual`, alguien
+    # escribio el stock sin pasar por el kardex y hay que saberlo.
+    saldo_segun_libro: float
+    cuadra: bool
+    movimientos: List[MovimientoInventario]
+
+
+class ExistenciaEnFecha(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    cantidad: float
+    costo_unitario: float
+    valor: float
+
+
+class InventarioEnFecha(BaseModel):
+    """Cuanto habia y cuanto valia el inventario en una fecha."""
+
+    fecha: datetime.datetime
+    total: float
+    insumos: List[ExistenciaEnFecha]
+
+
+class ConsumoDeInsumo(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    por_dia: float
+    dias_de_stock: Optional[float] = None  # None = no se consume, no se agota
+
+
 class ComprarIngredienteRequest(BaseModel):
     cantidad: float
     costo_total: Optional[float] = None  # si se informa, actualiza el costo unitario
@@ -220,6 +277,10 @@ class Merma(BaseModel):
     motivo: str
     fecha: datetime.datetime
     revertida: bool
+    # Salio de un conteo, no de un accidente. Las dos bajan el stock, pero
+    # "el sistema estaba mal" y "se cayo al piso" son dos problemas distintos
+    # y sumarlos en el mismo informe de perdidas no deja decidir nada.
+    por_conteo: bool = False
 
     class Config:
         from_attributes = True

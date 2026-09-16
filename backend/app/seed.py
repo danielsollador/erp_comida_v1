@@ -62,18 +62,31 @@ def seed_if_empty():
             db.commit()
 
         if db.query(Ingrediente).count() == 0:
+            from . import kardex
+
             for nombre, unidad, actual, minimo, objetivo, costo, rendimiento in INGREDIENTES_DEMO:
-                db.add(
-                    Ingrediente(
-                        nombre=nombre,
-                        unidad=unidad,
-                        stock_actual=actual,
-                        stock_minimo=minimo,
-                        stock_objetivo=objetivo,
-                        costo_unitario=costo,
-                        rendimiento_pct=rendimiento,
-                    )
+                ing = Ingrediente(
+                    nombre=nombre,
+                    unidad=unidad,
+                    stock_actual=0,
+                    stock_minimo=minimo,
+                    stock_objetivo=objetivo,
+                    costo_unitario=costo,
+                    rendimiento_pct=rendimiento,
                 )
+                db.add(ing)
+                db.flush()
+                # La existencia entra POR EL LIBRO, no escribiendo el numero.
+                # Sembrar el stock a mano dejaba el kardex arrancando en cero
+                # contra un deposito lleno: el extracto de cada insumo nacia
+                # descuadrado y el primer conteo mostraba un sobrante enorme
+                # que nadie podia explicar.
+                if actual:
+                    kardex.anotar(
+                        db, ing, actual, kardex.AJUSTE,
+                        origen="apertura_kardex",
+                        nota="Existencia al empezar a llevar el libro",
+                    )
             db.commit()
             # El negocio arranca con mercancia que vale plata; si los libros
             # arrancan en cero, la cuenta de inventario se va a negativo apenas

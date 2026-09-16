@@ -77,6 +77,8 @@ COLUMNAS = [
     ("mermas", "operador_id", "INTEGER"),
     ("gastos", "operador_id", "INTEGER"),
     ("pedidos", "clave_cliente", "VARCHAR"),
+    ("mermas", "por_conteo", "BOOLEAN DEFAULT 0"),
+    ("movimientos_inventario", "costo_promedio", "FLOAT DEFAULT 0"),
 ]
 
 
@@ -208,6 +210,53 @@ def _relajar_not_null(tabla: str, columna: str) -> None:
         _relajar_not_null_sqlite(tabla, columna)
 
 
+def _abrir_kardex() -> None:
+    """Saldo inicial del libro de movimientos, una sola vez.
+
+    El kardex nace vacio, pero el deposito del local no: hay insumos con
+    existencia que entro antes de que este libro existiera. Sin una fila de
+    apertura, el extracto de cada insumo arrancaria en cero y no cuadraria con
+    su stock, y el primer conteo mostraria un sobrante enorme que nadie
+    entiende.
+
+    Es el mismo gesto que el asiento de apertura de la contabilidad: no se
+    inventa historia, se declara el punto de partida. No toca el stock ni
+    genera asiento -la existencia ya esta reconocida en 1040-, solo deja
+    escrito de donde viene el saldo.
+    """
+    from . import models  # puebla Base.metadata
+    from .database import SessionLocal
+    from .timeutils import ahora
+
+    db = SessionLocal()
+    try:
+        if db.query(models.MovimientoInventario).first() is not None:
+            return  # ya se abrio: correr esto mil veces es inofensivo
+        abiertos = 0
+        for ing in db.query(models.Ingrediente).all():
+            saldo = ing.stock_actual or 0
+            if saldo == 0:
+                continue
+            db.add(models.MovimientoInventario(
+                ingrediente_id=ing.id,
+                fecha=ahora(),
+                tipo="ajuste",
+                cantidad=round(saldo, 4),
+                costo_unitario=round(ing.costo_unitario or 0, 4),
+                costo_promedio=round(ing.costo_unitario or 0, 4),
+                valor=round(saldo * (ing.costo_unitario or 0), 2),
+                saldo=round(saldo, 4),
+                origen="apertura_kardex",
+                nota="Existencia al empezar a llevar el libro de movimientos",
+            ))
+            abiertos += 1
+        if abiertos:
+            db.commit()
+            log.info("Kardex abierto con %d insumo(s) con existencia", abiertos)
+    finally:
+        db.close()
+
+
 def aplicar():
     inspector = inspect(engine)
     tablas = set(inspector.get_table_names())
@@ -255,3 +304,7 @@ def aplicar():
         if not _es_not_null(inspector, tabla, columna):
             continue
         _relajar_not_null(tabla, columna)
+
+    # Va de ultimo: necesita que la tabla exista (la crea `create_all`) y que
+    # las columnas nuevas ya esten puestas.
+    _abrir_kardex()

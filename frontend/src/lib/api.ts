@@ -56,6 +56,7 @@ import type {
   SaludContable,
   Sugerencia,
   SugerenciaCompra,
+  ExtractoInsumo,
   Usuario,
   Variante,
 } from './types'
@@ -194,6 +195,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ items, nota, permitir_sin_stock, clave_cliente }),
     }),
+  /** Que paso con este insumo, en orden. El extracto del deposito. */
+  movimientosDeInsumo: (ingredienteId: number, limite = 60) =>
+    req<ExtractoInsumo>(`/inventario/ingredientes/${ingredienteId}/movimientos?limite=${limite}`),
   marcarItemPreparado: (itemId: number) =>
     req<Pedido>(`/pedidos/items/${itemId}/preparado`, { method: 'POST' }),
   marcarPedidoListo: (pedidoId: number) =>
