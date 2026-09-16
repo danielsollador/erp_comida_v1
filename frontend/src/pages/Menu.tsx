@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type { Categoria, CostoVariante } from '../lib/types'
 
 export default function Menu() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
+  const dialogo = useDialogo()
   const [nuevaCategoria, setNuevaCategoria] = useState('')
   // Cuanto cuesta producir cada variante: el precio se fija mirando esto, no a
   // ciegas. Antes se podia poner un precio por debajo del costo sin que nada
@@ -32,12 +34,14 @@ export default function Menu() {
     const cat = categorias.find((c) => c.id === id)
     const productos = cat?.productos.length ?? 0
     if (
-      !window.confirm(
-        `Quitar "${cat?.nombre}" del menu?\n\n` +
+      !(await dialogo.confirmar({
+        titulo: `¿Quitar "${cat?.nombre}" del menú?`,
+        texto:
           `Deja de aparecer en el punto de venta junto con sus ${productos} producto(s), ` +
-          'pero las ventas que ya se hicieron se conservan intactas.\n\n' +
-          'Se puede volver a activar despues.',
-      )
+          'pero las ventas que ya se hicieron se conservan intactas.\n\nSe puede volver a activar después.',
+        aceptar: 'Quitar',
+        peligro: true,
+      }))
     )
       return
     await api.eliminarCategoria(id)
@@ -180,6 +184,7 @@ function ProductoRow({
   costos: Map<number, CostoVariante>
   onCambio: () => void
 }) {
+  const dialogo = useDialogo()
   const [nuevaVariante, setNuevaVariante] = useState('')
   const [nuevoPrecio, setNuevoPrecio] = useState('')
 
@@ -213,17 +218,23 @@ function ProductoRow({
               : '')
           : '')
       : '\n\n(Este producto no tiene receta, asi que no se sabe cuanto cuesta producirlo.)'
-    const texto = window.prompt(`Nuevo precio para ${nombre}${contexto}`, String(precioActual))
-    if (texto === null) return
-    const precio = Number(texto)
-    if (!Number.isFinite(precio) || precio < 0) return
+    const precio = await dialogo.pedirNumero({
+      titulo: `Precio de ${nombre}`,
+      texto: contexto.trim(),
+      etiqueta: 'Nuevo precio',
+      sufijo: '$',
+      valor: precioActual,
+    })
+    if (precio === null) return
 
     if (info?.costo && precio < info.costo) {
       const perdida = (info.costo - precio).toFixed(2)
-      const seguir = window.confirm(
-        `A $${precio.toFixed(2)} venderias por DEBAJO del costo ($${info.costo.toFixed(2)}): ` +
-          `pierdes $${perdida} en cada una.\n\nPonerlo igual?`,
-      )
+      const seguir = await dialogo.confirmar({
+        titulo: 'Venderías por debajo del costo',
+        texto: `A $${precio.toFixed(2)} pierdes $${perdida} en cada una: producirla cuesta $${info.costo.toFixed(2)}.`,
+        aceptar: 'Ponerlo igual',
+        peligro: true,
+      })
       if (!seguir) return
     }
 
@@ -237,7 +248,7 @@ function ProductoRow({
   }
 
   async function borrarProducto() {
-    if (!window.confirm(`Quitar "${producto.nombre}" del menu?`)) return
+    if (!(await dialogo.confirmar({ titulo: `¿Quitar "${producto.nombre}" del menú?`, aceptar: 'Quitar', peligro: true }))) return
     await api.eliminarProducto(producto.id)
     onCambio()
   }

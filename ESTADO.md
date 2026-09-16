@@ -328,6 +328,51 @@ clase), y las variantes `@custom-variant` ganan a `sm:/lg:` cuando fijan la
 misma propiedad porque salen después en el CSS — es lo que hace que `bajo:`
 mande, y hay que saberlo para no pelearse con ello.
 
+### Ni una ventana del navegador, y un inventario de verdad (16-sep, noche)
+
+Leider probó el sistema en producción y mandó dos cosas: "estas ventanas
+flotantes a nivel de navegador no sirven, no quiero que exista ni UNA", y "el
+inventario está horrible: es para llenar todos los productos y la materia y
+también llevar conteo, y eso no se está reflejando".
+
+**Diálogos propios.** Había sesenta `window.confirm / prompt / alert` en once
+pantallas. Son ventanas del navegador: salen con el rótulo "savora.vertigopro.
+tech dice", en la tablet diminutas, un flujo de cuatro preguntas eran cuatro
+ventanas seguidas, y los números se pedían como texto sin teclado numérico.
+Ahora hay un solo sitio, `components/dialogo.tsx`, con `useDialogo()`:
+`confirmar`, `elegir` (opciones grandes con explicación, en vez de "Aceptar =
+banco · Cancelar = gaveta"), `pedir` (un formulario con varios campos:
+número con teclado decimal y coma, texto, fecha, opciones), `pedirNumero`,
+`pedirTexto` y `avisar`. Devuelven promesas, así que el código que los usa se
+lee igual que antes pero con `await`; cancelar da `false`/`null`. Los flujos
+de varias preguntas (nota de crédito de compras, devolución de una venta,
+alta de un equipo existente) pasaron a UN formulario. **Regla para lo que
+venga: cero `window.*`.** Si hace falta preguntar algo, es `useDialogo()`.
+
+**Inventario.** No había forma de crear un insumo desde la pantalla (nacían
+con la base) ni de contar el depósito completo. Ahora:
+
+- **Alta y ficha.** "Nuevo insumo" y, tocando el nombre, la ficha: nombre,
+  tipo, unidad, mínimo, objetivo, costo, rendimiento, los cuatro movimientos
+  (compra, merma, consumo del personal, contar), el historial de costos y las
+  pérdidas del insumo. Se archiva en vez de borrar: tiene recetas, compras y
+  mermas colgando.
+- **Tipo.** `insumo` (materia prima que entra en recetas) o `reventa` (el
+  refresco: se compra y se vende tal cual, sin rendimiento que medir). Columna
+  `ingredientes.tipo`, y `activo` para el archivado; las dos con migración
+  automática al arrancar.
+- **Conteo físico en lote.** `POST /api/inventario/conteo`: se recorre el
+  depósito con la tablet, se anota lo que hay, lo que se deja en blanco no se
+  toca, y cada diferencia queda como merma o sobrante con su asiento — igual
+  que el "Contar" de un solo insumo, que sigue existiendo. Todo o nada: un id
+  que no existe no cambia ningún stock. Tests en
+  `tests/test_inventario_conteo.py`.
+- **La pantalla.** Cuatro cifras arriba (insumos, bajo mínimo, valor en
+  depósito, pérdidas 30 días), buscador y filtros (bajo mínimo, sin costo,
+  materia prima, reventa, archivados), la tabla con estado de stock (Agotado /
+  Bajo) y tres acciones por fila, y debajo qué comprar, la inflación de
+  insumos y las pérdidas como tabla ordenable.
+
 ### Qué falta acordar
 
 - **Commit y push de todo esto** al repo (hoy vive en mi clon, sobre tu

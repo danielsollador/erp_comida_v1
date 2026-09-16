@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
@@ -29,6 +30,7 @@ export default function Compras() {
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [fiscal, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
   const [error, setError] = useState('')
+  const dialogo = useDialogo()
 
   const [numeroFactura, setNumeroFactura] = useState('')
   const [proveedor, setProveedor] = useState('')
@@ -61,7 +63,7 @@ export default function Compras() {
 
   function cargar() {
     api.listarFacturasCompra().then(setFacturas)
-    api.listarIngredientes().then(setIngredientes)
+    api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
     api.configFiscal().then(setFiscal)
   }
 
@@ -193,47 +195,62 @@ export default function Compras() {
     // ajuste de inventario, que registra la diferencia como MERMA: una perdida
     // que no ocurrio, credito fiscal de mas en el Libro de Compras y una deuda
     // inflada con el proveedor.
-    const tipo = window.confirm(
-      `Nota de credito de ${f.proveedor_nombre} sobre la factura ${f.numero_factura}.\n\n` +
-        'Aceptar = DEVOLUCION (la mercancia vuelve al proveedor)\n' +
-        'Cancelar = DESCUENTO (te quedas la mercancia y te rebajan el precio)',
-    )
-      ? 'devolucion'
-      : 'descuento'
-
-    const numero = window.prompt('Numero de la nota de credito que emitio el proveedor')
-    if (!numero) return
-    const motivo = window.prompt('Motivo (mando menos, llego dañado, descuento...)') ?? ''
+    const tipo = (await dialogo.elegir({
+      titulo: `Nota de crédito de ${f.proveedor_nombre}`,
+      texto: `Sobre la factura ${f.numero_factura}. ¿Qué pasó?`,
+      opciones: [
+        { valor: 'devolucion', texto: 'Devolución', detalle: 'La mercancía vuelve al proveedor y sale del inventario.' },
+        { valor: 'descuento', texto: 'Descuento', detalle: 'Te quedas la mercancía y te rebajan el precio.' },
+      ],
+    })) as 'devolucion' | 'descuento' | null
+    if (!tipo) return
 
     if (tipo === 'descuento') {
-      const montoTxt = window.prompt('Cuanto te acreditaron, sin IVA?')
-      if (!montoTxt) return
-      const base = Number(montoTxt)
-      if (!Number.isFinite(base) || base <= 0) return
+      const r = await dialogo.pedir({
+        titulo: 'Descuento del proveedor',
+        campos: [
+          { nombre: 'numero', etiqueta: 'Número de la nota de crédito' },
+          { nombre: 'base', etiqueta: 'Cuánto te acreditaron, sin IVA', sufijo: '$', tipo: 'numero', min: 0.01 },
+          { nombre: 'motivo', etiqueta: 'Motivo', placeholder: 'Mandó menos, llegó dañado, descuento...', opcional: true },
+        ],
+        aceptar: 'Registrar',
+      })
+      if (!r) return
       await accionFactura(() =>
-        api.crearNotaCredito(f.id, { numero, tipo, motivo, base_imponible: base }),
+        api.crearNotaCredito(f.id, { numero: r.numero, tipo, motivo: r.motivo, base_imponible: Number(r.base) }),
       )
       return
     }
 
-    // Devolucion: hay que decir de que insumos y cuanto vuelve de cada uno.
-    const items: { ingrediente_id: number; cantidad: number }[] = []
-    for (const it of f.items) {
-      const txt = window.prompt(
-        `Cuanto vuelve de ${it.ingrediente_nombre}? (la factura trae ${it.cantidad} ${it.unidad})`,
-        '0',
-      )
-      if (txt === null) return
-      const cantidad = Number(txt)
-      if (Number.isFinite(cantidad) && cantidad > 0) {
-        items.push({ ingrediente_id: it.ingrediente_id, cantidad })
-      }
-    }
+    // Devolucion: de que insumos y cuanto vuelve de cada uno. Un solo
+    // formulario con una linea por insumo, no una pregunta por insumo.
+    const r = await dialogo.pedir({
+      titulo: 'Devolución al proveedor',
+      texto: 'Cuánto vuelve de cada insumo. Deja en 0 lo que se queda.',
+      ancho: 'md',
+      campos: [
+        { nombre: 'numero', etiqueta: 'Número de la nota de crédito' },
+        { nombre: 'motivo', etiqueta: 'Motivo', placeholder: 'Mandó menos, llegó dañado...', opcional: true },
+        ...f.items.map((it) => ({
+          nombre: `item_${it.ingrediente_id}`,
+          etiqueta: it.ingrediente_nombre,
+          sufijo: `${it.unidad}, la factura trae ${it.cantidad}`,
+          tipo: 'numero' as const,
+          valor: 0,
+          max: it.cantidad,
+        })),
+      ],
+      aceptar: 'Registrar devolución',
+    })
+    if (!r) return
+    const items = f.items
+      .map((it) => ({ ingrediente_id: it.ingrediente_id, cantidad: Number(r[`item_${it.ingrediente_id}`]) }))
+      .filter((it) => it.cantidad > 0)
     if (items.length === 0) {
-      window.alert('No se indico ninguna cantidad a devolver.')
+      await dialogo.avisar({ titulo: 'Nada que devolver', texto: 'No se indicó ninguna cantidad a devolver.', tono: 'ojo' })
       return
     }
-    await accionFactura(() => api.crearNotaCredito(f.id, { numero, tipo, motivo, items }))
+    await accionFactura(() => api.crearNotaCredito(f.id, { numero: r.numero, tipo, motivo: r.motivo, items }))
   }
 
   async function accionFactura(fn: () => Promise<unknown>) {
@@ -241,20 +258,32 @@ export default function Compras() {
       await fn()
       cargar()
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'No se pudo registrar la nota de credito')
+      await dialogo.avisar({
+        titulo: 'No se pudo registrar la nota de crédito',
+        texto: e instanceof Error ? e.message : undefined,
+        tono: 'mal',
+      })
     }
   }
 
   async function borrar(f: FacturaCompra) {
-    const aviso =
-      f.items.length > 0
-        ? 'Esta factura ya actualizo el stock de sus insumos, asi que no se puede borrar.'
-        : 'Borrar esta factura? Tambien se borra su asiento contable.'
     if (f.items.length > 0) {
-      window.alert(aviso)
+      await dialogo.avisar({
+        titulo: 'Esta factura no se puede borrar',
+        texto: 'Ya actualizó el stock de sus insumos. Si hubo un error, regístrale una nota de crédito.',
+        tono: 'ojo',
+      })
       return
     }
-    if (!window.confirm(aviso)) return
+    if (
+      !(await dialogo.confirmar({
+        titulo: '¿Borrar esta factura?',
+        texto: 'También se borra su asiento contable.',
+        aceptar: 'Borrar',
+        peligro: true,
+      }))
+    )
+      return
     try {
       await api.eliminarFacturaCompra(f.id)
       cargar()

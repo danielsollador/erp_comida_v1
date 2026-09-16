@@ -58,12 +58,43 @@ export type Ingrediente = {
   /** Promedio ponderado: lo que costo el stock que hay en el deposito. */
   costo_unitario: number
   rendimiento_pct: number
+  /** Materia prima de recetas, o mercancia que se compra y se vende tal cual. */
+  tipo: 'insumo' | 'reventa'
+  /** false = archivado: no se lista para comprar ni entra en sugerencias. */
+  activo: boolean
   costo_efectivo: number
   /** Ultimo precio pagado: lo que cuesta REPONERLO hoy. null = nunca comprado. */
   costo_reposicion: number | null
   ultima_compra: string | null
   /** Cuanto subestima el promedio al costo de reponer, en %. */
   variacion_pct: number | null
+}
+
+/** Lo que se escribe de un insumo (el resto lo calcula el sistema). */
+export type DatosIngrediente = Pick<
+  Ingrediente,
+  'nombre' | 'unidad' | 'stock_minimo' | 'stock_objetivo' | 'costo_unitario' | 'rendimiento_pct' | 'tipo' | 'activo'
+> & {
+  /** Solo al crear: lo que hay hoy. Despues el stock se mueve con compras, mermas y conteos. */
+  stock_actual?: number
+}
+
+export type AjusteConteo = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  sistema: number
+  contado: number
+  /** contado - sistema: negativo es faltante (merma), positivo sobrante. */
+  diferencia: number
+  valor: number
+}
+
+export type ResultadoConteo = {
+  ajustes: AjusteConteo[]
+  faltante_valor: number
+  sobrante_valor: number
+  sin_cambio: number
 }
 
 export type CompraDeInsumo = {

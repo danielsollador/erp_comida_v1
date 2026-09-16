@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
@@ -280,6 +281,7 @@ function Declaraciones() {
   const [declaraciones, setDeclaraciones] = useState<DeclaracionIva[]>([])
   const [pendientes, setPendientes] = useState<PeriodoPendiente[]>([])
   const [error, setError] = useState('')
+  const dialogo = useDialogo()
   const [ocupado, setOcupado] = useState(false)
 
   useEffect(() => {
@@ -304,39 +306,48 @@ function Declaraciones() {
     }
   }
 
-  function declarar(p: PeriodoPendiente) {
+  async function declarar(p: PeriodoPendiente) {
     const neto = p.iva_debito - p.iva_credito
     const resumen =
       neto > 0
         ? `Quedaria por pagar hasta $${neto.toFixed(2)} (menos el credito que venga arrastrado).`
         : `El credito fiscal cubre el debito: no se paga nada y sobran $${Math.abs(neto).toFixed(2)} para el mes siguiente.`
-    if (!window.confirm(`Declarar ${p.etiqueta}?\n\nIVA cobrado en ventas: $${p.iva_debito.toFixed(2)}\nIVA pagado en compras: $${p.iva_credito.toFixed(2)}\n\n${resumen}`))
+    if (
+      !(await dialogo.confirmar({
+        titulo: `¿Declarar ${p.etiqueta}?`,
+        texto: `IVA cobrado en ventas: $${p.iva_debito.toFixed(2)}\nIVA pagado en compras: $${p.iva_credito.toFixed(2)}\n\n${resumen}`,
+        aceptar: 'Declarar',
+      }))
+    )
       return
     accion(() => api.declararIva(p.anio, p.mes))
   }
 
-  function anular(d: DeclaracionIva) {
+  async function anular(d: DeclaracionIva) {
     // No existia borrar y re-declarar el mismo mes daba 409: una declaracion
     // mal hecha se quedaba mal para siempre.
     if (
-      !window.confirm(
-        `Anular la declaracion de ${d.etiqueta}?
-
-` +
-          'Se revierten sus asientos (y el del pago, si lo hubo) y el periodo vuelve a ' +
-          'quedar pendiente para declararlo bien.',
-      )
+      !(await dialogo.confirmar({
+        titulo: `¿Anular la declaración de ${d.etiqueta}?`,
+        texto: 'Se revierten sus asientos (y el del pago, si lo hubo) y el período vuelve a quedar pendiente para declararlo bien.',
+        aceptar: 'Anular',
+        peligro: true,
+      }))
     )
       return
     accion(() => api.anularDeclaracion(d.id))
   }
 
-  function pagar(d: DeclaracionIva) {
-    const forma = window.confirm(
-      `Pagar $${d.iva_a_pagar.toFixed(2)} de IVA de ${d.etiqueta}.\n\nAceptar = por banco · Cancelar = en efectivo`,
-    )
-      ? 'Banco'
-      : 'Efectivo'
+  async function pagar(d: DeclaracionIva) {
+    const forma = await dialogo.elegir({
+      titulo: `Pagar el IVA de ${d.etiqueta}`,
+      texto: `Son $${d.iva_a_pagar.toFixed(2)}. ¿De dónde sale?`,
+      opciones: [
+        { valor: 'Banco', texto: 'Por banco' },
+        { valor: 'Efectivo', texto: 'En efectivo', detalle: 'Sale de la gaveta.' },
+      ],
+    })
+    if (!forma) return
     accion(() => api.pagarDeclaracion(d.id, forma))
   }
 

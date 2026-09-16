@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from pydantic import BaseModel, Field
 
@@ -120,6 +120,11 @@ class IngredienteBase(BaseModel):
     # (0, 100] no tiene sentido fisico: 0 o negativo es "no rinde nada" y mas
     # de 100 diria que sale mas producto util del que se compro.
     rendimiento_pct: float = Field(default=100, gt=0, le=100)
+    # Materia prima de recetas, o mercancia de reventa (ver models.Ingrediente).
+    tipo: Literal["insumo", "reventa"] = "insumo"
+    # False = archivado: sigue existiendo (recetas, historial) pero no se lista
+    # para comprar ni entra en las sugerencias.
+    activo: bool = True
 
 
 class IngredienteCreate(IngredienteBase):
@@ -244,6 +249,37 @@ class SobranteInventario(BaseModel):
 class AjusteStockRequest(BaseModel):
     stock_real: float
     motivo: str = "Conteo fisico"
+
+
+class ConteoItem(BaseModel):
+    ingrediente_id: int
+    stock_real: float = Field(ge=0)
+
+
+class ConteoRequest(BaseModel):
+    """Un conteo fisico completo: lo que la balanza dijo de cada insumo."""
+
+    items: List[ConteoItem]
+    motivo: str = "Conteo fisico"
+
+
+class AjusteConteo(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    sistema: float
+    contado: float
+    # contado - sistema: negativo es faltante (merma), positivo sobrante.
+    diferencia: float
+    valor: float
+
+
+class ResultadoConteo(BaseModel):
+    # Solo los que cambiaron: un conteo que cuadra no tiene nada que contar.
+    ajustes: List[AjusteConteo]
+    faltante_valor: float
+    sobrante_valor: float
+    sin_cambio: int
 
 
 class GastoBase(BaseModel):

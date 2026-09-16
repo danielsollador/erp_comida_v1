@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Boton, Modal, Pagina } from '../components/ui'
 import { api } from '../lib/api'
@@ -28,6 +29,7 @@ export default function Sistema() {
   const [hecho, setHecho] = useState<Restauracion | null>(null)
   const [puntos, setPuntos] = useState<PuntoVenta[]>([])
   const [error, setError] = useState('')
+  const dialogo = useDialogo()
   const archivoRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -41,7 +43,7 @@ export default function Sistema() {
   }
 
   async function agregarPunto() {
-    const nombre = window.prompt('Nombre de la caja (ej. Piso 2)')
+    const nombre = await dialogo.pedirTexto({ titulo: 'Nueva caja', etiqueta: 'Nombre de la caja', placeholder: 'Piso 2' })
     if (!nombre?.trim()) return
     setError('')
     try {
@@ -293,9 +295,17 @@ export default function Sistema() {
             type="file"
             accept=".db"
             disabled={restaurando}
-            onChange={(e) => {
+            onChange={async (e) => {
               const f = e.target.files?.[0]
-              if (f && confirm(`Restaurar desde ${f.name}? La base actual se reemplaza.`)) {
+              if (
+                f &&
+                (await dialogo.confirmar({
+                  titulo: `¿Restaurar desde ${f.name}?`,
+                  texto: 'La base actual se reemplaza. Lo vendido después de ese respaldo se pierde.',
+                  aceptar: 'Restaurar',
+                  peligro: true,
+                }))
+              ) {
                 subir(f)
               } else if (archivoRef.current) {
                 archivoRef.current.value = ''

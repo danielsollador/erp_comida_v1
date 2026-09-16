@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
@@ -53,6 +54,7 @@ export default function Caja() {
     return v ? Number(v) : null
   })
   const [error, setError] = useState('')
+  const dialogo = useDialogo()
 
   useEffect(() => {
     cargar()
@@ -75,14 +77,28 @@ export default function Caja() {
   // que va contra patrimonio y no baja la ganancia. Antes la unica via era
   // cargarlo como Gasto, que hacia ver al negocio menos rentable de lo que es.
   async function registrarRetiro() {
-    const texto = window.prompt(
-      `Cuanto se lleva el dueno?\n\nEn la gaveta deberia haber $${resumen?.efectivo_esperado.toFixed(2) ?? '0.00'}.\n\n` +
-        'Esto no cuenta como gasto del negocio: sale del patrimonio.',
-    )
-    if (texto === null) return
-    const monto = Number(texto)
-    if (!Number.isFinite(monto) || monto <= 0) return
-    const porBanco = window.confirm('Aceptar = sale del banco · Cancelar = sale de la gaveta')
+    const r = await dialogo.pedir({
+      titulo: 'Retiro del dueño',
+      texto:
+        `En la gaveta debería haber $${resumen?.efectivo_esperado.toFixed(2) ?? '0.00'}.\n` +
+        'No cuenta como gasto del negocio: sale del patrimonio.',
+      campos: [
+        { nombre: 'monto', etiqueta: 'Cuánto se lleva', sufijo: '$', tipo: 'numero', min: 0.01 },
+        {
+          nombre: 'origen',
+          etiqueta: 'De dónde sale',
+          tipo: 'opciones',
+          opciones: [
+            { valor: 'Efectivo', texto: 'De la gaveta' },
+            { valor: 'Banco', texto: 'Del banco' },
+          ],
+        },
+      ],
+      aceptar: 'Registrar retiro',
+    })
+    if (!r) return
+    const monto = Number(r.monto)
+    const porBanco = r.origen === 'Banco'
     setError('')
     try {
       await api.crearRetiro(monto, porBanco ? 'Banco' : 'Efectivo', '')
@@ -93,7 +109,7 @@ export default function Caja() {
   }
 
   async function borrarRetiro(id: number) {
-    if (!window.confirm('Borrar este retiro?')) return
+    if (!(await dialogo.confirmar({ titulo: '¿Borrar este retiro?', aceptar: 'Borrar', peligro: true }))) return
     await api.eliminarRetiro(id)
     cargar()
   }
@@ -124,10 +140,13 @@ export default function Caja() {
   }
 
   async function anularCierre(id: number) {
-    const motivo = window.prompt(
-      'Por que se anula este cierre? (queda registrado)\n\n' +
-        'El cierre no se borra: se revierte su diferencia y el dia se puede volver a cerrar.',
-    )
+    const motivo = await dialogo.pedirTexto({
+      titulo: 'Anular este cierre',
+      texto: 'El cierre no se borra: se revierte su diferencia y el día se puede volver a cerrar.',
+      etiqueta: 'Por qué se anula (queda registrado)',
+      aceptar: 'Anular cierre',
+      peligro: true,
+    })
     if (motivo === null) return
     setError('')
     try {
@@ -141,14 +160,18 @@ export default function Caja() {
 
   async function entregarPropinas() {
     const pendiente = resumen?.propinas_por_entregar ?? 0
-    const texto = window.prompt(
-      `Cuanta propina se entrega? Hay $${pendiente.toFixed(2)} en la gaveta.`,
-      pendiente.toFixed(2),
-    )
-    if (!texto) return
-    const monto = Number(texto)
-    if (!Number.isFinite(monto) || monto <= 0) return
-    const nota_ = window.prompt('A quien? (queda en el asiento)') ?? ''
+    const r = await dialogo.pedir({
+      titulo: 'Entregar propinas',
+      texto: `Hay $${pendiente.toFixed(2)} de propinas en la gaveta.`,
+      campos: [
+        { nombre: 'monto', etiqueta: 'Cuánto se entrega', sufijo: '$', tipo: 'numero', valor: pendiente.toFixed(2), min: 0.01 },
+        { nombre: 'nota', etiqueta: 'A quién', ayuda: 'Queda en el asiento.', opcional: true },
+      ],
+      aceptar: 'Entregar',
+    })
+    if (!r) return
+    const monto = Number(r.monto)
+    const nota_ = r.nota
     setError('')
     try {
       await api.entregarPropinas(monto, 'Efectivo Bs', nota_)
@@ -159,11 +182,11 @@ export default function Caja() {
   }
 
   async function cobrarFiado(cuenta: CuentaPorCobrar) {
-    const metodo = window.prompt(
-      `Como paga ${cuenta.cliente} los $${cuenta.monto.toFixed(2)}?\n\n` +
-        'Escribe: Efectivo Bs, Efectivo $, Pago movil, Tarjeta o Transferencia',
-      'Efectivo Bs',
-    )
+    const metodo = await dialogo.elegir({
+      titulo: `Cobrar a ${cuenta.cliente}`,
+      texto: `Debe $${cuenta.monto.toFixed(2)}. ¿Cómo paga?`,
+      opciones: ['Efectivo Bs', 'Efectivo $', 'Pago movil', 'Tarjeta', 'Transferencia'].map((m) => ({ valor: m, texto: m })),
+    })
     if (!metodo) return
     setError('')
     try {

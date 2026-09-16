@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
@@ -31,6 +32,7 @@ export default function Usuarios() {
     'usuario',
   )
   const [error, setError] = useState('')
+  const dialogo = useDialogo()
   const [aviso, setAviso] = useState('')
 
   // Alta
@@ -105,7 +107,15 @@ export default function Usuarios() {
   }
 
   async function borrar(u: Usuario) {
-    if (!window.confirm(`Borrar el usuario «${u.usuario}»? Lo que hizo queda en el historial; solo deja de poder entrar.`)) return
+    if (
+      !(await dialogo.confirmar({
+        titulo: `¿Borrar el usuario «${u.usuario}»?`,
+        texto: 'Lo que hizo queda en el historial; solo deja de poder entrar.',
+        aceptar: 'Borrar',
+        peligro: true,
+      }))
+    )
+      return
     try {
       await api.borrarUsuario(u.usuario)
       ok(`Usuario «${u.usuario}» borrado.`)

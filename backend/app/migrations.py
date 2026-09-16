@@ -38,6 +38,8 @@ COLUMNAS = [
     ("pedidos", "numero_factura", "VARCHAR"),
     ("pedidos", "tasa_iva", "FLOAT"),
     ("ingredientes", "rendimiento_pct", "FLOAT DEFAULT 100"),
+    ("ingredientes", "tipo", "VARCHAR DEFAULT 'insumo'"),
+    ("ingredientes", "activo", "BOOLEAN DEFAULT 1"),
     ("facturas_compra", "pagada", "BOOLEAN DEFAULT 1"),
     ("facturas_compra", "fecha_vencimiento", "DATETIME"),
     ("facturas_compra", "fecha_pago", "DATETIME"),

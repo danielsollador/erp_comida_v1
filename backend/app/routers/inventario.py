@@ -204,47 +204,100 @@ def registrar_merma(
         return db_ingrediente
 
 
+def _aplicar_conteo(
+    db: Session, ingrediente: models.Ingrediente, stock_real: float, motivo: str
+) -> schemas.AjusteConteo:
+    """Lo que dice la balanza manda sobre lo que dice el sistema.
+
+    La diferencia no se pisa en silencio: el faltante queda como Merma y el
+    sobrante como SobranteInventario, cada uno con su asiento, para que el
+    inventario contable y el real no se separen sin dejar rastro.
+    """
+    sistema = ingrediente.stock_actual or 0
+    faltante = sistema - stock_real
+    valor = round(abs(faltante) * (ingrediente.costo_unitario or 0), 2)
+    if faltante > 0:
+        db_merma = models.Merma(ingrediente_id=ingrediente.id, cantidad=faltante, motivo=motivo)
+        db.add(db_merma)
+        db.flush()
+        contabilidad.registrar_merma(db, ingrediente, valor, db_merma.id)
+    elif faltante < 0 and valor > 0:
+        # Sobra mercancia respecto al sistema. Antes se subia el stock en
+        # silencio, sin asiento: el inventario contable quedaba por debajo del
+        # real para siempre (era la unica salida para corregir una merma
+        # duplicada, y dejaba los libros peor que antes).
+        #
+        # Y despues, con asiento pero sin fila propia: el faltante se podia
+        # revertir (queda como Merma) y el sobrante no, aunque el error de
+        # tecleo es el mismo. Ahora cada sobrante tiene su registro, con su
+        # propia referencia contable - dos sobrantes del mismo insumo ya no
+        # comparten referencia.
+        db_sobrante = models.SobranteInventario(
+            ingrediente_id=ingrediente.id, cantidad=abs(faltante), motivo=motivo
+        )
+        db.add(db_sobrante)
+        db.flush()
+        contabilidad.registrar_sobrante_inventario(db, ingrediente, valor, db_sobrante.id)
+
+    ingrediente.stock_actual = stock_real
+    # Se vuelca ya: el siguiente insumo del lote vuelve a `expire_all()` y un
+    # cambio sin volcar se perderia.
+    db.flush()
+    return schemas.AjusteConteo(
+        ingrediente_id=ingrediente.id,
+        nombre=ingrediente.nombre,
+        unidad=ingrediente.unidad,
+        sistema=round(sistema, 4),
+        contado=stock_real,
+        diferencia=round(stock_real - sistema, 4),
+        valor=valor,
+    )
+
+
 @router.post("/ingredientes/{ingrediente_id}/ajustar", response_model=schemas.Ingrediente)
 def ajustar_stock(
     ingrediente_id: int, body: schemas.AjusteStockRequest, db: Session = Depends(get_db)
 ):
-    """Conteo fisico: lo que dice la balanza manda sobre lo que dice el sistema."""
+    """Conteo fisico de UN insumo (desde su ficha)."""
     with costeo.bloqueo_inventario():
         db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
-
-        faltante = (db_ingrediente.stock_actual or 0) - body.stock_real
-        valor = round(abs(faltante) * (db_ingrediente.costo_unitario or 0), 2)
-        if faltante > 0:
-            db_merma = models.Merma(
-                ingrediente_id=ingrediente_id, cantidad=faltante, motivo=body.motivo
-            )
-            db.add(db_merma)
-            db.flush()
-            contabilidad.registrar_merma(db, db_ingrediente, valor, db_merma.id)
-        elif faltante < 0 and valor > 0:
-            # Sobra mercancia respecto al sistema. Antes se subia el stock en
-            # silencio, sin asiento: el inventario contable quedaba por debajo del
-            # real para siempre (era la unica salida para corregir una merma
-            # duplicada, y dejaba los libros peor que antes).
-            #
-            # Y despues, con asiento pero sin fila propia: el faltante se podia
-            # revertir (queda como Merma) y el sobrante no, aunque el error de
-            # tecleo es el mismo. Ahora cada sobrante tiene su registro, con su
-            # propia referencia contable - dos sobrantes del mismo insumo ya no
-            # comparten referencia.
-            db_sobrante = models.SobranteInventario(
-                ingrediente_id=ingrediente_id, cantidad=abs(faltante), motivo=body.motivo
-            )
-            db.add(db_sobrante)
-            db.flush()
-            contabilidad.registrar_sobrante_inventario(
-                db, db_ingrediente, valor, db_sobrante.id
-            )
-
-        db_ingrediente.stock_actual = body.stock_real
+        _aplicar_conteo(db, db_ingrediente, body.stock_real, body.motivo)
         db.commit()
         db.refresh(db_ingrediente)
         return db_ingrediente
+
+
+@router.post("/conteo", response_model=schemas.ResultadoConteo)
+def conteo_fisico(body: schemas.ConteoRequest, db: Session = Depends(get_db)):
+    """El inventario fisico de verdad: se cuenta TODO de una vez.
+
+    Contar insumo por insumo desde su fila obligaba a diez dialogos para diez
+    insumos y, peor, a decidir en cada uno; aqui se recorre el deposito con la
+    tablet, se anota lo que hay y se guarda una sola vez. Lo que no se anoto
+    no se toca. Todo o nada: si un id no existe, ningun stock cambia.
+    """
+    if not body.items:
+        raise HTTPException(status_code=400, detail="No se conto ningun insumo")
+    ids = [i.ingrediente_id for i in body.items]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=400, detail="Un insumo aparece dos veces en el conteo")
+
+    with costeo.bloqueo_inventario():
+        # Primero se buscan TODOS: un id que no existe tiene que fallar antes
+        # de que el primer stock cambie, no a mitad del lote.
+        ingredientes = [_ingrediente_para_actualizar(db, item.ingrediente_id) for item in body.items]
+        ajustes = [
+            _aplicar_conteo(db, ingrediente, item.stock_real, body.motivo)
+            for ingrediente, item in zip(ingredientes, body.items)
+        ]
+        db.commit()
+
+    return schemas.ResultadoConteo(
+        ajustes=[a for a in ajustes if a.diferencia != 0],
+        faltante_valor=round(sum(a.valor for a in ajustes if a.diferencia < 0), 2),
+        sobrante_valor=round(sum(a.valor for a in ajustes if a.diferencia > 0), 2),
+        sin_cambio=sum(1 for a in ajustes if a.diferencia == 0),
+    )
 
 
 @router.post("/ingredientes/{ingrediente_id}/consumo-personal", response_model=schemas.Ingrediente)
@@ -483,7 +536,8 @@ def _consumo_diario(db: Session, dias: int = 14) -> dict:
 def sugerencias_compra(db: Session = Depends(get_db)):
     consumo_diario = _consumo_diario(db)
     sugerencias = []
-    for ing in db.query(models.Ingrediente).all():
+    # Lo archivado no se compra: si sigue bajo minimo es porque ya no se usa.
+    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).all():
         por_dia = consumo_diario.get(ing.id, 0)
         dias_restantes = (ing.stock_actual / por_dia) if por_dia > 0 else None
         bajo_minimo = ing.stock_actual <= ing.stock_minimo

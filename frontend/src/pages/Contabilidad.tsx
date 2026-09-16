@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
@@ -682,6 +683,7 @@ function BalanceGeneralVista() {
 function Activos() {
   const [activos, setActivos] = useState<ActivoFijo[]>([])
   const [error, setError] = useState('')
+  const dialogo = useDialogo()
 
   useEffect(() => {
     cargar()
@@ -701,42 +703,52 @@ function Activos() {
     }
   }
 
-  function cambiarVida(a: ActivoFijo) {
-    const texto = window.prompt(
-      `Cuantos meses dura ${a.nombre}?\n\nA ${a.vida_util_meses} meses se gasta $${a.cuota_mensual.toFixed(2)} al mes.`,
-      String(a.vida_util_meses),
-    )
-    if (texto === null) return
-    const meses = Number(texto)
-    if (!Number.isFinite(meses) || meses <= 0) return
+  async function cambiarVida(a: ActivoFijo) {
+    const meses = await dialogo.pedirNumero({
+      titulo: `Vida útil de ${a.nombre}`,
+      texto: `A ${a.vida_util_meses} meses se gasta $${a.cuota_mensual.toFixed(2)} al mes.`,
+      etiqueta: 'Cuántos meses dura',
+      valor: a.vida_util_meses,
+      min: 1,
+    })
+    if (meses === null) return
     accion(() => api.actualizarActivo(a.id, { vida_util_meses: meses }))
   }
 
-  function reactivar(a: ActivoFijo) {
+  async function reactivar(a: ActivoFijo) {
     // Marcar el equipo equivocado lo sacaba de los libros para siempre: el
     // PUT devolvia 409 y no habia otra via.
     if (
-      !window.confirm(
-        `Devolver ${a.nombre} a los libros?\n\n` +
-          'Vuelve con su valor y su depreciacion acumulada tal como estaban, no como equipo nuevo.',
-      )
+      !(await dialogo.confirmar({
+        titulo: `¿Devolver ${a.nombre} a los libros?`,
+        texto: 'Vuelve con su valor y su depreciación acumulada tal como estaban, no como equipo nuevo.',
+        aceptar: 'Devolver a los libros',
+      }))
     )
       return
     accion(() => api.reactivarActivo(a.id))
   }
 
-  function altaExistente() {
+  async function altaExistente() {
     // Los activos solo nacian de una factura de compra: el horno que el dueno
     // tenia desde antes de instalar el ERP no existia contablemente, asi que
     // el balance subestimaba los activos y ese equipo nunca se depreciaba.
-    const nombre = window.prompt('Que equipo ya tenias antes de usar el sistema?')
-    if (!nombre) return
-    const valorTxt = window.prompt(`Cuanto vale ${nombre} hoy, aproximadamente?`)
-    if (!valorTxt) return
-    const valor = Number(valorTxt)
-    if (!Number.isFinite(valor) || valor <= 0) return
-    const meses = Number(window.prompt('En cuantos meses se gasta? (60 = cinco años)', '60')) || 60
-    const fecha = window.prompt('Cuando lo compraste? (AAAA-MM-DD, aproximado)') || ''
+    const r = await dialogo.pedir({
+      titulo: 'Equipo que ya tenías',
+      texto: 'Lo que compraste antes de usar el sistema también se deprecia y cuenta en el balance.',
+      campos: [
+        { nombre: 'nombre', etiqueta: 'Qué equipo es', placeholder: 'Horno, nevera, moto...' },
+        { nombre: 'valor', etiqueta: 'Cuánto vale hoy, aproximadamente', sufijo: '$', tipo: 'numero', min: 0.01 },
+        { nombre: 'meses', etiqueta: 'En cuántos meses se gasta', tipo: 'numero', valor: 60, min: 1, ayuda: '60 = cinco años.' },
+        { nombre: 'fecha', etiqueta: 'Cuándo lo compraste (aproximado)', tipo: 'fecha', opcional: true },
+      ],
+      aceptar: 'Dar de alta',
+    })
+    if (!r) return
+    const nombre = r.nombre
+    const valor = Number(r.valor)
+    const meses = Number(r.meses) || 60
+    const fecha = r.fecha
     accion(() =>
       api.registrarActivoExistente({
         nombre,
@@ -750,29 +762,38 @@ function Activos() {
   async function cerrarAnio() {
     const anio = new Date().getFullYear() - 1
     if (
-      !window.confirm(
-        `Cerrar el ejercicio ${anio}?\n\n` +
+      !(await dialogo.confirmar({
+        titulo: `¿Cerrar el ejercicio ${anio}?`,
+        texto:
           'Su resultado pasa a Utilidades retenidas y las cuentas de ingresos, costos y ' +
           'gastos de ese año quedan en cero. Sin esto, la utilidad acumulada del balance ' +
-          'mezcla todos los años en un solo numero.',
-      )
+          'mezcla todos los años en un solo número.',
+        aceptar: 'Cerrar ejercicio',
+      }))
     )
       return
     try {
       const r = await api.cerrarEjercicio(anio)
-      window.alert(`Ejercicio ${r.anio} cerrado. Resultado del año: $${r.resultado.toFixed(2)}`)
+      await dialogo.avisar({
+        titulo: `Ejercicio ${r.anio} cerrado`,
+        texto: `Resultado del año: $${r.resultado.toFixed(2)}`,
+        tono: 'bien',
+      })
       cargar()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cerrar el ejercicio')
     }
   }
 
-  function darDeBaja(a: ActivoFijo) {
-    const motivo = window.prompt(
-      `Dar de baja ${a.nombre}?\n\nLe quedan $${a.valor_en_libros.toFixed(2)} sin depreciar, ` +
-        `que se van a reconocer como perdida de una vez.\n\nQue paso?`,
-      'Se daño',
-    )
+  async function darDeBaja(a: ActivoFijo) {
+    const motivo = await dialogo.pedirTexto({
+      titulo: `Dar de baja ${a.nombre}`,
+      texto: `Le quedan $${a.valor_en_libros.toFixed(2)} sin depreciar, que se van a reconocer como pérdida de una vez.`,
+      etiqueta: 'Qué pasó',
+      valor: 'Se dañó',
+      aceptar: 'Dar de baja',
+      peligro: true,
+    })
     if (motivo === null) return
     accion(() => api.darDeBajaActivo(a.id, motivo))
   }

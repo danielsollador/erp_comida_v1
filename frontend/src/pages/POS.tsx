@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { Boton, Modal } from '../components/ui'
 import { api, connectWs } from '../lib/api'
 import { fmtBs, useMoneda } from '../lib/moneda'
@@ -52,6 +53,7 @@ export default function POS() {
     return v ? Number(v) : null
   })
   const [error, setError] = useState('')
+  const dialogo = useDialogo()
   const [ultimaVenta, setUltimaVenta] = useState<Pedido | null>(null)
   const { tasa, fmt } = useMoneda()
   const tasaBcv = tasa?.bcv ?? 0
@@ -90,28 +92,35 @@ export default function POS() {
   }
 
   async function devolver(pedido: Pedido) {
-    const motivo = window.prompt(
-      `Devolver el pedido #${pedido.numero} por ${fmt(pedido.total)}?\n\n` +
-        'Se le regresa la plata al cliente y la venta se revierte entera: deja de contar como ' +
-        'ingreso y deja de deber IVA.\n\nQue paso?',
-      'La comida estaba mala',
-    )
-    if (motivo === null) return
-
-    // Define si el costo vuelve al inventario o se reconoce como merma.
-    const recuperable = window.confirm(
-      'La comida se puede volver a vender?\n\nAceptar = si, vuelve al inventario\nCancelar = no, se bota (se registra como merma)',
-    )
-
-    let nota_credito: string | undefined
-    if (pedido.facturado) {
-      // Sin la nota de credito la factura no puede salir del Libro de Ventas.
-      const nc = window.prompt(
-        `Esta venta se facturo (${pedido.numero_factura}).\n\nNumero de la nota de credito que emitiste:`,
-      )
-      if (!nc) return
-      nota_credito = nc
-    }
+    const r = await dialogo.pedir({
+      titulo: `Devolver el pedido #${pedido.numero}`,
+      texto:
+        `Se le regresan ${fmt(pedido.total)} al cliente y la venta se revierte entera: deja de contar como ` +
+        'ingreso y deja de deber IVA.',
+      campos: [
+        { nombre: 'motivo', etiqueta: 'Qué pasó', valor: 'La comida estaba mala' },
+        // Define si el costo vuelve al inventario o se reconoce como merma.
+        {
+          nombre: 'recuperable',
+          etiqueta: 'La comida se puede volver a vender',
+          tipo: 'opciones',
+          opciones: [
+            { valor: 'no', texto: 'No, se bota (se registra como merma)' },
+            { valor: 'si', texto: 'Sí, vuelve al inventario' },
+          ],
+        },
+        // Sin la nota de credito la factura no puede salir del Libro de Ventas.
+        ...(pedido.facturado
+          ? [{ nombre: 'nc', etiqueta: `Número de la nota de crédito (factura ${pedido.numero_factura})` }]
+          : []),
+      ],
+      aceptar: 'Devolver',
+      peligro: true,
+    })
+    if (!r) return
+    const motivo = r.motivo
+    const recuperable = r.recuperable === 'si'
+    const nota_credito = pedido.facturado ? r.nc : undefined
 
     setError('')
     try {
@@ -194,7 +203,13 @@ export default function POS() {
       // sistema puede estar atrasado y el cajero tiene un cliente enfrente.
       // Se le muestra que falta y el decide; nunca se vende a ciegas.
       if (mensaje.startsWith('No alcanza el inventario')) {
-        if (window.confirm(`${mensaje}.\n\nVender igual? (revisa el inventario despues)`)) {
+        if (
+          await dialogo.confirmar({
+            titulo: 'No alcanza el inventario',
+            texto: `${mensaje}.\n\nPuedes vender igual y revisar el inventario después.`,
+            aceptar: 'Vender igual',
+          })
+        ) {
           try {
             await api.crearPedido(items, true)
             setCarrito({})
@@ -344,9 +359,9 @@ export default function POS() {
     // merma; si no, el stock vuelve al inventario.
     const yaHecha = pedido.estado === 'listo' || pedido.items.some((i) => i.preparado)
     const texto = yaHecha
-      ? 'La cocina ya preparo este pedido. Al anularlo se registra la comida como merma. Continuar?'
-      : 'Anular este pedido? Los insumos vuelven al inventario.'
-    if (!window.confirm(texto)) return
+      ? 'La cocina ya preparó este pedido: al anularlo la comida se registra como merma.'
+      : 'Los insumos vuelven al inventario.'
+    if (!(await dialogo.confirmar({ titulo: `¿Anular el pedido #${pedido.numero}?`, texto, aceptar: 'Anular', peligro: true }))) return
     setError('')
     try {
       await api.anularPedido(pedido.id, yaHecha)

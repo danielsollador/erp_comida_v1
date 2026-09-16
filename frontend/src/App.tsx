@@ -15,6 +15,7 @@ import Recetas from './pages/Recetas'
 import Usuarios from './pages/Usuarios'
 import MiCuenta from './pages/MiCuenta'
 import Rail from './components/Rail'
+import { DialogoProvider } from './components/dialogo'
 import { MonedaProvider } from './lib/moneda'
 import { AccesoProvider, useAcceso } from './lib/acceso'
 import type { ReactNode } from 'react'
@@ -49,6 +50,7 @@ export default function App() {
   return (
     <AccesoProvider>
       <MonedaProvider>
+        <DialogoProvider>
         <BrowserRouter>
           <Marco>
             <Routes>
@@ -74,6 +76,7 @@ export default function App() {
             </Routes>
           </Marco>
         </BrowserRouter>
+        </DialogoProvider>
       </MonedaProvider>
     </AccesoProvider>
   )

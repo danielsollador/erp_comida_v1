@@ -101,6 +101,15 @@ class Ingrediente(Base):
     # Distinto de la Merma (que es lo que se dano o se boto): esto es perdida
     # normal e inevitable del proceso, no un accidente.
     rendimiento_pct = Column(Float, default=100.0)
+    # Que es: materia prima que entra en recetas ("insumo") o mercancia que se
+    # compra y se vende tal cual ("reventa": el refresco, la botella de agua).
+    # Los dos llevan stock, costo y conteo; se separan para poder mirar el
+    # deposito por partes y porque el de reventa no tiene rendimiento que
+    # medir.
+    tipo = Column(String, default="insumo")
+    # Un insumo que ya no se compra no se borra: tiene recetas, compras y
+    # mermas colgando. Se archiva y deja de aparecer en listas y sugerencias.
+    activo = Column(Boolean, default=True)
 
     @property
     def costo_efectivo(self):

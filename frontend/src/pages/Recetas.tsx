@@ -41,7 +41,7 @@ export default function Recetas() {
       )
       setConReceta(new Set(recetas.filter(([, tiene]) => tiene).map(([id]) => id)))
     })
-    api.listarIngredientes().then(setIngredientes)
+    api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
   }, [])
 
   const mapaIngredientes = new Map(ingredientes.map((i) => [i.id, i]))

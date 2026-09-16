@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { api, connectWs } from '../lib/api'
 import type { Pedido } from '../lib/types'
 
@@ -28,6 +29,7 @@ function estiloAntiguedad(minutos: number) {
 
 export default function Cocina() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
+  const dialogo = useDialogo()
   const [, setTick] = useState(0)
   const [nuevos, setNuevos] = useState<Set<number>>(new Set())
   // El navegador no deja sonar nada hasta que alguien toca la pantalla, asi que
@@ -128,9 +130,9 @@ export default function Cocina() {
   async function anular(pedido: Pedido) {
     const yaHecha = pedido.items.some((i) => i.preparado)
     const texto = yaHecha
-      ? `Anular la comanda #${pedido.numero}? Ya hay items preparados: lo hecho se registra como merma.`
-      : `Anular la comanda #${pedido.numero}? Los insumos vuelven al inventario.`
-    if (!window.confirm(texto)) return
+      ? 'Ya hay items preparados: lo hecho se registra como merma.'
+      : 'Los insumos vuelven al inventario.'
+    if (!(await dialogo.confirmar({ titulo: `¿Anular la comanda #${pedido.numero}?`, texto, aceptar: 'Anular', peligro: true }))) return
     await api.anularPedido(pedido.id, yaHecha)
     refrescar()
   }

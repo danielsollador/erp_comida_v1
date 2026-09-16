@@ -6,6 +6,8 @@ import type {
   CambioReceta,
   Categoria,
   CompraDeInsumo,
+  DatosIngrediente,
+  ResultadoConteo,
   CuentaPorCobrar,
   NotaCreditoCompra,
   Operador,
@@ -238,12 +240,17 @@ export const api = {
     req<PuntoVenta>('/puntos-venta', { method: 'POST', body: JSON.stringify({ nombre }) }),
 
   listarIngredientes: () => req<Ingrediente[]>('/inventario/ingredientes'),
-  actualizarIngrediente: (id: number, i: Omit<Ingrediente, 'id' | 'costo_efectivo'>) =>
+  crearIngrediente: (i: DatosIngrediente) =>
+    req<Ingrediente>('/inventario/ingredientes', { method: 'POST', body: JSON.stringify(i) }),
+  actualizarIngrediente: (id: number, i: DatosIngrediente) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
-  registrarCompra: (id: number, cantidad: number, costo_total?: number) =>
+  // Todo el deposito de una vez; lo que no se anoto no se toca.
+  conteoFisico: (items: { ingrediente_id: number; stock_real: number }[], motivo = 'Conteo fisico') =>
+    req<ResultadoConteo>('/inventario/conteo', { method: 'POST', body: JSON.stringify({ items, motivo }) }),
+  registrarCompra: (id: number, cantidad: number, costo_total?: number, metodo_pago = 'Efectivo Bs') =>
     req<ImpactoDeCompra>(`/inventario/ingredientes/${id}/comprar`, {
       method: 'POST',
-      body: JSON.stringify({ cantidad, costo_total: costo_total ?? null }),
+      body: JSON.stringify({ cantidad, costo_total: costo_total ?? null, metodo_pago }),
     }),
   historialCostos: (id: number) =>
     req<CompraDeInsumo[]>(`/inventario/ingredientes/${id}/costos`),
