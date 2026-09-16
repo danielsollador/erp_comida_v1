@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { Ayuda } from '../components/Ayuda'
+import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
@@ -104,16 +106,19 @@ export default function Tasa() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-neutral-100">
             <Dato
               titulo="Paralelo"
+              ayuda="kpi.paralelo"
               valor={estado?.paralelo ? fmtNum(estado.paralelo) : '—'}
               nota="Binance P2P"
             />
             <Dato
               titulo="Brecha"
+              ayuda="kpi.brecha"
               valor={estado?.brecha_pct != null ? `${estado.brecha_pct}%` : '—'}
               nota="paralelo vs oficial"
             />
             <Dato
               titulo="Ultima semana"
+              ayuda="kpi.variacion_semana"
               valor={
                 estado?.variacion_semana_pct != null
                   ? `${estado.variacion_semana_pct > 0 ? '+' : ''}${estado.variacion_semana_pct}%`
@@ -192,7 +197,7 @@ export default function Tasa() {
               pasada no cambia cuando la tasa se mueve.
             </p>
           </div>
-          <Tabla orden={orden}>
+          <Tabla orden={orden} glosario="tasas">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
@@ -241,10 +246,14 @@ export default function Tasa() {
   )
 }
 
-function Dato({ titulo, valor, nota }: { titulo: string; valor: string; nota: string }) {
+function Dato({ titulo, valor, nota, ayuda }: { titulo: string; valor: string; nota: string; ayuda?: string }) {
   return (
     <div>
-      <div className="text-xs text-neutral-500">{titulo}</div>
+      <div className="text-xs text-neutral-500">
+        <Ayuda explica={explicar(ayuda)} titulo={titulo}>
+          {titulo}
+        </Ayuda>
+      </div>
       <div className="text-lg font-semibold tabular-nums">{valor}</div>
       <div className="text-[11px] text-neutral-400">{nota}</div>
     </div>

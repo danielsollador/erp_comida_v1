@@ -783,6 +783,31 @@ button:where([class*="text-peligro-6"], [class*="text-peligro-5"]):hover:not(:di
   }
 }
 
+/* ── Lo que tiene explicacion se subraya punteado ─────────────────────────── */
+
+/* Sin una marca, nadie descubre que posando el cursor hay una explicacion; con
+   una marca fuerte, noventa columnas subrayadas se ven como un error. Un
+   punteado del color de la linea: se nota cuando lo buscas y desaparece
+   cuando lees la tabla. */
+.vp-con-ayuda {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--color-neutral-300);
+  text-underline-offset: 3px;
+}
+th:hover .vp-con-ayuda {
+  text-decoration-color: var(--vp-acento);
+}
+
+/* El desplegable "¿Que significa cada columna?": es la version tactil de la
+   misma explicacion, porque en una tablet no hay cursor que posar. */
+.vp-glosario {
+  padding: 0 0.25rem;
+}
+.vp-glosario dd {
+  margin-left: 0;
+  color: var(--color-neutral-500);
+}
+
 /* ── Tablas: ordenar por columna ──────────────────────────────────────────── */
 
 /* El titulo de una columna ordenable hereda la tipografia del `th` para que

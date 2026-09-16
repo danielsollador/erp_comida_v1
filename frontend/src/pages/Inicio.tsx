@@ -2,6 +2,8 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
+import { Ayuda } from '../components/Ayuda'
+import { explicar } from '../lib/glosario'
 import { MODULOS, type Permiso } from '../components/Rail'
 import UsuarioMenu from '../components/UsuarioMenu'
 import { useAcceso } from '../lib/acceso'
@@ -124,13 +126,14 @@ export default function Inicio() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-5 sm:mb-6 lg:mb-8 bajo:mb-4 pc:mb-6">
           {estado.puede.operar && (
             <>
-              <Dato titulo="Vendido hoy" valor={hoy ? fmt(hoy.ventas) : '—'} destacado />
-              <Dato titulo="Pedidos" valor={hoy ? String(hoy.pedidos) : '—'} />
+              <Dato titulo="Vendido hoy" ayuda="kpi.vendido_hoy" valor={hoy ? fmt(hoy.ventas) : '—'} destacado />
+              <Dato titulo="Pedidos" ayuda="kpi.pedidos_hoy" valor={hoy ? String(hoy.pedidos) : '—'} />
             </>
           )}
-          <Dato titulo="En cocina" valor={String(enCocina)} alerta={enCocina > 0} enlace="/cocina" />
+          <Dato titulo="En cocina" ayuda="kpi.en_cocina" valor={String(enCocina)} alerta={enCocina > 0} enlace="/cocina" />
           <Dato
             titulo="Por cobrar"
+            ayuda="kpi.por_cobrar"
             valor={String(porCobrar)}
             alerta={porCobrar > 0}
             enlace={estado.puede.operar ? '/pos' : undefined}
@@ -250,12 +253,15 @@ function Tarjeta({
 function Dato({
   titulo,
   valor,
+  ayuda,
   destacado = false,
   alerta = false,
   enlace,
 }: {
   titulo: string
   valor: string
+  /** Clave del glosario: la explicacion al posar el cursor en el titulo. */
+  ayuda?: string
   destacado?: boolean
   alerta?: boolean
   enlace?: string
@@ -266,7 +272,13 @@ function Dato({
         alerta ? 'bg-aviso-50 border-aviso-300' : 'bg-white border-neutral-200'
       } ${enlace ? 'hover:shadow-md hover:-translate-y-px' : ''}`}
     >
-      <div className={`text-xs lg:text-sm pc:text-xs font-medium ${alerta ? 'text-aviso-700' : 'text-neutral-500'}`}>{titulo}</div>
+      <div className={`text-xs lg:text-sm pc:text-xs font-medium ${alerta ? 'text-aviso-700' : 'text-neutral-500'}`}>
+        {/* En una tarjeta que es enlace, el toque navega: ahi la explicacion
+            solo sale con el cursor, no al tocar. */}
+        <Ayuda explica={explicar(ayuda)} titulo={titulo} tactil={!enlace}>
+          {titulo}
+        </Ayuda>
+      </div>
       <div
         className={`font-semibold tabular-nums mt-1 ${
           destacado ? 'text-[clamp(1.6rem,3vw,2.75rem)] pc:text-[1.75rem]' : 'text-[clamp(1.35rem,2.5vw,2.3rem)] pc:text-2xl'

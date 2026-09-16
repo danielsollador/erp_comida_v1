@@ -148,7 +148,7 @@ export default function Usuarios() {
             <h2 className="font-semibold">Quien entra a {estado.local.nombre}</h2>
             <span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} cuentas` : ''}</span>
           </div>
-          <Tabla orden={orden}>
+          <Tabla orden={orden} glosario="usuarios">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>

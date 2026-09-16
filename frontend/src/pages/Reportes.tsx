@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
+import { Ayuda } from '../components/Ayuda'
+import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
@@ -91,19 +93,21 @@ export default function Reportes() {
             )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Kpi titulo="Ventas" valor={`$${datos.ventas.toFixed(2)}`} destacado />
+              <Kpi titulo="Ventas" ayuda="kpi.ventas" valor={`$${datos.ventas.toFixed(2)}`} destacado />
               <Kpi
                 titulo="Ganancia neta"
+                ayuda="kpi.ganancia_neta"
                 valor={`$${datos.ganancia_neta.toFixed(2)}`}
                 tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
                 destacado
               />
-              <Kpi titulo="Pedidos" valor={String(datos.pedidos)} />
+              <Kpi titulo="Pedidos" ayuda="kpi.pedidos" valor={String(datos.pedidos)} />
               {/* La mediana va al lado del promedio a proposito: un solo
                   pedido grande (un catering) mueve el promedio a un numero que
                   no gasta ningun cliente, y el dueno decide sobre eso. */}
               <Kpi
                 titulo="Ticket promedio"
+                ayuda="kpi.ticket_promedio"
                 valor={`$${datos.ticket_promedio.toFixed(2)}`}
                 nota={
                   Math.abs(datos.ticket_mediano - datos.ticket_promedio) > 0.01
@@ -210,7 +214,7 @@ export default function Reportes() {
             {datos.top_productos.length > 0 && (
               <div className="bg-white rounded-2xl border border-neutral-200 p-4">
                 <h2 className="font-semibold mb-3">Que se vendio</h2>
-                <Tabla orden={ordenProductos}>
+                <Tabla orden={ordenProductos} glosario="productos">
                 <table className="w-full text-sm">
                   <thead className="text-neutral-500 text-xs uppercase">
                     <tr>
@@ -299,12 +303,15 @@ export default function Reportes() {
 function Kpi({
   titulo,
   valor,
+  ayuda,
   destacado = false,
   tono,
   nota,
 }: {
   titulo: string
   valor: string
+  /** Clave del glosario: la explicacion al posar el cursor en el titulo. */
+  ayuda?: string
   destacado?: boolean
   tono?: 'bueno' | 'malo'
   /** Aclaracion bajo el numero, cuando el numero solo puede enganar. */
@@ -313,7 +320,11 @@ function Kpi({
   const color = tono === 'malo' ? 'text-peligro-600' : tono === 'bueno' ? 'text-exito-600' : ''
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-      <div className="text-xs text-neutral-500">{titulo}</div>
+      <div className="text-xs text-neutral-500">
+        <Ayuda explica={explicar(ayuda)} titulo={titulo}>
+          {titulo}
+        </Ayuda>
+      </div>
       <div className={`font-bold tabular-nums ${destacado ? 'text-2xl' : 'text-xl'} ${color}`}>
         {valor}
       </div>
@@ -394,7 +405,7 @@ function SeccionCombos({
         </p>
 
         {combos.pares.length > 0 ? (
-          <Tabla orden={ordenCombos}>
+          <Tabla orden={ordenCombos} glosario="combos">
             <table className="w-full text-sm">
               <thead className="text-neutral-500 text-xs uppercase">
                 <tr>

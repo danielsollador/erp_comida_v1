@@ -8,6 +8,8 @@ import {
   type ReactNode,
   type ThHTMLAttributes,
 } from 'react'
+import { useAyuda } from './Ayuda'
+import { explicar } from '../lib/glosario'
 
 /**
  * Las tablas del ERP: se ordenan por cualquier columna y se ven completas.
@@ -29,6 +31,11 @@ export type Orden = {
 }
 
 const OrdenCtx = createContext<Orden | null>(null)
+// De que seccion del glosario saca sus explicaciones esta tabla. Se declara
+// una vez en `<Tabla glosario="inventario">` y cada `Th` compone su clave con
+// la misma `clave` con la que ya ordena: asi no hay una segunda lista de
+// nombres que mantener en paralelo con la primera.
+const GlosarioCtx = createContext<string | undefined>(undefined)
 
 function comparar(a: Valor, b: Valor): number {
   // Lo vacio siempre al final, se ordene como se ordene: una fila sin dato no
@@ -102,10 +109,13 @@ export function useOrden<T>(
  */
 export function Tabla({
   orden,
+  glosario,
   children,
   className = '',
 }: {
   orden?: Orden
+  /** Seccion del glosario (`lib/glosario.ts`) de la que salen las ayudas. */
+  glosario?: string
   children: ReactNode
   className?: string
 }) {
@@ -115,6 +125,10 @@ export function Tabla({
   // clave en un `data-clave`-- porque en modo ficha el `thead` no se ve y hace
   // falta otro sitio desde donde ordenar.
   const [columnas, setColumnas] = useState<{ clave: string; titulo: string }[]>([])
+  // Las columnas que tienen explicacion, para el desplegable de abajo. En una
+  // tablet no hay cursor que posar sobre el titulo, y esa es justo la pantalla
+  // donde se usa el ERP todos los dias.
+  const [ayudas, setAyudas] = useState<{ clave: string; titulo: string }[]>([])
 
   // Apilar o no apilar se decide MIDIENDO, no por el ancho de la pantalla:
   // se quita la clase, se pregunta cuanto necesita la tabla de verdad y se
@@ -162,6 +176,15 @@ export function Tabla({
         ? antes
         : ordenables,
     )
+    const conAyuda = [...tabla.querySelectorAll('thead th[data-ayuda]')].map((th) => ({
+      clave: (th as HTMLElement).dataset.ayuda as string,
+      titulo: (th.textContent ?? '').trim(),
+    }))
+    setAyudas((antes) =>
+      antes.length === conAyuda.length && antes.every((a, i) => a.clave === conAyuda[i].clave)
+        ? antes
+        : conAyuda,
+    )
     const titulos = [...tabla.querySelectorAll('thead th')].map((th) => (th.textContent ?? '').trim())
     for (const fila of tabla.querySelectorAll('tbody tr, tfoot tr')) {
       let i = 0
@@ -183,6 +206,7 @@ export function Tabla({
 
   return (
     <OrdenCtx.Provider value={orden ?? null}>
+      <GlosarioCtx.Provider value={glosario}>
       <div ref={caja} className={`vp-tabla ${className}`}>
         {/* En ficha no hay encabezados que tocar, y la regla de la casa es que
             toda tabla se ordene por cualquier columna: la barra hace de
@@ -215,6 +239,31 @@ export function Tabla({
         )}
         {children}
       </div>
+      {ayudas.length > 0 && (
+        <details className="vp-glosario text-xs text-neutral-500">
+          <summary className="cursor-pointer font-medium text-neutral-600 py-1">
+            ¿Qué significa cada columna?
+          </summary>
+          <dl className="mt-1.5 space-y-2.5">
+            {ayudas.map((a) => {
+              const e = explicar(a.clave)
+              if (!e) return null
+              return (
+                <div key={a.clave}>
+                  <dt className="font-semibold text-neutral-700">{a.titulo}</dt>
+                  <dd className="leading-relaxed">
+                    {e.que}
+                    {e.origen && <> <b className="font-semibold text-neutral-500">De dónde sale:</b> {e.origen}</>}
+                    {e.calculo && <> <b className="font-semibold text-neutral-500">Cómo se calcula:</b> {e.calculo}</>}
+                    {e.ejemplo && <> <b className="font-semibold text-neutral-500">Para qué sirve:</b> {e.ejemplo}</>}
+                  </dd>
+                </div>
+              )
+            })}
+          </dl>
+        </details>
+      )}
+      </GlosarioCtx.Provider>
     </OrdenCtx.Provider>
   )
 }
@@ -227,22 +276,39 @@ export function Tabla({
  */
 export function Th({
   clave,
+  ayuda,
   alinear = 'izquierda',
   className = '',
   children,
   ...resto
 }: {
   clave?: string
+  /** Clave del glosario, cuando no coincide con `clave` o la columna no ordena. */
+  ayuda?: string
   alinear?: 'izquierda' | 'derecha'
   children?: ReactNode
 } & ThHTMLAttributes<HTMLTableCellElement>) {
   const orden = useContext(OrdenCtx)
+  const seccion = useContext(GlosarioCtx)
   const al = alinear === 'derecha' ? 'text-right' : 'text-left'
+  const claveAyuda = ayuda ?? (seccion && clave ? `${seccion}.${clave}` : undefined)
+  const explicacion = explicar(claveAyuda)
+  // La ayuda va en el `<th>` y no dentro del boton de ordenar: un boton
+  // dentro de otro boton no es HTML valido y rompe la navegacion por teclado.
+  // Sin tacto, ademas: en la tablet el toque sobre el titulo es para ordenar,
+  // y la explicacion esta en el desplegable de abajo.
+  const { props: ayudaProps, panel } = useAyuda(
+    explicacion,
+    typeof children === 'string' ? children : '',
+    { tactil: false },
+  )
+  const marca = explicacion ? 'vp-con-ayuda' : ''
 
   if (!clave || !orden) {
     return (
-      <th {...resto} className={`${al} p-3 ${className}`}>
-        {children}
+      <th {...resto} {...ayudaProps} data-ayuda={claveAyuda} className={`${al} p-3 ${className}`}>
+        <span className={marca}>{children}</span>
+        {panel}
       </th>
     )
   }
@@ -251,7 +317,9 @@ export function Th({
   return (
     <th
       {...resto}
+      {...ayudaProps}
       data-clave={clave}
+      data-ayuda={claveAyuda}
       aria-sort={activa ? (orden.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
       className={`${al} p-3 ${className}`}
     >
@@ -263,7 +331,7 @@ export function Th({
           alinear === 'derecha' ? 'flex-row-reverse' : ''
         } ${activa ? 'text-neutral-900' : ''}`}
       >
-        {children}
+        <span className={marca}>{children}</span>
         {/* Las dos puntas siempre a la vista: asi se ve que la columna se
             puede ordenar aunque todavia no sea la ordenada. */}
         <svg viewBox="0 0 10 14" width="7" height="10" aria-hidden className="shrink-0">
@@ -271,6 +339,7 @@ export function Th({
           <path d="M5 14 1 9h8z" fill="currentColor" opacity={activa && orden.dir === 'desc' ? 1 : 0.28} />
         </svg>
       </button>
+      {panel}
     </th>
   )
 }

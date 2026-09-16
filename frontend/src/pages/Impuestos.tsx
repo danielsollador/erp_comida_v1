@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Ayuda } from '../components/Ayuda'
+import { explicar } from '../lib/glosario'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
@@ -130,10 +132,11 @@ export default function Impuestos() {
 
         {resumen && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Kpi titulo="IVA debito (ventas)" valor={resumen.iva_debito} />
-            <Kpi titulo="IVA credito (compras)" valor={resumen.iva_credito} />
+            <Kpi titulo="IVA debito (ventas)" ayuda="kpi.iva_debito" valor={resumen.iva_debito} />
+            <Kpi titulo="IVA credito (compras)" ayuda="kpi.iva_credito" valor={resumen.iva_credito} />
             <Kpi
               titulo={resumen.iva_a_pagar >= 0 ? 'IVA a pagar' : 'IVA a favor'}
+              ayuda="kpi.iva_a_pagar"
               valor={Math.abs(resumen.iva_a_pagar)}
               destacado
             />
@@ -163,7 +166,7 @@ export default function Impuestos() {
                 dueno no las declaro con factura.
               </p>
             )}
-            <Tabla orden={ordenVentas} className="bg-white rounded-2xl border border-neutral-200">
+            <Tabla orden={ordenVentas} glosario="libroventas" className="bg-white rounded-2xl border border-neutral-200">
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                   <tr>
@@ -214,7 +217,7 @@ export default function Impuestos() {
         )}
 
         {tab === 'compras' && compras && (
-          <Tabla orden={ordenCompras} className="bg-white rounded-2xl border border-neutral-200">
+          <Tabla orden={ordenCompras} glosario="librocompras" className="bg-white rounded-2xl border border-neutral-200">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                 <tr>
@@ -464,10 +467,25 @@ function Declaraciones() {
   )
 }
 
-function Kpi({ titulo, valor, destacado = false }: { titulo: string; valor: number; destacado?: boolean }) {
+function Kpi({
+  titulo,
+  valor,
+  ayuda,
+  destacado = false,
+}: {
+  titulo: string
+  valor: number
+  /** Clave del glosario: la explicacion al posar el cursor en el titulo. */
+  ayuda?: string
+  destacado?: boolean
+}) {
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-      <div className="text-xs text-neutral-500">{titulo}</div>
+      <div className="text-xs text-neutral-500">
+        <Ayuda explica={explicar(ayuda)} titulo={titulo}>
+          {titulo}
+        </Ayuda>
+      </div>
       <div className={`font-bold tabular-nums ${destacado ? 'text-2xl' : 'text-xl'}`}>
         ${valor.toFixed(2)}
       </div>

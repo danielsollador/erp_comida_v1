@@ -1,5 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { Ayuda } from './Ayuda'
+import { explicar } from '../lib/glosario'
 import Icono, { type NombreIcono } from './Icono'
 
 /**
@@ -209,11 +211,14 @@ export function Cifra({
   titulo,
   valor,
   detalle,
+  ayuda,
   tono = 'normal',
 }: {
   titulo: string
   valor: string
   detalle?: string
+  /** Clave del glosario: al posar el cursor sobre el titulo, la explicacion. */
+  ayuda?: string
   tono?: 'normal' | 'alerta' | 'bien'
 }) {
   const fondo =
@@ -225,7 +230,11 @@ export function Cifra({
   const texto = tono === 'alerta' ? 'text-aviso-700' : tono === 'bien' ? 'text-exito-700' : 'text-neutral-500'
   return (
     <div className={`rounded-2xl border p-4 ${fondo}`}>
-      <div className={`text-xs font-medium ${texto}`}>{titulo}</div>
+      <div className={`text-xs font-medium ${texto}`}>
+        <Ayuda explica={explicar(ayuda)} titulo={titulo}>
+          {titulo}
+        </Ayuda>
+      </div>
       <div className="text-xl font-semibold tabular-nums mt-1">{valor}</div>
       {detalle && <div className="text-xs text-neutral-500 mt-0.5">{detalle}</div>}
     </div>

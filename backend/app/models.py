@@ -88,7 +88,7 @@ class Ingrediente(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String, nullable=False)
-    unidad = Column(String, nullable=False)  # kg | unidad | litro
+    unidad = Column(String, nullable=False)  # kg | g | lt | ml | unidad | paquete
     stock_actual = Column(Float, default=0)
     stock_minimo = Column(Float, default=0)
     stock_objetivo = Column(Float, default=0)  # nivel al que se repone al comprar

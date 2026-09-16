@@ -373,6 +373,45 @@ con la base) ni de contar el depósito completo. Ahora:
   Bajo) y tres acciones por fila, y debajo qué comprar, la inflación de
   insumos y las pérdidas como tabla ordenable.
 
+### Cada número dice de dónde sale (16-sep, noche)
+
+Leider: "cada vez que pose el cursor sobre el título de un campo en una tabla,
+o de una tarjeta, explica detalladamente de qué trata ese campo o ese KPI, de
+dónde sale, cómo se calcula, y un ejemplo de cómo se usa o para qué".
+
+El ERP muestra 82 columnas y 15 tarjetas de cifras. "Reponer", "Costo real",
+"Confianza", "Base", "Debe", "Naturaleza" no significan nada para quien no es
+contador, y la mitad de estos números solo sirven si se entiende de dónde
+salen: el margen calculado con el costo promedio **miente** cuando hay
+inflación, y esa diferencia es justo la que decide un precio.
+
+**Las cuatro partes son obligatorias, no texto libre.** Cada entrada de
+`lib/glosario.ts` responde: qué es, de dónde sale el dato, cómo se calcula y
+para qué sirve. No poder llenar "de dónde sale" suele ser la señal de que esa
+columna no debería existir.
+
+**Una sola lista, dos formas de leerla.** `components/Ayuda.tsx` la muestra al
+posar el cursor (panel flotante por portal, así no lo recorta la tabla con
+scroll; se abre también con el teclado al tabular, y Escape lo cierra). En una
+tablet **no hay cursor**, así que cada tabla despliega debajo "¿Qué significa
+cada columna?" con exactamente el mismo contenido. Lo que tiene explicación
+lleva un subrayado punteado: sin marca nadie lo descubre, y con una marca
+fuerte 82 columnas subrayadas se ven como un error.
+
+**La clave es `<tabla>.<columna>`.** La tabla declara su sección con
+`<Tabla glosario="inventario">` y cada `Th` compone la clave con la misma
+`clave` con la que ya ordena; no hay una segunda lista de nombres que
+mantener en paralelo. **`npm run glosario`** recorre las pantallas y falla si
+una columna quedó sin explicar o si sobra una explicación que ya nadie usa —
+hoy: 94 explicadas, ninguna suelta. Agregar una columna sin explicarla rompe
+el chequeo, que es justo cuando hay que escribirla: después nadie vuelve.
+
+**`litro` pasó a `lt`.** Ocupaba el triple que el resto de unidades ("kg",
+"ml") y desalineaba la columna del inventario. Se renombró el **dato**, no
+solo lo que se muestra: con dos verdades sobre la misma fila, la receta y la
+compra terminarían hablando de unidades distintas. Migración automática
+(`VALORES` en `migrations.py`, idempotente) con su test.
+
 ### Qué falta acordar
 
 - **Commit y push de todo esto** al repo (hoy vive en mi clon, sobre tu

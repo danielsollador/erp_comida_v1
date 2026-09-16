@@ -28,7 +28,7 @@ INGREDIENTES_DEMO = [
     ("Cafe molido", "kg", 4.0, 1.0, 5.0, 12.00, 100),
     ("Azucar", "kg", 8.0, 2.0, 10.0, 1.10, 100),
     ("Naranja", "kg", 40.0, 10.0, 50.0, 1.50, 45),  # la cascara y la pulpa no rinden jugo
-    ("Refresco concentrado", "litro", 30.0, 8.0, 35.0, 1.80, 100),
+    ("Refresco concentrado", "lt", 30.0, 8.0, 35.0, 1.80, 100),
 ]
 
 # (producto, variante) -> [(nombre ingrediente, cantidad por unidad vendida)]

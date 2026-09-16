@@ -589,7 +589,7 @@ export default function Caja() {
         {cierres.length > 0 && (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-2">Historial de cierres</h2>
-            <Tabla orden={orden}>
+            <Tabla orden={orden} glosario="cierres">
             <table className="w-full text-sm">
               <thead className="text-neutral-500">
                 <tr>

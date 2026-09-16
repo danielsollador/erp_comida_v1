@@ -560,14 +560,14 @@ export default function Compras() {
           </div>
         )}
 
-        <Tabla orden={orden} className="bg-white rounded-2xl border border-neutral-200">
+        <Tabla orden={orden} glosario="compras" className="bg-white rounded-2xl border border-neutral-200">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="fecha">Fecha</Th>
                 <Th clave="factura">Factura</Th>
                 <Th clave="proveedor">Proveedor</Th>
-                <Th>Detalle</Th>
+                <Th ayuda="compras.detalle">Detalle</Th>
                 <Th clave="base" alinear="derecha">Base</Th>
                 <Th clave="iva" alinear="derecha">IVA</Th>
                 <Th clave="total" alinear="derecha">Total</Th>

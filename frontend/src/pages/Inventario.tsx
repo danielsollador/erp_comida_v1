@@ -38,7 +38,7 @@ import type {
  *     historial de perdidas y conteos.
  */
 
-const UNIDADES = ['kg', 'g', 'litro', 'ml', 'unidad', 'paquete']
+const UNIDADES = ['kg', 'g', 'lt', 'ml', 'unidad', 'paquete']
 const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco']
 
 type Filtro = 'todos' | 'bajo' | 'sin-costo' | 'insumo' | 'reventa' | 'archivados'
@@ -334,18 +334,21 @@ export default function Inventario() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Cifra
             titulo="Insumos"
+            ayuda="kpi.insumos"
             valor={String(activos.length)}
             detalle={`${activos.filter((i) => i.tipo !== 'reventa').length} materia prima · ${activos.filter((i) => i.tipo === 'reventa').length} reventa`}
           />
           <Cifra
             titulo="Bajo mínimo"
+            ayuda="kpi.bajo_minimo"
             valor={String(bajoMinimo.length)}
             detalle={bajoMinimo.length ? 'Toca para verlos' : 'Todo por encima del mínimo'}
             tono={bajoMinimo.length ? 'alerta' : 'bien'}
           />
-          <Cifra titulo="Valor en depósito" valor={dinero(valorDeposito)} detalle="Stock × costo promedio, sin IVA" />
+          <Cifra titulo="Valor en depósito" ayuda="kpi.valor_deposito" valor={dinero(valorDeposito)} detalle="Stock × costo promedio, sin IVA" />
           <Cifra
             titulo="Pérdidas 30 días"
+            ayuda="kpi.perdidas_30"
             valor={dinero(perdidas30)}
             detalle="Mermas y faltantes de conteo"
             tono={perdidas30 > 0 ? 'alerta' : 'normal'}
@@ -397,7 +400,7 @@ export default function Inventario() {
           </div>
         </div>
 
-        <Tabla orden={orden} className="bg-white rounded-2xl border border-neutral-200">
+        <Tabla orden={orden} glosario="inventario" className="bg-white rounded-2xl border border-neutral-200">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
@@ -410,7 +413,7 @@ export default function Inventario() {
                 <Th clave="reponer" alinear="derecha">Reponer</Th>
                 <Th clave="rendimiento" alinear="derecha">Rendimiento</Th>
                 <Th clave="real" alinear="derecha">Costo real</Th>
-                <Th alinear="derecha">Acciones</Th>
+                <Th ayuda="inventario.acciones" alinear="derecha">Acciones</Th>
               </tr>
             </thead>
             <tbody>
@@ -580,7 +583,7 @@ export default function Inventario() {
           {mermas.length === 0 ? (
             <Vacio titulo="Sin pérdidas registradas" detalle="Bien ahí." />
           ) : (
-            <Tabla orden={ordenMermas}>
+            <Tabla orden={ordenMermas} glosario="perdidas">
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                   <tr>
@@ -990,7 +993,7 @@ function FichaInsumo({
             ) : historial.length === 0 ? (
               <p className="text-sm text-neutral-500">Todavía no hay compras registradas.</p>
             ) : (
-              <Tabla orden={ordenHistorial} className="border border-neutral-200 rounded-xl">
+              <Tabla orden={ordenHistorial} glosario="costos" className="border border-neutral-200 rounded-xl">
                 <table className="w-full text-sm">
                   <thead className="text-neutral-500 text-xs uppercase">
                     <tr>

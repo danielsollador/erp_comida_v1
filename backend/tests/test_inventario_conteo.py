@@ -101,3 +101,36 @@ def test_archivar_un_insumo_lo_saca_de_las_sugerencias_sin_borrarlo(client):
     assert client.get("/api/inventario/sugerencias").json() == []
     # Sigue existiendo: sus recetas, compras y mermas no quedan huerfanas.
     assert any(i["id"] == harina["id"] for i in client.get("/api/inventario/ingredientes").json())
+
+
+def test_la_unidad_litro_se_renombra_a_lt_una_sola_vez(tmp_path, monkeypatch):
+    """"litro" ocupaba el triple que el resto de unidades y desalineaba la
+    columna del inventario. Se renombra el DATO, no solo lo que se muestra: con
+    dos verdades sobre la misma fila, la receta y la compra terminan hablando
+    de unidades distintas.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    from app import migrations
+
+    ruta = tmp_path / "vieja.db"
+    con = sqlite3.connect(str(ruta))
+    con.executescript(
+        """
+        CREATE TABLE ingredientes (id INTEGER PRIMARY KEY, nombre VARCHAR, unidad VARCHAR NOT NULL);
+        INSERT INTO ingredientes (nombre, unidad) VALUES ('Refresco', 'litro'), ('Aceite', 'litros'), ('Harina', 'kg');
+        """
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(migrations, "engine", create_engine(f"sqlite:///{ruta}"))
+    migrations.aplicar()
+    migrations.aplicar()  # correrla dos veces no puede cambiar nada mas
+
+    con = sqlite3.connect(str(ruta))
+    unidades = dict(con.execute("SELECT nombre, unidad FROM ingredientes").fetchall())
+    con.close()
+    assert unidades == {"Refresco": "lt", "Aceite": "lt", "Harina": "kg"}

@@ -79,6 +79,17 @@ COLUMNAS = [
 ]
 
 
+# Valores que cambiaron de nombre: (tabla, columna, viejo, nuevo). La unidad
+# se imprime en cada fila del inventario, en las recetas y en cada merma, y
+# "litro" ocupa el triple que el resto ("kg", "ml"): en la tabla del inventario
+# desalineaba la columna entera. Se renombra el dato y no solo lo que se
+# muestra, para que no haya dos verdades sobre la misma fila.
+VALORES = [
+    ("ingredientes", "unidad", "litro", "lt"),
+    ("ingredientes", "unidad", "litros", "lt"),
+]
+
+
 # (tabla, columna) que dejaron de ser obligatorias.
 RELAJAR_NOT_NULL = [
     ("pedido_items", "variante_id"),
@@ -207,6 +218,16 @@ def aplicar():
                 con.execute(
                     text(f"UPDATE facturas_compra SET pagada = {falso} WHERE forma_pago = 'Credito'")
                 )
+
+        for tabla, columna, viejo, nuevo in VALORES:
+            if tabla not in tablas:
+                continue
+            resultado = con.execute(
+                text(f'UPDATE "{tabla}" SET "{columna}" = :nuevo WHERE "{columna}" = :viejo'),
+                {"nuevo": nuevo, "viejo": viejo},
+            )
+            if resultado.rowcount:
+                log.info("%s.%s: %s filas de '%s' a '%s'", tabla, columna, resultado.rowcount, viejo, nuevo)
 
     # El inspector cachea lo que leyo; para lo que sigue hace falta uno nuevo.
     inspector = inspect(engine)

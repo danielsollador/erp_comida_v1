@@ -201,7 +201,7 @@ function PlanCuentas() {
 
   return (
     <div className="space-y-4">
-      <Tabla orden={ordenCuentas} className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+      <Tabla orden={ordenCuentas} glosario="plan" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
             <tr>
@@ -278,7 +278,7 @@ function PlanCuentas() {
               solo se lee como acumulado en orden cronologico --que es como
               abre--. Ordenado por otra columna sigue siendo cierto por fila,
               pero deja de sumarse hacia abajo. */}
-          <Tabla orden={ordenMayor}>
+          <Tabla orden={ordenMayor} glosario="mayor">
           <table className="w-full text-sm">
             <thead className="text-neutral-500 text-xs uppercase">
               <tr>
@@ -443,14 +443,14 @@ function Diario() {
         </div>
       </div>
 
-      <Tabla orden={ordenAsientos} className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+      <Tabla orden={ordenAsientos} glosario="diario" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
             <tr>
               <Th clave="fecha">Fecha</Th>
               <Th clave="descripcion">Descripcion</Th>
               <Th clave="origen">Origen</Th>
-              <Th>Movimientos</Th>
+              <Th ayuda="diario.movimientos">Movimientos</Th>
               <Th />
             </tr>
           </thead>
@@ -497,7 +497,7 @@ function TablaCuentas({ filas }: { filas: FilaBalanceComprobacion[] }) {
     'cuenta',
   )
   return (
-    <Tabla orden={orden}>
+    <Tabla orden={orden} glosario="balance">
     <table className="w-full text-sm">
       <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
         <tr>
