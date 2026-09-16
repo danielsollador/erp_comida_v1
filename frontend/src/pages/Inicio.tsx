@@ -4,7 +4,7 @@ import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
-import { MODULOS, type Permiso } from '../components/Rail'
+import { MODULOS, entraA } from '../components/Rail'
 import UsuarioMenu from '../components/UsuarioMenu'
 import { useAcceso } from '../lib/acceso'
 import { api, connectWs } from '../lib/api'
@@ -30,7 +30,6 @@ const DESCRIPCION: Record<string, string> = {
   '/contabilidad': 'Libro, gastos y resultados',
   '/impuestos': 'IVA y libros fiscales',
   '/usuarios': 'Quién entra y qué puede hacer',
-  '/sistema': 'Respaldos y configuración',
 }
 
 function saludo(): string {
@@ -57,9 +56,9 @@ export default function Inicio() {
   const [porCobrar, setPorCobrar] = useState(0)
   const { fmt } = useMoneda()
 
-  const puede = (p: Permiso) => p === null || estado.puede[p]
-  const operacion = MODULOS.filter((m) => m.grupo === 'operacion' && puede(m.necesita))
-  const administracion = MODULOS.filter((m) => m.grupo === 'administracion' && puede(m.necesita))
+  const entra = (m: (typeof MODULOS)[number]) => entraA(estado.puede, m.modulo)
+  const operacion = MODULOS.filter((m) => m.grupo === 'operacion' && entra(m))
+  const administracion = MODULOS.filter((m) => m.grupo === 'administracion' && entra(m))
 
   useEffect(() => {
     cargar()
@@ -273,9 +272,7 @@ function Dato({
       } ${enlace ? 'hover:shadow-md hover:-translate-y-px' : ''}`}
     >
       <div className={`text-xs lg:text-sm pc:text-xs font-medium ${alerta ? 'text-aviso-700' : 'text-neutral-500'}`}>
-        {/* En una tarjeta que es enlace, el toque navega: ahi la explicacion
-            solo sale con el cursor, no al tocar. */}
-        <Ayuda explica={explicar(ayuda)} titulo={titulo} tactil={!enlace}>
+        <Ayuda explica={explicar(ayuda)} titulo={titulo}>
           {titulo}
         </Ayuda>
       </div>

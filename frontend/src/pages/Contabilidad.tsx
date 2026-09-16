@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
+import Respaldos from './partes/Respaldos'
 import { api } from '../lib/api'
 import type {
   ActivoFijo,
@@ -16,19 +18,21 @@ import type {
   SaludContable,
 } from '../lib/types'
 
-const TABS = [
+// Los respaldos vivian en el modulo "Sistema", que se quito. Van aqui porque
+// este es el modulo de quien administra el negocio, que es justo quien
+// restaura el dia que algo se rompe.
+const SECCIONES = [
   { id: 'plan', texto: 'Plan de cuentas' },
   { id: 'diario', texto: 'Diario' },
-  { id: 'comprobacion', texto: 'Balance de comprobacion' },
+  { id: 'comprobacion', texto: 'Balance de comprobación' },
   { id: 'resultados', texto: 'Estado de resultados' },
   { id: 'general', texto: 'Balance general' },
   { id: 'activos', texto: 'Equipos' },
-] as const
-
-type Tab = (typeof TABS)[number]['id']
+  { id: 'respaldos', texto: 'Respaldos' },
+]
 
 export default function Contabilidad() {
-  const [tab, setTab] = useState<Tab>('plan')
+  const [seccion, irA] = useSeccion(SECCIONES)
   const [salud, setSalud] = useState<SaludContable | null>(null)
 
   useEffect(() => {
@@ -37,22 +41,7 @@ export default function Contabilidad() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Contabilidad" />
-      <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold border transition ${
-              tab === t.id
-                ? 'bg-neutral-900 border-neutral-900 text-white'
-                : 'bg-white border-neutral-200 text-neutral-500'
-            }`}
-          >
-            {t.texto}
-          </button>
-        ))}
-      </div>
+      <NavBar titulo="Contabilidad" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina>
         {/* El "cuadra" del balance nunca falla (es una identidad de la partida
             doble). Estos chequeos si pueden fallar, y son los que avisan que
@@ -94,12 +83,13 @@ export default function Contabilidad() {
             </p>
           </div>
         )}
-        {tab === 'plan' && <PlanCuentas />}
-        {tab === 'diario' && <Diario />}
-        {tab === 'comprobacion' && <BalanceComprobacion />}
-        {tab === 'resultados' && <EstadoResultados />}
-        {tab === 'general' && <BalanceGeneralVista />}
-        {tab === 'activos' && <Activos />}
+        {seccion === 'plan' && <PlanCuentas />}
+        {seccion === 'diario' && <Diario />}
+        {seccion === 'comprobacion' && <BalanceComprobacion />}
+        {seccion === 'resultados' && <EstadoResultados />}
+        {seccion === 'general' && <BalanceGeneralVista />}
+        {seccion === 'activos' && <Activos />}
+        {seccion === 'respaldos' && <Respaldos />}
       </Pagina>
     </div>
   )

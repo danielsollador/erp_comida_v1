@@ -125,10 +125,6 @@ export function Tabla({
   // clave en un `data-clave`-- porque en modo ficha el `thead` no se ve y hace
   // falta otro sitio desde donde ordenar.
   const [columnas, setColumnas] = useState<{ clave: string; titulo: string }[]>([])
-  // Las columnas que tienen explicacion, para el desplegable de abajo. En una
-  // tablet no hay cursor que posar sobre el titulo, y esa es justo la pantalla
-  // donde se usa el ERP todos los dias.
-  const [ayudas, setAyudas] = useState<{ clave: string; titulo: string }[]>([])
 
   // Apilar o no apilar se decide MIDIENDO, no por el ancho de la pantalla:
   // se quita la clase, se pregunta cuanto necesita la tabla de verdad y se
@@ -175,15 +171,6 @@ export function Tabla({
       antes.length === ordenables.length && antes.every((c, i) => c.clave === ordenables[i].clave)
         ? antes
         : ordenables,
-    )
-    const conAyuda = [...tabla.querySelectorAll('thead th[data-ayuda]')].map((th) => ({
-      clave: (th as HTMLElement).dataset.ayuda as string,
-      titulo: (th.textContent ?? '').trim(),
-    }))
-    setAyudas((antes) =>
-      antes.length === conAyuda.length && antes.every((a, i) => a.clave === conAyuda[i].clave)
-        ? antes
-        : conAyuda,
     )
     const titulos = [...tabla.querySelectorAll('thead th')].map((th) => (th.textContent ?? '').trim())
     for (const fila of tabla.querySelectorAll('tbody tr, tfoot tr')) {
@@ -239,30 +226,6 @@ export function Tabla({
         )}
         {children}
       </div>
-      {ayudas.length > 0 && (
-        <details className="vp-glosario text-xs text-neutral-500">
-          <summary className="cursor-pointer font-medium text-neutral-600 py-1">
-            ¿Qué significa cada columna?
-          </summary>
-          <dl className="mt-1.5 space-y-2.5">
-            {ayudas.map((a) => {
-              const e = explicar(a.clave)
-              if (!e) return null
-              return (
-                <div key={a.clave}>
-                  <dt className="font-semibold text-neutral-700">{a.titulo}</dt>
-                  <dd className="leading-relaxed">
-                    {e.que}
-                    {e.origen && <> <b className="font-semibold text-neutral-500">De dónde sale:</b> {e.origen}</>}
-                    {e.calculo && <> <b className="font-semibold text-neutral-500">Cómo se calcula:</b> {e.calculo}</>}
-                    {e.ejemplo && <> <b className="font-semibold text-neutral-500">Para qué sirve:</b> {e.ejemplo}</>}
-                  </dd>
-                </div>
-              )
-            })}
-          </dl>
-        </details>
-      )}
       </GlosarioCtx.Provider>
     </OrdenCtx.Provider>
   )
@@ -295,12 +258,9 @@ export function Th({
   const explicacion = explicar(claveAyuda)
   // La ayuda va en el `<th>` y no dentro del boton de ordenar: un boton
   // dentro de otro boton no es HTML valido y rompe la navegacion por teclado.
-  // Sin tacto, ademas: en la tablet el toque sobre el titulo es para ordenar,
-  // y la explicacion esta en el desplegable de abajo.
   const { props: ayudaProps, panel } = useAyuda(
     explicacion,
     typeof children === 'string' ? children : '',
-    { tactil: false },
   )
   const marca = explicacion ? 'vp-con-ayuda' : ''
 

@@ -5,24 +5,35 @@ import { MonedaToggle } from '../lib/moneda'
 import { TemaToggle } from '../lib/tema'
 import Icono from './Icono'
 import Marca from './Marca'
+import { Secciones, type Seccion } from './Secciones'
 import UsuarioMenu from './UsuarioMenu'
 
 /**
  * El encabezado de cada modulo. En escritorio la barra lateral ya dice donde
  * estas, asi que aqui va la miga (local / modulo); en movil, donde no hay
  * barra, el boton de volver.
+ *
+ * Debajo, centradas, las secciones del modulo: lo que se puede hacer aqui, a
+ * la vista y siempre en el mismo sitio (ver `Secciones.tsx`).
  */
 export default function NavBar({
   titulo,
   dark = false,
   moneda = true,
   acciones,
+  secciones,
+  seccion,
+  alCambiarSeccion,
 }: {
   titulo: string
   dark?: boolean
   /** El selector de moneda solo tiene sentido donde se ven precios. */
   moneda?: boolean
   acciones?: ReactNode
+  /** Lo que se puede hacer en este modulo. Con una sola, no se muestra nada. */
+  secciones?: Seccion[]
+  seccion?: string
+  alCambiarSeccion?: (id: string) => void
 }) {
   const { estado } = useAcceso()
   return (
@@ -64,6 +75,10 @@ export default function NavBar({
           <UsuarioMenu dark={dark} />
         </div>
       </div>
+
+      {secciones && seccion && alCambiarSeccion && (
+        <Secciones secciones={secciones} activa={seccion} alCambiar={alCambiarSeccion} dark={dark} />
+      )}
     </header>
   )
 }

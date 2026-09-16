@@ -12,31 +12,37 @@ import Icono, { type NombreIcono } from './Icono'
  * pantalla completa. En movil tampoco: ahi manda el boton de volver del
  * encabezado y la pantalla de inicio.
  */
-export type Permiso = 'operar' | 'administrar' | null
-
-export const MODULOS: { to: string; icono: NombreIcono; titulo: string; necesita: Permiso; grupo: 'operacion' | 'administracion' }[] = [
-  { to: '/pos', icono: 'pos', titulo: 'Punto de venta', necesita: 'operar', grupo: 'operacion' },
-  { to: '/cocina', icono: 'cocina', titulo: 'Cocina', necesita: null, grupo: 'operacion' },
-  { to: '/reportes', icono: 'reportes', titulo: 'Reportes', necesita: 'operar', grupo: 'operacion' },
-  { to: '/menu', icono: 'menu', titulo: 'Menú', necesita: 'operar', grupo: 'administracion' },
-  { to: '/recetas', icono: 'recetas', titulo: 'Recetas', necesita: 'operar', grupo: 'administracion' },
-  { to: '/inventario', icono: 'inventario', titulo: 'Inventario', necesita: 'operar', grupo: 'administracion' },
-  { to: '/compras', icono: 'compras', titulo: 'Compras', necesita: 'operar', grupo: 'administracion' },
-  { to: '/caja', icono: 'caja', titulo: 'Cierre de caja', necesita: 'operar', grupo: 'administracion' },
-  { to: '/tasa', icono: 'tasa', titulo: 'Tasa de cambio', necesita: 'operar', grupo: 'administracion' },
-  { to: '/contabilidad', icono: 'contabilidad', titulo: 'Contabilidad', necesita: 'administrar', grupo: 'administracion' },
-  { to: '/impuestos', icono: 'impuestos', titulo: 'Impuestos', necesita: 'administrar', grupo: 'administracion' },
-  { to: '/usuarios', icono: 'usuarios', titulo: 'Usuarios', necesita: 'administrar', grupo: 'administracion' },
-  { to: '/sistema', icono: 'sistema', titulo: 'Sistema', necesita: 'administrar', grupo: 'administracion' },
+/**
+ * Los modulos del ERP. `modulo` es el mismo identificador que usa el backend
+ * (`acceso/permisos.py`): la barra muestra exactamente aquello a lo que el rol
+ * entra, sea uno de fabrica o uno a medida, sin deducirlo del nombre del rol.
+ */
+export const MODULOS: { to: string; modulo: string; icono: NombreIcono; titulo: string; grupo: 'operacion' | 'administracion' }[] = [
+  { to: '/pos', modulo: 'pos', icono: 'pos', titulo: 'Punto de venta', grupo: 'operacion' },
+  { to: '/cocina', modulo: 'cocina', icono: 'cocina', titulo: 'Cocina', grupo: 'operacion' },
+  { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'operacion' },
+  { to: '/menu', modulo: 'menu', icono: 'menu', titulo: 'Menú', grupo: 'administracion' },
+  { to: '/recetas', modulo: 'recetas', icono: 'recetas', titulo: 'Recetas', grupo: 'administracion' },
+  { to: '/inventario', modulo: 'inventario', icono: 'inventario', titulo: 'Inventario', grupo: 'administracion' },
+  { to: '/compras', modulo: 'compras', icono: 'compras', titulo: 'Compras', grupo: 'administracion' },
+  { to: '/caja', modulo: 'caja', icono: 'caja', titulo: 'Cierre de caja', grupo: 'administracion' },
+  { to: '/tasa', modulo: 'tasa', icono: 'tasa', titulo: 'Tasa de cambio', grupo: 'administracion' },
+  { to: '/contabilidad', modulo: 'contabilidad', icono: 'contabilidad', titulo: 'Contabilidad', grupo: 'administracion' },
+  { to: '/impuestos', modulo: 'impuestos', icono: 'impuestos', titulo: 'Impuestos', grupo: 'administracion' },
+  { to: '/usuarios', modulo: 'usuarios', icono: 'usuarios', titulo: 'Usuarios', grupo: 'administracion' },
 ]
+
+/** Si este usuario entra a ese modulo. Lo dice el servidor. */
+export function entraA(puede: { modulos?: string[] }, modulo: string): boolean {
+  return (puede.modulos ?? []).includes(modulo)
+}
 
 export default function Rail() {
   const { estado } = useAcceso()
   const { pathname } = useLocation()
   if (pathname.startsWith('/cocina')) return null
 
-  const puede = (p: Permiso) => p === null || estado.puede[p]
-  const visibles = MODULOS.filter((m) => puede(m.necesita))
+  const visibles = MODULOS.filter((m) => entraA(estado.puede, m.modulo))
   const operacion = visibles.filter((m) => m.grupo === 'operacion')
   const administracion = visibles.filter((m) => m.grupo === 'administracion')
   const inicial = (estado.usuario ?? '?').slice(0, 1).toUpperCase()

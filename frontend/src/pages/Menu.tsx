@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type { Categoria, CostoVariante } from '../lib/types'
 
+const SECCIONES = [
+  { id: 'menu', texto: 'El menú' },
+  { id: 'retiradas', texto: 'Fuera del menú' },
+]
+
 export default function Menu() {
+  const [seccion, irA] = useSeccion(SECCIONES)
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const dialogo = useDialogo()
   const [nuevaCategoria, setNuevaCategoria] = useState('')
@@ -55,8 +62,10 @@ export default function Menu() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Menu" />
+      <NavBar titulo="Menú" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="media">
+        {seccion === 'menu' && (
+          <>
         {categorias
           .filter((c) => c.activo)
           .map((cat) => (
@@ -69,6 +78,25 @@ export default function Menu() {
             />
           ))}
 
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex gap-2">
+          <input
+            value={nuevaCategoria}
+            onChange={(e) => setNuevaCategoria(e.target.value)}
+            placeholder="Nueva categoria (ej. Bebidas)"
+            className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+          />
+          <button
+            onClick={agregarCategoria}
+            className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            Agregar
+          </button>
+        </div>
+          </>
+        )}
+
+        {seccion === 'retiradas' && (
+          <>
         {/* Retiradas del menu, no borradas: sus ventas siguen en el historico
             y se pueden volver a activar. */}
         {categorias.some((c) => !c.activo) && (
@@ -97,21 +125,8 @@ export default function Menu() {
             </div>
           </div>
         )}
-
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex gap-2">
-          <input
-            value={nuevaCategoria}
-            onChange={(e) => setNuevaCategoria(e.target.value)}
-            placeholder="Nueva categoria (ej. Bebidas)"
-            className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-          />
-          <button
-            onClick={agregarCategoria}
-            className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            Agregar
-          </button>
-        </div>
+          </>
+        )}
       </Pagina>
     </div>
   )

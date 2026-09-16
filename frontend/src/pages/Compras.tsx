@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
@@ -11,7 +12,13 @@ const FORMAS_PAGO = ['Efectivo', 'Efectivo $', 'Banco', 'Credito']
 
 type Linea = { ingrediente_id: number; cantidad: string; costo_unitario: string }
 
+const SECCIONES = [
+  { id: 'facturas', texto: 'Facturas' },
+  { id: 'nueva', texto: 'Cargar factura' },
+]
+
 export default function Compras() {
+  const [seccion, irA] = useSeccion(SECCIONES)
   const [facturas, setFacturas] = useState<FacturaCompra[]>([])
   // Lo mas reciente arriba, que es lo que se acaba de cargar; pero ordenar por
   // Estado junta lo pendiente de pagar, que es la otra razon para entrar aqui.
@@ -323,8 +330,146 @@ export default function Compras() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Compras" />
+      <NavBar titulo="Compras" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina>
+        {seccion === 'facturas' && (
+          <>
+        {pendientes.length > 0 && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+            <div className="flex justify-between items-baseline mb-3">
+              <h2 className="font-semibold">Cuentas por pagar</h2>
+              <span className="text-sm text-neutral-500">
+                Debemos <span className="font-semibold text-neutral-800">${totalPendiente.toFixed(2)}</span>
+              </span>
+            </div>
+            <div className="space-y-2">
+              {pendientes.map((f) => {
+                const dias = diasVencida(f)
+                const vencida = dias !== null && dias > 0
+                return (
+                  <div
+                    key={f.id}
+                    className={`flex flex-wrap items-center gap-2 rounded-lg p-2 text-sm ${
+                      vencida ? 'bg-peligro-50' : 'bg-neutral-50'
+                    }`}
+                  >
+                    <span className="font-medium flex-1 min-w-[140px]">{f.proveedor_nombre}</span>
+                    <span className="text-neutral-500 font-mono text-xs">{f.numero_factura}</span>
+                    <span
+                      className={`text-xs ${vencida ? 'text-peligro-600 font-semibold' : 'text-neutral-500'}`}
+                    >
+                      {f.fecha_vencimiento
+                        ? vencida
+                          ? `Vencida hace ${dias} dias`
+                          : `Vence ${new Date(f.fecha_vencimiento).toLocaleDateString('es-VE')}`
+                        : 'Sin fecha de vencimiento'}
+                    </span>
+                    <span className="font-semibold tabular-nums w-20 text-right">${f.total.toFixed(2)}</span>
+                    <select
+                      value={liquidacion[f.id] || 'Efectivo'}
+                      onChange={(e) => setLiquidacion((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                      className="border border-neutral-300 rounded-lg px-2 py-1 text-xs"
+                    >
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Banco">Banco</option>
+                    </select>
+                    <button
+                      onClick={() => marcarPagada(f)}
+                      disabled={pagando === f.id}
+                      className="bg-neutral-900 text-white rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50"
+                    >
+                      Marcar pagada
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <Tabla orden={orden} glosario="compras" className="bg-white rounded-2xl border border-neutral-200">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+              <tr>
+                <Th clave="fecha">Fecha</Th>
+                <Th clave="factura">Factura</Th>
+                <Th clave="proveedor">Proveedor</Th>
+                <Th ayuda="compras.detalle">Detalle</Th>
+                <Th clave="base" alinear="derecha">Base</Th>
+                <Th clave="iva" alinear="derecha">IVA</Th>
+                <Th clave="total" alinear="derecha">Total</Th>
+                <Th clave="estado">Estado</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {orden.ordenar(facturas).map((f) => (
+                <tr key={f.id} className="border-t border-neutral-100 align-top">
+                  <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
+                  <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
+                  <td className="p-3 font-medium">{f.proveedor_nombre}</td>
+                  <td className="p-3 text-neutral-500">
+                    {f.items.length > 0 ? (
+                      <ul className="space-y-0.5">
+                        {f.items.map((it) => (
+                          <li key={it.id} className="text-xs">
+                            {it.cantidad} {it.unidad} {it.ingrediente_nombre}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      f.categoria
+                    )}
+                  </td>
+                  <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
+                  <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
+                  <td className="text-right p-3 tabular-nums font-semibold">
+                    {f.total.toFixed(2)}
+                    <button
+                      onClick={() => notaCredito(f)}
+                      className="block w-full text-right text-[11px] font-medium text-acento-600"
+                      title="El proveedor mando menos, o te dio un descuento"
+                    >
+                      Nota de credito
+                    </button>
+                  </td>
+                  <td className="p-3">
+                    {f.forma_pago === 'Credito' ? (
+                      <span
+                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          f.pagada
+                            ? 'bg-exito-50 text-exito-700'
+                            : 'bg-aviso-50 text-aviso-700'
+                        }`}
+                      >
+                        {f.pagada ? 'Pagada' : 'Pendiente'}
+                      </span>
+                    ) : (
+                      <span className="text-neutral-300 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    <button onClick={() => borrar(f)} className="text-peligro-500 text-xs">
+                      Borrar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {facturas.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="text-neutral-400 py-4 text-center">
+                    Sin facturas cargadas todavia.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </Tabla>
+          </>
+        )}
+
+        {seccion === 'nueva' && (
+          <>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Cargar factura de proveedor</h2>
           <p className="text-xs text-neutral-500 mb-3">
@@ -506,138 +651,8 @@ export default function Compras() {
             Cargar factura
           </button>
         </div>
-
-        {pendientes.length > 0 && (
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <div className="flex justify-between items-baseline mb-3">
-              <h2 className="font-semibold">Cuentas por pagar</h2>
-              <span className="text-sm text-neutral-500">
-                Debemos <span className="font-semibold text-neutral-800">${totalPendiente.toFixed(2)}</span>
-              </span>
-            </div>
-            <div className="space-y-2">
-              {pendientes.map((f) => {
-                const dias = diasVencida(f)
-                const vencida = dias !== null && dias > 0
-                return (
-                  <div
-                    key={f.id}
-                    className={`flex flex-wrap items-center gap-2 rounded-lg p-2 text-sm ${
-                      vencida ? 'bg-peligro-50' : 'bg-neutral-50'
-                    }`}
-                  >
-                    <span className="font-medium flex-1 min-w-[140px]">{f.proveedor_nombre}</span>
-                    <span className="text-neutral-500 font-mono text-xs">{f.numero_factura}</span>
-                    <span
-                      className={`text-xs ${vencida ? 'text-peligro-600 font-semibold' : 'text-neutral-500'}`}
-                    >
-                      {f.fecha_vencimiento
-                        ? vencida
-                          ? `Vencida hace ${dias} dias`
-                          : `Vence ${new Date(f.fecha_vencimiento).toLocaleDateString('es-VE')}`
-                        : 'Sin fecha de vencimiento'}
-                    </span>
-                    <span className="font-semibold tabular-nums w-20 text-right">${f.total.toFixed(2)}</span>
-                    <select
-                      value={liquidacion[f.id] || 'Efectivo'}
-                      onChange={(e) => setLiquidacion((prev) => ({ ...prev, [f.id]: e.target.value }))}
-                      className="border border-neutral-300 rounded-lg px-2 py-1 text-xs"
-                    >
-                      <option value="Efectivo">Efectivo</option>
-                      <option value="Banco">Banco</option>
-                    </select>
-                    <button
-                      onClick={() => marcarPagada(f)}
-                      disabled={pagando === f.id}
-                      className="bg-neutral-900 text-white rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50"
-                    >
-                      Marcar pagada
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+          </>
         )}
-
-        <Tabla orden={orden} glosario="compras" className="bg-white rounded-2xl border border-neutral-200">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
-              <tr>
-                <Th clave="fecha">Fecha</Th>
-                <Th clave="factura">Factura</Th>
-                <Th clave="proveedor">Proveedor</Th>
-                <Th ayuda="compras.detalle">Detalle</Th>
-                <Th clave="base" alinear="derecha">Base</Th>
-                <Th clave="iva" alinear="derecha">IVA</Th>
-                <Th clave="total" alinear="derecha">Total</Th>
-                <Th clave="estado">Estado</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {orden.ordenar(facturas).map((f) => (
-                <tr key={f.id} className="border-t border-neutral-100 align-top">
-                  <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
-                  <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
-                  <td className="p-3 font-medium">{f.proveedor_nombre}</td>
-                  <td className="p-3 text-neutral-500">
-                    {f.items.length > 0 ? (
-                      <ul className="space-y-0.5">
-                        {f.items.map((it) => (
-                          <li key={it.id} className="text-xs">
-                            {it.cantidad} {it.unidad} {it.ingrediente_nombre}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      f.categoria
-                    )}
-                  </td>
-                  <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
-                  <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
-                  <td className="text-right p-3 tabular-nums font-semibold">
-                    {f.total.toFixed(2)}
-                    <button
-                      onClick={() => notaCredito(f)}
-                      className="block w-full text-right text-[11px] font-medium text-acento-600"
-                      title="El proveedor mando menos, o te dio un descuento"
-                    >
-                      Nota de credito
-                    </button>
-                  </td>
-                  <td className="p-3">
-                    {f.forma_pago === 'Credito' ? (
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          f.pagada
-                            ? 'bg-exito-50 text-exito-700'
-                            : 'bg-aviso-50 text-aviso-700'
-                        }`}
-                      >
-                        {f.pagada ? 'Pagada' : 'Pendiente'}
-                      </span>
-                    ) : (
-                      <span className="text-neutral-300 text-xs">—</span>
-                    )}
-                  </td>
-                  <td className="p-3">
-                    <button onClick={() => borrar(f)} className="text-peligro-500 text-xs">
-                      Borrar
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {facturas.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="text-neutral-400 py-4 text-center">
-                    Sin facturas cargadas todavia.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </Tabla>
       </Pagina>
     </div>
   )

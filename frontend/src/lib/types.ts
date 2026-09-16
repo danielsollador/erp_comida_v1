@@ -745,7 +745,21 @@ export type ResumenIva = {
 }
 
 // ------------------------------------------------------------------ acceso
-export type Rol = 'admin' | 'dueno' | 'caja' | 'cocina'
+/** Los cuatro de fabrica, o el identificador de un rol a medida. */
+export type Rol = string
+
+/** Un modulo del ERP: una pantalla a la que un rol entra o no entra. */
+export type Modulo = { id: string; nombre: string }
+
+export type RolInfo = {
+  rol: Rol
+  nombre: string
+  descripcion: string
+  /** A que pantallas entra. Es lo que importa al repartir una llave. */
+  modulos: Modulo[]
+  /** true = lo creo el dueño; false = uno de fabrica, que no se borra. */
+  a_medida: boolean
+}
 
 export type EstadoAcceso = {
   autenticado: boolean
@@ -757,7 +771,14 @@ export type EstadoAcceso = {
   usuario: string | null
   rol: Rol | null
   /** Lo dice el servidor; el frontend no deduce permisos del rol. */
-  puede: { vertigo: boolean; administrar: boolean; operar: boolean; cocina: boolean }
+  puede: {
+    vertigo: boolean
+    administrar: boolean
+    operar: boolean
+    cocina: boolean
+    /** Los modulos a los que entra este rol: la barra lateral muestra solo esos. */
+    modulos: string[]
+  }
   configurado: boolean
   problema: string | null
 }
@@ -773,6 +794,16 @@ export type Usuario = {
 export type ListaUsuarios = {
   usuarios: Usuario[]
   yo: string
-  roles: { rol: Rol; descripcion: string }[]
+  roles: RolInfo[]
+  /** El catalogo para armar un rol nuevo. */
+  modulos: Modulo[]
   locales: { slug: string; nombre: string }[]
+}
+
+/** Lo que se escribe al crear o editar un rol. */
+export type DatosRol = {
+  id?: string
+  nombre: string
+  descripcion: string
+  modulos: string[]
 }

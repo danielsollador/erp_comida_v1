@@ -6,6 +6,8 @@ import type {
   CambioReceta,
   Categoria,
   CompraDeInsumo,
+  DatosRol,
+  RolInfo,
   DatosIngrediente,
   ResultadoConteo,
   CuentaPorCobrar,
@@ -94,6 +96,10 @@ export const api = {
   pedirPase: (local: string) =>
     req<{ pase: string }>('/acceso/pase', { method: 'POST', body: JSON.stringify({ local }) }),
   listarUsuarios: () => req<ListaUsuarios>('/usuarios'),
+  crearRol: (r: DatosRol) => req<RolInfo>('/usuarios/roles', { method: 'POST', body: JSON.stringify(r) }),
+  editarRol: (id: string, r: DatosRol) =>
+    req<RolInfo>(`/usuarios/roles/${id}`, { method: 'PUT', body: JSON.stringify(r) }),
+  borrarRol: (id: string) => req<{ ok: boolean }>(`/usuarios/roles/${id}`, { method: 'DELETE' }),
   crearUsuario: (u: { usuario: string; clave: string; rol: Rol; locales?: string[] }) =>
     req<Usuario>('/usuarios', { method: 'POST', body: JSON.stringify(u) }),
   cambiarRol: (usuario: string, rol: Rol) =>

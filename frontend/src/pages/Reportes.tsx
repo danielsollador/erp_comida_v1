@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
@@ -28,7 +29,14 @@ const ESTILO_INSIGHT: Record<Insight['tipo'], { caja: string; icono: string }> =
   info: { caja: 'bg-acento-50 border-acento-200 text-acento-900', icono: 'i' },
 }
 
+const SECCIONES = [
+  { id: 'resumen', texto: 'Resumen' },
+  { id: 'productos', texto: 'Qué se vendió' },
+  { id: 'combos', texto: 'Combinaciones' },
+]
+
 export default function Reportes() {
+  const [seccion, irA] = useSeccion(SECCIONES)
   const [periodo, setPeriodo] = useState<Periodo>('dia')
   const [datos, setDatos] = useState<ReporteResumen | null>(null)
   // Llega ordenado por ingresos, que es el ranking que el backend arma; aqui
@@ -58,7 +66,7 @@ export default function Reportes() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Reportes" />
+      <NavBar titulo="Reportes" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
 
       <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2">
         {PERIODOS.map((p) => (
@@ -92,6 +100,9 @@ export default function Reportes() {
               </p>
             )}
 
+
+            {seccion === 'resumen' && (
+              <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi titulo="Ventas" ayuda="kpi.ventas" valor={`$${datos.ventas.toFixed(2)}`} destacado />
               <Kpi
@@ -211,6 +222,32 @@ export default function Reportes() {
               </div>
             )}
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <h2 className="font-semibold mb-2">Como te pagaron</h2>
+                {Object.entries(datos.por_metodo_pago).map(([metodo, monto]) => (
+                  <div key={metodo} className="flex justify-between text-sm py-1">
+                    <span className="text-neutral-600">{metodo}</span>
+                    <span className="font-medium tabular-nums">${monto.toFixed(2)}</span>
+                  </div>
+                ))}
+                {Object.keys(datos.por_metodo_pago).length === 0 && (
+                  <p className="text-neutral-400 text-sm">Sin cobros en el periodo.</p>
+                )}
+              </div>
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <h2 className="font-semibold mb-2">Pedidos anulados</h2>
+                <p className="text-3xl font-bold tabular-nums">{datos.pedidos_anulados}</p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Si este numero crece, revisa que esta fallando al tomar los pedidos.
+                </p>
+              </div>
+            </div>
+              </>
+            )}
+
+            {seccion === 'productos' && (
+              <>
             {datos.top_productos.length > 0 && (
               <div className="bg-white rounded-2xl border border-neutral-200 p-4">
                 <h2 className="font-semibold mb-3">Que se vendio</h2>
@@ -269,30 +306,10 @@ export default function Reportes() {
                 </Tabla>
               </div>
             )}
+              </>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-2">Como te pagaron</h2>
-                {Object.entries(datos.por_metodo_pago).map(([metodo, monto]) => (
-                  <div key={metodo} className="flex justify-between text-sm py-1">
-                    <span className="text-neutral-600">{metodo}</span>
-                    <span className="font-medium tabular-nums">${monto.toFixed(2)}</span>
-                  </div>
-                ))}
-                {Object.keys(datos.por_metodo_pago).length === 0 && (
-                  <p className="text-neutral-400 text-sm">Sin cobros en el periodo.</p>
-                )}
-              </div>
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-2">Pedidos anulados</h2>
-                <p className="text-3xl font-bold tabular-nums">{datos.pedidos_anulados}</p>
-                <p className="text-xs text-neutral-500 mt-1">
-                  Si este numero crece, revisa que esta fallando al tomar los pedidos.
-                </p>
-              </div>
-            </div>
-
-            <SeccionCombos combos={combos} fmt={fmt} />
+            {seccion === 'combos' && <SeccionCombos combos={combos} fmt={fmt} />}
           </>
         )}
       </Pagina>

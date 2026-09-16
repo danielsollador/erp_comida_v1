@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
@@ -24,14 +25,14 @@ const PERIODOS: { valor: Periodo; texto: string }[] = [
   { valor: 'mes', texto: 'Este mes' },
 ]
 
-const TABS = [
+const SECCIONES = [
   { id: 'ventas', texto: 'Libro de ventas' },
   { id: 'compras', texto: 'Libro de compras' },
   { id: 'declaraciones', texto: 'Declaraciones' },
-] as const
+]
 
 export default function Impuestos() {
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('ventas')
+  const [seccion, irA] = useSeccion(SECCIONES)
   // Los libros del SENIAT se entregan por fecha, pero revisar una factura
   // concreta o la venta mas grande del mes es buscar, no leer: por eso
   // tambien se ordenan por numero de factura, por cliente o por monto.
@@ -88,7 +89,7 @@ export default function Impuestos() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Impuestos" />
+      <NavBar titulo="Impuestos" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
         {PERIODOS.map((p) => (
           <button
@@ -143,21 +144,7 @@ export default function Impuestos() {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-2 rounded-full text-sm font-semibold border ${
-                tab === t.id ? 'bg-neutral-900 text-white border-neutral-900' : 'bg-white border-neutral-200'
-              }`}
-            >
-              {t.texto}
-            </button>
-          ))}
-        </div>
-
-        {tab === 'ventas' && ventas && (
+        {seccion === 'ventas' && ventas && (
           <div className="space-y-3">
             {ventas.ventas_no_facturadas > 0 && (
               <p className="bg-aviso-50 border border-aviso-200 text-aviso-900 rounded-xl p-3 text-sm">
@@ -216,7 +203,7 @@ export default function Impuestos() {
           </div>
         )}
 
-        {tab === 'compras' && compras && (
+        {seccion === 'compras' && compras && (
           <Tabla orden={ordenCompras} glosario="librocompras" className="bg-white rounded-2xl border border-neutral-200">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
@@ -266,7 +253,7 @@ export default function Impuestos() {
           </Tabla>
         )}
 
-        {tab === 'declaraciones' && <Declaraciones />}
+        {seccion === 'declaraciones' && <Declaraciones />}
       </Pagina>
     </div>
   )

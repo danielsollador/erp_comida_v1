@@ -203,12 +203,17 @@ def test_el_estado_dice_quien_eres_y_que_puedes(fuera, client):
     assert fuera.get("/api/acceso/estado").json()["autenticado"] is False
     d = client.get("/api/acceso/estado").json()
     assert d["autenticado"] is True and d["usuario"] == "admin"
-    assert d["puede"] == {"vertigo": True, "administrar": True, "operar": True, "cocina": True}
+    assert {k: v for k, v in d["puede"].items() if k != "modulos"} == {
+        "vertigo": True, "administrar": True, "operar": True, "cocina": True}
+    # Y a que modulos entra: con esto la barra lateral muestra solo lo suyo.
+    assert "contabilidad" in d["puede"]["modulos"] and "pos" in d["puede"]["modulos"]
     assert d["local"]["slug"] == LOCAL
     assert d["local"]["logo"] == "/logo-savora.png"
     assert d["es_hub"] is False
     c = entrar(fuera, *COCINERO).get("/api/acceso/estado").json()
-    assert c["puede"] == {"vertigo": False, "administrar": False, "operar": False, "cocina": True}
+    assert {k: v for k, v in c["puede"].items() if k != "modulos"} == {
+        "vertigo": False, "administrar": False, "operar": False, "cocina": True}
+    assert c["puede"]["modulos"] == ["cocina"]
 
 
 def test_el_favicon_es_el_del_local(fuera):

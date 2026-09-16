@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import contabilidad, models, settings
-from app.acceso import auth, sesion, usuarios
+from app.acceso import auth, roles, sesion, usuarios
 from app.database import Base, get_db
 from app.main import app
 
@@ -36,6 +36,8 @@ def _almacen_aislado(tmp_path_factory):
     d = tmp_path_factory.mktemp("compartido")
     usuarios.SHARED_DIR = d
     usuarios.USERS_FILE = d / "users.json"
+    # Los roles a medida viven al lado de los usuarios, en el mismo volumen.
+    roles.RUTA = d / "roles.json"
     # Secreto fijo y de prueba: sin esto cada ejecucion crea uno en el
     # directorio compartido de verdad.
     sesion._CLAVE = b"secreto-de-pruebas-no-usar-en-produccion"

@@ -47,11 +47,7 @@ type Lado = 'abajo' | 'arriba'
  * ordenar: un envoltorio dejaria un boton dentro de otro boton, que ni es
  * HTML valido ni se puede enfocar con el teclado.
  */
-export function useAyuda(
-  explica: Explicacion | undefined,
-  titulo: string,
-  { tactil = true }: { tactil?: boolean } = {},
-) {
+export function useAyuda(explica: Explicacion | undefined, titulo: string) {
   const [abierta, setAbierta] = useState(false)
   const [caja, setCaja] = useState<{ x: number; y: number; lado: Lado } | null>(null)
   const ancla = useRef<HTMLElement | null>(null)
@@ -114,19 +110,28 @@ export function useAyuda(
     onPointerLeave: (e: React.PointerEvent<HTMLElement>) => {
       if (e.pointerType === 'mouse') cerrar()
     },
+    // En una tablet no hay cursor que posar. La pulsacion LARGA no le quita
+    // el sitio a nada: un toque normal sigue ordenando la columna o abriendo
+    // la tarjeta, y mantener el dedo es el gesto que ya significa "dime mas"
+    // en cualquier telefono.
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      if (e.pointerType === 'mouse') return
+      const el = e.currentTarget
+      temporizador.current = window.setTimeout(() => abrir(el, true), 450)
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
+      if (e.pointerType !== 'mouse') window.clearTimeout(temporizador.current)
+    },
+    onPointerCancel: cerrar,
+    // Mantener el dedo sobre un texto abre el menu de seleccion del sistema:
+    // seria una ventana del navegador encima de la nuestra.
+    onContextMenu: (e: React.MouseEvent) => {
+      if (abierta) e.preventDefault()
+    },
     // Con el teclado: al tabular hasta el titulo se abre igual que al pasar
     // el raton, y Escape la cierra.
     onFocus: (e: React.FocusEvent<HTMLElement>) => abrir(e.currentTarget, true),
     onBlur: cerrar,
-    ...(tactil
-      ? {
-          onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
-            if (e.pointerType === 'mouse') return
-            if (abierta) cerrar()
-            else abrir(e.currentTarget, true)
-          },
-        }
-      : {}),
   }
 
   return { props, abierta, panel: <Panel id={id} titulo={titulo} explica={explica} caja={abierta ? caja : null} /> }
@@ -193,16 +198,14 @@ export function Ayuda({
   titulo,
   children,
   className = '',
-  tactil = true,
 }: {
   explica: Explicacion | undefined
   /** El encabezado del panel. Por defecto, el propio texto del titulo. */
   titulo?: string
   children: ReactNode
   className?: string
-  tactil?: boolean
 }) {
-  const { props, panel } = useAyuda(explica, titulo ?? (typeof children === 'string' ? children : ''), { tactil })
+  const { props, panel } = useAyuda(explica, titulo ?? (typeof children === 'string' ? children : ''))
   if (!explica) return <span className={className}>{children}</span>
   return (
     <span {...props} tabIndex={0} className={`vp-con-ayuda ${className}`}>

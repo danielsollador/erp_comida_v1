@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
@@ -8,7 +9,13 @@ import { api } from '../lib/api'
 import { fmtNum, useMoneda } from '../lib/moneda'
 import type { EstadoTasa, PuntoTasa } from '../lib/types'
 
+const SECCIONES = [
+  { id: 'hoy', texto: 'Tasa de hoy' },
+  { id: 'historial', texto: 'Historial' },
+]
+
 export default function Tasa() {
+  const [seccion, irA] = useSeccion(SECCIONES)
   const { recargar } = useMoneda()
   const [estado, setEstado] = useState<EstadoTasa | null>(null)
   const [historial, setHistorial] = useState<PuntoTasa[]>([])
@@ -69,8 +76,13 @@ export default function Tasa() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Tasa de cambio" />
+      <NavBar titulo="Tasa de cambio" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="media">
+        {error && <p className="text-peligro-600 text-sm">{error}</p>}
+        {aviso && <p className="text-exito-700 text-sm">{aviso}</p>}
+
+        {seccion === 'hoy' && (
+          <>
         {/* --------- tasa vigente --------- */}
         <div className="bg-white rounded-2xl border border-neutral-200 p-5">
           <div className="flex items-start justify-between gap-3 mb-3">
@@ -137,9 +149,6 @@ export default function Tasa() {
           </p>
         </div>
 
-        {error && <p className="text-peligro-600 text-sm">{error}</p>}
-        {aviso && <p className="text-exito-700 text-sm">{aviso}</p>}
-
         {/* --------- controles --------- */}
         <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
           <div>
@@ -187,7 +196,11 @@ export default function Tasa() {
             )}
           </div>
         </div>
+          </>
+        )}
 
+        {seccion === 'historial' && (
+          <>
         {/* --------- historial --------- */}
         <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
           <div className="px-5 pt-4 pb-2">
@@ -241,6 +254,8 @@ export default function Tasa() {
           </table>
           </Tabla>
         </div>
+          </>
+        )}
       </Pagina>
     </div>
   )

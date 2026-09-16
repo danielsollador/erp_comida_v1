@@ -798,14 +798,11 @@ th:hover .vp-con-ayuda {
   text-decoration-color: var(--vp-acento);
 }
 
-/* El desplegable "¿Que significa cada columna?": es la version tactil de la
-   misma explicacion, porque en una tablet no hay cursor que posar. */
-.vp-glosario {
-  padding: 0 0.25rem;
-}
-.vp-glosario dd {
-  margin-left: 0;
-  color: var(--color-neutral-500);
+/* Con el dedo encima no se selecciona el texto del titulo: ahi la pulsacion
+   larga abre la explicacion. */
+th .vp-con-ayuda {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ── Tablas: ordenar por columna ──────────────────────────────────────────── */

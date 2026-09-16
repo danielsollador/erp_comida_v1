@@ -5,7 +5,6 @@ import Inventario from './pages/Inventario'
 import Menu from './pages/Menu'
 import Caja from './pages/Caja'
 import Reportes from './pages/Reportes'
-import Sistema from './pages/Sistema'
 import Tasa from './pages/Tasa'
 import Contabilidad from './pages/Contabilidad'
 import Compras from './pages/Compras'
@@ -14,20 +13,24 @@ import Inicio from './pages/Inicio'
 import Recetas from './pages/Recetas'
 import Usuarios from './pages/Usuarios'
 import MiCuenta from './pages/MiCuenta'
-import Rail from './components/Rail'
+import Rail, { entraA } from './components/Rail'
 import { DialogoProvider } from './components/dialogo'
 import { MonedaProvider } from './lib/moneda'
 import { AccesoProvider, useAcceso } from './lib/acceso'
 import type { ReactNode } from 'react'
 
 /**
- * Lo que cada rol puede abrir. Es comodidad --que un cocinero no aterrice en
- * una pantalla que le va a responder 403 en cada llamada--; la cerradura de
- * verdad esta en el middleware del backend.
+ * Lo que cada rol puede abrir, modulo por modulo. Es comodidad --que un
+ * cocinero no aterrice en una pantalla que le va a responder 403 en cada
+ * llamada--; la cerradura de verdad esta en el middleware del backend.
+ *
+ * Se pregunta por el MODULO y no por "operar"/"administrar" porque con roles a
+ * medida esas dos categorias ya no alcanzan: un mesonero opera el punto de
+ * venta y no tiene por que entrar a compras.
  */
-function Requiere({ que, children }: { que: 'operar' | 'administrar'; children: ReactNode }) {
+function Requiere({ modulo, children }: { modulo: string; children: ReactNode }) {
   const { estado } = useAcceso()
-  if (!estado.puede[que]) return <Navigate to="/" replace />
+  if (!entraA(estado.puede, modulo)) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -58,19 +61,18 @@ export default function App() {
               <Route path="/cocina" element={<Cocina />} />
               <Route path="/mi-cuenta" element={<MiCuenta />} />
 
-              <Route path="/pos" element={<Requiere que="operar"><POS /></Requiere>} />
-              <Route path="/inventario" element={<Requiere que="operar"><Inventario /></Requiere>} />
-              <Route path="/menu" element={<Requiere que="operar"><Menu /></Requiere>} />
-              <Route path="/caja" element={<Requiere que="operar"><Caja /></Requiere>} />
-              <Route path="/reportes" element={<Requiere que="operar"><Reportes /></Requiere>} />
-              <Route path="/tasa" element={<Requiere que="operar"><Tasa /></Requiere>} />
-              <Route path="/compras" element={<Requiere que="operar"><Compras /></Requiere>} />
-              <Route path="/recetas" element={<Requiere que="operar"><Recetas /></Requiere>} />
+              <Route path="/pos" element={<Requiere modulo="pos"><POS /></Requiere>} />
+              <Route path="/inventario" element={<Requiere modulo="inventario"><Inventario /></Requiere>} />
+              <Route path="/menu" element={<Requiere modulo="menu"><Menu /></Requiere>} />
+              <Route path="/caja" element={<Requiere modulo="caja"><Caja /></Requiere>} />
+              <Route path="/reportes" element={<Requiere modulo="reportes"><Reportes /></Requiere>} />
+              <Route path="/tasa" element={<Requiere modulo="tasa"><Tasa /></Requiere>} />
+              <Route path="/compras" element={<Requiere modulo="compras"><Compras /></Requiere>} />
+              <Route path="/recetas" element={<Requiere modulo="recetas"><Recetas /></Requiere>} />
 
-              <Route path="/sistema" element={<Requiere que="administrar"><Sistema /></Requiere>} />
-              <Route path="/contabilidad" element={<Requiere que="administrar"><Contabilidad /></Requiere>} />
-              <Route path="/impuestos" element={<Requiere que="administrar"><Impuestos /></Requiere>} />
-              <Route path="/usuarios" element={<Requiere que="administrar"><Usuarios /></Requiere>} />
+              <Route path="/contabilidad" element={<Requiere modulo="contabilidad"><Contabilidad /></Requiere>} />
+              <Route path="/impuestos" element={<Requiere modulo="impuestos"><Impuestos /></Requiere>} />
+              <Route path="/usuarios" element={<Requiere modulo="usuarios"><Usuarios /></Requiere>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

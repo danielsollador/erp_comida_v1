@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 from .. import settings
-from . import permisos
+from . import permisos, roles
 
 SHARED_DIR = Path(settings.SHARED_DIR)
 USERS_FILE = SHARED_DIR / "users.json"
@@ -194,9 +194,15 @@ def _validar_clave(clave: str) -> str:
 
 
 def _validar_rol(rol: str | None) -> str:
+    """Los cuatro de fabrica y los que el dueño haya creado (ver `roles.py`).
+
+    Se consulta la lista viva y no una constante: un rol a medida creado hoy
+    tiene que poder asignarse hoy.
+    """
     r = (rol or "").strip().lower()
-    if r not in ROLES:
-        raise ErrorUsuarios(f"Rol invalido. Debe ser uno de: {', '.join(ROLES)}")
+    validos = tuple(ROLES) + tuple(x["id"] for x in roles.listar())
+    if r not in validos:
+        raise ErrorUsuarios(f"Rol invalido. Debe ser uno de: {', '.join(validos)}")
     return r
 
 

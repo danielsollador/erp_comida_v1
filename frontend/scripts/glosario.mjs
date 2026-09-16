@@ -26,8 +26,15 @@ for (const [, seccion] of glosario.matchAll(/\[`(\w+)\.\$\{k\}`/g)) {
 const faltan = []
 const usadas = new Set()
 
-for (const archivo of readdirSync(join(raiz, 'pages')).filter((f) => f.endsWith('.tsx'))) {
-  const texto = readFileSync(join(raiz, 'pages', archivo), 'utf8')
+/** Todas las pantallas, incluidas las piezas sueltas de `pages/partes`. */
+function pantallas(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? pantallas(join(dir, e.name)) : e.name.endsWith('.tsx') ? [join(dir, e.name)] : [],
+  )
+}
+
+for (const archivo of pantallas(join(raiz, 'pages'))) {
+  const texto = readFileSync(archivo, 'utf8')
   let seccion = null
   for (const linea of texto.split('\n')) {
     const tabla = linea.match(/<Tabla\b[^>]*?glosario="([\w.]+)"/)

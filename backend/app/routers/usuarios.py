@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import locales, settings
-from ..acceso import auth, permisos, usuarios
+from ..acceso import auth, permisos, roles, usuarios
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
 
@@ -44,6 +44,15 @@ class NuevoUsuario(BaseModel):
 
 class CambioRol(BaseModel):
     rol: str = "caja"
+
+
+class NuevoRol(BaseModel):
+    """Un rol a medida: un nombre y los modulos a los que entra."""
+
+    id: str = ""
+    nombre: str = ""
+    descripcion: str = ""
+    modulos: List[str] = []
 
 
 class CambioLocales(BaseModel):
@@ -98,6 +107,18 @@ def _objetivo(s: dict, usuario: str) -> dict:
     return ficha
 
 
+def _ficha_rol(rol: str) -> dict:
+    """Un rol tal como lo muestra la pantalla de Usuarios."""
+    return {
+        "rol": rol,
+        "nombre": permisos.nombre_de(rol),
+        "descripcion": permisos.descripcion_de(rol),
+        "modulos": [{"id": m, "nombre": permisos.MODULOS[m]["nombre"]}
+                    for m in permisos.modulos_de(rol)],
+        "a_medida": permisos.es_a_medida(rol),
+    }
+
+
 def _rol_asignable(s: dict, rol: str) -> str:
     rol = (rol or "").strip().lower()
     if rol not in permisos.roles_que_puede_asignar(s["rol"]):
@@ -117,12 +138,54 @@ def listar(request: Request) -> dict:
     return {
         "usuarios": visibles,
         "yo": s["usuario"],
-        "roles": [{"rol": r, "descripcion": permisos.DESCRIPCION[r]}
-                  for r in permisos.roles_que_puede_asignar(s["rol"])],
+        # Cada rol con LOS MODULOS a los que entra: es lo que se pregunta
+        # quien reparte una llave, y lo que una frase de descripcion no dice.
+        "roles": [_ficha_rol(r) for r in permisos.roles_que_puede_asignar(s["rol"])],
+        # El catalogo para armar uno nuevo.
+        "modulos": [{"id": m, "nombre": permisos.MODULOS[m]["nombre"]}
+                    for m in permisos.MODULOS_A_MEDIDA],
         "locales": [{"slug": m["slug"], "nombre": m["nombre"]} for m in fichas],
         # Si quien mira puede repartir locales (solo Vertigo).
         "reparte_locales": permisos.es_vertigo(s["rol"]),
     }
+
+
+@router.post("/roles")
+def crear_rol(datos: NuevoRol, request: Request) -> dict:
+    """Un rol a medida, cuando los de fabrica no encajan: un mesonero que solo
+    toma pedidos, un encargado sin acceso a la contabilidad."""
+    auth.exigir_admin(request)
+    try:
+        return _ficha_rol(
+            roles.crear(datos.id or datos.nombre, datos.nombre, datos.descripcion,
+                        datos.modulos, permisos.ROLES, permisos.MODULOS_A_MEDIDA)["id"]
+        )
+    except roles.ErrorRoles as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/roles/{rol_id}")
+def editar_rol(rol_id: str, datos: NuevoRol, request: Request) -> dict:
+    auth.exigir_admin(request)
+    try:
+        return _ficha_rol(
+            roles.actualizar(rol_id, datos.nombre, datos.descripcion, datos.modulos,
+                             permisos.MODULOS_A_MEDIDA)["id"]
+        )
+    except roles.ErrorRoles as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/roles/{rol_id}")
+def borrar_rol(rol_id: str, request: Request) -> dict:
+    auth.exigir_admin(request)
+    objetivo = (rol_id or "").strip().lower()
+    en_uso = any(u.get("rol") == objetivo for u in usuarios.listar())
+    try:
+        roles.borrar(objetivo, en_uso)
+    except roles.ErrorRoles as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
 
 
 @router.post("")

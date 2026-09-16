@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
@@ -86,7 +87,14 @@ function estadoStock(ing: Ingrediente): { texto: string; tono: 'mal' | 'ojo' } |
   return null
 }
 
+const SECCIONES = [
+  { id: 'insumos', texto: 'Insumos' },
+  { id: 'comprar', texto: 'Qué comprar' },
+  { id: 'perdidas', texto: 'Pérdidas' },
+]
+
 export default function Inventario() {
+  const [seccion, irA] = useSeccion(SECCIONES)
   const dialogo = useDialogo()
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [sugerencias, setSugerencias] = useState<SugerenciaCompra[]>([])
@@ -326,10 +334,12 @@ export default function Inventario() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Inventario" />
+      <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="ancha">
         {error && <Aviso>{error}</Aviso>}
 
+        {seccion === 'insumos' && (
+          <>
         {/* Las cuatro cifras que dicen como esta el deposito sin leer la tabla. */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Cifra
@@ -520,7 +530,11 @@ export default function Inventario() {
             </tbody>
           </table>
         </Tabla>
+          </>
+        )}
 
+        {seccion === 'comprar' && (
+          <>
         {sugerencias.length > 0 && (
           <Seccion
             titulo="Qué comprar"
@@ -571,7 +585,11 @@ export default function Inventario() {
             </p>
           </Aviso>
         )}
+          </>
+        )}
 
+        {seccion === 'perdidas' && (
+          <>
         {/* Sin esta lista el dueno no podia ver cuanto se perdia ni corregir
             una merma duplicada: era la unica perdida del sistema sin historial. */}
         <Seccion
@@ -645,27 +663,8 @@ export default function Inventario() {
             </ul>
           </Seccion>
         )}
-
-        <details className="text-xs text-neutral-500">
-          <summary className="cursor-pointer font-medium text-neutral-600">¿Qué significa cada columna?</summary>
-          <div className="mt-2 space-y-1 leading-relaxed">
-            <p>
-              <b>Costo compra:</b> lo que pagas por 1 unidad, promedio de lo que hay en el depósito.{' '}
-              <b>Reponer:</b> lo que pagaste la última vez; es lo que te va a costar comprar más, y por eso es el
-              número para poner precios.
-            </p>
-            <p>
-              <b>Rendimiento:</b> cuánto de lo comprado queda utilizable después de preparar (100% si no se pierde
-              nada, ej. harina o queso). <b>Costo real:</b> lo que de verdad cuesta 1 unidad utilizable: el número que
-              usan las recetas y los márgenes.
-            </p>
-            <p>
-              <b>Compra:</b> entra mercancía. <b>Merma:</b> se dañó o se botó. <b>Consumo del personal:</b> se lo
-              comió un empleado (costo laboral, no pérdida). <b>Contar:</b> ajusta el sistema a lo que hay de
-              verdad.
-            </p>
-          </div>
-        </details>
+          </>
+        )}
       </Pagina>
 
       {(ficha === 'nuevo' || fichaIng) && (

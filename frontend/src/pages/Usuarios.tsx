@@ -1,50 +1,56 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Pagina } from '../components/ui'
+import { Aviso, Boton, Campo, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
 import { api } from '../lib/api'
-import type { ListaUsuarios, Rol, Usuario } from '../lib/types'
+import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
 
 /**
- * Las cuentas del local. Solo quien administra llega aqui (la ruta lo
- * comprueba y el backend responde 403 a los demas).
+ * Las cuentas del local y lo que cada una puede abrir.
  *
- * El dueño ve y crea a SU gente (dueño, caja, cocina) y lo que crea nace en
- * su local. Vertigo, ademas, ve sus propias cuentas y puede repartir locales
- * desde el hub. Los roles que se ofrecen los manda el servidor: un dueño no
- * ve la opcion de fabricar administradores. Cada persona entra con la suya, y
- * por eso cada pedido puede decir quien lo tomo, quien lo cobro y quien lo
- * anulo.
+ * Solo quien administra llega aqui (la ruta lo comprueba y el backend responde
+ * 403 a los demas). El dueño ve y crea a SU gente y lo que crea nace en su
+ * local. Vertigo, ademas, ve sus propias cuentas y reparte locales desde el
+ * hub. Los roles que se ofrecen los manda el servidor: un dueño no ve la
+ * opcion de fabricar administradores.
+ *
+ * UN ROL ES LA LISTA DE MODULOS A LOS QUE ENTRA. Antes cada rol se describia
+ * con una frase ("Mostrador: vende, cobra, cierra caja") que no respondia lo
+ * unico que se pregunta quien reparte una llave: a que pantallas entra. Ahora
+ * se ven los modulos, y si los cuatro de fabrica no encajan --un mesonero que
+ * solo toma pedidos, un encargado sin contabilidad-- se crea uno.
  */
+const SECCIONES = [
+  { id: 'cuentas', texto: 'Cuentas' },
+  { id: 'crear', texto: 'Crear cuenta' },
+  { id: 'roles', texto: 'Roles' },
+  { id: 'crear-rol', texto: 'Crear rol' },
+]
+
 export default function Usuarios() {
   const { estado } = useAcceso()
+  const [seccion, irA] = useSeccion(SECCIONES)
   const [lista, setLista] = useState<ListaUsuarios | null>(null)
+  const [error, setError] = useState('')
+  const [aviso, setAviso] = useState('')
+  const dialogo = useDialogo()
+
+  const roles = lista?.roles ?? []
+  const nombreRol = (rol: Rol) => roles.find((r) => r.rol === rol)?.nombre ?? NOMBRE_ROL[rol] ?? rol
+
   const orden = useOrden<Usuario>(
     {
       usuario: (u) => u.usuario,
-      rol: (u) => NOMBRE_ROL[u.rol],
+      rol: (u) => nombreRol(u.rol),
       // El que nunca ha entrado no tiene fecha: con `null` cae al final de la
       // lista se ordene como se ordene, que es donde se le ve.
       acceso: (u) => (u.ultimo_acceso ? new Date(u.ultimo_acceso * 1000) : null),
     },
     'usuario',
   )
-  const [error, setError] = useState('')
-  const dialogo = useDialogo()
-  const [aviso, setAviso] = useState('')
-
-  // Alta
-  const [usuario, setUsuario] = useState('')
-  const [clave, setClave] = useState('')
-  const [clave2, setClave2] = useState('')
-  const [rol, setRol] = useState<Rol>('caja')
-  const [creando, setCreando] = useState(false)
-
-  // Reinicio de clave, en linea
-  const [reiniciando, setReiniciando] = useState<string | null>(null)
-  const [claveNueva, setClaveNueva] = useState('')
 
   useEffect(() => {
     cargar()
@@ -63,44 +69,11 @@ export default function Usuarios() {
     window.setTimeout(() => setAviso(''), 3500)
   }
 
-  async function crear(e: FormEvent) {
-    e.preventDefault()
-    if (clave !== clave2) {
-      setError('Las dos contraseñas no coinciden.')
-      return
-    }
-    setCreando(true)
-    try {
-      await api.crearUsuario({ usuario, clave, rol })
-      setUsuario('')
-      setClave('')
-      setClave2('')
-      setRol('caja')
-      ok(`Usuario «${usuario.trim().toLowerCase()}» creado.`)
-      cargar()
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setCreando(false)
-    }
-  }
-
   async function cambiarRol(u: Usuario, nuevo: Rol) {
     try {
       await api.cambiarRol(u.usuario, nuevo)
-      ok(`${u.usuario} ahora es ${NOMBRE_ROL[nuevo].toLowerCase()}. Sus sesiones abiertas se cerraron.`)
+      ok(`${u.usuario} ahora es ${nombreRol(nuevo).toLowerCase()}. Sus sesiones abiertas se cerraron.`)
       cargar()
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
-  async function reiniciar(u: Usuario) {
-    try {
-      await api.reiniciarClave(u.usuario, claveNueva)
-      setReiniciando(null)
-      setClaveNueva('')
-      ok(`Clave de ${u.usuario} cambiada. Tendra que entrar de nuevo.`)
     } catch (err) {
       setError((err as Error).message)
     }
@@ -125,197 +98,481 @@ export default function Usuarios() {
     }
   }
 
-  const campo =
-    'w-full border border-neutral-200 rounded-xl px-3 py-2.5 bg-white text-sm focus:outline-none focus:border-neutral-900'
-
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Usuarios" moneda={false} />
+      <NavBar titulo="Usuarios" moneda={false} secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="media">
-        {(error || aviso) && (
-          <div
-            role="status"
-            className={`rounded-2xl border px-4 py-3 text-sm ${
-              error ? 'bg-peligro-50 border-peligro-200 text-peligro-700' : 'bg-exito-50 border-exito-200 text-exito-800'
-            }`}
+        {error && <Aviso>{error}</Aviso>}
+        {aviso && <Aviso tono="bien">{aviso}</Aviso>}
+
+        {seccion === 'cuentas' && (
+          <Seccion
+            titulo={`Quién entra a ${estado.local.nombre}`}
+            ayuda="Cada persona entra con su cuenta: así el sistema sabe quién cobró, quién anuló y quién cerró la caja."
+            accion={<span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} cuentas` : ''}</span>}
+            plano
           >
-            {error || aviso}
+            <Tabla orden={orden} glosario="usuarios">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                  <tr>
+                    <Th clave="usuario">Usuario</Th>
+                    <Th clave="rol">Rol</Th>
+                    <Th clave="acceso" className="hidden sm:table-cell">Último acceso</Th>
+                    <Th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {orden.ordenar(lista?.usuarios ?? []).map((u) => (
+                    <FilaUsuario
+                      key={u.usuario}
+                      u={u}
+                      soyYo={u.usuario === lista?.yo}
+                      roles={roles}
+                      onRol={(r) => void cambiarRol(u, r)}
+                      onBorrar={() => void borrar(u)}
+                      onClave={ok}
+                      onError={setError}
+                    />
+                  ))}
+                  {lista && lista.usuarios.length === 0 && (
+                    <tr>
+                      <td colSpan={4}>
+                        <Vacio icono="usuarios" titulo="Sin cuentas todavía" />
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </Tabla>
+          </Seccion>
+        )}
+
+        {seccion === 'crear' && (
+          <CrearCuenta
+            roles={roles}
+            onCreado={(usuario) => {
+              ok(`Usuario «${usuario}» creado.`)
+              cargar()
+              irA('cuentas')
+            }}
+            onError={setError}
+          />
+        )}
+
+        {seccion === 'roles' && (
+          <ListaRoles
+            roles={roles}
+            usuarios={lista?.usuarios ?? []}
+            onCambio={cargar}
+            onOk={ok}
+            onError={setError}
+            onCrear={() => irA('crear-rol')}
+          />
+        )}
+
+        {seccion === 'crear-rol' && (
+          <CrearRol
+            modulos={lista?.modulos ?? []}
+            onCreado={(nombre) => {
+              ok(`Rol «${nombre}» creado. Ya se puede asignar a una cuenta.`)
+              cargar()
+              irA('roles')
+            }}
+            onError={setError}
+          />
+        )}
+      </Pagina>
+    </div>
+  )
+}
+
+// ── Cuentas ────────────────────────────────────────────────────────────────
+
+function FilaUsuario({
+  u,
+  soyYo,
+  roles,
+  onRol,
+  onBorrar,
+  onClave,
+  onError,
+}: {
+  u: Usuario
+  soyYo: boolean
+  roles: RolInfo[]
+  onRol: (r: Rol) => void
+  onBorrar: () => void
+  onClave: (texto: string) => void
+  onError: (texto: string) => void
+}) {
+  const [reiniciando, setReiniciando] = useState(false)
+  const [claveNueva, setClaveNueva] = useState('')
+
+  async function reiniciar() {
+    try {
+      await api.reiniciarClave(u.usuario, claveNueva)
+      setReiniciando(false)
+      setClaveNueva('')
+      onClave(`Clave de ${u.usuario} cambiada. Tendrá que entrar de nuevo.`)
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
+  return (
+    <tr className="border-t border-neutral-100 align-top">
+      <td className="p-3">
+        <div className="font-medium">
+          {u.usuario}
+          {soyYo && <span className="ml-2 text-xs text-neutral-400">(tú)</span>}
+        </div>
+        {reiniciando && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <input
+              type="password"
+              autoComplete="new-password"
+              placeholder="Clave nueva (8 o más)"
+              value={claveNueva}
+              onChange={(e) => setClaveNueva(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+            />
+            <Boton onClick={() => void reiniciar()}>Guardar</Boton>
+            <Boton
+              tono="fantasma"
+              onClick={() => {
+                setReiniciando(false)
+                setClaveNueva('')
+              }}
+            >
+              Cancelar
+            </Boton>
+          </div>
+        )}
+      </td>
+      <td className="p-3">
+        <select
+          value={u.rol}
+          disabled={soyYo}
+          onChange={(e) => onRol(e.target.value)}
+          className="border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-sm disabled:opacity-60"
+          aria-label={`Rol de ${u.usuario}`}
+        >
+          {roles.map((r) => (
+            <option key={r.rol} value={r.rol}>
+              {r.nombre}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className="p-3 text-neutral-500 hidden sm:table-cell tabular-nums">
+        {u.ultimo_acceso
+          ? new Date(u.ultimo_acceso * 1000).toLocaleString('es-VE', {
+              day: '2-digit',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : 'Todavía no ha entrado'}
+      </td>
+      <td className="p-3 text-right whitespace-nowrap">
+        <button onClick={() => setReiniciando(true)} className="text-acento-600 font-medium text-sm mr-3">
+          Clave
+        </button>
+        {!soyYo && (
+          <button onClick={onBorrar} className="text-peligro-600 font-medium text-sm">
+            Borrar
+          </button>
+        )}
+      </td>
+    </tr>
+  )
+}
+
+function CrearCuenta({
+  roles,
+  onCreado,
+  onError,
+}: {
+  roles: RolInfo[]
+  onCreado: (usuario: string) => void
+  onError: (texto: string) => void
+}) {
+  const [usuario, setUsuario] = useState('')
+  const [clave, setClave] = useState('')
+  const [clave2, setClave2] = useState('')
+  const [rol, setRol] = useState<Rol>('caja')
+  const [creando, setCreando] = useState(false)
+  const elegido = roles.find((r) => r.rol === rol)
+
+  async function crear(e: FormEvent) {
+    e.preventDefault()
+    if (clave !== clave2) {
+      onError('Las dos contraseñas no coinciden.')
+      return
+    }
+    setCreando(true)
+    try {
+      await api.crearUsuario({ usuario, clave, rol })
+      onCreado(usuario.trim().toLowerCase())
+      setUsuario('')
+      setClave('')
+      setClave2('')
+    } catch (err) {
+      onError((err as Error).message)
+    } finally {
+      setCreando(false)
+    }
+  }
+
+  return (
+    <form onSubmit={crear}>
+      <Seccion
+        titulo="Nueva cuenta"
+        ayuda="El usuario va en minúsculas y sin espacios; la clave, 8 caracteres como mínimo."
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Campo
+            etiqueta="Usuario"
+            value={usuario}
+            onChange={(e) => setUsuario(e.target.value)}
+            required
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="ej. maria"
+          />
+          <Selector etiqueta="Rol" value={rol} onChange={(e) => setRol(e.target.value)}>
+            {roles.map((r) => (
+              <option key={r.rol} value={r.rol}>
+                {r.nombre}
+              </option>
+            ))}
+          </Selector>
+          <Campo
+            etiqueta="Contraseña"
+            type="password"
+            autoComplete="new-password"
+            value={clave}
+            onChange={(e) => setClave(e.target.value)}
+            required
+            minLength={8}
+          />
+          <Campo
+            etiqueta="Repetir contraseña"
+            type="password"
+            autoComplete="new-password"
+            value={clave2}
+            onChange={(e) => setClave2(e.target.value)}
+            required
+            minLength={8}
+          />
+        </div>
+
+        {/* Lo que se le está entregando, antes de entregarlo. */}
+        {elegido && (
+          <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Con ese rol va a entrar a
+            </p>
+            <Modulos modulos={elegido.modulos} />
+            {elegido.descripcion && <p className="text-xs text-neutral-500 mt-2">{elegido.descripcion}</p>}
           </div>
         )}
 
-        <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-neutral-100 flex items-baseline gap-2">
-            <h2 className="font-semibold">Quien entra a {estado.local.nombre}</h2>
-            <span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} cuentas` : ''}</span>
-          </div>
-          <Tabla orden={orden} glosario="usuarios">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
-              <tr>
-                <Th clave="usuario">Usuario</Th>
-                <Th clave="rol">Rol</Th>
-                <Th clave="acceso" className="hidden sm:table-cell">Ultimo acceso</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {orden.ordenar(lista?.usuarios ?? []).map((u) => {
-                const soyYo = u.usuario === lista?.yo
-                return (
-                  <tr key={u.usuario} className="border-t border-neutral-100 align-top">
-                    <td className="p-3">
-                      <div className="font-medium">
-                        {u.usuario}
-                        {soyYo && <span className="ml-2 text-xs text-neutral-400">(tu)</span>}
-                      </div>
-                      {reiniciando === u.usuario && (
-                        <div className="mt-2 flex gap-2">
-                          <input
-                            type="password"
-                            autoComplete="new-password"
-                            placeholder="Clave nueva (8 o mas)"
-                            value={claveNueva}
-                            onChange={(e) => setClaveNueva(e.target.value)}
-                            className={campo}
-                          />
-                          <button
-                            onClick={() => void reiniciar(u)}
-                            className="bg-neutral-900 text-white rounded-xl px-3 text-sm font-medium"
-                          >
-                            Guardar
-                          </button>
-                          <button
-                            onClick={() => {
-                              setReiniciando(null)
-                              setClaveNueva('')
-                            }}
-                            className="text-neutral-500 text-sm px-2"
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      <select
-                        value={u.rol}
-                        disabled={soyYo}
-                        onChange={(e) => void cambiarRol(u, e.target.value as Rol)}
-                        className="border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-sm disabled:opacity-60"
-                        aria-label={`Rol de ${u.usuario}`}
-                      >
-                        {(lista?.roles ?? []).map((r) => (
-                          <option key={r.rol} value={r.rol}>
-                            {NOMBRE_ROL[r.rol] ?? r.rol}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-3 text-neutral-500 hidden sm:table-cell tabular-nums">
-                      {u.ultimo_acceso
-                        ? new Date(u.ultimo_acceso * 1000).toLocaleString('es-VE', {
-                            day: '2-digit',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : 'Todavia no ha entrado'}
-                    </td>
-                    <td className="p-3 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => {
-                          setReiniciando(u.usuario)
-                          setClaveNueva('')
-                        }}
-                        className="text-acento-600 font-medium text-sm mr-3"
-                      >
-                        Clave
-                      </button>
-                      {!soyYo && (
-                        <button onClick={() => void borrar(u)} className="text-peligro-600 font-medium text-sm">
-                          Borrar
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-              {lista && lista.usuarios.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="p-4 text-center text-neutral-400">
-                    Sin usuarios.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </Tabla>
+        <div className="mt-4">
+          <Boton type="submit" disabled={creando}>
+            {creando ? 'Creando…' : 'Crear cuenta'}
+          </Boton>
+        </div>
+      </Seccion>
+    </form>
+  )
+}
+
+// ── Roles ──────────────────────────────────────────────────────────────────
+
+function Modulos({ modulos }: { modulos: Modulo[] }) {
+  if (modulos.length === 0) return <p className="text-sm text-neutral-400 mt-1">Ningún módulo.</p>
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-1.5">
+      {modulos.map((m) => (
+        <Pastilla key={m.id}>{m.nombre}</Pastilla>
+      ))}
+    </div>
+  )
+}
+
+function ListaRoles({
+  roles,
+  usuarios,
+  onCambio,
+  onOk,
+  onError,
+  onCrear,
+}: {
+  roles: RolInfo[]
+  usuarios: Usuario[]
+  onCambio: () => void
+  onOk: (texto: string) => void
+  onError: (texto: string) => void
+  onCrear: () => void
+}) {
+  const dialogo = useDialogo()
+
+  async function borrar(r: RolInfo) {
+    const cuantos = usuarios.filter((u) => u.rol === r.rol).length
+    if (cuantos > 0) {
+      await dialogo.avisar({
+        titulo: `«${r.nombre}» está en uso`,
+        texto: `${cuantos} cuenta(s) tienen este rol. Cámbialas de rol primero y vuelve a borrarlo.`,
+        tono: 'ojo',
+      })
+      return
+    }
+    if (
+      !(await dialogo.confirmar({
+        titulo: `¿Borrar el rol «${r.nombre}»?`,
+        texto: 'Deja de poder asignarse a nuevas cuentas.',
+        aceptar: 'Borrar',
+        peligro: true,
+      }))
+    )
+      return
+    try {
+      await api.borrarRol(r.rol)
+      onOk(`Rol «${r.nombre}» borrado.`)
+      onCambio()
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
+  return (
+    <Seccion
+      titulo="Roles"
+      ayuda="Un rol es la lista de módulos a los que entra. Lo que no esté en la lista, el sistema se lo niega."
+      accion={<Boton onClick={onCrear}>+ Crear rol</Boton>}
+    >
+      <div className="divide-y divide-neutral-100">
+        {roles.map((r) => {
+          const cuantos = usuarios.filter((u) => u.rol === r.rol).length
+          return (
+            <div key={r.rol} className="py-3 first:pt-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="font-semibold">{r.nombre}</span>
+                  {!r.a_medida && <span className="ml-2 text-xs text-neutral-400">de fábrica</span>}
+                  <span className="ml-2 text-xs text-neutral-400">
+                    {cuantos === 0 ? 'sin cuentas' : `${cuantos} cuenta(s)`}
+                  </span>
+                  {r.descripcion && <p className="text-xs text-neutral-500 mt-0.5">{r.descripcion}</p>}
+                </div>
+                {r.a_medida && (
+                  <button onClick={() => void borrar(r)} className="text-peligro-600 font-medium text-sm shrink-0">
+                    Borrar
+                  </button>
+                )}
+              </div>
+              <Modulos modulos={r.modulos} />
+            </div>
+          )
+        })}
+      </div>
+    </Seccion>
+  )
+}
+
+function CrearRol({
+  modulos,
+  onCreado,
+  onError,
+}: {
+  modulos: Modulo[]
+  onCreado: (nombre: string) => void
+  onError: (texto: string) => void
+}) {
+  const [nombre, setNombre] = useState('')
+  const [descripcion, setDescripcion] = useState('')
+  const [elegidos, setElegidos] = useState<string[]>([])
+  const [creando, setCreando] = useState(false)
+
+  const alternar = (id: string) =>
+    setElegidos((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]))
+
+  async function crear(e: FormEvent) {
+    e.preventDefault()
+    setCreando(true)
+    try {
+      await api.crearRol({ nombre, descripcion, modulos: elegidos })
+      onCreado(nombre.trim())
+      setNombre('')
+      setDescripcion('')
+      setElegidos([])
+    } catch (err) {
+      onError((err as Error).message)
+    } finally {
+      setCreando(false)
+    }
+  }
+
+  return (
+    <form onSubmit={crear}>
+      <Seccion
+        titulo="Crear un rol"
+        ayuda="Para cuando los roles de fábrica no encajan: un mesonero que solo toma pedidos, un encargado sin acceso a la contabilidad."
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Campo
+            etiqueta="Nombre del rol"
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            required
+            placeholder="ej. Mesonero"
+          />
+          <Campo
+            etiqueta="Para qué es (opcional)"
+            value={descripcion}
+            onChange={(e) => setDescripcion(e.target.value)}
+            placeholder="Toma pedidos en mesa y los manda a cocina"
+          />
         </div>
 
-        <form onSubmit={crear} className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
-          <h2 className="font-semibold">Nueva cuenta</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="block text-sm">
-              <span className="text-xs text-neutral-500 uppercase font-semibold">Usuario</span>
-              <input
-                value={usuario}
-                onChange={(e) => setUsuario(e.target.value)}
-                required
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                placeholder="ej. maria"
-                className={campo}
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs text-neutral-500 uppercase font-semibold">Rol</span>
-              <select value={rol} onChange={(e) => setRol(e.target.value as Rol)} className={campo}>
-                {(lista?.roles ?? []).map((r) => (
-                  <option key={r.rol} value={r.rol}>
-                    {NOMBRE_ROL[r.rol] ?? r.rol} — {r.descripcion}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs text-neutral-500 uppercase font-semibold">Contraseña</span>
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={clave}
-                onChange={(e) => setClave(e.target.value)}
-                required
-                minLength={8}
-                className={campo}
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs text-neutral-500 uppercase font-semibold">Repetir contraseña</span>
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={clave2}
-                onChange={(e) => setClave2(e.target.value)}
-                required
-                minLength={8}
-                className={campo}
-              />
-            </label>
-          </div>
-          <p className="text-xs text-neutral-500">
-            El usuario va en minusculas, sin espacios. La clave, 8 caracteres como minimo. Cada persona
-            entra con la suya: asi el sistema sabe quien cobro y quien anulo cada pedido.
-          </p>
-          <button
-            type="submit"
-            disabled={creando}
-            className="w-full sm:w-auto bg-neutral-900 text-white rounded-xl px-5 py-2.5 font-medium disabled:opacity-50"
-          >
-            {creando ? 'Creando...' : 'Crear usuario'}
-          </button>
-        </form>
-      </Pagina>
-    </div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mt-5 mb-2">
+          A qué módulos entra
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {modulos.map((m) => {
+            const marcado = elegidos.includes(m.id)
+            return (
+              <label
+                key={m.id}
+                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 cursor-pointer ${
+                  marcado ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={marcado}
+                  onChange={() => alternar(m.id)}
+                  className="w-4 h-4 accent-neutral-900"
+                />
+                <span className="text-sm font-medium">{m.nombre}</span>
+              </label>
+            )
+          })}
+        </div>
+        <p className="text-xs text-neutral-500 mt-3">
+          Lo que no marques, el sistema se lo niega: no es que la pantalla se esconda, es que el servidor
+          responde que no. Repartir cuentas no está en la lista a propósito: eso se queda contigo.
+        </p>
+
+        <div className="mt-4">
+          <Boton type="submit" disabled={creando || elegidos.length === 0 || !nombre.trim()}>
+            {creando ? 'Creando…' : 'Crear rol'}
+          </Boton>
+        </div>
+      </Seccion>
+    </form>
   )
 }

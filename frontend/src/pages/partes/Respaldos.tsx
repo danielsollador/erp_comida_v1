@@ -1,21 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
-import NavBar from '../components/NavBar'
-import { useDialogo } from '../components/dialogo'
-import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Boton, Modal, Pagina } from '../components/ui'
-import { api } from '../lib/api'
+import { useDialogo } from '../../components/dialogo'
+import { Tabla, Th, useOrden } from '../../components/Tabla'
+import { Boton, Modal } from '../../components/ui'
+import { api } from '../../lib/api'
 import type {
   EstadoRespaldos,
-  PuntoVenta,
   PrevisualizacionRestauracion,
   Respaldo,
   Restauracion,
-} from '../lib/types'
+} from '../../lib/types'
 
 /** Respaldo elegido para restaurar, con lo que se pierde ya calculado. */
 type Candidato = { respaldo: Respaldo; previo: PrevisualizacionRestauracion }
 
-export default function Sistema() {
+/**
+ * Los respaldos de la base: generarlos, bajarlos y restaurar.
+ *
+ * Vivian en el modulo "Sistema", que se quito. La copia automatica cada pocas
+ * horas NO depende de esta pantalla --corre en el servidor-- pero restaurar
+ * si: es la palanca de emergencia el dia que algo se rompe, y no puede quedar
+ * sin ninguna puerta. Va en Contabilidad porque es el modulo del que
+ * administra el negocio, que es justo quien restaura.
+ */
+export default function Respaldos() {
   const [respaldos, setRespaldos] = useState<Respaldo[]>([])
   // El mas reciente primero: es el que se restaura en el 99% de los casos.
   const orden = useOrden<Respaldo>(
@@ -27,7 +34,6 @@ export default function Sistema() {
   const [candidato, setCandidato] = useState<Candidato | null>(null)
   const [restaurando, setRestaurando] = useState(false)
   const [hecho, setHecho] = useState<Restauracion | null>(null)
-  const [puntos, setPuntos] = useState<PuntoVenta[]>([])
   const [error, setError] = useState('')
   const dialogo = useDialogo()
   const archivoRef = useRef<HTMLInputElement>(null)
@@ -39,19 +45,6 @@ export default function Sistema() {
   function cargar() {
     api.listarRespaldos().then(setRespaldos).catch(() => {})
     api.estadoRespaldos().then(setEstado).catch(() => {})
-    api.listarPuntosVenta().then(setPuntos).catch(() => {})
-  }
-
-  async function agregarPunto() {
-    const nombre = await dialogo.pedirTexto({ titulo: 'Nueva caja', etiqueta: 'Nombre de la caja', placeholder: 'Piso 2' })
-    if (!nombre?.trim()) return
-    setError('')
-    try {
-      await api.crearPuntoVenta(nombre.trim())
-      cargar()
-    } catch (e) {
-      setError((e as Error).message)
-    }
   }
 
   async function crearAhora() {
@@ -116,9 +109,7 @@ export default function Sistema() {
     estado != null && (estado.dias_sin_descargar == null || estado.dias_sin_descargar >= 7)
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Sistema" />
-      <Pagina ancho="media">
+    <>
         {/* Restaurar deja la caja del dia descuadrada: la plata fisica es la de
             ahora, la base volvio a hace unas horas. Hay que decirlo, no
             esconderlo detras de un "listo". */}
@@ -153,35 +144,6 @@ export default function Sistema() {
             {error}
           </div>
         )}
-
-        {/* Las cajas fisicas (una por piso). Quien atiende ya no se carga aqui:
-            cada persona entra con su usuario y el sistema lo anota solo en cada
-            pedido, anulacion, retiro y cierre. Las cuentas van en Usuarios. */}
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <div className="flex items-baseline justify-between">
-            <h2 className="font-semibold">Cajas</h2>
-            <button onClick={agregarPunto} className="text-sm font-medium text-acento-600">
-              + Agregar
-            </button>
-          </div>
-          <p className="text-xs text-neutral-500 mt-1">
-            Con dos pisos hay dos gavetas y cada una cierra la suya. Quien cobra queda registrado
-            solo, con el usuario con el que entro.
-          </p>
-          <p className="text-xs text-neutral-500 mt-1">
-            Si el local tiene dos pisos, cada caja cuenta y cierra su propia gaveta.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {puntos.map((pv) => (
-              <span key={pv.id} className="rounded-full bg-neutral-100 px-3 py-1 text-sm">
-                {pv.nombre}
-              </span>
-            ))}
-            {puntos.length === 0 && (
-              <span className="text-sm text-neutral-400">Una sola caja.</span>
-            )}
-          </div>
-        </div>
 
         <div
           className={`rounded-2xl border p-4 ${
@@ -314,7 +276,6 @@ export default function Sistema() {
             className="text-sm w-full"
           />
         </div>
-      </Pagina>
 
       {candidato && (
         <Modal
@@ -370,6 +331,6 @@ export default function Sistema() {
 
         </Modal>
       )}
-    </div>
+    </>
   )
 }

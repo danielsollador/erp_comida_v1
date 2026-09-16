@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
+import Cajas from './partes/Cajas'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type {
@@ -17,7 +19,19 @@ import type {
 const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
 const METODOS_GASTO = ['Efectivo', 'Efectivo $', 'Banco']
 
+// Cerrar la caja es lo que se hace todos los dias; lo demas se mira de vez
+// en cuando. Las cajas fisicas venian del modulo "Sistema", que se quito: su
+// sitio es aqui, que es donde se echan de menos.
+const SECCIONES = [
+  { id: 'cierre', texto: 'Cierre del día' },
+  { id: 'gastos', texto: 'Gastos y retiros' },
+  { id: 'fiado', texto: 'Fiado y propinas' },
+  { id: 'historial', texto: 'Historial' },
+  { id: 'cajas', texto: 'Cajas' },
+]
+
 export default function Caja() {
+  const [seccion, irA] = useSeccion(SECCIONES)
   const [resumen, setResumen] = useState<ResumenCaja | null>(null)
   // El valor solo se usa via tasaInput; se guarda el setter para refrescarlo.
   const [, setConfig] = useState<Configuracion>({ tasa_bcv: 0 })
@@ -218,8 +232,10 @@ export default function Caja() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Cierre de caja" />
+      <NavBar titulo="Cierre de caja" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="media">
+        {seccion === 'cierre' && (
+          <>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Tasa BCV (Bs por USD)</h2>
           <div className="flex flex-wrap gap-2">
@@ -268,189 +284,6 @@ export default function Caja() {
                 <p className="text-neutral-400">Aun no hay ventas cobradas hoy.</p>
               )}
             </div>
-          </div>
-        )}
-
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold">Gastos de hoy</h2>
-            <span className="font-bold">${totalGastosHoy.toFixed(2)}</span>
-          </div>
-          <p className="text-xs text-neutral-500 mb-3">
-            Gas, bolsas, un adelanto, el mandado. Si lo pagaste en efectivo se descuenta de la
-            gaveta; si fue por transferencia, no.
-          </p>
-
-          <div className="space-y-1 mb-3">
-            {gastosHoy.map((g) => (
-              <div key={g.id} className="flex justify-between items-center text-sm">
-                <span>
-                  {g.descripcion}{' '}
-                  <span className="text-xs text-neutral-400">
-                    ({g.categoria}
-                    {g.metodo_pago === 'Banco' ? ' · banco' : ''})
-                  </span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="font-medium">${g.monto.toFixed(2)}</span>
-                  <button onClick={() => borrarGasto(g.id)} className="text-peligro-400 text-xs">
-                    x
-                  </button>
-                </span>
-              </div>
-            ))}
-            {gastosHoy.length === 0 && (
-              <p className="text-neutral-400 text-sm">Sin gastos registrados hoy.</p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <input
-              value={gastoDesc}
-              onChange={(e) => setGastoDesc(e.target.value)}
-              placeholder="Ej. Bombona de gas"
-              className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
-            <select
-              value={gastoCategoria}
-              onChange={(e) => setGastoCategoria(e.target.value)}
-              className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-            >
-              {CATEGORIAS_GASTO.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            <select
-              value={gastoMetodo}
-              onChange={(e) => setGastoMetodo(e.target.value)}
-              className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-              title="De donde salio la plata"
-            >
-              {METODOS_GASTO.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <input
-              value={gastoMonto}
-              onChange={(e) => setGastoMonto(e.target.value)}
-              type="number"
-              step="0.01"
-              placeholder="$"
-              className="w-20 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-            />
-            <button
-              onClick={agregarGasto}
-              className="bg-neutral-900 text-white px-3 py-2 rounded-lg text-sm font-medium"
-            >
-              +
-            </button>
-          </div>
-        </div>
-
-        {/* Separado de Gastos a proposito: el dueno sacando su plata no es un
-            gasto del negocio y no debe bajar la ganancia. */}
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold">Retiros del dueño</h2>
-            <button
-              onClick={registrarRetiro}
-              className="bg-neutral-100 hover:bg-neutral-200 px-3 py-1.5 rounded-lg text-sm font-medium"
-            >
-              Registrar retiro
-            </button>
-          </div>
-          <p className="text-xs text-neutral-500 mb-3">
-            Plata que te llevas del negocio. No cuenta como gasto ni baja la ganancia: sale de tu
-            patrimonio.
-          </p>
-          <div className="space-y-1">
-            {retiros.slice(0, 5).map((r) => (
-              <div key={r.id} className="flex justify-between items-center text-sm">
-                <span className="text-neutral-600">
-                  {new Date(r.fecha).toLocaleDateString('es-VE')}
-                  {r.metodo_pago === 'Banco' && (
-                    <span className="text-xs text-neutral-400"> · banco</span>
-                  )}
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="font-medium tabular-nums">${r.monto.toFixed(2)}</span>
-                  <button onClick={() => borrarRetiro(r.id)} className="text-peligro-400 text-xs">
-                    x
-                  </button>
-                </span>
-              </div>
-            ))}
-            {retiros.length === 0 && (
-              <p className="text-neutral-400 text-sm">Sin retiros registrados.</p>
-            )}
-          </div>
-        </div>
-
-        {/* Plata que esta en la gaveta y NO es del negocio. Antes la propina
-            aparecia como sobrante y terminaba engordando la utilidad, y el
-            fiado no tenia donde registrarse. */}
-        {((resumen?.propinas_por_entregar ?? 0) > 0 || fiado.length > 0) && (
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
-            <h2 className="font-semibold">Plata que no es del negocio</h2>
-            {(resumen?.propinas_por_entregar ?? 0) > 0 && (
-              <div className="flex items-center justify-between rounded-xl bg-acento-50 border border-acento-200 p-3">
-                <div>
-                  <div className="font-medium text-acento-900">Propinas por entregar</div>
-                  <div className="text-xs text-acento-700">
-                    Esta en la gaveta pero es del empleado, no ingreso tuyo.
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold tabular-nums text-acento-900">
-                    ${(resumen?.propinas_por_entregar ?? 0).toFixed(2)}
-                  </span>
-                  <button
-                    onClick={entregarPropinas}
-                    className="rounded-lg bg-acento-600 px-3 py-1.5 text-sm font-medium text-white"
-                  >
-                    Entregar
-                  </button>
-                </div>
-              </div>
-            )}
-            {fiado.length > 0 && (
-              <div className="rounded-xl bg-aviso-50 border border-aviso-200 p-3">
-                <div className="flex justify-between font-medium text-aviso-900">
-                  <span>Fiado por cobrar</span>
-                  <span className="tabular-nums">
-                    ${(resumen?.fiado_por_cobrar ?? 0).toFixed(2)}
-                  </span>
-                </div>
-                <div className="mt-2 space-y-1">
-                  {fiado.map((f) => (
-                    <div
-                      key={f.pedido_id}
-                      className="flex items-center justify-between gap-2 text-sm text-aviso-900"
-                    >
-                      <span className="truncate">
-                        {f.cliente}
-                        <span className="ml-1 text-xs text-aviso-700">
-                          #{f.numero} · hace {f.dias} dia(s)
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className="font-semibold tabular-nums">${f.monto.toFixed(2)}</span>
-                        <button
-                          onClick={() => cobrarFiado(f)}
-                          className="rounded-lg border border-aviso-400 px-2 py-1 text-xs font-medium"
-                        >
-                          Cobrar
-                        </button>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -585,7 +418,202 @@ export default function Caja() {
             </div>
           )}
         </div>
+          </>
+        )}
 
+        {seccion === 'gastos' && (
+          <>
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="font-semibold">Gastos de hoy</h2>
+            <span className="font-bold">${totalGastosHoy.toFixed(2)}</span>
+          </div>
+          <p className="text-xs text-neutral-500 mb-3">
+            Gas, bolsas, un adelanto, el mandado. Si lo pagaste en efectivo se descuenta de la
+            gaveta; si fue por transferencia, no.
+          </p>
+
+          <div className="space-y-1 mb-3">
+            {gastosHoy.map((g) => (
+              <div key={g.id} className="flex justify-between items-center text-sm">
+                <span>
+                  {g.descripcion}{' '}
+                  <span className="text-xs text-neutral-400">
+                    ({g.categoria}
+                    {g.metodo_pago === 'Banco' ? ' · banco' : ''})
+                  </span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="font-medium">${g.monto.toFixed(2)}</span>
+                  <button onClick={() => borrarGasto(g.id)} className="text-peligro-400 text-xs">
+                    x
+                  </button>
+                </span>
+              </div>
+            ))}
+            {gastosHoy.length === 0 && (
+              <p className="text-neutral-400 text-sm">Sin gastos registrados hoy.</p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={gastoDesc}
+              onChange={(e) => setGastoDesc(e.target.value)}
+              placeholder="Ej. Bombona de gas"
+              className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+            />
+            <select
+              value={gastoCategoria}
+              onChange={(e) => setGastoCategoria(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+            >
+              {CATEGORIAS_GASTO.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <select
+              value={gastoMetodo}
+              onChange={(e) => setGastoMetodo(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+              title="De donde salio la plata"
+            >
+              {METODOS_GASTO.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <input
+              value={gastoMonto}
+              onChange={(e) => setGastoMonto(e.target.value)}
+              type="number"
+              step="0.01"
+              placeholder="$"
+              className="w-20 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+            />
+            <button
+              onClick={agregarGasto}
+              className="bg-neutral-900 text-white px-3 py-2 rounded-lg text-sm font-medium"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* Separado de Gastos a proposito: el dueno sacando su plata no es un
+            gasto del negocio y no debe bajar la ganancia. */}
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="font-semibold">Retiros del dueño</h2>
+            <button
+              onClick={registrarRetiro}
+              className="bg-neutral-100 hover:bg-neutral-200 px-3 py-1.5 rounded-lg text-sm font-medium"
+            >
+              Registrar retiro
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 mb-3">
+            Plata que te llevas del negocio. No cuenta como gasto ni baja la ganancia: sale de tu
+            patrimonio.
+          </p>
+          <div className="space-y-1">
+            {retiros.slice(0, 5).map((r) => (
+              <div key={r.id} className="flex justify-between items-center text-sm">
+                <span className="text-neutral-600">
+                  {new Date(r.fecha).toLocaleDateString('es-VE')}
+                  {r.metodo_pago === 'Banco' && (
+                    <span className="text-xs text-neutral-400"> · banco</span>
+                  )}
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="font-medium tabular-nums">${r.monto.toFixed(2)}</span>
+                  <button onClick={() => borrarRetiro(r.id)} className="text-peligro-400 text-xs">
+                    x
+                  </button>
+                </span>
+              </div>
+            ))}
+            {retiros.length === 0 && (
+              <p className="text-neutral-400 text-sm">Sin retiros registrados.</p>
+            )}
+          </div>
+        </div>
+          </>
+        )}
+
+        {seccion === 'fiado' && (
+          <>
+        {/* Plata que esta en la gaveta y NO es del negocio. Antes la propina
+            aparecia como sobrante y terminaba engordando la utilidad, y el
+            fiado no tenia donde registrarse. */}
+        {((resumen?.propinas_por_entregar ?? 0) > 0 || fiado.length > 0) && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+            <h2 className="font-semibold">Plata que no es del negocio</h2>
+            {(resumen?.propinas_por_entregar ?? 0) > 0 && (
+              <div className="flex items-center justify-between rounded-xl bg-acento-50 border border-acento-200 p-3">
+                <div>
+                  <div className="font-medium text-acento-900">Propinas por entregar</div>
+                  <div className="text-xs text-acento-700">
+                    Esta en la gaveta pero es del empleado, no ingreso tuyo.
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold tabular-nums text-acento-900">
+                    ${(resumen?.propinas_por_entregar ?? 0).toFixed(2)}
+                  </span>
+                  <button
+                    onClick={entregarPropinas}
+                    className="rounded-lg bg-acento-600 px-3 py-1.5 text-sm font-medium text-white"
+                  >
+                    Entregar
+                  </button>
+                </div>
+              </div>
+            )}
+            {fiado.length > 0 && (
+              <div className="rounded-xl bg-aviso-50 border border-aviso-200 p-3">
+                <div className="flex justify-between font-medium text-aviso-900">
+                  <span>Fiado por cobrar</span>
+                  <span className="tabular-nums">
+                    ${(resumen?.fiado_por_cobrar ?? 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {fiado.map((f) => (
+                    <div
+                      key={f.pedido_id}
+                      className="flex items-center justify-between gap-2 text-sm text-aviso-900"
+                    >
+                      <span className="truncate">
+                        {f.cliente}
+                        <span className="ml-1 text-xs text-aviso-700">
+                          #{f.numero} · hace {f.dias} dia(s)
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="font-semibold tabular-nums">${f.monto.toFixed(2)}</span>
+                        <button
+                          onClick={() => cobrarFiado(f)}
+                          className="rounded-lg border border-aviso-400 px-2 py-1 text-xs font-medium"
+                        >
+                          Cobrar
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+          </>
+        )}
+
+        {seccion === 'historial' && (
+          <>
         {cierres.length > 0 && (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-2">Historial de cierres</h2>
@@ -657,6 +685,10 @@ export default function Caja() {
             </Tabla>
           </div>
         )}
+          </>
+        )}
+
+        {seccion === 'cajas' && <Cajas />}
       </Pagina>
     </div>
   )

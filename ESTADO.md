@@ -412,6 +412,76 @@ solo lo que se muestra: con dos verdades sobre la misma fila, la receta y la
 compra terminarían hablando de unidades distintas. Migración automática
 (`VALORES` en `migrations.py`, idempotente) con su test.
 
+### Secciones arriba, roles por módulo, y fuera el módulo Sistema (16-sep, noche)
+
+**Las secciones, arriba y centradas.** Cada módulo había crecido hacia abajo o
+se había resuelto con pestañas propias metidas dentro del contenido:
+Contabilidad e Impuestos tenían las suyas, cada una con su estilo, y el resto
+apilaba tarjetas. Ahora `components/Secciones.tsx` pone en el encabezado, en
+el mismo sitio en todas las pantallas, lo que se puede hacer en ese módulo.
+**La sección vive en la URL** (`?s=`) y no en un `useState`: con estado local
+el botón de volver se saltaba las secciones y sacaba del módulo entero, y no
+se podía mandar a alguien directo a "Crear cuenta".
+
+| Módulo | Secciones |
+|---|---|
+| Usuarios | Cuentas · Crear cuenta · Roles · Crear rol |
+| Caja | Cierre del día · Gastos y retiros · Fiado y propinas · Historial · Cajas |
+| Contabilidad | Plan · Diario · Comprobación · Resultados · Balance · Equipos · Respaldos |
+| Impuestos | Libro de ventas · Libro de compras · Declaraciones |
+| Inventario | Insumos · Qué comprar · Pérdidas |
+| Reportes | Resumen · Qué se vendió · Combinaciones |
+| Compras | Facturas · Cargar factura |
+| Tasa | Tasa de hoy · Historial |
+| Menú | El menú · Fuera del menú |
+
+POS, Cocina, Recetas y Mi cuenta **no** llevan barra: hacen una sola cosa, y
+una pestaña única es ruido que hay que leer para descubrir que no ofrece nada.
+
+**Un rol es la lista de módulos a los que entra.** Antes cada rol se describía
+con una frase ("Mostrador: vende, cobra, cierra caja") que no responde lo único
+que se pregunta quien reparte una llave: a qué pantallas entra. Ahora la
+pantalla de Roles muestra los módulos de cada uno, y se pueden **crear roles a
+medida** (`acceso/roles.py`, en `SHARED_DIR/roles.json`, al lado de
+`users.json` y en el mismo volumen que comparte el hub).
+
+Cómo se decidió, y por qué así:
+
+- **`permisos.MODULOS`** declara, por módulo, las rutas de API que necesita:
+  `rutas` (completo), `lectura` (solo GET, lo que mira pero no le pertenece: el
+  POS lee el menú y no lo edita) y `escribe_solo` (las excepciones puntuales
+  que dejan a la cocina marcar una comanda lista sin poder cobrar).
+- **Los cuatro roles de fábrica conservan su código de siempre**, intacto. Solo
+  los roles a medida pasan por el camino nuevo, que **niega por defecto**: un
+  módulo nuevo del ERP queda cerrado hasta que se declare y alguien lo agregue
+  al rol. Esto se hizo así a propósito para no reescribir la cerradura que ya
+  estaba probada.
+- **`usuarios` no está entre los módulos elegibles**: repartir cuentas se queda
+  con el dueño, y además los routers de usuarios exigen rol de administrador
+  aparte del middleware — un rol a medida con ese módulo pasaría el middleware
+  y chocaría contra el router, que es la peor forma de fallar.
+- La barra lateral y las rutas del frontend ahora filtran **por módulo**
+  (`Requiere modulo="inventario"`), no por "operar"/"administrar": con roles a
+  medida esas dos categorías ya no alcanzan.
+- Un rol que desaparece del archivo no deja a la cuenta con todo abierto: cae
+  en `cocina`, el más restringido. Hay test.
+
+`tests/test_roles.py` (11 casos) comprueba lo que importa: que el middleware
+**niegue** lo que el rol no nombró, que agregar un módulo abra su pantalla, y
+que no se borre un rol que alguien está usando.
+
+**Fuera el módulo Sistema.** No significaba nada para quien atiende un
+restaurante. Sus dos capacidades reales se mudaron a donde se echan de menos:
+**Cajas → Cierre de caja** (una caja se crea para poder cerrarla aparte) y
+**Respaldos → Contabilidad** (es el módulo de quien administra, que es quien
+restaura). La copia automática cada pocas horas **no dependía de esa pantalla**
+— corre en un hilo del servidor — pero restaurar sí, y esa es la palanca de
+emergencia: no podía quedarse sin ninguna puerta.
+
+**Los diccionarios de columnas desplegables se quitaron.** Las explicaciones
+siguen al posar el cursor; en tablet salen con **pulsación larga**, que no le
+quita el sitio a nada (un toque normal sigue ordenando la columna).
+
 ### Qué falta acordar
 
 - **Commit y push de todo esto** al repo (hoy vive en mi clon, sobre tu
