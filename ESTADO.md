@@ -513,6 +513,63 @@ desplego nada: el despliegue sigue siendo un paso aparte.
 
 ---
 
+### Respaldos, fiado por partes y POS sin internet (Daniel, 16-sep, tarde)
+
+**Los respaldos ya no mueren con el servidor.** Corrian cada 6 horas pero al
+mismo disco que la base: si se pierde el VPS se perdian los dos juntos.
+`operaciones/bajar-respaldos.ps1` baja una copia a otra maquina cada 6 horas
+(tarea programada en la PC de Daniel, con "ejecutar en cuanto se pueda" para
+recuperar las veces que estuvo apagada). Es la solucion de hoy, no la
+definitiva: depende de que esa PC se encienda. El destino correcto es
+almacenamiento de objetos (B2 o R2, centavos al mes) cambiando `scp` por
+`rclone`; el script ya esta escrito para eso.
+
+**Fiado por partes.** Lo que quedaba pendiente del cobro parcial. Cada abono
+es una fila (`abonos_fiado`) con su fecha y su forma de pago, no una columna
+`abonado`. La lista de cuentas por cobrar muestra lo que FALTA -mostrar la
+venta hacia que se cobrara dos veces lo mismo- y el asiento dice "abono" y
+cuanto queda. Lo dificil era devolver una venta fiada a medio pagar: hay que
+devolver lo abonado desde la gaveta por donde entro y borrar lo que aun se
+debia, asi que `_cuenta_del_cobro_fiado` (una cuenta) paso a ser
+`_reparto_del_fiado` (una lista de cuenta y monto): con abonos la plata esta
+en dos sitios a la vez.
+
+**POS sin internet: hecho la mitad, y la mitad que falta es la delicada.**
+
+Hecho:
+
+- La comanda es **idempotente**. El POS manda una `clave_cliente` por intento;
+  si la wifi se cae despues de mandar y la cajera le da otra vez, el servidor
+  devuelve el pedido que ya entro en vez de mandar dos comandas iguales a
+  cocina y descontar el inventario dos veces. La clave muere cuando cambia el
+  carrito: si no, agregar una empanada y reintentar devolveria el pedido viejo
+  **sin** la empanada, y nadie se enteraria. Cobrar dos veces ya estaba
+  protegido de antes (da 409).
+- La app **abre sin internet** (`public/sw.js` + `app.webmanifest`,
+  instalable en la tablet). El worker nunca guarda `/api/`: un precio o una
+  tasa viejos servidos como buenos son peores que un error.
+- Un corte de red se lee como corte de red: barra roja "Sin conexion, lo que
+  hagas ahora no se esta guardando" (`components/Conexion.tsx`) en vez de
+  `Failed to fetch`. Se confirma preguntandole al servidor, porque
+  `navigator.onLine` dice que si con solo estar pegado al router.
+
+Falta, y **no se empezo a proposito**: la cola que permita *vender* sin
+internet. El diseño, para quien lo tome:
+
+- Guardar la comanda en IndexedDB y mandarla al reconectar. La clave de
+  idempotencia ya existe, asi que reintentar es seguro: esa era la pieza
+  base.
+- Lo que hay que resolver antes de escribir una linea es **congelar la tasa y
+  la hora en la tablet**. Si la venta se sincroniza al dia siguiente, el
+  backend le pondria la tasa de mañana y la fecha de mañana: el cierre de caja
+  de hoy no cuadraria y la venta caeria en el periodo de IVA equivocado. La
+  comanda en cola tiene que viajar con su `tasa_bcv` y su hora, igual que se
+  congelan el precio y el costo.
+- El numero de comanda lo sigue asignando el servidor. Numerar en la tablet
+  choca con la otra tablet apenas haya dos.
+
+---
+
 ## Bloqueante antes de cualquier despliegue (Daniel, 15-sep)
 
 > Resuelto arriba. Se deja el razonamiento porque es el que hay que recordar.

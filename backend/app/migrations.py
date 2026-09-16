@@ -76,6 +76,17 @@ COLUMNAS = [
     ("retiros_propietario", "operador_id", "INTEGER"),
     ("mermas", "operador_id", "INTEGER"),
     ("gastos", "operador_id", "INTEGER"),
+    ("pedidos", "clave_cliente", "VARCHAR"),
+]
+
+
+# Indices que no vienen con la columna. El UNIQUE de `clave_cliente` es lo
+# que hace que la idempotencia aguante dos reintentos simultaneos: sin el,
+# el chequeo "existe?" y el INSERT dejan una rendija por donde entran dos
+# comandas iguales. `IF NOT EXISTS` funciona igual en SQLite y PostgreSQL.
+INDICES = [
+    ("ix_pedidos_clave_cliente", "CREATE UNIQUE INDEX IF NOT EXISTS "
+     "ix_pedidos_clave_cliente ON pedidos (clave_cliente)"),
 ]
 
 
@@ -231,6 +242,13 @@ def aplicar():
 
     # El inspector cachea lo que leyo; para lo que sigue hace falta uno nuevo.
     inspector = inspect(engine)
+    with engine.begin() as con:
+        for nombre, sql in INDICES:
+            if "pedidos" not in tablas:
+                continue
+            con.execute(text(sql))
+            log.debug("Indice asegurado: %s", nombre)
+
     for tabla, columna in RELAJAR_NOT_NULL:
         if tabla not in tablas:
             continue

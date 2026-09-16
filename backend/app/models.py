@@ -652,6 +652,12 @@ class Pedido(Base):
     # a un pasivo (2040) hasta que se le entrega.
     propina = Column(Float, default=0)
     # Para el fiado: a quien se le dio. Sin nombre no hay a quien cobrarle.
+    # Idempotencia: la clave que genero el POS para ESTE intento de pedido.
+    # Si la tablet manda la comanda y la respuesta se pierde en el camino (la
+    # wifi del local se cae a media cuadra del router), la cajera le da otra
+    # vez y saldrian dos comandas iguales a cocina. Con la misma clave, el
+    # segundo intento devuelve el pedido que ya existe en vez de crear otro.
+    clave_cliente = Column(String, nullable=True, unique=True, index=True)
     cliente = Column(String, default="")
     fiado_saldado = Column(Boolean, default=False)
     fecha_cobro_fiado = Column(DateTime, nullable=True)

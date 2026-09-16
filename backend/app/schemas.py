@@ -383,6 +383,10 @@ class PedidoCreate(BaseModel):
     # el inventario" y decidio vender igual (el conteo del sistema puede estar
     # atrasado). Por defecto no se deja, para no vender lo que no hay.
     permitir_sin_stock: bool = False
+    # Clave que genera el POS para este intento. Si la respuesta se pierde y
+    # la cajera vuelve a darle, el mismo valor devuelve el pedido ya creado en
+    # vez de mandar una segunda comanda igual a cocina.
+    clave_cliente: Optional[str] = None
 
 
 class AnularRequest(BaseModel):
