@@ -484,9 +484,32 @@ quita el sitio a nada (un toque normal sigue ordenando la columna).
 
 ### Qué falta acordar
 
-- **Commit y push de todo esto** al repo (hoy vive en mi clon, sobre tu
-  `d5443d7`). Propongo rama `vertigo-pro-acceso-postgres` para que la revises.
-- El dueño de Sávora todavía no tiene cuenta: se crea desde el hub.
+- ~~**Commit y push de todo esto** al repo.~~ Hecho: la rama
+  `vertigo-pro-acceso-postgres` esta en el repo y **`master` quedo ahi mismo**
+  (fue avance directo: la rama sale de `d5443d7`, no hubo nada que fusionar).
+- El dueno de Savora todavia no tiene cuenta: se crea desde el hub.
+
+### Verificacion de la rama antes de moverla a master (Daniel, 16-sep)
+
+Corrido en la maquina de Daniel, no en Docker:
+
+- **296 pruebas en verde** en 68 s, con **Python 3.8** (no la 3.12 de la
+  imagen). La duda era si se habia colado una anotacion moderna; no se colo.
+- `npm run build` (o sea `tsc -b` + vite) limpio; `oxlint` sin errores, solo
+  advertencias de estilo.
+- El backend arranca contra una carpeta de datos desechable y **lo primero que
+  escribe en el log es la zona horaria: UTC-4**.
+- La puerta, probada por API: sin sesion `/api/pedidos`, `/api/openapi.json` y
+  el balance dan **401**; clave mala, **401**; clave buena, **200** y la
+  cookie sale `HttpOnly; SameSite=lax; Path=/`; con la cookie, **200**;
+  tras `logout`, **401** otra vez. Una cookie con un caracter cambiado y una
+  inventada a mano dan **401**: la firma se verifica de verdad.
+- Falta `Secure` en http local **a proposito** (`poner_cookie` la decide por
+  el esquema real); produccion responde con HSTS y niega credenciales malas
+  con 401.
+
+No hay CI ni despliegue automatico en el repo, asi que mover `master` no
+desplego nada: el despliegue sigue siendo un paso aparte.
 
 ---
 
