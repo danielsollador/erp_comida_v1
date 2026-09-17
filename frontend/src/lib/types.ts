@@ -587,6 +587,34 @@ export type EstadoTasa = {
   desactualizada: boolean
 }
 
+export type PuntoAnalisisTasa = {
+  fecha: string
+  bcv: number
+  eur: number | null
+  paralelo: number | null
+  brecha_pct: number | null
+}
+
+/** La serie de la tasa en un periodo y lo que el sistema lee en ella. */
+export type AnalisisTasa = {
+  etiqueta: string
+  puntos: PuntoAnalisisTasa[]
+  dias: number
+  bcv_inicio: number | null
+  bcv_fin: number | null
+  bcv_min: number | null
+  bcv_max: number | null
+  variacion_pct: number | null
+  brecha_inicio_pct: number | null
+  brecha_fin_pct: number | null
+  brecha_media_pct: number | null
+  /** Lo cobrado con metodos en bolivares, en dolares. */
+  cobrado_bs_usd: number
+  /** Lo que de eso se lleva la brecha al reponer comprando divisas. */
+  costo_brecha_usd: number
+  lecturas: Insight[]
+}
+
 export type PuntoTasa = {
   fecha: string
   bcv: number

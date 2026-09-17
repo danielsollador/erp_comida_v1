@@ -7,22 +7,15 @@ import { useRango } from '../lib/fechas'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Pagina } from '../components/ui'
+import { Lecturas, Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import type {
-  Insight,
   ParCombo,
   ProductoVendido,
   ReporteCombos,
   ReporteResumen,
 } from '../lib/types'
-
-const ESTILO_INSIGHT: Record<Insight['tipo'], { caja: string; icono: string }> = {
-  bueno: { caja: 'bg-exito-50 border-exito-200 text-exito-900', icono: '✓' },
-  alerta: { caja: 'bg-aviso-50 border-aviso-200 text-aviso-900', icono: '!' },
-  info: { caja: 'bg-acento-50 border-acento-200 text-acento-900', icono: 'i' },
-}
 
 const SECCIONES = [
   { id: 'resumen', texto: 'Resumen' },
@@ -127,20 +120,7 @@ export default function Reportes() {
                     <span className="text-xs font-normal text-neutral-400">· cifras en dólares</span>
                   )}
                 </h2>
-                {datos.insights.map((ins, idx) => {
-                  const estilo = ESTILO_INSIGHT[ins.tipo]
-                  return (
-                    <div key={idx} className={`border rounded-xl p-3 flex gap-3 ${estilo.caja}`}>
-                      <span className="font-bold shrink-0 w-5 h-5 rounded-full bg-white/70 flex items-center justify-center text-xs">
-                        {estilo.icono}
-                      </span>
-                      <div>
-                        <div className="font-semibold text-sm">{ins.titulo}</div>
-                        <div className="text-sm opacity-80">{ins.detalle}</div>
-                      </div>
-                    </div>
-                  )
-                })}
+                <Lecturas items={datos.insights} />
               </div>
             )}
 

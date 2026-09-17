@@ -57,6 +57,7 @@ import type {
   SugerenciaCompra,
   Usuario,
   Variante,
+  AnalisisTasa,
   ListaVentas,
   ResumenVentas,
 } from './types'
@@ -399,6 +400,7 @@ export const api = {
   fijarTasa: (bcv: number, paralelo?: number) =>
     req<EstadoTasa>('/tasas', { method: 'PUT', body: JSON.stringify({ bcv, paralelo }) }),
   historialTasa: (r?: Rango) => req<PuntoTasa[]>(`/tasas/historial${conRango(r)}`),
+  analisisTasa: (r?: Rango) => req<AnalisisTasa>(`/tasas/analisis${conRango(r)}`),
 
   resumenCaja: () => req<ResumenCaja>('/caja/resumen'),
   anularCierre: (id: number, motivo: string) =>

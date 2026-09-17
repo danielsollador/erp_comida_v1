@@ -793,6 +793,35 @@ class EstadoTasa(BaseModel):
     desactualizada: bool
 
 
+class PuntoAnalisisTasa(BaseModel):
+    fecha: str
+    bcv: float
+    eur: Optional[float] = None
+    paralelo: Optional[float] = None
+    brecha_pct: Optional[float] = None
+
+
+class AnalisisTasa(BaseModel):
+    """La serie del periodo y lo que se lee en ella (ver `analisis_tasa.py`)."""
+
+    etiqueta: str
+    puntos: List[PuntoAnalisisTasa]
+    dias: int
+    bcv_inicio: Optional[float] = None
+    bcv_fin: Optional[float] = None
+    bcv_min: Optional[float] = None
+    bcv_max: Optional[float] = None
+    variacion_pct: Optional[float] = None
+    brecha_inicio_pct: Optional[float] = None
+    brecha_fin_pct: Optional[float] = None
+    brecha_media_pct: Optional[float] = None
+    # Lo cobrado en metodos de bolivares, en dolares, y lo que la brecha se
+    # llevo de eso al reponer comprando divisas.
+    cobrado_bs_usd: float = 0
+    costo_brecha_usd: float = 0
+    lecturas: List[Insight] = []
+
+
 class TasaManual(BaseModel):
     bcv: float
     paralelo: Optional[float] = None

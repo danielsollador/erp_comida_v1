@@ -316,6 +316,46 @@ export function Aviso({
   )
 }
 
+// ── Lecturas ───────────────────────────────────────────────────────────────
+
+/**
+ * Lo que el sistema LEE en los numeros, en una frase por tarjeta.
+ *
+ * Estaba escrito dentro de Reportes; con el analisis de la tasa habia que
+ * repetirlo, y dos copias del mismo bloque se separan al primer retoque. El
+ * tono no es decorativo: verde es "asi esta bien", ambar es "esto te cuesta
+ * plata" y neutro es contexto.
+ */
+export type Lectura = { tipo: 'bueno' | 'alerta' | 'info'; titulo: string; detalle: string }
+
+const TONO_LECTURA: Record<Lectura['tipo'], { caja: string; icono: string }> = {
+  bueno: { caja: 'bg-exito-50 border-exito-200 text-exito-900', icono: '✓' },
+  alerta: { caja: 'bg-aviso-50 border-aviso-200 text-aviso-900', icono: '!' },
+  info: { caja: 'bg-acento-50 border-acento-200 text-acento-900', icono: 'i' },
+}
+
+export function Lecturas({ items }: { items: Lectura[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="space-y-2">
+      {items.map((l, i) => {
+        const tono = TONO_LECTURA[l.tipo]
+        return (
+          <div key={i} className={`border rounded-xl p-3 flex gap-3 ${tono.caja}`}>
+            <span className="font-bold shrink-0 w-5 h-5 rounded-full bg-white/70 flex items-center justify-center text-xs">
+              {tono.icono}
+            </span>
+            <div>
+              <div className="font-semibold text-sm">{l.titulo}</div>
+              <div className="text-sm opacity-80">{l.detalle}</div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Modal ──────────────────────────────────────────────────────────────────
 
 /**

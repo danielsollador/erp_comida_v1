@@ -620,6 +620,35 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Eligiendo "Euro BCV" arriba, todos los montos del sistema se ven en euros a esa tasa. Útil si cobras o pagas en euros; lo que se factura sigue siendo el dólar oficial.',
   },
+  'kpi.variacion_periodo': {
+    que: 'Cuánto se movió el dólar oficial dentro del período que elegiste arriba.',
+    origen: 'La primera y la última tasa guardadas en ese tramo.',
+    calculo: '(última ÷ primera − 1) × 100.',
+    ejemplo:
+      'Si subió 10% y el menú sigue igual, cada plato deja 10% menos de lo que dice la carta: los insumos se reponen a la tasa nueva.',
+  },
+  'kpi.brecha_media': {
+    que: 'La brecha promedio del período, no solo la de hoy.',
+    origen: 'Se promedian las brechas de cada día con tasa guardada.',
+    calculo: 'Media de (paralelo ÷ oficial − 1) × 100 de cada día.',
+    ejemplo:
+      'La de hoy puede ser un pico; la media dice con qué brecha vienes operando. Si la media sube mes a mes, el problema no es un día malo.',
+  },
+  'kpi.cobrado_bs': {
+    que: 'Cuánto de lo que cobraste entró en bolívares, expresado en dólares.',
+    origen: 'Los pagos del período hechos en efectivo Bs, pago móvil, transferencia, tarjeta o banco.',
+    calculo:
+      'Se suma pago por pago, no venta por venta: en una venta mixta solo cuenta la parte que entró en bolívares.',
+    ejemplo:
+      'Es la parte de tu venta que está expuesta a la brecha. Lo que te pagan en efectivo en dólares no lo está.',
+  },
+  'kpi.costo_brecha': {
+    que: 'Lo que la brecha se llevó de lo que cobraste en bolívares.',
+    origen: 'Lo cobrado en bolívares y la brecha vigente.',
+    calculo: 'Cobrado en Bs × (1 − 1 ÷ (1 + brecha)). Con 11% de brecha, de cada $100 quedan $90.',
+    ejemplo:
+      'Es el número para comparar con un gasto: si se llevó $180 en el mes, es como una factura que pagaste sin verla. Se reduce cobrando más en divisas o ajustando precios.',
+  },
   'kpi.brecha': {
     que: 'Cuánto más caro está el dólar paralelo que el oficial.',
     origen: 'Se calcula con las dos tasas del día.',

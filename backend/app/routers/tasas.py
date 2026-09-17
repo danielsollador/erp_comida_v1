@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import schemas, tasas
+from .. import analisis_tasa, schemas, tasas
 from ..database import get_db
 from ..rango import Rango
 
@@ -56,3 +56,14 @@ def historial(rango: Rango = Depends(), db: Session = Depends(get_db)):
         )
         for t in tasas.historial(db, inicio.date(), fin.date())
     ]
+
+
+@router.get("/analisis", response_model=schemas.AnalisisTasa)
+def analisis(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """Como se movio la tasa en el periodo y que significa para el negocio.
+
+    Sin rango, los ultimos 30 dias: es lo que se mira para decidir si hay que
+    tocar los precios del menu.
+    """
+    inicio, fin, etiqueta = rango.resolver(dias=30)
+    return analisis_tasa.analizar(db, inicio, fin, etiqueta)
