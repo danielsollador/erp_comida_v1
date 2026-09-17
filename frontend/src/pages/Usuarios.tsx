@@ -3,7 +3,7 @@ import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Aviso, Boton, Campo, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
+import { Aviso, Boton, Campo, Etiqueta, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
 import { api } from '../lib/api'
 import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
@@ -13,7 +13,7 @@ import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
  *
  * Solo quien administra llega aqui (la ruta lo comprueba y el backend responde
  * 403 a los demas). El dueño ve y crea a SU gente y lo que crea nace en su
- * local. Vertigo, ademas, ve sus propios usuarios y reparte locales desde el
+ * local, y en el orden de la jerarquia. Vertigo, ademas, ve sus propios usuarios y reparte locales desde el
  * hub. Los roles que se ofrecen los manda el servidor: un dueño no ve la
  * opcion de fabricar administradores.
  *
@@ -164,6 +164,7 @@ export default function Usuarios() {
           <ListaRoles
             roles={roles}
             usuarios={lista?.usuarios ?? []}
+            nombreLocal={estado.local.nombre}
             onCambio={cargar}
             onOk={ok}
             onError={setError}
@@ -258,6 +259,10 @@ function FilaUsuario({
           className="border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-sm disabled:opacity-60"
           aria-label={`Rol de ${u.usuario}`}
         >
+          {/* Su rol puede no estar entre los que se reparten en este local
+              (se lo puso Vertigo). Se muestra igual: dejar el selector en
+              blanco sobre su propia gente seria peor que mostrarlo. */}
+          {!roles.some((r) => r.rol === u.rol) && <option value={u.rol}>{u.rol_nombre || u.rol}</option>}
           {roles.map((r) => (
             <option key={r.rol} value={r.rol}>
               {r.nombre}
@@ -406,6 +411,7 @@ function Modulos({ modulos }: { modulos: Modulo[] }) {
 function ListaRoles({
   roles,
   usuarios,
+  nombreLocal,
   onCambio,
   onOk,
   onError,
@@ -413,6 +419,7 @@ function ListaRoles({
 }: {
   roles: RolInfo[]
   usuarios: Usuario[]
+  nombreLocal: string
   onCambio: () => void
   onOk: (texto: string) => void
   onError: (texto: string) => void
@@ -448,37 +455,59 @@ function ListaRoles({
     }
   }
 
+  // DOS MUNDOS, Y NO SE MEZCLAN. `interno` es el rol de Vertigo, la empresa
+  // que opera la plataforma; el servidor solo se lo manda a Vertigo, así que
+  // en la pantalla del dueño esta lista llega sin ninguno y el bloque no se
+  // dibuja: no es que se esconda, es que no existe para él.
+  const internos = roles.filter((r) => r.interno)
+  const delNegocio = roles.filter((r) => !r.interno)
+
+  const fila = (r: RolInfo) => {
+    const cuantos = usuarios.filter((u) => u.rol === r.rol).length
+    return (
+      <div key={r.rol} className="py-3 first:pt-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="font-semibold">{r.nombre}</span>
+            {!r.a_medida && <span className="ml-2 text-xs text-neutral-400">de fábrica</span>}
+            <span className="ml-2 text-xs text-neutral-400">
+              {cuantos === 0 ? 'sin usuarios' : `${cuantos} usuario(s)`}
+            </span>
+            {r.descripcion && <p className="text-xs text-neutral-500 mt-0.5">{r.descripcion}</p>}
+          </div>
+          {r.a_medida && (
+            <button onClick={() => void borrar(r)} className="text-peligro-600 font-medium text-sm shrink-0">
+              Borrar
+            </button>
+          )}
+        </div>
+        <Modulos modulos={r.modulos} />
+      </div>
+    )
+  }
+
   return (
     <Seccion
       titulo="Roles"
       ayuda="Un rol es la lista de módulos a los que entra. Lo que no esté en la lista, el sistema se lo niega."
       accion={<Boton onClick={onCrear}>+ Crear rol</Boton>}
     >
-      <div className="divide-y divide-neutral-100">
-        {roles.map((r) => {
-          const cuantos = usuarios.filter((u) => u.rol === r.rol).length
-          return (
-            <div key={r.rol} className="py-3 first:pt-0">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="font-semibold">{r.nombre}</span>
-                  {!r.a_medida && <span className="ml-2 text-xs text-neutral-400">de fábrica</span>}
-                  <span className="ml-2 text-xs text-neutral-400">
-                    {cuantos === 0 ? 'sin usuarios' : `${cuantos} usuario(s)`}
-                  </span>
-                  {r.descripcion && <p className="text-xs text-neutral-500 mt-0.5">{r.descripcion}</p>}
-                </div>
-                {r.a_medida && (
-                  <button onClick={() => void borrar(r)} className="text-peligro-600 font-medium text-sm shrink-0">
-                    Borrar
-                  </button>
-                )}
-              </div>
-              <Modulos modulos={r.modulos} />
-            </div>
-          )
-        })}
-      </div>
+      {internos.length > 0 && (
+        <div className="mb-4">
+          <Etiqueta>Interno de Vertigo</Etiqueta>
+          <p className="text-xs text-neutral-500 -mt-1 mb-1">
+            De la plataforma, no del negocio. No aparece en la pantalla del local: quien entra a{' '}
+            {nombreLocal} no ve este bloque ni sabe que existe.
+          </p>
+          <div className="divide-y divide-neutral-100">{internos.map(fila)}</div>
+        </div>
+      )}
+      {internos.length > 0 && <Etiqueta>Del negocio</Etiqueta>}
+      <p className="text-xs text-neutral-500 -mt-1 mb-1">
+        De mayor a menor. Dueño es el rol más alto de {nombreLocal}: entra a todo lo suyo, y a nada
+        de fuera.
+      </p>
+      <div className="divide-y divide-neutral-100">{delNegocio.map(fila)}</div>
     </Seccion>
   )
 }

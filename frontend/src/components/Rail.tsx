@@ -70,7 +70,7 @@ export default function Rail() {
       {administracion.map(item)}
 
       <div className="mt-auto flex flex-col items-center gap-1">
-        <Link to="/mi-cuenta" className="vp-rail-item" aria-current={pathname === '/mi-cuenta' ? 'page' : undefined} aria-label="Mi cuenta">
+        <Link to="/mi-usuario" className="vp-rail-item" aria-current={pathname === '/mi-usuario' ? 'page' : undefined} aria-label="Mi usuario">
           <span className="w-8 h-8 rounded-full bg-neutral-900 text-white grid place-items-center text-xs font-bold font-display">
             {inicial}
           </span>

@@ -4,6 +4,14 @@ Viven en `SHARED_DIR/roles.json`, al lado de `users.json` y en el mismo volumen
 compartido con el hub: la cuenta y su rol tienen que significar lo mismo entren
 por el dominio que entren.
 
+CADA ROL ES DE UN LOCAL. Este archivo es compartido --el hub y todos los
+paneles leen el mismo-- asi que un rol sin dueño seria un rol que el dueño de
+un local le ve (y le puede borrar) al vecino. Cada rol guarda el `local` donde
+se creo; `de_local` es lo que se ofrece y lo que se deja tocar. Ojo: el
+PERMISO no se filtra por local (`buscar`, `modulos_de`): si una cuenta tiene
+ese rol, tiene que funcionar entre en el panel que entre, o se quedaria sin
+poder hacer nada sin que nada lo explique.
+
 UN ROL ES UNA LISTA DE MODULOS, y nada más. No hay permisos sueltos por
 pantalla ni por botón: si el rol tiene "inventario", entra a Inventario y hace
 lo que se hace en Inventario. Se eligió así porque es lo que el dueño puede
@@ -50,9 +58,26 @@ def _guardar(roles: list[dict]) -> None:
 
 
 def listar() -> list[dict]:
-    """Los roles a medida de este despliegue."""
+    """TODOS los roles a medida del despliegue. Solo para Vertigo; para
+    ofrecerlos dentro de un local, `de_local`."""
     with _lock:
         return _leer()
+
+
+def de_local(local: str | None) -> list[dict]:
+    """Los roles a medida de ESE local.
+
+    Uno sin `local` no es de ninguno --se creo desde el hub, o antes de que los
+    roles tuvieran dueño-- y solo lo ve Vertigo: ante la duda, lo menos.
+    """
+    if not local:
+        return []
+    return [r for r in listar() if r.get("local") == local]
+
+
+def es_de_local(rol_id: str | None, local: str | None) -> bool:
+    rol = buscar(rol_id)
+    return bool(rol and local and rol.get("local") == local)
 
 
 def buscar(rol_id: str | None) -> dict | None:
@@ -74,10 +99,11 @@ def modulos_de(rol_id: str | None) -> tuple[str, ...]:
 
 
 def crear(rol_id: str, nombre: str, descripcion: str, modulos: list[str],
-          reservados: tuple[str, ...], validos: tuple[str, ...]) -> dict:
+          reservados: tuple[str, ...], validos: tuple[str, ...],
+          local: str | None = None) -> dict:
     """Da de alta un rol. `reservados` son los nombres de fabrica y `validos`
     los modulos que existen; los dos los pone `permisos`, para no tener que
-    importarlo desde aqui y armar un ciclo."""
+    importarlo desde aqui y armar un ciclo. `local` es de quien es el rol."""
     rol_id = (rol_id or "").strip().lower().replace(" ", "-")
     nombre = (nombre or "").strip()
     if not _RE_ID.match(rol_id):
@@ -98,7 +124,7 @@ def crear(rol_id: str, nombre: str, descripcion: str, modulos: list[str],
         if any(r["id"] == rol_id for r in roles):
             raise ErrorRoles(f"Ya existe un rol «{rol_id}».")
         rol = {"id": rol_id, "nombre": nombre, "descripcion": descripcion.strip(),
-               "modulos": limpios}
+               "modulos": limpios, "local": local or ""}
         roles.append(rol)
         _guardar(roles)
         return rol

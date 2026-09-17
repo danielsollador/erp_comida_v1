@@ -1,5 +1,12 @@
 """Que puede hacer cada rol. Una sola tabla, consultada por el middleware.
 
+DOS MUNDOS, Y NO SE MIRAN. `admin` es el rol INTERNO de Vertigo --la empresa
+que opera la plataforma-- y no es un rol del restaurante: no aparece en la
+lista de nadie que no sea Vertigo, no se lo puede asignar nadie mas, y el
+local no tiene por que enterarse de que existe. Dentro del negocio el rol mas
+alto es `dueno`, y por encima de el no hay nada que el pueda ver: ni otros
+locales, ni la gente de Vertigo, ni los roles que otro local se invento.
+
 UN ROL ES UNA LISTA DE MODULOS. Los cuatro de fabrica son atajos sobre esa
 misma lista, y el dueño puede crear los suyos (ver `roles.py`) cuando ninguno
 le sirve: un mesonero que solo toma pedidos, un encargado sin acceso a la
@@ -176,15 +183,23 @@ def puede_modulo(rol: str | None, modulo: str) -> bool:
     return modulo in modulos_de(rol)
 
 
-def roles_que_puede_asignar(rol: str | None) -> tuple[str, ...]:
-    """Que cuentas puede crear cada quien. Un dueño no fabrica administradores
-    de Vertigo ni otros dueños de otros locales, pero si puede usar los roles a
-    medida que el mismo creo."""
-    a_medida = tuple(r["id"] for r in roles_a_medida.listar())
+def roles_que_puede_asignar(rol: str | None, local: str | None = None) -> tuple[str, ...]:
+    """Que roles puede repartir cada quien, EN ESTE ORDEN de jerarquia.
+
+    Es tambien la lista que ve en pantalla, y por eso importa lo que NO trae:
+
+      * `admin` (Vertigo) solo para Vertigo. Es el rol interno de la
+        plataforma; que el dueño de un local lo viera listado ya seria
+        contarle que existe un escalon por encima del suyo.
+      * los roles a medida, solo los de SU local: viven en un archivo
+        compartido con el hub, asi que sin filtrar el dueño de un local
+        veria --y podria borrar-- los que se invento el vecino.
+    """
     if es_vertigo(rol):
-        return ROLES + a_medida
+        return ROLES + tuple(r["id"] for r in roles_a_medida.listar())
     if administra(rol):
-        return ("dueno", "caja", "cocina") + a_medida
+        return ("dueno", "caja", "cocina") + tuple(
+            r["id"] for r in roles_a_medida.de_local(local))
     return ()
 
 

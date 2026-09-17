@@ -5,8 +5,8 @@ import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
 import { api } from '../lib/api'
 
 /** Cambiar la propia clave. Pide la actual aunque haya sesion: si alguien deja
- *  el POS abierto, otro no puede quedarse con la cuenta. */
-export default function MiCuenta() {
+ *  el POS abierto, otro no puede quedarse con el usuario. */
+export default function MiUsuario() {
   const { estado } = useAcceso()
   const [actual, setActual] = useState('')
   const [nueva, setNueva] = useState('')
@@ -40,7 +40,7 @@ export default function MiCuenta() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Mi cuenta" moneda={false} />
+      <NavBar titulo="Mi usuario" moneda={false} />
       <Pagina ancho="angosta">
         <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex items-center gap-3">
           <span className="w-11 h-11 rounded-full bg-neutral-900 text-white grid place-items-center text-lg font-bold">

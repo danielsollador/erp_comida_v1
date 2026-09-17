@@ -7,7 +7,8 @@ propia, rol que administre. Pero administrar no es lo mismo para todos:
     el unico que fabrica administradores y reparte locales.
   * Un dueño ve y toca solo las cuentas de SU local --dueños, caja y cocina--
     y lo que crea nace asignado a su local. No ve a Vertigo ni a la gente de
-    otros locales: la cartera de la plataforma no es suya.
+    otros locales: la cartera de la plataforma no es suya. Tampoco ve el rol
+    de Vertigo en ninguna lista, ni los roles a medida de otro local.
 
 El rol viaja en la sesion, no en la peticion.
 """
@@ -116,12 +117,30 @@ def _ficha_rol(rol: str) -> dict:
         "modulos": [{"id": m, "nombre": permisos.MODULOS[m]["nombre"]}
                     for m in permisos.modulos_de(rol)],
         "a_medida": permisos.es_a_medida(rol),
+        # De la plataforma y no del negocio: la pantalla lo aparta del resto.
+        # Solo llega hasta aqui si quien mira es Vertigo (ver `listar`).
+        "interno": permisos.es_vertigo(rol),
     }
+
+
+def _rol_a_medida_al_alcance(s: dict, rol_id: str) -> str:
+    """El rol a medida sobre el que se puede actuar, o 404.
+
+    404 y no 403, igual que con las cuentas: el rol que se invento otro local
+    no es que este prohibido, es que aqui no existe.
+    """
+    objetivo = (rol_id or "").strip().lower()
+    if permisos.es_vertigo(s["rol"]):
+        if roles.buscar(objetivo) is None:
+            raise HTTPException(404, f"No existe el rol «{objetivo}».")
+    elif not roles.es_de_local(objetivo, _local_de_aqui()):
+        raise HTTPException(404, f"No existe el rol «{objetivo}».")
+    return objetivo
 
 
 def _rol_asignable(s: dict, rol: str) -> str:
     rol = (rol or "").strip().lower()
-    if rol not in permisos.roles_que_puede_asignar(s["rol"]):
+    if rol not in permisos.roles_que_puede_asignar(s["rol"], _local_de_aqui()):
         raise HTTPException(403, f"Tu usuario no puede asignar el rol «{rol}».")
     return rol
 
@@ -130,7 +149,12 @@ def _rol_asignable(s: dict, rol: str) -> str:
 def listar(request: Request) -> dict:
     s = auth.exigir_admin(request)
     todos = usuarios.listar()
-    visibles = [u for u in todos if _alcanza(s, u)]
+    asignables = permisos.roles_que_puede_asignar(s["rol"], _local_de_aqui())
+    # El nombre del rol viaja con cada cuenta: el de alguien puede no estar
+    # entre los asignables (Vertigo le puso uno que aqui no se reparte) y el
+    # selector de la pantalla se quedaria en blanco sobre su propia gente.
+    visibles = [{**u, "rol_nombre": permisos.nombre_de(u.get("rol"))}
+                for u in todos if _alcanza(s, u)]
     if permisos.es_vertigo(s["rol"]):
         fichas = locales.disponibles()
     else:
@@ -140,7 +164,7 @@ def listar(request: Request) -> dict:
         "yo": s["usuario"],
         # Cada rol con LOS MODULOS a los que entra: es lo que se pregunta
         # quien reparte una llave, y lo que una frase de descripcion no dice.
-        "roles": [_ficha_rol(r) for r in permisos.roles_que_puede_asignar(s["rol"])],
+        "roles": [_ficha_rol(r) for r in asignables],
         # El catalogo para armar uno nuevo.
         "modulos": [{"id": m, "nombre": permisos.MODULOS[m]["nombre"]}
                     for m in permisos.MODULOS_A_MEDIDA],
@@ -154,11 +178,14 @@ def listar(request: Request) -> dict:
 def crear_rol(datos: NuevoRol, request: Request) -> dict:
     """Un rol a medida, cuando los de fabrica no encajan: un mesonero que solo
     toma pedidos, un encargado sin acceso a la contabilidad."""
-    auth.exigir_admin(request)
+    s = auth.exigir_admin(request)
     try:
         return _ficha_rol(
             roles.crear(datos.id or datos.nombre, datos.nombre, datos.descripcion,
-                        datos.modulos, permisos.ROLES, permisos.MODULOS_A_MEDIDA)["id"]
+                        datos.modulos, permisos.ROLES, permisos.MODULOS_A_MEDIDA,
+                        # Nace del local donde se creo. Vertigo, desde el hub,
+                        # crea roles sin local: suyos y de nadie mas.
+                        local=_local_de_aqui())["id"]
         )
     except roles.ErrorRoles as e:
         raise HTTPException(400, str(e))
@@ -166,10 +193,11 @@ def crear_rol(datos: NuevoRol, request: Request) -> dict:
 
 @router.put("/roles/{rol_id}")
 def editar_rol(rol_id: str, datos: NuevoRol, request: Request) -> dict:
-    auth.exigir_admin(request)
+    s = auth.exigir_admin(request)
+    objetivo = _rol_a_medida_al_alcance(s, rol_id)
     try:
         return _ficha_rol(
-            roles.actualizar(rol_id, datos.nombre, datos.descripcion, datos.modulos,
+            roles.actualizar(objetivo, datos.nombre, datos.descripcion, datos.modulos,
                              permisos.MODULOS_A_MEDIDA)["id"]
         )
     except roles.ErrorRoles as e:
@@ -178,8 +206,8 @@ def editar_rol(rol_id: str, datos: NuevoRol, request: Request) -> dict:
 
 @router.delete("/roles/{rol_id}")
 def borrar_rol(rol_id: str, request: Request) -> dict:
-    auth.exigir_admin(request)
-    objetivo = (rol_id or "").strip().lower()
+    s = auth.exigir_admin(request)
+    objetivo = _rol_a_medida_al_alcance(s, rol_id)
     en_uso = any(u.get("rol") == objetivo for u in usuarios.listar())
     try:
         roles.borrar(objetivo, en_uso)

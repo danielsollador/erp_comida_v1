@@ -759,6 +759,12 @@ export type RolInfo = {
   modulos: Modulo[]
   /** true = lo creo el dueño; false = uno de fabrica, que no se borra. */
   a_medida: boolean
+  /**
+   * De la plataforma (Vertigo) y no del negocio. El servidor solo se lo manda
+   * a Vertigo: en la pantalla del dueño no llega ninguno, y por eso el bloque
+   * de lo interno ni siquiera se dibuja.
+   */
+  interno: boolean
 }
 
 export type EstadoAcceso = {
@@ -786,6 +792,8 @@ export type EstadoAcceso = {
 export type Usuario = {
   usuario: string
   rol: Rol
+  /** El nombre del rol tal cual, aunque no sea de los que se reparten aqui. */
+  rol_nombre: string
   locales: string[]
   creado: number | null
   ultimo_acceso: number | null

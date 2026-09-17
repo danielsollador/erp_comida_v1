@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from app import settings
 from app.acceso import roles, usuarios
 from app.database import get_db
 from app.main import app
@@ -173,3 +174,96 @@ def test_la_cuenta_cuyo_rol_desaparece_no_hereda_permisos(admin, clientes):
     roles.borrar("mesonero", en_uso=False)
     assert meson.get("/api/contabilidad/plan-cuentas").status_code == 403
     assert meson.get("/api/pedidos").status_code == 200  # lo que puede la cocina
+
+
+# ── La jerarquia: lo de Vertigo no existe para el negocio ────────────────────
+#
+# Leider (16-sep): "hay jerarquias. Esta la parte interna, que es lo que maneja
+# Vertigo, y esta la parte externa. Cuando pones los roles no me puedes dejar
+# un rol de Vertigo, porque eso no lo debe ver el externo... el dueño nunca
+# puede ver nada que este por fuera de su negocio".
+#
+# Dentro del local el rol mas alto es `dueno`. Por encima solo esta Vertigo, y
+# desde abajo no se ve: ni el rol, ni su gente, ni los otros locales, ni los
+# roles que otro local se invento.
+
+DUENA = ("duena-roles", "clave-de-duena-larga")
+OTRA = ("duena-otro", "clave-de-otra-larga")
+OTRO_LOCAL = "otro-local"
+
+
+@pytest.fixture()
+def duena(clientes):
+    """Una dueña de este local, con su propia sesion."""
+    usuarios.crear(DUENA[0], DUENA[1], rol="dueno", locales=[settings.LOCAL_SLUG])
+    yield entrar(clientes(), *DUENA)
+    try:
+        usuarios.borrar(DUENA[0])
+    except usuarios.ErrorUsuarios:
+        pass
+
+
+def test_el_rol_de_vertigo_no_existe_para_el_negocio(admin, duena):
+    de_vertigo = admin.get("/api/usuarios").json()["roles"]
+    assert [r["rol"] for r in de_vertigo] == ["admin", "dueno", "caja", "cocina"]
+    # Marcado como interno: es lo que la pantalla usa para apartarlo.
+    assert [r["interno"] for r in de_vertigo] == [True, False, False, False]
+
+    respuesta = duena.get("/api/usuarios")
+    del_negocio = respuesta.json()["roles"]
+    assert [r["rol"] for r in del_negocio] == ["dueno", "caja", "cocina"]
+    assert not any(r["interno"] for r in del_negocio)
+    # No es que la pantalla lo esconda: la palabra no viaja.
+    assert "vertigo" not in respuesta.text.lower()
+    assert "admin" not in respuesta.text.lower()
+
+
+def test_la_duena_no_asciende_a_nadie_a_vertigo(duena):
+    assert duena.post("/api/usuarios", json={
+        "usuario": "colado", "clave": "clave-larga-x", "rol": "admin"}).status_code == 403
+    r = duena.post("/api/usuarios", json={
+        "usuario": "cajera-suya", "clave": "clave-larga-y", "rol": "caja"})
+    assert r.status_code == 200, r.text
+    assert duena.put("/api/usuarios/cajera-suya/rol", json={"rol": "admin"}).status_code == 403
+    usuarios.borrar("cajera-suya")
+
+
+def test_la_duena_crea_su_rol_y_le_queda_bajo_el_suyo(duena):
+    ficha = _crear_rol(duena, ["pos", "cocina"])
+    assert ficha["interno"] is False
+    d = duena.get("/api/usuarios").json()
+    # El orden es la jerarquia: ella arriba, lo que se invento al final.
+    assert [r["rol"] for r in d["roles"]] == ["dueno", "caja", "cocina", "mesonero"]
+
+
+def test_el_rol_a_medida_es_del_local_donde_nacio(admin, clientes, monkeypatch):
+    """`roles.json` es UNO para el hub y todos los paneles. Sin dueño, el rol
+    que se invento un local se lo veria --y se lo podria borrar-- el vecino."""
+    _crear_rol(admin, ["pos"])
+    assert roles.buscar("mesonero")["local"] == settings.LOCAL_SLUG
+
+    monkeypatch.setattr(settings, "LOCAL_SLUG", OTRO_LOCAL)
+    usuarios.crear(OTRA[0], OTRA[1], rol="dueno", locales=[OTRO_LOCAL])
+    otra = entrar(clientes(), *OTRA)
+    try:
+        assert "mesonero" not in [r["rol"] for r in otra.get("/api/usuarios").json()["roles"]]
+        # Ni lo edita ni lo borra: aqui ese rol no existe. 404 y no 403, que
+        # un 403 ya seria contarle que existe.
+        assert otra.delete("/api/usuarios/roles/mesonero").status_code == 404
+        assert otra.put("/api/usuarios/roles/mesonero", json={
+            "nombre": "Mio", "descripcion": "", "modulos": ["contabilidad"]}).status_code == 404
+        assert roles.buscar("mesonero")["modulos"] == ["pos"]
+    finally:
+        usuarios.borrar(OTRA[0])
+
+
+def test_el_permiso_no_se_filtra_por_local(admin, clientes, monkeypatch):
+    """La VISIBILIDAD del rol es de su local; el PERMISO no. Si se filtrara,
+    la misma cuenta entrando por otra puerta se quedaria sin poder hacer nada
+    y sin nada que lo explicara."""
+    _crear_rol(admin, ["pos"])
+    usuarios.crear(MESONERO[0], MESONERO[1], rol="mesonero",
+                   locales=["savora", OTRO_LOCAL])
+    monkeypatch.setattr(settings, "LOCAL_SLUG", OTRO_LOCAL)
+    meson = entrar(clientes(), *MESONERO)
+    assert meson.get("/api/pedidos").status_code == 200
