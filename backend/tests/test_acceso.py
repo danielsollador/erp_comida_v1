@@ -584,16 +584,47 @@ def test_los_iconos_y_logos_del_local_existen_y_nginx_los_sirve_sin_sesion():
         assert patron.match(ficha[campo]), f"nginx pediria sesion para {ficha[campo]}"
 
 
-def test_el_compose_de_produccion_no_publica_puertos():
-    """Todo entra por Traefik con TLS. Un `ports:` en produccion seria el ERP
-    --o la base-- por la IP del servidor."""
+def test_en_produccion_nada_escucha_en_la_ip_publica():
+    """Todo entra por Traefik con TLS. Un `ports:` sin direccion delante lo
+    publica en TODAS las interfaces, o sea en la IP del servidor: seria el ERP
+    --o la base-- a la vista de internet.
+
+    Con `127.0.0.1:` delante si se permite: ese puerto no existe fuera de la
+    maquina y la unica forma de llegar es estando ya dentro (por SSH). Es lo
+    que hace falta para mirar la base con una herramienta visual por un tunel.
+    Se comprueba el prefijo, que es justo lo que distingue una cosa de la otra
+    y lo facil de olvidar al agregar un puerto.
+    """
     yaml.SafeLoader.add_constructor("!override", lambda l, n: l.construct_sequence(n))
     yaml.SafeLoader.add_constructor("!reset", lambda l, n: None)
-    prod = yaml.safe_load((RAIZ / "docker-compose.prod.yml").read_text(encoding="utf-8"))
-    for nombre, svc in (prod.get("services") or {}).items():
-        assert not (svc or {}).get("ports"), f"{nombre} publica puertos al host"
+    texto = (RAIZ / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    prod = yaml.safe_load(texto)
     base = yaml.safe_load((RAIZ / "docker-compose.yml").read_text(encoding="utf-8"))
-    assert not (base["services"]["db"].get("ports")), "PostgreSQL publicado al host"
+
+    def loopback(puertos, servicio, de_donde):
+        for publicado in puertos or []:
+            assert str(publicado).startswith("127.0.0.1:"), (
+                f"{servicio} publica {publicado} en {de_donde}: eso lo deja en la IP "
+                "del servidor. Ponle 127.0.0.1: delante, o quitalo."
+            )
+
+    # 1. Lo que el overlay de produccion publica, solo al loopback.
+    for nombre, svc in (prod.get("services") or {}).items():
+        loopback((svc or {}).get("ports"), nombre, "produccion")
+
+    # 2. Lo que publica el archivo BASE (el 8090 del desarrollo) tiene que
+    #    quedar anulado en produccion. `ports` se SUMA entre archivos: sin el
+    #    `!override`, el panel seguiria asomado al puerto 8090 del servidor.
+    for nombre, svc in (base.get("services") or {}).items():
+        if not (svc or {}).get("ports"):
+            continue
+        en_prod = (prod.get("services") or {}).get(nombre) or {}
+        assert "ports" in en_prod, f"{nombre} publica puertos en base y produccion no los anula"
+        assert f"{nombre}:" in texto and "ports: !override" in texto, (
+            f"{nombre} necesita `ports: !override` en produccion: una lista normal se suma "
+            "a la del archivo base en vez de reemplazarla"
+        )
+        loopback(en_prod.get("ports"), nombre, "produccion")
     assert "postgresql+psycopg://" in (RAIZ / "docker-compose.yml").read_text(encoding="utf-8")
     texto = (RAIZ / "docker-compose.prod.yml").read_text(encoding="utf-8")
     assert "Host(`savora.vertigopro.tech`)" in texto
