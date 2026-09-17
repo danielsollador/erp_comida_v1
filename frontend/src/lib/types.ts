@@ -765,6 +765,10 @@ export type RolInfo = {
    * de lo interno ni siquiera se dibuja.
    */
   interno: boolean
+  /** Si se le pueden cambiar los modulos desde la pantalla. */
+  editable: boolean
+  /** Un rol de fabrica al que este local ya le recorto modulos. */
+  ajustado: boolean
 }
 
 export type EstadoAcceso = {

@@ -10,11 +10,13 @@ que el rol no nombro.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app import settings
-from app.acceso import roles, usuarios
+from app.acceso import permisos, roles, usuarios
 from app.database import get_db
 from app.main import app
 from tests.conftest import entrar
@@ -62,6 +64,10 @@ def _sin_roles_previos():
             pass
         for r in roles.listar():
             roles.borrar(r["id"], en_uso=False)
+        # Y los recortes de los roles de fabrica: un rol ajustado se evalua
+        # por otro camino, y arrastrarlo al test siguiente lo mediria mal.
+        for rol in permisos.AJUSTABLES:
+            roles.restaurar(rol, settings.LOCAL_SLUG)
 
     limpiar()
     yield
@@ -267,3 +273,121 @@ def test_el_permiso_no_se_filtra_por_local(admin, clientes, monkeypatch):
     monkeypatch.setattr(settings, "LOCAL_SLUG", OTRO_LOCAL)
     meson = entrar(clientes(), *MESONERO)
     assert meson.get("/api/pedidos").status_code == 200
+
+
+# ── Editar un rol ───────────────────────────────────────────────────────────
+#
+# Leider (16-sep): "los roles se deberian poder editar por el admin y por el
+# dueño". Uno a medida se reescribe entero. A uno de fabrica no: se le guarda
+# el recorte de modulos de ESTE local, que ademas se puede deshacer.
+
+CAJERA = ("cajera-roles", "clave-de-cajera-larga")
+
+
+def _modulos_de(cliente, rol):
+    ficha = next(r for r in cliente.get("/api/usuarios").json()["roles"] if r["rol"] == rol)
+    return ficha, [m["id"] for m in ficha["modulos"]]
+
+
+def test_editar_un_rol_a_medida_cambia_lo_que_puede(admin, clientes):
+    _crear_rol(admin, ["pos"])
+    usuarios.crear(MESONERO[0], MESONERO[1], rol="mesonero", locales=["savora"])
+    meson = entrar(clientes(), *MESONERO)
+    assert meson.get("/api/contabilidad/plan-cuentas").status_code == 403
+
+    r = admin.put("/api/usuarios/roles/mesonero", json={
+        "nombre": "Mesonero de sala", "descripcion": "Toma pedidos y lleva los libros",
+        "modulos": ["pos", "contabilidad"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["nombre"] == "Mesonero de sala"
+    # No es la pantalla la que cambia: es la cerradura.
+    assert meson.get("/api/contabilidad/plan-cuentas").status_code == 200
+
+
+def test_la_duena_recorta_un_rol_de_fabrica_y_lo_puede_deshacer(duena, clientes):
+    usuarios.crear(CAJERA[0], CAJERA[1], rol="caja", locales=[settings.LOCAL_SLUG])
+    caja = entrar(clientes(), *CAJERA)
+    assert caja.get("/api/compras/facturas").status_code == 200
+
+    ficha, modulos = _modulos_de(duena, "caja")
+    assert (ficha["editable"], ficha["ajustado"]) == (True, False)
+    quedan = [m for m in modulos if m != "compras"]
+
+    r = duena.put("/api/usuarios/roles/caja",
+                  json={"nombre": "", "descripcion": "", "modulos": quedan})
+    assert r.status_code == 200, r.text
+    assert r.json()["ajustado"] is True
+    assert [m["id"] for m in r.json()["modulos"]] == quedan
+
+    assert caja.get("/api/compras/facturas").status_code == 403
+    assert caja.get("/api/pedidos").status_code == 200, "el resto del rol sigue igual"
+
+    assert duena.delete("/api/usuarios/roles/caja/ajuste").status_code == 200
+    assert caja.get("/api/compras/facturas").status_code == 200
+    # Deshacer dos veces no tiene sentido y se dice.
+    assert duena.delete("/api/usuarios/roles/caja/ajuste").status_code == 400
+    usuarios.borrar(CAJERA[0])
+
+
+def test_el_rol_mas_alto_y_el_de_vertigo_no_se_recortan(duena):
+    """Quitarle un modulo a `dueno` seria la unica forma de que nadie dentro
+    del local pudiera volver a ponerselo."""
+    r = duena.put("/api/usuarios/roles/dueno",
+                  json={"nombre": "", "descripcion": "", "modulos": ["pos"]})
+    assert r.status_code == 400
+    assert "alto" in r.text
+    # El de Vertigo, para ella, ni existe.
+    assert duena.put("/api/usuarios/roles/admin",
+                     json={"nombre": "", "descripcion": "", "modulos": ["pos"]}).status_code == 404
+
+
+def test_el_recorte_es_de_este_local_y_no_del_vecino(admin, clientes, monkeypatch):
+    quedan = ["pos", "caja"]
+    assert admin.put("/api/usuarios/roles/caja",
+                     json={"nombre": "", "descripcion": "", "modulos": quedan}).status_code == 200
+
+    monkeypatch.setattr(settings, "LOCAL_SLUG", OTRO_LOCAL)
+    usuarios.crear(OTRA[0], OTRA[1], rol="dueno", locales=[OTRO_LOCAL])
+    otra = entrar(clientes(), *OTRA)
+    try:
+        ficha, modulos = _modulos_de(otra, "caja")
+        assert ficha["ajustado"] is False
+        assert len(modulos) > len(quedan), "el recorte del vecino no se le aplica"
+    finally:
+        usuarios.borrar(OTRA[0])
+
+
+def _rutas_reales():
+    """Los (metodo, ruta) que la API sirve de verdad, con los parametros
+    rellenos. Sin el propio acceso, la salud ni la clave propia: el middleware
+    no los evalua."""
+    salida = set()
+    for r in app.routes:
+        ruta = getattr(r, "path", "")
+        if (not ruta.startswith("/api/") or ruta.startswith("/api/acceso")
+                or ruta in ("/api/health", "/api/usuarios/mi/clave")):
+            continue
+        concreta = re.sub(r"\{[^}]+\}", "1", ruta)
+        for metodo in getattr(r, "methods", None) or ():
+            if metodo not in ("HEAD", "OPTIONS"):
+                salida.add((metodo, concreta))
+    assert len(salida) >= 60, "la lista de rutas se quedo corta: revisar el filtro"
+    return sorted(salida)
+
+
+@pytest.mark.parametrize("rol", permisos.AJUSTABLES)
+def test_recortar_un_rol_no_le_quita_nada_que_no_se_le_quito(rol):
+    """Guardar el rol SIN cambiar una casilla tiene que dejarlo igual.
+
+    Al recortarlo cambia el motor que lo evalua: del camino de siempre al que
+    niega por defecto. Si algo que el rol hace hoy no estuviera declarado en
+    ningun modulo, dejaria de poder hacerlo en cuanto alguien abre la pantalla
+    y pulsa Guardar -- y nadie ataria una cosa con la otra en pleno servicio.
+    """
+    perdidas = []
+    for metodo, ruta in _rutas_reales():
+        de_siempre = permisos.permitido(rol, metodo, ruta)
+        libre = metodo in ("GET", "HEAD") and ruta.startswith(permisos.LECTURA_LIBRE)
+        if de_siempre and not (libre or permisos._por_modulos(rol, metodo, ruta)):
+            perdidas.append(f"{metodo} {ruta}")
+    assert not perdidas, f"«{rol}» perderia: {perdidas}"

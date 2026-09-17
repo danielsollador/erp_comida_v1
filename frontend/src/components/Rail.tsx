@@ -20,8 +20,8 @@ import Icono, { type NombreIcono } from './Icono'
 export const MODULOS: { to: string; modulo: string; icono: NombreIcono; titulo: string; grupo: 'operacion' | 'administracion' }[] = [
   { to: '/pos', modulo: 'pos', icono: 'pos', titulo: 'Punto de venta', grupo: 'operacion' },
   { to: '/cocina', modulo: 'cocina', icono: 'cocina', titulo: 'Cocina', grupo: 'operacion' },
-  { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'operacion' },
   { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'operacion' },
+  { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'administracion' },
   { to: '/menu', modulo: 'menu', icono: 'menu', titulo: 'Menú', grupo: 'administracion' },
   { to: '/recetas', modulo: 'recetas', icono: 'recetas', titulo: 'Recetas', grupo: 'administracion' },
   { to: '/inventario', modulo: 'inventario', icono: 'inventario', titulo: 'Inventario', grupo: 'administracion' },

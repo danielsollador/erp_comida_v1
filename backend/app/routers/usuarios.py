@@ -117,6 +117,10 @@ def _ficha_rol(rol: str) -> dict:
         "modulos": [{"id": m, "nombre": permisos.MODULOS[m]["nombre"]}
                     for m in permisos.modulos_de(rol)],
         "a_medida": permisos.es_a_medida(rol),
+        # Si se le pueden cambiar los modulos desde la pantalla, y si este
+        # local ya se los cambio (para poder devolverlo a como venia).
+        "editable": permisos.es_ajustable(rol),
+        "ajustado": permisos.esta_ajustado(rol),
         # De la plataforma y no del negocio: la pantalla lo aparta del resto.
         # Solo llega hasta aqui si quien mira es Vertigo (ver `listar`).
         "interno": permisos.es_vertigo(rol),
@@ -193,15 +197,42 @@ def crear_rol(datos: NuevoRol, request: Request) -> dict:
 
 @router.put("/roles/{rol_id}")
 def editar_rol(rol_id: str, datos: NuevoRol, request: Request) -> dict:
+    """Cambia un rol. Uno a medida se reescribe entero; a uno de fabrica se le
+    guarda el recorte de modulos de ESTE local, sin tocar el original."""
     s = auth.exigir_admin(request)
-    objetivo = _rol_a_medida_al_alcance(s, rol_id)
+    objetivo = (rol_id or "").strip().lower()
+    # Si no es de los que reparte, aqui no existe: ni el de Vertigo ni el que
+    # se invento otro local.
+    if objetivo not in permisos.roles_que_puede_asignar(s["rol"], _local_de_aqui()):
+        raise HTTPException(404, f"No existe el rol «{objetivo}».")
+    if not permisos.es_ajustable(objetivo):
+        raise HTTPException(
+            400, f"«{permisos.nombre_de(objetivo)}» no se puede recortar: es el rol más "
+                 "alto del negocio y el único que reparte usuarios. Si le quitas un módulo, "
+                 "nadie aquí dentro podría volver a ponérselo.")
     try:
+        if objetivo in permisos.ROLES:
+            roles.ajustar(objetivo, _local_de_aqui(), datos.modulos,
+                          permisos.MODULOS_A_MEDIDA)
+            return _ficha_rol(objetivo)
         return _ficha_rol(
             roles.actualizar(objetivo, datos.nombre, datos.descripcion, datos.modulos,
                              permisos.MODULOS_A_MEDIDA)["id"]
         )
     except roles.ErrorRoles as e:
         raise HTTPException(400, str(e))
+
+
+@router.delete("/roles/{rol_id}/ajuste")
+def restaurar_rol(rol_id: str, request: Request) -> dict:
+    """Devuelve un rol de fabrica a los modulos con los que viene."""
+    s = auth.exigir_admin(request)
+    objetivo = (rol_id or "").strip().lower()
+    if objetivo not in permisos.roles_que_puede_asignar(s["rol"], _local_de_aqui()):
+        raise HTTPException(404, f"No existe el rol «{objetivo}».")
+    if not roles.restaurar(objetivo, _local_de_aqui()):
+        raise HTTPException(400, "Ese rol no está recortado: ya está como viene de fábrica.")
+    return _ficha_rol(objetivo)
 
 
 @router.delete("/roles/{rol_id}")

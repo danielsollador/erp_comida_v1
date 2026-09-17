@@ -31,6 +31,7 @@ navegador, ser administrador seria escribir "admin" en un JSON.
 """
 from __future__ import annotations
 
+from .. import settings
 from . import roles as roles_a_medida
 
 ROLES = ("admin", "dueno", "caja", "cocina")
@@ -88,6 +89,13 @@ MODULOS: dict[str, dict] = {
     "impuestos": {"nombre": "Impuestos", "rutas": ("/api/impuestos",)},
     "usuarios": {"nombre": "Usuarios", "rutas": ("/api/usuarios",)},
 }
+
+# Los roles de fabrica a los que el local puede recortarles modulos.
+#
+# `dueno` NO: es el rol mas alto del negocio y el unico que reparte usuarios,
+# asi que quitarle un modulo seria la unica forma de que nadie en el local
+# pudiera volver a ponerselo. `admin` tampoco: es de Vertigo, no del negocio.
+AJUSTABLES = ("caja", "cocina")
 
 # Los modulos que un rol a medida puede incluir. `usuarios` NO: repartir
 # cuentas es del dueño, y ademas los routers de usuarios exigen rol de
@@ -154,9 +162,30 @@ def opera(rol: str | None) -> bool:
     return "pos" in modulos_de(r)
 
 
-def modulos_de(rol: str | None) -> tuple[str, ...]:
-    """A que modulos entra este rol."""
+def _local_actual() -> str | None:
+    """El local de ESTE panel. En el hub no hay local: no hay nada que recortar."""
+    return None if settings.ES_HUB else settings.LOCAL_SLUG
+
+
+def es_ajustable(rol: str | None) -> bool:
+    """Si a este rol se le pueden cambiar los modulos desde la pantalla."""
     r = normalizar(rol)
+    return r in AJUSTABLES or es_a_medida(r)
+
+
+def esta_ajustado(rol: str | None) -> bool:
+    """Si este local ya le recorto los modulos a ese rol de fabrica."""
+    r = normalizar(rol)
+    return r in AJUSTABLES and roles_a_medida.ajuste(r, _local_actual()) is not None
+
+
+def modulos_de(rol: str | None) -> tuple[str, ...]:
+    """A que modulos entra este rol, con el recorte del local si lo hay."""
+    r = normalizar(rol)
+    if r in AJUSTABLES:
+        propio = roles_a_medida.ajuste(r, _local_actual())
+        if propio is not None:
+            return propio
     if r in MODULOS_POR_ROL:
         return MODULOS_POR_ROL[r]
     return roles_a_medida.modulos_de(r)
@@ -245,6 +274,16 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
 
     if r in ("admin", "dueno"):
         return True
+
+    # Un rol de fabrica QUE ESTE LOCAL RECORTO se evalua por sus modulos, que
+    # niegan por defecto -- el mismo motor de los roles a medida. Sin recortar
+    # sigue el camino de siempre, que es el que lleva años funcionando: nadie
+    # cambia de cerradura por una pantalla que no toco.
+    if esta_ajustado(r):
+        if not escribe and ruta.startswith(LECTURA_LIBRE):
+            return True
+        return _por_modulos(r, metodo, ruta)
+
     if ruta.startswith(SOLO_ADMINISTRA):
         return False
     if escribe and ruta.startswith(SOLO_ADMINISTRA_ESCRITURA):

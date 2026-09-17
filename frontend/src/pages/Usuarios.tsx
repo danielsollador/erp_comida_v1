@@ -164,6 +164,7 @@ export default function Usuarios() {
           <ListaRoles
             roles={roles}
             usuarios={lista?.usuarios ?? []}
+            catalogo={lista?.modulos ?? []}
             nombreLocal={estado.local.nombre}
             onCambio={cargar}
             onOk={ok}
@@ -411,6 +412,7 @@ function Modulos({ modulos }: { modulos: Modulo[] }) {
 function ListaRoles({
   roles,
   usuarios,
+  catalogo,
   nombreLocal,
   onCambio,
   onOk,
@@ -419,6 +421,8 @@ function ListaRoles({
 }: {
   roles: RolInfo[]
   usuarios: Usuario[]
+  /** Los modulos que se pueden marcar al editar. */
+  catalogo: Modulo[]
   nombreLocal: string
   onCambio: () => void
   onOk: (texto: string) => void
@@ -462,29 +466,18 @@ function ListaRoles({
   const internos = roles.filter((r) => r.interno)
   const delNegocio = roles.filter((r) => !r.interno)
 
-  const fila = (r: RolInfo) => {
-    const cuantos = usuarios.filter((u) => u.rol === r.rol).length
-    return (
-      <div key={r.rol} className="py-3 first:pt-0">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <span className="font-semibold">{r.nombre}</span>
-            {!r.a_medida && <span className="ml-2 text-xs text-neutral-400">de fábrica</span>}
-            <span className="ml-2 text-xs text-neutral-400">
-              {cuantos === 0 ? 'sin usuarios' : `${cuantos} usuario(s)`}
-            </span>
-            {r.descripcion && <p className="text-xs text-neutral-500 mt-0.5">{r.descripcion}</p>}
-          </div>
-          {r.a_medida && (
-            <button onClick={() => void borrar(r)} className="text-peligro-600 font-medium text-sm shrink-0">
-              Borrar
-            </button>
-          )}
-        </div>
-        <Modulos modulos={r.modulos} />
-      </div>
-    )
-  }
+  const fila = (r: RolInfo) => (
+    <FilaRol
+      key={r.rol}
+      r={r}
+      cuantos={usuarios.filter((u) => u.rol === r.rol).length}
+      catalogo={catalogo}
+      onBorrar={() => void borrar(r)}
+      onCambio={onCambio}
+      onOk={onOk}
+      onError={onError}
+    />
+  )
 
   return (
     <Seccion
@@ -509,6 +502,183 @@ function ListaRoles({
       </p>
       <div className="divide-y divide-neutral-100">{delNegocio.map(fila)}</div>
     </Seccion>
+  )
+}
+
+/**
+ * Un rol de la lista, y su edicion ahi mismo.
+ *
+ * SE EDITA DONDE SE LEE. Mandar a otra pantalla a cambiar dos casillas obliga
+ * a recordar lo que decia la de atras, que es justo lo que se esta comparando.
+ *
+ * A uno de fabrica no se le reescribe el nombre: se le recorta la lista de
+ * modulos, y ese recorte es de ESTE local (ver `acceso/roles.py`). Por eso
+ * lleva "Restaurar": lo devuelve a como viene, que es la salida cuando algo
+ * se recorto de mas y la gente ya no puede trabajar.
+ */
+function FilaRol({
+  r,
+  cuantos,
+  catalogo,
+  onBorrar,
+  onCambio,
+  onOk,
+  onError,
+}: {
+  r: RolInfo
+  cuantos: number
+  catalogo: Modulo[]
+  onBorrar: () => void
+  onCambio: () => void
+  onOk: (texto: string) => void
+  onError: (texto: string) => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [nombre, setNombre] = useState(r.nombre)
+  const [descripcion, setDescripcion] = useState(r.descripcion)
+  const [elegidos, setElegidos] = useState<string[]>(r.modulos.map((m) => m.id))
+  const [guardando, setGuardando] = useState(false)
+  const dialogo = useDialogo()
+
+  function abrir() {
+    setNombre(r.nombre)
+    setDescripcion(r.descripcion)
+    setElegidos(r.modulos.map((m) => m.id))
+    setEditando(true)
+  }
+
+  const alternar = (id: string) =>
+    setElegidos((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]))
+
+  async function guardar() {
+    setGuardando(true)
+    try {
+      await api.editarRol(r.rol, { nombre, descripcion, modulos: elegidos })
+      setEditando(false)
+      onOk(`«${nombre || r.nombre}» actualizado. Quien lo tenga lo nota al recargar.`)
+      onCambio()
+    } catch (err) {
+      onError((err as Error).message)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  async function restaurar() {
+    if (
+      !(await dialogo.confirmar({
+        titulo: `¿Devolver «${r.nombre}» a como viene?`,
+        texto: 'Recupera los módulos de fábrica y se pierde el recorte que le hiciste.',
+        aceptar: 'Restaurar',
+      }))
+    )
+      return
+    try {
+      await api.restaurarRol(r.rol)
+      setEditando(false)
+      onOk(`«${r.nombre}» quedó como viene de fábrica.`)
+      onCambio()
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
+  return (
+    <div className="py-3 first:pt-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="font-semibold">{r.nombre}</span>
+          {!r.a_medida && <span className="ml-2 text-xs text-neutral-400">de fábrica</span>}
+          {r.ajustado && (
+            <span className="ml-2 align-middle">
+              <Pastilla tono="acento">a tu medida</Pastilla>
+            </span>
+          )}
+          <span className="ml-2 text-xs text-neutral-400">
+            {cuantos === 0 ? 'sin usuarios' : `${cuantos} usuario(s)`}
+          </span>
+          {r.descripcion && <p className="text-xs text-neutral-500 mt-0.5">{r.descripcion}</p>}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Restaurar tambien AQUI y no solo dentro de la edicion: es la
+              salida cuando un recorte dejo a alguien sin poder trabajar, y
+              entonces se busca rapido, no se entra a editar. */}
+          {r.ajustado && !editando && (
+            <button onClick={() => void restaurar()} className="font-medium text-sm text-neutral-500">
+              Restaurar
+            </button>
+          )}
+          {r.editable && (
+            <button onClick={() => (editando ? setEditando(false) : abrir())} className="font-medium text-sm">
+              {editando ? 'Cancelar' : 'Editar'}
+            </button>
+          )}
+          {r.a_medida && (
+            <button onClick={onBorrar} className="text-peligro-600 font-medium text-sm">
+              Borrar
+            </button>
+          )}
+        </div>
+      </div>
+
+      {editando ? (
+        <div className="mt-3 rounded-xl border border-neutral-200 p-3">
+          {r.a_medida ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <Campo etiqueta="Nombre del rol" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+              <Campo
+                etiqueta="Para qué es"
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.target.value)}
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-neutral-500 mb-3">
+              Es un rol de fábrica: el nombre no cambia, pero sí a qué entra en {'\u00ab'}este{'\u00bb'} local.
+            </p>
+          )}
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">
+            A qué módulos entra
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {catalogo.map((m) => {
+              const marcado = elegidos.includes(m.id)
+              return (
+                <label
+                  key={m.id}
+                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 cursor-pointer ${
+                    marcado ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={marcado}
+                    onChange={() => alternar(m.id)}
+                    className="w-4 h-4 accent-neutral-900"
+                  />
+                  <span className="text-sm font-medium">{m.nombre}</span>
+                </label>
+              )
+            })}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <Boton onClick={() => void guardar()} disabled={guardando || elegidos.length === 0}>
+              {guardando ? 'Guardando…' : 'Guardar'}
+            </Boton>
+            <Boton tono="fantasma" onClick={() => setEditando(false)}>
+              Cancelar
+            </Boton>
+            {r.ajustado && (
+              <Boton tono="fantasma" onClick={() => void restaurar()}>
+                Restaurar el de fábrica
+              </Boton>
+            )}
+          </div>
+        </div>
+      ) : (
+        <Modulos modulos={r.modulos} />
+      )}
+    </div>
   )
 }
 
