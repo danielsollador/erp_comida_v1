@@ -83,7 +83,7 @@ export default function Reportes() {
 
             {seccion === 'resumen' && (
               <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi titulo="Ventas" ayuda="kpi.ventas" valor={dinero(datos.ventas)} destacado />
               <Kpi
                 titulo="Ganancia neta"
@@ -172,12 +172,12 @@ export default function Reportes() {
                   Ventas por {datos.granularidad} · {sufijo}
                 </h2>
                 <div className="flex items-end gap-1.5 h-40 overflow-x-auto">
-                  {datos.serie.map((punto) => {
+                  {datos.serie.map((punto, i) => {
                     const alturaPct = maxVenta > 0 ? (punto.ventas / maxVenta) * 100 : 0
                     return (
                       <div
                         key={punto.etiqueta}
-                        className="flex-1 min-w-[28px] flex flex-col items-center justify-end h-full gap-1"
+                        className="group flex-1 min-w-[28px] flex flex-col items-center justify-end h-full gap-1 cursor-default"
                         title={`${punto.etiqueta}: ${dinero(punto.ventas)} en ${punto.pedidos} pedidos`}
                       >
                         <span className="text-[10px] text-neutral-500 tabular-nums">
@@ -185,8 +185,8 @@ export default function Reportes() {
                           {punto.ventas > 0 ? fmtNum(punto.ventas, 0) : ''}
                         </span>
                         <div
-                          className="w-full bg-neutral-900 rounded-t-md min-h-[2px]"
-                          style={{ height: `${alturaPct}%` }}
+                          className="vp-barra w-full bg-neutral-900 rounded-t-md min-h-[2px] transition-colors group-hover:bg-acento-500"
+                          style={{ height: `${alturaPct}%`, animationDelay: `${Math.min(i * 18, 400)}ms` }}
                         />
                         <span className="text-[10px] text-neutral-500 whitespace-nowrap">
                           {punto.etiqueta}

@@ -395,7 +395,7 @@ function Resumen({ r, nombre }: { r: ResumenVentas; nombre: string }) {
   const incompleto = r.hasta >= new Date().toISOString().slice(0, 10)
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Cifra
           titulo="Ventas"
           ayuda="kpi.ventas"
@@ -501,7 +501,10 @@ function Reparto({
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-neutral-100 mt-1 overflow-hidden">
-              <div className="h-full bg-neutral-900 rounded-full" style={{ width: `${pct}%` }} />
+              <div
+                className="vp-barra-h h-full bg-neutral-900 rounded-full"
+                style={{ width: `${pct}%` }}
+              />
             </div>
           </div>
         )
@@ -522,14 +525,17 @@ function Barras({ serie, fmt }: { serie: PuntoSerie[]; fmt: (v: number, d?: numb
         return (
           <div
             key={p.etiqueta + i}
-            className="flex-1 min-w-[18px] flex flex-col items-center justify-end h-full gap-1"
+            className="group flex-1 min-w-[18px] flex flex-col items-center justify-end h-full gap-1 cursor-default"
             title={`${p.etiqueta}: ${fmt(p.ventas)} en ${p.pedidos} pedido(s)`}
           >
             <span className="text-[10px] text-neutral-500 tabular-nums">
               {/* Sin simbolo: no cabe uno por barra y ya lo dice el titulo. */}
               {p.ventas > 0 && serie.length <= 16 ? fmtNum(p.ventas, 0) : ''}
             </span>
-            <div className="w-full bg-neutral-900 rounded-t-md min-h-[2px]" style={{ height: `${alto}%` }} />
+            <div
+              className="vp-barra w-full bg-neutral-900 rounded-t-md min-h-[2px] transition-colors group-hover:bg-acento-500"
+              style={{ height: `${alto}%`, animationDelay: `${Math.min(i * 18, 400)}ms` }}
+            />
             <span className="text-[10px] text-neutral-500 whitespace-nowrap h-3">{i % salto === 0 ? p.etiqueta : ''}</span>
           </div>
         )
@@ -593,7 +599,7 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-3 gap-3">
         <Cifra
           titulo="Dinero perdido"
           ayuda="kpi.perdidas"

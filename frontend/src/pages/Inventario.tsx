@@ -345,7 +345,7 @@ export default function Inventario() {
         {seccion === 'insumos' && (
           <>
         {/* Las cuatro cifras que dicen como esta el deposito sin leer la tabla. */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Cifra
             titulo="Insumos"
             ayuda="kpi.insumos"

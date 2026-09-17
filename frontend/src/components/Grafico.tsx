@@ -1,20 +1,22 @@
-import type { ReactNode } from 'react'
+import { useState, type PointerEvent, type ReactNode } from 'react'
 
 /**
  * Una serie en el tiempo, dibujada a mano.
  *
- * POR QUE NO UNA LIBRERIA. Vertigo Timon usa recharts para esto y se ve muy
- * bien, pero arrastra ~130 KB a un paquete que ya avisa por tamaño, y en una
- * tablet del mostrador eso se nota al abrir. Una linea con su relleno son
- * cuatro cuentas; lo que cuesta de un grafico no es el trazo, es decidir que
- * se dibuja. Ademas asi los colores salen de la paleta del ERP y el modo
- * oscuro funciona solo, sin configurar un tema aparte para la libreria.
+ * POR QUE NO UNA LIBRERIA. Vertigo Timon usa recharts y se ve muy bien, pero
+ * arrastra ~130 KB a un paquete que ya avisa por tamaño, y en una tablet del
+ * mostrador eso se nota al abrir. Para UNA linea con su cruceta, el trazo son
+ * cuatro cuentas: lo que cuesta de un grafico no es dibujarlo, es decidir que
+ * se dibuja. Ademas asi los colores salen de la paleta del ERP, el globo de
+ * detalle se ve como el resto de la interfaz y el modo oscuro funciona solo,
+ * sin configurar un tema aparte para la libreria.
  *
  * COMO ESCALA SIN MEDIR NADA. El `viewBox` es de 0 a 100 en los dos ejes
  * --coordenadas en porcentaje-- y `preserveAspectRatio="none"` lo estira a la
- * caja que le toque. El trazo no se deforma gracias a `vector-effect`, y las
- * etiquetas van en HTML por fuera: dentro del SVG estirado saldrian
- * distorsionadas.
+ * caja que le toque. El trazo no se deforma gracias a `vector-effect`. Todo lo
+ * que lleva texto --el globo, los puntos, las etiquetas-- va en HTML encima,
+ * posicionado tambien en porcentaje: dentro del SVG estirado saldria
+ * distorsionado, y asi tampoco hay que medir el contenedor.
  */
 export type SerieGrafico = {
   nombre: string
@@ -32,16 +34,24 @@ export function GraficoLineas({
   etiquetas,
   series,
   formato = (n) => n.toFixed(2),
+  formatoDetalle,
   alto = 200,
   pie,
 }: {
   etiquetas: string[]
   series: SerieGrafico[]
+  /** Para el eje: corto, que compite con la linea por el sitio. */
   formato?: (n: number) => string
+  /** Para el globo: ahi si cabe el numero entero, y es donde se mira de cerca. */
+  formatoDetalle?: (n: number) => string
   alto?: number
   /** Nota bajo el grafico, a la derecha de la leyenda. */
   pie?: ReactNode
 }) {
+  // El dia que el cursor esta señalando. null = nadie mirando.
+  const [activo, setActivo] = useState<number | null>(null)
+  const detalle = formatoDetalle ?? formato
+
   const todos = series.flatMap((s) => s.valores).filter((v): v is number => v != null)
   if (todos.length === 0 || etiquetas.length === 0) {
     return <p className="text-sm text-neutral-400 py-8 text-center">Sin datos para dibujar.</p>
@@ -82,6 +92,19 @@ export function GraficoLineas({
   const area = (puntos: { x: number; y: number }[]) =>
     `${linea(puntos)} L${puntos[puntos.length - 1].x.toFixed(2)},100 L${puntos[0].x.toFixed(2)},100 Z`
 
+  /** Que dia queda bajo el dedo o el cursor. */
+  const seguir = (e: PointerEvent<HTMLDivElement>) => {
+    const caja = e.currentTarget.getBoundingClientRect()
+    if (!caja.width) return
+    const fraccion = (e.clientX - caja.left) / caja.width
+    setActivo(Math.max(0, Math.min(n - 1, Math.round(fraccion * (n - 1)))))
+  }
+
+  // El globo se pega al borde cuando el dia esta en una punta: centrado
+  // siempre, se saldria de la tarjeta en el primer y el ultimo dia.
+  const anclaGlobo = (i: number) =>
+    x(i) < 22 ? 'translateX(0)' : x(i) > 78 ? 'translateX(-100%)' : 'translateX(-50%)'
+
   return (
     <div>
       <div className="flex gap-2" style={{ height: alto }}>
@@ -91,11 +114,31 @@ export function GraficoLineas({
           <span>{formato(techo)}</span>
           <span>{formato(piso)}</span>
         </div>
-        <div className="relative flex-1 min-w-0 rounded-lg border border-neutral-100">
+
+        <div
+          className="relative flex-1 min-w-0 rounded-lg border border-neutral-100"
+          // `pan-y`: arrastrar a lo ancho recorre los dias, pero deslizar
+          // hacia abajo sigue desplazando la pagina. Sin esto, en la tablet el
+          // grafico se traga el gesto de bajar.
+          style={{ touchAction: 'pan-y' }}
+          onPointerMove={seguir}
+          onPointerDown={seguir}
+          onPointerLeave={() => setActivo(null)}
+          onPointerCancel={() => setActivo(null)}
+        >
+          {/* EL GRAFICO SE DESTAPA DE IZQUIERDA A DERECHA, con un `clip-path`
+              sobre TODO el SVG. Antes cada linea se dibujaba sola con
+              `stroke-dasharray`, que es el truco habitual, pero aqui no
+              funciona: `vector-effect: non-scaling-stroke` hace que el patron
+              de guiones se mida en pixeles de pantalla mientras `pathLength`
+              lo normaliza contra el largo del trazo, y las dos cosas juntas
+              partian la linea en pedazos sueltos en vez de dibujarla. Un solo
+              recorte que avanza resuelve el efecto para la linea, el relleno y
+              la punteada a la vez, y es una sola propiedad animada. */}
           <svg
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
-            className="absolute inset-0 h-full w-full"
+            className="absolute inset-0 h-full w-full vp-revelar-izq"
             role="img"
             aria-label={`Evolucion de ${series.map((s) => s.nombre).join(', ')}`}
           >
@@ -112,15 +155,23 @@ export function GraficoLineas({
                 vectorEffect="non-scaling-stroke"
               />
             ))}
+
             {series.map((s) =>
               s.relleno
                 ? tramos(s.valores)
                     .filter((t) => t.length > 1)
                     .map((t, i) => (
-                      <path key={`${s.nombre}-relleno-${i}`} d={area(t)} fill={s.color} opacity={0.08} stroke="none" />
+                      <path
+                        key={`${s.nombre}-relleno-${i}`}
+                        d={area(t)}
+                        fill={s.color}
+                        stroke="none"
+                        opacity={0.08}
+                      />
                     ))
                 : null,
             )}
+
             {series.map((s) =>
               tramos(s.valores).map((t, i) => (
                 <path
@@ -128,36 +179,68 @@ export function GraficoLineas({
                   // Un tramo de un solo punto no dibuja nada con `L`: se le da
                   // largo cero y el `strokeLinecap` redondo lo vuelve un punto.
                   d={t.length > 1 ? linea(t) : `M${t[0].x.toFixed(2)},${t[0].y.toFixed(2)} l0,0`}
+                  // En pixeles de pantalla, no en unidades del viewBox: con
+                  // `non-scaling-stroke` los guiones se ven iguales sea cual
+                  // sea el ancho de la tarjeta.
+                  strokeDasharray={s.punteada ? '5 4' : undefined}
                   fill="none"
                   stroke={s.color}
                   strokeWidth="2"
-                  strokeLinecap="round"
+                  strokeLinecap={s.punteada ? 'butt' : 'round'}
                   strokeLinejoin="round"
-                  strokeDasharray={s.punteada ? '4 4' : undefined}
                   vectorEffect="non-scaling-stroke"
                 />
               )),
             )}
-            {/* Una franja invisible por fecha: el navegador muestra el detalle
-                al posar encima, sin escribir un tooltip a mano. */}
-            {etiquetas.map((e, i) => (
-              <rect
-                key={e + i}
-                x={n === 1 ? 0 : Math.max(0, x(i) - 50 / (n - 1))}
-                y="0"
-                width={n === 1 ? 100 : 100 / (n - 1)}
-                height="100"
-                fill="transparent"
-              >
-                <title>
-                  {`${e}\n` +
-                    series
-                      .map((s) => `${s.nombre}: ${s.valores[i] != null ? formato(s.valores[i] as number) : '—'}`)
-                      .join('\n')}
-                </title>
-              </rect>
-            ))}
+
+            {/* La cruceta del dia señalado. */}
+            {activo != null && (
+              <line
+                x1={x(activo)}
+                x2={x(activo)}
+                y1="0"
+                y2="100"
+                stroke="var(--color-neutral-300)"
+                strokeWidth="1"
+                strokeDasharray="3 3"
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
           </svg>
+
+          {/* Los puntos van en HTML y no en el SVG: dentro del viewBox estirado
+              un circulo sale ovalado. */}
+          {activo != null &&
+            series.map((s) => {
+              const v = s.valores[activo]
+              if (v == null) return null
+              return (
+                <span
+                  key={`punto-${s.nombre}`}
+                  className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
+                  style={{ left: `${x(activo)}%`, top: `${y(v)}%`, background: s.color }}
+                />
+              )
+            })}
+
+          {/* El globo: la fecha y las tres tasas de ese dia. */}
+          {activo != null && (
+            <div
+              className="pointer-events-none absolute z-10 rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-lg"
+              style={{ left: `${x(activo)}%`, top: '50%', transform: `${anclaGlobo(activo)} translateY(-50%)` }}
+            >
+              <div className="mb-1 text-[11px] font-semibold text-neutral-500">{etiquetas[activo]}</div>
+              {series.map((s) => (
+                <div key={`globo-${s.nombre}`} className="flex items-center gap-2 whitespace-nowrap text-xs">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: s.color }} />
+                  <span className="text-neutral-500">{s.nombre}</span>
+                  <span className="ml-auto pl-2 font-semibold tabular-nums">
+                    {s.valores[activo] != null ? detalle(s.valores[activo] as number) : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

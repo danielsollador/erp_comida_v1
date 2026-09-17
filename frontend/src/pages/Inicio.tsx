@@ -124,7 +124,7 @@ export default function Inicio() {
         </div>
 
         {/* La franja de hoy: cuatro cifras, sin adornos. */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-5 sm:mb-6 lg:mb-8 bajo:mb-4 pc:mb-6">
+        <div className="vp-escalonado grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-5 sm:mb-6 lg:mb-8 bajo:mb-4 pc:mb-6">
           {estado.puede.operar && (
             <>
               <Dato titulo="Vendido hoy" ayuda="kpi.vendido_hoy" valor={hoy ? fmt(hoy.ventas) : '—'} destacado />

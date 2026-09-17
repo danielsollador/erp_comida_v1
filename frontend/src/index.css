@@ -415,9 +415,76 @@ html.vp-cambiando-tema table {
     }
   }
 
+  /* ── Entradas escalonadas ────────────────────────────────────────────────
+     Una fila de tarjetas que aparece de golpe se lee como un parpadeo; la
+     misma fila entrando con 40 ms entre una y otra se lee como que el sistema
+     ACABA de traer esos numeros. Se pone en el contenedor y cada hijo hereda
+     su turno, sin tocar el codigo de cada tarjeta.
+
+     Solo `opacity` y `transform`: los dos los resuelve el compositor sin
+     recalcular nada, asi que cuesta lo mismo animar cuatro tarjetas que doce.
+     Y con relleno `backwards`, el transform se suelta al terminar (ver la nota
+     de `vp-entrar` arriba: si se queda puesto, rompe los modales de adentro). */
+  .vp-escalonado > * {
+    animation: vp-entrar 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  }
+  .vp-escalonado > *:nth-child(2) { animation-delay: 40ms; }
+  .vp-escalonado > *:nth-child(3) { animation-delay: 80ms; }
+  .vp-escalonado > *:nth-child(4) { animation-delay: 120ms; }
+  .vp-escalonado > *:nth-child(5) { animation-delay: 160ms; }
+  .vp-escalonado > *:nth-child(6) { animation-delay: 200ms; }
+  .vp-escalonado > *:nth-child(7) { animation-delay: 240ms; }
+  /* De la octava en adelante todas juntas: mas retraso ya se siente lento. */
+  .vp-escalonado > *:nth-child(n + 8) { animation-delay: 280ms; }
+
+  /* Una barra que crece desde su base. El retraso lo pone cada barra con
+     `animationDelay`, que son decenas y no caben en `nth-child`. */
+  .vp-barra {
+    animation: vp-crecer 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+    transform-origin: bottom;
+  }
+  .vp-barra-h {
+    animation: vp-crecer-h 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+    transform-origin: left;
+  }
+  @keyframes vp-crecer {
+    from { transform: scaleY(0); }
+    to { transform: none; }
+  }
+  @keyframes vp-crecer-h {
+    from { transform: scaleX(0); }
+    to { transform: none; }
+  }
+
+  /* Un grafico destapandose de izquierda a derecha. Es UNA propiedad sobre el
+     SVG entero --no una animacion por linea-- asi que cuesta lo mismo con una
+     serie que con cuatro, y revela el trazo, su relleno y la punteada a la vez
+     y en orden temporal, que es justo como se lee una serie de tiempo. */
+  .vp-revelar-izq {
+    animation: vp-revelar-izq 0.65s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  }
+  @keyframes vp-revelar-izq {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0 0 0 0); }
+  }
+
+  /* Aparecer sin moverse: para lo que ya esta en su sitio y solo tiene que
+     entrar --el relleno bajo una linea, una serie de referencia--. Sin `to`
+     a proposito: el destino es la opacidad que tenga el elemento. */
+  @keyframes vp-aclarar {
+    from { opacity: 0; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .min-h-screen { animation: none; }
     button { transition: none; }
+    /* Quien pidio menos movimiento ve los mismos datos, quietos. */
+    .vp-escalonado > *,
+    .vp-barra,
+    .vp-barra-h,
+    .vp-revelar-izq {
+      animation: none;
+    }
   }
 }
 

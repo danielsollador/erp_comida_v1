@@ -123,7 +123,7 @@ export default function Tasa() {
             </p>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-neutral-100">
+          <div className="vp-escalonado grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-neutral-100">
             <Dato
               titulo="Paralelo"
               ayuda="kpi.paralelo"
@@ -220,7 +220,7 @@ export default function Tasa() {
                 dolares aunque arriba se este viendo en otra moneda, y se dice:
                 la brecha ES cuanto valen en dolares los bolivares que cobras,
                 asi que expresarla en bolivares seria dar la vuelta completa. */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="vp-escalonado grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Dato
                 titulo="Movimiento"
                 ayuda="kpi.variacion_periodo"
@@ -272,6 +272,7 @@ export default function Tasa() {
                   }),
                 )}
                 formato={(n) => fmtNum(n, 0)}
+                formatoDetalle={(n) => fmtNum(n, 2)}
                 series={[
                   {
                     nombre: 'Dólar BCV',
