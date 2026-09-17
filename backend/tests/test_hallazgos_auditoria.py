@@ -1193,3 +1193,52 @@ def test_el_numero_de_comanda_no_se_repite_tras_anular(client, variante):
         "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 1}], "nota": ""}
     ).json()
     assert segundo["numero"] != primero["numero"]
+
+
+# ------------------------------------------- el euro oficial (pedido 17-sep)
+def test_el_euro_del_bcv_viaja_entero_y_no_se_deriva_del_dolar(client, db, monkeypatch):
+    """El BCV fija el euro APARTE del dolar: derivarlo por el cruce EUR/USD da
+    un numero parecido y equivocado. Se lee de la fuente y se guarda tal cual,
+    tambien en el historial."""
+    from app import rates
+
+    monkeypatch.setattr(
+        rates, "_fetch", lambda: {"bcv": 800.0, "eur": 935.5, "paralelo": 900.0}
+    )
+    rates._cache.update({"at": None, "ok_at": None, "anclas": None})
+
+    assert client.post("/api/tasas/refrescar?forzar=true").status_code == 200
+    estado = client.get("/api/tasas").json()
+    assert estado["eur"] == 935.5
+    # No es el dolar por el cruce: si lo fuera, rondaria los 864 (800 x 1,08).
+    assert estado["eur"] != estado["bcv"]
+
+    historial = client.get("/api/tasas/historial").json()
+    assert historial[0]["eur"] == 935.5
+
+
+def test_fijar_la_tasa_a_mano_no_congela_el_euro(client, db, monkeypatch):
+    """Lo manual manda sobre la tasa de COBRO. El euro y el paralelo son
+    referencia: si se quedaran pegados al valor del dia en que se fijo la
+    tasa, el selector mostraria euros de la semana pasada sin avisar."""
+    from app import rates
+
+    monkeypatch.setattr(
+        rates, "_fetch", lambda: {"bcv": 800.0, "eur": 935.5, "paralelo": 900.0}
+    )
+    rates._cache.update({"at": None, "ok_at": None, "anclas": None})
+    client.post("/api/tasas/refrescar?forzar=true")
+
+    assert client.put("/api/tasas", json={"bcv": 1000.0}).status_code == 200
+
+    monkeypatch.setattr(
+        rates, "_fetch", lambda: {"bcv": 810.0, "eur": 950.0, "paralelo": 920.0}
+    )
+    rates._cache.update({"at": None, "ok_at": None, "anclas": None})
+    client.post("/api/tasas/refrescar")
+
+    estado = client.get("/api/tasas").json()
+    assert estado["bcv"] == 1000.0, "la tasa de cobro es la que fijo el dueño"
+    assert estado["eur"] == 950.0, "el euro sigue actualizandose"
+    assert estado["paralelo"] == 920.0
+    assert estado["origen"] == "manual"

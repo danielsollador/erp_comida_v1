@@ -6,7 +6,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Cifra, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
-import { fmtBs, useMoneda } from '../lib/moneda'
+import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import type { EstadoVenta, ListaVentas, PuntoSerie, ResumenVentas, VentaFila } from '../lib/types'
 
 /**
@@ -135,7 +135,15 @@ function Historial({ lista, etiqueta }: { lista: ListaVentas; etiqueta: string }
   }, [lista, estado, busqueda])
 
   // Lo que suma lo visible, sin lo que no se vendio: una anulada no es venta.
-  const totalVisible = visibles.filter((v) => v.estado !== 'anulada' && v.estado !== 'devuelta').reduce((s, v) => s + v.total, 0)
+  const cuentan = visibles.filter((v) => v.estado !== 'anulada' && v.estado !== 'devuelta')
+  const totalVisible = cuentan.reduce((s, v) => s + v.total, 0)
+  // En bolivares, cada venta entro a la tasa de SU dia. Se suma con la tasa
+  // media ponderada de lo que hay a la vista y no con la de hoy: si no, el
+  // total de un mes viejo cambiaria solo cada vez que se mueve el dolar.
+  const tasaMedia =
+    totalVisible > 0
+      ? cuentan.reduce((s, v) => s + v.total * (v.tasa_bcv ?? 0), 0) / totalVisible || null
+      : null
 
   return (
     <Seccion
@@ -143,7 +151,10 @@ function Historial({ lista, etiqueta }: { lista: ListaVentas; etiqueta: string }
       ayuda={`${lista.total} venta(s) en el periodo. Toca una fila para ver el detalle.`}
       accion={
         <span className="text-sm text-neutral-500">
-          Vendido: <span className="font-semibold text-neutral-900 tabular-nums">${totalVisible.toFixed(2)}</span>
+          Vendido:{' '}
+          <span className="font-semibold text-neutral-900 tabular-nums">
+            {fmtCongelado(totalVisible, tasaMedia)}
+          </span>
         </span>
       }
       plano
@@ -215,6 +226,7 @@ function Historial({ lista, etiqueta }: { lista: ListaVentas; etiqueta: string }
                     desplegada={desplegada}
                     alTocar={() => setAbierta(desplegada ? null : v.id)}
                     total={fmtCongelado(v.total, v.tasa_bcv)}
+                    fmtCongelado={fmtCongelado}
                   />
                 )
               })}
@@ -232,12 +244,14 @@ function FilaVenta({
   desplegada,
   alTocar,
   total,
+  fmtCongelado,
 }: {
   v: VentaFila
   apagada: boolean
   desplegada: boolean
   alTocar: () => void
   total: string
+  fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
 }) {
   return (
     <>
@@ -255,7 +269,9 @@ function FilaVenta({
         <td className="p-3">
           <PastillaEstado estado={v.estado} />
           {v.estado === 'fiada' && v.fiado_pendiente > 0 && (
-            <span className="block text-[11px] text-aviso-700 mt-0.5">debe ${v.fiado_pendiente.toFixed(2)}</span>
+            <span className="block text-[11px] text-aviso-700 mt-0.5">
+              debe {fmtCongelado(v.fiado_pendiente, v.tasa_bcv)}
+            </span>
           )}
         </td>
         <td className="p-3 hidden md:table-cell">
@@ -271,7 +287,7 @@ function FilaVenta({
       {desplegada && (
         <tr className="border-t border-neutral-100 bg-neutral-50/60">
           <td colSpan={7} className="px-4 py-3">
-            <DetalleVenta v={v} />
+            <DetalleVenta v={v} fmtCongelado={fmtCongelado} />
           </td>
         </tr>
       )}
@@ -288,7 +304,14 @@ function Dato({ titulo, children }: { titulo: string; children: ReactNode }) {
   )
 }
 
-function DetalleVenta({ v }: { v: VentaFila }) {
+function DetalleVenta({
+  v,
+  fmtCongelado,
+}: {
+  v: VentaFila
+  fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
+}) {
+  const dinero = (x: number) => fmtCongelado(x, v.tasa_bcv)
   return (
     <div className="grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-4 text-neutral-800">
       <div>
@@ -300,7 +323,7 @@ function DetalleVenta({ v }: { v: VentaFila }) {
                 <span className="tabular-nums text-neutral-500">{i.cantidad}×</span> {i.nombre}
                 {i.nota && <span className="text-xs text-neutral-400"> · {i.nota}</span>}
               </span>
-              <span className="tabular-nums">${(i.precio_unitario * i.cantidad).toFixed(2)}</span>
+              <span className="tabular-nums">{dinero(i.precio_unitario * i.cantidad)}</span>
             </li>
           ))}
         </ul>
@@ -308,23 +331,23 @@ function DetalleVenta({ v }: { v: VentaFila }) {
           {v.descuento > 0 && (
             <div className="flex justify-between text-neutral-600">
               <span>Precio de lista</span>
-              <span className="tabular-nums">${v.subtotal.toFixed(2)}</span>
+              <span className="tabular-nums">{dinero(v.subtotal)}</span>
             </div>
           )}
           {v.descuento > 0 && (
             <div className="flex justify-between text-aviso-700">
               <span>Descuento</span>
-              <span className="tabular-nums">−${v.descuento.toFixed(2)}</span>
+              <span className="tabular-nums">−{dinero(v.descuento)}</span>
             </div>
           )}
           <div className="flex justify-between font-semibold">
             <span>Total</span>
-            <span className="tabular-nums">${v.total.toFixed(2)}</span>
+            <span className="tabular-nums">{dinero(v.total)}</span>
           </div>
           {v.propina > 0 && (
             <div className="flex justify-between text-neutral-600">
               <span>Propina (del empleado, no es venta)</span>
-              <span className="tabular-nums">${v.propina.toFixed(2)}</span>
+              <span className="tabular-nums">{dinero(v.propina)}</span>
             </div>
           )}
           {v.total_bs != null && v.tasa_bcv && (
@@ -343,7 +366,7 @@ function DetalleVenta({ v }: { v: VentaFila }) {
         <Dato titulo="Quién cobró">{v.operador || '—'}</Dato>
         <Dato titulo="Caja">{v.punto_venta || '—'}</Dato>
         {v.cliente && <Dato titulo="Cliente">{v.cliente}</Dato>}
-        {v.estado === 'fiada' && <Dato titulo="Debe todavía">${v.fiado_pendiente.toFixed(2)}</Dato>}
+        {v.estado === 'fiada' && <Dato titulo="Debe todavía">{dinero(v.fiado_pendiente)}</Dato>}
         {v.fiado_saldado && <Dato titulo="Fiado">Ya saldado</Dato>}
         {v.facturado && <Dato titulo="Factura">{v.numero_factura || 'sí'}</Dato>}
         {v.estado === 'anulada' && <Dato titulo="Anulada por">{v.anulado_por || '—'}</Dato>}
@@ -362,7 +385,12 @@ function DetalleVenta({ v }: { v: VentaFila }) {
 // ── Resumen ──────────────────────────────────────────────────────────────────
 
 function Resumen({ r, nombre }: { r: ResumenVentas; nombre: string }) {
-  const { fmt } = useMoneda()
+  const { fmtCongelado, sufijo } = useMoneda()
+  // La tasa MEDIA del periodo, sacada de los bolivares que de verdad entraron
+  // (cada venta a la suya). Con la de hoy, el resumen de un mes viejo se
+  // movería solo al moverse el dolar, y no cuadraría con la línea de arriba.
+  const tasaPeriodo = r.ventas > 0 ? r.ventas_bs / r.ventas || null : null
+  const fmt = (x: number | null | undefined, d?: number) => fmtCongelado(x, tasaPeriodo, d)
   const cambio = r.cambio_pct
   const incompleto = r.hasta >= new Date().toISOString().slice(0, 10)
   return (
@@ -414,14 +442,14 @@ function Resumen({ r, nombre }: { r: ResumenVentas; nombre: string }) {
 
       {r.serie.length > 0 && (
         <Seccion
-          titulo={`Ventas por ${r.granularidad}`}
+          titulo={`Ventas por ${r.granularidad} · ${sufijo}`}
           ayuda={
             r.mejor
               ? `${nombre}. El mejor tramo fue ${r.mejor.etiqueta}: ${fmt(r.mejor.ventas)} en ${r.mejor.pedidos} pedidos.`
               : nombre
           }
         >
-          <Barras serie={r.serie} />
+          <Barras serie={r.serie} fmt={fmt} />
         </Seccion>
       )}
 
@@ -482,7 +510,7 @@ function Reparto({
   )
 }
 
-function Barras({ serie }: { serie: PuntoSerie[] }) {
+function Barras({ serie, fmt }: { serie: PuntoSerie[]; fmt: (v: number, d?: number) => string }) {
   const max = Math.max(...serie.map((s) => s.ventas), 0)
   // Con muchos tramos (un año por semanas) no caben todas las etiquetas: se
   // muestra una de cada tantas y el resto queda en el title.
@@ -495,10 +523,11 @@ function Barras({ serie }: { serie: PuntoSerie[] }) {
           <div
             key={p.etiqueta + i}
             className="flex-1 min-w-[18px] flex flex-col items-center justify-end h-full gap-1"
-            title={`${p.etiqueta}: $${p.ventas.toFixed(2)} en ${p.pedidos} pedido(s)`}
+            title={`${p.etiqueta}: ${fmt(p.ventas)} en ${p.pedidos} pedido(s)`}
           >
             <span className="text-[10px] text-neutral-500 tabular-nums">
-              {p.ventas > 0 && serie.length <= 16 ? `$${p.ventas.toFixed(0)}` : ''}
+              {/* Sin simbolo: no cabe uno por barra y ya lo dice el titulo. */}
+              {p.ventas > 0 && serie.length <= 16 ? fmtNum(p.ventas, 0) : ''}
             </span>
             <div className="w-full bg-neutral-900 rounded-t-md min-h-[2px]" style={{ height: `${alto}%` }} />
             <span className="text-[10px] text-neutral-500 whitespace-nowrap h-3">{i % salto === 0 ? p.etiqueta : ''}</span>
@@ -519,6 +548,8 @@ type FilaPerdida = {
   detalle: string
   quien: string
   monto: number
+  /** La tasa a la que se cobro esa venta: en bolivares manda esa, no la de hoy. */
+  tasa: number | null
   nota: string
 }
 
@@ -536,18 +567,19 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
     },
     '-fecha',
   )
+  const { fmtCongelado } = useMoneda()
 
   const filas = useMemo<FilaPerdida[]>(() => {
     const salida: FilaPerdida[] = []
     for (const v of lista.filas) {
       if (v.estado === 'devuelta')
-        salida.push({ id: `d${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Devuelta', detalle: v.detalle, quien: v.operador, monto: v.total, nota: v.motivo_devolucion })
+        salida.push({ id: `d${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Devuelta', detalle: v.detalle, quien: v.operador, tasa: v.tasa_bcv, monto: v.total, nota: v.motivo_devolucion })
       if (v.estado === 'anulada')
-        salida.push({ id: `a${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Anulada', detalle: v.detalle, quien: v.anulado_por || v.operador, monto: v.total, nota: '' })
+        salida.push({ id: `a${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Anulada', detalle: v.detalle, quien: v.anulado_por || v.operador, tasa: v.tasa_bcv, monto: v.total, nota: '' })
       if (v.descuento > 0 && v.estado !== 'anulada' && v.estado !== 'devuelta')
-        salida.push({ id: `r${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Descuento', detalle: v.detalle, quien: v.operador, monto: v.descuento, nota: '' })
+        salida.push({ id: `r${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Descuento', detalle: v.detalle, quien: v.operador, tasa: v.tasa_bcv, monto: v.descuento, nota: '' })
       if (v.estado === 'fiada')
-        salida.push({ id: `f${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Fiado por cobrar', detalle: v.detalle, quien: v.operador, monto: v.fiado_pendiente, nota: v.cliente })
+        salida.push({ id: `f${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Fiado por cobrar', detalle: v.detalle, quien: v.operador, tasa: v.tasa_bcv, monto: v.fiado_pendiente, nota: v.cliente })
     }
     return salida
   }, [lista])
@@ -603,7 +635,9 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
                     </td>
                     <td className="p-3">{f.detalle || '—'}</td>
                     <td className="p-3 hidden md:table-cell">{f.quien || '—'}</td>
-                    <td className="p-3 text-right tabular-nums font-semibold">${f.monto.toFixed(2)}</td>
+                    <td className="p-3 text-right tabular-nums font-semibold">
+                      {fmtCongelado(f.monto, f.tasa)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

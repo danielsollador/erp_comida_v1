@@ -50,6 +50,7 @@ def historial(rango: Rango = Depends(), db: Session = Depends(get_db)):
         schemas.PuntoTasa(
             fecha=t.fecha.isoformat(),
             bcv=t.bcv,
+            eur=t.eur,
             paralelo=t.paralelo,
             origen=t.origen or "auto",
         )

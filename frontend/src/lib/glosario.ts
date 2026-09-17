@@ -448,6 +448,13 @@ export const GLOSARIO: Record<string, Explicacion> = {
     origen: 'La trae el sistema del BCV; si no hay conexión, la cargas a mano.',
     ejemplo: 'Es la que el SENIAT espera ver en tus libros. Facturar con otra tasa es un problema fiscal, no una decisión comercial.',
   },
+  'tasas.euro': {
+    que: 'El euro oficial del BCV de ese día: cuántos bolívares vale un euro.',
+    origen: 'Se lee del BCV, que lo publica aparte del dólar.',
+    calculo:
+      'No se calcula: NO es el dólar pasado por el cambio euro/dólar. El BCV fija cada uno por su lado y dan distinto, así que derivarlo daría un número parecido y equivocado.',
+    ejemplo: 'Sirve si a alguien le pagan o le cobran en euros; para facturar manda el dólar oficial.',
+  },
   'tasas.paralelo': {
     que: 'La tasa del mercado paralelo, de referencia.',
     origen: 'Se toma de Binance P2P.',
@@ -604,6 +611,14 @@ export const GLOSARIO: Record<string, Explicacion> = {
     que: 'A cuánto está el dólar en el mercado paralelo.',
     origen: 'Binance P2P, consultado por el sistema.',
     ejemplo: 'No se factura con ella, pero es la que te va a costar reponer la mercancía.',
+  },
+  'kpi.euro': {
+    que: 'A cuántos bolívares está el euro oficial hoy.',
+    origen: 'Del BCV, que publica el euro aparte del dólar.',
+    calculo:
+      'No sale de convertir el dólar: el BCV fija los dos por separado y no coinciden. Por eso se lee de la fuente.',
+    ejemplo:
+      'Eligiendo "Euro BCV" arriba, todos los montos del sistema se ven en euros a esa tasa. Útil si cobras o pagas en euros; lo que se factura sigue siendo el dólar oficial.',
   },
   'kpi.brecha': {
     que: 'Cuánto más caro está el dólar paralelo que el oficial.',

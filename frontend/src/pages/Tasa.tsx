@@ -26,6 +26,7 @@ export default function Tasa() {
     {
       fecha: (t) => t.fecha,
       oficial: (t) => t.bcv,
+      euro: (t) => t.eur,
       paralelo: (t) => t.paralelo,
       origen: (t) => t.origen,
     },
@@ -118,12 +119,18 @@ export default function Tasa() {
             </p>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-neutral-100">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-neutral-100">
             <Dato
               titulo="Paralelo"
               ayuda="kpi.paralelo"
               valor={estado?.paralelo ? fmtNum(estado.paralelo) : '—'}
               nota="Binance P2P"
+            />
+            <Dato
+              titulo="Euro BCV"
+              ayuda="kpi.euro"
+              valor={estado?.eur ? fmtNum(estado.eur) : '—'}
+              nota="Bs por euro"
             />
             <Dato
               titulo="Brecha"
@@ -219,6 +226,7 @@ export default function Tasa() {
               <tr>
                 <Th clave="fecha">Fecha</Th>
                 <Th clave="oficial" alinear="derecha">Oficial</Th>
+                <Th clave="euro" alinear="derecha">Euro</Th>
                 <Th clave="paralelo" alinear="derecha">Paralelo</Th>
                 <Th clave="origen" alinear="derecha">Origen</Th>
               </tr>
@@ -230,6 +238,9 @@ export default function Tasa() {
                     {new Date(t.fecha + 'T00:00:00').toLocaleDateString('es-VE')}
                   </td>
                   <td className="text-right p-3 tabular-nums font-medium">{fmtNum(t.bcv)}</td>
+                  <td className="text-right p-3 tabular-nums text-neutral-500">
+                    {t.eur ? fmtNum(t.eur) : '—'}
+                  </td>
                   <td className="text-right p-3 tabular-nums text-neutral-500">
                     {t.paralelo ? fmtNum(t.paralelo) : '—'}
                   </td>

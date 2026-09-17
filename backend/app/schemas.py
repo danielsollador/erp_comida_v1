@@ -801,6 +801,9 @@ class TasaManual(BaseModel):
 class PuntoTasa(BaseModel):
     fecha: str
     bcv: float
+    # El euro oficial del BCV. No es el dolar convertido: el banco lo fija
+    # aparte y da distinto (841,03 derivado contra 840,86 real).
+    eur: Optional[float] = None
     paralelo: Optional[float]
     origen: str
 

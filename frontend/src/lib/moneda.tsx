@@ -11,19 +11,24 @@ import type { EstadoTasa } from './types'
  * se mueve la tasa). Esto decide como se MUESTRAN, y en Venezuela eso no es un
  * interruptor de dos posiciones:
  *
- *  - usd       -> dolares tal como estan cargados en el menu.
  *  - bs        -> bolivares a la tasa vigente. Es lo que el cliente paga.
+ *  - usd       -> el dolar oficial: los precios tal como estan en el menu.
  *  - usd_calle -> lo que valen de verdad esos bolivares si hoy compras divisas
  *                 al paralelo: USD x (tasa / paralelo). Con 12% de brecha,
  *                 $100 cobrados en Bs son ~$89 reales. Es la vista que dice si
  *                 el margen del menu es real o se lo comio la brecha.
+ *  - eur       -> al euro oficial: USD x (tasa / euro). OJO: el euro del BCV
+ *                 NO es el dolar pasado por el cruce EUR/USD -- el banco lo
+ *                 fija aparte y da distinto (841,03 derivado contra 840,86
+ *                 publicado). Por eso se lee del BCV y no se calcula.
  */
-export type VistaMoneda = 'usd' | 'bs' | 'usd_calle'
+export type VistaMoneda = 'usd' | 'bs' | 'usd_calle' | 'eur'
 
 const SUFIJOS: Record<VistaMoneda, string> = {
   usd: 'USD',
   bs: 'Bs',
   usd_calle: 'USD calle',
+  eur: 'EUR',
 }
 
 const CLAVE_VISTA = 'erp-vista-moneda'
@@ -75,7 +80,7 @@ export function fmtNum(n: number, decimales = 2) {
 export function MonedaProvider({ children }: { children: ReactNode }) {
   const [vista, setVistaState] = useState<VistaMoneda>(() => {
     const guardada = localStorage.getItem(CLAVE_VISTA)
-    return guardada === 'bs' || guardada === 'usd_calle' ? guardada : 'usd'
+    return guardada === 'bs' || guardada === 'usd_calle' || guardada === 'eur' ? guardada : 'usd'
   })
   const [tasa, setTasa] = useState<EstadoTasa | null>(null)
 
@@ -113,6 +118,10 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
         return bcv ? fmtBs(usd * bcv, 2) : '…'
       case 'usd_calle':
         return bcv && tasa?.paralelo ? `$${((usd * bcv) / tasa.paralelo).toFixed(d)}` : '…'
+      case 'eur':
+        // Se pasa por bolivares a proposito: el precio vale lo que vale en Bs,
+        // y el euro dice cuantos euros son esos bolivares al cambio oficial.
+        return bcv && tasa?.eur ? `€${((usd * bcv) / tasa.eur).toFixed(d)}` : '…'
       default:
         return `$${usd.toFixed(d)}`
     }
@@ -165,39 +174,59 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
     }
   }, [abierto])
 
+  // EL ORDEN ES EL DE LA CAJA, no el del sistema: primero en lo que se cobra
+  // (bolivares), despues los dolares oficial y de calle, y el euro al final,
+  // que es el que menos se toca.
   const opciones: {
     k: VistaMoneda
     simbolo: string
     nombre: string
     detalleTasa: string | null
+    /** Solo dentro del menu: la pastilla cerrada tiene que quedar corta. */
+    variacion?: string | null
     ayuda: string
     lista: boolean
   }[] = [
     {
-      k: 'usd',
-      simbolo: '$',
-      nombre: 'Dolares',
-      detalleTasa: null,
-      ayuda: 'Los precios tal como estan en el menu.',
-      lista: true,
-    },
-    {
       k: 'bs',
       simbolo: 'Bs',
-      nombre: 'Bolivares',
+      nombre: 'Bolívares',
       detalleTasa: tasa?.bcv ? `tasa ${fmtNum(tasa.bcv)}` : null,
-      ayuda: 'Lo que el cliente paga en efectivo o pago movil.',
+      ayuda: 'Lo que el cliente paga en efectivo o pago móvil.',
       lista: !!tasa?.bcv,
+    },
+    {
+      k: 'usd',
+      simbolo: '$',
+      nombre: 'Dólares BCV',
+      detalleTasa: tasa?.bcv ? fmtNum(tasa.bcv) : null,
+      // Si el dolar se movio esta semana es LA pregunta al poner precios, y
+      // este menu se abre veinte veces al dia: se responde aqui y no solo en
+      // la pantalla de Tasa, que casi nadie abre.
+      variacion:
+        tasa?.variacion_semana_pct != null && tasa.variacion_semana_pct !== 0
+          ? `${tasa.variacion_semana_pct > 0 ? '+' : ''}${tasa.variacion_semana_pct}% en 7 días`
+          : null,
+      ayuda: 'Los precios tal como están en el menú, al dólar oficial.',
+      lista: true,
     },
     {
       k: 'usd_calle',
       simbolo: '$',
-      nombre: 'Dolares a paralelo',
+      nombre: 'Dólares Paralelo',
       detalleTasa: tasa?.paralelo
         ? `${fmtNum(tasa.paralelo)}${tasa.brecha_pct != null ? ` · brecha ${tasa.brecha_pct}%` : ''}`
         : null,
-      ayuda: 'Lo que valen esos bolivares comprando divisas en la calle.',
+      ayuda: 'Lo que valen esos bolívares comprando divisas en la calle.',
       lista: !!(tasa?.bcv && tasa?.paralelo),
+    },
+    {
+      k: 'eur',
+      simbolo: '€',
+      nombre: 'Euro BCV',
+      detalleTasa: tasa?.eur ? fmtNum(tasa.eur) : null,
+      ayuda: 'Al euro oficial. El BCV lo fija aparte: no es el dólar convertido.',
+      lista: !!(tasa?.bcv && tasa?.eur),
     },
   ]
   const activa = opciones.find((o) => o.k === vista) ?? opciones[0]
@@ -277,6 +306,17 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
                   <span className="text-sm font-medium">{o.nombre}</span>
                   {o.detalleTasa && (
                     <span className="text-[11px] tabular-nums text-neutral-400">{o.detalleTasa}</span>
+                  )}
+                  {/* Que suba el dolar encarece reponer: se marca como aviso,
+                      no como algo bueno. */}
+                  {o.variacion && (
+                    <span
+                      className={`text-[11px] tabular-nums ${
+                        o.variacion.startsWith('+') ? 'text-aviso-600' : 'text-exito-600'
+                      }`}
+                    >
+                      {o.variacion}
+                    </span>
                   )}
                 </span>
                 <span className="mt-0.5 block text-[11px] leading-snug text-neutral-500">

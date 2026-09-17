@@ -590,6 +590,8 @@ export type EstadoTasa = {
 export type PuntoTasa = {
   fecha: string
   bcv: number
+  /** Euro oficial del BCV. El banco lo fija aparte: no es el dolar convertido. */
+  eur: number | null
   paralelo: number | null
   origen: string
 }
