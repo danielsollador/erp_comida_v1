@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango, nombreRango } from '../lib/fechas'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
@@ -97,6 +99,8 @@ const SECCIONES = [
 
 export default function Inventario() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  // Solo las perdidas tienen fecha; el stock y que comprar son "a hoy".
+  const [rango, setRango] = useRango('30d')
   const dialogo = useDialogo()
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [sugerencias, setSugerencias] = useState<SugerenciaCompra[]>([])
@@ -141,13 +145,13 @@ export default function Inventario() {
 
   useEffect(() => {
     cargar()
-  }, [])
+  }, [rango])
 
   function cargar() {
     api.listarIngredientes().then(setIngredientes)
     api.sugerenciasCompra().then(setSugerencias)
-    api.listarMermas().then(setMermas)
-    api.listarSobrantes().then(setSobrantes).catch(() => {})
+    api.listarMermas(rango).then(setMermas)
+    api.listarSobrantes(rango).then(setSobrantes).catch(() => {})
     api.inflacionInsumos().then(setInflacion).catch(() => setInflacion(null))
   }
 
@@ -319,11 +323,14 @@ export default function Inventario() {
   const valorDeposito = activos.reduce((s, i) => s + Math.max(i.stock_actual, 0) * (i.costo_unitario || 0), 0)
   // Separadas a proposito. Un ajuste de conteo baja el stock igual que una
   // merma, pero dice "el sistema estaba mal", no "se boto comida". Sumados en
-  // el mismo total, el dueno cree que esta perdiendo el triple de lo que
-  // pierde y el numero deja de servir para decidir nada.
+  // el mismo total sin distincion, el dueno cree que esta perdiendo el triple
+  // de lo que pierde y el numero deja de servir para decidir nada. El KPI de
+  // arriba muestra el combinado (con su detalle diciendolo), y esta seccion
+  // desglosa: son las mismas `vivas`, dos lecturas distintas del mismo dato.
   const vivas = mermas.filter((m) => !m.revertida)
   const perdidas30 = vivas.filter((m) => !m.por_conteo).reduce((s, m) => s + m.valor, 0)
   const ajustes30 = vivas.filter((m) => m.por_conteo).reduce((s, m) => s + m.valor, 0)
+  const perdidas = perdidas30 + ajustes30
 
   const visibles = useMemo(() => {
     const q = buscar.trim().toLowerCase()
@@ -342,14 +349,14 @@ export default function Inventario() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={<FiltroFechas rango={rango} alCambiar={setRango} />} />
       <Pagina ancho="ancha">
         {error && <Aviso>{error}</Aviso>}
 
         {seccion === 'insumos' && (
           <>
         {/* Las cuatro cifras que dicen como esta el deposito sin leer la tabla. */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Cifra
             titulo="Insumos"
             ayuda="kpi.insumos"
@@ -365,11 +372,11 @@ export default function Inventario() {
           />
           <Cifra titulo="Valor en depósito" ayuda="kpi.valor_deposito" valor={dinero(valorDeposito)} detalle="Stock × costo promedio, sin IVA" />
           <Cifra
-            titulo="Pérdidas 30 días"
+            titulo={`Pérdidas · ${nombreRango(rango).toLowerCase()}`}
             ayuda="kpi.perdidas_30"
-            valor={dinero(perdidas30)}
+            valor={dinero(perdidas)}
             detalle="Mermas y faltantes de conteo"
-            tono={perdidas30 > 0 ? 'alerta' : 'normal'}
+            tono={perdidas > 0 ? 'alerta' : 'normal'}
           />
         </div>
 
@@ -602,7 +609,7 @@ export default function Inventario() {
             una merma duplicada: era la unica perdida del sistema sin historial. */}
         <Seccion
           titulo="Pérdidas registradas"
-          ayuda="Lo que se botó o se dañó, últimos 30 días. Los faltantes de un conteo se listan aparte: bajan el stock igual, pero dicen que el sistema estaba mal, no que se perdió comida. Una merma por error se revierte: no se borra, queda el reverso asentado."
+          ayuda={`Lo que se botó o se dañó (${nombreRango(rango).toLowerCase()}). Los faltantes de un conteo se listan aparte: bajan el stock igual, pero dicen que el sistema estaba mal, no que se perdió comida. Una merma por error se revierte: no se borra, queda el reverso asentado.`}
           accion={
             <span className="text-right text-sm">
               <b className="block tabular-nums">{dinero(perdidas30)}</b>

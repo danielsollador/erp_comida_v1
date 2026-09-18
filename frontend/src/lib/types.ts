@@ -205,11 +205,11 @@ export type Insight = {
   detalle: string
 }
 
-export type Periodo = 'dia' | 'semana' | 'mes'
-
 export type ReporteResumen = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
+  /** El paso de `serie`: hora | dia | semana | mes. Lo decide el tamaño del rango. */
+  granularidad: string
   ventas: number
   ventas_bs: number
   iva_cobrado: number
@@ -464,7 +464,7 @@ export type FilaBalanceComprobacion = {
 }
 
 export type EstadoResultadosContable = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   ingresos: number
   costos: number
@@ -593,9 +593,39 @@ export type EstadoTasa = {
   desactualizada: boolean
 }
 
+export type PuntoAnalisisTasa = {
+  fecha: string
+  bcv: number
+  eur: number | null
+  paralelo: number | null
+  brecha_pct: number | null
+}
+
+/** La serie de la tasa en un periodo y lo que el sistema lee en ella. */
+export type AnalisisTasa = {
+  etiqueta: string
+  puntos: PuntoAnalisisTasa[]
+  dias: number
+  bcv_inicio: number | null
+  bcv_fin: number | null
+  bcv_min: number | null
+  bcv_max: number | null
+  variacion_pct: number | null
+  brecha_inicio_pct: number | null
+  brecha_fin_pct: number | null
+  brecha_media_pct: number | null
+  /** Lo cobrado con metodos en bolivares, en dolares. */
+  cobrado_bs_usd: number
+  /** Lo que de eso se lleva la brecha al reponer comprando divisas. */
+  costo_brecha_usd: number
+  lecturas: Insight[]
+}
+
 export type PuntoTasa = {
   fecha: string
   bcv: number
+  /** Euro oficial del BCV. El banco lo fija aparte: no es el dolar convertido. */
+  eur: number | null
   paralelo: number | null
   origen: string
 }
@@ -624,7 +654,7 @@ export type OportunidadCombo = {
 }
 
 export type ReporteCombos = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   pedidos_analizados: number
   suficientes_datos: boolean
@@ -683,7 +713,7 @@ export type FilaLibroVentas = {
 }
 
 export type LibroVentas = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   tasa_iva: number
   filas: FilaLibroVentas[]
@@ -706,7 +736,7 @@ export type FilaLibroCompras = {
 }
 
 export type LibroCompras = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   filas: FilaLibroCompras[]
   total_base: number
@@ -743,7 +773,7 @@ export type PeriodoPendiente = {
 }
 
 export type ResumenIva = {
-  periodo: Periodo
+  periodo: string
   etiqueta: string
   iva_debito: number
   iva_credito: number
@@ -765,6 +795,16 @@ export type RolInfo = {
   modulos: Modulo[]
   /** true = lo creo el dueño; false = uno de fabrica, que no se borra. */
   a_medida: boolean
+  /**
+   * De la plataforma (Vertigo) y no del negocio. El servidor solo se lo manda
+   * a Vertigo: en la pantalla del dueño no llega ninguno, y por eso el bloque
+   * de lo interno ni siquiera se dibuja.
+   */
+  interno: boolean
+  /** Si se le pueden cambiar los modulos desde la pantalla. */
+  editable: boolean
+  /** Un rol de fabrica al que este local ya le recorto modulos. */
+  ajustado: boolean
 }
 
 export type EstadoAcceso = {
@@ -792,6 +832,8 @@ export type EstadoAcceso = {
 export type Usuario = {
   usuario: string
   rol: Rol
+  /** El nombre del rol tal cual, aunque no sea de los que se reparten aqui. */
+  rol_nombre: string
   locales: string[]
   creado: number | null
   ultimo_acceso: number | null
@@ -842,4 +884,91 @@ export type ExtractoInsumo = {
   /** Si es false, alguien movio existencias sin anotarlas: es un bug, no un aviso. */
   cuadra: boolean
   movimientos: MovimientoInventario[]
+}
+
+// ── Ventas ──────────────────────────────────────────────────────────────────
+
+/** Que paso con una venta (ver `routers/ventas.py`). */
+export type EstadoVenta = 'cobrada' | 'fiada' | 'devuelta' | 'anulada' | 'abierta'
+
+export type VentaFila = {
+  id: number
+  numero: number
+  fecha: string
+  estado: EstadoVenta
+  cliente: string
+  /** "2× Empanada, 1× Jugo" */
+  detalle: string
+  unidades: number
+  subtotal: number
+  descuento: number
+  total: number
+  propina: number
+  total_bs: number | null
+  tasa_bcv: number | null
+  /** "Efectivo $ + Pago movil" */
+  pago: string
+  fiado_pendiente: number
+  fiado_saldado: boolean
+  facturado: boolean
+  numero_factura: string | null
+  operador: string
+  punto_venta: string
+  anulado_por: string
+  motivo_devolucion: string
+  nota_credito: string | null
+  nota: string
+  items: PedidoItem[]
+}
+
+export type ListaVentas = {
+  etiqueta: string
+  total: number
+  /** Habia mas filas de las que se devolvieron: el rango es demasiado grande. */
+  recortado: boolean
+  filas: VentaFila[]
+}
+
+export type PerdidasVentas = {
+  anuladas: number
+  valor_anulado: number
+  devueltas: number
+  valor_devuelto: number
+  con_descuento: number
+  valor_descuentos: number
+  merma_inventario: number
+  fiado_pendiente: number
+  valor_fiado_pendiente: number
+  /** devuelto + descuentos + merma: lo que si se perdio. */
+  total: number
+  pct_sobre_ventas: number
+}
+
+export type GrupoVentas = { nombre: string; ventas: number; pedidos: number }
+
+export type ResumenVentas = {
+  etiqueta: string
+  desde: string
+  hasta: string
+  /** Dias del rango que ya pasaron: el divisor de los promedios. */
+  dias: number
+  granularidad: string
+  ventas: number
+  ventas_bs: number
+  pedidos: number
+  unidades: number
+  ticket_promedio: number
+  ticket_mediano: number
+  promedio_diario: number
+  pedidos_por_dia: number
+  anterior: { ventas: number; pedidos: number; promedio_diario: number }
+  cambio_pct: number | null
+  perdidas: PerdidasVentas
+  por_metodo_pago: Record<string, number>
+  por_punto_venta: GrupoVentas[]
+  por_operador: GrupoVentas[]
+  facturadas: number
+  valor_facturado: number
+  serie: PuntoSerie[]
+  mejor: PuntoSerie | null
 }

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import contabilidad, costeo, kardex, models, reposicion, schemas
 from . import operadores
 from ..database import get_db
+from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
@@ -484,12 +485,12 @@ def consumo_personal(
 
 
 @router.get("/sobrantes", response_model=List[schemas.SobranteInventario])
-def listar_sobrantes(dias: int = 30, db: Session = Depends(get_db)):
-    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+def listar_sobrantes(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    inicio, fin, _ = rango.resolver(dias=30)
     sobrantes = (
         db.query(models.SobranteInventario)
         .options(joinedload(models.SobranteInventario.ingrediente))
-        .filter(models.SobranteInventario.fecha >= desde)
+        .filter(models.SobranteInventario.fecha >= inicio, models.SobranteInventario.fecha < fin)
         .order_by(models.SobranteInventario.id.desc())
         .all()
     )
@@ -542,14 +543,14 @@ def revertir_sobrante(sobrante_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/mermas", response_model=List[schemas.Merma])
-def listar_mermas(dias: int = 30, db: Session = Depends(get_db)):
+def listar_mermas(rango: Rango = Depends(), db: Session = Depends(get_db)):
     """Historial de lo que se perdio. Sin esto el dueno no puede auditar su
     perdida mas sensible ni darse cuenta de un registro duplicado."""
-    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+    inicio, fin, _ = rango.resolver(dias=30)
     mermas = (
         db.query(models.Merma)
         .options(joinedload(models.Merma.ingrediente))
-        .filter(models.Merma.fecha >= desde)
+        .filter(models.Merma.fecha >= inicio, models.Merma.fecha < fin)
         .order_by(models.Merma.id.desc())
         .all()
     )

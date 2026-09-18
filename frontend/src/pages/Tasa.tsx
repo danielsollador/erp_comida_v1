@@ -1,28 +1,35 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango } from '../lib/fechas'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Pagina } from '../components/ui'
+import { Lecturas, Pagina } from '../components/ui'
+import { GraficoLineas } from '../components/Grafico'
 import { api } from '../lib/api'
 import { fmtNum, useMoneda } from '../lib/moneda'
-import type { EstadoTasa, PuntoTasa } from '../lib/types'
+import type { AnalisisTasa, EstadoTasa, PuntoTasa } from '../lib/types'
 
 const SECCIONES = [
   { id: 'hoy', texto: 'Tasa de hoy' },
+  { id: 'analisis', texto: 'Análisis' },
   { id: 'historial', texto: 'Historial' },
 ]
 
 export default function Tasa() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  const [rango, setRango] = useRango('30d')
   const { recargar } = useMoneda()
   const [estado, setEstado] = useState<EstadoTasa | null>(null)
   const [historial, setHistorial] = useState<PuntoTasa[]>([])
+  const [analisis, setAnalisis] = useState<AnalisisTasa | null>(null)
   const orden = useOrden<PuntoTasa>(
     {
       fecha: (t) => t.fecha,
       oficial: (t) => t.bcv,
+      euro: (t) => t.eur,
       paralelo: (t) => t.paralelo,
       origen: (t) => t.origen,
     },
@@ -35,14 +42,15 @@ export default function Tasa() {
 
   useEffect(() => {
     cargar()
-  }, [])
+  }, [rango])
 
   function cargar() {
     api.estadoTasa().then((e) => {
       setEstado(e)
       setManual(e.bcv ? String(e.bcv) : '')
     })
-    api.historialTasa(30).then(setHistorial)
+    api.historialTasa(rango).then(setHistorial)
+    api.analisisTasa(rango).then(setAnalisis).catch(() => setAnalisis(null))
   }
 
   async function accion(fn: () => Promise<EstadoTasa>, mensaje: string) {
@@ -55,7 +63,7 @@ export default function Tasa() {
       setManual(e.bcv ? String(e.bcv) : '')
       setAviso(mensaje)
       recargar()
-      api.historialTasa(30).then(setHistorial)
+      api.historialTasa(rango).then(setHistorial)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo actualizar la tasa')
     } finally {
@@ -76,7 +84,7 @@ export default function Tasa() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Tasa de cambio" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Tasa de cambio" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion === 'hoy' ? undefined : <FiltroFechas rango={rango} alCambiar={setRango} />} />
       <Pagina ancho="media">
         {error && <p className="text-peligro-600 text-sm">{error}</p>}
         {aviso && <p className="text-exito-700 text-sm">{aviso}</p>}
@@ -115,12 +123,18 @@ export default function Tasa() {
             </p>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-neutral-100">
+          <div className="vp-escalonado grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-neutral-100">
             <Dato
               titulo="Paralelo"
               ayuda="kpi.paralelo"
               valor={estado?.paralelo ? fmtNum(estado.paralelo) : '—'}
               nota="Binance P2P"
+            />
+            <Dato
+              titulo="Euro BCV"
+              ayuda="kpi.euro"
+              valor={estado?.eur ? fmtNum(estado.eur) : '—'}
+              nota="Bs por euro"
             />
             <Dato
               titulo="Brecha"
@@ -199,6 +213,100 @@ export default function Tasa() {
           </>
         )}
 
+        {seccion === 'analisis' && analisis && (
+          <>
+            {/* Las cuatro cifras del periodo. Las dos ultimas son la razon de
+                ser de esta pantalla: convierten la brecha en plata. Van en
+                dolares aunque arriba se este viendo en otra moneda, y se dice:
+                la brecha ES cuanto valen en dolares los bolivares que cobras,
+                asi que expresarla en bolivares seria dar la vuelta completa. */}
+            <div className="vp-escalonado grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Dato
+                titulo="Movimiento"
+                ayuda="kpi.variacion_periodo"
+                valor={
+                  analisis.variacion_pct != null
+                    ? `${analisis.variacion_pct > 0 ? '+' : ''}${analisis.variacion_pct}%`
+                    : '—'
+                }
+                nota={
+                  analisis.bcv_inicio && analisis.bcv_fin
+                    ? `${fmtNum(analisis.bcv_inicio)} → ${fmtNum(analisis.bcv_fin)}`
+                    : 'del oficial en el periodo'
+                }
+              />
+              <Dato
+                titulo="Brecha media"
+                ayuda="kpi.brecha_media"
+                valor={analisis.brecha_media_pct != null ? `${analisis.brecha_media_pct}%` : '—'}
+                nota={
+                  analisis.brecha_fin_pct != null ? `hoy ${analisis.brecha_fin_pct}%` : 'paralelo vs oficial'
+                }
+              />
+              <Dato
+                titulo="Cobrado en bolívares"
+                ayuda="kpi.cobrado_bs"
+                valor={`$${analisis.cobrado_bs_usd.toFixed(2)}`}
+                nota="efectivo Bs, pago móvil, tarjeta · en $"
+              />
+              <Dato
+                titulo="Se llevó la brecha"
+                ayuda="kpi.costo_brecha"
+                valor={`$${analisis.costo_brecha_usd.toFixed(2)}`}
+                nota="al reponer comprando divisas · en $"
+              />
+            </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+              <h2 className="font-semibold mb-1">Cómo se movió</h2>
+              <p className="text-xs text-neutral-500 mb-4">
+                {analisis.etiqueta} · {analisis.dias} día(s) con tasa guardada. Posa el cursor
+                sobre el gráfico para ver un día concreto.
+              </p>
+              <GraficoLineas
+                alto={220}
+                etiquetas={analisis.puntos.map((p) =>
+                  new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-VE', {
+                    day: '2-digit',
+                    month: '2-digit',
+                  }),
+                )}
+                formato={(n) => fmtNum(n, 0)}
+                formatoDetalle={(n) => fmtNum(n, 2)}
+                series={[
+                  {
+                    nombre: 'Dólar BCV',
+                    color: 'var(--color-neutral-900)',
+                    valores: analisis.puntos.map((p) => p.bcv),
+                    relleno: true,
+                  },
+                  {
+                    nombre: 'Paralelo',
+                    color: 'var(--color-acento-500)',
+                    valores: analisis.puntos.map((p) => p.paralelo),
+                  },
+                  {
+                    nombre: 'Euro BCV',
+                    color: 'var(--color-aviso-500)',
+                    valores: analisis.puntos.map((p) => p.eur),
+                    punteada: true,
+                  },
+                ]}
+                pie={
+                  analisis.bcv_min && analisis.bcv_max
+                    ? `mínimo ${fmtNum(analisis.bcv_min)} · máximo ${fmtNum(analisis.bcv_max)}`
+                    : undefined
+                }
+              />
+            </div>
+
+            <div>
+              <h2 className="font-semibold mb-2">Qué dice esto</h2>
+              <Lecturas items={analisis.lecturas} />
+            </div>
+          </>
+        )}
+
         {seccion === 'historial' && (
           <>
         {/* --------- historial --------- */}
@@ -216,6 +324,7 @@ export default function Tasa() {
               <tr>
                 <Th clave="fecha">Fecha</Th>
                 <Th clave="oficial" alinear="derecha">Oficial</Th>
+                <Th clave="euro" alinear="derecha">Euro</Th>
                 <Th clave="paralelo" alinear="derecha">Paralelo</Th>
                 <Th clave="origen" alinear="derecha">Origen</Th>
               </tr>
@@ -227,6 +336,9 @@ export default function Tasa() {
                     {new Date(t.fecha + 'T00:00:00').toLocaleDateString('es-VE')}
                   </td>
                   <td className="text-right p-3 tabular-nums font-medium">{fmtNum(t.bcv)}</td>
+                  <td className="text-right p-3 tabular-nums text-neutral-500">
+                    {t.eur ? fmtNum(t.eur) : '—'}
+                  </td>
                   <td className="text-right p-3 tabular-nums text-neutral-500">
                     {t.paralelo ? fmtNum(t.paralelo) : '—'}
                   </td>

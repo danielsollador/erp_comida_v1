@@ -3,17 +3,17 @@ import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Aviso, Boton, Campo, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
+import { Aviso, Boton, Campo, Etiqueta, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
 import { api } from '../lib/api'
 import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
 
 /**
- * Las cuentas del local y lo que cada una puede abrir.
+ * Los usuarios del local y lo que cada uno puede abrir.
  *
  * Solo quien administra llega aqui (la ruta lo comprueba y el backend responde
  * 403 a los demas). El dueño ve y crea a SU gente y lo que crea nace en su
- * local. Vertigo, ademas, ve sus propias cuentas y reparte locales desde el
+ * local, y en el orden de la jerarquia. Vertigo, ademas, ve sus propios usuarios y reparte locales desde el
  * hub. Los roles que se ofrecen los manda el servidor: un dueño no ve la
  * opcion de fabricar administradores.
  *
@@ -24,8 +24,8 @@ import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
  * solo toma pedidos, un encargado sin contabilidad-- se crea uno.
  */
 const SECCIONES = [
-  { id: 'cuentas', texto: 'Cuentas' },
-  { id: 'crear', texto: 'Crear cuenta' },
+  { id: 'usuarios', texto: 'Usuarios' },
+  { id: 'crear', texto: 'Crear usuario' },
   { id: 'roles', texto: 'Roles' },
   { id: 'crear-rol', texto: 'Crear rol' },
 ]
@@ -105,11 +105,11 @@ export default function Usuarios() {
         {error && <Aviso>{error}</Aviso>}
         {aviso && <Aviso tono="bien">{aviso}</Aviso>}
 
-        {seccion === 'cuentas' && (
+        {seccion === 'usuarios' && (
           <Seccion
             titulo={`Quién entra a ${estado.local.nombre}`}
-            ayuda="Cada persona entra con su cuenta: así el sistema sabe quién cobró, quién anuló y quién cerró la caja."
-            accion={<span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} cuentas` : ''}</span>}
+            ayuda="Cada persona entra con su usuario: así el sistema sabe quién cobró, quién anuló y quién cerró la caja."
+            accion={<span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} usuarios` : ''}</span>}
             plano
           >
             <Tabla orden={orden} glosario="usuarios">
@@ -138,7 +138,7 @@ export default function Usuarios() {
                   {lista && lista.usuarios.length === 0 && (
                     <tr>
                       <td colSpan={4}>
-                        <Vacio icono="usuarios" titulo="Sin cuentas todavía" />
+                        <Vacio icono="usuarios" titulo="Sin usuarios todavía" />
                       </td>
                     </tr>
                   )}
@@ -149,12 +149,12 @@ export default function Usuarios() {
         )}
 
         {seccion === 'crear' && (
-          <CrearCuenta
+          <CrearUsuario
             roles={roles}
             onCreado={(usuario) => {
               ok(`Usuario «${usuario}» creado.`)
               cargar()
-              irA('cuentas')
+              irA('usuarios')
             }}
             onError={setError}
           />
@@ -164,6 +164,8 @@ export default function Usuarios() {
           <ListaRoles
             roles={roles}
             usuarios={lista?.usuarios ?? []}
+            catalogo={lista?.modulos ?? []}
+            nombreLocal={estado.local.nombre}
             onCambio={cargar}
             onOk={ok}
             onError={setError}
@@ -175,7 +177,7 @@ export default function Usuarios() {
           <CrearRol
             modulos={lista?.modulos ?? []}
             onCreado={(nombre) => {
-              ok(`Rol «${nombre}» creado. Ya se puede asignar a una cuenta.`)
+              ok(`Rol «${nombre}» creado. Ya se puede asignar a un usuario.`)
               cargar()
               irA('roles')
             }}
@@ -187,7 +189,7 @@ export default function Usuarios() {
   )
 }
 
-// ── Cuentas ────────────────────────────────────────────────────────────────
+// ── Usuarios ───────────────────────────────────────────────────────────────
 
 function FilaUsuario({
   u,
@@ -258,6 +260,10 @@ function FilaUsuario({
           className="border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-sm disabled:opacity-60"
           aria-label={`Rol de ${u.usuario}`}
         >
+          {/* Su rol puede no estar entre los que se reparten en este local
+              (se lo puso Vertigo). Se muestra igual: dejar el selector en
+              blanco sobre su propia gente seria peor que mostrarlo. */}
+          {!roles.some((r) => r.rol === u.rol) && <option value={u.rol}>{u.rol_nombre || u.rol}</option>}
           {roles.map((r) => (
             <option key={r.rol} value={r.rol}>
               {r.nombre}
@@ -289,7 +295,7 @@ function FilaUsuario({
   )
 }
 
-function CrearCuenta({
+function CrearUsuario({
   roles,
   onCreado,
   onError,
@@ -328,7 +334,7 @@ function CrearCuenta({
   return (
     <form onSubmit={crear}>
       <Seccion
-        titulo="Nueva cuenta"
+        titulo="Nuevo usuario"
         ayuda="El usuario va en minúsculas y sin espacios; la clave, 8 caracteres como mínimo."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -382,7 +388,7 @@ function CrearCuenta({
 
         <div className="mt-4">
           <Boton type="submit" disabled={creando}>
-            {creando ? 'Creando…' : 'Crear cuenta'}
+            {creando ? 'Creando…' : 'Crear usuario'}
           </Boton>
         </div>
       </Seccion>
@@ -406,6 +412,8 @@ function Modulos({ modulos }: { modulos: Modulo[] }) {
 function ListaRoles({
   roles,
   usuarios,
+  catalogo,
+  nombreLocal,
   onCambio,
   onOk,
   onError,
@@ -413,6 +421,9 @@ function ListaRoles({
 }: {
   roles: RolInfo[]
   usuarios: Usuario[]
+  /** Los modulos que se pueden marcar al editar. */
+  catalogo: Modulo[]
+  nombreLocal: string
   onCambio: () => void
   onOk: (texto: string) => void
   onError: (texto: string) => void
@@ -425,7 +436,7 @@ function ListaRoles({
     if (cuantos > 0) {
       await dialogo.avisar({
         titulo: `«${r.nombre}» está en uso`,
-        texto: `${cuantos} cuenta(s) tienen este rol. Cámbialas de rol primero y vuelve a borrarlo.`,
+        texto: `${cuantos} usuario(s) tienen este rol. Cámbialos de rol primero y vuelve a borrarlo.`,
         tono: 'ojo',
       })
       return
@@ -433,7 +444,7 @@ function ListaRoles({
     if (
       !(await dialogo.confirmar({
         titulo: `¿Borrar el rol «${r.nombre}»?`,
-        texto: 'Deja de poder asignarse a nuevas cuentas.',
+        texto: 'Deja de poder asignarse a nuevos usuarios.',
         aceptar: 'Borrar',
         peligro: true,
       }))
@@ -448,38 +459,226 @@ function ListaRoles({
     }
   }
 
+  // DOS MUNDOS, Y NO SE MEZCLAN. `interno` es el rol de Vertigo, la empresa
+  // que opera la plataforma; el servidor solo se lo manda a Vertigo, así que
+  // en la pantalla del dueño esta lista llega sin ninguno y el bloque no se
+  // dibuja: no es que se esconda, es que no existe para él.
+  const internos = roles.filter((r) => r.interno)
+  const delNegocio = roles.filter((r) => !r.interno)
+
+  const fila = (r: RolInfo) => (
+    <FilaRol
+      key={r.rol}
+      r={r}
+      cuantos={usuarios.filter((u) => u.rol === r.rol).length}
+      catalogo={catalogo}
+      onBorrar={() => void borrar(r)}
+      onCambio={onCambio}
+      onOk={onOk}
+      onError={onError}
+    />
+  )
+
   return (
     <Seccion
       titulo="Roles"
       ayuda="Un rol es la lista de módulos a los que entra. Lo que no esté en la lista, el sistema se lo niega."
       accion={<Boton onClick={onCrear}>+ Crear rol</Boton>}
     >
-      <div className="divide-y divide-neutral-100">
-        {roles.map((r) => {
-          const cuantos = usuarios.filter((u) => u.rol === r.rol).length
-          return (
-            <div key={r.rol} className="py-3 first:pt-0">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="font-semibold">{r.nombre}</span>
-                  {!r.a_medida && <span className="ml-2 text-xs text-neutral-400">de fábrica</span>}
-                  <span className="ml-2 text-xs text-neutral-400">
-                    {cuantos === 0 ? 'sin cuentas' : `${cuantos} cuenta(s)`}
-                  </span>
-                  {r.descripcion && <p className="text-xs text-neutral-500 mt-0.5">{r.descripcion}</p>}
-                </div>
-                {r.a_medida && (
-                  <button onClick={() => void borrar(r)} className="text-peligro-600 font-medium text-sm shrink-0">
-                    Borrar
-                  </button>
-                )}
-              </div>
-              <Modulos modulos={r.modulos} />
-            </div>
-          )
-        })}
-      </div>
+      {internos.length > 0 && (
+        <div className="mb-4">
+          <Etiqueta>Interno de Vertigo</Etiqueta>
+          <p className="text-xs text-neutral-500 -mt-1 mb-1">
+            De la plataforma, no del negocio. No aparece en la pantalla del local: quien entra a{' '}
+            {nombreLocal} no ve este bloque ni sabe que existe.
+          </p>
+          <div className="divide-y divide-neutral-100">{internos.map(fila)}</div>
+        </div>
+      )}
+      {internos.length > 0 && <Etiqueta>Del negocio</Etiqueta>}
+      <p className="text-xs text-neutral-500 -mt-1 mb-1">
+        De mayor a menor. Dueño es el rol más alto de {nombreLocal}: entra a todo lo suyo, y a nada
+        de fuera.
+      </p>
+      <div className="divide-y divide-neutral-100">{delNegocio.map(fila)}</div>
     </Seccion>
+  )
+}
+
+/**
+ * Un rol de la lista, y su edicion ahi mismo.
+ *
+ * SE EDITA DONDE SE LEE. Mandar a otra pantalla a cambiar dos casillas obliga
+ * a recordar lo que decia la de atras, que es justo lo que se esta comparando.
+ *
+ * A uno de fabrica no se le reescribe el nombre: se le recorta la lista de
+ * modulos, y ese recorte es de ESTE local (ver `acceso/roles.py`). Por eso
+ * lleva "Restaurar": lo devuelve a como viene, que es la salida cuando algo
+ * se recorto de mas y la gente ya no puede trabajar.
+ */
+function FilaRol({
+  r,
+  cuantos,
+  catalogo,
+  onBorrar,
+  onCambio,
+  onOk,
+  onError,
+}: {
+  r: RolInfo
+  cuantos: number
+  catalogo: Modulo[]
+  onBorrar: () => void
+  onCambio: () => void
+  onOk: (texto: string) => void
+  onError: (texto: string) => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [nombre, setNombre] = useState(r.nombre)
+  const [descripcion, setDescripcion] = useState(r.descripcion)
+  const [elegidos, setElegidos] = useState<string[]>(r.modulos.map((m) => m.id))
+  const [guardando, setGuardando] = useState(false)
+  const dialogo = useDialogo()
+
+  function abrir() {
+    setNombre(r.nombre)
+    setDescripcion(r.descripcion)
+    setElegidos(r.modulos.map((m) => m.id))
+    setEditando(true)
+  }
+
+  const alternar = (id: string) =>
+    setElegidos((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]))
+
+  async function guardar() {
+    setGuardando(true)
+    try {
+      await api.editarRol(r.rol, { nombre, descripcion, modulos: elegidos })
+      setEditando(false)
+      onOk(`«${nombre || r.nombre}» actualizado. Quien lo tenga lo nota al recargar.`)
+      onCambio()
+    } catch (err) {
+      onError((err as Error).message)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  async function restaurar() {
+    if (
+      !(await dialogo.confirmar({
+        titulo: `¿Devolver «${r.nombre}» a como viene?`,
+        texto: 'Recupera los módulos de fábrica y se pierde el recorte que le hiciste.',
+        aceptar: 'Restaurar',
+      }))
+    )
+      return
+    try {
+      await api.restaurarRol(r.rol)
+      setEditando(false)
+      onOk(`«${r.nombre}» quedó como viene de fábrica.`)
+      onCambio()
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
+  return (
+    <div className="py-3 first:pt-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="font-semibold">{r.nombre}</span>
+          {!r.a_medida && <span className="ml-2 text-xs text-neutral-400">de fábrica</span>}
+          {r.ajustado && (
+            <span className="ml-2 align-middle">
+              <Pastilla tono="acento">a tu medida</Pastilla>
+            </span>
+          )}
+          <span className="ml-2 text-xs text-neutral-400">
+            {cuantos === 0 ? 'sin usuarios' : `${cuantos} usuario(s)`}
+          </span>
+          {r.descripcion && <p className="text-xs text-neutral-500 mt-0.5">{r.descripcion}</p>}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Restaurar tambien AQUI y no solo dentro de la edicion: es la
+              salida cuando un recorte dejo a alguien sin poder trabajar, y
+              entonces se busca rapido, no se entra a editar. */}
+          {r.ajustado && !editando && (
+            <button onClick={() => void restaurar()} className="font-medium text-sm text-neutral-500">
+              Restaurar
+            </button>
+          )}
+          {r.editable && (
+            <button onClick={() => (editando ? setEditando(false) : abrir())} className="font-medium text-sm">
+              {editando ? 'Cancelar' : 'Editar'}
+            </button>
+          )}
+          {r.a_medida && (
+            <button onClick={onBorrar} className="text-peligro-600 font-medium text-sm">
+              Borrar
+            </button>
+          )}
+        </div>
+      </div>
+
+      {editando ? (
+        <div className="mt-3 rounded-xl border border-neutral-200 p-3">
+          {r.a_medida ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <Campo etiqueta="Nombre del rol" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+              <Campo
+                etiqueta="Para qué es"
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.target.value)}
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-neutral-500 mb-3">
+              Es un rol de fábrica: el nombre no cambia, pero sí a qué entra en {'\u00ab'}este{'\u00bb'} local.
+            </p>
+          )}
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">
+            A qué módulos entra
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {catalogo.map((m) => {
+              const marcado = elegidos.includes(m.id)
+              return (
+                <label
+                  key={m.id}
+                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 cursor-pointer ${
+                    marcado ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={marcado}
+                    onChange={() => alternar(m.id)}
+                    className="w-4 h-4 accent-neutral-900"
+                  />
+                  <span className="text-sm font-medium">{m.nombre}</span>
+                </label>
+              )
+            })}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <Boton onClick={() => void guardar()} disabled={guardando || elegidos.length === 0}>
+              {guardando ? 'Guardando…' : 'Guardar'}
+            </Boton>
+            <Boton tono="fantasma" onClick={() => setEditando(false)}>
+              Cancelar
+            </Boton>
+            {r.ajustado && (
+              <Boton tono="fantasma" onClick={() => void restaurar()}>
+                Restaurar el de fábrica
+              </Boton>
+            )}
+          </div>
+        </div>
+      ) : (
+        <Modulos modulos={r.modulos} />
+      )}
+    </div>
   )
 }
 
@@ -564,7 +763,7 @@ function CrearRol({
         </div>
         <p className="text-xs text-neutral-500 mt-3">
           Lo que no marques, el sistema se lo niega: no es que la pantalla se esconda, es que el servidor
-          responde que no. Repartir cuentas no está en la lista a propósito: eso se queda contigo.
+          responde que no. Crear usuarios no está en la lista a propósito: eso se queda contigo.
         </p>
 
         <div className="mt-4">

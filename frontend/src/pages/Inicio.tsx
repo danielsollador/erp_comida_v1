@@ -8,6 +8,7 @@ import { MODULOS, entraA } from '../components/Rail'
 import UsuarioMenu from '../components/UsuarioMenu'
 import { useAcceso } from '../lib/acceso'
 import { api, connectWs } from '../lib/api'
+import { rangoDe } from '../lib/fechas'
 import { MonedaToggle, useMoneda } from '../lib/moneda'
 import { TemaToggle } from '../lib/tema'
 import type { ReporteResumen } from '../lib/types'
@@ -18,6 +19,7 @@ import type { ReporteResumen } from '../lib/types'
 const DESCRIPCION: Record<string, string> = {
   '/pos': 'Armar la comanda y cobrar',
   '/cocina': 'Comandas que llegan arriba',
+  '/ventas': 'Cada venta y qué pasó con ella',
   '/reportes': 'Cómo va el negocio',
   // Las de administracion solo se ven en pantallas altas (tablet en
   // vertical), donde las fichas crecen y una sola palabra las deja vacias.
@@ -70,7 +72,7 @@ export default function Inicio() {
   function cargar() {
     // Los reportes son de caja para arriba; a cocina le responden 403 y no se
     // pintan. Los pedidos si los ve todo el mundo.
-    if (estado.puede.operar) api.reporte('dia').then(setHoy).catch(() => undefined)
+    if (estado.puede.operar) api.reporte(rangoDe('hoy')).then(setHoy).catch(() => undefined)
     api
       .listarPedidos('pendiente')
       .then((ps) => setEnCocina(ps.length))
@@ -122,7 +124,7 @@ export default function Inicio() {
         </div>
 
         {/* La franja de hoy: cuatro cifras, sin adornos. */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-5 sm:mb-6 lg:mb-8 bajo:mb-4 pc:mb-6">
+        <div className="vp-escalonado grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-5 sm:mb-6 lg:mb-8 bajo:mb-4 pc:mb-6">
           {estado.puede.operar && (
             <>
               <Dato titulo="Vendido hoy" ayuda="kpi.vendido_hoy" valor={hoy ? fmt(hoy.ventas) : '—'} destacado />

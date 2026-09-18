@@ -53,11 +53,15 @@ def refrescar(db: Session, forzar: bool = False) -> bool:
     fila = db.query(models.TasaCambio).filter(models.TasaCambio.fecha == fecha).first()
 
     if fila and fila.origen == "manual" and not forzar:
-        # El dueno mando: solo se completa el paralelo, que es referencia y no
-        # afecta a que tasa se cobra.
+        # El dueno mando: se respeta SU tasa de cobro y solo se completan las
+        # de referencia --el paralelo y el euro--, que no deciden a que tasa se
+        # cobra. Sin esto, fijar la tasa a mano dejaba el euro congelado en el
+        # valor de ese dia para siempre.
         if anclas.get("paralelo"):
             fila.paralelo = anclas["paralelo"]
-            db.commit()
+        if anclas.get("eur"):
+            fila.eur = anclas["eur"]
+        db.commit()
         return True
 
     # Cada valor cae al anterior si su fuente fallo, en vez de perderse.
@@ -101,11 +105,10 @@ def fijar_manual(db: Session, bcv: float, paralelo: Optional[float] = None) -> m
     return fila
 
 
-def historial(db: Session, dias: int = 30):
-    desde = hoy() - datetime.timedelta(days=dias)
+def historial(db: Session, desde: datetime.date, hasta_exclusivo: datetime.date):
     return (
         db.query(models.TasaCambio)
-        .filter(models.TasaCambio.fecha >= desde)
+        .filter(models.TasaCambio.fecha >= desde, models.TasaCambio.fecha < hasta_exclusivo)
         .order_by(models.TasaCambio.fecha.desc())
         .all()
     )

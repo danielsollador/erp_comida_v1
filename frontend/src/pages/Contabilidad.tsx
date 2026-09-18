@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango, type Rango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
@@ -14,7 +16,6 @@ import type {
   EstadoResultadosContable,
   FilaBalanceComprobacion,
   FilaMayor,
-  Periodo,
   SaludContable,
 } from '../lib/types'
 
@@ -33,6 +34,10 @@ const SECCIONES = [
 
 export default function Contabilidad() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  // El diario y el estado de resultados son "de un periodo"; el plan, los
+  // balances y los equipos son "a hoy": el filtro solo se muestra donde aplica.
+  const [rango, setRango] = useRango('mes')
+  const conPeriodo = seccion === 'diario' || seccion === 'resultados'
   const [salud, setSalud] = useState<SaludContable | null>(null)
 
   useEffect(() => {
@@ -41,7 +46,7 @@ export default function Contabilidad() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Contabilidad" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Contabilidad" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={conPeriodo ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina>
         {/* El "cuadra" del balance nunca falla (es una identidad de la partida
             doble). Estos chequeos si pueden fallar, y son los que avisan que
@@ -84,9 +89,9 @@ export default function Contabilidad() {
           </div>
         )}
         {seccion === 'plan' && <PlanCuentas />}
-        {seccion === 'diario' && <Diario />}
+        {seccion === 'diario' && <Diario rango={rango} />}
         {seccion === 'comprobacion' && <BalanceComprobacion />}
-        {seccion === 'resultados' && <EstadoResultados />}
+        {seccion === 'resultados' && <EstadoResultados rango={rango} />}
         {seccion === 'general' && <BalanceGeneralVista />}
         {seccion === 'activos' && <Activos />}
         {seccion === 'respaldos' && <Respaldos />}
@@ -305,7 +310,7 @@ function PlanCuentas() {
   )
 }
 
-function Diario() {
+function Diario({ rango }: { rango: Rango }) {
   const [asientos, setAsientos] = useState<AsientoContable[]>([])
   // Lo ultimo asentado arriba; por Origen se separa de un vistazo lo que
   // escribio una persona a mano de lo que asento el sistema solo.
@@ -328,10 +333,10 @@ function Diario() {
   useEffect(() => {
     cargar()
     api.planCuentas().then(setCuentas)
-  }, [])
+  }, [rango])
 
   function cargar() {
-    api.listarAsientos().then(setAsientos)
+    api.listarAsientos(rango).then(setAsientos)
   }
 
   function actualizarLinea(i: number, campo: 'cuenta_id' | 'debe' | 'haber', valor: string) {
@@ -535,35 +540,15 @@ function BalanceComprobacion() {
   )
 }
 
-const PERIODOS: { valor: Periodo; texto: string }[] = [
-  { valor: 'dia', texto: 'Hoy' },
-  { valor: 'semana', texto: 'Esta semana' },
-  { valor: 'mes', texto: 'Este mes' },
-]
-
-function EstadoResultados() {
-  const [periodo, setPeriodo] = useState<Periodo>('mes')
+function EstadoResultados({ rango }: { rango: Rango }) {
   const [datos, setDatos] = useState<EstadoResultadosContable | null>(null)
 
   useEffect(() => {
-    api.estadoResultadosContable(periodo).then(setDatos)
-  }, [periodo])
+    api.estadoResultadosContable(rango).then(setDatos)
+  }, [rango])
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {PERIODOS.map((p) => (
-          <button
-            key={p.valor}
-            onClick={() => setPeriodo(p.valor)}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium border ${
-              periodo === p.valor ? 'bg-neutral-900 text-white border-neutral-900' : 'bg-white border-neutral-200'
-            }`}
-          >
-            {p.texto}
-          </button>
-        ))}
-      </div>
       {datos && (
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <p className="text-sm text-neutral-500 mb-3">{datos.etiqueta}</p>

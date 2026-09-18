@@ -698,6 +698,9 @@ class Insight(BaseModel):
 class ReporteResumen(BaseModel):
     periodo: str
     etiqueta: str
+    # Con que paso viene `serie`: hora | dia | semana | mes. Depende del
+    # tamaño del rango, no de que boton se toco.
+    granularidad: str = "dia"
     ventas: float  # bruto que entro por caja, incluido el IVA de lo facturado
     # Bolivares reales del periodo: cada venta a la tasa del dia en que se
     # cobro. No es `ventas` por la tasa de hoy.
@@ -724,6 +727,101 @@ class ReporteResumen(BaseModel):
     serie: List[PuntoSerie]
     top_productos: List[ProductoVendido]
     insights: List[Insight]
+
+
+class VentaFila(BaseModel):
+    """Una venta en el historial: que fue, cuanto, como, quien, y que paso."""
+
+    id: int
+    numero: int
+    fecha: datetime.datetime
+    # cobrada | fiada | devuelta | anulada | abierta (ver routers/ventas.py)
+    estado: str
+    cliente: str = ""
+    detalle: str  # "2× Empanada, 1× Jugo"
+    unidades: int
+    subtotal: float
+    descuento: float = 0
+    total: float
+    propina: float = 0
+    total_bs: Optional[float] = None
+    tasa_bcv: Optional[float] = None
+    pago: str = ""  # "Efectivo $ + Pago movil"
+    fiado_pendiente: float = 0
+    fiado_saldado: bool = False
+    facturado: bool = False
+    numero_factura: Optional[str] = None
+    operador: str = ""
+    punto_venta: str = ""
+    anulado_por: str = ""
+    motivo_devolucion: str = ""
+    nota_credito: Optional[str] = None
+    nota: str = ""
+    items: List[PedidoItem] = []
+
+
+class ListaVentas(BaseModel):
+    etiqueta: str
+    total: int
+    # Se devolvieron menos filas de las que hay: el rango es demasiado grande.
+    recortado: bool = False
+    filas: List[VentaFila]
+
+
+class PerdidasVentas(BaseModel):
+    """La plata que no llego, o que se fue, en el periodo."""
+
+    anuladas: int = 0
+    valor_anulado: float = 0
+    devueltas: int = 0
+    valor_devuelto: float = 0
+    con_descuento: int = 0
+    valor_descuentos: float = 0
+    merma_inventario: float = 0
+    fiado_pendiente: int = 0
+    valor_fiado_pendiente: float = 0
+    # devuelto + descuentos + merma: lo que si se perdio. Lo anulado nunca
+    # entro y lo fiado todavia se puede cobrar, asi que no suman aqui.
+    total: float = 0
+    pct_sobre_ventas: float = 0
+
+
+class GrupoVentas(BaseModel):
+    nombre: str
+    ventas: float
+    pedidos: int
+
+
+class VentasAnteriores(BaseModel):
+    ventas: float
+    pedidos: int
+    promedio_diario: float
+
+
+class ResumenVentas(BaseModel):
+    etiqueta: str
+    desde: datetime.date
+    hasta: datetime.date
+    dias: int  # dias del rango que ya pasaron; el divisor de los promedios
+    granularidad: str
+    ventas: float
+    ventas_bs: float = 0
+    pedidos: int
+    unidades: int = 0
+    ticket_promedio: float
+    ticket_mediano: float
+    promedio_diario: float
+    pedidos_por_dia: float
+    anterior: VentasAnteriores
+    cambio_pct: Optional[float] = None
+    perdidas: PerdidasVentas
+    por_metodo_pago: dict
+    por_punto_venta: List[GrupoVentas] = []
+    por_operador: List[GrupoVentas] = []
+    facturadas: int = 0
+    valor_facturado: float = 0
+    serie: List[PuntoSerie]
+    mejor: Optional[PuntoSerie] = None
 
 
 class CierreCaja(BaseModel):
@@ -768,6 +866,35 @@ class EstadoTasa(BaseModel):
     desactualizada: bool
 
 
+class PuntoAnalisisTasa(BaseModel):
+    fecha: str
+    bcv: float
+    eur: Optional[float] = None
+    paralelo: Optional[float] = None
+    brecha_pct: Optional[float] = None
+
+
+class AnalisisTasa(BaseModel):
+    """La serie del periodo y lo que se lee en ella (ver `analisis_tasa.py`)."""
+
+    etiqueta: str
+    puntos: List[PuntoAnalisisTasa]
+    dias: int
+    bcv_inicio: Optional[float] = None
+    bcv_fin: Optional[float] = None
+    bcv_min: Optional[float] = None
+    bcv_max: Optional[float] = None
+    variacion_pct: Optional[float] = None
+    brecha_inicio_pct: Optional[float] = None
+    brecha_fin_pct: Optional[float] = None
+    brecha_media_pct: Optional[float] = None
+    # Lo cobrado en metodos de bolivares, en dolares, y lo que la brecha se
+    # llevo de eso al reponer comprando divisas.
+    cobrado_bs_usd: float = 0
+    costo_brecha_usd: float = 0
+    lecturas: List[Insight] = []
+
+
 class TasaManual(BaseModel):
     bcv: float
     paralelo: Optional[float] = None
@@ -776,6 +903,9 @@ class TasaManual(BaseModel):
 class PuntoTasa(BaseModel):
     fecha: str
     bcv: float
+    # El euro oficial del BCV. No es el dolar convertido: el banco lo fija
+    # aparte y da distinto (841,03 derivado contra 840,86 real).
+    eur: Optional[float] = None
     paralelo: Optional[float]
     origen: str
 

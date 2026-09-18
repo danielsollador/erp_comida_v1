@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 from .. import settings
-from . import permisos, roles
+from . import archivo, permisos, roles
 
 SHARED_DIR = Path(settings.SHARED_DIR)
 USERS_FILE = SHARED_DIR / "users.json"
@@ -120,7 +120,7 @@ def _guardar(d: dict) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(d, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, USERS_FILE)
+        archivo.reemplazar(tmp, USERS_FILE)
         try:
             os.chmod(USERS_FILE, 0o600)
         except OSError:

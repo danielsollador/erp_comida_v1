@@ -5,6 +5,7 @@ import Inventario from './pages/Inventario'
 import Menu from './pages/Menu'
 import Caja from './pages/Caja'
 import Reportes from './pages/Reportes'
+import Ventas from './pages/Ventas'
 import Tasa from './pages/Tasa'
 import Contabilidad from './pages/Contabilidad'
 import Compras from './pages/Compras'
@@ -12,7 +13,7 @@ import Impuestos from './pages/Impuestos'
 import Inicio from './pages/Inicio'
 import Recetas from './pages/Recetas'
 import Usuarios from './pages/Usuarios'
-import MiCuenta from './pages/MiCuenta'
+import MiUsuario from './pages/MiUsuario'
 import Rail, { entraA } from './components/Rail'
 import Conexion from './components/Conexion'
 import { DialogoProvider } from './components/dialogo'
@@ -63,12 +64,15 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Inicio />} />
               <Route path="/cocina" element={<Cocina />} />
-              <Route path="/mi-cuenta" element={<MiCuenta />} />
+              <Route path="/mi-usuario" element={<MiUsuario />} />
+              {/* La pantalla se llamaba "Mi cuenta": el enlace viejo sigue llevando. */}
+              <Route path="/mi-cuenta" element={<Navigate to="/mi-usuario" replace />} />
 
               <Route path="/pos" element={<Requiere modulo="pos"><POS /></Requiere>} />
               <Route path="/inventario" element={<Requiere modulo="inventario"><Inventario /></Requiere>} />
               <Route path="/menu" element={<Requiere modulo="menu"><Menu /></Requiere>} />
               <Route path="/caja" element={<Requiere modulo="caja"><Caja /></Requiere>} />
+              <Route path="/ventas" element={<Requiere modulo="ventas"><Ventas /></Requiere>} />
               <Route path="/reportes" element={<Requiere modulo="reportes"><Reportes /></Requiere>} />
               <Route path="/tasa" element={<Requiere modulo="tasa"><Tasa /></Requiere>} />
               <Route path="/compras" element={<Requiere modulo="compras"><Compras /></Requiere>} />

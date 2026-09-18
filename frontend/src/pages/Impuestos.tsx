@@ -3,6 +3,8 @@ import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
@@ -14,16 +16,9 @@ import type {
   FilaLibroVentas,
   LibroCompras,
   LibroVentas,
-  Periodo,
   PeriodoPendiente,
   ResumenIva,
 } from '../lib/types'
-
-const PERIODOS: { valor: Periodo; texto: string }[] = [
-  { valor: 'dia', texto: 'Hoy' },
-  { valor: 'semana', texto: 'Esta semana' },
-  { valor: 'mes', texto: 'Este mes' },
-]
 
 const SECCIONES = [
   { id: 'ventas', texto: 'Libro de ventas' },
@@ -59,7 +54,9 @@ export default function Impuestos() {
     },
     'fecha',
   )
-  const [periodo, setPeriodo] = useState<Periodo>('mes')
+  // El SENIAT pide los libros por mes, asi que se abre en el mes en curso;
+  // el filtro deja ver cualquier otro tramo para revisar una factura.
+  const [rango, setRango] = useRango('mes')
   const [ventas, setVentas] = useState<LibroVentas | null>(null)
   const [compras, setCompras] = useState<LibroCompras | null>(null)
   const [resumen, setResumen] = useState<ResumenIva | null>(null)
@@ -68,10 +65,10 @@ export default function Impuestos() {
   const [tasaInput, setTasaInput] = useState('')
 
   useEffect(() => {
-    api.libroVentas(periodo).then(setVentas)
-    api.libroCompras(periodo).then(setCompras)
-    api.resumenIva(periodo).then(setResumen)
-  }, [periodo])
+    api.libroVentas(rango).then(setVentas)
+    api.libroCompras(rango).then(setCompras)
+    api.resumenIva(rango).then(setResumen)
+  }, [rango])
 
   useEffect(() => {
     api.configFiscal().then((c) => {
@@ -89,23 +86,7 @@ export default function Impuestos() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Impuestos" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
-      <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
-        {PERIODOS.map((p) => (
-          <button
-            key={p.valor}
-            onClick={() => setPeriodo(p.valor)}
-            className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold border transition ${
-              periodo === p.valor
-                ? 'bg-neutral-900 border-neutral-900 text-white'
-                : 'bg-white border-neutral-200 text-neutral-500'
-            }`}
-          >
-            {p.texto}
-          </button>
-        ))}
-      </div>
-
+      <NavBar titulo="Impuestos" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion !== 'declaraciones' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Alicuota de IVA</h2>

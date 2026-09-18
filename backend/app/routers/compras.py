@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import contabilidad, costeo, kardex, models, schemas
 from ..database import get_db
+from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/compras", tags=["compras"])
@@ -43,12 +44,12 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
 
 
 @router.get("/facturas", response_model=List[schemas.FacturaCompra])
-def listar_facturas(dias: int = 60, db: Session = Depends(get_db)):
-    desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+def listar_facturas(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    inicio, fin, _ = rango.resolver(dias=60)
     facturas = (
         db.query(models.FacturaCompra)
         .options(joinedload(models.FacturaCompra.items).joinedload(models.FacturaCompraItem.ingrediente))
-        .filter(models.FacturaCompra.fecha >= desde)
+        .filter(models.FacturaCompra.fecha >= inicio, models.FacturaCompra.fecha < fin)
         .order_by(models.FacturaCompra.id.desc())
         .all()
     )

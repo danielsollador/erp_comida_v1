@@ -3,8 +3,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import schemas, tasas
+from .. import analisis_tasa, schemas, tasas
 from ..database import get_db
+from ..rango import Rango
 
 router = APIRouter(prefix="/api/tasas", tags=["tasas"])
 
@@ -42,14 +43,27 @@ def fijar(body: schemas.TasaManual, db: Session = Depends(get_db)):
 
 
 @router.get("/historial", response_model=List[schemas.PuntoTasa])
-def historial(dias: int = 30, db: Session = Depends(get_db)):
-    dias = max(1, min(dias, 365))
+def historial(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """La tasa dia por dia. Sin rango, los ultimos 30 dias."""
+    inicio, fin, _ = rango.resolver(dias=30)
     return [
         schemas.PuntoTasa(
             fecha=t.fecha.isoformat(),
             bcv=t.bcv,
+            eur=t.eur,
             paralelo=t.paralelo,
             origen=t.origen or "auto",
         )
-        for t in tasas.historial(db, dias)
+        for t in tasas.historial(db, inicio.date(), fin.date())
     ]
+
+
+@router.get("/analisis", response_model=schemas.AnalisisTasa)
+def analisis(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """Como se movio la tasa en el periodo y que significa para el negocio.
+
+    Sin rango, los ultimos 30 dias: es lo que se mira para decidir si hay que
+    tocar los precios del menu.
+    """
+    inicio, fin, etiqueta = rango.resolver(dias=30)
+    return analisis_tasa.analizar(db, inicio, fin, etiqueta)

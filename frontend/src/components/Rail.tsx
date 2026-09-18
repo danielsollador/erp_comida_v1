@@ -21,6 +21,7 @@ export const MODULOS: { to: string; modulo: string; icono: NombreIcono; titulo: 
   { to: '/pos', modulo: 'pos', icono: 'pos', titulo: 'Punto de venta', grupo: 'operacion' },
   { to: '/cocina', modulo: 'cocina', icono: 'cocina', titulo: 'Cocina', grupo: 'operacion' },
   { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'operacion' },
+  { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'administracion' },
   { to: '/menu', modulo: 'menu', icono: 'menu', titulo: 'Menú', grupo: 'administracion' },
   { to: '/recetas', modulo: 'recetas', icono: 'recetas', titulo: 'Recetas', grupo: 'administracion' },
   { to: '/inventario', modulo: 'inventario', icono: 'inventario', titulo: 'Inventario', grupo: 'administracion' },
@@ -69,7 +70,7 @@ export default function Rail() {
       {administracion.map(item)}
 
       <div className="mt-auto flex flex-col items-center gap-1">
-        <Link to="/mi-cuenta" className="vp-rail-item" aria-current={pathname === '/mi-cuenta' ? 'page' : undefined} aria-label="Mi cuenta">
+        <Link to="/mi-usuario" className="vp-rail-item" aria-current={pathname === '/mi-usuario' ? 'page' : undefined} aria-label="Mi usuario">
           <span className="w-8 h-8 rounded-full bg-neutral-900 text-white grid place-items-center text-xs font-bold font-display">
             {inicial}
           </span>

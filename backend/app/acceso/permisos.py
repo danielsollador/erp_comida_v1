@@ -1,5 +1,12 @@
 """Que puede hacer cada rol. Una sola tabla, consultada por el middleware.
 
+DOS MUNDOS, Y NO SE MIRAN. `admin` es el rol INTERNO de Vertigo --la empresa
+que opera la plataforma-- y no es un rol del restaurante: no aparece en la
+lista de nadie que no sea Vertigo, no se lo puede asignar nadie mas, y el
+local no tiene por que enterarse de que existe. Dentro del negocio el rol mas
+alto es `dueno`, y por encima de el no hay nada que el pueda ver: ni otros
+locales, ni la gente de Vertigo, ni los roles que otro local se invento.
+
 UN ROL ES UNA LISTA DE MODULOS. Los cuatro de fabrica son atajos sobre esa
 misma lista, y el dueño puede crear los suyos (ver `roles.py`) cuando ninguno
 le sirve: un mesonero que solo toma pedidos, un encargado sin acceso a la
@@ -24,13 +31,14 @@ navegador, ser administrador seria escribir "admin" en un JSON.
 """
 from __future__ import annotations
 
+from .. import settings
 from . import roles as roles_a_medida
 
 ROLES = ("admin", "dueno", "caja", "cocina")
 
 DESCRIPCION = {
     "admin": "Vertigo: administra todos los locales y crea dueños.",
-    "dueno": "Dueño: todo dentro de su local, incluidas las cuentas de su gente.",
+    "dueno": "Dueño: todo dentro de su local, incluidos los usuarios de su gente.",
     "caja": "Mostrador: vende, cobra, cierra caja, compras e inventario.",
     "cocina": "Cocina: solo ve las comandas y las marca listas.",
 }
@@ -58,6 +66,7 @@ MODULOS: dict[str, dict] = {
         "escribe_solo": ("/api/pedidos/items/", "/marcar-listo"),
     },
     "reportes": {"nombre": "Reportes", "rutas": (), "lectura": ("/api/reportes",)},
+    "ventas": {"nombre": "Ventas", "rutas": (), "lectura": ("/api/ventas",)},
     "menu": {"nombre": "Menú", "rutas": ("/api/menu",), "lectura": ("/api/inventario",)},
     "recetas": {
         "nombre": "Recetas",
@@ -81,6 +90,13 @@ MODULOS: dict[str, dict] = {
     "usuarios": {"nombre": "Usuarios", "rutas": ("/api/usuarios",)},
 }
 
+# Los roles de fabrica a los que el local puede recortarles modulos.
+#
+# `dueno` NO: es el rol mas alto del negocio y el unico que reparte usuarios,
+# asi que quitarle un modulo seria la unica forma de que nadie en el local
+# pudiera volver a ponerselo. `admin` tampoco: es de Vertigo, no del negocio.
+AJUSTABLES = ("caja", "cocina")
+
 # Los modulos que un rol a medida puede incluir. `usuarios` NO: repartir
 # cuentas es del dueño, y ademas los routers de usuarios exigen rol de
 # administrador aparte del middleware -- un rol a medida con ese modulo pasaria
@@ -92,8 +108,8 @@ _TODOS = tuple(MODULOS)
 MODULOS_POR_ROL: dict[str, tuple[str, ...]] = {
     "admin": _TODOS,
     "dueno": _TODOS,
-    "caja": ("pos", "cocina", "reportes", "menu", "recetas", "inventario", "compras",
-             "caja", "tasa"),
+    "caja": ("pos", "cocina", "reportes", "ventas", "menu", "recetas", "inventario",
+             "compras", "caja", "tasa"),
     "cocina": ("cocina",),
 }
 
@@ -146,9 +162,30 @@ def opera(rol: str | None) -> bool:
     return "pos" in modulos_de(r)
 
 
-def modulos_de(rol: str | None) -> tuple[str, ...]:
-    """A que modulos entra este rol."""
+def _local_actual() -> str | None:
+    """El local de ESTE panel. En el hub no hay local: no hay nada que recortar."""
+    return None if settings.ES_HUB else settings.LOCAL_SLUG
+
+
+def es_ajustable(rol: str | None) -> bool:
+    """Si a este rol se le pueden cambiar los modulos desde la pantalla."""
     r = normalizar(rol)
+    return r in AJUSTABLES or es_a_medida(r)
+
+
+def esta_ajustado(rol: str | None) -> bool:
+    """Si este local ya le recorto los modulos a ese rol de fabrica."""
+    r = normalizar(rol)
+    return r in AJUSTABLES and roles_a_medida.ajuste(r, _local_actual()) is not None
+
+
+def modulos_de(rol: str | None) -> tuple[str, ...]:
+    """A que modulos entra este rol, con el recorte del local si lo hay."""
+    r = normalizar(rol)
+    if r in AJUSTABLES:
+        propio = roles_a_medida.ajuste(r, _local_actual())
+        if propio is not None:
+            return propio
     if r in MODULOS_POR_ROL:
         return MODULOS_POR_ROL[r]
     return roles_a_medida.modulos_de(r)
@@ -175,15 +212,23 @@ def puede_modulo(rol: str | None, modulo: str) -> bool:
     return modulo in modulos_de(rol)
 
 
-def roles_que_puede_asignar(rol: str | None) -> tuple[str, ...]:
-    """Que cuentas puede crear cada quien. Un dueño no fabrica administradores
-    de Vertigo ni otros dueños de otros locales, pero si puede usar los roles a
-    medida que el mismo creo."""
-    a_medida = tuple(r["id"] for r in roles_a_medida.listar())
+def roles_que_puede_asignar(rol: str | None, local: str | None = None) -> tuple[str, ...]:
+    """Que roles puede repartir cada quien, EN ESTE ORDEN de jerarquia.
+
+    Es tambien la lista que ve en pantalla, y por eso importa lo que NO trae:
+
+      * `admin` (Vertigo) solo para Vertigo. Es el rol interno de la
+        plataforma; que el dueño de un local lo viera listado ya seria
+        contarle que existe un escalon por encima del suyo.
+      * los roles a medida, solo los de SU local: viven en un archivo
+        compartido con el hub, asi que sin filtrar el dueño de un local
+        veria --y podria borrar-- los que se invento el vecino.
+    """
     if es_vertigo(rol):
-        return ROLES + a_medida
+        return ROLES + tuple(r["id"] for r in roles_a_medida.listar())
     if administra(rol):
-        return ("dueno", "caja", "cocina") + a_medida
+        return ("dueno", "caja", "cocina") + tuple(
+            r["id"] for r in roles_a_medida.de_local(local))
     return ()
 
 
@@ -229,6 +274,16 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
 
     if r in ("admin", "dueno"):
         return True
+
+    # Un rol de fabrica QUE ESTE LOCAL RECORTO se evalua por sus modulos, que
+    # niegan por defecto -- el mismo motor de los roles a medida. Sin recortar
+    # sigue el camino de siempre, que es el que lleva años funcionando: nadie
+    # cambia de cerradura por una pantalla que no toco.
+    if esta_ajustado(r):
+        if not escribe and ruta.startswith(LECTURA_LIBRE):
+            return True
+        return _por_modulos(r, metodo, ruta)
+
     if ruta.startswith(SOLO_ADMINISTRA):
         return False
     if escribe and ruta.startswith(SOLO_ADMINISTRA_ESCRITURA):

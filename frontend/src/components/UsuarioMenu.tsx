@@ -5,7 +5,7 @@ import Icono from './Icono'
 
 /**
  * Quien esta dentro, arriba a la derecha: su inicial, su nombre y un menu con
- * "Mi cuenta", "Usuarios" (solo quien administra), la administracion de
+ * "Mi usuario", "Usuarios" (solo quien administra), la administracion de
  * Vertigo (solo Vertigo) y "Salir". Mismo patron de apertura y cierre que el
  * selector de moneda.
  */
@@ -74,8 +74,8 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
             </div>
           </div>
           <div className={`h-px mx-1 mb-1 ${dark ? 'bg-neutral-800' : 'bg-neutral-100'}`} />
-          <Link to="/mi-cuenta" className={item} onClick={() => setAbierto(false)}>
-            <Icono nombre="cuenta" size={16} className="text-neutral-400" /> Mi cuenta
+          <Link to="/mi-usuario" className={item} onClick={() => setAbierto(false)}>
+            <Icono nombre="cuenta" size={16} className="text-neutral-400" /> Mi usuario
           </Link>
           {estado.puede.administrar && (
             <Link to="/usuarios" className={item} onClick={() => setAbierto(false)}>

@@ -2,32 +2,20 @@ import { useEffect, useState } from 'react'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { FiltroFechas } from '../components/Fechas'
+import { useRango } from '../lib/fechas'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Pagina } from '../components/ui'
+import { Lecturas, Pagina } from '../components/ui'
 import { api } from '../lib/api'
-import { fmtBs, useMoneda } from '../lib/moneda'
+import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import type {
-  Insight,
   ParCombo,
-  Periodo,
   ProductoVendido,
   ReporteCombos,
   ReporteResumen,
 } from '../lib/types'
-
-const PERIODOS: { valor: Periodo; texto: string }[] = [
-  { valor: 'dia', texto: 'Hoy' },
-  { valor: 'semana', texto: 'Esta semana' },
-  { valor: 'mes', texto: 'Este mes' },
-]
-
-const ESTILO_INSIGHT: Record<Insight['tipo'], { caja: string; icono: string }> = {
-  bueno: { caja: 'bg-exito-50 border-exito-200 text-exito-900', icono: '✓' },
-  alerta: { caja: 'bg-aviso-50 border-aviso-200 text-aviso-900', icono: '!' },
-  info: { caja: 'bg-acento-50 border-acento-200 text-acento-900', icono: 'i' },
-}
 
 const SECCIONES = [
   { id: 'resumen', texto: 'Resumen' },
@@ -37,7 +25,9 @@ const SECCIONES = [
 
 export default function Reportes() {
   const [seccion, irA] = useSeccion(SECCIONES)
-  const [periodo, setPeriodo] = useState<Periodo>('dia')
+  // Hoy por defecto: es lo que se mira al cerrar. El filtro del encabezado
+  // abre cualquier otro periodo, y queda en la URL.
+  const [rango, setRango] = useRango('hoy')
   const [datos, setDatos] = useState<ReporteResumen | null>(null)
   // Llega ordenado por ingresos, que es el ranking que el backend arma; aqui
   // se puede dar vuelta a la pregunta: que dejo mas GANANCIA, o que tiene el
@@ -51,38 +41,28 @@ export default function Reportes() {
   })
   const [combos, setCombos] = useState<ReporteCombos | null>(null)
   const [cargando, setCargando] = useState(true)
-  const { fmt } = useMoneda()
+  const { fmt, fmtCongelado, sufijo } = useMoneda()
 
   useEffect(() => {
     setCargando(true)
-    api.reporte(periodo).then((r) => {
+    api.reporte(rango).then((r) => {
       setDatos(r)
       setCargando(false)
     })
-    api.reporteCombos(periodo).then(setCombos).catch(() => setCombos(null))
-  }, [periodo])
+    api.reporteCombos(rango).then(setCombos).catch(() => setCombos(null))
+  }, [rango])
 
   const maxVenta = datos ? Math.max(...datos.serie.map((s) => s.ventas), 0) : 0
+  // La tasa MEDIA del periodo, sacada de los bolivares que de verdad entraron.
+  // En la vista en bolivares manda esta y no la de hoy: si no, el resumen del
+  // mes pasado cambiaria solo cada vez que se mueve el dolar, y ademas no
+  // cuadraria con la linea de abajo, que si suma cada venta a la tasa de su dia.
+  const tasaPeriodo = datos && datos.ventas > 0 ? datos.ventas_bs / datos.ventas || null : null
+  const dinero = (x: number, d?: number) => fmtCongelado(x, tasaPeriodo, d)
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Reportes" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
-
-      <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2">
-        {PERIODOS.map((p) => (
-          <button
-            key={p.valor}
-            onClick={() => setPeriodo(p.valor)}
-            className={`px-4 py-2 rounded-full text-sm font-semibold border transition ${
-              periodo === p.valor
-                ? 'bg-neutral-900 border-neutral-900 text-white'
-                : 'bg-white border-neutral-200 text-neutral-500'
-            }`}
-          >
-            {p.texto}
-          </button>
-        ))}
-      </div>
+      <NavBar titulo="Reportes" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={<FiltroFechas rango={rango} alCambiar={setRango} />} />
 
       <Pagina>
         {cargando && <p className="text-neutral-400 text-sm">Cargando...</p>}
@@ -103,12 +83,12 @@ export default function Reportes() {
 
             {seccion === 'resumen' && (
               <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Kpi titulo="Ventas" ayuda="kpi.ventas" valor={`$${datos.ventas.toFixed(2)}`} destacado />
+            <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Kpi titulo="Ventas" ayuda="kpi.ventas" valor={dinero(datos.ventas)} destacado />
               <Kpi
                 titulo="Ganancia neta"
                 ayuda="kpi.ganancia_neta"
-                valor={`$${datos.ganancia_neta.toFixed(2)}`}
+                valor={dinero(datos.ganancia_neta)}
                 tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
                 destacado
               />
@@ -119,10 +99,10 @@ export default function Reportes() {
               <Kpi
                 titulo="Ticket promedio"
                 ayuda="kpi.ticket_promedio"
-                valor={`$${datos.ticket_promedio.toFixed(2)}`}
+                valor={dinero(datos.ticket_promedio)}
                 nota={
                   Math.abs(datos.ticket_mediano - datos.ticket_promedio) > 0.01
-                    ? `el cliente tipico gasto $${datos.ticket_mediano.toFixed(2)}`
+                    ? `el cliente tipico gasto ${dinero(datos.ticket_mediano)}`
                     : undefined
                 }
               />
@@ -132,21 +112,15 @@ export default function Reportes() {
               <div className="space-y-2">
                 <h2 className="font-semibold flex items-center gap-2">
                   <Icono nombre="chispa" size={17} className="text-acento-600" /> Análisis del negocio
+                  {/* Los avisos los redacta el servidor y sus cifras van en
+                      dolares, que es la moneda en que el negocio lleva sus
+                      numeros. Se dice aqui para que no parezcan la misma
+                      moneda que las tarjetas de arriba. */}
+                  {sufijo !== 'USD' && (
+                    <span className="text-xs font-normal text-neutral-400">· cifras en dólares</span>
+                  )}
                 </h2>
-                {datos.insights.map((ins, idx) => {
-                  const estilo = ESTILO_INSIGHT[ins.tipo]
-                  return (
-                    <div key={idx} className={`border rounded-xl p-3 flex gap-3 ${estilo.caja}`}>
-                      <span className="font-bold shrink-0 w-5 h-5 rounded-full bg-white/70 flex items-center justify-center text-xs">
-                        {estilo.icono}
-                      </span>
-                      <div>
-                        <div className="font-semibold text-sm">{ins.titulo}</div>
-                        <div className="text-sm opacity-80">{ins.detalle}</div>
-                      </div>
-                    </div>
-                  )
-                })}
+                <Lecturas items={datos.insights} />
               </div>
             )}
 
@@ -155,35 +129,36 @@ export default function Reportes() {
               <p className="text-xs text-neutral-500 mb-3">
                 Los mismos numeros del Estado de Resultados en Contabilidad.
               </p>
-              <Linea etiqueta="Ventas cobradas" monto={datos.ventas} />
+              <Linea dinero={dinero} etiqueta="Ventas cobradas" monto={datos.ventas} />
               {datos.iva_cobrado > 0 && (
                 <>
                   {/* El IVA entra por caja pero se le debe al SENIAT: contarlo
                       como ingreso inflaba la ganancia mostrada. */}
-                  <Linea etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
-                  <Linea etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
+                  <Linea dinero={dinero} etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
+                  <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
                 </>
               )}
-              <Linea etiqueta="Costo de insumos" monto={-datos.costo_insumos} />
+              <Linea dinero={dinero} etiqueta="Costo de insumos" monto={-datos.costo_insumos} />
               <Linea
+                dinero={dinero}
                 etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
                 monto={datos.ganancia_bruta}
                 subtotal
               />
-              <Linea etiqueta="Gastos, mermas y faltantes" monto={-datos.gastos} />
-              <Linea etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
+              <Linea dinero={dinero} etiqueta="Gastos, mermas y faltantes" monto={-datos.gastos} />
+              <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
               {(datos.pedidos_anulados > 0 || datos.devoluciones > 0) && (
                 <p className="text-xs text-aviso-700 mt-3 bg-aviso-50 rounded-lg px-3 py-2">
                   {datos.pedidos_anulados > 0 && (
                     <>
-                      Se anularon {datos.pedidos_anulados} pedido(s) por $
-                      {datos.valor_anulado.toFixed(2)} que no llegaron a venderse.
+                      Se anularon {datos.pedidos_anulados} pedido(s) por{' '}
+                      {dinero(datos.valor_anulado)} que no llegaron a venderse.
                     </>
                   )}
                   {datos.devoluciones > 0 && (
                     <>
                       {datos.pedidos_anulados > 0 && ' '}
-                      {datos.devoluciones} venta(s) por ${datos.valor_devuelto.toFixed(2)} fueron
+                      {datos.devoluciones} venta(s) por {dinero(datos.valor_devuelto)} fueron
                       devueltas por el cliente y ya no cuentan arriba.
                     </>
                   )}
@@ -194,23 +169,24 @@ export default function Reportes() {
             {datos.serie.length > 0 && (
               <div className="bg-white rounded-2xl border border-neutral-200 p-4">
                 <h2 className="font-semibold mb-4">
-                  Ventas por {datos.periodo === 'dia' ? 'hora' : 'dia'}
+                  Ventas por {datos.granularidad} · {sufijo}
                 </h2>
                 <div className="flex items-end gap-1.5 h-40 overflow-x-auto">
-                  {datos.serie.map((punto) => {
+                  {datos.serie.map((punto, i) => {
                     const alturaPct = maxVenta > 0 ? (punto.ventas / maxVenta) * 100 : 0
                     return (
                       <div
                         key={punto.etiqueta}
-                        className="flex-1 min-w-[28px] flex flex-col items-center justify-end h-full gap-1"
-                        title={`${punto.etiqueta}: $${punto.ventas.toFixed(2)} en ${punto.pedidos} pedidos`}
+                        className="group flex-1 min-w-[28px] flex flex-col items-center justify-end h-full gap-1 cursor-default"
+                        title={`${punto.etiqueta}: ${dinero(punto.ventas)} en ${punto.pedidos} pedidos`}
                       >
                         <span className="text-[10px] text-neutral-500 tabular-nums">
-                          {punto.ventas > 0 ? `$${punto.ventas.toFixed(0)}` : ''}
+                          {/* Sin simbolo: no cabe uno por barra, y ya lo dice el titulo. */}
+                          {punto.ventas > 0 ? fmtNum(punto.ventas, 0) : ''}
                         </span>
                         <div
-                          className="w-full bg-neutral-900 rounded-t-md min-h-[2px]"
-                          style={{ height: `${alturaPct}%` }}
+                          className="vp-barra w-full bg-neutral-900 rounded-t-md min-h-[2px] transition-colors group-hover:bg-acento-500"
+                          style={{ height: `${alturaPct}%`, animationDelay: `${Math.min(i * 18, 400)}ms` }}
                         />
                         <span className="text-[10px] text-neutral-500 whitespace-nowrap">
                           {punto.etiqueta}
@@ -228,7 +204,7 @@ export default function Reportes() {
                 {Object.entries(datos.por_metodo_pago).map(([metodo, monto]) => (
                   <div key={metodo} className="flex justify-between text-sm py-1">
                     <span className="text-neutral-600">{metodo}</span>
-                    <span className="font-medium tabular-nums">${monto.toFixed(2)}</span>
+                    <span className="font-medium tabular-nums">{dinero(monto)}</span>
                   </div>
                 ))}
                 {Object.keys(datos.por_metodo_pago).length === 0 && (
@@ -274,7 +250,7 @@ export default function Reportes() {
                           )}
                         </td>
                         <td className="text-right py-2 tabular-nums">{p.unidades}</td>
-                        <td className="text-right py-2 tabular-nums">${p.ingresos.toFixed(2)}</td>
+                        <td className="text-right py-2 tabular-nums">{dinero(p.ingresos)}</td>
                         {/* Sin receta no hay costo, asi que la ganancia seria
                             todo el ingreso y el margen 100%: mostrarlos como
                             numeros validos hacia pasar por producto estrella
@@ -283,7 +259,7 @@ export default function Reportes() {
                           {p.sin_receta ? (
                             <span className="text-neutral-400">—</span>
                           ) : (
-                            `$${p.ganancia.toFixed(2)}`
+                            dinero(p.ganancia)
                           )}
                         </td>
                         <td
@@ -353,11 +329,14 @@ function Kpi({
 function Linea({
   etiqueta,
   monto,
+  dinero,
   subtotal = false,
   total = false,
 }: {
   etiqueta: string
   monto: number
+  /** Formatea en la vista cambiaria elegida, a la tasa del periodo. */
+  dinero: (x: number) => string
   subtotal?: boolean
   total?: boolean
 }) {
@@ -373,7 +352,7 @@ function Linea({
           total && monto < 0 ? 'text-peligro-600' : monto < 0 ? 'text-neutral-600' : ''
         }`}
       >
-        {monto < 0 ? '-' : ''}${Math.abs(monto).toFixed(2)}
+        {monto < 0 ? '-' : ''}{dinero(Math.abs(monto))}
       </span>
     </div>
   )
