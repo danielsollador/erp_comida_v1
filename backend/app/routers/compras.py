@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from .. import contabilidad, costeo, models, schemas
+from .. import contabilidad, costeo, kardex, models, schemas
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
@@ -124,7 +124,11 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         # El costo del insumo se promedia con lo que ya habia - mismo motor
         # que "Registrar compra" en Inventario (ver costeo.py), para que las
         # dos vias de cargar una compra lleguen siempre al mismo numero.
-        costeo.registrar_entrada(ingrediente, item.cantidad, item.costo_unitario)
+        costeo.registrar_entrada(
+            ingrediente, item.cantidad, item.costo_unitario, db,
+            origen="factura", referencia_id=db_factura.id,
+            nota=f"Factura {db_factura.numero_factura} - {db_factura.proveedor_nombre}",
+        )
 
     db.flush()
     contabilidad.registrar_factura_compra(db, db_factura)
@@ -262,7 +266,11 @@ def crear_nota_credito(
             # La mercancia se va: sale del stock al costo al que entro. El
             # promedio ponderado no se toca, porque lo devuelto costaba
             # exactamente lo que el resto de esa factura.
-            ingrediente.stock_actual = round((ingrediente.stock_actual or 0) - cantidad, 4)
+            kardex.anotar(
+                db, ingrediente, -cantidad, kardex.DEVOLUCION_PROVEEDOR,
+                costo_unitario=costo, origen="nota_credito", referencia_id=nota.id,
+                nota=f"Nota {nota.numero} a {factura.proveedor_nombre}: {body.motivo or 'devolucion'}",
+            )
 
         if body.tipo == "descuento":
             _abaratar_insumos(db, factura, base)

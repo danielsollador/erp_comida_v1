@@ -76,6 +76,20 @@ COLUMNAS = [
     ("TRX630_CON_RETIRO_PROPIETARIO", "operador_id", "INTEGER"),
     ("TRX320_INV_MERMA", "operador_id", "INTEGER"),
     ("TRX620_CON_GASTO", "operador_id", "INTEGER"),
+    ("TRX110_VEN_PEDIDO", "clave_cliente", "VARCHAR"),
+    ("TRX320_INV_MERMA", "por_conteo", "BOOLEAN DEFAULT 0"),
+    ("TRX340_INV_MOVIMIENTO", "costo_promedio", "FLOAT DEFAULT 0"),
+]
+
+
+# Indices que no vienen con la columna. El UNIQUE de `clave_cliente` es lo
+# que hace que la idempotencia aguante dos reintentos simultaneos: sin el,
+# el chequeo "existe?" y el INSERT dejan una rendija por donde entran dos
+# comandas iguales. `IF NOT EXISTS` funciona igual en SQLite y PostgreSQL.
+INDICES = [
+    ("UQ_TRX110_VEN_PEDIDO_clave_cliente",
+     'CREATE UNIQUE INDEX IF NOT EXISTS "UQ_TRX110_VEN_PEDIDO_clave_cliente" '
+     'ON "TRX110_VEN_PEDIDO" (clave_cliente)'),
 ]
 
 
@@ -133,6 +147,10 @@ RENOMBRES = {
     "movimientos_contables": "TRX611_CON_ASIENTO_DET",
     "declaraciones_iva": "TRX710_IMP_DECLARACION_IVA",
     "activos_fijos": "DIM620_ACT_ACTIVO_FIJO",
+    # Nacieron ya con la nomenclatura: solo estan aqui por si alguna base de
+    # desarrollo alcanzo a crearlas con el nombre suelto.
+    "movimientos_inventario": "TRX340_INV_MOVIMIENTO",
+    "abonos_fiado": "TRX130_VEN_ABONO_FIADO",
 }
 
 
@@ -321,6 +339,53 @@ def _relajar_not_null(tabla: str, columna: str) -> None:
         _relajar_not_null_sqlite(tabla, columna)
 
 
+def _abrir_kardex() -> None:
+    """Saldo inicial del libro de movimientos, una sola vez.
+
+    El kardex nace vacio, pero el deposito del local no: hay insumos con
+    existencia que entro antes de que este libro existiera. Sin una fila de
+    apertura, el extracto de cada insumo arrancaria en cero y no cuadraria con
+    su stock, y el primer conteo mostraria un sobrante enorme que nadie
+    entiende.
+
+    Es el mismo gesto que el asiento de apertura de la contabilidad: no se
+    inventa historia, se declara el punto de partida. No toca el stock ni
+    genera asiento -la existencia ya esta reconocida en 1040-, solo deja
+    escrito de donde viene el saldo.
+    """
+    from . import models  # puebla Base.metadata
+    from .database import SessionLocal
+    from .timeutils import ahora
+
+    db = SessionLocal()
+    try:
+        if db.query(models.MovimientoInventario).first() is not None:
+            return  # ya se abrio: correr esto mil veces es inofensivo
+        abiertos = 0
+        for ing in db.query(models.Ingrediente).all():
+            saldo = ing.stock_actual or 0
+            if saldo == 0:
+                continue
+            db.add(models.MovimientoInventario(
+                ingrediente_id=ing.id,
+                fecha=ahora(),
+                tipo="ajuste",
+                cantidad=round(saldo, 4),
+                costo_unitario=round(ing.costo_unitario or 0, 4),
+                costo_promedio=round(ing.costo_unitario or 0, 4),
+                valor=round(saldo * (ing.costo_unitario or 0), 2),
+                saldo=round(saldo, 4),
+                origen="apertura_kardex",
+                nota="Existencia al empezar a llevar el libro de movimientos",
+            ))
+            abiertos += 1
+        if abiertos:
+            db.commit()
+            log.info("Kardex abierto con %d insumo(s) con existencia", abiertos)
+    finally:
+        db.close()
+
+
 def aplicar():
     inspector = inspect(engine)
     tablas = set(inspector.get_table_names())
@@ -355,6 +420,13 @@ def aplicar():
 
     # El inspector cachea lo que leyo; para lo que sigue hace falta uno nuevo.
     inspector = inspect(engine)
+    with engine.begin() as con:
+        for nombre, sql in INDICES:
+            if "TRX110_VEN_PEDIDO" not in tablas:
+                continue
+            con.execute(text(sql))
+            log.debug("Indice asegurado: %s", nombre)
+
     for tabla, columna in RELAJAR_NOT_NULL:
         if tabla not in tablas:
             continue
@@ -362,5 +434,10 @@ def aplicar():
             continue
         _relajar_not_null(tabla, columna)
 
-    # Idempotente y barato: deja PK_/FK_/IX_ en una base que ya estaba renombrada.
+    # Va antes del kardex: le deja las restricciones con su nombre definitivo.
+    # Idempotente y barato: no hace nada en una base ya al dia.
     nombrar_restricciones()
+
+    # Va de ultimo: necesita que la tabla exista (la crea `create_all`) y que
+    # las columnas nuevas ya esten puestas.
+    _abrir_kardex()

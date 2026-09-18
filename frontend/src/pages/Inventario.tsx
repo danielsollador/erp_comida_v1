@@ -17,6 +17,7 @@ import type {
   ResultadoConteo,
   SobranteInventario,
   SugerenciaCompra,
+  ExtractoInsumo,
 } from '../lib/types'
 
 /**
@@ -817,6 +818,7 @@ function FichaInsumo({
   const [aviso, setAviso] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [historial, setHistorial] = useState<CompraDeInsumo[] | null>(null)
+  const [extracto, setExtracto] = useState<ExtractoInsumo | null>(null)
   const ordenHistorial = useOrden<CompraConVariacion>(
     {
       fecha: (c) => new Date(c.fecha),
@@ -836,6 +838,10 @@ function FichaInsumo({
       .historialCostos(ing.id)
       .then(setHistorial)
       .catch(() => setHistorial([]))
+    api
+      .movimientosDeInsumo(ing.id)
+      .then(setExtracto)
+      .catch(() => setExtracto(null))
   }, [ing])
 
   const num = (v: string) => Number(v.trim().replace(',', '.'))
@@ -987,6 +993,52 @@ function FichaInsumo({
               {mermas.length} registro(s).
             </p>
           )}
+          {/* El extracto va primero: "que paso con mi queso" es la pregunta
+              que trae al dueno aca. Antes habia que abrir cuatro pantallas y
+              aun asi faltaban el consumo del personal y las compras sueltas. */}
+          <div>
+            <p className="vp-etiqueta mb-2">Movimientos</p>
+            {extracto === null ? (
+              <p className="text-sm text-neutral-400">Cargando…</p>
+            ) : extracto.movimientos.length === 0 ? (
+              <p className="text-sm text-neutral-500">Todavía no se ha movido nada.</p>
+            ) : (
+              <>
+                {!extracto.cuadra && (
+                  <div className="mb-2">
+                    <Aviso tono="mal">
+                      El libro suma {cantidad(extracto.saldo_segun_libro)} {ing.unidad} y la
+                      existencia dice {cantidad(extracto.stock_actual)}. Algo movió el stock sin
+                      anotarlo: avísale a quien mantiene el sistema.
+                    </Aviso>
+                  </div>
+                )}
+                <div className="border border-neutral-200 rounded-xl divide-y divide-neutral-100">
+                  {extracto.movimientos.map((m) => (
+                    <div key={m.id} className="flex items-baseline justify-between gap-3 px-3 py-2 text-sm">
+                      <span className="min-w-0">
+                        <b>{m.etiqueta}</b>
+                        {m.nota && <span className="text-neutral-500"> · {m.nota}</span>}
+                        <span className="block text-[11px] text-neutral-400">
+                          {new Date(m.fecha).toLocaleString('es-VE')}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right tabular-nums">
+                        <b className={m.cantidad < 0 ? 'text-peligro-600' : 'text-exito-700'}>
+                          {m.cantidad > 0 ? '+' : ''}
+                          {cantidad(m.cantidad)}
+                        </b>
+                        <span className="block text-[11px] text-neutral-400">
+                          quedan {cantidad(m.saldo)} {ing.unidad}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           {/* La curva de inflacion de cada insumo estaba en las facturas desde
               el primer dia; no habia por donde verla. */}
           <div>

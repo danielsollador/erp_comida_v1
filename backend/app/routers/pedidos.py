@@ -2,9 +2,10 @@ import datetime
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from .. import combos, contabilidad, costeo, impuestos, models, schemas, tasas
+from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -88,6 +89,19 @@ async def crear_pedido(
     if not pedido.items:
         raise HTTPException(status_code=400, detail="El pedido necesita al menos un item")
 
+    # Reintento de una comanda que quizas ya entro. La wifi del local se cae y
+    # la cajera no sabe si el pedido llego: le da otra vez. Con la misma clave
+    # se le devuelve el que ya existe, en vez de mandar dos comandas iguales a
+    # cocina y descontar el inventario dos veces.
+    if pedido.clave_cliente:
+        ya = (
+            db.query(models.Pedido)
+            .filter(models.Pedido.clave_cliente == pedido.clave_cliente)
+            .first()
+        )
+        if ya is not None:
+            return schemas.Pedido.model_validate(ya)
+
     # Venta libre: renglones que no estan en el menu. No mueven inventario
     # (no tienen receta) y su costo queda en cero, que es honesto: el sistema
     # no sabe cuanto costo producir algo que no tiene cargado.
@@ -136,6 +150,7 @@ async def crear_pedido(
         numero=_siguiente_numero(db),
         nota=pedido.nota,
         operador_id=quien_toma.id if quien_toma else None,
+        clave_cliente=pedido.clave_cliente,
     )
     db.add(db_pedido)
     db.flush()
@@ -171,7 +186,12 @@ async def crear_pedido(
         )
 
     for ingrediente, cantidad in consumo.items():
-        ingrediente.stock_actual = (ingrediente.stock_actual or 0) - cantidad
+        kardex.anotar(
+            db, ingrediente, -cantidad, kardex.VENTA,
+            origen="pedido", referencia_id=db_pedido.id,
+            nota=f"Comanda #{db_pedido.numero}",
+            operador_id=quien_toma.id if quien_toma else None,
+        )
         # Se deja constancia de lo que salio: si la receta cambia mientras el
         # pedido esta en cocina, al anularlo hay que devolver esto y no lo que
         # diria la receta nueva.
@@ -181,7 +201,22 @@ async def crear_pedido(
             )
         )
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Dos reintentos que llegaron juntos: el indice UNIQUE de
+        # `clave_cliente` dejo pasar uno. El que perdio devuelve el pedido del
+        # que gano, que es exactamente lo que el cajero queria ver.
+        db.rollback()
+        ya = (
+            db.query(models.Pedido)
+            .filter(models.Pedido.clave_cliente == pedido.clave_cliente)
+            .first()
+        )
+        if ya is None:
+            raise
+        return schemas.Pedido.model_validate(ya)
+
     db.refresh(db_pedido)
 
     resultado = schemas.Pedido.model_validate(db_pedido)
@@ -387,7 +422,11 @@ async def devolver_pedido(
     # quedo reconocida como merma en el asiento.
     if body.recuperable:
         for consumo in pedido.consumos:
-            consumo.ingrediente.stock_actual = (consumo.ingrediente.stock_actual or 0) + consumo.cantidad
+            kardex.anotar(
+                db, consumo.ingrediente, consumo.cantidad, kardex.REVERSO,
+                origen="devolucion", referencia_id=pedido.id,
+                nota=f"Devolucion del pedido #{pedido.numero}: la comida se pudo revender",
+            )
 
     pedido.devuelto = True
     pedido.fecha_devolucion = ahora()
@@ -541,7 +580,11 @@ async def anular_pedido(
             contabilidad.registrar_merma(db, ingrediente, valor, db_merma.id)
     else:
         for ingrediente, cantidad in consumo.items():
-            ingrediente.stock_actual = (ingrediente.stock_actual or 0) + cantidad
+            kardex.anotar(
+                db, ingrediente, cantidad, kardex.REVERSO,
+                origen="pedido_anulado", referencia_id=pedido.id,
+                nota=f"Pedido #{pedido.numero} anulado antes de prepararse",
+            )
 
     pedido.estado = "anulado"
     db.commit()

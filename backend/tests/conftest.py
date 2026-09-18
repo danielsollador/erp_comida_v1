@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import contabilidad, models, settings
+from app import contabilidad, kardex, models, settings
 from app.acceso import auth, roles, sesion, usuarios
 from app.database import Base, get_db
 from app.main import app
@@ -116,13 +116,23 @@ def insumo(db):
     ingrediente = models.Ingrediente(
         nombre="Carne molida",
         unidad="kg",
-        stock_actual=10.0,
+        stock_actual=0,
         stock_minimo=1.0,
         stock_objetivo=15.0,
         costo_unitario=8.0,
         rendimiento_pct=80.0,  # de 1 kg comprado quedan 800 g utilizables
     )
     db.add(ingrediente)
+    db.flush()
+    # La existencia inicial se declara en el libro, igual que hace la
+    # migracion con el deposito de un local que ya venia lleno. Sin esto el
+    # extracto arrancaria en cero contra un stock de 10 y la invariante del
+    # kardex (libro == stock) se caeria en todas las pruebas por 10 kg que
+    # nadie movio.
+    kardex.anotar(
+        db, ingrediente, 10.0, kardex.AJUSTE,
+        origen="apertura_kardex", nota="Existencia al empezar",
+    )
     db.commit()
     db.refresh(ingrediente)
     return ingrediente
@@ -156,3 +166,63 @@ def saldo(db, codigo):
     movimientos = db.query(models.MovimientoContable).filter_by(cuenta_id=cuenta.id).all()
     total = sum(m.debe - m.haber for m in movimientos)
     return round(total if cuenta.naturaleza == "deudora" else -total, 2)
+
+
+# ── Auditoria contable, compartida ──────────────────────────────────────────
+# Vivian dentro de test_contabilidad_auditoria.py. Se subieron aca cuando una
+# segunda tanda de pruebas (abonos de fiado) necesito revisar los mismos
+# libros: duplicar una auditoria contable es garantizar que las dos copias
+# terminen diciendo cosas distintas.
+
+LOCAL_TOLERANCIA = 0.02
+
+
+def inventario_fisico(db) -> float:
+    return round(
+        sum((i.stock_actual or 0) * (i.costo_unitario or 0) for i in db.query(models.Ingrediente).all()),
+        2,
+    )
+
+
+def libros_cuadrados(client, db):
+    """Lo que un contador revisa antes de firmar. Falla con el motivo."""
+    filas = client.get("/api/contabilidad/balance-comprobacion").json()
+    debe = round(sum(f["debe"] for f in filas), 2)
+    haber = round(sum(f["haber"] for f in filas), 2)
+    assert abs(debe - haber) < LOCAL_TOLERANCIA, f"balance de comprobacion: debe {debe} != haber {haber}"
+
+    bg = client.get("/api/contabilidad/balance-general").json()
+    assert bg["cuadra"], bg
+    for f in bg["activos"]:
+        if f["codigo"] in contabilidad.CUENTAS_CONTRA:
+            continue
+        assert f["saldo"] >= -LOCAL_TOLERANCIA, f"activo {f['codigo']} {f['nombre']} en negativo: {f['saldo']}"
+    for f in bg["pasivos"]:
+        assert f["saldo"] >= -LOCAL_TOLERANCIA, f"pasivo {f['codigo']} {f['nombre']} en negativo: {f['saldo']}"
+
+    contable = saldo(db, "1040")
+    fisico = inventario_fisico(db)
+    assert abs(contable - fisico) < LOCAL_TOLERANCIA, f"inventario: libros {contable} vs fisico {fisico}"
+
+    # Cada asiento cuadra por si solo (no solo la suma de todos).
+    for a in db.query(models.AsientoContable).all():
+        d = round(sum(m.debe for m in a.movimientos), 2)
+        h = round(sum(m.haber for m in a.movimientos), 2)
+        assert abs(d - h) < 0.011, f"asiento #{a.id} '{a.descripcion}' descuadrado: {d} vs {h}"
+
+
+@pytest.fixture()
+def libros(db, insumo, variante):
+    """Los libros arrancan como en un local real: con el inventario reconocido
+    y con plata en las gavetas y en el banco (el aporte inicial del dueño).
+    Sin eso, la primera compra en efectivo dejaria la caja en negativo, y el
+    negativo seria de la prueba, no del sistema."""
+    contabilidad.asiento_de_apertura(db)
+    contabilidad.crear_asiento(
+        db,
+        "Aporte inicial del dueño: caja chica y banco",
+        [("1010", 100.0, 0.0), ("1011", 20.0, 0.0), ("1020", 100.0, 0.0), ("3010", 0.0, 220.0)],
+        origen="manual",
+    )
+    db.commit()
+    return db

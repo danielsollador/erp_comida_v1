@@ -55,6 +55,7 @@ import type {
   SaludContable,
   Sugerencia,
   SugerenciaCompra,
+  ExtractoInsumo,
   Usuario,
   Variante,
   AnalisisTasa,
@@ -69,14 +70,31 @@ const conRango = (r?: Rango, extra = '') => {
   return partes.length ? `?${partes.join('&')}` : ''
 }
 
+/** Se cayo la red (no el servidor): `fetch` rechaza sin respuesta. */
+export class SinConexion extends Error {
+  constructor() {
+    super('Sin conexión. Revisa el wifi e intenta otra vez.')
+    this.name = 'SinConexion'
+  }
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    // La cookie de sesion viaja sola en el mismo origen; se declara igual para
-    // que un despliegue con el API en otro origen no la pierda en silencio.
-    credentials: 'same-origin',
-    ...options,
-  })
+  let res: Response
+  try {
+    res = await fetch(`/api${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      // La cookie de sesion viaja sola en el mismo origen; se declara igual
+      // para que un despliegue con el API en otro origen no la pierda en
+      // silencio.
+      credentials: 'same-origin',
+      ...options,
+    })
+  } catch {
+    // `fetch` solo rechaza cuando no hubo respuesta: wifi caida, servidor
+    // inalcanzable. Un 500 NO pasa por aca. Sin esto la cajera veia
+    // "Failed to fetch", que no le dice que hacer.
+    throw new SinConexion()
+  }
   // Sesion caducada o cerrada en otra pestaña: al login, no a un error rojo.
   // Las rutas del propio acceso no: alli el 401 es "clave incorrecta".
   if (res.status === 401 && !path.startsWith('/acceso/')) {
@@ -180,11 +198,17 @@ export const api = {
     }[],
     permitir_sin_stock = false,
     nota = '',
+    // Reintentar con la misma clave devuelve el pedido que ya entro, en vez
+    // de mandar dos comandas iguales a cocina.
+    clave_cliente?: string,
   ) =>
     req<Pedido>('/pedidos', {
       method: 'POST',
-      body: JSON.stringify({ items, nota, permitir_sin_stock }),
+      body: JSON.stringify({ items, nota, permitir_sin_stock, clave_cliente }),
     }),
+  /** Que paso con este insumo, en orden. El extracto del deposito. */
+  movimientosDeInsumo: (ingredienteId: number, limite = 60) =>
+    req<ExtractoInsumo>(`/inventario/ingredientes/${ingredienteId}/movimientos?limite=${limite}`),
   marcarItemPreparado: (itemId: number) =>
     req<Pedido>(`/pedidos/items/${itemId}/preparado`, { method: 'POST' }),
   marcarPedidoListo: (pedidoId: number) =>
@@ -415,11 +439,12 @@ export const api = {
       body: JSON.stringify({ monto, metodo_pago, nota }),
     }),
   listarFiado: () => req<CuentaPorCobrar[]>('/caja/fiado'),
-  cobrarFiado: (pedidoId: number, metodo_pago = 'Efectivo Bs') =>
-    req<{ ok: boolean; cobrado: number; cliente: string }>(`/caja/fiado/${pedidoId}/cobrar`, {
-      method: 'POST',
-      body: JSON.stringify({ metodo_pago }),
-    }),
+  /** Sin `monto` se cobra todo lo que queda; con monto, es un abono. */
+  cobrarFiado: (pedidoId: number, metodo_pago = 'Efectivo Bs', monto?: number) =>
+    req<{ ok: boolean; cobrado: number; queda: number; saldado: boolean; cliente: string }>(
+      `/caja/fiado/${pedidoId}/cobrar`,
+      { method: 'POST', body: JSON.stringify({ metodo_pago, monto }) },
+    ),
 
   cerrarCaja: (
     efectivo_contado: number,

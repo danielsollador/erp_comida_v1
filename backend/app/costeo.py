@@ -57,8 +57,23 @@ def consumo_bruto(receta: models.RecetaItem, unidades: float) -> float:
     return receta.cantidad_por_unidad * unidades / rendimiento
 
 
-def registrar_entrada(ingrediente: models.Ingrediente, cantidad: float, costo_unitario: float) -> None:
-    """Suma stock y recalcula el costo promedio ponderado. No hace commit."""
+def registrar_entrada(
+    ingrediente: models.Ingrediente,
+    cantidad: float,
+    costo_unitario: float,
+    db=None,
+    *,
+    origen: str = "",
+    referencia_id=None,
+    nota: str = "",
+) -> None:
+    """Suma stock y recalcula el costo promedio ponderado. No hace commit.
+
+    Con `db` ademas anota el movimiento en el kardex. Es opcional y no por
+    comodidad: `registrar_entrada` tambien se usa para deshacer entradas (una
+    factura que se elimina), y ahi el movimiento lo anota quien llama, con su
+    propio tipo y su motivo.
+    """
     stock_previo = ingrediente.stock_actual or 0
     costo_previo = ingrediente.costo_unitario or 0
 
@@ -78,4 +93,23 @@ def registrar_entrada(ingrediente: models.Ingrediente, cantidad: float, costo_un
         ingrediente.costo_unitario = round(
             (base_para_promedio * costo_previo + cantidad * costo_unitario) / volumen, 4
         )
-    ingrediente.stock_actual = nuevo_stock
+
+    if db is None:
+        ingrediente.stock_actual = nuevo_stock
+        return
+
+    # El kardex mueve el stock el mismo; se anota con el costo DE ESTA COMPRA,
+    # no con el promedio recien calculado: el libro tiene que decir a como
+    # entro, no a como quedo la mezcla.
+    from . import kardex
+
+    kardex.anotar(
+        db,
+        ingrediente,
+        cantidad,
+        kardex.COMPRA,
+        costo_unitario=costo_unitario,
+        origen=origen,
+        referencia_id=referencia_id,
+        nota=nota,
+    )

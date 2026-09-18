@@ -201,15 +201,36 @@ export default function Caja() {
   }
 
   async function cobrarFiado(cuenta: CuentaPorCobrar) {
+    // Primero cuánto y después cómo: el monto viene ya puesto en lo que debe,
+    // así que cobrar todo -que es lo normal- sigue siendo dar Aceptar dos
+    // veces, y abonar es borrar y escribir otra cifra.
+    const monto = await dialogo.pedirNumero({
+      titulo: `Cobrar a ${cuenta.cliente}`,
+      etiqueta: 'Cuánto entrega',
+      valor: cuenta.monto,
+      sufijo: '$',
+      min: 0.01,
+      ayuda:
+        cuenta.abonado > 0
+          ? `Debe $${cuenta.monto.toFixed(2)} de $${cuenta.original.toFixed(2)} (ya abonó $${cuenta.abonado.toFixed(2)}).`
+          : `Debe $${cuenta.monto.toFixed(2)}. Si entrega menos, queda abonado.`,
+    })
+    if (monto === null) return
     const metodo = await dialogo.elegir({
       titulo: `Cobrar a ${cuenta.cliente}`,
-      texto: `Debe $${cuenta.monto.toFixed(2)}. ¿Cómo paga?`,
+      texto: `$${monto.toFixed(2)}. ¿Cómo paga?`,
       opciones: ['Efectivo Bs', 'Efectivo $', 'Pago movil', 'Tarjeta', 'Transferencia'].map((m) => ({ valor: m, texto: m })),
     })
     if (!metodo) return
     setError('')
     try {
-      await api.cobrarFiado(cuenta.pedido_id, metodo)
+      const r = await api.cobrarFiado(cuenta.pedido_id, metodo, monto)
+      if (!r.saldado) {
+        await dialogo.avisar({
+          titulo: 'Abono registrado',
+          texto: `${cuenta.cliente} entregó $${r.cobrado.toFixed(2)} y queda debiendo $${r.queda.toFixed(2)}.`,
+        })
+      }
       cargar()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cobrar')
@@ -601,6 +622,7 @@ export default function Caja() {
                         {f.cliente}
                         <span className="ml-1 text-xs text-aviso-700">
                           #{f.numero} · hace {f.dias} dia(s)
+                          {f.abonado > 0 && ` · abonó $${f.abonado.toFixed(2)} de $${f.original.toFixed(2)}`}
                         </span>
                       </span>
                       <span className="flex shrink-0 items-center gap-2">

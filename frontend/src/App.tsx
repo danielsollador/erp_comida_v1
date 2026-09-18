@@ -15,6 +15,7 @@ import Recetas from './pages/Recetas'
 import Usuarios from './pages/Usuarios'
 import MiUsuario from './pages/MiUsuario'
 import Rail, { entraA } from './components/Rail'
+import Conexion from './components/Conexion'
 import { DialogoProvider } from './components/dialogo'
 import { MonedaProvider } from './lib/moneda'
 import { AccesoProvider, useAcceso } from './lib/acceso'
@@ -45,7 +46,10 @@ function Marco({ children }: { children: ReactNode }) {
   return (
     <>
       <Rail />
-      <div className={conRail ? 'md:pl-[68px]' : ''}>{children}</div>
+      <div className={conRail ? 'md:pl-[68px]' : ''}>
+        <Conexion />
+        {children}
+      </div>
     </>
   )
 }

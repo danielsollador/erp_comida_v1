@@ -20,7 +20,7 @@ MODULO_POR_CENTENA = {
 
 def test_todas_las_tablas_siguen_la_norma():
     nombres = sorted(Base.metadata.tables)
-    assert len(nombres) == 31
+    assert len(nombres) == 33
     for n in nombres:
         m = PATRON.match(n)
         assert m, f"{n!r} no sigue CAPA###_MOD_ENTIDAD"
@@ -66,8 +66,8 @@ def test_restricciones_e_indices_con_la_norma():
     assert NOMBRES["pk"] == "PK_%(table_name)s"
 
 
-def test_renombres_cubre_las_31_y_apunta_a_tablas_reales():
-    assert len(migrations.RENOMBRES) == 31
+def test_renombres_cubre_todas_y_apunta_a_tablas_reales():
+    assert len(migrations.RENOMBRES) == 33
     assert set(migrations.RENOMBRES.values()) == set(Base.metadata.tables)
     assert all(v == v.lower() for v in migrations.RENOMBRES)
 
@@ -116,6 +116,6 @@ def test_create_all_encima_de_una_base_renombrada_no_duplica():
     migrations.renombrar_tablas(motor)
     Base.metadata.create_all(bind=motor)
     tablas = set(sa.inspect(motor).get_table_names())
-    assert len(tablas) == 31
+    assert len(tablas) == 33
     with motor.connect() as con:
         assert con.execute(text('SELECT COUNT(*) FROM "DIM220_MEN_PRODUCTO"')).scalar() == 1

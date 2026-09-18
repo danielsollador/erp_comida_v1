@@ -148,6 +148,51 @@ class Ingrediente(Base):
         return round(self.costo_unitario / (rendimiento / 100), 6)
 
 
+class MovimientoInventario(Base):
+    """Una fila por cada vez que un insumo entra o sale. Ver `kardex.py`.
+
+    `stock_actual` en el ingrediente sigue siendo el saldo vivo -se lee mil
+    veces al dia y no se va a calcular sumando todo cada vez-, pero deja de
+    ser la unica verdad: es la suma de esta tabla. Si los dos no coinciden,
+    ahora se puede demostrar cual esta mal y desde cuando.
+
+    El costo va congelado: el promedio del insumo cambia con cada compra, asi
+    que preguntarlo manana daria otro numero y el libro dejaria de cuadrar con
+    lo que se asento en su momento. Es el mismo criterio que con el precio y
+    el costo de una venta.
+    """
+
+    __tablename__ = "TRX340_INV_MOVIMIENTO"
+
+    id = Column(Integer, primary_key=True)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False, index=True)
+    fecha = Column(DateTime, default=ahora, index=True)
+    tipo = Column(String, nullable=False)  # ver kardex.py
+    # Con signo: positiva entra, negativa sale.
+    cantidad = Column(Float, nullable=False)
+    # A como se movio ESTA cantidad: el precio de esta compra, el costo al que
+    # salio esta venta.
+    costo_unitario = Column(Float, default=0)
+    valor = Column(Float, default=0)
+    # El promedio ponderado del insumo DESPUES de este movimiento. Es distinto
+    # del de arriba y hace falta para valorar existencias a una fecha pasada
+    # con el mismo criterio que usa la contabilidad. Sin esto, el inventario
+    # valorizado y la cuenta 1040 daban numeros parecidos pero distintos, y
+    # "parecido" en contabilidad es estar mal.
+    costo_promedio = Column(Float, default=0)
+    # Existencia que quedo despues de este movimiento. Guardarla permite leer
+    # el extracto sin recalcular, igual que la libreta del banco.
+    saldo = Column(Float, default=0)
+    # De donde vino: "pedido", "compra_suelta", "factura", "merma"... con el id
+    # de ese registro, para poder ir hasta el documento.
+    origen = Column(String, default="")
+    referencia_id = Column(Integer, nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    nota = Column(String, default="")
+
+    ingrediente = relationship("Ingrediente")
+
+
 class RecetaItem(Base):
     __tablename__ = "REL250_REC_PRODUCTO_INGREDIENTE"
 
@@ -236,6 +281,31 @@ class RetiroPropietario(Base):
     nota = Column(String, default="")
     fecha = Column(DateTime, default=ahora)
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+
+
+class AbonoFiado(Base):
+    """Un pago parcial contra una venta fiada.
+
+    Antes el fiado solo tenia dos estados: se debe todo o no se debe nada. En
+    la calle no funciona asi -la senora abona 5 el martes y 3 el viernes-, y
+    sin donde anotarlo la cajera terminaba cobrando el total de golpe o, peor,
+    llevando la cuenta en un cuaderno aparte que los libros no ven.
+
+    Cada abono es un hecho con su fecha y su forma de pago, no un booleano:
+    por eso son filas y no una columna `abonado` en el pedido. Lo que se debe
+    hoy se calcula restando estos abonos al monto fiado.
+    """
+
+    __tablename__ = "TRX130_VEN_ABONO_FIADO"
+
+    id = Column(Integer, primary_key=True)
+    pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=False, index=True)
+    monto = Column(Float, nullable=False)
+    metodo_pago = Column(String, default="Efectivo Bs")
+    fecha = Column(DateTime, default=ahora)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+
+    pedido = relationship("Pedido", back_populates="abonos")
 
 
 class DeclaracionIva(Base):
@@ -347,6 +417,12 @@ class Merma(Base):
     # Una merma mal cargada se revierte con un asiento de reverso, no se borra:
     # el error queda documentado igual que en Compras.
     revertida = Column(Boolean, default=False)
+    # Esta merma salio de un CONTEO, no de un accidente. Las dos bajan el
+    # stock y las dos llevan asiento, pero son dos problemas distintos: una
+    # dice "se nos cayo al piso" y la otra "el sistema estaba mal". Mezcladas
+    # en el informe de perdidas, el ajuste de un conteo se lee como si se
+    # hubiera botado comida, y el numero deja de servir para decidir nada.
+    por_conteo = Column(Boolean, default=False)
     fecha = Column(DateTime, default=ahora)
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
@@ -650,6 +726,12 @@ class Pedido(Base):
     # a un pasivo (2040) hasta que se le entrega.
     propina = Column(Float, default=0)
     # Para el fiado: a quien se le dio. Sin nombre no hay a quien cobrarle.
+    # Idempotencia: la clave que genero el POS para ESTE intento de pedido.
+    # Si la tablet manda la comanda y la respuesta se pierde en el camino (la
+    # wifi del local se cae a media cuadra del router), la cajera le da otra
+    # vez y saldrian dos comandas iguales a cocina. Con la misma clave, el
+    # segundo intento devuelve el pedido que ya existe en vez de crear otro.
+    clave_cliente = Column(String, nullable=True, unique=True, index=True)
     cliente = Column(String, default="")
     fiado_saldado = Column(Boolean, default=False)
     fecha_cobro_fiado = Column(DateTime, nullable=True)
@@ -679,6 +761,10 @@ class Pedido(Base):
         return self.punto_venta_rel.nombre if self.punto_venta_rel else ""
     consumos = relationship("PedidoConsumo", cascade="all, delete-orphan")
     pagos = relationship("PagoPedido", cascade="all, delete-orphan")
+    abonos = relationship(
+        "AbonoFiado", back_populates="pedido", cascade="all, delete-orphan",
+        order_by="AbonoFiado.fecha",
+    )
 
     @property
     def total(self):
@@ -698,6 +784,22 @@ class Pedido(Base):
     def a_cobrar(self):
         """Lo que se recibe en la gaveta: la comida mas la propina."""
         return round(self.total + (self.propina or 0), 2)
+
+    @property
+    def fiado_monto(self):
+        """Cuanto de este pedido quedo a credito."""
+        return round(sum(p.monto for p in self.pagos if p.metodo == "Fiado"), 2)
+
+    @property
+    def fiado_abonado(self):
+        return round(sum(a.monto for a in self.abonos), 2)
+
+    @property
+    def fiado_saldo(self):
+        """Lo que el cliente debe HOY. Una sola definicion para todos: la
+        pantalla de cuentas por cobrar, el cobro y los libros preguntaban lo
+        mismo y cada uno lo sumaba por su cuenta."""
+        return round(max(self.fiado_monto - self.fiado_abonado, 0), 2)
 
 
 class PagoPedido(Base):

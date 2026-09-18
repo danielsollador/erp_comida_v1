@@ -5,6 +5,9 @@
     <!-- El icono lo decide el backend segun el local (ver /api/acceso/favicon):
          el mismo paquete sirve a Savora, al proximo local y al hub. -->
     <link rel="icon" href="/api/acceso/favicon" />
+    <!-- Instalable en la tablet: se abre como aplicacion, sin barra del
+         navegador. Los iconos son los del local. -->
+    <link rel="manifest" href="/app.webmanifest" />
     <link rel="apple-touch-icon" href="/api/acceso/favicon" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
@@ -39,5 +42,17 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!-- Que la app abra sin internet. Solo en produccion: en desarrollo un
+         worker guardando archivos pelea con el recargado en caliente de Vite
+         y uno termina depurando el cache en vez del codigo. -->
+    <script>
+      if ("serviceWorker" in navigator && location.hostname !== "localhost") {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js").catch(function () {
+            // Sin worker la app funciona igual, solo que no abre sin conexion.
+          });
+        });
+      }
+    </script>
   </body>
 </html>

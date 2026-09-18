@@ -1,0 +1,16 @@
+{
+  "name": "Sávora",
+  "short_name": "Sávora",
+  "description": "Punto de venta y administración del local.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f4ef",
+  "theme_color": "#f6f4ef",
+  "icons": [
+    { "src": "/favicon-savora-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon-savora-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/favicon-savora-32.png", "sizes": "32x32", "type": "image/png" }
+  ]
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { Boton, Modal } from '../components/ui'
@@ -28,6 +28,19 @@ export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [categoriaActiva, setCategoriaActiva] = useState<number | null>(null)
   const [carrito, setCarrito] = useState<Carrito>({})
+
+  // Clave de ESTE intento de comanda. Si la comanda se manda y la respuesta
+  // se pierde (se cayo la wifi), volver a darle con la misma clave devuelve
+  // el pedido que ya entro en vez de mandar otro igual a cocina.
+  //
+  // Muere en cuanto el carrito cambia, y eso no es un detalle: si la cajera
+  // agrega una empanada despues de un fallo y reintentara con la clave vieja,
+  // el servidor le devolveria el pedido anterior -sin la empanada nueva- y
+  // nadie se enteraria.
+  const claveComanda = useRef<string | null>(null)
+  useEffect(() => {
+    claveComanda.current = null
+  }, [carrito])
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
   const [ventasRecientes, setVentasRecientes] = useState<Pedido[]>([])
   const [pagoMixto, setPagoMixto] = useState(false)
@@ -193,8 +206,10 @@ export default function POS() {
       cantidad: c.cantidad,
     }))
     if (items.length === 0) return
+    if (!claveComanda.current) claveComanda.current = crypto.randomUUID()
+    const clave = claveComanda.current
     try {
-      await api.crearPedido(items)
+      await api.crearPedido(items, false, '', clave)
       setCarrito({})
       refrescarPedidos()
     } catch (e) {
@@ -211,7 +226,7 @@ export default function POS() {
           })
         ) {
           try {
-            await api.crearPedido(items, true)
+            await api.crearPedido(items, true, '', clave)
             setCarrito({})
             refrescarPedidos()
             return
