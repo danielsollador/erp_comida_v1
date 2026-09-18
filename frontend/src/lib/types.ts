@@ -510,8 +510,15 @@ export type Respaldo = {
   creado_en: string
 }
 
+/** El ultimo intento de respaldo que fallo, si aun no hubo uno bueno despues. */
+export type FalloRespaldo = { fecha: string; motivo: string; error: string }
+
 export type EstadoRespaldos = {
   ultimo_respaldo: string | null
+  /** Horas que lleva la base sin una copia. Si pasa de `intervalo_horas`, algo falla. */
+  horas_sin_respaldo: number | null
+  intervalo_horas: number
+  ultimo_fallo: FalloRespaldo | null
   cantidad: number
   /** Hasta que fecha se puede volver atras de verdad. */
   dia_mas_viejo: string | null
