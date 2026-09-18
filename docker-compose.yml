@@ -62,7 +62,6 @@ services:
     environment:
       <<: *db-env
       # El esquema de ESTE local dentro de la base.
-      ERP_DB_SCHEMA: ${ERP_LOCAL:-savora}
       # Respaldos y estado del aplicativo (no la base: esa vive en `db`).
       ERP_DATA_DIR: /data
       # Usuarios y secreto de sesion, en un volumen COMPARTIDO con el hub.

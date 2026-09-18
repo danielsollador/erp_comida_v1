@@ -21,19 +21,19 @@ def _crear_base(ruta, pedidos=0, precio=5.0, desde=None):
     if os.path.exists(ruta):
         os.remove(ruta)
     con = sqlite3.connect(ruta)
-    con.execute("CREATE TABLE pedidos (id INTEGER PRIMARY KEY, estado TEXT, creado_en TEXT)")
+    con.execute("CREATE TABLE TRX110_VEN_PEDIDO (id INTEGER PRIMARY KEY, estado TEXT, creado_en TEXT)")
     con.execute(
-        "CREATE TABLE pedido_items (id INTEGER PRIMARY KEY, pedido_id INTEGER, "
+        "CREATE TABLE TRX111_VEN_PEDIDO_DET (id INTEGER PRIMARY KEY, pedido_id INTEGER, "
         "precio_unitario REAL, cantidad INTEGER)"
     )
-    con.execute("CREATE TABLE ingredientes (id INTEGER PRIMARY KEY)")
-    con.execute("CREATE TABLE asientos_contables (id INTEGER PRIMARY KEY)")
-    con.execute("CREATE TABLE cuentas_contables (id INTEGER PRIMARY KEY)")
+    con.execute("CREATE TABLE DIM310_INV_INGREDIENTE (id INTEGER PRIMARY KEY)")
+    con.execute("CREATE TABLE TRX610_CON_ASIENTO (id INTEGER PRIMARY KEY)")
+    con.execute("CREATE TABLE DIM610_CON_CUENTA (id INTEGER PRIMARY KEY)")
     base = desde or datetime.datetime(2026, 1, 1, 8, 0, 0)
     for i in range(pedidos):
         cuando = (base + datetime.timedelta(minutes=i)).isoformat()
-        con.execute("INSERT INTO pedidos VALUES (?, 'pagado', ?)", (i + 1, cuando))
-        con.execute("INSERT INTO pedido_items VALUES (?, ?, ?, 1)", (i + 1, i + 1, precio))
+        con.execute("INSERT INTO TRX110_VEN_PEDIDO VALUES (?, 'pagado', ?)", (i + 1, cuando))
+        con.execute("INSERT INTO TRX111_VEN_PEDIDO_DET VALUES (?, ?, ?, 1)", (i + 1, i + 1, precio))
     con.commit()
     con.close()
 
@@ -56,7 +56,7 @@ def entorno(tmp_path, monkeypatch):
 def _pedidos_en(ruta):
     con = sqlite3.connect(ruta)
     try:
-        return con.execute("SELECT COUNT(*) FROM pedidos").fetchone()[0]
+        return con.execute("SELECT COUNT(*) FROM TRX110_VEN_PEDIDO").fetchone()[0]
     finally:
         con.close()
 
@@ -133,7 +133,7 @@ def test_la_perdida_que_no_se_puede_medir_no_se_reporta_como_cero(entorno):
     copia = backup.crear_respaldo()
 
     con = sqlite3.connect(entorno["db"])  # la base viva queda sin esa tabla
-    con.execute("DROP TABLE pedido_items")
+    con.execute("DROP TABLE TRX111_VEN_PEDIDO_DET")
     con.commit()
     con.close()
 

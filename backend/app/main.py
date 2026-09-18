@@ -12,6 +12,7 @@ from .backup import iniciar_respaldos_automaticos, respaldo_si_hace_falta
 from .contabilidad import seed_plan_de_cuentas
 from .database import Base, SessionLocal, engine, preparar_esquema
 from .migrations import aplicar as aplicar_migraciones
+from .migrations import renombrar_tablas
 from .routers import (
     acceso as acceso_router,
     agencia,
@@ -92,9 +93,17 @@ async def lifespan(app: FastAPI):
     # respaldos. En PostgreSQL cada local vive en su propio esquema y hay que
     # crearlo antes de que `create_all` intente meter tablas en el.
     _avisar_zona_horaria()
-    preparar_esquema()
-    Base.metadata.create_all(bind=engine)
-    aplicar_migraciones()
+    # El hub no toca la base: cuentas, locales y pases viven en JSON. Sin este
+    # `if` le clonaba las 31 tablas del local, vacias, solo por compartir la
+    # imagen.
+    if not settings.ES_HUB:
+        preparar_esquema()
+        # Los nombres viejos se renombran ANTES de `create_all`; despues seria
+        # tarde: crearia las tablas nuevas vacias y las viejas quedarian al
+        # lado con los datos.
+        renombrar_tablas()
+        Base.metadata.create_all(bind=engine)
+        aplicar_migraciones()
     _arrancar_acceso()
 
     # El hub no vende nada: no siembra menu, no respalda ni consulta la tasa.

@@ -52,7 +52,7 @@ Dónde vive cada cosa nueva:
 ### PostgreSQL
 
 Producción corre sobre **PostgreSQL 16** (`db` en el compose), base `vertigo`,
-**un esquema por local** (`savora`, `hub`). Cada backend lleva su
+**un esquema por local** (`SAVORA`; tablas `CAPA###_MOD_ENTIDAD`). Cada backend lleva su
 `search_path`; `create_all` y las migraciones trabajan dentro del esquema sin
 que el resto del código lo sepa. Detalles y por qué esquema-por-local en
 `DESPLIEGUE.md`.

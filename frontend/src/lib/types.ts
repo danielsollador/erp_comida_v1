@@ -856,36 +856,6 @@ export type DatosRol = {
   modulos: string[]
 }
 
-/** Una linea del extracto de un insumo: el libro de movimientos del deposito. */
-export type MovimientoInventario = {
-  id: number
-  fecha: string
-  tipo: string
-  /** El tipo en palabras del local: "Venta", "Merma", "Ajuste por conteo"... */
-  etiqueta: string
-  /** Con signo: positiva entra, negativa sale. */
-  cantidad: number
-  costo_unitario: number
-  valor: number
-  /** Existencia que quedo despues de este movimiento. */
-  saldo: number
-  origen: string
-  referencia_id: number | null
-  operador: string | null
-  nota: string
-}
-
-export type ExtractoInsumo = {
-  ingrediente_id: number
-  nombre: string
-  unidad: string
-  stock_actual: number
-  saldo_segun_libro: number
-  /** Si es false, alguien movio existencias sin anotarlas: es un bug, no un aviso. */
-  cuadra: boolean
-  movimientos: MovimientoInventario[]
-}
-
 // ── Ventas ──────────────────────────────────────────────────────────────────
 
 /** Que paso con una venta (ver `routers/ventas.py`). */
@@ -971,4 +941,34 @@ export type ResumenVentas = {
   valor_facturado: number
   serie: PuntoSerie[]
   mejor: PuntoSerie | null
+}
+
+/** Una linea del extracto de un insumo: el libro de movimientos del deposito. */
+export type MovimientoInventario = {
+  id: number
+  fecha: string
+  tipo: string
+  /** El tipo en palabras del local: "Venta", "Merma", "Ajuste por conteo"... */
+  etiqueta: string
+  /** Con signo: positiva entra, negativa sale. */
+  cantidad: number
+  costo_unitario: number
+  valor: number
+  /** Existencia que quedo despues de este movimiento. */
+  saldo: number
+  origen: string
+  referencia_id: number | null
+  operador: string | null
+  nota: string
+}
+
+export type ExtractoInsumo = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  stock_actual: number
+  saldo_segun_libro: number
+  /** Si es false, alguien movio existencias sin anotarlas: es un bug, no un aviso. */
+  cuadra: boolean
+  movimientos: MovimientoInventario[]
 }

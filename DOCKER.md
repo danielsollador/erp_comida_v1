@@ -52,7 +52,8 @@ hasta él.
 ## Datos y respaldos
 
 La base es **PostgreSQL 16** (servicio `db`, volumen `erp_comida_pg`), con un
-**esquema por local** (`savora`, `hub`, …). Los respaldos (`pg_dump` del
+**esquema por local** (`SAVORA`, …; tablas `CAPA###_MOD_ENTIDAD`, ver
+`DESPLIEGUE.md`). Los respaldos (`pg_dump` del
 esquema, cada 6 horas) viven en `erp_comida_data` montado en `/data`. Los
 usuarios y el secreto de sesión, en `erp_comida_compartido` montado en
 `/compartido`. Ninguno está dentro de la imagen: se puede reconstruir sin
@@ -75,7 +76,7 @@ Copiar `.env.example` a `.env` y ajustar. Variables disponibles:
 | `APP_PORT` | `8090` | puerto del host (solo local) |
 | `TZ` | `America/Caracas` | zona horaria (afecta cierres y reportes por día) |
 | `ERP_DATABASE_URL` | *(ver compose)* | conexión a PostgreSQL (`postgresql+psycopg://…`) |
-| `ERP_DB_SCHEMA` | `savora` | esquema de PostgreSQL de este local |
+| `ERP_DB_SCHEMA` | *(sale de `ERP_LOCAL`)* | esquema de PostgreSQL de este local, en mayúsculas (`SAVORA`) |
 | `ERP_BACKUP_INTERVAL_HOURS` | `6` | cada cuánto respalda solo |
 | `ERP_BACKUP_RETENER_RECIENTES` | `8` | últimos respaldos que siempre se conservan |
 | `ERP_BACKUP_RETENER_DIAS` | `30` | días de historia (el último respaldo de cada día) |

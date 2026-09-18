@@ -480,18 +480,18 @@ def salud_contable(db: Session = Depends(get_db)):
     #    de antes puede traerlas y nada mas las detecta.
     sueltas = []
     for tabla, columna, destino, que_es in [
-        ("pedido_items", "variante_id", "variantes", "lineas de venta"),
-        ("receta_items", "variante_id", "variantes", "lineas de receta"),
-        ("pedido_consumos", "ingrediente_id", "ingredientes", "consumos de pedido"),
-        ("mermas", "ingrediente_id", "ingredientes", "mermas"),
+        ("TRX111_VEN_PEDIDO_DET", "variante_id", "DIM230_MEN_VARIANTE", "lineas de venta"),
+        ("REL250_REC_PRODUCTO_INGREDIENTE", "variante_id", "DIM230_MEN_VARIANTE", "lineas de receta"),
+        ("TRX310_INV_CONSUMO", "ingrediente_id", "DIM310_INV_INGREDIENTE", "consumos de pedido"),
+        ("TRX320_INV_MERMA", "ingrediente_id", "DIM310_INV_INGREDIENTE", "mermas"),
     ]:
         # `t.{columna} IS NOT NULL` es lo que distingue una fila rota de una
         # que legitimamente no apunta a nada: la venta libre no tiene variante
         # porque el producto no esta en el menu, y no es un huerfano.
         cuantas = db.execute(
             text(
-                f"SELECT COUNT(1) FROM {tabla} t "
-                f"LEFT JOIN {destino} d ON d.id = t.{columna} "
+                f'SELECT COUNT(1) FROM "{tabla}" t '
+                f'LEFT JOIN "{destino}" d ON d.id = t.{columna} '
                 f"WHERE t.{columna} IS NOT NULL AND d.id IS NULL"
             )
         ).scalar()

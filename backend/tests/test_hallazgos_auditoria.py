@@ -962,8 +962,8 @@ def test_quitar_una_categoria_no_destruye_sus_ventas(client, db, variante):
 
     huerfanos = db.execute(
         text(
-            "SELECT COUNT(1) FROM pedido_items t "
-            "LEFT JOIN variantes v ON v.id = t.variante_id WHERE v.id IS NULL"
+            "SELECT COUNT(1) FROM TRX111_VEN_PEDIDO_DET t "
+            "LEFT JOIN DIM230_MEN_VARIANTE v ON v.id = t.variante_id WHERE v.id IS NULL"
         )
     ).scalar()
     assert huerfanos == 0
@@ -999,7 +999,7 @@ def test_la_base_rechaza_referencias_a_registros_inexistentes(db):
 
     try:
         db.execute(
-            text("INSERT INTO receta_items (variante_id, ingrediente_id, cantidad_por_unidad) "
+            text("INSERT INTO REL250_REC_PRODUCTO_INGREDIENTE (variante_id, ingrediente_id, cantidad_por_unidad) "
                  "VALUES (99999, 99999, 1)")
         )
         db.commit()
@@ -1018,7 +1018,7 @@ def test_la_salud_detecta_filas_huerfanas(client, db, variante, insumo):
     # base que venia de antes de activarlas
     db.execute(text("PRAGMA foreign_keys=OFF"))
     db.execute(
-        text("INSERT INTO receta_items (variante_id, ingrediente_id, cantidad_por_unidad) "
+        text("INSERT INTO REL250_REC_PRODUCTO_INGREDIENTE (variante_id, ingrediente_id, cantidad_por_unidad) "
              "VALUES (99999, :ing, 1)"),
         {"ing": insumo.id},
     )

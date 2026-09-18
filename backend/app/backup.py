@@ -63,7 +63,12 @@ PREFIJO = "comida_"
 # Tablas sin las cuales un archivo no es una base de este ERP. Se revisan
 # antes de restaurar: subir el archivo equivocado y perder la base buena encima
 # seria peor que el problema original.
-TABLAS_OBLIGATORIAS = ("pedidos", "ingredientes", "asientos_contables", "cuentas_contables")
+TABLAS_OBLIGATORIAS = ("TRX110_VEN_PEDIDO", "DIM310_INV_INGREDIENTE",
+                       "TRX610_CON_ASIENTO", "DIM610_CON_CUENTA")
+# Los mismos, como se llamaban antes de la nomenclatura: un respaldo de
+# entonces sigue siendo de este ERP y se puede restaurar (`renombrar_tablas`
+# lo pone al dia en el siguiente arranque).
+TABLAS_OBLIGATORIAS_VIEJAS = ("pedidos", "ingredientes", "asientos_contables", "cuentas_contables")
 
 RUTA_ESTADO = os.path.join(DATA_DIR, "respaldos_estado.json")
 
@@ -152,7 +157,7 @@ def _medir_base_viva() -> dict:
     try:
         with engine.connect() as con:
             fila = con.execute(text(
-                "SELECT COUNT(*), MAX(creado_en) FROM pedidos")).fetchone()
+                'SELECT COUNT(*), MAX(creado_en) FROM "TRX110_VEN_PEDIDO"')).fetchone()
         ultima = fila[1]
         if isinstance(ultima, datetime.datetime):
             ultima = ultima.isoformat()
@@ -346,7 +351,7 @@ def _validar_postgres(ruta: str) -> dict:
             i = partes.index("TABLE")
             if i + 2 < len(partes):
                 tablas.add(partes[i + 2])
-    faltantes = [t for t in TABLAS_OBLIGATORIAS if t not in tablas]
+    faltantes = _faltantes(tablas)
     if faltantes:
         return {"valido": False,
                 "motivo": "No parece una base de este sistema (faltan: {}).".format(
@@ -354,6 +359,19 @@ def _validar_postgres(ruta: str) -> dict:
     meta = _leer_meta(ruta)
     return {"valido": True, "motivo": "",
             "pedidos": meta.get("pedidos"), "ultima_venta": meta.get("ultima_venta")}
+
+
+def _faltantes(tablas) -> list:
+    """Que tablas obligatorias le faltan a un archivo, en cualquiera de las dos
+    nomenclaturas. Vacia si es una base de este ERP."""
+    tablas = set(tablas)
+    if not [t for t in TABLAS_OBLIGATORIAS_VIEJAS if t not in tablas]:
+        return []
+    return [t for t in TABLAS_OBLIGATORIAS if t not in tablas]
+
+
+def _tabla_pedidos(tablas) -> str:
+    return "TRX110_VEN_PEDIDO" if "TRX110_VEN_PEDIDO" in set(tablas) else "pedidos"
 
 
 def _validar_sqlite(ruta: str) -> dict:
@@ -367,7 +385,7 @@ def _validar_sqlite(ruta: str) -> dict:
             return {"valido": False, "motivo": "El archivo esta danado ({}).".format(integridad)}
 
         tablas = {f[0] for f in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        faltantes = [t for t in TABLAS_OBLIGATORIAS if t not in tablas]
+        faltantes = _faltantes(tablas)
         if faltantes:
             return {
                 "valido": False,
@@ -376,8 +394,9 @@ def _validar_sqlite(ruta: str) -> dict:
                 ),
             }
 
-        pedidos = con.execute("SELECT COUNT(*) FROM pedidos").fetchone()[0]
-        ultima = con.execute("SELECT MAX(creado_en) FROM pedidos").fetchone()[0]
+        t = _tabla_pedidos(tablas)
+        pedidos = con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+        ultima = con.execute(f'SELECT MAX(creado_en) FROM "{t}"').fetchone()[0]
         return {"valido": True, "motivo": "", "pedidos": pedidos, "ultima_venta": ultima}
     except sqlite3.Error as e:
         return {"valido": False, "motivo": "No se pudo leer: {}".format(e)}
@@ -415,7 +434,7 @@ def que_se_pierde(ruta: str) -> dict:
     consulta = (
         "SELECT COUNT(DISTINCT p.id), "
         "       COALESCE(SUM(i.precio_unitario * i.cantidad), 0) "
-        "FROM pedidos p LEFT JOIN pedido_items i ON i.pedido_id = p.id "
+        'FROM "TRX110_VEN_PEDIDO" p LEFT JOIN "TRX111_VEN_PEDIDO_DET" i ON i.pedido_id = p.id '
         "WHERE p.estado != 'anulado'"
     )
     perdidos, monto = None, None

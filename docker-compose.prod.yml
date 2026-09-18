@@ -59,6 +59,16 @@ services:
   db:
     labels:
       - "traefik.enable=false"
+    # SOLO AL LOOPBACK DEL SERVIDOR, nunca a su IP publica. Con `127.0.0.1:`
+    # delante, Docker no abre el puerto en la interfaz de red: desde internet
+    # el 5432 sigue sin existir --se puede comprobar con un escaneo-- y la
+    # unica forma de llegar es estando ya dentro del servidor, o sea por SSH.
+    #
+    # Existe para que el dueño pueda mirar la base con una herramienta visual
+    # (DBeaver) a traves de un tunel SSH. La alternativa era apuntar el tunel
+    # a la IP del contenedor, que cambia en cada despliegue.
+    ports:
+      - "127.0.0.1:5432:5432"
 
   # ───────────────────────────── El hub ─────────────────────────────────
   #
@@ -79,7 +89,7 @@ services:
     environment:
       ERP_ES_HUB: "true"
       ERP_DATABASE_URL: postgresql+psycopg://vertigo:${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}@db:5432/vertigo
-      ERP_DB_SCHEMA: hub
+      ERP_DB_SCHEMA: HUB
       ERP_DATA_DIR: /data
       ERP_SHARED_DIR: /compartido
       ERP_LOCALES_DIR: /locales

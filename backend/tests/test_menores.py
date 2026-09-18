@@ -184,34 +184,34 @@ def test_la_migracion_relaja_not_null_sin_perder_filas(tmp_path, monkeypatch):
     con = sqlite3.connect(str(ruta))
     con.executescript(
         """
-        CREATE TABLE pedidos (id INTEGER PRIMARY KEY);
-        CREATE TABLE variantes (id INTEGER PRIMARY KEY);
-        CREATE TABLE pedido_items (
+        CREATE TABLE TRX110_VEN_PEDIDO (id INTEGER PRIMARY KEY);
+        CREATE TABLE DIM230_MEN_VARIANTE (id INTEGER PRIMARY KEY);
+        CREATE TABLE TRX111_VEN_PEDIDO_DET (
             id INTEGER NOT NULL PRIMARY KEY,
             pedido_id INTEGER NOT NULL,
             variante_id INTEGER NOT NULL,
             nombre VARCHAR NOT NULL,
             precio_unitario FLOAT NOT NULL,
             costo_unitario FLOAT, cantidad INTEGER, nota VARCHAR, preparado BOOLEAN);
-        CREATE INDEX ix_pedido_items_id ON pedido_items (id);
-        INSERT INTO pedidos VALUES (1);
-        INSERT INTO variantes VALUES (1);
-        INSERT INTO pedido_items VALUES (1, 1, 1, 'Empanada', 5.0, 1.0, 2, '', 0);
+        CREATE INDEX IX_viejo_id ON TRX111_VEN_PEDIDO_DET (id);
+        INSERT INTO TRX110_VEN_PEDIDO VALUES (1);
+        INSERT INTO DIM230_MEN_VARIANTE VALUES (1);
+        INSERT INTO TRX111_VEN_PEDIDO_DET VALUES (1, 1, 1, 'Empanada', 5.0, 1.0, 2, '', 0);
         """
     )
     con.commit()
     con.close()
 
     monkeypatch.setattr(migrations, "engine", create_engine(f"sqlite:///{ruta}"))
-    migrations._relajar_not_null("pedido_items", "variante_id")
+    migrations._relajar_not_null("TRX111_VEN_PEDIDO_DET", "variante_id")
 
     con = sqlite3.connect(str(ruta))
     try:
-        notnull = [r[3] for r in con.execute("PRAGMA table_info(pedido_items)")
+        notnull = [r[3] for r in con.execute("PRAGMA table_info(TRX111_VEN_PEDIDO_DET)")
                    if r[1] == "variante_id"][0]
         assert notnull == 0, "la columna acepta NULL"
-        assert con.execute("SELECT COUNT(*) FROM pedido_items").fetchone()[0] == 1
-        assert con.execute("SELECT nombre FROM pedido_items").fetchone()[0] == "Empanada"
+        assert con.execute("SELECT COUNT(*) FROM TRX111_VEN_PEDIDO_DET").fetchone()[0] == 1
+        assert con.execute("SELECT nombre FROM TRX111_VEN_PEDIDO_DET").fetchone()[0] == "Empanada"
         sobrantes = [
             r[0]
             for r in con.execute(
@@ -221,7 +221,7 @@ def test_la_migracion_relaja_not_null_sin_perder_filas(tmp_path, monkeypatch):
         assert sobrantes == [], "no queda tabla temporal"
         # y la venta libre ya entra
         con.execute(
-            "INSERT INTO pedido_items (pedido_id, variante_id, nombre, precio_unitario) "
+            "INSERT INTO TRX111_VEN_PEDIDO_DET (pedido_id, variante_id, nombre, precio_unitario) "
             "VALUES (1, NULL, 'Torta por encargo', 25.0)"
         )
         con.commit()

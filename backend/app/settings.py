@@ -76,13 +76,14 @@ APP_PASSWORD = os.getenv("ERP_APP_PASSWORD", "")
 
 # ── Base de datos: un esquema por local ─────────────────────────────────────
 # Una sola instancia de PostgreSQL y una sola base (`vertigo`), y dentro un
-# ESQUEMA por local: `savora`, el siguiente que venga, y `hub` para el hub.
+# ESQUEMA por local: `SAVORA`, el siguiente que venga, y `HUB` para el hub.
+# En MAYUSCULAS, como las tablas (ver la cabecera de `models.py`).
 # Se eligio esquema-por-local y no base-por-local porque comparte una sola
 # instancia que respaldar y vigilar, y aun asi cada local tiene sus tablas
 # aparte: un `SELECT` de un local no puede tocar las filas de otro sin
 # nombrar su esquema, y el `search_path` de cada proceso solo tiene el suyo.
 DB_SCHEMA = (os.getenv("ERP_DB_SCHEMA", "").strip()
-             or ("hub" if ES_HUB else LOCAL_SLUG)).replace("-", "_").lower()
+             or ("hub" if ES_HUB else LOCAL_SLUG)).replace("-", "_").upper()
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)

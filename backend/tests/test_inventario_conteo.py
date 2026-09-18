@@ -119,8 +119,8 @@ def test_la_unidad_litro_se_renombra_a_lt_una_sola_vez(tmp_path, monkeypatch):
     con = sqlite3.connect(str(ruta))
     con.executescript(
         """
-        CREATE TABLE ingredientes (id INTEGER PRIMARY KEY, nombre VARCHAR, unidad VARCHAR NOT NULL);
-        INSERT INTO ingredientes (nombre, unidad) VALUES ('Refresco', 'litro'), ('Aceite', 'litros'), ('Harina', 'kg');
+        CREATE TABLE DIM310_INV_INGREDIENTE (id INTEGER PRIMARY KEY, nombre VARCHAR, unidad VARCHAR NOT NULL);
+        INSERT INTO DIM310_INV_INGREDIENTE (nombre, unidad) VALUES ('Refresco', 'litro'), ('Aceite', 'litros'), ('Harina', 'kg');
         """
     )
     con.commit()
@@ -131,6 +131,6 @@ def test_la_unidad_litro_se_renombra_a_lt_una_sola_vez(tmp_path, monkeypatch):
     migrations.aplicar()  # correrla dos veces no puede cambiar nada mas
 
     con = sqlite3.connect(str(ruta))
-    unidades = dict(con.execute("SELECT nombre, unidad FROM ingredientes").fetchall())
+    unidades = dict(con.execute("SELECT nombre, unidad FROM DIM310_INV_INGREDIENTE").fetchall())
     con.close()
     assert unidades == {"Refresco": "lt", "Aceite": "lt", "Harina": "kg"}
