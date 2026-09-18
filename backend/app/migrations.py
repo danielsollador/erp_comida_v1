@@ -88,10 +88,21 @@ COLUMNAS = [
 # que hace que la idempotencia aguante dos reintentos simultaneos: sin el,
 # el chequeo "existe?" y el INSERT dejan una rendija por donde entran dos
 # comandas iguales. `IF NOT EXISTS` funciona igual en SQLite y PostgreSQL.
+# (tabla, nombre, sql). La tabla va delante porque cada indice solo se puede
+# crear si LA SUYA existe: antes se miraba siempre la de pedidos, que servia
+# cuando habia un solo indice en la lista y dejaba de servir al segundo.
 INDICES = [
-    ("UQ_TRX110_VEN_PEDIDO_clave_cliente",
+    ("TRX110_VEN_PEDIDO", "UQ_TRX110_VEN_PEDIDO_clave_cliente",
      'CREATE UNIQUE INDEX IF NOT EXISTS "UQ_TRX110_VEN_PEDIDO_clave_cliente" '
      'ON "TRX110_VEN_PEDIDO" (clave_cliente)'),
+    # Dos proveedores con el mismo RIF son el mismo proveedor, y el directorio
+    # existe justamente para que no se dupliquen. El router avisa con palabras
+    # (409); esto es la red por debajo, para lo que entre por otro camino.
+    # Los RIF vacios no estorban: un indice unico admite todos los NULL que
+    # quiera, tanto en PostgreSQL como en SQLite.
+    ("DIM410_COM_PROVEEDOR", "UQ_DIM410_COM_PROVEEDOR_rif",
+     'CREATE UNIQUE INDEX IF NOT EXISTS "UQ_DIM410_COM_PROVEEDOR_rif" '
+     'ON "DIM410_COM_PROVEEDOR" (rif)'),
 ]
 
 
@@ -155,6 +166,61 @@ RENOMBRES = {
     "abonos_fiado": "TRX130_VEN_ABONO_FIADO",
     "proveedores": "DIM410_COM_PROVEEDOR",
 }
+
+
+def indexar_claves_foraneas(motor=None) -> list:
+    """Le pone indice a toda clave foranea que no lo tenga. Devuelve los que creo.
+
+    PostgreSQL indexa sola la clave PRIMARIA, nunca las foraneas. Sin indice,
+    cada `JOIN` por esa columna y cada borrado del padre -que obliga a revisar
+    si algun hijo lo apunta- recorren la tabla hija entera. Con 15 pedidos no
+    se nota; con un anio de ventas es la diferencia entre abrir un reporte al
+    instante y esperar segundos, y va empeorando sin que nadie lo vea venir.
+
+    Se deduce del metadata en vez de escribir la lista a mano: asi una tabla
+    nueva queda cubierta sola, sin que nadie tenga que acordarse.
+
+    No lleva CONCURRENTLY a proposito: eso no puede ir dentro de una
+    transaccion y estas tablas son chicas. Si algun dia una crece de verdad,
+    ese indice se crea aparte y aqui ya lo encuentra hecho.
+    """
+    from . import models  # noqa: F401  (puebla Base.metadata)
+    from .database import Base
+
+    motor = motor or engine
+    inspector = inspect(motor)
+    tablas = set(inspector.get_table_names())
+    creados = []
+
+    for nombre, tabla in Base.metadata.tables.items():
+        if nombre not in tablas:
+            continue
+        # Lo que ya esta cubierto por la izquierda: un indice compuesto sirve
+        # para su PRIMERA columna, no para las del medio.
+        cubiertas = {i["column_names"][0] for i in inspector.get_indexes(nombre)
+                     if i.get("column_names")}
+        pk = inspector.get_pk_constraint(nombre).get("constrained_columns") or []
+        if pk:
+            cubiertas.add(pk[0])
+
+        for fk in tabla.foreign_key_constraints:
+            columnas = [c.name for c in fk.columns]
+            if len(columnas) != 1 or columnas[0] in cubiertas:
+                continue
+            columna = columnas[0]
+            indice = f"IX_{nombre}_{columna}"
+            if len(indice) > 63:  # limite de identificador de PostgreSQL
+                log.warning("Indice %s demasiado largo, se omite", indice)
+                continue
+            with motor.begin() as con:
+                con.execute(text(
+                    f'CREATE INDEX IF NOT EXISTS "{indice}" ON "{nombre}" ("{columna}")'))
+            cubiertas.add(columna)
+            creados.append(indice)
+
+    if creados:
+        log.info("Indices de claves foraneas creados: %d", len(creados))
+    return creados
 
 
 def renombrar_tablas(motor=None) -> list:
@@ -424,8 +490,8 @@ def aplicar():
     # El inspector cachea lo que leyo; para lo que sigue hace falta uno nuevo.
     inspector = inspect(engine)
     with engine.begin() as con:
-        for nombre, sql in INDICES:
-            if "TRX110_VEN_PEDIDO" not in tablas:
+        for tabla, nombre, sql in INDICES:
+            if tabla not in tablas:
                 continue
             con.execute(text(sql))
             log.debug("Indice asegurado: %s", nombre)
@@ -440,6 +506,7 @@ def aplicar():
     # Va antes del kardex: le deja las restricciones con su nombre definitivo.
     # Idempotente y barato: no hace nada en una base ya al dia.
     nombrar_restricciones()
+    indexar_claves_foraneas()
 
     # Va de ultimo: necesita que la tabla exista (la crea `create_all`) y que
     # las columnas nuevas ya esten puestas.

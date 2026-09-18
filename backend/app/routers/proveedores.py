@@ -9,6 +9,7 @@ de tipearlos de nuevo cada vez con el riesgo de que un error de tecleo separe
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import impuestos, models, schemas
@@ -23,6 +24,42 @@ def listar(activos: Optional[bool] = None, db: Session = Depends(get_db)):
     if activos is not None:
         query = query.filter(models.Proveedor.activo.is_(activos))
     return query.order_by(models.Proveedor.nombre).all()
+
+
+def _sin_duplicar(db: Session, nombre: str, rif: Optional[str], excluir: Optional[int] = None):
+    """Que no entre dos veces el mismo proveedor.
+
+    El directorio existe justamente para que "Carnes SA" y "Carnes S.A." no
+    terminen siendo dos, pero nada impedia crear el mismo dos veces desde la
+    propia pantalla -- y entonces el directorio deja de ser el arreglo y pasa
+    a ser otra fuente del problema.
+
+    El nombre se compara sin distinguir mayusculas ni espacios de sobra; el
+    RIF es la identidad legal y ahi no hay margen: dos proveedores con el
+    mismo RIF son el mismo proveedor, aunque se escriban distinto. El indice
+    unico de `rif` en la base es la red por debajo (ver `migrations`); esto
+    es para poder decirlo con palabras en vez de un error de base de datos.
+    """
+    igual = db.query(models.Proveedor).filter(
+        func.lower(func.trim(models.Proveedor.nombre)) == nombre.strip().lower())
+    if excluir is not None:
+        igual = igual.filter(models.Proveedor.id != excluir)
+    existente = igual.first()
+    if existente:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ya existe un proveedor llamado «{existente.nombre}»."
+                   + ("" if existente.activo else " Está archivado: puedes reactivarlo."))
+
+    if rif:
+        por_rif = db.query(models.Proveedor).filter(models.Proveedor.rif == rif)
+        if excluir is not None:
+            por_rif = por_rif.filter(models.Proveedor.id != excluir)
+        otro = por_rif.first()
+        if otro:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ese RIF ya es de «{otro.nombre}».")
 
 
 def _validar_rif_si_viene(rif: Optional[str]) -> Optional[str]:
@@ -40,9 +77,11 @@ def _validar_rif_si_viene(rif: Optional[str]) -> Optional[str]:
 def crear(datos: schemas.ProveedorCreate, db: Session = Depends(get_db)):
     if not datos.nombre.strip():
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+    rif = _validar_rif_si_viene(datos.rif)
+    _sin_duplicar(db, datos.nombre, rif)
     proveedor = models.Proveedor(
         nombre=datos.nombre.strip(),
-        rif=_validar_rif_si_viene(datos.rif),
+        rif=rif,
         telefono=datos.telefono.strip(),
         direccion=datos.direccion.strip(),
         contacto=datos.contacto.strip(),
@@ -61,8 +100,10 @@ def editar(proveedor_id: int, datos: schemas.ProveedorCreate, db: Session = Depe
         raise HTTPException(status_code=404, detail="Proveedor no encontrado")
     if not datos.nombre.strip():
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+    rif = _validar_rif_si_viene(datos.rif)
+    _sin_duplicar(db, datos.nombre, rif, excluir=proveedor_id)
     proveedor.nombre = datos.nombre.strip()
-    proveedor.rif = _validar_rif_si_viene(datos.rif)
+    proveedor.rif = rif
     proveedor.telefono = datos.telefono.strip()
     proveedor.direccion = datos.direccion.strip()
     proveedor.contacto = datos.contacto.strip()
