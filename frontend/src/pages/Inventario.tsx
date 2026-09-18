@@ -16,6 +16,7 @@ import type {
   SobranteInventario,
   SugerenciaCompra,
   ExtractoInsumo,
+  MovimientoInventario,
 } from '../lib/types'
 
 /**
@@ -316,7 +317,13 @@ export default function Inventario() {
   const bajoMinimo = activos.filter((i) => i.stock_actual <= i.stock_minimo)
   const sinCosto = activos.filter((i) => !i.costo_unitario)
   const valorDeposito = activos.reduce((s, i) => s + Math.max(i.stock_actual, 0) * (i.costo_unitario || 0), 0)
-  const perdidas30 = mermas.filter((m) => !m.revertida).reduce((s, m) => s + m.valor, 0)
+  // Separadas a proposito. Un ajuste de conteo baja el stock igual que una
+  // merma, pero dice "el sistema estaba mal", no "se boto comida". Sumados en
+  // el mismo total, el dueno cree que esta perdiendo el triple de lo que
+  // pierde y el numero deja de servir para decidir nada.
+  const vivas = mermas.filter((m) => !m.revertida)
+  const perdidas30 = vivas.filter((m) => !m.por_conteo).reduce((s, m) => s + m.valor, 0)
+  const ajustes30 = vivas.filter((m) => m.por_conteo).reduce((s, m) => s + m.valor, 0)
 
   const visibles = useMemo(() => {
     const q = buscar.trim().toLowerCase()
@@ -595,8 +602,17 @@ export default function Inventario() {
             una merma duplicada: era la unica perdida del sistema sin historial. */}
         <Seccion
           titulo="Pérdidas registradas"
-          ayuda="Todo lo que se botó, se dañó o faltó en un conteo, últimos 30 días. Una merma por error se revierte: no se borra, queda el reverso asentado."
-          accion={<span className="text-sm font-semibold tabular-nums">{dinero(perdidas30)}</span>}
+          ayuda="Lo que se botó o se dañó, últimos 30 días. Los faltantes de un conteo se listan aparte: bajan el stock igual, pero dicen que el sistema estaba mal, no que se perdió comida. Una merma por error se revierte: no se borra, queda el reverso asentado."
+          accion={
+            <span className="text-right text-sm">
+              <b className="block tabular-nums">{dinero(perdidas30)}</b>
+              {ajustes30 > 0 && (
+                <span className="block text-[11px] font-normal text-neutral-500 tabular-nums">
+                  + {dinero(ajustes30)} en ajustes de conteo
+                </span>
+              )}
+            </span>
+          }
           plano
         >
           {mermas.length === 0 ? (
@@ -622,8 +638,17 @@ export default function Inventario() {
                       <td className="p-3 text-right tabular-nums whitespace-nowrap">
                         {cantidad(m.cantidad)} {m.unidad}
                       </td>
-                      <td className="p-3 text-neutral-500">{m.motivo || '—'}</td>
-                      <td className="p-3 text-right tabular-nums font-medium text-peligro-600">{dinero(m.valor)}</td>
+                      <td className="p-3 text-neutral-500">
+                        {m.por_conteo && <Pastilla tono="ojo">conteo</Pastilla>}{' '}
+                        {m.motivo || '—'}
+                      </td>
+                      <td
+                        className={`p-3 text-right tabular-nums font-medium ${
+                          m.por_conteo ? 'text-neutral-500' : 'text-peligro-600'
+                        }`}
+                      >
+                        {dinero(m.valor)}
+                      </td>
                       <td className="p-3 text-right">
                         {m.revertida ? (
                           <span className="text-xs text-neutral-500">revertida</span>
@@ -815,6 +840,17 @@ function FichaInsumo({
   const [guardando, setGuardando] = useState(false)
   const [historial, setHistorial] = useState<CompraDeInsumo[] | null>(null)
   const [extracto, setExtracto] = useState<ExtractoInsumo | null>(null)
+  const ordenMovimientos = useOrden<MovimientoInventario>(
+    {
+      fecha: (m) => new Date(m.fecha),
+      movimiento: (m) => m.etiqueta,
+      quien: (m) => m.operador ?? '',
+      cantidad: (m) => m.cantidad,
+      saldo: (m) => m.saldo,
+    },
+    '-fecha',
+  )
+
   const ordenHistorial = useOrden<CompraConVariacion>(
     {
       fecha: (c) => new Date(c.fecha),
@@ -1009,28 +1045,46 @@ function FichaInsumo({
                     </Aviso>
                   </div>
                 )}
-                <div className="border border-neutral-200 rounded-xl divide-y divide-neutral-100">
-                  {extracto.movimientos.map((m) => (
-                    <div key={m.id} className="flex items-baseline justify-between gap-3 px-3 py-2 text-sm">
-                      <span className="min-w-0">
-                        <b>{m.etiqueta}</b>
-                        {m.nota && <span className="text-neutral-500"> · {m.nota}</span>}
-                        <span className="block text-[11px] text-neutral-400">
-                          {new Date(m.fecha).toLocaleString('es-VE')}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-right tabular-nums">
-                        <b className={m.cantidad < 0 ? 'text-peligro-600' : 'text-exito-700'}>
-                          {m.cantidad > 0 ? '+' : ''}
-                          {cantidad(m.cantidad)}
-                        </b>
-                        <span className="block text-[11px] text-neutral-400">
-                          quedan {cantidad(m.saldo)} {ing.unidad}
-                        </span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <Tabla orden={ordenMovimientos} glosario="movimientos" className="border border-neutral-200 rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                      <tr>
+                        <Th clave="fecha">Fecha</Th>
+                        <Th clave="movimiento">Movimiento</Th>
+                        <Th clave="quien">Quién</Th>
+                        <Th clave="cantidad" alinear="derecha">Cantidad</Th>
+                        <Th clave="saldo" alinear="derecha">Saldo</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ordenMovimientos.ordenar(extracto.movimientos).map((m) => (
+                        <tr key={m.id} className="border-t border-neutral-100">
+                          <td className="p-2 text-neutral-500 whitespace-nowrap">
+                            {new Date(m.fecha).toLocaleDateString('es-VE')}
+                          </td>
+                          <td className="p-2">
+                            <b className="font-medium">{m.etiqueta}</b>
+                            {m.nota && (
+                              <span className="block text-[11px] text-neutral-400">{m.nota}</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-neutral-500">{m.operador ?? '—'}</td>
+                          <td
+                            className={`p-2 text-right tabular-nums font-medium ${
+                              m.cantidad < 0 ? 'text-peligro-600' : 'text-exito-700'
+                            }`}
+                          >
+                            {m.cantidad > 0 ? '+' : ''}
+                            {cantidad(m.cantidad)}
+                          </td>
+                          <td className="p-2 text-right tabular-nums text-neutral-500">
+                            {cantidad(m.saldo)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Tabla>
               </>
             )}
           </div>

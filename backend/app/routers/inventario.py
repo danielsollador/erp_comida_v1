@@ -1,11 +1,12 @@
 import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from .. import contabilidad, costeo, kardex, models, reposicion, schemas
+from . import operadores
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 
@@ -35,7 +36,12 @@ def _ingrediente_para_actualizar(db: Session, ingrediente_id: int) -> models.Ing
 @router.get("/ingredientes", response_model=List[schemas.Ingrediente])
 def listar_ingredientes(db: Session = Depends(get_db)):
     ingredientes = db.query(models.Ingrediente).order_by(models.Ingrediente.nombre).all()
-    return [_con_reposicion(i, reposicion.costos_reposicion(db)) for i in ingredientes]
+    # UNA vez, fuera del bucle. `costos_reposicion` se escribio en lote justo
+    # para no consultar insumo por insumo, y llamarla adentro deshacia todo el
+    # trabajo: con 120 insumos eran 241 consultas y 695 ms para abrir la
+    # pantalla principal del modulo.
+    ultimos = reposicion.costos_reposicion(db)
+    return [_con_reposicion(i, ultimos) for i in ingredientes]
 
 
 def _con_reposicion(ingrediente: models.Ingrediente, ultimos: dict) -> schemas.Ingrediente:
@@ -84,6 +90,14 @@ def extracto(ingrediente_id: int, limite: int = 200, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Insumo no encontrado")
 
     movs = kardex.movimientos_de(db, ingrediente_id, limite)
+    # Quien hizo cada cosa. En un solo viaje: preguntarlo por movimiento seria
+    # volver al N+1 que se acaba de quitar de este mismo modulo.
+    nombres = {
+        o.id: o.nombre
+        for o in db.query(models.Operador).filter(
+            models.Operador.id.in_([m.operador_id for m in movs if m.operador_id] or [0])
+        )
+    }
     total = db.query(func.sum(models.MovimientoInventario.cantidad)).filter(
         models.MovimientoInventario.ingrediente_id == ingrediente_id
     ).scalar() or 0
@@ -107,7 +121,7 @@ def extracto(ingrediente_id: int, limite: int = 200, db: Session = Depends(get_d
                 cantidad=m.cantidad, costo_unitario=m.costo_unitario,
                 valor=m.valor, saldo=m.saldo, origen=m.origen or "",
                 referencia_id=m.referencia_id,
-                operador=None, nota=m.nota or "",
+                operador=nombres.get(m.operador_id), nota=m.nota or "",
             )
             for m in movs
         ],
@@ -120,30 +134,21 @@ def existencias_en_fecha(fecha: Optional[datetime.datetime] = None, db: Session 
 
     Antes esta pregunta -la que hace el contador para cerrar un mes- solo se
     podia responder en total y reconstruyendo desde los asientos, nunca por
-    insumo. La valorizacion usa el costo del ULTIMO movimiento hasta esa
-    fecha, no el promedio de hoy: valorar existencias viejas con el costo
-    actual es contar la inflacion como si fuera mercancia.
+    insumo. La valorizacion usa el PROMEDIO ponderado de ese momento, que es el
+    criterio de la cuenta 1040: con el precio de la ultima compra, este informe
+    y el balance daban numeros distintos por el mismo inventario.
     """
     corte = fecha or ahora()
+    saldos = kardex.existencias_a(db, corte)
+    promedios = kardex.costos_promedio_a(db, corte)
+
     filas = []
     total = 0.0
     for ing in db.query(models.Ingrediente).order_by(models.Ingrediente.nombre).all():
-        cantidad = kardex.existencia_a(db, ing.id, corte)
+        cantidad = saldos.get(ing.id, 0)
         if abs(cantidad) < 0.00005:
             continue
-        ultimo = (
-            db.query(models.MovimientoInventario)
-            .filter(
-                models.MovimientoInventario.ingrediente_id == ing.id,
-                models.MovimientoInventario.fecha <= corte,
-            )
-            .order_by(models.MovimientoInventario.fecha.desc(), models.MovimientoInventario.id.desc())
-            .first()
-        )
-        # Con el PROMEDIO de ese momento, que es el criterio de la cuenta 1040.
-        # Con el precio de la ultima compra, este informe y el balance daban
-        # numeros distintos por el mismo inventario.
-        costo = (ultimo.costo_promedio if ultimo else None) or ing.costo_unitario or 0
+        costo = promedios.get(ing.id) or ing.costo_unitario or 0
         valor = round(cantidad * costo, 2)
         total += valor
         filas.append(schemas.ExistenciaEnFecha(
@@ -162,9 +167,10 @@ def consumo(dias: int = 30, db: Session = Depends(get_db)):
     """
     hasta = ahora()
     desde = hasta - datetime.timedelta(days=dias)
+    medido = kardex.consumo_por_dia_de_todos(db, desde, hasta)
     filas = []
     for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all():
-        por_dia = kardex.consumo_por_dia(db, ing.id, desde, hasta)
+        por_dia = medido.get(ing.id, 0.0)
         stock = ing.stock_actual or 0
         filas.append(schemas.ConsumoDeInsumo(
             ingrediente_id=ing.id, nombre=ing.nombre, unidad=ing.unidad,
@@ -306,12 +312,14 @@ def registrar_compra(
 
 @router.post("/ingredientes/{ingrediente_id}/merma", response_model=schemas.Ingrediente)
 def registrar_merma(
-    ingrediente_id: int, body: schemas.MermaRequest, db: Session = Depends(get_db)
+    ingrediente_id: int, body: schemas.MermaRequest, request: Request,
+    db: Session = Depends(get_db),
 ):
     """Lo que se daño, quemó o botó. Sin esto el stock del sistema nunca cuadra."""
     if body.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
 
+    quien = operadores.del_turno(db, request)
     with costeo.bloqueo_inventario():
         db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
         db_merma = models.Merma(
@@ -322,6 +330,7 @@ def registrar_merma(
         kardex.anotar(
             db, db_ingrediente, -body.cantidad, kardex.MERMA,
             origen="merma", referencia_id=db_merma.id, nota=body.motivo,
+            operador_id=quien.id if quien else None,
         )
         contabilidad.registrar_merma(
             db,
@@ -335,7 +344,8 @@ def registrar_merma(
 
 
 def _aplicar_conteo(
-    db: Session, ingrediente: models.Ingrediente, stock_real: float, motivo: str
+    db: Session, ingrediente: models.Ingrediente, stock_real: float, motivo: str,
+    operador_id: Optional[int] = None,
 ) -> schemas.AjusteConteo:
     """Lo que dice la balanza manda sobre lo que dice el sistema.
 
@@ -377,7 +387,7 @@ def _aplicar_conteo(
     if abs(stock_real - sistema) > 0.00005:
         kardex.anotar(
             db, ingrediente, stock_real - sistema, kardex.AJUSTE,
-            origen="conteo", nota=motivo,
+            origen="conteo", nota=motivo, operador_id=operador_id,
         )
     # Se vuelca ya: el siguiente insumo del lote vuelve a `expire_all()` y un
     # cambio sin volcar se perderia.
@@ -395,19 +405,22 @@ def _aplicar_conteo(
 
 @router.post("/ingredientes/{ingrediente_id}/ajustar", response_model=schemas.Ingrediente)
 def ajustar_stock(
-    ingrediente_id: int, body: schemas.AjusteStockRequest, db: Session = Depends(get_db)
+    ingrediente_id: int, body: schemas.AjusteStockRequest, request: Request,
+    db: Session = Depends(get_db),
 ):
     """Conteo fisico de UN insumo (desde su ficha)."""
     with costeo.bloqueo_inventario():
         db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
-        _aplicar_conteo(db, db_ingrediente, body.stock_real, body.motivo)
+        quien = operadores.del_turno(db, request)
+        _aplicar_conteo(db, db_ingrediente, body.stock_real, body.motivo,
+                        quien.id if quien else None)
         db.commit()
         db.refresh(db_ingrediente)
         return db_ingrediente
 
 
 @router.post("/conteo", response_model=schemas.ResultadoConteo)
-def conteo_fisico(body: schemas.ConteoRequest, db: Session = Depends(get_db)):
+def conteo_fisico(body: schemas.ConteoRequest, request: Request, db: Session = Depends(get_db)):
     """El inventario fisico de verdad: se cuenta TODO de una vez.
 
     Contar insumo por insumo desde su fila obligaba a diez dialogos para diez
@@ -421,12 +434,14 @@ def conteo_fisico(body: schemas.ConteoRequest, db: Session = Depends(get_db)):
     if len(set(ids)) != len(ids):
         raise HTTPException(status_code=400, detail="Un insumo aparece dos veces en el conteo")
 
+    quien = operadores.del_turno(db, request)
     with costeo.bloqueo_inventario():
         # Primero se buscan TODOS: un id que no existe tiene que fallar antes
         # de que el primer stock cambie, no a mitad del lote.
         ingredientes = [_ingrediente_para_actualizar(db, item.ingrediente_id) for item in body.items]
         ajustes = [
-            _aplicar_conteo(db, ingrediente, item.stock_real, body.motivo)
+            _aplicar_conteo(db, ingrediente, item.stock_real, body.motivo,
+                            quien.id if quien else None)
             for ingrediente, item in zip(ingredientes, body.items)
         ]
         db.commit()
@@ -441,7 +456,8 @@ def conteo_fisico(body: schemas.ConteoRequest, db: Session = Depends(get_db)):
 
 @router.post("/ingredientes/{ingrediente_id}/consumo-personal", response_model=schemas.Ingrediente)
 def consumo_personal(
-    ingrediente_id: int, body: schemas.MermaRequest, db: Session = Depends(get_db)
+    ingrediente_id: int, body: schemas.MermaRequest, request: Request,
+    db: Session = Depends(get_db),
 ):
     """El empleado se comio una empanada.
 
@@ -452,12 +468,14 @@ def consumo_personal(
     """
     if body.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
+    quien = operadores.del_turno(db, request)
     with costeo.bloqueo_inventario():
         ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
         valor = round(body.cantidad * (ingrediente.costo_unitario or 0), 2)
         kardex.anotar(
             db, ingrediente, -body.cantidad, kardex.CONSUMO_PERSONAL,
             origen="consumo_personal", nota=body.motivo,
+            operador_id=quien.id if quien else None,
         )
         contabilidad.registrar_consumo_personal(db, ingrediente, valor, ingrediente_id, body.motivo)
         db.commit()
@@ -470,6 +488,7 @@ def listar_sobrantes(dias: int = 30, db: Session = Depends(get_db)):
     desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
     sobrantes = (
         db.query(models.SobranteInventario)
+        .options(joinedload(models.SobranteInventario.ingrediente))
         .filter(models.SobranteInventario.fecha >= desde)
         .order_by(models.SobranteInventario.id.desc())
         .all()
@@ -529,6 +548,7 @@ def listar_mermas(dias: int = 30, db: Session = Depends(get_db)):
     desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
     mermas = (
         db.query(models.Merma)
+        .options(joinedload(models.Merma.ingrediente))
         .filter(models.Merma.fecha >= desde)
         .order_by(models.Merma.id.desc())
         .all()
@@ -678,13 +698,18 @@ def _consumo_diario(db: Session, dias: int = 14) -> dict:
     tiempo.
     """
     desde = inicio_del_dia(hoy()) - datetime.timedelta(days=dias)
+    # Los renglones se traen JUNTO con los pedidos. Recorrerlos en perezoso
+    # costaba una consulta por pedido: dos semanas de ventas eran 150
+    # consultas para responder "que compro".
     pedidos = (
         db.query(models.Pedido)
+        .options(joinedload(models.Pedido.items))
         .filter(models.Pedido.estado == "pagado", models.Pedido.cerrado_en >= desde)
         .all()
     )
     recetas = {}
-    for receta in db.query(models.RecetaItem).all():
+    # Y con su ingrediente, que `consumo_bruto` necesita para el rendimiento.
+    for receta in db.query(models.RecetaItem).options(joinedload(models.RecetaItem.ingrediente)).all():
         recetas.setdefault(receta.variante_id, []).append(receta)
 
     consumo = {}

@@ -246,6 +246,51 @@ def impacto_en_productos(
     return afectados
 
 
+def compras_por_insumo(db: Session, desde=None) -> Dict[int, List[dict]]:
+    """El historial de compras de TODOS los insumos, en dos consultas.
+
+    Misma informacion que `historial_de_costos`, pero para todos a la vez.
+    Existe porque la curva de inflacion la necesita insumo por insumo, y
+    pedirla de a uno costaba dos consultas por insumo: con 120 insumos eran
+    241 consultas para dibujar un solo numero.
+    """
+    por_insumo: Dict[int, List[dict]] = {}
+
+    consulta = db.query(models.FacturaCompraItem, models.FacturaCompra).join(
+        models.FacturaCompra, models.FacturaCompra.id == models.FacturaCompraItem.factura_id
+    )
+    if desde is not None:
+        consulta = consulta.filter(models.FacturaCompra.fecha >= desde)
+    for item, factura in consulta.all():
+        por_insumo.setdefault(item.ingrediente_id, []).append(
+            {
+                "fecha": factura.fecha,
+                "cantidad": item.cantidad,
+                "costo_unitario": item.costo_unitario,
+                "origen": "factura",
+                "referencia": factura.numero_factura,
+            }
+        )
+
+    sueltas = db.query(models.CompraSuelta)
+    if desde is not None:
+        sueltas = sueltas.filter(models.CompraSuelta.fecha >= desde)
+    for suelta in sueltas.all():
+        por_insumo.setdefault(suelta.ingrediente_id, []).append(
+            {
+                "fecha": suelta.fecha,
+                "cantidad": suelta.cantidad,
+                "costo_unitario": suelta.costo_unitario,
+                "origen": "compra suelta",
+                "referencia": "",
+            }
+        )
+
+    for compras in por_insumo.values():
+        compras.sort(key=lambda c: c["fecha"], reverse=True)
+    return por_insumo
+
+
 def inflacion_de_insumos(db: Session, dias: int = 30) -> Optional[dict]:
     """Cuanto subio la canasta de insumos en el periodo.
 
@@ -258,10 +303,9 @@ def inflacion_de_insumos(db: Session, dias: int = 30) -> Optional[dict]:
     peso_total = 0.0
     subida_ponderada = 0.0
 
+    del_periodo = compras_por_insumo(db, desde=desde)
     for ingrediente in db.query(models.Ingrediente).all():
-        compras = [
-            c for c in historial_de_costos(db, ingrediente.id, limite=200) if c["fecha"] >= desde
-        ]
+        compras = del_periodo.get(ingrediente.id, [])
         if len(compras) < 2:
             continue
         nuevo = compras[0]["costo_unitario"]

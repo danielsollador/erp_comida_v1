@@ -122,6 +122,37 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
 
   // ── Inventario: pérdidas registradas ─────────────────────────────────────
+  // El extracto de un insumo: el libro de movimientos del deposito.
+  'movimientos.fecha': fecha(
+    'Cuándo se movió el insumo.',
+    'La hora del local en que entró o salió: una venta, una compra, una merma, un conteo.',
+    'Los movimientos van del más nuevo al más viejo, como el extracto del banco.',
+  ),
+  'movimientos.movimiento': {
+    que: 'Qué pasó con el insumo.',
+    origen:
+      'Lo pone el sistema según la operación: Venta descuenta al mandar la comanda a cocina, Compra suma, Merma es lo que se botó, Ajuste por conteo es lo que encontró la balanza, Reverso deshace algo mal cargado.',
+    ejemplo:
+      'Un "Ajuste por conteo" grande dice que el sistema venía mal desde hace rato, no que se perdió comida ese día.',
+  },
+  'movimientos.quien': {
+    que: 'Quién hizo el movimiento.',
+    origen: 'La cuenta con la que se entró al sistema. Las ventas lo toman de quien tomó la comanda.',
+    ejemplo:
+      'Vacío en los movimientos viejos: son anteriores a que el sistema pidiera clave, y ahí no hay a quién atribuirlos.',
+  },
+  'movimientos.cantidad': {
+    que: 'Cuánto entró o salió.',
+    origen: 'La cantidad del movimiento, con signo: en verde lo que entra, en rojo lo que sale.',
+    ejemplo: 'Una venta de 40 empanadas saca de la carne lo que dice la receta, ya ajustado por el rendimiento.',
+  },
+  'movimientos.saldo': {
+    que: 'Cuánto quedó después de ese movimiento.',
+    origen: 'Se guarda en el momento, no se recalcula.',
+    calculo: 'El saldo anterior más lo que entró, o menos lo que salió.',
+    ejemplo:
+      'Si el último saldo de esta lista no coincide con la existencia del insumo, algo movió el stock sin anotarlo y el sistema lo avisa arriba en rojo.',
+  },
   'perdidas.fecha': fecha(
     'Cuándo se registró la pérdida.',
     'La hora del local en que alguien cargó la merma, o en que un conteo físico encontró el faltante.',

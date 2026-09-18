@@ -269,6 +269,8 @@ export type Merma = {
   motivo: string
   fecha: string
   revertida: boolean
+  /** Salió de un conteo, no de un accidente: son dos problemas distintos. */
+  por_conteo: boolean
 }
 
 export type SugerenciaCompra = {
