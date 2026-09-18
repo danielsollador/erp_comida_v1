@@ -13,6 +13,18 @@ from . import operadores
 
 router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
 
+# Cuanto tiempo se queda una comanda en el tablero de cocina.
+#
+# Sin limite, un pedido que nadie marco como preparado se queda ahi PARA
+# SIEMPRE: un mes de ventas dejaba 981 comandas en la pantalla de cocina, que
+# ya no es un tablero sino un archivo. Doce horas porque tiene que cubrir el
+# turno completo y cruzar la medianoche -cortar por "hoy" haria desaparecer a
+# las 00:00 una comanda de las 23:50 que todavia se esta cocinando- y a la vez
+# soltar lo que quedo sin marcar del dia anterior, que ya no es trabajo
+# pendiente sino olvido. Lo que se cocino de verdad sale del tablero al
+# marcarlo, no al vencerse.
+HORAS_EN_COCINA = 12
+
 
 @router.get("", response_model=List[schemas.Pedido])
 def listar_pedidos(
@@ -34,6 +46,7 @@ def listar_pedidos(
     if en_cocina:
         query = (
             query.filter(models.Pedido.estado != "anulado")
+            .filter(models.Pedido.creado_en >= ahora() - datetime.timedelta(hours=HORAS_EN_COCINA))
             .join(models.PedidoItem)
             .filter(models.PedidoItem.preparado.is_(False))
             .distinct()

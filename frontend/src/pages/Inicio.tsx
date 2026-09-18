@@ -73,8 +73,13 @@ export default function Inicio() {
     // Los reportes son de caja para arriba; a cocina le responden 403 y no se
     // pintan. Los pedidos si los ve todo el mundo.
     if (estado.puede.operar) api.reporte(rangoDe('hoy')).then(setHoy).catch(() => undefined)
+    // El MISMO listado que pinta la pantalla de cocina, no `estado='pendiente'`.
+    // Eran dos definiciones distintas de lo mismo: cobrar deja el pedido en
+    // 'pagado' aunque la comida no se haya tocado, asi que el KPI decia "2"
+    // mientras cocina tenia cientos de comandas sin preparar. Un numero en la
+    // portada que no coincide con la pantalla a la que lleva no sirve de nada.
     api
-      .listarPedidos('pendiente')
+      .listarPedidosEnCocina()
       .then((ps) => setEnCocina(ps.length))
       .catch(() => undefined)
     api
