@@ -5,9 +5,12 @@ import { FiltroFechas } from '../components/Fechas'
 import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Pagina } from '../components/ui'
+import { Boton, Campo, Modal, Pagina, Pastilla, Vacio } from '../components/ui'
 import { api } from '../lib/api'
-import type { ConfiguracionFiscal, FacturaCompra, Ingrediente } from '../lib/types'
+import { useMoneda } from '../lib/moneda'
+import type { ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor } from '../lib/types'
+
+const MONEDAS_DE_CARGA = ['$', 'Bs'] as const
 
 const CATEGORIAS = ['Insumos', 'Servicios', 'Activos', 'Otros']
 const FORMAS_PAGO = ['Efectivo', 'Efectivo $', 'Banco', 'Credito']
@@ -17,6 +20,7 @@ type Linea = { ingrediente_id: number; cantidad: string; costo_unitario: string 
 const SECCIONES = [
   { id: 'facturas', texto: 'Facturas' },
   { id: 'nueva', texto: 'Cargar factura' },
+  { id: 'proveedores', texto: 'Proveedores' },
 ]
 
 export default function Compras() {
@@ -40,12 +44,19 @@ export default function Compras() {
   )
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [fiscal, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
+  const [proveedores, setProveedores] = useState<Proveedor[]>([])
+  const [fichaProveedor, setFichaProveedor] = useState<Proveedor | 'nuevo' | null>(null)
   const [error, setError] = useState('')
   const dialogo = useDialogo()
 
+  const { tasa } = useMoneda()
   const [numeroFactura, setNumeroFactura] = useState('')
   const [proveedor, setProveedor] = useState('')
   const [rif, setRif] = useState('')
+  // La factura del proveedor puede venir en cualquiera de las dos: el que
+  // vende insumos suele cobrar en dolares, pero el de servicios (luz, gas,
+  // alquiler) casi siempre factura en bolivares.
+  const [monedaCarga, setMonedaCarga] = useState<(typeof MONEDAS_DE_CARGA)[number]>('$')
   const [categoria, setCategoria] = useState(CATEGORIAS[0])
   const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0])
   const [descripcion, setDescripcion] = useState('')
@@ -76,6 +87,32 @@ export default function Compras() {
     api.listarFacturasCompra(rango).then(setFacturas)
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
     api.configFiscal().then(setFiscal)
+    api.listarProveedores().then(setProveedores)
+  }
+
+  // Elegir un proveedor del directorio completa nombre y RIF solos, para no
+  // volver a tipearlos cada vez con el riesgo de que un error de tecleo
+  // separe "Carnes SA" de "Carnes S.A." en dos proveedores para siempre.
+  function elegirProveedorConocido(nombre: string) {
+    setProveedor(nombre)
+    const p = proveedores.find((x) => x.nombre === nombre)
+    if (p?.rif) setRif(p.rif)
+  }
+
+  async function guardarProveedor(datos: Omit<Proveedor, 'id' | 'activo'>) {
+    if (fichaProveedor && fichaProveedor !== 'nuevo') {
+      await api.editarProveedor(fichaProveedor.id, datos)
+    } else {
+      await api.crearProveedor(datos)
+    }
+    setFichaProveedor(null)
+    api.listarProveedores().then(setProveedores)
+  }
+
+  async function archivarProveedor(p: Proveedor) {
+    if (!(await dialogo.confirmar({ titulo: `${p.activo ? 'Archivar' : 'Reactivar'} a ${p.nombre}?` }))) return
+    await api.archivarProveedor(p.id, !p.activo)
+    api.listarProveedores().then(setProveedores)
   }
 
   const baseLineas = useMemo(
@@ -87,10 +124,16 @@ export default function Compras() {
       }, 0),
     [lineas],
   )
-  const ivaLineas = useMemo(
-    () => Math.round(baseLineas * (fiscal.tasa_iva / 100) * 100) / 100,
-    [baseLineas, fiscal.tasa_iva],
-  )
+  // Solo de vista previa: el numero real lo calcula el backend con el mismo
+  // criterio (exento por insumo) al guardar.
+  const ivaLineas = useMemo(() => {
+    const baseGravada = lineas.reduce((sum, l) => {
+      const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
+      if (ing?.exento) return sum
+      return sum + (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0)
+    }, 0)
+    return Math.round(baseGravada * (fiscal.tasa_iva / 100) * 100) / 100
+  }, [lineas, ingredientes, fiscal.tasa_iva])
 
   function actualizarLinea(i: number, campo: keyof Linea, valor: string) {
     setLineas((prev) =>
@@ -108,7 +151,43 @@ export default function Compras() {
 
   // Al escribir un costo unitario, se rellena con lo que ya cuesta ese insumo
   // hoy en el sistema - el dueno solo corrige si el proveedor le vendio distinto.
-  function elegirIngrediente(i: number, ingredienteId: string) {
+  async function elegirIngrediente(i: number, ingredienteId: string) {
+    if (ingredienteId === 'nuevo') {
+      // Sin esto, un insumo que llega por primera vez (un proveedor nuevo
+      // trae algo que no estaba en el menu todavia) obligaba a salir de
+      // Compras, ir a Inventario a crearlo, y volver a cargar la factura
+      // desde cero.
+      const datos = await dialogo.pedir({
+        titulo: 'Insumo nuevo',
+        campos: [
+          { nombre: 'nombre', etiqueta: 'Nombre', placeholder: 'Ej. Pollo' },
+          {
+            nombre: 'unidad',
+            etiqueta: 'Unidad',
+            tipo: 'opciones',
+            valor: 'kg',
+            opciones: ['kg', 'g', 'lt', 'ml', 'unidad', 'paquete'].map((u) => ({ valor: u, texto: u })),
+          },
+        ],
+      })
+      if (!datos) return
+      const creado = await api.crearIngrediente({
+        nombre: datos.nombre,
+        unidad: datos.unidad,
+        stock_actual: 0,
+        stock_minimo: 0,
+        stock_objetivo: 0,
+        costo_unitario: 0,
+        rendimiento_pct: 100,
+        tipo: 'insumo',
+        activo: true,
+        exento: false,
+      })
+      setIngredientes((prev) => [...prev, creado])
+      setLineas((prev) => prev.map((l, idx) => (idx === i ? { ...l, ingrediente_id: creado.id } : l)))
+      return
+    }
+
     const ing = ingredientes.find((x) => x.id === Number(ingredienteId))
     setLineas((prev) =>
       prev.map((l, idx) =>
@@ -142,14 +221,30 @@ export default function Compras() {
     setBase('')
     setIva('')
     setFechaVencimiento('')
+    setMonedaCarga('$')
   }
 
   async function agregarFactura() {
     setError('')
     if (!numeroFactura.trim() || !proveedor.trim()) {
-      setError('Completa al menos el numero de factura y el proveedor')
+      setError('Completa al menos el número de factura y el proveedor')
       return
     }
+    // Sin RIF el Libro de Compras queda incompleto para el SENIAT. El backend
+    // valida el formato exacto; aca solo se evita el viaje si esta vacio.
+    if (!rif.trim()) {
+      setError('El RIF del proveedor es obligatorio')
+      return
+    }
+    // Todo el sistema costea en dolares (recetas, margenes, balance). Cargar
+    // en bolivares es una comodidad de tecleo -la factura del gas casi
+    // siempre viene en Bs-, no una segunda moneda que el resto del ERP tenga
+    // que entender: se convierte aca, una sola vez, a la tasa del dia.
+    if (monedaCarga === 'Bs' && !tasa?.bcv) {
+      setError('No se pudo obtener la tasa del día. Intenta de nuevo o carga en dólares.')
+      return
+    }
+    const aUsd = (monto: number) => (monedaCarga === 'Bs' ? monto / (tasa!.bcv as number) : monto)
 
     try {
       if (esInsumos) {
@@ -158,7 +253,7 @@ export default function Compras() {
           .map((l) => ({
             ingrediente_id: l.ingrediente_id,
             cantidad: Number(l.cantidad),
-            costo_unitario: Number(l.costo_unitario),
+            costo_unitario: aUsd(Number(l.costo_unitario)),
           }))
         if (items.length === 0) {
           setError('Agrega al menos un insumo con cantidad y costo')
@@ -167,7 +262,7 @@ export default function Compras() {
         await api.crearFacturaCompra({
           numero_factura: numeroFactura.trim(),
           proveedor_nombre: proveedor.trim(),
-          proveedor_rif: rif.trim() || undefined,
+          proveedor_rif: rif.trim(),
           categoria,
           forma_pago: formaPago,
           descripcion: descripcion.trim(),
@@ -184,12 +279,12 @@ export default function Compras() {
         await api.crearFacturaCompra({
           numero_factura: numeroFactura.trim(),
           proveedor_nombre: proveedor.trim(),
-          proveedor_rif: rif.trim() || undefined,
+          proveedor_rif: rif.trim(),
           categoria,
           forma_pago: formaPago,
           descripcion: descripcion.trim(),
-          base_imponible: baseNum,
-          iva: Number(iva) || 0,
+          base_imponible: aUsd(baseNum),
+          iva: aUsd(Number(iva) || 0),
           fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
           vida_util_meses: esActivo ? Number(vidaUtil) || 60 : undefined,
         })
@@ -364,7 +459,7 @@ export default function Compras() {
                     >
                       {f.fecha_vencimiento
                         ? vencida
-                          ? `Vencida hace ${dias} dias`
+                          ? `Vencida hace ${dias} días`
                           : `Vence ${new Date(f.fecha_vencimiento).toLocaleDateString('es-VE')}`
                         : 'Sin fecha de vencimiento'}
                     </span>
@@ -432,9 +527,9 @@ export default function Compras() {
                     <button
                       onClick={() => notaCredito(f)}
                       className="block w-full text-right text-[11px] font-medium text-acento-600"
-                      title="El proveedor mando menos, o te dio un descuento"
+                      title="El proveedor mandó menos, o te dio un descuento"
                     >
-                      Nota de credito
+                      Nota de crédito
                     </button>
                   </td>
                   <td className="p-3">
@@ -462,7 +557,7 @@ export default function Compras() {
               {facturas.length === 0 && (
                 <tr>
                   <td colSpan={9} className="text-neutral-400 py-4 text-center">
-                    Sin facturas cargadas todavia.
+                    Sin facturas cargadas todavía.
                   </td>
                 </tr>
               )}
@@ -478,7 +573,7 @@ export default function Compras() {
           <h2 className="font-semibold mb-2">Cargar factura de proveedor</h2>
           <p className="text-xs text-neutral-500 mb-3">
             {esInsumos
-              ? 'Cada renglon reabastece el stock del insumo y recalcula su costo promedio - no hace falta cargarlo aparte en Inventario.'
+              ? 'Cada renglón reabastece el stock del insumo y recalcula su costo promedio - no hace falta cargarlo aparte en Inventario.'
               : 'Alimenta el Libro de Compras y contabiliza sola: activos entran al balance, servicios van directo a gasto.'}
           </p>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
@@ -492,14 +587,23 @@ export default function Compras() {
             />
             <input
               value={proveedor}
-              onChange={(e) => setProveedor(e.target.value)}
+              onChange={(e) => elegirProveedorConocido(e.target.value)}
               placeholder="Proveedor"
+              list="proveedores-conocidos"
               className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
+            {/* Un proveedor no registrado se puede tipear igual: el directorio
+                es una comodidad, no un requisito para poder comprar. */}
+            <datalist id="proveedores-conocidos">
+              {proveedores.filter((p) => p.activo).map((p) => (
+                <option key={p.id} value={p.nombre} />
+              ))}
+            </datalist>
             <input
               value={rif}
               onChange={(e) => setRif(e.target.value)}
-              placeholder="RIF (opcional)"
+              placeholder="RIF (ej. J-12345678-9)"
+              required
               className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
             <select
@@ -520,16 +624,30 @@ export default function Compras() {
             >
               {FORMAS_PAGO.map((f) => (
                 <option key={f} value={f}>
-                  {f === 'Credito' ? 'A credito (por pagar)' : f}
+                  {f === 'Credito' ? 'A crédito (por pagar)' : f}
                 </option>
               ))}
             </select>
             <input
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
-              placeholder="Descripcion (opcional)"
+              placeholder="Descripción (opcional)"
               className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
+            <label className="flex items-center gap-2 text-sm border border-neutral-300 rounded-lg px-3 py-2">
+              <span className="text-neutral-500">Factura en</span>
+              <select
+                value={monedaCarga}
+                onChange={(e) => setMonedaCarga(e.target.value as (typeof MONEDAS_DE_CARGA)[number])}
+                className="flex-1 outline-none bg-transparent"
+              >
+                {MONEDAS_DE_CARGA.map((m) => (
+                  <option key={m} value={m}>
+                    {m === '$' ? 'Dólares' : `Bolívares${tasa?.bcv ? ` (a ${tasa.bcv.toFixed(2)})` : ''}`}
+                  </option>
+                ))}
+              </select>
+            </label>
             {esCredito && (
               <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
                 Vence
@@ -576,6 +694,7 @@ export default function Compras() {
                           {ing2.nombre} ({ing2.unidad})
                         </option>
                       ))}
+                      <option value="nuevo">+ Crear insumo nuevo...</option>
                     </select>
                     <input
                       value={l.cantidad}
@@ -588,13 +707,15 @@ export default function Compras() {
                     <input
                       value={l.costo_unitario}
                       onChange={(e) => actualizarLinea(i, 'costo_unitario', e.target.value)}
-                      placeholder="Costo/unidad sin IVA"
+                      placeholder={`Costo/unidad sin IVA (${monedaCarga})`}
                       type="number"
                       step="0.01"
                       className="w-32 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
                     />
-                    <span className="text-sm font-medium text-neutral-600 w-20 text-right">
-                      ${subtotal.toFixed(2)}
+                    {ing?.exento && <Pastilla tono="neutro">exento</Pastilla>}
+                    <span className="text-sm font-medium text-neutral-600 w-24 text-right">
+                      {monedaCarga}
+                      {subtotal.toFixed(2)}
                     </span>
                     <button
                       onClick={() => quitarLinea(i)}
@@ -611,15 +732,15 @@ export default function Compras() {
               </button>
               <div className="flex justify-end gap-6 text-sm pt-2 border-t border-neutral-200">
                 <span className="text-neutral-500">
-                  Base <span className="font-semibold text-neutral-800">${baseLineas.toFixed(2)}</span>
+                  Base <span className="font-semibold text-neutral-800">{monedaCarga}{baseLineas.toFixed(2)}</span>
                 </span>
                 <span className="text-neutral-500">
                   IVA ({fiscal.tasa_iva}%){' '}
-                  <span className="font-semibold text-neutral-800">${ivaLineas.toFixed(2)}</span>
+                  <span className="font-semibold text-neutral-800">{monedaCarga}{ivaLineas.toFixed(2)}</span>
                 </span>
                 <span className="text-neutral-500">
                   Total{' '}
-                  <span className="font-bold text-neutral-900">${(baseLineas + ivaLineas).toFixed(2)}</span>
+                  <span className="font-bold text-neutral-900">{monedaCarga}{(baseLineas + ivaLineas).toFixed(2)}</span>
                 </span>
               </div>
             </div>
@@ -628,7 +749,7 @@ export default function Compras() {
               <input
                 value={base}
                 onChange={(e) => actualizarBase(e.target.value)}
-                placeholder="Base imponible"
+                placeholder={`Base imponible (${monedaCarga})`}
                 type="number"
                 step="0.01"
                 className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
@@ -636,14 +757,14 @@ export default function Compras() {
               <input
                 value={iva}
                 onChange={(e) => setIva(e.target.value)}
-                placeholder={`IVA (${fiscal.tasa_iva}%)`}
+                placeholder={`IVA ${fiscal.tasa_iva}% (${monedaCarga})`}
                 type="number"
                 step="0.01"
                 className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
               />
               <div className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 text-sm font-medium">
                 <span className="text-neutral-500">Total</span>
-                <span>${((Number(base) || 0) + (Number(iva) || 0)).toFixed(2)}</span>
+                <span>{monedaCarga}{((Number(base) || 0) + (Number(iva) || 0)).toFixed(2)}</span>
               </div>
             </div>
           )}
@@ -657,7 +778,135 @@ export default function Compras() {
         </div>
           </>
         )}
+
+        {seccion === 'proveedores' && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="font-semibold">Proveedores</h2>
+                <p className="text-xs text-neutral-500">
+                  Elegir uno al cargar una factura completa su nombre y su RIF solos.
+                </p>
+              </div>
+              <Boton onClick={() => setFichaProveedor('nuevo')}>Nuevo proveedor</Boton>
+            </div>
+
+            {proveedores.length === 0 ? (
+              <Vacio titulo="Sin proveedores registrados" detalle="Se pueden seguir cargando facturas igual, tipeando el nombre." />
+            ) : (
+              <Tabla>
+                <table className="w-full text-sm">
+                  <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                    <tr>
+                      <Th>Nombre</Th>
+                      <Th>RIF</Th>
+                      <Th>Teléfono</Th>
+                      <Th>Contacto</Th>
+                      <Th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {proveedores.map((p) => (
+                      <tr key={p.id} className={`border-t border-neutral-100 ${!p.activo ? 'opacity-50' : ''}`}>
+                        <td className="p-2 font-medium">{p.nombre}</td>
+                        <td className="p-2 tabular-nums text-neutral-500">{p.rif || '—'}</td>
+                        <td className="p-2 text-neutral-500">{p.telefono || '—'}</td>
+                        <td className="p-2 text-neutral-500">{p.contacto || '—'}</td>
+                        <td className="p-2 text-right whitespace-nowrap">
+                          {!p.activo && <Pastilla tono="neutro">archivado</Pastilla>}{' '}
+                          <button
+                            onClick={() => setFichaProveedor(p)}
+                            className="text-xs text-acento-700 font-medium mr-3"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => archivarProveedor(p)}
+                            className="text-xs text-neutral-500 font-medium"
+                          >
+                            {p.activo ? 'Archivar' : 'Reactivar'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Tabla>
+            )}
+          </div>
+        )}
+
+        {fichaProveedor && (
+          <FichaProveedor
+            proveedor={fichaProveedor === 'nuevo' ? null : fichaProveedor}
+            onCerrar={() => setFichaProveedor(null)}
+            onGuardar={guardarProveedor}
+          />
+        )}
       </Pagina>
     </div>
+  )
+}
+
+function FichaProveedor({
+  proveedor,
+  onCerrar,
+  onGuardar,
+}: {
+  proveedor: Proveedor | null
+  onCerrar: () => void
+  onGuardar: (datos: Omit<Proveedor, 'id' | 'activo'>) => Promise<void>
+}) {
+  const [nombre, setNombre] = useState(proveedor?.nombre ?? '')
+  const [rif, setRif] = useState(proveedor?.rif ?? '')
+  const [telefono, setTelefono] = useState(proveedor?.telefono ?? '')
+  const [direccion, setDireccion] = useState(proveedor?.direccion ?? '')
+  const [contacto, setContacto] = useState(proveedor?.contacto ?? '')
+  const [nota, setNota] = useState(proveedor?.nota ?? '')
+  const [error, setError] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    if (!nombre.trim()) {
+      setError('El nombre es obligatorio')
+      return
+    }
+    setError('')
+    setGuardando(true)
+    try {
+      await onGuardar({ nombre: nombre.trim(), rif: rif.trim() || null, telefono, direccion, contacto, nota })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Modal
+      titulo={proveedor ? proveedor.nombre : 'Nuevo proveedor'}
+      onCerrar={onCerrar}
+      pie={
+        <>
+          <Boton tono="suave" onClick={onCerrar}>Cancelar</Boton>
+          <Boton onClick={guardar} disabled={guardando}>Guardar</Boton>
+        </>
+      }
+    >
+      {error && <p className="text-peligro-600 text-sm mb-3">{error}</p>}
+      <div className="space-y-3">
+        <Campo etiqueta="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <Campo
+          etiqueta="RIF"
+          value={rif}
+          onChange={(e) => setRif(e.target.value)}
+          placeholder="J-12345678-9 (opcional)"
+        />
+        <Campo etiqueta="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} />
+        <Campo etiqueta="Dirección" value={direccion} onChange={(e) => setDireccion(e.target.value)} />
+        <Campo etiqueta="Persona de contacto" value={contacto} onChange={(e) => setContacto(e.target.value)} />
+        <Campo etiqueta="Nota" value={nota} onChange={(e) => setNota(e.target.value)} />
+      </div>
+    </Modal>
   )
 }

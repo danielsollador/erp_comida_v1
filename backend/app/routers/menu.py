@@ -33,7 +33,7 @@ def crear_categoria(categoria: schemas.CategoriaCreate, db: Session = Depends(ge
 def actualizar_categoria(categoria_id: int, categoria: schemas.CategoriaCreate, db: Session = Depends(get_db)):
     db_categoria = db.query(models.Categoria).filter(models.Categoria.id == categoria_id).first()
     if not db_categoria:
-        raise HTTPException(status_code=404, detail="Categoria no encontrada")
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
     for key, value in categoria.model_dump().items():
         setattr(db_categoria, key, value)
     db.commit()
@@ -52,7 +52,7 @@ def eliminar_categoria(categoria_id: int, db: Session = Depends(get_db)):
     """
     db_categoria = db.query(models.Categoria).filter(models.Categoria.id == categoria_id).first()
     if not db_categoria:
-        raise HTTPException(status_code=404, detail="Categoria no encontrada")
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
     db_categoria.activo = False
     for producto in db_categoria.productos:
         producto.activo = False
@@ -66,7 +66,7 @@ def reactivar_categoria(categoria_id: int, db: Session = Depends(get_db)):
     tendria vuelta atras."""
     db_categoria = db.query(models.Categoria).filter(models.Categoria.id == categoria_id).first()
     if not db_categoria:
-        raise HTTPException(status_code=404, detail="Categoria no encontrada")
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
     db_categoria.activo = True
     for producto in db_categoria.productos:
         producto.activo = True

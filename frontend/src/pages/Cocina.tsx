@@ -60,7 +60,7 @@ export default function Cocina() {
   }, [])
 
   const refrescar = useCallback(() => {
-    api.listarPedidos('pendiente').then((ps) => {
+    api.listarPedidosEnCocina().then((ps) => {
       const ordenados = ps.sort((a, b) => a.numero - b.numero)
       setPedidos(ordenados)
 
@@ -124,16 +124,32 @@ export default function Cocina() {
     refrescar()
   }
 
-  // La cocina es quien sabe si la comida alcanzo a hacerse, y hasta ahora solo
-  // el POS podia anular. Se pregunta explicitamente porque de eso depende si el
-  // insumo vuelve al inventario o se registra como merma.
+  // La cocina es quien sabe de verdad si la comida alcanzo a hacerse - el
+  // sistema solo adivina por si algun item quedo marcado "preparado", y esa
+  // marca se puede escapar (se hizo la comida y nadie toco la casilla). Se
+  // pregunta en vez de imponer la adivinanza.
   async function anular(pedido: Pedido) {
     const yaHecha = pedido.items.some((i) => i.preparado)
-    const texto = yaHecha
-      ? 'Ya hay items preparados: lo hecho se registra como merma.'
-      : 'Los insumos vuelven al inventario.'
-    if (!(await dialogo.confirmar({ titulo: `¿Anular la comanda #${pedido.numero}?`, texto, aceptar: 'Anular', peligro: true }))) return
-    await api.anularPedido(pedido.id, yaHecha)
+    const eleccion = await dialogo.elegir({
+      titulo: `¿Anular la comanda #${pedido.numero}?`,
+      texto: `El sistema cree que ${yaHecha ? 'ya se preparó algo' : 'todavía no se preparó nada'}. Confirma o corrige:`,
+      opciones: [
+        {
+          valor: 'perdida',
+          texto: 'Se preparó: es pérdida',
+          detalle: 'La comida se botó. Queda como merma y no vuelve al inventario.',
+          peligro: !yaHecha,
+        },
+        {
+          valor: 'inventario',
+          texto: 'No se preparó: vuelve al inventario',
+          detalle: 'Los insumos que se iban a usar se devuelven al stock.',
+          peligro: yaHecha,
+        },
+      ],
+    })
+    if (!eleccion) return
+    await api.anularPedido(pedido.id, eleccion === 'perdida')
     refrescar()
   }
 

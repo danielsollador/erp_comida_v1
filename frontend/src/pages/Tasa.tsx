@@ -74,7 +74,7 @@ export default function Tasa() {
   function guardarManual() {
     const valor = Number(manual.replace(',', '.'))
     if (!valor || valor <= 0) {
-      setError('Escribe una tasa valida, por ejemplo 145,80')
+      setError('Escribe una tasa válida, por ejemplo 145,80')
       return
     }
     accion(() => api.fijarTasa(valor), 'Tasa fijada. Los cobros de hoy usan esta.')
@@ -97,7 +97,7 @@ export default function Tasa() {
             <div>
               <h2 className="font-semibold">Tasa con la que se cobra hoy</h2>
               <p className="text-xs text-neutral-500 mt-0.5">
-                Es la que convierte a bolivares en el punto de venta.
+                Es la que convierte a bolívares en el punto de venta.
               </p>
             </div>
             <span
@@ -105,7 +105,7 @@ export default function Tasa() {
                 esManual ? 'bg-aviso-100 text-aviso-700' : 'bg-exito-100 text-exito-700'
               }`}
             >
-              {esManual ? 'Cargada a mano' : 'Automatica'}
+              {esManual ? 'Cargada a mano' : 'Automática'}
             </span>
           </div>
 
@@ -113,13 +113,13 @@ export default function Tasa() {
             <span className="text-4xl font-bold tabular-nums">
               {estado?.bcv ? fmtNum(estado.bcv) : '—'}
             </span>
-            <span className="text-neutral-500">Bs por dolar</span>
+            <span className="text-neutral-500">Bs por dólar</span>
           </div>
 
           {estado?.desactualizada && (
             <p className="text-aviso-600 text-sm mt-2">
               Esta tasa es del {new Date(estado.fecha + 'T00:00:00').toLocaleDateString('es-VE')}, no
-              de hoy. Refresca o cargala a mano.
+              de hoy. Refresca o cárgala a mano.
             </p>
           )}
 
@@ -143,7 +143,7 @@ export default function Tasa() {
               nota="paralelo vs oficial"
             />
             <Dato
-              titulo="Ultima semana"
+              titulo="Última semana"
               ayuda="kpi.variacion_semana"
               valor={
                 estado?.variacion_semana_pct != null
@@ -159,7 +159,7 @@ export default function Tasa() {
               ? `Conectado a bcv.org.ve y Binance P2P${
                   estado.fuente_actualizada ? ` · fecha valor ${estado.fuente_actualizada}` : ''
                 }`
-              : 'Sin conexion a las fuentes ahora mismo. El local sigue cobrando con la ultima tasa conocida.'}
+              : 'Sin conexión a las fuentes ahora mismo. El local sigue cobrando con la última tasa conocida.'}
           </p>
         </div>
 
@@ -168,8 +168,8 @@ export default function Tasa() {
           <div>
             <h2 className="font-semibold mb-1">Cargar la tasa a mano</h2>
             <p className="text-xs text-neutral-500">
-              Si cobras a una tasa propia -redondeada, la del proveedor, un punto medio- escribela
-              aqui. Manda sobre la automatica y no se pisa hasta que la devuelvas a automatico.
+              Si cobras a una tasa propia -redondeada, la del proveedor, un punto medio- escríbela
+              aquí. Manda sobre la automática y no se pisa hasta que la devuelvas a automático.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -205,7 +205,7 @@ export default function Tasa() {
                 disabled={ocupado}
                 className="bg-neutral-100 hover:bg-neutral-200 rounded-xl px-4 py-2.5 text-sm font-medium disabled:opacity-50"
               >
-                Volver a la automatica
+                Volver a la automática
               </button>
             )}
           </div>
@@ -232,7 +232,7 @@ export default function Tasa() {
                 nota={
                   analisis.bcv_inicio && analisis.bcv_fin
                     ? `${fmtNum(analisis.bcv_inicio)} → ${fmtNum(analisis.bcv_fin)}`
-                    : 'del oficial en el periodo'
+                    : 'del oficial en el período'
                 }
               />
               <Dato
@@ -314,7 +314,7 @@ export default function Tasa() {
           <div className="px-5 pt-4 pb-2">
             <h2 className="font-semibold">Historial</h2>
             <p className="text-xs text-neutral-500">
-              Cada pedido cobrado guarda la tasa de su dia, asi el reporte en bolivares de la semana
+              Cada pedido cobrado guarda la tasa de su día, así el reporte en bolívares de la semana
               pasada no cambia cuando la tasa se mueve.
             </p>
           </div>
@@ -358,7 +358,7 @@ export default function Tasa() {
               {historial.length === 0 && (
                 <tr>
                   <td colSpan={4} className="p-4 text-center text-neutral-400">
-                    Todavia no hay tasas registradas.
+                    Todavía no hay tasas registradas.
                   </td>
                 </tr>
               )}

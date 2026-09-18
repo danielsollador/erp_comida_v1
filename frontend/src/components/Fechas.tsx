@@ -48,7 +48,7 @@ export function FiltroFechas({
         onClick={() => setAbierto((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={abierto}
-        title="Elegir el periodo"
+        title="Elegir el período"
         // En el telefono solo el icono: con el texto, el titulo del modulo se
         // quedaba sin sitio. El periodo se lee igual en el titulo de la tarjeta.
         className={`inline-flex items-center justify-center gap-1.5 h-9 w-9 sm:w-auto sm:px-3 rounded-xl border text-sm font-medium whitespace-nowrap ${
@@ -172,7 +172,7 @@ function PanelFechas({
   const panel = (
     <div
       role="dialog"
-      aria-label="Elegir el periodo"
+      aria-label="Elegir el período"
       onClick={(e) => e.stopPropagation()}
       className={`bg-white border border-neutral-200 shadow-lg flex flex-col ${
         pos

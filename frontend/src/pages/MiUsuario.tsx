@@ -79,7 +79,7 @@ export default function MiUsuario() {
                 />
               </label>
               <label className="block text-sm">
-                <span className="text-xs text-neutral-500 uppercase font-semibold">Nueva (8 o mas)</span>
+                <span className="text-xs text-neutral-500 uppercase font-semibold">Nueva (8 o más)</span>
                 <input
                   type="password"
                   autoComplete="new-password"

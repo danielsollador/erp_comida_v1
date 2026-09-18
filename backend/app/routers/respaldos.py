@@ -69,7 +69,7 @@ def previsualizar(nombre: str):
 @router.post("/{nombre}/restaurar")
 def restaurar(nombre: str, cuerpo: ConfirmacionRestaurar):
     if not cuerpo.confirmar:
-        raise HTTPException(status_code=400, detail="Falta confirmar la restauracion")
+        raise HTTPException(status_code=400, detail="Falta confirmar la restauración")
     resultado = backup.restaurar(_ruta(nombre), nombre)
     if not resultado["ok"]:
         raise HTTPException(status_code=400, detail=resultado["motivo"])
@@ -85,7 +85,7 @@ async def restaurar_desde_archivo(archivo: UploadFile = File(...), confirmar: bo
     no tiene por donde entrar.
     """
     if not confirmar:
-        raise HTTPException(status_code=400, detail="Falta confirmar la restauracion")
+        raise HTTPException(status_code=400, detail="Falta confirmar la restauración")
 
     marca = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     # La extension la decide el motor: `.dump` de PostgreSQL en produccion.

@@ -152,6 +152,12 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Si el último saldo de esta lista no coincide con la existencia del insumo, algo movió el stock sin anotarlo y el sistema lo avisa arriba en rojo.',
   },
+  'movimientos.valor': {
+    que: 'A cuánto equivale ese movimiento en plata.',
+    origen: 'Cantidad × el costo al que entró o salió, congelado en el momento.',
+    calculo: 'En una compra, el precio de esa compra puntual. En una venta o merma, el costo promedio del insumo cuando se movió, no el de hoy.',
+    ejemplo: '0.025 kg de café no dice mucho; $0.30 sí dice cuánto costó ese cafecito.',
+  },
   'perdidas.fecha': fecha(
     'Cuándo se registró la pérdida.',
     'La hora del local en que alguien cargó la merma, o en que un conteo físico encontró el faltante.',
@@ -749,8 +755,8 @@ export const GLOSARIO: Record<string, Explicacion> = {
     que: 'Qué clase de pérdida es.',
     origen: 'Del estado de la venta.',
     calculo:
-      'Devuelta: plata que salió de la caja. Descuento: rebaja concedida. Anulada: venta que nunca entró (se muestra, no se suma). Fiado por cobrar: se entregó y aún se debe.',
-    ejemplo: 'Solo devuelto + descuentos + merma cuentan como "Dinero perdido": lo anulado nunca fue tuyo y lo fiado todavía se puede cobrar.',
+      'Devuelta: plata que salió de la caja. Descuento: rebaja concedida. Anulada: venta que nunca entró (se muestra, no se suma). A crédito por cobrar: se entregó y aún se debe.',
+    ejemplo: 'Solo devuelto + descuentos + merma cuentan como "Dinero perdido": lo anulado nunca fue tuyo y lo vendido a crédito todavía se puede cobrar.',
   },
   'ventas_perdidas.detalle': {
     que: 'Lo que se vendió en esa venta.',
@@ -764,14 +770,14 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'ventas_perdidas.monto': {
     que: 'Cuánto dinero representa esa fila.',
-    origen: 'El total de la venta (devueltas y anuladas), la rebaja (descuentos) o lo que falta por pagar (fiado).',
+    origen: 'El total de la venta (devueltas y anuladas), la rebaja (descuentos) o lo que falta por pagar (a crédito).',
     ejemplo: 'Ordena por esta columna para ver dónde está la plata grande.',
   },
 
   // Ventas: las cifras
   'kpi.promedio_diario': {
     que: 'Cuánto vendes al día, en promedio, en el período.',
-    origen: 'Las ventas cobradas y fiadas del período.',
+    origen: 'Las ventas cobradas y las vendidas a crédito del período.',
     calculo:
       'Ventas ÷ días transcurridos. "Este mes" el día 3 divide entre 3, no entre 30: si no, el promedio se vería bajo todo el mes.',
     ejemplo: 'Es el número para comparar meses de distinto largo, o para saber cuánto tienes que vender mañana para alcanzar la meta.',
@@ -797,7 +803,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   'kpi.perdidas': {
     que: 'La plata que se te fue en el período.',
     origen: 'Las devoluciones, los descuentos y la merma de inventario (cuenta 6020 del libro).',
-    calculo: 'Devuelto + descuentos + merma. Lo anulado no se suma (nunca entró) ni lo fiado (todavía se puede cobrar).',
+    calculo: 'Devuelto + descuentos + merma. Lo anulado no se suma (nunca entró) ni lo vendido a crédito (todavía se puede cobrar).',
     ejemplo: 'Por encima de 3–4% de lo vendido, en comida, algo se está botando o se está yendo por la puerta.',
   },
   'kpi.devueltas': {
@@ -822,8 +828,8 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'kpi.fiado_pendiente': {
     que: 'Ventas de este período que se entregaron y todavía no se han pagado.',
-    origen: 'Los pagos "Fiado" sin saldar de las ventas del período.',
-    ejemplo: 'Es venta hecha y plata que aún no está. Se cobra desde Cierre de caja › Fiado y propinas.',
+    origen: 'Los pagos "A crédito" sin saldar de las ventas del período.',
+    ejemplo: 'Es venta hecha y plata que aún no está. Se cobra desde Cierre de caja › A crédito y propinas.',
   },
 }
 

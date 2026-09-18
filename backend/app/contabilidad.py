@@ -36,6 +36,10 @@ PLAN_DE_CUENTAS = [
     ("1011", "Caja en divisas (efectivo $)", "activo", "deudora"),
     ("1015", "Cuentas por cobrar a clientes", "activo", "deudora"),
     ("1020", "Banco / pagos electronicos", "activo", "deudora"),
+    # Zelle entra en dolares y no es efectivo -no hay billete que contar en el
+    # arqueo-, asi que necesita su propia cuenta y no puede compartir la de
+    # 1020 (que es Bs) ni la 1011 (que si se cuenta fisicamente al cerrar).
+    ("1021", "Banco USD (Zelle)", "activo", "deudora"),
     ("1030", "IVA credito fiscal", "activo", "deudora"),
     ("1040", "Inventario de insumos", "activo", "deudora"),
     ("1050", "Equipos y mobiliario", "activo", "deudora"),
@@ -84,9 +88,11 @@ CUENTA_POR_METODO_PAGO = {
     "Efectivo Bs": "1010",
     "Efectivo $": "1011",
     "Tarjeta": "1020",
+    "Punto de venta": "1020",  # mismo terminal que "Tarjeta"; nombre distinto, misma cuenta
     "Pago movil": "1020",
     "Transferencia": "1020",
     "Banco": "1020",
+    "Zelle": "1021",
     # El cliente se lleva la comida y paga despues. No entra plata: nace una
     # cuenta por cobrar. Antes habia que elegir entre no registrar la venta
     # (y descuadrar el inventario) o marcarla cobrada (y descuadrar la caja).
@@ -97,6 +103,13 @@ CUENTA_POR_METODO_PAGO = {
 # arquea: su saldo lo dice el banco, no un conteo.
 CUENTAS_DE_EFECTIVO = {"1010": "bolivares", "1011": "divisas"}
 METODOS_DE_EFECTIVO = {"Efectivo", "Efectivo Bs", "Efectivo $"}
+
+# Todo lo que no es un billete deja un numero de confirmacion en alguna parte
+# -el pago movil su codigo, el punto su ticket, el Zelle su comprobante- y sin
+# el, reclamar un pago duplicado o un cobro que nunca llego es la palabra del
+# cliente contra la del negocio. El efectivo no tiene nada que anotar: un
+# billete no trae referencia.
+METODOS_CON_REFERENCIA = set(CUENTA_POR_METODO_PAGO) - METODOS_DE_EFECTIVO - {"Fiado"}
 
 # Con que se PAGA algo (un gasto, un retiro, una factura, el IVA, una compra
 # suelta): la plata sale de una de las dos gavetas o del banco. Es la misma

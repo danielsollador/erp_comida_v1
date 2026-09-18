@@ -27,7 +27,7 @@ def refrescar(forzar: bool = False, db: Session = Depends(get_db)):
     if not ok:
         raise HTTPException(
             status_code=503,
-            detail="No hay conexion con el BCV ni con las fuentes de respaldo. "
+            detail="No hay conexión con el BCV ni con las fuentes de respaldo. "
             "Puedes cargar la tasa a mano mientras tanto.",
         )
     return tasas.estado(db)

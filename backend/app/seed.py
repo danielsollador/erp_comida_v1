@@ -45,6 +45,53 @@ RECETAS_DEMO = {
 }
 
 
+def asegurar_categoria_envios(db=None):
+    """El delivery como dos productos del menu, no un modulo aparte.
+
+    Un envio no lleva receta ni mueve inventario -es un servicio, no algo que
+    se cocine- pero por lo demas es exactamente un producto: tiene precio, se
+    agrega a la comanda desde el POS y cuenta en el reporte de ventas. Crear un
+    modulo de "Envios" completo para esto habria sido reinventar el menu con
+    otro nombre.
+
+    Se asegura sola en cada arranque -no solo en una base vacia como
+    `seed_if_empty`- para que un local que ya viene vendiendo la reciba en el
+    proximo despliegue sin que nadie tenga que crearla a mano.
+
+    Recibe la sesion como parametro, igual que `seed_plan_de_cuentas`: quien
+    llama decide si abre una nueva (produccion) o reutiliza la de la prueba
+    (los tests aislan su base con `dependency_overrides`, que no alcanza a un
+    `SessionLocal()` creado aca adentro).
+    """
+    propia = db is None
+    if propia:
+        db = SessionLocal()
+    try:
+        categoria = db.query(Categoria).filter_by(nombre="Envios").first()
+        if categoria is None:
+            categoria = Categoria(nombre="Envios", orden=99)
+            db.add(categoria)
+            db.flush()
+
+        existentes = {
+            p.nombre
+            for p in db.query(Producto).filter_by(categoria_id=categoria.id).all()
+        }
+        for nombre, precio in (("Delivery corto", 1.5), ("Delivery largo", 3.0)):
+            if nombre in existentes:
+                continue
+            producto = Producto(categoria_id=categoria.id, nombre=nombre, activo=True)
+            db.add(producto)
+            db.flush()
+            # Sin variante no aparece en el POS: el resto del menu funciona
+            # igual, "Regular" es el nombre que se usa cuando no hay tamanos.
+            db.add(Variante(producto_id=producto.id, nombre="Regular", precio=precio, activo=True))
+        db.commit()
+    finally:
+        if propia:
+            db.close()
+
+
 def seed_if_empty():
     db = SessionLocal()
     try:

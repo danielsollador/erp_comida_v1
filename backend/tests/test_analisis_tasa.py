@@ -32,7 +32,7 @@ def _vender(client, variante, cantidad, pagos, cliente=""):
         f"/api/pedidos/{pedido['id']}/cobrar",
         json={
             "metodo_pago": pagos[0][0],
-            "pagos": [{"metodo": m, "monto": v} for m, v in pagos],
+            "pagos": [{"metodo": m, "monto": v, "referencia": "REF-1"} for m, v in pagos],
             "cliente": cliente,
         },
     )

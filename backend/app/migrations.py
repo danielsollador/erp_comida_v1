@@ -79,6 +79,8 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "clave_cliente", "VARCHAR"),
     ("TRX320_INV_MERMA", "por_conteo", "BOOLEAN DEFAULT 0"),
     ("TRX340_INV_MOVIMIENTO", "costo_promedio", "FLOAT DEFAULT 0"),
+    ("DIM310_INV_INGREDIENTE", "exento", "BOOLEAN DEFAULT 0"),
+    ("TRX120_VEN_PAGO", "referencia", "VARCHAR DEFAULT ''"),
 ]
 
 
@@ -151,6 +153,7 @@ RENOMBRES = {
     # desarrollo alcanzo a crearlas con el nombre suelto.
     "movimientos_inventario": "TRX340_INV_MOVIMIENTO",
     "abonos_fiado": "TRX130_VEN_ABONO_FIADO",
+    "proveedores": "DIM410_COM_PROVEEDOR",
 }
 
 

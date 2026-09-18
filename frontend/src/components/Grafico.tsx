@@ -140,7 +140,7 @@ export function GraficoLineas({
             preserveAspectRatio="none"
             className="absolute inset-0 h-full w-full vp-revelar-izq"
             role="img"
-            aria-label={`Evolucion de ${series.map((s) => s.nombre).join(', ')}`}
+            aria-label={`Evolución de ${series.map((s) => s.nombre).join(', ')}`}
           >
             {/* Tres lineas de referencia, discretas. */}
             {[25, 50, 75].map((p) => (

@@ -193,7 +193,7 @@ def cerrar_caja(
         cual = f"La caja de {punto.nombre}" if punto else "La caja de hoy"
         raise HTTPException(
             status_code=409,
-            detail=f"{cual} ya fue cerrada hoy. Si el conteo quedo mal, anula ese cierre y vuelve a cerrar.",
+            detail=f"{cual} ya fue cerrada hoy. Si el conteo quedó mal, anula ese cierre y vuelve a cerrar.",
         )
 
     resumen = resumen_caja(db)
@@ -350,16 +350,16 @@ def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session =
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     if pedido.fiado_saldado:
-        raise HTTPException(status_code=409, detail="Ese fiado ya fue cobrado")
+        raise HTTPException(status_code=409, detail="Esa cuenta a crédito ya fue cobrada")
     if pedido.devuelto:
         raise HTTPException(status_code=409, detail="Ese pedido fue devuelto: ya no se debe")
     saldo = pedido.fiado_saldo
     if pedido.fiado_monto <= 0:
-        raise HTTPException(status_code=400, detail="Ese pedido no quedo fiado")
+        raise HTTPException(status_code=400, detail="Ese pedido no quedó a crédito")
     if saldo <= 0:
-        raise HTTPException(status_code=409, detail="Ese fiado ya esta pago")
+        raise HTTPException(status_code=409, detail="Esa cuenta a crédito ya está pagada")
     if body.metodo_pago == "Fiado" or body.metodo_pago not in contabilidad.CUENTA_POR_METODO_PAGO:
-        raise HTTPException(status_code=400, detail="Forma de cobro invalida")
+        raise HTTPException(status_code=400, detail="Forma de cobro inválida")
 
     monto = saldo if body.monto is None else round(body.monto, 2)
     if monto <= 0:

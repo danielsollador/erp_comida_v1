@@ -3,10 +3,12 @@ import datetime
 from typing import List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
 from .. import contabilidad, impuestos, models, schemas
 from ..database import get_db
+from ..exportar_csv import nombre_de_archivo, respuesta_csv
 from ..rango import Rango
 from ..timeutils import ahora, hoy, rango_periodo
 
@@ -118,6 +120,22 @@ def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
     )
 
 
+@router.get("/libro-ventas/exportar")
+def libro_ventas_exportar(rango: Rango = Depends(), db: Session = Depends(get_db)) -> StreamingResponse:
+    """El mismo Libro de Ventas, como CSV para Excel."""
+    libro = libro_ventas(rango, db)
+    filas = [
+        (f.pedido_id, f.fecha.strftime("%d/%m/%Y %H:%M"), f.numero_factura, f.cliente,
+         f"{f.base_imponible:.2f}", f"{f.iva:.2f}", f"{f.total:.2f}")
+        for f in libro.filas
+    ]
+    return respuesta_csv(
+        f"libro-ventas-{nombre_de_archivo(libro.etiqueta)}.csv",
+        ["Pedido", "Fecha", "N. Factura", "Cliente", "Base imponible", "IVA", "Total"],
+        filas,
+    )
+
+
 @router.get("/libro-compras", response_model=schemas.LibroCompras)
 def libro_compras(rango: Rango = Depends(), db: Session = Depends(get_db)):
     inicio, fin, etiqueta = rango.resolver(periodo="mes")
@@ -154,6 +172,22 @@ def libro_compras(rango: Rango = Depends(), db: Session = Depends(get_db)):
         total_base=round(sum(f.base_imponible for f in filas), 2),
         total_iva=round(sum(f.iva for f in filas), 2),
         total_general=round(sum(f.total for f in filas), 2),
+    )
+
+
+@router.get("/libro-compras/exportar")
+def libro_compras_exportar(rango: Rango = Depends(), db: Session = Depends(get_db)) -> StreamingResponse:
+    """El mismo Libro de Compras, como CSV para Excel."""
+    libro = libro_compras(rango, db)
+    filas = [
+        (f.factura_id, f.fecha.strftime("%d/%m/%Y"), f.numero_factura, f.proveedor_nombre,
+         f.proveedor_rif or "", f"{f.base_imponible:.2f}", f"{f.iva:.2f}", f"{f.total:.2f}")
+        for f in libro.filas
+    ]
+    return respuesta_csv(
+        f"libro-compras-{nombre_de_archivo(libro.etiqueta)}.csv",
+        ["Factura", "Fecha", "N. Factura", "Proveedor", "RIF", "Base imponible", "IVA", "Total"],
+        filas,
     )
 
 
@@ -271,13 +305,13 @@ def periodos_pendientes(db: Session = Depends(get_db)):
 @router.post("/declaraciones", response_model=schemas.DeclaracionIva)
 def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)):
     if not 1 <= body.mes <= 12:
-        raise HTTPException(status_code=400, detail="Mes invalido")
+        raise HTTPException(status_code=400, detail="Mes inválido")
 
     hoy_ = hoy()
     if (body.anio, body.mes) >= (hoy_.year, hoy_.month):
         raise HTTPException(
             status_code=400,
-            detail="Ese mes todavia no termina: declararlo fijaria un numero que aun puede cambiar.",
+            detail="Ese mes todavía no termina: declararlo fijaría un número que aún puede cambiar.",
         )
 
     existente = (
@@ -285,7 +319,7 @@ def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)
     )
     if existente:
         raise HTTPException(
-            status_code=409, detail=f"El periodo {existente.periodo} ya fue declarado."
+            status_code=409, detail=f"El período {existente.periodo} ya fue declarado."
         )
 
     inicio, fin = _rango_del_mes(body.anio, body.mes)
@@ -331,13 +365,13 @@ def pagar_declaracion(
         db.query(models.DeclaracionIva).filter(models.DeclaracionIva.id == declaracion_id).first()
     )
     if not declaracion:
-        raise HTTPException(status_code=404, detail="Declaracion no encontrada")
+        raise HTTPException(status_code=404, detail="Declaración no encontrada")
     if declaracion.pagada:
-        raise HTTPException(status_code=409, detail="Esta declaracion ya fue pagada")
+        raise HTTPException(status_code=409, detail="Esta declaración ya fue pagada")
     if declaracion.iva_a_pagar <= 0:
         raise HTTPException(
             status_code=400,
-            detail="Este periodo no dejo IVA por pagar: el credito fiscal cubrio el debito.",
+            detail="Este período no dejó IVA por pagar: el crédito fiscal cubrió el débito.",
         )
     if not contabilidad.metodo_de_pago_valido(body.forma_pago):
         raise HTTPException(
@@ -371,7 +405,7 @@ def anular_declaracion(declaracion_id: int, db: Session = Depends(get_db)):
         db.query(models.DeclaracionIva).filter(models.DeclaracionIva.id == declaracion_id).first()
     )
     if not declaracion:
-        raise HTTPException(status_code=404, detail="Declaracion no encontrada")
+        raise HTTPException(status_code=404, detail="Declaración no encontrada")
 
     posterior = (
         db.query(models.DeclaracionIva)

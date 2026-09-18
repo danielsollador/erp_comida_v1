@@ -237,7 +237,7 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
         onClick={() => setAbierto((v) => !v)}
         aria-expanded={abierto}
         aria-haspopup="menu"
-        title="Elegir en que moneda ver todos los montos"
+        title="Elegir en qué moneda ver todos los montos"
         className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
           dark
             ? 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
@@ -333,8 +333,8 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
                 : tasa?.origen === 'manual'
                   ? 'Tasa cargada a mano'
                   : tasa?.minutos_sin_contacto != null
-                    ? `Sin internet hace ${Math.round(tasa.minutos_sin_contacto)} min · se sigue usando la ultima tasa`
-                    : 'Sin conexion a las fuentes'}
+                    ? `Sin internet hace ${Math.round(tasa.minutos_sin_contacto)} min · se sigue usando la última tasa`
+                    : 'Sin conexión a las fuentes'}
             </span>
             <a href="/tasa" className="font-medium text-acento-600">
               Gestionar

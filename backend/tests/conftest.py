@@ -20,6 +20,7 @@ from app import contabilidad, kardex, models, settings
 from app.acceso import auth, roles, sesion, usuarios
 from app.database import Base, get_db
 from app.main import app
+from app.seed import asegurar_categoria_envios
 
 USUARIO_TEST = "admin"
 CLAVE_TEST = "clave-de-prueba-larga"
@@ -83,6 +84,7 @@ def db():
     Sesion = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     sesion_db = Sesion()
     contabilidad.seed_plan_de_cuentas(sesion_db)
+    asegurar_categoria_envios(sesion_db)
     try:
         yield sesion_db
     finally:

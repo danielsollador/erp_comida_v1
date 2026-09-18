@@ -15,10 +15,29 @@ router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
 
 
 @router.get("", response_model=List[schemas.Pedido])
-def listar_pedidos(estado: Optional[str] = None, db: Session = Depends(get_db)):
+def listar_pedidos(
+    estado: Optional[str] = None, en_cocina: Optional[bool] = None, db: Session = Depends(get_db)
+):
+    """`en_cocina=true` es lo que pregunta la pantalla de cocina: que falta por
+    preparar, sin importar si ya se cobro.
+
+    No es lo mismo que `estado='pendiente'`. Cobrar pone `estado='pagado'`
+    aunque la comida no se haya tocado -pagar antes de que salga el pedido es
+    el flujo normal de un mostrador-, y con `estado='pendiente'` ese pedido
+    desaparecia de cocina sin que nadie lo hubiera preparado. Lo que de verdad
+    dice si falta cocinar es el detalle: si algun item no esta `preparado`, la
+    cocina todavia tiene trabajo con ese pedido, este pagado o no.
+    """
     query = db.query(models.Pedido)
     if estado:
         query = query.filter(models.Pedido.estado == estado)
+    if en_cocina:
+        query = (
+            query.filter(models.Pedido.estado != "anulado")
+            .join(models.PedidoItem)
+            .filter(models.PedidoItem.preparado.is_(False))
+            .distinct()
+        )
     return query.order_by(models.Pedido.id.desc()).all()
 
 
@@ -182,6 +201,14 @@ async def crear_pedido(
                 costo_unitario=round(costos.get(variante.id, 0), 4),
                 cantidad=item.cantidad,
                 nota=item.nota,
+                # Sin receta cargada no hay nada que cocinar -es el caso de un
+                # envio, o de cualquier producto de reventa (una gaseosa)-, asi
+                # que nace ya "preparado". Sin esto se quedaba pegado para
+                # siempre en la cola de cocina, porque nadie iba a marcar
+                # "listo" algo que no se cocina. La venta libre queda afuera a
+                # proposito: un encargo a medida (una torta) si puede necesitar
+                # cocina, y ahi no hay receta que consultar.
+                preparado=not recetas.get(variante.id),
             )
         )
 
@@ -250,7 +277,14 @@ async def marcar_pedido_listo(pedido_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     for item in pedido.items:
         item.preparado = True
-    pedido.estado = "listo"
+    # Si ya se cobro, `estado` vale "pagado" y ASI SE QUEDA: es la señal que
+    # usan caja, contabilidad, reportes e impuestos para saber que es venta
+    # reconocida (17 sitios distintos). Pisarlo con "listo" aca lo hacia
+    # desaparecer de todos esos calculos en silencio, aunque la venta siguiera
+    # siendo real. Marcar los items como preparados es lo unico que hace falta
+    # para que salga de la cola de cocina.
+    if pedido.estado not in ("pagado", "anulado"):
+        pedido.estado = "listo"
     db.commit()
     db.refresh(pedido)
 
@@ -287,7 +321,7 @@ async def cobrar_pedido(
         if repetido:
             raise HTTPException(
                 status_code=409,
-                detail=f"La factura {body.numero_factura} ya se uso en el pedido #{repetido.numero}.",
+                detail=f"La factura {body.numero_factura} ya se usó en el pedido #{repetido.numero}.",
             )
 
     # El descuento y la propina se fijan ANTES de armar los pagos: los dos
@@ -311,7 +345,9 @@ async def cobrar_pedido(
     # cosa de todos los dias. Sin esto habia que elegir un metodo y mentir, y
     # el cierre de caja mostraba un faltante que no existia.
     a_cobrar = pedido.a_cobrar
-    pagos = body.pagos or [schemas.PagoInput(metodo=body.metodo_pago, monto=a_cobrar)]
+    pagos = body.pagos or [
+        schemas.PagoInput(metodo=body.metodo_pago, monto=a_cobrar, referencia=body.referencia)
+    ]
     for pago in pagos:
         if pago.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
             raise HTTPException(
@@ -329,6 +365,13 @@ async def cobrar_pedido(
         if pago.vuelto_metodo and pago.vuelto_metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
             raise HTTPException(
                 status_code=400, detail=f"Forma de vuelto desconocida: '{pago.vuelto_metodo}'"
+            )
+        # Sin esto, un reclamo de pago movil o Zelle es la palabra del cliente
+        # contra la del negocio: no hay con que ubicar el comprobante.
+        if pago.metodo in contabilidad.METODOS_CON_REFERENCIA and not (pago.referencia or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Falta el número de referencia del pago por {pago.metodo}.",
             )
     if abs(round(sum(p.monto for p in pagos), 2) - round(a_cobrar, 2)) > 0.01:
         detalle = f"Los pagos suman ${sum(p.monto for p in pagos):.2f} y hay que cobrar ${a_cobrar:.2f}"
@@ -362,6 +405,7 @@ async def cobrar_pedido(
                 recibido=round(pago.recibido, 2) if pago.recibido is not None else None,
                 vuelto_metodo=(pago.vuelto_metodo or pago.metodo) if vuelto > 0 else None,
                 vuelto_monto=vuelto,
+                referencia=(pago.referencia or "").strip(),
             )
         )
     db.flush()
@@ -406,14 +450,14 @@ async def devolver_pedido(
     if pedido.estado != "pagado":
         raise HTTPException(
             status_code=409,
-            detail="Solo se devuelve un pedido ya cobrado. Si todavia no se cobro, anulalo.",
+            detail="Solo se devuelve un pedido ya cobrado. Si todavía no se cobró, anúlalo.",
         )
     if pedido.devuelto:
         raise HTTPException(status_code=409, detail="Este pedido ya fue devuelto")
     if pedido.facturado and not body.nota_credito:
         raise HTTPException(
             status_code=400,
-            detail="Esta venta se facturo: hace falta el numero de la nota de credito para sacarla del Libro de Ventas.",
+            detail="Esta venta se facturó: hace falta el número de la nota de crédito para sacarla del Libro de Ventas.",
         )
 
     contabilidad.registrar_devolucion(db, pedido, body.recuperable)
@@ -517,6 +561,7 @@ def ticket(pedido_id: int, db: Session = Depends(get_db)):
                 recibido=p.recibido,
                 vuelto_metodo=p.vuelto_metodo,
                 vuelto_monto=p.vuelto_monto or 0,
+                referencia=p.referencia or "",
             )
             for p in pedido.pagos
         ],
@@ -540,7 +585,7 @@ async def anular_pedido(
     if pedido.estado == "pagado":
         raise HTTPException(
             status_code=409,
-            detail="Este pedido ya fue cobrado. Si el cliente devolvio la comida, usa Devolver.",
+            detail="Este pedido ya fue cobrado. Si el cliente devolvió la comida, usa Devolver.",
         )
     if pedido.estado == "anulado":
         raise HTTPException(status_code=409, detail="Este pedido ya estaba anulado")
@@ -605,7 +650,7 @@ def sugerencias(variantes: str = "", db: Session = Depends(get_db)):
     try:
         ids = [int(v) for v in variantes.split(",") if v.strip()]
     except ValueError:
-        raise HTTPException(status_code=400, detail="Lista de variantes invalida")
+        raise HTTPException(status_code=400, detail="Lista de variantes inválida")
     if not ids:
         return []
     return combos.sugerir(db, ids)

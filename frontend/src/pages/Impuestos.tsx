@@ -4,7 +4,7 @@ import { explicar } from '../lib/glosario'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
-import { useRango } from '../lib/fechas'
+import { useRango, queryRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
@@ -89,7 +89,7 @@ export default function Impuestos() {
       <NavBar titulo="Impuestos" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion !== 'declaraciones' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <h2 className="font-semibold mb-2">Alicuota de IVA</h2>
+          <h2 className="font-semibold mb-2">Alícuota de IVA</h2>
           <div className="flex flex-wrap gap-2">
             <input
               value={tasaInput}
@@ -107,15 +107,15 @@ export default function Impuestos() {
             </button>
           </div>
           <p className="text-xs text-neutral-500 mt-2">
-            Se congela en cada venta facturada al momento de cobrar, asi que cambiarla no altera
+            Se congela en cada venta facturada al momento de cobrar, así que cambiarla no altera
             los libros de meses ya cerrados.
           </p>
         </div>
 
         {resumen && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Kpi titulo="IVA debito (ventas)" ayuda="kpi.iva_debito" valor={resumen.iva_debito} />
-            <Kpi titulo="IVA credito (compras)" ayuda="kpi.iva_credito" valor={resumen.iva_credito} />
+            <Kpi titulo="IVA débito (ventas)" ayuda="kpi.iva_debito" valor={resumen.iva_debito} />
+            <Kpi titulo="IVA crédito (compras)" ayuda="kpi.iva_credito" valor={resumen.iva_credito} />
             <Kpi
               titulo={resumen.iva_a_pagar >= 0 ? 'IVA a pagar' : 'IVA a favor'}
               ayuda="kpi.iva_a_pagar"
@@ -127,11 +127,19 @@ export default function Impuestos() {
 
         {seccion === 'ventas' && ventas && (
           <div className="space-y-3">
+            <div className="flex justify-end">
+              <a
+                href={`/api/impuestos/libro-ventas/exportar?${queryRango(rango)}`}
+                className="text-sm font-medium text-acento-700 hover:underline"
+              >
+                Descargar Excel
+              </a>
+            </div>
             {ventas.ventas_no_facturadas > 0 && (
               <p className="bg-aviso-50 border border-aviso-200 text-aviso-900 rounded-xl p-3 text-sm">
-                Ademas hubo <strong>{ventas.ventas_no_facturadas}</strong> venta(s) sin facturar por
-                ${ventas.monto_no_facturado.toFixed(2)} en este periodo - no entran aqui porque el
-                dueno no las declaro con factura.
+                Además hubo <strong>{ventas.ventas_no_facturadas}</strong> venta(s) sin facturar por
+                ${ventas.monto_no_facturado.toFixed(2)} en este período - no entran aquí porque el
+                dueño no las declaró con factura.
               </p>
             )}
             <Tabla orden={ordenVentas} glosario="libroventas" className="bg-white rounded-2xl border border-neutral-200">
@@ -162,7 +170,7 @@ export default function Impuestos() {
                   {ventas.filas.length === 0 && (
                     <tr>
                       <td colSpan={6} className="text-neutral-400 py-4 text-center">
-                        Sin ventas facturadas en este periodo.
+                        Sin ventas facturadas en este período.
                       </td>
                     </tr>
                   )}
@@ -185,6 +193,15 @@ export default function Impuestos() {
         )}
 
         {seccion === 'compras' && compras && (
+          <div className="space-y-3">
+          <div className="flex justify-end">
+            <a
+              href={`/api/impuestos/libro-compras/exportar?${queryRango(rango)}`}
+              className="text-sm font-medium text-acento-700 hover:underline"
+            >
+              Descargar Excel
+            </a>
+          </div>
           <Tabla orden={ordenCompras} glosario="librocompras" className="bg-white rounded-2xl border border-neutral-200">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
@@ -213,7 +230,7 @@ export default function Impuestos() {
                 {compras.filas.length === 0 && (
                   <tr>
                     <td colSpan={7} className="text-neutral-400 py-4 text-center">
-                      Sin facturas de compra en este periodo.
+                      Sin facturas de compra en este período.
                     </td>
                   </tr>
                 )}
@@ -232,6 +249,7 @@ export default function Impuestos() {
               )}
             </table>
           </Tabla>
+          </div>
         )}
 
         {seccion === 'declaraciones' && <Declaraciones />}
@@ -271,7 +289,7 @@ function Declaraciones() {
       await fn()
       cargar()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ocurrio un error')
+      setError(e instanceof Error ? e.message : 'Ocurrió un error')
     } finally {
       setOcupado(false)
     }
@@ -281,8 +299,8 @@ function Declaraciones() {
     const neto = p.iva_debito - p.iva_credito
     const resumen =
       neto > 0
-        ? `Quedaria por pagar hasta $${neto.toFixed(2)} (menos el credito que venga arrastrado).`
-        : `El credito fiscal cubre el debito: no se paga nada y sobran $${Math.abs(neto).toFixed(2)} para el mes siguiente.`
+        ? `Quedaría por pagar hasta $${neto.toFixed(2)} (menos el crédito que venga arrastrado).`
+        : `El crédito fiscal cubre el débito: no se paga nada y sobran $${Math.abs(neto).toFixed(2)} para el mes siguiente.`
     if (
       !(await dialogo.confirmar({
         titulo: `¿Declarar ${p.etiqueta}?`,
@@ -333,7 +351,7 @@ function Declaraciones() {
         <div className="bg-white rounded-2xl border border-aviso-300 p-4">
           <h2 className="font-semibold mb-1">Meses cerrados sin declarar</h2>
           <p className="text-xs text-neutral-500 mb-3">
-            Solo aparecen meses que ya terminaron: el mes en curso todavia puede recibir ventas.
+            Solo aparecen meses que ya terminaron: el mes en curso todavía puede recibir ventas.
           </p>
           <div className="space-y-2">
             {pendientes.map((p) => (
@@ -343,7 +361,7 @@ function Declaraciones() {
               >
                 <span className="font-medium flex-1 min-w-[120px]">{p.etiqueta}</span>
                 <span className="text-neutral-600 tabular-nums text-xs">
-                  debito ${p.iva_debito.toFixed(2)} · credito ${p.iva_credito.toFixed(2)}
+                  débito ${p.iva_debito.toFixed(2)} · crédito ${p.iva_credito.toFixed(2)}
                 </span>
                 <button
                   onClick={() => declarar(p)}
@@ -360,7 +378,7 @@ function Declaraciones() {
 
       {ultima && ultima.credito_excedente > 0 && (
         <div className="bg-exito-50 border border-exito-200 rounded-xl px-3 py-2 text-sm text-exito-800">
-          Tienes ${ultima.credito_excedente.toFixed(2)} de credito fiscal a favor de{' '}
+          Tienes ${ultima.credito_excedente.toFixed(2)} de crédito fiscal a favor de{' '}
           {ultima.etiqueta}: se descuentan del IVA del mes siguiente.
         </div>
       )}
@@ -378,7 +396,7 @@ function Declaraciones() {
 
         {declaraciones.length === 0 && (
           <p className="text-sm text-neutral-400">
-            Sin declaraciones todavia. Se declara cada mes una vez cerrado.
+            Sin declaraciones todavía. Se declara cada mes una vez cerrado.
           </p>
         )}
 
@@ -394,7 +412,7 @@ function Declaraciones() {
                     onClick={() => anular(d)}
                     disabled={ocupado}
                     className="ml-2 text-xs font-medium text-peligro-500 disabled:opacity-40"
-                    title="Revierte sus asientos y libera el periodo"
+                    title="Revierte sus asientos y libera el período"
                   >
                     Anular
                   </button>
@@ -423,7 +441,7 @@ function Declaraciones() {
                 )}
               </div>
               <div className="text-xs text-neutral-500 tabular-nums">
-                debito ${d.iva_debito.toFixed(2)} · credito ${d.iva_credito.toFixed(2)}
+                débito ${d.iva_debito.toFixed(2)} · crédito ${d.iva_credito.toFixed(2)}
                 {d.credito_arrastrado > 0 && ` (+ $${d.credito_arrastrado.toFixed(2)} arrastrado)`}
                 {d.credito_excedente > 0 && ` · sobran $${d.credito_excedente.toFixed(2)}`}
               </div>

@@ -8,6 +8,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import Cajas from './partes/Cajas'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
+import { etiquetaMetodo } from '../lib/pagos'
 import type {
   CierreCaja,
   Configuracion,
@@ -27,7 +28,7 @@ const METODOS_GASTO = ['Efectivo', 'Efectivo $', 'Banco']
 const SECCIONES = [
   { id: 'cierre', texto: 'Cierre del día' },
   { id: 'gastos', texto: 'Gastos y retiros' },
-  { id: 'fiado', texto: 'Fiado y propinas' },
+  { id: 'fiado', texto: 'A crédito y propinas' },
   { id: 'historial', texto: 'Historial' },
   { id: 'cajas', texto: 'Cajas' },
 ]
@@ -219,7 +220,15 @@ export default function Caja() {
     const metodo = await dialogo.elegir({
       titulo: `Cobrar a ${cuenta.cliente}`,
       texto: `$${monto.toFixed(2)}. ¿Cómo paga?`,
-      opciones: ['Efectivo Bs', 'Efectivo $', 'Pago movil', 'Tarjeta', 'Transferencia'].map((m) => ({ valor: m, texto: m })),
+      opciones: [
+        'Efectivo Bs',
+        'Efectivo $',
+        'Pago movil',
+        'Punto de venta',
+        'Tarjeta',
+        'Transferencia',
+        'Zelle',
+      ].map((m) => ({ valor: m, texto: m })),
     })
     if (!metodo) return
     setError('')
@@ -281,7 +290,7 @@ export default function Caja() {
             </button>
           </div>
           <p className="text-xs text-neutral-500 mt-2">
-            Se usa para mostrar el equivalente en bolivares al cobrar. Actualizala tu mismo cada dia
+            Se usa para mostrar el equivalente en bolívares al cobrar. Actualízala tú mismo cada día
             (no se consulta ninguna fuente externa).
           </p>
         </div>
@@ -302,12 +311,12 @@ export default function Caja() {
             <div className="text-sm space-y-1">
               {Object.entries(resumen.por_metodo_pago).map(([metodo, monto]) => (
                 <div key={metodo} className="flex justify-between">
-                  <span className="text-neutral-600">{metodo}</span>
+                  <span className="text-neutral-600">{etiquetaMetodo(metodo)}</span>
                   <span className="font-medium">${monto.toFixed(2)}</span>
                 </div>
               ))}
               {Object.keys(resumen.por_metodo_pago).length === 0 && (
-                <p className="text-neutral-400">Aun no hay ventas cobradas hoy.</p>
+                <p className="text-neutral-400">Aún no hay ventas cobradas hoy.</p>
               )}
             </div>
           </div>
@@ -315,7 +324,7 @@ export default function Caja() {
 
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-            <h2 className="font-semibold">Contar efectivo fisico</h2>
+            <h2 className="font-semibold">Contar efectivo físico</h2>
             {/* Con dos pisos hay dos gavetas y cada una cierra la suya: antes
                 el segundo cierre del dia devolvia 409. */}
             {puntos.length > 0 && (
@@ -348,12 +357,12 @@ export default function Caja() {
           <div className="bg-neutral-50 rounded-xl p-3 text-sm mb-3 space-y-1">
             {(resumen?.saldo_anterior ?? 0) !== 0 && (
               <div className="flex justify-between text-neutral-600">
-                <span>Quedaba de dias anteriores</span>
+                <span>Quedaba de días anteriores</span>
                 <span className="tabular-nums">${(resumen?.saldo_anterior ?? 0).toFixed(2)}</span>
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-neutral-600">Ventas cobradas en bolivares</span>
+              <span className="text-neutral-600">Ventas cobradas en bolívares</span>
               <span className="tabular-nums">
                 $
                 {(
@@ -376,7 +385,7 @@ export default function Caja() {
               </div>
             )}
             <div className="flex justify-between font-semibold pt-1 border-t border-neutral-200">
-              <span>Deberia haber en la gaveta</span>
+              <span>Debería haber en la gaveta</span>
               <span className="tabular-nums">
                 ${resumen?.efectivo_esperado.toFixed(2) ?? '0.00'}
               </span>
@@ -389,7 +398,7 @@ export default function Caja() {
               onChange={(e) => setContado(e.target.value)}
               type="number"
               step="0.01"
-              placeholder="Cuanto efectivo hay en caja"
+              placeholder="Cuánto efectivo hay en caja"
               className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
           {/* La gaveta de divisas se cuenta aparte: son otros billetes, en otra
@@ -397,7 +406,7 @@ export default function Caja() {
           {(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0) !== 0 && (
             <div className="mt-3 rounded-xl border border-exito-200 bg-exito-50 p-3">
               <div className="flex justify-between text-sm font-medium text-exito-900">
-                <span>Deberia haber en billetes de dolar</span>
+                <span>Debería haber en billetes de dólar</span>
                 <span className="tabular-nums">
                   ${(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0).toFixed(2)}
                 </span>
@@ -407,7 +416,7 @@ export default function Caja() {
                 onChange={(e) => setContadoDivisas(e.target.value)}
                 type="number"
                 step="0.01"
-                placeholder="Cuantos dolares contaste"
+                placeholder="Cuántos dólares contaste"
                 className="mt-2 w-full rounded-lg border border-exito-300 px-3 py-2 text-sm"
               />
             </div>
@@ -430,17 +439,36 @@ export default function Caja() {
 
           {resultado && (
             <div
-              className={`mt-4 rounded-xl p-3 text-sm ${
-                resultado.diferencia === 0
+              // Las DOS gavetas cuadran, o no cuadra el cierre. Antes solo se
+              // avisaba de los bolivares: un faltante de dolares se cerraba
+              // en silencio, como si contar bien esa gaveta no importara.
+              className={`mt-4 rounded-xl p-3 text-sm space-y-1 ${
+                resultado.diferencia === 0 && resultado.divisas_diferencia === 0
                   ? 'bg-exito-50 text-exito-800'
                   : 'bg-aviso-50 text-aviso-800'
               }`}
             >
-              {resultado.diferencia === 0 && 'Cuadra exacto. Buen cierre.'}
-              {resultado.diferencia > 0 &&
-                `Sobran $${resultado.diferencia.toFixed(2)} respecto a lo esperado.`}
-              {resultado.diferencia < 0 &&
-                `Faltan $${Math.abs(resultado.diferencia).toFixed(2)} respecto a lo esperado.`}
+              <p className="font-medium">
+                {resultado.diferencia === 0 && resultado.divisas_diferencia === 0
+                  ? 'Concilia: las dos gavetas cuadran exacto.'
+                  : 'No concilia:'}
+              </p>
+              <p>
+                Bolívares:{' '}
+                {resultado.diferencia === 0
+                  ? 'cuadra exacto.'
+                  : resultado.diferencia > 0
+                    ? `sobran $${resultado.diferencia.toFixed(2)}.`
+                    : `faltan $${Math.abs(resultado.diferencia).toFixed(2)}.`}
+              </p>
+              <p>
+                Dólares:{' '}
+                {resultado.divisas_diferencia === 0
+                  ? 'cuadra exacto.'
+                  : resultado.divisas_diferencia > 0
+                    ? `sobran $${resultado.divisas_diferencia.toFixed(2)}.`
+                    : `faltan $${Math.abs(resultado.divisas_diferencia).toFixed(2)}.`}
+              </p>
             </div>
           )}
         </div>
@@ -483,7 +511,7 @@ export default function Caja() {
               </div>
             ))}
             {gastos.length === 0 && (
-              <p className="text-neutral-400 text-sm">Sin gastos en este periodo.</p>
+              <p className="text-neutral-400 text-sm">Sin gastos en este período.</p>
             )}
           </div>
 
@@ -509,7 +537,7 @@ export default function Caja() {
               value={gastoMetodo}
               onChange={(e) => setGastoMetodo(e.target.value)}
               className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-              title="De donde salio la plata"
+              title="De dónde salió la plata"
             >
               {METODOS_GASTO.map((m) => (
                 <option key={m} value={m}>
@@ -568,7 +596,7 @@ export default function Caja() {
               </div>
             ))}
             {retiros.length === 0 && (
-              <p className="text-neutral-400 text-sm">Sin retiros en este periodo.</p>
+              <p className="text-neutral-400 text-sm">Sin retiros en este período.</p>
             )}
           </div>
         </div>
@@ -588,7 +616,7 @@ export default function Caja() {
                 <div>
                   <div className="font-medium text-acento-900">Propinas por entregar</div>
                   <div className="text-xs text-acento-700">
-                    Esta en la gaveta pero es del empleado, no ingreso tuyo.
+                    Está en la gaveta pero es del empleado, no ingreso tuyo.
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -607,7 +635,7 @@ export default function Caja() {
             {fiado.length > 0 && (
               <div className="rounded-xl bg-aviso-50 border border-aviso-200 p-3">
                 <div className="flex justify-between font-medium text-aviso-900">
-                  <span>Fiado por cobrar</span>
+                  <span>A crédito por cobrar</span>
                   <span className="tabular-nums">
                     ${(resumen?.fiado_por_cobrar ?? 0).toFixed(2)}
                   </span>
@@ -621,7 +649,7 @@ export default function Caja() {
                       <span className="truncate">
                         {f.cliente}
                         <span className="ml-1 text-xs text-aviso-700">
-                          #{f.numero} · hace {f.dias} dia(s)
+                          #{f.numero} · hace {f.dias} día(s)
                           {f.abonado > 0 && ` · abonó $${f.abonado.toFixed(2)} de $${f.original.toFixed(2)}`}
                         </span>
                       </span>

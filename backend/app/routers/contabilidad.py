@@ -73,7 +73,7 @@ def listar_asientos(limite: int = 100, rango: Rango = Depends(), db: Session = D
 @router.post("/asientos", response_model=schemas.AsientoContable)
 def crear_asiento_manual(body: schemas.AsientoCreate, db: Session = Depends(get_db)):
     if len(body.lineas) < 2:
-        raise HTTPException(status_code=400, detail="Un asiento necesita al menos 2 lineas")
+        raise HTTPException(status_code=400, detail="Un asiento necesita al menos 2 líneas")
 
     lineas = []
     for linea in body.lineas:
@@ -100,7 +100,7 @@ def eliminar_asiento(asiento_id: int, db: Session = Depends(get_db)):
     if asiento.origen != "manual":
         raise HTTPException(
             status_code=409,
-            detail="Este asiento lo genero el sistema automaticamente. Borralo desde donde se origino (la venta, el gasto...).",
+            detail="Este asiento lo generó el sistema automáticamente. Bórralo desde donde se originó (la venta, el gasto...).",
         )
     try:
         contabilidad.asegurar_ejercicio_abierto(db, asiento.fecha, "ese asiento")
@@ -277,7 +277,7 @@ def actualizar_activo(
         if body.vida_util_meses < ya:
             raise HTTPException(
                 status_code=409,
-                detail=f"Ya se depreciaron {ya} meses de este bien: la vida util no puede ser menor.",
+                detail=f"Ya se depreciaron {ya} meses de este bien: la vida útil no puede ser menor.",
             )
         activo.vida_util_meses = body.vida_util_meses
     db.commit()
@@ -321,7 +321,7 @@ def reactivar_activo(activo_id: int, db: Session = Depends(get_db)):
     if not activo:
         raise HTTPException(status_code=404, detail="Activo no encontrado")
     if not activo.dado_de_baja:
-        raise HTTPException(status_code=409, detail="Este activo no esta dado de baja")
+        raise HTTPException(status_code=409, detail="Este activo no está dado de baja")
 
     # Los asientos de depreciacion siguen vivos (la baja no los borro, les hizo
     # un contra-asiento aparte), asi que la acumulada se lee igual que siempre.
@@ -343,7 +343,7 @@ def cerrar_ejercicio(body: schemas.CerrarEjercicioRequest, db: Session = Depends
     if body.anio >= hoy_.year:
         raise HTTPException(
             status_code=400,
-            detail=f"El {body.anio} todavia no termina: cerrarlo fijaria un resultado que aun puede cambiar.",
+            detail=f"El {body.anio} todavía no termina: cerrarlo fijaría un resultado que aún puede cambiar.",
         )
     resultado = contabilidad.cerrar_ejercicio(db, body.anio)
     if not resultado["ok"]:
@@ -376,7 +376,7 @@ def registrar_activo_existente(body: schemas.ActivoExistenteCreate, db: Session 
     if body.valor <= 0:
         raise HTTPException(status_code=400, detail="El valor debe ser mayor a cero")
     if body.vida_util_meses <= 0:
-        raise HTTPException(status_code=400, detail="La vida util debe ser mayor a cero")
+        raise HTTPException(status_code=400, detail="La vida útil debe ser mayor a cero")
 
     activo = models.ActivoFijo(
         nombre=body.nombre,

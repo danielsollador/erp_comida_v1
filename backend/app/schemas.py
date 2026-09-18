@@ -125,6 +125,10 @@ class IngredienteBase(BaseModel):
     # False = archivado: sigue existiendo (recetas, historial) pero no se lista
     # para comprar ni entra en las sugerencias.
     activo: bool = True
+    # Exento de IVA (la mayoria de alimentos basicos en Venezuela lo son). Del
+    # insumo, no de la factura: la harina es exenta la compre a quien la
+    # compre.
+    exento: bool = False
 
 
 class IngredienteCreate(IngredienteBase):
@@ -410,6 +414,10 @@ class PagoInput(BaseModel):
     # el vuelto en bolivares mueve dos cajas distintas).
     recibido: Optional[float] = None
     vuelto_metodo: Optional[str] = None
+    # Numero de confirmacion: del pago movil, el ticket del punto, el
+    # comprobante del Zelle. Se exige para los metodos que de verdad tienen
+    # uno (ver contabilidad.METODOS_CON_REFERENCIA); en efectivo se ignora.
+    referencia: Optional[str] = None
 
 
 class Pago(BaseModel):
@@ -418,6 +426,7 @@ class Pago(BaseModel):
     recibido: Optional[float] = None
     vuelto_metodo: Optional[str] = None
     vuelto_monto: float = 0
+    referencia: str = ""
 
     class Config:
         from_attributes = True
@@ -518,6 +527,9 @@ class Pedido(BaseModel):
 
 class CobrarRequest(BaseModel):
     metodo_pago: str
+    # Solo aplica cuando NO se manda `pagos` (un solo metodo para todo el
+    # pedido). Con pagos partidos, cada uno trae la suya.
+    referencia: Optional[str] = None
     # Pago partido entre varias formas. Si no viene, se asume que todo el
     # pedido se pago con `metodo_pago`.
     pagos: Optional[List[PagoInput]] = None
@@ -1119,10 +1131,30 @@ class LineaFactura(BaseModel):
         from_attributes = True
 
 
+class ProveedorCreate(BaseModel):
+    nombre: str
+    rif: Optional[str] = None
+    telefono: str = ""
+    direccion: str = ""
+    contacto: str = ""
+    nota: str = ""
+
+
+class Proveedor(ProveedorCreate):
+    id: int
+    activo: bool = True
+
+    class Config:
+        from_attributes = True
+
+
 class FacturaCompraBase(BaseModel):
     numero_factura: str
     proveedor_nombre: str
-    proveedor_rif: Optional[str] = None
+    # Obligatorio para el Libro de Compras: se valida el formato en el router
+    # (letra + 8/9 digitos), no aca, porque el mensaje de error necesita decir
+    # exactamente que formato se espera.
+    proveedor_rif: str
     categoria: str = "Insumos"  # Insumos|Servicios|Activos|Otros
     forma_pago: str = "Efectivo"  # Efectivo|Banco|Credito
     descripcion: str = ""

@@ -87,7 +87,7 @@ def test_un_dia_completo_deja_los_libros_cuadrados(client, libros, variante, ins
     # Venta B: facturada y mixta, pago en divisas con vuelto en bolivares.
     vender(client, variante, 1, facturado=True, numero_factura="00-1",
            pagos=[{"metodo": "Efectivo $", "monto": 3.0, "recibido": 5.0, "vuelto_metodo": "Efectivo Bs"},
-                  {"metodo": "Pago movil", "monto": 2.0}])
+                  {"metodo": "Pago movil", "monto": 2.0, "referencia": "REF-2"}])
     # Venta C: facturada, con descuento y propina.
     vender(client, variante, 3, facturado=True, numero_factura="00-2", descuento=1.0,
            motivo_descuento="cliente frecuente", propina=2.0,
@@ -109,7 +109,7 @@ def test_un_dia_completo_deja_los_libros_cuadrados(client, libros, variante, ins
     assert client.post(f"/api/inventario/ingredientes/{insumo.id}/comprar",
                        json={"cantidad": 5, "costo_total": 45}).status_code == 200
     fac = client.post("/api/compras/facturas", json={
-        "numero_factura": "F-1", "proveedor_nombre": "Carnes SA", "categoria": "Insumos",
+        "numero_factura": "F-1", "proveedor_nombre": "Carnes SA", "proveedor_rif": "J123456789", "categoria": "Insumos",
         "forma_pago": "Credito", "iva": 2.88,
         "items": [{"ingrediente_id": insumo.id, "cantidad": 2, "costo_unitario": 9.0}],
     })
@@ -184,7 +184,7 @@ def test_devolver_una_venta_facturada_con_descuento_y_propina(client, libros, va
     db = libros
     banco_antes = saldo(db, "1020")
     p = vender(client, variante, 2, facturado=True, numero_factura="00-9", descuento=1.0, propina=0.5,
-               pagos=[{"metodo": "Pago movil", "monto": 9.5}])
+               pagos=[{"metodo": "Pago movil", "monto": 9.5, "referencia": "REF-3"}])
     r = client.post(f"/api/pedidos/{p['id']}/devolver", json={"recuperable": False, "nota_credito": "NC-1"})
     assert r.status_code == 200, r.text
     for cuenta in ("4010", "4020", "2030", "2040"):
@@ -261,17 +261,21 @@ def test_las_divisas_tambien_pagan(client, libros, variante, insumo):
     r = client.post("/api/caja/retiros", json={"monto": 3, "metodo_pago": "Efectivo $"})
     assert r.status_code == 200, r.text
     fac = client.post("/api/compras/facturas", json={
-        "numero_factura": "F-2", "proveedor_nombre": "Carnes SA", "categoria": "Insumos",
-        "forma_pago": "Credito", "iva": 0,
+        "numero_factura": "F-2", "proveedor_nombre": "Carnes SA", "proveedor_rif": "J123456789", "categoria": "Insumos",
+        # El IVA de una factura con renglones ya no lo dice el cliente: lo
+        # calcula el sistema sobre lo que de verdad esta gravado (0.64 =
+        # 16% de $4, porque este insumo no esta marcado exento).
+        "forma_pago": "Credito",
         "items": [{"ingrediente_id": insumo.id, "cantidad": 1, "costo_unitario": 4.0}],
     }).json()
+    assert fac["iva"] == 0.64
     r = client.post(f"/api/compras/facturas/{fac['id']}/pagar", json={"forma_pago": "Efectivo $"})
     assert r.status_code == 200, r.text
     r = client.post(f"/api/inventario/ingredientes/{insumo.id}/comprar",
                     json={"cantidad": 1, "costo_total": 5, "metodo_pago": "Efectivo $"})
     assert r.status_code == 200, r.text
 
-    assert saldo(db, "1011") == 20 + 20 - 2 - 3 - 4 - 5  # aporte + venta - lo que salio
+    assert saldo(db, "1011") == 20 + 20 - 2 - 3 - 4.64 - 5  # aporte + venta - lo que salio
     assert saldo(db, "1010") == bs_antes, "los bolivares no se tocaron"
     assert gaveta(client, "1011")["esperado"] == saldo(db, "1011")
     libros_cuadrados(client, db)
@@ -335,7 +339,7 @@ def test_lo_que_se_asienta_con_fecha_de_un_año_cerrado_cae_en_el_abierto(client
     resultado_2025 = client.get("/api/contabilidad/estado-resultados?anio=2025&mes=6").json()["utilidad_neta"]
 
     fac = client.post("/api/compras/facturas", json={
-        "numero_factura": "F-viejo", "proveedor_nombre": "Gas SA", "categoria": "Servicios",
+        "numero_factura": "F-viejo", "proveedor_nombre": "Gas SA", "proveedor_rif": "J123456789", "categoria": "Servicios",
         "forma_pago": "Banco", "iva": 0, "base_imponible": 12.0, "fecha": "2025-05-10T10:00:00",
     })
     assert fac.status_code == 200, fac.text
@@ -354,7 +358,7 @@ def test_borrar_la_factura_de_un_activo_no_deja_el_equipo_depreciandose(client, 
     asiento y dejaba la nevera viva, depreciandose contra nada."""
     db = libros
     fac = client.post("/api/compras/facturas", json={
-        "numero_factura": "F-nev", "proveedor_nombre": "Frio SA", "categoria": "Activos",
+        "numero_factura": "F-nev", "proveedor_nombre": "Frio SA", "proveedor_rif": "J123456789", "categoria": "Activos",
         "forma_pago": "Banco", "iva": 0, "base_imponible": 600.0, "descripcion": "Nevera",
         "vida_util_meses": 60,
     }).json()

@@ -115,7 +115,7 @@ export default function Respaldos() {
             esconderlo detras de un "listo". */}
         {(hecho || estado?.restauracion_reciente) && (
           <div className="rounded-2xl border border-acento-200 bg-acento-50 p-4">
-            <h2 className="font-semibold text-acento-900">Se restauro un respaldo</h2>
+            <h2 className="font-semibold text-acento-900">Se restauró un respaldo</h2>
             {(() => {
               const r = hecho ?? estado!.restauracion_reciente!
               return (
@@ -125,13 +125,13 @@ export default function Respaldos() {
                   </p>
                   <p className="text-sm text-acento-900 mt-1">
                     {r.pedidos_perdidos == null
-                      ? 'No se pudo medir cuanto se perdio.'
+                      ? 'No se pudo medir cuánto se perdió.'
                       : `Se perdieron ${r.pedidos_perdidos} pedido(s) por $${(r.monto_perdido ?? 0).toFixed(2)}.`}{' '}
-                    Vuelve a cargar las ventas que se hicieron despues, o el cierre de caja de
+                    Vuelve a cargar las ventas que se hicieron después, o el cierre de caja de
                     hoy va a dar un faltante que no es faltante.
                   </p>
                   <p className="text-xs text-acento-700 mt-1">
-                    La base que habia antes quedo guardada como {r.respaldo_previo}.
+                    La base que había antes quedó guardada como {r.respaldo_previo}.
                   </p>
                 </>
               )
@@ -155,8 +155,8 @@ export default function Respaldos() {
           <h2 className="font-semibold mb-1">Respaldo de la base de datos</h2>
           <p className="text-sm text-neutral-700">
             {ultimo
-              ? `Ultimo respaldo hace ${horasDesdeUltimo} hora(s), automatico.`
-              : 'Todavia no hay respaldos generados.'}
+              ? `Último respaldo hace ${horasDesdeUltimo} hora(s), automático.`
+              : 'Todavía no hay respaldos generados.'}
           </p>
           {estado?.dia_mas_viejo && (
             <p className="text-sm text-neutral-700">
@@ -165,9 +165,9 @@ export default function Respaldos() {
             </p>
           )}
           <p className="text-xs text-neutral-500 mt-1">
-            El sistema guarda una copia sola cada pocas horas y conserva la ultima de cada dia
-            del ultimo mes. Eso protege contra corrupcion o borrado accidental en esta misma
-            maquina.
+            El sistema guarda una copia sola cada pocas horas y conserva la última de cada día
+            del último mes. Eso protege contra corrupción o borrado accidental en esta misma
+            máquina.
           </p>
         </div>
 
@@ -184,13 +184,13 @@ export default function Respaldos() {
               ? 'Nunca se ha bajado un respaldo de aqui.'
               : estado.dias_sin_descargar === 0
                 ? 'Bajaste una copia hoy.'
-                : `Hace ${estado.dias_sin_descargar} dia(s) que no bajas una copia.`}
+                : `Hace ${estado.dias_sin_descargar} día(s) que no bajas una copia.`}
           </p>
           <p className="text-xs text-neutral-500 mt-1">
             Si la laptop se pierde, se moja o se la roban, los respaldos de arriba se pierden
-            con ella. Baja el ultimo respaldo una vez por semana y guardalo en un USB, tu
-            correo o tu telefono.
-            {estado?.copia_externa && ` Ademas se copia solo a ${estado.copia_externa}.`}
+            con ella. Baja el último respaldo una vez por semana y guárdalo en un USB, tu
+            correo o tu teléfono.
+            {estado?.copia_externa && ` Además se copia solo a ${estado.copia_externa}.`}
           </p>
         </div>
 
@@ -207,7 +207,7 @@ export default function Respaldos() {
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="fecha">Fecha</Th>
-                <Th clave="tamano" alinear="derecha">Tamano</Th>
+                <Th clave="tamano" alinear="derecha">Tamaño</Th>
                 <Th />
               </tr>
             </thead>
@@ -236,7 +236,7 @@ export default function Respaldos() {
               {respaldos.length === 0 && (
                 <tr>
                   <td colSpan={3} className="p-4 text-center text-neutral-400">
-                    Sin respaldos todavia.
+                    Sin respaldos todavía.
                   </td>
                 </tr>
               )}
@@ -249,8 +249,8 @@ export default function Respaldos() {
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-1">Restaurar desde un archivo</h2>
           <p className="text-xs text-neutral-500 mb-3">
-            Si esta maquina es nueva o se formateo, busca aqui el respaldo que tengas guardado
-            en el USB, el correo o el telefono.
+            Si esta máquina es nueva o se formateó, busca aquí el respaldo que tengas guardado
+            en el USB, el correo o el teléfono.
           </p>
           <input
             ref={archivoRef}
@@ -300,7 +300,7 @@ export default function Respaldos() {
           <div className="mt-4 rounded-xl bg-aviso-50 border border-aviso-200 p-3 text-sm">
             {candidato.previo.pedidos_que_se_pierden == null ? (
               <p className="font-medium text-aviso-900">
-                No se pudo calcular cuanto se pierde. Puede ser mucho: revisa las ventas de
+                No se pudo calcular cuánto se pierde. Puede ser mucho: revisa las ventas de
                 hoy antes de restaurar.
               </p>
             ) : candidato.previo.pedidos_que_se_pierden > 0 ? (
@@ -310,11 +310,11 @@ export default function Respaldos() {
                   {(candidato.previo.monto_que_se_pierde ?? 0).toFixed(2)}.
                 </p>
                 <p className="text-aviso-800 mt-1">
-                  Es todo lo cobrado despues de{' '}
+                  Es todo lo cobrado después de{' '}
                   {candidato.previo.corte
                     ? new Date(candidato.previo.corte).toLocaleString('es-VE')
                     : 'el inicio'}
-                  . Tambien se pierden las compras, gastos y mermas de ese rato.
+                  . También se pierden las compras, gastos y mermas de ese rato.
                 </p>
               </>
             ) : (

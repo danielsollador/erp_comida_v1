@@ -62,6 +62,8 @@ export type Ingrediente = {
   tipo: 'insumo' | 'reventa'
   /** false = archivado: no se lista para comprar ni entra en sugerencias. */
   activo: boolean
+  /** Exento de IVA (la mayoria de alimentos basicos en Venezuela lo son). */
+  exento: boolean
   costo_efectivo: number
   /** Ultimo precio pagado: lo que cuesta REPONERLO hoy. null = nunca comprado. */
   costo_reposicion: number | null
@@ -73,7 +75,15 @@ export type Ingrediente = {
 /** Lo que se escribe de un insumo (el resto lo calcula el sistema). */
 export type DatosIngrediente = Pick<
   Ingrediente,
-  'nombre' | 'unidad' | 'stock_minimo' | 'stock_objetivo' | 'costo_unitario' | 'rendimiento_pct' | 'tipo' | 'activo'
+  | 'nombre'
+  | 'unidad'
+  | 'stock_minimo'
+  | 'stock_objetivo'
+  | 'costo_unitario'
+  | 'rendimiento_pct'
+  | 'tipo'
+  | 'activo'
+  | 'exento'
 > & {
   /** Solo al crear: lo que hay hoy. Despues el stock se mueve con compras, mermas y conteos. */
   stock_actual?: number
@@ -319,6 +329,8 @@ export type Pedido = {
     recibido: number | null
     vuelto_metodo: string | null
     vuelto_monto: number
+    /** Numero de confirmacion del pago movil, ticket o comprobante. Vacio en efectivo. */
+    referencia: string
   }[]
   items: PedidoItem[]
 }
@@ -369,7 +381,7 @@ export type Ticket = {
   numero_factura: string | null
   base_imponible: number | null
   iva: number | null
-  pagos: { metodo: string; monto: number; recibido: number | null; vuelto_monto: number }[]
+  pagos: { metodo: string; monto: number; recibido: number | null; vuelto_monto: number; referencia: string }[]
   cliente: string
   operador: string
   punto_venta: string
@@ -700,6 +712,17 @@ export type FacturaCompra = {
 
 export type ConfiguracionFiscal = {
   tasa_iva: number
+}
+
+export type Proveedor = {
+  id: number
+  nombre: string
+  rif: string | null
+  telefono: string
+  direccion: string
+  contacto: string
+  nota: string
+  activo: boolean
 }
 
 export type FilaLibroVentas = {

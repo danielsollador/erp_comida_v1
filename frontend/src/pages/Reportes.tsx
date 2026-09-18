@@ -102,7 +102,7 @@ export default function Reportes() {
                 valor={dinero(datos.ticket_promedio)}
                 nota={
                   Math.abs(datos.ticket_mediano - datos.ticket_promedio) > 0.01
-                    ? `el cliente tipico gasto ${dinero(datos.ticket_mediano)}`
+                    ? `el cliente típico gastó ${dinero(datos.ticket_mediano)}`
                     : undefined
                 }
               />
@@ -125,9 +125,9 @@ export default function Reportes() {
             )}
 
             <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-              <h2 className="font-semibold mb-1">De donde sale la ganancia</h2>
+              <h2 className="font-semibold mb-1">De dónde sale la ganancia</h2>
               <p className="text-xs text-neutral-500 mb-3">
-                Los mismos numeros del Estado de Resultados en Contabilidad.
+                Los mismos números del Estado de Resultados en Contabilidad.
               </p>
               <Linea dinero={dinero} etiqueta="Ventas cobradas" monto={datos.ventas} />
               {datos.iva_cobrado > 0 && (
@@ -200,7 +200,7 @@ export default function Reportes() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-2">Como te pagaron</h2>
+                <h2 className="font-semibold mb-2">Cómo te pagaron</h2>
                 {Object.entries(datos.por_metodo_pago).map(([metodo, monto]) => (
                   <div key={metodo} className="flex justify-between text-sm py-1">
                     <span className="text-neutral-600">{metodo}</span>
@@ -208,14 +208,14 @@ export default function Reportes() {
                   </div>
                 ))}
                 {Object.keys(datos.por_metodo_pago).length === 0 && (
-                  <p className="text-neutral-400 text-sm">Sin cobros en el periodo.</p>
+                  <p className="text-neutral-400 text-sm">Sin cobros en el período.</p>
                 )}
               </div>
               <div className="bg-white rounded-2xl border border-neutral-200 p-4">
                 <h2 className="font-semibold mb-2">Pedidos anulados</h2>
                 <p className="text-3xl font-bold tabular-nums">{datos.pedidos_anulados}</p>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Si este numero crece, revisa que esta fallando al tomar los pedidos.
+                  Si este número crece, revisa qué está fallando al tomar los pedidos.
                 </p>
               </div>
             </div>
@@ -226,7 +226,7 @@ export default function Reportes() {
               <>
             {datos.top_productos.length > 0 && (
               <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-3">Que se vendio</h2>
+                <h2 className="font-semibold mb-3">Qué se vendió</h2>
                 <Tabla orden={ordenProductos} glosario="productos">
                 <table className="w-full text-sm">
                   <thead className="text-neutral-500 text-xs uppercase">
@@ -379,10 +379,10 @@ function SeccionCombos({
   if (!combos.suficientes_datos) {
     return (
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-        <h2 className="font-semibold mb-1">Que se vende junto</h2>
+        <h2 className="font-semibold mb-1">Qué se vende junto</h2>
         <p className="text-sm text-neutral-500">
-          Llevas {combos.pedidos_analizados} pedido(s) cobrados en este periodo. Con unos cuantos
-          mas el sistema puede decirte que productos salen juntos y que ofrecer en caja.
+          Llevas {combos.pedidos_analizados} pedido(s) cobrados en este período. Con unos cuantos
+          más el sistema puede decirte qué productos salen juntos y qué ofrecer en caja.
         </p>
       </div>
     )
@@ -394,10 +394,10 @@ function SeccionCombos({
   return (
     <div className="space-y-3">
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-        <h2 className="font-semibold mb-1">Que se vende junto</h2>
+        <h2 className="font-semibold mb-1">Qué se vende junto</h2>
         <p className="text-xs text-neutral-500 mb-3">
           Sobre {combos.pedidos_analizados} pedidos cobrados. La confianza es: de cada 100 pedidos
-          con el primer producto, cuantos llevaron tambien el segundo.
+          con el primer producto, cuántos llevaron también el segundo.
         </p>
 
         {combos.pares.length > 0 ? (
@@ -405,7 +405,7 @@ function SeccionCombos({
             <table className="w-full text-sm">
               <thead className="text-neutral-500 text-xs uppercase">
                 <tr>
-                  <Th clave="combinacion" className="pb-2 px-0">Combinacion</Th>
+                  <Th clave="combinacion" className="pb-2 px-0">Combinación</Th>
                   <Th clave="veces" alinear="derecha" className="pb-2 px-0">Veces</Th>
                   <Th clave="confianza" alinear="derecha" className="pb-2 px-0">Confianza</Th>
                 </tr>
@@ -429,14 +429,14 @@ function SeccionCombos({
           </Tabla>
         ) : (
           <p className="text-neutral-400 text-sm">
-            Todavia no hay un par que se repita lo suficiente como para llamarlo patron.
+            Todavía no hay un par que se repita lo suficiente como para llamarlo patrón.
           </p>
         )}
       </div>
 
       {acomp && (
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <h2 className="font-semibold mb-3">Cuantos se van sin bebida</h2>
+          <h2 className="font-semibold mb-3">Cuántos se van sin bebida</h2>
           <div className="flex h-3 rounded-full overflow-hidden bg-neutral-100 mb-2">
             <div
               className="bg-exito-500"
@@ -463,11 +463,11 @@ function SeccionCombos({
               <p className="text-sm text-neutral-700">
                 <span className="font-semibold">{oport.pedidos_sin_bebida} pedidos</span> salieron
                 sin nada de tomar. Si el cajero lograra convencer a{' '}
-                {oport.conversion_supuesta_pct} de cada 100, serian{' '}
+                {oport.conversion_supuesta_pct} de cada 100, serían{' '}
                 <span className="font-semibold text-exito-700">
                   {fmt(oport.venta_potencial)}
                 </span>{' '}
-                mas de venta y {fmt(oport.ganancia_potencial)} de ganancia en este periodo.
+                más de venta y {fmt(oport.ganancia_potencial)} de ganancia en este período.
               </p>
               <p className="text-xs text-neutral-400 mt-1">
                 El punto de venta ya sugiere la bebida sola mientras se arma la comanda.

@@ -136,7 +136,7 @@ def activo(client):
     client.post(
         "/api/compras/facturas",
         json={
-            "numero_factura": "A-1", "proveedor_nombre": "X", "categoria": "Activos",
+            "numero_factura": "A-1", "proveedor_nombre": "X", "proveedor_rif": "J123456789", "categoria": "Activos",
             "forma_pago": "Efectivo", "base_imponible": 600, "iva": 0,
             "descripcion": "Nevera", "vida_util_meses": 60, "items": [],
         },

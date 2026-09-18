@@ -64,7 +64,7 @@ def resolver(db: Session, operador_id: Optional[int]) -> Optional[models.Operado
     if operador is None:
         raise HTTPException(status_code=404, detail="Ese operador no existe")
     if not operador.activo:
-        raise HTTPException(status_code=409, detail=f"{operador.nombre} ya no esta activo")
+        raise HTTPException(status_code=409, detail=f"{operador.nombre} ya no está activo")
     return operador
 
 
@@ -79,7 +79,7 @@ def listar(incluir_inactivos: bool = False, db: Session = Depends(get_db)):
 @router.post("", response_model=schemas.Operador)
 def crear(body: schemas.OperadorCreate, db: Session = Depends(get_db)):
     if not body.nombre.strip():
-        raise HTTPException(status_code=400, detail="El nombre no puede estar vacio")
+        raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
     operador = models.Operador(
         nombre=body.nombre.strip(), rol=body.rol, punto_venta=body.punto_venta
     )
@@ -139,7 +139,7 @@ def listar_puntos(db: Session = Depends(get_db)):
 @puntos.post("", response_model=schemas.PuntoVenta)
 def crear_punto(body: schemas.PuntoVentaCreate, db: Session = Depends(get_db)):
     if not body.nombre.strip():
-        raise HTTPException(status_code=400, detail="El nombre no puede estar vacio")
+        raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
     punto = models.PuntoVenta(nombre=body.nombre.strip())
     db.add(punto)
     db.commit()

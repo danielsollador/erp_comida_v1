@@ -430,7 +430,7 @@ def conteo_fisico(body: schemas.ConteoRequest, request: Request, db: Session = D
     no se toca. Todo o nada: si un id no existe, ningun stock cambia.
     """
     if not body.items:
-        raise HTTPException(status_code=400, detail="No se conto ningun insumo")
+        raise HTTPException(status_code=400, detail="No se contó ningún insumo")
     ids = [i.ingrediente_id for i in body.items]
     if len(set(ids)) != len(ids):
         raise HTTPException(status_code=400, detail="Un insumo aparece dos veces en el conteo")

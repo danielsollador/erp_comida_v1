@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from .. import contabilidad, costeo, kardex, models, schemas
+from .. import contabilidad, costeo, impuestos, kardex, models, schemas
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
@@ -69,6 +69,16 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
     if factura.iva < 0:
         raise HTTPException(status_code=400, detail="El IVA no puede ser negativo")
 
+    # Sin RIF el Libro de Compras queda incompleto para el SENIAT. No se
+    # valida el digito verificador -eso lo hace el SENIAT, no este ERP- pero
+    # "V123" o dejarlo en blanco ya no puede pasar.
+    if not impuestos.rif_valido(factura.proveedor_rif or ""):
+        raise HTTPException(
+            status_code=400,
+            detail="El RIF del proveedor es obligatorio: letra (J/G/V/E/P/C) + 8 o 9 dígitos.",
+        )
+    factura_rif = impuestos.normalizar_rif(factura.proveedor_rif)
+
     if factura.items:
         # Con renglones: la base la calcula el sistema sumando lo que de
         # verdad se compro, no lo que alguien tipeo aparte - evita que un
@@ -84,24 +94,37 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             if item.ingrediente_id not in ingredientes:
                 raise HTTPException(status_code=404, detail=f"Ingrediente {item.ingrediente_id} no existe")
             if item.cantidad <= 0:
-                raise HTTPException(status_code=400, detail="La cantidad de cada renglon debe ser mayor a cero")
+                raise HTTPException(status_code=400, detail="La cantidad de cada renglón debe ser mayor a cero")
         base_imponible = round(sum(it.cantidad * it.costo_unitario for it in factura.items), 2)
+        # El IVA se calcula aca, no se confia en lo que mando el cliente: solo
+        # asi el "exento" del insumo tiene efecto real. Sin esto, marcar la
+        # harina como exenta no cambiaba un centavo del IVA de la factura.
+        base_gravada = round(
+            sum(
+                it.cantidad * it.costo_unitario
+                for it in factura.items
+                if not ingredientes[it.ingrediente_id].exento
+            ),
+            2,
+        )
+        iva_calculado = round(base_gravada * impuestos.tasa_iva(db) / 100, 2)
     else:
         if not factura.base_imponible or factura.base_imponible <= 0:
             raise HTTPException(status_code=400, detail="La base imponible debe ser mayor a cero")
         base_imponible = factura.base_imponible
+        iva_calculado = factura.iva
 
     es_credito = factura.forma_pago == "Credito"
     db_factura = models.FacturaCompra(
         numero_factura=factura.numero_factura,
         proveedor_nombre=factura.proveedor_nombre,
-        proveedor_rif=factura.proveedor_rif,
+        proveedor_rif=factura_rif,
         fecha=factura.fecha or ahora(),
         categoria=factura.categoria,
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
         base_imponible=base_imponible,
-        iva=factura.iva,
+        iva=iva_calculado,
         # Efectivo/Banco: la plata ya salio al cargarla. Credito: queda
         # pendiente hasta que se registre el pago aparte.
         pagada=not es_credito,
@@ -162,9 +185,9 @@ def pagar_factura(factura_id: int, pago: schemas.PagoFacturaRequest, db: Session
     if not db_factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
     if db_factura.forma_pago != "Credito":
-        raise HTTPException(status_code=400, detail="Esta factura no quedo a credito")
+        raise HTTPException(status_code=400, detail="Esta factura no quedó a crédito")
     if db_factura.pagada:
-        raise HTTPException(status_code=409, detail="Esta factura ya esta pagada")
+        raise HTTPException(status_code=409, detail="Esta factura ya está pagada")
     if not contabilidad.metodo_de_pago_valido(pago.forma_pago):
         raise HTTPException(
             status_code=400,
@@ -221,7 +244,7 @@ def crear_nota_credito(
             base, lineas = _base_de_descuento(body), []
 
         if base <= 0:
-            raise HTTPException(status_code=400, detail="La nota de credito debe ser mayor a cero")
+            raise HTTPException(status_code=400, detail="La nota de crédito debe ser mayor a cero")
 
         disponible = round(factura.base_neta, 2)
         if base > disponible + 0.01:
@@ -327,7 +350,7 @@ def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
     if not body.items:
         raise HTTPException(
             status_code=400,
-            detail="Una devolucion necesita decir que insumos vuelven y cuanto de cada uno",
+            detail="Una devolución necesita decir qué insumos vuelven y cuánto de cada uno",
         )
 
     por_ingrediente = {i.ingrediente_id: i for i in factura.items}
@@ -345,7 +368,7 @@ def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
         if linea is None:
             raise HTTPException(
                 status_code=400,
-                detail=f"El insumo {pedido_item.ingrediente_id} no esta en esa factura",
+                detail=f"El insumo {pedido_item.ingrediente_id} no está en esa factura",
             )
         if pedido_item.cantidad <= 0:
             raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
@@ -454,7 +477,7 @@ def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
         # igual que ya hacemos con un pedido cobrado.
         raise HTTPException(
             status_code=409,
-            detail="Esta factura ya actualizo el stock de insumos y no se puede borrar. "
+            detail="Esta factura ya actualizó el stock de insumos y no se puede borrar. "
             "Si fue un error, registra un ajuste de inventario para corregir el stock.",
         )
     if db_factura.forma_pago == "Credito" and db_factura.pagada:
@@ -477,7 +500,7 @@ def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
         if contabilidad.depreciacion_acumulada(db, activo) > 0:
             raise HTTPException(
                 status_code=409,
-                detail=f"El equipo «{activo.nombre}» que nacio de esta factura ya lleva "
+                detail=f"El equipo «{activo.nombre}» que nació de esta factura ya lleva "
                 f"depreciacion asentada: dalo de baja desde Contabilidad en vez de borrar la factura.",
             )
         db.delete(activo)

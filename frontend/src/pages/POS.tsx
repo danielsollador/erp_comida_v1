@@ -5,6 +5,7 @@ import { Boton, Modal } from '../components/ui'
 import { api, connectWs } from '../lib/api'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { colorCategoria } from '../lib/theme'
+import { etiquetaMetodo } from '../lib/pagos'
 import type {
   Categoria,
   Pedido,
@@ -17,7 +18,20 @@ import type {
 // Las mismas que reconoce la contabilidad; cualquier otra cosa la rechaza el
 // backend en vez de mandarla a Caja por defecto. Bolivares y divisas van
 // separados porque son dos gavetas fisicas distintas y se cuentan aparte.
-const METODOS_PAGO = ['Efectivo Bs', 'Efectivo $', 'Pago movil', 'Tarjeta', 'Transferencia']
+const METODOS_PAGO = [
+  'Efectivo Bs',
+  'Efectivo $',
+  'Pago movil',
+  'Punto de venta',
+  'Tarjeta',
+  'Transferencia',
+  'Zelle',
+]
+// Todo lo que no es un billete deja un numero de confirmacion en alguna
+// parte, y el backend lo exige (ver contabilidad.METODOS_CON_REFERENCIA).
+const METODOS_CON_REFERENCIA = new Set(
+  METODOS_PAGO.filter((m) => !m.startsWith('Efectivo')),
+)
 const METODOS_EFECTIVO = ['Efectivo Bs', 'Efectivo $']
 const CLAVE_PUNTO = 'erp-punto-venta'
 
@@ -28,6 +42,11 @@ export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [categoriaActiva, setCategoriaActiva] = useState<number | null>(null)
   const [carrito, setCarrito] = useState<Carrito>({})
+  // Sin esto, tocar un producto no se sentia como que hizo algo: el carrito
+  // esta al lado o abajo, fuera de la vista, y la cajera termina tocando dos
+  // o tres veces por duda. El numero en la esquina y el salto son la
+  // confirmacion inmediata de que si se agrego.
+  const [recienAgregado, setRecienAgregado] = useState<Set<number>>(new Set())
 
   // Clave de ESTE intento de comanda. Si la comanda se manda y la respuesta
   // se pierde (se cayo la wifi), volver a darle con la misma clave devuelve
@@ -174,6 +193,14 @@ export default function POS() {
       ...c,
       [variante.id]: { producto, variante, cantidad: (c[variante.id]?.cantidad ?? 0) + 1 },
     }))
+    setRecienAgregado((prev) => new Set(prev).add(variante.id))
+    setTimeout(() => {
+      setRecienAgregado((prev) => {
+        const next = new Set(prev)
+        next.delete(variante.id)
+        return next
+      })
+    }, 300)
   }
 
   function agregarSugerencia(sug: Sugerencia) {
@@ -257,7 +284,8 @@ export default function POS() {
 
   async function cobrar(
     metodo: string,
-    pagos?: { metodo: string; monto: number; recibido?: number; vuelto_metodo?: string }[],
+    pagos?: { metodo: string; monto: number; recibido?: number; vuelto_metodo?: string; referencia?: string }[],
+    referencia?: string,
   ) {
     if (!cobrando) return
     setError('')
@@ -268,6 +296,7 @@ export default function POS() {
         propina: Number(propina) || 0,
         cliente,
         punto_venta_id: puntoId,
+        referencia,
       })
       limpiarCobro()
       setUltimaVenta(cobrado)
@@ -278,7 +307,20 @@ export default function POS() {
     refrescarPedidos()
   }
 
-  function confirmarCobro(metodo: string) {
+  async function confirmarCobro(metodo: string) {
+    // Sin esto un reclamo de "pague por pago movil y no me lo cobraron" es la
+    // palabra del cliente contra la del negocio: no hay con que ubicar el
+    // comprobante. El backend lo exige igual; se pregunta antes para no
+    // mandar el cobro y que rebote.
+    let referencia: string | undefined
+    if (METODOS_CON_REFERENCIA.has(metodo)) {
+      const r = await dialogo.pedirTexto({
+        titulo: `Referencia del pago por ${metodo}`,
+        placeholder: 'Número de confirmación, ticket o comprobante',
+      })
+      if (r === null) return
+      referencia = r
+    }
     // Si el cajero anoto con cuanto le pagaron, se manda: sin eso la gaveta no
     // cuadra cuando hubo vuelto, y menos si el vuelto salio en otra moneda.
     const entregado = Number(recibido) || 0
@@ -289,22 +331,45 @@ export default function POS() {
           monto: aCobrar,
           recibido: entregado,
           vuelto_metodo: vueltoEn || metodo,
+          referencia,
         },
       ])
       return
     }
-    cobrar(metodo)
+    cobrar(metodo, undefined, referencia)
   }
 
   // El resto del total va al segundo metodo, calculado acá para que los dos
   // pagos sumen exacto y el backend no lo rechace por centavos.
-  function confirmarCobroMixto(segundoMetodo: string) {
+  async function confirmarCobroMixto(segundoMetodo: string) {
     if (!cobrando) return
     const primero = Number(montoParcial)
     const resto = Math.round((aCobrar - primero) * 100) / 100
+
+    // Cada parte que no sea efectivo pide su propia referencia: son dos
+    // pagos distintos, con dos comprobantes distintos.
+    let refPrimero: string | undefined
+    if (METODOS_CON_REFERENCIA.has(metodoParcial)) {
+      const r = await dialogo.pedirTexto({
+        titulo: `Referencia del pago por ${metodoParcial}`,
+        placeholder: 'Número de confirmación, ticket o comprobante',
+      })
+      if (r === null) return
+      refPrimero = r
+    }
+    let refSegundo: string | undefined
+    if (METODOS_CON_REFERENCIA.has(segundoMetodo)) {
+      const r = await dialogo.pedirTexto({
+        titulo: `Referencia del pago por ${segundoMetodo}`,
+        placeholder: 'Número de confirmación, ticket o comprobante',
+      })
+      if (r === null) return
+      refSegundo = r
+    }
+
     cobrar('Mixto', [
-      { metodo: metodoParcial, monto: primero },
-      { metodo: segundoMetodo, monto: resto },
+      { metodo: metodoParcial, monto: primero, referencia: refPrimero },
+      { metodo: segundoMetodo, monto: resto, referencia: refSegundo },
     ])
   }
 
@@ -332,7 +397,7 @@ export default function POS() {
         </style></head><body>
         <h1>Pedido #${t.numero}</h1>
         <div class="c">${new Date(t.fecha).toLocaleString('es-VE')}</div>
-        ${t.operador ? `<div class="c">Le atendio: ${t.operador}</div>` : ''}
+        ${t.operador ? `<div class="c">Le atendió: ${t.operador}</div>` : ''}
         ${t.punto_venta ? `<div class="c">${t.punto_venta}</div>` : ''}
         <hr>
         ${t.items
@@ -343,7 +408,7 @@ export default function POS() {
         ${t.descuento ? linea('Descuento', `-$${t.descuento.toFixed(2)}`) : ''}
         ${t.propina ? linea('Propina', `$${t.propina.toFixed(2)}`) : ''}
         <div class="l tot"><span>TOTAL</span><span>$${t.a_cobrar.toFixed(2)}</span></div>
-        ${t.total_bs ? linea('En bolivares', fmtBs(t.total_bs)) : ''}
+        ${t.total_bs ? linea('En bolívares', fmtBs(t.total_bs)) : ''}
         ${t.tasa_bcv ? `<div class="c" style="font-size:10px">tasa ${t.tasa_bcv}</div>` : ''}
         ${t.facturado && t.base_imponible != null ? '<hr>' : ''}
         ${t.facturado && t.base_imponible != null ? linea('Base imponible', `$${t.base_imponible.toFixed(2)}`) : ''}
@@ -353,7 +418,8 @@ export default function POS() {
         ${t.pagos
           .map(
             (p) =>
-              linea(p.metodo, `$${p.monto.toFixed(2)}`) +
+              linea(etiquetaMetodo(p.metodo), `$${p.monto.toFixed(2)}`) +
+              (p.referencia ? `<div class="c" style="font-size:10px">ref. ${p.referencia}</div>` : '') +
               (p.vuelto_monto ? linea('Vuelto', `$${p.vuelto_monto.toFixed(2)}`) : ''),
           )
           .join('')}
@@ -369,17 +435,33 @@ export default function POS() {
   }
 
   async function anular(pedido: Pedido) {
-    // Lo que pasa con los insumos depende de esto, asi que se pregunta en vez
-    // de asumir: si la comida ya se hizo, se botó y hay que registrarla como
-    // merma; si no, el stock vuelve al inventario.
+    // El sistema adivina segun si algun item quedo marcado "preparado", pero
+    // es solo una sugerencia: si la cajera marco el item por error, o la
+    // cocina hizo la comida sin tocar la casilla, la adivinanza queda mal y
+    // antes no habia forma de corregirla al anular. Ahora se pregunta.
     const yaHecha = pedido.estado === 'listo' || pedido.items.some((i) => i.preparado)
-    const texto = yaHecha
-      ? 'La cocina ya preparó este pedido: al anularlo la comida se registra como merma.'
-      : 'Los insumos vuelven al inventario.'
-    if (!(await dialogo.confirmar({ titulo: `¿Anular el pedido #${pedido.numero}?`, texto, aceptar: 'Anular', peligro: true }))) return
+    const eleccion = await dialogo.elegir({
+      titulo: `¿Anular el pedido #${pedido.numero}?`,
+      texto: `El sistema cree que ${yaHecha ? 'la cocina ya lo preparó' : 'todavía no se preparó'}. Confirma o corrige:`,
+      opciones: [
+        {
+          valor: 'perdida',
+          texto: 'Se preparó: es pérdida',
+          detalle: 'La comida se botó. Queda como merma y no vuelve al inventario.',
+          peligro: !yaHecha, // si el sistema NO lo esperaba, resaltar que es la opcion inusual
+        },
+        {
+          valor: 'inventario',
+          texto: 'No se preparó: vuelve al inventario',
+          detalle: 'Los insumos que se iban a usar se devuelven al stock.',
+          peligro: yaHecha,
+        },
+      ],
+    })
+    if (!eleccion) return
     setError('')
     try {
-      await api.anularPedido(pedido.id, yaHecha)
+      await api.anularPedido(pedido.id, eleccion === 'perdida')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo anular')
     }
@@ -427,12 +509,25 @@ export default function POS() {
                     .filter((v) => v.activo)
                     .map((v) => {
                       const color = colorCategoria(categoria.id)
+                      const enCarrito = carrito[v.id]?.cantidad ?? 0
+                      const pulsando = recienAgregado.has(v.id)
                       return (
                         <button
                           key={v.id}
                           onClick={() => agregar(p, v)}
-                          className={`rounded-2xl border-2 p-5 min-h-[104px] flex flex-col justify-between text-left active:scale-95 transition shadow-sm ${color.bg} ${color.border}`}
+                          className={`relative rounded-2xl border-2 p-5 min-h-[104px] flex flex-col justify-between text-left transition shadow-sm ${color.bg} ${color.border} ${
+                            pulsando ? 'scale-105' : 'active:scale-95'
+                          }`}
                         >
+                          {enCarrito > 0 && (
+                            <span
+                              className={`absolute -top-2 -right-2 min-w-[26px] h-[26px] px-1.5 rounded-full bg-acento-500 text-neutral-50 text-sm font-bold flex items-center justify-center shadow ring-2 ring-white transition ${
+                                pulsando ? 'scale-125' : ''
+                              }`}
+                            >
+                              {enCarrito}
+                            </span>
+                          )}
                           <div className={`font-semibold text-lg leading-tight ${color.text}`}>
                             {v.nombre === 'Regular' ? p.nombre : `${p.nombre} - ${v.nombre}`}
                           </div>
@@ -706,7 +801,7 @@ export default function POS() {
             <p className="text-aviso-600 text-xs mb-3">
               Sin tasa de cambio cargada -{' '}
               <a href="/tasa" className="underline font-medium">
-                configurala aqui
+                configúrala aquí
               </a>
               .
             </p>
@@ -771,7 +866,7 @@ export default function POS() {
               menos si el vuelto sale en la otra moneda. */}
           <div className="grid grid-cols-2 gap-2 mt-2">
             <label className="text-xs text-neutral-500">
-              Con cuanto pago
+              Con cuánto pagó
               <input
                 value={recibido}
                 onChange={(e) => setRecibido(e.target.value)}
@@ -806,11 +901,11 @@ export default function POS() {
             </p>
           )}
 
-          {/* Fiado: sin nombre no hay a quien cobrarle. */}
+          {/* A credito: sin nombre no hay a quien cobrarle. */}
           <input
             value={cliente}
             onChange={(e) => setCliente(e.target.value)}
-            placeholder="Cliente (obligatorio si es fiado)"
+            placeholder="Cliente (obligatorio si es a crédito)"
             className="w-full border border-neutral-300 rounded-lg px-3 py-1.5 text-sm mt-2"
           />
 
@@ -836,7 +931,7 @@ export default function POS() {
                   title={cliente.trim() ? '' : 'Escribe el nombre del cliente primero'}
                   className="bg-aviso-100 hover:bg-aviso-200 rounded-xl py-3 text-sm font-medium disabled:opacity-40"
                 >
-                  Fiado
+                  A crédito
                 </button>
               </div>
               <button
@@ -886,7 +981,7 @@ export default function POS() {
                     }
                     className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-2.5 text-sm font-medium disabled:opacity-30"
                   >
-                    {m}
+                    {etiquetaMetodo(m)}
                   </button>
                 ))}
               </div>

@@ -108,7 +108,7 @@ export default function Recetas() {
       .filter((f) => f.ingrediente_id && Number(f.cantidad_por_unidad) > 0)
       .map((f) => ({ ingrediente_id: f.ingrediente_id, cantidad_por_unidad: Number(f.cantidad_por_unidad) }))
     if (items.length === 0) {
-      setError('Agrega al menos un insumo con cantidad valida')
+      setError('Agrega al menos un insumo con cantidad válida')
       return
     }
     setGuardando(true)
@@ -144,7 +144,7 @@ export default function Recetas() {
       <NavBar titulo="Recetas y costo por producto" />
       <Pagina ancho="media">
         <p className="text-sm text-neutral-500">
-          Define de que insumos y cuanto lleva cada producto. El costo y el margen que ves en
+          Define de qué insumos y cuánto lleva cada producto. El costo y el margen que ves en
           Reportes salen de esto.
         </p>
 
@@ -296,7 +296,7 @@ export default function Recetas() {
 
             <div className="bg-neutral-50 rounded-xl p-3 text-sm space-y-1">
               <div className="flex justify-between text-neutral-500">
-                <span>Costo teorico (sin merma de cocina)</span>
+                <span>Costo teórico (sin merma de cocina)</span>
                 <span className="tabular-nums">${costoTeorico.toFixed(3)}</span>
               </div>
               <div className="flex justify-between font-semibold">

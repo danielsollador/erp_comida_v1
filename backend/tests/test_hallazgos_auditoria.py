@@ -127,7 +127,7 @@ def test_pagar_al_proveedor_en_efectivo_baja_la_gaveta(client):
         "/api/compras/facturas",
         json={
             "numero_factura": "F-1",
-            "proveedor_nombre": "Proveedor",
+            "proveedor_nombre": "Proveedor", "proveedor_rif": "J123456789",
             "categoria": "Insumos",
             "forma_pago": "Credito",
             "base_imponible": 100,
@@ -397,7 +397,7 @@ def _comprar_nevera(client, meses=60, hace_meses=0):
         "/api/compras/facturas",
         json={
             "numero_factura": "NEV-1",
-            "proveedor_nombre": "Refrigeracion",
+            "proveedor_nombre": "Refrigeracion", "proveedor_rif": "J123456789",
             "categoria": "Activos",
             "forma_pago": "Banco",
             "descripcion": "Nevera exhibidora",
@@ -526,7 +526,7 @@ def test_no_se_puede_declarar_un_mes_que_no_termino(client):
     hoy_ = datetime.date.today()
     r = client.post("/api/impuestos/declaraciones", json={"anio": hoy_.year, "mes": hoy_.month})
     assert r.status_code == 400
-    assert "todavia no termina" in r.json()["detail"]
+    assert "todavía no termina" in r.json()["detail"]
 
 
 def test_declarar_cierra_el_iva_del_mes_contra_las_cuentas_fiscales(client, db, variante):
@@ -537,7 +537,7 @@ def test_declarar_cierra_el_iva_del_mes_contra_las_cuentas_fiscales(client, db, 
     # una compra del mismo mes, con menos IVA que la venta
     factura = client.post(
         "/api/compras/facturas",
-        json={"numero_factura": "C-1", "proveedor_nombre": "Prov", "categoria": "Servicios",
+        json={"numero_factura": "C-1", "proveedor_nombre": "Prov", "proveedor_rif": "J123456789", "categoria": "Servicios",
               "forma_pago": "Banco", "base_imponible": 100, "iva": 16,
               "fecha": datetime.datetime(anio, mes, 10).isoformat()},
     ).json()
@@ -568,7 +568,7 @@ def test_el_credito_que_sobra_se_arrastra_al_mes_siguiente(client, db, variante)
     # mes previo: solo compras -> todo queda como credito a favor
     client.post(
         "/api/compras/facturas",
-        json={"numero_factura": "C-0", "proveedor_nombre": "Prov", "categoria": "Servicios",
+        json={"numero_factura": "C-0", "proveedor_nombre": "Prov", "proveedor_rif": "J123456789", "categoria": "Servicios",
               "forma_pago": "Banco", "base_imponible": 500, "iva": 80,
               "fecha": datetime.datetime(anio_previo, mes_previo, 5).isoformat()},
     )
@@ -597,7 +597,7 @@ def test_un_mes_con_solo_compras_tambien_se_declara(client, db):
     anio, mes = _mes_pasado()
     client.post(
         "/api/compras/facturas",
-        json={"numero_factura": "EQ-9", "proveedor_nombre": "Prov", "categoria": "Activos",
+        json={"numero_factura": "EQ-9", "proveedor_nombre": "Prov", "proveedor_rif": "J123456789", "categoria": "Activos",
               "forma_pago": "Banco", "descripcion": "Congelador", "base_imponible": 300, "iva": 48,
               "fecha": datetime.datetime(anio, mes, 3).isoformat()},
     )
@@ -888,7 +888,7 @@ def test_una_venta_facturada_necesita_nota_de_credito(client, variante):
     pedido = _vender(client, variante, facturado=True, numero_factura="00-3")
     r = client.post(f"/api/pedidos/{pedido['id']}/devolver", json={"recuperable": False})
     assert r.status_code == 400
-    assert "nota de credito" in r.json()["detail"]
+    assert "nota de crédito" in r.json()["detail"]
 
 
 def test_la_comida_botada_pasa_de_costo_de_ventas_a_merma(client, db, variante):
@@ -939,7 +939,7 @@ def test_no_se_devuelve_dos_veces_ni_algo_sin_cobrar(client, variante):
     ).json()
     r = client.post(f"/api/pedidos/{sin_cobrar['id']}/devolver", json={"recuperable": False})
     assert r.status_code == 409
-    assert "anulalo" in r.json()["detail"]
+    assert "anúlalo" in r.json()["detail"]
 
 
 # ------------------------------------------- UU..XX: borrar del menu (caso 17)
@@ -1046,7 +1046,7 @@ def test_un_pago_partido_va_a_la_cuenta_que_corresponde(client, db, variante):
             "metodo_pago": "Mixto",
             "pagos": [
                 {"metodo": "Efectivo", "monto": 8.0},
-                {"metodo": "Pago movil", "monto": 12.0},
+                {"metodo": "Pago movil", "monto": 12.0, "referencia": "123456"},
             ],
         },
     )

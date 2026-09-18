@@ -76,7 +76,7 @@ MODULOS: dict[str, dict] = {
     "inventario": {"nombre": "Inventario", "rutas": ("/api/inventario",)},
     "compras": {
         "nombre": "Compras",
-        "rutas": ("/api/compras",),
+        "rutas": ("/api/compras", "/api/proveedores"),
         "lectura": ("/api/inventario",),
     },
     "caja": {

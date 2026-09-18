@@ -83,7 +83,7 @@ export default function Contabilidad() {
         {salud?.sano && (
           <div className="mb-4 rounded-xl border border-exito-200 bg-exito-50 px-3 py-2">
             <p className="text-sm text-exito-800">
-              Libros sanos: sin movimientos huerfanos, sin activos en negativo, e inventario
+              Libros sanos: sin movimientos huérfanos, sin activos en negativo, e inventario
               contable acorde a las existencias reales.
             </p>
           </div>
@@ -115,11 +115,11 @@ const ORIGEN_LABEL: Record<string, string> = {
   ajuste_inventario: 'Ajuste de inventario',
   sobrante_inventario: 'Sobrante de inventario',
   reverso_sobrante: 'Reverso de sobrante',
-  reverso_cierre_caja: 'Anulacion de cierre de caja',
-  reverso_baja_activo: 'Anulacion de baja de activo',
-  reverso_declaracion_iva: 'Anulacion de declaracion de IVA',
-  nota_credito_compra: 'Nota de credito del proveedor',
-  depreciacion: 'Depreciacion',
+  reverso_cierre_caja: 'Anulación de cierre de caja',
+  reverso_baja_activo: 'Anulación de baja de activo',
+  reverso_declaracion_iva: 'Anulación de declaración de IVA',
+  nota_credito_compra: 'Nota de crédito del proveedor',
+  depreciacion: 'Depreciación',
   baja_activo: 'Baja de equipo',
 }
 
@@ -200,7 +200,7 @@ function PlanCuentas() {
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
             <tr>
-              <Th clave="codigo">Codigo</Th>
+              <Th clave="codigo">Código</Th>
               <Th clave="nombre">Nombre</Th>
               <Th clave="tipo">Tipo</Th>
               <Th clave="naturaleza">Naturaleza</Th>
@@ -230,7 +230,7 @@ function PlanCuentas() {
           <input
             value={nuevoCodigo}
             onChange={(e) => setNuevoCodigo(e.target.value)}
-            placeholder="Codigo (ej. 6030)"
+            placeholder="Código (ej. 6030)"
             className="w-32 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
           />
           <input
@@ -278,7 +278,7 @@ function PlanCuentas() {
             <thead className="text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="fecha" className="py-1 px-0">Fecha</Th>
-                <Th clave="descripcion" className="py-1 px-0">Descripcion</Th>
+                <Th clave="descripcion" className="py-1 px-0">Descripción</Th>
                 <Th clave="debe" alinear="derecha" className="py-1 px-0">Debe</Th>
                 <Th clave="haber" alinear="derecha" className="py-1 px-0">Haber</Th>
                 <Th clave="saldo" alinear="derecha" className="py-1 px-0">Saldo</Th>
@@ -297,7 +297,7 @@ function PlanCuentas() {
               {mayor.filas.length === 0 && (
                 <tr>
                   <td colSpan={5} className="text-neutral-400 py-3 text-center">
-                    Esta cuenta no tiene movimientos todavia.
+                    Esta cuenta no tiene movimientos todavía.
                   </td>
                 </tr>
               )}
@@ -379,15 +379,15 @@ function Diario({ rango }: { rango: Rango }) {
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
         <h2 className="font-semibold mb-2">Nuevo asiento manual</h2>
         <p className="text-xs text-neutral-500 mb-3">
-          Los que genera el sistema solo (ventas, gastos, compras, merma) no aparecen aqui para
-          crear - solo para consultar. Este formulario es para lo que no encaja en ningun flujo,
+          Los que genera el sistema solo (ventas, gastos, compras, merma) no aparecen aquí para
+          crear - solo para consultar. Este formulario es para lo que no encaja en ningún flujo,
           por ejemplo un aporte de capital.
         </p>
         {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
         <input
           value={nuevaDescripcion}
           onChange={(e) => setNuevaDescripcion(e.target.value)}
-          placeholder="Descripcion del asiento"
+          placeholder="Descripción del asiento"
           className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mb-2"
         />
         {lineas.map((l, i) => (
@@ -443,7 +443,7 @@ function Diario({ rango }: { rango: Rango }) {
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
             <tr>
               <Th clave="fecha">Fecha</Th>
-              <Th clave="descripcion">Descripcion</Th>
+              <Th clave="descripcion">Descripción</Th>
               <Th clave="origen">Origen</Th>
               <Th ayuda="diario.movimientos">Movimientos</Th>
               <Th />
@@ -674,7 +674,7 @@ function Activos() {
       await fn()
       cargar()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ocurrio un error')
+      setError(e instanceof Error ? e.message : 'Ocurrió un error')
     }
   }
 
@@ -790,7 +790,7 @@ function Activos() {
             <button
               onClick={altaExistente}
               className="ml-3 text-sm font-medium text-acento-600"
-              title="Un equipo que ya tenias antes de instalar el sistema"
+              title="Un equipo que ya tenías antes de instalar el sistema"
             >
               + ya lo tenia
             </button>
@@ -819,13 +819,13 @@ function Activos() {
           </span>
         </div>
         <p className="text-xs text-neutral-500 mb-3">
-          Cada equipo se va convirtiendo en gasto a lo largo de su vida util. Ese desgaste ya
-          esta descontado de la ganancia que ves en Reportes.
+          Cada equipo se va convirtiendo en gasto a lo largo de su vida útil. Ese desgaste ya
+          está descontado de la ganancia que ves en Reportes.
         </p>
 
         {activos.length === 0 && (
           <p className="text-sm text-neutral-400">
-            Sin equipos registrados. Se crean solos al cargar una factura de categoria Activos en
+            Sin equipos registrados. Se crean solos al cargar una factura de categoría Activos en
             Compras.
           </p>
         )}
@@ -885,7 +885,7 @@ function Activos() {
                       </span>
                       <span className="flex gap-3">
                         <button onClick={() => cambiarVida(a)} className="text-acento-600 font-medium">
-                          Cambiar duracion
+                          Cambiar duración
                         </button>
                         <button onClick={() => darDeBaja(a)} className="text-peligro-500 font-medium">
                           Dar de baja

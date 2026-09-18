@@ -7,6 +7,7 @@ import { Cifra, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
+import { etiquetaMetodo } from '../lib/pagos'
 import type { EstadoVenta, ListaVentas, PuntoSerie, ResumenVentas, VentaFila } from '../lib/types'
 
 /**
@@ -33,7 +34,7 @@ const SECCIONES = [
 const ESTADOS: { clave: EstadoVenta | 'todas'; texto: string; tono: 'neutro' | 'bien' | 'ojo' | 'mal' | 'acento' }[] = [
   { clave: 'todas', texto: 'Todas', tono: 'neutro' },
   { clave: 'cobrada', texto: 'Cobradas', tono: 'bien' },
-  { clave: 'fiada', texto: 'Fiadas', tono: 'ojo' },
+  { clave: 'fiada', texto: 'A crédito', tono: 'ojo' },
   { clave: 'devuelta', texto: 'Devueltas', tono: 'mal' },
   { clave: 'anulada', texto: 'Anuladas', tono: 'neutro' },
   { clave: 'abierta', texto: 'Abiertas', tono: 'acento' },
@@ -41,7 +42,7 @@ const ESTADOS: { clave: EstadoVenta | 'todas'; texto: string; tono: 'neutro' | '
 
 const TEXTO_ESTADO: Record<EstadoVenta, string> = {
   cobrada: 'Cobrada',
-  fiada: 'Fiada',
+  fiada: 'A crédito',
   devuelta: 'Devuelta',
   anulada: 'Anulada',
   abierta: 'Abierta',
@@ -148,7 +149,7 @@ function Historial({ lista, etiqueta }: { lista: ListaVentas; etiqueta: string }
   return (
     <Seccion
       titulo={`Ventas · ${etiqueta}`}
-      ayuda={`${lista.total} venta(s) en el periodo. Toca una fila para ver el detalle.`}
+      ayuda={`${lista.total} venta(s) en el período. Toca una fila para ver el detalle.`}
       accion={
         <span className="text-sm text-neutral-500">
           Vendido:{' '}
@@ -189,7 +190,7 @@ function Historial({ lista, etiqueta }: { lista: ListaVentas; etiqueta: string }
 
       {lista.recortado && (
         <p className="mx-4 mb-3 text-xs bg-aviso-50 border border-aviso-200 text-aviso-800 rounded-lg px-3 py-2">
-          Hay más de {lista.filas.length} ventas en este periodo y solo se muestran las más recientes.
+          Hay más de {lista.filas.length} ventas en este período y solo se muestran las más recientes.
           Acorta el rango arriba para verlas todas.
         </p>
       )}
@@ -197,8 +198,8 @@ function Historial({ lista, etiqueta }: { lista: ListaVentas; etiqueta: string }
       {visibles.length === 0 ? (
         <Vacio
           icono="ventas"
-          titulo={lista.filas.length === 0 ? 'Sin ventas en este periodo' : 'Nada coincide con el filtro'}
-          detalle={lista.filas.length === 0 ? 'Cambia el periodo arriba, o cobra un pedido en el punto de venta.' : undefined}
+          titulo={lista.filas.length === 0 ? 'Sin ventas en este período' : 'Nada coincide con el filtro'}
+          detalle={lista.filas.length === 0 ? 'Cambia el período arriba, o cobra un pedido en el punto de venta.' : undefined}
         />
       ) : (
         <Tabla orden={orden} glosario="ventas">
@@ -275,7 +276,7 @@ function FilaVenta({
           )}
         </td>
         <td className="p-3 hidden md:table-cell">
-          {v.pago || '—'}
+          {etiquetaMetodo(v.pago) || '—'}
           {v.facturado && <span className="block text-[11px] text-neutral-400">factura {v.numero_factura ?? ''}</span>}
         </td>
         <td className="p-3 hidden lg:table-cell">
@@ -362,14 +363,28 @@ function DetalleVenta({
         <Dato titulo="Qué pasó">
           <PastillaEstado estado={v.estado} />
         </Dato>
-        <Dato titulo="Cómo se pagó">{v.pago || '—'}</Dato>
+        <Dato titulo="Cómo se pagó">{etiquetaMetodo(v.pago) || '—'}</Dato>
         <Dato titulo="Quién cobró">{v.operador || '—'}</Dato>
         <Dato titulo="Caja">{v.punto_venta || '—'}</Dato>
         {v.cliente && <Dato titulo="Cliente">{v.cliente}</Dato>}
         {v.estado === 'fiada' && <Dato titulo="Debe todavía">{dinero(v.fiado_pendiente)}</Dato>}
-        {v.fiado_saldado && <Dato titulo="Fiado">Ya saldado</Dato>}
+        {v.fiado_saldado && <Dato titulo="A crédito">Ya saldado</Dato>}
         {v.facturado && <Dato titulo="Factura">{v.numero_factura || 'sí'}</Dato>}
         {v.estado === 'anulada' && <Dato titulo="Anulada por">{v.anulado_por || '—'}</Dato>}
+        {v.estado === 'anulada' && (
+          <Dato titulo="Comida">
+            {/* La senal que de verdad importa para auditar: anular ANTES de
+                cocinar es que el cliente cambio de opinion, algo normal.
+                Anular DESPUES es comida que se hizo y no se cobro -una
+                perdida real, y si se repite mucho con el mismo operador, la
+                pregunta que hay que hacerse. */}
+            {v.items.some((i) => i.preparado) ? (
+              <span className="text-peligro-700 font-medium">Se preparó (pérdida real)</span>
+            ) : (
+              <span className="text-neutral-500">No se llegó a preparar</span>
+            )}
+          </Dato>
+        )}
         {v.estado === 'devuelta' && (
           <Dato titulo="Devolución">
             {v.motivo_devolucion || 'sin motivo'}
@@ -419,10 +434,10 @@ function Resumen({ r, nombre }: { r: ResumenVentas; nombre: string }) {
           }
         />
         <Cifra
-          titulo="Contra el periodo anterior"
+          titulo="Contra el período anterior"
           ayuda="kpi.vs_anterior"
           valor={cambio == null ? '—' : `${cambio > 0 ? '+' : ''}${cambio.toFixed(0)}%`}
-          detalle={`Antes: ${fmt(r.anterior.ventas)} en ${r.anterior.pedidos} pedidos${incompleto ? ' · este periodo aún no termina' : ''}`}
+          detalle={`Antes: ${fmt(r.anterior.ventas)} en ${r.anterior.pedidos} pedidos${incompleto ? ' · este período aún no termina' : ''}`}
           tono={cambio == null ? 'normal' : cambio >= 0 ? 'bien' : 'alerta'}
         />
         <Cifra
@@ -484,7 +499,7 @@ function Reparto({
   total: number
   fmt: (v: number) => string
 }) {
-  if (filas.length === 0) return <p className="text-neutral-400 text-sm">Sin cobros en el periodo.</p>
+  if (filas.length === 0) return <p className="text-neutral-400 text-sm">Sin cobros en el período.</p>
   return (
     <div className="space-y-2">
       {filas.map((f) => {
@@ -550,7 +565,7 @@ type FilaPerdida = {
   id: string
   numero: number
   fecha: string
-  tipo: 'Devuelta' | 'Descuento' | 'Anulada' | 'Fiado por cobrar'
+  tipo: 'Devuelta' | 'Descuento' | 'Anulada' | 'A crédito por cobrar'
   detalle: string
   quien: string
   monto: number
@@ -585,7 +600,7 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
       if (v.descuento > 0 && v.estado !== 'anulada' && v.estado !== 'devuelta')
         salida.push({ id: `r${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Descuento', detalle: v.detalle, quien: v.operador, tasa: v.tasa_bcv, monto: v.descuento, nota: '' })
       if (v.estado === 'fiada')
-        salida.push({ id: `f${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Fiado por cobrar', detalle: v.detalle, quien: v.operador, tasa: v.tasa_bcv, monto: v.fiado_pendiente, nota: v.cliente })
+        salida.push({ id: `f${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'A crédito por cobrar', detalle: v.detalle, quien: v.operador, tasa: v.tasa_bcv, monto: v.fiado_pendiente, nota: v.cliente })
     }
     return salida
   }, [lista])
@@ -594,7 +609,7 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
     Devuelta: 'mal',
     Descuento: 'ojo',
     Anulada: 'neutro',
-    'Fiado por cobrar': 'ojo',
+    'A crédito por cobrar': 'ojo',
   }
 
   return (
@@ -611,12 +626,12 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
         <Cifra titulo="Descuentos" ayuda="kpi.descuentos" valor={fmt(p.valor_descuentos)} detalle={`En ${p.con_descuento} venta(s)`} />
         <Cifra titulo="Merma de inventario" ayuda="kpi.merma_inventario" valor={fmt(p.merma_inventario)} detalle="Lo que se botó o se dañó, según el libro" tono={p.merma_inventario > 0 ? 'alerta' : 'normal'} />
         <Cifra titulo="Anuladas" ayuda="kpi.anuladas" valor={fmt(p.valor_anulado)} detalle={`${p.anuladas} pedido(s). No entró: no se suma arriba`} />
-        <Cifra titulo="Fiado por cobrar" ayuda="kpi.fiado_pendiente" valor={fmt(p.valor_fiado_pendiente)} detalle={`${p.fiado_pendiente} venta(s) de este periodo aún sin pagar`} tono={p.valor_fiado_pendiente > 0 ? 'alerta' : 'normal'} />
+        <Cifra titulo="A crédito por cobrar" ayuda="kpi.fiado_pendiente" valor={fmt(p.valor_fiado_pendiente)} detalle={`${p.fiado_pendiente} venta(s) de este período aún sin pagar`} tono={p.valor_fiado_pendiente > 0 ? 'alerta' : 'normal'} />
       </div>
 
-      <Seccion titulo="Una por una" ayuda="Cada venta que se devolvió, se rebajó, se anuló o quedó fiada en el periodo." plano>
+      <Seccion titulo="Una por una" ayuda="Cada venta que se devolvió, se rebajó, se anuló o quedó a crédito en el período." plano>
         {filas.length === 0 ? (
-          <Vacio icono="ok" titulo="Nada que lamentar" detalle="En este periodo no hubo devoluciones, descuentos, anulaciones ni fiado pendiente." />
+          <Vacio icono="ok" titulo="Nada que lamentar" detalle="En este período no hubo devoluciones, descuentos, anulaciones ni ventas a crédito pendientes." />
         ) : (
           <Tabla orden={orden} glosario="ventas_perdidas">
             <table className="w-full text-sm">

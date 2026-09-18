@@ -142,6 +142,11 @@ class Ingrediente(Base):
     # Un insumo que ya no se compra no se borra: tiene recetas, compras y
     # mermas colgando. Se archiva y deja de aparecer en listas y sugerencias.
     activo = Column(Boolean, default=True)
+    # Exento de IVA (la mayoria de los alimentos basicos en Venezuela lo son).
+    # Es del INSUMO, no de la factura: la harina es exenta la compre a quien
+    # la compre. Al cargar una factura con renglones, el IVA se calcula solo
+    # sobre lo que de verdad esta gravado.
+    exento = Column(Boolean, default=False)
 
     @property
     def costo_efectivo(self):
@@ -443,6 +448,34 @@ class ConfiguracionFiscal(Base):
 
     id = Column(Integer, primary_key=True)
     tasa_iva = Column(Float, default=16.0)  # alicuota general de IVA en Venezuela
+
+
+class Proveedor(Base):
+    """El directorio de a quien se le compra.
+
+    Antes cada factura escribia el nombre y el RIF del proveedor sueltos, a
+    mano, cada vez -mismo proveedor, error de tecleo distinto cada factura, y
+    ninguna forma de ver "cuanto le compre a Carnes SA este mes" sin adivinar
+    con cuantos nombres distintos quedo escrito.
+
+    A proposito NO es una llave foranea en FacturaCompra: la factura sigue
+    guardando su propio nombre y RIF (para que una factura vieja no cambie de
+    significado si el proveedor se edita despues), pero el formulario de carga
+    los completa solos al elegir uno de aca. Sigue permitiendo una compra a
+    alguien que no esta en el directorio -no todo proveedor informal amerita
+    una ficha-, sin obligar a mantener un catalogo perfecto para poder comprar.
+    """
+
+    __tablename__ = "DIM410_COM_PROVEEDOR"
+
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String, nullable=False)
+    rif = Column(String, nullable=True)
+    telefono = Column(String, default="")
+    direccion = Column(String, default="")
+    contacto = Column(String, default="")
+    nota = Column(String, default="")
+    activo = Column(Boolean, default=True)
 
 
 class FacturaCompra(Base):
@@ -834,6 +867,10 @@ class PagoPedido(Base):
     recibido = Column(Float, nullable=True)
     vuelto_metodo = Column(String, nullable=True)
     vuelto_monto = Column(Float, default=0)
+    # Numero de confirmacion del pago movil, el ticket del punto, el
+    # comprobante del Zelle. En efectivo no hay nada que anotar aca: un
+    # billete no trae referencia.
+    referencia = Column(String, default="")
 
 
 class PedidoConsumo(Base):

@@ -82,7 +82,7 @@ export default function Menu() {
           <input
             value={nuevaCategoria}
             onChange={(e) => setNuevaCategoria(e.target.value)}
-            placeholder="Nueva categoria (ej. Bebidas)"
+            placeholder="Nueva categoría (ej. Bebidas)"
             className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
           />
           <button
@@ -101,7 +101,7 @@ export default function Menu() {
             y se pueden volver a activar. */}
         {categorias.some((c) => !c.activo) && (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <h2 className="font-semibold mb-1">Fuera del menu</h2>
+            <h2 className="font-semibold mb-1">Fuera del menú</h2>
             <p className="text-xs text-neutral-500 mb-3">
               No aparecen en el punto de venta. Sus ventas anteriores se conservan.
             </p>
@@ -157,7 +157,7 @@ function CategoriaCard({
       <div className="flex justify-between items-center mb-3">
         <h2 className="font-semibold text-lg">{categoria.nombre}</h2>
         <button onClick={() => onBorrar(categoria.id)} className="text-peligro-500 text-xs">
-          Borrar categoria
+          Borrar categoría
         </button>
       </div>
 
@@ -229,10 +229,10 @@ function ProductoRow({
           ? `\n\nOJO: con los precios de HOY cuesta $${info.costo_reposicion!.toFixed(2)}, ` +
             `y a $${precioActual.toFixed(2)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.` +
             (info.precio_sugerido != null
-              ? `\nPara mantener tu margen tendrias que cobrar $${info.precio_sugerido.toFixed(2)}.`
+              ? `\nPara mantener tu margen tendrías que cobrar $${info.precio_sugerido.toFixed(2)}.`
               : '')
           : '')
-      : '\n\n(Este producto no tiene receta, asi que no se sabe cuanto cuesta producirlo.)'
+      : '\n\n(Este producto no tiene receta, así que no se sabe cuánto cuesta producirlo.)'
     const precio = await dialogo.pedirNumero({
       titulo: `Precio de ${nombre}`,
       texto: contexto.trim(),
@@ -334,7 +334,7 @@ function ProductoRow({
               </span>
             )}
             {info?.sin_receta && (
-              <span className="text-aviso-700" title="Sin receta: no se sabe cuanto cuesta">
+              <span className="text-aviso-700" title="Sin receta: no se sabe cuánto cuesta">
                 sin receta
               </span>
             )}
@@ -351,7 +351,7 @@ function ProductoRow({
         <input
           value={nuevaVariante}
           onChange={(e) => setNuevaVariante(e.target.value)}
-          placeholder="Subseccion (ej. Grande)"
+          placeholder="Subsección (ej. Grande)"
           className="flex-1 border border-neutral-300 rounded-lg px-2 py-1 text-xs"
         />
         <input
@@ -366,7 +366,7 @@ function ProductoRow({
           onClick={agregarVariante}
           className="bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded-lg text-xs"
         >
-          + Subseccion
+          + Subsección
         </button>
       </div>
     </div>

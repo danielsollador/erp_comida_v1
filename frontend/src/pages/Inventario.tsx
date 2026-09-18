@@ -7,6 +7,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { api } from '../lib/api'
+import { useMoneda } from '../lib/moneda'
 import type {
   CompraDeInsumo,
   DatosIngrediente,
@@ -102,6 +103,7 @@ export default function Inventario() {
   // Solo las perdidas tienen fecha; el stock y que comprar son "a hoy".
   const [rango, setRango] = useRango('30d')
   const dialogo = useDialogo()
+  const { tasa } = useMoneda()
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [sugerencias, setSugerencias] = useState<SugerenciaCompra[]>([])
   const [mermas, setMermas] = useState<Merma[]>([])
@@ -162,7 +164,7 @@ export default function Inventario() {
       cargar()
       return true
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ocurrio un error')
+      setError(e instanceof Error ? e.message : 'Ocurrió un error')
       return false
     }
   }
@@ -177,10 +179,19 @@ export default function Inventario() {
         {
           nombre: 'costo',
           etiqueta: 'Cuánto pagaste en total, sin IVA',
-          sufijo: '$',
           tipo: 'numero',
           opcional: true,
           ayuda: 'Vacío = se mantiene el costo actual. El IVA no es parte del costo del insumo.',
+        },
+        {
+          nombre: 'moneda',
+          etiqueta: 'En qué moneda pagaste',
+          tipo: 'opciones',
+          valor: '$',
+          opciones: [
+            { valor: '$', texto: 'Dólares' },
+            { valor: 'Bs', texto: `Bolívares${tasa?.bcv ? ` (a ${tasa.bcv.toFixed(2)})` : ''}` },
+          ],
         },
         {
           nombre: 'metodo',
@@ -192,13 +203,14 @@ export default function Inventario() {
       aceptar: 'Registrar compra',
     })
     if (!r) return
+    if (r.moneda === 'Bs' && !tasa?.bcv) {
+      setError('No se pudo obtener la tasa del día. Intenta de nuevo o registra en dólares.')
+      return
+    }
+    const costoUsd =
+      r.costo && r.moneda === 'Bs' ? Number(r.costo) / (tasa!.bcv as number) : r.costo ? Number(r.costo) : undefined
     await accion(async () => {
-      const resultado = await api.registrarCompra(
-        ing.id,
-        Number(r.cantidad),
-        r.costo ? Number(r.costo) : undefined,
-        r.metodo,
-      )
+      const resultado = await api.registrarCompra(ing.id, Number(r.cantidad), costoUsd, r.metodo)
       // Si el proveedor pego un salto, se dice AHORA. El costo promedio tarda
       // semanas en reflejarlo, y para entonces ya vendiste con el margen viejo
       // en pantalla y el nuevo en la realidad.
@@ -804,6 +816,7 @@ function datosDe(ing: Ingrediente): DatosIngrediente {
     rendimiento_pct: ing.rendimiento_pct,
     tipo: ing.tipo ?? 'insumo',
     activo: ing.activo !== false,
+    exento: ing.exento ?? false,
   }
 }
 
@@ -842,6 +855,7 @@ function FichaInsumo({
     stock_objetivo: ing ? cantidad(ing.stock_objetivo) : '',
     costo_unitario: ing ? String(ing.costo_unitario) : '',
     rendimiento_pct: ing ? String(ing.rendimiento_pct) : '100',
+    exento: ing?.exento ?? false,
   }))
   const [aviso, setAviso] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -908,6 +922,7 @@ function FichaInsumo({
       costo_unitario: costo,
       rendimiento_pct: rendimiento,
       activo: ing?.activo !== false,
+      exento: f.exento,
       ...(nuevo ? { stock_actual: inicial } : {}),
     })
     setGuardando(false)
@@ -1022,6 +1037,19 @@ function FichaInsumo({
             ayuda="Cuánto queda utilizable después de limpiar o cocinar. 100 = no se pierde nada."
           />
         )}
+        <label className="flex items-center gap-2 text-sm mt-1 sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={f.exento}
+            onChange={(e) => setF((a) => ({ ...a, exento: e.target.checked }))}
+          />
+          <span>
+            Exento de IVA
+            <span className="block text-xs text-neutral-500">
+              La mayoría de los alimentos básicos lo son. Cambia el IVA de las facturas donde aparezca este insumo.
+            </span>
+          </span>
+        </label>
       </div>
 
       {!nuevo && (
@@ -1060,6 +1088,7 @@ function FichaInsumo({
                         <Th clave="movimiento">Movimiento</Th>
                         <Th clave="quien">Quién</Th>
                         <Th clave="cantidad" alinear="derecha">Cantidad</Th>
+                        <Th clave="valor" alinear="derecha">Costo</Th>
                         <Th clave="saldo" alinear="derecha">Saldo</Th>
                       </tr>
                     </thead>
@@ -1082,10 +1111,19 @@ function FichaInsumo({
                             }`}
                           >
                             {m.cantidad > 0 ? '+' : ''}
-                            {cantidad(m.cantidad)}
+                            {cantidad(m.cantidad)} {ing.unidad}
+                          </td>
+                          {/* El equivalente en plata: sin esto, "-0.025" no dice
+                              si eso que salio costo un centavo o un dolar. */}
+                          <td
+                            className={`p-2 text-right tabular-nums ${
+                              m.valor < 0 ? 'text-peligro-600' : 'text-neutral-500'
+                            }`}
+                          >
+                            ${Math.abs(m.valor).toFixed(2)}
                           </td>
                           <td className="p-2 text-right tabular-nums text-neutral-500">
-                            {cantidad(m.saldo)}
+                            {cantidad(m.saldo)} {ing.unidad}
                           </td>
                         </tr>
                       ))}

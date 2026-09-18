@@ -274,16 +274,16 @@ function Formulario({
       if (c.tipo === 'numero') {
         const n = aNumero(crudo)
         if (!Number.isFinite(n)) {
-          malos[c.nombre] = 'Tiene que ser un numero'
+          malos[c.nombre] = 'Tiene que ser un número'
           continue
         }
         const min = c.min ?? 0
         if (n < min) {
-          malos[c.nombre] = min === 0 ? 'No puede ser negativo' : `Minimo ${min}`
+          malos[c.nombre] = min === 0 ? 'No puede ser negativo' : `Mínimo ${min}`
           continue
         }
         if (c.max != null && n > c.max) {
-          malos[c.nombre] = `Maximo ${c.max}`
+          malos[c.nombre] = `Máximo ${c.max}`
           continue
         }
         limpios[c.nombre] = String(n)

@@ -25,13 +25,14 @@ from .routers import (
     menu,
     operadores,
     pedidos,
+    proveedores,
     reportes,
     respaldos,
     tasas,
     usuarios as usuarios_router,
     ventas,
 )
-from .seed import seed_if_empty
+from .seed import asegurar_categoria_envios, seed_if_empty
 from .settings import BACKUP_ON_STARTUP, CORS_ORIGINS
 from .tasas import iniciar_refresco_automatico
 from .ws_manager import manager
@@ -113,6 +114,7 @@ async def lifespan(app: FastAPI):
         # su asiento de apertura y necesita que las cuentas ya existan.
         with SessionLocal() as db:
             seed_plan_de_cuentas(db)
+            asegurar_categoria_envios(db)
         seed_if_empty()
 
         # Un respaldo al arrancar SOLO si el ultimo ya tiene sus horas encima.
@@ -210,6 +212,7 @@ app.include_router(respaldos.router)
 app.include_router(tasas.router)
 app.include_router(contabilidad_router.router)
 app.include_router(compras.router)
+app.include_router(proveedores.router)
 app.include_router(impuestos_router.router)
 
 

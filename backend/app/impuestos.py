@@ -6,6 +6,7 @@ vive en `Pedido.facturado` (ver `contabilidad.registrar_venta`); este modulo
 solo resuelve la aritmetica del IVA y donde vive la alicuota vigente.
 """
 
+import re
 from typing import Tuple
 
 from sqlalchemy.orm import Session
@@ -13,6 +14,20 @@ from sqlalchemy.orm import Session
 from . import models
 
 IVA_DEFAULT = 16.0  # alicuota general vigente en Venezuela
+
+# Letra (tipo de contribuyente) + 8 o 9 digitos, con o sin guiones/espacios:
+# J-12345678-9, V123456789, E-12345678. No se valida el digito verificador
+# -esa cuenta es del SENIAT, no del ERP- pero un campo vacio o "sin rif" no
+# puede quedar en un libro de compras que se declara.
+_RIF_FORMATO = re.compile(r"^[VEJGPC]\d{8,9}$")
+
+
+def normalizar_rif(rif: str) -> str:
+    return re.sub(r"[\s-]", "", (rif or "").strip().upper())
+
+
+def rif_valido(rif: str) -> bool:
+    return bool(_RIF_FORMATO.match(normalizar_rif(rif)))
 
 
 def _config(db: Session) -> models.ConfiguracionFiscal:

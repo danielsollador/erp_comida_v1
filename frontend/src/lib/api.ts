@@ -32,6 +32,7 @@ import type {
   FilaMayor,
   Gasto,
   Ingrediente,
+  Proveedor,
   LibroCompras,
   LibroVentas,
   ListaUsuarios,
@@ -187,6 +188,8 @@ export const api = {
 
   listarPedidos: (estado?: string) =>
     req<Pedido[]>(`/pedidos${estado ? `?estado=${estado}` : ''}`),
+  /** Lo que cocina todavia tiene que preparar, cobrado o no. */
+  listarPedidosEnCocina: () => req<Pedido[]>('/pedidos?en_cocina=true'),
   crearPedido: (
     items: {
       variante_id?: number
@@ -224,6 +227,10 @@ export const api = {
       monto: number
       recibido?: number
       vuelto_metodo?: string
+      // Numero de confirmacion: del pago movil, el ticket del punto, el
+      // comprobante del Zelle. El backend lo exige para todo lo que no sea
+      // efectivo ni fiado.
+      referencia?: string
     }[],
     extra?: {
       descuento?: number
@@ -232,6 +239,8 @@ export const api = {
       cliente?: string
       operador_id?: number | null
       punto_venta_id?: number | null
+      // Solo aplica cuando no se manda `pagos` (un solo metodo para todo).
+      referencia?: string
     },
   ) =>
     req<Pedido>(`/pedidos/${pedidoId}/cobrar`, {
@@ -247,6 +256,7 @@ export const api = {
         cliente: extra?.cliente ?? '',
         operador_id: extra?.operador_id ?? null,
         punto_venta_id: extra?.punto_venta_id ?? null,
+        referencia: extra?.referencia || null,
       }),
     }),
   ticket: (pedidoId: number) => req<Ticket>(`/pedidos/${pedidoId}/ticket`),
@@ -496,10 +506,21 @@ export const api = {
     }),
 
   listarFacturasCompra: (r?: Rango) => req<FacturaCompra[]>(`/compras/facturas${conRango(r)}`),
+
+  listarProveedores: (soloActivos = false) =>
+    req<Proveedor[]>(`/proveedores${soloActivos ? '?activos=true' : ''}`),
+  crearProveedor: (p: Omit<Proveedor, 'id' | 'activo'>) =>
+    req<Proveedor>('/proveedores', { method: 'POST', body: JSON.stringify(p) }),
+  editarProveedor: (id: number, p: Omit<Proveedor, 'id' | 'activo'>) =>
+    req<Proveedor>(`/proveedores/${id}`, { method: 'PUT', body: JSON.stringify(p) }),
+  archivarProveedor: (id: number, activo: boolean) =>
+    req<Proveedor>(`/proveedores/${id}/archivar?activo=${activo}`, { method: 'POST' }),
   crearFacturaCompra: (f: {
     numero_factura: string
     proveedor_nombre: string
-    proveedor_rif?: string
+    // Obligatorio para el Libro de Compras: el backend rechaza vacio o
+    // formato invalido.
+    proveedor_rif: string
     categoria: string
     forma_pago: string
     descripcion?: string
@@ -588,6 +609,7 @@ export type {
   FilaMayor,
   Gasto,
   Ingrediente,
+  Proveedor,
   LibroCompras,
   LibroVentas,
   Merma,
