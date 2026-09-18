@@ -42,7 +42,22 @@ def historial_restauraciones():
 
 @router.post("/crear")
 def crear():
-    ruta = backup.crear_respaldo(motivo="manual")
+    """Si falla, dice POR QUE.
+
+    Antes cualquier tropiezo salia como un 500 pelado y la pantalla mostraba
+    "Internal Server Error": el dueno se quedaba sin saber si fue falta de
+    disco, la base caida o el `pg_dump` ausente. El motivo ya queda guardado
+    (`backup.estado()["ultimo_fallo"]`); esto es para que tambien se vea en el
+    momento, sin ir a buscarlo.
+    """
+    try:
+        ruta = backup.crear_respaldo(motivo="manual")
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail="Falta `pg_dump` en el servidor: sin el no se puede respaldar PostgreSQL.")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"No se pudo respaldar: {e}")
     return {"ok": True, "archivo": os.path.basename(ruta)}
 
 

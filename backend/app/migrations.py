@@ -168,6 +168,43 @@ RENOMBRES = {
 }
 
 
+def nombrar_secuencias(motor=None) -> int:
+    """Le pone a cada secuencia el nombre de la tabla a la que sirve.
+
+    `ALTER TABLE ... RENAME TO` NO renombra la secuencia que alimenta su `id`:
+    despues del renombrado, la tabla era `TRX110_VEN_PEDIDO` y su secuencia
+    seguia llamandose `pedidos_id_seq`. Funciona igual -el vinculo es por OID,
+    no por nombre- pero en el arbol de DBeaver queda una carpeta de secuencias
+    con los nombres viejos al lado de las tablas nuevas, que es justo el enredo
+    que la nomenclatura vino a quitar.
+
+    Solo PostgreSQL: SQLite no tiene secuencias.
+    """
+    motor = motor or engine
+    if not ES_POSTGRES:
+        return 0
+    cambios = 0
+    with motor.begin() as con:
+        filas = con.execute(text("""
+            SELECT s.relname, t.relname, a.attname
+            FROM pg_class s
+            JOIN pg_depend d ON d.objid = s.oid AND d.classid = 'pg_class'::regclass
+            JOIN pg_class t ON t.oid = d.refobjid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+            WHERE n.nspname = current_schema() AND s.relkind = 'S'
+        """)).fetchall()
+        for secuencia, tabla, columna in filas:
+            nuevo = f"{tabla}_{columna}_seq"
+            if secuencia == nuevo or len(nuevo) > 63:
+                continue
+            con.execute(text(f'ALTER SEQUENCE "{secuencia}" RENAME TO "{nuevo}"'))
+            cambios += 1
+    if cambios:
+        log.info("Secuencias renombradas: %d", cambios)
+    return cambios
+
+
 def indexar_claves_foraneas(motor=None) -> list:
     """Le pone indice a toda clave foranea que no lo tenga. Devuelve los que creo.
 
@@ -506,6 +543,7 @@ def aplicar():
     # Va antes del kardex: le deja las restricciones con su nombre definitivo.
     # Idempotente y barato: no hace nada en una base ya al dia.
     nombrar_restricciones()
+    nombrar_secuencias()
     indexar_claves_foraneas()
 
     # Va de ultimo: necesita que la tabla exista (la crea `create_all`) y que

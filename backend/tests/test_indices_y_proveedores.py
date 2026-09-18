@@ -115,3 +115,11 @@ def test_el_archivado_tambien_cuenta_y_lo_dice(client):
     r = _crear(client, "Cafe La Montana")
     assert r.status_code == 409
     assert "archivado" in r.json()["detail"].lower(), r.json()["detail"]
+
+
+def test_las_secuencias_se_renombran_con_su_tabla():
+    """`ALTER TABLE ... RENAME` no arrastra la secuencia del `id`: en
+    produccion la tabla ya era TRX110_VEN_PEDIDO y su secuencia seguia
+    llamandose pedidos_id_seq. En SQLite no hay secuencias, asi que aqui solo
+    se comprueba que no explote y que en ese motor no haga nada."""
+    assert migrations.nombrar_secuencias() == 0

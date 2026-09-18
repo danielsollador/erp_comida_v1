@@ -80,3 +80,23 @@ def test_el_estado_dice_cuantas_horas_lleva_sin_respaldo(monkeypatch, tmp_path):
     est = backup.estado()
     assert est["horas_sin_respaldo"] < 0.1
     assert est["intervalo_horas"] == backup.INTERVALO_HORAS
+
+
+def test_al_fallar_el_respaldo_manual_dice_por_que(client, monkeypatch):
+    """Antes cualquier tropiezo salia como "Internal Server Error" y el dueno
+    no sabia si fue el disco, la base o un programa que falta."""
+    def falta_el_programa(motivo="manual"):
+        raise FileNotFoundError(2, "El sistema no puede encontrar el archivo")
+
+    monkeypatch.setattr(backup, "crear_respaldo", falta_el_programa)
+    r = client.post("/api/respaldos/crear")
+    assert r.status_code == 500
+    assert "pg_dump" in r.json()["detail"], r.text
+
+    def disco_lleno(motivo="manual"):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(backup, "crear_respaldo", disco_lleno)
+    r = client.post("/api/respaldos/crear")
+    assert r.status_code == 500
+    assert "No space left" in r.json()["detail"], r.text
