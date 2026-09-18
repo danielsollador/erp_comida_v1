@@ -1,3 +1,26 @@
+"""Las tablas del ERP.
+
+NOMENCLATURA: `CAPA###_MOD_ENTIDAD[_DET]`, todo en mayusculas.
+
+  CAPA   TRX hechos que pasan (ventas, pagos, compras)   DIM catalogos maestros
+         CFG parametros   HIS historial de cambios   REL puente N:M entre modulos
+         DM_FACT / DM_DIM cuando exista el data mart (va en su esquema aparte)
+  ###    orden visual. La centena es el modulo, igual en todas las capas:
+         1 ventas  2 menu y recetas  3 inventario  4 compras  5 caja
+         6 contabilidad y activos  7 impuestos  8 tasa  9 usuarios y admin
+         De diez en diez para poder meter una tabla entre dos sin renumerar;
+         el detalle de una cabecera es su numero + 1 (110 pedido, 111 detalle).
+  MOD    tres letras del modulo. Una tabla que leen dos modulos la firma el que
+         la ESCRIBE; solo un puente puro lleva REL.
+  ENTIDAD en singular. Columnas en minusculas: se escriben cien veces mas que
+         los nombres de tabla y asi el SQL a mano no va entrecomillado.
+
+PostgreSQL pliega a minusculas lo que no va entre comillas, asi que en SQL
+crudo estos nombres van SIEMPRE como "TRX110_VEN_PEDIDO". SQLAlchemy lo hace
+solo. Las restricciones e indices siguen la misma linea (PK_, FK_, IX_, UQ_,
+CK_; ver `database.py`), y los nombres viejos se migran al arrancar
+(`migrations.RENOMBRES`).
+"""
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
@@ -20,9 +43,9 @@ class Operador(Base):
     ver despues quien hizo que.
     """
 
-    __tablename__ = "operadores"
+    __tablename__ = "DIM910_USU_OPERADOR"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     nombre = Column(String, nullable=False)
     rol = Column(String, default="cajero")  # cajero | dueno
     activo = Column(Boolean, default=True)
@@ -38,17 +61,17 @@ class PuntoVenta(Base):
     saber en cual gaveta.
     """
 
-    __tablename__ = "puntos_venta"
+    __tablename__ = "DIM110_VEN_PUNTO_VENTA"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     nombre = Column(String, nullable=False)
     activo = Column(Boolean, default=True)
 
 
 class Categoria(Base):
-    __tablename__ = "categorias"
+    __tablename__ = "DIM210_MEN_CATEGORIA"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     nombre = Column(String, nullable=False)
     orden = Column(Integer, default=0)
     # Se desactiva, no se borra: igual que producto y variante. Borrarla en
@@ -60,10 +83,10 @@ class Categoria(Base):
 
 
 class Producto(Base):
-    __tablename__ = "productos"
+    __tablename__ = "DIM220_MEN_PRODUCTO"
 
-    id = Column(Integer, primary_key=True, index=True)
-    categoria_id = Column(Integer, ForeignKey("categorias.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    categoria_id = Column(Integer, ForeignKey("DIM210_MEN_CATEGORIA.id"), nullable=False)
     nombre = Column(String, nullable=False)
     activo = Column(Boolean, default=True)
 
@@ -72,10 +95,10 @@ class Producto(Base):
 
 
 class Variante(Base):
-    __tablename__ = "variantes"
+    __tablename__ = "DIM230_MEN_VARIANTE"
 
-    id = Column(Integer, primary_key=True, index=True)
-    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    producto_id = Column(Integer, ForeignKey("DIM220_MEN_PRODUCTO.id"), nullable=False)
     nombre = Column(String, nullable=False)  # ej. "Grande", "Carne", "Regular"
     precio = Column(Float, nullable=False)
     activo = Column(Boolean, default=True)
@@ -84,9 +107,9 @@ class Variante(Base):
 
 
 class Ingrediente(Base):
-    __tablename__ = "ingredientes"
+    __tablename__ = "DIM310_INV_INGREDIENTE"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     nombre = Column(String, nullable=False)
     unidad = Column(String, nullable=False)  # kg | g | lt | ml | unidad | paquete
     stock_actual = Column(Float, default=0)
@@ -126,11 +149,11 @@ class Ingrediente(Base):
 
 
 class RecetaItem(Base):
-    __tablename__ = "receta_items"
+    __tablename__ = "REL250_REC_PRODUCTO_INGREDIENTE"
 
-    id = Column(Integer, primary_key=True, index=True)
-    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
-    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     cantidad_por_unidad = Column(Float, nullable=False)  # cuanto insumo consume 1 unidad vendida
 
     variante = relationship("Variante")
@@ -146,15 +169,15 @@ class CambioReceta(Base):
     reconstruir el costo de una epoca sin ir sumando diferencias.
     """
 
-    __tablename__ = "cambios_receta"
+    __tablename__ = "HIS250_REC_RECETA"
 
-    id = Column(Integer, primary_key=True, index=True)
-    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
     # "Queso 0.1 kg; Harina 0.05 kg" - legible, para que el dueno lo entienda.
     composicion = Column(String, default="")
     costo_resultante = Column(Float, default=0)
     fecha = Column(DateTime, default=ahora)
-    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
 
 class TasaCambio(Base):
@@ -165,7 +188,7 @@ class TasaCambio(Base):
     cobra a una tasa propia -distinta del BCV- y el sistema tiene que respetarla.
     """
 
-    __tablename__ = "tasas_cambio"
+    __tablename__ = "TRX810_TAS_TASA"
 
     fecha = Column(Date, primary_key=True)
     bcv = Column(Float, nullable=False)  # Bs por USD (oficial BCV)
@@ -176,16 +199,16 @@ class TasaCambio(Base):
 
 
 class Configuracion(Base):
-    __tablename__ = "configuracion"
+    __tablename__ = "CFG910_ADM_PARAMETRO"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tasa_bcv = Column(Float, default=0)
 
 
 class Gasto(Base):
-    __tablename__ = "gastos"
+    __tablename__ = "TRX620_CON_GASTO"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     descripcion = Column(String, nullable=False)
     categoria = Column(String, default="Operativo")  # Insumos | Servicios | Sueldos | Otros
     monto = Column(Float, nullable=False)
@@ -193,7 +216,7 @@ class Gasto(Base):
     # bajaba igual el efectivo esperado del cierre de caja.
     metodo_pago = Column(String, default="Efectivo")  # Efectivo | Banco
     fecha = Column(DateTime, default=ahora)
-    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
 
 class RetiroPropietario(Base):
@@ -205,14 +228,14 @@ class RetiroPropietario(Base):
     que es. No es gasto, es capital que sale.
     """
 
-    __tablename__ = "retiros_propietario"
+    __tablename__ = "TRX630_CON_RETIRO_PROPIETARIO"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     monto = Column(Float, nullable=False)
     metodo_pago = Column(String, default="Efectivo")  # Efectivo | Banco
     nota = Column(String, default="")
     fecha = Column(DateTime, default=ahora)
-    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
 
 class DeclaracionIva(Base):
@@ -226,9 +249,9 @@ class DeclaracionIva(Base):
     se arrastra al mes siguiente, que es como funciona de verdad.
     """
 
-    __tablename__ = "declaraciones_iva"
+    __tablename__ = "TRX710_IMP_DECLARACION_IVA"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     anio = Column(Integer, nullable=False)
     mes = Column(Integer, nullable=False)
     iva_debito = Column(Float, default=0)  # cobrado en ventas facturadas del mes
@@ -256,14 +279,14 @@ class ActivoFijo(Base):
     desgaste nunca llegaba al estado de resultados.
     """
 
-    __tablename__ = "activos_fijos"
+    __tablename__ = "DIM620_ACT_ACTIVO_FIJO"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     nombre = Column(String, nullable=False)
     valor = Column(Float, nullable=False)  # costo sin IVA, que es lo que se deprecia
     fecha_compra = Column(DateTime, default=ahora)
     vida_util_meses = Column(Integer, default=60)  # 5 años es lo tipico para equipo de cocina
-    factura_id = Column(Integer, ForeignKey("facturas_compra.id"), nullable=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=True)
     dado_de_baja = Column(Boolean, default=False)
     fecha_baja = Column(DateTime, nullable=True)
     motivo_baja = Column(String, default="")
@@ -284,10 +307,10 @@ class CambioPrecio(Base):
     ya que cualquiera con la tablet puede cambiarlos.
     """
 
-    __tablename__ = "cambios_precio"
+    __tablename__ = "HIS220_MEN_PRECIO"
 
-    id = Column(Integer, primary_key=True, index=True)
-    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
     precio_anterior = Column(Float, nullable=False)
     precio_nuevo = Column(Float, nullable=False)
     fecha = Column(DateTime, default=ahora)
@@ -303,10 +326,10 @@ class CompraSuelta(Base):
     FacturaCompraItem; esta es la via informal, que el negocio usa igual.
     """
 
-    __tablename__ = "compras_sueltas"
+    __tablename__ = "TRX430_COM_COMPRA_SUELTA"
 
-    id = Column(Integer, primary_key=True, index=True)
-    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     cantidad = Column(Float, nullable=False)
     costo_unitario = Column(Float, nullable=False)
     fecha = Column(DateTime, default=ahora)
@@ -315,25 +338,25 @@ class CompraSuelta(Base):
 
 
 class Merma(Base):
-    __tablename__ = "mermas"
+    __tablename__ = "TRX320_INV_MERMA"
 
-    id = Column(Integer, primary_key=True, index=True)
-    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     cantidad = Column(Float, nullable=False)
     motivo = Column(String, default="")
     # Una merma mal cargada se revierte con un asiento de reverso, no se borra:
     # el error queda documentado igual que en Compras.
     revertida = Column(Boolean, default=False)
     fecha = Column(DateTime, default=ahora)
-    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
     ingrediente = relationship("Ingrediente")
 
 
 class ConfiguracionFiscal(Base):
-    __tablename__ = "configuracion_fiscal"
+    __tablename__ = "CFG710_IMP_FISCAL"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tasa_iva = Column(Float, default=16.0)  # alicuota general de IVA en Venezuela
 
 
@@ -346,9 +369,9 @@ class FacturaCompra(Base):
     insumos a la vez y el dueno no siempre la carga el mismo dia que compra.
     """
 
-    __tablename__ = "facturas_compra"
+    __tablename__ = "TRX410_COM_FACTURA"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     numero_factura = Column(String, nullable=False)
     proveedor_nombre = Column(String, nullable=False)
     proveedor_rif = Column(String, nullable=True)
@@ -403,11 +426,11 @@ class FacturaCompraItem(Base):
     queda inflado con el IVA, que no es un costo real sino credito fiscal.
     """
 
-    __tablename__ = "factura_compra_items"
+    __tablename__ = "TRX411_COM_FACTURA_DET"
 
-    id = Column(Integer, primary_key=True, index=True)
-    factura_id = Column(Integer, ForeignKey("facturas_compra.id"), nullable=False)
-    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     cantidad = Column(Float, nullable=False)
     costo_unitario = Column(Float, nullable=False)  # precio pagado por 1 unidad de medida, SIN IVA
 
@@ -420,17 +443,17 @@ class FacturaCompraItem(Base):
 
 
 class CierreCaja(Base):
-    __tablename__ = "cierres_caja"
+    __tablename__ = "TRX510_CAJ_CIERRE"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     fecha = Column(DateTime, default=ahora)
     total_sistema = Column(Float, nullable=False)
     efectivo_esperado = Column(Float, nullable=False)
     efectivo_contado = Column(Float, nullable=False)
     diferencia = Column(Float, nullable=False)
     nota = Column(String, default="")
-    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
-    punto_venta_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    punto_venta_id = Column(Integer, ForeignKey("DIM110_VEN_PUNTO_VENTA.id"), nullable=True)
     # Un digito de mas al contar (1000 en vez de 100) metia un sobrante
     # ficticio en los libros para siempre: no habia borrar ni volver a cerrar.
     # El cierre no se borra - se anula con su contra-asiento y queda el rastro
@@ -444,8 +467,8 @@ class CierreCaja(Base):
     divisas_contado = Column(Float, default=0)
     divisas_diferencia = Column(Float, default=0)
     # Quien conto y que gaveta cerro. Con dos pisos son dos cierres distintos.
-    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
-    punto_venta_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    punto_venta_id = Column(Integer, ForeignKey("DIM110_VEN_PUNTO_VENTA.id"), nullable=True)
 
     operador_rel = relationship("Operador")
     punto_venta_rel = relationship("PuntoVenta")
@@ -469,10 +492,10 @@ class SobranteInventario(Base):
     referencia contable (el mismo bug que ya se corrigio en compras sueltas).
     """
 
-    __tablename__ = "sobrantes_inventario"
+    __tablename__ = "TRX330_INV_SOBRANTE"
 
-    id = Column(Integer, primary_key=True, index=True)
-    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     cantidad = Column(Float, nullable=False)
     motivo = Column(String, default="")
     fecha = Column(DateTime, default=ahora)
@@ -497,10 +520,10 @@ class NotaCreditoCompra(Base):
     le hacia pagar de mas al proveedor.
     """
 
-    __tablename__ = "notas_credito_compra"
+    __tablename__ = "TRX420_COM_NOTA_CREDITO"
 
-    id = Column(Integer, primary_key=True, index=True)
-    factura_id = Column(Integer, ForeignKey("facturas_compra.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
     numero = Column(String, nullable=False)  # el numero que emitio el proveedor
     tipo = Column(String, nullable=False)  # devolucion | descuento
     fecha = Column(DateTime, default=ahora)
@@ -524,11 +547,11 @@ class NotaCreditoCompraItem(Base):
     Solo aplica al tipo `devolucion`; un descuento no mueve cantidades.
     """
 
-    __tablename__ = "nota_credito_compra_items"
+    __tablename__ = "TRX421_COM_NOTA_CREDITO_DET"
 
-    id = Column(Integer, primary_key=True, index=True)
-    nota_id = Column(Integer, ForeignKey("notas_credito_compra.id"), nullable=False)
-    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    nota_id = Column(Integer, ForeignKey("TRX420_COM_NOTA_CREDITO.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     cantidad = Column(Float, nullable=False)
     costo_unitario = Column(Float, nullable=False)
 
@@ -544,9 +567,9 @@ class CuentaContable(Base):
     ingreso) aumenta con creditos. Sin esto no se puede calcular un saldo.
     """
 
-    __tablename__ = "cuentas_contables"
+    __tablename__ = "DIM610_CON_CUENTA"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     codigo = Column(String, unique=True, nullable=False)
     nombre = Column(String, nullable=False)
     tipo = Column(String, nullable=False)  # activo|pasivo|patrimonio|ingreso|costo|gasto
@@ -562,9 +585,9 @@ class AsientoContable(Base):
     numero sin adivinar.
     """
 
-    __tablename__ = "asientos_contables"
+    __tablename__ = "TRX610_CON_ASIENTO"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     fecha = Column(DateTime, default=ahora)
     descripcion = Column(String, nullable=False)
     origen = Column(String, default="manual")  # manual|venta|compra_insumo|gasto|merma
@@ -576,11 +599,11 @@ class AsientoContable(Base):
 
 
 class MovimientoContable(Base):
-    __tablename__ = "movimientos_contables"
+    __tablename__ = "TRX611_CON_ASIENTO_DET"
 
-    id = Column(Integer, primary_key=True, index=True)
-    asiento_id = Column(Integer, ForeignKey("asientos_contables.id"), nullable=False)
-    cuenta_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    asiento_id = Column(Integer, ForeignKey("TRX610_CON_ASIENTO.id"), nullable=False)
+    cuenta_id = Column(Integer, ForeignKey("DIM610_CON_CUENTA.id"), nullable=False)
     debe = Column(Float, default=0)
     haber = Column(Float, default=0)
 
@@ -589,9 +612,9 @@ class MovimientoContable(Base):
 
 
 class Pedido(Base):
-    __tablename__ = "pedidos"
+    __tablename__ = "TRX110_VEN_PEDIDO"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     numero = Column(Integer, nullable=False)
     estado = Column(String, default="pendiente")  # pendiente | listo | pagado | anulado
     nota = Column(String, default="")
@@ -632,9 +655,9 @@ class Pedido(Base):
     fecha_cobro_fiado = Column(DateTime, nullable=True)
     # Quien lo cobro y desde que caja. Sin esto no habia forma de saber quien
     # anulo un pedido ni cuanto entro por cada gaveta con dos tablets.
-    operador_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
-    punto_venta_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=True)
-    anulado_por_id = Column(Integer, ForeignKey("operadores.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    punto_venta_id = Column(Integer, ForeignKey("DIM110_VEN_PUNTO_VENTA.id"), nullable=True)
+    anulado_por_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     operador_rel = relationship("Operador", foreign_keys=[operador_id])
@@ -686,10 +709,10 @@ class PagoPedido(Base):
     no existia.
     """
 
-    __tablename__ = "pagos_pedido"
+    __tablename__ = "TRX120_VEN_PAGO"
 
-    id = Column(Integer, primary_key=True, index=True)
-    pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=False)
     metodo = Column(String, nullable=False)  # ver contabilidad.CUENTA_POR_METODO_PAGO
     monto = Column(Float, nullable=False)
     # Lo que el cliente entrego de verdad. Con un billete de $20 por una compra
@@ -711,26 +734,26 @@ class PedidoConsumo(Base):
     descontado, y aparecia inventario de la nada.
     """
 
-    __tablename__ = "pedido_consumos"
+    __tablename__ = "TRX310_INV_CONSUMO"
 
-    id = Column(Integer, primary_key=True, index=True)
-    pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
-    ingrediente_id = Column(Integer, ForeignKey("ingredientes.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     cantidad = Column(Float, nullable=False)  # cantidad bruta, ya ajustada por rendimiento
 
     ingrediente = relationship("Ingrediente")
 
 
 class PedidoItem(Base):
-    __tablename__ = "pedido_items"
+    __tablename__ = "TRX111_VEN_PEDIDO_DET"
 
-    id = Column(Integer, primary_key=True, index=True)
-    pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=False)
     # Nullable para la venta libre: el encargo especial, el combo armado a mano,
     # el producto de temporada. Antes habia que crearlo en el menu para poder
     # cobrarlo, y ahi se quedaba para siempre ensuciando el catalogo - lo que
     # en la practica empujaba a no registrar la venta.
-    variante_id = Column(Integer, ForeignKey("variantes.id"), nullable=True)
+    variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=True)
     nombre = Column(String, nullable=False)
     precio_unitario = Column(Float, nullable=False)
     # Costo de insumos congelado al momento de la venta: si manana sube el queso,

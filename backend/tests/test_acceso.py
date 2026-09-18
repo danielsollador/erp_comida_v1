@@ -629,4 +629,4 @@ def test_en_produccion_nada_escucha_en_la_ip_publica():
     texto = (RAIZ / "docker-compose.prod.yml").read_text(encoding="utf-8")
     assert "Host(`savora.vertigopro.tech`)" in texto
     assert "Host(`vertigopro.tech`)" in texto
-    assert "ERP_DB_SCHEMA: hub" in texto, "el hub tiene que trabajar en su propio esquema"
+    assert "ERP_DB_SCHEMA: HUB" in texto, "el hub tiene que trabajar en su propio esquema"

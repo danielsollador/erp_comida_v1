@@ -16,10 +16,32 @@ un CNAME al raíz.
 ## La base: PostgreSQL, un esquema por local
 
 Una sola instancia (`db`), una base (`vertigo`) y un **esquema** por local:
-`savora` para Sávora, `hub` para el hub, y el siguiente local tendrá el suyo.
-Cada backend arranca con `ERP_DB_SCHEMA` y su `search_path` solo tiene ese
-esquema: `SELECT * FROM pedidos` es siempre `savora.pedidos` y nunca el de otro
-cliente.
+`SAVORA` para Sávora y el siguiente local tendrá el suyo (el hub no tiene
+tablas: trabaja con JSON). El esquema sale de `ERP_LOCAL`, en mayúsculas, y el
+`search_path` de cada backend solo tiene ese esquema: `SELECT * FROM
+"TRX110_VEN_PEDIDO"` es siempre `"SAVORA"."TRX110_VEN_PEDIDO"` y nunca el de
+otro cliente.
+
+**Nomenclatura** (`CAPA###_MOD_ENTIDAD`, todo en mayúsculas; la norma completa
+está en la cabecera de `backend/app/models.py`):
+
+| Capa | Qué es | Ejemplo |
+|---|---|---|
+| `TRX` | transaccional: hechos que pasan | `TRX110_VEN_PEDIDO` / `TRX111_VEN_PEDIDO_DET` |
+| `DIM` | catálogo maestro | `DIM220_MEN_PRODUCTO` |
+| `CFG` | parámetros | `CFG710_IMP_FISCAL` |
+| `HIS` | historial de cambios | `HIS220_MEN_PRECIO` |
+| `REL` | puente N:M entre módulos | `REL250_REC_PRODUCTO_INGREDIENTE` |
+| `DM_FACT` / `DM_DIM` | data mart (cuando exista; esquema `SAVORA_DM`) | — |
+
+La centena del número es el módulo, igual en todas las capas: 1 ventas, 2 menú
+y recetas, 3 inventario, 4 compras, 5 caja, 6 contabilidad y activos,
+7 impuestos, 8 tasa, 9 usuarios y admin. Restricciones e índices: `PK_`, `FK_`,
+`UQ_`, `IX_`. PostgreSQL pliega a minúsculas lo que no va entre comillas, así
+que en SQL a mano estos nombres van **siempre entre comillas dobles**. Una base
+con los nombres viejos (`pedidos`, esquema `savora`) se pone al día sola al
+arrancar (`migrations.RENOMBRES`); los respaldos de antes siguen siendo
+restaurables.
 
 Se eligió esquema-por-local y no base-por-local porque es **una sola instancia
 que respaldar y vigilar**, y aun así cada local tiene sus tablas aparte. El día
@@ -32,7 +54,7 @@ clave de `POSTGRES_PASSWORD` del `.env` del servidor.
 **Respaldos**: `pg_dump` del esquema (formato custom, comprimido) cada 6 horas
 desde el propio backend, con retención por tiempo (8 recientes + el último de
 cada día de los últimos 30). Se descargan y **se restauran desde la pantalla
-Sistema**. Restaurar renombra el esquema vivo a `savora_previo`, restaura en
+Sistema**. Restaurar renombra el esquema vivo a `SAVORA_previo`, restaura en
 una transacción, y solo si terminó bien lo suelta: un archivo malo no cuesta la
 base buena. Junto a cada `.dump` va un `.json` con cuántos pedidos tenía y hasta
 cuándo: es lo que permite decir "vas a perder 14 pedidos por $87" antes de
