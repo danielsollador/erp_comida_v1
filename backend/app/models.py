@@ -5,11 +5,20 @@ NOMENCLATURA: `CAPA###_MOD_ENTIDAD[_DET]`, todo en mayusculas.
   CAPA   TRX hechos que pasan (ventas, pagos, compras)   DIM catalogos maestros
          CFG parametros   HIS historial de cambios   REL puente N:M entre modulos
          DM_FACT / DM_DIM cuando exista el data mart (va en su esquema aparte)
-  ###    orden visual. La centena es el modulo, igual en todas las capas:
-         1 ventas  2 menu y recetas  3 inventario  4 compras  5 caja
-         6 contabilidad y activos  7 impuestos  8 tasa  9 usuarios y admin
-         De diez en diez para poder meter una tabla entre dos sin renumerar;
-         el detalle de una cabecera es su numero + 1 (110 pedido, 111 detalle).
+  ###    orden visual. Cada digito tiene dueño:
+         CENTENA = el modulo, igual en todas las capas:
+           1 ventas  2 menu y recetas  3 inventario  4 compras  5 caja
+           6 contabilidad y activos  7 impuestos  8 tasa  9 usuarios y admin
+         DECENA  = la entidad dentro del modulo (310 ingrediente, 320 merma,
+           330 sobrante, 340 movimiento). Aqui vive el orden, y aqui esta el
+           sitio para una tabla nueva: quedan decenas libres de sobra.
+         UNIDAD  = las hijas de esa entidad; la cabecera siempre termina en 0
+           (110 pedido, 111 su detalle). Es lo que hace que una hija caiga
+           pegada a su madre en el arbol: comparte prefijo y solo cambia el
+           ultimo digito. Por eso el orden NO puede vivir en la unidad, y por
+           eso tampoco se mete una entidad nueva en 115: ese hueco es de las
+           hijas de la 11x.
+         Da 9 entidades por modulo y capa, con 9 hijas cada una.
   MOD    tres letras del modulo. Una tabla que leen dos modulos la firma el que
          la ESCRIBE; solo un puente puro lleva REL.
   ENTIDAD en singular. Columnas en minusculas: se escriben cien veces mas que

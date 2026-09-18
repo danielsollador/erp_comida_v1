@@ -34,9 +34,16 @@ está en la cabecera de `backend/app/models.py`):
 | `REL` | puente N:M entre módulos | `REL250_REC_PRODUCTO_INGREDIENTE` |
 | `DM_FACT` / `DM_DIM` | data mart (cuando exista; esquema `SAVORA_DM`) | — |
 
-La centena del número es el módulo, igual en todas las capas: 1 ventas, 2 menú
-y recetas, 3 inventario, 4 compras, 5 caja, 6 contabilidad y activos,
-7 impuestos, 8 tasa, 9 usuarios y admin. Restricciones e índices: `PK_`, `FK_`,
+Cada dígito del número tiene dueño. La **centena** es el módulo, igual en todas
+las capas: 1 ventas, 2 menú y recetas, 3 inventario, 4 compras, 5 caja,
+6 contabilidad y activos, 7 impuestos, 8 tasa, 9 usuarios y admin. La **decena**
+es la entidad dentro del módulo (310 ingrediente, 320 merma, 330 sobrante,
+340 movimiento): ahí vive el orden y ahí va una tabla nueva. La **unidad** es
+para las hijas — la cabecera siempre termina en 0 y su detalle es +1
+(`TRX110_VEN_PEDIDO` → `TRX111_VEN_PEDIDO_DET`), que es lo que las deja pegadas
+en el árbol. Da 9 entidades por módulo y capa, con 9 hijas cada una.
+
+Restricciones e índices: `PK_`, `FK_`,
 `UQ_`, `IX_`. PostgreSQL pliega a minúsculas lo que no va entre comillas, así
 que en SQL a mano estos nombres van **siempre entre comillas dobles**. Una base
 con los nombres viejos (`pedidos`, esquema `savora`) se pone al día sola al
