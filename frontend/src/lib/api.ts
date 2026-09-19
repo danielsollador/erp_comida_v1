@@ -87,6 +87,13 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
   try {
     res = await fetch(`/api${path}`, {
       headers: { 'Content-Type': 'application/json' },
+      // SIN CACHE. El API no manda `Cache-Control` ni `ETag`, asi que el
+      // navegador puede decidir por su cuenta reutilizar la respuesta
+      // anterior de un GET: se borraba algo, se volvia a pedir la lista y
+      // llegaba la de antes. Solo al recargar la pagina se veia el cambio.
+      // Son respuestas pequenas y lo que se pide de este ERP es siempre "como
+      // esta AHORA": una lista vieja no sirve de nada.
+      cache: 'no-store',
       // La cookie de sesion viaja sola en el mismo origen; se declara igual
       // para que un despliegue con el API en otro origen no la pierda en
       // silencio.
