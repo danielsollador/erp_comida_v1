@@ -20,12 +20,14 @@ MODULO_POR_CENTENA = {
 
 def test_todas_las_tablas_siguen_la_norma():
     nombres = sorted(Base.metadata.tables)
-    assert len(nombres) == 37
+    assert len(nombres) == 40
     for n in nombres:
         m = PATRON.match(n)
         assert m, f"{n!r} no sigue CAPA###_MOD_ENTIDAD"
         capa, numero = m.group(1), m.group(2)
-        modulo = n.split("_")[1]
+        # El modulo es lo que sigue a la capa y al numero: con `DM_FACT` la
+        # capa lleva su propio guion bajo y partir por "_" daba "FACT110".
+        modulo = n[len(capa) + len(numero) + 1:].split("_")[0]
         assert modulo in MODULO_POR_CENTENA[numero[0]], (
             f"{n}: la centena {numero[0]} no es del modulo {modulo}")
         assert len(n) <= 63 - len("IX__ingrediente_id"), f"{n}: demasiado largo para sus indices"
@@ -125,6 +127,6 @@ def test_create_all_encima_de_una_base_renombrada_no_duplica():
     migrations.renombrar_tablas(motor)
     Base.metadata.create_all(bind=motor)
     tablas = set(sa.inspect(motor).get_table_names())
-    assert len(tablas) == 37
+    assert len(tablas) == 40
     with motor.connect() as con:
         assert con.execute(text('SELECT COUNT(*) FROM "DIM220_MEN_PRODUCTO"')).scalar() == 1

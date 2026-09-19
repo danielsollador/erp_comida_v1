@@ -953,6 +953,9 @@ class ReporteResumen(BaseModel):
     por_categoria: List[GrupoReporte] = []
     # Los siete dias, lunes a domingo. Vacio si el rango es de un solo dia.
     por_dia_semana: List[GrupoReporte] = []
+    # Cuando se guardaron por ultima vez los dias pasados en el mart. None si
+    # todo lo que se ve se calculo en vivo.
+    consolidado_en: Optional[str] = None
 
 
 class VentaFila(BaseModel):

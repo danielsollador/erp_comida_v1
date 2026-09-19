@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
-from .. import backup, contabilidad, models, schemas, seed
+from .. import backup, consolidacion, contabilidad, models, schemas, seed
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy, rango_periodo
@@ -106,6 +106,8 @@ def eliminar_asiento(asiento_id: int, db: Session = Depends(get_db)):
         contabilidad.asegurar_ejercicio_abierto(db, asiento.fecha, "ese asiento")
     except contabilidad.ErrorEjercicioCerrado as e:
         raise HTTPException(status_code=409, detail=str(e))
+    # El dia de ese asiento ya podia estar en el mart: se recalcula.
+    consolidacion.invalidar_dia(db, asiento.fecha)
     db.delete(asiento)
     db.commit()
     return {"ok": True}

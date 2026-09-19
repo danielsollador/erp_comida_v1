@@ -325,6 +325,8 @@ export type ReporteResumen = {
   por_categoria: GrupoReporte[]
   /** Lunes a domingo. Vacio si el rango es de un solo dia. */
   por_dia_semana: GrupoReporte[]
+  /** Cuando se guardaron los dias pasados en el mart. null = todo en vivo. */
+  consolidado_en: string | null
 }
 
 export type ActivoFijo = {

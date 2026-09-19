@@ -703,3 +703,35 @@ Por bloques:
 - **Verificar contra el sistema corriendo**, no solo con tests. Los dos bugs de
   arriba salieron así y la suite no los veía.
 - Commits que explican el razonamiento, no el diff.
+
+## El mart diario (19-sep, Leider)
+
+Reportes, Ventas y Contabilidad ya **no recorren el histórico en cada visita**.
+`backend/app/consolidacion.py` guarda cada noche (03:30 hora del local) los
+números de cada día terminado en tres tablas `DM_FACT*` del mismo esquema:
+`DM_FACT110_VEN_DIA` (una fila por día), `DM_FACT120_VEN_DIA_DET` (por método,
+hora, día×hora, categoría, producto, operador, caja) y
+`DM_FACT610_CON_DIA_CUENTA` (debe/haber por cuenta y día). Un rango se parte:
+los días consolidados salen del mart y solo lo que falta —hoy— se calcula en
+vivo, **con la misma función** (`bloque_en_vivo`), así el número es idéntico
+venga de donde venga (`tests/test_mart_diario.py` lo comprueba literalmente
+borrando los pedidos y viendo que el reporte no cambia).
+
+- Si un día pasado cambia (devolución, factura tardía, anulación de una comanda
+  de ayer, asiento manual con fecha vieja), `invalidar_dia` lo borra del mart
+  y se calcula en vivo hasta la noche siguiente. El gancho general está en
+  `contabilidad.crear_asiento`; los de ventas en `routers/pedidos.py`.
+- `consolidacion.VERSION`: súbela cuando cambie qué se guarda o cómo se
+  calcula y la noche recalcula lo guardado con la versión vieja.
+- Al arrancar, un minuto después, se pone al día lo que la noche no alcanzó.
+- Lo único que sigue vivo en Ventas es el **fiado pendiente**: cambia cuando
+  el cliente paga, semanas después.
+- Por qué en Python y no en un procedimiento de PostgreSQL: la definición de
+  "venta del día" vive en el código (devueltas fuera, IVA por alícuota del
+  pedido, envíos sin receta a propósito, mediana) y duplicarla en SQL era
+  garantizar dos versiones distintas. El costo que importa se paga igual una
+  vez por día.
+
+También del 19-sep: el menú demo solo se siembra con `ERP_SEMBRAR_DEMO=1`
+(`docker-compose.dev.yml`); producción se vació esa noche para arrancar el
+20-sep (dump previo en `/root/respaldos/` del servidor).

@@ -30,7 +30,7 @@ solo. Las restricciones e indices siguen la misma linea (PK_, FK_, IX_, UQ_,
 CK_; ver `database.py`), y los nombres viejos se migran al arrancar
 (`migrations.RENOMBRES`).
 """
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -1099,3 +1099,87 @@ class PedidoEdicion(Base):
     @property
     def operador(self) -> str:
         return self.operador_rel.nombre if self.operador_rel else ""
+
+
+# ── El data mart diario (ver `consolidacion.py`) ─────────────────────────────
+#
+# La cabecera de este archivo reserva DM_FACT / DM_DIM "en su esquema aparte".
+# Viven en el esquema del local a proposito: el search_path de cada proceso
+# apunta a UN esquema, el respaldo de un local es su esquema, y un mart en
+# otro esquema habria obligado a repetir esas dos cosas por cliente para no
+# ganar nada (los locales ya no se cruzan). El prefijo DM_ sigue diciendo que
+# esto es derivado: se puede borrar entero y se reconstruye solo.
+
+
+class DmVentaDia(Base):
+    """Los numeros de UN dia terminado, calculados una vez por la noche.
+
+    Es exactamente lo que `consolidacion.bloque_en_vivo` calcula para ese dia;
+    Reportes y Ventas leen de aqui los dias pasados y calculan en vivo solo lo
+    que falta (hoy). Si un dia cambia (devolucion, factura tardia), la fila se
+    borra y se vuelve a calcular: nunca se corrige a mano.
+    """
+
+    __tablename__ = "DM_FACT110_VEN_DIA"
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(Date, nullable=False, unique=True, index=True)
+    # Con que version del calculo se guardo: al subirla, la noche recalcula.
+    version = Column(Integer, nullable=False, default=1)
+    consolidado_en = Column(DateTime, nullable=False)
+
+    ventas = Column(Float, default=0)
+    ventas_bs = Column(Float, default=0)
+    iva_cobrado = Column(Float, default=0)
+    pedidos = Column(Integer, default=0)
+    unidades = Column(Integer, default=0)
+    costo_items = Column(Float, default=0)
+    # Los totales de cada pedido cobrado, ordenados, en JSON: la mediana de un
+    # mes se calcula exacta juntando las listas, sin volver a leer pedidos.
+    totales_json = Column(Text, default="[]")
+    mayor_numero = Column(Integer, nullable=True)
+    mayor_total = Column(Float, nullable=True)
+    anulados = Column(Integer, default=0)
+    valor_anulado = Column(Float, default=0)
+    devoluciones = Column(Integer, default=0)
+    valor_devuelto = Column(Float, default=0)
+    facturadas = Column(Integer, default=0)
+    valor_facturado = Column(Float, default=0)
+    con_descuento = Column(Integer, default=0)
+    valor_descuentos = Column(Float, default=0)
+
+
+class DmVentaDiaDet(Base):
+    """El detalle de un dia: una fila por (tipo, clave).
+
+    tipo: metodo | hora | calor | categoria | producto | operador | punto.
+    clave: el metodo de pago; "HH"; "d-HH" (dia de la semana y hora); el
+    nombre de la categoria; "v:<variante_id>" o "l:<nombre>" (venta libre);
+    el operador; la caja.
+    """
+
+    __tablename__ = "DM_FACT120_VEN_DIA_DET"
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(Date, nullable=False, index=True)
+    tipo = Column(String, nullable=False)
+    clave = Column(String, nullable=False)
+    nombre = Column(String, default="")
+    ventas = Column(Float, default=0)
+    pedidos = Column(Integer, default=0)
+    unidades = Column(Integer, default=0)
+    costo = Column(Float, default=0)
+    sin_receta = Column(Boolean, default=False)
+
+
+class DmCuentaDia(Base):
+    """Debe y haber de cada cuenta contable en un dia terminado. El balance de
+    un año suma 365 filas por cuenta en vez de recorrer todos los asientos."""
+
+    __tablename__ = "DM_FACT610_CON_DIA_CUENTA"
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(Date, nullable=False, index=True)
+    cuenta_id = Column(Integer, ForeignKey("DIM610_CON_CUENTA.id"), nullable=False)
+    debe = Column(Float, default=0)
+    haber = Column(Float, default=0)

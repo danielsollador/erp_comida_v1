@@ -10,6 +10,7 @@ from ..acceso import usuarios
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
+from .. import consolidacion
 from . import operadores
 
 router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
@@ -1155,6 +1156,8 @@ async def facturar_pedido(
     # porque en ese momento no iba a haber factura.
     pedido.tasa_iva = impuestos.tasa_iva(db)
     contabilidad.registrar_facturacion_tardia(db, pedido)
+    # La venta ya estaba en el mart sin factura: ese dia se recalcula.
+    consolidacion.invalidar_dia(db, pedido.cerrado_en)
     db.commit()
     db.refresh(pedido)
 
@@ -1205,6 +1208,8 @@ async def devolver_pedido(
 
     pedido.devuelto = True
     pedido.fecha_devolucion = ahora()
+    # Deja de ser venta del dia en que se cobro: ese dia se recalcula.
+    consolidacion.invalidar_dia(db, pedido.cerrado_en)
     pedido.nota_credito = body.nota_credito
     pedido.motivo_devolucion = body.motivo
     db.commit()
@@ -1312,6 +1317,9 @@ async def anular_pedido(
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    # Los anulados se cuentan por el dia en que se tomo la comanda: una de
+    # ayer anulada hoy cambia los numeros de ayer que el mart ya guardo.
+    consolidacion.invalidar_dia(db, pedido.creado_en)
     # Anular algo ya cobrado descuadraria la caja del dia en silencio.
     if pedido.estado == "pagado":
         raise HTTPException(

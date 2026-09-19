@@ -1,15 +1,14 @@
 import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from sqlalchemy.orm import joinedload
-
-from .. import combos, contabilidad, impuestos, models, reposicion, schemas, seed
+from .. import combos, consolidacion, contabilidad, models, reposicion, schemas
+from ..consolidacion import Bloque, pedidos_pagados as _pedidos_pagados
 from ..database import get_db
 from ..rango import Rango, anterior, granularidad, serie as serie_del_rango
-from ..timeutils import hoy
+from ..timeutils import hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/reportes", tags=["reportes"])
 
@@ -137,111 +136,47 @@ DIAS_ES = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
 DIAS_LARGOS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 
-def _pedidos_pagados(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
-    """Ventas efectivas del periodo. Las devueltas no cuentan: el cliente
-    trajo la comida de vuelta, asi que no hubo venta."""
-    return (
-        db.query(models.Pedido)
-        .filter(
-            models.Pedido.estado == "pagado",
-            models.Pedido.devuelto.is_(False),
-            models.Pedido.cerrado_en >= inicio,
-            models.Pedido.cerrado_en < fin,
-        )
-        .all()
-    )
-
-
-def _devoluciones(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
-    return (
-        db.query(models.Pedido)
-        .filter(
-            models.Pedido.devuelto.is_(True),
-            models.Pedido.fecha_devolucion >= inicio,
-            models.Pedido.fecha_devolucion < fin,
-        )
-        .all()
-    )
-
-
-def _totales(pedidos) -> Tuple[float, float]:
-    """(ventas, costo de insumos) del conjunto de pedidos."""
-    ventas = sum(p.total for p in pedidos)
-    costo = sum(
-        (i.costo_unitario or 0) * i.cantidad for p in pedidos for i in p.items
-    )
-    return ventas, costo
-
-
-def _pedidos_anulados(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
-    return (
-        db.query(models.Pedido)
-        .filter(
-            models.Pedido.estado == "anulado",
-            models.Pedido.creado_en >= inicio,
-            models.Pedido.creado_en < fin,
-        )
-        .all()
-    )
-
-
-def _valor_anulado(db: Session, inicio: datetime.datetime, fin: datetime.datetime) -> float:
-    """Cuanto dinero de venta se perdio en anulaciones.
-
-    Contar cuantos pedidos se anularon no le dice nada al dueno; lo que importa
-    es si eso le esta costando plata.
-    """
-    return round(sum(p.total for p in _pedidos_anulados(db, inicio, fin)), 2)
-
-
 def merma_periodo(db: Session, inicio: datetime.datetime, fin: datetime.datetime) -> float:
-    """Valor de lo que se boto en el periodo, segun la cuenta 6020."""
+    """Valor de lo que se boto en el periodo, segun la cuenta 6020. Pasa por
+    `sumas_de_cuenta`, que ya lee los dias cerrados del mart."""
     cuenta = (
         db.query(models.CuentaContable).filter(models.CuentaContable.codigo == "6020").first()
     )
     if not cuenta:
         return 0.0
-    movimientos = (
-        db.query(models.MovimientoContable)
-        .join(models.AsientoContable)
-        .filter(
-            models.MovimientoContable.cuenta_id == cuenta.id,
-            models.AsientoContable.fecha >= inicio,
-            models.AsientoContable.fecha < fin,
-        )
-        .all()
-    )
-    return round(sum(m.debe - m.haber for m in movimientos), 2)
+    debe, haber = contabilidad.sumas_de_cuenta(db, cuenta.id, inicio, fin)
+    return round(debe - haber, 2)
 
 
-def _ventas_en_bs(pedidos) -> float:
-    """Bolivares que de verdad entraron, cada venta a la tasa de SU dia.
+def _puntos_del_bloque(b: Bloque, paso: str):
+    """Los puntos con que `rango.serie` arma la serie: por horas cuando el
+    rango es un dia (el detalle por hora del bloque), por dias en lo demas.
+    Cada punto vale por los pedidos que agrupa."""
+    if paso == "hora":
+        # Un rango de un dia: la fecha de cada punto es la de ese dia. Si el
+        # bloque cubre varios dias por horas no tiene sentido y no se pide.
+        dia = consolidacion.fecha_de_clave(next(iter(b.por_dia))) if b.por_dia else None
+        if dia is None:
+            return []
+        return [
+            (datetime.datetime.combine(dia, datetime.time(int(h), 0)), g.ventas, g.pedidos)
+            for h, g in b.por_hora.items()
+        ]
+    return [
+        (inicio_del_dia(consolidacion.fecha_de_clave(clave)) + datetime.timedelta(hours=12), g.ventas, g.pedidos)
+        for clave, g in b.por_dia.items()
+    ]
 
-    Convertir el total en dolares a la tasa de hoy haria que el historico en
-    bolivares cambiara solo cada vez que se mueve el dolar.
-    """
-    return round(sum(p.total * (p.tasa_bcv or 0) for p in pedidos), 2)
 
-
-def _iva_cobrado(pedidos) -> float:
-    """IVA contenido en las ventas facturadas: entro a la caja pero no es del negocio."""
-    total = 0.0
-    for p in pedidos:
-        if not p.facturado:
-            continue
-        _base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
-        total += iva
-    return round(total, 2)
-
-
-def _serie(periodo: str, pedidos, inicio: datetime.datetime, fin: datetime.datetime):
+def _serie(periodo: str, b: Bloque, inicio: datetime.datetime, fin: datetime.datetime):
     """Ventas a lo largo del rango, con el paso que le toca (ver `rango.serie`).
 
     La semana se sigue leyendo por dia de la semana ("Lun", "Mar"), que es como
     la piensa quien atiende; lo demas lleva la fecha.
     """
-    puntos = serie_del_rango(((p.cerrado_en, p.total) for p in pedidos), inicio, fin)
-    if periodo == "semana" and granularidad(inicio, fin) == "dia":
+    paso = granularidad(inicio, fin)
+    puntos = serie_del_rango(_puntos_del_bloque(b, paso), inicio, fin, paso=paso)
+    if periodo == "semana" and paso == "dia":
         dia = inicio
         for punto in puntos:
             punto["etiqueta"] = DIAS_ES[dia.weekday()]
@@ -249,7 +184,7 @@ def _serie(periodo: str, pedidos, inicio: datetime.datetime, fin: datetime.datet
     return [schemas.PuntoSerie(**p) for p in puntos]
 
 
-def _top_productos(pedidos, servicios: set) -> List[schemas.ProductoVendido]:
+def _top_productos(b: Bloque) -> List[schemas.ProductoVendido]:
     """Agrupa por variante, NO por el nombre congelado del item.
 
     Agrupar por nombre rompia en las dos direcciones: dos productos distintos
@@ -259,55 +194,24 @@ def _top_productos(pedidos, servicios: set) -> List[schemas.ProductoVendido]:
     dos lineas. El nombre congelado sigue siendo el que se muestra (el ticket
     de ayer decia eso), pero ya no es la clave.
     """
-    agregado: Dict[object, Dict[str, float]] = {}
-    for p in pedidos:
-        for i in p.items:
-            # La venta libre no tiene variante: se agrupa por su nombre, que es
-            # lo unico que la identifica.
-            clave = i.variante_id if i.variante_id is not None else ("libre", i.nombre)
-            entrada = agregado.setdefault(
-                clave,
-                {
-                    "nombre": i.nombre,
-                    "unidades": 0,
-                    "ingresos": 0.0,
-                    "costo": 0.0,
-                    "sin_receta": False,
-                },
-            )
-            # Si el producto se renombro, manda el nombre mas reciente: es el
-            # que el dueno reconoce hoy en la pantalla.
-            entrada["nombre"] = i.nombre
-            entrada["unidades"] += i.cantidad
-            entrada["ingresos"] += i.precio_unitario * i.cantidad
-            entrada["costo"] += (i.costo_unitario or 0) * i.cantidad
-            # Lo que decide si el margen es confiable es si ESA venta tuvo
-            # costo, no si el producto tiene receta HOY. Con la receta de hoy,
-            # borrarla reescribia a 0% el margen de ventas que si lo tuvieron,
-            # y cargarla despues presentaba como dato bueno un 100% inventado
-            # sobre ventas que se hicieron sin costo.
-            # Un servicio (el envio) cuesta cero de verdad: no le falta nada.
-            if not (i.costo_unitario or 0) and i.variante_id not in servicios:
-                entrada["sin_receta"] = True
-
+    # El bloque ya agrupo por variante (o por nombre en la venta libre) y ya
+    # decidio si a cada uno le falto costo; ver `consolidacion.bloque_en_vivo`.
     productos = []
-    for _variante_id, datos in agregado.items():
-        nombre = datos["nombre"]
-        ingresos = round(datos["ingresos"], 2)
-        costo = round(datos["costo"], 2)
+    for _clave, g in b.productos.items():
+        ingresos = round(g.ventas, 2)
+        costo = round(g.costo, 2)
         ganancia = round(ingresos - costo, 2)
-        sin_receta = bool(datos["sin_receta"])
         productos.append(
             schemas.ProductoVendido(
-                nombre=nombre,
-                unidades=int(datos["unidades"]),
+                nombre=g.nombre,
+                unidades=int(g.unidades),
                 ingresos=ingresos,
                 costo=costo,
                 ganancia=ganancia,
                 # Un margen calculado sobre costo cero no significa nada, asi
                 # que no se reporta como si fuera un dato bueno.
-                margen_pct=0.0 if sin_receta else (round(ganancia / ingresos * 100, 1) if ingresos else 0.0),
-                sin_receta=sin_receta,
+                margen_pct=0.0 if g.sin_receta else (round(ganancia / ingresos * 100, 1) if ingresos else 0.0),
+                sin_receta=bool(g.sin_receta),
             )
         )
     productos.sort(key=lambda x: x.ingresos, reverse=True)
@@ -345,15 +249,15 @@ def _pct(nuevo: float, viejo: float):
 
 
 def _comparativa(
-    etiqueta: str, pedidos_previos, ventas_previas: float, libro_previo: dict,
-    ventas: float, cuantos: int, ganancia_neta: float,
+    etiqueta: str, previo: Bloque, libro_previo: dict, ventas: float, cuantos: int, ganancia_neta: float,
 ) -> schemas.Comparativa:
     """El periodo anterior puesto al lado, con el cambio en porcentaje.
 
     Se calcula igual que el actual --mismos pedidos pagados, misma
     contabilidad-- para que "vas 12% arriba" compare lo mismo con lo mismo.
     """
-    n_prev = len(pedidos_previos)
+    n_prev = previo.pedidos
+    ventas_previas = previo.ventas
     ticket_prev = round(ventas_previas / n_prev, 2) if n_prev else 0.0
     ticket = round(ventas / cuantos, 2) if cuantos else 0.0
     ganancia_prev = round(libro_previo["ingreso"] - libro_previo["costo"] - libro_previo["gasto"], 2)
@@ -373,7 +277,7 @@ def _comparativa(
 
 
 def _serie_anterior(
-    serie_actual: List[schemas.PuntoSerie], pedidos_previos, inicio, fin, paso: str
+    serie_actual: List[schemas.PuntoSerie], previo: Bloque, inicio, fin, paso: str
 ) -> List[schemas.PuntoSerie]:
     """La serie del periodo anterior, tramo a tramo contra la actual.
 
@@ -384,9 +288,7 @@ def _serie_anterior(
     if not serie_actual:
         return []
     ini_prev, fin_prev = anterior(inicio, fin)
-    puntos = serie_del_rango(
-        ((p.cerrado_en, p.total) for p in pedidos_previos), ini_prev, fin_prev, paso=paso
-    )
+    puntos = serie_del_rango(_puntos_del_bloque(previo, paso), ini_prev, fin_prev, paso=paso)
     if paso == "hora":
         # Por horas la serie viene recortada de la primera a la ultima venta
         # de cada dia, y esos recortes no coinciden: se alinea por la hora.
@@ -409,68 +311,34 @@ def _serie_anterior(
     return salida
 
 
-def _mapa_de_calor(pedidos) -> List[schemas.PuntoCalor]:
+def _mapa_de_calor(b: Bloque) -> List[schemas.PuntoCalor]:
     """Cuando ENTRAN los clientes: por la hora en que se tomo el pedido, no
-    en la que se cobro. Para decidir a que hora hace falta mas gente en el
-    mostrador importa cuando llegan, y una mesa que paga al irse se cobraria
-    una hora despues de haber pedido."""
-    celdas: Dict[Tuple[int, int], Dict[str, float]] = {}
-    for p in pedidos:
-        t = p.creado_en or p.cerrado_en
-        if t is None:
-            continue
-        c = celdas.setdefault((t.weekday(), t.hour), {"pedidos": 0, "ventas": 0.0})
-        c["pedidos"] += 1
-        c["ventas"] += p.total
-    return [
-        schemas.PuntoCalor(dia=d, hora=h, pedidos=int(c["pedidos"]), ventas=round(c["ventas"], 2))
-        for (d, h), c in sorted(celdas.items())
-    ]
+    en la que se cobro (ver `consolidacion.bloque_en_vivo`)."""
+    celdas = []
+    for clave, g in b.calor.items():
+        d, h = clave.split("-")
+        celdas.append(schemas.PuntoCalor(dia=int(d), hora=int(h), pedidos=g.pedidos, ventas=round(g.ventas, 2)))
+    celdas.sort(key=lambda c: (c.dia, c.hora))
+    return celdas
 
 
-def _por_categoria(db: Session, pedidos, ventas_total: float) -> List[schemas.GrupoReporte]:
+def _por_categoria(b: Bloque, ventas_total: float) -> List[schemas.GrupoReporte]:
     """Que parte de la venta es comida, que parte bebida, que parte envios.
-
-    Se agrupa por la categoria de HOY de cada variante: los renglones guardan
-    nombre y precio pero no categoria, y guardarla habria sido repetir el menu
-    en cada venta. La venta libre va en su propio grupo.
-    """
-    ids = {i.variante_id for p in pedidos for i in p.items if i.variante_id is not None}
-    categoria_de: Dict[int, str] = {}
-    if ids:
-        variantes = (
-            db.query(models.Variante)
-            .options(joinedload(models.Variante.producto).joinedload(models.Producto.categoria))
-            .filter(models.Variante.id.in_(ids))
-            .all()
-        )
-        for v in variantes:
-            cat = v.producto.categoria if v.producto else None
-            categoria_de[v.id] = cat.nombre if cat else "Sin categoría"
-
-    grupos: Dict[str, Dict[str, float]] = {}
-    pedidos_por_grupo: Dict[str, set] = {}
-    for p in pedidos:
-        for i in p.items:
-            nombre = "Venta libre" if i.variante_id is None else categoria_de.get(i.variante_id, "Sin categoría")
-            g = grupos.setdefault(nombre, {"ventas": 0.0})
-            g["ventas"] += i.precio_unitario * i.cantidad
-            pedidos_por_grupo.setdefault(nombre, set()).add(p.id)
-
+    La venta libre va en su propio grupo."""
     salida = [
         schemas.GrupoReporte(
             nombre=nombre,
-            ventas=round(g["ventas"], 2),
-            pedidos=len(pedidos_por_grupo[nombre]),
-            pct=round(g["ventas"] / ventas_total * 100, 1) if ventas_total else 0.0,
+            ventas=round(g.ventas, 2),
+            pedidos=g.pedidos,
+            pct=round(g.ventas / ventas_total * 100, 1) if ventas_total else 0.0,
         )
-        for nombre, g in grupos.items()
+        for nombre, g in b.por_categoria.items()
     ]
     salida.sort(key=lambda g: g.ventas, reverse=True)
     return salida
 
 
-def _por_dia_semana(pedidos, inicio, fin, ventas_total: float) -> List[schemas.GrupoReporte]:
+def _por_dia_semana(b: Bloque, inicio, fin, ventas_total: float) -> List[schemas.GrupoReporte]:
     """Lo que vende cada dia de la semana, y lo que vende uno TIPICO.
 
     El promedio divide entre las veces que ese dia cayo dentro del rango --y
@@ -486,12 +354,10 @@ def _por_dia_semana(pedidos, inicio, fin, ventas_total: float) -> List[schemas.G
 
     total = [0.0] * 7
     cuantos = [0] * 7
-    for p in pedidos:
-        t = p.cerrado_en
-        if t is None:
-            continue
-        total[t.weekday()] += p.total
-        cuantos[t.weekday()] += 1
+    for clave, g in b.por_dia.items():
+        w = consolidacion.fecha_de_clave(clave).weekday()
+        total[w] += g.ventas
+        cuantos[w] += g.pedidos
 
     return [
         schemas.GrupoReporte(
@@ -561,7 +427,7 @@ def _insights(
     ventas: float,
     costo: float,
     gastos: float,
-    pedidos,
+    b: Bloque,
     productos: List[schemas.ProductoVendido],
     serie: List[schemas.PuntoSerie],
     granularidad_serie: str,
@@ -575,7 +441,7 @@ def _insights(
         periodo, "en este periodo"
     )
 
-    if not pedidos:
+    if not b.pedidos:
         insights.append(
             schemas.Insight(
                 tipo="info",
@@ -755,17 +621,17 @@ def _insights(
 
     # Un pedido que pesa demasiado en el dia distorsiona todos los promedios.
     # Decirlo es mas util que corregir el numero en silencio.
-    if len(pedidos) > 3 and ventas > 0:
-        mayor = max(pedidos, key=lambda p: p.total)
-        peso = mayor.total / ventas * 100
+    if b.pedidos > 3 and ventas > 0 and b.mayor:
+        mayor_numero, mayor_total = b.mayor
+        peso = mayor_total / ventas * 100
         if peso >= 30:
-            mediana = _mediana([p.total for p in pedidos])
+            mediana = _mediana(b.totales)
             insights.append(
                 schemas.Insight(
                     tipo="info",
                     titulo=f"Un solo pedido fue el {peso:.0f}% de la venta",
                     detalle=(
-                        f"El pedido #{mayor.numero} de ${mayor.total:.2f} mueve todos los "
+                        f"El pedido #{mayor_numero} de ${mayor_total:.2f} mueve todos los "
                         f"promedios del dia. El cliente tipico gasto ${mediana:.2f} "
                         "(esa es la mediana, no el promedio)."
                     ),
@@ -815,15 +681,17 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
     # Las palabras ("hoy", "ayer") solo cuando se pidio con el boton; con un
     # rango de fechas se habla de "este periodo".
     periodo = rango.periodo if rango.periodo in ("dia", "semana", "mes") and rango.desde is None else "rango"
-    pedidos = _pedidos_pagados(db, inicio, fin)
+    # Del mart los dias cerrados, en vivo lo que falta (hoy). Es una sola
+    # definicion de "las ventas del periodo" para las dos fuentes.
+    b = consolidacion.bloque_para(db, inicio, fin)
 
     # Las ventas brutas (lo que entro por caja) salen de los pedidos, porque es
     # el numero que el dueno reconoce. Pero la GANANCIA sale de la contabilidad:
     # el IVA cobrado no es ingreso suyo, y las mermas si son perdida aunque no
     # sean un "gasto" de la tabla de gastos. Antes Reportes calculaba los dos
     # por su cuenta y daba 8% mas de ganancia que el Estado de Resultados.
-    ventas, _costo_pedidos = _totales(pedidos)
-    iva_cobrado = _iva_cobrado(pedidos)
+    ventas = b.ventas
+    iva_cobrado = b.iva_cobrado
     libro = contabilidad.saldos_por_tipo(db, inicio, fin)
     ingresos_netos = libro["ingreso"]
     costo = libro["costo"]
@@ -831,53 +699,47 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
     ganancia_bruta = round(ingresos_netos - costo, 2)
 
     # Mismo tamano de ventana, inmediatamente anterior.
-    pedidos_previos = _pedidos_pagados(db, *anterior(inicio, fin))
-    ventas_previas, _ = _totales(pedidos_previos)
+    previo = consolidacion.bloque_para(db, *anterior(inicio, fin))
+    ventas_previas = previo.ventas
     libro_previo = contabilidad.saldos_por_tipo(db, *anterior(inicio, fin))
 
-    anulados = len(_pedidos_anulados(db, inicio, fin))
-    devoluciones = _devoluciones(db, inicio, fin)
-    facturados = [p for p in pedidos if p.facturado]
+    # Por pago y no por pedido: una venta mixta reparte su monto entre dos
+    # metodos en vez de aparecer entera bajo una etiqueta combinada.
+    por_metodo: Dict[str, float] = {m: round(g.ventas, 2) for m, g in b.por_metodo.items()}
 
-    por_metodo: Dict[str, float] = {}
-    for p in pedidos:
-        # Por pago y no por pedido: una venta mixta reparte su monto entre dos
-        # metodos en vez de aparecer entera bajo una etiqueta combinada.
-        for pago in p.pagos:
-            por_metodo[pago.metodo] = round(por_metodo.get(pago.metodo, 0) + pago.monto, 2)
-
-    serie = _serie(periodo, pedidos, inicio, fin)
-    productos = _top_productos(pedidos, seed.variantes_de_servicio(db))
+    serie = _serie(periodo, b, inicio, fin)
+    productos = _top_productos(b)
     paso = granularidad(inicio, fin)
     ganancia_neta = round(ganancia_bruta - gastos, 2)
     # Un dia solo se lee por horas; el mapa y el dia de la semana necesitan
     # varios dias para decir algo.
     varios_dias = (fin - inicio).days >= 2
-    calor = _mapa_de_calor(pedidos) if varios_dias else []
-    por_dia = _por_dia_semana(pedidos, inicio, fin, ventas) if varios_dias else []
+    calor = _mapa_de_calor(b) if varios_dias else []
+    por_dia = _por_dia_semana(b, inicio, fin, ventas) if varios_dias else []
+    consolidado_en = consolidacion.ultima_consolidacion(db) if consolidacion.partir_rango(db, inicio, fin)[0] else None
 
     return schemas.ReporteResumen(
         periodo=periodo,
         etiqueta=etiqueta,
         granularidad=granularidad(inicio, fin),
         ventas=round(ventas, 2),
-        ventas_bs=_ventas_en_bs(pedidos),
+        ventas_bs=round(b.ventas_bs, 2),
         iva_cobrado=iva_cobrado,
         ingresos_netos=ingresos_netos,
-        pedidos=len(pedidos),
-        ticket_promedio=round(ventas / len(pedidos), 2) if pedidos else 0.0,
-        ticket_mediano=_mediana([p.total for p in pedidos]),
+        pedidos=b.pedidos,
+        ticket_promedio=round(ventas / b.pedidos, 2) if b.pedidos else 0.0,
+        ticket_mediano=_mediana(b.totales),
         costo_insumos=round(costo, 2),
         ganancia_bruta=ganancia_bruta,
         margen_pct=round(ganancia_bruta / ingresos_netos * 100, 1) if ingresos_netos else 0.0,
         gastos=round(gastos, 2),
         ganancia_neta=ganancia_neta,
-        valor_anulado=_valor_anulado(db, inicio, fin),
-        pedidos_anulados=anulados,
-        devoluciones=len(devoluciones),
-        valor_devuelto=round(sum(p.total for p in devoluciones), 2),
-        facturadas=len(facturados),
-        valor_facturado=round(sum(p.total for p in facturados), 2),
+        valor_anulado=round(b.valor_anulado, 2),
+        pedidos_anulados=b.anulados,
+        devoluciones=b.devoluciones,
+        valor_devuelto=round(b.valor_devuelto, 2),
+        facturadas=b.facturadas,
+        valor_facturado=round(b.valor_facturado, 2),
         por_metodo_pago=por_metodo,
         serie=serie,
         top_productos=productos[:10],
@@ -887,7 +749,7 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
             ventas,
             costo,
             gastos,
-            pedidos,
+            b,
             productos,
             serie,
             paso,
@@ -896,15 +758,16 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
             # El periodo esta a medias si incluye hoy.
             incompleto=fin > datetime.datetime.now(),
         )
-        + _lecturas_de_ritmo(calor, por_dia, len(pedidos)),
+        + _lecturas_de_ritmo(calor, por_dia, b.pedidos),
         anterior=_comparativa(
             _nombre_del_anterior(periodo, inicio, fin),
-            pedidos_previos, ventas_previas, libro_previo, ventas, len(pedidos), ganancia_neta,
+            previo, libro_previo, ventas, b.pedidos, ganancia_neta,
         ),
-        serie_anterior=_serie_anterior(serie, pedidos_previos, inicio, fin, paso),
+        serie_anterior=_serie_anterior(serie, previo, inicio, fin, paso),
         calor=calor,
-        por_categoria=_por_categoria(db, pedidos, ventas),
+        por_categoria=_por_categoria(b, ventas),
         por_dia_semana=por_dia,
+        consolidado_en=consolidado_en.isoformat() if consolidado_en else None,
     )
 
 

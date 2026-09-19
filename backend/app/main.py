@@ -32,6 +32,7 @@ from .routers import (
     usuarios as usuarios_router,
     ventas,
 )
+from .consolidacion import iniciar_consolidacion
 from .seed import asegurar_categoria_envios, seed_if_empty
 from .settings import BACKUP_ON_STARTUP, CORS_ORIGINS
 from .tasas import iniciar_refresco_automatico
@@ -134,6 +135,10 @@ async def lifespan(app: FastAPI):
         # Tasa de cambio: se refresca sola contra BCV y Binance. Si no hay
         # internet el local sigue vendiendo con la ultima tasa conocida.
         iniciar_refresco_automatico()
+        # El mart diario: cada noche guarda los numeros del dia que termino,
+        # para que Reportes, Ventas y Contabilidad no recalculen el historico
+        # en cada visita (ver consolidacion.py).
+        iniciar_consolidacion()
     yield
 
 

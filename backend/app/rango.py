@@ -199,7 +199,11 @@ def serie(
             else:
                 t = datetime.datetime(t.year + (t.month // 12), (t.month % 12) + 1, 1)
 
-    for fecha, monto in puntos:
+    for punto in puntos:
+        # (fecha, monto) es un pedido; (fecha, monto, cuantos) es un dia ya
+        # sumado por el mart, que vale por `cuantos` pedidos.
+        fecha, monto = punto[0], punto[1]
+        cuantos = punto[2] if len(punto) > 2 else 1
         if fecha is None:
             continue
         k = clave_de(fecha)
@@ -207,7 +211,7 @@ def serie(
         if e is None:
             continue
         e["ventas"] += monto
-        e["pedidos"] += 1
+        e["pedidos"] += cuantos
 
     salida = []
     for k in orden:

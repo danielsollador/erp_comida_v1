@@ -21,9 +21,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from .. import models, schemas
+from .. import consolidacion, models, schemas
 from ..database import get_db
 from ..rango import Rango, anterior, dias_transcurridos, granularidad, serie
+from ..timeutils import inicio_del_dia
 from .reportes import _mediana, merma_periodo
 
 router = APIRouter(prefix="/api/ventas", tags=["ventas"])
@@ -153,68 +154,78 @@ def listar(
     )
 
 
-def _agrupar(pedidos, clave) -> List[schemas.GrupoVentas]:
-    grupos: Dict[str, Dict[str, float]] = {}
-    for p in pedidos:
-        k = clave(p) or "Sin asignar"
-        g = grupos.setdefault(k, {"ventas": 0.0, "pedidos": 0})
-        g["ventas"] += p.total
-        g["pedidos"] += 1
+def _agrupar(grupos: Dict[str, consolidacion.Grupo]) -> List[schemas.GrupoVentas]:
     salida = [
-        schemas.GrupoVentas(nombre=k, ventas=round(v["ventas"], 2), pedidos=int(v["pedidos"]))
-        for k, v in grupos.items()
+        schemas.GrupoVentas(nombre=k, ventas=round(g.ventas, 2), pedidos=int(g.pedidos))
+        for k, g in grupos.items()
     ]
     salida.sort(key=lambda g: g.ventas, reverse=True)
     return salida
 
 
+def _puntos(b: consolidacion.Bloque, paso: str):
+    """Los puntos para `serie`: por horas si el rango es un dia, por dias en
+    lo demas. Cada punto vale por los pedidos que agrupa."""
+    if paso == "hora":
+        if not b.por_dia:
+            return []
+        dia = consolidacion.fecha_de_clave(next(iter(b.por_dia)))
+        return [
+            (datetime.datetime.combine(dia, datetime.time(int(h), 0)), g.ventas, g.pedidos)
+            for h, g in b.por_hora.items()
+        ]
+    return [
+        (inicio_del_dia(consolidacion.fecha_de_clave(k)) + datetime.timedelta(hours=12), g.ventas, g.pedidos)
+        for k, g in b.por_dia.items()
+    ]
+
+
 @router.get("/resumen", response_model=schemas.ResumenVentas)
 def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
     inicio, fin, etiqueta = rango.resolver(periodo="mes")
-    todos = _pedidos_del_rango(db, inicio, fin)
-
-    # Venta efectiva: cobrada o fiada (la comida salio y hay una deuda a
-    # favor). Las devueltas y anuladas van aparte, en lo que se pierde.
-    vendidos = [p for p in todos if p.estado == "pagado" and not p.devuelto]
-    anulados = [p for p in todos if p.estado == "anulado"]
-    # Devoluciones por la fecha en que se DEVOLVIERON, igual que en Reportes:
-    # la plata salio de la caja ese dia, no el dia de la venta.
-    devueltos = (
-        db.query(models.Pedido)
-        .filter(
-            models.Pedido.devuelto.is_(True),
-            models.Pedido.fecha_devolucion >= inicio,
-            models.Pedido.fecha_devolucion < fin,
-        )
-        .all()
-    )
-
-    ventas = round(sum(p.total for p in vendidos), 2)
+    # Del mart los dias cerrados, en vivo lo de hoy: una sola definicion de
+    # "venta efectiva" compartida con Reportes (ver consolidacion.py). Las
+    # anuladas van por el dia de la comanda y las devueltas por el dia en que
+    # se devolvieron, igual que antes.
+    b = consolidacion.bloque_para(db, inicio, fin)
+    ventas = b.ventas
     dias = dias_transcurridos(inicio, fin)
 
     # El periodo anterior, del mismo tamaño, para decir si esto es mas o menos
     # que antes. Siempre incompleto el actual si incluye hoy; se aclara en
     # pantalla, no se corrige el numero.
     a_ini, a_fin = anterior(inicio, fin)
-    prev = [p for p in _pedidos_del_rango(db, a_ini, a_fin) if p.estado == "pagado" and not p.devuelto]
-    ventas_prev = round(sum(p.total for p in prev), 2)
+    prev = consolidacion.bloque_para(db, a_ini, a_fin)
+    ventas_prev = prev.ventas
     dias_prev = max(1, (a_fin - a_ini).days)
 
-    con_descuento = [p for p in vendidos if (p.descuento or 0) > 0]
-    fiado_pendiente = [
-        p for p in vendidos if _es_fiado(p) and not p.fiado_saldado
-    ]
+    # Lo UNICO que sigue vivo: el fiado pendiente cambia cuando el cliente
+    # paga, semanas despues de la venta, asi que no se puede guardar por dia.
+    fiado_pendiente = (
+        db.query(models.Pedido)
+        .join(models.PagoPedido)
+        .filter(
+            models.Pedido.estado == "pagado",
+            models.Pedido.devuelto.is_(False),
+            models.Pedido.cerrado_en >= inicio,
+            models.Pedido.cerrado_en < fin,
+            models.Pedido.fiado_saldado.is_(False),
+            models.PagoPedido.metodo == "Fiado",
+        )
+        .distinct()
+        .all()
+    )
     valor_fiado = round(
         sum(pg.monto for p in fiado_pendiente for pg in p.pagos if pg.metodo == "Fiado"), 2
     )
     merma = merma_periodo(db, inicio, fin)
     perdidas = schemas.PerdidasVentas(
-        anuladas=len(anulados),
-        valor_anulado=round(sum(p.total for p in anulados), 2),
-        devueltas=len(devueltos),
-        valor_devuelto=round(sum(p.total for p in devueltos), 2),
-        con_descuento=len(con_descuento),
-        valor_descuentos=round(sum(p.descuento or 0 for p in con_descuento), 2),
+        anuladas=b.anulados,
+        valor_anulado=round(b.valor_anulado, 2),
+        devueltas=b.devoluciones,
+        valor_devuelto=round(b.valor_devuelto, 2),
+        con_descuento=b.con_descuento,
+        valor_descuentos=round(b.valor_descuentos, 2),
         merma_inventario=merma,
         fiado_pendiente=len(fiado_pendiente),
         valor_fiado_pendiente=valor_fiado,
@@ -225,15 +236,11 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
     perdidas.total = round(perdidas.valor_devuelto + perdidas.valor_descuentos + merma, 2)
     perdidas.pct_sobre_ventas = round(perdidas.total / ventas * 100, 1) if ventas else 0.0
 
-    por_metodo: Dict[str, float] = {}
-    for p in vendidos:
-        for pg in p.pagos:
-            por_metodo[pg.metodo] = round(por_metodo.get(pg.metodo, 0) + pg.monto, 2)
+    por_metodo: Dict[str, float] = {m: round(g.ventas, 2) for m, g in b.por_metodo.items()}
 
-    puntos = serie(((p.cerrado_en, p.total) for p in vendidos), inicio, fin)
+    paso = granularidad(inicio, fin)
+    puntos = serie(_puntos(b, paso), inicio, fin, paso=paso)
     mejor = max(puntos, key=lambda s: (s["ventas"], s["pedidos"])) if puntos else None
-
-    facturadas = [p for p in vendidos if p.facturado]
 
     return schemas.ResumenVentas(
         etiqueta=etiqueta,
@@ -242,25 +249,25 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
         dias=dias,
         granularidad=granularidad(inicio, fin),
         ventas=ventas,
-        ventas_bs=round(sum(p.total * (p.tasa_bcv or 0) for p in vendidos), 2),
-        pedidos=len(vendidos),
-        unidades=sum(i.cantidad for p in vendidos for i in p.items),
-        ticket_promedio=round(ventas / len(vendidos), 2) if vendidos else 0.0,
-        ticket_mediano=_mediana([p.total for p in vendidos]),
+        ventas_bs=round(b.ventas_bs, 2),
+        pedidos=b.pedidos,
+        unidades=b.unidades,
+        ticket_promedio=round(ventas / b.pedidos, 2) if b.pedidos else 0.0,
+        ticket_mediano=_mediana(b.totales),
         promedio_diario=round(ventas / dias, 2),
-        pedidos_por_dia=round(len(vendidos) / dias, 1),
+        pedidos_por_dia=round(b.pedidos / dias, 1),
         anterior=schemas.VentasAnteriores(
             ventas=ventas_prev,
-            pedidos=len(prev),
+            pedidos=prev.pedidos,
             promedio_diario=round(ventas_prev / dias_prev, 2),
         ),
         cambio_pct=round((ventas - ventas_prev) / ventas_prev * 100, 1) if ventas_prev else None,
         perdidas=perdidas,
         por_metodo_pago=por_metodo,
-        por_punto_venta=_agrupar(vendidos, lambda p: p.punto_venta),
-        por_operador=_agrupar(vendidos, lambda p: p.operador),
-        facturadas=len(facturadas),
-        valor_facturado=round(sum(p.total for p in facturadas), 2),
+        por_punto_venta=_agrupar(b.por_punto),
+        por_operador=_agrupar(b.por_operador),
+        facturadas=b.facturadas,
+        valor_facturado=round(b.valor_facturado, 2),
         serie=[schemas.PuntoSerie(**s) for s in puntos],
         mejor=schemas.PuntoSerie(**mejor) if mejor and mejor["pedidos"] else None,
     )

@@ -90,6 +90,21 @@ export default function Reportes() {
                 Equivalen a {fmtBs(datos.ventas_bs)} cobrados, cada venta a la tasa de su dia.
               </p>
             )}
+            {/* Los dias ya cerrados se leen de lo que la noche dejo guardado;
+                hoy se calcula al momento. Se dice para que "consolidado a las
+                3:30" explique por que una devolucion de ayer tarda en verse. */}
+            {datos.consolidado_en && (
+              <p className="text-[11px] text-neutral-400 -mt-2">
+                Días anteriores consolidados el{' '}
+                {new Date(datos.consolidado_en.replace(/(\.\d{3})\d+$/, '$1')).toLocaleString('es-VE', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                ; hoy se calcula al momento.
+              </p>
+            )}
 
             {seccion === 'resumen' && <Resumen datos={datos} dinero={dinero} corto={corto} sufijo={sufijo} />}
 

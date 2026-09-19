@@ -289,6 +289,12 @@ def crear_asiento(
     )
     db.add(asiento)
     db.flush()
+    # Un asiento con fecha de un dia ya cerrado (depreciacion del mes, gasto
+    # de ayer, factura tardia) cambia los numeros que el mart ya guardo de
+    # ese dia: se invalida y la noche lo vuelve a guardar.
+    from . import consolidacion
+
+    consolidacion.invalidar_dia(db, asiento.fecha)
 
     for codigo, debe, haber in lineas:
         if not debe and not haber:
@@ -701,18 +707,29 @@ def sumas_de_cuenta(db: Session, cuenta_id: int, inicio=None, fin=None) -> Tuple
     balance general las recorria todas en cada pantalla. La base suma en una
     consulta lo que Python sumaba en un bucle.
     """
-    consulta = db.query(
-        func.coalesce(func.sum(models.MovimientoContable.debe), 0.0),
-        func.coalesce(func.sum(models.MovimientoContable.haber), 0.0),
-    ).filter(models.MovimientoContable.cuenta_id == cuenta_id)
-    if inicio is not None or fin is not None:
-        consulta = consulta.join(models.AsientoContable)
-        if inicio is not None:
-            consulta = consulta.filter(models.AsientoContable.fecha >= inicio)
-        if fin is not None:
-            consulta = consulta.filter(models.AsientoContable.fecha < fin)
-    debe, haber = consulta.one()
-    return round(float(debe or 0), 2), round(float(haber or 0), 2)
+    # Los dias ya cerrados salen del mart (una fila por cuenta y dia, ver
+    # `consolidacion.py`); solo lo que falta --hoy, o un dia invalidado-- se
+    # suma sobre los asientos. Un año de balance deja de recorrer todos los
+    # movimientos cada vez que alguien abre Contabilidad.
+    from . import consolidacion
+
+    debe_mart, haber_mart, tramos = consolidacion.sumas_de_cuenta_por_mart(db, cuenta_id, inicio, fin)
+    debe_vivo = haber_vivo = 0.0
+    for t_inicio, t_fin in tramos:
+        consulta = db.query(
+            func.coalesce(func.sum(models.MovimientoContable.debe), 0.0),
+            func.coalesce(func.sum(models.MovimientoContable.haber), 0.0),
+        ).filter(models.MovimientoContable.cuenta_id == cuenta_id)
+        if t_inicio is not None or t_fin is not None:
+            consulta = consulta.join(models.AsientoContable)
+            if t_inicio is not None:
+                consulta = consulta.filter(models.AsientoContable.fecha >= t_inicio)
+            if t_fin is not None:
+                consulta = consulta.filter(models.AsientoContable.fecha < t_fin)
+        d, h = consulta.one()
+        debe_vivo += float(d or 0)
+        haber_vivo += float(h or 0)
+    return round(debe_mart + debe_vivo, 2), round(haber_mart + haber_vivo, 2)
 
 
 def saldo_de_cuenta(db: Session, codigo: str) -> float:
