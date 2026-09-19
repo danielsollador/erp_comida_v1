@@ -1,7 +1,8 @@
+import csv
 import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
@@ -599,6 +600,128 @@ def planilla_de_conteo(db: Session = Depends(get_db)):
         ["ID", "Insumo", "Unidad", "Contado"],
         filas,
     )
+
+
+def _numero_de_planilla(texto: str) -> float:
+    """Lee una cantidad escrita por una persona o por Excel.
+
+    Aca se escribe "12,5" y el Excel en espanol tambien; el mismo archivo
+    abierto en otra maquina sale "12.5", y una cantidad grande puede venir
+    con separador de miles. La regla que sirve para todas: el separador que
+    aparece DE ULTIMO es el decimal, y el otro es de miles.
+    """
+    limpio = texto.strip().replace(" ", "")
+    ultimo_punto, ultima_coma = limpio.rfind("."), limpio.rfind(",")
+    if ultimo_punto >= 0 and ultima_coma >= 0:
+        decimal, miles = (",", ".") if ultima_coma > ultimo_punto else (".", ",")
+        limpio = limpio.replace(miles, "").replace(decimal, ".")
+    else:
+        limpio = limpio.replace(",", ".")
+    return float(limpio)
+
+
+@router.post("/conteos/leer-planilla", response_model=schemas.PlanillaLeida)
+async def leer_planilla(archivo: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Lee la planilla que el trabajador lleno y la cruza contra el deposito.
+
+    NO GUARDA NADA a proposito. Un archivo que entra solo dice que se
+    entendio; el conteo se aplica despues por `POST /conteo`, que es el camino
+    que ya sabe dejar cada diferencia como merma o sobrante con su asiento y
+    su documento. Asi no hay dos maneras de cargar un conteo que puedan
+    terminar diciendo cosas distintas, y el dueno ve en pantalla lo que va a
+    guardar antes de guardarlo -- que con un archivo importa mas todavia, que
+    nadie lo tecleo mirando.
+
+    Se admite el CSV que salio de aqui y cualquier cosa que se le parezca: se
+    ubica el insumo por su ID si viene, y si no, por el nombre. Un Excel
+    guardado como CSV cambia el separador segun el idioma del sistema (`,` o
+    `;`), asi que se detecta en vez de exigirlo.
+    """
+    crudo = await archivo.read()
+    if not crudo:
+        raise HTTPException(status_code=400, detail="El archivo está vacío")
+    if len(crudo) > 2_000_000:
+        raise HTTPException(status_code=400, detail="El archivo es demasiado grande para ser una planilla")
+    try:
+        # utf-8-sig se come el BOM que Excel le pone delante; si el archivo
+        # viene de un Excel viejo en Windows, cae a latin-1, que nunca falla.
+        texto = crudo.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        texto = crudo.decode("latin-1")
+
+    lineas = [l for l in texto.splitlines() if l.strip()]
+    if not lineas:
+        raise HTTPException(status_code=400, detail="El archivo no tiene ninguna fila")
+    separador = ";" if lineas[0].count(";") > lineas[0].count(",") else ","
+    filas_csv = list(csv.reader(lineas, delimiter=separador))
+
+    encabezado = [c.strip().lower() for c in filas_csv[0]]
+    def columna(*nombres, por_defecto=None):
+        for n in nombres:
+            if n in encabezado:
+                return encabezado.index(n)
+        return por_defecto
+
+    col_id = columna("id", "ingrediente_id")
+    col_nombre = columna("insumo", "nombre", "mercancia", "mercancía")
+    col_contado = columna("contado", "cantidad", "conteo", "fisico", "físico")
+    if col_contado is None:
+        raise HTTPException(
+            status_code=400,
+            detail='La planilla necesita una columna "Contado". Descarga la planilla en blanco y llena esa columna.',
+        )
+
+    ingredientes = db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all()
+    por_id = {i.id: i for i in ingredientes}
+    # El nombre se compara sin mayusculas y con los espacios colapsados: quien
+    # llena la planilla a mano no escribe "Carne Molida" igual dos veces.
+    def clave(texto: str) -> str:
+        return " ".join(texto.lower().split())
+
+    por_nombre = {clave(i.nombre): i for i in ingredientes}
+
+    filas, errores, en_blanco = [], [], 0
+    vistos = set()
+    for numero, fila in enumerate(filas_csv[1:], start=2):
+        if not any(c.strip() for c in fila):
+            continue
+
+        def celda(indice):
+            return fila[indice].strip() if indice is not None and indice < len(fila) else ""
+
+        crudo_contado = celda(col_contado)
+        if not crudo_contado:
+            en_blanco += 1
+            continue
+
+        ing = None
+        if celda(col_id).isdigit():
+            ing = por_id.get(int(celda(col_id)))
+        if ing is None and celda(col_nombre):
+            ing = por_nombre.get(clave(celda(col_nombre)))
+        if ing is None:
+            errores.append(f"Fila {numero}: no encuentro ese insumo ({celda(col_nombre) or celda(col_id) or 'sin nombre'}).")
+            continue
+        if ing.id in vistos:
+            errores.append(f"Fila {numero}: {ing.nombre} aparece dos veces en la planilla.")
+            continue
+
+        try:
+            contado = _numero_de_planilla(crudo_contado)
+        except ValueError:
+            errores.append(f"Fila {numero} ({ing.nombre}): \"{crudo_contado}\" no es un número.")
+            continue
+        if contado < 0:
+            errores.append(f"Fila {numero} ({ing.nombre}): no se puede contar una cantidad negativa.")
+            continue
+
+        vistos.add(ing.id)
+        filas.append(schemas.FilaLeida(
+            ingrediente_id=ing.id, nombre=ing.nombre, unidad=ing.unidad,
+            contado=round(contado, 4),
+        ))
+
+    return schemas.PlanillaLeida(filas=filas, errores=errores, en_blanco=en_blanco)
 
 
 @router.get("/conteos/{conteo_id}/exportar")

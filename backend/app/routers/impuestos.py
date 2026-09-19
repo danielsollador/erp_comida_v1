@@ -27,23 +27,70 @@ def actualizar_config(body: schemas.ConfiguracionFiscal, db: Session = Depends(g
     return schemas.ConfiguracionFiscal(tasa_iva=impuestos.fijar_tasa_iva(db, body.tasa_iva))
 
 
-def _totales_iva_del_rango(db: Session, inicio, fin) -> Tuple[float, float]:
-    """(debito, credito) de un rango cualquiera, para declarar un mes puntual."""
-    facturados = (
+def _ventas_del_libro(db: Session, inicio, fin):
+    """Lo que va al Libro de Ventas de ese periodo: (facturas, notas de credito).
+
+    Una venta devuelta salia del libro, y punto. Eso funciona mientras la
+    devolucion cae en el mismo mes que la venta, pero si el cliente trae la
+    comida en octubre y esa factura ya se declaro en septiembre, borrarla de
+    septiembre reescribe en silencio un periodo que ya se le presento al
+    SENIAT: el libro reimpreso deja de coincidir con la declaracion firmada.
+
+    Lo correcto es lo que hace cualquier contabilidad: la factura se queda en
+    su mes y la NOTA DE CREDITO es un documento aparte, con su propia fecha,
+    que entra en negativo en el mes en que se emitio. Que es ademas la fecha
+    con la que `registrar_devolucion` ya asienta la reversion, asi que el
+    mayor y el libro pasan a decir lo mismo.
+
+    Vendida y devuelta dentro del mismo periodo sigue saliendo entera: ese mes
+    todavia no se declaro, no hay nada que corregir, y un par factura/NC que
+    se anulan entre si solo ensuciaria el libro.
+    """
+    facturadas = (
         db.query(models.Pedido)
         .filter(
             models.Pedido.estado == "pagado",
             models.Pedido.facturado.is_(True),
-            models.Pedido.devuelto.is_(False),
             models.Pedido.cerrado_en >= inicio,
             models.Pedido.cerrado_en < fin,
         )
+        .order_by(models.Pedido.cerrado_en)
         .all()
     )
+    # Sin fecha de devolucion es historico viejo: se trata como antes (fuera),
+    # que es lo unico que se puede afirmar de el.
+    vigentes = [
+        p for p in facturadas
+        if not (p.devuelto and (p.fecha_devolucion is None or p.fecha_devolucion < fin))
+    ]
+    notas = (
+        db.query(models.Pedido)
+        .filter(
+            models.Pedido.estado == "pagado",
+            models.Pedido.facturado.is_(True),
+            models.Pedido.devuelto.is_(True),
+            models.Pedido.cerrado_en < inicio,
+            models.Pedido.fecha_devolucion >= inicio,
+            models.Pedido.fecha_devolucion < fin,
+        )
+        .order_by(models.Pedido.fecha_devolucion)
+        .all()
+    )
+    return vigentes, notas
+
+
+def _totales_iva_del_rango(db: Session, inicio, fin) -> Tuple[float, float]:
+    """(debito, credito) de un rango cualquiera, para declarar un mes puntual."""
+    vigentes, notas = _ventas_del_libro(db, inicio, fin)
     debito = 0.0
-    for p in facturados:
+    for p in vigentes:
         _base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
         debito += iva
+    # Las notas de credito del periodo restan: es IVA que se declaro en su mes
+    # y que ahora se devuelve.
+    for p in notas:
+        _base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
+        debito -= iva
 
     # Neto de notas de credito: declarar el IVA bruto de una factura que el
     # proveedor ya acredito es deduccion indebida ante el SENIAT.
@@ -66,20 +113,10 @@ def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
     inicio, fin, etiqueta = rango.resolver(periodo="mes")
     periodo = rango.periodo or "rango"
 
-    # Una venta devuelta sale del Libro: el dueno emitio una nota de credito y
-    # esa factura ya no representa una venta.
-    pedidos_facturados = (
-        db.query(models.Pedido)
-        .filter(
-            models.Pedido.estado == "pagado",
-            models.Pedido.facturado.is_(True),
-            models.Pedido.devuelto.is_(False),
-            models.Pedido.cerrado_en >= inicio,
-            models.Pedido.cerrado_en < fin,
-        )
-        .order_by(models.Pedido.cerrado_en)
-        .all()
-    )
+    # Las facturas del periodo y las notas de credito emitidas en el (ver
+    # `_ventas_del_libro`: una devolucion posterior no borra la factura de su
+    # mes, entra como NC en el suyo).
+    pedidos_facturados, notas = _ventas_del_libro(db, inicio, fin)
     no_facturados = (
         db.query(models.Pedido)
         .filter(
@@ -106,6 +143,24 @@ def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
                 total=round(p.total, 2),
             )
         )
+
+    # Las notas de credito del periodo, en negativo. Llevan la fecha en que se
+    # emitieron y el numero del talonario de notas, no el de la factura: son
+    # otro documento y el SENIAT los cuenta aparte.
+    for p in notas:
+        base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
+        filas.append(
+            schemas.FilaLibroVentas(
+                pedido_id=p.id,
+                fecha=p.fecha_devolucion,
+                numero_factura=p.nota_credito or f"NC-{p.numero}",
+                cliente="Consumidor final",
+                base_imponible=round(-base, 2),
+                iva=round(-iva, 2),
+                total=round(-p.total, 2),
+            )
+        )
+    filas.sort(key=lambda f: f.fecha)
 
     return schemas.LibroVentas(
         periodo=periodo,

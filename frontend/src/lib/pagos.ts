@@ -10,14 +10,29 @@ export const METODOS_PAGO = [
   'Zelle',
 ]
 
-// Todo lo que no es un billete deja un numero de confirmacion en alguna parte,
-// y el backend lo exige (ver contabilidad.METODOS_CON_REFERENCIA). Vive aca y
-// no dentro del POS porque la regla no es del POS: es de cualquier pantalla
-// que aplique un pago. Cobrar un credito desde Caja o desde Ventas entra la
-// misma plata por la misma gaveta, y estaba aceptandola sin comprobante.
-export const METODOS_CON_REFERENCIA = new Set(
-  METODOS_PAGO.filter((m) => !m.startsWith('Efectivo')),
-)
+// Una deuda que nace no es plata que se mueve, asi que no hay comprobante que
+// pedir: llega despues, cuando se salde. 'Fiado' es la venta a credito;
+// 'Credito' es como le llama Compras a lo mismo del otro lado.
+const SIN_COMPROBANTE = new Set(['Fiado', 'Credito'])
+
+/**
+ * Si este metodo de pago tiene que traer su numero de confirmacion.
+ *
+ * La regla se escribe UNA vez y como funcion, no como lista, porque cada
+ * modulo tiene su propio vocabulario: el punto de venta dice "Transferencia"
+ * y Compras dice "Banco". Derivar el conjunto de la lista de ventas dejaba
+ * "Banco" fuera en el frontend y dentro en el backend -- la pantalla no
+ * pedia el comprobante y el servidor rechazaba el pago con un 400.
+ */
+export function necesitaReferencia(metodo: string): boolean {
+  return !metodo.startsWith('Efectivo') && !SIN_COMPROBANTE.has(metodo)
+}
+
+// Los de la lista de ventas, ya filtrados. Vive aca y no dentro del POS
+// porque la regla no es del POS: es de cualquier pantalla que aplique un
+// pago. Cobrar un credito desde Caja o desde Ventas entra la misma plata por
+// la misma gaveta, y estaba aceptandola sin comprobante.
+export const METODOS_CON_REFERENCIA = new Set(METODOS_PAGO.filter(necesitaReferencia))
 
 /**
  * El comprobante del pago, si el metodo lo lleva.
@@ -30,7 +45,7 @@ export async function pedirReferencia(
   metodo: string,
   pedirTexto: Dialogo['pedirTexto'],
 ): Promise<string | null> {
-  if (!METODOS_CON_REFERENCIA.has(metodo)) return ''
+  if (!necesitaReferencia(metodo)) return ''
   return await pedirTexto({
     titulo: `Referencia del pago por ${metodo}`,
     etiqueta: 'Referencia',

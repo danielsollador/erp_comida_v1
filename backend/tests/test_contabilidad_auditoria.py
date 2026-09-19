@@ -117,7 +117,7 @@ def test_un_dia_completo_deja_los_libros_cuadrados(client, libros, variante, ins
         "items": [{"ingrediente_id": insumo.id, "cantidad": 2, "costo_unitario": 9.0}],
     })
     assert fac.status_code == 200, fac.text
-    assert client.post(f"/api/compras/facturas/{fac.json()['id']}/pagar", json={"forma_pago": "Banco"}).status_code == 200
+    assert client.post(f"/api/compras/facturas/{fac.json()['id']}/pagar", json={"forma_pago": "Banco", "referencia": "TRF-T"}).status_code == 200
 
     # Gasto por banco, retiro del dueño, entrega de propinas.
     assert client.post("/api/caja/gastos", json={"descripcion": "Gas", "categoria": "Servicios",
@@ -346,7 +346,7 @@ def test_lo_que_se_asienta_con_fecha_de_un_año_cerrado_cae_en_el_abierto(client
 
     fac = client.post("/api/compras/facturas", json={
         "numero_factura": "F-viejo", "proveedor_nombre": "Gas SA", "proveedor_rif": "J123456789", "categoria": "Servicios",
-        "forma_pago": "Banco", "iva": 0, "base_imponible": 12.0, "fecha": "2025-05-10T10:00:00",
+        "forma_pago": "Banco", "referencia_pago": "TRF-T", "iva": 0, "base_imponible": 12.0, "fecha": "2025-05-10T10:00:00",
     })
     assert fac.status_code == 200, fac.text
     asiento = db.query(models.AsientoContable).filter_by(origen="factura_compra",
@@ -365,7 +365,7 @@ def test_borrar_la_factura_de_un_activo_no_deja_el_equipo_depreciandose(client, 
     db = libros
     fac = client.post("/api/compras/facturas", json={
         "numero_factura": "F-nev", "proveedor_nombre": "Frio SA", "proveedor_rif": "J123456789", "categoria": "Activos",
-        "forma_pago": "Banco", "iva": 0, "base_imponible": 600.0, "descripcion": "Nevera",
+        "forma_pago": "Banco", "referencia_pago": "TRF-T", "iva": 0, "base_imponible": 600.0, "descripcion": "Nevera",
         "vida_util_meses": 60,
     }).json()
     assert db.query(models.ActivoFijo).filter_by(factura_id=fac["id"]).count() == 1

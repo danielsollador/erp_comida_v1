@@ -11,6 +11,7 @@ import type {
   DatosIngrediente,
   ConteoDetalle,
   ConteoResumen,
+  PlanillaLeida,
   ResultadoConteo,
   CuentaPorCobrar,
   NotaCreditoCompra,
@@ -377,6 +378,22 @@ export const api = {
   /** El historial de planillas del período. */
   conteos: (rango: Rango) => req<ConteoResumen[]>(`/inventario/conteos?${queryRango(rango)}`),
   conteo: (id: number) => req<ConteoDetalle>(`/inventario/conteos/${id}`),
+  /**
+   * Sube la planilla llena y devuelve lo que el ERP entendió. NO guarda nada:
+   * el conteo se aplica después con `conteoFisico`, que es el camino que sabe
+   * dejar cada diferencia como merma o sobrante con su asiento.
+   */
+  leerPlanillaConteo: async (archivo: File) => {
+    const datos = new FormData()
+    datos.append('archivo', archivo)
+    // Sin cabecera Content-Type a propósito: el navegador la pone con el
+    // `boundary` del multipart, y fijarla a JSON rompe el envío.
+    return req<PlanillaLeida>('/inventario/conteos/leer-planilla', {
+      method: 'POST',
+      body: datos,
+      headers: {},
+    })
+  },
   registrarCompra: (id: number, cantidad: number, costo_total?: number, metodo_pago = 'Efectivo Bs') =>
     req<ImpactoDeCompra>(`/inventario/ingredientes/${id}/comprar`, {
       method: 'POST',
@@ -632,12 +649,16 @@ export const api = {
     fecha_vencimiento?: string
     // Solo si categoria es "Activos": en cuantos meses se gasta el equipo.
     vida_util_meses?: number
+    // Obligatoria si se carga ya pagada y no fue en efectivo (el backend la
+    // exige igual, ver contabilidad.METODOS_CON_REFERENCIA).
+    referencia_pago?: string
   }) => req<FacturaCompra>('/compras/facturas', { method: 'POST', body: JSON.stringify(f) }),
   eliminarFacturaCompra: (id: number) => req(`/compras/facturas/${id}`, { method: 'DELETE' }),
-  pagarFacturaCompra: (id: number, forma_pago: string) =>
+  /** `referencia` es obligatoria si no se salda en efectivo. */
+  pagarFacturaCompra: (id: number, forma_pago: string, referencia?: string) =>
     req<FacturaCompra>(`/compras/facturas/${id}/pagar`, {
       method: 'POST',
-      body: JSON.stringify({ forma_pago }),
+      body: JSON.stringify({ forma_pago, referencia }),
     }),
 
   configFiscal: () => req<ConfiguracionFiscal>('/impuestos/config'),

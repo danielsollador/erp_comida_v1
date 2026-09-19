@@ -516,6 +516,11 @@ class FacturaCompra(Base):
     pagada = Column(Boolean, default=True)
     fecha_vencimiento = Column(DateTime, nullable=True)
     fecha_pago = Column(DateTime, nullable=True)
+    # El comprobante de con que se le pago al proveedor. Misma regla que al
+    # cobrar (ver contabilidad.METODOS_CON_REFERENCIA): la plata que no sale
+    # en billetes deja un numero en alguna parte, y sin el no hay como
+    # demostrar un pago que el proveedor dice no haber recibido.
+    referencia_pago = Column(String, default="")
 
     @property
     def total(self):

@@ -24,6 +24,24 @@ def _exento_de(item, ingredientes: dict) -> bool:
     return bool(ingredientes[item.ingrediente_id].exento)
 
 
+def _referencia_del_pago(forma_pago: str, referencia) -> str:
+    """El comprobante con que se le pago al proveedor, ya validado.
+
+    Es la misma regla que al cobrar una venta y sale de la misma tabla
+    (`contabilidad.METODOS_CON_REFERENCIA`): lo que no sale en billetes deja
+    un numero en alguna parte. Pagarle al proveedor por transferencia sin
+    anotarlo deja al negocio sin con que demostrar un pago que el proveedor
+    dice no haber recibido, que es el mismo reclamo de siempre pero al reves.
+    """
+    limpia = (referencia or "").strip()
+    if forma_pago in contabilidad.METODOS_CON_REFERENCIA and not limpia:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Un pago por {forma_pago} necesita su número de referencia",
+        )
+    return limpia
+
+
 def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
     return schemas.FacturaCompra(
         id=factura.id,
@@ -42,6 +60,7 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
         pagada=factura.pagada,
         fecha_vencimiento=factura.fecha_vencimiento,
         fecha_pago=factura.fecha_pago,
+        referencia_pago=factura.referencia_pago or "",
         items=[
             schemas.LineaFactura(
                 id=i.id,
@@ -98,6 +117,13 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             detail="El RIF del proveedor es obligatorio: letra (J/G/V/E/P/C) + 8 o 9 dígitos.",
         )
     factura_rif = impuestos.normalizar_rif(factura.proveedor_rif)
+    # Antes de tocar stock ni costos: si falta el comprobante hay que rebotar
+    # con la factura entera sin cargar, no a mitad de los renglones. A credito
+    # no se pide, que todavia no ha salido plata.
+    referencia_pago = (
+        "" if factura.forma_pago == "Credito"
+        else _referencia_del_pago(factura.forma_pago, factura.referencia_pago)
+    )
 
     if factura.items:
         # Con renglones: la base la calcula el sistema sumando lo que de
@@ -178,6 +204,7 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         pagada=not es_credito,
         fecha_vencimiento=factura.fecha_vencimiento if es_credito else None,
         fecha_pago=None if es_credito else (factura.fecha or ahora()),
+        referencia_pago=referencia_pago,
     )
     db.add(db_factura)
     db.flush()
@@ -248,9 +275,12 @@ def pagar_factura(factura_id: int, pago: schemas.PagoFacturaRequest, db: Session
             detail="La factura se paga desde una gaveta (Efectivo Bs, Efectivo $) o del Banco",
         )
 
+    referencia = _referencia_del_pago(pago.forma_pago, pago.referencia)
+
     contabilidad.registrar_pago_factura(db, db_factura, pago.forma_pago)
     db_factura.pagada = True
     db_factura.fecha_pago = ahora()
+    db_factura.referencia_pago = referencia
     db.commit()
     db.refresh(db_factura)
     return _a_schema(db_factura)

@@ -95,6 +95,7 @@ COLUMNAS = [
     ("TRX410_COM_FACTURA", "recargo", "FLOAT DEFAULT 0"),
     ("TRX410_COM_FACTURA", "descuento", "FLOAT DEFAULT 0"),
     ("TRX411_COM_FACTURA_DET", "exento", "BOOLEAN DEFAULT 0"),
+    ("TRX410_COM_FACTURA", "referencia_pago", "VARCHAR DEFAULT ''"),
 ]
 
 

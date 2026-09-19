@@ -399,7 +399,7 @@ def _comprar_nevera(client, meses=60, hace_meses=0):
             "numero_factura": "NEV-1",
             "proveedor_nombre": "Refrigeracion", "proveedor_rif": "J123456789",
             "categoria": "Activos",
-            "forma_pago": "Banco",
+            "forma_pago": "Banco", "referencia_pago": "TRF-T",
             "descripcion": "Nevera exhibidora",
             "base_imponible": 600,
             "iva": 96,
@@ -538,7 +538,7 @@ def test_declarar_cierra_el_iva_del_mes_contra_las_cuentas_fiscales(client, db, 
     factura = client.post(
         "/api/compras/facturas",
         json={"numero_factura": "C-1", "proveedor_nombre": "Prov", "proveedor_rif": "J123456789", "categoria": "Servicios",
-              "forma_pago": "Banco", "base_imponible": 100, "iva": 16,
+              "forma_pago": "Banco", "referencia_pago": "TRF-T", "base_imponible": 100, "iva": 16,
               "fecha": datetime.datetime(anio, mes, 10).isoformat()},
     ).json()
     assert factura["iva"] == 16
@@ -569,7 +569,7 @@ def test_el_credito_que_sobra_se_arrastra_al_mes_siguiente(client, db, variante)
     client.post(
         "/api/compras/facturas",
         json={"numero_factura": "C-0", "proveedor_nombre": "Prov", "proveedor_rif": "J123456789", "categoria": "Servicios",
-              "forma_pago": "Banco", "base_imponible": 500, "iva": 80,
+              "forma_pago": "Banco", "referencia_pago": "TRF-T", "base_imponible": 500, "iva": 80,
               "fecha": datetime.datetime(anio_previo, mes_previo, 5).isoformat()},
     )
     d0 = client.post(
@@ -598,7 +598,7 @@ def test_un_mes_con_solo_compras_tambien_se_declara(client, db):
     client.post(
         "/api/compras/facturas",
         json={"numero_factura": "EQ-9", "proveedor_nombre": "Prov", "proveedor_rif": "J123456789", "categoria": "Activos",
-              "forma_pago": "Banco", "descripcion": "Congelador", "base_imponible": 300, "iva": 48,
+              "forma_pago": "Banco", "referencia_pago": "TRF-T", "descripcion": "Congelador", "base_imponible": 300, "iva": 48,
               "fecha": datetime.datetime(anio, mes, 3).isoformat()},
     )
     pendientes = client.get("/api/impuestos/periodos-pendientes").json()

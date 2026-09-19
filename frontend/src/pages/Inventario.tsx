@@ -22,6 +22,7 @@ import type {
   SugerenciaCompra,
   ExtractoInsumo,
   MovimientoInventario,
+  PlanillaLeida,
   RenglonPorTipo,
 } from '../lib/types'
 
@@ -1481,6 +1482,24 @@ function ConteoFisico({
   // Encendido por defecto: el conteo que sirve es el que se hace sin ver lo
   // que el sistema espera. Se puede apagar, pero hay que decidirlo.
   const [ciego, setCiego] = useState(true)
+  const [leido, setLeido] = useState<PlanillaLeida | null>(null)
+
+  async function cargarPlanilla(archivo: File) {
+    setError('')
+    try {
+      const r = await api.leerPlanillaConteo(archivo)
+      setLeido(r)
+      // Se rellenan las casillas en vez de guardar: el archivo lo llenó
+      // alguien en el depósito y nadie lo ha mirado todavía en pantalla.
+      setValores((v) => ({
+        ...v,
+        ...Object.fromEntries(r.filas.map((f) => [f.ingrediente_id, String(f.contado)])),
+      }))
+    } catch (e) {
+      setLeido(null)
+      setError(e instanceof Error ? e.message : 'No se pudo leer la planilla')
+    }
+  }
 
   const num = (v: string) => Number(v.trim().replace(',', '.'))
   const lista = useMemo(() => {
@@ -1577,7 +1596,40 @@ function ConteoFisico({
         >
           Descargar planilla
         </a>
+        {/* La vuelta del viaje: la planilla que el trabajador llenó en el
+            depósito entra por aquí y rellena las casillas. No guarda nada
+            todavía: se revisa en pantalla y se guarda con el mismo botón de
+            siempre, que es el que sabe asentar cada diferencia. */}
+        <label className="text-sm font-medium text-acento-700 hover:underline whitespace-nowrap cursor-pointer">
+          Subir planilla llena
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const archivo = e.target.files?.[0]
+              e.target.value = ''
+              if (archivo) cargarPlanilla(archivo)
+            }}
+          />
+        </label>
       </div>
+      {leido && (
+        <div className="mb-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm">
+          <p>
+            Se leyeron <b>{leido.filas.length}</b> renglón(es) de la planilla
+            {leido.en_blanco > 0 && `, ${leido.en_blanco} en blanco que no se tocan`}.
+            {leido.filas.length > 0 && ' Revísalos abajo y guarda.'}
+          </p>
+          {leido.errores.length > 0 && (
+            <ul className="mt-2 list-disc pl-5 text-peligro-700 space-y-0.5">
+              {leido.errores.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {/* El interruptor que hace que el conteo sirva para auditar. Contar
           teniendo delante el número que el sistema espera no prueba nada: el
           ojo acomoda la cifra al número que ya leyó, y una diferencia real se

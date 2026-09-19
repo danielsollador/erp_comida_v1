@@ -139,6 +139,22 @@ export type ConteoDetalle = ConteoResumen & {
   lineas: ConteoLinea[]
 }
 
+export type FilaLeida = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  contado: number
+}
+
+/** Lo que el ERP entendió de la planilla llena. Leerla no guarda nada. */
+export type PlanillaLeida = {
+  filas: FilaLeida[]
+  /** Renglones que no se pudieron leer, en palabras, para arreglar el archivo. */
+  errores: string[]
+  /** Renglones sin nada escrito en "Contado": se ignoran. */
+  en_blanco: number
+}
+
 export type CompraDeInsumo = {
   fecha: string
   cantidad: number
@@ -789,6 +805,8 @@ export type FacturaCompra = {
   pagada: boolean
   fecha_vencimiento: string | null
   fecha_pago: string | null
+  /** El comprobante con que se le pagó al proveedor. Vacío si fue en efectivo. */
+  referencia_pago: string
   items: LineaFactura[]
 }
 

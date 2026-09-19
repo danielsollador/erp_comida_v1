@@ -8,6 +8,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Boton, Campo, Modal, Pagina, Pastilla, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
+import { necesitaReferencia, pedirReferencia } from '../lib/pagos'
 import type { ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor } from '../lib/types'
 
 const MONEDAS_DE_CARGA = ['$', 'Bs'] as const
@@ -78,6 +79,9 @@ export default function Compras() {
   const [monedaCarga, setMonedaCarga] = useState<(typeof MONEDAS_DE_CARGA)[number]>('$')
   const [categoria, setCategoria] = useState(CATEGORIAS[0].valor)
   const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0])
+  // El comprobante de con qué se le pagó al proveedor. Solo cuando la factura
+  // se carga ya pagada y no en efectivo (a crédito todavía no ha salido plata).
+  const [referenciaPago, setReferenciaPago] = useState('')
   const [descripcion, setDescripcion] = useState('')
 
   // Con insumos: renglones por ingrediente, que reabastecen el stock solos.
@@ -318,6 +322,7 @@ export default function Compras() {
           recargo: aUsd(recargoNum),
           descuento: aUsd(descuentoNum),
           fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
+          referencia_pago: referenciaPago.trim() || undefined,
         })
         setExito(
           `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
@@ -343,6 +348,7 @@ export default function Compras() {
           descuento: aUsd(descuentoNum),
           fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
           vida_util_meses: esActivo ? Number(vidaUtil) || 60 : undefined,
+          referencia_pago: referenciaPago.trim() || undefined,
         })
         setExito(
           `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
@@ -459,10 +465,15 @@ export default function Compras() {
   }
 
   async function marcarPagada(f: FacturaCompra) {
+    const forma = liquidacion[f.id] || 'Efectivo'
+    // Pagarle al proveedor es aplicar un pago: si no sale en billetes, lleva
+    // comprobante, igual que cobrar en el punto de venta.
+    const referencia = await pedirReferencia(forma, dialogo.pedirTexto)
+    if (referencia === null) return
     setError('')
     setPagando(f.id)
     try {
-      await api.pagarFacturaCompra(f.id, liquidacion[f.id] || 'Efectivo')
+      await api.pagarFacturaCompra(f.id, forma, referencia)
       cargar()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar el pago')
@@ -711,6 +722,17 @@ export default function Compras() {
                 </option>
               ))}
             </select>
+            {/* Solo cuando la plata ya salió y no fue en billetes. El backend
+                la exige igual, así que se pide antes de mandar la factura. */}
+            {necesitaReferencia(formaPago) && (
+              <input
+                value={referenciaPago}
+                onChange={(e) => setReferenciaPago(e.target.value)}
+                placeholder="Referencia del pago"
+                required
+                className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
+            )}
             <input
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}

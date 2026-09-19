@@ -410,6 +410,32 @@ class FilaPlanilla(BaseModel):
     unidad: str
 
 
+class FilaLeida(BaseModel):
+    """Un renglon que se pudo leer de la planilla llena."""
+
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    contado: float
+
+
+class PlanillaLeida(BaseModel):
+    """Lo que trajo el archivo, ya cruzado contra el deposito.
+
+    No se guarda nada: esto solo dice que se entendio. El conteo se aplica
+    despues por el camino de siempre (`POST /conteo`), que es el que ya sabe
+    poner cada diferencia como merma o sobrante con su asiento.
+    """
+
+    filas: List[FilaLeida]
+    # Lo que no se pudo leer, en palabras, para arreglarlo en el archivo y
+    # volver a subirlo. Una planilla con un renglon roto no se rechaza entera:
+    # lo demas sirve igual y el dueno decide.
+    errores: List[str] = []
+    # Renglones sin nada escrito en "Contado": se ignoran, como en pantalla.
+    en_blanco: int = 0
+
+
 class GastoBase(BaseModel):
     descripcion: str
     categoria: str = "Operativo"
@@ -1335,6 +1361,9 @@ class FacturaCompraCreate(FacturaCompraBase):
     # Solo para categoria="Activos": en cuantos meses se gasta el bien.
     # 60 (5 años) es lo tipico para equipo de cocina.
     vida_util_meses: Optional[int] = None
+    # El comprobante, cuando la factura se carga ya pagada y no en efectivo.
+    # A credito no aplica: todavia no ha salido plata.
+    referencia_pago: Optional[str] = None
 
 
 class FacturaCompra(FacturaCompraBase):
@@ -1351,6 +1380,7 @@ class FacturaCompra(FacturaCompraBase):
     pagada: bool
     fecha_vencimiento: Optional[datetime.datetime] = None
     fecha_pago: Optional[datetime.datetime] = None
+    referencia_pago: str = ""
     items: List[LineaFactura] = []
 
     class Config:
@@ -1359,6 +1389,8 @@ class FacturaCompra(FacturaCompraBase):
 
 class PagoFacturaRequest(BaseModel):
     forma_pago: str = "Efectivo"  # Efectivo|Banco - con que se salda la deuda
+    # Obligatoria si no se paga en efectivo, igual que al cobrar una venta.
+    referencia: Optional[str] = None
 
 
 # ----------------------------------------------------------------- impuestos
