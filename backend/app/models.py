@@ -790,9 +790,39 @@ class Pedido(Base):
     # pedido no esta anulado.
     anulado_es_perdida = Column(Boolean, nullable=True)
 
+    # ── Quien tiene la comanda en la mano ───────────────────────────────────
+    #
+    # Cocina y el punto de venta trabajan sobre el MISMO pedido al mismo
+    # tiempo, y hasta ahora ninguno de los dos sabia que estaba haciendo el
+    # otro. Eso es un choque real: la cajera le agrega una empanada a una
+    # comanda que el cocinero ya esta armando, o el cocinero la marca lista
+    # mientras la cajera le esta cambiando los renglones. Gana el ultimo en
+    # guardar y nadie se entera.
+    #
+    # Son dos candados que se excluyen, uno por cada lado del mostrador:
+    #   cocinando_*  la agarro la cocina -> el punto de venta no la edita.
+    #   editando_*   la abrio el punto de venta -> la cocina la ve bloqueada.
+    #
+    # `cocinando_desde` dura hasta que se prepara o se suelta: es un estado de
+    # verdad, no un candado tecnico. `editando_desde` SI vence solo (ver
+    # MINUTOS_EDITANDO): si la cajera cierra la tablet a mitad de una edicion,
+    # sin vencimiento la comanda le quedaria trancada a la cocina para siempre.
+    cocinando_desde = Column(DateTime, nullable=True)
+    cocinando_por_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    editando_desde = Column(DateTime, nullable=True)
+    editando_por_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    # Un pedido que cambio despues de hecho no es igual a uno que salio bien a
+    # la primera, y quien lo mira -en cocina o en el listado de ventas- tiene
+    # que poder distinguirlos de un vistazo. El detalle de cada cambio vive en
+    # PedidoEdicion; esto es la marca que se pinta.
+    editado = Column(Boolean, default=False)
+    editado_en = Column(DateTime, nullable=True)
+
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     operador_rel = relationship("Operador", foreign_keys=[operador_id])
     anulado_por_rel = relationship("Operador", foreign_keys=[anulado_por_id])
+    cocinando_por_rel = relationship("Operador", foreign_keys=[cocinando_por_id])
+    editando_por_rel = relationship("Operador", foreign_keys=[editando_por_id])
     punto_venta_rel = relationship("PuntoVenta")
 
     # Nombres para la pantalla. Se exponen como texto para que el historico
@@ -808,11 +838,24 @@ class Pedido(Base):
     @property
     def punto_venta(self) -> str:
         return self.punto_venta_rel.nombre if self.punto_venta_rel else ""
+
+    @property
+    def cocinando_por(self) -> str:
+        return self.cocinando_por_rel.nombre if self.cocinando_por_rel else ""
+
+    @property
+    def editando_por(self) -> str:
+        return self.editando_por_rel.nombre if self.editando_por_rel else ""
+
     consumos = relationship("PedidoConsumo", cascade="all, delete-orphan")
     pagos = relationship("PagoPedido", cascade="all, delete-orphan")
     abonos = relationship(
         "AbonoFiado", back_populates="pedido", cascade="all, delete-orphan",
         order_by="AbonoFiado.fecha",
+    )
+    ediciones = relationship(
+        "PedidoEdicion", back_populates="pedido", cascade="all, delete-orphan",
+        order_by="PedidoEdicion.fecha",
     )
 
     @property
@@ -919,3 +962,51 @@ class PedidoItem(Base):
     preparado = Column(Boolean, default=False)
 
     pedido = relationship("Pedido", back_populates="items")
+
+
+class PedidoEdicion(Base):
+    """Cada vez que un pedido se cambio despues de tomado: que paso y quien.
+
+    La etiqueta "Editado" que se ve en cocina y en ventas sola no dice nada:
+    lo que el dueno necesita saber es QUE se cambio, cuanta plata se movio y
+    -sobre todo- quien autorizo mover esa plata. Editar un pedido ya cobrado
+    es la via mas comoda para que se pierda dinero sin dejar rastro: se le
+    quita un renglon a una venta cobrada, la diferencia se saca de la gaveta y
+    el cierre del dia sigue cuadrando. Por eso una diferencia de plata exige
+    clave, y por eso aca queda el nombre de quien la puso.
+
+    `detalle` es texto armado en el momento ("+1 Empanada - Queso; -2
+    Refresco"). Se guarda ya escrito a proposito: dentro de un mes la variante
+    puede llamarse distinto o no existir, y lo que hace falta es leer lo que
+    de verdad paso ese dia.
+    """
+
+    __tablename__ = "TRX112_VEN_PEDIDO_EDICION"
+
+    id = Column(Integer, primary_key=True)
+    pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=False)
+    fecha = Column(DateTime, default=ahora)
+    # Que cambio, en palabras.
+    detalle = Column(String, default="")
+    # Lo que costaba antes y lo que cuesta ahora. La diferencia se guarda
+    # calculada porque es lo que se consulta: un reporte de "ediciones que
+    # movieron plata" no deberia tener que restar dos columnas.
+    total_antes = Column(Float, default=0)
+    total_despues = Column(Float, default=0)
+    diferencia = Column(Float, default=0)
+    # Como se cubrio la diferencia (o como se devolvio, si fue a favor del
+    # cliente). Vacio cuando la edicion no movio plata.
+    metodo_pago = Column(String, default="")
+    motivo = Column(String, default="")
+    # Quien la hizo, y quien puso la clave para autorizar la diferencia. Son
+    # dos nombres distintos a proposito: lo normal es que la cajera edite y el
+    # encargado autorice.
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    autorizado_por = Column(String, default="")
+
+    pedido = relationship("Pedido", back_populates="ediciones")
+    operador_rel = relationship("Operador", foreign_keys=[operador_id])
+
+    @property
+    def operador(self) -> str:
+        return self.operador_rel.nombre if self.operador_rel else ""

@@ -3,6 +3,7 @@ import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { api, connectWs } from '../lib/api'
+import { editandoAhora } from '../lib/comandas'
 import type { Pedido } from '../lib/types'
 
 const CLAVE_SONIDO = 'cocina.sonido'
@@ -116,14 +117,34 @@ export default function Cocina() {
     }
   }
 
-  async function toggleItem(itemId: number) {
-    await api.marcarItemPreparado(itemId)
+  /**
+   * Las acciones de cocina ya pueden ser rechazadas: si la caja abrio la
+   * comanda para editarla, el servidor dice que no. Sin atrapar el error, el
+   * toque se perdia en silencio y el cocinero volvia a tocar.
+   */
+  async function intentar(accion: () => Promise<unknown>) {
+    try {
+      await accion()
+    } catch (e) {
+      await dialogo.avisar({ titulo: 'No se pudo', texto: (e as Error).message, tono: 'ojo' })
+    }
     refrescar()
   }
 
+  async function toggleItem(itemId: number) {
+    await intentar(() => api.marcarItemPreparado(itemId))
+  }
+
   async function marcarTodoListo(pedidoId: number) {
-    await api.marcarPedidoListo(pedidoId)
-    refrescar()
+    await intentar(() => api.marcarPedidoListo(pedidoId))
+  }
+
+  /**
+   * "Esta es mia": el resto de la cocina lo ve, y la caja deja de poder
+   * cambiarle los renglones a algo que ya esta en el sarten.
+   */
+  async function alternarCocinando(pedidoId: number) {
+    await intentar(() => api.marcarCocinando(pedidoId))
   }
 
   // La cocina es quien sabe de verdad si la comida alcanzo a hacerse - el
@@ -151,19 +172,11 @@ export default function Cocina() {
       ],
     })
     if (!eleccion) return
-    try {
-      await api.anularPedido(pedido.id, eleccion === 'perdida')
-      refrescar()
-    } catch (e) {
-      // Sin esto, si caja ya cobro el pedido mientras cocina lo tenia
-      // abierto (puede pasar: en_cocina muestra lo pagado que aun no esta
-      // preparado), el backend rechaza la anulacion y aqui no pasaba nada
-      // -el dialogo se cerraba y quien anulaba se quedaba sin saber por que.
-      await dialogo.avisar({
-        titulo: 'No se pudo anular',
-        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
-      })
-    }
+    // Por `intentar`, que dice el motivo en vez de tragarselo. Pasa de verdad:
+    // si caja ya cobro el pedido mientras cocina lo tenia abierto (en_cocina
+    // muestra lo pagado que aun no esta preparado), el backend rechaza la
+    // anulacion, y antes el dialogo se cerraba sin decir nada.
+    await intentar(() => api.anularPedido(pedido.id, eleccion === 'perdida'))
   }
 
   return (
@@ -205,20 +218,34 @@ export default function Cocina() {
           const minutos = minutosDesde(pedido.creado_en)
           const estilo = estiloAntiguedad(minutos)
           const esNuevo = nuevos.has(pedido.id)
+          // La caja la tiene abierta: no se toca hasta que termine, porque los
+          // renglones que se ven pueden dejar de ser los del pedido.
+          const bloqueada = editandoAhora(pedido)
+          const mia = Boolean(pedido.cocinando_desde)
           return (
             <div
               key={pedido.id}
               className={`rounded-2xl p-5 border transition ${
-                esNuevo
-                  ? 'bg-acento-50 border-acento-400 ring-4 ring-acento-500/40 animate-pulse'
-                  : `bg-white border-neutral-200 ${estilo.card}`
+                bloqueada
+                  ? 'bg-aviso-500/10 border-aviso-500 ring-2 ring-aviso-500/50'
+                  : esNuevo
+                    ? 'bg-acento-50 border-acento-400 ring-4 ring-acento-500/40 animate-pulse'
+                    : `bg-white border-neutral-200 ${estilo.card}`
               }`}
             >
               <div className="flex justify-between items-center mb-4">
                 <span className="text-3xl font-black tracking-tight tabular-nums">
                   #{pedido.numero}
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {/* Un pedido que cambio despues de tomado no es igual a uno
+                      que salio bien a la primera: lo primero que hace el
+                      cocinero al verlo es releer los renglones. */}
+                  {pedido.editado && (
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-aviso-500/20 text-aviso-800 ring-1 ring-aviso-500/40 uppercase tracking-wide">
+                      Editado
+                    </span>
+                  )}
                   {esNuevo && (
                     <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-acento-400 text-neutral-50 uppercase tracking-wide">
                       Nuevo
@@ -231,12 +258,40 @@ export default function Cocina() {
                   </span>
                 </div>
               </div>
+
+              {bloqueada && (
+                <div className="mb-4 px-4 py-3 rounded-xl bg-aviso-500/20 text-aviso-900 text-sm font-semibold flex items-center gap-2">
+                  <Icono nombre="alerta" size={16} />
+                  {pedido.editando_por || 'El punto de venta'} está editando esta comanda.
+                  Espera: los renglones pueden cambiar.
+                </div>
+              )}
+
+              {/* Agarrarla es lo que le cierra la edicion a la caja. Marcar un
+                  renglon tambien la agarra, asi que el boton es para decirlo
+                  antes de empezar -- que es cuando sirve. */}
+              <button
+                onClick={() => alternarCocinando(pedido.id)}
+                disabled={bloqueada}
+                className={`w-full mb-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-40 ${
+                  mia
+                    ? 'bg-acento-500/15 text-acento-800 ring-1 ring-acento-500/40'
+                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                }`}
+              >
+                <Icono nombre="cocina" size={16} />
+                {mia
+                  ? `En preparación${pedido.cocinando_por ? ` · ${pedido.cocinando_por}` : ''}`
+                  : 'Empezar a preparar'}
+              </button>
+
               <ul className="space-y-2 mb-4">
                 {pedido.items.map((item) => (
                   <li key={item.id}>
                     <button
                       onClick={() => toggleItem(item.id)}
-                      className={`w-full text-left px-4 py-3 rounded-xl flex justify-between items-center gap-3 border ${
+                      disabled={bloqueada}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex justify-between items-center gap-3 border disabled:opacity-50 ${
                         item.preparado
                           ? 'bg-exito-500/10 border-exito-500/30 text-neutral-500 line-through'
                           : 'bg-neutral-100 border-neutral-200'
@@ -258,13 +313,15 @@ export default function Cocina() {
               </ul>
               <button
                 onClick={() => marcarTodoListo(pedido.id)}
-                className="w-full bg-exito-600 hover:bg-exito-500 text-neutral-50 py-3.5 rounded-xl font-bold text-base"
+                disabled={bloqueada}
+                className="w-full bg-exito-600 hover:bg-exito-500 disabled:opacity-40 disabled:hover:bg-exito-600 text-neutral-50 py-3.5 rounded-xl font-bold text-base"
               >
                 Marcar todo listo
               </button>
               <button
                 onClick={() => anular(pedido)}
-                className="w-full mt-2 text-neutral-500 hover:text-peligro-400 py-1.5 text-sm font-medium"
+                disabled={bloqueada}
+                className="w-full mt-2 text-neutral-500 hover:text-peligro-400 disabled:opacity-40 py-1.5 text-sm font-medium"
               >
                 Anular comanda
               </button>

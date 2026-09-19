@@ -417,6 +417,78 @@ def registrar_venta(db: Session, pedido: models.Pedido) -> None:
     )
 
 
+def registrar_ajuste_edicion(
+    db: Session,
+    pedido: models.Pedido,
+    delta_venta: float,
+    delta_costo: float,
+    pagos: List[Tuple[str, float]],
+    costo_perdido: float = 0.0,
+) -> None:
+    """Corrige una venta YA COBRADA que se edito: solo lo que cambio.
+
+    No se reescribe el asiento de la venta ni se anula para volver a hacerlo.
+    Un asiento contable no se borra --si se pudiera, la contabilidad no serviria
+    de nada-- asi que el ajuste entra como lo que es: un segundo asiento, por la
+    diferencia, con su propia fecha. El dia que alguien pregunte por que esa
+    venta cambio de monto, la respuesta esta escrita.
+
+    Son dos movimientos independientes y cada uno cuadra por su lado:
+
+      la plata   la diferencia entra (o sale) por la gaveta que diga el cajero
+                 y se reconoce contra el ingreso (4010).
+      el costo   quitar o agregar un renglon cambia los insumos que se
+                 consumieron, y eso mueve costo de ventas (5010) contra
+                 inventario (1040) aunque el precio no se haya movido un centavo
+                 -- cambiar una empanada por otra del mismo precio pero distinta
+                 receta es exactamente ese caso.
+
+    Sin IVA a proposito: el router no deja editar el monto de una venta
+    facturada, porque cambiarle el total a una factura ya emitida se corrige con
+    una nota de credito y no retocando el Libro de Ventas.
+    """
+    delta_venta = round(delta_venta, 2)
+    delta_costo = round(delta_costo, 2)
+    lineas: List[Tuple[str, float, float]] = []
+
+    if delta_venta > 0:
+        for metodo, monto in pagos:
+            lineas.append((cuenta_de_pago(metodo), round(monto, 2), 0.0))
+        lineas.append(("4010", 0.0, delta_venta))
+    elif delta_venta < 0:
+        for metodo, monto in pagos:
+            lineas.append((cuenta_de_pago(metodo), 0.0, round(monto, 2)))
+        lineas.append(("4010", -delta_venta, 0.0))
+
+    if delta_costo > 0:
+        lineas += [("5010", delta_costo, 0.0), ("1040", 0.0, delta_costo)]
+    elif delta_costo < 0:
+        # Baja el costo de ventas, pero el contrapeso depende de donde quedo la
+        # comida: si nunca se cocino, los insumos volvieron al deposito (1040);
+        # si ya estaba hecha, se boto y es perdida por merma (6020). Mandarlo
+        # todo a inventario haria aparecer en los libros comida que esta en la
+        # basura, y el arqueo del deposito dejaria de cuadrar.
+        baja = -delta_costo
+        botado = min(round(costo_perdido, 2), baja)
+        vuelve = round(baja - botado, 2)
+        if botado > 0:
+            lineas.append(("6020", botado, 0.0))
+        if vuelve > 0:
+            lineas.append(("1040", vuelve, 0.0))
+        lineas.append(("5010", 0.0, baja))
+
+    if not lineas:
+        return
+
+    crear_asiento(
+        db,
+        f"Ajuste por edicion del pedido #{pedido.numero}",
+        lineas,
+        origen="edicion_pedido",
+        referencia_id=pedido.id,
+    )
+
+
 def registrar_facturacion_tardia(db: Session, pedido: models.Pedido) -> None:
     """El pedido ya se cobro y ya tiene su asiento de venta (sin IVA, porque
     en ese momento no se facturo). El dueno decide despues, revisando el

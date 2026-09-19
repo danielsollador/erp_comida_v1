@@ -82,6 +82,13 @@ COLUMNAS = [
     ("TRX340_INV_MOVIMIENTO", "costo_promedio", "FLOAT DEFAULT 0"),
     ("DIM310_INV_INGREDIENTE", "exento", "BOOLEAN DEFAULT 0"),
     ("TRX120_VEN_PAGO", "referencia", "VARCHAR DEFAULT ''"),
+    # Los dos candados entre cocina y punto de venta, y la marca de editado.
+    ("TRX110_VEN_PEDIDO", "cocinando_desde", "DATETIME"),
+    ("TRX110_VEN_PEDIDO", "cocinando_por_id", "INTEGER"),
+    ("TRX110_VEN_PEDIDO", "editando_desde", "DATETIME"),
+    ("TRX110_VEN_PEDIDO", "editando_por_id", "INTEGER"),
+    ("TRX110_VEN_PEDIDO", "editado", "BOOLEAN DEFAULT 0"),
+    ("TRX110_VEN_PEDIDO", "editado_en", "DATETIME"),
 ]
 
 

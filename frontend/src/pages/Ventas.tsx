@@ -335,6 +335,14 @@ function FilaVenta({
         <td className="p-3 tabular-nums whitespace-nowrap">{fechaCorta(v.fecha)}</td>
         <td className="p-3">
           <span className={apagada ? 'line-through' : ''}>{v.detalle || '—'}</span>
+          {/* Va pegada al detalle y no al estado a proposito: lo que cambio
+              son los renglones, y es ahi donde el ojo pregunta por que el
+              ticket del cliente no dice lo mismo. */}
+          {v.editado && (
+            <span className="ml-2 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-aviso-500/20 text-aviso-800 align-middle">
+              Editada
+            </span>
+          )}
           {v.cliente && <span className="block text-xs text-neutral-400">{v.cliente}</span>}
         </td>
         <td className="p-3">
@@ -552,6 +560,34 @@ function DetalleVenta({
           </Dato>
         )}
         {v.nota && <Dato titulo="Nota">{v.nota}</Dato>}
+        {v.ediciones.length > 0 && (
+          <div className="col-span-2">
+            <Dato titulo="Ediciones">
+              {/* La etiqueta sola no sirve de nada: lo que el dueño necesita
+                  saber es que se cambio, cuanta plata se movio y quien firmo.
+                  Una edicion que movio plata y no tiene nombre detras es
+                  exactamente lo que hay que poder encontrar despues. */}
+              {v.ediciones.map((e) => (
+                <span key={e.id} className="block">
+                  {e.detalle}
+                  {e.diferencia !== 0 && (
+                    <span className={e.diferencia > 0 ? 'text-exito-700' : 'text-aviso-700'}>
+                      {' '}
+                      ({e.diferencia > 0 ? '+' : ''}
+                      {dinero(e.diferencia)}
+                      {e.metodo_pago && ` en ${etiquetaMetodo(e.metodo_pago)}`})
+                    </span>
+                  )}
+                  <span className="block text-xs text-neutral-500">
+                    {e.operador || 'sin operador'}
+                    {e.autorizado_por && ` · autorizó ${e.autorizado_por}`}
+                    {e.motivo && ` · ${e.motivo}`}
+                  </span>
+                </span>
+              ))}
+            </Dato>
+          </div>
+        )}
       </div>
     </div>
   )

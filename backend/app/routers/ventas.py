@@ -47,6 +47,7 @@ def _pedidos_del_rango(db: Session, inicio: datetime.datetime, fin: datetime.dat
             joinedload(models.Pedido.operador_rel),
             joinedload(models.Pedido.anulado_por_rel),
             joinedload(models.Pedido.punto_venta_rel),
+            joinedload(models.Pedido.ediciones),
         )
         .filter(f >= inicio, f < fin)
         .order_by(f.desc(), models.Pedido.id.desc())
@@ -123,6 +124,8 @@ def _fila(p: models.Pedido) -> schemas.VentaFila:
         nota_credito=p.nota_credito,
         nota=p.nota or "",
         items=[schemas.PedidoItem.model_validate(i) for i in p.items],
+        editado=bool(p.editado),
+        ediciones=[schemas.PedidoEdicion.model_validate(e) for e in p.ediciones],
     )
 
 

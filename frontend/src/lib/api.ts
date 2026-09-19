@@ -221,6 +221,53 @@ export const api = {
     req<Pedido>(`/pedidos/items/${itemId}/preparado`, { method: 'POST' }),
   marcarPedidoListo: (pedidoId: number) =>
     req<Pedido>(`/pedidos/${pedidoId}/marcar-listo`, { method: 'POST' }),
+  /**
+   * La cocina agarra (o suelta) la comanda. Es un interruptor: avisa al resto
+   * de la cocina que esa ya tiene dueño y le cierra la edicion a la caja.
+   */
+  marcarCocinando: (pedidoId: number) =>
+    req<Pedido>(`/pedidos/${pedidoId}/cocinando`, { method: 'POST' }),
+  /** El punto de venta agarra la comanda: la cocina la ve bloqueada. */
+  abrirEdicion: (pedidoId: number) =>
+    req<Pedido>(`/pedidos/${pedidoId}/edicion`, { method: 'POST' }),
+  /** Se cerro el cuadro sin guardar: la cocina puede seguir. */
+  soltarEdicion: (pedidoId: number) =>
+    req<Pedido>(`/pedidos/${pedidoId}/edicion`, { method: 'DELETE' }),
+  /**
+   * Como queda el pedido: la lista COMPLETA de renglones, no un delta.
+   *
+   * `autorizacion` y `pagos` solo hacen falta cuando la edicion le cambia el
+   * monto a una venta ya cobrada. El monto del pago va en positivo siempre: el
+   * signo lo pone la diferencia, no quien lo teclea.
+   */
+  editarPedido: (
+    pedidoId: number,
+    items: {
+      variante_id?: number | null
+      cantidad: number
+      nota?: string
+      nombre_libre?: string
+      precio_libre?: number
+    }[],
+    extra?: {
+      nota?: string
+      motivo?: string
+      permitir_sin_stock?: boolean
+      autorizacion?: { usuario: string; clave: string }
+      pagos?: { metodo: string; monto: number; referencia?: string }[]
+    },
+  ) =>
+    req<Pedido>(`/pedidos/${pedidoId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        items,
+        nota: extra?.nota ?? null,
+        motivo: extra?.motivo ?? '',
+        permitir_sin_stock: extra?.permitir_sin_stock ?? false,
+        autorizacion: extra?.autorizacion ?? null,
+        pagos: extra?.pagos ?? null,
+      }),
+    }),
   cobrarPedido: (
     pedidoId: number,
     metodo_pago: string,

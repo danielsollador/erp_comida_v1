@@ -23,8 +23,8 @@ llave: A QUE PANTALLAS ENTRA.
   caja    Quien atiende el mostrador: vende, cobra, anula, cierra caja, carga
           compras e inventario, ve reportes. No toca contabilidad ni impuestos
           ni las cuentas de los demas.
-  cocina  Solo la pantalla de cocina: ve las comandas y las marca preparadas o
-          listas. No crea pedidos ni cobra.
+  cocina  Solo la pantalla de cocina: ve las comandas, las agarra para
+          prepararlas y las marca listas. No crea pedidos ni cobra.
 
 El rol viaja dentro de la sesion firmada, no en la peticion: si lo mandara el
 navegador, ser administrador seria escribir "admin" en un JSON.
@@ -63,7 +63,7 @@ MODULOS: dict[str, dict] = {
         "nombre": "Cocina",
         "rutas": (),
         "lectura": ("/api/pedidos", "/api/menu"),
-        "escribe_solo": ("/api/pedidos/items/", "/marcar-listo"),
+        "escribe_solo": ("/api/pedidos/items/", "/marcar-listo", "/cocinando"),
     },
     "reportes": {"nombre": "Reportes", "rutas": (), "lectura": ("/api/reportes",)},
     "ventas": {"nombre": "Ventas", "rutas": (), "lectura": ("/api/ventas",)},
@@ -295,8 +295,10 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
     if not escribe:
         return ruta.startswith(("/api/pedidos", "/api/menu") + LECTURA_LIBRE)
     if metodo == "POST":
+        # `/cocinando` es como la cocina dice "esta comanda es mia": marca que
+        # empezo a prepararla y con eso le cierra la edicion al punto de venta.
         return (ruta.startswith("/api/pedidos/items/")
-                or ruta.endswith("/marcar-listo"))
+                or ruta.endswith(("/marcar-listo", "/cocinando")))
     return False
 
 
