@@ -612,12 +612,22 @@ export const api = {
     categoria: string
     forma_pago: string
     descripcion?: string
-    // Con renglones (compra de insumos): cada uno actualiza stock y costo
+    // Con renglones (compra de mercancia): cada uno actualiza stock y costo
     // promedio de su ingrediente, y la base se calcula sola sumandolos.
-    items?: { ingrediente_id: number; cantidad: number; costo_unitario: number }[]
+    // `exento` solo viaja cuando ESTA factura contradice a la ficha.
+    items?: {
+      ingrediente_id: number
+      cantidad: number
+      costo_unitario: number
+      exento?: boolean
+    }[]
     // Sin renglones (servicios, activos...): se carga la base a mano.
     base_imponible?: number
     iva?: number
+    // Lo que el proveedor suma o rebaja sobre el total: flete, recargo por
+    // pagar a credito, descuento por volumen. Los dos en positivo.
+    recargo?: number
+    descuento?: number
     // Solo si forma_pago es "Credito".
     fecha_vencimiento?: string
     // Solo si categoria es "Activos": en cuantos meses se gasta el equipo.

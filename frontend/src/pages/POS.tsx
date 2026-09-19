@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import EditarPedido from '../components/EditarPedido'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
-import { Boton, Campo, Modal, Selector } from '../components/ui'
+import { Boton, Modal } from '../components/ui'
 import { api, connectWs } from '../lib/api'
 import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { colorCategoria } from '../lib/theme'
-import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
+import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import type {
   Categoria,
   Pedido,
@@ -25,32 +26,6 @@ const CLAVE_PUNTO = 'erp-punto-venta'
 
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
 type Carrito = Record<number, CarritoEntry>
-
-/**
- * Un renglon dentro del cuadro de edicion.
- *
- * `precio` viaja en la linea en vez de leerse del menu cada vez, y es lo que
- * hace que el total que ve el cajero sea el mismo que va a calcular el
- * servidor: un renglon que ya estaba conserva el precio al que se le dijo al
- * cliente, aunque el menu haya subido mientras el pedido estaba abierto.
- */
-type LineaEdicion = {
-  clave: string
-  variante_id: number | null
-  nombre: string
-  precio: number
-  cantidad: number
-}
-
-function lineasDePedido(pedido: Pedido): LineaEdicion[] {
-  return pedido.items.map((i) => ({
-    clave: i.variante_id !== null ? `v${i.variante_id}` : `libre:${i.nombre}:${i.precio_unitario}`,
-    variante_id: i.variante_id,
-    nombre: i.nombre,
-    precio: i.precio_unitario,
-    cantidad: i.cantidad,
-  }))
-}
 
 export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
@@ -80,7 +55,6 @@ export default function POS() {
     claveComanda.current = null
   }, [carrito, libres])
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
-  const [ventasRecientes, setVentasRecientes] = useState<Pedido[]>([])
   const [pagoMixto, setPagoMixto] = useState(false)
   const [metodoParcial, setMetodoParcial] = useState(METODOS_PAGO[0])
   const [montoParcial, setMontoParcial] = useState('')
@@ -111,15 +85,6 @@ export default function POS() {
   // avisa: un candado que solo se suelta al guardar dejaria la comanda
   // trancada cada vez que alguien se arrepiente.
   const [editando, setEditando] = useState<Pedido | null>(null)
-  const [lineas, setLineas] = useState<LineaEdicion[]>([])
-  const [motivoEdicion, setMotivoEdicion] = useState('')
-  const [buscarEnMenu, setBuscarEnMenu] = useState('')
-  const [usuarioAutoriza, setUsuarioAutoriza] = useState('')
-  const [claveAutoriza, setClaveAutoriza] = useState('')
-  const [metodoDiferencia, setMetodoDiferencia] = useState(METODOS_PAGO[0])
-  const [referenciaDiferencia, setReferenciaDiferencia] = useState('')
-  const [errorEdicion, setErrorEdicion] = useState('')
-  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
   const dialogo = useDialogo()
   const [ultimaVenta, setUltimaVenta] = useState<Pedido | null>(null)
   const { tasa, fmt } = useMoneda()
@@ -131,18 +96,6 @@ export default function POS() {
   const aCobrar = Math.round((subtotalCobro - descuentoNum + (Number(propina) || 0)) * 100) / 100
   const vuelto = Math.max(Math.round(((Number(recibido) || 0) - aCobrar) * 100) / 100, 0)
 
-  // Lo que va a costar el pedido despues de la edicion. Se calcula igual que
-  // en el servidor -- el descuento ya concedido se respeta -- para que el
-  // numero que el cajero le dice al cliente sea el que se va a cobrar.
-  const subtotalEditado =
-    Math.round(lineas.reduce((t, l) => t + l.precio * l.cantidad, 0) * 100) / 100
-  const totalEditado = editando
-    ? Math.max(Math.round((subtotalEditado - (editando.descuento || 0)) * 100) / 100, 0)
-    : 0
-  const diferencia = editando ? Math.round((totalEditado - editando.total) * 100) / 100 : 0
-  // Solo una venta YA COBRADA tiene plata que cuadrar. Si todavia no se ha
-  // cobrado, cambiar renglones es simplemente tomar bien el pedido.
-  const pideAutorizacion = Boolean(editando && editando.estado === 'pagado' && diferencia !== 0)
 
   useEffect(() => {
     // Solo lo que esta en el menu hoy: una categoria retirada conserva sus
@@ -158,57 +111,27 @@ export default function POS() {
     return disconnect
   }, [])
 
+  /**
+   * Lo que esta vivo en el piso, y nada mas: lo que falta por cobrar y lo que
+   * esta en cocina.
+   *
+   * La cola de cocina se pide con `en_cocina`, el MISMO listado que pinta la
+   * pantalla de cocina, y no con `estado='pendiente'`. No es lo mismo: cobrar
+   * deja el pedido en "pagado" aunque la comida no se haya tocado --pagar
+   * antes de que salga es el flujo normal de un mostrador-- y por contar
+   * estados el mostrador veia una cosa y la cocina otra.
+   */
   function refrescarPedidos() {
-    Promise.all([api.listarPedidos('pendiente'), api.listarPedidos('listo')]).then(
-      ([pendientes, listos]) =>
-        setPedidosActivos([...listos, ...pendientes].sort((a, b) => a.numero - b.numero)),
-    )
-    // Las ultimas ventas quedan a mano por si el cliente vuelve con la comida:
-    // devolver una venta cobrada es distinto de anular una que nunca se cobro.
-    api
-      .listarPedidos('pagado')
-      .then((ps) => setVentasRecientes(ps.slice(0, 6)))
-      .catch(() => setVentasRecientes([]))
-  }
-
-  async function devolver(pedido: Pedido) {
-    const r = await dialogo.pedir({
-      titulo: `Devolver el pedido #${pedido.numero}`,
-      texto:
-        `Se le regresan ${fmt(pedido.total)} al cliente y la venta se revierte entera: deja de contar como ` +
-        'ingreso y deja de deber IVA.',
-      campos: [
-        { nombre: 'motivo', etiqueta: 'Qué pasó', valor: 'La comida estaba mala' },
-        // Define si el costo vuelve al inventario o se reconoce como merma.
-        {
-          nombre: 'recuperable',
-          etiqueta: 'La comida se puede volver a vender',
-          tipo: 'opciones',
-          opciones: [
-            { valor: 'no', texto: 'No, se bota (se registra como merma)' },
-            { valor: 'si', texto: 'Sí, vuelve al inventario' },
-          ],
-        },
-        // Sin la nota de credito la factura no puede salir del Libro de Ventas.
-        ...(pedido.facturado
-          ? [{ nombre: 'nc', etiqueta: `Número de la nota de crédito (factura ${pedido.numero_factura})` }]
-          : []),
-      ],
-      aceptar: 'Devolver',
-      peligro: true,
-    })
-    if (!r) return
-    const motivo = r.motivo
-    const recuperable = r.recuperable === 'si'
-    const nota_credito = pedido.facturado ? r.nc : undefined
-
-    setError('')
-    try {
-      await api.devolverPedido(pedido.id, { recuperable, nota_credito, motivo })
-      refrescarPedidos()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo devolver')
-    }
+    Promise.all([api.listarPedidosEnCocina(), api.listarPedidos('listo')])
+      .then(([enCocina, listos]) => {
+        const porId = new Map<number, Pedido>()
+        for (const p of [...enCocina, ...listos]) porId.set(p.id, p)
+        const falta = (p: Pedido) => (p.items.some((i) => !i.preparado) ? 1 : 0)
+        setPedidosActivos(
+          [...porId.values()].sort((a, b) => falta(a) - falta(b) || a.numero - b.numero),
+        )
+      })
+      .catch(() => setPedidosActivos([]))
   }
 
   // Que ofrecerle al cliente segun lo que ya lleva. Se recalcula en cada
@@ -532,15 +455,7 @@ export default function POS() {
     try {
       // Se toma el candado ANTES de que el cajero empiece a tocar renglones:
       // avisarle a la cocina cuando ya se guardo no sirve de nada.
-      const fresco = await api.abrirEdicion(pedido.id)
-      setEditando(fresco)
-      setLineas(lineasDePedido(fresco))
-      setMotivoEdicion('')
-      setBuscarEnMenu('')
-      setUsuarioAutoriza('')
-      setClaveAutoriza('')
-      setReferenciaDiferencia('')
-      setErrorEdicion('')
+      setEditando(await api.abrirEdicion(pedido.id))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo abrir la edición')
     }
@@ -552,98 +467,16 @@ export default function POS() {
     // cinco minutos y la cocina sigue igual.
     if (editando) api.soltarEdicion(editando.id).catch(() => {})
     setEditando(null)
-    setLineas([])
-    setClaveAutoriza('')
     refrescarPedidos()
-  }
-
-  function cambiarLinea(clave: string, delta: number) {
-    setLineas((prev) =>
-      prev
-        .map((l) => (l.clave === clave ? { ...l, cantidad: l.cantidad + delta } : l))
-        .filter((l) => l.cantidad > 0),
-    )
-  }
-
-  function agregarAlEditado(producto: Producto, variante: Variante) {
-    const clave = `v${variante.id}`
-    setLineas((prev) => {
-      const ya = prev.find((l) => l.clave === clave)
-      if (ya) return prev.map((l) => (l.clave === clave ? { ...l, cantidad: l.cantidad + 1 } : l))
-      const nombre =
-        variante.nombre && variante.nombre.toLowerCase() !== 'regular'
-          ? `${producto.nombre} - ${variante.nombre}`
-          : producto.nombre
-      return [...prev, { clave, variante_id: variante.id, nombre, precio: variante.precio, cantidad: 1 }]
-    })
-  }
-
-  async function guardarEdicion() {
-    if (!editando) return
-    setErrorEdicion('')
-    if (lineas.length === 0) {
-      setErrorEdicion('Un pedido no puede quedar vacío. Si ya no va, anúlalo.')
-      return
-    }
-    if (pideAutorizacion && (!usuarioAutoriza.trim() || !claveAutoriza)) {
-      setErrorEdicion('La diferencia de dinero necesita usuario y clave de quien la autoriza.')
-      return
-    }
-    setGuardandoEdicion(true)
-    try {
-      await api.editarPedido(
-        editando.id,
-        lineas.map((l) =>
-          l.variante_id !== null
-            ? { variante_id: l.variante_id, cantidad: l.cantidad }
-            : { variante_id: null, cantidad: l.cantidad, nombre_libre: l.nombre, precio_libre: l.precio },
-        ),
-        {
-          motivo: motivoEdicion,
-          autorizacion: pideAutorizacion
-            ? { usuario: usuarioAutoriza.trim(), clave: claveAutoriza }
-            : undefined,
-          // El monto va en positivo: el signo lo pone la diferencia. Pedirle al
-          // cajero que escriba -3.00 para una devolucion es pedirle que se
-          // equivoque.
-          pagos: pideAutorizacion
-            ? [
-                {
-                  metodo: metodoDiferencia,
-                  monto: Math.abs(diferencia),
-                  referencia: referenciaDiferencia,
-                },
-              ]
-            : undefined,
-        },
-      )
-      setEditando(null)
-      setLineas([])
-      setClaveAutoriza('')
-      refrescarPedidos()
-    } catch (e) {
-      setErrorEdicion(e instanceof Error ? e.message : 'No se pudo guardar')
-    } finally {
-      setGuardandoEdicion(false)
-    }
   }
 
   const categoria = categorias.find((c) => c.id === categoriaActiva)
 
-  // Todo el menu en una lista, para el buscador del cuadro de edicion: ahi no
-  // hay espacio para las pestañas de categoria y lo que se necesita es teclear
-  // tres letras y tocar.
-  const platosDelMenu = useMemo(
-    () =>
-      categorias
-        .filter((c) => c.activo)
-        .flatMap((c) =>
-          c.productos
-            .filter((pr) => pr.activo)
-            .flatMap((pr) => pr.variantes.filter((v) => v.activo).map((v) => ({ producto: pr, variante: v }))),
-        ),
-    [categorias],
-  )
+  // Lo que espera a que lo cobren va primero: es lo unico de esta pantalla que
+  // le toca hacer a quien esta en la caja. Lo que sigue en cocina va debajo,
+  // para verlo, no para actuar.
+  const cuantosEnCocina = pedidosActivos.filter((p) => p.items.some((i) => !i.preparado)).length
+  const cuantosPorCobrar = pedidosActivos.length - cuantosEnCocina
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -716,12 +549,36 @@ export default function POS() {
             </div>
           )}
 
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-2">
-            Pedidos en curso
-          </h2>
+          <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              Pedidos en curso
+            </h2>
+            {/* El color de cada tarjeta dice donde esta el pedido; esto es la
+                leyenda, para no tener que aprendersela. */}
+            <span className="text-xs text-neutral-400 flex items-center gap-3">
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-exito-500" /> {cuantosPorCobrar} por cobrar
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-aviso-500" /> {cuantosEnCocina} en cocina
+              </span>
+            </span>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {pedidosActivos.map((pedido) => (
-              <div key={pedido.id} className="bg-white rounded-2xl shadow-sm border border-neutral-200 p-4">
+            {pedidosActivos.map((pedido) => {
+              // Falta comida por hacer: la misma pregunta que responde la
+              // pantalla de cocina, no el estado del pedido. Cobrar deja el
+              // pedido en "pagado" aunque no se haya tocado la comida.
+              const falta = pedido.items.some((i) => !i.preparado)
+              const preparando = enPreparacion(pedido)
+              const yaPagado = pedido.estado === 'pagado'
+              const marco = preparando
+                ? 'border-acento-400 bg-acento-50 ring-1 ring-acento-500/30'
+                : falta
+                  ? 'border-aviso-400 bg-aviso-500/5'
+                  : 'border-exito-400 bg-exito-500/5'
+              return (
+              <div key={pedido.id} className={`rounded-2xl shadow-sm border-2 p-4 ${marco}`}>
                 <div className="flex justify-between items-center mb-2 gap-2">
                   <span className="font-bold text-lg">#{pedido.numero}</span>
                   <span className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -732,19 +589,22 @@ export default function POS() {
                     )}
                     {/* Que la cocina ya la tenga no es un detalle de color: es
                         el motivo por el que el boton de editar esta apagado. */}
-                    {enPreparacion(pedido) && (
+                    {preparando && (
                       <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-acento-500/15 text-acento-800">
                         {pedido.cocinando_por ? `${pedido.cocinando_por} la prepara` : 'En preparación'}
                       </span>
                     )}
+                    {yaPagado && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-neutral-200 text-neutral-600">
+                        Pagado
+                      </span>
+                    )}
                     <span
                       className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                        pedido.estado === 'listo'
-                          ? 'bg-exito-100 text-exito-700'
-                          : 'bg-aviso-100 text-aviso-700'
+                        falta ? 'bg-aviso-100 text-aviso-700' : 'bg-exito-100 text-exito-700'
                       }`}
                     >
-                      {pedido.estado === 'listo' ? 'Listo para cobrar' : 'En cocina'}
+                      {falta ? 'En cocina' : 'Listo para cobrar'}
                     </span>
                   </span>
                 </div>
@@ -758,12 +618,14 @@ export default function POS() {
                 <div className="flex justify-between items-center gap-3">
                   <span className="font-semibold whitespace-nowrap">{fmt(pedido.total)}</span>
                   <div className="flex items-center gap-3 shrink-0">
-                    <button
-                      onClick={() => anular(pedido)}
-                      className="text-peligro-500 text-xs font-medium"
-                    >
-                      Anular
-                    </button>
+                    {!yaPagado && (
+                      <button
+                        onClick={() => anular(pedido)}
+                        className="text-peligro-500 text-xs font-medium"
+                      >
+                        Anular
+                      </button>
+                    )}
                     <button
                       onClick={() => editar(pedido)}
                       disabled={Boolean(porQueNoSeEdita(pedido))}
@@ -772,18 +634,26 @@ export default function POS() {
                     >
                       Editar
                     </button>
-                    <button
-                      onClick={() => setCobrando(pedido)}
-                      className="bg-neutral-900 text-white text-sm px-4 py-2 rounded-xl font-medium"
-                    >
-                      Cobrar
-                    </button>
+                    {/* Un pedido cobrado que sigue en cocina se queda a la
+                        vista hasta que la comida salga -- pero no se vuelve a
+                        cobrar ni se anula: para eso esta Devolver, en Ventas. */}
+                    {!yaPagado && (
+                      <button
+                        onClick={() => setCobrando(pedido)}
+                        className="bg-neutral-900 text-white text-sm px-4 py-2 rounded-xl font-medium"
+                      >
+                        Cobrar
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
-            ))}
+              )
+            })}
             {pedidosActivos.length === 0 && (
-              <p className="text-neutral-400 text-sm">No hay pedidos activos.</p>
+              <p className="text-neutral-400 text-sm">
+                Nada en curso: ni pedidos por cobrar ni comida en cocina.
+              </p>
             )}
           </div>
 
@@ -815,69 +685,6 @@ export default function POS() {
             </div>
           )}
 
-          {ventasRecientes.length > 0 && (
-            <div className="mt-6">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">
-                Ultimas ventas
-              </h2>
-              <div className="space-y-1">
-                {ventasRecientes.map((v) => (
-                  <div
-                    key={v.id}
-                    className={`flex items-center justify-between gap-2 text-sm rounded-lg px-2.5 py-1.5 ${
-                      v.devuelto ? 'bg-neutral-100 opacity-60' : 'bg-white border border-neutral-200'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 min-w-0">
-                      <span className="font-medium">#{v.numero}</span>
-                      <span className="text-neutral-500 truncate">
-                        {v.items.map((i) => `${i.cantidad}x ${i.nombre}`).join(', ')}
-                      </span>
-                      {v.facturado && !v.devuelto && (
-                        <span className="text-[10px] text-neutral-400 shrink-0">facturada</span>
-                      )}
-                      {v.editado && (
-                        <span
-                          className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-aviso-500/20 text-aviso-800 shrink-0"
-                          title={v.ediciones.map((e) => e.detalle).join(' | ')}
-                        >
-                          Editada
-                        </span>
-                      )}
-                      {v.operador && (
-                        <span className="text-[10px] text-neutral-400 shrink-0" title="Quien cobro">
-                          · {v.operador}
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex items-center gap-3 shrink-0">
-                      <span className="tabular-nums">{fmt(v.total)}</span>
-                      {v.devuelto ? (
-                        <span className="text-xs text-neutral-500">devuelta</span>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => editar(v)}
-                            disabled={Boolean(porQueNoSeEdita(v))}
-                            title={porQueNoSeEdita(v) ?? 'Corregir lo que se cobró'}
-                            className="text-xs font-medium text-neutral-600 disabled:opacity-30"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => devolver(v)}
-                            className="text-xs font-medium text-aviso-700"
-                          >
-                            Devolver
-                          </button>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:sticky md:top-[105px] md:h-[calc(100vh-105px)]">
@@ -1007,183 +814,17 @@ export default function POS() {
         </div>
       )}
 
+      {/* Vive en su propio componente porque Ventas abre exactamente el mismo
+          cuadro: dos copias serian dos reglas distintas para la misma clave. */}
       {editando && (
-        <Modal
-          titulo={`Editar pedido #${editando.numero}`}
-          ayuda={
-            editando.estado === 'pagado'
-              ? 'Esta venta ya está cobrada: si el monto cambia hará falta una clave y decir por dónde entra o sale la diferencia.'
-              : 'La cocina tiene esta comanda bloqueada mientras el cuadro esté abierto.'
-          }
+        <EditarPedido
+          pedido={editando}
+          onGuardado={() => {
+            setEditando(null)
+            refrescarPedidos()
+          }}
           onCerrar={cerrarEdicion}
-          ancho="lg"
-          pie={
-            <div className="flex items-center justify-between w-full gap-3">
-              <Boton tono="fantasma" onClick={cerrarEdicion}>
-                Cancelar
-              </Boton>
-              <Boton onClick={guardarEdicion} disabled={guardandoEdicion || lineas.length === 0}>
-                {guardandoEdicion ? 'Guardando…' : 'Guardar cambios'}
-              </Boton>
-            </div>
-          }
-        >
-          {errorEdicion && <p className="text-peligro-600 text-sm mb-3">{errorEdicion}</p>}
-
-          <div className="space-y-2 mb-4">
-            {lineas.map((l) => (
-              <div key={l.clave} className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold truncate">{l.nombre}</div>
-                  <div className="text-xs text-neutral-500">
-                    {l.cantidad} x {fmt(l.precio)} ={' '}
-                    <span className="font-semibold text-neutral-700">{fmt(l.precio * l.cantidad)}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => cambiarLinea(l.clave, -1)}
-                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
-                  >
-                    -
-                  </button>
-                  <span className="w-6 text-center font-semibold tabular-nums">{l.cantidad}</span>
-                  <button
-                    onClick={() => cambiarLinea(l.clave, 1)}
-                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            ))}
-            {lineas.length === 0 && (
-              <p className="text-sm text-peligro-600">
-                No queda ningún renglón. Un pedido vacío se anula, no se guarda.
-              </p>
-            )}
-          </div>
-
-          <input
-            value={buscarEnMenu}
-            onChange={(e) => setBuscarEnMenu(e.target.value)}
-            placeholder="Agregar del menú: escribe para buscar"
-            className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mb-2"
-          />
-          {buscarEnMenu.trim().length > 0 && (
-            <div className="grid grid-cols-2 gap-2 mb-4 max-h-44 overflow-y-auto">
-              {platosDelMenu
-                .filter(({ producto, variante }) =>
-                  `${producto.nombre} ${variante.nombre}`
-                    .toLowerCase()
-                    .includes(buscarEnMenu.trim().toLowerCase()),
-                )
-                .slice(0, 12)
-                .map(({ producto, variante }) => (
-                  <button
-                    key={variante.id}
-                    onClick={() => agregarAlEditado(producto, variante)}
-                    className="text-left bg-neutral-100 hover:bg-neutral-200 rounded-xl px-3 py-2 text-sm"
-                  >
-                    <span className="font-medium">
-                      {variante.nombre && variante.nombre.toLowerCase() !== 'regular'
-                        ? `${producto.nombre} - ${variante.nombre}`
-                        : producto.nombre}
-                    </span>
-                    <span className="block text-xs text-neutral-500">{fmt(variante.precio)}</span>
-                  </button>
-                ))}
-            </div>
-          )}
-
-          <div className="border-t border-neutral-200 pt-3 text-sm space-y-1">
-            <div className="flex justify-between text-neutral-500">
-              <span>Antes</span>
-              <span className="tabular-nums">{fmt(editando.total)}</span>
-            </div>
-            <div className="flex justify-between font-semibold">
-              <span>Queda en</span>
-              <span className="tabular-nums">{fmt(totalEditado)}</span>
-            </div>
-            {diferencia !== 0 && (
-              <div
-                className={`flex justify-between font-semibold ${
-                  diferencia > 0 ? 'text-exito-700' : 'text-aviso-700'
-                }`}
-              >
-                <span>{diferencia > 0 ? 'El cliente paga de más' : 'Se le devuelve al cliente'}</span>
-                <span className="tabular-nums">{fmt(Math.abs(diferencia))}</span>
-              </div>
-            )}
-          </div>
-
-          {/* La clave no se pide por cambiar renglones: se pide por mover plata
-              de una venta ya cobrada. Un pedido sin cobrar no pide nada, y una
-              edicion que da exacta tampoco -- pedir clave siempre entrena a la
-              gente para que la clave no signifique nada. */}
-          {pideAutorizacion && (
-            <div className="mt-4 rounded-xl bg-aviso-500/10 ring-1 ring-aviso-500/30 p-3 space-y-3">
-              <p className="text-sm font-semibold text-aviso-900">
-                Esta venta ya está cobrada y el monto cambia en {fmt(Math.abs(diferencia))}.
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <Campo
-                  etiqueta="Autoriza (usuario)"
-                  value={usuarioAutoriza}
-                  onChange={(e) => setUsuarioAutoriza(e.target.value)}
-                  autoComplete="off"
-                />
-                <Campo
-                  etiqueta="Clave"
-                  type="password"
-                  value={claveAutoriza}
-                  onChange={(e) => setClaveAutoriza(e.target.value)}
-                  autoComplete="off"
-                />
-              </div>
-              <Selector
-                etiqueta={diferencia > 0 ? 'Cómo se cobra la diferencia' : 'Cómo se devuelve'}
-                value={metodoDiferencia}
-                onChange={(e) => setMetodoDiferencia(e.target.value)}
-              >
-                {METODOS_PAGO.map((m) => (
-                  <option key={m} value={m}>
-                    {etiquetaMetodo(m)}
-                  </option>
-                ))}
-              </Selector>
-              {METODOS_CON_REFERENCIA.has(metodoDiferencia) && (
-                <Campo
-                  etiqueta="Referencia"
-                  value={referenciaDiferencia}
-                  onChange={(e) => setReferenciaDiferencia(e.target.value)}
-                  ayuda="El número del pago móvil, el ticket del punto o el comprobante."
-                />
-              )}
-            </div>
-          )}
-
-          <Campo
-            etiqueta="Por qué se edita"
-            className="mt-4"
-            value={motivoEdicion}
-            onChange={(e) => setMotivoEdicion(e.target.value)}
-            placeholder="El cliente cambió de idea"
-          />
-
-          {editando.ediciones.length > 0 && (
-            <div className="mt-4 text-xs text-neutral-500 space-y-1">
-              <p className="font-semibold uppercase tracking-wide">Ya se editó antes</p>
-              {editando.ediciones.map((e) => (
-                <p key={e.id}>
-                  {e.detalle}
-                  {e.diferencia !== 0 && ` · ${fmt(e.diferencia)}`}
-                  {e.autorizado_por && ` · autorizó ${e.autorizado_por}`}
-                </p>
-              ))}
-            </div>
-          )}
-        </Modal>
+        />
       )}
 
       {cobrando && (

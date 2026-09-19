@@ -1265,6 +1265,11 @@ class LineaFacturaInput(BaseModel):
     ingrediente_id: int
     cantidad: float
     costo_unitario: float  # precio pagado por 1 unidad de medida, SIN IVA
+    # Si ESTE renglon viene exento. None = lo que diga la ficha del insumo,
+    # que es lo normal; se manda explicito cuando esta factura viene distinta
+    # (la misma mercancia puede llegar exenta de un proveedor y gravada de
+    # otro, y quien tiene el papel delante es quien sabe).
+    exento: Optional[bool] = None
 
 
 class LineaFactura(BaseModel):
@@ -1275,6 +1280,7 @@ class LineaFactura(BaseModel):
     cantidad: float
     costo_unitario: float
     subtotal: float
+    exento: bool = False
 
     class Config:
         from_attributes = True
@@ -1318,6 +1324,11 @@ class FacturaCompraCreate(FacturaCompraBase):
     # puntual): se carga la base a mano, como antes.
     base_imponible: Optional[float] = None
     iva: float = 0
+    # Lo que el proveedor suma o rebaja sobre el total: flete, recargo por
+    # pagar a credito, descuento por volumen. Van en positivo los dos; el
+    # signo lo pone el campo, no quien teclea.
+    recargo: float = 0
+    descuento: float = 0
     # Solo tiene sentido si forma_pago="Credito": para cuando el dueno se
     # comprometio a pagar, y poder avisar si ya se paso la fecha.
     fecha_vencimiento: Optional[datetime.datetime] = None
@@ -1329,7 +1340,12 @@ class FacturaCompraCreate(FacturaCompraBase):
 class FacturaCompra(FacturaCompraBase):
     id: int
     fecha: datetime.datetime
+    # Ya con el recargo y el descuento aplicados: es la base que va al Libro
+    # de Compras. Los dos viajan aparte para poder explicar la diferencia con
+    # la suma de los renglones.
     base_imponible: float
+    recargo: float = 0
+    descuento: float = 0
     iva: float
     total: float
     pagada: bool

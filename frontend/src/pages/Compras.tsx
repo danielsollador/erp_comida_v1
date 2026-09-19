@@ -12,10 +12,29 @@ import type { ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor } from 
 
 const MONEDAS_DE_CARGA = ['$', 'Bs'] as const
 
-const CATEGORIAS = ['Insumos', 'Servicios', 'Activos', 'Otros']
+// El valor que viaja y se guarda NO cambia: "Insumos" es la clave con la que
+// la contabilidad decide a que cuenta va cada compra, y la llevan las facturas
+// que ya estan cargadas. Lo que cambia es la palabra que se lee: quien carga
+// una factura de proveedor compra mercancia, no "insumos" -- esa palabra es de
+// Inventario, donde lo mismo ya entro al deposito y va a una receta.
+const CATEGORIAS = [
+  { valor: 'Insumos', texto: 'Mercancía' },
+  { valor: 'Servicios', texto: 'Servicios' },
+  { valor: 'Activos', texto: 'Activos' },
+  { valor: 'Otros', texto: 'Otros' },
+]
 const FORMAS_PAGO = ['Efectivo', 'Efectivo $', 'Banco', 'Credito']
 
-type Linea = { ingrediente_id: number; cantidad: string; costo_unitario: string }
+/** Como se lee una categoria guardada. Es el mismo mapa, al reves. */
+const TEXTO_CATEGORIA = Object.fromEntries(CATEGORIAS.map((c) => [c.valor, c.texto]))
+
+type Linea = {
+  ingrediente_id: number
+  cantidad: string
+  costo_unitario: string
+  /** null = lo que diga la ficha de la mercancía; true/false = lo dice ESTA factura. */
+  exento: boolean | null
+}
 
 const SECCIONES = [
   { id: 'facturas', texto: 'Facturas' },
@@ -57,12 +76,22 @@ export default function Compras() {
   // vende insumos suele cobrar en dolares, pero el de servicios (luz, gas,
   // alquiler) casi siempre factura en bolivares.
   const [monedaCarga, setMonedaCarga] = useState<(typeof MONEDAS_DE_CARGA)[number]>('$')
-  const [categoria, setCategoria] = useState(CATEGORIAS[0])
+  const [categoria, setCategoria] = useState(CATEGORIAS[0].valor)
   const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0])
   const [descripcion, setDescripcion] = useState('')
 
   // Con insumos: renglones por ingrediente, que reabastecen el stock solos.
-  const [lineas, setLineas] = useState<Linea[]>([{ ingrediente_id: 0, cantidad: '', costo_unitario: '' }])
+  const [lineas, setLineas] = useState<Linea[]>([
+    { ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null },
+  ])
+  // Lo que el proveedor suma o rebaja sobre el total: flete, recargo por pagar
+  // a credito, descuento por volumen. Van en positivo los dos.
+  const [recargo, setRecargo] = useState('')
+  const [descuentoFactura, setDescuentoFactura] = useState('')
+  // Cargar una factura no decia nada al salir bien: el formulario se limpiaba
+  // y ya. Eso deja a quien la cargo sin saber si entro, y la unica salida era
+  // ir a la lista a buscarla.
+  const [exito, setExito] = useState('')
   // Sin insumos (servicios, activos...): un monto suelto, como antes.
   const [base, setBase] = useState('')
   const [iva, setIva] = useState('')
@@ -124,16 +153,28 @@ export default function Compras() {
       }, 0),
     [lineas],
   )
+  const recargoNum = Number(recargo) || 0
+  const descuentoNum = Number(descuentoFactura) || 0
+  // La base que de verdad se va a guardar: los renglones, mas el recargo,
+  // menos el descuento.
+  const baseFinal = Math.round((baseLineas + recargoNum - descuentoNum) * 100) / 100
   // Solo de vista previa: el numero real lo calcula el backend con el mismo
-  // criterio (exento por insumo) al guardar.
+  // criterio al guardar. El recargo y el descuento se reparten entre los
+  // renglones, asi que tambien mueven el IVA.
   const ivaLineas = useMemo(() => {
-    const baseGravada = lineas.reduce((sum, l) => {
+    const bruta = lineas.reduce(
+      (sum, l) => sum + (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0),
+      0,
+    )
+    const gravada = lineas.reduce((sum, l) => {
       const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
-      if (ing?.exento) return sum
+      const exento = l.exento === null ? Boolean(ing?.exento) : l.exento
+      if (exento) return sum
       return sum + (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0)
     }, 0)
-    return Math.round(baseGravada * (fiscal.tasa_iva / 100) * 100) / 100
-  }, [lineas, ingredientes, fiscal.tasa_iva])
+    const factor = bruta > 0 ? (bruta + recargoNum - descuentoNum) / bruta : 1
+    return Math.round(gravada * factor * (fiscal.tasa_iva / 100) * 100) / 100
+  }, [lineas, ingredientes, fiscal.tasa_iva, recargoNum, descuentoNum])
 
   function actualizarLinea(i: number, campo: keyof Linea, valor: string) {
     setLineas((prev) =>
@@ -142,7 +183,7 @@ export default function Compras() {
   }
 
   function agregarLinea() {
-    setLineas((prev) => [...prev, { ingrediente_id: 0, cantidad: '', costo_unitario: '' }])
+    setLineas((prev) => [...prev, { ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null }])
   }
 
   function quitarLinea(i: number) {
@@ -158,7 +199,7 @@ export default function Compras() {
       // Compras, ir a Inventario a crearlo, y volver a cargar la factura
       // desde cero.
       const datos = await dialogo.pedir({
-        titulo: 'Insumo nuevo',
+        titulo: 'Mercancía nueva',
         campos: [
           { nombre: 'nombre', etiqueta: 'Nombre', placeholder: 'Ej. Pollo' },
           {
@@ -217,15 +258,18 @@ export default function Compras() {
     setProveedor('')
     setRif('')
     setDescripcion('')
-    setLineas([{ ingrediente_id: 0, cantidad: '', costo_unitario: '' }])
+    setLineas([{ ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null }])
     setBase('')
     setIva('')
+    setRecargo('')
+    setDescuentoFactura('')
     setFechaVencimiento('')
     setMonedaCarga('$')
   }
 
   async function agregarFactura() {
     setError('')
+    setExito('')
     if (!numeroFactura.trim() || !proveedor.trim()) {
       setError('Completa al menos el número de factura y el proveedor')
       return
@@ -254,12 +298,15 @@ export default function Compras() {
             ingrediente_id: l.ingrediente_id,
             cantidad: Number(l.cantidad),
             costo_unitario: aUsd(Number(l.costo_unitario)),
+            // Solo viaja cuando ESTA factura contradice a la ficha; si no, se
+            // omite y manda lo que diga la mercancía.
+            ...(l.exento === null ? {} : { exento: l.exento }),
           }))
         if (items.length === 0) {
-          setError('Agrega al menos un insumo con cantidad y costo')
+          setError('Agrega al menos un renglón con cantidad y costo')
           return
         }
-        await api.crearFacturaCompra({
+        const guardada = await api.crearFacturaCompra({
           numero_factura: numeroFactura.trim(),
           proveedor_nombre: proveedor.trim(),
           proveedor_rif: rif.trim(),
@@ -268,15 +315,22 @@ export default function Compras() {
           descripcion: descripcion.trim(),
           items,
           iva: ivaLineas,
+          recargo: aUsd(recargoNum),
+          descuento: aUsd(descuentoNum),
           fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
         })
+        setExito(
+          `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
+            `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}). ` +
+            `${guardada.items.length} renglón(es) al depósito.`,
+        )
       } else {
         const baseNum = Number(base)
         if (!Number.isFinite(baseNum) || baseNum <= 0) {
           setError('La base imponible debe ser mayor a cero')
           return
         }
-        await api.crearFacturaCompra({
+        const guardada = await api.crearFacturaCompra({
           numero_factura: numeroFactura.trim(),
           proveedor_nombre: proveedor.trim(),
           proveedor_rif: rif.trim(),
@@ -285,9 +339,15 @@ export default function Compras() {
           descripcion: descripcion.trim(),
           base_imponible: aUsd(baseNum),
           iva: aUsd(Number(iva) || 0),
+          recargo: aUsd(recargoNum),
+          descuento: aUsd(descuentoNum),
           fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
           vida_util_meses: esActivo ? Number(vidaUtil) || 60 : undefined,
         })
+        setExito(
+          `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
+            `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}).`,
+        )
       }
       limpiarFormulario()
       cargar()
@@ -332,7 +392,7 @@ export default function Compras() {
     // formulario con una linea por insumo, no una pregunta por insumo.
     const r = await dialogo.pedir({
       titulo: 'Devolución al proveedor',
-      texto: 'Cuánto vuelve de cada insumo. Deja en 0 lo que se queda.',
+      texto: 'Cuánto vuelve de cada renglón. Deja en 0 lo que se queda.',
       ancho: 'md',
       campos: [
         { nombre: 'numero', etiqueta: 'Número de la nota de crédito' },
@@ -376,7 +436,7 @@ export default function Compras() {
     if (f.items.length > 0) {
       await dialogo.avisar({
         titulo: 'Esta factura no se puede borrar',
-        texto: 'Ya actualizó el stock de sus insumos. Si hubo un error, regístrale una nota de crédito.',
+        texto: 'Ya actualizó el stock de su mercancía. Si hubo un error, regístrale una nota de crédito.',
         tono: 'ojo',
       })
       return
@@ -513,14 +573,26 @@ export default function Compras() {
                         {f.items.map((it) => (
                           <li key={it.id} className="text-xs">
                             {it.cantidad} {it.unidad} {it.ingrediente_nombre}
+                            {it.exento && <span className="text-neutral-400"> · exento</span>}
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      f.categoria
+                      TEXTO_CATEGORIA[f.categoria] ?? f.categoria
                     )}
                   </td>
-                  <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
+                  <td className="text-right p-3 tabular-nums">
+                    {f.base_imponible.toFixed(2)}
+                    {/* Sin esto, la suma de los renglones no da la base y no
+                        hay forma de saber por que. */}
+                    {(f.recargo > 0 || f.descuento > 0) && (
+                      <span className="block text-[11px] text-neutral-400">
+                        {f.recargo > 0 && `+${f.recargo.toFixed(2)} recargo`}
+                        {f.recargo > 0 && f.descuento > 0 && ' · '}
+                        {f.descuento > 0 && `-${f.descuento.toFixed(2)} desc.`}
+                      </span>
+                    )}
+                  </td>
                   <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
                   <td className="text-right p-3 tabular-nums font-semibold">
                     {f.total.toFixed(2)}
@@ -573,10 +645,21 @@ export default function Compras() {
           <h2 className="font-semibold mb-2">Cargar factura de proveedor</h2>
           <p className="text-xs text-neutral-500 mb-3">
             {esInsumos
-              ? 'Cada renglón reabastece el stock del insumo y recalcula su costo promedio - no hace falta cargarlo aparte en Inventario.'
+              ? 'Cada renglón reabastece el stock de esa mercancía y recalcula su costo promedio - no hace falta cargarlo aparte en Inventario.'
               : 'Alimenta el Libro de Compras y contabiliza sola: activos entran al balance, servicios van directo a gasto.'}
           </p>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
+          {/* Antes salir bien no decia nada: el formulario se limpiaba y ya, y
+              quien la cargo se quedaba sin saber si entro -- con la duda de si
+              darle otra vez, que es como se cargan dos facturas iguales. */}
+          {exito && (
+            <div className="mb-3 rounded-lg bg-exito-500/10 ring-1 ring-exito-500/30 px-3 py-2 text-sm text-exito-800 flex items-start justify-between gap-3">
+              <span>{exito}</span>
+              <button onClick={() => irA('facturas')} className="font-semibold shrink-0 underline">
+                Verla
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
             <input
@@ -612,8 +695,8 @@ export default function Compras() {
               className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
             >
               {CATEGORIAS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+                <option key={c.valor} value={c.valor}>
+                  {c.texto}
                 </option>
               ))}
             </select>
@@ -688,13 +771,13 @@ export default function Compras() {
                       onChange={(e) => elegirIngrediente(i, e.target.value)}
                       className="flex-1 min-w-[140px] border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
                     >
-                      <option value={0}>Insumo...</option>
+                      <option value={0}>Mercancía...</option>
                       {ingredientes.map((ing2) => (
                         <option key={ing2.id} value={ing2.id}>
                           {ing2.nombre} ({ing2.unidad})
                         </option>
                       ))}
-                      <option value="nuevo">+ Crear insumo nuevo...</option>
+                      <option value="nuevo">+ Crear mercancía nueva...</option>
                     </select>
                     <input
                       value={l.cantidad}
@@ -712,7 +795,30 @@ export default function Compras() {
                       step="0.01"
                       className="w-32 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
                     />
-                    {ing?.exento && <Pastilla tono="neutro">exento</Pastilla>}
+                    {/* La ficha de la mercancía es el valor por defecto, no la
+                        ultima palabra: la misma cosa puede venir exenta de un
+                        proveedor y gravada de otro, y quien tiene el papel
+                        delante es quien sabe. */}
+                    <select
+                      value={l.exento === null ? 'ficha' : l.exento ? 'exento' : 'grava'}
+                      onChange={(e) =>
+                        setLineas((prev) =>
+                          prev.map((x, idx) =>
+                            idx === i
+                              ? { ...x, exento: e.target.value === 'ficha' ? null : e.target.value === 'exento' }
+                              : x,
+                          ),
+                        )
+                      }
+                      title="Si este renglón paga IVA"
+                      className="w-32 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
+                    >
+                      <option value="ficha">
+                        {ing ? (ing.exento ? 'Exento (ficha)' : `IVA ${fiscal.tasa_iva}% (ficha)`) : 'Según la ficha'}
+                      </option>
+                      <option value="grava">Lleva IVA {fiscal.tasa_iva}%</option>
+                      <option value="exento">Exento</option>
+                    </select>
                     <span className="text-sm font-medium text-neutral-600 w-24 text-right">
                       {monedaCarga}
                       {subtotal.toFixed(2)}
@@ -728,19 +834,62 @@ export default function Compras() {
                 )
               })}
               <button onClick={agregarLinea} className="text-sm text-neutral-500 font-medium">
-                + insumo
+                + renglón
               </button>
-              <div className="flex justify-end gap-6 text-sm pt-2 border-t border-neutral-200">
+
+              {/* Casi ninguna factura es la suma limpia de sus renglones: viene
+                  con flete, con recargo por pagar a credito, o con un descuento
+                  por volumen. Sin donde ponerlos habia que falsear un costo
+                  unitario -- y ahi el costo de receta empieza a mentir. */}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-200">
+                <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
+                  Recargo
+                  <input
+                    value={recargo}
+                    onChange={(e) => setRecargo(e.target.value)}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    className="w-full outline-none text-neutral-800 text-right"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
+                  Descuento
+                  <input
+                    value={descuentoFactura}
+                    onChange={(e) => setDescuentoFactura(e.target.value)}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    className="w-full outline-none text-neutral-800 text-right"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-neutral-500">
+                Se reparten entre los renglones: la mercancía entra al depósito por lo que de
+                verdad costó, flete y rebajas incluidos.
+              </p>
+
+              <div className="flex justify-end gap-6 text-sm pt-2 border-t border-neutral-200 flex-wrap">
                 <span className="text-neutral-500">
-                  Base <span className="font-semibold text-neutral-800">{monedaCarga}{baseLineas.toFixed(2)}</span>
+                  Renglones{' '}
+                  <span className="font-semibold text-neutral-800">{monedaCarga}{baseLineas.toFixed(2)}</span>
                 </span>
+                {(recargoNum > 0 || descuentoNum > 0) && (
+                  <span className="text-neutral-500">
+                    Base{' '}
+                    <span className="font-semibold text-neutral-800">{monedaCarga}{baseFinal.toFixed(2)}</span>
+                  </span>
+                )}
                 <span className="text-neutral-500">
                   IVA ({fiscal.tasa_iva}%){' '}
                   <span className="font-semibold text-neutral-800">{monedaCarga}{ivaLineas.toFixed(2)}</span>
                 </span>
                 <span className="text-neutral-500">
                   Total{' '}
-                  <span className="font-bold text-neutral-900">{monedaCarga}{(baseLineas + ivaLineas).toFixed(2)}</span>
+                  <span className="font-bold text-neutral-900">{monedaCarga}{(baseFinal + ivaLineas).toFixed(2)}</span>
                 </span>
               </div>
             </div>

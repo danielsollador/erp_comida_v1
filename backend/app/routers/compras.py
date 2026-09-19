@@ -12,6 +12,18 @@ from ..timeutils import ahora, hoy, inicio_del_dia
 router = APIRouter(prefix="/api/compras", tags=["compras"])
 
 
+def _exento_de(item, ingredientes: dict) -> bool:
+    """Si este renglon pago IVA.
+
+    Manda lo que diga la factura que se esta cargando; la ficha del insumo es
+    solo el valor por defecto. La misma mercancia puede venir exenta de un
+    proveedor y gravada de otro, y quien tiene el papel delante es quien sabe.
+    """
+    if getattr(item, "exento", None) is not None:
+        return bool(item.exento)
+    return bool(ingredientes[item.ingrediente_id].exento)
+
+
 def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
     return schemas.FacturaCompra(
         id=factura.id,
@@ -23,6 +35,8 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
         base_imponible=factura.base_imponible,
+        recargo=factura.recargo or 0,
+        descuento=factura.descuento or 0,
         iva=factura.iva,
         total=factura.total,
         pagada=factura.pagada,
@@ -37,6 +51,7 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
                 cantidad=i.cantidad,
                 costo_unitario=i.costo_unitario,
                 subtotal=i.subtotal,
+                exento=bool(i.exento),
             )
             for i in factura.items
         ],
@@ -68,6 +83,11 @@ def crear_factura(factura: schemas.FacturaCompraCreate, db: Session = Depends(ge
 def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas.FacturaCompra:
     if factura.iva < 0:
         raise HTTPException(status_code=400, detail="El IVA no puede ser negativo")
+    if factura.recargo < 0 or factura.descuento < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="El recargo y el descuento van en positivo: el signo lo pone el campo.",
+        )
 
     # Sin RIF el Libro de Compras queda incompleto para el SENIAT. No se
     # valida el digito verificador -eso lo hace el SENIAT, no este ERP- pero
@@ -95,24 +115,50 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
                 raise HTTPException(status_code=404, detail=f"Ingrediente {item.ingrediente_id} no existe")
             if item.cantidad <= 0:
                 raise HTTPException(status_code=400, detail="La cantidad de cada renglón debe ser mayor a cero")
-        base_imponible = round(sum(it.cantidad * it.costo_unitario for it in factura.items), 2)
+        base_bruta = round(sum(it.cantidad * it.costo_unitario for it in factura.items), 2)
+        ajuste = round(factura.recargo - factura.descuento, 2)
+        base_imponible = round(base_bruta + ajuste, 2)
+        if base_imponible <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El descuento (${factura.descuento:.2f}) se come la factura entera "
+                f"(${base_bruta:.2f}). Revisa el monto.",
+            )
+        # El recargo y el descuento se reparten ENTRE LOS RENGLONES, no se
+        # anotan a un lado. Un flete de $10 en una compra de $100 hace que esa
+        # mercancia de verdad cueste 10% mas, y el margen de cada plato tiene
+        # que saberlo; dejarlo aparte mantendria el costo de receta mintiendo a
+        # favor. Lo mismo al reves con un descuento por volumen.
+        factor = base_imponible / base_bruta if base_bruta else 1.0
+
         # El IVA se calcula aca, no se confia en lo que mando el cliente: solo
-        # asi el "exento" del insumo tiene efecto real. Sin esto, marcar la
-        # harina como exenta no cambiaba un centavo del IVA de la factura.
+        # asi el "exento" tiene efecto real. Sin esto, marcar la harina como
+        # exenta no cambiaba un centavo del IVA de la factura.
         base_gravada = round(
             sum(
                 it.cantidad * it.costo_unitario
                 for it in factura.items
-                if not ingredientes[it.ingrediente_id].exento
-            ),
+                if not _exento_de(it, ingredientes)
+            )
+            * factor,
             2,
         )
         iva_calculado = round(base_gravada * impuestos.tasa_iva(db) / 100, 2)
     else:
         if not factura.base_imponible or factura.base_imponible <= 0:
             raise HTTPException(status_code=400, detail="La base imponible debe ser mayor a cero")
-        base_imponible = factura.base_imponible
+        base_imponible = round(factura.base_imponible + factura.recargo - factura.descuento, 2)
+        if base_imponible <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El descuento (${factura.descuento:.2f}) se come la factura entera. "
+                "Revisa el monto.",
+            )
+        # Sin renglones el IVA lo teclea quien tiene el papel delante: no hay
+        # nada que recalcular, y adivinarlo por regla de tres daria un numero
+        # que no es el que dice la factura.
         iva_calculado = factura.iva
+        factor = 1.0
 
     es_credito = factura.forma_pago == "Credito"
     db_factura = models.FacturaCompra(
@@ -124,6 +170,8 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
         base_imponible=base_imponible,
+        recargo=round(factura.recargo, 2),
+        descuento=round(factura.descuento, 2),
         iva=iva_calculado,
         # Efectivo/Banco: la plata ya salio al cargarla. Credito: queda
         # pendiente hasta que se registre el pago aparte.
@@ -141,14 +189,20 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
                 factura_id=db_factura.id,
                 ingrediente_id=item.ingrediente_id,
                 cantidad=item.cantidad,
+                # El renglon guarda el precio que dice el papel, sin repartir:
+                # es lo que hay que poder cotejar con la factura del proveedor.
                 costo_unitario=item.costo_unitario,
+                exento=_exento_de(item, ingredientes),
             )
         )
         # El costo del insumo se promedia con lo que ya habia - mismo motor
         # que "Registrar compra" en Inventario (ver costeo.py), para que las
-        # dos vias de cargar una compra lleguen siempre al mismo numero.
+        # dos vias de cargar una compra lleguen siempre al mismo numero. Aca si
+        # va el costo repartido: al inventario entra lo que la mercancia costo
+        # de verdad, flete y descuentos incluidos, y asi la suma de las
+        # entradas cuadra exactamente con la base de la factura.
         costeo.registrar_entrada(
-            ingrediente, item.cantidad, item.costo_unitario, db,
+            ingrediente, item.cantidad, round(item.costo_unitario * factor, 6), db,
             origen="factura", referencia_id=db_factura.id,
             nota=f"Factura {db_factura.numero_factura} - {db_factura.proveedor_nombre}",
         )

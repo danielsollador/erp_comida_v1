@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import EditarPedido from '../components/EditarPedido'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { useSeccion } from '../components/Secciones'
@@ -9,7 +10,14 @@ import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
-import type { EstadoVenta, ListaVentas, PuntoSerie, ResumenVentas, VentaFila } from '../lib/types'
+import type {
+  EstadoVenta,
+  ListaVentas,
+  Pedido,
+  PuntoSerie,
+  ResumenVentas,
+  VentaFila,
+} from '../lib/types'
 
 /**
  * VENTAS: cada venta del periodo, que paso con ella, y los numeros de arriba.
@@ -85,6 +93,12 @@ export default function Ventas() {
   const [resumen, setResumen] = useState<ResumenVentas | null>(null)
   // Para que rango llegaron los datos: si no es el de ahora, se esta cargando.
   const [cargado, setCargado] = useState('')
+  // Corregir y devolver vivian en el punto de venta, en la lista de "ultimas
+  // ventas". Esa lista se quito -- el mostrador muestra ahora solo lo que esta
+  // vivo en el piso -- y estas dos acciones se vinieron con el historial, que
+  // es donde de verdad se busca una venta de hace dos horas.
+  const [editando, setEditando] = useState<Pedido | null>(null)
+  const dialogoVentas = useDialogo()
   const cargando = cargado !== `${rango.desde}/${rango.hasta}`
 
   function cargar() {
@@ -100,6 +114,26 @@ export default function Ventas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rango])
 
+  async function abrirEdicion(id: number) {
+    try {
+      // Abrir toma el candado en el servidor: mientras este cuadro este
+      // abierto, la cocina ve esa comanda bloqueada.
+      setEditando(await api.abrirEdicion(id))
+    } catch (e) {
+      await dialogoVentas.avisar({
+        titulo: 'No se puede corregir',
+        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
+        tono: 'ojo',
+      })
+    }
+  }
+
+  function cerrarEdicion() {
+    if (editando) api.soltarEdicion(editando.id).catch(() => {})
+    setEditando(null)
+    cargar()
+  }
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar
@@ -113,11 +147,29 @@ export default function Ventas() {
         {cargando && !lista && <p className="text-neutral-400 text-sm">Cargando...</p>}
 
         {seccion === 'historial' && lista && (
-          <Historial lista={lista} etiqueta={etiquetaRango(rango)} alActualizar={cargar} />
+          <Historial
+            lista={lista}
+            etiqueta={etiquetaRango(rango)}
+            alActualizar={cargar}
+            alEditar={abrirEdicion}
+          />
         )}
         {seccion === 'resumen' && resumen && <Resumen r={resumen} nombre={nombreRango(rango)} />}
         {seccion === 'perdidas' && resumen && lista && <Perdidas r={resumen} lista={lista} />}
       </Pagina>
+
+      {/* El mismo cuadro que abre el punto de venta: una sola version, para
+          que no haya dos reglas distintas sobre cuando se pide la clave. */}
+      {editando && (
+        <EditarPedido
+          pedido={editando}
+          onGuardado={() => {
+            setEditando(null)
+            cargar()
+          }}
+          onCerrar={cerrarEdicion}
+        />
+      )}
     </div>
   )
 }
@@ -128,10 +180,12 @@ function Historial({
   lista,
   etiqueta,
   alActualizar,
+  alEditar,
 }: {
   lista: ListaVentas
   etiqueta: string
   alActualizar: () => void
+  alEditar: (id: number) => void
 }) {
   const { fmtCongelado } = useMoneda()
   const [estado, setEstado] = useState<FiltroEstado>('todas')
@@ -301,6 +355,7 @@ function Historial({
                     total={fmtCongelado(v.total, v.tasa_bcv)}
                     fmtCongelado={fmtCongelado}
                     alActualizar={alActualizar}
+                    alEditar={alEditar}
                   />
                 )
               })}
@@ -320,6 +375,7 @@ function FilaVenta({
   total,
   fmtCongelado,
   alActualizar,
+  alEditar,
 }: {
   v: VentaFila
   apagada: boolean
@@ -328,6 +384,7 @@ function FilaVenta({
   total: string
   fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
   alActualizar: () => void
+  alEditar: (id: number) => void
 }) {
   return (
     <>
@@ -340,6 +397,14 @@ function FilaVenta({
         <td className="p-3 tabular-nums whitespace-nowrap">{fechaCorta(v.fecha)}</td>
         <td className="p-3">
           <span className={apagada ? 'line-through' : ''}>{v.detalle || '—'}</span>
+          {/* Va pegada al detalle y no al estado a proposito: lo que cambio
+              son los renglones, y es ahi donde el ojo pregunta por que el
+              ticket del cliente no dice lo mismo. */}
+          {v.editado && (
+            <span className="ml-2 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-aviso-500/20 text-aviso-800 align-middle">
+              Editada
+            </span>
+          )}
           {/* Va pegada al detalle y no al estado a proposito: lo que cambio
               son los renglones, y es ahi donde el ojo pregunta por que el
               ticket del cliente no dice lo mismo. */}
@@ -371,7 +436,12 @@ function FilaVenta({
       {desplegada && (
         <tr className="border-t border-neutral-100 bg-neutral-50/60">
           <td colSpan={7} className="px-4 py-3">
-            <DetalleVenta v={v} fmtCongelado={fmtCongelado} alActualizar={alActualizar} />
+            <DetalleVenta
+              v={v}
+              fmtCongelado={fmtCongelado}
+              alActualizar={alActualizar}
+              alEditar={alEditar}
+            />
           </td>
         </tr>
       )}
@@ -392,10 +462,12 @@ function DetalleVenta({
   v,
   fmtCongelado,
   alActualizar,
+  alEditar,
 }: {
   v: VentaFila
   fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
   alActualizar: () => void
+  alEditar: (id: number) => void
 }) {
   const dialogo = useDialogo()
   const dinero = (x: number) => fmtCongelado(x, v.tasa_bcv)
@@ -456,6 +528,50 @@ function DetalleVenta({
     } catch (e) {
       await dialogo.avisar({
         titulo: 'No se pudo cobrar',
+        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
+      })
+    }
+  }
+
+  // El cliente trajo la comida de vuelta. Distinto de anular: aca ya hubo
+  // venta, asi que hay que deshacerla entera -- el ingreso, el IVA y la plata.
+  async function devolver() {
+    const r = await dialogo.pedir({
+      titulo: `Devolver la venta #${v.numero}`,
+      texto:
+        `Se le regresan ${dinero(v.total)} al cliente y la venta se revierte entera: deja de ` +
+        'contar como ingreso y deja de deber IVA.',
+      campos: [
+        { nombre: 'motivo', etiqueta: 'Qué pasó', valor: 'La comida estaba mala' },
+        // Define si el costo vuelve al inventario o se reconoce como merma.
+        {
+          nombre: 'recuperable',
+          etiqueta: 'La comida se puede volver a vender',
+          tipo: 'opciones',
+          opciones: [
+            { valor: 'no', texto: 'No, se bota (se registra como merma)' },
+            { valor: 'si', texto: 'Sí, vuelve al inventario' },
+          ],
+        },
+        // Sin la nota de credito la factura no puede salir del Libro de Ventas.
+        ...(v.facturado
+          ? [{ nombre: 'nc', etiqueta: `Número de la nota de crédito (factura ${v.numero_factura})` }]
+          : []),
+      ],
+      aceptar: 'Devolver',
+      peligro: true,
+    })
+    if (!r) return
+    try {
+      await api.devolverPedido(v.id, {
+        recuperable: r.recuperable === 'si',
+        nota_credito: v.facturado ? r.nc : undefined,
+        motivo: r.motivo,
+      })
+      alActualizar()
+    } catch (e) {
+      await dialogo.avisar({
+        titulo: 'No se pudo devolver',
         texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
       })
     }
@@ -541,6 +657,35 @@ function DetalleVenta({
             </button>
           </Dato>
         )}
+        {/* Corregir cambia los renglones de la venta; devolver la deshace
+            entera. Estaban en el punto de venta y se vinieron con el historial,
+            que es donde se busca una venta que ya salio del mostrador. */}
+        {(v.estado === 'cobrada' || v.estado === 'fiada') && (
+          <Dato titulo="Corregir">
+            <span className="flex gap-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  alEditar(v.id)
+                }}
+                className="text-acento-600 hover:text-acento-700 font-medium text-sm"
+                title="Cambiar los renglones. Si el monto cambia, pide clave."
+              >
+                Editar renglones
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  devolver()
+                }}
+                className="text-aviso-700 hover:text-aviso-800 font-medium text-sm"
+                title="El cliente trajo la comida de vuelta"
+              >
+                Devolver
+              </button>
+            </span>
+          </Dato>
+        )}
         {v.estado === 'anulada' && <Dato titulo="Anulada por">{v.anulado_por || '—'}</Dato>}
         {v.estado === 'anulada' && (
           <Dato titulo="Comida">
@@ -567,6 +712,34 @@ function DetalleVenta({
           </Dato>
         )}
         {v.nota && <Dato titulo="Nota">{v.nota}</Dato>}
+        {v.ediciones.length > 0 && (
+          <div className="col-span-2">
+            <Dato titulo="Ediciones">
+              {/* La etiqueta sola no sirve de nada: lo que el dueño necesita
+                  saber es que se cambio, cuanta plata se movio y quien firmo.
+                  Una edicion que movio plata y no tiene nombre detras es
+                  exactamente lo que hay que poder encontrar despues. */}
+              {v.ediciones.map((e) => (
+                <span key={e.id} className="block">
+                  {e.detalle}
+                  {e.diferencia !== 0 && (
+                    <span className={e.diferencia > 0 ? 'text-exito-700' : 'text-aviso-700'}>
+                      {' '}
+                      ({e.diferencia > 0 ? '+' : ''}
+                      {dinero(e.diferencia)}
+                      {e.metodo_pago && ` en ${etiquetaMetodo(e.metodo_pago)}`})
+                    </span>
+                  )}
+                  <span className="block text-xs text-neutral-500">
+                    {e.operador || 'sin operador'}
+                    {e.autorizado_por && ` · autorizó ${e.autorizado_por}`}
+                    {e.motivo && ` · ${e.motivo}`}
+                  </span>
+                </span>
+              ))}
+            </Dato>
+          </div>
+        )}
         {v.ediciones.length > 0 && (
           <div className="col-span-2">
             <Dato titulo="Ediciones">

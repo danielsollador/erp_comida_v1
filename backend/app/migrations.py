@@ -90,6 +90,11 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "editando_por_id", "INTEGER"),
     ("TRX110_VEN_PEDIDO", "editado", "BOOLEAN DEFAULT 0"),
     ("TRX110_VEN_PEDIDO", "editado_en", "DATETIME"),
+    # Recargo y descuento del proveedor sobre el total de la factura, y si
+    # cada renglon pago IVA.
+    ("TRX410_COM_FACTURA", "recargo", "FLOAT DEFAULT 0"),
+    ("TRX410_COM_FACTURA", "descuento", "FLOAT DEFAULT 0"),
+    ("TRX411_COM_FACTURA_DET", "exento", "BOOLEAN DEFAULT 0"),
 ]
 
 
