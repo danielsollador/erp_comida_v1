@@ -689,7 +689,11 @@ input[type="number"] {
 }
 
 /* El desplegable nativo pinta su flecha en gris del sistema; esta va con el
-   color de la tinta y deja sitio a la derecha para que no pise al texto. */
+   color de la tinta y deja sitio a la derecha para que no pise al texto.
+
+   `.vp-flecha` dibuja LA MISMA con un elemento propio, para los campos que no
+   son un `select` de verdad (ver CampoSugerido.tsx). Van juntas a proposito:
+   en una misma fila conviven los dos, y dos flechas distintas se notan. */
 select {
   appearance: none;
   background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
@@ -698,6 +702,19 @@ select {
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
   padding-right: 2rem;
+}
+
+.vp-flecha {
+  display: block;
+  width: 10px;
+  height: 5px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  /* El orden importa: el gradiente de 45deg dibuja la mitad IZQUIERDA de la
+     punta y el de 135deg la derecha, igual que en la regla de `select`. */
+  background-position: left center, right center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
 }
 
 input:disabled,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import CampoSugerido from '../components/CampoSugerido'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
@@ -679,20 +680,15 @@ export default function Compras() {
               placeholder="N. de factura"
               className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
-            <input
-              value={proveedor}
-              onChange={(e) => elegirProveedorConocido(e.target.value)}
-              placeholder="Proveedor"
-              list="proveedores-conocidos"
-              className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
             {/* Un proveedor no registrado se puede tipear igual: el directorio
                 es una comodidad, no un requisito para poder comprar. */}
-            <datalist id="proveedores-conocidos">
-              {proveedores.filter((p) => p.activo).map((p) => (
-                <option key={p.id} value={p.nombre} />
-              ))}
-            </datalist>
+            <CampoSugerido
+              value={proveedor}
+              onChange={elegirProveedorConocido}
+              opciones={proveedores.filter((p) => p.activo).map((p) => p.nombre)}
+              placeholder="Proveedor"
+              vacio="Todavía no hay proveedores guardados"
+            />
             <input
               value={rif}
               onChange={(e) => setRif(e.target.value)}
