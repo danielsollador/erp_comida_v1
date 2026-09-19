@@ -147,12 +147,29 @@ export default function Respaldos() {
 
         <div
           className={`rounded-2xl border p-4 ${
-            horasDesdeUltimo !== null && horasDesdeUltimo <= 8
-              ? 'bg-exito-50 border-exito-200'
-              : 'bg-aviso-50 border-aviso-200'
+            estado?.ultimo_fallo
+              ? 'bg-peligro-50 border-peligro-200'
+              : horasDesdeUltimo !== null && horasDesdeUltimo <= 8
+                ? 'bg-exito-50 border-exito-200'
+                : 'bg-aviso-50 border-aviso-200'
           }`}
         >
           <h2 className="font-semibold mb-1">Respaldo de la base de datos</h2>
+
+          {/* Un respaldo roto solo se veia en el log del contenedor. Aqui la
+              tarjeta se pone en rojo y dice desde cuando y por que: la base
+              lleva ese tiempo sin copia nueva, que es lo unico que importa. */}
+          {estado?.ultimo_fallo && (
+            <p className="text-sm font-medium text-peligro-800 mb-1">
+              El respaldo automático está fallando desde el{' '}
+              {new Date(estado.ultimo_fallo.fecha).toLocaleString('es-VE')}. La base no
+              tiene copia nueva desde entonces.
+              <span className="block font-normal text-xs mt-1 break-words">
+                {estado.ultimo_fallo.error}
+              </span>
+            </p>
+          )}
+
           <p className="text-sm text-neutral-700">
             {ultimo
               ? `Último respaldo hace ${horasDesdeUltimo} hora(s), automático.`

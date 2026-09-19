@@ -104,6 +104,29 @@ def registrar_descarga(nombre: str):
     _guardar_estado(est)
 
 
+def _registrar_fallo(motivo: str, error: str):
+    """Deja constancia de que un respaldo NO se pudo hacer.
+
+    Hasta ahora un respaldo roto solo se veia en el log del contenedor, que
+    nadie mira. Paso de verdad: al pasar los esquemas a mayusculas, `pg_dump`
+    empezo a fallar y la pantalla de Sistema siguio diciendo "ultimo respaldo
+    hace N horas" -- con un numero que crecia y crecia sin que nada avisara.
+    """
+    est = _leer_estado()
+    est["ultimo_fallo"] = {
+        "fecha": datetime.datetime.now().isoformat(),
+        "motivo": motivo,
+        "error": error[:500],
+    }
+    _guardar_estado(est)
+
+
+def _limpiar_fallo():
+    est = _leer_estado()
+    if est.pop("ultimo_fallo", None) is not None:
+        _guardar_estado(est)
+
+
 def restauraciones() -> List[dict]:
     return _leer_estado().get("restauraciones", [])
 
@@ -138,9 +161,22 @@ def _pg(comando: List[str], timeout: int = 600) -> subprocess.CompletedProcess:
                           text=True, timeout=timeout)
 
 
+def _patron_de_esquema(nombre: str) -> str:
+    """El esquema tal como `pg_dump --schema` tiene que recibirlo.
+
+    `--schema` no toma un nombre: toma un PATRON con las reglas de `psql \\d`,
+    y esas reglas pliegan a minusculas lo que no va entre comillas. Con los
+    esquemas en mayusculas (`SAVORA`), `--schema=SAVORA` busca `savora`, no lo
+    encuentra y pg_dump falla con "no matching schemas were found" -- que es
+    exactamente lo que paso en produccion: el respaldo automatico llevaba
+    horas fallando en silencio porque el error solo salia en el log.
+    """
+    return f'"{nombre}"'
+
+
 def _pg_dump(destino: str) -> None:
     r = _pg(["pg_dump", "--format=custom", "--no-owner", "--no-privileges",
-             f"--schema={DB_SCHEMA}", f"--file={destino}"])
+             f"--schema={_patron_de_esquema(DB_SCHEMA)}", f"--file={destino}"])
     if r.returncode != 0:
         try:
             os.remove(destino)
@@ -209,18 +245,25 @@ def crear_respaldo(motivo: str = "automatico") -> str:
         marca = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         destino = _ruta_libre(marca)
 
-        if ES_POSTGRES:
-            _pg_dump(destino)
-            _escribir_meta(destino)
-        else:
-            origen_con = sqlite3.connect(DB_PATH)
-            destino_con = sqlite3.connect(destino)
-            try:
-                origen_con.backup(destino_con)
-            finally:
-                destino_con.close()
-                origen_con.close()
+        # Unico sitio por donde pasan todos los respaldos: aqui se anota si
+        # fallo, para que la pantalla de Sistema lo pueda decir.
+        try:
+            if ES_POSTGRES:
+                _pg_dump(destino)
+                _escribir_meta(destino)
+            else:
+                origen_con = sqlite3.connect(DB_PATH)
+                destino_con = sqlite3.connect(destino)
+                try:
+                    origen_con.backup(destino_con)
+                finally:
+                    destino_con.close()
+                    origen_con.close()
+        except Exception as e:
+            _registrar_fallo(motivo, str(e))
+            raise
 
+        _limpiar_fallo()
         _limpiar_antiguos()
         _espejar(destino)
         return destino
@@ -508,6 +551,13 @@ def estado() -> dict:
             pass
 
     archivos = _archivos()
+    # Cuantas horas lleva la base sin una copia. Es el numero que de verdad
+    # importa: si pasa del intervalo, algo esta fallando aunque el ultimo
+    # respaldo exista y se vea reciente en la lista.
+    horas_sin_respaldo = None
+    if ultimo:
+        horas_sin_respaldo = round((time.time() - os.stat(ultimo).st_mtime) / 3600, 1)
+
     return {
         "motor": "postgresql" if ES_POSTGRES else "sqlite",
         "ultimo_respaldo": (
@@ -515,6 +565,10 @@ def estado() -> dict:
             if ultimo
             else None
         ),
+        "horas_sin_respaldo": horas_sin_respaldo,
+        "intervalo_horas": INTERVALO_HORAS,
+        # El ultimo intento que fallo, si no se ha logrado uno bueno despues.
+        "ultimo_fallo": est.get("ultimo_fallo"),
         "cantidad": len(archivos),
         "dia_mas_viejo": _dia_de(min(archivos, key=lambda r: os.stat(r).st_mtime)).isoformat()
         if archivos

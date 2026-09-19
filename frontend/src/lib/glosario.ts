@@ -555,7 +555,8 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'kpi.en_cocina': {
     que: 'Cuántas comandas están esperando que la cocina las prepare.',
-    origen: 'Los pedidos en estado pendiente, en vivo.',
+    origen:
+      'Las mismas que ves en la pantalla de Cocina: pedidos con algún producto sin marcar como preparado, cobrados o no, de las últimas 12 horas. Que ya esté pagado no significa que esté hecho.',
     ejemplo:
       'Si este número crece y no baja, la cocina se está quedando atrás y el cliente lo va a notar antes que tú. Toca la tarjeta para ver la pantalla de cocina.',
   },
