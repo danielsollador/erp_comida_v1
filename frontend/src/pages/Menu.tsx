@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
+import { contiene, palabrasDe } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type { Categoria, CostoVariante } from '../lib/types'
@@ -16,6 +17,10 @@ export default function Menu() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const dialogo = useDialogo()
   const [nuevaCategoria, setNuevaCategoria] = useState('')
+  // Con un menu de cien variantes, encontrar "Empanada de pernil" para
+  // cambiarle el precio era recorrer la pagina con el ojo. Busca por producto,
+  // por variante y por categoria, sin acentos.
+  const [busqueda, setBusqueda] = useState('')
   // Cuanto cuesta producir cada variante: el precio se fija mirando esto, no a
   // ciegas. Antes se podia poner un precio por debajo del costo sin que nada
   // lo dijera, y la perdida quedaba escondida en el promedio del reporte.
@@ -60,30 +65,26 @@ export default function Menu() {
     cargar()
   }
 
+  // Una categoria entra si coincide su nombre --y entonces se ve entera-- o
+  // si algun producto suyo coincide, y entonces se ve solo con esos.
+  const visibles = filtrarMenu(categorias.filter((c) => c.activo), busqueda)
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Menú" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="media">
         {seccion === 'menu' && (
           <>
-        {categorias
-          .filter((c) => c.activo)
-          .map((cat) => (
-            <CategoriaCard
-              key={cat.id}
-              categoria={cat}
-              costos={costos}
-              onCambio={cargar}
-              onBorrar={borrarCategoria}
-            />
-          ))}
-
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex gap-2">
+        {/* Agregar y buscar, ARRIBA. La caja de "nueva categoria" estaba al
+            final de la pagina: con ocho categorias desplegadas habia que
+            bajarlas todas para crear la novena. */}
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex flex-wrap gap-2">
           <input
             value={nuevaCategoria}
             onChange={(e) => setNuevaCategoria(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()}
             placeholder="Nueva categoría (ej. Bebidas)"
-            className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+            className="flex-1 min-w-[12rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
           />
           <button
             onClick={agregarCategoria}
@@ -92,6 +93,47 @@ export default function Menu() {
             Agregar
           </button>
         </div>
+
+        <div className="relative">
+          <input
+            type="search"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && setBusqueda('')}
+            placeholder="Buscar un producto por nombre"
+            aria-label="Buscar un producto por nombre"
+            className="w-full bg-white border border-neutral-300 rounded-xl pl-9 pr-3 py-2 text-sm"
+          />
+          <svg
+            viewBox="0 0 24 24"
+            width="15"
+            height="15"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            aria-hidden
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+        </div>
+
+        {visibles.map((cat) => (
+          <CategoriaCard
+            key={cat.id}
+            categoria={cat}
+            costos={costos}
+            onCambio={cargar}
+            onBorrar={borrarCategoria}
+          />
+        ))}
+        {busqueda.trim() && visibles.length === 0 && (
+          <p className="text-sm text-neutral-400 text-center py-6">
+            Ningún producto coincide con «{busqueda.trim()}».
+          </p>
+        )}
           </>
         )}
 
@@ -161,21 +203,13 @@ function CategoriaCard({
         </button>
       </div>
 
-      <div className="space-y-3">
-        {categoria.productos.map((producto) => (
-          <ProductoRow
-            key={producto.id}
-            producto={producto}
-            costos={costos}
-            onCambio={onCambio}
-          />
-        ))}
-      </div>
-
-      <div className="flex gap-2 mt-3">
+      {/* Igual que la categoria: agregar va arriba. En una categoria con
+          quince productos, el campo quedaba al fondo de la tarjeta. */}
+      <div className="flex gap-2 mb-3">
         <input
           value={nuevoProducto}
           onChange={(e) => setNuevoProducto(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && agregarProducto()}
           placeholder="Nuevo producto (ej. Empanada)"
           className="flex-1 border border-neutral-300 rounded-lg px-3 py-1.5 text-sm"
         />
@@ -185,6 +219,17 @@ function CategoriaCard({
         >
           + Producto
         </button>
+      </div>
+
+      <div className="space-y-3">
+        {categoria.productos.map((producto) => (
+          <ProductoRow
+            key={producto.id}
+            producto={producto}
+            costos={costos}
+            onCambio={onCambio}
+          />
+        ))}
       </div>
     </div>
   )
@@ -371,4 +416,27 @@ function ProductoRow({
       </div>
     </div>
   )
+}
+
+/**
+ * El menu filtrado por texto, sin acentos y por palabras sueltas.
+ *
+ * Si coincide el nombre de la categoria se muestra entera; si no, se muestra
+ * con los productos que coinciden. Una categoria sin nada que mostrar
+ * desaparece: dejarla vacia haria parecer que el producto no existe.
+ */
+function filtrarMenu(categorias: Categoria[], texto: string): Categoria[] {
+  const palabras = palabrasDe(texto)
+  if (palabras.length === 0) return categorias
+
+  const coincide = (donde: string) => contiene(donde, palabras)
+
+  return categorias.flatMap((cat) => {
+    if (coincide(cat.nombre)) return [cat]
+    const productos = cat.productos.filter(
+      (p) => coincide(`${cat.nombre} ${p.nombre}`) ||
+        p.variantes.some((v) => coincide(`${p.nombre} ${v.nombre}`)),
+    )
+    return productos.length ? [{ ...cat, productos }] : []
+  })
 }

@@ -3,7 +3,7 @@ import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { useRango, nombreRango } from '../lib/fechas'
-import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { api } from '../lib/api'
@@ -139,6 +139,11 @@ export default function Inventario() {
       real: (i) => i.costo_efectivo,
     },
     'nombre',
+  )
+  // "Que se boto de queso este mes" sin leer la lista entera.
+  const buscadorMermas = useBuscador<Merma>(
+    (m) => [m.ingrediente_nombre, m.motivo],
+    'Buscar por insumo o motivo',
   )
   const ordenMermas = useOrden<Merma>(
     {
@@ -644,7 +649,7 @@ export default function Inventario() {
           {mermas.length === 0 ? (
             <Vacio titulo="Sin pérdidas registradas" detalle="Bien ahí." />
           ) : (
-            <Tabla orden={ordenMermas} glosario="perdidas">
+            <Tabla orden={ordenMermas} buscador={buscadorMermas} glosario="perdidas">
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                   <tr>
@@ -657,7 +662,7 @@ export default function Inventario() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ordenMermas.ordenar(mermas).map((m) => (
+                  {ordenMermas.ordenar(buscadorMermas.filtrar(mermas)).map((m) => (
                     <tr key={m.id} className={`border-t border-neutral-100 ${m.revertida ? 'opacity-50' : ''}`}>
                       <td className="p-3 text-neutral-500 whitespace-nowrap">{new Date(m.fecha).toLocaleDateString('es-VE')}</td>
                       <td className="p-3 font-medium">{m.ingrediente_nombre}</td>

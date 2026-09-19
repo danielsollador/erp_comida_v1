@@ -4,8 +4,8 @@ import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { useRango, type Rango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
-import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Pagina } from '../components/ui'
+import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
+import { Boton, Campo, Modal, Pagina, Selector } from '../components/ui'
 import Respaldos from './partes/Respaldos'
 import { api } from '../lib/api'
 import type {
@@ -135,6 +135,7 @@ const TIPO_LABEL: Record<string, string> = {
 function PlanCuentas() {
   const [cuentas, setCuentas] = useState<CuentaContable[]>([])
   const [mayor, setMayor] = useState<{ cuenta: CuentaContable; filas: FilaMayor[] } | null>(null)
+  const [creando, setCreando] = useState(false)
   // El plan abre por codigo, que es el orden contable de toda la vida; pero
   // buscar "Gastos" por nombre o agrupar por tipo es un clic.
   const ordenCuentas = useOrden<CuentaContable>(
@@ -146,6 +147,12 @@ function PlanCuentas() {
     },
     'codigo',
   )
+  // Por codigo Y por nombre: quien lleva la contabilidad busca "6020", quien
+  // no la lleva busca "merma". Las dos tienen que servir.
+  const buscador = useBuscador<CuentaContable>(
+    (c) => [c.codigo, c.nombre, TIPO_LABEL[c.tipo] ?? c.tipo],
+    'Buscar por código o nombre',
+  )
   const ordenMayor = useOrden<FilaMayor>(
     {
       fecha: (f) => new Date(f.fecha),
@@ -156,10 +163,6 @@ function PlanCuentas() {
     },
     'fecha',
   )
-  const [nuevoCodigo, setNuevoCodigo] = useState('')
-  const [nuevoNombre, setNuevoNombre] = useState('')
-  const [nuevoTipo, setNuevoTipo] = useState('gasto')
-  const [error, setError] = useState('')
 
   useEffect(() => {
     cargar()
@@ -174,29 +177,25 @@ function PlanCuentas() {
     setMayor({ cuenta, filas })
   }
 
-  async function agregarCuenta() {
-    setError('')
-    if (!nuevoCodigo.trim() || !nuevoNombre.trim()) return
-    const naturaleza = nuevoTipo === 'activo' || nuevoTipo === 'costo' || nuevoTipo === 'gasto' ? 'deudora' : 'acreedora'
-    try {
-      await api.crearCuenta({
-        codigo: nuevoCodigo.trim(),
-        nombre: nuevoNombre.trim(),
-        tipo: nuevoTipo as CuentaContable['tipo'],
-        naturaleza,
-        activa: true,
-      })
-      setNuevoCodigo('')
-      setNuevoNombre('')
-      cargar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo crear la cuenta')
-    }
-  }
-
   return (
-    <div className="space-y-4">
-      <Tabla orden={ordenCuentas} glosario="plan" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+    <div className="space-y-3">
+      {/* El boton de crear, ARRIBA. El formulario estaba DEBAJO de la tabla:
+          con el plan entero delante, agregar una cuenta pedia bajar
+          veinticuatro filas hasta algo que ni se veia al entrar. */}
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-semibold">Plan de cuentas</h2>
+          <p className="text-xs text-neutral-500">Toca una cuenta para ver su libro mayor.</p>
+        </div>
+        <Boton onClick={() => setCreando(true)}>+ Nueva cuenta</Boton>
+      </div>
+
+      <Tabla
+        orden={ordenCuentas}
+        buscador={buscador}
+        glosario="plan"
+        className="bg-white rounded-2xl border border-neutral-200 overflow-hidden"
+      >
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
             <tr>
@@ -207,7 +206,7 @@ function PlanCuentas() {
             </tr>
           </thead>
           <tbody>
-            {ordenCuentas.ordenar(cuentas).map((c) => (
+            {ordenCuentas.ordenar(buscador.filtrar(cuentas)).map((c) => (
               <tr
                 key={c.id}
                 onClick={() => verMayor(c)}
@@ -223,90 +222,140 @@ function PlanCuentas() {
         </table>
       </Tabla>
 
-      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-        <h2 className="font-semibold mb-2">Agregar cuenta</h2>
-        {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
-        <div className="flex flex-wrap gap-2">
-          <input
-            value={nuevoCodigo}
-            onChange={(e) => setNuevoCodigo(e.target.value)}
-            placeholder="Código (ej. 6030)"
-            className="w-32 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-          />
-          <input
-            value={nuevoNombre}
-            onChange={(e) => setNuevoNombre(e.target.value)}
-            placeholder="Nombre de la cuenta"
-            className="flex-1 min-w-[180px] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-          />
-          <select
-            value={nuevoTipo}
-            onChange={(e) => setNuevoTipo(e.target.value)}
-            className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-          >
-            {Object.entries(TIPO_LABEL).map(([v, t]) => (
-              <option key={v} value={v}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={agregarCuenta}
-            className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            Agregar
-          </button>
-        </div>
-      </div>
+      {creando && (
+        <NuevaCuenta
+          onCerrar={() => setCreando(false)}
+          onCreada={() => {
+            setCreando(false)
+            cargar()
+          }}
+        />
+      )}
 
+      {/* El libro mayor se abre ENCIMA, no debajo. Antes se renderizaba al
+          final del contenedor: con el plan entero y el formulario en medio,
+          tocar una cuenta parecia no hacer nada hasta que uno bajaba. */}
       {mayor && (
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="font-semibold">
-              Libro mayor: {mayor.cuenta.codigo} - {mayor.cuenta.nombre}
-            </h2>
-            <button onClick={() => setMayor(null)} className="text-neutral-400 text-sm">
-              cerrar
-            </button>
-          </div>
-          {/* OJO con el Saldo: es el saldo DESPUES de ese movimiento, o sea que
-              solo se lee como acumulado en orden cronologico --que es como
-              abre--. Ordenado por otra columna sigue siendo cierto por fila,
-              pero deja de sumarse hacia abajo. */}
+        <Modal
+          titulo={`Libro mayor · ${mayor.cuenta.codigo} ${mayor.cuenta.nombre}`}
+          ayuda="El saldo es el que queda DESPUÉS de cada movimiento: solo se lee como acumulado en orden cronológico, que es como abre."
+          ancho="lg"
+          onCerrar={() => setMayor(null)}
+        >
           <Tabla orden={ordenMayor} glosario="mayor">
-          <table className="w-full text-sm">
-            <thead className="text-neutral-500 text-xs uppercase">
-              <tr>
-                <Th clave="fecha" className="py-1 px-0">Fecha</Th>
-                <Th clave="descripcion" className="py-1 px-0">Descripción</Th>
-                <Th clave="debe" alinear="derecha" className="py-1 px-0">Debe</Th>
-                <Th clave="haber" alinear="derecha" className="py-1 px-0">Haber</Th>
-                <Th clave="saldo" alinear="derecha" className="py-1 px-0">Saldo</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {ordenMayor.ordenar(mayor.filas).map((f, i) => (
-                <tr key={i} className="border-t border-neutral-100">
-                  <td className="py-1">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
-                  <td className="py-1">{f.descripcion}</td>
-                  <td className="text-right py-1 tabular-nums">{f.debe ? f.debe.toFixed(2) : ''}</td>
-                  <td className="text-right py-1 tabular-nums">{f.haber ? f.haber.toFixed(2) : ''}</td>
-                  <td className="text-right py-1 tabular-nums font-medium">{f.saldo.toFixed(2)}</td>
-                </tr>
-              ))}
-              {mayor.filas.length === 0 && (
+            <table className="w-full text-sm">
+              <thead className="text-neutral-500 text-xs uppercase">
                 <tr>
-                  <td colSpan={5} className="text-neutral-400 py-3 text-center">
-                    Esta cuenta no tiene movimientos todavía.
-                  </td>
+                  <Th clave="fecha" className="py-1 px-0">Fecha</Th>
+                  <Th clave="descripcion" className="py-1 px-0">Descripción</Th>
+                  <Th clave="debe" alinear="derecha" className="py-1 px-0">Debe</Th>
+                  <Th clave="haber" alinear="derecha" className="py-1 px-0">Haber</Th>
+                  <Th clave="saldo" alinear="derecha" className="py-1 px-0">Saldo</Th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {ordenMayor.ordenar(mayor.filas).map((f, i) => (
+                  <tr key={i} className="border-t border-neutral-100">
+                    <td className="py-1">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
+                    <td className="py-1">{f.descripcion}</td>
+                    <td className="text-right py-1 tabular-nums">{f.debe ? f.debe.toFixed(2) : ''}</td>
+                    <td className="text-right py-1 tabular-nums">{f.haber ? f.haber.toFixed(2) : ''}</td>
+                    <td className="text-right py-1 tabular-nums font-medium">{f.saldo.toFixed(2)}</td>
+                  </tr>
+                ))}
+                {mayor.filas.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="text-neutral-400 py-3 text-center">
+                      Esta cuenta no tiene movimientos todavía.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </Tabla>
-        </div>
+        </Modal>
       )}
     </div>
+  )
+}
+
+/** El alta de una cuenta, en ventana flotante. */
+function NuevaCuenta({ onCerrar, onCreada }: { onCerrar: () => void; onCreada: () => void }) {
+  const [codigo, setCodigo] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [tipo, setTipo] = useState('gasto')
+  const [error, setError] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    setError('')
+    if (!codigo.trim() || !nombre.trim()) {
+      setError('Hacen falta el código y el nombre.')
+      return
+    }
+    // La naturaleza no se pregunta: la decide el tipo, y equivocarse ahi deja
+    // una cuenta que suma al reves para siempre.
+    const naturaleza =
+      tipo === 'activo' || tipo === 'costo' || tipo === 'gasto' ? 'deudora' : 'acreedora'
+    setGuardando(true)
+    try {
+      await api.crearCuenta({
+        codigo: codigo.trim(),
+        nombre: nombre.trim(),
+        tipo: tipo as CuentaContable['tipo'],
+        naturaleza,
+        activa: true,
+      })
+      onCreada()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo crear la cuenta')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Modal
+      titulo="Nueva cuenta"
+      ayuda="El código decide dónde entra en los reportes: 1 activo, 2 pasivo, 3 patrimonio, 4 ingreso, 5 costo, 6 gasto."
+      onCerrar={onCerrar}
+      pie={
+        <>
+          <Boton tono="suave" onClick={onCerrar}>
+            Cancelar
+          </Boton>
+          <Boton onClick={guardar} disabled={guardando}>
+            {guardando ? 'Creando…' : 'Crear cuenta'}
+          </Boton>
+        </>
+      }
+    >
+      {error && <p className="text-peligro-600 text-sm mb-3">{error}</p>}
+      <div className="space-y-3">
+        {/* `Campo` ES el input, no lo envuelve: los `<input>` van como props. */}
+        <Campo
+          etiqueta="Código"
+          autoFocus
+          value={codigo}
+          onChange={(e) => setCodigo(e.target.value)}
+          placeholder="6030"
+        />
+        <Campo
+          etiqueta="Nombre de la cuenta"
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && guardar()}
+          placeholder="Faltante de caja"
+        />
+        <Selector etiqueta="Tipo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          {Object.entries(TIPO_LABEL).map(([v, t]) => (
+            <option key={v} value={v}>
+              {t}
+            </option>
+          ))}
+        </Selector>
+      </div>
+    </Modal>
   )
 }
 
@@ -321,6 +370,16 @@ function Diario({ rango }: { rango: Rango }) {
       origen: (a) => ORIGEN_LABEL[a.origen] ?? a.origen,
     },
     '-fecha',
+  )
+  // La descripcion es lo unico por lo que se busca un asiento: "alquiler",
+  // "#412", "Zelle". El origen entra tambien, para aislar lo manual.
+  const buscadorAsientos = useBuscador<AsientoContable>(
+    (a) => [
+      a.descripcion,
+      ORIGEN_LABEL[a.origen] ?? a.origen,
+      ...a.movimientos.map((m) => `${m.cuenta_codigo} ${m.cuenta_nombre}`),
+    ],
+    'Buscar por descripción, cuenta u origen',
   )
   const [cuentas, setCuentas] = useState<CuentaContable[]>([])
   const [error, setError] = useState('')
@@ -438,7 +497,12 @@ function Diario({ rango }: { rango: Rango }) {
         </div>
       </div>
 
-      <Tabla orden={ordenAsientos} glosario="diario" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+      <Tabla
+        orden={ordenAsientos}
+        buscador={buscadorAsientos}
+        glosario="diario"
+        className="bg-white rounded-2xl border border-neutral-200 overflow-hidden"
+      >
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
             <tr>
@@ -450,7 +514,7 @@ function Diario({ rango }: { rango: Rango }) {
             </tr>
           </thead>
           <tbody>
-            {ordenAsientos.ordenar(asientos).map((a) => (
+            {ordenAsientos.ordenar(buscadorAsientos.filtrar(asientos)).map((a) => (
               <tr key={a.id} className="border-t border-neutral-100 align-top">
                 <td className="p-3 whitespace-nowrap">{new Date(a.fecha).toLocaleDateString('es-VE')}</td>
                 <td className="p-3 font-medium">{a.descripcion}</td>

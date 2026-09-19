@@ -5,7 +5,7 @@ import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
-import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { Boton, Campo, Modal, Pagina, Pastilla, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
@@ -62,6 +62,16 @@ export default function Compras() {
       estado: (f) => (f.pagada ? 'Pagada' : 'Pendiente'),
     },
     '-fecha',
+  )
+  // Es la lista que mas crece del ERP: una fila por factura, para siempre.
+  // Se busca por el numero que trae el papel y por el proveedor.
+  const buscador = useBuscador<FacturaCompra>(
+    (f) => [f.numero_factura, f.proveedor_nombre, f.proveedor_rif, f.descripcion],
+    'Buscar por factura, proveedor o RIF',
+  )
+  const buscadorProveedores = useBuscador<Proveedor>(
+    (p) => [p.nombre, p.rif, p.telefono, p.contacto],
+    'Buscar por nombre, RIF o teléfono',
   )
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [fiscal, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
@@ -558,7 +568,12 @@ export default function Compras() {
           </div>
         )}
 
-        <Tabla orden={orden} glosario="compras" className="bg-white rounded-2xl border border-neutral-200">
+        <Tabla
+          orden={orden}
+          buscador={buscador}
+          glosario="compras"
+          className="bg-white rounded-2xl border border-neutral-200"
+        >
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
@@ -574,7 +589,7 @@ export default function Compras() {
               </tr>
             </thead>
             <tbody>
-              {orden.ordenar(facturas).map((f) => (
+              {orden.ordenar(buscador.filtrar(facturas)).map((f) => (
                 <tr key={f.id} className="border-t border-neutral-100 align-top">
                   <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
                   <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
@@ -961,7 +976,7 @@ export default function Compras() {
             {proveedores.length === 0 ? (
               <Vacio titulo="Sin proveedores registrados" detalle="Se pueden seguir cargando facturas igual, tipeando el nombre." />
             ) : (
-              <Tabla>
+              <Tabla buscador={buscadorProveedores}>
                 <table className="w-full text-sm">
                   <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                     <tr>
@@ -973,7 +988,7 @@ export default function Compras() {
                     </tr>
                   </thead>
                   <tbody>
-                    {proveedores.map((p) => (
+                    {buscadorProveedores.filtrar(proveedores).map((p) => (
                       <tr key={p.id} className={`border-t border-neutral-100 ${!p.activo ? 'opacity-50' : ''}`}>
                         <td className="p-2 font-medium">{p.nombre}</td>
                         <td className="p-2 tabular-nums text-neutral-500">{p.rif || '—'}</td>

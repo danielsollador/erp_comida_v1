@@ -99,6 +99,97 @@ export function useOrden<T>(
 }
 
 /**
+ * Sin acentos y en minusculas: buscar "azucar" tiene que encontrar "Azúcar",
+ * y "bolivares" tiene que encontrar "Bolívares". Nadie escribe los acentos
+ * cuando esta buscando algo con prisa en el mostrador.
+ */
+function normalizar(texto: string): string {
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    // El rango son las marcas de acento que `NFD` separa de su letra.
+    .replace(/[̀-ͯ]/g, '')
+}
+
+/**
+ * Las palabras de una busqueda, sin acentos y en minusculas. Lista vacia =
+ * no hay nada que filtrar.
+ */
+export function palabrasDe(consulta: string): string[] {
+  return normalizar(consulta).split(/\s+/).filter(Boolean)
+}
+
+/**
+ * Si `donde` contiene TODAS las palabras, en cualquier orden. Asi "emp per"
+ * encuentra "Empanada - Pernil" sin escribirlo entero.
+ */
+export function contiene(donde: string, palabras: string[]): boolean {
+  if (palabras.length === 0) return true
+  const heno = normalizar(donde)
+  return palabras.every((p) => heno.includes(p))
+}
+
+export type Buscador = {
+  texto: string
+  fijar: (t: string) => void
+  etiqueta: string
+  /** Lo que `filtrar` vio en la ultima pasada, para poder decirlo en pantalla. */
+  total: number
+  visibles: number
+}
+
+/**
+ * El buscador de una tabla: filtra por texto sobre las columnas que se le
+ * digan.
+ *
+ * POR QUE. Ordenar no es buscar. Con veinticuatro cuentas contables, o con
+ * cuarenta insumos, encontrar "la de propinas" pedia recorrer la lista con el
+ * ojo aunque la tabla estuviera ordenada por codigo. Leider (19-sep): "tienes
+ * que poder filtrar por nombre y codigo".
+ *
+ * Cada palabra se busca por separado y todas tienen que aparecer, asi que
+ * "caja bol" encuentra "Caja en bolivares" sin escribirlo entero ni en orden.
+ *
+ *   const buscador = useBuscador<Cuenta>((c) => [c.codigo, c.nombre], 'Buscar por código o nombre')
+ *   <Tabla orden={orden} buscador={buscador}> … {orden.ordenar(buscador.filtrar(cuentas)).map(…)}
+ */
+export function useBuscador<T>(
+  campos: (fila: T) => (string | number | null | undefined)[],
+  etiqueta = 'Buscar…',
+): Buscador & { filtrar: (filas: T[]) => T[] } {
+  const [texto, fijar] = useState('')
+  // Se rellenan en `filtrar` y los lee la barra. Funciona porque las filas se
+  // arman dentro del `<Tabla>` de la pantalla --o sea, durante SU pintada--
+  // y la barra se dibuja despues, en la pintada de `Tabla`.
+  const estado: Buscador = { texto, fijar, etiqueta, total: 0, visibles: 0 }
+
+  const filtrar = (filas: T[]) => {
+    estado.total = filas.length
+    const palabras = palabrasDe(texto)
+    const salida = palabras.length
+      ? filas.filter((f) =>
+          contiene(campos(f).filter((v) => v != null && v !== '').join(' '), palabras),
+        )
+      : filas
+    estado.visibles = salida.length
+    return salida
+  }
+
+  return {
+    texto,
+    fijar,
+    etiqueta,
+    filtrar,
+    get total() {
+      return estado.total
+    },
+    get visibles() {
+      return estado.visibles
+    },
+  }
+}
+
+/**
  * El envoltorio de toda tabla.
  *
  * Reparte el orden a los `Th` de adentro y, en un telefono, la convierte en
@@ -109,11 +200,14 @@ export function useOrden<T>(
  */
 export function Tabla({
   orden,
+  buscador,
   glosario,
   children,
   className = '',
 }: {
   orden?: Orden
+  /** De `useBuscador`: dibuja el campo de busqueda sobre la tabla. */
+  buscador?: Buscador
   /** Seccion del glosario (`lib/glosario.ts`) de la que salen las ayudas. */
   glosario?: string
   children: ReactNode
@@ -195,6 +289,66 @@ export function Tabla({
     <OrdenCtx.Provider value={orden ?? null}>
       <GlosarioCtx.Provider value={glosario}>
       <div ref={caja} className={`vp-tabla ${className}`}>
+        {/* El buscador va ARRIBA de la tabla, siempre visible: es lo primero
+            que se toca al entrar a una lista larga. */}
+        {buscador && (
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-200">
+            <div className="relative flex-1 min-w-0">
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                type="search"
+                value={buscador.texto}
+                onChange={(e) => buscador.fijar(e.target.value)}
+                // Escape limpia: es lo que hace todo el mundo para volver a
+                // ver la lista entera sin ir a borrar letra por letra.
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    buscador.fijar('')
+                  }
+                }}
+                placeholder={buscador.etiqueta}
+                aria-label={buscador.etiqueta}
+                className="w-full bg-transparent border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 text-sm"
+              />
+            </div>
+            {buscador.texto && (
+              <>
+                <span className="text-xs text-neutral-500 tabular-nums shrink-0">
+                  {buscador.visibles} de {buscador.total}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => buscador.fijar('')}
+                  className="shrink-0 text-xs text-neutral-500 hover:text-neutral-900 px-2 py-1 rounded-lg hover:bg-neutral-100"
+                >
+                  Limpiar
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {/* Cuando no queda ninguna, se dice aqui: la tabla vacia de abajo
+            diria "todavia no hay nada registrado", que es mentira -- hay,
+            pero no coincide con lo que se escribio. */}
+        {buscador && buscador.texto && buscador.visibles === 0 && (
+          <p className="px-3 py-6 text-sm text-neutral-400 text-center">
+            Ninguna fila coincide con «{buscador.texto}».
+          </p>
+        )}
         {/* En ficha no hay encabezados que tocar, y la regla de la casa es que
             toda tabla se ordene por cualquier columna: la barra hace de
             `thead` cuando el `thead` no esta. */}

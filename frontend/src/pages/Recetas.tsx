@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
+import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import type { Categoria, Ingrediente, RecetaItem, Variante } from '../lib/types'
@@ -31,6 +32,7 @@ export default function Recetas() {
   // el dueno no tiene forma de saber cual le falta, que es justo la que despues
   // aparece con margen 100% en Reportes.
   const [conReceta, setConReceta] = useState<Set<number>>(new Set())
+  const [busqueda, setBusqueda] = useState('')
 
   useEffect(() => {
     api.listarCategorias().then(async (cats) => {
@@ -139,6 +141,25 @@ export default function Recetas() {
   const precio = abierta?.precio ?? 0
   const margenReal = precio > 0 ? ((precio - costoReal) / precio) * 100 : 0
 
+  // "emp per" encuentra "Empanada - Pernil". Una categoria a la que no le
+  // queda ninguna variante no se dibuja.
+  const palabras = palabrasDe(busqueda)
+  const visibles: Categoria[] = palabras.length
+    ? categorias
+        .map((cat) => ({
+          ...cat,
+          productos: cat.productos
+            .map((p) => ({
+              ...p,
+              variantes: p.variantes.filter((v) =>
+                contiene(`${cat.nombre} ${p.nombre} ${v.nombre}`, palabras),
+              ),
+            }))
+            .filter((p) => p.variantes.length > 0),
+        }))
+        .filter((cat) => cat.productos.length > 0)
+    : categorias
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Recetas y costo por producto" />
@@ -148,7 +169,35 @@ export default function Recetas() {
           Reportes salen de esto.
         </p>
 
-        {categorias.map((cat) => (
+        {/* Con el menu entero desplegado por categorias, encontrar "Empanada
+            de pernil" para cargarle la receta era recorrer la pagina. */}
+        <div className="relative">
+          <input
+            type="search"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && setBusqueda('')}
+            placeholder="Buscar un producto por nombre"
+            aria-label="Buscar un producto por nombre"
+            className="w-full bg-white border border-neutral-300 rounded-xl pl-9 pr-3 py-2 text-sm"
+          />
+          <svg
+            viewBox="0 0 24 24"
+            width="15"
+            height="15"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            aria-hidden
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+        </div>
+
+        {visibles.map((cat) => (
           <div key={cat.id} className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-2">{cat.nombre}</h2>
             <div className="space-y-1">
@@ -180,6 +229,12 @@ export default function Recetas() {
             </div>
           </div>
         ))}
+
+        {busqueda.trim() && visibles.length === 0 && (
+          <p className="text-sm text-neutral-400 text-center py-6">
+            Ningún producto coincide con «{busqueda.trim()}».
+          </p>
+        )}
 
         {abierta && (
           <Modal

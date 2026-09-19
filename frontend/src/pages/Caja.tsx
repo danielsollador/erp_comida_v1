@@ -4,7 +4,7 @@ import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { useRango, etiquetaRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
-import { Tabla, Th, useOrden } from '../components/Tabla'
+import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import Cajas from './partes/Cajas'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
@@ -58,6 +58,19 @@ export default function Caja() {
       diferencia: (c) => Math.abs(c.diferencia),
     },
     '-fecha',
+  )
+  // Un cierre por turno: en un mes son sesenta filas. Se busca por quien
+  // cerro, por caja, por la nota -- y por fecha, escrita como se ve en la
+  // tabla ("18/09/2026" o "18/09").
+  const buscador = useBuscador<CierreCaja>(
+    (c) => [
+      new Date(c.fecha).toLocaleDateString('es-VE'),
+      c.operador,
+      c.punto_venta,
+      c.nota,
+      c.motivo_anulacion,
+    ],
+    'Buscar por fecha, quien cerró o caja',
   )
   const [resultado, setResultado] = useState<CierreCaja | null>(null)
   const [gastos, setGastos] = useState<Gasto[]>([])
@@ -673,7 +686,7 @@ export default function Caja() {
         {cierres.length > 0 && (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-2">Historial de cierres</h2>
-            <Tabla orden={orden} glosario="cierres">
+            <Tabla orden={orden} buscador={buscador} glosario="cierres">
             <table className="w-full text-sm">
               <thead className="text-neutral-500">
                 <tr>
@@ -685,7 +698,7 @@ export default function Caja() {
                 </tr>
               </thead>
               <tbody>
-                {orden.ordenar(cierres).map((c) => (
+                {orden.ordenar(buscador.filtrar(cierres)).map((c) => (
                   <tr
                     key={c.id}
                     className={`border-t border-neutral-100 ${c.anulado ? 'opacity-50' : ''}`}
