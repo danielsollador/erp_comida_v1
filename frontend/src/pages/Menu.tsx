@@ -378,7 +378,12 @@ function ProductoRow({
         </button>
       </div>
       <div className="flex flex-wrap gap-2 mb-2">
-        {producto.variantes.map((v) => {
+        {/* Las retiradas no: la `x` las quita de la base pero seguian
+            dibujadas, asi que el boton parecia no hacer nada. Se recuperan
+            desde "Fuera del menu". */}
+        {producto.variantes
+          .filter((v) => v.activo)
+          .map((v) => {
           const info = costos.get(v.id)
           const bajoCosto = info?.costo != null && v.precio < info.costo
           // El acantilado: el margen aguanta con el inventario viejo, pero no
@@ -446,7 +451,7 @@ function ProductoRow({
             )}
           </span>
           )
-        })}
+          })}
       </div>
       <div className="flex flex-wrap gap-2">
         <input
