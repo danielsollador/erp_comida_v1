@@ -220,6 +220,16 @@ class MovimientoInventario(BaseModel):
         from_attributes = True
 
 
+class RenglonPorTipo(BaseModel):
+    """Cuanto entro (o salio) por un motivo, en el periodo que se mira."""
+
+    tipo: str
+    etiqueta: str
+    cantidad: float        # siempre positiva: el lado lo dice en que lista va
+    valor: float
+    movimientos: int
+
+
 class ExtractoInsumo(BaseModel):
     ingrediente_id: int
     nombre: str
@@ -229,6 +239,15 @@ class ExtractoInsumo(BaseModel):
     # escribio el stock sin pasar por el kardex y hay que saberlo.
     saldo_segun_libro: float
     cuadra: bool
+    # El extracto empieza en lo que habia antes del primer movimiento que se
+    # muestra: sin eso, un extracto filtrado por fechas arranca en el aire y
+    # no se puede comprobar que saldo_inicial + entradas - salidas = final.
+    saldo_inicial: float
+    saldo_final: float
+    entradas: List[RenglonPorTipo]
+    salidas: List[RenglonPorTipo]
+    total_entradas: float
+    total_salidas: float
     movimientos: List[MovimientoInventario]
 
 
@@ -326,6 +345,9 @@ class ConteoRequest(BaseModel):
 
     items: List[ConteoItem]
     motivo: str = "Conteo fisico"
+    # Si se conto sin ver en pantalla lo que el sistema esperaba. Lo manda el
+    # frontend porque es lo unico que sabe si se ocultaron las columnas.
+    ciego: bool = False
 
 
 class AjusteConteo(BaseModel):
@@ -345,6 +367,47 @@ class ResultadoConteo(BaseModel):
     faltante_valor: float
     sobrante_valor: float
     sin_cambio: int
+    # El documento que quedo guardado, para poder abrirlo despues.
+    conteo_id: Optional[int] = None
+
+
+class ConteoResumen(BaseModel):
+    """Una planilla en la lista del historial."""
+
+    id: int
+    fecha: datetime.datetime
+    motivo: str
+    operador: Optional[str] = None
+    ciego: bool
+    contados: int
+    cuadraron: int
+    faltante_valor: float
+    sobrante_valor: float
+    # Lo que costo la diferencia, neto. Es el numero que el dueno persigue.
+    neto: float
+
+
+class ConteoLinea(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    sistema: float
+    contado: float
+    diferencia: float
+    costo_unitario: float
+    valor: float
+
+
+class ConteoDetalle(ConteoResumen):
+    lineas: List[ConteoLinea]
+
+
+class FilaPlanilla(BaseModel):
+    """Un renglon de la planilla en blanco que se lleva al deposito."""
+
+    ingrediente_id: int
+    nombre: str
+    unidad: str
 
 
 class GastoBase(BaseModel):

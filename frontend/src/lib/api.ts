@@ -9,6 +9,8 @@ import type {
   DatosRol,
   RolInfo,
   DatosIngrediente,
+  ConteoDetalle,
+  ConteoResumen,
   ResultadoConteo,
   CuentaPorCobrar,
   NotaCreditoCompra,
@@ -215,8 +217,17 @@ export const api = {
       body: JSON.stringify({ items, nota, permitir_sin_stock, clave_cliente }),
     }),
   /** Que paso con este insumo, en orden. El extracto del deposito. */
-  movimientosDeInsumo: (ingredienteId: number, limite = 60) =>
-    req<ExtractoInsumo>(`/inventario/ingredientes/${ingredienteId}/movimientos?limite=${limite}`),
+  /** Con `desde`/`hasta` el extracto trae además saldo inicial y totales del período. */
+  movimientosDeInsumo: (
+    ingredienteId: number,
+    limite = 60,
+    rango?: { desde?: string; hasta?: string },
+  ) => {
+    const q = new URLSearchParams({ limite: String(limite) })
+    if (rango?.desde) q.set('desde', rango.desde)
+    if (rango?.hasta) q.set('hasta', rango.hasta)
+    return req<ExtractoInsumo>(`/inventario/ingredientes/${ingredienteId}/movimientos?${q}`)
+  },
   marcarItemPreparado: (itemId: number) =>
     req<Pedido>(`/pedidos/items/${itemId}/preparado`, { method: 'POST' }),
   marcarPedidoListo: (pedidoId: number) =>
@@ -354,8 +365,18 @@ export const api = {
   actualizarIngrediente: (id: number, i: DatosIngrediente) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
   // Todo el deposito de una vez; lo que no se anoto no se toca.
-  conteoFisico: (items: { ingrediente_id: number; stock_real: number }[], motivo = 'Conteo fisico') =>
-    req<ResultadoConteo>('/inventario/conteo', { method: 'POST', body: JSON.stringify({ items, motivo }) }),
+  conteoFisico: (
+    items: { ingrediente_id: number; stock_real: number }[],
+    motivo = 'Conteo fisico',
+    ciego = false,
+  ) =>
+    req<ResultadoConteo>('/inventario/conteo', {
+      method: 'POST',
+      body: JSON.stringify({ items, motivo, ciego }),
+    }),
+  /** El historial de planillas del período. */
+  conteos: (rango: Rango) => req<ConteoResumen[]>(`/inventario/conteos?${queryRango(rango)}`),
+  conteo: (id: number) => req<ConteoDetalle>(`/inventario/conteos/${id}`),
   registrarCompra: (id: number, cantidad: number, costo_total?: number, metodo_pago = 'Efectivo Bs') =>
     req<ImpactoDeCompra>(`/inventario/ingredientes/${id}/comprar`, {
       method: 'POST',

@@ -627,6 +627,73 @@ class SobranteInventario(Base):
     ingrediente = relationship("Ingrediente")
 
 
+class Conteo(Base):
+    """Un inventario fisico: la planilla completa que trajo el trabajador.
+
+    Los ajustes del conteo ya dejaban rastro uno por uno -cada faltante una
+    Merma, cada sobrante un SobranteInventario, cada diferencia un movimiento
+    de kardex-, pero el CONTEO como hecho no existia en ninguna parte. No se
+    podia responder "cuando fue el ultimo conteo", "quien lo hizo", "cuanto
+    falto ese dia" ni "de los 43 insumos que contamos, cuantos cuadraron":
+    habia que reconstruirlo cruzando tres tablas por fecha y esperar que en
+    ese minuto nadie hubiera botado una lechuga.
+
+    Auditar es comparar dos documentos, no dos numeros sueltos. Por eso el
+    conteo es una cabecera con sus lineas y se guarda entero, incluso las que
+    cuadraron: saber que un insumo se conto y dio exacto es informacion, y
+    borrarla haria que un conteo de 43 insumos con 2 diferencias se viera
+    igual que uno de 2 insumos.
+    """
+
+    __tablename__ = "TRX350_INV_CONTEO"
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(DateTime, default=ahora, index=True)
+    motivo = Column(String, default="")
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    # Si se conto sin ver en pantalla lo que el sistema decia. Un conteo a la
+    # vista del numero esperado no prueba nada -el ojo acomoda la cifra-, asi
+    # que la planilla ciega es la que vale ante una auditoria y hay que poder
+    # distinguir una de otra despues.
+    ciego = Column(Boolean, default=False)
+    contados = Column(Integer, default=0)
+    cuadraron = Column(Integer, default=0)
+    faltante_valor = Column(Float, default=0)
+    sobrante_valor = Column(Float, default=0)
+
+    operador = relationship("Operador")
+    lineas = relationship(
+        "ConteoLinea", back_populates="conteo", cascade="all, delete-orphan"
+    )
+
+
+class ConteoLinea(Base):
+    """Un insumo dentro de una planilla de conteo.
+
+    Nombre, unidad y costo van congelados: renombrar un insumo o comprarlo
+    mas caro el mes que viene no puede reescribir lo que decia la planilla
+    que se firmo. Es el mismo criterio del resto del ERP (precios de una
+    venta, alicuota de una factura).
+    """
+
+    __tablename__ = "TRX351_INV_CONTEO_DET"
+
+    id = Column(Integer, primary_key=True)
+    conteo_id = Column(Integer, ForeignKey("TRX350_INV_CONTEO.id"), nullable=False, index=True)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    nombre = Column(String, default="")
+    unidad = Column(String, default="")
+    # Lo que el ERP decia que habia justo antes de aplicar el conteo.
+    sistema = Column(Float, default=0)
+    contado = Column(Float, default=0)
+    diferencia = Column(Float, default=0)
+    costo_unitario = Column(Float, default=0)
+    valor = Column(Float, default=0)
+
+    conteo = relationship("Conteo", back_populates="lineas")
+    ingrediente = relationship("Ingrediente")
+
+
 class NotaCreditoCompra(Base):
     """Nota de credito del proveedor contra una factura de compra.
 

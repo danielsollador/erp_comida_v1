@@ -10,6 +10,8 @@ import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
 import type {
   CompraDeInsumo,
+  ConteoDetalle,
+  ConteoResumen,
   DatosIngrediente,
   ImpactoDeCompra,
   InflacionInsumos,
@@ -20,6 +22,7 @@ import type {
   SugerenciaCompra,
   ExtractoInsumo,
   MovimientoInventario,
+  RenglonPorTipo,
 } from '../lib/types'
 
 /**
@@ -118,6 +121,8 @@ export default function Inventario() {
   // objeto para que la ficha vea el stock nuevo despues de cada movimiento.
   const [ficha, setFicha] = useState<'nuevo' | number | null>(null)
   const [contando, setContando] = useState(false)
+  const [conteos, setConteos] = useState<ConteoResumen[]>([])
+  const [conteoAbierto, setConteoAbierto] = useState<number | null>(null)
 
   // Abre por nombre, que es como se busca un insumo; pero el dueno entra aqui
   // a ver que se esta acabando y que subio de precio, y eso son dos clics en
@@ -154,6 +159,7 @@ export default function Inventario() {
     api.sugerenciasCompra().then(setSugerencias)
     api.listarMermas(rango).then(setMermas)
     api.listarSobrantes(rango).then(setSobrantes).catch(() => {})
+    api.conteos(rango).then(setConteos).catch(() => setConteos([]))
     api.inflacionInsumos().then(setInflacion).catch(() => setInflacion(null))
   }
 
@@ -708,9 +714,62 @@ export default function Inventario() {
             </ul>
           </Seccion>
         )}
+
+        {/* El historial de PLANILLAS, que es distinto del de diferencias. Las
+            dos listas de arriba dicen qué faltó; esta dice cuándo se contó,
+            quién contó y si fue a ciegas. Sin ella no había cómo responder
+            "¿cuándo fue el último conteo?" ni comparar una semana con otra. */}
+        <Seccion
+          titulo="Conteos hechos"
+          ayuda="Cada planilla de inventario físico que se cargó, con lo que encontró. Un conteo a ciegas -sin ver lo que el sistema esperaba- es el que de verdad prueba algo."
+        >
+          {conteos.length === 0 ? (
+            <p className="text-sm text-neutral-500">
+              Todavía no se ha hecho ningún conteo en este período.
+            </p>
+          ) : (
+            <ul className="divide-y divide-neutral-100 text-sm">
+              {conteos.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => setConteoAbierto(c.id)}
+                    className="w-full py-2 flex items-center justify-between gap-2 text-left hover:bg-neutral-50"
+                  >
+                    <span>
+                      {new Date(c.fecha).toLocaleDateString('es-VE')}
+                      {c.ciego && <> <Pastilla tono="bien">a ciegas</Pastilla></>}
+                      <span className="block text-xs text-neutral-400">
+                        {c.contados} insumo(s) · {c.cuadraron} cuadraron
+                        {c.operador && ` · ${c.operador}`}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right tabular-nums">
+                      <span
+                        className={
+                          c.neto < 0 ? 'text-peligro-600 font-medium' : 'text-neutral-600'
+                        }
+                      >
+                        {c.neto < 0 ? '−' : c.neto > 0 ? '+' : ''}
+                        {dinero(Math.abs(c.neto))}
+                      </span>
+                      <span className="block text-xs text-neutral-400">
+                        faltó {dinero(c.faltante_valor)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Seccion>
           </>
         )}
       </Pagina>
+
+      {conteoAbierto !== null && (
+        <DetalleConteo id={conteoAbierto} onCerrar={() => setConteoAbierto(null)} />
+      )}
 
       {(ficha === 'nuevo' || fichaIng) && (
         <FichaInsumo
@@ -861,6 +920,10 @@ function FichaInsumo({
   const [guardando, setGuardando] = useState(false)
   const [historial, setHistorial] = useState<CompraDeInsumo[] | null>(null)
   const [extracto, setExtracto] = useState<ExtractoInsumo | null>(null)
+  // Desde cuándo se está auditando. Vacío = toda la vida del insumo, que es
+  // como venía; con fecha, el extracto trae saldo de apertura y totales y se
+  // puede comprobar que inicial + entradas − salidas da el final.
+  const [desdeExtracto, setDesdeExtracto] = useState('')
   const ordenMovimientos = useOrden<MovimientoInventario>(
     {
       fecha: (m) => new Date(m.fecha),
@@ -892,10 +955,10 @@ function FichaInsumo({
       .then(setHistorial)
       .catch(() => setHistorial([]))
     api
-      .movimientosDeInsumo(ing.id)
+      .movimientosDeInsumo(ing.id, 200, desdeExtracto ? { desde: `${desdeExtracto}T00:00:00` } : undefined)
       .then(setExtracto)
       .catch(() => setExtracto(null))
-  }, [ing])
+  }, [ing, desdeExtracto])
 
   const num = (v: string) => Number(v.trim().replace(',', '.'))
   const poner = (k: keyof typeof f, v: string) => setF((a) => ({ ...a, [k]: v }))
@@ -1064,13 +1127,46 @@ function FichaInsumo({
               que trae al dueno aca. Antes habia que abrir cuatro pantallas y
               aun asi faltaban el consumo del personal y las compras sueltas. */}
           <div>
-            <p className="vp-etiqueta mb-2">Movimientos</p>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <p className="vp-etiqueta">Movimientos</p>
+              <div className="ml-auto flex items-center gap-2">
+                <label className="text-xs text-neutral-500">Desde</label>
+                <input
+                  type="date"
+                  value={desdeExtracto}
+                  onChange={(e) => setDesdeExtracto(e.target.value)}
+                  className="border border-neutral-300 rounded-lg px-2 py-1 text-xs"
+                />
+                {desdeExtracto && (
+                  <button
+                    type="button"
+                    onClick={() => setDesdeExtracto('')}
+                    className="text-xs text-neutral-500 hover:text-neutral-800"
+                  >
+                    Todo
+                  </button>
+                )}
+                <a
+                  href={`/api/inventario/ingredientes/${ing.id}/movimientos/exportar${
+                    desdeExtracto ? `?desde=${desdeExtracto}T00:00:00` : ''
+                  }`}
+                  className="text-xs font-medium text-acento-700 hover:underline"
+                >
+                  Descargar
+                </a>
+              </div>
+            </div>
             {extracto === null ? (
               <p className="text-sm text-neutral-400">Cargando…</p>
             ) : extracto.movimientos.length === 0 ? (
-              <p className="text-sm text-neutral-500">Todavía no se ha movido nada.</p>
+              <p className="text-sm text-neutral-500">
+                {desdeExtracto
+                  ? 'No se movió nada en ese período.'
+                  : 'Todavía no se ha movido nada.'}
+              </p>
             ) : (
               <>
+                <ResumenDelExtracto e={extracto} desde={desdeExtracto} />
                 {!extracto.cuadra && (
                   <div className="mb-2">
                     <Aviso tono="mal">
@@ -1185,6 +1281,182 @@ function FichaInsumo({
   )
 }
 
+/**
+ * De dónde salió y de dónde entró, agrupado por motivo.
+ *
+ * El listado línea por línea responde "qué pasó el martes". Esto responde
+ * "de dónde salieron los 3 kg que faltan", que es la pregunta con la que se
+ * abre esta pantalla, y que antes había que contestar sumando doscientas
+ * filas a ojo. Con un "desde" puesto cierra con la cuenta completa
+ * -apertura + entradas − salidas = final-, que es lo que hace que el
+ * extracto sirva para auditar y no solo para mirar.
+ */
+function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) {
+  const Lado = ({
+    titulo,
+    filas,
+    total,
+    signo,
+  }: {
+    titulo: string
+    filas: RenglonPorTipo[]
+    total: number
+    signo: '+' | '−'
+  }) => (
+    <div>
+      <div className="flex justify-between text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
+        <span>{titulo}</span>
+        <span className="tabular-nums">
+          {signo}
+          {cantidad(total)} {e.unidad}
+        </span>
+      </div>
+      {filas.length === 0 ? (
+        <p className="text-xs text-neutral-400">Nada.</p>
+      ) : (
+        <ul className="space-y-0.5">
+          {filas.map((f) => (
+            <li key={f.tipo} className="flex justify-between text-sm gap-2">
+              <span className="text-neutral-600 truncate">
+                {f.etiqueta}
+                <span className="text-neutral-400 text-xs"> ·{f.movimientos}</span>
+              </span>
+              <span className="tabular-nums whitespace-nowrap">
+                {cantidad(f.cantidad)}{' '}
+                <span className="text-neutral-400 text-xs">{dinero(Math.abs(f.valor))}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="mb-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Lado titulo="Entró" filas={e.entradas} total={e.total_entradas} signo="+" />
+        <Lado titulo="Salió" filas={e.salidas} total={e.total_salidas} signo="−" />
+      </div>
+      {desde && (
+        <p className="mt-3 pt-2 border-t border-neutral-200 text-xs text-neutral-500 tabular-nums">
+          Había {cantidad(e.saldo_inicial)} {e.unidad} · entró {cantidad(e.total_entradas)} ·
+          salió {cantidad(e.total_salidas)} · quedan{' '}
+          <b className="text-neutral-800">
+            {cantidad(e.saldo_final)} {e.unidad}
+          </b>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Una planilla de conteo ya cargada, renglón por renglón.
+ *
+ * Es el documento que se compara contra el papel que trajo el trabajador.
+ * Las diferencias van arriba -es lo que se viene a mirar- y lo que cuadró
+ * queda abajo, pero se muestra: saber que 40 insumos dieron exacto es parte
+ * de lo que hace creíble al conteo.
+ */
+function DetalleConteo({ id, onCerrar }: { id: number; onCerrar: () => void }) {
+  const [d, setD] = useState<ConteoDetalle | null>(null)
+
+  useEffect(() => {
+    api.conteo(id).then(setD).catch(() => setD(null))
+  }, [id])
+
+  return (
+    <Modal
+      titulo={d ? `Conteo del ${new Date(d.fecha).toLocaleDateString('es-VE')}` : 'Conteo'}
+      onCerrar={onCerrar}
+      ancho="lg"
+      pie={
+        <>
+          {d && (
+            <a
+              href={`/api/inventario/conteos/${d.id}/exportar`}
+              className="mr-auto self-center text-sm font-medium text-acento-700 hover:underline"
+            >
+              Descargar
+            </a>
+          )}
+          <Boton onClick={onCerrar}>Cerrar</Boton>
+        </>
+      }
+    >
+      {d === null ? (
+        <p className="text-sm text-neutral-400">Cargando…</p>
+      ) : (
+        <>
+          <p className="text-sm text-neutral-600 mb-3">
+            {d.contados} insumo(s) contados, {d.cuadraron} cuadraron.
+            {d.operador && ` Lo hizo ${d.operador}.`}{' '}
+            {d.ciego ? (
+              <Pastilla tono="bien">a ciegas</Pastilla>
+            ) : (
+              <span className="text-neutral-400">
+                Se contó viendo lo que el sistema esperaba.
+              </span>
+            )}
+          </p>
+          <div className="flex gap-4 text-sm mb-3 tabular-nums">
+            <span>
+              Faltó <b className="text-peligro-600">{dinero(d.faltante_valor)}</b>
+            </span>
+            <span>
+              Sobró <b className="text-exito-600">{dinero(d.sobrante_valor)}</b>
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="text-neutral-500 text-xs uppercase">
+              <tr>
+                <th className="text-left p-2">Insumo</th>
+                <th className="text-right p-2">Sistema</th>
+                <th className="text-right p-2">Contado</th>
+                <th className="text-right p-2">Diferencia</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.lineas.map((l) => (
+                <tr key={l.ingrediente_id} className="border-t border-neutral-100">
+                  <td className="p-2">
+                    {l.nombre}
+                    <span className="block text-[11px] text-neutral-400">{l.unidad}</span>
+                  </td>
+                  <td className="p-2 text-right tabular-nums text-neutral-500">
+                    {cantidad(l.sistema)}
+                  </td>
+                  <td className="p-2 text-right tabular-nums">{cantidad(l.contado)}</td>
+                  <td className="p-2 text-right tabular-nums whitespace-nowrap">
+                    {l.diferencia === 0 ? (
+                      <span className="text-exito-600">cuadra</span>
+                    ) : (
+                      <span
+                        className={
+                          l.diferencia < 0
+                            ? 'text-peligro-600 font-medium'
+                            : 'text-aviso-600 font-medium'
+                        }
+                      >
+                        {l.diferencia > 0 ? '+' : ''}
+                        {cantidad(l.diferencia)}
+                        <span className="block text-[11px] font-normal text-neutral-500">
+                          {dinero(l.valor)}
+                        </span>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </Modal>
+  )
+}
+
 // ── El conteo fisico ─────────────────────────────────────────────────────────
 
 /**
@@ -1206,6 +1478,9 @@ function ConteoFisico({
   const [buscar, setBuscar] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
+  // Encendido por defecto: el conteo que sirve es el que se hace sin ver lo
+  // que el sistema espera. Se puede apagar, pero hay que decidirlo.
+  const [ciego, setCiego] = useState(true)
 
   const num = (v: string) => Number(v.trim().replace(',', '.'))
   const lista = useMemo(() => {
@@ -1230,6 +1505,8 @@ function ConteoFisico({
     setError('')
     if (invalidos.length) return setError('Hay cantidades que no son números o son negativas.')
     if (contados.length === 0) return
+    // A ciegas el resumen se revela aquí y no antes: si el total de faltante
+    // se ve mientras se teclea, ya no es un conteo a ciegas.
     const ok = await dialogo.confirmar({
       titulo: `¿Guardar el conteo de ${contados.length} insumo(s)?`,
       texto:
@@ -1240,7 +1517,11 @@ function ConteoFisico({
     if (!ok) return
     setGuardando(true)
     try {
-      const r = await api.conteoFisico(contados.map((c) => ({ ingrediente_id: c.ing.id, stock_real: c.real })))
+      const r = await api.conteoFisico(
+        contados.map((c) => ({ ingrediente_id: c.ing.id, stock_real: c.real })),
+        'Conteo fisico',
+        ciego,
+      )
       onGuardado(r)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el conteo')
@@ -1259,7 +1540,9 @@ function ConteoFisico({
         <>
           <span className="mr-auto text-sm text-neutral-600 tabular-nums self-center">
             {contados.length} contado(s)
-            {diferencias.length > 0 && (
+            {/* A ciegas tampoco se adelantan los totales: ver "faltante $40"
+                mientras se teclea delata el resultado igual que la columna. */}
+            {!ciego && diferencias.length > 0 && (
               <>
                 {' · '}faltante <b className="text-peligro-600">{dinero(faltante)}</b>
                 {' · '}sobrante <b className="text-exito-600">{dinero(sobrante)}</b>
@@ -1280,20 +1563,47 @@ function ConteoFisico({
           <Aviso>{error}</Aviso>
         </div>
       )}
-      <input
-        type="search"
-        value={buscar}
-        onChange={(e) => setBuscar(e.target.value)}
-        placeholder="Buscar…"
-        className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full mb-3"
-      />
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <input
+          type="search"
+          value={buscar}
+          onChange={(e) => setBuscar(e.target.value)}
+          placeholder="Buscar…"
+          className="border border-neutral-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-40"
+        />
+        <a
+          href="/api/inventario/conteos/planilla"
+          className="text-sm font-medium text-acento-700 hover:underline whitespace-nowrap"
+        >
+          Descargar planilla
+        </a>
+      </div>
+      {/* El interruptor que hace que el conteo sirva para auditar. Contar
+          teniendo delante el número que el sistema espera no prueba nada: el
+          ojo acomoda la cifra al número que ya leyó, y una diferencia real se
+          teclea como "cuadra" sin mala intención. Viene encendido. */}
+      <label className="flex items-start gap-2 mb-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={ciego}
+          onChange={(e) => setCiego(e.target.checked)}
+          className="mt-0.5"
+        />
+        <span className="text-sm">
+          <b className="font-medium">Contar a ciegas</b>
+          <span className="block text-xs text-neutral-500">
+            Esconde lo que el sistema espera mientras se cuenta. Las diferencias aparecen al
+            guardar. Es la única forma de que el conteo pruebe algo.
+          </span>
+        </span>
+      </label>
       <table className="w-full text-sm">
         <thead className="text-neutral-500 text-xs uppercase">
           <tr>
             <th className="text-left p-2">Insumo</th>
-            <th className="text-right p-2">Sistema</th>
+            {!ciego && <th className="text-right p-2">Sistema</th>}
             <th className="text-right p-2 w-32">Contado</th>
-            <th className="text-right p-2">Diferencia</th>
+            {!ciego && <th className="text-right p-2">Diferencia</th>}
           </tr>
         </thead>
         <tbody>
@@ -1308,9 +1618,11 @@ function ConteoFisico({
                   <span className="font-medium">{ing.nombre}</span>
                   <span className="block text-[11px] text-neutral-400">{ing.unidad}</span>
                 </td>
-                <td className="p-2 text-right tabular-nums text-neutral-500 whitespace-nowrap">
-                  {cantidad(ing.stock_actual)}
-                </td>
+                {!ciego && (
+                  <td className="p-2 text-right tabular-nums text-neutral-500 whitespace-nowrap">
+                    {cantidad(ing.stock_actual)}
+                  </td>
+                )}
                 <td className="p-2 text-right">
                   <input
                     inputMode="decimal"
@@ -1323,21 +1635,23 @@ function ConteoFisico({
                     }`}
                   />
                 </td>
-                <td className="p-2 text-right tabular-nums whitespace-nowrap">
-                  {dif === null ? (
-                    <span className="text-neutral-300">—</span>
-                  ) : dif === 0 ? (
-                    <span className="text-exito-600">cuadra</span>
-                  ) : (
-                    <span className={dif < 0 ? 'text-peligro-600 font-medium' : 'text-aviso-600 font-medium'}>
-                      {dif > 0 ? '+' : ''}
-                      {cantidad(dif)} {ing.unidad}
-                      <span className="block text-[11px] font-normal text-neutral-500">
-                        {dinero(Math.abs(dif) * (ing.costo_unitario || 0))}
+                {!ciego && (
+                  <td className="p-2 text-right tabular-nums whitespace-nowrap">
+                    {dif === null ? (
+                      <span className="text-neutral-300">—</span>
+                    ) : dif === 0 ? (
+                      <span className="text-exito-600">cuadra</span>
+                    ) : (
+                      <span className={dif < 0 ? 'text-peligro-600 font-medium' : 'text-aviso-600 font-medium'}>
+                        {dif > 0 ? '+' : ''}
+                        {cantidad(dif)} {ing.unidad}
+                        <span className="block text-[11px] font-normal text-neutral-500">
+                          {dinero(Math.abs(dif) * (ing.costo_unitario || 0))}
+                        </span>
                       </span>
-                    </span>
-                  )}
-                </td>
+                    )}
+                  </td>
+                )}
               </tr>
             )
           })}

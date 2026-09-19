@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import contabilidad, costeo, kardex, models, reposicion, schemas
 from . import operadores
 from ..database import get_db
+from ..exportar_csv import nombre_de_archivo, respuesta_csv
 from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
 
@@ -79,18 +80,40 @@ def historial_de_costos(ingrediente_id: int, db: Session = Depends(get_db)):
 @router.get(
     "/ingredientes/{ingrediente_id}/movimientos", response_model=schemas.ExtractoInsumo
 )
-def extracto(ingrediente_id: int, limite: int = 200, db: Session = Depends(get_db)):
+def extracto(
+    ingrediente_id: int,
+    limite: int = 200,
+    desde: Optional[datetime.datetime] = None,
+    hasta: Optional[datetime.datetime] = None,
+    db: Session = Depends(get_db),
+):
     """Que paso con este insumo, en orden. El extracto bancario del deposito.
 
     Es la respuesta a "la carne bajo 3 kg hoy, explicame eso", que antes
     obligaba a abrir cuatro pantallas y aun asi dejaba fuera el consumo del
     personal y las compras sueltas.
+
+    Con `desde`/`hasta` se acota a un periodo y el extracto se vuelve
+    auditable de verdad: trae el saldo con el que se abrio, los totales de
+    entradas y salidas separados por motivo, y el saldo con el que cerro. Los
+    tres numeros tienen que atar -inicial + entradas - salidas = final- y si
+    no atan, el que mira lo ve sin tener que sumar a mano.
     """
     ing = db.query(models.Ingrediente).filter(models.Ingrediente.id == ingrediente_id).first()
     if not ing:
         raise HTTPException(status_code=404, detail="Insumo no encontrado")
 
-    movs = kardex.movimientos_de(db, ingrediente_id, limite)
+    movs = kardex.movimientos_de(db, ingrediente_id, limite, desde=desde, hasta=hasta)
+    entradas, salidas = kardex.resumen_por_tipo(db, ingrediente_id, desde=desde, hasta=hasta)
+    total_entradas = round(sum(f["cantidad"] for f in entradas), 4)
+    total_salidas = round(sum(f["cantidad"] for f in salidas), 4)
+    # El saldo de apertura se calcula sumando lo anterior al periodo, no
+    # leyendo el `saldo` de un movimiento: un movimiento cargado con fecha
+    # vieja dejaria mintiendo al saldo guardado (ver kardex.existencia_a).
+    saldo_inicial = (
+        kardex.existencia_antes_de(db, ingrediente_id, desde) if desde is not None else 0.0
+    )
+    saldo_final = round(saldo_inicial + total_entradas - total_salidas, 4)
     # Quien hizo cada cosa. En un solo viaje: preguntarlo por movimiento seria
     # volver al N+1 que se acaba de quitar de este mismo modulo.
     nombres = {
@@ -115,6 +138,12 @@ def extracto(ingrediente_id: int, limite: int = 200, db: Session = Depends(get_d
         # stock sin pasar por el kardex, y eso es un error de programacion que
         # no se puede quedar callado.
         cuadra=abs(saldo_libro - stock) < 0.001,
+        saldo_inicial=saldo_inicial,
+        saldo_final=saldo_final,
+        entradas=[schemas.RenglonPorTipo(**f) for f in entradas],
+        salidas=[schemas.RenglonPorTipo(**f) for f in salidas],
+        total_entradas=total_entradas,
+        total_salidas=total_salidas,
         movimientos=[
             schemas.MovimientoInventario(
                 id=m.id, fecha=m.fecha, tipo=m.tipo,
@@ -126,6 +155,34 @@ def extracto(ingrediente_id: int, limite: int = 200, db: Session = Depends(get_d
             )
             for m in movs
         ],
+    )
+
+
+@router.get("/ingredientes/{ingrediente_id}/movimientos/exportar")
+def extracto_exportar(
+    ingrediente_id: int,
+    limite: int = 5000,
+    desde: Optional[datetime.datetime] = None,
+    hasta: Optional[datetime.datetime] = None,
+    db: Session = Depends(get_db),
+):
+    """El mismo extracto, en CSV. Para llevarlo al contador o cruzarlo aparte."""
+    datos = extracto(ingrediente_id, limite, desde, hasta, db)
+    filas = [
+        (
+            m.fecha.strftime("%d/%m/%Y %H:%M"), m.etiqueta, m.operador or "",
+            f"{m.cantidad:.4f}", datos.unidad, f"{m.costo_unitario:.4f}",
+            f"{m.valor:.2f}", f"{m.saldo:.4f}", m.nota,
+        )
+        # El CSV va del mas viejo al mas nuevo: un extracto se lee hacia
+        # adelante y asi la columna de saldo avanza como debe.
+        for m in reversed(datos.movimientos)
+    ]
+    return respuesta_csv(
+        f"movimientos-{nombre_de_archivo(datos.nombre)}.csv",
+        ["Fecha", "Movimiento", "Quien", "Cantidad", "Unidad", "Costo unitario",
+         "Valor", "Saldo", "Nota"],
+        filas,
     )
 
 
@@ -440,18 +497,151 @@ def conteo_fisico(body: schemas.ConteoRequest, request: Request, db: Session = D
         # Primero se buscan TODOS: un id que no existe tiene que fallar antes
         # de que el primer stock cambie, no a mitad del lote.
         ingredientes = [_ingrediente_para_actualizar(db, item.ingrediente_id) for item in body.items]
+        costos = {i.id: round(i.costo_unitario or 0, 4) for i in ingredientes}
         ajustes = [
             _aplicar_conteo(db, ingrediente, item.stock_real, body.motivo,
                             quien.id if quien else None)
             for ingrediente, item in zip(ingredientes, body.items)
         ]
+
+        faltante = round(sum(a.valor for a in ajustes if a.diferencia < 0), 2)
+        sobrante = round(sum(a.valor for a in ajustes if a.diferencia > 0), 2)
+        # La planilla se guarda ENTERA, tambien las lineas que cuadraron: que
+        # un insumo se haya contado y diera exacto es informacion, y sin ella
+        # un conteo de 43 insumos con 2 diferencias se ve igual que uno de 2.
+        conteo = models.Conteo(
+            motivo=body.motivo,
+            operador_id=quien.id if quien else None,
+            ciego=bool(body.ciego),
+            contados=len(ajustes),
+            cuadraron=sum(1 for a in ajustes if a.diferencia == 0),
+            faltante_valor=faltante,
+            sobrante_valor=sobrante,
+            lineas=[
+                models.ConteoLinea(
+                    ingrediente_id=a.ingrediente_id,
+                    nombre=a.nombre,
+                    unidad=a.unidad,
+                    sistema=a.sistema,
+                    contado=a.contado,
+                    diferencia=a.diferencia,
+                    costo_unitario=costos.get(a.ingrediente_id, 0),
+                    valor=a.valor,
+                )
+                for a in ajustes
+            ],
+        )
+        db.add(conteo)
         db.commit()
+        db.refresh(conteo)
 
     return schemas.ResultadoConteo(
         ajustes=[a for a in ajustes if a.diferencia != 0],
-        faltante_valor=round(sum(a.valor for a in ajustes if a.diferencia < 0), 2),
-        sobrante_valor=round(sum(a.valor for a in ajustes if a.diferencia > 0), 2),
+        faltante_valor=faltante,
+        sobrante_valor=sobrante,
         sin_cambio=sum(1 for a in ajustes if a.diferencia == 0),
+        conteo_id=conteo.id,
+    )
+
+
+def _resumen_de_conteo(c: models.Conteo) -> dict:
+    return {
+        "id": c.id,
+        "fecha": c.fecha,
+        "motivo": c.motivo or "",
+        "operador": c.operador.nombre if c.operador else None,
+        "ciego": bool(c.ciego),
+        "contados": c.contados or 0,
+        "cuadraron": c.cuadraron or 0,
+        "faltante_valor": round(c.faltante_valor or 0, 2),
+        "sobrante_valor": round(c.sobrante_valor or 0, 2),
+        # Sobrante menos faltante: negativo es lo que el conteo dice que se
+        # perdio. Un conteo con $40 de faltante y $38 de sobrante no es un
+        # conteo tranquilo -son dos errores grandes-, pero el neto es lo que
+        # pega en el resultado del mes y es lo que se compara entre semanas.
+        "neto": round((c.sobrante_valor or 0) - (c.faltante_valor or 0), 2),
+    }
+
+
+@router.get("/conteos", response_model=List[schemas.ConteoResumen])
+def listar_conteos(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """El historial de planillas. Sin esto no habia como responder cuando fue
+    el ultimo conteo ni quien lo hizo."""
+    inicio, fin, _etiqueta = rango.resolver(periodo="mes")
+    conteos = (
+        db.query(models.Conteo)
+        .options(joinedload(models.Conteo.operador))
+        .filter(models.Conteo.fecha >= inicio, models.Conteo.fecha < fin)
+        .order_by(models.Conteo.fecha.desc())
+        .all()
+    )
+    return [schemas.ConteoResumen(**_resumen_de_conteo(c)) for c in conteos]
+
+
+@router.get("/conteos/planilla")
+def planilla_de_conteo(db: Session = Depends(get_db)):
+    """La planilla EN BLANCO que se lleva al deposito, en CSV.
+
+    Va sin la columna de lo que el sistema espera, y es a proposito: contar
+    teniendo el numero esperado delante no prueba nada, porque el ojo acomoda
+    la cifra al numero que ya leyo. El trabajador pesa y anota lo que hay; la
+    comparacion la hace el ERP despues.
+    """
+    ingredientes = (
+        db.query(models.Ingrediente)
+        .filter(models.Ingrediente.activo.is_(True))
+        .order_by(models.Ingrediente.nombre)
+        .all()
+    )
+    filas = [(i.id, i.nombre, i.unidad, "") for i in ingredientes]
+    return respuesta_csv(
+        f"planilla-conteo-{hoy():%Y-%m-%d}.csv",
+        ["ID", "Insumo", "Unidad", "Contado"],
+        filas,
+    )
+
+
+@router.get("/conteos/{conteo_id}/exportar")
+def conteo_exportar(conteo_id: int, db: Session = Depends(get_db)):
+    """La planilla ya conciliada, en CSV: lo contado contra lo esperado."""
+    detalle = detalle_de_conteo(conteo_id, db)
+    filas = [
+        (
+            l.nombre, l.unidad, f"{l.sistema:.4f}", f"{l.contado:.4f}",
+            f"{l.diferencia:.4f}", f"{l.costo_unitario:.4f}",
+            f"{l.valor:.2f}" if l.diferencia else "0.00",
+        )
+        for l in detalle.lineas
+    ]
+    return respuesta_csv(
+        f"conteo-{detalle.id}-{detalle.fecha:%Y-%m-%d}.csv",
+        ["Insumo", "Unidad", "Segun el sistema", "Contado", "Diferencia",
+         "Costo unitario", "Valor de la diferencia"],
+        filas,
+    )
+
+
+@router.get("/conteos/{conteo_id}", response_model=schemas.ConteoDetalle)
+def detalle_de_conteo(conteo_id: int, db: Session = Depends(get_db)):
+    conteo = (
+        db.query(models.Conteo)
+        .options(joinedload(models.Conteo.operador), joinedload(models.Conteo.lineas))
+        .filter(models.Conteo.id == conteo_id)
+        .first()
+    )
+    if not conteo:
+        raise HTTPException(status_code=404, detail="Conteo no encontrado")
+    lineas = sorted(conteo.lineas, key=lambda l: (l.diferencia == 0, l.nombre))
+    return schemas.ConteoDetalle(
+        **_resumen_de_conteo(conteo),
+        lineas=[
+            schemas.ConteoLinea(
+                ingrediente_id=l.ingrediente_id, nombre=l.nombre, unidad=l.unidad,
+                sistema=l.sistema, contado=l.contado, diferencia=l.diferencia,
+                costo_unitario=l.costo_unitario, valor=l.valor,
+            )
+            for l in lineas
+        ],
     )
 
 

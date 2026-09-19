@@ -105,6 +105,38 @@ export type ResultadoConteo = {
   faltante_valor: number
   sobrante_valor: number
   sin_cambio: number
+  /** La planilla que quedó guardada, para poder abrirla después. */
+  conteo_id: number | null
+}
+
+export type ConteoResumen = {
+  id: number
+  fecha: string
+  motivo: string
+  operador: string | null
+  /** Se contó sin ver en pantalla lo que el sistema esperaba. */
+  ciego: boolean
+  contados: number
+  cuadraron: number
+  faltante_valor: number
+  sobrante_valor: number
+  /** Sobrante menos faltante: negativo es lo que el conteo dice que se perdió. */
+  neto: number
+}
+
+export type ConteoLinea = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  sistema: number
+  contado: number
+  diferencia: number
+  costo_unitario: number
+  valor: number
+}
+
+export type ConteoDetalle = ConteoResumen & {
+  lineas: ConteoLinea[]
 }
 
 export type CompraDeInsumo = {
@@ -1031,6 +1063,15 @@ export type MovimientoInventario = {
   nota: string
 }
 
+export type RenglonPorTipo = {
+  tipo: string
+  etiqueta: string
+  /** Siempre positiva: el lado lo dice la lista en la que viene. */
+  cantidad: number
+  valor: number
+  movimientos: number
+}
+
 export type ExtractoInsumo = {
   ingrediente_id: number
   nombre: string
@@ -1039,5 +1080,12 @@ export type ExtractoInsumo = {
   saldo_segun_libro: number
   /** Si es false, alguien movio existencias sin anotarlas: es un bug, no un aviso. */
   cuadra: boolean
+  /** Lo que había antes del período. Sin rango es 0. */
+  saldo_inicial: number
+  saldo_final: number
+  entradas: RenglonPorTipo[]
+  salidas: RenglonPorTipo[]
+  total_entradas: number
+  total_salidas: number
   movimientos: MovimientoInventario[]
 }

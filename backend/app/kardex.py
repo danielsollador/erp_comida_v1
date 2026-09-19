@@ -35,7 +35,7 @@ movimiento no va a existir para nadie.
 
 from typing import List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from . import models
@@ -114,15 +114,78 @@ def anotar(
     return mov
 
 
-def movimientos_de(db: Session, ingrediente_id: int, limite: int = 200) -> List[models.MovimientoInventario]:
-    """El extracto de un insumo, del mas reciente al mas viejo."""
+def movimientos_de(
+    db: Session,
+    ingrediente_id: int,
+    limite: int = 200,
+    desde=None,
+    hasta=None,
+) -> List[models.MovimientoInventario]:
+    """El extracto de un insumo, del mas reciente al mas viejo.
+
+    Con `desde`/`hasta` se acota al periodo que se esta auditando, que es lo
+    que hace falta para la pregunta de verdad: "desde el ultimo conteo hasta
+    hoy, que entro y que salio".
+    """
+    q = db.query(models.MovimientoInventario).filter(
+        models.MovimientoInventario.ingrediente_id == ingrediente_id
+    )
+    if desde is not None:
+        q = q.filter(models.MovimientoInventario.fecha >= desde)
+    if hasta is not None:
+        q = q.filter(models.MovimientoInventario.fecha < hasta)
     return (
-        db.query(models.MovimientoInventario)
-        .filter(models.MovimientoInventario.ingrediente_id == ingrediente_id)
-        .order_by(models.MovimientoInventario.fecha.desc(), models.MovimientoInventario.id.desc())
+        q.order_by(models.MovimientoInventario.fecha.desc(), models.MovimientoInventario.id.desc())
         .limit(limite)
         .all()
     )
+
+
+def resumen_por_tipo(db: Session, ingrediente_id: int, desde=None, hasta=None):
+    """(entradas, salidas): cuanto movio cada motivo en el periodo.
+
+    El extracto linea por linea responde "que paso el martes"; esto responde
+    "de donde salieron los 3 kg que faltan", que es la pregunta con la que el
+    dueno abre la pantalla. Sumar doscientas filas a ojo para saber cuanto se
+    fue en merma no es auditar.
+
+    Cada motivo se parte por el SIGNO y no solo por el tipo, porque hay tipos
+    que van en los dos sentidos: un ajuste de conteo sube o baja, y un reverso
+    deshace. Netearlos haria desaparecer del resumen un mes en que se ajusto
+    +5 y -5 kg, que es justo el mes que hay que mirar.
+    """
+    cantidad = models.MovimientoInventario.cantidad
+    valor = models.MovimientoInventario.valor
+    q = db.query(
+        models.MovimientoInventario.tipo,
+        func.sum(case((cantidad > 0, cantidad), else_=0.0)),
+        func.sum(case((cantidad > 0, valor), else_=0.0)),
+        func.sum(case((cantidad > 0, 1), else_=0)),
+        func.sum(case((cantidad < 0, -cantidad), else_=0.0)),
+        func.sum(case((cantidad < 0, -valor), else_=0.0)),
+        func.sum(case((cantidad < 0, 1), else_=0)),
+    ).filter(models.MovimientoInventario.ingrediente_id == ingrediente_id)
+    if desde is not None:
+        q = q.filter(models.MovimientoInventario.fecha >= desde)
+    if hasta is not None:
+        q = q.filter(models.MovimientoInventario.fecha < hasta)
+
+    entradas, salidas = [], []
+    for tipo, cant_e, val_e, n_e, cant_s, val_s, n_s in q.group_by(
+        models.MovimientoInventario.tipo
+    ).all():
+        fila = {"tipo": tipo, "etiqueta": ETIQUETAS.get(tipo, tipo)}
+        if n_e:
+            entradas.append({**fila, "cantidad": round(cant_e or 0, 4),
+                             "valor": round(val_e or 0, 2), "movimientos": int(n_e)})
+        if n_s:
+            salidas.append({**fila, "cantidad": round(cant_s or 0, 4),
+                            "valor": round(val_s or 0, 2), "movimientos": int(n_s)})
+
+    # Lo mas grande primero: lo que explica el hueco va arriba.
+    entradas.sort(key=lambda f: -f["cantidad"])
+    salidas.sort(key=lambda f: -f["cantidad"])
+    return entradas, salidas
 
 
 def existencia_a(db: Session, ingrediente_id: int, fecha) -> float:
@@ -137,6 +200,24 @@ def existencia_a(db: Session, ingrediente_id: int, fecha) -> float:
         .filter(
             models.MovimientoInventario.ingrediente_id == ingrediente_id,
             models.MovimientoInventario.fecha <= fecha,
+        )
+        .scalar()
+    )
+    return round(total or 0, 4)
+
+
+def existencia_antes_de(db: Session, ingrediente_id: int, fecha) -> float:
+    """El saldo de apertura de un extracto que arranca en `fecha`.
+
+    Estrictamente ANTES, no "hasta": `existencia_a` incluye la fecha y el
+    extracto tambien la incluye, asi que usarla aca contaria dos veces un
+    movimiento hecho justo en el instante de corte.
+    """
+    total = (
+        db.query(func.sum(models.MovimientoInventario.cantidad))
+        .filter(
+            models.MovimientoInventario.ingrediente_id == ingrediente_id,
+            models.MovimientoInventario.fecha < fecha,
         )
         .scalar()
     )
