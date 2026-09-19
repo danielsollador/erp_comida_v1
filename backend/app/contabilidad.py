@@ -358,9 +358,40 @@ def _lineas_de_cobro(
     return lineas
 
 
-def registrar_venta(db: Session, pedido: models.Pedido) -> None:
+def _lineas_ingreso_venta(pedido: models.Pedido, facturado: bool) -> List[Tuple[str, float, float]]:
+    """La parte de la venta que cambia segun si esta facturada o no: el resto
+    del asiento (caja, propina, costo) es igual facture o no. Aparte para que
+    `registrar_facturacion_tardia` pueda pedir la version "antes" y la version
+    "despues" sin repetir la aritmetica.
+    """
     total = round(pedido.total, 2)
     descuento = round(pedido.descuento or 0, 2)
+    # La venta se reconoce BRUTA y el descuento se muestra aparte: asi el dueno
+    # puede ver cuanto regalo en rebajas, que es informacion que se perdia
+    # cuando la unica via era bajarle el precio al menu.
+    bruto = round(total + descuento, 2)
+    if facturado:
+        # Solo lo facturado le debe IVA al fisco, y sobre lo que de verdad se
+        # cobro: el IVA se desglosa del neto, no del precio de lista. La
+        # alicuota ya viene congelada en el pedido (se fija al facturar) para
+        # que un Libro de Ventas de un mes cerrado no cambie si despues sube
+        # el IVA.
+        base, iva = impuestos.desglosar(total, pedido.tasa_iva or impuestos.IVA_DEFAULT)
+        base_bruta, _ = impuestos.desglosar(bruto, pedido.tasa_iva or impuestos.IVA_DEFAULT)
+        lineas = [("4010", 0.0, base_bruta), ("2030", 0.0, iva)]
+        if descuento > 0:
+            # El descuento se reconoce neto de IVA, porque 4010 tambien es
+            # neto: la diferencia entre las dos bases es exactamente lo que
+            # cuadra el asiento.
+            lineas += [("4020", round(base_bruta - base, 2), 0.0)]
+    else:
+        lineas = [("4010", 0.0, bruto)]
+        if descuento > 0:
+            lineas += [("4020", descuento, 0.0)]
+    return lineas
+
+
+def registrar_venta(db: Session, pedido: models.Pedido) -> None:
     propina = round(pedido.propina or 0, 2)
     costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
 
@@ -371,27 +402,7 @@ def registrar_venta(db: Session, pedido: models.Pedido) -> None:
     if propina > 0:
         lineas += [("2040", 0.0, propina)]
 
-    # La venta se reconoce BRUTA y el descuento se muestra aparte: asi el dueno
-    # puede ver cuanto regalo en rebajas, que es informacion que se perdia
-    # cuando la unica via era bajarle el precio al menu.
-    bruto = round(total + descuento, 2)
-    if pedido.facturado:
-        # Solo lo facturado le debe IVA al fisco, y sobre lo que de verdad se
-        # cobro: el IVA se desglosa del neto, no del precio de lista. La
-        # alicuota ya viene congelada en el pedido (se fija al cobrar) para que
-        # un Libro de Ventas de un mes cerrado no cambie si despues sube el IVA.
-        base, iva = impuestos.desglosar(total, pedido.tasa_iva or impuestos.IVA_DEFAULT)
-        base_bruta, _ = impuestos.desglosar(bruto, pedido.tasa_iva or impuestos.IVA_DEFAULT)
-        lineas += [("4010", 0.0, base_bruta), ("2030", 0.0, iva)]
-        if descuento > 0:
-            # El descuento se reconoce neto de IVA, porque 4010 tambien es
-            # neto: la diferencia entre las dos bases es exactamente lo que
-            # cuadra el asiento.
-            lineas += [("4020", round(base_bruta - base, 2), 0.0)]
-    else:
-        lineas += [("4010", 0.0, bruto)]
-        if descuento > 0:
-            lineas += [("4020", descuento, 0.0)]
+    lineas += _lineas_ingreso_venta(pedido, bool(pedido.facturado))
 
     if costo > 0:
         lineas += [("5010", costo, 0.0), ("1040", 0.0, costo)]
@@ -403,6 +414,49 @@ def registrar_venta(db: Session, pedido: models.Pedido) -> None:
         origen="venta",
         referencia_id=pedido.id,
         fecha=pedido.cerrado_en,
+    )
+
+
+def registrar_facturacion_tardia(db: Session, pedido: models.Pedido) -> None:
+    """El pedido ya se cobro y ya tiene su asiento de venta (sin IVA, porque
+    en ese momento no se facturo). El dueno decide despues, revisando el
+    historico, facturarlo con un numero de su talonario.
+
+    No se reabre el asiento original -un asiento ya posteado no se toca-, se
+    postea el AJUSTE: la diferencia entre "como se conto sin factura" y "como
+    se cuenta con factura" es sacar del ingreso bruto lo que en realidad era
+    IVA y pasarlo a la cuenta por pagar al fisco (2030). Fechado HOY, porque
+    es hoy que la factura existe, aunque la venta haya sido antes -el Libro de
+    Ventas la sigue ubicando en la fecha de la venta (`cerrado_en`), que es
+    aparte de este asiento.
+    """
+    antes = _lineas_ingreso_venta(pedido, facturado=False)
+    despues = _lineas_ingreso_venta(pedido, facturado=True)
+
+    saldos: dict = {}
+    for cuenta, debito, credito in antes:
+        neto = saldos.get(cuenta, 0.0) - (debito - credito)
+        saldos[cuenta] = round(neto, 2)
+    for cuenta, debito, credito in despues:
+        neto = saldos.get(cuenta, 0.0) + (debito - credito)
+        saldos[cuenta] = round(neto, 2)
+
+    lineas = []
+    for cuenta, neto in saldos.items():
+        if neto > 0:
+            lineas.append((cuenta, neto, 0.0))
+        elif neto < 0:
+            lineas.append((cuenta, 0.0, -neto))
+    if not lineas:
+        return
+
+    crear_asiento(
+        db,
+        f"Facturacion tardia del pedido #{pedido.numero}",
+        lineas,
+        origen="factura_tardia",
+        referencia_id=pedido.id,
+        fecha=ahora(),
     )
 
 

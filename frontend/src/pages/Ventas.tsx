@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import NavBar from '../components/NavBar'
+import { useDialogo } from '../components/dialogo'
 import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { Tabla, Th, useOrden } from '../components/Tabla'
@@ -65,12 +66,17 @@ export default function Ventas() {
   const [cargado, setCargado] = useState('')
   const cargando = cargado !== `${rango.desde}/${rango.hasta}`
 
-  useEffect(() => {
-    Promise.all([api.ventas(rango), api.resumenVentas(rango)]).then(([l, r]) => {
+  function cargar() {
+    return Promise.all([api.ventas(rango), api.resumenVentas(rango)]).then(([l, r]) => {
       setLista(l)
       setResumen(r)
       setCargado(`${rango.desde}/${rango.hasta}`)
     })
+  }
+
+  useEffect(() => {
+    cargar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rango])
 
   return (
@@ -85,7 +91,9 @@ export default function Ventas() {
       <Pagina>
         {cargando && !lista && <p className="text-neutral-400 text-sm">Cargando...</p>}
 
-        {seccion === 'historial' && lista && <Historial lista={lista} etiqueta={etiquetaRango(rango)} />}
+        {seccion === 'historial' && lista && (
+          <Historial lista={lista} etiqueta={etiquetaRango(rango)} alFacturar={cargar} />
+        )}
         {seccion === 'resumen' && resumen && <Resumen r={resumen} nombre={nombreRango(rango)} />}
         {seccion === 'perdidas' && resumen && lista && <Perdidas r={resumen} lista={lista} />}
       </Pagina>
@@ -95,7 +103,15 @@ export default function Ventas() {
 
 // ── Historial ────────────────────────────────────────────────────────────────
 
-function Historial({ lista, etiqueta }: { lista: ListaVentas; etiqueta: string }) {
+function Historial({
+  lista,
+  etiqueta,
+  alFacturar,
+}: {
+  lista: ListaVentas
+  etiqueta: string
+  alFacturar: () => void
+}) {
   const { fmtCongelado } = useMoneda()
   const [estado, setEstado] = useState<EstadoVenta | 'todas'>('todas')
   const [busqueda, setBusqueda] = useState('')
@@ -228,6 +244,7 @@ function Historial({ lista, etiqueta }: { lista: ListaVentas; etiqueta: string }
                     alTocar={() => setAbierta(desplegada ? null : v.id)}
                     total={fmtCongelado(v.total, v.tasa_bcv)}
                     fmtCongelado={fmtCongelado}
+                    alFacturar={alFacturar}
                   />
                 )
               })}
@@ -246,6 +263,7 @@ function FilaVenta({
   alTocar,
   total,
   fmtCongelado,
+  alFacturar,
 }: {
   v: VentaFila
   apagada: boolean
@@ -253,6 +271,7 @@ function FilaVenta({
   alTocar: () => void
   total: string
   fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
+  alFacturar: () => void
 }) {
   return (
     <>
@@ -288,7 +307,7 @@ function FilaVenta({
       {desplegada && (
         <tr className="border-t border-neutral-100 bg-neutral-50/60">
           <td colSpan={7} className="px-4 py-3">
-            <DetalleVenta v={v} fmtCongelado={fmtCongelado} />
+            <DetalleVenta v={v} fmtCongelado={fmtCongelado} alFacturar={alFacturar} />
           </td>
         </tr>
       )}
@@ -308,11 +327,35 @@ function Dato({ titulo, children }: { titulo: string; children: ReactNode }) {
 function DetalleVenta({
   v,
   fmtCongelado,
+  alFacturar,
 }: {
   v: VentaFila
   fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
+  alFacturar: () => void
 }) {
+  const dialogo = useDialogo()
   const dinero = (x: number) => fmtCongelado(x, v.tasa_bcv)
+
+  // El dueño no siempre sabe al cobrar si va a facturar: a veces lo decide
+  // al final de la semana, viendo el histórico y el talonario en la mano.
+  async function facturar() {
+    const r = await dialogo.pedir({
+      titulo: `Facturar la venta #${v.numero}`,
+      texto: 'El número sale del talonario físico.',
+      campos: [{ nombre: 'numero', etiqueta: 'Número de factura' }],
+      aceptar: 'Facturar',
+    })
+    if (!r || !r.numero.trim()) return
+    try {
+      await api.facturarPedido(v.id, r.numero.trim())
+      alFacturar()
+    } catch (e) {
+      await dialogo.avisar({
+        titulo: 'No se pudo facturar',
+        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
+      })
+    }
+  }
   return (
     <div className="grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-4 text-neutral-800">
       <div>
@@ -370,6 +413,19 @@ function DetalleVenta({
         {v.estado === 'fiada' && <Dato titulo="Debe todavía">{dinero(v.fiado_pendiente)}</Dato>}
         {v.fiado_saldado && <Dato titulo="A crédito">Ya saldado</Dato>}
         {v.facturado && <Dato titulo="Factura">{v.numero_factura || 'sí'}</Dato>}
+        {!v.facturado && (v.estado === 'cobrada' || v.estado === 'fiada') && (
+          <Dato titulo="Factura">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                facturar()
+              }}
+              className="text-acento-600 hover:text-acento-700 font-medium text-sm"
+            >
+              Facturar ahora
+            </button>
+          </Dato>
+        )}
         {v.estado === 'anulada' && <Dato titulo="Anulada por">{v.anulado_por || '—'}</Dato>}
         {v.estado === 'anulada' && (
           <Dato titulo="Comida">

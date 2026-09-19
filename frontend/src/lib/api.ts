@@ -198,6 +198,11 @@ export const api = {
       // Venta libre: cobrar algo que no esta en el menu sin ensuciarlo.
       nombre_libre?: string
       precio_libre?: number
+      // Solo aplica a venta libre: en true cuando el ítem no necesita cocina
+      // (un delivery personalizado, por ejemplo), para que no se quede
+      // pegado en la cola de cocina esperando que alguien marque "listo"
+      // algo que nadie va a cocinar.
+      preparado?: boolean
     }[],
     permitir_sin_stock = false,
     nota = '',
@@ -261,6 +266,12 @@ export const api = {
     }),
   ticket: (pedidoId: number) => req<Ticket>(`/pedidos/${pedidoId}/ticket`),
   pedidosOlvidados: (horas = 24) => req<Pedido[]>(`/pedidos/olvidados?horas=${horas}`),
+  /** Facturar despues de cobrar: el numero de factura sale del talonario. */
+  facturarPedido: (pedidoId: number, numero_factura: string) =>
+    req<Pedido>(`/pedidos/${pedidoId}/facturar`, {
+      method: 'POST',
+      body: JSON.stringify({ numero_factura }),
+    }),
   devolverPedido: (
     pedidoId: number,
     opciones: { recuperable: boolean; nota_credito?: string; motivo?: string },

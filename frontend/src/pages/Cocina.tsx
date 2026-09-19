@@ -41,21 +41,23 @@ export default function Cocina() {
   const sonar = useCallback(() => {
     const ctx = audioRef.current
     if (!ctx) return
-    // Dos tonos cortos: se oye por encima del ruido de cocina sin ser una alarma.
+    // Dos tonos, repetidos dos veces: mas volumen y mas largo que antes -la
+    // version corta se perdia entre licuadoras y freidoras- pero sigue siendo
+    // un timbre, no una sirena.
     const ahora = ctx.currentTime
-    for (const [i, freq] of [880, 1175].entries()) {
+    for (const [i, freq] of [880, 1175, 880, 1175].entries()) {
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()
       osc.frequency.value = freq
       osc.type = 'sine'
-      const t = ahora + i * 0.18
+      const t = ahora + i * 0.26
       gain.gain.setValueAtTime(0.0001, t)
-      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16)
+      gain.gain.exponentialRampToValueAtTime(0.7, t + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.24)
       osc.connect(gain)
       gain.connect(ctx.destination)
       osc.start(t)
-      osc.stop(t + 0.18)
+      osc.stop(t + 0.26)
     }
   }, [])
 
@@ -149,8 +151,19 @@ export default function Cocina() {
       ],
     })
     if (!eleccion) return
-    await api.anularPedido(pedido.id, eleccion === 'perdida')
-    refrescar()
+    try {
+      await api.anularPedido(pedido.id, eleccion === 'perdida')
+      refrescar()
+    } catch (e) {
+      // Sin esto, si caja ya cobro el pedido mientras cocina lo tenia
+      // abierto (puede pasar: en_cocina muestra lo pagado que aun no esta
+      // preparado), el backend rechaza la anulacion y aqui no pasaba nada
+      // -el dialogo se cerraba y quien anulaba se quedaba sin saber por que.
+      await dialogo.avisar({
+        titulo: 'No se pudo anular',
+        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
+      })
+    }
   }
 
   return (

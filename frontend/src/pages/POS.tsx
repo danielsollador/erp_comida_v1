@@ -47,6 +47,11 @@ export default function POS() {
   // o tres veces por duda. El numero en la esquina y el salto son la
   // confirmacion inmediata de que si se agrego.
   const [recienAgregado, setRecienAgregado] = useState<Set<number>>(new Set())
+  // Delivery personalizado: cada envio cobra distinto segun la distancia, asi
+  // que no encaja como producto de precio fijo (Delivery corto/largo). Va
+  // aparte del carrito de variantes porque usa la "venta libre" del backend
+  // (nombre_libre + precio_libre) en vez de un variante_id.
+  const [libres, setLibres] = useState<{ id: string; nombre: string; precio: number }[]>([])
 
   // Clave de ESTE intento de comanda. Si la comanda se manda y la respuesta
   // se pierde (se cayo la wifi), volver a darle con la misma clave devuelve
@@ -59,7 +64,7 @@ export default function POS() {
   const claveComanda = useRef<string | null>(null)
   useEffect(() => {
     claveComanda.current = null
-  }, [carrito])
+  }, [carrito, libres])
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
   const [ventasRecientes, setVentasRecientes] = useState<Pedido[]>([])
   const [pagoMixto, setPagoMixto] = useState(false)
@@ -184,9 +189,26 @@ export default function POS() {
   }, [idsCarrito])
 
   const totalCarrito = useMemo(
-    () => Object.values(carrito).reduce((sum, c) => sum + c.variante.precio * c.cantidad, 0),
-    [carrito],
+    () =>
+      Object.values(carrito).reduce((sum, c) => sum + c.variante.precio * c.cantidad, 0) +
+      libres.reduce((sum, l) => sum + l.precio, 0),
+    [carrito, libres],
   )
+
+  async function agregarDeliveryPersonalizado() {
+    const monto = await dialogo.pedirNumero({
+      titulo: 'Delivery personalizado',
+      etiqueta: 'Cuánto cobra este envío',
+      sufijo: '$',
+      min: 0.01,
+    })
+    if (monto === null) return
+    setLibres((l) => [...l, { id: crypto.randomUUID(), nombre: 'Delivery personalizado', precio: monto }])
+  }
+
+  function quitarLibre(id: string) {
+    setLibres((l) => l.filter((x) => x.id !== id))
+  }
 
   function agregar(producto: Producto, variante: Variante) {
     setCarrito((c) => ({
@@ -228,16 +250,25 @@ export default function POS() {
 
   async function enviarComanda() {
     setError('')
-    const items = Object.values(carrito).map((c) => ({
-      variante_id: c.variante.id,
-      cantidad: c.cantidad,
-    }))
+    const items = [
+      ...Object.values(carrito).map((c) => ({
+        variante_id: c.variante.id,
+        cantidad: c.cantidad,
+      })),
+      ...libres.map((l) => ({
+        cantidad: 1,
+        nombre_libre: l.nombre,
+        precio_libre: l.precio,
+        preparado: true,
+      })),
+    ]
     if (items.length === 0) return
     if (!claveComanda.current) claveComanda.current = crypto.randomUUID()
     const clave = claveComanda.current
     try {
       await api.crearPedido(items, false, '', clave)
       setCarrito({})
+      setLibres([])
       refrescarPedidos()
     } catch (e) {
       const mensaje = e instanceof Error ? e.message : 'Error al enviar la comanda'
@@ -255,6 +286,7 @@ export default function POS() {
           try {
             await api.crearPedido(items, true, '', clave)
             setCarrito({})
+            setLibres([])
             refrescarPedidos()
             return
           } catch (e2) {
@@ -668,15 +700,24 @@ export default function POS() {
         <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:sticky md:top-[105px] md:h-[calc(100vh-105px)]">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-lg">Comanda actual</h2>
-            {Object.keys(carrito).length > 0 && (
+            {(Object.keys(carrito).length > 0 || libres.length > 0) && (
               <button
-                onClick={() => setCarrito({})}
+                onClick={() => {
+                  setCarrito({})
+                  setLibres([])
+                }}
                 className="text-xs font-medium text-neutral-400 hover:text-peligro-500"
               >
                 Vaciar
               </button>
             )}
           </div>
+          <button
+            onClick={agregarDeliveryPersonalizado}
+            className="w-full mb-3 text-sm font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-2"
+          >
+            + Delivery personalizado
+          </button>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
           <div className="flex-1 overflow-y-auto space-y-3">
             {Object.values(carrito).map(({ producto, variante, cantidad }) => (
@@ -709,7 +750,21 @@ export default function POS() {
                 </div>
               </div>
             ))}
-            {Object.keys(carrito).length === 0 && (
+            {libres.map((l) => (
+              <div key={l.id} className="flex justify-between items-center gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold truncate">{l.nombre}</div>
+                  <div className="text-xs text-neutral-500">{fmt(l.precio)}</div>
+                </div>
+                <button
+                  onClick={() => quitarLibre(l.id)}
+                  className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg shrink-0"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {Object.keys(carrito).length === 0 && libres.length === 0 && (
               <p className="text-neutral-400 text-sm">Toca un producto para agregarlo.</p>
             )}
           </div>
@@ -741,7 +796,7 @@ export default function POS() {
             </div>
             <button
               onClick={enviarComanda}
-              disabled={Object.keys(carrito).length === 0}
+              disabled={Object.keys(carrito).length === 0 && libres.length === 0}
               className="w-full bg-neutral-900 text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-30"
             >
               Enviar comanda a cocina

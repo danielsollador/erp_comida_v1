@@ -185,6 +185,7 @@ async def crear_pedido(
                     costo_unitario=0,
                     cantidad=item.cantidad,
                     nota=item.nota,
+                    preparado=bool(item.preparado),
                 )
             )
             continue
@@ -429,6 +430,57 @@ async def cobrar_pedido(
 
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_pagado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+@router.post("/{pedido_id}/facturar", response_model=schemas.Pedido)
+async def facturar_pedido(
+    pedido_id: int, body: schemas.FacturarRequest, db: Session = Depends(get_db)
+):
+    """Facturar despues, no al cobrar: el dueno revisa el historico de ventas
+    al final de la semana y decide ahi que factura de su talonario le pone a
+    cada venta. Antes la unica ventana era al momento de cobrar.
+    """
+    pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    if pedido.estado != "pagado":
+        raise HTTPException(status_code=409, detail="Solo se factura un pedido ya cobrado")
+    if pedido.devuelto:
+        raise HTTPException(
+            status_code=409, detail="Este pedido fue devuelto: ya no hay nada que facturar"
+        )
+    if pedido.facturado:
+        raise HTTPException(status_code=409, detail="Este pedido ya esta facturado")
+
+    numero = (body.numero_factura or "").strip()
+    if not numero:
+        raise HTTPException(status_code=400, detail="Hace falta el numero de factura")
+    # Mismo control que al cobrar: dos facturas con el mismo numero es un
+    # problema fiscal, no cosmetico.
+    repetido = (
+        db.query(models.Pedido)
+        .filter(models.Pedido.numero_factura == numero, models.Pedido.id != pedido_id)
+        .first()
+    )
+    if repetido:
+        raise HTTPException(
+            status_code=409,
+            detail=f"La factura {numero} ya se uso en el pedido #{repetido.numero}.",
+        )
+
+    pedido.facturado = True
+    pedido.numero_factura = numero
+    # La alicuota se congela AHORA, que es cuando de verdad se decide
+    # facturar -no la de cuando se vendio, que en este caso no se guardo
+    # porque en ese momento no iba a haber factura.
+    pedido.tasa_iva = impuestos.tasa_iva(db)
+    contabilidad.registrar_facturacion_tardia(db, pedido)
+    db.commit()
+    db.refresh(pedido)
+
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado
 
 
