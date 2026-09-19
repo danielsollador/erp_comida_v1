@@ -35,7 +35,19 @@ export default function Recetas() {
   const [busqueda, setBusqueda] = useState('')
 
   useEffect(() => {
-    api.listarCategorias().then(async (cats) => {
+    api.listarCategorias().then(async (todas) => {
+      // Solo lo que sigue EN el menu: cargarle la receta a un producto que se
+      // retiro no sirve de nada, y el listado lo devolvia igual.
+      const cats = todas
+        .filter((c) => c.activo)
+        .map((c) => ({
+          ...c,
+          productos: c.productos
+            .filter((p) => p.activo)
+            .map((p) => ({ ...p, variantes: p.variantes.filter((v) => v.activo) }))
+            .filter((p) => p.variantes.length > 0),
+        }))
+        .filter((c) => c.productos.length > 0)
       setCategorias(cats)
       const ids = cats.flatMap((c) => c.productos.flatMap((p) => p.variantes.map((v) => v.id)))
       const recetas = await Promise.all(

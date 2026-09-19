@@ -111,6 +111,41 @@ def eliminar_producto(producto_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.post("/productos/{producto_id}/reactivar", response_model=schemas.Producto)
+def reactivar_producto(producto_id: int, db: Session = Depends(get_db)):
+    """Deshace el retiro de un producto. Existia para categorias y no para
+    productos, asi que quitar uno por error no tenia vuelta atras."""
+    producto = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    producto.activo = True
+    # Si su categoria esta retirada, el producto seguiria sin verse y el boton
+    # pareceria roto. Se activa la categoria SIN tocar sus otros productos:
+    # vuelve lo que se pidio, y nada mas.
+    if producto.categoria and not producto.categoria.activo:
+        producto.categoria.activo = True
+    db.commit()
+    db.refresh(producto)
+    return producto
+
+
+@router.post("/variantes/{variante_id}/reactivar", response_model=schemas.Variante)
+def reactivar_variante(variante_id: int, db: Session = Depends(get_db)):
+    """Lo mismo para una presentacion suelta (el "Grande" de un cafe)."""
+    variante = db.query(models.Variante).filter(models.Variante.id == variante_id).first()
+    if not variante:
+        raise HTTPException(status_code=404, detail="Variante no encontrada")
+    variante.activo = True
+    producto = variante.producto
+    if producto and not producto.activo:
+        producto.activo = True
+    if producto and producto.categoria and not producto.categoria.activo:
+        producto.categoria.activo = True
+    db.commit()
+    db.refresh(variante)
+    return variante
+
+
 @router.post("/productos/{producto_id}/variantes", response_model=schemas.Variante)
 def crear_variante(producto_id: int, variante: schemas.VarianteCreate, db: Session = Depends(get_db)):
     producto = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
