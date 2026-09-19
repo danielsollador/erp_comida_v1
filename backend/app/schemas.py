@@ -444,6 +444,12 @@ class PedidoItemCreate(BaseModel):
     nota: str = ""
     nombre_libre: Optional[str] = None
     precio_libre: Optional[float] = None
+    # Una venta libre no tiene receta que consultar, asi que por defecto
+    # cocina la tiene que marcar a mano (puede ser un encargo real, como una
+    # torta). Cuando el cliente SI sabe que no hay nada que cocinar -un
+    # delivery personalizado, por ejemplo- lo manda en true para que no se
+    # quede pegado para siempre en la cola de cocina.
+    preparado: Optional[bool] = None
 
 
 class PedidoCreate(BaseModel):
@@ -463,6 +469,13 @@ class AnularRequest(BaseModel):
     # None = que el sistema lo deduzca del estado del pedido.
     comida_preparada: Optional[bool] = None
     operador_id: Optional[int] = None
+
+
+class FacturarRequest(BaseModel):
+    """Facturar despues de cobrar: el dueno revisa el historico y decide que
+    vender factura, con el numero que transcribe de su talonario."""
+
+    numero_factura: str
 
 
 class DevolucionRequest(BaseModel):
