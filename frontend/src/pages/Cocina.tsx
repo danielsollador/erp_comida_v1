@@ -92,7 +92,14 @@ export default function Cocina() {
   useEffect(() => {
     refrescar()
     const disconnect = connectWs(() => refrescar())
-    const interval = setInterval(() => setTick((t) => t + 1), 30000)
+    // Cada 30 s se repintan los minutos Y se vuelve a pedir la cola: si el
+    // websocket murio sin avisar (la tablet se durmio), la pantalla no se
+    // queda con comandas que la caja ya cobro o anulo. Una peticion cada
+    // medio minuto por pantalla abierta.
+    const interval = setInterval(() => {
+      setTick((t) => t + 1)
+      if (document.visibilityState === 'visible') refrescar()
+    }, 30000)
     return () => {
       disconnect()
       clearInterval(interval)
@@ -137,14 +144,6 @@ export default function Cocina() {
 
   async function marcarTodoListo(pedidoId: number) {
     await intentar(() => api.marcarPedidoListo(pedidoId))
-  }
-
-  /**
-   * "Esta es mia": el resto de la cocina lo ve, y la caja deja de poder
-   * cambiarle los renglones a algo que ya esta en el sarten.
-   */
-  async function alternarCocinando(pedidoId: number) {
-    await intentar(() => api.marcarCocinando(pedidoId))
   }
 
   // La cocina es quien sabe de verdad si la comida alcanzo a hacerse - el
@@ -267,23 +266,16 @@ export default function Cocina() {
                 </div>
               )}
 
-              {/* Agarrarla es lo que le cierra la edicion a la caja. Marcar un
-                  renglon tambien la agarra, asi que el boton es para decirlo
-                  antes de empezar -- que es cuando sirve. */}
-              <button
-                onClick={() => alternarCocinando(pedido.id)}
-                disabled={bloqueada}
-                className={`w-full mb-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-40 ${
-                  mia
-                    ? 'bg-acento-500/15 text-acento-800 ring-1 ring-acento-500/40'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                }`}
-              >
-                <Icono nombre="cocina" size={16} />
-                {mia
-                  ? `En preparación${pedido.cocinando_por ? ` · ${pedido.cocinando_por}` : ''}`
-                  : 'Empezar a preparar'}
-              </button>
+              {/* Marcar un renglon es lo que "agarra" la comanda: desde ese
+                  momento la caja no puede cambiarle los renglones. No hay
+                  boton aparte para decirlo: habia uno y no hacia nada visible
+                  para el cocinero, asi que sobraba. */}
+              {mia && (
+                <div className="mb-3 text-xs font-semibold text-acento-800 flex items-center gap-1.5">
+                  <Icono nombre="cocina" size={14} />
+                  En preparación{pedido.cocinando_por ? ` · ${pedido.cocinando_por}` : ''}
+                </div>
+              )}
 
               <ul className="space-y-2 mb-4">
                 {pedido.items.map((item) => (

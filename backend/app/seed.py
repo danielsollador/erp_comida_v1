@@ -45,6 +45,28 @@ RECETAS_DEMO = {
 }
 
 
+CATEGORIA_ENVIOS = "Envios"
+
+
+def variantes_de_servicio(db) -> set:
+    """Las variantes que se venden sin que salga nada del deposito.
+
+    Hoy son los envios. Un servicio no tiene receta POR DISEÑO --no se
+    cocina--, asi que su costo cero es correcto y no un dato que falta.
+    Sin esta lista, la salud contable y el reporte de productos pedian
+    "cargarle la receta" al delivery todos los dias, y un aviso que nunca se
+    puede resolver entrena a ignorar la pantalla entera.
+    """
+    filas = (
+        db.query(Variante.id)
+        .join(Producto, Producto.id == Variante.producto_id)
+        .join(Categoria, Categoria.id == Producto.categoria_id)
+        .filter(Categoria.nombre == CATEGORIA_ENVIOS)
+        .all()
+    )
+    return {v_id for (v_id,) in filas}
+
+
 def asegurar_categoria_envios(db=None):
     """El delivery como dos productos del menu, no un modulo aparte.
 
@@ -67,9 +89,9 @@ def asegurar_categoria_envios(db=None):
     if propia:
         db = SessionLocal()
     try:
-        categoria = db.query(Categoria).filter_by(nombre="Envios").first()
+        categoria = db.query(Categoria).filter_by(nombre=CATEGORIA_ENVIOS).first()
         if categoria is None:
-            categoria = Categoria(nombre="Envios", orden=99)
+            categoria = Categoria(nombre=CATEGORIA_ENVIOS, orden=99)
             db.add(categoria)
             db.flush()
 
@@ -95,7 +117,14 @@ def asegurar_categoria_envios(db=None):
 def seed_if_empty():
     db = SessionLocal()
     try:
-        if db.query(Categoria).count() == 0:
+        # "Vacia" sin contar los envios: esa categoria la asegura el arranque
+        # ANTES de llegar aqui, y con ella sola la base ya no estaba "vacia",
+        # asi que el menu de ejemplo no se sembraba nunca y las recetas de
+        # ejemplo tampoco (no tenian variantes a las que pegarse).
+        sin_menu = (
+            db.query(Categoria).filter(Categoria.nombre != CATEGORIA_ENVIOS).count() == 0
+        )
+        if sin_menu:
             for orden, (categoria_nombre, productos) in enumerate(MENU_DEMO.items()):
                 categoria = Categoria(nombre=categoria_nombre, orden=orden)
                 db.add(categoria)

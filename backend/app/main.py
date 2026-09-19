@@ -115,7 +115,11 @@ async def lifespan(app: FastAPI):
         with SessionLocal() as db:
             seed_plan_de_cuentas(db)
             asegurar_categoria_envios(db)
-        seed_if_empty()
+        # El menu de ejemplo solo en desarrollo. Un local real arranca vacio
+        # y carga SU menu; sin esta bandera, limpiar la base para salir a
+        # produccion la volvia a llenar de cafes y empanadas al reiniciar.
+        if settings.SEMBRAR_DEMO:
+            seed_if_empty()
 
         # Un respaldo al arrancar SOLO si el ultimo ya tiene sus horas encima.
         # Con un respaldo incondicional por arranque, cada corte de luz se

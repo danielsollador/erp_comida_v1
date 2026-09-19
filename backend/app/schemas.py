@@ -872,6 +872,41 @@ class Insight(BaseModel):
     detalle: str
 
 
+class PuntoCalor(BaseModel):
+    """Una celda del mapa de calor: los pedidos que entraron ese dia de la
+    semana a esa hora, sumando todo el periodo. Solo vienen las celdas con
+    algo; la cuadricula entera la arma la pantalla."""
+
+    dia: int  # 0 = lunes ... 6 = domingo
+    hora: int  # 0..23
+    pedidos: int
+    ventas: float
+
+
+class GrupoReporte(BaseModel):
+    nombre: str
+    ventas: float
+    pedidos: int
+    pct: float  # sobre las ventas del periodo
+    # Para los dias de la semana: lo que vende un lunes TIPICO. La suma de
+    # todos los lunes crece con el tamaño del rango y no dice nada.
+    promedio: Optional[float] = None
+
+
+class Comparativa(BaseModel):
+    """El periodo inmediatamente anterior, del mismo tamaño."""
+
+    etiqueta: str  # "ayer", "la semana pasada", "el periodo anterior"
+    ventas: float
+    pedidos: int
+    ticket_promedio: float
+    ganancia_neta: float
+    cambio_ventas_pct: Optional[float] = None
+    cambio_pedidos_pct: Optional[float] = None
+    cambio_ticket_pct: Optional[float] = None
+    cambio_ganancia_pct: Optional[float] = None
+
+
 class ReporteResumen(BaseModel):
     periodo: str
     etiqueta: str
@@ -908,6 +943,16 @@ class ReporteResumen(BaseModel):
     serie: List[PuntoSerie]
     top_productos: List[ProductoVendido]
     insights: List[Insight]
+    # Lo que hace falta para comparar y dibujar, no solo para leer numeros.
+    anterior: Optional[Comparativa] = None
+    # La misma serie del periodo anterior, alineada punto a punto con `serie`
+    # (misma cantidad de tramos, las etiquetas de la actual) para superponerla.
+    serie_anterior: List[PuntoSerie] = []
+    # Vacio si el rango es de un solo dia: ahi la serie por horas ya lo dice.
+    calor: List[PuntoCalor] = []
+    por_categoria: List[GrupoReporte] = []
+    # Los siete dias, lunes a domingo. Vacio si el rango es de un solo dia.
+    por_dia_semana: List[GrupoReporte] = []
 
 
 class VentaFila(BaseModel):
@@ -1061,6 +1106,29 @@ class PuntoAnalisisTasa(BaseModel):
     brecha_pct: Optional[float] = None
 
 
+class SaltoTasa(BaseModel):
+    """El dia que mas se movio el oficial dentro del periodo."""
+
+    fecha: str
+    de: float
+    a: float
+    pct: float
+
+
+class EquivalenciaTasa(BaseModel):
+    """Cuantos bolivares eran X dolares al empezar el periodo y cuantos al final."""
+
+    usd: float
+    bs_inicio: float
+    bs_fin: float
+
+
+class GrupoMonto(BaseModel):
+    nombre: str
+    monto: float
+    pct: float
+
+
 class AnalisisTasa(BaseModel):
     """La serie del periodo y lo que se lee en ella (ver `analisis_tasa.py`)."""
 
@@ -1080,6 +1148,23 @@ class AnalisisTasa(BaseModel):
     cobrado_bs_usd: float = 0
     costo_brecha_usd: float = 0
     lecturas: List[Insight] = []
+    # Ritmo: variacion promedio por dia calendario, y donde queda el dolar en
+    # 30 dias si sigue igual. Es una extrapolacion y se dice como tal.
+    ritmo_diario_pct: Optional[float] = None
+    proyeccion_30d: Optional[float] = None
+    proyeccion_30d_pct: Optional[float] = None
+    mayor_salto: Optional[SaltoTasa] = None
+    # Exposicion: de todo lo cobrado, que parte entro en bolivares. Esa es la
+    # parte que la brecha se come; lo cobrado en divisas no pierde nada.
+    cobrado_total_usd: float = 0
+    cobrado_divisas_usd: float = 0
+    exposicion_pct: Optional[float] = None
+    por_metodo_bs: List[GrupoMonto] = []
+    equivalencias: List[EquivalenciaTasa] = []
+    # Cuanto subieron los insumos en el mismo periodo, si hubo compras que lo
+    # digan. Al lado de `variacion_pct` responde si la subida es de la tasa o
+    # de los proveedores.
+    inflacion_insumos_pct: Optional[float] = None
 
 
 class TasaManual(BaseModel):

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
-from .. import backup, contabilidad, models, schemas
+from .. import backup, contabilidad, models, schemas, seed
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy, rango_periodo
@@ -559,6 +559,8 @@ def salud_contable(db: Session = Depends(get_db)):
     #    validacion los ve: el problema es que falta el vinculo, no que dos
     #    datos discrepen.
     con_receta = {r.variante_id for r in db.query(models.RecetaItem.variante_id).distinct()}
+    # Los envios tampoco: son un servicio, no algo que se cocine.
+    con_receta |= seed.variantes_de_servicio(db)
     vendidas_sin_receta = {
         item.nombre
         for item in db.query(models.PedidoItem)
@@ -588,7 +590,12 @@ def salud_contable(db: Session = Depends(get_db)):
         if not factura.items:
             continue
         recibido = sum(i.cantidad * i.costo_unitario for i in factura.items)
-        if abs(recibido - factura.base_imponible) > 0.01:
+        # Los renglones llevan el precio facturado de cada uno; el flete y el
+        # descuento por volumen van aparte en la cabecera y SI forman parte
+        # de la base. Sin sumarlos aqui, toda factura con recargo o descuento
+        # salia como "no suma" aunque estuviera perfecta.
+        ajuste = (factura.recargo or 0) - (factura.descuento or 0)
+        if abs(recibido + ajuste - factura.base_imponible) > 0.01:
             sin_acreditar.append(factura)
     if sin_acreditar:
         problemas.append(

@@ -4,9 +4,12 @@ from typing import Dict, List, Tuple
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from .. import combos, contabilidad, impuestos, models, reposicion, schemas
+from sqlalchemy.orm import joinedload
+
+from .. import combos, contabilidad, impuestos, models, reposicion, schemas, seed
 from ..database import get_db
 from ..rango import Rango, anterior, granularidad, serie as serie_del_rango
+from ..timeutils import hoy
 
 router = APIRouter(prefix="/api/reportes", tags=["reportes"])
 
@@ -130,6 +133,8 @@ def _mediana(valores: List[float]) -> float:
 
 
 DIAS_ES = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+# Para la prosa: "tu dia fuerte es el sabado", no "el sab".
+DIAS_LARGOS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 
 def _pedidos_pagados(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
@@ -244,11 +249,7 @@ def _serie(periodo: str, pedidos, inicio: datetime.datetime, fin: datetime.datet
     return [schemas.PuntoSerie(**p) for p in puntos]
 
 
-def _variantes_con_receta(db: Session) -> set:
-    return {r.variante_id for r in db.query(models.RecetaItem.variante_id).distinct()}
-
-
-def _top_productos(pedidos, con_receta: set) -> List[schemas.ProductoVendido]:
+def _top_productos(pedidos, servicios: set) -> List[schemas.ProductoVendido]:
     """Agrupa por variante, NO por el nombre congelado del item.
 
     Agrupar por nombre rompia en las dos direcciones: dos productos distintos
@@ -285,7 +286,8 @@ def _top_productos(pedidos, con_receta: set) -> List[schemas.ProductoVendido]:
             # borrarla reescribia a 0% el margen de ventas que si lo tuvieron,
             # y cargarla despues presentaba como dato bueno un 100% inventado
             # sobre ventas que se hicieron sin costo.
-            if not (i.costo_unitario or 0):
+            # Un servicio (el envio) cuesta cero de verdad: no le falta nada.
+            if not (i.costo_unitario or 0) and i.variante_id not in servicios:
                 entrada["sin_receta"] = True
 
     productos = []
@@ -310,6 +312,247 @@ def _top_productos(pedidos, con_receta: set) -> List[schemas.ProductoVendido]:
         )
     productos.sort(key=lambda x: x.ingresos, reverse=True)
     return productos
+
+
+NOMBRE_ANTERIOR = {"dia": "ayer", "semana": "la semana pasada", "mes": "el mes pasado"}
+
+
+def _nombre_del_anterior(periodo: str, inicio, fin) -> str:
+    """Como se llama el periodo de al lado, en palabras.
+
+    La pantalla manda siempre `desde`/`hasta` (el filtro de fechas), asi que
+    `periodo` casi nunca dice "dia" o "semana": se deduce del rango. Un dia
+    que es hoy se compara con "ayer"; una semana que empieza en lunes, con
+    "la semana pasada"; un mes entero, con "el mes pasado". Lo demas es "el
+    periodo anterior", que es exacto aunque no suene a nada.
+    """
+    if periodo in NOMBRE_ANTERIOR:
+        return NOMBRE_ANTERIOR[periodo]
+    dias = (fin - inicio).days
+    if dias == 1:
+        return "ayer" if inicio.date() == hoy() else "el dia anterior"
+    if dias == 7 and inicio.weekday() == 0:
+        return "la semana pasada"
+    if inicio.day == 1 and fin.day == 1 and dias >= 28:
+        return "el mes pasado"
+    return "el periodo anterior"
+
+
+def _pct(nuevo: float, viejo: float):
+    if not viejo:
+        return None
+    return round((nuevo / viejo - 1) * 100, 1)
+
+
+def _comparativa(
+    etiqueta: str, pedidos_previos, ventas_previas: float, libro_previo: dict,
+    ventas: float, cuantos: int, ganancia_neta: float,
+) -> schemas.Comparativa:
+    """El periodo anterior puesto al lado, con el cambio en porcentaje.
+
+    Se calcula igual que el actual --mismos pedidos pagados, misma
+    contabilidad-- para que "vas 12% arriba" compare lo mismo con lo mismo.
+    """
+    n_prev = len(pedidos_previos)
+    ticket_prev = round(ventas_previas / n_prev, 2) if n_prev else 0.0
+    ticket = round(ventas / cuantos, 2) if cuantos else 0.0
+    ganancia_prev = round(libro_previo["ingreso"] - libro_previo["costo"] - libro_previo["gasto"], 2)
+    return schemas.Comparativa(
+        etiqueta=etiqueta,
+        ventas=round(ventas_previas, 2),
+        pedidos=n_prev,
+        ticket_promedio=ticket_prev,
+        ganancia_neta=ganancia_prev,
+        cambio_ventas_pct=_pct(ventas, ventas_previas),
+        cambio_pedidos_pct=_pct(cuantos, n_prev),
+        cambio_ticket_pct=_pct(ticket, ticket_prev),
+        # La ganancia puede ser negativa: un porcentaje sobre un numero
+        # negativo no significa nada, asi que solo se da si ambas son positivas.
+        cambio_ganancia_pct=_pct(ganancia_neta, ganancia_prev) if ganancia_prev > 0 and ganancia_neta > 0 else None,
+    )
+
+
+def _serie_anterior(
+    serie_actual: List[schemas.PuntoSerie], pedidos_previos, inicio, fin, paso: str
+) -> List[schemas.PuntoSerie]:
+    """La serie del periodo anterior, tramo a tramo contra la actual.
+
+    Lleva las etiquetas de la actual a proposito: se dibuja encima de ella,
+    punteada, y lo que se compara es "el mismo tramo" (la misma hora, el
+    mismo dia de la semana), no la fecha.
+    """
+    if not serie_actual:
+        return []
+    ini_prev, fin_prev = anterior(inicio, fin)
+    puntos = serie_del_rango(
+        ((p.cerrado_en, p.total) for p in pedidos_previos), ini_prev, fin_prev, paso=paso
+    )
+    if paso == "hora":
+        # Por horas la serie viene recortada de la primera a la ultima venta
+        # de cada dia, y esos recortes no coinciden: se alinea por la hora.
+        por_hora = {pt["etiqueta"]: pt for pt in puntos}
+        return [
+            schemas.PuntoSerie(
+                etiqueta=s.etiqueta,
+                ventas=por_hora.get(s.etiqueta, {}).get("ventas", 0.0),
+                pedidos=por_hora.get(s.etiqueta, {}).get("pedidos", 0),
+            )
+            for s in serie_actual
+        ]
+    salida = [
+        schemas.PuntoSerie(etiqueta=s.etiqueta, ventas=pt["ventas"], pedidos=pt["pedidos"])
+        for s, pt in zip(serie_actual, puntos)
+    ]
+    # Meses de distinto largo pueden dar un tramo mas o menos: se rellena.
+    for s in serie_actual[len(salida):]:
+        salida.append(schemas.PuntoSerie(etiqueta=s.etiqueta, ventas=0.0, pedidos=0))
+    return salida
+
+
+def _mapa_de_calor(pedidos) -> List[schemas.PuntoCalor]:
+    """Cuando ENTRAN los clientes: por la hora en que se tomo el pedido, no
+    en la que se cobro. Para decidir a que hora hace falta mas gente en el
+    mostrador importa cuando llegan, y una mesa que paga al irse se cobraria
+    una hora despues de haber pedido."""
+    celdas: Dict[Tuple[int, int], Dict[str, float]] = {}
+    for p in pedidos:
+        t = p.creado_en or p.cerrado_en
+        if t is None:
+            continue
+        c = celdas.setdefault((t.weekday(), t.hour), {"pedidos": 0, "ventas": 0.0})
+        c["pedidos"] += 1
+        c["ventas"] += p.total
+    return [
+        schemas.PuntoCalor(dia=d, hora=h, pedidos=int(c["pedidos"]), ventas=round(c["ventas"], 2))
+        for (d, h), c in sorted(celdas.items())
+    ]
+
+
+def _por_categoria(db: Session, pedidos, ventas_total: float) -> List[schemas.GrupoReporte]:
+    """Que parte de la venta es comida, que parte bebida, que parte envios.
+
+    Se agrupa por la categoria de HOY de cada variante: los renglones guardan
+    nombre y precio pero no categoria, y guardarla habria sido repetir el menu
+    en cada venta. La venta libre va en su propio grupo.
+    """
+    ids = {i.variante_id for p in pedidos for i in p.items if i.variante_id is not None}
+    categoria_de: Dict[int, str] = {}
+    if ids:
+        variantes = (
+            db.query(models.Variante)
+            .options(joinedload(models.Variante.producto).joinedload(models.Producto.categoria))
+            .filter(models.Variante.id.in_(ids))
+            .all()
+        )
+        for v in variantes:
+            cat = v.producto.categoria if v.producto else None
+            categoria_de[v.id] = cat.nombre if cat else "Sin categoría"
+
+    grupos: Dict[str, Dict[str, float]] = {}
+    pedidos_por_grupo: Dict[str, set] = {}
+    for p in pedidos:
+        for i in p.items:
+            nombre = "Venta libre" if i.variante_id is None else categoria_de.get(i.variante_id, "Sin categoría")
+            g = grupos.setdefault(nombre, {"ventas": 0.0})
+            g["ventas"] += i.precio_unitario * i.cantidad
+            pedidos_por_grupo.setdefault(nombre, set()).add(p.id)
+
+    salida = [
+        schemas.GrupoReporte(
+            nombre=nombre,
+            ventas=round(g["ventas"], 2),
+            pedidos=len(pedidos_por_grupo[nombre]),
+            pct=round(g["ventas"] / ventas_total * 100, 1) if ventas_total else 0.0,
+        )
+        for nombre, g in grupos.items()
+    ]
+    salida.sort(key=lambda g: g.ventas, reverse=True)
+    return salida
+
+
+def _por_dia_semana(pedidos, inicio, fin, ventas_total: float) -> List[schemas.GrupoReporte]:
+    """Lo que vende cada dia de la semana, y lo que vende uno TIPICO.
+
+    El promedio divide entre las veces que ese dia cayo dentro del rango --y
+    ya paso--, asi el sabado de un mes con cinco sabados no le gana al de uno
+    con cuatro solo por eso.
+    """
+    veces = [0] * 7
+    d = inicio.date()
+    tope = min(fin.date(), hoy() + datetime.timedelta(days=1))
+    while d < tope:
+        veces[d.weekday()] += 1
+        d += datetime.timedelta(days=1)
+
+    total = [0.0] * 7
+    cuantos = [0] * 7
+    for p in pedidos:
+        t = p.cerrado_en
+        if t is None:
+            continue
+        total[t.weekday()] += p.total
+        cuantos[t.weekday()] += 1
+
+    return [
+        schemas.GrupoReporte(
+            nombre=DIAS_ES[i],
+            ventas=round(total[i], 2),
+            pedidos=cuantos[i],
+            pct=round(total[i] / ventas_total * 100, 1) if ventas_total else 0.0,
+            promedio=round(total[i] / veces[i], 2) if veces[i] else None,
+        )
+        for i in range(7)
+    ]
+
+
+def _lecturas_de_ritmo(
+    calor: List[schemas.PuntoCalor], por_dia: List[schemas.GrupoReporte], total_pedidos: int
+) -> List[schemas.Insight]:
+    """Lo que dicen el mapa de calor y el dia de la semana, en una frase."""
+    out: List[schemas.Insight] = []
+    if not calor or total_pedidos < 20:
+        return out
+
+    # Las dos horas que concentran mas clientes, sumando todos los dias.
+    por_hora: Dict[int, int] = {}
+    for c in calor:
+        por_hora[c.hora] = por_hora.get(c.hora, 0) + c.pedidos
+    pico = sorted(por_hora.items(), key=lambda kv: kv[1], reverse=True)[:2]
+    en_pico = sum(n for _h, n in pico)
+    if pico and en_pico / total_pedidos >= 0.3:
+        horas = " y ".join(f"{h:02d}:00" for h, _n in sorted(pico))
+        out.append(
+            schemas.Insight(
+                tipo="info",
+                titulo=f"Tu hora pico: {horas}",
+                detalle=(
+                    f"El {en_pico / total_pedidos * 100:.0f}% de los pedidos entra en esas dos "
+                    "horas. Ahi es donde hace falta la gente y la comida lista; el resto del "
+                    "dia se puede atender con menos."
+                ),
+            )
+        )
+
+    # El dia fuerte y el flojo, por lo que vende un dia tipico.
+    con_promedio = [d for d in por_dia if d.promedio is not None and d.pedidos > 0]
+    if len(con_promedio) >= 4:
+        media = sum(d.promedio for d in con_promedio) / len(con_promedio)
+        fuerte = max(con_promedio, key=lambda d: d.promedio)
+        flojo = min(con_promedio, key=lambda d: d.promedio)
+        if media > 0 and fuerte.promedio >= media * 1.25:
+            largo = dict(zip(DIAS_ES, DIAS_LARGOS))
+            out.append(
+                schemas.Insight(
+                    tipo="info",
+                    titulo=f"Tu dia fuerte es el {largo.get(fuerte.nombre, fuerte.nombre)}",
+                    detalle=(
+                        f"Vende ${fuerte.promedio:.2f} en promedio, un {fuerte.promedio / media * 100 - 100:.0f}% "
+                        f"mas que un dia normal. El mas flojo es el {largo.get(flojo.nombre, flojo.nombre)} "
+                        f"(${flojo.promedio:.2f}). Compra y arma turnos con eso en mente."
+                    ),
+                )
+            )
+    return out
 
 
 def _insights(
@@ -590,6 +833,7 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
     # Mismo tamano de ventana, inmediatamente anterior.
     pedidos_previos = _pedidos_pagados(db, *anterior(inicio, fin))
     ventas_previas, _ = _totales(pedidos_previos)
+    libro_previo = contabilidad.saldos_por_tipo(db, *anterior(inicio, fin))
 
     anulados = len(_pedidos_anulados(db, inicio, fin))
     devoluciones = _devoluciones(db, inicio, fin)
@@ -603,7 +847,14 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
             por_metodo[pago.metodo] = round(por_metodo.get(pago.metodo, 0) + pago.monto, 2)
 
     serie = _serie(periodo, pedidos, inicio, fin)
-    productos = _top_productos(pedidos, _variantes_con_receta(db))
+    productos = _top_productos(pedidos, seed.variantes_de_servicio(db))
+    paso = granularidad(inicio, fin)
+    ganancia_neta = round(ganancia_bruta - gastos, 2)
+    # Un dia solo se lee por horas; el mapa y el dia de la semana necesitan
+    # varios dias para decir algo.
+    varios_dias = (fin - inicio).days >= 2
+    calor = _mapa_de_calor(pedidos) if varios_dias else []
+    por_dia = _por_dia_semana(pedidos, inicio, fin, ventas) if varios_dias else []
 
     return schemas.ReporteResumen(
         periodo=periodo,
@@ -620,7 +871,7 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
         ganancia_bruta=ganancia_bruta,
         margen_pct=round(ganancia_bruta / ingresos_netos * 100, 1) if ingresos_netos else 0.0,
         gastos=round(gastos, 2),
-        ganancia_neta=round(ganancia_bruta - gastos, 2),
+        ganancia_neta=ganancia_neta,
         valor_anulado=_valor_anulado(db, inicio, fin),
         pedidos_anulados=anulados,
         devoluciones=len(devoluciones),
@@ -639,12 +890,21 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
             pedidos,
             productos,
             serie,
-            granularidad(inicio, fin),
+            paso,
             ventas_previas,
             merma=merma_periodo(db, inicio, fin),
             # El periodo esta a medias si incluye hoy.
             incompleto=fin > datetime.datetime.now(),
+        )
+        + _lecturas_de_ritmo(calor, por_dia, len(pedidos)),
+        anterior=_comparativa(
+            _nombre_del_anterior(periodo, inicio, fin),
+            pedidos_previos, ventas_previas, libro_previo, ventas, len(pedidos), ganancia_neta,
         ),
+        serie_anterior=_serie_anterior(serie, pedidos_previos, inicio, fin, paso),
+        calor=calor,
+        por_categoria=_por_categoria(db, pedidos, ventas),
+        por_dia_semana=por_dia,
     )
 
 

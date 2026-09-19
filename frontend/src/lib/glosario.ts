@@ -687,6 +687,23 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Es el número para comparar con un gasto: si se llevó $180 en el mes, es como una factura que pagaste sin verla. Se reduce cobrando más en divisas o ajustando precios.',
   },
+  'kpi.exposicion': {
+    que: 'Qué parte de lo que cobraste entró en bolívares.',
+    origen: 'Los pagos del período, método por método. Efectivo Bs, pago móvil, transferencia y tarjeta cuentan; efectivo en dólares y Zelle no.',
+    calculo: 'Cobrado en bolívares ÷ cobrado total.',
+    ejemplo: 'Con 70% de exposición y 10% de brecha, pierdes 7% de toda la venta al reponer comprando divisas. Lo que entra en divisas no pierde nada.',
+  },
+  'kpi.proyeccion_30d': {
+    que: 'Dónde estaría el dólar en 30 días si siguiera al ritmo de este período.',
+    origen: 'La primera y la última tasa oficial del período.',
+    calculo: 'Ritmo diario compuesto, proyectado 30 días hacia adelante.',
+    ejemplo: 'No es un pronóstico: nadie sabe qué hará el BCV. Sirve para dimensionar cuánto se encarece reponer si no cambia nada.',
+  },
+  'kpi.dia_tipico': {
+    que: 'Lo que vende un día de la semana normal, no la suma de todos.',
+    origen: 'Las ventas de cada día de la semana, divididas entre las veces que ese día cayó en el período.',
+    ejemplo: 'Un mes con cinco sábados sumaría más que uno con cuatro; el promedio por sábado compara lo mismo.',
+  },
   'kpi.brecha': {
     que: 'Cuánto más caro está el dólar paralelo que el oficial.',
     origen: 'Se calcula con las dos tasas del día.',

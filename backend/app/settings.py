@@ -69,6 +69,13 @@ LOCALES_DIR = os.getenv(
 # A donde vuelve el enlace "Vertigo Pro" del panel. Vacio = no se muestra.
 HUB_URL = os.getenv("ERP_HUB_URL", "").strip().rstrip("/")
 
+# Sembrar el MENU DE EJEMPLO (cafe, empanadas, ocho insumos con stock) si la
+# base esta vacia. Apagado por defecto A PROPOSITO: en produccion, borrar los
+# datos de prueba y reiniciar volvia a llenar el local con el menu de la demo
+# --y con un asiento de apertura de inventario que nadie compro--. Solo la
+# maquina de desarrollo lo enciende (docker-compose.dev.yml).
+SEMBRAR_DEMO = os.getenv("ERP_SEMBRAR_DEMO", "0").strip().lower() in ("1", "true", "yes")
+
 # Siembra del primer usuario, OPCIONAL. Sin esto, la primera visita al ERP
 # pide crear el administrador desde el navegador (modo instalacion).
 APP_USER = os.getenv("ERP_APP_USER", "admin").strip() or "admin"

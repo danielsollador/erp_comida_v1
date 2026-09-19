@@ -7,9 +7,18 @@ import { useRango } from '../lib/fechas'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Lecturas, Pagina } from '../components/ui'
+import { Lecturas, Pagina, Seccion } from '../components/ui'
+import {
+  BarrasApiladas,
+  GraficoBarras,
+  GraficoDona,
+  GraficoLineas,
+  MapaCalor,
+  PALETA_CATEGORICA,
+  Variacion,
+} from '../components/Grafico'
 import { api } from '../lib/api'
-import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
+import { fmtBs, useMoneda } from '../lib/moneda'
 import { etiquetaMetodo } from '../lib/pagos'
 import type {
   ParCombo,
@@ -20,6 +29,7 @@ import type {
 
 const SECCIONES = [
   { id: 'resumen', texto: 'Resumen' },
+  { id: 'ritmo', texto: 'Cuándo se vende' },
   { id: 'productos', texto: 'Qué se vendió' },
   { id: 'combos', texto: 'Combinaciones' },
 ]
@@ -53,13 +63,13 @@ export default function Reportes() {
     api.reporteCombos(rango).then(setCombos).catch(() => setCombos(null))
   }, [rango])
 
-  const maxVenta = datos ? Math.max(...datos.serie.map((s) => s.ventas), 0) : 0
   // La tasa MEDIA del periodo, sacada de los bolivares que de verdad entraron.
   // En la vista en bolivares manda esta y no la de hoy: si no, el resumen del
   // mes pasado cambiaria solo cada vez que se mueve el dolar, y ademas no
   // cuadraria con la linea de abajo, que si suma cada venta a la tasa de su dia.
   const tasaPeriodo = datos && datos.ventas > 0 ? datos.ventas_bs / datos.ventas || null : null
   const dinero = (x: number, d?: number) => fmtCongelado(x, tasaPeriodo, d)
+  const corto = (x: number) => dinero(x, 0)
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -81,213 +91,12 @@ export default function Reportes() {
               </p>
             )}
 
+            {seccion === 'resumen' && <Resumen datos={datos} dinero={dinero} corto={corto} sufijo={sufijo} />}
 
-            {seccion === 'resumen' && (
-              <>
-            <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Kpi titulo="Ventas" ayuda="kpi.ventas" valor={dinero(datos.ventas)} destacado />
-              <Kpi
-                titulo="Ganancia neta"
-                ayuda="kpi.ganancia_neta"
-                valor={dinero(datos.ganancia_neta)}
-                tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
-                destacado
-              />
-              <Kpi titulo="Pedidos" ayuda="kpi.pedidos" valor={String(datos.pedidos)} />
-              {/* La mediana va al lado del promedio a proposito: un solo
-                  pedido grande (un catering) mueve el promedio a un numero que
-                  no gasta ningun cliente, y el dueno decide sobre eso. */}
-              <Kpi
-                titulo="Ticket promedio"
-                ayuda="kpi.ticket_promedio"
-                valor={dinero(datos.ticket_promedio)}
-                nota={
-                  Math.abs(datos.ticket_mediano - datos.ticket_promedio) > 0.01
-                    ? `el cliente típico gastó ${dinero(datos.ticket_mediano)}`
-                    : undefined
-                }
-              />
-            </div>
-
-            {datos.insights.length > 0 && (
-              <div className="space-y-2">
-                <h2 className="font-semibold flex items-center gap-2">
-                  <Icono nombre="chispa" size={17} className="text-acento-600" /> Análisis del negocio
-                  {/* Los avisos los redacta el servidor y sus cifras van en
-                      dolares, que es la moneda en que el negocio lleva sus
-                      numeros. Se dice aqui para que no parezcan la misma
-                      moneda que las tarjetas de arriba. */}
-                  {sufijo !== 'USD' && (
-                    <span className="text-xs font-normal text-neutral-400">· cifras en dólares</span>
-                  )}
-                </h2>
-                <Lecturas items={datos.insights} />
-              </div>
-            )}
-
-            <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-              <h2 className="font-semibold mb-1">De dónde sale la ganancia</h2>
-              <p className="text-xs text-neutral-500 mb-3">
-                Los mismos números del Estado de Resultados en Contabilidad.
-              </p>
-              <Linea dinero={dinero} etiqueta="Ventas cobradas" monto={datos.ventas} />
-              {datos.iva_cobrado > 0 && (
-                <>
-                  {/* El IVA entra por caja pero se le debe al SENIAT: contarlo
-                      como ingreso inflaba la ganancia mostrada. */}
-                  <Linea dinero={dinero} etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
-                  <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
-                </>
-              )}
-              <Linea dinero={dinero} etiqueta="Costo de insumos" monto={-datos.costo_insumos} />
-              <Linea
-                dinero={dinero}
-                etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
-                monto={datos.ganancia_bruta}
-                subtotal
-              />
-              <Linea dinero={dinero} etiqueta="Gastos, mermas y faltantes" monto={-datos.gastos} />
-              <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
-              {(datos.pedidos_anulados > 0 || datos.devoluciones > 0) && (
-                <p className="text-xs text-aviso-700 mt-3 bg-aviso-50 rounded-lg px-3 py-2">
-                  {datos.pedidos_anulados > 0 && (
-                    <>
-                      Se anularon {datos.pedidos_anulados} pedido(s) por{' '}
-                      {dinero(datos.valor_anulado)} que no llegaron a venderse.
-                    </>
-                  )}
-                  {datos.devoluciones > 0 && (
-                    <>
-                      {datos.pedidos_anulados > 0 && ' '}
-                      {datos.devoluciones} venta(s) por {dinero(datos.valor_devuelto)} fueron
-                      devueltas por el cliente y ya no cuentan arriba.
-                    </>
-                  )}
-                </p>
-              )}
-            </div>
-
-            {datos.ventas > 0 && (
-              <Facturacion datos={datos} dinero={dinero} />
-            )}
-
-            {datos.serie.length > 0 && (
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-4">
-                  Ventas por {datos.granularidad} · {sufijo}
-                </h2>
-                <div className="flex items-end gap-1.5 h-40 overflow-x-auto">
-                  {datos.serie.map((punto, i) => {
-                    const alturaPct = maxVenta > 0 ? (punto.ventas / maxVenta) * 100 : 0
-                    return (
-                      <div
-                        key={punto.etiqueta}
-                        className="group flex-1 min-w-[28px] flex flex-col items-center justify-end h-full gap-1 cursor-default"
-                        title={`${punto.etiqueta}: ${dinero(punto.ventas)} en ${punto.pedidos} pedidos`}
-                      >
-                        <span className="text-[10px] text-neutral-500 tabular-nums">
-                          {/* Sin simbolo: no cabe uno por barra, y ya lo dice el titulo. */}
-                          {punto.ventas > 0 ? fmtNum(punto.ventas, 0) : ''}
-                        </span>
-                        <div
-                          className="vp-barra w-full bg-neutral-900 rounded-t-md min-h-[2px] transition-colors group-hover:bg-acento-500"
-                          style={{ height: `${alturaPct}%`, animationDelay: `${Math.min(i * 18, 400)}ms` }}
-                        />
-                        <span className="text-[10px] text-neutral-500 whitespace-nowrap">
-                          {punto.etiqueta}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-2">Cómo te pagaron</h2>
-                {Object.entries(datos.por_metodo_pago).map(([metodo, monto]) => (
-                  <div key={metodo} className="flex justify-between text-sm py-1">
-                    <span className="text-neutral-600">{etiquetaMetodo(metodo)}</span>
-                    <span className="font-medium tabular-nums">{dinero(monto)}</span>
-                  </div>
-                ))}
-                {Object.keys(datos.por_metodo_pago).length === 0 && (
-                  <p className="text-neutral-400 text-sm">Sin cobros en el período.</p>
-                )}
-              </div>
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-2">Pedidos anulados</h2>
-                <p className="text-3xl font-bold tabular-nums">{datos.pedidos_anulados}</p>
-                <p className="text-xs text-neutral-500 mt-1">
-                  Si este número crece, revisa qué está fallando al tomar los pedidos.
-                </p>
-              </div>
-            </div>
-              </>
-            )}
+            {seccion === 'ritmo' && <Ritmo datos={datos} dinero={dinero} corto={corto} />}
 
             {seccion === 'productos' && (
-              <>
-            {datos.top_productos.length > 0 && (
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-3">Qué se vendió</h2>
-                <Tabla orden={ordenProductos} glosario="productos">
-                <table className="w-full text-sm">
-                  <thead className="text-neutral-500 text-xs uppercase">
-                    <tr>
-                      <Th clave="producto" className="py-2 px-0">Producto</Th>
-                      <Th clave="uds" alinear="derecha" className="py-2 px-0">Uds</Th>
-                      <Th clave="ingresos" alinear="derecha" className="py-2 px-0">Ingresos</Th>
-                      <Th clave="ganancia" alinear="derecha" className="py-2 px-0">Ganancia</Th>
-                      <Th clave="margen" alinear="derecha" className="py-2 px-0">Margen</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ordenProductos.ordenar(datos.top_productos).map((p) => (
-                      <tr key={p.nombre} className="border-t border-neutral-100">
-                        <td className="py-2 font-medium">
-                          {p.nombre}
-                          {p.sin_receta && (
-                            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
-                              sin receta
-                            </span>
-                          )}
-                        </td>
-                        <td className="text-right py-2 tabular-nums">{p.unidades}</td>
-                        <td className="text-right py-2 tabular-nums">{dinero(p.ingresos)}</td>
-                        {/* Sin receta no hay costo, asi que la ganancia seria
-                            todo el ingreso y el margen 100%: mostrarlos como
-                            numeros validos hacia pasar por producto estrella
-                            justo al que no se sabe cuanto cuesta. */}
-                        <td className="text-right py-2 tabular-nums">
-                          {p.sin_receta ? (
-                            <span className="text-neutral-400">—</span>
-                          ) : (
-                            dinero(p.ganancia)
-                          )}
-                        </td>
-                        <td
-                          className={`text-right py-2 tabular-nums font-semibold ${
-                            p.sin_receta
-                              ? 'text-neutral-400'
-                              : p.margen_pct >= 50
-                                ? 'text-exito-600'
-                                : p.margen_pct >= 30
-                                  ? 'text-aviso-600'
-                                  : 'text-peligro-600'
-                          }`}
-                        >
-                          {p.sin_receta ? '?' : `${p.margen_pct.toFixed(0)}%`}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </Tabla>
-              </div>
-            )}
-              </>
+              <Productos datos={datos} dinero={dinero} corto={corto} orden={ordenProductos} />
             )}
 
             {seccion === 'combos' && <SeccionCombos combos={combos} fmt={fmt} />}
@@ -295,6 +104,485 @@ export default function Reportes() {
         )}
       </Pagina>
     </div>
+  )
+}
+
+type Dinero = (x: number, d?: number) => string
+
+// El backend etiqueta los dias en corto ("Sab") para que quepan bajo una
+// barra; en una frase se dice entero.
+const DIA_LARGO: Record<string, string> = {
+  Lun: 'lunes',
+  Mar: 'martes',
+  Mie: 'miércoles',
+  Jue: 'jueves',
+  Vie: 'viernes',
+  Sab: 'sábado',
+  Dom: 'domingo',
+}
+
+// ── Resumen ──────────────────────────────────────────────────────────────────
+
+function Resumen({
+  datos,
+  dinero,
+  corto,
+  sufijo,
+}: {
+  datos: ReporteResumen
+  dinero: Dinero
+  corto: (x: number) => string
+  sufijo: string
+}) {
+  const ant = datos.anterior
+  const vs = ant ? `vs ${ant.etiqueta}` : undefined
+  const mejor = datos.serie.reduce<(typeof datos.serie)[number] | null>(
+    (m, p) => (p.pedidos > 0 && (!m || p.ventas > m.ventas) ? p : m),
+    null,
+  )
+
+  return (
+    <>
+      {/* Cada cifra lleva su cambio contra el periodo anterior del mismo
+          tamaño. "Vendiste $400" no dice nada solo; "$400, 12% menos que la
+          semana pasada" si. */}
+      <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi
+          titulo="Ventas"
+          ayuda="kpi.ventas"
+          valor={dinero(datos.ventas)}
+          destacado
+          delta={ant && <Variacion pct={ant.cambio_ventas_pct} texto={vs} />}
+        />
+        <Kpi
+          titulo="Ganancia neta"
+          ayuda="kpi.ganancia_neta"
+          valor={dinero(datos.ganancia_neta)}
+          tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
+          destacado
+          delta={ant && <Variacion pct={ant.cambio_ganancia_pct} texto={vs} />}
+        />
+        <Kpi
+          titulo="Pedidos"
+          ayuda="kpi.pedidos"
+          valor={String(datos.pedidos)}
+          delta={ant && <Variacion pct={ant.cambio_pedidos_pct} texto={vs} />}
+        />
+        {/* La mediana va al lado del promedio a proposito: un solo pedido
+            grande (un catering) mueve el promedio a un numero que no gasta
+            ningun cliente, y el dueno decide sobre eso. */}
+        <Kpi
+          titulo="Ticket promedio"
+          ayuda="kpi.ticket_promedio"
+          valor={dinero(datos.ticket_promedio)}
+          delta={ant && <Variacion pct={ant.cambio_ticket_pct} texto={vs} />}
+          nota={
+            Math.abs(datos.ticket_mediano - datos.ticket_promedio) > 0.01
+              ? `el cliente típico gastó ${dinero(datos.ticket_mediano)}`
+              : undefined
+          }
+        />
+      </div>
+
+      {datos.insights.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="font-semibold flex items-center gap-2">
+            <Icono nombre="chispa" size={17} className="text-acento-600" /> Análisis del negocio
+            {/* Los avisos los redacta el servidor y sus cifras van en
+                dolares, que es la moneda en que el negocio lleva sus
+                numeros. Se dice aqui para que no parezcan la misma
+                moneda que las tarjetas de arriba. */}
+            {sufijo !== 'USD' && (
+              <span className="text-xs font-normal text-neutral-400">· cifras en dólares</span>
+            )}
+          </h2>
+          <Lecturas items={datos.insights} />
+        </div>
+      )}
+
+      {datos.serie.length > 0 && (
+        <Seccion
+          titulo={`Ventas por ${datos.granularidad} · ${sufijo}`}
+          ayuda={
+            ant
+              ? `La línea punteada es ${ant.etiqueta}, tramo a tramo: la misma hora, el mismo día de la semana.`
+              : undefined
+          }
+        >
+          <GraficoLineas
+            alto={210}
+            etiquetas={datos.serie.map((p) => p.etiqueta)}
+            formato={corto}
+            formatoDetalle={(n) => dinero(n)}
+            series={[
+              {
+                nombre: 'Este período',
+                color: 'var(--color-neutral-900)',
+                valores: datos.serie.map((p) => p.ventas),
+                relleno: true,
+              },
+              ...(datos.serie_anterior.length === datos.serie.length && ant
+                ? [
+                    {
+                      nombre: `${ant.etiqueta[0].toUpperCase()}${ant.etiqueta.slice(1)}`,
+                      color: 'var(--color-neutral-400)',
+                      valores: datos.serie_anterior.map((p) => p.ventas),
+                      punteada: true,
+                    },
+                  ]
+                : []),
+            ]}
+            pie={
+              mejor
+                ? `mejor tramo: ${mejor.etiqueta}, ${dinero(mejor.ventas)} en ${mejor.pedidos} pedido(s)`
+                : undefined
+            }
+          />
+        </Seccion>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+          <h2 className="font-semibold mb-1">De dónde sale la ganancia</h2>
+          <p className="text-xs text-neutral-500 mb-3">
+            Los mismos números del Estado de Resultados en Contabilidad.
+          </p>
+          {/* La barra de arriba es la misma cuenta de abajo, en proporcion:
+              cuanto de cada dolar vendido se va en insumos, cuanto en gastos
+              y cuanto queda. */}
+          {datos.ventas > 0 && (
+            <div className="mb-3">
+              <BarrasApiladas
+                formato={dinero}
+                filas={[
+                  {
+                    nombre: 'Cada venta',
+                    partes: [
+                      { nombre: 'Insumos', valor: datos.costo_insumos, color: 'var(--color-neutral-400)' },
+                      { nombre: 'Gastos y mermas', valor: datos.gastos, color: 'var(--color-aviso-500)' },
+                      ...(datos.iva_cobrado > 0
+                        ? [{ nombre: 'IVA (del SENIAT)', valor: datos.iva_cobrado, color: 'var(--color-neutral-300)' }]
+                        : []),
+                      {
+                        nombre: datos.ganancia_neta >= 0 ? 'Ganancia' : 'Pérdida',
+                        valor: Math.abs(datos.ganancia_neta),
+                        color: datos.ganancia_neta >= 0 ? 'var(--color-exito-500)' : 'var(--color-peligro-500)',
+                      },
+                    ],
+                  },
+                ]}
+                leyenda={[
+                  { nombre: 'Insumos', color: 'var(--color-neutral-400)' },
+                  { nombre: 'Gastos y mermas', color: 'var(--color-aviso-500)' },
+                  ...(datos.iva_cobrado > 0 ? [{ nombre: 'IVA', color: 'var(--color-neutral-300)' }] : []),
+                  {
+                    nombre: datos.ganancia_neta >= 0 ? 'Ganancia' : 'Pérdida',
+                    color: datos.ganancia_neta >= 0 ? 'var(--color-exito-500)' : 'var(--color-peligro-500)',
+                  },
+                ]}
+              />
+            </div>
+          )}
+          <Linea dinero={dinero} etiqueta="Ventas cobradas" monto={datos.ventas} />
+          {datos.iva_cobrado > 0 && (
+            <>
+              {/* El IVA entra por caja pero se le debe al SENIAT: contarlo
+                  como ingreso inflaba la ganancia mostrada. */}
+              <Linea dinero={dinero} etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
+              <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
+            </>
+          )}
+          <Linea dinero={dinero} etiqueta="Costo de insumos" monto={-datos.costo_insumos} />
+          <Linea
+            dinero={dinero}
+            etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
+            monto={datos.ganancia_bruta}
+            subtotal
+          />
+          <Linea dinero={dinero} etiqueta="Gastos, mermas y faltantes" monto={-datos.gastos} />
+          <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
+          {ant && (
+            <p className="text-xs text-neutral-500 mt-2">
+              {ant.etiqueta[0].toUpperCase()}
+              {ant.etiqueta.slice(1)}: {dinero(ant.ventas)} en ventas y {dinero(ant.ganancia_neta)} de
+              ganancia neta.
+            </p>
+          )}
+          {(datos.pedidos_anulados > 0 || datos.devoluciones > 0) && (
+            <p className="text-xs text-aviso-700 mt-3 bg-aviso-50 rounded-lg px-3 py-2">
+              {datos.pedidos_anulados > 0 && (
+                <>
+                  Se anularon {datos.pedidos_anulados} pedido(s) por{' '}
+                  {dinero(datos.valor_anulado)} que no llegaron a venderse.
+                </>
+              )}
+              {datos.devoluciones > 0 && (
+                <>
+                  {datos.pedidos_anulados > 0 && ' '}
+                  {datos.devoluciones} venta(s) por {dinero(datos.valor_devuelto)} fueron
+                  devueltas por el cliente y ya no cuentan arriba.
+                </>
+              )}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <Seccion titulo="Cómo te pagaron" ayuda="Por pago, no por pedido: una venta mixta se reparte.">
+            <GraficoDona
+              formato={dinero}
+              centro={{ valor: corto(datos.ventas), texto: 'cobrado' }}
+              partes={Object.entries(datos.por_metodo_pago)
+                .sort(([, a], [, b]) => b - a)
+                .map(([metodo, monto]) => ({ nombre: etiquetaMetodo(metodo), valor: monto }))}
+            />
+          </Seccion>
+          {datos.por_categoria.length > 0 && (
+            <Seccion titulo="Qué parte es comida, bebida, envíos" ayuda="Por la categoría de cada producto en el menú.">
+              <GraficoDona
+                formato={dinero}
+                centro={{ valor: String(datos.por_categoria.length), texto: 'categorías' }}
+                partes={datos.por_categoria.map((g, i) => ({
+                  nombre: g.nombre,
+                  valor: g.ventas,
+                  detalle: `${g.pedidos} pedidos`,
+                  color: PALETA_CATEGORICA[(i + 1) % PALETA_CATEGORICA.length],
+                }))}
+              />
+            </Seccion>
+          )}
+        </div>
+      </div>
+
+      {datos.ventas > 0 && <Facturacion datos={datos} dinero={dinero} />}
+    </>
+  )
+}
+
+// ── Cuando se vende ──────────────────────────────────────────────────────────
+
+/**
+ * Las preguntas de turnos y compras: a que hora entra la gente, que dia de la
+ * semana es el fuerte. Con un solo dia no hay mapa que dibujar, y se dice.
+ */
+function Ritmo({ datos, dinero, corto }: { datos: ReporteResumen; dinero: Dinero; corto: (x: number) => string }) {
+  const [medida, setMedida] = useState<'pedidos' | 'ventas'>('pedidos')
+
+  if (datos.calor.length === 0 && datos.por_dia_semana.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <h2 className="font-semibold mb-1">Cuándo se vende</h2>
+        <p className="text-sm text-neutral-500">
+          {datos.pedidos > 0
+            ? 'Con un solo día la pregunta la responde el gráfico de horas del Resumen. Elige una semana o un mes arriba para ver qué días y horas concentran la venta.'
+            : 'Todavía no hay ventas en este período.'}
+        </p>
+      </div>
+    )
+  }
+
+  const conVentas = datos.por_dia_semana.filter((d) => d.pedidos > 0)
+  const mejorDia = conVentas.reduce<(typeof conVentas)[number] | null>(
+    (m, d) => (!m || (d.promedio ?? 0) > (m.promedio ?? 0) ? d : m),
+    null,
+  )
+  const porHora = new Map<number, { pedidos: number; ventas: number }>()
+  for (const c of datos.calor) {
+    const h = porHora.get(c.hora) ?? { pedidos: 0, ventas: 0 }
+    h.pedidos += c.pedidos
+    h.ventas += c.ventas
+    porHora.set(c.hora, h)
+  }
+  const horas = [...porHora.entries()].sort(([a], [b]) => a - b)
+  const horaPico = horas.reduce<[number, { pedidos: number; ventas: number }] | null>(
+    (m, h) => (!m || h[1].pedidos > m[1].pedidos ? h : m),
+    null,
+  )
+
+  return (
+    <>
+      {datos.calor.length > 0 && (
+        <Seccion
+          titulo="A qué hora entran los clientes"
+          ayuda="Cada casilla es un día de la semana a una hora, sumando todo el período. Más oscuro, más pedidos. La hora es la de tomar el pedido, no la de cobrarlo."
+          accion={
+            <div className="flex rounded-lg border border-neutral-200 overflow-hidden text-xs">
+              {(['pedidos', 'ventas'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMedida(m)}
+                  className={`px-2.5 py-1 ${medida === m ? 'bg-neutral-900 text-white' : 'text-neutral-600'}`}
+                >
+                  {m === 'pedidos' ? 'Pedidos' : 'Ventas'}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          <MapaCalor celdas={datos.calor} medida={medida} formato={dinero} />
+          {horaPico && (
+            <p className="text-xs text-neutral-500 mt-3">
+              La hora con más pedidos es las {horaPico[0]}:00, con {horaPico[1].pedidos} en el período.
+            </p>
+          )}
+        </Seccion>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {datos.por_dia_semana.length > 0 && (
+          <Seccion
+            titulo="Qué día vendes más"
+            ayuda={
+              <Ayuda explica={explicar('kpi.dia_tipico')} titulo="Día típico">
+                Lo que vende un día típico de cada uno, no la suma de todos.
+              </Ayuda>
+            }
+          >
+            <GraficoBarras
+              formato={corto}
+              datos={datos.por_dia_semana.map((d) => ({
+                etiqueta: d.nombre,
+                valor: d.promedio ?? 0,
+                detalle: `${d.pedidos} pedidos en total`,
+              }))}
+              resaltar={(d) => d.etiqueta === mejorDia?.nombre}
+            />
+            {mejorDia && conVentas.length > 1 && (
+              <p className="text-xs text-neutral-500 mt-2">
+                El {DIA_LARGO[mejorDia.nombre] ?? mejorDia.nombre.toLowerCase()} típico vende{' '}
+                {dinero(mejorDia.promedio ?? 0)}.
+              </p>
+            )}
+          </Seccion>
+        )}
+        {horas.length > 0 && (
+          <Seccion titulo="Pedidos por hora" ayuda="Sumando todos los días del período.">
+            <GraficoBarras
+              formato={(n) => `${n}`}
+              datos={horas.map(([h, v]) => ({
+                etiqueta: `${h}`,
+                valor: v.pedidos,
+                detalle: dinero(v.ventas),
+              }))}
+              resaltar={(d) => horaPico != null && d.etiqueta === `${horaPico[0]}`}
+            />
+          </Seccion>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ── Que se vendio ────────────────────────────────────────────────────────────
+
+function Productos({
+  datos,
+  dinero,
+  corto,
+  orden,
+}: {
+  datos: ReporteResumen
+  dinero: Dinero
+  corto: (x: number) => string
+  orden: ReturnType<typeof useOrden<ProductoVendido>>
+}) {
+  if (datos.top_productos.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <p className="text-sm text-neutral-400">Todavía no se vendió nada en este período.</p>
+      </div>
+    )
+  }
+  const conCosto = datos.top_productos.filter((p) => !p.sin_receta)
+
+  return (
+    <>
+      {/* La barra parte cada producto en lo que costo y lo que dejo. Lo que
+          vende mucho y deja poco se ve enseguida: barra larga, casi toda
+          gris. */}
+      <Seccion
+        titulo="Cuánto vende y cuánto deja cada producto"
+        ayuda="La barra completa es el ingreso; la parte verde, lo que quedó después de los insumos. Los productos sin receta no se pueden partir."
+      >
+        <BarrasApiladas
+          formato={dinero}
+          leyenda={[
+            { nombre: 'Costo de insumos', color: 'var(--color-neutral-300)' },
+            { nombre: 'Ganancia', color: 'var(--color-exito-500)' },
+            { nombre: 'Sin receta (costo desconocido)', color: 'var(--color-aviso-300)' },
+          ]}
+          filas={datos.top_productos.slice(0, 8).map((p) => ({
+            nombre: p.nombre,
+            detalle: p.sin_receta ? '?' : `${p.margen_pct.toFixed(0)}%`,
+            partes: p.sin_receta
+              ? [{ nombre: 'Ingreso (sin costo conocido)', valor: p.ingresos, color: 'var(--color-aviso-300)' }]
+              : [
+                  { nombre: 'Costo de insumos', valor: p.costo, color: 'var(--color-neutral-300)' },
+                  { nombre: 'Ganancia', valor: Math.max(p.ganancia, 0), color: 'var(--color-exito-500)' },
+                ],
+          }))}
+        />
+        {conCosto.length > 0 && (
+          <p className="text-xs text-neutral-500 mt-3">
+            En total, {corto(conCosto.reduce((s, p) => s + p.ingresos, 0))} vendidos con receta dejaron{' '}
+            {corto(conCosto.reduce((s, p) => s + p.ganancia, 0))} de ganancia bruta.
+          </p>
+        )}
+      </Seccion>
+
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <h2 className="font-semibold mb-3">Qué se vendió</h2>
+        <Tabla orden={orden} glosario="productos">
+          <table className="w-full text-sm">
+            <thead className="text-neutral-500 text-xs uppercase">
+              <tr>
+                <Th clave="producto" className="py-2 px-0">Producto</Th>
+                <Th clave="uds" alinear="derecha" className="py-2 px-0">Uds</Th>
+                <Th clave="ingresos" alinear="derecha" className="py-2 px-0">Ingresos</Th>
+                <Th clave="ganancia" alinear="derecha" className="py-2 px-0">Ganancia</Th>
+                <Th clave="margen" alinear="derecha" className="py-2 px-0">Margen</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {orden.ordenar(datos.top_productos).map((p) => (
+                <tr key={p.nombre} className="border-t border-neutral-100">
+                  <td className="py-2 font-medium">
+                    {p.nombre}
+                    {p.sin_receta && (
+                      <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
+                        sin receta
+                      </span>
+                    )}
+                  </td>
+                  <td className="text-right py-2 tabular-nums">{p.unidades}</td>
+                  <td className="text-right py-2 tabular-nums">{dinero(p.ingresos)}</td>
+                  {/* Sin receta no hay costo, asi que la ganancia seria
+                      todo el ingreso y el margen 100%: mostrarlos como
+                      numeros validos hacia pasar por producto estrella
+                      justo al que no se sabe cuanto cuesta. */}
+                  <td className="text-right py-2 tabular-nums">
+                    {p.sin_receta ? <span className="text-neutral-400">—</span> : dinero(p.ganancia)}
+                  </td>
+                  <td
+                    className={`text-right py-2 tabular-nums font-semibold ${
+                      p.sin_receta
+                        ? 'text-neutral-400'
+                        : p.margen_pct >= 50
+                          ? 'text-exito-600'
+                          : p.margen_pct >= 30
+                            ? 'text-aviso-600'
+                            : 'text-peligro-600'
+                    }`}
+                  >
+                    {p.sin_receta ? '?' : `${p.margen_pct.toFixed(0)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Tabla>
+      </div>
+    </>
   )
 }
 
@@ -409,6 +697,7 @@ function Kpi({
   destacado = false,
   tono,
   nota,
+  delta,
 }: {
   titulo: string
   valor: string
@@ -418,6 +707,8 @@ function Kpi({
   tono?: 'bueno' | 'malo'
   /** Aclaracion bajo el numero, cuando el numero solo puede enganar. */
   nota?: string
+  /** El cambio contra el periodo anterior, ya dibujado. */
+  delta?: React.ReactNode
 }) {
   const color = tono === 'malo' ? 'text-peligro-600' : tono === 'bueno' ? 'text-exito-600' : ''
   return (
@@ -430,6 +721,7 @@ function Kpi({
       <div className={`font-bold tabular-nums ${destacado ? 'text-2xl' : 'text-xl'} ${color}`}>
         {valor}
       </div>
+      {delta && <div className="mt-0.5">{delta}</div>}
       {nota && <div className="mt-0.5 text-[11px] leading-snug text-aviso-700">{nota}</div>}
     </div>
   )

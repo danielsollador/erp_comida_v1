@@ -12,6 +12,7 @@ services:
     environment:
       ERP_DATA_DIR: /data
       ERP_BACKUP_ON_STARTUP: "0"   # en dev no ensuciar con respaldos cada rato
+      ERP_SEMBRAR_DEMO: "1"        # menu de ejemplo si la base esta vacia (solo aqui)
       TZ: ${TZ:-America/Caracas}
     volumes:
       - ./backend/app:/app/app:ro   # editar en el host se refleja al instante

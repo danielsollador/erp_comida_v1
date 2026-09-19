@@ -263,6 +263,32 @@ export type Insight = {
   detalle: string
 }
 
+/** Una celda del mapa de calor: pedidos de ese dia de la semana a esa hora. */
+export type PuntoCalor = { dia: number; hora: number; pedidos: number; ventas: number }
+
+export type GrupoReporte = {
+  nombre: string
+  ventas: number
+  pedidos: number
+  /** Sobre las ventas del periodo. */
+  pct: number
+  /** Solo para dias de la semana: lo que vende ese dia TIPICO. */
+  promedio: number | null
+}
+
+/** El periodo inmediatamente anterior, del mismo tamaño. */
+export type Comparativa = {
+  etiqueta: string
+  ventas: number
+  pedidos: number
+  ticket_promedio: number
+  ganancia_neta: number
+  cambio_ventas_pct: number | null
+  cambio_pedidos_pct: number | null
+  cambio_ticket_pct: number | null
+  cambio_ganancia_pct: number | null
+}
+
 export type ReporteResumen = {
   periodo: string
   etiqueta: string
@@ -291,6 +317,14 @@ export type ReporteResumen = {
   serie: PuntoSerie[]
   top_productos: ProductoVendido[]
   insights: Insight[]
+  anterior: Comparativa | null
+  /** La serie del periodo anterior, alineada tramo a tramo con `serie`. */
+  serie_anterior: PuntoSerie[]
+  /** Vacio si el rango es de un solo dia. */
+  calor: PuntoCalor[]
+  por_categoria: GrupoReporte[]
+  /** Lunes a domingo. Vacio si el rango es de un solo dia. */
+  por_dia_semana: GrupoReporte[]
 }
 
 export type ActivoFijo = {
@@ -721,7 +755,24 @@ export type AnalisisTasa = {
   /** Lo que de eso se lleva la brecha al reponer comprando divisas. */
   costo_brecha_usd: number
   lecturas: Insight[]
+  /** Variacion promedio por dia calendario, y a donde llega en 30 dias si sigue igual. */
+  ritmo_diario_pct: number | null
+  proyeccion_30d: number | null
+  proyeccion_30d_pct: number | null
+  mayor_salto: SaltoTasa | null
+  cobrado_total_usd: number
+  cobrado_divisas_usd: number
+  /** Que parte de lo cobrado entro en bolivares: la parte expuesta a la brecha. */
+  exposicion_pct: number | null
+  por_metodo_bs: GrupoMonto[]
+  equivalencias: EquivalenciaTasa[]
+  /** Cuanto subieron los insumos en el mismo periodo, si hubo compras que lo digan. */
+  inflacion_insumos_pct: number | null
 }
+
+export type SaltoTasa = { fecha: string; de: number; a: number; pct: number }
+export type EquivalenciaTasa = { usd: number; bs_inicio: number; bs_fin: number }
+export type GrupoMonto = { nombre: string; monto: number; pct: number }
 
 export type PuntoTasa = {
   fecha: string

@@ -108,7 +108,21 @@ export default function POS() {
     refrescarPedidos()
     api.listarPuntosVenta().then(setPuntos).catch(() => {})
     const disconnect = connectWs(() => refrescarPedidos())
-    return disconnect
+    // Respaldo del websocket: si se cayo sin avisar, una comanda que cocina
+    // ya termino o anulo se quedaba pintada aqui como si siguiera en cocina.
+    // Cada minuto y solo con la pestaña visible.
+    const respaldo = setInterval(() => {
+      if (document.visibilityState === 'visible') refrescarPedidos()
+    }, 60000)
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') refrescarPedidos()
+    }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => {
+      disconnect()
+      clearInterval(respaldo)
+      document.removeEventListener('visibilitychange', alVolver)
+    }
   }, [])
 
   /**
@@ -126,9 +140,13 @@ export default function POS() {
       .then(([enCocina, listos]) => {
         const porId = new Map<number, Pedido>()
         for (const p of [...enCocina, ...listos]) porId.set(p.id, p)
-        const falta = (p: Pedido) => (p.items.some((i) => !i.preparado) ? 1 : 0)
+        // 0 = listo para cobrar, 1 = en cocina sin cobrar, 2 = cobrado y en
+        // cocina. Lo que le toca hacer a la caja va arriba; lo que solo se
+        // mira, abajo.
+        const peso = (p: Pedido) =>
+          p.items.some((i) => !i.preparado) ? (p.estado === 'pagado' ? 2 : 1) : 0
         setPedidosActivos(
-          [...porId.values()].sort((a, b) => falta(a) - falta(b) || a.numero - b.numero),
+          [...porId.values()].sort((a, b) => peso(a) - peso(b) || a.numero - b.numero),
         )
       })
       .catch(() => setPedidosActivos([]))
@@ -475,8 +493,15 @@ export default function POS() {
   // Lo que espera a que lo cobren va primero: es lo unico de esta pantalla que
   // le toca hacer a quien esta en la caja. Lo que sigue en cocina va debajo,
   // para verlo, no para actuar.
-  const cuantosEnCocina = pedidosActivos.filter((p) => p.items.some((i) => !i.preparado)).length
-  const cuantosPorCobrar = pedidosActivos.length - cuantosEnCocina
+  // Tres situaciones, tres colores. "En cocina" se parte en dos: la comanda
+  // que falta cobrar (la caja todavia tiene algo que hacer con ella) y la que
+  // ya se cobro y solo espera a que salga la comida (no hay nada que hacer,
+  // salvo mirar). Con un solo color para las dos, la cajera tenia que leer
+  // cada tarjeta para saber a cual le debia plata el cliente.
+  const faltaCocina = (p: Pedido) => p.items.some((i) => !i.preparado)
+  const cuantosPorCobrar = pedidosActivos.filter((p) => !faltaCocina(p)).length
+  const cuantosEnCocina = pedidosActivos.filter((p) => faltaCocina(p) && p.estado !== 'pagado').length
+  const cuantosCobradosEnCocina = pedidosActivos.filter((p) => faltaCocina(p) && p.estado === 'pagado').length
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -555,12 +580,15 @@ export default function POS() {
             </h2>
             {/* El color de cada tarjeta dice donde esta el pedido; esto es la
                 leyenda, para no tener que aprendersela. */}
-            <span className="text-xs text-neutral-400 flex items-center gap-3">
+            <span className="text-xs text-neutral-400 flex items-center gap-3 flex-wrap">
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-exito-500" /> {cuantosPorCobrar} por cobrar
+                <span className="w-2.5 h-2.5 rounded-full bg-exito-500" /> {cuantosPorCobrar} listos, falta cobrar
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-aviso-500" /> {cuantosEnCocina} en cocina
+                <span className="w-2.5 h-2.5 rounded-full bg-aviso-500" /> {cuantosEnCocina} en cocina sin cobrar
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-neutral-400" /> {cuantosCobradosEnCocina} cobrados, en cocina
               </span>
             </span>
           </div>
@@ -572,13 +600,19 @@ export default function POS() {
               const falta = pedido.items.some((i) => !i.preparado)
               const preparando = enPreparacion(pedido)
               const yaPagado = pedido.estado === 'pagado'
-              const marco = preparando
-                ? 'border-acento-400 bg-acento-50 ring-1 ring-acento-500/30'
+              // Verde: hay que cobrarlo. Ambar: en cocina y todavia sin
+              // cobrar. Gris: ya se cobro, solo espera la comida. Que alguien
+              // la este preparando se dice con un anillo cobre ENCIMA del
+              // color, no en vez de el: si lo reemplazara, un pedido cobrado y
+              // uno sin cobrar volverian a verse iguales mientras se cocinan.
+              const marco = yaPagado
+                ? 'border-neutral-300 bg-neutral-100/70'
                 : falta
                   ? 'border-aviso-400 bg-aviso-500/5'
                   : 'border-exito-400 bg-exito-500/5'
+              const anillo = preparando ? 'ring-2 ring-acento-500/50' : ''
               return (
-              <div key={pedido.id} className={`rounded-2xl shadow-sm border-2 p-4 ${marco}`}>
+              <div key={pedido.id} className={`rounded-2xl shadow-sm border-2 p-4 ${marco} ${anillo}`}>
                 <div className="flex justify-between items-center mb-2 gap-2">
                   <span className="font-bold text-lg">#{pedido.numero}</span>
                   <span className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -594,17 +628,16 @@ export default function POS() {
                         {pedido.cocinando_por ? `${pedido.cocinando_por} la prepara` : 'En preparación'}
                       </span>
                     )}
-                    {yaPagado && (
-                      <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-neutral-200 text-neutral-600">
-                        Pagado
-                      </span>
-                    )}
                     <span
                       className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                        falta ? 'bg-aviso-100 text-aviso-700' : 'bg-exito-100 text-exito-700'
+                        yaPagado
+                          ? 'bg-neutral-200 text-neutral-700'
+                          : falta
+                            ? 'bg-aviso-100 text-aviso-700'
+                            : 'bg-exito-100 text-exito-700'
                       }`}
                     >
-                      {falta ? 'En cocina' : 'Listo para cobrar'}
+                      {yaPagado ? 'Cobrado · en cocina' : falta ? 'En cocina' : 'Cocina terminó · falta cobrar'}
                     </span>
                   </span>
                 </div>
