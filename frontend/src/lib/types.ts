@@ -726,8 +726,11 @@ export type LineaFactura = {
   ingrediente_nombre: string
   unidad: string
   cantidad: number
+  /** Lo que dice el papel del proveedor, sin repartirle el recargo ni el descuento. */
   costo_unitario: number
   subtotal: number
+  /** Si ESTE renglón pagó IVA. Se congela al cargar la factura. */
+  exento: boolean
 }
 
 export type FacturaCompra = {
@@ -738,7 +741,12 @@ export type FacturaCompra = {
   fecha: string
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
   forma_pago: 'Efectivo' | 'Banco' | 'Credito'
+  /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
   base_imponible: number
+  /** Lo que el proveedor sumó (flete, recargo por crédito) sobre el total. */
+  recargo: number
+  /** Lo que el proveedor rebajó (volumen, pronto pago). */
+  descuento: number
   iva: number
   descripcion: string
   total: number

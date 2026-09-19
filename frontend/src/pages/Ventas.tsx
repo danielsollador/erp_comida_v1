@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import EditarPedido from '../components/EditarPedido'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { useSeccion } from '../components/Secciones'
@@ -9,7 +10,14 @@ import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { etiquetaMetodo } from '../lib/pagos'
-import type { EstadoVenta, ListaVentas, PuntoSerie, ResumenVentas, VentaFila } from '../lib/types'
+import type {
+  EstadoVenta,
+  ListaVentas,
+  Pedido,
+  PuntoSerie,
+  ResumenVentas,
+  VentaFila,
+} from '../lib/types'
 
 /**
  * VENTAS: cada venta del periodo, que paso con ella, y los numeros de arriba.
@@ -65,6 +73,32 @@ export default function Ventas() {
   // Para que rango llegaron los datos: si no es el de ahora, se esta cargando.
   const [cargado, setCargado] = useState('')
   const cargando = cargado !== `${rango.desde}/${rango.hasta}`
+  // Corregir y devolver vivian en el punto de venta, en la lista de "ultimas
+  // ventas". Esa lista se quito -- el mostrador muestra ahora solo lo que esta
+  // vivo en el piso -- y estas dos acciones se vinieron con el historial, que
+  // es donde de verdad se busca una venta de hace dos horas.
+  const [editando, setEditando] = useState<Pedido | null>(null)
+  const dialogoVentas = useDialogo()
+
+  async function abrirEdicion(id: number) {
+    try {
+      // Abrir toma el candado en el servidor: mientras este cuadro este
+      // abierto, la cocina ve esa comanda bloqueada.
+      setEditando(await api.abrirEdicion(id))
+    } catch (e) {
+      await dialogoVentas.avisar({
+        titulo: 'No se puede corregir',
+        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
+        tono: 'ojo',
+      })
+    }
+  }
+
+  function cerrarEdicion() {
+    if (editando) api.soltarEdicion(editando.id).catch(() => {})
+    setEditando(null)
+    cargar()
+  }
 
   function cargar() {
     return Promise.all([api.ventas(rango), api.resumenVentas(rango)]).then(([l, r]) => {
@@ -92,11 +126,29 @@ export default function Ventas() {
         {cargando && !lista && <p className="text-neutral-400 text-sm">Cargando...</p>}
 
         {seccion === 'historial' && lista && (
-          <Historial lista={lista} etiqueta={etiquetaRango(rango)} alFacturar={cargar} />
+          <Historial
+            lista={lista}
+            etiqueta={etiquetaRango(rango)}
+            recargar={cargar}
+            alEditar={abrirEdicion}
+          />
         )}
         {seccion === 'resumen' && resumen && <Resumen r={resumen} nombre={nombreRango(rango)} />}
         {seccion === 'perdidas' && resumen && lista && <Perdidas r={resumen} lista={lista} />}
       </Pagina>
+
+      {/* El mismo cuadro que abre el punto de venta: una sola version, para
+          que no haya dos reglas distintas sobre cuando se pide la clave. */}
+      {editando && (
+        <EditarPedido
+          pedido={editando}
+          onGuardado={() => {
+            setEditando(null)
+            cargar()
+          }}
+          onCerrar={cerrarEdicion}
+        />
+      )}
     </div>
   )
 }
@@ -106,11 +158,13 @@ export default function Ventas() {
 function Historial({
   lista,
   etiqueta,
-  alFacturar,
+  recargar,
+  alEditar,
 }: {
   lista: ListaVentas
   etiqueta: string
-  alFacturar: () => void
+  recargar: () => void
+  alEditar: (id: number) => void
 }) {
   const { fmtCongelado } = useMoneda()
   const [estado, setEstado] = useState<EstadoVenta | 'todas'>('todas')
@@ -244,7 +298,8 @@ function Historial({
                     alTocar={() => setAbierta(desplegada ? null : v.id)}
                     total={fmtCongelado(v.total, v.tasa_bcv)}
                     fmtCongelado={fmtCongelado}
-                    alFacturar={alFacturar}
+                    recargar={recargar}
+                    alEditar={alEditar}
                   />
                 )
               })}
@@ -263,7 +318,8 @@ function FilaVenta({
   alTocar,
   total,
   fmtCongelado,
-  alFacturar,
+  recargar,
+  alEditar,
 }: {
   v: VentaFila
   apagada: boolean
@@ -271,7 +327,8 @@ function FilaVenta({
   alTocar: () => void
   total: string
   fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
-  alFacturar: () => void
+  recargar: () => void
+  alEditar: (id: number) => void
 }) {
   return (
     <>
@@ -315,7 +372,7 @@ function FilaVenta({
       {desplegada && (
         <tr className="border-t border-neutral-100 bg-neutral-50/60">
           <td colSpan={7} className="px-4 py-3">
-            <DetalleVenta v={v} fmtCongelado={fmtCongelado} alFacturar={alFacturar} />
+            <DetalleVenta v={v} fmtCongelado={fmtCongelado} recargar={recargar} alEditar={alEditar} />
           </td>
         </tr>
       )}
@@ -335,11 +392,13 @@ function Dato({ titulo, children }: { titulo: string; children: ReactNode }) {
 function DetalleVenta({
   v,
   fmtCongelado,
-  alFacturar,
+  recargar,
+  alEditar,
 }: {
   v: VentaFila
   fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
-  alFacturar: () => void
+  recargar: () => void
+  alEditar: (id: number) => void
 }) {
   const dialogo = useDialogo()
   const dinero = (x: number) => fmtCongelado(x, v.tasa_bcv)
@@ -356,7 +415,7 @@ function DetalleVenta({
     if (!r || !r.numero.trim()) return
     try {
       await api.facturarPedido(v.id, r.numero.trim())
-      alFacturar()
+      recargar()
     } catch (e) {
       await dialogo.avisar({
         titulo: 'No se pudo facturar',
@@ -364,6 +423,50 @@ function DetalleVenta({
       })
     }
   }
+  // El cliente trajo la comida de vuelta. Distinto de anular: aca ya hubo
+  // venta, asi que hay que deshacerla entera -- el ingreso, el IVA y la plata.
+  async function devolver() {
+    const r = await dialogo.pedir({
+      titulo: `Devolver la venta #${v.numero}`,
+      texto:
+        `Se le regresan ${dinero(v.total)} al cliente y la venta se revierte entera: deja de ` +
+        'contar como ingreso y deja de deber IVA.',
+      campos: [
+        { nombre: 'motivo', etiqueta: 'Qué pasó', valor: 'La comida estaba mala' },
+        // Define si el costo vuelve al inventario o se reconoce como merma.
+        {
+          nombre: 'recuperable',
+          etiqueta: 'La comida se puede volver a vender',
+          tipo: 'opciones',
+          opciones: [
+            { valor: 'no', texto: 'No, se bota (se registra como merma)' },
+            { valor: 'si', texto: 'Sí, vuelve al inventario' },
+          ],
+        },
+        // Sin la nota de credito la factura no puede salir del Libro de Ventas.
+        ...(v.facturado
+          ? [{ nombre: 'nc', etiqueta: `Número de la nota de crédito (factura ${v.numero_factura})` }]
+          : []),
+      ],
+      aceptar: 'Devolver',
+      peligro: true,
+    })
+    if (!r) return
+    try {
+      await api.devolverPedido(v.id, {
+        recuperable: r.recuperable === 'si',
+        nota_credito: v.facturado ? r.nc : undefined,
+        motivo: r.motivo,
+      })
+      recargar()
+    } catch (e) {
+      await dialogo.avisar({
+        titulo: 'No se pudo devolver',
+        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
+      })
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-4 text-neutral-800">
       <div>
@@ -432,6 +535,35 @@ function DetalleVenta({
             >
               Facturar ahora
             </button>
+          </Dato>
+        )}
+        {/* Corregir cambia los renglones de la venta; devolver la deshace
+            entera. Estaban en el punto de venta y se vinieron con el historial,
+            que es donde se busca una venta que ya salio del mostrador. */}
+        {(v.estado === 'cobrada' || v.estado === 'fiada') && (
+          <Dato titulo="Corregir">
+            <span className="flex gap-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  alEditar(v.id)
+                }}
+                className="text-acento-600 hover:text-acento-700 font-medium text-sm"
+                title="Cambiar los renglones. Si el monto cambia, pide clave."
+              >
+                Editar renglones
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  devolver()
+                }}
+                className="text-aviso-700 hover:text-aviso-800 font-medium text-sm"
+                title="El cliente trajo la comida de vuelta"
+              >
+                Devolver
+              </button>
+            </span>
           </Dato>
         )}
         {v.estado === 'anulada' && <Dato titulo="Anulada por">{v.anulado_por || '—'}</Dato>}

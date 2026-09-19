@@ -498,6 +498,13 @@ class FacturaCompra(Base):
     forma_pago = Column(String, default="Efectivo")  # Efectivo|Banco|Credito
     base_imponible = Column(Float, nullable=False)
     iva = Column(Float, default=0)
+    # Lo que el proveedor suma o rebaja sobre el total de la factura: flete,
+    # recargo por pagar a credito, descuento por volumen o por pronto pago.
+    # Se guardan aparte de la base aunque ya esten aplicados en ella, porque
+    # si no, dentro de un mes nadie puede explicar por que la suma de los
+    # renglones no da el total que se pago.
+    recargo = Column(Float, default=0)
+    descuento = Column(Float, default=0)
     descripcion = Column(String, default="")
     # Solo relevante para forma_pago="Credito": Efectivo/Banco se dan por
     # pagadas al momento de cargarlas, porque la plata ya salio ahi mismo.
@@ -551,6 +558,11 @@ class FacturaCompraItem(Base):
     ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     cantidad = Column(Float, nullable=False)
     costo_unitario = Column(Float, nullable=False)  # precio pagado por 1 unidad de medida, SIN IVA
+    # Si ESTE renglon pago IVA. Se congela en la factura en vez de leerse del
+    # insumo cada vez: la misma mercancia puede venir exenta de un proveedor y
+    # gravada de otro, y cambiarle la marca al insumo el mes que viene no
+    # puede reescribir el Libro de Compras de este mes.
+    exento = Column(Boolean, default=False)
 
     factura = relationship("FacturaCompra", back_populates="items")
     ingrediente = relationship("Ingrediente")
