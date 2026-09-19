@@ -25,6 +25,9 @@ const CATEGORIAS = [
 ]
 const FORMAS_PAGO = ['Efectivo', 'Efectivo $', 'Banco', 'Credito']
 
+/** Como se lee una categoria guardada. Es el mismo mapa, al reves. */
+const TEXTO_CATEGORIA = Object.fromEntries(CATEGORIAS.map((c) => [c.valor, c.texto]))
+
 type Linea = {
   ingrediente_id: number
   cantidad: string
@@ -575,7 +578,7 @@ export default function Compras() {
                         ))}
                       </ul>
                     ) : (
-                      f.categoria
+                      TEXTO_CATEGORIA[f.categoria] ?? f.categoria
                     )}
                   </td>
                   <td className="text-right p-3 tabular-nums">
