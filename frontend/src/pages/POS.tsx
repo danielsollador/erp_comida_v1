@@ -6,7 +6,7 @@ import { api, connectWs } from '../lib/api'
 import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { colorCategoria } from '../lib/theme'
-import { etiquetaMetodo } from '../lib/pagos'
+import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import type {
   Categoria,
   Pedido,
@@ -16,23 +16,10 @@ import type {
   Variante,
 } from '../lib/types'
 
-// Las mismas que reconoce la contabilidad; cualquier otra cosa la rechaza el
-// backend en vez de mandarla a Caja por defecto. Bolivares y divisas van
-// separados porque son dos gavetas fisicas distintas y se cuentan aparte.
-const METODOS_PAGO = [
-  'Efectivo Bs',
-  'Efectivo $',
-  'Pago movil',
-  'Punto de venta',
-  'Tarjeta',
-  'Transferencia',
-  'Zelle',
-]
-// Todo lo que no es un billete deja un numero de confirmacion en alguna
-// parte, y el backend lo exige (ver contabilidad.METODOS_CON_REFERENCIA).
-const METODOS_CON_REFERENCIA = new Set(
-  METODOS_PAGO.filter((m) => !m.startsWith('Efectivo')),
-)
+// METODOS_PAGO y METODOS_CON_REFERENCIA viven en lib/pagos porque la regla no
+// es del punto de venta: Caja y Ventas tambien aplican pagos y tenian su
+// propia lista, que fue justo como el cobro a credito termino aceptando un
+// pago movil sin comprobante.
 const METODOS_EFECTIVO = ['Efectivo Bs', 'Efectivo $']
 const CLAVE_PUNTO = 'erp-punto-venta'
 
@@ -400,15 +387,8 @@ export default function POS() {
     // palabra del cliente contra la del negocio: no hay con que ubicar el
     // comprobante. El backend lo exige igual; se pregunta antes para no
     // mandar el cobro y que rebote.
-    let referencia: string | undefined
-    if (METODOS_CON_REFERENCIA.has(metodo)) {
-      const r = await dialogo.pedirTexto({
-        titulo: `Referencia del pago por ${metodo}`,
-        placeholder: 'Número de confirmación, ticket o comprobante',
-      })
-      if (r === null) return
-      referencia = r
-    }
+    const referencia = await pedirReferencia(metodo, dialogo.pedirTexto)
+    if (referencia === null) return
     // Si el cajero anoto con cuanto le pagaron, se manda: sin eso la gaveta no
     // cuadra cuando hubo vuelto, y menos si el vuelto salio en otra moneda.
     const entregado = Number(recibido) || 0
@@ -436,24 +416,10 @@ export default function POS() {
 
     // Cada parte que no sea efectivo pide su propia referencia: son dos
     // pagos distintos, con dos comprobantes distintos.
-    let refPrimero: string | undefined
-    if (METODOS_CON_REFERENCIA.has(metodoParcial)) {
-      const r = await dialogo.pedirTexto({
-        titulo: `Referencia del pago por ${metodoParcial}`,
-        placeholder: 'Número de confirmación, ticket o comprobante',
-      })
-      if (r === null) return
-      refPrimero = r
-    }
-    let refSegundo: string | undefined
-    if (METODOS_CON_REFERENCIA.has(segundoMetodo)) {
-      const r = await dialogo.pedirTexto({
-        titulo: `Referencia del pago por ${segundoMetodo}`,
-        placeholder: 'Número de confirmación, ticket o comprobante',
-      })
-      if (r === null) return
-      refSegundo = r
-    }
+    const refPrimero = await pedirReferencia(metodoParcial, dialogo.pedirTexto)
+    if (refPrimero === null) return
+    const refSegundo = await pedirReferencia(segundoMetodo, dialogo.pedirTexto)
+    if (refSegundo === null) return
 
     cobrar('Mixto', [
       { metodo: metodoParcial, monto: primero, referencia: refPrimero },

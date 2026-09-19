@@ -145,13 +145,11 @@ export default function Impuestos() {
                 Descargar Excel
               </a>
             </div>
-            {ventas.ventas_no_facturadas > 0 && (
-              <p className="bg-aviso-50 border border-aviso-200 text-aviso-900 rounded-xl p-3 text-sm">
-                Además hubo <strong>{ventas.ventas_no_facturadas}</strong> venta(s) sin facturar por
-                ${ventas.monto_no_facturado.toFixed(2)} en este período - no entran aquí porque el
-                dueño no las declaró con factura.
-              </p>
-            )}
+            {/* El aviso de "además hubo N ventas sin facturar" salió de aquí:
+                el Libro de Ventas es el documento que se le presenta al
+                SENIAT, y lo que no se facturó no tiene por qué asomarse en él.
+                Esa lectura ahora vive en Reportes, que es donde el dueño mira
+                su negocio y no el fisco. */}
             <Tabla orden={ordenVentas} glosario="libroventas" className="bg-white rounded-2xl border border-neutral-200">
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">

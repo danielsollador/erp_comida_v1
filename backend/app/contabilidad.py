@@ -497,10 +497,28 @@ def registrar_facturacion_tardia(db: Session, pedido: models.Pedido) -> None:
     No se reabre el asiento original -un asiento ya posteado no se toca-, se
     postea el AJUSTE: la diferencia entre "como se conto sin factura" y "como
     se cuenta con factura" es sacar del ingreso bruto lo que en realidad era
-    IVA y pasarlo a la cuenta por pagar al fisco (2030). Fechado HOY, porque
-    es hoy que la factura existe, aunque la venta haya sido antes -el Libro de
-    Ventas la sigue ubicando en la fecha de la venta (`cerrado_en`), que es
-    aparte de este asiento.
+    IVA y pasarlo a la cuenta por pagar al fisco (2030).
+
+    FECHADO EN LA FECHA DE LA VENTA, no en la de hoy. Se intento al reves y
+    descuadraba dos cosas a la vez:
+
+      el IVA   el Libro de Ventas ubica la factura en el mes de la venta
+               (`cerrado_en`) y la declaracion del SENIAT se arma con ese
+               libro. Si el credito a 2030 caia en el mes en que el dueno
+               agarro el talonario, el mayor decia que el IVA nacio en
+               septiembre y la declaracion que se debia desde agosto.
+      la ganancia  Reportes muestra "ventas cobradas - IVA = ingreso del
+               negocio", con las ventas sacadas de los pedidos y el ingreso
+               del mayor. Con el ajuste fechado hoy, el mes de la venta
+               restaba un IVA que el mayor todavia no habia sacado de 4010
+               (ganancia inflada) y el mes de hoy perdia una base que nunca
+               vendio (ganancia hundida, a veces negativa).
+
+    El principio de no tocar lo posteado se respeta igual: esto sigue siendo
+    un asiento aparte, con su propio `origen`, rastreable. Solo que fechado en
+    el periodo al que pertenece el hecho economico. Por eso el router se niega
+    a facturar dentro de un mes ya declarado o de un ejercicio ya cerrado: ahi
+    si seria reescribir el pasado.
     """
     antes = _lineas_ingreso_venta(pedido, facturado=False)
     despues = _lineas_ingreso_venta(pedido, facturado=True)
@@ -528,7 +546,7 @@ def registrar_facturacion_tardia(db: Session, pedido: models.Pedido) -> None:
         lineas,
         origen="factura_tardia",
         referencia_id=pedido.id,
-        fecha=ahora(),
+        fecha=pedido.cerrado_en or ahora(),
     )
 
 
@@ -719,6 +737,40 @@ def movimiento_efectivo(db: Session, inicio, fin, codigo: str = "1010") -> float
     cuenta = _cuenta(db, codigo)
     debe, haber = sumas_de_cuenta(db, cuenta.id, inicio, fin)
     return round(debe - haber, 2)
+
+
+def periodo_bloqueado(db: Session, fecha: datetime.datetime) -> Optional[str]:
+    """Por que no se puede postear nada nuevo con esa fecha, o None si si.
+
+    Hay dos puertas que ya se cerraron detras de un periodo: la declaracion de
+    IVA del mes -que se presento al SENIAT con un numero que ya no puede
+    cambiar- y el cierre del ejercicio -que volco resultados a utilidades
+    retenidas contando los saldos de ese ano-. Meterle un asiento a un periodo
+    asi no es corregir, es dejar los libros diciendo algo distinto de lo que se
+    declaro y se firmo.
+
+    Devuelve el motivo en texto para que quien llame lo muestre tal cual: al
+    dueno hay que decirle por que no se puede, no solo que no se puede.
+
+    Para el ejercicio cerrado no basta con `fecha_contable`, que empuja el
+    asiento al ejercicio abierto: eso sirve para una factura de compra
+    atrasada, pero aca partiria en dos lo que tiene que ir junto -el Libro de
+    Ventas seguiria poniendo la factura en el ano viejo y el mayor en el
+    nuevo-, que es exactamente el descuadre que se esta evitando.
+    """
+    cerrado = ultimo_ejercicio_cerrado(db)
+    if cerrado is not None and fecha.year <= cerrado:
+        return f"el ejercicio {fecha.year} ya esta cerrado"
+
+    declarada = (
+        db.query(models.DeclaracionIva)
+        .filter_by(anio=fecha.year, mes=fecha.month)
+        .first()
+    )
+    if declarada:
+        return f"el IVA de {fecha.month:02d}/{fecha.year} ya fue declarado"
+
+    return None
 
 
 def cerrar_ejercicio(db: Session, anio: int) -> dict:

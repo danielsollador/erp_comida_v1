@@ -57,7 +57,12 @@ def test_un_abono_baja_la_deuda_y_la_deja_viva(client, db, variante):
 def test_varios_abonos_hasta_saldar(client, db, variante):
     p = fiar(client, variante)
     client.post(f"/api/caja/fiado/{p['id']}/cobrar", json={"metodo_pago": "Efectivo Bs", "monto": 3.0})
-    client.post(f"/api/caja/fiado/{p['id']}/cobrar", json={"metodo_pago": "Pago movil", "monto": 3.0})
+    # Un abono que no es efectivo lleva su comprobante, igual que en el punto
+    # de venta (ver test_referencia_cobro_credito.py).
+    client.post(
+        f"/api/caja/fiado/{p['id']}/cobrar",
+        json={"metodo_pago": "Pago movil", "monto": 3.0, "referencia": "PM-3"},
+    )
     r = client.post(f"/api/caja/fiado/{p['id']}/cobrar", json={"metodo_pago": "Efectivo Bs", "monto": 4.0})
 
     assert r.json()["saldado"] is True and r.json()["queda"] == 0.0

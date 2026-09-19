@@ -671,6 +671,9 @@ class SaldarFiadoRequest(BaseModel):
     # hacia antes este endpoint. Con monto, es un abono.
     monto: Optional[float] = None
     operador_id: Optional[int] = None
+    # Obligatoria si el metodo no es efectivo, igual que al cobrar en el punto
+    # de venta (ver contabilidad.METODOS_CON_REFERENCIA).
+    referencia: Optional[str] = None
 
 
 class CuentaPorCobrar(BaseModel):

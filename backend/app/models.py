@@ -316,6 +316,11 @@ class AbonoFiado(Base):
     pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=False, index=True)
     monto = Column(Float, nullable=False)
     metodo_pago = Column(String, default="Efectivo Bs")
+    # Mismo criterio que en el cobro del punto de venta: cobrar un credito por
+    # pago movil o transferencia sin anotar el comprobante deja el abono sin
+    # forma de ubicarlo el dia que el cliente diga que ya pago. El efectivo no
+    # tiene nada que anotar (ver contabilidad.METODOS_CON_REFERENCIA).
+    referencia = Column(String, default="")
     fecha = Column(DateTime, default=ahora)
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 

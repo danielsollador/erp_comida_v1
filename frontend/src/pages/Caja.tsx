@@ -8,7 +8,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import Cajas from './partes/Cajas'
 import { Pagina } from '../components/ui'
 import { api } from '../lib/api'
-import { etiquetaMetodo } from '../lib/pagos'
+import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import type {
   CierreCaja,
   Configuracion,
@@ -220,20 +220,16 @@ export default function Caja() {
     const metodo = await dialogo.elegir({
       titulo: `Cobrar a ${cuenta.cliente}`,
       texto: `$${monto.toFixed(2)}. ¿Cómo paga?`,
-      opciones: [
-        'Efectivo Bs',
-        'Efectivo $',
-        'Pago movil',
-        'Punto de venta',
-        'Tarjeta',
-        'Transferencia',
-        'Zelle',
-      ].map((m) => ({ valor: m, texto: m })),
+      opciones: METODOS_PAGO.map((m) => ({ valor: m, texto: m })),
     })
     if (!metodo) return
+    // Cobrar un crédito es aplicar un pago: si no entra por la gaveta, lleva
+    // comprobante, igual que en el punto de venta.
+    const referencia = await pedirReferencia(metodo, dialogo.pedirTexto)
+    if (referencia === null) return
     setError('')
     try {
-      const r = await api.cobrarFiado(cuenta.pedido_id, metodo, monto)
+      const r = await api.cobrarFiado(cuenta.pedido_id, metodo, monto, referencia)
       if (!r.saldado) {
         await dialogo.avisar({
           titulo: 'Abono registrado',

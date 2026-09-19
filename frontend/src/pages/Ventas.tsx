@@ -8,7 +8,7 @@ import { Cifra, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
-import { etiquetaMetodo } from '../lib/pagos'
+import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import type { EstadoVenta, ListaVentas, PuntoSerie, ResumenVentas, VentaFila } from '../lib/types'
 
 /**
@@ -225,22 +225,27 @@ function Historial({
             )
           })}
         </div>
-        <div className="flex gap-1">
+        {/* Filtra por otro eje que el de arriba -una venta cobrada puede estar
+            facturada o no-, así que va rotulado y más chico. Sin el rótulo,
+            seis pastillas idénticas en fila se leen como una sola lista de
+            estados y "Facturada o no" parece un estado más. */}
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-xs text-neutral-400 mr-0.5">Factura:</span>
           {(
             [
-              ['todas', 'Facturada o no'],
-              ['si', 'Facturada'],
-              ['no', 'Sin facturar'],
+              ['todas', 'Todas'],
+              ['si', 'Con factura'],
+              ['no', 'Sin factura'],
             ] as const
           ).map(([valor, texto]) => (
             <button
               key={valor}
               type="button"
               onClick={() => setFactura(valor)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border ${
+              className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium border ${
                 factura === valor
-                  ? 'bg-neutral-900 text-white border-neutral-900'
-                  : 'bg-white border-neutral-200 text-neutral-600'
+                  ? 'bg-neutral-200 text-neutral-900 border-neutral-300'
+                  : 'bg-white border-neutral-200 text-neutral-500'
               }`}
             >
               {texto}
@@ -432,13 +437,15 @@ function DetalleVenta({
     const metodo = await dialogo.elegir({
       titulo: `Cobrar a ${v.cliente || 'cliente'}`,
       texto: `$${monto.toFixed(2)}. ¿Cómo paga?`,
-      opciones: [
-        'Efectivo Bs', 'Efectivo $', 'Pago movil', 'Punto de venta', 'Tarjeta', 'Transferencia', 'Zelle',
-      ].map((m) => ({ valor: m, texto: m })),
+      opciones: METODOS_PAGO.map((m) => ({ valor: m, texto: m })),
     })
     if (!metodo) return
+    // Cobrar un crédito es aplicar un pago: si no entra por la gaveta, lleva
+    // comprobante, igual que en el punto de venta.
+    const referencia = await pedirReferencia(metodo, dialogo.pedirTexto)
+    if (referencia === null) return
     try {
-      const r = await api.cobrarFiado(v.id, metodo, monto)
+      const r = await api.cobrarFiado(v.id, metodo, monto, referencia)
       if (!r.saldado) {
         await dialogo.avisar({
           titulo: 'Abono registrado',
@@ -666,7 +673,14 @@ function Resumen({ r, nombre }: { r: ResumenVentas; nombre: string }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Seccion titulo="Cómo te pagaron">
-          <Reparto filas={Object.entries(r.por_metodo_pago).map(([nombre, ventas]) => ({ nombre, ventas }))} total={r.ventas} fmt={fmt} />
+          <Reparto
+            filas={Object.entries(r.por_metodo_pago).map(([nombre, ventas]) => ({
+              nombre: etiquetaMetodo(nombre),
+              ventas,
+            }))}
+            total={r.ventas}
+            fmt={fmt}
+          />
         </Seccion>
         {(r.por_operador.length > 1 || r.por_punto_venta.length > 1) && (
           <Seccion titulo={r.por_operador.length > 1 ? 'Quién cobró' : 'Por caja'}>

@@ -10,6 +10,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Lecturas, Pagina } from '../components/ui'
 import { api } from '../lib/api'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
+import { etiquetaMetodo } from '../lib/pagos'
 import type {
   ParCombo,
   ProductoVendido,
@@ -166,40 +167,8 @@ export default function Reportes() {
               )}
             </div>
 
-            {datos.pedidos > 0 && (
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <h2 className="font-semibold mb-1">Cuánto se facturó</h2>
-                <p className="text-xs text-neutral-500 mb-3">
-                  No todo se factura al momento: el dueño puede decidirlo después, desde el
-                  histórico de Ventas.
-                </p>
-                {(() => {
-                  const pct = datos.ventas > 0 ? (datos.valor_facturado / datos.ventas) * 100 : 0
-                  return (
-                    <>
-                      <div className="h-6 rounded-full bg-neutral-100 overflow-hidden flex">
-                        <div
-                          className="h-full bg-exito-500"
-                          style={{ width: `${pct}%` }}
-                          title={`Facturado: ${dinero(datos.valor_facturado)}`}
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs text-neutral-500 mt-2">
-                        <span>
-                          <span className="inline-block w-2 h-2 rounded-full bg-exito-500 mr-1" />
-                          Facturado: {dinero(datos.valor_facturado)} · {datos.facturadas} venta(s) ·{' '}
-                          {pct.toFixed(0)}%
-                        </span>
-                        <span>
-                          <span className="inline-block w-2 h-2 rounded-full bg-neutral-300 mr-1" />
-                          Sin facturar: {dinero(datos.ventas - datos.valor_facturado)} ·{' '}
-                          {datos.pedidos - datos.facturadas} venta(s)
-                        </span>
-                      </div>
-                    </>
-                  )
-                })()}
-              </div>
+            {datos.ventas > 0 && (
+              <Facturacion datos={datos} dinero={dinero} />
             )}
 
             {datos.serie.length > 0 && (
@@ -239,7 +208,7 @@ export default function Reportes() {
                 <h2 className="font-semibold mb-2">Cómo te pagaron</h2>
                 {Object.entries(datos.por_metodo_pago).map(([metodo, monto]) => (
                   <div key={metodo} className="flex justify-between text-sm py-1">
-                    <span className="text-neutral-600">{metodo}</span>
+                    <span className="text-neutral-600">{etiquetaMetodo(metodo)}</span>
                     <span className="font-medium tabular-nums">{dinero(monto)}</span>
                   </div>
                 ))}
@@ -328,6 +297,110 @@ export default function Reportes() {
     </div>
   )
 }
+
+/**
+ * Cuánto de lo que se vendió llegó a tener factura.
+ *
+ * La pregunta del dueño es una sola y tiene una sola respuesta: qué
+ * porcentaje facturó. Por eso el porcentaje es el número grande y todo lo
+ * demás lo sustenta. La barra da la proporción de un vistazo y las dos filas
+ * dan el detalle con las unidades separadas -cuántas ventas en una columna y
+ * cuánto dinero en otra-, porque mezclar "$1.240 · 8 ventas · 62%" en un
+ * renglón obliga a leerlo tres veces para sacar una cifra.
+ *
+ * El cierre dice la consecuencia: el IVA que se le debe al SENIAT sale solo
+ * de la parte facturada, que es el motivo por el que esta decisión importa.
+ */
+function Facturacion({
+  datos,
+  dinero,
+}: {
+  datos: ReporteResumen
+  dinero: (x: number, d?: number) => string
+}) {
+  const sinFacturar = Math.max(round2(datos.ventas - datos.valor_facturado), 0)
+  const pct = (datos.valor_facturado / datos.ventas) * 100
+  const ventasSinFactura = Math.max(datos.pedidos - datos.facturadas, 0)
+
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-semibold">Cuánto se facturó</h2>
+          <p className="text-xs text-neutral-500">
+            No todo se factura al momento: el dueño puede decidirlo después, desde el histórico
+            de Ventas.
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-3xl font-bold tabular-nums leading-none">{pct.toFixed(0)}%</div>
+          <div className="text-[11px] text-neutral-500">facturado</div>
+        </div>
+      </div>
+
+      {/* Los dos tramos se dibujan aunque uno sea diminuto: con un solo div
+          verde sobre fondo gris, un 1% no se veia y parecia que no habia
+          facturado nada. */}
+      <div className="mt-3 flex h-3 rounded-full overflow-hidden bg-neutral-100">
+        <div
+          className="bg-exito-500"
+          style={{ width: `${pct}%`, minWidth: datos.valor_facturado > 0 ? 4 : 0 }}
+        />
+        <div
+          className="bg-neutral-300"
+          style={{ width: `${100 - pct}%`, minWidth: sinFacturar > 0 ? 4 : 0 }}
+        />
+      </div>
+
+      <dl className="mt-3 text-sm divide-y divide-neutral-100">
+        <FilaFacturacion
+          color="bg-exito-500"
+          etiqueta="Con factura"
+          ventas={datos.facturadas}
+          monto={dinero(datos.valor_facturado)}
+        />
+        <FilaFacturacion
+          color="bg-neutral-300"
+          etiqueta="Sin factura"
+          ventas={ventasSinFactura}
+          monto={dinero(sinFacturar)}
+        />
+      </dl>
+
+      {datos.iva_cobrado > 0 && (
+        <p className="mt-3 text-xs text-neutral-500">
+          De esa parte facturada salen {dinero(datos.iva_cobrado)} de IVA que se le deben al
+          SENIAT. Lo que no se facturó no genera IVA.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function FilaFacturacion({
+  color,
+  etiqueta,
+  ventas,
+  monto,
+}: {
+  color: string
+  etiqueta: string
+  ventas: number
+  monto: string
+}) {
+  return (
+    <div className="flex items-center gap-3 py-1.5">
+      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${color}`} />
+      <dt className="flex-1 whitespace-nowrap">{etiqueta}</dt>
+      <dd className="w-20 text-right tabular-nums text-neutral-500 whitespace-nowrap">
+        {ventas} {ventas === 1 ? 'venta' : 'ventas'}
+      </dd>
+      <dd className="w-24 text-right tabular-nums font-medium whitespace-nowrap">{monto}</dd>
+    </div>
+  )
+}
+
+const round2 = (x: number) => Math.round(x * 100) / 100
 
 function Kpi({
   titulo,

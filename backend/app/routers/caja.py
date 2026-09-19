@@ -360,6 +360,16 @@ def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session =
         raise HTTPException(status_code=409, detail="Esa cuenta a crédito ya está pagada")
     if body.metodo_pago == "Fiado" or body.metodo_pago not in contabilidad.CUENTA_POR_METODO_PAGO:
         raise HTTPException(status_code=400, detail="Forma de cobro inválida")
+    # Cobrar un crédito es aplicar un pago, igual que cobrar en el punto de
+    # venta: si no entra por la gaveta tiene un comprobante, y sin anotarlo no
+    # hay con qué responder cuando el cliente diga que ya pagó. Este endpoint
+    # era el único que aceptaba un pago móvil sin referencia.
+    referencia = (body.referencia or "").strip()
+    if body.metodo_pago in contabilidad.METODOS_CON_REFERENCIA and not referencia:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Un cobro por {body.metodo_pago} necesita su número de referencia",
+        )
 
     monto = saldo if body.monto is None else round(body.monto, 2)
     if monto <= 0:
@@ -382,6 +392,7 @@ def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session =
         pedido_id=pedido.id,
         monto=monto,
         metodo_pago=body.metodo_pago,
+        referencia=referencia,
         operador_id=body.operador_id,
         fecha=ahora(),
     ))

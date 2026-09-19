@@ -507,11 +507,20 @@ export const api = {
       body: JSON.stringify({ monto, metodo_pago, nota }),
     }),
   listarFiado: () => req<CuentaPorCobrar[]>('/caja/fiado'),
-  /** Sin `monto` se cobra todo lo que queda; con monto, es un abono. */
-  cobrarFiado: (pedidoId: number, metodo_pago = 'Efectivo Bs', monto?: number) =>
+  /**
+   * Sin `monto` se cobra todo lo que queda; con monto, es un abono.
+   * `referencia` es obligatoria si el metodo no es efectivo: el backend la
+   * exige igual (ver contabilidad.METODOS_CON_REFERENCIA).
+   */
+  cobrarFiado: (
+    pedidoId: number,
+    metodo_pago = 'Efectivo Bs',
+    monto?: number,
+    referencia?: string,
+  ) =>
     req<{ ok: boolean; cobrado: number; queda: number; saldado: boolean; cliente: string }>(
       `/caja/fiado/${pedidoId}/cobrar`,
-      { method: 'POST', body: JSON.stringify({ metodo_pago, monto }) },
+      { method: 'POST', body: JSON.stringify({ metodo_pago, monto, referencia }) },
     ),
 
   cerrarCaja: (

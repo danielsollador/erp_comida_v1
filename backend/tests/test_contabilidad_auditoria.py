@@ -94,7 +94,10 @@ def test_un_dia_completo_deja_los_libros_cuadrados(client, libros, variante, ins
            pagos=[{"metodo": "Efectivo Bs", "monto": 16.0}])
     # Venta D: fiada y luego cobrada por pago movil.
     fiada = vender(client, variante, 1, metodo_pago="Fiado", cliente="Pedro")
-    r = client.post(f"/api/caja/fiado/{fiada['id']}/cobrar", json={"metodo_pago": "Pago movil"})
+    r = client.post(
+        f"/api/caja/fiado/{fiada['id']}/cobrar",
+        json={"metodo_pago": "Pago movil", "referencia": "PM-1"},
+    )
     assert r.status_code == 200, r.text
     # Venta E: con propina, y el cliente devuelve la comida (se puede revender).
     e = vender(client, variante, 1, propina=1.0, pagos=[{"metodo": "Efectivo Bs", "monto": 6.0}])
@@ -202,7 +205,10 @@ def test_devolver_un_fiado_ya_cobrado_devuelve_plata_y_no_una_deuda(client, libr
     db = libros
     banco_antes = saldo(db, "1020")
     p = vender(client, variante, 1, metodo_pago="Fiado", cliente="Pedro")
-    client.post(f"/api/caja/fiado/{p['id']}/cobrar", json={"metodo_pago": "Pago movil"})
+    client.post(
+        f"/api/caja/fiado/{p['id']}/cobrar",
+        json={"metodo_pago": "Pago movil", "referencia": "PM-2"},
+    )
     assert saldo(db, "1015") == 0.0 and saldo(db, "1020") == banco_antes + 5.0
 
     r = client.post(f"/api/pedidos/{p['id']}/devolver", json={"recuperable": True})

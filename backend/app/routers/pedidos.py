@@ -1116,6 +1116,22 @@ async def facturar_pedido(
     if pedido.facturado:
         raise HTTPException(status_code=409, detail="Este pedido ya esta facturado")
 
+    # Facturar tarde mete la venta en el Libro de Ventas del mes en que se
+    # VENDIO, no del mes en que se agarro el talonario. Si ese mes ya se le
+    # declaro al SENIAT, el libro reimpreso diria una cifra distinta de la que
+    # se presento; y si el ano ya se cerro, el asiento caeria despues del
+    # cierre. En los dos casos lo correcto es una factura nueva con fecha de
+    # hoy, no retocar un periodo firmado.
+    motivo = contabilidad.periodo_bloqueado(db, pedido.cerrado_en or ahora())
+    if motivo:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"No se puede facturar esta venta: {motivo}. "
+                "Facturarla ahora cambiaria un periodo que ya se presento."
+            ),
+        )
+
     numero = (body.numero_factura or "").strip()
     if not numero:
         raise HTTPException(status_code=400, detail="Hace falta el numero de factura")
