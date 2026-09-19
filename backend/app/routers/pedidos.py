@@ -66,6 +66,12 @@ def listar_pedidos(
     if en_cocina:
         query = (
             query.filter(models.Pedido.estado != "anulado")
+            # Una venta devuelta se quedaba en el tablero para siempre: sigue
+            # en estado "pagado" -- la plata entro y salio de verdad -- y sus
+            # renglones nunca se marcaron, asi que cumplia las dos condiciones.
+            # Pero el cliente trajo la comida DE VUELTA: no hay nada que
+            # cocinar, y el cocinero no tiene por que verla.
+            .filter(models.Pedido.devuelto.is_(False))
             .filter(models.Pedido.creado_en >= ahora() - datetime.timedelta(hours=HORAS_EN_COCINA))
             .join(models.PedidoItem)
             .filter(models.PedidoItem.preparado.is_(False))

@@ -75,3 +75,19 @@ def test_el_kpi_de_la_portada_cuenta_lo_mismo_que_la_pantalla(client, variante):
     assert p["id"] in {x["id"] for x in tablero}, "pero la comida sigue sin hacerse"
     assert len(tablero) != len(pendientes), (
         "justo por esto la portada tiene que pedir el mismo listado que la pantalla")
+
+
+def test_una_venta_devuelta_sale_del_tablero(client, variante):
+    """El cliente trajo la comida de vuelta: no hay nada que cocinar.
+
+    Se quedaba ahi para siempre porque cumplia las dos condiciones sin ser lo
+    que la condicion buscaba: sigue en estado "pagado" --la plata entro y
+    salio de verdad-- y sus renglones nunca se marcaron preparados.
+    """
+    p = comanda(client, variante)
+    client.post(f"/api/pedidos/{p['id']}/cobrar", json={"metodo_pago": "Efectivo Bs"})
+    assert p["id"] in en_cocina(client)
+
+    r = client.post(f"/api/pedidos/{p['id']}/devolver", json={"recuperable": True})
+    assert r.status_code == 200, r.text
+    assert p["id"] not in en_cocina(client)
