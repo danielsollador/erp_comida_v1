@@ -794,6 +794,13 @@ class Pedido(Base):
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
     punto_venta_id = Column(Integer, ForeignKey("DIM110_VEN_PUNTO_VENTA.id"), nullable=True)
     anulado_por_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    # La decision de VERDAD tomada al anular: perdida (se preparo, se boto) o
+    # vuelve al inventario (no se llego a preparar). Antes de esta columna,
+    # Ventas la adivinaba mirando si algun item quedo "preparado" - pero esa
+    # marca puede no coincidir con lo que se decidio de verdad al anular
+    # (quien anula puede corregir la adivinanza del sistema). None si el
+    # pedido no esta anulado.
+    anulado_es_perdida = Column(Boolean, nullable=True)
 
     # ── Quien tiene la comanda en la mano ───────────────────────────────────
     #

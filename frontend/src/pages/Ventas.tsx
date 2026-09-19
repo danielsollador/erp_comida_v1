@@ -40,12 +40,21 @@ const SECCIONES = [
   { id: 'perdidas', texto: 'Pérdidas' },
 ]
 
-const ESTADOS: { clave: EstadoVenta | 'todas'; texto: string; tono: 'neutro' | 'bien' | 'ojo' | 'mal' | 'acento' }[] = [
+// Las dos anuladas no son el mismo problema: una es comida botada (perdida
+// real) y la otra es un cliente que se arrepintio antes de que se tocara
+// nada (el inventario ni se movio). "Anuladas" a secas escondia esa
+// diferencia -era la unica manera de auditar quien anula demasiado despues
+// de cocinar-, asi que el filtro las separa aunque las dos compartan
+// `estado === 'anulada'` en el backend.
+type FiltroEstado = EstadoVenta | 'todas' | 'anulada_perdida' | 'anulada_inventario'
+
+const ESTADOS: { clave: FiltroEstado; texto: string; tono: 'neutro' | 'bien' | 'ojo' | 'mal' | 'acento' }[] = [
   { clave: 'todas', texto: 'Todas', tono: 'neutro' },
   { clave: 'cobrada', texto: 'Cobradas', tono: 'bien' },
   { clave: 'fiada', texto: 'A crédito', tono: 'ojo' },
   { clave: 'devuelta', texto: 'Devueltas', tono: 'mal' },
-  { clave: 'anulada', texto: 'Anuladas', tono: 'neutro' },
+  { clave: 'anulada_perdida', texto: 'Anuladas: pérdida', tono: 'mal' },
+  { clave: 'anulada_inventario', texto: 'Anuladas: sin tocar', tono: 'neutro' },
   { clave: 'abierta', texto: 'Abiertas', tono: 'acento' },
 ]
 
@@ -57,9 +66,21 @@ const TEXTO_ESTADO: Record<EstadoVenta, string> = {
   abierta: 'Abierta',
 }
 
-function PastillaEstado({ estado }: { estado: EstadoVenta }) {
-  const tono = ESTADOS.find((e) => e.clave === estado)?.tono ?? 'neutro'
-  return <Pastilla tono={tono}>{TEXTO_ESTADO[estado]}</Pastilla>
+/** A que filtro pertenece esta fila. Una anulada vieja sin `anulado_es_perdida`
+ * guardado (de antes de que existiera la columna) cae en "anulada" a secas. */
+function claveDeFila(v: VentaFila): FiltroEstado {
+  if (v.estado !== 'anulada' || v.anulado_es_perdida === null) return v.estado
+  return v.anulado_es_perdida ? 'anulada_perdida' : 'anulada_inventario'
+}
+
+function PastillaEstado({ v }: { v: VentaFila }) {
+  if (v.estado === 'anulada') {
+    if (v.anulado_es_perdida === true) return <Pastilla tono="mal">Anulada: pérdida</Pastilla>
+    if (v.anulado_es_perdida === false) return <Pastilla tono="neutro">Anulada: sin tocar</Pastilla>
+    return <Pastilla tono="neutro">Anulada</Pastilla>
+  }
+  const tono = ESTADOS.find((e) => e.clave === v.estado)?.tono ?? 'neutro'
+  return <Pastilla tono={tono}>{TEXTO_ESTADO[v.estado]}</Pastilla>
 }
 
 const fechaCorta = (iso: string) =>
@@ -72,13 +93,26 @@ export default function Ventas() {
   const [resumen, setResumen] = useState<ResumenVentas | null>(null)
   // Para que rango llegaron los datos: si no es el de ahora, se esta cargando.
   const [cargado, setCargado] = useState('')
-  const cargando = cargado !== `${rango.desde}/${rango.hasta}`
   // Corregir y devolver vivian en el punto de venta, en la lista de "ultimas
   // ventas". Esa lista se quito -- el mostrador muestra ahora solo lo que esta
   // vivo en el piso -- y estas dos acciones se vinieron con el historial, que
   // es donde de verdad se busca una venta de hace dos horas.
   const [editando, setEditando] = useState<Pedido | null>(null)
   const dialogoVentas = useDialogo()
+  const cargando = cargado !== `${rango.desde}/${rango.hasta}`
+
+  function cargar() {
+    return Promise.all([api.ventas(rango), api.resumenVentas(rango)]).then(([l, r]) => {
+      setLista(l)
+      setResumen(r)
+      setCargado(`${rango.desde}/${rango.hasta}`)
+    })
+  }
+
+  useEffect(() => {
+    cargar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rango])
 
   async function abrirEdicion(id: number) {
     try {
@@ -100,19 +134,6 @@ export default function Ventas() {
     cargar()
   }
 
-  function cargar() {
-    return Promise.all([api.ventas(rango), api.resumenVentas(rango)]).then(([l, r]) => {
-      setLista(l)
-      setResumen(r)
-      setCargado(`${rango.desde}/${rango.hasta}`)
-    })
-  }
-
-  useEffect(() => {
-    cargar()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rango])
-
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar
@@ -129,7 +150,7 @@ export default function Ventas() {
           <Historial
             lista={lista}
             etiqueta={etiquetaRango(rango)}
-            recargar={cargar}
+            alActualizar={cargar}
             alEditar={abrirEdicion}
           />
         )}
@@ -158,16 +179,19 @@ export default function Ventas() {
 function Historial({
   lista,
   etiqueta,
-  recargar,
+  alActualizar,
   alEditar,
 }: {
   lista: ListaVentas
   etiqueta: string
-  recargar: () => void
+  alActualizar: () => void
   alEditar: (id: number) => void
 }) {
   const { fmtCongelado } = useMoneda()
-  const [estado, setEstado] = useState<EstadoVenta | 'todas'>('todas')
+  const [estado, setEstado] = useState<FiltroEstado>('todas')
+  // Independiente del estado: una venta cobrada puede o no estar facturada,
+  // y el dueño necesita poder aislar "que factura" de "que se cobro".
+  const [factura, setFactura] = useState<'todas' | 'si' | 'no'>('todas')
   const [busqueda, setBusqueda] = useState('')
   const [abierta, setAbierta] = useState<number | null>(null)
   const orden = useOrden<VentaFila>(
@@ -185,14 +209,19 @@ function Historial({
 
   const conteo = useMemo(() => {
     const c: Record<string, number> = { todas: lista.filas.length }
-    for (const v of lista.filas) c[v.estado] = (c[v.estado] ?? 0) + 1
+    for (const v of lista.filas) {
+      const clave = claveDeFila(v)
+      c[clave] = (c[clave] ?? 0) + 1
+    }
     return c
   }, [lista])
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     return lista.filas.filter((v) => {
-      if (estado !== 'todas' && v.estado !== estado) return false
+      if (estado !== 'todas' && claveDeFila(v) !== estado) return false
+      if (factura === 'si' && !v.facturado) return false
+      if (factura === 'no' && v.facturado) return false
       if (!q) return true
       return (
         String(v.numero).includes(q) ||
@@ -203,7 +232,7 @@ function Historial({
         (v.numero_factura ?? '').toLowerCase().includes(q)
       )
     })
-  }, [lista, estado, busqueda])
+  }, [lista, estado, factura, busqueda])
 
   // Lo que suma lo visible, sin lo que no se vendio: una anulada no es venta.
   const cuentan = visibles.filter((v) => v.estado !== 'anulada' && v.estado !== 'devuelta')
@@ -249,6 +278,28 @@ function Historial({
               </button>
             )
           })}
+        </div>
+        <div className="flex gap-1">
+          {(
+            [
+              ['todas', 'Facturada o no'],
+              ['si', 'Facturada'],
+              ['no', 'Sin facturar'],
+            ] as const
+          ).map(([valor, texto]) => (
+            <button
+              key={valor}
+              type="button"
+              onClick={() => setFactura(valor)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border ${
+                factura === valor
+                  ? 'bg-neutral-900 text-white border-neutral-900'
+                  : 'bg-white border-neutral-200 text-neutral-600'
+              }`}
+            >
+              {texto}
+            </button>
+          ))}
         </div>
         <input
           value={busqueda}
@@ -298,7 +349,7 @@ function Historial({
                     alTocar={() => setAbierta(desplegada ? null : v.id)}
                     total={fmtCongelado(v.total, v.tasa_bcv)}
                     fmtCongelado={fmtCongelado}
-                    recargar={recargar}
+                    alActualizar={alActualizar}
                     alEditar={alEditar}
                   />
                 )
@@ -318,7 +369,7 @@ function FilaVenta({
   alTocar,
   total,
   fmtCongelado,
-  recargar,
+  alActualizar,
   alEditar,
 }: {
   v: VentaFila
@@ -327,7 +378,7 @@ function FilaVenta({
   alTocar: () => void
   total: string
   fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
-  recargar: () => void
+  alActualizar: () => void
   alEditar: (id: number) => void
 }) {
   return (
@@ -349,10 +400,18 @@ function FilaVenta({
               Editada
             </span>
           )}
+          {/* Va pegada al detalle y no al estado a proposito: lo que cambio
+              son los renglones, y es ahi donde el ojo pregunta por que el
+              ticket del cliente no dice lo mismo. */}
+          {v.editado && (
+            <span className="ml-2 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-aviso-500/20 text-aviso-800 align-middle">
+              Editada
+            </span>
+          )}
           {v.cliente && <span className="block text-xs text-neutral-400">{v.cliente}</span>}
         </td>
         <td className="p-3">
-          <PastillaEstado estado={v.estado} />
+          <PastillaEstado v={v} />
           {v.estado === 'fiada' && v.fiado_pendiente > 0 && (
             <span className="block text-[11px] text-aviso-700 mt-0.5">
               debe {fmtCongelado(v.fiado_pendiente, v.tasa_bcv)}
@@ -372,7 +431,12 @@ function FilaVenta({
       {desplegada && (
         <tr className="border-t border-neutral-100 bg-neutral-50/60">
           <td colSpan={7} className="px-4 py-3">
-            <DetalleVenta v={v} fmtCongelado={fmtCongelado} recargar={recargar} alEditar={alEditar} />
+            <DetalleVenta
+              v={v}
+              fmtCongelado={fmtCongelado}
+              alActualizar={alActualizar}
+              alEditar={alEditar}
+            />
           </td>
         </tr>
       )}
@@ -392,12 +456,12 @@ function Dato({ titulo, children }: { titulo: string; children: ReactNode }) {
 function DetalleVenta({
   v,
   fmtCongelado,
-  recargar,
+  alActualizar,
   alEditar,
 }: {
   v: VentaFila
   fmtCongelado: (usd: number | null | undefined, tasa: number | null | undefined) => string
-  recargar: () => void
+  alActualizar: () => void
   alEditar: (id: number) => void
 }) {
   const dialogo = useDialogo()
@@ -415,7 +479,7 @@ function DetalleVenta({
     if (!r || !r.numero.trim()) return
     try {
       await api.facturarPedido(v.id, r.numero.trim())
-      recargar()
+      alActualizar()
     } catch (e) {
       await dialogo.avisar({
         titulo: 'No se pudo facturar',
@@ -423,6 +487,45 @@ function DetalleVenta({
       })
     }
   }
+
+  // Una venta a crédito no puede quedarse así para siempre: el cliente
+  // vuelve a pagar (todo o en abonos) y esto tiene que poder cerrarse desde
+  // el mismo lugar donde el dueño la está viendo, sin ir hasta Caja.
+  async function cobrarCredito() {
+    const monto = await dialogo.pedirNumero({
+      titulo: `Cobrar a ${v.cliente || 'cliente'}`,
+      etiqueta: 'Cuánto entrega',
+      valor: v.fiado_pendiente,
+      sufijo: '$',
+      min: 0.01,
+      ayuda: `Debe ${dinero(v.fiado_pendiente)}. Si entrega menos, queda abonado.`,
+    })
+    if (monto === null) return
+    const metodo = await dialogo.elegir({
+      titulo: `Cobrar a ${v.cliente || 'cliente'}`,
+      texto: `$${monto.toFixed(2)}. ¿Cómo paga?`,
+      opciones: [
+        'Efectivo Bs', 'Efectivo $', 'Pago movil', 'Punto de venta', 'Tarjeta', 'Transferencia', 'Zelle',
+      ].map((m) => ({ valor: m, texto: m })),
+    })
+    if (!metodo) return
+    try {
+      const r = await api.cobrarFiado(v.id, metodo, monto)
+      if (!r.saldado) {
+        await dialogo.avisar({
+          titulo: 'Abono registrado',
+          texto: `Entregó $${r.cobrado.toFixed(2)} y queda debiendo $${r.queda.toFixed(2)}.`,
+        })
+      }
+      alActualizar()
+    } catch (e) {
+      await dialogo.avisar({
+        titulo: 'No se pudo cobrar',
+        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
+      })
+    }
+  }
+
   // El cliente trajo la comida de vuelta. Distinto de anular: aca ya hubo
   // venta, asi que hay que deshacerla entera -- el ingreso, el IVA y la plata.
   async function devolver() {
@@ -458,7 +561,7 @@ function DetalleVenta({
         nota_credito: v.facturado ? r.nc : undefined,
         motivo: r.motivo,
       })
-      recargar()
+      alActualizar()
     } catch (e) {
       await dialogo.avisar({
         titulo: 'No se pudo devolver',
@@ -515,13 +618,23 @@ function DetalleVenta({
       </div>
       <div className="grid grid-cols-2 gap-3 content-start">
         <Dato titulo="Qué pasó">
-          <PastillaEstado estado={v.estado} />
+          <PastillaEstado v={v} />
         </Dato>
         <Dato titulo="Cómo se pagó">{etiquetaMetodo(v.pago) || '—'}</Dato>
         <Dato titulo="Quién cobró">{v.operador || '—'}</Dato>
         <Dato titulo="Caja">{v.punto_venta || '—'}</Dato>
         {v.cliente && <Dato titulo="Cliente">{v.cliente}</Dato>}
-        {v.estado === 'fiada' && <Dato titulo="Debe todavía">{dinero(v.fiado_pendiente)}</Dato>}
+        {v.estado === 'fiada' && (
+          <Dato titulo="Debe todavía">
+            {dinero(v.fiado_pendiente)}{' '}
+            <button
+              onClick={cobrarCredito}
+              className="text-acento-600 hover:text-acento-700 font-medium text-sm"
+            >
+              Cobrar / abonar
+            </button>
+          </Dato>
+        )}
         {v.fiado_saldado && <Dato titulo="A crédito">Ya saldado</Dato>}
         {v.facturado && <Dato titulo="Factura">{v.numero_factura || 'sí'}</Dato>}
         {!v.facturado && (v.estado === 'cobrada' || v.estado === 'fiada') && (
@@ -573,12 +686,16 @@ function DetalleVenta({
                 cocinar es que el cliente cambio de opinion, algo normal.
                 Anular DESPUES es comida que se hizo y no se cobro -una
                 perdida real, y si se repite mucho con el mismo operador, la
-                pregunta que hay que hacerse. */}
-            {v.items.some((i) => i.preparado) ? (
+                pregunta que hay que hacerse. Es la decision que se guardo al
+                anular, no una adivinanza sobre los items: quien anula pudo
+                haber corregido lo que el sistema creia. */}
+            {v.anulado_es_perdida === true && (
               <span className="text-peligro-700 font-medium">Se preparó (pérdida real)</span>
-            ) : (
+            )}
+            {v.anulado_es_perdida === false && (
               <span className="text-neutral-500">No se llegó a preparar</span>
             )}
+            {v.anulado_es_perdida === null && <span className="text-neutral-400">Sin registrar</span>}
           </Dato>
         )}
         {v.estado === 'devuelta' && (
@@ -588,6 +705,34 @@ function DetalleVenta({
           </Dato>
         )}
         {v.nota && <Dato titulo="Nota">{v.nota}</Dato>}
+        {v.ediciones.length > 0 && (
+          <div className="col-span-2">
+            <Dato titulo="Ediciones">
+              {/* La etiqueta sola no sirve de nada: lo que el dueño necesita
+                  saber es que se cambio, cuanta plata se movio y quien firmo.
+                  Una edicion que movio plata y no tiene nombre detras es
+                  exactamente lo que hay que poder encontrar despues. */}
+              {v.ediciones.map((e) => (
+                <span key={e.id} className="block">
+                  {e.detalle}
+                  {e.diferencia !== 0 && (
+                    <span className={e.diferencia > 0 ? 'text-exito-700' : 'text-aviso-700'}>
+                      {' '}
+                      ({e.diferencia > 0 ? '+' : ''}
+                      {dinero(e.diferencia)}
+                      {e.metodo_pago && ` en ${etiquetaMetodo(e.metodo_pago)}`})
+                    </span>
+                  )}
+                  <span className="block text-xs text-neutral-500">
+                    {e.operador || 'sin operador'}
+                    {e.autorizado_por && ` · autorizó ${e.autorizado_por}`}
+                    {e.motivo && ` · ${e.motivo}`}
+                  </span>
+                </span>
+              ))}
+            </Dato>
+          </div>
+        )}
         {v.ediciones.length > 0 && (
           <div className="col-span-2">
             <Dato titulo="Ediciones">
@@ -820,7 +965,22 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
       if (v.estado === 'devuelta')
         salida.push({ id: `d${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Devuelta', detalle: v.detalle, quien: v.operador, tasa: v.tasa_bcv, monto: v.total, nota: v.motivo_devolucion })
       if (v.estado === 'anulada')
-        salida.push({ id: `a${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Anulada', detalle: v.detalle, quien: v.anulado_por || v.operador, tasa: v.tasa_bcv, monto: v.total, nota: '' })
+        salida.push({
+          id: `a${v.id}`,
+          numero: v.numero,
+          fecha: v.fecha,
+          tipo: 'Anulada',
+          detalle: v.detalle,
+          quien: v.anulado_por || v.operador,
+          tasa: v.tasa_bcv,
+          monto: v.total,
+          nota:
+            v.anulado_es_perdida === true
+              ? 'Pérdida: se preparó'
+              : v.anulado_es_perdida === false
+                ? 'Sin tocar: volvió al inventario'
+                : '',
+        })
       if (v.descuento > 0 && v.estado !== 'anulada' && v.estado !== 'devuelta')
         salida.push({ id: `r${v.id}`, numero: v.numero, fecha: v.fecha, tipo: 'Descuento', detalle: v.detalle, quien: v.operador, tasa: v.tasa_bcv, monto: v.descuento, nota: '' })
       if (v.estado === 'fiada')

@@ -166,6 +166,42 @@ export default function Reportes() {
               )}
             </div>
 
+            {datos.pedidos > 0 && (
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <h2 className="font-semibold mb-1">Cuánto se facturó</h2>
+                <p className="text-xs text-neutral-500 mb-3">
+                  No todo se factura al momento: el dueño puede decidirlo después, desde el
+                  histórico de Ventas.
+                </p>
+                {(() => {
+                  const pct = datos.ventas > 0 ? (datos.valor_facturado / datos.ventas) * 100 : 0
+                  return (
+                    <>
+                      <div className="h-6 rounded-full bg-neutral-100 overflow-hidden flex">
+                        <div
+                          className="h-full bg-exito-500"
+                          style={{ width: `${pct}%` }}
+                          title={`Facturado: ${dinero(datos.valor_facturado)}`}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-neutral-500 mt-2">
+                        <span>
+                          <span className="inline-block w-2 h-2 rounded-full bg-exito-500 mr-1" />
+                          Facturado: {dinero(datos.valor_facturado)} · {datos.facturadas} venta(s) ·{' '}
+                          {pct.toFixed(0)}%
+                        </span>
+                        <span>
+                          <span className="inline-block w-2 h-2 rounded-full bg-neutral-300 mr-1" />
+                          Sin facturar: {dinero(datos.ventas - datos.valor_facturado)} ·{' '}
+                          {datos.pedidos - datos.facturadas} venta(s)
+                        </span>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+            )}
+
             {datos.serie.length > 0 && (
               <div className="bg-white rounded-2xl border border-neutral-200 p-4">
                 <h2 className="font-semibold mb-4">

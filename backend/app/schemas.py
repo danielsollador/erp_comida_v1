@@ -550,6 +550,9 @@ class Pedido(BaseModel):
     operador: str = ""
     punto_venta: str = ""
     anulado_por: str = ""
+    # None si no esta anulado. Si lo esta: True = se preparo y se perdio
+    # (merma), False = no se llego a preparar y volvio al inventario.
+    anulado_es_perdida: Optional[bool] = None
     pagos: List[Pago] = []
     items: List[PedidoItem]
     # Los dos candados. Van como fecha y no como booleano porque la pantalla
@@ -805,6 +808,10 @@ class ReporteResumen(BaseModel):
     # necesita saber cuantas fueron.
     devoluciones: int = 0
     valor_devuelto: float = 0
+    # Cuanto de lo vendido el dueno decidio facturar. No es todo o nada: se
+    # puede facturar al cobrar o despues, revisando el historico.
+    facturadas: int = 0
+    valor_facturado: float = 0
     por_metodo_pago: dict
     serie: List[PuntoSerie]
     top_productos: List[ProductoVendido]
@@ -836,6 +843,7 @@ class VentaFila(BaseModel):
     operador: str = ""
     punto_venta: str = ""
     anulado_por: str = ""
+    anulado_es_perdida: Optional[bool] = None
     motivo_devolucion: str = ""
     nota_credito: Optional[str] = None
     nota: str = ""
