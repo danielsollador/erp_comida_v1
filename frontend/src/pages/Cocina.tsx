@@ -4,6 +4,7 @@ import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { api, connectWs } from '../lib/api'
 import { editandoAhora } from '../lib/comandas'
+import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import type { Pedido } from '../lib/types'
 
 const CLAVE_SONIDO = 'cocina.sonido'
@@ -188,20 +189,23 @@ export default function Cocina() {
         titulo="Cocina"
         moneda={false}
         acciones={
-          <button
-            onClick={alternarSonido}
-            className={`text-sm px-3 py-2 rounded-lg font-medium flex items-center gap-2 ${
-              sonido
-                ? 'bg-exito-600 hover:bg-exito-500 text-neutral-50'
-                : 'bg-aviso-500 hover:bg-aviso-400 text-neutral-50'
-            }`}
-          >
-            <Icono nombre={sonido ? 'campana' : 'campana-muda'} size={16} />
-            {/* En el telefono solo la campana: con el texto, el titulo de la
-                pantalla se quedaba en "Coci...". El aviso de abajo ya explica
-                para que sirve mientras esta apagado. */}
-            <span className="hidden sm:inline">{sonido ? 'Aviso activo' : 'Activar aviso'}</span>
-          </button>
+          <>
+            <button
+              onClick={alternarSonido}
+              className={`text-sm px-3 py-2 rounded-lg font-medium flex items-center gap-2 ${
+                sonido
+                  ? 'bg-exito-600 hover:bg-exito-500 text-neutral-50'
+                  : 'bg-aviso-500 hover:bg-aviso-400 text-neutral-50'
+              }`}
+            >
+              <Icono nombre={sonido ? 'campana' : 'campana-muda'} size={16} />
+              {/* En el telefono solo la campana: con el texto, el titulo de la
+                  pantalla se quedaba en "Coci...". El aviso de abajo ya explica
+                  para que sirve mientras esta apagado. */}
+              <span className="hidden sm:inline">{sonido ? 'Aviso activo' : 'Activar aviso'}</span>
+            </button>
+            <PantallaCompletaToggle />
+          </>
         }
       />
 

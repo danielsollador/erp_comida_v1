@@ -31,6 +31,8 @@ export type NombreIcono =
   | 'chevron'
   | 'alerta'
   | 'ok'
+  | 'expandir'
+  | 'contraer'
   | 'campana'
   | 'campana-muda'
   | 'chispa'
@@ -63,6 +65,10 @@ const TRAZOS: Record<NombreIcono, string> = {
   cuenta: 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
   chevron: 'm9 18 6-6-6-6',
   alerta: 'M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+  // Cuatro flechas hacia las esquinas: entrar a pantalla completa.
+  expandir: 'M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3',
+  // El mismo dibujo, hacia adentro: ya esta en pantalla completa, esto sale.
+  contraer: 'M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3',
   ok: 'M20 6 9 17l-5-5',
   campana: 'M10.3 21a1.94 1.94 0 0 0 3.4 0M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9',
   'campana-muda': 'M10.3 21a1.94 1.94 0 0 0 3.4 0M18 8a6 6 0 0 0-9.3-5M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h13M2 2l20 20',

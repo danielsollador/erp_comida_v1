@@ -8,6 +8,7 @@ import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { colorCategoria } from '../lib/theme'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
+import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import type {
   Categoria,
   Pedido,
@@ -505,7 +506,7 @@ export default function POS() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Punto de venta" />
+      <NavBar titulo="Punto de venta" acciones={<PantallaCompletaToggle />} />
 
       {categorias.length > 0 && (
         <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
