@@ -538,10 +538,16 @@ export default function POS() {
             <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3 mb-8">
               {categoria.productos
                 .filter((p) => p.activo)
-                .flatMap((p) =>
-                  p.variantes
-                    .filter((v) => v.activo)
-                    .map((v) => {
+                .flatMap((p) => {
+                  const activas = p.variantes.filter((v) => v.activo)
+                  // "Regular" nace sola al crear el producto (precio $0) para
+                  // que siempre haya algo que vender. Si despues se le agregan
+                  // subsecciones de verdad, esa "Regular" queda huerfana y se
+                  // mostraba como si fuera el producto: un tile de "Pastelito"
+                  // a $0 al lado de "Pastelito - Pollo".
+                  const visibles =
+                    activas.length > 1 ? activas.filter((v) => v.nombre !== 'Regular') : activas
+                  return visibles.map((v) => {
                       const color = colorCategoria(categoria.id)
                       const enCarrito = carrito[v.id]?.cantidad ?? 0
                       const pulsando = recienAgregado.has(v.id)
@@ -570,8 +576,8 @@ export default function POS() {
                           </div>
                         </button>
                       )
-                    }),
-                )}
+                    })
+                })}
             </div>
           )}
 
