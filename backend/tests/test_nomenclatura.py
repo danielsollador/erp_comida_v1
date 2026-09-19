@@ -20,7 +20,7 @@ MODULO_POR_CENTENA = {
 
 def test_todas_las_tablas_siguen_la_norma():
     nombres = sorted(Base.metadata.tables)
-    assert len(nombres) == 34
+    assert len(nombres) == 35
     for n in nombres:
         m = PATRON.match(n)
         assert m, f"{n!r} no sigue CAPA###_MOD_ENTIDAD"
@@ -67,8 +67,17 @@ def test_restricciones_e_indices_con_la_norma():
 
 
 def test_renombres_cubre_todas_y_apunta_a_tablas_reales():
+    """Cada renombre apunta a una tabla que existe de verdad.
+
+    Lo que NO se pide es que toda tabla este en RENOMBRES: las que nacieron
+    despues de la norma nunca tuvieron nombre viejo del que venir, y exigirles
+    uno obligaria a inventar una tabla minuscula ficticia por cada tabla nueva.
+    Lo que si tiene que cumplirse es al reves --nada en RENOMBRES puede apuntar
+    a una tabla que no existe-- porque ese es el error que dejaria una base a
+    medio renombrar.
+    """
     assert len(migrations.RENOMBRES) == 34
-    assert set(migrations.RENOMBRES.values()) == set(Base.metadata.tables)
+    assert set(migrations.RENOMBRES.values()) <= set(Base.metadata.tables)
     assert all(v == v.lower() for v in migrations.RENOMBRES)
 
 
@@ -116,6 +125,6 @@ def test_create_all_encima_de_una_base_renombrada_no_duplica():
     migrations.renombrar_tablas(motor)
     Base.metadata.create_all(bind=motor)
     tablas = set(sa.inspect(motor).get_table_names())
-    assert len(tablas) == 34
+    assert len(tablas) == 35
     with motor.connect() as con:
         assert con.execute(text('SELECT COUNT(*) FROM "DIM220_MEN_PRODUCTO"')).scalar() == 1

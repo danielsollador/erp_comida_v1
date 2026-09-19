@@ -3,9 +3,10 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
+from ..acceso import usuarios
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -25,6 +26,18 @@ router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
 # marcarlo, no al vencerse.
 HORAS_EN_COCINA = 12
 
+# Cuanto vale el candado que pone el punto de venta al abrir una comanda para
+# editarla.
+#
+# Vence solo, y no es un detalle: mientras el candado esta puesto la cocina no
+# puede tocar esa comanda. Si la cajera abre la edicion y se va a atender a
+# alguien --o se le apaga la tablet-- sin vencimiento la comanda le queda
+# trancada a la cocina hasta que alguien reinicie algo. Cinco minutos es mas de
+# lo que toma agregar un refresco y menos de lo que la cocina puede esperar con
+# la comida en el sarten. Quien sigue editando cuando vence no pierde nada: al
+# guardar se vuelve a tomar el candado si nadie mas lo agarro.
+MINUTOS_EDITANDO = 5
+
 
 @router.get("", response_model=List[schemas.Pedido])
 def listar_pedidos(
@@ -40,7 +53,14 @@ def listar_pedidos(
     dice si falta cocinar es el detalle: si algun item no esta `preparado`, la
     cocina todavia tiene trabajo con ese pedido, este pagado o no.
     """
-    query = db.query(models.Pedido)
+    # Sin esto, pintar 40 comandas dispara 120 consultas sueltas (renglones,
+    # pagos y ediciones de cada una, una por una). `selectinload` las trae en
+    # una consulta por relacion, y aguanta el `distinct()` de mas abajo.
+    query = db.query(models.Pedido).options(
+        selectinload(models.Pedido.items),
+        selectinload(models.Pedido.pagos),
+        selectinload(models.Pedido.ediciones),
+    )
     if estado:
         query = query.filter(models.Pedido.estado == estado)
     if en_cocina:
@@ -52,6 +72,46 @@ def listar_pedidos(
             .distinct()
         )
     return query.order_by(models.Pedido.id.desc()).all()
+
+
+def _buscar(db: Session, pedido_id: int) -> models.Pedido:
+    pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    return pedido
+
+
+def edicion_viva(pedido: models.Pedido) -> bool:
+    """Si el punto de venta tiene esta comanda abierta AHORA MISMO."""
+    if not pedido.editando_desde:
+        return False
+    return pedido.editando_desde >= ahora() - datetime.timedelta(minutes=MINUTOS_EDITANDO)
+
+
+def la_tiene_cocina(pedido: models.Pedido) -> bool:
+    """Si la comanda esta EN EL SARTEN ahora mismo.
+
+    Las dos condiciones son necesarias, y la segunda es la que evita un error
+    caro: `cocinando_desde` no se limpia solo, asi que sin mirar los renglones
+    una comanda que la cocina despacho hace tres horas seguiria "en
+    preparacion" para siempre, y la caja no podria corregir NUNCA una venta ya
+    cobrada -- que es justo el caso para el que se hizo la edicion.
+
+    Cuando ya no queda nada por preparar, la cocina termino y suelta la
+    comanda. Editarla desde ahi sigue siendo posible, pero lo que se quite es
+    comida hecha y se trata como merma, no como inventario que vuelve.
+    """
+    if not pedido.cocinando_desde:
+        return False
+    return any(not i.preparado for i in pedido.items)
+
+
+def _nombre_de_variante(variante: models.Variante) -> str:
+    """Como se llama el renglon en la comanda y en el ticket."""
+    nombre = variante.producto.nombre
+    if variante.nombre and variante.nombre.lower() != "regular":
+        nombre = f"{nombre} - {variante.nombre}"
+    return nombre
 
 
 def _siguiente_numero(db: Session) -> int:
@@ -202,9 +262,7 @@ async def crear_pedido(
             )
             continue
         variante = variantes[item.variante_id]
-        nombre = variante.producto.nombre
-        if variante.nombre and variante.nombre.lower() != "regular":
-            nombre = f"{nombre} - {variante.nombre}"
+        nombre = _nombre_de_variante(variante)
         db.add(
             models.PedidoItem(
                 pedido_id=db_pedido.id,
@@ -264,15 +322,74 @@ async def crear_pedido(
     return resultado
 
 
+def _cocina_puede_tocar(pedido: models.Pedido) -> None:
+    """La cocina no toca una comanda que el punto de venta esta editando.
+
+    Es el lado de cocina del candado: si la cajera le esta quitando un renglon
+    al pedido, marcar ese renglon preparado no significa nada -- el cocinero
+    estaria trabajando sobre una comanda que en dos segundos va a ser otra.
+    Mejor que espere treinta segundos a que haga comida que nadie pidio.
+    """
+    if edicion_viva(pedido):
+        quien = pedido.editando_por or "El punto de venta"
+        raise HTTPException(
+            status_code=409,
+            detail=f"{quien} está editando la comanda #{pedido.numero}. "
+            "Espera a que termine: los renglones pueden cambiar.",
+        )
+
+
+@router.post("/{pedido_id}/cocinando", response_model=schemas.Pedido)
+async def marcar_cocinando(pedido_id: int, request: Request, db: Session = Depends(get_db)):
+    """La cocina agarra (o suelta) la comanda. Es un interruptor.
+
+    Sirve para dos cosas a la vez, y las dos importan: el resto de la cocina ve
+    que esa comanda ya tiene dueño, y el punto de venta deja de poder editarla.
+    Lo segundo es el motivo de que exista. Hasta ahora la caja podia cambiarle
+    los renglones a un pedido que ya estaba en el sarten, y el cocinero se
+    enteraba cuando salia un plato que ya no era el que pedian.
+
+    Se puede soltar porque un toque por error no puede dejar la comanda
+    bloqueada para la caja sin forma de deshacerlo.
+    """
+    pedido = _buscar(db, pedido_id)
+    if pedido.estado == "anulado":
+        raise HTTPException(status_code=409, detail="Esta comanda está anulada")
+    _cocina_puede_tocar(pedido)
+
+    if pedido.cocinando_desde:
+        pedido.cocinando_desde = None
+        pedido.cocinando_por_id = None
+    else:
+        quien = operadores.del_turno(db, request)
+        pedido.cocinando_desde = ahora()
+        pedido.cocinando_por_id = quien.id if quien else None
+    db.commit()
+    db.refresh(pedido)
+
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
 @router.post("/items/{item_id}/preparado", response_model=schemas.Pedido)
-async def marcar_item_preparado(item_id: int, db: Session = Depends(get_db)):
+async def marcar_item_preparado(item_id: int, request: Request, db: Session = Depends(get_db)):
     item = db.query(models.PedidoItem).filter(models.PedidoItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item no encontrado")
+    pedido = db.query(models.Pedido).filter(models.Pedido.id == item.pedido_id).first()
+    _cocina_puede_tocar(pedido)
+
     item.preparado = not item.preparado
+    # Marcar un renglon ES empezar a cocinar. Sin esto el candado dependia de
+    # que alguien se acordara de apretar un boton aparte, y el boton que la
+    # cocina de verdad aprieta es este.
+    if item.preparado and not pedido.cocinando_desde:
+        quien = operadores.del_turno(db, request)
+        pedido.cocinando_desde = ahora()
+        pedido.cocinando_por_id = quien.id if quien else None
     db.commit()
 
-    pedido = db.query(models.Pedido).filter(models.Pedido.id == item.pedido_id).first()
     if pedido.items and all(i.preparado for i in pedido.items) and pedido.estado == "pendiente":
         pedido.estado = "listo"
         db.commit()
@@ -284,12 +401,15 @@ async def marcar_item_preparado(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{pedido_id}/marcar-listo", response_model=schemas.Pedido)
-async def marcar_pedido_listo(pedido_id: int, db: Session = Depends(get_db)):
-    pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+async def marcar_pedido_listo(pedido_id: int, request: Request, db: Session = Depends(get_db)):
+    pedido = _buscar(db, pedido_id)
+    _cocina_puede_tocar(pedido)
     for item in pedido.items:
         item.preparado = True
+    if not pedido.cocinando_desde:
+        quien = operadores.del_turno(db, request)
+        pedido.cocinando_desde = ahora()
+        pedido.cocinando_por_id = quien.id if quien else None
     # Si ya se cobro, `estado` vale "pagado" y ASI SE QUEDA: es la señal que
     # usan caja, contabilidad, reportes e impuestos para saber que es venta
     # reconocida (17 sitios distintos). Pisarlo con "listo" aca lo hacia
@@ -298,6 +418,526 @@ async def marcar_pedido_listo(pedido_id: int, db: Session = Depends(get_db)):
     # para que salga de la cola de cocina.
     if pedido.estado not in ("pagado", "anulado"):
         pedido.estado = "listo"
+    db.commit()
+    db.refresh(pedido)
+
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+# -- Editar una comanda ya tomada --------------------------------------------
+#
+# Se pidio mal, el cliente cambio de idea, la cajera tecleo dos refrescos en
+# vez de uno. Hasta ahora la unica salida era anular y volver a empezar, que
+# manda una comanda nueva a cocina, le cambia el numero al cliente y -si ya
+# estaba cobrado- ni siquiera se podia. Editar es lo que la gente de verdad
+# hace, y el sistema tiene que saberlo en vez de enterarse por un descuadre.
+
+
+def _clave_de_fila(fila: models.PedidoItem) -> tuple:
+    """Que hace a dos renglones "el mismo" para efectos de editar.
+
+    Del menu, la variante. De la venta libre, el nombre y el precio: es lo
+    unico que la identifica, porque no existe en ningun catalogo.
+    """
+    if fila.variante_id is not None:
+        return ("menu", fila.variante_id)
+    return ("libre", (fila.nombre or "").strip().lower(), round(fila.precio_unitario or 0, 2))
+
+
+def _clave_pedida(item: schemas.PedidoItemCreate) -> tuple:
+    if item.variante_id is not None:
+        return ("menu", item.variante_id)
+    return ("libre", (item.nombre_libre or "").strip().lower(), round(item.precio_libre or 0, 2))
+
+
+def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int]) -> None:
+    """Todo lo que impide tocar esta comanda, con el motivo escrito."""
+    if pedido.estado == "anulado":
+        raise HTTPException(status_code=409, detail="Un pedido anulado ya no se edita")
+    if pedido.devuelto:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta venta se devolvió entera. Si el cliente quiere otra cosa, es un pedido nuevo.",
+        )
+    if la_tiene_cocina(pedido):
+        quien = pedido.cocinando_por or "La cocina"
+        desde = pedido.cocinando_desde.strftime("%H:%M") if pedido.cocinando_desde else ""
+        detalle = f"{quien} ya está preparando la comanda #{pedido.numero}"
+        if desde:
+            detalle += f" (desde las {desde})"
+        raise HTTPException(
+            status_code=409,
+            detail=detalle + ". Habla con cocina: lo que está en el sartén ya no se cambia desde aquí.",
+        )
+    if edicion_viva(pedido) and pedido.editando_por_id not in (None, quien_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{pedido.editando_por or 'Otra caja'} está editando la comanda "
+            f"#{pedido.numero} en este momento.",
+        )
+    # Una venta cobrada AYER ya entro al cierre de caja de ayer. Moverle el
+    # monto hoy deja la gaveta de ayer diciendo una cosa y los libros otra, y
+    # ese descuadre no aparece hasta que alguien cuenta billetes.
+    if pedido.estado == "pagado" and pedido.cerrado_en and pedido.cerrado_en < inicio_del_dia(hoy()):
+        raise HTTPException(
+            status_code=409,
+            detail="Esta venta es de otro día y ya entró al cierre de caja. "
+            "Para corregirla usa Devolver y vuelve a cobrarla.",
+        )
+
+
+@router.post("/{pedido_id}/edicion", response_model=schemas.Pedido)
+async def abrir_edicion(pedido_id: int, request: Request, db: Session = Depends(get_db)):
+    """El punto de venta agarra la comanda para cambiarla.
+
+    Avisa a la cocina ANTES de que el cajero empiece a tocar renglones, no
+    despues: esa es toda la gracia. Mientras el candado esta puesto, la
+    pantalla de cocina muestra la comanda bloqueada y no la deja marcar.
+    """
+    pedido = _buscar(db, pedido_id)
+    quien = operadores.del_turno(db, request)
+    _revisar_que_se_puede_editar(pedido, quien.id if quien else None)
+
+    pedido.editando_desde = ahora()
+    pedido.editando_por_id = quien.id if quien else None
+    db.commit()
+    db.refresh(pedido)
+
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+@router.delete("/{pedido_id}/edicion", response_model=schemas.Pedido)
+async def soltar_edicion(pedido_id: int, db: Session = Depends(get_db)):
+    """Se cerro el cuadro de edicion sin guardar: la cocina puede seguir."""
+    pedido = _buscar(db, pedido_id)
+    pedido.editando_desde = None
+    pedido.editando_por_id = None
+    db.commit()
+    db.refresh(pedido)
+
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+def _autorizar_diferencia(body: schemas.EditarPedidoRequest, diferencia: float) -> str:
+    """La clave que hace falta cuando la edicion mueve plata ya cobrada.
+
+    El caso que esto cubre no es un error de tecleo: es que a una venta ya
+    pagada se le quite un renglon, la diferencia salga de la gaveta y el cierre
+    del dia siga cuadrando porque el sistema tambien bajo lo que esperaba. Sin
+    una firma, eso no deja rastro de ninguna clase.
+
+    Vale la cuenta de cualquiera que tenga una, no solo la del dueño, y es a
+    proposito: a las nueve de la noche el dueño no esta, y un control que obliga
+    a parar el negocio termina siendo un control que se salta por otro lado
+    (anular y volver a cobrar, que hoy no pide nada). Lo que da el control es
+    que el nombre queda escrito en la edicion y se ve en el listado de ventas.
+    """
+    if not body.autorizacion:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Esta edición cambia ${abs(diferencia):.2f} de una venta ya cobrada. "
+            "Hace falta la clave de alguien con cuenta para autorizarla.",
+        )
+    cuenta = usuarios.verificar(body.autorizacion.usuario, body.autorizacion.clave)
+    if not cuenta:
+        raise HTTPException(status_code=403, detail="Usuario o clave incorrectos")
+    return body.autorizacion.usuario.strip()
+
+
+def _pagos_de_la_diferencia(
+    body: schemas.EditarPedidoRequest, diferencia: float
+) -> List[schemas.PagoInput]:
+    """Por donde entro (o salio) la plata de la diferencia.
+
+    Los montos vienen en positivo siempre: el signo lo pone la diferencia, no el
+    cajero. Pedirle que escriba -3.00 para una devolucion es pedirle que se
+    equivoque.
+    """
+    pagos = body.pagos or []
+    falta = round(abs(diferencia), 2)
+    verbo = "se cobró" if diferencia > 0 else "se devolvió"
+    if not pagos:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Falta decir cómo {verbo} la diferencia de ${falta:.2f}.",
+        )
+    for pago in pagos:
+        if pago.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
+            raise HTTPException(
+                status_code=400, detail=f"Forma de pago desconocida: '{pago.metodo}'."
+            )
+        # Fiar la diferencia abriria una cuenta por cobrar dentro de una venta
+        # que ya figura cobrada, y el saldo del cliente quedaria contado por dos
+        # lados. Si el cliente va a quedar debiendo, es otra venta.
+        if pago.metodo == "Fiado":
+            raise HTTPException(
+                status_code=400,
+                detail="La diferencia de una edición no se puede fiar: cóbrala o devuélvela.",
+            )
+        if pago.monto <= 0:
+            raise HTTPException(status_code=400, detail="Cada pago debe ser mayor a cero")
+        if pago.metodo in contabilidad.METODOS_CON_REFERENCIA and not (pago.referencia or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Falta el número de referencia del pago por {pago.metodo}.",
+            )
+    suma = round(sum(p.monto for p in pagos), 2)
+    if abs(suma - falta) > 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Los pagos suman ${suma:.2f} y la diferencia es de ${falta:.2f}.",
+        )
+    return pagos
+
+
+@router.put("/{pedido_id}", response_model=schemas.Pedido)
+async def editar_pedido(
+    pedido_id: int,
+    body: schemas.EditarPedidoRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Cambia los renglones de una comanda ya tomada.
+
+    Llega la lista COMPLETA de como tiene que quedar el pedido, no un delta: el
+    POS ya lo tiene en pantalla, y mandar el estado final evita que dos
+    ediciones seguidas sumen cambios sobre bases distintas.
+
+    Lo que se mueve junto, y por eso vive todo en la misma transaccion:
+      inventario   lo que se agrega sale del stock y lo que se quita vuelve,
+                   contra lo que de VERDAD salio (PedidoConsumo), no contra lo
+                   que diria la receta de hoy;
+      plata        solo si el pedido ya estaba cobrado. Una diferencia exige
+                   clave y decir por que gaveta entro o salio;
+      contabilidad un asiento de ajuste por la diferencia, nunca reescribiendo
+                   el asiento de la venta;
+      rastro       una fila en PedidoEdicion y la marca "editado", que es lo que
+                   despues se ve en cocina y en ventas.
+    """
+    pedido = _buscar(db, pedido_id)
+    quien = operadores.del_turno(db, request)
+    _revisar_que_se_puede_editar(pedido, quien.id if quien else None)
+
+    if not body.items:
+        raise HTTPException(
+            status_code=400, detail="Un pedido no puede quedar vacío. Si ya no va, anúlalo."
+        )
+
+    # -- los renglones que se piden, con las mismas reglas que al crear
+    for item in body.items:
+        if item.cantidad <= 0:
+            raise HTTPException(status_code=400, detail="Cada renglón necesita una cantidad")
+        if item.variante_id is None:
+            if not (item.nombre_libre or "").strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Una venta libre necesita un nombre para que quede en el ticket",
+                )
+            if not item.precio_libre or item.precio_libre <= 0:
+                raise HTTPException(status_code=400, detail="Una venta libre necesita su precio")
+
+    del_menu = [i for i in body.items if i.variante_id is not None]
+    variantes = {
+        v.id: v
+        for v in db.query(models.Variante).filter(
+            models.Variante.id.in_([i.variante_id for i in del_menu])
+        )
+    }
+    for item in del_menu:
+        if item.variante_id not in variantes:
+            raise HTTPException(status_code=404, detail=f"Variante {item.variante_id} no existe")
+
+    costos = _costo_por_variante(list(variantes.keys()), db)
+    # Las recetas cubren lo nuevo Y lo viejo: sin las de un renglon que se
+    # quita no hay con que saber cuanto inventario devolver.
+    recetas = _recetas_por_variante(
+        list(set(variantes) | {f.variante_id for f in pedido.items if f.variante_id}), db
+    )
+
+    # -- como queda cada renglon: lo pedido contra lo que ya estaba
+    pedidas: Dict[tuple, int] = {}
+    ejemplo: Dict[tuple, schemas.PedidoItemCreate] = {}
+    for item in body.items:
+        clave = _clave_pedida(item)
+        pedidas[clave] = pedidas.get(clave, 0) + item.cantidad
+        ejemplo.setdefault(clave, item)
+
+    actuales: Dict[tuple, List[models.PedidoItem]] = {}
+    for fila in pedido.items:
+        actuales.setdefault(_clave_de_fila(fila), []).append(fila)
+
+    def _precio_y_costo(clave: tuple) -> tuple:
+        """El precio de un renglon que YA ESTABA no se recalcula.
+
+        Si el menu subio de precio mientras la comanda estaba abierta, agregarle
+        un refresco no puede cambiarle al cliente lo que ya le habiamos dicho
+        que costaban sus empanadas. Lo que entra nuevo si va al precio de hoy.
+        """
+        if clave in actuales:
+            fila = actuales[clave][0]
+            return fila.precio_unitario, (fila.costo_unitario or 0)
+        item = ejemplo[clave]
+        if item.variante_id is not None:
+            return variantes[item.variante_id].precio, round(costos.get(item.variante_id, 0), 4)
+        return round(item.precio_libre, 2), 0.0
+
+    nuevo_subtotal = 0.0
+    nuevo_costo = 0.0
+    for clave, cantidad in pedidas.items():
+        precio, costo = _precio_y_costo(clave)
+        nuevo_subtotal += precio * cantidad
+        nuevo_costo += costo * cantidad
+    nuevo_subtotal = round(nuevo_subtotal, 2)
+    nuevo_costo = round(nuevo_costo, 2)
+
+    total_antes = pedido.total
+    costo_antes = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
+    nuevo_total = round(max(nuevo_subtotal - (pedido.descuento or 0), 0), 2)
+    diferencia = round(nuevo_total - total_antes, 2)
+
+    # -- la plata, si ya estaba cobrado
+    autorizado_por = ""
+    pagos: List[schemas.PagoInput] = []
+    if pedido.estado == "pagado" and abs(diferencia) > 0.01:
+        if pedido.facturado:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Esta venta se facturó (N° {pedido.numero_factura}). Cambiarle el monto "
+                "exige una nota de crédito: usa Devolver y vuelve a cobrarla.",
+            )
+        # Una venta fiada no es plata en la gaveta: es una deuda del cliente,
+        # con sus abonos y su saldo. Cambiarle el monto por un lado y meter el
+        # vuelto en efectivo por el otro dejaria al cliente debiendo lo de
+        # antes mientras la venta dice otra cosa, y el saldo que se le cobre
+        # despues seria el equivocado.
+        if pedido.fiado_saldo > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Esta venta quedó fiada y todavía se deben ${pedido.fiado_saldo:.2f}. "
+                "Cóbrala o devuélvela: editarle el monto dejaría la deuda del cliente "
+                "diciendo otra cosa.",
+            )
+        autorizado_por = _autorizar_diferencia(body, diferencia)
+        pagos = _pagos_de_la_diferencia(body, diferencia)
+
+    # -- el inventario, renglon por renglon
+    #
+    # No sirve restar el consumo nuevo del viejo en bruto: quitar una empanada
+    # YA HECHA y agregar dos crudas da un neto que parece inocente, y esconde
+    # que se boto comida de verdad. Son tres flujos distintos y cada uno va a
+    # un sitio distinto:
+    #   aumento   lo que hay que sacar del deposito ahora
+    #   retorno   lo que se quito y todavia no se habia tocado: vuelve al stock
+    #   perdida   lo que se quito y YA ESTABA HECHO: eso no vuelve, se perdio
+    aumento: Dict[models.Ingrediente, float] = {}
+    retorno: Dict[models.Ingrediente, float] = {}
+    perdida: Dict[models.Ingrediente, float] = {}
+    costo_perdido = 0.0
+    for clave in set(actuales) | set(pedidas):
+        antes = sum(f.cantidad for f in actuales.get(clave, []))
+        despues = pedidas.get(clave, 0)
+        if antes == despues:
+            continue
+        if clave in actuales:
+            variante_id = actuales[clave][0].variante_id
+            ya_hecho = actuales[clave][0].preparado
+        else:
+            variante_id, ya_hecho = ejemplo[clave].variante_id, False
+        # La venta libre no tiene receta: no mueve inventario, ni al entrar ni
+        # al salir. Su costo tampoco se conoce, y eso es honesto.
+        if variante_id is None or not recetas.get(variante_id):
+            continue
+        if despues > antes:
+            destino, cantidad = aumento, despues - antes
+        else:
+            destino, cantidad = (perdida if ya_hecho else retorno), antes - despues
+            if ya_hecho:
+                costo_perdido += (actuales[clave][0].costo_unitario or 0) * cantidad
+        for receta in recetas[variante_id]:
+            bruto = costeo.consumo_bruto(receta, cantidad)
+            destino[receta.ingrediente] = destino.get(receta.ingrediente, 0) + bruto
+    costo_perdido = round(costo_perdido, 2)
+
+    neto = {}
+    for ingrediente in set(aumento) | set(retorno):
+        cambio = round(aumento.get(ingrediente, 0) - retorno.get(ingrediente, 0), 4)
+        if cambio:
+            neto[ingrediente] = cambio
+
+    faltantes = _faltantes({i: c for i, c in neto.items() if c > 0})
+    if faltantes and not body.permitir_sin_stock:
+        raise HTTPException(
+            status_code=409, detail="No alcanza el inventario para: " + "; ".join(faltantes)
+        )
+
+    # -- que cambio, en palabras, antes de tocar nada
+    cambios = []
+    for clave in list(actuales) + [c for c in pedidas if c not in actuales]:
+        antes = sum(f.cantidad for f in actuales.get(clave, []))
+        despues = pedidas.get(clave, 0)
+        if antes == despues:
+            continue
+        if clave in actuales:
+            nombre = actuales[clave][0].nombre
+        else:
+            item = ejemplo[clave]
+            nombre = (
+                _nombre_de_variante(variantes[item.variante_id])
+                if item.variante_id is not None
+                else item.nombre_libre.strip()
+            )
+        if despues == 0:
+            cambios.append(f"quitado {nombre} (x{antes})")
+        elif antes == 0:
+            cambios.append(f"+{despues} {nombre}")
+        else:
+            cambios.append(f"{nombre}: {antes} -> {despues}")
+
+    if not cambios and (body.nota is None or body.nota == pedido.nota):
+        raise HTTPException(status_code=400, detail="No hay ningún cambio que guardar")
+
+    # -- se aplica
+    for clave, cantidad in pedidas.items():
+        filas = actuales.get(clave)
+        if filas:
+            fila = filas[0]
+            # Si la misma cosa estaba en dos renglones, se consolida en uno.
+            for sobrante in filas[1:]:
+                db.delete(sobrante)
+            antes = sum(f.cantidad for f in filas)
+            # Hay comida nueva que hacer: vuelve a la cola de cocina aunque el
+            # renglon ya estuviera marcado.
+            if cantidad > antes:
+                fila.preparado = False
+            fila.cantidad = cantidad
+        else:
+            item = ejemplo[clave]
+            precio, costo = _precio_y_costo(clave)
+            if item.variante_id is not None:
+                nombre = _nombre_de_variante(variantes[item.variante_id])
+                # Misma regla que al crear: sin receta no hay nada que cocinar.
+                nace_preparado = not recetas.get(item.variante_id)
+            else:
+                nombre = item.nombre_libre.strip()
+                nace_preparado = False
+            db.add(
+                models.PedidoItem(
+                    pedido_id=pedido.id,
+                    variante_id=item.variante_id,
+                    nombre=nombre,
+                    precio_unitario=precio,
+                    costo_unitario=costo,
+                    cantidad=cantidad,
+                    nota=item.nota,
+                    preparado=nace_preparado,
+                )
+            )
+    for clave, filas in actuales.items():
+        if clave not in pedidas:
+            for fila in filas:
+                db.delete(fila)
+
+    for ingrediente, cambio in neto.items():
+        kardex.anotar(
+            db, ingrediente, -cambio,
+            kardex.VENTA if cambio > 0 else kardex.REVERSO,
+            origen="pedido_editado", referencia_id=pedido.id,
+            nota=f"Comanda #{pedido.numero} editada",
+            operador_id=quien.id if quien else None,
+        )
+
+    # La comida que ya estaba hecha y se quito no pasa por el kardex: esos
+    # insumos salieron del deposito cuando se tomo la comanda y no volvieron.
+    # Lo que hace falta es reconocer la perdida, igual que al anular un pedido
+    # que la cocina alcanzo a preparar.
+    for ingrediente, cantidad in perdida.items():
+        db_merma = models.Merma(
+            ingrediente_id=ingrediente.id,
+            cantidad=round(cantidad, 4),
+            motivo=f"Pedido #{pedido.numero} editado: comida ya preparada",
+            operador_id=quien.id if quien else None,
+        )
+        db.add(db_merma)
+        db.flush()
+        # Una venta ya cobrada tiene su costo reconocido en 5010, asi que la
+        # perdida se saca de ahi dentro del asiento de ajuste. Una que todavia
+        # no se cobro nunca lo reconocio: ahi la merma sale del inventario, que
+        # es exactamente lo que hace `registrar_merma`.
+        if pedido.estado != "pagado":
+            contabilidad.registrar_merma(
+                db, ingrediente, round(cantidad * (ingrediente.costo_unitario or 0), 2), db_merma.id
+            )
+
+    # Lo que este pedido tiene consumido AHORA: lo que ya habia, mas lo que
+    # entro, menos lo que volvio y lo que se boto. Se arrastra el registro
+    # viejo en vez de recalcularlo desde las recetas de hoy, porque si una
+    # receta cambio mientras la comanda estaba abierta, recalcular haria
+    # aparecer o desaparecer insumos que nadie movio.
+    consumo_viejo = {c.ingrediente: c.cantidad for c in pedido.consumos}
+    for consumo in list(pedido.consumos):
+        db.delete(consumo)
+    db.flush()
+    for ingrediente in set(consumo_viejo) | set(aumento) | set(retorno) | set(perdida):
+        queda = round(
+            consumo_viejo.get(ingrediente, 0)
+            + aumento.get(ingrediente, 0)
+            - retorno.get(ingrediente, 0)
+            - perdida.get(ingrediente, 0),
+            4,
+        )
+        if queda > 0:
+            db.add(
+                models.PedidoConsumo(
+                    pedido_id=pedido.id, ingrediente_id=ingrediente.id, cantidad=queda
+                )
+            )
+
+    if body.nota is not None:
+        pedido.nota = body.nota
+
+    if pedido.estado == "pagado":
+        signo = 1 if diferencia > 0 else -1
+        for pago in pagos:
+            db.add(
+                models.PagoPedido(
+                    pedido_id=pedido.id,
+                    metodo=pago.metodo,
+                    monto=round(signo * pago.monto, 2),
+                    referencia=(pago.referencia or "").strip(),
+                )
+            )
+        db.flush()
+        db.refresh(pedido)
+        metodos = {p.metodo for p in pedido.pagos}
+        pedido.metodo_pago = list(metodos)[0] if len(metodos) == 1 else "Mixto"
+        contabilidad.registrar_ajuste_edicion(
+            db, pedido, diferencia, round(nuevo_costo - costo_antes, 2),
+            [(p.metodo, p.monto) for p in pagos], costo_perdido=costo_perdido,
+        )
+
+    db.add(
+        models.PedidoEdicion(
+            pedido_id=pedido.id,
+            detalle="; ".join(cambios) or "cambio de nota",
+            total_antes=total_antes,
+            total_despues=nuevo_total,
+            diferencia=diferencia,
+            metodo_pago=", ".join(sorted({p.metodo for p in pagos})),
+            motivo=body.motivo,
+            operador_id=quien.id if quien else None,
+            autorizado_por=autorizado_por,
+        )
+    )
+    pedido.editado = True
+    pedido.editado_en = ahora()
+    pedido.editando_desde = None
+    pedido.editando_por_id = None
     db.commit()
     db.refresh(pedido)
 

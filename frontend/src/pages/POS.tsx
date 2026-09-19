@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
-import { Boton, Modal } from '../components/ui'
+import { Boton, Campo, Modal, Selector } from '../components/ui'
 import { api, connectWs } from '../lib/api'
+import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { colorCategoria } from '../lib/theme'
 import { etiquetaMetodo } from '../lib/pagos'
@@ -37,6 +38,32 @@ const CLAVE_PUNTO = 'erp-punto-venta'
 
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
 type Carrito = Record<number, CarritoEntry>
+
+/**
+ * Un renglon dentro del cuadro de edicion.
+ *
+ * `precio` viaja en la linea en vez de leerse del menu cada vez, y es lo que
+ * hace que el total que ve el cajero sea el mismo que va a calcular el
+ * servidor: un renglon que ya estaba conserva el precio al que se le dijo al
+ * cliente, aunque el menu haya subido mientras el pedido estaba abierto.
+ */
+type LineaEdicion = {
+  clave: string
+  variante_id: number | null
+  nombre: string
+  precio: number
+  cantidad: number
+}
+
+function lineasDePedido(pedido: Pedido): LineaEdicion[] {
+  return pedido.items.map((i) => ({
+    clave: i.variante_id !== null ? `v${i.variante_id}` : `libre:${i.nombre}:${i.precio_unitario}`,
+    variante_id: i.variante_id,
+    nombre: i.nombre,
+    precio: i.precio_unitario,
+    cantidad: i.cantidad,
+  }))
+}
 
 export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
@@ -85,6 +112,22 @@ export default function POS() {
     return v ? Number(v) : null
   })
   const [error, setError] = useState('')
+  // ── Editar un pedido ya tomado.
+  //
+  // Mientras este cuadro esta abierto, el servidor tiene la comanda marcada
+  // como "en edicion" y la cocina no la puede tocar. Por eso cerrar el cuadro
+  // avisa: un candado que solo se suelta al guardar dejaria la comanda
+  // trancada cada vez que alguien se arrepiente.
+  const [editando, setEditando] = useState<Pedido | null>(null)
+  const [lineas, setLineas] = useState<LineaEdicion[]>([])
+  const [motivoEdicion, setMotivoEdicion] = useState('')
+  const [buscarEnMenu, setBuscarEnMenu] = useState('')
+  const [usuarioAutoriza, setUsuarioAutoriza] = useState('')
+  const [claveAutoriza, setClaveAutoriza] = useState('')
+  const [metodoDiferencia, setMetodoDiferencia] = useState(METODOS_PAGO[0])
+  const [referenciaDiferencia, setReferenciaDiferencia] = useState('')
+  const [errorEdicion, setErrorEdicion] = useState('')
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
   const dialogo = useDialogo()
   const [ultimaVenta, setUltimaVenta] = useState<Pedido | null>(null)
   const { tasa, fmt } = useMoneda()
@@ -95,6 +138,19 @@ export default function POS() {
   const descuentoNum = Math.min(Number(descuento) || 0, subtotalCobro)
   const aCobrar = Math.round((subtotalCobro - descuentoNum + (Number(propina) || 0)) * 100) / 100
   const vuelto = Math.max(Math.round(((Number(recibido) || 0) - aCobrar) * 100) / 100, 0)
+
+  // Lo que va a costar el pedido despues de la edicion. Se calcula igual que
+  // en el servidor -- el descuento ya concedido se respeta -- para que el
+  // numero que el cajero le dice al cliente sea el que se va a cobrar.
+  const subtotalEditado =
+    Math.round(lineas.reduce((t, l) => t + l.precio * l.cantidad, 0) * 100) / 100
+  const totalEditado = editando
+    ? Math.max(Math.round((subtotalEditado - (editando.descuento || 0)) * 100) / 100, 0)
+    : 0
+  const diferencia = editando ? Math.round((totalEditado - editando.total) * 100) / 100 : 0
+  // Solo una venta YA COBRADA tiene plata que cuadrar. Si todavia no se ha
+  // cobrado, cambiar renglones es simplemente tomar bien el pedido.
+  const pideAutorizacion = Boolean(editando && editando.estado === 'pagado' && diferencia !== 0)
 
   useEffect(() => {
     // Solo lo que esta en el menu hoy: una categoria retirada conserva sus
@@ -468,7 +524,128 @@ export default function POS() {
     refrescarPedidos()
   }
 
+  async function editar(pedido: Pedido) {
+    const impedimento = porQueNoSeEdita(pedido)
+    if (impedimento) {
+      setError(impedimento)
+      return
+    }
+    setError('')
+    try {
+      // Se toma el candado ANTES de que el cajero empiece a tocar renglones:
+      // avisarle a la cocina cuando ya se guardo no sirve de nada.
+      const fresco = await api.abrirEdicion(pedido.id)
+      setEditando(fresco)
+      setLineas(lineasDePedido(fresco))
+      setMotivoEdicion('')
+      setBuscarEnMenu('')
+      setUsuarioAutoriza('')
+      setClaveAutoriza('')
+      setReferenciaDiferencia('')
+      setErrorEdicion('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo abrir la edición')
+    }
+    refrescarPedidos()
+  }
+
+  function cerrarEdicion() {
+    // Suelta el candado sin esperar: si la peticion falla, vence solo a los
+    // cinco minutos y la cocina sigue igual.
+    if (editando) api.soltarEdicion(editando.id).catch(() => {})
+    setEditando(null)
+    setLineas([])
+    setClaveAutoriza('')
+    refrescarPedidos()
+  }
+
+  function cambiarLinea(clave: string, delta: number) {
+    setLineas((prev) =>
+      prev
+        .map((l) => (l.clave === clave ? { ...l, cantidad: l.cantidad + delta } : l))
+        .filter((l) => l.cantidad > 0),
+    )
+  }
+
+  function agregarAlEditado(producto: Producto, variante: Variante) {
+    const clave = `v${variante.id}`
+    setLineas((prev) => {
+      const ya = prev.find((l) => l.clave === clave)
+      if (ya) return prev.map((l) => (l.clave === clave ? { ...l, cantidad: l.cantidad + 1 } : l))
+      const nombre =
+        variante.nombre && variante.nombre.toLowerCase() !== 'regular'
+          ? `${producto.nombre} - ${variante.nombre}`
+          : producto.nombre
+      return [...prev, { clave, variante_id: variante.id, nombre, precio: variante.precio, cantidad: 1 }]
+    })
+  }
+
+  async function guardarEdicion() {
+    if (!editando) return
+    setErrorEdicion('')
+    if (lineas.length === 0) {
+      setErrorEdicion('Un pedido no puede quedar vacío. Si ya no va, anúlalo.')
+      return
+    }
+    if (pideAutorizacion && (!usuarioAutoriza.trim() || !claveAutoriza)) {
+      setErrorEdicion('La diferencia de dinero necesita usuario y clave de quien la autoriza.')
+      return
+    }
+    setGuardandoEdicion(true)
+    try {
+      await api.editarPedido(
+        editando.id,
+        lineas.map((l) =>
+          l.variante_id !== null
+            ? { variante_id: l.variante_id, cantidad: l.cantidad }
+            : { variante_id: null, cantidad: l.cantidad, nombre_libre: l.nombre, precio_libre: l.precio },
+        ),
+        {
+          motivo: motivoEdicion,
+          autorizacion: pideAutorizacion
+            ? { usuario: usuarioAutoriza.trim(), clave: claveAutoriza }
+            : undefined,
+          // El monto va en positivo: el signo lo pone la diferencia. Pedirle al
+          // cajero que escriba -3.00 para una devolucion es pedirle que se
+          // equivoque.
+          pagos: pideAutorizacion
+            ? [
+                {
+                  metodo: metodoDiferencia,
+                  monto: Math.abs(diferencia),
+                  referencia: referenciaDiferencia,
+                },
+              ]
+            : undefined,
+        },
+      )
+      setEditando(null)
+      setLineas([])
+      setClaveAutoriza('')
+      refrescarPedidos()
+    } catch (e) {
+      setErrorEdicion(e instanceof Error ? e.message : 'No se pudo guardar')
+    } finally {
+      setGuardandoEdicion(false)
+    }
+  }
+
   const categoria = categorias.find((c) => c.id === categoriaActiva)
+
+  // Todo el menu en una lista, para el buscador del cuadro de edicion: ahi no
+  // hay espacio para las pestañas de categoria y lo que se necesita es teclear
+  // tres letras y tocar.
+  const platosDelMenu = useMemo(
+    () =>
+      categorias
+        .filter((c) => c.activo)
+        .flatMap((c) =>
+          c.productos
+            .filter((pr) => pr.activo)
+            .flatMap((pr) => pr.variantes.filter((v) => v.activo).map((v) => ({ producto: pr, variante: v }))),
+        ),
+    [categorias],
+  )
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -547,16 +724,30 @@ export default function POS() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {pedidosActivos.map((pedido) => (
               <div key={pedido.id} className="bg-white rounded-2xl shadow-sm border border-neutral-200 p-4">
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex justify-between items-center mb-2 gap-2">
                   <span className="font-bold text-lg">#{pedido.numero}</span>
-                  <span
-                    className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                      pedido.estado === 'listo'
-                        ? 'bg-exito-100 text-exito-700'
-                        : 'bg-aviso-100 text-aviso-700'
-                    }`}
-                  >
-                    {pedido.estado === 'listo' ? 'Listo para cobrar' : 'En cocina'}
+                  <span className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {pedido.editado && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-aviso-500/20 text-aviso-800">
+                        Editado
+                      </span>
+                    )}
+                    {/* Que la cocina ya la tenga no es un detalle de color: es
+                        el motivo por el que el boton de editar esta apagado. */}
+                    {enPreparacion(pedido) && (
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-acento-500/15 text-acento-800">
+                        {pedido.cocinando_por ? `${pedido.cocinando_por} la prepara` : 'En preparación'}
+                      </span>
+                    )}
+                    <span
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                        pedido.estado === 'listo'
+                          ? 'bg-exito-100 text-exito-700'
+                          : 'bg-aviso-100 text-aviso-700'
+                      }`}
+                    >
+                      {pedido.estado === 'listo' ? 'Listo para cobrar' : 'En cocina'}
+                    </span>
                   </span>
                 </div>
                 <ul className="text-sm text-neutral-600 mb-3">
@@ -574,6 +765,14 @@ export default function POS() {
                       className="text-peligro-500 text-xs font-medium"
                     >
                       Anular
+                    </button>
+                    <button
+                      onClick={() => editar(pedido)}
+                      disabled={Boolean(porQueNoSeEdita(pedido))}
+                      title={porQueNoSeEdita(pedido) ?? 'Cambiar los renglones del pedido'}
+                      className="text-neutral-600 text-xs font-medium disabled:opacity-30"
+                    >
+                      Editar
                     </button>
                     <button
                       onClick={() => setCobrando(pedido)}
@@ -639,6 +838,14 @@ export default function POS() {
                       {v.facturado && !v.devuelto && (
                         <span className="text-[10px] text-neutral-400 shrink-0">facturada</span>
                       )}
+                      {v.editado && (
+                        <span
+                          className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-aviso-500/20 text-aviso-800 shrink-0"
+                          title={v.ediciones.map((e) => e.detalle).join(' | ')}
+                        >
+                          Editada
+                        </span>
+                      )}
                       {v.operador && (
                         <span className="text-[10px] text-neutral-400 shrink-0" title="Quien cobro">
                           · {v.operador}
@@ -650,12 +857,22 @@ export default function POS() {
                       {v.devuelto ? (
                         <span className="text-xs text-neutral-500">devuelta</span>
                       ) : (
-                        <button
-                          onClick={() => devolver(v)}
-                          className="text-xs font-medium text-aviso-700"
-                        >
-                          Devolver
-                        </button>
+                        <>
+                          <button
+                            onClick={() => editar(v)}
+                            disabled={Boolean(porQueNoSeEdita(v))}
+                            title={porQueNoSeEdita(v) ?? 'Corregir lo que se cobró'}
+                            className="text-xs font-medium text-neutral-600 disabled:opacity-30"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => devolver(v)}
+                            className="text-xs font-medium text-aviso-700"
+                          >
+                            Devolver
+                          </button>
+                        </>
                       )}
                     </span>
                   </div>
@@ -767,6 +984,185 @@ export default function POS() {
             x
           </button>
         </div>
+      )}
+
+      {editando && (
+        <Modal
+          titulo={`Editar pedido #${editando.numero}`}
+          ayuda={
+            editando.estado === 'pagado'
+              ? 'Esta venta ya está cobrada: si el monto cambia hará falta una clave y decir por dónde entra o sale la diferencia.'
+              : 'La cocina tiene esta comanda bloqueada mientras el cuadro esté abierto.'
+          }
+          onCerrar={cerrarEdicion}
+          ancho="lg"
+          pie={
+            <div className="flex items-center justify-between w-full gap-3">
+              <Boton tono="fantasma" onClick={cerrarEdicion}>
+                Cancelar
+              </Boton>
+              <Boton onClick={guardarEdicion} disabled={guardandoEdicion || lineas.length === 0}>
+                {guardandoEdicion ? 'Guardando…' : 'Guardar cambios'}
+              </Boton>
+            </div>
+          }
+        >
+          {errorEdicion && <p className="text-peligro-600 text-sm mb-3">{errorEdicion}</p>}
+
+          <div className="space-y-2 mb-4">
+            {lineas.map((l) => (
+              <div key={l.clave} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold truncate">{l.nombre}</div>
+                  <div className="text-xs text-neutral-500">
+                    {l.cantidad} x {fmt(l.precio)} ={' '}
+                    <span className="font-semibold text-neutral-700">{fmt(l.precio * l.cantidad)}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => cambiarLinea(l.clave, -1)}
+                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
+                  >
+                    -
+                  </button>
+                  <span className="w-6 text-center font-semibold tabular-nums">{l.cantidad}</span>
+                  <button
+                    onClick={() => cambiarLinea(l.clave, 1)}
+                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            ))}
+            {lineas.length === 0 && (
+              <p className="text-sm text-peligro-600">
+                No queda ningún renglón. Un pedido vacío se anula, no se guarda.
+              </p>
+            )}
+          </div>
+
+          <input
+            value={buscarEnMenu}
+            onChange={(e) => setBuscarEnMenu(e.target.value)}
+            placeholder="Agregar del menú: escribe para buscar"
+            className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mb-2"
+          />
+          {buscarEnMenu.trim().length > 0 && (
+            <div className="grid grid-cols-2 gap-2 mb-4 max-h-44 overflow-y-auto">
+              {platosDelMenu
+                .filter(({ producto, variante }) =>
+                  `${producto.nombre} ${variante.nombre}`
+                    .toLowerCase()
+                    .includes(buscarEnMenu.trim().toLowerCase()),
+                )
+                .slice(0, 12)
+                .map(({ producto, variante }) => (
+                  <button
+                    key={variante.id}
+                    onClick={() => agregarAlEditado(producto, variante)}
+                    className="text-left bg-neutral-100 hover:bg-neutral-200 rounded-xl px-3 py-2 text-sm"
+                  >
+                    <span className="font-medium">
+                      {variante.nombre && variante.nombre.toLowerCase() !== 'regular'
+                        ? `${producto.nombre} - ${variante.nombre}`
+                        : producto.nombre}
+                    </span>
+                    <span className="block text-xs text-neutral-500">{fmt(variante.precio)}</span>
+                  </button>
+                ))}
+            </div>
+          )}
+
+          <div className="border-t border-neutral-200 pt-3 text-sm space-y-1">
+            <div className="flex justify-between text-neutral-500">
+              <span>Antes</span>
+              <span className="tabular-nums">{fmt(editando.total)}</span>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <span>Queda en</span>
+              <span className="tabular-nums">{fmt(totalEditado)}</span>
+            </div>
+            {diferencia !== 0 && (
+              <div
+                className={`flex justify-between font-semibold ${
+                  diferencia > 0 ? 'text-exito-700' : 'text-aviso-700'
+                }`}
+              >
+                <span>{diferencia > 0 ? 'El cliente paga de más' : 'Se le devuelve al cliente'}</span>
+                <span className="tabular-nums">{fmt(Math.abs(diferencia))}</span>
+              </div>
+            )}
+          </div>
+
+          {/* La clave no se pide por cambiar renglones: se pide por mover plata
+              de una venta ya cobrada. Un pedido sin cobrar no pide nada, y una
+              edicion que da exacta tampoco -- pedir clave siempre entrena a la
+              gente para que la clave no signifique nada. */}
+          {pideAutorizacion && (
+            <div className="mt-4 rounded-xl bg-aviso-500/10 ring-1 ring-aviso-500/30 p-3 space-y-3">
+              <p className="text-sm font-semibold text-aviso-900">
+                Esta venta ya está cobrada y el monto cambia en {fmt(Math.abs(diferencia))}.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Campo
+                  etiqueta="Autoriza (usuario)"
+                  value={usuarioAutoriza}
+                  onChange={(e) => setUsuarioAutoriza(e.target.value)}
+                  autoComplete="off"
+                />
+                <Campo
+                  etiqueta="Clave"
+                  type="password"
+                  value={claveAutoriza}
+                  onChange={(e) => setClaveAutoriza(e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+              <Selector
+                etiqueta={diferencia > 0 ? 'Cómo se cobra la diferencia' : 'Cómo se devuelve'}
+                value={metodoDiferencia}
+                onChange={(e) => setMetodoDiferencia(e.target.value)}
+              >
+                {METODOS_PAGO.map((m) => (
+                  <option key={m} value={m}>
+                    {etiquetaMetodo(m)}
+                  </option>
+                ))}
+              </Selector>
+              {METODOS_CON_REFERENCIA.has(metodoDiferencia) && (
+                <Campo
+                  etiqueta="Referencia"
+                  value={referenciaDiferencia}
+                  onChange={(e) => setReferenciaDiferencia(e.target.value)}
+                  ayuda="El número del pago móvil, el ticket del punto o el comprobante."
+                />
+              )}
+            </div>
+          )}
+
+          <Campo
+            etiqueta="Por qué se edita"
+            className="mt-4"
+            value={motivoEdicion}
+            onChange={(e) => setMotivoEdicion(e.target.value)}
+            placeholder="El cliente cambió de idea"
+          />
+
+          {editando.ediciones.length > 0 && (
+            <div className="mt-4 text-xs text-neutral-500 space-y-1">
+              <p className="font-semibold uppercase tracking-wide">Ya se editó antes</p>
+              {editando.ediciones.map((e) => (
+                <p key={e.id}>
+                  {e.detalle}
+                  {e.diferencia !== 0 && ` · ${fmt(e.diferencia)}`}
+                  {e.autorizado_por && ` · autorizó ${e.autorizado_por}`}
+                </p>
+              ))}
+            </div>
+          )}
+        </Modal>
       )}
 
       {cobrando && (

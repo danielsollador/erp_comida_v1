@@ -11,3 +11,5 @@ backend/respaldos_estado.json
 compartido/
 # Entorno virtual de Python para correr las pruebas
 .venv/
+# Entorno para correr las pruebas sin Docker (pytest + sqlalchemy).
+.venv-pruebas/

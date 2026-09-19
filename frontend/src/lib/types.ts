@@ -302,6 +302,8 @@ export type Pedido = {
   metodo_pago: string | null
   total: number
   creado_en: string
+  /** Cuando se cobro. Null mientras siga sin cobrar. */
+  cerrado_en: string | null
   facturado: boolean
   numero_factura: string | null
   /** Tasa a la que se cobro. Para montos historicos manda esta, no la de hoy. */
@@ -333,6 +335,35 @@ export type Pedido = {
     referencia: string
   }[]
   items: PedidoItem[]
+  /**
+   * Los dos candados entre cocina y punto de venta. Van como fecha, no como
+   * booleano: la pantalla muestra desde cuando, y el de edicion vence solo
+   * (ver MINUTOS_EDITANDO en el backend), asi que quien lo lee decide si
+   * sigue vivo.
+   */
+  cocinando_desde: string | null
+  cocinando_por: string
+  editando_desde: string | null
+  editando_por: string
+  /** Cambio despues de tomado. Se pinta en cocina y en ventas. */
+  editado: boolean
+  editado_en: string | null
+  ediciones: PedidoEdicion[]
+}
+export type PedidoEdicion = {
+  id: number
+  fecha: string
+  /** Que cambio, en palabras: "+1 Refresco; quitado Empanada (x2)". */
+  detalle: string
+  total_antes: number
+  total_despues: number
+  diferencia: number
+  /** Por donde entro o salio la diferencia. Vacio si no movio plata. */
+  metodo_pago: string
+  motivo: string
+  operador: string
+  /** Quien puso la clave. Vacio si la edicion no movio plata cobrada. */
+  autorizado_por: string
 }
 
 export type Gaveta = {
@@ -919,6 +950,9 @@ export type VentaFila = {
   nota_credito: string | null
   nota: string
   items: PedidoItem[]
+  /** Cambio despues de tomada; `ediciones` dice que cambio y quien lo autorizo. */
+  editado: boolean
+  ediciones: PedidoEdicion[]
 }
 
 export type ListaVentas = {

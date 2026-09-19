@@ -488,6 +488,22 @@ class PedidoItem(BaseModel):
         from_attributes = True
 
 
+class PedidoEdicion(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    detalle: str = ""
+    total_antes: float = 0
+    total_despues: float = 0
+    diferencia: float = 0
+    metodo_pago: str = ""
+    motivo: str = ""
+    operador: str = ""
+    autorizado_por: str = ""
+
+    class Config:
+        from_attributes = True
+
+
 class Pedido(BaseModel):
     id: int
     numero: int
@@ -496,6 +512,9 @@ class Pedido(BaseModel):
     metodo_pago: Optional[str]
     total: float
     creado_en: datetime.datetime
+    # Cuando se cobro. La pantalla la necesita para saber si la venta ya entro
+    # al cierre de caja de otro dia, que es lo que impide editarle el monto.
+    cerrado_en: Optional[datetime.datetime] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
     # Tasa a la que se cobro. Se expone para que la pantalla muestre los
@@ -520,9 +539,47 @@ class Pedido(BaseModel):
     anulado_por: str = ""
     pagos: List[Pago] = []
     items: List[PedidoItem]
+    # Los dos candados. Van como fecha y no como booleano porque la pantalla
+    # muestra desde cuando ("editando hace 2 min"), y porque el de edicion
+    # vence solo: quien decide si sigue vivo es quien lo lee.
+    cocinando_desde: Optional[datetime.datetime] = None
+    cocinando_por: str = ""
+    editando_desde: Optional[datetime.datetime] = None
+    editando_por: str = ""
+    editado: bool = False
+    editado_en: Optional[datetime.datetime] = None
+    ediciones: List[PedidoEdicion] = []
 
     class Config:
         from_attributes = True
+
+
+class Autorizacion(BaseModel):
+    """Usuario y clave de quien autoriza una diferencia de plata.
+
+    No es el login: quien esta editando ya entro. Es la firma de que alguien
+    con cuenta acepta que la caja reciba (o suelte) plata por un pedido que ya
+    estaba cobrado. Se verifica contra las cuentas del local y el nombre queda
+    guardado en la edicion.
+    """
+
+    usuario: str
+    clave: str
+
+
+class EditarPedidoRequest(BaseModel):
+    """Como queda el pedido despues de la edicion: la lista COMPLETA de
+    renglones, no un delta. El POS ya tiene el pedido en pantalla; mandar el
+    estado final evita que dos ediciones seguidas se pisen sumando cambios
+    sobre una base distinta a la que el cajero esta viendo."""
+
+    items: List[PedidoItemCreate]
+    nota: Optional[str] = None
+    motivo: str = ""
+    permitir_sin_stock: bool = False
+    # Solo hacen falta si la edicion cambia lo que ya se cobro.
+    autorizacion: Optional[Autorizacion] = None
+    pagos: Optional[List[PagoInput]] = None
 
 
 class CobrarRequest(BaseModel):
@@ -770,6 +827,11 @@ class VentaFila(BaseModel):
     nota_credito: Optional[str] = None
     nota: str = ""
     items: List[PedidoItem] = []
+    # Cambio despues de tomada. Una venta editada no se lee igual que una que
+    # salio bien a la primera, sobre todo si la edicion le movio el monto: por
+    # eso viaja el detalle completo y no solo la marca.
+    editado: bool = False
+    ediciones: List[PedidoEdicion] = []
 
 
 class ListaVentas(BaseModel):
