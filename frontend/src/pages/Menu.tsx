@@ -12,6 +12,8 @@ const SECCIONES = [
   { id: 'retiradas', texto: 'Fuera del menú' },
 ]
 
+const BR = '\n\n'
+
 export default function Menu() {
   const [seccion, irA] = useSeccion(SECCIONES)
   const [categorias, setCategorias] = useState<Categoria[]>([])
@@ -50,7 +52,7 @@ export default function Menu() {
         titulo: `¿Quitar "${cat?.nombre}" del menú?`,
         texto:
           `Deja de aparecer en el punto de venta junto con sus ${productos} producto(s), ` +
-          'pero las ventas que ya se hicieron se conservan intactas.\n\nSe puede volver a activar después.',
+          'pero las ventas que ya se hicieron se conservan intactas.\n\nSe puede volver a activar desde "Fuera del menú".',
         aceptar: 'Quitar',
         peligro: true,
       }))
@@ -68,6 +70,22 @@ export default function Menu() {
   // Una categoria entra si coincide su nombre --y entonces se ve entera-- o
   // si algun producto suyo coincide, y entonces se ve solo con esos.
   const visibles = filtrarMenu(categorias.filter((c) => c.activo), busqueda)
+
+  // Lo que se quito del menu, para poder devolverlo. Un producto retirado
+  // dentro de una categoria retirada no se lista aparte: vuelve con ella.
+  const catsRetiradas = categorias.filter((c) => !c.activo)
+  const productosRetirados = categorias
+    .filter((c) => c.activo)
+    .flatMap((c) => c.productos.filter((p) => !p.activo).map((p) => ({ cat: c, p })))
+  const variantesRetiradas = categorias
+    .filter((c) => c.activo)
+    .flatMap((c) =>
+      c.productos
+        .filter((p) => p.activo)
+        .flatMap((p) => p.variantes.filter((v) => !v.activo).map((v) => ({ p, v }))),
+    )
+  const hayRetirados =
+    catsRetiradas.length > 0 || productosRetirados.length > 0 || variantesRetiradas.length > 0
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -140,32 +158,52 @@ export default function Menu() {
         {seccion === 'retiradas' && (
           <>
         {/* Retiradas del menu, no borradas: sus ventas siguen en el historico
-            y se pueden volver a activar. */}
-        {categorias.some((c) => !c.activo) && (
+            y se pueden volver a activar. Antes solo se listaban las
+            CATEGORIAS; un producto o una presentacion que se quitaba no
+            aparecia por ningun lado y no habia forma de traerlo de vuelta. */}
+        {hayRetirados ? (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-1">Fuera del menú</h2>
             <p className="text-xs text-neutral-500 mb-3">
               No aparecen en el punto de venta. Sus ventas anteriores se conservan.
             </p>
             <div className="space-y-1">
-              {categorias
-                .filter((c) => !c.activo)
-                .map((c) => (
-                  <div key={c.id} className="flex justify-between items-center text-sm">
-                    <span>
-                      {c.nombre}
-                      <span className="text-xs text-neutral-400"> · {c.productos.length} producto(s)</span>
-                    </span>
-                    <button
-                      onClick={() => reactivarCategoria(c.id)}
-                      className="text-acento-600 text-xs font-medium"
-                    >
-                      Volver a activar
-                    </button>
-                  </div>
-                ))}
+              {catsRetiradas.map((c) => (
+                <FilaRetirada
+                  key={`c${c.id}`}
+                  nombre={c.nombre}
+                  detalle={`categoría · ${c.productos.length} producto(s)`}
+                  onVolver={() => reactivarCategoria(c.id)}
+                />
+              ))}
+              {productosRetirados.map(({ cat, p }) => (
+                <FilaRetirada
+                  key={`p${p.id}`}
+                  nombre={p.nombre}
+                  detalle={`producto de ${cat.nombre}`}
+                  onVolver={async () => {
+                    await api.reactivarProducto(p.id)
+                    cargar()
+                  }}
+                />
+              ))}
+              {variantesRetiradas.map(({ p, v }) => (
+                <FilaRetirada
+                  key={`v${v.id}`}
+                  nombre={`${p.nombre} - ${v.nombre}`}
+                  detalle="presentación"
+                  onVolver={async () => {
+                    await api.reactivarVariante(v.id)
+                    cargar()
+                  }}
+                />
+              ))}
             </div>
           </div>
+        ) : (
+          <p className="text-sm text-neutral-400 text-center py-6">
+            No has quitado nada del menú.
+          </p>
         )}
           </>
         )}
@@ -221,15 +259,21 @@ function CategoriaCard({
         </button>
       </div>
 
+      {/* Solo lo que esta EN el menu. Quitar un producto lo retira
+          (`activo = false`) para no romper las ventas viejas que lo
+          nombran; mostrarlo igual hacia parecer que el boton no servia. Lo
+          retirado se recupera desde "Fuera del menu". */}
       <div className="space-y-3">
-        {categoria.productos.map((producto) => (
-          <ProductoRow
-            key={producto.id}
-            producto={producto}
-            costos={costos}
-            onCambio={onCambio}
-          />
-        ))}
+        {categoria.productos
+          .filter((producto) => producto.activo)
+          .map((producto) => (
+            <ProductoRow
+              key={producto.id}
+              producto={producto}
+              costos={costos}
+              onCambio={onCambio}
+            />
+          ))}
       </div>
     </div>
   )
@@ -308,7 +352,19 @@ function ProductoRow({
   }
 
   async function borrarProducto() {
-    if (!(await dialogo.confirmar({ titulo: `¿Quitar "${producto.nombre}" del menú?`, aceptar: 'Quitar', peligro: true }))) return
+    if (
+      !(await dialogo.confirmar({
+        titulo: `¿Quitar "${producto.nombre}" del menú?`,
+        texto:
+          'Deja de aparecer en el punto de venta, pero las ventas que ya se hicieron se ' +
+          'conservan intactas.' +
+          BR +
+          'Se puede volver a activar desde "Fuera del menú".',
+        aceptar: 'Quitar',
+        peligro: true,
+      }))
+    )
+      return
     await api.eliminarProducto(producto.id)
     onCambio()
   }
@@ -439,4 +495,27 @@ function filtrarMenu(categorias: Categoria[], texto: string): Categoria[] {
     )
     return productos.length ? [{ ...cat, productos }] : []
   })
+}
+
+/** Una cosa retirada del menu, con su boton para devolverla. */
+function FilaRetirada({
+  nombre,
+  detalle,
+  onVolver,
+}: {
+  nombre: string
+  detalle: string
+  onVolver: () => void
+}) {
+  return (
+    <div className="flex justify-between items-center gap-3 text-sm py-1">
+      <span className="min-w-0">
+        {nombre}
+        <span className="text-xs text-neutral-400"> · {detalle}</span>
+      </span>
+      <button onClick={onVolver} className="text-acento-600 text-xs font-medium shrink-0">
+        Volver a activar
+      </button>
+    </div>
+  )
 }

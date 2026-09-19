@@ -173,6 +173,8 @@ export const api = {
   actualizarProducto: (id: number, p: { categoria_id: number; nombre: string; activo: boolean }) =>
     req<Producto>(`/menu/productos/${id}`, { method: 'PUT', body: JSON.stringify(p) }),
   eliminarProducto: (id: number) => req(`/menu/productos/${id}`, { method: 'DELETE' }),
+  reactivarProducto: (id: number) =>
+    req<Producto>(`/menu/productos/${id}/reactivar`, { method: 'POST' }),
 
   crearVariante: (producto_id: number, nombre: string, precio: number) =>
     req<Variante>(`/menu/productos/${producto_id}/variantes`, {
@@ -185,6 +187,8 @@ export const api = {
       body: JSON.stringify({ nombre, precio, activo }),
     }),
   eliminarVariante: (id: number) => req(`/menu/variantes/${id}`, { method: 'DELETE' }),
+  reactivarVariante: (id: number) =>
+    req<Variante>(`/menu/variantes/${id}/reactivar`, { method: 'POST' }),
   costosVariantes: () => req<CostoVariante[]>('/menu/costos'),
   historialPrecios: (varianteId: number) =>
     req<CambioPrecio[]>(`/menu/variantes/${varianteId}/precios`),
