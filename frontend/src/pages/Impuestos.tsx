@@ -63,6 +63,10 @@ export default function Impuestos() {
   // El valor solo se usa via tasaInput; se guarda el setter para refrescarlo.
   const [, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
   const [tasaInput, setTasaInput] = useState('')
+  // Revisar una factura puntual (un reclamo, una auditoria) es buscarla, no
+  // hojear el libro entero mes por mes.
+  const [buscarVentas, setBuscarVentas] = useState('')
+  const [buscarCompras, setBuscarCompras] = useState('')
 
   useEffect(() => {
     api.libroVentas(rango).then(setVentas)
@@ -127,7 +131,13 @@ export default function Impuestos() {
 
         {seccion === 'ventas' && ventas && (
           <div className="space-y-3">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <input
+                value={buscarVentas}
+                onChange={(e) => setBuscarVentas(e.target.value)}
+                placeholder="Buscar por número de factura o cliente…"
+                className="w-full sm:w-72 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
               <a
                 href={`/api/impuestos/libro-ventas/exportar?${queryRango(rango)}`}
                 className="text-sm font-medium text-acento-700 hover:underline"
@@ -155,18 +165,29 @@ export default function Impuestos() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ordenVentas.ordenar(ventas.filas).map((f) => (
-                    <tr key={f.pedido_id} className="border-t border-neutral-100">
-                      <td className="p-3 whitespace-nowrap">
-                        {new Date(f.fecha).toLocaleDateString('es-VE')}
-                      </td>
-                      <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
-                      <td className="p-3">{f.cliente}</td>
-                      <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
-                      <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
-                      <td className="text-right p-3 tabular-nums font-semibold">{f.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
+                  {ordenVentas
+                    .ordenar(
+                      ventas.filas.filter((f) => {
+                        const q = buscarVentas.trim().toLowerCase()
+                        if (!q) return true
+                        return (
+                          f.numero_factura.toLowerCase().includes(q) ||
+                          f.cliente.toLowerCase().includes(q)
+                        )
+                      }),
+                    )
+                    .map((f) => (
+                      <tr key={f.pedido_id} className="border-t border-neutral-100">
+                        <td className="p-3 whitespace-nowrap">
+                          {new Date(f.fecha).toLocaleDateString('es-VE')}
+                        </td>
+                        <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
+                        <td className="p-3">{f.cliente}</td>
+                        <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
+                        <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
+                        <td className="text-right p-3 tabular-nums font-semibold">{f.total.toFixed(2)}</td>
+                      </tr>
+                    ))}
                   {ventas.filas.length === 0 && (
                     <tr>
                       <td colSpan={6} className="text-neutral-400 py-4 text-center">
@@ -194,7 +215,13 @@ export default function Impuestos() {
 
         {seccion === 'compras' && compras && (
           <div className="space-y-3">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <input
+              value={buscarCompras}
+              onChange={(e) => setBuscarCompras(e.target.value)}
+              placeholder="Buscar por número de factura o proveedor…"
+              className="w-full sm:w-72 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+            />
             <a
               href={`/api/impuestos/libro-compras/exportar?${queryRango(rango)}`}
               className="text-sm font-medium text-acento-700 hover:underline"
@@ -216,17 +243,28 @@ export default function Impuestos() {
                 </tr>
               </thead>
               <tbody>
-                {ordenCompras.ordenar(compras.filas).map((f) => (
-                  <tr key={f.factura_id} className="border-t border-neutral-100">
-                    <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
-                    <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
-                    <td className="p-3">{f.proveedor_nombre}</td>
-                    <td className="p-3 text-neutral-500">{f.proveedor_rif || '-'}</td>
-                    <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
-                    <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
-                    <td className="text-right p-3 tabular-nums font-semibold">{f.total.toFixed(2)}</td>
-                  </tr>
-                ))}
+                {ordenCompras
+                  .ordenar(
+                    compras.filas.filter((f) => {
+                      const q = buscarCompras.trim().toLowerCase()
+                      if (!q) return true
+                      return (
+                        f.numero_factura.toLowerCase().includes(q) ||
+                        f.proveedor_nombre.toLowerCase().includes(q)
+                      )
+                    }),
+                  )
+                  .map((f) => (
+                    <tr key={f.factura_id} className="border-t border-neutral-100">
+                      <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
+                      <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
+                      <td className="p-3">{f.proveedor_nombre}</td>
+                      <td className="p-3 text-neutral-500">{f.proveedor_rif || '-'}</td>
+                      <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
+                      <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
+                      <td className="text-right p-3 tabular-nums font-semibold">{f.total.toFixed(2)}</td>
+                    </tr>
+                  ))}
                 {compras.filas.length === 0 && (
                   <tr>
                     <td colSpan={7} className="text-neutral-400 py-4 text-center">

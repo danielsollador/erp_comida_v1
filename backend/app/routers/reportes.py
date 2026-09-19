@@ -593,6 +593,7 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
 
     anulados = len(_pedidos_anulados(db, inicio, fin))
     devoluciones = _devoluciones(db, inicio, fin)
+    facturados = [p for p in pedidos if p.facturado]
 
     por_metodo: Dict[str, float] = {}
     for p in pedidos:
@@ -624,6 +625,8 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
         pedidos_anulados=anulados,
         devoluciones=len(devoluciones),
         valor_devuelto=round(sum(p.total for p in devoluciones), 2),
+        facturadas=len(facturados),
+        valor_facturado=round(sum(p.total for p in facturados), 2),
         por_metodo_pago=por_metodo,
         serie=serie,
         top_productos=productos[:10],

@@ -237,6 +237,8 @@ export type ReporteResumen = {
   valor_anulado: number
   devoluciones: number
   valor_devuelto: number
+  facturadas: number
+  valor_facturado: number
   por_metodo_pago: Record<string, number>
   serie: PuntoSerie[]
   top_productos: ProductoVendido[]
@@ -322,6 +324,8 @@ export type Pedido = {
   operador: string
   punto_venta: string
   anulado_por: string
+  /** null si no esta anulado. True = se preparo y se perdio. False = volvio al inventario. */
+  anulado_es_perdida: boolean | null
   /** Un pedido puede pagarse con varias formas a la vez. */
   pagos: {
     metodo: string
@@ -915,6 +919,7 @@ export type VentaFila = {
   operador: string
   punto_venta: string
   anulado_por: string
+  anulado_es_perdida: boolean | null
   motivo_devolucion: string
   nota_credito: string | null
   nota: string

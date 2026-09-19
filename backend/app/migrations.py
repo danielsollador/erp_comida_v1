@@ -71,6 +71,7 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "operador_id", "INTEGER"),
     ("TRX110_VEN_PEDIDO", "punto_venta_id", "INTEGER"),
     ("TRX110_VEN_PEDIDO", "anulado_por_id", "INTEGER"),
+    ("TRX110_VEN_PEDIDO", "anulado_es_perdida", "BOOLEAN"),
     ("TRX510_CAJ_CIERRE", "operador_id", "INTEGER"),
     ("TRX510_CAJ_CIERRE", "punto_venta_id", "INTEGER"),
     ("TRX630_CON_RETIRO_PROPIETARIO", "operador_id", "INTEGER"),

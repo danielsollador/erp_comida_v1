@@ -118,6 +118,7 @@ def _fila(p: models.Pedido) -> schemas.VentaFila:
         operador=p.operador,
         punto_venta=p.punto_venta,
         anulado_por=p.anulado_por,
+        anulado_es_perdida=p.anulado_es_perdida,
         motivo_devolucion=p.motivo_devolucion or "",
         nota_credito=p.nota_credito,
         nota=p.nota or "",

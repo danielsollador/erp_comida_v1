@@ -697,6 +697,11 @@ async def anular_pedido(
             )
 
     pedido.estado = "anulado"
+    # Se guarda la decision de VERDAD, no lo que adivina el front mirando si
+    # algun item quedo "preparado": quien anula puede haber corregido esa
+    # adivinanza, y Ventas necesita el dato real para mostrar dos tipos de
+    # anulacion distintos, no repetir la misma adivinanza en otro lado.
+    pedido.anulado_es_perdida = preparada
     db.commit()
     db.refresh(pedido)
 
