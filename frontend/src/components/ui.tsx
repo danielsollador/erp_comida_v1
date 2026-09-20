@@ -436,6 +436,9 @@ export function Modal({
   return createPortal(
     <div
       className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4"
+      // Si el teclado propio esta abierto (Teclado.tsx), el cuadro se centra
+      // en lo que queda de pantalla en vez de quedar debajo de el.
+      style={{ paddingRight: 'var(--vp-teclado-derecha, 0px)', paddingBottom: 'var(--vp-teclado-abajo, 0px)' }}
       onClick={onCerrar}
       role="presentation"
     >

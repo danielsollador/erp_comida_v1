@@ -12,34 +12,48 @@ import {
 import { createPortal } from 'react-dom'
 
 /**
- * El teclado numerico del ERP, para las tablets del mostrador.
+ * El teclado propio del ERP, para las tablets del mostrador.
  *
- * POR QUE EXISTE. En una tablet, tocar el campo "Descuento" abria el teclado
- * del sistema: alfabetico, con fila de sugerencias, y ocupando mas de la
- * mitad de la pantalla --tapaba el propio cuadro de cobro. `type="number"`
- * no lo evitaba: el teclado de Samsung lo ignora. Leider (20-sep): "cuando
- * se escribe en tablets es super engorroso, y esto se usa mucho en tablets".
+ * POR QUE EXISTE. En una tablet, tocar un campo abria el teclado del sistema:
+ * alfabetico con sugerencias para un monto, ocupando mas de media pantalla y
+ * tapando el propio cuadro de cobro. Leider (20-sep): "necesito que se vea a
+ * la derecha el teclado, donde no ocupe tanto... y tambien para texto,
+ * porque para texto literalmente no existe nada".
  *
- * COMO FUNCIONA. Todo campo de numero del ERP es un `<Numerico>`. En una
- * pantalla tactil (`pointer: coarse`) el campo no deja salir el teclado del
- * sistema y en su lugar abre ESTE, abajo, con doce teclas grandes y una
- * linea que dice que campo se esta llenando y con que valor: asi no importa
- * si el teclado tapa el campo. En un computador con raton el campo es un
- * input normal y el teclado fisico funciona como siempre.
+ * COMO FUNCIONA. En una pantalla tactil (`pointer: coarse`) el teclado del
+ * sistema no sale nunca: se le dice al navegador `inputmode="none"` y en su
+ * lugar se abre este, ANCLADO A LA DERECHA en la tablet apaisada (un tercio
+ * del ancho, sin tapar el cuadro, que se corre a la izquierda) o abajo en un
+ * telefono. Dos teclados:
  *
- * El valor viaja como TEXTO, igual que antes (`e.target.value`): las
- * pantallas ya lo convertian con `Number(...)`, y asi acepta la coma decimal
- * que es como se escribe aqui.
+ *   NUMERICO  para todo campo de numero (`<Numerico>`): doce teclas grandes.
+ *   TEXTO     para cualquier otro campo de texto o area de texto del ERP, sin
+ *             tocar las pantallas: se engancha al foco de la pagina y escribe
+ *             en el campo igual que lo haria una persona (React se entera por
+ *             el evento `input`).
+ *
+ * Arriba de las teclas se ve que campo se esta llenando y con que valor, asi
+ * da igual si el campo quedo detras. En un computador con raton nada de esto
+ * existe: los campos son inputs normales.
  */
 
-type Objetivo = {
-  etiqueta: string
-  valor: string
-  oculto: boolean
-  entero: boolean
-  poner: (v: string) => void
-  listo: () => void
-}
+type Objetivo =
+  | {
+      tipo: 'numero'
+      etiqueta: string
+      valor: string
+      oculto: boolean
+      entero: boolean
+      poner: (v: string) => void
+      listo: () => void
+    }
+  | {
+      tipo: 'texto'
+      etiqueta: string
+      valor: string
+      oculto: boolean
+      el: HTMLInputElement | HTMLTextAreaElement
+    }
 
 type Ctx = {
   abrir: (o: Objetivo) => void
@@ -52,19 +66,112 @@ const TecladoCtx = createContext<Ctx | null>(null)
 /** Si esta pantalla se maneja con el dedo. Se decide una vez por carga. */
 export function esTactil(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false
+  // Para probarlo en un computador: localStorage.setItem('vp-teclado', 'siempre').
+  try {
+    const forzado = window.localStorage.getItem('vp-teclado')
+    if (forzado === 'siempre') return true
+    if (forzado === 'nunca') return false
+  } catch {
+    // sin almacenamiento local, se decide por el puntero
+  }
   return window.matchMedia('(pointer: coarse)').matches
+}
+
+// Anchos del panel a la derecha. Por debajo de `MINIMO_DERECHA` de ancho de
+// pantalla (un telefono, una tablet en vertical) va abajo.
+const ANCHO_NUMERO = 300
+const ANCHO_TEXTO = 620
+const MINIMO_DERECHA = 1000
+
+/** Los campos de texto a los que se engancha el teclado de texto. */
+function campoDeTexto(el: EventTarget | null): HTMLInputElement | HTMLTextAreaElement | null {
+  if (!(el instanceof HTMLElement)) return null
+  if (el.closest('[data-teclado]')) return null
+  if (el instanceof HTMLTextAreaElement) return el.readOnly ? null : el
+  if (!(el instanceof HTMLInputElement)) return null
+  if (el.readOnly || el.disabled) return null
+  const tipo = (el.getAttribute('type') || 'text').toLowerCase()
+  if (!['text', 'search', 'password', 'email', 'tel', 'url'].includes(tipo)) return null
+  // Los de numero ya traen su teclado (<Numerico>).
+  if (el.dataset.numerico === '1') return null
+  return el
+}
+
+function rotuloDe(el: HTMLElement, porDefecto: string): string {
+  const aria = el.getAttribute('aria-label')
+  if (aria) return aria
+  const label = el.closest('label')
+  const texto = label?.textContent?.trim()
+  if (texto) return texto.split('\n')[0].slice(0, 40)
+  if (el.id) {
+    const l = document.querySelector(`label[for="${el.id}"]`)
+    if (l?.textContent?.trim()) return l.textContent.trim()
+  }
+  return (el as HTMLInputElement).placeholder || porDefecto
+}
+
+/** Escribe en el campo como lo haria la persona: React lo ve por `input`. */
+function escribirEn(el: HTMLInputElement | HTMLTextAreaElement, valor: string, caret: number) {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+  if (setter) setter.call(el, valor)
+  else el.value = valor
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  try {
+    el.setSelectionRange(caret, caret)
+  } catch {
+    // email y algunos tipos no dejan mover el cursor
+  }
 }
 
 export function TecladoProvider({ children }: { children: ReactNode }) {
   const [objetivo, setObjetivo] = useState<Objetivo | null>(null)
+  const tactil = useMemo(esTactil, [])
 
   const abrir = useCallback((o: Objetivo) => setObjetivo(o), [])
   const cerrar = useCallback(() => setObjetivo(null), [])
   const actualizar = useCallback((valor: string) => {
     setObjetivo((o) => (o ? { ...o, valor } : o))
   }, [])
-
   const ctx = useMemo(() => ({ abrir, cerrar, actualizar }), [abrir, cerrar, actualizar])
+
+  // El teclado de TEXTO se engancha a la pagina entera: cualquier campo de
+  // texto del ERP, sin que cada pantalla tenga que saberlo.
+  useEffect(() => {
+    if (!tactil) return
+    // ANTES del foco: es lo que evita que el navegador abra el suyo.
+    const alTocar = (e: Event) => {
+      const el = campoDeTexto(e.target)
+      if (el) el.setAttribute('inputmode', 'none')
+    }
+    const alEnfocar = (e: FocusEvent) => {
+      const el = campoDeTexto(e.target)
+      if (!el) return
+      el.setAttribute('inputmode', 'none')
+      setObjetivo({
+        tipo: 'texto',
+        el,
+        etiqueta: rotuloDe(el, 'Texto'),
+        valor: el.value,
+        oculto: el instanceof HTMLInputElement && el.type === 'password',
+      })
+    }
+    const alSoltar = (e: FocusEvent) => {
+      const el = campoDeTexto(e.target)
+      if (!el) return
+      setObjetivo((o) => (o && o.tipo === 'texto' && o.el === el ? null : o))
+    }
+    document.addEventListener('touchstart', alTocar, true)
+    document.addEventListener('pointerdown', alTocar, true)
+    document.addEventListener('focusin', alEnfocar)
+    document.addEventListener('focusout', alSoltar)
+    return () => {
+      document.removeEventListener('touchstart', alTocar, true)
+      document.removeEventListener('pointerdown', alTocar, true)
+      document.removeEventListener('focusin', alEnfocar)
+      document.removeEventListener('focusout', alSoltar)
+    }
+  }, [tactil])
 
   return (
     <TecladoCtx.Provider value={ctx}>
@@ -74,17 +181,12 @@ export function TecladoProvider({ children }: { children: ReactNode }) {
   )
 }
 
-const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
-const boton = 'h-12 rounded-xl text-xl font-semibold tabular-nums active:scale-95 transition-transform select-none'
-const gris = 'bg-neutral-800 hover:bg-neutral-700'
+// ── El panel ────────────────────────────────────────────────────────────────
 
-function Digito({ t, onClick }: { t: string; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className={`${boton} ${gris}`}>
-      {t}
-    </button>
-  )
-}
+const tecla =
+  'rounded-lg font-medium select-none active:scale-95 transition-transform bg-neutral-100 text-neutral-900 hover:bg-neutral-200 disabled:opacity-30'
+const especial = 'bg-neutral-200 text-neutral-700 hover:bg-neutral-300'
+const principal = 'bg-neutral-900 text-white hover:bg-neutral-800'
 
 function Panel({
   objetivo,
@@ -95,7 +197,79 @@ function Panel({
   onCerrar: () => void
   onValor: (v: string) => void
 }) {
-  const { etiqueta, valor, oculto, entero, listo } = objetivo
+  const ancho = objetivo.tipo === 'numero' ? ANCHO_NUMERO : ANCHO_TEXTO
+  const [derecha, setDerecha] = useState(() => window.innerWidth >= MINIMO_DERECHA)
+
+  useEffect(() => {
+    const medir = () => setDerecha(window.innerWidth >= MINIMO_DERECHA)
+    window.addEventListener('resize', medir)
+    return () => window.removeEventListener('resize', medir)
+  }, [])
+
+  // El resto de la pantalla se corre para dejarle sitio: los cuadros (Modal)
+  // leen estas variables y se centran en lo que queda.
+  useEffect(() => {
+    const raiz = document.documentElement.style
+    raiz.setProperty('--vp-teclado-derecha', derecha ? `${ancho}px` : '0px')
+    raiz.setProperty('--vp-teclado-abajo', derecha ? '0px' : objetivo.tipo === 'numero' ? '250px' : '290px')
+    return () => {
+      raiz.setProperty('--vp-teclado-derecha', '0px')
+      raiz.setProperty('--vp-teclado-abajo', '0px')
+    }
+  }, [derecha, ancho, objetivo.tipo])
+
+  const mostrado = objetivo.oculto ? '•'.repeat(objetivo.valor.length) : objetivo.valor
+
+  return createPortal(
+    <div
+      data-teclado="1"
+      role="dialog"
+      aria-label={`Teclado para ${objetivo.etiqueta}`}
+      className={`fixed z-[60] bg-white text-neutral-900 shadow-2xl border-neutral-200 flex flex-col ${
+        derecha ? 'top-0 right-0 bottom-0 border-l' : 'inset-x-0 bottom-0 border-t pb-[env(safe-area-inset-bottom)]'
+      }`}
+      style={{ width: derecha ? ancho : undefined, animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
+      // No robar el foco del campo: si el foco se va, el campo se cierra.
+      onMouseDown={(e) => e.preventDefault()}
+      onPointerDown={(e) => e.preventDefault()}
+    >
+      <div className={`px-3 pt-3 pb-2 ${derecha ? 'border-b border-neutral-100' : ''}`}>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 truncate">{objetivo.etiqueta}</div>
+        <div
+          className={`font-semibold tabular-nums break-words min-h-[1.75rem] leading-tight ${
+            objetivo.tipo === 'numero' ? 'text-2xl text-right' : 'text-base'
+          }`}
+        >
+          {mostrado || <span className="text-neutral-300">{objetivo.tipo === 'numero' ? '0' : '…'}</span>}
+          {objetivo.tipo === 'texto' && <span className="inline-block w-px h-4 bg-neutral-900 align-middle ml-px animate-pulse" />}
+        </div>
+      </div>
+      <div className={`px-3 pb-3 ${derecha ? 'flex-1 flex flex-col justify-end' : ''}`}>
+        {objetivo.tipo === 'numero' ? (
+          <Numeros objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
+        ) : (
+          <Letras objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// ── Numerico ────────────────────────────────────────────────────────────────
+
+const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+
+function Numeros({
+  objetivo,
+  onCerrar,
+  onValor,
+}: {
+  objetivo: Extract<Objetivo, { tipo: 'numero' }>
+  onCerrar: () => void
+  onValor: (v: string) => void
+}) {
+  const { valor, entero, listo } = objetivo
   // Lo que dice arriba cambia AQUI mismo, sin esperar a que la pantalla
   // vuelva a pintar el campo: si no, va una tecla por detras.
   const poner = (v: string) => {
@@ -103,19 +277,14 @@ function Panel({
     objetivo.poner(v)
   }
 
-  function tecla(t: string) {
+  function pulsar(t: string) {
     if (t === ',') {
       if (entero || valor.includes('.') || valor.includes(',')) return
       poner((valor || '0') + '.')
       return
     }
-    // "0.00" es un marcador, no un valor escrito: la primera tecla lo pisa.
-    const base = valor === '0' ? '' : valor
-    poner(base + t)
-  }
-
-  function borrar() {
-    poner(valor.slice(0, -1))
+    // "0" solo es un marcador: la primera tecla lo pisa.
+    poner((valor === '0' ? '' : valor) + t)
   }
 
   function terminar() {
@@ -123,49 +292,169 @@ function Panel({
     onCerrar()
   }
 
-  const mostrado = oculto ? '•'.repeat(valor.length) : valor.replace('.', ',')
+  const alto = 'h-12 text-xl'
+  const d = (t: string) => (
+    <button key={t} type="button" onClick={() => pulsar(t)} className={`${tecla} ${alto}`}>
+      {t}
+    </button>
+  )
 
-  return createPortal(
-    <div
-      role="dialog"
-      aria-label={`Teclado para ${etiqueta}`}
-      // Debajo de todo lo demas en la pantalla salvo los cuadros (z-50): se
-      // abre desde un campo de un cuadro y tiene que quedar encima de el.
-      className="fixed inset-x-0 bottom-0 z-[60] bg-neutral-900 text-white border-t border-neutral-700 shadow-2xl pb-[env(safe-area-inset-bottom)]"
-      style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
-      // No robar el foco del campo: si el foco se va, el campo se cierra.
-      onMouseDown={(e) => e.preventDefault()}
-      onTouchStart={(e) => e.stopPropagation()}
-    >
-      <div className="max-w-md mx-auto px-3 pt-2 pb-3">
-        <div className="flex items-baseline justify-between gap-3 px-1 mb-2">
-          <span className="text-xs uppercase tracking-wide text-neutral-400 truncate">{etiqueta}</span>
-          <span className="text-2xl font-bold tabular-nums min-h-[2rem]">{mostrado || <span className="text-neutral-600">0</span>}</span>
-        </div>
-        {/* Cuatro columnas: los digitos a la izquierda y, a la derecha,
-            borrar, limpiar y Listo (que ocupa dos filas). */}
-        <div className="grid grid-cols-4 gap-2">
-          {TECLAS.slice(0, 3).map((t) => <Digito key={t} t={t} onClick={() => tecla(t)} />)}
-          <button type="button" onClick={borrar} aria-label="Borrar" className={`${boton} ${gris}`}>⌫</button>
-          {TECLAS.slice(3, 6).map((t) => <Digito key={t} t={t} onClick={() => tecla(t)} />)}
-          <button type="button" onClick={() => poner('')} aria-label="Limpiar" className={`${boton} ${gris} text-base`}>C</button>
-          {TECLAS.slice(6, 9).map((t) => <Digito key={t} t={t} onClick={() => tecla(t)} />)}
-          <button type="button" onClick={terminar} className={`${boton} row-span-2 h-auto bg-acento-500 hover:bg-acento-600 text-base`}>
-            Listo
-          </button>
-          <button type="button" onClick={() => tecla(',')} disabled={entero} className={`${boton} ${gris} disabled:opacity-30`}>
-            ,
-          </button>
-          <Digito t="0" onClick={() => tecla('0')} />
-          <button type="button" onClick={terminar} aria-label="Cerrar teclado" className={`${boton} ${gris} text-base`}>
-            ▾
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <div className="grid grid-cols-4 gap-1.5">
+      {TECLAS.slice(0, 3).map(d)}
+      <button type="button" onClick={() => poner(valor.slice(0, -1))} aria-label="Borrar" className={`${tecla} ${especial} ${alto}`}>
+        ⌫
+      </button>
+      {TECLAS.slice(3, 6).map(d)}
+      <button type="button" onClick={() => poner('')} aria-label="Limpiar" className={`${tecla} ${especial} ${alto} text-base`}>
+        C
+      </button>
+      {TECLAS.slice(6, 9).map(d)}
+      <button type="button" onClick={terminar} className={`${tecla} ${principal} row-span-2 h-auto text-base`}>
+        Listo
+      </button>
+      <button type="button" onClick={() => pulsar(',')} disabled={entero} className={`${tecla} ${alto}`}>
+        ,
+      </button>
+      {d('0')}
+      <button type="button" onClick={terminar} aria-label="Cerrar teclado" className={`${tecla} ${especial} ${alto} text-base`}>
+        ▾
+      </button>
+    </div>
   )
 }
+
+// ── Texto ───────────────────────────────────────────────────────────────────
+
+const FILA_NUMEROS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+const FILA_ACENTOS = ['á', 'é', 'í', 'ó', 'ú', 'ü', '¿', '?', '¡', '!']
+const FILAS = [
+  ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'ñ'],
+  ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.'],
+]
+
+function Letras({
+  objetivo,
+  onCerrar,
+  onValor,
+}: {
+  objetivo: Extract<Objetivo, { tipo: 'texto' }>
+  onCerrar: () => void
+  onValor: (v: string) => void
+}) {
+  const { el } = objetivo
+  const [mayus, setMayus] = useState(() => !el.value)
+  const [acentos, setAcentos] = useState(false)
+
+  function insertar(texto: string) {
+    const inicio = el.selectionStart ?? el.value.length
+    const fin = el.selectionEnd ?? el.value.length
+    const nuevo = el.value.slice(0, inicio) + texto + el.value.slice(fin)
+    escribirEn(el, nuevo, inicio + texto.length)
+    onValor(nuevo)
+    // Como en un telefono: mayuscula al empezar y despues de un punto.
+    if (mayus && /[a-zñ]/i.test(texto)) setMayus(false)
+    if (/[.!?]\s?$/.test(nuevo)) setMayus(true)
+  }
+
+  function borrar() {
+    const inicio = el.selectionStart ?? el.value.length
+    const fin = el.selectionEnd ?? el.value.length
+    if (inicio === 0 && fin === 0) return
+    const desde = inicio === fin ? inicio - 1 : inicio
+    const nuevo = el.value.slice(0, desde) + el.value.slice(fin)
+    escribirEn(el, nuevo, desde)
+    onValor(nuevo)
+    if (!nuevo) setMayus(true)
+  }
+
+  function intro() {
+    if (el instanceof HTMLTextAreaElement) {
+      insertar('\n')
+      return
+    }
+    // Enter en un campo de un formulario es "enviar", como con teclado fisico.
+    const form = el.closest('form')
+    if (form) {
+      form.requestSubmit()
+      return
+    }
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    el.blur()
+    onCerrar()
+  }
+
+  function listo() {
+    el.blur()
+    onCerrar()
+  }
+
+  const letra = (t: string) => {
+    const texto = mayus ? t.toUpperCase() : t
+    return (
+      <button key={t} type="button" onClick={() => insertar(texto)} className={`${tecla} h-11 text-lg flex-1 min-w-0`}>
+        {texto}
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-1.5">
+        {(acentos ? FILA_ACENTOS : FILA_NUMEROS).map((t) => (
+          <button key={t} type="button" onClick={() => insertar(mayus && acentos ? t.toUpperCase() : t)} className={`${tecla} h-10 text-base flex-1 min-w-0`}>
+            {mayus && acentos ? t.toUpperCase() : t}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-1.5">{FILAS[0].map(letra)}</div>
+      <div className="flex gap-1.5 px-4">{FILAS[1].map(letra)}</div>
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => setMayus((m) => !m)}
+          aria-label="Mayúsculas"
+          aria-pressed={mayus}
+          className={`${tecla} ${mayus ? principal : especial} h-11 text-lg flex-[1.4] min-w-0`}
+        >
+          ⇧
+        </button>
+        {FILAS[2].map(letra)}
+        <button type="button" onClick={borrar} aria-label="Borrar" className={`${tecla} ${especial} h-11 text-lg flex-[1.4] min-w-0`}>
+          ⌫
+        </button>
+      </div>
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => setAcentos((a) => !a)}
+          aria-pressed={acentos}
+          className={`${tecla} ${acentos ? principal : especial} h-11 text-sm flex-[1.4] min-w-0`}
+        >
+          {acentos ? '123' : 'áé'}
+        </button>
+        <button type="button" onClick={() => insertar('@')} className={`${tecla} h-11 text-lg flex-1 min-w-0`}>
+          @
+        </button>
+        <button type="button" onClick={() => insertar(' ')} aria-label="Espacio" className={`${tecla} h-11 flex-[5] min-w-0`}>
+          <span className="block mx-6 h-px bg-neutral-400" />
+        </button>
+        <button type="button" onClick={() => insertar('-')} className={`${tecla} h-11 text-lg flex-1 min-w-0`}>
+          -
+        </button>
+        <button type="button" onClick={intro} aria-label="Intro" className={`${tecla} ${especial} h-11 text-lg flex-[1.4] min-w-0`}>
+          ↵
+        </button>
+        <button type="button" onClick={listo} className={`${tecla} ${principal} h-11 text-sm flex-[1.6] min-w-0`}>
+          Listo
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── El campo de numero ──────────────────────────────────────────────────────
 
 type CambioComoEvento = { target: { value: string }; currentTarget: { value: string } }
 
@@ -191,7 +480,7 @@ export function Numerico({
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'type'> & {
   value: string | number | undefined
   onChange: (e: CambioComoEvento) => void
-  /** Lo que dice el teclado arriba. Si falta, se toma del placeholder o del label que envuelve. */
+  /** Lo que dice el teclado arriba. Si falta, se toma del label que envuelve o del placeholder. */
   etiqueta?: string
   oculto?: boolean
   entero?: boolean
@@ -200,26 +489,17 @@ export function Numerico({
   const tactil = useMemo(esTactil, [])
   const ref = useRef<HTMLInputElement>(null)
   const texto = value === undefined || value === null ? '' : String(value)
-  // El teclado llama a `poner` con el valor nuevo; se envuelve para que la
-  // pantalla lo reciba como si lo hubiera escrito en el input.
   const poner = useCallback(
     (v: string) => onChange({ target: { value: v }, currentTarget: { value: v } }),
     [onChange],
   )
 
-  // Mientras el teclado esta abierto para ESTE campo, lo que dice arriba
-  // sigue al valor real.
+  // Si la pantalla cambia el valor por su cuenta mientras el teclado esta
+  // abierto para ESTE campo, lo de arriba lo sigue.
   const abiertoAqui = useRef(false)
   useEffect(() => {
     if (abiertoAqui.current && ctx) ctx.actualizar(texto)
   }, [texto, ctx])
-
-  function rotulo(): string {
-    if (etiqueta) return etiqueta
-    const label = ref.current?.closest('label')
-    const propio = label?.textContent?.trim()
-    return propio || placeholder || 'Número'
-  }
 
   if (!tactil || !ctx) {
     // Computador: un input de texto con teclado decimal. No `type=number`,
@@ -243,13 +523,16 @@ export function Numerico({
 
   return (
     <input
+      // Lo que venga de la pantalla va primero: lo de abajo no se puede pisar
+      // (un `inputMode="decimal"` heredado volveria a abrir el teclado del sistema).
+      {...resto}
       ref={ref}
       type={oculto ? 'password' : 'text'}
-      // `inputMode="none"` es lo que le dice al navegador que NO abra el
-      // teclado del sistema; `readOnly` es la red por si algun teclado lo
-      // ignora. El campo sigue recibiendo el foco y mostrando el valor.
+      // `inputMode="none"`: que el navegador NO abra su teclado. `readOnly` es
+      // la red por si algun teclado lo ignora; el campo igual recibe el foco.
       inputMode="none"
       readOnly
+      data-numerico="1"
       autoComplete="off"
       value={texto}
       onChange={() => undefined}
@@ -258,7 +541,8 @@ export function Numerico({
       onFocus={(e) => {
         abiertoAqui.current = true
         ctx.abrir({
-          etiqueta: rotulo(),
+          tipo: 'numero',
+          etiqueta: etiqueta || (ref.current ? rotuloDe(ref.current, 'Número') : 'Número'),
           valor: texto,
           oculto,
           entero,
@@ -267,16 +551,11 @@ export function Numerico({
         })
         onFocus?.(e)
       }}
-      onClick={(e) => {
-        // Ya tenia el foco y el teclado se cerro con "Listo": volver a tocar lo reabre.
-        if (!abiertoAqui.current) (e.currentTarget as HTMLInputElement).focus()
-      }}
       onBlur={(e) => {
         abiertoAqui.current = false
         ctx.cerrar()
         onBlur?.(e)
       }}
-      {...resto}
     />
   )
 }
