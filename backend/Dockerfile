@@ -28,7 +28,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # para los respaldos. Se instala del repositorio oficial de PostgreSQL y no
 # del de Debian: pg_dump se niega a volcar un servidor mas nuevo que el, y la
 # version de Debian va varias por detras del `postgres:16` del compose.
-RUN apt-get update \
+#
+# SOLO IPv4 para apt. `apt.postgresql.org` publica direccion IPv6 y dentro
+# del constructor de Docker esa ruta no sale: apt se queda 40 s intentando y
+# falla con "Unable to connect", con lo que el despliegue se cae aunque el
+# servidor si llegue al repositorio por IPv4. Se comprobo en produccion el
+# 20-sep-2026: desde un contenedor, curl -4 responde 200 y curl -6 no conecta.
+RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4     && apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
        | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
