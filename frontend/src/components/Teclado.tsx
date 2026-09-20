@@ -76,6 +76,104 @@ export function esTactil(): boolean {
   return window.matchMedia('(pointer: coarse)').matches
 }
 
+/** Los campos de texto a los que se engancha el teclado de texto. */
+function campoDeTexto(el: EventTarget | null): HTMLInputElement | HTMLTextAreaElement | null {
+  if (!(el instanceof HTMLElement)) return null
+  if (el.closest('[data-teclado]')) return null
+  if (el instanceof HTMLTextAreaElement) return el.readOnly ? null : el
+  if (!(el instanceof HTMLInputElement)) return null
+  if (el.readOnly || el.disabled) return null
+  const tipo = (el.getAttribute('type') || 'text').toLowerCase()
+  if (!['text', 'search', 'password', 'email', 'tel', 'url'].includes(tipo)) return null
+  // Los de numero ya traen su teclado (<Numerico>).
+  if (el.dataset.numerico === '1') return null
+  return el
+}
+
+function rotuloDe(el: HTMLElement, porDefecto: string): string {
+  const aria = el.getAttribute('aria-label')
+  if (aria) return aria
+  const label = el.closest('label')
+  const texto = label?.textContent?.trim()
+  if (texto) return texto.split('\n')[0].slice(0, 40)
+  if (el.id) {
+    const l = document.querySelector(`label[for="${el.id}"]`)
+    if (l?.textContent?.trim()) return l.textContent.trim()
+  }
+  return (el as HTMLInputElement).placeholder || porDefecto
+}
+
+/** Escribe en el campo como lo haria la persona: React lo ve por `input`. */
+function escribirEn(el: HTMLInputElement | HTMLTextAreaElement, valor: string, caret: number) {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+  if (setter) setter.call(el, valor)
+  else el.value = valor
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  try {
+    el.setSelectionRange(caret, caret)
+  } catch {
+    // email y algunos tipos no dejan mover el cursor
+  }
+}
+
+export function TecladoProvider({ children }: { children: ReactNode }) {
+  const [objetivo, setObjetivo] = useState<Objetivo | null>(null)
+  const tactil = useMemo(esTactil, [])
+
+  const abrir = useCallback((o: Objetivo) => setObjetivo(o), [])
+  const cerrar = useCallback(() => setObjetivo(null), [])
+  const actualizar = useCallback((valor: string) => {
+    setObjetivo((o) => (o ? { ...o, valor } : o))
+  }, [])
+  const ctx = useMemo(() => ({ abrir, cerrar, actualizar }), [abrir, cerrar, actualizar])
+
+  // El teclado de TEXTO se engancha a la pagina entera: cualquier campo de
+  // texto del ERP, sin que cada pantalla tenga que saberlo.
+  useEffect(() => {
+    if (!tactil) return
+    // ANTES del foco: es lo que evita que el navegador abra el suyo.
+    const alTocar = (e: Event) => {
+      const el = campoDeTexto(e.target)
+      if (el) el.setAttribute('inputmode', 'none')
+    }
+    const alEnfocar = (e: FocusEvent) => {
+      const el = campoDeTexto(e.target)
+      if (!el) return
+      el.setAttribute('inputmode', 'none')
+      setObjetivo({
+        tipo: 'texto',
+        el,
+        etiqueta: rotuloDe(el, 'Texto'),
+        valor: el.value,
+        oculto: el instanceof HTMLInputElement && el.type === 'password',
+      })
+    }
+    const alSoltar = (e: FocusEvent) => {
+      const el = campoDeTexto(e.target)
+      if (!el) return
+      setObjetivo((o) => (o && o.tipo === 'texto' && o.el === el ? null : o))
+    }
+    document.addEventListener('touchstart', alTocar, true)
+    document.addEventListener('pointerdown', alTocar, true)
+    document.addEventListener('focusin', alEnfocar)
+    document.addEventListener('focusout', alSoltar)
+    return () => {
+      document.removeEventListener('touchstart', alTocar, true)
+      document.removeEventListener('pointerdown', alTocar, true)
+      document.removeEventListener('focusin', alEnfocar)
+      document.removeEventListener('focusout', alSoltar)
+    }
+  }, [tactil])
+
+  return (
+    <TecladoCtx.Provider value={ctx}>
+      {children}
+      {objetivo && <Panel objetivo={objetivo} onCerrar={cerrar} onValor={actualizar} />}
+    </TecladoCtx.Provider>
+  )
+}
+
 // ── El panel ────────────────────────────────────────────────────────────────
 //
 // ABAJO, Y LO MAS BAJO POSIBLE. Se probo anclado al costado y era incomodo
