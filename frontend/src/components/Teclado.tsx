@@ -77,11 +77,20 @@ export function esTactil(): boolean {
   return window.matchMedia('(pointer: coarse)').matches
 }
 
-// Anchos del panel a la derecha. Por debajo de `MINIMO_DERECHA` de ancho de
-// pantalla (un telefono, una tablet en vertical) va abajo.
-const ANCHO_NUMERO = 300
-const ANCHO_TEXTO = 620
-const MINIMO_DERECHA = 1000
+// A la derecha siempre que la pantalla este APAISADA (mas ancha que alta) y
+// no sea un telefono. Se mide por orientacion y no por un ancho fijo: una
+// tablet de 10" apaisada tiene apenas 800-900 px CSS de ancho, y con un
+// umbral de 1000 el teclado caia abajo y ocupaba media pantalla.
+const MINIMO_DERECHA = 640
+
+function medir(tipo: 'numero' | 'texto') {
+  const w = window.innerWidth
+  const derecha = w > window.innerHeight && w >= MINIMO_DERECHA
+  // Proporcional a la pantalla, con tope: el numerico un cuarto, el de texto
+  // algo mas de la mitad (diez teclas por fila necesitan sitio).
+  const ancho = tipo === 'numero' ? Math.min(300, Math.round(w * 0.28)) : Math.min(600, Math.round(w * 0.56))
+  return { derecha, ancho }
+}
 
 /** Los campos de texto a los que se engancha el teclado de texto. */
 function campoDeTexto(el: EventTarget | null): HTMLInputElement | HTMLTextAreaElement | null {
@@ -197,14 +206,18 @@ function Panel({
   onCerrar: () => void
   onValor: (v: string) => void
 }) {
-  const ancho = objetivo.tipo === 'numero' ? ANCHO_NUMERO : ANCHO_TEXTO
-  const [derecha, setDerecha] = useState(() => window.innerWidth >= MINIMO_DERECHA)
+  const [{ derecha, ancho }, setMedida] = useState(() => medir(objetivo.tipo))
 
   useEffect(() => {
-    const medir = () => setDerecha(window.innerWidth >= MINIMO_DERECHA)
-    window.addEventListener('resize', medir)
-    return () => window.removeEventListener('resize', medir)
-  }, [])
+    const remedir = () => setMedida(medir(objetivo.tipo))
+    remedir()
+    window.addEventListener('resize', remedir)
+    window.addEventListener('orientationchange', remedir)
+    return () => {
+      window.removeEventListener('resize', remedir)
+      window.removeEventListener('orientationchange', remedir)
+    }
+  }, [objetivo.tipo])
 
   // El resto de la pantalla se corre para dejarle sitio: los cuadros (Modal)
   // leen estas variables y se centran en lo que queda.
@@ -244,7 +257,7 @@ function Panel({
           {objetivo.tipo === 'texto' && <span className="inline-block w-px h-4 bg-neutral-900 align-middle ml-px animate-pulse" />}
         </div>
       </div>
-      <div className={`px-3 pb-3 ${derecha ? 'flex-1 flex flex-col justify-end' : ''}`}>
+      <div className={`px-3 pb-3 ${derecha ? 'flex-1 flex flex-col justify-center' : ''}`}>
         {objetivo.tipo === 'numero' ? (
           <Numeros objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
         ) : (
