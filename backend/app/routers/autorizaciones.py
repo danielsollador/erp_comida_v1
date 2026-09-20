@@ -17,7 +17,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import autorizaciones, schemas
+from .. import autorizaciones, models, schemas
 from ..acceso import auth, permisos, usuarios
 from ..database import get_db
 from ..ws_manager import manager
@@ -52,6 +52,24 @@ def listar(request: Request, db: Session = Depends(get_db)):
     db.commit()
     if not permisos.autoriza(s.get("rol")):
         filas = [f for f in filas if f.solicitante == s["usuario"]]
+    return filas
+
+
+@router.get("/historial", response_model=List[schemas.SolicitudAutorizacion])
+def historial(request: Request, limite: int = 50, db: Session = Depends(get_db)):
+    """Las ultimas solicitudes, resueltas o no: es el buzon de notificaciones.
+
+    Quien autoriza ve todas las del local (lo que le pidieron y que
+    respondio, aunque no tuviera la aplicacion abierta cuando llego); el
+    resto ve solo las que pidio.
+    """
+    s = auth.sesion_actual(request)
+    autorizaciones.pendientes(db)  # marca vencidas las que pasaron de hora
+    q = db.query(models.SolicitudAutorizacion)
+    if not permisos.autoriza(s.get("rol")):
+        q = q.filter(models.SolicitudAutorizacion.solicitante == s["usuario"])
+    filas = q.order_by(models.SolicitudAutorizacion.creada.desc()).limit(max(1, min(limite, 200))).all()
+    db.commit()
     return filas
 
 

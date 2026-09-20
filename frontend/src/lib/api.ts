@@ -187,6 +187,8 @@ export const api = {
   solicitarAutorizacion: (d: { accion: string; detalle?: string; monto?: number; pedido_id?: number | null }) =>
     req<SolicitudAutorizacion>('/autorizaciones', { method: 'POST', body: JSON.stringify(d) }),
   solicitudesPendientes: () => req<SolicitudAutorizacion[]>('/autorizaciones'),
+  /** El buzon: las ultimas solicitudes, resueltas o no. */
+  historialAutorizaciones: () => req<SolicitudAutorizacion[]>('/autorizaciones/historial'),
   verSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}`),
   aprobarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}/aprobar`, { method: 'POST' }),
   rechazarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}/rechazar`, { method: 'POST' }),

@@ -7,6 +7,7 @@ import Icono from './Icono'
 import Marca from './Marca'
 import { Secciones, type Seccion } from './Secciones'
 import UsuarioMenu from './UsuarioMenu'
+import Notificaciones from './Notificaciones'
 
 /**
  * El encabezado de cada modulo. En escritorio la barra lateral ya dice donde
@@ -75,6 +76,7 @@ export default function NavBar({
           {filtro}
           {acciones}
           {moneda && <MonedaToggle dark={dark} />}
+          <Notificaciones dark={dark} />
           <TemaToggle dark={dark} />
           <UsuarioMenu dark={dark} />
         </div>

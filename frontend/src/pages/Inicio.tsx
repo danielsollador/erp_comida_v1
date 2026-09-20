@@ -6,6 +6,7 @@ import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { MODULOS, entraA } from '../components/Rail'
 import UsuarioMenu from '../components/UsuarioMenu'
+import Notificaciones from '../components/Notificaciones'
 import { useAcceso } from '../lib/acceso'
 import { api, connectWs } from '../lib/api'
 import { rangoDe } from '../lib/fechas'
@@ -124,6 +125,7 @@ export default function Inicio() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {estado.puede.operar && <MonedaToggle />}
+            <Notificaciones />
             <TemaToggle />
             <UsuarioMenu />
           </div>
