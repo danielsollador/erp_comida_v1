@@ -181,7 +181,7 @@ function Fila({
           </p>
           <p className={`text-xs mt-0.5 ${dark ? 'text-neutral-300' : 'text-neutral-700'}`}>
             {accion}
-            {s.pedido_id ? ` · pedido #${s.pedido_id}` : ''}
+            {s.pedido_numero ? ` · pedido #${s.pedido_numero}` : ''}
             {s.monto > 0 ? ` · ${fmt(s.monto)}` : ''}
           </p>
           {s.detalle && <p className={`text-xs mt-0.5 ${dark ? 'text-neutral-400' : 'text-neutral-500'}`}>{s.detalle}</p>}

@@ -1061,6 +1061,8 @@ export type SolicitudAutorizacion = {
   detalle: string
   monto: number
   pedido_id: number | null
+  /** El numero de comanda, que es el que ve la caja. */
+  pedido_numero: number | null
   solicitante: string
   solicitante_nombre: string
   estado: EstadoSolicitud

@@ -87,6 +87,15 @@ class SolicitudAutorizacion(Base):
     resuelta_en = Column(DateTime, nullable=True)
     usada_en = Column(DateTime, nullable=True)
 
+    pedido = relationship("Pedido")
+
+    @property
+    def pedido_numero(self):
+        """El numero de comanda, que es el que ve la caja. El `id` interno
+        no: al dueño le llego "pedido 17" por una venta que la caja conocia
+        como la 3."""
+        return self.pedido.numero if self.pedido else None
+
 
 class PuntoVenta(Base):
     """Una caja fisica. El local tiene dos pisos y dos gavetas.

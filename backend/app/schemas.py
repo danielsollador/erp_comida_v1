@@ -689,6 +689,8 @@ class SolicitudAutorizacion(BaseModel):
     detalle: str = ""
     monto: float = 0
     pedido_id: Optional[int] = None
+    # El numero de comanda: lo que ve la caja y lo que hay que mostrar.
+    pedido_numero: Optional[int] = None
     solicitante: str = ""
     solicitante_nombre: str = ""
     estado: str

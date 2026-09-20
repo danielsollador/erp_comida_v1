@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import EditarPedido from '../components/EditarPedido'
 import NavBar from '../components/NavBar'
+import Icono from '../components/Icono'
 import { useDialogo } from '../components/dialogo'
 import { Boton, Modal } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api, connectWs } from '../lib/api'
 import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
+import { imprimirTicket as ticket } from '../lib/ticket'
 import { colorCategoria } from '../lib/theme'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
@@ -376,56 +378,17 @@ export default function POS() {
     else localStorage.removeItem(CLAVE_PUNTO)
   }
 
+  // El ofrecimiento de imprimir se retira solo. Sin esto habia que cerrarlo a
+  // mano en cada venta, veinte veces por turno.
+  useEffect(() => {
+    if (!ultimaVenta) return
+    const t = window.setTimeout(() => setUltimaVenta(null), 20000)
+    return () => window.clearTimeout(t)
+  }, [ultimaVenta])
+
   async function imprimirTicket(pedidoId: number) {
     try {
-      const t = await api.ticket(pedidoId)
-      const ventana = window.open('', '_blank', 'width=320,height=600')
-      if (!ventana) return
-      const linea = (izq: string, der: string) =>
-        `<div class="l"><span>${izq}</span><span>${der}</span></div>`
-      ventana.document.write(`
-        <html><head><title>Ticket ${t.numero}</title><style>
-          body{font-family:ui-monospace,monospace;font-size:12px;width:280px;margin:0;padding:8px}
-          h1{font-size:14px;text-align:center;margin:0 0 2px}
-          .c{text-align:center}.l{display:flex;justify-content:space-between}
-          hr{border:none;border-top:1px dashed #000;margin:6px 0}
-          .tot{font-size:15px;font-weight:bold}
-          @media print{body{width:auto}}
-        </style></head><body>
-        <h1>Pedido #${t.numero}</h1>
-        <div class="c">${new Date(t.fecha).toLocaleString('es-VE')}</div>
-        ${t.operador ? `<div class="c">Le atendió: ${t.operador}</div>` : ''}
-        ${t.punto_venta ? `<div class="c">${t.punto_venta}</div>` : ''}
-        <hr>
-        ${t.items
-          .map((i) => linea(`${i.cantidad} x ${i.nombre}`, `$${i.subtotal.toFixed(2)}`))
-          .join('')}
-        <hr>
-        ${t.descuento ? linea('Subtotal', `$${t.subtotal.toFixed(2)}`) : ''}
-        ${t.descuento ? linea('Descuento', `-$${t.descuento.toFixed(2)}`) : ''}
-        ${t.propina ? linea('Propina', `$${t.propina.toFixed(2)}`) : ''}
-        <div class="l tot"><span>TOTAL</span><span>$${t.a_cobrar.toFixed(2)}</span></div>
-        ${t.total_bs ? linea('En bolívares', fmtBs(t.total_bs)) : ''}
-        ${t.tasa_bcv ? `<div class="c" style="font-size:10px">tasa ${t.tasa_bcv}</div>` : ''}
-        ${t.facturado && t.base_imponible != null ? '<hr>' : ''}
-        ${t.facturado && t.base_imponible != null ? linea('Base imponible', `$${t.base_imponible.toFixed(2)}`) : ''}
-        ${t.facturado && t.iva != null ? linea('IVA', `$${t.iva.toFixed(2)}`) : ''}
-        ${t.numero_factura ? `<div class="c">Factura ${t.numero_factura}</div>` : ''}
-        <hr>
-        ${t.pagos
-          .map(
-            (p) =>
-              linea(etiquetaMetodo(p.metodo), `$${p.monto.toFixed(2)}`) +
-              (p.referencia ? `<div class="c" style="font-size:10px">ref. ${p.referencia}</div>` : '') +
-              (p.vuelto_monto ? linea('Vuelto', `$${p.vuelto_monto.toFixed(2)}`) : ''),
-          )
-          .join('')}
-        ${t.cliente ? `<div class="c">Cliente: ${t.cliente}</div>` : ''}
-        <hr><div class="c">Gracias por su compra</div>
-        </body></html>`)
-      ventana.document.close()
-      ventana.focus()
-      ventana.print()
+      await ticket(pedidoId)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo generar el ticket')
     }
@@ -836,23 +799,24 @@ export default function POS() {
         </div>
       </div>
 
-      {/* El comprobante del cliente. No habia impresion de ninguna clase en
-          todo el sistema. */}
+      {/* El comprobante del cliente, ofrecido SIN estorbar.
+          Era una barra negra en el centro de la pantalla que se quedaba hasta
+          que alguien la cerraba: tapaba la comanda siguiente y parecia un
+          aviso urgente cuando solo es una comodidad -- casi nadie pide
+          ticket. Ahora es una pastilla chica en la esquina, del color de la
+          pantalla, y se va sola a los 20 s. Si se fue, el ticket se imprime
+          igual desde Ventas. */}
       {ultimaVenta && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl bg-neutral-900 px-4 py-3 text-white shadow-xl">
-          <span className="text-sm">
-            Cobrado #{ultimaVenta.numero} - ${ultimaVenta.a_cobrar.toFixed(2)}
-          </span>
-          <button
-            onClick={() => imprimirTicket(ultimaVenta.id)}
-            className="rounded-lg bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25"
-          >
-            Imprimir ticket
-          </button>
-          <button onClick={() => setUltimaVenta(null)} className="text-white/60 text-sm">
-            x
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => imprimirTicket(ultimaVenta.id)}
+          title={`Imprimir el ticket del pedido #${ultimaVenta.numero}`}
+          className="fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 backdrop-blur px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
+          style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
+        >
+          <Icono nombre="ventas" size={14} />
+          Imprimir #{ultimaVenta.numero}
+        </button>
       )}
 
       {/* Vive en su propio componente porque Ventas abre exactamente el mismo

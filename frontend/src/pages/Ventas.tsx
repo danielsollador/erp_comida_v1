@@ -10,6 +10,7 @@ import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
+import { imprimirTicket } from '../lib/ticket'
 import type {
   EstadoVenta,
   ListaVentas,
@@ -472,6 +473,18 @@ function DetalleVenta({
   const dialogo = useDialogo()
   const dinero = (x: number) => fmtCongelado(x, v.tasa_bcv)
 
+  async function imprimir(id: number) {
+    try {
+      await imprimirTicket(id)
+    } catch (e) {
+      await dialogo.avisar({
+        titulo: 'No se pudo imprimir',
+        texto: e instanceof Error ? e.message : 'Intenta de nuevo.',
+        tono: 'mal',
+      })
+    }
+  }
+
   // El dueño no siempre sabe al cobrar si va a facturar: a veces lo decide
   // al final de la semana, viendo el histórico y el talonario en la mano.
   async function facturar() {
@@ -660,6 +673,21 @@ function DetalleVenta({
         {/* Corregir cambia los renglones de la venta; devolver la deshace
             entera. Estaban en el punto de venta y se vinieron con el historial,
             que es donde se busca una venta que ya salio del mostrador. */}
+        {/* El ticket, cuando el cliente lo pide despues: la pastilla del
+            mostrador se va sola y la venta ya salio de ahi. */}
+        {v.estado !== 'anulada' && (
+          <Dato titulo="Comprobante">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                void imprimir(v.id)
+              }}
+              className="text-acento-600 hover:text-acento-700 font-medium text-sm"
+            >
+              Imprimir ticket
+            </button>
+          </Dato>
+        )}
         {(v.estado === 'cobrada' || v.estado === 'fiada') && (
           <Dato titulo="Corregir">
             <span className="flex gap-3">

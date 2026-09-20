@@ -149,5 +149,5 @@ export default function Solicitudes() {
 
 function texto(s: SolicitudAutorizacion): string {
   const base = s.accion === 'editar_venta' ? 'Editar una venta ya cobrada' : s.accion
-  return s.pedido_id ? `${base} (pedido #${s.pedido_id})` : base
+  return s.pedido_numero ? `${base} (pedido #${s.pedido_numero})` : base
 }
