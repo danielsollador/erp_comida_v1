@@ -7,6 +7,7 @@ import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Lecturas, Pagina } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import { GraficoDona, GraficoLineas, Sparkline, Variacion } from '../components/Grafico'
 import { api } from '../lib/api'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
@@ -241,8 +242,8 @@ export default function Tasa() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <input
-              inputMode="decimal"
+            <Numerico
+              etiqueta="Tasa manual (Bs por $)"
               value={manual}
               onChange={(e) => setManual(e.target.value)}
               placeholder="145,80"

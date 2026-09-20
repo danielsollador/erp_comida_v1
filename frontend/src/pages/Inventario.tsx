@@ -6,6 +6,7 @@ import { useRango, nombreRango } from '../lib/fechas'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
 import type {
@@ -1681,11 +1682,11 @@ function ConteoFisico({
                   </td>
                 )}
                 <td className="p-2 text-right">
-                  <input
-                    inputMode="decimal"
+                  <Numerico
                     value={texto}
                     onChange={(e) => setValores((v) => ({ ...v, [ing.id]: e.target.value }))}
                     placeholder="—"
+                    etiqueta={`Contado de ${ing.nombre}`}
                     aria-label={`Contado de ${ing.nombre}`}
                     className={`w-28 text-right border rounded-lg px-2 py-1.5 text-sm tabular-nums ${
                       texto && !valido ? 'border-peligro-400' : 'border-neutral-300'

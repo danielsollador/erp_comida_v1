@@ -222,18 +222,31 @@ const LADOS: readonly Lado[] = ['izquierda', 'centro', 'derecha']
  * ESTA tablet: la del mostrador y la de cocina no tienen por que coincidir, y
  * quien cobra no siempre es la misma persona.
  */
-export type PreferenciasTeclado = { dividido: boolean; lado: Lado }
+export type Posicion = 'abajo' | 'izquierda' | 'derecha'
+export const POSICIONES: readonly Posicion[] = ['abajo', 'izquierda', 'derecha']
+
+export type PreferenciasTeclado = { dividido: boolean; lado: Lado; posicion: Posicion }
 
 export function leerPreferenciasTeclado(): PreferenciasTeclado {
   return {
     dividido: leerPreferencia('vp-teclado-dividido', ['si', 'no'] as const, convieneDividir() ? 'si' : 'no') === 'si',
     lado: leerPreferencia('vp-teclado-lado', LADOS, 'centro'),
+    posicion: leerPreferencia('vp-teclado-posicion', POSICIONES, 'abajo'),
   }
 }
 
 export function guardarPreferenciasTeclado(p: Partial<PreferenciasTeclado>) {
   if (p.dividido !== undefined) guardarPreferencia('vp-teclado-dividido', p.dividido ? 'si' : 'no')
   if (p.lado !== undefined) guardarPreferencia('vp-teclado-lado', p.lado)
+  if (p.posicion !== undefined) guardarPreferencia('vp-teclado-posicion', p.posicion)
+}
+
+/** Ancho minimo para que el teclado quepa en una columna sin ahogar la
+ *  pantalla. Por debajo, aunque se haya elegido un costado, va abajo. */
+const MINIMO_COLUMNA = 720
+
+function anchoColumna(tipo: 'numero' | 'texto'): number {
+  return tipo === 'numero' ? 300 : Math.min(560, Math.round(window.innerWidth * 0.62))
 }
 const JUSTIFICAR: Record<Lado, string> = {
   izquierda: 'justify-start',
@@ -259,6 +272,41 @@ function Panel({
   // que lo que se cambie en Apariencia vale desde el campo siguiente.
   const [lado, setLado] = useState<Lado>(() => leerPreferenciasTeclado().lado)
   const [dividido, setDividido] = useState(() => leerPreferenciasTeclado().dividido)
+  const [posicion, setPosicion] = useState<Posicion>(() => leerPreferenciasTeclado().posicion)
+  // En una pantalla angosta no hay columna que valga: iria abajo igual.
+  const [cabe, setCabe] = useState(() => window.innerWidth >= MINIMO_COLUMNA)
+  const [ancho, setAncho] = useState(() => anchoColumna(objetivo.tipo))
+
+  useEffect(() => {
+    const medir = () => {
+      setCabe(window.innerWidth >= MINIMO_COLUMNA)
+      setAncho(anchoColumna(objetivo.tipo))
+    }
+    medir()
+    window.addEventListener('resize', medir)
+    window.addEventListener('orientationchange', medir)
+    return () => {
+      window.removeEventListener('resize', medir)
+      window.removeEventListener('orientationchange', medir)
+    }
+  }, [objetivo.tipo])
+
+  const columna = posicion !== 'abajo' && cabe
+  const izquierda = posicion === 'izquierda'
+
+  // El cuadro abierto se aparta justo lo que ocupa el teclado, este donde
+  // este: sin esto el campo que se esta llenando queda detras.
+  useEffect(() => {
+    const raiz = document.documentElement.style
+    raiz.setProperty('--vp-teclado-abajo', columna ? '0px' : `${alto}px`)
+    raiz.setProperty('--vp-teclado-izquierda', columna && izquierda ? `${ancho}px` : '0px')
+    raiz.setProperty('--vp-teclado-derecha', columna && !izquierda ? `${ancho}px` : '0px')
+    return () => {
+      raiz.setProperty('--vp-teclado-abajo', '0px')
+      raiz.setProperty('--vp-teclado-izquierda', '0px')
+      raiz.setProperty('--vp-teclado-derecha', '0px')
+    }
+  }, [columna, izquierda, alto, ancho])
 
   function cambiarLado() {
     const siguiente = LADOS[(LADOS.indexOf(lado) + 1) % LADOS.length]
@@ -273,44 +321,96 @@ function Panel({
     })
   }
 
-  useEffect(() => {
-    const raiz = document.documentElement.style
-    raiz.setProperty('--vp-teclado-abajo', `${alto}px`)
-    return () => raiz.setProperty('--vp-teclado-abajo', '0px')
-  }, [alto])
+  function moverPanel() {
+    const siguiente = POSICIONES[(POSICIONES.indexOf(posicion) + 1) % POSICIONES.length]
+    setPosicion(siguiente)
+    guardarPreferenciasTeclado({ posicion: siguiente })
+  }
 
   const mostrado = objetivo.oculto ? '•'.repeat(objetivo.valor.length) : objetivo.valor
+  const nombrePosicion: Record<Posicion, string> = { abajo: 'abajo', izquierda: 'a la izquierda', derecha: 'a la derecha' }
+  const mover = (
+    <button
+      type="button"
+      onClick={moverPanel}
+      title="Mover el teclado de sitio"
+      className="shrink-0 text-[11px] text-neutral-500 hover:text-neutral-900"
+    >
+      Mover {nombrePosicion[POSICIONES[(POSICIONES.indexOf(posicion) + 1) % POSICIONES.length]]}
+    </button>
+  )
+
+  const marco = columna
+    ? `top-0 bottom-0 ${izquierda ? 'left-0 border-r' : 'right-0 border-l'}`
+    : 'inset-x-0 bottom-0 border-t pb-[env(safe-area-inset-bottom)]'
 
   return createPortal(
     <div
       data-teclado="1"
       role="dialog"
       aria-label={`Teclado para ${objetivo.etiqueta}`}
-      className="fixed inset-x-0 bottom-0 z-[60] bg-white text-neutral-900 shadow-2xl border-t border-neutral-200 pb-[env(safe-area-inset-bottom)]"
-      style={{ height: alto, animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
+      className={`fixed z-[60] bg-white text-neutral-900 shadow-2xl border-neutral-200 ${marco}`}
+      style={{
+        height: columna ? undefined : alto,
+        width: columna ? ancho : undefined,
+        animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both',
+      }}
       // No robar el foco del campo: si el foco se va, el campo se cierra.
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={(e) => e.preventDefault()}
     >
-      {objetivo.tipo === 'numero' ? (
+      {columna ? (
+        // En columna las teclas van ABAJO del todo, que es donde llega el
+        // pulgar con la tablet sostenida; arriba, lo que se esta escribiendo.
+        // Todo abajo: las teclas al alcance del pulgar y, justo encima, lo
+        // que se esta escribiendo. Arriba solo el enlace para mover el panel,
+        // que se busca una vez y no se vuelve a tocar.
+        <div className="h-full px-3 py-3 flex flex-col justify-end gap-2">
+          <div className="absolute top-3 right-3">{mover}</div>
+          <div className="shrink-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate">
+              {objetivo.etiqueta}
+            </div>
+            <div
+              className={`font-semibold tabular-nums leading-tight break-words ${
+                objetivo.tipo === 'numero' ? 'text-3xl text-right' : 'text-sm'
+              }`}
+            >
+              {mostrado || <span className="text-neutral-300">{objetivo.tipo === 'numero' ? '0' : '…'}</span>}
+              {objetivo.tipo === 'texto' && (
+                <span className="inline-block w-px h-3.5 bg-neutral-900 align-middle ml-px animate-pulse" />
+              )}
+            </div>
+          </div>
+          <div className="shrink-0">
+            {objetivo.tipo === 'numero' ? (
+              <Numeros objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
+            ) : (
+              // Dividido no aplica en una columna: no hay dos bordes que
+              // alcanzar, se teclea con una mano sola.
+              <Letras objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} dividido={false} />
+            )}
+          </div>
+        </div>
+      ) : objetivo.tipo === 'numero' ? (
         // La barra: a un lado que se escribe, al otro las teclas.
-        // El bloque (valor + teclas) va al lado que prefiera quien cobra:
-        // bajo el pulgar derecho, el izquierdo o al centro. Se cambia con la
-        // flecha y la tablet lo recuerda.
         <div className={`h-full px-3 py-2 flex items-stretch gap-4 ${JUSTIFICAR[lado]}`}>
           <div className="w-40 min-w-0 flex flex-col justify-center text-right">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate">{objetivo.etiqueta}</div>
             <div className="text-2xl font-semibold tabular-nums leading-tight truncate">
               {mostrado || <span className="text-neutral-300">0</span>}
             </div>
-            <button
-              type="button"
-              onClick={cambiarLado}
-              title="Mover el teclado"
-              className="self-end mt-1 text-[11px] text-neutral-500 hover:text-neutral-900"
-            >
-              {lado === 'izquierda' ? 'Mover al centro →' : lado === 'centro' ? 'Mover a la derecha →' : '← Mover a la izquierda'}
-            </button>
+            <div className="flex justify-end gap-3 mt-1">
+              <button
+                type="button"
+                onClick={cambiarLado}
+                title="Mover las teclas de lado"
+                className="text-[11px] text-neutral-500 hover:text-neutral-900"
+              >
+                {lado === 'izquierda' ? 'Centrar' : lado === 'centro' ? 'A la derecha' : 'A la izquierda'}
+              </button>
+              {mover}
+            </div>
           </div>
           <div className="w-[260px] shrink-0">
             <Numeros objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
@@ -319,7 +419,7 @@ function Panel({
       ) : (
         <div className={`h-full mx-auto px-2 py-1.5 flex flex-col ${dividido ? 'w-full' : 'max-w-4xl'}`}>
           <div className="flex items-baseline gap-3 px-1 h-7 shrink-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate shrink-0 max-w-[40%]">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate shrink-0 max-w-[30%]">
               {objetivo.etiqueta}
             </span>
             <span className="text-sm font-semibold truncate min-w-0 flex-1">
@@ -333,8 +433,9 @@ function Panel({
               title={dividido ? 'Juntar el teclado' : 'Dividir el teclado para los pulgares'}
               className="shrink-0 text-[11px] text-neutral-500 hover:text-neutral-900"
             >
-              {dividido ? 'Juntar teclado' : 'Dividir teclado'}
+              {dividido ? 'Juntar' : 'Dividir'}
             </button>
+            {mover}
           </div>
           <Letras objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} dividido={dividido} />
         </div>

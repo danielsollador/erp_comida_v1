@@ -4,9 +4,12 @@ import { useSeccion } from '../components/Secciones'
 import { Pagina, Pastilla } from '../components/ui'
 import { useDialogo } from '../components/dialogo'
 import {
+  Numerico,
+  POSICIONES,
   esTactil,
   guardarPreferenciasTeclado,
   leerPreferenciasTeclado,
+  type Posicion,
   type PreferenciasTeclado,
 } from '../components/Teclado'
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
@@ -235,28 +238,26 @@ function MiPin({ tienePin, onCambio }: { tienePin: boolean; onCambio: () => void
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm">
             <Rotulo>PIN nuevo</Rotulo>
-            <input
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
+            <Numerico
+              etiqueta={'PIN nuevo'}
+              oculto
+              entero
               maxLength={6}
-              autoComplete="off"
               value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
               required
               className={`${campo} text-center text-xl tracking-[0.4em]`}
             />
           </label>
           <label className="block text-sm">
             <Rotulo>Repetir PIN</Rotulo>
-            <input
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
+            <Numerico
+              etiqueta={'Repetir PIN'}
+              oculto
+              entero
               maxLength={6}
-              autoComplete="off"
               value={pin2}
-              onChange={(e) => setPin2(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => setPin2(e.target.value.replace(/\D/g, '').slice(0, 6))}
               required
               className={`${campo} text-center text-xl tracking-[0.4em]`}
             />
@@ -386,8 +387,14 @@ function Apariencia() {
             detalle="Para el mostrador con luz de día."
             onElegir={() => cambiar('claro')}
           >
-            <div className="h-12 rounded-lg border border-neutral-200 bg-white grid place-items-center">
-              <span className="w-8 h-1.5 rounded-full bg-neutral-300" />
+            {/* Colores fijos, no los del tema: una muestra del modo claro
+                tiene que verse clara aunque el sistema este en oscuro. Con
+                los tokens del tema las dos muestras salian al reves. */}
+            <div
+              className="h-12 rounded-lg border grid place-items-center"
+              style={{ background: '#ffffff', borderColor: '#e5e5e5' }}
+            >
+              <span className="w-8 h-1.5 rounded-full" style={{ background: '#d4d4d4' }} />
             </div>
           </Opcion>
           <Opcion
@@ -396,8 +403,11 @@ function Apariencia() {
             detalle="Para la cocina y el turno de noche."
             onElegir={() => cambiar('oscuro')}
           >
-            <div className="h-12 rounded-lg border border-neutral-700 bg-neutral-900 grid place-items-center">
-              <span className="w-8 h-1.5 rounded-full bg-neutral-600" />
+            <div
+              className="h-12 rounded-lg border grid place-items-center"
+              style={{ background: '#171717', borderColor: '#404040' }}
+            >
+              <span className="w-8 h-1.5 rounded-full" style={{ background: '#525252' }} />
             </div>
           </Opcion>
         </div>
@@ -432,24 +442,57 @@ function Apariencia() {
       </Tarjeta>
 
       <Tarjeta
-        titulo="Teclado de números"
-        ayuda="De qué lado aparecen las teclas al escribir un monto: del lado de la mano con la que cobras."
+        titulo="Dónde aparece el teclado"
+        ayuda="Abajo tapa menos; a un costado deja ver la pantalla entera y queda bajo la mano con la que sostienes la tablet. En pantallas angostas siempre sale abajo, porque una columna no cabría."
       >
-        <div className="grid grid-cols-3 gap-2">
-          {(['izquierda', 'centro', 'derecha'] as const).map((l) => (
+        <div className="grid grid-cols-3 gap-3">
+          {POSICIONES.map((pos) => (
             <button
-              key={l}
+              key={pos}
               type="button"
-              onClick={() => ponerTeclado({ lado: l })}
-              className={`rounded-xl border px-3 py-2.5 text-sm font-medium capitalize ${
-                teclado.lado === l ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300'
+              onClick={() => ponerTeclado({ posicion: pos })}
+              aria-pressed={teclado.posicion === pos}
+              className={`text-left rounded-xl border p-2.5 ${
+                teclado.posicion === pos
+                  ? 'border-neutral-900 bg-neutral-50'
+                  : 'border-neutral-200 hover:border-neutral-300'
               }`}
             >
-              {l}
+              <Croquis posicion={pos} />
+              <div className="flex items-center gap-1.5 mt-2">
+                <span
+                  className={`w-3.5 h-3.5 rounded-full border-[3px] shrink-0 ${
+                    teclado.posicion === pos ? 'border-neutral-900' : 'border-neutral-300'
+                  }`}
+                />
+                <span className="text-sm font-medium">{NOMBRE_POSICION[pos]}</span>
+              </div>
             </button>
           ))}
         </div>
       </Tarjeta>
+
+      {teclado.posicion === 'abajo' && (
+        <Tarjeta
+          titulo="Teclado de números"
+          ayuda="Con el teclado abajo, de qué lado de la barra quedan las teclas: del lado de la mano con la que cobras."
+        >
+          <div className="grid grid-cols-3 gap-2">
+            {(['izquierda', 'centro', 'derecha'] as const).map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => ponerTeclado({ lado: l })}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-medium capitalize ${
+                  teclado.lado === l ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300'
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </Tarjeta>
+      )}
     </>
   )
 }
@@ -517,6 +560,57 @@ function TeclasDemo({ dividido = false }: { dividido?: boolean }) {
       {fila(8, 'a')}
       {fila(8, 'b')}
       {fila(6, 'c')}
+    </div>
+  )
+}
+
+const NOMBRE_POSICION: Record<Posicion, string> = {
+  abajo: 'Abajo',
+  izquierda: 'A la izquierda',
+  derecha: 'A la derecha',
+}
+
+/**
+ * El croquis de la pantalla con el teclado puesto donde se elige.
+ *
+ * Se dibuja y no se describe con palabras a proposito: "a la derecha" no
+ * dice cuanto ocupa ni que le pasa a lo que se estaba viendo. Aqui se ve de
+ * un vistazo que el contenido se corre y no queda tapado.
+ */
+function Croquis({ posicion }: { posicion: Posicion }) {
+  const teclas = (n: number, ancho: string) => (
+    <div className="flex flex-wrap gap-[2px] content-end justify-center">
+      {Array.from({ length: n }, (_, i) => (
+        <span key={i} className={`${ancho} h-[5px] rounded-[1px] bg-neutral-400`} />
+      ))}
+    </div>
+  )
+  const contenido = (
+    <div className="flex-1 min-w-0 p-1.5 flex flex-col gap-1">
+      <span className="h-1.5 w-2/3 rounded-full bg-neutral-200" />
+      <span className="h-1.5 w-full rounded-full bg-neutral-200" />
+      <span className="h-1.5 w-1/2 rounded-full bg-neutral-200" />
+    </div>
+  )
+  const panel = (clase: string, n: number, ancho: string) => (
+    <div className={`bg-neutral-100 border-neutral-300 p-1.5 flex flex-col justify-end ${clase}`}>
+      {teclas(n, ancho)}
+    </div>
+  )
+  return (
+    <div className="h-16 rounded-lg border border-neutral-300 bg-white overflow-hidden flex">
+      {/* La tablet, vista de frente: lo gris claro es la pantalla del ERP y
+          lo gris oscuro, las teclas. */}
+      {posicion === 'izquierda' && panel('w-[38%] border-r shrink-0', 12, 'w-[9px]')}
+      {posicion === 'abajo' ? (
+        <div className="flex-1 flex flex-col">
+          {contenido}
+          {panel('h-[38%] border-t', 14, 'w-[9px]')}
+        </div>
+      ) : (
+        contenido
+      )}
+      {posicion === 'derecha' && panel('w-[38%] border-l shrink-0', 12, 'w-[9px]')}
     </div>
   )
 }

@@ -183,6 +183,10 @@ export function Campo({
           {...(resto as Omit<typeof resto, 'onChange' | 'value' | 'type'>)}
           etiqueta={etiqueta}
           entero={resto.inputMode === 'numeric'}
+          // `type` no se puede pasar a <Numerico>, que lo decide el mismo:
+          // sin esto un PIN (`type="password"` + teclado numerico) se
+          // dibujaba en claro, a la vista de quien estuviera delante.
+          oculto={resto.type === 'password'}
           value={resto.value as string | number | undefined}
           onChange={(e) => resto.onChange?.(e as unknown as ChangeEvent<HTMLInputElement>)}
           className={clase}
@@ -444,7 +448,11 @@ export function Modal({
       className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4"
       // Si el teclado propio esta abierto (Teclado.tsx), el cuadro se centra
       // en lo que queda de pantalla en vez de quedar debajo de el.
-      style={{ paddingBottom: 'var(--vp-teclado-abajo, 0px)' }}
+      style={{
+        paddingBottom: 'var(--vp-teclado-abajo, 0px)',
+        paddingLeft: 'var(--vp-teclado-izquierda, 0px)',
+        paddingRight: 'var(--vp-teclado-derecha, 0px)',
+      }}
       onPointerDown={(e) => {
         bajoEnFondo.current = e.target === e.currentTarget
       }}
