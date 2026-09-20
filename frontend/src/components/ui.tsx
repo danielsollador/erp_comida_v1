@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { useEffect, type ButtonHTMLAttributes, type ChangeEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { useEffect, useRef, type ButtonHTMLAttributes, type ChangeEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { Ayuda } from './Ayuda'
 import { explicar } from '../lib/glosario'
 import Icono, { type NombreIcono } from './Icono'
@@ -428,6 +428,12 @@ export function Modal({
 
   const anchos = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl' }
 
+  // Tocar el fondo cierra SOLO si el toque empezo Y termino en el fondo. Sin
+  // esto, al tocar un campo se abria el teclado propio, el cuadro se corria
+  // para dejarle sitio, y el `click` --que llega despues del corrimiento--
+  // caia en el fondo y cerraba el cuadro con el teclado abierto y solo.
+  const bajoEnFondo = useRef(false)
+
   // Al `body` y no donde se escribio: si algun ancestro tiene `transform`,
   // `filter` o `contain`, pasa a ser el bloque contenedor de lo `fixed` y el
   // modal se posiciona contra la pagina en vez de contra la pantalla. Ya paso
@@ -438,8 +444,14 @@ export function Modal({
       className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4"
       // Si el teclado propio esta abierto (Teclado.tsx), el cuadro se centra
       // en lo que queda de pantalla en vez de quedar debajo de el.
-      style={{ paddingRight: 'var(--vp-teclado-derecha, 0px)', paddingBottom: 'var(--vp-teclado-abajo, 0px)' }}
-      onClick={onCerrar}
+      style={{ paddingBottom: 'var(--vp-teclado-abajo, 0px)' }}
+      onPointerDown={(e) => {
+        bajoEnFondo.current = e.target === e.currentTarget
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && bajoEnFondo.current) onCerrar()
+        bajoEnFondo.current = false
+      }}
       role="presentation"
     >
       <div
