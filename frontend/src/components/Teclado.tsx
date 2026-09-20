@@ -188,6 +188,40 @@ const tecla =
 const especial = 'bg-neutral-200 text-neutral-700 hover:bg-neutral-300'
 const principal = 'bg-neutral-900 text-white hover:bg-neutral-800'
 
+// Preferencias de ergonomia, guardadas en ESTA tablet: como se sostiene y
+// con que mano se cobra no es igual en todos los mostradores.
+type Lado = 'izquierda' | 'centro' | 'derecha'
+
+function leerPreferencia<T extends string>(clave: string, valido: readonly T[], porDefecto: T): T {
+  try {
+    const v = window.localStorage.getItem(clave)
+    if (v && (valido as readonly string[]).includes(v)) return v as T
+  } catch {
+    // sin almacenamiento local
+  }
+  return porDefecto
+}
+
+function guardarPreferencia(clave: string, valor: string) {
+  try {
+    window.localStorage.setItem(clave, valor)
+  } catch {
+    // sin almacenamiento local
+  }
+}
+
+/** Con la tablet apaisada y ancha, las dos mitades caen bajo los pulgares. */
+function convieneDividir(): boolean {
+  return window.innerWidth > window.innerHeight && window.innerWidth >= 900
+}
+
+const LADOS: readonly Lado[] = ['izquierda', 'centro', 'derecha']
+const JUSTIFICAR: Record<Lado, string> = {
+  izquierda: 'justify-start',
+  centro: 'justify-center',
+  derecha: 'justify-end',
+}
+
 // Alto del panel, para que el cuadro de arriba sepa cuanto correrse.
 const ALTO_NUMERO = 172
 const ALTO_TEXTO = 196
@@ -202,6 +236,23 @@ function Panel({
   onValor: (v: string) => void
 }) {
   const alto = objetivo.tipo === 'numero' ? ALTO_NUMERO : ALTO_TEXTO
+  const [lado, setLado] = useState<Lado>(() => leerPreferencia('vp-teclado-lado', LADOS, 'centro'))
+  const [dividido, setDividido] = useState(() =>
+    leerPreferencia('vp-teclado-dividido', ['si', 'no'] as const, convieneDividir() ? 'si' : 'no') === 'si',
+  )
+
+  function cambiarLado() {
+    const siguiente = LADOS[(LADOS.indexOf(lado) + 1) % LADOS.length]
+    setLado(siguiente)
+    guardarPreferencia('vp-teclado-lado', siguiente)
+  }
+
+  function alternarDividido() {
+    setDividido((d) => {
+      guardarPreferencia('vp-teclado-dividido', d ? 'no' : 'si')
+      return !d
+    })
+  }
 
   useEffect(() => {
     const raiz = document.documentElement.style
@@ -224,29 +275,49 @@ function Panel({
     >
       {objetivo.tipo === 'numero' ? (
         // La barra: a un lado que se escribe, al otro las teclas.
-        <div className="h-full w-fit max-w-full mx-auto px-3 py-2 flex items-stretch justify-center gap-4">
+        // El bloque (valor + teclas) va al lado que prefiera quien cobra:
+        // bajo el pulgar derecho, el izquierdo o al centro. Se cambia con la
+        // flecha y la tablet lo recuerda.
+        <div className={`h-full px-3 py-2 flex items-stretch gap-4 ${JUSTIFICAR[lado]}`}>
           <div className="w-40 min-w-0 flex flex-col justify-center text-right">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate">{objetivo.etiqueta}</div>
             <div className="text-2xl font-semibold tabular-nums leading-tight truncate">
               {mostrado || <span className="text-neutral-300">0</span>}
             </div>
+            <button
+              type="button"
+              onClick={cambiarLado}
+              title="Mover el teclado"
+              className="self-end mt-1 text-[11px] text-neutral-500 hover:text-neutral-900"
+            >
+              {lado === 'izquierda' ? 'Mover al centro →' : lado === 'centro' ? 'Mover a la derecha →' : '← Mover a la izquierda'}
+            </button>
           </div>
           <div className="w-[260px] shrink-0">
             <Numeros objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
           </div>
         </div>
       ) : (
-        <div className="h-full max-w-4xl mx-auto px-2 py-1.5 flex flex-col">
+        <div className={`h-full mx-auto px-2 py-1.5 flex flex-col ${dividido ? 'w-full' : 'max-w-4xl'}`}>
           <div className="flex items-baseline gap-3 px-1 h-7 shrink-0">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate shrink-0 max-w-[40%]">
               {objetivo.etiqueta}
             </span>
-            <span className="text-sm font-semibold truncate min-w-0">
+            <span className="text-sm font-semibold truncate min-w-0 flex-1">
               {mostrado || <span className="text-neutral-300">…</span>}
               <span className="inline-block w-px h-3.5 bg-neutral-900 align-middle ml-px animate-pulse" />
             </span>
+            <button
+              type="button"
+              onClick={alternarDividido}
+              aria-pressed={dividido}
+              title={dividido ? 'Juntar el teclado' : 'Dividir el teclado para los pulgares'}
+              className="shrink-0 text-[11px] text-neutral-500 hover:text-neutral-900"
+            >
+              {dividido ? 'Juntar teclado' : 'Dividir teclado'}
+            </button>
           </div>
-          <Letras objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
+          <Letras objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} dividido={dividido} />
         </div>
       )}
     </div>,
@@ -345,10 +416,13 @@ function Letras({
   objetivo,
   onCerrar,
   onValor,
+  dividido,
 }: {
   objetivo: Extract<Objetivo, { tipo: 'texto' }>
   onCerrar: () => void
   onValor: (v: string) => void
+  /** En dos mitades pegadas a los bordes, bajo los pulgares. */
+  dividido: boolean
 }) {
   const { el } = objetivo
   const [mayus, setMayus] = useState(() => !el.value)
@@ -398,59 +472,143 @@ function Letras({
   }
 
   const filas = simbolos ? SIMBOLOS : LETRAS
+  // Juntas, las teclas se reparten el ancho; divididas, cada una mide lo
+  // que un pulgar (44 px) y las mitades se pegan a los bordes.
+  const fija = dividido ? 'w-11 shrink-0' : 'flex-1 min-w-0'
   const k = (t: string) => {
     const texto = mayus ? t.toUpperCase() : t
     return (
-      <button key={t} type="button" onClick={() => insertar(texto)} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
+      <button key={t} type="button" onClick={() => insertar(texto)} className={`${tecla} h-9 text-base ${fija}`}>
         {texto}
       </button>
     )
   }
-  const ancha = 'h-9 text-base flex-[1.5] min-w-0'
+  const ancha = dividido ? 'h-9 text-base w-14 shrink-0' : 'h-9 text-base flex-[1.5] min-w-0'
+
+  const mayusK = (
+    <button
+      key="mayus"
+      type="button"
+      onClick={() => setMayus((m) => !m)}
+      aria-label="Mayúsculas"
+      aria-pressed={mayus}
+      className={`${tecla} ${mayus ? principal : especial} ${ancha}`}
+    >
+      ⇧
+    </button>
+  )
+  const borrarK = (
+    <button key="borrar" type="button" onClick={borrar} aria-label="Borrar" className={`${tecla} ${especial} ${ancha}`}>
+      ⌫
+    </button>
+  )
+  const simbolosK = (
+    <button
+      key="simbolos"
+      type="button"
+      onClick={() => setSimbolos((v) => !v)}
+      aria-pressed={simbolos}
+      className={`${tecla} ${simbolos ? principal : especial} h-9 text-xs ${dividido ? 'w-14 shrink-0' : 'flex-[1.5] min-w-0'}`}
+    >
+      {simbolos ? 'abc' : '123'}
+    </button>
+  )
+  const comaK = (
+    <button key="coma" type="button" onClick={() => insertar(',')} className={`${tecla} h-9 text-base ${fija}`}>
+      ,
+    </button>
+  )
+  const puntoK = (
+    <button key="punto" type="button" onClick={() => insertar('.')} className={`${tecla} h-9 text-base ${fija}`}>
+      .
+    </button>
+  )
+  const espacioK = (clave: string, clase: string) => (
+    <button key={clave} type="button" onClick={() => insertar(' ')} aria-label="Espacio" className={`${tecla} h-9 ${clase}`}>
+      <span className="block mx-5 h-px bg-neutral-400" />
+    </button>
+  )
+  const introK = (
+    <button key="intro" type="button" onClick={intro} aria-label="Intro" className={`${tecla} ${especial} ${ancha}`}>
+      ↵
+    </button>
+  )
+  const listoK = (
+    <button
+      key="listo"
+      type="button"
+      onClick={listo}
+      className={`${tecla} ${principal} h-9 text-xs ${dividido ? 'w-16 shrink-0' : 'flex-[1.8] min-w-0'}`}
+    >
+      Listo
+    </button>
+  )
+
+  if (!dividido) {
+    return (
+      <div className="space-y-1 flex-1 flex flex-col justify-end">
+        <div className="flex gap-1">{filas[0].map(k)}</div>
+        <div className={`flex gap-1 ${simbolos ? '' : 'px-4'}`}>{filas[1].map(k)}</div>
+        <div className="flex gap-1">
+          {mayusK}
+          {filas[2].map(k)}
+          {borrarK}
+        </div>
+        <div className="flex gap-1">
+          {simbolosK}
+          {comaK}
+          {espacioK('espacio', 'flex-[5] min-w-0')}
+          {puntoK}
+          {introK}
+          {listoK}
+        </div>
+      </div>
+    )
+  }
+
+  // DIVIDIDO: cada fila se parte por la mitad y las dos mitades se van a los
+  // bordes; el hueco del medio es donde no llega ningun pulgar.
+  const mitad = (fila: string[]) => {
+    const corte = Math.ceil(fila.length / 2)
+    return [fila.slice(0, corte), fila.slice(corte)]
+  }
+  const [f0i, f0d] = mitad(filas[0])
+  const [f1i, f1d] = mitad(filas[1])
+  const [f2i, f2d] = mitad(filas[2])
+  const grupo = 'flex gap-1'
 
   return (
     <div className="space-y-1 flex-1 flex flex-col justify-end">
-      <div className="flex gap-1">{filas[0].map(k)}</div>
-      <div className={`flex gap-1 ${simbolos ? '' : 'px-4'}`}>{filas[1].map(k)}</div>
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => setMayus((m) => !m)}
-          aria-label="Mayúsculas"
-          aria-pressed={mayus}
-          className={`${tecla} ${mayus ? principal : especial} ${ancha}`}
-        >
-          ⇧
-        </button>
-        {filas[2].map(k)}
-        <button type="button" onClick={borrar} aria-label="Borrar" className={`${tecla} ${especial} ${ancha}`}>
-          ⌫
-        </button>
+      <div className="flex justify-between">
+        <div className={grupo}>{f0i.map(k)}</div>
+        <div className={grupo}>{f0d.map(k)}</div>
       </div>
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => setSimbolos((v) => !v)}
-          aria-pressed={simbolos}
-          className={`${tecla} ${simbolos ? principal : especial} h-9 text-xs flex-[1.5] min-w-0`}
-        >
-          {simbolos ? 'abc' : '123'}
-        </button>
-        <button type="button" onClick={() => insertar(',')} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
-          ,
-        </button>
-        <button type="button" onClick={() => insertar(' ')} aria-label="Espacio" className={`${tecla} h-9 flex-[5] min-w-0`}>
-          <span className="block mx-6 h-px bg-neutral-400" />
-        </button>
-        <button type="button" onClick={() => insertar('.')} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
-          .
-        </button>
-        <button type="button" onClick={intro} aria-label="Intro" className={`${tecla} ${especial} h-9 text-base flex-[1.5] min-w-0`}>
-          ↵
-        </button>
-        <button type="button" onClick={listo} className={`${tecla} ${principal} h-9 text-xs flex-[1.8] min-w-0`}>
-          Listo
-        </button>
+      <div className="flex justify-between px-4">
+        <div className={grupo}>{f1i.map(k)}</div>
+        <div className={grupo}>{f1d.map(k)}</div>
+      </div>
+      <div className="flex justify-between">
+        <div className={grupo}>
+          {mayusK}
+          {f2i.map(k)}
+        </div>
+        <div className={grupo}>
+          {f2d.map(k)}
+          {borrarK}
+        </div>
+      </div>
+      <div className="flex justify-between">
+        <div className={grupo}>
+          {simbolosK}
+          {comaK}
+          {espacioK('espacio-izq', 'w-28 shrink-0')}
+        </div>
+        <div className={grupo}>
+          {espacioK('espacio-der', 'w-28 shrink-0')}
+          {puntoK}
+          {introK}
+          {listoK}
+        </div>
       </div>
     </div>
   )
