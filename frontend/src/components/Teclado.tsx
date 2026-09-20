@@ -17,14 +17,13 @@ import { createPortal } from 'react-dom'
  * POR QUE EXISTE. En una tablet, tocar un campo abria el teclado del sistema:
  * alfabetico con sugerencias para un monto, ocupando mas de media pantalla y
  * tapando el propio cuadro de cobro. Leider (20-sep): "necesito que se vea a
- * la derecha el teclado, donde no ocupe tanto... y tambien para texto,
+ * teclado abajo, lo mas pequeno posible... y tambien para texto,
  * porque para texto literalmente no existe nada".
  *
  * COMO FUNCIONA. En una pantalla tactil (`pointer: coarse`) el teclado del
  * sistema no sale nunca: se le dice al navegador `inputmode="none"` y en su
- * lugar se abre este, ANCLADO A LA DERECHA en la tablet apaisada (un tercio
- * del ancho, sin tapar el cuadro, que se corre a la izquierda) o abajo en un
- * telefono. Dos teclados:
+ * lugar se abre este, abajo y lo mas bajo posible; el cuadro abierto se
+ * recentra en lo que queda. Dos teclados:
  *
  *   NUMERICO  para todo campo de numero (`<Numerico>`): doce teclas grandes.
  *   TEXTO     para cualquier otro campo de texto o area de texto del ERP, sin
@@ -77,125 +76,23 @@ export function esTactil(): boolean {
   return window.matchMedia('(pointer: coarse)').matches
 }
 
-// A la derecha siempre que la pantalla este APAISADA (mas ancha que alta) y
-// no sea un telefono. Se mide por orientacion y no por un ancho fijo: una
-// tablet de 10" apaisada tiene apenas 800-900 px CSS de ancho, y con un
-// umbral de 1000 el teclado caia abajo y ocupaba media pantalla.
-const MINIMO_DERECHA = 640
-
-function medir(tipo: 'numero' | 'texto') {
-  const w = window.innerWidth
-  const derecha = w > window.innerHeight && w >= MINIMO_DERECHA
-  // Proporcional a la pantalla, con tope: el numerico un cuarto, el de texto
-  // algo mas de la mitad (diez teclas por fila necesitan sitio).
-  const ancho = tipo === 'numero' ? Math.min(300, Math.round(w * 0.28)) : Math.min(600, Math.round(w * 0.56))
-  return { derecha, ancho }
-}
-
-/** Los campos de texto a los que se engancha el teclado de texto. */
-function campoDeTexto(el: EventTarget | null): HTMLInputElement | HTMLTextAreaElement | null {
-  if (!(el instanceof HTMLElement)) return null
-  if (el.closest('[data-teclado]')) return null
-  if (el instanceof HTMLTextAreaElement) return el.readOnly ? null : el
-  if (!(el instanceof HTMLInputElement)) return null
-  if (el.readOnly || el.disabled) return null
-  const tipo = (el.getAttribute('type') || 'text').toLowerCase()
-  if (!['text', 'search', 'password', 'email', 'tel', 'url'].includes(tipo)) return null
-  // Los de numero ya traen su teclado (<Numerico>).
-  if (el.dataset.numerico === '1') return null
-  return el
-}
-
-function rotuloDe(el: HTMLElement, porDefecto: string): string {
-  const aria = el.getAttribute('aria-label')
-  if (aria) return aria
-  const label = el.closest('label')
-  const texto = label?.textContent?.trim()
-  if (texto) return texto.split('\n')[0].slice(0, 40)
-  if (el.id) {
-    const l = document.querySelector(`label[for="${el.id}"]`)
-    if (l?.textContent?.trim()) return l.textContent.trim()
-  }
-  return (el as HTMLInputElement).placeholder || porDefecto
-}
-
-/** Escribe en el campo como lo haria la persona: React lo ve por `input`. */
-function escribirEn(el: HTMLInputElement | HTMLTextAreaElement, valor: string, caret: number) {
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
-  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
-  if (setter) setter.call(el, valor)
-  else el.value = valor
-  el.dispatchEvent(new Event('input', { bubbles: true }))
-  try {
-    el.setSelectionRange(caret, caret)
-  } catch {
-    // email y algunos tipos no dejan mover el cursor
-  }
-}
-
-export function TecladoProvider({ children }: { children: ReactNode }) {
-  const [objetivo, setObjetivo] = useState<Objetivo | null>(null)
-  const tactil = useMemo(esTactil, [])
-
-  const abrir = useCallback((o: Objetivo) => setObjetivo(o), [])
-  const cerrar = useCallback(() => setObjetivo(null), [])
-  const actualizar = useCallback((valor: string) => {
-    setObjetivo((o) => (o ? { ...o, valor } : o))
-  }, [])
-  const ctx = useMemo(() => ({ abrir, cerrar, actualizar }), [abrir, cerrar, actualizar])
-
-  // El teclado de TEXTO se engancha a la pagina entera: cualquier campo de
-  // texto del ERP, sin que cada pantalla tenga que saberlo.
-  useEffect(() => {
-    if (!tactil) return
-    // ANTES del foco: es lo que evita que el navegador abra el suyo.
-    const alTocar = (e: Event) => {
-      const el = campoDeTexto(e.target)
-      if (el) el.setAttribute('inputmode', 'none')
-    }
-    const alEnfocar = (e: FocusEvent) => {
-      const el = campoDeTexto(e.target)
-      if (!el) return
-      el.setAttribute('inputmode', 'none')
-      setObjetivo({
-        tipo: 'texto',
-        el,
-        etiqueta: rotuloDe(el, 'Texto'),
-        valor: el.value,
-        oculto: el instanceof HTMLInputElement && el.type === 'password',
-      })
-    }
-    const alSoltar = (e: FocusEvent) => {
-      const el = campoDeTexto(e.target)
-      if (!el) return
-      setObjetivo((o) => (o && o.tipo === 'texto' && o.el === el ? null : o))
-    }
-    document.addEventListener('touchstart', alTocar, true)
-    document.addEventListener('pointerdown', alTocar, true)
-    document.addEventListener('focusin', alEnfocar)
-    document.addEventListener('focusout', alSoltar)
-    return () => {
-      document.removeEventListener('touchstart', alTocar, true)
-      document.removeEventListener('pointerdown', alTocar, true)
-      document.removeEventListener('focusin', alEnfocar)
-      document.removeEventListener('focusout', alSoltar)
-    }
-  }, [tactil])
-
-  return (
-    <TecladoCtx.Provider value={ctx}>
-      {children}
-      {objetivo && <Panel objetivo={objetivo} onCerrar={cerrar} onValor={actualizar} />}
-    </TecladoCtx.Provider>
-  )
-}
-
 // ── El panel ────────────────────────────────────────────────────────────────
+//
+// ABAJO, Y LO MAS BAJO POSIBLE. Se probo anclado al costado y era incomodo
+// para escribir: con la tablet apoyada, los pulgares estan abajo. Asi que va
+// abajo como un teclado, pero con lo minimo: teclas de 36 px, sin fila de
+// sugerencias, y el numerico ocupa solo su bloque al lado de la barra y deja
+// el resto para decir que se esta escribiendo. El cuadro abierto se recentra
+// en lo que queda de pantalla (variable `--vp-teclado-abajo`).
 
 const tecla =
-  'rounded-lg font-medium select-none active:scale-95 transition-transform bg-neutral-100 text-neutral-900 hover:bg-neutral-200 disabled:opacity-30'
+  'rounded-md font-medium select-none active:scale-95 transition-transform bg-neutral-100 text-neutral-900 hover:bg-neutral-200 disabled:opacity-30'
 const especial = 'bg-neutral-200 text-neutral-700 hover:bg-neutral-300'
 const principal = 'bg-neutral-900 text-white hover:bg-neutral-800'
+
+// Alto del panel, para que el cuadro de arriba sepa cuanto correrse.
+const ALTO_NUMERO = 176
+const ALTO_TEXTO = 236
 
 function Panel({
   objetivo,
@@ -206,30 +103,13 @@ function Panel({
   onCerrar: () => void
   onValor: (v: string) => void
 }) {
-  const [{ derecha, ancho }, setMedida] = useState(() => medir(objetivo.tipo))
+  const alto = objetivo.tipo === 'numero' ? ALTO_NUMERO : ALTO_TEXTO
 
-  useEffect(() => {
-    const remedir = () => setMedida(medir(objetivo.tipo))
-    remedir()
-    window.addEventListener('resize', remedir)
-    window.addEventListener('orientationchange', remedir)
-    return () => {
-      window.removeEventListener('resize', remedir)
-      window.removeEventListener('orientationchange', remedir)
-    }
-  }, [objetivo.tipo])
-
-  // El resto de la pantalla se corre para dejarle sitio: los cuadros (Modal)
-  // leen estas variables y se centran en lo que queda.
   useEffect(() => {
     const raiz = document.documentElement.style
-    raiz.setProperty('--vp-teclado-derecha', derecha ? `${ancho}px` : '0px')
-    raiz.setProperty('--vp-teclado-abajo', derecha ? '0px' : objetivo.tipo === 'numero' ? '250px' : '290px')
-    return () => {
-      raiz.setProperty('--vp-teclado-derecha', '0px')
-      raiz.setProperty('--vp-teclado-abajo', '0px')
-    }
-  }, [derecha, ancho, objetivo.tipo])
+    raiz.setProperty('--vp-teclado-abajo', `${alto}px`)
+    return () => raiz.setProperty('--vp-teclado-abajo', '0px')
+  }, [alto])
 
   const mostrado = objetivo.oculto ? '•'.repeat(objetivo.valor.length) : objetivo.valor
 
@@ -238,32 +118,39 @@ function Panel({
       data-teclado="1"
       role="dialog"
       aria-label={`Teclado para ${objetivo.etiqueta}`}
-      className={`fixed z-[60] bg-white text-neutral-900 shadow-2xl border-neutral-200 flex flex-col ${
-        derecha ? 'top-0 right-0 bottom-0 border-l' : 'inset-x-0 bottom-0 border-t pb-[env(safe-area-inset-bottom)]'
-      }`}
-      style={{ width: derecha ? ancho : undefined, animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
+      className="fixed inset-x-0 bottom-0 z-[60] bg-white text-neutral-900 shadow-2xl border-t border-neutral-200 pb-[env(safe-area-inset-bottom)]"
+      style={{ height: alto, animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
       // No robar el foco del campo: si el foco se va, el campo se cierra.
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={(e) => e.preventDefault()}
     >
-      <div className={`px-3 pt-3 pb-2 ${derecha ? 'border-b border-neutral-100' : ''}`}>
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 truncate">{objetivo.etiqueta}</div>
-        <div
-          className={`font-semibold tabular-nums break-words min-h-[1.75rem] leading-tight ${
-            objetivo.tipo === 'numero' ? 'text-2xl text-right' : 'text-base'
-          }`}
-        >
-          {mostrado || <span className="text-neutral-300">{objetivo.tipo === 'numero' ? '0' : '…'}</span>}
-          {objetivo.tipo === 'texto' && <span className="inline-block w-px h-4 bg-neutral-900 align-middle ml-px animate-pulse" />}
+      {objetivo.tipo === 'numero' ? (
+        // La barra: a un lado que se escribe, al otro las teclas.
+        <div className="h-full max-w-3xl mx-auto px-3 py-2 flex items-stretch gap-4">
+          <div className="flex-1 min-w-0 flex flex-col justify-center text-right">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate">{objetivo.etiqueta}</div>
+            <div className="text-2xl font-semibold tabular-nums leading-tight truncate">
+              {mostrado || <span className="text-neutral-300">0</span>}
+            </div>
+          </div>
+          <div className="w-[260px] shrink-0">
+            <Numeros objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
+          </div>
         </div>
-      </div>
-      <div className={`px-3 pb-3 ${derecha ? 'flex-1 flex flex-col justify-center' : ''}`}>
-        {objetivo.tipo === 'numero' ? (
-          <Numeros objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
-        ) : (
+      ) : (
+        <div className="h-full max-w-4xl mx-auto px-2 py-1.5 flex flex-col">
+          <div className="flex items-baseline gap-3 px-1 h-7 shrink-0">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate shrink-0 max-w-[40%]">
+              {objetivo.etiqueta}
+            </span>
+            <span className="text-sm font-semibold truncate min-w-0">
+              {mostrado || <span className="text-neutral-300">…</span>}
+              <span className="inline-block w-px h-3.5 bg-neutral-900 align-middle ml-px animate-pulse" />
+            </span>
+          </div>
           <Letras objetivo={objetivo} onCerrar={onCerrar} onValor={onValor} />
-        )}
-      </div>
+        </div>
+      )}
     </div>,
     document.body,
   )
@@ -305,7 +192,7 @@ function Numeros({
     onCerrar()
   }
 
-  const alto = 'h-12 text-xl'
+  const alto = 'h-9 text-lg'
   const d = (t: string) => (
     <button key={t} type="button" onClick={() => pulsar(t)} className={`${tecla} ${alto}`}>
       {t}
@@ -313,7 +200,7 @@ function Numeros({
   )
 
   return (
-    <div className="grid grid-cols-4 gap-1.5">
+    <div className="grid grid-cols-4 gap-1">
       {TECLAS.slice(0, 3).map(d)}
       <button type="button" onClick={() => poner(valor.slice(0, -1))} aria-label="Borrar" className={`${tecla} ${especial} ${alto}`}>
         ⌫
@@ -406,60 +293,60 @@ function Letras({
   const letra = (t: string) => {
     const texto = mayus ? t.toUpperCase() : t
     return (
-      <button key={t} type="button" onClick={() => insertar(texto)} className={`${tecla} h-11 text-lg flex-1 min-w-0`}>
+      <button key={t} type="button" onClick={() => insertar(texto)} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
         {texto}
       </button>
     )
   }
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex gap-1.5">
+    <div className="space-y-1 flex-1 flex flex-col justify-end">
+      <div className="flex gap-1">
         {(acentos ? FILA_ACENTOS : FILA_NUMEROS).map((t) => (
-          <button key={t} type="button" onClick={() => insertar(mayus && acentos ? t.toUpperCase() : t)} className={`${tecla} h-10 text-base flex-1 min-w-0`}>
+          <button key={t} type="button" onClick={() => insertar(mayus && acentos ? t.toUpperCase() : t)} className={`${tecla} h-9 text-sm flex-1 min-w-0`}>
             {mayus && acentos ? t.toUpperCase() : t}
           </button>
         ))}
       </div>
-      <div className="flex gap-1.5">{FILAS[0].map(letra)}</div>
-      <div className="flex gap-1.5 px-4">{FILAS[1].map(letra)}</div>
-      <div className="flex gap-1.5">
+      <div className="flex gap-1">{FILAS[0].map(letra)}</div>
+      <div className="flex gap-1 px-4">{FILAS[1].map(letra)}</div>
+      <div className="flex gap-1">
         <button
           type="button"
           onClick={() => setMayus((m) => !m)}
           aria-label="Mayúsculas"
           aria-pressed={mayus}
-          className={`${tecla} ${mayus ? principal : especial} h-11 text-lg flex-[1.4] min-w-0`}
+          className={`${tecla} ${mayus ? principal : especial} h-9 text-base flex-[1.4] min-w-0`}
         >
           ⇧
         </button>
         {FILAS[2].map(letra)}
-        <button type="button" onClick={borrar} aria-label="Borrar" className={`${tecla} ${especial} h-11 text-lg flex-[1.4] min-w-0`}>
+        <button type="button" onClick={borrar} aria-label="Borrar" className={`${tecla} ${especial} h-9 text-base flex-[1.4] min-w-0`}>
           ⌫
         </button>
       </div>
-      <div className="flex gap-1.5">
+      <div className="flex gap-1">
         <button
           type="button"
           onClick={() => setAcentos((a) => !a)}
           aria-pressed={acentos}
-          className={`${tecla} ${acentos ? principal : especial} h-11 text-sm flex-[1.4] min-w-0`}
+          className={`${tecla} ${acentos ? principal : especial} h-9 text-xs flex-[1.4] min-w-0`}
         >
           {acentos ? '123' : 'áé'}
         </button>
-        <button type="button" onClick={() => insertar('@')} className={`${tecla} h-11 text-lg flex-1 min-w-0`}>
+        <button type="button" onClick={() => insertar('@')} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
           @
         </button>
-        <button type="button" onClick={() => insertar(' ')} aria-label="Espacio" className={`${tecla} h-11 flex-[5] min-w-0`}>
+        <button type="button" onClick={() => insertar(' ')} aria-label="Espacio" className={`${tecla} h-9 flex-[5] min-w-0`}>
           <span className="block mx-6 h-px bg-neutral-400" />
         </button>
-        <button type="button" onClick={() => insertar('-')} className={`${tecla} h-11 text-lg flex-1 min-w-0`}>
+        <button type="button" onClick={() => insertar('-')} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
           -
         </button>
-        <button type="button" onClick={intro} aria-label="Intro" className={`${tecla} ${especial} h-11 text-lg flex-[1.4] min-w-0`}>
+        <button type="button" onClick={intro} aria-label="Intro" className={`${tecla} ${especial} h-9 text-base flex-[1.4] min-w-0`}>
           ↵
         </button>
-        <button type="button" onClick={listo} className={`${tecla} ${principal} h-11 text-sm flex-[1.6] min-w-0`}>
+        <button type="button" onClick={listo} className={`${tecla} ${principal} h-9 text-xs flex-[1.6] min-w-0`}>
           Listo
         </button>
       </div>
