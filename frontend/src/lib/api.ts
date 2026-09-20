@@ -40,6 +40,8 @@ import type {
   LibroVentas,
   ListaUsuarios,
   Merma,
+  Autorizacion,
+  SolicitudAutorizacion,
   Pedido,
   PedidoItem,
   PeriodoPendiente,
@@ -140,7 +142,14 @@ export const api = {
   borrarRol: (id: string) => req<{ ok: boolean }>(`/usuarios/roles/${id}`, { method: 'DELETE' }),
   /** Devuelve un rol de fabrica a los modulos con los que viene. */
   restaurarRol: (id: string) => req<RolInfo>(`/usuarios/roles/${id}/ajuste`, { method: 'DELETE' }),
-  crearUsuario: (u: { usuario: string; clave: string; rol: Rol; locales?: string[] }) =>
+  crearUsuario: (u: {
+    usuario: string
+    clave: string
+    rol: Rol
+    nombre?: string
+    apellido?: string
+    locales?: string[]
+  }) =>
     req<Usuario>('/usuarios', { method: 'POST', body: JSON.stringify(u) }),
   cambiarRol: (usuario: string, rol: Rol) =>
     req<Usuario>(`/usuarios/${encodeURIComponent(usuario)}/rol`, {
@@ -159,6 +168,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ clave_actual, clave_nueva }),
     }),
+  cambiarNombre: (usuario: string, nombre: string, apellido: string) =>
+    req<Usuario>(`/usuarios/${encodeURIComponent(usuario)}/nombre`, {
+      method: 'PUT',
+      body: JSON.stringify({ nombre, apellido }),
+    }),
+  /** Quien administra le pone el PIN a alguien cuyo rol autoriza. */
+  ponerPin: (usuario: string, pin: string) =>
+    req<Usuario>(`/usuarios/${encodeURIComponent(usuario)}/pin`, { method: 'POST', body: JSON.stringify({ pin }) }),
+  quitarPin: (usuario: string) =>
+    req<Usuario>(`/usuarios/${encodeURIComponent(usuario)}/pin`, { method: 'DELETE' }),
+  /** El PIN propio, con la contraseña delante. */
+  ponerMiPin: (clave_actual: string, pin: string) =>
+    req<Usuario>('/usuarios/mi/pin', { method: 'POST', body: JSON.stringify({ clave_actual, pin }) }),
+  quitarMiPin: () => req<Usuario>('/usuarios/mi/pin', { method: 'DELETE' }),
+
+  // --- autorizaciones: pedir permiso desde la caja, resolverlo desde la app ---
+  solicitarAutorizacion: (d: { accion: string; detalle?: string; monto?: number; pedido_id?: number | null }) =>
+    req<SolicitudAutorizacion>('/autorizaciones', { method: 'POST', body: JSON.stringify(d) }),
+  solicitudesPendientes: () => req<SolicitudAutorizacion[]>('/autorizaciones'),
+  verSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}`),
+  aprobarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}/aprobar`, { method: 'POST' }),
+  rechazarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}/rechazar`, { method: 'POST' }),
+  cancelarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}`, { method: 'DELETE' }),
+  /** Cuantas personas que autorizan tienen la aplicacion abierta ahora. */
+  autorizantesConectados: () => req<{ autorizantes: number }>('/autorizaciones/conectados'),
 
   listarCategorias: () => req<Categoria[]>('/menu/categorias'),
   crearCategoria: (nombre: string, orden = 0) =>
@@ -276,7 +310,7 @@ export const api = {
       nota?: string
       motivo?: string
       permitir_sin_stock?: boolean
-      autorizacion?: { usuario: string; clave: string }
+      autorizacion?: Autorizacion
       pagos?: { metodo: string; monto: number; referencia?: string }[]
     },
   ) =>
@@ -692,7 +726,9 @@ export const api = {
     }),
 }
 
-export type WsEvent = { event: 'pedido_nuevo' | 'pedido_actualizado' | 'pedido_pagado'; data: Pedido }
+export type WsEvent =
+  | { event: 'pedido_nuevo' | 'pedido_actualizado' | 'pedido_pagado'; data: Pedido }
+  | { event: 'autorizacion_pendiente' | 'autorizacion_resuelta'; data: SolicitudAutorizacion }
 
 export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'

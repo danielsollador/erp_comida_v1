@@ -56,7 +56,9 @@ DESCRIPCION = {
 MODULOS: dict[str, dict] = {
     "pos": {
         "nombre": "Punto de venta",
-        "rutas": ("/api/pedidos",),
+        # Las autorizaciones van con el punto de venta: es desde alli que se
+        # pide permiso para tocar una venta cobrada.
+        "rutas": ("/api/pedidos", "/api/autorizaciones"),
         "lectura": ("/api/menu", "/api/puntos-venta", "/api/operadores", "/api/inventario"),
     },
     "cocina": {
@@ -81,7 +83,7 @@ MODULOS: dict[str, dict] = {
     },
     "caja": {
         "nombre": "Cierre de caja",
-        "rutas": ("/api/caja", "/api/puntos-venta"),
+        "rutas": ("/api/caja", "/api/puntos-venta", "/api/autorizaciones"),
         "lectura": ("/api/pedidos", "/api/reportes"),
     },
     "tasa": {"nombre": "Tasa de cambio", "rutas": ("/api/tasas", "/api/config")},
@@ -89,6 +91,12 @@ MODULOS: dict[str, dict] = {
     "impuestos": {"nombre": "Impuestos", "rutas": ("/api/impuestos",)},
     "usuarios": {"nombre": "Usuarios", "rutas": ("/api/usuarios",)},
 }
+
+# Que roles de fabrica AUTORIZAN operaciones delicadas (editar una venta
+# cobrada) de fabrica. Quien autoriza tiene PIN y recibe las solicitudes en su
+# aplicacion. El local puede cambiarlo para caja y cocina; dueño y Vertigo
+# autorizan siempre: son la autoridad del negocio y de la plataforma.
+AUTORIZA_POR_DEFECTO = {"admin": True, "dueno": True, "caja": False, "cocina": False}
 
 # Los roles de fabrica a los que el local puede recortarles modulos.
 #
@@ -152,6 +160,19 @@ def es_vertigo(rol: str | None) -> bool:
 def administra(rol: str | None) -> bool:
     """Administra un local: contabilidad, respaldos, cuentas. Admin y dueño."""
     return normalizar(rol) in ("admin", "dueno")
+
+
+def autoriza(rol: str | None) -> bool:
+    """Si quien tiene este rol puede autorizar operaciones: tener PIN, y que
+    le lleguen las solicitudes para aprobarlas desde su aplicacion."""
+    r = normalizar(rol)
+    if r in ("admin", "dueno"):
+        return True
+    if r in ROLES:
+        propio = roles_a_medida.autoriza_ajustado(r, _local_actual())
+        return AUTORIZA_POR_DEFECTO[r] if propio is None else propio
+    ficha = roles_a_medida.buscar(r)
+    return bool(ficha and ficha.get("autoriza"))
 
 
 def opera(rol: str | None) -> bool:
@@ -259,8 +280,8 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
     metodo = metodo.upper()
     escribe = metodo not in ("GET", "HEAD")
 
-    # La clave propia la cambia cada quien, sea el rol que sea.
-    if ruta == "/api/usuarios/mi/clave":
+    # La clave y el PIN propios los cambia cada quien, sea el rol que sea.
+    if ruta.startswith("/api/usuarios/mi/"):
         return True
     if ruta.startswith(SOLO_VERTIGO):
         return r == "admin"
@@ -310,6 +331,8 @@ def resumen(rol: str | None) -> dict:
             "administrar": administra(r),
             "operar": opera(r),
             "cocina": True,
+            # Si autoriza operaciones: le llegan las solicitudes y tiene PIN.
+            "autoriza": autoriza(r),
             # A que modulos entra: con esto la barra lateral muestra solo lo
             # suyo, sin que cada pantalla tenga que deducirlo del nombre del rol.
             "modulos": list(modulos_de(r))}

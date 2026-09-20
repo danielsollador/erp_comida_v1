@@ -30,7 +30,7 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
     }
   }, [abierto])
 
-  const usuario = estado.usuario ?? ''
+  const usuario = estado.nombre_visible || estado.usuario || ''
   const inicial = usuario.slice(0, 1).toUpperCase() || '?'
   const rol = NOMBRE_ROL[estado.rol ?? ''] ?? estado.rol ?? ''
 
@@ -70,6 +70,7 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
           <div className="px-3 pt-2 pb-2">
             <div className="text-sm font-semibold truncate font-display">{usuario}</div>
             <div className={`text-xs ${dark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+              {usuario !== estado.usuario && <>@{estado.usuario} · </>}
               {rol} · {estado.local.nombre}
             </div>
           </div>

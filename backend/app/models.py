@@ -62,6 +62,32 @@ class Operador(Base):
     punto_venta = Column(String, default="")
 
 
+class SolicitudAutorizacion(Base):
+    """Una autorizacion pedida desde la caja y resuelta desde la aplicacion.
+
+    Queda guardada aunque ya se haya usado: es el rastro de quien pidio
+    permiso para que, y quien lo dio. Ver `autorizaciones.py`.
+    """
+
+    __tablename__ = "TRX910_USU_AUTORIZACION"
+
+    id = Column(Integer, primary_key=True)
+    creada = Column(DateTime, default=ahora)
+    # Que operacion (`autorizaciones.ACCIONES`) y en palabras que se pidio.
+    accion = Column(String, nullable=False)
+    detalle = Column(String, default="")
+    monto = Column(Float, default=0)
+    pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=True)
+    # Quien la pidio: su usuario, y su nombre tal como se mostro.
+    solicitante = Column(String, default="")
+    solicitante_nombre = Column(String, default="")
+    # pendiente | aprobada | rechazada | cancelada | usada | vencida
+    estado = Column(String, default="pendiente")
+    resuelta_por = Column(String, default="")
+    resuelta_en = Column(DateTime, nullable=True)
+    usada_en = Column(DateTime, nullable=True)
+
+
 class PuntoVenta(Base):
     """Una caja fisica. El local tiene dos pisos y dos gavetas.
 

@@ -115,7 +115,8 @@ export default function Inicio() {
           <div className="min-w-0">
             <Marca className="h-8 sm:h-10 lg:h-12 bajo:h-10 pc:h-9 mb-3 sm:mb-4 bajo:mb-3 pc:mb-3" />
             <h1 className="font-bold leading-[1.05] text-[clamp(1.9rem,3.6vw,3.4rem)] pc:text-[2.25rem]">
-              {saludo()}, {estado.usuario}
+              {/* Por su nombre, no por su usuario: "Buenos dias, Daniel". */}
+              {saludo()}, {estado.nombre || estado.nombre_visible || estado.usuario}
             </h1>
             <p className="text-neutral-500 first-letter:uppercase mt-1.5 text-[clamp(0.9rem,1.3vw,1.2rem)] pc:text-base">
               {fecha}

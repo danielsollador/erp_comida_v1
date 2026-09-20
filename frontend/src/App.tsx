@@ -16,6 +16,7 @@ import Usuarios from './pages/Usuarios'
 import MiUsuario from './pages/MiUsuario'
 import Rail, { entraA } from './components/Rail'
 import Conexion from './components/Conexion'
+import Solicitudes from './components/Solicitudes'
 import { DialogoProvider } from './components/dialogo'
 import { MonedaProvider } from './lib/moneda'
 import { AccesoProvider, useAcceso } from './lib/acceso'
@@ -49,6 +50,8 @@ function Marco({ children }: { children: ReactNode }) {
       <div className={conRail ? 'md:pl-[68px]' : ''}>
         <Conexion />
         {children}
+        {/* Los avisos de "fulano pide autorizacion", solo para quien autoriza. */}
+        <Solicitudes />
       </div>
     </>
   )

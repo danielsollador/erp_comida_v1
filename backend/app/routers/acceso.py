@@ -252,6 +252,7 @@ def estado(request: Request, response: Response) -> dict:
         auth.poner_cookie(response, nuevo, request)
     s = auth.datos_acceso(token)
     local = IDENTIDAD_HUB if settings.ES_HUB else locales.actual()
+    ficha = usuarios.ficha(s["usuario"]) if s else None
     return {
         "autenticado": bool(s),
         "es_hub": settings.ES_HUB,
@@ -265,6 +266,12 @@ def estado(request: Request, response: Response) -> dict:
         # Los locales a los que ESTE usuario puede entrar. Vacio sin sesion.
         "locales": _locales_del_usuario(s["usuario"]) if s else [],
         "usuario": s["usuario"] if s else None,
+        # Como se llama la persona, para saludarla por su nombre y no por su
+        # usuario. `nombre_visible` nunca viene vacio: cae al usuario.
+        "nombre": (ficha or {}).get("nombre", ""),
+        "apellido": (ficha or {}).get("apellido", ""),
+        "nombre_visible": usuarios.nombre_visible(ficha) if ficha else (s["usuario"] if s else None),
+        "tiene_pin": bool((ficha or {}).get("tiene_pin")),
         "rol": s["rol"] if s else None,
         # Lo que puede hacer este perfil. Lo dice el servidor; el frontend no
         # deduce permisos de `rol === "admin"`.

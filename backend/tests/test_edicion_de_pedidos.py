@@ -235,7 +235,7 @@ def test_una_venta_cobrada_que_cambia_de_monto_exige_clave(client, variante, db)
         {"variante_id": otra.id, "cantidad": 1},
     ])
     assert r.status_code == 403
-    assert "clave" in r.json()["detail"]
+    assert "PIN" in r.json()["detail"]
 
 
 def test_con_la_clave_mala_no_pasa(client, variante, db):

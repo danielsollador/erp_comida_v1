@@ -977,6 +977,10 @@ export type RolInfo = {
    * de lo interno ni siquiera se dibuja.
    */
   interno: boolean
+  /** Si quien tiene el rol autoriza operaciones (PIN y solicitudes). */
+  autoriza: boolean
+  /** Dueño y Vertigo autorizan siempre: la casilla no se toca. */
+  autoriza_fijo: boolean
   /** Si se le pueden cambiar los modulos desde la pantalla. */
   editable: boolean
   /** Un rol de fabrica al que este local ya le recorto modulos. */
@@ -991,6 +995,11 @@ export type EstadoAcceso = {
   local: { slug: string; nombre: string; dominio: string; url: string; logo: string; favicon: string }
   locales: { slug: string; nombre: string; descripcion: string; url: string; dominio: string }[]
   usuario: string | null
+  /** Como se llama la persona. `nombre_visible` nunca viene vacio: cae al usuario. */
+  nombre: string
+  apellido: string
+  nombre_visible: string | null
+  tiene_pin: boolean
   rol: Rol | null
   /** Lo dice el servidor; el frontend no deduce permisos del rol. */
   puede: {
@@ -998,6 +1007,8 @@ export type EstadoAcceso = {
     administrar: boolean
     operar: boolean
     cocina: boolean
+    /** Autoriza operaciones delicadas: tiene PIN y le llegan las solicitudes. */
+    autoriza: boolean
     /** Los modulos a los que entra este rol: la barra lateral muestra solo esos. */
     modulos: string[]
   }
@@ -1007,6 +1018,9 @@ export type EstadoAcceso = {
 
 export type Usuario = {
   usuario: string
+  nombre: string
+  apellido: string
+  tiene_pin: boolean
   rol: Rol
   /** El nombre del rol tal cual, aunque no sea de los que se reparten aqui. */
   rol_nombre: string
@@ -1030,6 +1044,28 @@ export type DatosRol = {
   nombre: string
   descripcion: string
   modulos: string[]
+  autoriza?: boolean
+}
+
+// ── Autorizaciones ──────────────────────────────────────────────────────────
+
+/** La firma de quien autoriza: el PIN tecleado, o una solicitud aprobada. */
+export type Autorizacion = { pin: string } | { solicitud_id: number } | { usuario: string; clave: string }
+
+export type EstadoSolicitud = 'pendiente' | 'aprobada' | 'rechazada' | 'cancelada' | 'usada' | 'vencida'
+
+export type SolicitudAutorizacion = {
+  id: number
+  creada: string
+  accion: string
+  detalle: string
+  monto: number
+  pedido_id: number | null
+  solicitante: string
+  solicitante_nombre: string
+  estado: EstadoSolicitud
+  resuelta_por: string
+  resuelta_en: string | null
 }
 
 // ── Ventas ──────────────────────────────────────────────────────────────────

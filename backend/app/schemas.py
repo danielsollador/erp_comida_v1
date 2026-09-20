@@ -660,16 +660,43 @@ class Pedido(BaseModel):
 
 
 class Autorizacion(BaseModel):
-    """Usuario y clave de quien autoriza una diferencia de plata.
+    """La firma de quien autoriza mover plata de una venta ya cobrada.
 
-    No es el login: quien esta editando ya entro. Es la firma de que alguien
-    con cuenta acepta que la caja reciba (o suelte) plata por un pedido que ya
-    estaba cobrado. Se verifica contra las cuentas del local y el nombre queda
-    guardado en la edicion.
+    No es el login: quien esta editando ya entro. Tres formas, y con UNA
+    basta (ver `autorizaciones.py`):
+      pin           el PIN de alguien con rol que autoriza, en el mostrador;
+      solicitud_id  una solicitud que ese alguien aprobo desde su aplicacion;
+      usuario+clave la forma vieja, por compatibilidad.
     """
 
-    usuario: str
-    clave: str
+    pin: Optional[str] = None
+    solicitud_id: Optional[int] = None
+    usuario: Optional[str] = None
+    clave: Optional[str] = None
+
+
+class SolicitudAutorizacionCreate(BaseModel):
+    accion: str
+    detalle: str = ""
+    monto: float = 0
+    pedido_id: Optional[int] = None
+
+
+class SolicitudAutorizacion(BaseModel):
+    id: int
+    creada: datetime.datetime
+    accion: str
+    detalle: str = ""
+    monto: float = 0
+    pedido_id: Optional[int] = None
+    solicitante: str = ""
+    solicitante_nombre: str = ""
+    estado: str
+    resuelta_por: str = ""
+    resuelta_en: Optional[datetime.datetime] = None
+
+    class Config:
+        from_attributes = True
 
 
 class EditarPedidoRequest(BaseModel):

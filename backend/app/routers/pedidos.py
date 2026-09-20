@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
-from ..acceso import usuarios
+from .. import autorizaciones
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -532,30 +532,30 @@ async def soltar_edicion(pedido_id: int, db: Session = Depends(get_db)):
     return resultado
 
 
-def _autorizar_diferencia(body: schemas.EditarPedidoRequest, diferencia: float) -> str:
-    """La clave que hace falta cuando la edicion mueve plata ya cobrada.
+def _autorizar_diferencia(
+    db: Session, request: Request, body: schemas.EditarPedidoRequest,
+    pedido: models.Pedido, diferencia: float,
+) -> str:
+    """La firma que hace falta cuando la edicion mueve plata ya cobrada.
 
     El caso que esto cubre no es un error de tecleo: es que a una venta ya
     pagada se le quite un renglon, la diferencia salga de la gaveta y el cierre
     del dia siga cuadrando porque el sistema tambien bajo lo que esperaba. Sin
     una firma, eso no deja rastro de ninguna clase.
 
-    Vale la cuenta de cualquiera que tenga una, no solo la del dueño, y es a
-    proposito: a las nueve de la noche el dueño no esta, y un control que obliga
-    a parar el negocio termina siendo un control que se salta por otro lado
-    (anular y volver a cobrar, que hoy no pide nada). Lo que da el control es
-    que el nombre queda escrito en la edicion y se ve en el listado de ventas.
+    Firma con PIN quien tiene un rol que autoriza, o aprueba desde su
+    aplicacion si no esta en el local (ver `autorizaciones.py`). Lo que da el
+    control es que el nombre queda escrito en la edicion y se ve en ventas.
     """
     if not body.autorizacion:
         raise HTTPException(
             status_code=403,
             detail=f"Esta edición cambia ${abs(diferencia):.2f} de una venta ya cobrada. "
-            "Hace falta la clave de alguien con cuenta para autorizarla.",
+            + autorizaciones.SIN_FIRMA,
         )
-    cuenta = usuarios.verificar(body.autorizacion.usuario, body.autorizacion.clave)
-    if not cuenta:
-        raise HTTPException(status_code=403, detail="Usuario o clave incorrectos")
-    return body.autorizacion.usuario.strip()
+    return autorizaciones.firmar(
+        db, request, body.autorizacion, accion="editar_venta", pedido_id=pedido.id
+    )
 
 
 def _pagos_de_la_diferencia(
@@ -731,7 +731,7 @@ async def editar_pedido(
                 "Cóbrala o devuélvela: editarle el monto dejaría la deuda del cliente "
                 "diciendo otra cosa.",
             )
-        autorizado_por = _autorizar_diferencia(body, diferencia)
+        autorizado_por = _autorizar_diferencia(db, request, body, pedido, diferencia)
         pagos = _pagos_de_la_diferencia(body, diferencia)
 
     # -- el inventario, renglon por renglon

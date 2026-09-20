@@ -153,3 +153,27 @@ def rate_limit(request: Request, limit: int, window: int, what: str) -> None:
         if len(_hits) > 2000:
             for k in [k for k, v in _hits.items() if not v or now - v[-1] > window]:
                 _hits.pop(k, None)
+
+
+def _recientes(clave: str, window: int, now: float) -> list:
+    recent = [t for t in _hits.get(clave, []) if now - t < window]
+    _hits[clave] = recent
+    return recent
+
+
+def exigir_pocos_fallos(request: Request, limit: int, window: int, what: str) -> None:
+    """Como `rate_limit`, pero cuenta solo FALLOS (ver `anotar_fallo`): diez
+    autorizaciones bien puestas en cinco minutos no bloquean a nadie; diez
+    PIN equivocados, si."""
+    now = time.time()
+    with _lock:
+        recent = _recientes(f"{what}:{_ip_cliente(request)}", window, now)
+        if len(recent) >= limit:
+            espera = int(window - (now - recent[0])) + 1
+            raise HTTPException(
+                429, f"Demasiados intentos de {what}. Reintenta en {espera} s.")
+
+
+def anotar_fallo(request: Request, what: str) -> None:
+    with _lock:
+        _hits.setdefault(f"{what}:{_ip_cliente(request)}", []).append(time.time())

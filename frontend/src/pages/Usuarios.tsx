@@ -3,7 +3,7 @@ import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Aviso, Boton, Campo, Etiqueta, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
+import { Aviso, Boton, Campo, Etiqueta, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
 import { api } from '../lib/api'
 import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
@@ -43,7 +43,7 @@ export default function Usuarios() {
 
   const orden = useOrden<Usuario>(
     {
-      usuario: (u) => u.usuario,
+      usuario: (u) => `${u.nombre} ${u.apellido}`.trim() || u.usuario,
       rol: (u) => nombreRol(u.rol),
       // El que nunca ha entrado no tiene fecha: con `null` cae al final de la
       // lista se ordene como se ordene, que es donde se le ve.
@@ -116,7 +116,7 @@ export default function Usuarios() {
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                   <tr>
-                    <Th clave="usuario">Usuario</Th>
+                    <Th clave="usuario">Persona</Th>
                     <Th clave="rol">Rol</Th>
                     <Th clave="acceso" className="hidden sm:table-cell">Último acceso</Th>
                     <Th />
@@ -131,7 +131,10 @@ export default function Usuarios() {
                       roles={roles}
                       onRol={(r) => void cambiarRol(u, r)}
                       onBorrar={() => void borrar(u)}
-                      onClave={ok}
+                      onCambio={(texto) => {
+                        ok(texto)
+                        cargar()
+                      }}
                       onError={setError}
                     />
                   ))}
@@ -197,7 +200,7 @@ function FilaUsuario({
   roles,
   onRol,
   onBorrar,
-  onClave,
+  onCambio,
   onError,
 }: {
   u: Usuario
@@ -205,52 +208,25 @@ function FilaUsuario({
   roles: RolInfo[]
   onRol: (r: Rol) => void
   onBorrar: () => void
-  onClave: (texto: string) => void
+  onCambio: (texto: string) => void
   onError: (texto: string) => void
 }) {
-  const [reiniciando, setReiniciando] = useState(false)
-  const [claveNueva, setClaveNueva] = useState('')
-
-  async function reiniciar() {
-    try {
-      await api.reiniciarClave(u.usuario, claveNueva)
-      setReiniciando(false)
-      setClaveNueva('')
-      onClave(`Clave de ${u.usuario} cambiada. Tendrá que entrar de nuevo.`)
-    } catch (err) {
-      onError((err as Error).message)
-    }
-  }
+  const [editando, setEditando] = useState(false)
+  const nombre = `${u.nombre} ${u.apellido}`.trim()
+  const autoriza = roles.find((r) => r.rol === u.rol)?.autoriza ?? false
 
   return (
     <tr className="border-t border-neutral-100 align-top">
       <td className="p-3">
         <div className="font-medium">
-          {u.usuario}
+          {nombre || u.usuario}
           {soyYo && <span className="ml-2 text-xs text-neutral-400">(tú)</span>}
         </div>
-        {reiniciando && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            <input
-              type="password"
-              autoComplete="new-password"
-              placeholder="Clave nueva (8 o más)"
-              value={claveNueva}
-              onChange={(e) => setClaveNueva(e.target.value)}
-              className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
-            <Boton onClick={() => void reiniciar()}>Guardar</Boton>
-            <Boton
-              tono="fantasma"
-              onClick={() => {
-                setReiniciando(false)
-                setClaveNueva('')
-              }}
-            >
-              Cancelar
-            </Boton>
-          </div>
-        )}
+        <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+          {nombre && <span>@{u.usuario}</span>}
+          {/* Solo tiene sentido en quien autoriza: al resto no se le pide PIN. */}
+          {autoriza && (u.tiene_pin ? <Pastilla tono="bien">PIN listo</Pastilla> : <Pastilla tono="ojo">sin PIN</Pastilla>)}
+        </div>
       </td>
       <td className="p-3">
         <select
@@ -282,16 +258,158 @@ function FilaUsuario({
           : 'Todavía no ha entrado'}
       </td>
       <td className="p-3 text-right whitespace-nowrap">
-        <button onClick={() => setReiniciando(true)} className="text-acento-600 font-medium text-sm mr-3">
-          Clave
+        <button onClick={() => setEditando(true)} className="text-acento-600 font-medium text-sm mr-3">
+          Editar
         </button>
         {!soyYo && (
           <button onClick={onBorrar} className="text-peligro-600 font-medium text-sm">
             Borrar
           </button>
         )}
+        {editando && (
+          <EditarUsuario
+            u={u}
+            autoriza={autoriza}
+            onCerrar={() => setEditando(false)}
+            onCambio={(texto) => {
+              setEditando(false)
+              onCambio(texto)
+            }}
+            onError={onError}
+          />
+        )}
       </td>
     </tr>
+  )
+}
+
+/**
+ * La ficha de una persona, en ventana flotante: su nombre, su contraseña y
+ * su PIN. Antes la clave se cambiaba en un campo que aparecia dentro de la
+ * fila y la empujaba hacia abajo.
+ */
+function EditarUsuario({
+  u,
+  autoriza,
+  onCerrar,
+  onCambio,
+  onError,
+}: {
+  u: Usuario
+  /** Si su rol autoriza: solo entonces se le ofrece PIN. */
+  autoriza: boolean
+  onCerrar: () => void
+  onCambio: (texto: string) => void
+  onError: (texto: string) => void
+}) {
+  const [nombre, setNombre] = useState(u.nombre)
+  const [apellido, setApellido] = useState(u.apellido)
+  const [clave, setClave] = useState('')
+  const [pin, setPin] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const dialogo = useDialogo()
+
+  async function guardar() {
+    setGuardando(true)
+    const hecho: string[] = []
+    try {
+      if (nombre !== u.nombre || apellido !== u.apellido) {
+        await api.cambiarNombre(u.usuario, nombre, apellido)
+        hecho.push('nombre')
+      }
+      if (clave) {
+        await api.reiniciarClave(u.usuario, clave)
+        hecho.push('contraseña (tendrá que entrar de nuevo)')
+      }
+      if (pin) {
+        await api.ponerPin(u.usuario, pin)
+        hecho.push('PIN')
+      }
+      onCambio(hecho.length ? `${nombre || u.usuario}: ${hecho.join(', ')} actualizado.` : 'Sin cambios.')
+    } catch (err) {
+      onError((err as Error).message)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  async function quitarPin() {
+    if (
+      !(await dialogo.confirmar({
+        titulo: `¿Quitarle el PIN a ${nombre || u.usuario}?`,
+        texto: 'Deja de poder autorizar con PIN en el mostrador; desde su aplicación sigue pudiendo.',
+        aceptar: 'Quitar PIN',
+        peligro: true,
+      }))
+    )
+      return
+    try {
+      await api.quitarPin(u.usuario)
+      onCambio(`PIN de ${nombre || u.usuario} quitado.`)
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
+  return (
+    <Modal
+      titulo={`Editar a ${u.nombre || u.usuario}`}
+      ayuda={`@${u.usuario} · ${u.rol_nombre || u.rol}`}
+      onCerrar={onCerrar}
+      ancho="sm"
+      pie={
+        <>
+          <Boton tono="fantasma" onClick={onCerrar}>
+            Cancelar
+          </Boton>
+          <Boton onClick={() => void guardar()} disabled={guardando}>
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </Boton>
+        </>
+      }
+    >
+      <div className="space-y-4 text-left">
+        <div className="grid grid-cols-2 gap-3">
+          <Campo etiqueta="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus />
+          <Campo etiqueta="Apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} />
+        </div>
+        <Campo
+          etiqueta="Nueva contraseña"
+          type="password"
+          autoComplete="new-password"
+          placeholder="Déjalo vacío para no cambiarla"
+          minLength={8}
+          value={clave}
+          onChange={(e) => setClave(e.target.value)}
+          ayuda="8 caracteres como mínimo. Cambiarla cierra sus sesiones abiertas."
+        />
+        {autoriza ? (
+          <div>
+            <Campo
+              etiqueta={u.tiene_pin ? 'Nuevo PIN' : 'PIN'}
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              autoComplete="off"
+              placeholder={u.tiene_pin ? 'Déjalo vacío para no cambiarlo' : '4 a 6 números'}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              ayuda="Con el PIN autoriza en el mostrador sin escribir usuario ni contraseña. No puede repetirse entre personas."
+            />
+            {u.tiene_pin && (
+              <button type="button" onClick={() => void quitarPin()} className="text-xs text-peligro-600 font-medium mt-1">
+                Quitarle el PIN
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-neutral-500">
+            Su rol no autoriza operaciones, así que no lleva PIN. Si debe autorizar, márcalo en la pestaña Roles.
+          </p>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -304,12 +422,29 @@ function CrearUsuario({
   onCreado: (usuario: string) => void
   onError: (texto: string) => void
 }) {
+  const [nombre, setNombre] = useState('')
+  const [apellido, setApellido] = useState('')
   const [usuario, setUsuario] = useState('')
+  const [usuarioTocado, setUsuarioTocado] = useState(false)
   const [clave, setClave] = useState('')
   const [clave2, setClave2] = useState('')
   const [rol, setRol] = useState<Rol>('caja')
   const [creando, setCreando] = useState(false)
   const elegido = roles.find((r) => r.rol === rol)
+
+  // El usuario se propone solo a partir del nombre ("maria"), hasta que
+  // alguien lo escriba a mano.
+  function proponerUsuario(n: string) {
+    if (usuarioTocado) return
+    setUsuario(
+      n
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9._-]/g, '')
+        .slice(0, 32),
+    )
+  }
 
   async function crear(e: FormEvent) {
     e.preventDefault()
@@ -319,9 +454,12 @@ function CrearUsuario({
     }
     setCreando(true)
     try {
-      await api.crearUsuario({ usuario, clave, rol })
-      onCreado(usuario.trim().toLowerCase())
+      await api.crearUsuario({ usuario, clave, rol, nombre, apellido })
+      onCreado(nombre.trim() || usuario.trim().toLowerCase())
+      setNombre('')
+      setApellido('')
       setUsuario('')
+      setUsuarioTocado(false)
       setClave('')
       setClave2('')
     } catch (err) {
@@ -335,13 +473,27 @@ function CrearUsuario({
     <form onSubmit={crear}>
       <Seccion
         titulo="Nuevo usuario"
-        ayuda="El usuario va en minúsculas y sin espacios; la clave, 8 caracteres como mínimo."
+        ayuda="Su nombre es con el que se le saluda y el que queda en lo que hace. El usuario va en minúsculas y sin espacios; la clave, 8 caracteres como mínimo."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Campo
-            etiqueta="Usuario"
+            etiqueta="Nombre"
+            value={nombre}
+            onChange={(e) => {
+              setNombre(e.target.value)
+              proponerUsuario(e.target.value)
+            }}
+            required
+            placeholder="ej. María"
+          />
+          <Campo etiqueta="Apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} placeholder="ej. Pérez" />
+          <Campo
+            etiqueta="Usuario (para entrar)"
             value={usuario}
-            onChange={(e) => setUsuario(e.target.value)}
+            onChange={(e) => {
+              setUsuarioTocado(true)
+              setUsuario(e.target.value)
+            }}
             required
             autoCapitalize="none"
             autoCorrect="off"
@@ -382,6 +534,11 @@ function CrearUsuario({
               Con ese rol va a entrar a
             </p>
             <Modulos modulos={elegido.modulos} />
+            {elegido.autoriza && (
+              <p className="text-xs text-neutral-600 mt-2">
+                Este rol <strong>autoriza</strong> operaciones: después de crearlo, ponle su PIN desde «Editar».
+              </p>
+            )}
             {elegido.descripcion && <p className="text-xs text-neutral-500 mt-2">{elegido.descripcion}</p>}
           </div>
         )}
@@ -537,6 +694,7 @@ function FilaRol({
   const [nombre, setNombre] = useState(r.nombre)
   const [descripcion, setDescripcion] = useState(r.descripcion)
   const [elegidos, setElegidos] = useState<string[]>(r.modulos.map((m) => m.id))
+  const [autoriza, setAutoriza] = useState(r.autoriza)
   const [guardando, setGuardando] = useState(false)
   const dialogo = useDialogo()
 
@@ -544,6 +702,7 @@ function FilaRol({
     setNombre(r.nombre)
     setDescripcion(r.descripcion)
     setElegidos(r.modulos.map((m) => m.id))
+    setAutoriza(r.autoriza)
     setEditando(true)
   }
 
@@ -553,7 +712,7 @@ function FilaRol({
   async function guardar() {
     setGuardando(true)
     try {
-      await api.editarRol(r.rol, { nombre, descripcion, modulos: elegidos })
+      await api.editarRol(r.rol, { nombre, descripcion, modulos: elegidos, autoriza })
       setEditando(false)
       onOk(`«${nombre || r.nombre}» actualizado. Quien lo tenga lo nota al recargar.`)
       onCambio()
@@ -592,6 +751,11 @@ function FilaRol({
           {r.ajustado && (
             <span className="ml-2 align-middle">
               <Pastilla tono="acento">a tu medida</Pastilla>
+            </span>
+          )}
+          {r.autoriza && (
+            <span className="ml-2 align-middle">
+              <Pastilla tono="bien">autoriza</Pastilla>
             </span>
           )}
           <span className="ml-2 text-xs text-neutral-400">
@@ -661,6 +825,7 @@ function FilaRol({
               )
             })}
           </div>
+          <CasillaAutoriza marcado={autoriza} fijo={r.autoriza_fijo} onCambio={setAutoriza} />
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <Boton onClick={() => void guardar()} disabled={guardando || elegidos.length === 0}>
               {guardando ? 'Guardando…' : 'Guardar'}
@@ -694,6 +859,7 @@ function CrearRol({
   const [nombre, setNombre] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [elegidos, setElegidos] = useState<string[]>([])
+  const [autoriza, setAutoriza] = useState(false)
   const [creando, setCreando] = useState(false)
 
   const alternar = (id: string) =>
@@ -703,7 +869,7 @@ function CrearRol({
     e.preventDefault()
     setCreando(true)
     try {
-      await api.crearRol({ nombre, descripcion, modulos: elegidos })
+      await api.crearRol({ nombre, descripcion, modulos: elegidos, autoriza })
       onCreado(nombre.trim())
       setNombre('')
       setDescripcion('')
@@ -766,6 +932,8 @@ function CrearRol({
           responde que no. Crear usuarios no está en la lista a propósito: eso se queda contigo.
         </p>
 
+        <CasillaAutoriza marcado={autoriza} fijo={false} onCambio={setAutoriza} />
+
         <div className="mt-4">
           <Boton type="submit" disabled={creando || elegidos.length === 0 || !nombre.trim()}>
             {creando ? 'Creando…' : 'Crear rol'}
@@ -773,5 +941,45 @@ function CrearRol({
         </div>
       </Seccion>
     </form>
+  )
+}
+
+/**
+ * La casilla de "este rol autoriza". Es una sola porque son las dos caras de
+ * la misma autoridad: quien autoriza tiene PIN para firmar en el mostrador Y
+ * recibe las solicitudes en su aplicacion para aprobarlas desde donde este.
+ */
+function CasillaAutoriza({
+  marcado,
+  fijo,
+  onCambio,
+}: {
+  marcado: boolean
+  /** Dueño y Vertigo autorizan siempre. */
+  fijo: boolean
+  onCambio: (v: boolean) => void
+}) {
+  return (
+    <label
+      className={`mt-4 flex items-start gap-2.5 rounded-xl border px-3 py-2.5 ${
+        fijo ? 'border-neutral-200 bg-neutral-50 cursor-default' : 'cursor-pointer ' + (marcado ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300')
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={marcado}
+        disabled={fijo}
+        onChange={(e) => onCambio(e.target.checked)}
+        className="w-4 h-4 mt-0.5 accent-neutral-900"
+      />
+      <span className="text-sm">
+        <span className="font-medium">Autoriza operaciones delicadas</span>
+        <span className="block text-xs text-neutral-500 mt-0.5">
+          Puede tener PIN para firmar en el mostrador (editar una venta ya cobrada) y le llegan las
+          solicitudes para aprobarlas desde su aplicación cuando no está en el local.
+          {fijo && ' El dueño autoriza siempre.'}
+        </span>
+      </span>
+    </label>
   )
 }

@@ -46,7 +46,7 @@ export default function Rail() {
   const visibles = MODULOS.filter((m) => entraA(estado.puede, m.modulo))
   const operacion = visibles.filter((m) => m.grupo === 'operacion')
   const administracion = visibles.filter((m) => m.grupo === 'administracion')
-  const inicial = (estado.usuario ?? '?').slice(0, 1).toUpperCase()
+  const inicial = (estado.nombre_visible || estado.usuario || '?').slice(0, 1).toUpperCase()
 
   const item = (m: (typeof MODULOS)[number]) => {
     const activo = pathname === m.to || pathname.startsWith(m.to + '/')

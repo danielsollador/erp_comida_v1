@@ -61,13 +61,21 @@ def _leer_ajustes() -> list[dict]:
     return [a for a in (ajustes or []) if isinstance(a, dict) and a.get("rol")]
 
 
-def _guardar(roles: list[dict] | None = None, ajustes: list[dict] | None = None) -> None:
-    """Escribe sin pisar la otra mitad del archivo."""
+def _leer_autorizan() -> list[dict]:
+    filas = _documento().get("autorizan")
+    return [a for a in (filas or []) if isinstance(a, dict) and a.get("rol")]
+
+
+def _guardar(roles: list[dict] | None = None, ajustes: list[dict] | None = None,
+             autorizan: list[dict] | None = None) -> None:
+    """Escribe sin pisar las otras partes del archivo."""
     doc = _documento()
     if roles is not None:
         doc["roles"] = roles
     if ajustes is not None:
         doc["ajustes"] = ajustes
+    if autorizan is not None:
+        doc["autorizan"] = autorizan
     doc.setdefault("roles", [])
     RUTA.parent.mkdir(parents=True, exist_ok=True)
     tmp = RUTA.with_suffix(".tmp")
@@ -163,7 +171,7 @@ def restaurar(rol: str, local: str | None) -> bool:
 
 def crear(rol_id: str, nombre: str, descripcion: str, modulos: list[str],
           reservados: tuple[str, ...], validos: tuple[str, ...],
-          local: str | None = None) -> dict:
+          local: str | None = None, autoriza: bool = False) -> dict:
     """Da de alta un rol. `reservados` son los nombres de fabrica y `validos`
     los modulos que existen; los dos los pone `permisos`, para no tener que
     importarlo desde aqui y armar un ciclo. `local` es de quien es el rol."""
@@ -187,14 +195,17 @@ def crear(rol_id: str, nombre: str, descripcion: str, modulos: list[str],
         if any(r["id"] == rol_id for r in roles):
             raise ErrorRoles(f"Ya existe un rol «{rol_id}».")
         rol = {"id": rol_id, "nombre": nombre, "descripcion": descripcion.strip(),
-               "modulos": limpios, "local": local or ""}
+               "modulos": limpios, "local": local or "",
+               # Si quien tiene este rol puede autorizar operaciones (PIN y
+               # avisos). Ver `permisos.autoriza`.
+               "autoriza": bool(autoriza)}
         roles.append(rol)
         _guardar(roles)
         return rol
 
 
 def actualizar(rol_id: str, nombre: str, descripcion: str, modulos: list[str],
-               validos: tuple[str, ...]) -> dict:
+               validos: tuple[str, ...], autoriza: bool | None = None) -> dict:
     limpios = [m for m in dict.fromkeys(modulos or []) if m in validos]
     if not limpios:
         raise ErrorRoles("Elige al menos un modulo al que pueda entrar.")
@@ -206,6 +217,8 @@ def actualizar(rol_id: str, nombre: str, descripcion: str, modulos: list[str],
         rol["nombre"] = (nombre or rol["nombre"]).strip()
         rol["descripcion"] = descripcion.strip()
         rol["modulos"] = limpios
+        if autoriza is not None:
+            rol["autoriza"] = bool(autoriza)
         _guardar(roles)
         return rol
 
@@ -225,3 +238,30 @@ def borrar(rol_id: str, en_uso: bool) -> None:
         if len(quedan) == len(roles):
             raise ErrorRoles(f"No existe el rol «{objetivo}».")
         _guardar(quedan)
+
+
+# ── Que roles de fabrica autorizan, por local ───────────────────────────────
+#
+# Igual que los recortes: "Caja" sigue significando lo mismo en todos los
+# locales, y ESTE local decide aparte si su gente de caja puede autorizar.
+
+
+def autoriza_ajustado(rol: str | None, local: str | None) -> bool | None:
+    """Lo que este local decidio para ese rol de fabrica. None = sin tocar."""
+    r = (rol or "").strip().lower()
+    if not r or not local:
+        return None
+    for a in _leer_autorizan():
+        if a.get("rol") == r and a.get("local") == local:
+            return bool(a.get("autoriza"))
+    return None
+
+
+def fijar_autoriza(rol: str, local: str | None, valor: bool) -> None:
+    if not local:
+        raise ErrorRoles("Un rol de fabrica se ajusta desde el panel de un local.")
+    r = (rol or "").strip().lower()
+    with _lock:
+        otros = [a for a in _leer_autorizan()
+                 if not (a.get("rol") == r and a.get("local") == local)]
+        _guardar(autorizan=otros + [{"rol": r, "local": local, "autoriza": bool(valor)}])

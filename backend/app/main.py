@@ -16,6 +16,7 @@ from .migrations import renombrar_tablas
 from .routers import (
     acceso as acceso_router,
     agencia,
+    autorizaciones as autorizaciones_router,
     caja,
     compras,
     config,
@@ -207,6 +208,7 @@ async def exigir_sesion(request: Request, call_next):
 
 app.include_router(acceso_router.router)
 app.include_router(usuarios_router.router)
+app.include_router(autorizaciones_router.router)
 app.include_router(agencia.router)
 app.include_router(menu.router)
 app.include_router(operadores.router)
@@ -236,10 +238,13 @@ async def websocket_endpoint(websocket: WebSocket):
     # El middleware HTTP no cubre los WebSockets: la cookie se comprueba aqui,
     # ANTES de aceptar. Sin esto, la cocina en tiempo real --cada comanda con
     # sus items-- se podia escuchar sin haber entrado.
-    if not auth.acceso_ok(websocket.cookies.get(auth.COOKIE_SESION)):
+    sesion_ws = auth.datos_acceso(websocket.cookies.get(auth.COOKIE_SESION))
+    if not sesion_ws:
         await websocket.close(code=1008)
         return
-    await manager.connect(websocket)
+    # La sesion viaja con la conexion: asi una solicitud de autorizacion le
+    # llega solo a quien puede resolverla.
+    await manager.connect(websocket, sesion_ws)
     try:
         while True:
             await websocket.receive_text()

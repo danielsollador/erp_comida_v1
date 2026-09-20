@@ -34,6 +34,14 @@ ROLES = permisos.ROLES
 _lock = threading.RLock()
 # Un usuario es un identificador, no un nombre: sin espacios ni acentos.
 _RE_USUARIO = re.compile(r"^[a-z0-9._-]{3,32}$")
+# El PIN: de cuatro a seis digitos. Es lo que se teclea en el mostrador para
+# autorizar algo; la contraseña queda para entrar.
+_RE_PIN = re.compile(r"^\d{4,6}$")
+# Menos vueltas que la contraseña: con diez mil combinaciones posibles el hash
+# no es la defensa, lo es el limite de intentos (ver `autorizaciones.py`). Y
+# verificar un PIN recorre a TODOS los que tienen uno.
+ITERACIONES_PIN = 60_000
+LARGO_NOMBRE = 60
 
 
 class ErrorUsuarios(ValueError):
@@ -53,10 +61,10 @@ def _derivar(clave: str, sal: bytes, iteraciones: int = ITERACIONES) -> str:
                                iteraciones).hex()
 
 
-def _nuevo_hash(clave: str) -> dict:
+def _nuevo_hash(clave: str, iteraciones: int = ITERACIONES) -> dict:
     sal = secrets.token_bytes(16)
-    return {"sal": sal.hex(), "hash": _derivar(clave, sal),
-            "iteraciones": ITERACIONES}
+    return {"sal": sal.hex(), "hash": _derivar(clave, sal, iteraciones),
+            "iteraciones": iteraciones}
 
 
 def _coincide(clave: str, reg: dict) -> bool:
@@ -206,8 +214,38 @@ def _validar_rol(rol: str | None) -> str:
     return r
 
 
+def _validar_pin(pin: str | None) -> str:
+    p = (pin or "").strip()
+    if not _RE_PIN.match(p):
+        raise ErrorUsuarios("El PIN son de 4 a 6 números, sin letras.")
+    return p
+
+
+def _validar_nombre(texto: str | None) -> str:
+    return " ".join((texto or "").split())[:LARGO_NOMBRE]
+
+
 def _buscar(d: dict, usuario: str) -> dict | None:
     return next((x for x in d["usuarios"] if x["usuario"] == usuario), None)
+
+
+def _publico(reg: dict) -> dict:
+    """La ficha sin hashes ni sales: esto viaja al navegador."""
+    return {"usuario": reg["usuario"], "rol": reg.get("rol", "admin"),
+            "nombre": reg.get("nombre", ""), "apellido": reg.get("apellido", ""),
+            "locales": reg.get("locales", []),
+            "creado": reg.get("creado"),
+            "ultimo_acceso": reg.get("ultimo_acceso"),
+            "tiene_pin": bool(reg.get("pin"))}
+
+
+def nombre_visible(f: dict | None) -> str:
+    """Como se le llama en pantalla: nombre y apellido si los tiene, y si no
+    el usuario. Nunca vacio."""
+    if not f:
+        return ""
+    completo = f"{f.get('nombre', '')} {f.get('apellido', '')}".strip()
+    return completo or f.get("usuario", "")
 
 
 # --- API del modulo --------------------------------------------------------
@@ -225,15 +263,19 @@ def hay_usuarios() -> bool:
 def listar() -> list[dict]:
     """Sin hashes ni sales: esto viaja al navegador."""
     with _lock:
-        return [{"usuario": u["usuario"], "rol": u.get("rol", "admin"),
-                 "locales": u.get("locales", []),
-                 "creado": u.get("creado"),
-                 "ultimo_acceso": u.get("ultimo_acceso")}
-                for u in _leer()["usuarios"]]
+        return [_publico(u) for u in _leer()["usuarios"]]
+
+
+def ficha(usuario: str | None) -> dict | None:
+    """La ficha publica de uno, o None si no existe."""
+    with _lock:
+        reg = _buscar(_leer(), _norm(usuario))
+    return None if reg is None else _publico(reg)
 
 
 def crear(usuario: str, clave: str, rol: str = "admin",
-          locales: list[str] | None = None) -> dict:
+          locales: list[str] | None = None,
+          nombre: str = "", apellido: str = "") -> dict:
     """Crea un usuario. `locales` es la lista de locales que puede ver; VACIA
     significa todos (el caso del dueño y del primer usuario)."""
     u = _validar_usuario(usuario)
@@ -250,11 +292,13 @@ def crear(usuario: str, clave: str, rol: str = "admin",
         if _buscar(d, u):
             raise ErrorUsuarios(f"El usuario «{u}» ya existe.")
         reg = {"usuario": u, "rol": rol, "locales": list(locales or []),
+               "nombre": _validar_nombre(nombre),
+               "apellido": _validar_nombre(apellido),
                "creado": int(time.time()), "ultimo_acceso": None,
                **_nuevo_hash(clave)}
         d["usuarios"].append(reg)
         _guardar(d)
-    return {"usuario": u, "rol": rol, "locales": list(locales or [])}
+    return _publico(reg)
 
 
 def verificar(usuario: str | None, clave: str | None) -> dict | None:
@@ -278,7 +322,8 @@ def verificar(usuario: str | None, clave: str | None) -> dict | None:
             _guardar(d)
         except ErrorAlmacen:
             pass  # anotar la hora es cosmetico; entrar no.
-        return {"usuario": reg["usuario"], "rol": reg.get("rol", "admin")}
+        return {"usuario": reg["usuario"], "rol": reg.get("rol", "admin"),
+                "nombre": reg.get("nombre", ""), "apellido": reg.get("apellido", "")}
 
 
 def marcar_acceso(usuario: str) -> None:
@@ -407,6 +452,71 @@ def borrar(usuario: str) -> None:
                 "Es el ultimo administrador. Crea otro antes de borrar este.")
         d["usuarios"] = [x for x in d["usuarios"] if x["usuario"] != u]
         _guardar(d)
+
+
+def cambiar_nombre(usuario: str, nombre: str, apellido: str) -> dict:
+    u = _norm(usuario)
+    with _lock:
+        d = _leer()
+        reg = _buscar(d, u)
+        if reg is None:
+            raise ErrorUsuarios(f"No existe el usuario «{u}».")
+        reg["nombre"] = _validar_nombre(nombre)
+        reg["apellido"] = _validar_nombre(apellido)
+        _guardar(d)
+    return _publico(reg)
+
+
+# --- PIN -------------------------------------------------------------------
+#
+# El PIN identifica solo: quien lo teclea no dice quien es. Por eso no puede
+# haber dos personas con el mismo, y por eso al ponerlo se compara contra el
+# de todas las demas.
+
+def poner_pin(usuario: str, pin: str) -> dict:
+    u = _norm(usuario)
+    p = _validar_pin(pin)
+    with _lock:
+        d = _leer()
+        reg = _buscar(d, u)
+        if reg is None:
+            raise ErrorUsuarios(f"No existe el usuario «{u}».")
+        for otro in d["usuarios"]:
+            if otro is not reg and otro.get("pin") and _coincide(p, otro["pin"]):
+                raise ErrorUsuarios("Ese PIN ya lo usa otra persona: elige otro.")
+        reg["pin"] = _nuevo_hash(p, ITERACIONES_PIN)
+        _guardar(d)
+    return _publico(reg)
+
+
+def quitar_pin(usuario: str) -> dict:
+    u = _norm(usuario)
+    with _lock:
+        d = _leer()
+        reg = _buscar(d, u)
+        if reg is None:
+            raise ErrorUsuarios(f"No existe el usuario «{u}».")
+        reg.pop("pin", None)
+        _guardar(d)
+    return _publico(reg)
+
+
+def verificar_pin(pin: str | None, local: str | None = None) -> dict | None:
+    """A quien pertenece este PIN, entre la gente de ESTE local (o Vertigo),
+    o None. Quien llama decide si su rol autoriza."""
+    p = (pin or "").strip()
+    if not _RE_PIN.match(p):
+        return None
+    with _lock:
+        for reg in _leer()["usuarios"]:
+            if not reg.get("pin"):
+                continue
+            if local and not permisos.es_vertigo(reg.get("rol")) \
+                    and local not in (reg.get("locales") or []):
+                continue
+            if _coincide(p, reg["pin"]):
+                return _publico(reg)
+    return None
 
 
 def sembrar_desde_entorno(usuario: str | None, clave: str | None) -> bool:
