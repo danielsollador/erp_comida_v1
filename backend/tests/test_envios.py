@@ -59,3 +59,46 @@ def test_un_envio_se_puede_agregar_junto_con_comida(client, variante):
         "nota": "",
     }).json()
     assert p["total"] == round(variante.precio * 2 + 3.0, 2)
+
+
+def test_renombrar_la_categoria_no_la_duplica_en_el_siguiente_arranque(client, db):
+    """El dueño renombra "Envios" a "Envíos", que es como se escribe bien.
+
+    Con la busqueda por cadena exacta, el arranque siguiente no la encontraba
+    y creaba otra: el menu quedaba con las dos, una con las ventas y otra
+    recien nacida. Se busca sin tildes y sin mayusculas justo por esto.
+    """
+    from app.seed import asegurar_categoria_envios
+
+    envios = buscar_envios(client)
+    r = client.put(
+        f"/api/menu/categorias/{envios['id']}",
+        json={"nombre": "Envíos", "orden": 99, "activo": True},
+    )
+    assert r.status_code == 200, r.text
+
+    asegurar_categoria_envios(db)
+
+    cats = client.get("/api/menu/categorias").json()
+    de_envios = [c for c in cats if c["nombre"] in ("Envios", "Envíos")]
+    assert len(de_envios) == 1, [c["nombre"] for c in cats]
+    assert de_envios[0]["id"] == envios["id"]
+    assert len(de_envios[0]["productos"]) == 2
+
+
+def test_el_delivery_renombrado_sigue_siendo_un_servicio(client, db):
+    """Si deja de reconocerse, la salud contable vuelve a pedir "cargale la
+    receta al delivery" para siempre -- un aviso que no se puede resolver."""
+    from app.seed import variantes_de_servicio
+
+    envios = buscar_envios(client)
+    antes = variantes_de_servicio(db)
+    assert antes, "los delivery deberian contar como servicio desde el arranque"
+
+    client.put(
+        f"/api/menu/categorias/{envios['id']}",
+        json={"nombre": "ENVÍOS", "orden": 99, "activo": True},
+    )
+    db.expire_all()
+
+    assert variantes_de_servicio(db) == antes

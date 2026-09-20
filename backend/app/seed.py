@@ -1,3 +1,5 @@
+import unicodedata
+
 from . import contabilidad
 from .database import SessionLocal
 from .models import Categoria, Ingrediente, Producto, RecetaItem, Variante
@@ -48,6 +50,40 @@ RECETAS_DEMO = {
 CATEGORIA_ENVIOS = "Envios"
 
 
+def _sin_tildes(texto: str) -> str:
+    """Para COMPARAR nombres, no para guardarlos: sin tildes, sin mayusculas
+    y sin espacios de sobra."""
+    plano = unicodedata.normalize("NFD", texto or "")
+    return "".join(c for c in plano if not unicodedata.combining(c)).strip().casefold()
+
+
+_ENVIOS_NORMALIZADO = _sin_tildes(CATEGORIA_ENVIOS)
+
+
+def categoria_envios(db):
+    """La categoria de los envios, la escriba el dueño como la escriba.
+
+    Se busca por el nombre SIN TILDES y sin mayusculas, no por la cadena
+    exacta. El dueño puede renombrar cualquier categoria desde el menu, y
+    "Envíos" --con tilde, que es como se escribe bien-- es lo primero que
+    va a corregir. Con la comparacion exacta eso tenia dos consecuencias,
+    las dos silenciosas:
+
+      - `asegurar_categoria_envios` no la encontraba y creaba OTRA en el
+        siguiente despliegue. El menu quedaba con "Envíos" y "Envios", una
+        con las ventas y otra recien nacida.
+      - `variantes_de_servicio` dejaba de reconocer los delivery, y la salud
+        contable volvia a pedir "cargale la receta al delivery" para siempre
+        -- un aviso que no se puede resolver, porque un envio no se cocina.
+
+    Devuelve None si no existe ninguna todavia.
+    """
+    for c in db.query(Categoria).all():
+        if _sin_tildes(c.nombre) == _ENVIOS_NORMALIZADO:
+            return c
+    return None
+
+
 def variantes_de_servicio(db) -> set:
     """Las variantes que se venden sin que salga nada del deposito.
 
@@ -57,11 +93,13 @@ def variantes_de_servicio(db) -> set:
     "cargarle la receta" al delivery todos los dias, y un aviso que nunca se
     puede resolver entrena a ignorar la pantalla entera.
     """
+    categoria = categoria_envios(db)
+    if categoria is None:
+        return set()
     filas = (
         db.query(Variante.id)
         .join(Producto, Producto.id == Variante.producto_id)
-        .join(Categoria, Categoria.id == Producto.categoria_id)
-        .filter(Categoria.nombre == CATEGORIA_ENVIOS)
+        .filter(Producto.categoria_id == categoria.id)
         .all()
     )
     return {v_id for (v_id,) in filas}
@@ -89,7 +127,7 @@ def asegurar_categoria_envios(db=None):
     if propia:
         db = SessionLocal()
     try:
-        categoria = db.query(Categoria).filter_by(nombre=CATEGORIA_ENVIOS).first()
+        categoria = categoria_envios(db)
         if categoria is None:
             categoria = Categoria(nombre=CATEGORIA_ENVIOS, orden=99)
             db.add(categoria)
@@ -121,8 +159,12 @@ def seed_if_empty():
         # ANTES de llegar aqui, y con ella sola la base ya no estaba "vacia",
         # asi que el menu de ejemplo no se sembraba nunca y las recetas de
         # ejemplo tampoco (no tenian variantes a las que pegarse).
+        envios = categoria_envios(db)
         sin_menu = (
-            db.query(Categoria).filter(Categoria.nombre != CATEGORIA_ENVIOS).count() == 0
+            db.query(Categoria)
+            .filter(Categoria.id != (envios.id if envios else -1))
+            .count()
+            == 0
         )
         if sin_menu:
             for orden, (categoria_nombre, productos) in enumerate(MENU_DEMO.items()):
