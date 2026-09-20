@@ -46,7 +46,13 @@ export default function NavBar({
         dark ? 'bg-neutral-900/90 backdrop-blur-md text-white border-neutral-800' : 'vp-glass border-neutral-200'
       }`}
     >
-      <div className="flex items-center gap-3 px-4 h-14">
+      {/* En el telefono la barra va en DOS filas: arriba la flecha y el nombre
+          del modulo entero, abajo los botones a la derecha. Con todo en una
+          fila el nombre salia cortado ("Punt..."), y quitar botones no era
+          opcion: Leider (20-sep) quiere el tema y la pantalla completa
+          tambien en el telefono. Es el mismo DOM en los dos casos, asi que las
+          notificaciones y su WebSocket se montan una sola vez. */}
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1.5 px-4 py-2 sm:py-0 sm:h-14">
         {/* Volver al inicio, SIEMPRE visible. Estaba solo en movil porque en
             escritorio la barra lateral ya lleva al inicio, pero el rombo de la
             barra no se lee como "volver": quien entra a un modulo busca la
@@ -64,17 +70,15 @@ export default function NavBar({
 
         {/* La miga tambien lleva al inicio: es la otra mitad del mismo gesto.
             Va con el logo del local, no con su nombre escrito. */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1 sm:flex-none">
           <Link to="/" className="hidden md:inline-flex items-center shrink-0 hover:opacity-80" title={estado.local.nombre}>
             <Marca className="h-[22px]" sobreOscuro={dark} />
           </Link>
           <span className={`hidden md:inline ${dark ? 'text-neutral-700' : 'text-neutral-300'}`}>/</span>
-          {/* Un punto menos en el telefono: "Punto de venta" tiene que
-              leerse entero con la moneda, la campana y el usuario al lado. */}
-          <h1 className="font-display font-semibold text-[15px] sm:text-[17px] leading-none truncate">{titulo}</h1>
+          <h1 className="font-display font-semibold text-[17px] leading-none truncate">{titulo}</h1>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 max-sm:basis-full max-sm:justify-end">
           {filtro}
           {acciones}
           {moneda && <MonedaToggle dark={dark} />}
