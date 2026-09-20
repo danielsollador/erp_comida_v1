@@ -20,10 +20,10 @@ import { createPortal } from 'react-dom'
  * teclado abajo, lo mas pequeno posible... y tambien para texto,
  * porque para texto literalmente no existe nada".
  *
- * COMO FUNCIONA. En una pantalla tactil (`pointer: coarse`) el teclado del
- * sistema no sale nunca: se le dice al navegador `inputmode="none"` y en su
- * lugar se abre este, abajo y lo mas bajo posible; el cuadro abierto se
- * recentra en lo que queda. Dos teclados:
+ * COMO FUNCIONA. En una TABLET (`pointer: coarse` y pantalla ancha) el
+ * teclado del sistema no sale nunca: se le dice al navegador
+ * `inputmode="none"` y en su lugar se abre este, abajo y lo mas bajo posible;
+ * el cuadro abierto se recentra en lo que queda. Dos teclados:
  *
  *   NUMERICO  para todo campo de numero (`<Numerico>`): doce teclas grandes.
  *   TEXTO     para cualquier otro campo de texto o area de texto del ERP, sin
@@ -34,6 +34,12 @@ import { createPortal } from 'react-dom'
  * Arriba de las teclas se ve que campo se esta llenando y con que valor, asi
  * da igual si el campo quedo detras. En un computador con raton nada de esto
  * existe: los campos son inputs normales.
+ *
+ * EN UN TELEFONO TAMPOCO. Leider (20-sep): "para telefonos deja mucho que
+ * desear... deja que la gente use su teclado normal". Ahi la pantalla es
+ * angosta, el teclado del sistema ya esta hecho para el pulgar y el nuestro
+ * solo lo empeoraba. Los campos de numero salen con `inputmode` decimal o
+ * numerico, que es el teclado de digitos del propio telefono.
  */
 
 type Objetivo =
@@ -62,18 +68,43 @@ type Ctx = {
 
 const TecladoCtx = createContext<Ctx | null>(null)
 
-/** Si esta pantalla se maneja con el dedo. Se decide una vez por carga. */
+/** Si esta pantalla se maneja con el dedo. */
 export function esTactil(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false
+  return window.matchMedia('(pointer: coarse)').matches
+}
+
+/**
+ * Un telefono: tactil y angosto por su lado corto. Se mide la pantalla
+ * fisica y no la ventana, para que girar el aparato no lo convierta en tablet.
+ * Las tablets chicas de 7-8" miden 600 px o mas por el lado corto; los
+ * telefonos, entre 360 y 430.
+ */
+const LADO_CORTO_TELEFONO = 600
+
+export function esTelefono(): boolean {
+  if (typeof window === 'undefined') return false
+  if (!esTactil()) return false
+  const { width, height } = window.screen
+  return Math.min(width, height) < LADO_CORTO_TELEFONO
+}
+
+/**
+ * Si aqui se usa el teclado propio del ERP: una TABLET. Ni en el computador
+ * (raton y teclado fisico) ni en el telefono (su teclado ya es para el
+ * pulgar). Se decide una vez por carga.
+ */
+export function usaTecladoPropio(): boolean {
+  if (typeof window === 'undefined') return false
   // Para probarlo en un computador: localStorage.setItem('vp-teclado', 'siempre').
   try {
     const forzado = window.localStorage.getItem('vp-teclado')
     if (forzado === 'siempre') return true
     if (forzado === 'nunca') return false
   } catch {
-    // sin almacenamiento local, se decide por el puntero
+    // sin almacenamiento local, se decide por la pantalla
   }
-  return window.matchMedia('(pointer: coarse)').matches
+  return esTactil() && !esTelefono()
 }
 
 /** Los campos de texto a los que se engancha el teclado de texto. */
@@ -119,7 +150,7 @@ function escribirEn(el: HTMLInputElement | HTMLTextAreaElement, valor: string, c
 
 export function TecladoProvider({ children }: { children: ReactNode }) {
   const [objetivo, setObjetivo] = useState<Objetivo | null>(null)
-  const tactil = useMemo(esTactil, [])
+  const tactil = useMemo(usaTecladoPropio, [])
 
   const abrir = useCallback((o: Objetivo) => setObjetivo(o), [])
   const cerrar = useCallback(() => setObjetivo(null), [])
@@ -766,7 +797,7 @@ export function Numerico({
   entero?: boolean
 }) {
   const ctx = useContext(TecladoCtx)
-  const tactil = useMemo(esTactil, [])
+  const tactil = useMemo(usaTecladoPropio, [])
   const ref = useRef<HTMLInputElement>(null)
   const texto = value === undefined || value === null ? '' : String(value)
   const poner = useCallback(
@@ -782,8 +813,9 @@ export function Numerico({
   }, [texto, ctx])
 
   if (!tactil || !ctx) {
-    // Computador: un input de texto con teclado decimal. No `type=number`,
-    // que cambia el valor con la rueda del raton y no acepta la coma.
+    // Computador o telefono: un input de texto con el teclado de digitos del
+    // sistema. No `type=number`, que cambia el valor con la rueda del raton
+    // y no acepta la coma.
     return (
       <input
         ref={ref}

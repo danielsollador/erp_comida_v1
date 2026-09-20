@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from 'react'
 import { api } from './api'
 import type { EstadoTasa } from './types'
+import { useAnchoDeTelefono } from './desplegable'
 
 /**
  * Vista cambiaria de toda la app. Portado del modulo cambiario de Vertigo
@@ -157,6 +158,7 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
   const { vista, setVista, tasa } = useMoneda()
   const [abierto, setAbierto] = useState(false)
   const caja = useRef<HTMLDivElement>(null)
+  const enTelefono = useAnchoDeTelefono(caja, abierto)
 
   useEffect(() => {
     if (!abierto) return
@@ -276,6 +278,7 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
         <div
           role="menu"
           className="absolute right-0 z-40 mt-1.5 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white text-neutral-900 shadow-xl"
+          style={enTelefono}
         >
           <div className="border-b border-neutral-100 px-3.5 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
             Ver todos los montos como

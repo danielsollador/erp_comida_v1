@@ -4,6 +4,7 @@ import { api, connectWs } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
 import type { SolicitudAutorizacion } from '../lib/types'
 import Icono from './Icono'
+import { useAnchoDeTelefono } from '../lib/desplegable'
 
 /**
  * La campana: el buzon de notificaciones, arriba junto a la moneda.
@@ -23,6 +24,7 @@ export default function Notificaciones({ dark = false }: { dark?: boolean }) {
   const [lista, setLista] = useState<SolicitudAutorizacion[]>([])
   const [ocupada, setOcupada] = useState<number | null>(null)
   const caja = useRef<HTMLDivElement>(null)
+  const enTelefono = useAnchoDeTelefono(caja, abierto)
 
   const cargar = useCallback(() => {
     api.historialAutorizaciones().then(setLista).catch(() => undefined)
@@ -97,10 +99,10 @@ export default function Notificaciones({ dark = false }: { dark?: boolean }) {
       {abierto && (
         <div
           role="menu"
-          className={`absolute right-0 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] rounded-2xl border shadow-lg z-30 overflow-hidden ${
+          className={`absolute right-0 mt-2 w-[22rem] rounded-2xl border shadow-lg z-30 overflow-hidden ${
             dark ? 'bg-neutral-900 border-neutral-700 text-white' : 'bg-white border-neutral-200'
           }`}
-          style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
+          style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both', ...enTelefono }}
         >
           <div className={`px-4 py-3 border-b flex items-baseline justify-between ${dark ? 'border-neutral-800' : 'border-neutral-100'}`}>
             <span className="font-semibold font-display">Notificaciones</span>

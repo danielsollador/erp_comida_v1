@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NOMBRE_ROL, irAlHub, useAcceso } from '../lib/acceso'
 import Icono from './Icono'
+import { useAnchoDeTelefono } from '../lib/desplegable'
 
 /**
  * Quien esta dentro, arriba a la derecha: su inicial, su nombre y un menu con
@@ -13,6 +14,7 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
   const { estado, salir } = useAcceso()
   const [abierto, setAbierto] = useState(false)
   const caja = useRef<HTMLDivElement>(null)
+  const enTelefono = useAnchoDeTelefono(caja, abierto)
 
   useEffect(() => {
     if (!abierto) return
@@ -65,7 +67,7 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
           className={`absolute right-0 mt-2 w-60 rounded-2xl border shadow-lg p-1.5 z-30 ${
             dark ? 'bg-neutral-900 border-neutral-700 text-white' : 'bg-white border-neutral-200'
           }`}
-          style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
+          style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both', ...enTelefono }}
         >
           <div className="px-3 pt-2 pb-2">
             <div className="text-sm font-semibold truncate font-display">{usuario}</div>

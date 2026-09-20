@@ -6,7 +6,8 @@ import { useDialogo } from '../components/dialogo'
 import {
   Numerico,
   POSICIONES,
-  esTactil,
+  esTelefono,
+  usaTecladoPropio,
   guardarPreferenciasTeclado,
   leerPreferenciasTeclado,
   type Posicion,
@@ -370,7 +371,8 @@ function CambiarClave() {
 function Apariencia() {
   const { tema, cambiar } = useTema()
   const [teclado, setTeclado] = useState<PreferenciasTeclado>(leerPreferenciasTeclado)
-  const tactil = esTactil()
+  const tactil = usaTecladoPropio()
+  const telefono = esTelefono()
 
   function ponerTeclado(p: Partial<PreferenciasTeclado>) {
     guardarPreferenciasTeclado(p)
@@ -413,85 +415,99 @@ function Apariencia() {
         </div>
       </Tarjeta>
 
-      <Tarjeta
-        titulo="Teclado en pantalla"
-        ayuda={
-          tactil
-            ? 'Cómo se abre el teclado del sistema al escribir en esta tablet. El cambio se nota en el próximo campo que toques.'
-            : 'Este equipo se maneja con ratón y teclado físico, así que el teclado en pantalla no aparece. Lo que elijas aquí vale si el mismo navegador se usa en una pantalla táctil.'
-        }
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <Opcion
-            marcada={teclado.dividido}
-            titulo="Dividido"
-            detalle="En dos mitades, bajo los pulgares. Para sostener la tablet con las dos manos."
-            onElegir={() => ponerTeclado({ dividido: true })}
-          >
-            <TeclasDemo dividido />
-          </Opcion>
-          <Opcion
-            marcada={!teclado.dividido}
-            titulo="Convencional"
-            detalle="Entero y centrado, como el de siempre. Para la tablet apoyada en la mesa."
-            onElegir={() => ponerTeclado({ dividido: false })}
-          >
-            <TeclasDemo />
-          </Opcion>
-        </div>
-      </Tarjeta>
-
-      <Tarjeta
-        titulo="Dónde aparece el teclado"
-        ayuda="Abajo tapa menos; a un costado deja ver la pantalla entera y queda bajo la mano con la que sostienes la tablet. En pantallas angostas siempre sale abajo, porque una columna no cabría."
-      >
-        <div className="grid grid-cols-3 gap-3">
-          {POSICIONES.map((pos) => (
-            <button
-              key={pos}
-              type="button"
-              onClick={() => ponerTeclado({ posicion: pos })}
-              aria-pressed={teclado.posicion === pos}
-              className={`text-left rounded-xl border p-2.5 ${
-                teclado.posicion === pos
-                  ? 'border-neutral-900 bg-neutral-50'
-                  : 'border-neutral-200 hover:border-neutral-300'
-              }`}
-            >
-              <Croquis posicion={pos} />
-              <div className="flex items-center gap-1.5 mt-2">
-                <span
-                  className={`w-3.5 h-3.5 rounded-full border-[3px] shrink-0 ${
-                    teclado.posicion === pos ? 'border-neutral-900' : 'border-neutral-300'
-                  }`}
-                />
-                <span className="text-sm font-medium">{NOMBRE_POSICION[pos]}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </Tarjeta>
-
-      {teclado.posicion === 'abajo' && (
+      {/* En un telefono manda el teclado del propio telefono, asi que no hay
+          nada que ajustar: se dice y ya, en vez de ofrecer opciones que no
+          harian nada. */}
+      {telefono ? (
         <Tarjeta
-          titulo="Teclado de números"
-          ayuda="Con el teclado abajo, de qué lado de la barra quedan las teclas: del lado de la mano con la que cobras."
+          titulo="Teclado en pantalla"
+          ayuda="En un teléfono se escribe con el teclado del propio teléfono: el del sistema ya está hecho para el pulgar. El teclado de Sávora es para las tablets del mostrador."
         >
-          <div className="grid grid-cols-3 gap-2">
-            {(['izquierda', 'centro', 'derecha'] as const).map((l) => (
+          <p className="text-sm text-neutral-500">Sin opciones en este equipo.</p>
+        </Tarjeta>
+      ) : (
+        <>
+        <Tarjeta
+          titulo="Teclado en pantalla"
+          ayuda={
+            tactil
+              ? 'Cómo se abre el teclado al escribir en esta tablet. El cambio se nota en el próximo campo que toques.'
+              : 'Este equipo se maneja con ratón y teclado físico, así que el teclado en pantalla no aparece. Lo que elijas aquí vale si el mismo navegador se usa en una tablet.'
+          }
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <Opcion
+              marcada={teclado.dividido}
+              titulo="Dividido"
+              detalle="En dos mitades, bajo los pulgares. Para sostener la tablet con las dos manos."
+              onElegir={() => ponerTeclado({ dividido: true })}
+            >
+              <TeclasDemo dividido />
+            </Opcion>
+            <Opcion
+              marcada={!teclado.dividido}
+              titulo="Convencional"
+              detalle="Entero y centrado, como el de siempre. Para la tablet apoyada en la mesa."
+              onElegir={() => ponerTeclado({ dividido: false })}
+            >
+              <TeclasDemo />
+            </Opcion>
+          </div>
+        </Tarjeta>
+
+        <Tarjeta
+          titulo="Dónde aparece el teclado"
+          ayuda="Abajo tapa menos; a un costado deja ver la pantalla entera y queda bajo la mano con la que sostienes la tablet. En pantallas angostas siempre sale abajo, porque una columna no cabría."
+        >
+          <div className="grid grid-cols-3 gap-3">
+            {POSICIONES.map((pos) => (
               <button
-                key={l}
+                key={pos}
                 type="button"
-                onClick={() => ponerTeclado({ lado: l })}
-                className={`rounded-xl border px-3 py-2.5 text-sm font-medium capitalize ${
-                  teclado.lado === l ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300'
+                onClick={() => ponerTeclado({ posicion: pos })}
+                aria-pressed={teclado.posicion === pos}
+                className={`text-left rounded-xl border p-2.5 ${
+                  teclado.posicion === pos
+                    ? 'border-neutral-900 bg-neutral-50'
+                    : 'border-neutral-200 hover:border-neutral-300'
                 }`}
               >
-                {l}
+                <Croquis posicion={pos} />
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span
+                    className={`w-3.5 h-3.5 rounded-full border-[3px] shrink-0 ${
+                      teclado.posicion === pos ? 'border-neutral-900' : 'border-neutral-300'
+                    }`}
+                  />
+                  <span className="text-sm font-medium">{NOMBRE_POSICION[pos]}</span>
+                </div>
               </button>
             ))}
           </div>
         </Tarjeta>
+
+        {teclado.posicion === 'abajo' && (
+          <Tarjeta
+            titulo="Teclado de números"
+            ayuda="Con el teclado abajo, de qué lado de la barra quedan las teclas: del lado de la mano con la que cobras."
+          >
+            <div className="grid grid-cols-3 gap-2">
+              {(['izquierda', 'centro', 'derecha'] as const).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => ponerTeclado({ lado: l })}
+                  className={`rounded-xl border px-3 py-2.5 text-sm font-medium capitalize ${
+                    teclado.lado === l ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </Tarjeta>
+        )}
+        </>
       )}
     </>
   )
