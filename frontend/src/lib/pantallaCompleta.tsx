@@ -2,16 +2,19 @@ import { useCallback, useEffect, useState } from 'react'
 import Icono from '../components/Icono'
 
 /**
- * Pantalla completa, para el mostrador y la cocina.
+ * Pantalla completa, en todo el aplicativo.
  *
  * En una tablet montada en la pared o el mostrador, la barra de direcciones
  * del navegador se come una franja de la pantalla para siempre -- no hay
  * scroll que la esconda porque el usuario nunca desliza hacia abajo en un
  * POS. La Fullscreen API la quita del todo mientras dure el turno.
  *
- * Solo en POS y Cocina: son las dos pantallas que de verdad se dejan
- * montadas en un dispositivo fijo. El resto se abre y se cierra en un
- * escritorio, donde la barra del navegador no estorba.
+ * Nacio solo para POS y Cocina, que son las pantallas que se dejan montadas
+ * en un dispositivo fijo. Resulto que el dueno revisa caja, compras y
+ * reportes en esa MISMA tablet, asi que el boton vive ahora en <NavBar> --
+ * de donde lo hereda cualquier modulo, incluso uno que no existe todavia--,
+ * en el encabezado propio del inicio, y en el login (public/login.html, que
+ * no carga React y lleva su propia copia del mismo icono).
  */
 function estaCompleta(): boolean {
   return document.fullscreenElement != null

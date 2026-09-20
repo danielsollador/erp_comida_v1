@@ -4,7 +4,6 @@ import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { api, connectWs } from '../lib/api'
 import { editandoAhora } from '../lib/comandas'
-import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import type { Pedido } from '../lib/types'
 
 const CLAVE_SONIDO = 'cocina.sonido'
@@ -198,6 +197,8 @@ export default function Cocina() {
         moneda={false}
         acciones={
           <>
+            {/* La pantalla completa ya la pone <NavBar> para todos los
+                modulos; aqui solo queda lo propio de cocina. */}
             <button
               onClick={alternarSonido}
               className={`text-sm px-3 py-2 rounded-lg font-medium flex items-center gap-2 ${
@@ -212,7 +213,6 @@ export default function Cocina() {
                   para que sirve mientras esta apagado. */}
               <span className="hidden sm:inline">{sonido ? 'Aviso activo' : 'Activar aviso'}</span>
             </button>
-            <PantallaCompletaToggle />
           </>
         }
       />
@@ -245,8 +245,18 @@ export default function Cocina() {
               }`}
             >
               <div className="flex justify-between items-center mb-4">
-                <span className="text-3xl font-black tracking-tight tabular-nums">
-                  #{pedido.numero}
+                {/* El nombre debajo del numero y no al lado: el numero se lee
+                    de lejos --es lo que se canta cuando la comida sale-- y
+                    ponerle el nombre en la misma linea lo encogeria. */}
+                <span className="min-w-0">
+                  <span className="block text-3xl font-black tracking-tight tabular-nums">
+                    #{pedido.numero}
+                  </span>
+                  {pedido.cliente && (
+                    <span className="block text-base font-semibold text-neutral-600 truncate">
+                      {pedido.cliente}
+                    </span>
+                  )}
                 </span>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   {/* Un pedido que cambio despues de tomado no es igual a uno

@@ -11,6 +11,7 @@ import { useAcceso } from '../lib/acceso'
 import { api, connectWs } from '../lib/api'
 import { rangoDe } from '../lib/fechas'
 import { MonedaToggle, useMoneda } from '../lib/moneda'
+import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import { TemaToggle } from '../lib/tema'
 import type { ReporteResumen } from '../lib/types'
 
@@ -126,6 +127,10 @@ export default function Inicio() {
           <div className="flex items-center gap-2 shrink-0">
             {estado.puede.operar && <MonedaToggle />}
             <Notificaciones />
+            {/* El inicio no usa <NavBar>, tiene su propio encabezado: sin
+                esto seria la unica pantalla del ERP sin pantalla completa,
+                y es justo la primera que se ve al entrar. */}
+            <PantallaCompletaToggle />
             <TemaToggle />
             <UsuarioMenu />
           </div>

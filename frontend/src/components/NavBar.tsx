@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useAcceso } from '../lib/acceso'
 import { MonedaToggle } from '../lib/moneda'
+import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import { TemaToggle } from '../lib/tema'
 import Icono from './Icono'
 import Marca from './Marca'
@@ -83,6 +84,13 @@ export default function NavBar({
           {acciones}
           {moneda && <MonedaToggle dark={dark} />}
           <Notificaciones dark={dark} />
+          {/* Pantalla completa en TODOS los modulos, no solo en el mostrador
+              y la cocina. Nacio ahi porque son las pantallas que se dejan
+              montadas en una tablet, pero el dueno revisa caja, compras y
+              reportes en esa misma tablet y la barra del navegador le comia
+              una franja igual. Al vivir en la barra y no en cada pagina,
+              cualquier modulo nuevo lo hereda sin acordarse de ponerlo. */}
+          <PantallaCompletaToggle dark={dark} />
           <TemaToggle dark={dark} />
           <UsuarioMenu dark={dark} />
         </div>

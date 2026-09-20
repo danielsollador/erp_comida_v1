@@ -109,8 +109,16 @@
   }
   .aviso.visible { display: block; }
   .pie { margin-top: 18px; font-size: 11px; color: var(--tenue); text-align: center; }
+  /* Los dos interruptores de la esquina: tema y pantalla completa. En una
+     tablet de mostrador el login es la PRIMERA pantalla del turno, asi que
+     es el sitio natural para quitar la barra del navegador de una vez, en
+     vez de entrar y buscarla dentro del aplicativo. */
+  .esquina {
+    position: absolute; top: 14px; right: 14px;
+    display: flex; gap: 6px;
+  }
   .tema {
-    position: absolute; top: 14px; right: 14px; width: 32px; height: 32px;
+    width: 32px; height: 32px;
     display: grid; place-items: center; padding: 0; border-radius: 999px;
     border: 1px solid var(--linea); background: transparent;
     color: var(--tenue); cursor: pointer;
@@ -144,7 +152,10 @@
 </head>
 <body>
   <main class="caja">
-    <button class="tema" id="tema" type="button" aria-label="Cambiar entre modo claro y oscuro"></button>
+    <div class="esquina">
+      <button class="tema" id="pantalla" type="button" aria-label="Pantalla completa" title="Pantalla completa"></button>
+      <button class="tema" id="tema" type="button" aria-label="Cambiar entre modo claro y oscuro"></button>
+    </div>
     <div class="marca"><span class="punto"></span> Vertigo Pro</div>
     <!-- El logo del local, si su ficha lo declara. Es lo primero que se ve del
          producto: la puerta tiene que verse del negocio, no de la plataforma.
@@ -208,6 +219,33 @@
       document.startViewTransition(aplicar);
     } else {
       aplicar();
+    }
+  });
+
+  // ---------- Pantalla completa ----------
+  // Los mismos iconos que el aplicativo (src/components/Icono.tsx:
+  // "expandir" / "contraer"), para que el boton sea el mismo antes y
+  // despues de entrar y no haya que volver a aprenderlo.
+  var btnPantalla = document.getElementById("pantalla");
+  var EXPANDIR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>';
+  var CONTRAER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg>';
+  function pintarPantalla() {
+    var completa = document.fullscreenElement != null;
+    btnPantalla.innerHTML = completa ? CONTRAER : EXPANDIR;
+    var rotulo = completa ? "Salir de pantalla completa" : "Pantalla completa";
+    btnPantalla.setAttribute("aria-label", rotulo);
+    btnPantalla.title = rotulo;
+  }
+  pintarPantalla();
+  // Se puede salir con Esc o con el gesto del sistema sin pasar por el boton:
+  // sin esto el icono se quedaria diciendo "pantalla completa" ya estandolo.
+  document.addEventListener("fullscreenchange", pintarPantalla);
+  btnPantalla.addEventListener("click", function () {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    } catch (e) {
+      // Sin pantalla completa se entra igual: no hay nada que avisarle a nadie.
     }
   });
 
