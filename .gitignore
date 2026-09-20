@@ -3,6 +3,9 @@ dist/
 __pycache__/
 *.pyc
 *.db
+# El diario de SQLite queda suelto si el servidor local se corta a media
+# escritura. Es estado de la maquina, no del proyecto.
+*.db-journal
 backups/
 .env
 backend/respaldos_estado.json

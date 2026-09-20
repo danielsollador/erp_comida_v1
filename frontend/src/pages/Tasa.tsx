@@ -20,8 +20,28 @@ const BILLETES = [1, 5, 10, 20, 50, 100]
 
 const SECCIONES = [
   { id: 'hoy', texto: 'Tasa de hoy' },
+  { id: 'calculadora', texto: 'Calculadora' },
   { id: 'analisis', texto: 'Análisis' },
   { id: 'historial', texto: 'Historial' },
+]
+
+/**
+ * Las tasas con las que se puede medir un mismo monto.
+ *
+ * POR QUE EXISTEN VARIAS. En Venezuela el precio se piensa en dolares pero se
+ * cobra en bolivares, y no hay UN dolar: hay el del BCV --al que la ley obliga
+ * a facturar-- y el del mercado, que es al que de verdad se repone la
+ * mercancia. El euro entra porque muchos mayoristas cotizan en euros cuando el
+ * cliente no tiene divisas.
+ *
+ * El dueño hace esta cuenta todos los dias de cabeza y con la calculadora del
+ * telefono: "vendi $10 al BCV, eso fueron tantos bolivares, y esos bolivares
+ * ¿cuanto son en Binance?". Aqui se hace sola y con las tasas del dia.
+ */
+const TASAS: { id: string; nombre: string; ayuda: string }[] = [
+  { id: 'bcv', nombre: 'BCV (oficial)', ayuda: 'Al que hay que facturar' },
+  { id: 'paralelo', nombre: 'Paralelo / Binance', ayuda: 'Al que se repone' },
+  { id: 'eur', nombre: 'Euro BCV', ayuda: 'Al que cotizan algunos mayoristas' },
 ]
 
 export default function Tasa() {
@@ -52,6 +72,10 @@ export default function Tasa() {
     '-fecha',
   )
   const [manual, setManual] = useState('')
+  // La calculadora: cuanto, y en que se escribio. "bs" = bolivares; lo demas
+  // es un monto en divisa medido a ESA tasa.
+  const [montoCalc, setMontoCalc] = useState('10')
+  const [enCalc, setEnCalc] = useState('bcv')
   // Los ultimos 30 dias con tasa, en orden, para la tendencia de "hoy". Se
   // piden aparte del historial porque ese sigue el filtro de fechas y la
   // tendencia no: siempre es "el ultimo mes".
@@ -279,6 +303,185 @@ export default function Tasa() {
             )}
           </div>
         </div>
+          </>
+        )}
+
+        {seccion === 'calculadora' && (
+          <>
+            {/* --------- el mismo dinero, medido con cada tasa ---------
+
+                Es la cuenta que el dueño hace a diario con la calculadora del
+                telefono: cobro en bolivares a la tasa que la ley me obliga a
+                facturar, y repongo comprando divisas a otra. Mientras haya
+                brecha, ese viaje de ida y vuelta pierde plata, y perderla sin
+                verla es lo que termina descapitalizando el negocio.
+
+                Se hace en el navegador y no en el servidor: son tres
+                divisiones con tasas que ya estan en pantalla, y asi el
+                resultado cambia mientras se teclea. */}
+            {(() => {
+              const tasas: Record<string, number | null | undefined> = {
+                bcv: estado?.bcv,
+                paralelo: estado?.paralelo,
+                eur: estado?.eur,
+              }
+              const monto = Number(montoCalc.replace(',', '.'))
+              const valido = Number.isFinite(monto) && monto > 0
+              // Todo pasa por bolivares, que es la unica moneda en la que un
+              // monto significa lo mismo mire quien lo mire.
+              const bs = !valido
+                ? 0
+                : enCalc === 'bs'
+                  ? monto
+                  : monto * (tasas[enCalc] || 0)
+              const disponibles = TASAS.filter((t) => (tasas[t.id] ?? 0) > 0)
+              const bcv = estado?.bcv ?? 0
+              const paralelo = estado?.paralelo ?? 0
+              // Lo que se pierde en el viaje: cobrar al oficial y reponer al
+              // de la calle. Solo tiene sentido con las dos tasas y con
+              // brecha a favor del paralelo.
+              const hayBrecha = bcv > 0 && paralelo > bcv
+              const enBcv = bcv > 0 ? bs / bcv : 0
+              const enParalelo = paralelo > 0 ? bs / paralelo : 0
+              const perdida = hayBrecha ? enBcv - enParalelo : 0
+              const perdidaPct = hayBrecha && enBcv > 0 ? (perdida / enBcv) * 100 : 0
+
+              return (
+                <>
+                  <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+                    <h2 className="font-semibold mb-1">Pasar un monto de una tasa a otra</h2>
+                    <p className="text-xs text-neutral-500 mb-4">
+                      Escribe cuánto y con qué tasa lo estás midiendo. Abajo sale lo mismo medido
+                      con las demás.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <Numerico
+                        etiqueta="Monto"
+                        value={montoCalc}
+                        onChange={(e) => setMontoCalc(e.target.value)}
+                        placeholder="10"
+                        className="flex-1 min-w-[120px] border border-neutral-300 rounded-xl px-3 py-3 text-lg tabular-nums"
+                      />
+                      <label className="flex-1 min-w-[160px]">
+                        <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
+                          Medido en
+                        </span>
+                        <select
+                          value={enCalc}
+                          onChange={(e) => setEnCalc(e.target.value)}
+                          className="w-full border border-neutral-300 rounded-xl px-3 py-3 text-sm"
+                        >
+                          <option value="bs">Bolívares</option>
+                          {disponibles.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              Dólares a {t.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    {!valido || disponibles.length === 0 ? (
+                      <p className="text-neutral-400 text-sm">
+                        {disponibles.length === 0
+                          ? 'Todavía no hay tasas cargadas. Consulta el BCV en "Tasa de hoy".'
+                          : 'Escribe un monto para ver las equivalencias.'}
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Bolivares primero: es el pivote de todas las demas
+                            y lo que de verdad pasa por la gaveta. */}
+                        <div className="flex items-baseline justify-between gap-3 rounded-xl bg-neutral-900 text-neutral-50 px-4 py-3">
+                          <span className="text-sm font-medium">En bolívares</span>
+                          <span className="text-xl font-bold tabular-nums">{fmtBs(bs)}</span>
+                        </div>
+                        {disponibles.map((t) => {
+                          const tasa = tasas[t.id] as number
+                          const esEscrito = t.id === enCalc
+                          return (
+                            <div
+                              key={t.id}
+                              className={`flex items-baseline justify-between gap-3 rounded-xl px-4 py-3 ${
+                                esEscrito
+                                  ? 'bg-neutral-100 text-neutral-400'
+                                  : 'bg-neutral-50'
+                              }`}
+                            >
+                              <span className="min-w-0">
+                                <span className="block text-sm font-medium truncate">
+                                  {t.nombre}
+                                </span>
+                                <span className="block text-[11px] text-neutral-400 tabular-nums">
+                                  {esEscrito ? 'lo que escribiste' : `${t.ayuda} · ${fmtNum(tasa, 2)} Bs`}
+                                </span>
+                              </span>
+                              <span className="text-xl font-bold tabular-nums shrink-0">
+                                ${fmtNum(bs / tasa, 2)}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* --------- lo que cuesta el viaje ---------
+                      La cifra que el conversor de arriba deja implicita y
+                      nadie calcula: cobrar al oficial y reponer al paralelo
+                      no es neutro. */}
+                  {valido && hayBrecha && (
+                    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+                      <h2 className="font-semibold mb-1">Si cobras esto al oficial y repones al paralelo</h2>
+                      <p className="text-xs text-neutral-500 mb-4">
+                        La ley te obliga a facturar a la tasa del BCV, pero la mercancía se repone
+                        comprando divisas a la del mercado. Esa diferencia sale de tu margen, no del
+                        de nadie más.
+                      </p>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-neutral-600">Le cobras al cliente</span>
+                          <span className="font-medium tabular-nums">
+                            {fmtBs(bs)} (${fmtNum(enBcv, 2)} al BCV)
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-neutral-600">Con esos bolívares repones</span>
+                          <span className="font-medium tabular-nums">${fmtNum(enParalelo, 2)}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-neutral-200 pt-2 font-semibold">
+                          <span>Se queda en la brecha</span>
+                          <span className="tabular-nums text-peligro-600">
+                            −${fmtNum(perdida, 2)} ({fmtNum(perdidaPct, 1)}%)
+                          </span>
+                        </div>
+                      </div>
+                      {/* El numero accionable: no "estas perdiendo", sino "a
+                          cuanto tendrias que venderlo". Es lo que el dueño
+                          puede hacer manana por la mañana. */}
+                      <div className="mt-4 rounded-xl bg-acento-50 border border-acento-200 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-acento-700 mb-1">
+                          Para que te queden ${fmtNum(enBcv, 2)} de verdad
+                        </div>
+                        <div className="text-2xl font-bold tabular-nums text-acento-900">
+                          ${fmtNum(enBcv * (paralelo / bcv), 2)}
+                        </div>
+                        <p className="text-xs text-acento-800 mt-1.5">
+                          Es lo mismo que multiplicar tu precio en dólares por{' '}
+                          <strong className="tabular-nums">{fmtNum(paralelo / bcv, 3)}</strong> antes
+                          de convertirlo a bolívares al BCV. Así, después de reponer, te queda el
+                          margen que dice tu carta.
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 mt-3">
+                        Lo cobrado en efectivo en dólares no pasa por aquí: esas divisas ya son
+                        divisas y no pierden nada con la brecha. Por eso conviene tener precio en
+                        divisas y cobrar en ellas cuando se pueda.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </>
         )}
 
