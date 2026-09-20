@@ -173,6 +173,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ nombre, apellido }),
     }),
+  /** Cada quien escribe como se llama. */
+  cambiarMiNombre: (nombre: string, apellido: string) =>
+    req<Usuario>('/usuarios/mi/nombre', { method: 'PUT', body: JSON.stringify({ nombre, apellido }) }),
   /** Quien administra le pone el PIN a alguien cuyo rol autoriza. */
   ponerPin: (usuario: string, pin: string) =>
     req<Usuario>(`/usuarios/${encodeURIComponent(usuario)}/pin`, { method: 'POST', body: JSON.stringify({ pin }) }),

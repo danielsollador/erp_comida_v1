@@ -351,6 +351,18 @@ def cambiar_mi_clave(datos: CambioClavePropia, request: Request) -> dict:
     return {"ok": True}
 
 
+@router.put("/mi/nombre")
+def cambiar_mi_nombre(datos: CambioNombre, request: Request) -> dict:
+    """Cada quien escribe como se llama. No hace falta la contrasena: es su
+    nombre para mostrar, no una llave, y lo que ata sus acciones al historial
+    es el usuario con el que entro, que no cambia."""
+    s = auth.sesion_actual(request)
+    try:
+        return usuarios.cambiar_nombre(s["usuario"], datos.nombre, datos.apellido)
+    except (usuarios.ErrorUsuarios, usuarios.ErrorAlmacen) as e:
+        raise _traducir(e)
+
+
 @router.post("/mi/pin")
 def poner_mi_pin(datos: CambioPinPropio, request: Request) -> dict:
     """El PIN propio. Solo para quien tiene un rol que autoriza: a los demas

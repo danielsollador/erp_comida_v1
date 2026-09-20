@@ -216,6 +216,25 @@ function convieneDividir(): boolean {
 }
 
 const LADOS: readonly Lado[] = ['izquierda', 'centro', 'derecha']
+
+/**
+ * Las preferencias del teclado, para la pantalla de Apariencia. Se guardan en
+ * ESTA tablet: la del mostrador y la de cocina no tienen por que coincidir, y
+ * quien cobra no siempre es la misma persona.
+ */
+export type PreferenciasTeclado = { dividido: boolean; lado: Lado }
+
+export function leerPreferenciasTeclado(): PreferenciasTeclado {
+  return {
+    dividido: leerPreferencia('vp-teclado-dividido', ['si', 'no'] as const, convieneDividir() ? 'si' : 'no') === 'si',
+    lado: leerPreferencia('vp-teclado-lado', LADOS, 'centro'),
+  }
+}
+
+export function guardarPreferenciasTeclado(p: Partial<PreferenciasTeclado>) {
+  if (p.dividido !== undefined) guardarPreferencia('vp-teclado-dividido', p.dividido ? 'si' : 'no')
+  if (p.lado !== undefined) guardarPreferencia('vp-teclado-lado', p.lado)
+}
 const JUSTIFICAR: Record<Lado, string> = {
   izquierda: 'justify-start',
   centro: 'justify-center',
@@ -236,20 +255,20 @@ function Panel({
   onValor: (v: string) => void
 }) {
   const alto = objetivo.tipo === 'numero' ? ALTO_NUMERO : ALTO_TEXTO
-  const [lado, setLado] = useState<Lado>(() => leerPreferencia('vp-teclado-lado', LADOS, 'centro'))
-  const [dividido, setDividido] = useState(() =>
-    leerPreferencia('vp-teclado-dividido', ['si', 'no'] as const, convieneDividir() ? 'si' : 'no') === 'si',
-  )
+  // Se leen al abrirse: el panel se monta y se desmonta con cada campo, asi
+  // que lo que se cambie en Apariencia vale desde el campo siguiente.
+  const [lado, setLado] = useState<Lado>(() => leerPreferenciasTeclado().lado)
+  const [dividido, setDividido] = useState(() => leerPreferenciasTeclado().dividido)
 
   function cambiarLado() {
     const siguiente = LADOS[(LADOS.indexOf(lado) + 1) % LADOS.length]
     setLado(siguiente)
-    guardarPreferencia('vp-teclado-lado', siguiente)
+    guardarPreferenciasTeclado({ lado: siguiente })
   }
 
   function alternarDividido() {
     setDividido((d) => {
-      guardarPreferencia('vp-teclado-dividido', d ? 'no' : 'si')
+      guardarPreferenciasTeclado({ dividido: !d })
       return !d
     })
   }
