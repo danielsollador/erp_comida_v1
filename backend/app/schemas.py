@@ -796,9 +796,52 @@ class RetiroPropietario(BaseModel):
         from_attributes = True
 
 
+class LineaArqueo(BaseModel):
+    """Un destino del dinero, listo para arquear."""
+
+    cuenta: str
+    etiqueta: str
+    # Los metodos de pago que caen en este destino, con lo que entro por cada
+    # uno hoy. Es el "detallado" que se pide al cerrar: la gaveta de bolivares
+    # no dice de donde salio, y el banco junta punto, pago movil y
+    # transferencia en un solo saldo.
+    metodos: dict = {}
+    # True = billetes que se cuentan. False = se coteja contra el banco o el
+    # lote del punto. Cambia lo que la persona hace, no solo el rotulo.
+    fisico: bool
+    # Solo en las gavetas: la plata no empieza en cero cada manana.
+    saldo_anterior: float = 0
+    entradas_hoy: float = 0
+    salidas_hoy: float = 0
+    esperado: float
+
+
+class ConteoArqueo(BaseModel):
+    """Lo que de verdad habia en un destino. `contado` nulo = no se verifico."""
+
+    cuenta: str
+    contado: Optional[float] = None
+
+
+class LineaCierre(BaseModel):
+    cuenta: str
+    etiqueta: str
+    metodos: str = ""
+    esperado: float
+    contado: Optional[float] = None
+    diferencia: float = 0
+
+    class Config:
+        from_attributes = True
+
+
 class CierreCajaRequest(BaseModel):
-    efectivo_contado: float  # bolivares
+    # Las dos gavetas siguen aceptandose sueltas: es como cerraba antes y hay
+    # enlaces y pruebas que lo usan. Si viene `conteos`, manda `conteos`.
+    efectivo_contado: Optional[float] = None  # bolivares
     divisas_contado: float = 0  # billetes en dolares, se cuentan aparte
+    # El arqueo completo, una entrada por destino verificado.
+    conteos: List[ConteoArqueo] = []
     nota: str = ""
     operador_id: Optional[int] = None
     # Con dos pisos hay dos gavetas: cada una cierra la suya.
@@ -841,6 +884,8 @@ class ResumenCaja(BaseModel):
     retiros_hoy: float = 0
     cantidad_pedidos: int
     gavetas: List[Gaveta] = []
+    # El arqueo completo: una fila por destino del dinero, gavetas incluidas.
+    arqueo: List[LineaArqueo] = []
     # Plata de terceros que esta en la gaveta: no es del negocio.
     propinas_por_entregar: float = 0
     fiado_por_cobrar: float = 0
@@ -1075,6 +1120,9 @@ class CierreCaja(BaseModel):
     divisas_esperado: float = 0
     divisas_contado: float = 0
     divisas_diferencia: float = 0
+    # El arqueo tal como quedo. Vacio en los cierres viejos, que solo tenian
+    # las dos gavetas.
+    lineas: List[LineaCierre] = []
 
     class Config:
         from_attributes = True

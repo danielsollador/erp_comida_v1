@@ -45,12 +45,31 @@ def _retiros_hoy(db: Session) -> float:
     return round(sum(r.monto for r in retiros), 2)
 
 
-# Metodos que caen en cada gaveta. "Efectivo" a secas es historico: antes de
+# A que cuenta va cada metodo de pago, dado la vuelta: de la cuenta a sus
+# metodos. Sale del plan de cuentas y no de una lista repetida aqui, asi un
+# metodo nuevo queda arqueado solo. "Efectivo" a secas es historico: antes de
 # separar bolivares de divisas todo el efectivo iba a la misma cuenta.
 METODOS_POR_GAVETA = {
-    "1010": ("Efectivo", "Efectivo Bs"),
-    "1011": ("Efectivo $",),
+    codigo: tuple(
+        m for m, c in contabilidad.CUENTA_POR_METODO_PAGO.items() if c == codigo
+    )
+    for codigo in set(contabilidad.CUENTA_POR_METODO_PAGO.values())
 }
+
+# Los destinos que se arquean al cerrar, en el orden en que se cuentan.
+#
+# El fiado (1015) NO esta: ahi no entro plata, nacio una deuda. Contarlo seria
+# pedirle al cajero que "cuente" algo que no esta en ninguna gaveta ni en
+# ningun banco.
+#
+# `fisico` es la diferencia que importa en la mano: los billetes se CUENTAN,
+# lo electronico se COTEJA contra el banco o el lote del punto.
+DESTINOS_ARQUEO = (
+    ("1010", "Efectivo en bolívares", True),
+    ("1011", "Efectivo en dólares", True),
+    ("1020", "Banco, punto y pago móvil", False),
+    ("1021", "Zelle", False),
+)
 
 
 def _entradas_de_gaveta_hoy(db: Session, codigo: str) -> float:
@@ -99,6 +118,58 @@ def _saldo_anterior(db: Session) -> float:
 def _saldo_anterior_de(db: Session, codigo: str) -> float:
     inicio, _fin = _rango_hoy()
     return contabilidad.movimiento_efectivo(db, datetime.datetime.min, inicio, codigo)
+
+
+def _ventas_por_metodo_hoy(db: Session) -> dict:
+    """Lo cobrado hoy por cada metodo, sin contar las devueltas."""
+    por_metodo: dict = {}
+    for pedido in _pedidos_pagados_hoy(db):
+        if pedido.devuelto:
+            continue
+        for pago in pedido.pagos:
+            por_metodo[pago.metodo] = round(por_metodo.get(pago.metodo, 0) + pago.monto, 2)
+    return por_metodo
+
+
+def _linea_arqueo(
+    db: Session, codigo: str, etiqueta: str, fisico: bool, ventas: dict
+) -> schemas.LineaArqueo:
+    """Una fila del arqueo.
+
+    Para una GAVETA, "lo que debe haber" es un saldo: lo que quedaba de ayer
+    mas lo que entro hoy menos lo que salio. Para el BANCO es un flujo: lo que
+    debio moverse hoy, que es lo que se ve en el extracto. Sumarle el saldo
+    anterior a la cuenta del banco daria un numero que no esta en ningun sitio
+    contra el que cotejar.
+    """
+    metodos = METODOS_POR_GAVETA.get(codigo, ())
+    saldo_anterior = _saldo_anterior_de(db, codigo) if fisico else 0.0
+    entradas = _entradas_de_gaveta_hoy(db, codigo)
+    salidas = _salidas_gaveta_hoy(db, codigo)
+    return schemas.LineaArqueo(
+        cuenta=codigo,
+        etiqueta=etiqueta,
+        metodos={m: ventas[m] for m in metodos if ventas.get(m)},
+        fisico=fisico,
+        saldo_anterior=saldo_anterior,
+        entradas_hoy=entradas,
+        salidas_hoy=salidas,
+        esperado=round(saldo_anterior + entradas - salidas, 2),
+    )
+
+
+def _arqueo(db: Session) -> List[schemas.LineaArqueo]:
+    """Las filas a arquear. Las gavetas siempre --se cuentan aunque esten
+    vacias--; el banco y Zelle solo si se movieron hoy, para no llenar la
+    pantalla de ceros que nadie va a cotejar."""
+    ventas = _ventas_por_metodo_hoy(db)
+    filas = []
+    for codigo, etiqueta, fisico in DESTINOS_ARQUEO:
+        linea = _linea_arqueo(db, codigo, etiqueta, fisico, ventas)
+        if not fisico and abs(linea.esperado) < 0.01 and not linea.metodos:
+            continue
+        filas.append(linea)
+    return filas
 
 
 def _gaveta(db: Session, codigo: str, etiqueta: str) -> schemas.Gaveta:
@@ -157,6 +228,7 @@ def resumen_caja(db: Session = Depends(get_db)):
         # hacia imposible arquear: decia "esperado $10" tanto si en la gaveta
         # habia un billete verde como si habia Bs 400.
         gavetas=[bolivares, _gaveta(db, "1011", "Divisas ($)")],
+        arqueo=_arqueo(db),
         propinas_por_entregar=round(contabilidad.saldo_de_cuenta(db, "2040"), 2),
         fiado_por_cobrar=round(contabilidad.saldo_de_cuenta(db, "1015"), 2),
         propinas_hoy=round(
@@ -197,24 +269,68 @@ def cerrar_caja(
         )
 
     resumen = resumen_caja(db)
-    diferencia = round(body.efectivo_contado - resumen.efectivo_esperado, 2)
-    # La gaveta de divisas se cuenta aparte: son otros billetes.
-    divisas = next((g for g in resumen.gavetas if g.codigo == "1011"), None)
-    divisas_esperado = divisas.esperado if divisas else 0.0
-    divisas_contado = round(body.divisas_contado or 0, 2)
+    arqueo = {linea.cuenta: linea for linea in resumen.arqueo}
+
+    # Lo contado, por destino. `conteos` es la forma nueva; los dos campos
+    # sueltos son como se cerraba antes y se siguen aceptando.
+    contados: dict = {c.cuenta: c.contado for c in body.conteos}
+    if not body.conteos:
+        if body.efectivo_contado is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Falta el conteo: dinos al menos cuánto efectivo hay en la gaveta.",
+            )
+        contados = {"1010": body.efectivo_contado, "1011": round(body.divisas_contado or 0, 2)}
+    # Nulo = no se verifico ese destino, y entonces no hay diferencia que
+    # asentar. Distinto de cero, que es "conte y no habia nada".
+    contados = {k: v for k, v in contados.items() if v is not None}
+    if not contados:
+        raise HTTPException(
+            status_code=400,
+            detail="Falta el conteo: hay que verificar al menos un destino para cerrar.",
+        )
+
+    bolivares = arqueo.get("1010")
+    divisas = arqueo.get("1011")
+    esperado_bs = bolivares.esperado if bolivares else resumen.efectivo_esperado
+    esperado_usd = divisas.esperado if divisas else 0.0
+    contado_bs = contados.get("1010")
+    contado_usd = contados.get("1011")
+
     db_cierre = models.CierreCaja(
         total_sistema=resumen.total_ventas,
-        efectivo_esperado=resumen.efectivo_esperado,
-        efectivo_contado=body.efectivo_contado,
-        diferencia=diferencia,
-        divisas_esperado=divisas_esperado,
-        divisas_contado=divisas_contado,
-        divisas_diferencia=round(divisas_contado - divisas_esperado, 2),
+        efectivo_esperado=esperado_bs,
+        # Las columnas viejas no aceptan nulo: si no se conto la gaveta se
+        # guarda lo esperado, que deja la diferencia en cero -- que es
+        # justamente "no se verifico, no hay nada que reclamar".
+        efectivo_contado=contado_bs if contado_bs is not None else esperado_bs,
+        diferencia=round((contado_bs - esperado_bs), 2) if contado_bs is not None else 0.0,
+        divisas_esperado=esperado_usd,
+        divisas_contado=contado_usd if contado_usd is not None else esperado_usd,
+        divisas_diferencia=round((contado_usd - esperado_usd), 2) if contado_usd is not None else 0.0,
         nota=body.nota,
         operador_id=quien.id if quien else None,
         punto_venta_id=punto.id if punto else None,
     )
     db.add(db_cierre)
+    db.flush()
+
+    # El detalle: una fila por destino verificado, con lo que decia el sistema
+    # al cerrar. Congelado aqui porque manana el esperado ya no sera el mismo.
+    for cuenta, contado in contados.items():
+        linea = arqueo.get(cuenta)
+        esperado = linea.esperado if linea else 0.0
+        db.add(
+            models.CierreCajaLinea(
+                cierre_id=db_cierre.id,
+                cuenta=cuenta,
+                etiqueta=linea.etiqueta if linea else cuenta,
+                metodos=", ".join(linea.metodos) if linea and linea.metodos else "",
+                esperado=esperado,
+                contado=round(contado, 2),
+                diferencia=round(contado - esperado, 2),
+            )
+        )
     db.flush()
     # El faltante/sobrante tambien va a los libros: si no, 1010 nunca se
     # concilia con lo que de verdad hay en la gaveta.
@@ -256,6 +372,17 @@ def anular_cierre(
 
 def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
     return schemas.CierreCaja(
+        lineas=[
+            schemas.LineaCierre(
+                cuenta=l.cuenta,
+                etiqueta=l.etiqueta or l.cuenta,
+                metodos=l.metodos or "",
+                esperado=l.esperado or 0,
+                contado=l.contado,
+                diferencia=l.diferencia or 0,
+            )
+            for l in c.lineas
+        ],
         id=c.id,
         fecha=c.fecha.isoformat(),
         total_sistema=c.total_sistema,

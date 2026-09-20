@@ -929,13 +929,7 @@ def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
     Sin esto, `1010 Caja` nunca se concilia con lo que de verdad hay en la
     gaveta: la diferencia quedaba solo como una nota en la tabla de cierres.
     """
-    # LAS DOS GAVETAS. Se contaban las dos pero solo la de bolivares se
-    # conciliaba: un faltante en dolares quedaba anotado en la fila del cierre
-    # y la cuenta 1011 seguia diciendo que la plata estaba ahi.
-    for codigo, nombre, diferencia in (
-        ("1010", "caja", round(cierre.diferencia or 0, 2)),
-        ("1011", "divisas", round(cierre.divisas_diferencia or 0, 2)),
-    ):
+    for codigo, nombre, diferencia in _diferencias_del_cierre(cierre):
         if abs(diferencia) < 0.01:
             continue
         if diferencia < 0:  # falta plata: sale de caja y se reconoce como perdida
@@ -954,17 +948,39 @@ def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
         )
 
 
+def _diferencias_del_cierre(cierre: models.CierreCaja):
+    """(cuenta, nombre, diferencia) de cada destino que se arqueo.
+
+    Con el arqueo por destino, la diferencia del banco o del punto tambien va
+    a los libros: si el lote liquido de menos, 1020 tiene que reflejarlo igual
+    que 1010 refleja un faltante de la gaveta. Los cierres viejos no tienen
+    detalle y se leen de las dos columnas de siempre.
+    """
+    if cierre.lineas:
+        return [
+            (l.cuenta, l.etiqueta or l.cuenta, round(l.diferencia or 0, 2))
+            for l in cierre.lineas
+        ]
+    # LAS DOS GAVETAS. Se contaban las dos pero solo la de bolivares se
+    # conciliaba: un faltante en dolares quedaba anotado en la fila del cierre
+    # y la cuenta 1011 seguia diciendo que la plata estaba ahi.
+    return [
+        ("1010", "caja", round(cierre.diferencia or 0, 2)),
+        ("1011", "divisas", round(cierre.divisas_diferencia or 0, 2)),
+    ]
+
+
 def registrar_reverso_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
-    """Deshace el faltante/sobrante de un cierre mal contado, en las dos gavetas.
+    """Deshace el faltante/sobrante de un cierre mal contado, destino por destino.
 
     El cierre no se borra: se anula. Borrarlo dejaria los libros limpios pero
     mudos sobre lo que paso, y un error de conteo es justo lo que un dueno
     quiere poder auditar despues.
+
+    Revierte EXACTAMENTE lo que se asento: la misma lista de destinos, para
+    que no quede un asiento suelto el dia que el arqueo cubra una cuenta mas.
     """
-    for codigo, nombre, diferencia in (
-        ("1010", "caja", round(cierre.diferencia or 0, 2)),
-        ("1011", "divisas", round(cierre.divisas_diferencia or 0, 2)),
-    ):
+    for codigo, nombre, diferencia in _diferencias_del_cierre(cierre):
         if abs(diferencia) < 0.01:
             continue
         if diferencia < 0:  # se habia reconocido un faltante: se devuelve a caja

@@ -612,6 +612,9 @@ class CierreCaja(Base):
 
     operador_rel = relationship("Operador")
     punto_venta_rel = relationship("PuntoVenta")
+    lineas = relationship(
+        "CierreCajaLinea", back_populates="cierre", cascade="all, delete-orphan"
+    )
 
     @property
     def operador(self) -> str:
@@ -620,6 +623,34 @@ class CierreCaja(Base):
     @property
     def punto_venta(self) -> str:
         return self.punto_venta_rel.nombre if self.punto_venta_rel else ""
+
+
+class CierreCajaLinea(Base):
+    """Una fila del arqueo: que se esperaba en ese destino y que habia.
+
+    Vive aparte del cierre porque son N por cierre y porque crecen: manana
+    entra otro metodo de pago y no hay que tocar la tabla de cierres. Las
+    columnas `efectivo_*` y `divisas_*` del cierre se quedan --son las dos
+    gavetas, que es lo que mira el historico viejo-- y estas las repiten
+    ademas del resto.
+    """
+
+    __tablename__ = "TRX511_CAJ_CIERRE_DET"
+
+    id = Column(Integer, primary_key=True)
+    cierre_id = Column(Integer, ForeignKey("TRX510_CAJ_CIERRE.id"), nullable=False)
+    # La cuenta contable del destino: 1010 gaveta Bs, 1011 gaveta $, 1020
+    # banco y punto, 1021 Zelle. Es lo que se arquea; los metodos de pago que
+    # caen ahi se guardan en `metodos` para poder leer la fila sin el catalogo.
+    cuenta = Column(String, nullable=False)
+    etiqueta = Column(String, default="")
+    metodos = Column(String, default="")
+    esperado = Column(Float, default=0)
+    # Nulo = no se verifico. Distinto de cero, que es "conte y no habia nada".
+    contado = Column(Float, nullable=True)
+    diferencia = Column(Float, default=0)
+
+    cierre = relationship("CierreCaja", back_populates="lineas")
 
 
 class SobranteInventario(Base):
