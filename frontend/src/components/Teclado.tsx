@@ -189,8 +189,8 @@ const especial = 'bg-neutral-200 text-neutral-700 hover:bg-neutral-300'
 const principal = 'bg-neutral-900 text-white hover:bg-neutral-800'
 
 // Alto del panel, para que el cuadro de arriba sepa cuanto correrse.
-const ALTO_NUMERO = 176
-const ALTO_TEXTO = 236
+const ALTO_NUMERO = 172
+const ALTO_TEXTO = 196
 
 function Panel({
   objetivo,
@@ -224,8 +224,8 @@ function Panel({
     >
       {objetivo.tipo === 'numero' ? (
         // La barra: a un lado que se escribe, al otro las teclas.
-        <div className="h-full max-w-3xl mx-auto px-3 py-2 flex items-stretch gap-4">
-          <div className="flex-1 min-w-0 flex flex-col justify-center text-right">
+        <div className="h-full w-fit max-w-full mx-auto px-3 py-2 flex items-stretch justify-center gap-4">
+          <div className="w-40 min-w-0 flex flex-col justify-center text-right">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 truncate">{objetivo.etiqueta}</div>
             <div className="text-2xl font-semibold tabular-nums leading-tight truncate">
               {mostrado || <span className="text-neutral-300">0</span>}
@@ -323,13 +323,22 @@ function Numeros({
 }
 
 // ── Texto ───────────────────────────────────────────────────────────────────
+//
+// CUATRO FILAS, como el teclado de un telefono: tres de letras y la de
+// abajo. Los numeros y los simbolos estan detras de la tecla "123", que
+// cambia las tres filas de letras por numeros, acentos y signos. Una fila
+// menos son 40 px menos de pantalla tapada, y se teclean muchas mas letras
+// que numeros (para los montos hay teclado aparte).
 
-const FILA_NUMEROS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
-const FILA_ACENTOS = ['á', 'é', 'í', 'ó', 'ú', 'ü', '¿', '?', '¡', '!']
-const FILAS = [
+const LETRAS = [
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
   ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'ñ'],
-  ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.'],
+  ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
+]
+const SIMBOLOS = [
+  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+  ['á', 'é', 'í', 'ó', 'ú', 'ü', '¿', '?', '¡', '!'],
+  ['@', '#', '$', '%', '&', '/', '(', ')', '-', ':'],
 ]
 
 function Letras({
@@ -343,7 +352,7 @@ function Letras({
 }) {
   const { el } = objetivo
   const [mayus, setMayus] = useState(() => !el.value)
-  const [acentos, setAcentos] = useState(false)
+  const [simbolos, setSimbolos] = useState(false)
 
   function insertar(texto: string) {
     const inicio = el.selectionStart ?? el.value.length
@@ -352,7 +361,7 @@ function Letras({
     escribirEn(el, nuevo, inicio + texto.length)
     onValor(nuevo)
     // Como en un telefono: mayuscula al empezar y despues de un punto.
-    if (mayus && /[a-zñ]/i.test(texto)) setMayus(false)
+    if (mayus && /[a-zñáéíóúü]/i.test(texto)) setMayus(false)
     if (/[.!?]\s?$/.test(nuevo)) setMayus(true)
   }
 
@@ -388,7 +397,8 @@ function Letras({
     onCerrar()
   }
 
-  const letra = (t: string) => {
+  const filas = simbolos ? SIMBOLOS : LETRAS
+  const k = (t: string) => {
     const texto = mayus ? t.toUpperCase() : t
     return (
       <button key={t} type="button" onClick={() => insertar(texto)} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
@@ -396,55 +406,49 @@ function Letras({
       </button>
     )
   }
+  const ancha = 'h-9 text-base flex-[1.5] min-w-0'
 
   return (
     <div className="space-y-1 flex-1 flex flex-col justify-end">
-      <div className="flex gap-1">
-        {(acentos ? FILA_ACENTOS : FILA_NUMEROS).map((t) => (
-          <button key={t} type="button" onClick={() => insertar(mayus && acentos ? t.toUpperCase() : t)} className={`${tecla} h-9 text-sm flex-1 min-w-0`}>
-            {mayus && acentos ? t.toUpperCase() : t}
-          </button>
-        ))}
-      </div>
-      <div className="flex gap-1">{FILAS[0].map(letra)}</div>
-      <div className="flex gap-1 px-4">{FILAS[1].map(letra)}</div>
+      <div className="flex gap-1">{filas[0].map(k)}</div>
+      <div className={`flex gap-1 ${simbolos ? '' : 'px-4'}`}>{filas[1].map(k)}</div>
       <div className="flex gap-1">
         <button
           type="button"
           onClick={() => setMayus((m) => !m)}
           aria-label="Mayúsculas"
           aria-pressed={mayus}
-          className={`${tecla} ${mayus ? principal : especial} h-9 text-base flex-[1.4] min-w-0`}
+          className={`${tecla} ${mayus ? principal : especial} ${ancha}`}
         >
           ⇧
         </button>
-        {FILAS[2].map(letra)}
-        <button type="button" onClick={borrar} aria-label="Borrar" className={`${tecla} ${especial} h-9 text-base flex-[1.4] min-w-0`}>
+        {filas[2].map(k)}
+        <button type="button" onClick={borrar} aria-label="Borrar" className={`${tecla} ${especial} ${ancha}`}>
           ⌫
         </button>
       </div>
       <div className="flex gap-1">
         <button
           type="button"
-          onClick={() => setAcentos((a) => !a)}
-          aria-pressed={acentos}
-          className={`${tecla} ${acentos ? principal : especial} h-9 text-xs flex-[1.4] min-w-0`}
+          onClick={() => setSimbolos((v) => !v)}
+          aria-pressed={simbolos}
+          className={`${tecla} ${simbolos ? principal : especial} h-9 text-xs flex-[1.5] min-w-0`}
         >
-          {acentos ? '123' : 'áé'}
+          {simbolos ? 'abc' : '123'}
         </button>
-        <button type="button" onClick={() => insertar('@')} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
-          @
+        <button type="button" onClick={() => insertar(',')} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
+          ,
         </button>
         <button type="button" onClick={() => insertar(' ')} aria-label="Espacio" className={`${tecla} h-9 flex-[5] min-w-0`}>
           <span className="block mx-6 h-px bg-neutral-400" />
         </button>
-        <button type="button" onClick={() => insertar('-')} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
-          -
+        <button type="button" onClick={() => insertar('.')} className={`${tecla} h-9 text-base flex-1 min-w-0`}>
+          .
         </button>
-        <button type="button" onClick={intro} aria-label="Intro" className={`${tecla} ${especial} h-9 text-base flex-[1.4] min-w-0`}>
+        <button type="button" onClick={intro} aria-label="Intro" className={`${tecla} ${especial} h-9 text-base flex-[1.5] min-w-0`}>
           ↵
         </button>
-        <button type="button" onClick={listo} className={`${tecla} ${principal} h-9 text-xs flex-[1.6] min-w-0`}>
+        <button type="button" onClick={listo} className={`${tecla} ${principal} h-9 text-xs flex-[1.8] min-w-0`}>
           Listo
         </button>
       </div>
