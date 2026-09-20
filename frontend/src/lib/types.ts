@@ -463,6 +463,35 @@ export type Gaveta = {
   esperado: number
 }
 
+/**
+ * Un destino del dinero, listo para arquear: la gaveta de bolivares, la de
+ * dolares, el banco, Zelle.
+ *
+ * `fisico` cambia lo que la persona HACE, no solo el rotulo: los billetes se
+ * cuentan, lo electronico se coteja contra el banco o el lote del punto.
+ */
+export type LineaArqueo = {
+  cuenta: string
+  etiqueta: string
+  /** Los metodos de pago que caen aqui, con lo que entro por cada uno hoy. */
+  metodos: Record<string, number>
+  fisico: boolean
+  saldo_anterior: number
+  entradas_hoy: number
+  salidas_hoy: number
+  esperado: number
+}
+
+/** Una fila del cierre ya guardado: lo que decia el sistema contra lo contado. */
+export type LineaCierre = {
+  cuenta: string
+  etiqueta: string
+  metodos: string
+  esperado: number
+  contado: number
+  diferencia: number
+}
+
 export type CuentaPorCobrar = {
   pedido_id: number
   numero: number
@@ -682,11 +711,18 @@ export type ResumenCaja = {
   cantidad_pedidos: number
   /** Bolivares y divisas son dos montones de billetes: dos conteos. */
   gavetas: Gaveta[]
+  /** El arqueo completo: una fila por destino del dinero, gavetas incluidas. */
+  arqueo: LineaArqueo[]
   /** Plata en la gaveta que no es del negocio. */
   propinas_por_entregar: number
   fiado_por_cobrar: number
   propinas_hoy: number
   descuentos_hoy: number
+  /** Lo que no se vendio: comandas botadas y ventas reembolsadas. */
+  anulados_hoy: number
+  anulado_monto_hoy: number
+  devueltos_hoy: number
+  devuelto_monto_hoy: number
 }
 
 export type RetiroPropietario = {
@@ -713,6 +749,8 @@ export type CierreCaja = {
   divisas_esperado: number
   divisas_contado: number
   divisas_diferencia: number
+  /** Una fila por destino verificado, congelada como estaba al cerrar. */
+  lineas: LineaCierre[]
 }
 
 export type EstadoTasa = {

@@ -262,10 +262,12 @@ export const api = {
     // Reintentar con la misma clave devuelve el pedido que ya entro, en vez
     // de mandar dos comandas iguales a cocina.
     clave_cliente?: string,
+    /** A nombre de quien va la comanda: sale al lado del numero de pedido. */
+    cliente = '',
   ) =>
     req<Pedido>('/pedidos', {
       method: 'POST',
-      body: JSON.stringify({ items, nota, permitir_sin_stock, clave_cliente }),
+      body: JSON.stringify({ items, nota, permitir_sin_stock, clave_cliente, cliente }),
     }),
   /** Que paso con este insumo, en orden. El extracto del deposito. */
   /** Con `desde`/`hasta` el extracto trae además saldo inicial y totales del período. */
@@ -611,17 +613,23 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ metodo_pago, monto, referencia }) },
     ),
 
+  /**
+   * Cerrar la caja con el arqueo completo: una entrada por destino contado.
+   *
+   * Un destino que no se verifico simplemente no viene en la lista. Es
+   * distinto de mandarlo en cero, que significa "conte y no habia nada": el
+   * backend solo asienta diferencia de lo que de verdad se conto.
+   */
   cerrarCaja: (
-    efectivo_contado: number,
+    conteos: { cuenta: string; contado: number }[],
     nota = '',
-    extra?: { divisas_contado?: number; operador_id?: number | null; punto_venta_id?: number | null },
+    extra?: { operador_id?: number | null; punto_venta_id?: number | null },
   ) =>
     req<CierreCaja>('/caja/cerrar', {
       method: 'POST',
       body: JSON.stringify({
-        efectivo_contado,
+        conteos,
         nota,
-        divisas_contado: extra?.divisas_contado ?? 0,
         operador_id: extra?.operador_id ?? null,
         punto_venta_id: extra?.punto_venta_id ?? null,
       }),

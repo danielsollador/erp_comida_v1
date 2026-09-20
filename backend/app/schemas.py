@@ -926,6 +926,13 @@ class ResumenCaja(BaseModel):
     fiado_por_cobrar: float = 0
     propinas_hoy: float = 0
     descuentos_hoy: float = 0
+    # Lo que NO se vendio, que es la otra mitad de la pregunta al cerrar.
+    # Anulado = la comanda se boto y nunca entro plata. Devuelto = se cobro y
+    # se reembolso; ese si movio la gaveta y el arqueo ya lo tiene contado.
+    anulados_hoy: int = 0
+    anulado_monto_hoy: float = 0
+    devueltos_hoy: int = 0
+    devuelto_monto_hoy: float = 0
 
 
 class PuntoSerie(BaseModel):

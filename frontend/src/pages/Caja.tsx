@@ -6,7 +6,7 @@ import { useRango, etiquetaRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import Cajas from './partes/Cajas'
-import { Pagina } from '../components/ui'
+import { Modal, Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
@@ -44,7 +44,17 @@ export default function Caja() {
   // El valor solo se usa via tasaInput; se guarda el setter para refrescarlo.
   const [, setConfig] = useState<Configuracion>({ tasa_bcv: 0 })
   const [tasaInput, setTasaInput] = useState('')
-  const [contado, setContado] = useState('')
+  // Lo contado, destino por destino, tal como se teclea. Cuenta -> texto:
+  // vacio es "no lo verifique" y no "habia cero", que son cosas distintas y
+  // el backend las trata distinto (vacio no asienta diferencia).
+  const [contados, setContados] = useState<Record<string, string>>({})
+  const [cerrando, setCerrando] = useState(false)
+  // El arqueo es CIEGO por defecto: quien cuenta no ve lo que el sistema
+  // espera. Si lo ve, el numero esperado se convierte en la respuesta que hay
+  // que teclear y el arqueo deja de verificar nada -- es el mismo motivo por
+  // el que el conteo de inventario nace ciego. Se puede destapar, porque a
+  // veces el dueno cuenta su propia caja y solo quiere confirmar.
+  const [verEsperado, setVerEsperado] = useState(false)
   const [nota, setNota] = useState('')
   const [cierres, setCierres] = useState<CierreCaja[]>([])
   // El ultimo cierre arriba; pero ordenar por Diferencia pone de primeras las
@@ -80,8 +90,6 @@ export default function Caja() {
   const [gastoCategoria, setGastoCategoria] = useState(CATEGORIAS_GASTO[0])
   const [gastoMetodo, setGastoMetodo] = useState(METODOS_GASTO[0])
   const [retiros, setRetiros] = useState<RetiroPropietario[]>([])
-  // La otra gaveta: billetes verdes. Son otra moneda y otro conteo.
-  const [contadoDivisas, setContadoDivisas] = useState('')
   const [fiado, setFiado] = useState<CuentaPorCobrar[]>([])
   const [puntos, setPuntos] = useState<PuntoVenta[]>([])
   const [puntoId, setPuntoId] = useState<number | null>(() => {
@@ -256,18 +264,35 @@ export default function Caja() {
     }
   }
 
+  // Lo que se va a mandar: solo los destinos con un numero escrito. Un campo
+  // en blanco NO viaja como cero -- eso diria "conte y no habia nada" y
+  // asentaria un faltante por todo lo esperado.
+  const conteosAMandar = (resumen?.arqueo ?? [])
+    .flatMap((l) => {
+      const escrito = (contados[l.cuenta] ?? '').trim()
+      if (!escrito) return []
+      const contado = Number(escrito.replace(',', '.'))
+      if (!Number.isFinite(contado) || contado < 0) return []
+      return [{ cuenta: l.cuenta, contado }]
+    })
+
+  function abrirCierre() {
+    setContados({})
+    setNota('')
+    setVerEsperado(false)
+    setError('')
+    setResultado(null)
+    setCerrando(true)
+  }
+
   async function hacerCierre() {
-    const valor = Number(contado)
-    if (!Number.isFinite(valor) || valor < 0) return
+    if (conteosAMandar.length === 0) return
     setError('')
     try {
-      const cierre = await api.cerrarCaja(valor, nota, {
-        divisas_contado: Number(contadoDivisas) || 0,
-        punto_venta_id: puntoId,
-      })
+      const cierre = await api.cerrarCaja(conteosAMandar, nota, { punto_venta_id: puntoId })
       setResultado(cierre)
-      setContado('')
-      setContadoDivisas('')
+      setCerrando(false)
+      setContados({})
       setNota('')
       cargar()
     } catch (e) {
@@ -281,58 +306,127 @@ export default function Caja() {
       <Pagina ancho="media">
         {seccion === 'cierre' && (
           <>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <h2 className="font-semibold mb-2">Tasa BCV (Bs por USD)</h2>
-          <div className="flex flex-wrap gap-2">
-            <Numerico
-              value={tasaInput}
-              onChange={(e) => setTasaInput(e.target.value)}
-              className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-              placeholder="Ej. 190.50"
-            />
-            <button
-              onClick={guardarTasa}
-              className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
-            >
-              Guardar
-            </button>
-          </div>
-          <p className="text-xs text-neutral-500 mt-2">
-            Se usa para mostrar el equivalente en bolívares al cobrar. Actualízala tú mismo cada día
-            (no se consulta ninguna fuente externa).
-          </p>
-        </div>
-
+        {/* ---------- 1. QUE PASO HOY ----------
+            Arriba lo que se vendio y lo que no llego a venderse. Es la
+            pregunta con la que el dueno abre esta pantalla; el arqueo viene
+            despues, y solo cuando decide cerrar. */}
         {resumen && (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <h2 className="font-semibold mb-3">Ventas de hoy ({resumen.fecha})</h2>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div className="bg-neutral-50 rounded-xl p-3">
-                <div className="text-xs text-neutral-500">Total vendido</div>
-                <div className="text-xl font-bold">${resumen.total_ventas.toFixed(2)}</div>
-              </div>
-              <div className="bg-neutral-50 rounded-xl p-3">
-                <div className="text-xs text-neutral-500">Pedidos cobrados</div>
-                <div className="text-xl font-bold">{resumen.cantidad_pedidos}</div>
-              </div>
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+              <h2 className="font-semibold">Ventas de hoy</h2>
+              <span className="text-xs text-neutral-400 tabular-nums">{resumen.fecha}</span>
             </div>
-            <div className="text-sm space-y-1">
-              {Object.entries(resumen.por_metodo_pago).map(([metodo, monto]) => (
-                <div key={metodo} className="flex justify-between">
-                  <span className="text-neutral-600">{etiquetaMetodo(metodo)}</span>
-                  <span className="font-medium">${monto.toFixed(2)}</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-neutral-50 rounded-xl p-3">
+                <div className="text-xs text-neutral-500">Vendido</div>
+                <div className="text-xl font-bold tabular-nums">
+                  ${resumen.total_ventas.toFixed(2)}
                 </div>
-              ))}
-              {Object.keys(resumen.por_metodo_pago).length === 0 && (
-                <p className="text-neutral-400">Aún no hay ventas cobradas hoy.</p>
-              )}
+                <div className="text-[11px] text-neutral-400">
+                  {resumen.cantidad_pedidos} pedido{resumen.cantidad_pedidos === 1 ? '' : 's'}
+                </div>
+              </div>
+              {/* Anulado y devuelto NO son lo mismo y por eso van separados:
+                  en el anulado nunca entro plata, en el devuelto entro y
+                  volvio a salir (y por eso el arqueo ya lo tiene contado). */}
+              <div className="bg-neutral-50 rounded-xl p-3">
+                <div className="text-xs text-neutral-500">Anulado</div>
+                <div
+                  className={`text-xl font-bold tabular-nums ${
+                    resumen.anulados_hoy > 0 ? 'text-peligro-600' : 'text-neutral-300'
+                  }`}
+                >
+                  ${resumen.anulado_monto_hoy.toFixed(2)}
+                </div>
+                <div className="text-[11px] text-neutral-400">
+                  {resumen.anulados_hoy} comanda{resumen.anulados_hoy === 1 ? '' : 's'} botada
+                  {resumen.anulados_hoy === 1 ? '' : 's'}
+                </div>
+              </div>
+              <div className="bg-neutral-50 rounded-xl p-3">
+                <div className="text-xs text-neutral-500">Devuelto</div>
+                <div
+                  className={`text-xl font-bold tabular-nums ${
+                    resumen.devueltos_hoy > 0 ? 'text-aviso-600' : 'text-neutral-300'
+                  }`}
+                >
+                  ${resumen.devuelto_monto_hoy.toFixed(2)}
+                </div>
+                <div className="text-[11px] text-neutral-400">
+                  {resumen.devueltos_hoy} venta{resumen.devueltos_hoy === 1 ? '' : 's'} reembolsada
+                  {resumen.devueltos_hoy === 1 ? '' : 's'}
+                </div>
+              </div>
+              <div className="bg-neutral-50 rounded-xl p-3">
+                <div className="text-xs text-neutral-500">Descuentos</div>
+                <div
+                  className={`text-xl font-bold tabular-nums ${
+                    resumen.descuentos_hoy > 0 ? 'text-neutral-700' : 'text-neutral-300'
+                  }`}
+                >
+                  ${resumen.descuentos_hoy.toFixed(2)}
+                </div>
+                {resumen.propinas_hoy > 0 && (
+                  <div className="text-[11px] text-neutral-400">
+                    ${resumen.propinas_hoy.toFixed(2)} de propina
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
+        {/* ---------- 2. COMO SE COBRO ----------
+            El detalle por forma de pago, agrupado por DONDE cayo la plata.
+            Agrupado y no en una lista plana porque es justo el corte que
+            despues hay que arquear: la gaveta de bolivares junta el efectivo
+            en Bs, y el banco junta punto, pago movil y transferencia. Ver el
+            grupo aqui es lo que hace que el conteo de despues tenga sentido. */}
+        {resumen && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+            <h2 className="font-semibold mb-1">Cómo se cobró</h2>
+            <p className="text-xs text-neutral-500 mb-3">
+              Lo que el sistema tiene registrado, agrupado por dónde cayó la plata.
+            </p>
+            {resumen.arqueo.length === 0 && (
+              <p className="text-neutral-400 text-sm">Aún no hay ventas cobradas hoy.</p>
+            )}
+            <div className="space-y-3">
+              {resumen.arqueo.map((linea) => {
+                const metodos = Object.entries(linea.metodos)
+                return (
+                  <div key={linea.cuenta} className="rounded-xl bg-neutral-50 p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-medium text-sm">{linea.etiqueta}</span>
+                      <span className="text-xs text-neutral-400">
+                        {linea.fisico ? 'se cuenta' : 'se coteja'}
+                      </span>
+                    </div>
+                    {metodos.length > 0 ? (
+                      <div className="mt-2 space-y-1 text-sm">
+                        {metodos.map(([metodo, monto]) => (
+                          <div key={metodo} className="flex justify-between">
+                            <span className="text-neutral-600">{etiquetaMetodo(metodo)}</span>
+                            <span className="font-medium tabular-nums">${monto.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-xs text-neutral-400">
+                        Sin ventas cobradas por aquí hoy.
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ---------- 3. CERRAR ---------- */}
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-            <h2 className="font-semibold">Contar efectivo físico</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+            <h2 className="font-semibold">Cerrar la caja</h2>
             {/* Con dos pisos hay dos gavetas y cada una cierra la suya: antes
                 el segundo cierre del dia devolvia 409. */}
             {puntos.length > 0 && (
@@ -358,124 +452,166 @@ export default function Caja() {
               </label>
             )}
           </div>
-          {/* El desglose importa: antes solo se restaban los gastos, y los dias
-              que se le pagaba al proveedor el cierre mostraba un faltante que
-              no existia. Ahora sale de la contabilidad e incluye TODO lo que
-              salio de la gaveta, con el detalle a la vista. */}
-          <div className="bg-neutral-50 rounded-xl p-3 text-sm mb-3 space-y-1">
-            {(resumen?.saldo_anterior ?? 0) !== 0 && (
-              <div className="flex justify-between text-neutral-600">
-                <span>Quedaba de días anteriores</span>
-                <span className="tabular-nums">${(resumen?.saldo_anterior ?? 0).toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-neutral-600">Ventas cobradas en bolívares</span>
-              <span className="tabular-nums">
-                $
-                {(
-                  (resumen?.por_metodo_pago?.['Efectivo'] ?? 0) +
-                  (resumen?.por_metodo_pago?.['Efectivo Bs'] ?? 0)
-                ).toFixed(2)}
-              </span>
-            </div>
-            {(resumen?.salidas_efectivo ?? 0) !== 0 && (
-              <div className="flex justify-between text-neutral-600">
-                <span>
-                  Salidas de efectivo (gastos, proveedores, compras
-                  {(resumen?.retiros_hoy ?? 0) > 0 &&
-                    `, ${(resumen?.retiros_hoy ?? 0).toFixed(2)} de retiros`}
-                  )
-                </span>
-                <span className="tabular-nums text-peligro-600">
-                  −${(resumen?.salidas_efectivo ?? 0).toFixed(2)}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between font-semibold pt-1 border-t border-neutral-200">
-              <span>Debería haber en la gaveta</span>
-              <span className="tabular-nums">
-                ${resumen?.efectivo_esperado.toFixed(2) ?? '0.00'}
-              </span>
-            </div>
-          </div>
-          {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
-          <div className="flex gap-2 mb-2">
-            <Numerico
-              value={contado}
-              onChange={(e) => setContado(e.target.value)}
-              placeholder="Cuánto efectivo hay en caja"
-              className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
-          {/* La gaveta de divisas se cuenta aparte: son otros billetes, en otra
-              moneda. Con un solo numero el arqueo era imposible. */}
-          {(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0) !== 0 && (
-            <div className="mt-3 rounded-xl border border-exito-200 bg-exito-50 p-3">
-              <div className="flex justify-between text-sm font-medium text-exito-900">
-                <span>Debería haber en billetes de dólar</span>
-                <span className="tabular-nums">
-                  ${(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0).toFixed(2)}
-                </span>
-              </div>
-              <Numerico
-                value={contadoDivisas}
-                onChange={(e) => setContadoDivisas(e.target.value)}
-                placeholder="Cuántos dólares contaste"
-                className="mt-2 w-full rounded-lg border border-exito-300 px-3 py-2 text-sm"
-              />
-            </div>
-          )}
-
-          </div>
-          <input
-            value={nota}
-            onChange={(e) => setNota(e.target.value)}
-            placeholder="Nota (opcional)"
-            className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mb-3"
-          />
+          <p className="text-xs text-neutral-500 mb-3">
+            Cuenta los billetes y coteja el banco. El sistema compara con lo que debería haber y
+            te dice si cuadró.
+          </p>
+          {error && !cerrando && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
           <button
-            onClick={hacerCierre}
-            disabled={!contado}
+            onClick={abrirCierre}
+            disabled={!resumen || resumen.arqueo.length === 0}
             className="w-full bg-neutral-900 text-white rounded-xl py-3 font-medium disabled:opacity-30"
           >
             Cerrar caja
           </button>
 
+          {/* El veredicto, fila por fila. Se queda despues de cerrar el
+              cuadro: es lo que el cajero le enseña al dueno. */}
           {resultado && (
-            <div
-              // Las DOS gavetas cuadran, o no cuadra el cierre. Antes solo se
-              // avisaba de los bolivares: un faltante de dolares se cerraba
-              // en silencio, como si contar bien esa gaveta no importara.
-              className={`mt-4 rounded-xl p-3 text-sm space-y-1 ${
-                resultado.diferencia === 0 && resultado.divisas_diferencia === 0
-                  ? 'bg-exito-50 text-exito-800'
-                  : 'bg-aviso-50 text-aviso-800'
-              }`}
-            >
-              <p className="font-medium">
-                {resultado.diferencia === 0 && resultado.divisas_diferencia === 0
-                  ? 'Concilia: las dos gavetas cuadran exacto.'
-                  : 'No concilia:'}
-              </p>
-              <p>
-                Bolívares:{' '}
-                {resultado.diferencia === 0
-                  ? 'cuadra exacto.'
-                  : resultado.diferencia > 0
-                    ? `sobran $${resultado.diferencia.toFixed(2)}.`
-                    : `faltan $${Math.abs(resultado.diferencia).toFixed(2)}.`}
-              </p>
-              <p>
-                Dólares:{' '}
-                {resultado.divisas_diferencia === 0
-                  ? 'cuadra exacto.'
-                  : resultado.divisas_diferencia > 0
-                    ? `sobran $${resultado.divisas_diferencia.toFixed(2)}.`
-                    : `faltan $${Math.abs(resultado.divisas_diferencia).toFixed(2)}.`}
-              </p>
+            <div className="mt-4 rounded-xl border border-neutral-200 overflow-hidden">
+              <div
+                className={`px-3 py-2 text-sm font-medium ${
+                  resultado.lineas.every((l) => Math.abs(l.diferencia) < 0.01)
+                    ? 'bg-exito-50 text-exito-800'
+                    : 'bg-aviso-50 text-aviso-800'
+                }`}
+              >
+                {resultado.lineas.every((l) => Math.abs(l.diferencia) < 0.01)
+                  ? 'Cuadró: todo lo contado coincide con el sistema.'
+                  : 'No cuadró. El descuadre queda asentado en los libros:'}
+              </div>
+              <div className="divide-y divide-neutral-100">
+                {resultado.lineas.map((l) => (
+                  <div key={l.cuenta} className="flex items-baseline justify-between gap-2 px-3 py-2 text-sm">
+                    <span className="min-w-0">
+                      <span className="block font-medium truncate">{l.etiqueta}</span>
+                      <span className="block text-[11px] text-neutral-400 tabular-nums">
+                        sistema ${l.esperado.toFixed(2)} · contado ${l.contado.toFixed(2)}
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 font-semibold tabular-nums ${
+                        Math.abs(l.diferencia) < 0.01
+                          ? 'text-exito-600'
+                          : l.diferencia < 0
+                            ? 'text-peligro-600'
+                            : 'text-aviso-600'
+                      }`}
+                    >
+                      {Math.abs(l.diferencia) < 0.01
+                        ? 'cuadra'
+                        : l.diferencia > 0
+                          ? `sobran $${l.diferencia.toFixed(2)}`
+                          : `faltan $${Math.abs(l.diferencia).toFixed(2)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
+
+        {/* La tasa se edita de verdad en su propio modulo; aqui queda el
+            atajo, abajo, porque el cajero la toca al abrir y no al cerrar. */}
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+          <h2 className="font-semibold mb-2">Tasa BCV (Bs por USD)</h2>
+          <div className="flex flex-wrap gap-2">
+            <Numerico
+              value={tasaInput}
+              onChange={(e) => setTasaInput(e.target.value)}
+              className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              placeholder="Ej. 190.50"
+            />
+            <button
+              onClick={guardarTasa}
+              className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              Guardar
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 mt-2">
+            Se usa para mostrar el equivalente en bolívares al cobrar. En el módulo Tasa se
+            actualiza sola desde el BCV.
+          </p>
+        </div>
+
+        {/* ---------- El conteo, en un cuadro aparte ----------
+            Aparte y no en la pagina a proposito: contar la caja es un acto
+            con principio y fin, y mientras dura no hay nada mas que hacer
+            aqui. Ademas asi el arqueo ciego es de verdad ciego -- en la
+            pagina, lo esperado estaria a dos dedos de los campos. */}
+        {cerrando && resumen && (
+          <Modal
+            titulo="Contar la caja"
+            ayuda="Escribe lo que hay DE VERDAD en cada sitio. Lo que dejes en blanco no se verifica."
+            onCerrar={() => setCerrando(false)}
+            pie={
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCerrando(false)}
+                  className="flex-1 rounded-xl border border-neutral-300 py-3 text-sm font-medium"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={hacerCierre}
+                  disabled={conteosAMandar.length === 0}
+                  className="flex-1 rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white disabled:opacity-30"
+                >
+                  Cerrar y conciliar
+                </button>
+              </div>
+            }
+          >
+            {error && <p className="text-peligro-600 text-sm mb-3">{error}</p>}
+            <div className="space-y-3">
+              {resumen.arqueo.map((linea) => (
+                <div key={linea.cuenta} className="rounded-xl border border-neutral-200 p-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-medium text-sm">{linea.etiqueta}</span>
+                    <span className="text-[11px] text-neutral-400">
+                      {linea.fisico ? 'cuenta los billetes' : 'coteja el saldo'}
+                    </span>
+                  </div>
+                  {Object.keys(linea.metodos).length > 0 && (
+                    <p className="text-[11px] text-neutral-400 mt-0.5">
+                      {Object.keys(linea.metodos).map(etiquetaMetodo).join(' · ')}
+                    </p>
+                  )}
+                  <Numerico
+                    value={contados[linea.cuenta] ?? ''}
+                    onChange={(e) =>
+                      setContados((c) => ({ ...c, [linea.cuenta]: e.target.value }))
+                    }
+                    placeholder={linea.fisico ? 'Cuánto contaste' : 'Cuánto dice el saldo'}
+                    className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                  />
+                  {/* Destapado, queda debajo del campo ya escrito: sirve para
+                      confirmar, no para copiar. */}
+                  {verEsperado && (
+                    <p className="mt-1.5 text-xs text-neutral-500 tabular-nums">
+                      El sistema dice ${linea.esperado.toFixed(2)}
+                      {linea.saldo_anterior !== 0 &&
+                        ` (${linea.saldo_anterior.toFixed(2)} de ayer + ${linea.entradas_hoy.toFixed(2)} − ${linea.salidas_hoy.toFixed(2)})`}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setVerEsperado((v) => !v)}
+              className="mt-3 text-xs font-medium text-neutral-500 underline"
+            >
+              {verEsperado ? 'Ocultar lo que dice el sistema' : 'Ver lo que dice el sistema'}
+            </button>
+            <input
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+              placeholder="Nota (opcional): por qué faltó, quién contó…"
+              className="mt-3 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </Modal>
+        )}
           </>
         )}
 
@@ -721,12 +857,27 @@ export default function Caja() {
                       }`}
                     >
                       {c.anulado ? '—' : `${c.diferencia > 0 ? '+' : ''}${c.diferencia.toFixed(2)}`}
-                      {!c.anulado && c.divisas_diferencia !== 0 && (
-                        <span className="block text-[11px]">
-                          divisas {c.divisas_diferencia > 0 ? '+' : ''}
-                          {c.divisas_diferencia.toFixed(2)}
-                        </span>
-                      )}
+                      {/* El desglose por destino. Las columnas de la tabla
+                          son las de la gaveta de bolivares y nada mas; desde
+                          que se arquea el banco y Zelle, un descuadre de ahi
+                          no aparecia por ningun lado. Los cierres viejos no
+                          tienen detalle y caen al aviso de divisas de antes. */}
+                      {!c.anulado && c.lineas.length > 0
+                        ? c.lineas
+                            .filter((l) => l.cuenta !== '1010' && Math.abs(l.diferencia) >= 0.01)
+                            .map((l) => (
+                              <span key={l.cuenta} className="block text-[11px]">
+                                {l.etiqueta.toLowerCase()} {l.diferencia > 0 ? '+' : ''}
+                                {l.diferencia.toFixed(2)}
+                              </span>
+                            ))
+                        : !c.anulado &&
+                          c.divisas_diferencia !== 0 && (
+                            <span className="block text-[11px]">
+                              divisas {c.divisas_diferencia > 0 ? '+' : ''}
+                              {c.divisas_diferencia.toFixed(2)}
+                            </span>
+                          )}
                     </td>
                     <td className="py-1 text-right">
                       {/* Un digito de mas al contar metia un sobrante ficticio

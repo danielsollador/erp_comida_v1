@@ -120,6 +120,50 @@ def _saldo_anterior_de(db: Session, codigo: str) -> float:
     return contabilidad.movimiento_efectivo(db, datetime.datetime.min, inicio, codigo)
 
 
+def _anulados_hoy(db: Session):
+    """Comandas que se botaron hoy: cuantas y por cuanto.
+
+    Se cuentan por `creado_en` y no por `cerrado_en`: un pedido anulado nunca
+    se cierra, asi que filtrar por la fecha de cierre no devolvia ninguno.
+
+    Van en el resumen del cierre porque es la pregunta que el dueno hace al
+    mirar la caja --"¿cuanto se vendio y cuanto se boto?"-- y hasta ahora
+    habia que irse a Ventas a buscarla. No tocan el arqueo: un pedido anulado
+    no movio plata por ninguna gaveta.
+    """
+    inicio, fin = _rango_hoy()
+    pedidos = (
+        db.query(models.Pedido)
+        .filter(
+            models.Pedido.estado == "anulado",
+            models.Pedido.creado_en >= inicio,
+            models.Pedido.creado_en < fin,
+        )
+        .all()
+    )
+    return len(pedidos), round(sum(p.total for p in pedidos), 2)
+
+
+def _devueltos_hoy(db: Session):
+    """Ventas cobradas que el cliente trajo de vuelta hoy y se le reembolsaron.
+
+    Distinto de anular: aqui la plata SI entro y volvio a salir, y por eso el
+    arqueo ya las tiene contadas. Se muestran aparte para que el total vendido
+    no parezca que no cuadra con la cantidad de pedidos.
+    """
+    inicio, fin = _rango_hoy()
+    pedidos = (
+        db.query(models.Pedido)
+        .filter(
+            models.Pedido.devuelto.is_(True),
+            models.Pedido.fecha_devolucion >= inicio,
+            models.Pedido.fecha_devolucion < fin,
+        )
+        .all()
+    )
+    return len(pedidos), round(sum(p.total for p in pedidos), 2)
+
+
 def _ventas_por_metodo_hoy(db: Session) -> dict:
     """Lo cobrado hoy por cada metodo, sin contar las devueltas."""
     por_metodo: dict = {}
@@ -214,6 +258,8 @@ def resumen_caja(db: Session = Depends(get_db)):
     saldo_anterior = bolivares.saldo_anterior
     salidas = bolivares.salidas_hoy
     efectivo_esperado = bolivares.esperado
+    anulados, anulado_monto = _anulados_hoy(db)
+    devueltos, devuelto_monto = _devueltos_hoy(db)
 
     return schemas.ResumenCaja(
         fecha=hoy().isoformat(),
@@ -235,6 +281,10 @@ def resumen_caja(db: Session = Depends(get_db)):
             sum(p.propina or 0 for p in pedidos), 2
         ),
         descuentos_hoy=round(sum(p.descuento or 0 for p in pedidos), 2),
+        anulados_hoy=anulados,
+        anulado_monto_hoy=anulado_monto,
+        devueltos_hoy=devueltos,
+        devuelto_monto_hoy=devuelto_monto,
     )
 
 
