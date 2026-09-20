@@ -1,8 +1,9 @@
 import { createPortal } from 'react-dom'
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { useEffect, type ButtonHTMLAttributes, type ChangeEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { Ayuda } from './Ayuda'
 import { explicar } from '../lib/glosario'
 import Icono, { type NombreIcono } from './Icono'
+import { Numerico } from './Teclado'
 
 /**
  * Las piezas del sistema de diseño de Vertigo Pro.
@@ -168,12 +169,27 @@ export function Campo({
   className = '',
   ...resto
 }: { etiqueta: string; ayuda?: string; className?: string } & InputHTMLAttributes<HTMLInputElement>) {
+  // Un campo de numero (`type="number"` o `inputMode="decimal"/"numeric"`)
+  // usa el teclado propio del ERP en las tablets (ver Teclado.tsx).
+  const esNumero = resto.type === 'number' || resto.inputMode === 'decimal' || resto.inputMode === 'numeric'
+  const clase = 'w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm'
   return (
     <label className={`block ${className}`}>
       <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
         {etiqueta}
       </span>
-      <input {...resto} className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm" />
+      {esNumero ? (
+        <Numerico
+          {...(resto as Omit<typeof resto, 'onChange' | 'value' | 'type'>)}
+          etiqueta={etiqueta}
+          entero={resto.inputMode === 'numeric'}
+          value={resto.value as string | number | undefined}
+          onChange={(e) => resto.onChange?.(e as unknown as ChangeEvent<HTMLInputElement>)}
+          className={clase}
+        />
+      ) : (
+        <input {...resto} className={clase} />
+      )}
       {ayuda && <span className="block text-xs text-neutral-500 mt-1">{ayuda}</span>}
     </label>
   )

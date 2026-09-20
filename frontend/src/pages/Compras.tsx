@@ -7,6 +7,7 @@ import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { Boton, Campo, Modal, Pagina, Pastilla, Vacio } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
 import { necesitaReferencia, pedirReferencia } from '../lib/pagos'
@@ -780,10 +781,9 @@ export default function Compras() {
             {esActivo && (
               <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
                 Dura
-                <input
+                <Numerico
                   value={vidaUtil}
                   onChange={(e) => setVidaUtil(e.target.value)}
-                  type="number"
                   min="1"
                   className="w-16 outline-none text-neutral-800 text-right"
                 />
@@ -812,20 +812,16 @@ export default function Compras() {
                       ))}
                       <option value="nuevo">+ Crear mercancía nueva...</option>
                     </select>
-                    <input
+                    <Numerico
                       value={l.cantidad}
                       onChange={(e) => actualizarLinea(i, 'cantidad', e.target.value)}
                       placeholder={`Cantidad${ing ? ` (${ing.unidad})` : ''}`}
-                      type="number"
-                      step="0.01"
                       className="w-28 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
                     />
-                    <input
+                    <Numerico
                       value={l.costo_unitario}
                       onChange={(e) => actualizarLinea(i, 'costo_unitario', e.target.value)}
                       placeholder={`Costo/unidad sin IVA (${monedaCarga})`}
-                      type="number"
-                      step="0.01"
                       className="w-32 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
                     />
                     {/* La ficha de la mercancía es el valor por defecto, no la
@@ -877,11 +873,9 @@ export default function Compras() {
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-200">
                 <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
                   Recargo
-                  <input
+                  <Numerico
                     value={recargo}
                     onChange={(e) => setRecargo(e.target.value)}
-                    type="number"
-                    step="0.01"
                     min="0"
                     placeholder="0.00"
                     className="w-full outline-none text-neutral-800 text-right"
@@ -889,11 +883,9 @@ export default function Compras() {
                 </label>
                 <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
                   Descuento
-                  <input
+                  <Numerico
                     value={descuentoFactura}
                     onChange={(e) => setDescuentoFactura(e.target.value)}
-                    type="number"
-                    step="0.01"
                     min="0"
                     placeholder="0.00"
                     className="w-full outline-none text-neutral-800 text-right"
@@ -928,20 +920,16 @@ export default function Compras() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
-              <input
+              <Numerico
                 value={base}
                 onChange={(e) => actualizarBase(e.target.value)}
                 placeholder={`Base imponible (${monedaCarga})`}
-                type="number"
-                step="0.01"
                 className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
               />
-              <input
+              <Numerico
                 value={iva}
                 onChange={(e) => setIva(e.target.value)}
                 placeholder={`IVA ${fiscal.tasa_iva}% (${monedaCarga})`}
-                type="number"
-                step="0.01"
                 className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
               />
               <div className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 text-sm font-medium">

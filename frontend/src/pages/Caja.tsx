@@ -7,6 +7,7 @@ import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import Cajas from './partes/Cajas'
 import { Pagina } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import type {
@@ -283,11 +284,9 @@ export default function Caja() {
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Tasa BCV (Bs por USD)</h2>
           <div className="flex flex-wrap gap-2">
-            <input
+            <Numerico
               value={tasaInput}
               onChange={(e) => setTasaInput(e.target.value)}
-              type="number"
-              step="0.01"
               className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
               placeholder="Ej. 190.50"
             />
@@ -402,11 +401,9 @@ export default function Caja() {
           </div>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
           <div className="flex gap-2 mb-2">
-            <input
+            <Numerico
               value={contado}
               onChange={(e) => setContado(e.target.value)}
-              type="number"
-              step="0.01"
               placeholder="Cuánto efectivo hay en caja"
               className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
@@ -420,11 +417,9 @@ export default function Caja() {
                   ${(resumen?.gavetas?.find((g) => g.codigo === '1011')?.esperado ?? 0).toFixed(2)}
                 </span>
               </div>
-              <input
+              <Numerico
                 value={contadoDivisas}
                 onChange={(e) => setContadoDivisas(e.target.value)}
-                type="number"
-                step="0.01"
                 placeholder="Cuántos dólares contaste"
                 className="mt-2 w-full rounded-lg border border-exito-300 px-3 py-2 text-sm"
               />
@@ -554,11 +549,9 @@ export default function Caja() {
                 </option>
               ))}
             </select>
-            <input
+            <Numerico
               value={gastoMonto}
               onChange={(e) => setGastoMonto(e.target.value)}
-              type="number"
-              step="0.01"
               placeholder="$"
               className="w-20 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
             />

@@ -9,7 +9,10 @@
          navegador. Los iconos son los del local. -->
     <link rel="manifest" href="/app.webmanifest" />
     <link rel="apple-touch-icon" href="/api/acceso/favicon" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content: cuando sale el teclado del sistema (campos de
+         texto), la pagina se encoge y el cuadro abierto se desplaza, en vez de quedar
+         tapado a medias. Los campos de numero usan el teclado propio (Teclado.tsx). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0e1014" media="(prefers-color-scheme: dark)" />

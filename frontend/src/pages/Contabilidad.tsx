@@ -6,6 +6,7 @@ import { useRango, type Rango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { Boton, Campo, Modal, Pagina, Selector } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import Respaldos from './partes/Respaldos'
 import { api } from '../lib/api'
 import type {
@@ -463,20 +464,16 @@ function Diario({ rango }: { rango: Rango }) {
                 </option>
               ))}
             </select>
-            <input
+            <Numerico
               value={l.debe}
               onChange={(e) => actualizarLinea(i, 'debe', e.target.value)}
               placeholder="Debe"
-              type="number"
-              step="0.01"
               className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
             />
-            <input
+            <Numerico
               value={l.haber}
               onChange={(e) => actualizarLinea(i, 'haber', e.target.value)}
               placeholder="Haber"
-              type="number"
-              step="0.01"
               className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
             />
           </div>

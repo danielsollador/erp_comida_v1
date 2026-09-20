@@ -4,6 +4,7 @@ import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { contiene, palabrasDe } from '../components/Tabla'
 import { Pagina } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import type { Categoria, CostoVariante } from '../lib/types'
 
@@ -460,12 +461,10 @@ function ProductoRow({
           placeholder="Subsección (ej. Grande)"
           className="flex-1 border border-neutral-300 rounded-lg px-2 py-1 text-xs"
         />
-        <input
+        <Numerico
           value={nuevoPrecio}
           onChange={(e) => setNuevoPrecio(e.target.value)}
           placeholder="Precio"
-          type="number"
-          step="0.01"
           className="w-20 border border-neutral-300 rounded-lg px-2 py-1 text-xs"
         />
         <button

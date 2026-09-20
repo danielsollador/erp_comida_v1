@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import type { Categoria, Ingrediente, RecetaItem, Variante } from '../lib/types'
 
@@ -303,21 +304,17 @@ export default function Recetas() {
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2 text-sm">
                           <span>De</span>
-                          <input
+                          <Numerico
                             value={f.rendimientoDe}
                             onChange={(e) => actualizarFila(i, { rendimientoDe: e.target.value })}
-                            type="number"
-                            step="0.01"
                             className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
                           />
                           <span>{ing?.unidad ?? 'unidad'} que compras salen</span>
-                          <input
+                          <Numerico
                             value={f.rendimientoSalen}
                             onChange={(e) =>
                               actualizarFila(i, { rendimientoSalen: e.target.value })
                             }
-                            type="number"
-                            step="1"
                             className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
                           />
                           <span>unidades</span>
@@ -338,12 +335,10 @@ export default function Recetas() {
                     ) : null}
 
                     <div className="flex items-center gap-2 mt-2 text-sm">
-                      <input
+                      <Numerico
                         value={f.cantidad_por_unidad}
                         onChange={(e) => actualizarFila(i, { cantidad_por_unidad: e.target.value })}
                         placeholder={`Cantidad utilizable por unidad${ing ? ` (${ing.unidad})` : ''}`}
-                        type="number"
-                        step="0.0001"
                         className="flex-1 border border-neutral-300 rounded-lg px-2 py-1.5"
                       />
                       {ing && Number(f.cantidad_por_unidad) > 0 && (

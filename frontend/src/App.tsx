@@ -18,6 +18,7 @@ import Rail, { entraA } from './components/Rail'
 import Conexion from './components/Conexion'
 import Solicitudes from './components/Solicitudes'
 import { DialogoProvider } from './components/dialogo'
+import { TecladoProvider } from './components/Teclado'
 import { MonedaProvider } from './lib/moneda'
 import { AccesoProvider, useAcceso } from './lib/acceso'
 import type { ReactNode } from 'react'
@@ -61,6 +62,9 @@ export default function App() {
   return (
     <AccesoProvider>
       <MonedaProvider>
+        {/* El teclado va por FUERA de los dialogos: los cuadros de "pedir un
+            numero" tambien lo usan y tienen que verlo. */}
+        <TecladoProvider>
         <DialogoProvider>
         <BrowserRouter>
           <Marco>
@@ -90,6 +94,7 @@ export default function App() {
           </Marco>
         </BrowserRouter>
         </DialogoProvider>
+        </TecladoProvider>
       </MonedaProvider>
     </AccesoProvider>
   )

@@ -3,6 +3,7 @@ import EditarPedido from '../components/EditarPedido'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { Boton, Modal } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import { api, connectWs } from '../lib/api'
 import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
@@ -927,11 +928,9 @@ export default function POS() {
           <div className="grid grid-cols-2 gap-2 mt-3">
             <label className="text-xs text-neutral-500">
               Descuento
-              <input
+              <Numerico
                 value={descuento}
                 onChange={(e) => setDescuento(e.target.value)}
-                type="number"
-                step="0.01"
                 placeholder="0.00"
                 className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
               />
@@ -940,11 +939,9 @@ export default function POS() {
                 empleado hasta que se le entrega. */}
             <label className="text-xs text-neutral-500">
               Propina
-              <input
+              <Numerico
                 value={propina}
                 onChange={(e) => setPropina(e.target.value)}
-                type="number"
-                step="0.01"
                 placeholder="0.00"
                 className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
               />
@@ -965,11 +962,9 @@ export default function POS() {
           <div className="grid grid-cols-2 gap-2 mt-2">
             <label className="text-xs text-neutral-500">
               Con cuánto pagó
-              <input
+              <Numerico
                 value={recibido}
                 onChange={(e) => setRecibido(e.target.value)}
-                type="number"
-                step="0.01"
                 placeholder="opcional"
                 className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
               />
@@ -1053,11 +1048,9 @@ export default function POS() {
                     </option>
                   ))}
                 </select>
-                <input
+                <Numerico
                   value={montoParcial}
                   onChange={(e) => setMontoParcial(e.target.value)}
-                  type="number"
-                  step="0.01"
                   placeholder="Monto"
                   className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
                 />

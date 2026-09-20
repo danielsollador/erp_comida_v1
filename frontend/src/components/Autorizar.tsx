@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, connectWs } from '../lib/api'
 import type { Autorizacion, SolicitudAutorizacion } from '../lib/types'
 import { Boton } from './ui'
+import { Numerico } from './Teclado'
 
 /**
  * La firma de alguien autorizado, de dos formas:
@@ -138,14 +139,13 @@ export default function Autorizar({
           <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
             PIN de quien autoriza
           </span>
-          <input
-            type="password"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            autoComplete="one-time-code"
+          <Numerico
+            etiqueta="PIN"
+            oculto
+            entero
             maxLength={6}
             value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
             placeholder="••••"
             className="w-full border border-neutral-300 rounded-lg px-3 py-2.5 text-2xl tracking-[0.5em] text-center tabular-nums"
           />

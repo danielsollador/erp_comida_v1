@@ -8,6 +8,7 @@ import { useRango, queryRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
+import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import type {
   ConfiguracionFiscal,
@@ -95,11 +96,9 @@ export default function Impuestos() {
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Alícuota de IVA</h2>
           <div className="flex flex-wrap gap-2">
-            <input
+            <Numerico
               value={tasaInput}
               onChange={(e) => setTasaInput(e.target.value)}
-              type="number"
-              step="0.5"
               className="w-24 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
             <span className="flex items-center text-sm text-neutral-500">%</span>
