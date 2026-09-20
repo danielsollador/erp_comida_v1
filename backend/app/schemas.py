@@ -544,6 +544,12 @@ class PedidoItemCreate(BaseModel):
 class PedidoCreate(BaseModel):
     items: List[PedidoItemCreate]
     nota: str = ""
+    # A nombre de quien va la comanda. Se pregunta al TOMAR el pedido y no al
+    # cobrar: con ocho comandas vivas, "#14" no le dice a nadie de quien es, y
+    # el cajero termina cantando numeros por el mostrador. Ademas es lo que
+    # habilita fiar sin tener que pararse a escribir el nombre con el cliente
+    # esperando: para fiar hace falta un nombre, y aqui ya esta.
+    cliente: str = ""
     # El POS lo manda en true cuando el cajero ya vio el aviso de "no alcanza
     # el inventario" y decidio vender igual (el conteo del sistema puede estar
     # atrasado). Por defecto no se deja, para no vender lo que no hay.

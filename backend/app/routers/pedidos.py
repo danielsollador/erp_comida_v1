@@ -248,6 +248,7 @@ async def crear_pedido(
     db_pedido = models.Pedido(
         numero=_siguiente_numero(db),
         nota=pedido.nota,
+        cliente=(pedido.cliente or "").strip(),
         operador_id=quien_toma.id if quien_toma else None,
         clave_cliente=pedido.clave_cliente,
     )
@@ -1004,7 +1005,13 @@ async def cobrar_pedido(
     pedido.descuento = round(body.descuento, 2)
     pedido.motivo_descuento = body.motivo_descuento
     pedido.propina = round(body.propina, 2)
-    pedido.cliente = body.cliente
+    # El nombre puede venir de dos sitios: se escribio al tomar la comanda, o
+    # se escribe ahora al cobrar. Lo del cobro pisa --ahi es donde se corrige
+    # un nombre mal escuchado-- pero vacio NO pisa: el POS manda el campo
+    # siempre, y un cobro normal de una comanda que si tenia nombre le borraba
+    # el suyo. Con fiado eso era perder a quien cobrarle.
+    if (body.cliente or "").strip():
+        pedido.cliente = body.cliente.strip()
 
     # Un pago puede venir partido: $5 en efectivo y el resto por pago movil es
     # cosa de todos los dias. Sin esto habia que elegir un metodo y mentir, y
@@ -1044,7 +1051,9 @@ async def cobrar_pedido(
             detalle += f" (${pedido.total:.2f} de comida + ${pedido.propina:.2f} de propina)"
         raise HTTPException(status_code=400, detail=detalle + ".")
 
-    if any(p.metodo == "Fiado" for p in pagos) and not body.cliente.strip():
+    # Contra el nombre YA resuelto, no contra el del cuerpo: si se escribio al
+    # tomar la comanda, fiar no tiene por que volver a pedirlo.
+    if any(p.metodo == "Fiado" for p in pagos) and not (pedido.cliente or "").strip():
         raise HTTPException(
             status_code=400,
             detail="Para fiar hace falta el nombre del cliente: si no, no hay a quien cobrarle.",

@@ -11,7 +11,6 @@ import { fmtBs, useMoneda } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { colorCategoria } from '../lib/theme'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
-import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import type {
   Categoria,
   Pedido,
@@ -71,6 +70,10 @@ export default function POS() {
   const [motivoDescuento, setMotivoDescuento] = useState('')
   const [propina, setPropina] = useState('')
   const [cliente, setCliente] = useState('')
+  // A nombre de quien va la comanda que se esta armando. Es otro estado que
+  // `cliente`: aquel es el del cobro (una comanda ya tomada), este viaja con
+  // el pedido cuando se manda a cocina.
+  const [clienteComanda, setClienteComanda] = useState('')
   // Con un billete grande, entra mas de lo que cuesta y sale el vuelto.
   const [recibido, setRecibido] = useState('')
   const [vueltoEn, setVueltoEn] = useState('')
@@ -253,10 +256,12 @@ export default function POS() {
     if (items.length === 0) return
     if (!claveComanda.current) claveComanda.current = crypto.randomUUID()
     const clave = claveComanda.current
+    const nombre = clienteComanda.trim()
     try {
-      await api.crearPedido(items, false, '', clave)
+      await api.crearPedido(items, false, '', clave, nombre)
       setCarrito({})
       setLibres([])
+      setClienteComanda('')
       refrescarPedidos()
     } catch (e) {
       const mensaje = e instanceof Error ? e.message : 'Error al enviar la comanda'
@@ -272,9 +277,10 @@ export default function POS() {
           })
         ) {
           try {
-            await api.crearPedido(items, true, '', clave)
+            await api.crearPedido(items, true, '', clave, nombre)
             setCarrito({})
             setLibres([])
+            setClienteComanda('')
             refrescarPedidos()
             return
           } catch (e2) {
@@ -306,6 +312,9 @@ export default function POS() {
     metodo: string,
     pagos?: { metodo: string; monto: number; recibido?: number; vuelto_metodo?: string; referencia?: string }[],
     referencia?: string,
+    // El nombre recien escrito en un cuadro: `setCliente` no se ha aplicado
+    // todavia cuando el cobro sale, y el estado viejo iria vacio.
+    clienteAhora?: string,
   ) {
     if (!cobrando) return
     setError('')
@@ -314,7 +323,7 @@ export default function POS() {
         descuento: Number(descuento) || 0,
         motivo_descuento: motivoDescuento,
         propina: Number(propina) || 0,
-        cliente,
+        cliente: clienteAhora ?? cliente,
         punto_venta_id: puntoId,
         referencia,
       })
@@ -325,6 +334,36 @@ export default function POS() {
       setCobrando(null)
     }
     refrescarPedidos()
+  }
+
+  /**
+   * Fiar. Lo unico que hace falta y no siempre esta es el nombre: sin el no
+   * hay a quien cobrarle despues, y la deuda nace huerfana.
+   *
+   * Se pide aqui en vez de dejar el boton apagado. El cajero que ve "A
+   * crédito" en gris no deduce que le falta llenar un campo mas arriba:
+   * concluye que el sistema no deja fiar.
+   */
+  async function cobrarACredito() {
+    let nombre = cliente.trim()
+    if (!nombre) {
+      const escrito = await dialogo.pedirTexto({
+        titulo: 'Vender a crédito',
+        texto: 'Queda como cuenta por cobrar. Se salda después desde Caja.',
+        etiqueta: '¿A nombre de quién queda la deuda?',
+        aceptar: 'Fiar',
+      })
+      if (escrito === null) return
+      nombre = escrito.trim()
+      if (!nombre) {
+        setError('Para fiar hace falta el nombre del cliente: si no, no hay a quién cobrarle.')
+        return
+      }
+      // Al estado tambien, para que el cobro lo mande y la pantalla lo muestre.
+      setCliente(nombre)
+    }
+    // Fiar no lleva referencia ni vuelto: no entra plata por ninguna gaveta.
+    cobrar('Fiado', undefined, undefined, nombre)
   }
 
   async function confirmarCobro(metodo: string) {
@@ -470,7 +509,7 @@ export default function POS() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Punto de venta" acciones={<PantallaCompletaToggle />} />
+      <NavBar titulo="Punto de venta" />
 
       {categorias.length > 0 && (
         <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
@@ -584,8 +623,22 @@ export default function POS() {
               const anillo = preparando ? 'ring-2 ring-acento-500/50' : ''
               return (
               <div key={pedido.id} className={`rounded-2xl shadow-sm border-2 p-4 ${marco} ${anillo}`}>
-                <div className="flex justify-between items-center mb-2 gap-2">
-                  <span className="font-bold text-lg">#{pedido.numero}</span>
+                <div className="flex justify-between items-start mb-2 gap-2">
+                  {/* El numero y, debajo, de quien es. Entre ocho comandas
+                      vivas el nombre es lo que las distingue; el numero solo
+                      sirve para cantarlo.
+
+                      Debajo y no al lado: en la misma linea competia con la
+                      pastilla de estado ("Cobrado · en cocina") y un nombre
+                      normal se cortaba en "Sra. Ca...". */}
+                  <span className="min-w-0">
+                    <span className="block font-bold text-lg leading-tight">#{pedido.numero}</span>
+                    {pedido.cliente && (
+                      <span className="block text-sm font-semibold text-neutral-600 truncate">
+                        {pedido.cliente}
+                      </span>
+                    )}
+                  </span>
                   <span className="flex items-center gap-1.5 flex-wrap justify-end">
                     {pedido.editado && (
                       <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-aviso-500/20 text-aviso-800">
@@ -643,7 +696,13 @@ export default function POS() {
                         cobrar ni se anula: para eso esta Devolver, en Ventas. */}
                     {!yaPagado && (
                       <button
-                        onClick={() => setCobrando(pedido)}
+                        onClick={() => {
+                          setCobrando(pedido)
+                          // Si se anoto al tomar la comanda, el cobro arranca
+                          // con el nombre puesto: fiar deja de pedir que se
+                          // escriba otra vez lo que ya se escribio.
+                          setCliente(pedido.cliente || '')
+                        }}
                         className="bg-neutral-900 text-white text-sm px-4 py-2 rounded-xl font-medium"
                       >
                         Cobrar
@@ -784,6 +843,22 @@ export default function POS() {
           )}
 
           <div className="border-t border-neutral-200 pt-3 mt-3">
+            {/* A nombre de quien va. Con ocho comandas vivas, "#14" no le dice
+                a nadie de quien es: el cajero termina cantando numeros por el
+                mostrador. El nombre viaja al pedido y sale al lado del numero
+                aqui, en cocina y en el ticket.
+
+                Opcional a proposito: en un mostrador con cola, obligar a
+                escribir un nombre por cada refresco seria un freno. Lo unico
+                que SI lo exige es fiar, y por eso se pide aqui -- antes solo
+                aparecia en el cobro y el boton de credito se veia trancado
+                sin decir por que. */}
+            <input
+              value={clienteComanda}
+              onChange={(e) => setClienteComanda(e.target.value)}
+              placeholder="¿A nombre de quién? (opcional)"
+              className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-sm mb-3"
+            />
             <div className="flex justify-between items-baseline font-bold text-xl mb-3">
               <span className="text-sm font-medium text-neutral-500">Total</span>
               <span>{fmt(totalCarrito)}</span>
@@ -958,11 +1033,12 @@ export default function POS() {
             </p>
           )}
 
-          {/* A credito: sin nombre no hay a quien cobrarle. */}
+          {/* Viene puesto si se anoto al tomar la comanda; aqui se corrige o
+              se agrega. Solo fiar lo exige, y ese boton lo pide si falta. */}
           <input
             value={cliente}
             onChange={(e) => setCliente(e.target.value)}
-            placeholder="Cliente (obligatorio si es a crédito)"
+            placeholder="Cliente (opcional, salvo a crédito)"
             className="w-full border border-neutral-300 rounded-lg px-3 py-1.5 text-sm mt-2"
           />
 
@@ -981,12 +1057,17 @@ export default function POS() {
                     {m}
                   </button>
                 ))}
-                {/* No entra plata: nace una cuenta por cobrar. */}
+                {/* No entra plata: nace una cuenta por cobrar.
+
+                    El boton ya NO se apaga cuando falta el nombre. Apagado
+                    con un `title` de explicacion era invisible en la tablet
+                    --no hay raton que se pose encima-- y se leia como que
+                    vender a credito estaba deshabilitado en el sistema. Ahora
+                    se pulsa siempre y, si falta el nombre, se pide: el
+                    requisito se explica en el momento en que estorba. */}
                 <button
-                  onClick={() => confirmarCobro('Fiado')}
-                  disabled={!cliente.trim()}
-                  title={cliente.trim() ? '' : 'Escribe el nombre del cliente primero'}
-                  className="bg-aviso-100 hover:bg-aviso-200 rounded-xl py-3 text-sm font-medium disabled:opacity-40"
+                  onClick={cobrarACredito}
+                  className="bg-aviso-100 hover:bg-aviso-200 rounded-xl py-3 text-sm font-medium"
                 >
                   A crédito
                 </button>
