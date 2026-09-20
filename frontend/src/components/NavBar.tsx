@@ -69,7 +69,9 @@ export default function NavBar({
             <Marca className="h-[22px]" sobreOscuro={dark} />
           </Link>
           <span className={`hidden md:inline ${dark ? 'text-neutral-700' : 'text-neutral-300'}`}>/</span>
-          <h1 className="font-display font-semibold text-[17px] leading-none truncate">{titulo}</h1>
+          {/* Un punto menos en el telefono: "Punto de venta" tiene que
+              leerse entero con la moneda, la campana y el usuario al lado. */}
+          <h1 className="font-display font-semibold text-[15px] sm:text-[17px] leading-none truncate">{titulo}</h1>
         </div>
 
         <div className="ml-auto flex items-center gap-2">

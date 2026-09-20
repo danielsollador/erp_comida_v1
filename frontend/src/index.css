@@ -680,6 +680,19 @@ textarea {
   color: var(--color-neutral-900);
 }
 
+/* En el telefono, los campos a 16 px como minimo. Safari de iOS hace zoom a
+   la pagina al enfocar un campo con letra mas chica, y NO lo deshace al
+   terminar: la pantalla quedaba agrandada y corrida (Leider, 20-sep). Con 16
+   px no hay zoom. Solo en tactil y angosto: en tablet y escritorio los campos
+   siguen con la letra de su pantalla. */
+@media (pointer: coarse) and (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Las cifras que se teclean van en mono tabular, igual que las que se leen en
    las tablas: al cajero le cuadra la columna con lo que acaba de escribir. */
 input[type="number"] {

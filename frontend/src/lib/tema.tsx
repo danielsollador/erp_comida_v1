@@ -104,7 +104,9 @@ export function TemaToggle({ dark = false }: { dark?: boolean }) {
       onClick={onClick}
       aria-label={aOscuro ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
       title={aOscuro ? 'Modo oscuro' : 'Modo claro'}
-      className={`w-9 h-9 rounded-full border grid place-items-center ${
+      // En el telefono no cabe en la barra y le quitaba sitio al nombre del
+      // modulo ("Punt..."). Ahi el tema se cambia en Mi usuario > Apariencia.
+      className={`w-9 h-9 rounded-full border max-sm:hidden grid place-items-center ${
         dark
           ? 'border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
           : 'border-neutral-200 text-neutral-500 hover:text-neutral-900 hover:border-neutral-400 bg-white'

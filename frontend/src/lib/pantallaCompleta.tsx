@@ -49,7 +49,11 @@ export function usePantallaCompleta() {
   return { completa, alternar }
 }
 
-/** El boton, chico y en una esquina: no compite con lo que de verdad importa. */
+/**
+ * El boton, chico y en una esquina: no compite con lo que de verdad importa.
+ * En el telefono no sale: el iPhone no tiene pantalla completa para paginas
+ * web, y en la barra angosta le quitaba el sitio al nombre del modulo.
+ */
 export function PantallaCompletaToggle({ dark = false }: { dark?: boolean }) {
   const { completa, alternar } = usePantallaCompleta()
   return (
@@ -58,7 +62,7 @@ export function PantallaCompletaToggle({ dark = false }: { dark?: boolean }) {
       onClick={alternar}
       aria-label={completa ? 'Salir de pantalla completa' : 'Pantalla completa'}
       title={completa ? 'Salir de pantalla completa' : 'Pantalla completa'}
-      className={`w-9 h-9 rounded-full border grid place-items-center shrink-0 ${
+      className={`w-9 h-9 rounded-full border max-sm:hidden grid place-items-center shrink-0 ${
         dark
           ? 'border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
           : 'border-neutral-200 text-neutral-500 hover:text-neutral-900 hover:border-neutral-400 bg-white'

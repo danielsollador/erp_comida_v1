@@ -428,7 +428,7 @@ function Apariencia() {
       ) : (
         <>
         <Tarjeta
-          titulo="Teclado en pantalla"
+          titulo="Teclado en pantalla · solo tablets"
           ayuda={
             tactil
               ? 'Cómo se abre el teclado al escribir en esta tablet. El cambio se nota en el próximo campo que toques.'
@@ -456,7 +456,7 @@ function Apariencia() {
         </Tarjeta>
 
         <Tarjeta
-          titulo="Dónde aparece el teclado"
+          titulo="Dónde aparece el teclado · solo tablets"
           ayuda="Abajo tapa menos; a un costado deja ver la pantalla entera y queda bajo la mano con la que sostienes la tablet. En pantallas angostas siempre sale abajo, porque una columna no cabría."
         >
           <div className="grid grid-cols-3 gap-3">
