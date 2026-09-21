@@ -679,6 +679,10 @@ class CierreCajaLinea(Base):
 
     id = Column(Integer, primary_key=True)
     cierre_id = Column(Integer, ForeignKey("TRX510_CAJ_CIERRE.id"), nullable=False)
+    # La forma de pago que se conto. Se cuenta por metodo y no por cuenta
+    # porque cada uno tiene su fuente: los billetes se cuentan, el punto
+    # imprime su lote, el pago movil se mira en el banco.
+    metodo = Column(String, default="")
     # La cuenta contable del destino: 1010 gaveta Bs, 1011 gaveta $, 1020
     # banco y punto, 1021 Zelle. Es lo que se arquea; los metodos de pago que
     # caen ahi se guardan en `metodos` para poder leer la fila sin el catalogo.

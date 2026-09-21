@@ -28,6 +28,9 @@ import pytest
 
 from app import contabilidad, models
 from conftest import (  # noqa: F401  (`libros` se inyecta como fixture)
+    caja_cerrar,
+    caja_esperado,
+    caja_ventas,
     LOCAL_TOLERANCIA,
     inventario_fisico,
     libros_cuadrados,
@@ -58,9 +61,15 @@ def vender(client, variante, cantidad=1, **cuerpo):
     return cobrar(client, comanda(client, variante, cantidad)["id"], **cuerpo)
 
 
+# La gaveta, buscada por su cuenta contable. El cierre pasó a contarse por
+# forma de pago, así que la fila de 1010 es la de "Efectivo Bs".
+METODO_DE_CUENTA = {"1010": "Efectivo Bs", "1011": "Efectivo $"}
+
+
 def gaveta(client, codigo):
     resumen = client.get("/api/caja/resumen").json()
-    return next(g for g in resumen["gavetas"] if g["codigo"] == codigo)
+    metodo = METODO_DE_CUENTA[codigo]
+    return next(l for l in resumen["desglose"] if l["metodo"] == metodo)
 
 
 def _a_2025(db, gasto_id: int, cuando=datetime.datetime(2025, 6, 15, 12, 0)):
@@ -127,10 +136,9 @@ def test_un_dia_completo_deja_los_libros_cuadrados(client, libros, variante, ins
 
     # Cierre: falta $1 en bolivares y sobran $0.50 en divisas.
     bs, usd = gaveta(client, "1010"), gaveta(client, "1011")
-    cierre = client.post("/api/caja/cerrar", json={
-        "efectivo_contado": round(bs["esperado"] - 1.0, 2),
-        "divisas_contado": round(usd["esperado"] + 0.5, 2),
-    })
+    cierre = caja_cerrar(
+        client, round(bs["esperado"] - 1.0, 2), round(usd["esperado"] + 0.5, 2)
+    )
     assert cierre.status_code == 200, cierre.text
     assert cierre.json()["diferencia"] == -1.0
     assert cierre.json()["divisas_diferencia"] == 0.5
@@ -241,7 +249,7 @@ def test_la_diferencia_de_divisas_del_cierre_tambien_va_a_los_libros(client, lib
     assert saldo(db, "1011") == 30.0  # 20 del aporte inicial + 10 de la venta
 
     bs = gaveta(client, "1010")["esperado"]
-    cierre = client.post("/api/caja/cerrar", json={"efectivo_contado": bs, "divisas_contado": 28.0}).json()
+    cierre = caja_cerrar(client, bs, 28.0).json()
     assert cierre["divisas_diferencia"] == -2.0
     assert saldo(db, "1011") == 28.0, "los libros tienen que decir lo que hay en la gaveta"
     assert saldo(db, "6030") == 2.0
@@ -306,10 +314,10 @@ def test_el_resumen_de_caja_no_cuenta_como_venta_lo_devuelto(client, libros, var
     p = vender(client, variante, 1)
     client.post(f"/api/pedidos/{p['id']}/devolver", json={"recuperable": True})
     resumen = client.get("/api/caja/resumen").json()
-    assert resumen["total_ventas"] == 5.0, "la venta devuelta no es una venta"
+    assert resumen["vendido"] == 5.0, "la venta devuelta no es una venta"
     assert resumen["cantidad_pedidos"] == 1
     # Pero la gaveta si refleja que la plata entro y salio.
-    assert resumen["efectivo_esperado"] == saldo(db, "1010")
+    assert gaveta(client, "1010")["esperado"] == saldo(db, "1010")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -66,15 +66,17 @@ def test_el_cierre_deja_de_reportar_un_sobrante_que_no_existe(client, db):
     )
     # Sin declarar: el sistema cree que deberia haber -10, asi que contar los
     # 70 reales que hay en la gaveta da un "sobrante" de 80.
-    arqueo = {l["cuenta"]: l for l in client.get("/api/caja/resumen").json()["arqueo"]}
-    assert arqueo["1010"]["esperado"] == -10.0
+    def esperado_efectivo():
+        d = client.get("/api/caja/resumen").json()
+        return next(l for l in d["desglose"] if l["metodo"] == "Efectivo Bs")["esperado"]
+
+    assert esperado_efectivo() == -10.0
 
     client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": 80.0})
 
-    arqueo = {l["cuenta"]: l for l in client.get("/api/caja/resumen").json()["arqueo"]}
-    assert arqueo["1010"]["esperado"] == 70.0
+    assert esperado_efectivo() == 70.0
 
-    r = client.post("/api/caja/cerrar", json={"conteos": [{"cuenta": "1010", "contado": 70.0}]})
+    r = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo Bs", "contado": 70.0}]})
     assert r.status_code == 200, r.text
     assert r.json()["diferencia"] == 0.0
 

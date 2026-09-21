@@ -10,6 +10,8 @@ nunca estuvo en la gaveta.
 a la misma cuenta (1020), a proposito.
 """
 
+from conftest import caja_esperado, caja_ventas
+from conftest import caja_esperado, caja_ventas
 from app import models
 
 
@@ -56,5 +58,5 @@ def test_resumen_de_caja_no_arquea_zelle_como_efectivo(client, variante):
     client.post(f"/api/pedidos/{p['id']}/cobrar", json={"metodo_pago": "Zelle", "referencia": "Z-1"})
 
     resumen = client.get("/api/caja/resumen").json()
-    assert resumen["efectivo_esperado"] == 0.0
+    assert caja_esperado(client) == 0.0
     assert resumen.get("divisas_esperado", 0.0) == 0.0

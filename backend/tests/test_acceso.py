@@ -12,6 +12,9 @@ Aca esta concentrado todo lo que puede fallar en silencio:
 """
 from __future__ import annotations
 
+from conftest import caja_cerrar
+
+from conftest import caja_cerrar
 import re
 import time
 from pathlib import Path
@@ -426,7 +429,7 @@ def test_un_operador_id_de_la_tablet_no_manda_sobre_la_sesion(client, como_caja,
 
 
 def test_el_cierre_de_caja_dice_quien_lo_hizo(como_caja):
-    r = como_caja.post("/api/caja/cerrar", json={"efectivo_contado": 0, "nota": ""})
+    r = caja_cerrar(como_caja, 0, nota="")
     assert r.status_code == 200, r.text
     assert r.json()["operador"] == "cajera"
 

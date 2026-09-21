@@ -228,3 +228,34 @@ def libros(db, insumo, variante):
     )
     db.commit()
     return db
+
+
+# ── Caja: la forma nueva, en dos ayudantes ──────────────────────────────────
+#
+# El cierre pasó a contarse POR FORMA DE PAGO (el efectivo se cuenta, el punto
+# imprime su lote, el banco tiene su pantalla) en vez de por cuenta contable.
+# Casi toda la suite solo necesita "cuánto debería haber en la gaveta" y
+# "cierra contando esto", así que se escriben una vez aquí en lugar de repetir
+# la forma del cuerpo en treinta sitios.
+
+
+def caja_esperado(client, metodo: str = "Efectivo Bs") -> float:
+    """Lo que el sistema dice que debería haber de esa forma de pago."""
+    d = client.get("/api/caja/resumen").json()
+    return next(l["esperado"] for l in d["desglose"] if l["metodo"] == metodo)
+
+
+def caja_ventas(client, metodo: str) -> float:
+    """Lo que entró por esa forma de pago hoy."""
+    d = client.get("/api/caja/resumen").json()
+    return next(l["ventas"] for l in d["desglose"] if l["metodo"] == metodo)
+
+
+def caja_cerrar(client, efectivo=None, divisas=None, **extra):
+    """Cerrar contando las dos gavetas. `None` = no se verificó esa."""
+    conteos = []
+    if efectivo is not None:
+        conteos.append({"metodo": "Efectivo Bs", "contado": efectivo})
+    if divisas is not None:
+        conteos.append({"metodo": "Efectivo $", "contado": divisas})
+    return client.post("/api/caja/cerrar", json={"conteos": conteos, **extra})

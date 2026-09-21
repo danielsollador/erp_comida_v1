@@ -51,6 +51,7 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "motivo_devolucion", "VARCHAR DEFAULT ''"),
     ("DIM210_MEN_CATEGORIA", "activo", "BOOLEAN DEFAULT 1"),
     ("DIM210_MEN_CATEGORIA", "bebida", "BOOLEAN DEFAULT 0"),
+    ("TRX511_CAJ_CIERRE_DET", "metodo", "VARCHAR DEFAULT ''"),
     ("TRX510_CAJ_CIERRE", "anulado", "BOOLEAN DEFAULT 0"),
     ("TRX510_CAJ_CIERRE", "fecha_anulacion", "DATETIME"),
     ("TRX510_CAJ_CIERRE", "motivo_anulacion", "VARCHAR DEFAULT ''"),

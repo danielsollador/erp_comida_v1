@@ -486,6 +486,8 @@ export type LineaArqueo = {
 
 /** Una fila del cierre ya guardado: lo que decia el sistema contra lo contado. */
 export type LineaCierre = {
+  /** La forma de pago que se contó. Los cierres viejos no la tienen. */
+  metodo: string
   cuenta: string
   etiqueta: string
   metodos: string
@@ -717,30 +719,55 @@ export type Restauracion = {
   corte: string | null
 }
 
+/** Una forma de pago, lista para cuadrar. */
+export type LineaMetodo = {
+  metodo: string
+  /** La cuenta contable donde cae. Varias formas comparten una (1020). */
+  cuenta: string
+  /** true = billetes que se cuentan; false = se coteja contra una pantalla. */
+  fisico: boolean
+  /** El crédito se muestra pero no se cuenta: no entró plata. */
+  se_cuadra: boolean
+  saldo_anterior: number
+  ventas: number
+  salidas: number
+  /** Lo que movió la cuenta sin ser venta, gasto ni retiro. */
+  otros: number
+  esperado: number
+}
+
+/** Lo que movió una cuenta compartida sin poder atribuirse a una forma de pago. */
+export type OtroMovimiento = {
+  cuenta: string
+  etiqueta: string
+  monto: number
+}
+
 export type ResumenCaja = {
   fecha: string
-  total_ventas: number
-  por_metodo_pago: Record<string, number>
-  saldo_anterior: number
-  efectivo_esperado: number
-  salidas_efectivo: number
-  /** Parte de salidas_efectivo que se llevo el dueno (no es gasto del negocio). */
-  retiros_hoy: number
+  es_hoy: boolean
+  vendido: number
+  descuentos: number
+  propinas: number
+  /** vendido − descuentos + propinas: lo que de verdad había que cobrar. */
+  a_cobrar: number
+  /** La suma del desglose por forma de pago. */
+  cobrado: number
+  /** Si no da, hay un pago mal registrado. */
+  cuadra_ventas: boolean
   cantidad_pedidos: number
-  /** Bolivares y divisas son dos montones de billetes: dos conteos. */
-  gavetas: Gaveta[]
-  /** El arqueo completo: una fila por destino del dinero, gavetas incluidas. */
-  arqueo: LineaArqueo[]
-  /** Plata en la gaveta que no es del negocio. */
-  propinas_por_entregar: number
-  fiado_por_cobrar: number
-  propinas_hoy: number
-  descuentos_hoy: number
-  /** Lo que no se vendio: comandas botadas y ventas reembolsadas. */
   anulados_hoy: number
   anulado_monto_hoy: number
   devueltos_hoy: number
   devuelto_monto_hoy: number
+  gastos: number
+  retiros: number
+  desglose: LineaMetodo[]
+  otros_movimientos: OtroMovimiento[]
+  fiado_por_cobrar: number
+  propinas_por_entregar: number
+  cerrada: boolean
+  cierre_id: number | null
 }
 
 export type RetiroPropietario = {

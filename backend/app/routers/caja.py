@@ -1,5 +1,5 @@
 import datetime
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -13,13 +13,19 @@ from . import operadores
 router = APIRouter(prefix="/api/caja", tags=["caja"])
 
 
-def _rango_hoy():
-    inicio = inicio_del_dia(hoy())
+def _rango_de(fecha: datetime.date):
+    """El dia que se esta mirando, de medianoche a medianoche.
+
+    Recibe la fecha en vez de asumir hoy: la caja de ayer se cuadra esta
+    manana. En un local de verdad no siempre da tiempo de cerrar antes de
+    bajar la santamaria, y obligar a cuadrar "hoy o nunca" es lo que hace que
+    se dejen de cerrar cajas.
+    """
+    inicio = inicio_del_dia(fecha)
     return inicio, inicio + datetime.timedelta(days=1)
 
 
-def _pedidos_pagados_hoy(db: Session):
-    inicio, fin = _rango_hoy()
+def _pedidos_pagados(db: Session, inicio, fin):
     return (
         db.query(models.Pedido)
         .filter(
@@ -31,39 +37,197 @@ def _pedidos_pagados_hoy(db: Session):
     )
 
 
-def _retiros_hoy(db: Session) -> float:
-    inicio, fin = _rango_hoy()
-    retiros = (
+def _gastos_de(db: Session, inicio, fin):
+    return (
+        db.query(models.Gasto)
+        .filter(models.Gasto.fecha >= inicio, models.Gasto.fecha < fin)
+        .all()
+    )
+
+
+def _retiros_de(db: Session, inicio, fin):
+    return (
         db.query(models.RetiroPropietario)
         .filter(
             models.RetiroPropietario.fecha >= inicio,
             models.RetiroPropietario.fecha < fin,
-            models.RetiroPropietario.metodo_pago.in_(METODOS_POR_GAVETA["1010"]),
         )
         .all()
     )
-    return round(sum(r.monto for r in retiros), 2)
 
 
-# A que cuenta va cada metodo de pago, dado la vuelta: de la cuenta a sus
-# metodos. Sale del plan de cuentas y no de una lista repetida aqui, asi un
-# metodo nuevo queda arqueado solo. "Efectivo" a secas es historico: antes de
-# separar bolivares de divisas todo el efectivo iba a la misma cuenta.
-METODOS_POR_GAVETA = {
-    codigo: tuple(
-        m for m, c in contabilidad.CUENTA_POR_METODO_PAGO.items() if c == codigo
-    )
-    for codigo in set(contabilidad.CUENTA_POR_METODO_PAGO.values())
-}
-
-# Los destinos que se arquean al cerrar, en el orden en que se cuentan.
+# Los metodos que se cuadran al cerrar, en el orden en que se revisan: primero
+# lo que se cuenta con la mano, despues lo que se coteja contra una pantalla.
 #
-# El fiado (1015) NO esta: ahi no entro plata, nacio una deuda. Contarlo seria
-# pedirle al cajero que "cuente" algo que no esta en ninguna gaveta ni en
-# ningun banco.
+# `fisico` cambia lo que la persona HACE: los billetes se cuentan, el punto de
+# venta se lee del lote que imprime el terminal y el pago movil del banco.
 #
-# `fisico` es la diferencia que importa en la mano: los billetes se CUENTAN,
-# lo electronico se COTEJA contra el banco o el lote del punto.
+# El credito va de ultimo y no se "cuenta": no entro plata, nacio una deuda.
+# Se muestra igual porque el dueno quiere ver cuanto se fio ese dia, y
+# confirmarlo es una verificacion mas.
+METODOS_DE_CIERRE = (
+    ("Efectivo Bs", True),
+    ("Efectivo $", True),
+    ("Punto de venta", False),
+    ("Pago movil", False),
+    ("Transferencia", False),
+    ("Tarjeta", False),
+    ("Zelle", False),
+    ("Fiado", False),
+)
+
+# "Efectivo" a secas es historico: antes de separar bolivares de divisas todo
+# el efectivo iba a la misma cuenta. Se suma a "Efectivo Bs" para que una
+# venta vieja no quede fuera del cuadre.
+ALIAS_METODO = {"Efectivo": "Efectivo Bs", "Banco": "Transferencia"}
+
+
+def _normalizar(metodo: str) -> str:
+    return ALIAS_METODO.get(metodo, metodo)
+
+
+def _ventas_por_metodo(db: Session, inicio, fin) -> dict:
+    """Lo que entro por cada forma de pago, pago por pago.
+
+    Se mira el PAGO y no el pedido: una venta mixta --algo en efectivo y el
+    resto por pago movil-- aporta a dos metodos distintos, y contarla entera
+    bajo una sola etiqueta es lo que hacia imposible cuadrar.
+
+    Las devueltas no cuentan: el cliente trajo la comida y se le devolvio la
+    plata, asi que ni es venta ni quedo en la gaveta.
+    """
+    por_metodo: dict = {}
+    for pedido in _pedidos_pagados(db, inicio, fin):
+        if pedido.devuelto:
+            continue
+        for pago in pedido.pagos:
+            m = _normalizar(pago.metodo)
+            por_metodo[m] = round(por_metodo.get(m, 0.0) + pago.monto, 2)
+    return por_metodo
+
+
+def _salidas_por_metodo(db: Session, inicio, fin) -> dict:
+    """Lo que salio por cada forma de pago: gastos y retiros del dueno.
+
+    Es la mitad que faltaba para que el cuadre tenga sentido. Si la caja
+    cobro 100 en efectivo y de ahi salieron 50 para una bombona, al contar
+    tienen que aparecer 50 y no 100.
+    """
+    por_metodo: dict = {}
+    for g in _gastos_de(db, inicio, fin):
+        m = _normalizar(g.metodo_pago or "Efectivo Bs")
+        por_metodo[m] = round(por_metodo.get(m, 0.0) + g.monto, 2)
+    for r in _retiros_de(db, inicio, fin):
+        m = _normalizar(r.metodo_pago or "Efectivo Bs")
+        por_metodo[m] = round(por_metodo.get(m, 0.0) + r.monto, 2)
+    return por_metodo
+
+
+def _cuentas_de(metodo: str) -> str:
+    return contabilidad.CUENTA_POR_METODO_PAGO.get(metodo, "1010")
+
+
+def _saldo_anterior_de(db: Session, codigo: str, inicio) -> float:
+    """Lo que quedo en esa gaveta de dias anteriores.
+
+    La caja no arranca en cero cada manana: si ayer sobro plata, hoy sigue
+    ahi. Sin esto, un dia en que se le paga al proveedor mas de lo que se
+    vendio en efectivo mostraba un "deberia haber" negativo, que no significa
+    nada.
+    """
+    return contabilidad.movimiento_efectivo(db, datetime.datetime.min, inicio, codigo)
+
+
+# Que metodos caen en cada cuenta. El punto de venta, el pago movil, la
+# transferencia y la tarjeta comparten 1020: ahi no se puede saber por cual
+# de los cuatro entro un movimiento que no sea una venta.
+METODOS_POR_CUENTA: dict = {}
+for _m, _f in METODOS_DE_CIERRE:
+    METODOS_POR_CUENTA.setdefault(contabilidad.CUENTA_POR_METODO_PAGO.get(_m, "1010"), []).append(_m)
+
+
+def _desglose(db: Session, inicio, fin) -> List[schemas.LineaMetodo]:
+    """Una fila por forma de pago: lo que entro, lo que salio y que deberia
+    haber.
+
+    LO QUE NO ES VENTA NI GASTO TAMBIEN CUENTA. Pagarle a un proveedor en
+    efectivo, declarar con cuanto arranco la gaveta, cobrar un fiado: todo eso
+    mueve la plata y los libros lo saben, pero no es ninguna de las dos cosas
+    que el dueno tiene en la cabeza al cuadrar. Si se ignora, contar la gaveta
+    da un descuadre del tamano de esos movimientos.
+
+    Cuando una forma de pago es la UNICA que usa su cuenta --el efectivo en
+    bolivares es la unica que toca 1010-- ese resto se le puede atribuir, y
+    entonces lo esperado es el saldo contable: la verdad completa. Cuando
+    cuatro metodos comparten cuenta (1020) no hay forma de saber por cual
+    entro, asi que el resto se reporta aparte (ver `_otros_movimientos`).
+    """
+    ventas = _ventas_por_metodo(db, inicio, fin)
+    salidas = _salidas_por_metodo(db, inicio, fin)
+    filas = []
+    for metodo, fisico in METODOS_DE_CIERRE:
+        cuenta = _cuentas_de(metodo)
+        entro = ventas.get(metodo, 0.0)
+        salio = salidas.get(metodo, 0.0)
+        # Solo el efectivo arrastra saldo: los billetes que sobraron ayer
+        # siguen en la gaveta. Lo del banco y el punto se coteja contra el
+        # movimiento del dia, que es lo que muestra el extracto.
+        anterior = _saldo_anterior_de(db, cuenta, inicio) if fisico else 0.0
+
+        otros = 0.0
+        if len(METODOS_POR_CUENTA.get(cuenta, [])) == 1:
+            neto_libro = contabilidad.movimiento_efectivo(db, inicio, fin, cuenta)
+            otros = round(neto_libro - (entro - salio), 2)
+
+        filas.append(
+            schemas.LineaMetodo(
+                metodo=metodo,
+                cuenta=cuenta,
+                fisico=fisico,
+                # El credito no se cuenta: no hay billetes ni extracto que
+                # mirar. Se muestra para saber cuanto se fio.
+                se_cuadra=metodo != "Fiado",
+                saldo_anterior=round(anterior, 2),
+                ventas=round(entro, 2),
+                salidas=round(salio, 2),
+                otros=otros,
+                esperado=round(anterior + entro - salio + otros, 2),
+            )
+        )
+    return filas
+
+
+def _otros_movimientos(db: Session, inicio, fin, desglose) -> List[schemas.OtroMovimiento]:
+    """Lo que movio una cuenta compartida sin ser venta, gasto ni retiro.
+
+    Solo queda aqui lo que NO se pudo atribuir a una forma de pago: los cuatro
+    metodos que comparten la cuenta del banco (punto de venta, pago movil,
+    transferencia y tarjeta). El asiento guarda la cuenta, no el metodo, asi
+    que no hay forma de saber por cual de los cuatro salio.
+
+    Se dice en vez de callarlo: que aparezca como un descuadre sin
+    explicacion al contar es peor que una linea de mas.
+    """
+    fuera = []
+    for cuenta, metodos in METODOS_POR_CUENTA.items():
+        if len(metodos) == 1:
+            continue  # ya va dentro de su propia fila
+        neto_libro = contabilidad.movimiento_efectivo(db, inicio, fin, cuenta)
+        explicado = round(
+            sum(l.ventas - l.salidas for l in desglose if l.cuenta == cuenta), 2
+        )
+        resto = round(neto_libro - explicado, 2)
+        if abs(resto) >= 0.01:
+            fuera.append(
+                schemas.OtroMovimiento(
+                    cuenta=cuenta, etiqueta="Banco, punto y pago móvil", monto=resto
+                )
+            )
+    return fuera
+
+
+# Las cuentas cuyo saldo inicial se puede declarar. Son DESTINOS y no metodos:
+# lo que se declara es con cuanto arranco la gaveta, no por que via entro.
 DESTINOS_ARQUEO = (
     ("1010", "Efectivo en bolívares", True),
     ("1011", "Efectivo en dólares", True),
@@ -72,66 +236,15 @@ DESTINOS_ARQUEO = (
 )
 
 
-def _entradas_de_gaveta_hoy(db: Session, codigo: str) -> float:
-    """Lo que entro a esa gaveta por ventas, contando lo recibido y el vuelto.
-
-    Con un billete de $20 por una compra de $10 entran 20 y salen 10: si solo
-    se cuenta el neto, el conteo fisico nunca cuadra cuando el vuelto sale por
-    la otra gaveta.
-    """
-    metodos = METODOS_POR_GAVETA.get(codigo, ())
-    total = 0.0
-    for pedido in _pedidos_pagados_hoy(db):
-        for pago in pedido.pagos:
-            if pago.metodo in metodos:
-                total += (pago.recibido or pago.monto)
-            # Vuelto entregado desde ESTA gaveta por un pago que entro en otra.
-            if pago.vuelto_monto and pago.vuelto_metodo in metodos and pago.metodo not in metodos:
-                total -= pago.vuelto_monto
-    return round(total, 2)
-
-
-def _salidas_gaveta_hoy(db: Session, codigo: str) -> float:
-    """Todo lo que salio de esa gaveta hoy que no fue una venta, segun los libros."""
-    inicio, fin = _rango_hoy()
-    # neto = entradas - salidas. Las unicas entradas son las ventas en efectivo,
-    # asi que lo demas que movio la cuenta son salidas.
-    neto = contabilidad.movimiento_efectivo(db, inicio, fin, codigo)
-    return round(_entradas_de_gaveta_hoy(db, codigo) - neto, 2)
-
-
-def _salidas_efectivo_hoy(db: Session) -> float:
-    return _salidas_gaveta_hoy(db, "1010")
-
-
-def _saldo_anterior(db: Session) -> float:
-    """Lo que quedo en la gaveta de dias anteriores.
-
-    La caja no arranca en cero cada manana: si ayer sobro plata, hoy sigue ahi.
-    Sin esto, un dia en que se le paga al proveedor mas de lo que se vendio en
-    efectivo mostraba un "deberia haber" negativo, que no significa nada.
-    """
-    inicio, _fin = _rango_hoy()
-    return contabilidad.movimiento_efectivo(db, datetime.datetime.min, inicio)
-
-
-def _saldo_anterior_de(db: Session, codigo: str) -> float:
-    inicio, _fin = _rango_hoy()
-    return contabilidad.movimiento_efectivo(db, datetime.datetime.min, inicio, codigo)
-
-
-def _anulados_hoy(db: Session):
-    """Comandas que se botaron hoy: cuantas y por cuanto.
+def _anulados(db: Session, inicio, fin):
+    """Comandas que se botaron: cuantas y por cuanto.
 
     Se cuentan por `creado_en` y no por `cerrado_en`: un pedido anulado nunca
     se cierra, asi que filtrar por la fecha de cierre no devolvia ninguno.
 
-    Van en el resumen del cierre porque es la pregunta que el dueno hace al
-    mirar la caja --"¿cuanto se vendio y cuanto se boto?"-- y hasta ahora
-    habia que irse a Ventas a buscarla. No tocan el arqueo: un pedido anulado
-    no movio plata por ninguna gaveta.
+    No tocan el cuadre --no movieron plata-- pero son la otra mitad de la
+    pregunta que el dueno hace al cerrar: cuanto se vendio y cuanto se boto.
     """
-    inicio, fin = _rango_hoy()
     pedidos = (
         db.query(models.Pedido)
         .filter(
@@ -144,14 +257,11 @@ def _anulados_hoy(db: Session):
     return len(pedidos), round(sum(p.total for p in pedidos), 2)
 
 
-def _devueltos_hoy(db: Session):
-    """Ventas cobradas que el cliente trajo de vuelta hoy y se le reembolsaron.
+def _devueltos(db: Session, inicio, fin):
+    """Ventas cobradas que el cliente trajo de vuelta y se le reembolsaron.
 
-    Distinto de anular: aqui la plata SI entro y volvio a salir, y por eso el
-    arqueo ya las tiene contadas. Se muestran aparte para que el total vendido
-    no parezca que no cuadra con la cantidad de pedidos.
+    Distinto de anular: aqui la plata SI entro y volvio a salir.
     """
-    inicio, fin = _rango_hoy()
     pedidos = (
         db.query(models.Pedido)
         .filter(
@@ -164,127 +274,79 @@ def _devueltos_hoy(db: Session):
     return len(pedidos), round(sum(p.total for p in pedidos), 2)
 
 
-def _ventas_por_metodo_hoy(db: Session) -> dict:
-    """Lo cobrado hoy por cada metodo, sin contar las devueltas."""
-    por_metodo: dict = {}
-    for pedido in _pedidos_pagados_hoy(db):
-        if pedido.devuelto:
-            continue
-        for pago in pedido.pagos:
-            por_metodo[pago.metodo] = round(por_metodo.get(pago.metodo, 0) + pago.monto, 2)
-    return por_metodo
-
-
-def _linea_arqueo(
-    db: Session, codigo: str, etiqueta: str, fisico: bool, ventas: dict
-) -> schemas.LineaArqueo:
-    """Una fila del arqueo.
-
-    Para una GAVETA, "lo que debe haber" es un saldo: lo que quedaba de ayer
-    mas lo que entro hoy menos lo que salio. Para el BANCO es un flujo: lo que
-    debio moverse hoy, que es lo que se ve en el extracto. Sumarle el saldo
-    anterior a la cuenta del banco daria un numero que no esta en ningun sitio
-    contra el que cotejar.
-    """
-    metodos = METODOS_POR_GAVETA.get(codigo, ())
-    saldo_anterior = _saldo_anterior_de(db, codigo) if fisico else 0.0
-    entradas = _entradas_de_gaveta_hoy(db, codigo)
-    salidas = _salidas_gaveta_hoy(db, codigo)
-    return schemas.LineaArqueo(
-        cuenta=codigo,
-        etiqueta=etiqueta,
-        metodos={m: ventas[m] for m in metodos if ventas.get(m)},
-        fisico=fisico,
-        saldo_anterior=saldo_anterior,
-        entradas_hoy=entradas,
-        salidas_hoy=salidas,
-        esperado=round(saldo_anterior + entradas - salidas, 2),
-    )
-
-
-def _arqueo(db: Session) -> List[schemas.LineaArqueo]:
-    """Las filas a arquear. Las gavetas siempre --se cuentan aunque esten
-    vacias--; el banco y Zelle solo si se movieron hoy, para no llenar la
-    pantalla de ceros que nadie va a cotejar."""
-    ventas = _ventas_por_metodo_hoy(db)
-    filas = []
-    for codigo, etiqueta, fisico in DESTINOS_ARQUEO:
-        linea = _linea_arqueo(db, codigo, etiqueta, fisico, ventas)
-        if not fisico and abs(linea.esperado) < 0.01 and not linea.metodos:
-            continue
-        filas.append(linea)
-    return filas
-
-
-def _gaveta(db: Session, codigo: str, etiqueta: str) -> schemas.Gaveta:
-    saldo_anterior = _saldo_anterior_de(db, codigo)
-    entradas = _entradas_de_gaveta_hoy(db, codigo)
-    salidas = _salidas_gaveta_hoy(db, codigo)
-    return schemas.Gaveta(
-        codigo=codigo,
-        etiqueta=etiqueta,
-        saldo_anterior=saldo_anterior,
-        entradas_hoy=entradas,
-        salidas_hoy=salidas,
-        esperado=round(saldo_anterior + entradas - salidas, 2),
-    )
+def _fecha_pedida(fecha: Optional[datetime.date]) -> datetime.date:
+    d = fecha or hoy()
+    if d > hoy():
+        raise HTTPException(status_code=400, detail="Esa fecha todavía no llegó")
+    return d
 
 
 @router.get("/resumen", response_model=schemas.ResumenCaja)
-def resumen_caja(db: Session = Depends(get_db)):
-    # Las devueltas no son ventas: el cliente trajo la comida y se le devolvio
-    # la plata. Siguen en `_pedidos_pagados_hoy` porque la plata SI entro y
-    # salio de la gaveta (eso lo cuadra el calculo de las gavetas), pero no
-    # cuentan en "ventas de hoy" ni en el desglose por forma de pago.
-    pedidos = [p for p in _pedidos_pagados_hoy(db) if not p.devuelto]
-    por_metodo: dict = {}
-    total = 0.0
-    for pedido in pedidos:
-        total += pedido.total
-        # Se desglosa por pago, no por pedido: una venta mixta aporta a dos
-        # metodos distintos y antes aparecia entera bajo una etiqueta inventada.
-        for pago in pedido.pagos:
-            por_metodo[pago.metodo] = por_metodo.get(pago.metodo, 0) + pago.monto
+def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(get_db)):
+    """Todo lo que hace falta para cuadrar un dia.
 
-    # Lo que debe haber en la gaveta lo dice la contabilidad, no un calculo
-    # aparte: el saldo de la cuenta 1010 ya incluye ventas en efectivo, gastos,
-    # pagos a proveedores y compras sueltas. Cuando Caja llevaba su propia
-    # cuenta solo restaba Gastos, y los dias de pagar al proveedor mostraba un
-    # faltante inexistente (medido: hasta $93.95 en un dia).
-    # El esperado de la gaveta de bolivares sale del mismo calculo que la
-    # gaveta: sumar `por_metodo["Efectivo"]` se quedaba corto desde que existen
-    # "Efectivo Bs", el vuelto y la propina.
-    bolivares = _gaveta(db, "1010", "Bolivares")
-    saldo_anterior = bolivares.saldo_anterior
-    salidas = bolivares.salidas_hoy
-    efectivo_esperado = bolivares.esperado
-    anulados, anulado_monto = _anulados_hoy(db)
-    devueltos, devuelto_monto = _devueltos_hoy(db)
+    Con `fecha` se mira cualquier dia pasado, no solo hoy: la caja de ayer se
+    cuadra esta manana.
+    """
+    dia = _fecha_pedida(fecha)
+    inicio, fin = _rango_de(dia)
+
+    # Las devueltas no son ventas: el cliente trajo la comida y se le devolvio
+    # la plata. Salen del total y del desglose; que la plata entrara y saliera
+    # de la gaveta lo resuelven los libros.
+    pedidos = [p for p in _pedidos_pagados(db, inicio, fin) if not p.devuelto]
+    vendido = round(sum(p.total for p in pedidos), 2)
+    descuentos = round(sum(p.descuento or 0 for p in pedidos), 2)
+    propinas = round(sum(p.propina or 0 for p in pedidos), 2)
+    # Lo que de verdad habia que cobrar: la comida, menos la rebaja, mas la
+    # propina. Es contra esto que tiene que cuadrar el desglose.
+    a_cobrar = round(vendido - descuentos + propinas, 2)
+
+    desglose = _desglose(db, inicio, fin)
+    cobrado = round(sum(l.ventas for l in desglose), 2)
+
+    gastos_dia = _gastos_de(db, inicio, fin)
+    retiros_dia = _retiros_de(db, inicio, fin)
+    total_gastos = round(sum(g.monto for g in gastos_dia), 2)
+    total_retiros = round(sum(r.monto for r in retiros_dia), 2)
+
+    anulados, anulado_monto = _anulados(db, inicio, fin)
+    devueltos, devuelto_monto = _devueltos(db, inicio, fin)
+
+    cierre = (
+        db.query(models.CierreCaja)
+        .filter(
+            models.CierreCaja.fecha >= inicio,
+            models.CierreCaja.fecha < fin,
+            models.CierreCaja.anulado.is_(False),
+        )
+        .first()
+    )
 
     return schemas.ResumenCaja(
-        fecha=hoy().isoformat(),
-        total_ventas=round(total, 2),
-        por_metodo_pago={k: round(v, 2) for k, v in por_metodo.items()},
-        saldo_anterior=saldo_anterior,
-        efectivo_esperado=efectivo_esperado,
-        salidas_efectivo=salidas,
-        retiros_hoy=_retiros_hoy(db),
+        fecha=dia.isoformat(),
+        es_hoy=dia == hoy(),
+        vendido=vendido,
+        descuentos=descuentos,
+        propinas=propinas,
+        a_cobrar=a_cobrar,
+        cobrado=cobrado,
+        # Si esto no da, el desglose no explica las ventas y hay un pago mal
+        # registrado. Se dice en la pantalla en vez de esconderlo.
+        cuadra_ventas=abs(a_cobrar - cobrado) < 0.01,
         cantidad_pedidos=len(pedidos),
-        # Dos monedas, dos montones de billetes, dos conteos. Un solo numero
-        # hacia imposible arquear: decia "esperado $10" tanto si en la gaveta
-        # habia un billete verde como si habia Bs 400.
-        gavetas=[bolivares, _gaveta(db, "1011", "Divisas ($)")],
-        arqueo=_arqueo(db),
-        propinas_por_entregar=round(contabilidad.saldo_de_cuenta(db, "2040"), 2),
-        fiado_por_cobrar=round(contabilidad.saldo_de_cuenta(db, "1015"), 2),
-        propinas_hoy=round(
-            sum(p.propina or 0 for p in pedidos), 2
-        ),
-        descuentos_hoy=round(sum(p.descuento or 0 for p in pedidos), 2),
         anulados_hoy=anulados,
         anulado_monto_hoy=anulado_monto,
         devueltos_hoy=devueltos,
         devuelto_monto_hoy=devuelto_monto,
+        gastos=total_gastos,
+        retiros=total_retiros,
+        desglose=desglose,
+        otros_movimientos=_otros_movimientos(db, inicio, fin, desglose),
+        fiado_por_cobrar=round(contabilidad.saldo_de_cuenta(db, "1015"), 2),
+        propinas_por_entregar=round(contabilidad.saldo_de_cuenta(db, "2040"), 2),
+        cerrada=cierre is not None,
+        cierre_id=cierre.id if cierre else None,
     )
 
 
@@ -392,97 +454,103 @@ def estado_apertura(db: Session = Depends(get_db)):
 def cerrar_caja(
     body: schemas.CierreCajaRequest, request: Request, db: Session = Depends(get_db)
 ):
-    inicio, fin = _rango_hoy()
-    # Cerrar dos veces el mismo dia ahora genera dos asientos de diferencia y
-    # descuadraria la caja contra si misma.
-    quien = operadores.del_turno(db, request, body.operador_id)
-    punto = operadores.resolver_punto(db, body.punto_venta_id)
+    """Cuadrar la caja de un dia.
 
-    # Cada caja cierra la suya: con dos pisos, el segundo cierre del dia no es
-    # un duplicado sino la otra gaveta. Antes devolvia 409 y la caja de arriba
-    # no podia cuadrar lo suyo.
+    Se cuenta POR FORMA DE PAGO y no por cuenta contable, porque es como se
+    cuenta de verdad: los billetes se cuentan, el punto de venta imprime su
+    lote, el pago movil y el Zelle se miran en el telefono. Cada uno tiene su
+    propia fuente de verdad, y juntarlos en "banco" obligaba a sumarlos a mano
+    antes de poder teclear un solo numero.
+
+    La diferencia se asienta por CUENTA, no por metodo: los libros llevan
+    cuentas. Si el punto y el pago movil --que caen los dos en 1020-- fallan
+    cada uno por su lado, lo que va al asiento es la suma.
+    """
+    dia = _fecha_pedida(body.fecha)
+    inicio, fin = _rango_de(dia)
+    quien = operadores.del_turno(db, request, body.operador_id)
+
     ya_cerrada = (
         db.query(models.CierreCaja)
         .filter(
             models.CierreCaja.fecha >= inicio,
             models.CierreCaja.fecha < fin,
             models.CierreCaja.anulado.is_(False),
-            models.CierreCaja.punto_venta_id == (punto.id if punto else None),
         )
         .first()
     )
     if ya_cerrada:
-        cual = f"La caja de {punto.nombre}" if punto else "La caja de hoy"
+        cuando = "de hoy" if dia == hoy() else f"del {dia.strftime('%d/%m')}"
         raise HTTPException(
             status_code=409,
-            detail=f"{cual} ya fue cerrada hoy. Si el conteo quedó mal, anula ese cierre y vuelve a cerrar.",
+            detail=f"La caja {cuando} ya fue cerrada. Si el conteo quedó mal, "
+            "anula ese cierre y vuelve a cerrar.",
         )
 
-    resumen = resumen_caja(db)
-    arqueo = {linea.cuenta: linea for linea in resumen.arqueo}
+    resumen = resumen_caja(dia, db)
+    esperados = {l.metodo: l for l in resumen.desglose}
 
-    # Lo contado, por destino. `conteos` es la forma nueva; los dos campos
-    # sueltos son como se cerraba antes y se siguen aceptando.
-    contados: dict = {c.cuenta: c.contado for c in body.conteos}
-    if not body.conteos:
-        if body.efectivo_contado is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Falta el conteo: dinos al menos cuánto efectivo hay en la gaveta.",
-            )
-        contados = {"1010": body.efectivo_contado, "1011": round(body.divisas_contado or 0, 2)}
-    # Nulo = no se verifico ese destino, y entonces no hay diferencia que
-    # asentar. Distinto de cero, que es "conte y no habia nada".
-    contados = {k: v for k, v in contados.items() if v is not None}
+    # Nulo = no se verifico esa forma de pago, y entonces no hay diferencia
+    # que asentar. Distinto de cero, que es "conte y no habia nada".
+    contados = {
+        c.metodo: round(c.contado, 2)
+        for c in body.conteos
+        if c.contado is not None and c.metodo in esperados
+    }
     if not contados:
         raise HTTPException(
             status_code=400,
-            detail="Falta el conteo: hay que verificar al menos un destino para cerrar.",
+            detail="Falta el conteo: hay que verificar al menos una forma de pago para cerrar.",
         )
 
-    bolivares = arqueo.get("1010")
-    divisas = arqueo.get("1011")
-    esperado_bs = bolivares.esperado if bolivares else resumen.efectivo_esperado
+    # La fecha del cierre es la del DIA que se cuadra, no la de ahora: cerrar
+    # el lunes la caja del domingo tiene que quedar archivado en el domingo, o
+    # el historico miente y el dia siguiente arranca con el saldo equivocado.
+    momento = ahora() if dia == hoy() else inicio + datetime.timedelta(hours=23, minutes=59)
+
+    bolivares = esperados.get("Efectivo Bs")
+    divisas = esperados.get("Efectivo $")
+    esperado_bs = bolivares.esperado if bolivares else 0.0
     esperado_usd = divisas.esperado if divisas else 0.0
-    contado_bs = contados.get("1010")
-    contado_usd = contados.get("1011")
+    contado_bs = contados.get("Efectivo Bs")
+    contado_usd = contados.get("Efectivo $")
 
     db_cierre = models.CierreCaja(
-        total_sistema=resumen.total_ventas,
+        fecha=momento,
+        total_sistema=resumen.vendido,
         efectivo_esperado=esperado_bs,
-        # Las columnas viejas no aceptan nulo: si no se conto la gaveta se
+        # Las columnas viejas no aceptan nulo: si no se conto esa gaveta se
         # guarda lo esperado, que deja la diferencia en cero -- que es
         # justamente "no se verifico, no hay nada que reclamar".
         efectivo_contado=contado_bs if contado_bs is not None else esperado_bs,
-        diferencia=round((contado_bs - esperado_bs), 2) if contado_bs is not None else 0.0,
+        diferencia=round(contado_bs - esperado_bs, 2) if contado_bs is not None else 0.0,
         divisas_esperado=esperado_usd,
         divisas_contado=contado_usd if contado_usd is not None else esperado_usd,
-        divisas_diferencia=round((contado_usd - esperado_usd), 2) if contado_usd is not None else 0.0,
+        divisas_diferencia=round(contado_usd - esperado_usd, 2) if contado_usd is not None else 0.0,
         nota=body.nota,
         operador_id=quien.id if quien else None,
-        punto_venta_id=punto.id if punto else None,
     )
     db.add(db_cierre)
     db.flush()
 
-    # El detalle: una fila por destino verificado, con lo que decia el sistema
-    # al cerrar. Congelado aqui porque manana el esperado ya no sera el mismo.
-    for cuenta, contado in contados.items():
-        linea = arqueo.get(cuenta)
-        esperado = linea.esperado if linea else 0.0
+    # Una fila por forma de pago verificada, con lo que decia el sistema al
+    # cerrar. Congelado aqui porque manana el esperado ya no sera el mismo.
+    for metodo, contado in contados.items():
+        linea = esperados[metodo]
         db.add(
             models.CierreCajaLinea(
                 cierre_id=db_cierre.id,
-                cuenta=cuenta,
-                etiqueta=linea.etiqueta if linea else cuenta,
-                metodos=", ".join(linea.metodos) if linea and linea.metodos else "",
-                esperado=esperado,
-                contado=round(contado, 2),
-                diferencia=round(contado - esperado, 2),
+                cuenta=linea.cuenta,
+                metodo=metodo,
+                etiqueta=metodo,
+                metodos=metodo,
+                esperado=linea.esperado,
+                contado=contado,
+                diferencia=round(contado - linea.esperado, 2),
             )
         )
     db.flush()
-    # El faltante/sobrante tambien va a los libros: si no, 1010 nunca se
+    # El faltante/sobrante tambien va a los libros: si no, la cuenta nunca se
     # concilia con lo que de verdad hay en la gaveta.
     contabilidad.registrar_diferencia_caja(db, db_cierre)
     db.commit()
@@ -524,6 +592,7 @@ def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
     return schemas.CierreCaja(
         lineas=[
             schemas.LineaCierre(
+                metodo=l.metodo or "",
                 cuenta=l.cuenta,
                 etiqueta=l.etiqueta or l.cuenta,
                 metodos=l.metodos or "",

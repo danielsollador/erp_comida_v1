@@ -5,6 +5,8 @@ equivocado o corrompian datos sin avisar. Son justo los que no se pueden
 detectar mirando la pantalla.
 """
 
+from conftest import caja_cerrar, caja_esperado, caja_ventas
+
 import datetime
 import threading
 import time
@@ -122,7 +124,7 @@ def test_anular_ya_preparado_registra_merma(client, db, variante, insumo):
 def test_pagar_al_proveedor_en_efectivo_baja_la_gaveta(client):
     """Caja restaba solo los Gastos: los dias de pagarle al proveedor mostraba
     un faltante que no existia."""
-    antes = client.get("/api/caja/resumen").json()["efectivo_esperado"]
+    antes = caja_esperado(client)
     factura = client.post(
         "/api/compras/facturas",
         json={
@@ -135,26 +137,26 @@ def test_pagar_al_proveedor_en_efectivo_baja_la_gaveta(client):
         },
     ).json()
     client.post(f"/api/compras/facturas/{factura['id']}/pagar", json={"forma_pago": "Efectivo"})
-    despues = client.get("/api/caja/resumen").json()["efectivo_esperado"]
+    despues = caja_esperado(client)
     assert round(antes - despues, 2) == 116.0
 
 
 def test_un_gasto_por_banco_no_toca_la_gaveta(client):
-    antes = client.get("/api/caja/resumen").json()["efectivo_esperado"]
+    antes = caja_esperado(client)
     client.post(
         "/api/caja/gastos",
         json={"descripcion": "Sueldo", "categoria": "Sueldos", "monto": 50, "metodo_pago": "Banco"},
     )
-    assert client.get("/api/caja/resumen").json()["efectivo_esperado"] == antes
+    assert caja_esperado(client) == antes
 
 
 def test_un_gasto_en_efectivo_si_baja_la_gaveta(client):
-    antes = client.get("/api/caja/resumen").json()["efectivo_esperado"]
+    antes = caja_esperado(client)
     client.post(
         "/api/caja/gastos",
         json={"descripcion": "Gas", "categoria": "Servicios", "monto": 12, "metodo_pago": "Efectivo"},
     )
-    assert round(antes - client.get("/api/caja/resumen").json()["efectivo_esperado"], 2) == 12.0
+    assert round(antes - caja_esperado(client), 2) == 12.0
 
 
 # ------------------------------------------------------------------- S: borrados
@@ -658,20 +660,18 @@ def test_el_faltante_deja_la_caja_en_lo_que_se_conto(client, db, variante):
     ).json()
     client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
 
-    esperado = client.get("/api/caja/resumen").json()["efectivo_esperado"]
+    esperado = caja_esperado(client)
     assert esperado == 20.0
 
-    cierre = client.post(
-        "/api/caja/cerrar", json={"efectivo_contado": 15.0, "nota": "faltaron 5"}
-    ).json()
+    cierre = caja_cerrar(client, 15.0, nota="faltaron 5").json()
     assert cierre["diferencia"] == -5.0
     assert saldo(db, "6030") == 5.0  # el faltante es una perdida reconocida
     assert saldo(db, "1010") == 15.0  # la caja quedo en lo contado
 
 
 def test_no_se_cierra_la_caja_dos_veces_el_mismo_dia(client, variante):
-    client.post("/api/caja/cerrar", json={"efectivo_contado": 0.0, "nota": ""})
-    r = client.post("/api/caja/cerrar", json={"efectivo_contado": 0.0, "nota": ""})
+    caja_cerrar(client, 0.0, nota="")
+    r = caja_cerrar(client, 0.0, nota="")
     assert r.status_code == 409
 
 
@@ -680,7 +680,7 @@ def test_un_sobrante_netea_contra_los_faltantes(client, db, variante):
         "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
     ).json()
     client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
-    client.post("/api/caja/cerrar", json={"efectivo_contado": 23.0, "nota": "sobraron 3"})
+    caja_cerrar(client, 23.0, nota="sobraron 3")
     assert saldo(db, "6030") == -3.0  # un sobrante baja el gasto acumulado
     assert saldo(db, "1010") == 23.0
 
@@ -705,8 +705,8 @@ def test_el_retiro_del_dueno_no_es_un_gasto(client, db, variante):
 
     # y la caja lo cuenta como salida de efectivo
     resumen = client.get("/api/caja/resumen").json()
-    assert resumen["retiros_hoy"] == 12.0
-    assert resumen["efectivo_esperado"] == 8.0
+    assert resumen["retiros"] == 12.0
+    assert caja_esperado(client) == 8.0
 
 
 def test_el_retiro_no_descuadra_el_balance(client, db, variante):
@@ -1057,9 +1057,10 @@ def test_un_pago_partido_va_a_la_cuenta_que_corresponde(client, db, variante):
     assert saldo(db, "1020") == 12.0
     assert saldo(db, "4010") == 20.0
 
-    caja = client.get("/api/caja/resumen").json()
-    assert caja["efectivo_esperado"] == 8.0
-    assert caja["por_metodo_pago"] == {"Efectivo": 8.0, "Pago movil": 12.0}
+    assert caja_esperado(client) == 8.0
+    # El desglose reparte la venta mixta entre las dos formas de pago.
+    assert caja_ventas(client, "Efectivo Bs") == 8.0
+    assert caja_ventas(client, "Pago movil") == 12.0
 
 
 def test_los_pagos_tienen_que_sumar_el_total(client, variante):
@@ -1158,7 +1159,7 @@ def test_se_puede_vender_y_cerrar_caja_sin_internet(client, db, variante, monkey
     assert cobrado["estado"] == "pagado"
     assert cobrado["tasa_bcv"] == 800.0  # se congela la ultima conocida
 
-    assert client.get("/api/caja/resumen").json()["efectivo_esperado"] == 10.0
+    assert caja_esperado(client) == 10.0
     assert client.get("/api/reportes/resumen?periodo=dia").json()["ventas"] == 10.0
     assert client.get("/api/contabilidad/estado-resultados?periodo=mes").status_code == 200
 

@@ -9,6 +9,7 @@ import datetime
 import pytest
 
 from app import models
+from conftest import caja_cerrar, caja_esperado
 
 
 def saldo(db, codigo):
@@ -67,14 +68,10 @@ def test_se_registra_quien_anulo_un_pedido(client, variante, cajero):
     assert anulado["anulado_por"] == "admin"
 
 
-def test_el_cierre_queda_con_el_nombre_de_quien_conto(client, variante, cajero, piso2):
+def test_el_cierre_queda_con_el_nombre_de_quien_conto(client, variante, cajero):
     vender(client, variante, cantidad=2)
-    cierre = client.post(
-        "/api/caja/cerrar",
-        json={"efectivo_contado": 10.0, "operador_id": cajero["id"], "punto_venta_id": piso2["id"]},
-    ).json()
+    cierre = caja_cerrar(client, 10.0, operador_id=cajero["id"]).json()
     assert cierre["operador"] == "admin"
-    assert cierre["punto_venta"] == "Piso 2"
 
 
 def test_un_operador_desactivado_de_la_tablet_no_manda_sobre_la_sesion(client, variante, cajero):
@@ -101,28 +98,19 @@ def test_sin_operador_en_el_cuerpo_el_pedido_igual_tiene_nombre(client, variante
 
 
 # ------------------------------------------------- H103/H104: dos cajas
-def test_cada_punto_de_venta_cierra_su_propia_gaveta(client, variante, piso2):
-    """Con un solo cierre por dia, la caja del piso 2 no podia cuadrar lo
-    suyo: el segundo cierre devolvia 409."""
+def test_la_caja_no_cierra_dos_veces_el_mismo_dia(client, variante):
+    """Savora tiene UNA caja.
+
+    Antes cada punto de venta cerraba la suya, porque el local iba a tener dos
+    pisos. No los tuvo, y arrastrar esa pregunta --"¿cual caja estas
+    cerrando?"-- en cada cierre era pedirle al cajero que decidiera algo que
+    no existe. Con una sola caja, el segundo cierre del dia es un duplicado.
+    """
     vender(client, variante, cantidad=2)
-    primero = client.post("/api/caja/cerrar", json={"efectivo_contado": 10.0})
-    assert primero.status_code == 200
-
-    segundo = client.post(
-        "/api/caja/cerrar", json={"efectivo_contado": 0.0, "punto_venta_id": piso2["id"]}
-    )
-    assert segundo.status_code == 200, "la otra caja tambien cierra"
-    assert segundo.json()["punto_venta"] == "Piso 2"
-
-
-def test_la_misma_caja_no_cierra_dos_veces(client, variante, piso2):
-    vender(client, variante, cantidad=2)
-    client.post("/api/caja/cerrar", json={"efectivo_contado": 10.0, "punto_venta_id": piso2["id"]})
-    r = client.post(
-        "/api/caja/cerrar", json={"efectivo_contado": 10.0, "punto_venta_id": piso2["id"]}
-    )
+    assert caja_cerrar(client, 10.0).status_code == 200
+    r = caja_cerrar(client, 10.0)
     assert r.status_code == 409
-    assert "Piso 2" in r.json()["detail"]
+    assert "ya fue cerrada" in r.json()["detail"]
 
 
 # ------------------------------------------------- H88: meses ya cerrados

@@ -590,7 +590,8 @@ export const api = {
   historialTasa: (r?: Rango) => req<PuntoTasa[]>(`/tasas/historial${conRango(r)}`),
   analisisTasa: (r?: Rango) => req<AnalisisTasa>(`/tasas/analisis${conRango(r)}`),
 
-  resumenCaja: () => req<ResumenCaja>('/caja/resumen'),
+  resumenCaja: (fecha?: string) =>
+    req<ResumenCaja>('/caja/resumen' + (fecha ? `?fecha=${fecha}` : '')),
   anularCierre: (id: number, motivo: string) =>
     req<CierreCaja>(`/caja/cierres/${id}/anular`, {
       method: 'POST',
@@ -626,18 +627,24 @@ export const api = {
    * distinto de mandarlo en cero, que significa "conte y no habia nada": el
    * backend solo asienta diferencia de lo que de verdad se conto.
    */
+  /**
+   * Cuadrar la caja de un dia, contando POR FORMA DE PAGO.
+   *
+   * Cada una tiene su propia fuente de verdad: los billetes se cuentan, el
+   * punto de venta imprime su lote, el pago movil se mira en el banco. Una
+   * forma que no venga en la lista es "no la verifique", que es distinto de
+   * contarla en cero.
+   */
   cerrarCaja: (
-    conteos: { cuenta: string; contado: number }[],
-    nota = '',
-    extra?: { operador_id?: number | null; punto_venta_id?: number | null },
+    conteos: { metodo: string; contado: number }[],
+    opciones: { fecha?: string; nota?: string } = {},
   ) =>
     req<CierreCaja>('/caja/cerrar', {
       method: 'POST',
       body: JSON.stringify({
         conteos,
-        nota,
-        operador_id: extra?.operador_id ?? null,
-        punto_venta_id: extra?.punto_venta_id ?? null,
+        fecha: opciones.fecha ?? null,
+        nota: opciones.nota ?? '',
       }),
     }),
   /** Que gavetas ya dijeron con cuanto arrancaron, y cuales hacen falta. */

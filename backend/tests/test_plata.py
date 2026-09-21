@@ -5,6 +5,8 @@ misma raiz: el sistema solo sabia representar "entro plata por una via y toda
 esa plata es venta del negocio".
 """
 
+from conftest import caja_cerrar, caja_esperado, caja_ventas
+
 from app import models
 
 
@@ -24,7 +26,10 @@ def comanda(client, variante, cantidad=1):
 
 def gaveta(client, codigo):
     resumen = client.get("/api/caja/resumen").json()
-    return next(g for g in resumen["gavetas"] if g["codigo"] == codigo)
+    # El cierre pasó a contarse por forma de pago: la fila de 1010 es la de
+    # "Efectivo Bs" y la de 1011 la de "Efectivo $".
+    metodo = {"1010": "Efectivo Bs", "1011": "Efectivo $"}[codigo]
+    return next(l for l in resumen["desglose"] if l["metodo"] == metodo)
 
 
 # ------------------------------------------- H110: dolares vs bolivares
@@ -46,9 +51,7 @@ def test_las_dos_gavetas_se_cuentan_por_separado_al_cerrar(client, db, variante)
     p2 = comanda(client, variante, cantidad=4)
     client.post(f"/api/pedidos/{p2['id']}/cobrar", json={"metodo_pago": "Efectivo $"})
 
-    cierre = client.post(
-        "/api/caja/cerrar", json={"efectivo_contado": 10.0, "divisas_contado": 18.0}
-    ).json()
+    cierre = caja_cerrar(client, 10.0, 18.0).json()
     assert cierre["diferencia"] == 0.0, "los bolivares cuadran"
     assert cierre["divisas_esperado"] == 20.0
     assert cierre["divisas_diferencia"] == -2.0, "faltan 2 dolares en la otra gaveta"
@@ -202,7 +205,7 @@ def test_el_cierre_espera_la_propina_en_la_gaveta(client, variante):
             "pagos": [{"metodo": "Efectivo Bs", "monto": 12.0}],
         },
     )
-    cierre = client.post("/api/caja/cerrar", json={"efectivo_contado": 12.0}).json()
+    cierre = caja_cerrar(client, 12.0).json()
     assert cierre["diferencia"] == 0.0, "contar 12 cuadra: 10 de venta + 2 de propina"
 
 
@@ -249,7 +252,7 @@ def test_fiar_no_mete_plata_en_la_caja_pero_registra_la_venta(client, db, varian
     assert saldo(db, "1010") == 0.0, "no entro plata a la gaveta"
     assert saldo(db, "1015") == 10.0, "nacio una cuenta por cobrar"
     assert saldo(db, "4010") == 10.0, "pero la venta si se reconocio"
-    assert client.get("/api/caja/resumen").json()["efectivo_esperado"] == 0.0
+    assert caja_esperado(client) == 0.0
 
 
 def test_no_se_puede_fiar_sin_nombre(client, variante):

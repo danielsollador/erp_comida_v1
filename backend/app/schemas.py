@@ -876,6 +876,7 @@ class ConteoArqueo(BaseModel):
 
 
 class LineaCierre(BaseModel):
+    metodo: str = ""
     cuenta: str
     etiqueta: str
     metodos: str = ""
@@ -887,17 +888,20 @@ class LineaCierre(BaseModel):
         from_attributes = True
 
 
+class ConteoMetodo(BaseModel):
+    """Lo que se conto de una forma de pago. Nulo = no se verifico."""
+
+    metodo: str
+    contado: Optional[float] = None
+
+
 class CierreCajaRequest(BaseModel):
-    # Las dos gavetas siguen aceptandose sueltas: es como cerraba antes y hay
-    # enlaces y pruebas que lo usan. Si viene `conteos`, manda `conteos`.
-    efectivo_contado: Optional[float] = None  # bolivares
-    divisas_contado: float = 0  # billetes en dolares, se cuentan aparte
-    # El arqueo completo, una entrada por destino verificado.
-    conteos: List[ConteoArqueo] = []
+    # El dia que se esta cuadrando. Sin fecha, hoy: la caja de ayer se cuadra
+    # esta manana y el cierre tiene que quedar archivado en ayer.
+    fecha: Optional[datetime.date] = None
+    conteos: List[ConteoMetodo] = []
     nota: str = ""
     operador_id: Optional[int] = None
-    # Con dos pisos hay dos gavetas: cada una cierra la suya.
-    punto_venta_id: Optional[int] = None
 
 
 class AperturaCajaRequest(BaseModel):
@@ -944,37 +948,74 @@ class Gaveta(BaseModel):
     esperado: float
 
 
+class LineaMetodo(BaseModel):
+    """Una forma de pago, lista para cuadrar."""
+
+    metodo: str
+    # La cuenta contable donde cae. Varios metodos comparten una: el punto de
+    # venta, el pago movil y la transferencia son todos 1020.
+    cuenta: str
+    # True = billetes que se cuentan. False = se coteja contra el lote del
+    # punto o la pantalla del banco. Cambia lo que la persona hace.
+    fisico: bool
+    # El credito se muestra pero no se cuenta: no entro plata.
+    se_cuadra: bool
+    # Solo el efectivo arrastra saldo de ayer.
+    saldo_anterior: float = 0
+    ventas: float = 0
+    salidas: float = 0
+    # Lo que movio la cuenta sin ser venta, gasto ni retiro: pagarle a un
+    # proveedor, declarar el saldo inicial, cobrar un fiado.
+    otros: float = 0
+    esperado: float = 0
+
+
+class OtroMovimiento(BaseModel):
+    """Lo que movio una gaveta sin ser venta, gasto ni retiro.
+
+    Pagarle a un proveedor, una compra suelta, el IVA. Se dice aparte para
+    que no aparezca como un descuadre sin explicacion al contar.
+    """
+
+    cuenta: str
+    etiqueta: str
+    monto: float
+
+
 class ResumenCaja(BaseModel):
     fecha: str
-    total_ventas: float
-    por_metodo_pago: dict
-    # Lo que quedo en la gaveta de dias anteriores: la caja no arranca en cero
-    # cada manana.
-    saldo_anterior: float = 0
-    efectivo_esperado: float
-    # Lo que salio de la gaveta hoy sin ser una venta (gastos, pagos a
-    # proveedores, compras sueltas). Se muestra para que el faltante deje de
-    # parecer inexplicable.
-    salidas_efectivo: float = 0
-    # Parte de `salidas_efectivo` que se llevo el dueno. Se muestra aparte
-    # porque no es un gasto del negocio.
-    retiros_hoy: float = 0
-    cantidad_pedidos: int
-    gavetas: List[Gaveta] = []
-    # El arqueo completo: una fila por destino del dinero, gavetas incluidas.
-    arqueo: List[LineaArqueo] = []
-    # Plata de terceros que esta en la gaveta: no es del negocio.
-    propinas_por_entregar: float = 0
-    fiado_por_cobrar: float = 0
-    propinas_hoy: float = 0
-    descuentos_hoy: float = 0
-    # Lo que NO se vendio, que es la otra mitad de la pregunta al cerrar.
-    # Anulado = la comanda se boto y nunca entro plata. Devuelto = se cobro y
-    # se reembolso; ese si movio la gaveta y el arqueo ya lo tiene contado.
+    es_hoy: bool = True
+
+    # --- lo que se vendio ---
+    vendido: float = 0
+    descuentos: float = 0
+    propinas: float = 0
+    # vendido - descuentos + propinas: lo que de verdad habia que cobrar.
+    a_cobrar: float = 0
+    # La suma del desglose por forma de pago.
+    cobrado: float = 0
+    # Si estos dos no dan igual, hay un pago mal registrado.
+    cuadra_ventas: bool = True
+    cantidad_pedidos: int = 0
+
+    # --- lo que no se vendio ---
     anulados_hoy: int = 0
     anulado_monto_hoy: float = 0
     devueltos_hoy: int = 0
     devuelto_monto_hoy: float = 0
+
+    # --- lo que salio ---
+    gastos: float = 0
+    retiros: float = 0
+
+    desglose: List[LineaMetodo] = []
+    otros_movimientos: List[OtroMovimiento] = []
+
+    fiado_por_cobrar: float = 0
+    propinas_por_entregar: float = 0
+
+    cerrada: bool = False
+    cierre_id: Optional[int] = None
 
 
 class PuntoSerie(BaseModel):

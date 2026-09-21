@@ -5,6 +5,8 @@ los casos es el mismo que ya usaban merma y devolucion: no se borra el hecho,
 se le hace un contra-asiento y queda el rastro de que hubo un error.
 """
 
+from conftest import caja_cerrar, caja_esperado, caja_ventas
+
 import datetime
 
 import pytest
@@ -36,9 +38,7 @@ def test_el_cierre_mal_tecleado_se_puede_anular(client, db, variante):
     vender(client, variante, cantidad=2)  # $10
     caja_antes = saldo(db, "1010")
 
-    cierre = client.post(
-        "/api/caja/cerrar", json={"efectivo_contado": 1000.0, "nota": "dedo gordo"}
-    ).json()
+    cierre = caja_cerrar(client, 1000.0, nota="dedo gordo").json()
     assert cierre["diferencia"] == 990.0
     assert saldo(db, "1010") == 1000.0
 
@@ -51,18 +51,18 @@ def test_el_cierre_mal_tecleado_se_puede_anular(client, db, variante):
 
 def test_tras_anular_se_puede_cerrar_otra_vez_el_mismo_dia(client, variante):
     vender(client, variante, cantidad=2)
-    primero = client.post("/api/caja/cerrar", json={"efectivo_contado": 1000.0}).json()
-    assert client.post("/api/caja/cerrar", json={"efectivo_contado": 10.0}).status_code == 409
+    primero = caja_cerrar(client, 1000.0).json()
+    assert caja_cerrar(client, 10.0).status_code == 409
 
     client.post(f"/api/caja/cierres/{primero['id']}/anular", json={"motivo": "error"})
-    segundo = client.post("/api/caja/cerrar", json={"efectivo_contado": 10.0})
+    segundo = caja_cerrar(client, 10.0)
     assert segundo.status_code == 200
     assert segundo.json()["diferencia"] == 0.0
 
 
 def test_el_cierre_anulado_no_se_borra_queda_el_rastro(client, db, variante):
     vender(client, variante, cantidad=2)
-    cierre = client.post("/api/caja/cerrar", json={"efectivo_contado": 1000.0}).json()
+    cierre = caja_cerrar(client, 1000.0).json()
     client.post(f"/api/caja/cierres/{cierre['id']}/anular", json={"motivo": "conte mal"})
 
     cierres = client.get("/api/caja/cierres").json()
@@ -74,7 +74,7 @@ def test_el_cierre_anulado_no_se_borra_queda_el_rastro(client, db, variante):
 
 def test_no_se_anula_dos_veces_el_mismo_cierre(client, variante):
     vender(client, variante, cantidad=2)
-    cierre = client.post("/api/caja/cerrar", json={"efectivo_contado": 50.0}).json()
+    cierre = caja_cerrar(client, 50.0).json()
     assert client.post(f"/api/caja/cierres/{cierre['id']}/anular", json={}).status_code == 200
     assert client.post(f"/api/caja/cierres/{cierre['id']}/anular", json={}).status_code == 409
 
