@@ -4,6 +4,7 @@ import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
+import { etiquetaVariante } from '../lib/menu'
 import type { Categoria, Ingrediente, RecetaItem, Variante } from '../lib/types'
 
 type Fila = {
@@ -216,7 +217,7 @@ export default function Recetas() {
             <div className="space-y-1">
               {cat.productos.map((p) =>
                 p.variantes.map((v) => {
-                  const nombre = v.nombre === 'Regular' ? p.nombre : `${p.nombre} - ${v.nombre}`
+                  const nombre = etiquetaVariante(p, v)
                   const falta = !conReceta.has(v.id)
                   return (
                     <button

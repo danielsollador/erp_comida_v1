@@ -28,6 +28,26 @@ def _categoria_es_bebida(nombre: str) -> bool:
     return "bebida" in (nombre or "").lower()
 
 
+def _etiqueta(d: dict, mapa: Dict[int, dict]) -> str:
+    """Como se llama una variante en la sugerencia que ve la cajera.
+
+    La regla es CUANTAS subsecciones activas tiene el producto, no como se
+    llaman. Antes se comparaba contra el texto "Regular" --el nombre que trae
+    la subseccion que nace con el producto-- y eso lo escribe el dueño: un
+    local con "Cafe Regular" y "Cafe Grande" de verdad ofrecia "Cafe" a
+    secas y el cliente no sabia cual le estaban ofreciendo. Es la misma regla
+    que el punto de venta (frontend/src/lib/menu.ts).
+    """
+    hermanas = sum(
+        1
+        for otra in mapa.values()
+        if otra["producto_id"] == d["producto_id"] and otra["activo"]
+    )
+    if hermanas <= 1:
+        return d["producto"]
+    return f"{d['producto']} - {d['variante']}"
+
+
 def _mapa_variantes(db: Session) -> Dict[int, dict]:
     """variante_id -> datos del producto al que pertenece.
 
@@ -244,9 +264,7 @@ def sugerir(db: Session, variante_ids: List[int], limite: int = 3) -> List[dict]
         d = por_producto.get(producto_id)
         if not d:
             continue
-        etiqueta = (
-            d["producto"] if d["variante"] == "Regular" else f"{d['producto']} - {d['variante']}"
-        )
+        etiqueta = _etiqueta(d, mapa)
         sugerencias.append(
             {
                 "variante_id": d["variante_id"],

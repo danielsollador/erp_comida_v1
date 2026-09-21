@@ -10,6 +10,7 @@ import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { colorCategoria } from '../lib/theme'
+import { etiquetaVariante, variantesParaVender } from '../lib/menu'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import type {
   Categoria,
@@ -542,15 +543,12 @@ export default function POS() {
               {categoria.productos
                 .filter((p) => p.activo)
                 .flatMap((p) => {
-                  const activas = p.variantes.filter((v) => v.activo)
-                  // "Regular" nace sola al crear el producto (precio $0) para
-                  // que siempre haya algo que vender. Si despues se le agregan
-                  // subsecciones de verdad, esa "Regular" queda huerfana y se
-                  // mostraba como si fuera el producto: un tile de "Pastelito"
-                  // a $0 al lado de "Pastelito - Pollo".
-                  const visibles =
-                    activas.length > 1 ? activas.filter((v) => v.nombre !== 'Regular') : activas
-                  return visibles.map((v) => {
+                  // Sin la subseccion inicial que nadie estreno: mostrarla
+                  // ponia un "Pastelito" a $0 al lado de "Pastelito - Pollo".
+                  // Ver lib/menu.ts: la regla mira el nombre Y el precio,
+                  // porque un "Cafe Regular $1,00" de verdad tiene que
+                  // seguir vendiendose.
+                  return variantesParaVender(p).map((v) => {
                       const color = colorCategoria(categoria.id)
                       const enCarrito = carrito[v.id]?.cantidad ?? 0
                       const pulsando = recienAgregado.has(v.id)
@@ -572,7 +570,7 @@ export default function POS() {
                             </span>
                           )}
                           <div className={`font-semibold text-lg leading-tight ${color.text}`}>
-                            {v.nombre === 'Regular' ? p.nombre : `${p.nombre} - ${v.nombre}`}
+                            {etiquetaVariante(p, v)}
                           </div>
                           <div className="text-neutral-700 font-bold text-lg mt-2">
                             {fmt(v.precio)}
@@ -777,7 +775,7 @@ export default function POS() {
               <div key={variante.id} className="flex justify-between items-center gap-2">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold truncate">
-                    {variante.nombre === 'Regular' ? producto.nombre : `${producto.nombre} - ${variante.nombre}`}
+                    {etiquetaVariante(producto, variante)}
                   </div>
                   <div className="text-xs text-neutral-500">
                     {cantidad} x {fmt(variante.precio)} ={' '}

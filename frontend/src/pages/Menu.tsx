@@ -6,6 +6,7 @@ import { contiene, palabrasDe } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
+import { SUBSECCION_INICIAL } from '../lib/menu'
 import type { Categoria, CostoVariante } from '../lib/types'
 
 const SECCIONES = [
@@ -228,7 +229,7 @@ function CategoriaCard({
 
   async function agregarProducto() {
     if (!nuevoProducto.trim()) return
-    await api.crearProducto(categoria.id, nuevoProducto.trim(), [{ nombre: 'Regular', precio: 0 }])
+    await api.crearProducto(categoria.id, nuevoProducto.trim(), [{ nombre: SUBSECCION_INICIAL, precio: 0 }])
     setNuevoProducto('')
     onCambio()
   }
@@ -403,7 +404,10 @@ function ProductoRow({
             }`}
           >
             <button onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}>
-              {v.nombre === 'Regular' && producto.variantes.length === 1
+              {/* Con una sola subseccion, su nombre no aporta nada: la
+                  pastilla dice el precio del producto y ya. Se mira cuantas
+                  hay y no como se llama (ver lib/menu.ts). */}
+              {producto.variantes.filter((x) => x.activo).length <= 1
                 ? `$${v.precio.toFixed(2)}`
                 : `${v.nombre}: $${v.precio.toFixed(2)}`}
             </button>
