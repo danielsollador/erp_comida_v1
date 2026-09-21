@@ -319,13 +319,19 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
   )
 }
 
-/** 3. Por dónde entró y por dónde salió, forma de pago por forma de pago. */
+/**
+ * 3. Por dónde entró y por dónde salió, forma de pago por forma de pago.
+ *
+ * SIEMPRE salen TODAS, incluso en cero. Un reporte Z se lee como una lista de
+ * chequeo: el cajero baja por las filas confirmando una por una. Si las formas
+ * sin movimiento se esconden, la lista cambia de tamaño cada día y deja de
+ * servir para eso --y peor: un cobro que se registró en la forma equivocada
+ * desaparece de la vista en lugar de saltar a los ojos.
+ */
 function Desglose({ r }: { r: ResumenCaja }) {
-  // Las que no se movieron se esconden, salvo el efectivo: esas se cuentan
-  // siempre, aunque el dia haya sido de puro pago movil.
-  const visibles = r.desglose.filter(
-    (l) => l.fisico || l.ventas !== 0 || l.salidas !== 0 || l.otros !== 0,
-  )
+  const totalEntro = r.desglose.reduce((s, l) => s + l.ventas, 0)
+  const totalSalio = r.desglose.reduce((s, l) => s + salidaDe(l), 0)
+  const totalCuadra = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + l.esperado, 0)
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <h2 className="font-semibold mb-1">Desglose por forma de pago</h2>
@@ -344,20 +350,42 @@ function Desglose({ r }: { r: ResumenCaja }) {
             </tr>
           </thead>
           <tbody>
-            {visibles.map((l) => (
+            {r.desglose.map((l) => (
               <FilaMetodo key={l.metodo} l={l} />
             ))}
           </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-neutral-300 font-semibold">
+              <td className="py-2">Total</td>
+              <td className="text-right tabular-nums">{dinero(totalEntro)}</td>
+              <td className="text-right tabular-nums text-peligro-600">{dinero(-totalSalio)}</td>
+              <td className="text-right tabular-nums">{dinero(totalCuadra)}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
   )
 }
 
+/** Lo que salió por esta vía: gastos y retiros, más lo que los libros saben y
+ *  el desglose no puede atribuir (pagarle a un proveedor en efectivo). */
+function salidaDe(l: LineaMetodo) {
+  return l.salidas - Math.min(l.otros, 0)
+}
+
+/** Un cero se escribe, no se calla: en un cuadre "no entró nada por Zelle" es
+ *  una afirmación que alguien confirma, no un dato ausente. */
+function Cifra({ monto, clase = '' }: { monto: number; clase?: string }) {
+  return (
+    <td className={`text-right tabular-nums ${monto === 0 ? 'text-neutral-300' : clase}`}>
+      {dinero(monto)}
+    </td>
+  )
+}
+
 function FilaMetodo({ l }: { l: LineaMetodo }) {
-  // Lo que salio por esta via: gastos y retiros, mas lo que los libros saben
-  // y el desglose no puede atribuir (pagarle a un proveedor en efectivo).
-  const salidaTotal = l.salidas - Math.min(l.otros, 0)
+  const salidaTotal = salidaDe(l)
   return (
     <tr className="border-b border-neutral-100 last:border-0">
       <td className="py-2">
@@ -371,13 +399,13 @@ function FilaMetodo({ l }: { l: LineaMetodo }) {
           {l.saldo_anterior !== 0 && ` · ${dinero(l.saldo_anterior)} de días anteriores`}
         </span>
       </td>
-      <td className="text-right tabular-nums">{l.ventas ? dinero(l.ventas) : '—'}</td>
-      <td className="text-right tabular-nums text-peligro-600">
-        {salidaTotal ? dinero(-salidaTotal) : '—'}
-      </td>
-      <td className="text-right tabular-nums font-semibold">
-        {l.se_cuadra ? dinero(l.esperado) : '—'}
-      </td>
+      <Cifra monto={l.ventas} />
+      <Cifra monto={-salidaTotal} clase="text-peligro-600" />
+      {l.se_cuadra ? (
+        <Cifra monto={l.esperado} clase="font-semibold" />
+      ) : (
+        <td className="text-right tabular-nums text-neutral-300">—</td>
+      )}
     </tr>
   )
 }
