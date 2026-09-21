@@ -11,6 +11,7 @@ from . import operadores
 from ..database import get_db
 from ..exportar_csv import nombre_de_archivo, respuesta_csv
 from ..rango import Rango
+from ..texto import comparable
 from ..timeutils import ahora, hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
@@ -673,12 +674,12 @@ async def leer_planilla(archivo: UploadFile = File(...), db: Session = Depends(g
 
     ingredientes = db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all()
     por_id = {i.id: i for i in ingredientes}
-    # El nombre se compara sin mayusculas y con los espacios colapsados: quien
-    # llena la planilla a mano no escribe "Carne Molida" igual dos veces.
-    def clave(texto: str) -> str:
-        return " ".join(texto.lower().split())
-
-    por_nombre = {clave(i.nombre): i for i in ingredientes}
+    # El nombre se compara sin mayusculas, sin tildes y con los espacios
+    # colapsados: quien llena la planilla a mano no escribe "Carne Molida"
+    # igual dos veces, y "Azucar" por "Azúcar" es lo normal en un teclado
+    # apurado. Sin las tildes, esa fila se rechazaba con un "no encuentro ese
+    # insumo" que parecia un error de la planilla.
+    por_nombre = {comparable(i.nombre): i for i in ingredientes}
 
     filas, errores, en_blanco = [], [], 0
     vistos = set()
@@ -698,7 +699,7 @@ async def leer_planilla(archivo: UploadFile = File(...), db: Session = Depends(g
         if celda(col_id).isdigit():
             ing = por_id.get(int(celda(col_id)))
         if ing is None and celda(col_nombre):
-            ing = por_nombre.get(clave(celda(col_nombre)))
+            ing = por_nombre.get(comparable(celda(col_nombre)))
         if ing is None:
             errores.append(f"Fila {numero}: no encuentro ese insumo ({celda(col_nombre) or celda(col_id) or 'sin nombre'}).")
             continue

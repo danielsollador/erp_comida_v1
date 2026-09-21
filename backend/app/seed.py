@@ -1,7 +1,6 @@
-import unicodedata
-
 from . import contabilidad
 from .database import SessionLocal
+from .texto import comparable
 from .models import Categoria, Ingrediente, Producto, RecetaItem, Variante
 
 # nombre categoria -> [(nombre producto, [(nombre variante, precio), ...])]
@@ -49,15 +48,13 @@ RECETAS_DEMO = {
 
 CATEGORIA_ENVIOS = "Envios"
 
-
-def _sin_tildes(texto: str) -> str:
-    """Para COMPARAR nombres, no para guardarlos: sin tildes, sin mayusculas
-    y sin espacios de sobra."""
-    plano = unicodedata.normalize("NFD", texto or "")
-    return "".join(c for c in plano if not unicodedata.combining(c)).strip().casefold()
+# El nombre de la subseccion que nace con un producto sin tamanos. Tiene que
+# decir lo mismo que SUBSECCION_INICIAL en frontend/src/lib/menu.ts.
+SUBSECCION_INICIAL = "Regular"
 
 
-_ENVIOS_NORMALIZADO = _sin_tildes(CATEGORIA_ENVIOS)
+
+_ENVIOS_COMPARABLE = comparable(CATEGORIA_ENVIOS)
 
 
 def categoria_envios(db):
@@ -79,7 +76,7 @@ def categoria_envios(db):
     Devuelve None si no existe ninguna todavia.
     """
     for c in db.query(Categoria).all():
-        if _sin_tildes(c.nombre) == _ENVIOS_NORMALIZADO:
+        if comparable(c.nombre) == _ENVIOS_COMPARABLE:
             return c
     return None
 
@@ -133,19 +130,32 @@ def asegurar_categoria_envios(db=None):
             db.add(categoria)
             db.flush()
 
-        existentes = {
-            p.nombre
-            for p in db.query(Producto).filter_by(categoria_id=categoria.id).all()
-        }
-        for nombre, precio in (("Delivery corto", 1.5), ("Delivery largo", 3.0)):
-            if nombre in existentes:
-                continue
-            producto = Producto(categoria_id=categoria.id, nombre=nombre, activo=True)
-            db.add(producto)
-            db.flush()
-            # Sin variante no aparece en el POS: el resto del menu funciona
-            # igual, "Regular" es el nombre que se usa cuando no hay tamanos.
-            db.add(Variante(producto_id=producto.id, nombre="Regular", precio=precio, activo=True))
+        # Los dos delivery son un PUNTO DE PARTIDA, no una plantilla que haya
+        # que imponer en cada arranque: por eso se miran si la categoria esta
+        # vacia y no si existe cada nombre.
+        #
+        # Con la busqueda por nombre, renombrar "Delivery corto" a "Delivery
+        # cerca" --o borrarlo porque el local no hace envios cortos-- lo hacia
+        # volver a nacer en el siguiente despliegue, y la categoria terminaba
+        # con los dos. El dueño manda sobre su menu; si ya hay algo aqui, no
+        # se toca.
+        vacia = db.query(Producto).filter_by(categoria_id=categoria.id).count() == 0
+        if vacia:
+            for nombre, precio in (("Delivery corto", 1.5), ("Delivery largo", 3.0)):
+                producto = Producto(categoria_id=categoria.id, nombre=nombre, activo=True)
+                db.add(producto)
+                db.flush()
+                # Sin variante no aparece en el POS: el resto del menu funciona
+                # igual, SUBSECCION_INICIAL es el nombre que se usa cuando no
+                # hay tamanos (ver frontend/src/lib/menu.ts).
+                db.add(
+                    Variante(
+                        producto_id=producto.id,
+                        nombre=SUBSECCION_INICIAL,
+                        precio=precio,
+                        activo=True,
+                    )
+                )
         db.commit()
     finally:
         if propia:

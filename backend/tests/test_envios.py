@@ -102,3 +102,43 @@ def test_el_delivery_renombrado_sigue_siendo_un_servicio(client, db):
     db.expire_all()
 
     assert variantes_de_servicio(db) == antes
+
+
+def test_renombrar_un_delivery_no_lo_hace_renacer(client, db):
+    """Los dos delivery son un punto de partida, no una plantilla obligatoria.
+
+    Con la busqueda por nombre exacto, renombrar "Delivery corto" lo hacia
+    volver a nacer en el siguiente arranque y la categoria terminaba con los
+    dos: el renombrado y una copia del original.
+    """
+    from app.seed import asegurar_categoria_envios
+
+    envios = buscar_envios(client)
+    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery corto")
+    r = client.put(
+        f"/api/menu/productos/{corto['id']}",
+        json={"nombre": "Delivery cerca", "categoria_id": envios["id"], "activo": True},
+    )
+    assert r.status_code == 200, r.text
+
+    asegurar_categoria_envios(db)
+
+    envios = buscar_envios(client)
+    nombres = sorted(p["nombre"] for p in envios["productos"])
+    assert nombres == ["Delivery cerca", "Delivery largo"]
+
+
+def test_quitar_un_delivery_no_lo_devuelve_solo(client, db):
+    """Un local que no hace envios cortos lo quita, y tiene que quedarse
+    quitado."""
+    from app.seed import asegurar_categoria_envios
+
+    envios = buscar_envios(client)
+    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery corto")
+    client.delete(f"/api/menu/productos/{corto['id']}")
+
+    asegurar_categoria_envios(db)
+
+    envios = buscar_envios(client)
+    activos = [p["nombre"] for p in envios["productos"] if p["activo"]]
+    assert activos == ["Delivery largo"]
