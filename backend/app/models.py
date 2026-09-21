@@ -122,6 +122,11 @@ class Categoria(Base):
     # duro arrastraba sus productos por cascade y dejaba las ventas historicas
     # apuntando a variantes inexistentes (419 filas huerfanas en la prueba).
     activo = Column(Boolean, default=True)
+    # Si lo que hay aqui se toma. Lo marca el dueño; antes se adivinaba
+    # buscando la palabra "bebida" en el nombre, y una categoria llamada
+    # "Jugos" o "Refrescos" dejaba de ofrecerse para acompañar la comida sin
+    # que nada lo dijera. Solo afecta que se sugiere en el mostrador.
+    bebida = Column(Boolean, default=False)
 
     productos = relationship("Producto", back_populates="categoria", cascade="all, delete-orphan")
 

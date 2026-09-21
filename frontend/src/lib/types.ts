@@ -21,6 +21,8 @@ export type Categoria = {
   /** Retirada del menu. Sus ventas historicas se conservan igual. */
   activo: boolean
   productos: Producto[]
+  /** Lo que hay aqui se toma: sirve para ofrecer algo de tomar con la comida. */
+  bebida: boolean
 }
 
 export type Operador = {

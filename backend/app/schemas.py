@@ -95,10 +95,27 @@ class CategoriaBase(BaseModel):
     nombre: str
     orden: int = 0
     activo: bool = True
+    # Lo que hay aqui se toma. Sirve para ofrecer algo de tomar con la comida.
+    bebida: bool = False
 
 
 class CategoriaCreate(CategoriaBase):
     pass
+
+
+class CategoriaUpdate(BaseModel):
+    """Los cambios a una categoria: todo opcional.
+
+    Aparte de `CategoriaCreate` a proposito. Al reutilizar el esquema de
+    creacion, cada campo que el cliente no mandaba se escribia con el valor
+    por defecto: un PUT con solo el nombre le ponia `activo=True` y devolvia
+    al menu una categoria retirada. Lo que no viene, no se toca.
+    """
+
+    nombre: Optional[str] = None
+    orden: Optional[int] = None
+    activo: Optional[bool] = None
+    bebida: Optional[bool] = None
 
 
 class Categoria(CategoriaBase):

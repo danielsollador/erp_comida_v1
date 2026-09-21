@@ -236,11 +236,32 @@ function CategoriaCard({
 
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-      <div className="flex justify-between items-center mb-3">
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
         <h2 className="font-semibold text-lg">{categoria.nombre}</h2>
-        <button onClick={() => onBorrar(categoria.id)} className="text-peligro-500 text-xs">
-          Borrar categoría
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Antes se adivinaba buscando la palabra "bebida" en el nombre de
+              la categoria: una llamada "Jugos" o "Refrescos" dejaba de
+              ofrecerse para acompañar la comida y nada lo decia. Lo marca el
+              dueño, que es el unico que lo sabe. */}
+          <label
+            className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer"
+            title="El mostrador ofrece estos productos para acompañar la comida"
+          >
+            <input
+              type="checkbox"
+              checked={categoria.bebida}
+              onChange={async (e) => {
+                await api.actualizarCategoria(categoria.id, { bebida: e.target.checked })
+                onCambio()
+              }}
+              className="accent-acento-600"
+            />
+            Son bebidas
+          </label>
+          <button onClick={() => onBorrar(categoria.id)} className="text-peligro-500 text-xs">
+            Borrar categoría
+          </button>
+        </div>
       </div>
 
       {/* Igual que la categoria: agregar va arriba. En una categoria con

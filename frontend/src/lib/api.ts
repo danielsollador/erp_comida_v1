@@ -202,10 +202,15 @@ export const api = {
   listarCategorias: () => req<Categoria[]>('/menu/categorias'),
   crearCategoria: (nombre: string, orden = 0) =>
     req<Categoria>('/menu/categorias', { method: 'POST', body: JSON.stringify({ nombre, orden }) }),
-  actualizarCategoria: (id: number, nombre: string, orden: number) =>
+  /**
+   * Cambia SOLO lo que se le pasa. El backend ignora lo que no venga en el
+   * cuerpo: mandar el objeto entero hacia que renombrar una categoria
+   * retirada la devolviera al menu sola.
+   */
+  actualizarCategoria: (id: number, cambios: { nombre?: string; orden?: number; bebida?: boolean }) =>
     req<Categoria>(`/menu/categorias/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ nombre, orden }),
+      body: JSON.stringify(cambios),
     }),
   eliminarCategoria: (id: number) => req(`/menu/categorias/${id}`, { method: 'DELETE' }),
   reactivarCategoria: (id: number) =>

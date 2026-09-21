@@ -50,6 +50,7 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "nota_credito", "VARCHAR"),
     ("TRX110_VEN_PEDIDO", "motivo_devolucion", "VARCHAR DEFAULT ''"),
     ("DIM210_MEN_CATEGORIA", "activo", "BOOLEAN DEFAULT 1"),
+    ("DIM210_MEN_CATEGORIA", "bebida", "BOOLEAN DEFAULT 0"),
     ("TRX510_CAJ_CIERRE", "anulado", "BOOLEAN DEFAULT 0"),
     ("TRX510_CAJ_CIERRE", "fecha_anulacion", "DATETIME"),
     ("TRX510_CAJ_CIERRE", "motivo_anulacion", "VARCHAR DEFAULT ''"),
@@ -520,6 +521,24 @@ def aplicar():
                 continue
             con.execute(text(f'ALTER TABLE "{tabla}" ADD COLUMN "{columna}" {_tipo_sql(tipo)}'))
             log.info("Columna agregada: %s.%s", tabla, columna)
+            if tabla == "DIM210_MEN_CATEGORIA" and columna == "bebida":
+                # Hasta ahora "es bebida" se adivinaba buscando la palabra en
+                # el nombre de la categoria. Al estrenar la columna se deja
+                # marcado exactamente lo que esa regla ya marcaba, para que el
+                # despliegue no le cambie las sugerencias a ningun local: lo
+                # que se ofrecia ayer se sigue ofreciendo hoy. De ahi en
+                # adelante manda el dueño desde el menu.
+                #
+                # Va DENTRO del `if columna not in existentes`, o sea una sola
+                # vez: si corriera en cada arranque, una categoria que el dueño
+                # desmarcara volveria a marcarse sola en el proximo despliegue.
+                verdadero = "TRUE" if ES_POSTGRES else "1"
+                con.execute(
+                    text(
+                        f'UPDATE "DIM210_MEN_CATEGORIA" SET bebida = {verdadero} '
+                        "WHERE LOWER(nombre) LIKE '%bebida%'"
+                    )
+                )
             if tabla == "TRX410_COM_FACTURA" and columna == "pagada":
                 # El DEFAULT 1 de arriba es correcto para Efectivo/Banco, pero
                 # una factura a credito que ya existia antes de esta migracion

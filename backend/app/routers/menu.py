@@ -30,11 +30,15 @@ def crear_categoria(categoria: schemas.CategoriaCreate, db: Session = Depends(ge
 
 
 @router.put("/categorias/{categoria_id}", response_model=schemas.Categoria)
-def actualizar_categoria(categoria_id: int, categoria: schemas.CategoriaCreate, db: Session = Depends(get_db)):
+def actualizar_categoria(categoria_id: int, categoria: schemas.CategoriaUpdate, db: Session = Depends(get_db)):
     db_categoria = db.query(models.Categoria).filter(models.Categoria.id == categoria_id).first()
     if not db_categoria:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
-    for key, value in categoria.model_dump().items():
+    # Solo lo que vino en la peticion. Con `model_dump()` a secas, todo campo
+    # que el cliente no mandara se escribia con el valor por defecto del
+    # esquema: renombrar una categoria retirada le ponia `activo=True` y la
+    # devolvia al menu sola. El punto de venta manda nombre y orden nada mas.
+    for key, value in categoria.model_dump(exclude_unset=True).items():
         setattr(db_categoria, key, value)
     db.commit()
     db.refresh(db_categoria)

@@ -24,10 +24,6 @@ MIN_PEDIDOS = 15
 MIN_JUNTOS = 3
 
 
-def _categoria_es_bebida(nombre: str) -> bool:
-    return "bebida" in (nombre or "").lower()
-
-
 def _etiqueta(d: dict, mapa: Dict[int, dict]) -> str:
     """Como se llama una variante en la sugerencia que ve la cajera.
 
@@ -65,6 +61,7 @@ def _mapa_variantes(db: Session) -> Dict[int, dict]:
             models.Producto.nombre,
             models.Categoria.id,
             models.Categoria.nombre,
+            models.Categoria.bebida,
         )
         .join(models.Producto, models.Variante.producto_id == models.Producto.id)
         .join(models.Categoria, models.Producto.categoria_id == models.Categoria.id)
@@ -72,7 +69,7 @@ def _mapa_variantes(db: Session) -> Dict[int, dict]:
     )
 
     mapa = {}
-    for v_id, v_nom, precio, activo, p_id, p_nom, c_id, c_nom in filas:
+    for v_id, v_nom, precio, activo, p_id, p_nom, c_id, c_nom, c_bebida in filas:
         mapa[v_id] = {
             "variante_id": v_id,
             "variante": v_nom,
@@ -82,7 +79,7 @@ def _mapa_variantes(db: Session) -> Dict[int, dict]:
             "producto": p_nom,
             "categoria_id": c_id,
             "categoria": c_nom,
-            "es_bebida": _categoria_es_bebida(c_nom),
+            "es_bebida": bool(c_bebida),
         }
     return mapa
 
