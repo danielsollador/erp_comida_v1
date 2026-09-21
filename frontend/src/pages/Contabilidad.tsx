@@ -17,7 +17,6 @@ import type {
   EstadoResultadosContable,
   FilaBalanceComprobacion,
   FilaMayor,
-  SaludContable,
 } from '../lib/types'
 
 // Los respaldos vivian en el modulo "Sistema", que se quito. Van aqui porque
@@ -39,56 +38,11 @@ export default function Contabilidad() {
   // balances y los equipos son "a hoy": el filtro solo se muestra donde aplica.
   const [rango, setRango] = useRango('mes')
   const conPeriodo = seccion === 'diario' || seccion === 'resultados'
-  const [salud, setSalud] = useState<SaludContable | null>(null)
-
-  useEffect(() => {
-    api.saludContable().then(setSalud).catch(() => setSalud(null))
-  }, [])
 
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Contabilidad" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={conPeriodo ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina>
-        {/* El "cuadra" del balance nunca falla (es una identidad de la partida
-            doble). Estos chequeos si pueden fallar, y son los que avisan que
-            los libros dejaron de reflejar la realidad. */}
-        {salud && !salud.sano && (
-          <div className="mb-4 space-y-2">
-            {salud.problemas.map((p, i) => (
-              <div
-                key={i}
-                className={`rounded-xl border p-3 ${
-                  p.gravedad === 'grave'
-                    ? 'bg-peligro-50 border-peligro-200'
-                    : 'bg-aviso-50 border-aviso-200'
-                }`}
-              >
-                <p
-                  className={`text-sm font-semibold ${
-                    p.gravedad === 'grave' ? 'text-peligro-800' : 'text-aviso-800'
-                  }`}
-                >
-                  {p.titulo}
-                </p>
-                <p
-                  className={`text-xs mt-0.5 ${
-                    p.gravedad === 'grave' ? 'text-peligro-700' : 'text-aviso-700'
-                  }`}
-                >
-                  {p.detalle}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-        {salud?.sano && (
-          <div className="mb-4 rounded-xl border border-exito-200 bg-exito-50 px-3 py-2">
-            <p className="text-sm text-exito-800">
-              Libros sanos: sin movimientos huérfanos, sin activos en negativo, e inventario
-              contable acorde a las existencias reales.
-            </p>
-          </div>
-        )}
         {seccion === 'plan' && <PlanCuentas />}
         {seccion === 'diario' && <Diario rango={rango} />}
         {seccion === 'comprobacion' && <BalanceComprobacion />}
