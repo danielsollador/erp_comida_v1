@@ -288,6 +288,106 @@ def resumen_caja(db: Session = Depends(get_db)):
     )
 
 
+@router.post("/apertura", response_model=schemas.AperturaCaja)
+def declarar_saldo_inicial(
+    body: schemas.AperturaCajaRequest, db: Session = Depends(get_db)
+):
+    """Con cuanta plata arranco el negocio en esa gaveta.
+
+    POR QUE HACE FALTA. Los libros empiezan en cero, pero el local no: el dia
+    que se estrena el sistema ya hay billetes en la gaveta y saldo en el
+    banco. Mientras nadie lo declare, la primera compra pagada en efectivo
+    saca plata de una cuenta vacia y la deja en NEGATIVO -- un activo
+    imposible.
+
+    No es un detalle contable. El cierre calcula lo que deberia haber como
+    `saldo anterior + entradas - salidas`: con el saldo anterior corrido, el
+    primer arqueo reporta un sobrante que no existe, y ese sobrante termina
+    asentado como ingreso del negocio.
+
+    Es el mismo gesto que `contabilidad.asiento_de_apertura` hace con el
+    inventario: lo que ya estaba entra contra el capital del dueño, porque
+    no es una venta -- es plata suya que ya estaba ahi.
+
+    UNA VEZ POR GAVETA. Declararlo dos veces duplicaria el capital. Si se
+    tecleo mal, el asiento se borra desde Contabilidad y se vuelve a declarar.
+    """
+    codigo = body.cuenta
+    etiquetas = {c: e for c, e, _ in DESTINOS_ARQUEO}
+    if codigo not in etiquetas:
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se declara el saldo inicial de una gaveta o del banco",
+        )
+    if body.monto < 0:
+        raise HTTPException(status_code=400, detail="El monto no puede ser negativo")
+
+    ya = (
+        db.query(models.AsientoContable)
+        .filter(
+            models.AsientoContable.origen == "apertura_caja",
+            models.AsientoContable.referencia_id == int(codigo),
+        )
+        .first()
+    )
+    if ya:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"El saldo inicial de {etiquetas[codigo]} ya se declaró. "
+                "Si quedó mal, borra ese asiento en Contabilidad y vuelve a declararlo."
+            ),
+        )
+
+    nota = (body.nota or "").strip()
+    descripcion = f"Apertura: efectivo inicial en {etiquetas[codigo]}"
+    if nota:
+        descripcion += f" ({nota})"
+    # Contra el capital del dueño: esa plata no la genero el negocio vendiendo,
+    # ya era suya. Meterla como ingreso inflaria la ganancia y pagaria impuesto
+    # sobre algo que nunca se vendio.
+    contabilidad.crear_asiento(
+        db,
+        descripcion,
+        [(codigo, round(body.monto, 2), 0.0), ("3010", 0.0, round(body.monto, 2))],
+        origen="apertura_caja",
+        referencia_id=int(codigo),
+    )
+    db.commit()
+    return schemas.AperturaCaja(
+        cuenta=codigo,
+        etiqueta=etiquetas[codigo],
+        monto=round(body.monto, 2),
+        saldo=round(contabilidad.saldo_de_cuenta(db, codigo), 2),
+    )
+
+
+@router.get("/apertura", response_model=List[schemas.DestinoApertura])
+def estado_apertura(db: Session = Depends(get_db)):
+    """Que gavetas ya declararon con cuanto arrancaron, y cuales hacen falta.
+
+    `urge` marca las que estan en negativo: ahi la falta de declaracion ya
+    esta ensuciando los libros y el proximo cierre va a mentir.
+    """
+    declaradas = {
+        a.referencia_id
+        for a in db.query(models.AsientoContable).filter_by(origen="apertura_caja").all()
+    }
+    filas = []
+    for codigo, etiqueta, _fisico in DESTINOS_ARQUEO:
+        saldo = round(contabilidad.saldo_de_cuenta(db, codigo), 2)
+        filas.append(
+            schemas.DestinoApertura(
+                cuenta=codigo,
+                etiqueta=etiqueta,
+                declarada=int(codigo) in declaradas,
+                saldo=saldo,
+                urge=saldo < -0.01 and int(codigo) not in declaradas,
+            )
+        )
+    return filas
+
+
 @router.post("/cerrar", response_model=schemas.CierreCaja)
 def cerrar_caja(
     body: schemas.CierreCajaRequest, request: Request, db: Session = Depends(get_db)

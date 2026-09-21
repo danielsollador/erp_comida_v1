@@ -900,6 +900,31 @@ class CierreCajaRequest(BaseModel):
     punto_venta_id: Optional[int] = None
 
 
+class AperturaCajaRequest(BaseModel):
+    """Con cuanta plata arranco una gaveta el dia que se estreno el sistema."""
+
+    cuenta: str
+    monto: float
+    nota: str = ""
+
+
+class AperturaCaja(BaseModel):
+    cuenta: str
+    etiqueta: str
+    monto: float
+    saldo: float
+
+
+class DestinoApertura(BaseModel):
+    cuenta: str
+    etiqueta: str
+    declarada: bool
+    saldo: float
+    # En negativo y sin declarar: los libros ya estan sucios y el proximo
+    # cierre va a reportar un sobrante que no existe.
+    urge: bool
+
+
 class PropinasPendientes(BaseModel):
     por_entregar: float
 

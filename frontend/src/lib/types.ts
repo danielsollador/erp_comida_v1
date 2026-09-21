@@ -494,6 +494,22 @@ export type LineaCierre = {
   diferencia: number
 }
 
+/**
+ * Con cuanta plata arranco una gaveta el dia que se estreno el sistema.
+ *
+ * Los libros empiezan en cero pero el local no. Sin declararlo, la primera
+ * compra pagada en efectivo deja la cuenta en negativo y el primer cierre
+ * reporta un sobrante que no existe.
+ */
+export type DestinoApertura = {
+  cuenta: string
+  etiqueta: string
+  declarada: boolean
+  saldo: number
+  /** En negativo y sin declarar: ya esta ensuciando los libros. */
+  urge: boolean
+}
+
 export type CuentaPorCobrar = {
   pedido_id: number
   numero: number

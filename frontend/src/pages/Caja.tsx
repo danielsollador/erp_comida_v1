@@ -12,6 +12,7 @@ import { api } from '../lib/api'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import type {
   CierreCaja,
+  DestinoApertura,
   Configuracion,
   CuentaPorCobrar,
   Gasto,
@@ -84,6 +85,9 @@ export default function Caja() {
     'Buscar por fecha, quien cerró o caja',
   )
   const [resultado, setResultado] = useState<CierreCaja | null>(null)
+  // Con cuanta plata arranco cada gaveta. Mientras no se declare, la primera
+  // compra pagada en efectivo deja la cuenta en negativo.
+  const [apertura, setApertura] = useState<DestinoApertura[]>([])
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [gastoDesc, setGastoDesc] = useState('')
   const [gastoMonto, setGastoMonto] = useState('')
@@ -114,6 +118,7 @@ export default function Caja() {
     api.listarRetiros(rango).then(setRetiros).catch(() => setRetiros([]))
     api.listarFiado().then(setFiado).catch(() => {})
     api.listarPuntosVenta().then(setPuntos).catch(() => {})
+    api.estadoApertura().then(setApertura).catch(() => setApertura([]))
   }
 
   // Sacar plata del negocio NO es un gasto: es capital del dueno que sale, asi
@@ -179,6 +184,33 @@ export default function Caja() {
     if (!Number.isFinite(tasa) || tasa < 0) return
     const c = await api.actualizarConfig(tasa)
     setConfig(c)
+  }
+
+  /**
+   * Declarar con cuanta plata arranco una gaveta.
+   *
+   * Los libros empiezan en cero pero el local no. Mientras nadie lo diga, la
+   * primera compra pagada en efectivo saca plata de una cuenta vacia y la
+   * deja en negativo -- y el primer cierre reporta un sobrante que no existe.
+   */
+  async function declararApertura(destino: DestinoApertura) {
+    const monto = await dialogo.pedirNumero({
+      titulo: `¿Con cuánto arrancó ${destino.etiqueta.toLowerCase()}?`,
+      etiqueta: 'Lo que había cuando empezaste a usar el sistema',
+      sufijo: '$',
+      min: 0,
+      ayuda:
+        'Es plata tuya que ya estaba ahí, no una venta: entra contra tu capital y no ' +
+        'sube la ganancia. Se declara una sola vez.',
+    })
+    if (monto === null) return
+    setError('')
+    try {
+      await api.declararApertura(destino.cuenta, monto)
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo declarar el saldo inicial')
+    }
   }
 
   async function anularCierre(id: number) {
@@ -306,6 +338,37 @@ export default function Caja() {
       <Pagina ancho="media">
         {seccion === 'cierre' && (
           <>
+        {/* ---------- 0. UNA GAVETA EN NEGATIVO ----------
+            Solo aparece cuando hace falta, y arriba de todo: mientras este
+            asi, el cierre de abajo miente. Una gaveta no puede tener menos
+            de cero: si los libros lo dicen, es que salio plata que el sistema
+            nunca vio entrar -- casi siempre porque el local ya tenia efectivo
+            el dia que estreno el sistema y nadie lo declaro. */}
+        {apertura.filter((d) => d.urge).map((d) => (
+          <div key={d.cuenta} className="bg-peligro-50 border border-peligro-300 rounded-2xl p-4">
+            <h2 className="font-semibold text-peligro-900">
+              {/* El signo ANTES del simbolo: "$-4.20" se lee como un precio
+                  raro, "-$4.20" se lee como lo que es. */}
+              {d.etiqueta} está en −${Math.abs(d.saldo).toFixed(2)}
+            </h2>
+            <p className="text-sm text-peligro-800 mt-1">
+              Una gaveta no puede tener menos de cero. Pasa cuando se paga algo en efectivo con
+              plata que ya estaba ahí el día que empezaste a usar el sistema: él no la vio entrar,
+              así que la descontó de cero.
+            </p>
+            <p className="text-sm text-peligro-800 mt-2">
+              Mientras siga así, el cierre te va a decir que <strong>sobra</strong> plata que en
+              realidad no sobra, y ese sobrante se asienta como ganancia.
+            </p>
+            <button
+              onClick={() => declararApertura(d)}
+              className="mt-3 rounded-xl bg-peligro-600 px-4 py-2.5 text-sm font-medium text-white"
+            >
+              Declarar con cuánto arrancaste
+            </button>
+          </div>
+        ))}
+
         {/* ---------- 1. QUE PASO HOY ----------
             Arriba lo que se vendio y lo que no llego a venderse. Es la
             pregunta con la que el dueno abre esta pantalla; el arqueo viene

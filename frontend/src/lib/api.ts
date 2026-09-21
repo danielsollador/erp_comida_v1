@@ -24,6 +24,7 @@ import type {
   InflacionInsumos,
   EstadoTasa,
   CierreCaja,
+  DestinoApertura,
   Configuracion,
   ConfiguracionFiscal,
   CuentaContable,
@@ -638,6 +639,13 @@ export const api = {
         operador_id: extra?.operador_id ?? null,
         punto_venta_id: extra?.punto_venta_id ?? null,
       }),
+    }),
+  /** Que gavetas ya dijeron con cuanto arrancaron, y cuales hacen falta. */
+  estadoApertura: () => req<DestinoApertura[]>('/caja/apertura'),
+  declararApertura: (cuenta: string, monto: number, nota = '') =>
+    req('/caja/apertura', {
+      method: 'POST',
+      body: JSON.stringify({ cuenta, monto, nota }),
     }),
   listarCierres: (r?: Rango) => req<CierreCaja[]>(`/caja/cierres${conRango(r)}`),
   listarRetiros: (r?: Rango) => req<RetiroPropietario[]>(`/caja/retiros${conRango(r)}`),
