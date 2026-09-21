@@ -64,11 +64,26 @@ const MonedaCtx = createContext<Ctx>({
   recargar: () => {},
 })
 
+/**
+ * El signo MENOS delante del simbolo, no entre el simbolo y el numero.
+ *
+ * `$-4.42` se lee como un precio raro y hay que releerlo para entender que es
+ * negativo; `-$4.42` se lee de una. Importa donde mas duele: "Ganancia neta"
+ * en rojo, un faltante de caja, una gaveta sobregirada.
+ */
+function conSigno(simbolo: string, valor: number, cuerpo: string) {
+  return valor < 0 ? `−${simbolo}${cuerpo}` : `${simbolo}${cuerpo}`
+}
+
 export function fmtBs(bs: number, decimales = 2) {
-  return `Bs ${bs.toLocaleString('es-VE', {
-    minimumFractionDigits: decimales,
-    maximumFractionDigits: decimales,
-  })}`
+  return conSigno(
+    'Bs ',
+    bs,
+    Math.abs(bs).toLocaleString('es-VE', {
+      minimumFractionDigits: decimales,
+      maximumFractionDigits: decimales,
+    }),
+  )
 }
 
 export function fmtNum(n: number, decimales = 2) {
@@ -117,14 +132,20 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
         // Sin tasa no se convierte: mostrar un numero en dolares bajo etiqueta
         // de bolivares seria mentir sobre la cifra que el cliente va a pagar.
         return bcv ? fmtBs(usd * bcv, 2) : '…'
-      case 'usd_calle':
-        return bcv && tasa?.paralelo ? `$${((usd * bcv) / tasa.paralelo).toFixed(d)}` : '…'
-      case 'eur':
+      case 'usd_calle': {
+        if (!bcv || !tasa?.paralelo) return '…'
+        const v = (usd * bcv) / tasa.paralelo
+        return conSigno('$', v, Math.abs(v).toFixed(d))
+      }
+      case 'eur': {
         // Se pasa por bolivares a proposito: el precio vale lo que vale en Bs,
         // y el euro dice cuantos euros son esos bolivares al cambio oficial.
-        return bcv && tasa?.eur ? `€${((usd * bcv) / tasa.eur).toFixed(d)}` : '…'
+        if (!bcv || !tasa?.eur) return '…'
+        const v = (usd * bcv) / tasa.eur
+        return conSigno('€', v, Math.abs(v).toFixed(d))
+      }
       default:
-        return `$${usd.toFixed(d)}`
+        return conSigno('$', usd, Math.abs(usd).toFixed(d))
     }
   }
 
