@@ -12,6 +12,7 @@ import { fmtBs, useMoneda } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { uuid } from '../lib/uuid'
 import { colorCategoria } from '../lib/theme'
+import { useModoLigero } from '../lib/ligero'
 import { etiquetaVariante, variantesParaVender } from '../lib/menu'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import type {
@@ -47,6 +48,8 @@ function monto(v: string): number {
   return Number(String(v).replace(',', '.')) || 0
 }
 const CLAVE_PUNTO = 'erp-punto-venta'
+// Como se eligen los productos: 'lista' (un desplegable) o 'fichas'.
+const CLAVE_VISTA = 'erp-pos-vista'
 
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
 type Carrito = Record<number, CarritoEntry>
@@ -54,6 +57,29 @@ type Carrito = Record<number, CarritoEntry>
 export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [categoriaActiva, setCategoriaActiva] = useState<number | null>(null)
+  // Los productos como lista desplegable y no como cuadricula de fichas
+  // (Leider, 22-sep: "los productos tienen que ser una lista desplegable").
+  // Un <select> nativo son dos nodos en pantalla en vez de cuarenta fichas
+  // con sombra y borde, y en la tablet eso se siente. Las fichas se pueden
+  // volver a poner desde el boton de al lado; se recuerda en este aparato.
+  const [vista, setVista] = useState<'lista' | 'fichas'>(() => {
+    try {
+      return localStorage.getItem(CLAVE_VISTA) === 'fichas' ? 'fichas' : 'lista'
+    } catch {
+      return 'lista'
+    }
+  })
+  function cambiarVista(v: 'lista' | 'fichas') {
+    setVista(v)
+    try {
+      localStorage.setItem(CLAVE_VISTA, v)
+    } catch {
+      // sin almacenamiento: solo dura esta sesion
+    }
+  }
+  // Pantalla que vive horas abierta en la tablet: sin desenfoques ni
+  // animaciones (lib/ligero).
+  useModoLigero()
   const [carrito, setCarrito] = useState<Carrito>({})
   // Sin esto, tocar un producto no se sentia como que hizo algo: el carrito
   // esta al lado o abajo, fuera de la vista, y la cajera termina tocando dos
@@ -173,7 +199,17 @@ export default function POS() {
     })
     refrescarPedidos()
     api.listarPuntosVenta().then(setPuntos).catch(() => {})
-    const disconnect = connectWs(() => refrescarPedidos())
+    // Varios eventos seguidos (se cobra, cocina marca listo, se entrega)
+    // llegaban en el mismo segundo y cada uno pedia tres listados. Se juntan
+    // en una sola tanda un cuarto de segundo despues del ultimo.
+    let tanda: ReturnType<typeof setTimeout> | null = null
+    const disconnect = connectWs(() => {
+      if (tanda) clearTimeout(tanda)
+      tanda = setTimeout(() => {
+        tanda = null
+        refrescarPedidos()
+      }, 250)
+    })
     // Respaldo del websocket: si se cayo sin avisar, una comanda que cocina
     // ya termino o anulo se quedaba pintada aqui como si siguiera en cocina.
     // Cada minuto y solo con la pestaña visible.
@@ -186,6 +222,7 @@ export default function POS() {
     document.addEventListener('visibilitychange', alVolver)
     return () => {
       disconnect()
+      if (tanda) clearTimeout(tanda)
       clearInterval(respaldo)
       document.removeEventListener('visibilitychange', alVolver)
     }
@@ -251,15 +288,38 @@ export default function POS() {
       return
     }
     let vigente = true
-    api
-      .sugerencias(ids)
-      .then((s) => vigente && setSugerencias(s))
-      .catch(() => vigente && setSugerencias([]))
+    // Un tercio de segundo despues del ultimo toque, no en cada toque: tres
+    // empanadas seguidas eran tres peticiones y tres repintados.
+    const espera = setTimeout(() => {
+      api
+        .sugerencias(ids)
+        .then((s) => vigente && setSugerencias(s))
+        .catch(() => vigente && setSugerencias([]))
+    }, 350)
     return () => {
       vigente = false
+      clearTimeout(espera)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsCarrito])
+
+  // Lo que se puede vender hoy, por categoria, para el desplegable. Se
+  // calcula una vez por menu y no en cada toque.
+  const vendibles = useMemo(
+    () =>
+      categorias.map((c) => ({
+        categoria: c,
+        filas: c.productos
+          .filter((p) => p.activo)
+          .flatMap((p) => variantesParaVender(p).map((v) => ({ producto: p, variante: v }))),
+      })),
+    [categorias],
+  )
+  const varianteVendible = useMemo(() => {
+    const m = new Map<number, { producto: Producto; variante: Variante }>()
+    for (const g of vendibles) for (const f of g.filas) m.set(f.variante.id, f)
+    return m
+  }, [vendibles])
 
   const totalCarrito = useMemo(
     () =>
@@ -707,8 +767,8 @@ export default function POS() {
         </div>
       )}
 
-      {categorias.length > 0 && (
-        <div className="sticky top-[57px] md:static z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto shrink-0">
+      {categorias.length > 0 && vista === 'fichas' && (
+        <div className="sticky top-[57px] md:static z-10 bg-neutral-50 border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto shrink-0">
           {categorias.map((cat) => {
             const color = colorCategoria(cat.id, cat.color)
             const activa = cat.id === categoriaActiva
@@ -736,7 +796,66 @@ export default function POS() {
           {/* Mas fichas por fila y mas bajas. Con cuatro por fila en una
               laptop, once bebidas ocupaban media pantalla y las comandas
               quedaban debajo del pliegue. */}
-          {categoria && (
+          {vista === 'lista' && categorias.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <label htmlFor="pos-producto" className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                  Agregar a la comanda
+                </label>
+                <button
+                  type="button"
+                  onClick={() => cambiarVista('fichas')}
+                  className="text-xs font-medium text-neutral-500 hover:text-neutral-900 underline underline-offset-2"
+                >
+                  Ver como fichas
+                </button>
+              </div>
+              {/* `value=""` a proposito: cada eleccion agrega una unidad y el
+                  desplegable vuelve a "Elige un producto", listo para la
+                  siguiente. Las cantidades se ven y se ajustan en la comanda
+                  de la derecha. Letra de 16 px para que iOS no haga zoom. */}
+              <select
+                id="pos-producto"
+                value=""
+                onChange={(e) => {
+                  const fila = varianteVendible.get(Number(e.target.value))
+                  if (fila) agregar(fila.producto, fila.variante)
+                }}
+                className="w-full rounded-2xl border-2 border-neutral-300 bg-white px-4 py-3.5 text-base font-semibold text-neutral-900 focus:border-acento-500 focus:outline-none"
+              >
+                <option value="">Elige un producto…</option>
+                {vendibles
+                  .filter((g) => g.filas.length > 0)
+                  .map((g) => (
+                    <optgroup key={g.categoria.id} label={g.categoria.nombre}>
+                      {g.filas.map(({ producto: p, variante: v }) => {
+                        const enCarrito = carrito[v.id]?.cantidad ?? 0
+                        return (
+                          <option key={v.id} value={v.id}>
+                            {etiquetaVariante(p, v)} · {fmt(v.precio)}
+                            {enCarrito > 0 ? ` (${enCarrito} en la comanda)` : ''}
+                          </option>
+                        )
+                      })}
+                    </optgroup>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {vista === 'fichas' && (
+            <div className="flex justify-end mb-2 -mt-1">
+              <button
+                type="button"
+                onClick={() => cambiarVista('lista')}
+                className="text-xs font-medium text-neutral-500 hover:text-neutral-900 underline underline-offset-2"
+              >
+                Ver como lista
+              </button>
+            </div>
+          )}
+
+          {vista === 'fichas' && categoria && (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 mb-6">
               {categoria.productos
                 .filter((p) => p.activo)
@@ -1226,7 +1345,7 @@ export default function POS() {
           type="button"
           onClick={() => imprimirTicket(ultimaVenta.id)}
           title={`Imprimir el ticket del pedido #${ultimaVenta.numero}`}
-          className="fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 backdrop-blur px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
+          className="fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
           style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
         >
           <Icono nombre="ventas" size={14} />

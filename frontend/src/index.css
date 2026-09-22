@@ -1036,3 +1036,37 @@ html,
 body {
   overflow-x: clip;
 }
+
+/* ── Modo ligero (lib/ligero.ts) ─────────────────────────────────────────────
+   La tablet del mostrador se trababa: cada `backdrop-filter` obliga a
+   recomponer la capa en cada desplazamiento y las animaciones de entrada
+   hacen lo mismo al abrir la pantalla. Con `html.vp-ligero` todo eso se
+   apaga y el fondo pasa a ser opaco. Mismos datos, mismos colores. */
+html.vp-ligero .vp-rail,
+html.vp-ligero .vp-glass,
+html.vp-ligero [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html.vp-ligero .vp-rail,
+html.vp-ligero .vp-glass {
+  background: var(--vp-superficie);
+}
+html.vp-ligero .min-h-screen,
+html.vp-ligero .vp-escalonado > *,
+html.vp-ligero .vp-barra,
+html.vp-ligero .vp-barra-h,
+html.vp-ligero .vp-revelar-izq,
+html.vp-ligero .animate-pulse,
+html.vp-ligero [style*="vp-entrar"] {
+  animation: none !important;
+}
+html.vp-ligero::view-transition-old(root),
+html.vp-ligero::view-transition-new(root) {
+  animation: none !important;
+}
+/* Las sombras grandes tambien se pintan en cada cuadro del desplazamiento. */
+html.vp-ligero .shadow-lg,
+html.vp-ligero .shadow-md {
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08) !important;
+}

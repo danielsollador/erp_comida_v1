@@ -5,6 +5,7 @@ import { useDialogo } from '../components/dialogo'
 import { api, connectWs } from '../lib/api'
 import { editandoAhora } from '../lib/comandas'
 import type { Categoria, Pedido } from '../lib/types'
+import { useModoLigero } from '../lib/ligero'
 import { colorCategoria, type TinteCategoria } from '../lib/theme'
 
 const CLAVE_SONIDO = 'cocina.sonido'
@@ -32,6 +33,8 @@ function estiloAntiguedad(minutos: number) {
 export default function Cocina() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const dialogo = useDialogo()
+  // Horas abierta en una tablet: sin desenfoques ni animaciones (lib/ligero).
+  useModoLigero()
   // El color de la categoria en cada renglon, igual que en el mostrador
   // (Leider, 21-sep: "los colores tienen que estar para cocina tambien").
   // Los renglones traen solo la variante, asi que el menu se carga una vez

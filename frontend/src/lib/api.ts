@@ -819,13 +819,38 @@ export type WsEvent =
   | { event: 'pedido_nuevo' | 'pedido_actualizado' | 'pedido_pagado'; data: Pedido }
   | { event: 'autorizacion_pendiente' | 'autorizacion_resuelta'; data: SolicitudAutorizacion }
 
+/**
+ * El canal en vivo con el servidor, con reconexion que no castiga a la tablet.
+ *
+ * Antes reintentaba cada 1,5 s para siempre. Con la wifi caida o la tablet
+ * dormida eso eran 40 sockets por minuto que fallaban, cada uno con su
+ * memoria y su intento de red: la tablet se calentaba y se trababa sin que
+ * hubiera nada que recibir. Ahora la espera se dobla hasta 30 s, y con la
+ * pestaña escondida no se reintenta: se reconecta al volver a la vista.
+ */
 export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  let ws: WebSocket
+  let ws: WebSocket | null = null
   let closed = false
+  let espera = 1500
+  let reintento: ReturnType<typeof setTimeout> | null = null
+
+  function programar() {
+    if (closed || reintento) return
+    if (document.visibilityState !== 'visible') return // al volver se reconecta
+    reintento = setTimeout(() => {
+      reintento = null
+      connect()
+    }, espera)
+    espera = Math.min(espera * 2, 30000)
+  }
 
   function connect() {
+    if (closed) return
     ws = new WebSocket(`${proto}://${window.location.host}/ws`)
+    ws.onopen = () => {
+      espera = 1500
+    }
     ws.onmessage = (msg) => {
       try {
         onEvent(JSON.parse(msg.data))
@@ -834,14 +859,25 @@ export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
       }
     }
     ws.onclose = () => {
-      if (!closed) setTimeout(connect, 1500)
+      ws = null
+      programar()
     }
   }
+
+  const alVolver = () => {
+    if (document.visibilityState === 'visible' && !ws && !reintento && !closed) {
+      espera = 1500
+      connect()
+    }
+  }
+  document.addEventListener('visibilitychange', alVolver)
   connect()
 
   return () => {
     closed = true
-    ws.close()
+    document.removeEventListener('visibilitychange', alVolver)
+    if (reintento) clearTimeout(reintento)
+    ws?.close()
   }
 }
 
