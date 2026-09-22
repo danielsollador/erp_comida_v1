@@ -302,6 +302,11 @@ class Configuracion(Base):
 
     id = Column(Integer, primary_key=True)
     tasa_bcv = Column(Float, default=0)
+    # Interruptor para arrancar un local nuevo: el dueno todavia no cargo
+    # insumos ni recetas, y sin esto CADA venta se traba con "no alcanza el
+    # inventario" aunque en los hechos no haya nada que controlar todavia. Se
+    # apaga el dia que carga el inventario de verdad.
+    vender_sin_inventario = Column(Boolean, default=False)
 
 
 class Gasto(Base):

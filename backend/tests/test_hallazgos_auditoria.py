@@ -81,6 +81,51 @@ def test_se_puede_forzar_la_venta_con_aviso(client, variante):
     assert r.status_code == 200
 
 
+def test_vender_sin_inventario_apagado_por_defecto(client, variante):
+    """El interruptor global arranca en falso: prenderlo es una decision, no
+    un descuido de instalacion que deje colando cualquier venta."""
+    r = client.post(
+        "/api/pedidos",
+        json={"items": [{"variante_id": variante.id, "cantidad": 1000}], "nota": ""},
+    )
+    assert r.status_code == 409
+
+
+def test_vender_sin_inventario_prendido_no_bloquea_ninguna_venta(client, variante):
+    """Para arrancar un local que todavia no cargo insumos ni recetas: con el
+    interruptor prendido, ninguna venta se traba por stock, sin que el
+    cajero tenga que marcar `permitir_sin_stock` pedido por pedido."""
+    r = client.put("/api/config/inventario", json={"vender_sin_inventario": True})
+    assert r.status_code == 200
+    assert r.json()["vender_sin_inventario"] is True
+
+    r = client.post(
+        "/api/pedidos",
+        json={"items": [{"variante_id": variante.id, "cantidad": 1000}], "nota": ""},
+    )
+    assert r.status_code == 200
+
+
+def test_apagar_vender_sin_inventario_vuelve_a_bloquear(client, variante):
+    client.put("/api/config/inventario", json={"vender_sin_inventario": True})
+    client.put("/api/config/inventario", json={"vender_sin_inventario": False})
+    r = client.post(
+        "/api/pedidos",
+        json={"items": [{"variante_id": variante.id, "cantidad": 1000}], "nota": ""},
+    )
+    assert r.status_code == 409
+
+
+def test_fijar_la_tasa_no_apaga_vender_sin_inventario(client):
+    """El PUT de la tasa (`/config`) y el del interruptor (`/config/inventario`)
+    son endpoints separados a proposito: si compartieran uno, cada vez que
+    Caja mandara la tasa sin este campo lo apagaria de vuelta sin que nadie
+    lo haya tocado."""
+    client.put("/api/config/inventario", json={"vender_sin_inventario": True})
+    client.put("/api/config", json={"tasa_bcv": 50})
+    assert client.get("/api/config").json()["vender_sin_inventario"] is True
+
+
 def test_el_stock_baja_al_crear_la_comanda_no_al_cobrar(client, db, variante, insumo):
     """La cocina gasta insumos cuando cocina. Descontar al cobrar dejaba una
     ventana donde el sistema creia tener lo que ya estaba en el sarten."""

@@ -11,6 +11,7 @@ import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
 import type {
   CompraDeInsumo,
+  Configuracion,
   ConteoDetalle,
   ConteoResumen,
   DatosIngrediente,
@@ -125,6 +126,10 @@ export default function Inventario() {
   const [contando, setContando] = useState(false)
   const [conteos, setConteos] = useState<ConteoResumen[]>([])
   const [conteoAbierto, setConteoAbierto] = useState<number | null>(null)
+  // Arranque de un local nuevo: todavia no hay insumos ni recetas cargadas,
+  // y sin esto cada venta se traba en cuanto un producto tenga receta.
+  const [config, setConfig] = useState<Configuracion | null>(null)
+  const [cambiandoConfig, setCambiandoConfig] = useState(false)
 
   // Abre por nombre, que es como se busca un insumo; pero el dueno entra aqui
   // a ver que se esta acabando y que subio de precio, y eso son dos clics en
@@ -168,6 +173,19 @@ export default function Inventario() {
     api.listarSobrantes(rango).then(setSobrantes).catch(() => {})
     api.conteos(rango).then(setConteos).catch(() => setConteos([]))
     api.inflacionInsumos().then(setInflacion).catch(() => setInflacion(null))
+    api.obtenerConfig().then(setConfig).catch(() => setConfig(null))
+  }
+
+  async function alternarVentaSinInventario() {
+    if (!config) return
+    setCambiandoConfig(true)
+    try {
+      setConfig(await api.venderSinInventario(!config.vender_sin_inventario))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cambiar')
+    } finally {
+      setCambiandoConfig(false)
+    }
   }
 
   async function accion(fn: () => Promise<unknown>) {
@@ -377,6 +395,41 @@ export default function Inventario() {
       <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={<FiltroFechas rango={rango} alCambiar={setRango} />} />
       <Pagina ancho="ancha">
         {error && <Aviso>{error}</Aviso>}
+
+        {/* Arranque del local: mientras no haya insumos ni recetas cargadas,
+            NO bloquea la venta. Visible en cualquier sub-sección porque es un
+            interruptor de todo el módulo, no solo de "Insumos". */}
+        {config && (
+          <div
+            className={`rounded-2xl border p-4 flex items-center justify-between gap-4 ${
+              config.vender_sin_inventario
+                ? 'bg-aviso-50 border-aviso-300'
+                : 'bg-white border-neutral-200'
+            }`}
+          >
+            <div>
+              <h2 className={`font-semibold ${config.vender_sin_inventario ? 'text-aviso-900' : ''}`}>
+                Vender sin control de inventario
+              </h2>
+              <p className={`text-sm mt-0.5 ${config.vender_sin_inventario ? 'text-aviso-800' : 'text-neutral-500'}`}>
+                {config.vender_sin_inventario
+                  ? 'Prendido: ninguna venta se traba por falta de stock, aunque un producto tenga receta.'
+                  : 'Para arrancar el local sin insumos ni recetas cargadas todavía. Apágalo cuando el inventario esté al día.'}
+              </p>
+            </div>
+            <button
+              onClick={alternarVentaSinInventario}
+              disabled={cambiandoConfig}
+              className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-40 ${
+                config.vender_sin_inventario
+                  ? 'bg-neutral-900 text-white'
+                  : 'border border-neutral-300 text-neutral-700'
+              }`}
+            >
+              {config.vender_sin_inventario ? 'Apagar' : 'Encender'}
+            </button>
+          </div>
+        )}
 
         {seccion === 'insumos' && (
           <>

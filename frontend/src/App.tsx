@@ -84,7 +84,6 @@ const Tasa = perezoso(() => import('./pages/Tasa'))
 const Contabilidad = perezoso(() => import('./pages/Contabilidad'))
 const Compras = perezoso(() => import('./pages/Compras'))
 const Impuestos = perezoso(() => import('./pages/Impuestos'))
-const Recetas = perezoso(() => import('./pages/Recetas'))
 const Usuarios = perezoso(() => import('./pages/Usuarios'))
 const MiUsuario = perezoso(() => import('./pages/MiUsuario'))
 
@@ -154,6 +153,18 @@ function Requiere({ modulo, children }: { modulo: string; children: ReactNode })
 }
 
 /**
+ * Igual que `Requiere`, pero para una pantalla que junta dos módulos (Menú y
+ * recetas). Entra con CUALQUIERA de los dos: un rol a medida que solo tenga
+ * "recetas" no debería quedarse afuera de la pantalla, aunque dentro de ella
+ * solo vea su propia pestaña (eso lo decide la pantalla, no esta guarda).
+ */
+function RequiereAlguno({ modulos, children }: { modulos: string[]; children: ReactNode }) {
+  const { estado } = useAcceso()
+  if (!modulos.some((m) => entraA(estado.puede, m))) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
+/**
  * El marco: la barra lateral y, a su derecha, la pantalla. La cocina va sola a
  * pantalla completa (la barra no se muestra y no se deja hueco).
  */
@@ -196,13 +207,13 @@ export default function App() {
 
               <Route path="/pos" element={<Requiere modulo="pos"><POS /></Requiere>} />
               <Route path="/inventario" element={<Requiere modulo="inventario"><Inventario /></Requiere>} />
-              <Route path="/menu" element={<Requiere modulo="menu"><Menu /></Requiere>} />
+              <Route path="/menu" element={<RequiereAlguno modulos={['menu', 'recetas']}><Menu /></RequiereAlguno>} />
+              <Route path="/recetas" element={<Navigate to="/menu?s=recetas" replace />} />
               <Route path="/caja" element={<Requiere modulo="caja"><Caja /></Requiere>} />
               <Route path="/ventas" element={<Requiere modulo="ventas"><Ventas /></Requiere>} />
               <Route path="/reportes" element={<Requiere modulo="reportes"><Reportes /></Requiere>} />
               <Route path="/tasa" element={<Requiere modulo="tasa"><Tasa /></Requiere>} />
               <Route path="/compras" element={<Requiere modulo="compras"><Compras /></Requiere>} />
-              <Route path="/recetas" element={<Requiere modulo="recetas"><Recetas /></Requiere>} />
 
               <Route path="/contabilidad" element={<Requiere modulo="contabilidad"><Contabilidad /></Requiere>} />
               <Route path="/impuestos" element={<Requiere modulo="impuestos"><Impuestos /></Requiere>} />

@@ -662,6 +662,8 @@ export type BalanceGeneral = {
 
 export type Configuracion = {
   tasa_bcv: number
+  /** Mientras está prendido, una venta se hace aunque falte inventario. */
+  vender_sin_inventario: boolean
 }
 
 export type Respaldo = {

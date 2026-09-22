@@ -98,6 +98,7 @@ COLUMNAS = [
     ("TRX410_COM_FACTURA", "descuento", "FLOAT DEFAULT 0"),
     ("TRX411_COM_FACTURA_DET", "exento", "BOOLEAN DEFAULT 0"),
     ("TRX410_COM_FACTURA", "referencia_pago", "VARCHAR DEFAULT ''"),
+    ("CFG910_ADM_PARAMETRO", "vender_sin_inventario", "BOOLEAN DEFAULT 0"),
 ]
 
 

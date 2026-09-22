@@ -23,17 +23,23 @@ import { useSearchParams } from 'react-router-dom'
  */
 export type Seccion = { id: string; texto: string }
 
-export function useSeccion(secciones: Seccion[]): [string, (id: string) => void] {
+export function useSeccion(
+  secciones: Seccion[],
+  // Nombre del parametro en la URL. Por defecto 's'; un modulo con
+  // sub-secciones DENTRO de una sub-seccion (menu y recetas, cada uno con
+  // las suyas) necesita un segundo nombre para no pisar al de afuera.
+  param = 's',
+): [string, (id: string) => void] {
   const [params, setParams] = useSearchParams()
-  const pedida = params.get('s')
+  const pedida = params.get(param)
   const activa = secciones.some((s) => s.id === pedida) ? (pedida as string) : secciones[0].id
   // `replace`: elegir sección no llena el historial de pasos intermedios, pero
   // la URL sí queda compartible. Los demás parámetros (el rango de fechas,
   // `?r=`/`?d=`/`?h=`) se conservan: cambiar de sección no cambia el periodo.
   const ir = (id: string) => {
     const p = new URLSearchParams(params)
-    if (id === secciones[0].id) p.delete('s')
-    else p.set('s', id)
+    if (id === secciones[0].id) p.delete(param)
+    else p.set(param, id)
     setParams(p, { replace: true })
   }
   return [activa, ir]

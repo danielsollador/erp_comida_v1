@@ -181,6 +181,16 @@ def _faltantes(consumo: Dict[models.Ingrediente, float]) -> List[str]:
     ]
 
 
+def _vender_sin_inventario(db: Session) -> bool:
+    """Si el local esta arrancando y el control de inventario esta apagado.
+
+    Bypasea el bloqueo entero, no solo lo avisa: con el interruptor prendido
+    ninguna venta se traba por stock, sin importar lo que digan las recetas.
+    """
+    fila = db.query(models.Configuracion).first()
+    return bool(fila and fila.vender_sin_inventario)
+
+
 @router.post("", response_model=schemas.Pedido)
 async def crear_pedido(
     pedido: schemas.PedidoCreate, request: Request, db: Session = Depends(get_db)
@@ -236,7 +246,7 @@ async def crear_pedido(
     # ventana donde el sistema creia tener lo que ya estaba en el sarten, y
     # hacia que un pedido anulado despues de prepararse no descontara nada.
     faltantes = _faltantes(consumo)
-    if faltantes and not pedido.permitir_sin_stock:
+    if faltantes and not pedido.permitir_sin_stock and not _vender_sin_inventario(db):
         raise HTTPException(
             status_code=409,
             detail="No alcanza el inventario para: " + "; ".join(faltantes),
@@ -780,7 +790,7 @@ async def editar_pedido(
             neto[ingrediente] = cambio
 
     faltantes = _faltantes({i: c for i, c in neto.items() if c > 0})
-    if faltantes and not body.permitir_sin_stock:
+    if faltantes and not body.permitir_sin_stock and not _vender_sin_inventario(db):
         raise HTTPException(
             status_code=409, detail="No alcanza el inventario para: " + "; ".join(faltantes)
         )

@@ -17,13 +17,14 @@ import Icono, { type NombreIcono } from './Icono'
  * (`acceso/permisos.py`): la barra muestra exactamente aquello a lo que el rol
  * entra, sea uno de fabrica o uno a medida, sin deducirlo del nombre del rol.
  */
-export const MODULOS: { to: string; modulo: string; icono: NombreIcono; titulo: string; grupo: 'operacion' | 'administracion' }[] = [
+export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcono; titulo: string; grupo: 'operacion' | 'administracion' }[] = [
   { to: '/pos', modulo: 'pos', icono: 'pos', titulo: 'Punto de venta', grupo: 'operacion' },
   { to: '/cocina', modulo: 'cocina', icono: 'cocina', titulo: 'Cocina', grupo: 'operacion' },
   { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'operacion' },
   { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'administracion' },
-  { to: '/menu', modulo: 'menu', icono: 'menu', titulo: 'Menú', grupo: 'administracion' },
-  { to: '/recetas', modulo: 'recetas', icono: 'recetas', titulo: 'Recetas', grupo: 'administracion' },
+  // Dos permisos detras de un solo icono: quien tenga cualquiera de los dos
+  // entra, aunque dentro solo vea su propia pestaña.
+  { to: '/menu', modulo: ['menu', 'recetas'], icono: 'menu', titulo: 'Menú y recetas', grupo: 'administracion' },
   { to: '/inventario', modulo: 'inventario', icono: 'inventario', titulo: 'Inventario', grupo: 'administracion' },
   { to: '/compras', modulo: 'compras', icono: 'compras', titulo: 'Compras', grupo: 'administracion' },
   { to: '/caja', modulo: 'caja', icono: 'caja', titulo: 'Cierre de caja', grupo: 'administracion' },
@@ -38,12 +39,19 @@ export function entraA(puede: { modulos?: string[] }, modulo: string): boolean {
   return (puede.modulos ?? []).includes(modulo)
 }
 
+/** Igual que `entraA`, pero acepta un módulo o una lista: con lista, basta con
+ * cualquiera de ellos (una pantalla que junta dos módulos, como Menú y
+ * recetas). */
+export function entraAModulo(puede: { modulos?: string[] }, modulo: string | string[]): boolean {
+  return Array.isArray(modulo) ? modulo.some((m) => entraA(puede, m)) : entraA(puede, modulo)
+}
+
 export default function Rail() {
   const { estado } = useAcceso()
   const { pathname } = useLocation()
   if (pathname.startsWith('/cocina')) return null
 
-  const visibles = MODULOS.filter((m) => entraA(estado.puede, m.modulo))
+  const visibles = MODULOS.filter((m) => entraAModulo(estado.puede, m.modulo))
   const operacion = visibles.filter((m) => m.grupo === 'operacion')
   const administracion = visibles.filter((m) => m.grupo === 'administracion')
   const inicial = (estado.nombre_visible || estado.usuario || '?').slice(0, 1).toUpperCase()

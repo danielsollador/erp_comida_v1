@@ -4,7 +4,7 @@ import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
-import { MODULOS, entraA } from '../components/Rail'
+import { MODULOS, entraAModulo } from '../components/Rail'
 import UsuarioMenu from '../components/UsuarioMenu'
 import Notificaciones from '../components/Notificaciones'
 import { useAcceso } from '../lib/acceso'
@@ -25,8 +25,7 @@ const DESCRIPCION: Record<string, string> = {
   '/reportes': 'Cómo va el negocio',
   // Las de administracion solo se ven en pantallas altas (tablet en
   // vertical), donde las fichas crecen y una sola palabra las deja vacias.
-  '/menu': 'Productos, precios y categorías',
-  '/recetas': 'Qué lleva cada producto',
+  '/menu': 'Productos, precios y qué lleva cada uno',
   '/inventario': 'Insumos, stock y costos',
   '/compras': 'Lo que entra y lo que cuesta',
   '/caja': 'Cuadrar el día',
@@ -60,7 +59,7 @@ export default function Inicio() {
   const [porCobrar, setPorCobrar] = useState(0)
   const { fmt } = useMoneda()
 
-  const entra = (m: (typeof MODULOS)[number]) => entraA(estado.puede, m.modulo)
+  const entra = (m: (typeof MODULOS)[number]) => entraAModulo(estado.puede, m.modulo)
   const operacion = MODULOS.filter((m) => m.grupo === 'operacion' && entra(m))
   const administracion = MODULOS.filter((m) => m.grupo === 'administracion' && entra(m))
 

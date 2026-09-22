@@ -798,6 +798,13 @@ class Ticket(BaseModel):
 
 class Configuracion(BaseModel):
     tasa_bcv: float
+    # Mientras esta encendido, una venta se hace aunque falte inventario: es
+    # para arrancar un local que todavia no cargo insumos ni recetas.
+    vender_sin_inventario: bool = False
+
+
+class VenderSinInventarioRequest(BaseModel):
+    vender_sin_inventario: bool
 
 
 class EntregarPropinasRequest(BaseModel):

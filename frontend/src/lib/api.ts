@@ -574,6 +574,12 @@ export const api = {
   obtenerConfig: () => req<Configuracion>('/config'),
   actualizarConfig: (tasa_bcv: number) =>
     req<Configuracion>('/config', { method: 'PUT', body: JSON.stringify({ tasa_bcv }) }),
+  /** Prender o apagar la venta sin control de inventario (arranque del local). */
+  venderSinInventario: (vender_sin_inventario: boolean) =>
+    req<Configuracion>('/config/inventario', {
+      method: 'PUT',
+      body: JSON.stringify({ vender_sin_inventario }),
+    }),
 
   reporteCombos: (r: Rango) => req<ReporteCombos>(`/reportes/combos${conRango(r)}`),
   ventas: (r: Rango, estado?: string) =>
