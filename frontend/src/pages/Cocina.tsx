@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { api, connectWs } from '../lib/api'
 import { editandoAhora } from '../lib/comandas'
-import type { Pedido } from '../lib/types'
+import type { Categoria, Pedido } from '../lib/types'
+import { colorCategoria, type TinteCategoria } from '../lib/theme'
 
 const CLAVE_SONIDO = 'cocina.sonido'
 // Cuanto se resalta un pedido recien llegado antes de verse como los demas.
@@ -31,6 +32,21 @@ function estiloAntiguedad(minutos: number) {
 export default function Cocina() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const dialogo = useDialogo()
+  // El color de la categoria en cada renglon, igual que en el mostrador
+  // (Leider, 21-sep: "los colores tienen que estar para cocina tambien").
+  // Los renglones traen solo la variante, asi que el menu se carga una vez
+  // para saber a que categoria pertenece cada una.
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  useEffect(() => {
+    api.listarCategorias().then(setCategorias).catch(() => setCategorias([]))
+  }, [])
+  const tinteDeVariante = useMemo(() => {
+    const m = new Map<number, TinteCategoria>()
+    for (const c of categorias)
+      for (const p of c.productos)
+        for (const v of p.variantes) m.set(v.id, colorCategoria(c.id, c.color))
+    return m
+  }, [categorias])
   const [, setTick] = useState(0)
   const [nuevos, setNuevos] = useState<Set<number>>(new Set())
   // El navegador no deja sonar nada hasta que alguien toca la pantalla, asi que
@@ -307,7 +323,9 @@ export default function Cocina() {
               </button>
 
               <ul className="space-y-2 mb-4">
-                {pedido.items.map((item) => (
+                {pedido.items.map((item) => {
+                  const tinte = item.variante_id != null ? tinteDeVariante.get(item.variante_id) : undefined
+                  return (
                   <li key={item.id}>
                     <button
                       onClick={() => toggleItem(item.id)}
@@ -315,7 +333,9 @@ export default function Cocina() {
                       className={`w-full text-left px-4 py-3 rounded-xl flex justify-between items-center gap-3 border disabled:opacity-50 ${
                         item.preparado
                           ? 'bg-exito-500/10 border-exito-500/30 text-neutral-500 line-through'
-                          : 'bg-neutral-100 border-neutral-200'
+                          : tinte
+                            ? `${tinte.bg} ${tinte.border}`
+                            : 'bg-neutral-100 border-neutral-200'
                       }`}
                     >
                       <span className="text-lg font-semibold leading-snug">
@@ -330,7 +350,8 @@ export default function Cocina() {
                       </span>
                     </button>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
               <button
                 onClick={() => marcarTodoListo(pedido.id)}
