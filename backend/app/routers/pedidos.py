@@ -339,6 +339,7 @@ async def crear_pedido(
         cliente=(pedido.cliente or "").strip(),
         operador_id=quien_toma.id if quien_toma else None,
         clave_cliente=pedido.clave_cliente,
+        a_cocina=pedido.a_cocina,
     )
     db.add(db_pedido)
     db.flush()
@@ -354,7 +355,7 @@ async def crear_pedido(
                     costo_unitario=0,
                     cantidad=item.cantidad,
                     nota=item.nota,
-                    preparado=bool(item.preparado),
+                    preparado=bool(item.preparado) or not pedido.a_cocina,
                 )
             )
             continue
@@ -369,7 +370,13 @@ async def crear_pedido(
                 costo_unitario=round(costos.get(variante.id, 0), 4),
                 cantidad=item.cantidad,
                 nota=item.nota,
-                preparado=_nace_preparado(variante, recetas.get(variante.id), categoria_envios_id),
+                # Si la comanda no va a cocina, nada que preparar: la comida
+                # ya esta hecha en la vitrina.
+                preparado=(
+                    True
+                    if not pedido.a_cocina
+                    else _nace_preparado(variante, recetas.get(variante.id), categoria_envios_id)
+                ),
             )
         )
 

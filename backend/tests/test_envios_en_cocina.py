@@ -112,3 +112,42 @@ def test_comida_mas_delivery_si_aparece_hasta_que_la_comida_este_lista(client, v
 
     client.post(f"/api/pedidos/{p['id']}/marcar-listo")
     assert p["id"] not in en_cocina(client), "al terminar de cocinar, ya no hay nada pendiente"
+
+
+# ── Comida de vitrina: la comanda que no pasa por cocina ────────────────────
+
+def test_una_comanda_de_vitrina_no_llega_a_cocina(client, variante):
+    """Leider (22-sep): "la tienda va a tener ya comida de muestra... al darle
+    al boton tiene que generarte la opcion de si quieres mandarlo a cocina o
+    no, y esa comanda no se le enviaria al modulo de cocina"."""
+    p = client.post("/api/pedidos", json={
+        "items": [{"variante_id": variante.id, "cantidad": 1}],
+        "nota": "", "a_cocina": False,
+    }).json()
+
+    assert p["a_cocina"] is False
+    assert p["items"][0]["preparado"] is True
+    assert p["id"] not in en_cocina(client), "ya estaba hecha: nadie la va a cocinar"
+    # Y nace lista para cobrar, no en el limbo.
+    assert p["estado"] == "listo"
+
+
+def test_la_misma_comanda_a_cocina_si_llega(client, variante):
+    """El control: lo unico que cambia es la respuesta a la pregunta."""
+    p = client.post("/api/pedidos", json={
+        "items": [{"variante_id": variante.id, "cantidad": 1}],
+        "nota": "", "a_cocina": True,
+    }).json()
+    assert p["a_cocina"] is True
+    assert p["items"][0]["preparado"] is False
+    assert p["id"] in en_cocina(client)
+
+
+def test_sin_decir_nada_la_comanda_va_a_cocina(client, variante):
+    """El valor por defecto es el de siempre: una peticion vieja --o la app
+    de alguien que no recargo-- no puede dejar de mandar comida a cocina."""
+    p = client.post("/api/pedidos", json={
+        "items": [{"variante_id": variante.id, "cantidad": 1}], "nota": "",
+    }).json()
+    assert p["a_cocina"] is True
+    assert p["id"] in en_cocina(client)

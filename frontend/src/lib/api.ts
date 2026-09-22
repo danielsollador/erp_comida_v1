@@ -277,10 +277,12 @@ export const api = {
     clave_cliente?: string,
     /** A nombre de quien va la comanda: sale al lado del numero de pedido. */
     cliente = '',
+    /** false = la comida ya esta hecha (vitrina): no pasa por cocina. */
+    a_cocina = true,
   ) =>
     req<Pedido>('/pedidos', {
       method: 'POST',
-      body: JSON.stringify({ items, nota, permitir_sin_stock, clave_cliente, cliente }),
+      body: JSON.stringify({ items, nota, permitir_sin_stock, clave_cliente, cliente, a_cocina }),
     }),
   /** Que paso con este insumo, en orden. El extracto del deposito. */
   /** Con `desde`/`hasta` el extracto trae además saldo inicial y totales del período. */

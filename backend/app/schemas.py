@@ -591,6 +591,9 @@ class PedidoCreate(BaseModel):
     # la cajera vuelve a darle, el mismo valor devuelve el pedido ya creado en
     # vez de mandar una segunda comanda igual a cocina.
     clave_cliente: Optional[str] = None
+    # False = la comida ya esta hecha y no pasa por cocina: es de la vitrina.
+    # Sus renglones nacen preparados y la comanda nace lista para cobrar.
+    a_cocina: bool = True
 
 
 class AnularRequest(BaseModel):
@@ -659,6 +662,9 @@ class Pedido(BaseModel):
     # Cuando quedo lista para entregar. El mostrador la sigue mostrando un
     # rato despues de cobrada para saber a quien darle la comida.
     listo_en: Optional[datetime.datetime] = None
+    # False = no paso por cocina: comida de vitrina. La pantalla lo dice, y
+    # por eso se guarda en vez de adivinarse (ver el modelo).
+    a_cocina: bool = True
     facturado: bool = False
     numero_factura: Optional[str] = None
     # Tasa a la que se cobro. Se expone para que la pantalla muestre los

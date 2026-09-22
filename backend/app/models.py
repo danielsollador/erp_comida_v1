@@ -1049,6 +1049,13 @@ class Pedido(Base):
     # es el reloj con el que el mostrador la sigue mostrando un rato mas: la
     # comida esta hecha y el cliente todavia no ha venido a buscarla.
     listo_en = Column(DateTime, nullable=True)
+    # Si esta comanda pasa por cocina. False = la comida ya estaba hecha, en
+    # la vitrina del mostrador (Leider, 22-sep: "la tienda va a tener ya
+    # comida de muestra"). Se guarda en vez de deducirse de "todos los
+    # renglones nacieron preparados", porque eso tambien es verdad de una
+    # comanda normal en cuanto la cocina termina, y entonces no habria forma
+    # de distinguirlas UNA HORA DESPUES, que es cuando alguien pregunta.
+    a_cocina = Column(Boolean, default=True, nullable=False)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     operador_rel = relationship("Operador", foreign_keys=[operador_id])

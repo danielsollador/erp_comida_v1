@@ -394,6 +394,8 @@ export type Pedido = {
   creado_en: string
   /** Cuando se cobro. Null mientras siga sin cobrar. */
   cerrado_en: string | null
+  /** false = no pasó por cocina: comida de vitrina, ya hecha. */
+  a_cocina: boolean
   facturado: boolean
   numero_factura: string | null
   /** Tasa a la que se cobro. Para montos historicos manda esta, no la de hoy. */

@@ -338,10 +338,34 @@ export default function POS() {
     }
     setFaltaNombre(false)
 
+    // A cocina o de la vitrina. Leider (22-sep): "la tienda va a tener ya
+    // comida de muestra... al darle al boton tiene que generarte la opcion
+    // de si quieres mandarlo a cocina o no". Se pregunta y no se adivina:
+    // desde el carrito no hay forma de saber si esa empanada hay que hacerla
+    // o ya esta en la vitrina, y mandar a cocina algo que ya esta hecho es
+    // comida de mas.
+    const destino = await dialogo.elegir({
+      titulo: `¿La comanda de ${nombre} va a cocina?`,
+      opciones: [
+        {
+          valor: 'cocina',
+          texto: 'Sí, mandar a cocina',
+          detalle: 'Hay que prepararla. Aparece en la pantalla de cocina.',
+        },
+        {
+          valor: 'vitrina',
+          texto: 'No, ya está lista',
+          detalle: 'Comida de muestra, del mostrador. No pasa por cocina: queda lista para cobrar.',
+        },
+      ],
+    })
+    if (destino === null) return
+    const aCocina = destino === 'cocina'
+
     if (!claveComanda.current) claveComanda.current = uuid()
     const clave = claveComanda.current
     try {
-      await api.crearPedido(items, false, '', clave, nombre)
+      await api.crearPedido(items, false, '', clave, nombre, aCocina)
       setCarrito({})
       setLibres([])
       setClienteComanda('')
@@ -360,7 +384,7 @@ export default function POS() {
           })
         ) {
           try {
-            await api.crearPedido(items, true, '', clave, nombre)
+            await api.crearPedido(items, true, '', clave, nombre, aCocina)
             setCarrito({})
             setLibres([])
             setClienteComanda('')
@@ -803,10 +827,20 @@ export default function POS() {
                       )
                     )}
                   </span>
-                  <span className="flex items-center gap-1.5 flex-wrap justify-end">
+                  {/* Las pastillas no se comen el nombre: con dos o tres, un
+                      "Ana" se cortaba en "A...", que es justo el dato por el
+                      que se mira la tarjeta. */}
+                  <span className="flex items-center gap-1.5 flex-wrap justify-end max-w-[62%] shrink-0">
                     {pedido.editado && (
                       <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-aviso-500/20 text-aviso-800">
                         Editado
+                      </span>
+                    )}
+                    {/* La comida ya estaba hecha: no la espera nadie en la
+                        cocina, y quien mire la tarjeta tiene que saberlo. */}
+                    {!pedido.a_cocina && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-neutral-800 text-white">
+                        Sin cocina
                       </span>
                     )}
                     {/* Que la cocina ya la tenga no es un detalle de color: es
@@ -1064,7 +1098,7 @@ export default function POS() {
               disabled={Object.keys(carrito).length === 0 && libres.length === 0}
               className="w-full bg-neutral-900 text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-30"
             >
-              Enviar comanda a cocina
+              Enviar comanda
             </button>
           </div>
         </div>
