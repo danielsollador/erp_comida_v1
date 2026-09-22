@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Boton, Campo, Modal, Selector } from './ui'
 import Autorizar from './Autorizar'
 import { api } from '../lib/api'
+import { useAcceso } from '../lib/acceso'
 import { useMoneda } from '../lib/moneda'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO } from '../lib/pagos'
 import { etiquetaMetodo } from '../lib/pagos'
@@ -65,6 +66,12 @@ export default function EditarPedido({
   onCerrar: () => void
 }) {
   const { fmt } = useMoneda()
+  // Quien ya tiene un rol que autoriza no se pide permiso a si mismo: su
+  // sesion es la firma, igual que cuando aprueba desde su aplicacion sin
+  // teclear nada (Leider, 21-sep: "es logico"). El servidor decide lo mismo
+  // por su cuenta; esto solo evita mostrar un cuadro que no hace falta.
+  const { estado } = useAcceso()
+  const autorizoYo = estado.puede.autoriza
   const [lineas, setLineas] = useState<LineaEdicion[]>(() => lineasDePedido(pedido))
   const [motivo, setMotivo] = useState('')
   const [buscar, setBuscar] = useState('')
@@ -103,7 +110,8 @@ export default function EditarPedido({
   const diferencia = Math.round((total - pedido.total) * 100) / 100
   // Solo una venta YA COBRADA tiene plata que cuadrar. Si todavía no se ha
   // cobrado, cambiar renglones es simplemente tomar bien el pedido.
-  const pideClave = pedido.estado === 'pagado' && diferencia !== 0
+  const mueveDinero = pedido.estado === 'pagado' && diferencia !== 0
+  const pideClave = mueveDinero && !autorizoYo
 
   function cambiar(clave: string, delta: number) {
     setLineas((prev) =>
@@ -151,7 +159,7 @@ export default function EditarPedido({
           // El monto va en positivo: el signo lo pone la diferencia. Pedirle al
           // cajero que escriba -3.00 para una devolución es pedirle que se
           // equivoque.
-          pagos: pideClave
+          pagos: mueveDinero
             ? [{ metodo, monto: Math.abs(diferencia), referencia }]
             : undefined,
         },
@@ -169,7 +177,9 @@ export default function EditarPedido({
       titulo={`Editar pedido #${pedido.numero}`}
       ayuda={
         pedido.estado === 'pagado'
-          ? 'Esta venta ya está cobrada: si el monto cambia hará falta el PIN de quien autoriza (o su aprobación desde la app) y decir por dónde entra o sale la diferencia.'
+          ? autorizoYo
+            ? 'Esta venta ya está cobrada: si el monto cambia, la diferencia queda firmada a tu nombre y hay que decir por dónde entra o sale.'
+            : 'Esta venta ya está cobrada: si el monto cambia hará falta el PIN de quien autoriza (o su aprobación desde la app) y decir por dónde entra o sale la diferencia.'
           : 'La cocina tiene esta comanda bloqueada mientras el cuadro esté abierto.'
       }
       onCerrar={onCerrar}
@@ -276,18 +286,25 @@ export default function EditarPedido({
           una venta ya cobrada. Un pedido sin cobrar no pide nada, y una edición
           que da exacta tampoco -- pedir clave siempre entrena a la gente para
           que la clave no signifique nada. */}
-      {pideClave && (
+      {mueveDinero && (
         <div className="mt-4 rounded-xl bg-aviso-500/10 ring-1 ring-aviso-500/30 p-3 space-y-3">
           <p className="text-sm font-semibold text-aviso-900">
             Esta venta ya está cobrada y el monto cambia en {fmt(Math.abs(diferencia))}.
           </p>
-          <Autorizar
-            accion="editar_venta"
-            detalle={`${diferencia > 0 ? 'El cliente paga de más' : 'Se le devuelve al cliente'} ${fmt(Math.abs(diferencia))}`}
-            monto={Math.abs(diferencia)}
-            pedidoId={pedido.id}
-            onCambio={setFirma}
-          />
+          {autorizoYo ? (
+            <p className="text-sm text-aviso-900/80">
+              Lo autorizas tú: queda firmado a nombre de{' '}
+              <span className="font-semibold">{estado.nombre_visible || estado.usuario}</span>.
+            </p>
+          ) : (
+            <Autorizar
+              accion="editar_venta"
+              detalle={`${diferencia > 0 ? 'El cliente paga de más' : 'Se le devuelve al cliente'} ${fmt(Math.abs(diferencia))}`}
+              monto={Math.abs(diferencia)}
+              pedidoId={pedido.id}
+              onCambio={setFirma}
+            />
+          )}
           <Selector
             etiqueta={diferencia > 0 ? 'Cómo se cobra la diferencia' : 'Cómo se devuelve'}
             value={metodo}

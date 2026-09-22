@@ -7,14 +7,46 @@ guardar y nadie se enteraba de nada.
 
 Son dos candados que se excluyen, uno por cada lado del mostrador, mas la
 regla de plata: editar una venta YA COBRADA solo se puede si alguien con
-cuenta pone su clave y dice por donde entro (o salio) la diferencia.
+autoridad firma y se dice por donde entro (o salio) la diferencia. Quien ya
+tiene un rol que autoriza --el admin de estos tests-- firma con su sesion;
+a quien no, se le pide PIN o aprobacion remota (eso vive en
+`test_autorizaciones.py`).
 """
 import datetime
 
-from app import models
+import pytest
+from fastapi.testclient import TestClient
+
+from app import models, settings
+from app.acceso import usuarios
+from app.database import get_db
+from app.main import app
 from app.routers.pedidos import MINUTOS_EDITANDO
 
-from conftest import CLAVE_TEST, USUARIO_TEST, libros, libros_cuadrados  # noqa: F401
+from conftest import CLAVE_TEST, USUARIO_TEST, entrar, libros, libros_cuadrados  # noqa: F401
+
+CAJERA = ("cajera_edicion", "clave-de-la-cajera-larga")
+
+
+@pytest.fixture()
+def caja(db):
+    """Una sesion de caja: rol que NO autoriza, que es a quien se le pide
+    firma. Se borra al salir porque el almacen de usuarios es de sesion y
+    otros tests cuentan la gente del local."""
+    try:
+        usuarios.crear(CAJERA[0], CAJERA[1], rol="caja", locales=[settings.LOCAL_SLUG],
+                       nombre="Carla", apellido="Caja")
+    except usuarios.ErrorUsuarios:
+        pass
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as c:
+        entrar(c, *CAJERA)
+        yield c
+    app.dependency_overrides.clear()
+    try:
+        usuarios.borrar(CAJERA[0])
+    except usuarios.ErrorUsuarios:
+        pass
 
 
 def comanda(client, variante, cantidad=1):
@@ -226,11 +258,12 @@ def test_si_la_edicion_no_mueve_plata_no_pide_clave(client, variante, db):
     assert r.json()["editado"] is True
 
 
-def test_una_venta_cobrada_que_cambia_de_monto_exige_clave(client, variante, db):
+def test_una_venta_cobrada_que_cambia_de_monto_exige_firma(caja, variante, db):
+    """A quien no autoriza se le sigue pidiendo."""
     otra = otra_variante(db, precio=3.0)
-    p = cobrada(client, variante)
+    p = cobrada(caja, variante)
 
-    r = editar(client, p["id"], [
+    r = editar(caja, p["id"], [
         {"variante_id": variante.id, "cantidad": 1},
         {"variante_id": otra.id, "cantidad": 1},
     ])
@@ -238,11 +271,26 @@ def test_una_venta_cobrada_que_cambia_de_monto_exige_clave(client, variante, db)
     assert "PIN" in r.json()["detail"]
 
 
-def test_con_la_clave_mala_no_pasa(client, variante, db):
+def test_quien_autoriza_no_se_pide_permiso_a_si_mismo(client, variante, db):
+    """Y a quien si autoriza, no. Leider (21-sep): "si un rol tiene permisos
+    para autorizar, no tengas que pedirle autorizacion, es logico". La sesion
+    del admin es la firma; el nombre queda escrito igual."""
     otra = otra_variante(db, precio=3.0)
     p = cobrada(client, variante)
     r = editar(
         client, p["id"],
+        [{"variante_id": variante.id, "cantidad": 1}, {"variante_id": otra.id, "cantidad": 1}],
+        pagos=[{"metodo": "Efectivo Bs", "monto": 3.0}],
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["ediciones"][-1]["autorizado_por"] == USUARIO_TEST
+
+
+def test_con_la_clave_mala_no_pasa(caja, variante, db):
+    otra = otra_variante(db, precio=3.0)
+    p = cobrada(caja, variante)
+    r = editar(
+        caja, p["id"],
         [{"variante_id": variante.id, "cantidad": 1}, {"variante_id": otra.id, "cantidad": 1}],
         autorizacion={"usuario": USUARIO_TEST, "clave": "la-que-no-es"},
         pagos=[{"metodo": "Efectivo Bs", "monto": 3.0}],

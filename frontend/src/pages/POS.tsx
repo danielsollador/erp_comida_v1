@@ -26,7 +26,25 @@ import type {
 // es del punto de venta: Caja y Ventas tambien aplican pagos y tenian su
 // propia lista, que fue justo como el cobro a credito termino aceptando un
 // pago movil sin comprobante.
+// Las dos gavetas fisicas. Un cobro en efectivo no se resuelve de un toque:
+// hay que saber si el cliente paga exacto o hay vuelto (ver el panel de
+// cobro), porque de eso depende cuanta plata queda en la gaveta.
 const METODOS_EFECTIVO = ['Efectivo Bs', 'Efectivo $']
+
+// Por donde puede SALIR el vuelto. No estan tarjeta ni punto de venta: un
+// terminal no devuelve plata. El pago movil si: es lo que se hace cuando en
+// la gaveta no hay sencillo.
+const METODOS_VUELTO = ['Efectivo $', 'Efectivo Bs', 'Pago movil', 'Transferencia', 'Zelle']
+
+// Los billetes que de verdad andan en la calle, para tocar en vez de teclear.
+const BILLETES_USD = [1, 5, 10, 20, 50, 100]
+
+/** Un monto tecleado, con coma o con punto. El teclado del ERP escribe punto,
+ *  pero el del telefono en español escribe coma: sin esto "20,50" era cero y
+ *  el cobro se quedaba trancado diciendo que el billete no alcanza. */
+function monto(v: string): number {
+  return Number(String(v).replace(',', '.')) || 0
+}
 const CLAVE_PUNTO = 'erp-punto-venta'
 
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
@@ -85,9 +103,14 @@ export default function POS() {
   // `cliente`: aquel es el del cobro (una comanda ya tomada), este viaja con
   // el pedido cuando se manda a cocina.
   const [clienteComanda, setClienteComanda] = useState('')
-  // Con un billete grande, entra mas de lo que cuesta y sale el vuelto.
-  const [recibido, setRecibido] = useState('')
-  const [vueltoEn, setVueltoEn] = useState('')
+  // El cobro en efectivo va por pasos: primero si paga exacto o con un
+  // billete mas grande, y si hay vuelto, con cuanto paga y por donde se le
+  // devuelve. Antes era un campo opcional --"Con cuanto pago"-- que casi
+  // nadie llenaba con un cliente esperando: la gaveta cerraba con un
+  // sobrante que nadie sabia explicar, y el vuelto dado en bolivares por una
+  // venta en dolares no aparecia en ninguna parte.
+  const [efectivo, setEfectivo] = useState<{ metodo: string; conVuelto: boolean } | null>(null)
+  const [billete, setBillete] = useState('')
   // En que caja se cobra. Se recuerda en la tablet: se elige una vez por
   // turno, no en cada venta. Quien cobra es quien entro con su clave.
   const [puntos, setPuntos] = useState<PuntoVenta[]>([])
@@ -112,7 +135,17 @@ export default function POS() {
   const subtotalCobro = cobrando?.total ?? 0
   const descuentoNum = Math.min(Number(descuento) || 0, subtotalCobro)
   const aCobrar = Math.round((subtotalCobro - descuentoNum + (Number(propina) || 0)) * 100) / 100
-  const vuelto = Math.max(Math.round(((Number(recibido) || 0) - aCobrar) * 100) / 100, 0)
+  // Lo que entrego el cliente, SIEMPRE en dolares: en la gaveta de bolivares
+  // el cajero teclea bolivares --que es lo que tiene en la mano-- y se
+  // convierte a la tasa del dia, que es como se guarda la venta.
+  const enBs = efectivo?.metodo === 'Efectivo Bs'
+  const billeteNum = monto(billete)
+  const entregado = enBs
+    ? tasaBcv > 0
+      ? Math.round((billeteNum / tasaBcv) * 100) / 100
+      : 0
+    : billeteNum
+  const vuelto = Math.max(Math.round((entregado - aCobrar) * 100) / 100, 0)
 
 
   useEffect(() => {
@@ -327,8 +360,8 @@ export default function POS() {
     setMotivoDescuento('')
     setPropina('')
     setCliente('')
-    setRecibido('')
-    setVueltoEn('')
+    setEfectivo(null)
+    setBillete('')
   }
 
   async function cobrar(
@@ -390,28 +423,37 @@ export default function POS() {
   }
 
   async function confirmarCobro(metodo: string) {
+    // El efectivo no se cobra de un toque: antes hay que saber si paga
+    // exacto o hay vuelto, y por donde sale. El resto de las formas entran
+    // completas por su cuenta, asi que se cobran de una.
+    if (METODOS_EFECTIVO.includes(metodo)) {
+      setEfectivo({ metodo, conVuelto: false })
+      setBillete('')
+      return
+    }
     // Sin esto un reclamo de "pague por pago movil y no me lo cobraron" es la
     // palabra del cliente contra la del negocio: no hay con que ubicar el
     // comprobante. El backend lo exige igual; se pregunta antes para no
     // mandar el cobro y que rebote.
     const referencia = await pedirReferencia(metodo, dialogo.pedirTexto)
     if (referencia === null) return
-    // Si el cajero anoto con cuanto le pagaron, se manda: sin eso la gaveta no
-    // cuadra cuando hubo vuelto, y menos si el vuelto salio en otra moneda.
-    const entregado = Number(recibido) || 0
-    if (entregado > aCobrar + 0.001) {
-      cobrar(metodo, [
-        {
-          metodo,
-          monto: aCobrar,
-          recibido: entregado,
-          vuelto_metodo: vueltoEn || metodo,
-          referencia,
-        },
-      ])
-      return
-    }
     cobrar(metodo, undefined, referencia)
+  }
+
+  /**
+   * El cobro en efectivo cuando hay vuelto.
+   *
+   * Entra el billete completo a la gaveta del metodo con que pagaron y sale
+   * la diferencia por donde diga el cajero, que muchas veces NO es la misma:
+   * se paga con veinte dolares y el vuelto se da en bolivares, o por pago
+   * movil cuando no hay sencillo. Sin anotar por donde salio, la gaveta de
+   * dolares cierra con un sobrante y la de bolivares con un faltante.
+   */
+  function cobrarConVuelto(vueltoMetodo: string) {
+    if (!efectivo) return
+    cobrar(efectivo.metodo, [
+      { metodo: efectivo.metodo, monto: aCobrar, recibido: entregado, vuelto_metodo: vueltoMetodo },
+    ])
   }
 
   // El resto del total va al segundo metodo, calculado acá para que los dos
@@ -1044,44 +1086,6 @@ export default function POS() {
             />
           )}
 
-          {/* Con cuanto pago: si dio un billete grande, entra mas de lo que
-              cuesta y sale el vuelto. Sin anotarlo, la gaveta no cuadra -- y
-              menos si el vuelto sale en la otra moneda. */}
-          <div className="grid grid-cols-2 gap-2 mt-2">
-            <label className="text-xs text-neutral-500">
-              Con cuánto pagó
-              <Numerico
-                value={recibido}
-                onChange={(e) => setRecibido(e.target.value)}
-                placeholder="opcional"
-                className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
-              />
-            </label>
-            {vuelto > 0 && (
-              <label className="text-xs text-neutral-500">
-                Vuelto en
-                <select
-                  value={vueltoEn}
-                  onChange={(e) => setVueltoEn(e.target.value)}
-                  className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
-                >
-                  <option value="">misma forma</option>
-                  {METODOS_EFECTIVO.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-          {vuelto > 0 && (
-            <p className="mt-1 text-sm font-semibold text-exito-700 tabular-nums">
-              Vuelto: ${vuelto.toFixed(2)}
-              {tasaBcv > 0 && vueltoEn === 'Efectivo Bs' && ` - ${fmtBs(vuelto * tasaBcv)}`}
-            </p>
-          )}
-
           {/* Viene puesto si se anoto al tomar la comanda; aqui se corrige o
               se agrega. Solo fiar lo exige, y ese boton lo pide si falta. */}
           <input
@@ -1095,6 +1099,112 @@ export default function POS() {
               otra via. Antes habia que elegir un metodo solo y la caja
               quedaba esperando plata que nunca entro a la gaveta. */}
           {!pagoMixto ? (
+            efectivo ? (
+              /* Efectivo, paso a paso. Leider (21-sep): "tienen que haber dos
+                 opciones, si va a pagar exacto o con diferencia... si pone
+                 diferencia tienes que preguntar de cuanto es el billete... y
+                 que el cajero ponga como se le va a devolver esa plata del
+                 fondo de caja". */
+              <div className="mt-3 mb-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">{efectivo.metodo}</span>
+                  <button
+                    onClick={() => {
+                      setEfectivo(null)
+                      setBillete('')
+                    }}
+                    className="text-sm text-neutral-500 hover:text-neutral-800"
+                  >
+                    Cambiar forma de pago
+                  </button>
+                </div>
+
+                {!efectivo.conVuelto ? (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => cobrar(efectivo.metodo)}
+                      className="w-full rounded-xl border border-exito-300 bg-exito-50 text-exito-800 py-3.5 font-semibold active:scale-95 transition"
+                    >
+                      Paga exacto ·{' '}
+                      <span className="tabular-nums">
+                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${aCobrar.toFixed(2)}`}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => setEfectivo({ ...efectivo, conVuelto: true })}
+                      disabled={enBs && tasaBcv === 0}
+                      title={enBs && tasaBcv === 0 ? 'Sin tasa de cambio no se puede calcular el vuelto' : ''}
+                      className="w-full rounded-xl bg-neutral-100 hover:bg-neutral-200 py-3.5 font-semibold disabled:opacity-40"
+                    >
+                      Paga con más: hay vuelto
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="block text-xs text-neutral-500">
+                      {enBs ? '¿Con cuántos bolívares paga?' : '¿De cuánto es el billete?'}
+                      <Numerico
+                        value={billete}
+                        onChange={(e) => setBillete(e.target.value)}
+                        placeholder={enBs ? '0,00' : '20.00'}
+                        className="w-full border border-neutral-300 rounded-lg px-3 py-2.5 mt-1 text-lg font-semibold text-neutral-900"
+                      />
+                    </label>
+                    {/* Los billetes de siempre: con un cliente esperando, tocar
+                        "20" es mas rapido y se equivoca menos que teclearlo. */}
+                    {!enBs && (
+                      <div className="grid grid-cols-4 gap-2">
+                        {BILLETES_USD.filter((b) => b > aCobrar).map((b) => (
+                          <button
+                            key={b}
+                            onClick={() => setBillete(String(b))}
+                            className="rounded-lg bg-neutral-100 hover:bg-neutral-200 py-2 text-sm font-semibold tabular-nums"
+                          >
+                            ${b}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {vuelto > 0 ? (
+                      <>
+                        <p className="text-center text-lg font-bold text-exito-700 tabular-nums pt-1">
+                          Vuelto: ${vuelto.toFixed(2)}
+                          {tasaBcv > 0 && (
+                            <span className="block text-sm font-medium text-neutral-500">
+                              {fmtBs(vuelto * tasaBcv)}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-neutral-500">
+                          ¿Por dónde se le devuelve? Sale del fondo de caja.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {METODOS_VUELTO.map((m) => (
+                            <button
+                              key={m}
+                              onClick={() => cobrarConVuelto(m)}
+                              className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-3 text-sm font-medium"
+                            >
+                              {m}
+                              {m === 'Efectivo Bs' && tasaBcv > 0 && (
+                                <span className="block text-[11px] text-neutral-500 tabular-nums">
+                                  {fmtBs(vuelto * tasaBcv)}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-xs text-neutral-500">
+                        Tiene que ser más de{' '}
+                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${aCobrar.toFixed(2)}`}.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
             <>
               <div className="grid grid-cols-2 gap-2 mb-2 mt-3">
                 {METODOS_PAGO.map((m) => (
@@ -1128,6 +1238,7 @@ export default function POS() {
                 Paga con dos formas
               </button>
             </>
+            )
           ) : (
             <div className="mt-3 mb-3 space-y-2">
               <div className="flex items-center gap-2">

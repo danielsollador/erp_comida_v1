@@ -555,9 +555,13 @@ def _autorizar_diferencia(
     una firma, eso no deja rastro de ninguna clase.
 
     Firma con PIN quien tiene un rol que autoriza, o aprueba desde su
-    aplicacion si no esta en el local (ver `autorizaciones.py`). Lo que da el
-    control es que el nombre queda escrito en la edicion y se ve en ventas.
+    aplicacion si no esta en el local (ver `autorizaciones.py`). Si quien
+    esta editando ya autoriza, no se le pide nada. Lo que da el control es
+    que el nombre queda escrito en la edicion y se ve en ventas.
     """
+    propia = autorizaciones.firma_propia(request)
+    if propia:
+        return propia
     if not body.autorizacion:
         raise HTTPException(
             status_code=403,

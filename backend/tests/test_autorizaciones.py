@@ -143,6 +143,34 @@ def test_editar_una_venta_cobrada_con_el_pin_de_la_duena(clientes, variante):
     assert r.json()["ediciones"][-1]["autorizado_por"] == "Daniela Prueba"
 
 
+def test_quien_autoriza_no_se_pide_permiso_a_si_mismo(clientes, variante):
+    """Leider (21-sep): "si un rol tiene permisos para autorizar, no tengas
+    que pedirle autorizacion". La sesion de la dueña ES la firma."""
+    duena = clientes(DUENA)
+    p = cobrada(duena, variante)
+    r = quitar_una(duena, p, variante, None)
+    assert r.status_code == 200, r.text
+    assert r.json()["ediciones"][-1]["autorizado_por"] == "Daniela Prueba"
+
+
+def test_a_la_cajera_si_se_le_sigue_pidiendo(clientes, variante):
+    cajera = clientes(CAJERA)
+    p = cobrada(cajera, variante)
+    assert quitar_una(cajera, p, variante, None).status_code == 403
+
+
+def test_si_el_local_le_da_autorizacion_a_caja_la_cajera_firma_sola(clientes, variante):
+    admin = clientes()
+    modulos = list(permisos.MODULOS_POR_ROL["caja"])
+    assert admin.put("/api/usuarios/roles/caja",
+                     json={"modulos": modulos, "autoriza": True}).status_code == 200
+    cajera = clientes(CAJERA)
+    p = cobrada(cajera, variante)
+    r = quitar_una(cajera, p, variante, None)
+    assert r.status_code == 200, r.text
+    assert r.json()["ediciones"][-1]["autorizado_por"] == "María Caja"
+
+
 def test_diez_pin_malos_bloquean_un_rato(clientes, variante):
     usuarios.poner_pin(DUENA[0], "2468")
     cajera = clientes(CAJERA)
