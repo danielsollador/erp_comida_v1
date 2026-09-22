@@ -54,6 +54,11 @@ COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
 COPY --chown=appuser:appuser app ./app
+# Scripts de mantenimiento de un solo uso (reset, cargas de datos): no corren
+# solos, se invocan a mano con `docker compose exec backend python -m
+# scripts.<nombre>`. Van en la imagen para no depender de copiar archivos al
+# servidor cada vez que hace falta uno.
+COPY --chown=appuser:appuser scripts ./scripts
 
 # /data es el volumen: base de datos + respaldos viven aca, fuera de la imagen.
 # /compartido es el otro: usuarios y secreto de sesion, comun al hub y al
