@@ -59,6 +59,10 @@ export function porQueNoSeEdita(pedido: Pedido): string | null {
   if (pedido.devuelto) return 'Esta venta se devolvió entera'
   if (enPreparacion(pedido))
     return `${pedido.cocinando_por || 'La cocina'} ya está preparando esta comanda`
+  // Lo que la cocina ya termino no se edita: la comida esta hecha y en la
+  // barra. Lo que toca es anular, o devolver y volver a cobrar.
+  if (pedido.items.length > 0 && pedido.items.every((i) => i.preparado))
+    return 'La cocina ya terminó esta comanda: ya no se edita'
   if (editandoAhora(pedido)) return `${pedido.editando_por || 'Otra caja'} la está editando`
   // Una venta cobrada AYER ya entro al cierre de caja de ayer: moverle el monto
   // hoy deja la gaveta diciendo una cosa y los libros otra. El servidor la

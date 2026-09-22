@@ -874,33 +874,6 @@ class RetiroPropietario(BaseModel):
         from_attributes = True
 
 
-class LineaArqueo(BaseModel):
-    """Un destino del dinero, listo para arquear."""
-
-    cuenta: str
-    etiqueta: str
-    # Los metodos de pago que caen en este destino, con lo que entro por cada
-    # uno hoy. Es el "detallado" que se pide al cerrar: la gaveta de bolivares
-    # no dice de donde salio, y el banco junta punto, pago movil y
-    # transferencia en un solo saldo.
-    metodos: dict = {}
-    # True = billetes que se cuentan. False = se coteja contra el banco o el
-    # lote del punto. Cambia lo que la persona hace, no solo el rotulo.
-    fisico: bool
-    # Solo en las gavetas: la plata no empieza en cero cada manana.
-    saldo_anterior: float = 0
-    entradas_hoy: float = 0
-    salidas_hoy: float = 0
-    esperado: float
-
-
-class ConteoArqueo(BaseModel):
-    """Lo que de verdad habia en un destino. `contado` nulo = no se verifico."""
-
-    cuenta: str
-    contado: Optional[float] = None
-
-
 class LineaCierre(BaseModel):
     metodo: str = ""
     cuenta: str
@@ -932,21 +905,6 @@ class CierreCajaRequest(BaseModel):
 
 class PropinasPendientes(BaseModel):
     por_entregar: float
-
-
-class Gaveta(BaseModel):
-    """Una caja fisica que se cuenta al cerrar.
-
-    Bolivares y divisas son dos montones de billetes distintos: con un solo
-    numero el arqueo era imposible.
-    """
-
-    codigo: str
-    etiqueta: str
-    saldo_anterior: float
-    entradas_hoy: float
-    salidas_hoy: float
-    esperado: float
 
 
 class LineaMetodo(BaseModel):

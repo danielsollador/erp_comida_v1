@@ -580,6 +580,17 @@ def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int])
             status_code=409,
             detail=detalle + ". Habla con cocina: lo que está en el sartén ya no se cambia desde aquí.",
         )
+    # Lo que la cocina ya termino no se edita. Leider (21-sep): "despues de
+    # que una comanda este para entregar ya no se puede editar; incluso
+    # despues de que cocina la marque lista". La comida esta hecha y en la
+    # barra: cambiar renglones ahi es botar comida por la puerta de atras.
+    # Lo que toca es anular, o devolver y volver a cobrar, que dejan rastro.
+    if pedido.items and all(i.preparado for i in pedido.items):
+        raise HTTPException(
+            status_code=409,
+            detail=f"La cocina ya terminó la comanda #{pedido.numero}: ya no se edita. "
+            "Si hay que corregirla, anúlala o devuélvela y vuelve a cobrar.",
+        )
     if edicion_viva(pedido) and pedido.editando_por_id not in (None, quien_id):
         raise HTTPException(
             status_code=409,

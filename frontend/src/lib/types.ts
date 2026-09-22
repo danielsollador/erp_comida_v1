@@ -458,34 +458,6 @@ export type PedidoEdicion = {
   autorizado_por: string
 }
 
-export type Gaveta = {
-  codigo: string
-  etiqueta: string
-  saldo_anterior: number
-  entradas_hoy: number
-  salidas_hoy: number
-  esperado: number
-}
-
-/**
- * Un destino del dinero, listo para arquear: la gaveta de bolivares, la de
- * dolares, el banco, Zelle.
- *
- * `fisico` cambia lo que la persona HACE, no solo el rotulo: los billetes se
- * cuentan, lo electronico se coteja contra el banco o el lote del punto.
- */
-export type LineaArqueo = {
-  cuenta: string
-  etiqueta: string
-  /** Los metodos de pago que caen aqui, con lo que entro por cada uno hoy. */
-  metodos: Record<string, number>
-  fisico: boolean
-  saldo_anterior: number
-  entradas_hoy: number
-  salidas_hoy: number
-  esperado: number
-}
-
 /** Una fila del cierre ya guardado: lo que decia el sistema contra lo contado. */
 export type LineaCierre = {
   /** La forma de pago que se contó. Los cierres viejos no la tienen. */

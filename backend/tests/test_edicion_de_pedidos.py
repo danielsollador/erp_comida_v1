@@ -211,15 +211,28 @@ def test_un_pedido_no_puede_quedar_vacio(client, variante):
     assert "anúlalo" in r.json()["detail"]
 
 
-def test_subir_la_cantidad_devuelve_el_renglon_a_la_cola_de_cocina(client, variante, db):
-    """Dos empanadas cuando ya estaba marcada una: hay comida nueva que hacer."""
-    p = comanda(client, variante)
-    fila = db.query(models.PedidoItem).filter_by(pedido_id=p["id"]).first()
+def test_subir_la_cantidad_devuelve_el_renglon_a_la_cola_de_cocina(client, variante, insumo, db):
+    """Dos empanadas cuando ya estaba marcada una: hay comida nueva que hacer.
+
+    Con otro renglon todavia crudo: si TODO estuviera hecho la comanda ya no
+    se edita (ver `test_lo_que_la_cocina_termino_ya_no_se_edita`)."""
+    otra = otra_variante(db, precio=3.0, insumo=insumo, nombre="Pastelito")
+    r = client.post("/api/pedidos", json={"items": [
+        {"variante_id": variante.id, "cantidad": 1},
+        {"variante_id": otra.id, "cantidad": 1},
+    ], "nota": ""})
+    p = r.json()
+    fila = db.query(models.PedidoItem).filter_by(pedido_id=p["id"], variante_id=variante.id).first()
     fila.preparado = True
     db.commit()
 
-    r = editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 2}])
-    assert r.json()["items"][0]["preparado"] is False
+    r = editar(client, p["id"], [
+        {"variante_id": variante.id, "cantidad": 2},
+        {"variante_id": otra.id, "cantidad": 1},
+    ])
+    assert r.status_code == 200, r.text
+    empanada = next(i for i in r.json()["items"] if i["variante_id"] == variante.id)
+    assert empanada["preparado"] is False
 
 
 def test_el_precio_de_lo_que_ya_estaba_no_se_recalcula(client, variante, db):
@@ -459,26 +472,27 @@ def test_la_cocina_suelta_la_comanda_cuando_termina(client, variante):
     client.post(f"/api/pedidos/{p['id']}/cocinando")
     assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 409
 
-    client.post(f"/api/pedidos/{p['id']}/marcar-listo")
+    # Soltarla sin terminar SI devuelve la edicion: fue un toque por error.
+    client.post(f"/api/pedidos/{p['id']}/cocinando")
     assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
 
 
-def test_quitar_comida_ya_hecha_es_merma_y_no_vuelve_al_inventario(client, variante, insumo, db):
-    """Lo que salio del sarten no vuelve al deposito porque el cliente cambie
-    de idea: se boto, y eso es una perdida que hay que reconocer."""
-    p = comanda(client, variante, cantidad=2)
+def test_lo_que_la_cocina_termino_ya_no_se_edita(client, variante):
+    """Leider (21-sep): "despues de que una comanda este para entregar ya no se
+    puede editar; incluso despues de que cocina la marque lista". La comida
+    esta hecha y en la barra: lo que toca es anular, o devolver y volver a
+    cobrar, que dejan rastro."""
+    p = comanda(client, variante)
     client.post(f"/api/pedidos/{p['id']}/marcar-listo")
-    db.refresh(insumo)
-    tras_cocinar = insumo.stock_actual
+    r = client.post(f"/api/pedidos/{p['id']}/edicion")
+    assert r.status_code == 409 and "ya no se edita" in r.json()["detail"]
+    r = editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 2}])
+    assert r.status_code == 409
 
-    r = editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 1}])
-    assert r.status_code == 200, r.text
-
-    db.refresh(insumo)
-    assert insumo.stock_actual == tras_cocinar, "la empanada hecha no vuelve a ser carne"
-
-    merma = db.query(models.Merma).filter(models.Merma.motivo.contains("editado")).all()
-    assert len(merma) == 1 and round(merma[0].cantidad, 4) == 0.125
+    # Cobrada y cocinada --"para entregar"-- tampoco.
+    q = cobrada(client, variante)
+    client.post(f"/api/pedidos/{q['id']}/marcar-listo")
+    assert client.post(f"/api/pedidos/{q['id']}/edicion").status_code == 409
 
 
 def test_quitar_comida_sin_hacer_si_devuelve_el_inventario(client, variante, insumo, db):
@@ -490,40 +504,6 @@ def test_quitar_comida_sin_hacer_si_devuelve_el_inventario(client, variante, ins
     db.refresh(insumo)
     assert round(insumo.stock_actual, 4) == round(tras_la_comanda + 0.125, 4)
     assert db.query(models.Merma).count() == 0
-
-
-def test_quitar_lo_hecho_y_agregar_crudo_no_se_compensa(client, variante, insumo, db):
-    """El caso que rompe restar consumos en bruto: quitar una empanada YA HECHA
-    y agregar dos crudas da un neto que parece inocente y esconde la que se
-    boto. Son dos flujos distintos y cada uno va a un sitio distinto."""
-    p = comanda(client, variante, cantidad=2)
-    client.post(f"/api/pedidos/{p['id']}/marcar-listo")
-    db.refresh(insumo)
-    tras_cocinar = insumo.stock_actual
-
-    # De 2 hechas a 3: una mas que sacar del deposito, ninguna que botar.
-    editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 3}])
-    db.refresh(insumo)
-    assert round(insumo.stock_actual, 4) == round(tras_cocinar - 0.125, 4)
-    assert db.query(models.Merma).count() == 0
-
-
-def test_botar_comida_de_una_venta_cobrada_deja_los_libros_cuadrados(
-    client, variante, db, libros
-):
-    """La baja de costo de ventas no puede irse entera al inventario: la comida
-    esta en la basura, no en el deposito."""
-    p = cobrada(client, variante, cantidad=2)
-    client.post(f"/api/pedidos/{p['id']}/marcar-listo")
-
-    r = editar(
-        client, p["id"], [{"variante_id": variante.id, "cantidad": 1}],
-        autorizacion={"usuario": USUARIO_TEST, "clave": CLAVE_TEST},
-        pagos=[{"metodo": "Efectivo Bs", "monto": 5.0}],
-        motivo="El cliente solo queria una",
-    )
-    assert r.status_code == 200, r.text
-    libros_cuadrados(client, db)
 
 
 def test_una_venta_fiada_con_saldo_no_se_edita_de_monto(client, variante, db):

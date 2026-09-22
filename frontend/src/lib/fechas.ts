@@ -145,11 +145,6 @@ export function nombreRango(r: Rango): string {
   return ATAJOS.find((a) => a.clave === r.clave)?.texto ?? 'Personalizado'
 }
 
-/** Cuantos dias abarca, contando los dos extremos. */
-export function diasDe(r: Rango): number {
-  return Math.round((deIso(r.hasta).getTime() - deIso(r.desde).getTime()) / 86400000) + 1
-}
-
 /** Los parametros para el API: `desde=…&hasta=…`. */
 export function queryRango(r: Rango): string {
   return `desde=${r.desde}&hasta=${r.hasta}`
