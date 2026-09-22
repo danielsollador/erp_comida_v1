@@ -20,7 +20,6 @@ import type {
   Pedido,
   Producto,
   PuntoVenta,
-  Sugerencia,
   Variante,
 } from '../lib/types'
 
@@ -112,7 +111,6 @@ export default function POS() {
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
   const [facturar, setFacturar] = useState(false)
   const [numeroFactura, setNumeroFactura] = useState('')
-  const [sugerencias, setSugerencias] = useState<Sugerencia[]>([])
   // Lo que cambia cuanta plata entra: rebaja al cliente y propina del mesonero.
   const [descuento, setDescuento] = useState('')
   const [motivoDescuento, setMotivoDescuento] = useState('')
@@ -264,31 +262,6 @@ export default function POS() {
     return m
   }, [categorias])
 
-  // Que ofrecerle al cliente segun lo que ya lleva. Se recalcula en cada
-  // cambio del carrito, que es justo cuando el cajero esta mirando la pantalla.
-  const idsCarrito = Object.keys(carrito).join(',')
-  useEffect(() => {
-    const ids = Object.values(carrito).map((c) => c.variante.id)
-    if (ids.length === 0) {
-      setSugerencias([])
-      return
-    }
-    let vigente = true
-    // Un tercio de segundo despues del ultimo toque, no en cada toque: tres
-    // empanadas seguidas eran tres peticiones y tres repintados.
-    const espera = setTimeout(() => {
-      api
-        .sugerencias(ids)
-        .then((s) => vigente && setSugerencias(s))
-        .catch(() => vigente && setSugerencias([]))
-    }, 350)
-    return () => {
-      vigente = false
-      clearTimeout(espera)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsCarrito])
-
   // Lo que se puede vender hoy, por categoria, para el desplegable. Se
   // calcula una vez por menu y no en cada toque.
   const vendibles = useMemo(
@@ -341,18 +314,6 @@ export default function POS() {
         return next
       })
     }, 300)
-  }
-
-  function agregarSugerencia(sug: Sugerencia) {
-    for (const cat of categorias) {
-      for (const producto of cat.productos) {
-        const variante = producto.variantes.find((v) => v.id === sug.variante_id)
-        if (variante) {
-          agregar(producto, variante)
-          return
-        }
-      }
-    }
   }
 
   function quitar(varianteId: number) {
@@ -1193,27 +1154,6 @@ export default function POS() {
               <p className="text-neutral-400 text-sm">Toca un producto para agregarlo.</p>
             )}
           </div>
-          {sugerencias.length > 0 && (
-            <div className="border-t border-neutral-200 pt-3 mt-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">
-                {sugerencias.some((s) => s.es_bebida) ? 'Ofrecele algo de tomar' : 'Suele ir con'}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {sugerencias.map((sug) => (
-                  <button
-                    key={sug.variante_id}
-                    onClick={() => agregarSugerencia(sug)}
-                    className="flex items-center gap-2 rounded-xl border border-exito-300 bg-exito-50 px-3 py-2 text-sm font-medium text-exito-800 active:scale-95 transition"
-                  >
-                    <span aria-hidden>+</span>
-                    <span>{sug.etiqueta}</span>
-                    <span className="tabular-nums text-exito-600">{fmt(sug.precio)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="border-t border-neutral-200 pt-3 mt-3">
             {/* A nombre de quien va. Con ocho comandas vivas, "#14" no le dice
                 a nadie de quien es: el cajero termina cantando numeros por el
