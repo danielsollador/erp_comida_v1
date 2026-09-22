@@ -67,8 +67,23 @@ def test_todas_las_formas_de_pago_salen_aunque_no_se_usen(client):
     d = resumen(client)
     metodos = [l["metodo"] for l in d["desglose"]]
     for esperado in ("Efectivo Bs", "Efectivo $", "Punto de venta", "Pago movil",
-                     "Transferencia", "Tarjeta", "Zelle", "Fiado"):
+                     "Transferencia", "Zelle", "Fiado"):
         assert esperado in metodos
+    # "Tarjeta" NO: es el mismo terminal que "Punto de venta" (Leider,
+    # 21-sep). Eran dos filas que se cuadraban por separado contra un solo
+    # lote impreso, asi que una de las dos siempre daba descuadre.
+    assert "Tarjeta" not in metodos
+
+
+def test_una_venta_vieja_con_tarjeta_cuadra_en_el_punto_de_venta(client, variante):
+    """El nombre viejo se sigue traduciendo: hay ventas cargadas con el, y sin
+    esto desaparecerian del arqueo -- el cajero contaria el lote del terminal
+    y le faltaria plata sin explicacion."""
+    vender(client, variante, "Tarjeta")
+    d = resumen(client)
+    fila = next(l for l in d["desglose"] if l["metodo"] == "Punto de venta")
+    assert fila["ventas"] == 5.0
+    assert d["cuadra_ventas"] is True
 
 
 def test_un_gasto_en_efectivo_solo_baja_el_efectivo(client, variante):

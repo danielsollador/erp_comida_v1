@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
@@ -27,6 +28,16 @@ router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
 # marcarlo, no al vencerse.
 HORAS_EN_COCINA = 12
 
+# Cuanto se queda una comanda ya cobrada y ya cocinada en el mostrador.
+#
+# Cuando la cocina termina y la venta ya esta cobrada, la comanda desaparecia
+# de la pantalla al instante: la comida quedaba en la barra y la cajera no
+# tenia donde mirar de quien era. Leider (21-sep): "cada comanda que ya fue
+# cobrada y ademas ya fue cocinada tiene que prevalecer por lo menos 60
+# minutos... para que el cajero pueda seguirla viendo y ver a quien darle el
+# producto".
+MINUTOS_PARA_ENTREGAR = 60
+
 # Cuanto vale el candado que pone el punto de venta al abrir una comanda para
 # editarla.
 #
@@ -42,7 +53,11 @@ MINUTOS_EDITANDO = 5
 
 @router.get("", response_model=List[schemas.Pedido])
 def listar_pedidos(
-    estado: Optional[str] = None, en_cocina: Optional[bool] = None, db: Session = Depends(get_db)
+    estado: Optional[str] = None,
+    en_cocina: Optional[bool] = None,
+    por_entregar: Optional[bool] = None,
+    del_dia: Optional[bool] = None,
+    db: Session = Depends(get_db),
 ):
     """`en_cocina=true` es lo que pregunta la pantalla de cocina: que falta por
     preparar, sin importar si ya se cobro.
@@ -53,6 +68,13 @@ def listar_pedidos(
     desaparecia de cocina sin que nadie lo hubiera preparado. Lo que de verdad
     dice si falta cocinar es el detalle: si algun item no esta `preparado`, la
     cocina todavia tiene trabajo con ese pedido, este pagado o no.
+
+    `por_entregar=true` es el otro lado: lo que ya se cobro Y ya se cocino,
+    durante `MINUTOS_PARA_ENTREGAR`. Son las que estan en la barra esperando
+    que el cliente las venga a buscar, y por eso las sigue viendo la caja.
+
+    `del_dia=true` son las ventas de hoy, para consultarlas desde el
+    mostrador sin salir a otro modulo.
     """
     # Sin esto, pintar 40 comandas dispara 120 consultas sueltas (renglones,
     # pagos y ediciones de cada una, una por una). `selectinload` las trae en
@@ -64,6 +86,30 @@ def listar_pedidos(
     )
     if estado:
         query = query.filter(models.Pedido.estado == estado)
+    if del_dia:
+        query = query.filter(
+            models.Pedido.estado == "pagado",
+            models.Pedido.cerrado_en >= inicio_del_dia(hoy()),
+        )
+    if por_entregar:
+        # Ya cobrada, nada pendiente en cocina, y todavia reciente. El reloj es
+        # `listo_en`; para las que nunca pasaron por cocina --una botella-- no
+        # existe, y entonces vale la hora del cobro.
+        falta_cocinar = (
+            db.query(models.PedidoItem.id)
+            .filter(
+                models.PedidoItem.pedido_id == models.Pedido.id,
+                models.PedidoItem.preparado.is_(False),
+            )
+            .exists()
+        )
+        desde = ahora() - datetime.timedelta(minutes=MINUTOS_PARA_ENTREGAR)
+        query = query.filter(
+            models.Pedido.estado == "pagado",
+            models.Pedido.devuelto.is_(False),
+            ~falta_cocinar,
+            func.coalesce(models.Pedido.listo_en, models.Pedido.cerrado_en) >= desde,
+        )
     if en_cocina:
         query = (
             query.filter(models.Pedido.estado != "anulado")
@@ -409,8 +455,13 @@ async def marcar_item_preparado(item_id: int, request: Request, db: Session = De
         pedido.cocinando_por_id = quien.id if quien else None
     db.commit()
 
-    if pedido.items and all(i.preparado for i in pedido.items) and pedido.estado == "pendiente":
-        pedido.estado = "listo"
+    if pedido.items and all(i.preparado for i in pedido.items):
+        # La hora en que la comida quedo hecha, que es desde cuando el
+        # mostrador la muestra como "para entregar".
+        if not pedido.listo_en:
+            pedido.listo_en = ahora()
+        if pedido.estado == "pendiente":
+            pedido.estado = "listo"
         db.commit()
         db.refresh(pedido)
 
@@ -437,6 +488,8 @@ async def marcar_pedido_listo(pedido_id: int, request: Request, db: Session = De
     # para que salga de la cola de cocina.
     if pedido.estado not in ("pagado", "anulado"):
         pedido.estado = "listo"
+    if pedido.items and not pedido.listo_en:
+        pedido.listo_en = ahora()
     db.commit()
     db.refresh(pedido)
 

@@ -1,11 +1,15 @@
 import type { Dialogo } from '../components/dialogo'
 
+// "Tarjeta" NO esta: es el mismo terminal que "Punto de venta" (Leider,
+// 21-sep: "punto de venta y tarjeta es el mismo ya que punto de ventas es
+// POS"). Eran dos botones para el mismo cobro, y en el cierre dos filas que
+// se cuadraban por separado contra un solo lote impreso. El valor viejo se
+// sigue leyendo en las ventas ya cargadas: el arqueo lo traduce.
 export const METODOS_PAGO = [
   'Efectivo Bs',
   'Efectivo $',
   'Pago movil',
   'Punto de venta',
-  'Tarjeta',
   'Transferencia',
   'Zelle',
 ]

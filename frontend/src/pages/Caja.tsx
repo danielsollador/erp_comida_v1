@@ -67,7 +67,6 @@ export default function Caja() {
   const [cierres, setCierres] = useState<CierreCaja[]>([])
 
   const [contando, setContando] = useState(false)
-  const [resultado, setResultado] = useState<CierreCaja | null>(null)
 
   useEffect(() => {
     cargarDia()
@@ -124,20 +123,23 @@ export default function Caja() {
             <Ventas r={resumen} />
             <Salidas r={resumen} irAMovimientos={() => irA('movimientos')} />
             <Desglose r={resumen} />
-            <Cuadre r={resumen} />
 
+            <ResumenDelDia r={resumen} />
+
+            {/* Cerrado no es intocable: un digito de mas al teclear se
+                corrige aqui mismo, sin anular el cierre a mano (por dentro
+                si se anula y se rehace, que los libros no se reescriben). */}
             <button
-              onClick={() => {
-                setResultado(null)
-                setContando(true)
-              }}
-              disabled={resumen.cerrada}
-              className="w-full bg-neutral-900 text-white rounded-xl py-3.5 font-medium disabled:opacity-30"
+              onClick={() => setContando(true)}
+              className="w-full bg-neutral-900 text-white rounded-xl py-3.5 font-medium"
             >
-              {resumen.cerrada ? 'Esta caja ya se cerró' : 'Hacer cierre de caja'}
+              {resumen.cerrada ? 'Corregir el conteo' : 'Hacer cierre de caja'}
             </button>
-
-            {resultado && <Veredicto cierre={resultado} />}
+            {resumen.cerrada && (
+              <p className="text-xs text-neutral-500 text-center -mt-2">
+                Esta caja ya se cerró. Lo reportado se ve en la tabla de arriba.
+              </p>
+            )}
           </>
         )}
 
@@ -171,10 +173,10 @@ export default function Caja() {
       {contando && resumen && (
         <CuadrarCaja
           resumen={resumen}
+          corregir={resumen.cerrada ? resumen.cierre_id : null}
           dia={dia}
           alCerrar={() => setContando(false)}
-          alListo={(c) => {
-            setResultado(c)
+          alListo={() => {
             setContando(false)
             recargar()
           }}
@@ -376,10 +378,17 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
  * deja de servir para eso --y peor: un cobro que se registró en la forma
  * equivocada desaparece de la vista en lugar de saltar a los ojos.
  *
- * LA FILA SUMA A LA VISTA: fondo + entró − salió = debe cuadrar. Ese es el
+ * LA FILA SUMA A LA VISTA: fondo + entró − salió = debes tener. Ese es el
  * contrato. Un total que no se obtiene de las columnas de al lado obliga a
  * creerle al sistema en vez de verificarlo, y lo que la gente hace entonces
  * es llevar la caja en un cuaderno aparte.
+ *
+ * Y EL VEREDICTO VIVE AQUÍ. Cuando el día ya se cerró aparecen dos columnas
+ * más: lo que el cajero reportó y en cuánto falló. Antes eso era una tarjeta
+ * aparte al final de la pantalla que repetía el esperado y el contado de cada
+ * forma de pago, así que para saber si el pago móvil había fallado había que
+ * comparar dos bloques distintos (Leider, 21-sep: "redunda con la información
+ * que ya tengo; el cuadre se debe hacer en la información de arriba").
  *
  * EN LAS DOS MONEDAS. El precio vive en dólares, pero los billetes de la
  * gaveta y el lote del punto están en bolívares: cuadrar obliga a mirar las
@@ -393,6 +402,11 @@ function Desglose({ r }: { r: ResumenCaja }) {
   const totalEntro = r.desglose.reduce((s, l) => s + entradaDe(l), 0)
   const totalSalio = r.desglose.reduce((s, l) => s + salidaDe(l), 0)
   const totalCuadra = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + l.esperado, 0)
+  // Las dos columnas del veredicto solo existen si ya se contó: antes del
+  // cierre serían dos columnas vacías pidiendo que se llenen a mano.
+  const cerrada = r.desglose.some((l) => l.contado !== null)
+  const totalContado = r.desglose.reduce((s, l) => s + (l.contado ?? 0), 0)
+  const totalDif = r.desglose.reduce((s, l) => s + (l.diferencia ?? 0), 0)
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <h2 className="font-semibold mb-1">Desglose por forma de pago</h2>
@@ -413,12 +427,18 @@ function Desglose({ r }: { r: ResumenCaja }) {
               <th className="text-right font-medium py-1.5">Fondo</th>
               <th className="text-right font-medium py-1.5">Entró</th>
               <th className="text-right font-medium py-1.5">Salió</th>
-              <th className="text-right font-medium py-1.5">Debe cuadrar</th>
+              <th className="text-right font-medium py-1.5">Debes tener</th>
+              {cerrada && (
+                <>
+                  <th className="text-right font-medium py-1.5">Reportado por cajero</th>
+                  <th className="text-right font-medium py-1.5">Diferencia</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {r.desglose.map((l) => (
-              <FilaMetodo key={l.metodo} l={l} bcv={bcv} />
+              <FilaMetodo key={l.metodo} l={l} bcv={bcv} cerrada={cerrada} />
             ))}
           </tbody>
           <tfoot>
@@ -428,6 +448,16 @@ function Desglose({ r }: { r: ResumenCaja }) {
               <Cifra monto={totalEntro} bcv={bcv} />
               <Cifra monto={-totalSalio} bcv={bcv} clase="text-peligro-600" />
               <Cifra monto={totalCuadra} bcv={bcv} />
+              {cerrada && (
+                <>
+                  <Cifra monto={totalContado} bcv={bcv} />
+                  <Cifra
+                    monto={totalDif}
+                    bcv={bcv}
+                    clase={Math.abs(totalDif) < 0.01 ? 'text-exito-600' : 'text-peligro-600'}
+                  />
+                </>
+              )}
             </tr>
           </tfoot>
         </table>
@@ -476,7 +506,15 @@ function Cifra({
   )
 }
 
-function FilaMetodo({ l, bcv }: { l: LineaMetodo; bcv: number | null }) {
+function FilaMetodo({
+  l,
+  bcv,
+  cerrada,
+}: {
+  l: LineaMetodo
+  bcv: number | null
+  cerrada: boolean
+}) {
   return (
     <tr className="border-b border-neutral-100 last:border-0">
       <td className="py-2 align-top">
@@ -505,67 +543,109 @@ function FilaMetodo({ l, bcv }: { l: LineaMetodo; bcv: number | null }) {
       ) : (
         <td className="text-right tabular-nums text-neutral-300 align-top">—</td>
       )}
+      {cerrada && (
+        <>
+          {l.contado === null ? (
+            <td className="text-right text-[11px] text-neutral-300 align-top">
+              sin verificar
+            </td>
+          ) : (
+            <Cifra monto={l.contado} bcv={bcv} clase="font-semibold" />
+          )}
+          <td className="text-right tabular-nums align-top">
+            {l.diferencia === null ? (
+              <span className="text-neutral-300">—</span>
+            ) : Math.abs(l.diferencia) < 0.01 ? (
+              <span className="text-exito-600 text-[11px] font-medium">cuadra</span>
+            ) : (
+              <span
+                className={`font-semibold ${
+                  l.diferencia < 0 ? 'text-peligro-600' : 'text-aviso-600'
+                }`}
+              >
+                <span className="block">
+                  {l.diferencia > 0 ? 'sobran ' : 'faltan '}
+                  {dinero(Math.abs(l.diferencia))}
+                </span>
+                {bcv !== null && (
+                  <span className="block text-[11px] font-normal text-neutral-400">
+                    {fmtBs(Math.abs(l.diferencia) * bcv, 2)}
+                  </span>
+                )}
+              </span>
+            )}
+          </td>
+        </>
+      )}
     </tr>
   )
 }
 
-/** 4. ¿Cuadra? Las ventas contra el desglose, y lo que debería quedar. */
-function Cuadre({ r }: { r: ResumenCaja }) {
-  const quedaEfectivo = r.desglose.filter((l) => l.fisico).reduce((s, l) => s + l.esperado, 0)
+/**
+ * 4. El día en cuatro cifras.
+ *
+ * Breve A PROPOSITO. Lo que había aquí era una tarjeta que repetía el vendido,
+ * los descuentos, las propinas, la suma del desglose y el efectivo esperado
+ * --todo eso ya está arriba, en las fichas y en la tabla-- y encima quedaba
+ * debajo del botón de cerrar (Leider, 21-sep: "eso está chimbo... redunda con
+ * la información que ya tengo... un resumen sí, pero breve").
+ *
+ * Lo único que NO está arriba es el resultado: qué quedó del día después de
+ * los gastos. Eso, y la comprobación de que el desglose explica las ventas,
+ * que es la que dice si vale la pena contar la caja.
+ */
+function ResumenDelDia({ r }: { r: ResumenCaja }) {
+  // Las propinas no son del negocio: entran a la gaveta y se le deben al
+  // empleado. Los retiros tampoco son gasto: salen del patrimonio del dueño.
+  const resultado = round2(r.vendido - r.gastos)
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-      <h2 className="font-semibold mb-3">Resumen</h2>
-      <div className="space-y-1.5 text-sm">
-        <Fila texto="Vendido" monto={r.vendido} />
-        {r.descuentos > 0 && <Fila texto="− Descuentos" monto={-r.descuentos} />}
-        {r.propinas > 0 && <Fila texto="+ Propinas" monto={r.propinas} />}
-        <Fila texto="Había que cobrar" monto={r.a_cobrar} negrita />
-        <div className="border-t border-neutral-200 pt-1.5" />
-        <Fila texto="Suma del desglose" monto={r.cobrado} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Tile titulo="Ventas" valor={r.vendido} detalle={`${r.cantidad_pedidos} pedido(s)`} />
+        <Tile
+          titulo="Gastos"
+          valor={r.gastos}
+          detalle="bombona, vasos, pitillos…"
+          tono={r.gastos > 0 ? 'malo' : 'apagado'}
+        />
+        <Tile
+          titulo="Retiros"
+          valor={r.retiros}
+          detalle="del dueño: no es gasto"
+          tono={r.retiros > 0 ? 'malo' : 'apagado'}
+        />
+        <Tile
+          titulo="Resultado"
+          valor={resultado}
+          detalle="ventas − gastos"
+          fuerte
+          tono={resultado < 0 ? 'malo' : 'neutro'}
+        />
       </div>
 
       {/* LA comprobacion: si el desglose no suma las ventas, hay un pago mal
           registrado y contar la caja no va a servir de nada. */}
-      <div
-        className={`mt-3 rounded-xl px-3 py-2.5 text-sm ${
-          r.cuadra_ventas ? 'bg-exito-50 text-exito-800' : 'bg-peligro-50 text-peligro-800'
-        }`}
-      >
-        {r.cuadra_ventas ? (
+      {!r.cuadra_ventas && (
+        <div className="mt-3 rounded-xl px-3 py-2.5 text-sm bg-peligro-50 text-peligro-800">
           <span className="font-medium">
-            Cuadra: cada bolívar vendido está en alguna forma de pago.
-          </span>
-        ) : (
-          <>
-            <span className="font-medium">
-              No cuadra por {dinero(Math.abs(r.a_cobrar - r.cobrado))}.
-            </span>{' '}
-            Hay una venta cobrada sin pago registrado. Revísala antes de contar.
-          </>
-        )}
-      </div>
-
-      <div className="mt-3 space-y-1.5 text-sm">
-        {r.gastos > 0 && <Fila texto="− Gastos" monto={-r.gastos} />}
-        {r.retiros > 0 && <Fila texto="− Retiros" monto={-r.retiros} />}
-        <div className="border-t border-neutral-200 pt-1.5" />
-        <Fila texto="Debería quedar en efectivo" monto={quedaEfectivo} negrita />
-      </div>
-      <p className="text-[11px] text-neutral-400 mt-2">
-        Solo el efectivo se arrastra de un día a otro. Lo del banco, el punto y Zelle se coteja
-        contra el movimiento del día.
-      </p>
+            Las formas de pago no suman las ventas: faltan{' '}
+            {dinero(Math.abs(r.a_cobrar - r.cobrado))}.
+          </span>{' '}
+          Hay una venta cobrada sin pago registrado. Revísala antes de contar.
+        </div>
+      )}
+      {r.propinas > 0 && (
+        <p className="text-[11px] text-neutral-400 mt-3">
+          Además hay {dinero(r.propinas)} de propinas en la gaveta: son del empleado, no del
+          negocio, y no cuentan en el resultado.
+        </p>
+      )}
     </div>
   )
 }
 
-function Fila({ texto, monto, negrita }: { texto: string; monto: number; negrita?: boolean }) {
-  return (
-    <div className={`flex justify-between ${negrita ? 'font-semibold' : 'text-neutral-600'}`}>
-      <span>{texto}</span>
-      <span className="tabular-nums">{dinero(monto)}</span>
-    </div>
-  )
+function round2(n: number) {
+  return Math.round(n * 100) / 100
 }
 
 function Tile({
@@ -609,17 +689,31 @@ function Tile({
  */
 function CuadrarCaja({
   resumen,
+  corregir,
   dia,
   alCerrar,
   alListo,
 }: {
   resumen: ResumenCaja
+  /** El id del cierre que se esta corrigiendo, o null si es uno nuevo. */
+  corregir: number | null
   dia: string
   alCerrar: () => void
   alListo: (c: CierreCaja) => void
 }) {
-  const [contados, setContados] = useState<Record<string, string>>({})
-  const [verEsperado, setVerEsperado] = useState(false)
+  // Al corregir se arranca con lo que se reporto, que es justo lo que hay que
+  // arreglar: teclearlo todo otra vez para cambiar un digito es lo que hace
+  // que nadie corrija nada.
+  const [contados, setContados] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      resumen.desglose
+        .filter((l) => l.contado !== null)
+        .map((l) => [l.metodo, String(l.contado)]),
+    ),
+  )
+  // Ciego al contar por primera vez; al corregir no: ya se conto, y lo que se
+  // esta haciendo es comparar contra el sistema para ver donde estuvo el error.
+  const [verEsperado, setVerEsperado] = useState(Boolean(corregir))
   const [nota, setNota] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -642,7 +736,11 @@ function CuadrarCaja({
     setGuardando(true)
     setError('')
     try {
-      alListo(await api.cerrarCaja(conteos, { fecha: dia, nota }))
+      alListo(
+        corregir
+          ? await api.corregirCierre(corregir, conteos, { fecha: dia, nota })
+          : await api.cerrarCaja(conteos, { fecha: dia, nota }),
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cerrar la caja')
     } finally {
@@ -652,8 +750,12 @@ function CuadrarCaja({
 
   return (
     <Modal
-      titulo="Contar la caja"
-      ayuda="Escribe lo que hay DE VERDAD en cada sitio. Lo que dejes en blanco no se verifica."
+      titulo={corregir ? 'Corregir el conteo' : 'Contar la caja'}
+      ayuda={
+        corregir
+          ? 'Cambia lo que quedó mal tecleado. El cierre viejo queda anulado con su rastro y se guarda este.'
+          : 'Escribe lo que hay DE VERDAD en cada sitio. Lo que dejes en blanco no se verifica.'
+      }
       onCerrar={alCerrar}
       pie={
         <div className="flex gap-2">
@@ -668,7 +770,7 @@ function CuadrarCaja({
             disabled={conteos.length === 0 || guardando}
             className="flex-1 rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white disabled:opacity-30"
           >
-            {guardando ? 'Cerrando…' : 'Cerrar y conciliar'}
+            {guardando ? 'Guardando…' : corregir ? 'Guardar el conteo' : 'Cerrar y conciliar'}
           </button>
         </div>
       }
@@ -717,51 +819,6 @@ function CuadrarCaja({
         className="mt-3 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
       />
     </Modal>
-  )
-}
-
-/** El veredicto, forma de pago por forma de pago. */
-function Veredicto({ cierre }: { cierre: CierreCaja }) {
-  const cuadra = cierre.lineas.every((l) => Math.abs(l.diferencia) < 0.01)
-  return (
-    <div className="rounded-2xl border border-neutral-200 overflow-hidden">
-      <div
-        className={`px-3 py-2.5 text-sm font-medium ${
-          cuadra ? 'bg-exito-50 text-exito-800' : 'bg-aviso-50 text-aviso-800'
-        }`}
-      >
-        {cuadra
-          ? 'Cuadró: todo lo contado coincide con el sistema.'
-          : 'No cuadró. El descuadre queda asentado en los libros:'}
-      </div>
-      <div className="divide-y divide-neutral-100 bg-white">
-        {cierre.lineas.map((l) => (
-          <div key={l.cuenta + l.metodo} className="flex items-baseline justify-between gap-2 px-3 py-2 text-sm">
-            <span className="min-w-0">
-              <span className="block font-medium truncate">{l.metodo || l.etiqueta}</span>
-              <span className="block text-[11px] text-neutral-400 tabular-nums">
-                sistema {dinero(l.esperado)} · contado {dinero(l.contado)}
-              </span>
-            </span>
-            <span
-              className={`shrink-0 font-semibold tabular-nums ${
-                Math.abs(l.diferencia) < 0.01
-                  ? 'text-exito-600'
-                  : l.diferencia < 0
-                    ? 'text-peligro-600'
-                    : 'text-aviso-600'
-              }`}
-            >
-              {Math.abs(l.diferencia) < 0.01
-                ? 'cuadra'
-                : l.diferencia > 0
-                  ? `sobran ${dinero(l.diferencia)}`
-                  : `faltan ${dinero(Math.abs(l.diferencia))}`}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
   )
 }
 

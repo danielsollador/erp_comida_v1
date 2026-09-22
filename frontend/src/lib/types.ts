@@ -23,6 +23,8 @@ export type Categoria = {
   productos: Producto[]
   /** Lo que hay aqui se toma: sirve para ofrecer algo de tomar con la comida. */
   bebida: boolean
+  /** El tinte con el que se pinta en el mostrador. Vacio = el automatico. */
+  color: string
 }
 
 export type Operador = {
@@ -736,6 +738,11 @@ export type LineaMetodo = {
   /** Lo que movió la cuenta sin ser venta, gasto ni retiro. */
   otros: number
   esperado: number
+  /** Lo que el cajero reportó al cerrar. null = el día no se ha cerrado, o esa
+   *  forma de pago no se verificó. */
+  contado: number | null
+  /** En cuánto falló lo reportado contra lo que debía haber. */
+  diferencia: number | null
 }
 
 /** Lo que movió una cuenta compartida sin poder atribuirse a una forma de pago. */

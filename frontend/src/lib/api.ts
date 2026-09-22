@@ -208,7 +208,10 @@ export const api = {
    * cuerpo: mandar el objeto entero hacia que renombrar una categoria
    * retirada la devolviera al menu sola.
    */
-  actualizarCategoria: (id: number, cambios: { nombre?: string; orden?: number; bebida?: boolean }) =>
+  actualizarCategoria: (
+    id: number,
+    cambios: { nombre?: string; orden?: number; bebida?: boolean; color?: string },
+  ) =>
     req<Categoria>(`/menu/categorias/${id}`, {
       method: 'PUT',
       body: JSON.stringify(cambios),
@@ -249,6 +252,10 @@ export const api = {
     req<Pedido[]>(`/pedidos${estado ? `?estado=${estado}` : ''}`),
   /** Lo que cocina todavia tiene que preparar, cobrado o no. */
   listarPedidosEnCocina: () => req<Pedido[]>('/pedidos?en_cocina=true'),
+  /** Cobradas y ya cocinadas, todavia en el mostrador esperando al cliente. */
+  listarPedidosPorEntregar: () => req<Pedido[]>('/pedidos?por_entregar=true'),
+  /** Las ventas de hoy, para consultarlas sin salir del punto de venta. */
+  ventasDelDia: () => req<Pedido[]>('/pedidos?del_dia=true'),
   crearPedido: (
     items: {
       variante_id?: number
@@ -646,6 +653,24 @@ export const api = {
     opciones: { fecha?: string; nota?: string } = {},
   ) =>
     req<CierreCaja>('/caja/cerrar', {
+      method: 'POST',
+      body: JSON.stringify({
+        conteos,
+        fecha: opciones.fecha ?? null,
+        nota: opciones.nota ?? '',
+      }),
+    }),
+  /**
+   * Cambiar el conteo de un cierre ya hecho: un dígito de más al teclear.
+   * Por dentro anula el viejo --los libros no se reescriben-- y crea uno
+   * nuevo, en una sola petición.
+   */
+  corregirCierre: (
+    id: number,
+    conteos: { metodo: string; contado: number }[],
+    opciones: { fecha?: string; nota?: string } = {},
+  ) =>
+    req<CierreCaja>(`/caja/cierres/${id}/corregir`, {
       method: 'POST',
       body: JSON.stringify({
         conteos,

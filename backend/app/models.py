@@ -127,6 +127,11 @@ class Categoria(Base):
     # "Jugos" o "Refrescos" dejaba de ofrecerse para acompañar la comida sin
     # que nada lo dijera. Solo afecta que se sugiere en el mostrador.
     bebida = Column(Boolean, default=False)
+    # El color con el que se pinta en el mostrador. Lo elige el dueño: el
+    # mostrador ya coloreaba las categorias, pero repartiendo la paleta por el
+    # `id`, asi que "Bebidas" quedaba del color que le tocara y dos categorias
+    # vecinas podian salir casi iguales. Vacio = el automatico de siempre.
+    color = Column(String, default="")
 
     productos = relationship("Producto", back_populates="categoria", cascade="all, delete-orphan")
 
@@ -1033,6 +1038,11 @@ class Pedido(Base):
     # PedidoEdicion; esto es la marca que se pinta.
     editado = Column(Boolean, default=False)
     editado_en = Column(DateTime, nullable=True)
+    # Cuando quedo lista para entregar: el momento en que se preparo el ultimo
+    # renglon. No es lo mismo que `cerrado_en` --se cobra antes de cocinar-- y
+    # es el reloj con el que el mostrador la sigue mostrando un rato mas: la
+    # comida esta hecha y el cliente todavia no ha venido a buscarla.
+    listo_en = Column(DateTime, nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     operador_rel = relationship("Operador", foreign_keys=[operador_id])

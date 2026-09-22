@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import EditarPedido from '../components/EditarPedido'
 import NavBar from '../components/NavBar'
 import Icono from '../components/Icono'
@@ -128,6 +128,11 @@ export default function POS() {
   const [editando, setEditando] = useState<Pedido | null>(null)
   const dialogo = useDialogo()
   const [ultimaVenta, setUltimaVenta] = useState<Pedido | null>(null)
+  // Las ventas de hoy, para consultarlas sin salir del mostrador. `null` es
+  // cerrado; se piden al abrir, no al cargar la pantalla: se miran de vez en
+  // cuando y el punto de venta tiene que arrancar rapido.
+  const [ventasHoy, setVentasHoy] = useState<Pedido[] | null>(null)
+  const [cargandoVentas, setCargandoVentas] = useState(false)
   const { tasa, fmt } = useMoneda()
   const tasaBcv = tasa?.bcv ?? 0
 
@@ -187,21 +192,42 @@ export default function POS() {
    * estados el mostrador veia una cosa y la cocina otra.
    */
   function refrescarPedidos() {
-    Promise.all([api.listarPedidosEnCocina(), api.listarPedidos('listo')])
-      .then(([enCocina, listos]) => {
+    Promise.all([
+      api.listarPedidosEnCocina(),
+      api.listarPedidos('listo'),
+      // Cobradas y ya cocinadas: la comida esta en la barra y el cliente no ha
+      // venido. Antes desaparecian de la pantalla en el mismo momento en que
+      // la cocina terminaba, justo cuando hacia falta saber de quien era.
+      api.listarPedidosPorEntregar(),
+    ])
+      .then(([enCocina, listos, porEntregar]) => {
         const porId = new Map<number, Pedido>()
-        for (const p of [...enCocina, ...listos]) porId.set(p.id, p)
-        // 0 = listo para cobrar, 1 = en cocina sin cobrar, 2 = cobrado y en
-        // cocina. Lo que le toca hacer a la caja va arriba; lo que solo se
-        // mira, abajo.
+        for (const p of [...enCocina, ...listos, ...porEntregar]) porId.set(p.id, p)
+        // 0 = listo para cobrar, 1 = para entregar, 2 = en cocina sin cobrar,
+        // 3 = cobrado y en cocina. Lo que le toca hacer a la caja va arriba;
+        // lo que solo se mira, abajo.
         const peso = (p: Pedido) =>
-          p.items.some((i) => !i.preparado) ? (p.estado === 'pagado' ? 2 : 1) : 0
+          p.items.some((i) => !i.preparado) ? (p.estado === 'pagado' ? 3 : 2) : p.estado === 'pagado' ? 1 : 0
         setPedidosActivos(
           [...porId.values()].sort((a, b) => peso(a) - peso(b) || a.numero - b.numero),
         )
       })
       .catch(() => setPedidosActivos([]))
   }
+
+  // El color que el dueño le puso a cada categoria, y de que categoria es
+  // cada subseccion: los renglones de un pedido solo traen la variante.
+  const colorDe = useCallback(
+    (categoriaId: number) => categorias.find((c) => c.id === categoriaId)?.color ?? '',
+    [categorias],
+  )
+  const categoriaDeVariante = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const c of categorias) {
+      for (const p of c.productos) for (const v of p.variantes) m.set(v.id, c.id)
+    }
+    return m
+  }, [categorias])
 
   // Que ofrecerle al cliente segun lo que ya lleva. Se recalcula en cada
   // cambio del carrito, que es justo cuando el cajero esta mirando la pantalla.
@@ -490,6 +516,18 @@ export default function POS() {
     return () => window.clearTimeout(t)
   }, [ultimaVenta])
 
+  async function verVentasDelDia() {
+    setCargandoVentas(true)
+    setVentasHoy([])
+    try {
+      setVentasHoy(await api.ventasDelDia())
+    } catch {
+      setVentasHoy([])
+    } finally {
+      setCargandoVentas(false)
+    }
+  }
+
   async function imprimirTicket(pedidoId: number) {
     try {
       await ticket(pedidoId)
@@ -568,7 +606,10 @@ export default function POS() {
   // salvo mirar). Con un solo color para las dos, la cajera tenia que leer
   // cada tarjeta para saber a cual le debia plata el cliente.
   const faltaCocina = (p: Pedido) => p.items.some((i) => !i.preparado)
-  const cuantosPorCobrar = pedidosActivos.filter((p) => !faltaCocina(p)).length
+  // Ya se cobro y ya se cocino: solo falta darsela a su dueño.
+  const porEntregar = (p: Pedido) => p.estado === 'pagado' && !faltaCocina(p)
+  const cuantosPorCobrar = pedidosActivos.filter((p) => !faltaCocina(p) && p.estado !== 'pagado').length
+  const cuantosPorEntregar = pedidosActivos.filter(porEntregar).length
   const cuantosEnCocina = pedidosActivos.filter((p) => faltaCocina(p) && p.estado !== 'pagado').length
   const cuantosCobradosEnCocina = pedidosActivos.filter((p) => faltaCocina(p) && p.estado === 'pagado').length
 
@@ -599,7 +640,7 @@ export default function POS() {
       {categorias.length > 0 && (
         <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
           {categorias.map((cat) => {
-            const color = colorCategoria(cat.id)
+            const color = colorCategoria(cat.id, cat.color)
             const activa = cat.id === categoriaActiva
             return (
               <button
@@ -633,7 +674,7 @@ export default function POS() {
                   // porque un "Cafe Regular $1,00" de verdad tiene que
                   // seguir vendiendose.
                   return variantesParaVender(p).map((v) => {
-                      const color = colorCategoria(categoria.id)
+                      const color = colorCategoria(categoria.id, categoria.color)
                       const enCarrito = carrito[v.id]?.cantidad ?? 0
                       const pulsando = recienAgregado.has(v.id)
                       return (
@@ -677,6 +718,9 @@ export default function POS() {
                 <span className="w-2.5 h-2.5 rounded-full bg-exito-500" /> {cuantosPorCobrar} listos, falta cobrar
               </span>
               <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-acento-500" /> {cuantosPorEntregar} para entregar
+              </span>
+              <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded-full bg-aviso-500" /> {cuantosEnCocina} en cocina sin cobrar
               </span>
               <span className="flex items-center gap-1">
@@ -692,16 +736,21 @@ export default function POS() {
               const falta = pedido.items.some((i) => !i.preparado)
               const preparando = enPreparacion(pedido)
               const yaPagado = pedido.estado === 'pagado'
+              const entregar = yaPagado && !falta
               // Verde: hay que cobrarlo. Ambar: en cocina y todavia sin
               // cobrar. Gris: ya se cobro, solo espera la comida. Que alguien
               // la este preparando se dice con un anillo cobre ENCIMA del
               // color, no en vez de el: si lo reemplazara, un pedido cobrado y
               // uno sin cobrar volverian a verse iguales mientras se cocinan.
-              const marco = yaPagado
-                ? 'border-neutral-300 bg-neutral-100/70'
-                : falta
-                  ? 'border-aviso-400 bg-aviso-500/5'
-                  : 'border-exito-400 bg-exito-500/5'
+              // Cobre y con el nombre grande: la comida esta hecha, pagada, y
+              // lo unico que falta es acertar de quien es.
+              const marco = entregar
+                ? 'border-acento-400 bg-acento-500/10'
+                : yaPagado
+                  ? 'border-neutral-300 bg-neutral-100/70'
+                  : falta
+                    ? 'border-aviso-400 bg-aviso-500/5'
+                    : 'border-exito-400 bg-exito-500/5'
               const anillo = preparando ? 'ring-2 ring-acento-500/50' : ''
               return (
               <div key={pedido.id} className={`rounded-2xl shadow-sm border-2 p-4 ${marco} ${anillo}`}>
@@ -715,10 +764,18 @@ export default function POS() {
                       normal se cortaba en "Sra. Ca...". */}
                   <span className="min-w-0">
                     <span className="block font-bold text-lg leading-tight">#{pedido.numero}</span>
-                    {pedido.cliente && (
-                      <span className="block text-sm font-semibold text-neutral-600 truncate">
+                    {pedido.cliente ? (
+                      <span
+                        className={`block truncate ${
+                          entregar ? 'text-base font-bold text-acento-800' : 'text-sm font-semibold text-neutral-600'
+                        }`}
+                      >
                         {pedido.cliente}
                       </span>
+                    ) : (
+                      entregar && (
+                        <span className="block text-sm text-neutral-500">sin nombre</span>
+                      )
                     )}
                   </span>
                   <span className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -736,23 +793,40 @@ export default function POS() {
                     )}
                     <span
                       className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                        yaPagado
-                          ? 'bg-neutral-200 text-neutral-700'
-                          : falta
-                            ? 'bg-aviso-100 text-aviso-700'
-                            : 'bg-exito-100 text-exito-700'
+                        entregar
+                          ? 'bg-acento-500 text-white'
+                          : yaPagado
+                            ? 'bg-neutral-200 text-neutral-700'
+                            : falta
+                              ? 'bg-aviso-100 text-aviso-700'
+                              : 'bg-exito-100 text-exito-700'
                       }`}
                     >
-                      {yaPagado ? 'Cobrado · en cocina' : falta ? 'En cocina' : 'Cocina terminó · falta cobrar'}
+                      {entregar
+                        ? 'Para entregar'
+                        : yaPagado
+                          ? 'Cobrado · en cocina'
+                          : falta
+                            ? 'En cocina'
+                            : 'Cocina terminó · falta cobrar'}
                     </span>
                   </span>
                 </div>
-                <ul className="text-sm text-neutral-600 mb-3">
-                  {pedido.items.map((i) => (
-                    <li key={i.id}>
-                      {i.cantidad}x {i.nombre}
-                    </li>
-                  ))}
+                <ul className="text-sm text-neutral-600 mb-3 space-y-0.5">
+                  {pedido.items.map((i) => {
+                    const cat = categoriaDeVariante.get(i.variante_id ?? -1)
+                    return (
+                      <li key={i.id} className="flex items-center gap-2">
+                        <span
+                          aria-hidden
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            cat == null ? 'bg-neutral-300' : colorCategoria(cat, colorDe(cat)).dot
+                          }`}
+                        />
+                        {i.cantidad}x {i.nombre}
+                      </li>
+                    )
+                  })}
                 </ul>
                 <div className="flex justify-between items-center gap-3">
                   <span className="font-semibold whitespace-nowrap">{fmt(pedido.total)}</span>
@@ -857,7 +931,13 @@ export default function POS() {
           <div className="flex-1 overflow-y-auto space-y-3">
             {Object.values(carrito).map(({ producto, variante, cantidad }) => (
               <div key={variante.id} className="flex justify-between items-center gap-2">
-                <div className="min-w-0">
+                <span
+                  aria-hidden
+                  className={`w-1 self-stretch min-h-[34px] rounded-full shrink-0 ${
+                    colorCategoria(producto.categoria_id, colorDe(producto.categoria_id)).barra
+                  }`}
+                />
+                <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold truncate">
                     {etiquetaVariante(producto, variante)}
                   </div>
@@ -965,6 +1045,79 @@ export default function POS() {
         </div>
       </div>
 
+      {/* Las ventas del dia, en la esquina. Leider (21-sep): "dejame en una
+          esquina un lugar donde el cajero pueda ver las ventas del dia... y
+          ademas vea los nombres de para que persona fue esa venta". Antes
+          habia que salir a Ventas, elegir el periodo y volver -- con un
+          cliente preguntando "¿ya me cobraste?" eso es perder el mostrador. */}
+      <button
+        type="button"
+        onClick={verVentasDelDia}
+        className="fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 backdrop-blur px-3.5 py-2 text-xs font-medium text-neutral-600 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
+      >
+        <Icono nombre="ventas" size={14} />
+        Ventas de hoy
+      </button>
+
+      {ventasHoy !== null && (
+        <Modal
+          titulo="Ventas de hoy"
+          ayuda={
+            cargandoVentas
+              ? 'Buscando…'
+              : `${ventasHoy.length} venta(s) · ${fmt(ventasHoy.reduce((t, v) => t + v.a_cobrar, 0))}`
+          }
+          onCerrar={() => setVentasHoy(null)}
+          ancho="lg"
+        >
+          {ventasHoy.length === 0 ? (
+            <p className="text-sm text-neutral-500 py-4 text-center">
+              {cargandoVentas ? 'Buscando…' : 'Todavía no se ha cobrado nada hoy.'}
+            </p>
+          ) : (
+            <div className="divide-y divide-neutral-100">
+              {[...ventasHoy].reverse().map((v) => (
+                <div key={v.id} className="flex items-center gap-3 py-2.5">
+                  <span className="w-12 shrink-0 text-xs text-neutral-400 tabular-nums">
+                    {/* En 24 h: "09:35 p. m." no cabe en la columna y se
+                        partia en dos lineas. */}
+                    {new Date(v.cerrado_en ?? v.creado_en).toLocaleTimeString('es-VE', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                    })}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    {/* El nombre primero: es lo que se viene a buscar aqui. */}
+                    <span className="block text-sm font-medium truncate">
+                      {v.cliente || <span className="text-neutral-400 font-normal">sin nombre</span>}
+                    </span>
+                    <span className="block text-[11px] text-neutral-400 truncate">
+                      #{v.numero} · {etiquetaMetodo(v.metodo_pago || '')}
+                      {v.devuelto && ' · devuelta'}
+                    </span>
+                  </span>
+                  <span
+                    className={`shrink-0 text-sm font-semibold tabular-nums ${
+                      v.devuelto ? 'text-neutral-400 line-through' : ''
+                    }`}
+                  >
+                    {fmt(v.a_cobrar)}
+                  </span>
+                  <button
+                    onClick={() => imprimirTicket(v.id)}
+                    title="Imprimir el ticket"
+                    className="shrink-0 w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                  >
+                    <Icono nombre="ventas" size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {/* El comprobante del cliente, ofrecido SIN estorbar.
           Era una barra negra en el centro de la pantalla que se quedaba hasta
           que alguien la cerraba: tapaba la comanda siguiente y parecia un
@@ -977,7 +1130,7 @@ export default function POS() {
           type="button"
           onClick={() => imprimirTicket(ultimaVenta.id)}
           title={`Imprimir el ticket del pedido #${ultimaVenta.numero}`}
-          className="fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 backdrop-blur px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
+          className="fixed bottom-14 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 backdrop-blur px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
           style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
         >
           <Icono nombre="ventas" size={14} />

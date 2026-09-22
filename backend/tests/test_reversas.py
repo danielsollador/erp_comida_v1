@@ -60,6 +60,50 @@ def test_tras_anular_se_puede_cerrar_otra_vez_el_mismo_dia(client, variante):
     assert segundo.json()["diferencia"] == 0.0
 
 
+def test_un_error_de_tipeo_se_corrige_sin_anular_a_mano(client, db, variante):
+    """Leider (21-sep): "me debe permitir modificar los datos enviados en el
+    formulario de cerrar caja por algun error de tipeo". Antes habia que
+    anular --con motivo y contra-asiento-- y volver a cerrar desde cero; para
+    un digito de mas eso es demasiado tramite, y lo que se hace entonces es
+    dejarlo mal."""
+    vender(client, variante, cantidad=2)  # $10
+    caja_antes = saldo(db, "1010")
+
+    malo = caja_cerrar(client, 1000.0, nota="dedo gordo").json()
+    assert malo["diferencia"] == 990.0
+
+    r = client.post(
+        f"/api/caja/cierres/{malo['id']}/corregir",
+        json={"conteos": [{"metodo": "Efectivo Bs", "contado": 10.0}], "nota": "era 10"},
+    )
+    assert r.status_code == 200, r.text
+    bueno = r.json()
+    assert bueno["id"] != malo["id"], "el viejo no se reescribe: los libros no se borran"
+    assert bueno["diferencia"] == 0.0
+    assert bueno["anulado"] is False
+    assert saldo(db, "1010") == caja_antes, "el sobrante ficticio salio de los libros"
+
+    # El dia queda con UN solo cierre vivo, y el malo con su rastro.
+    cierres = client.get("/api/caja/cierres").json()
+    vivos = [c for c in cierres if not c["anulado"]]
+    assert [c["id"] for c in vivos] == [bueno["id"]]
+    viejo = next(c for c in cierres if c["id"] == malo["id"])
+    assert viejo["anulado"] is True and viejo["motivo_anulacion"]
+
+
+def test_un_cierre_ya_anulado_no_se_corrige(client, variante):
+    """Ahi no hay nada que corregir: el dia esta sin cerrar y lo que toca es
+    cerrarlo. Decirlo es mejor que crear un segundo cierre en silencio."""
+    vender(client, variante, cantidad=2)
+    cierre = caja_cerrar(client, 1000.0).json()
+    client.post(f"/api/caja/cierres/{cierre['id']}/anular", json={"motivo": "error"})
+    r = client.post(
+        f"/api/caja/cierres/{cierre['id']}/corregir",
+        json={"conteos": [{"metodo": "Efectivo Bs", "contado": 10.0}]},
+    )
+    assert r.status_code == 409
+
+
 def test_el_cierre_anulado_no_se_borra_queda_el_rastro(client, db, variante):
     vender(client, variante, cantidad=2)
     cierre = caja_cerrar(client, 1000.0).json()

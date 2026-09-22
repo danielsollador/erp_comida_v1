@@ -71,7 +71,6 @@ METODOS_DE_CIERRE = (
     ("Punto de venta", False),
     ("Pago movil", False),
     ("Transferencia", False),
-    ("Tarjeta", False),
     ("Zelle", False),
     ("Fiado", False),
 )
@@ -79,7 +78,17 @@ METODOS_DE_CIERRE = (
 # "Efectivo" a secas es historico: antes de separar bolivares de divisas todo
 # el efectivo iba a la misma cuenta. Se suma a "Efectivo Bs" para que una
 # venta vieja no quede fuera del cuadre.
-ALIAS_METODO = {"Efectivo": "Efectivo Bs", "Banco": "Transferencia"}
+#
+# "Tarjeta" y "Punto de venta" son la MISMA cosa: el terminal del local
+# (Leider, 21-sep: "punto de venta y tarjeta es el mismo ya que punto de
+# ventas es POS"). Eran dos filas del arqueo que se cuadraban por separado
+# contra un solo lote impreso, asi que una de las dos siempre daba descuadre.
+# El nombre viejo se sigue traduciendo porque hay ventas cargadas con el.
+ALIAS_METODO = {
+    "Efectivo": "Efectivo Bs",
+    "Banco": "Transferencia",
+    "Tarjeta": "Punto de venta",
+}
 
 
 def _normalizar(metodo: str) -> str:
@@ -187,7 +196,13 @@ def _ajuste_apertura(db: Session, dia: datetime.date, codigo: str) -> float:
     return round(sum((m.debe or 0) - (m.haber or 0) for m in filas), 2)
 
 
-def _desglose(db: Session, dia: datetime.date, inicio, fin) -> List[schemas.LineaMetodo]:
+def _desglose(
+    db: Session,
+    dia: datetime.date,
+    inicio,
+    fin,
+    cierre: Optional[models.CierreCaja] = None,
+) -> List[schemas.LineaMetodo]:
     """Una fila por forma de pago: con cuanto arranco, que entro, que salio y
     que deberia haber.
 
@@ -216,6 +231,16 @@ def _desglose(db: Session, dia: datetime.date, inicio, fin) -> List[schemas.Line
     ventas = _ventas_por_metodo(db, inicio, fin)
     salidas = _salidas_por_metodo(db, inicio, fin)
     aperturas = _aperturas_de(db, dia)
+    # Lo que se reporto al cerrar, si el dia ya se cerro. Se normaliza el
+    # nombre: un cierre viejo pudo guardar la fila como "Tarjeta".
+    contados = {}
+    if cierre is not None:
+        for l in cierre.lineas:
+            if l.contado is None:
+                continue
+            m = _normalizar(l.metodo or "")
+            anterior = contados.get(m, 0.0)
+            contados[m] = round(anterior + l.contado, 2)
     filas = []
     for metodo, fisico in METODOS_DE_CIERRE:
         cuenta = _cuentas_de(metodo)
@@ -257,6 +282,12 @@ def _desglose(db: Session, dia: datetime.date, inicio, fin) -> List[schemas.Line
                 salidas=round(salio, 2),
                 otros=otros,
                 esperado=round(fondo + entro - salio + otros, 2),
+                contado=contados.get(metodo),
+                diferencia=(
+                    round(contados[metodo] - (fondo + entro - salio + otros), 2)
+                    if metodo in contados
+                    else None
+                ),
             )
         )
     return filas
@@ -357,17 +388,6 @@ def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(ge
     # propina. Es contra esto que tiene que cuadrar el desglose.
     a_cobrar = round(vendido - descuentos + propinas, 2)
 
-    desglose = _desglose(db, dia, inicio, fin)
-    cobrado = round(sum(l.ventas for l in desglose), 2)
-
-    gastos_dia = _gastos_de(db, inicio, fin)
-    retiros_dia = _retiros_de(db, inicio, fin)
-    total_gastos = round(sum(g.monto for g in gastos_dia), 2)
-    total_retiros = round(sum(r.monto for r in retiros_dia), 2)
-
-    anulados, anulado_monto = _anulados(db, inicio, fin)
-    devueltos, devuelto_monto = _devueltos(db, inicio, fin)
-
     cierre = (
         db.query(models.CierreCaja)
         .filter(
@@ -377,6 +397,16 @@ def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(ge
         )
         .first()
     )
+    desglose = _desglose(db, dia, inicio, fin, cierre)
+    cobrado = round(sum(l.ventas for l in desglose), 2)
+
+    gastos_dia = _gastos_de(db, inicio, fin)
+    retiros_dia = _retiros_de(db, inicio, fin)
+    total_gastos = round(sum(g.monto for g in gastos_dia), 2)
+    total_retiros = round(sum(r.monto for r in retiros_dia), 2)
+
+    anulados, anulado_monto = _anulados(db, inicio, fin)
+    devueltos, devuelto_monto = _devueltos(db, inicio, fin)
 
     return schemas.ResumenCaja(
         fecha=dia.isoformat(),
@@ -736,6 +766,55 @@ def anular_cierre(
     db.commit()
     db.refresh(cierre)
     return _a_schema(cierre)
+
+
+@router.post("/cierres/{cierre_id}/corregir", response_model=schemas.CierreCaja)
+def corregir_cierre(
+    cierre_id: int,
+    body: schemas.CierreCajaRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Cambiar el conteo de un cierre ya hecho.
+
+    POR QUE EXISTE. Un digito de mas al teclear (500 en vez de 50) dejaba el
+    dia cerrado con un sobrante ficticio, y la unica salida era anular el
+    cierre --con su motivo, su contra-asiento y su fila anulada en el
+    historico-- y volver a cerrar desde cero. Para un error de tecleo eso es
+    demasiado tramite, y lo que hace la gente es dejarlo mal (Leider, 21-sep:
+    "me debe permitir modificar los datos enviados en el formulario de cerrar
+    caja por algun error de tipeo").
+
+    Por dentro sigue siendo lo mismo, y a proposito: se anula el cierre viejo
+    --queda la fila y el reverso de su diferencia, porque los libros no se
+    reescriben-- y se crea uno nuevo con el conteo bueno, todo en una sola
+    peticion. Si algo falla, no se queda el dia sin cierre.
+    """
+    viejo = db.query(models.CierreCaja).filter(models.CierreCaja.id == cierre_id).first()
+    if not viejo:
+        raise HTTPException(status_code=404, detail="Cierre no encontrado")
+    if viejo.anulado:
+        raise HTTPException(
+            status_code=409,
+            detail="Ese cierre esta anulado: vuelve a cerrar el dia en vez de corregirlo.",
+        )
+
+    # Se comprueba ANTES de tocar nada. Si el conteo nuevo viniera vacio,
+    # `cerrar_caja` cortaria con un 400 dejando el dia anulado y sin cierre:
+    # la sesion se descarta sola al cerrarse, pero no se deja depender de eso
+    # una operacion que mueve los libros.
+    if not [c for c in body.conteos if c.contado is not None]:
+        raise HTTPException(
+            status_code=400,
+            detail="Falta el conteo: hay que verificar al menos una forma de pago.",
+        )
+
+    contabilidad.registrar_reverso_diferencia_caja(db, viejo)
+    viejo.anulado = True
+    viejo.fecha_anulacion = ahora()
+    viejo.motivo_anulacion = (body.nota or "").strip() or "Se corrigio el conteo"
+    db.flush()
+    return cerrar_caja(body, request, db)
 
 
 def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:

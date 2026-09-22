@@ -1,7 +1,7 @@
 import datetime
 from typing import List, Optional, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class OperadorCreate(BaseModel):
@@ -97,6 +97,21 @@ class CategoriaBase(BaseModel):
     activo: bool = True
     # Lo que hay aqui se toma. Sirve para ofrecer algo de tomar con la comida.
     bebida: bool = False
+    # Como se pinta en el mostrador. Uno de los tintes de la paleta; vacio es
+    # el automatico. El nombre del tinte y no un codigo de color: la paleta
+    # vive en el frontend y cambia con el tema claro/oscuro.
+    color: str = ""
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _color_nunca_nulo(cls, v):
+        """NULL vale lo mismo que vacio: el automatico.
+
+        Una categoria cargada antes de que existiera la columna la tiene en
+        NULL, y un `str` que recibe None es un 500 al pedir el menu -- o sea,
+        el mostrador entero en blanco.
+        """
+        return v or ""
 
 
 class CategoriaCreate(CategoriaBase):
@@ -116,6 +131,7 @@ class CategoriaUpdate(BaseModel):
     orden: Optional[int] = None
     activo: Optional[bool] = None
     bebida: Optional[bool] = None
+    color: Optional[str] = None
 
 
 class Categoria(CategoriaBase):
@@ -640,6 +656,9 @@ class Pedido(BaseModel):
     # Cuando se cobro. La pantalla la necesita para saber si la venta ya entro
     # al cierre de caja de otro dia, que es lo que impide editarle el monto.
     cerrado_en: Optional[datetime.datetime] = None
+    # Cuando quedo lista para entregar. El mostrador la sigue mostrando un
+    # rato despues de cobrada para saber a quien darle la comida.
+    listo_en: Optional[datetime.datetime] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
     # Tasa a la que se cobro. Se expone para que la pantalla muestre los
@@ -959,6 +978,14 @@ class LineaMetodo(BaseModel):
     # ya esta dentro de `fondo`, y contarlo dos veces descuadraria la fila.
     otros: float = 0
     esperado: float = 0
+    # Lo que el cajero reporto al cerrar, y en cuanto fallo. Nulo mientras el
+    # dia no se haya cerrado, o cuando esa forma de pago no se verifico. Va
+    # EN LA FILA a proposito: antes el veredicto era una tarjeta aparte al
+    # final de la pantalla que repetia el esperado y el contado, y para saber
+    # si el pago movil habia fallado habia que comparar dos bloques distintos
+    # (Leider, 21-sep).
+    contado: Optional[float] = None
+    diferencia: Optional[float] = None
 
 
 class OtroMovimiento(BaseModel):

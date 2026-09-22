@@ -1,365 +1,578 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import NavBar from '../components/NavBar'
-import { Secciones, useSeccion } from '../components/Secciones'
+import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { contiene, palabrasDe } from '../components/Tabla'
-import { Boton, Modal, Pagina } from '../components/ui'
+import { Pagina, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
+import { useArrastre } from '../lib/arrastre'
 import { SUBSECCION_INICIAL } from '../lib/menu'
-import { etiquetaVariante } from '../lib/menu'
-import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from '../lib/types'
+import { COLORES, NOMBRES_COLOR, NOMBRE_COLOR, colorCategoria } from '../lib/theme'
+import Recetas from './partes/Recetas'
+import type { Categoria, CostoVariante, Producto } from '../lib/types'
 
-const SUBSECCIONES_MENU = [
+/**
+ * El menú: qué se vende, a cuánto, y qué lleva cada cosa.
+ *
+ * COMO ESTABA. Todo desplegado en una sola columna: ocho categorías, cada una
+ * con sus productos, cada producto con sus subsecciones, y tres formularios de
+ * "agregar" siempre abiertos. Encontrar algo era recorrer la página entera con
+ * el ojo, las acciones de borrar eran enlaces de texto pegados al contenido
+ * --en una tablet, a un dedo de distancia-- y no había forma de renombrar una
+ * categoría ni de mover un producto de una a otra: había que borrar y volver a
+ * crear, perdiendo las subsecciones y las recetas.
+ *
+ * COMO ESTA. Leider (21-sep): "mucho más fácil de manejar, mucho más
+ * intuitivo... si tengo un producto en una categoría y la quiero pasar para
+ * otra, que lo pueda hacer con un drag and drop". Las reglas que se siguieron:
+ *
+ *   UNA COSA A LA VEZ    Las categorías a un lado y los productos de LA
+ *                        elegida al otro. Lo que no estás mirando no compite.
+ *   MANIPULACION DIRECTA Se arrastra el producto a la categoría, y las
+ *                        categorías entre sí para ordenarlas. Con el dedo
+ *                        (ver `lib/arrastre.ts`), que es como se usa esto.
+ *   NADA IRREVERSIBLE    Quitar es retirar del menú, nunca borrar: las ventas
+ *                        viejas siguen nombrando el producto. Se dice en el
+ *                        momento y se deshace desde "Fuera del menú".
+ *   LO PELIGROSO APARTE  Quitar vive dentro del menú de "⋯", no al lado del
+ *                        nombre donde se toca sin querer.
+ *   EDITAR DONDE SE LEE  El nombre y el precio se tocan y se cambian ahí
+ *                        mismo.
+ *
+ * LAS RECETAS SON UNA SECCION DE AQUI, no un módulo aparte: qué lleva un
+ * producto es parte de qué es ese producto, y separarlas obligaba a abrir dos
+ * pantallas para una sola pregunta --"¿cuánto me deja esta empanada?".
+ */
+const SECCIONES = [
   { id: 'menu', texto: 'El menú' },
+  { id: 'recetas', texto: 'Qué lleva cada uno' },
   { id: 'retiradas', texto: 'Fuera del menú' },
-]
-
-const SECCIONES_MODULO = [
-  { id: 'menu', texto: 'Menú' },
-  { id: 'recetas', texto: 'Recetas' },
 ]
 
 const BR = '\n\n'
 
-/**
- * Menú y recetas: un solo módulo con dos sub-secciones.
- *
- * Antes eran dos pantallas separadas en la barra lateral. Se unifican aquí
- * porque son la misma conversación --"qué vendo" y "de qué está hecho"-- pero
- * CADA UNA CONSERVA SU LÓGICA TAL CUAL ESTABA: `MenuSeccion` es exactamente
- * el antiguo módulo Menu y `RecetasSeccion` el antiguo módulo Recetas, solo
- * que ya no dibujan su propio NavBar ni su propia página: la envolvente de
- * abajo pone una sola vez el encabezado con las dos pestañas.
- */
-export default function MenuYRecetas() {
-  const [seccion, irA] = useSeccion(SECCIONES_MODULO)
-  return (
-    <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Menú y recetas" secciones={SECCIONES_MODULO} seccion={seccion} alCambiarSeccion={irA} />
-      <Pagina ancho="media">
-        {seccion === 'menu' && <MenuSeccion />}
-        {seccion === 'recetas' && <RecetasSeccion />}
-      </Pagina>
-    </div>
-  )
-}
-
-function MenuSeccion() {
-  const [seccion, irA] = useSeccion(SUBSECCIONES_MENU, 'ms')
+export default function Menu() {
+  const [seccion, irA] = useSeccion(SECCIONES)
   const [categorias, setCategorias] = useState<Categoria[]>([])
-  const dialogo = useDialogo()
-  const [nuevaCategoria, setNuevaCategoria] = useState('')
-  // Con un menu de cien variantes, encontrar "Empanada de pernil" para
-  // cambiarle el precio era recorrer la pagina con el ojo. Busca por producto,
-  // por variante y por categoria, sin acentos.
-  const [busqueda, setBusqueda] = useState('')
-  // Cuanto cuesta producir cada variante: el precio se fija mirando esto, no a
-  // ciegas. Antes se podia poner un precio por debajo del costo sin que nada
-  // lo dijera, y la perdida quedaba escondida en el promedio del reporte.
   const [costos, setCostos] = useState<Map<number, CostoVariante>>(new Map())
+  const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
     cargar()
   }, [])
 
   function cargar() {
-    api.listarCategorias().then(setCategorias)
+    api.listarCategorias().then((cs) => {
+      setCategorias(cs)
+      setCargando(false)
+    })
+    // Una sola llamada para todo el menú: cuánto cuesta cada subsección y
+    // cuál no tiene receta. Las recetas preguntaban variante por variante
+    // --cien peticiones para abrir una pantalla-- y esto ya venía calculado.
     api.costosVariantes().then((cs) => setCostos(new Map(cs.map((c) => [c.variante_id, c]))))
   }
 
+  return (
+    <div className="min-h-screen bg-neutral-50">
+      <NavBar titulo="Menú y recetas" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <Pagina ancho="ancha">
+        {seccion === 'menu' && (
+          <ElMenu categorias={categorias} costos={costos} cargando={cargando} onCambio={cargar} />
+        )}
+        {seccion === 'recetas' && <Recetas categorias={categorias} costos={costos} onCambio={cargar} />}
+        {seccion === 'retiradas' && <Retiradas categorias={categorias} onCambio={cargar} />}
+      </Pagina>
+    </div>
+  )
+}
+
+// ── El menú ─────────────────────────────────────────────────────────────────
+
+function ElMenu({
+  categorias,
+  costos,
+  cargando,
+  onCambio,
+}: {
+  categorias: Categoria[]
+  costos: Map<number, CostoVariante>
+  cargando: boolean
+  onCambio: () => void
+}) {
+  const dialogo = useDialogo()
+  const [busqueda, setBusqueda] = useState('')
+  const [elegida, setElegida] = useState<number | null>(null)
+  const [nuevaCategoria, setNuevaCategoria] = useState('')
+  const [aviso, setAviso] = useState('')
+
+  const activas = useMemo(() => categorias.filter((c) => c.activo), [categorias])
+  // La primera vez, y cuando la elegida se retira, se cae en la primera.
+  const actual = activas.find((c) => c.id === elegida) ?? activas[0] ?? null
+
+  const buscando = palabrasDe(busqueda).length > 0
+  const encontrados = useMemo(
+    () => (buscando ? buscar(activas, busqueda) : []),
+    [activas, busqueda, buscando],
+  )
+
+  /** Mover un producto a otra categoría, o una categoría a otro puesto. */
+  const arrastre = useArrastre<{ tipo: 'producto'; producto: Producto } | { tipo: 'categoria'; id: number }>(
+    async (carga, destino) => {
+      const idDestino = Number(destino.replace('cat-', ''))
+      if (!Number.isFinite(idDestino)) return
+      if (carga.tipo === 'producto') {
+        if (carga.producto.categoria_id === idDestino) return
+        await api.actualizarProducto(carga.producto.id, {
+          categoria_id: idDestino,
+          nombre: carga.producto.nombre,
+          activo: true,
+        })
+        const nombre = activas.find((c) => c.id === idDestino)?.nombre
+        setAviso(`"${carga.producto.nombre}" pasó a ${nombre}.`)
+        setElegida(idDestino)
+      } else {
+        if (carga.id === idDestino) return
+        await reordenar(activas, carga.id, idDestino)
+      }
+      onCambio()
+    },
+  )
+
+  // El aviso de "se movió" se retira solo: es una confirmación, no algo que
+  // haya que cerrar.
+  useEffect(() => {
+    if (!aviso) return
+    const t = window.setTimeout(() => setAviso(''), 4000)
+    return () => window.clearTimeout(t)
+  }, [aviso])
+
   async function agregarCategoria() {
-    if (!nuevaCategoria.trim()) return
-    await api.crearCategoria(nuevaCategoria.trim(), categorias.length)
+    const nombre = nuevaCategoria.trim()
+    if (!nombre) return
+    const cat = await api.crearCategoria(nombre, activas.length)
     setNuevaCategoria('')
-    cargar()
+    setElegida(cat.id)
+    onCambio()
   }
 
-  async function borrarCategoria(id: number) {
-    const cat = categorias.find((c) => c.id === id)
-    const productos = cat?.productos.length ?? 0
-    if (
-      !(await dialogo.confirmar({
-        titulo: `¿Quitar "${cat?.nombre}" del menú?`,
-        texto:
-          `Deja de aparecer en el punto de venta junto con sus ${productos} producto(s), ` +
-          'pero las ventas que ya se hicieron se conservan intactas.\n\nSe puede volver a activar desde "Fuera del menú".',
-        aceptar: 'Quitar',
-        peligro: true,
-      }))
+  async function quitarCategoria(cat: Categoria) {
+    const cuantos = cat.productos.filter((p) => p.activo).length
+    const ok = await dialogo.confirmar({
+      titulo: `¿Quitar "${cat.nombre}" del menú?`,
+      texto:
+        `Deja de aparecer en el punto de venta junto con sus ${cuantos} producto(s).` +
+        BR +
+        'Las ventas que ya se hicieron se conservan intactas, y se puede devolver desde "Fuera del menú".',
+      aceptar: 'Quitar del menú',
+      peligro: true,
+    })
+    if (!ok) return
+    await api.eliminarCategoria(cat.id)
+    onCambio()
+  }
+
+  async function renombrarCategoria(cat: Categoria) {
+    const nombre = await dialogo.pedirTexto({
+      titulo: 'Nombre de la categoría',
+      etiqueta: 'Se ve así en el punto de venta',
+      valor: cat.nombre,
+      aceptar: 'Guardar',
+    })
+    if (nombre === null || !nombre.trim() || nombre.trim() === cat.nombre) return
+    await api.actualizarCategoria(cat.id, { nombre: nombre.trim() })
+    onCambio()
+  }
+
+  if (cargando) return <p className="text-sm text-neutral-400 py-10 text-center">Cargando el menú…</p>
+
+  if (activas.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-neutral-200">
+        <Vacio
+          icono="menu"
+          titulo="Todavía no hay menú"
+          detalle="Empieza por una categoría: Comida, Bebidas, Postres. Dentro van los productos y sus precios."
+          accion={
+            <div className="flex gap-2 max-w-sm mx-auto">
+              <input
+                value={nuevaCategoria}
+                onChange={(e) => setNuevaCategoria(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()}
+                placeholder="Ej. Comida"
+                className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <button
+                onClick={agregarCategoria}
+                className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                Crear
+              </button>
+            </div>
+          }
+        />
+      </div>
     )
-      return
-    await api.eliminarCategoria(id)
-    cargar()
   }
-
-  async function reactivarCategoria(id: number) {
-    await api.reactivarCategoria(id)
-    cargar()
-  }
-
-  // Una categoria entra si coincide su nombre --y entonces se ve entera-- o
-  // si algun producto suyo coincide, y entonces se ve solo con esos.
-  const visibles = filtrarMenu(categorias.filter((c) => c.activo), busqueda)
-
-  // Lo que se quito del menu, para poder devolverlo. Un producto retirado
-  // dentro de una categoria retirada no se lista aparte: vuelve con ella.
-  const catsRetiradas = categorias.filter((c) => !c.activo)
-  const productosRetirados = categorias
-    .filter((c) => c.activo)
-    .flatMap((c) => c.productos.filter((p) => !p.activo).map((p) => ({ cat: c, p })))
-  const variantesRetiradas = categorias
-    .filter((c) => c.activo)
-    .flatMap((c) =>
-      c.productos
-        .filter((p) => p.activo)
-        .flatMap((p) => p.variantes.filter((v) => !v.activo).map((v) => ({ p, v }))),
-    )
-  const hayRetirados =
-    catsRetiradas.length > 0 || productosRetirados.length > 0 || variantesRetiradas.length > 0
 
   return (
     <>
-      <Secciones secciones={SUBSECCIONES_MENU} activa={seccion} alCambiar={irA} />
-      <div className="space-y-4">
-        {seccion === 'menu' && (
-          <>
-        {/* Agregar y buscar, ARRIBA. La caja de "nueva categoria" estaba al
-            final de la pagina: con ocho categorias desplegadas habia que
-            bajarlas todas para crear la novena. */}
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex flex-wrap gap-2">
-          <input
-            value={nuevaCategoria}
-            onChange={(e) => setNuevaCategoria(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()}
-            placeholder="Nueva categoría (ej. Bebidas)"
-            className="flex-1 min-w-[12rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-          />
-          <button
-            onClick={agregarCategoria}
-            className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            Agregar
-          </button>
-        </div>
+      <Buscador valor={busqueda} onCambio={setBusqueda} />
 
-        <div className="relative">
-          <input
-            type="search"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            onKeyDown={(e) => e.key === 'Escape' && setBusqueda('')}
-            placeholder="Buscar un producto por nombre"
-            aria-label="Buscar un producto por nombre"
-            className="w-full bg-white border border-neutral-300 rounded-xl pl-9 pr-3 py-2 text-sm"
-          />
-          <svg
-            viewBox="0 0 24 24"
-            width="15"
-            height="15"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            aria-hidden
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-        </div>
-
-        {visibles.map((cat) => (
-          <CategoriaCard
-            key={cat.id}
-            categoria={cat}
-            costos={costos}
-            onCambio={cargar}
-            onBorrar={borrarCategoria}
-          />
-        ))}
-        {busqueda.trim() && visibles.length === 0 && (
-          <p className="text-sm text-neutral-400 text-center py-6">
-            Ningún producto coincide con «{busqueda.trim()}».
+      {buscando ? (
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-500">
+            {encontrados.length === 0
+              ? `Ningún producto coincide con «${busqueda.trim()}».`
+              : `${encontrados.length} producto(s) con «${busqueda.trim()}»`}
           </p>
-        )}
-          </>
-        )}
+          {encontrados.map(({ cat, producto }) => (
+            <TarjetaProducto
+              key={producto.id}
+              producto={producto}
+              categoria={cat}
+              categorias={activas}
+              costos={costos}
+              onCambio={onCambio}
+              arrastre={arrastre}
+              conCategoria
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-[15rem_1fr] lg:grid-cols-[17rem_1fr] gap-4 lg:gap-5 items-start">
+          <ListaCategorias
+            categorias={activas}
+            elegida={actual?.id ?? null}
+            onElegir={setElegida}
+            onRenombrar={renombrarCategoria}
+            onQuitar={quitarCategoria}
+            onCambio={onCambio}
+            arrastre={arrastre}
+            nueva={nuevaCategoria}
+            onNueva={setNuevaCategoria}
+            onAgregar={agregarCategoria}
+          />
+          {actual && (
+            <ProductosDe
+              categoria={actual}
+              categorias={activas}
+              costos={costos}
+              onCambio={onCambio}
+              arrastre={arrastre}
+            />
+          )}
+        </div>
+      )}
 
-        {seccion === 'retiradas' && (
-          <>
-        {/* Retiradas del menu, no borradas: sus ventas siguen en el historico
-            y se pueden volver a activar. Antes solo se listaban las
-            CATEGORIAS; un producto o una presentacion que se quitaba no
-            aparecia por ningun lado y no habia forma de traerlo de vuelta. */}
-        {hayRetirados ? (
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <h2 className="font-semibold mb-1">Fuera del menú</h2>
-            <p className="text-xs text-neutral-500 mb-3">
-              No aparecen en el punto de venta. Sus ventas anteriores se conservan.
-            </p>
-            <div className="space-y-1">
-              {catsRetiradas.map((c) => (
-                <FilaRetirada
-                  key={`c${c.id}`}
-                  nombre={c.nombre}
-                  detalle={`categoría · ${c.productos.length} producto(s)`}
-                  onVolver={() => reactivarCategoria(c.id)}
-                />
-              ))}
-              {productosRetirados.map(({ cat, p }) => (
-                <FilaRetirada
-                  key={`p${p.id}`}
-                  nombre={p.nombre}
-                  detalle={`producto de ${cat.nombre}`}
-                  onVolver={async () => {
-                    await api.reactivarProducto(p.id)
-                    cargar()
-                  }}
-                />
-              ))}
-              {variantesRetiradas.map(({ p, v }) => (
-                <FilaRetirada
-                  key={`v${v.id}`}
-                  nombre={`${p.nombre} - ${v.nombre}`}
-                  detalle="presentación"
-                  onVolver={async () => {
-                    await api.reactivarVariante(v.id)
-                    cargar()
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-neutral-400 text-center py-6">
-            No has quitado nada del menú.
-          </p>
-        )}
-          </>
-        )}
-      </div>
+      {/* El fantasma de lo que se está moviendo, pegado al dedo. Sin esto, al
+          arrastrar no pasa nada visible hasta soltar y no se sabe si el gesto
+          fue tomado. */}
+      {arrastre.carga && arrastre.punto && (
+        <div
+          className="fixed z-50 pointer-events-none rounded-xl bg-neutral-900 text-white text-sm font-medium px-3 py-2 shadow-xl"
+          style={{ left: arrastre.punto.x + 12, top: arrastre.punto.y - 14 }}
+        >
+          {arrastre.carga.tipo === 'producto'
+            ? arrastre.carga.producto.nombre
+            : activas.find((c) => c.id === (arrastre.carga as { id: number }).id)?.nombre}
+        </div>
+      )}
+
+      {aviso && (
+        <p
+          role="status"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 rounded-full bg-neutral-900 text-white text-sm px-4 py-2 shadow-lg"
+        >
+          {aviso}
+        </p>
+      )}
     </>
   )
 }
 
-function CategoriaCard({
-  categoria,
-  costos,
+/**
+ * Las categorías: la columna de la izquierda y, a la vez, el sitio donde se
+ * sueltan los productos.
+ */
+function ListaCategorias({
+  categorias,
+  elegida,
+  onElegir,
+  onRenombrar,
+  onQuitar,
   onCambio,
-  onBorrar,
+  arrastre,
+  nueva,
+  onNueva,
+  onAgregar,
 }: {
-  categoria: Categoria
-  costos: Map<number, CostoVariante>
+  categorias: Categoria[]
+  elegida: number | null
+  onElegir: (id: number) => void
+  onRenombrar: (c: Categoria) => void
+  onQuitar: (c: Categoria) => void
   onCambio: () => void
-  onBorrar: (id: number) => void
+  arrastre: Arrastre
+  nueva: string
+  onNueva: (v: string) => void
+  onAgregar: () => void
 }) {
-  const [nuevoProducto, setNuevoProducto] = useState('')
-
-  async function agregarProducto() {
-    if (!nuevoProducto.trim()) return
-    await api.crearProducto(categoria.id, nuevoProducto.trim(), [{ nombre: SUBSECCION_INICIAL, precio: 0 }])
-    setNuevoProducto('')
-    onCambio()
-  }
-
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-      <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
-        <h2 className="font-semibold text-lg">{categoria.nombre}</h2>
-        <div className="flex items-center gap-3">
-          {/* Antes se adivinaba buscando la palabra "bebida" en el nombre de
-              la categoria: una llamada "Jugos" o "Refrescos" dejaba de
-              ofrecerse para acompañar la comida y nada lo decia. Lo marca el
-              dueño, que es el unico que lo sabe. */}
-          <label
-            className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer"
-            title="El mostrador ofrece estos productos para acompañar la comida"
-          >
-            <input
-              type="checkbox"
-              checked={categoria.bebida}
-              onChange={async (e) => {
-                await api.actualizarCategoria(categoria.id, { bebida: e.target.checked })
-                onCambio()
-              }}
-              className="accent-acento-600"
-            />
-            Son bebidas
-          </label>
-          <button onClick={() => onBorrar(categoria.id)} className="text-peligro-500 text-xs">
-            Borrar categoría
-          </button>
-        </div>
+    <div className="bg-white rounded-2xl border border-neutral-200 p-2 md:sticky md:top-[84px]">
+      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 px-2 pt-1.5 pb-2">
+        Categorías
+      </p>
+      <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
+        {categorias.map((cat) => {
+          const activa = cat.id === elegida
+          const encima = arrastre.sobre === `cat-${cat.id}` && arrastre.carga !== null
+          return (
+            <div
+              key={cat.id}
+              data-soltar={`cat-${cat.id}`}
+              className={`group flex items-center gap-1 rounded-xl shrink-0 md:shrink transition ${
+                encima
+                  ? 'bg-acento-50 ring-2 ring-acento-400'
+                  : activa
+                    ? 'bg-neutral-100'
+                    : 'hover:bg-neutral-50'
+              }`}
+            >
+              {/* El agarre es suyo y no de toda la fila: así tocar la
+                  categoría la abre, que es lo que se hace mil veces, y
+                  arrastrar es un gesto aparte que no se dispara sin querer. */}
+              <button
+                aria-label={`Mover ${cat.nombre} de puesto`}
+                onPointerDown={(e) => arrastre.empezar(e, { tipo: 'categoria', id: cat.id })}
+                className="hidden md:grid place-items-center w-7 h-10 shrink-0 text-neutral-300 group-hover:text-neutral-500 cursor-grab touch-none"
+              >
+                <Puntos />
+              </button>
+              <button
+                onClick={() => onElegir(cat.id)}
+                aria-current={activa ? 'true' : undefined}
+                className="flex-1 min-w-0 text-left px-2 md:px-1 py-2.5 min-h-[40px]"
+              >
+                <span className={`flex items-center gap-1.5 text-sm ${activa ? 'font-semibold' : ''}`}>
+                  {/* El mismo color con el que se pinta en el mostrador: aqui
+                      se elige y aqui se ve, sin tener que ir a mirar. */}
+                  <span
+                    aria-hidden
+                    className={`w-2 h-2 rounded-full shrink-0 ${colorCategoria(cat.id, cat.color).dot}`}
+                  />
+                  <span className="truncate">{cat.nombre}</span>
+                </span>
+                <span className="block text-[11px] text-neutral-400">
+                  {cat.productos.filter((p) => p.activo).length} producto(s)
+                  {cat.bebida && ' · bebidas'}
+                </span>
+              </button>
+              <MenuAcciones
+                etiqueta={`Opciones de ${cat.nombre}`}
+                encabezado={
+                  <Colores
+                    elegido={cat.color}
+                    onElegir={async (color) => {
+                      await api.actualizarCategoria(cat.id, { color })
+                      onCambio()
+                    }}
+                  />
+                }
+                opciones={[
+                  { texto: 'Renombrar', onElegir: () => onRenombrar(cat) },
+                  {
+                    texto: cat.bebida ? 'No son bebidas' : 'Son bebidas',
+                    ayuda: 'El mostrador ofrece las bebidas para acompañar la comida',
+                    onElegir: async () => {
+                      await api.actualizarCategoria(cat.id, { bebida: !cat.bebida })
+                      onCambio()
+                    },
+                  },
+                  { texto: 'Quitar del menú', peligro: true, onElegir: () => onQuitar(cat) },
+                ]}
+              />
+            </div>
+          )
+        })}
       </div>
 
-      {/* Igual que la categoria: agregar va arriba. En una categoria con
-          quince productos, el campo quedaba al fondo de la tarjeta. */}
-      <div className="flex gap-2 mb-3">
+      <div className="flex gap-1.5 p-2 pt-2.5 mt-1 border-t border-neutral-100">
         <input
-          value={nuevoProducto}
-          onChange={(e) => setNuevoProducto(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && agregarProducto()}
-          placeholder="Nuevo producto (ej. Empanada)"
-          className="flex-1 border border-neutral-300 rounded-lg px-3 py-1.5 text-sm"
+          value={nueva}
+          onChange={(e) => onNueva(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && onAgregar()}
+          placeholder="Nueva categoría"
+          aria-label="Nueva categoría"
+          className="flex-1 min-w-0 border border-neutral-200 rounded-lg px-2.5 py-2 text-sm"
         />
         <button
-          onClick={agregarProducto}
-          className="bg-neutral-100 hover:bg-neutral-200 px-3 py-1.5 rounded-lg text-sm"
+          onClick={onAgregar}
+          disabled={!nueva.trim()}
+          className="bg-neutral-900 text-white px-3 rounded-lg text-sm font-medium disabled:opacity-30"
         >
-          + Producto
+          +
         </button>
-      </div>
-
-      {/* Solo lo que esta EN el menu. Quitar un producto lo retira
-          (`activo = false`) para no romper las ventas viejas que lo
-          nombran; mostrarlo igual hacia parecer que el boton no servia. Lo
-          retirado se recupera desde "Fuera del menu". */}
-      <div className="space-y-3">
-        {categoria.productos
-          .filter((producto) => producto.activo)
-          .map((producto) => (
-            <ProductoRow
-              key={producto.id}
-              producto={producto}
-              costos={costos}
-              onCambio={onCambio}
-            />
-          ))}
       </div>
     </div>
   )
 }
 
-function ProductoRow({
-  producto,
+type Arrastre = ReturnType<
+  typeof useArrastre<{ tipo: 'producto'; producto: Producto } | { tipo: 'categoria'; id: number }>
+>
+
+/** Los productos de la categoría abierta. */
+function ProductosDe({
+  categoria,
+  categorias,
   costos,
   onCambio,
+  arrastre,
 }: {
-  producto: Categoria['productos'][number]
+  categoria: Categoria
+  categorias: Categoria[]
   costos: Map<number, CostoVariante>
   onCambio: () => void
+  arrastre: Arrastre
+}) {
+  const [nuevo, setNuevo] = useState('')
+  const productos = categoria.productos.filter((p) => p.activo)
+
+  async function agregar() {
+    const nombre = nuevo.trim()
+    if (!nombre) return
+    await api.crearProducto(categoria.id, nombre, [{ nombre: SUBSECCION_INICIAL, precio: 0 }])
+    setNuevo('')
+    onCambio()
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-white rounded-2xl border border-neutral-200 p-3 flex flex-wrap items-center gap-2">
+        <h2 className="font-semibold text-lg px-1 mr-auto">{categoria.nombre}</h2>
+        <input
+          value={nuevo}
+          onChange={(e) => setNuevo(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && agregar()}
+          placeholder="Nuevo producto (ej. Empanada)"
+          aria-label="Nuevo producto"
+          className="flex-1 min-w-[11rem] border border-neutral-200 rounded-lg px-3 py-2 text-sm"
+        />
+        <button
+          onClick={agregar}
+          disabled={!nuevo.trim()}
+          className="bg-neutral-900 text-white px-3.5 py-2 rounded-lg text-sm font-medium disabled:opacity-30"
+        >
+          + Producto
+        </button>
+      </div>
+
+      {productos.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-neutral-200">
+          <Vacio
+            titulo={`"${categoria.nombre}" está vacía`}
+            detalle="Escribe arriba el primer producto. También puedes arrastrar uno de otra categoría hasta aquí."
+          />
+        </div>
+      ) : (
+        productos.map((producto) => (
+          <TarjetaProducto
+            key={producto.id}
+            producto={producto}
+            categoria={categoria}
+            categorias={categorias}
+            costos={costos}
+            onCambio={onCambio}
+            arrastre={arrastre}
+          />
+        ))
+      )}
+    </div>
+  )
+}
+
+/** Un producto con sus subsecciones y precios. */
+function TarjetaProducto({
+  producto,
+  categoria,
+  categorias,
+  costos,
+  onCambio,
+  arrastre,
+  conCategoria = false,
+}: {
+  producto: Producto
+  categoria: Categoria
+  categorias: Categoria[]
+  costos: Map<number, CostoVariante>
+  onCambio: () => void
+  arrastre: Arrastre
+  /** En los resultados de búsqueda se dice de qué categoría es cada uno. */
+  conCategoria?: boolean
 }) {
   const dialogo = useDialogo()
   const [nuevaVariante, setNuevaVariante] = useState('')
   const [nuevoPrecio, setNuevoPrecio] = useState('')
+  const [abierto, setAbierto] = useState(false)
+  const variantes = producto.variantes.filter((v) => v.activo)
+  const moviendose = arrastre.carga?.tipo === 'producto' && arrastre.carga.producto.id === producto.id
 
-  async function agregarVariante() {
-    const precio = Number(nuevoPrecio)
-    if (!nuevaVariante.trim() || !Number.isFinite(precio) || precio < 0) return
-    await api.crearVariante(producto.id, nuevaVariante.trim(), precio)
-    setNuevaVariante('')
-    setNuevoPrecio('')
+  async function renombrar() {
+    const nombre = await dialogo.pedirTexto({
+      titulo: 'Nombre del producto',
+      etiqueta: 'Se ve así en el punto de venta y en el ticket',
+      valor: producto.nombre,
+      aceptar: 'Guardar',
+    })
+    if (nombre === null || !nombre.trim() || nombre.trim() === producto.nombre) return
+    await api.actualizarProducto(producto.id, {
+      categoria_id: producto.categoria_id,
+      nombre: nombre.trim(),
+      activo: true,
+    })
+    onCambio()
+  }
+
+  async function mover() {
+    const otras = categorias.filter((c) => c.id !== producto.categoria_id)
+    if (otras.length === 0) return
+    const destino = await dialogo.elegir({
+      titulo: `¿A qué categoría pasa "${producto.nombre}"?`,
+      texto: 'Se lleva sus subsecciones, sus precios y su receta.',
+      opciones: otras.map((c) => ({ valor: String(c.id), texto: c.nombre })),
+    })
+    if (destino === null) return
+    await api.actualizarProducto(producto.id, {
+      categoria_id: Number(destino),
+      nombre: producto.nombre,
+      activo: true,
+    })
+    onCambio()
+  }
+
+  async function quitar() {
+    const ok = await dialogo.confirmar({
+      titulo: `¿Quitar "${producto.nombre}" del menú?`,
+      texto:
+        'Deja de aparecer en el punto de venta.' +
+        BR +
+        'Las ventas que ya se hicieron se conservan intactas, y se puede devolver desde "Fuera del menú".',
+      aceptar: 'Quitar del menú',
+      peligro: true,
+    })
+    if (!ok) return
+    await api.eliminarProducto(producto.id)
     onCambio()
   }
 
   async function cambiarPrecio(varianteId: number, nombre: string, precioActual: number) {
-    // El costo va en la pregunta, no despues: es el dato que decide si el
+    // El costo va EN la pregunta, no después: es el dato que decide si el
     // precio tiene sentido, y el sistema ya lo tiene.
     const info = costos.get(varianteId)
-    // El costo promedio mira hacia atras. Para poner un precio hoy lo que
-    // manda es cuanto cuesta reponer los insumos, que con inflacion puede ser
-    // varias veces mas. Si difieren, se muestran los dos y el precio sugerido.
+    // El costo promedio mira hacia atrás. Para poner un precio hoy lo que
+    // manda es cuánto cuesta reponer los insumos, que con inflación puede ser
+    // varias veces más. Si difieren, se muestran los dos y el precio sugerido.
     const seEncarecio =
       info?.costo != null &&
       info.costo_reposicion != null &&
@@ -393,169 +606,247 @@ function ProductoRow({
       })
       if (!seguir) return
     }
-
     await api.actualizarVariante(varianteId, nombre, precio)
     onCambio()
   }
 
-  async function borrarVariante(varianteId: number) {
-    await api.eliminarVariante(varianteId)
-    onCambio()
-  }
-
-  async function borrarProducto() {
-    if (
-      !(await dialogo.confirmar({
-        titulo: `¿Quitar "${producto.nombre}" del menú?`,
-        texto:
-          'Deja de aparecer en el punto de venta, pero las ventas que ya se hicieron se ' +
-          'conservan intactas.' +
-          BR +
-          'Se puede volver a activar desde "Fuera del menú".',
-        aceptar: 'Quitar',
-        peligro: true,
-      }))
-    )
-      return
-    await api.eliminarProducto(producto.id)
+  async function agregarVariante() {
+    const precio = Number(String(nuevoPrecio).replace(',', '.'))
+    if (!nuevaVariante.trim() || !Number.isFinite(precio) || precio < 0) return
+    await api.crearVariante(producto.id, nuevaVariante.trim(), precio)
+    setNuevaVariante('')
+    setNuevoPrecio('')
     onCambio()
   }
 
   return (
-    <div className="border border-neutral-200 rounded-xl p-3">
-      <div className="flex justify-between items-center mb-2">
-        <span className="font-medium">{producto.nombre}</span>
-        <button onClick={borrarProducto} className="text-peligro-500 text-xs">
-          Quitar
+    <div
+      className={`bg-white rounded-2xl border p-3 transition ${
+        moviendose ? 'border-acento-400 opacity-50' : 'border-neutral-200'
+      }`}
+    >
+      <div className="flex items-center gap-1.5">
+        <button
+          aria-label={`Mover ${producto.nombre} a otra categoría`}
+          title="Arrástralo hasta la categoría a la que va"
+          onPointerDown={(e) => arrastre.empezar(e, { tipo: 'producto', producto })}
+          className="grid place-items-center w-7 h-10 shrink-0 text-neutral-300 hover:text-neutral-500 cursor-grab touch-none"
+        >
+          <Puntos />
         </button>
+        <button onClick={renombrar} className="min-w-0 text-left flex-1 py-1.5">
+          <span className="font-medium">{producto.nombre}</span>
+          {conCategoria && <span className="text-xs text-neutral-400"> · {categoria.nombre}</span>}
+        </button>
+        <MenuAcciones
+          etiqueta={`Opciones de ${producto.nombre}`}
+          opciones={[
+            { texto: 'Renombrar', onElegir: renombrar },
+            { texto: 'Mover a otra categoría…', onElegir: mover },
+            { texto: 'Quitar del menú', peligro: true, onElegir: quitar },
+          ]}
+        />
       </div>
-      <div className="flex flex-wrap gap-2 mb-2">
-        {/* Las retiradas no: la `x` las quita de la base pero seguian
-            dibujadas, asi que el boton parecia no hacer nada. Se recuperan
-            desde "Fuera del menu". */}
-        {producto.variantes
-          .filter((v) => v.activo)
-          .map((v) => {
+
+      <div className="flex flex-wrap gap-1.5 mt-2 pl-8">
+        {variantes.map((v) => {
           const info = costos.get(v.id)
           const bajoCosto = info?.costo != null && v.precio < info.costo
           // El acantilado: el margen aguanta con el inventario viejo, pero no
-          // con lo que cuesta reponer. Cuando ese stock se acabe, el margen que
-          // queda es el de la derecha - y hasta ahora no se veia venir.
+          // con lo que cuesta reponer. Cuando ese stock se acabe, el margen
+          // que queda es el de la derecha -- y así se ve venir.
           const seDesploma =
             !bajoCosto &&
             info?.margen_pct != null &&
             info.margen_reposicion_pct != null &&
             info.margen_reposicion_pct < info.margen_pct - 5
           return (
-          <span
-            key={v.id}
-            className={`rounded-full px-3 py-1 text-xs flex items-center gap-2 ${
-              bajoCosto ? 'bg-peligro-50 ring-1 ring-peligro-300' : 'bg-neutral-100'
-            }`}
-          >
-            <button onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}>
-              {/* Con una sola subseccion, su nombre no aporta nada: la
-                  pastilla dice el precio del producto y ya. Se mira cuantas
-                  hay y no como se llama (ver lib/menu.ts). */}
-              {producto.variantes.filter((x) => x.activo).length <= 1
-                ? `$${v.precio.toFixed(2)}`
-                : `${v.nombre}: $${v.precio.toFixed(2)}`}
-            </button>
-            {/* El margen a la vista: sin esto habia que abrir cada producto
-                para saber si el precio todavia tiene sentido. */}
-            {info?.margen_pct != null && (
-              <span
-                className={`tabular-nums ${
-                  bajoCosto
-                    ? 'text-peligro-600 font-semibold'
-                    : info.margen_pct >= 50
-                      ? 'text-exito-600'
-                      : 'text-aviso-600'
-                }`}
-                title={`Cuesta $${info.costo?.toFixed(2)} producirlo`}
+            <span
+              key={v.id}
+              className={`rounded-full pl-3 pr-1 py-1 text-xs flex items-center gap-2 ${
+                bajoCosto ? 'bg-peligro-50 ring-1 ring-peligro-300' : 'bg-neutral-100'
+              }`}
+            >
+              <button
+                onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}
+                className="py-1 font-medium tabular-nums"
               >
-                {bajoCosto ? '¡a perdida!' : `${info.margen_pct.toFixed(0)}%`}
-              </span>
-            )}
-            {seDesploma && (
-              <span
-                className={`tabular-nums ${
-                  info!.margen_reposicion_pct! < 0
-                    ? 'text-peligro-600 font-semibold'
-                    : 'text-aviso-600'
-                }`}
-                title={
-                  `Con los precios de hoy cuesta $${info!.costo_reposicion?.toFixed(2)} producirlo. ` +
-                  (info!.precio_sugerido != null
-                    ? `Para mantener tu margen: $${info!.precio_sugerido.toFixed(2)}.`
-                    : '')
-                }
-              >
-                → {info!.margen_reposicion_pct!.toFixed(0)}%
-              </span>
-            )}
-            {info?.sin_receta && (
-              <span className="text-aviso-700" title="Sin receta: no se sabe cuánto cuesta">
-                sin receta
-              </span>
-            )}
-            {producto.variantes.length > 1 && (
-              <button onClick={() => borrarVariante(v.id)} className="text-peligro-400">
-                x
+                {/* Con una sola subsección, su nombre no aporta nada: la
+                    pastilla dice el precio del producto y ya. */}
+                {variantes.length <= 1 ? `$${v.precio.toFixed(2)}` : `${v.nombre}: $${v.precio.toFixed(2)}`}
               </button>
-            )}
-          </span>
+              {info?.margen_pct != null && (
+                <span
+                  className={`tabular-nums ${
+                    bajoCosto
+                      ? 'text-peligro-600 font-semibold'
+                      : info.margen_pct >= 50
+                        ? 'text-exito-600'
+                        : 'text-aviso-600'
+                  }`}
+                  title={`Cuesta $${info.costo?.toFixed(2)} producirlo`}
+                >
+                  {bajoCosto ? '¡a pérdida!' : `${info.margen_pct.toFixed(0)}%`}
+                </span>
+              )}
+              {seDesploma && (
+                <span
+                  className={`tabular-nums ${
+                    info!.margen_reposicion_pct! < 0 ? 'text-peligro-600 font-semibold' : 'text-aviso-600'
+                  }`}
+                  title={
+                    `Con los precios de hoy cuesta $${info!.costo_reposicion?.toFixed(2)} producirlo. ` +
+                    (info!.precio_sugerido != null
+                      ? `Para mantener tu margen: $${info!.precio_sugerido.toFixed(2)}.`
+                      : '')
+                  }
+                >
+                  → {info!.margen_reposicion_pct!.toFixed(0)}%
+                </span>
+              )}
+              {info?.sin_receta && (
+                <span className="text-aviso-700" title="Sin receta: no se sabe cuánto cuesta">
+                  sin receta
+                </span>
+              )}
+              {variantes.length > 1 ? (
+                <button
+                  onClick={async () => {
+                    await api.eliminarVariante(v.id)
+                    onCambio()
+                  }}
+                  aria-label={`Quitar ${v.nombre}`}
+                  className="w-6 h-6 grid place-items-center rounded-full text-neutral-400 hover:bg-peligro-100 hover:text-peligro-600"
+                >
+                  ×
+                </button>
+              ) : (
+                <span className="w-1" />
+              )}
+            </span>
           )
-          })}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <input
-          value={nuevaVariante}
-          onChange={(e) => setNuevaVariante(e.target.value)}
-          placeholder="Subsección (ej. Grande)"
-          className="flex-1 border border-neutral-300 rounded-lg px-2 py-1 text-xs"
-        />
-        <Numerico
-          value={nuevoPrecio}
-          onChange={(e) => setNuevoPrecio(e.target.value)}
-          placeholder="Precio"
-          className="w-20 border border-neutral-300 rounded-lg px-2 py-1 text-xs"
-        />
-        <button
-          onClick={agregarVariante}
-          className="bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded-lg text-xs"
-        >
-          + Subsección
-        </button>
+        })}
+
+        {/* Agregar una subsección se pide, no estorba: el formulario vivía
+            abierto en cada producto y triplicaba lo que hay que leer. */}
+        {abierto ? (
+          <span className="flex flex-wrap items-center gap-1.5">
+            <input
+              value={nuevaVariante}
+              onChange={(e) => setNuevaVariante(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && agregarVariante()}
+              placeholder="Ej. Grande"
+              aria-label="Nombre de la subsección"
+              autoFocus
+              className="w-28 border border-neutral-300 rounded-lg px-2 py-1.5 text-xs"
+            />
+            <Numerico
+              value={nuevoPrecio}
+              onChange={(e) => setNuevoPrecio(e.target.value)}
+              placeholder="Precio"
+              aria-label="Precio de la subsección"
+              className="w-20 border border-neutral-300 rounded-lg px-2 py-1.5 text-xs"
+            />
+            <button
+              onClick={agregarVariante}
+              className="bg-neutral-900 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium"
+            >
+              Agregar
+            </button>
+            <button
+              onClick={() => setAbierto(false)}
+              className="text-neutral-500 px-1.5 py-1.5 text-xs"
+            >
+              Cancelar
+            </button>
+          </span>
+        ) : (
+          <button
+            onClick={() => setAbierto(true)}
+            className="rounded-full px-3 py-1.5 text-xs font-medium text-neutral-500 border border-dashed border-neutral-300 hover:border-neutral-400 hover:text-neutral-800"
+          >
+            + Subsección
+          </button>
+        )}
       </div>
     </div>
   )
 }
 
-/**
- * El menu filtrado por texto, sin acentos y por palabras sueltas.
- *
- * Si coincide el nombre de la categoria se muestra entera; si no, se muestra
- * con los productos que coinciden. Una categoria sin nada que mostrar
- * desaparece: dejarla vacia haria parecer que el producto no existe.
- */
-function filtrarMenu(categorias: Categoria[], texto: string): Categoria[] {
-  const palabras = palabrasDe(texto)
-  if (palabras.length === 0) return categorias
+// ── Fuera del menú ──────────────────────────────────────────────────────────
 
-  const coincide = (donde: string) => contiene(donde, palabras)
-
-  return categorias.flatMap((cat) => {
-    if (coincide(cat.nombre)) return [cat]
-    const productos = cat.productos.filter(
-      (p) => coincide(`${cat.nombre} ${p.nombre}`) ||
-        p.variantes.some((v) => coincide(`${p.nombre} ${v.nombre}`)),
+function Retiradas({ categorias, onCambio }: { categorias: Categoria[]; onCambio: () => void }) {
+  const cats = categorias.filter((c) => !c.activo)
+  // Un producto retirado dentro de una categoría retirada no se lista aparte:
+  // vuelve con ella.
+  const productos = categorias
+    .filter((c) => c.activo)
+    .flatMap((c) => c.productos.filter((p) => !p.activo).map((p) => ({ cat: c, p })))
+  const variantes = categorias
+    .filter((c) => c.activo)
+    .flatMap((c) =>
+      c.productos
+        .filter((p) => p.activo)
+        .flatMap((p) => p.variantes.filter((v) => !v.activo).map((v) => ({ p, v }))),
     )
-    return productos.length ? [{ ...cat, productos }] : []
-  })
+  const hay = cats.length > 0 || productos.length > 0 || variantes.length > 0
+
+  if (!hay) {
+    return (
+      <div className="bg-white rounded-2xl border border-neutral-200">
+        <Vacio
+          titulo="No has quitado nada del menú"
+          detalle="Lo que quites aparece aquí para poder devolverlo. Nada se borra: las ventas viejas siguen nombrándolo."
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+      <h2 className="font-semibold">Fuera del menú</h2>
+      <p className="text-xs text-neutral-500 mt-0.5 mb-3">
+        No aparecen en el punto de venta. Sus ventas anteriores se conservan.
+      </p>
+      <div className="divide-y divide-neutral-100">
+        {cats.map((c) => (
+          <FilaRetirada
+            key={`c${c.id}`}
+            nombre={c.nombre}
+            detalle={`categoría · ${c.productos.length} producto(s)`}
+            onVolver={async () => {
+              await api.reactivarCategoria(c.id)
+              onCambio()
+            }}
+          />
+        ))}
+        {productos.map(({ cat, p }) => (
+          <FilaRetirada
+            key={`p${p.id}`}
+            nombre={p.nombre}
+            detalle={`producto de ${cat.nombre}`}
+            onVolver={async () => {
+              await api.reactivarProducto(p.id)
+              onCambio()
+            }}
+          />
+        ))}
+        {variantes.map(({ p, v }) => (
+          <FilaRetirada
+            key={`v${v.id}`}
+            nombre={`${p.nombre} - ${v.nombre}`}
+            detalle="subsección"
+            onVolver={async () => {
+              await api.reactivarVariante(v.id)
+              onCambio()
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
 }
 
-/** Una cosa retirada del menu, con su boton para devolverla. */
 function FilaRetirada({
   nombre,
   detalle,
@@ -566,385 +857,215 @@ function FilaRetirada({
   onVolver: () => void
 }) {
   return (
-    <div className="flex justify-between items-center gap-3 text-sm py-1">
+    <div className="flex justify-between items-center gap-3 text-sm py-2">
       <span className="min-w-0">
         {nombre}
         <span className="text-xs text-neutral-400"> · {detalle}</span>
       </span>
-      <button onClick={onVolver} className="text-acento-600 text-xs font-medium shrink-0">
-        Volver a activar
+      <button
+        onClick={onVolver}
+        className="text-acento-600 text-sm font-medium shrink-0 px-2 py-1.5 rounded-lg hover:bg-acento-50"
+      >
+        Devolver al menú
       </button>
     </div>
   )
 }
 
-type Fila = {
-  ingrediente_id: number
-  cantidad_por_unidad: string
-  // Calculadora opcional: "de tanto sale tanto" - solo para ayudar a escribir
-  // el numero de arriba, no se guarda aparte.
-  rendimientoDe: string
-  rendimientoSalen: string
-  modoRendimiento: boolean
+// ── Piezas sueltas ──────────────────────────────────────────────────────────
+
+function Buscador({ valor, onCambio }: { valor: string; onCambio: (v: string) => void }) {
+  return (
+    <div className="relative">
+      <input
+        type="search"
+        value={valor}
+        onChange={(e) => onCambio(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && onCambio('')}
+        placeholder="Buscar un producto en todo el menú"
+        aria-label="Buscar un producto en todo el menú"
+        className="w-full bg-white border border-neutral-300 rounded-xl pl-9 pr-3 py-2.5 text-sm"
+      />
+      <svg
+        viewBox="0 0 24 24"
+        width="15"
+        height="15"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        aria-hidden
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+    </div>
+  )
 }
 
-function filaVacia(): Fila {
-  return { ingrediente_id: 0, cantidad_por_unidad: '', rendimientoDe: '', rendimientoSalen: '', modoRendimiento: false }
+/** El agarre: seis puntos, que es como se dibuja "esto se arrastra". */
+function Puntos() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden>
+      <circle cx="6" cy="3" r="1.3" />
+      <circle cx="10" cy="3" r="1.3" />
+      <circle cx="6" cy="8" r="1.3" />
+      <circle cx="10" cy="8" r="1.3" />
+      <circle cx="6" cy="13" r="1.3" />
+      <circle cx="10" cy="13" r="1.3" />
+    </svg>
+  )
 }
 
-function RecetasSeccion() {
-  const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
-  const [abierta, setAbierta] = useState<Variante | null>(null)
-  const [nombreAbierta, setNombreAbierta] = useState('')
-  const [filas, setFilas] = useState<Fila[]>([])
-  const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState('')
+type Opcion = { texto: string; ayuda?: string; peligro?: boolean; onElegir: () => void }
 
-  // Que variantes ya tienen receta: sin esto la lista se ve igual para todas y
-  // el dueno no tiene forma de saber cual le falta, que es justo la que despues
-  // aparece con margen 100% en Reportes.
-  const [conReceta, setConReceta] = useState<Set<number>>(new Set())
-  const [busqueda, setBusqueda] = useState('')
+/**
+ * El menú de "⋯".
+ *
+ * Lo que borra no puede estar al lado de lo que se toca todo el día: en una
+ * tablet, "Borrar categoría" como enlace de texto pegado al nombre estaba a un
+ * dedo mal puesto de distancia.
+ */
+function MenuAcciones({
+  etiqueta,
+  opciones,
+  encabezado,
+}: {
+  etiqueta: string
+  opciones: Opcion[]
+  /** Algo que se elige de un toque y no cierra el menu, como el color. */
+  encabezado?: ReactNode
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const caja = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    api.listarCategorias().then(async (todas) => {
-      // Solo lo que sigue EN el menu: cargarle la receta a un producto que se
-      // retiro no sirve de nada, y el listado lo devolvia igual.
-      const cats = todas
-        .filter((c) => c.activo)
-        .map((c) => ({
-          ...c,
-          productos: c.productos
-            .filter((p) => p.activo)
-            .map((p) => ({ ...p, variantes: p.variantes.filter((v) => v.activo) }))
-            .filter((p) => p.variantes.length > 0),
-        }))
-        .filter((c) => c.productos.length > 0)
-      setCategorias(cats)
-      const ids = cats.flatMap((c) => c.productos.flatMap((p) => p.variantes.map((v) => v.id)))
-      const recetas = await Promise.all(
-        ids.map((id) => api.verReceta(id).then((r) => [id, r.length > 0] as const).catch(() => [id, false] as const)),
-      )
-      setConReceta(new Set(recetas.filter(([, tiene]) => tiene).map(([id]) => id)))
-    })
-    api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
-  }, [])
-
-  const mapaIngredientes = new Map(ingredientes.map((i) => [i.id, i]))
-
-  async function abrir(variante: Variante, nombre: string) {
-    setError('')
-    setAbierta(variante)
-    setNombreAbierta(nombre)
-    const receta = await api.verReceta(variante.id)
-    setFilas(
-      receta.length > 0
-        ? receta.map((r: RecetaItem) => ({
-            ingrediente_id: r.ingrediente_id,
-            cantidad_por_unidad: String(r.cantidad_por_unidad),
-            rendimientoDe: '',
-            rendimientoSalen: '',
-            modoRendimiento: false,
-          }))
-        : [filaVacia()],
-    )
-  }
-
-  function cerrar() {
-    setAbierta(null)
-    setFilas([])
-  }
-
-  function actualizarFila(i: number, cambios: Partial<Fila>) {
-    setFilas((prev) => prev.map((f, idx) => (idx === i ? { ...f, ...cambios } : f)))
-  }
-
-  // "De 1 kg COMPRADO salen 20 unidades" -> cuanto insumo UTILIZABLE lleva cada
-  // una. El dueno mide sobre lo que compra (es lo unico que puede pesar), pero
-  // la receta guarda cantidad utilizable, que es lo que el sistema multiplica
-  // por el costo real. Sin multiplicar por el rendimiento aca, la merma de
-  // cocina se contaria dos veces: una en este numero y otra en costo_efectivo.
-  function aplicarRendimiento(i: number) {
-    const de = Number(filas[i].rendimientoDe)
-    const salen = Number(filas[i].rendimientoSalen)
-    if (!Number.isFinite(de) || de <= 0 || !Number.isFinite(salen) || salen <= 0) return
-    const ing = mapaIngredientes.get(filas[i].ingrediente_id)
-    const rendimiento = (ing?.rendimiento_pct ?? 100) / 100
-    actualizarFila(i, {
-      cantidad_por_unidad: String(round6((de * rendimiento) / salen)),
-    })
-  }
-
-  function round6(n: number) {
-    return Math.round(n * 1e6) / 1e6
-  }
-
-  function agregarFila() {
-    setFilas((prev) => [...prev, filaVacia()])
-  }
-
-  function quitarFila(i: number) {
-    setFilas((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev))
-  }
-
-  async function guardar() {
-    if (!abierta) return
-    setError('')
-    const items = filas
-      .filter((f) => f.ingrediente_id && Number(f.cantidad_por_unidad) > 0)
-      .map((f) => ({ ingrediente_id: f.ingrediente_id, cantidad_por_unidad: Number(f.cantidad_por_unidad) }))
-    if (items.length === 0) {
-      setError('Agrega al menos un insumo con cantidad válida')
-      return
+    if (!abierto) return
+    const fuera = (e: MouseEvent) => {
+      if (caja.current && !caja.current.contains(e.target as Node)) setAbierto(false)
     }
-    setGuardando(true)
-    try {
-      await api.actualizarReceta(abierta.id, items)
-      setConReceta((prev) => new Set(prev).add(abierta.id))
-      cerrar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar la receta')
-    } finally {
-      setGuardando(false)
+    const escape = (e: KeyboardEvent) => e.key === 'Escape' && setAbierto(false)
+    document.addEventListener('mousedown', fuera)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', fuera)
+      document.removeEventListener('keydown', escape)
     }
-  }
-
-  // Costo teorico: como si cada insumo rindiera el 100% comprado.
-  // Costo real: descontando la merma de cocina (costo_efectivo). La
-  // diferencia entre estos dos es justo lo que antes no se veia en ningun
-  // lado del sistema.
-  let costoTeorico = 0
-  let costoReal = 0
-  for (const f of filas) {
-    const ing = mapaIngredientes.get(f.ingrediente_id)
-    const cantidad = Number(f.cantidad_por_unidad) || 0
-    if (!ing) continue
-    costoTeorico += cantidad * ing.costo_unitario
-    costoReal += cantidad * ing.costo_efectivo
-  }
-  const precio = abierta?.precio ?? 0
-  const margenReal = precio > 0 ? ((precio - costoReal) / precio) * 100 : 0
-
-  // "emp per" encuentra "Empanada - Pernil". Una categoria a la que no le
-  // queda ninguna variante no se dibuja.
-  const palabras = palabrasDe(busqueda)
-  const visibles: Categoria[] = palabras.length
-    ? categorias
-        .map((cat) => ({
-          ...cat,
-          productos: cat.productos
-            .map((p) => ({
-              ...p,
-              variantes: p.variantes.filter((v) =>
-                contiene(`${cat.nombre} ${p.nombre} ${v.nombre}`, palabras),
-              ),
-            }))
-            .filter((p) => p.variantes.length > 0),
-        }))
-        .filter((cat) => cat.productos.length > 0)
-    : categorias
+  }, [abierto])
 
   return (
-    <>
-      <p className="text-sm text-neutral-500">
-          Define de qué insumos y cuánto lleva cada producto. El costo y el margen que ves en
-          Reportes salen de esto.
-        </p>
-
-        {/* Con el menu entero desplegado por categorias, encontrar "Empanada
-            de pernil" para cargarle la receta era recorrer la pagina. */}
-        <div className="relative">
-          <input
-            type="search"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            onKeyDown={(e) => e.key === 'Escape' && setBusqueda('')}
-            placeholder="Buscar un producto por nombre"
-            aria-label="Buscar un producto por nombre"
-            className="w-full bg-white border border-neutral-300 rounded-xl pl-9 pr-3 py-2 text-sm"
-          />
-          <svg
-            viewBox="0 0 24 24"
-            width="15"
-            height="15"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            aria-hidden
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-        </div>
-
-        {visibles.map((cat) => (
-          <div key={cat.id} className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <h2 className="font-semibold mb-2">{cat.nombre}</h2>
-            <div className="space-y-1">
-              {cat.productos.map((p) =>
-                p.variantes.map((v) => {
-                  const nombre = etiquetaVariante(p, v)
-                  const falta = !conReceta.has(v.id)
-                  return (
-                    <button
-                      key={v.id}
-                      onClick={() => abrir(v, nombre)}
-                      className={`w-full flex justify-between items-center gap-2 px-3 py-2 rounded-lg text-sm text-left ${
-                        abierta?.id === v.id ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        <span className="truncate">{nombre}</span>
-                        {falta && abierta?.id !== v.id && (
-                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
-                            sin receta
-                          </span>
-                        )}
-                      </span>
-                      <span className="tabular-nums opacity-70 shrink-0">${v.precio.toFixed(2)}</span>
-                    </button>
-                  )
-                }),
-              )}
-            </div>
-          </div>
-        ))}
-
-        {busqueda.trim() && visibles.length === 0 && (
-          <p className="text-sm text-neutral-400 text-center py-6">
-            Ningún producto coincide con «{busqueda.trim()}».
-          </p>
-        )}
-
-        {abierta && (
-          <Modal
-            titulo={nombreAbierta}
-            ayuda={`Precio de venta: $${precio.toFixed(2)}`}
-            onCerrar={cerrar}
-            pie={
-              <Boton onClick={guardar} disabled={guardando}>
-                Guardar receta
-              </Boton>
-            }
-          >
-            {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
-
-            <div className="space-y-3 mb-3">
-              {filas.map((f, i) => {
-                const ing = mapaIngredientes.get(f.ingrediente_id)
-                return (
-                  <div key={i} className="border border-neutral-200 rounded-xl p-3">
-                    <div className="flex gap-2 items-center mb-2">
-                      <select
-                        value={f.ingrediente_id}
-                        onChange={(e) => actualizarFila(i, { ingrediente_id: Number(e.target.value) })}
-                        className="flex-1 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                      >
-                        <option value={0}>Insumo...</option>
-                        {ingredientes.map((ing2) => (
-                          <option key={ing2.id} value={ing2.id}>
-                            {ing2.nombre} ({ing2.unidad})
-                          </option>
-                        ))}
-                      </select>
-                      <button onClick={() => quitarFila(i)} className="text-peligro-400 text-sm px-1">
-                        x
-                      </button>
-                    </div>
-
-                    <div className="flex gap-3 items-center mb-2 text-xs">
-                      <button
-                        onClick={() => actualizarFila(i, { modoRendimiento: false })}
-                        className={`font-medium ${!f.modoRendimiento ? 'text-neutral-900' : 'text-neutral-400'}`}
-                      >
-                        Cantidad directa
-                      </button>
-                      <button
-                        onClick={() => actualizarFila(i, { modoRendimiento: true })}
-                        className={`font-medium ${f.modoRendimiento ? 'text-neutral-900' : 'text-neutral-400'}`}
-                      >
-                        De X sale Y
-                      </button>
-                    </div>
-
-                    {f.modoRendimiento ? (
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
-                          <span>De</span>
-                          <Numerico
-                            value={f.rendimientoDe}
-                            onChange={(e) => actualizarFila(i, { rendimientoDe: e.target.value })}
-                            className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
-                          />
-                          <span>{ing?.unidad ?? 'unidad'} que compras salen</span>
-                          <Numerico
-                            value={f.rendimientoSalen}
-                            onChange={(e) =>
-                              actualizarFila(i, { rendimientoSalen: e.target.value })
-                            }
-                            className="w-20 border border-neutral-300 rounded-lg px-2 py-1"
-                          />
-                          <span>unidades</span>
-                          <button
-                            onClick={() => aplicarRendimiento(i)}
-                            className="bg-neutral-100 hover:bg-neutral-200 rounded-lg px-2 py-1 text-xs font-medium"
-                          >
-                            Calcular
-                          </button>
-                        </div>
-                        {ing && ing.rendimiento_pct < 100 && (
-                          <p className="text-xs text-aviso-700">
-                            Mide sobre lo que compras, sin limpiar. El {ing.rendimiento_pct}% de
-                            rendimiento de {ing.nombre} ya se descuenta solo.
-                          </p>
-                        )}
-                      </div>
-                    ) : null}
-
-                    <div className="flex items-center gap-2 mt-2 text-sm">
-                      <Numerico
-                        value={f.cantidad_por_unidad}
-                        onChange={(e) => actualizarFila(i, { cantidad_por_unidad: e.target.value })}
-                        placeholder={`Cantidad utilizable por unidad${ing ? ` (${ing.unidad})` : ''}`}
-                        className="flex-1 border border-neutral-300 rounded-lg px-2 py-1.5"
-                      />
-                      {ing && Number(f.cantidad_por_unidad) > 0 && (
-                        <span className="text-xs text-neutral-500 whitespace-nowrap">
-                          = ${(Number(f.cantidad_por_unidad) * ing.costo_efectivo).toFixed(3)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <button onClick={agregarFila} className="text-sm text-neutral-500 font-medium mb-4">
-              + insumo
+    <div ref={caja} className="relative shrink-0">
+      <button
+        onClick={() => setAbierto((v) => !v)}
+        aria-label={etiqueta}
+        aria-haspopup="menu"
+        aria-expanded={abierto}
+        className="w-9 h-9 grid place-items-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden>
+          <circle cx="3" cy="8" r="1.5" />
+          <circle cx="8" cy="8" r="1.5" />
+          <circle cx="13" cy="8" r="1.5" />
+        </svg>
+      </button>
+      {abierto && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-1 z-30 w-56 rounded-xl border border-neutral-200 bg-white shadow-lg p-1"
+        >
+          {encabezado}
+          {opciones.map((o) => (
+            <button
+              key={o.texto}
+              role="menuitem"
+              onClick={() => {
+                setAbierto(false)
+                o.onElegir()
+              }}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm hover:bg-neutral-50 ${
+                o.peligro ? 'text-peligro-600' : ''
+              }`}
+            >
+              {o.texto}
+              {o.ayuda && <span className="block text-[11px] text-neutral-400">{o.ayuda}</span>}
             </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
-            <div className="bg-neutral-50 rounded-xl p-3 text-sm space-y-1">
-              <div className="flex justify-between text-neutral-500">
-                <span>Costo teórico (sin merma de cocina)</span>
-                <span className="tabular-nums">${costoTeorico.toFixed(3)}</span>
-              </div>
-              <div className="flex justify-between font-semibold">
-                <span>Costo real</span>
-                <span className="tabular-nums">${costoReal.toFixed(3)}</span>
-              </div>
-              <div className="flex justify-between font-semibold">
-                <span>Margen a este precio</span>
-                <span className={`tabular-nums ${margenReal < 30 ? 'text-aviso-600' : 'text-exito-600'}`}>
-                  {margenReal.toFixed(1)}%
-                </span>
-              </div>
-            </div>
+// ── Reglas ──────────────────────────────────────────────────────────────────
 
-          </Modal>
-        )}
-    </>
+/** Los productos que coinciden, con la categoría a la que pertenecen. */
+function buscar(categorias: Categoria[], texto: string): { cat: Categoria; producto: Producto }[] {
+  const palabras = palabrasDe(texto)
+  if (palabras.length === 0) return []
+  return categorias.flatMap((cat) =>
+    cat.productos
+      .filter(
+        (p) =>
+          p.activo &&
+          (contiene(`${cat.nombre} ${p.nombre}`, palabras) ||
+            p.variantes.some((v) => contiene(`${p.nombre} ${v.nombre}`, palabras))),
+      )
+      .map((producto) => ({ cat, producto })),
+  )
+}
+
+/**
+ * Poner una categoría en el puesto de otra.
+ *
+ * Se reescribe el `orden` de todas y no solo el de la que se movió: los
+ * números venían de cuándo se creó cada una (0, 1, 2…) y podían estar
+ * repetidos, así que un solo cambio dejaba dos con el mismo puesto y el
+ * mostrador las ordenaba como le diera la gana.
+ */
+async function reordenar(categorias: Categoria[], id: number, sobre: number) {
+  const orden = categorias.map((c) => c.id).filter((x) => x !== id)
+  const donde = orden.indexOf(sobre)
+  if (donde < 0) return
+  orden.splice(donde, 0, id)
+  await Promise.all(orden.map((cid, i) => api.actualizarCategoria(cid, { orden: i })))
+}
+
+/**
+ * Los cinco tintes, para elegir de un toque.
+ *
+ * Cinco y no una rueda de color: la paleta del sistema tiene cinco y con mas
+ * se pierde --un menu de doce colores inventados deja de parecer el mismo
+ * aplicativo, y en modo oscuro la mitad no se leen. Ver `lib/theme.ts`.
+ */
+function Colores({
+  elegido,
+  onElegir,
+}: {
+  elegido: string
+  onElegir: (color: string) => void
+}) {
+  return (
+    <div className="px-2 pt-1.5 pb-2 border-b border-neutral-100 mb-1">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-1.5">
+        Color en el mostrador
+      </p>
+      <div className="flex gap-1.5">
+        {NOMBRES_COLOR.map((c) => (
+          <button
+            key={c}
+            onClick={() => onElegir(c)}
+            aria-label={NOMBRE_COLOR[c]}
+            aria-pressed={elegido === c}
+            title={NOMBRE_COLOR[c]}
+            className={`w-8 h-8 rounded-lg grid place-items-center border-2 ${
+              elegido === c ? 'border-neutral-900' : 'border-transparent hover:border-neutral-300'
+            }`}
+          >
+            <span className={`w-5 h-5 rounded-md ${COLORES[c].dot}`} />
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
