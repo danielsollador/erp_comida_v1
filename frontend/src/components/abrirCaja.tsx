@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import type { EstadoApertura } from '../lib/types'
 import { Modal } from './ui'
 import { Numerico } from './Teclado'
-import { fmtBs, useMoneda } from '../lib/moneda'
+import { useMoneda } from '../lib/moneda'
 
 /**
  * Abrir la caja: contar el fondo antes de empezar a vender.
@@ -22,6 +22,11 @@ import { fmtBs, useMoneda } from '../lib/moneda'
  *
  * Vive aparte de las dos pantallas porque las dos lo necesitan igual.
  */
+// Los billetes que de verdad andan. Lo que no sea un billete entero va en
+// "sueltos", asi que una denominacion que falte aqui no impide contar.
+const BILLETES_USD = [100, 50, 20, 10, 5, 2, 1]
+const BILLETES_BS = [500, 200, 100, 50, 20, 10, 5]
+
 export function useApertura(fecha?: string) {
   const [estado, setEstado] = useState<EstadoApertura | null>(null)
 
@@ -51,19 +56,48 @@ export function AbrirCaja({
   alAbrir: () => void
 }) {
   const { tasa } = useMoneda()
-  const [montos, setMontos] = useState<Record<string, string>>({})
+  // Por gaveta: cuantos billetes de cada uno, y los sueltos (monedas y lo
+  // que no es un billete entero). Se cuenta por billete y no como un total
+  // porque un total no se puede volver a contar: si la gaveta amanece
+  // distinta, con el desglose se sabe QUE billete falta (Leider, 21-sep).
+  const [conteo, setConteo] = useState<Record<string, Record<string, string>>>({})
   const [nota, setNota] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
 
-  // En blanco NO viaja como cero: "no conté esa gaveta" es distinto de
-  // "conté y estaba vacía", y la segunda asienta una diferencia.
+  function poner(metodo: string, clave: string, valor: string) {
+    setConteo((c) => ({ ...c, [metodo]: { ...(c[metodo] ?? {}), [clave]: valor } }))
+  }
+
+  /** El desglose limpio de una gaveta, y su total. null = no se toco. */
+  function desgloseDe(metodo: string): { desglose: Record<string, number>; total: number } | null {
+    const filas = conteo[metodo]
+    if (!filas) return null
+    const desglose: Record<string, number> = {}
+    let total = 0
+    for (const [clave, texto] of Object.entries(filas)) {
+      const n = Number(String(texto).replace(',', '.'))
+      if (!texto.trim() || !Number.isFinite(n) || n < 0) continue
+      if (n === 0) continue
+      desglose[clave] = n
+      total += clave === 'sueltos' ? n : Number(clave) * n
+    }
+    if (Object.keys(desglose).length === 0) return null
+    return { desglose, total: Math.round(total * 100) / 100 }
+  }
+
+  // Una gaveta sin tocar NO viaja como cero: "no conté esa gaveta" es
+  // distinto de "conté y estaba vacía", y la segunda asienta una diferencia.
   const fondos = estado.fondos.flatMap((f) => {
-    const escrito = (montos[f.metodo] ?? '').trim()
-    if (!escrito) return []
-    const fondo = Number(escrito.replace(',', '.'))
-    if (!Number.isFinite(fondo) || fondo < 0) return []
-    return [{ metodo: f.metodo, cuenta: f.cuenta, fondo }]
+    const d = desgloseDe(f.metodo)
+    if (!d) return []
+    // La gaveta de bolivares se cuenta en bolivares y se guarda en dolares,
+    // que es la moneda de los libros. El desglose se guarda tal como se
+    // conto, en su moneda: es para volver a contar, no para sumar.
+    const enBs = f.metodo === 'Efectivo Bs'
+    if (enBs && !tasa?.bcv) return []
+    const fondo = enBs ? Math.round((d.total / (tasa?.bcv ?? 1)) * 100) / 100 : d.total
+    return [{ metodo: f.metodo, cuenta: f.cuenta, fondo, desglose: d.desglose }]
   })
 
   async function abrir() {
@@ -105,28 +139,69 @@ export function AbrirCaja({
       {error && <p className="text-peligro-600 text-sm mb-3">{error}</p>}
       <div className="space-y-3">
         {estado.fondos.map((f) => {
-          const escrito = (montos[f.metodo] ?? '').trim()
-          const valor = Number(escrito.replace(',', '.'))
+          const enBs = f.metodo === 'Efectivo Bs'
+          const billetes = enBs ? BILLETES_BS : BILLETES_USD
+          const simbolo = enBs ? 'Bs' : '$'
+          const d = desgloseDe(f.metodo)
+          const filas = conteo[f.metodo] ?? {}
           return (
             <div key={f.metodo} className="rounded-xl border border-neutral-200 p-3">
-              <div className="flex items-baseline justify-between gap-2">
+              <div className="flex items-baseline justify-between gap-2 mb-2">
                 <span className="font-medium text-sm">{f.metodo}</span>
-                <span className="text-[11px] text-neutral-400">cuenta los billetes</span>
+                <span className="text-[11px] text-neutral-400">cuántos billetes de cada uno</span>
               </div>
-              <Numerico
-                value={montos[f.metodo] ?? ''}
-                onChange={(e) => setMontos((m) => ({ ...m, [f.metodo]: e.target.value }))}
-                placeholder="Cuánto hay en la gaveta"
-                className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-              />
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {billetes.map((b) => {
+                  const n = Number(filas[String(b)] ?? 0) || 0
+                  return (
+                    <label key={b} className="rounded-lg border border-neutral-200 px-2 py-1.5">
+                      <span className="block text-[11px] font-semibold text-neutral-500 tabular-nums">
+                        {simbolo} {b}
+                      </span>
+                      <div className="flex items-baseline gap-1.5">
+                        <Numerico
+                          entero
+                          value={filas[String(b)] ?? ''}
+                          onChange={(e) => poner(f.metodo, String(b), e.target.value)}
+                          placeholder="0"
+                          aria-label={`Billetes de ${simbolo} ${b}`}
+                          className="w-full min-w-0 bg-transparent text-base font-semibold tabular-nums outline-none"
+                        />
+                        {n > 0 && (
+                          <span className="text-[11px] text-neutral-400 tabular-nums whitespace-nowrap">
+                            = {simbolo} {(n * b).toLocaleString('es-VE')}
+                          </span>
+                        )}
+                      </div>
+                    </label>
+                  )
+                })}
+                <label className="rounded-lg border border-dashed border-neutral-300 px-2 py-1.5 col-span-2 sm:col-span-4">
+                  <span className="block text-[11px] font-semibold text-neutral-500">
+                    Monedas y sueltos ({simbolo})
+                  </span>
+                  <Numerico
+                    value={filas.sueltos ?? ''}
+                    onChange={(e) => poner(f.metodo, 'sueltos', e.target.value)}
+                    placeholder="0.00"
+                    aria-label={`Monedas y sueltos en ${simbolo}`}
+                    className="w-full bg-transparent text-base font-semibold tabular-nums outline-none"
+                  />
+                </label>
+              </div>
+              <div className="mt-2 flex items-baseline justify-between text-sm">
+                <span className="text-neutral-500">Total en la gaveta</span>
+                <span className="font-bold tabular-nums">
+                  {d ? `${simbolo} ${d.total.toLocaleString('es-VE', { minimumFractionDigits: 2 })}` : '—'}
+                </span>
+              </div>
               {/* La gaveta de bolívares se cuenta en bolívares, pero el sistema
-                  lleva todo en dólares. Se muestra la conversión debajo para
-                  que nadie tenga que hacerla de cabeza --y para que se note de
-                  una si alguien tecleó los bolívares en el campo de dólares. */}
-              {f.metodo === 'Efectivo Bs' && escrito !== '' && Number.isFinite(valor) && (
-                <p className="mt-1.5 text-xs text-neutral-500 tabular-nums">
+                  lleva todo en dólares: la conversión va debajo para que nadie
+                  la haga de cabeza. */}
+              {enBs && d && (
+                <p className="mt-0.5 text-right text-xs text-neutral-500 tabular-nums">
                   {tasa?.bcv
-                    ? `son ${fmtBs(valor * tasa.bcv)} a la tasa de hoy`
+                    ? `son $${(d.total / tasa.bcv).toFixed(2)} a la tasa de hoy`
                     : 'sin tasa para convertir'}
                 </p>
               )}

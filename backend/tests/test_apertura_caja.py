@@ -1,3 +1,6 @@
+import json
+
+from app import models
 """Abrir la caja: contar el fondo antes de vender.
 
 POR QUE IMPORTA. Sin apertura, lo que se espera al cerrar sale del saldo
@@ -148,3 +151,25 @@ def test_cerrar_cuenta_desde_el_fondo_contado(client, variante):
     r = caja_cerrar(client, efectivo=esperado)
     assert r.status_code == 200, r.text
     assert r.json()["diferencia"] == 0
+
+
+def test_el_fondo_en_dolares_se_declara_por_billete(client, db):
+    """Leider (21-sep): "si dices que en efectivo tienes 50 dolares, tienes
+    que especificar en billetes de que o en monedas". El desglose se guarda
+    tal como se conto, y tiene que sumar el fondo: uno que no cuadra parece
+    contado y no lo esta."""
+    r = client.post("/api/caja/abrir", json={"fondos": [
+        {"metodo": "Efectivo $", "cuenta": "1011", "fondo": 50.0,
+         "desglose": {"20": 2, "5": 1, "sueltos": 5.0}},
+    ]})
+    assert r.status_code == 200, r.text
+    fila = db.query(models.AperturaCaja).filter_by(metodo="Efectivo $").first()
+    assert json.loads(fila.desglose) == {"20": 2, "5": 1, "sueltos": 5.0}
+
+
+def test_un_desglose_que_no_suma_el_fondo_se_rechaza(client):
+    r = client.post("/api/caja/abrir", json={"fondos": [
+        {"metodo": "Efectivo $", "cuenta": "1011", "fondo": 50.0, "desglose": {"20": 2}},
+    ]})
+    assert r.status_code == 400
+    assert "suma 40.00" in r.json()["detail"]

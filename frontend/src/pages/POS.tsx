@@ -10,6 +10,7 @@ import { api, connectWs } from '../lib/api'
 import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
+import { uuid } from '../lib/uuid'
 import { colorCategoria } from '../lib/theme'
 import { etiquetaVariante, variantesParaVender } from '../lib/menu'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
@@ -264,7 +265,7 @@ export default function POS() {
       min: 0.01,
     })
     if (monto === null) return
-    setLibres((l) => [...l, { id: crypto.randomUUID(), nombre: 'Delivery personalizado', precio: monto }])
+    setLibres((l) => [...l, { id: uuid(), nombre: 'Delivery personalizado', precio: monto }])
   }
 
   function quitarLibre(id: string) {
@@ -337,7 +338,7 @@ export default function POS() {
     }
     setFaltaNombre(false)
 
-    if (!claveComanda.current) claveComanda.current = crypto.randomUUID()
+    if (!claveComanda.current) claveComanda.current = uuid()
     const clave = claveComanda.current
     try {
       await api.crearPedido(items, false, '', clave, nombre)
@@ -614,7 +615,14 @@ export default function POS() {
   const cuantosCobradosEnCocina = pedidosActivos.filter((p) => faltaCocina(p) && p.estado === 'pagado').length
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    // De `md` para arriba el mostrador es una pantalla de APLICACION, no una
+    // pagina: mide lo que mide la ventana y lo que se desplaza es el panel de
+    // productos, no la pagina entera. Antes la barra de categorias (53 px) y
+    // la de arriba (57 px) sumaban mas que los 105 px que el carrito
+    // descontaba, y el aviso de "abrir caja" sumaba otros 48: con cero
+    // comandas habia que bajar para ver el final (Leider, 21-sep: "no
+    // deberia necesitar ningun tipo de scroll si no tengo ninguna comanda").
+    <div className="min-h-screen bg-neutral-50 md:min-h-0 md:h-[100dvh] md:flex md:flex-col md:overflow-hidden">
       <NavBar titulo="Punto de venta" />
 
       {/* NO bloquea la venta. Un local no deja de cobrar porque falte un
@@ -638,7 +646,7 @@ export default function POS() {
       )}
 
       {categorias.length > 0 && (
-        <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
+        <div className="sticky top-[57px] md:static z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto shrink-0">
           {categorias.map((cat) => {
             const color = colorCategoria(cat.id, cat.color)
             const activa = cat.id === categoriaActiva
@@ -661,10 +669,13 @@ export default function POS() {
 
       {/* md (768px) y no lg: una tablet en vertical ya muestra el carrito al
           lado, sin obligar al cajero a bajar para ver el total y cobrar. */}
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_330px] lg:grid-cols-[1fr_380px]">
-        <div className="p-4 overflow-y-auto">
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_330px] lg:grid-cols-[1fr_380px] md:flex-1 md:min-h-0">
+        <div className="p-4 overflow-y-auto md:h-full">
+          {/* Mas fichas por fila y mas bajas. Con cuatro por fila en una
+              laptop, once bebidas ocupaban media pantalla y las comandas
+              quedaban debajo del pliegue. */}
           {categoria && (
-            <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 mb-6">
               {categoria.productos
                 .filter((p) => p.activo)
                 .flatMap((p) => {
@@ -681,7 +692,7 @@ export default function POS() {
                         <button
                           key={v.id}
                           onClick={() => agregar(p, v)}
-                          className={`relative rounded-2xl border-2 p-5 min-h-[104px] flex flex-col justify-between text-left transition shadow-sm ${color.bg} ${color.border} ${
+                          className={`relative rounded-2xl border-2 p-3.5 min-h-[76px] flex flex-col justify-between text-left transition shadow-sm ${color.bg} ${color.border} ${
                             pulsando ? 'scale-105' : 'active:scale-95'
                           }`}
                         >
@@ -694,10 +705,10 @@ export default function POS() {
                               {enCarrito}
                             </span>
                           )}
-                          <div className={`font-semibold text-lg leading-tight ${color.text}`}>
+                          <div className={`font-semibold text-[15px] leading-tight ${color.text}`}>
                             {etiquetaVariante(p, v)}
                           </div>
-                          <div className="text-neutral-700 font-bold text-lg mt-2">
+                          <div className="text-neutral-700 font-bold text-base mt-1.5">
                             {fmt(v.precio)}
                           </div>
                         </button>
@@ -708,9 +719,21 @@ export default function POS() {
           )}
 
           <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-              Pedidos en curso
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                Pedidos en curso
+              </h2>
+              {/* Aqui y no flotando en una esquina: una pastilla suelta sobre
+                  la pagina parecia de otra aplicacion (Leider, 21-sep). */}
+              <button
+                type="button"
+                onClick={verVentasDelDia}
+                className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:border-neutral-400"
+              >
+                <Icono nombre="ventas" size={13} />
+                Ventas de hoy
+              </button>
+            </div>
             {/* El color de cada tarjeta dice donde esta el pedido; esto es la
                 leyenda, para no tener que aprendersela. */}
             <span className="text-xs text-neutral-400 flex items-center gap-3 flex-wrap">
@@ -728,7 +751,9 @@ export default function POS() {
               </span>
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Tres o cuatro comandas por fila en una laptop: con dos, cada
+              fila era una pantalla. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
             {pedidosActivos.map((pedido) => {
               // Falta comida por hacer: la misma pregunta que responde la
               // pantalla de cocina, no el estado del pedido. Cobrar deja el
@@ -906,7 +931,7 @@ export default function POS() {
 
         </div>
 
-        <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:sticky md:top-[105px] md:h-[calc(100vh-105px)]">
+        <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:h-full md:min-h-0">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-lg">Comanda actual</h2>
             {(Object.keys(carrito).length > 0 || libres.length > 0) && (
@@ -1045,20 +1070,6 @@ export default function POS() {
         </div>
       </div>
 
-      {/* Las ventas del dia, en la esquina. Leider (21-sep): "dejame en una
-          esquina un lugar donde el cajero pueda ver las ventas del dia... y
-          ademas vea los nombres de para que persona fue esa venta". Antes
-          habia que salir a Ventas, elegir el periodo y volver -- con un
-          cliente preguntando "¿ya me cobraste?" eso es perder el mostrador. */}
-      <button
-        type="button"
-        onClick={verVentasDelDia}
-        className="fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 backdrop-blur px-3.5 py-2 text-xs font-medium text-neutral-600 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
-      >
-        <Icono nombre="ventas" size={14} />
-        Ventas de hoy
-      </button>
-
       {ventasHoy !== null && (
         <Modal
           titulo="Ventas de hoy"
@@ -1130,7 +1141,7 @@ export default function POS() {
           type="button"
           onClick={() => imprimirTicket(ultimaVenta.id)}
           title={`Imprimir el ticket del pedido #${ultimaVenta.numero}`}
-          className="fixed bottom-14 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 backdrop-blur px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
+          className="fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white/90 backdrop-blur px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
           style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
         >
           <Icono nombre="ventas" size={14} />

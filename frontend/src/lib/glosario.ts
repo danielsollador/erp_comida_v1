@@ -738,8 +738,8 @@ export const GLOSARIO: Record<string, Explicacion> = {
     que: 'Qué pasó con la venta.',
     origen: 'Del pedido y sus pagos.',
     calculo:
-      'Cobrada: se pagó. Fiada: se entregó y todavía se debe. Devuelta: se cobró y el cliente trajo la comida de vuelta. Anulada: no llegó a venderse. Abierta: sigue en cocina o lista sin cobrar.',
-    ejemplo: 'Muchas anuladas es un problema de toma de pedidos; muchas fiadas, un problema de cobro. Cada estado apunta a otra cosa.',
+      'Cobrada: se pagó. A crédito: se entregó y todavía se debe. Devuelta: se cobró y el cliente trajo la comida de vuelta. Anulada: no llegó a venderse. Abierta: sigue en cocina o lista sin cobrar.',
+    ejemplo: 'Muchas anuladas es un problema de toma de pedidos; muchas a crédito, un problema de cobro. Cada estado apunta a otra cosa.',
   },
   'ventas.pago': {
     que: 'Con qué se pagó.',

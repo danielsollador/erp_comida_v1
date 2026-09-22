@@ -1,4 +1,5 @@
 import datetime
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -540,6 +541,22 @@ def abrir_caja(
         for f in body.fondos
         if f.metodo in GAVETAS_DE_APERTURA
     }
+    desgloses = {f.metodo: f.desglose for f in body.fondos if f.desglose}
+    # Si vino el desglose, tiene que sumar el fondo: un desglose que no
+    # cuadra con el total es peor que ninguno, porque parece contado. La
+    # gaveta de bolivares no se comprueba asi: su desglose viene en bolivares
+    # y el fondo en dolares, convertido a la tasa del dia por la pantalla.
+    for metodo, d in desgloses.items():
+        if metodo == "Efectivo Bs":
+            continue
+        suma = round(sum(
+            float(v) if k == "sueltos" else float(k) * float(v) for k, v in d.items()
+        ), 2)
+        if abs(suma - pedidos[metodo]) >= 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El desglose de {metodo} suma {suma:.2f} y el fondo dice {pedidos[metodo]:.2f}.",
+            )
     if not pedidos:
         raise HTTPException(
             status_code=400,
@@ -577,6 +594,7 @@ def abrir_caja(
                 segun_libros=libros,
                 diferencia=diferencia,
                 nota=body.nota or "",
+                desglose=json.dumps(desgloses[metodo]) if metodo in desgloses else "",
                 operador_id=quien.id if quien else None,
             )
         )

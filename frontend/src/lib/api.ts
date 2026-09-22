@@ -694,7 +694,7 @@ export const api = {
    * como un faltante del turno.
    */
   abrirCaja: (
-    fondos: { metodo: string; cuenta: string; fondo: number }[],
+    fondos: { metodo: string; cuenta: string; fondo: number; desglose?: Record<string, number> }[],
     opciones: { fecha?: string; nota?: string } = {},
   ) =>
     req<EstadoApertura>('/caja/abrir', {

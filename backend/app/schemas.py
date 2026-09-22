@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional, Literal
+from typing import Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -1048,6 +1048,9 @@ class FondoApertura(BaseModel):
     fondo: float
     segun_libros: float = 0
     diferencia: float = 0
+    # Billete -> cuantos, y "sueltos" para monedas y lo que no cuadre en un
+    # billete. El total tiene que dar `fondo`; el servidor lo comprueba.
+    desglose: Optional[Dict[str, float]] = None
 
 
 class AbrirCajaRequest(BaseModel):

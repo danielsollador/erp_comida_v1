@@ -9,7 +9,7 @@ import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { api } from '../lib/api'
-import { METODOS_PAGO } from '../lib/pagos'
+import { METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
 import type {
   CierreCaja,
   EstadoApertura,
@@ -217,7 +217,7 @@ function Apertura({
           </span>
         </div>
         <p className="text-xs text-neutral-500 mt-1">
-          {estado.fondos.map((f) => `${f.metodo} ${dinero(f.fondo)}`).join(' · ')}
+          {estado.fondos.map((f) => `${etiquetaMetodo(f.metodo)} ${dinero(f.fondo)}`).join(' · ')}
           {estado.operador && ` · abrió ${estado.operador}`}
         </p>
         {/* Una diferencia al abrir pasó ANTES del turno. Decirlo aquí es lo
@@ -398,7 +398,6 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
 function Desglose({ r }: { r: ResumenCaja }) {
   const { tasa } = useMoneda()
   const bcv = tasa?.bcv ?? null
-  const totalFondo = r.desglose.reduce((s, l) => s + l.fondo, 0)
   const totalEntro = r.desglose.reduce((s, l) => s + entradaDe(l), 0)
   const totalSalio = r.desglose.reduce((s, l) => s + salidaDe(l), 0)
   const totalCuadra = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + l.esperado, 0)
@@ -412,7 +411,8 @@ function Desglose({ r }: { r: ResumenCaja }) {
       <h2 className="font-semibold mb-1">Desglose por forma de pago</h2>
       <p className="text-xs text-neutral-500 mb-3">
         Cada forma tiene su propia fuente: los billetes se cuentan, el punto imprime su lote, el
-        pago móvil se mira en el banco.{' '}
+        pago móvil se mira en el banco. "Debes tener" es el fondo con el que arrancó más lo que
+        entró menos lo que salió.{' '}
         {bcv ? (
           <>Los bolívares van a {fmtBs(bcv, 2)} por dólar, la tasa de hoy.</>
         ) : (
@@ -424,7 +424,6 @@ function Desglose({ r }: { r: ResumenCaja }) {
           <thead className="text-neutral-500">
             <tr className="border-b border-neutral-200">
               <th className="text-left font-medium py-1.5">Forma de pago</th>
-              <th className="text-right font-medium py-1.5">Fondo</th>
               <th className="text-right font-medium py-1.5">Entró</th>
               <th className="text-right font-medium py-1.5">Salió</th>
               <th className="text-right font-medium py-1.5">Debes tener</th>
@@ -444,7 +443,6 @@ function Desglose({ r }: { r: ResumenCaja }) {
           <tfoot>
             <tr className="border-t-2 border-neutral-300 font-semibold">
               <td className="py-2">Total</td>
-              <Cifra monto={totalFondo} bcv={bcv} />
               <Cifra monto={totalEntro} bcv={bcv} />
               <Cifra monto={-totalSalio} bcv={bcv} clase="text-peligro-600" />
               <Cifra monto={totalCuadra} bcv={bcv} />
@@ -518,7 +516,7 @@ function FilaMetodo({
   return (
     <tr className="border-b border-neutral-100 last:border-0">
       <td className="py-2 align-top">
-        <span className="font-medium">{l.metodo}</span>
+        <span className="font-medium">{etiquetaMetodo(l.metodo)}</span>
         <span className="block text-[11px] text-neutral-400">
           {!l.se_cuadra
             ? 'no entró plata: es una deuda'
@@ -528,14 +526,13 @@ function FilaMetodo({
           {/* Un fondo contado y un saldo heredado no valen lo mismo: el
               primero es un hecho de esta mañana, el segundo una suposición
               que arrastra los errores de siempre. */}
-          {l.fondo_declarado
-            ? ' · fondo contado al abrir'
-            : l.fondo !== 0
-              ? ' · viene de días anteriores'
-              : ''}
+          {/* La columna del fondo se quito (Leider, 21-sep); lo que arranco
+              en la gaveta se dice aqui, que es donde hace falta para que
+              "debes tener" se entienda. */}
+          {l.fondo !== 0 &&
+            ` · arrancó con ${dinero(l.fondo)}${l.fondo_declarado ? ' contados al abrir' : ' de días anteriores'}`}
         </span>
       </td>
-      <Cifra monto={l.fondo} bcv={bcv} />
       <Cifra monto={entradaDe(l)} bcv={bcv} />
       <Cifra monto={-salidaDe(l)} bcv={bcv} clase="text-peligro-600" />
       {l.se_cuadra ? (
@@ -687,6 +684,14 @@ function Tile({
  * que hay que teclear. Se puede destapar, porque a veces el dueño cuenta su
  * propia caja y solo quiere confirmar.
  */
+/**
+ * Lo que se cuenta o se coteja EN BOLIVARES: la gaveta de bolivares, el lote
+ * del punto, el pago movil y la transferencia. Lo demas --dolares y Zelle--
+ * va en dolares. El sistema guarda todo en dolares, asi que lo tecleado en
+ * bolivares se convierte a la tasa del dia antes de viajar.
+ */
+const EN_BOLIVARES = new Set(['Efectivo Bs', 'Punto de venta', 'Pago movil', 'Transferencia'])
+
 function CuadrarCaja({
   resumen,
   corregir,
@@ -701,14 +706,21 @@ function CuadrarCaja({
   alCerrar: () => void
   alListo: (c: CierreCaja) => void
 }) {
+  const { tasa } = useMoneda()
+  const bcv = tasa?.bcv ?? 0
   // Al corregir se arranca con lo que se reporto, que es justo lo que hay que
   // arreglar: teclearlo todo otra vez para cambiar un digito es lo que hace
-  // que nadie corrija nada.
+  // que nadie corrija nada. En la moneda de cada forma (ver EN_BOLIVARES).
   const [contados, setContados] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       resumen.desglose
         .filter((l) => l.contado !== null)
-        .map((l) => [l.metodo, String(l.contado)]),
+        .map((l) => [
+          l.metodo,
+          EN_BOLIVARES.has(l.metodo) && bcv > 0
+            ? String(Math.round((l.contado as number) * bcv * 100) / 100)
+            : String(l.contado),
+        ]),
     ),
   )
   // Ciego al contar por primera vez; al corregir no: ya se conto, y lo que se
@@ -726,9 +738,15 @@ function CuadrarCaja({
   const conteos = aCuadrar.flatMap((l) => {
     const escrito = (contados[l.metodo] ?? '').trim()
     if (!escrito) return []
-    const contado = Number(escrito.replace(',', '.'))
-    if (!Number.isFinite(contado) || contado < 0) return []
-    return [{ metodo: l.metodo, contado }]
+    const tecleado = Number(escrito.replace(',', '.'))
+    if (!Number.isFinite(tecleado) || tecleado < 0) return []
+    // Lo que se teclea en bolivares se guarda en dolares, que es la moneda
+    // de los libros. Sin tasa no hay como convertir: esa forma no viaja.
+    if (EN_BOLIVARES.has(l.metodo)) {
+      if (bcv <= 0) return []
+      return [{ metodo: l.metodo, contado: Math.round((tecleado / bcv) * 100) / 100 }]
+    }
+    return [{ metodo: l.metodo, contado: tecleado }]
   })
 
   async function cerrar() {
@@ -782,29 +800,56 @@ function CuadrarCaja({
         </p>
       )}
       <div className="space-y-3">
-        {aCuadrar.map((l) => (
-          <div key={l.metodo} className="rounded-xl border border-neutral-200 p-3">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="font-medium text-sm">{l.metodo}</span>
-              <span className="text-[11px] text-neutral-400">
-                {l.fisico ? 'cuenta los billetes' : 'mira el lote o el banco'}
-              </span>
+        {aCuadrar.map((l) => {
+          const enBs = EN_BOLIVARES.has(l.metodo)
+          const escrito = Number((contados[l.metodo] ?? '').replace(',', '.'))
+          return (
+            <div key={l.metodo} className="rounded-xl border border-neutral-200 p-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-sm">
+                  {etiquetaMetodo(l.metodo)}
+                  {/* La moneda va en el nombre, grande: el punto y el pago
+                      movil se miran en bolivares, el Zelle en dolares, y
+                      teclear uno en la moneda del otro es el descuadre mas
+                      comun (Leider, 21-sep). */}
+                  <span className={`ml-1.5 text-[11px] font-bold ${enBs ? 'text-aviso-700' : 'text-exito-700'}`}>
+                    {enBs ? 'en Bs' : 'en $'}
+                  </span>
+                </span>
+                <span className="text-[11px] text-neutral-400">
+                  {l.fisico ? 'cuenta los billetes' : 'mira el lote o el banco'}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-sm font-semibold text-neutral-500 w-6">{enBs ? 'Bs' : '$'}</span>
+                <Numerico
+                  value={contados[l.metodo] ?? ''}
+                  onChange={(e) => setContados((c) => ({ ...c, [l.metodo]: e.target.value }))}
+                  placeholder={enBs ? 'Cuánto, en bolívares' : 'Cuánto, en dólares'}
+                  className="flex-1 min-w-0 rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                />
+              </div>
+              {enBs && bcv <= 0 && (
+                <p className="mt-1.5 text-xs text-peligro-600">Sin tasa del día no se puede convertir.</p>
+              )}
+              {/* El equivalente en la otra moneda, para que se note de una si
+                  se teclearon dolares donde iban bolivares. */}
+              {(contados[l.metodo] ?? '').trim() !== '' && Number.isFinite(escrito) && bcv > 0 && (
+                <p className="mt-1.5 text-xs text-neutral-500 tabular-nums">
+                  {enBs ? `son ${dinero(escrito / bcv)}` : `son ${fmtBs(escrito * bcv, 2)}`}
+                </p>
+              )}
+              {/* Destapado, queda DEBAJO del campo ya escrito: sirve para
+                  confirmar, no para copiar. En la moneda del campo. */}
+              {verEsperado && (
+                <p className="mt-1 text-xs text-neutral-500 tabular-nums">
+                  El sistema dice{' '}
+                  {enBs && bcv > 0 ? fmtBs(l.esperado * bcv, 2) : dinero(l.esperado)}
+                </p>
+              )}
             </div>
-            <Numerico
-              value={contados[l.metodo] ?? ''}
-              onChange={(e) => setContados((c) => ({ ...c, [l.metodo]: e.target.value }))}
-              placeholder={l.fisico ? 'Cuánto contaste' : 'Cuánto dice el banco'}
-              className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-            />
-            {/* Destapado, queda DEBAJO del campo ya escrito: sirve para
-                confirmar, no para copiar. */}
-            {verEsperado && (
-              <p className="mt-1.5 text-xs text-neutral-500 tabular-nums">
-                El sistema dice {dinero(l.esperado)}
-              </p>
-            )}
-          </div>
-        ))}
+          )
+        })}
       </div>
       <button
         onClick={() => setVerEsperado((v) => !v)}

@@ -670,6 +670,12 @@ class AperturaCaja(Base):
     segun_libros = Column(Float, default=0)
     diferencia = Column(Float, default=0)
     nota = Column(String, default="")
+    # De que billetes y monedas salio ese fondo, en JSON: {"100": 2, "20": 1,
+    # "sueltos": 3.5}. Un total suelto no se puede volver a contar; con el
+    # desglose, si la gaveta amanece distinta se sabe QUE billete falta
+    # (Leider, 21-sep: "si dices que en efectivo tienes 50 dolares, tienes
+    # que especificar en billetes de que o en monedas").
+    desglose = Column(String, default="")
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
     operador_rel = relationship("Operador")
