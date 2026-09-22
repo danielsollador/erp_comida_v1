@@ -108,6 +108,7 @@ def listar_pedidos(
         query = query.filter(
             models.Pedido.estado == "pagado",
             models.Pedido.devuelto.is_(False),
+            models.Pedido.entregado_en.is_(None),
             ~falta_cocinar,
             func.coalesce(models.Pedido.listo_en, models.Pedido.cerrado_en) >= desde,
         )
@@ -509,6 +510,26 @@ async def marcar_item_preparado(item_id: int, request: Request, db: Session = De
         db.commit()
         db.refresh(pedido)
 
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+@router.post("/{pedido_id}/entregado", response_model=schemas.Pedido)
+async def marcar_entregado(pedido_id: int, db: Session = Depends(get_db)):
+    """La comida se le dio al cliente: fuera de la barra.
+
+    No cambia el estado de la venta ni toca plata: la venta ya estaba cobrada.
+    Lo unico que hace es sacar la tarjeta del mostrador antes de que se cumpla
+    la hora, que es lo que la cajera quiere cuando ya entrego (Leider,
+    22-sep: "si esta listo para entregar, una equis por si lo quieres
+    borrar"). Se guarda la hora en vez de borrar nada: la venta es la venta.
+    """
+    pedido = _buscar(db, pedido_id)
+    if pedido.entregado_en is None:
+        pedido.entregado_en = ahora()
+        db.commit()
+        db.refresh(pedido)
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado

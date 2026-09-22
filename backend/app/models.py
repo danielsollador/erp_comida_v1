@@ -1056,6 +1056,11 @@ class Pedido(Base):
     # comanda normal en cuanto la cocina termina, y entonces no habria forma
     # de distinguirlas UNA HORA DESPUES, que es cuando alguien pregunta.
     a_cocina = Column(Boolean, default=True, nullable=False)
+    # Cuando se le entrego al cliente. Mientras es nulo, la comanda cobrada y
+    # cocinada se queda a la vista del mostrador (ver MINUTOS_PARA_ENTREGAR);
+    # al entregarla, la cajera la quita con una equis y deja de estorbar sin
+    # tener que esperar la hora (Leider, 22-sep).
+    entregado_en = Column(DateTime, nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     operador_rel = relationship("Operador", foreign_keys=[operador_id])

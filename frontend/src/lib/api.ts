@@ -300,6 +300,9 @@ export const api = {
     req<Pedido>(`/pedidos/items/${itemId}/preparado`, { method: 'POST' }),
   marcarPedidoListo: (pedidoId: number) =>
     req<Pedido>(`/pedidos/${pedidoId}/marcar-listo`, { method: 'POST' }),
+  /** Se le dio al cliente: sale del mostrador sin esperar la hora. */
+  marcarEntregado: (pedidoId: number) =>
+    req<Pedido>(`/pedidos/${pedidoId}/entregado`, { method: 'POST' }),
   /**
    * La cocina agarra (o suelta) la comanda. Es un interruptor: avisa al resto
    * de la cocina que esa ya tiene dueño y le cierra la edicion a la caja.

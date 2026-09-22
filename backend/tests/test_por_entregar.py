@@ -127,3 +127,31 @@ def test_las_ventas_del_dia_traen_el_nombre(client, variante):
     assert uno["id"] in ids
     assert sin_cobrar["id"] not in ids, "todavia no se ha cobrado: no es una venta"
     assert next(v for v in ventas if v["id"] == uno["id"])["cliente"] == "Pedro"
+
+
+def test_entregarla_la_saca_de_la_barra(client, variante):
+    """Leider (22-sep): "si esta listo para entregar, una equis por si lo
+    quieres borrar". No borra la venta: marca la hora de entrega y la tarjeta
+    sale del mostrador sin esperar la hora."""
+    p = comanda(client, variante, cliente="Ana")
+    cobrar(client, p)
+    client.post(f"/api/pedidos/{p['id']}/marcar-listo")
+    assert p["id"] in por_entregar(client)
+
+    r = client.post(f"/api/pedidos/{p['id']}/entregado")
+    assert r.status_code == 200, r.text
+    assert r.json()["entregado_en"] is not None
+    assert p["id"] not in por_entregar(client)
+    # La venta sigue siendo una venta: cobrada y en las ventas del dia.
+    assert r.json()["estado"] == "pagado"
+    assert p["id"] in {v["id"] for v in del_dia(client)}
+
+
+def test_entregar_dos_veces_no_cambia_la_hora(client, variante):
+    """Un doble toque no puede mover el dato: la hora de entrega es un hecho."""
+    p = comanda(client, variante)
+    cobrar(client, p)
+    client.post(f"/api/pedidos/{p['id']}/marcar-listo")
+    primera = client.post(f"/api/pedidos/{p['id']}/entregado").json()["entregado_en"]
+    segunda = client.post(f"/api/pedidos/{p['id']}/entregado").json()["entregado_en"]
+    assert primera == segunda

@@ -665,6 +665,8 @@ class Pedido(BaseModel):
     # False = no paso por cocina: comida de vitrina. La pantalla lo dice, y
     # por eso se guarda en vez de adivinarse (ver el modelo).
     a_cocina: bool = True
+    # Cuando se le entrego al cliente. Nulo = sigue en la barra esperando.
+    entregado_en: Optional[datetime.datetime] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
     # Tasa a la que se cobro. Se expone para que la pantalla muestre los

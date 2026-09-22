@@ -88,9 +88,13 @@ export default function POS() {
     claveComanda.current = null
   }, [carrito, libres])
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
+  // Pago mixto: las partes que ya se anotaron. Antes era un desplegable con
+  // UNA forma y un monto, y el resto se lo llevaba entera la segunda: no se
+  // podia partir en tres, y para saber cuanto faltaba habia que restar de
+  // cabeza (Leider, 22-sep). Ahora cada parte se agrega con su monto y lo que
+  // falta se calcula solo.
   const [pagoMixto, setPagoMixto] = useState(false)
-  const [metodoParcial, setMetodoParcial] = useState(METODOS_PAGO[0])
-  const [montoParcial, setMontoParcial] = useState('')
+  const [partes, setPartes] = useState<{ metodo: string; monto: number; referencia: string }[]>([])
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
   const [facturar, setFacturar] = useState(false)
   const [numeroFactura, setNumeroFactura] = useState('')
@@ -152,6 +156,11 @@ export default function POS() {
       : 0
     : billeteNum
   const vuelto = Math.max(Math.round((entregado - aCobrar) * 100) / 100, 0)
+  // Lo que queda por cubrir en un pago mixto.
+  const faltaMixto = Math.max(
+    Math.round((aCobrar - partes.reduce((t, p) => t + p.monto, 0)) * 100) / 100,
+    0,
+  )
 
 
   useEffect(() => {
@@ -206,11 +215,13 @@ export default function POS() {
         for (const p of [...enCocina, ...listos, ...porEntregar]) porId.set(p.id, p)
         // 0 = listo para cobrar, 1 = para entregar, 2 = en cocina sin cobrar,
         // 3 = cobrado y en cocina. Lo que le toca hacer a la caja va arriba;
-        // lo que solo se mira, abajo.
+        // lo que solo se mira, abajo. Y dentro de cada grupo, la ULTIMA que
+        // llego primero: la comanda que se acaba de tomar es la que se esta
+        // mirando, y quedaba al final de la lista (Leider, 22-sep).
         const peso = (p: Pedido) =>
           p.items.some((i) => !i.preparado) ? (p.estado === 'pagado' ? 3 : 2) : p.estado === 'pagado' ? 1 : 0
         setPedidosActivos(
-          [...porId.values()].sort((a, b) => peso(a) - peso(b) || a.numero - b.numero),
+          [...porId.values()].sort((a, b) => peso(a) - peso(b) || b.numero - a.numero),
         )
       })
       .catch(() => setPedidosActivos([]))
@@ -406,7 +417,7 @@ export default function POS() {
     setFacturar(false)
     setNumeroFactura('')
     setPagoMixto(false)
-    setMontoParcial('')
+    setPartes([])
     setDescuento('')
     setMotivoDescuento('')
     setPropina('')
@@ -507,24 +518,41 @@ export default function POS() {
     ])
   }
 
-  // El resto del total va al segundo metodo, calculado acá para que los dos
-  // pagos sumen exacto y el backend no lo rechace por centavos.
-  async function confirmarCobroMixto(segundoMetodo: string) {
-    if (!cobrando) return
-    const primero = Number(montoParcial)
-    const resto = Math.round((aCobrar - primero) * 100) / 100
+  /**
+   * Agregar una forma de pago al cobro mixto.
+   *
+   * El monto viene propuesto con lo que falta, que es el caso normal --la
+   * ultima parte cierra la cuenta-- pero se puede bajar para partirlo en
+   * tres. Nunca se acepta mas de lo que falta: el servidor rechaza el cobro
+   * entero si los pagos no suman, y ese error llega cuando ya se guardo todo
+   * lo demas.
+   */
+  async function agregarParte(metodo: string) {
+    if (faltaMixto <= 0) return
+    const monto = await dialogo.pedirNumero({
+      titulo: `¿Cuánto paga con ${etiquetaMetodo(metodo)}?`,
+      texto: `Faltan ${fmt(faltaMixto)} de ${fmt(aCobrar)}.`,
+      etiqueta: 'Monto',
+      sufijo: '$',
+      valor: faltaMixto,
+      min: 0.01,
+    })
+    if (monto === null) return
+    if (monto > faltaMixto + 0.001) {
+      setError(`Esa parte (${fmt(monto)}) pasa de lo que falta (${fmt(faltaMixto)}).`)
+      return
+    }
+    // Cada parte lleva su propio comprobante: son pagos distintos.
+    const referencia = await pedirReferencia(metodo, dialogo.pedirTexto)
+    if (referencia === null) return
+    setError('')
+    setPartes((p) => [...p, { metodo, monto: Math.round(monto * 100) / 100, referencia }])
+  }
 
-    // Cada parte que no sea efectivo pide su propia referencia: son dos
-    // pagos distintos, con dos comprobantes distintos.
-    const refPrimero = await pedirReferencia(metodoParcial, dialogo.pedirTexto)
-    if (refPrimero === null) return
-    const refSegundo = await pedirReferencia(segundoMetodo, dialogo.pedirTexto)
-    if (refSegundo === null) return
-
-    cobrar('Mixto', [
-      { metodo: metodoParcial, monto: primero, referencia: refPrimero },
-      { metodo: segundoMetodo, monto: resto, referencia: refSegundo },
-    ])
+  function cobrarMixto() {
+    if (!cobrando || faltaMixto > 0.001 || partes.length === 0) return
+    // El nombre recien escrito: si alguna parte es a credito, hace falta.
+    cobrar('Mixto', partes, undefined, cliente.trim())
   }
 
   function elegirPunto(id: number | null) {
@@ -559,6 +587,16 @@ export default function POS() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo generar el ticket')
     }
+  }
+
+  /** Se le dio al cliente: la tarjeta sale del mostrador. */
+  async function entregarPedido(pedido: Pedido) {
+    try {
+      await api.marcarEntregado(pedido.id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo marcar como entregado')
+    }
+    refrescarPedidos()
   }
 
   async function anular(pedido: Pedido) {
@@ -842,6 +880,19 @@ export default function POS() {
                       <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-neutral-800 text-white">
                         Sin cocina
                       </span>
+                    )}
+                    {/* Ya se le dio al cliente: fuera de la barra sin esperar
+                        la hora. No borra la venta --la venta es la venta--,
+                        solo saca la tarjeta del mostrador. */}
+                    {entregar && (
+                      <button
+                        onClick={() => entregarPedido(pedido)}
+                        title={`Ya le entregaste el pedido #${pedido.numero}${pedido.cliente ? ` a ${pedido.cliente}` : ''}`}
+                        aria-label={`Marcar el pedido #${pedido.numero} como entregado`}
+                        className="w-7 h-7 grid place-items-center rounded-full text-acento-800/60 hover:bg-acento-500/20 hover:text-acento-900 text-lg leading-none"
+                      >
+                        ×
+                      </button>
                     )}
                     {/* Que la cocina ya la tenga no es un detalle de color: es
                         el motivo por el que el boton de editar esta apagado. */}
@@ -1439,48 +1490,76 @@ export default function POS() {
             )
           ) : (
             <div className="mt-3 mb-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <select
-                  value={metodoParcial}
-                  onChange={(e) => setMetodoParcial(e.target.value)}
-                  className="flex-1 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+              {/* Lo que falta, GRANDE: es el numero que el cajero le canta al
+                  cliente mientras arma el pago. */}
+              <div
+                className={`rounded-xl px-3 py-2.5 flex items-baseline justify-between ${
+                  faltaMixto > 0 ? 'bg-aviso-50 text-aviso-900' : 'bg-exito-50 text-exito-800'
+                }`}
+              >
+                <span className="text-sm font-medium">
+                  {faltaMixto > 0 ? 'Falta por pagar' : 'Cubierto completo'}
+                </span>
+                <span className="text-xl font-bold tabular-nums">{fmt(faltaMixto)}</span>
+              </div>
+
+              {partes.map((parte, i) => (
+                <div
+                  key={`${parte.metodo}-${i}`}
+                  className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2"
                 >
-                  {METODOS_PAGO.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-                <Numerico
-                  value={montoParcial}
-                  onChange={(e) => setMontoParcial(e.target.value)}
-                  placeholder="Monto"
-                  className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-                />
-              </div>
-              <p className="text-xs text-neutral-500">
-                Falta por cubrir:{' '}
-                <span className="font-semibold tabular-nums text-neutral-800">
-                  ${Math.max(aCobrar - (Number(montoParcial) || 0), 0).toFixed(2)}
-                </span>{' '}
-                con:
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {[...METODOS_PAGO, 'Fiado'].filter((m) => m !== metodoParcial).map((m) => (
+                  <span className="min-w-0 flex-1 text-sm">
+                    <span className="font-medium">{etiquetaMetodo(parte.metodo)}</span>
+                    {parte.referencia && (
+                      <span className="block text-[11px] text-neutral-400 truncate">
+                        ref. {parte.referencia}
+                      </span>
+                    )}
+                  </span>
+                  <span className="font-semibold tabular-nums">{fmt(parte.monto)}</span>
                   <button
-                    key={m}
-                    onClick={() => confirmarCobroMixto(m)}
-                    disabled={
-                      !(Number(montoParcial) > 0 && Number(montoParcial) < aCobrar)
-                    }
-                    className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-2.5 text-sm font-medium disabled:opacity-30"
+                    onClick={() => setPartes((p) => p.filter((_, x) => x !== i))}
+                    aria-label={`Quitar el pago con ${etiquetaMetodo(parte.metodo)}`}
+                    className="w-7 h-7 grid place-items-center rounded-full text-neutral-400 hover:bg-peligro-50 hover:text-peligro-600"
                   >
-                    {etiquetaMetodo(m)}
+                    ×
                   </button>
-                ))}
-              </div>
+                </div>
+              ))}
+
+              {faltaMixto > 0 && (
+                <>
+                  <p className="text-xs text-neutral-500 pt-1">
+                    {partes.length === 0 ? 'Con qué paga la primera parte:' : 'Y el resto con:'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[...METODOS_PAGO, 'Fiado'].map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => agregarParte(m)}
+                        disabled={m === 'Fiado' && !cliente.trim()}
+                        title={m === 'Fiado' && !cliente.trim() ? 'Escribe el nombre del cliente primero' : ''}
+                        className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-2.5 text-sm font-medium disabled:opacity-30"
+                      >
+                        {etiquetaMetodo(m)}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
               <button
-                onClick={() => setPagoMixto(false)}
+                onClick={cobrarMixto}
+                disabled={faltaMixto > 0.001 || partes.length === 0}
+                className="w-full rounded-xl bg-neutral-900 py-3 text-sm font-semibold text-white disabled:opacity-30"
+              >
+                Cobrar {fmt(aCobrar)} en {partes.length} forma(s)
+              </button>
+              <button
+                onClick={() => {
+                  setPagoMixto(false)
+                  setPartes([])
+                }}
                 className="w-full text-xs text-neutral-500 pt-1"
               >
                 Volver a un solo pago
