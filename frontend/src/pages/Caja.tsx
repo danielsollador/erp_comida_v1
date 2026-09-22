@@ -6,11 +6,13 @@ import { useRango, etiquetaRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Modal, Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
+import { AbrirCaja, useApertura } from '../components/abrirCaja'
+import { fmtBs, useMoneda } from '../lib/moneda'
 import { api } from '../lib/api'
 import { METODOS_PAGO } from '../lib/pagos'
 import type {
   CierreCaja,
-  DestinoApertura,
+  EstadoApertura,
   Gasto,
   LineaMetodo,
   ResumenCaja,
@@ -54,7 +56,8 @@ export default function Caja() {
   // El día que se está cuadrando. NO es un rango: cuadrar es de un día.
   const [dia, setDia] = useState(hoyISO)
   const [resumen, setResumen] = useState<ResumenCaja | null>(null)
-  const [apertura, setApertura] = useState<DestinoApertura[]>([])
+  const { estado: apertura, recargar: recargarApertura } = useApertura(dia)
+  const [abriendo, setAbriendo] = useState(false)
   const [error, setError] = useState('')
 
   // Solo el historial mira períodos.
@@ -65,7 +68,6 @@ export default function Caja() {
 
   const [contando, setContando] = useState(false)
   const [resultado, setResultado] = useState<CierreCaja | null>(null)
-  const dialogo = useDialogo()
 
   useEffect(() => {
     cargarDia()
@@ -78,7 +80,7 @@ export default function Caja() {
   function cargarDia() {
     setError('')
     api.resumenCaja(dia).then(setResumen).catch((e) => setError(e.message))
-    api.estadoApertura().then(setApertura).catch(() => setApertura([]))
+    recargarApertura()
   }
 
   function cargarPeriodo() {
@@ -90,25 +92,6 @@ export default function Caja() {
   function recargar() {
     cargarDia()
     cargarPeriodo()
-  }
-
-  async function declararApertura(destino: DestinoApertura) {
-    const monto = await dialogo.pedirNumero({
-      titulo: `¿Con cuánto arrancó ${destino.etiqueta.toLowerCase()}?`,
-      etiqueta: 'Lo que había cuando empezaste a usar el sistema',
-      sufijo: '$',
-      min: 0,
-      ayuda:
-        'Es plata tuya que ya estaba ahí, no una venta: entra contra tu capital y no ' +
-        'sube la ganancia. Se declara una sola vez.',
-    })
-    if (monto === null) return
-    try {
-      await api.declararApertura(destino.cuenta, monto)
-      recargar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo declarar el saldo inicial')
-    }
   }
 
   return (
@@ -127,26 +110,15 @@ export default function Caja() {
 
         {seccion === 'cierre' && resumen && (
           <>
-            {/* Una gaveta en negativo: mientras siga así, el cierre miente. */}
-            {apertura
-              .filter((d) => d.urge)
-              .map((d) => (
-                <div key={d.cuenta} className="bg-peligro-50 border border-peligro-300 rounded-2xl p-4">
-                  <h2 className="font-semibold text-peligro-900">
-                    {d.etiqueta} está en −${Math.abs(d.saldo).toFixed(2)}
-                  </h2>
-                  <p className="text-sm text-peligro-800 mt-1">
-                    Una gaveta no puede tener menos de cero. Pasa cuando se paga algo en efectivo
-                    con plata que ya estaba ahí el día que empezaste a usar el sistema.
-                  </p>
-                  <button
-                    onClick={() => declararApertura(d)}
-                    className="mt-3 rounded-xl bg-peligro-600 px-4 py-2.5 text-sm font-medium text-white"
-                  >
-                    Declarar con cuánto arrancaste
-                  </button>
-                </div>
-              ))}
+            {/* Abrir es lo PRIMERO del día y aparece arriba del todo. Una
+                caja sin abrir no se bloquea --nadie deja de vender por un
+                formulario-- pero el cierre de esa noche parte del saldo
+                contable en vez de un conteo, y eso hereda cualquier error
+                viejo. El aviso dice exactamente eso. */}
+            <Apertura
+              estado={apertura}
+              alAbrir={() => setAbriendo(true)}
+            />
 
             <SelectorDia dia={dia} alCambiar={setDia} resumen={resumen} />
             <Ventas r={resumen} />
@@ -184,6 +156,18 @@ export default function Caja() {
         )}
       </Pagina>
 
+      {abriendo && apertura && (
+        <AbrirCaja
+          estado={apertura}
+          fecha={dia}
+          alCerrar={() => setAbriendo(false)}
+          alAbrir={() => {
+            setAbriendo(false)
+            recargar()
+          }}
+        />
+      )}
+
       {contando && resumen && (
         <CuadrarCaja
           resumen={resumen}
@@ -200,6 +184,70 @@ export default function Caja() {
   )
 }
 
+
+/**
+ * Abrir la caja: el primer gesto del día.
+ *
+ * No bloquea la venta. Un local no puede dejar de cobrar porque falte un
+ * formulario, y un sistema que se pone en el medio se termina saltando. Lo
+ * que hace es decir qué se pierde: sin apertura, el cierre de esta noche
+ * parte del saldo contable, que hereda cualquier error viejo, en vez de
+ * partir de un conteo de esta mañana.
+ */
+function Apertura({
+  estado,
+  alAbrir,
+}: {
+  estado: EstadoApertura | null
+  alAbrir: () => void
+}) {
+  if (!estado) return null
+
+  if (estado.abierta) {
+    const total = estado.fondos.reduce((s, f) => s + f.fondo, 0)
+    const descuadre = estado.fondos.reduce((s, f) => s + f.diferencia, 0)
+    return (
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-semibold">Caja abierta</h2>
+          <span className="text-sm text-neutral-500 tabular-nums">
+            fondo {dinero(total)}
+          </span>
+        </div>
+        <p className="text-xs text-neutral-500 mt-1">
+          {estado.fondos.map((f) => `${f.metodo} ${dinero(f.fondo)}`).join(' · ')}
+          {estado.operador && ` · abrió ${estado.operador}`}
+        </p>
+        {/* Una diferencia al abrir pasó ANTES del turno. Decirlo aquí es lo
+            que impide que esta noche se le cargue al cajero de hoy. */}
+        {Math.abs(descuadre) >= 0.01 && (
+          <p className="text-xs text-aviso-700 mt-1.5">
+            Al abrir {descuadre > 0 ? 'había' : 'faltaban'} {dinero(Math.abs(descuadre))}{' '}
+            respecto a lo que decían los libros. Ya quedó asentado: no se le cuenta a este turno.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  if (!estado.puede_abrir) return null
+
+  return (
+    <div className="bg-aviso-50 border border-aviso-300 rounded-2xl p-4">
+      <h2 className="font-semibold text-aviso-900">La caja de este día no se ha abierto</h2>
+      <p className="text-sm text-aviso-800 mt-1">
+        Cuenta el fondo con el que arrancas y el cierre de esta noche será la resta de un solo
+        día. Sin eso parte del saldo contable, que arrastra cualquier descuadre viejo.
+      </p>
+      <button
+        onClick={alAbrir}
+        className="mt-3 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white"
+      >
+        Abrir caja
+      </button>
+    </div>
+  )
+}
 
 /** Qué día se está cuadrando. Ayer, anteayer o el que sea. */
 function SelectorDia({
@@ -322,28 +370,47 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
 /**
  * 3. Por dónde entró y por dónde salió, forma de pago por forma de pago.
  *
- * SIEMPRE salen TODAS, incluso en cero. Un reporte Z se lee como una lista de
- * chequeo: el cajero baja por las filas confirmando una por una. Si las formas
- * sin movimiento se esconden, la lista cambia de tamaño cada día y deja de
- * servir para eso --y peor: un cobro que se registró en la forma equivocada
- * desaparece de la vista en lugar de saltar a los ojos.
+ * SIEMPRE salen TODAS, incluso en cero. Un reporte de cierre se lee como una
+ * lista de chequeo: el cajero baja por las filas confirmando una por una. Si
+ * las formas sin movimiento se esconden, la lista cambia de tamaño cada día y
+ * deja de servir para eso --y peor: un cobro que se registró en la forma
+ * equivocada desaparece de la vista en lugar de saltar a los ojos.
+ *
+ * LA FILA SUMA A LA VISTA: fondo + entró − salió = debe cuadrar. Ese es el
+ * contrato. Un total que no se obtiene de las columnas de al lado obliga a
+ * creerle al sistema en vez de verificarlo, y lo que la gente hace entonces
+ * es llevar la caja en un cuaderno aparte.
+ *
+ * EN LAS DOS MONEDAS. El precio vive en dólares, pero los billetes de la
+ * gaveta y el lote del punto están en bolívares: cuadrar obliga a mirar las
+ * dos cifras, y hacer la cuenta de cabeza a la medianoche es como se cuelan
+ * los errores.
  */
 function Desglose({ r }: { r: ResumenCaja }) {
-  const totalEntro = r.desglose.reduce((s, l) => s + l.ventas, 0)
+  const { tasa } = useMoneda()
+  const bcv = tasa?.bcv ?? null
+  const totalFondo = r.desglose.reduce((s, l) => s + l.fondo, 0)
+  const totalEntro = r.desglose.reduce((s, l) => s + entradaDe(l), 0)
   const totalSalio = r.desglose.reduce((s, l) => s + salidaDe(l), 0)
   const totalCuadra = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + l.esperado, 0)
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <h2 className="font-semibold mb-1">Desglose por forma de pago</h2>
       <p className="text-xs text-neutral-500 mb-3">
-        Lo que el sistema tiene registrado. Cada forma tiene su propia fuente: los billetes se
-        cuentan, el punto imprime su lote, el pago móvil se mira en el banco.
+        Cada forma tiene su propia fuente: los billetes se cuentan, el punto imprime su lote, el
+        pago móvil se mira en el banco.{' '}
+        {bcv ? (
+          <>Los bolívares van a {fmtBs(bcv, 2)} por dólar, la tasa de hoy.</>
+        ) : (
+          <>Sin tasa del día no se pueden mostrar los bolívares.</>
+        )}
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-neutral-500">
             <tr className="border-b border-neutral-200">
               <th className="text-left font-medium py-1.5">Forma de pago</th>
+              <th className="text-right font-medium py-1.5">Fondo</th>
               <th className="text-right font-medium py-1.5">Entró</th>
               <th className="text-right font-medium py-1.5">Salió</th>
               <th className="text-right font-medium py-1.5">Debe cuadrar</th>
@@ -351,15 +418,16 @@ function Desglose({ r }: { r: ResumenCaja }) {
           </thead>
           <tbody>
             {r.desglose.map((l) => (
-              <FilaMetodo key={l.metodo} l={l} />
+              <FilaMetodo key={l.metodo} l={l} bcv={bcv} />
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-neutral-300 font-semibold">
               <td className="py-2">Total</td>
-              <td className="text-right tabular-nums">{dinero(totalEntro)}</td>
-              <td className="text-right tabular-nums text-peligro-600">{dinero(-totalSalio)}</td>
-              <td className="text-right tabular-nums">{dinero(totalCuadra)}</td>
+              <Cifra monto={totalFondo} bcv={bcv} />
+              <Cifra monto={totalEntro} bcv={bcv} />
+              <Cifra monto={-totalSalio} bcv={bcv} clase="text-peligro-600" />
+              <Cifra monto={totalCuadra} bcv={bcv} />
             </tr>
           </tfoot>
         </table>
@@ -368,27 +436,50 @@ function Desglose({ r }: { r: ResumenCaja }) {
   )
 }
 
+/** Lo que entró por esta vía: ventas, más lo que los libros saben y no es
+ *  venta (cobrar un fiado viejo en efectivo). */
+function entradaDe(l: LineaMetodo) {
+  return l.ventas + Math.max(l.otros, 0)
+}
+
 /** Lo que salió por esta vía: gastos y retiros, más lo que los libros saben y
  *  el desglose no puede atribuir (pagarle a un proveedor en efectivo). */
 function salidaDe(l: LineaMetodo) {
   return l.salidas - Math.min(l.otros, 0)
 }
 
-/** Un cero se escribe, no se calla: en un cuadre "no entró nada por Zelle" es
- *  una afirmación que alguien confirma, no un dato ausente. */
-function Cifra({ monto, clase = '' }: { monto: number; clase?: string }) {
+/**
+ * Un importe en las dos monedas, una debajo de la otra.
+ *
+ * Y un cero se escribe, no se calla: en un cuadre "no entró nada por Zelle"
+ * es una afirmación que alguien confirma, no un dato ausente.
+ */
+function Cifra({
+  monto,
+  bcv,
+  clase = '',
+}: {
+  monto: number
+  bcv: number | null
+  clase?: string
+}) {
+  const vacia = monto === 0
   return (
-    <td className={`text-right tabular-nums ${monto === 0 ? 'text-neutral-300' : clase}`}>
-      {dinero(monto)}
+    <td className={`text-right tabular-nums ${vacia ? 'text-neutral-300' : clase}`}>
+      <span className="block">{dinero(monto)}</span>
+      {bcv !== null && (
+        <span className={`block text-[11px] ${vacia ? 'text-neutral-300' : 'text-neutral-400'}`}>
+          {fmtBs(monto * bcv, 2)}
+        </span>
+      )}
     </td>
   )
 }
 
-function FilaMetodo({ l }: { l: LineaMetodo }) {
-  const salidaTotal = salidaDe(l)
+function FilaMetodo({ l, bcv }: { l: LineaMetodo; bcv: number | null }) {
   return (
     <tr className="border-b border-neutral-100 last:border-0">
-      <td className="py-2">
+      <td className="py-2 align-top">
         <span className="font-medium">{l.metodo}</span>
         <span className="block text-[11px] text-neutral-400">
           {!l.se_cuadra
@@ -396,15 +487,23 @@ function FilaMetodo({ l }: { l: LineaMetodo }) {
             : l.fisico
               ? 'se cuenta: lo que hay en la gaveta'
               : 'se coteja: el movimiento del día'}
-          {l.saldo_anterior !== 0 && ` · ${dinero(l.saldo_anterior)} de días anteriores`}
+          {/* Un fondo contado y un saldo heredado no valen lo mismo: el
+              primero es un hecho de esta mañana, el segundo una suposición
+              que arrastra los errores de siempre. */}
+          {l.fondo_declarado
+            ? ' · fondo contado al abrir'
+            : l.fondo !== 0
+              ? ' · viene de días anteriores'
+              : ''}
         </span>
       </td>
-      <Cifra monto={l.ventas} />
-      <Cifra monto={-salidaTotal} clase="text-peligro-600" />
+      <Cifra monto={l.fondo} bcv={bcv} />
+      <Cifra monto={entradaDe(l)} bcv={bcv} />
+      <Cifra monto={-salidaDe(l)} bcv={bcv} clase="text-peligro-600" />
       {l.se_cuadra ? (
-        <Cifra monto={l.esperado} clase="font-semibold" />
+        <Cifra monto={l.esperado} bcv={bcv} clase="font-semibold" />
       ) : (
-        <td className="text-right tabular-nums text-neutral-300">—</td>
+        <td className="text-right tabular-nums text-neutral-300 align-top">—</td>
       )}
     </tr>
   )

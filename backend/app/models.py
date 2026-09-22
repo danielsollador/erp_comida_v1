@@ -622,6 +622,53 @@ class FacturaCompraItem(Base):
         return round(self.cantidad * self.costo_unitario, 2)
 
 
+class AperturaCaja(Base):
+    """Con cuanta plata arranco una gaveta el dia que se abrio la caja.
+
+    POR QUE EXISTE UN BOTON DE "ABRIR CAJA". No es burocracia: fija el punto
+    de partida. Sin el, lo que se espera al cerrar sale del saldo contable, y
+    ese saldo arrastra cualquier error viejo --una compra pagada en efectivo
+    antes de que existiera el sistema deja la gaveta en negativo y el arqueo
+    de esta noche reporta un faltante que nadie se robo. Contar al abrir
+    convierte el cierre en la resta de un solo dia: fondo + lo que entro -
+    lo que salio.
+
+    Y separa culpas. Si la gaveta amanece con menos plata de la que quedo
+    anoche, eso pasó ANTES del turno; descubrirlo a las once de la noche lo
+    vuelve inseparable de lo que hizo el cajero de hoy.
+
+    UNA FILA POR GAVETA Y POR DIA. El efectivo en bolivares y el efectivo en
+    dolares se cuentan aparte porque son dos monedas distintas.
+    """
+
+    __tablename__ = "TRX505_CAJ_APERTURA"
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(DateTime, default=ahora)
+    # El dia al que pertenece la apertura, sin hora. Se guarda aparte de
+    # `fecha` porque es la clave de "esta caja ya se abrio hoy": comparar
+    # rangos de timestamp para eso es como se cuelan los duplicados.
+    dia = Column(Date, nullable=False)
+    # La forma de pago que se conto ("Efectivo Bs") y su cuenta (1010).
+    metodo = Column(String, nullable=False)
+    cuenta = Column(String, nullable=False)
+    # Lo que habia de verdad en la gaveta al abrir.
+    fondo = Column(Float, nullable=False)
+    # Lo que los libros decian que debia haber. Congelado: manana este numero
+    # ya no se puede recalcular, y sin el no hay forma de saber por que se
+    # ajusto.
+    segun_libros = Column(Float, default=0)
+    diferencia = Column(Float, default=0)
+    nota = Column(String, default="")
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+
+    operador_rel = relationship("Operador")
+
+    @property
+    def operador(self) -> str:
+        return self.operador_rel.nombre if self.operador_rel else ""
+
+
 class CierreCaja(Base):
     __tablename__ = "TRX510_CAJ_CIERRE"
 

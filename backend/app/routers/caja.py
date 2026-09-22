@@ -146,24 +146,76 @@ for _m, _f in METODOS_DE_CIERRE:
     METODOS_POR_CUENTA.setdefault(contabilidad.CUENTA_POR_METODO_PAGO.get(_m, "1010"), []).append(_m)
 
 
-def _desglose(db: Session, inicio, fin) -> List[schemas.LineaMetodo]:
-    """Una fila por forma de pago: lo que entro, lo que salio y que deberia
-    haber.
+# Las gavetas que se cuentan al abrir. Solo el efectivo: el punto de venta y
+# el banco no tienen fondo que contar en la manana -- su saldo lo dice la
+# pantalla del banco, no un conteo.
+GAVETAS_DE_APERTURA = tuple(m for m, fisico in METODOS_DE_CIERRE if fisico)
+
+ORIGEN_APERTURA = "apertura_dia"
+
+
+def _aperturas_de(db: Session, dia: datetime.date) -> dict:
+    """Las gavetas que se abrieron ese dia, por forma de pago."""
+    filas = db.query(models.AperturaCaja).filter(models.AperturaCaja.dia == dia).all()
+    return {a.metodo: a for a in filas}
+
+
+def _ajuste_apertura(db: Session, dia: datetime.date, codigo: str) -> float:
+    """Lo que el ajuste de apertura movio en esa cuenta ese dia.
+
+    Hay que descontarlo de `otros` antes de armar la fila: ese ajuste YA esta
+    dentro del fondo declarado, y dejarlo en los dos sitios haria que la fila
+    no sumara. Un "debe cuadrar" que no se obtiene de los numeros que el
+    cajero tiene delante es la forma mas rapida de que le pierda la confianza
+    al cuadre y empiece a llevarlo en un cuaderno aparte.
+    """
+    inicio, fin = _rango_de(dia)
+    filas = (
+        db.query(models.MovimientoContable)
+        .join(models.AsientoContable,
+              models.MovimientoContable.asiento_id == models.AsientoContable.id)
+        .join(models.CuentaContable,
+              models.MovimientoContable.cuenta_id == models.CuentaContable.id)
+        .filter(
+            models.AsientoContable.origen == ORIGEN_APERTURA,
+            models.AsientoContable.fecha >= inicio,
+            models.AsientoContable.fecha < fin,
+            models.CuentaContable.codigo == codigo,
+        )
+        .all()
+    )
+    return round(sum((m.debe or 0) - (m.haber or 0) for m in filas), 2)
+
+
+def _desglose(db: Session, dia: datetime.date, inicio, fin) -> List[schemas.LineaMetodo]:
+    """Una fila por forma de pago: con cuanto arranco, que entro, que salio y
+    que deberia haber.
+
+    LA FILA TIENE QUE SUMAR A LA VISTA: fondo + entradas - salidas = esperado.
+    Ese es el contrato. Un arqueo en el que el total no se obtiene de las
+    columnas que estan al lado obliga a creer en el sistema en vez de
+    verificarlo, y lo que la gente hace entonces es llevar la caja en un
+    cuaderno aparte.
+
+    EL FONDO. Si alguien abrio la caja contando, el fondo es lo que conto. Si
+    no, es lo que quedo de dias anteriores segun los libros. La diferencia
+    importa: lo contado es un hecho, el arrastre contable es una suposicion
+    que hereda cualquier error viejo.
 
     LO QUE NO ES VENTA NI GASTO TAMBIEN CUENTA. Pagarle a un proveedor en
-    efectivo, declarar con cuanto arranco la gaveta, cobrar un fiado: todo eso
-    mueve la plata y los libros lo saben, pero no es ninguna de las dos cosas
-    que el dueno tiene en la cabeza al cuadrar. Si se ignora, contar la gaveta
-    da un descuadre del tamano de esos movimientos.
+    efectivo o cobrar un fiado mueve la plata y los libros lo saben, pero no
+    es ninguna de las dos cosas que el dueno tiene en la cabeza al cuadrar. Si
+    se ignora, contar la gaveta da un descuadre del tamano de esos
+    movimientos.
 
     Cuando una forma de pago es la UNICA que usa su cuenta --el efectivo en
-    bolivares es la unica que toca 1010-- ese resto se le puede atribuir, y
-    entonces lo esperado es el saldo contable: la verdad completa. Cuando
-    cuatro metodos comparten cuenta (1020) no hay forma de saber por cual
-    entro, asi que el resto se reporta aparte (ver `_otros_movimientos`).
+    bolivares es la unica que toca 1010-- ese resto se le puede atribuir.
+    Cuando cuatro metodos comparten cuenta (1020) no hay forma de saber por
+    cual entro, asi que el resto se reporta aparte (ver `_otros_movimientos`).
     """
     ventas = _ventas_por_metodo(db, inicio, fin)
     salidas = _salidas_por_metodo(db, inicio, fin)
+    aperturas = _aperturas_de(db, dia)
     filas = []
     for metodo, fisico in METODOS_DE_CIERRE:
         cuenta = _cuentas_de(metodo)
@@ -179,6 +231,17 @@ def _desglose(db: Session, inicio, fin) -> List[schemas.LineaMetodo]:
             neto_libro = contabilidad.movimiento_efectivo(db, inicio, fin, cuenta)
             otros = round(neto_libro - (entro - salio), 2)
 
+        # El ajuste de la apertura cae dentro del dia, asi que viene metido en
+        # `otros`. Se le saca de ahi y se le suma al fondo, que es donde el
+        # cajero lo espera ver.
+        apertura = aperturas.get(metodo)
+        if apertura is not None:
+            ajuste = _ajuste_apertura(db, dia, cuenta)
+            otros = round(otros - ajuste, 2)
+            fondo = round(anterior + ajuste, 2)
+        else:
+            fondo = round(anterior, 2)
+
         filas.append(
             schemas.LineaMetodo(
                 metodo=metodo,
@@ -188,10 +251,12 @@ def _desglose(db: Session, inicio, fin) -> List[schemas.LineaMetodo]:
                 # mirar. Se muestra para saber cuanto se fio.
                 se_cuadra=metodo != "Fiado",
                 saldo_anterior=round(anterior, 2),
+                fondo=fondo,
+                fondo_declarado=apertura is not None,
                 ventas=round(entro, 2),
                 salidas=round(salio, 2),
                 otros=otros,
-                esperado=round(anterior + entro - salio + otros, 2),
+                esperado=round(fondo + entro - salio + otros, 2),
             )
         )
     return filas
@@ -224,16 +289,6 @@ def _otros_movimientos(db: Session, inicio, fin, desglose) -> List[schemas.OtroM
                 )
             )
     return fuera
-
-
-# Las cuentas cuyo saldo inicial se puede declarar. Son DESTINOS y no metodos:
-# lo que se declara es con cuanto arranco la gaveta, no por que via entro.
-DESTINOS_ARQUEO = (
-    ("1010", "Efectivo en bolívares", True),
-    ("1011", "Efectivo en dólares", True),
-    ("1020", "Banco, punto y pago móvil", False),
-    ("1021", "Zelle", False),
-)
 
 
 def _anulados(db: Session, inicio, fin):
@@ -302,7 +357,7 @@ def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(ge
     # propina. Es contra esto que tiene que cuadrar el desglose.
     a_cobrar = round(vendido - descuentos + propinas, 2)
 
-    desglose = _desglose(db, inicio, fin)
+    desglose = _desglose(db, dia, inicio, fin)
     cobrado = round(sum(l.ventas for l in desglose), 2)
 
     gastos_dia = _gastos_de(db, inicio, fin)
@@ -347,107 +402,202 @@ def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(ge
         propinas_por_entregar=round(contabilidad.saldo_de_cuenta(db, "2040"), 2),
         cerrada=cierre is not None,
         cierre_id=cierre.id if cierre else None,
+        abierta=bool(_aperturas_de(db, dia)),
     )
 
 
-@router.post("/apertura", response_model=schemas.AperturaCaja)
-def declarar_saldo_inicial(
-    body: schemas.AperturaCajaRequest, db: Session = Depends(get_db)
+@router.get("/estado-apertura", response_model=schemas.EstadoApertura)
+def estado_de_apertura(
+    fecha: Optional[datetime.date] = None, db: Session = Depends(get_db)
 ):
-    """Con cuanta plata arranco el negocio en esa gaveta.
+    """Si la caja de ese dia ya se abrio, y con cuanto arranco cada gaveta.
 
-    POR QUE HACE FALTA. Los libros empiezan en cero, pero el local no: el dia
-    que se estrena el sistema ya hay billetes en la gaveta y saldo en el
-    banco. Mientras nadie lo declare, la primera compra pagada en efectivo
-    saca plata de una cuenta vacia y la deja en NEGATIVO -- un activo
-    imposible.
-
-    No es un detalle contable. El cierre calcula lo que deberia haber como
-    `saldo anterior + entradas - salidas`: con el saldo anterior corrido, el
-    primer arqueo reporta un sobrante que no existe, y ese sobrante termina
-    asentado como ingreso del negocio.
-
-    Es el mismo gesto que `contabilidad.asiento_de_apertura` hace con el
-    inventario: lo que ya estaba entra contra el capital del dueño, porque
-    no es una venta -- es plata suya que ya estaba ahi.
-
-    UNA VEZ POR GAVETA. Declararlo dos veces duplicaria el capital. Si se
-    tecleo mal, el asiento se borra desde Contabilidad y se vuelve a declarar.
+    Es lo que consulta el punto de venta al cargar para decidir si muestra el
+    boton de "Abrir caja". Cuando no esta abierta trae, en `fondos`, lo que
+    los libros creen que hay: no para rellenar el formulario --eso volveria
+    el conteo un tramite de darle a aceptar-- sino para calcular la
+    diferencia cuando la persona teclee lo suyo.
     """
-    codigo = body.cuenta
-    etiquetas = {c: e for c, e, _ in DESTINOS_ARQUEO}
-    if codigo not in etiquetas:
-        raise HTTPException(
-            status_code=400,
-            detail="Solo se declara el saldo inicial de una gaveta o del banco",
-        )
-    if body.monto < 0:
-        raise HTTPException(status_code=400, detail="El monto no puede ser negativo")
+    dia = _fecha_pedida(fecha)
+    inicio, fin = _rango_de(dia)
+    abiertas = _aperturas_de(db, dia)
 
-    ya = (
-        db.query(models.AsientoContable)
+    if abiertas:
+        primera = next(iter(abiertas.values()))
+        return schemas.EstadoApertura(
+            fecha=dia.isoformat(),
+            abierta=True,
+            puede_abrir=False,
+            motivo="La caja de este día ya se abrió.",
+            momento=primera.fecha.isoformat() if primera.fecha else None,
+            operador=primera.operador,
+            nota=primera.nota or "",
+            fondos=[
+                schemas.FondoApertura(
+                    metodo=a.metodo,
+                    cuenta=a.cuenta,
+                    fondo=round(a.fondo, 2),
+                    segun_libros=round(a.segun_libros or 0, 2),
+                    diferencia=round(a.diferencia or 0, 2),
+                )
+                for a in abiertas.values()
+            ],
+        )
+
+    # Una caja ya cerrada no se reabre: el cierre congelo lo esperado y metio
+    # la diferencia a los libros. Cambiarle el punto de partida despues
+    # dejaria ese cierre apuntando a un numero que ya no existe.
+    cerrada = (
+        db.query(models.CierreCaja)
         .filter(
-            models.AsientoContable.origen == "apertura_caja",
-            models.AsientoContable.referencia_id == int(codigo),
+            models.CierreCaja.fecha >= inicio,
+            models.CierreCaja.fecha < fin,
+            models.CierreCaja.anulado.is_(False),
         )
         .first()
     )
-    if ya:
+    motivo = ""
+    if cerrada:
+        motivo = "La caja de este día ya se cerró. Anula ese cierre si hay que rehacerlo."
+    elif dia > hoy():
+        motivo = "Todavía no es ese día."
+
+    return schemas.EstadoApertura(
+        fecha=dia.isoformat(),
+        abierta=False,
+        puede_abrir=not motivo,
+        motivo=motivo,
+        fondos=[
+            schemas.FondoApertura(
+                metodo=m,
+                cuenta=_cuentas_de(m),
+                fondo=0.0,
+                segun_libros=round(_saldo_anterior_de(db, _cuentas_de(m), inicio), 2),
+            )
+            for m in GAVETAS_DE_APERTURA
+        ],
+    )
+
+
+@router.post("/abrir", response_model=schemas.EstadoApertura)
+def abrir_caja(
+    body: schemas.AbrirCajaRequest, request: Request, db: Session = Depends(get_db)
+):
+    """Abrir la caja del dia contando el fondo de cada gaveta.
+
+    QUE HACE DE VERDAD. Fija el punto de partida del cuadre. Lo contado pasa a
+    ser la verdad de la gaveta, y si los libros decian otra cosa se asienta la
+    diferencia ahi mismo -- si no, el cierre de esta noche reportaria como
+    faltante del turno algo que ya faltaba en la manana.
+
+    A DONDE VA ESA DIFERENCIA. La primera vez que se abre una gaveta va contra
+    el capital del dueno (3010): esa plata no la genero el negocio vendiendo,
+    ya era suya y estaba ahi antes de que existiera el sistema. Meterla como
+    ingreso inflaria la ganancia y pagaria impuesto sobre algo que nunca se
+    vendio. De ahi en adelante es un descuadre como el de cualquier arqueo y
+    va a faltantes y sobrantes (6030), igual que el del cierre.
+    """
+    dia = _fecha_pedida(body.fecha)
+    inicio, fin = _rango_de(dia)
+    quien = operadores.del_turno(db, request, body.operador_id)
+
+    estado = estado_de_apertura(dia, db)
+    if not estado.puede_abrir:
+        raise HTTPException(status_code=409, detail=estado.motivo)
+
+    pedidos = {
+        f.metodo: round(f.fondo, 2)
+        for f in body.fondos
+        if f.metodo in GAVETAS_DE_APERTURA
+    }
+    if not pedidos:
         raise HTTPException(
-            status_code=409,
-            detail=(
-                f"El saldo inicial de {etiquetas[codigo]} ya se declaró. "
-                "Si quedó mal, borra ese asiento en Contabilidad y vuelve a declararlo."
-            ),
+            status_code=400,
+            detail="Falta el fondo: hay que contar al menos una gaveta para abrir.",
+        )
+    if any(v < 0 for v in pedidos.values()):
+        raise HTTPException(status_code=400, detail="El fondo no puede ser negativo")
+
+    momento = ahora() if dia == hoy() else inicio + datetime.timedelta(hours=8)
+    resultado = []
+    for metodo in GAVETAS_DE_APERTURA:
+        if metodo not in pedidos:
+            continue
+        codigo = _cuentas_de(metodo)
+        fondo = pedidos[metodo]
+        libros = round(_saldo_anterior_de(db, codigo, inicio), 2)
+        diferencia = round(fondo - libros, 2)
+        # ANTES de agregar la fila: la consulta hace autoflush y se
+        # encontraria a si misma, y entonces ninguna apertura seria nunca la
+        # primera.
+        primera_vez = (
+            db.query(models.AperturaCaja)
+            .filter(models.AperturaCaja.metodo == metodo)
+            .first()
+            is None
         )
 
-    nota = (body.nota or "").strip()
-    descripcion = f"Apertura: efectivo inicial en {etiquetas[codigo]}"
-    if nota:
-        descripcion += f" ({nota})"
-    # Contra el capital del dueño: esa plata no la genero el negocio vendiendo,
-    # ya era suya. Meterla como ingreso inflaria la ganancia y pagaria impuesto
-    # sobre algo que nunca se vendio.
-    contabilidad.crear_asiento(
-        db,
-        descripcion,
-        [(codigo, round(body.monto, 2), 0.0), ("3010", 0.0, round(body.monto, 2))],
-        origen="apertura_caja",
-        referencia_id=int(codigo),
-    )
-    db.commit()
-    return schemas.AperturaCaja(
-        cuenta=codigo,
-        etiqueta=etiquetas[codigo],
-        monto=round(body.monto, 2),
-        saldo=round(contabilidad.saldo_de_cuenta(db, codigo), 2),
-    )
-
-
-@router.get("/apertura", response_model=List[schemas.DestinoApertura])
-def estado_apertura(db: Session = Depends(get_db)):
-    """Que gavetas ya declararon con cuanto arrancaron, y cuales hacen falta.
-
-    `urge` marca las que estan en negativo: ahi la falta de declaracion ya
-    esta ensuciando los libros y el proximo cierre va a mentir.
-    """
-    declaradas = {
-        a.referencia_id
-        for a in db.query(models.AsientoContable).filter_by(origen="apertura_caja").all()
-    }
-    filas = []
-    for codigo, etiqueta, _fisico in DESTINOS_ARQUEO:
-        saldo = round(contabilidad.saldo_de_cuenta(db, codigo), 2)
-        filas.append(
-            schemas.DestinoApertura(
+        db.add(
+            models.AperturaCaja(
+                fecha=momento,
+                dia=dia,
+                metodo=metodo,
                 cuenta=codigo,
-                etiqueta=etiqueta,
-                declarada=int(codigo) in declaradas,
-                saldo=saldo,
-                urge=saldo < -0.01 and int(codigo) not in declaradas,
+                fondo=fondo,
+                segun_libros=libros,
+                diferencia=diferencia,
+                nota=body.nota or "",
+                operador_id=quien.id if quien else None,
             )
         )
-    return filas
+
+        if abs(diferencia) >= 0.01:
+            contrapartida = "3010" if primera_vez else "6030"
+            if diferencia > 0:
+                lineas = [(codigo, diferencia, 0.0), (contrapartida, 0.0, diferencia)]
+                texto = (
+                    f"Apertura: {metodo} ya tenía {diferencia:.2f} sin declarar"
+                    if primera_vez
+                    else f"Sobrante de {metodo} al abrir"
+                )
+            else:
+                falta = abs(diferencia)
+                lineas = [(contrapartida, falta, 0.0), (codigo, 0.0, falta)]
+                texto = (
+                    f"Apertura: {metodo} tenía {falta:.2f} menos de lo declarado"
+                    if primera_vez
+                    else f"Faltante de {metodo} al abrir"
+                )
+            contabilidad.crear_asiento(
+                db,
+                f"{texto} ({dia.strftime('%d/%m')})",
+                lineas,
+                origen=ORIGEN_APERTURA,
+                referencia_id=int(codigo),
+                fecha=momento,
+            )
+
+        resultado.append(
+            schemas.FondoApertura(
+                metodo=metodo,
+                cuenta=codigo,
+                fondo=fondo,
+                segun_libros=libros,
+                diferencia=diferencia,
+            )
+        )
+
+    db.commit()
+    return schemas.EstadoApertura(
+        fecha=dia.isoformat(),
+        abierta=True,
+        puede_abrir=False,
+        motivo="La caja de este día ya se abrió.",
+        momento=momento.isoformat(),
+        operador=quien.nombre if quien else "",
+        nota=body.nota or "",
+        fondos=resultado,
+    )
 
 
 @router.post("/cerrar", response_model=schemas.CierreCaja)

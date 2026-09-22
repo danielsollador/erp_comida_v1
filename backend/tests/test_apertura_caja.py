@@ -1,108 +1,150 @@
-"""Con cuanta plata arranca el negocio en cada gaveta.
+"""Abrir la caja: contar el fondo antes de vender.
 
-POR QUE EXISTE. Los libros empiezan en cero pero el local no: el dia que se
-estrena el sistema ya hay billetes en la gaveta. Mientras nadie lo declare, la
-primera compra pagada en efectivo saca plata de una cuenta vacia y la deja en
-negativo -- que es exactamente lo que le paso a Savora (1010 en -6,66 despues
-de pagarle a dos proveedores en efectivo antes de la primera venta).
+POR QUE IMPORTA. Sin apertura, lo que se espera al cerrar sale del saldo
+contable, y ese saldo arrastra cualquier error viejo: una compra pagada en
+efectivo antes de que existiera el sistema deja la gaveta en negativo y el
+arqueo de esta noche reporta un faltante que nadie se robo. Contar al abrir
+convierte el cierre en la resta de un solo dia.
 
-No es cosmetico: el cierre calcula lo que deberia haber como
-`saldo anterior + entradas - salidas`. Con el saldo anterior corrido, el
-primer arqueo reporta un sobrante que no existe y lo asienta como ingreso.
+Estas pruebas fijan las cuatro cosas de las que depende eso:
+
+  1. El fondo contado manda sobre lo que digan los libros.
+  2. La diferencia se asienta, y la primera vez va al capital del dueno --no a
+     perdidas-- porque esa plata ya era suya.
+  3. La fila del desglose SUMA A LA VISTA: fondo + entro - salio = esperado.
+  4. No se abre dos veces, ni despues de cerrar.
 """
 
-from app import contabilidad
+from conftest import caja_cerrar, caja_esperado
 
 
-def saldo(db, codigo):
-    return round(contabilidad.saldo_de_cuenta(db, codigo), 2)
-
-
-def test_declarar_el_efectivo_inicial_sube_la_gaveta(client, db):
-    assert saldo(db, "1010") == 0
-
-    r = client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": 50.0})
+def vender(client, variante, metodo="Efectivo Bs", cantidad=1):
+    p = client.post(
+        "/api/pedidos",
+        json={"items": [{"variante_id": variante.id, "cantidad": cantidad}], "nota": ""},
+    ).json()
+    referencia = "" if metodo.startswith("Efectivo") else "REF-000"
+    r = client.post(
+        f"/api/pedidos/{p['id']}/cobrar",
+        json={"metodo_pago": metodo, "referencia": referencia},
+    )
     assert r.status_code == 200, r.text
-    assert r.json()["saldo"] == 50.0
-    assert saldo(db, "1010") == 50.0
+    return p
 
 
-def test_va_contra_el_capital_y_no_contra_ingresos(client, db):
-    """Esa plata no la genero el negocio vendiendo: ya era del dueño. Meterla
-    como ingreso inflaria la ganancia y pagaria impuesto sobre algo que nunca
-    se vendio."""
-    client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": 50.0})
-    assert saldo(db, "3010") == 50.0
-    assert saldo(db, "4010") == 0
+def abrir(client, bolivares=None, divisas=None, **extra):
+    fondos = []
+    if bolivares is not None:
+        fondos.append({"metodo": "Efectivo Bs", "cuenta": "1010", "fondo": bolivares})
+    if divisas is not None:
+        fondos.append({"metodo": "Efectivo $", "cuenta": "1011", "fondo": divisas})
+    return client.post("/api/caja/abrir", json={"fondos": fondos, **extra})
 
 
-def test_rescata_una_gaveta_que_quedo_en_negativo(client, db, variante):
-    """El caso real: se le paga a un proveedor en efectivo antes de vender."""
+def linea(client, metodo="Efectivo Bs"):
+    d = client.get("/api/caja/resumen").json()
+    return next(l for l in d["desglose"] if l["metodo"] == metodo)
+
+
+def test_la_caja_arranca_cerrada(client):
+    e = client.get("/api/caja/estado-apertura").json()
+    assert e["abierta"] is False
+    assert e["puede_abrir"] is True
+    # Trae las gavetas a contar, en cero: el formulario NO viene rellenado con
+    # lo que dicen los libros. Rellenarlo volveria el conteo un tramite de
+    # darle a aceptar, que es justo lo que la apertura intenta evitar.
+    assert [f["metodo"] for f in e["fondos"]] == ["Efectivo Bs", "Efectivo $"]
+    assert all(f["fondo"] == 0 for f in e["fondos"])
+
+
+def test_el_fondo_contado_manda_sobre_los_libros(client, variante):
+    """La gaveta tiene 50 aunque los libros digan cero: gana lo que hay."""
+    r = abrir(client, bolivares=50)
+    assert r.status_code == 200, r.text
+    assert r.json()["abierta"] is True
+
+    l = linea(client)
+    assert l["fondo"] == 50
+    assert l["fondo_declarado"] is True
+    assert caja_esperado(client) == 50
+
+
+def test_la_primera_apertura_va_al_capital_no_a_perdidas(client):
+    """Esa plata ya era del dueno: meterla como ingreso inflaria la ganancia y
+    pagaria impuesto sobre algo que nunca se vendio."""
+    abrir(client, bolivares=50)
+    asientos = client.get("/api/contabilidad/asientos").json()
+    apertura = [a for a in asientos if a["origen"] == "apertura_dia"]
+    assert len(apertura) == 1
+    cuentas = {m["cuenta_codigo"]: m for m in apertura[0]["movimientos"]}
+    assert cuentas["1010"]["debe"] == 50
+    assert cuentas["3010"]["haber"] == 50
+
+
+def test_la_fila_suma_a_la_vista(client, variante):
+    """fondo + entro - salio = esperado. Es el contrato del desglose: un total
+    que no sale de las columnas de al lado obliga a creer en vez de verificar.
+    """
+    abrir(client, bolivares=20)
+    vender(client, variante, "Efectivo Bs")
     client.post(
         "/api/caja/gastos",
-        json={"descripcion": "Bombona", "categoria": "Servicios", "monto": 10.0, "metodo_pago": "Efectivo Bs"},
+        json={"descripcion": "Bombona", "monto": 3, "categoria": "Otros",
+              "metodo_pago": "Efectivo Bs"},
     )
-    assert saldo(db, "1010") == -10.0
 
-    estado = client.get("/api/caja/apertura").json()
-    bolivares = next(d for d in estado if d["cuenta"] == "1010")
-    assert bolivares["urge"] is True
-    assert bolivares["declarada"] is False
-
-    client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": 80.0})
-    assert saldo(db, "1010") == 70.0
-
-    estado = client.get("/api/caja/apertura").json()
-    bolivares = next(d for d in estado if d["cuenta"] == "1010")
-    assert bolivares["declarada"] is True
-    assert bolivares["urge"] is False
+    l = linea(client)
+    assert l["fondo"] == 20
+    assert round(l["fondo"] + l["ventas"] - l["salidas"] + l["otros"], 2) == l["esperado"]
+    assert l["salidas"] == 3
 
 
-def test_el_cierre_deja_de_reportar_un_sobrante_que_no_existe(client, db):
-    """La consecuencia que de verdad importa."""
-    client.post(
-        "/api/caja/gastos",
-        json={"descripcion": "Bombona", "categoria": "Servicios", "monto": 10.0, "metodo_pago": "Efectivo Bs"},
-    )
-    # Sin declarar: el sistema cree que deberia haber -10, asi que contar los
-    # 70 reales que hay en la gaveta da un "sobrante" de 80.
-    def esperado_efectivo():
-        d = client.get("/api/caja/resumen").json()
-        return next(l for l in d["desglose"] if l["metodo"] == "Efectivo Bs")["esperado"]
-
-    assert esperado_efectivo() == -10.0
-
-    client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": 80.0})
-
-    assert esperado_efectivo() == 70.0
-
-    r = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo Bs", "contado": 70.0}]})
-    assert r.status_code == 200, r.text
-    assert r.json()["diferencia"] == 0.0
+def test_abrir_no_descuadra_las_ventas(client, variante):
+    """El fondo NO es una venta. Si se colara en `cobrado`, el sistema diria
+    que se vendio de mas y el cuadre contra ventas quedaria roto para siempre.
+    """
+    abrir(client, bolivares=40)
+    vender(client, variante, "Efectivo Bs")
+    d = client.get("/api/caja/resumen").json()
+    assert d["cuadra_ventas"] is True
+    assert d["cobrado"] == d["a_cobrar"]
 
 
-def test_no_se_declara_dos_veces(client, db):
-    """Declararlo dos veces duplicaria el capital."""
-    client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": 50.0})
-    r = client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": 50.0})
+def test_no_se_abre_dos_veces_el_mismo_dia(client):
+    assert abrir(client, bolivares=10).status_code == 200
+    r = abrir(client, bolivares=99)
     assert r.status_code == 409
-    assert saldo(db, "1010") == 50.0
+    assert "ya se abrió" in r.json()["detail"]
+    # Y el segundo intento no dejo rastro: el fondo sigue siendo el primero.
+    assert linea(client)["fondo"] == 10
 
 
-def test_cada_gaveta_se_declara_aparte(client, db):
-    client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": 50.0})
-    r = client.post("/api/caja/apertura", json={"cuenta": "1011", "monto": 20.0})
+def test_no_se_abre_una_caja_ya_cerrada(client, variante):
+    """El cierre congelo lo esperado y asento la diferencia. Cambiarle el punto
+    de partida despues dejaria ese cierre apuntando a un numero que ya no
+    existe."""
+    vender(client, variante, "Efectivo Bs")
+    assert caja_cerrar(client, efectivo=caja_esperado(client)).status_code == 200
+    r = abrir(client, bolivares=10)
+    assert r.status_code == 409
+    assert "ya se cerró" in r.json()["detail"]
+
+
+def test_abrir_sin_contar_nada_no_abre(client):
+    r = client.post("/api/caja/abrir", json={"fondos": []})
+    assert r.status_code == 400
+    assert "al menos una gaveta" in r.json()["detail"]
+
+
+def test_el_fondo_no_puede_ser_negativo(client):
+    assert abrir(client, bolivares=-5).status_code == 400
+
+
+def test_cerrar_cuenta_desde_el_fondo_contado(client, variante):
+    """Todo junto: se abre con 20, se vende 1, se cuenta lo que hay y cuadra."""
+    abrir(client, bolivares=20)
+    vender(client, variante, "Efectivo Bs")
+    esperado = caja_esperado(client)
+    r = caja_cerrar(client, efectivo=esperado)
     assert r.status_code == 200, r.text
-    assert saldo(db, "1010") == 50.0
-    assert saldo(db, "1011") == 20.0
-
-
-def test_una_cuenta_que_no_se_arquea_no_se_declara(client):
-    """El fiado (1015) no es una gaveta: ahi no hay billetes que contar."""
-    r = client.post("/api/caja/apertura", json={"cuenta": "1015", "monto": 10.0})
-    assert r.status_code == 400
-
-
-def test_un_monto_negativo_no_se_acepta(client):
-    r = client.post("/api/caja/apertura", json={"cuenta": "1010", "monto": -5.0})
-    assert r.status_code == 400
+    assert r.json()["diferencia"] == 0

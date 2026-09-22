@@ -24,7 +24,7 @@ import type {
   InflacionInsumos,
   EstadoTasa,
   CierreCaja,
-  DestinoApertura,
+  EstadoApertura,
   Configuracion,
   ConfiguracionFiscal,
   CuentaContable,
@@ -647,12 +647,32 @@ export const api = {
         nota: opciones.nota ?? '',
       }),
     }),
-  /** Que gavetas ya dijeron con cuanto arrancaron, y cuales hacen falta. */
-  estadoApertura: () => req<DestinoApertura[]>('/caja/apertura'),
-  declararApertura: (cuenta: string, monto: number, nota = '') =>
-    req('/caja/apertura', {
+  /**
+   * Si la caja de ese dia ya se abrio, y con cuanto arranco cada gaveta.
+   *
+   * Es lo que el punto de venta consulta al cargar para decidir si muestra el
+   * boton de "Abrir caja".
+   */
+  estadoDeApertura: (fecha?: string) =>
+    req<EstadoApertura>('/caja/estado-apertura' + (fecha ? `?fecha=${fecha}` : '')),
+  /**
+   * Abrir la caja del dia contando el fondo de cada gaveta.
+   *
+   * Lo contado pasa a ser la verdad de la gaveta: si los libros decian otra
+   * cosa, la diferencia se asienta ahi mismo en vez de aparecer esta noche
+   * como un faltante del turno.
+   */
+  abrirCaja: (
+    fondos: { metodo: string; cuenta: string; fondo: number }[],
+    opciones: { fecha?: string; nota?: string } = {},
+  ) =>
+    req<EstadoApertura>('/caja/abrir', {
       method: 'POST',
-      body: JSON.stringify({ cuenta, monto, nota }),
+      body: JSON.stringify({
+        fondos,
+        fecha: opciones.fecha ?? null,
+        nota: opciones.nota ?? '',
+      }),
     }),
   listarCierres: (r?: Rango) => req<CierreCaja[]>(`/caja/cierres${conRango(r)}`),
   listarRetiros: (r?: Rango) => req<RetiroPropietario[]>(`/caja/retiros${conRango(r)}`),

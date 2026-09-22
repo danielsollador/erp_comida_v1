@@ -503,14 +503,6 @@ export type LineaCierre = {
  * compra pagada en efectivo deja la cuenta en negativo y el primer cierre
  * reporta un sobrante que no existe.
  */
-export type DestinoApertura = {
-  cuenta: string
-  etiqueta: string
-  declarada: boolean
-  saldo: number
-  /** En negativo y sin declarar: ya esta ensuciando los libros. */
-  urge: boolean
-}
 
 export type CuentaPorCobrar = {
   pedido_id: number
@@ -729,6 +721,14 @@ export type LineaMetodo = {
   /** El crédito se muestra pero no se cuenta: no entró plata. */
   se_cuadra: boolean
   saldo_anterior: number
+  /**
+   * Con cuánto arrancó la gaveta este día: lo contado al abrir, o lo que
+   * quedó de ayer si nadie abrió. La fila suma a la vista con esto:
+   * fondo + ventas + otras entradas − salidas = esperado.
+   */
+  fondo: number
+  /** true = lo contó una persona al abrir, no es solo el arrastre contable. */
+  fondo_declarado: boolean
   ventas: number
   salidas: number
   /** Lo que movió la cuenta sin ser venta, gasto ni retiro. */
@@ -768,6 +768,8 @@ export type ResumenCaja = {
   propinas_por_entregar: number
   cerrada: boolean
   cierre_id: number | null
+  /** Si la caja de ese día se abrió contando el fondo. */
+  abierta: boolean
 }
 
 export type RetiroPropietario = {
@@ -1288,4 +1290,32 @@ export type ExtractoInsumo = {
   total_entradas: number
   total_salidas: number
   movimientos: MovimientoInventario[]
+}
+
+/** Una gaveta al abrir: lo que se contó y lo que los libros creían. */
+export type FondoApertura = {
+  metodo: string
+  cuenta: string
+  fondo: number
+  segun_libros: number
+  diferencia: number
+}
+
+/**
+ * Si la caja de un día ya se abrió, y con cuánto.
+ *
+ * `puede_abrir` viene del servidor y no se deduce en la pantalla: las razones
+ * por las que no se puede (ya está abierta, ya se cerró, todavía no es ese
+ * día) son reglas del negocio, y duplicarlas aquí es como se terminan
+ * contradiciendo.
+ */
+export type EstadoApertura = {
+  fecha: string
+  abierta: boolean
+  puede_abrir: boolean
+  motivo: string
+  momento: string | null
+  operador: string
+  nota: string
+  fondos: FondoApertura[]
 }

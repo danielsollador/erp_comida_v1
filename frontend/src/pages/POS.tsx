@@ -5,6 +5,7 @@ import Icono from '../components/Icono'
 import { useDialogo } from '../components/dialogo'
 import { Boton, Modal } from '../components/ui'
 import { Numerico } from '../components/Teclado'
+import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
 import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
@@ -40,6 +41,15 @@ export default function POS() {
   // o tres veces por duda. El numero en la esquina y el salto son la
   // confirmacion inmediata de que si se agrego.
   const [recienAgregado, setRecienAgregado] = useState<Set<number>>(new Set())
+  // Abrir la caja es lo primero del turno y lo hace quien atiende, no quien
+  // administra. Por eso el botón vive aquí y no solo en Cierre de caja: en el
+  // otro módulo simplemente no se haría.
+  const { estado: apertura, recargar: recargarApertura } = useApertura()
+  const [abriendoCaja, setAbriendoCaja] = useState(false)
+  // Se enciende al intentar comandar sin nombre y se apaga al escribir: el
+  // campo en rojo dice DÓNDE está el problema, que un mensaje al pie solo no
+  // consigue cuando la pantalla es larga.
+  const [faltaNombre, setFaltaNombre] = useState(false)
   // Delivery personalizado: cada envio cobra distinto segun la distancia, asi
   // que no encaja como producto de precio fijo (Delivery corto/largo). Va
   // aparte del carrito de variantes porque usa la "venta libre" del backend
@@ -255,9 +265,21 @@ export default function POS() {
       })),
     ]
     if (items.length === 0) return
+
+    // Sin nombre no se comanda. Un pedido anónimo no se nota al escribirlo:
+    // se nota media hora después, cuando hay cuatro comandas sin dueño y la
+    // comida se entrega preguntando en voz alta. Y si esa venta termina
+    // fiada, ya no hay a quién cobrarle.
+    const nombre = clienteComanda.trim()
+    if (!nombre) {
+      setFaltaNombre(true)
+      setError('Sin nombre no se puede comandar: escribe a nombre de quién va el pedido.')
+      return
+    }
+    setFaltaNombre(false)
+
     if (!claveComanda.current) claveComanda.current = crypto.randomUUID()
     const clave = claveComanda.current
-    const nombre = clienteComanda.trim()
     try {
       await api.crearPedido(items, false, '', clave, nombre)
       setCarrito({})
@@ -511,6 +533,26 @@ export default function POS() {
   return (
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Punto de venta" />
+
+      {/* NO bloquea la venta. Un local no deja de cobrar porque falte un
+          formulario, y un sistema que se pone en el medio se termina
+          saltando. Lo que hace es estar donde no se puede no verlo, y decir
+          qué se pierde: sin fondo contado, el cierre de esta noche parte del
+          saldo contable en vez de un conteo de esta mañana. */}
+      {apertura && !apertura.abierta && apertura.puede_abrir && (
+        <div className="bg-aviso-50 border-b border-aviso-300 px-4 py-2.5 flex items-center justify-between gap-3">
+          <p className="text-sm text-aviso-900 min-w-0">
+            <span className="font-semibold">La caja no se ha abierto.</span>{' '}
+            <span className="text-aviso-800">Cuenta el fondo con el que arrancas.</span>
+          </p>
+          <button
+            onClick={() => setAbriendoCaja(true)}
+            className="shrink-0 rounded-xl bg-neutral-900 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Abrir caja
+          </button>
+        </div>
+      )}
 
       {categorias.length > 0 && (
         <div className="sticky top-[57px] z-10 bg-neutral-50/95 backdrop-blur border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto">
@@ -846,17 +888,26 @@ export default function POS() {
                 mostrador. El nombre viaja al pedido y sale al lado del numero
                 aqui, en cocina y en el ticket.
 
-                Opcional a proposito: en un mostrador con cola, obligar a
-                escribir un nombre por cada refresco seria un freno. Lo unico
-                que SI lo exige es fiar, y por eso se pide aqui -- antes solo
-                aparecia en el cobro y el boton de credito se veia trancado
-                sin decir por que. */}
+                OBLIGATORIO. Era opcional para no frenar la cola, pero la cola
+                se frena mucho mas al entregar: cuatro comandas sin dueno se
+                reparten preguntando en voz alta. Y si una termina fiada, ya
+                no hay a quien cobrarle. */}
             <input
               value={clienteComanda}
-              onChange={(e) => setClienteComanda(e.target.value)}
-              placeholder="¿A nombre de quién? (opcional)"
-              className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-sm mb-3"
+              onChange={(e) => {
+                setClienteComanda(e.target.value)
+                if (faltaNombre) setFaltaNombre(false)
+              }}
+              placeholder="¿A nombre de quién?"
+              className={`w-full border rounded-xl px-3 py-2.5 text-sm ${
+                faltaNombre ? 'border-peligro-400 bg-peligro-50 mb-1' : 'border-neutral-300 mb-3'
+              }`}
             />
+            {faltaNombre && (
+              <p className="text-xs text-peligro-600 mb-3">
+                Sin nombre no se puede comandar.
+              </p>
+            )}
             <div className="flex justify-between items-baseline font-bold text-xl mb-3">
               <span className="text-sm font-medium text-neutral-500">Total</span>
               <span>{fmt(totalCarrito)}</span>
@@ -1129,6 +1180,17 @@ export default function POS() {
           )}
         </Modal>
       )}
+      {abriendoCaja && apertura && (
+        <AbrirCaja
+          estado={apertura}
+          alCerrar={() => setAbriendoCaja(false)}
+          alAbrir={() => {
+            setAbriendoCaja(false)
+            recargarApertura()
+          }}
+        />
+      )}
+
     </div>
   )
 }

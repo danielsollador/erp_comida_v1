@@ -904,31 +904,6 @@ class CierreCajaRequest(BaseModel):
     operador_id: Optional[int] = None
 
 
-class AperturaCajaRequest(BaseModel):
-    """Con cuanta plata arranco una gaveta el dia que se estreno el sistema."""
-
-    cuenta: str
-    monto: float
-    nota: str = ""
-
-
-class AperturaCaja(BaseModel):
-    cuenta: str
-    etiqueta: str
-    monto: float
-    saldo: float
-
-
-class DestinoApertura(BaseModel):
-    cuenta: str
-    etiqueta: str
-    declarada: bool
-    saldo: float
-    # En negativo y sin declarar: los libros ya estan sucios y el proximo
-    # cierre va a reportar un sobrante que no existe.
-    urge: bool
-
-
 class PropinasPendientes(BaseModel):
     por_entregar: float
 
@@ -962,10 +937,19 @@ class LineaMetodo(BaseModel):
     se_cuadra: bool
     # Solo el efectivo arrastra saldo de ayer.
     saldo_anterior: float = 0
+    # Con cuanto arranco la gaveta este dia. Cuando la caja se abrio con el
+    # boton, es lo que el cajero conto; si no, lo que quedo de ayer. Se
+    # expone aparte de `saldo_anterior` para que la fila cuadre a la vista:
+    # fondo + ventas + otras entradas - salidas = esperado.
+    fondo: float = 0
+    # True cuando ese fondo lo declaro una persona al abrir la caja, y no es
+    # solo el arrastre contable. Cambia lo que la fila puede prometer.
+    fondo_declarado: bool = False
     ventas: float = 0
     salidas: float = 0
     # Lo que movio la cuenta sin ser venta, gasto ni retiro: pagarle a un
-    # proveedor, declarar el saldo inicial, cobrar un fiado.
+    # proveedor, cobrar un fiado. El ajuste de la apertura NO entra aqui: ese
+    # ya esta dentro de `fondo`, y contarlo dos veces descuadraria la fila.
     otros: float = 0
     esperado: float = 0
 
@@ -1016,6 +1000,45 @@ class ResumenCaja(BaseModel):
 
     cerrada: bool = False
     cierre_id: Optional[int] = None
+    # Si la caja de ese dia ya se abrio contando el fondo. Sin apertura el
+    # cierre sigue funcionando, pero parte del saldo contable en vez de un
+    # conteo, y arrastra los errores viejos.
+    abierta: bool = False
+
+
+class FondoApertura(BaseModel):
+    """Una gaveta al abrir: lo que se conto y lo que los libros creian."""
+
+    metodo: str
+    cuenta: str
+    fondo: float
+    segun_libros: float = 0
+    diferencia: float = 0
+
+
+class AbrirCajaRequest(BaseModel):
+    fondos: List[FondoApertura]
+    fecha: Optional[datetime.date] = None
+    nota: str = ""
+    operador_id: Optional[int] = None
+
+
+class EstadoApertura(BaseModel):
+    """Si la caja de ese dia ya se abrio, y con cuanto.
+
+    `puede_abrir` existe para que la pantalla no tenga que deducirlo: una caja
+    ya cerrada no se vuelve a abrir, y un dia futuro no se abre por
+    adelantado.
+    """
+
+    fecha: str
+    abierta: bool = False
+    puede_abrir: bool = True
+    motivo: str = ""
+    momento: Optional[str] = None
+    operador: str = ""
+    nota: str = ""
+    fondos: List[FondoApertura] = []
 
 
 class PuntoSerie(BaseModel):
