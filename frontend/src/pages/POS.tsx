@@ -48,35 +48,23 @@ function monto(v: string): number {
   return Number(String(v).replace(',', '.')) || 0
 }
 const CLAVE_PUNTO = 'erp-punto-venta'
-// Como se eligen los productos: 'lista' (un desplegable) o 'fichas'.
-const CLAVE_VISTA = 'erp-pos-vista'
 
 type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
 type Carrito = Record<number, CarritoEntry>
 
 export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [categoriaActiva, setCategoriaActiva] = useState<number | null>(null)
-  // Los productos como lista desplegable y no como cuadricula de fichas
-  // (Leider, 22-sep: "los productos tienen que ser una lista desplegable").
-  // Un <select> nativo son dos nodos en pantalla en vez de cuarenta fichas
-  // con sombra y borde, y en la tablet eso se siente. Las fichas se pueden
-  // volver a poner desde el boton de al lado; se recuerda en este aparato.
-  const [vista, setVista] = useState<'lista' | 'fichas'>(() => {
-    try {
-      return localStorage.getItem(CLAVE_VISTA) === 'fichas' ? 'fichas' : 'lista'
-    } catch {
-      return 'lista'
-    }
-  })
-  function cambiarVista(v: 'lista' | 'fichas') {
-    setVista(v)
-    try {
-      localStorage.setItem(CLAVE_VISTA, v)
-    } catch {
-      // sin almacenamiento: solo dura esta sesion
-    }
-  }
+  // Que categoria se ve en la lista: una, o todas con su seccion cada una.
+  // Arranca en "todas": la cajera ve el menu entero de una pasada y las
+  // secciones le dicen donde esta cada cosa (Leider, 22-sep: "haz mas facil
+  // ver todas las categorias").
+  const [categoriaActiva, setCategoriaActiva] = useState<number | 'todas'>('todas')
+  // La lista de productos es UNA lista, siempre: renglones agrupados por
+  // categoria, que se quedan a la vista mientras se tocan varios. Antes eran
+  // fichas grandes (decenas de nodos con sombra y borde) y luego un <select>
+  // que se cerraba en cada eleccion: dos toques por producto. Se pliega con
+  // el encabezado cuando lo que hace falta es ver las comandas.
+  const [listaAbierta, setListaAbierta] = useState(true)
   // Pantalla que vive horas abierta en la tablet: sin desenfoques ni
   // animaciones (lib/ligero).
   useModoLigero()
@@ -193,9 +181,7 @@ export default function POS() {
     // Solo lo que esta en el menu hoy: una categoria retirada conserva sus
     // ventas historicas pero no se debe poder seguir vendiendo.
     api.listarCategorias().then((todas) => {
-      const cats = todas.filter((c) => c.activo)
-      setCategorias(cats)
-      if (cats.length > 0) setCategoriaActiva(cats[0].id)
+      setCategorias(todas.filter((c) => c.activo))
     })
     refrescarPedidos()
     api.listarPuntosVenta().then(setPuntos).catch(() => {})
@@ -315,11 +301,10 @@ export default function POS() {
       })),
     [categorias],
   )
-  const varianteVendible = useMemo(() => {
-    const m = new Map<number, { producto: Producto; variante: Variante }>()
-    for (const g of vendibles) for (const f of g.filas) m.set(f.variante.id, f)
-    return m
-  }, [vendibles])
+  const unidadesEnCarrito = useMemo(
+    () => Object.values(carrito).reduce((n, c) => n + c.cantidad, 0),
+    [carrito],
+  )
 
   const totalCarrito = useMemo(
     () =>
@@ -718,7 +703,6 @@ export default function POS() {
     refrescarPedidos()
   }
 
-  const categoria = categorias.find((c) => c.id === categoriaActiva)
 
   // Lo que espera a que lo cobren va primero: es lo unico de esta pantalla que
   // le toca hacer a quien esta en la caja. Lo que sigue en cocina va debajo,
@@ -767,136 +751,133 @@ export default function POS() {
         </div>
       )}
 
-      {categorias.length > 0 && vista === 'fichas' && (
-        <div className="sticky top-[57px] md:static z-10 bg-neutral-50 border-b border-neutral-200 px-4 py-2 flex gap-2 overflow-x-auto shrink-0">
-          {categorias.map((cat) => {
-            const color = colorCategoria(cat.id, cat.color)
-            const activa = cat.id === categoriaActiva
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setCategoriaActiva(cat.id)}
-                className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold border transition ${
-                  activa
-                    ? `${color.bg} ${color.border} ${color.text}`
-                    : 'bg-white border-neutral-200 text-neutral-500'
-                }`}
-              >
-                {cat.nombre}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
       {/* md (768px) y no lg: una tablet en vertical ya muestra el carrito al
           lado, sin obligar al cajero a bajar para ver el total y cobrar. */}
       <div className="grid grid-cols-1 md:grid-cols-[1fr_330px] lg:grid-cols-[1fr_380px] md:flex-1 md:min-h-0">
         <div className="p-4 overflow-y-auto md:h-full">
-          {/* Mas fichas por fila y mas bajas. Con cuatro por fila en una
-              laptop, once bebidas ocupaban media pantalla y las comandas
-              quedaban debajo del pliegue. */}
-          {vista === 'lista' && categorias.length > 0 && (
-            <div className="mb-6">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <label htmlFor="pos-producto" className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                  Agregar a la comanda
-                </label>
-                <button
-                  type="button"
-                  onClick={() => cambiarVista('fichas')}
-                  className="text-xs font-medium text-neutral-500 hover:text-neutral-900 underline underline-offset-2"
-                >
-                  Ver como fichas
-                </button>
-              </div>
-              {/* `value=""` a proposito: cada eleccion agrega una unidad y el
-                  desplegable vuelve a "Elige un producto", listo para la
-                  siguiente. Las cantidades se ven y se ajustan en la comanda
-                  de la derecha. Letra de 16 px para que iOS no haga zoom. */}
-              <select
-                id="pos-producto"
-                value=""
-                onChange={(e) => {
-                  const fila = varianteVendible.get(Number(e.target.value))
-                  if (fila) agregar(fila.producto, fila.variante)
-                }}
-                className="w-full rounded-2xl border-2 border-neutral-300 bg-white px-4 py-3.5 text-base font-semibold text-neutral-900 focus:border-acento-500 focus:outline-none"
-              >
-                <option value="">Elige un producto…</option>
-                {vendibles
-                  .filter((g) => g.filas.length > 0)
-                  .map((g) => (
-                    <optgroup key={g.categoria.id} label={g.categoria.nombre}>
-                      {g.filas.map(({ producto: p, variante: v }) => {
-                        const enCarrito = carrito[v.id]?.cantidad ?? 0
-                        return (
-                          <option key={v.id} value={v.id}>
-                            {etiquetaVariante(p, v)} · {fmt(v.precio)}
-                            {enCarrito > 0 ? ` (${enCarrito} en la comanda)` : ''}
-                          </option>
-                        )
-                      })}
-                    </optgroup>
-                  ))}
-              </select>
-            </div>
-          )}
-
-          {vista === 'fichas' && (
-            <div className="flex justify-end mb-2 -mt-1">
+          {categorias.length > 0 && (
+            <section className="mb-5 rounded-2xl border border-neutral-200 bg-white overflow-hidden">
               <button
                 type="button"
-                onClick={() => cambiarVista('lista')}
-                className="text-xs font-medium text-neutral-500 hover:text-neutral-900 underline underline-offset-2"
+                onClick={() => setListaAbierta((v) => !v)}
+                aria-expanded={listaAbierta}
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left"
               >
-                Ver como lista
+                <span className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                  Productos
+                  {unidadesEnCarrito > 0 && (
+                    <span className="ml-2 normal-case tracking-normal text-neutral-400 font-medium">
+                      · {unidadesEnCarrito} en la comanda
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs font-medium text-neutral-500">
+                  {listaAbierta ? 'Plegar ▴' : 'Desplegar ▾'}
+                </span>
               </button>
-            </div>
-          )}
 
-          {vista === 'fichas' && categoria && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 mb-6">
-              {categoria.productos
-                .filter((p) => p.activo)
-                .flatMap((p) => {
-                  // Sin la subseccion inicial que nadie estreno: mostrarla
-                  // ponia un "Pastelito" a $0 al lado de "Pastelito - Pollo".
-                  // Ver lib/menu.ts: la regla mira el nombre Y el precio,
-                  // porque un "Cafe Regular $1,00" de verdad tiene que
-                  // seguir vendiendose.
-                  return variantesParaVender(p).map((v) => {
-                      const color = colorCategoria(categoria.id, categoria.color)
-                      const enCarrito = carrito[v.id]?.cantidad ?? 0
-                      const pulsando = recienAgregado.has(v.id)
+              {listaAbierta && (
+                <>
+                  {/* Las categorias, siempre a la vista: "Todas" pone el
+                      menu entero con una seccion por categoria. */}
+                  <div className="flex gap-2 overflow-x-auto px-4 pb-3 border-b border-neutral-100">
+                    <button
+                      type="button"
+                      onClick={() => setCategoriaActiva('todas')}
+                      className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
+                        categoriaActiva === 'todas'
+                          ? 'bg-neutral-900 border-neutral-900 text-white'
+                          : 'bg-white border-neutral-200 text-neutral-500'
+                      }`}
+                    >
+                      Todas
+                    </button>
+                    {categorias.map((cat) => {
+                      const color = colorCategoria(cat.id, cat.color)
+                      const activa = cat.id === categoriaActiva
                       return (
                         <button
-                          key={v.id}
-                          onClick={() => agregar(p, v)}
-                          className={`relative rounded-2xl border-2 p-3.5 min-h-[76px] flex flex-col justify-between text-left transition shadow-sm ${color.bg} ${color.border} ${
-                            pulsando ? 'scale-105' : 'active:scale-95'
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setCategoriaActiva(cat.id)}
+                          className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
+                            activa
+                              ? `${color.bg} ${color.border} ${color.text}`
+                              : 'bg-white border-neutral-200 text-neutral-500'
                           }`}
                         >
-                          {enCarrito > 0 && (
-                            <span
-                              className={`absolute -top-2 -right-2 min-w-[26px] h-[26px] px-1.5 rounded-full bg-acento-500 text-neutral-50 text-sm font-bold flex items-center justify-center shadow ring-2 ring-white transition ${
-                                pulsando ? 'scale-125' : ''
-                              }`}
-                            >
-                              {enCarrito}
-                            </span>
-                          )}
-                          <div className={`font-semibold text-[15px] leading-tight ${color.text}`}>
-                            {etiquetaVariante(p, v)}
-                          </div>
-                          <div className="text-neutral-700 font-bold text-base mt-1.5">
-                            {fmt(v.precio)}
-                          </div>
+                          {cat.nombre}
                         </button>
                       )
-                    })
-                })}
-            </div>
+                    })}
+                  </div>
+
+                  {/* Renglones, no fichas: un producto por linea con su precio
+                      y, si ya va en la comanda, cuantos y un menos. Se toca
+                      el renglon y suma uno; la lista no se cierra, asi que
+                      cinco productos son cinco toques. */}
+                  <div className="max-h-[46vh] md:max-h-[52vh] overflow-y-auto">
+                    {vendibles
+                      .filter(
+                        (g) =>
+                          g.filas.length > 0 &&
+                          (categoriaActiva === 'todas' || g.categoria.id === categoriaActiva),
+                      )
+                      .map((g) => {
+                        const color = colorCategoria(g.categoria.id, g.categoria.color)
+                        return (
+                          <div key={g.categoria.id}>
+                            <div className="sticky top-0 z-[1] flex items-center gap-2 px-4 py-1.5 bg-neutral-50 border-y border-neutral-100 text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-500">
+                              <span className={`w-2 h-2 rounded-full ${color.dot}`} />
+                              {g.categoria.nombre}
+                            </div>
+                            {g.filas.map(({ producto: p, variante: v }) => {
+                              const enCarrito = carrito[v.id]?.cantidad ?? 0
+                              const pulsando = recienAgregado.has(v.id)
+                              return (
+                                <div
+                                  key={v.id}
+                                  className={`flex items-stretch border-b border-neutral-100 last:border-b-0 ${
+                                    pulsando ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => agregar(p, v)}
+                                    className={`flex-1 min-w-0 flex items-center justify-between gap-3 px-4 py-3 text-left border-l-4 ${color.border} active:bg-neutral-100`}
+                                  >
+                                    <span className="font-semibold text-[15px] leading-tight text-neutral-900 truncate">
+                                      {etiquetaVariante(p, v)}
+                                    </span>
+                                    <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
+                                      {fmt(v.precio)}
+                                    </span>
+                                  </button>
+                                  {enCarrito > 0 && (
+                                    <div className="flex items-center gap-1 pr-3 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => quitar(v.id)}
+                                        aria-label={`Quitar uno de ${etiquetaVariante(p, v)}`}
+                                        className="w-9 h-9 rounded-full border border-neutral-300 text-lg leading-none text-neutral-700 active:bg-neutral-200"
+                                      >
+                                        −
+                                      </button>
+                                      <span className="min-w-[28px] h-7 px-1.5 rounded-full bg-acento-500 text-neutral-50 text-sm font-bold flex items-center justify-center tabular-nums">
+                                        {enCarrito}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })}
+                  </div>
+                </>
+              )}
+            </section>
           )}
 
           <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
