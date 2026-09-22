@@ -31,7 +31,7 @@ def _avisos_de_costos(db: Session) -> List[schemas.Insight]:
         avisos.append(
             schemas.Insight(
                 tipo="alerta",
-                titulo=f"Tus insumos subieron {inflacion['cambio_pct']:.0f}% en 30 dias",
+                titulo=f"Tu mercancía subió {inflacion['cambio_pct']:.0f}% en 30 dias",
                 detalle=(
                     f"{detalle}. Si tus precios no subieron parecido, estas vendiendo "
                     "mas barato de lo que te va a costar reponer. Revisa el Menu: "
@@ -508,15 +508,15 @@ def _insights(
             insights.append(
                 schemas.Insight(
                     tipo="alerta",
-                    titulo=f"Los insumos se llevan {food_cost:.0f}% de la venta",
-                    detalle=f"Arriba de 35% el margen se aprieta{sobre}. Revisa precios de venta o el costo de tus insumos.",
+                    titulo=f"La mercancía se lleva {food_cost:.0f}% de la venta",
+                    detalle=f"Arriba de 35% el margen se aprieta{sobre}. Revisa precios de venta o el costo de tu mercancía.",
                 )
             )
         else:
             insights.append(
                 schemas.Insight(
                     tipo="bueno",
-                    titulo=f"Costo de insumos en {food_cost:.0f}%",
+                    titulo=f"Costo de la mercancía en {food_cost:.0f}%",
                     detalle=f"Esta en rango sano para comida rapida{sobre} (referencia: menos de 35%).",
                 )
             )

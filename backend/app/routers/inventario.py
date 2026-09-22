@@ -489,10 +489,10 @@ def conteo_fisico(body: schemas.ConteoRequest, request: Request, db: Session = D
     no se toca. Todo o nada: si un id no existe, ningun stock cambia.
     """
     if not body.items:
-        raise HTTPException(status_code=400, detail="No se contó ningún insumo")
+        raise HTTPException(status_code=400, detail="No se contó ninguna mercancía")
     ids = [i.ingrediente_id for i in body.items]
     if len(set(ids)) != len(ids):
-        raise HTTPException(status_code=400, detail="Un insumo aparece dos veces en el conteo")
+        raise HTTPException(status_code=400, detail="Una mercancía aparece dos veces en el conteo")
 
     quien = operadores.del_turno(db, request)
     with costeo.bloqueo_inventario():
@@ -701,7 +701,7 @@ async def leer_planilla(archivo: UploadFile = File(...), db: Session = Depends(g
         if ing is None and celda(col_nombre):
             ing = por_nombre.get(comparable(celda(col_nombre)))
         if ing is None:
-            errores.append(f"Fila {numero}: no encuentro ese insumo ({celda(col_nombre) or celda(col_id) or 'sin nombre'}).")
+            errores.append(f"Fila {numero}: no encuentro esa mercancía ({celda(col_nombre) or celda(col_id) or 'sin nombre'}).")
             continue
         if ing.id in vistos:
             errores.append(f"Fila {numero}: {ing.nombre} aparece dos veces en la planilla.")

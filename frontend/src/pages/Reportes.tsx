@@ -273,7 +273,7 @@ function Resumen({
                   {
                     nombre: 'Cada venta',
                     partes: [
-                      { nombre: 'Insumos', valor: datos.costo_insumos, color: 'var(--color-neutral-400)' },
+                      { nombre: 'Mercancía', valor: datos.costo_insumos, color: 'var(--color-neutral-400)' },
                       { nombre: 'Gastos y mermas', valor: datos.gastos, color: 'var(--color-aviso-500)' },
                       ...(datos.iva_cobrado > 0
                         ? [{ nombre: 'IVA (del SENIAT)', valor: datos.iva_cobrado, color: 'var(--color-neutral-300)' }]
@@ -287,7 +287,7 @@ function Resumen({
                   },
                 ]}
                 leyenda={[
-                  { nombre: 'Insumos', color: 'var(--color-neutral-400)' },
+                  { nombre: 'Mercancía', color: 'var(--color-neutral-400)' },
                   { nombre: 'Gastos y mermas', color: 'var(--color-aviso-500)' },
                   ...(datos.iva_cobrado > 0 ? [{ nombre: 'IVA', color: 'var(--color-neutral-300)' }] : []),
                   {
@@ -307,7 +307,7 @@ function Resumen({
               <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
             </>
           )}
-          <Linea dinero={dinero} etiqueta="Costo de insumos" monto={-datos.costo_insumos} />
+          <Linea dinero={dinero} etiqueta="Costo de la mercancía" monto={-datos.costo_insumos} />
           <Linea
             dinero={dinero}
             etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
@@ -517,12 +517,12 @@ function Productos({
           gris. */}
       <Seccion
         titulo="Cuánto vende y cuánto deja cada producto"
-        ayuda="La barra completa es el ingreso; la parte verde, lo que quedó después de los insumos. Los productos sin receta no se pueden partir."
+        ayuda="La barra completa es el ingreso; la parte verde, lo que quedó después de la mercancía. Los productos sin receta no se pueden partir."
       >
         <BarrasApiladas
           formato={dinero}
           leyenda={[
-            { nombre: 'Costo de insumos', color: 'var(--color-neutral-300)' },
+            { nombre: 'Costo de la mercancía', color: 'var(--color-neutral-300)' },
             { nombre: 'Ganancia', color: 'var(--color-exito-500)' },
             { nombre: 'Sin receta (costo desconocido)', color: 'var(--color-aviso-300)' },
           ]}
@@ -532,7 +532,7 @@ function Productos({
             partes: p.sin_receta
               ? [{ nombre: 'Ingreso (sin costo conocido)', valor: p.ingresos, color: 'var(--color-aviso-300)' }]
               : [
-                  { nombre: 'Costo de insumos', valor: p.costo, color: 'var(--color-neutral-300)' },
+                  { nombre: 'Costo de la mercancía', valor: p.costo, color: 'var(--color-neutral-300)' },
                   { nombre: 'Ganancia', valor: Math.max(p.ganancia, 0), color: 'var(--color-exito-500)' },
                 ],
           }))}

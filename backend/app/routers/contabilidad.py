@@ -694,7 +694,7 @@ def salud_contable(db: Session = Depends(get_db)):
         problemas.append(
             schemas.ProblemaContable(
                 gravedad="grave",
-                titulo=f"{len(negativos)} insumo(s) con stock negativo",
+                titulo=f"{len(negativos)} mercancía(s) con stock negativo",
                 detalle=f"{nombres}. Se vendio mas de lo que habia cargado. Haz un conteo "
                 "fisico para corregirlo antes de la proxima compra.",
             )

@@ -54,7 +54,7 @@ def salto_sospechoso(costo_nuevo: float, costo_anterior: float) -> Optional[dict
         "factor": round(factor, 1),
         "mensaje": (
             "Ese precio es {:.0f} veces el anterior. Si compraste por saco, bulto o "
-            "caja, la cantidad va en la unidad del insumo: un saco de 50 kg son "
+            "caja, la cantidad va en la unidad de la mercancía: un saco de 50 kg son "
             "50, no 1."
         ).format(factor),
     }

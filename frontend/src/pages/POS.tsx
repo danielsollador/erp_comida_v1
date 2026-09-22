@@ -555,7 +555,7 @@ export default function POS() {
         {
           valor: 'inventario',
           texto: 'No se preparó: vuelve al inventario',
-          detalle: 'Los insumos que se iban a usar se devuelven al stock.',
+          detalle: 'La mercancía que se iba a usar vuelve al stock.',
           peligro: yaHecha,
         },
       ],

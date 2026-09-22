@@ -61,7 +61,7 @@ const ORIGEN_LABEL: Record<string, string> = {
   venta: 'Venta',
   gasto: 'Gasto',
   merma: 'Merma',
-  compra_insumo: 'Compra de insumo',
+  compra_insumo: 'Compra de mercancía',
   factura_compra: 'Factura de compra',
   pago_factura: 'Pago a proveedor',
   cierre_caja: 'Cierre de caja',

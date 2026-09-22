@@ -3,7 +3,7 @@ import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { contiene, palabrasDe } from '../components/Tabla'
-import { Pagina, Vacio } from '../components/ui'
+import { Boton, Modal, Pagina, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { useArrastre } from '../lib/arrastre'
@@ -46,7 +46,7 @@ import type { Categoria, CostoVariante, Producto } from '../lib/types'
  */
 const SECCIONES = [
   { id: 'menu', texto: 'El menú' },
-  { id: 'recetas', texto: 'Qué lleva cada uno' },
+  { id: 'recetas', texto: 'Recetas' },
   { id: 'retiradas', texto: 'Fuera del menú' },
 ]
 
@@ -75,7 +75,7 @@ export default function Menu() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Menú y recetas" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Menú" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="ancha">
         {seccion === 'menu' && (
           <ElMenu categorias={categorias} costos={costos} cargando={cargando} onCambio={cargar} />
@@ -103,7 +103,11 @@ function ElMenu({
   const dialogo = useDialogo()
   const [busqueda, setBusqueda] = useState('')
   const [elegida, setElegida] = useState<number | null>(null)
-  const [nuevaCategoria, setNuevaCategoria] = useState('')
+  // Crear se hace en un cuadro, no escribiendo en una casilla suelta.
+  // Leider (21-sep): "no me gusta ni un poco que tengas que escribir algo y
+  // despues agregarlo... porque en teoria tienes que agregarle el precio, se
+  // crearia sin el precio". Un producto nace con su precio puesto.
+  const [creando, setCreando] = useState<'categoria' | 'producto' | null>(null)
   const [aviso, setAviso] = useState('')
 
   const activas = useMemo(() => categorias.filter((c) => c.activo), [categorias])
@@ -147,12 +151,20 @@ function ElMenu({
     return () => window.clearTimeout(t)
   }, [aviso])
 
-  async function agregarCategoria() {
-    const nombre = nuevaCategoria.trim()
-    if (!nombre) return
+  async function crearCategoria(nombre: string, color: string, bebida: boolean) {
     const cat = await api.crearCategoria(nombre, activas.length)
-    setNuevaCategoria('')
+    // El color y lo de bebidas van en un segundo paso porque el alta solo
+    // acepta nombre y orden; para quien lo usa es un solo gesto.
+    if (color || bebida) await api.actualizarCategoria(cat.id, { color, bebida })
     setElegida(cat.id)
+    setCreando(null)
+    onCambio()
+  }
+
+  async function crearProducto(categoriaId: number, nombre: string, precio: number) {
+    await api.crearProducto(categoriaId, nombre, [{ nombre: SUBSECCION_INICIAL, precio }])
+    setElegida(categoriaId)
+    setCreando(null)
     onCambio()
   }
 
@@ -194,23 +206,17 @@ function ElMenu({
           titulo="Todavía no hay menú"
           detalle="Empieza por una categoría: Comida, Bebidas, Postres. Dentro van los productos y sus precios."
           accion={
-            <div className="flex gap-2 max-w-sm mx-auto">
-              <input
-                value={nuevaCategoria}
-                onChange={(e) => setNuevaCategoria(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()}
-                placeholder="Ej. Comida"
-                className="flex-1 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-              />
-              <button
-                onClick={agregarCategoria}
-                className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
-              >
-                Crear
-              </button>
-            </div>
+            <button
+              onClick={() => setCreando('categoria')}
+              className="bg-neutral-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium"
+            >
+              Crear la primera categoría
+            </button>
           }
         />
+        {creando === 'categoria' && (
+          <CrearCategoria onCerrar={() => setCreando(null)} onCrear={crearCategoria} />
+        )}
       </div>
     )
   }
@@ -249,9 +255,7 @@ function ElMenu({
             onQuitar={quitarCategoria}
             onCambio={onCambio}
             arrastre={arrastre}
-            nueva={nuevaCategoria}
-            onNueva={setNuevaCategoria}
-            onAgregar={agregarCategoria}
+            onCrear={() => setCreando('categoria')}
           />
           {actual && (
             <ProductosDe
@@ -260,6 +264,7 @@ function ElMenu({
               costos={costos}
               onCambio={onCambio}
               arrastre={arrastre}
+              onCrear={() => setCreando('producto')}
             />
           )}
         </div>
@@ -277,6 +282,18 @@ function ElMenu({
             ? arrastre.carga.producto.nombre
             : activas.find((c) => c.id === (arrastre.carga as { id: number }).id)?.nombre}
         </div>
+      )}
+
+      {creando === 'categoria' && (
+        <CrearCategoria onCerrar={() => setCreando(null)} onCrear={crearCategoria} />
+      )}
+      {creando === 'producto' && actual && (
+        <CrearProducto
+          categorias={activas}
+          categoriaId={actual.id}
+          onCerrar={() => setCreando(null)}
+          onCrear={crearProducto}
+        />
       )}
 
       {aviso && (
@@ -303,9 +320,7 @@ function ListaCategorias({
   onQuitar,
   onCambio,
   arrastre,
-  nueva,
-  onNueva,
-  onAgregar,
+  onCrear,
 }: {
   categorias: Categoria[]
   elegida: number | null
@@ -314,9 +329,7 @@ function ListaCategorias({
   onQuitar: (c: Categoria) => void
   onCambio: () => void
   arrastre: Arrastre
-  nueva: string
-  onNueva: (v: string) => void
-  onAgregar: () => void
+  onCrear: () => void
 }) {
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-2 md:sticky md:top-[84px]">
@@ -397,21 +410,12 @@ function ListaCategorias({
         })}
       </div>
 
-      <div className="flex gap-1.5 p-2 pt-2.5 mt-1 border-t border-neutral-100">
-        <input
-          value={nueva}
-          onChange={(e) => onNueva(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && onAgregar()}
-          placeholder="Nueva categoría"
-          aria-label="Nueva categoría"
-          className="flex-1 min-w-0 border border-neutral-200 rounded-lg px-2.5 py-2 text-sm"
-        />
+      <div className="p-2 pt-2.5 mt-1 border-t border-neutral-100">
         <button
-          onClick={onAgregar}
-          disabled={!nueva.trim()}
-          className="bg-neutral-900 text-white px-3 rounded-lg text-sm font-medium disabled:opacity-30"
+          onClick={onCrear}
+          className="w-full rounded-lg border border-dashed border-neutral-300 py-2.5 text-sm font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-900"
         >
-          +
+          + Categoría
         </button>
       </div>
     </div>
@@ -429,40 +433,24 @@ function ProductosDe({
   costos,
   onCambio,
   arrastre,
+  onCrear,
 }: {
   categoria: Categoria
   categorias: Categoria[]
   costos: Map<number, CostoVariante>
   onCambio: () => void
   arrastre: Arrastre
+  onCrear: () => void
 }) {
-  const [nuevo, setNuevo] = useState('')
   const productos = categoria.productos.filter((p) => p.activo)
-
-  async function agregar() {
-    const nombre = nuevo.trim()
-    if (!nombre) return
-    await api.crearProducto(categoria.id, nombre, [{ nombre: SUBSECCION_INICIAL, precio: 0 }])
-    setNuevo('')
-    onCambio()
-  }
 
   return (
     <div className="space-y-3">
       <div className="bg-white rounded-2xl border border-neutral-200 p-3 flex flex-wrap items-center gap-2">
         <h2 className="font-semibold text-lg px-1 mr-auto">{categoria.nombre}</h2>
-        <input
-          value={nuevo}
-          onChange={(e) => setNuevo(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && agregar()}
-          placeholder="Nuevo producto (ej. Empanada)"
-          aria-label="Nuevo producto"
-          className="flex-1 min-w-[11rem] border border-neutral-200 rounded-lg px-3 py-2 text-sm"
-        />
         <button
-          onClick={agregar}
-          disabled={!nuevo.trim()}
-          className="bg-neutral-900 text-white px-3.5 py-2 rounded-lg text-sm font-medium disabled:opacity-30"
+          onClick={onCrear}
+          className="bg-neutral-900 text-white px-3.5 py-2.5 rounded-xl text-sm font-medium"
         >
           + Producto
         </button>
@@ -472,7 +460,15 @@ function ProductosDe({
         <div className="bg-white rounded-2xl border border-neutral-200">
           <Vacio
             titulo={`"${categoria.nombre}" está vacía`}
-            detalle="Escribe arriba el primer producto. También puedes arrastrar uno de otra categoría hasta aquí."
+            detalle="Crea el primer producto con el botón de arriba. También puedes arrastrar uno de otra categoría hasta aquí."
+            accion={
+              <button
+                onClick={onCrear}
+                className="bg-neutral-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium"
+              >
+                + Producto
+              </button>
+            }
           />
         </div>
       ) : (
@@ -1067,5 +1063,207 @@ function Colores({
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * Crear una categoría.
+ *
+ * En un cuadro y no en una casilla al pie de la lista: ahí se creaba con lo
+ * mínimo --un nombre-- y el color y lo de bebidas quedaban para después, en
+ * un menú que hay que descubrir. Aquí se decide todo de una vez, que es como
+ * se piensa una categoría nueva.
+ */
+function CrearCategoria({
+  onCerrar,
+  onCrear,
+}: {
+  onCerrar: () => void
+  onCrear: (nombre: string, color: string, bebida: boolean) => Promise<void>
+}) {
+  const [nombre, setNombre] = useState('')
+  const [color, setColor] = useState<string>('')
+  const [bebida, setBebida] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    if (!nombre.trim() || guardando) return
+    setGuardando(true)
+    try {
+      await onCrear(nombre.trim(), color, bebida)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Modal
+      titulo="Nueva categoría"
+      ayuda="Así se agrupa el menú en el mostrador: Comida, Bebidas, Postres."
+      onCerrar={onCerrar}
+      pie={
+        <div className="flex items-center justify-between w-full gap-3">
+          <Boton tono="fantasma" onClick={onCerrar}>
+            Cancelar
+          </Boton>
+          <Boton onClick={guardar} disabled={!nombre.trim() || guardando}>
+            {guardando ? 'Creando…' : 'Crear categoría'}
+          </Boton>
+        </div>
+      }
+    >
+      <label className="block">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
+          Nombre
+        </span>
+        <input
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && guardar()}
+          placeholder="Ej. Comida"
+          autoFocus
+          className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-sm"
+        />
+      </label>
+
+      <div className="mt-4">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">
+          Color en el mostrador
+        </span>
+        <div className="flex gap-2">
+          {NOMBRES_COLOR.map((c) => (
+            <button
+              key={c}
+              onClick={() => setColor(c)}
+              aria-label={NOMBRE_COLOR[c]}
+              aria-pressed={color === c}
+              className={`w-10 h-10 rounded-xl grid place-items-center border-2 ${
+                color === c ? 'border-neutral-900' : 'border-transparent hover:border-neutral-300'
+              }`}
+            >
+              <span className={`w-6 h-6 rounded-lg ${COLORES[c].dot}`} />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="flex items-start gap-2.5 mt-4 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={bebida}
+          onChange={(e) => setBebida(e.target.checked)}
+          className="mt-0.5 w-4 h-4 accent-acento-600"
+        />
+        <span className="text-sm">
+          Son bebidas
+          <span className="block text-xs text-neutral-500">
+            El mostrador las ofrece para acompañar la comida.
+          </span>
+        </span>
+      </label>
+    </Modal>
+  )
+}
+
+/**
+ * Crear un producto, CON su precio.
+ *
+ * Antes se escribía el nombre en una casilla y el producto nacía a $0,00: se
+ * vendía en cero hasta que alguien se acordara de ponerle precio, y un cero
+ * en el mostrador no se ve como un error. El precio es parte de crear el
+ * producto, no un segundo paso.
+ */
+function CrearProducto({
+  categorias,
+  categoriaId,
+  onCerrar,
+  onCrear,
+}: {
+  categorias: Categoria[]
+  categoriaId: number
+  onCerrar: () => void
+  onCrear: (categoriaId: number, nombre: string, precio: number) => Promise<void>
+}) {
+  const [nombre, setNombre] = useState('')
+  const [precio, setPrecio] = useState('')
+  const [donde, setDonde] = useState(categoriaId)
+  const [guardando, setGuardando] = useState(false)
+
+  const monto = Number(String(precio).replace(',', '.'))
+  const listo = nombre.trim().length > 0 && Number.isFinite(monto) && monto >= 0 && precio !== ''
+
+  async function guardar() {
+    if (!listo || guardando) return
+    setGuardando(true)
+    try {
+      await onCrear(donde, nombre.trim(), monto)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Modal
+      titulo="Nuevo producto"
+      ayuda="Con su precio: así se puede vender desde el primer momento."
+      onCerrar={onCerrar}
+      pie={
+        <div className="flex items-center justify-between w-full gap-3">
+          <Boton tono="fantasma" onClick={onCerrar}>
+            Cancelar
+          </Boton>
+          <Boton onClick={guardar} disabled={!listo || guardando}>
+            {guardando ? 'Creando…' : 'Crear producto'}
+          </Boton>
+        </div>
+      }
+    >
+      <label className="block">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
+          Nombre
+        </span>
+        <input
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Ej. Empanada"
+          autoFocus
+          className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-sm"
+        />
+      </label>
+
+      <label className="block mt-4">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
+          Precio
+        </span>
+        <Numerico
+          value={precio}
+          onChange={(e) => setPrecio(e.target.value)}
+          placeholder="0.00"
+          className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-lg font-semibold tabular-nums"
+        />
+      </label>
+
+      <label className="block mt-4">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
+          Categoría
+        </span>
+        <select
+          value={donde}
+          onChange={(e) => setDonde(Number(e.target.value))}
+          className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-sm"
+        >
+          {categorias.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nombre}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <p className="text-xs text-neutral-500 mt-4">
+        Si el producto tiene presentaciones --Grande y Pequeño, o por relleno--
+        se le agregan después con "+ Subsección", cada una con su precio.
+      </p>
+    </Modal>
   )
 }

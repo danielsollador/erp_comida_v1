@@ -360,7 +360,7 @@ def test_un_producto_sin_receta_no_pasa_por_margen_perfecto(client, db, variante
     # utilizables a $10 (=$8 con 80% de rendimiento) sobre $5 de venta medible
     # da 20%. Contando los $100 del producto fantasma daria 1%, que es
     # exactamente como una alerta se volvia felicitacion.
-    food_cost = next(i for i in r["insights"] if "insumos" in i["titulo"].lower())
+    food_cost = next(i for i in r["insights"] if "mercancía" in i["titulo"].lower())
     assert "20%" in food_cost["titulo"]
 
 

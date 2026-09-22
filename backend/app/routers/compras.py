@@ -434,7 +434,7 @@ def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
     if not body.items:
         raise HTTPException(
             status_code=400,
-            detail="Una devolución necesita decir qué insumos vuelven y cuánto de cada uno",
+            detail="Una devolución necesita decir qué mercancía vuelve y cuánto de cada una",
         )
 
     por_ingrediente = {i.ingrediente_id: i for i in factura.items}
@@ -452,7 +452,7 @@ def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
         if linea is None:
             raise HTTPException(
                 status_code=400,
-                detail=f"El insumo {pedido_item.ingrediente_id} no está en esa factura",
+                detail=f"La mercancía {pedido_item.ingrediente_id} no está en esa factura",
             )
         if pedido_item.cantidad <= 0:
             raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
@@ -561,7 +561,7 @@ def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
         # igual que ya hacemos con un pedido cobrado.
         raise HTTPException(
             status_code=409,
-            detail="Esta factura ya actualizó el stock de insumos y no se puede borrar. "
+            detail="Esta factura ya actualizó el stock y no se puede borrar. "
             "Si fue un error, registra un ajuste de inventario para corregir el stock.",
         )
     if db_factura.forma_pago == "Credito" and db_factura.pagada:

@@ -24,7 +24,7 @@ export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcon
   { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'administracion' },
   // Dos permisos detras de un solo icono: quien tenga cualquiera de los dos
   // entra, aunque dentro solo vea su propia pestaña.
-  { to: '/menu', modulo: ['menu', 'recetas'], icono: 'menu', titulo: 'Menú y recetas', grupo: 'administracion' },
+  { to: '/menu', modulo: ['menu', 'recetas'], icono: 'menu', titulo: 'Menú', grupo: 'administracion' },
   { to: '/inventario', modulo: 'inventario', icono: 'inventario', titulo: 'Inventario', grupo: 'administracion' },
   { to: '/compras', modulo: 'compras', icono: 'compras', titulo: 'Compras', grupo: 'administracion' },
   { to: '/caja', modulo: 'caja', icono: 'caja', titulo: 'Cierre de caja', grupo: 'administracion' },

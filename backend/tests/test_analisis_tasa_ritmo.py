@@ -133,7 +133,7 @@ def test_si_los_insumos_subieron_mas_que_el_dolar_la_culpa_es_del_proveedor(clie
     a = client.get("/api/tasas/analisis").json()
     assert a["inflacion_insumos_pct"] == 20.0
     assert a["variacion_pct"] == 2.0
-    assert "Tus insumos subieron 20.0% y el dólar +2.0%" in _titulos(a)
+    assert "Tu mercancía subió 20.0% y el dólar +2.0%" in _titulos(a)
 
 
 def test_sin_compras_no_se_opina_de_los_insumos(client, db):

@@ -99,7 +99,7 @@ function estadoStock(ing: Ingrediente): { texto: string; tono: 'mal' | 'ojo' } |
 }
 
 const SECCIONES = [
-  { id: 'insumos', texto: 'Insumos' },
+  { id: 'insumos', texto: 'Mercancía' },
   { id: 'comprar', texto: 'Qué comprar' },
   { id: 'perdidas', texto: 'Pérdidas' },
 ]
@@ -149,7 +149,7 @@ export default function Inventario() {
   // "Que se boto de queso este mes" sin leer la lista entera.
   const buscadorMermas = useBuscador<Merma>(
     (m) => [m.ingrediente_nombre, m.motivo],
-    'Buscar por insumo o motivo',
+    'Buscar por mercancía o motivo',
   )
   const ordenMermas = useOrden<Merma>(
     {
@@ -212,7 +212,7 @@ export default function Inventario() {
           etiqueta: 'Cuánto pagaste en total, sin IVA',
           tipo: 'numero',
           opcional: true,
-          ayuda: 'Vacío = se mantiene el costo actual. El IVA no es parte del costo del insumo.',
+          ayuda: 'Vacío = se mantiene el costo actual. El IVA no es parte del costo de la mercancía.',
         },
         {
           nombre: 'moneda',
@@ -351,7 +351,7 @@ export default function Inventario() {
       tono: r.faltante_valor > 0 ? 'ojo' : 'bien',
       texto:
         r.ajustes.length === 0
-          ? `Los ${r.sin_cambio} insumos contados coinciden con el sistema.`
+          ? `Las ${r.sin_cambio} mercancías contadas coinciden con el sistema.`
           : `${r.ajustes.length} ajuste(s) · faltante ${dinero(r.faltante_valor)} (queda como merma) · sobrante ${dinero(r.sobrante_valor)}` +
             (r.sin_cambio ? ` · ${r.sin_cambio} cuadraron` : '') +
             `\n\n${lineas}${r.ajustes.length > 8 ? '\n…' : ''}`,
@@ -414,7 +414,7 @@ export default function Inventario() {
               <p className={`text-sm mt-0.5 ${config.vender_sin_inventario ? 'text-aviso-800' : 'text-neutral-500'}`}>
                 {config.vender_sin_inventario
                   ? 'Prendido: ninguna venta se traba por falta de stock, aunque un producto tenga receta.'
-                  : 'Para arrancar el local sin insumos ni recetas cargadas todavía. Apágalo cuando el inventario esté al día.'}
+                  : 'Para arrancar el local sin mercancía ni recetas cargadas todavía. Apágalo cuando el inventario esté al día.'}
               </p>
             </div>
             <button
@@ -436,7 +436,7 @@ export default function Inventario() {
         {/* Las cuatro cifras que dicen como esta el deposito sin leer la tabla. */}
         <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Cifra
-            titulo="Insumos"
+            titulo="Mercancía"
             ayuda="kpi.insumos"
             valor={String(activos.length)}
             detalle={`${activos.filter((i) => i.tipo !== 'reventa').length} materia prima · ${activos.filter((i) => i.tipo === 'reventa').length} reventa`}
@@ -464,7 +464,7 @@ export default function Inventario() {
             type="search"
             value={buscar}
             onChange={(e) => setBuscar(e.target.value)}
-            placeholder="Buscar insumo…"
+            placeholder="Buscar mercancía…"
             className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full lg:w-64"
           />
           <div className="flex flex-wrap gap-1.5 lg:flex-1">
@@ -499,7 +499,7 @@ export default function Inventario() {
             <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
               Conteo físico
             </Boton>
-            <Boton onClick={() => setFicha('nuevo')}>+ Nuevo insumo</Boton>
+            <Boton onClick={() => setFicha('nuevo')}>+ Nueva mercancía</Boton>
           </div>
         </div>
 
@@ -507,7 +507,7 @@ export default function Inventario() {
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
-                <Th clave="nombre">Insumo</Th>
+                <Th clave="nombre">Mercancía</Th>
                 <Th clave="stock" alinear="derecha">Stock</Th>
                 <Th clave="minimo" alinear="derecha">Mínimo</Th>
                 <Th clave="costo" alinear="derecha">Costo compra</Th>
@@ -525,13 +525,13 @@ export default function Inventario() {
                   <td colSpan={8}>
                     <Vacio
                       icono="inventario"
-                      titulo={ingredientes.length === 0 ? 'Todavía no hay insumos' : 'Nada con ese filtro'}
+                      titulo={ingredientes.length === 0 ? 'Todavía no hay mercancía' : 'Nada con ese filtro'}
                       detalle={
                         ingredientes.length === 0
                           ? 'Carga la materia prima y la mercancía de reventa; después las recetas dicen cuánto lleva cada producto.'
                           : undefined
                       }
-                      accion={ingredientes.length === 0 ? <Boton onClick={() => setFicha('nuevo')}>+ Nuevo insumo</Boton> : undefined}
+                      accion={ingredientes.length === 0 ? <Boton onClick={() => setFicha('nuevo')}>+ Nueva mercancía</Boton> : undefined}
                     />
                   </td>
                 </tr>
@@ -660,7 +660,7 @@ export default function Inventario() {
         {inflacion && inflacion.cambio_pct >= 15 && (
           <Aviso tono="ojo">
             <p className="font-semibold">
-              Tus insumos subieron {inflacion.cambio_pct.toFixed(0)}% en {inflacion.dias} días
+              Tu mercancía subió {inflacion.cambio_pct.toFixed(0)}% en {inflacion.dias} días
             </p>
             <ul className="mt-2 space-y-1">
               {inflacion.insumos.slice(0, 5).map((i) => (
@@ -708,7 +708,7 @@ export default function Inventario() {
                 <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                   <tr>
                     <Th clave="fecha">Fecha</Th>
-                    <Th clave="insumo">Insumo</Th>
+                    <Th clave="insumo">Mercancía</Th>
                     <Th clave="cantidad" alinear="derecha">Cantidad</Th>
                     <Th clave="motivo">Motivo</Th>
                     <Th clave="valor" alinear="derecha">Valor</Th>
@@ -800,7 +800,7 @@ export default function Inventario() {
                       {new Date(c.fecha).toLocaleDateString('es-VE')}
                       {c.ciego && <> <Pastilla tono="bien">a ciegas</Pastilla></>}
                       <span className="block text-xs text-neutral-400">
-                        {c.contados} insumo(s) · {c.cuadraron} cuadraron
+                        {c.contados} mercancía(s) · {c.cuadraron} cuadraron
                         {c.operador && ` · ${c.operador}`}
                       </span>
                     </span>
@@ -898,7 +898,7 @@ export default function Inventario() {
               ))}
             </div>
           ) : (
-            <p className="mt-4 text-sm text-neutral-600">Ningún producto del menú usa este insumo todavía.</p>
+            <p className="mt-4 text-sm text-neutral-600">Ningún producto del menú usa esta mercancía todavía.</p>
           )}
         </Modal>
       )}
@@ -1025,7 +1025,7 @@ function FichaInsumo({
 
   async function guardar() {
     setAviso('')
-    if (!f.nombre.trim()) return setAviso('El insumo necesita un nombre.')
+    if (!f.nombre.trim()) return setAviso('La mercancía necesita un nombre.')
     const minimo = f.stock_minimo === '' ? 0 : num(f.stock_minimo)
     const objetivo = f.stock_objetivo === '' ? 0 : num(f.stock_objetivo)
     const costo = f.costo_unitario === '' ? 0 : num(f.costo_unitario)
@@ -1055,7 +1055,7 @@ function FichaInsumo({
 
   return (
     <Modal
-      titulo={nuevo ? 'Nuevo insumo' : ing.nombre}
+      titulo={nuevo ? 'Nueva mercancía' : ing.nombre}
       ayuda={
         nuevo
           ? 'Materia prima para las recetas, o mercancía que se compra y se vende tal cual.'
@@ -1074,7 +1074,7 @@ function FichaInsumo({
             Cancelar
           </Boton>
           <Boton onClick={guardar} disabled={guardando}>
-            {nuevo ? 'Crear insumo' : 'Guardar cambios'}
+            {nuevo ? 'Crear mercancía' : 'Guardar cambios'}
           </Boton>
         </>
       }
@@ -1169,7 +1169,7 @@ function FichaInsumo({
           <span>
             Exento de IVA
             <span className="block text-xs text-neutral-500">
-              La mayoría de los alimentos básicos lo son. Cambia el IVA de las facturas donde aparezca este insumo.
+              La mayoría de los alimentos básicos lo son. Cambia el IVA de las facturas donde aparezca esta mercancía.
             </span>
           </span>
         </label>
@@ -1450,7 +1450,7 @@ function DetalleConteo({ id, onCerrar }: { id: number; onCerrar: () => void }) {
       ) : (
         <>
           <p className="text-sm text-neutral-600 mb-3">
-            {d.contados} insumo(s) contados, {d.cuadraron} cuadraron.
+            {d.contados} mercancía(s) contada(s), {d.cuadraron} cuadraron.
             {d.operador && ` Lo hizo ${d.operador}.`}{' '}
             {d.ciego ? (
               <Pastilla tono="bien">a ciegas</Pastilla>
@@ -1471,7 +1471,7 @@ function DetalleConteo({ id, onCerrar }: { id: number; onCerrar: () => void }) {
           <table className="w-full text-sm">
             <thead className="text-neutral-500 text-xs uppercase">
               <tr>
-                <th className="text-left p-2">Insumo</th>
+                <th className="text-left p-2">Mercancía</th>
                 <th className="text-right p-2">Sistema</th>
                 <th className="text-right p-2">Contado</th>
                 <th className="text-right p-2">Diferencia</th>
@@ -1586,7 +1586,7 @@ function ConteoFisico({
     // A ciegas el resumen se revela aquí y no antes: si el total de faltante
     // se ve mientras se teclea, ya no es un conteo a ciegas.
     const ok = await dialogo.confirmar({
-      titulo: `¿Guardar el conteo de ${contados.length} insumo(s)?`,
+      titulo: `¿Guardar el conteo de ${contados.length} mercancía(s)?`,
       texto:
         `Faltante: ${dinero(faltante)} (queda como merma) · Sobrante: ${dinero(sobrante)}.\n\n` +
         'Lo que dice la balanza manda sobre lo que dice el sistema. Lo que dejaste en blanco no se toca.',
@@ -1611,7 +1611,7 @@ function ConteoFisico({
   return (
     <Modal
       titulo="Conteo físico"
-      ayuda="Anota lo que hay de verdad de cada insumo. Lo que dejes en blanco no cambia."
+      ayuda="Anota lo que hay de verdad de cada mercancía. Lo que dejes en blanco no cambia."
       onCerrar={onCerrar}
       ancho="lg"
       pie={
@@ -1711,7 +1711,7 @@ function ConteoFisico({
       <table className="w-full text-sm">
         <thead className="text-neutral-500 text-xs uppercase">
           <tr>
-            <th className="text-left p-2">Insumo</th>
+            <th className="text-left p-2">Mercancía</th>
             {!ciego && <th className="text-right p-2">Sistema</th>}
             <th className="text-right p-2 w-32">Contado</th>
             {!ciego && <th className="text-right p-2">Diferencia</th>}

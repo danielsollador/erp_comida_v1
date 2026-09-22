@@ -148,7 +148,7 @@ export default function Recetas({
       .filter((f) => f.ingrediente_id && Number(f.cantidad_por_unidad) > 0)
       .map((f) => ({ ingrediente_id: f.ingrediente_id, cantidad_por_unidad: Number(f.cantidad_por_unidad) }))
     if (items.length === 0) {
-      setError('Agrega al menos un insumo con su cantidad.')
+      setError('Agrega al menos una mercancía con su cantidad.')
       return
     }
     setGuardando(true)
@@ -185,7 +185,7 @@ export default function Recetas({
         <Vacio
           icono="recetas"
           titulo="Todavía no hay productos"
-          detalle="Crea el menú primero. La receta dice de qué insumos y cuánto lleva cada producto, y de ahí salen el costo y el margen."
+          detalle="Crea el menú primero. La receta dice de qué mercancía y cuánto lleva cada producto, y de ahí salen el costo y el margen."
         />
       </div>
     )
@@ -315,10 +315,10 @@ export default function Recetas({
                     <select
                       value={f.ingrediente_id}
                       onChange={(e) => actualizarFila(i, { ingrediente_id: Number(e.target.value) })}
-                      aria-label="Insumo"
+                      aria-label="Mercancía"
                       className="flex-1 min-w-0 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
                     >
-                      <option value={0}>Insumo…</option>
+                      <option value={0}>Mercancía…</option>
                       {ingredientes.map((otro) => (
                         <option key={otro.id} value={otro.id}>
                           {otro.nombre} ({otro.unidad})
@@ -327,7 +327,7 @@ export default function Recetas({
                     </select>
                     <button
                       onClick={() => setFilas((p) => (p.length > 1 ? p.filter((_, x) => x !== i) : p))}
-                      aria-label="Quitar este insumo"
+                      aria-label="Quitar esta mercancía"
                       disabled={filas.length <= 1}
                       className="w-9 h-9 shrink-0 grid place-items-center rounded-lg text-neutral-400 hover:bg-peligro-50 hover:text-peligro-600 disabled:opacity-30"
                     >
@@ -411,7 +411,7 @@ export default function Recetas({
             onClick={() => setFilas((p) => [...p, filaVacia()])}
             className="w-full rounded-xl border border-dashed border-neutral-300 py-2.5 text-sm font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 mb-4"
           >
-            + Otro insumo
+            + Otra mercancía
           </button>
 
           <div className="bg-neutral-50 rounded-xl p-3 text-sm space-y-1">

@@ -265,7 +265,7 @@ def _lecturas_de_ritmo(
                 f"{'sube' if sube else 'baja'} {abs(proyeccion_pct)}% desde los {ultimo['bcv']:,.2f} de hoy. "
                 + (
                     "Conviene revisar los precios del menú antes, no después: cada semana que pasa "
-                    "los insumos se reponen un poco más caros."
+                    "la mercancía se repone un poco más cara."
                     if sube and proyeccion_pct >= 5
                     else "Es una extrapolación de lo que ya pasó, no un pronóstico: sirve para dimensionar."
                 )
@@ -315,24 +315,24 @@ def _lecturas_de_ritmo(
         if diferencia >= INSUMOS_POR_ENCIMA_DEL_DOLAR_PCT:
             out.append({
                 "tipo": "alerta",
-                "titulo": f"Tus insumos subieron {inflacion_pct}% y el dólar {variacion:+.1f}%",
+                "titulo": f"Tu mercancía subió {inflacion_pct}% y el dólar {variacion:+.1f}%",
                 "detalle": (
                     f"La diferencia ({diferencia:.1f} puntos) no viene de la tasa: viene de los "
                     "proveedores. Ajustar el menú solo por el dólar te deja corto; revisa en "
-                    "Inventario qué insumos subieron más y a quién se los compras."
+                    "Inventario qué mercancía subió más y a quién se la compras."
                 ),
             })
         elif abs(diferencia) < INSUMOS_POR_ENCIMA_DEL_DOLAR_PCT:
             out.append({
                 "tipo": "info",
-                "titulo": f"Los insumos subieron parejo con el dólar ({inflacion_pct}% contra {variacion:+.1f}%)",
+                "titulo": f"La mercancía subió pareja con el dólar ({inflacion_pct}% contra {variacion:+.1f}%)",
                 "detalle": "La subida de costos es la de la tasa, no de los proveedores. "
                            "Con el menú en dólares, el margen se sostiene solo.",
             })
         else:
             out.append({
                 "tipo": "bueno",
-                "titulo": f"Tus insumos subieron menos que el dólar ({inflacion_pct}% contra {variacion:+.1f}%)",
+                "titulo": f"Tu mercancía subió menos que el dólar ({inflacion_pct}% contra {variacion:+.1f}%)",
                 "detalle": "Los proveedores no trasladaron toda la subida. Buen momento para "
                            "comprar lo que aguante en depósito.",
             })
@@ -364,7 +364,7 @@ def _lecturas(
             "detalle": (
                 f"De {primero['bcv']:,.2f} a {ultimo['bcv']:,.2f} bolívares. "
                 + (
-                    "Tus insumos se repondrán más caros: si el menú no subió parecido, el margen "
+                    "Tu mercancía se repondrá más cara: si el menú no subió parecido, el margen "
                     "de cada plato ya es menor que el de la carta."
                     if subio
                     else "Si bajaste precios siguiendo la subida anterior, este es el momento de revisar."

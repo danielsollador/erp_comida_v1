@@ -28,7 +28,7 @@ function baseIvaTotal(lado: 'compra' | 'venta'): Record<string, Explicacion> {
       calculo: 'Total ÷ 1,16 cuando la alícuota es 16%. Al revés: base × 16% = IVA.',
       ejemplo:
         lado === 'compra'
-          ? 'Un saco facturado en $116 tiene $100 de base. Ese $100 es el costo real del insumo; los $16 no son costo, son impuesto que vas a descontar.'
+          ? 'Un saco facturado en $116 tiene $100 de base. Ese $100 es el costo real de la mercancía; los $16 no son costo, son impuesto que vas a descontar.'
           : 'Una venta de $116 tiene $100 de base. Esos $100 son tu ingreso; los $16 los cobraste para el SENIAT, no son tuyos.',
     },
     iva: {
@@ -62,10 +62,10 @@ const fecha = (que: string, origen: string, ejemplo: string): Explicacion => ({
 })
 
 export const GLOSARIO: Record<string, Explicacion> = {
-  // ── Inventario: la tabla de insumos ──────────────────────────────────────
+  // ── Inventario: la tabla de mercancía ──────────────────────────────────────
   'inventario.nombre': {
-    que: 'El insumo: la materia prima con la que cocinas, o la mercancía que revendes tal cual.',
-    origen: 'Lo creas tú con "+ Nuevo insumo". Toca el nombre para abrir su ficha completa.',
+    que: 'La mercancía: la materia prima con la que cocinas, o lo que revendes tal cual.',
+    origen: 'Lo creas tú con "+ Nueva mercancía". Toca el nombre para abrir su ficha completa.',
     ejemplo:
       'Harina y Queso son materia prima: entran en las recetas. Un refresco en lata es "reventa": se compra y se vende sin cocinar.',
   },
@@ -79,8 +79,8 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'inventario.minimo': {
     que: 'El punto en el que hay que volver a comprar.',
-    origen: 'Lo pones tú en la ficha del insumo.',
-    calculo: 'Cuando el stock cae a este número o por debajo, el insumo se marca "Bajo" y entra en la lista de "Qué comprar".',
+    origen: 'Lo pones tú en la ficha de la mercancía.',
+    calculo: 'Cuando el stock cae a este número o por debajo, la mercancía se marca "Bajo" y entra en la lista de "Qué comprar".',
     ejemplo:
       'Si gastas 3 kg de harina al día y al proveedor le toma dos días traerla, un mínimo de 6 kg te avisa justo a tiempo.',
   },
@@ -94,7 +94,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'inventario.reponer': {
     que: 'Lo que pagaste la última vez. Es lo que te va a costar comprar más.',
-    origen: 'La última compra registrada de ese insumo, venga de una factura o de una compra suelta.',
+    origen: 'La última compra registrada de esa mercancía, venga de una factura o de una compra suelta.',
     calculo: 'El costo unitario de la compra más reciente. Si está muy por encima del promedio, sale el porcentaje en naranja.',
     ejemplo:
       'Con el promedio en $1,50 y reponer en $2, un producto que parece dejarte 40% de margen en realidad te deja 25%. Para fijar precios manda este número, no el promedio.',
@@ -114,21 +114,21 @@ export const GLOSARIO: Record<string, Explicacion> = {
       'Pollo a $4,50 el kilo con 88% de rendimiento cuesta en realidad $5,11 por kilo usable ($4,50 ÷ 0,88). Costear con $4,50 te haría creer que ganas 60 centavos de más en cada plato.',
   },
   'inventario.acciones': {
-    que: 'Los movimientos que puedes registrar sobre ese insumo.',
+    que: 'Los movimientos que puedes registrar sobre esa mercancía.',
     origen: 'Cada uno deja su asiento contable: nada mueve el stock en silencio.',
     ejemplo:
       '"+ Compra" entra mercancía y actualiza el costo promedio. "− Merma" registra lo que se dañó o se botó. En "Más" está la ficha: consumo del personal, conteo, historial y edición.',
   },
 
   // ── Inventario: pérdidas registradas ─────────────────────────────────────
-  // El extracto de un insumo: el libro de movimientos del deposito.
+  // El extracto de una mercancía: el libro de movimientos del deposito.
   'movimientos.fecha': fecha(
-    'Cuándo se movió el insumo.',
+    'Cuándo se movió la mercancía.',
     'La hora del local en que entró o salió: una venta, una compra, una merma, un conteo.',
     'Los movimientos van del más nuevo al más viejo, como el extracto del banco.',
   ),
   'movimientos.movimiento': {
-    que: 'Qué pasó con el insumo.',
+    que: 'Qué pasó con la mercancía.',
     origen:
       'Lo pone el sistema según la operación: Venta descuenta al mandar la comanda a cocina, Compra suma, Merma es lo que se botó, Ajuste por conteo es lo que encontró la balanza, Reverso deshace algo mal cargado.',
     ejemplo:
@@ -150,26 +150,26 @@ export const GLOSARIO: Record<string, Explicacion> = {
     origen: 'Se guarda en el momento, no se recalcula.',
     calculo: 'El saldo anterior más lo que entró, o menos lo que salió.',
     ejemplo:
-      'Si el último saldo de esta lista no coincide con la existencia del insumo, algo movió el stock sin anotarlo y el sistema lo avisa arriba en rojo.',
+      'Si el último saldo de esta lista no coincide con la existencia de la mercancía, algo movió el stock sin anotarlo y el sistema lo avisa arriba en rojo.',
   },
   'movimientos.valor': {
     que: 'A cuánto equivale ese movimiento en plata.',
     origen: 'Cantidad × el costo al que entró o salió, congelado en el momento.',
-    calculo: 'En una compra, el precio de esa compra puntual. En una venta o merma, el costo promedio del insumo cuando se movió, no el de hoy.',
+    calculo: 'En una compra, el precio de esa compra puntual. En una venta o merma, el costo promedio de la mercancía cuando se movió, no el de hoy.',
     ejemplo: '0.025 kg de café no dice mucho; $0.30 sí dice cuánto costó ese cafecito.',
   },
   'perdidas.fecha': fecha(
     'Cuándo se registró la pérdida.',
     'La hora del local en que alguien cargó la merma, o en que un conteo físico encontró el faltante.',
-    'Si ves varias mermas del mismo insumo el mismo día, suele ser un registro duplicado: revisa antes de revertir.',
+    'Si ves varias mermas de la misma mercancía el mismo día, suele ser un registro duplicado: revisa antes de revertir.',
   ),
   'perdidas.insumo': {
     que: 'Qué se perdió.',
-    origen: 'El insumo que se eligió al registrar la merma o al contar.',
-    ejemplo: 'Un insumo que aparece siempre en esta lista es el que hay que vigilar: o se maneja mal, o se está yendo.',
+    origen: 'La mercancía que se eligió al registrar la merma o al contar.',
+    ejemplo: 'La mercancía que aparece siempre en esta lista es la que hay que vigilar: o se maneja mal, o se está yendo.',
   },
   'perdidas.cantidad': {
-    que: 'Cuánto se perdió, en la unidad del insumo.',
+    que: 'Cuánto se perdió, en la unidad de la mercancía.',
     origen: 'Lo escribiste al registrar la merma, o es la diferencia que encontró un conteo físico.',
     calculo: 'En un conteo: lo que dice el sistema menos lo que contaste. Si falta, entra aquí como merma.',
     ejemplo: 'El sistema decía 10 kg y contaste 8: esos 2 kg quedan registrados como pérdida, no desaparecen sin rastro.',
@@ -182,13 +182,13 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'perdidas.valor': {
     que: 'Cuánta plata se perdió.',
-    origen: 'Lo calcula el sistema con el costo del insumo.',
-    calculo: 'Cantidad × costo promedio actual del insumo.',
+    origen: 'Lo calcula el sistema con el costo de la mercancía.',
+    calculo: 'Cantidad × costo promedio actual de la mercancía.',
     ejemplo:
       'Dos kilos de queso a $6,50 son $13 que no vas a recuperar. La suma del mes es el número de "Pérdidas 30 días" y sale del Estado de Resultados.',
   },
 
-  // ── Inventario: historial de costos de un insumo ─────────────────────────
+  // ── Inventario: historial de costos de una mercancía ─────────────────────────
   'costos.fecha': fecha(
     'El día de esa compra.',
     'La fecha de la factura, o del día en que registraste la compra suelta.',
@@ -204,7 +204,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
     que: 'Lo que costó una unidad en esa compra concreta.',
     origen: 'Lo que pagaste dividido entre lo que entró, siempre sin IVA.',
     calculo: 'Total pagado sin IVA ÷ cantidad.',
-    ejemplo: 'La compra más reciente de esta lista es la que aparece como "Reponer" en la tabla de insumos.',
+    ejemplo: 'La compra más reciente de esta lista es la que aparece como "Reponer" en la tabla de mercancía.',
   },
   'costos.cambio': {
     que: 'Cuánto subió o bajó el precio respecto a la compra anterior.',
@@ -232,10 +232,10 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo: 'Ordenando por proveedor ves cuánto le compras a cada uno: es el dato con el que se negocia un mejor precio.',
   },
   'compras.detalle': {
-    que: 'Qué insumos trajo esa factura y en qué cantidad.',
-    origen: 'Las líneas que cargaste. Cada una sumó stock y recalculó el costo promedio de su insumo.',
+    que: 'Qué mercancías trajo esa factura y en qué cantidad.',
+    origen: 'Las líneas que cargaste. Cada una sumó stock y recalculó el costo promedio de su mercancía.',
     ejemplo:
-      'Si el stock de un insumo no cuadra, aquí se ve qué factura lo movió y por cuánto. Una factura con líneas ya no se puede borrar: se corrige con una nota de crédito.',
+      'Si el stock de una mercancía no cuadra, aquí se ve qué factura la movió y por cuánto. Una factura con líneas ya no se puede borrar: se corrige con una nota de crédito.',
   },
   ...Object.fromEntries(Object.entries(baseIvaTotal('compra')).map(([k, v]) => [`compras.${k}`, v])),
   'compras.estado': {
@@ -308,9 +308,9 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo: 'La suma de esta columna es la venta del período. Es el "cuánto vendí", no el "cuánto gané".',
   },
   'productos.ganancia': {
-    que: 'Lo que quedó después de pagar los insumos de ese producto.',
-    origen: 'La receta del producto, valorada al costo real de cada insumo.',
-    calculo: 'Ingresos − (costo real de los insumos × unidades vendidas).',
+    que: 'Lo que quedó después de pagar la mercancía de ese producto.',
+    origen: 'La receta del producto, valorada al costo real de cada mercancía.',
+    calculo: 'Ingresos − (costo real de la mercancía × unidades vendidas).',
     ejemplo:
       'Es la columna con la que se decide qué empujar. Un producto sin receta cargada aparece con ganancia igual a los ingresos: no es que sea buenísimo, es que no sabe cuánto cuesta.',
   },
@@ -378,7 +378,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   'plan.nombre': {
     que: 'Qué guarda esa cuenta.',
     origen: 'Del plan de cuentas.',
-    ejemplo: '"Inventario de insumos" acumula el valor de tu depósito; "Ventas", todo lo que facturaste.',
+    ejemplo: '"Inventario de mercancía" acumula el valor de tu depósito; "Ventas", todo lo que facturaste.',
   },
   'plan.tipo': {
     que: 'A qué parte del negocio pertenece la cuenta.',
@@ -434,7 +434,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   'diario.descripcion': {
     que: 'Qué se registró.',
     origen: 'Lo arma el sistema con la operación de origen, o lo escribes tú en un asiento manual.',
-    ejemplo: '"Venta pedido #42" o "Compra de insumos factura 0012": el asiento dice qué pasó, no solo cuánto.',
+    ejemplo: '"Venta pedido #42" o "Compra de mercancía factura 0012": el asiento dice qué pasó, no solo cuánto.',
   },
   'diario.origen': {
     que: 'Qué parte del ERP generó el asiento.',
@@ -569,21 +569,21 @@ export const GLOSARIO: Record<string, Explicacion> = {
 
   // Inventario
   'kpi.insumos': {
-    que: 'Cuántos insumos activos maneja el local.',
-    origen: 'Los insumos dados de alta que no están archivados.',
+    que: 'Cuánta mercancía activa maneja el local.',
+    origen: 'La mercancía dada de alta que no está archivada.',
     calculo: 'Se separan en materia prima (entra en recetas) y reventa (se vende tal cual).',
-    ejemplo: 'Si tienes veinte insumos y el menú solo usa doce, hay ocho que compras sin saber bien para qué.',
+    ejemplo: 'Si tienes veinte y el menú solo usa doce, hay ocho que compras sin saber bien para qué.',
   },
   'kpi.bajo_minimo': {
-    que: 'Cuántos insumos ya cruzaron su punto de reposición.',
-    origen: 'Los insumos cuyo stock cayó al mínimo o por debajo.',
-    calculo: 'Cuenta de insumos con stock ≤ mínimo.',
+    que: 'Cuánta mercancía ya cruzó su punto de reposición.',
+    origen: 'La mercancía cuyo stock cayó al mínimo o por debajo.',
+    calculo: 'Cuenta de mercancías con stock ≤ mínimo.',
     ejemplo: 'Es la lista de compras de hoy. En cero significa que no vas a quedarte sin nada mañana.',
   },
   'kpi.valor_deposito': {
     que: 'Cuánta plata tienes guardada en forma de mercancía.',
     origen: 'Todo lo que hay en el depósito, valorado al costo.',
-    calculo: 'Suma de (stock × costo promedio) de cada insumo, sin IVA.',
+    calculo: 'Suma de (stock × costo promedio) de cada mercancía, sin IVA.',
     ejemplo:
       'Es plata quieta: no está en la gaveta ni en el banco, está en el estante. Si crece mientras las ventas no, estás comprando de más.',
   },
@@ -605,7 +605,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   'kpi.ganancia_neta': {
     que: 'Lo que de verdad te quedó después de todo.',
     origen: 'Los mismos números del Estado de Resultados en Contabilidad.',
-    calculo: 'Ventas − costo de los insumos − gastos, mermas y faltantes.',
+    calculo: 'Ventas − costo de la mercancía − gastos, mermas y faltantes.',
     ejemplo:
       'Puede ser negativa con ventas altas: es exactamente la situación que hay que detectar a tiempo. Este es el número que dice si el negocio funciona.',
   },
@@ -663,7 +663,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
     origen: 'La primera y la última tasa guardadas en ese tramo.',
     calculo: '(última ÷ primera − 1) × 100.',
     ejemplo:
-      'Si subió 10% y el menú sigue igual, cada plato deja 10% menos de lo que dice la carta: los insumos se reponen a la tasa nueva.',
+      'Si subió 10% y el menú sigue igual, cada plato deja 10% menos de lo que dice la carta: la mercancía se reponen a la tasa nueva.',
   },
   'kpi.brecha_media': {
     que: 'La brecha promedio del período, no solo la de hoy.',
@@ -837,7 +837,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   'kpi.merma_inventario': {
     que: 'El valor de lo que se botó, se dañó o faltó en un conteo.',
     origen: 'La cuenta 6020 del libro contable, que Inventario mueve con cada merma.',
-    ejemplo: 'Se pagó como cualquier insumo, pero no dejó ingreso. Los detalles están en Inventario › Pérdidas.',
+    ejemplo: 'Se pagó como cualquier mercancía, pero no dejó ingreso. Los detalles están en Inventario › Pérdidas.',
   },
   'kpi.anuladas': {
     que: 'Pedidos que se anularon antes de venderse.',

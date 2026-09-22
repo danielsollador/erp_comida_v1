@@ -25,8 +25,8 @@ const DESCRIPCION: Record<string, string> = {
   '/reportes': 'Cómo va el negocio',
   // Las de administracion solo se ven en pantallas altas (tablet en
   // vertical), donde las fichas crecen y una sola palabra las deja vacias.
-  '/menu': 'Productos, precios y qué lleva cada uno',
-  '/inventario': 'Insumos, stock y costos',
+  '/menu': 'Productos, precios y recetas',
+  '/inventario': 'Mercancía, stock y costos',
   '/compras': 'Lo que entra y lo que cuesta',
   '/caja': 'Cuadrar el día',
   '/tasa': 'Bolívares por dólar de hoy',
