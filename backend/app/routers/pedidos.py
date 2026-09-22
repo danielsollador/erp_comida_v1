@@ -12,6 +12,7 @@ from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
 from .. import consolidacion
+from .. import seed
 from . import operadores
 
 router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
@@ -199,6 +200,35 @@ def _costo_por_variante(variante_ids: List[int], db: Session) -> Dict[int, float
     return costos
 
 
+def _nace_preparado(
+    variante: models.Variante,
+    receta: Optional[List[models.RecetaItem]],
+    categoria_envios_id: Optional[int],
+) -> bool:
+    """Si este renglon NO pasa por la cocina y nace ya "preparado".
+
+    La regla anterior era "sin receta = nada que cocinar". Servia para el
+    delivery y la gaseosa, pero en un local que arranca sin recetas cargadas
+    --que es como arranca todo local-- volvia TODA comanda algo que no se
+    cocina: el pastelito nacia preparado, la cocina nunca lo veia y el
+    mostrador tampoco (ver `crear_pedido`). Invisible es peor que un toque de
+    mas en cocina.
+
+    Ahora nace preparado solo lo que de verdad no se cocina:
+      - un envio (la categoria de envios, se llame como se llame);
+      - un producto cuya receta es toda mercancia de reventa: la botella de
+        agua que se compra y se vende tal cual.
+    Sin receta, o con receta que lleva materia prima, va a cocina.
+    """
+    # La receta manda sobre la categoria: algo que lleva materia prima se
+    # cocina este donde este (una torta que se entrega a domicilio igual pasa
+    # por el horno). La categoria de envios solo decide para lo que NO tiene
+    # receta, que es el caso del delivery.
+    if receta:
+        return all(r.ingrediente.tipo == "reventa" for r in receta)
+    return categoria_envios_id is not None and variante.producto.categoria_id == categoria_envios_id
+
+
 def _recetas_por_variante(variante_ids: List[int], db: Session) -> Dict[int, List[models.RecetaItem]]:
     recetas = (
         db.query(models.RecetaItem).filter(models.RecetaItem.variante_id.in_(variante_ids)).all()
@@ -286,6 +316,8 @@ async def crear_pedido(
     costos = _costo_por_variante(list(variantes.keys()), db)
     recetas = _recetas_por_variante(list(variantes.keys()), db)
     consumo = _consumo_del_pedido(del_menu, recetas)
+    envios = seed.categoria_envios(db)
+    categoria_envios_id = envios.id if envios else None
 
     # El inventario se mueve ACA, no al cobrar: la cocina empieza a gastar
     # insumos apenas le llega la comanda. Descontar al cobrar dejaba una
@@ -337,16 +369,21 @@ async def crear_pedido(
                 costo_unitario=round(costos.get(variante.id, 0), 4),
                 cantidad=item.cantidad,
                 nota=item.nota,
-                # Sin receta cargada no hay nada que cocinar -es el caso de un
-                # envio, o de cualquier producto de reventa (una gaseosa)-, asi
-                # que nace ya "preparado". Sin esto se quedaba pegado para
-                # siempre en la cola de cocina, porque nadie iba a marcar
-                # "listo" algo que no se cocina. La venta libre queda afuera a
-                # proposito: un encargo a medida (una torta) si puede necesitar
-                # cocina, y ahi no hay receta que consultar.
-                preparado=not recetas.get(variante.id),
+                preparado=_nace_preparado(variante, recetas.get(variante.id), categoria_envios_id),
             )
         )
+
+    # Si ningun renglon necesita cocina, la comanda nace "lista": es la misma
+    # regla de marcar-listo, aplicada al nacer. Sin esto quedaba en
+    # "pendiente" con todo preparado, y NINGUNA pantalla la pedia asi: ni la
+    # cocina (nada por preparar), ni el mostrador (solo pide "listo" o lo
+    # que falta cocinar). El POST devolvia 200 y la comanda no aparecia en
+    # ningun lado -- Leider (21-sep): "le doy a enviar y no se guarda ni en
+    # pedidos ni llega a cocina".
+    db.flush()
+    if db_pedido.items and all(i.preparado for i in db_pedido.items):
+        db_pedido.estado = "listo"
+        db_pedido.listo_en = ahora()
 
     for ingrediente, cantidad in consumo.items():
         kardex.anotar(
