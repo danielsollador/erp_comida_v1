@@ -5,7 +5,12 @@ usuario y contraseña de alguien con cuenta. Dos problemas: teclear usuario y
 contraseña en una tablet con un cliente esperando es lento, y el dueño --que
 es quien deberia autorizar-- muchas veces no esta en el local.
 
-DOS FORMAS DE FIRMAR, UNA SOLA HACE FALTA:
+QUIEN YA AUTORIZA, NO FIRMA NADA. Si la sesion que esta haciendo la
+operacion tiene un rol que autoriza, eso es la firma y no se pide mas (ver
+`firma_propia`). Lo contrario era pedirle a la dueña, parada en su propia
+caja, el PIN de la dueña.
+
+DOS FORMAS DE FIRMAR CUANDO QUIEN OPERA NO AUTORIZA:
 
   PIN         Cuatro a seis digitos, propios de cada persona con un rol que
               autoriza. El PIN solo identifica a quien lo puso: no hace falta
@@ -162,6 +167,21 @@ def _consumir(db: Session, solicitud_id: int, accion: str, pedido_id: Optional[i
     return s.resuelta_por or "autorizado desde la app"
 
 
+def firma_propia(request: Request) -> Optional[str]:
+    """Quien esta operando, si su rol ya autoriza. None si no.
+
+    Pedirle el PIN a quien tiene la autoridad no agrega ningun control: entro
+    con su clave y esa sesion es su firma, la misma que vale cuando aprueba
+    desde su aplicacion sin teclear nada. Lo unico que lograba era enseñarle
+    a todo el mundo que la firma es un tramite. Lo que importa queda igual de
+    escrito: el nombre de quien autorizo se guarda en la operacion.
+    """
+    s = getattr(request.state, "sesion", None)
+    if not s or not permisos.autoriza(s.get("rol")):
+        return None
+    return usuarios.nombre_visible(usuarios.ficha(s.get("usuario"))) or s.get("usuario") or ""
+
+
 SIN_FIRMA = (
     "Hace falta el PIN de alguien autorizado, o que apruebe la solicitud "
     "desde su aplicación."
@@ -176,6 +196,11 @@ def firmar(
     pedido_id: Optional[int] = None,
 ) -> str:
     """El nombre de quien autoriza, o un 403 que dice que falta."""
+    # Antes que nada: quien opera puede ser quien autoriza.
+    propia = firma_propia(request)
+    if propia:
+        return propia
+
     if autorizacion is None:
         raise HTTPException(status_code=403, detail=SIN_FIRMA)
 
