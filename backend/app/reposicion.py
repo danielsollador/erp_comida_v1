@@ -218,10 +218,16 @@ def impacto_en_productos(
         )
 
         producto = db.query(models.Producto).filter_by(id=variante.producto_id).first()
+        # Misma regla que el mostrador: con una sola subseccion activa, su
+        # nombre no aporta nada ("Jugo natural", no "Jugo natural Regular").
+        hermanas = sum(1 for v in producto.variantes if v.activo) if producto else 0
+        nombre = producto.nombre if producto else ""
+        if hermanas > 1:
+            nombre = f"{nombre} - {variante.nombre}".strip(" -")
         afectados.append(
             {
                 "variante_id": variante.id,
-                "nombre": "{} {}".format(producto.nombre if producto else "", variante.nombre).strip(),
+                "nombre": nombre,
                 "precio": round(precio, 2),
                 "costo_antes": round(costo_antes, 4),
                 "costo_despues": round(costo_despues, 4),

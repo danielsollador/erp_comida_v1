@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from .. import models, reposicion, schemas
+from ..seed import SUBSECCION_INICIAL
 from ..database import get_db
 
 router = APIRouter(prefix="/api/menu", tags=["menu"])
@@ -152,9 +153,42 @@ def reactivar_variante(variante_id: int, db: Session = Depends(get_db)):
 
 @router.post("/productos/{producto_id}/variantes", response_model=schemas.Variante)
 def crear_variante(producto_id: int, variante: schemas.VarianteCreate, db: Session = Depends(get_db)):
-    producto = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
+    """Agrega una subseccion. La primera de verdad OCUPA el lugar de la inicial.
+
+    Todo producto nace con una subseccion "Regular" que lleva su precio: es lo
+    que hace falta para venderlo, y mientras esta sola no se ve por ningun
+    lado. El problema era al agregar la primera subseccion real: quedaban las
+    dos, y en el mostrador aparecia "Jugo natural - Regular" al lado de "Jugo
+    natural - Parchita", un renglon que nadie pidio y que habia que ir a
+    quitar a mano (Leider, 23-sep: "no quiero ninguna -Regular, solo la
+    seccion y ya"). Asi que si la unica subseccion activa es esa inicial, se
+    convierte en la nueva --mismo renglon, nombre y precio nuevos-- en vez de
+    duplicarse. Las ventas viejas siguen apuntando al mismo id.
+    """
+    producto = (
+        db.query(models.Producto)
+        .options(joinedload(models.Producto.variantes))
+        .filter(models.Producto.id == producto_id)
+        .first()
+    )
     if not producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
+    activas = [v for v in producto.variantes if v.activo]
+    if len(activas) == 1 and (activas[0].nombre or "").strip().lower() == SUBSECCION_INICIAL.lower():
+        inicial = activas[0]
+        if round(inicial.precio, 4) != round(variante.precio, 4):
+            db.add(
+                models.CambioPrecio(
+                    variante_id=inicial.id,
+                    precio_anterior=inicial.precio,
+                    precio_nuevo=variante.precio,
+                )
+            )
+        for key, value in variante.model_dump().items():
+            setattr(inicial, key, value)
+        db.commit()
+        db.refresh(inicial)
+        return inicial
     db_variante = models.Variante(producto_id=producto_id, **variante.model_dump())
     db.add(db_variante)
     db.commit()

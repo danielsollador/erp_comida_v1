@@ -1290,7 +1290,8 @@ function CrearProducto({
 
       <p className="text-xs text-neutral-500 mt-4">
         Si el producto tiene presentaciones --Grande y Pequeño, o por relleno--
-        se le agregan después con "+ Subsección", cada una con su precio.
+        se le agregan después con "+ Subsección", cada una con su precio. La
+        primera que agregues toma el lugar de este precio.
       </p>
     </Modal>
   )
