@@ -151,11 +151,11 @@ function ElMenu({
     return () => window.clearTimeout(t)
   }, [aviso])
 
-  async function crearCategoria(nombre: string, color: string, bebida: boolean) {
+  async function crearCategoria(nombre: string, color: string, vaACocina: boolean) {
     const cat = await api.crearCategoria(nombre, activas.length)
-    // El color y lo de bebidas van en un segundo paso porque el alta solo
+    // El color y lo de cocina van en un segundo paso porque el alta solo
     // acepta nombre y orden; para quien lo usa es un solo gesto.
-    if (color || bebida) await api.actualizarCategoria(cat.id, { color, bebida })
+    if (color || !vaACocina) await api.actualizarCategoria(cat.id, { color, va_a_cocina: vaACocina })
     setElegida(cat.id)
     setCreando(null)
     onCambio()
@@ -378,7 +378,6 @@ function ListaCategorias({
                 </span>
                 <span className="block text-[11px] text-neutral-400">
                   {cat.productos.filter((p) => p.activo).length} producto(s)
-                  {cat.bebida && ' · bebidas'}
                   {cat.va_a_cocina === false && ' · no va a cocina'}
                 </span>
               </button>
@@ -395,19 +394,21 @@ function ListaCategorias({
                 }
                 opciones={[
                   { texto: 'Renombrar', onElegir: () => onRenombrar(cat) },
+                  // Una de dos, con la vigente marcada. Es la sugerencia al
+                  // comandar: la cajera la cambia en cada pedido.
                   {
-                    texto: cat.bebida ? 'No son bebidas' : 'Son bebidas',
-                    ayuda: 'El mostrador ofrece las bebidas para acompañar la comida',
+                    texto: 'Va a cocina',
+                    marcada: cat.va_a_cocina !== false,
                     onElegir: async () => {
-                      await api.actualizarCategoria(cat.id, { bebida: !cat.bebida })
+                      await api.actualizarCategoria(cat.id, { va_a_cocina: true })
                       onCambio()
                     },
                   },
                   {
-                    texto: cat.va_a_cocina === false ? 'Sí va a cocina' : 'No va a cocina',
-                    ayuda: 'Lo que se sugiere al comandar. La cajera lo puede cambiar en cada pedido.',
+                    texto: 'No va a cocina',
+                    marcada: cat.va_a_cocina === false,
                     onElegir: async () => {
-                      await api.actualizarCategoria(cat.id, { va_a_cocina: cat.va_a_cocina === false })
+                      await api.actualizarCategoria(cat.id, { va_a_cocina: false })
                       onCambio()
                     },
                   },
@@ -923,7 +924,8 @@ function Puntos() {
   )
 }
 
-type Opcion = { texto: string; ayuda?: string; peligro?: boolean; onElegir: () => void }
+// `marcada`: una de dos (o mas) opciones excluyentes, y esta es la vigente.
+type Opcion = { texto: string; ayuda?: string; peligro?: boolean; marcada?: boolean; onElegir: () => void }
 
 /**
  * El menú de "⋯".
@@ -983,15 +985,21 @@ function MenuAcciones({
           {opciones.map((o) => (
             <button
               key={o.texto}
-              role="menuitem"
+              role={o.marcada === undefined ? 'menuitem' : 'menuitemradio'}
+              aria-checked={o.marcada}
               onClick={() => {
                 setAbierto(false)
-                o.onElegir()
+                if (!o.marcada) o.onElegir()
               }}
               className={`w-full text-left px-3 py-2.5 rounded-lg text-sm hover:bg-neutral-50 ${
                 o.peligro ? 'text-peligro-600' : ''
-              }`}
+              } ${o.marcada ? 'font-semibold' : ''}`}
             >
+              {o.marcada !== undefined && (
+                <span aria-hidden className={`inline-block w-4 ${o.marcada ? 'text-acento-700' : 'text-transparent'}`}>
+                  ✓
+                </span>
+              )}
               {o.texto}
               {o.ayuda && <span className="block text-[11px] text-neutral-400">{o.ayuda}</span>}
             </button>
@@ -1079,7 +1087,7 @@ function Colores({
  * Crear una categoría.
  *
  * En un cuadro y no en una casilla al pie de la lista: ahí se creaba con lo
- * mínimo --un nombre-- y el color y lo de bebidas quedaban para después, en
+ * mínimo --un nombre-- y el color y lo de cocina quedaban para después, en
  * un menú que hay que descubrir. Aquí se decide todo de una vez, que es como
  * se piensa una categoría nueva.
  */
@@ -1088,18 +1096,18 @@ function CrearCategoria({
   onCrear,
 }: {
   onCerrar: () => void
-  onCrear: (nombre: string, color: string, bebida: boolean) => Promise<void>
+  onCrear: (nombre: string, color: string, vaACocina: boolean) => Promise<void>
 }) {
   const [nombre, setNombre] = useState('')
   const [color, setColor] = useState<string>('')
-  const [bebida, setBebida] = useState(false)
+  const [vaACocina, setVaACocina] = useState(true)
   const [guardando, setGuardando] = useState(false)
 
   async function guardar() {
     if (!nombre.trim() || guardando) return
     setGuardando(true)
     try {
-      await onCrear(nombre.trim(), color, bebida)
+      await onCrear(nombre.trim(), color, vaACocina)
     } finally {
       setGuardando(false)
     }
@@ -1156,20 +1164,31 @@ function CrearCategoria({
         </div>
       </div>
 
-      <label className="flex items-start gap-2.5 mt-4 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={bebida}
-          onChange={(e) => setBebida(e.target.checked)}
-          className="mt-0.5 w-4 h-4 accent-acento-600"
-        />
-        <span className="text-sm">
-          Son bebidas
-          <span className="block text-xs text-neutral-500">
-            El mostrador las ofrece para acompañar la comida.
-          </span>
+      <div className="mt-4">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">
+          Al comandar
         </span>
-      </label>
+        <div className="flex gap-2">
+          {[
+            { valor: true, texto: 'Va a cocina' },
+            { valor: false, texto: 'No va a cocina' },
+          ].map((o) => (
+            <button
+              key={o.texto}
+              onClick={() => setVaACocina(o.valor)}
+              aria-pressed={vaACocina === o.valor}
+              className={`flex-1 rounded-xl border-2 px-3 py-2 text-sm font-medium ${
+                vaACocina === o.valor ? 'border-neutral-900' : 'border-neutral-200 hover:border-neutral-300'
+              }`}
+            >
+              {o.texto}
+            </button>
+          ))}
+        </div>
+        <span className="block text-xs text-neutral-500 mt-1.5">
+          Es lo que se sugiere; la cajera lo puede cambiar en cada pedido.
+        </span>
+      </div>
     </Modal>
   )
 }

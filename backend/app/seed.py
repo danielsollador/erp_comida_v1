@@ -126,7 +126,8 @@ def asegurar_categoria_envios(db=None):
     try:
         categoria = categoria_envios(db)
         if categoria is None:
-            categoria = Categoria(nombre=CATEGORIA_ENVIOS, orden=99)
+            # Un envio no se cocina: nace sugerido "no va a cocina".
+            categoria = Categoria(nombre=CATEGORIA_ENVIOS, orden=99, va_a_cocina=False)
             db.add(categoria)
             db.flush()
 
