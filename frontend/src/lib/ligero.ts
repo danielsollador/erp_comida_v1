@@ -10,7 +10,8 @@
  * trabado.
  *
  * Con `html.vp-ligero` (ver index.css) se quitan los desenfoques y las
- * animaciones. Los datos, los colores y los botones son los mismos.
+ * animaciones de entrada. Los datos, los colores y los botones son los
+ * mismos; el circulo al cambiar de tema tambien se queda, que es puntual.
  *
  * Se enciende solo en un aparato tactil o con poca memoria, y SIEMPRE en
  * Punto de venta y Cocina, que son las pantallas que viven horas abiertas.

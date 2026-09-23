@@ -1061,10 +1061,9 @@ html.vp-ligero .animate-pulse,
 html.vp-ligero [style*="vp-entrar"] {
   animation: none !important;
 }
-html.vp-ligero::view-transition-old(root),
-html.vp-ligero::view-transition-new(root) {
-  animation: none !important;
-}
+/* El circulo del cambio de tema se queda: es medio segundo una sola vez al
+   pulsar el boton, no algo que se pinte en cada desplazamiento. Apagarlo en
+   el mostrador (Leider, 23-sep) no ahorraba nada y se sentia roto. */
 /* Las sombras grandes tambien se pintan en cada cuadro del desplazamiento. */
 html.vp-ligero .shadow-lg,
 html.vp-ligero .shadow-md {
