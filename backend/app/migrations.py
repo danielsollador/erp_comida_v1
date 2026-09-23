@@ -92,6 +92,8 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "listo_en", "DATETIME"),
     ("TRX110_VEN_PEDIDO", "a_cocina", "BOOLEAN DEFAULT 1"),
     ("TRX110_VEN_PEDIDO", "entregado_en", "DATETIME"),
+    ("TRX111_VEN_PEDIDO_DET", "cortesia", "BOOLEAN DEFAULT 0"),
+    ("TRX111_VEN_PEDIDO_DET", "precio_lista", "FLOAT DEFAULT 0"),
     # Con DEFAULT: sin el, las categorias que ya existen quedan en NULL y el
     # esquema --que promete un texto-- revienta al serializar el menu.
     ("DIM210_MEN_CATEGORIA", "color", "VARCHAR DEFAULT ''"),

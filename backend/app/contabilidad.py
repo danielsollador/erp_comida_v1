@@ -70,6 +70,10 @@ PLAN_DE_CUENTAS = [
     # perdida: es un costo laboral autorizado. Mezclarlo con la merma
     # contaminaba el indicador que sirve para vigilar desperdicio y robo.
     ("6025", "Consumo del personal", "gasto", "deudora"),
+    # Lo que se le regala al cliente (el cafe de cortesia): salio del
+    # inventario sin venta. Aparte del consumo del personal y de la merma,
+    # porque son tres decisiones distintas y el dueno quiere ver cada una.
+    ("6035", "Cortesias a clientes", "gasto", "deudora"),
     ("6030", "Faltante / sobrante de caja", "gasto", "deudora"),
     ("6040", "Depreciacion", "gasto", "deudora"),
 ]
@@ -397,9 +401,19 @@ def _lineas_ingreso_venta(pedido: models.Pedido, facturado: bool) -> List[Tuple[
     return lineas
 
 
+def costo_de_items(pedido: models.Pedido, cortesia: bool) -> float:
+    """El costo congelado de los renglones cobrados (cortesia=False) o de los
+    regalados (cortesia=True). Van a cuentas distintas."""
+    return round(
+        sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items if bool(i.cortesia) == cortesia),
+        2,
+    )
+
+
 def registrar_venta(db: Session, pedido: models.Pedido) -> None:
     propina = round(pedido.propina or 0, 2)
-    costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
+    costo = costo_de_items(pedido, cortesia=False)
+    cortesia = costo_de_items(pedido, cortesia=True)
 
     lineas = _lineas_de_cobro(pedido)
 
@@ -412,6 +426,15 @@ def registrar_venta(db: Session, pedido: models.Pedido) -> None:
 
     if costo > 0:
         lineas += [("5010", costo, 0.0), ("1040", 0.0, costo)]
+    # La cortesia no es venta ni costo de venta: es un gasto del negocio que
+    # salio del deposito.
+    if cortesia > 0:
+        lineas += [("6035", cortesia, 0.0), ("1040", 0.0, cortesia)]
+
+    # Una comanda regalada entera y sin receta no mueve ni plata ni costo: no
+    # hay asiento que hacer, y `crear_asiento` con todo en cero reventaria.
+    if round(sum(d for _, d, _ in lineas), 2) == 0:
+        return
 
     crear_asiento(
         db,
@@ -430,8 +453,13 @@ def registrar_ajuste_edicion(
     delta_costo: float,
     pagos: List[Tuple[str, float]],
     costo_perdido: float = 0.0,
+    delta_cortesia: float = 0.0,
+    cortesia_perdida: float = 0.0,
 ) -> None:
     """Corrige una venta YA COBRADA que se edito: solo lo que cambio.
+
+    `delta_cortesia` es lo mismo que `delta_costo` pero para los renglones
+    regalados: mueve Cortesias (6035) en vez de costo de ventas (5010).
 
     No se reescribe el asiento de la venta ni se anula para volver a hacerlo.
     Un asiento contable no se borra --si se pudiera, la contabilidad no serviria
@@ -482,6 +510,19 @@ def registrar_ajuste_edicion(
         if vuelve > 0:
             lineas.append(("1040", vuelve, 0.0))
         lineas.append(("5010", 0.0, baja))
+
+    delta_cortesia = round(delta_cortesia, 2)
+    if delta_cortesia > 0:
+        lineas += [("6035", delta_cortesia, 0.0), ("1040", 0.0, delta_cortesia)]
+    elif delta_cortesia < 0:
+        baja = -delta_cortesia
+        botado = min(round(cortesia_perdida, 2), baja)
+        vuelve = round(baja - botado, 2)
+        if botado > 0:
+            lineas.append(("6020", botado, 0.0))
+        if vuelve > 0:
+            lineas.append(("1040", vuelve, 0.0))
+        lineas.append(("6035", 0.0, baja))
 
     if not lineas:
         return
@@ -573,7 +614,8 @@ def registrar_devolucion(
     total = round(pedido.total, 2)
     descuento = round(pedido.descuento or 0, 2)
     propina = round(pedido.propina or 0, 2)
-    costo = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
+    costo = costo_de_items(pedido, cortesia=False)
+    cortesia = costo_de_items(pedido, cortesia=True)
     bruto = round(total + descuento, 2)
 
     # ES EL ESPEJO EXACTO DE `registrar_venta`. La venta se reconocio bruta con
@@ -609,6 +651,12 @@ def registrar_devolucion(
         # comida se recupera vuelve al inventario; si no, es perdida por merma.
         destino = "1040" if recuperable else "6020"
         lineas += [(destino, costo, 0.0), ("5010", 0.0, costo)]
+    if cortesia > 0:
+        destino = "1040" if recuperable else "6020"
+        lineas += [(destino, cortesia, 0.0), ("6035", 0.0, cortesia)]
+
+    if round(sum(d for _, d, _ in lineas), 2) == 0:
+        return
 
     crear_asiento(
         db,

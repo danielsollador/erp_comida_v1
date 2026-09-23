@@ -305,6 +305,11 @@ def bloque_en_vivo(db: Session, inicio: datetime.datetime, fin: datetime.datetim
 
         categorias_del_pedido = set()
         for i in p.items:
+            # Lo regalado no entra al ranking de productos ni al costo de lo
+            # vendido: vendio cero y su costo esta en gastos (6035). Se mira
+            # aparte, en Perdidas.
+            if i.cortesia:
+                continue
             b.unidades += i.cantidad
             b.costo_items += (i.costo_unitario or 0) * i.cantidad
             clave = f"v:{i.variante_id}" if i.variante_id is not None else f"l:{i.nombre}"

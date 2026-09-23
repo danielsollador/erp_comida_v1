@@ -29,7 +29,8 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
   const top = datos.por_insumo.slice(0, 8)
   // "Lo que menos se merma": lo de abajo de la lista, sin repetir lo de arriba.
   const menos = datos.por_insumo.length > 3 ? datos.por_insumo.slice(-5).reverse().filter((p) => !top.includes(p)) : []
-  const hayVentasQueNoLlegaron = datos.anulados > 0 || datos.devoluciones > 0 || datos.con_descuento > 0
+  const hayVentasQueNoLlegaron =
+    datos.anulados > 0 || datos.devoluciones > 0 || datos.con_descuento > 0 || datos.cortesias > 0
 
   return (
     <>
@@ -226,7 +227,12 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
       {/* ── Ventas que no llegaron ───────────────────────────────────── */}
       {hayVentasQueNoLlegaron && (
         <Bloque titulo="Ventas que no llegaron a serlo" descripcion="No son merma, pero es plata que se dejó de cobrar.">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Kpi
+              titulo="Cortesías"
+              valor={dinero(datos.valor_cortesias)}
+              nota={`${datos.cortesias} regalo(s) a precio de lista · costaron ${dinero(datos.costo_cortesias)}`}
+            />
             <Kpi
               titulo="Comandas anuladas"
               ayuda="kpi.anuladas"

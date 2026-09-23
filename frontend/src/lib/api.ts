@@ -271,6 +271,8 @@ export const api = {
       // pegado en la cola de cocina esperando que alguien marque "listo"
       // algo que nadie va a cocinar.
       preparado?: boolean
+      // Se regala: no se cobra, sí descuenta inventario.
+      cortesia?: boolean
     }[],
     permitir_sin_stock = false,
     nota = '',
@@ -332,6 +334,7 @@ export const api = {
       nota?: string
       nombre_libre?: string
       precio_libre?: number
+      cortesia?: boolean
     }[],
     extra?: {
       nota?: string

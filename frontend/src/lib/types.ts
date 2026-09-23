@@ -50,6 +50,9 @@ export type PedidoItem = {
   cantidad: number
   nota: string
   preparado: boolean
+  /** Regalado: precio 0 en la cuenta; `precio_lista` es lo que habría costado. */
+  cortesia: boolean
+  precio_lista: number
 }
 
 export type Ingrediente = {
@@ -917,6 +920,10 @@ export type ReportePerdidas = {
   valor_devuelto: number
   con_descuento: number
   valor_descuentos: number
+  /** Lo regalado en ventas cobradas del período. */
+  cortesias: number
+  valor_cortesias: number
+  costo_cortesias: number
   detalle: Merma[]
   insights: Insight[]
 }

@@ -343,6 +343,11 @@ export default function Cocina() {
                     >
                       <span className="text-lg font-semibold leading-snug">
                         <span className="tabular-nums">{item.cantidad}x</span> {item.nombre}
+                        {item.cortesia && (
+                          <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide text-exito-700 bg-exito-50 rounded px-1.5 py-0.5">
+                            cortesía
+                          </span>
+                        )}
                       </span>
                       <span
                         className={`w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0 ${

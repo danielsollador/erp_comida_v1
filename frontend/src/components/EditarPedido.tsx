@@ -41,18 +41,34 @@ type LineaEdicion = {
   clave: string
   variante_id: number | null
   nombre: string
+  /** Lo que se cobra por unidad: 0 si es cortesia. */
   precio: number
+  /** Lo que vale de lista: lo que se cobraria si dejara de ser cortesia. */
+  precioLista: number
   cantidad: number
+  cortesia: boolean
+}
+
+// Un cafe cobrado y un cafe regalado son dos renglones distintos, igual que
+// en el servidor: la clave lleva la marca.
+function claveDe(variante_id: number | null, nombre: string, precioLista: number, cortesia: boolean) {
+  const base = variante_id !== null ? `v${variante_id}` : `libre:${nombre}:${precioLista}`
+  return cortesia ? `${base}:c` : base
 }
 
 function lineasDePedido(pedido: Pedido): LineaEdicion[] {
-  return pedido.items.map((i) => ({
-    clave: i.variante_id !== null ? `v${i.variante_id}` : `libre:${i.nombre}:${i.precio_unitario}`,
-    variante_id: i.variante_id,
-    nombre: i.nombre,
-    precio: i.precio_unitario,
-    cantidad: i.cantidad,
-  }))
+  return pedido.items.map((i) => {
+    const precioLista = i.cortesia ? i.precio_lista : i.precio_unitario
+    return {
+      clave: claveDe(i.variante_id, i.nombre, precioLista, i.cortesia),
+      variante_id: i.variante_id,
+      nombre: i.nombre,
+      precio: i.cortesia ? 0 : i.precio_unitario,
+      precioLista,
+      cantidad: i.cantidad,
+      cortesia: i.cortesia,
+    }
+  })
 }
 
 export default function EditarPedido({
@@ -74,6 +90,11 @@ export default function EditarPedido({
   const autorizoYo = estado.puede.autoriza
   const [lineas, setLineas] = useState<LineaEdicion[]>(() => lineasDePedido(pedido))
   const [motivo, setMotivo] = useState('')
+  // La nota de por que se edita es opcional y va escondida tras un enlace:
+  // casi siempre es una cuenta abierta a la que se le agrega algo, y no hay
+  // nada que explicar (Leider, 22-sep: "no quiero que tenga ese nivel de
+  // protagonismo").
+  const [conNota, setConNota] = useState(false)
   const [buscar, setBuscar] = useState('')
   // La firma de quien autoriza la diferencia: su PIN, o la solicitud que
   // aprobo desde su aplicacion (ver `Autorizar`).
@@ -130,7 +151,42 @@ export default function EditarPedido({
         variante.nombre && variante.nombre.toLowerCase() !== 'regular'
           ? `${producto.nombre} - ${variante.nombre}`
           : producto.nombre
-      return [...prev, { clave: id, variante_id: variante.id, nombre, precio: variante.precio, cantidad: 1 }]
+      return [
+        ...prev,
+        {
+          clave: id,
+          variante_id: variante.id,
+          nombre,
+          precio: variante.precio,
+          precioLista: variante.precio,
+          cantidad: 1,
+          cortesia: false,
+        },
+      ]
+    })
+  }
+
+  /**
+   * Regalar (o dejar de regalar) un renglon entero. Si ya existe el renglon
+   * gemelo (el mismo producto en la otra condicion), se juntan.
+   */
+  function alternarCortesia(clave: string) {
+    setLineas((prev) => {
+      const l = prev.find((x) => x.clave === clave)
+      if (!l) return prev
+      const cortesia = !l.cortesia
+      const nueva: LineaEdicion = {
+        ...l,
+        cortesia,
+        precio: cortesia ? 0 : l.precioLista,
+        clave: claveDe(l.variante_id, l.nombre, l.precioLista, cortesia),
+      }
+      const resto = prev.filter((x) => x.clave !== clave)
+      const gemelo = resto.find((x) => x.clave === nueva.clave)
+      if (gemelo) {
+        return resto.map((x) => (x.clave === nueva.clave ? { ...x, cantidad: x.cantidad + l.cantidad } : x))
+      }
+      return [...resto, nueva]
     })
   }
 
@@ -150,8 +206,14 @@ export default function EditarPedido({
         pedido.id,
         lineas.map((l) =>
           l.variante_id !== null
-            ? { variante_id: l.variante_id, cantidad: l.cantidad }
-            : { variante_id: null, cantidad: l.cantidad, nombre_libre: l.nombre, precio_libre: l.precio },
+            ? { variante_id: l.variante_id, cantidad: l.cantidad, cortesia: l.cortesia }
+            : {
+                variante_id: null,
+                cantidad: l.cantidad,
+                nombre_libre: l.nombre,
+                precio_libre: l.precioLista,
+                cortesia: l.cortesia,
+              },
         ),
         {
           motivo,
@@ -200,11 +262,31 @@ export default function EditarPedido({
       <div className="space-y-2 mb-4">
         {lineas.map((l) => (
           <div key={l.clave} className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold truncate">{l.nombre}</div>
-              <div className="text-xs text-neutral-500">
-                {l.cantidad} x {fmt(l.precio)} ={' '}
-                <span className="font-semibold text-neutral-700">{fmt(l.precio * l.cantidad)}</span>
+              <div className="text-xs text-neutral-500 flex items-center gap-1.5 flex-wrap">
+                {l.cortesia ? (
+                  <>
+                    <span className="line-through">{fmt(l.precioLista * l.cantidad)}</span>
+                    <span className="font-semibold text-exito-700">{fmt(0)}</span>
+                  </>
+                ) : (
+                  <>
+                    {l.cantidad} x {fmt(l.precio)} ={' '}
+                    <span className="font-semibold text-neutral-700">{fmt(l.precio * l.cantidad)}</span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => alternarCortesia(l.clave)}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${
+                    l.cortesia
+                      ? 'bg-exito-50 border-exito-300 text-exito-700'
+                      : 'border-neutral-200 text-neutral-400 hover:text-neutral-700 hover:border-neutral-400'
+                  }`}
+                >
+                  {l.cortesia ? 'Cortesía' : 'Regalar'}
+                </button>
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -327,13 +409,26 @@ export default function EditarPedido({
         </div>
       )}
 
-      <Campo
-        etiqueta="Por qué se edita"
-        className="mt-4"
-        value={motivo}
-        onChange={(e) => setMotivo(e.target.value)}
-        placeholder="El cliente cambió de idea"
-      />
+      {/* Opcional y discreta: una cuenta abierta a la que se le agrega un
+          cafe no necesita explicacion. Quien quiera dejar constancia, la
+          abre. */}
+      {conNota ? (
+        <Campo
+          etiqueta="Nota"
+          className="mt-4"
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="Opcional: por qué se cambió"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConNota(true)}
+          className="mt-4 text-xs font-medium text-neutral-400 hover:text-neutral-700 underline underline-offset-2"
+        >
+          Agregar una nota
+        </button>
+      )}
 
       {pedido.ediciones.length > 0 && (
         <div className="mt-4 text-xs text-neutral-500 space-y-1">

@@ -48,7 +48,11 @@ function monto(v: string): number {
 }
 const CLAVE_PUNTO = 'erp-punto-venta'
 
-type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number }
+// `cortesia`: el renglon entero se regala (Leider, 22-sep: "le quiero regalar
+// un cafe"). No se cobra, si descuenta inventario, y su costo va a gasto de
+// cortesias y no a costo de ventas, para que la caja cierre y el margen del
+// producto no mienta.
+type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number; cortesia: boolean }
 type Carrito = Record<number, CarritoEntry>
 
 export default function POS() {
@@ -281,7 +285,7 @@ export default function POS() {
 
   const totalCarrito = useMemo(
     () =>
-      Object.values(carrito).reduce((sum, c) => sum + c.variante.precio * c.cantidad, 0) +
+      Object.values(carrito).reduce((sum, c) => sum + (c.cortesia ? 0 : c.variante.precio * c.cantidad), 0) +
       libres.reduce((sum, l) => sum + l.precio, 0),
     [carrito, libres],
   )
@@ -304,7 +308,12 @@ export default function POS() {
   function agregar(producto: Producto, variante: Variante) {
     setCarrito((c) => ({
       ...c,
-      [variante.id]: { producto, variante, cantidad: (c[variante.id]?.cantidad ?? 0) + 1 },
+      [variante.id]: {
+        producto,
+        variante,
+        cantidad: (c[variante.id]?.cantidad ?? 0) + 1,
+        cortesia: c[variante.id]?.cortesia ?? false,
+      },
     }))
     setRecienAgregado((prev) => new Set(prev).add(variante.id))
     setTimeout(() => {
@@ -314,6 +323,14 @@ export default function POS() {
         return next
       })
     }, 300)
+  }
+
+  function alternarCortesia(varianteId: number) {
+    setCarrito((c) => {
+      const actual = c[varianteId]
+      if (!actual) return c
+      return { ...c, [varianteId]: { ...actual, cortesia: !actual.cortesia } }
+    })
   }
 
   function quitar(varianteId: number) {
@@ -333,6 +350,7 @@ export default function POS() {
       ...Object.values(carrito).map((c) => ({
         variante_id: c.variante.id,
         cantidad: c.cantidad,
+        cortesia: c.cortesia,
       })),
       ...libres.map((l) => ({
         cantidad: 1,
@@ -995,6 +1013,11 @@ export default function POS() {
                           }`}
                         />
                         {i.cantidad}x {i.nombre}
+                        {i.cortesia && (
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-exito-700 bg-exito-50 rounded px-1.5 py-0.5">
+                            cortesía
+                          </span>
+                        )}
                       </li>
                     )
                   })}
@@ -1100,7 +1123,7 @@ export default function POS() {
           </button>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
           <div className="flex-1 overflow-y-auto space-y-3">
-            {Object.values(carrito).map(({ producto, variante, cantidad }) => (
+            {Object.values(carrito).map(({ producto, variante, cantidad, cortesia }) => (
               <div key={variante.id} className="flex justify-between items-center gap-2">
                 <span
                   aria-hidden
@@ -1112,11 +1135,33 @@ export default function POS() {
                   <div className="text-sm font-semibold truncate">
                     {etiquetaVariante(producto, variante)}
                   </div>
-                  <div className="text-xs text-neutral-500">
-                    {cantidad} x {fmt(variante.precio)} ={' '}
-                    <span className="font-semibold text-neutral-700">
-                      {fmt(variante.precio * cantidad)}
-                    </span>
+                  <div className="text-xs text-neutral-500 flex items-center gap-1.5 flex-wrap">
+                    {cortesia ? (
+                      <>
+                        <span className="line-through">{fmt(variante.precio * cantidad)}</span>
+                        <span className="font-semibold text-exito-700">{fmt(0)}</span>
+                      </>
+                    ) : (
+                      <>
+                        {cantidad} x {fmt(variante.precio)} ={' '}
+                        <span className="font-semibold text-neutral-700">
+                          {fmt(variante.precio * cantidad)}
+                        </span>
+                      </>
+                    )}
+                    {/* Regalar el renglon: un toque lo marca, otro lo
+                        desmarca. Chico y a la mano, sin cuadro ni motivo. */}
+                    <button
+                      type="button"
+                      onClick={() => alternarCortesia(variante.id)}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${
+                        cortesia
+                          ? 'bg-exito-50 border-exito-300 text-exito-700'
+                          : 'border-neutral-200 text-neutral-400 hover:text-neutral-700 hover:border-neutral-400'
+                      }`}
+                    >
+                      {cortesia ? 'Cortesía' : 'Regalar'}
+                    </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -1493,6 +1538,15 @@ export default function POS() {
                   </div>
                 )}
               </div>
+            ) : aCobrar <= 0 ? (
+              // Todo regalado: no entra plata. Se cierra la comanda y listo;
+              // el costo lo reconoce el servidor como gasto de cortesias.
+              <button
+                onClick={() => confirmarCobro(METODOS_PAGO[0])}
+                className="w-full mt-3 bg-exito-600 hover:bg-exito-700 text-white rounded-xl py-3 text-sm font-semibold"
+              >
+                Cerrar como cortesía (no se cobra)
+              </button>
             ) : (
             <>
               <div className="grid grid-cols-2 gap-2 mb-2 mt-3">

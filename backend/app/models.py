@@ -1204,6 +1204,14 @@ class PedidoItem(Base):
     cantidad = Column(Integer, default=1)
     nota = Column(String, default="")
     preparado = Column(Boolean, default=False)
+    # Cortesia: se regala (Leider, 22-sep: "le quiero regalar un cafe"). Al
+    # cliente no se le cobra (precio 0), pero la mercancia salio igual, asi
+    # que descuenta inventario como cualquier renglon y su costo va a gasto
+    # "Cortesias" (6035), NO a costo de ventas: si fuera venta, la caja no
+    # cerraria; si fuera costo de ventas, el margen del producto mentiria.
+    # `precio_lista` guarda lo que habria costado, para saber cuanto se regalo.
+    cortesia = Column(Boolean, default=False, nullable=False)
+    precio_lista = Column(Float, default=0)
 
     pedido = relationship("Pedido", back_populates="items")
 

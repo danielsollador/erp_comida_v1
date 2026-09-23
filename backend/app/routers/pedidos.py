@@ -299,7 +299,7 @@ async def crear_pedido(
                 status_code=400,
                 detail="Una venta libre necesita un nombre para que quede en el ticket",
             )
-        if not item.precio_libre or item.precio_libre <= 0:
+        if not item.cortesia and (not item.precio_libre or item.precio_libre <= 0):
             raise HTTPException(
                 status_code=400, detail="Una venta libre necesita su precio"
             )
@@ -352,11 +352,13 @@ async def crear_pedido(
                     pedido_id=db_pedido.id,
                     variante_id=None,
                     nombre=item.nombre_libre.strip(),
-                    precio_unitario=round(item.precio_libre, 2),
+                    precio_unitario=0.0 if item.cortesia else round(item.precio_libre, 2),
                     costo_unitario=0,
                     cantidad=item.cantidad,
                     nota=item.nota,
                     preparado=bool(item.preparado) or not pedido.a_cocina,
+                    cortesia=item.cortesia,
+                    precio_lista=round(item.precio_libre or 0, 2) if item.cortesia else 0.0,
                 )
             )
             continue
@@ -367,8 +369,12 @@ async def crear_pedido(
                 pedido_id=db_pedido.id,
                 variante_id=variante.id,
                 nombre=nombre,
-                precio_unitario=variante.precio,
+                # Regalado: al cliente no se le cobra, pero el costo se
+                # congela igual para saber cuanto costo el regalo.
+                precio_unitario=0.0 if item.cortesia else variante.precio,
                 costo_unitario=round(costos.get(variante.id, 0), 4),
+                cortesia=item.cortesia,
+                precio_lista=variante.precio if item.cortesia else 0.0,
                 cantidad=item.cantidad,
                 nota=item.nota,
                 # Si la comanda no va a cocina, nada que preparar: la comida
@@ -578,15 +584,27 @@ def _clave_de_fila(fila: models.PedidoItem) -> tuple:
     Del menu, la variante. De la venta libre, el nombre y el precio: es lo
     unico que la identifica, porque no existe en ningun catalogo.
     """
+    # Un cafe cobrado y un cafe regalado son DOS renglones: juntarlos le
+    # cobraria al cliente el que se le regalo, o le regalaria el que pago.
     if fila.variante_id is not None:
-        return ("menu", fila.variante_id)
-    return ("libre", (fila.nombre or "").strip().lower(), round(fila.precio_unitario or 0, 2))
+        return ("menu", fila.variante_id, bool(fila.cortesia))
+    return (
+        "libre",
+        (fila.nombre or "").strip().lower(),
+        0.0 if fila.cortesia else round(fila.precio_unitario or 0, 2),
+        bool(fila.cortesia),
+    )
 
 
 def _clave_pedida(item: schemas.PedidoItemCreate) -> tuple:
     if item.variante_id is not None:
-        return ("menu", item.variante_id)
-    return ("libre", (item.nombre_libre or "").strip().lower(), round(item.precio_libre or 0, 2))
+        return ("menu", item.variante_id, bool(item.cortesia))
+    return (
+        "libre",
+        (item.nombre_libre or "").strip().lower(),
+        0.0 if item.cortesia else round(item.precio_libre or 0, 2),
+        bool(item.cortesia),
+    )
 
 
 def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int]) -> None:
@@ -836,20 +854,32 @@ async def editar_pedido(
             return fila.precio_unitario, (fila.costo_unitario or 0)
         item = ejemplo[clave]
         if item.variante_id is not None:
-            return variantes[item.variante_id].precio, round(costos.get(item.variante_id, 0), 4)
-        return round(item.precio_libre, 2), 0.0
+            precio = 0.0 if item.cortesia else variantes[item.variante_id].precio
+            return precio, round(costos.get(item.variante_id, 0), 4)
+        return (0.0 if item.cortesia else round(item.precio_libre, 2)), 0.0
 
+    def _es_cortesia(clave: tuple) -> bool:
+        return bool(clave[-1])
+
+    # El costo de lo cobrado y el de lo regalado van a cuentas distintas
+    # (5010 y 6035), asi que se llevan por separado de punta a punta.
     nuevo_subtotal = 0.0
     nuevo_costo = 0.0
+    nuevo_costo_cortesia = 0.0
     for clave, cantidad in pedidas.items():
         precio, costo = _precio_y_costo(clave)
         nuevo_subtotal += precio * cantidad
-        nuevo_costo += costo * cantidad
+        if _es_cortesia(clave):
+            nuevo_costo_cortesia += costo * cantidad
+        else:
+            nuevo_costo += costo * cantidad
     nuevo_subtotal = round(nuevo_subtotal, 2)
     nuevo_costo = round(nuevo_costo, 2)
+    nuevo_costo_cortesia = round(nuevo_costo_cortesia, 2)
 
     total_antes = pedido.total
-    costo_antes = round(sum((i.costo_unitario or 0) * i.cantidad for i in pedido.items), 2)
+    costo_antes = contabilidad.costo_de_items(pedido, cortesia=False)
+    costo_antes_cortesia = contabilidad.costo_de_items(pedido, cortesia=True)
     nuevo_total = round(max(nuevo_subtotal - (pedido.descuento or 0), 0), 2)
     diferencia = round(nuevo_total - total_antes, 2)
 
@@ -891,6 +921,7 @@ async def editar_pedido(
     retorno: Dict[models.Ingrediente, float] = {}
     perdida: Dict[models.Ingrediente, float] = {}
     costo_perdido = 0.0
+    cortesia_perdida = 0.0
     for clave in set(actuales) | set(pedidas):
         antes = sum(f.cantidad for f in actuales.get(clave, []))
         despues = pedidas.get(clave, 0)
@@ -910,11 +941,15 @@ async def editar_pedido(
         else:
             destino, cantidad = (perdida if ya_hecho else retorno), antes - despues
             if ya_hecho:
-                costo_perdido += (actuales[clave][0].costo_unitario or 0) * cantidad
+                if _es_cortesia(clave):
+                    cortesia_perdida += (actuales[clave][0].costo_unitario or 0) * cantidad
+                else:
+                    costo_perdido += (actuales[clave][0].costo_unitario or 0) * cantidad
         for receta in recetas[variante_id]:
             bruto = costeo.consumo_bruto(receta, cantidad)
             destino[receta.ingrediente] = destino.get(receta.ingrediente, 0) + bruto
     costo_perdido = round(costo_perdido, 2)
+    cortesia_perdida = round(cortesia_perdida, 2)
 
     neto = {}
     for ingrediente in set(aumento) | set(retorno):
@@ -944,6 +979,8 @@ async def editar_pedido(
                 if item.variante_id is not None
                 else item.nombre_libre.strip()
             )
+        if _es_cortesia(clave):
+            nombre += " (cortesía)"
         if despues == 0:
             cambios.append(f"quitado {nombre} (x{antes})")
         elif antes == 0:
@@ -992,6 +1029,12 @@ async def editar_pedido(
                     cantidad=cantidad,
                     nota=item.nota,
                     preparado=nace_preparado,
+                    cortesia=item.cortesia,
+                    precio_lista=(
+                        (variantes[item.variante_id].precio if item.variante_id is not None else round(item.precio_libre or 0, 2))
+                        if item.cortesia
+                        else 0.0
+                    ),
                 )
             )
     for clave, filas in actuales.items():
@@ -1075,6 +1118,8 @@ async def editar_pedido(
         contabilidad.registrar_ajuste_edicion(
             db, pedido, diferencia, round(nuevo_costo - costo_antes, 2),
             [(p.metodo, p.monto) for p in pagos], costo_perdido=costo_perdido,
+            delta_cortesia=round(nuevo_costo_cortesia - costo_antes_cortesia, 2),
+            cortesia_perdida=cortesia_perdida,
         )
 
     db.add(
@@ -1160,9 +1205,15 @@ async def cobrar_pedido(
     # cosa de todos los dias. Sin esto habia que elegir un metodo y mentir, y
     # el cierre de caja mostraba un faltante que no existia.
     a_cobrar = pedido.a_cobrar
-    pagos = body.pagos or [
-        schemas.PagoInput(metodo=body.metodo_pago, monto=a_cobrar, referencia=body.referencia)
-    ]
+    # Una comanda regalada entera (todo cortesia) no tiene nada que cobrar:
+    # se cierra sin pagos, y la gaveta no se entera. El costo si se reconoce
+    # abajo, en `registrar_venta`, como gasto de cortesias.
+    if a_cobrar <= 0:
+        pagos = []
+    else:
+        pagos = body.pagos or [
+            schemas.PagoInput(metodo=body.metodo_pago, monto=a_cobrar, referencia=body.referencia)
+        ]
     for pago in pagos:
         if pago.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
             raise HTTPException(
@@ -1211,7 +1262,7 @@ async def cobrar_pedido(
 
     pedido.estado = "pagado"
     # El campo resumen sigue existiendo para mostrar de un vistazo como se pago.
-    pedido.metodo_pago = pagos[0].metodo if len(pagos) == 1 else "Mixto"
+    pedido.metodo_pago = "Cortesía" if not pagos else pagos[0].metodo if len(pagos) == 1 else "Mixto"
     for pago in pagos:
         vuelto = round(max((pago.recibido or pago.monto) - pago.monto, 0), 2)
         db.add(

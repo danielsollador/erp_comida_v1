@@ -572,6 +572,9 @@ class PedidoItemCreate(BaseModel):
     # delivery personalizado, por ejemplo- lo manda en true para que no se
     # quede pegado para siempre en la cola de cocina.
     preparado: Optional[bool] = None
+    # Se regala: no se cobra, si descuenta inventario, y su costo va a gasto
+    # de cortesias en vez de a costo de ventas.
+    cortesia: bool = False
 
 
 class PedidoCreate(BaseModel):
@@ -627,6 +630,9 @@ class PedidoItem(BaseModel):
     cantidad: int
     nota: str
     preparado: bool
+    # Regalado: precio 0 en la cuenta; `precio_lista` es lo que habria costado.
+    cortesia: bool = False
+    precio_lista: float = 0
 
     class Config:
         from_attributes = True
@@ -1463,6 +1469,10 @@ class ReportePerdidas(BaseModel):
     valor_devuelto: float
     con_descuento: int
     valor_descuentos: float
+    # Lo que se regalo: renglones de cortesia en ventas cobradas del periodo.
+    cortesias: int = 0
+    valor_cortesias: float = 0  # a precio de lista
+    costo_cortesias: float = 0  # lo que costo la mercancia regalada
     detalle: List[Merma]
     insights: List[Insight]
 

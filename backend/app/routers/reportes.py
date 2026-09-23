@@ -992,6 +992,27 @@ def reporte_perdidas(rango: Rango = Depends(), db: Session = Depends(get_db)):
     merma_anterior = round(sum(v for _, v in _mermas_valoradas(db, *anterior(inicio, fin))), 2)
     cambio = _pct(total, merma_anterior)
 
+    # Lo regalado en ventas cobradas del periodo: cuantas unidades, cuanto
+    # valian y cuanto costaron.
+    cortesias = 0
+    valor_cortesias = 0.0
+    costo_cortesias = 0.0
+    for item in (
+        db.query(models.PedidoItem)
+        .join(models.Pedido, models.PedidoItem.pedido_id == models.Pedido.id)
+        .filter(
+            models.PedidoItem.cortesia.is_(True),
+            models.Pedido.estado == "pagado",
+            models.Pedido.devuelto.is_(False),
+            models.Pedido.cerrado_en >= inicio,
+            models.Pedido.cerrado_en < fin,
+        )
+        .all()
+    ):
+        cortesias += item.cantidad
+        valor_cortesias += (item.precio_lista or 0) * item.cantidad
+        costo_cortesias += (item.costo_unitario or 0) * item.cantidad
+
     detalle = [
         schemas.Merma(
             id=m.id,
@@ -1030,6 +1051,9 @@ def reporte_perdidas(rango: Rango = Depends(), db: Session = Depends(get_db)):
         valor_devuelto=round(b.valor_devuelto, 2),
         con_descuento=b.con_descuento,
         valor_descuentos=round(b.valor_descuentos, 2),
+        cortesias=cortesias,
+        valor_cortesias=round(valor_cortesias, 2),
+        costo_cortesias=round(costo_cortesias, 2),
         detalle=detalle,
         insights=_lecturas_de_perdidas(
             total, b.ventas, por_insumo, por_conteo, merma_anterior, cambio, b.anulados, b.valor_anulado

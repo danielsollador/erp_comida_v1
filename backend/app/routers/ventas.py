@@ -80,7 +80,7 @@ def estado_de(p: models.Pedido) -> str:
 
 def _detalle(p: models.Pedido) -> str:
     """"2× Empanada, 1× Jugo": lo que se vendio, de un vistazo."""
-    return ", ".join(f"{i.cantidad}× {i.nombre}" for i in p.items)
+    return ", ".join(f"{i.cantidad}× {i.nombre}{' (cortesía)' if i.cortesia else ''}" for i in p.items)
 
 
 def _metodos(p: models.Pedido) -> str:
