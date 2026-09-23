@@ -48,6 +48,19 @@ export function enPreparacion(pedido: Pedido): boolean {
 }
 
 /**
+ * Donde esta la comida de esta comanda, en palabras. Solo mira lo que paso
+ * por cocina: un refresco de la nevera no hace esperar a nadie.
+ *   'en_cocina'  falta algo por cocinar
+ *   'lista'      la cocina ya termino lo suyo
+ *   'sin_cocina' nada paso por cocina (todo de vitrina)
+ */
+export function estadoCocina(pedido: Pedido): 'en_cocina' | 'lista' | 'sin_cocina' {
+  const deCocina = pedido.items.filter((i) => i.a_cocina !== false)
+  if (deCocina.length === 0) return 'sin_cocina'
+  return deCocina.some((i) => !i.preparado) ? 'en_cocina' : 'lista'
+}
+
+/**
  * Por que NO se puede editar esta comanda, en palabras, o null si si se puede.
  *
  * Devuelve el motivo y no un booleano a proposito: un boton apagado sin
@@ -59,10 +72,9 @@ export function porQueNoSeEdita(pedido: Pedido): string | null {
   if (pedido.devuelto) return 'Esta venta se devolvió entera'
   if (enPreparacion(pedido))
     return `${pedido.cocinando_por || 'La cocina'} ya está preparando esta comanda`
-  // Lo que la cocina ya termino no se edita: la comida esta hecha y en la
-  // barra. Lo que toca es anular, o devolver y volver a cobrar.
-  if (pedido.items.length > 0 && pedido.items.every((i) => i.preparado))
-    return 'La cocina ya terminó esta comanda: ya no se edita'
+  // Lo que la cocina ya termino no se QUITA, pero la comanda se abre igual:
+  // agregarle algo no bota comida, y lo de vitrina nunca paso por cocina. El
+  // servidor rechaza quitar lo ya cocinado y dice por que.
   if (editandoAhora(pedido)) return `${pedido.editando_por || 'Otra caja'} la está editando`
   // Una venta cobrada AYER ya entro al cierre de caja de ayer: moverle el monto
   // hoy deja la gaveta diciendo una cosa y los libros otra. El servidor la

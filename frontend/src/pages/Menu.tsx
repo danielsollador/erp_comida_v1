@@ -379,6 +379,7 @@ function ListaCategorias({
                 <span className="block text-[11px] text-neutral-400">
                   {cat.productos.filter((p) => p.activo).length} producto(s)
                   {cat.bebida && ' · bebidas'}
+                  {cat.va_a_cocina === false && ' · no va a cocina'}
                 </span>
               </button>
               <MenuAcciones
@@ -399,6 +400,14 @@ function ListaCategorias({
                     ayuda: 'El mostrador ofrece las bebidas para acompañar la comida',
                     onElegir: async () => {
                       await api.actualizarCategoria(cat.id, { bebida: !cat.bebida })
+                      onCambio()
+                    },
+                  },
+                  {
+                    texto: cat.va_a_cocina === false ? 'Sí va a cocina' : 'No va a cocina',
+                    ayuda: 'Lo que se sugiere al comandar. La cajera lo puede cambiar en cada pedido.',
+                    onElegir: async () => {
+                      await api.actualizarCategoria(cat.id, { va_a_cocina: cat.va_a_cocina === false })
                       onCambio()
                     },
                   },

@@ -7,7 +7,7 @@ import { Boton, Modal } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
-import { enPreparacion, porQueNoSeEdita } from '../lib/comandas'
+import { enPreparacion, estadoCocina, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { uuid } from '../lib/uuid'
@@ -344,13 +344,58 @@ export default function POS() {
     })
   }
 
-  async function enviarComanda() {
+  // Lo que va a cocina, renglón por renglón, mientras se confirma la comanda.
+  // `null` = no se está confirmando. Antes era UNA pregunta para toda la
+  // comanda, y un pedido con un refresco de la nevera y una empanada por
+  // hacer no tenía respuesta correcta.
+  const [destinos, setDestinos] = useState<Record<number, boolean> | null>(null)
+  const categoriaPorId = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias])
+
+  /** Lo que sugiere la categoría: se prepara en cocina o no. */
+  function vaACocinaPorDefecto(varianteId: number): boolean {
+    const cat = categoriaPorId.get(categoriaDeVariante.get(varianteId) ?? -1)
+    return cat?.va_a_cocina ?? true
+  }
+
+  function enviarComanda() {
     setError('')
+    if (Object.keys(carrito).length === 0 && libres.length === 0) return
+
+    // Sin nombre no se comanda. Un pedido anónimo no se nota al escribirlo:
+    // se nota media hora después, cuando hay cuatro comandas sin dueño y la
+    // comida se entrega preguntando en voz alta. Y si esa venta termina
+    // fiada, ya no hay a quién cobrarle.
+    if (!clienteComanda.trim()) {
+      setFaltaNombre(true)
+      setError('Sin nombre no se puede comandar: escribe a nombre de quién va el pedido.')
+      return
+    }
+    setFaltaNombre(false)
+
+    // A cocina o de la vitrina, renglón por renglón. Leider (22-sep): "la
+    // tienda va a tener ya comida de muestra... al darle al boton tiene que
+    // generarte la opcion de si quieres mandarlo a cocina o no". Cada renglón
+    // nace con lo que diga su categoría (el refresco no, la empanada sí) y la
+    // cajera cambia lo que haga falta: la empanada que ya está en la vitrina
+    // no se vuelve a hacer.
+    const renglones = Object.values(carrito)
+    if (renglones.length === 0) {
+      void mandarComanda({})
+      return
+    }
+    setDestinos(Object.fromEntries(renglones.map((c) => [c.variante.id, vaACocinaPorDefecto(c.variante.id)])))
+  }
+
+  async function mandarComanda(destinoDe: Record<number, boolean>) {
+    setError('')
+    setDestinos(null)
+    const nombre = clienteComanda.trim()
     const items = [
       ...Object.values(carrito).map((c) => ({
         variante_id: c.variante.id,
         cantidad: c.cantidad,
         cortesia: c.cortesia,
+        a_cocina: destinoDe[c.variante.id] ?? vaACocinaPorDefecto(c.variante.id),
       })),
       ...libres.map((l) => ({
         cantidad: 1,
@@ -361,46 +406,10 @@ export default function POS() {
     ]
     if (items.length === 0) return
 
-    // Sin nombre no se comanda. Un pedido anónimo no se nota al escribirlo:
-    // se nota media hora después, cuando hay cuatro comandas sin dueño y la
-    // comida se entrega preguntando en voz alta. Y si esa venta termina
-    // fiada, ya no hay a quién cobrarle.
-    const nombre = clienteComanda.trim()
-    if (!nombre) {
-      setFaltaNombre(true)
-      setError('Sin nombre no se puede comandar: escribe a nombre de quién va el pedido.')
-      return
-    }
-    setFaltaNombre(false)
-
-    // A cocina o de la vitrina. Leider (22-sep): "la tienda va a tener ya
-    // comida de muestra... al darle al boton tiene que generarte la opcion
-    // de si quieres mandarlo a cocina o no". Se pregunta y no se adivina:
-    // desde el carrito no hay forma de saber si esa empanada hay que hacerla
-    // o ya esta en la vitrina, y mandar a cocina algo que ya esta hecho es
-    // comida de mas.
-    const destino = await dialogo.elegir({
-      titulo: `¿La comanda de ${nombre} va a cocina?`,
-      opciones: [
-        {
-          valor: 'cocina',
-          texto: 'Sí, mandar a cocina',
-          detalle: 'Hay que prepararla. Aparece en la pantalla de cocina.',
-        },
-        {
-          valor: 'vitrina',
-          texto: 'No, ya está lista',
-          detalle: 'Comida de muestra, del mostrador. No pasa por cocina: queda lista para cobrar.',
-        },
-      ],
-    })
-    if (destino === null) return
-    const aCocina = destino === 'cocina'
-
     if (!claveComanda.current) claveComanda.current = uuid()
     const clave = claveComanda.current
     try {
-      await api.crearPedido(items, false, '', clave, nombre, aCocina)
+      await api.crearPedido(items, false, '', clave, nombre)
       setCarrito({})
       setLibres([])
       setClienteComanda('')
@@ -419,7 +428,7 @@ export default function POS() {
           })
         ) {
           try {
-            await api.crearPedido(items, true, '', clave, nombre, aCocina)
+            await api.crearPedido(items, true, '', clave, nombre)
             setCarrito({})
             setLibres([])
             setClienteComanda('')
@@ -628,7 +637,9 @@ export default function POS() {
     // es solo una sugerencia: si la cajera marco el item por error, o la
     // cocina hizo la comida sin tocar la casilla, la adivinanza queda mal y
     // antes no habia forma de corregirla al anular. Ahora se pregunta.
-    const yaHecha = pedido.estado === 'listo' || pedido.items.some((i) => i.preparado)
+    // Solo cuenta lo que hizo la cocina: lo de vitrina nace "preparado" y
+    // "listo" sin que nadie lo cocinara, y al anular vuelve a la vitrina.
+    const yaHecha = pedido.items.some((i) => i.preparado && i.a_cocina !== false)
     const eleccion = await dialogo.elegir({
       titulo: `¿Anular el pedido #${pedido.numero}?`,
       texto: `El sistema cree que ${yaHecha ? 'la cocina ya lo preparó' : 'todavía no se preparó'}. Confirma o corrige:`,
@@ -900,6 +911,7 @@ export default function POS() {
               // pantalla de cocina, no el estado del pedido. Cobrar deja el
               // pedido en "pagado" aunque no se haya tocado la comida.
               const falta = pedido.items.some((i) => !i.preparado)
+              const cocina = estadoCocina(pedido)
               const preparando = enPreparacion(pedido)
               const yaPagado = pedido.estado === 'pagado'
               const entregar = yaPagado && !falta
@@ -991,13 +1003,19 @@ export default function POS() {
                               : 'bg-exito-100 text-exito-700'
                       }`}
                     >
+                      {/* Dos cosas a la vez: si ya se cobró, y dónde está la
+                          comida. "Cuenta abierta" sola (22-sep) se había
+                          comido el "cocina terminó": la cajera no sabía si
+                          ya podía entregar. */}
                       {entregar
                         ? 'Para entregar'
                         : yaPagado
-                          ? 'Cobrado · en cocina'
+                          ? 'Cobrado · falta cocina'
                           : falta
-                            ? 'Cuenta abierta · en cocina'
-                            : 'Cuenta abierta · falta cobrar'}
+                            ? 'Cuenta abierta · falta cocina'
+                            : cocina === 'lista'
+                              ? 'Cuenta abierta · cocina lista'
+                              : 'Cuenta abierta · falta cobrar'}
                     </span>
                   </span>
                 </div>
@@ -1013,6 +1031,22 @@ export default function POS() {
                           }`}
                         />
                         {i.cantidad}x {i.nombre}
+                        {/* Renglón por renglón, solo si la comanda pasó por
+                            cocina: en una mixta es lo que dice qué falta. */}
+                        {cocina !== 'sin_cocina' &&
+                          (i.a_cocina === false ? (
+                            <span className="text-[10px] font-medium text-neutral-500 bg-neutral-100 rounded px-1.5 py-0.5">
+                              vitrina
+                            </span>
+                          ) : i.preparado ? (
+                            <span className="text-[10px] font-medium text-exito-700 bg-exito-50 rounded px-1.5 py-0.5">
+                              listo
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
+                              en cocina
+                            </span>
+                          ))}
                         {i.cortesia && (
                           <span className="text-[10px] font-semibold uppercase tracking-wide text-exito-700 bg-exito-50 rounded px-1.5 py-0.5">
                             cortesía
@@ -1239,6 +1273,74 @@ export default function POS() {
           </div>
         </div>
       </div>
+
+      {destinos !== null && (
+        <Modal
+          titulo={`¿Qué va a cocina? · ${clienteComanda.trim()}`}
+          ayuda="Cada renglón viene con lo que dice su categoría. Toca para cambiarlo: lo que ya está hecho en la vitrina no pasa por cocina."
+          onCerrar={() => setDestinos(null)}
+          ancho="sm"
+          pie={
+            <>
+              <Boton tono="fantasma" onClick={() => setDestinos(null)}>
+                Volver
+              </Boton>
+              <Boton onClick={() => void mandarComanda(destinos)}>
+                {Object.values(destinos).some(Boolean) ? 'Enviar comanda' : 'Enviar sin cocina'}
+              </Boton>
+            </>
+          }
+        >
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => setDestinos(Object.fromEntries(Object.keys(destinos).map((k) => [k, true])))}
+              className="flex-1 text-xs font-medium rounded-lg border border-neutral-200 py-2 hover:bg-neutral-50"
+            >
+              Todo a cocina
+            </button>
+            <button
+              onClick={() => setDestinos(Object.fromEntries(Object.keys(destinos).map((k) => [k, false])))}
+              className="flex-1 text-xs font-medium rounded-lg border border-neutral-200 py-2 hover:bg-neutral-50"
+            >
+              Todo de vitrina
+            </button>
+          </div>
+          <ul className="space-y-2">
+            {Object.values(carrito).map((c) => {
+              const cocina = destinos[c.variante.id] ?? true
+              return (
+                <li key={c.variante.id}>
+                  <button
+                    onClick={() => setDestinos({ ...destinos, [c.variante.id]: !cocina })}
+                    aria-pressed={cocina}
+                    className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left ${
+                      cocina ? 'border-aviso-300 bg-aviso-50' : 'border-neutral-200 bg-white'
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block font-medium truncate">
+                        {c.cantidad}x {etiquetaVariante(c.producto, c.variante)}
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 text-xs font-semibold rounded-full px-2.5 py-1 ${
+                        cocina ? 'bg-aviso-500 text-white' : 'bg-neutral-800 text-white'
+                      }`}
+                    >
+                      {cocina ? 'A cocina' : 'De vitrina'}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          {libres.length > 0 && (
+            <p className="text-xs text-neutral-500 mt-3">
+              {libres.length} envío(s) aparte: no pasan por cocina.
+            </p>
+          )}
+        </Modal>
+      )}
 
       {ventasHoy !== null && (
         <Modal

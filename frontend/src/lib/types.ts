@@ -25,6 +25,9 @@ export type Categoria = {
   bebida: boolean
   /** El tinte con el que se pinta en el mostrador. Vacio = el automatico. */
   color: string
+  /** Lo de aqui se prepara en cocina. Es la sugerencia al comandar: la cajera
+   *  la puede cambiar renglón por renglón. */
+  va_a_cocina: boolean
 }
 
 export type Operador = {
@@ -53,6 +56,8 @@ export type PedidoItem = {
   /** Regalado: precio 0 en la cuenta; `precio_lista` es lo que habría costado. */
   cortesia: boolean
   precio_lista: number
+  /** Pasó por cocina. Con `preparado`: en cocina / cocina lo terminó / de vitrina. */
+  a_cocina: boolean
 }
 
 export type Ingrediente = {
@@ -729,6 +734,24 @@ export type OtroMovimiento = {
   cuenta: string
   etiqueta: string
   monto: number
+}
+
+/** Un cobro suelto del día, para cotejarlo contra el lote del punto o el banco. */
+export type CobroDelDia = {
+  metodo: string
+  /** "venta": el cobro de una comanda; "abono": un pago contra un fiado. */
+  tipo: 'venta' | 'abono'
+  pedido_id: number
+  numero: number
+  cliente: string
+  fecha: string | null
+  monto: number
+  /** La tasa a la que se cobró. null = no se sabe: se usa la de hoy. */
+  tasa: number | null
+  referencia: string
+  cobrado_por: string
+  /** La misma referencia anotada dos veces en el día por la misma vía. */
+  repetida: boolean
 }
 
 export type ResumenCaja = {

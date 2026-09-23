@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
@@ -9,9 +9,10 @@ import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { api } from '../lib/api'
-import { METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
+import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
 import type {
   CierreCaja,
+  CobroDelDia,
   EstadoApertura,
   Gasto,
   LineaMetodo,
@@ -406,6 +407,23 @@ function Desglose({ r }: { r: ResumenCaja }) {
   const cerrada = r.desglose.some((l) => l.contado !== null)
   const totalContado = r.desglose.reduce((s, l) => s + (l.contado ?? 0), 0)
   const totalDif = r.desglose.reduce((s, l) => s + (l.diferencia ?? 0), 0)
+  const columnas = cerrada ? 6 : 4
+
+  // El detalle de cada fila: cobro por cobro, con su referencia. El cierre
+  // dice CUÁNTO falta en el punto; esto dice CUÁL ticket fue, puesto al lado
+  // del lote que imprime el terminal.
+  const [cobros, setCobros] = useState<CobroDelDia[] | null>(null)
+  const [abierta, setAbierta] = useState<string | null>(null)
+  useEffect(() => {
+    let vivo = true
+    api
+      .cobrosDelDia(r.fecha)
+      .then((c) => vivo && setCobros(c))
+      .catch(() => vivo && setCobros(null))
+    return () => {
+      vivo = false
+    }
+  }, [r.fecha, r.cobrado])
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <h2 className="font-semibold mb-1">Desglose por forma de pago</h2>
@@ -436,9 +454,30 @@ function Desglose({ r }: { r: ResumenCaja }) {
             </tr>
           </thead>
           <tbody>
-            {r.desglose.map((l) => (
-              <FilaMetodo key={l.metodo} l={l} bcv={bcv} cerrada={cerrada} />
-            ))}
+            {r.desglose.map((l) => {
+              const suyos = cobros?.filter((c) => c.metodo === l.metodo) ?? []
+              const abiertaEsta = abierta === l.metodo
+              return (
+                <Fragment key={l.metodo}>
+                  <FilaMetodo
+                    l={l}
+                    bcv={bcv}
+                    cerrada={cerrada}
+                    cuantos={suyos.length}
+                    alertas={suyos.filter((c) => c.repetida || sinReferencia(c)).length}
+                    abierta={abiertaEsta}
+                    onAlternar={() => setAbierta(abiertaEsta ? null : l.metodo)}
+                  />
+                  {abiertaEsta && (
+                    <tr className="border-b border-neutral-100">
+                      <td colSpan={columnas} className="pb-3">
+                        <DetalleCobros cobros={suyos} bcv={bcv} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-neutral-300 font-semibold">
@@ -504,19 +543,129 @@ function Cifra({
   )
 }
 
+/** Un cobro que debía traer referencia y no la trae (los de antes de exigirla). */
+function sinReferencia(c: CobroDelDia) {
+  return METODOS_CON_REFERENCIA.has(c.metodo) && !c.referencia
+}
+
+function hora(iso: string | null) {
+  if (!iso) return '—'
+  const d = new Date(iso.replace(/(\.\d{3})\d+$/, '$1'))
+  return Number.isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * Los cobros de una forma de pago, uno por uno y en orden de hora: el mismo
+ * orden del lote del punto y del estado de cuenta, para bajar por las dos
+ * listas a la vez. Los bolívares van a la tasa a la que se cobró, que es lo
+ * que de verdad pasó por el terminal.
+ */
+function DetalleCobros({ cobros, bcv }: { cobros: CobroDelDia[]; bcv: number | null }) {
+  if (cobros.length === 0) {
+    return <p className="text-xs text-neutral-400 px-2 py-2">No hubo cobros por esta vía.</p>
+  }
+  const conReferencia = cobros.some((c) => METODOS_CON_REFERENCIA.has(c.metodo))
+  const total = cobros.reduce((s, c) => s + c.monto, 0)
+  const totalBs = cobros.reduce((s, c) => s + c.monto * (c.tasa ?? bcv ?? 0), 0)
+  return (
+    <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-2 overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className="text-neutral-500">
+          <tr>
+            <th className="text-left font-medium px-2 py-1">Hora</th>
+            <th className="text-left font-medium px-2 py-1">Pedido</th>
+            {conReferencia && <th className="text-left font-medium px-2 py-1">Referencia</th>}
+            <th className="text-right font-medium px-2 py-1">$</th>
+            <th className="text-right font-medium px-2 py-1">Bs</th>
+            <th className="text-left font-medium px-2 py-1">Cobró</th>
+          </tr>
+        </thead>
+        <tbody className="tabular-nums">
+          {cobros.map((c, n) => {
+            const tasa = c.tasa ?? bcv
+            return (
+              <tr key={n} className={`border-t border-neutral-200 ${c.repetida ? 'bg-peligro-50' : ''}`}>
+                <td className="px-2 py-1.5 whitespace-nowrap">{hora(c.fecha)}</td>
+                <td className="px-2 py-1.5">
+                  <span className="font-medium">#{c.numero}</span>
+                  {c.cliente && <span className="text-neutral-500"> · {c.cliente}</span>}
+                  {c.tipo === 'abono' && <span className="text-neutral-500"> · abono de fiado</span>}
+                </td>
+                {conReferencia && (
+                  <td className="px-2 py-1.5">
+                    {c.referencia ? (
+                      <span className="font-mono">{c.referencia}</span>
+                    ) : (
+                      sinReferencia(c) && <span className="text-aviso-700">sin referencia</span>
+                    )}
+                    {c.repetida && (
+                      <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-peligro-700">
+                        repetida
+                      </span>
+                    )}
+                  </td>
+                )}
+                <td className={`px-2 py-1.5 text-right ${c.monto < 0 ? 'text-peligro-600' : ''}`}>
+                  {dinero(c.monto)}
+                </td>
+                <td className="px-2 py-1.5 text-right text-neutral-500">
+                  {tasa ? fmtBs(c.monto * tasa, 2) : '—'}
+                </td>
+                <td className="px-2 py-1.5 text-neutral-500">{c.cobrado_por || '—'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-neutral-300 font-semibold tabular-nums">
+            <td className="px-2 py-1.5" colSpan={conReferencia ? 3 : 2}>
+              {cobros.length} cobro(s)
+            </td>
+            <td className="px-2 py-1.5 text-right">{dinero(total)}</td>
+            <td className="px-2 py-1.5 text-right">{totalBs ? fmtBs(totalBs, 2) : '—'}</td>
+            <td />
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
 function FilaMetodo({
   l,
   bcv,
   cerrada,
+  cuantos,
+  alertas,
+  abierta,
+  onAlternar,
 }: {
   l: LineaMetodo
   bcv: number | null
   cerrada: boolean
+  cuantos: number
+  alertas: number
+  abierta: boolean
+  onAlternar: () => void
 }) {
   return (
     <tr className="border-b border-neutral-100 last:border-0">
       <td className="py-2 align-top">
         <span className="font-medium">{etiquetaMetodo(l.metodo)}</span>
+        {cuantos > 0 && (
+          <button
+            onClick={onAlternar}
+            aria-expanded={abierta}
+            className="block text-[11px] font-medium text-acento-700 hover:underline"
+          >
+            {abierta ? 'Ocultar cobros' : `Ver ${cuantos} cobro(s)`}
+            {alertas > 0 && (
+              <span className="ml-1 text-peligro-600">· {alertas} por revisar</span>
+            )}
+          </button>
+        )}
         <span className="block text-[11px] text-neutral-400">
           {!l.se_cuadra
             ? 'no entró plata: es una deuda'

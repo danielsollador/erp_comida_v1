@@ -101,6 +101,14 @@ class CategoriaBase(BaseModel):
     # el automatico. El nombre del tinte y no un codigo de color: la paleta
     # vive en el frontend y cambia con el tema claro/oscuro.
     color: str = ""
+    # Si lo de aqui se prepara en cocina: la sugerencia con la que nace cada
+    # renglon al comandar. La cajera la puede cambiar en la comanda.
+    va_a_cocina: bool = True
+
+    @field_validator("va_a_cocina", mode="before")
+    @classmethod
+    def _cocina_nunca_nula(cls, v):
+        return True if v is None else v
 
     @field_validator("color", mode="before")
     @classmethod
@@ -132,6 +140,7 @@ class CategoriaUpdate(BaseModel):
     activo: Optional[bool] = None
     bebida: Optional[bool] = None
     color: Optional[str] = None
+    va_a_cocina: Optional[bool] = None
 
 
 class Categoria(CategoriaBase):
@@ -575,6 +584,10 @@ class PedidoItemCreate(BaseModel):
     # Se regala: no se cobra, si descuenta inventario, y su costo va a gasto
     # de cortesias en vez de a costo de ventas.
     cortesia: bool = False
+    # Si este renglon va a cocina. None = lo que diga la comanda (`a_cocina`
+    # del pedido), que es como llegaban los pedidos antes de decidirse
+    # renglon por renglon.
+    a_cocina: Optional[bool] = None
 
 
 class PedidoCreate(BaseModel):
@@ -633,6 +646,15 @@ class PedidoItem(BaseModel):
     # Regalado: precio 0 en la cuenta; `precio_lista` es lo que habria costado.
     cortesia: bool = False
     precio_lista: float = 0
+    # Si paso por cocina. Con `preparado`: a_cocina y no preparado = la cocina
+    # lo esta haciendo; a_cocina y preparado = la cocina lo termino; sin
+    # a_cocina = de la vitrina.
+    a_cocina: bool = True
+
+    @field_validator("a_cocina", mode="before")
+    @classmethod
+    def _cocina_nunca_nula(cls, v):
+        return True if v is None else v
 
     class Config:
         from_attributes = True
@@ -958,6 +980,32 @@ class LineaMetodo(BaseModel):
     # (Leider, 21-sep).
     contado: Optional[float] = None
     diferencia: Optional[float] = None
+
+
+class CobroDelDia(BaseModel):
+    """Un cobro suelto, para cotejarlo uno por uno contra el lote del punto o
+    el estado de cuenta del banco.
+
+    El cierre dice CUANTO falta en el punto; esto dice CUAL cobro fue: el que
+    no aparece en el lote, o el que aparece por otro monto.
+    """
+
+    metodo: str
+    # "venta": el cobro de una comanda. "abono": un pago contra un fiado.
+    tipo: str = "venta"
+    pedido_id: int
+    numero: int
+    cliente: str = ""
+    fecha: Optional[datetime.datetime] = None
+    monto: float
+    # La tasa a la que se cobro, para dar los bolivares que de verdad pasaron
+    # por el punto ese dia. None = no se sabe; la pantalla usa la de hoy.
+    tasa: Optional[float] = None
+    referencia: str = ""
+    cobrado_por: str = ""
+    # La misma referencia anotada dos veces en el dia por la misma via: casi
+    # siempre es un pago registrado dos veces, o una referencia copiada mal.
+    repetida: bool = False
 
 
 class OtroMovimiento(BaseModel):

@@ -192,11 +192,15 @@ def test_la_migracion_relaja_not_null_sin_perder_filas(tmp_path, monkeypatch):
             variante_id INTEGER NOT NULL,
             nombre VARCHAR NOT NULL,
             precio_unitario FLOAT NOT NULL,
-            costo_unitario FLOAT, cantidad INTEGER, nota VARCHAR, preparado BOOLEAN);
+            costo_unitario FLOAT, cantidad INTEGER, nota VARCHAR, preparado BOOLEAN,
+            -- Las que `aplicar()` agrega ANTES de relajar (ver COLUMNAS): la
+            -- reconstruccion copia todas las del modelo.
+            cortesia BOOLEAN DEFAULT 0, precio_lista FLOAT DEFAULT 0,
+            a_cocina BOOLEAN DEFAULT 1);
         CREATE INDEX IX_viejo_id ON TRX111_VEN_PEDIDO_DET (id);
         INSERT INTO TRX110_VEN_PEDIDO VALUES (1);
         INSERT INTO DIM230_MEN_VARIANTE VALUES (1);
-        INSERT INTO TRX111_VEN_PEDIDO_DET VALUES (1, 1, 1, 'Empanada', 5.0, 1.0, 2, '', 0);
+        INSERT INTO TRX111_VEN_PEDIDO_DET VALUES (1, 1, 1, 'Empanada', 5.0, 1.0, 2, '', 0, 0, 0, 1);
         """
     )
     con.commit()
@@ -221,8 +225,8 @@ def test_la_migracion_relaja_not_null_sin_perder_filas(tmp_path, monkeypatch):
         assert sobrantes == [], "no queda tabla temporal"
         # y la venta libre ya entra
         con.execute(
-            "INSERT INTO TRX111_VEN_PEDIDO_DET (pedido_id, variante_id, nombre, precio_unitario) "
-            "VALUES (1, NULL, 'Torta por encargo', 25.0)"
+            "INSERT INTO TRX111_VEN_PEDIDO_DET (pedido_id, variante_id, nombre, precio_unitario, cortesia) "
+            "VALUES (1, NULL, 'Torta por encargo', 25.0, 0)"
         )
         con.commit()
     finally:

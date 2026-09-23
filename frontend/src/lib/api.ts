@@ -24,6 +24,7 @@ import type {
   InflacionInsumos,
   EstadoTasa,
   CierreCaja,
+  CobroDelDia,
   EstadoApertura,
   Configuracion,
   ConfiguracionFiscal,
@@ -212,7 +213,7 @@ export const api = {
    */
   actualizarCategoria: (
     id: number,
-    cambios: { nombre?: string; orden?: number; bebida?: boolean; color?: string },
+    cambios: { nombre?: string; orden?: number; bebida?: boolean; color?: string; va_a_cocina?: boolean },
   ) =>
     req<Categoria>(`/menu/categorias/${id}`, {
       method: 'PUT',
@@ -273,6 +274,8 @@ export const api = {
       preparado?: boolean
       // Se regala: no se cobra, sí descuenta inventario.
       cortesia?: boolean
+      // Si este renglón va a cocina. Sin decirlo, vale lo de `a_cocina`.
+      a_cocina?: boolean
     }[],
     permitir_sin_stock = false,
     nota = '',
@@ -335,6 +338,8 @@ export const api = {
       nombre_libre?: string
       precio_libre?: number
       cortesia?: boolean
+      // Lo nuevo: si va a cocina. Sin decirlo, lo que sugiera su categoría.
+      a_cocina?: boolean
     }[],
     extra?: {
       nota?: string
@@ -617,6 +622,9 @@ export const api = {
 
   resumenCaja: (fecha?: string) =>
     req<ResumenCaja>('/caja/resumen' + (fecha ? `?fecha=${fecha}` : '')),
+  /** Cada cobro del día con su referencia: el detalle de la columna "Entró". */
+  cobrosDelDia: (fecha?: string) =>
+    req<CobroDelDia[]>('/caja/cobros' + (fecha ? `?fecha=${fecha}` : '')),
   anularCierre: (id: number, motivo: string) =>
     req<CierreCaja>(`/caja/cierres/${id}/anular`, {
       method: 'POST',
@@ -896,6 +904,7 @@ export type {
   Categoria,
   CostoVariante,
   CierreCaja,
+  CobroDelDia,
   Configuracion,
   ConfiguracionFiscal,
   CuentaContable,

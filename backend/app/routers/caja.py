@@ -437,6 +437,67 @@ def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(ge
     )
 
 
+@router.get("/cobros", response_model=List[schemas.CobroDelDia])
+def cobros_del_dia(fecha: Optional[datetime.date] = None, db: Session = Depends(get_db)):
+    """Cada cobro del dia, uno por uno, con su referencia.
+
+    Es el detalle de la columna "Entró" del desglose: cuando el cierre dice
+    que faltan $12 en el punto, aqui se ve cual ticket fue, poniendo esta
+    lista al lado del lote que imprime el terminal. Salen las mismas ventas
+    que suma el desglose (cobradas ese dia y no devueltas), mas los abonos de
+    fiado, que tambien pasan por el punto y el banco aunque no sean venta.
+    """
+    dia = _fecha_pedida(fecha)
+    inicio, fin = _rango_de(dia)
+    nombres = {o.id: o.nombre for o in db.query(models.Operador).all()}
+
+    cobros: List[schemas.CobroDelDia] = []
+    for pedido in _pedidos_pagados(db, inicio, fin):
+        if pedido.devuelto:
+            continue
+        for pago in pedido.pagos:
+            cobros.append(schemas.CobroDelDia(
+                metodo=_normalizar(pago.metodo),
+                pedido_id=pedido.id,
+                numero=pedido.numero,
+                cliente=pedido.cliente or "",
+                fecha=pedido.cerrado_en,
+                monto=round(pago.monto, 2),
+                tasa=pedido.tasa_bcv,
+                referencia=(pago.referencia or "").strip(),
+                cobrado_por=nombres.get(pedido.operador_id, ""),
+            ))
+    abonos = (
+        db.query(models.AbonoFiado)
+        .filter(models.AbonoFiado.fecha >= inicio, models.AbonoFiado.fecha < fin)
+        .all()
+    )
+    for abono in abonos:
+        cobros.append(schemas.CobroDelDia(
+            metodo=_normalizar(abono.metodo_pago or "Efectivo Bs"),
+            tipo="abono",
+            pedido_id=abono.pedido_id,
+            numero=abono.pedido.numero if abono.pedido else 0,
+            cliente=(abono.pedido.cliente or "") if abono.pedido else "",
+            fecha=abono.fecha,
+            monto=round(abono.monto, 2),
+            referencia=(abono.referencia or "").strip(),
+            cobrado_por=nombres.get(abono.operador_id, ""),
+        ))
+
+    vistas: dict = {}
+    for c in cobros:
+        if c.referencia:
+            clave = (c.metodo, c.referencia.lower())
+            vistas[clave] = vistas.get(clave, 0) + 1
+    for c in cobros:
+        if c.referencia and vistas[(c.metodo, c.referencia.lower())] > 1:
+            c.repetida = True
+
+    cobros.sort(key=lambda c: (c.fecha or datetime.datetime.min, c.numero))
+    return cobros
+
+
 @router.get("/estado-apertura", response_model=schemas.EstadoApertura)
 def estado_de_apertura(
     fecha: Optional[datetime.date] = None, db: Session = Depends(get_db)

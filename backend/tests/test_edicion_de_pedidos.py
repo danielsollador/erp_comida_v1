@@ -477,22 +477,108 @@ def test_la_cocina_suelta_la_comanda_cuando_termina(client, variante):
     assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
 
 
-def test_lo_que_la_cocina_termino_ya_no_se_edita(client, variante):
+def test_lo_que_la_cocina_termino_no_se_quita(client, variante, db):
     """Leider (21-sep): "despues de que una comanda este para entregar ya no se
     puede editar; incluso despues de que cocina la marque lista". La comida
-    esta hecha y en la barra: lo que toca es anular, o devolver y volver a
-    cobrar, que dejan rastro."""
+    esta hecha y en la barra: quitarla es botarla; lo que toca es anular, o
+    devolver y volver a cobrar, que dejan rastro."""
+    otra = otra_variante(db, precio=3.0)
     p = comanda(client, variante)
     client.post(f"/api/pedidos/{p['id']}/marcar-listo")
-    r = client.post(f"/api/pedidos/{p['id']}/edicion")
-    assert r.status_code == 409 and "ya no se edita" in r.json()["detail"]
-    r = editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 2}])
-    assert r.status_code == 409
+    r = editar(client, p["id"], [{"variante_id": otra.id, "cantidad": 1}])
+    assert r.status_code == 409 and "ya no se quita" in r.json()["detail"]
 
     # Cobrada y cocinada --"para entregar"-- tampoco.
-    q = cobrada(client, variante)
+    q = cobrada(client, variante, cantidad=2)
     client.post(f"/api/pedidos/{q['id']}/marcar-listo")
-    assert client.post(f"/api/pedidos/{q['id']}/edicion").status_code == 409
+    r = editar(client, q["id"], [{"variante_id": variante.id, "cantidad": 1}],
+               pagos=[{"metodo": "Efectivo Bs", "monto": 5.0}])
+    assert r.status_code == 409 and "ya no se quita" in r.json()["detail"]
+
+
+def test_a_lo_que_la_cocina_termino_se_le_puede_agregar(client, variante, db):
+    """Agregar un refresco a un pedido ya hecho no bota comida. Lo nuevo por
+    cocinar devuelve la comanda a la cola como nueva: si no, seguiria
+    "lista" en el mostrador y "en preparacion" por quien ya la termino."""
+    p = comanda(client, variante)
+    client.post(f"/api/pedidos/{p['id']}/marcar-listo")
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+
+    r = editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 2}])
+    assert r.status_code == 200, r.text
+    q = r.json()
+    assert q["estado"] == "pendiente"
+    assert q["cocinando_desde"] is None
+    assert [i["preparado"] for i in q["items"]] == [False]
+
+
+def test_una_comanda_sin_cocina_se_edita(client, variante, insumo, db):
+    """El error de antes: lo de vitrina nace "preparado", y la regla de "lo
+    que la cocina termino no se edita" la trancaba aunque la cocina nunca la
+    vio. Y lo que se quita vuelve a la vitrina: no es merma."""
+    r = client.post("/api/pedidos", json={
+        "items": [{"variante_id": variante.id, "cantidad": 2}], "a_cocina": False,
+    })
+    p = r.json()
+    assert p["estado"] == "listo"
+    db.refresh(insumo)
+    antes = insumo.stock_actual
+
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+    r = editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 1}])
+    assert r.status_code == 200, r.text
+    db.refresh(insumo)
+    assert insumo.stock_actual > antes
+    assert db.query(models.Merma).count() == 0
+    # Y agregar mas de lo mismo tampoco la manda a cocina: sale de la vitrina.
+    r = editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 3}])
+    assert r.status_code == 200, r.text
+    assert all(i["preparado"] and not i["a_cocina"] for i in r.json()["items"])
+
+
+def test_a_cocina_se_decide_renglon_por_renglon(client, variante, db):
+    """El refresco se sirve en la barra y la empanada se cocina: en la misma
+    comanda. La cocina solo ve lo suyo."""
+    refresco = otra_variante(db, precio=2.0)
+    r = client.post("/api/pedidos", json={"items": [
+        {"variante_id": variante.id, "cantidad": 1, "a_cocina": True},
+        {"variante_id": refresco.id, "cantidad": 1, "a_cocina": False},
+    ]})
+    p = r.json()
+    assert p["a_cocina"] is True and p["estado"] == "pendiente"
+    por_nombre = {i["nombre"]: i for i in p["items"]}
+    assert por_nombre["Refresco"]["a_cocina"] is False and por_nombre["Refresco"]["preparado"] is True
+    empanada = next(i for i in p["items"] if i["nombre"] != "Refresco")
+    assert empanada["a_cocina"] is True and empanada["preparado"] is False
+
+    # La cocina termina la empanada: el refresco de la vitrina se sigue
+    # pudiendo quitar, la empanada no.
+    client.post(f"/api/pedidos/{p['id']}/items/{empanada['id']}/preparado")
+    r = editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 1}])
+    assert r.status_code == 200, r.text
+
+
+def test_lo_nuevo_en_una_edicion_sigue_a_su_categoria(client, variante, db):
+    """Si el POS no dice nada, lo agregado va a cocina o no segun su
+    categoria, igual que al comandar."""
+    barra = models.Categoria(nombre="Bebidas", orden=1, va_a_cocina=False)
+    db.add(barra)
+    db.flush()
+    producto = models.Producto(categoria_id=barra.id, nombre="Jugo")
+    db.add(producto)
+    db.flush()
+    jugo = models.Variante(producto_id=producto.id, nombre="Regular", precio=2.0)
+    db.add(jugo)
+    db.commit()
+
+    p = comanda(client, variante)
+    r = editar(client, p["id"], [
+        {"variante_id": variante.id, "cantidad": 1},
+        {"variante_id": jugo.id, "cantidad": 1},
+    ])
+    assert r.status_code == 200, r.text
+    nuevo = next(i for i in r.json()["items"] if i["nombre"] == "Jugo")
+    assert nuevo["a_cocina"] is False and nuevo["preparado"] is True
 
 
 def test_quitar_comida_sin_hacer_si_devuelve_el_inventario(client, variante, insumo, db):

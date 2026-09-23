@@ -178,7 +178,8 @@ export default function Cocina() {
   // marca se puede escapar (se hizo la comida y nadie toco la casilla). Se
   // pregunta en vez de imponer la adivinanza.
   async function anular(pedido: Pedido) {
-    const yaHecha = pedido.items.some((i) => i.preparado)
+    // Lo de vitrina nace "preparado" sin que la cocina lo tocara: no cuenta.
+    const yaHecha = pedido.items.some((i) => i.preparado && i.a_cocina !== false)
     const eleccion = await dialogo.elegir({
       titulo: `¿Anular la comanda #${pedido.numero}?`,
       texto: `El sistema cree que ${yaHecha ? 'ya se preparó algo' : 'todavía no se preparó nada'}. Confirma o corrige:`,
@@ -326,7 +327,9 @@ export default function Cocina() {
               </button>
 
               <ul className="space-y-2 mb-4">
-                {pedido.items.map((item) => {
+                {/* Lo de vitrina no se cocina: el refresco de la nevera
+                    solo le estorba a quien está en la plancha. */}
+                {pedido.items.filter((item) => item.a_cocina !== false).map((item) => {
                   const tinte = item.variante_id != null ? tinteDeVariante.get(item.variante_id) : undefined
                   return (
                   <li key={item.id}>

@@ -132,6 +132,12 @@ class Categoria(Base):
     # `id`, asi que "Bebidas" quedaba del color que le tocara y dos categorias
     # vecinas podian salir casi iguales. Vacio = el automatico de siempre.
     color = Column(String, default="")
+    # Si lo de esta categoria se prepara en cocina. Es solo la sugerencia con
+    # la que nace cada renglon al comandar: la cajera la puede cambiar ahi
+    # mismo (la empanada que ya esta en la vitrina no se vuelve a hacer).
+    # Antes la pregunta era una sola para toda la comanda, y un pedido con un
+    # refresco y una empanada por hacer no tenia respuesta correcta.
+    va_a_cocina = Column(Boolean, default=True)
 
     productos = relationship("Producto", back_populates="categoria", cascade="all, delete-orphan")
 
@@ -1055,6 +1061,8 @@ class Pedido(Base):
     # renglones nacieron preparados", porque eso tambien es verdad de una
     # comanda normal en cuanto la cocina termina, y entonces no habria forma
     # de distinguirlas UNA HORA DESPUES, que es cuando alguien pregunta.
+    # Desde que se decide renglon por renglon (ver PedidoItem.a_cocina), esto
+    # vale True si AL MENOS UN renglon paso por cocina.
     a_cocina = Column(Boolean, default=True, nullable=False)
     # Cuando se le entrego al cliente. Mientras es nulo, la comanda cobrada y
     # cocinada se queda a la vista del mostrador (ver MINUTOS_PARA_ENTREGAR);
@@ -1212,6 +1220,11 @@ class PedidoItem(Base):
     # `precio_lista` guarda lo que habria costado, para saber cuanto se regalo.
     cortesia = Column(Boolean, default=False, nullable=False)
     precio_lista = Column(Float, default=0)
+    # Si este renglon PASO por cocina. `preparado` solo no alcanza: un renglon
+    # de vitrina nace preparado y uno que la cocina termino tambien lo esta, y
+    # son cosas opuestas. Confundirlas trancaba la edicion de toda comanda sin
+    # cocina ("la cocina ya termino") aunque la cocina nunca la vio.
+    a_cocina = Column(Boolean, default=True)
 
     pedido = relationship("Pedido", back_populates="items")
 

@@ -108,6 +108,9 @@ COLUMNAS = [
     ("TRX411_COM_FACTURA_DET", "exento", "BOOLEAN DEFAULT 0"),
     ("TRX410_COM_FACTURA", "referencia_pago", "VARCHAR DEFAULT ''"),
     ("CFG910_ADM_PARAMETRO", "vender_sin_inventario", "BOOLEAN DEFAULT 0"),
+    # A cocina o no, renglon por renglon (y la sugerencia, por categoria).
+    ("DIM210_MEN_CATEGORIA", "va_a_cocina", "BOOLEAN DEFAULT 1"),
+    ("TRX111_VEN_PEDIDO_DET", "a_cocina", "BOOLEAN DEFAULT 1"),
 ]
 
 
@@ -548,6 +551,27 @@ def aplicar():
                     text(
                         f'UPDATE "DIM210_MEN_CATEGORIA" SET bebida = {verdadero} '
                         "WHERE LOWER(nombre) LIKE '%bebida%'"
+                    )
+                )
+            if tabla == "DIM210_MEN_CATEGORIA" and columna == "va_a_cocina":
+                # Lo que el dueño ya marco como bebida se sirve en la barra,
+                # no se cocina. Una sola vez, por la misma razon que `bebida`:
+                # despues manda el dueño desde el menu.
+                falso = "FALSE" if ES_POSTGRES else "0"
+                verdadero = "TRUE" if ES_POSTGRES else "1"
+                con.execute(
+                    text(f'UPDATE "DIM210_MEN_CATEGORIA" SET va_a_cocina = {falso} '
+                         f"WHERE bebida = {verdadero}")
+                )
+            if tabla == "TRX111_VEN_PEDIDO_DET" and columna == "a_cocina":
+                # Los renglones de una comanda que se tomo "sin cocina" nunca
+                # pasaron por cocina. Sin esto seguirian trancados para editar.
+                falso = "FALSE" if ES_POSTGRES else "0"
+                con.execute(
+                    text(
+                        f'UPDATE "TRX111_VEN_PEDIDO_DET" SET a_cocina = {falso} '
+                        'WHERE pedido_id IN (SELECT id FROM "TRX110_VEN_PEDIDO" '
+                        f"WHERE a_cocina = {falso})"
                     )
                 )
             if tabla == "TRX410_COM_FACTURA" and columna == "pagada":
