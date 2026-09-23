@@ -996,8 +996,8 @@ export default function POS() {
                         : yaPagado
                           ? 'Cobrado · en cocina'
                           : falta
-                            ? 'En cocina'
-                            : 'Cocina terminó · falta cobrar'}
+                            ? 'Cuenta abierta · en cocina'
+                            : 'Cuenta abierta · falta cobrar'}
                     </span>
                   </span>
                 </div>
