@@ -1,14 +1,16 @@
 import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
 
-from .. import combos, consolidacion, contabilidad, models, reposicion, schemas
+from .. import combos, consolidacion, contabilidad, kardex, models, reposicion, schemas
 from ..consolidacion import Bloque, pedidos_pagados as _pedidos_pagados
 from ..database import get_db
 from ..rango import Rango, anterior, granularidad, serie as serie_del_rango
-from ..timeutils import hoy, inicio_del_dia
+from ..timeutils import ahora, hoy, inicio_del_dia
+from .inventario import sugerencias_compra
 
 router = APIRouter(prefix="/api/reportes", tags=["reportes"])
 
@@ -783,3 +785,433 @@ def reporte_combos(rango: Rango = Depends(), db: Session = Depends(get_db)):
     analisis = combos.analizar(db, pedidos)
 
     return schemas.ReporteCombos(periodo=rango.periodo or "rango", etiqueta=etiqueta, **analisis)
+
+
+# ── Perdidas ─────────────────────────────────────────────────────────────────
+
+
+def _mermas_valoradas(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
+    """Las mermas vivas del periodo con su valor CONGELADO, como las lista
+    Inventario: el costo de hoy revaloraria una merma de hace un mes."""
+    mermas = (
+        db.query(models.Merma)
+        .options(joinedload(models.Merma.ingrediente))
+        .filter(
+            models.Merma.fecha >= inicio,
+            models.Merma.fecha < fin,
+            models.Merma.revertida.is_(False),
+        )
+        .order_by(models.Merma.fecha.desc())
+        .all()
+    )
+    ids = [m.id for m in mermas] or [0]
+    congelado = {
+        mv.referencia_id: abs(mv.valor)
+        for mv in db.query(models.MovimientoInventario)
+        .filter(
+            models.MovimientoInventario.origen == "merma",
+            models.MovimientoInventario.referencia_id.in_(ids),
+        )
+        .all()
+    }
+    # El faltante de un conteo no deja movimiento "merma" (el ajuste va como
+    # "conteo"), pero si deja su asiento: ahi esta el valor al costo de ese
+    # dia, que es el mismo que resta en el Estado de Resultados.
+    for asiento in (
+        db.query(models.AsientoContable)
+        .options(joinedload(models.AsientoContable.movimientos))
+        .filter(models.AsientoContable.origen == "merma", models.AsientoContable.referencia_id.in_(ids))
+        .all()
+    ):
+        congelado.setdefault(asiento.referencia_id, round(sum(mv.debe or 0 for mv in asiento.movimientos), 2))
+    return [
+        (
+            m,
+            congelado.get(m.id, round(m.cantidad * (m.ingrediente.costo_unitario or 0), 2)),
+        )
+        for m in mermas
+    ]
+
+
+def _lecturas_de_perdidas(
+    merma: float,
+    ventas: float,
+    por_insumo: List[schemas.PerdidaPorInsumo],
+    merma_conteo: float,
+    merma_anterior: float,
+    cambio_pct,
+    anulados: int,
+    valor_anulado: float,
+) -> List[schemas.Insight]:
+    out: List[schemas.Insight] = []
+    if merma <= 0:
+        if ventas > 0:
+            out.append(
+                schemas.Insight(
+                    tipo="bueno",
+                    titulo="Sin mermas registradas en el periodo",
+                    detalle="Si de verdad no se boto nada, perfecto. Si se boto y no se anoto, el inventario va a cuadrar mal en el proximo conteo.",
+                )
+            )
+        return out
+    if ventas > 0:
+        peso = merma / ventas * 100
+        out.append(
+            schemas.Insight(
+                tipo="alerta" if peso > 3 else "info",
+                titulo=f"La merma es el {peso:.1f}% de la venta",
+                detalle=(
+                    f"${merma:.2f} perdidos contra ${ventas:.2f} vendidos. "
+                    + ("En comida, por encima de 3-4% hay que buscar la causa." if peso > 3 else "Esta dentro de lo normal para comida.")
+                ),
+            )
+        )
+    if por_insumo:
+        top = por_insumo[0]
+        if top.pct >= 40 and len(por_insumo) > 1:
+            out.append(
+                schemas.Insight(
+                    tipo="alerta",
+                    titulo=f"{top.nombre} concentra el {top.pct:.0f}% de la perdida",
+                    detalle=f"${top.valor:.2f} en {top.veces} registro(s). Es el primer sitio donde mirar: porciones, almacenamiento o compra de mas.",
+                )
+            )
+    if merma_conteo > 0 and merma > 0:
+        parte = merma_conteo / merma * 100
+        if parte >= 50:
+            out.append(
+                schemas.Insight(
+                    tipo="alerta",
+                    titulo=f"El {parte:.0f}% de la perdida aparecio en conteos",
+                    detalle="Nadie la registro cuando paso: o se bota sin anotar, o se esta yendo por la puerta. Las dos se arreglan distinto.",
+                )
+            )
+    if cambio_pct is not None and merma_anterior > 0:
+        if cambio_pct >= 25:
+            out.append(
+                schemas.Insight(
+                    tipo="alerta",
+                    titulo=f"La merma subio {cambio_pct:.0f}% contra el periodo anterior",
+                    detalle=f"De ${merma_anterior:.2f} a ${merma:.2f}.",
+                )
+            )
+        elif cambio_pct <= -25:
+            out.append(
+                schemas.Insight(
+                    tipo="bueno",
+                    titulo=f"La merma bajo {abs(cambio_pct):.0f}% contra el periodo anterior",
+                    detalle=f"De ${merma_anterior:.2f} a ${merma:.2f}.",
+                )
+            )
+    if anulados > 0 and ventas > 0 and valor_anulado / ventas >= 0.05:
+        out.append(
+            schemas.Insight(
+                tipo="info",
+                titulo=f"{anulados} comanda(s) anuladas por ${valor_anulado:.2f}",
+                detalle="No es merma salvo que ya se hubieran preparado; revisa en Ventas cuales se marcaron como perdida.",
+            )
+        )
+    return out
+
+
+@router.get("/perdidas", response_model=schemas.ReportePerdidas)
+def reporte_perdidas(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """Analisis de perdidas: que se merma mas, que se merma menos, por que, y
+    cuanto pesa sobre la venta. Mas las ventas que no llegaron."""
+    inicio, fin, etiqueta = rango.resolver(periodo="dia")
+    paso = granularidad(inicio, fin)
+    b = consolidacion.bloque_para(db, inicio, fin)
+
+    valoradas = _mermas_valoradas(db, inicio, fin)
+    total = round(sum(v for _, v in valoradas), 2)
+    por_conteo = round(sum(v for m, v in valoradas if m.por_conteo), 2)
+
+    grupos: Dict[int, dict] = {}
+    motivos: Dict[str, dict] = {}
+    for m, v in valoradas:
+        g = grupos.setdefault(
+            m.ingrediente_id,
+            {"nombre": m.ingrediente.nombre, "unidad": m.ingrediente.unidad, "cantidad": 0.0, "valor": 0.0, "veces": 0, "conteo": 0.0},
+        )
+        g["cantidad"] += m.cantidad
+        g["valor"] += v
+        g["veces"] += 1
+        if m.por_conteo:
+            g["conteo"] += v
+        motivo = "Conteo fisico" if m.por_conteo else (m.motivo.strip() or "Sin motivo")
+        mo = motivos.setdefault(motivo, {"valor": 0.0, "veces": 0})
+        mo["valor"] += v
+        mo["veces"] += 1
+
+    por_insumo = sorted(
+        (
+            schemas.PerdidaPorInsumo(
+                ingrediente_id=i,
+                nombre=g["nombre"],
+                unidad=g["unidad"],
+                cantidad=round(g["cantidad"], 3),
+                valor=round(g["valor"], 2),
+                veces=g["veces"],
+                pct=round(g["valor"] / total * 100, 1) if total else 0.0,
+                valor_conteo=round(g["conteo"], 2),
+            )
+            for i, g in grupos.items()
+        ),
+        key=lambda x: x.valor,
+        reverse=True,
+    )
+    por_motivo = sorted(
+        (schemas.PerdidaPorMotivo(motivo=k, valor=round(v["valor"], 2), veces=v["veces"]) for k, v in motivos.items()),
+        key=lambda x: x.valor,
+        reverse=True,
+    )
+    # La serie en el mismo paso que las ventas: `serie_del_rango` cuenta un
+    # "pedido" por punto, que aqui es un registro de merma.
+    serie = [
+        schemas.PuntoPerdida(etiqueta=t["etiqueta"], valor=round(t["ventas"], 2), veces=t["pedidos"])
+        for t in serie_del_rango([(m.fecha, v) for m, v in valoradas], inicio, fin, paso)
+    ]
+
+    activos = db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).count()
+    sin_merma = max(activos - len(grupos), 0)
+
+    consumo_personal = round(
+        sum(
+            abs(mv.valor or 0)
+            for mv in db.query(models.MovimientoInventario)
+            .filter(
+                models.MovimientoInventario.tipo == kardex.CONSUMO_PERSONAL,
+                models.MovimientoInventario.fecha >= inicio,
+                models.MovimientoInventario.fecha < fin,
+            )
+            .all()
+        ),
+        2,
+    )
+
+    merma_anterior = round(sum(v for _, v in _mermas_valoradas(db, *anterior(inicio, fin))), 2)
+    cambio = _pct(total, merma_anterior)
+
+    detalle = [
+        schemas.Merma(
+            id=m.id,
+            ingrediente_id=m.ingrediente_id,
+            ingrediente_nombre=m.ingrediente.nombre,
+            unidad=m.ingrediente.unidad,
+            cantidad=m.cantidad,
+            valor=v,
+            motivo=m.motivo,
+            fecha=m.fecha,
+            revertida=m.revertida,
+            por_conteo=bool(m.por_conteo),
+        )
+        for m, v in valoradas
+    ]
+
+    return schemas.ReportePerdidas(
+        etiqueta=etiqueta,
+        granularidad=paso,
+        ventas=round(b.ventas, 2),
+        merma=total,
+        merma_registrada=round(total - por_conteo, 2),
+        merma_por_conteo=por_conteo,
+        registros=len(valoradas),
+        peso_pct=round(total / b.ventas * 100, 1) if b.ventas else 0.0,
+        consumo_personal=consumo_personal,
+        merma_anterior=merma_anterior,
+        cambio_pct=cambio,
+        por_insumo=por_insumo,
+        por_motivo=por_motivo,
+        serie=serie,
+        sin_merma=sin_merma,
+        anulados=b.anulados,
+        valor_anulado=round(b.valor_anulado, 2),
+        devoluciones=b.devoluciones,
+        valor_devuelto=round(b.valor_devuelto, 2),
+        con_descuento=b.con_descuento,
+        valor_descuentos=round(b.valor_descuentos, 2),
+        detalle=detalle,
+        insights=_lecturas_de_perdidas(
+            total, b.ventas, por_insumo, por_conteo, merma_anterior, cambio, b.anulados, b.valor_anulado
+        ),
+    )
+
+
+# ── Inventario ───────────────────────────────────────────────────────────────
+
+
+def _estado_del_insumo(cantidad: float, minimo: float, dias: Optional[float], por_dia: float) -> str:
+    if cantidad <= 0:
+        return "agotado"
+    if cantidad <= minimo:
+        return "bajo"
+    if por_dia <= 0:
+        return "quieto"
+    if dias is not None and dias > 45:
+        return "sobra"
+    return "ok"
+
+
+def _lecturas_de_inventario(
+    valor_total: float,
+    por_insumo: List[schemas.InsumoDelDeposito],
+    bajo: int,
+    agotados: int,
+    quietos: int,
+    valor_quieto: float,
+    rotacion: Optional[float],
+    inflacion_pct: Optional[float],
+    dias: int,
+) -> List[schemas.Insight]:
+    out: List[schemas.Insight] = []
+    if valor_total <= 0:
+        return out
+    if agotados:
+        nombres = ", ".join(i.nombre for i in por_insumo if i.estado == "agotado")
+        out.append(schemas.Insight(tipo="alerta", titulo=f"{agotados} mercancia(s) agotadas", detalle=nombres[:160]))
+    if bajo:
+        nombres = ", ".join(i.nombre for i in por_insumo if i.estado == "bajo")
+        out.append(
+            schemas.Insight(
+                tipo="alerta",
+                titulo=f"{bajo} mercancia(s) bajo el minimo",
+                detalle=f"{nombres[:140]}. La lista de compra esta abajo.",
+            )
+        )
+    if por_insumo:
+        top = por_insumo[0]
+        if top.pct >= 35:
+            out.append(
+                schemas.Insight(
+                    tipo="info",
+                    titulo=f"{top.nombre} es el {top.pct:.0f}% de la plata en el deposito",
+                    detalle=f"${top.valor:.2f} de ${valor_total:.2f}. Conviene contarlo mas seguido que al resto.",
+                )
+            )
+    if quietos and valor_quieto / valor_total >= 0.15:
+        out.append(
+            schemas.Insight(
+                tipo="alerta",
+                titulo=f"${valor_quieto:.2f} en mercancia que no se movio en {dias} dia(s)",
+                detalle=f"{quietos} mercancia(s) sin ninguna salida. Es plata quieta: revisa si se sigue usando o si se compro de mas.",
+            )
+        )
+    if rotacion is not None:
+        if rotacion < 0.5 and dias >= 14:
+            out.append(
+                schemas.Insight(
+                    tipo="info",
+                    titulo=f"El deposito roto {rotacion:.1f} veces en el periodo",
+                    detalle="Hay mas inventario del que la venta necesita: cada dolar en el estante tarda en volver a la gaveta.",
+                )
+            )
+        elif rotacion >= 2:
+            out.append(
+                schemas.Insight(
+                    tipo="bueno",
+                    titulo=f"El deposito roto {rotacion:.1f} veces en el periodo",
+                    detalle="Se compra lo que se vende. Ojo con quedarse corto en los dias fuertes.",
+                )
+            )
+    if inflacion_pct is not None and inflacion_pct >= 10:
+        out.append(
+            schemas.Insight(
+                tipo="alerta",
+                titulo=f"La mercancia subio {inflacion_pct:.0f}% en el periodo",
+                detalle="Si los precios del menu no se movieron, el margen se esta achicando solo. Revisa los precios sugeridos en Menu.",
+            )
+        )
+    return out
+
+
+@router.get("/inventario", response_model=schemas.ReporteInventario)
+def reporte_inventario(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    """El deposito de hoy, leido con el consumo del periodo: donde esta la
+    plata, para cuantos dias alcanza, que no se mueve y que hay que comprar."""
+    inicio, fin, etiqueta = rango.resolver(periodo="dia")
+    corte = ahora()
+    # El consumo se mide hasta ahora aunque el rango sea el mes pasado: lo
+    # que interesa es cuanto dura lo que HAY, y eso se mide con dias reales.
+    dias = max((min(fin, corte) - inicio).days, 1)
+    desde_consumo = min(fin, corte) - datetime.timedelta(days=dias)
+
+    saldos = kardex.existencias_a(db, corte)
+    promedios = kardex.costos_promedio_a(db, corte)
+    consumo_diario = kardex.consumo_por_dia_de_todos(db, desde_consumo, corte)
+    # Lo que salio por ventas en el periodo, a costo, por mercancia.
+    consumido_por: Dict[int, float] = {}
+    for ing_id, valor in (
+        db.query(models.MovimientoInventario.ingrediente_id, func.sum(models.MovimientoInventario.valor))
+        .filter(
+            models.MovimientoInventario.tipo == kardex.VENTA,
+            models.MovimientoInventario.fecha >= inicio,
+            models.MovimientoInventario.fecha < fin,
+        )
+        .group_by(models.MovimientoInventario.ingrediente_id)
+        .all()
+    ):
+        consumido_por[ing_id] = abs(valor or 0)
+
+    filas = []
+    valor_total = 0.0
+    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).order_by(models.Ingrediente.nombre).all():
+        cantidad = saldos.get(ing.id, ing.stock_actual or 0)
+        costo = promedios.get(ing.id) or ing.costo_unitario or 0
+        valor = round(max(cantidad, 0) * costo, 2)
+        valor_total += valor
+        por_dia = consumo_diario.get(ing.id, 0.0)
+        dias_stock = round(cantidad / por_dia, 1) if por_dia > 0 and cantidad > 0 else None
+        filas.append(
+            schemas.InsumoDelDeposito(
+                ingrediente_id=ing.id,
+                nombre=ing.nombre,
+                unidad=ing.unidad,
+                tipo=ing.tipo or "insumo",
+                cantidad=round(cantidad, 3),
+                stock_minimo=ing.stock_minimo or 0,
+                costo_unitario=round(costo, 4),
+                valor=valor,
+                pct=0.0,
+                por_dia=por_dia,
+                dias_de_stock=dias_stock,
+                consumido=round(consumido_por.get(ing.id, 0.0), 2),
+                estado=_estado_del_insumo(cantidad, ing.stock_minimo or 0, dias_stock, por_dia),
+            )
+        )
+    valor_total = round(valor_total, 2)
+    for f in filas:
+        f.pct = round(f.valor / valor_total * 100, 1) if valor_total else 0.0
+    filas.sort(key=lambda f: f.valor, reverse=True)
+
+    consumido = round(sum(consumido_por.values()), 2)
+    quietos = [f for f in filas if f.estado == "quieto" and f.valor > 0]
+    inflacion = reposicion.inflacion_de_insumos(db, dias)
+
+    bajo = sum(1 for f in filas if f.estado == "bajo")
+    agotados = sum(1 for f in filas if f.estado == "agotado")
+    valor_quieto = round(sum(f.valor for f in quietos), 2)
+    rotacion = round(consumido / valor_total, 2) if valor_total > 0 else None
+
+    return schemas.ReporteInventario(
+        etiqueta=etiqueta,
+        dias=dias,
+        valor_total=valor_total,
+        valor_insumos=round(sum(f.valor for f in filas if f.tipo != "reventa"), 2),
+        valor_reventa=round(sum(f.valor for f in filas if f.tipo == "reventa"), 2),
+        activos=len(filas),
+        bajo_minimo=bajo,
+        agotados=agotados,
+        sin_costo=sum(1 for f in filas if f.costo_unitario <= 0),
+        quietos=len(quietos),
+        valor_quieto=valor_quieto,
+        consumido=consumido,
+        rotacion=rotacion,
+        inflacion_pct=inflacion["cambio_pct"] if inflacion else None,
+        inflacion=[schemas.InsumoInflacion(**i) for i in (inflacion["insumos"][:8] if inflacion else [])],
+        por_insumo=filas,
+        por_comprar=sugerencias_compra(db),
+        insights=_lecturas_de_inventario(
+            valor_total, filas, bajo, agotados, len(quietos), valor_quieto, rotacion,
+            inflacion["cambio_pct"] if inflacion else None, dias,
+        ),
+    )

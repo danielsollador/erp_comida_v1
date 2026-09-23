@@ -50,6 +50,8 @@ import type {
   ReporteResumen,
   PuntoTasa,
   ReporteCombos,
+  ReporteInventario,
+  ReportePerdidas,
   RecetaItem,
   Respaldo,
   EstadoRespaldos,
@@ -594,6 +596,8 @@ export const api = {
     }),
 
   reporteCombos: (r: Rango) => req<ReporteCombos>(`/reportes/combos${conRango(r)}`),
+  reportePerdidas: (r: Rango) => req<ReportePerdidas>(`/reportes/perdidas${conRango(r)}`),
+  reporteInventario: (r: Rango) => req<ReporteInventario>(`/reportes/inventario${conRango(r)}`),
   ventas: (r: Rango, estado?: string) =>
     req<ListaVentas>(`/ventas${conRango(r, estado ? `estado=${estado}` : '')}`),
   resumenVentas: (r: Rango) => req<ResumenVentas>(`/ventas/resumen${conRango(r)}`),
@@ -911,6 +915,8 @@ export type {
   ReporteResumen,
   PuntoTasa,
   ReporteCombos,
+  ReporteInventario,
+  ReportePerdidas,
   RecetaItem,
   Respaldo,
   EstadoRespaldos,

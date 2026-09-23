@@ -330,12 +330,16 @@ export function GraficoDona({
   formato,
   centro,
   alto = 150,
+  pastel = false,
 }: {
   partes: ParteDona[]
   formato: (n: number) => string
-  /** Lo que va en el hueco: el total y que es. */
+  /** Lo que va en el hueco: el total y que es. Con `pastel` no hay hueco. */
   centro?: { valor: string; texto: string }
   alto?: number
+  /** Un pastel entero en vez de un anillo: para dos o tres partes donde lo
+      que importa es la proporcion de un vistazo (facturado / sin facturar). */
+  pastel?: boolean
 }) {
   const [activa, setActiva] = useState<number | null>(null)
   const total = partes.reduce((s, p) => s + Math.max(p.valor, 0), 0)
@@ -355,8 +359,18 @@ export function GraficoDona({
   return (
     <div className="flex flex-wrap items-center gap-4">
       <div className="relative shrink-0" style={{ width: alto, height: alto }}>
-        <svg viewBox="0 0 42 42" className="h-full w-full -rotate-90" role="img" aria-label="Reparto">
-          <circle cx="21" cy="21" r={r} fill="none" stroke="var(--color-neutral-100)" strokeWidth="5" />
+        {/* Con pastel el trazo llega hasta 2r del centro, mas que los 21 de
+            la caja de 42: la caja se agranda para que el disco quepa entero
+            y no salga cortado en cuadrado. */}
+        <svg
+          viewBox={pastel ? `${21 - 2 * r} ${21 - 2 * r} ${4 * r} ${4 * r}` : '0 0 42 42'}
+          className="h-full w-full -rotate-90"
+          role="img"
+          aria-label="Reparto"
+        >
+          {!pastel && (
+            <circle cx="21" cy="21" r={r} fill="none" stroke="var(--color-neutral-100)" strokeWidth="5" />
+          )}
           {arcos.map((a, i) =>
             a.pct > 0 ? (
               <circle
@@ -366,10 +380,17 @@ export function GraficoDona({
                 r={r}
                 fill="none"
                 stroke={a.color}
-                strokeWidth={activa === i ? 6.2 : 5}
+                // Pastel: el trazo es tan grueso como el diametro del
+                // circulo guia, asi que llena hasta el centro. El dasharray
+                // se mide en la linea media y sigue valiendo en porcentaje.
+                strokeWidth={pastel ? (activa === i ? 2 * r + 1.6 : 2 * r) : activa === i ? 6.2 : 5}
                 // Un respiro entre arcos: 0.6 de los 100 se deja en blanco,
                 // salvo si la parte es tan chica que el respiro se la come.
-                strokeDasharray={`${Math.max(a.pct - (a.pct > 1.5 ? 0.6 : 0), 0.001)} ${100 - Math.max(a.pct - (a.pct > 1.5 ? 0.6 : 0), 0.001)}`}
+                strokeDasharray={
+                  pastel
+                    ? `${Math.max(a.pct, 0.001)} ${100 - Math.max(a.pct, 0.001)}`
+                    : `${Math.max(a.pct - (a.pct > 1.5 ? 0.6 : 0), 0.001)} ${100 - Math.max(a.pct - (a.pct > 1.5 ? 0.6 : 0), 0.001)}`
+                }
                 strokeDashoffset={-a.desde}
                 className="transition-all duration-200"
                 onPointerEnter={() => setActiva(i)}
@@ -378,7 +399,7 @@ export function GraficoDona({
             ) : null,
           )}
         </svg>
-        {centro && (
+        {centro && !pastel && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
             <span className="text-base font-bold tabular-nums leading-none">
               {activa != null ? `${arcos[activa].pct.toFixed(0)}%` : centro.valor}

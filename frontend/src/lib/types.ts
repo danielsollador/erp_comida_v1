@@ -878,6 +878,88 @@ export type OportunidadCombo = {
   conversion_supuesta_pct: number
 }
 
+/** Cuanto se perdio de UNA mercancia en el periodo. */
+export type PerdidaPorInsumo = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  cantidad: number
+  valor: number
+  veces: number
+  /** Sobre el valor total de las mermas del periodo. */
+  pct: number
+  /** Cuanto de esa perdida salio de un conteo y no de un accidente. */
+  valor_conteo: number
+}
+
+export type PerdidaPorMotivo = { motivo: string; valor: number; veces: number }
+export type PuntoPerdida = { etiqueta: string; valor: number; veces: number }
+
+export type ReportePerdidas = {
+  etiqueta: string
+  granularidad: string
+  ventas: number
+  merma: number
+  merma_registrada: number
+  merma_por_conteo: number
+  registros: number
+  peso_pct: number
+  consumo_personal: number
+  merma_anterior: number
+  cambio_pct: number | null
+  por_insumo: PerdidaPorInsumo[]
+  por_motivo: PerdidaPorMotivo[]
+  serie: PuntoPerdida[]
+  sin_merma: number
+  anulados: number
+  valor_anulado: number
+  devoluciones: number
+  valor_devuelto: number
+  con_descuento: number
+  valor_descuentos: number
+  detalle: Merma[]
+  insights: Insight[]
+}
+
+export type EstadoDeposito = 'agotado' | 'bajo' | 'ok' | 'sobra' | 'quieto'
+
+export type InsumoDelDeposito = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  tipo: 'insumo' | 'reventa'
+  cantidad: number
+  stock_minimo: number
+  costo_unitario: number
+  valor: number
+  pct: number
+  por_dia: number
+  dias_de_stock: number | null
+  consumido: number
+  estado: EstadoDeposito
+}
+
+export type ReporteInventario = {
+  etiqueta: string
+  dias: number
+  valor_total: number
+  valor_insumos: number
+  valor_reventa: number
+  activos: number
+  bajo_minimo: number
+  agotados: number
+  sin_costo: number
+  quietos: number
+  valor_quieto: number
+  consumido: number
+  rotacion: number | null
+  inflacion_pct: number | null
+  inflacion: InsumoInflacion[]
+  por_insumo: InsumoDelDeposito[]
+  por_comprar: SugerenciaCompra[]
+  insights: Insight[]
+}
+
 export type ReporteCombos = {
   periodo: string
   etiqueta: string

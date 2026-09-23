@@ -1408,6 +1408,108 @@ class OportunidadCombo(BaseModel):
     conversion_supuesta_pct: int
 
 
+class PerdidaPorInsumo(BaseModel):
+    """Cuanto se perdio de UNA mercancia en el periodo."""
+
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    cantidad: float
+    valor: float
+    veces: int
+    pct: float  # sobre el valor total de las mermas del periodo
+    # Cuanto de esa perdida salio de un conteo y no de un accidente.
+    valor_conteo: float = 0
+
+
+class PerdidaPorMotivo(BaseModel):
+    motivo: str
+    valor: float
+    veces: int
+
+
+class PuntoPerdida(BaseModel):
+    etiqueta: str
+    valor: float
+    veces: int
+
+
+class ReportePerdidas(BaseModel):
+    """Lo que se perdio en el periodo: la merma que se registro a mano, los
+    faltantes que encontraron los conteos, y las ventas que no llegaron
+    (anuladas, devueltas, con descuento). Todo en dolares, costo congelado."""
+
+    etiqueta: str
+    granularidad: str
+    ventas: float
+    merma: float  # registrada + por conteo, sin las revertidas
+    merma_registrada: float
+    merma_por_conteo: float
+    registros: int
+    peso_pct: float  # merma / ventas * 100
+    consumo_personal: float
+    # Contra el periodo anterior del mismo tamaño.
+    merma_anterior: float
+    cambio_pct: Optional[float] = None
+    por_insumo: List[PerdidaPorInsumo]
+    por_motivo: List[PerdidaPorMotivo]
+    serie: List[PuntoPerdida]
+    # Mercancias activas que no tuvieron NINGUNA merma en el periodo.
+    sin_merma: int
+    # Ventas que no llegaron a serlo.
+    anulados: int
+    valor_anulado: float
+    devoluciones: int
+    valor_devuelto: float
+    con_descuento: int
+    valor_descuentos: float
+    detalle: List[Merma]
+    insights: List[Insight]
+
+
+class InsumoDelDeposito(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    tipo: str  # insumo | reventa
+    cantidad: float
+    stock_minimo: float
+    costo_unitario: float
+    valor: float
+    pct: float  # sobre el valor del deposito
+    # Consumo medido en el periodo y para cuantos dias alcanza lo que hay.
+    por_dia: float
+    dias_de_stock: Optional[float] = None
+    # Valor de lo que salio por ventas en el periodo (a costo).
+    consumido: float
+    estado: str  # agotado | bajo | ok | sobra | quieto
+
+
+class ReporteInventario(BaseModel):
+    """El deposito hoy, leido con el consumo del periodo elegido."""
+
+    etiqueta: str
+    dias: int
+    valor_total: float
+    valor_insumos: float
+    valor_reventa: float
+    activos: int
+    bajo_minimo: int
+    agotados: int
+    sin_costo: int
+    # Mercancia que no se movio en todo el periodo: plata quieta.
+    quietos: int
+    valor_quieto: float
+    # Cuanto salio del deposito a costo en el periodo, y cuantas veces "roto".
+    consumido: float
+    rotacion: Optional[float] = None
+    inflacion_pct: Optional[float] = None
+    inflacion: List[InsumoInflacion] = []
+    por_insumo: List[InsumoDelDeposito]
+    por_comprar: List[SugerenciaCompra]
+    insights: List[Insight]
+
+
 class ReporteCombos(BaseModel):
     periodo: str
     etiqueta: str
