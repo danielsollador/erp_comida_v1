@@ -857,56 +857,94 @@ export type WsEvent =
  * memoria y su intento de red: la tablet se calentaba y se trababa sin que
  * hubiera nada que recibir. Ahora la espera se dobla hasta 30 s, y con la
  * pestaña escondida no se reintenta: se reconecta al volver a la vista.
+ *
+ * UN SOLO SOCKET PARA TODA LA PANTALLA. Cada `connectWs` abria el suyo: en el
+ * punto de venta eran tres a la vez (el mostrador, la campana de la barra y
+ * el aviso de autorizaciones), y cada comanda que cambiaba llegaba tres veces
+ * por la red y se desarmaba tres veces. En una tablet de 3 GB eso se nota
+ * justo cuando hay movimiento. Ahora quien llama se SUSCRIBE a un socket
+ * compartido: se abre con el primero y se cierra con el ultimo.
  */
-export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
+type Oyente = (evt: WsEvent) => void
+
+const oyentes = new Set<Oyente>()
+let canal: WebSocket | null = null
+let espera = 1500
+let reintento: ReturnType<typeof setTimeout> | null = null
+
+function hayQuienEscuche() {
+  return oyentes.size > 0
+}
+
+function programarReconexion() {
+  if (!hayQuienEscuche() || reintento) return
+  if (document.visibilityState !== 'visible') return // al volver se reconecta
+  reintento = setTimeout(() => {
+    reintento = null
+    abrirCanal()
+  }, espera)
+  espera = Math.min(espera * 2, 30000)
+}
+
+function abrirCanal() {
+  if (!hayQuienEscuche() || canal) return
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  let ws: WebSocket | null = null
-  let closed = false
-  let espera = 1500
-  let reintento: ReturnType<typeof setTimeout> | null = null
-
-  function programar() {
-    if (closed || reintento) return
-    if (document.visibilityState !== 'visible') return // al volver se reconecta
-    reintento = setTimeout(() => {
-      reintento = null
-      connect()
-    }, espera)
-    espera = Math.min(espera * 2, 30000)
+  const ws = new WebSocket(`${proto}://${window.location.host}/ws`)
+  canal = ws
+  ws.onopen = () => {
+    espera = 1500
   }
-
-  function connect() {
-    if (closed) return
-    ws = new WebSocket(`${proto}://${window.location.host}/ws`)
-    ws.onopen = () => {
-      espera = 1500
+  ws.onmessage = (msg) => {
+    let evt: WsEvent
+    try {
+      evt = JSON.parse(msg.data)
+    } catch {
+      return // ignore malformed message
     }
-    ws.onmessage = (msg) => {
+    // Una copia: un oyente que se desuscribe al recibir no corta a los demas.
+    for (const oyente of [...oyentes]) {
       try {
-        onEvent(JSON.parse(msg.data))
+        oyente(evt)
       } catch {
-        // ignore malformed message
+        // un oyente que falla no apaga el canal de los otros
       }
     }
-    ws.onclose = () => {
-      ws = null
-      programar()
-    }
   }
+  ws.onclose = () => {
+    // Un socket que se cerro a proposito (se fue el ultimo oyente) ya no es
+    // el canal: no se reconecta, aunque otro se haya abierto despues.
+    if (canal !== ws) return
+    canal = null
+    programarReconexion()
+  }
+}
 
-  const alVolver = () => {
-    if (document.visibilityState === 'visible' && !ws && !reintento && !closed) {
-      espera = 1500
-      connect()
-    }
+function alVolverALaVista() {
+  if (document.visibilityState === 'visible' && hayQuienEscuche() && !canal && !reintento) {
+    espera = 1500
+    abrirCanal()
   }
-  document.addEventListener('visibilitychange', alVolver)
-  connect()
+}
+
+export function connectWs(onEvent: (evt: WsEvent) => void): () => void {
+  // Cada suscripcion es su propia funcion: la misma funcion suscrita dos
+  // veces tiene que poder desuscribirse dos veces.
+  const oyente: Oyente = (evt) => onEvent(evt)
+  const primero = !hayQuienEscuche()
+  oyentes.add(oyente)
+  if (primero) document.addEventListener('visibilitychange', alVolverALaVista)
+  abrirCanal()
 
   return () => {
-    closed = true
-    document.removeEventListener('visibilitychange', alVolver)
-    if (reintento) clearTimeout(reintento)
+    oyentes.delete(oyente)
+    if (hayQuienEscuche()) return
+    document.removeEventListener('visibilitychange', alVolverALaVista)
+    if (reintento) {
+      clearTimeout(reintento)
+      reintento = null
+    }
+    const ws = canal
+    canal = null
     ws?.close()
   }
 }

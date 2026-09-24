@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api } from './api'
 import type { EstadoTasa } from './types'
@@ -112,14 +112,18 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id)
   }, [recargar])
 
-  const setVista = (v: VistaMoneda) => {
+  const setVista = useCallback((v: VistaMoneda) => {
     localStorage.setItem(CLAVE_VISTA, v)
     setVistaState(v)
-  }
+  }, [])
 
   // `tasaBase` permite pasar la tasa congelada de un pedido viejo; si no se
   // pasa ninguna se usa la vigente, que es lo correcto para precios de menu.
-  const formatear = (
+  // Todo memorizado: las funciones cambian solo si cambia la vista o la tasa.
+  // Si se rehicieran en cada vuelta, cada pantalla que muestra montos se
+  // repintaria entera sin que nada cambiara (y la lista de productos del
+  // mostrador, que esta memorizada, dejaria de estarlo).
+  const formatear = useCallback((
     usd: number | null | undefined,
     decimales: number | undefined,
     tasaBase: number | null | undefined,
@@ -147,21 +151,29 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
       default:
         return conSigno('$', usd, Math.abs(usd).toFixed(d))
     }
-  }
+  }, [vista, tasa])
 
-  const fmt = (usd: number | null | undefined, decimales?: number) =>
-    formatear(usd, decimales, null)
+  const fmt = useCallback(
+    (usd: number | null | undefined, decimales?: number) => formatear(usd, decimales, null),
+    [formatear],
+  )
 
-  const fmtCongelado = (
-    usd: number | null | undefined,
-    tasaCongelada: number | null | undefined,
-    decimales?: number,
-  ) => formatear(usd, decimales, tasaCongelada)
+  const fmtCongelado = useCallback(
+    (
+      usd: number | null | undefined,
+      tasaCongelada: number | null | undefined,
+      decimales?: number,
+    ) => formatear(usd, decimales, tasaCongelada),
+    [formatear],
+  )
+
+  const valor = useMemo(
+    () => ({ vista, setVista, tasa, fmt, fmtCongelado, sufijo: SUFIJOS[vista], recargar }),
+    [vista, setVista, tasa, fmt, fmtCongelado, recargar],
+  )
 
   return (
-    <MonedaCtx.Provider
-      value={{ vista, setVista, tasa, fmt, fmtCongelado, sufijo: SUFIJOS[vista], recargar }}
-    >
+    <MonedaCtx.Provider value={valor}>
       {children}
     </MonedaCtx.Provider>
   )

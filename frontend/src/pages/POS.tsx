@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import EditarPedido from '../components/EditarPedido'
 import Autorizar from '../components/Autorizar'
 import { useSeccion } from '../components/Secciones'
@@ -136,6 +136,8 @@ export default function POS() {
     claveComanda.current = null
   }, [carrito, libres])
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
+  // Lo ultimo que se pinto, para no repintar cuando el servidor manda lo mismo.
+  const firmaPedidos = useRef('')
   const [vista, irA] = useSeccion(SECCIONES_POS)
   // Pago mixto: las partes que ya se anotaron. Antes era un desplegable con
   // UNA forma y un monto, y el resto se lo llevaba entera la segunda: no se
@@ -238,7 +240,10 @@ export default function POS() {
     // llegaban en el mismo segundo y cada uno pedia tres listados. Se juntan
     // en una sola tanda un cuarto de segundo despues del ultimo.
     let tanda: ReturnType<typeof setTimeout> | null = null
-    const disconnect = connectWs(() => {
+    const disconnect = connectWs((evt) => {
+      // Solo lo que mueve comandas. Las solicitudes de autorizacion viajan
+      // por el mismo canal y pedian los tres listados sin que nada cambiara.
+      if (!evt.event.startsWith('pedido_')) return
       if (tanda) clearTimeout(tanda)
       tanda = setTimeout(() => {
         tanda = null
@@ -292,11 +297,24 @@ export default function POS() {
         // mirando, y quedaba al final de la lista (Leider, 22-sep).
         const peso = (p: Pedido) =>
           p.items.some((i) => !i.preparado) ? (p.estado === 'pagado' ? 3 : 2) : p.estado === 'pagado' ? 1 : 0
-        setPedidosActivos(
-          [...porId.values()].sort((a, b) => peso(a) - peso(b) || b.numero - a.numero),
-        )
+        const lista = [...porId.values()].sort((a, b) => peso(a) - peso(b) || b.numero - a.numero)
+        // Si llego exactamente lo mismo, no se toca el estado: repintar el
+        // mostrador entero por nada es lo que traba a una tablet de 3 GB, y
+        // el respaldo de cada minuto casi siempre trae lo mismo.
+        // Con un candado de edicion puesto se repinta igual cada minuto: vence
+        // por reloj (MINUTOS_EDITANDO) sin que el servidor cambie nada, y el
+        // boton de editar tiene que volver a encenderse.
+        const firma =
+          JSON.stringify(lista) +
+          (lista.some((p) => p.editando_desde) ? `@${Math.floor(Date.now() / 60000)}` : '')
+        if (firma === firmaPedidos.current) return
+        firmaPedidos.current = firma
+        setPedidosActivos(lista)
       })
-      .catch(() => setPedidosActivos([]))
+      .catch(() => {
+        firmaPedidos.current = ''
+        setPedidosActivos([])
+      })
   }
 
   // El color que el dueño le puso a cada categoria, y de que categoria es
@@ -372,6 +390,20 @@ export default function POS() {
     void agregarEnvio(envio?.producto, envio?.variante)
   }
 
+  // Lo que ya va en la comanda, por subseccion: es lo unico del carrito que
+  // la lista de productos necesita para pintar sus contadores.
+  const cantidades = useMemo(() => {
+    const m: Record<number, number> = {}
+    for (const c of Object.values(carrito)) m[c.variante.id] = c.cantidad
+    return m
+  }, [carrito])
+
+  // Los toques de la lista pasan por una referencia: asi la funcion que recibe
+  // la lista es siempre la misma y no la obliga a repintarse en cada vuelta.
+  const acciones = useRef({ agregar: (_p: Producto, _v: Variante) => {}, quitar: (_id: number) => {} })
+  const agregarEstable = useCallback((p: Producto, v: Variante) => acciones.current.agregar(p, v), [])
+  const quitarEstable = useCallback((id: number) => acciones.current.quitar(id), [])
+
   function quitarLibre(id: string) {
     setLibres((l) => l.filter((x) => x.id !== id))
   }
@@ -419,6 +451,9 @@ export default function POS() {
       return next
     })
   }
+  useEffect(() => {
+    acciones.current = { agregar, quitar }
+  })
 
   // Lo que va a cocina, renglón por renglón, mientras se confirma la comanda.
   // `null` = no se está confirmando. Antes era UNA pregunta para toda la
@@ -999,109 +1034,18 @@ export default function POS() {
               </button>
 
               {listaAbierta && (
-                <>
-                  {/* Las categorias, siempre a la vista: "Todas" pone el
-                      menu entero con una seccion por categoria. */}
-                  <div className="flex gap-2 overflow-x-auto px-4 pb-3 border-b border-neutral-100">
-                    <button
-                      type="button"
-                      onClick={() => setCategoriaActiva('todas')}
-                      className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
-                        categoriaActiva === 'todas'
-                          ? 'bg-neutral-900 border-neutral-900 text-white'
-                          : 'bg-white border-neutral-200 text-neutral-500'
-                      }`}
-                    >
-                      Todas
-                    </button>
-                    {categorias.map((cat) => {
-                      const color = colorCategoria(cat.id, cat.color)
-                      const activa = cat.id === categoriaActiva
-                      return (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => setCategoriaActiva(cat.id)}
-                          className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
-                            activa
-                              ? `${color.bg} ${color.border} ${color.text}`
-                              : 'bg-white border-neutral-200 text-neutral-500'
-                          }`}
-                        >
-                          {cat.nombre}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Renglones, no fichas: un producto por linea con su precio
-                      y, si ya va en la comanda, cuantos y un menos. Se toca
-                      el renglon y suma uno; la lista no se cierra, asi que
-                      cinco productos son cinco toques. */}
-                  <div>
-                    {vendibles
-                      .filter(
-                        (g) =>
-                          g.filas.length > 0 &&
-                          (categoriaActiva === 'todas' || g.categoria.id === categoriaActiva),
-                      )
-                      .map((g) => {
-                        const color = colorCategoria(g.categoria.id, g.categoria.color)
-                        return (
-                          <div key={g.categoria.id}>
-                            <div className="sticky top-0 z-[1] flex items-center gap-2 px-4 py-1.5 bg-neutral-50 border-y border-neutral-100 text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-500">
-                              <span className={`w-2 h-2 rounded-full ${color.dot}`} />
-                              {g.categoria.nombre}
-                            </div>
-                            {g.filas.map(({ producto: p, variante: v }) => {
-                              const enCarrito = carrito[v.id]?.cantidad ?? 0
-                              const pulsando = recienAgregado.has(v.id)
-                              return (
-                                <div
-                                  key={v.id}
-                                  className={`flex items-stretch border-b border-neutral-100 last:border-b-0 ${
-                                    pulsando ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'
-                                  }`}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => agregar(p, v)}
-                                    className={`flex-1 min-w-0 flex items-center justify-between gap-3 px-4 py-3 text-left border-l-4 ${color.border} active:bg-neutral-100`}
-                                  >
-                                    <span className="font-semibold text-[15px] leading-tight text-neutral-900 truncate">
-                                      {etiquetaVariante(p, v)}
-                                    </span>
-                                    <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
-                                      {categoriaEnvios && p.categoria_id === categoriaEnvios.id ? (
-                                        <span className="text-xs font-medium text-neutral-500">monto libre</span>
-                                      ) : (
-                                        fmt(v.precio)
-                                      )}
-                                    </span>
-                                  </button>
-                                  {enCarrito > 0 && (
-                                    <div className="flex items-center gap-1 pr-3 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => quitar(v.id)}
-                                        aria-label={`Quitar uno de ${etiquetaVariante(p, v)}`}
-                                        className="w-9 h-9 rounded-full border border-neutral-300 text-lg leading-none text-neutral-700 active:bg-neutral-200"
-                                      >
-                                        −
-                                      </button>
-                                      <span className="min-w-[28px] h-7 px-1.5 rounded-full bg-acento-500 text-neutral-50 text-sm font-bold flex items-center justify-center tabular-nums">
-                                        {enCarrito}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )
-                      })}
-                  </div>
-                </>
+                <ListaProductos
+                  categorias={categorias}
+                  vendibles={vendibles}
+                  categoriaActiva={categoriaActiva}
+                  alElegirCategoria={setCategoriaActiva}
+                  cantidades={cantidades}
+                  recienAgregado={recienAgregado}
+                  onAgregar={agregarEstable}
+                  onQuitar={quitarEstable}
+                  fmt={fmt}
+                  envioId={categoriaEnvios?.id ?? null}
+                />
               )}
             </section>
           )}
@@ -2108,3 +2052,144 @@ export default function POS() {
     </div>
   )
 }
+
+/**
+ * La lista de productos del mostrador, aparte y memorizada.
+ *
+ * POR QUE. Vivia dentro del componente del punto de venta, asi que cada letra
+ * del nombre del cliente, cada comanda que llegaba por el canal en vivo y
+ * cada paso del cobro volvian a pintar el menu entero --todas las categorias,
+ * todos los renglones--. En una computadora no se nota; en la tablet de 3 GB
+ * del mostrador es lo que la dejaba "pegada" (el cliente, 23-sep). Ahora solo
+ * se repinta cuando cambia algo que ella muestra: el menu, la categoria
+ * elegida o lo que ya va en la comanda. Se ve exactamente igual.
+ */
+const ListaProductos = memo(function ListaProductos({
+  categorias,
+  vendibles,
+  categoriaActiva,
+  alElegirCategoria,
+  cantidades,
+  recienAgregado,
+  onAgregar,
+  onQuitar,
+  fmt,
+  envioId,
+}: {
+  categorias: Categoria[]
+  vendibles: { categoria: Categoria; filas: { producto: Producto; variante: Variante }[] }[]
+  categoriaActiva: number | 'todas'
+  alElegirCategoria: (c: number | 'todas') => void
+  cantidades: Record<number, number>
+  recienAgregado: Set<number>
+  onAgregar: (p: Producto, v: Variante) => void
+  onQuitar: (varianteId: number) => void
+  fmt: (usd: number | null | undefined, decimales?: number) => string
+  envioId: number | null
+}) {
+  return (
+    <>
+    {/* Las categorias, siempre a la vista: "Todas" pone el
+        menu entero con una seccion por categoria. */}
+    <div className="flex gap-2 overflow-x-auto px-4 pb-3 border-b border-neutral-100">
+      <button
+        type="button"
+        onClick={() => alElegirCategoria('todas')}
+        className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
+          categoriaActiva === 'todas'
+            ? 'bg-neutral-900 border-neutral-900 text-white'
+            : 'bg-white border-neutral-200 text-neutral-500'
+        }`}
+      >
+        Todas
+      </button>
+      {categorias.map((cat) => {
+        const color = colorCategoria(cat.id, cat.color)
+        const activa = cat.id === categoriaActiva
+        return (
+          <button
+            key={cat.id}
+            type="button"
+            onClick={() => alElegirCategoria(cat.id)}
+            className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
+              activa
+                ? `${color.bg} ${color.border} ${color.text}`
+                : 'bg-white border-neutral-200 text-neutral-500'
+            }`}
+          >
+            {cat.nombre}
+          </button>
+        )
+      })}
+    </div>
+
+    {/* Renglones, no fichas: un producto por linea con su precio
+        y, si ya va en la comanda, cuantos y un menos. Se toca
+        el renglon y suma uno; la lista no se cierra, asi que
+        cinco productos son cinco toques. */}
+    <div>
+      {vendibles
+        .filter(
+          (g) =>
+            g.filas.length > 0 &&
+            (categoriaActiva === 'todas' || g.categoria.id === categoriaActiva),
+        )
+        .map((g) => {
+          const color = colorCategoria(g.categoria.id, g.categoria.color)
+          return (
+            <div key={g.categoria.id}>
+              <div className="sticky top-0 z-[1] flex items-center gap-2 px-4 py-1.5 bg-neutral-50 border-y border-neutral-100 text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-500">
+                <span className={`w-2 h-2 rounded-full ${color.dot}`} />
+                {g.categoria.nombre}
+              </div>
+              {g.filas.map(({ producto: p, variante: v }) => {
+                const enCarrito = cantidades[v.id] ?? 0
+                const pulsando = recienAgregado.has(v.id)
+                return (
+                  <div
+                    key={v.id}
+                    className={`flex items-stretch border-b border-neutral-100 last:border-b-0 ${
+                      pulsando ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onAgregar(p, v)}
+                      className={`flex-1 min-w-0 flex items-center justify-between gap-3 px-4 py-3 text-left border-l-4 ${color.border} active:bg-neutral-100`}
+                    >
+                      <span className="font-semibold text-[15px] leading-tight text-neutral-900 truncate">
+                        {etiquetaVariante(p, v)}
+                      </span>
+                      <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
+                        {envioId !== null && p.categoria_id === envioId ? (
+                          <span className="text-xs font-medium text-neutral-500">monto libre</span>
+                        ) : (
+                          fmt(v.precio)
+                        )}
+                      </span>
+                    </button>
+                    {enCarrito > 0 && (
+                      <div className="flex items-center gap-1 pr-3 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => onQuitar(v.id)}
+                          aria-label={`Quitar uno de ${etiquetaVariante(p, v)}`}
+                          className="w-9 h-9 rounded-full border border-neutral-300 text-lg leading-none text-neutral-700 active:bg-neutral-200"
+                        >
+                          −
+                        </button>
+                        <span className="min-w-[28px] h-7 px-1.5 rounded-full bg-acento-500 text-neutral-50 text-sm font-bold flex items-center justify-center tabular-nums">
+                          {enCarrito}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+    </div>
+    </>
+  )
+})
