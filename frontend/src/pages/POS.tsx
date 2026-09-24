@@ -86,6 +86,27 @@ function sinTildes(texto: string) {
   return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
 }
 
+// Que pedido se estaba editando en ESTA pestaña, para retomarlo si se recarga.
+const CLAVE_EDICION = 'erp-pos-editando'
+
+function recordarEdicion(id: number | null) {
+  try {
+    if (id === null) sessionStorage.removeItem(CLAVE_EDICION)
+    else sessionStorage.setItem(CLAVE_EDICION, String(id))
+  } catch {
+    // sin almacenamiento: al recargar simplemente no se retoma
+  }
+}
+
+function edicionRecordada(): number | null {
+  try {
+    const v = sessionStorage.getItem(CLAVE_EDICION)
+    return v ? Number(v) || null : null
+  } catch {
+    return null
+  }
+}
+
 export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   // Que categoria se ve en la lista: una, o todas con su seccion cada una.
@@ -520,6 +541,7 @@ export default function POS() {
   }
 
   function terminarEdicion() {
+    recordarEdicion(null)
     setEnEdicion(null)
     setDiferencia(null)
     setFirma(null)
@@ -542,6 +564,14 @@ export default function POS() {
     if (!enEdicion) return
     setError('')
     setDestinos(null)
+    // Se abrio para mirar y quedo igual: no hay nada que guardar, y eso no es
+    // un error. Se cierra la edicion y se vuelve a los pedidos. Antes el
+    // servidor contestaba "no hay ningun cambio" y la pantalla se quedaba
+    // trancada en la comanda con el pedido adentro.
+    if (quedoIgual(enEdicion)) {
+      cerrarSinCambios()
+      return
+    }
     const nuevoTotal = Math.max(
       Math.round((totalCarrito - (enEdicion.descuento || 0)) * 100) / 100,
       0,
@@ -565,8 +595,52 @@ export default function POS() {
       refrescarPedidos()
     } catch (e) {
       setDiferencia(null)
-      setError(e instanceof Error ? e.message : 'No se pudieron guardar los cambios')
+      const mensaje = e instanceof Error ? e.message : 'No se pudieron guardar los cambios'
+      // Por si el servidor ve igual algo que aqui parecia distinto.
+      if (mensaje.includes('ningún cambio')) {
+        cerrarSinCambios()
+        return
+      }
+      setError(mensaje)
     }
+  }
+
+  /** Lo que tiene la comanda, contado igual que los renglones del pedido. */
+  function huellaDeLaComanda(): string {
+    const partes: string[] = []
+    for (const c of Object.values(carrito)) partes.push(`v${c.variante.id}:${c.cortesia ? 1 : 0}:${c.cantidad}`)
+    const sueltos = new Map<string, number>()
+    for (const l of libres) {
+      const k = l.variante_id !== undefined ? `e${l.variante_id}:${l.precio.toFixed(2)}` : `l${l.nombre}:${l.precio.toFixed(2)}`
+      sueltos.set(k, (sueltos.get(k) ?? 0) + 1)
+    }
+    for (const [k, n] of sueltos) partes.push(`${k}:${n}`)
+    return partes.sort().join('|')
+  }
+
+  function huellaDelPedido(pedido: Pedido): string {
+    const partes: string[] = []
+    const sueltos = new Map<string, number>()
+    const sumar = (k: string, n: number) => sueltos.set(k, (sueltos.get(k) ?? 0) + n)
+    for (const i of pedido.items) {
+      if (i.variante_id === null) sumar(`l${i.nombre}:${i.precio_unitario.toFixed(2)}`, i.cantidad)
+      else if (categoriaEnvios && categoriaDeVariante.get(i.variante_id) === categoriaEnvios.id)
+        sumar(`e${i.variante_id}:${i.precio_unitario.toFixed(2)}`, i.cantidad)
+      else partes.push(`v${i.variante_id}:${i.cortesia ? 1 : 0}:${i.cantidad}`)
+    }
+    for (const [k, n] of sueltos) partes.push(`${k}:${n}`)
+    return partes.sort().join('|')
+  }
+
+  function quedoIgual(pedido: Pedido): boolean {
+    return huellaDeLaComanda() === huellaDelPedido(pedido)
+  }
+
+  function cerrarSinCambios() {
+    if (enEdicion) api.soltarEdicion(enEdicion.id).catch(() => {})
+    terminarEdicion()
+    irA('pedidos')
+    refrescarPedidos()
   }
 
   async function mandarComanda(destinoDe: Record<number, boolean>) {
@@ -917,9 +991,32 @@ export default function POS() {
     setClienteComanda(pedido.cliente || '')
     setFaltaNombre(false)
     setEnEdicion(pedido)
+    recordarEdicion(pedido.id)
     irA('tomar')
     return true
   }
+
+  // Si se recarga la pagina a mitad de una edicion, la comanda volvia vacia
+  // y el pedido parecia borrado (seguia en el servidor, sin tocar). Se
+  // recuerda en esta pestaña cual se estaba editando y, al volver, se abre
+  // otra vez en la comanda tal como esta guardado.
+  const restaurada = useRef(false)
+  useEffect(() => {
+    if (restaurada.current || categorias.length === 0) return
+    restaurada.current = true
+    const id = edicionRecordada()
+    if (id === null) return
+    api
+      .abrirEdicion(id)
+      .then((p) => {
+        if (!cargarEnLaComanda(p)) {
+          api.soltarEdicion(id).catch(() => {})
+          recordarEdicion(null)
+        }
+      })
+      .catch(() => recordarEdicion(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categorias])
 
   function cancelarEdicion() {
     if (enEdicion) api.soltarEdicion(enEdicion.id).catch(() => {})
