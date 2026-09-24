@@ -285,7 +285,7 @@ export default function EditarPedido({
                       : 'border-neutral-200 text-neutral-400 hover:text-neutral-700 hover:border-neutral-400'
                   }`}
                 >
-                  {l.cortesia ? 'Cortesía' : 'Regalar'}
+                  {l.cortesia ? '✓ Cortesía' : 'Cortesía'}
                 </button>
               </div>
             </div>

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import EditarPedido from '../components/EditarPedido'
+import Autorizar from '../components/Autorizar'
+import { useSeccion } from '../components/Secciones'
 import NavBar from '../components/NavBar'
 import Icono from '../components/Icono'
 import { useDialogo } from '../components/dialogo'
-import { Boton, Modal } from '../components/ui'
+import { Boton, Campo, Modal, Selector } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
@@ -14,8 +16,10 @@ import { uuid } from '../lib/uuid'
 import { colorCategoria } from '../lib/theme'
 import { useModoLigero } from '../lib/ligero'
 import { etiquetaVariante, variantesParaVender } from '../lib/menu'
-import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
+import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
+import { useAcceso } from '../lib/acceso'
 import type {
+  Autorizacion,
   Categoria,
   Pedido,
   Producto,
@@ -52,8 +56,35 @@ const CLAVE_PUNTO = 'erp-punto-venta'
 // un cafe"). No se cobra, si descuenta inventario, y su costo va a gasto de
 // cortesias y no a costo de ventas, para que la caja cierre y el margen del
 // producto no mienta.
-type CarritoEntry = { producto: Producto; variante: Variante; cantidad: number; cortesia: boolean }
+//
+// `precio`: el que ya se le dijo al cliente, cuando se esta editando un pedido
+// ya tomado. El servidor conserva ese precio aunque el menu haya cambiado, y
+// la pantalla tiene que sumar lo mismo que el.
+type CarritoEntry = {
+  producto: Producto
+  variante: Variante
+  cantidad: number
+  cortesia: boolean
+  precio?: number
+}
 type Carrito = Record<number, CarritoEntry>
+
+// Un renglon suelto de la comanda: el envio (del menu, con el monto que se le
+// dice en cada pedido) o la venta libre.
+type Libre = { id: string; nombre: string; precio: number; variante_id?: number }
+
+// Dos pantallas y no una: tomar el pedido ocupa la tablet entera, y lo ya
+// tomado se mira aparte (el cliente, 23-sep: las dimensiones de la tablet no
+// terminaban de encajar con las dos cosas juntas).
+const SECCIONES_POS = [
+  { id: 'tomar', texto: 'Tomar pedido' },
+  { id: 'pedidos', texto: 'Pedidos' },
+]
+
+/** El nombre sin tildes ni mayusculas: "Envíos" y "envios" son la misma. */
+function sinTildes(texto: string) {
+  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
+}
 
 export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
@@ -90,7 +121,7 @@ export default function POS() {
   // que no encaja como producto de precio fijo (Delivery corto/largo). Va
   // aparte del carrito de variantes porque usa la "venta libre" del backend
   // (nombre_libre + precio_libre) en vez de un variante_id.
-  const [libres, setLibres] = useState<{ id: string; nombre: string; precio: number }[]>([])
+  const [libres, setLibres] = useState<Libre[]>([])
 
   // Clave de ESTE intento de comanda. Si la comanda se manda y la respuesta
   // se pierde (se cayo la wifi), volver a darle con la misma clave devuelve
@@ -105,6 +136,7 @@ export default function POS() {
     claveComanda.current = null
   }, [carrito, libres])
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
+  const [vista, irA] = useSeccion(SECCIONES_POS)
   // Pago mixto: las partes que ya se anotaron. Antes era un desplegable con
   // UNA forma y un monto, y el resto se lo llevaba entera la segunda: no se
   // podia partir en tres, y para saber cuanto faltaba habia que restar de
@@ -147,6 +179,21 @@ export default function POS() {
   // avisa: un candado que solo se suelta al guardar dejaria la comanda
   // trancada cada vez que alguien se arrepiente.
   const [editando, setEditando] = useState<Pedido | null>(null)
+  // El pedido que se esta editando EN la pantalla de tomar pedido: sus
+  // renglones se cargan en la comanda y se cambian como si se tomara de
+  // cero (el cliente, 23-sep: nada de ventana flotante). `editando`, el
+  // cuadro, queda solo para lo que la comanda no sabe mostrar.
+  const [enEdicion, setEnEdicion] = useState<Pedido | null>(null)
+  // Guardar una edicion que mueve plata de una venta cobrada: falta la
+  // firma y por donde entra o sale la diferencia.
+  const [diferencia, setDiferencia] = useState<{
+    destinoDe: Record<number, boolean>
+    monto: number
+  } | null>(null)
+  const [firma, setFirma] = useState<Autorizacion | null>(null)
+  const [metodoDif, setMetodoDif] = useState(METODOS_PAGO[0])
+  const [referenciaDif, setReferenciaDif] = useState('')
+  const { estado: acceso } = useAcceso()
   const dialogo = useDialogo()
   const [ultimaVenta, setUltimaVenta] = useState<Pedido | null>(null)
   // Las ventas de hoy, para consultarlas sin salir del mostrador. `null` es
@@ -285,20 +332,44 @@ export default function POS() {
 
   const totalCarrito = useMemo(
     () =>
-      Object.values(carrito).reduce((sum, c) => sum + (c.cortesia ? 0 : c.variante.precio * c.cantidad), 0) +
-      libres.reduce((sum, l) => sum + l.precio, 0),
+      Object.values(carrito).reduce(
+        (sum, c) => sum + (c.cortesia ? 0 : (c.precio ?? c.variante.precio) * c.cantidad),
+        0,
+      ) + libres.reduce((sum, l) => sum + l.precio, 0),
     [carrito, libres],
   )
 
-  async function agregarDeliveryPersonalizado() {
+  // La categoria de los envios: lo que hay ahi no tiene monto fijo, cobra lo
+  // que se le diga en cada pedido (el cliente, 23-sep: "que sea
+  // customizable, nada de monto fijo"). Sigue siendo un producto del menu
+  // para que cuente como envio en los reportes.
+  const categoriaEnvios = useMemo(
+    () => categorias.find((c) => sinTildes(c.nombre) === 'envios') ?? null,
+    [categorias],
+  )
+
+  async function agregarEnvio(producto?: Producto, variante?: Variante) {
     const monto = await dialogo.pedirNumero({
-      titulo: 'Delivery personalizado',
+      titulo: producto && variante ? etiquetaVariante(producto, variante) : 'Delivery',
       etiqueta: 'Cuánto cobra este envío',
       sufijo: '$',
       min: 0.01,
     })
     if (monto === null) return
-    setLibres((l) => [...l, { id: uuid(), nombre: 'Delivery personalizado', precio: monto }])
+    setLibres((l) => [
+      ...l,
+      producto && variante
+        ? { id: uuid(), nombre: etiquetaVariante(producto, variante), precio: monto, variante_id: variante.id }
+        : { id: uuid(), nombre: 'Delivery', precio: monto },
+    ])
+  }
+
+  /** El boton de delivery: el primer envio del menu, o venta libre si no hay. */
+  function agregarDeliveryPersonalizado() {
+    const envio = categoriaEnvios?.productos
+      .filter((p) => p.activo)
+      .flatMap((p) => variantesParaVender(p).map((v) => ({ producto: p, variante: v })))[0]
+    void agregarEnvio(envio?.producto, envio?.variante)
   }
 
   function quitarLibre(id: string) {
@@ -306,6 +377,10 @@ export default function POS() {
   }
 
   function agregar(producto: Producto, variante: Variante) {
+    if (categoriaEnvios && producto.categoria_id === categoriaEnvios.id) {
+      void agregarEnvio(producto, variante)
+      return
+    }
     setCarrito((c) => ({
       ...c,
       [variante.id]: {
@@ -313,6 +388,7 @@ export default function POS() {
         variante,
         cantidad: (c[variante.id]?.cantidad ?? 0) + 1,
         cortesia: c[variante.id]?.cortesia ?? false,
+        precio: c[variante.id]?.precio,
       },
     }))
     setRecienAgregado((prev) => new Set(prev).add(variante.id))
@@ -378,7 +454,11 @@ export default function POS() {
     // nace con lo que diga su categoría (el refresco no, la empanada sí) y la
     // cajera cambia lo que haga falta: la empanada que ya está en la vitrina
     // no se vuelve a hacer.
-    const renglones = Object.values(carrito)
+    //
+    // Editando, solo se pregunta por lo NUEVO: lo que ya estaba conserva lo
+    // que se decidio al tomarlo.
+    const yaEstaban = new Set(enEdicion?.items.map((i) => i.variante_id) ?? [])
+    const renglones = Object.values(carrito).filter((c) => !yaEstaban.has(c.variante.id))
     if (renglones.length === 0) {
       void mandarComanda({})
       return
@@ -386,24 +466,85 @@ export default function POS() {
     setDestinos(Object.fromEntries(renglones.map((c) => [c.variante.id, vaACocinaPorDefecto(c.variante.id)])))
   }
 
-  async function mandarComanda(destinoDe: Record<number, boolean>) {
-    setError('')
-    setDestinos(null)
-    const nombre = clienteComanda.trim()
-    const items = [
+  /** Los renglones de la comanda tal como los pide el servidor. */
+  function renglonesDeLaComanda(destinoDe: Record<number, boolean>) {
+    return [
       ...Object.values(carrito).map((c) => ({
-        variante_id: c.variante.id,
+        variante_id: c.variante.id as number | null,
         cantidad: c.cantidad,
         cortesia: c.cortesia,
         a_cocina: destinoDe[c.variante.id] ?? vaACocinaPorDefecto(c.variante.id),
       })),
-      ...libres.map((l) => ({
-        cantidad: 1,
-        nombre_libre: l.nombre,
-        precio_libre: l.precio,
-        preparado: true,
-      })),
+      ...libres.map((l) =>
+        l.variante_id !== undefined
+          ? // El envio es del menu, con el monto de este pedido.
+            { variante_id: l.variante_id as number | null, cantidad: 1, precio_libre: l.precio, a_cocina: false }
+          : { variante_id: null, cantidad: 1, nombre_libre: l.nombre, precio_libre: l.precio, preparado: true },
+      ),
     ]
+  }
+
+  function terminarEdicion() {
+    setEnEdicion(null)
+    setDiferencia(null)
+    setFirma(null)
+    setReferenciaDif('')
+    setCarrito({})
+    setLibres([])
+    setClienteComanda('')
+  }
+
+  /**
+   * Guardar los cambios de un pedido que se edito en la comanda. Mismas
+   * reglas que el cuadro de edicion (`EditarPedido`), porque es el mismo
+   * endpoint: si la venta ya estaba cobrada y el monto cambia, hace falta la
+   * firma y decir por donde entra o sale la diferencia.
+   */
+  async function guardarEdicion(
+    destinoDe: Record<number, boolean>,
+    pago?: { metodo: string; referencia: string; firma: Autorizacion | null },
+  ) {
+    if (!enEdicion) return
+    setError('')
+    setDestinos(null)
+    const nuevoTotal = Math.max(
+      Math.round((totalCarrito - (enEdicion.descuento || 0)) * 100) / 100,
+      0,
+    )
+    const dif = Math.round((nuevoTotal - enEdicion.total) * 100) / 100
+    const mueveDinero = enEdicion.estado === 'pagado' && dif !== 0
+    if (mueveDinero && !pago) {
+      setDiferencia({ destinoDe, monto: dif })
+      return
+    }
+    try {
+      await api.editarPedido(enEdicion.id, renglonesDeLaComanda(destinoDe), {
+        autorizacion: mueveDinero && pago?.firma && !acceso.puede.autoriza ? pago.firma : undefined,
+        pagos:
+          mueveDinero && pago
+            ? [{ metodo: pago.metodo, monto: Math.abs(dif), referencia: pago.referencia }]
+            : undefined,
+      })
+      terminarEdicion()
+      irA('pedidos')
+      refrescarPedidos()
+    } catch (e) {
+      setDiferencia(null)
+      setError(e instanceof Error ? e.message : 'No se pudieron guardar los cambios')
+    }
+  }
+
+  async function mandarComanda(destinoDe: Record<number, boolean>) {
+    if (enEdicion) {
+      await guardarEdicion(destinoDe)
+      return
+    }
+    setError('')
+    setDestinos(null)
+    const nombre = clienteComanda.trim()
+    const items = renglonesDeLaComanda(destinoDe).map(({ variante_id, ...r }) =>
+      variante_id === null ? r : { ...r, variante_id },
+    )
     if (items.length === 0) return
 
     if (!claveComanda.current) claveComanda.current = uuid()
@@ -675,15 +816,94 @@ export default function POS() {
       return
     }
     setError('')
+    // Lo que se estaba tomando se perderia: se pregunta antes.
+    if (!enEdicion && (Object.keys(carrito).length > 0 || libres.length > 0)) {
+      const seguir = await dialogo.confirmar({
+        titulo: 'Hay una comanda a medio tomar',
+        texto: 'Si editas este pedido, lo que tienes en la comanda actual se descarta.',
+        aceptar: 'Descartar y editar',
+        peligro: true,
+      })
+      if (!seguir) return
+    }
+    if (enEdicion && enEdicion.id !== pedido.id) {
+      api.soltarEdicion(enEdicion.id).catch(() => {})
+    }
     try {
       // Se toma el candado ANTES de que el cajero empiece a tocar renglones:
       // avisarle a la cocina cuando ya se guardo no sirve de nada.
-      setEditando(await api.abrirEdicion(pedido.id))
+      const abierto = await api.abrirEdicion(pedido.id)
+      // En la pantalla de tomar pedido, como si se pidiera de cero (el
+      // cliente, 23-sep). Lo que la comanda no sabe mostrar --un producto
+      // que ya salio del menu, el mismo producto cobrado y regalado a la
+      // vez-- se edita en el cuadro de siempre.
+      if (!cargarEnLaComanda(abierto)) {
+        terminarEdicion()
+        setEditando(abierto)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo abrir la edición')
     }
     refrescarPedidos()
   }
+
+  /** Pone los renglones del pedido en la comanda. false = no se pudo. */
+  function cargarEnLaComanda(pedido: Pedido): boolean {
+    const delMenu = new Map<number, { producto: Producto; variante: Variante }>()
+    for (const c of categorias)
+      for (const p of c.productos) for (const v of p.variantes) delMenu.set(v.id, { producto: p, variante: v })
+    const nuevo: Carrito = {}
+    const sueltos: Libre[] = []
+    for (const i of pedido.items) {
+      if (i.variante_id === null) {
+        if (i.cortesia) return false
+        for (let n = 0; n < i.cantidad; n++)
+          sueltos.push({ id: uuid(), nombre: i.nombre, precio: i.precio_unitario })
+        continue
+      }
+      const menu = delMenu.get(i.variante_id)
+      if (!menu) return false
+      if (categoriaEnvios && menu.producto.categoria_id === categoriaEnvios.id) {
+        if (i.cortesia) return false
+        for (let n = 0; n < i.cantidad; n++)
+          sueltos.push({ id: uuid(), nombre: i.nombre, precio: i.precio_unitario, variante_id: i.variante_id })
+        continue
+      }
+      if (nuevo[i.variante_id]) return false
+      nuevo[i.variante_id] = {
+        ...menu,
+        cantidad: i.cantidad,
+        cortesia: i.cortesia,
+        precio: i.cortesia ? i.precio_lista : i.precio_unitario,
+      }
+    }
+    setCarrito(nuevo)
+    setLibres(sueltos)
+    setClienteComanda(pedido.cliente || '')
+    setFaltaNombre(false)
+    setEnEdicion(pedido)
+    irA('tomar')
+    return true
+  }
+
+  function cancelarEdicion() {
+    if (enEdicion) api.soltarEdicion(enEdicion.id).catch(() => {})
+    terminarEdicion()
+    irA('pedidos')
+    refrescarPedidos()
+  }
+
+  // El candado de edicion vence a los cinco minutos (MINUTOS_EDITANDO). Una
+  // edicion en la comanda puede tardar mas --el cliente duda, se agrega
+  // algo--: se renueva mientras siga abierta.
+  useEffect(() => {
+    if (!enEdicion) return
+    const id = enEdicion.id
+    const t = setInterval(() => {
+      api.abrirEdicion(id).catch(() => {})
+    }, 2 * 60 * 1000)
+    return () => clearInterval(t)
+  }, [enEdicion])
 
   function cerrarEdicion() {
     // Suelta el candado sin esperar: si la peticion falla, vence solo a los
@@ -719,7 +939,15 @@ export default function POS() {
     // comandas habia que bajar para ver el final (Leider, 21-sep: "no
     // deberia necesitar ningun tipo de scroll si no tengo ninguna comanda").
     <div className="min-h-screen bg-neutral-50 md:min-h-0 md:h-[100dvh] md:flex md:flex-col md:overflow-hidden">
-      <NavBar titulo="Punto de venta" />
+      <NavBar
+        titulo="Punto de venta"
+        secciones={[
+          SECCIONES_POS[0],
+          { id: 'pedidos', texto: pedidosActivos.length ? `Pedidos · ${pedidosActivos.length}` : 'Pedidos' },
+        ]}
+        seccion={vista}
+        alCambiarSeccion={irA}
+      />
 
       {/* NO bloquea la venta. Un local no deja de cobrar porque falte un
           formulario, y un sistema que se pone en el medio se termina
@@ -743,9 +971,13 @@ export default function POS() {
 
       {/* md (768px) y no lg: una tablet en vertical ya muestra el carrito al
           lado, sin obligar al cajero a bajar para ver el total y cobrar. */}
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_330px] lg:grid-cols-[1fr_380px] md:flex-1 md:min-h-0">
+      <div
+        className={`grid grid-cols-1 md:flex-1 md:min-h-0 ${
+          vista === 'tomar' ? 'md:grid-cols-[1fr_330px] lg:grid-cols-[1fr_380px]' : ''
+        }`}
+      >
         <div className="p-4 overflow-y-auto md:h-full">
-          {categorias.length > 0 && (
+          {vista === 'tomar' && categorias.length > 0 && (
             <section className="mb-5 rounded-2xl border border-neutral-200 bg-white overflow-hidden">
               <button
                 type="button"
@@ -806,7 +1038,7 @@ export default function POS() {
                       y, si ya va en la comanda, cuantos y un menos. Se toca
                       el renglon y suma uno; la lista no se cierra, asi que
                       cinco productos son cinco toques. */}
-                  <div className="max-h-[46vh] md:max-h-[52vh] overflow-y-auto">
+                  <div>
                     {vendibles
                       .filter(
                         (g) =>
@@ -840,7 +1072,11 @@ export default function POS() {
                                       {etiquetaVariante(p, v)}
                                     </span>
                                     <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
-                                      {fmt(v.precio)}
+                                      {categoriaEnvios && p.categoria_id === categoriaEnvios.id ? (
+                                        <span className="text-xs font-medium text-neutral-500">monto libre</span>
+                                      ) : (
+                                        fmt(v.precio)
+                                      )}
                                     </span>
                                   </button>
                                   {enCarrito > 0 && (
@@ -870,6 +1106,8 @@ export default function POS() {
             </section>
           )}
 
+          {vista === 'pedidos' && (
+          <>
           <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
@@ -1111,7 +1349,7 @@ export default function POS() {
               es quien entro con su clave, y el backend lo anota en cada pedido,
               anulacion y cierre. */}
           {puntos.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 mb-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 mb-3 mt-4">
               {puntos.length > 0 && (
                 <label className="flex items-center gap-1">
                   Caja
@@ -1131,13 +1369,31 @@ export default function POS() {
               )}
             </div>
           )}
-
+          </>
+          )}
         </div>
 
+        {vista === 'tomar' && (
         <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:h-full md:min-h-0">
+          {enEdicion && (
+            <div className="mb-3 rounded-xl bg-aviso-50 border border-aviso-300 px-3 py-2 flex items-center justify-between gap-2">
+              <p className="text-sm text-aviso-900 min-w-0">
+                <span className="font-semibold">Editando el pedido #{enEdicion.numero}</span>
+                {enEdicion.estado === 'pagado' && (
+                  <span className="block text-xs text-aviso-800">Ya está cobrado: si el total cambia, se cuadra la diferencia.</span>
+                )}
+              </p>
+              <button
+                onClick={cancelarEdicion}
+                className="shrink-0 text-xs font-semibold text-aviso-900 underline underline-offset-2"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-lg">Comanda actual</h2>
-            {(Object.keys(carrito).length > 0 || libres.length > 0) && (
+            <h2 className="font-semibold text-lg">{enEdicion ? 'Comanda del pedido' : 'Comanda actual'}</h2>
+            {!enEdicion && (Object.keys(carrito).length > 0 || libres.length > 0) && (
               <button
                 onClick={() => {
                   setCarrito({})
@@ -1153,11 +1409,11 @@ export default function POS() {
             onClick={agregarDeliveryPersonalizado}
             className="w-full mb-3 text-sm font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-2"
           >
-            + Delivery personalizado
+            + Delivery
           </button>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
           <div className="flex-1 overflow-y-auto space-y-3">
-            {Object.values(carrito).map(({ producto, variante, cantidad, cortesia }) => (
+            {Object.values(carrito).map(({ producto, variante, cantidad, cortesia, precio }) => (
               <div key={variante.id} className="flex justify-between items-center gap-2">
                 <span
                   aria-hidden
@@ -1172,14 +1428,14 @@ export default function POS() {
                   <div className="text-xs text-neutral-500 flex items-center gap-1.5 flex-wrap">
                     {cortesia ? (
                       <>
-                        <span className="line-through">{fmt(variante.precio * cantidad)}</span>
+                        <span className="line-through">{fmt((precio ?? variante.precio) * cantidad)}</span>
                         <span className="font-semibold text-exito-700">{fmt(0)}</span>
                       </>
                     ) : (
                       <>
-                        {cantidad} x {fmt(variante.precio)} ={' '}
+                        {cantidad} x {fmt(precio ?? variante.precio)} ={' '}
                         <span className="font-semibold text-neutral-700">
-                          {fmt(variante.precio * cantidad)}
+                          {fmt((precio ?? variante.precio) * cantidad)}
                         </span>
                       </>
                     )}
@@ -1194,7 +1450,7 @@ export default function POS() {
                           : 'border-neutral-200 text-neutral-400 hover:text-neutral-700 hover:border-neutral-400'
                       }`}
                     >
-                      {cortesia ? 'Cortesía' : 'Regalar'}
+                      {cortesia ? '✓ Cortesía' : 'Cortesía'}
                     </button>
                   </div>
                 </div>
@@ -1263,16 +1519,90 @@ export default function POS() {
               <span className="text-sm font-medium text-neutral-500">Total</span>
               <span>{fmt(totalCarrito)}</span>
             </div>
+            {enEdicion && (
+              <p className="text-xs text-neutral-500 -mt-2 mb-3 flex justify-between">
+                <span>Antes</span>
+                <span className="tabular-nums">{fmt(enEdicion.total + (enEdicion.descuento || 0))}</span>
+              </p>
+            )}
             <button
               onClick={enviarComanda}
               disabled={Object.keys(carrito).length === 0 && libres.length === 0}
               className="w-full bg-neutral-900 text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-30"
             >
-              Enviar comanda
+              {enEdicion ? 'Guardar cambios' : 'Enviar comanda'}
             </button>
           </div>
         </div>
+        )}
       </div>
+
+      {diferencia !== null && enEdicion && (
+        <Modal
+          titulo={`Pedido #${enEdicion.numero}: cambia lo cobrado`}
+          ayuda="Esta venta ya está cobrada. Di por dónde entra o sale la diferencia."
+          onCerrar={() => setDiferencia(null)}
+          ancho="sm"
+          pie={
+            <>
+              <Boton tono="fantasma" onClick={() => setDiferencia(null)}>
+                Volver
+              </Boton>
+              <Boton
+                onClick={() =>
+                  void guardarEdicion(diferencia.destinoDe, {
+                    metodo: metodoDif,
+                    referencia: referenciaDif,
+                    firma,
+                  })
+                }
+                disabled={!acceso.puede.autoriza && !firma}
+              >
+                Guardar cambios
+              </Boton>
+            </>
+          }
+        >
+          <p className="text-sm font-semibold mb-3">
+            {diferencia.monto > 0 ? 'El cliente paga de más' : 'Se le devuelve al cliente'}{' '}
+            {fmt(Math.abs(diferencia.monto))}
+          </p>
+          <div className="space-y-3">
+            {acceso.puede.autoriza ? (
+              <p className="text-sm text-neutral-600">
+                Lo autorizas tú: queda firmado a nombre de{' '}
+                <span className="font-semibold">{acceso.nombre_visible || acceso.usuario}</span>.
+              </p>
+            ) : (
+              <Autorizar
+                accion="editar_venta"
+                detalle={`${diferencia.monto > 0 ? 'El cliente paga de más' : 'Se le devuelve al cliente'} ${fmt(Math.abs(diferencia.monto))}`}
+                monto={Math.abs(diferencia.monto)}
+                pedidoId={enEdicion.id}
+                onCambio={setFirma}
+              />
+            )}
+            <Selector
+              etiqueta={diferencia.monto > 0 ? 'Cómo se cobra la diferencia' : 'Cómo se devuelve'}
+              value={metodoDif}
+              onChange={(e) => setMetodoDif(e.target.value)}
+            >
+              {METODOS_PAGO.map((m) => (
+                <option key={m} value={m}>
+                  {etiquetaMetodo(m)}
+                </option>
+              ))}
+            </Selector>
+            {METODOS_CON_REFERENCIA.has(metodoDif) && (
+              <Campo
+                etiqueta="Referencia"
+                value={referenciaDif}
+                onChange={(e) => setReferenciaDif(e.target.value)}
+              />
+            )}
+          </div>
+        </Modal>
+      )}
 
       {destinos !== null && (
         <Modal

@@ -59,6 +59,7 @@ PIN_VENTANA = 5 * 60
 # Las operaciones que piden firma, con el texto que ve quien autoriza.
 ACCIONES = {
     "editar_venta": "Editar una venta ya cobrada",
+    "corregir_pago": "Corregir la forma de pago de una venta",
 }
 
 PENDIENTE, APROBADA, RECHAZADA, CANCELADA, USADA, VENCIDA = (

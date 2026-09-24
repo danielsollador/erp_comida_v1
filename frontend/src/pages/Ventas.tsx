@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import EditarPedido from '../components/EditarPedido'
+import CorregirPago from '../components/CorregirPago'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { useSeccion } from '../components/Secciones'
@@ -472,6 +473,8 @@ function DetalleVenta({
 }) {
   const dialogo = useDialogo()
   const dinero = (x: number) => fmtCongelado(x, v.tasa_bcv)
+  // Corregir como se pago: la forma, el reparto o la referencia.
+  const [corrigiendoPago, setCorrigiendoPago] = useState(false)
 
   async function imprimir(id: number) {
     try {
@@ -640,7 +643,32 @@ function DetalleVenta({
         <Dato titulo="Qué pasó">
           <PastillaEstado v={v} />
         </Dato>
-        <Dato titulo="Cómo se pagó">{etiquetaMetodo(v.pago) || '—'}</Dato>
+        <Dato titulo="Cómo se pagó">
+          {etiquetaMetodo(v.pago) || '—'}
+          {/* Al lado de "Facturar ahora", como lo pidio el cliente (23-sep):
+              si se anoto mal el monto de cada forma o la referencia. */}
+          {v.estado === 'cobrada' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setCorrigiendoPago(true)
+              }}
+              className="block text-acento-600 hover:text-acento-700 font-medium text-sm"
+            >
+              Editar pago
+            </button>
+          )}
+          {corrigiendoPago && (
+            <CorregirPago
+              pedidoId={v.id}
+              onCerrar={() => setCorrigiendoPago(false)}
+              onGuardado={() => {
+                setCorrigiendoPago(false)
+                alActualizar()
+              }}
+            />
+          )}
+        </Dato>
         <Dato titulo="Quién cobró">{v.operador || '—'}</Dato>
         <Dato titulo="Caja">{v.punto_venta || '—'}</Dato>
         {v.cliente && <Dato titulo="Cliente">{v.cliente}</Dato>}
@@ -740,34 +768,6 @@ function DetalleVenta({
           </Dato>
         )}
         {v.nota && <Dato titulo="Nota">{v.nota}</Dato>}
-        {v.ediciones.length > 0 && (
-          <div className="col-span-2">
-            <Dato titulo="Ediciones">
-              {/* La etiqueta sola no sirve de nada: lo que el dueño necesita
-                  saber es que se cambio, cuanta plata se movio y quien firmo.
-                  Una edicion que movio plata y no tiene nombre detras es
-                  exactamente lo que hay que poder encontrar despues. */}
-              {v.ediciones.map((e) => (
-                <span key={e.id} className="block">
-                  {e.detalle}
-                  {e.diferencia !== 0 && (
-                    <span className={e.diferencia > 0 ? 'text-exito-700' : 'text-aviso-700'}>
-                      {' '}
-                      ({e.diferencia > 0 ? '+' : ''}
-                      {dinero(e.diferencia)}
-                      {e.metodo_pago && ` en ${etiquetaMetodo(e.metodo_pago)}`})
-                    </span>
-                  )}
-                  <span className="block text-xs text-neutral-500">
-                    {e.operador || 'sin operador'}
-                    {e.autorizado_por && ` · autorizó ${e.autorizado_por}`}
-                    {e.motivo && ` · ${e.motivo}`}
-                  </span>
-                </span>
-              ))}
-            </Dato>
-          </div>
-        )}
         {v.ediciones.length > 0 && (
           <div className="col-span-2">
             <Dato titulo="Ediciones">

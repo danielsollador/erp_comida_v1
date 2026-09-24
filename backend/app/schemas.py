@@ -552,6 +552,8 @@ class PagoInput(BaseModel):
 
 
 class Pago(BaseModel):
+    # Para corregir un pago despues (ver `CorregirPagosRequest`).
+    id: Optional[int] = None
     metodo: str
     monto: float
     recibido: Optional[float] = None
@@ -792,6 +794,29 @@ class EditarPedidoRequest(BaseModel):
     # Solo hacen falta si la edicion cambia lo que ya se cobro.
     autorizacion: Optional[Autorizacion] = None
     pagos: Optional[List[PagoInput]] = None
+
+
+class PagoCorregido(BaseModel):
+    """Un pago tal como tiene que quedar. Con `id`, es uno que ya estaba."""
+
+    id: Optional[int] = None
+    metodo: str
+    monto: float
+    referencia: Optional[str] = None
+
+
+class CorregirPagosRequest(BaseModel):
+    """Como se pago de verdad una venta ya cobrada: la lista COMPLETA.
+
+    Para cuando se anoto mal la forma de pago, el reparto de un pago mixto o
+    la referencia. Lo cobrado no cambia --eso es editar la venta--: solo por
+    donde entro.
+    """
+
+    pagos: List[PagoCorregido]
+    motivo: str = ""
+    # Solo hace falta si la plata cambia de gaveta o de cuenta.
+    autorizacion: Optional[Autorizacion] = None
 
 
 class CobrarRequest(BaseModel):

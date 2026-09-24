@@ -170,7 +170,11 @@ function Fila({
   onResolver: (aprobar: boolean) => void
 }) {
   const e = ESTADO[s.estado] ?? { texto: s.estado, clase: 'bg-neutral-100 text-neutral-600' }
-  const accion = s.accion === 'editar_venta' ? 'Editar una venta ya cobrada' : s.accion
+  const accion = s.accion === 'editar_venta'
+      ? 'Editar una venta ya cobrada'
+      : s.accion === 'corregir_pago'
+        ? 'Corregir la forma de pago de una venta'
+        : s.accion
   return (
     <div className={`px-4 py-3 border-b last:border-b-0 ${dark ? 'border-neutral-800' : 'border-neutral-100'}`}>
       <div className="flex items-start gap-2">

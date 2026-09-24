@@ -329,6 +329,21 @@ export const api = {
    * monto a una venta ya cobrada. El monto del pago va en positivo siempre: el
    * signo lo pone la diferencia, no quien lo teclea.
    */
+  /** Un pedido con sus renglones, pagos y ediciones. */
+  verPedido: (id: number) => req<Pedido>(`/pedidos/${id}`),
+  /**
+   * Corregir COMO se pago una venta ya cobrada. Lo cobrado no cambia: los
+   * pagos tienen que sumar lo mismo. Mover plata de gaveta pide firma.
+   */
+  corregirPagos: (
+    pedidoId: number,
+    pagos: { id?: number | null; metodo: string; monto: number; referencia?: string }[],
+    extra?: { motivo?: string; autorizacion?: Autorizacion },
+  ) =>
+    req<Pedido>(`/pedidos/${pedidoId}/pagos`, {
+      method: 'PUT',
+      body: JSON.stringify({ pagos, motivo: extra?.motivo ?? '', autorizacion: extra?.autorizacion }),
+    }),
   editarPedido: (
     pedidoId: number,
     items: {

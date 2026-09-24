@@ -430,6 +430,8 @@ export type Pedido = {
   anulado_es_perdida: boolean | null
   /** Un pedido puede pagarse con varias formas a la vez. */
   pagos: {
+    /** Para corregir despues como se pago (ver `api.corregirPagos`). */
+    id?: number | null
     metodo: string
     monto: number
     recibido: number | null

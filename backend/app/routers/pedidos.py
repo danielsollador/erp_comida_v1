@@ -240,6 +240,41 @@ def _nace_preparado(
     return categoria_envios_id is not None and variante.producto.categoria_id == categoria_envios_id
 
 
+def _es_envio(variante: Optional[models.Variante], categoria_envios_id: Optional[int]) -> bool:
+    return (
+        variante is not None
+        and categoria_envios_id is not None
+        and variante.producto.categoria_id == categoria_envios_id
+    )
+
+
+def _precio_de(
+    variante: models.Variante, item: schemas.PedidoItemCreate, categoria_envios_id: Optional[int]
+) -> float:
+    """A cuanto se vende este renglon del menu.
+
+    El envio cobra lo que se le diga en cada pedido: depende de la distancia,
+    y un monto fijo (el cliente, 23-sep: "que sea customizable, nada de monto
+    fijo") obligaba a cobrar mal o a salirse del menu con una venta libre,
+    que despues no contaba como envio en los reportes. El resto del menu
+    cobra su precio: el mostrador no le cambia el precio a una empanada.
+    """
+    if _es_envio(variante, categoria_envios_id) and item.precio_libre is not None:
+        return round(item.precio_libre, 2)
+    return variante.precio
+
+
+def _revisar_precio_de_envios(items, variantes, categoria_envios_id) -> None:
+    for item in items:
+        if (
+            _es_envio(variantes.get(item.variante_id), categoria_envios_id)
+            and item.precio_libre is not None
+            and item.precio_libre <= 0
+            and not item.cortesia
+        ):
+            raise HTTPException(status_code=400, detail="El envío necesita su monto")
+
+
 def _renglon_va_a_cocina(
     item: schemas.PedidoItemCreate,
     variante: Optional[models.Variante],
@@ -353,6 +388,7 @@ async def crear_pedido(
     consumo = _consumo_del_pedido(del_menu, recetas)
     envios = seed.categoria_envios(db)
     categoria_envios_id = envios.id if envios else None
+    _revisar_precio_de_envios(del_menu, variantes, categoria_envios_id)
 
     # El inventario se mueve ACA, no al cobrar: la cocina empieza a gastar
     # insumos apenas le llega la comanda. Descontar al cobrar dejaba una
@@ -410,10 +446,10 @@ async def crear_pedido(
                 nombre=nombre,
                 # Regalado: al cliente no se le cobra, pero el costo se
                 # congela igual para saber cuanto costo el regalo.
-                precio_unitario=0.0 if item.cortesia else variante.precio,
+                precio_unitario=0.0 if item.cortesia else _precio_de(variante, item, categoria_envios_id),
                 costo_unitario=round(costos.get(variante.id, 0), 4),
                 cortesia=item.cortesia,
-                precio_lista=variante.precio if item.cortesia else 0.0,
+                precio_lista=_precio_de(variante, item, categoria_envios_id) if item.cortesia else 0.0,
                 cantidad=item.cantidad,
                 nota=item.nota,
                 # Lo que no va a cocina nace hecho: esta en la vitrina, o
@@ -617,7 +653,7 @@ async def marcar_pedido_listo(pedido_id: int, request: Request, db: Session = De
 # hace, y el sistema tiene que saberlo en vez de enterarse por un descuadre.
 
 
-def _clave_de_fila(fila: models.PedidoItem) -> tuple:
+def _clave_de_fila(fila: models.PedidoItem, envios: frozenset = frozenset()) -> tuple:
     """Que hace a dos renglones "el mismo" para efectos de editar.
 
     Del menu, la variante. De la venta libre, el nombre y el precio: es lo
@@ -625,6 +661,11 @@ def _clave_de_fila(fila: models.PedidoItem) -> tuple:
     """
     # Un cafe cobrado y un cafe regalado son DOS renglones: juntarlos le
     # cobraria al cliente el que se le regalo, o le regalaria el que pago.
+    # Un envio lleva su monto en la clave: dos delivery de distinto monto en
+    # el mismo pedido son dos renglones, no uno con el precio del primero.
+    if fila.variante_id is not None and fila.variante_id in envios:
+        precio = fila.precio_lista if fila.cortesia else fila.precio_unitario
+        return ("envio", fila.variante_id, round(precio or 0, 2), bool(fila.cortesia))
     if fila.variante_id is not None:
         return ("menu", fila.variante_id, bool(fila.cortesia))
     return (
@@ -635,7 +676,12 @@ def _clave_de_fila(fila: models.PedidoItem) -> tuple:
     )
 
 
-def _clave_pedida(item: schemas.PedidoItemCreate) -> tuple:
+def _clave_pedida(
+    item: schemas.PedidoItemCreate, envios: frozenset = frozenset(), precios: Optional[dict] = None
+) -> tuple:
+    if item.variante_id is not None and item.variante_id in envios:
+        precio = item.precio_libre if item.precio_libre is not None else (precios or {}).get(item.variante_id, 0)
+        return ("envio", item.variante_id, round(precio or 0, 2), bool(item.cortesia))
     if item.variante_id is not None:
         return ("menu", item.variante_id, bool(item.cortesia))
     return (
@@ -861,18 +907,32 @@ async def editar_pedido(
     recetas = _recetas_por_variante(
         list(set(variantes) | {f.variante_id for f in pedido.items if f.variante_id}), db
     )
+    envios = seed.categoria_envios(db)
+    categoria_envios_id = envios.id if envios else None
+    _revisar_precio_de_envios(del_menu, variantes, categoria_envios_id)
+    ids_envio = (
+        frozenset(
+            v_id
+            for (v_id,) in db.query(models.Variante.id)
+            .join(models.Producto, models.Variante.producto_id == models.Producto.id)
+            .filter(models.Producto.categoria_id == categoria_envios_id)
+        )
+        if categoria_envios_id is not None
+        else frozenset()
+    )
+    precios_menu = {v_id: v.precio for v_id, v in variantes.items()}
 
     # -- como queda cada renglon: lo pedido contra lo que ya estaba
     pedidas: Dict[tuple, int] = {}
     ejemplo: Dict[tuple, schemas.PedidoItemCreate] = {}
     for item in body.items:
-        clave = _clave_pedida(item)
+        clave = _clave_pedida(item, ids_envio, precios_menu)
         pedidas[clave] = pedidas.get(clave, 0) + item.cantidad
         ejemplo.setdefault(clave, item)
 
     actuales: Dict[tuple, List[models.PedidoItem]] = {}
     for fila in pedido.items:
-        actuales.setdefault(_clave_de_fila(fila), []).append(fila)
+        actuales.setdefault(_clave_de_fila(fila, ids_envio), []).append(fila)
 
     # Lo que la cocina ya termino no se quita. Leider (21-sep): "despues de
     # que una comanda este para entregar ya no se puede editar; incluso
@@ -903,7 +963,8 @@ async def editar_pedido(
             return fila.precio_unitario, (fila.costo_unitario or 0)
         item = ejemplo[clave]
         if item.variante_id is not None:
-            precio = 0.0 if item.cortesia else variantes[item.variante_id].precio
+            variante = variantes[item.variante_id]
+            precio = 0.0 if item.cortesia else _precio_de(variante, item, categoria_envios_id)
             return precio, round(costos.get(item.variante_id, 0), 4)
         return (0.0 if item.cortesia else round(item.precio_libre, 2)), 0.0
 
@@ -1045,8 +1106,6 @@ async def editar_pedido(
 
     # -- se aplica
     cocina_ya_habia_terminado = cocina_termino(pedido)
-    envios = seed.categoria_envios(db)
-    categoria_envios_id = envios.id if envios else None
     for clave, cantidad in pedidas.items():
         filas = actuales.get(clave)
         if filas:
@@ -1092,7 +1151,7 @@ async def editar_pedido(
                     a_cocina=a_cocina,
                     cortesia=item.cortesia,
                     precio_lista=(
-                        (variantes[item.variante_id].precio if item.variante_id is not None else round(item.precio_libre or 0, 2))
+                        (_precio_de(variante, item, categoria_envios_id) if variante is not None else round(item.precio_libre or 0, 2))
                         if item.cortesia
                         else 0.0
                     ),
@@ -1450,6 +1509,198 @@ async def facturar_pedido(
     return resultado
 
 
+@router.put("/{pedido_id}/pagos", response_model=schemas.Pedido)
+async def corregir_pagos(
+    pedido_id: int,
+    body: schemas.CorregirPagosRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Corregir COMO se pago una venta ya cobrada: la forma de pago, el
+    reparto de un pago mixto o la referencia.
+
+    Lo cobrado no cambia: los pagos nuevos tienen que sumar lo mismo que los
+    de antes. Cambiar lo que se cobro es editar la venta.
+
+    La contabilidad no se reescribe: un asiento de ajuste, con la fecha de la
+    venta, saca la plata de la cuenta donde se anoto mal y la pone donde
+    entro de verdad. Asi el cierre de ese dia cuadra con lo que hay.
+
+    Lo que no se toca:
+      - un dia cuya caja ya se cerro: el arqueo firmado diria una cosa y la
+        venta otra. Se anula el cierre, se corrige, y se vuelve a cerrar;
+      - el fiado: es una cuenta por cobrar con sus abonos, no una gaveta;
+      - un pago que tuvo vuelto, o una devolucion de una edicion: mueven dos
+        gavetas a la vez, y moverlos a medias descuadra las dos.
+    """
+    pedido = _buscar(db, pedido_id)
+    if pedido.estado != "pagado":
+        raise HTTPException(status_code=409, detail="Solo se corrige el pago de una venta ya cobrada")
+    if pedido.devuelto:
+        raise HTTPException(status_code=409, detail="Esta venta se devolvió: ya no hay pago que corregir")
+    if not body.pagos:
+        raise HTTPException(status_code=400, detail="Falta decir cómo se pagó")
+
+    inicio = inicio_del_dia((pedido.cerrado_en or ahora()).date())
+    cerrada = (
+        db.query(models.CierreCaja)
+        .filter(
+            models.CierreCaja.fecha >= inicio,
+            models.CierreCaja.fecha < inicio + datetime.timedelta(days=1),
+            models.CierreCaja.anulado.is_(False),
+        )
+        .first()
+    )
+    if cerrada:
+        raise HTTPException(
+            status_code=409,
+            detail="La caja de ese día ya se cerró. Anula el cierre en Cierre de caja, "
+            "corrige el pago y vuelve a cerrar.",
+        )
+
+    viejos = {p.id: p for p in pedido.pagos}
+    if any(p.metodo == "Fiado" for p in pedido.pagos) or any(p.metodo == "Fiado" for p in body.pagos):
+        raise HTTPException(
+            status_code=409,
+            detail="El fiado no se corrige aquí: es una cuenta por cobrar, no una forma de pago.",
+        )
+
+    fijos = {p.id for p in pedido.pagos if (p.vuelto_monto or 0) > 0 or p.monto < 0}
+    nuevos: List[tuple] = []  # (pago viejo o None, metodo, monto, referencia)
+    for p in body.pagos:
+        viejo = viejos.get(p.id) if p.id is not None else None
+        if p.id is not None and viejo is None:
+            raise HTTPException(status_code=400, detail="Ese pago no es de esta venta")
+        referencia = (p.referencia or "").strip()
+        monto = round(p.monto, 2)
+        if viejo is not None and viejo.id in fijos:
+            if p.metodo != viejo.metodo or abs(monto - round(viejo.monto, 2)) > 0.001:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Un pago que tuvo vuelto (o una devolución) no se cambia de forma ni de monto: "
+                    "movió dos gavetas a la vez. Solo se le corrige la referencia.",
+                )
+        else:
+            if p.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
+                raise HTTPException(status_code=400, detail=f"Forma de pago desconocida: '{p.metodo}'.")
+            if monto <= 0:
+                raise HTTPException(status_code=400, detail="Cada pago debe ser mayor a cero")
+        if p.metodo in contabilidad.METODOS_CON_REFERENCIA and not referencia:
+            raise HTTPException(
+                status_code=400, detail=f"Falta el número de referencia del pago por {p.metodo}."
+            )
+        nuevos.append((viejo, p.metodo, monto, referencia))
+
+    # Todo pago que tuvo vuelto sigue ahi: quitarlo borraria de los libros un
+    # vuelto que si se dio.
+    quedan = {v.id for v, *_ in nuevos if v is not None}
+    if fijos - quedan:
+        raise HTTPException(
+            status_code=409,
+            detail="Un pago que tuvo vuelto (o una devolución) no se puede quitar.",
+        )
+
+    antes = round(sum(p.monto for p in pedido.pagos), 2)
+    despues = round(sum(m for _, _, m, _ in nuevos), 2)
+    if abs(antes - despues) > 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Los pagos suman ${despues:.2f} y la venta se cobró por ${antes:.2f}. "
+            "Lo cobrado no cambia aquí: para eso se edita la venta.",
+        )
+
+    def _describir(pagos) -> str:
+        return ", ".join(
+            f"{etiqueta} ${monto:.2f}" + (f" (ref {ref})" if ref else "")
+            for etiqueta, monto, ref in pagos
+        )
+
+    antes_texto = _describir([(p.metodo, p.monto, p.referencia or "") for p in pedido.pagos])
+    despues_texto = _describir([(m, monto, ref) for _, m, monto, ref in nuevos])
+    if antes_texto == despues_texto:
+        raise HTTPException(status_code=400, detail="No hay ningún cambio que guardar")
+
+    lineas_antes = contabilidad._lineas_de_cobro(pedido)
+    mueve_plata = sorted((v.metodo, round(v.monto, 2)) for v in pedido.pagos) != sorted(
+        (m, monto) for _, m, monto, _ in nuevos
+    )
+    autorizado_por = ""
+    if mueve_plata:
+        autorizado_por = autorizaciones.firma_propia(request) or ""
+        if not autorizado_por:
+            if not body.autorizacion:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Esta corrección cambia por dónde entró la plata de una venta ya cobrada. "
+                    + autorizaciones.SIN_FIRMA,
+                )
+            autorizado_por = autorizaciones.firmar(
+                db, request, body.autorizacion, accion="corregir_pago", pedido_id=pedido.id
+            )
+
+    # -- se aplica: lo que ya estaba conserva su vuelto; lo demas se reescribe
+    for v in pedido.pagos:
+        if v.id not in quedan:
+            db.delete(v)
+    for viejo, metodo, monto, referencia in nuevos:
+        if viejo is not None:
+            viejo.metodo = metodo
+            viejo.monto = monto
+            viejo.referencia = referencia
+        else:
+            db.add(models.PagoPedido(pedido_id=pedido.id, metodo=metodo, monto=monto, referencia=referencia))
+    db.flush()
+    db.refresh(pedido)
+    metodos = {p.metodo for p in pedido.pagos}
+    pedido.metodo_pago = list(metodos)[0] if len(metodos) == 1 else "Mixto"
+
+    # El ajuste: por cuenta, lo nuevo menos lo viejo.
+    neto: Dict[str, float] = {}
+    for cuenta, debe, haber in lineas_antes:
+        neto[cuenta] = neto.get(cuenta, 0.0) - debe + haber
+    for cuenta, debe, haber in contabilidad._lineas_de_cobro(pedido):
+        neto[cuenta] = neto.get(cuenta, 0.0) + debe - haber
+    ajuste = [
+        (cuenta, round(n, 2), 0.0) if n > 0 else (cuenta, 0.0, round(-n, 2))
+        for cuenta, n in neto.items()
+        if abs(round(n, 2)) >= 0.01
+    ]
+    if ajuste:
+        contabilidad.crear_asiento(
+            db,
+            f"Corrección del pago, pedido #{pedido.numero}",
+            ajuste,
+            origen="correccion_pago",
+            referencia_id=pedido.id,
+            fecha=pedido.cerrado_en,
+        )
+    if mueve_plata:
+        consolidacion.invalidar_dia(db, pedido.cerrado_en)
+
+    quien = operadores.del_turno(db, request)
+    db.add(
+        models.PedidoEdicion(
+            pedido_id=pedido.id,
+            detalle=f"pago corregido: {antes_texto} -> {despues_texto}",
+            total_antes=pedido.total,
+            total_despues=pedido.total,
+            diferencia=0,
+            metodo_pago=", ".join(sorted(metodos)),
+            motivo=body.motivo,
+            operador_id=quien.id if quien else None,
+            autorizado_por=autorizado_por,
+        )
+    )
+    pedido.editado = True
+    pedido.editado_en = ahora()
+    db.commit()
+    db.refresh(pedido)
+
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
 @router.post("/{pedido_id}/devolver", response_model=schemas.Pedido)
 async def devolver_pedido(
     pedido_id: int, body: schemas.DevolucionRequest, db: Session = Depends(get_db)
@@ -1685,3 +1936,11 @@ def sugerencias(variantes: str = "", db: Session = Depends(get_db)):
     if not ids:
         return []
     return combos.sugerir(db, ids)
+
+
+# Al final a proposito: `/{pedido_id}` casaria tambien con "/sugerencias" y
+# "/olvidados" si se declarara antes que ellas.
+@router.get("/{pedido_id}", response_model=schemas.Pedido)
+def ver_pedido(pedido_id: int, db: Session = Depends(get_db)):
+    """Un pedido con todo lo suyo: renglones, pagos y ediciones."""
+    return _buscar(db, pedido_id)
