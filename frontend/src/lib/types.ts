@@ -11,6 +11,8 @@ export type Producto = {
   categoria_id: number
   nombre: string
   activo: boolean
+  /** Su puesto dentro de la categoría: el orden del menú y del mostrador. */
+  orden?: number
   variantes: Variante[]
 }
 

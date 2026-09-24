@@ -123,6 +123,27 @@ function ElMenu({
   /** Mover un producto a otra categoría, o una categoría a otro puesto. */
   const arrastre = useArrastre<{ tipo: 'producto'; producto: Producto } | { tipo: 'categoria'; id: number }>(
     async (carga, destino) => {
+      // Soltado sobre otro producto: queda justo antes de el. Es como se
+      // ordena el menu (el cliente, 24-sep: los cafes nuevos salian despues
+      // de los jugos). Si venia de otra categoria, ademas se muda.
+      if (destino.startsWith('prod-')) {
+        if (carga.tipo !== 'producto') return
+        const idSobre = Number(destino.replace('prod-', ''))
+        if (idSobre === carga.producto.id) return
+        const cat = activas.find((c) => c.productos.some((p) => p.id === idSobre))
+        if (!cat) return
+        if (carga.producto.categoria_id !== cat.id) {
+          await api.actualizarProducto(carga.producto.id, {
+            categoria_id: cat.id,
+            nombre: carga.producto.nombre,
+            activo: true,
+          })
+          setElegida(cat.id)
+        }
+        await ordenarProductos(cat, carga.producto.id, idSobre)
+        onCambio()
+        return
+      }
       const idDestino = Number(destino.replace('cat-', ''))
       if (!Number.isFinite(idDestino)) return
       if (carga.tipo === 'producto') {
@@ -482,17 +503,45 @@ function ProductosDe({
           />
         </div>
       ) : (
-        productos.map((producto) => (
-          <TarjetaProducto
-            key={producto.id}
-            producto={producto}
-            categoria={categoria}
-            categorias={categorias}
-            costos={costos}
-            onCambio={onCambio}
-            arrastre={arrastre}
-          />
-        ))
+        productos.map((producto, i) => {
+          const encima =
+            arrastre.carga?.tipo === 'producto' &&
+            arrastre.carga.producto.id !== producto.id &&
+            arrastre.sobre === `prod-${producto.id}`
+          return (
+            <div
+              key={producto.id}
+              data-soltar={`prod-${producto.id}`}
+              className={`rounded-2xl ${encima ? 'ring-2 ring-acento-400 ring-offset-2' : ''}`}
+            >
+              <TarjetaProducto
+                producto={producto}
+                categoria={categoria}
+                categorias={categorias}
+                costos={costos}
+                onCambio={onCambio}
+                arrastre={arrastre}
+                onSubir={
+                  i > 0
+                    ? async () => {
+                        await ordenarProductos(categoria, producto.id, productos[i - 1].id)
+                        onCambio()
+                      }
+                    : undefined
+                }
+                onBajar={
+                  i < productos.length - 1
+                    ? async () => {
+                        // Bajar uno es que el de abajo suba por encima de el.
+                        await ordenarProductos(categoria, productos[i + 1].id, producto.id)
+                        onCambio()
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          )
+        })
       )}
     </div>
   )
@@ -507,7 +556,12 @@ function TarjetaProducto({
   onCambio,
   arrastre,
   conCategoria = false,
+  onSubir,
+  onBajar,
 }: {
+  /** Mover un puesto arriba o abajo en su categoría. Sin él, ya está en la punta. */
+  onSubir?: () => void
+  onBajar?: () => void
   producto: Producto
   categoria: Categoria
   categorias: Categoria[]
@@ -633,8 +687,8 @@ function TarjetaProducto({
     >
       <div className="flex items-center gap-1.5">
         <button
-          aria-label={`Mover ${producto.nombre} a otra categoría`}
-          title="Arrástralo hasta la categoría a la que va"
+          aria-label={`Mover ${producto.nombre}`}
+          title="Arrástralo sobre otro producto para ordenarlo, o hasta la categoría a la que va"
           onPointerDown={(e) => arrastre.empezar(e, { tipo: 'producto', producto })}
           className="grid place-items-center w-7 h-10 shrink-0 text-neutral-300 hover:text-neutral-500 cursor-grab touch-none"
         >
@@ -648,6 +702,8 @@ function TarjetaProducto({
           etiqueta={`Opciones de ${producto.nombre}`}
           opciones={[
             { texto: 'Renombrar', onElegir: renombrar },
+            ...(onSubir ? [{ texto: 'Subir', ayuda: 'Un puesto más arriba en el menú y el punto de venta', onElegir: onSubir }] : []),
+            ...(onBajar ? [{ texto: 'Bajar', ayuda: 'Un puesto más abajo', onElegir: onBajar }] : []),
             { texto: 'Mover a otra categoría…', onElegir: mover },
             { texto: 'Quitar del menú', peligro: true, onElegir: quitar },
           ]}
@@ -1036,6 +1092,17 @@ function buscar(categorias: Categoria[], texto: string): { cat: Categoria; produ
  * repetidos, así que un solo cambio dejaba dos con el mismo puesto y el
  * mostrador las ordenaba como le diera la gana.
  */
+/**
+ * Pone el producto `id` justo antes de `sobre` dentro de la categoría y guarda
+ * el orden completo de una vez (ver `reordenar`, lo mismo para categorías).
+ */
+async function ordenarProductos(categoria: Categoria, id: number, sobre: number) {
+  const orden = categoria.productos.filter((p) => p.activo).map((p) => p.id).filter((x) => x !== id)
+  const donde = orden.indexOf(sobre)
+  orden.splice(donde < 0 ? orden.length : donde, 0, id)
+  await api.ordenarProductos(categoria.id, orden)
+}
+
 async function reordenar(categorias: Categoria[], id: number, sobre: number) {
   const orden = categorias.map((c) => c.id).filter((x) => x !== id)
   const donde = orden.indexOf(sobre)

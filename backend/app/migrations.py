@@ -111,6 +111,8 @@ COLUMNAS = [
     # A cocina o no, renglon por renglon (y la sugerencia, por categoria).
     ("DIM210_MEN_CATEGORIA", "va_a_cocina", "BOOLEAN DEFAULT 1"),
     ("TRX111_VEN_PEDIDO_DET", "a_cocina", "BOOLEAN DEFAULT 1"),
+    # En 0 para todos: a igual puesto manda el id, que es el orden de siempre.
+    ("DIM220_MEN_PRODUCTO", "orden", "INTEGER DEFAULT 0"),
 ]
 
 

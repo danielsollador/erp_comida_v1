@@ -219,6 +219,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(cambios),
     }),
+  /** El orden de los productos de una categoría: así salen en el menú y en el mostrador. */
+  ordenarProductos: (categoriaId: number, ids: number[]) =>
+    req(`/menu/categorias/${categoriaId}/orden-productos`, {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    }),
   eliminarCategoria: (id: number) => req(`/menu/categorias/${id}`, { method: 'DELETE' }),
   reactivarCategoria: (id: number) =>
     req<Categoria>(`/menu/categorias/${id}/reactivar`, { method: 'POST' }),
