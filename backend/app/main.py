@@ -25,6 +25,7 @@ from .routers import (
     inventario,
     menu,
     operadores,
+    pagos,
     pedidos,
     proveedores,
     reportes,
@@ -214,6 +215,7 @@ app.include_router(menu.router)
 app.include_router(operadores.router)
 app.include_router(operadores.puntos)
 app.include_router(pedidos.router)
+app.include_router(pagos.router)
 app.include_router(inventario.router)
 app.include_router(config.router)
 app.include_router(caja.router)

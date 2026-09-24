@@ -71,6 +71,8 @@ import type {
   AnalisisTasa,
   ListaVentas,
   ResumenVentas,
+  EstadoPabilo,
+  VerificacionPago,
 } from './types'
 import { queryRango, type Rango } from './fechas'
 
@@ -255,6 +257,20 @@ export const api = {
     req<Pedido[]>(`/pedidos${estado ? `?estado=${estado}` : ''}`),
   /** Lo que cocina todavia tiene que preparar, cobrado o no. */
   listarPedidosEnCocina: () => req<Pedido[]>('/pedidos?en_cocina=true'),
+
+  // ── Verificar pagos moviles contra el banco (Pabilo) ──
+  // Si el local no tiene la clave, `configurado` viene en false y el cuadro
+  // de cobro no menciona la verificacion: se anota la referencia como siempre.
+  estadoPabilo: () => req<EstadoPabilo>('/pagos/estado'),
+  verificarPago: (datos: {
+    referencia: string
+    monto_usd: number
+    metodo: string
+    pedido_id?: number
+    telefono?: string
+    cedula?: string
+    banco_origen?: string
+  }) => req<VerificacionPago>('/pagos/verificar', { method: 'POST', body: JSON.stringify(datos) }),
   /** Cobradas y ya cocinadas, todavia en el mostrador esperando al cliente. */
   listarPedidosPorEntregar: () => req<Pedido[]>('/pedidos?por_entregar=true'),
   /** Las ventas de hoy, para consultarlas sin salir del punto de venta. */
@@ -390,6 +406,8 @@ export const api = {
       // comprobante del Zelle. El backend lo exige para todo lo que no sea
       // efectivo ni fiado.
       referencia?: string
+      // La consulta al banco que respaldo esa referencia (verificarPago).
+      verificacion_id?: number
     }[],
     extra?: {
       descuento?: number

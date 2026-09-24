@@ -1173,6 +1173,47 @@ class PagoPedido(Base):
     # comprobante del Zelle. En efectivo no hay nada que anotar aca: un
     # billete no trae referencia.
     referencia = Column(String, default="")
+    # Si la referencia se comprobo contra el banco antes de cobrar (Pabilo),
+    # el registro de esa consulta. NULL = se anoto a mano, como siempre.
+    verificacion_id = Column(Integer, ForeignKey("TRX121_VEN_VERIFICACION.id"), nullable=True)
+
+
+class VerificacionPago(Base):
+    """Cada vez que se le pregunto al banco por una referencia (via Pabilo).
+
+    Se guarda TODA consulta, salga bien o mal, y no solo las que terminaron en
+    cobro: la que dijo "no existe" a las 8:03 y la que dijo "verificado" a las
+    8:05 con la misma referencia cuentan la historia de un pago que tardo en
+    reflejarse --o de alguien probando referencias--. Y cada consulta cuesta un
+    credito: el dueno tiene que poder ver en que se gastaron.
+
+    `monto_bs` es lo que el BANCO dijo que entro; `esperado_bs` lo que la
+    cuenta pedia a la tasa del momento. La diferencia entre los dos es lo que
+    la cajera decidio aceptar o no.
+    """
+
+    __tablename__ = "TRX121_VEN_VERIFICACION"
+
+    id = Column(Integer, primary_key=True)
+    creado_en = Column(DateTime, default=ahora)
+    referencia = Column(String, nullable=False, index=True)
+    metodo = Column(String, default="Pago movil")
+    # verificado | monto_distinto | no_encontrado | ya_usado | error
+    resultado = Column(String, nullable=False)
+    # El `error` de Pabilo cuando no salio bien; vacio si salio bien.
+    codigo = Column(String, default="")
+    mensaje = Column(String, default="")
+    esperado_usd = Column(Float, nullable=True)
+    esperado_bs = Column(Float, nullable=True)
+    tasa = Column(Float, nullable=True)
+    monto_bs = Column(Float, nullable=True)
+    pabilo_id = Column(String, default="")
+    es_nueva = Column(Boolean, default=True)
+    credito_costo = Column(Integer, default=0)
+    creditos_restantes = Column(Integer, nullable=True)
+    # A que cobro termino pegada. NULL mientras solo fue una consulta.
+    pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
 
 class PedidoConsumo(Base):

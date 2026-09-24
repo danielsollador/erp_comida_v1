@@ -67,8 +67,12 @@ export function useTema() {
       const x = origen?.x ?? window.innerWidth / 2
       const y = origen?.y ?? window.innerHeight / 2
       const radio = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))
-      raiz.style.setProperty('--vp-x', `${x}px`)
-      raiz.style.setProperty('--vp-y', `${y}px`)
+      // EN PORCENTAJE, no en pixeles. La revelacion usa una mascara que crece
+      // (`mask-size`), y ahi una posicion en pixeles deja de anclar: el centro
+      // del circulo se arrastraria mientras la mascara se agranda. En
+      // porcentaje el ancla se queda clavada donde se pulso.
+      raiz.style.setProperty('--vp-x', `${(x / window.innerWidth) * 100}%`)
+      raiz.style.setProperty('--vp-y', `${(y / window.innerHeight) * 100}%`)
       raiz.style.setProperty('--vp-radio', `${Math.ceil(radio)}px`)
       doc.startViewTransition(aplicar)
       return
@@ -104,7 +108,7 @@ export function TemaToggle({ dark = false }: { dark?: boolean }) {
       onClick={onClick}
       aria-label={aOscuro ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
       title={aOscuro ? 'Modo oscuro' : 'Modo claro'}
-      className={`w-9 h-9 rounded-full border grid place-items-center ${
+      className={`vp-control w-9 h-9 rounded-full border grid place-items-center ${
         dark
           ? 'border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
           : 'border-neutral-200 text-neutral-500 hover:text-neutral-900 hover:border-neutral-400 bg-white'

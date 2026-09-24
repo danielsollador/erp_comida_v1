@@ -58,7 +58,8 @@ MODULOS: dict[str, dict] = {
         "nombre": "Punto de venta",
         # Las autorizaciones van con el punto de venta: es desde alli que se
         # pide permiso para tocar una venta cobrada.
-        "rutas": ("/api/pedidos", "/api/autorizaciones"),
+        # Verificar un pago movil contra el banco es parte de cobrar.
+        "rutas": ("/api/pedidos", "/api/autorizaciones", "/api/pagos"),
         "lectura": ("/api/menu", "/api/puntos-venta", "/api/operadores", "/api/inventario"),
     },
     "cocina": {
@@ -83,7 +84,7 @@ MODULOS: dict[str, dict] = {
     },
     "caja": {
         "nombre": "Cierre de caja",
-        "rutas": ("/api/caja", "/api/puntos-venta", "/api/autorizaciones"),
+        "rutas": ("/api/caja", "/api/puntos-venta", "/api/autorizaciones", "/api/pagos"),
         "lectura": ("/api/pedidos", "/api/reportes"),
     },
     "tasa": {"nombre": "Tasa de cambio", "rutas": ("/api/tasas", "/api/config")},

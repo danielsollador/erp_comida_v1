@@ -82,7 +82,7 @@ export default function Notificaciones({ dark = false }: { dark?: boolean }) {
         aria-expanded={abierto}
         aria-label={pendientes.length ? `${pendientes.length} notificaciones pendientes` : 'Notificaciones'}
         title="Notificaciones"
-        className={`relative w-9 h-9 rounded-full border grid place-items-center shrink-0 ${
+        className={`vp-control relative w-9 h-9 rounded-full border grid place-items-center shrink-0 ${
           dark
             ? 'border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
             : 'border-neutral-200 text-neutral-500 hover:text-neutral-900 hover:border-neutral-400 bg-white'
@@ -99,7 +99,7 @@ export default function Notificaciones({ dark = false }: { dark?: boolean }) {
       {abierto && (
         <div
           role="menu"
-          className={`absolute right-0 mt-2 w-[22rem] rounded-2xl border shadow-lg z-30 overflow-hidden ${
+          className={`vp-menu absolute right-0 mt-2 w-[22rem] rounded-2xl border z-30 overflow-hidden ${
             dark ? 'bg-neutral-900 border-neutral-700 text-white' : 'bg-white border-neutral-200'
           }`}
           style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both', ...enTelefono }}

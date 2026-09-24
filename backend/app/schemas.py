@@ -549,6 +549,9 @@ class PagoInput(BaseModel):
     # comprobante del Zelle. Se exige para los metodos que de verdad tienen
     # uno (ver contabilidad.METODOS_CON_REFERENCIA); en efectivo se ignora.
     referencia: Optional[str] = None
+    # La consulta al banco que respaldo esta referencia (POST
+    # /api/pagos/verificar). Opcional: sin Pabilo se cobra como siempre.
+    verificacion_id: Optional[int] = None
 
 
 class Pago(BaseModel):
@@ -560,6 +563,7 @@ class Pago(BaseModel):
     vuelto_metodo: Optional[str] = None
     vuelto_monto: float = 0
     referencia: str = ""
+    verificacion_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -2000,3 +2004,54 @@ class ResumenIva(BaseModel):
     iva_debito: float
     iva_credito: float
     iva_a_pagar: float
+
+
+# ── Verificacion de pagos moviles (Pabilo) ─────────────────────────────────
+
+
+class VerificarPagoRequest(BaseModel):
+    referencia: str
+    # Lo que la cuenta pide, en dolares: el backend lo pasa a Bs con la tasa
+    # vigente y compara contra lo que el banco dice que entro.
+    monto_usd: float
+    metodo: str = "Pago movil"
+    pedido_id: Optional[int] = None
+    # Solo si el banco de la cuenta los exige (ver GET /api/pagos/estado).
+    telefono: str = ""
+    cedula: str = ""
+    banco_origen: str = ""
+
+
+class VerificacionPago(BaseModel):
+    id: int
+    referencia: str
+    resultado: str  # verificado | monto_distinto | no_encontrado | ya_usado | error
+    mensaje: str
+    codigo: str = ""
+    esperado_bs: Optional[float] = None
+    monto_bs: Optional[float] = None
+    tasa: Optional[float] = None
+    es_nueva: bool = True
+    # Si vale la pena volver a intentar (el banco no respondio) o si es algo
+    # que solo el dueno puede arreglar (sin creditos).
+    reintentable: bool = False
+    del_dueno: bool = False
+    creditos_restantes: Optional[int] = None
+    # El cobro con que quedo pegada la referencia si ya se habia usado.
+    pedido_numero: Optional[int] = None
+
+
+class EstadoPabilo(BaseModel):
+    configurado: bool
+    # Solo cuando esta configurado y la cuenta respondio.
+    cuenta: str = ""
+    banco: str = ""
+    moneda: str = ""
+    # Campos extra que el banco exige ademas de la referencia (nombres del
+    # API de Pabilo: PHONE_ORIGIN, DNI_ORIGIN, BANK_CODE_ORIGIN).
+    campos: List[str] = []
+    # Los metodos de pago del ERP que se verifican con esta cuenta.
+    metodos: List[str] = []
+    creditos: Optional[int] = None
+    error: str = ""
+

@@ -63,7 +63,7 @@ export default function NavBar({
           aria-label="Volver al inicio"
           title="Volver al inicio"
           className={`grid place-items-center w-9 h-9 rounded-xl border shrink-0 ${
-            dark ? 'border-neutral-700 hover:bg-neutral-800' : 'border-neutral-200 bg-white hover:bg-neutral-100'
+            dark ? 'border-neutral-700 hover:bg-neutral-800' : 'vp-control'
           }`}
         >
           <Icono nombre="atras" size={18} />

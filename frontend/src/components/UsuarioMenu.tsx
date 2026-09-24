@@ -47,7 +47,7 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
         onClick={() => setAbierto((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={abierto}
-        className={`h-9 pl-1 pr-3 rounded-full border flex items-center gap-2 text-sm font-medium ${
+        className={`vp-control h-9 pl-1 pr-3 rounded-full border flex items-center gap-2 text-sm font-medium ${
           dark ? 'border-neutral-700 hover:border-neutral-500' : 'border-neutral-200 hover:border-neutral-400 bg-white'
         }`}
       >
@@ -64,7 +64,7 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
       {abierto && (
         <div
           role="menu"
-          className={`absolute right-0 mt-2 w-60 rounded-2xl border shadow-lg p-1.5 z-30 ${
+          className={`vp-menu absolute right-0 mt-2 w-60 rounded-2xl border p-1.5 z-30 ${
             dark ? 'bg-neutral-900 border-neutral-700 text-white' : 'bg-white border-neutral-200'
           }`}
           style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both', ...enTelefono }}

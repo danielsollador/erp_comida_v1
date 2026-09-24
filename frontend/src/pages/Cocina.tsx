@@ -23,11 +23,13 @@ function minutosDesde(iso: string): number {
 }
 
 function estiloAntiguedad(minutos: number) {
+  // El contorno de la tarjeta va con `outline` y no con `ring`: el anillo es
+  // un box-shadow y pisaria la sombra de la losa (ver .vp-losa en index.css).
   if (minutos >= 12)
-    return { badge: 'bg-peligro-500/15 text-peligro-700 ring-1 ring-peligro-500/40', card: 'ring-2 ring-peligro-500/50' }
+    return { badge: 'bg-peligro-500/15 text-peligro-700', card: 'outline outline-2 outline-peligro-500/50' }
   if (minutos >= 6)
-    return { badge: 'bg-aviso-500/15 text-aviso-700 ring-1 ring-aviso-500/40', card: 'ring-1 ring-aviso-500/30' }
-  return { badge: 'bg-exito-500/15 text-exito-700 ring-1 ring-exito-500/30', card: '' }
+    return { badge: 'bg-aviso-500/15 text-aviso-700', card: 'outline outline-1 outline-aviso-500/40' }
+  return { badge: 'bg-exito-500/15 text-exito-700', card: '' }
 }
 
 export default function Cocina() {
@@ -211,7 +213,7 @@ export default function Cocina() {
     // oscura siempre --menos brillo detras del fogon-- pero era la unica que
     // no obedecia al interruptor y de dia se veia de otro aplicativo. Quien
     // la quiera oscura pone el modo oscuro, que ademas se recuerda.
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
+    <div className="min-h-screen text-neutral-900">
       <NavBar
         titulo="Cocina"
         moneda={false}
@@ -219,15 +221,23 @@ export default function Cocina() {
           <>
             {/* La pantalla completa ya la pone <NavBar> para todos los
                 modulos; aqui solo queda lo propio de cocina. */}
+            {/* Apagado es la unica accion pendiente de la pantalla, y por eso
+                es el unico boton con fondo de color: hay que tocarlo al abrir
+                el turno. Encendido pasa a ser un control mas de la barra, con
+                un punto verde que dice "activo" sin gritar. */}
             <button
               onClick={alternarSonido}
-              className={`text-sm px-3 py-2 rounded-lg font-medium flex items-center gap-2 ${
+              className={`h-9 rounded-full px-3 text-sm font-medium flex items-center gap-2 border ${
                 sonido
-                  ? 'bg-exito-600 hover:bg-exito-500 text-neutral-50'
-                  : 'bg-aviso-500 hover:bg-aviso-400 text-neutral-50'
+                  ? 'vp-control text-neutral-700'
+                  : 'vp-boton-acento border-transparent'
               }`}
             >
-              <Icono nombre={sonido ? 'campana' : 'campana-muda'} size={16} />
+              {sonido ? (
+                <span aria-hidden className="w-2 h-2 rounded-full bg-exito-500 shrink-0" />
+              ) : (
+                <Icono nombre="campana-muda" size={16} />
+              )}
               {/* En el telefono solo la campana: con el texto, el titulo de la
                   pantalla se quedaba en "Coci...". El aviso de abajo ya explica
                   para que sirve mientras esta apagado. */}
@@ -238,13 +248,13 @@ export default function Cocina() {
       />
 
       {!sonido && (
-        <div className="bg-aviso-500/15 border-b border-aviso-500/30 text-aviso-800 px-5 py-2.5 text-sm">
+        <div className="bg-aviso-500/10 border-b border-aviso-500/20 text-aviso-900 px-5 py-2.5 text-sm">
           Toca <strong>Activar aviso</strong> para que suene cuando entre una comanda. Hazlo al
           abrir el turno.
         </div>
       )}
 
-      <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {pedidos.map((pedido) => {
           const minutos = minutosDesde(pedido.creado_en)
           const estilo = estiloAntiguedad(minutos)
@@ -256,12 +266,12 @@ export default function Cocina() {
           return (
             <div
               key={pedido.id}
-              className={`rounded-2xl p-5 border transition ${
+              className={`vp-losa p-5 outline-offset-[-1px] ${
                 bloqueada
-                  ? 'bg-aviso-500/10 border-aviso-500 ring-2 ring-aviso-500/50'
+                  ? 'outline outline-2 outline-aviso-500/60 bg-aviso-500/5'
                   : esNuevo
-                    ? 'bg-acento-50 border-acento-400 ring-4 ring-acento-500/40 animate-pulse'
-                    : `bg-white border-neutral-200 ${estilo.card}`
+                    ? 'outline outline-2 outline-acento-500/70'
+                    : estilo.card
               }`}
             >
               <div className="flex justify-between items-center mb-4">
@@ -269,7 +279,7 @@ export default function Cocina() {
                     de lejos --es lo que se canta cuando la comida sale-- y
                     ponerle el nombre en la misma linea lo encogeria. */}
                 <span className="min-w-0">
-                  <span className="block text-3xl font-black tracking-tight tabular-nums">
+                  <span className="block font-display text-3xl font-semibold tracking-tight tabular-nums">
                     #{pedido.numero}
                   </span>
                   {pedido.cliente && (
@@ -283,12 +293,12 @@ export default function Cocina() {
                       que salio bien a la primera: lo primero que hace el
                       cocinero al verlo es releer los renglones. */}
                   {pedido.editado && (
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-aviso-500/20 text-aviso-800 ring-1 ring-aviso-500/40 uppercase tracking-wide">
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-aviso-500/15 text-aviso-800">
                       Editado
                     </span>
                   )}
                   {esNuevo && (
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-acento-400 text-neutral-50 uppercase tracking-wide">
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-acento-500 text-neutral-50">
                       Nuevo
                     </span>
                   )}
@@ -314,9 +324,9 @@ export default function Cocina() {
               <button
                 onClick={() => alternarCocinando(pedido.id)}
                 disabled={bloqueada}
-                className={`w-full mb-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-40 ${
+                className={`vp-pulsable w-full mb-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-40 ${
                   mia
-                    ? 'bg-acento-500/15 text-acento-800 ring-1 ring-acento-500/40'
+                    ? 'bg-acento-500/15 text-acento-800'
                     : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
                 }`}
               >
@@ -336,7 +346,7 @@ export default function Cocina() {
                     <button
                       onClick={() => toggleItem(item.id)}
                       disabled={bloqueada}
-                      className={`w-full text-left px-4 py-3 rounded-xl flex justify-between items-center gap-3 border disabled:opacity-50 ${
+                      className={`vp-pulsable w-full text-left px-4 py-3 rounded-xl flex justify-between items-center gap-3 border disabled:opacity-50 ${
                         item.preparado
                           ? 'bg-exito-500/10 border-exito-500/30 text-neutral-500 line-through'
                           : tinte
@@ -367,7 +377,7 @@ export default function Cocina() {
               <button
                 onClick={() => marcarTodoListo(pedido.id)}
                 disabled={bloqueada}
-                className="w-full bg-exito-600 hover:bg-exito-500 disabled:opacity-40 disabled:hover:bg-exito-600 text-neutral-50 py-3.5 rounded-xl font-bold text-base"
+                className="vp-pulsable w-full bg-exito-600 hover:bg-exito-500 disabled:opacity-40 disabled:hover:bg-exito-600 text-neutral-50 py-3.5 rounded-xl font-semibold text-base"
               >
                 Marcar todo listo
               </button>

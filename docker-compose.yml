@@ -71,6 +71,10 @@ services:
       ERP_LOCAL: ${ERP_LOCAL:-savora}
       # Vacio = se genera uno la primera vez y se guarda en el volumen.
       ERP_SESSION_SECRET: ${ERP_SESSION_SECRET:-}
+      # Verificar pagos moviles contra el banco (pabilo.app). Vacio = el
+      # mostrador cobra anotando la referencia, como siempre.
+      PABILO_API_KEY: ${PABILO_API_KEY:-}
+      PABILO_USER_BANK_ID: ${PABILO_USER_BANK_ID:-}
       # Siembra OPCIONAL del primer administrador. Sin esto, la primera visita
       # pide crearlo desde el navegador.
       ERP_APP_USER: ${ERP_APP_USER:-admin}

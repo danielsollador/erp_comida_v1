@@ -469,7 +469,7 @@ export function Modal({
         // El clic dentro no cierra: si no, arrastrar para seleccionar un texto
         // y soltar fuera cerraba la ventana con todo a medio llenar.
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white w-full ${anchos[ancho]} rounded-t-2xl sm:rounded-2xl border border-neutral-200 shadow-lg flex flex-col max-h-[92vh] sm:max-h-[85vh] pb-[env(safe-area-inset-bottom)] sm:pb-0`}
+        className={`vp-menu w-full ${anchos[ancho]} rounded-t-2xl sm:rounded-2xl flex flex-col max-h-[92vh] sm:max-h-[85vh] pb-[env(safe-area-inset-bottom)] sm:pb-0`}
         style={{ animation: 'vp-entrar .22s cubic-bezier(.2,.7,.2,1) backwards' }}
       >
         <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-neutral-100 shrink-0">

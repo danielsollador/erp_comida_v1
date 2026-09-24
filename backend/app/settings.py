@@ -94,3 +94,20 @@ DB_SCHEMA = (os.getenv("ERP_DB_SCHEMA", "").strip()
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
+
+# ── Pabilo: verificar pagos moviles contra el banco ─────────────────────────
+# El integrador (pabilo.app) consulta la cuenta bancaria del local y dice si
+# una referencia de pago movil o transferencia de verdad entro. Sin clave, el
+# ERP se comporta como antes: la cajera anota la referencia y punto.
+#
+# LA CLAVE ES SECRETA DE SERVIDOR: nunca va al navegador ni al repositorio.
+# Vive en el .env del servidor, como la de la base de datos.
+PABILO_API_KEY = os.getenv("PABILO_API_KEY", "").strip()
+# La cuenta bancaria donde el local recibe los pagos (el `id` que devuelve
+# GET /me/usersbank). Vacio = la unica cuenta de la clave, si tiene una sola.
+PABILO_USER_BANK_ID = os.getenv("PABILO_USER_BANK_ID", "").strip()
+PABILO_URL = os.getenv("PABILO_URL", "https://api.pabilo.app").strip().rstrip("/")
+# El banco tarda: una consulta normal anda por los 3-8 s. Mas de esto y es
+# mejor decirle a la cajera que el banco no responde que dejarla esperando.
+PABILO_TIMEOUT = float(os.getenv("PABILO_TIMEOUT", "25"))
+

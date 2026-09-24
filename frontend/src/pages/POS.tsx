@@ -17,6 +17,8 @@ import { colorCategoria } from '../lib/theme'
 import { useModoLigero } from '../lib/ligero'
 import { etiquetaVariante, variantesParaVender } from '../lib/menu'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
+import VerificarPago, { type PagoVerificado } from '../components/VerificarPago'
+import type { EstadoPabilo } from '../lib/types'
 import { useAcceso } from '../lib/acceso'
 import type {
   Autorizacion,
@@ -145,7 +147,35 @@ export default function POS() {
   // cabeza (Leider, 22-sep). Ahora cada parte se agrega con su monto y lo que
   // falta se calcula solo.
   const [pagoMixto, setPagoMixto] = useState(false)
-  const [partes, setPartes] = useState<{ metodo: string; monto: number; referencia: string }[]>([])
+  const [partes, setPartes] = useState<
+    { metodo: string; monto: number; referencia: string; verificacion_id?: number }[]
+  >([])
+  // Si el local tiene Pabilo, un pago movil se comprueba contra el banco
+  // antes de cobrarlo. Se consulta una vez al abrir; si no esta configurado
+  // (o no responde) el cobro pide la referencia a mano, como siempre.
+  const [pabilo, setPabilo] = useState<EstadoPabilo | null>(null)
+  useEffect(() => {
+    api.estadoPabilo().then(setPabilo).catch(() => setPabilo(null))
+  }, [])
+  // El paso de verificacion abierto dentro del cuadro de cobro. Se resuelve
+  // como una promesa para que el flujo de cobrar lo espere igual que espera
+  // al dialogo de la referencia.
+  const [verificando, setVerificando] = useState<{
+    metodo: string
+    monto: number
+    resolver: (pago: PagoVerificado | null) => void
+  } | null>(null)
+
+  /**
+   * La referencia de un pago que no es efectivo y, si el local tiene Pabilo
+   * y el metodo cae en su cuenta, la confirmacion del banco. `null` si la
+   * cajera se echo atras.
+   */
+  function pedirPago(metodo: string, monto: number): Promise<PagoVerificado | null> {
+    const verificable = Boolean(pabilo?.configurado && !pabilo.error && pabilo.metodos.includes(metodo))
+    if (verificable) return new Promise((resolver) => setVerificando({ metodo, monto, resolver }))
+    return pedirReferencia(metodo, dialogo.pedirTexto).then((r) => (r === null ? null : { referencia: r }))
+  }
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
   const [facturar, setFacturar] = useState(false)
   const [numeroFactura, setNumeroFactura] = useState('')
@@ -633,11 +663,20 @@ export default function POS() {
     setCliente('')
     setEfectivo(null)
     setBillete('')
+    if (verificando) verificando.resolver(null)
+    setVerificando(null)
   }
 
   async function cobrar(
     metodo: string,
-    pagos?: { metodo: string; monto: number; recibido?: number; vuelto_metodo?: string; referencia?: string }[],
+    pagos?: {
+      metodo: string
+      monto: number
+      recibido?: number
+      vuelto_metodo?: string
+      referencia?: string
+      verificacion_id?: number
+    }[],
     referencia?: string,
     // El nombre recien escrito en un cuadro: `setCliente` no se ha aplicado
     // todavia cuando el cobro sale, y el estado viejo iria vacio.
@@ -706,9 +745,11 @@ export default function POS() {
     // palabra del cliente contra la del negocio: no hay con que ubicar el
     // comprobante. El backend lo exige igual; se pregunta antes para no
     // mandar el cobro y que rebote.
-    const referencia = await pedirReferencia(metodo, dialogo.pedirTexto)
-    if (referencia === null) return
-    cobrar(metodo, undefined, referencia)
+    const pago = await pedirPago(metodo, aCobrar)
+    if (pago === null) return
+    cobrar(metodo, [
+      { metodo, monto: aCobrar, referencia: pago.referencia, verificacion_id: pago.verificacion_id },
+    ])
   }
 
   /**
@@ -752,10 +793,13 @@ export default function POS() {
       return
     }
     // Cada parte lleva su propio comprobante: son pagos distintos.
-    const referencia = await pedirReferencia(metodo, dialogo.pedirTexto)
-    if (referencia === null) return
+    const pago = await pedirPago(metodo, monto)
+    if (pago === null) return
     setError('')
-    setPartes((p) => [...p, { metodo, monto: Math.round(monto * 100) / 100, referencia }])
+    setPartes((p) => [
+      ...p,
+      { metodo, monto: Math.round(monto * 100) / 100, referencia: pago.referencia, verificacion_id: pago.verificacion_id },
+    ])
   }
 
   function cobrarMixto() {
@@ -973,7 +1017,7 @@ export default function POS() {
     // descontaba, y el aviso de "abrir caja" sumaba otros 48: con cero
     // comandas habia que bajar para ver el final (Leider, 21-sep: "no
     // deberia necesitar ningun tipo de scroll si no tengo ninguna comanda").
-    <div className="min-h-screen bg-neutral-50 md:min-h-0 md:h-[100dvh] md:flex md:flex-col md:overflow-hidden">
+    <div className="min-h-screen md:min-h-0 md:h-[100dvh] md:flex md:flex-col md:overflow-hidden">
       <NavBar
         titulo="Punto de venta"
         secciones={[
@@ -1013,7 +1057,7 @@ export default function POS() {
       >
         <div className="p-4 overflow-y-auto md:h-full">
           {vista === 'tomar' && categorias.length > 0 && (
-            <section className="mb-5 rounded-2xl border border-neutral-200 bg-white overflow-hidden">
+            <section className="vp-losa mb-5 overflow-hidden">
               <button
                 type="button"
                 onClick={() => setListaAbierta((v) => !v)}
@@ -1062,7 +1106,7 @@ export default function POS() {
               <button
                 type="button"
                 onClick={verVentasDelDia}
-                className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:border-neutral-400"
+                className="vp-control flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium text-neutral-600 hover:text-neutral-900"
               >
                 <Icono nombre="ventas" size={13} />
                 Ventas de hoy
@@ -1113,7 +1157,7 @@ export default function POS() {
                     : 'border-exito-400 bg-exito-500/5'
               const anillo = preparando ? 'ring-2 ring-acento-500/50' : ''
               return (
-              <div key={pedido.id} className={`rounded-2xl shadow-sm border-2 p-4 ${marco} ${anillo}`}>
+              <div key={pedido.id} className={`rounded-2xl border-2 p-4 ${marco} ${anillo}`}>
                 <div className="flex justify-between items-start mb-2 gap-2">
                   {/* El numero y, debajo, de quien es. Entre ocho comandas
                       vivas el nombre es lo que las distingue; el numero solo
@@ -1269,7 +1313,7 @@ export default function POS() {
                           // escriba otra vez lo que ya se escribio.
                           setCliente(pedido.cliente || '')
                         }}
-                        className="bg-neutral-900 text-white text-sm px-4 py-2 rounded-xl font-medium"
+                        className="vp-pulsable bg-neutral-900 text-white text-sm px-4 py-2 rounded-xl font-medium"
                       >
                         Cobrar
                       </button>
@@ -1318,7 +1362,7 @@ export default function POS() {
         </div>
 
         {vista === 'tomar' && (
-        <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:h-full md:min-h-0">
+        <div className="bg-[var(--vp-superficie)] md:border-l border-neutral-200 p-4 flex flex-col md:h-full md:min-h-0">
           {enEdicion && (
             <div className="mb-3 rounded-xl bg-aviso-50 border border-aviso-300 px-3 py-2 flex items-center justify-between gap-2">
               <p className="text-sm text-aviso-900 min-w-0">
@@ -1472,7 +1516,7 @@ export default function POS() {
             <button
               onClick={enviarComanda}
               disabled={Object.keys(carrito).length === 0 && libres.length === 0}
-              className="w-full bg-neutral-900 text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-30"
+              className="vp-pulsable w-full bg-neutral-900 text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-30"
             >
               {enEdicion ? 'Guardar cambios' : 'Enviar comanda'}
             </button>
@@ -1719,7 +1763,7 @@ export default function POS() {
             </Boton>
           }
         >
-          <p className="text-3xl font-bold">${aCobrar.toFixed(2)}</p>
+          <p className="font-display text-4xl font-semibold tracking-tight tabular-nums">${aCobrar.toFixed(2)}</p>
           {(descuentoNum > 0 || Number(propina) > 0) && (
             <p className="text-xs text-neutral-500">
               ${cobrando.total.toFixed(2)} de comida
@@ -1808,7 +1852,23 @@ export default function POS() {
           {/* Pago partido: el cliente da algo en efectivo y el resto por
               otra via. Antes habia que elegir un metodo solo y la caja
               quedaba esperando plata que nunca entro a la gaveta. */}
-          {!pagoMixto ? (
+          {verificando && pabilo ? (
+            <VerificarPago
+              metodo={verificando.metodo}
+              montoUsd={verificando.monto}
+              tasa={tasaBcv}
+              estado={pabilo}
+              pedidoId={cobrando.id}
+              onListo={(pago) => {
+                verificando.resolver(pago)
+                setVerificando(null)
+              }}
+              onCancelar={() => {
+                verificando.resolver(null)
+                setVerificando(null)
+              }}
+            />
+          ) : !pagoMixto ? (
             efectivo ? (
               /* Efectivo, paso a paso. Leider (21-sep): "tienen que haber dos
                  opciones, si va a pagar exacto o con diferencia... si pone
@@ -1833,7 +1893,7 @@ export default function POS() {
                   <div className="space-y-2">
                     <button
                       onClick={() => cobrar(efectivo.metodo)}
-                      className="w-full rounded-xl border border-exito-300 bg-exito-50 text-exito-800 py-3.5 font-semibold active:scale-95 transition"
+                      className="vp-pulsable w-full rounded-xl border border-exito-300 bg-exito-50 text-exito-800 py-3.5 font-semibold"
                     >
                       Paga exacto ·{' '}
                       <span className="tabular-nums">
@@ -1893,7 +1953,7 @@ export default function POS() {
                             <button
                               key={m}
                               onClick={() => cobrarConVuelto(m)}
-                              className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-3 text-sm font-medium"
+                              className="vp-control vp-pulsable rounded-xl py-3 text-sm font-medium"
                             >
                               {m}
                               {m === 'Efectivo Bs' && tasaBcv > 0 && (
@@ -1930,7 +1990,7 @@ export default function POS() {
                   <button
                     key={m}
                     onClick={() => confirmarCobro(m)}
-                    className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-3 text-sm font-medium"
+                    className="vp-control vp-pulsable rounded-xl py-3 text-sm font-medium"
                   >
                     {m}
                   </button>
@@ -1945,7 +2005,7 @@ export default function POS() {
                     requisito se explica en el momento en que estorba. */}
                 <button
                   onClick={cobrarACredito}
-                  className="bg-aviso-100 hover:bg-aviso-200 rounded-xl py-3 text-sm font-medium"
+                  className="vp-pulsable bg-aviso-100 hover:bg-aviso-200 rounded-xl py-3 text-sm font-medium"
                 >
                   A crédito
                 </button>
@@ -1983,6 +2043,7 @@ export default function POS() {
                     {parte.referencia && (
                       <span className="block text-[11px] text-neutral-400 truncate">
                         ref. {parte.referencia}
+                        {parte.verificacion_id && <span className="text-exito-700"> · verificada</span>}
                       </span>
                     )}
                   </span>
@@ -2009,7 +2070,7 @@ export default function POS() {
                         onClick={() => agregarParte(m)}
                         disabled={m === 'Fiado' && !cliente.trim()}
                         title={m === 'Fiado' && !cliente.trim() ? 'Escribe el nombre del cliente primero' : ''}
-                        className="bg-neutral-100 hover:bg-neutral-200 rounded-xl py-2.5 text-sm font-medium disabled:opacity-30"
+                        className="vp-control vp-pulsable rounded-xl py-2.5 text-sm font-medium disabled:opacity-30"
                       >
                         {etiquetaMetodo(m)}
                       </button>
@@ -2021,7 +2082,7 @@ export default function POS() {
               <button
                 onClick={cobrarMixto}
                 disabled={faltaMixto > 0.001 || partes.length === 0}
-                className="w-full rounded-xl bg-neutral-900 py-3 text-sm font-semibold text-white disabled:opacity-30"
+                className="vp-pulsable w-full rounded-xl bg-neutral-900 py-3 text-sm font-semibold text-white disabled:opacity-30"
               >
                 Cobrar {fmt(aCobrar)} en {partes.length} forma(s)
               </button>
@@ -2098,7 +2159,7 @@ const ListaProductos = memo(function ListaProductos({
         className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
           categoriaActiva === 'todas'
             ? 'bg-neutral-900 border-neutral-900 text-white'
-            : 'bg-white border-neutral-200 text-neutral-500'
+            : 'vp-control text-neutral-500'
         }`}
       >
         Todas
@@ -2114,7 +2175,7 @@ const ListaProductos = memo(function ListaProductos({
             className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
               activa
                 ? `${color.bg} ${color.border} ${color.text}`
-                : 'bg-white border-neutral-200 text-neutral-500'
+                : 'vp-control text-neutral-500'
             }`}
           >
             {cat.nombre}

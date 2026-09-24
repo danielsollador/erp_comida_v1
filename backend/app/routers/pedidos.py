@@ -1405,6 +1405,28 @@ async def cobrar_pedido(
     pedido.metodo_pago = "Cortesía" if not pagos else pagos[0].metodo if len(pagos) == 1 else "Mixto"
     for pago in pagos:
         vuelto = round(max((pago.recibido or pago.monto) - pago.monto, 0), 2)
+        # La consulta al banco que respaldo esta referencia, si la hubo. Se
+        # comprueba que exista y que sea de ESTA referencia: un id suelto en
+        # el cuerpo no convierte una referencia inventada en verificada.
+        verificacion = None
+        if pago.verificacion_id:
+            verificacion = db.get(models.VerificacionPago, pago.verificacion_id)
+            ref_pago = "".join(ch for ch in (pago.referencia or "") if ch.isalnum())
+            if (
+                not verificacion
+                or verificacion.resultado not in ("verificado", "monto_distinto")
+                or verificacion.referencia != ref_pago
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"La verificación del pago por {pago.metodo} no corresponde a esa referencia.",
+                )
+            if verificacion.pedido_id and verificacion.pedido_id != pedido.id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Esa verificación ya se usó para cobrar otro pedido.",
+                )
+            verificacion.pedido_id = pedido.id
         db.add(
             models.PagoPedido(
                 pedido_id=pedido.id,
@@ -1414,6 +1436,7 @@ async def cobrar_pedido(
                 vuelto_metodo=(pago.vuelto_metodo or pago.metodo) if vuelto > 0 else None,
                 vuelto_monto=vuelto,
                 referencia=(pago.referencia or "").strip(),
+                verificacion_id=verificacion.id if verificacion else None,
             )
         )
     db.flush()

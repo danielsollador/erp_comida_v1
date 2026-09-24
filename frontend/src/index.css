@@ -226,25 +226,39 @@ html[data-tema="oscuro"] {
 
 /* ── Cambio de tema: el compositor, no el layout ──────────────────────────── */
 
-/* La foto vieja se queda quieta y la nueva se revela en circulo desde el boton
-   que se pulso (`--vp-x/--vp-y` los pone `lib/tema.tsx`). Nada de esto toca el
-   DOM durante la animacion: son dos imagenes que el compositor funde. */
+/* BARRIDO.
+   Una banda cruza la pantalla en diagonal una sola vez y va destapando el
+   tema nuevo a su paso.
+
+   POR QUE `clip-path` Y NO UNA MASCARA. La version anterior movia una
+   mascara de degradado (`mask-position`). Esa propiedad NO la acelera el
+   compositor: cada fotograma se volvia a generar en el hilo principal, con
+   el tema entero recien montado detras compitiendo por ese mismo hilo, y de
+   ahi los tirones (empeoraban justo cuando mas pesada era la pantalla).
+   `clip-path` con un poligono de los mismos 4 vertices en ambos extremos SI
+   corre en el compositor, igual que `transform` y `opacity`: la CPU no toca
+   un solo fotograma. El frente queda nitido en vez de difuminado, pero
+   nitido y a 60 fps se ve muchisimo mejor que suave a saltos.
+
+   El borde izquierdo del poligono es la linea diagonal: arriba va 45 % por
+   delante de abajo. Empieza por completo fuera de la pantalla, a la derecha,
+   y termina fuera por la izquierda. */
 ::view-transition-old(root) {
   animation: none;
   mix-blend-mode: normal;
 }
 
 ::view-transition-new(root) {
-  animation: vp-revelar 0.52s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: vp-barrido 640ms cubic-bezier(0.4, 0, 0.12, 1);
   mix-blend-mode: normal;
 }
 
-@keyframes vp-revelar {
+@keyframes vp-barrido {
   from {
-    clip-path: circle(0px at var(--vp-x, 50%) var(--vp-y, 50%));
+    clip-path: polygon(100% 0%, 200% 0%, 200% 100%, 145% 100%);
   }
   to {
-    clip-path: circle(var(--vp-radio, 160vmax) at var(--vp-x, 50%) var(--vp-y, 50%));
+    clip-path: polygon(-45% 0%, 200% 0%, 200% 100%, 0% 100%);
   }
 }
 
@@ -259,9 +273,9 @@ html.vp-cambiando-tema aside,
 html.vp-cambiando-tema section,
 html.vp-cambiando-tema table {
   transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease;
+    background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -298,12 +312,50 @@ html.vp-cambiando-tema table {
     content: "";
     position: fixed;
     inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    /* FOCO Y VIÑETA. Una sola luz, cenital y muy ancha, y los bordes que se
+       apagan hacia afuera. La idea no es pintar el fondo: es dar la sensacion
+       de una superficie iluminada desde arriba, con el contenido en la parte
+       clara. La luz se mide con `max(rem, vw/vh)` para que cubra igual un
+       telefono que un monitor de 2000 px (Leider, 23-sep: en `rem` sola no se
+       notaba en pantalla grande). */
+    background-image:
+      radial-gradient(max(56rem, 108vw) max(32rem, 64vh) at 50% -20%,
+        color-mix(in oklab, var(--vp-acento) 52%, transparent), transparent 70%),
+      radial-gradient(max(64rem, 128vw) max(52rem, 118vh) at 50% 36%,
+        transparent 36%, color-mix(in oklab, var(--vp-tinta) 15%, transparent) 100%),
+      radial-gradient(var(--vp-textura) 0.8px, transparent 0.8px);
+    background-size: auto, auto, 22px 22px;
+  }
+
+  /* GRANO. Un degradado liso en CSS bandea en pantallas de 8 bits y se lee
+     como plastico; una capa de ruido finisimo lo convierte en material. Va
+     fija, sin eventos y detras del contenido: se rasteriza una vez y no se
+     repinta al desplazar. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
     z-index: -1;
     pointer-events: none;
+    opacity: 0.22;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.34'/%3E%3C/svg%3E");
+  }
+
+  /* En oscuro el acento es mas claro que el papel: la luz se insinua y la
+     viñeta hace casi todo el trabajo, que sobre negro es donde luce. */
+  :root[data-tema="oscuro"] body::before {
     background-image:
-      radial-gradient(60rem 36rem at -10% -20%, color-mix(in oklab, var(--vp-acento) 13%, transparent), transparent 60%),
+      radial-gradient(max(56rem, 108vw) max(32rem, 64vh) at 50% -20%,
+        color-mix(in oklab, var(--vp-acento) 22%, transparent), transparent 70%),
+      radial-gradient(max(64rem, 128vw) max(52rem, 118vh) at 50% 36%,
+        transparent 30%, rgb(0 0 0 / 0.5) 100%),
       radial-gradient(var(--vp-textura) 0.8px, transparent 0.8px);
-    background-size: auto, 22px 22px;
+    background-size: auto, auto, 22px 22px;
+  }
+  :root[data-tema="oscuro"] body::after {
+    opacity: 0.16;
   }
 
   h1, h2, h3 {
@@ -631,6 +683,91 @@ html.vp-cambiando-tema table {
     color: var(--color-neutral-400);
   }
 
+  /* ── Superficies que flotan, no cajas que se dibujan ──────────────────────
+     El borde gris de 1 px que homologa las tarjetas (ver mas abajo) sirve en
+     una tabla o un formulario, donde hay que delimitar campos. En una
+     pantalla de arranque con dieciseis fichas convierte todo en el mismo
+     rectangulo y el ojo no encuentra donde posarse. `vp-losa` separa con
+     SOMBRA AMBIENTAL --difusa y baja, como un objeto apoyado en papel-- y
+     deja el pelo de borde solo para el modo oscuro, donde la sombra no se
+     ve. Requisito: no depende de `backdrop-filter`, asi que se ve igual con
+     el modo ligero de la tablet. */
+  .vp-losa {
+    background: var(--vp-superficie);
+    border-radius: 1.5rem;
+    box-shadow:
+      inset 0 0 0 1px var(--vp-textura),
+      0 1px 2px rgb(23 24 27 / 0.04),
+      0 12px 32px -14px rgb(23 24 27 / 0.14);
+  }
+
+  /* Lista agrupada: UNA superficie, las filas al ras separadas por un pelo.
+     Antes esto era una bandeja hundida con nueve tarjetas flotando dentro
+     --caja dentro de caja-- y se veia a plantilla. Un grupo de ajustes no se
+     dibuja con nueve rectangulos: se dibuja con una sola lamina y lineas de
+     un pixel, que es lo que separa sin agregar objetos.
+
+     Las lineas van como sombra interior en el borde derecho e inferior de
+     cada celda: las del ultimo renglon y la ultima columna caen justo en el
+     canto de la lamina, donde el `overflow: hidden` las recorta, asi que no
+     hace falta calcular cual celda es la ultima. */
+  .vp-lista {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: stretch;
+    background: var(--vp-superficie);
+    border-radius: 1.25rem;
+    overflow: hidden;
+    box-shadow:
+      inset 0 0 0 1px var(--vp-textura),
+      0 1px 2px rgb(23 24 27 / 0.04),
+      0 12px 32px -14px rgb(23 24 27 / 0.14);
+    --cols: 2;
+  }
+  .vp-lista > * {
+    flex: 1 1 calc(100% / var(--cols));
+    min-width: 0;
+    box-shadow: inset -1px -1px 0 0 var(--vp-textura);
+  }
+  .vp-lista > *:hover {
+    background: color-mix(in oklab, var(--vp-tinta) 4%, transparent);
+  }
+  @media (min-width: 640px) {
+    .vp-lista {
+      --cols: var(--cols-sm, 3);
+    }
+  }
+  @media (min-width: 1024px) {
+    .vp-lista {
+      --cols: var(--cols-lg, 5);
+    }
+  }
+  /* Tablet en vertical: pocas columnas anchas, que les cabe la descripcion. */
+  @media (min-height: 1100px) and (max-width: 1439px) {
+    .vp-lista {
+      --cols: var(--cols-alto, 2);
+    }
+  }
+
+  /* Lo que se toca se hunde un pelo, con la curva de un objeto con masa. */
+  .vp-pulsable {
+    transition:
+      transform 0.24s cubic-bezier(0.32, 0.72, 0, 1),
+      box-shadow 0.24s cubic-bezier(0.32, 0.72, 0, 1),
+      background-color 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .vp-pulsable:active {
+    transform: scale(0.985);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vp-pulsable {
+      transition: none;
+    }
+    .vp-pulsable:active {
+      transform: none;
+    }
+  }
+
   /* Boton de acento: el unico sitio donde el cobre es fondo. */
   .vp-boton-acento {
     background: var(--vp-acento);
@@ -667,6 +804,47 @@ html.vp-cambiando-tema table {
    martillo: lo que la pantalla pidio explicitamente (un `rounded-full`, un
    `text-lg`) sigue mandando.
    ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Controles de cabecera y menus flotantes ──────────────────────────────── */
+
+/* La moneda, la campana, la pantalla completa, el tema y el usuario se
+   dibujaban cada uno con un borde gris de 1 px: cinco anillos duros seguidos
+   en la esquina, y en modo oscuro tres tonos distintos de gris. `vp-control`
+   les da a todos la misma lamina --superficie, pelo de borde y una sombra
+   corta-- para que el grupo se lea como un juego de controles y no como cinco
+   cosas pegadas. Va sin capa a proposito: tiene que ganarle al `border-…` y
+   al `bg-white` que cada componente trae escritos. */
+.vp-control {
+  background: var(--vp-superficie);
+  border-color: transparent;
+  box-shadow:
+    inset 0 0 0 1px var(--vp-textura),
+    0 1px 2px rgb(23 24 27 / 0.04),
+    0 6px 16px -10px rgb(23 24 27 / 0.20);
+  transition:
+    box-shadow 0.2s cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.vp-control:hover {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--vp-tinta) 13%, transparent),
+    0 1px 2px rgb(23 24 27 / 0.05),
+    0 10px 22px -12px rgb(23 24 27 / 0.26);
+}
+.vp-control:active {
+  transform: scale(0.97);
+}
+
+/* Lo que se despliega flota: sombra larga y difusa en vez de borde. */
+.vp-menu {
+  background: var(--vp-superficie);
+  border-color: transparent;
+  border-radius: 1.15rem;
+  box-shadow:
+    inset 0 0 0 1px var(--vp-textura),
+    0 4px 12px -4px rgb(23 24 27 / 0.10),
+    0 28px 60px -22px rgb(23 24 27 / 0.38);
+}
 
 /* ── Campos: una sola forma, una sola tipografia ──────────────────────────── */
 
@@ -1068,6 +1246,30 @@ html.vp-ligero [style*="vp-entrar"] {
 html.vp-ligero .shadow-lg,
 html.vp-ligero .shadow-md {
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08) !important;
+}
+/* Las superficies homologadas (losa, lista, control, menu) se quedan --son
+   lo que hace que el mostrador se vea del mismo aplicativo que el inicio--
+   pero con la sombra corta: un desenfoque de 32 px se vuelve a rasterizar
+   cada vez que la tarjeta se desplaza, y en la tablet de 2 GB eso se nota.
+   El pelo de borde interior es lo que define la forma; se conserva. */
+html.vp-ligero .vp-losa,
+html.vp-ligero .vp-lista,
+html.vp-ligero .vp-menu {
+  box-shadow:
+    inset 0 0 0 1px var(--vp-textura),
+    0 1px 2px rgb(23 24 27 / 0.06) !important;
+}
+html.vp-ligero .vp-control,
+html.vp-ligero .vp-control:hover {
+  box-shadow:
+    inset 0 0 0 1px var(--vp-textura),
+    0 1px 2px rgb(23 24 27 / 0.05) !important;
+}
+/* El grano del fondo es un filtro SVG a pantalla completa: se pinta una vez,
+   pero es una capa mas que la tablet tiene que componer. La luz y la viñeta
+   (body::before) se quedan, que son dos degradados y pesan nada. */
+html.vp-ligero body::after {
+  display: none;
 }
 
 /* Dos toques rapidos sobre un boton (abrir y cerrar el panel de productos)

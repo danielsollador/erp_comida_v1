@@ -67,6 +67,8 @@ COLUMNAS = [
     ("TRX120_VEN_PAGO", "recibido", "FLOAT"),
     ("TRX120_VEN_PAGO", "vuelto_metodo", "VARCHAR"),
     ("TRX120_VEN_PAGO", "vuelto_monto", "FLOAT DEFAULT 0"),
+    # La referencia comprobada contra el banco (Pabilo). NULL = anotada a mano.
+    ("TRX120_VEN_PAGO", "verificacion_id", "INTEGER"),
     # Trazabilidad: quien hizo que. Nullable a proposito - todo lo cargado
     # antes de que existieran los operadores no tiene a quien atribuirse, y
     # inventarle un autor seria peor que dejarlo en blanco.

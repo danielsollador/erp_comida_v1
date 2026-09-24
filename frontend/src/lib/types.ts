@@ -439,6 +439,8 @@ export type Pedido = {
     vuelto_monto: number
     /** Numero de confirmacion del pago movil, ticket o comprobante. Vacio en efectivo. */
     referencia: string
+    /** La consulta al banco que respaldo la referencia (Pabilo). null = anotada a mano. */
+    verificacion_id?: number | null
   }[]
   items: PedidoItem[]
   /**
@@ -1418,3 +1420,35 @@ export type EstadoApertura = {
   nota: string
   fondos: FondoApertura[]
 }
+
+// ── Verificacion de pagos moviles (Pabilo) ──────────────────────────────────
+
+export type EstadoPabilo = {
+  configurado: boolean
+  cuenta: string
+  banco: string
+  moneda: string
+  /** Campos extra que el banco exige ademas de la referencia (nombres del API). */
+  campos: string[]
+  /** Los metodos del ERP que se verifican con la cuenta conectada. */
+  metodos: string[]
+  creditos: number | null
+  error: string
+}
+
+export type VerificacionPago = {
+  id: number
+  referencia: string
+  resultado: 'verificado' | 'monto_distinto' | 'no_encontrado' | 'ya_usado' | 'error'
+  mensaje: string
+  codigo: string
+  esperado_bs: number | null
+  monto_bs: number | null
+  tasa: number | null
+  es_nueva: boolean
+  reintentable: boolean
+  del_dueno: boolean
+  creditos_restantes: number | null
+  pedido_numero: number | null
+}
+

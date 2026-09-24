@@ -273,7 +273,7 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
         aria-expanded={abierto}
         aria-haspopup="menu"
         title="Elegir en qué moneda ver todos los montos"
-        className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+        className={`vp-control flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs font-medium ${
           dark
             ? 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
             : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
@@ -310,7 +310,7 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
       {abierto && (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-1.5 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white text-neutral-900 shadow-xl"
+          className="vp-menu absolute right-0 z-40 mt-2 w-72 overflow-hidden border border-neutral-200 text-neutral-900"
           style={enTelefono}
         >
           <div className="border-b border-neutral-100 px-3.5 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">

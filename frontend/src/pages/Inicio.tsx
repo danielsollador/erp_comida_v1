@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
@@ -52,6 +52,17 @@ function columnasSinHuecos(n: number, candidatas: number[]): number {
   return candidatas.find((c) => c <= n && n % c === 0) ?? candidatas[0]
 }
 
+/**
+ * La portada.
+ *
+ * UNA SOLA COSA GRANDE. Antes eran dieciseis rectangulos blancos del mismo
+ * tamaño y el mismo borde --cuatro cifras, tres accesos, nueve modulos-- y lo
+ * mas destacado de la pantalla era el saludo, que no es informacion. Ahora la
+ * jerarquia sigue a lo que se pregunta al entrar: cuanto se ha vendido hoy
+ * (el panel grande), que esta esperando (las dos fichas de accion, que solo
+ * se encienden si hay algo), a donde voy (operacion), y el resto recogido en
+ * una bandeja para que nueve modulos pesen como un bloque y no como nueve.
+ */
 export default function Inicio() {
   const { estado } = useAcceso()
   const [hoy, setHoy] = useState<ReporteResumen | null>(null)
@@ -90,6 +101,7 @@ export default function Inicio() {
   }
 
   const fecha = new Date().toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' })
+  const nombre = estado.nombre || estado.nombre_visible || estado.usuario
 
   // El mosaico de administracion elige sus columnas segun cuantos modulos ve
   // este rol, para no dejar celdas vacias (ver `columnasSinHuecos`).
@@ -110,17 +122,20 @@ export default function Inicio() {
     // escritorio, como cualquier tablero. En un telefono la pagina se
     // desplaza como siempre.
     <div className="min-h-screen flex flex-col">
-      <div className="max-w-[100rem] pc:max-w-[84rem] mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 bajo:py-5 pc:py-8 flex-1 flex flex-col">
-        {/* Cabecera: la marca del local, quien, que dia. */}
-        <div className="flex items-start justify-between gap-4 mb-5 sm:mb-6 lg:mb-8 bajo:mb-4 pc:mb-6">
-          <div className="min-w-0">
-            <Marca className="h-8 sm:h-10 lg:h-12 bajo:h-10 pc:h-9 mb-3 sm:mb-4 bajo:mb-3 pc:mb-3" />
-            <h1 className="font-bold leading-[1.05] text-[clamp(1.9rem,3.6vw,3.4rem)] pc:text-[2.25rem]">
-              {/* Por su nombre, no por su usuario: "Buenos dias, Daniel". */}
-              {saludo()}, {estado.nombre || estado.nombre_visible || estado.usuario}
-            </h1>
-            <p className="text-neutral-500 first-letter:uppercase mt-1.5 text-[clamp(0.9rem,1.3vw,1.2rem)] pc:text-base">
-              {fecha}
+      <div className="max-w-[100rem] pc:max-w-[84rem] mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 bajo:py-4 pc:py-8 flex-1 flex flex-col">
+        {/* Cabecera: marca, a quien y que dia, y los controles. El saludo vive
+            aqui --pequeño, al lado de la marca-- y no dentro del panel: de
+            titular gigante no informaba nada, y en el panel le robaba una
+            linea a la cifra. De paso esta franja deja de ser una barra vacia
+            con dos cosas en los extremos. */}
+        <div className="flex items-center justify-between gap-4 mb-4 sm:mb-5 lg:mb-6 bajo:mb-3">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <Marca className="h-8 sm:h-9 lg:h-10 bajo:h-8 pc:h-8 shrink-0" />
+            <span aria-hidden className="hidden lg:block w-px h-8 bg-[var(--vp-textura)] shrink-0" />
+            <p className="hidden lg:block min-w-0 truncate text-[15px] lg:text-base text-neutral-500">
+              {saludo()}, <span className="text-neutral-800 font-semibold">{nombre}</span>
+              <span aria-hidden className="mx-1.5 text-neutral-400">·</span>
+              <span className="first-letter:uppercase inline-block">{fecha}</span>
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -135,28 +150,84 @@ export default function Inicio() {
           </div>
         </div>
 
-        {/* La franja de hoy: cuatro cifras, sin adornos. */}
-        <div className="vp-escalonado grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-5 sm:mb-6 lg:mb-8 bajo:mb-4 pc:mb-6">
-          {estado.puede.operar && (
-            <>
-              <Dato titulo="Vendido hoy" ayuda="kpi.vendido_hoy" valor={hoy ? fmt(hoy.ventas) : '—'} destacado />
-              <Dato titulo="Pedidos" ayuda="kpi.pedidos_hoy" valor={hoy ? String(hoy.pedidos) : '—'} />
-            </>
-          )}
-          <Dato titulo="En cocina" ayuda="kpi.en_cocina" valor={String(enCocina)} alerta={enCocina > 0} enlace="/cocina" />
-          <Dato
+        {/* Lo que queda de pantalla se reparte ARRIBA Y ABAJO del contenido,
+            no todo al final. Con `safe center` el navegador vuelve a alinear
+            arriba cuando el contenido no cabe --en un telefono apaisado--, de
+            modo que centrar nunca recorta la primera fila. */}
+        <div className="flex-1 flex flex-col gap-3 lg:gap-4 [justify-content:safe_center] min-h-0">
+        {/* En el telefono y en la tablet en vertical el saludo no cabe al lado
+            de la marca --se cortaba en "Buenas tardes, re..."--, asi que va
+            aqui, en su propio renglon. A partir de 1024 px vive arriba y esta
+            linea desaparece. */}
+        <p className="lg:hidden text-[15px] text-neutral-500 -mt-1 mb-3">
+          {saludo()}, <span className="text-neutral-800 font-semibold">{nombre}</span>
+          <span aria-hidden className="mx-1.5 text-neutral-400">·</span>
+          <span className="first-letter:uppercase inline-block">{fecha}</span>
+        </p>
+
+        {/* ── El dia ──────────────────────────────────────────────────────
+            Un panel ancho con la unica cifra que se pregunta al entrar, y a
+            su lado las dos cosas que ESPERAN algo. No es un mosaico de
+            cuatro cifras iguales: dos son resultados y dos son trabajo
+            pendiente, y mirarlas no cuesta lo mismo. */}
+        <div className="grid grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-3 lg:gap-4">
+          <section className="col-span-2 lg:col-span-1 vp-losa relative overflow-hidden p-5 sm:p-7 lg:p-8 bajo:p-4 pc:p-7 flex flex-col justify-center">
+            {estado.puede.operar ? (
+              <>
+                <p className="font-display font-bold tabular-nums leading-[0.95] tracking-[-0.03em] text-[clamp(2.6rem,6.5vw,4.6rem)] bajo:text-[clamp(2rem,4.2vw,3rem)] pc:text-[3.4rem]">
+                  {hoy ? fmt(hoy.ventas) : '—'}
+                </p>
+                {/* Una sola linea de apoyo en vez de etiqueta arriba y nota
+                    abajo: dice lo mismo, ocupa la mitad y no hace falta
+                    gritar en mayusculas para nombrar la cifra. */}
+                <p className="mt-2 sm:mt-2.5 bajo:mt-1.5 text-neutral-500 text-[clamp(0.9rem,1.2vw,1.1rem)] pc:text-[0.95rem]">
+                  <Ayuda explica={explicar('kpi.vendido_hoy')} titulo="Vendido hoy">
+                    Vendido hoy
+                  </Ayuda>
+                  {hoy && (
+                    <>
+                      <span aria-hidden className="mx-1.5 text-neutral-400">·</span>
+                      <span className="tabular-nums text-neutral-700 font-semibold">{hoy.pedidos}</span>{' '}
+                      {hoy.pedidos === 1 ? 'pedido' : 'pedidos'}
+                    </>
+                  )}
+                </p>
+              </>
+            ) : (
+              // Sin permiso de reportes no hay cifra: el panel saluda y ya.
+              <p className="font-display font-bold leading-[1.05] tracking-[-0.02em] text-[clamp(1.7rem,3.2vw,2.8rem)] pc:text-[2rem]">
+                {saludo()}, {nombre}
+              </p>
+            )}
+          </section>
+
+          {/* Lo que espera. En cero se quedan calladas (neutras); con algo
+              dentro se encienden en ambar. Un numero que nunca cambia de
+              aspecto no avisa de nada. */}
+          {/* Las dos fichas son celdas de la MISMA fila que el panel, no una
+              columna aparte: apiladas median mas que el panel y estiraban el
+              bloque cien pixeles, que es justo lo que obligaba a desplazar la
+              pagina en un portatil. */}
+          <Espera
+            titulo="En cocina"
+            ayuda="kpi.en_cocina"
+            valor={enCocina}
+            nota="comandas preparándose"
+            to="/cocina"
+          />
+          <Espera
             titulo="Por cobrar"
             ayuda="kpi.por_cobrar"
-            valor={String(porCobrar)}
-            alerta={porCobrar > 0}
-            enlace={estado.puede.operar ? '/pos' : undefined}
+            valor={porCobrar}
+            nota="listas, falta cobrar"
+            to={estado.puede.operar ? '/pos' : undefined}
           />
         </div>
 
-        {/* Operacion: lo que se toca cien veces al dia. Las tres fichas miden
-            una fraccion fija de la pantalla (24 % del alto, con tope), asi
-            que en una tablet en vertical son grandes sin quedarse vacias y
-            en una apaisada dejan sitio al mosaico de abajo. */}
+        {/* Operacion: lo que se toca cien veces al dia. Las fichas miden una
+            fraccion fija de la pantalla (21 % del alto, con tope), asi que en
+            una tablet en vertical son grandes sin quedarse vacias y en una
+            apaisada dejan sitio al mosaico de abajo. */}
         <div
           className={`grid grid-cols-1 gap-3 lg:gap-4 ${operacion.length > 1 ? 'sm:grid-cols-3' : ''}`}
         >
@@ -172,29 +243,28 @@ export default function Inicio() {
           ))}
         </div>
 
-        {/* Administracion: el mosaico se queda con TODO el alto que sobre y
-            lo reparte entre sus filas. Las fichas van en columna (icono
-            arriba, titulo abajo) porque asi crecen bien; en una pantalla
-            corta (`bajo:`) vuelven a fila, que es lo que cabe en 768 px sin
-            desplazar la pagina. */}
+        {/* Administracion: UNA bandeja, no nueve cajas. Se usa una vez a la
+            semana; agrupada pesa lo que tiene que pesar y deja el primer
+            golpe de vista para lo de arriba. La bandeja se queda con todo el
+            alto que sobre y lo reparte entre sus filas. */}
         {administracion.length > 0 && (
-          <div className="flex-1 pc:flex-none flex flex-col min-h-0 mt-5 sm:mt-6 lg:mt-8 bajo:mt-4 pc:mt-6">
-            <p className="vp-etiqueta mb-3">Administración</p>
-            <div className="vp-mosaico flex-1 pc:flex-none" style={columnas}>
+          <div className="flex flex-col min-h-0">
+            <p className="vp-etiqueta mb-2.5">Administración</p>
+            <div className="vp-lista" style={columnas}>
               {administracion.map((m) => (
                 <Link
                   key={m.to}
                   to={m.to}
-                  className="group bg-white border border-neutral-200 rounded-2xl p-3.5 sm:p-4 lg:p-5 bajo:p-4 pc:p-4 flex items-center gap-3 sm:flex-col sm:items-start sm:justify-between sm:gap-4 alto:flex-row alto:items-center alto:justify-start alto:gap-4 bajo:flex-row bajo:items-center bajo:justify-start bajo:gap-3 pc:flex-row pc:items-center pc:justify-start pc:gap-3 min-h-[4.25rem] sm:min-h-[7.5rem] alto:min-h-0 bajo:min-h-0 pc:min-h-0 hover:border-neutral-300 hover:shadow-md hover:-translate-y-px"
+                  className="group flex items-center gap-3 px-4 py-3 lg:px-5 lg:py-3.5 bajo:px-4 bajo:py-2.5 min-h-[3.25rem] alto:min-h-0 transition-colors duration-200"
                 >
-                  <span className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bajo:w-12 bajo:h-12 pc:w-11 pc:h-11 shrink-0 rounded-xl bg-neutral-100 text-neutral-600 grid place-items-center group-hover:bg-acento-50 group-hover:text-acento-600">
-                    <Icono nombre={m.icono} size={20} className="sm:w-6 sm:h-6 lg:w-7 lg:h-7 bajo:w-6 bajo:h-6 pc:w-6 pc:h-6" />
+                  <span className="shrink-0 text-neutral-400 group-hover:text-acento-600 transition-colors duration-200">
+                    <Icono nombre={m.icono} size={19} className="lg:w-5 lg:h-5" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block font-display font-semibold leading-tight text-[15px] sm:text-base lg:text-lg bajo:text-base pc:text-base">
+                    <span className="block font-display font-semibold leading-tight text-[15px] lg:text-base">
                       {m.titulo}
                     </span>
-                    <span className="hidden alto:block pc:hidden text-sm text-neutral-500 mt-1 leading-snug">
+                    <span className="hidden alto:block pc:hidden text-sm text-neutral-500 mt-0.5 leading-snug">
                       {DESCRIPCION[m.to] ?? ''}
                     </span>
                   </span>
@@ -203,11 +273,18 @@ export default function Inicio() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   )
 }
 
+/**
+ * Ficha de operacion. La primera --el punto de venta-- va en tinta llena con
+ * la luz de la marca detras: es la que se toca cien veces al dia y tiene que
+ * encontrarse sin mirar. La flecha de "Abrir" vive dentro de su propio
+ * circulo, no suelta al lado del texto.
+ */
 function Tarjeta({
   to,
   icono,
@@ -224,86 +301,97 @@ function Tarjeta({
   return (
     <Link
       to={to}
-      className={`group relative overflow-hidden border rounded-2xl p-5 lg:p-7 bajo:p-5 pc:p-6 min-h-[8.5rem] sm:min-h-[clamp(9rem,21vh,19rem)] bajo:min-h-[clamp(8rem,20vh,22rem)] pc:min-h-[10.5rem] h-full flex flex-col gap-3 lg:gap-4 bajo:gap-3 pc:gap-3 shadow-sm hover:shadow-lg hover:-translate-y-0.5 ${
-        principal ? 'bg-neutral-900 text-white border-neutral-900' : 'bg-white border-neutral-200'
+      className={`vp-pulsable group relative overflow-hidden rounded-3xl p-5 lg:p-6 bajo:p-4 pc:p-6 min-h-[8rem] sm:min-h-[clamp(8.5rem,19vh,17rem)] bajo:min-h-[clamp(6.5rem,16vh,20rem)] pc:min-h-[9.5rem] h-full flex flex-col gap-3 lg:gap-4 bajo:gap-3 pc:gap-3 ${
+        principal
+          ? 'bg-neutral-900 text-white shadow-[0_2px_6px_-2px_rgb(23_24_27/0.16),0_18px_40px_-18px_rgb(23_24_27/0.45)]'
+          : 'vp-losa hover:shadow-[inset_0_0_0_1px_var(--vp-textura),0_2px_6px_-2px_rgb(23_24_27/0.06),0_18px_44px_-18px_rgb(23_24_27/0.20)]'
       }`}
     >
       {principal && (
-        // La luz de la marca en la tarjeta principal: es la que se toca cien
-        // veces al dia y tiene que encontrarse sin mirar.
         <span
           aria-hidden
-          className="absolute -right-10 -top-10 w-40 h-40 lg:w-56 lg:h-56 rounded-full opacity-40 blur-2xl"
+          className="absolute -right-12 -top-12 w-44 h-44 lg:w-60 lg:h-60 rounded-full opacity-45 blur-2xl"
           style={{ background: 'var(--vp-acento)' }}
         />
       )}
       <span
-        className={`relative w-11 h-11 lg:w-14 lg:h-14 bajo:w-12 bajo:h-12 pc:w-12 pc:h-12 rounded-xl grid place-items-center ${
-          principal ? 'bg-white/10 text-white' : 'bg-acento-50 text-acento-600'
+        className={`relative w-11 h-11 lg:w-13 lg:h-13 bajo:w-11 bajo:h-11 pc:w-12 pc:h-12 rounded-[0.9rem] grid place-items-center ${
+          principal
+            ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]'
+            : 'bg-acento-50 text-acento-600'
         }`}
       >
         <Icono nombre={icono} size={22} className="lg:w-7 lg:h-7 bajo:w-6 bajo:h-6 pc:w-6 pc:h-6" />
       </span>
       <span className="relative">
-        <span className="block font-display font-semibold leading-tight text-lg lg:text-[clamp(1.25rem,1.7vw,1.6rem)] pc:text-xl">
+        <span className="block font-display font-semibold leading-tight tracking-[-0.015em] text-lg lg:text-[clamp(1.25rem,1.6vw,1.55rem)] pc:text-xl">
           {titulo}
         </span>
-        <span className={`block mt-1 text-sm lg:text-base pc:text-sm ${principal ? 'text-neutral-300' : 'text-neutral-500'}`}>
+        <span className={`block mt-1 text-sm lg:text-[0.95rem] pc:text-sm ${principal ? 'text-white/65' : 'text-neutral-500'}`}>
           {desc}
         </span>
       </span>
-      <span
-        className={`relative mt-auto inline-flex items-center gap-1 text-xs lg:text-sm pc:text-xs font-semibold ${
-          principal ? 'text-neutral-300' : 'text-neutral-400 group-hover:text-acento-600'
-        }`}
-      >
-        Abrir <Icono nombre="chevron" size={14} className="transition-transform group-hover:translate-x-0.5" />
+      <span className="relative mt-auto flex items-center gap-2">
+        <span
+          className={`w-7 h-7 rounded-full grid place-items-center transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:translate-x-0.5 ${
+            principal ? 'bg-white/12 text-white' : 'bg-neutral-100 text-neutral-500 group-hover:text-acento-600'
+          }`}
+        >
+          <Icono nombre="chevron" size={14} />
+        </span>
+        <span className={`text-xs font-semibold ${principal ? 'text-white/65' : 'text-neutral-400'}`}>Abrir</span>
       </span>
     </Link>
   )
 }
 
-function Dato({
+/**
+ * Lo que espera a alguien: comandas en cocina, cuentas por cobrar.
+ *
+ * En cero es una ficha callada; con algo dentro se enciende. Es la diferencia
+ * entre un tablero que informa y uno que avisa.
+ */
+function Espera({
   titulo,
   valor,
   ayuda,
-  destacado = false,
-  alerta = false,
-  enlace,
+  nota,
+  to,
 }: {
   titulo: string
-  valor: string
+  valor: number
   /** Clave del glosario: la explicacion al posar el cursor en el titulo. */
   ayuda?: string
-  destacado?: boolean
-  alerta?: boolean
-  enlace?: string
+  nota: string
+  to?: string
 }) {
-  const contenido = (
+  const hay = valor > 0
+  const cuerpo = (
     <div
-      className={`rounded-2xl border p-4 lg:p-6 bajo:p-4 pc:p-5 h-full shadow-sm ${
-        alerta ? 'bg-aviso-50 border-aviso-300' : 'bg-white border-neutral-200'
-      } ${enlace ? 'hover:shadow-md hover:-translate-y-px' : ''}`}
+      className={`vp-pulsable rounded-3xl p-4 sm:p-5 bajo:p-4 pc:p-5 h-full flex flex-col justify-center ${
+        hay
+          ? 'bg-aviso-50 text-aviso-900 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-aviso-400)_45%,transparent),0_10px_28px_-14px_color-mix(in_oklab,var(--color-aviso-500)_55%,transparent)]'
+          : 'vp-losa'
+      } ${to ? 'hover:shadow-[inset_0_0_0_1px_var(--vp-textura),0_2px_6px_-2px_rgb(23_24_27/0.06),0_14px_34px_-16px_rgb(23_24_27/0.20)]' : ''}`}
     >
-      <div className={`text-xs lg:text-sm pc:text-xs font-medium ${alerta ? 'text-aviso-700' : 'text-neutral-500'}`}>
+      <div className={`text-[13px] font-semibold ${hay ? 'text-aviso-700' : 'text-neutral-500'}`}>
         <Ayuda explica={explicar(ayuda)} titulo={titulo}>
           {titulo}
         </Ayuda>
       </div>
-      <div
-        className={`font-semibold tabular-nums mt-1 ${
-          destacado ? 'text-[clamp(1.6rem,3vw,2.75rem)] pc:text-[1.75rem]' : 'text-[clamp(1.35rem,2.5vw,2.3rem)] pc:text-2xl'
-        } ${alerta ? 'text-aviso-900' : ''}`}
-      >
-        {valor}
+      <div className="mt-1.5">
+        <span className="font-display font-bold tabular-nums leading-none tracking-[-0.02em] text-[clamp(1.9rem,3.4vw,2.9rem)] bajo:text-[1.9rem] pc:text-[2.1rem]">
+          {valor}
+        </span>
       </div>
+      <p className={`mt-1.5 text-[13px] leading-snug ${hay ? 'text-aviso-600' : 'text-neutral-400'}`}>{nota}</p>
     </div>
   )
-  return enlace ? (
-    <Link to={enlace} className="block h-full">
-      {contenido}
+  return to ? (
+    <Link to={to} className="block h-full">
+      {cuerpo}
     </Link>
   ) : (
-    contenido
+    (cuerpo as ReactNode)
   )
 }
