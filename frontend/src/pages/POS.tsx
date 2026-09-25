@@ -159,7 +159,7 @@ export default function POS() {
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
   // Lo ultimo que se pinto, para no repintar cuando el servidor manda lo mismo.
   const firmaPedidos = useRef('')
-  const [vista, irA] = useSeccion(SECCIONES_POS)
+  const [vista, irAVista] = useSeccion(SECCIONES_POS)
   // Pago mixto: las partes que ya se anotaron. Antes era un desplegable con
   // UNA forma y un monto, y el resto se lo llevaba entera la segunda: no se
   // podia partir en tres, y para saber cuanto faltaba habia que restar de
@@ -217,6 +217,7 @@ export default function POS() {
   const [metodoDif, setMetodoDif] = useState(METODOS_PAGO[0])
   const [referenciaDif, setReferenciaDif] = useState('')
   const { estado: acceso } = useAcceso()
+  const yo = acceso.nombre_visible || acceso.usuario
   const dialogo = useDialogo()
   const [ultimaVenta, setUltimaVenta] = useState<Pedido | null>(null)
   // Las ventas de hoy, para consultarlas sin salir del mostrador. `null` es
@@ -540,6 +541,24 @@ export default function POS() {
     ]
   }
 
+  /**
+   * Cambiar de pestaña. Con un pedido en edicion solo se puede ir a la comanda:
+   * salir a "Pedidos" con el candado tomado dejaba el pedido bloqueado para
+   * todos hasta que venciera (Leider, 25-sep). Se termina con Guardar cambios o
+   * con Cancelar; las funciones internas que ya soltaron el candado usan
+   * `irAVista` directo.
+   */
+  function irA(destino: string) {
+    if (enEdicion && destino !== 'tomar') {
+      dialogo.avisar({
+        titulo: `Estás editando el pedido #${enEdicion.numero}`,
+        texto: 'Termina con "Guardar cambios" o "Cancelar" antes de salir de la comanda.',
+      })
+      return
+    }
+    irAVista(destino)
+  }
+
   function terminarEdicion() {
     recordarEdicion(null)
     setEnEdicion(null)
@@ -591,7 +610,7 @@ export default function POS() {
             : undefined,
       })
       terminarEdicion()
-      irA('pedidos')
+      irAVista('pedidos')
       refrescarPedidos()
     } catch (e) {
       setDiferencia(null)
@@ -639,7 +658,7 @@ export default function POS() {
   function cerrarSinCambios() {
     if (enEdicion) api.soltarEdicion(enEdicion.id).catch(() => {})
     terminarEdicion()
-    irA('pedidos')
+    irAVista('pedidos')
     refrescarPedidos()
   }
 
@@ -919,7 +938,7 @@ export default function POS() {
   }
 
   async function editar(pedido: Pedido) {
-    const impedimento = porQueNoSeEdita(pedido)
+    const impedimento = porQueNoSeEdita(pedido, yo)
     if (impedimento) {
       setError(impedimento)
       return
@@ -1021,7 +1040,7 @@ export default function POS() {
   function cancelarEdicion() {
     if (enEdicion) api.soltarEdicion(enEdicion.id).catch(() => {})
     terminarEdicion()
-    irA('pedidos')
+    irAVista('pedidos')
     refrescarPedidos()
   }
 
@@ -1210,7 +1229,7 @@ export default function POS() {
                     : 'border-exito-400 bg-exito-500/5'
               const anillo = preparando ? 'ring-2 ring-acento-500/50' : ''
               return (
-              <div key={pedido.id} className={`rounded-2xl shadow-sm border-2 p-4 ${marco} ${anillo}`}>
+              <div key={pedido.id} className={`rounded-2xl shadow-sm border-2 p-3 ${marco} ${anillo}`}>
                 <div className="flex justify-between items-start mb-2 gap-2">
                   {/* El numero y, debajo, de quien es. Entre ocho comandas
                       vivas el nombre es lo que las distingue; el numero solo
@@ -1220,11 +1239,11 @@ export default function POS() {
                       pastilla de estado ("Cobrado · en cocina") y un nombre
                       normal se cortaba en "Sra. Ca...". */}
                   <span className="min-w-0">
-                    <span className="block font-bold text-lg leading-tight">#{pedido.numero}</span>
+                    <span className="block font-bold text-base leading-tight">#{pedido.numero}</span>
                     {pedido.cliente ? (
                       <span
                         className={`block truncate ${
-                          entregar ? 'text-base font-bold text-acento-800' : 'text-sm font-semibold text-neutral-600'
+                          entregar ? 'text-sm font-bold text-acento-800' : 'text-[13px] font-semibold text-neutral-600'
                         }`}
                       >
                         {pedido.cliente}
@@ -1298,7 +1317,7 @@ export default function POS() {
                     </span>
                   </span>
                 </div>
-                <ul className="text-sm text-neutral-600 mb-3 space-y-0.5">
+                <ul className="text-[13px] leading-snug text-neutral-600 mb-2 space-y-0">
                   {pedido.items.map((i) => {
                     const cat = categoriaDeVariante.get(i.variante_id ?? -1)
                     return (
@@ -1348,8 +1367,8 @@ export default function POS() {
                     )}
                     <button
                       onClick={() => editar(pedido)}
-                      disabled={Boolean(porQueNoSeEdita(pedido))}
-                      title={porQueNoSeEdita(pedido) ?? 'Cambiar los renglones del pedido'}
+                      disabled={Boolean(porQueNoSeEdita(pedido, yo))}
+                      title={porQueNoSeEdita(pedido, yo) ?? 'Cambiar los renglones del pedido'}
                       className="text-neutral-600 text-xs font-medium disabled:opacity-30"
                     >
                       Editar
@@ -1433,7 +1452,7 @@ export default function POS() {
             </div>
           )}
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-lg">{enEdicion ? 'Comanda del pedido' : 'Comanda actual'}</h2>
+            <h2 className="font-semibold text-base">{enEdicion ? 'Comanda del pedido' : 'Comanda actual'}</h2>
             {!enEdicion && (Object.keys(carrito).length > 0 || libres.length > 0) && (
               <button
                 onClick={() => {
@@ -1448,25 +1467,25 @@ export default function POS() {
           </div>
           <button
             onClick={agregarDeliveryPersonalizado}
-            className="w-full mb-3 text-sm font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-2"
+            className="w-full mb-2 text-xs font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-1.5"
           >
             + Delivery
           </button>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
-          <div className="flex-1 overflow-y-auto space-y-3">
+          <div className="flex-1 overflow-y-auto space-y-1.5">
             {Object.values(carrito).map(({ producto, variante, cantidad, cortesia, precio }) => (
               <div key={variante.id} className="flex justify-between items-center gap-2">
                 <span
                   aria-hidden
-                  className={`w-1 self-stretch min-h-[34px] rounded-full shrink-0 ${
+                  className={`w-1 self-stretch min-h-[30px] rounded-full shrink-0 ${
                     colorCategoria(producto.categoria_id, colorDe(producto.categoria_id)).barra
                   }`}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold truncate">
+                  <div className="text-[13px] font-semibold leading-tight line-clamp-2">
                     {etiquetaVariante(producto, variante)}
                   </div>
-                  <div className="text-xs text-neutral-500 flex items-center gap-1.5 flex-wrap">
+                  <div className="text-[11px] text-neutral-500 flex items-center gap-1.5 flex-wrap">
                     {cortesia ? (
                       <>
                         <span className="line-through">{fmt((precio ?? variante.precio) * cantidad)}</span>
@@ -1485,7 +1504,7 @@ export default function POS() {
                     <button
                       type="button"
                       onClick={() => alternarCortesia(variante.id)}
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${
+                      className={`rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide border ${
                         cortesia
                           ? 'bg-exito-50 border-exito-300 text-exito-700'
                           : 'border-neutral-200 text-neutral-400 hover:text-neutral-700 hover:border-neutral-400'
@@ -1498,14 +1517,14 @@ export default function POS() {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => quitar(variante.id)}
-                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
+                    className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-base"
                   >
                     -
                   </button>
-                  <span className="w-6 text-center font-semibold tabular-nums">{cantidad}</span>
+                  <span className="w-5 text-center text-sm font-semibold tabular-nums">{cantidad}</span>
                   <button
                     onClick={() => agregar(producto, variante)}
-                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
+                    className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-base"
                   >
                     +
                   </button>
@@ -1515,12 +1534,12 @@ export default function POS() {
             {libres.map((l) => (
               <div key={l.id} className="flex justify-between items-center gap-2">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold truncate">{l.nombre}</div>
-                  <div className="text-xs text-neutral-500">{fmt(l.precio)}</div>
+                  <div className="text-[13px] font-semibold leading-tight line-clamp-2">{l.nombre}</div>
+                  <div className="text-[11px] text-neutral-500">{fmt(l.precio)}</div>
                 </div>
                 <button
                   onClick={() => quitarLibre(l.id)}
-                  className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg shrink-0"
+                  className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-base shrink-0"
                 >
                   ×
                 </button>
