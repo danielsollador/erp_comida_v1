@@ -1434,13 +1434,13 @@ export default function POS() {
         </div>
 
         {vista === 'tomar' && (
-        <div className="bg-white border-l border-neutral-200 p-4 flex flex-col md:h-full md:min-h-0">
+        <div className="bg-white border-l border-neutral-200 p-3 flex flex-col md:h-full md:min-h-0">
           {enEdicion && (
-            <div className="mb-3 rounded-xl bg-aviso-50 border border-aviso-300 px-3 py-2 flex items-center justify-between gap-2">
-              <p className="text-sm text-aviso-900 min-w-0">
+            <div className="mb-2 rounded-lg bg-aviso-50 border border-aviso-300 px-2.5 py-1.5 flex items-center justify-between gap-2">
+              <p className="text-xs text-aviso-900 min-w-0">
                 <span className="font-semibold">Editando el pedido #{enEdicion.numero}</span>
                 {enEdicion.estado === 'pagado' && (
-                  <span className="block text-xs text-aviso-800">Ya está cobrado: si el total cambia, se cuadra la diferencia.</span>
+                  <span className="block text-[11px] text-aviso-800">Ya está cobrado: si cambia el total, se cuadra la diferencia.</span>
                 )}
               </p>
               <button
@@ -1451,8 +1451,8 @@ export default function POS() {
               </button>
             </div>
           )}
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-base">{enEdicion ? 'Comanda del pedido' : 'Comanda actual'}</h2>
+          <div className={`flex items-center justify-between ${enEdicion ? 'mb-0' : 'mb-2'}`}>
+            {!enEdicion && <h2 className="font-semibold text-sm">Comanda actual</h2>}
             {!enEdicion && (Object.keys(carrito).length > 0 || libres.length > 0) && (
               <button
                 onClick={() => {
@@ -1549,7 +1549,7 @@ export default function POS() {
               <p className="text-neutral-400 text-sm">Toca un producto para agregarlo.</p>
             )}
           </div>
-          <div className="border-t border-neutral-200 pt-3 mt-3">
+          <div className="border-t border-neutral-200 pt-2 mt-2">
             {/* A nombre de quien va. Con ocho comandas vivas, "#14" no le dice
                 a nadie de quien es: el cajero termina cantando numeros por el
                 mostrador. El nombre viaja al pedido y sale al lado del numero
@@ -1566,21 +1566,21 @@ export default function POS() {
                 if (faltaNombre) setFaltaNombre(false)
               }}
               placeholder="¿A nombre de quién?"
-              className={`w-full border rounded-xl px-3 py-2.5 text-sm ${
-                faltaNombre ? 'border-peligro-400 bg-peligro-50 mb-1' : 'border-neutral-300 mb-3'
+              className={`w-full border rounded-lg px-2.5 py-1.5 text-[13px] ${
+                faltaNombre ? 'border-peligro-400 bg-peligro-50 mb-1' : 'border-neutral-300 mb-2'
               }`}
             />
             {faltaNombre && (
-              <p className="text-xs text-peligro-600 mb-3">
+              <p className="text-xs text-peligro-600 mb-2">
                 Sin nombre no se puede comandar.
               </p>
             )}
-            <div className="flex justify-between items-baseline font-bold text-xl mb-3">
-              <span className="text-sm font-medium text-neutral-500">Total</span>
+            <div className="flex justify-between items-baseline font-bold text-lg mb-2">
+              <span className="text-xs font-medium text-neutral-500">Total</span>
               <span>{fmt(totalCarrito)}</span>
             </div>
             {enEdicion && (
-              <p className="text-xs text-neutral-500 -mt-2 mb-3 flex justify-between">
+              <p className="text-[11px] text-neutral-500 -mt-1.5 mb-2 flex justify-between">
                 <span>Antes</span>
                 <span className="tabular-nums">{fmt(enEdicion.total + (enEdicion.descuento || 0))}</span>
               </p>
@@ -1588,7 +1588,7 @@ export default function POS() {
             <button
               onClick={enviarComanda}
               disabled={Object.keys(carrito).length === 0 && libres.length === 0}
-              className="w-full bg-neutral-900 text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-30"
+              className="w-full bg-neutral-900 text-white rounded-xl py-2.5 font-semibold text-sm disabled:opacity-30"
             >
               {enEdicion ? 'Guardar cambios' : 'Enviar comanda'}
             </button>
