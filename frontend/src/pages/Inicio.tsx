@@ -55,6 +55,7 @@ function columnasSinHuecos(n: number, candidatas: number[]): number {
 export default function Inicio() {
   const { estado } = useAcceso()
   const [hoy, setHoy] = useState<ReporteResumen | null>(null)
+  const [pedidosHoy, setPedidosHoy] = useState<number | null>(null)
   const [enCocina, setEnCocina] = useState(0)
   const [porCobrar, setPorCobrar] = useState(0)
   const { fmt } = useMoneda()
@@ -76,6 +77,12 @@ export default function Inicio() {
     // Y solo a quien el rol le deja ver las cifras: al resto se le pinta un
     // guion, no un "no tienes permiso" (Leider, 25-sep).
     if (estado.puede.ve_kpis) api.reporte(rangoDe('hoy')).then(setHoy).catch(() => undefined)
+    // "Pedidos" lo ve todo el mundo: sale del listado de ventas del dia, que
+    // caja y cocina si pueden leer (los reportes, no).
+    api
+      .ventasDelDia()
+      .then((ps) => setPedidosHoy(ps.length))
+      .catch(() => undefined)
     // El MISMO listado que pinta la pantalla de cocina, no `estado='pendiente'`.
     // Eran dos definiciones distintas de lo mismo: cobrar deja el pedido en
     // 'pagado' aunque la comida no se haya tocado, asi que el KPI decia "2"
@@ -148,7 +155,7 @@ export default function Inicio() {
           <Dato
             titulo="Pedidos"
             ayuda="kpi.pedidos_hoy"
-            valor={estado.puede.ve_kpis && hoy ? String(hoy.pedidos) : '—'}
+            valor={pedidosHoy === null ? '—' : String(pedidosHoy)}
           />
           <Dato titulo="En cocina" ayuda="kpi.en_cocina" valor={String(enCocina)} alerta={enCocina > 0} enlace="/cocina" />
           <Dato
