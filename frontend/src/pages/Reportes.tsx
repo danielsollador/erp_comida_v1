@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
@@ -10,7 +10,7 @@ import { api } from '../lib/api'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { etiquetaMetodo } from '../lib/pagos'
 import type { ReporteCombos, ReporteInventario, ReportePerdidas, ReporteResumen } from '../lib/types'
-import { Bloque, Kpi, Linea, type Dinero } from './partes/reportes/comunes'
+import { Bloque, Kpi, Linea, type Dinero, recortarSerie } from './partes/reportes/comunes'
 import Ventas from './partes/reportes/Ventas'
 import Perdidas from './partes/reportes/Perdidas'
 import Inventario from './partes/reportes/Inventario'
@@ -30,6 +30,15 @@ import Inventario from './partes/reportes/Inventario'
  * el Resumen repetia parte de las otras tres. Cada seccion pide solo SUS
  * datos y sigue el mismo esqueleto: cifras, lecturas, bloques con nombre.
  */
+// El grano de la serie. El primero es el automatico: `useSeccion` devuelve ese
+// cuando no hay nada en la URL, y entonces no se le manda `paso` al servidor.
+const PASOS = [
+  { id: 'auto', texto: 'Automático' },
+  { id: 'dia', texto: 'Por día' },
+  { id: 'semana', texto: 'Por semana' },
+  { id: 'mes', texto: 'Por mes' },
+]
+
 const SECCIONES = [
   { id: 'resumen', texto: 'Resumen' },
   { id: 'ventas', texto: 'Ventas' },
@@ -41,7 +50,23 @@ export default function Reportes() {
   const [seccion, irA] = useSeccion(SECCIONES)
   // Hoy por defecto: es lo que se mira al cerrar. El filtro del encabezado
   // abre cualquier otro periodo, y queda en la URL.
-  const [rango, setRango] = useRango('hoy')
+  // EL MES EN CURSO, no el dia. Reportes es donde se mira como va el negocio,
+  // y "hoy" a las nueve de la manana son dos pedidos: ni el mapa de calor ni la
+  // comparacion contra el periodo anterior tienen de que hablar. Ademas deja
+  // este modulo en el mismo periodo que Ventas, Contabilidad e Impuestos, que
+  // ya arrancaban en el mes (Leider, 24-sep).
+  const [rango, setRango] = useRango('mes')
+  /**
+   * Con que grano se dibuja la serie de ventas: por dia, por semana o por mes.
+   *
+   * EN LA URL y no en un `useState`, igual que la seccion: asi volver con el
+   * boton del navegador hace lo que se espera y el enlace se puede compartir
+   * ya puesto en lo que uno queria enseñar.
+   *
+   * Vacio = lo elige el servidor por el largo del rango, que acierta casi
+   * siempre. El selector existe para el "casi" (Leider, 24-sep).
+   */
+  const [paso, irAPaso] = useSeccion(PASOS, 'g')
   const [datos, setDatos] = useState<ReporteResumen | null>(null)
   const [combos, setCombos] = useState<ReporteCombos | null>(null)
   const [perdidas, setPerdidas] = useState<ReportePerdidas | null>(null)
@@ -58,7 +83,8 @@ export default function Reportes() {
     setError('')
     const necesitaResumen = seccion === 'resumen' || seccion === 'ventas'
     const pedidos: Promise<unknown>[] = []
-    if (necesitaResumen) pedidos.push(api.reporte(rango).then((r) => vigente && setDatos(r)))
+    if (necesitaResumen)
+      pedidos.push(api.reporte(rango, paso === 'auto' ? undefined : paso).then((r) => vigente && setDatos(r)))
     if (seccion === 'ventas') pedidos.push(api.reporteCombos(rango).then((c) => vigente && setCombos(c)).catch(() => vigente && setCombos(null)))
     if (seccion === 'perdidas') pedidos.push(api.reportePerdidas(rango).then((p) => vigente && setPerdidas(p)))
     if (seccion === 'inventario') pedidos.push(api.reporteInventario(rango).then((i) => vigente && setInventario(i)))
@@ -68,7 +94,7 @@ export default function Reportes() {
     return () => {
       vigente = false
     }
-  }, [rango, seccion])
+  }, [rango, seccion, paso])
 
   // La tasa MEDIA del periodo, sacada de los bolivares que de verdad entraron.
   // En la vista en bolivares manda esta y no la de hoy: si no, el resumen del
@@ -78,6 +104,23 @@ export default function Reportes() {
   const corto = (x: number) => dinero(x, 0)
 
   const etiqueta = seccion === 'perdidas' ? perdidas?.etiqueta : seccion === 'inventario' ? inventario?.etiqueta : datos?.etiqueta
+
+  /**
+   * Si YA hay algo que mostrar de esta seccion.
+   *
+   * Cambiar de periodo no vacia la pantalla: se siguen viendo los numeros del
+   * periodo anterior, un poco apagados, hasta que llegan los nuevos. Antes se
+   * desmontaba todo y se ponia "Cargando...", asi que la pagina se encogia a
+   * una linea y volvia a crecer -- un parpadeo en cada toque del filtro de
+   * fechas (Leider, 24-sep). Y al volver a montarse, la entrada escalonada se
+   * ejecutaba otra vez, que lo hacia mas evidente.
+   *
+   * Solo se vacia cuando de verdad no hay nada que enseñar: la primera carga
+   * de la seccion.
+   */
+  const hayDatos =
+    seccion === 'perdidas' ? perdidas !== null : seccion === 'inventario' ? inventario !== null : datos !== null
+  const refrescando = cargando && hayDatos
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -89,11 +132,11 @@ export default function Reportes() {
         filtro={<FiltroFechas rango={rango} alCambiar={setRango} />}
       />
 
-      <Pagina>
-        {cargando && <p className="text-neutral-400 text-sm">Cargando...</p>}
+      <Pagina ocupada={refrescando}>
+        {cargando && !hayDatos && <p className="text-neutral-400 text-sm">Cargando...</p>}
         {error && !cargando && <p className="text-peligro-600 text-sm">{error}</p>}
 
-        {!cargando && !error && (
+        {hayDatos && !error && (
           <>
             {etiqueta && (
               <div className="space-y-0.5">
@@ -128,7 +171,17 @@ export default function Reportes() {
             )}
 
             {seccion === 'resumen' && datos && <Resumen datos={datos} dinero={dinero} corto={corto} sufijo={sufijo} />}
-            {seccion === 'ventas' && datos && <Ventas datos={datos} combos={combos} dinero={dinero} corto={corto} fmt={fmt} />}
+            {seccion === 'ventas' && datos && (
+              <Ventas
+                datos={datos}
+                combos={combos}
+                dinero={dinero}
+                corto={corto}
+                fmt={fmt}
+                paso={paso}
+                alCambiarPaso={irAPaso}
+              />
+            )}
             {seccion === 'perdidas' && perdidas && <Perdidas datos={perdidas} dinero={dinero} corto={corto} />}
             {seccion === 'inventario' && inventario && <Inventario datos={inventario} dinero={dinero} corto={corto} />}
           </>
@@ -158,11 +211,19 @@ function Resumen({
 }) {
   const ant = datos.anterior
   const vs = ant ? `vs ${ant.etiqueta}` : undefined
+  // EXACTAMENTE EL MISMO RECORTE QUE EN VENTAS, y por eso sale del mismo sitio
+  // (`comunes.recortarSerie`): fuera los tramos vacios de los extremos. Al
+  // arreglarlo solo en Ventas, este quedo dibujando nueve meses de raya plana
+  // (Leider, 24-sep: "ponlo exacto como esta en Ventas").
+  const { serie, anterior: serieAnterior } = useMemo(
+    () => recortarSerie(datos.serie, datos.serie_anterior),
+    [datos.serie, datos.serie_anterior],
+  )
 
   return (
     <>
       {/* ── 1. Las cifras ─────────────────────────────────────────────── */}
-      <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi
           titulo="Ventas"
           ayuda="kpi.ventas"
@@ -198,7 +259,7 @@ function Resumen({
       </div>
 
       {/* ── 2. Las ventas ─────────────────────────────────────────────── */}
-      {datos.serie.length > 0 && (
+      {serie.length > 0 && (
         <Bloque titulo="Ventas" descripcion="El detalle por hora, día y producto está en la pestaña Ventas.">
           <Seccion
             titulo={`Ventas por ${datos.granularidad} · ${sufijo}`}
@@ -206,22 +267,22 @@ function Resumen({
           >
             <GraficoLineas
               alto={200}
-              etiquetas={datos.serie.map((p) => p.etiqueta)}
+              etiquetas={serie.map((p) => p.etiqueta)}
               formato={corto}
               formatoDetalle={(n) => dinero(n)}
               series={[
                 {
                   nombre: 'Este período',
                   color: 'var(--color-neutral-900)',
-                  valores: datos.serie.map((p) => p.ventas),
+                  valores: serie.map((p) => p.ventas),
                   relleno: true,
                 },
-                ...(datos.serie_anterior.length === datos.serie.length && ant
+                ...(serieAnterior.length === serie.length && ant
                   ? [
                       {
                         nombre: `${ant.etiqueta[0].toUpperCase()}${ant.etiqueta.slice(1)}`,
                         color: 'var(--color-neutral-400)',
-                        valores: datos.serie_anterior.map((p) => p.ventas),
+                        valores: serieAnterior.map((p) => p.ventas),
                         punteada: true,
                       },
                     ]
@@ -267,7 +328,9 @@ function Resumen({
                       nombre: 'Cada venta',
                       partes: [
                         { nombre: 'Mercancía', valor: datos.costo_insumos, color: 'var(--color-neutral-400)' },
-                        { nombre: 'Gastos y mermas', valor: datos.gastos, color: 'var(--color-aviso-500)' },
+                        // Solo si de verdad hubo gasto: un gasto negativo (mas
+                        // sobrantes que mermas) no es un trozo de la barra.
+                        { nombre: 'Gastos y mermas', valor: Math.max(datos.gastos, 0), color: 'var(--color-aviso-500)' },
                         ...(datos.iva_cobrado > 0
                           ? [{ nombre: 'IVA (del SENIAT)', valor: datos.iva_cobrado, color: 'var(--color-neutral-300)' }]
                           : []),
@@ -305,7 +368,20 @@ function Resumen({
               monto={datos.ganancia_bruta}
               subtotal
             />
-            <Linea dinero={dinero} etiqueta="Gastos, mermas y faltantes" monto={-datos.gastos} />
+            {/* CUANDO LOS GASTOS SON NEGATIVOS, LA LINEA CAMBIA DE NOMBRE.
+                Un reverso de merma o un sobrante de conteo restan gasto, y el
+                total del periodo puede quedar en negativo. Con el rotulo fijo,
+                la cuenta se leia al reves: "Ganancia bruta 132 / Gastos 2 /
+                Ganancia neta 134" -- el que mira resta y le da 130 (Leider,
+                24-sep). Diciendo que ese renglon SUMA, la columna vuelve a
+                cuadrar a la vista. */}
+            <Linea
+              dinero={dinero}
+              etiqueta={
+                datos.gastos >= 0 ? 'Gastos, mermas y faltantes' : 'Sobrantes y reversos (suman)'
+              }
+              monto={-datos.gastos}
+            />
             <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
             {ant && (
               <p className="text-xs text-neutral-500 mt-2">

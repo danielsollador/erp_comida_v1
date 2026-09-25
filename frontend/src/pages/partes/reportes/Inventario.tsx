@@ -32,7 +32,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
   return (
     <>
       {/* ── Las cifras ─────────────────────────────────────────────────── */}
-      <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi
           titulo="Valor del depósito"
           ayuda="kpi.valor_deposito"

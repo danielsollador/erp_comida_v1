@@ -8,7 +8,7 @@ import POS from './pages/POS'
 import Cocina from './pages/Cocina'
 // El inicio tambien: es lo primero que se ve al entrar.
 import Inicio from './pages/Inicio'
-import Rail, { entraA } from './components/Rail'
+import Rail, { entraA, sinBarraLateral } from './components/Rail'
 import Conexion from './components/Conexion'
 import Solicitudes from './components/Solicitudes'
 import { DialogoProvider } from './components/dialogo'
@@ -165,12 +165,13 @@ function RequiereAlguno({ modulos, children }: { modulos: string[]; children: Re
 }
 
 /**
- * El marco: la barra lateral y, a su derecha, la pantalla. La cocina va sola a
- * pantalla completa (la barra no se muestra y no se deja hueco).
+ * El marco: la barra lateral y, a su derecha, la pantalla. Cocina y el
+ * mostrador van solos a pantalla completa (ver `sinBarraLateral`): ni se
+ * muestra la barra ni se deja su hueco.
  */
 function Marco({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
-  const conRail = !pathname.startsWith('/cocina')
+  const conRail = !sinBarraLateral(pathname)
   return (
     <>
       <Rail />

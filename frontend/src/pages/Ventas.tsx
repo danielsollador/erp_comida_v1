@@ -6,7 +6,7 @@ import { useDialogo } from '../components/dialogo'
 import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Cifra, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
+import { Cifra, Filtros, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
@@ -262,51 +262,31 @@ function Historial({
       plano
     >
       <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
-        <div className="flex gap-1 overflow-x-auto">
-          {ESTADOS.map((e) => {
-            const n = conteo[e.clave] ?? 0
-            if (e.clave !== 'todas' && n === 0) return null
-            const activo = estado === e.clave
-            return (
-              <button
-                key={e.clave}
-                type="button"
-                onClick={() => setEstado(e.clave)}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border ${
-                  activo ? 'bg-neutral-900 text-white border-neutral-900' : 'bg-white border-neutral-200 text-neutral-600'
-                }`}
-              >
-                {e.texto} <span className={activo ? 'opacity-70' : 'text-neutral-400'}>{n}</span>
-              </button>
-            )
-          })}
-        </div>
+        <Filtros
+          activo={estado}
+          alElegir={setEstado}
+          opciones={ESTADOS.filter((e) => e.clave === 'todas' || (conteo[e.clave] ?? 0) > 0).map((e) => ({
+            valor: e.clave,
+            texto: e.texto,
+            contador: conteo[e.clave] ?? 0,
+          }))}
+        />
         {/* Filtra por otro eje que el de arriba -una venta cobrada puede estar
             facturada o no-, así que va rotulado y más chico. Sin el rótulo,
             seis pastillas idénticas en fila se leen como una sola lista de
             estados y "Facturada o no" parece un estado más. */}
         <div className="flex items-center gap-1 shrink-0">
           <span className="text-xs text-neutral-400 mr-0.5">Factura:</span>
-          {(
-            [
-              ['todas', 'Todas'],
-              ['si', 'Con factura'],
-              ['no', 'Sin factura'],
-            ] as const
-          ).map(([valor, texto]) => (
-            <button
-              key={valor}
-              type="button"
-              onClick={() => setFactura(valor)}
-              className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                factura === valor
-                  ? 'bg-neutral-200 text-neutral-900 border-neutral-300'
-                  : 'bg-white border-neutral-200 text-neutral-500'
-              }`}
-            >
-              {texto}
-            </button>
-          ))}
+          <Filtros
+            tamano="chico"
+            activo={factura}
+            alElegir={setFactura}
+            opciones={[
+              { valor: 'todas', texto: 'Todas' },
+              { valor: 'si', texto: 'Con factura' },
+              { valor: 'no', texto: 'Sin factura' },
+            ]}
+          />
         </div>
         <input
           value={busqueda}
@@ -814,7 +794,7 @@ function Resumen({ r, nombre }: { r: ResumenVentas; nombre: string }) {
   const incompleto = r.hasta >= new Date().toISOString().slice(0, 10)
   return (
     <>
-      <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Cifra
           titulo="Ventas"
           ayuda="kpi.ventas"
@@ -1040,7 +1020,7 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
 
   return (
     <>
-      <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <Cifra
           titulo="Dinero perdido"
           ayuda="kpi.perdidas"

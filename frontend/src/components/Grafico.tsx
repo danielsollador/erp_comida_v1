@@ -1,4 +1,69 @@
 import { Fragment, useState, type PointerEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+
+/**
+ * El globo de informacion que sigue al cursor, compartido por todos los
+ * graficos de HTML (barras, barras apiladas, dona, mapa de calor).
+ *
+ * POR QUE NO EL `title` DEL NAVEGADOR, que es lo que habia. Tarda cerca de un
+ * segundo en salir, no se puede leer de un barrido --hay que parar el cursor y
+ * esperar en cada casilla--, sale con la tipografia del sistema operativo y en
+ * modo oscuro sigue siendo un rectangulo amarillo de Windows. Para un mapa de
+ * calor de cien casillas eso no es informacion: es un examen de paciencia
+ * (Leider, 24-sep: "todos estos graficos tienen que tener informacion sobre
+ * herramienta cuando yo pose el cursor").
+ *
+ * VA EN UN PORTAL AL `body` a proposito: el mapa de calor vive dentro de un
+ * contenedor con `overflow-x: auto` y un globo escrito dentro se recortaria
+ * justo en las casillas del borde, que son las que mas cuesta identificar.
+ *
+ * Y es el MISMO globo del grafico de lineas --misma lamina, mismo radio, misma
+ * sombra--, para que pasar de un grafico a otro no se sienta como cambiar de
+ * aplicativo.
+ */
+function useGlobo() {
+  const [globo, setGlobo] = useState<{ x: number; y: number; nodo: ReactNode } | null>(null)
+
+  /** Se cuelga de un elemento: `<div {...enHover(<>…</>)} />`. */
+  const enHover = (nodo: ReactNode) => ({
+    onPointerEnter: (e: PointerEvent) => setGlobo({ x: e.clientX, y: e.clientY, nodo }),
+    onPointerMove: (e: PointerEvent) => setGlobo({ x: e.clientX, y: e.clientY, nodo }),
+    onPointerLeave: () => setGlobo(null),
+  })
+
+  // Se dibuja arriba y a la derecha del cursor, y se voltea contra el borde de
+  // la pantalla: en la ultima columna de un mapa ancho, un globo fijo a la
+  // derecha se sale de la ventana.
+  const Globo = () =>
+    globo
+      ? createPortal(
+          <div
+            className="pointer-events-none fixed z-50 rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-lg text-xs"
+            style={{
+              left: globo.x + 14,
+              top: globo.y - 10,
+              transform: `translate(${globo.x > window.innerWidth - 220 ? '-100%' : '0'}, -100%)`,
+            }}
+          >
+            {globo.nodo}
+          </div>,
+          document.body,
+        )
+      : null
+
+  return { enHover, Globo }
+}
+
+/** Una linea del globo: rotulo a la izquierda, cifra a la derecha. */
+function LineaGlobo({ nombre, valor, color }: { nombre: string; valor: string; color?: string }) {
+  return (
+    <div className="flex items-center gap-2 whitespace-nowrap">
+      {color && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />}
+      <span className="text-neutral-500">{nombre}</span>
+      <span className="ml-auto pl-3 font-semibold tabular-nums">{valor}</span>
+    </div>
+  )
+}
 
 /**
  * Una serie en el tiempo, dibujada a mano.
@@ -342,6 +407,7 @@ export function GraficoDona({
   pastel?: boolean
 }) {
   const [activa, setActiva] = useState<number | null>(null)
+  const { enHover, Globo } = useGlobo()
   const total = partes.reduce((s, p) => s + Math.max(p.valor, 0), 0)
   if (total <= 0 || partes.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
@@ -351,13 +417,21 @@ export function GraficoDona({
   let acumulado = 0
   const arcos = partes.map((p, i) => {
     const pct = (Math.max(p.valor, 0) / total) * 100
-    const arco = { pct, desde: acumulado, color: p.color ?? PALETA_CATEGORICA[i % PALETA_CATEGORICA.length] }
+    const arco = {
+      pct,
+      desde: acumulado,
+      color: p.color ?? PALETA_CATEGORICA[i % PALETA_CATEGORICA.length],
+      nombre: p.nombre,
+      valor: p.valor,
+      detalle: p.detalle,
+    }
     acumulado += pct
     return arco
   })
 
   return (
     <div className="flex flex-wrap items-center gap-4">
+      <Globo />
       <div className="relative shrink-0" style={{ width: alto, height: alto }}>
         {/* Con pastel el trazo llega hasta 2r del centro, mas que los 21 de
             la caja de 42: la caja se agranda para que el disco quepa entero
@@ -393,8 +467,29 @@ export function GraficoDona({
                 }
                 strokeDashoffset={-a.desde}
                 className="transition-all duration-200"
-                onPointerEnter={() => setActiva(i)}
-                onPointerLeave={() => setActiva(null)}
+                {...(() => {
+                  const h = enHover(
+                    <>
+                      <div className="mb-1 font-semibold text-neutral-500">{a.nombre}</div>
+                      <LineaGlobo nombre="Vale" valor={formato(a.valor)} color={a.color} />
+                      <LineaGlobo nombre="Del total" valor={`${a.pct.toFixed(0)}%`} />
+                      {a.detalle && <div className="mt-0.5 text-[11px] text-neutral-400">{a.detalle}</div>}
+                    </>,
+                  )
+                  // El arco tambien se engorda y el centro muestra su %: eso ya
+                  // estaba y se conserva, el globo se suma.
+                  return {
+                    ...h,
+                    onPointerEnter: (e: PointerEvent) => {
+                      setActiva(i)
+                      h.onPointerEnter(e)
+                    },
+                    onPointerLeave: () => {
+                      setActiva(null)
+                      h.onPointerLeave()
+                    },
+                  }
+                })()}
               />
             ) : null,
           )}
@@ -456,6 +551,7 @@ export function GraficoBarras({
   /** Que barra va en cobre (la mayor, la de hoy). Las demas, grafito. */
   resaltar?: (d: BarraDato, i: number) => boolean
 }) {
+  const { enHover, Globo } = useGlobo()
   if (datos.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
   }
@@ -464,6 +560,7 @@ export function GraficoBarras({
   const salto = Math.ceil(datos.length / 16)
   return (
     <div className="flex items-end gap-1.5 overflow-x-auto overflow-y-hidden" style={{ height: alto }}>
+      <Globo />
       {datos.map((d, i) => {
         const pct = max > 0 ? (d.valor / max) * 100 : 0
         const fuerte = resaltar ? resaltar(d, i) : false
@@ -471,13 +568,26 @@ export function GraficoBarras({
           <div
             key={d.etiqueta + i}
             className="group flex-1 min-w-[22px] flex flex-col items-center justify-end h-full gap-1 cursor-default"
-            title={`${d.etiqueta}: ${formato(d.valor)}${d.detalle ? ` · ${d.detalle}` : ''}`}
+            {...enHover(
+              <>
+                <div className="mb-1 font-semibold text-neutral-500">{d.etiqueta}</div>
+                <LineaGlobo nombre="Total" valor={formato(d.valor)} />
+                {d.detalle && <div className="mt-0.5 text-[11px] text-neutral-400">{d.detalle}</div>}
+              </>,
+            )}
           >
             <span className="text-[10px] text-neutral-500 tabular-nums whitespace-nowrap">
               {d.valor > 0 && datos.length <= 12 ? formato(d.valor) : ''}
             </span>
             <div
-              className={`vp-barra w-full rounded-t-md min-h-[2px] transition-colors group-hover:bg-acento-500 ${
+              // EL HOVER NO PINTA DE COBRE. El cobre significa "esta es la
+              // barra fuerte"; usarlo tambien para el cursor hacia que
+              // cualquier barra se disfrazara de la mayor al pasarle por
+              // encima, y ya no se sabia cual era la de verdad (Leider,
+              // 24-sep). El color se queda quieto y lo que cambia es la
+              // opacidad, que ademas se ve en los DOS temas: aclarar no sirve
+              // en modo oscuro, donde la barra normal ya es casi blanca.
+              className={`vp-barra w-full rounded-t-md min-h-[2px] transition-opacity group-hover:opacity-70 ${
                 fuerte ? 'bg-acento-500' : 'bg-neutral-900'
               }`}
               style={{
@@ -514,6 +624,7 @@ export function BarrasApiladas({
   /** Que significa cada color. Se dibuja una vez, arriba. */
   leyenda?: { nombre: string; color: string }[]
 }) {
+  const { enHover, Globo } = useGlobo()
   if (filas.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
   }
@@ -521,6 +632,7 @@ export function BarrasApiladas({
   const max = Math.max(...totales, 0)
   return (
     <div>
+      <Globo />
       {leyenda && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
           {leyenda.map((l) => (
@@ -533,18 +645,36 @@ export function BarrasApiladas({
       )}
       <div className="space-y-2">
         {filas.map((f, i) => (
-          <div key={f.nombre} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 text-sm">
-            <span className="truncate text-neutral-700" title={f.nombre}>
+          <div
+            key={f.nombre}
+            className="grid grid-cols-[minmax(0,10rem)_1fr_auto] lg:grid-cols-[minmax(0,15rem)_1fr_auto] items-center gap-3 text-sm"
+          >
+            {/* DOS LINEAS ANTES QUE PUNTOS SUSPENSIVOS. La columna medida
+                9 rem y a esa anchura "Pastelito mechada criolla" y "Pastelito
+                mechada gourmet" se cortaban las dos en "Pastelito mechada c…":
+                dos barras distintas con el mismo nombre en pantalla, que es
+                justo lo que un grafico no puede hacer. Ahora la columna es mas
+                ancha donde hay sitio y el nombre se acomoda en dos lineas. */}
+            <span className="text-neutral-700 leading-tight line-clamp-2" title={f.nombre}>
               {f.nombre}
             </span>
-            <div className="flex h-4 rounded-md overflow-hidden bg-neutral-100" style={{ width: max > 0 ? `${(totales[i] / max) * 100}%` : 0 }}>
+            <div className="flex h-5 rounded-md overflow-hidden bg-neutral-100" style={{ width: max > 0 ? `${(totales[i] / max) * 100}%` : 0 }}>
               {f.partes.map((p) =>
                 p.valor > 0 ? (
                   <div
                     key={p.nombre}
                     className="vp-barra-h h-full"
                     style={{ width: `${(p.valor / totales[i]) * 100}%`, background: p.color }}
-                    title={`${p.nombre}: ${formato(p.valor)}`}
+                    {...enHover(
+                      <>
+                        <div className="mb-1 font-semibold text-neutral-500">{f.nombre}</div>
+                        {f.partes
+                          .filter((q) => q.valor > 0)
+                          .map((q) => (
+                            <LineaGlobo key={q.nombre} nombre={q.nombre} valor={formato(q.valor)} color={q.color} />
+                          ))}
+                      </>,
+                    )}
                   />
                 ) : null,
               )}
@@ -583,62 +713,112 @@ export function MapaCalor({
   medida: 'pedidos' | 'ventas'
   formato: (n: number) => string
 }) {
+  const { enHover, Globo } = useGlobo()
   if (celdas.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
   }
   const horas = celdas.map((c) => c.hora)
   const desde = Math.min(...horas)
   const hasta = Math.max(...horas)
-  const columnas = Array.from({ length: hasta - desde + 1 }, (_, i) => desde + i)
+  const filas = Array.from({ length: hasta - desde + 1 }, (_, i) => desde + i)
   const valor = (c: CeldaCalor) => (medida === 'pedidos' ? c.pedidos : c.ventas)
   const max = Math.max(...celdas.map(valor), 0)
+  // SOLO SE MARCA SI HAY UNA SOLA GANADORA. Con pocos dias cargados todas las
+  // casillas empatan, y marcar las cinco no dice nada: dice que no hay hora
+  // pico todavia, que es distinto. Entonces no se marca ninguna.
+  const hayPicoUnico = max > 0 && celdas.filter((c) => valor(c) === max).length === 1
   const porCelda = new Map(celdas.map((c) => [`${c.dia}-${c.hora}`, c]))
-  // Las filas de un dia en que nunca abrio no aportan nada, pero un dia con
-  // pocas ventas si: se quitan solo los dias sin una sola celda.
-  const dias = [0, 1, 2, 3, 4, 5, 6].filter((d) => celdas.some((c) => c.dia === d))
+
+  // LOS DIAS SON LAS COLUMNAS Y VAN ABAJO; LAS HORAS, LAS FILAS.
+  //
+  // Estaba al reves. Asi el mapa queda en los mismos ejes que los dos graficos
+  // que tiene al lado --"Que dia vendes mas" y "Pedidos por hora"-- y los tres
+  // se leen sin cambiar de marco mental (Leider, 24-sep: "para dar orden").
+  //
+  // Y son los SIETE dias, aunque alguno este vacio: una columna en blanco los
+  // lunes dice "aqui no se abre", que es informacion. Ademas el ancho del mapa
+  // deja de cambiar segun los datos que haya.
+  const dias = [0, 1, 2, 3, 4, 5, 6]
 
   return (
-    <div className="overflow-x-auto">
+    <div>
+      <Globo />
+      {/* El scroll horizontal envuelve SOLO la cuadricula. Con la leyenda
+          dentro, el anillo del cuadradito de "la hora mas fuerte" --que
+          sobresale 3 px por su `outline-offset`-- se recortaba contra el canto
+          del contenedor y salia a medias (Leider, 24-sep). */}
+      <div className="overflow-x-auto">
       <div
-        className="grid gap-[3px] text-[10px]"
-        // Las casillas tienen tope: con diez horas y una pantalla ancha, a
-        // `1fr` cada una media setenta pixeles y el mapa ocupaba media pagina.
-        style={{ gridTemplateColumns: `2.2rem repeat(${columnas.length}, minmax(1.4rem, 2.4rem))` }}
+        className="grid gap-[2px] text-[10px]"
+        // LAS SIETE COLUMNAS SE REPARTEN TODO EL ANCHO (`1fr`). Antes tenian
+        // tope de 3,4 rem y el mapa terminaba a media tarjeta, con una franja
+        // blanca a la derecha que parecia un error de dibujo (Leider, 24-sep:
+        // "tiene que ocupar todo").
+        //
+        // Casillas anchas y BAJAS: las horas son las filas, y con dieciseis
+        // horas de jornada una casilla cuadrada hacia una tarjeta de seiscientos
+        // pixeles que dejaba a los dos graficos de al lado flotando en el aire.
+        style={{ gridTemplateColumns: `2.2rem repeat(7, minmax(2rem, 1fr))` }}
       >
-        <span />
-        {columnas.map((h) => (
-          <span key={h} className="text-center text-neutral-400 tabular-nums">
-            {h % 2 === 0 || columnas.length <= 10 ? `${h}` : ''}
-          </span>
-        ))}
-        {dias.map((d) => (
-          <Fragment key={d}>
-            <span className="text-neutral-500 self-center">{DIAS_CORTOS[d]}</span>
-            {columnas.map((h) => {
+        {filas.map((h) => (
+          <Fragment key={h}>
+            <span className="text-neutral-400 tabular-nums self-center text-right pr-1">{h}</span>
+            {dias.map((d) => {
               const c = porCelda.get(`${d}-${h}`)
               const v = c ? valor(c) : 0
               const intensidad = max > 0 && v > 0 ? 12 + (v / max) * 88 : 0
+              // La casilla mas alta, marcada: el mapa pregunta "cuando entran
+              // los clientes" y la respuesta es UNA casilla; sin señalarla hay
+              // que comparar cincuenta tonos de cobre a ojo.
+              const esPico = hayPicoUnico && v === max
               return (
                 <div
-                  key={h}
-                  className="aspect-square rounded-[4px] bg-neutral-100"
+                  key={d}
+                  className={`h-[22px] rounded-[4px] bg-neutral-100 ${
+                    esPico ? 'outline outline-2 outline-offset-1 outline-acento-600' : ''
+                  }`}
                   style={
                     intensidad
                       ? { background: `color-mix(in oklab, var(--color-acento-500) ${intensidad.toFixed(0)}%, transparent)` }
                       : undefined
                   }
-                  title={
-                    c
-                      ? `${DIAS_CORTOS[d]} ${h}:00 · ${c.pedidos} pedido(s) · ${formato(c.ventas)}`
-                      : `${DIAS_CORTOS[d]} ${h}:00 · nada`
-                  }
+                  {...enHover(
+                    <>
+                      <div className="mb-1 font-semibold text-neutral-500">
+                        {DIAS_CORTOS[d]} · {h}:00
+                      </div>
+                      {c ? (
+                        <>
+                          <LineaGlobo nombre="Pedidos" valor={String(c.pedidos)} />
+                          <LineaGlobo nombre="Vendido" valor={formato(c.ventas)} />
+                        </>
+                      ) : (
+                        <div className="text-neutral-400">Sin movimiento</div>
+                      )}
+                    </>,
+                  )}
                 />
               )
             })}
           </Fragment>
         ))}
+        {/* Los nombres de los dias, ABAJO: es donde se leen en los otros dos
+            graficos de este bloque. */}
+        <span />
+        {dias.map((d) => (
+          <span key={d} className="text-center text-neutral-500 pt-0.5">
+            {DIAS_CORTOS[d]}
+          </span>
+        ))}
       </div>
-      <div className="flex items-center justify-end gap-1.5 mt-2 text-[10px] text-neutral-400">
+      </div>
+      <div className="flex items-center justify-end gap-2 mt-2 px-1 text-[10px] text-neutral-400">
+        {hayPicoUnico && (
+          <span className="mr-auto flex items-center gap-1.5">
+            <span aria-hidden className="h-2.5 w-2.5 rounded-[3px] outline outline-2 outline-offset-1 outline-acento-600 bg-acento-500" />
+            la hora más fuerte
+          </span>
+        )}
         menos
         {[15, 35, 60, 85, 100].map((p) => (
           <span
@@ -652,6 +832,7 @@ export function MapaCalor({
     </div>
   )
 }
+
 
 // ── Sparkline ───────────────────────────────────────────────────────────────
 

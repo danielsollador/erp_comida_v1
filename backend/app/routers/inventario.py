@@ -247,6 +247,127 @@ def inflacion(dias: int = 30, db: Session = Depends(get_db)):
     return reposicion.inflacion_de_insumos(db, dias)
 
 
+def categoria_del_deposito(db: Session, nombre: str) -> Optional[models.CategoriaInsumo]:
+    """La categoria que se llama asi, creandola si todavia no existe.
+
+    Se compara SIN mayusculas ni tildes: "Carnes", "carnes" y "cárnes" son el
+    mismo cajon del deposito. Sin esto, el desplegable de la ficha acabaria con
+    tres entradas que dicen lo mismo y la mercancia repartida entre ellas.
+    """
+    limpio = " ".join((nombre or "").split())
+    if not limpio:
+        return None
+    for cat in db.query(models.CategoriaInsumo).filter(models.CategoriaInsumo.activo.is_(True)).all():
+        if comparable(cat.nombre) == comparable(limpio):
+            return cat
+    cat = models.CategoriaInsumo(nombre=limpio)
+    db.add(cat)
+    db.flush()
+    return cat
+
+
+@router.get("/categorias", response_model=List[schemas.CategoriaInsumo])
+def listar_categorias(db: Session = Depends(get_db)):
+    """Las categorias del deposito con cuanta mercancia tiene cada una.
+
+    Incluye las VACIAS: una categoria recien creada tiene que poder verse y
+    elegirse antes de tener nada dentro, que es justo para lo que se crea.
+    """
+    conteo = dict(
+        db.query(models.Ingrediente.categoria_id, func.count(models.Ingrediente.id))
+        .filter(models.Ingrediente.activo.is_(True))
+        .group_by(models.Ingrediente.categoria_id)
+        .all()
+    )
+    return [
+        schemas.CategoriaInsumo(id=c.id, nombre=c.nombre, usos=conteo.get(c.id, 0))
+        for c in db.query(models.CategoriaInsumo)
+        .filter(models.CategoriaInsumo.activo.is_(True))
+        .order_by(models.CategoriaInsumo.nombre)
+        .all()
+    ]
+
+
+@router.post("/categorias", response_model=schemas.CategoriaInsumo)
+def crear_categoria(body: schemas.CategoriaInsumoInput, db: Session = Depends(get_db)):
+    if not body.nombre.strip():
+        raise HTTPException(status_code=400, detail="La categoría necesita un nombre.")
+    cat = categoria_del_deposito(db, body.nombre)
+    db.commit()
+    db.refresh(cat)
+    return schemas.CategoriaInsumo(id=cat.id, nombre=cat.nombre, usos=0)
+
+
+@router.put("/categorias/{categoria_id}", response_model=schemas.CategoriaInsumo)
+def renombrar_categoria(
+    categoria_id: int, body: schemas.CategoriaInsumoInput, db: Session = Depends(get_db)
+):
+    """Renombrar, y si el nombre nuevo ya existe, FUNDIR las dos.
+
+    Renombrar "Carne" a "Carnes" cuando "Carnes" ya existe no puede dejar dos
+    cajones iguales: lo que el dueño quiere decir es "esto era lo mismo". Se
+    mueve la mercancia a la que se queda y la otra se desactiva.
+    """
+    cat = db.query(models.CategoriaInsumo).filter(models.CategoriaInsumo.id == categoria_id).first()
+    if not cat or not cat.activo:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
+    limpio = " ".join((body.nombre or "").split())
+    if not limpio:
+        raise HTTPException(status_code=400, detail="La categoría necesita un nombre.")
+
+    gemela = next(
+        (
+            o
+            for o in db.query(models.CategoriaInsumo)
+            .filter(models.CategoriaInsumo.activo.is_(True), models.CategoriaInsumo.id != cat.id)
+            .all()
+            if comparable(o.nombre) == comparable(limpio)
+        ),
+        None,
+    )
+    if gemela:
+        db.query(models.Ingrediente).filter(models.Ingrediente.categoria_id == cat.id).update(
+            {"categoria_id": gemela.id}, synchronize_session=False
+        )
+        cat.activo = False
+        db.commit()
+        usos = (
+            db.query(models.Ingrediente)
+            .filter(models.Ingrediente.categoria_id == gemela.id, models.Ingrediente.activo.is_(True))
+            .count()
+        )
+        return schemas.CategoriaInsumo(id=gemela.id, nombre=gemela.nombre, usos=usos)
+
+    cat.nombre = limpio
+    db.commit()
+    usos = (
+        db.query(models.Ingrediente)
+        .filter(models.Ingrediente.categoria_id == cat.id, models.Ingrediente.activo.is_(True))
+        .count()
+    )
+    return schemas.CategoriaInsumo(id=cat.id, nombre=cat.nombre, usos=usos)
+
+
+@router.delete("/categorias/{categoria_id}")
+def borrar_categoria(categoria_id: int, db: Session = Depends(get_db)):
+    """La categoria se desactiva; su mercancia queda SIN CATEGORIA.
+
+    Nunca se borra un insumo por borrar el cajon donde estaba: tiene recetas,
+    compras y mermas colgando. Queda sin clasificar, que es un estado normal.
+    """
+    cat = db.query(models.CategoriaInsumo).filter(models.CategoriaInsumo.id == categoria_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
+    sueltos = (
+        db.query(models.Ingrediente)
+        .filter(models.Ingrediente.categoria_id == cat.id)
+        .update({"categoria_id": None}, synchronize_session=False)
+    )
+    cat.activo = False
+    db.commit()
+    return {"sin_categoria": sueltos}
+
+
 @router.post("/ingredientes", response_model=schemas.Ingrediente)
 def crear_ingrediente(ingrediente: schemas.IngredienteCreate, db: Session = Depends(get_db)):
     datos = ingrediente.model_dump()
@@ -263,6 +384,12 @@ def crear_ingrediente(ingrediente: schemas.IngredienteCreate, db: Session = Depe
         kardex.anotar(
             db, db_ingrediente, inicial, kardex.AJUSTE,
             origen="alta_insumo", nota="Existencia declarada al crear el insumo",
+        )
+        # Y su asiento: el stock y los libros se mueven juntos o no se mueven.
+        # Va contra el capital del dueño y no contra una gaveta, porque hoy no
+        # salio plata: es mercancia que ya estaba (ver contabilidad).
+        contabilidad.registrar_existencia_declarada(
+            db, db_ingrediente, round(inicial * (db_ingrediente.costo_unitario or 0), 2)
         )
     db.commit()
     db.refresh(db_ingrediente)

@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import MenuAcciones from '../components/MenuAcciones'
+import Agarre from '../components/Agarre'
+import { useArrastre } from '../lib/arrastre'
 import { FiltroFechas } from '../components/Fechas'
 import { useRango, nombreRango } from '../lib/fechas'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
-import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
+import { Aviso, Boton, Campo, Cifra, FiltroDesplegable, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
@@ -26,6 +29,7 @@ import type {
   MovimientoInventario,
   PlanillaLeida,
   RenglonPorTipo,
+  CategoriaInsumo,
 } from '../lib/types'
 
 /**
@@ -54,6 +58,11 @@ const UNIDADES = ['kg', 'g', 'lt', 'ml', 'unidad', 'paquete']
 const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco']
 
 type Filtro = 'todos' | 'bajo' | 'sin-costo' | 'insumo' | 'reventa' | 'archivados'
+
+// "Sin categoria" es una opcion mas del filtro, asi que necesita un valor. Se
+// usa uno con guiones bajos porque el servidor guarda las categorias sin
+// espacios de sobra y nadie va a teclear esto como nombre de un cajon.
+const SIN_CATEGORIA = '__sin_categoria__'
 
 const FILTROS: { valor: Filtro; texto: string }[] = [
   { valor: 'todos', texto: 'Todos' },
@@ -102,6 +111,7 @@ const SECCIONES = [
   { id: 'insumos', texto: 'Mercancía' },
   { id: 'comprar', texto: 'Qué comprar' },
   { id: 'perdidas', texto: 'Pérdidas' },
+  { id: 'categorias', texto: 'Categorías' },
 ]
 
 export default function Inventario() {
@@ -118,6 +128,29 @@ export default function Inventario() {
   const [error, setError] = useState('')
   const [buscar, setBuscar] = useState('')
   const [filtro, setFiltro] = useState<Filtro>('todos')
+  // En que parte del deposito mirar. Vive aparte del filtro de arriba: se
+  // puede pedir "lo que esta bajo minimo, de Carnes".
+  const [categoria, setCategoria] = useState<string>('todas')
+  // Los cajones del deposito. Vienen del servidor y no de la mercancia: una
+  // categoria recien creada existe aunque todavia no tenga nada dentro.
+  const [cats, setCats] = useState<CategoriaInsumo[]>([])
+  const recargarCats = useCallback(
+    () => api.listarCategoriasInsumo().then(setCats).catch(() => setCats([])),
+    [],
+  )
+  useEffect(() => {
+    void recargarCats()
+  }, [recargarCats])
+
+  /** Crear un cajon nuevo desde donde haga falta. Devuelve su id. */
+  const crearCategoria = useCallback(
+    async (nombre: string) => {
+      const cat = await api.crearCategoriaInsumo(nombre)
+      await recargarCats()
+      return cat.id
+    },
+    [recargarCats],
+  )
   // Lo que hay que ponerle delante al dueno cuando un insumo pega un salto.
   const [impacto, setImpacto] = useState<ImpactoDeCompra | null>(null)
   // La ficha abierta: 'nuevo' o el id del insumo. Se guarda el id y no el
@@ -205,6 +238,21 @@ export default function Inventario() {
   async function comprar(ing: Ingrediente) {
     const r = await dialogo.pedir({
       titulo: `Compra de ${ing.nombre}`,
+      // LA DECISION FISCAL, A LA VISTA Y EN EL MOMENTO. Esta compra entra al
+      // deposito y sale de la gaveta, pero NO genera credito de IVA: no hay
+      // factura que lo respalde. Es correcto para lo que se compra en el
+      // mercado, y un error caro si la compra si traia factura -- ese IVA se
+      // pierde. Antes no habia forma de saberlo desde aqui (Leider, 24-sep).
+      texto: (
+        <>
+          Compra <strong>sin factura</strong>: entra al depósito y sale de la gaveta, pero{' '}
+          <strong>no descuenta IVA</strong>.{' '}
+          <a href="/compras?s=nueva" className="underline font-medium">
+            Si tienes la factura, cárgala en Compras
+          </a>{' '}
+          para aprovechar el crédito fiscal.
+        </>
+      ),
       campos: [
         { nombre: 'cantidad', etiqueta: 'Cuánto entra', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
         {
@@ -375,6 +423,8 @@ export default function Inventario() {
   const ajustes30 = vivas.filter((m) => m.por_conteo).reduce((s, m) => s + m.valor, 0)
   const perdidas = perdidas30 + ajustes30
 
+  const haySinCategoria = ingredientes.some((i) => i.activo !== false && !i.categoria_id)
+
   const visibles = useMemo(() => {
     const q = buscar.trim().toLowerCase()
     return ingredientes.filter((i) => {
@@ -384,9 +434,14 @@ export default function Inventario() {
       if (filtro === 'bajo' && i.stock_actual > i.stock_minimo) return false
       if (filtro === 'sin-costo' && i.costo_unitario) return false
       if ((filtro === 'insumo' || filtro === 'reventa') && i.tipo !== filtro) return false
+      // La categoria filtra POR SEPARADO del resto: "Carnes" y "bajo minimo"
+      // son dos preguntas distintas y se pueden hacer a la vez.
+      if (categoria === SIN_CATEGORIA && i.categoria_id) return false
+      if (categoria !== 'todas' && categoria !== SIN_CATEGORIA && String(i.categoria_id) !== categoria)
+        return false
       return !q || i.nombre.toLowerCase().includes(q)
     })
-  }, [ingredientes, filtro, buscar])
+  }, [ingredientes, filtro, buscar, categoria])
 
   const fichaIng = typeof ficha === 'number' ? ingredientes.find((i) => i.id === ficha) ?? null : null
 
@@ -434,7 +489,7 @@ export default function Inventario() {
         {seccion === 'insumos' && (
           <>
         {/* Las cuatro cifras que dicen como esta el deposito sin leer la tabla. */}
-        <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Cifra
             titulo="Mercancía"
             ayuda="kpi.insumos"
@@ -458,44 +513,66 @@ export default function Inventario() {
           />
         </div>
 
-        {/* Buscar, filtrar y las dos acciones del modulo. */}
-        <div className="bg-white rounded-2xl border border-neutral-200 p-3 flex flex-col lg:flex-row lg:items-center gap-3">
+        {/* UNA SOLA BARRA: buscar, los dos filtros y las dos acciones.
+            Antes eran once pastillas repartidas en dos filas, y el numero de
+            pastillas crecia con las categorias del local: con veinte, la fila
+            se volvia un carrusel que hay que arrastrar para ver que hay
+            (Leider, 24-sep: "tienes que pensar en escalabilidad"). Dos
+            desplegables ocupan lo mismo con tres opciones que con doscientas,
+            y ademas dicen QUE se esta filtrando en vez de dejarlo deducir.
+
+            La cuenta de "bajo minimo" no se pierde por dejar las pastillas:
+            esta arriba, en su cifra, que es donde se mira de todos modos. */}
+        <div className="vp-losa p-3 flex flex-wrap items-center gap-2">
           <input
             type="search"
             value={buscar}
             onChange={(e) => setBuscar(e.target.value)}
             placeholder="Buscar mercancía…"
-            className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full lg:w-64"
+            className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full sm:w-56 shrink-0"
           />
-          <div className="flex flex-wrap gap-1.5 lg:flex-1">
-            {FILTROS.map((f) => {
-              const n =
+          <FiltroDesplegable
+            etiqueta="Ver"
+            valor={filtro}
+            alCambiar={(v) => setFiltro(v as Filtro)}
+            opciones={FILTROS.filter(
+              (f) => f.valor !== 'archivados' || ingredientes.length - activos.length > 0,
+            ).map((f) => ({
+              valor: f.valor,
+              texto: f.texto,
+              contador:
                 f.valor === 'bajo'
                   ? bajoMinimo.length
                   : f.valor === 'sin-costo'
                     ? sinCosto.length
                     : f.valor === 'archivados'
                       ? ingredientes.length - activos.length
-                      : null
-              if (f.valor === 'archivados' && !n) return null
-              return (
-                <button
-                  key={f.valor}
-                  type="button"
-                  onClick={() => setFiltro(f.valor)}
-                  className={`text-xs font-medium px-3 py-1.5 rounded-full border ${
-                    filtro === f.valor
-                      ? 'bg-neutral-900 text-white border-neutral-900'
-                      : 'border-neutral-200 text-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  {f.texto}
-                  {n ? <span className="ml-1 opacity-70">{n}</span> : null}
-                </button>
-              )
-            })}
-          </div>
-          <div className="flex gap-2 shrink-0">
+                      : null,
+            }))}
+          />
+          {/* Solo si hay algo que agrupar: un local que todavia no clasifico
+              nada no gana nada con un desplegable que solo dice "Todo". */}
+          {(cats.length > 0 || haySinCategoria) && (
+            <FiltroDesplegable
+              etiqueta="Categoría"
+              valor={categoria}
+              alCambiar={setCategoria}
+              opciones={[
+                { valor: 'todas', texto: 'Todo el depósito' },
+                ...cats.map((c) => ({ valor: String(c.id), texto: c.nombre, contador: c.usos })),
+                ...(haySinCategoria
+                  ? [
+                      {
+                        valor: SIN_CATEGORIA,
+                        texto: 'Sin categoría',
+                        contador: activos.filter((i) => !i.categoria_id).length,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          )}
+          <div className="flex gap-2 shrink-0 ml-auto">
             <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
               Conteo físico
             </Boton>
@@ -551,6 +628,9 @@ export default function Inventario() {
                         {ing.nombre}
                       </button>
                       <span className="block text-[11px] text-neutral-400 mt-0.5">
+                        {ing.categoria && (
+                          <span className="text-neutral-500 font-medium">{ing.categoria} · </span>
+                        )}
                         {ing.tipo === 'reventa' ? 'Reventa' : 'Materia prima'} · por {ing.unidad}
                       </span>
                     </td>
@@ -679,6 +759,17 @@ export default function Inventario() {
           </Aviso>
         )}
           </>
+        )}
+
+        {seccion === 'categorias' && (
+          <SeccionCategorias
+            categorias={cats}
+            ingredientes={ingredientes}
+            onCambio={async () => {
+              await recargarCats()
+              await cargar()
+            }}
+          />
         )}
 
         {seccion === 'perdidas' && (
@@ -836,12 +927,20 @@ export default function Inventario() {
           ing={fichaIng}
           mermas={fichaIng ? mermas.filter((m) => m.ingrediente_id === fichaIng.id && !m.revertida) : []}
           onCerrar={() => setFicha(null)}
-          onGuardar={(datos) => guardarFicha(datos, fichaIng?.id ?? null)}
+          categorias={cats}
+          onCrearCategoria={crearCategoria}
+          onGuardar={async (datos) => {
+            const ok = await guardarFicha(datos, fichaIng?.id ?? null)
+            // Los conteos por categoria cambian al mover una mercancia.
+            if (ok) void recargarCats()
+            return ok
+          }}
           acciones={{ comprar, merma, consumoPersonal, contar, archivar: (ing) => archivar(ing, false) }}
         />
       )}
 
       {contando && <ConteoFisico ingredientes={activos} onCerrar={() => setContando(false)} onGuardado={conteoGuardado} />}
+
 
       {/* El aviso llega en el momento de la compra, no cuando el promedio por
           fin se mueva - para entonces ya vendiste semanas al precio viejo. */}
@@ -934,6 +1033,7 @@ function datosDe(ing: Ingrediente): DatosIngrediente {
     costo_unitario: ing.costo_unitario,
     rendimiento_pct: ing.rendimiento_pct,
     tipo: ing.tipo ?? 'insumo',
+    categoria_id: ing.categoria_id ?? null,
     activo: ing.activo !== false,
     exento: ing.exento ?? false,
   }
@@ -948,12 +1048,18 @@ function datosDe(ing: Ingrediente): DatosIngrediente {
 function FichaInsumo({
   ing,
   mermas,
+  categorias,
+  onCrearCategoria,
   onCerrar,
   onGuardar,
   acciones,
 }: {
   ing: Ingrediente | null
   mermas: Merma[]
+  /** Los cajones del deposito, para elegir en cual va esta mercancia. */
+  categorias: CategoriaInsumo[]
+  /** Crear uno nuevo sin salir de la ficha. Devuelve su id. */
+  onCrearCategoria: (nombre: string) => Promise<number>
   onCerrar: () => void
   onGuardar: (datos: DatosIngrediente) => Promise<boolean>
   acciones: {
@@ -965,9 +1071,11 @@ function FichaInsumo({
   }
 }) {
   const nuevo = ing === null
+  const dialogo = useDialogo()
   const [f, setF] = useState(() => ({
     nombre: ing?.nombre ?? '',
     tipo: (ing?.tipo ?? 'insumo') as 'insumo' | 'reventa',
+    categoria_id: ing?.categoria_id ?? null,
     unidad: ing?.unidad ?? 'kg',
     stock_actual: '',
     stock_minimo: ing ? cantidad(ing.stock_minimo) : '',
@@ -1021,7 +1129,8 @@ function FichaInsumo({
   }, [ing, desdeExtracto])
 
   const num = (v: string) => Number(v.trim().replace(',', '.'))
-  const poner = (k: keyof typeof f, v: string) => setF((a) => ({ ...a, [k]: v }))
+  const poner = (k: keyof typeof f, v: string | number | null | boolean) =>
+    setF((a) => ({ ...a, [k]: v }))
 
   async function guardar() {
     setAviso('')
@@ -1039,6 +1148,7 @@ function FichaInsumo({
     await onGuardar({
       nombre: f.nombre.trim(),
       tipo: f.tipo,
+      categoria_id: f.categoria_id,
       unidad: f.unidad,
       stock_minimo: minimo,
       stock_objetivo: objetivo,
@@ -1109,6 +1219,36 @@ function FichaInsumo({
         <Selector etiqueta="Qué es" value={f.tipo} onChange={(e) => poner('tipo', e.target.value)}>
           <option value="insumo">Materia prima (entra en recetas)</option>
           <option value="reventa">Reventa (se vende tal cual)</option>
+        </Selector>
+        {/* AQUI se le pone cajon a una mercancia, y AQUI se le cambia: es la
+            misma accion. La ultima opcion crea uno nuevo sin salir de la ficha,
+            porque acordarse de la categoria suele pasar justo al cargar algo,
+            y mandar al dueño a otra pantalla en ese momento es perder el hilo. */}
+        <Selector
+          etiqueta="Categoría"
+          value={f.categoria_id === null ? '' : String(f.categoria_id)}
+          onChange={async (e) => {
+            const v = e.target.value
+            if (v !== 'nueva') {
+              poner('categoria_id', v === '' ? null : Number(v))
+              return
+            }
+            const nombre = await dialogo.pedirTexto({
+              titulo: 'Nueva categoría',
+              texto: 'Un cajón del depósito: Carnes, Lácteos, Empaques…',
+              etiqueta: 'Nombre',
+            })
+            if (!nombre?.trim()) return
+            poner('categoria_id', await onCrearCategoria(nombre))
+          }}
+        >
+          <option value="">Sin categoría</option>
+          {categorias.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nombre}
+            </option>
+          ))}
+          <option value="nueva">+ Nueva categoría…</option>
         </Selector>
         <Selector etiqueta="Se mide en" value={f.unidad} onChange={(e) => poner('unidad', e.target.value)}>
           {UNIDADES.map((u) => (
@@ -1769,5 +1909,270 @@ function ConteoFisico({
         </tbody>
       </table>
     </Modal>
+  )
+}
+
+
+/**
+ * SUBMODULO DE CATEGORIAS. Deliberadamente igual al de Menu.
+ *
+ * Misma forma: la columna de categorias a la izquierda --cada una con lo que
+ * tiene dentro y su menu de "⋯"-- y a la derecha lo que hay en la elegida. El
+ * boton de crear es el mismo rectangulo punteado al pie de la columna, y el
+ * menu de acciones es literalmente el mismo componente
+ * (`components/MenuAcciones`), no uno parecido.
+ *
+ * POR QUE ASI. Leider (24-sep): "no puede ser que el cliente tenga que
+ * aprender de forma distinta como crear para cada modulo". Quien ya organizo
+ * el menu sabe organizar el deposito sin que nadie le explique nada: se crea
+ * igual, se renombra igual y se borra igual.
+ *
+ * LA DIFERENCIA CON EL MENU, y es de fondo: un producto SIEMPRE pertenece a
+ * una categoria; una mercancia puede no tener ninguna, y eso es normal --se
+ * carga una factura a las prisas y se clasifica despues--. Por eso la columna
+ * tiene un cajon mas, "Sin categoría", que no se puede renombrar ni borrar
+ * porque no es una categoria: es la ausencia de una.
+ */
+const SIN_CAJON = -1
+
+function SeccionCategorias({
+  categorias,
+  ingredientes,
+  onCambio,
+}: {
+  categorias: CategoriaInsumo[]
+  ingredientes: Ingrediente[]
+  onCambio: () => Promise<void>
+}) {
+  const dialogo = useDialogo()
+  const [elegida, setElegida] = useState<number | null>(null)
+  const [error, setError] = useState('')
+  const [ocupado, setOcupado] = useState(false)
+
+  /**
+   * Arrastrar una mercancia hasta un cajon de la columna.
+   *
+   * La MISMA primitiva que el menu (`lib/arrastre`), que va por eventos de
+   * puntero y no por el arrastre de HTML: el de HTML no existe en pantallas
+   * tactiles, y esto se usa en tablets. Soltar sobre "Sin categoría" la saca
+   * de donde estuviera, que es como se deshace sin tener que buscar un menu.
+   */
+  const arrastre = useArrastre<Ingrediente>(async (ing, destino) => {
+    const id = Number(destino.replace('cajon-', ''))
+    if (!Number.isFinite(id)) return
+    const nuevo = id === SIN_CAJON ? null : id
+    if ((ing.categoria_id ?? null) === nuevo) return
+    await intentar(() => api.actualizarIngrediente(ing.id, { ...datosDe(ing), categoria_id: nuevo }))
+  })
+
+  const activos = ingredientes.filter((i) => i.activo !== false)
+  const sinCajon = activos.filter((i) => !i.categoria_id)
+  const actual = elegida ?? (categorias[0]?.id ?? (sinCajon.length ? SIN_CAJON : null))
+  const dentro =
+    actual === SIN_CAJON ? sinCajon : activos.filter((i) => i.categoria_id === actual)
+  const nombreActual =
+    actual === SIN_CAJON ? 'Sin categoría' : categorias.find((c) => c.id === actual)?.nombre ?? ''
+
+  async function intentar(accion: () => Promise<unknown>) {
+    setOcupado(true)
+    setError('')
+    try {
+      await accion()
+      await onCambio()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo')
+    }
+    setOcupado(false)
+  }
+
+  async function crear() {
+    const nombre = await dialogo.pedirTexto({
+      titulo: 'Nueva categoría',
+      texto: 'Un cajón del depósito: Carnes, Lácteos, Empaques…',
+      etiqueta: 'Nombre',
+    })
+    if (!nombre?.trim()) return
+    await intentar(async () => {
+      const cat = await api.crearCategoriaInsumo(nombre)
+      setElegida(cat.id)
+    })
+  }
+
+  async function renombrar(c: CategoriaInsumo) {
+    const nombre = await dialogo.pedirTexto({
+      titulo: `Renombrar «${c.nombre}»`,
+      texto: 'Se cambia en toda su mercancía. Si le pones el nombre de otra categoría, las dos se juntan en una.',
+      etiqueta: 'Nombre',
+      valor: c.nombre,
+    })
+    if (!nombre?.trim() || nombre.trim() === c.nombre) return
+    await intentar(() => api.renombrarCategoriaInsumo(c.id, nombre))
+  }
+
+  async function borrar(c: CategoriaInsumo) {
+    const ok = await dialogo.confirmar({
+      titulo: `¿Borrar la categoría «${c.nombre}»?`,
+      texto: c.usos
+        ? `Su mercancía NO se borra: ${c.usos} artículo(s) quedan sin categoría y se les puede poner otra cuando quieras.`
+        : 'Está vacía, así que no afecta a ninguna mercancía.',
+      aceptar: 'Borrar la categoría',
+      peligro: true,
+    })
+    if (!ok) return
+    await intentar(async () => {
+      await api.borrarCategoriaInsumo(c.id)
+      setElegida(null)
+    })
+  }
+
+  /** Mover una mercancia de cajon: la misma accion que en su ficha. */
+  async function mover(ing: Ingrediente) {
+    const destino = await dialogo.elegir({
+      titulo: `¿A qué categoría va «${ing.nombre}»?`,
+      opciones: [
+        ...categorias
+          .filter((c) => c.id !== ing.categoria_id)
+          .map((c) => ({ valor: String(c.id), texto: c.nombre })),
+        ...(ing.categoria_id ? [{ valor: '', texto: 'Sin categoría' }] : []),
+      ],
+    })
+    if (destino === null) return
+    await intentar(() =>
+      api.actualizarIngrediente(ing.id, {
+        ...datosDe(ing),
+        categoria_id: destino === '' ? null : Number(destino),
+      }),
+    )
+  }
+
+  const fila = (id: number, nombre: string, cuantos: number, acciones: ReactNode) => {
+    const activa = id === actual
+    const encima = arrastre.sobre === `cajon-${id}` && arrastre.carga !== null
+    return (
+      <div
+        key={id}
+        data-soltar={`cajon-${id}`}
+        className={`group flex items-center gap-1 rounded-xl shrink-0 md:shrink transition ${
+          encima ? 'bg-acento-50 ring-2 ring-acento-400' : activa ? 'bg-neutral-100' : 'hover:bg-neutral-50'
+        }`}
+      >
+        <button
+          onClick={() => setElegida(id)}
+          aria-current={activa ? 'true' : undefined}
+          className="flex-1 min-w-0 text-left px-2 py-2.5 min-h-[40px]"
+        >
+          <span className={`block truncate text-sm ${activa ? 'font-semibold' : ''}`}>{nombre}</span>
+          <span className="block text-[11px] text-neutral-400">
+            {cuantos} mercancía(s)
+          </span>
+        </button>
+        {acciones}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {error && <Aviso>{error}</Aviso>}
+      <div className="grid grid-cols-1 md:grid-cols-[15rem_1fr] lg:grid-cols-[17rem_1fr] gap-4 lg:gap-5 items-start">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-2 md:sticky md:top-[84px]">
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 px-2 pt-1.5 pb-2">
+            Categorías
+          </p>
+          <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
+            {categorias.map((c) =>
+              fila(
+                c.id,
+                c.nombre,
+                c.usos,
+                <MenuAcciones
+                  etiqueta={`Opciones de ${c.nombre}`}
+                  opciones={[
+                    { texto: 'Renombrar', onElegir: () => renombrar(c) },
+                    { texto: 'Borrar la categoría', peligro: true, onElegir: () => borrar(c) },
+                  ]}
+                />,
+              ),
+            )}
+            {sinCajon.length > 0 &&
+              fila(SIN_CAJON, 'Sin categoría', sinCajon.length, <span className="w-9 shrink-0" />)}
+          </div>
+
+          <div className="p-2 pt-2.5 mt-1 border-t border-neutral-100">
+            <button
+              onClick={crear}
+              disabled={ocupado}
+              className="w-full rounded-lg border border-dashed border-neutral-300 py-2.5 text-sm font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-900 disabled:opacity-40"
+            >
+              + Categoría
+            </button>
+          </div>
+        </div>
+
+        <Seccion
+          titulo={nombreActual || 'Categorías del depósito'}
+          ayuda={
+            actual === SIN_CAJON
+              ? 'Mercancía que todavía no está en ningún cajón. Es normal: se carga una factura a las prisas y se clasifica después. Arrástrala a una categoría de la izquierda.'
+              : 'Lo que hay en este cajón del depósito. Arrastra un renglón a otra categoría para moverlo.'
+          }
+          plano
+        >
+          {dentro.length === 0 ? (
+            <Vacio
+              icono="inventario"
+              titulo={categorias.length === 0 ? 'Todavía no hay categorías' : 'Esta categoría está vacía'}
+              detalle={
+                categorias.length === 0
+                  ? 'Crea la primera con «+ Categoría» y después trae aquí la mercancía que le toca.'
+                  : 'Arrastra mercancía hasta esta categoría desde otra, o usa «Mover a…» en cada renglón.'
+              }
+            />
+          ) : (
+            <ul className="divide-y divide-neutral-100">
+              {dentro.map((i) => (
+                <li key={i.id} className="flex items-center gap-2 px-2 py-2.5 sm:px-4 sm:gap-3">
+                  {/* El agarre es suyo y no de toda la fila, igual que en el
+                      menu: tocar la fila no puede empezar un arrastre sin
+                      querer. */}
+                  <button
+                    aria-label={`Mover ${i.nombre} de categoría`}
+                    onPointerDown={(e) => arrastre.empezar(e, i)}
+                    className="hidden md:grid place-items-center w-7 h-10 shrink-0 text-neutral-300 hover:text-neutral-500 cursor-grab touch-none"
+                  >
+                    <Agarre />
+                  </button>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium truncate">{i.nombre}</span>
+                    <span className="block text-[11px] text-neutral-400">
+                      {i.tipo === 'reventa' ? 'Reventa' : 'Materia prima'} · por {i.unidad}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => mover(i)}
+                    disabled={ocupado}
+                    className="shrink-0 text-xs font-medium text-neutral-600 hover:text-neutral-900 disabled:opacity-40"
+                  >
+                    Mover a…
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Seccion>
+      </div>
+
+      {/* Lo que va en el aire, pegado al dedo: sin esto, arrastrar no se ve
+          hasta soltar y no se sabe si el gesto fue tomado. */}
+      {arrastre.carga && arrastre.punto && (
+        <div
+          className="fixed z-50 pointer-events-none rounded-xl bg-neutral-900 text-white text-sm font-medium px-3 py-2 shadow-xl"
+          style={{ left: arrastre.punto.x + 12, top: arrastre.punto.y - 14 }}
+        >
+          {arrastre.carga.nombre}
+        </div>
+      )}
+    </>
   )
 }

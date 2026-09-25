@@ -71,6 +71,7 @@ import type {
   AnalisisTasa,
   ListaVentas,
   ResumenVentas,
+  CategoriaInsumo,
   EstadoPabilo,
   VerificacionPago,
 } from './types'
@@ -261,6 +262,15 @@ export const api = {
   // ── Verificar pagos moviles contra el banco (Pabilo) ──
   // Si el local no tiene la clave, `configurado` viene en false y el cuadro
   // de cobro no menciona la verificacion: se anota la referencia como siempre.
+  // ── Categorias del deposito ──
+  listarCategoriasInsumo: () => req<CategoriaInsumo[]>('/inventario/categorias'),
+  crearCategoriaInsumo: (nombre: string) =>
+    req<CategoriaInsumo>('/inventario/categorias', { method: 'POST', body: JSON.stringify({ nombre }) }),
+  renombrarCategoriaInsumo: (id: number, nombre: string) =>
+    req<CategoriaInsumo>(`/inventario/categorias/${id}`, { method: 'PUT', body: JSON.stringify({ nombre }) }),
+  borrarCategoriaInsumo: (id: number) =>
+    req<{ sin_categoria: number }>(`/inventario/categorias/${id}`, { method: 'DELETE' }),
+
   estadoPabilo: () => req<EstadoPabilo>('/pagos/estado'),
   verificarPago: (datos: {
     referencia: string
@@ -554,7 +564,10 @@ export const api = {
     }),
   eliminarGasto: (id: number) => req(`/caja/gastos/${id}`, { method: 'DELETE' }),
 
-  reporte: (r: Rango) => req<ReporteResumen>(`/reportes/resumen${conRango(r)}`),
+  // `paso` fuerza el grano de la serie (dia | semana | mes). Sin el, el
+  // servidor lo elige por el largo del rango.
+  reporte: (r: Rango, paso?: string) =>
+    req<ReporteResumen>(`/reportes/resumen${conRango(r)}${paso ? `&paso=${paso}` : ''}`),
 
   notasCreditoCompra: (facturaId: number) =>
     req<NotaCreditoCompra[]>(`/compras/facturas/${facturaId}/notas-credito`),

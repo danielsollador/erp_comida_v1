@@ -46,10 +46,22 @@ export function entraAModulo(puede: { modulos?: string[] }, modulo: string | str
   return Array.isArray(modulo) ? modulo.some((m) => entraA(puede, m)) : entraA(puede, modulo)
 }
 
+/**
+ * Las pantallas que van a pantalla completa, sin barra lateral.
+ *
+ * Cocina y el mostrador se quedan abiertas el turno entero en una tablet y no
+ * se navega desde ellas: se entra, se trabaja y se sale. Los 68 px de la barra
+ * son ancho que le hace falta a la lista de productos, que es lo que el cajero
+ * de verdad mira. Para salir esta la flecha del encabezado, que siempre esta.
+ */
+export function sinBarraLateral(pathname: string): boolean {
+  return pathname.startsWith('/cocina') || pathname.startsWith('/pos')
+}
+
 export default function Rail() {
   const { estado } = useAcceso()
   const { pathname } = useLocation()
-  if (pathname.startsWith('/cocina')) return null
+  if (sinBarraLateral(pathname)) return null
 
   const visibles = MODULOS.filter((m) => entraAModulo(estado.puede, m.modulo))
   const operacion = visibles.filter((m) => m.grupo === 'operacion')

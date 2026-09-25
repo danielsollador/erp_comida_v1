@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import Icono from './Icono'
 import {
@@ -98,22 +98,34 @@ function PanelFechas({
   onElegir: (r: Rango) => void
 }) {
   // En pantalla ancha, anclado bajo el boton; en el telefono, hoja desde abajo.
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
-  useEffect(() => {
-    const medir = () => {
-      const el = ancla.current
-      if (!el || window.innerWidth < 640) {
-        setPos(null)
-        return
-      }
-      const r = el.getBoundingClientRect()
-      const left = Math.max(8, Math.min(r.right - ANCHO_PANEL, window.innerWidth - ANCHO_PANEL - 8))
-      setPos({ top: r.bottom + 6, left })
-    }
-    medir()
-    window.addEventListener('resize', medir)
-    return () => window.removeEventListener('resize', medir)
+  //
+  // SE MIDE ANTES DE PINTAR. Esto vivia en un `useEffect`, que corre cuando el
+  // navegador YA pinto, asi que el primer fotograma salia con `pos` en null --
+  // y con `pos` en null este panel es la hoja de telefono: fondo negro al 40 %
+  // con desenfoque tapando la pantalla entera y el panel pegado abajo. En el
+  // fotograma siguiente saltaba a su sitio bajo el boton y el fondo se volvia
+  // transparente. Ese destello negro en cada toque del filtro era el parpadeo
+  // que Leider reporto cuatro veces (24-sep: "cuando aprieto el filtro de
+  // fecha se reinicia la pantalla").
+  //
+  // Ahora el valor ya viene medido en el estado inicial --el boton existe
+  // antes que este panel, asi que se puede medir durante el render-- y
+  // `useLayoutEffect` lo corrige antes de pintar si cambia el tamaño de la
+  // ventana. El primer fotograma ya es el definitivo.
+  const medir = useCallback(() => {
+    const el = ancla.current
+    if (!el || window.innerWidth < 640) return null
+    const r = el.getBoundingClientRect()
+    const left = Math.max(8, Math.min(r.right - ANCHO_PANEL, window.innerWidth - ANCHO_PANEL - 8))
+    return { top: r.bottom + 6, left }
   }, [ancla])
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(medir)
+  useLayoutEffect(() => {
+    const alCambiar = () => setPos(medir())
+    alCambiar()
+    window.addEventListener('resize', alCambiar)
+    return () => window.removeEventListener('resize', alCambiar)
+  }, [medir])
 
   useEffect(() => {
     const alPulsar = (e: KeyboardEvent) => {

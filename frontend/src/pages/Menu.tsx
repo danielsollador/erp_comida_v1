@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import MenuAcciones from '../components/MenuAcciones'
+import Agarre from '../components/Agarre'
 import { useDialogo } from '../components/dialogo'
 import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina, Vacio } from '../components/ui'
@@ -360,7 +362,7 @@ function ListaCategorias({
                 onPointerDown={(e) => arrastre.empezar(e, { tipo: 'categoria', id: cat.id })}
                 className="hidden md:grid place-items-center w-7 h-10 shrink-0 text-neutral-300 group-hover:text-neutral-500 cursor-grab touch-none"
               >
-                <Puntos />
+                <Agarre />
               </button>
               <button
                 onClick={() => onElegir(cat.id)}
@@ -638,7 +640,7 @@ function TarjetaProducto({
           onPointerDown={(e) => arrastre.empezar(e, { tipo: 'producto', producto })}
           className="grid place-items-center w-7 h-10 shrink-0 text-neutral-300 hover:text-neutral-500 cursor-grab touch-none"
         >
-          <Puntos />
+          <Agarre />
         </button>
         <button onClick={renombrar} className="min-w-0 text-left flex-1 py-1.5">
           <span className="font-medium">{producto.nombre}</span>
@@ -906,106 +908,6 @@ function Buscador({ valor, onCambio }: { valor: string; onCambio: (v: string) =>
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
-    </div>
-  )
-}
-
-/** El agarre: seis puntos, que es como se dibuja "esto se arrastra". */
-function Puntos() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden>
-      <circle cx="6" cy="3" r="1.3" />
-      <circle cx="10" cy="3" r="1.3" />
-      <circle cx="6" cy="8" r="1.3" />
-      <circle cx="10" cy="8" r="1.3" />
-      <circle cx="6" cy="13" r="1.3" />
-      <circle cx="10" cy="13" r="1.3" />
-    </svg>
-  )
-}
-
-// `marcada`: una de dos (o mas) opciones excluyentes, y esta es la vigente.
-type Opcion = { texto: string; ayuda?: string; peligro?: boolean; marcada?: boolean; onElegir: () => void }
-
-/**
- * El menú de "⋯".
- *
- * Lo que borra no puede estar al lado de lo que se toca todo el día: en una
- * tablet, "Borrar categoría" como enlace de texto pegado al nombre estaba a un
- * dedo mal puesto de distancia.
- */
-function MenuAcciones({
-  etiqueta,
-  opciones,
-  encabezado,
-}: {
-  etiqueta: string
-  opciones: Opcion[]
-  /** Algo que se elige de un toque y no cierra el menu, como el color. */
-  encabezado?: ReactNode
-}) {
-  const [abierto, setAbierto] = useState(false)
-  const caja = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!abierto) return
-    const fuera = (e: MouseEvent) => {
-      if (caja.current && !caja.current.contains(e.target as Node)) setAbierto(false)
-    }
-    const escape = (e: KeyboardEvent) => e.key === 'Escape' && setAbierto(false)
-    document.addEventListener('mousedown', fuera)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('mousedown', fuera)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [abierto])
-
-  return (
-    <div ref={caja} className="relative shrink-0">
-      <button
-        onClick={() => setAbierto((v) => !v)}
-        aria-label={etiqueta}
-        aria-haspopup="menu"
-        aria-expanded={abierto}
-        className="w-9 h-9 grid place-items-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-      >
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden>
-          <circle cx="3" cy="8" r="1.5" />
-          <circle cx="8" cy="8" r="1.5" />
-          <circle cx="13" cy="8" r="1.5" />
-        </svg>
-      </button>
-      {abierto && (
-        <div
-          role="menu"
-          className="absolute right-0 top-full mt-1 z-30 w-56 rounded-xl border border-neutral-200 bg-white shadow-lg p-1"
-        >
-          {encabezado}
-          {opciones.map((o) => (
-            <button
-              key={o.texto}
-              role={o.marcada === undefined ? 'menuitem' : 'menuitemradio'}
-              aria-checked={o.marcada}
-              onClick={() => {
-                setAbierto(false)
-                if (!o.marcada) o.onElegir()
-              }}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm hover:bg-neutral-50 ${
-                o.peligro ? 'text-peligro-600' : ''
-              } ${o.marcada ? 'font-semibold' : ''}`}
-            >
-              {o.marcada !== undefined && (
-                <span aria-hidden className={`inline-block w-4 ${o.marcada ? 'text-acento-700' : 'text-transparent'}`}>
-                  ✓
-                </span>
-              )}
-              {o.texto}
-              {o.ayuda && <span className="block text-[11px] text-neutral-400">{o.ayuda}</span>}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

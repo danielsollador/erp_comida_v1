@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Ayuda } from '../../../components/Ayuda'
 import {
   BarrasApiladas,
@@ -9,10 +9,10 @@ import {
   PALETA_CATEGORICA,
 } from '../../../components/Grafico'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
-import { Seccion } from '../../../components/ui'
+import { Filtros, Seccion } from '../../../components/ui'
 import { explicar } from '../../../lib/glosario'
 import type { ParCombo, ProductoVendido, ReporteCombos, ReporteResumen } from '../../../lib/types'
-import { Bloque, DIA_LARGO, Vacio, type Dinero } from './comunes'
+import { Bloque, DIA_LARGO, Vacio, recortarSerie, type Dinero } from './comunes'
 
 /**
  * La seccion Ventas: cuando se vende, que se vende y que se vende junto.
@@ -28,12 +28,17 @@ export default function Ventas({
   dinero,
   corto,
   fmt,
+  paso,
+  alCambiarPaso,
 }: {
   datos: ReporteResumen
   combos: ReporteCombos | null
   dinero: Dinero
   corto: (x: number) => string
   fmt: (usd: number | null | undefined, decimales?: number) => string
+  /** El grano elegido: 'auto' | 'dia' | 'semana' | 'mes'. */
+  paso: string
+  alCambiarPaso: (id: string) => void
 }) {
   // Los hooks antes de cualquier salida temprana.
   const ordenProductos = useOrden<ProductoVendido>({
@@ -51,7 +56,14 @@ export default function Ventas({
   const [medida, setMedida] = useState<'pedidos' | 'ventas'>('pedidos')
 
   const ant = datos.anterior
-  const mejor = datos.serie.reduce<(typeof datos.serie)[number] | null>(
+
+  // Recorta los tramos vacios de los extremos (ver `comunes.recortarSerie`).
+  const { serie, anterior: serieAnterior } = useMemo(
+    () => recortarSerie(datos.serie, datos.serie_anterior),
+    [datos.serie, datos.serie_anterior],
+  )
+
+  const mejor = serie.reduce<(typeof serie)[number] | null>(
     (m, p) => (p.pedidos > 0 && (!m || p.ventas > m.ventas) ? p : m),
     null,
   )
@@ -78,12 +90,13 @@ export default function Ventas({
 
   // ── Que ──
   const conCosto = datos.top_productos.filter((p) => !p.sin_receta)
+  const sinReceta = datos.top_productos.filter((p) => p.sin_receta)
 
   return (
     <>
       {/* ── 1. Cuando se vende ─────────────────────────────────────────── */}
       <Bloque titulo="Cuándo se vende" descripcion="La hora es la de tomar el pedido, no la de cobrarlo.">
-        {datos.serie.length > 0 ? (
+        {serie.length > 0 ? (
           <Seccion
             titulo={`Ventas por ${datos.granularidad}`}
             ayuda={
@@ -91,25 +104,44 @@ export default function Ventas({
                 ? `La línea punteada es ${ant.etiqueta}, tramo a tramo: la misma hora, el mismo día de la semana.`
                 : undefined
             }
+            /* EL GRANO LO ELIGE EL DUEÑO. El automatico mira el largo del
+               rango y casi siempre acierta, pero "casi" no sirve cuando lo
+               que quieres ver es justo el dia: un rango de nueve meses se
+               dibujaba por semanas y no habia forma de bajarlo (Leider,
+               24-sep). Va en la esquina de la tarjeta, que es donde se busca
+               un ajuste del grafico y no una accion de la pantalla. */
+            accion={
+              <Filtros
+                tamano="chico"
+                activo={paso}
+                alElegir={alCambiarPaso}
+                opciones={[
+                  { valor: 'auto', texto: 'Auto' },
+                  { valor: 'dia', texto: 'Día' },
+                  { valor: 'semana', texto: 'Semana' },
+                  { valor: 'mes', texto: 'Mes' },
+                ]}
+              />
+            }
           >
             <GraficoLineas
               alto={240}
-              etiquetas={datos.serie.map((p) => p.etiqueta)}
+              etiquetas={serie.map((p) => p.etiqueta)}
               formato={corto}
               formatoDetalle={(n) => dinero(n)}
               series={[
                 {
                   nombre: 'Este período',
                   color: 'var(--color-neutral-900)',
-                  valores: datos.serie.map((p) => p.ventas),
+                  valores: serie.map((p) => p.ventas),
                   relleno: true,
                 },
-                ...(datos.serie_anterior.length === datos.serie.length && ant
+                ...(serieAnterior.length === serie.length && ant
                   ? [
                       {
                         nombre: `${ant.etiqueta[0].toUpperCase()}${ant.etiqueta.slice(1)}`,
                         color: 'var(--color-neutral-400)',
-                        valores: datos.serie_anterior.map((p) => p.ventas),
+                        valores: serieAnterior.map((p) => p.ventas),
                         punteada: true,
                       },
                     ]
@@ -138,19 +170,17 @@ export default function Ventas({
             {datos.calor.length > 0 && (
               <Seccion
                 titulo="A qué hora y qué día entran los clientes"
-                ayuda="Cada casilla es un día de la semana a una hora, sumando todo el período. Más oscuro, más pedidos."
+                ayuda="Cada casilla es una hora de un día de la semana, sumando todo el período. Más oscuro, más movimiento."
                 accion={
-                  <div className="flex rounded-lg border border-neutral-200 overflow-hidden text-xs">
-                    {(['pedidos', 'ventas'] as const).map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => setMedida(m)}
-                        className={`px-2.5 py-1 ${medida === m ? 'bg-neutral-900 text-white' : 'text-neutral-600'}`}
-                      >
-                        {m === 'pedidos' ? 'Pedidos' : 'Ventas'}
-                      </button>
-                    ))}
-                  </div>
+                  <Filtros
+                    tamano="chico"
+                    activo={medida}
+                    alElegir={setMedida}
+                    opciones={[
+                      { valor: 'pedidos', texto: 'Pedidos' },
+                      { valor: 'ventas', texto: 'Ventas' },
+                    ]}
+                  />
                 }
               >
                 <MapaCalor celdas={datos.calor} medida={medida} formato={dinero} />
@@ -242,6 +272,24 @@ export default function Ventas({
                   <p className="text-xs text-neutral-500 mt-3">
                     En total, {corto(conCosto.reduce((s, p) => s + p.ingresos, 0))} vendidos con receta
                     dejaron {corto(conCosto.reduce((s, p) => s + p.ganancia, 0))} de ganancia bruta.
+                  </p>
+                )}
+                {/* LO QUE EL GRAFICO NO PUEDE DECIR SOLO. Sin receta no hay
+                    costo, asi que la barra es de un color plano y el margen es
+                    "?": el grafico existe pero no responde su propia pregunta.
+                    Decirlo con la cuenta exacta --y con el enlace a donde se
+                    arregla-- convierte un grafico mudo en una tarea. */}
+                {sinReceta.length > 0 && (
+                  <p className="text-xs text-aviso-800 bg-aviso-500/10 rounded-xl px-3 py-2.5 mt-3">
+                    <strong>
+                      {sinReceta.length} de {datos.top_productos.length} productos sin receta
+                    </strong>{' '}
+                    ({corto(sinReceta.reduce((s, p) => s + p.ingresos, 0))} vendidos). Hasta que las
+                    cargues no se puede saber cuánto deja cada uno: esas barras muestran el ingreso
+                    completo, no la ganancia.{' '}
+                    <a href="/menu?s=recetas" className="underline font-medium">
+                      Cargar recetas
+                    </a>
                   </p>
                 )}
               </Seccion>

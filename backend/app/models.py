@@ -166,6 +166,31 @@ class Variante(Base):
     producto = relationship("Producto", back_populates="variantes")
 
 
+class CategoriaInsumo(Base):
+    """En que parte del deposito vive una mercancia: Carnes, Lacteos, Empaques.
+
+    ES UNA TABLA Y NO UN TEXTO EN CADA INSUMO, y eso costo un rodeo. Primero
+    fue texto libre, como el proveedor, para no obligar a crear la categoria
+    antes de poder cargar mercancia. Pero una categoria guardada solo dentro de
+    sus insumos NO EXISTE mientras no tenga ninguno: no se puede crear una
+    vacia para ir llenandola, renombrarla obliga a editar uno por uno todos sus
+    insumos, y no hay donde verlas juntas (Leider, 24-sep: "no hay lugar donde
+    agregar otra categoria").
+
+    Con tabla propia: se crea vacia, se renombra en un sitio, se ve cuanta
+    mercancia tiene cada una y dos no pueden llamarse igual.
+
+    Se desactiva, no se borra, igual que las categorias del menu: la mercancia
+    que la usaba queda sin categoria, pero no se pierde ni una fila.
+    """
+
+    __tablename__ = "DIM305_INV_CATEGORIA"
+
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String, nullable=False)
+    activo = Column(Boolean, default=True)
+
+
 class Ingrediente(Base):
     __tablename__ = "DIM310_INV_INGREDIENTE"
 
@@ -190,6 +215,11 @@ class Ingrediente(Base):
     # deposito por partes y porque el de reventa no tiene rendimiento que
     # medir.
     tipo = Column(String, default="insumo")
+    # En que parte del deposito vive (ver CategoriaInsumo). NULL = sin
+    # clasificar, que es un estado normal: cargar mercancia no puede depender
+    # de haber pensado antes en que cajon va.
+    categoria_id = Column(Integer, ForeignKey("DIM305_INV_CATEGORIA.id"), nullable=True, index=True)
+    categoria = relationship("CategoriaInsumo", lazy="joined")
     # Un insumo que ya no se compra no se borra: tiene recetas, compras y
     # mermas colgando. Se archiva y deja de aparecer en listas y sugerencias.
     activo = Column(Boolean, default=True)

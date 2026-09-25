@@ -72,6 +72,10 @@ export type Ingrediente = {
   rendimiento_pct: number
   /** Materia prima de recetas, o mercancia que se compra y se vende tal cual. */
   tipo: 'insumo' | 'reventa'
+  /** En que cajon del deposito vive. null = sin clasificar, que es normal. */
+  categoria_id: number | null
+  /** El nombre de esa categoria, ya resuelto por el servidor. '' si no tiene. */
+  categoria: string
   /** false = archivado: no se lista para comprar ni entra en sugerencias. */
   activo: boolean
   /** Exento de IVA (la mayoria de alimentos basicos en Venezuela lo son). */
@@ -94,6 +98,7 @@ export type DatosIngrediente = Pick<
   | 'costo_unitario'
   | 'rendimiento_pct'
   | 'tipo'
+  | 'categoria_id'
   | 'activo'
   | 'exento'
 > & {
@@ -1452,3 +1457,10 @@ export type VerificacionPago = {
   pedido_numero: number | null
 }
 
+/** Un cajon del deposito. Vive por su cuenta: existe aunque este vacio. */
+export type CategoriaInsumo = {
+  id: number
+  nombre: string
+  /** Cuanta mercancia tiene dentro. */
+  usos: number
+}

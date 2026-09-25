@@ -100,7 +100,6 @@ export default function POS() {
   // fichas grandes (decenas de nodos con sombra y borde) y luego un <select>
   // que se cerraba en cada eleccion: dos toques por producto. Se pliega con
   // el encabezado cuando lo que hace falta es ver las comandas.
-  const [listaAbierta, setListaAbierta] = useState(true)
   // Pantalla que vive horas abierta en la tablet: sin desenfoques ni
   // animaciones (lib/ligero).
   useModoLigero()
@@ -141,6 +140,21 @@ export default function POS() {
   // Lo ultimo que se pinto, para no repintar cuando el servidor manda lo mismo.
   const firmaPedidos = useRef('')
   const [vista, irA] = useSeccion(SECCIONES_POS)
+  /**
+   * "Comanda #12 enviada", un momento y se va sola.
+   *
+   * Sin esto, mandar una comanda se sentia como si no hubiera pasado nada: el
+   * carrito se vaciaba y ya. Con un cliente enfrente y ruido alrededor, el
+   * cajero no sabia si habia salido o si le habia fallado el toque, y volvia a
+   * tocar "Enviar" -- que no duplica el pedido (la clave de idempotencia lo
+   * impide) pero lo deja dudando igual.
+   */
+  const [comandaEnviada, setComandaEnviada] = useState<{ numero: number; cliente: string } | null>(null)
+  useEffect(() => {
+    if (!comandaEnviada) return
+    const t = setTimeout(() => setComandaEnviada(null), 4000)
+    return () => clearTimeout(t)
+  }, [comandaEnviada])
   // Pago mixto: las partes que ya se anotaron. Antes era un desplegable con
   // UNA forma y un monto, y el resto se lo llevaba entera la segunda: no se
   // podia partir en tres, y para saber cuanto faltaba habia que restar de
@@ -615,10 +629,11 @@ export default function POS() {
     if (!claveComanda.current) claveComanda.current = uuid()
     const clave = claveComanda.current
     try {
-      await api.crearPedido(items, false, '', clave, nombre)
+      const creado = await api.crearPedido(items, false, '', clave, nombre)
       setCarrito({})
       setLibres([])
       setClienteComanda('')
+      setComandaEnviada({ numero: creado.numero, cliente: nombre })
       refrescarPedidos()
     } catch (e) {
       const mensaje = e instanceof Error ? e.message : 'Error al enviar la comanda'
@@ -634,10 +649,11 @@ export default function POS() {
           })
         ) {
           try {
-            await api.crearPedido(items, true, '', clave, nombre)
+            const creado = await api.crearPedido(items, true, '', clave, nombre)
             setCarrito({})
             setLibres([])
             setClienteComanda('')
+            setComandaEnviada({ numero: creado.numero, cliente: nombre })
             refrescarPedidos()
             return
           } catch (e2) {
@@ -1022,7 +1038,7 @@ export default function POS() {
         titulo="Punto de venta"
         secciones={[
           SECCIONES_POS[0],
-          { id: 'pedidos', texto: pedidosActivos.length ? `Pedidos · ${pedidosActivos.length}` : 'Pedidos' },
+          { ...SECCIONES_POS[1], contador: pedidosActivos.length },
         ]}
         seccion={vista}
         alCambiarSeccion={irA}
@@ -1058,39 +1074,32 @@ export default function POS() {
         <div className="p-4 overflow-y-auto md:h-full">
           {vista === 'tomar' && categorias.length > 0 && (
             <section className="vp-losa mb-5 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setListaAbierta((v) => !v)}
-                aria-expanded={listaAbierta}
-                className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left"
-              >
-                <span className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                  Productos
-                  {unidadesEnCarrito > 0 && (
-                    <span className="ml-2 normal-case tracking-normal text-neutral-400 font-medium">
-                      · {unidadesEnCarrito} en la comanda
-                    </span>
-                  )}
-                </span>
-                <span className="text-xs font-medium text-neutral-500">
-                  {listaAbierta ? 'Plegar ▴' : 'Desplegar ▾'}
-                </span>
-              </button>
+              {/* FIJO, no plegable. Plegar tenia sentido cuando productos y
+                  pedidos compartian la misma pantalla y habia que hacerles
+                  sitio; ahora son dos secciones ("Tomar pedido" y "Pedidos"),
+                  asi que plegar solo dejaba vacia la seccion en la que el
+                  cajero acaba de entrar a buscar productos. */}
+              <div className="px-4 py-2.5 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                Productos
+                {unidadesEnCarrito > 0 && (
+                  <span className="ml-2 normal-case tracking-normal text-neutral-400 font-medium">
+                    · {unidadesEnCarrito} en la comanda
+                  </span>
+                )}
+              </div>
 
-              {listaAbierta && (
-                <ListaProductos
-                  categorias={categorias}
-                  vendibles={vendibles}
-                  categoriaActiva={categoriaActiva}
-                  alElegirCategoria={setCategoriaActiva}
-                  cantidades={cantidades}
-                  recienAgregado={recienAgregado}
-                  onAgregar={agregarEstable}
-                  onQuitar={quitarEstable}
-                  fmt={fmt}
-                  envioId={categoriaEnvios?.id ?? null}
-                />
-              )}
+              <ListaProductos
+                categorias={categorias}
+                vendibles={vendibles}
+                categoriaActiva={categoriaActiva}
+                alElegirCategoria={setCategoriaActiva}
+                cantidades={cantidades}
+                recienAgregado={recienAgregado}
+                onAgregar={agregarEstable}
+                onQuitar={quitarEstable}
+                fmt={fmt}
+                envioId={categoriaEnvios?.id ?? null}
+              />
             </section>
           )}
 
@@ -1501,6 +1510,22 @@ export default function POS() {
             {faltaNombre && (
               <p className="text-xs text-peligro-600 mb-3">
                 Sin nombre no se puede comandar.
+              </p>
+            )}
+            {/* La comanda salio. AQUI, en el mismo renglon donde aparece el
+                aviso de que falta el nombre: es el sitio del carrito donde el
+                cajero ya esta mirando cuando toca "Enviar", y donde acaba de
+                escribir. En una esquina de la pantalla, el mensaje se le
+                quedaba fuera de la vista. Se va solo a los cuatro segundos. */}
+            {comandaEnviada && !faltaNombre && (
+              <p role="status" className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-exito-700">
+                <span aria-hidden className="grid place-items-center w-4 h-4 shrink-0 rounded-full bg-exito-600 text-white text-[10px] leading-none">
+                  ✓
+                </span>
+                <span className="min-w-0 truncate">
+                  Comanda #{comandaEnviada.numero} enviada
+                  {comandaEnviada.cliente && ` · ${comandaEnviada.cliente}`}
+                </span>
               </p>
             )}
             <div className="flex justify-between items-baseline font-bold text-xl mb-3">
@@ -2149,17 +2174,35 @@ const ListaProductos = memo(function ListaProductos({
   envioId: number | null
 }) {
   return (
-    <>
-    {/* Las categorias, siempre a la vista: "Todas" pone el
-        menu entero con una seccion por categoria. */}
-    <div className="flex gap-2 overflow-x-auto px-4 pb-3 border-b border-neutral-100">
+    // `@container`: las columnas responden al ancho de ESTE panel, no al de la
+    // ventana. Entre `md` y `lg` la ventana es ancha pero el panel mide 400 px
+    // --el carrito se lleva 330-- y con dos columnas los nombres quedarian en
+    // tres lineas. Con la consulta de contenedor, dos columnas aparecen cuando
+    // de verdad caben.
+    <div className="@container">
+    {/* Las categorias, siempre a la vista: "Todas" pone el menu entero con
+        una seccion por categoria.
+
+        MISMO CARRIL QUE LAS SECCIONES DE ARRIBA, pero no el mismo peso. Las de
+        arriba son navegacion --cambian de pantalla-- y su elegida es una
+        pastilla negra, definitiva. Estas filtran lo que ya estas viendo, y su
+        elegida se pinta del COLOR DE LA CATEGORIA, que no es decoracion: es el
+        mismo tinte de la raya de cada producto y del punto de su encabezado,
+        asi que la pastilla dice ademas "lo que estas viendo es esto".
+
+        Antes las no elegidas eran fichas en relieve (`vp-control`) y pesaban
+        MAS que las secciones de arriba, que son las importantes. Dentro del
+        carril van planas, que es lo que corresponde a una opcion en reposo. */}
+    <div className="flex px-4 pb-3 overflow-x-auto border-b border-neutral-100">
+      <div className="vp-segmentado inline-flex shrink-0 items-center gap-1 rounded-full p-1">
       <button
         type="button"
         onClick={() => alElegirCategoria('todas')}
-        className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
+        aria-pressed={categoriaActiva === 'todas'}
+        className={`vp-seccion shrink-0 px-3.5 py-1.5 rounded-full text-sm whitespace-nowrap ${
           categoriaActiva === 'todas'
-            ? 'bg-neutral-900 border-neutral-900 text-white'
-            : 'vp-control text-neutral-500'
+            ? 'vp-segmento-elegido bg-[var(--vp-superficie)] text-neutral-900 font-semibold'
+            : 'text-neutral-500 font-medium'
         }`}
       >
         Todas
@@ -2172,19 +2215,21 @@ const ListaProductos = memo(function ListaProductos({
             key={cat.id}
             type="button"
             onClick={() => alElegirCategoria(cat.id)}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold border ${
+            aria-pressed={activa}
+            className={`vp-seccion shrink-0 px-3.5 py-1.5 rounded-full text-sm whitespace-nowrap ${
               activa
-                ? `${color.bg} ${color.border} ${color.text}`
-                : 'vp-control text-neutral-500'
+                ? `vp-segmento-elegido ${color.bg} ${color.text} font-semibold`
+                : 'text-neutral-500 font-medium'
             }`}
           >
             {cat.nombre}
           </button>
         )
       })}
+      </div>
     </div>
 
-    {/* Renglones, no fichas: un producto por linea con su precio
+    {/* Renglones, no fichas: un producto por celda con su precio
         y, si ya va en la comanda, cuantos y un menos. Se toca
         el renglon y suma uno; la lista no se cierra, asi que
         cinco productos son cinco toques. */}
@@ -2203,22 +2248,37 @@ const ListaProductos = memo(function ListaProductos({
                 <span className={`w-2 h-2 rounded-full ${color.dot}`} />
                 {g.categoria.nombre}
               </div>
+              {/* DOS COLUMNAS cuando el panel da para ellas: el menu completo
+                  entra en la mitad del alto y se busca de un vistazo en vez de
+                  desplazando. Las lineas que separan las celdas van como sombra
+                  INTERIOR abajo y a la derecha, y el tinte al pasar el cursor
+                  es el mismo de las fichas del inicio: las dos cosas viven en
+                  `.vp-celda` (index.css), al lado de `.vp-lista`, que es de
+                  donde salen. Asi no hay que calcular cual celda es la ultima
+                  de su fila o columna -- la que cae en el canto la recorta el
+                  `overflow-hidden` de la lamina. */}
+              <div className="grid grid-cols-1 @lg:grid-cols-2">
               {g.filas.map(({ producto: p, variante: v }) => {
                 const enCarrito = cantidades[v.id] ?? 0
                 const pulsando = recienAgregado.has(v.id)
                 return (
                   <div
                     key={v.id}
-                    className={`flex items-stretch border-b border-neutral-100 last:border-b-0 ${
+                    className={`vp-celda flex items-stretch ${
                       pulsando ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'
                     }`}
                   >
                     <button
                       type="button"
                       onClick={() => onAgregar(p, v)}
-                      className={`flex-1 min-w-0 flex items-center justify-between gap-3 px-4 py-3 text-left border-l-4 ${color.border} active:bg-neutral-100`}
+                      className={`flex-1 min-w-0 flex items-center justify-between gap-2 px-3 py-3 text-left border-l-4 ${color.border} active:bg-neutral-100`}
                     >
-                      <span className="font-semibold text-[15px] leading-tight text-neutral-900 truncate">
+                      {/* Sin `truncate`: un nombre largo se acomoda en dos
+                          lineas. Cortarlo con puntos suspensivos deja dos
+                          empanadas distintas leyendose igual, y el cajero
+                          toca la que no era. Las celdas de una misma fila
+                          crecen juntas, que para eso es una cuadricula. */}
+                      <span className="font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">
                         {etiquetaVariante(p, v)}
                       </span>
                       <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
@@ -2230,7 +2290,7 @@ const ListaProductos = memo(function ListaProductos({
                       </span>
                     </button>
                     {enCarrito > 0 && (
-                      <div className="flex items-center gap-1 pr-3 shrink-0">
+                      <div className="flex items-center gap-1 pr-2 shrink-0">
                         <button
                           type="button"
                           onClick={() => onQuitar(v.id)}
@@ -2247,10 +2307,11 @@ const ListaProductos = memo(function ListaProductos({
                   </div>
                 )
               })}
+              </div>
             </div>
           )
         })}
     </div>
-    </>
+    </div>
   )
 })

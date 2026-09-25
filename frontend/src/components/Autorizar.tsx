@@ -3,6 +3,7 @@ import { api, connectWs } from '../lib/api'
 import type { Autorizacion, SolicitudAutorizacion } from '../lib/types'
 import { Boton } from './ui'
 import { Numerico } from './Teclado'
+import { Filtros } from './ui'
 
 /**
  * La firma de alguien autorizado, de dos formas:
@@ -115,24 +116,20 @@ export default function Autorizar({
     onCambio(m === 'pin' && /^\d{4,6}$/.test(pin) ? { pin } : m === 'remoto' && solicitud?.estado === 'aprobada' ? { solicitud_id: solicitud.id } : null)
   }
 
-  const pestana = (m: 'pin' | 'remoto', texto: string) => (
-    <button
-      type="button"
-      onClick={() => cambiarModo(m)}
-      className={`flex-1 py-2 text-sm font-semibold rounded-lg ${
-        modo === m ? 'bg-neutral-900 text-white' : 'bg-white text-neutral-600 border border-neutral-200'
-      }`}
-    >
-      {texto}
-    </button>
-  )
+
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        {pestana('pin', 'Con PIN')}
-        {pestana('remoto', 'Pedir permiso')}
-      </div>
+      {/* El carril segmentado compartido: la misma eleccion de dos posiciones
+          que en las secciones, los filtros y las recetas. */}
+      <Filtros
+        activo={modo}
+        alElegir={cambiarModo}
+        opciones={[
+          { valor: 'pin', texto: 'Con PIN' },
+          { valor: 'remoto', texto: 'Pedir permiso' },
+        ]}
+      />
 
       {modo === 'pin' && (
         <label className="block">

@@ -236,6 +236,10 @@ export default function Compras() {
         stock_objetivo: 0,
         costo_unitario: 0,
         rendimiento_pct: 100,
+        // Sin clasificar: la mercancia nace aqui de urgencia, cargando una
+        // factura, y ese no es el momento de pararse a pensar el cajon del
+        // deposito. Se le pone despues desde Inventario.
+        categoria_id: null,
         tipo: 'insumo',
         activo: true,
         exento: false,
@@ -656,8 +660,16 @@ export default function Compras() {
               ))}
               {facturas.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-neutral-400 py-4 text-center">
-                    Sin facturas cargadas todavía.
+                  {/* Con `Vacio` y no una linea de texto gris: una tabla con
+                      encabezados y nada debajo no dice si esta cargando, si
+                      fallo, o si de verdad no hay nada -- y la primera vez que
+                      alguien abre Compras no hay nada. */}
+                  <td colSpan={9}>
+                    <Vacio
+                      icono="compras"
+                      titulo="Todavía no hay facturas"
+                      detalle="Carga la primera desde «Cargar factura»: de ahí salen el costo de la mercancía y el IVA que se puede descontar."
+                    />
                   </td>
                 </tr>
               )}

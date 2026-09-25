@@ -1137,6 +1137,33 @@ def registrar_nota_credito_compra(
     )
 
 
+def registrar_existencia_declarada(db: Session, ingrediente, valor: float) -> None:
+    """La mercancia que YA estaba en el deposito cuando se dio de alta el insumo.
+
+    NO ES UNA COMPRA: no salio plata de ninguna gaveta hoy. Es el dueño metiendo
+    al negocio algo que ya tenia, asi que la contrapartida es su capital (3010),
+    igual que el asiento de apertura.
+
+    SIN ESTO LOS LIBROS MENTIAN. Dar de alta un insumo con existencia subia el
+    stock y el "Valor en deposito" del tablero, pero no tocaba `1040`: medido,
+    diez kilos a $2 dejaban $20 de inventario fisico contra $0 contable, y el
+    Balance ni se inmutaba porque nunca hubo contrapartida que descuadrar
+    (Leider, 24-sep: "esa mercancia pareciera que no pasa por factura ni por
+    compras").
+
+    No genera credito de IVA, y es correcto: no hay factura que lo respalde.
+    """
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Existencia declarada al dar de alta: {ingrediente.nombre}",
+        [("1040", valor, 0.0), ("3010", 0.0, valor)],
+        origen="alta_insumo",
+        referencia_id=ingrediente.id,
+    )
+
+
 def registrar_compra_insumo(
     db: Session,
     ingrediente: models.Ingrediente,

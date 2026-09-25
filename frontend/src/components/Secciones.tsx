@@ -21,7 +21,20 @@ import { useSearchParams } from 'react-router-dom'
  * alguien directo a "Crear cuenta". Con la URL, volver hace lo que se espera y
  * cada sección tiene su enlace.
  */
-export type Seccion = { id: string; texto: string }
+export type Seccion = {
+  id: string
+  texto: string
+  /**
+   * Cuantas cosas hay en esa seccion. VA APARTE y no dentro de `texto`.
+   *
+   * El punto de venta escribia "Pedidos · 5" de corrido, asi que la cifra
+   * pesaba igual que el nombre y la pestaña crecia y encogia cada vez que
+   * entraba una comanda -- moviendo de sitio la pestaña de al lado. Separada,
+   * se le puede bajar el peso (que es un dato, no un titulo) y llevar cifras
+   * tabulares, que no bailan al cambiar de numero.
+   */
+  contador?: number
+}
 
 export function useSeccion(
   secciones: Seccion[],
@@ -60,10 +73,13 @@ export function Secciones({
   return (
     <nav
       aria-label="Secciones"
-      className={`flex justify-start sm:justify-center gap-1 px-3 pb-2 overflow-x-auto ${
+      className={`flex justify-start sm:justify-center px-3 pb-2 overflow-x-auto ${
         dark ? 'border-neutral-800' : ''
       }`}
     >
+      {/* `shrink-0`: con muchas secciones el carril se desplaza entero dentro
+          del encabezado en vez de apretujar las pestañas hasta partirlas. */}
+      <div className={`inline-flex shrink-0 items-center gap-1 rounded-full p-1 ${dark ? 'bg-neutral-800' : 'vp-segmentado'}`}>
       {secciones.map((s) => {
         const esta = s.id === activa
         return (
@@ -72,18 +88,30 @@ export function Secciones({
             type="button"
             onClick={() => alCambiar(s.id)}
             aria-current={esta ? 'page' : undefined}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${
+            className={`vp-seccion shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm whitespace-nowrap ${
               esta
-                ? 'bg-neutral-900 text-white'
+                ? 'vp-segmento-elegido bg-neutral-900 text-white font-semibold'
                 : dark
-                  ? 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+                  ? 'text-neutral-400 font-medium hover:text-white hover:bg-neutral-800'
+                  : 'text-neutral-600 font-medium hover:text-neutral-900'
             }`}
           >
             {s.texto}
+            {/* Solo si hay algo que contar: un "0" permanente es ruido, y la
+                pestaña sin cifra se lee mas limpia. */}
+            {s.contador != null && s.contador > 0 && (
+              <span
+                className={`rounded-full px-1.5 min-w-[20px] text-center text-[11px] font-semibold tabular-nums ${
+                  esta ? 'bg-white/20' : 'bg-neutral-500/15'
+                }`}
+              >
+                {s.contador}
+              </span>
+            )}
           </button>
         )
       })}
+      </div>
     </nav>
   )
 }

@@ -170,13 +170,18 @@ def _puntos_del_bloque(b: Bloque, paso: str):
     ]
 
 
-def _serie(periodo: str, b: Bloque, inicio: datetime.datetime, fin: datetime.datetime):
-    """Ventas a lo largo del rango, con el paso que le toca (ver `rango.serie`).
+# Los granos que la pantalla puede pedir. "hora" solo tiene sentido dentro de
+# un dia, pero no se prohibe: pedir horas de un mes dibuja 720 puntos, feo pero
+# no roto, y decidir por el dueño que no puede mirarlo seria peor.
+PASOS_VALIDOS = ("hora", "dia", "semana", "mes")
+
+
+def _serie(periodo: str, b: Bloque, inicio: datetime.datetime, fin: datetime.datetime, paso: str):
+    """Ventas a lo largo del rango, con el paso que se pida.
 
     La semana se sigue leyendo por dia de la semana ("Lun", "Mar"), que es como
     la piensa quien atiende; lo demas lleva la fecha.
     """
-    paso = granularidad(inicio, fin)
     puntos = serie_del_rango(_puntos_del_bloque(b, paso), inicio, fin, paso=paso)
     if periodo == "semana" and paso == "dia":
         dia = inicio
@@ -677,8 +682,18 @@ def _insights(
 
 
 @router.get("/resumen", response_model=schemas.ReporteResumen)
-def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
-    """Los numeros del periodo. `desde`/`hasta` o, como antes, `periodo=`."""
+def resumen(
+    rango: Rango = Depends(),
+    paso: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Los numeros del periodo. `desde`/`hasta` o, como antes, `periodo=`.
+
+    `paso` (hora|dia|semana|mes) fuerza el grano de la serie. Sin el, se elige
+    solo segun el largo del rango. Lo manda la pantalla cuando el dueño toca el
+    selector del grafico: el automatico acierta casi siempre, pero "casi" no
+    sirve cuando lo que quieres ver es justo el dia (Leider, 24-sep).
+    """
     inicio, fin, etiqueta = rango.resolver(periodo="dia")
     # Las palabras ("hoy", "ayer") solo cuando se pidio con el boton; con un
     # rango de fechas se habla de "este periodo".
@@ -709,9 +724,10 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
     # metodos en vez de aparecer entera bajo una etiqueta combinada.
     por_metodo: Dict[str, float] = {m: round(g.ventas, 2) for m, g in b.por_metodo.items()}
 
-    serie = _serie(periodo, b, inicio, fin)
+    # El que pidio la pantalla si es uno de los validos; si no, el automatico.
+    paso = paso if paso in PASOS_VALIDOS else granularidad(inicio, fin)
+    serie = _serie(periodo, b, inicio, fin, paso)
     productos = _top_productos(b)
-    paso = granularidad(inicio, fin)
     ganancia_neta = round(ganancia_bruta - gastos, 2)
     # Un dia solo se lee por horas; el mapa y el dia de la semana necesitan
     # varios dias para decir algo.
@@ -723,7 +739,7 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
     return schemas.ReporteResumen(
         periodo=periodo,
         etiqueta=etiqueta,
-        granularidad=granularidad(inicio, fin),
+        granularidad=paso,
         ventas=round(ventas, 2),
         ventas_bs=round(b.ventas_bs, 2),
         iva_cobrado=iva_cobrado,

@@ -39,6 +39,8 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "tasa_iva", "FLOAT"),
     ("DIM310_INV_INGREDIENTE", "rendimiento_pct", "FLOAT DEFAULT 100"),
     ("DIM310_INV_INGREDIENTE", "tipo", "VARCHAR DEFAULT 'insumo'"),
+    ("DIM310_INV_INGREDIENTE", "categoria", "VARCHAR DEFAULT ''"),
+    ("DIM310_INV_INGREDIENTE", "categoria_id", "INTEGER"),
     ("DIM310_INV_INGREDIENTE", "activo", "BOOLEAN DEFAULT 1"),
     ("TRX410_COM_FACTURA", "pagada", "BOOLEAN DEFAULT 1"),
     ("TRX410_COM_FACTURA", "fecha_vencimiento", "DATETIME"),
@@ -537,6 +539,33 @@ def aplicar():
                 continue
             con.execute(text(f'ALTER TABLE "{tabla}" ADD COLUMN "{columna}" {_tipo_sql(tipo)}'))
             log.info("Columna agregada: %s.%s", tabla, columna)
+            if tabla == "DIM310_INV_INGREDIENTE" and columna == "categoria_id":
+                # La categoria fue un texto dentro de cada insumo antes de ser
+                # tabla. Al estrenar la clave foranea se convierte lo que ya
+                # estuviera escrito: una fila por nombre distinto, y cada
+                # insumo apuntando a la suya. Una sola vez, dentro del `if`:
+                # si corriera en cada arranque, una mercancia que el dueño
+                # cambiara de cajon volveria al viejo en el proximo despliegue.
+                nombres = [
+                    f[0]
+                    for f in con.execute(
+                        text('SELECT DISTINCT categoria FROM "DIM310_INV_INGREDIENTE" '
+                             "WHERE categoria IS NOT NULL AND categoria <> ''")
+                    ).fetchall()
+                ]
+                for nombre in nombres:
+                    con.execute(
+                        text('INSERT INTO "DIM305_INV_CATEGORIA" (nombre, activo) VALUES (:n, :v)'),
+                        {"n": nombre, "v": True if ES_POSTGRES else 1},
+                    )
+                    con.execute(
+                        text('UPDATE "DIM310_INV_INGREDIENTE" SET categoria_id = '
+                             '(SELECT id FROM "DIM305_INV_CATEGORIA" WHERE nombre = :n) '
+                             "WHERE categoria = :n"),
+                        {"n": nombre},
+                    )
+                if nombres:
+                    log.info("Categorias de deposito convertidas a tabla: %d", len(nombres))
             if tabla == "DIM210_MEN_CATEGORIA" and columna == "bebida":
                 # Hasta ahora "es bebida" se adivinaba buscando la palabra en
                 # el nombre de la categoria. Al estrenar la columna se deja

@@ -4,6 +4,7 @@ import { Ayuda } from './Ayuda'
 import { explicar } from '../lib/glosario'
 import Icono, { type NombreIcono } from './Icono'
 import { Numerico } from './Teclado'
+import MenuAcciones from './MenuAcciones'
 
 /**
  * Las piezas del sistema de diseño de Vertigo Pro.
@@ -39,14 +40,36 @@ export function Pagina({
   ancho = 'ancha',
   children,
   className = '',
+  ocupada = false,
 }: {
   ancho?: 'ancha' | 'media' | 'angosta'
   children: ReactNode
   className?: string
+  /**
+   * Llegando datos nuevos sobre los que ya se ven (cambiar de periodo).
+   *
+   * NO CAMBIA NADA A LA VISTA, y es a proposito. Primero esto vaciaba la
+   * pagina y la volvia a llenar; despues la atenuaba al 60 % y la devolvia.
+   * Las dos cosas son el mismo defecto con distinta duracion: un parpadeo en
+   * cada toque del filtro de fechas (Leider, 24-sep: "solo es mas rapido,
+   * pero existe"). Una recarga de fondo no tiene por que verse -- los numeros
+   * se sustituyen cuando llegan y ya.
+   *
+   * Queda `aria-busy`, que si le sirve a quien usa lector de pantalla y no
+   * dibuja nada.
+   */
+  ocupada?: boolean
 }) {
   const topes = { ancha: 'max-w-[90rem]', media: 'max-w-[69rem]', angosta: 'max-w-[42rem]' }
   return (
+    // SIN ENTRADA ESCALONADA, y es a proposito. Una animacion de entrada se
+    // vuelve a ejecutar cada vez que su elemento se vuelve a crear, y las
+    // tarjetas se recrean cada vez que llegan datos nuevos: cambiar el filtro
+    // de fechas hacia entrar la pantalla otra vez (Leider, 24-sep, tres
+    // veces: "sigue el parpadeo"). Una pantalla que ya esta abierta no tiene
+    // por que volver a aparecer porque cambiaron unos numeros.
     <div
+      aria-busy={ocupada || undefined}
       className={`${topes[ancho]} mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 space-y-5 lg:space-y-6 ${className}`}
     >
       {children}
@@ -68,7 +91,7 @@ export function Tarjeta({
 }) {
   return (
     <div
-      className={`bg-white rounded-2xl border border-neutral-200 ${plano ? 'overflow-hidden' : 'p-4'} ${className}`}
+      className={`bg-white rounded-2xl border border-neutral-200 ${plano ? 'overflow-hidden' : 'p-4 sm:p-5'} ${className}`}
     >
       {children}
     </div>
@@ -102,7 +125,7 @@ export function Seccion({
     <Tarjeta className={className} plano={plano}>
       <div className={`flex items-start justify-between gap-3 ${plano ? 'px-4 pt-4' : ''}`}>
         <div className="min-w-0">
-          <h2 className="font-semibold">{titulo}</h2>
+          <h2 className="font-display font-semibold tracking-tight">{titulo}</h2>
           {ayuda && <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{ayuda}</p>}
         </div>
         {accion && <div className="shrink-0">{accion}</div>}
@@ -118,7 +141,9 @@ type TonoBoton = 'principal' | 'suave' | 'fantasma' | 'peligro' | 'peligro-fuert
 
 const TONOS: Record<TonoBoton, string> = {
   principal: 'bg-neutral-900 text-white',
-  suave: 'bg-white border border-neutral-200 text-neutral-900 hover:border-neutral-400',
+  // La misma lamina de los controles del encabezado (`vp-control`): el boton
+  // secundario de una pantalla y el de la barra de arriba son el mismo objeto.
+  suave: 'vp-control text-neutral-900',
   fantasma: 'text-neutral-600 hover:bg-neutral-100',
   peligro: 'text-peligro-600 hover:bg-peligro-50',
   // Para la accion que destruye datos y aun asi es la principal del dialogo
@@ -249,15 +274,157 @@ export function Cifra({
         : 'bg-white border-neutral-200'
   const texto = tono === 'alerta' ? 'text-aviso-700' : tono === 'bien' ? 'text-exito-700' : 'text-neutral-500'
   return (
-    <div className={`rounded-2xl border p-4 ${fondo}`}>
+    <div className={`rounded-2xl border p-4 sm:p-5 ${fondo}`}>
       <div className={`text-xs font-medium ${texto}`}>
         <Ayuda explica={explicar(ayuda)} titulo={titulo}>
           {titulo}
         </Ayuda>
       </div>
-      <div className="text-xl font-semibold tabular-nums mt-1">{valor}</div>
-      {detalle && <div className="text-xs text-neutral-500 mt-0.5">{detalle}</div>}
+      {/* La cifra ES la tarjeta: se lee de lejos y de un vistazo, que es para
+          lo que existe una franja de resumen. A 20 px pesaba lo mismo que el
+          rotulo de encima y habia que buscarla. Va en la tipografia de
+          titulares, con el interletrado apretado que pide un numero grande, y
+          en cifras tabulares para que no baile al cambiar de dia. */}
+      <div className="font-display text-2xl lg:text-[28px] font-semibold tracking-tight tabular-nums mt-1.5 leading-none">
+        {valor}
+      </div>
+      {detalle && <div className="text-xs text-neutral-500 mt-2">{detalle}</div>}
     </div>
+  )
+}
+
+/**
+ * Una fila de filtros: "de estas, esta".
+ *
+ * MISMA FORMA QUE LAS SECCIONES DEL ENCABEZADO y que las categorias del
+ * mostrador: un carril hundido con la elegida apoyada dentro. Es el mismo
+ * gesto, asi que es la misma forma, y quien aprende una las sabe todas.
+ *
+ * Cada pantalla se habia escrito la suya: Inventario con borde gris y pastilla
+ * negra, Ventas con dos filas de estilos distintos entre si. Tres maneras de
+ * decir lo mismo, y ninguna se parecia a las pestañas de arriba.
+ *
+ * El contador va aparte del texto (no "Bajo minimo 3" de corrido): es un dato,
+ * no parte del nombre, y en cifras tabulares la pastilla no cambia de ancho
+ * cuando el numero pasa de 9 a 10.
+ */
+export function Filtros<T extends string>({
+  opciones,
+  activo,
+  alElegir,
+  className = '',
+  tamano = 'normal',
+}: {
+  opciones: { valor: T; texto: string; contador?: number | null }[]
+  activo: T
+  alElegir: (valor: T) => void
+  className?: string
+  /** `chico` para un filtro secundario que convive con otro mas importante. */
+  tamano?: 'normal' | 'chico'
+}) {
+  const medida = tamano === 'chico' ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-sm'
+  return (
+    <div className={`flex overflow-x-auto ${className}`}>
+      <div className="vp-segmentado inline-flex shrink-0 items-center gap-1 rounded-full p-1">
+        {opciones.map((o) => {
+          const esta = o.valor === activo
+          return (
+            <button
+              key={o.valor}
+              type="button"
+              onClick={() => alElegir(o.valor)}
+              aria-pressed={esta}
+              className={`vp-seccion shrink-0 inline-flex items-center gap-1.5 rounded-full whitespace-nowrap ${medida} ${
+                esta
+                  ? 'vp-segmento-elegido bg-[var(--vp-superficie)] text-neutral-900 font-semibold'
+                  : 'text-neutral-500 font-medium'
+              }`}
+            >
+              {o.texto}
+              {o.contador != null && o.contador > 0 && (
+                <span className="rounded-full bg-neutral-500/15 px-1.5 min-w-[20px] text-center text-[11px] font-semibold tabular-nums">
+                  {o.contador}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Un filtro que se despliega.
+ *
+ * CUANDO ESTE Y CUANDO `Filtros`. Las pastillas de `Filtros` sirven para un
+ * conjunto CORTO Y FIJO, de los que trae el sistema y nunca crecen. Para lo
+ * que crea el dueño --las categorias del deposito, los proveedores-- no
+ * sirven: con veinte, la fila se convierte en un carrusel que hay que
+ * arrastrar para saber que hay dentro, y en un telefono no se ve ni la
+ * mitad (Leider, 24-sep: "si añaden 20 categorias no cabra, tienes que
+ * pensar en escalabilidad").
+ *
+ * Un desplegable ocupa lo mismo con tres opciones que con doscientas, y
+ * ademas dice QUE se esta filtrando sin tener que deducirlo: la etiqueta va
+ * escrita al lado ("Categoría: Carnes") en vez de una pastilla suelta que
+ * solo dice "Carnes".
+ *
+ * SE DIBUJA, NO ES UN `<select>`. Lo intente primero con el nativo por lo que
+ * trae gratis --rueda en la tablet, busqueda al teclear-- y en Windows el panel
+ * sale blanco con la seleccion en azul del sistema: en modo oscuro parecia de
+ * otro programa flotando encima del ERP (Leider, 24-sep: "se ve horrible"). Es
+ * la misma razon por la que `CampoSugerido` existe en vez de un `<datalist>`.
+ *
+ * Reutiliza el menu de `MenuAcciones` --el mismo panel de las categorias del
+ * menu y del deposito-- con la pastilla por disparador. Un menu, un
+ * comportamiento: tocar fuera cierra, Escape cierra, la opcion vigente va
+ * marcada.
+ */
+export function FiltroDesplegable({
+  etiqueta,
+  valor,
+  alCambiar,
+  opciones,
+  className = '',
+}: {
+  etiqueta: string
+  valor: string
+  alCambiar: (valor: string) => void
+  /** La primera es la neutra ("Todas"): con ella puesta, el filtro no destaca. */
+  opciones: { valor: string; texto: string; contador?: number | null }[]
+  className?: string
+}) {
+  const sinFiltrar = opciones.length === 0 || valor === opciones[0].valor
+  const elegida = opciones.find((o) => o.valor === valor)
+  return (
+    <MenuAcciones
+      etiqueta={etiqueta}
+      opciones={opciones.map((o) => ({
+        texto: o.contador != null && o.contador > 0 ? `${o.texto} · ${o.contador}` : o.texto,
+        marcada: o.valor === valor,
+        onElegir: () => alCambiar(o.valor),
+      }))}
+      disparador={({ abierto, alternar }: { abierto: boolean; alternar: () => void }) => (
+        <button
+          type="button"
+          onClick={alternar}
+          aria-haspopup="menu"
+          aria-expanded={abierto}
+          className={`vp-control inline-flex items-center gap-1.5 h-9 rounded-full px-3 text-sm shrink-0 select-none ${
+            sinFiltrar ? 'text-neutral-600' : 'text-neutral-900'
+          } ${className}`}
+        >
+          <span className="shrink-0 text-neutral-500">{etiqueta}</span>
+          {/* Un punto de acento cuando hay filtro puesto: de un vistazo se ve
+              que la lista de abajo NO es todo lo que hay. Sin el, el dueño mira
+              media mercancia y cree que le falta la otra mitad. */}
+          {!sinFiltrar && <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-acento-500 shrink-0" />}
+          <span className="font-semibold truncate max-w-[11rem]">{elegida?.texto ?? ''}</span>
+          <span aria-hidden className="vp-flecha shrink-0 opacity-60" />
+        </button>
+      )}
+    />
   )
 }
 
@@ -302,13 +469,13 @@ export function Vacio({
   accion?: ReactNode
 }) {
   return (
-    <div className="text-center py-10 px-6">
+    <div className="text-center py-14 px-6">
       {icono && (
-        <span className="inline-grid place-items-center w-12 h-12 rounded-2xl bg-neutral-100 text-neutral-400 mb-3">
-          <Icono nombre={icono} size={22} />
+        <span className="vp-losa inline-grid place-items-center w-14 h-14 text-neutral-400 mb-4">
+          <Icono nombre={icono} size={24} />
         </span>
       )}
-      <p className="font-semibold">{titulo}</p>
+      <p className="font-display font-semibold tracking-tight text-[17px]">{titulo}</p>
       {detalle && <p className="text-sm text-neutral-500 mt-1 max-w-sm mx-auto">{detalle}</p>}
       {accion && <div className="mt-4">{accion}</div>}
     </div>
@@ -323,14 +490,16 @@ export function Aviso({
   tono?: 'mal' | 'ojo' | 'bien' | 'info'
   children: ReactNode
 }) {
+  // Sin borde duro: el fondo de color ya separa el aviso de la pagina, y el
+  // anillo encima lo convertia en una caja mas de las que hay que leer.
   const tonos = {
-    mal: 'bg-peligro-50 border-peligro-200 text-peligro-700',
-    ojo: 'bg-aviso-50 border-aviso-200 text-aviso-800',
-    bien: 'bg-exito-50 border-exito-200 text-exito-800',
-    info: 'bg-acento-50 border-acento-200 text-acento-700',
+    mal: 'bg-peligro-500/10 text-peligro-700',
+    ojo: 'bg-aviso-500/10 text-aviso-800',
+    bien: 'bg-exito-500/10 text-exito-800',
+    info: 'bg-acento-500/10 text-acento-700',
   }
   return (
-    <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${tonos[tono]}`}>
+    <div role="status" className={`rounded-2xl px-4 py-3.5 text-sm ${tonos[tono]}`}>
       {children}
     </div>
   )

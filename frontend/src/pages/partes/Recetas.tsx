@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { contiene, palabrasDe } from '../../components/Tabla'
-import { Boton, Modal, Vacio } from '../../components/ui'
+import { Boton, Filtros, Modal, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
@@ -335,24 +335,21 @@ export default function Recetas({
                     </button>
                   </div>
 
-                  <div className="flex gap-1 mb-2">
-                    {[
-                      { modo: false, texto: 'Cantidad por unidad' },
-                      { modo: true, texto: 'De X salen Y' },
-                    ].map((op) => (
-                      <button
-                        key={op.texto}
-                        onClick={() => actualizarFila(i, { modoRendimiento: op.modo })}
-                        className={`flex-1 rounded-lg py-1.5 text-xs font-medium ${
-                          f.modoRendimiento === op.modo
-                            ? 'bg-neutral-900 text-white'
-                            : 'bg-neutral-100 text-neutral-600'
-                        }`}
-                      >
-                        {op.texto}
-                      </button>
-                    ))}
-                  </div>
+                  {/* El mismo carril segmentado de las secciones y los
+                      filtros: dentro de un cuadro flotante tambien es "de
+                      estas, esta". Antes eran dos botones a media pantalla,
+                      uno negro y otro gris, que se leian como dos acciones
+                      distintas en vez de un interruptor de dos posiciones. */}
+                  <Filtros
+                    className="mb-2"
+                    tamano="chico"
+                    activo={f.modoRendimiento ? 'rendimiento' : 'unidad'}
+                    alElegir={(v) => actualizarFila(i, { modoRendimiento: v === 'rendimiento' })}
+                    opciones={[
+                      { valor: 'unidad', texto: 'Cantidad por unidad' },
+                      { valor: 'rendimiento', texto: 'De X salen Y' },
+                    ]}
+                  />
 
                   {f.modoRendimiento ? (
                     <div className="space-y-1">

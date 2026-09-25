@@ -35,7 +35,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
   return (
     <>
       {/* ── Las cifras ─────────────────────────────────────────────────── */}
-      <div className="vp-escalonado grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi
           titulo="Merma del período"
           ayuda="kpi.perdidas"

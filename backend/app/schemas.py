@@ -164,6 +164,9 @@ class IngredienteBase(BaseModel):
     rendimiento_pct: float = Field(default=100, gt=0, le=100)
     # Materia prima de recetas, o mercancia de reventa (ver models.Ingrediente).
     tipo: Literal["insumo", "reventa"] = "insumo"
+    # En que parte del deposito vive (ver models.CategoriaInsumo). None = sin
+    # clasificar, que es un estado normal y no un error.
+    categoria_id: Optional[int] = None
     # False = archivado: sigue existiendo (recetas, historial) pero no se lista
     # para comprar ni entra en las sugerencias.
     activo: bool = True
@@ -179,6 +182,9 @@ class IngredienteCreate(IngredienteBase):
 
 class Ingrediente(IngredienteBase):
     id: int
+    # El NOMBRE de su categoria, ya resuelto: la pantalla lo pinta en cada
+    # renglon y no tiene por que cruzar dos listas para eso. Vacio si no tiene.
+    categoria: str = ""
     costo_efectivo: float  # costo_unitario / rendimiento - lo que de verdad cuesta 1 unidad usable
     # Ultimo precio pagado por este insumo. El `costo_unitario` de arriba es el
     # promedio ponderado (lo que costo lo que hay en el deposito); esto es lo
@@ -188,8 +194,29 @@ class Ingrediente(IngredienteBase):
     # Cuanto subestima el promedio al costo de reponer, en %.
     variacion_pct: Optional[float] = None
 
+    @field_validator("categoria", mode="before")
+    @classmethod
+    def _nombre_de_la_categoria(cls, v):
+        """El modelo trae el objeto CategoriaInsumo; aqui viaja su nombre."""
+        return getattr(v, "nombre", v) or ""
+
     class Config:
         from_attributes = True
+
+
+class CategoriaInsumo(BaseModel):
+    id: int
+    nombre: str
+    # Cuanta mercancia tiene dentro. Es lo que hace falta para decidir si se
+    # puede borrar sin dejar huerfano a medio deposito.
+    usos: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class CategoriaInsumoInput(BaseModel):
+    nombre: str
 
 
 class CompraDeInsumo(BaseModel):
