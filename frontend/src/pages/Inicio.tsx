@@ -73,7 +73,9 @@ export default function Inicio() {
   function cargar() {
     // Los reportes son de caja para arriba; a cocina le responden 403 y no se
     // pintan. Los pedidos si los ve todo el mundo.
-    if (estado.puede.operar) api.reporte(rangoDe('hoy')).then(setHoy).catch(() => undefined)
+    // Y solo a quien el rol le deja ver las cifras: al resto se le pinta un
+    // guion, no un "no tienes permiso" (Leider, 25-sep).
+    if (estado.puede.ve_kpis) api.reporte(rangoDe('hoy')).then(setHoy).catch(() => undefined)
     // El MISMO listado que pinta la pantalla de cocina, no `estado='pendiente'`.
     // Eran dos definiciones distintas de lo mismo: cobrar deja el pedido en
     // 'pagado' aunque la comida no se haya tocado, asi que el KPI decia "2"
@@ -137,12 +139,17 @@ export default function Inicio() {
 
         {/* La franja de hoy: cuatro cifras, sin adornos. */}
         <div className="vp-escalonado grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-5 sm:mb-6 lg:mb-8 bajo:mb-4 pc:mb-6">
-          {estado.puede.operar && (
-            <>
-              <Dato titulo="Vendido hoy" ayuda="kpi.vendido_hoy" valor={hoy ? fmt(hoy.ventas) : '—'} destacado />
-              <Dato titulo="Pedidos" ayuda="kpi.pedidos_hoy" valor={hoy ? String(hoy.pedidos) : '—'} />
-            </>
-          )}
+          <Dato
+            titulo="Vendido hoy"
+            ayuda="kpi.vendido_hoy"
+            valor={estado.puede.ve_kpis && hoy ? fmt(hoy.ventas) : '—'}
+            destacado
+          />
+          <Dato
+            titulo="Pedidos"
+            ayuda="kpi.pedidos_hoy"
+            valor={estado.puede.ve_kpis && hoy ? String(hoy.pedidos) : '—'}
+          />
           <Dato titulo="En cocina" ayuda="kpi.en_cocina" valor={String(enCocina)} alerta={enCocina > 0} enlace="/cocina" />
           <Dato
             titulo="Por cobrar"

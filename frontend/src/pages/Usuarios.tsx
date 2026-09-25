@@ -695,6 +695,7 @@ function FilaRol({
   const [descripcion, setDescripcion] = useState(r.descripcion)
   const [elegidos, setElegidos] = useState<string[]>(r.modulos.map((m) => m.id))
   const [autoriza, setAutoriza] = useState(r.autoriza)
+  const [veKpis, setVeKpis] = useState(r.ve_kpis)
   const [guardando, setGuardando] = useState(false)
   const dialogo = useDialogo()
 
@@ -703,6 +704,7 @@ function FilaRol({
     setDescripcion(r.descripcion)
     setElegidos(r.modulos.map((m) => m.id))
     setAutoriza(r.autoriza)
+    setVeKpis(r.ve_kpis)
     setEditando(true)
   }
 
@@ -712,7 +714,7 @@ function FilaRol({
   async function guardar() {
     setGuardando(true)
     try {
-      await api.editarRol(r.rol, { nombre, descripcion, modulos: elegidos, autoriza })
+      await api.editarRol(r.rol, { nombre, descripcion, modulos: elegidos, autoriza, ve_kpis: veKpis })
       setEditando(false)
       onOk(`«${nombre || r.nombre}» actualizado. Quien lo tenga lo nota al recargar.`)
       onCambio()
@@ -826,6 +828,7 @@ function FilaRol({
             })}
           </div>
           <CasillaAutoriza marcado={autoriza} fijo={r.autoriza_fijo} onCambio={setAutoriza} />
+          <CasillaKpis marcado={veKpis} fijo={r.ve_kpis_fijo} onCambio={setVeKpis} />
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <Boton onClick={() => void guardar()} disabled={guardando || elegidos.length === 0}>
               {guardando ? 'Guardando…' : 'Guardar'}
@@ -860,6 +863,7 @@ function CrearRol({
   const [descripcion, setDescripcion] = useState('')
   const [elegidos, setElegidos] = useState<string[]>([])
   const [autoriza, setAutoriza] = useState(false)
+  const [veKpis, setVeKpis] = useState(false)
   const [creando, setCreando] = useState(false)
 
   const alternar = (id: string) =>
@@ -869,7 +873,7 @@ function CrearRol({
     e.preventDefault()
     setCreando(true)
     try {
-      await api.crearRol({ nombre, descripcion, modulos: elegidos, autoriza })
+      await api.crearRol({ nombre, descripcion, modulos: elegidos, autoriza, ve_kpis: veKpis })
       onCreado(nombre.trim())
       setNombre('')
       setDescripcion('')
@@ -933,6 +937,7 @@ function CrearRol({
         </p>
 
         <CasillaAutoriza marcado={autoriza} fijo={false} onCambio={setAutoriza} />
+        <CasillaKpis marcado={veKpis} fijo={false} onCambio={setVeKpis} />
 
         <div className="mt-4">
           <Boton type="submit" disabled={creando || elegidos.length === 0 || !nombre.trim()}>
@@ -941,6 +946,40 @@ function CrearRol({
         </div>
       </Seccion>
     </form>
+  )
+}
+
+/** La casilla de "este rol ve las cifras del dia" (Vendido hoy, Pedidos). */
+function CasillaKpis({
+  marcado,
+  fijo,
+  onCambio,
+}: {
+  marcado: boolean
+  fijo: boolean
+  onCambio: (v: boolean) => void
+}) {
+  return (
+    <label
+      className={`mt-2 flex items-start gap-2.5 rounded-xl border px-3 py-2.5 ${
+        fijo ? 'border-neutral-200 bg-neutral-50 cursor-default' : 'cursor-pointer ' + (marcado ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300')
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={marcado}
+        disabled={fijo}
+        onChange={(e) => onCambio(e.target.checked)}
+        className="w-4 h-4 mt-0.5 accent-neutral-900"
+      />
+      <span className="text-sm">
+        <span className="font-medium">Ve las cifras del día en el inicio</span>
+        <span className="block text-xs text-neutral-500 mt-0.5">
+          «Vendido hoy» y «Pedidos» en la portada. Si no, ve un guion en su lugar.
+          {fijo && ' El dueño las ve siempre.'}
+        </span>
+      </span>
+    </label>
   )
 }
 

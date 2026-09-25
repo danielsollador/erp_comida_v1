@@ -1167,6 +1167,9 @@ export type RolInfo = {
   autoriza: boolean
   /** Dueño y Vertigo autorizan siempre: la casilla no se toca. */
   autoriza_fijo: boolean
+  /** Si ve las cifras del dia en la portada. */
+  ve_kpis: boolean
+  ve_kpis_fijo: boolean
   /** Si se le pueden cambiar los modulos desde la pantalla. */
   editable: boolean
   /** Un rol de fabrica al que este local ya le recorto modulos. */
@@ -1195,6 +1198,8 @@ export type EstadoAcceso = {
     cocina: boolean
     /** Autoriza operaciones delicadas: tiene PIN y le llegan las solicitudes. */
     autoriza: boolean
+    /** Ve "Vendido hoy" y "Pedidos" en la portada; si no, un guion. */
+    ve_kpis: boolean
     /** Los modulos a los que entra este rol: la barra lateral muestra solo esos. */
     modulos: string[]
   }
@@ -1231,6 +1236,7 @@ export type DatosRol = {
   descripcion: string
   modulos: string[]
   autoriza?: boolean
+  ve_kpis?: boolean
 }
 
 // ── Autorizaciones ──────────────────────────────────────────────────────────

@@ -208,7 +208,7 @@ def test_el_estado_dice_quien_eres_y_que_puedes(fuera, client):
     assert d["autenticado"] is True and d["usuario"] == "admin"
     assert {k: v for k, v in d["puede"].items() if k != "modulos"} == {
         "vertigo": True, "administrar": True, "operar": True, "cocina": True,
-        "autoriza": True}
+        "autoriza": True, "ve_kpis": True}
     # Y a que modulos entra: con esto la barra lateral muestra solo lo suyo.
     assert "contabilidad" in d["puede"]["modulos"] and "pos" in d["puede"]["modulos"]
     assert d["local"]["slug"] == LOCAL
@@ -217,7 +217,7 @@ def test_el_estado_dice_quien_eres_y_que_puedes(fuera, client):
     c = entrar(fuera, *COCINERO).get("/api/acceso/estado").json()
     assert {k: v for k, v in c["puede"].items() if k != "modulos"} == {
         "vertigo": False, "administrar": False, "operar": False, "cocina": True,
-        "autoriza": False}
+        "autoriza": False, "ve_kpis": False}
     assert c["puede"]["modulos"] == ["cocina"]
 
 

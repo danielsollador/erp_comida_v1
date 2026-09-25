@@ -98,6 +98,11 @@ MODULOS: dict[str, dict] = {
 # autorizan siempre: son la autoridad del negocio y de la plataforma.
 AUTORIZA_POR_DEFECTO = {"admin": True, "dueno": True, "caja": False, "cocina": False}
 
+# Que roles de fabrica VEN LAS CIFRAS DEL DIA en la portada ("Vendido hoy",
+# "Pedidos"). Cuanto vende el local es del dueño: caja y cocina ven un guion,
+# salvo que el local lo cambie desde la pantalla de Roles.
+VE_KPIS_POR_DEFECTO = {"admin": True, "dueno": True, "caja": False, "cocina": False}
+
 # Los roles de fabrica a los que el local puede recortarles modulos.
 #
 # `dueno` NO: es el rol mas alto del negocio y el unico que reparte usuarios,
@@ -173,6 +178,18 @@ def autoriza(rol: str | None) -> bool:
         return AUTORIZA_POR_DEFECTO[r] if propio is None else propio
     ficha = roles_a_medida.buscar(r)
     return bool(ficha and ficha.get("autoriza"))
+
+
+def ve_kpis(rol: str | None) -> bool:
+    """Si quien tiene este rol ve las cifras del dia en la portada."""
+    r = normalizar(rol)
+    if r in ("admin", "dueno"):
+        return True
+    if r in ROLES:
+        propio = roles_a_medida.kpis_ajustado(r, _local_actual())
+        return VE_KPIS_POR_DEFECTO[r] if propio is None else propio
+    ficha = roles_a_medida.buscar(r)
+    return bool(ficha and ficha.get("ve_kpis"))
 
 
 def opera(rol: str | None) -> bool:
@@ -333,6 +350,8 @@ def resumen(rol: str | None) -> dict:
             "cocina": True,
             # Si autoriza operaciones: le llegan las solicitudes y tiene PIN.
             "autoriza": autoriza(r),
+            # Si ve "Vendido hoy" y "Pedidos" en la portada.
+            "ve_kpis": ve_kpis(r),
             # A que modulos entra: con esto la barra lateral muestra solo lo
             # suyo, sin que cada pantalla tenga que deducirlo del nombre del rol.
             "modulos": list(modulos_de(r))}
