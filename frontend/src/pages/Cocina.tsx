@@ -244,7 +244,7 @@ export default function Cocina() {
         </div>
       )}
 
-      <div className="p-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+      <div className="p-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
         {pedidos.map((pedido) => {
           const minutos = minutosDesde(pedido.creado_en)
           const estilo = estiloAntiguedad(minutos)
@@ -256,7 +256,7 @@ export default function Cocina() {
           return (
             <div
               key={pedido.id}
-              className={`rounded-2xl p-3 border transition ${
+              className={`rounded-xl p-2.5 border transition ${
                 bloqueada
                   ? 'bg-aviso-500/10 border-aviso-500 ring-2 ring-aviso-500/50'
                   : esNuevo
@@ -264,16 +264,16 @@ export default function Cocina() {
                     : `bg-white border-neutral-200 ${estilo.card}`
               }`}
             >
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between items-start mb-1.5">
                 {/* El nombre debajo del numero y no al lado: el numero se lee
                     de lejos --es lo que se canta cuando la comida sale-- y
                     ponerle el nombre en la misma linea lo encogeria. */}
                 <span className="min-w-0">
-                  <span className="block text-2xl font-black tracking-tight tabular-nums leading-none">
+                  <span className="block text-xl font-black tracking-tight tabular-nums leading-none">
                     #{pedido.numero}
                   </span>
                   {pedido.cliente && (
-                    <span className="block text-sm font-semibold text-neutral-600 truncate">
+                    <span className="block text-[13px] font-semibold text-neutral-600 truncate">
                       {pedido.cliente}
                     </span>
                   )}
@@ -297,6 +297,13 @@ export default function Cocina() {
                   >
                     {minutos} min
                   </span>
+                  <button
+                    onClick={() => anular(pedido)}
+                    disabled={bloqueada}
+                    className="text-[11px] text-neutral-400 hover:text-peligro-500 disabled:opacity-40 px-1"
+                  >
+                    Anular
+                  </button>
                 </div>
               </div>
 
@@ -311,21 +318,6 @@ export default function Cocina() {
               {/* Agarrarla es lo que le cierra la edicion a la caja. Marcar un
                   renglon tambien la agarra, asi que el boton es para decirlo
                   antes de empezar -- que es cuando sirve. */}
-              <button
-                onClick={() => alternarCocinando(pedido.id)}
-                disabled={bloqueada}
-                className={`w-full mb-2 py-1.5 rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 ${
-                  mia
-                    ? 'bg-acento-500/15 text-acento-800 ring-1 ring-acento-500/40'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                }`}
-              >
-                <Icono nombre="cocina" size={14} />
-                {mia
-                  ? `En preparación${pedido.cocinando_por ? ` · ${pedido.cocinando_por}` : ''}`
-                  : 'Empezar a preparar'}
-              </button>
-
               <ul className="space-y-1 mb-2">
                 {/* Lo de vitrina no se cocina: el refresco de la nevera
                     solo le estorba a quien está en la plancha. */}
@@ -336,7 +328,7 @@ export default function Cocina() {
                     <button
                       onClick={() => toggleItem(item.id)}
                       disabled={bloqueada}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg flex justify-between items-center gap-2 border disabled:opacity-50 ${
+                      className={`w-full text-left px-2 py-1 rounded-md flex justify-between items-center gap-2 border disabled:opacity-50 ${
                         item.preparado
                           ? 'bg-exito-500/10 border-exito-500/30 text-neutral-500 line-through'
                           : tinte
@@ -364,20 +356,29 @@ export default function Cocina() {
                   )
                 })}
               </ul>
-              <button
-                onClick={() => marcarTodoListo(pedido.id)}
-                disabled={bloqueada}
-                className="w-full bg-exito-600 hover:bg-exito-500 disabled:opacity-40 disabled:hover:bg-exito-600 text-neutral-50 py-2 rounded-lg font-bold text-sm"
-              >
-                Marcar todo listo
-              </button>
-              <button
-                onClick={() => anular(pedido)}
-                disabled={bloqueada}
-                className="w-full mt-1 text-neutral-500 hover:text-peligro-400 disabled:opacity-40 py-1 text-xs font-medium"
-              >
-                Anular comanda
-              </button>
+              {/* Las dos acciones en una fila: apiladas eran media tarjeta. */}
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => alternarCocinando(pedido.id)}
+                  disabled={bloqueada}
+                  title={mia && pedido.cocinando_por ? `En preparación · ${pedido.cocinando_por}` : undefined}
+                  className={`flex-1 min-w-0 py-1.5 rounded-lg font-semibold text-xs flex items-center justify-center gap-1 disabled:opacity-40 ${
+                    mia
+                      ? 'bg-acento-500/15 text-acento-800 ring-1 ring-acento-500/40'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  }`}
+                >
+                  <Icono nombre="cocina" size={13} />
+                  <span className="truncate">{mia ? 'Preparando' : 'Preparar'}</span>
+                </button>
+                <button
+                  onClick={() => marcarTodoListo(pedido.id)}
+                  disabled={bloqueada}
+                  className="flex-1 bg-exito-600 hover:bg-exito-500 disabled:opacity-40 disabled:hover:bg-exito-600 text-neutral-50 py-1.5 rounded-lg font-bold text-xs"
+                >
+                  Todo listo
+                </button>
+              </div>
             </div>
           )
         })}
