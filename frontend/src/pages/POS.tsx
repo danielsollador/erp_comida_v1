@@ -312,14 +312,12 @@ export default function POS() {
       .then(([enCocina, listos, porEntregar]) => {
         const porId = new Map<number, Pedido>()
         for (const p of [...enCocina, ...listos, ...porEntregar]) porId.set(p.id, p)
-        // 0 = listo para cobrar, 1 = para entregar, 2 = en cocina sin cobrar,
-        // 3 = cobrado y en cocina. Lo que le toca hacer a la caja va arriba;
-        // lo que solo se mira, abajo. Y dentro de cada grupo, la ULTIMA que
-        // llego primero: la comanda que se acaba de tomar es la que se esta
-        // mirando, y quedaba al final de la lista (Leider, 22-sep).
-        const peso = (p: Pedido) =>
-          p.items.some((i) => !i.preparado) ? (p.estado === 'pagado' ? 3 : 2) : p.estado === 'pagado' ? 1 : 0
-        const lista = [...porId.values()].sort((a, b) => peso(a) - peso(b) || b.numero - a.numero)
+        // LA ULTIMA QUE LLEGO, PRIMERO, y nada mas. Antes se agrupaba por lo
+        // que le tocaba hacer a la caja (listos para cobrar arriba, cobrados
+        // en cocina abajo) y con una fila de cobrados por entregar los pedidos
+        // recien tomados quedaban tapados debajo (Leider, 28-sep). El color de
+        // cada tarjeta ya dice en que va.
+        const lista = [...porId.values()].sort((a, b) => b.numero - a.numero)
         // Si llego exactamente lo mismo, no se toca el estado: repintar el
         // mostrador entero por nada es lo que traba a una tablet de 3 GB, y
         // el respaldo de cada minuto casi siempre trae lo mismo.

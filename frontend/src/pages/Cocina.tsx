@@ -52,15 +52,47 @@ export default function Cocina() {
   }, [categorias])
   const [, setTick] = useState(0)
   const [nuevos, setNuevos] = useState<Set<number>>(new Set())
-  // El navegador no deja sonar nada hasta que alguien toca la pantalla, asi que
-  // el sonido arranca apagado y la cocina lo activa con un toque al abrir turno.
-  const [sonido, setSonido] = useState(false)
+  // ENCENDIDO SALVO QUE ALGUIEN LO APAGUE, y lo que se elija queda guardado
+  // en la tablet: arrancaba apagado y se perdia con cada recarga, asi que en
+  // la practica nadie lo tenia puesto (Leider, 28-sep). El navegador no deja
+  // sonar nada hasta un toque en la pantalla: el primer toque que reciba la
+  // pagina, sea donde sea, despierta el audio.
+  const [sonido, setSonido] = useState(() => {
+    try {
+      return localStorage.getItem(CLAVE_SONIDO) !== 'off'
+    } catch {
+      return true
+    }
+  })
   const audioRef = useRef<AudioContext | null>(null)
+
+  const despertarAudio = useCallback(() => {
+    try {
+      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      if (!audioRef.current) audioRef.current = new Ctor()
+      void audioRef.current.resume()
+    } catch {
+      // Sin audio disponible el resto de la pantalla sigue funcionando igual.
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!sonido) return
+    despertarAudio()
+    const alTocar = () => despertarAudio()
+    document.addEventListener('pointerdown', alTocar, { once: true })
+    document.addEventListener('keydown', alTocar, { once: true })
+    return () => {
+      document.removeEventListener('pointerdown', alTocar)
+      document.removeEventListener('keydown', alTocar)
+    }
+  }, [sonido, despertarAudio])
   const idsConocidos = useRef<Set<number> | null>(null)
 
   const sonar = useCallback(() => {
     const ctx = audioRef.current
     if (!ctx) return
+    if (ctx.state === 'suspended') void ctx.resume()
     // Dos tonos, repetidos dos veces: mas volumen y mas largo que antes -la
     // version corta se perdia entre licuadoras y freidoras- pero sigue siendo
     // un timbre, no una sirena.
@@ -131,16 +163,10 @@ export default function Cocina() {
       localStorage.setItem(CLAVE_SONIDO, 'off')
       return
     }
-    try {
-      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      if (!audioRef.current) audioRef.current = new Ctor()
-      audioRef.current.resume()
-      setSonido(true)
-      localStorage.setItem(CLAVE_SONIDO, 'on')
-      sonar() // confirmacion audible de que quedo activo
-    } catch {
-      // Sin audio disponible el resto de la pantalla sigue funcionando igual.
-    }
+    despertarAudio()
+    setSonido(true)
+    localStorage.setItem(CLAVE_SONIDO, 'on')
+    sonar() // confirmacion audible de que quedo activo
   }
 
   /**
@@ -239,8 +265,8 @@ export default function Cocina() {
 
       {!sonido && (
         <div className="bg-aviso-500/15 border-b border-aviso-500/30 text-aviso-800 px-5 py-2.5 text-sm">
-          Toca <strong>Activar aviso</strong> para que suene cuando entre una comanda. Hazlo al
-          abrir el turno.
+          El aviso está apagado: toca <strong>Activar aviso</strong> para que suene cuando entre
+          una comanda.
         </div>
       )}
 
@@ -336,8 +362,11 @@ export default function Cocina() {
                             : 'bg-neutral-100 border-neutral-200'
                       }`}
                     >
-                      <span className="text-sm font-semibold leading-snug">
-                        <span className="tabular-nums">{item.cantidad}x</span> {item.nombre}
+                      {/* Grande: se lee desde la plancha, no con la tablet en
+                          la mano. "4x Pastelito" a 14 px obligaba a acercarse
+                          (Leider, 28-sep). */}
+                      <span className="text-lg font-semibold leading-snug">
+                        <span className="tabular-nums font-black">{item.cantidad}x</span> {item.nombre}
                         {item.cortesia && (
                           <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide text-exito-700 bg-exito-50 rounded px-1.5 py-0.5">
                             cortesía
@@ -345,7 +374,7 @@ export default function Cocina() {
                         )}
                       </span>
                       <span
-                        className={`w-5 h-5 rounded-full flex items-center justify-center text-xs shrink-0 ${
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-sm shrink-0 ${
                           item.preparado ? 'bg-exito-500 text-neutral-50' : 'bg-neutral-200'
                         }`}
                       >
