@@ -25,7 +25,20 @@ const BOCA = 60
 const FONDO = 370
 const ALTO = FONDO - BOCA
 const SILUETA = 'M36 60H224Q232 60 231 68L214 356Q213 370 199 370H61Q47 370 46 356L29 68Q28 60 36 60Z'
-const MINIMO = 22
+// Dos renglones de texto caben en 34 px: el nombre completo arriba y la
+// cifra abajo, en vez de "Refresco concentr…" (Leider, 29-sep).
+const MINIMO = 34
+
+/** Parte un nombre en hasta dos renglones de ~26 letras, por palabras. */
+function renglones(nombre: string): string[] {
+  const MAX = 26
+  if (nombre.length <= MAX) return [nombre]
+  const corte = nombre.lastIndexOf(' ', MAX)
+  const a = corte > 8 ? nombre.slice(0, corte) : nombre.slice(0, MAX)
+  let b = nombre.slice(a.length).trim()
+  if (b.length > MAX) b = b.slice(0, MAX - 1) + '…'
+  return [a, b]
+}
 
 let contador = 0
 
@@ -117,16 +130,7 @@ export default function Vaso({
             {/* Un hilo del color del papel entre franja y franja: aunque dos
                 tonos se parezcan, se ve donde termina una y empieza la otra. */}
             <line x1="0" x2="260" y1={f.y} y2={f.y} stroke="var(--vp-papel)" strokeWidth="1.5" />
-            {f.h >= 18 && (
-              <>
-                <text x="48" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="var(--color-neutral-50)" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
-                  {f.nombre.length > 18 ? f.nombre.slice(0, 17) + '…' : f.nombre}
-                </text>
-                <text x="212" y={f.y + f.h / 2 + 4} textAnchor="end" fontSize="11" fontWeight="600" fill="var(--color-neutral-50)" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2, fontVariantNumeric: 'tabular-nums' }}>
-                  {formato(f.valor)}
-                </text>
-              </>
-            )}
+            {f.h >= 18 && <Rotulo f={f} texto={formato(f.valor)} />}
             {resaltado === f.id && <rect x="0" y={f.y} width="260" height={f.h} fill="none" stroke="var(--vp-tinta)" strokeWidth="2" />}
           </g>
         ))}
@@ -154,6 +158,58 @@ export default function Vaso({
         </text>
       )}
     </svg>
+  )
+}
+
+const TEXTO = {
+  fontSize: 11,
+  fontWeight: 600,
+  fill: 'var(--color-neutral-50)',
+  style: { paintOrder: 'stroke' as const, stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 },
+}
+
+/**
+ * El nombre y la cifra dentro de la franja. Si la franja es alta, el nombre
+ * va entero (hasta dos renglones) y la cifra debajo; si es baja, todo en un
+ * renglon y el nombre se corta solo cuando de verdad no cabe.
+ */
+function Rotulo({ f, texto }: { f: { y: number; h: number; nombre: string }; texto: string }) {
+  const lineas = renglones(f.nombre)
+  const cortoParaUnaLinea = f.nombre.length <= 16
+  if (f.h < 34 || (lineas.length === 1 && cortoParaUnaLinea)) {
+    const nombre = f.h < 34 && !cortoParaUnaLinea ? lineas[0] : f.nombre
+    return (
+      <>
+        <text x="48" y={f.y + f.h / 2 + 4} {...TEXTO}>
+          {cortoParaUnaLinea ? nombre : f.h < 34 ? nombre : f.nombre}
+        </text>
+        {(cortoParaUnaLinea || f.h >= 34) && (
+          <text x="212" y={f.y + f.h / 2 + 4} textAnchor="end" {...TEXTO} style={{ ...TEXTO.style, fontVariantNumeric: 'tabular-nums' }}>
+            {texto}
+          </text>
+        )}
+      </>
+    )
+  }
+  // Alta: nombre entero arriba (uno o dos renglones), cifra abajo a la derecha.
+  const tres = lineas.length === 2 && f.h >= 48
+  const paso = 14
+  const total = (tres ? 3 : 2) * paso
+  const y0 = f.y + f.h / 2 - total / 2 + 11
+  return (
+    <>
+      <text x="48" y={y0} {...TEXTO}>
+        {tres ? lineas[0] : lineas.length === 2 ? lineas[0] + ' ' + lineas[1] : lineas[0]}
+      </text>
+      {tres && (
+        <text x="48" y={y0 + paso} {...TEXTO}>
+          {lineas[1]}
+        </text>
+      )}
+      <text x="212" y={y0 + (tres ? 2 : 1) * paso} textAnchor="end" {...TEXTO} style={{ ...TEXTO.style, fontVariantNumeric: 'tabular-nums' }}>
+        {texto}
+      </text>
+    </>
   )
 }
 
