@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { contiene, palabrasDe } from '../../components/Tabla'
-import { Boton, FiltroDesplegable, Vacio } from '../../components/ui'
+import { Boton, Cifra, FiltroDesplegable, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
 import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
@@ -82,6 +82,8 @@ export default function Recetas({
   const [error, setError] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const [soloFaltan, setSoloFaltan] = useState(false)
+  // Por categoria del menu, como en todas las pantallas: "" = todas.
+  const [categoria, setCategoria] = useState('')
 
   useEffect(() => {
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
@@ -115,10 +117,33 @@ export default function Recetas({
 
   const palabras = palabrasDe(busqueda)
   const visibles = renglones.filter((r) => {
+    if (categoria && r.categoria !== categoria) return false
     if (soloFaltan && r.info?.sin_receta === false) return false
     if (palabras.length === 0) return true
     return contiene(`${r.categoria} ${r.nombre}`, palabras)
   })
+
+  const opcionesCategoria = useMemo(() => {
+    const cuenta = new Map<string, number>()
+    for (const r of renglones) cuenta.set(r.categoria, (cuenta.get(r.categoria) ?? 0) + 1)
+    return [
+      { valor: '', texto: 'Todas', contador: renglones.length },
+      ...[...cuenta.entries()].map(([nombre, n]) => ({ valor: nombre, texto: nombre, contador: n })),
+    ]
+  }, [renglones])
+
+  // Las dos cifras de arriba: cuanto cuesta hacer un producto y cuanto deja,
+  // EN PROMEDIO y de lo que se esta viendo (la categoria filtrada), solo de
+  // los que tienen receta: sin receta el costo es cero y el margen del 100%
+  // mentiria (Leider, 29-sep).
+  const conReceta = renglones.filter(
+    (r) => (!categoria || r.categoria === categoria) && r.info?.sin_receta === false && r.info.costo != null,
+  )
+  const promedio = (f: (r: Renglon) => number) =>
+    conReceta.length ? conReceta.reduce((t, r) => t + f(r), 0) / conReceta.length : 0
+  const costoPromedio = promedio((r) => r.info!.costo!)
+  const margenPromedio = promedio((r) => r.variante.precio - r.info!.costo!)
+  const margenPctPromedio = promedio((r) => r.info!.margen_pct ?? 0)
 
   async function abrir(r: Renglon) {
     setError('')
@@ -193,6 +218,24 @@ export default function Recetas({
 
   return (
     <>
+      <div className="grid grid-cols-2 gap-3">
+        <Cifra
+          titulo="Cuesta hacer cada producto"
+          valor={conReceta.length ? `$${costoPromedio.toFixed(2)}` : '—'}
+          detalle={
+            conReceta.length
+              ? `promedio de ${conReceta.length} producto${conReceta.length === 1 ? '' : 's'} con receta${categoria ? ` · ${categoria}` : ''}`
+              : 'Ningún producto con receta'
+          }
+        />
+        <Cifra
+          titulo="Margen por producto"
+          valor={conReceta.length ? `$${margenPromedio.toFixed(2)}` : '—'}
+          detalle={conReceta.length ? `el ${margenPctPromedio.toFixed(0)}% del precio, en promedio` : 'Ponles receta para saberlo'}
+          tono={!conReceta.length ? 'normal' : margenPctPromedio < 30 ? 'alerta' : 'bien'}
+        />
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[12rem]">
           <input
@@ -206,6 +249,7 @@ export default function Recetas({
           />
           <Lupa />
         </div>
+        <FiltroDesplegable etiqueta="Categoría" valor={categoria} alCambiar={setCategoria} opciones={opcionesCategoria} />
         {/* El filtro que de verdad se usa: quién falta. Sin receta, ese
             producto sale con 100% de margen en Reportes, que es peor que no
             tener el dato porque parece uno bueno. */}
@@ -223,7 +267,13 @@ export default function Recetas({
       <div className="vp-losa overflow-hidden">
         {visibles.length === 0 ? (
           <Vacio
-            titulo={soloFaltan ? 'Todos tienen receta' : `Nada coincide con «${busqueda.trim()}»`}
+            titulo={
+              soloFaltan
+                ? `Todos tienen receta${categoria ? ` en ${categoria}` : ''}`
+                : busqueda.trim()
+                  ? `Nada coincide con «${busqueda.trim()}»`
+                  : `Nada en ${categoria || 'esta categoría'}`
+            }
             detalle={soloFaltan ? 'El costo y el margen de Reportes son de fiar.' : undefined}
           />
         ) : (
