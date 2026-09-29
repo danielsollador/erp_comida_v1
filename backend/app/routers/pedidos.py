@@ -1509,6 +1509,122 @@ async def facturar_pedido(
     return resultado
 
 
+@router.put("/{pedido_id}/cocina", response_model=schemas.Pedido)
+async def cambiar_cocina(
+    pedido_id: int,
+    body: schemas.CambiarCocinaRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Corregir, renglon por renglon, que va a cocina y que sale de la vitrina.
+
+    Para el error de un toque: la cajera marco de vitrina unos pastelitos que
+    habia que hacer, cobro, y la cocina nunca los vio mientras el cliente
+    esperaba (el cliente, 29-sep). Antes la unica salida era anular o
+    devolver la venta. Ahora esos renglones se mandan a cocina y aparecen alli
+    como pendientes; la plata y el inventario no se tocan (el renglon ya
+    estaba vendido y descontado).
+
+    Al reves --de cocina a vitrina-- tambien, pero solo lo que la cocina
+    todavia no toco: lo que ya hizo, o lo que esta haciendo, no se deshace
+    desde el mostrador.
+    """
+    pedido = _buscar(db, pedido_id)
+    if pedido.estado == "anulado":
+        raise HTTPException(status_code=409, detail="Un pedido anulado no va a cocina")
+    if pedido.devuelto:
+        raise HTTPException(status_code=409, detail="Esta venta se devolvió entera")
+    if pedido.entregado_en is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"El pedido #{pedido.numero} ya se entregó. Si falta algo, es un pedido nuevo.",
+        )
+    quien = operadores.del_turno(db, request)
+    if edicion_viva(pedido) and pedido.editando_por_id not in (None, quien.id if quien else None):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{pedido.editando_por or 'Otra caja'} está editando la comanda #{pedido.numero}.",
+        )
+
+    renglones = {i.id: i for i in pedido.items}
+    a_cocina: List[str] = []
+    a_vitrina: List[str] = []
+    ya_tenia_cocina = cocina_termino(pedido)
+    cocinando = la_tiene_cocina(pedido)
+    for cambio in body.items:
+        fila = renglones.get(cambio.id)
+        if fila is None:
+            raise HTTPException(status_code=400, detail="Ese renglón no es de este pedido")
+        va_hoy = fila.a_cocina is not False
+        if cambio.a_cocina == va_hoy:
+            continue
+        if cambio.a_cocina:
+            fila.a_cocina = True
+            fila.preparado = False
+            a_cocina.append(f"{fila.cantidad}x {fila.nombre}")
+        else:
+            if fila.preparado:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"La cocina ya terminó {fila.nombre}: no pasa a vitrina.",
+                )
+            if cocinando:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"La cocina ya está preparando la comanda #{pedido.numero}: "
+                    "habla con cocina antes de sacarle renglones.",
+                )
+            fila.a_cocina = False
+            fila.preparado = True
+            a_vitrina.append(f"{fila.cantidad}x {fila.nombre}")
+
+    if not a_cocina and not a_vitrina:
+        raise HTTPException(status_code=400, detail="No hay ningún cambio que guardar")
+
+    # Como queda frente a la cocina: la misma regla que al editar.
+    db.flush()
+    pedido.a_cocina = any(i.a_cocina is not False for i in pedido.items)
+    if any(not i.preparado for i in pedido.items):
+        if ya_tenia_cocina or a_cocina:
+            # Lo nuevo por cocinar la devuelve a la cola como nueva: si no,
+            # seguiria "lista" en el mostrador o "en preparacion" por quien
+            # la termino.
+            if not cocinando:
+                pedido.cocinando_desde = None
+                pedido.cocinando_por_id = None
+            pedido.listo_en = None
+            if pedido.estado == "listo":
+                pedido.estado = "pendiente"
+    elif pedido.items:
+        if pedido.estado == "pendiente":
+            pedido.estado = "listo"
+        pedido.listo_en = pedido.listo_en or ahora()
+
+    partes = []
+    if a_cocina:
+        partes.append("a cocina: " + ", ".join(a_cocina))
+    if a_vitrina:
+        partes.append("de vitrina: " + ", ".join(a_vitrina))
+    db.add(
+        models.PedidoEdicion(
+            pedido_id=pedido.id,
+            detalle="; ".join(partes),
+            total_antes=pedido.total,
+            total_despues=pedido.total,
+            diferencia=0,
+            operador_id=quien.id if quien else None,
+        )
+    )
+    pedido.editado = True
+    pedido.editado_en = ahora()
+    db.commit()
+    db.refresh(pedido)
+
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
 @router.put("/{pedido_id}/pagos", response_model=schemas.Pedido)
 async def corregir_pagos(
     pedido_id: int,

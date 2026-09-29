@@ -812,6 +812,21 @@ class PagoCorregido(BaseModel):
     referencia: Optional[str] = None
 
 
+class DestinoRenglon(BaseModel):
+    id: int
+    a_cocina: bool
+
+
+class CambiarCocinaRequest(BaseModel):
+    """Que renglones de un pedido ya tomado van a cocina y cuales no.
+
+    Solo hace falta mandar los que cambian; los que no vienen quedan como
+    estan.
+    """
+
+    items: List[DestinoRenglon]
+
+
 class CorregirPagosRequest(BaseModel):
     """Como se pago de verdad una venta ya cobrada: la lista COMPLETA.
 

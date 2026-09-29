@@ -480,6 +480,11 @@ export default function POS() {
   // comanda, y un pedido con un refresco de la nevera y una empanada por
   // hacer no tenía respuesta correcta.
   const [destinos, setDestinos] = useState<Record<number, boolean> | null>(null)
+  // Corregir despues, renglon por renglon, que va a cocina en un pedido ya
+  // tomado (el cliente, 29-sep: un toque de "vitrina" por error y la cocina
+  // nunca vio unos pastelitos que habia que hacer).
+  const [cocinaDe, setCocinaDe] = useState<{ pedido: Pedido; destino: Record<number, boolean> } | null>(null)
+  const [guardandoCocina, setGuardandoCocina] = useState(false)
   const categoriaPorId = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias])
 
   /** Lo que sugiere la categoría: se prepara en cocina o no. */
@@ -1326,11 +1331,18 @@ export default function POS() {
                             cat == null ? 'bg-neutral-300' : colorCategoria(cat, colorDe(cat)).dot
                           }`}
                         />
-                        {i.cantidad}x {i.nombre}
-                        {/* Renglón por renglón, solo si la comanda pasó por
-                            cocina: en una mixta es lo que dice qué falta. */}
-                        {cocina !== 'sin_cocina' &&
-                          (i.a_cocina === false ? (
+                        {/* La cantidad un poco más grande que el nombre: es
+                            lo que se lee de lejos al armar el pedido (el
+                            cliente, 29-sep: "ese número es muy pequeño"). */}
+                        <span className="text-[15px] font-bold text-neutral-900 tabular-nums">
+                          {i.cantidad}x
+                        </span>{' '}
+                        {i.nombre}
+                        {/* Renglón por renglón, siempre: dice qué entrega la
+                            cajera de la vitrina y qué espera de cocina. Antes
+                            una comanda toda de vitrina solo decía "Sin
+                            cocina" y un error de un toque no se notaba. */}
+                        {(i.a_cocina === false ? (
                             <span className="text-[10px] font-medium text-neutral-500 bg-neutral-100 rounded px-1.5 py-0.5">
                               vitrina
                             </span>
@@ -1361,6 +1373,20 @@ export default function POS() {
                         className="text-peligro-500 text-xs font-medium"
                       >
                         Anular
+                      </button>
+                    )}
+                    {pedido.estado !== 'anulado' && !pedido.devuelto && !pedido.entregado_en && (
+                      <button
+                        onClick={() =>
+                          setCocinaDe({
+                            pedido,
+                            destino: Object.fromEntries(pedido.items.map((i) => [i.id, i.a_cocina !== false])),
+                          })
+                        }
+                        title="Qué va a cocina y qué es de vitrina, renglón por renglón"
+                        className="text-neutral-600 text-xs font-medium"
+                      >
+                        Cocina
                       </button>
                     )}
                     <button
@@ -1674,11 +1700,23 @@ export default function POS() {
                 Volver
               </Boton>
               <Boton onClick={() => void mandarComanda(destinos)}>
-                {Object.values(destinos).some(Boolean) ? 'Enviar comanda' : 'Enviar sin cocina'}
+                {(() => {
+                  // La cuenta en el boton: la decision se ve antes de enviar.
+                  const n = Object.values(destinos)
+                  const aCocina = n.filter(Boolean).length
+                  const vitrina = n.length - aCocina
+                  if (vitrina === 0) return 'Enviar · todo a cocina'
+                  if (aCocina === 0) return `Enviar · ${vitrina} de vitrina, nada a cocina`
+                  return `Enviar · ${aCocina} a cocina, ${vitrina} de vitrina`
+                })()}
               </Boton>
             </>
           }
         >
+          {/* Solo "todo a cocina": equivocarse en esa direccion no deja a nadie
+              esperando. "Todo de vitrina" sacaba de cocina la comanda entera de
+              un toque, que es justo el error que se quiere evitar; lo de
+              vitrina se marca renglon por renglon. */}
           <div className="flex gap-2 mb-3">
             <button
               onClick={() => setDestinos(Object.fromEntries(Object.keys(destinos).map((k) => [k, true])))}
@@ -1686,29 +1724,35 @@ export default function POS() {
             >
               Todo a cocina
             </button>
-            <button
-              onClick={() => setDestinos(Object.fromEntries(Object.keys(destinos).map((k) => [k, false])))}
-              className="flex-1 text-xs font-medium rounded-lg border border-neutral-200 py-2 hover:bg-neutral-50"
-            >
-              Todo de vitrina
-            </button>
           </div>
           <ul className="space-y-2">
-            {Object.values(carrito).map((c) => {
+            {Object.values(carrito).filter((c) => c.variante.id in destinos).map((c) => {
               const cocina = destinos[c.variante.id] ?? true
+              // Lo que por su categoria va a cocina y se marco de vitrina: se
+              // resalta ESE renglon, que es donde suele estar el error.
+              const fueraDeLoNormal = !cocina && vaACocinaPorDefecto(c.variante.id)
               return (
                 <li key={c.variante.id}>
                   <button
                     onClick={() => setDestinos({ ...destinos, [c.variante.id]: !cocina })}
                     aria-pressed={cocina}
                     className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left ${
-                      cocina ? 'border-aviso-300 bg-aviso-50' : 'border-neutral-200 bg-white'
+                      fueraDeLoNormal
+                        ? 'border-peligro-400 bg-peligro-50'
+                        : cocina
+                          ? 'border-aviso-300 bg-aviso-50'
+                          : 'border-neutral-200 bg-white'
                     }`}
                   >
                     <span className="min-w-0">
                       <span className="block font-medium truncate">
                         {c.cantidad}x {etiquetaVariante(c.producto, c.variante)}
                       </span>
+                      {fueraDeLoNormal && (
+                        <span className="block text-xs font-medium text-peligro-700">
+                          Normalmente va a cocina: ¿ya está hecho en la vitrina?
+                        </span>
+                      )}
                     </span>
                     <span
                       className={`shrink-0 text-xs font-semibold rounded-full px-2.5 py-1 ${
@@ -1727,6 +1771,85 @@ export default function POS() {
               {libres.length} envío(s) aparte: no pasan por cocina.
             </p>
           )}
+        </Modal>
+      )}
+
+      {cocinaDe !== null && (
+        <Modal
+          titulo={`Cocina · pedido #${cocinaDe.pedido.numero}`}
+          ayuda="Renglón por renglón: toca para cambiar lo que va a cocina y lo que sale de la vitrina. Lo que la cocina ya hizo o está haciendo no se cambia."
+          onCerrar={() => setCocinaDe(null)}
+          ancho="sm"
+          pie={
+            <>
+              <Boton tono="fantasma" onClick={() => setCocinaDe(null)}>
+                Volver
+              </Boton>
+              <Boton
+                disabled={
+                  guardandoCocina ||
+                  !cocinaDe.pedido.items.some((i) => (i.a_cocina !== false) !== cocinaDe.destino[i.id])
+                }
+                onClick={async () => {
+                  const cambios = cocinaDe.pedido.items
+                    .filter((i) => (i.a_cocina !== false) !== cocinaDe.destino[i.id])
+                    .map((i) => ({ id: i.id, a_cocina: cocinaDe.destino[i.id] }))
+                  setGuardandoCocina(true)
+                  setError('')
+                  try {
+                    await api.cambiarCocina(cocinaDe.pedido.id, cambios)
+                    setCocinaDe(null)
+                    refrescarPedidos()
+                  } catch (e) {
+                    setCocinaDe(null)
+                    setError(e instanceof Error ? e.message : 'No se pudo cambiar')
+                  } finally {
+                    setGuardandoCocina(false)
+                  }
+                }}
+              >
+                Guardar
+              </Boton>
+            </>
+          }
+        >
+          <ul className="space-y-2">
+            {cocinaDe.pedido.items.map((i) => {
+              const cocina = cocinaDe.destino[i.id]
+              const hecho = i.a_cocina !== false && i.preparado
+              const preparando = i.a_cocina !== false && !i.preparado && enPreparacion(cocinaDe.pedido)
+              const fijo = hecho || preparando
+              return (
+                <li key={i.id}>
+                  <button
+                    disabled={fijo}
+                    onClick={() =>
+                      setCocinaDe({ ...cocinaDe, destino: { ...cocinaDe.destino, [i.id]: !cocina } })
+                    }
+                    aria-pressed={cocina}
+                    className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left disabled:opacity-60 ${
+                      cocina ? 'border-aviso-300 bg-aviso-50' : 'border-neutral-200 bg-white'
+                    }`}
+                  >
+                    <span className="min-w-0 block font-medium truncate">
+                      {i.cantidad}x {i.nombre}
+                    </span>
+                    <span
+                      className={`shrink-0 text-xs font-semibold rounded-full px-2.5 py-1 ${
+                        hecho
+                          ? 'bg-exito-100 text-exito-700'
+                          : cocina
+                            ? 'bg-aviso-500 text-white'
+                            : 'bg-neutral-800 text-white'
+                      }`}
+                    >
+                      {hecho ? 'Cocina lo terminó' : preparando ? 'En preparación' : cocina ? 'A cocina' : 'De vitrina'}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         </Modal>
       )}
 
