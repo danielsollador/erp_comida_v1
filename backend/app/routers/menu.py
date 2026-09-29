@@ -1,6 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from .. import models, reposicion, schemas
@@ -83,7 +84,11 @@ def reactivar_categoria(categoria_id: int, db: Session = Depends(get_db)):
 @router.post("/productos", response_model=schemas.Producto)
 def crear_producto(producto: schemas.ProductoCreate, db: Session = Depends(get_db)):
     db_producto = models.Producto(
-        nombre=producto.nombre, categoria_id=producto.categoria_id, activo=producto.activo
+        nombre=producto.nombre,
+        categoria_id=producto.categoria_id,
+        activo=producto.activo,
+        # Lo nuevo va al final de su categoria, no delante de lo ya ordenado.
+        orden=_siguiente_puesto(db, producto.categoria_id),
     )
     db.add(db_producto)
     db.flush()
@@ -99,11 +104,50 @@ def actualizar_producto(producto_id: int, producto: schemas.ProductoBase, db: Se
     db_producto = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
     if not db_producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
+    # Si cambia de categoria, llega al final de la nueva.
+    if producto.categoria_id != db_producto.categoria_id:
+        db_producto.orden = _siguiente_puesto(db, producto.categoria_id)
     for key, value in producto.model_dump().items():
         setattr(db_producto, key, value)
     db.commit()
     db.refresh(db_producto)
     return db_producto
+
+
+def _siguiente_puesto(db: Session, categoria_id: int) -> int:
+    ultimo = (
+        db.query(func.max(models.Producto.orden))
+        .filter(models.Producto.categoria_id == categoria_id)
+        .scalar()
+    )
+    return (ultimo or 0) + 1
+
+
+@router.put("/categorias/{categoria_id}/orden-productos")
+def ordenar_productos(
+    categoria_id: int, body: schemas.OrdenProductos, db: Session = Depends(get_db)
+):
+    """El orden de los productos de una categoria, de una vez.
+
+    Llega la lista completa y cada uno queda en su puesto (1, 2, 3...). Uno
+    por uno dejaria puestos repetidos a mitad de camino, y el mostrador los
+    ordenaria como le diera la gana.
+    """
+    productos = {
+        p.id: p
+        for p in db.query(models.Producto).filter(models.Producto.categoria_id == categoria_id)
+    }
+    if not productos:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada o vacía")
+    ajenos = [i for i in body.ids if i not in productos]
+    if ajenos:
+        raise HTTPException(status_code=400, detail="Hay productos que no son de esta categoría")
+    # Los que no vinieron (retirados del menu) quedan detras, en su orden.
+    resto = [p.id for p in sorted(productos.values(), key=lambda p: (p.orden or 0, p.id)) if p.id not in body.ids]
+    for puesto, pid in enumerate(list(dict.fromkeys(body.ids)) + resto, start=1):
+        productos[pid].orden = puesto
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/productos/{producto_id}")

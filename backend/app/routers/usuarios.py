@@ -60,6 +60,8 @@ class NuevoRol(BaseModel):
     modulos: List[str] = []
     # Si quien tiene el rol autoriza operaciones (PIN y solicitudes).
     autoriza: bool = False
+    # Si ve las cifras del dia en la portada.
+    ve_kpis: bool = False
 
 
 class CambioLocales(BaseModel):
@@ -150,6 +152,9 @@ def _ficha_rol(rol: str) -> dict:
         # el local con la casilla de la pantalla de Roles.
         "autoriza": permisos.autoriza(rol),
         "autoriza_fijo": permisos.normalizar(rol) in ("admin", "dueno"),
+        # Si ve las cifras del dia en la portada. Dueño siempre.
+        "ve_kpis": permisos.ve_kpis(rol),
+        "ve_kpis_fijo": permisos.normalizar(rol) in ("admin", "dueno"),
     }
 
 
@@ -215,7 +220,8 @@ def crear_rol(datos: NuevoRol, request: Request) -> dict:
                         datos.modulos, permisos.ROLES, permisos.MODULOS_A_MEDIDA,
                         # Nace del local donde se creo. Vertigo, desde el hub,
                         # crea roles sin local: suyos y de nadie mas.
-                        local=_local_de_aqui(), autoriza=datos.autoriza)["id"]
+                        local=_local_de_aqui(), autoriza=datos.autoriza,
+                        ve_kpis=datos.ve_kpis)["id"]
         )
     except roles.ErrorRoles as e:
         raise HTTPException(400, str(e))
@@ -241,10 +247,12 @@ def editar_rol(rol_id: str, datos: NuevoRol, request: Request) -> dict:
             roles.ajustar(objetivo, _local_de_aqui(), datos.modulos,
                           permisos.MODULOS_A_MEDIDA)
             roles.fijar_autoriza(objetivo, _local_de_aqui(), datos.autoriza)
+            roles.fijar_ve_kpis(objetivo, _local_de_aqui(), datos.ve_kpis)
             return _ficha_rol(objetivo)
         return _ficha_rol(
             roles.actualizar(objetivo, datos.nombre, datos.descripcion, datos.modulos,
-                             permisos.MODULOS_A_MEDIDA, autoriza=datos.autoriza)["id"]
+                             permisos.MODULOS_A_MEDIDA, autoriza=datos.autoriza,
+                             ve_kpis=datos.ve_kpis)["id"]
         )
     except roles.ErrorRoles as e:
         raise HTTPException(400, str(e))

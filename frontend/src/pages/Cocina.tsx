@@ -54,15 +54,47 @@ export default function Cocina() {
   }, [categorias])
   const [, setTick] = useState(0)
   const [nuevos, setNuevos] = useState<Set<number>>(new Set())
-  // El navegador no deja sonar nada hasta que alguien toca la pantalla, asi que
-  // el sonido arranca apagado y la cocina lo activa con un toque al abrir turno.
-  const [sonido, setSonido] = useState(false)
+  // ENCENDIDO SALVO QUE ALGUIEN LO APAGUE, y lo que se elija queda guardado
+  // en la tablet: arrancaba apagado y se perdia con cada recarga, asi que en
+  // la practica nadie lo tenia puesto (Leider, 28-sep). El navegador no deja
+  // sonar nada hasta un toque en la pantalla: el primer toque que reciba la
+  // pagina, sea donde sea, despierta el audio.
+  const [sonido, setSonido] = useState(() => {
+    try {
+      return localStorage.getItem(CLAVE_SONIDO) !== 'off'
+    } catch {
+      return true
+    }
+  })
   const audioRef = useRef<AudioContext | null>(null)
+
+  const despertarAudio = useCallback(() => {
+    try {
+      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      if (!audioRef.current) audioRef.current = new Ctor()
+      void audioRef.current.resume()
+    } catch {
+      // Sin audio disponible el resto de la pantalla sigue funcionando igual.
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!sonido) return
+    despertarAudio()
+    const alTocar = () => despertarAudio()
+    document.addEventListener('pointerdown', alTocar, { once: true })
+    document.addEventListener('keydown', alTocar, { once: true })
+    return () => {
+      document.removeEventListener('pointerdown', alTocar)
+      document.removeEventListener('keydown', alTocar)
+    }
+  }, [sonido, despertarAudio])
   const idsConocidos = useRef<Set<number> | null>(null)
 
   const sonar = useCallback(() => {
     const ctx = audioRef.current
     if (!ctx) return
+    if (ctx.state === 'suspended') void ctx.resume()
     // Dos tonos, repetidos dos veces: mas volumen y mas largo que antes -la
     // version corta se perdia entre licuadoras y freidoras- pero sigue siendo
     // un timbre, no una sirena.
@@ -133,16 +165,10 @@ export default function Cocina() {
       localStorage.setItem(CLAVE_SONIDO, 'off')
       return
     }
-    try {
-      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      if (!audioRef.current) audioRef.current = new Ctor()
-      audioRef.current.resume()
-      setSonido(true)
-      localStorage.setItem(CLAVE_SONIDO, 'on')
-      sonar() // confirmacion audible de que quedo activo
-    } catch {
-      // Sin audio disponible el resto de la pantalla sigue funcionando igual.
-    }
+    despertarAudio()
+    setSonido(true)
+    localStorage.setItem(CLAVE_SONIDO, 'on')
+    sonar() // confirmacion audible de que quedo activo
   }
 
   /**
@@ -249,12 +275,12 @@ export default function Cocina() {
 
       {!sonido && (
         <div className="bg-aviso-500/10 border-b border-aviso-500/20 text-aviso-900 px-5 py-2.5 text-sm">
-          Toca <strong>Activar aviso</strong> para que suene cuando entre una comanda. Hazlo al
-          abrir el turno.
+          El aviso está apagado: toca <strong>Activar aviso</strong> para que suene cuando entre
+          una comanda.
         </div>
       )}
 
-      <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="p-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
         {pedidos.map((pedido) => {
           const minutos = minutosDesde(pedido.creado_en)
           const estilo = estiloAntiguedad(minutos)
@@ -266,7 +292,7 @@ export default function Cocina() {
           return (
             <div
               key={pedido.id}
-              className={`vp-losa p-5 outline-offset-[-1px] ${
+              className={`vp-losa p-2.5 outline-offset-[-1px] ${
                 bloqueada
                   ? 'outline outline-2 outline-aviso-500/60 bg-aviso-500/5'
                   : esNuevo
@@ -274,16 +300,16 @@ export default function Cocina() {
                     : estilo.card
               }`}
             >
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex justify-between items-start mb-1.5">
                 {/* El nombre debajo del numero y no al lado: el numero se lee
                     de lejos --es lo que se canta cuando la comida sale-- y
                     ponerle el nombre en la misma linea lo encogeria. */}
                 <span className="min-w-0">
-                  <span className="block font-display text-3xl font-semibold tracking-tight tabular-nums">
+                  <span className="block font-display text-xl font-semibold tracking-tight tabular-nums leading-none">
                     #{pedido.numero}
                   </span>
                   {pedido.cliente && (
-                    <span className="block text-base font-semibold text-neutral-600 truncate">
+                    <span className="block text-[13px] font-semibold text-neutral-600 truncate">
                       {pedido.cliente}
                     </span>
                   )}
@@ -293,25 +319,32 @@ export default function Cocina() {
                       que salio bien a la primera: lo primero que hace el
                       cocinero al verlo es releer los renglones. */}
                   {pedido.editado && (
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-aviso-500/15 text-aviso-800">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-aviso-500/15 text-aviso-800 uppercase tracking-wide">
                       Editado
                     </span>
                   )}
                   {esNuevo && (
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-acento-500 text-neutral-50">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-acento-500 text-neutral-50 uppercase tracking-wide">
                       Nuevo
                     </span>
                   )}
                   <span
-                    className={`text-sm font-semibold px-2.5 py-1 rounded-full tabular-nums ${estilo.badge}`}
+                    className={`text-xs font-semibold px-2 py-0.5 rounded-full tabular-nums ${estilo.badge}`}
                   >
                     {minutos} min
                   </span>
+                  <button
+                    onClick={() => anular(pedido)}
+                    disabled={bloqueada}
+                    className="text-[11px] text-neutral-400 hover:text-peligro-500 disabled:opacity-40 px-1"
+                  >
+                    Anular
+                  </button>
                 </div>
               </div>
 
               {bloqueada && (
-                <div className="mb-4 px-4 py-3 rounded-xl bg-aviso-500/20 text-aviso-900 text-sm font-semibold flex items-center gap-2">
+                <div className="mb-2 px-3 py-2 rounded-lg bg-aviso-500/20 text-aviso-900 text-xs font-semibold flex items-center gap-2">
                   <Icono nombre="alerta" size={16} />
                   {pedido.editando_por || 'El punto de venta'} está editando esta comanda.
                   Espera: los renglones pueden cambiar.
@@ -321,22 +354,7 @@ export default function Cocina() {
               {/* Agarrarla es lo que le cierra la edicion a la caja. Marcar un
                   renglon tambien la agarra, asi que el boton es para decirlo
                   antes de empezar -- que es cuando sirve. */}
-              <button
-                onClick={() => alternarCocinando(pedido.id)}
-                disabled={bloqueada}
-                className={`vp-pulsable w-full mb-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-40 ${
-                  mia
-                    ? 'bg-acento-500/15 text-acento-800'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                }`}
-              >
-                <Icono nombre="cocina" size={16} />
-                {mia
-                  ? `En preparación${pedido.cocinando_por ? ` · ${pedido.cocinando_por}` : ''}`
-                  : 'Empezar a preparar'}
-              </button>
-
-              <ul className="space-y-2 mb-4">
+              <ul className="space-y-1 mb-2">
                 {/* Lo de vitrina no se cocina: el refresco de la nevera
                     solo le estorba a quien está en la plancha. */}
                 {pedido.items.filter((item) => item.a_cocina !== false).map((item) => {
@@ -346,7 +364,7 @@ export default function Cocina() {
                     <button
                       onClick={() => toggleItem(item.id)}
                       disabled={bloqueada}
-                      className={`vp-pulsable w-full text-left px-4 py-3 rounded-xl flex justify-between items-center gap-3 border disabled:opacity-50 ${
+                      className={`vp-pulsable w-full text-left px-2.5 py-1.5 rounded-lg flex justify-between items-center gap-2 border disabled:opacity-50 ${
                         item.preparado
                           ? 'bg-exito-500/10 border-exito-500/30 text-neutral-500 line-through'
                           : tinte
@@ -354,8 +372,11 @@ export default function Cocina() {
                             : 'bg-neutral-100 border-neutral-200'
                       }`}
                     >
+                      {/* Grande: se lee desde la plancha, no con la tablet en
+                          la mano. "4x Pastelito" a 14 px obligaba a acercarse
+                          (Leider, 28-sep). */}
                       <span className="text-lg font-semibold leading-snug">
-                        <span className="tabular-nums">{item.cantidad}x</span> {item.nombre}
+                        <span className="tabular-nums font-black">{item.cantidad}x</span> {item.nombre}
                         {item.cortesia && (
                           <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide text-exito-700 bg-exito-50 rounded px-1.5 py-0.5">
                             cortesía
@@ -363,7 +384,7 @@ export default function Cocina() {
                         )}
                       </span>
                       <span
-                        className={`w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0 ${
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-sm shrink-0 ${
                           item.preparado ? 'bg-exito-500 text-neutral-50' : 'bg-neutral-200'
                         }`}
                       >
@@ -374,20 +395,29 @@ export default function Cocina() {
                   )
                 })}
               </ul>
-              <button
-                onClick={() => marcarTodoListo(pedido.id)}
-                disabled={bloqueada}
-                className="vp-pulsable w-full bg-exito-600 hover:bg-exito-500 disabled:opacity-40 disabled:hover:bg-exito-600 text-neutral-50 py-3.5 rounded-xl font-semibold text-base"
-              >
-                Marcar todo listo
-              </button>
-              <button
-                onClick={() => anular(pedido)}
-                disabled={bloqueada}
-                className="w-full mt-2 text-neutral-500 hover:text-peligro-400 disabled:opacity-40 py-1.5 text-sm font-medium"
-              >
-                Anular comanda
-              </button>
+              {/* Las dos acciones en una fila: apiladas eran media tarjeta. */}
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => alternarCocinando(pedido.id)}
+                  disabled={bloqueada}
+                  title={mia && pedido.cocinando_por ? `En preparación · ${pedido.cocinando_por}` : undefined}
+                  className={`vp-pulsable flex-1 min-w-0 py-1.5 rounded-lg font-semibold text-xs flex items-center justify-center gap-1 disabled:opacity-40 ${
+                    mia
+                      ? 'bg-acento-500/15 text-acento-800 '
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  }`}
+                >
+                  <Icono nombre="cocina" size={13} />
+                  <span className="truncate">{mia ? 'Preparando' : 'Preparar'}</span>
+                </button>
+                <button
+                  onClick={() => marcarTodoListo(pedido.id)}
+                  disabled={bloqueada}
+                  className="vp-pulsable flex-1 bg-exito-600 hover:bg-exito-500 disabled:opacity-40 disabled:hover:bg-exito-600 text-neutral-50 py-1.5 rounded-lg font-semibold text-xs"
+                >
+                  Todo listo
+                </button>
+              </div>
             </div>
           )
         })}

@@ -88,6 +88,27 @@ function sinTildes(texto: string) {
   return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
 }
 
+// Que pedido se estaba editando en ESTA pestaña, para retomarlo si se recarga.
+const CLAVE_EDICION = 'erp-pos-editando'
+
+function recordarEdicion(id: number | null) {
+  try {
+    if (id === null) sessionStorage.removeItem(CLAVE_EDICION)
+    else sessionStorage.setItem(CLAVE_EDICION, String(id))
+  } catch {
+    // sin almacenamiento: al recargar simplemente no se retoma
+  }
+}
+
+function edicionRecordada(): number | null {
+  try {
+    const v = sessionStorage.getItem(CLAVE_EDICION)
+    return v ? Number(v) || null : null
+  } catch {
+    return null
+  }
+}
+
 export default function POS() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   // Que categoria se ve en la lista: una, o todas con su seccion cada una.
@@ -139,7 +160,7 @@ export default function POS() {
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
   // Lo ultimo que se pinto, para no repintar cuando el servidor manda lo mismo.
   const firmaPedidos = useRef('')
-  const [vista, irA] = useSeccion(SECCIONES_POS)
+  const [vista, irAVista] = useSeccion(SECCIONES_POS)
   /**
    * "Comanda #12 enviada", un momento y se va sola.
    *
@@ -240,6 +261,7 @@ export default function POS() {
   const [metodoDif, setMetodoDif] = useState(METODOS_PAGO[0])
   const [referenciaDif, setReferenciaDif] = useState('')
   const { estado: acceso } = useAcceso()
+  const yo = acceso.nombre_visible || acceso.usuario
   const dialogo = useDialogo()
   const [ultimaVenta, setUltimaVenta] = useState<Pedido | null>(null)
   // Las ventas de hoy, para consultarlas sin salir del mostrador. `null` es
@@ -334,14 +356,12 @@ export default function POS() {
       .then(([enCocina, listos, porEntregar]) => {
         const porId = new Map<number, Pedido>()
         for (const p of [...enCocina, ...listos, ...porEntregar]) porId.set(p.id, p)
-        // 0 = listo para cobrar, 1 = para entregar, 2 = en cocina sin cobrar,
-        // 3 = cobrado y en cocina. Lo que le toca hacer a la caja va arriba;
-        // lo que solo se mira, abajo. Y dentro de cada grupo, la ULTIMA que
-        // llego primero: la comanda que se acaba de tomar es la que se esta
-        // mirando, y quedaba al final de la lista (Leider, 22-sep).
-        const peso = (p: Pedido) =>
-          p.items.some((i) => !i.preparado) ? (p.estado === 'pagado' ? 3 : 2) : p.estado === 'pagado' ? 1 : 0
-        const lista = [...porId.values()].sort((a, b) => peso(a) - peso(b) || b.numero - a.numero)
+        // LA ULTIMA QUE LLEGO, PRIMERO, y nada mas. Antes se agrupaba por lo
+        // que le tocaba hacer a la caja (listos para cobrar arriba, cobrados
+        // en cocina abajo) y con una fila de cobrados por entregar los pedidos
+        // recien tomados quedaban tapados debajo (Leider, 28-sep). El color de
+        // cada tarjeta ya dice en que va.
+        const lista = [...porId.values()].sort((a, b) => b.numero - a.numero)
         // Si llego exactamente lo mismo, no se toca el estado: repintar el
         // mostrador entero por nada es lo que traba a una tablet de 3 GB, y
         // el respaldo de cada minuto casi siempre trae lo mismo.
@@ -563,7 +583,26 @@ export default function POS() {
     ]
   }
 
+  /**
+   * Cambiar de pestaña. Con un pedido en edicion solo se puede ir a la comanda:
+   * salir a "Pedidos" con el candado tomado dejaba el pedido bloqueado para
+   * todos hasta que venciera (Leider, 25-sep). Se termina con Guardar cambios o
+   * con Cancelar; las funciones internas que ya soltaron el candado usan
+   * `irAVista` directo.
+   */
+  function irA(destino: string) {
+    if (enEdicion && destino !== 'tomar') {
+      dialogo.avisar({
+        titulo: `Estás editando el pedido #${enEdicion.numero}`,
+        texto: 'Termina con "Guardar cambios" o "Cancelar" antes de salir de la comanda.',
+      })
+      return
+    }
+    irAVista(destino)
+  }
+
   function terminarEdicion() {
+    recordarEdicion(null)
     setEnEdicion(null)
     setDiferencia(null)
     setFirma(null)
@@ -586,6 +625,14 @@ export default function POS() {
     if (!enEdicion) return
     setError('')
     setDestinos(null)
+    // Se abrio para mirar y quedo igual: no hay nada que guardar, y eso no es
+    // un error. Se cierra la edicion y se vuelve a los pedidos. Antes el
+    // servidor contestaba "no hay ningun cambio" y la pantalla se quedaba
+    // trancada en la comanda con el pedido adentro.
+    if (quedoIgual(enEdicion)) {
+      cerrarSinCambios()
+      return
+    }
     const nuevoTotal = Math.max(
       Math.round((totalCarrito - (enEdicion.descuento || 0)) * 100) / 100,
       0,
@@ -605,12 +652,56 @@ export default function POS() {
             : undefined,
       })
       terminarEdicion()
-      irA('pedidos')
+      irAVista('pedidos')
       refrescarPedidos()
     } catch (e) {
       setDiferencia(null)
-      setError(e instanceof Error ? e.message : 'No se pudieron guardar los cambios')
+      const mensaje = e instanceof Error ? e.message : 'No se pudieron guardar los cambios'
+      // Por si el servidor ve igual algo que aqui parecia distinto.
+      if (mensaje.includes('ningún cambio')) {
+        cerrarSinCambios()
+        return
+      }
+      setError(mensaje)
     }
+  }
+
+  /** Lo que tiene la comanda, contado igual que los renglones del pedido. */
+  function huellaDeLaComanda(): string {
+    const partes: string[] = []
+    for (const c of Object.values(carrito)) partes.push(`v${c.variante.id}:${c.cortesia ? 1 : 0}:${c.cantidad}`)
+    const sueltos = new Map<string, number>()
+    for (const l of libres) {
+      const k = l.variante_id !== undefined ? `e${l.variante_id}:${l.precio.toFixed(2)}` : `l${l.nombre}:${l.precio.toFixed(2)}`
+      sueltos.set(k, (sueltos.get(k) ?? 0) + 1)
+    }
+    for (const [k, n] of sueltos) partes.push(`${k}:${n}`)
+    return partes.sort().join('|')
+  }
+
+  function huellaDelPedido(pedido: Pedido): string {
+    const partes: string[] = []
+    const sueltos = new Map<string, number>()
+    const sumar = (k: string, n: number) => sueltos.set(k, (sueltos.get(k) ?? 0) + n)
+    for (const i of pedido.items) {
+      if (i.variante_id === null) sumar(`l${i.nombre}:${i.precio_unitario.toFixed(2)}`, i.cantidad)
+      else if (categoriaEnvios && categoriaDeVariante.get(i.variante_id) === categoriaEnvios.id)
+        sumar(`e${i.variante_id}:${i.precio_unitario.toFixed(2)}`, i.cantidad)
+      else partes.push(`v${i.variante_id}:${i.cortesia ? 1 : 0}:${i.cantidad}`)
+    }
+    for (const [k, n] of sueltos) partes.push(`${k}:${n}`)
+    return partes.sort().join('|')
+  }
+
+  function quedoIgual(pedido: Pedido): boolean {
+    return huellaDeLaComanda() === huellaDelPedido(pedido)
+  }
+
+  function cerrarSinCambios() {
+    if (enEdicion) api.soltarEdicion(enEdicion.id).catch(() => {})
+    terminarEdicion()
+    irAVista('pedidos')
+    refrescarPedidos()
   }
 
   async function mandarComanda(destinoDe: Record<number, boolean>) {
@@ -905,7 +996,7 @@ export default function POS() {
   }
 
   async function editar(pedido: Pedido) {
-    const impedimento = porQueNoSeEdita(pedido)
+    const impedimento = porQueNoSeEdita(pedido, yo)
     if (impedimento) {
       setError(impedimento)
       return
@@ -977,14 +1068,37 @@ export default function POS() {
     setClienteComanda(pedido.cliente || '')
     setFaltaNombre(false)
     setEnEdicion(pedido)
+    recordarEdicion(pedido.id)
     irA('tomar')
     return true
   }
 
+  // Si se recarga la pagina a mitad de una edicion, la comanda volvia vacia
+  // y el pedido parecia borrado (seguia en el servidor, sin tocar). Se
+  // recuerda en esta pestaña cual se estaba editando y, al volver, se abre
+  // otra vez en la comanda tal como esta guardado.
+  const restaurada = useRef(false)
+  useEffect(() => {
+    if (restaurada.current || categorias.length === 0) return
+    restaurada.current = true
+    const id = edicionRecordada()
+    if (id === null) return
+    api
+      .abrirEdicion(id)
+      .then((p) => {
+        if (!cargarEnLaComanda(p)) {
+          api.soltarEdicion(id).catch(() => {})
+          recordarEdicion(null)
+        }
+      })
+      .catch(() => recordarEdicion(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categorias])
+
   function cancelarEdicion() {
     if (enEdicion) api.soltarEdicion(enEdicion.id).catch(() => {})
     terminarEdicion()
-    irA('pedidos')
+    irAVista('pedidos')
     refrescarPedidos()
   }
 
@@ -1166,7 +1280,7 @@ export default function POS() {
                     : 'border-exito-400 bg-exito-500/5'
               const anillo = preparando ? 'ring-2 ring-acento-500/50' : ''
               return (
-              <div key={pedido.id} className={`rounded-2xl border-2 p-4 ${marco} ${anillo}`}>
+              <div key={pedido.id} className={`rounded-2xl border-2 p-3 ${marco} ${anillo}`}>
                 <div className="flex justify-between items-start mb-2 gap-2">
                   {/* El numero y, debajo, de quien es. Entre ocho comandas
                       vivas el nombre es lo que las distingue; el numero solo
@@ -1176,11 +1290,11 @@ export default function POS() {
                       pastilla de estado ("Cobrado · en cocina") y un nombre
                       normal se cortaba en "Sra. Ca...". */}
                   <span className="min-w-0">
-                    <span className="block font-bold text-lg leading-tight">#{pedido.numero}</span>
+                    <span className="block font-bold text-base leading-tight">#{pedido.numero}</span>
                     {pedido.cliente ? (
                       <span
                         className={`block truncate ${
-                          entregar ? 'text-base font-bold text-acento-800' : 'text-sm font-semibold text-neutral-600'
+                          entregar ? 'text-sm font-bold text-acento-800' : 'text-[13px] font-semibold text-neutral-600'
                         }`}
                       >
                         {pedido.cliente}
@@ -1254,7 +1368,7 @@ export default function POS() {
                     </span>
                   </span>
                 </div>
-                <ul className="text-sm text-neutral-600 mb-3 space-y-0.5">
+                <ul className="text-[13px] leading-snug text-neutral-600 mb-2 space-y-0">
                   {pedido.items.map((i) => {
                     const cat = categoriaDeVariante.get(i.variante_id ?? -1)
                     return (
@@ -1304,8 +1418,8 @@ export default function POS() {
                     )}
                     <button
                       onClick={() => editar(pedido)}
-                      disabled={Boolean(porQueNoSeEdita(pedido))}
-                      title={porQueNoSeEdita(pedido) ?? 'Cambiar los renglones del pedido'}
+                      disabled={Boolean(porQueNoSeEdita(pedido, yo))}
+                      title={porQueNoSeEdita(pedido, yo) ?? 'Cambiar los renglones del pedido'}
                       className="text-neutral-600 text-xs font-medium disabled:opacity-30"
                     >
                       Editar
@@ -1371,13 +1485,13 @@ export default function POS() {
         </div>
 
         {vista === 'tomar' && (
-        <div className="bg-[var(--vp-superficie)] md:border-l border-neutral-200 p-4 flex flex-col md:h-full md:min-h-0">
+        <div className="bg-[var(--vp-superficie)] md:border-l border-neutral-200 p-3 flex flex-col md:h-full md:min-h-0">
           {enEdicion && (
-            <div className="mb-3 rounded-xl bg-aviso-50 border border-aviso-300 px-3 py-2 flex items-center justify-between gap-2">
-              <p className="text-sm text-aviso-900 min-w-0">
+            <div className="mb-2 rounded-lg bg-aviso-50 border border-aviso-300 px-2.5 py-1.5 flex items-center justify-between gap-2">
+              <p className="text-xs text-aviso-900 min-w-0">
                 <span className="font-semibold">Editando el pedido #{enEdicion.numero}</span>
                 {enEdicion.estado === 'pagado' && (
-                  <span className="block text-xs text-aviso-800">Ya está cobrado: si el total cambia, se cuadra la diferencia.</span>
+                  <span className="block text-[11px] text-aviso-800">Ya está cobrado: si cambia el total, se cuadra la diferencia.</span>
                 )}
               </p>
               <button
@@ -1388,8 +1502,8 @@ export default function POS() {
               </button>
             </div>
           )}
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-lg">{enEdicion ? 'Comanda del pedido' : 'Comanda actual'}</h2>
+          <div className={`flex items-center justify-between ${enEdicion ? 'mb-0' : 'mb-2'}`}>
+            {!enEdicion && <h2 className="font-semibold text-sm">Comanda actual</h2>}
             {!enEdicion && (Object.keys(carrito).length > 0 || libres.length > 0) && (
               <button
                 onClick={() => {
@@ -1404,25 +1518,25 @@ export default function POS() {
           </div>
           <button
             onClick={agregarDeliveryPersonalizado}
-            className="w-full mb-3 text-sm font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-2"
+            className="w-full mb-2 text-xs font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-1.5"
           >
             + Delivery
           </button>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
-          <div className="flex-1 overflow-y-auto space-y-3">
+          <div className="flex-1 overflow-y-auto space-y-1.5">
             {Object.values(carrito).map(({ producto, variante, cantidad, cortesia, precio }) => (
               <div key={variante.id} className="flex justify-between items-center gap-2">
                 <span
                   aria-hidden
-                  className={`w-1 self-stretch min-h-[34px] rounded-full shrink-0 ${
+                  className={`w-1 self-stretch min-h-[30px] rounded-full shrink-0 ${
                     colorCategoria(producto.categoria_id, colorDe(producto.categoria_id)).barra
                   }`}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold truncate">
+                  <div className="text-[13px] font-semibold leading-tight line-clamp-2">
                     {etiquetaVariante(producto, variante)}
                   </div>
-                  <div className="text-xs text-neutral-500 flex items-center gap-1.5 flex-wrap">
+                  <div className="text-[11px] text-neutral-500 flex items-center gap-1.5 flex-wrap">
                     {cortesia ? (
                       <>
                         <span className="line-through">{fmt((precio ?? variante.precio) * cantidad)}</span>
@@ -1441,7 +1555,7 @@ export default function POS() {
                     <button
                       type="button"
                       onClick={() => alternarCortesia(variante.id)}
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${
+                      className={`rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide border ${
                         cortesia
                           ? 'bg-exito-50 border-exito-300 text-exito-700'
                           : 'border-neutral-200 text-neutral-400 hover:text-neutral-700 hover:border-neutral-400'
@@ -1454,14 +1568,14 @@ export default function POS() {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => quitar(variante.id)}
-                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
+                    className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-base"
                   >
                     -
                   </button>
-                  <span className="w-6 text-center font-semibold tabular-nums">{cantidad}</span>
+                  <span className="w-5 text-center text-sm font-semibold tabular-nums">{cantidad}</span>
                   <button
                     onClick={() => agregar(producto, variante)}
-                    className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg"
+                    className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-base"
                   >
                     +
                   </button>
@@ -1471,12 +1585,12 @@ export default function POS() {
             {libres.map((l) => (
               <div key={l.id} className="flex justify-between items-center gap-2">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold truncate">{l.nombre}</div>
-                  <div className="text-xs text-neutral-500">{fmt(l.precio)}</div>
+                  <div className="text-[13px] font-semibold leading-tight line-clamp-2">{l.nombre}</div>
+                  <div className="text-[11px] text-neutral-500">{fmt(l.precio)}</div>
                 </div>
                 <button
                   onClick={() => quitarLibre(l.id)}
-                  className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-lg shrink-0"
+                  className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-base shrink-0"
                 >
                   ×
                 </button>
@@ -1486,7 +1600,7 @@ export default function POS() {
               <p className="text-neutral-400 text-sm">Toca un producto para agregarlo.</p>
             )}
           </div>
-          <div className="border-t border-neutral-200 pt-3 mt-3">
+          <div className="border-t border-neutral-200 pt-2 mt-2">
             {/* A nombre de quien va. Con ocho comandas vivas, "#14" no le dice
                 a nadie de quien es: el cajero termina cantando numeros por el
                 mostrador. El nombre viaja al pedido y sale al lado del numero
@@ -1503,12 +1617,12 @@ export default function POS() {
                 if (faltaNombre) setFaltaNombre(false)
               }}
               placeholder="¿A nombre de quién?"
-              className={`w-full border rounded-xl px-3 py-2.5 text-sm ${
-                faltaNombre ? 'border-peligro-400 bg-peligro-50 mb-1' : 'border-neutral-300 mb-3'
+              className={`w-full border rounded-lg px-2.5 py-1.5 text-[13px] ${
+                faltaNombre ? 'border-peligro-400 bg-peligro-50 mb-1' : 'border-neutral-300 mb-2'
               }`}
             />
             {faltaNombre && (
-              <p className="text-xs text-peligro-600 mb-3">
+              <p className="text-xs text-peligro-600 mb-2">
                 Sin nombre no se puede comandar.
               </p>
             )}
@@ -1518,7 +1632,7 @@ export default function POS() {
                 escribir. En una esquina de la pantalla, el mensaje se le
                 quedaba fuera de la vista. Se va solo a los cuatro segundos. */}
             {comandaEnviada && !faltaNombre && (
-              <p role="status" className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-exito-700">
+              <p role="status" className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-exito-700">
                 <span aria-hidden className="grid place-items-center w-4 h-4 shrink-0 rounded-full bg-exito-600 text-white text-[10px] leading-none">
                   ✓
                 </span>
@@ -1528,12 +1642,12 @@ export default function POS() {
                 </span>
               </p>
             )}
-            <div className="flex justify-between items-baseline font-bold text-xl mb-3">
-              <span className="text-sm font-medium text-neutral-500">Total</span>
+            <div className="flex justify-between items-baseline font-bold text-lg mb-2">
+              <span className="text-xs font-medium text-neutral-500">Total</span>
               <span>{fmt(totalCarrito)}</span>
             </div>
             {enEdicion && (
-              <p className="text-xs text-neutral-500 -mt-2 mb-3 flex justify-between">
+              <p className="text-[11px] text-neutral-500 -mt-1.5 mb-2 flex justify-between">
                 <span>Antes</span>
                 <span className="tabular-nums">{fmt(enEdicion.total + (enEdicion.descuento || 0))}</span>
               </p>
@@ -1541,7 +1655,7 @@ export default function POS() {
             <button
               onClick={enviarComanda}
               disabled={Object.keys(carrito).length === 0 && libres.length === 0}
-              className="vp-pulsable w-full bg-neutral-900 text-white rounded-2xl py-4 font-semibold text-base disabled:opacity-30"
+              className="vp-pulsable w-full bg-neutral-900 text-white rounded-xl py-2.5 font-semibold text-sm disabled:opacity-30"
             >
               {enEdicion ? 'Guardar cambios' : 'Enviar comanda'}
             </button>

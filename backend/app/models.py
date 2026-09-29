@@ -139,7 +139,14 @@ class Categoria(Base):
     # refresco y una empanada por hacer no tenia respuesta correcta.
     va_a_cocina = Column(Boolean, default=True)
 
-    productos = relationship("Producto", back_populates="categoria", cascade="all, delete-orphan")
+    # En el orden que eligio el dueño (y, a igual puesto, el de creacion): es
+    # el orden en que salen en el menu y en el punto de venta.
+    productos = relationship(
+        "Producto",
+        back_populates="categoria",
+        cascade="all, delete-orphan",
+        order_by="(Producto.orden, Producto.id)",
+    )
 
 
 class Producto(Base):
@@ -149,6 +156,10 @@ class Producto(Base):
     categoria_id = Column(Integer, ForeignKey("DIM210_MEN_CATEGORIA.id"), nullable=False)
     nombre = Column(String, nullable=False)
     activo = Column(Boolean, default=True)
+    # Su puesto dentro de la categoria. Antes no habia: salian en el orden en
+    # que se crearon, y un cafe agregado despues quedaba despues de los jugos
+    # aunque en el mostrador fuera con los otros cafes (el cliente, 24-sep).
+    orden = Column(Integer, default=0)
 
     categoria = relationship("Categoria", back_populates="productos")
     variantes = relationship("Variante", back_populates="producto", cascade="all, delete-orphan")

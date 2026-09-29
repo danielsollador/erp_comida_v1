@@ -66,6 +66,7 @@ function columnasSinHuecos(n: number, candidatas: number[]): number {
 export default function Inicio() {
   const { estado } = useAcceso()
   const [hoy, setHoy] = useState<ReporteResumen | null>(null)
+  const [pedidosHoy, setPedidosHoy] = useState<number | null>(null)
   const [enCocina, setEnCocina] = useState(0)
   const [porCobrar, setPorCobrar] = useState(0)
   const { fmt } = useMoneda()
@@ -84,7 +85,15 @@ export default function Inicio() {
   function cargar() {
     // Los reportes son de caja para arriba; a cocina le responden 403 y no se
     // pintan. Los pedidos si los ve todo el mundo.
-    if (estado.puede.operar) api.reporte(rangoDe('hoy')).then(setHoy).catch(() => undefined)
+    // Y solo a quien el rol le deja ver las cifras: al resto se le pinta un
+    // guion, no un "no tienes permiso" (Leider, 25-sep).
+    if (estado.puede.ve_kpis) api.reporte(rangoDe('hoy')).then(setHoy).catch(() => undefined)
+    // "Pedidos" lo ve todo el mundo: sale del listado de ventas del dia, que
+    // caja y cocina si pueden leer (los reportes, no).
+    api
+      .ventasDelDia()
+      .then((ps) => setPedidosHoy(ps.length))
+      .catch(() => undefined)
     // El MISMO listado que pinta la pantalla de cocina, no `estado='pendiente'`.
     // Eran dos definiciones distintas de lo mismo: cobrar deja el pedido en
     // 'pagado' aunque la comida no se haya tocado, asi que el KPI decia "2"
@@ -172,33 +181,27 @@ export default function Inicio() {
             pendiente, y mirarlas no cuesta lo mismo. */}
         <div className="grid grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-3 lg:gap-4">
           <section className="col-span-2 lg:col-span-1 vp-losa relative overflow-hidden p-5 sm:p-7 lg:p-8 bajo:p-4 pc:p-7 flex flex-col justify-center">
-            {estado.puede.operar ? (
-              <>
-                <p className="font-display font-bold tabular-nums leading-[0.95] tracking-[-0.03em] text-[clamp(2.6rem,6.5vw,4.6rem)] bajo:text-[clamp(2rem,4.2vw,3rem)] pc:text-[3.4rem]">
-                  {hoy ? fmt(hoy.ventas) : '—'}
-                </p>
+            {/* Sin el permiso del rol, un guion y nada mas: ni "no tienes
+                permiso" ni un panel distinto (Leider, 25-sep). "Pedidos" si lo
+                ve todo el mundo: sale del listado de ventas del dia. */}
+            <p className="font-display font-bold tabular-nums leading-[0.95] tracking-[-0.03em] text-[clamp(2.6rem,6.5vw,4.6rem)] bajo:text-[clamp(2rem,4.2vw,3rem)] pc:text-[3.4rem]">
+              {estado.puede.ve_kpis && hoy ? fmt(hoy.ventas) : '—'}
+            </p>
                 {/* Una sola linea de apoyo en vez de etiqueta arriba y nota
                     abajo: dice lo mismo, ocupa la mitad y no hace falta
                     gritar en mayusculas para nombrar la cifra. */}
-                <p className="mt-2 sm:mt-2.5 bajo:mt-1.5 text-neutral-500 text-[clamp(0.9rem,1.2vw,1.1rem)] pc:text-[0.95rem]">
-                  <Ayuda explica={explicar('kpi.vendido_hoy')} titulo="Vendido hoy">
-                    Vendido hoy
-                  </Ayuda>
-                  {hoy && (
-                    <>
-                      <span aria-hidden className="mx-1.5 text-neutral-400">·</span>
-                      <span className="tabular-nums text-neutral-700 font-semibold">{hoy.pedidos}</span>{' '}
-                      {hoy.pedidos === 1 ? 'pedido' : 'pedidos'}
-                    </>
-                  )}
-                </p>
-              </>
-            ) : (
-              // Sin permiso de reportes no hay cifra: el panel saluda y ya.
-              <p className="font-display font-bold leading-[1.05] tracking-[-0.02em] text-[clamp(1.7rem,3.2vw,2.8rem)] pc:text-[2rem]">
-                {saludo()}, {nombre}
-              </p>
-            )}
+            <p className="mt-2 sm:mt-2.5 bajo:mt-1.5 text-neutral-500 text-[clamp(0.9rem,1.2vw,1.1rem)] pc:text-[0.95rem]">
+              <Ayuda explica={explicar('kpi.vendido_hoy')} titulo="Vendido hoy">
+                Vendido hoy
+              </Ayuda>
+              {pedidosHoy !== null && (
+                <>
+                  <span aria-hidden className="mx-1.5 text-neutral-400">·</span>
+                  <span className="tabular-nums text-neutral-700 font-semibold">{pedidosHoy}</span>{' '}
+                  {pedidosHoy === 1 ? 'pedido' : 'pedidos'}
+                </>
+              )}
+            </p>
           </section>
 
           {/* Lo que espera. En cero se quedan calladas (neutras); con algo

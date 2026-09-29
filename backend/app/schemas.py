@@ -85,10 +85,17 @@ class ProductoCreate(ProductoBase):
 
 class Producto(ProductoBase):
     id: int
+    orden: Optional[int] = 0
     variantes: List[Variante] = []
 
     class Config:
         from_attributes = True
+
+
+class OrdenProductos(BaseModel):
+    """Los productos de una categoria, en el orden en que tienen que salir."""
+
+    ids: List[int]
 
 
 class CategoriaBase(BaseModel):

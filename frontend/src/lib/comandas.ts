@@ -30,6 +30,10 @@ function minutosDesde(iso: string | null): number | null {
 }
 
 /** El punto de venta tiene la comanda abierta AHORA: la cocina no la toca. */
+function esElMismo(a: string | null | undefined, b: string | null | undefined): boolean {
+  return Boolean(a && b) && a!.trim().toLowerCase() === b!.trim().toLowerCase()
+}
+
 export function editandoAhora(pedido: Pedido): boolean {
   const minutos = minutosDesde(pedido.editando_desde)
   return minutos !== null && minutos < MINUTOS_EDITANDO
@@ -67,7 +71,13 @@ export function estadoCocina(pedido: Pedido): 'en_cocina' | 'lista' | 'sin_cocin
  * explicacion hace que la cajera lo toque tres veces y despues llame por
  * telefono.
  */
-export function porQueNoSeEdita(pedido: Pedido): string | null {
+/**
+ * `quien`: el nombre del operador que pregunta. Si el candado es suyo --lo
+ * abrio el mismo y salio sin guardar-- no cuenta como impedimento: el servidor
+ * ya lo deja volver a entrar, y aqui se le decia "Otra caja la esta editando"
+ * a la misma caja (bug de produccion, 25-sep).
+ */
+export function porQueNoSeEdita(pedido: Pedido, quien?: string | null): string | null {
   if (pedido.estado === 'anulado') return 'Este pedido está anulado'
   if (pedido.devuelto) return 'Esta venta se devolvió entera'
   if (enPreparacion(pedido))
@@ -75,7 +85,8 @@ export function porQueNoSeEdita(pedido: Pedido): string | null {
   // Lo que la cocina ya termino no se QUITA, pero la comanda se abre igual:
   // agregarle algo no bota comida, y lo de vitrina nunca paso por cocina. El
   // servidor rechaza quitar lo ya cocinado y dice por que.
-  if (editandoAhora(pedido)) return `${pedido.editando_por || 'Otra caja'} la está editando`
+  if (editandoAhora(pedido) && !esElMismo(pedido.editando_por, quien))
+    return `${pedido.editando_por || 'Otra caja'} la está editando`
   // Una venta cobrada AYER ya entro al cierre de caja de ayer: moverle el monto
   // hoy deja la gaveta diciendo una cosa y los libros otra. El servidor la
   // rechaza igual; aca se apaga el boton para no hacer teclear una edicion
