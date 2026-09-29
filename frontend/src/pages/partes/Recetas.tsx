@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { contiene, palabrasDe } from '../../components/Tabla'
 import { Boton, Cifra, FiltroDesplegable, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
 import { useDialogo } from '../../components/dialogo'
+import { useGuardiaDeSalida } from '../../lib/sinGuardar'
 import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
@@ -167,9 +168,10 @@ export default function Recetas({
   // Solo lo que se guarda: mercancia y cantidad. Abrir la calculadora o
   // cambiar de kg a g no es un cambio de receta.
   function huella(fs: Fila[]): string {
+    // Una mercancia recien agregada, aun sin cantidad, ya es un cambio.
     return fs
-      .filter((f) => f.ingrediente_id && Number(f.cantidad_por_unidad) > 0)
-      .map((f) => `${f.ingrediente_id}:${Number(f.cantidad_por_unidad)}`)
+      .filter((f) => f.ingrediente_id)
+      .map((f) => `${f.ingrediente_id}:${Number(f.cantidad_por_unidad) || 0}`)
       .sort()
       .join('|')
   }
@@ -180,16 +182,23 @@ export default function Recetas({
   }
 
   /** Salir con cambios sin guardar pide confirmacion (Leider, 29-sep). */
-  async function salir() {
-    if (huella(filas) !== huellaGuardada) {
-      const seguir = await dialogo.confirmar({
+  const hayCambios = abierta !== null && huella(filas) !== huellaGuardada
+  const preguntar = useCallback(
+    () =>
+      dialogo.confirmar({
         titulo: `¿Salir sin guardar la receta de ${abierta?.nombre ?? 'este producto'}?`,
         texto: 'Lo que cambiaste se pierde. Si quieres conservarlo, vuelve y toca «Guardar receta».',
         aceptar: 'Salir sin guardar',
         peligro: true,
-      })
-      if (!seguir) return
-    }
+      }),
+    [dialogo, abierta],
+  )
+  // Y no solo "← Productos": la flecha de volver, las pestañas, la barra
+  // lateral y recargar tambien preguntan mientras haya cambios.
+  useGuardiaDeSalida(hayCambios, preguntar)
+
+  async function salir() {
+    if (hayCambios && !(await preguntar())) return
     cerrar()
   }
 

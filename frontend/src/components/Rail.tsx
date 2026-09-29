@@ -1,4 +1,5 @@
-import { Link, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
+import LinkVigilado from './LinkVigilado'
 import { useAcceso } from '../lib/acceso'
 import Icono, { type NombreIcono } from './Icono'
 
@@ -75,31 +76,31 @@ export default function Rail() {
   const item = (m: (typeof MODULOS)[number]) => {
     const activo = pathname === m.to || pathname.startsWith(m.to + '/')
     return (
-      <Link key={m.to} to={m.to} className="vp-rail-item" aria-current={activo ? 'page' : undefined} aria-label={m.titulo}>
+      <LinkVigilado key={m.to} to={m.to} className="vp-rail-item" aria-current={activo ? 'page' : undefined} aria-label={m.titulo}>
         <Icono nombre={m.icono} size={20} />
         <span className="vp-tip">{m.titulo}</span>
-      </Link>
+      </LinkVigilado>
     )
   }
 
   return (
     <aside className="vp-rail hidden md:flex fixed left-0 top-0 bottom-0 w-[68px] z-30 flex-col items-center py-3 gap-1">
-      <Link to="/" className="vp-rail-item mb-2" aria-current={pathname === '/' ? 'page' : undefined} aria-label="Inicio">
+      <LinkVigilado to="/" className="vp-rail-item mb-2" aria-current={pathname === '/' ? 'page' : undefined} aria-label="Inicio">
         <span className="vp-rombo" />
         <span className="vp-tip">{estado.local.nombre}</span>
-      </Link>
+      </LinkVigilado>
 
       {operacion.map(item)}
       {administracion.length > 0 && <div className="w-8 h-px bg-neutral-200 my-2" />}
       {administracion.map(item)}
 
       <div className="mt-auto flex flex-col items-center gap-1">
-        <Link to="/configuracion?s=cuenta" className="vp-rail-item" aria-label="Mi cuenta">
+        <LinkVigilado to="/configuracion?s=cuenta" className="vp-rail-item" aria-label="Mi cuenta">
           <span className="w-8 h-8 rounded-full bg-neutral-900 text-white grid place-items-center text-xs font-bold font-display">
             {inicial}
           </span>
           <span className="vp-tip">{estado.usuario}</span>
-        </Link>
+        </LinkVigilado>
       </div>
     </aside>
   )

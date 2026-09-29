@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import LinkVigilado from './LinkVigilado'
+import { puedoSalir } from '../lib/sinGuardar'
 import { useAcceso } from '../lib/acceso'
 import { MonedaToggle } from '../lib/moneda'
 import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
@@ -58,7 +59,7 @@ export default function NavBar({
             escritorio la barra lateral ya lleva al inicio, pero el rombo de la
             barra no se lee como "volver": quien entra a un modulo busca la
             flecha arriba a la izquierda, que es donde esta en todo lo demas. */}
-        <Link
+        <LinkVigilado
           to="/"
           aria-label="Volver al inicio"
           title="Volver al inicio"
@@ -67,14 +68,14 @@ export default function NavBar({
           }`}
         >
           <Icono nombre="atras" size={18} />
-        </Link>
+        </LinkVigilado>
 
         {/* La miga tambien lleva al inicio: es la otra mitad del mismo gesto.
             Va con el logo del local, no con su nombre escrito. */}
         <div className="flex items-center gap-2.5 min-w-0 flex-1 sm:flex-none">
-          <Link to="/" className="hidden md:inline-flex items-center shrink-0 hover:opacity-80" title={estado.local.nombre}>
+          <LinkVigilado to="/" className="hidden md:inline-flex items-center shrink-0 hover:opacity-80" title={estado.local.nombre}>
             <Marca className="h-[22px]" sobreOscuro={dark} />
-          </Link>
+          </LinkVigilado>
           <span className={`hidden md:inline ${dark ? 'text-neutral-700' : 'text-neutral-300'}`}>/</span>
           <h1 className="font-display font-semibold text-[17px] leading-none truncate">{titulo}</h1>
         </div>
@@ -97,7 +98,12 @@ export default function NavBar({
       </div>
 
       {secciones && seccion && alCambiarSeccion && (
-        <Secciones secciones={secciones} activa={seccion} alCambiar={alCambiarSeccion} dark={dark} />
+        <Secciones
+          secciones={secciones}
+          activa={seccion}
+          alCambiar={(id) => void puedoSalir().then((ok) => ok && alCambiarSeccion(id))}
+          dark={dark}
+        />
       )}
     </header>
   )
