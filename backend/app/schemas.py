@@ -1876,9 +1876,107 @@ class FacturaCompra(FacturaCompraBase):
     fecha_pago: Optional[datetime.datetime] = None
     referencia_pago: str = ""
     items: List[LineaFactura] = []
+    # Si tiene la foto del papel enganchada. Solo lo llena el listado.
+    tiene_soporte: bool = False
 
     class Config:
         from_attributes = True
+
+
+# ------------------------------------------------ factura de compra desde foto
+class RenglonLeido(BaseModel):
+    """Un renglon tal como viene impreso: todavia no es un insumo nuestro.
+
+    Casar "HARINA PAN 1KG" con nuestra "Harina de maiz (kg)" lo hace quien
+    revisa; la unidad del papel viaja aparte porque rara vez es la nuestra.
+    """
+
+    descripcion: str = ""
+    cantidad: Optional[float] = None
+    unidad: str = ""
+    precio_unitario: Optional[float] = None  # sin IVA, en la moneda de la factura
+    subtotal: Optional[float] = None
+    # None = el papel no lo marca. Muchas facturas marcan "(E)" lo exento.
+    exento: Optional[bool] = None
+
+
+class BorradorFactura(BaseModel):
+    """Lo que el lector saco de la foto. Es una PROPUESTA para el formulario,
+    no una factura: nada de esto se guarda sin que alguien lo revise."""
+
+    proveedor_nombre: str = ""
+    proveedor_rif: str = ""
+    numero_factura: str = ""
+    fecha: Optional[datetime.date] = None
+    moneda: str = ""  # "$" | "Bs" | "" si no se sabe
+    renglones: List[RenglonLeido] = []
+    recargo: float = 0
+    descuento: float = 0
+    # Los totales IMPRESOS. Son los que permiten saber si lo que se va a
+    # guardar cuadra con el papel.
+    subtotal: Optional[float] = None
+    iva: Optional[float] = None
+    total: Optional[float] = None
+    # Lo que el lector no pudo leer bien, dicho por el.
+    advertencias: List[str] = []
+
+
+class LecturaFactura(BaseModel):
+    soporte_id: int
+    lector: str
+    borrador: Optional[BorradorFactura] = None
+    # Si no se pudo leer, por que. La foto queda guardada igual: se puede
+    # cargar a mano y adjuntarla.
+    error: str = ""
+
+
+class EstadoLector(BaseModel):
+    activo: bool
+    lector: str = ""
+
+
+class RenglonARevisar(BaseModel):
+    indice: int  # posicion en el formulario, para devolver el aviso a su renglon
+    ingrediente_id: int
+    costo_unitario: float  # en dolares, como se va a guardar
+
+
+class RevisionFacturaRequest(BaseModel):
+    proveedor_rif: str = ""
+    proveedor_nombre: str = ""
+    numero_factura: str = ""
+    items: List[RenglonARevisar] = []
+
+
+class FacturaParecida(BaseModel):
+    id: int
+    numero_factura: str
+    proveedor_nombre: str
+    fecha: datetime.datetime
+    total: float
+
+
+class AvisoPrecio(BaseModel):
+    indice: int
+    ingrediente_id: int
+    costo_unitario: float
+    referencia: float
+    # De donde sale la referencia: "compras" (mediana de las ultimas) o
+    # "promedio" (la ficha, cuando nunca se ha comprado).
+    base: str
+    muestras: int
+    variacion_pct: float
+    nivel: str  # "normal" | "alto" | "bajo" | "unidad"
+    mensaje: str = ""
+
+
+class RevisionFactura(BaseModel):
+    duplicadas: List[FacturaParecida] = []
+    precios: List[AvisoPrecio] = []
+
+
+class AdjuntarSoporteRequest(BaseModel):
+    soporte_id: int
 
 
 class PagoFacturaRequest(BaseModel):

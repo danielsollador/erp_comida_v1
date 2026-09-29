@@ -33,6 +33,8 @@ import type {
   EstadoAcceso,
   EstadoResultadosContable,
   FacturaCompra,
+  LecturaFactura,
+  RevisionFactura,
   FilaBalanceComprobacion,
   FilaMayor,
   Gasto,
@@ -833,6 +835,30 @@ export const api = {
     referencia_pago?: string
   }) => req<FacturaCompra>('/compras/facturas', { method: 'POST', body: JSON.stringify(f) }),
   eliminarFacturaCompra: (id: number) => req(`/compras/facturas/${id}`, { method: 'DELETE' }),
+
+  // Factura desde foto. Nada de esto guarda facturas: la lectura propone, el
+  // formulario de siempre guarda con `crearFacturaCompra`, y despues la foto
+  // se engancha a la factura que salio.
+  estadoLectorFacturas: () => req<{ activo: boolean; lector: string }>('/compras/lectura'),
+  leerFacturaCompra: async (foto: Blob) => {
+    const datos = new FormData()
+    datos.append('archivo', foto, 'factura.jpg')
+    // Sin Content-Type: el navegador pone el del multipart con su boundary.
+    return req<LecturaFactura>('/compras/lectura', { method: 'POST', body: datos, headers: {} })
+  },
+  revisarFacturaCompra: (r: {
+    proveedor_rif: string
+    proveedor_nombre: string
+    numero_factura: string
+    /** `costo_unitario` en dólares, como se va a guardar. */
+    items: { indice: number; ingrediente_id: number; costo_unitario: number }[]
+  }) => req<RevisionFactura>('/compras/revision', { method: 'POST', body: JSON.stringify(r) }),
+  adjuntarSoporteFactura: (facturaId: number, soporteId: number) =>
+    req(`/compras/facturas/${facturaId}/soporte`, {
+      method: 'POST',
+      body: JSON.stringify({ soporte_id: soporteId }),
+    }),
+  urlSoporteFactura: (facturaId: number) => `/api/compras/facturas/${facturaId}/soporte`,
   /** `referencia` es obligatoria si no se salda en efectivo. */
   pagarFacturaCompra: (id: number, forma_pago: string, referencia?: string) =>
     req<FacturaCompra>(`/compras/facturas/${id}/pagar`, {

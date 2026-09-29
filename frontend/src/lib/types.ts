@@ -1047,6 +1047,67 @@ export type FacturaCompra = {
   /** El comprobante con que se le pagó al proveedor. Vacío si fue en efectivo. */
   referencia_pago: string
   items: LineaFactura[]
+  /** Si tiene la foto del papel enganchada. */
+  tiene_soporte?: boolean
+}
+
+/** Un renglón tal como viene impreso: todavía no es una mercancía nuestra. */
+export type RenglonLeido = {
+  descripcion: string
+  cantidad: number | null
+  /** La unidad del papel ("UND", "BULTO"), que rara vez es la nuestra. */
+  unidad: string
+  /** Sin IVA, en la moneda de la factura. */
+  precio_unitario: number | null
+  subtotal: number | null
+  /** null = el papel no lo marca. */
+  exento: boolean | null
+}
+
+/** Lo que el lector sacó de la foto: una propuesta, no una factura. */
+export type BorradorFactura = {
+  proveedor_nombre: string
+  proveedor_rif: string
+  numero_factura: string
+  /** AAAA-MM-DD, la del papel. */
+  fecha: string | null
+  moneda: '$' | 'Bs' | ''
+  renglones: RenglonLeido[]
+  recargo: number
+  descuento: number
+  /** Los totales IMPRESOS, para ver si lo que se va a guardar cuadra. */
+  subtotal: number | null
+  iva: number | null
+  total: number | null
+  advertencias: string[]
+}
+
+export type LecturaFactura = {
+  soporte_id: number
+  lector: string
+  borrador: BorradorFactura | null
+  /** Si no se pudo leer, por qué. La foto queda guardada igual. */
+  error: string
+}
+
+export type AvisoPrecio = {
+  /** Posición del renglón en el formulario. */
+  indice: number
+  ingrediente_id: number
+  costo_unitario: number
+  referencia: number
+  /** "compras": mediana de las últimas; "promedio": la ficha, si nunca se compró. */
+  base: 'compras' | 'promedio'
+  muestras: number
+  variacion_pct: number
+  /** "unidad": más parece un error de unidad que un cambio de precio. */
+  nivel: 'normal' | 'alto' | 'bajo' | 'unidad'
+  mensaje: string
+}
+
+export type RevisionFactura = {
+  duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
+  precios: AvisoPrecio[]
 }
 
 export type ConfiguracionFiscal = {

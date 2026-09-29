@@ -87,7 +87,14 @@ def listar_facturas(rango: Rango = Depends(), db: Session = Depends(get_db)):
         .order_by(models.FacturaCompra.id.desc())
         .all()
     )
-    return [_a_schema(f) for f in facturas]
+    # Que facturas tienen la foto del papel, en una sola consulta.
+    con_foto = {
+        fid
+        for (fid,) in db.query(models.SoporteFactura.factura_id).filter(
+            models.SoporteFactura.factura_id.in_([f.id for f in facturas])
+        )
+    } if facturas else set()
+    return [_a_schema(f).model_copy(update={"tiene_soporte": f.id in con_foto}) for f in facturas]
 
 
 @router.post("/facturas", response_model=schemas.FacturaCompra)

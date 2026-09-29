@@ -30,8 +30,10 @@ solo. Las restricciones e indices siguen la misma linea (PK_, FK_, IX_, UQ_,
 CK_; ver `database.py`), y los nombres viejos se migran al arrancar
 (`migrations.RENOMBRES`).
 """
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import (
+    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text,
+)
+from sqlalchemy.orm import deferred, relationship
 
 from .database import Base
 from .timeutils import ahora
@@ -597,6 +599,11 @@ class FacturaCompra(Base):
     notas_credito = relationship(
         "NotaCreditoCompra", back_populates="factura", cascade="all, delete-orphan"
     )
+    # La foto del papel. Si la factura se borra (solo se puede sin renglones)
+    # la foto se va con ella: una imagen suelta no respalda nada.
+    soporte = relationship(
+        "SoporteFactura", back_populates="factura", uselist=False, cascade="all, delete-orphan"
+    )
 
     @property
     def base_neta(self) -> float:
@@ -647,6 +654,46 @@ class FacturaCompraItem(Base):
     @property
     def subtotal(self):
         return round(self.cantidad * self.costo_unitario, 2)
+
+
+class SoporteFactura(Base):
+    """La foto de la factura del proveedor, y lo que la IA leyo en ella.
+
+    Nace ANTES que la factura: se sube la foto, la IA prellena el formulario,
+    una persona lo revisa y guarda por el camino de siempre, y recien ahi la
+    foto se engancha a la factura que salio. Por eso `factura_id` es opcional:
+    una foto leida que nadie termino de guardar queda suelta.
+
+    La imagen va en la base y no en disco a proposito: asi entra en el mismo
+    `pg_dump` que la factura, restaurar un respaldo trae las fotos que le
+    corresponden, y cada local ve solo las suyas por su esquema.
+
+    `lectura` guarda el borrador tal como lo devolvio el lector, sin las
+    correcciones de quien lo reviso. Comparado con lo que de verdad se guardo
+    es lo que dice en que se equivoca la IA -- y lo que la memoria por
+    proveedor va a aprender.
+    """
+
+    __tablename__ = "TRX412_COM_FACTURA_SOPORTE"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(
+        Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=True, unique=True, index=True
+    )
+    fecha = Column(DateTime, default=ahora)
+    tipo_mime = Column(String, nullable=False)
+    tamano = Column(Integer, default=0)  # bytes
+    # Diferido: listar soportes no tiene por que traerse cientos de KB por fila.
+    contenido = deferred(Column(LargeBinary, nullable=False))
+    lector = Column(String, default="")  # "prueba", "claude-...": quien leyo
+    lectura = Column(Text, default="")  # JSON del borrador; vacio si la lectura fallo
+    error = Column(String, default="")  # por que no se pudo leer, si no se pudo
+    # Lo que costo leerla. La API cobra por token: sin esto el gasto real del
+    # mes seria una estimacion para siempre.
+    tokens_entrada = Column(Integer, default=0)
+    tokens_salida = Column(Integer, default=0)
+
+    factura = relationship("FacturaCompra", back_populates="soporte")
 
 
 class AperturaCaja(Base):

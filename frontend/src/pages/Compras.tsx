@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import CampoSugerido from '../components/CampoSugerido'
+import { BotonFoto, PanelRevision, RenglonDelPapel, VerSoporte } from '../components/FacturaDesdeFoto'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
@@ -10,8 +11,16 @@ import { Boton, Campo, Modal, Pagina, Pastilla, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
+import { useRevision } from '../lib/revisionFactura'
 import { necesitaReferencia, pedirReferencia } from '../lib/pagos'
-import type { ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor } from '../lib/types'
+import type {
+  ConfiguracionFiscal,
+  FacturaCompra,
+  Ingrediente,
+  LecturaFactura,
+  Proveedor,
+  RenglonLeido,
+} from '../lib/types'
 
 const MONEDAS_DE_CARGA = ['$', 'Bs'] as const
 
@@ -37,6 +46,8 @@ type Linea = {
   costo_unitario: string
   /** null = lo que diga la ficha de la mercancía; true/false = lo dice ESTA factura. */
   exento: boolean | null
+  /** Lo que dice el papel de este renglón, si vino de una foto. */
+  leido?: RenglonLeido
 }
 
 const SECCIONES = [
@@ -114,6 +125,10 @@ export default function Compras() {
   const [fechaVencimiento, setFechaVencimiento] = useState('')
   // Cuantos meses dura el equipo. Define la cuota de depreciacion mensual.
   const [vidaUtil, setVidaUtil] = useState('60')
+  // La foto leida: su soporte se engancha a la factura al guardar.
+  const [lectura, setLectura] = useState<LecturaFactura | null>(null)
+  const [fotoLectura, setFotoLectura] = useState('')
+  const [verSoporte, setVerSoporte] = useState<number | null>(null)
 
   // Con que forma de pago se va a saldar cada factura a credito pendiente -
   // una por fila, para el boton "Marcar pagada" de cuentas por pagar.
@@ -191,6 +206,64 @@ export default function Compras() {
     const factor = bruta > 0 ? (bruta + recargoNum - descuentoNum) / bruta : 1
     return Math.round(gravada * factor * (fiscal.tasa_iva / 100) * 100) / 100
   }, [lineas, ingredientes, fiscal.tasa_iva, recargoNum, descuentoNum])
+
+  // Duplicado y precios fuera de lo normal, mientras se llena. Sirve igual
+  // para una factura tecleada que para una leida de una foto.
+  const aUsdVista = (monto: number) => (monedaCarga === 'Bs' && tasa?.bcv ? monto / tasa.bcv : monto)
+  const revision = useRevision({
+    proveedor_rif: rif.trim(),
+    proveedor_nombre: proveedor.trim(),
+    numero_factura: numeroFactura.trim(),
+    items: esInsumos
+      ? lineas
+          .map((l, indice) => ({
+            indice,
+            ingrediente_id: l.ingrediente_id,
+            costo_unitario: aUsdVista(Number(l.costo_unitario) || 0),
+          }))
+          .filter((x) => x.ingrediente_id && x.costo_unitario > 0)
+      : [],
+  })
+
+  // La IA propone; aca solo se llena el formulario. Nada se guarda hasta que
+  // alguien lo revisa y le da "Cargar factura".
+  function aplicarLectura(l: LecturaFactura, foto: string) {
+    setError('')
+    setExito('')
+    setLectura(l)
+    setFotoLectura(foto)
+    const b = l.borrador
+    if (!b) return
+    setNumeroFactura(b.numero_factura)
+    // Si el RIF ya esta en el directorio, manda el nombre de alli: es el que
+    // agrupa las compras de ese proveedor.
+    const soloRif = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
+    const conocido = b.proveedor_rif
+      ? proveedores.find((p) => p.rif && soloRif(p.rif) === soloRif(b.proveedor_rif))
+      : undefined
+    setProveedor(conocido?.nombre ?? b.proveedor_nombre)
+    setRif(conocido?.rif ?? b.proveedor_rif)
+    if (b.moneda) setMonedaCarga(b.moneda)
+    setRecargo(b.recargo ? String(b.recargo) : '')
+    setDescuentoFactura(b.descuento ? String(b.descuento) : '')
+    if (b.renglones.length > 0) {
+      setCategoria('Insumos')
+      // La mercancia de cada renglon la elige quien revisa: el papel dice
+      // "HARINA PAN 1KG", no cual de nuestras mercancias es.
+      setLineas(
+        b.renglones.map((r) => ({
+          ingrediente_id: 0,
+          cantidad: r.cantidad == null ? '' : String(r.cantidad),
+          costo_unitario: r.precio_unitario == null ? '' : String(r.precio_unitario),
+          exento: r.exento,
+          leido: r,
+        })),
+      )
+    } else {
+      setBase(b.subtotal == null ? '' : String(b.subtotal))
+      setIva(b.iva == null ? '' : String(b.iva))
+    }
+  }
 
   function actualizarLinea(i: number, campo: keyof Linea, valor: string) {
     setLineas((prev) =>
@@ -281,6 +354,8 @@ export default function Compras() {
     setDescuentoFactura('')
     setFechaVencimiento('')
     setMonedaCarga('$')
+    setLectura(null)
+    setFotoLectura('')
   }
 
   async function agregarFactura() {
@@ -305,6 +380,51 @@ export default function Compras() {
       return
     }
     const aUsd = (monto: number) => (monedaCarga === 'Bs' ? monto / (tasa!.bcv as number) : monto)
+
+    // Un renglon con cantidad o costo pero sin mercancia se quedaba afuera
+    // en silencio. Con la foto pasa mas facil: el renglon llega lleno y solo
+    // falta elegir la mercancia.
+    const sinMercancia = esInsumos
+      ? lineas.filter((l) => !l.ingrediente_id && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0)).length
+      : 0
+    if (sinMercancia > 0) {
+      setError(`Falta elegir la mercancía de ${sinMercancia} renglón(es). Elígela o quita el renglón.`)
+      return
+    }
+
+    // Se pregunta al momento, no con la revision de hace un rato: pudieron
+    // cargarla en otra tablet mientras tanto.
+    const yaCargadas = await api
+      .revisarFacturaCompra({
+        proveedor_rif: rif.trim(),
+        proveedor_nombre: proveedor.trim(),
+        numero_factura: numeroFactura.trim(),
+        items: [],
+      })
+      .then((r) => r.duplicadas)
+      .catch(() => [])
+    if (
+      yaCargadas.length > 0 &&
+      !(await dialogo.confirmar({
+        titulo: 'Esta factura parece ya cargada',
+        texto: `Ya hay una ${yaCargadas[0].numero_factura} de ${yaCargadas[0].proveedor_nombre}. Guardarla otra vez duplica la mercancía en el depósito y el gasto.`,
+        aceptar: 'Guardar igual',
+        peligro: true,
+      }))
+    )
+      return
+
+    // La foto se engancha despues del guardado de siempre. Si falla, la
+    // factura ya entro: se avisa, no se deshace.
+    async function adjuntarFoto(facturaId: number): Promise<string> {
+      if (!lectura) return ''
+      try {
+        await api.adjuntarSoporteFactura(facturaId, lectura.soporte_id)
+        return ' Foto adjunta.'
+      } catch (e) {
+        return ` Ojo: la foto no se pudo adjuntar (${e instanceof Error ? e.message : 'error'}).`
+      }
+    }
 
     try {
       if (esInsumos) {
@@ -339,7 +459,8 @@ export default function Compras() {
         setExito(
           `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
             `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}). ` +
-            `${guardada.items.length} renglón(es) al depósito.`,
+            `${guardada.items.length} renglón(es) al depósito.` +
+            (await adjuntarFoto(guardada.id)),
         )
       } else {
         const baseNum = Number(base)
@@ -364,7 +485,8 @@ export default function Compras() {
         })
         setExito(
           `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
-            `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}).`,
+            `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}).` +
+            (await adjuntarFoto(guardada.id)),
         )
       }
       limpiarFormulario()
@@ -647,7 +769,12 @@ export default function Compras() {
                       <span className="text-neutral-300 text-xs">—</span>
                     )}
                   </td>
-                  <td className="p-3">
+                  <td className="p-3 whitespace-nowrap">
+                    {f.tiene_soporte && (
+                      <button onClick={() => setVerSoporte(f.id)} className="text-acento-700 text-xs mr-3">
+                        Foto
+                      </button>
+                    )}
                     <button onClick={() => borrar(f)} className="text-peligro-500 text-xs">
                       Borrar
                     </button>
@@ -688,6 +815,21 @@ export default function Compras() {
               </button>
             </div>
           )}
+
+          <BotonFoto alLeer={aplicarLectura} />
+          <PanelRevision
+            lectura={lectura}
+            foto={fotoLectura}
+            monedaFormulario={monedaCarga}
+            totalFormulario={
+              esInsumos
+                ? Math.round((baseFinal + ivaLineas) * 100) / 100
+                : Math.round(((Number(base) || 0) + (Number(iva) || 0)) * 100) / 100
+            }
+            baseFormulario={esInsumos ? baseFinal : Number(base) || 0}
+            ivaFormulario={esInsumos ? ivaLineas : Number(iva) || 0}
+            revision={revision}
+          />
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
             <input
@@ -799,6 +941,12 @@ export default function Compras() {
                 const subtotal = (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0)
                 return (
                   <div key={i} className="flex flex-wrap gap-2 items-center bg-neutral-50 rounded-lg p-2">
+                    <RenglonDelPapel
+                      leido={l.leido}
+                      moneda={monedaCarga}
+                      unidadNuestra={ing?.unidad}
+                      aviso={revision?.precios.find((p) => p.indice === i)}
+                    />
                     <select
                       value={l.ingrediente_id}
                       onChange={(e) => elegirIngrediente(i, e.target.value)}
@@ -1005,6 +1153,8 @@ export default function Compras() {
             )}
           </div>
         )}
+
+        {verSoporte !== null && <VerSoporte facturaId={verSoporte} onCerrar={() => setVerSoporte(null)} />}
 
         {fichaProveedor && (
           <FichaProveedor

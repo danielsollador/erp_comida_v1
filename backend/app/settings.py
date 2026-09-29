@@ -76,6 +76,14 @@ HUB_URL = os.getenv("ERP_HUB_URL", "").strip().rstrip("/")
 # maquina de desarrollo lo enciende (docker-compose.dev.yml).
 SEMBRAR_DEMO = os.getenv("ERP_SEMBRAR_DEMO", "0").strip().lower() in ("1", "true", "yes")
 
+# Quien lee las fotos de facturas de compra (ver `lectura_facturas.py`):
+#   ""       apagado -- el boton "Cargar desde foto" ni aparece. Por defecto.
+#   "prueba" devuelve siempre la misma factura inventada, sin llamar a nadie:
+#            para desarrollar y probar el formulario sin gastar un centavo.
+# Apagado por defecto por la misma razon que la demo: que una imagen nueva en
+# produccion no empiece a mandar facturas a ningun lado sin decidirlo.
+LECTOR_FACTURAS = os.getenv("ERP_LECTOR_FACTURAS", "").strip().lower()
+
 # Siembra del primer usuario, OPCIONAL. Sin esto, la primera visita al ERP
 # pide crear el administrador desde el navegador (modo instalacion).
 APP_USER = os.getenv("ERP_APP_USER", "admin").strip() or "admin"
