@@ -5,7 +5,8 @@ import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { useRango } from '../lib/fechas'
 import { Lecturas, Pagina, Seccion } from '../components/ui'
-import { BarrasApiladas, GraficoDona, GraficoLineas, Variacion } from '../components/Grafico'
+import { GraficoDona, GraficoLineas, Variacion } from '../components/Grafico'
+import Vaso, { ResumenVaso } from '../components/Vaso'
 import { api } from '../lib/api'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { etiquetaMetodo } from '../lib/pagos'
@@ -316,73 +317,77 @@ function Resumen({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold mb-3">De dónde sale la ganancia</h2>
-            {/* La barra es la misma cuenta de abajo, en proporcion: cuanto de
-                cada dolar vendido se va en mercancia, cuanto en gastos y
-                cuanto queda. */}
-            {datos.ventas > 0 && (
-              <div className="mb-3">
-                <BarrasApiladas
-                  formato={dinero}
-                  filas={[
-                    {
-                      nombre: 'Cada venta',
-                      partes: [
-                        { nombre: 'Mercancía', valor: datos.costo_insumos, color: 'var(--color-neutral-400)' },
-                        // Solo si de verdad hubo gasto: un gasto negativo (mas
-                        // sobrantes que mermas) no es un trozo de la barra.
-                        { nombre: 'Gastos y mermas', valor: Math.max(datos.gastos, 0), color: 'var(--color-aviso-500)' },
-                        ...(datos.iva_cobrado > 0
-                          ? [{ nombre: 'IVA (del SENIAT)', valor: datos.iva_cobrado, color: 'var(--color-neutral-300)' }]
-                          : []),
-                        {
-                          nombre: datos.ganancia_neta >= 0 ? 'Ganancia' : 'Pérdida',
-                          valor: Math.abs(datos.ganancia_neta),
-                          color: datos.ganancia_neta >= 0 ? 'var(--color-exito-500)' : 'var(--color-peligro-500)',
-                        },
-                      ],
-                    },
-                  ]}
-                  leyenda={[
-                    { nombre: 'Mercancía', color: 'var(--color-neutral-400)' },
-                    { nombre: 'Gastos y mermas', color: 'var(--color-aviso-500)' },
-                    ...(datos.iva_cobrado > 0 ? [{ nombre: 'IVA', color: 'var(--color-neutral-300)' }] : []),
-                    {
-                      nombre: datos.ganancia_neta >= 0 ? 'Ganancia' : 'Pérdida',
-                      color: datos.ganancia_neta >= 0 ? 'var(--color-exito-500)' : 'var(--color-peligro-500)',
-                    },
-                  ]}
-                />
+            {/* El mismo vaso de las recetas, con lo vendido de borde: cada
+                cosa que se lleva una parte --la mercancia, los gastos, el
+                IVA-- es una franja, y lo que queda hasta el borde es la
+                ganancia, en verde. Si los costos se pasan de lo vendido, el
+                vaso se desborda y la linea de las ventas queda por debajo. La
+                cuenta de al lado es la misma, en numeros. */}
+            <div className={datos.ventas > 0 ? 'grid sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 items-start' : ''}>
+              {datos.ventas > 0 && (
+                <div>
+                  <Vaso
+                    tope={datos.ventas}
+                    topeTitulo="vendiste"
+                    restoNombre="ganancia"
+                    desbordeTexto="hasta aquí llegan las ventas"
+                    formato={dinero}
+                    partes={[
+                      ...(datos.iva_cobrado > 0
+                        ? [{ id: 'iva', nombre: 'IVA (del SENIAT)', valor: datos.iva_cobrado, color: 'var(--color-neutral-300)' }]
+                        : []),
+                      { id: 'mercancia', nombre: 'Mercancía', valor: datos.costo_insumos, color: 'var(--color-neutral-500)' },
+                      // Solo si de verdad hubo gasto: un gasto negativo (mas
+                      // sobrantes que mermas) no es una franja.
+                      ...(datos.gastos > 0
+                        ? [{ id: 'gastos', nombre: 'Gastos y mermas', valor: datos.gastos, color: 'var(--color-aviso-400)' }]
+                        : []),
+                    ]}
+                  />
+                  <div className="mt-3">
+                    <ResumenVaso
+                      tope={datos.ventas}
+                      costo={datos.ventas - datos.ganancia_neta}
+                      formato={dinero}
+                      queda="Te queda"
+                      pierde="Perdiste"
+                      de="de lo vendido"
+                    />
+                  </div>
+                </div>
+              )}
+              <div>
+              <Linea dinero={dinero} etiqueta="Ventas cobradas" monto={datos.ventas} />
+              {datos.iva_cobrado > 0 && (
+                <>
+                  <Linea dinero={dinero} etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
+                  <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
+                </>
+              )}
+              <Linea dinero={dinero} etiqueta="Costo de la mercancía" monto={-datos.costo_insumos} />
+              <Linea
+                dinero={dinero}
+                etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
+                monto={datos.ganancia_bruta}
+                subtotal
+              />
+              {/* CUANDO LOS GASTOS SON NEGATIVOS, LA LINEA CAMBIA DE NOMBRE.
+                  Un reverso de merma o un sobrante de conteo restan gasto, y el
+                  total del periodo puede quedar en negativo. Con el rotulo fijo,
+                  la cuenta se leia al reves: "Ganancia bruta 132 / Gastos 2 /
+                  Ganancia neta 134" -- el que mira resta y le da 130 (Leider,
+                  24-sep). Diciendo que ese renglon SUMA, la columna vuelve a
+                  cuadrar a la vista. */}
+              <Linea
+                dinero={dinero}
+                etiqueta={
+                  datos.gastos >= 0 ? 'Gastos, mermas y faltantes' : 'Sobrantes y reversos (suman)'
+                }
+                monto={-datos.gastos}
+              />
+              <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
               </div>
-            )}
-            <Linea dinero={dinero} etiqueta="Ventas cobradas" monto={datos.ventas} />
-            {datos.iva_cobrado > 0 && (
-              <>
-                <Linea dinero={dinero} etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
-                <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
-              </>
-            )}
-            <Linea dinero={dinero} etiqueta="Costo de la mercancía" monto={-datos.costo_insumos} />
-            <Linea
-              dinero={dinero}
-              etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
-              monto={datos.ganancia_bruta}
-              subtotal
-            />
-            {/* CUANDO LOS GASTOS SON NEGATIVOS, LA LINEA CAMBIA DE NOMBRE.
-                Un reverso de merma o un sobrante de conteo restan gasto, y el
-                total del periodo puede quedar en negativo. Con el rotulo fijo,
-                la cuenta se leia al reves: "Ganancia bruta 132 / Gastos 2 /
-                Ganancia neta 134" -- el que mira resta y le da 130 (Leider,
-                24-sep). Diciendo que ese renglon SUMA, la columna vuelve a
-                cuadrar a la vista. */}
-            <Linea
-              dinero={dinero}
-              etiqueta={
-                datos.gastos >= 0 ? 'Gastos, mermas y faltantes' : 'Sobrantes y reversos (suman)'
-              }
-              monto={-datos.gastos}
-            />
-            <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
+            </div>
             {ant && (
               <p className="text-xs text-neutral-500 mt-2">
                 {ant.etiqueta[0].toUpperCase()}

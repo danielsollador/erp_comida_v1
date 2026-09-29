@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { contiene, palabrasDe } from '../../components/Tabla'
 import { Boton, FiltroDesplegable, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
+import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
 import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from '../../lib/types'
@@ -37,7 +38,15 @@ type Fila = {
   rendimientoDe: string
   rendimientoSalen: string
   modoRendimiento: boolean
+  // Se escribe en la unidad chica (g en vez de kg, ml en vez de lt). La receta
+  // se guarda siempre en la unidad de la mercancia; esto es solo como se ve.
+  enChica?: boolean
 }
+
+/** La unidad "chica" de una grande, y al reves: kg⇄g, lt⇄ml. */
+const OTRA_UNIDAD: Record<string, string> = { kg: 'g', g: 'kg', lt: 'ml', ml: 'lt' }
+const esGrande = (u: string) => u === 'kg' || u === 'lt'
+const sinRuido = (n: number) => String(Math.round(n * 1e6) / 1e6)
 
 type Renglon = { variante: Variante; nombre: string; categoria: string; info?: CostoVariante }
 
@@ -50,6 +59,7 @@ type Renglon = { variante: Variante; nombre: string; categoria: string; info?: C
 // una sola franja (Leider, 29-sep). Vecinas siempre distintas.
 const TONOS = ['acento-500', 'aviso-400', 'neutral-500', 'acento-300', 'aviso-600', 'neutral-700', 'acento-700', 'aviso-300']
 const tono = (i: number) => `var(--color-${TONOS[i % TONOS.length]})`
+const dolares = (n: number) => `$${n.toFixed(2)}`
 
 /** Lo que se cuenta por piezas y no se pesa: el vaso, la tapa, el pitillo,
  *  la caja. Tambien es costo, y va en su propio apartado. */
@@ -300,8 +310,6 @@ function Lupa() {
 
 // ── El compositor: el vaso a la izquierda, la mercancía a la derecha ────────
 
-type Parte = { id: number; nombre: string; costo: number; color: string }
-
 function Compositor({
   renglon,
   ingredientes,
@@ -386,7 +394,7 @@ function Compositor({
   }
 
   // Costo real: descontando la merma de cocina (`costo_efectivo`).
-  const partes: Parte[] = []
+  const partes: ParteVaso[] = []
   const colorDe = new Map<number, string>()
   let costoReal = 0
   filas.forEach((f, i) => {
@@ -396,7 +404,7 @@ function Compositor({
     const cantidad = Number(f.cantidad_por_unidad) || 0
     const costo = cantidad * ing.costo_efectivo
     costoReal += costo
-    if (costo > 0) partes.push({ id: ing.id, nombre: ing.nombre, costo, color: tono(i) })
+    if (costo > 0) partes.push({ id: ing.id, nombre: ing.nombre, valor: costo, color: tono(i) })
   })
   const esPieza = (f: Fila) => {
     const ing = mapaIngredientes.get(f.ingrediente_id)
@@ -406,8 +414,6 @@ function Compositor({
   const piezas = filas.filter(esPieza)
   const disponiblesPesadas = disponibles.filter((i) => !porUnidad(i))
   const disponiblesPiezas = disponibles.filter(porUnidad)
-  const margen = precio - costoReal
-  const margenPct = precio > 0 ? (margen / precio) * 100 : 0
 
   return (
     <div className="space-y-4">
@@ -431,8 +437,18 @@ function Compositor({
         <section className="vp-losa p-5 sm:p-6">
           <p className="text-xs text-neutral-500">{renglon.categoria}</p>
           <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight mb-3">{renglon.nombre}</h2>
-          <Vaso precio={precio} partes={partes} costo={costoReal} resaltado={resaltado} onResaltar={setResaltado} />
-          <Margen precio={precio} costoReal={costoReal} margen={margen} margenPct={margenPct} vacio={filas.length === 0} />
+          <Vaso
+            tope={precio}
+            topeTitulo="se vende a"
+            partes={partes}
+            restoNombre="margen"
+            desbordeTexto="hasta aquí llega el precio"
+            vacioTexto="Toca a la derecha lo que lleva"
+            formato={dolares}
+            resaltado={resaltado}
+            onResaltar={(id) => setResaltado(id === null ? null : Number(id))}
+          />
+          <Margen precio={precio} costoReal={costoReal} vacio={filas.length === 0} />
         </section>
 
         {/* ── La mercancía ────────────────────────────────────────────── */}
@@ -570,6 +586,20 @@ function RenglonReceta({
 }) {
   const cantidad = Number(f.cantidad_por_unidad) || 0
   const pieza = porUnidad(ing)
+  // MUCHOS MIDEN EN GRAMOS Y MILILITROS aunque compren por kilo y por litro
+  // (Leider, 29-sep). La unidad es un boton: kg ⇄ g, lt ⇄ ml. Lo que se
+  // escribe en la chica se guarda convertido a la de la mercancia, asi el
+  // costo y el inventario no se enteran del cambio.
+  const otra = OTRA_UNIDAD[ing.unidad]
+  const enChica = Boolean(otra && f.enChica)
+  const factor = enChica ? (esGrande(ing.unidad) ? 1000 : 1 / 1000) : 1
+  const unidadVista = enChica ? otra : ing.unidad
+  const valorVisto = f.cantidad_por_unidad === '' ? '' : sinRuido((Number(f.cantidad_por_unidad) || 0) * factor)
+  const escribir = (texto: string) => {
+    if (!enChica) return onCambio({ cantidad_por_unidad: texto })
+    const n = Number(String(texto).replace(',', '.'))
+    onCambio({ cantidad_por_unidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor) })
+  }
   return (
     <li
       onMouseEnter={() => onResaltar(ing.id)}
@@ -581,21 +611,32 @@ function RenglonReceta({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            ${ing.costo_efectivo.toFixed(3)} por {ing.unidad}
+            {enChica ? `$${(ing.costo_efectivo / factor).toFixed(4)} por ${otra}` : `$${ing.costo_efectivo.toFixed(3)} por ${ing.unidad}`}
             {ing.categoria && ` · ${ing.categoria}`}
           </span>
         </span>
         <Numerico
-          value={f.cantidad_por_unidad}
-          onChange={(e) => onCambio({ cantidad_por_unidad: e.target.value })}
+          value={valorVisto}
+          onChange={(e) => escribir(e.target.value)}
           placeholder="0"
           entero={pieza}
-          etiqueta={`${ing.nombre} (${ing.unidad})`}
-          aria-label={`Cantidad de ${ing.nombre} por unidad`}
+          etiqueta={`${ing.nombre} (${unidadVista})`}
+          aria-label={`Cantidad de ${ing.nombre} por unidad, en ${unidadVista}`}
           autoFocus={f.cantidad_por_unidad === ''}
           className="w-20 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-right tabular-nums"
         />
-        <span className="w-9 text-xs text-neutral-500">{pieza ? (cantidad === 1 ? 'pieza' : 'piezas') : ing.unidad}</span>
+        {otra ? (
+          <button
+            type="button"
+            onClick={() => onCambio({ enChica: !enChica })}
+            title={`Ver en ${enChica ? ing.unidad : otra}`}
+            className="w-12 shrink-0 rounded-md bg-neutral-100 hover:bg-neutral-200 px-1 py-1 text-xs font-semibold text-neutral-700 tabular-nums"
+          >
+            {unidadVista} ⇄
+          </button>
+        ) : (
+          <span className="w-12 shrink-0 text-xs text-neutral-500">{pieza ? (cantidad === 1 ? 'pieza' : 'piezas') : ing.unidad}</span>
+        )}
         <span className="w-16 text-right text-sm tabular-nums font-semibold">
           {cantidad > 0 ? `$${(cantidad * ing.costo_efectivo).toFixed(2)}` : '—'}
         </span>
@@ -669,146 +710,7 @@ function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () =
   )
 }
 
-// ── El vaso ─────────────────────────────────────────────────────────────────
-
-// Geometria del recipiente (viewBox 260 x 400): boca en y=60, fondo en y=370.
-const BOCA = 60
-const FONDO = 370
-const ALTO = FONDO - BOCA
-const SILUETA = 'M36 60H224Q232 60 231 68L214 356Q213 370 199 370H61Q47 370 46 356L29 68Q28 60 36 60Z'
-
-function Vaso({
-  precio,
-  partes,
-  costo,
-  resaltado,
-  onResaltar,
-}: {
-  precio: number
-  partes: Parte[]
-  costo: number
-  resaltado: number | null
-  onResaltar: (id: number | null) => void
-}) {
-  // El borde del vaso es el precio... salvo que el costo se pase: entonces la
-  // escala es el costo, el vaso queda lleno de mercancia y la linea del
-  // precio se dibuja por debajo del borde, donde deberia haber parado.
-  const tope = Math.max(precio, costo, 0.000001)
-  const px = (v: number) => (v / tope) * ALTO
-  const desbordado = costo > precio + 0.0001
-  // NINGUNA FRANJA DESAPARECE. La harina de una empanada es el 5% del precio:
-  // a escala eran 15 px sin sitio para el nombre, pegados a la carne del
-  // mismo tono (Leider, 29-sep: "la harina ni se ve"). Cada franja mide al
-  // menos lo que hace falta para leerla; lo que crece se lo come el margen, y
-  // si entre todas se pasan del vaso se encogen parejo.
-  const MINIMO = 22
-  let alturas = partes.map((p) => Math.max(px(p.costo), MINIMO))
-  const suma = alturas.reduce((t, h) => t + h, 0)
-  if (suma > ALTO) alturas = alturas.map((h) => (h * ALTO) / suma)
-  let y = FONDO
-  const franjas = partes.map((p, i) => {
-    const h = alturas[i]
-    y -= h
-    return { ...p, y, h }
-  })
-  const margenH = desbordado ? 0 : Math.max(ALTO - alturas.reduce((t, h) => t + h, 0), 0)
-  const yMargen = y - margenH
-  const yPrecio = FONDO - px(precio)
-  const id = 'vaso-recorte'
-
-  return (
-    <svg viewBox="0 0 260 400" className="w-full max-w-[280px] mx-auto block" role="img" aria-label="Cuánto del precio se lleva cada mercancía">
-      <defs>
-        <clipPath id={id}>
-          <path d={SILUETA} />
-        </clipPath>
-      </defs>
-
-      {/* El precio, arriba del vaso: es el borde hasta donde se puede llenar. */}
-      <text x="130" y="22" textAnchor="middle" fontSize="11" fill="var(--color-neutral-500)">
-        se vende a
-      </text>
-      <text
-        x="130"
-        y="50"
-        textAnchor="middle"
-        fontSize="28"
-        fontWeight="600"
-        fill="var(--vp-tinta)"
-        style={{ fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}
-      >
-        ${precio.toFixed(2)}
-      </text>
-
-      {/* Fondo del recipiente: vacio. */}
-      <path d={SILUETA} fill="var(--color-neutral-100)" />
-
-      <g clipPath={`url(#${id})`}>
-        {/* Lo que queda hasta el borde: el margen, en verde. */}
-        {margenH > 0.5 && partes.length > 0 && (
-          <rect x="0" y={yMargen} width="260" height={margenH} fill="var(--color-exito-500)" opacity="0.9" />
-        )}
-        {/* Cada mercancia, una franja desde abajo. */}
-        {franjas.map((f) => (
-          <g key={f.id} onMouseEnter={() => onResaltar(f.id)} onMouseLeave={() => onResaltar(null)} style={{ cursor: 'default' }}>
-            <rect x="0" y={f.y} width="260" height={f.h} fill={f.color} opacity={resaltado === null || resaltado === f.id ? 1 : 0.55} />
-            {/* Un hilo del color del papel entre franja y franja: aunque dos
-                tonos se parezcan, se ve donde termina una y empieza la otra. */}
-            <line x1="0" x2="260" y1={f.y} y2={f.y} stroke="var(--vp-papel)" strokeWidth="1.5" />
-            {f.h >= 18 && (
-              <>
-                <text x="48" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="var(--color-neutral-50)" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
-                  {f.nombre.length > 18 ? f.nombre.slice(0, 17) + '…' : f.nombre}
-                </text>
-                <text x="212" y={f.y + f.h / 2 + 4} textAnchor="end" fontSize="11" fontWeight="600" fill="var(--color-neutral-50)" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2, fontVariantNumeric: 'tabular-nums' }}>
-                  ${f.costo.toFixed(2)}
-                </text>
-              </>
-            )}
-            {resaltado === f.id && <rect x="0" y={f.y} width="260" height={f.h} fill="none" stroke="var(--vp-tinta)" strokeWidth="2" />}
-          </g>
-        ))}
-        {/* Con el vaso desbordado, la linea del precio queda dentro. */}
-        {desbordado && (
-          <>
-            <line x1="20" x2="240" y1={yPrecio} y2={yPrecio} stroke="var(--color-peligro-600)" strokeWidth="2" strokeDasharray="6 4" />
-            <text x="130" y={yPrecio - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--color-peligro-600)">
-              hasta aquí llega el precio
-            </text>
-          </>
-        )}
-      </g>
-
-      {/* El contorno, encima de todo. */}
-      <path d={SILUETA} fill="none" stroke="var(--vp-tinta)" strokeOpacity="0.55" strokeWidth="2.5" strokeLinejoin="round" />
-
-      {partes.length === 0 && (
-        <text x="130" y="220" textAnchor="middle" fontSize="13" fill="var(--color-neutral-500)">
-          Toca a la derecha lo que lleva
-        </text>
-      )}
-      {margenH >= 22 && partes.length > 0 && (
-        <text x="130" y={yMargen + margenH / 2 + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--color-neutral-50)" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.2)', strokeWidth: 2 }}>
-          margen ${(precio - costo).toFixed(2)}
-        </text>
-      )}
-    </svg>
-  )
-}
-
-function Margen({
-  precio,
-  costoReal,
-  margen,
-  margenPct,
-  vacio,
-}: {
-  precio: number
-  costoReal: number
-  margen: number
-  margenPct: number
-  vacio: boolean
-}) {
+function Margen({ precio, costoReal, vacio }: { precio: number; costoReal: number; vacio: boolean }) {
   if (vacio) {
     return (
       <p className="mt-4 text-sm text-neutral-500 text-center">
@@ -816,22 +718,9 @@ function Margen({
       </p>
     )
   }
-  const pierde = margen < 0
   return (
     <div className="mt-4 space-y-2">
-      <p className={`text-center font-display text-lg font-semibold tracking-tight ${pierde ? 'text-peligro-600' : 'text-exito-700'}`}>
-        {pierde ? (
-          <>
-            Pierdes ${Math.abs(margen).toFixed(2)} por unidad
-            <span className="block text-sm font-medium">el costo se pasa del precio un {Math.abs(margenPct).toFixed(0)}%</span>
-          </>
-        ) : (
-          <>
-            Tu margen es ${margen.toFixed(2)}
-            <span className="block text-sm font-medium">el {margenPct.toFixed(0)}% de este producto</span>
-          </>
-        )}
-      </p>
+      <ResumenVaso tope={precio} costo={costoReal} formato={dolares} queda="Tu margen es" pierde="Pierdes por unidad" de="de este producto" />
       <div className="flex justify-between text-xs text-neutral-500 tabular-nums pt-2 border-t border-neutral-100">
         <span>Cuesta hacerlo</span>
         <span className="font-semibold text-neutral-700">${costoReal.toFixed(2)}</span>
