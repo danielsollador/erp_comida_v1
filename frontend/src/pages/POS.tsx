@@ -18,6 +18,8 @@ import { useModoLigero } from '../lib/ligero'
 import { etiquetaVariante, variantesParaVender } from '../lib/menu'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import VerificarPago, { type PagoVerificado } from '../components/VerificarPago'
+
+const redondear = (n: number) => Math.round(n * 100) / 100
 import type { EstadoPabilo } from '../lib/types'
 import { useAcceso } from '../lib/acceso'
 import type {
@@ -788,14 +790,17 @@ export default function POS() {
     // El nombre recien escrito en un cuadro: `setCliente` no se ha aplicado
     // todavia cuando el cobro sale, y el estado viejo iria vacio.
     clienteAhora?: string,
+    // Igual con la propina y el descuento que acaba de fijar la verificacion
+    // del pago movil: se mandan explicitos, no desde el estado viejo.
+    ajustes?: { propina?: number; descuento?: number; motivo_descuento?: string },
   ) {
     if (!cobrando) return
     setError('')
     try {
       const cobrado = await api.cobrarPedido(cobrando.id, metodo, facturar, numeroFactura, pagos, {
-        descuento: Number(descuento) || 0,
-        motivo_descuento: motivoDescuento,
-        propina: Number(propina) || 0,
+        descuento: ajustes?.descuento ?? (Number(descuento) || 0),
+        motivo_descuento: ajustes?.motivo_descuento ?? motivoDescuento,
+        propina: ajustes?.propina ?? (Number(propina) || 0),
         cliente: clienteAhora ?? cliente,
         punto_venta_id: puntoId,
         referencia,
@@ -804,7 +809,11 @@ export default function POS() {
       setUltimaVenta(cobrado)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cobrar')
-      setCobrando(null)
+      // Todo el cuadro se vacia, no solo se cierra: la propina o el
+      // descuento que dejo una verificacion de pago movil no tienen que
+      // reaparecer en el siguiente intento como si el cajero los hubiera
+      // escrito.
+      limpiarCobro()
     }
     refrescarPedidos()
   }
@@ -854,9 +863,52 @@ export default function POS() {
     // mandar el cobro y que rebote.
     const pago = await pedirPago(metodo, aCobrar)
     if (pago === null) return
-    cobrar(metodo, [
-      { metodo, monto: aCobrar, referencia: pago.referencia, verificacion_id: pago.verificacion_id },
-    ])
+    cobrarVerificado(metodo, pago)
+  }
+
+  /**
+   * Cobrar con lo que el banco dijo que entro.
+   *
+   * El cliente redondea al escribir en su banco: Bs 1.700 por una cuenta de
+   * Bs 1.650, o 1.600. La verificacion trae lo que ENTRO y la cajera ya
+   * decidio que hacer con la diferencia (ver `VerificarPago`):
+   *
+   *   propina   entro de mas: lo que sobra se anota como propina, y el pago
+   *             se registra por lo que entro (asi la gaveta cuadra).
+   *   resto     entro de menos: se anota esa parte y el cobro pasa a pago
+   *             partido para cobrar lo que falta con otra forma.
+   *   perdonar  entro de menos y se deja pasar: la diferencia es descuento.
+   *
+   * Sin decision (referencia anotada a mano, o sin tasa) se cobra la cuenta
+   * tal cual, como siempre.
+   */
+  function cobrarVerificado(metodo: string, pago: PagoVerificado) {
+    const parte = { metodo, referencia: pago.referencia, verificacion_id: pago.verificacion_id }
+    const entro = pago.monto_usd
+    if (entro === undefined || !pago.decision || pago.decision === 'exacto') {
+      cobrar(metodo, [{ ...parte, monto: aCobrar }])
+      return
+    }
+    if (pago.decision === 'propina') {
+      const propinaTotal = redondear((Number(propina) || 0) + (entro - aCobrar))
+      setPropina(String(propinaTotal))
+      cobrar(metodo, [{ ...parte, monto: entro }], undefined, undefined, { propina: propinaTotal })
+      return
+    }
+    if (pago.decision === 'perdonar') {
+      const descuentoTotal = redondear(descuentoNum + (aCobrar - entro))
+      const motivo = motivoDescuento.trim() || 'Diferencia del pago móvil'
+      setDescuento(String(descuentoTotal))
+      setMotivoDescuento(motivo)
+      cobrar(metodo, [{ ...parte, monto: entro }], undefined, undefined, {
+        descuento: descuentoTotal,
+        motivo_descuento: motivo,
+      })
+      return
+    }
+    // 'resto': lo que entro queda anotado y lo que falta se cobra aparte.
+    setPagoMixto(true)
+    setPartes([{ ...parte, monto: entro }])
   }
 
   /**
@@ -903,9 +955,23 @@ export default function POS() {
     const pago = await pedirPago(metodo, monto)
     if (pago === null) return
     setError('')
+    // Si el banco dijo que entro otra cosa, la parte es lo que entro: lo que
+    // sobra va a propina, lo que falta sigue pendiente (o se perdona como
+    // descuento). Igual que en el cobro de una sola forma.
+    let montoParte = redondear(monto)
+    const entro = pago.monto_usd
+    if (entro !== undefined && pago.decision && pago.decision !== 'exacto') {
+      montoParte = entro
+      if (pago.decision === 'propina') {
+        setPropina(String(redondear((Number(propina) || 0) + (entro - monto))))
+      } else if (pago.decision === 'perdonar') {
+        setDescuento(String(redondear(descuentoNum + (monto - entro))))
+        setMotivoDescuento((m) => m.trim() || 'Diferencia del pago móvil')
+      }
+    }
     setPartes((p) => [
       ...p,
-      { metodo, monto: Math.round(monto * 100) / 100, referencia: pago.referencia, verificacion_id: pago.verificacion_id },
+      { metodo, monto: montoParte, referencia: pago.referencia, verificacion_id: pago.verificacion_id },
     ])
   }
 
@@ -1998,6 +2064,7 @@ export default function POS() {
               tasa={tasaBcv}
               estado={pabilo}
               pedidoId={cobrando.id}
+              enMixto={pagoMixto}
               onListo={(pago) => {
                 verificando.resolver(pago)
                 setVerificando(null)

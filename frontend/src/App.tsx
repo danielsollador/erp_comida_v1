@@ -84,8 +84,7 @@ const Tasa = perezoso(() => import('./pages/Tasa'))
 const Contabilidad = perezoso(() => import('./pages/Contabilidad'))
 const Compras = perezoso(() => import('./pages/Compras'))
 const Impuestos = perezoso(() => import('./pages/Impuestos'))
-const Usuarios = perezoso(() => import('./pages/Usuarios'))
-const MiUsuario = perezoso(() => import('./pages/MiUsuario'))
+const Configuracion = perezoso(() => import('./pages/Configuracion'))
 
 /** Lo que se ve el instante que tarda en llegar el modulo. */
 function Cargando() {
@@ -202,9 +201,13 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Inicio />} />
               <Route path="/cocina" element={<Cocina />} />
-              <Route path="/mi-usuario" element={<MiUsuario />} />
+              {/* Configuracion es de todos; dentro, las pestañas de administrar
+                  solo se ofrecen a quien administra (y el backend responde 403
+                  al resto). Las rutas viejas siguen llegando a su pestaña. */}
+              <Route path="/configuracion" element={<Configuracion />} />
+              <Route path="/mi-usuario" element={<Navigate to="/configuracion?s=cuenta" replace />} />
               {/* La pantalla se llamaba "Mi cuenta": el enlace viejo sigue llevando. */}
-              <Route path="/mi-cuenta" element={<Navigate to="/mi-usuario" replace />} />
+              <Route path="/mi-cuenta" element={<Navigate to="/configuracion?s=cuenta" replace />} />
 
               <Route path="/pos" element={<Requiere modulo="pos"><POS /></Requiere>} />
               <Route path="/inventario" element={<Requiere modulo="inventario"><Inventario /></Requiere>} />
@@ -218,7 +221,7 @@ export default function App() {
 
               <Route path="/contabilidad" element={<Requiere modulo="contabilidad"><Contabilidad /></Requiere>} />
               <Route path="/impuestos" element={<Requiere modulo="impuestos"><Impuestos /></Requiere>} />
-              <Route path="/usuarios" element={<Requiere modulo="usuarios"><Usuarios /></Requiere>} />
+              <Route path="/usuarios" element={<Navigate to="/configuracion?s=usuarios" replace />} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

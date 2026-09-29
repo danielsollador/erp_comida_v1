@@ -1,9 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import NavBar from '../components/NavBar'
-import { useSeccion } from '../components/Secciones'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Aviso, Boton, Campo, Etiqueta, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
+import { Aviso, Boton, Campo, Etiqueta, Modal, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
 import { api } from '../lib/api'
 import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
@@ -23,16 +21,19 @@ import type { ListaUsuarios, Modulo, Rol, RolInfo, Usuario } from '../lib/types'
  * se ven los modulos, y si los cuatro de fabrica no encajan --un mesonero que
  * solo toma pedidos, un encargado sin contabilidad-- se crea uno.
  */
-const SECCIONES = [
-  { id: 'usuarios', texto: 'Usuarios' },
-  { id: 'crear', texto: 'Crear usuario' },
-  { id: 'roles', texto: 'Roles' },
-  { id: 'crear-rol', texto: 'Crear rol' },
-]
-
-export default function Usuarios() {
+/**
+ * Las pestañas Usuarios y Roles de Configuracion. Crear (un usuario, un rol)
+ * ya no es una pestaña aparte: es un paso dentro de la lista, con su boton
+ * y su "volver", para no llenar el encabezado de Configuracion de pestañas.
+ */
+export function PanelUsuarios({ seccion }: { seccion: 'usuarios' | 'roles' }) {
   const { estado } = useAcceso()
-  const [seccion, irA] = useSeccion(SECCIONES)
+  const [creando, setCreando] = useState(false)
+  // Al cambiar de pestaña se vuelve a la lista: un formulario a medio llenar
+  // de "crear usuario" no tiene por que aparecer al abrir Roles.
+  useEffect(() => {
+    setCreando(false)
+  }, [seccion])
   const [lista, setLista] = useState<ListaUsuarios | null>(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
@@ -99,96 +100,114 @@ export default function Usuarios() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Usuarios" moneda={false} secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
-      <Pagina ancho="media">
-        {error && <Aviso>{error}</Aviso>}
-        {aviso && <Aviso tono="bien">{aviso}</Aviso>}
+    <>
+      {error && <Aviso>{error}</Aviso>}
+      {aviso && <Aviso tono="bien">{aviso}</Aviso>}
 
-        {seccion === 'usuarios' && (
-          <Seccion
-            titulo={`Quién entra a ${estado.local.nombre}`}
-            ayuda="Cada persona entra con su usuario: así el sistema sabe quién cobró, quién anuló y quién cerró la caja."
-            accion={<span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} usuarios` : ''}</span>}
-            plano
-          >
-            <Tabla orden={orden} glosario="usuarios">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+      {seccion === 'usuarios' && !creando && (
+        <Seccion
+          titulo={`Quién entra a ${estado.local.nombre}`}
+          ayuda="Cada persona entra con su usuario: así el sistema sabe quién cobró, quién anuló y quién cerró la caja."
+          accion={
+            <span className="flex items-center gap-3">
+              <span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} usuarios` : ''}</span>
+              <Boton tono="fantasma" onClick={() => setCreando(true)}>
+                Crear usuario
+              </Boton>
+            </span>
+          }
+          plano
+        >
+          <Tabla orden={orden} glosario="usuarios">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                <tr>
+                  <Th clave="usuario">Persona</Th>
+                  <Th clave="rol">Rol</Th>
+                  <Th clave="acceso" className="hidden sm:table-cell">Último acceso</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {orden.ordenar(lista?.usuarios ?? []).map((u) => (
+                  <FilaUsuario
+                    key={u.usuario}
+                    u={u}
+                    soyYo={u.usuario === lista?.yo}
+                    roles={roles}
+                    onRol={(r) => void cambiarRol(u, r)}
+                    onBorrar={() => void borrar(u)}
+                    onCambio={(texto) => {
+                      ok(texto)
+                      cargar()
+                    }}
+                    onError={setError}
+                  />
+                ))}
+                {lista && lista.usuarios.length === 0 && (
                   <tr>
-                    <Th clave="usuario">Persona</Th>
-                    <Th clave="rol">Rol</Th>
-                    <Th clave="acceso" className="hidden sm:table-cell">Último acceso</Th>
-                    <Th />
+                    <td colSpan={4}>
+                      <Vacio icono="usuarios" titulo="Sin usuarios todavía" />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {orden.ordenar(lista?.usuarios ?? []).map((u) => (
-                    <FilaUsuario
-                      key={u.usuario}
-                      u={u}
-                      soyYo={u.usuario === lista?.yo}
-                      roles={roles}
-                      onRol={(r) => void cambiarRol(u, r)}
-                      onBorrar={() => void borrar(u)}
-                      onCambio={(texto) => {
-                        ok(texto)
-                        cargar()
-                      }}
-                      onError={setError}
-                    />
-                  ))}
-                  {lista && lista.usuarios.length === 0 && (
-                    <tr>
-                      <td colSpan={4}>
-                        <Vacio icono="usuarios" titulo="Sin usuarios todavía" />
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </Tabla>
-          </Seccion>
-        )}
+                )}
+              </tbody>
+            </table>
+          </Tabla>
+        </Seccion>
+      )}
 
-        {seccion === 'crear' && (
+      {seccion === 'usuarios' && creando && (
+        <>
+          <Volver onClick={() => setCreando(false)}>Volver a la lista</Volver>
           <CrearUsuario
             roles={roles}
             onCreado={(usuario) => {
               ok(`Usuario «${usuario}» creado.`)
               cargar()
-              irA('usuarios')
+              setCreando(false)
             }}
             onError={setError}
           />
-        )}
+        </>
+      )}
 
-        {seccion === 'roles' && (
-          <ListaRoles
-            roles={roles}
-            usuarios={lista?.usuarios ?? []}
-            catalogo={lista?.modulos ?? []}
-            nombreLocal={estado.local.nombre}
-            onCambio={cargar}
-            onOk={ok}
-            onError={setError}
-            onCrear={() => irA('crear-rol')}
-          />
-        )}
+      {seccion === 'roles' && !creando && (
+        <ListaRoles
+          roles={roles}
+          usuarios={lista?.usuarios ?? []}
+          catalogo={lista?.modulos ?? []}
+          nombreLocal={estado.local.nombre}
+          onCambio={cargar}
+          onOk={ok}
+          onError={setError}
+          onCrear={() => setCreando(true)}
+        />
+      )}
 
-        {seccion === 'crear-rol' && (
+      {seccion === 'roles' && creando && (
+        <>
+          <Volver onClick={() => setCreando(false)}>Volver a los roles</Volver>
           <CrearRol
             modulos={lista?.modulos ?? []}
             onCreado={(nombre) => {
               ok(`Rol «${nombre}» creado. Ya se puede asignar a un usuario.`)
               cargar()
-              irA('roles')
+              setCreando(false)
             }}
             onError={setError}
           />
-        )}
-      </Pagina>
-    </div>
+        </>
+      )}
+    </>
+  )
+}
+
+function Volver({ onClick, children }: { onClick: () => void; children: string }) {
+  return (
+    <button type="button" onClick={onClick} className="mb-3 text-sm text-neutral-500 hover:text-neutral-900">
+      ← {children}
+    </button>
   )
 }
 

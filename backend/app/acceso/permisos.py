@@ -90,7 +90,9 @@ MODULOS: dict[str, dict] = {
     "tasa": {"nombre": "Tasa de cambio", "rutas": ("/api/tasas", "/api/config")},
     "contabilidad": {"nombre": "Contabilidad", "rutas": ("/api/contabilidad", "/api/respaldos")},
     "impuestos": {"nombre": "Impuestos", "rutas": ("/api/impuestos",)},
-    "usuarios": {"nombre": "Usuarios", "rutas": ("/api/usuarios",)},
+    # La pantalla se llama Configuracion (usuarios, roles, pago movil). El
+    # id sigue siendo `usuarios` porque asi esta guardado en los roles.
+    "usuarios": {"nombre": "Configuración", "rutas": ("/api/usuarios",)},
 }
 
 # Que roles de fabrica AUTORIZAN operaciones delicadas (editar una venta
@@ -131,7 +133,7 @@ MODULOS_POR_ROL: dict[str, tuple[str, ...]] = {
 # impuestos son la utilidad real del negocio; los respaldos son la base
 # completa; los usuarios, las llaves.
 SOLO_ADMINISTRA = ("/api/contabilidad", "/api/impuestos", "/api/respaldos",
-                   "/api/usuarios")
+                   "/api/usuarios", "/api/pagos/config")
 
 # La cartera de locales de Vertigo. Solo el equipo de la plataforma.
 SOLO_VERTIGO = ("/api/agencia",)

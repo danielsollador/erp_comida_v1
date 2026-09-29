@@ -2048,6 +2048,11 @@ class VerificarPagoRequest(BaseModel):
     # Lo que la cuenta pide, en dolares: el backend lo pasa a Bs con la tasa
     # vigente y compara contra lo que el banco dice que entro.
     monto_usd: float
+    # Lo que el cliente DICE que mando, en Bs, si la cajera lo corrigio en la
+    # pantalla (la gente redondea: 1.700 por una cuenta de 1.650). Es contra
+    # lo que se compara el hallazgo del banco; la cuenta real sigue siendo
+    # `monto_usd` a la tasa, y la diferencia la decide la cajera al cobrar.
+    monto_bs: Optional[float] = None
     metodo: str = "Pago movil"
     pedido_id: Optional[int] = None
     # Solo si el banco de la cuenta los exige (ver GET /api/pagos/estado).
@@ -2064,6 +2069,9 @@ class VerificacionPago(BaseModel):
     codigo: str = ""
     esperado_bs: Optional[float] = None
     monto_bs: Optional[float] = None
+    # Lo que la CUENTA pide en Bs a la tasa del momento. `esperado_bs` puede
+    # ser lo que la cajera escribio; esto es lo que la venta vale.
+    cuenta_bs: Optional[float] = None
     tasa: Optional[float] = None
     es_nueva: bool = True
     # Si vale la pena volver a intentar (el banco no respondio) o si es algo
@@ -2073,6 +2081,83 @@ class VerificacionPago(BaseModel):
     creditos_restantes: Optional[int] = None
     # El cobro con que quedo pegada la referencia si ya se habia usado.
     pedido_numero: Optional[int] = None
+
+
+# ── Configuracion de Pabilo (Configuracion > Pago movil) ──────────────────
+
+
+class PerfilPabilo(BaseModel):
+    usuario: str = ""
+    empresa: str = ""
+    creditos: Optional[float] = None
+    plan_activo: bool = True
+
+
+class CuentaPabilo(BaseModel):
+    id: str
+    descripcion: str
+    banco: str
+    proveedor: str
+    moneda: str
+    numero: str = ""
+    telefono: str = ""
+    deshabilitada: bool = False
+    bloqueada: bool = False
+    # Si es la cuenta con la que cobra este local.
+    activa: bool = False
+
+
+class ConfigPabilo(BaseModel):
+    configurado: bool
+    # "pantalla" (guardada aqui), "servidor" (variable de entorno) o "".
+    origen_clave: str = ""
+    # Los ultimos digitos de la clave, para saber cual esta puesta.
+    clave_pista: str = ""
+    cuenta_activa_id: str = ""
+    perfil: Optional[PerfilPabilo] = None
+    cuentas: List[CuentaPabilo] = []
+    error: str = ""
+
+
+class CampoProveedor(BaseModel):
+    clave: str
+    rotulo: str
+    ayuda: str = ""
+    requerido: bool = True
+    secreto: bool = False
+
+
+class OpcionBanco(BaseModel):
+    proveedor: str
+    banco: str
+    nombre: str
+    moneda: str = "VEF"
+    codigo_banco: str = ""
+    prueba: bool = False
+    ayuda: str = ""
+    campos: List[CampoProveedor] = []
+
+
+class ClavePabiloRequest(BaseModel):
+    clave: str = ""
+
+
+class CuentaActivaRequest(BaseModel):
+    user_bank_id: str
+
+
+class NuevaCuentaPabilo(BaseModel):
+    proveedor: str
+    descripcion: str = ""
+    usuario: str = ""
+    clave: str = ""
+    metadata: dict = {}
+    telefono: str = ""
+    cedula: str = ""
+
+
+class SecretoCuentaRequest(BaseModel):
+    clave: str
 
 
 class EstadoPabilo(BaseModel):

@@ -112,6 +112,52 @@ class PabiloNoConfigurado(RuntimeError):
     """No hay clave: el ERP sigue cobrando como siempre, sin verificar."""
 
 
+class PabiloError(RuntimeError):
+    """Pabilo dijo que no (o no respondio) en una operacion de configuracion:
+    crear una cuenta, cambiarle la clave. Lleva el codigo documentado y un
+    mensaje ya en el idioma del dueño."""
+
+    def __init__(self, codigo: str, mensaje: str, status: int = 502):
+        super().__init__(mensaje)
+        self.codigo = codigo
+        self.mensaje = mensaje
+        self.status = status
+
+
+# ── Lo guardado desde la pantalla ───────────────────────────────────────────
+#
+# El dueño pega la clave y elige la cuenta en Configuracion > Pago movil; el
+# router lo guarda en la base y lo deja aqui al arrancar y cada vez que
+# cambia. Pisa a las variables del servidor (.env), que siguen valiendo de
+# respaldo para un despliegue que las tenga.
+_ajuste: dict[str, str] = {"clave": "", "cuenta": ""}
+
+
+def ajustar(clave: Optional[str] = None, cuenta: Optional[str] = None) -> None:
+    """Fija lo guardado en la base. None = no tocar ese campo."""
+    global _cache_cuentas
+    if clave is not None and clave.strip() != _ajuste["clave"]:
+        _ajuste["clave"] = clave.strip()
+        # Otra clave, otras cuentas: lo cacheado ya no vale.
+        _cache_cuentas = (0.0, [])
+    if cuenta is not None:
+        _ajuste["cuenta"] = cuenta.strip()
+
+
+def clave() -> str:
+    return _ajuste["clave"] or settings.PABILO_API_KEY
+
+
+def origen_clave() -> str:
+    if _ajuste["clave"]:
+        return "pantalla"
+    return "servidor" if settings.PABILO_API_KEY else ""
+
+
+def cuenta_configurada() -> str:
+    return _ajuste["cuenta"] or settings.PABILO_USER_BANK_ID
+
+
 @dataclass
 class Cuenta:
     """La cuenta bancaria conectada, con lo que la pantalla necesita saber."""
@@ -124,6 +170,12 @@ class Cuenta:
     # PHONE_ORIGIN...), del primer tipo de verificacion disponible.
     campos: list[str] = field(default_factory=list)
     tipo: str = "GENERIC"
+    # Para la pantalla de configuracion: con que se conecto y como esta.
+    proveedor: str = ""
+    numero: str = ""
+    telefono: str = ""
+    deshabilitada: bool = False
+    bloqueada: bool = False
 
 
 @dataclass
@@ -155,14 +207,14 @@ class Respuesta:
 
 
 def configurado() -> bool:
-    return bool(settings.PABILO_API_KEY)
+    return bool(clave())
 
 
 def _headers() -> dict[str, str]:
-    if not settings.PABILO_API_KEY:
-        raise PabiloNoConfigurado("PABILO_API_KEY no esta definida")
+    if not clave():
+        raise PabiloNoConfigurado("No hay clave de Pabilo: ni guardada ni en PABILO_API_KEY")
     return {
-        "Authorization": f"Bearer {settings.PABILO_API_KEY}",
+        "Authorization": f"Bearer {clave()}",
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
@@ -197,15 +249,19 @@ def cuentas(forzar: bool = False) -> list[Cuenta]:
     marca, lista = _cache_cuentas
     if not forzar and lista and time.monotonic() - marca < CACHE_CUENTAS_SEG:
         return lista
-    with _cliente() as c:
-        r = c.get("/me/usersbank", headers=_headers())
-    r.raise_for_status()
+    # Por `_get`, como todo lo demas: asi las pruebas lo reemplazan y nada
+    # sale a internet, y un 401 llega como PabiloError y no como excepcion
+    # de httpx.
+    status, datos = _get("/me/usersbank")
+    d = _o_error(status, datos)
     resultado: list[Cuenta] = []
-    for b in r.json().get("user_banks", []):
+    for b in (d.get("user_banks", []) if isinstance(d, dict) else []):
         if b.get("to_trash"):
             continue
         tipos = [t for t in b.get("verifications_types_available", []) if not t.get("hidden")]
         tipo = tipos[0] if tipos else {"id": "GENERIC", "fields_required": [{"name": "REFERENCE_NUMBER"}]}
+        numero = str((b.get("default_bank_account") or {}).get("account_number") or "")
+        telefono = str((b.get("user_bank_phone") or {}).get("number") or "")
         resultado.append(
             Cuenta(
                 id=str(b.get("id", "")),
@@ -214,6 +270,13 @@ def cuentas(forzar: bool = False) -> list[Cuenta]:
                 moneda=str(b.get("currency") or "VEF"),
                 campos=[str(f.get("name")) for f in tipo.get("fields_required", [])],
                 tipo=str(tipo.get("id") or "GENERIC"),
+                proveedor=str(b.get("provider") or ""),
+                # Solo el final: la pantalla lo muestra para distinguir dos
+                # cuentas del mismo banco, no para copiarlo.
+                numero=("…" + numero[-4:]) if len(numero) > 4 else numero,
+                telefono=telefono,
+                deshabilitada=bool(b.get("is_disabled")),
+                bloqueada=bool(b.get("is_block_by_bank")),
             )
         )
     _cache_cuentas = (time.monotonic(), resultado)
@@ -223,21 +286,24 @@ def cuentas(forzar: bool = False) -> list[Cuenta]:
 def cuenta_activa() -> Cuenta:
     """La cuenta donde cobra el local: la configurada, o la unica que hay."""
     lista = cuentas()
-    if settings.PABILO_USER_BANK_ID:
+    elegida = cuenta_configurada()
+    if elegida:
         for c in lista:
-            if c.id == settings.PABILO_USER_BANK_ID:
+            if c.id == elegida:
                 return c
         raise LookupError(
-            f"La cuenta {settings.PABILO_USER_BANK_ID} no esta entre las de la clave "
-            f"({', '.join(c.descripcion or c.id for c in lista) or 'ninguna'})."
+            f"La cuenta {elegida} no esta entre las de la clave "
+            f"({', '.join(c.descripcion or c.id for c in lista) or 'ninguna'}). "
+            "Elige otra en Configuración > Pago móvil."
         )
     if len(lista) == 1:
         return lista[0]
     if not lista:
         raise LookupError("La clave de Pabilo no tiene ninguna cuenta bancaria conectada.")
     raise LookupError(
-        "La clave tiene varias cuentas; define PABILO_USER_BANK_ID con la del local: "
-        + ", ".join(f"{c.descripcion or '?'}={c.id}" for c in lista)
+        "La clave tiene varias cuentas: elige con cuál cobra este local en "
+        "Configuración > Pago móvil ("
+        + ", ".join(c.descripcion or c.id for c in lista) + ")."
     )
 
 
@@ -344,3 +410,289 @@ def verificar(cuenta: Cuenta, cuerpo: dict[str, Any]) -> Respuesta:
         mensaje=MENSAJES.get(codigo, f"Pabilo respondió {codigo}."),
         detalle=mensaje[:300],
     )
+
+
+# ── Configuracion desde la pantalla: perfil, catalogo y alta de cuentas ────
+#
+# Todo lo de abajo lo usa Configuracion > Pago movil (routers/pagos.py). Son
+# las mismas llamadas que hace el panel web de Pabilo (docs/bank-accounts,
+# docs/user): con la clave del local se pueden dar de alta cuentas, pausarlas,
+# cambiarles la clave del banco y borrarlas, sin salir del ERP.
+
+
+def _get(ruta: str, con_clave: bool = True) -> tuple[int, Any]:
+    with _cliente() as c:
+        r = c.get(ruta, headers=_headers() if con_clave else {"Accept": "application/json"})
+    try:
+        return r.status_code, r.json()
+    except ValueError:
+        return r.status_code, r.text
+
+
+def _put(ruta: str, cuerpo: dict[str, Any]) -> tuple[int, Any]:
+    with _cliente() as c:
+        r = c.put(ruta, json=cuerpo, headers=_headers())
+    try:
+        return r.status_code, r.json()
+    except ValueError:
+        return r.status_code, r.text
+
+
+def _delete(ruta: str) -> tuple[int, Any]:
+    with _cliente() as c:
+        r = c.delete(ruta, headers=_headers())
+    try:
+        return r.status_code, r.json()
+    except ValueError:
+        return r.status_code, r.text
+
+
+def _o_error(status: int, datos: Any) -> Any:
+    """Devuelve `datos` si salio bien; si no, levanta PabiloError con el
+    codigo documentado y un mensaje para el dueño."""
+    if 200 <= status < 300:
+        return datos
+    codigo, detalle = _error_de(datos, status)
+    mensaje = MENSAJES.get(codigo)
+    if not mensaje:
+        mensaje = MENSAJES_CONFIG.get(codigo) or f"Pabilo respondió {codigo}."
+        if detalle and codigo not in MENSAJES_CONFIG:
+            mensaje = f"{mensaje} {detalle[:160]}"
+    raise PabiloError(codigo, mensaje, 400 if 400 <= status < 500 else 502)
+
+
+def _llamar(fn, *args):
+    """Una llamada de configuracion, con los errores de red ya traducidos."""
+    try:
+        status, datos = fn(*args)
+    except httpx.TimeoutException:
+        raise PabiloError("TIEMPO_AGOTADO", MENSAJES["TIEMPO_AGOTADO"])
+    except httpx.HTTPError as e:
+        log.warning("pabilo sin conexion: %s", e)
+        raise PabiloError("SIN_CONEXION", MENSAJES["SIN_CONEXION"])
+    return _o_error(status, datos)
+
+
+# Errores propios de dar de alta o tocar cuentas (docs/bank-accounts).
+MENSAJES_CONFIG = {
+    "PASSWORD_CHANGE_TRY_TOO_FREQUENT": "Espera al menos 30 segundos entre intentos.",
+    "PASSWORD_CHANGE_TOO_FREQUENT": "La clave ya se cambió hace menos de 30 minutos. Vuelve a intentar más tarde.",
+    "BAD_REQUEST": "Faltan datos o hay alguno mal escrito. Revisa el formulario.",
+    "VALIDATION_ERROR": "Faltan datos o hay alguno mal escrito. Revisa el formulario.",
+}
+
+
+def perfil() -> dict[str, Any]:
+    """Quien es el dueño de la clave: nombre, plan y creditos (GET /me)."""
+    d = _llamar(_get, "/me")
+    if not isinstance(d, dict):
+        raise PabiloError("RESPUESTA_RARA", "Pabilo respondió algo que no se entiende.")
+    # La doc lo muestra plano; el API real lo envuelve en `user` (29-sep). Se
+    # aceptan los dos.
+    if isinstance(d.get("user"), dict):
+        d = d["user"]
+    return {
+        "id": str(d.get("id") or ""),
+        "usuario": str(d.get("username") or ""),
+        "empresa": str(d.get("company_name") or d.get("full_name") or ""),
+        "creditos": d.get("credits"),
+        "plan_activo": bool(d.get("plan_is_active", True)),
+    }
+
+
+# Con que se conecta cada proveedor (docs/bank-accounts, tabla "Proveedores
+# soportados"). `usuario`/`clave` son los rotulos de los dos campos fijos del
+# API (`username`, `password`); `metadata` lo que ese banco pide ademas.
+PROVEEDORES: dict[str, dict[str, Any]] = {
+    "VE_BAN": {
+        "nombre": "Banco de Venezuela · personas",
+        "usuario": "Usuario de BDV en línea",
+        "clave": "Contraseña de BDV en línea",
+        "ayuda": "La misma con la que entras a bdvenlinea. Pabilo la guarda cifrada y la usa solo para leer los movimientos.",
+    },
+    "VE_BAN_EMP_V2": {
+        "nombre": "Banco de Venezuela · empresas (API de conciliación)",
+        "usuario": "Número de cuenta (20 dígitos)",
+        "clave": "API Key de conciliación automática",
+        "ayuda": "La API Key se pide en BDV Empresas: Gestión de productos → Solicitud de API conciliación automática (guía en pabilo.app/docs/bdv-juridico).",
+    },
+    "MERCANTIL_EMP_V1": {
+        "nombre": "Mercantil · empresas",
+        "usuario": "Client ID",
+        "clave": "Secret Key",
+        "metadata": [
+            {"clave": "INTEGRATOR_ID", "rotulo": "ID del integrador"},
+            {"clave": "TERMINAL_ID", "rotulo": "ID del terminal"},
+            {"clave": "MERCHANT_ID", "rotulo": "ID del comercio"},
+        ],
+    },
+    "VE_BANESCO_V1": {
+        "nombre": "Banesco · empresas",
+        "usuario": "Client ID",
+        "clave": "Client Secret",
+        "metadata": [
+            {"clave": "ACCOUNT_NUMBER", "rotulo": "Número de cuenta (20 dígitos, empieza por 0134)"},
+            {"clave": "DEVICE_IP", "rotulo": "IP pública autorizada", "requerido": False},
+        ],
+    },
+    "VE_BANK_PLAZA_V1": {
+        "nombre": "Banco Plaza · empresas",
+        "usuario": "Client ID",
+        "clave": "Client Secret",
+        "metadata": [
+            {"clave": "ACCOUNT_NUMBER", "rotulo": "Número de cuenta (20 dígitos, empieza por 0138)"},
+        ],
+    },
+    "BINANCE_APP": {
+        "nombre": "Binance Pay",
+        "usuario": "API Key de Binance",
+        "clave": "Secret Key de Binance",
+    },
+    "BANK_TEST": {
+        "nombre": "Banco de prueba (sandbox de Pabilo)",
+        "prueba": True,
+        "ayuda": "No conecta con ningún banco. Sirve para probar el cobro: la referencia 67890 siempre sale aprobada.",
+    },
+    "NOTIFICATION_ACCOUNT": {
+        "nombre": "Notificaciones de Pabilo (SMS / app del banco)",
+        "telefono": True,
+        "ayuda": "Para bancos sin conexión directa: un teléfono Android con la app de Pabilo lee los SMS o las notificaciones del banco.",
+    },
+}
+
+
+def catalogo() -> list[dict[str, Any]]:
+    """Los bancos que Pabilo conoce (GET /v1/platforms, publico)."""
+    d = _llamar(_get, "/v1/platforms", False)
+    return [p for p in (d if isinstance(d, list) else []) if isinstance(p, dict)]
+
+
+def opciones_de_banco() -> list[dict[str, Any]]:
+    """Lo que se ofrece en el desplegable de "Agregar cuenta": un renglon por
+    proveedor que sabemos conectar, con los campos que pide."""
+    plataformas = catalogo()
+    opciones: list[dict[str, Any]] = []
+    sin_conexion_directa: list[str] = []
+    for p in plataformas:
+        proveedores = [x for x in (p.get("providers") or []) if x in PROVEEDORES]
+        if not proveedores:
+            if p.get("is_bank") and (p.get("have_notification_sms") or p.get("have_notification_app")):
+                sin_conexion_directa.append(str(p.get("name") or p.get("id")))
+            continue
+        for prov in proveedores:
+            ficha = PROVEEDORES[prov]
+            opciones.append(_opcion(prov, ficha, str(p.get("id") or ""), str(p.get("currency") or "VEF"),
+                                    str(p.get("bank_code") or "")))
+    ficha = PROVEEDORES["NOTIFICATION_ACCOUNT"]
+    ayuda = ficha["ayuda"]
+    if sin_conexion_directa:
+        ayuda += " Sirve para: " + ", ".join(sin_conexion_directa[:8]) + "."
+    opciones.append(_opcion("NOTIFICATION_ACCOUNT", {**ficha, "ayuda": ayuda}, "notificaciones", "VEF", ""))
+    # Los de verdad primero, y entre ellos el mas comun en un local de comida
+    # (BDV personas) de primero; el sandbox y las notificaciones al final.
+    orden = list(PROVEEDORES)
+    opciones.sort(key=lambda o: (
+        o["prueba"] or o["proveedor"] == "NOTIFICATION_ACCOUNT",
+        o["proveedor"] == "NOTIFICATION_ACCOUNT",
+        orden.index(o["proveedor"]) if o["proveedor"] in orden else 99,
+    ))
+    return opciones
+
+
+def _opcion(prov: str, ficha: dict[str, Any], banco: str, moneda: str, codigo: str) -> dict[str, Any]:
+    campos: list[dict[str, Any]] = []
+    if ficha.get("usuario"):
+        campos.append({"clave": "usuario", "rotulo": ficha["usuario"], "requerido": True, "secreto": False})
+    if ficha.get("clave"):
+        campos.append({"clave": "clave", "rotulo": ficha["clave"], "requerido": True, "secreto": True})
+    if ficha.get("telefono"):
+        campos.append({"clave": "telefono", "rotulo": "Teléfono que recibe los pagos", "requerido": True, "secreto": False})
+        campos.append({"clave": "cedula", "rotulo": "Cédula del titular", "requerido": True, "secreto": False})
+    for m in ficha.get("metadata", []):
+        campos.append({"clave": "metadata." + m["clave"], "rotulo": m["rotulo"],
+                       "requerido": m.get("requerido", True), "secreto": False})
+    return {
+        "proveedor": prov,
+        "banco": banco,
+        "nombre": ficha["nombre"],
+        "moneda": moneda,
+        "codigo_banco": codigo,
+        "prueba": bool(ficha.get("prueba")),
+        "ayuda": ficha.get("ayuda", ""),
+        "campos": campos,
+    }
+
+
+def crear_cuenta(
+    proveedor: str,
+    descripcion: str,
+    *,
+    usuario: str = "",
+    clave_banco: str = "",
+    metadata: Optional[dict[str, str]] = None,
+    telefono: str = "",
+    cedula: str = "",
+) -> dict[str, Any]:
+    """Da de alta una cuenta bancaria en Pabilo (POST /usersbank).
+
+    Pabilo pide el `user_id` del dueño de la clave: se resuelve con GET /me
+    para no obligar al dueño a copiarlo de ningun sitio.
+    """
+    global _cache_cuentas
+    ficha = PROVEEDORES.get(proveedor)
+    if not ficha:
+        raise PabiloError("PROVEEDOR_DESCONOCIDO", f"No sé conectar con «{proveedor}».", 400)
+    quien = perfil()
+    cuerpo: dict[str, Any] = {
+        "user_id": quien["id"],
+        "bank_provider": proveedor,
+        "description": descripcion.strip() or ficha["nombre"],
+    }
+    if ficha.get("usuario"):
+        if not usuario.strip() or not clave_banco:
+            raise PabiloError("FALTAN_DATOS", f"Hacen falta {ficha['usuario']} y {ficha['clave']}.", 400)
+        cuerpo["username"] = usuario.strip()
+        cuerpo["password"] = clave_banco
+    if ficha.get("telefono"):
+        digitos = "".join(ch for ch in telefono if ch.isdigit())
+        if len(digitos) < 10 or not cedula.strip():
+            raise PabiloError("FALTAN_DATOS", "Hacen falta el teléfono que recibe los pagos y la cédula del titular.", 400)
+        cuerpo["user_bank_phone"] = {"countryCode": "58", "number": digitos[-10:]}
+        letra, numero = _partir_cedula(cedula)
+        cuerpo["user_bank_dni"] = {"dni_type": letra, "dni_number": numero}
+    pares = []
+    for m in ficha.get("metadata", []):
+        valor = (metadata or {}).get(m["clave"], "").strip()
+        if not valor:
+            if m.get("requerido", True):
+                raise PabiloError("FALTAN_DATOS", f"Hace falta {m['rotulo']}.", 400)
+            continue
+        pares.append({"key_name": m["clave"], "key_value": valor})
+    if pares:
+        cuerpo["metadata"] = pares
+    d = _llamar(_post, "/usersbank", cuerpo)
+    _cache_cuentas = (0.0, [])
+    creada = d.get("usersbank") or d.get("user_bank") or d if isinstance(d, dict) else {}
+    return {"id": str(creada.get("id") or ""), "mensaje": str(d.get("message") or "") if isinstance(d, dict) else ""}
+
+
+def alternar_cuenta(user_bank_id: str) -> bool:
+    """Pausa o reanuda una cuenta. Devuelve si quedo deshabilitada."""
+    global _cache_cuentas
+    d = _llamar(_put, f"/v1/usersbank/{user_bank_id}/toggle-disabled", {})
+    _cache_cuentas = (0.0, [])
+    return bool(d.get("is_disabled")) if isinstance(d, dict) else False
+
+
+def borrar_cuenta(user_bank_id: str) -> None:
+    global _cache_cuentas
+    _llamar(_delete, f"/usersbank/{user_bank_id}/to-trash")
+    _cache_cuentas = (0.0, [])
+
+
+def cambiar_secreto(user_bank_id: str, secreto: str) -> None:
+    """Nueva clave del banco (o API key) con validacion en vivo: Pabilo la
+    prueba contra el banco antes de guardarla. Cuesta 0,5 creditos si sirve."""
+    global _cache_cuentas
+    _llamar(_put, f"/v1/usersbank/{user_bank_id}/change-secret", {"secret": secreto})
+    _cache_cuentas = (0.0, [])

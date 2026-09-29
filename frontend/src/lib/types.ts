@@ -1457,12 +1457,69 @@ export type VerificacionPago = {
   codigo: string
   esperado_bs: number | null
   monto_bs: number | null
+  /** Lo que la cuenta vale en Bs a la tasa del momento (contra esto se decide). */
+  cuenta_bs: number | null
   tasa: number | null
   es_nueva: boolean
   reintentable: boolean
   del_dueno: boolean
   creditos_restantes: number | null
   pedido_numero: number | null
+}
+
+// ── Configuracion > Pago movil (Pabilo) ──────────────────────────────────
+
+export type PerfilPabilo = {
+  usuario: string
+  empresa: string
+  creditos: number | null
+  plan_activo: boolean
+}
+
+export type CuentaPabilo = {
+  id: string
+  descripcion: string
+  banco: string
+  proveedor: string
+  moneda: string
+  /** Solo el final del numero de cuenta, para distinguir dos del mismo banco. */
+  numero: string
+  telefono: string
+  deshabilitada: boolean
+  bloqueada: boolean
+  /** Con esta cobra el local. */
+  activa: boolean
+}
+
+export type ConfigPabilo = {
+  configurado: boolean
+  /** De donde sale la clave: guardada aqui, del servidor (.env) o ninguna. */
+  origen_clave: '' | 'pantalla' | 'servidor'
+  clave_pista: string
+  cuenta_activa_id: string
+  perfil: PerfilPabilo | null
+  cuentas: CuentaPabilo[]
+  error: string
+}
+
+export type CampoProveedor = {
+  /** usuario | clave | telefono | cedula | metadata.<NOMBRE> */
+  clave: string
+  rotulo: string
+  ayuda: string
+  requerido: boolean
+  secreto: boolean
+}
+
+export type OpcionBanco = {
+  proveedor: string
+  banco: string
+  nombre: string
+  moneda: string
+  codigo_banco: string
+  prueba: boolean
+  ayuda: string
+  campos: CampoProveedor[]
 }
 
 /** Un cajon del deposito. Vive por su cuenta: existe aunque este vacio. */

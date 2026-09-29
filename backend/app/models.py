@@ -359,6 +359,12 @@ class Configuracion(Base):
     # inventario" aunque en los hechos no haya nada que controlar todavia. Se
     # apaga el dia que carga el inventario de verdad.
     vender_sin_inventario = Column(Boolean, default=False)
+    # Pago movil con Pabilo, guardado desde Configuracion > Pago movil. Pisa a
+    # PABILO_API_KEY / PABILO_USER_BANK_ID del servidor, que siguen valiendo
+    # de respaldo. La clave es un "secreto de servidor" (asi la llama Pabilo):
+    # vive aqui y nunca sale entera al navegador, solo sus ultimos digitos.
+    pabilo_api_key = Column(String, default="")
+    pabilo_user_bank_id = Column(String, default="")
 
 
 class Gasto(Base):

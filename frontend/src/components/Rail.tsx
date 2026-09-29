@@ -31,7 +31,9 @@ export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcon
   { to: '/tasa', modulo: 'tasa', icono: 'tasa', titulo: 'Tasa de cambio', grupo: 'administracion' },
   { to: '/contabilidad', modulo: 'contabilidad', icono: 'contabilidad', titulo: 'Contabilidad', grupo: 'administracion' },
   { to: '/impuestos', modulo: 'impuestos', icono: 'impuestos', titulo: 'Impuestos', grupo: 'administracion' },
-  { to: '/usuarios', modulo: 'usuarios', icono: 'usuarios', titulo: 'Usuarios', grupo: 'administracion' },
+  // Para todos: dentro, cada quien ve las pestañas que le tocan (mi cuenta y
+  // apariencia siempre; usuarios, roles y pago movil solo quien administra).
+  { to: '/configuracion', modulo: '*', icono: 'configuracion', titulo: 'Configuración', grupo: 'administracion' },
 ]
 
 /** Si este usuario entra a ese modulo. Lo dice el servidor. */
@@ -43,6 +45,8 @@ export function entraA(puede: { modulos?: string[] }, modulo: string): boolean {
  * cualquiera de ellos (una pantalla que junta dos módulos, como Menú y
  * recetas). */
 export function entraAModulo(puede: { modulos?: string[] }, modulo: string | string[]): boolean {
+  // '*' = una pantalla de todos (Configuracion): no depende de ningun modulo.
+  if (modulo === '*') return true
   return Array.isArray(modulo) ? modulo.some((m) => entraA(puede, m)) : entraA(puede, modulo)
 }
 
@@ -90,7 +94,7 @@ export default function Rail() {
       {administracion.map(item)}
 
       <div className="mt-auto flex flex-col items-center gap-1">
-        <Link to="/mi-usuario" className="vp-rail-item" aria-current={pathname === '/mi-usuario' ? 'page' : undefined} aria-label="Mi usuario">
+        <Link to="/configuracion?s=cuenta" className="vp-rail-item" aria-label="Mi cuenta">
           <span className="w-8 h-8 rounded-full bg-neutral-900 text-white grid place-items-center text-xs font-bold font-display">
             {inicial}
           </span>

@@ -112,6 +112,8 @@ COLUMNAS = [
     ("TRX411_COM_FACTURA_DET", "exento", "BOOLEAN DEFAULT 0"),
     ("TRX410_COM_FACTURA", "referencia_pago", "VARCHAR DEFAULT ''"),
     ("CFG910_ADM_PARAMETRO", "vender_sin_inventario", "BOOLEAN DEFAULT 0"),
+    ("CFG910_ADM_PARAMETRO", "pabilo_api_key", "VARCHAR DEFAULT ''"),
+    ("CFG910_ADM_PARAMETRO", "pabilo_user_bank_id", "VARCHAR DEFAULT ''"),
     # A cocina o no, renglon por renglon (y la sugerencia, por categoria).
     ("DIM210_MEN_CATEGORIA", "va_a_cocina", "BOOLEAN DEFAULT 1"),
     ("TRX111_VEN_PEDIDO_DET", "a_cocina", "BOOLEAN DEFAULT 1"),

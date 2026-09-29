@@ -73,6 +73,8 @@ import type {
   ResumenVentas,
   CategoriaInsumo,
   EstadoPabilo,
+  ConfigPabilo,
+  OpcionBanco,
   VerificacionPago,
 } from './types'
 import { queryRango, type Rango } from './fechas'
@@ -281,12 +283,36 @@ export const api = {
   verificarPago: (datos: {
     referencia: string
     monto_usd: number
+    // Lo que el cliente dice que mando, si la cajera lo corrigio.
+    monto_bs?: number
     metodo: string
     pedido_id?: number
     telefono?: string
     cedula?: string
     banco_origen?: string
   }) => req<VerificacionPago>('/pagos/verificar', { method: 'POST', body: JSON.stringify(datos) }),
+  // Configuracion > Pago movil: la clave, la cuenta con la que se cobra y las
+  // cuentas conectadas. Solo dueño/Vertigo.
+  configPabilo: () => req<ConfigPabilo>('/pagos/config'),
+  guardarClavePabilo: (clave: string) =>
+    req<ConfigPabilo>('/pagos/config/clave', { method: 'PUT', body: JSON.stringify({ clave }) }),
+  elegirCuentaPabilo: (user_bank_id: string) =>
+    req<ConfigPabilo>('/pagos/config/cuenta', { method: 'PUT', body: JSON.stringify({ user_bank_id }) }),
+  bancosPabilo: () => req<OpcionBanco[]>('/pagos/config/bancos'),
+  crearCuentaPabilo: (datos: {
+    proveedor: string
+    descripcion: string
+    usuario?: string
+    clave?: string
+    metadata?: Record<string, string>
+    telefono?: string
+    cedula?: string
+  }) => req<ConfigPabilo>('/pagos/config/cuentas', { method: 'POST', body: JSON.stringify(datos) }),
+  alternarCuentaPabilo: (id: string) =>
+    req<ConfigPabilo>(`/pagos/config/cuentas/${id}/alternar`, { method: 'POST' }),
+  cambiarClaveCuentaPabilo: (id: string, clave: string) =>
+    req<ConfigPabilo>(`/pagos/config/cuentas/${id}/clave`, { method: 'PUT', body: JSON.stringify({ clave }) }),
+  borrarCuentaPabilo: (id: string) => req<ConfigPabilo>(`/pagos/config/cuentas/${id}`, { method: 'DELETE' }),
   /** Cobradas y ya cocinadas, todavia en el mostrador esperando al cliente. */
   listarPedidosPorEntregar: () => req<Pedido[]>('/pedidos?por_entregar=true'),
   /** Las ventas de hoy, para consultarlas sin salir del punto de venta. */

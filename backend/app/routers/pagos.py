@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from .. import contabilidad, models, pabilo, schemas, tasas
+from ..acceso import auth
 from ..database import get_db
 from . import operadores
 
@@ -92,6 +93,7 @@ def _a_respuesta(v: models.VerificacionPago, *, reintentable=False, del_dueno=Fa
         codigo=v.codigo or "",
         esperado_bs=v.esperado_bs,
         monto_bs=v.monto_bs,
+        cuenta_bs=round(v.esperado_usd * v.tasa, 2) if v.esperado_usd and v.tasa else None,
         tasa=v.tasa,
         es_nueva=bool(v.es_nueva),
         reintentable=reintentable,
@@ -119,7 +121,14 @@ def verificar(body: schemas.VerificarPagoRequest, request: Request, db: Session 
     operador = operadores.del_turno(db, request)
     vigente = tasas.tasa_vigente(db)
     tasa = float(vigente.bcv) if vigente else None
-    esperado_bs = round(body.monto_usd * tasa, 2) if tasa else None
+    # Contra que se compara lo que diga el banco: lo que la cajera escribio
+    # (el cliente dijo "te mande 1.700") o, si no toco nada, la cuenta a la
+    # tasa. La diferencia con la cuenta real la resuelve la cajera al cobrar:
+    # de mas es propina, de menos se completa con otra forma.
+    if body.monto_bs and body.monto_bs > 0:
+        esperado_bs = round(body.monto_bs, 2)
+    else:
+        esperado_bs = round(body.monto_usd * tasa, 2) if tasa else None
 
     registro = models.VerificacionPago(
         referencia=referencia,
@@ -229,3 +238,222 @@ def verificar(body: schemas.VerificarPagoRequest, request: Request, db: Session 
     db.commit()
     db.refresh(registro)
     return _a_respuesta(registro, reintentable=r.reintentable, del_dueno=r.del_dueno)
+
+
+# ── Configuracion: la clave, la cuenta y las cuentas (Configuracion > Pago movil)
+#
+# Solo quien administra el local (dueño o Vertigo): la clave gasta creditos y
+# da de alta cuentas bancarias con la contraseña del banco. El middleware ya
+# cierra `/api/pagos/config` a los demas (permisos.SOLO_ADMINISTRA); aqui se
+# vuelve a exigir por si alguien monta el router en otro sitio.
+
+
+def _fila(db: Session) -> models.Configuracion:
+    fila = db.query(models.Configuracion).first()
+    if fila is None:
+        fila = models.Configuracion(vender_sin_inventario=False)
+        db.add(fila)
+        db.commit()
+        db.refresh(fila)
+    return fila
+
+
+def cargar_ajustes(db: Session) -> None:
+    """Deja en `pabilo` lo guardado en la base. Se llama al arrancar y cada
+    vez que se guarda algo desde la pantalla."""
+    fila = db.query(models.Configuracion).first()
+    pabilo.ajustar(
+        clave=(fila.pabilo_api_key or "") if fila else "",
+        cuenta=(fila.pabilo_user_bank_id or "") if fila else "",
+    )
+
+
+def _pista(clave: str) -> str:
+    return ("…" + clave[-4:]) if len(clave) >= 8 else ""
+
+
+def _config_actual(db: Session, *, forzar: bool = False) -> schemas.ConfigPabilo:
+    """La foto completa para la pantalla: clave, perfil y cuentas."""
+    fila = _fila(db)
+    activa = pabilo.cuenta_configurada()
+    r = schemas.ConfigPabilo(
+        configurado=pabilo.configurado(),
+        origen_clave=pabilo.origen_clave(),
+        clave_pista=_pista(pabilo.clave()),
+        cuenta_activa_id=activa,
+    )
+    if not r.configurado:
+        return r
+    try:
+        p = pabilo.perfil()
+        r.perfil = schemas.PerfilPabilo(
+            usuario=p["usuario"], empresa=p["empresa"], creditos=p["creditos"], plan_activo=p["plan_activo"]
+        )
+        lista = pabilo.cuentas(forzar=forzar)
+    except pabilo.PabiloError as e:
+        r.error = e.mensaje
+        return r
+    except Exception as e:  # noqa: BLE001
+        log.warning("pabilo: no se pudo leer la configuracion: %s", e)
+        r.error = pabilo.MENSAJES["SIN_CONEXION"]
+        return r
+    # Sin cuenta elegida y una sola conectada: esa es, y se deja guardada
+    # para que la pantalla y el cobro digan lo mismo.
+    if not activa and len(lista) == 1:
+        fila.pabilo_user_bank_id = lista[0].id
+        db.commit()
+        cargar_ajustes(db)
+        activa = lista[0].id
+        r.cuenta_activa_id = activa
+    r.cuentas = [
+        schemas.CuentaPabilo(
+            id=c.id,
+            descripcion=c.descripcion,
+            banco=c.banco,
+            proveedor=c.proveedor,
+            moneda=c.moneda,
+            numero=c.numero,
+            telefono=c.telefono,
+            deshabilitada=c.deshabilitada,
+            bloqueada=c.bloqueada,
+            activa=c.id == activa,
+        )
+        for c in lista
+    ]
+    if activa and not any(c.id == activa for c in lista):
+        r.error = "La cuenta elegida para cobrar ya no está en Pabilo. Elige otra."
+    return r
+
+
+def _traducir(e: pabilo.PabiloError) -> HTTPException:
+    return HTTPException(status_code=e.status, detail=e.mensaje)
+
+
+@router.get("/config", response_model=schemas.ConfigPabilo)
+def config(request: Request, db: Session = Depends(get_db)):
+    auth.exigir_admin(request)
+    return _config_actual(db, forzar=True)
+
+
+@router.put("/config/clave", response_model=schemas.ConfigPabilo)
+def guardar_clave(body: schemas.ClavePabiloRequest, request: Request, db: Session = Depends(get_db)):
+    """Pega la clave de Pabilo. Se prueba ANTES de guardarla (GET /me): una
+    clave mal copiada no se queda puesta rompiendo el cobro. Vacia = se quita
+    la de la pantalla y vuelve a valer la del servidor, si hay."""
+    auth.exigir_admin(request)
+    clave = body.clave.strip()
+    fila = _fila(db)
+    if clave:
+        anterior = pabilo._ajuste["clave"]
+        pabilo.ajustar(clave=clave)
+        try:
+            pabilo.perfil()
+        except pabilo.PabiloError as e:
+            pabilo.ajustar(clave=anterior)
+            if e.codigo in ("UNAUTHORIZED", "FORBIDDEN"):
+                raise HTTPException(400, "Pabilo no reconoce esa clave. Cópiala de nuevo desde Integraciones en pabilo.app.")
+            raise _traducir(e)
+    # Otra clave, otras cuentas: la elegida ya no aplica.
+    if clave != (fila.pabilo_api_key or ""):
+        fila.pabilo_user_bank_id = ""
+    fila.pabilo_api_key = clave
+    db.commit()
+    cargar_ajustes(db)
+    return _config_actual(db, forzar=True)
+
+
+@router.put("/config/cuenta", response_model=schemas.ConfigPabilo)
+def elegir_cuenta(body: schemas.CuentaActivaRequest, request: Request, db: Session = Depends(get_db)):
+    """Con cual de las cuentas conectadas cobra este local."""
+    auth.exigir_admin(request)
+    if not pabilo.configurado():
+        raise HTTPException(409, "Primero guarda la clave de Pabilo.")
+    try:
+        lista = pabilo.cuentas(forzar=True)
+    except pabilo.PabiloError as e:
+        raise _traducir(e)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(502, pabilo.MENSAJES["SIN_CONEXION"])
+    if not any(c.id == body.user_bank_id for c in lista):
+        raise HTTPException(404, "Esa cuenta no está entre las de la clave.")
+    fila = _fila(db)
+    fila.pabilo_user_bank_id = body.user_bank_id
+    db.commit()
+    cargar_ajustes(db)
+    return _config_actual(db)
+
+
+@router.get("/config/bancos", response_model=list[schemas.OpcionBanco])
+def bancos(request: Request):
+    """Con que bancos se puede conectar una cuenta y que pide cada uno."""
+    auth.exigir_admin(request)
+    try:
+        return pabilo.opciones_de_banco()
+    except pabilo.PabiloError as e:
+        raise _traducir(e)
+
+
+@router.post("/config/cuentas", response_model=schemas.ConfigPabilo)
+def crear_cuenta(body: schemas.NuevaCuentaPabilo, request: Request, db: Session = Depends(get_db)):
+    """Conecta una cuenta bancaria nueva en Pabilo con las credenciales del
+    banco. Si es la primera, queda elegida para cobrar."""
+    auth.exigir_admin(request)
+    if not pabilo.configurado():
+        raise HTTPException(409, "Primero guarda la clave de Pabilo.")
+    try:
+        creada = pabilo.crear_cuenta(
+            body.proveedor,
+            body.descripcion,
+            usuario=body.usuario,
+            clave_banco=body.clave,
+            metadata={str(k): str(v) for k, v in (body.metadata or {}).items()},
+            telefono=body.telefono,
+            cedula=body.cedula,
+        )
+    except pabilo.PabiloError as e:
+        raise _traducir(e)
+    fila = _fila(db)
+    if not fila.pabilo_user_bank_id and creada.get("id"):
+        fila.pabilo_user_bank_id = creada["id"]
+        db.commit()
+        cargar_ajustes(db)
+    return _config_actual(db, forzar=True)
+
+
+@router.post("/config/cuentas/{user_bank_id}/alternar", response_model=schemas.ConfigPabilo)
+def alternar_cuenta(user_bank_id: str, request: Request, db: Session = Depends(get_db)):
+    auth.exigir_admin(request)
+    try:
+        pabilo.alternar_cuenta(user_bank_id)
+    except pabilo.PabiloError as e:
+        raise _traducir(e)
+    return _config_actual(db, forzar=True)
+
+
+@router.put("/config/cuentas/{user_bank_id}/clave", response_model=schemas.ConfigPabilo)
+def cambiar_clave_de_cuenta(
+    user_bank_id: str, body: schemas.SecretoCuentaRequest, request: Request, db: Session = Depends(get_db)
+):
+    auth.exigir_admin(request)
+    if not body.clave:
+        raise HTTPException(400, "Escribe la clave nueva.")
+    try:
+        pabilo.cambiar_secreto(user_bank_id, body.clave)
+    except pabilo.PabiloError as e:
+        raise _traducir(e)
+    return _config_actual(db, forzar=True)
+
+
+@router.delete("/config/cuentas/{user_bank_id}", response_model=schemas.ConfigPabilo)
+def borrar_cuenta(user_bank_id: str, request: Request, db: Session = Depends(get_db)):
+    auth.exigir_admin(request)
+    try:
+        pabilo.borrar_cuenta(user_bank_id)
+    except pabilo.PabiloError as e:
+        raise _traducir(e)
+    fila = _fila(db)
+    if fila.pabilo_user_bank_id == user_bank_id:
+        fila.pabilo_user_bank_id = ""
+        db.commit()
+        cargar_ajustes(db)
+    return _config_actual(db, forzar=True)

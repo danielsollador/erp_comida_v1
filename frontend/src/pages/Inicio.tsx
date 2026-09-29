@@ -32,7 +32,7 @@ const DESCRIPCION: Record<string, string> = {
   '/tasa': 'Bolívares por dólar de hoy',
   '/contabilidad': 'Libro, gastos y resultados',
   '/impuestos': 'IVA y libros fiscales',
-  '/usuarios': 'Quién entra y qué puede hacer',
+  '/configuracion': 'Mi cuenta, usuarios y pago móvil',
 }
 
 function saludo(): string {

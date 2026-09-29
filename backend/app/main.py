@@ -118,6 +118,8 @@ async def lifespan(app: FastAPI):
         with SessionLocal() as db:
             seed_plan_de_cuentas(db)
             asegurar_categoria_envios(db)
+            # La clave y la cuenta de Pabilo guardadas desde la pantalla.
+            pagos.cargar_ajustes(db)
         # El menu de ejemplo solo en desarrollo. Un local real arranca vacio
         # y carga SU menu; sin esta bandera, limpiar la base para salir a
         # produccion la volvia a llenar de cafes y empanadas al reiniciar.

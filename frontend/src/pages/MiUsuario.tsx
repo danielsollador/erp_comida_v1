@@ -1,7 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
-import NavBar from '../components/NavBar'
-import { useSeccion } from '../components/Secciones'
-import { Pagina, Pastilla } from '../components/ui'
+import { Pastilla } from '../components/ui'
 import { useDialogo } from '../components/dialogo'
 import {
   Numerico,
@@ -28,49 +26,37 @@ import { useTema } from '../lib/tema'
  * actual aunque haya sesion: si alguien deja el POS abierto, otro no puede
  * quedarse con la cuenta ni ponerse un PIN a su nombre.
  */
-const SECCIONES = [
-  { id: 'cuenta', texto: 'Mi cuenta' },
-  { id: 'apariencia', texto: 'Apariencia' },
-]
-
-export default function MiUsuario() {
+/**
+ * Mi cuenta: quien soy (la ficha de arriba), mi nombre, mi PIN si mi rol
+ * autoriza, y mi contraseña. Vive en Configuracion > Mi cuenta.
+ */
+export function MiCuenta() {
   const { estado, recargar } = useAcceso()
-  const [seccion, irA] = useSeccion(SECCIONES)
   const nombre = estado.nombre_visible || estado.usuario || ''
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Mi usuario" moneda={false} secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
-      <Pagina ancho="angosta">
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex items-center gap-3">
-          <span className="w-11 h-11 rounded-full bg-neutral-900 text-white grid place-items-center text-lg font-bold">
-            {nombre.slice(0, 1).toUpperCase()}
-          </span>
-          <div className="min-w-0">
-            <div className="font-semibold truncate">{nombre}</div>
-            <div className="text-sm text-neutral-500 truncate">
-              {nombre !== estado.usuario && <>@{estado.usuario} · </>}
-              {NOMBRE_ROL[estado.rol ?? ''] ?? estado.rol} · {estado.local.nombre}
-            </div>
+    <>
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex items-center gap-3">
+        <span className="w-11 h-11 rounded-full bg-neutral-900 text-white grid place-items-center text-lg font-bold">
+          {nombre.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <div className="font-semibold truncate">{nombre}</div>
+          <div className="text-sm text-neutral-500 truncate">
+            {nombre !== estado.usuario && <>@{estado.usuario} · </>}
+            {NOMBRE_ROL[estado.rol ?? ''] ?? estado.rol} · {estado.local.nombre}
           </div>
-          {estado.puede.autoriza && (
-            <span className="ml-auto shrink-0">
-              {estado.tiene_pin ? <Pastilla tono="bien">PIN listo</Pastilla> : <Pastilla tono="ojo">sin PIN</Pastilla>}
-            </span>
-          )}
         </div>
-
-        {seccion === 'cuenta' ? (
-          <>
-            <MiNombre nombre={estado.nombre} apellido={estado.apellido} onCambio={recargar} />
-            {estado.puede.autoriza && <MiPin tienePin={estado.tiene_pin} onCambio={recargar} />}
-            <CambiarClave />
-          </>
-        ) : (
-          <Apariencia />
+        {estado.puede.autoriza && (
+          <span className="ml-auto shrink-0">
+            {estado.tiene_pin ? <Pastilla tono="bien">PIN listo</Pastilla> : <Pastilla tono="ojo">sin PIN</Pastilla>}
+          </span>
         )}
-      </Pagina>
-    </div>
+      </div>
+      <MiNombre nombre={estado.nombre} apellido={estado.apellido} onCambio={recargar} />
+      {estado.puede.autoriza && <MiPin tienePin={estado.tiene_pin} onCambio={recargar} />}
+      <CambiarClave />
+    </>
   )
 }
 
@@ -368,7 +354,7 @@ function CambiarClave() {
  * distinto, y quien las usa no siempre es la misma persona -- por eso se
  * guarda en el navegador y no en el usuario.
  */
-function Apariencia() {
+export function Apariencia() {
   const { tema, cambiar } = useTema()
   const [teclado, setTeclado] = useState<PreferenciasTeclado>(leerPreferenciasTeclado)
   const tactil = usaTecladoPropio()
