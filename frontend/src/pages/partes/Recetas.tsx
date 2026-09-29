@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { contiene, palabrasDe } from '../../components/Tabla'
 import { Boton, Cifra, FiltroDesplegable, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
+import { useDialogo } from '../../components/dialogo'
 import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
@@ -78,6 +79,9 @@ export default function Recetas({
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [abierta, setAbierta] = useState<Renglon | null>(null)
   const [filas, setFilas] = useState<Fila[]>([])
+  // Lo que se guardo por ultima vez, para saber si hay cambios sin guardar.
+  const [huellaGuardada, setHuellaGuardada] = useState('')
+  const dialogo = useDialogo()
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
   const [busqueda, setBusqueda] = useState('')
@@ -149,20 +153,44 @@ export default function Recetas({
     setError('')
     setAbierta(r)
     const receta = await api.verReceta(r.variante.id)
-    setFilas(
-      receta.map((x: RecetaItem) => ({
-        ingrediente_id: x.ingrediente_id,
-        cantidad_por_unidad: String(x.cantidad_por_unidad),
-        rendimientoDe: '',
-        rendimientoSalen: '',
-        modoRendimiento: false,
-      })),
-    )
+    const iniciales: Fila[] = receta.map((x: RecetaItem) => ({
+      ingrediente_id: x.ingrediente_id,
+      cantidad_por_unidad: String(x.cantidad_por_unidad),
+      rendimientoDe: '',
+      rendimientoSalen: '',
+      modoRendimiento: false,
+    }))
+    setFilas(iniciales)
+    setHuellaGuardada(huella(iniciales))
+  }
+
+  // Solo lo que se guarda: mercancia y cantidad. Abrir la calculadora o
+  // cambiar de kg a g no es un cambio de receta.
+  function huella(fs: Fila[]): string {
+    return fs
+      .filter((f) => f.ingrediente_id && Number(f.cantidad_por_unidad) > 0)
+      .map((f) => `${f.ingrediente_id}:${Number(f.cantidad_por_unidad)}`)
+      .sort()
+      .join('|')
   }
 
   function cerrar() {
     setAbierta(null)
     setFilas([])
+  }
+
+  /** Salir con cambios sin guardar pide confirmacion (Leider, 29-sep). */
+  async function salir() {
+    if (huella(filas) !== huellaGuardada) {
+      const seguir = await dialogo.confirmar({
+        titulo: `¿Salir sin guardar la receta de ${abierta?.nombre ?? 'este producto'}?`,
+        texto: 'Lo que cambiaste se pierde. Si quieres conservarlo, vuelve y toca «Guardar receta».',
+        aceptar: 'Salir sin guardar',
+        peligro: true,
+      })
+      if (!seguir) return
+    }
+    cerrar()
   }
 
   async function guardar() {
@@ -211,7 +239,7 @@ export default function Recetas({
         error={error}
         guardando={guardando}
         onGuardar={() => void guardar()}
-        onCerrar={cerrar}
+        onCerrar={() => void salir()}
       />
     )
   }
