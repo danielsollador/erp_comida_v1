@@ -89,7 +89,7 @@ export default function Vaso({
   const [id] = useIdEstable()
 
   return (
-    <svg viewBox="0 0 260 400" className={`w-full max-w-[280px] mx-auto block ${className}`} role="img" aria-label={`Cuánto de ${topeTitulo} se lleva cada parte`}>
+    <svg viewBox="0 0 260 400" className={`mx-auto block ${className || 'w-full max-w-[280px]'}`} role="img" aria-label={`Cuánto de ${topeTitulo} se lleva cada parte`}>
       <defs>
         <clipPath id={id}>
           <path d={SILUETA} />
@@ -196,17 +196,19 @@ function Rotulo({ f, texto }: { f: { y: number; h: number; nombre: string }; tex
   const paso = 14
   const total = (tres ? 3 : 2) * paso
   const y0 = f.y + f.h / 2 - total / 2 + 11
+  // Centrado, como el rotulo del margen: con espacio de sobra, nombre y
+  // cifra uno debajo del otro en el medio de la franja.
   return (
     <>
-      <text x="48" y={y0} {...TEXTO}>
+      <text x="130" y={y0} textAnchor="middle" {...TEXTO}>
         {tres ? lineas[0] : lineas.length === 2 ? lineas[0] + ' ' + lineas[1] : lineas[0]}
       </text>
       {tres && (
-        <text x="48" y={y0 + paso} {...TEXTO}>
+        <text x="130" y={y0 + paso} textAnchor="middle" {...TEXTO}>
           {lineas[1]}
         </text>
       )}
-      <text x="212" y={y0 + (tres ? 2 : 1) * paso} textAnchor="end" {...TEXTO} style={{ ...TEXTO.style, fontVariantNumeric: 'tabular-nums' }}>
+      <text x="130" y={y0 + (tres ? 2 : 1) * paso} textAnchor="middle" {...TEXTO} style={{ ...TEXTO.style, fontVariantNumeric: 'tabular-nums' }}>
         {texto}
       </text>
     </>

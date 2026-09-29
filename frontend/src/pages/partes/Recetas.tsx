@@ -466,8 +466,8 @@ function Compositor({
   const disponiblesPiezas = disponibles.filter(porUnidad)
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="space-y-3 lg:h-[calc(100dvh-11.25rem)] lg:flex lg:flex-col">
+      <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <button type="button" onClick={onCerrar} className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Productos
         </button>
@@ -482,12 +482,19 @@ function Compositor({
       </div>
       {error && <p className="text-peligro-600 text-sm">{error}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+      {/* EN UNA PANTALLA, sin desplazar la pagina (Leider, 29-sep): la
+          cuadricula mide lo que queda de ventana y lo que no cabe se
+          desplaza dentro de su columna. */}
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
         {/* ── El producto ─────────────────────────────────────────────── */}
-        <section className="vp-losa p-5 sm:p-6">
+        <section className="vp-losa p-4 sm:p-5 lg:flex lg:flex-col lg:min-h-0">
           <p className="text-xs text-neutral-500">{renglon.categoria}</p>
-          <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight mb-3">{renglon.nombre}</h2>
+          <h2 className="font-display text-xl font-semibold tracking-tight leading-tight mb-2">{renglon.nombre}</h2>
+          {/* El vaso ocupa lo que queda entre el titulo y el resumen: asi la
+              tarjeta nunca es mas alta que la ventana. */}
+          <div className="lg:flex-1 lg:min-h-0 flex justify-center">
           <Vaso
+            className="w-full max-w-[260px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
             tope={precio}
             topeTitulo="se vende a"
             partes={partes}
@@ -498,13 +505,14 @@ function Compositor({
             resaltado={resaltado}
             onResaltar={(id) => setResaltado(id === null ? null : Number(id))}
           />
+          </div>
           <Margen precio={precio} costoReal={costoReal} vacio={filas.length === 0} />
         </section>
 
         {/* ── La mercancía ────────────────────────────────────────────── */}
-        <section className="space-y-3">
+        <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
           {filas.length > 0 && (
-            <div className="vp-losa overflow-hidden">
+            <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[45%] lg:overflow-y-auto">
               {pesadas.length > 0 && (
                 <>
                   <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Lleva</p>
@@ -557,8 +565,8 @@ function Compositor({
             </div>
           )}
 
-          <div className="vp-losa overflow-hidden">
-            <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2">
+          <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+            <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 shrink-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mr-auto">
                 {filas.length === 0 ? 'Toca lo que lleva' : 'Agregar'}
               </p>
@@ -586,7 +594,7 @@ function Compositor({
                 {ingredientes.length === 0 ? 'No hay mercancía en el depósito todavía.' : 'Nada coincide.'}
               </p>
             ) : (
-              <div className="max-h-[30rem] overflow-y-auto">
+              <div className="max-h-[30rem] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto">
                 {disponiblesPesadas.length > 0 && (
                   <ul className="divide-y divide-neutral-100">
                     {disponiblesPesadas.map((ing) => (
