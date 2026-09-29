@@ -2053,6 +2053,9 @@ class VerificarPagoRequest(BaseModel):
     # lo que se compara el hallazgo del banco; la cuenta real sigue siendo
     # `monto_usd` a la tasa, y la diferencia la decide la cajera al cobrar.
     monto_bs: Optional[float] = None
+    # A cual de las cuentas conectadas le pagaron, si el local tiene mas de
+    # una. Vacio = la principal.
+    user_bank_id: Optional[str] = None
     metodo: str = "Pago movil"
     pedido_id: Optional[int] = None
     # Solo si el banco de la cuenta los exige (ver GET /api/pagos/estado).
@@ -2160,10 +2163,22 @@ class SecretoCuentaRequest(BaseModel):
     clave: str
 
 
+class CuentaCorta(BaseModel):
+    """Una cuenta conectada, con lo justo para que la caja elija a cual le pagaron."""
+
+    id: str
+    descripcion: str
+    banco: str
+
+
 class EstadoPabilo(BaseModel):
     configurado: bool
     # Solo cuando esta configurado y la cuenta respondio.
     cuenta: str = ""
+    # La principal (a la que se verifica si la caja no elige otra) y todas las
+    # operativas, para que la caja pregunte "¿a cuál le pagó?" si hay varias.
+    cuenta_id: str = ""
+    cuentas: List[CuentaCorta] = []
     banco: str = ""
     moneda: str = ""
     # Campos extra que el banco exige ademas de la referencia (nombres del

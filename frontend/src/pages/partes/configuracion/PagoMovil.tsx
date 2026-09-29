@@ -1,28 +1,33 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useDialogo } from '../../../components/dialogo'
 import { Aviso, Boton, Campo, Pastilla, Seccion, Selector, Vacio } from '../../../components/ui'
+import { useAcceso } from '../../../lib/acceso'
 import { api } from '../../../lib/api'
 import type { ConfigPabilo, CuentaPabilo, OpcionBanco } from '../../../lib/types'
 
 /**
- * Configuracion > Pago movil: conectar el local con Pabilo para que el
- * mostrador pueda preguntarle al banco si un pago movil de verdad entro.
+ * Configuracion > Pago movil: las cuentas del banco contra las que el
+ * mostrador verifica que un pago movil de verdad entro.
  *
- * TRES COSAS, EN ORDEN. Primero la clave de Pabilo (se pega una vez, se
- * prueba antes de guardarse). Con la clave puesta, las cuentas bancarias que
- * Pabilo tiene conectadas, y cual de ellas es la del local. Y por ultimo
- * conectar una cuenta nueva desde aqui mismo: se elige el banco, se llenan
- * las credenciales que ESE banco pide (usuario y contraseña de BDV en linea,
- * o el Client ID y el Secret de un banco juridico) y Pabilo la da de alta.
+ * DOS PANTALLAS EN UNA, SEGUN QUIEN MIRA. La verificacion la presta Vertigo
+ * a traves de un tercero (Pabilo); con quien esta hecha, la clave, los
+ * creditos y el plan son de la plataforma. Eso lo ve y lo toca SOLO Vertigo.
+ * El dueño del local ve "verificacion de pagos" y sus cuentas bancarias: cual
+ * es la principal, conectar otra, cambiarle la clave del banco, quitarla
+ * (Leider, 29-sep: "si no eres admin, no tienes por que ver con quien
+ * estamos integrados").
  *
- * LA CLAVE NUNCA VUELVE ENTERA. El servidor manda solo sus ultimos cuatro
- * caracteres, para saber cual esta puesta; las contraseñas del banco viajan
- * una vez, al conectar, y no se vuelven a ver (Pabilo las guarda cifradas).
+ * UNA PRINCIPAL, Y LA CAJA ELIGE SI HAY MAS. Un local con dos bancos recibe
+ * pagos en los dos; la principal es a la que se verifica por defecto, y al
+ * cobrar la caja marca a cual le pagaron. No hay "pausar": una cuenta que no
+ * se usa se quita.
  *
- * Lo que aqui se decide no bloquea el cobro: si algo falla, el mostrador
- * sigue cobrando anotando la referencia, como siempre.
+ * LAS CREDENCIALES NO SE GUARDAN AQUI. La contraseña del banco viaja una vez,
+ * al conectar, cifrada al verificador, y no se vuelve a ver.
  */
 export default function PagoMovil() {
+  const { estado } = useAcceso()
+  const vertigo = estado.puede.vertigo
   const dialogo = useDialogo()
   const [config, setConfig] = useState<ConfigPabilo | null>(null)
   const [cargando, setCargando] = useState(true)
@@ -31,11 +36,6 @@ export default function PagoMovil() {
   const [conectando, setConectando] = useState(false)
 
   useEffect(() => {
-    cargar()
-  }, [])
-
-  function cargar() {
-    setCargando(true)
     api
       .configPabilo()
       .then((c) => {
@@ -44,7 +44,7 @@ export default function PagoMovil() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setCargando(false))
-  }
+  }, [])
 
   function ok(texto: string, nuevo?: ConfigPabilo) {
     setError('')
@@ -55,29 +55,19 @@ export default function PagoMovil() {
 
   async function correr(accion: () => Promise<ConfigPabilo>, texto: string) {
     try {
-      const nuevo = await accion()
-      ok(texto, nuevo)
-      return true
+      ok(texto, await accion())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo.')
-      return false
     }
   }
 
   async function elegir(c: CuentaPabilo) {
-    await correr(() => api.elegirCuentaPabilo(c.id), `El local cobra en «${c.descripcion || c.banco}».`)
-  }
-
-  async function alternar(c: CuentaPabilo) {
-    await correr(
-      () => api.alternarCuentaPabilo(c.id),
-      c.deshabilitada ? `«${c.descripcion}» vuelve a recibir verificaciones.` : `«${c.descripcion}» quedó en pausa.`,
-    )
+    await correr(() => api.elegirCuentaPabilo(c.id), `«${c.descripcion || nombreBanco(c.banco)}» es ahora la cuenta principal.`)
   }
 
   async function quitar(c: CuentaPabilo) {
     const seguro = await dialogo.confirmar({
-      titulo: `¿Quitar «${c.descripcion || c.banco}» de Pabilo?`,
+      titulo: `¿Quitar «${c.descripcion || nombreBanco(c.banco)}»?`,
       texto: 'Deja de verificarse contra esa cuenta. Las ventas ya cobradas no cambian.',
       aceptar: 'Quitar',
       peligro: true,
@@ -87,8 +77,11 @@ export default function PagoMovil() {
   }
 
   if (cargando && !config) {
-    return <p className="text-sm text-neutral-400 py-6 text-center">Consultando a Pabilo…</p>
+    return <p className="text-sm text-neutral-400 py-6 text-center">Consultando…</p>
   }
+
+  const configurado = Boolean(config?.configurado)
+  const varias = (config?.cuentas.length ?? 0) > 1
 
   return (
     <div className="space-y-4">
@@ -96,12 +89,26 @@ export default function PagoMovil() {
       {aviso && <Aviso tono="bien">{aviso}</Aviso>}
       {config?.error && !error && <Aviso tono="ojo">{config.error}</Aviso>}
 
-      <Clave config={config} onGuardada={(c, texto) => ok(texto, c)} onError={setError} />
+      {vertigo && <Conexion config={config} onGuardada={(c, texto) => ok(texto, c)} onError={setError} />}
 
-      {config?.configurado && !config.error && (
+      {!vertigo && !configurado && (
+        <Seccion titulo="Verificación de pagos móviles">
+          <p className="text-sm text-neutral-600">
+            Con la verificación, el mostrador le pregunta al banco si un pago móvil de verdad entró antes de
+            cobrar: nada de capturas retocadas ni referencias repetidas. La activa Vertigo para tu local;
+            escríbenos y la dejamos lista.
+          </p>
+        </Seccion>
+      )}
+
+      {configurado && !config?.error && (
         <Seccion
-          titulo="Cuentas bancarias"
-          ayuda="Las cuentas conectadas en Pabilo. Una es con la que cobra este local: contra esa se verifican los pagos móviles."
+          titulo="Cuentas del banco"
+          ayuda={
+            varias
+              ? 'La principal es a la que se verifica por defecto. Al cobrar, la caja marca a cuál de las cuentas le pagaron.'
+              : 'La cuenta donde recibes los pagos móviles. Contra esa se verifica cada pago antes de cobrarlo.'
+          }
           accion={
             <Boton tono="fantasma" onClick={() => setConectando((v) => !v)}>
               {conectando ? 'Cerrar' : 'Conectar una cuenta'}
@@ -112,25 +119,25 @@ export default function PagoMovil() {
             <ConectarCuenta
               onConectada={(c) => {
                 setConectando(false)
-                ok('Cuenta conectada. Pabilo ya puede consultar sus movimientos.', c)
+                ok('Cuenta conectada: ya se verifican los pagos que entren ahí.', c)
               }}
               onError={setError}
             />
           )}
-          {config.cuentas.length === 0 ? (
+          {config!.cuentas.length === 0 ? (
             <Vacio
               icono="tasa"
               titulo="Ninguna cuenta conectada"
-              detalle="Conecta la cuenta donde recibes los pagos móviles: usuario y contraseña del banco en línea, y Pabilo hace el resto."
+              detalle="Conecta la cuenta donde recibes los pagos móviles: con el usuario y la contraseña del banco en línea basta."
             />
           ) : (
             <ul className="divide-y divide-neutral-100">
-              {config.cuentas.map((c) => (
+              {config!.cuentas.map((c) => (
                 <FilaCuenta
                   key={c.id}
                   c={c}
+                  varias={varias}
                   onElegir={() => void elegir(c)}
-                  onAlternar={() => void alternar(c)}
                   onQuitar={() => void quitar(c)}
                   onClaveCambiada={(nuevo) => ok('Clave del banco actualizada y probada.', nuevo)}
                   onError={setError}
@@ -144,9 +151,9 @@ export default function PagoMovil() {
   )
 }
 
-// ── La clave de Pabilo ──────────────────────────────────────────────────────
+// ── La conexion con el verificador (solo Vertigo) ──────────────────────────
 
-function Clave({
+function Conexion({
   config,
   onGuardada,
   onError,
@@ -180,7 +187,10 @@ function Clave({
     setGuardando(true)
     try {
       const nuevo = await api.guardarClavePabilo('')
-      onGuardada(nuevo, nuevo.configurado ? 'Se quitó la clave guardada; vale la del servidor.' : 'Clave quitada. El mostrador cobra sin verificar.')
+      onGuardada(
+        nuevo,
+        nuevo.configurado ? 'Se quitó la clave guardada; vale la del servidor.' : 'Clave quitada. El mostrador cobra sin verificar.',
+      )
     } catch (err) {
       onError(err instanceof Error ? err.message : 'No se pudo quitar la clave.')
     } finally {
@@ -190,8 +200,8 @@ function Clave({
 
   return (
     <Seccion
-      titulo="Conexión con Pabilo"
-      ayuda="Pabilo (pabilo.app) tiene la cuenta del banco conectada y responde en segundos si un pago móvil entró, cuánto fue y si ya se usó."
+      titulo="Integración con Pabilo"
+      ayuda="Solo Vertigo ve esto. Pabilo (pabilo.app) tiene las cuentas del banco conectadas y responde si un pago entró, cuánto fue y si ya se usó. Cada consulta nueva gasta un crédito."
       accion={
         configurado && !editando ? (
           <span className="flex items-center gap-2">
@@ -213,7 +223,6 @@ function Clave({
           <Dato
             titulo="Créditos"
             valor={config?.perfil?.creditos == null ? '—' : String(config.perfil.creditos)}
-            ayuda="Cada consulta nueva gasta uno."
             ojo={config?.perfil?.creditos != null && config.perfil.creditos < 10}
           />
           <Dato
@@ -272,15 +281,15 @@ function Dato({ titulo, valor, ayuda, ojo = false }: { titulo: string; valor: st
 
 function FilaCuenta({
   c,
+  varias,
   onElegir,
-  onAlternar,
   onQuitar,
   onClaveCambiada,
   onError,
 }: {
   c: CuentaPabilo
+  varias: boolean
   onElegir: () => void
-  onAlternar: () => void
   onQuitar: () => void
   onClaveCambiada: (nuevo: ConfigPabilo) => void
   onError: (t: string) => void
@@ -305,27 +314,31 @@ function FilaCuenta({
     }
   }
 
+  const fueraDeServicio = c.bloqueada || c.deshabilitada
   const estado = c.bloqueada ? (
     <Pastilla tono="mal">bloqueada por el banco</Pastilla>
   ) : c.deshabilitada ? (
-    <Pastilla tono="ojo">en pausa</Pastilla>
-  ) : c.activa ? (
-    <Pastilla tono="bien">cobra aquí</Pastilla>
+    <Pastilla tono="ojo">fuera de servicio</Pastilla>
+  ) : c.activa && varias ? (
+    <Pastilla tono="bien">principal</Pastilla>
   ) : null
 
   return (
     <li className="py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        {/* Elegir con cual se cobra: un solo toque, sin cuadro. */}
-        <button
-          type="button"
-          onClick={onElegir}
-          disabled={c.activa || c.deshabilitada}
-          aria-label={c.activa ? 'Es la cuenta con la que cobra el local' : 'Cobrar con esta cuenta'}
-          className={`mt-1 w-4 h-4 shrink-0 rounded-full border-2 ${
-            c.activa ? 'border-neutral-900 bg-neutral-900 ring-2 ring-white ring-inset' : 'border-neutral-300 hover:border-neutral-500'
-          } disabled:cursor-default`}
-        />
+        {/* La principal se marca con un toque; con una sola cuenta no hay
+            nada que elegir y el circulo sobra. */}
+        {varias && (
+          <button
+            type="button"
+            onClick={onElegir}
+            disabled={c.activa || fueraDeServicio}
+            aria-label={c.activa ? 'Es la cuenta principal' : 'Hacerla la principal'}
+            className={`mt-1 w-4 h-4 shrink-0 rounded-full border-2 ${
+              c.activa ? 'border-neutral-900 bg-neutral-900 ring-2 ring-white ring-inset' : 'border-neutral-300 hover:border-neutral-500'
+            } disabled:cursor-default`}
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold truncate">{c.descripcion || nombreBanco(c.banco)}</span>
@@ -347,7 +360,7 @@ function FilaCuenta({
                 autoComplete="new-password"
                 autoFocus
                 className="flex-1"
-                ayuda="Pabilo la prueba con el banco antes de guardarla (0,5 créditos si sirve)."
+                ayuda="Se prueba con el banco antes de guardarse."
               />
               <Boton type="submit" disabled={!clave || guardando}>
                 {guardando ? 'Probando…' : 'Guardar'}
@@ -359,16 +372,13 @@ function FilaCuenta({
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0 text-xs">
-          {!c.activa && !c.deshabilitada && (
+          {varias && !c.activa && !fueraDeServicio && (
             <button type="button" onClick={onElegir} className="text-neutral-600 hover:text-neutral-900 font-medium px-2 py-1">
-              Cobrar aquí
+              Hacer principal
             </button>
           )}
           <button type="button" onClick={() => setCambiandoClave((v) => !v)} className="text-neutral-500 hover:text-neutral-900 px-2 py-1">
-            Clave
-          </button>
-          <button type="button" onClick={onAlternar} className="text-neutral-500 hover:text-neutral-900 px-2 py-1">
-            {c.deshabilitada ? 'Reanudar' : 'Pausar'}
+            Clave del banco
           </button>
           <button type="button" onClick={onQuitar} className="text-neutral-400 hover:text-peligro-600 px-2 py-1">
             Quitar
@@ -387,6 +397,7 @@ const NOMBRES: Record<string, string> = {
   bancamiga: 'Bancamiga',
   binance: 'Binance',
   test: 'Banco de prueba',
+  notificaciones: 'Notificaciones del banco',
   VE_BAN: 'Banco de Venezuela',
   VE_BAN_EMP_V2: 'Banco de Venezuela (empresas)',
   MERCANTIL_EMP_V1: 'Mercantil (empresas)',
@@ -394,7 +405,7 @@ const NOMBRES: Record<string, string> = {
   VE_BANK_PLAZA_V1: 'Banco Plaza (empresas)',
   BINANCE_APP: 'Binance Pay',
   BANK_TEST: 'Banco de prueba',
-  NOTIFICATION_ACCOUNT: 'Notificaciones de Pabilo',
+  NOTIFICATION_ACCOUNT: 'Notificaciones del banco',
 }
 
 function nombreBanco(clave: string): string {
@@ -452,7 +463,7 @@ function ConectarCuenta({
       setDescripcion('')
       onConectada(nuevo)
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Pabilo no pudo conectar la cuenta.')
+      onError(err instanceof Error ? err.message : 'No se pudo conectar la cuenta.')
     } finally {
       setGuardando(false)
     }
@@ -473,7 +484,6 @@ function ConectarCuenta({
         {opciones.map((o) => (
           <option key={o.proveedor} value={o.proveedor}>
             {o.nombre}
-            {o.prueba ? ' · solo pruebas' : ''}
           </option>
         ))}
       </Selector>
@@ -504,7 +514,7 @@ function ConectarCuenta({
           {guardando ? 'Conectando…' : 'Conectar'}
         </Boton>
         <span className="text-xs text-neutral-500">
-          Las credenciales viajan una sola vez a Pabilo, que las guarda cifradas. Aquí no se guardan.
+          La contraseña del banco viaja una sola vez, cifrada, al verificador de pagos. Aquí no se guarda.
         </span>
       </div>
     </form>

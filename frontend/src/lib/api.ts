@@ -285,6 +285,8 @@ export const api = {
     monto_usd: number
     // Lo que el cliente dice que mando, si la cajera lo corrigio.
     monto_bs?: number
+    // A cual cuenta le pagaron, si el local tiene mas de una.
+    user_bank_id?: string
     metodo: string
     pedido_id?: number
     telefono?: string
@@ -308,8 +310,6 @@ export const api = {
     telefono?: string
     cedula?: string
   }) => req<ConfigPabilo>('/pagos/config/cuentas', { method: 'POST', body: JSON.stringify(datos) }),
-  alternarCuentaPabilo: (id: string) =>
-    req<ConfigPabilo>(`/pagos/config/cuentas/${id}/alternar`, { method: 'POST' }),
   cambiarClaveCuentaPabilo: (id: string, clave: string) =>
     req<ConfigPabilo>(`/pagos/config/cuentas/${id}/clave`, { method: 'PUT', body: JSON.stringify({ clave }) }),
   borrarCuentaPabilo: (id: string) => req<ConfigPabilo>(`/pagos/config/cuentas/${id}`, { method: 'DELETE' }),

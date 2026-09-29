@@ -20,6 +20,7 @@ from tests.conftest import entrar
 
 LOCAL = settings.LOCAL_SLUG
 CAJERA = ("cajera-pabilo", "clave-de-caja-larga")
+DUENA = ("duena-pabilo", "clave-de-duena-larga")
 
 PERFIL = {"id": "685725869e6febc736848bf1", "username": "savora", "email": "x@y.z",
           "full_name": "Sávora C.A.", "company_name": "Sávora C.A.", "credits": 38,
@@ -81,8 +82,6 @@ def pabilo_falso(monkeypatch):
 
     def _put(ruta, cuerpo):
         estado["llamadas"].append(("PUT", ruta, cuerpo))
-        if ruta.endswith("/toggle-disabled"):
-            return 200, {"is_disabled": True}
         if ruta.endswith("/change-secret"):
             return 200, {"message": "Usersbank secret changed successfully"}
         return 404, {"error": "NOT_FOUND", "message": ruta}
@@ -229,7 +228,7 @@ def test_crear_cuenta_con_metadata_y_de_notificaciones(client, pabilo_falso):
     assert "username" not in cuerpo
 
 
-def test_elegir_pausar_cambiar_clave_y_borrar(client, db, pabilo_falso):
+def test_elegir_principal_cambiar_clave_y_borrar(client, db, pabilo_falso):
     guardar_clave(client, "clave-buena")
     client.post("/api/pagos/config/cuentas", json={
         "proveedor": "VE_BAN", "descripcion": "Segunda", "usuario": "u", "clave": "c"})
@@ -237,9 +236,6 @@ def test_elegir_pausar_cambiar_clave_y_borrar(client, db, pabilo_falso):
     assert r.status_code == 200 and r.json()["cuenta_activa_id"] == "nueva-123"
     assert db.query(models.Configuracion).first().pabilo_user_bank_id == "nueva-123"
     assert client.put("/api/pagos/config/cuenta", json={"user_bank_id": "no-existe"}).status_code == 404
-
-    assert client.post("/api/pagos/config/cuentas/nueva-123/alternar").status_code == 200
-    assert pabilo_falso["llamadas"][-1][1] == "/v1/usersbank/nueva-123/toggle-disabled"
 
     r = client.put("/api/pagos/config/cuentas/nueva-123/clave", json={"clave": "otra"})
     assert r.status_code == 200
@@ -268,15 +264,86 @@ def test_errores_de_pabilo_llegan_en_cristiano(client, pabilo_falso, monkeypatch
     assert r.status_code == 400 and "clave del banco" in r.json()["detail"].lower()
 
 
+# ── Con dos cuentas, la caja elige a cual le pagaron ────────────────────────
+
+
+def test_la_caja_elige_a_cual_cuenta_le_pagaron(client, pabilo_falso, monkeypatch):
+    guardar_clave(client, "clave-buena")
+    client.post("/api/pagos/config/cuentas", json={
+        "proveedor": "VE_BAN", "descripcion": "Segunda", "usuario": "u", "clave": "c"})
+    e = client.get("/api/pagos/estado").json()
+    assert e["cuenta_id"] == CUENTA_BDV["id"], "la principal sigue siendo la primera"
+    assert [c["id"] for c in e["cuentas"]] == [CUENTA_BDV["id"], "nueva-123"]
+
+    client.put("/api/tasas", json={"bcv": 100.0})
+    pago = {"id": "ubp_1", "bank_reference_id": "12345678", "amount": 1000.0}
+    monkeypatch.setattr(pabilo, "_post", lambda ruta, cuerpo: (
+        200, {"user_bank_payment": pago, "is_new": True, "credit_cost": 1, "user_credits_total": 37}))
+    rutas = []
+    real = pabilo.verificar
+
+    def espiar(cuenta, cuerpo):
+        rutas.append(cuenta.id)
+        return real(cuenta, cuerpo)
+
+    monkeypatch.setattr(pabilo, "verificar", espiar)
+    r = client.post("/api/pagos/verificar", json={
+        "referencia": "12345678", "monto_usd": 10, "metodo": "Pago movil", "user_bank_id": "nueva-123"})
+    assert r.status_code == 200 and r.json()["resultado"] == "verificado"
+    assert rutas == ["nueva-123"], "se pregunto a la cuenta que dijo la caja"
+    r = client.post("/api/pagos/verificar", json={
+        "referencia": "12345678", "monto_usd": 10, "metodo": "Pago movil", "user_bank_id": "fantasma"})
+    assert r.json()["resultado"] == "error" and "elige otra" in r.json()["mensaje"].lower()
+
+
 # ── Quien puede ─────────────────────────────────────────────────────────────
 
+def test_el_dueno_ve_sus_cuentas_pero_no_la_integracion(como_duena, pabilo_falso, monkeypatch):
+    """Con quien esta hecha la integracion, la clave, los creditos y el plan
+    son de Vertigo. El dueño conecta y elige sus cuentas, y nada mas."""
+    monkeypatch.setattr(settings, "PABILO_API_KEY", "clave-buena")
+    duena = como_duena
+    d = duena.get("/api/pagos/config").json()
+    assert d["configurado"] is True
+    assert d["perfil"] is None and d["clave_pista"] == "" and d["origen_clave"] == ""
+    assert [c["id"] for c in d["cuentas"]] == [CUENTA_BDV["id"]]
+    # La clave no la toca.
+    assert duena.put("/api/pagos/config/clave", json={"clave": "otra"}).status_code == 403
+    # Ni ve el banco de prueba.
+    assert "BANK_TEST" not in [o["proveedor"] for o in duena.get("/api/pagos/config/bancos").json()]
+    # Pero si conecta cuentas y elige la principal.
+    r = duena.post("/api/pagos/config/cuentas", json={
+        "proveedor": "VE_BAN", "descripcion": "Mia", "usuario": "u", "clave": "c"})
+    assert r.status_code == 200, r.text
+    assert duena.put("/api/pagos/config/cuenta", json={"user_bank_id": "nueva-123"}).status_code == 200
+    # Y en todo lo que le llega no aparece el proveedor.
+    import json as _json
+    assert "abilo" not in _json.dumps(r.json(), ensure_ascii=False)
 
-def test_caja_no_toca_la_configuracion(fuera, pabilo_falso):
+
+
+@pytest.fixture()
+def como_caja(fuera):
+    """Una cajera que existe solo durante la prueba: el almacen de cuentas es
+    de toda la sesion y test_acceso cuenta la gente del local."""
+    usuarios.crear(*CAJERA, rol="caja", locales=[LOCAL])
     try:
-        usuarios.crear(*CAJERA, rol="caja", locales=[LOCAL])
-    except usuarios.ErrorUsuarios:
-        pass
-    caja = entrar(fuera, *CAJERA)
+        yield entrar(fuera, *CAJERA)
+    finally:
+        usuarios.borrar(CAJERA[0])
+
+
+@pytest.fixture()
+def como_duena(fuera):
+    usuarios.crear(*DUENA, rol="dueno", locales=[LOCAL])
+    try:
+        yield entrar(fuera, *DUENA)
+    finally:
+        usuarios.borrar(DUENA[0])
+
+
+def test_caja_no_toca_la_configuracion(como_caja, pabilo_falso):
+    caja = como_caja
     assert caja.get("/api/pagos/config").status_code == 403
     assert caja.put("/api/pagos/config/clave", json={"clave": "clave-buena"}).status_code == 403
     assert caja.post("/api/pagos/config/cuentas", json={"proveedor": "BANK_TEST"}).status_code == 403

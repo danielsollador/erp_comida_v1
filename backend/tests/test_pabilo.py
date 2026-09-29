@@ -152,7 +152,9 @@ def test_sin_creditos_es_cosa_del_dueno(client, con_pabilo):
     v = verificar(client).json()
     assert v["resultado"] == "error"
     assert v["del_dueno"] is True
-    assert "dueño" in v["mensaje"]
+    # Los creditos son de Vertigo, no del local: es a Vertigo a quien se avisa,
+    # y sin nombrar al proveedor.
+    assert "Vertigo" in v["mensaje"] and "Pabilo" not in v["mensaje"]
 
 
 def test_referencia_que_ya_cobro_aqui_no_gasta_credito(client, variante, con_pabilo):

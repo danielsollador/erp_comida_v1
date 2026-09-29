@@ -78,6 +78,11 @@ DEL_DUENO = {
 
 # Lo que ve la cajera por cada codigo. Corto y en su idioma: esto sale en el
 # cuadro de cobro, con el cliente delante.
+#
+# SIN NOMBRAR A PABILO. La integracion es de Vertigo; el local ve "la
+# verificacion de pagos" y a quien tiene que avisar: a Vertigo si es cosa de
+# creditos o de la clave (que son de Vertigo), o a Configuracion > Pago movil
+# si es la clave del banco, que la maneja el dueño (Leider, 29-sep).
 MENSAJES = {
     "PAYMENT_NOT_FOUND": "El banco no encuentra ningún pago con esa referencia. Revisa los dígitos o espera un momento: a veces tarda en reflejarse.",
     "PAYMENT_AMOUNT_NOT_VALID": "La referencia existe pero el monto no coincide.",
@@ -85,25 +90,25 @@ MENSAJES = {
     "IS_NOT_POSITIVE_PAYMENT": "Esa referencia es de un pago que SALIÓ de la cuenta, no de uno que entró.",
     "IS_NOT_POSITIVE_AMOUNT": "El monto tiene que ser mayor a cero.",
     "BAD_REQUEST": "Faltan datos para consultar ese pago.",
-    "NOT_ENOUGH_CREDITS": "Se acabaron los créditos de Pabilo. Avísale al dueño; mientras, cobra anotando la referencia.",
-    "PLAN_IS_NOT_ACTIVE": "El plan de Pabilo está vencido. Avísale al dueño; mientras, cobra anotando la referencia.",
-    "REQUEST_LIMIT_REACHED": "Se agotó la cuota de consultas de Pabilo por este período.",
-    "API_KEY_MONTHLY_CREDIT_LIMIT_EXCEEDED": "Se alcanzó el tope mensual de consultas de Pabilo.",
-    "CLIENT_MONTHLY_CREDIT_LIMIT_EXCEEDED": "Se alcanzó el tope mensual de consultas de Pabilo.",
-    "USER_BANCK_BAD_PASSWORD": "La clave del banco guardada en Pabilo ya no sirve. El dueño tiene que actualizarla.",
-    "USER_BANCK_PASSWORD_EXPIRED": "El banco pide cambiar la clave. El dueño tiene que actualizarla en Pabilo.",
+    "NOT_ENOUGH_CREDITS": "Se agotaron las consultas de verificación. Avísale a Vertigo; mientras, cobra anotando la referencia.",
+    "PLAN_IS_NOT_ACTIVE": "La verificación de pagos está suspendida. Avísale a Vertigo; mientras, cobra anotando la referencia.",
+    "REQUEST_LIMIT_REACHED": "Se agotó la cuota de consultas por este período. Avísale a Vertigo.",
+    "API_KEY_MONTHLY_CREDIT_LIMIT_EXCEEDED": "Se alcanzó el tope mensual de consultas. Avísale a Vertigo.",
+    "CLIENT_MONTHLY_CREDIT_LIMIT_EXCEEDED": "Se alcanzó el tope mensual de consultas. Avísale a Vertigo.",
+    "USER_BANCK_BAD_PASSWORD": "La clave del banco ya no sirve. Hay que actualizarla en Configuración › Pago móvil.",
+    "USER_BANCK_PASSWORD_EXPIRED": "El banco pide cambiar la clave. Cámbiala en el banco y luego en Configuración › Pago móvil.",
     "USER_BANCK_BLOCKED": "El banco bloqueó el usuario de la cuenta. Hay que desbloquearlo con el banco.",
-    "USER_BANCK_BAD_API_KEY": "La credencial del banco en Pabilo no es válida.",
-    "USER_BANK_IS_DISABLED": "La cuenta bancaria está deshabilitada en Pabilo.",
-    "USER_BANCK_NOT_FOUND": "La cuenta bancaria configurada no existe en Pabilo. Revisa PABILO_USER_BANK_ID.",
-    "UNAUTHORIZED": "La clave de Pabilo no es válida o fue revocada.",
-    "FORBIDDEN": "La clave de Pabilo no tiene permiso para verificar pagos.",
+    "USER_BANCK_BAD_API_KEY": "La credencial del banco no es válida. Revísala en Configuración › Pago móvil.",
+    "USER_BANK_IS_DISABLED": "Esa cuenta bancaria está en pausa. Avísale a Vertigo.",
+    "USER_BANCK_NOT_FOUND": "La cuenta bancaria configurada ya no existe. Elige otra en Configuración › Pago móvil.",
+    "UNAUTHORIZED": "La verificación de pagos no está autorizada para este local. Avísale a Vertigo.",
+    "FORBIDDEN": "La verificación de pagos no tiene permiso en este local. Avísale a Vertigo.",
     "BANK_NOT_AVAILABLE": "El banco no respondió. Intenta otra vez en un momento.",
     "BANK_TEMPORARILY_INACTIVE": "El banco está caído en este momento.",
     "BANK_TOO_MANY_REQUESTS": "El banco está limitando las consultas. Espera unos segundos.",
     "PROXY_ERROR": "Falló la conexión con el banco. Intenta otra vez.",
     "SESSION_ALREADY_ACTIVE": "Hay otra consulta en curso contra el banco. Espera unos segundos.",
-    "SIN_CONEXION": "No se pudo llegar a Pabilo. Revisa la conexión a internet.",
+    "SIN_CONEXION": "No se pudo llegar al verificador de pagos. Revisa la conexión a internet.",
     "TIEMPO_AGOTADO": "El banco tardó demasiado en responder.",
 }
 
@@ -299,12 +304,22 @@ def cuenta_activa() -> Cuenta:
     if len(lista) == 1:
         return lista[0]
     if not lista:
-        raise LookupError("La clave de Pabilo no tiene ninguna cuenta bancaria conectada.")
+        raise LookupError("No hay ninguna cuenta bancaria conectada para verificar pagos.")
     raise LookupError(
-        "La clave tiene varias cuentas: elige con cuál cobra este local en "
-        "Configuración > Pago móvil ("
+        "Hay varias cuentas conectadas: elige la principal en Configuración › Pago móvil ("
         + ", ".join(c.descripcion or c.id for c in lista) + ")."
     )
+
+
+def cuenta_por_id(user_bank_id: str) -> Cuenta:
+    """La cuenta que la caja eligio para verificar, cuando el local tiene mas
+    de una conectada. Tiene que existir y estar operativa."""
+    for c in cuentas():
+        if c.id == user_bank_id:
+            if c.deshabilitada or c.bloqueada:
+                raise LookupError("Esa cuenta está en pausa o bloqueada por el banco: elige otra.")
+            return c
+    raise LookupError("Esa cuenta ya no está conectada: elige otra.")
 
 
 # ── Verificar ───────────────────────────────────────────────────────────────
@@ -407,7 +422,7 @@ def verificar(cuenta: Cuenta, cuerpo: dict[str, Any]) -> Respuesta:
     return Respuesta(
         ok=False,
         codigo=codigo,
-        mensaje=MENSAJES.get(codigo, f"Pabilo respondió {codigo}."),
+        mensaje=MENSAJES.get(codigo, f"El verificador respondió {codigo}."),
         detalle=mensaje[:300],
     )
 
@@ -455,7 +470,7 @@ def _o_error(status: int, datos: Any) -> Any:
     codigo, detalle = _error_de(datos, status)
     mensaje = MENSAJES.get(codigo)
     if not mensaje:
-        mensaje = MENSAJES_CONFIG.get(codigo) or f"Pabilo respondió {codigo}."
+        mensaje = MENSAJES_CONFIG.get(codigo) or f"El verificador respondió {codigo}."
         if detalle and codigo not in MENSAJES_CONFIG:
             mensaje = f"{mensaje} {detalle[:160]}"
     raise PabiloError(codigo, mensaje, 400 if 400 <= status < 500 else 502)
@@ -486,7 +501,7 @@ def perfil() -> dict[str, Any]:
     """Quien es el dueño de la clave: nombre, plan y creditos (GET /me)."""
     d = _llamar(_get, "/me")
     if not isinstance(d, dict):
-        raise PabiloError("RESPUESTA_RARA", "Pabilo respondió algo que no se entiende.")
+        raise PabiloError("RESPUESTA_RARA", "El verificador respondió algo que no se entiende.")
     # La doc lo muestra plano; el API real lo envuelve en `user` (29-sep). Se
     # aceptan los dos.
     if isinstance(d.get("user"), dict):
@@ -508,13 +523,13 @@ PROVEEDORES: dict[str, dict[str, Any]] = {
         "nombre": "Banco de Venezuela · personas",
         "usuario": "Usuario de BDV en línea",
         "clave": "Contraseña de BDV en línea",
-        "ayuda": "La misma con la que entras a bdvenlinea. Pabilo la guarda cifrada y la usa solo para leer los movimientos.",
+        "ayuda": "La misma con la que entras a bdvenlinea. Se guarda cifrada y se usa solo para leer los movimientos de la cuenta.",
     },
     "VE_BAN_EMP_V2": {
         "nombre": "Banco de Venezuela · empresas (API de conciliación)",
         "usuario": "Número de cuenta (20 dígitos)",
         "clave": "API Key de conciliación automática",
-        "ayuda": "La API Key se pide en BDV Empresas: Gestión de productos → Solicitud de API conciliación automática (guía en pabilo.app/docs/bdv-juridico).",
+        "ayuda": "La API Key se pide en BDV Empresas: Gestión de productos → Solicitud de API conciliación automática. Después aparece en Consultas → Conciliación automática.",
     },
     "MERCANTIL_EMP_V1": {
         "nombre": "Mercantil · empresas",
@@ -549,14 +564,14 @@ PROVEEDORES: dict[str, dict[str, Any]] = {
         "clave": "Secret Key de Binance",
     },
     "BANK_TEST": {
-        "nombre": "Banco de prueba (sandbox de Pabilo)",
+        "nombre": "Banco de prueba (solo Vertigo)",
         "prueba": True,
         "ayuda": "No conecta con ningún banco. Sirve para probar el cobro: la referencia 67890 siempre sale aprobada.",
     },
     "NOTIFICATION_ACCOUNT": {
-        "nombre": "Notificaciones de Pabilo (SMS / app del banco)",
+        "nombre": "Notificaciones del banco (SMS / app)",
         "telefono": True,
-        "ayuda": "Para bancos sin conexión directa: un teléfono Android con la app de Pabilo lee los SMS o las notificaciones del banco.",
+        "ayuda": "Para bancos sin conexión directa: un teléfono Android con la app de notificaciones que instala Vertigo lee los SMS o las notificaciones del banco.",
     },
 }
 
@@ -674,14 +689,6 @@ def crear_cuenta(
     _cache_cuentas = (0.0, [])
     creada = d.get("usersbank") or d.get("user_bank") or d if isinstance(d, dict) else {}
     return {"id": str(creada.get("id") or ""), "mensaje": str(d.get("message") or "") if isinstance(d, dict) else ""}
-
-
-def alternar_cuenta(user_bank_id: str) -> bool:
-    """Pausa o reanuda una cuenta. Devuelve si quedo deshabilitada."""
-    global _cache_cuentas
-    d = _llamar(_put, f"/v1/usersbank/{user_bank_id}/toggle-disabled", {})
-    _cache_cuentas = (0.0, [])
-    return bool(d.get("is_disabled")) if isinstance(d, dict) else False
 
 
 def borrar_cuenta(user_bank_id: str) -> None:

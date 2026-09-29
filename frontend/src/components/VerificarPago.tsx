@@ -73,6 +73,12 @@ export default function VerificarPago({
   onCancelar: () => void
 }) {
   const montoBs = tasa > 0 ? redondear(montoUsd * tasa) : null
+  // A cual de las cuentas del local le pagaron. Arranca en la principal; si
+  // el local tiene dos bancos, se pregunta.
+  const [cuentaId, setCuentaId] = useState(estado.cuenta_id)
+  const varias = estado.cuentas.length > 1
+  const cuenta = estado.cuentas.find((c) => c.id === cuentaId)
+  const nombreCuenta = cuenta ? cuenta.descripcion || cuenta.banco : estado.cuenta
   const [referencia, setReferencia] = useState('')
   // Lo que el cliente dice que mando. Arranca en la cuenta exacta.
   const [montoTexto, setMontoTexto] = useState(montoBs !== null ? montoBs.toFixed(2) : '')
@@ -107,6 +113,7 @@ export default function VerificarPago({
         referencia: limpia,
         monto_usd: montoUsd,
         monto_bs: corregido ? redondear(montoEscrito) : undefined,
+        user_bank_id: varias ? cuentaId : undefined,
         metodo,
         pedido_id: pedidoId,
         telefono: pideTelefono ? telefono : undefined,
@@ -139,12 +146,36 @@ export default function VerificarPago({
 
       {!resultado ? (
         <>
+          {/* Con dos bancos, lo primero es a cual le pagaron: contra ese se
+              pregunta. Con uno solo no hay nada que elegir. */}
+          {varias && (
+            <div>
+              <span className="block text-xs text-neutral-500 mb-1">¿A qué cuenta pagó?</span>
+              <div className="vp-segmentado inline-flex w-full items-center gap-1 rounded-full p-1">
+                {estado.cuentas.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCuentaId(c.id)}
+                    aria-pressed={c.id === cuentaId}
+                    className={`vp-seccion flex-1 min-w-0 truncate px-3 py-1.5 rounded-full text-sm ${
+                      c.id === cuentaId
+                        ? 'vp-segmento-elegido bg-neutral-900 text-white font-semibold'
+                        : 'text-neutral-600 font-medium hover:text-neutral-900'
+                    }`}
+                  >
+                    {c.descripcion || c.banco}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Lo que tiene que haber entrado al banco, en la moneda en que el
               cliente lo ve en su telefono. Es la cifra que se coteja, y se
               puede corregir con lo que el cliente diga que mando. */}
           {montoBs !== null ? (
             <label className="block text-xs text-neutral-500">
-              {estado.cuenta ? `Monto que entró a ${estado.cuenta}` : 'Monto que mandó (Bs)'}
+              {nombreCuenta ? `Monto que entró a ${nombreCuenta}` : 'Monto que mandó (Bs)'}
               <Numerico
                 value={montoTexto}
                 onChange={(e) => setMontoTexto(e.target.value)}
@@ -325,7 +356,7 @@ function Resultado({
               monto_distinto: 'El banco lo encontró, pero el monto no cuadra',
               no_encontrado: 'El banco no lo encuentra',
               ya_usado: 'Esa referencia ya se usó',
-              error: r.del_dueno ? 'Hay que avisarle al dueño' : 'No se pudo consultar',
+              error: r.del_dueno ? 'No se puede verificar ahora' : 'No se pudo consultar',
             }[r.resultado]
 
   const detalle =

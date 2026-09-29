@@ -1439,6 +1439,9 @@ export type EstadoApertura = {
 export type EstadoPabilo = {
   configurado: boolean
   cuenta: string
+  /** La principal, y todas las operativas: si hay varias, la caja elige a cual le pagaron. */
+  cuenta_id: string
+  cuentas: { id: string; descripcion: string; banco: string }[]
   banco: string
   moneda: string
   /** Campos extra que el banco exige ademas de la referencia (nombres del API). */
