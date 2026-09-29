@@ -27,6 +27,16 @@ export type PagoVerificado = {
 
 const redondear = (n: number) => Math.round(n * 100) / 100
 
+/** Bs con coma decimal, como se escribe en Venezuela: 1.650,00 → "1650,00". */
+const enBs = (n: number) => n.toFixed(2).replace('.', ',')
+
+/** Lo que tecleo la cajera: acepta "1650,50", "1.650,50" y "1650.50". */
+function leerBs(texto: string): number {
+  const t = String(texto).trim()
+  const limpio = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
+  return Number(limpio)
+}
+
 /**
  * El paso de cobrar por pago movil o transferencia cuando el local tiene
  * Pabilo: se escribe la referencia, se le pregunta al banco y se cobra con la
@@ -81,7 +91,7 @@ export default function VerificarPago({
   const nombreCuenta = cuenta ? cuenta.descripcion || cuenta.banco : estado.cuenta
   const [referencia, setReferencia] = useState('')
   // Lo que el cliente dice que mando. Arranca en la cuenta exacta.
-  const [montoTexto, setMontoTexto] = useState(montoBs !== null ? montoBs.toFixed(2) : '')
+  const [montoTexto, setMontoTexto] = useState(montoBs !== null ? enBs(montoBs) : '')
   const [telefono, setTelefono] = useState('')
   const [cedula, setCedula] = useState('')
   const [bancoOrigen, setBancoOrigen] = useState('')
@@ -93,7 +103,7 @@ export default function VerificarPago({
   const pideCedula = estado.campos.includes('DNI_ORIGIN')
   const pideBanco = estado.campos.includes('BANK_CODE_ORIGIN')
   const limpia = referencia.replace(/[^0-9a-zA-Z]/g, '')
-  const montoEscrito = Number(String(montoTexto).replace(',', '.'))
+  const montoEscrito = leerBs(montoTexto)
   const montoValido = montoBs === null || (Number.isFinite(montoEscrito) && montoEscrito > 0)
   const corregido = montoBs !== null && montoValido && Math.abs(montoEscrito - montoBs) > 0.005
   const puedeConsultar =
@@ -175,16 +185,29 @@ export default function VerificarPago({
               puede corregir con lo que el cliente diga que mando. */}
           {montoBs !== null ? (
             <label className="block text-xs text-neutral-500">
-              {nombreCuenta ? `Monto que entró a ${nombreCuenta}` : 'Monto que mandó (Bs)'}
-              <Numerico
-                value={montoTexto}
-                onChange={(e) => setMontoTexto(e.target.value)}
-                placeholder={montoBs.toFixed(2)}
-                etiqueta="Monto en Bs"
-                className={`w-full rounded-lg px-3 py-2.5 mt-1 font-display text-xl font-semibold tabular-nums tracking-tight text-neutral-900 ${
-                  !montoValido ? 'ring-1 ring-peligro-400' : ''
-                }`}
-              />
+              {nombreCuenta ? `Monto que entró a ${nombreCuenta}` : 'Monto que mandó'}
+              {/* Un campo que se ve como campo: borde, y el "Bs" dentro para
+                  que no quede duda de la moneda. La cifra viene puesta con la
+                  cuenta a la tasa, y se corrige encima si el cliente redondeo
+                  (Leider, 29-sep: "no queda claro que ese numero es
+                  editable"). Coma decimal, como se escribe aqui. */}
+              <span className="relative block mt-1">
+                <span
+                  aria-hidden
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-neutral-500 select-none"
+                >
+                  Bs
+                </span>
+                <Numerico
+                  value={montoTexto}
+                  onChange={(e) => setMontoTexto(e.target.value)}
+                  placeholder={enBs(montoBs)}
+                  etiqueta="Monto en Bs"
+                  className={`w-full border rounded-lg pl-10 pr-3 py-2.5 font-display text-xl font-semibold tabular-nums tracking-tight text-neutral-900 ${
+                    !montoValido ? 'border-peligro-400' : 'border-neutral-300'
+                  }`}
+                />
+              </span>
               <span className="block mt-1 text-[11px] text-neutral-400 tabular-nums">
                 {corregido ? (
                   <>
@@ -192,7 +215,7 @@ export default function VerificarPago({
                     menos, se completa con otra forma.
                   </>
                 ) : (
-                  <>La cuenta a la tasa del día. Si el cliente redondeó, escribe lo que mandó.</>
+                  <>Es la cuenta a la tasa del día. Si el cliente mandó otra cantidad, tócalo y escribe lo que mandó.</>
                 )}
               </span>
             </label>
@@ -218,7 +241,7 @@ export default function VerificarPago({
               autoFocus
               placeholder="Los dígitos que muestra el banco"
               etiqueta="Referencia"
-              className="w-full rounded-lg px-3 py-2.5 mt-1 text-lg font-semibold tracking-wide text-neutral-900"
+              className="w-full border border-neutral-300 rounded-lg px-3 py-2.5 mt-1 text-lg font-semibold tracking-wide text-neutral-900"
             />
           </label>
           {pideTelefono && (
@@ -230,7 +253,7 @@ export default function VerificarPago({
                 entero
                 placeholder="04141234567"
                 etiqueta="Teléfono"
-                className="w-full rounded-lg px-3 py-2 mt-1 text-sm text-neutral-900"
+                className="w-full border border-neutral-300 rounded-lg px-3 py-2 mt-1 text-sm text-neutral-900"
               />
             </label>
           )}
@@ -241,7 +264,7 @@ export default function VerificarPago({
                 value={cedula}
                 onChange={(e) => setCedula(e.target.value)}
                 placeholder="V-12345678"
-                className="w-full rounded-lg px-3 py-2 mt-1 text-sm text-neutral-900"
+                className="w-full border border-neutral-300 rounded-lg px-3 py-2 mt-1 text-sm text-neutral-900"
               />
             </label>
           )}
@@ -254,7 +277,7 @@ export default function VerificarPago({
                 entero
                 placeholder="0102"
                 etiqueta="Banco"
-                className="w-full rounded-lg px-3 py-2 mt-1 text-sm text-neutral-900"
+                className="w-full border border-neutral-300 rounded-lg px-3 py-2 mt-1 text-sm text-neutral-900"
               />
             </label>
           )}
