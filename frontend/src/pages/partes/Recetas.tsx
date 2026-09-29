@@ -41,10 +41,20 @@ type Fila = {
 
 type Renglon = { variante: Variante; nombre: string; categoria: string; info?: CostoVariante }
 
-// Los tintes de las franjas, por categoria del deposito. Salen de la paleta
-// (index.css) y esquivan el verde --que es el margen-- y el rojo --que es la
-// perdida--, para que el vaso se lea sin leyenda.
-const TONOS = ['acento-400', 'aviso-400', 'neutral-400', 'acento-600', 'aviso-600', 'neutral-600', 'acento-300', 'aviso-300']
+// Los tintes de las franjas. Salen de la paleta (index.css) y esquivan el
+// verde --que es el margen-- y el rojo --que es la perdida--, para que el
+// vaso se lea sin leyenda.
+//
+// UNO POR MERCANCIA, EN EL ORDEN DE LA RECETA, y no por categoria: harina y
+// carne molida son las dos "Secos" y salian del mismo color, pegadas, como
+// una sola franja (Leider, 29-sep). Vecinas siempre distintas.
+const TONOS = ['acento-500', 'aviso-400', 'neutral-500', 'acento-300', 'aviso-600', 'neutral-700', 'acento-700', 'aviso-300']
+const tono = (i: number) => `var(--color-${TONOS[i % TONOS.length]})`
+
+/** Lo que se cuenta por piezas y no se pesa: el vaso, la tapa, el pitillo,
+ *  la caja. Tambien es costo, y va en su propio apartado. */
+const porUnidad = (ing: Ingrediente) => ing.unidad === 'unidad' || ing.unidad === 'paquete'
+
 
 export default function Recetas({
   categorias,
@@ -318,16 +328,6 @@ function Compositor({
   const [resaltado, setResaltado] = useState<number | null>(null)
   const precio = renglon.variante.precio
 
-  // Un tinte por categoria del deposito, estable mientras dure la pantalla.
-  const tonoDeCategoria = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const i of ingredientes) {
-      const c = i.categoria || ''
-      if (!m.has(c)) m.set(c, `var(--color-${TONOS[m.size % TONOS.length]})`)
-    }
-    return m
-  }, [ingredientes])
-
   const categoriasDeposito = useMemo(() => {
     const cuenta = new Map<string, number>()
     for (const i of ingredientes) cuenta.set(i.categoria || '', (cuenta.get(i.categoria || '') ?? 0) + 1)
@@ -352,7 +352,14 @@ function Compositor({
   function agregar(ing: Ingrediente) {
     setFilas((prev) => [
       ...prev,
-      { ingrediente_id: ing.id, cantidad_por_unidad: '', rendimientoDe: '', rendimientoSalen: '', modoRendimiento: false },
+      {
+        ingrediente_id: ing.id,
+        // Un vaso es un vaso: lo que se cuenta por piezas entra con 1.
+        cantidad_por_unidad: porUnidad(ing) ? '1' : '',
+        rendimientoDe: '',
+        rendimientoSalen: '',
+        modoRendimiento: false,
+      },
     ])
     setResaltado(ing.id)
   }
@@ -378,21 +385,27 @@ function Compositor({
     })
   }
 
-  // Costo teorico: como si cada insumo rindiera el 100% comprado. Costo real:
-  // descontando la merma de cocina (`costo_efectivo`). La diferencia entre los
-  // dos es justo lo que no se veia en ningun lado del sistema.
+  // Costo real: descontando la merma de cocina (`costo_efectivo`).
   const partes: Parte[] = []
-  let costoTeorico = 0
+  const colorDe = new Map<number, string>()
   let costoReal = 0
-  for (const f of filas) {
+  filas.forEach((f, i) => {
     const ing = mapaIngredientes.get(f.ingrediente_id)
+    if (!ing) return
+    colorDe.set(ing.id, tono(i))
     const cantidad = Number(f.cantidad_por_unidad) || 0
-    if (!ing) continue
-    costoTeorico += cantidad * ing.costo_unitario
     const costo = cantidad * ing.costo_efectivo
     costoReal += costo
-    if (costo > 0) partes.push({ id: ing.id, nombre: ing.nombre, costo, color: tonoDeCategoria.get(ing.categoria || '') ?? 'var(--color-neutral-400)' })
+    if (costo > 0) partes.push({ id: ing.id, nombre: ing.nombre, costo, color: tono(i) })
+  })
+  const esPieza = (f: Fila) => {
+    const ing = mapaIngredientes.get(f.ingrediente_id)
+    return Boolean(ing && porUnidad(ing))
   }
+  const pesadas = filas.filter((f) => mapaIngredientes.has(f.ingrediente_id) && !esPieza(f))
+  const piezas = filas.filter(esPieza)
+  const disponiblesPesadas = disponibles.filter((i) => !porUnidad(i))
+  const disponiblesPiezas = disponibles.filter(porUnidad)
   const margen = precio - costoReal
   const margenPct = precio > 0 ? (margen / precio) * 100 : 0
 
@@ -419,110 +432,62 @@ function Compositor({
           <p className="text-xs text-neutral-500">{renglon.categoria}</p>
           <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight mb-3">{renglon.nombre}</h2>
           <Vaso precio={precio} partes={partes} costo={costoReal} resaltado={resaltado} onResaltar={setResaltado} />
-          <Margen precio={precio} costoReal={costoReal} costoTeorico={costoTeorico} margen={margen} margenPct={margenPct} vacio={filas.length === 0} />
+          <Margen precio={precio} costoReal={costoReal} margen={margen} margenPct={margenPct} vacio={filas.length === 0} />
         </section>
 
         {/* ── La mercancía ────────────────────────────────────────────── */}
         <section className="space-y-3">
           {filas.length > 0 && (
             <div className="vp-losa overflow-hidden">
-              <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Lleva</p>
-              <ul className="divide-y divide-neutral-100">
-                {filas.map((f) => {
-                  const ing = mapaIngredientes.get(f.ingrediente_id)
-                  if (!ing) return null
-                  const cantidad = Number(f.cantidad_por_unidad) || 0
-                  const color = tonoDeCategoria.get(ing.categoria || '') ?? 'var(--color-neutral-400)'
-                  return (
-                    <li
-                      key={ing.id}
-                      onMouseEnter={() => setResaltado(ing.id)}
-                      onMouseLeave={() => setResaltado(null)}
-                      className={`px-4 py-2.5 ${resaltado === ing.id ? 'bg-neutral-50' : ''}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: color }} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium truncate">{ing.nombre}</span>
-                          <span className="block text-[11px] text-neutral-400">
-                            ${ing.costo_efectivo.toFixed(3)} por {ing.unidad}
-                            {ing.categoria && ` · ${ing.categoria}`}
-                          </span>
-                        </span>
-                        <Numerico
-                          value={f.cantidad_por_unidad}
-                          onChange={(e) => actualizarFila(ing.id, { cantidad_por_unidad: e.target.value })}
-                          placeholder="0"
-                          etiqueta={`${ing.nombre} (${ing.unidad})`}
-                          aria-label={`Cantidad de ${ing.nombre} por unidad`}
-                          autoFocus={f.cantidad_por_unidad === ''}
-                          className="w-20 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-right tabular-nums"
-                        />
-                        <span className="w-9 text-xs text-neutral-500">{ing.unidad}</span>
-                        <span className="w-16 text-right text-sm tabular-nums font-semibold">
-                          {cantidad > 0 ? `$${(cantidad * ing.costo_efectivo).toFixed(2)}` : '—'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => quitar(ing.id)}
-                          aria-label={`Quitar ${ing.nombre}`}
-                          className="w-8 h-8 shrink-0 grid place-items-center rounded-lg text-neutral-400 hover:bg-peligro-50 hover:text-peligro-600"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      {/* La calculadora "de X salen Y", plegada: sirve cuando se
-                          mide sobre lo comprado y no sobre cada unidad. */}
-                      {f.modoRendimiento ? (
-                        <div className="mt-2 ml-4 flex flex-wrap items-center gap-2 text-sm">
-                          <span>De</span>
-                          <Numerico
-                            value={f.rendimientoDe}
-                            onChange={(e) => actualizarFila(ing.id, { rendimientoDe: e.target.value })}
-                            aria-label="Cantidad que compras"
-                            className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm"
-                          />
-                          <span>{ing.unidad} salen</span>
-                          <Numerico
-                            value={f.rendimientoSalen}
-                            onChange={(e) => actualizarFila(ing.id, { rendimientoSalen: e.target.value })}
-                            aria-label="Unidades que salen"
-                            className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm"
-                          />
-                          <span>unidades</span>
-                          <button
-                            type="button"
-                            onClick={() => aplicarRendimiento(f)}
-                            className="rounded-lg bg-neutral-900 text-white px-2.5 py-1 text-xs font-medium"
-                          >
-                            Calcular
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => actualizarFila(ing.id, { modoRendimiento: false })}
-                            className="text-xs text-neutral-500"
-                          >
-                            Cerrar
-                          </button>
-                          {ing.rendimiento_pct < 100 && (
-                            <span className="basis-full text-[11px] text-aviso-700">
-                              Mide sobre lo que compras, sin limpiar: el {ing.rendimiento_pct}% de rendimiento ya se descuenta solo.
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => actualizarFila(ing.id, { modoRendimiento: true })}
-                          className="ml-4 mt-1 text-[11px] text-neutral-400 hover:text-neutral-700"
-                        >
-                          ¿No sabes cuánto lleva cada una? Calcúlalo: de X salen Y
-                        </button>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
+              {pesadas.length > 0 && (
+                <>
+                  <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Lleva</p>
+                  <ul className="divide-y divide-neutral-100">
+                    {pesadas.map((f) => (
+                      <RenglonReceta
+                        key={f.ingrediente_id}
+                        f={f}
+                        ing={mapaIngredientes.get(f.ingrediente_id)!}
+                        color={colorDe.get(f.ingrediente_id) ?? 'var(--color-neutral-400)'}
+                        resaltado={resaltado === f.ingrediente_id}
+                        onResaltar={setResaltado}
+                        onCambio={(c) => actualizarFila(f.ingrediente_id, c)}
+                        onQuitar={() => quitar(f.ingrediente_id)}
+                        onRendimiento={() => aplicarRendimiento(f)}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
+              {/* Lo que se cuenta por piezas va aparte: el vaso, la tapa, la
+                  caja. No se pesa, no lleva rendimiento, y es tan costo como
+                  la carne (Leider, 29-sep). */}
+              {piezas.length > 0 && (
+                <>
+                  <p
+                    className={`px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500 ${
+                      pesadas.length > 0 ? 'border-t border-neutral-100' : ''
+                    }`}
+                  >
+                    Por unidad · vaso, tapa, empaque
+                  </p>
+                  <ul className="divide-y divide-neutral-100">
+                    {piezas.map((f) => (
+                      <RenglonReceta
+                        key={f.ingrediente_id}
+                        f={f}
+                        ing={mapaIngredientes.get(f.ingrediente_id)!}
+                        color={colorDe.get(f.ingrediente_id) ?? 'var(--color-neutral-400)'}
+                        resaltado={resaltado === f.ingrediente_id}
+                        onResaltar={setResaltado}
+                        onCambio={(c) => actualizarFila(f.ingrediente_id, c)}
+                        onQuitar={() => quitar(f.ingrediente_id)}
+                        onRendimiento={() => aplicarRendimiento(f)}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           )}
 
@@ -555,35 +520,152 @@ function Compositor({
                 {ingredientes.length === 0 ? 'No hay mercancía en el depósito todavía.' : 'Nada coincide.'}
               </p>
             ) : (
-              <ul className="divide-y divide-neutral-100 max-h-[28rem] overflow-y-auto">
-                {disponibles.map((ing) => {
-                  const color = tonoDeCategoria.get(ing.categoria || '') ?? 'var(--color-neutral-400)'
-                  return (
-                    <li key={ing.id}>
-                      <button
-                        type="button"
-                        onClick={() => agregar(ing)}
-                        className="vp-celda w-full flex items-center gap-3 px-4 py-2.5 text-left"
-                      >
-                        <span aria-hidden className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm truncate">{ing.nombre}</span>
-                          <span className="block text-[11px] text-neutral-400">{ing.categoria || 'Sin categoría'}</span>
-                        </span>
-                        <span className="text-xs text-neutral-500 tabular-nums">
-                          ${ing.costo_efectivo.toFixed(3)} / {ing.unidad}
-                        </span>
-                        <span className="w-7 h-7 grid place-items-center rounded-full bg-neutral-100 text-neutral-600 text-base leading-none">+</span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
+              <div className="max-h-[30rem] overflow-y-auto">
+                {disponiblesPesadas.length > 0 && (
+                  <ul className="divide-y divide-neutral-100">
+                    {disponiblesPesadas.map((ing) => (
+                      <OpcionMercancia key={ing.id} ing={ing} onAgregar={() => agregar(ing)} />
+                    ))}
+                  </ul>
+                )}
+                {disponiblesPiezas.length > 0 && (
+                  <>
+                    <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500 border-t border-neutral-100">
+                      Por unidad · vaso, tapa, empaque
+                    </p>
+                    <ul className="divide-y divide-neutral-100">
+                      {disponiblesPiezas.map((ing) => (
+                        <OpcionMercancia key={ing.id} ing={ing} onAgregar={() => agregar(ing)} />
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </section>
       </div>
     </div>
+  )
+}
+
+function RenglonReceta({
+  f,
+  ing,
+  color,
+  resaltado,
+  onResaltar,
+  onCambio,
+  onQuitar,
+  onRendimiento,
+}: {
+  f: Fila
+  ing: Ingrediente
+  color: string
+  resaltado: boolean
+  onResaltar: (id: number | null) => void
+  onCambio: (c: Partial<Fila>) => void
+  onQuitar: () => void
+  onRendimiento: () => void
+}) {
+  const cantidad = Number(f.cantidad_por_unidad) || 0
+  const pieza = porUnidad(ing)
+  return (
+    <li
+      onMouseEnter={() => onResaltar(ing.id)}
+      onMouseLeave={() => onResaltar(null)}
+      className={`px-4 py-2.5 ${resaltado ? 'bg-neutral-50' : ''}`}
+    >
+      <div className="flex items-center gap-3">
+        <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: color }} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium truncate">{ing.nombre}</span>
+          <span className="block text-[11px] text-neutral-400">
+            ${ing.costo_efectivo.toFixed(3)} por {ing.unidad}
+            {ing.categoria && ` · ${ing.categoria}`}
+          </span>
+        </span>
+        <Numerico
+          value={f.cantidad_por_unidad}
+          onChange={(e) => onCambio({ cantidad_por_unidad: e.target.value })}
+          placeholder="0"
+          entero={pieza}
+          etiqueta={`${ing.nombre} (${ing.unidad})`}
+          aria-label={`Cantidad de ${ing.nombre} por unidad`}
+          autoFocus={f.cantidad_por_unidad === ''}
+          className="w-20 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-right tabular-nums"
+        />
+        <span className="w-9 text-xs text-neutral-500">{pieza ? (cantidad === 1 ? 'pieza' : 'piezas') : ing.unidad}</span>
+        <span className="w-16 text-right text-sm tabular-nums font-semibold">
+          {cantidad > 0 ? `$${(cantidad * ing.costo_efectivo).toFixed(2)}` : '—'}
+        </span>
+        <button
+          type="button"
+          onClick={onQuitar}
+          aria-label={`Quitar ${ing.nombre}`}
+          className="w-8 h-8 shrink-0 grid place-items-center rounded-lg text-neutral-400 hover:bg-peligro-50 hover:text-peligro-600"
+        >
+          ×
+        </button>
+      </div>
+      {/* La calculadora "de X salen Y", plegada: sirve cuando se mide sobre
+          lo comprado y no sobre cada unidad. Una pieza no se calcula. */}
+      {pieza ? null : f.modoRendimiento ? (
+        <div className="mt-2 ml-4 flex flex-wrap items-center gap-2 text-sm">
+          <span>De</span>
+          <Numerico
+            value={f.rendimientoDe}
+            onChange={(e) => onCambio({ rendimientoDe: e.target.value })}
+            aria-label="Cantidad que compras"
+            className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm"
+          />
+          <span>{ing.unidad} salen</span>
+          <Numerico
+            value={f.rendimientoSalen}
+            onChange={(e) => onCambio({ rendimientoSalen: e.target.value })}
+            aria-label="Unidades que salen"
+            className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm"
+          />
+          <span>unidades</span>
+          <button type="button" onClick={onRendimiento} className="rounded-lg bg-neutral-900 text-white px-2.5 py-1 text-xs font-medium">
+            Calcular
+          </button>
+          <button type="button" onClick={() => onCambio({ modoRendimiento: false })} className="text-xs text-neutral-500">
+            Cerrar
+          </button>
+          {ing.rendimiento_pct < 100 && (
+            <span className="basis-full text-[11px] text-aviso-700">
+              Mide sobre lo que compras, sin limpiar: el {ing.rendimiento_pct}% de rendimiento ya se descuenta solo.
+            </span>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onCambio({ modoRendimiento: true })}
+          className="ml-4 mt-1 text-[11px] text-neutral-400 hover:text-neutral-700"
+        >
+          ¿No sabes cuánto lleva cada una? Calcúlalo: de X salen Y
+        </button>
+      )}
+    </li>
+  )
+}
+
+function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () => void }) {
+  return (
+    <li>
+      <button type="button" onClick={onAgregar} className="vp-celda w-full flex items-center gap-3 px-4 py-2.5 text-left">
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm truncate">{ing.nombre}</span>
+          <span className="block text-[11px] text-neutral-400">{ing.categoria || 'Sin categoría'}</span>
+        </span>
+        <span className="text-xs text-neutral-500 tabular-nums">
+          ${ing.costo_efectivo.toFixed(3)} / {ing.unidad}
+        </span>
+        <span className="w-7 h-7 grid place-items-center rounded-full bg-neutral-100 text-neutral-600 text-base leading-none">+</span>
+      </button>
+    </li>
   )
 }
 
@@ -614,13 +696,22 @@ function Vaso({
   const tope = Math.max(precio, costo, 0.000001)
   const px = (v: number) => (v / tope) * ALTO
   const desbordado = costo > precio + 0.0001
+  // NINGUNA FRANJA DESAPARECE. La harina de una empanada es el 5% del precio:
+  // a escala eran 15 px sin sitio para el nombre, pegados a la carne del
+  // mismo tono (Leider, 29-sep: "la harina ni se ve"). Cada franja mide al
+  // menos lo que hace falta para leerla; lo que crece se lo come el margen, y
+  // si entre todas se pasan del vaso se encogen parejo.
+  const MINIMO = 22
+  let alturas = partes.map((p) => Math.max(px(p.costo), MINIMO))
+  const suma = alturas.reduce((t, h) => t + h, 0)
+  if (suma > ALTO) alturas = alturas.map((h) => (h * ALTO) / suma)
   let y = FONDO
-  const franjas = partes.map((p) => {
-    const h = px(p.costo)
+  const franjas = partes.map((p, i) => {
+    const h = alturas[i]
     y -= h
     return { ...p, y, h }
   })
-  const margenH = desbordado ? 0 : px(precio - costo)
+  const margenH = desbordado ? 0 : Math.max(ALTO - alturas.reduce((t, h) => t + h, 0), 0)
   const yMargen = y - margenH
   const yPrecio = FONDO - px(precio)
   const id = 'vaso-recorte'
@@ -661,6 +752,9 @@ function Vaso({
         {franjas.map((f) => (
           <g key={f.id} onMouseEnter={() => onResaltar(f.id)} onMouseLeave={() => onResaltar(null)} style={{ cursor: 'default' }}>
             <rect x="0" y={f.y} width="260" height={f.h} fill={f.color} opacity={resaltado === null || resaltado === f.id ? 1 : 0.55} />
+            {/* Un hilo del color del papel entre franja y franja: aunque dos
+                tonos se parezcan, se ve donde termina una y empieza la otra. */}
+            <line x1="0" x2="260" y1={f.y} y2={f.y} stroke="var(--vp-papel)" strokeWidth="1.5" />
             {f.h >= 18 && (
               <>
                 <text x="48" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="var(--color-neutral-50)" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
@@ -705,14 +799,12 @@ function Vaso({
 function Margen({
   precio,
   costoReal,
-  costoTeorico,
   margen,
   margenPct,
   vacio,
 }: {
   precio: number
   costoReal: number
-  costoTeorico: number
   margen: number
   margenPct: number
   vacio: boolean
@@ -744,12 +836,6 @@ function Margen({
         <span>Cuesta hacerlo</span>
         <span className="font-semibold text-neutral-700">${costoReal.toFixed(2)}</span>
       </div>
-      {Math.abs(costoTeorico - costoReal) > 0.0005 && (
-        <div className="flex justify-between text-[11px] text-neutral-400 tabular-nums">
-          <span>Sin la merma de cocina costaría</span>
-          <span>${costoTeorico.toFixed(2)}</span>
-        </div>
-      )}
       {precio <= 0 && <p className="text-xs text-aviso-700">Este producto no tiene precio: ponlo en el menú.</p>}
     </div>
   )
