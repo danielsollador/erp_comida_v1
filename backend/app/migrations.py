@@ -107,6 +107,8 @@ COLUMNAS = [
     ("TRX410_COM_FACTURA", "descuento", "FLOAT DEFAULT 0"),
     ("TRX411_COM_FACTURA_DET", "exento", "BOOLEAN DEFAULT 0"),
     ("TRX410_COM_FACTURA", "referencia_pago", "VARCHAR DEFAULT ''"),
+    # La fecha impresa en el papel, aparte de la de registro (`fecha`).
+    ("TRX410_COM_FACTURA", "fecha_emision", "DATE"),
     ("CFG910_ADM_PARAMETRO", "vender_sin_inventario", "BOOLEAN DEFAULT 0"),
     # A cocina o no, renglon por renglon (y la sugerencia, por categoria).
     ("DIM210_MEN_CATEGORIA", "va_a_cocina", "BOOLEAN DEFAULT 1"),

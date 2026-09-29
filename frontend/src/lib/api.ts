@@ -804,6 +804,9 @@ export const api = {
   crearFacturaCompra: (f: {
     numero_factura: string
     proveedor_nombre: string
+    // La impresa en el papel (AAAA-MM-DD). Solo se muestra: el periodo del
+    // Libro de Compras lo decide la fecha de registro, que pone el backend.
+    fecha_emision?: string
     // Obligatorio para el Libro de Compras: el backend rechaza vacio o
     // formato invalido.
     proveedor_rif: string

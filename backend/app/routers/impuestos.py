@@ -207,6 +207,7 @@ def libro_compras(rango: Rango = Depends(), db: Session = Depends(get_db)):
         schemas.FilaLibroCompras(
             factura_id=f.id,
             fecha=f.fecha,
+            fecha_emision=f.fecha_emision or f.fecha.date(),
             numero_factura=f.numero_factura,
             proveedor_nombre=f.proveedor_nombre,
             proveedor_rif=f.proveedor_rif,
@@ -235,13 +236,15 @@ def libro_compras_exportar(rango: Rango = Depends(), db: Session = Depends(get_d
     """El mismo Libro de Compras, como CSV para Excel."""
     libro = libro_compras(rango, db)
     filas = [
-        (f.factura_id, f.fecha.strftime("%d/%m/%Y"), f.numero_factura, f.proveedor_nombre,
+        (f.factura_id, f.fecha_emision.strftime("%d/%m/%Y"), f.fecha.strftime("%d/%m/%Y"),
+         f.numero_factura, f.proveedor_nombre,
          f.proveedor_rif or "", f"{f.base_imponible:.2f}", f"{f.iva:.2f}", f"{f.total:.2f}")
         for f in libro.filas
     ]
     return respuesta_csv(
         f"libro-compras-{nombre_de_archivo(libro.etiqueta)}.csv",
-        ["Factura", "Fecha", "N. Factura", "Proveedor", "RIF", "Base imponible", "IVA", "Total"],
+        ["Factura", "Fecha factura", "Fecha registro", "N. Factura", "Proveedor", "RIF",
+         "Base imponible", "IVA", "Total"],
         filas,
     )
 

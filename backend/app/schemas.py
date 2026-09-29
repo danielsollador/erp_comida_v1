@@ -1837,6 +1837,8 @@ class FacturaCompraBase(BaseModel):
 
 class FacturaCompraCreate(FacturaCompraBase):
     fecha: Optional[datetime.datetime] = None
+    # La del papel. No cambia el periodo: ese lo decide `fecha` (registro).
+    fecha_emision: Optional[datetime.date] = None
     # Con renglones (compra de insumos): la base sale de sumar los renglones,
     # y cada uno actualiza el stock y el costo promedio de su ingrediente.
     items: List[LineaFacturaInput] = []
@@ -1863,6 +1865,7 @@ class FacturaCompraCreate(FacturaCompraBase):
 class FacturaCompra(FacturaCompraBase):
     id: int
     fecha: datetime.datetime
+    fecha_emision: Optional[datetime.date] = None
     # Ya con el recargo y el descuento aplicados: es la base que va al Libro
     # de Compras. Los dos viajan aparte para poder explicar la diferencia con
     # la suma de los renglones.
@@ -2061,7 +2064,8 @@ class LibroVentas(BaseModel):
 
 class FilaLibroCompras(BaseModel):
     factura_id: int
-    fecha: datetime.datetime
+    fecha: datetime.datetime  # registro: la que pone la factura en este libro
+    fecha_emision: datetime.date  # la del papel (o la de registro, si no se cargo)
     numero_factura: str
     proveedor_nombre: str
     proveedor_rif: Optional[str]

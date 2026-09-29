@@ -37,6 +37,10 @@ const CATEGORIAS = [
 ]
 const FORMAS_PAGO = ['Efectivo', 'Efectivo $', 'Banco', 'Credito']
 
+// Una factura mas vieja que esto se avisa, no se bloquea: el plazo real para
+// descontar ese credito fiscal lo confirma quien lleva la contabilidad.
+const DIAS_FACTURA_VIEJA = 60
+
 /** Como se lee una categoria guardada. Es el mismo mapa, al reves. */
 const TEXTO_CATEGORIA = Object.fromEntries(CATEGORIAS.map((c) => [c.valor, c.texto]))
 
@@ -94,6 +98,15 @@ export default function Compras() {
 
   const { tasa } = useMoneda()
   const [numeroFactura, setNumeroFactura] = useState('')
+  // La fecha impresa en el papel. Solo se muestra en el Libro de Compras: el
+  // periodo lo decide la fecha de registro (hoy), que pone el backend.
+  const hoyISO = new Date().toLocaleDateString('en-CA')
+  const [fechaEmision, setFechaEmision] = useState('')
+  const diasDeLaFactura = fechaEmision
+    ? Math.round(
+        (new Date(`${hoyISO}T12:00:00`).getTime() - new Date(`${fechaEmision}T12:00:00`).getTime()) / 86400000,
+      )
+    : 0
   const [proveedor, setProveedor] = useState('')
   const [rif, setRif] = useState('')
   // La factura del proveedor puede venir en cualquiera de las dos: el que
@@ -235,6 +248,7 @@ export default function Compras() {
     const b = l.borrador
     if (!b) return
     setNumeroFactura(b.numero_factura)
+    setFechaEmision(b.fecha ?? '')
     // Si el RIF ya esta en el directorio, manda el nombre de alli: es el que
     // agrupa las compras de ese proveedor.
     const soloRif = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
@@ -344,6 +358,7 @@ export default function Compras() {
 
   function limpiarFormulario() {
     setNumeroFactura('')
+    setFechaEmision('')
     setProveedor('')
     setRif('')
     setDescripcion('')
@@ -369,6 +384,10 @@ export default function Compras() {
     // valida el formato exacto; aca solo se evita el viaje si esta vacio.
     if (!rif.trim()) {
       setError('El RIF del proveedor es obligatorio')
+      return
+    }
+    if (fechaEmision && fechaEmision > hoyISO) {
+      setError('La fecha de la factura no puede ser futura')
       return
     }
     // Todo el sistema costea en dolares (recetas, margenes, balance). Cargar
@@ -444,6 +463,7 @@ export default function Compras() {
         }
         const guardada = await api.crearFacturaCompra({
           numero_factura: numeroFactura.trim(),
+          fecha_emision: fechaEmision || undefined,
           proveedor_nombre: proveedor.trim(),
           proveedor_rif: rif.trim(),
           categoria,
@@ -470,6 +490,7 @@ export default function Compras() {
         }
         const guardada = await api.crearFacturaCompra({
           numero_factura: numeroFactura.trim(),
+          fecha_emision: fechaEmision || undefined,
           proveedor_nombre: proveedor.trim(),
           proveedor_rif: rif.trim(),
           categoria,
@@ -854,6 +875,21 @@ export default function Compras() {
               required
               className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
+            {/* La del papel. No mueve la factura de mes: una de agosto que
+                llega en octubre se registra en octubre. */}
+            <label
+              className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2"
+              title="La impresa en la factura. El mes del Libro de Compras lo decide el día en que se registra."
+            >
+              Fecha factura
+              <input
+                value={fechaEmision}
+                onChange={(e) => setFechaEmision(e.target.value)}
+                type="date"
+                max={hoyISO}
+                className="flex-1 min-w-0 outline-none text-neutral-800 bg-transparent"
+              />
+            </label>
             <select
               value={categoria}
               onChange={(e) => setCategoria(e.target.value)}
@@ -933,6 +969,13 @@ export default function Compras() {
               </label>
             )}
           </div>
+
+          {diasDeLaFactura > DIAS_FACTURA_VIEJA && (
+            <p className="text-xs text-aviso-700 -mt-1 mb-3">
+              Esta factura tiene {diasDeLaFactura} días. Se registra en el Libro de Compras de este mes;
+              confirma con quien lleva la contabilidad si ese crédito fiscal todavía se puede descontar.
+            </p>
+          )}
 
           {esInsumos ? (
             <div className="space-y-2 mb-3">

@@ -233,3 +233,50 @@ def test_sin_nada_contra_que_comparar_no_se_inventa_un_aviso(client, db):
     db.commit()
     assert revisar(client, nuevo, 3.0)["precios"] == []
 
+
+
+# ------------------------------------------------------------------ dos fechas
+
+def test_la_fecha_del_papel_se_guarda_pero_el_periodo_es_el_del_registro(client, insumo, db):
+    """Una factura de agosto que llega hoy se registra hoy: entra al Libro de
+    Compras de este mes, y agosto -ya declarado- no se toca."""
+    import datetime
+    db.add(models.DeclaracionIva(anio=2026, mes=8, iva_debito=0, iva_credito=0))
+    db.commit()
+    guardada = factura(client, insumo, fecha_emision="2026-08-20")
+    assert guardada["fecha_emision"] == "2026-08-20"
+    assert guardada["fecha"][:10] == datetime.date.today().isoformat()
+
+    agosto = client.get("/api/impuestos/libro-compras?desde=2026-08-01&hasta=2026-08-31").json()
+    assert agosto["filas"] == []
+    este_mes = client.get("/api/impuestos/libro-compras").json()["filas"]
+    assert [f["fecha_emision"] for f in este_mes] == ["2026-08-20"]
+
+
+def test_sin_fecha_del_papel_el_libro_muestra_la_de_registro(client, insumo):
+    """Las facturas de antes no tienen fecha de emision: el libro sigue
+    mostrando la que mostraba."""
+    guardada = factura(client, insumo)
+    assert guardada["fecha_emision"] is None
+    fila = client.get("/api/impuestos/libro-compras").json()["filas"][0]
+    assert fila["fecha_emision"] == guardada["fecha"][:10]
+
+
+def test_la_fecha_del_papel_no_puede_ser_futura(client, insumo):
+    import datetime
+    manana = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+    r = client.post("/api/compras/facturas", json={
+        "numero_factura": "F-9", "proveedor_nombre": "Carnes SA", "proveedor_rif": "J123456789",
+        "categoria": "Insumos", "forma_pago": "Efectivo", "fecha_emision": manana,
+        "items": [{"ingrediente_id": insumo.id, "cantidad": 1, "costo_unitario": 1.0}],
+    })
+    assert r.status_code == 400
+    assert "futura" in r.json()["detail"]
+
+
+def test_el_csv_lleva_las_dos_fechas(client, insumo):
+    factura(client, insumo, fecha_emision="2026-08-20")
+    texto = client.get("/api/impuestos/libro-compras/exportar").content.decode("utf-8-sig")
+    encabezado, fila = texto.strip().splitlines()[:2]
+    assert encabezado.startswith("Factura,Fecha factura,Fecha registro,N. Factura")
+    assert ",20/08/2026," in fila

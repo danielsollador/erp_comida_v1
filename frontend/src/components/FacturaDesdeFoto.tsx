@@ -185,11 +185,6 @@ export function PanelRevision({
                 <p className="text-xs">
                   Revisa cada campo contra el papel y elige la mercancía de cada renglón antes de guardar.
                 </p>
-                {borrador.fecha && (
-                  <p className="text-xs">
-                    Fecha en la factura: {new Date(`${borrador.fecha}T12:00:00`).toLocaleDateString('es-VE')}.
-                  </p>
-                )}
                 {borrador.advertencias.map((a) => (
                   <p key={a} className="text-xs text-aviso-800">
                     {a}

@@ -567,7 +567,15 @@ class FacturaCompra(Base):
     numero_factura = Column(String, nullable=False)
     proveedor_nombre = Column(String, nullable=False)
     proveedor_rif = Column(String, nullable=True)
+    # Fecha de REGISTRO: cuando se cargo. Es la que manda en el periodo del
+    # Libro de Compras, en la declaracion de IVA, en el asiento y en el
+    # inventario. Una factura de agosto que llega en octubre se registra en
+    # octubre, y agosto -tal vez ya declarado- no se toca.
     fecha = Column(DateTime, default=ahora)
+    # Fecha de EMISION: la impresa en el papel del proveedor. Solo se muestra
+    # (columna del Libro de Compras); no mueve la factura de periodo. Vacia en
+    # las facturas cargadas antes de que existiera: ahi vale la de registro.
+    fecha_emision = Column(Date, nullable=True)
     categoria = Column(String, default="Insumos")  # Insumos|Servicios|Activos|Otros
     forma_pago = Column(String, default="Efectivo")  # Efectivo|Banco|Credito
     base_imponible = Column(Float, nullable=False)

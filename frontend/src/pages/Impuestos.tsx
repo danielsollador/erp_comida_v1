@@ -45,6 +45,7 @@ export default function Impuestos() {
   )
   const ordenCompras = useOrden<FilaLibroCompras>(
     {
+      emision: (f) => f.fecha_emision,
       fecha: (f) => f.fecha,
       factura: (f) => f.numero_factura,
       proveedor: (f) => f.proveedor_nombre,
@@ -230,7 +231,8 @@ export default function Impuestos() {
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                 <tr>
-                  <Th clave="fecha">Fecha</Th>
+                  <Th clave="emision">Fecha factura</Th>
+                  <Th clave="fecha">Registro</Th>
                   <Th clave="factura">Factura</Th>
                   <Th clave="proveedor">Proveedor</Th>
                   <Th clave="rif">RIF</Th>
@@ -253,7 +255,12 @@ export default function Impuestos() {
                   )
                   .map((f) => (
                     <tr key={f.factura_id} className="border-t border-neutral-100">
-                      <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
+                      <td className="p-3 whitespace-nowrap">
+                        {new Date(`${f.fecha_emision}T12:00:00`).toLocaleDateString('es-VE')}
+                      </td>
+                      <td className="p-3 whitespace-nowrap text-neutral-500">
+                        {new Date(f.fecha).toLocaleDateString('es-VE')}
+                      </td>
                       <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
                       <td className="p-3">{f.proveedor_nombre}</td>
                       <td className="p-3 text-neutral-500">{f.proveedor_rif || '-'}</td>
@@ -264,7 +271,7 @@ export default function Impuestos() {
                   ))}
                 {compras.filas.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-neutral-400 py-4 text-center">
+                    <td colSpan={8} className="text-neutral-400 py-4 text-center">
                       Sin facturas de compra en este período.
                     </td>
                   </tr>
@@ -273,7 +280,7 @@ export default function Impuestos() {
               {compras.filas.length > 0 && (
                 <tfoot className="border-t-2 border-neutral-300 font-bold">
                   <tr>
-                    <td className="p-3" colSpan={4}>
+                    <td className="p-3" colSpan={5}>
                       Total
                     </td>
                     <td className="text-right p-3 tabular-nums">{compras.total_base.toFixed(2)}</td>

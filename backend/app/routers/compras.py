@@ -49,6 +49,7 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
         proveedor_nombre=factura.proveedor_nombre,
         proveedor_rif=factura.proveedor_rif,
         fecha=factura.fecha,
+        fecha_emision=factura.fecha_emision,
         categoria=factura.categoria,
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
@@ -124,6 +125,8 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             detail="El RIF del proveedor es obligatorio: letra (J/G/V/E/P/C) + 8 o 9 dígitos.",
         )
     factura_rif = impuestos.normalizar_rif(factura.proveedor_rif)
+    if factura.fecha_emision and factura.fecha_emision > hoy():
+        raise HTTPException(status_code=400, detail="La fecha de la factura no puede ser futura.")
     # Antes de tocar stock ni costos: si falta el comprobante hay que rebotar
     # con la factura entera sin cargar, no a mitad de los renglones. A credito
     # no se pide, que todavia no ha salido plata.
@@ -199,6 +202,7 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         proveedor_nombre=factura.proveedor_nombre,
         proveedor_rif=factura_rif,
         fecha=factura.fecha or ahora(),
+        fecha_emision=factura.fecha_emision,
         categoria=factura.categoria,
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,

@@ -1029,7 +1029,10 @@ export type FacturaCompra = {
   numero_factura: string
   proveedor_nombre: string
   proveedor_rif: string | null
+  /** De registro: decide el período del Libro de Compras y la declaración. */
   fecha: string
+  /** La impresa en el papel (AAAA-MM-DD). null en las cargadas antes de existir. */
+  fecha_emision: string | null
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
   forma_pago: 'Efectivo' | 'Banco' | 'Credito'
   /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
@@ -1149,7 +1152,10 @@ export type LibroVentas = {
 
 export type FilaLibroCompras = {
   factura_id: number
+  /** De registro: la que pone la factura en este libro. */
   fecha: string
+  /** La del papel (AAAA-MM-DD); la de registro si no se cargó. */
+  fecha_emision: string
   numero_factura: string
   proveedor_nombre: string
   proveedor_rif: string | null
