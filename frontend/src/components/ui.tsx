@@ -123,12 +123,16 @@ export function Seccion({
 }) {
   return (
     <Tarjeta className={className} plano={plano}>
-      <div className={`flex items-start justify-between gap-3 ${plano ? 'px-4 pt-4' : ''}`}>
-        <div className="min-w-0">
+      {/* Con `flex-wrap` la accion (un selector, un boton) baja a su propio
+          renglon cuando no cabe al lado del titulo: en un telefono, "Ventas
+          por dia" con el selector Auto/Dia/Semana/Mes a la derecha dejaba el
+          titulo en una columna de cuatro letras (Leider, 30-sep). */}
+      <div className={`flex flex-wrap items-start justify-between gap-3 ${plano ? 'px-4 pt-4' : ''}`}>
+        <div className="min-w-0 flex-1 basis-[12rem]">
           <h2 className="font-display font-semibold tracking-tight">{titulo}</h2>
           {ayuda && <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{ayuda}</p>}
         </div>
-        {accion && <div className="shrink-0">{accion}</div>}
+        {accion && <div className="shrink-0 max-w-full">{accion}</div>}
       </div>
       <div className={plano ? '' : 'mt-3'}>{children}</div>
     </Tarjeta>

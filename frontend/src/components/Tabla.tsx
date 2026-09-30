@@ -360,7 +360,8 @@ export function Tabla({
               onChange={(e) => orden.alternar(e.target.value)}
               className="min-w-0 flex-1 border border-neutral-300 rounded-lg px-2 py-1.5 text-xs bg-transparent"
             >
-              {orden.clave === null && <option value="">—</option>}
+              {/* "—" no decia nada en el telefono: se llama por su nombre. */}
+              {orden.clave === null && <option value="">Como viene</option>}
               {columnas.map((c) => (
                 <option key={c.clave} value={c.clave}>
                   {c.titulo}

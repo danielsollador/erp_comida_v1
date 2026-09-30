@@ -394,135 +394,100 @@ export function GraficoDona({
   partes,
   formato,
   centro,
-  alto = 150,
   pastel = false,
 }: {
   partes: ParteDona[]
   formato: (n: number) => string
-  /** Lo que va en el hueco: el total y que es. Con `pastel` no hay hueco. */
+  /** El total y que es; va de cabecera. */
   centro?: { valor: string; texto: string }
   alto?: number
-  /** Un pastel entero en vez de un anillo: para dos o tres partes donde lo
-      que importa es la proporcion de un vistazo (facturado / sin facturar). */
+  /** Dos o tres partes de un todo (facturado / sin facturar): una sola
+      barra al 100 %, repartida. */
   pastel?: boolean
 }) {
-  const [activa, setActiva] = useState<number | null>(null)
+  // YA NO ES UN ANILLO. Con cinco categorias el pastel se leia; con quince
+  // era un abanico de astillas del mismo color con una leyenda que no cabia
+  // en un telefono (Leider, 30-sep: "si agregas muchas variables se volvera
+  // un desastre, tiene que ser barras"). Cada parte es una barra con su
+  // nombre entero, su cifra y su porcentaje: crece hacia abajo, no se
+  // aprieta, y se ordena de mayor a menor.
   const { enHover, Globo } = useGlobo()
   const total = partes.reduce((s, p) => s + Math.max(p.valor, 0), 0)
   if (total <= 0 || partes.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
   }
-  // r = 100 / (2π): la circunferencia mide 100 y los arcos van en porcentaje.
-  const r = 15.9155
-  let acumulado = 0
-  const arcos = partes.map((p, i) => {
-    const pct = (Math.max(p.valor, 0) / total) * 100
-    const arco = {
-      pct,
-      desde: acumulado,
+  const filas = partes
+    .map((p, i) => ({
+      ...p,
+      valor: Math.max(p.valor, 0),
+      pct: (Math.max(p.valor, 0) / total) * 100,
       color: p.color ?? PALETA_CATEGORICA[i % PALETA_CATEGORICA.length],
-      nombre: p.nombre,
-      valor: p.valor,
-      detalle: p.detalle,
-    }
-    acumulado += pct
-    return arco
-  })
+    }))
+    .sort((a, b) => b.valor - a.valor)
+  const max = filas[0].valor
+  const globo = (f: (typeof filas)[number]) =>
+    enHover(
+      <>
+        <div className="mb-1 font-semibold text-neutral-500">{f.nombre}</div>
+        <LineaGlobo nombre="Vale" valor={formato(f.valor)} color={f.color} />
+        <LineaGlobo nombre="Del total" valor={`${f.pct.toFixed(0)}%`} />
+        {f.detalle && <div className="mt-0.5 text-[11px] text-neutral-400">{f.detalle}</div>}
+      </>,
+    )
+
+  if (pastel) {
+    return (
+      <div>
+        <Globo />
+        <div className="flex h-5 w-full overflow-hidden rounded-md bg-neutral-100">
+          {filas.map((f) => (
+            <div key={f.nombre} style={{ width: `${f.pct}%`, background: f.color }} className="h-full" {...globo(f)} />
+          ))}
+        </div>
+        <ul className="mt-3 space-y-1.5 text-sm">
+          {filas.map((f) => (
+            <li key={f.nombre} className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: f.color }} />
+              <span className="flex-1 min-w-0 text-neutral-700">
+                {f.nombre}
+                {f.detalle && <span className="text-xs text-neutral-400"> · {f.detalle}</span>}
+              </span>
+              <span className="tabular-nums font-medium whitespace-nowrap">{formato(f.valor)}</span>
+              <span className="w-10 text-right tabular-nums text-xs text-neutral-400">{f.pct.toFixed(0)}%</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex flex-wrap items-center gap-4">
+    <div>
       <Globo />
-      <div className="relative shrink-0" style={{ width: alto, height: alto }}>
-        {/* Con pastel el trazo llega hasta 2r del centro, mas que los 21 de
-            la caja de 42: la caja se agranda para que el disco quepa entero
-            y no salga cortado en cuadrado. */}
-        <svg
-          viewBox={pastel ? `${21 - 2 * r} ${21 - 2 * r} ${4 * r} ${4 * r}` : '0 0 42 42'}
-          className="h-full w-full -rotate-90"
-          role="img"
-          aria-label="Reparto"
-        >
-          {!pastel && (
-            <circle cx="21" cy="21" r={r} fill="none" stroke="var(--color-neutral-100)" strokeWidth="5" />
-          )}
-          {arcos.map((a, i) =>
-            a.pct > 0 ? (
-              <circle
-                key={i}
-                cx="21"
-                cy="21"
-                r={r}
-                fill="none"
-                stroke={a.color}
-                // Pastel: el trazo es tan grueso como el diametro del
-                // circulo guia, asi que llena hasta el centro. El dasharray
-                // se mide en la linea media y sigue valiendo en porcentaje.
-                strokeWidth={pastel ? (activa === i ? 2 * r + 1.6 : 2 * r) : activa === i ? 6.2 : 5}
-                // Un respiro entre arcos: 0.6 de los 100 se deja en blanco,
-                // salvo si la parte es tan chica que el respiro se la come.
-                strokeDasharray={
-                  pastel
-                    ? `${Math.max(a.pct, 0.001)} ${100 - Math.max(a.pct, 0.001)}`
-                    : `${Math.max(a.pct - (a.pct > 1.5 ? 0.6 : 0), 0.001)} ${100 - Math.max(a.pct - (a.pct > 1.5 ? 0.6 : 0), 0.001)}`
-                }
-                strokeDashoffset={-a.desde}
-                className="transition-all duration-200"
-                {...(() => {
-                  const h = enHover(
-                    <>
-                      <div className="mb-1 font-semibold text-neutral-500">{a.nombre}</div>
-                      <LineaGlobo nombre="Vale" valor={formato(a.valor)} color={a.color} />
-                      <LineaGlobo nombre="Del total" valor={`${a.pct.toFixed(0)}%`} />
-                      {a.detalle && <div className="mt-0.5 text-[11px] text-neutral-400">{a.detalle}</div>}
-                    </>,
-                  )
-                  // El arco tambien se engorda y el centro muestra su %: eso ya
-                  // estaba y se conserva, el globo se suma.
-                  return {
-                    ...h,
-                    onPointerEnter: (e: PointerEvent) => {
-                      setActiva(i)
-                      h.onPointerEnter(e)
-                    },
-                    onPointerLeave: () => {
-                      setActiva(null)
-                      h.onPointerLeave()
-                    },
-                  }
-                })()}
+      {centro && (
+        <p className="mb-3 text-sm text-neutral-500">
+          <span className="font-semibold text-neutral-800 tabular-nums">{centro.valor}</span> {centro.texto}
+        </p>
+      )}
+      <ul className="space-y-2.5">
+        {filas.map((f) => (
+          <li key={f.nombre} className="grid grid-cols-[minmax(0,7.5rem)_1fr_auto] sm:grid-cols-[minmax(0,11rem)_1fr_auto] items-center gap-x-3 text-sm">
+            {/* El nombre entero, en dos renglones si hace falta: en el
+                anillo se cortaba en "Bebi…" y habia que adivinar. */}
+            <span className="text-neutral-700 leading-tight line-clamp-2" title={f.nombre}>
+              {f.nombre}
+            </span>
+            <div className="h-4 rounded-md bg-neutral-100 overflow-hidden">
+              <div
+                className="h-full rounded-md"
+                style={{ width: `${max > 0 ? (f.valor / max) * 100 : 0}%`, background: f.color, minWidth: f.valor > 0 ? 3 : 0 }}
+                {...globo(f)}
               />
-            ) : null,
-          )}
-        </svg>
-        {centro && !pastel && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-base font-bold tabular-nums leading-none">
-              {activa != null ? `${arcos[activa].pct.toFixed(0)}%` : centro.valor}
+            </div>
+            <span className="text-right whitespace-nowrap tabular-nums">
+              <span className="font-medium">{formato(f.valor)}</span>
+              <span className="ml-2 inline-block w-8 text-xs text-neutral-400">{f.pct.toFixed(0)}%</span>
             </span>
-            <span className="text-[10px] text-neutral-500 mt-1 px-3 leading-tight">
-              {activa != null ? partes[activa].nombre : centro.texto}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <ul className="flex-1 min-w-[10rem] space-y-1.5 text-sm">
-        {partes.map((p, i) => (
-          <li
-            key={p.nombre}
-            className={`flex items-center gap-2 rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors ${
-              activa === i ? 'bg-neutral-100' : ''
-            }`}
-            onPointerEnter={() => setActiva(i)}
-            onPointerLeave={() => setActiva(null)}
-          >
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: arcos[i].color }} />
-            <span className="flex-1 min-w-0 truncate text-neutral-700">
-              {p.nombre}
-              {p.detalle && <span className="text-xs text-neutral-400"> · {p.detalle}</span>}
-            </span>
-            <span className="tabular-nums font-medium whitespace-nowrap">{formato(p.valor)}</span>
-            <span className="w-10 text-right tabular-nums text-xs text-neutral-400">{arcos[i].pct.toFixed(0)}%</span>
           </li>
         ))}
       </ul>
