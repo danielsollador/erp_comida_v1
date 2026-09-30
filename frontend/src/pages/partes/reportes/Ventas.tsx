@@ -89,7 +89,6 @@ export default function Ventas({
   const unDia = datos.calor.length === 0 && datos.por_dia_semana.length === 0
 
   // ── Que ──
-  const conCosto = datos.top_productos.filter((p) => !p.sin_receta)
   const sinReceta = datos.top_productos.filter((p) => p.sin_receta)
 
   return (
@@ -256,16 +255,11 @@ export default function Ventas({
               >
                 <BarrasGanancia
                   formato={dinero}
-                  total={{
-                    nombre: `Todos los productos (${datos.top_productos.length})`,
-                    ingreso: datos.top_productos.reduce((s, p) => s + p.ingresos, 0),
-                    costo: conCosto.length ? conCosto.reduce((s, p) => s + p.costo, 0) : null,
-                    sinCosto: sinReceta.reduce((s, p) => s + p.ingresos, 0),
-                  }}
                   filas={datos.top_productos.map((p) => ({
                     nombre: p.nombre,
                     ingreso: p.ingresos,
                     costo: p.sin_receta ? null : p.costo,
+                    unidades: p.unidades,
                   }))}
                 />
                 {/* Sin receta no hay costo: la barra va rayada y la fila dice
