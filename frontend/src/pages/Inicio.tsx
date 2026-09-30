@@ -25,16 +25,6 @@ function saludo(): string {
 }
 
 /**
- * Cuantas columnas para que `n` fichas no dejen huecos: el mayor divisor
- * exacto entre los candidatos. Diez modulos van en 5 (dos filas llenas), seis
- * en 3; si ninguno divide (siete), se usa el primero y el mosaico ensancha
- * las ultimas fichas para completar la fila (ver `.vp-mosaico`).
- */
-function columnasSinHuecos(n: number, candidatas: number[]): number {
-  return candidatas.find((c) => c <= n && n % c === 0) ?? candidatas[0]
-}
-
-/**
  * La portada.
  *
  * UNA SOLA COSA GRANDE. Antes eran dieciseis rectangulos blancos del mismo
@@ -57,10 +47,9 @@ export default function Inicio() {
   // negocio y numeros; y aparte, atenuado, lo del contador. Cada modulo
   // conserva su nombre y debajo lleva la pregunta que responde.
   const operacion = modulosDe(estado.puede, 'vender')
-  const negocio: { to: string; icono: NombreIcono; titulo: string }[] = [
-    ...modulosDe(estado.puede, 'negocio'),
-    { to: '/configuracion', icono: 'configuracion', titulo: 'Configuración' },
-  ]
+  // Configuracion no es "mi negocio": vive en el avatar de la barra y en el
+  // menu de usuario, como siempre.
+  const negocio = modulosDe(estado.puede, 'negocio')
   const numeros = modulosDe(estado.puede, 'numeros')
   const contador = modulosDe(estado.puede, 'contador')
 
@@ -101,14 +90,10 @@ export default function Inicio() {
   const fecha = new Date().toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' })
   const nombre = estado.nombre || estado.nombre_visible || estado.usuario
 
-  // Cada bandeja elige sus columnas segun cuantos modulos ve este rol, para
-  // no dejar celdas vacias (ver `columnasSinHuecos`).
-  const columnas = (n: number) =>
-    ({
-      '--cols-sm': columnasSinHuecos(n, [3, 2]),
-      '--cols-lg': columnasSinHuecos(n, [4, 3, 2]),
-      '--cols-alto': columnasSinHuecos(n, [2, 3]),
-    }) as CSSProperties
+  // Una columna por bandeja: filas anchas donde el nombre y la pregunta
+  // caben en un renglon. Con tres o cuatro columnas la pregunta se partia en
+  // cuatro lineas y la lamina parecia una tabla (Leider, 30-sep).
+  const unaColumna = { '--cols-sm': 1, '--cols-lg': 1, '--cols-alto': 1 } as CSSProperties
 
   return (
     // En la TABLET la pantalla se llena, en vertical y en horizontal: es una
@@ -248,23 +233,29 @@ export default function Inicio() {
         {/* ── Mi negocio y Numeros: dos bandejas, no seis cajas. Se usan una
             vez al dia o a la semana; agrupadas pesan lo que tienen que pesar
             y dejan el primer golpe de vista para lo de arriba. */}
-        <div className="grid gap-3 lg:gap-4 lg:grid-cols-2">
-          <Bandeja titulo="Mi negocio" modulos={negocio} estilo={columnas(negocio.length)} />
-          <Bandeja titulo="Números" modulos={numeros} estilo={columnas(numeros.length)} />
+        <div className="grid gap-3 lg:gap-4 sm:grid-cols-2">
+          <Bandeja titulo="Mi negocio" modulos={negocio} estilo={unaColumna} />
+          <Bandeja titulo="Números" modulos={numeros} estilo={unaColumna} />
         </div>
 
-        {/* ── Para el contador: se ve, atenuado. Es secundario, no un
-            secreto (Leider, 30-sep). El titulo lleva a la pagina que explica
-            que todo esto se arma solo. */}
+        {/* ── Para el contador: sin lamina ni fichas. Una linea de enlaces
+            con su icono, en gris: se ve que esta y se ve que es otra cosa
+            (Leider, 30-sep: secundario, no escondido, y no con el mismo
+            estilo). El titulo lleva a la pagina que explica que se arma solo. */}
         {contador.length > 0 && (
-          <Bandeja
-            titulo="Para el contador"
-            nota="se arma solo con lo de arriba"
-            a={CONTADOR.to}
-            modulos={contador}
-            estilo={columnas(contador.length)}
-            atenuada
-          />
+          <div className="pt-1 border-t border-[var(--vp-textura)] flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-neutral-500">
+            <Link to={CONTADOR.to} className="vp-etiqueta hover:text-neutral-700 mr-2">
+              Para el contador
+            </Link>
+            {contador.map((m) => (
+              <Link key={m.to} to={m.to} className="group inline-flex items-center gap-2 py-2 hover:text-neutral-900">
+                <Icono nombre={m.icono} size={16} className="text-neutral-400 group-hover:text-acento-600" />
+                <span className="font-medium">{m.titulo}</span>
+                <span className="hidden md:inline text-neutral-400 group-hover:text-neutral-500">· {PREGUNTA[m.to]}</span>
+              </Link>
+            ))}
+            <span className="ml-auto text-xs text-neutral-400">Se arma solo con lo de arriba</span>
+          </div>
         )}
         </div>
       </div>
@@ -391,54 +382,34 @@ function Espera({
 
 /**
  * Una bandeja de modulos: UNA lamina con filas al ras, cada una con el
- * nombre del modulo y, debajo, la pregunta que responde. Atenuada para lo
- * del contador: esta a la vista, pero un escalon mas abajo.
+ * nombre del modulo y, al lado, la pregunta que responde.
  */
 function Bandeja({
   titulo,
-  nota,
-  a,
   modulos,
   estilo,
-  atenuada = false,
 }: {
   titulo: string
-  nota?: string
-  /** Si el titulo lleva a algun lado. */
-  a?: string
   modulos: { to: string; icono: NombreIcono; titulo: string }[]
   estilo: CSSProperties
-  atenuada?: boolean
 }) {
   if (modulos.length === 0) return null
-  const cabecera = (
-    <>
-      {titulo}
-      {nota && <span className="normal-case tracking-normal font-medium text-neutral-400"> · {nota}</span>}
-    </>
-  )
   return (
-    <div className={`flex flex-col min-h-0 ${atenuada ? 'opacity-80 hover:opacity-100 transition-opacity' : ''}`}>
-      {a ? (
-        <Link to={a} className="vp-etiqueta mb-2.5 hover:text-neutral-700">
-          {cabecera}
-        </Link>
-      ) : (
-        <p className="vp-etiqueta mb-2.5">{cabecera}</p>
-      )}
+    <div className="flex flex-col min-h-0">
+      <p className="vp-etiqueta mb-2.5">{titulo}</p>
       <div className="vp-lista" style={estilo}>
         {modulos.map((m) => (
           <Link
             key={m.to}
             to={m.to}
-            className="group flex items-center gap-3 px-4 py-3 lg:px-5 lg:py-3.5 bajo:px-4 bajo:py-2.5 min-h-[3.25rem] transition-colors duration-200"
+            className="group flex items-center gap-3.5 px-4 py-3 lg:px-5 bajo:py-2.5 min-h-[3.25rem] transition-colors duration-200"
           >
             <span className="shrink-0 text-neutral-400 group-hover:text-acento-600 transition-colors duration-200">
               <Icono nombre={m.icono} size={19} className="lg:w-5 lg:h-5" />
             </span>
-            <span className="min-w-0">
-              <span className="block font-display font-semibold leading-tight text-[15px] lg:text-base">{m.titulo}</span>
-              <span className="block text-[13px] text-neutral-500 mt-0.5 leading-snug">{PREGUNTA[m.to] ?? ''}</span>
+            <span className="min-w-0 flex flex-wrap items-baseline gap-x-2">
+              <span className="font-display font-semibold leading-tight text-[15px] lg:text-base">{m.titulo}</span>
+              <span className="text-[13px] text-neutral-500 leading-snug">{PREGUNTA[m.to] ?? ''}</span>
             </span>
           </Link>
         ))}
