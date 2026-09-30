@@ -1982,6 +1982,64 @@ class AdjuntarSoporteRequest(BaseModel):
     soporte_id: int
 
 
+# ------------------------------------------------- memoria por proveedor
+class RenglonABuscar(BaseModel):
+    descripcion: str
+    unidad: str = ""
+
+
+class BuscarEquivalenciasRequest(BaseModel):
+    proveedor_rif: str
+    renglones: List[RenglonABuscar] = []
+
+
+class SugerenciaRenglon(BaseModel):
+    indice: int  # posicion del renglon en lo que se pregunto
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str  # la nuestra
+    # Cuantas unidades nuestras trae una del papel.
+    factor: float
+    unidad_papel: str
+    descripcion_recordada: str
+    veces: int
+    # False = no es el mismo texto sino uno muy parecido: vale la pena mirarlo.
+    exacta: bool
+
+
+class RenglonAprendido(BaseModel):
+    """Un renglon ya guardado: lo que decia el papel y lo que quedo."""
+
+    descripcion: str
+    unidad: str = ""
+    cantidad_papel: Optional[float] = None
+    precio_papel: Optional[float] = None
+    ingrediente_id: int
+    # Lo que quedo en el formulario, en la MISMA moneda que el papel.
+    cantidad: float
+    costo_unitario: float
+
+
+class AprenderEquivalenciasRequest(BaseModel):
+    proveedor_rif: str
+    proveedor_nombre: str = ""
+    renglones: List[RenglonAprendido] = []
+
+
+class Equivalencia(BaseModel):
+    id: int
+    proveedor_rif: str
+    proveedor_nombre: str
+    descripcion: str
+    unidad_papel: str
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    factor: float
+    veces: int
+    actualizado: datetime.datetime
+
+
 class PagoFacturaRequest(BaseModel):
     forma_pago: str = "Efectivo"  # Efectivo|Banco - con que se salda la deuda
     # Obligatoria si no se paga en efectivo, igual que al cobrar una venta.

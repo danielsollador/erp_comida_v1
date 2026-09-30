@@ -33,8 +33,10 @@ import type {
   EstadoAcceso,
   EstadoResultadosContable,
   FacturaCompra,
+  Equivalencia,
   LecturaFactura,
   RevisionFactura,
+  SugerenciaRenglon,
   FilaBalanceComprobacion,
   FilaMayor,
   Gasto,
@@ -862,6 +864,32 @@ export const api = {
       body: JSON.stringify({ soporte_id: soporteId }),
     }),
   urlSoporteFactura: (facturaId: number) => `/api/compras/facturas/${facturaId}/soporte`,
+  // Memoria por proveedor: que es de lo nuestro cada renglon de su factura.
+  buscarEquivalencias: (proveedor_rif: string, renglones: { descripcion: string; unidad: string }[]) =>
+    req<SugerenciaRenglon[]>('/compras/equivalencias/buscar', {
+      method: 'POST',
+      body: JSON.stringify({ proveedor_rif, renglones }),
+    }),
+  /** Montos en la MISMA moneda que el papel. */
+  aprenderEquivalencias: (
+    proveedor_rif: string,
+    proveedor_nombre: string,
+    renglones: {
+      descripcion: string
+      unidad: string
+      cantidad_papel: number | null
+      precio_papel: number | null
+      ingrediente_id: number
+      cantidad: number
+      costo_unitario: number
+    }[],
+  ) =>
+    req<{ aprendidas: number }>('/compras/equivalencias/aprender', {
+      method: 'POST',
+      body: JSON.stringify({ proveedor_rif, proveedor_nombre, renglones }),
+    }),
+  listarEquivalencias: () => req<Equivalencia[]>('/compras/equivalencias'),
+  olvidarEquivalencia: (id: number) => req(`/compras/equivalencias/${id}`, { method: 'DELETE' }),
   /** `referencia` es obligatoria si no se salda en efectivo. */
   pagarFacturaCompra: (id: number, forma_pago: string, referencia?: string) =>
     req<FacturaCompra>(`/compras/facturas/${id}/pagar`, {

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import CampoSugerido from '../components/CampoSugerido'
-import { BotonFoto, PanelRevision, RenglonDelPapel, VerSoporte } from '../components/FacturaDesdeFoto'
+import {
+  BotonFoto,
+  MemoriaProveedores,
+  PanelRevision,
+  RenglonDelPapel,
+  VerSoporte,
+} from '../components/FacturaDesdeFoto'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
@@ -20,6 +26,7 @@ import type {
   LecturaFactura,
   Proveedor,
   RenglonLeido,
+  SugerenciaRenglon,
 } from '../lib/types'
 
 const MONEDAS_DE_CARGA = ['$', 'Bs'] as const
@@ -52,6 +59,8 @@ type Linea = {
   exento: boolean | null
   /** Lo que dice el papel de este renglón, si vino de una foto. */
   leido?: RenglonLeido
+  /** Lo que se recordaba de este proveedor para este renglón, si se aplicó. */
+  recordada?: SugerenciaRenglon
 }
 
 const SECCIONES = [
@@ -256,7 +265,8 @@ export default function Compras() {
       ? proveedores.find((p) => p.rif && soloRif(p.rif) === soloRif(b.proveedor_rif))
       : undefined
     setProveedor(conocido?.nombre ?? b.proveedor_nombre)
-    setRif(conocido?.rif ?? b.proveedor_rif)
+    const rifFactura = conocido?.rif ?? b.proveedor_rif
+    setRif(rifFactura)
     if (b.moneda) setMonedaCarga(b.moneda)
     setRecargo(b.recargo ? String(b.recargo) : '')
     setDescuentoFactura(b.descuento ? String(b.descuento) : '')
@@ -273,6 +283,32 @@ export default function Compras() {
           leido: r,
         })),
       )
+      // Lo que ya se sabe de este proveedor: mercancia y conversion de unidad.
+      // Llega despues del prellenado; si alguien ya toco ese renglon, manda
+      // lo que toco.
+      api
+        .buscarEquivalencias(
+          rifFactura,
+          b.renglones.map((r) => ({ descripcion: r.descripcion, unidad: r.unidad })),
+        )
+        .then((sugerencias) =>
+          setLineas((prev) =>
+            prev.map((l, i) => {
+              const s = sugerencias.find((x) => x.indice === i)
+              if (!s || l.leido !== b.renglones[i] || l.ingrediente_id) return l
+              const redondeo = (x: number) => String(Math.round(x * 10000) / 10000)
+              return {
+                ...l,
+                ingrediente_id: s.ingrediente_id,
+                cantidad: l.leido.cantidad == null ? l.cantidad : redondeo(l.leido.cantidad * s.factor),
+                costo_unitario:
+                  l.leido.precio_unitario == null ? l.costo_unitario : redondeo(l.leido.precio_unitario / s.factor),
+                recordada: s,
+              }
+            }),
+          ),
+        )
+        .catch(() => undefined)
     } else {
       setBase(b.subtotal == null ? '' : String(b.subtotal))
       setIva(b.iva == null ? '' : String(b.iva))
@@ -433,6 +469,24 @@ export default function Compras() {
     )
       return
 
+    // Lo que el papel decia y lo que quedo: de ahi aprende la memoria del
+    // proveedor. Se toma ANTES de guardar, que despues se limpia el formulario.
+    const paraRecordar = lectura
+      ? lineas
+          .filter((l) => l.leido && l.ingrediente_id && Number(l.cantidad) > 0)
+          .map((l) => ({
+            descripcion: l.leido!.descripcion,
+            unidad: l.leido!.unidad,
+            cantidad_papel: l.leido!.cantidad,
+            precio_papel: l.leido!.precio_unitario,
+            ingrediente_id: l.ingrediente_id,
+            cantidad: Number(l.cantidad),
+            costo_unitario: Number(l.costo_unitario),
+          }))
+      : []
+    const rifGuardado = rif.trim()
+    const proveedorGuardado = proveedor.trim()
+
     // La foto se engancha despues del guardado de siempre. Si falla, la
     // factura ya entro: se avisa, no se deshace.
     async function adjuntarFoto(facturaId: number): Promise<string> {
@@ -442,6 +496,17 @@ export default function Compras() {
         return ' Foto adjunta.'
       } catch (e) {
         return ` Ojo: la foto no se pudo adjuntar (${e instanceof Error ? e.message : 'error'}).`
+      }
+    }
+
+    // Si no se puede recordar, la factura igual entro: solo se avisa.
+    async function recordar(): Promise<string> {
+      if (paraRecordar.length === 0) return ''
+      try {
+        await api.aprenderEquivalencias(rifGuardado, proveedorGuardado, paraRecordar)
+        return ''
+      } catch {
+        return ' (No se pudo recordar la asociación de sus renglones para la próxima.)'
       }
     }
 
@@ -480,7 +545,8 @@ export default function Compras() {
           `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
             `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}). ` +
             `${guardada.items.length} renglón(es) al depósito.` +
-            (await adjuntarFoto(guardada.id)),
+            (await adjuntarFoto(guardada.id)) +
+            (await recordar()),
         )
       } else {
         const baseNum = Number(base)
@@ -989,6 +1055,7 @@ export default function Compras() {
                       moneda={monedaCarga}
                       unidadNuestra={ing?.unidad}
                       aviso={revision?.precios.find((p) => p.indice === i)}
+                      recordada={l.recordada?.ingrediente_id === l.ingrediente_id ? l.recordada : undefined}
                     />
                     <select
                       value={l.ingrediente_id}
@@ -1141,6 +1208,7 @@ export default function Compras() {
         )}
 
         {seccion === 'proveedores' && (
+          <>
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -1195,6 +1263,8 @@ export default function Compras() {
               </Tabla>
             )}
           </div>
+          <MemoriaProveedores proveedores={proveedores} />
+          </>
         )}
 
         {verSoporte !== null && <VerSoporte facturaId={verSoporte} onCerrar={() => setVerSoporte(null)} />}

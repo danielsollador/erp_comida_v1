@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { achicarFoto } from '../lib/foto'
-import type { AvisoPrecio, LecturaFactura, RenglonLeido, RevisionFactura } from '../lib/types'
-import { Aviso, Boton, Modal } from './ui'
+import type {
+  AvisoPrecio,
+  Equivalencia,
+  LecturaFactura,
+  Proveedor,
+  RenglonLeido,
+  RevisionFactura,
+  SugerenciaRenglon,
+} from '../lib/types'
+import { Aviso, Boton, Modal, Vacio } from './ui'
 
 /**
  * Factura de compra desde una foto: las piezas que se enganchan al formulario
@@ -81,18 +89,28 @@ function unidadDistinta(unidadPapel: string, unidadNuestra: string | undefined):
 }
 
 /** Lo que dice el papel sobre un renglón, encima del renglón del formulario. */
+/** "1 BULTO = 20 kg", o nada si es uno a uno. */
+function conversion(factor: number, unidadPapel: string, unidad: string): string {
+  if (Math.abs(factor - 1) < 1e-9) return ''
+  return `1 ${unidadPapel || 'unidad del papel'} = ${Number(factor.toFixed(4))} ${unidad}`
+}
+
 export function RenglonDelPapel({
   leido,
   moneda,
   unidadNuestra,
   aviso,
+  recordada,
 }: {
   leido?: RenglonLeido
   moneda: string
   unidadNuestra?: string
   aviso?: AvisoPrecio
+  /** Solo si sigue elegida la mercancía que se recordó. */
+  recordada?: SugerenciaRenglon
 }) {
   if (!leido && !aviso) return null
+  const conv = recordada ? conversion(recordada.factor, recordada.unidad_papel, recordada.unidad) : ''
   return (
     <div className="w-full text-xs space-y-0.5">
       {leido && (
@@ -104,7 +122,16 @@ export function RenglonDelPapel({
           {leido.exento ? ' (exento)' : ''}
         </p>
       )}
-      {leido && unidadDistinta(leido.unidad, unidadNuestra) && (
+      {recordada && (
+        <p className="text-exito-700">
+          Recordado de este proveedor{conv ? `: ${conv}, ya convertido` : ''} ·{' '}
+          {recordada.veces === 1 ? '1 factura' : `${recordada.veces} facturas`}
+          {!recordada.exacta && (
+            <span className="text-aviso-700"> · parecido a «{recordada.descripcion_recordada}», revísalo</span>
+          )}
+        </p>
+      )}
+      {leido && !recordada && unidadDistinta(leido.unidad, unidadNuestra) && (
         <p className="text-aviso-700">
           La factura dice {leido.unidad} y esta mercancía se lleva en {unidadNuestra}: ajusta cantidad y costo
           si no es uno a uno.
@@ -233,5 +260,84 @@ export function VerSoporte({ facturaId, onCerrar }: { facturaId: number; onCerra
     <Modal titulo="Foto de la factura" onCerrar={onCerrar} ancho="lg">
       <img src={api.urlSoporteFactura(facturaId)} alt="Foto de la factura" className="w-full rounded-lg" />
     </Modal>
+  )
+}
+
+/**
+ * Lo que el sistema recuerda de las facturas de cada proveedor. Olvidar una
+ * asociación mal aprendida es seguro: la próxima factura la vuelve a aprender
+ * de lo que quede guardado.
+ */
+export function MemoriaProveedores({ proveedores }: { proveedores: Proveedor[] }) {
+  const [filas, setFilas] = useState<Equivalencia[] | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    api
+      .listarEquivalencias()
+      .then(setFilas)
+      .catch((e) => setError(e instanceof Error ? e.message : 'No se pudo cargar'))
+  }, [])
+
+  const soloRif = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
+  // La ficha manda; sin ficha, como venia en la ultima factura.
+  const nombreDe = (e: Equivalencia) =>
+    proveedores.find((p) => p.rif && soloRif(p.rif) === e.proveedor_rif)?.nombre || e.proveedor_nombre || e.proveedor_rif
+
+  async function olvidar(e: Equivalencia) {
+    setError('')
+    try {
+      await api.olvidarEquivalencia(e.id)
+      setFilas((prev) => (prev ?? []).filter((x) => x.id !== e.id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo olvidar')
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4 mt-4">
+      <h2 className="font-semibold">Lo que se recuerda de sus facturas</h2>
+      <p className="text-xs text-neutral-500 mb-3">
+        Se aprende al guardar una factura cargada desde foto: qué mercancía es cada renglón y cómo se convierte su
+        unidad. La próxima factura de ese proveedor llega con esos renglones ya asociados.
+      </p>
+      {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
+      {filas !== null && filas.length === 0 ? (
+        <Vacio titulo="Todavía no se recuerda nada" detalle="Carga una factura desde foto y guárdala." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+              <tr>
+                <th className="p-2 text-left">Proveedor</th>
+                <th className="p-2 text-left">En su factura</th>
+                <th className="p-2 text-left">Es</th>
+                <th className="p-2 text-left">Conversión</th>
+                <th className="p-2 text-right">Facturas</th>
+                <th className="p-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {(filas ?? []).map((e) => (
+                <tr key={e.id} className="border-t border-neutral-100">
+                  <td className="p-2">{nombreDe(e)}</td>
+                  <td className="p-2 font-mono text-xs">{e.descripcion}</td>
+                  <td className="p-2">
+                    {e.ingrediente_nombre} <span className="text-neutral-400">({e.unidad})</span>
+                  </td>
+                  <td className="p-2 text-neutral-500">{conversion(e.factor, e.unidad_papel, e.unidad) || '—'}</td>
+                  <td className="p-2 text-right tabular-nums">{e.veces}</td>
+                  <td className="p-2 text-right">
+                    <button onClick={() => olvidar(e)} className="text-xs text-neutral-500 font-medium">
+                      Olvidar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   )
 }

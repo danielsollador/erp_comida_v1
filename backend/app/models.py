@@ -32,6 +32,7 @@ CK_; ver `database.py`), y los nombres viejos se migran al arrancar
 """
 from sqlalchemy import (
     Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import deferred, relationship
 
@@ -550,6 +551,44 @@ class Proveedor(Base):
     contacto = Column(String, default="")
     nota = Column(String, default="")
     activo = Column(Boolean, default=True)
+
+
+class EquivalenciaProveedor(Base):
+    """Lo que un proveedor escribe en su factura, y que es de lo nuestro.
+
+    "HARINA PAN BULTO" de Distribuidora La Montaña es nuestra Harina (kg), y
+    un bulto son 20 kg. Se aprende sola al guardar una factura leida de una
+    foto: el papel dice una cosa, la persona que la reviso dejo otra, y la
+    diferencia es la equivalencia. La proxima factura de ese proveedor llega
+    con esos renglones ya asociados y convertidos -- y la persona igual revisa.
+
+    Va por RIF y no por la ficha del proveedor, igual que la factura: no todo
+    proveedor tiene ficha, pero toda factura tiene RIF.
+
+    `factor` son cuantas unidades NUESTRAS trae una unidad del papel:
+    2 BULTO a $30 con factor 20 entran como 40 kg a $1.50. El subtotal no
+    cambia, que es lo que hace que la conversion no descuadre la factura.
+    """
+
+    __tablename__ = "DIM420_COM_EQUIVALENCIA"
+    __table_args__ = (UniqueConstraint("proveedor_rif", "clave"),)
+
+    id = Column(Integer, primary_key=True)
+    proveedor_rif = Column(String, nullable=False)  # normalizado, como en la factura
+    # Como se llamaba en la ultima factura: para mostrarlo sin exigir ficha.
+    proveedor_nombre = Column(String, default="")
+    # El texto del renglon sin espacios, signos, tildes ni la marca de exento:
+    # lo que se compara. `descripcion` es como venia, para mostrarlo.
+    clave = Column(String, nullable=False)
+    descripcion = Column(String, default="")
+    unidad_papel = Column(String, default="")
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    factor = Column(Float, default=1.0)
+    # Cuantas facturas lo confirmaron. Uno solo puede ser casualidad.
+    veces = Column(Integer, default=1)
+    actualizado = Column(DateTime, default=ahora)
+
+    ingrediente = relationship("Ingrediente")
 
 
 class FacturaCompra(Base):

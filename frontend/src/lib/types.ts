@@ -1108,6 +1108,38 @@ export type AvisoPrecio = {
   mensaje: string
 }
 
+/** Lo que ese proveedor ya trajo antes: a qué mercancía nuestra corresponde. */
+export type SugerenciaRenglon = {
+  indice: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  /** La nuestra. */
+  unidad: string
+  /** Cuántas unidades nuestras trae una del papel (1 BULTO = 20 kg → 20). */
+  factor: number
+  unidad_papel: string
+  descripcion_recordada: string
+  /** Cuántas facturas lo confirmaron. */
+  veces: number
+  /** false = no es el mismo texto sino uno muy parecido. */
+  exacta: boolean
+}
+
+export type Equivalencia = {
+  id: number
+  proveedor_rif: string
+  /** Como venía en la última factura. */
+  proveedor_nombre: string
+  descripcion: string
+  unidad_papel: string
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  factor: number
+  veces: number
+  actualizado: string
+}
+
 export type RevisionFactura = {
   duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
   precios: AvisoPrecio[]
