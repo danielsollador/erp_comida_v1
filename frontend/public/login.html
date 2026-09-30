@@ -376,6 +376,16 @@
           if (icono) icono.href = d.local.favicon;
         }
       }
+      // La marca `fallo=servidor` es de cuando el servidor no contesto. Si
+      // ahora SI contesta, el aviso ya no es verdad: se quita, se libera el
+      // boton y se limpia la direccion (Safari la volvia a completar sola
+      // desde el historial y el login quedaba bloqueado para siempre).
+      if (location.search.indexOf("fallo=servidor") !== -1) {
+        aviso.textContent = "";
+        aviso.classList.remove("visible");
+        boton.disabled = false;
+        try { history.replaceState(null, "", location.pathname); } catch (e) {}
+      }
       if (d && d.problema) { avisoFijo(d.problema); return; }
       if (d && d.configurado === false) modoInstalacion();
     })
