@@ -192,9 +192,13 @@ export default function Ventas({
                 )}
               </Seccion>
             )}
-            <div className="space-y-3">
+            {/* Las dos tarjetas reparten el alto del mapa de calor de al lado:
+                con alto fijo se quedaban cortas y la fila terminaba escalonada
+                (Leider, 30-sep). */}
+            <div className="flex flex-col gap-3">
               {datos.por_dia_semana.length > 0 && (
                 <Seccion
+                  estirar
                   titulo="Qué día vendes más"
                   ayuda={
                     <Ayuda explica={explicar('kpi.dia_tipico')} titulo="Día típico">
@@ -203,7 +207,7 @@ export default function Ventas({
                   }
                 >
                   <GraficoBarras
-                    alto={140}
+                    estirar
                     formato={corto}
                     datos={datos.por_dia_semana.map((d) => ({
                       etiqueta: d.nombre,
@@ -221,9 +225,9 @@ export default function Ventas({
                 </Seccion>
               )}
               {horas.length > 0 && (
-                <Seccion titulo="Pedidos por hora" ayuda="Sumando todos los días del período.">
+                <Seccion estirar titulo="Pedidos por hora" ayuda="Sumando todos los días del período.">
                   <GraficoBarras
-                    alto={140}
+                    estirar
                     formato={(n) => `${n}`}
                     datos={horas.map(([h, v]) => ({
                       etiqueta: `${h}`,
@@ -297,11 +301,14 @@ export default function Ventas({
                 <Seccion titulo="Qué parte es comida, bebida, envíos" ayuda="Por la categoría de cada producto en el menú.">
                   <GraficoDona
                     formato={dinero}
-                    centro={{ valor: String(datos.por_categoria.length), texto: 'categorías' }}
+                    centro={{
+                      valor: dinero(datos.por_categoria.reduce((t, g) => t + g.ventas, 0)),
+                      texto: `vendidos en ${datos.por_categoria.length} categoría${datos.por_categoria.length === 1 ? '' : 's'}`,
+                    }}
                     partes={datos.por_categoria.map((g, i) => ({
                       nombre: g.nombre,
                       valor: g.ventas,
-                      detalle: `${g.pedidos} pedidos`,
+                      detalle: `${g.pedidos} ${g.pedidos === 1 ? 'pedido' : 'pedidos'}`,
                       color: PALETA_CATEGORICA[(i + 1) % PALETA_CATEGORICA.length],
                     }))}
                   />

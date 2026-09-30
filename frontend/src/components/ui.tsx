@@ -112,6 +112,7 @@ export function Seccion({
   children,
   className = '',
   plano = false,
+  estirar = false,
 }: {
   titulo: string
   /** Una linea que explica de que va la seccion, bajo el titulo. */
@@ -120,9 +121,14 @@ export function Seccion({
   children: ReactNode
   className?: string
   plano?: boolean
+  /** La seccion ocupa todo el alto que le den y su contenido se estira con
+      ella. Sirve cuando dos columnas de tarjetas tienen que terminar a la
+      misma altura: sin esto, la columna con graficos de alto fijo queda
+      corta y la fila se ve descuadrada. */
+  estirar?: boolean
 }) {
   return (
-    <Tarjeta className={className} plano={plano}>
+    <Tarjeta className={`${estirar ? 'flex flex-col flex-1 min-h-0' : ''} ${className}`} plano={plano}>
       {/* Con `flex-wrap` la accion (un selector, un boton) baja a su propio
           renglon cuando no cabe al lado del titulo: en un telefono, "Ventas
           por dia" con el selector Auto/Dia/Semana/Mes a la derecha dejaba el
@@ -134,7 +140,9 @@ export function Seccion({
         </div>
         {accion && <div className="shrink-0 max-w-full">{accion}</div>}
       </div>
-      <div className={plano ? '' : 'mt-3'}>{children}</div>
+      <div className={`${plano ? '' : 'mt-3'} ${estirar ? 'flex-1 flex flex-col min-h-0' : ''}`}>
+        {children}
+      </div>
     </Tarjeta>
   )
 }

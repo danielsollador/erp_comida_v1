@@ -474,8 +474,11 @@ export function GraficoDona({
           <li key={f.nombre} className="grid grid-cols-[minmax(0,7.5rem)_1fr_auto] sm:grid-cols-[minmax(0,11rem)_1fr_auto] items-center gap-x-3 text-sm">
             {/* El nombre entero, en dos renglones si hace falta: en el
                 anillo se cortaba en "Bebi…" y habia que adivinar. */}
-            <span className="text-neutral-700 leading-tight line-clamp-2" title={f.nombre}>
-              {f.nombre}
+            <span className="min-w-0">
+              <span className="block text-neutral-700 leading-tight line-clamp-2" title={f.nombre}>
+                {f.nombre}
+              </span>
+              {f.detalle && <span className="block text-[11px] text-neutral-400 truncate">{f.detalle}</span>}
             </span>
             <div className="h-4 rounded-md bg-neutral-100 overflow-hidden">
               <div
@@ -497,7 +500,16 @@ export function GraficoDona({
 
 // ── Barras ──────────────────────────────────────────────────────────────────
 
-export type BarraDato = { etiqueta: string; valor: number; detalle?: string; color?: string }
+export type BarraDato = {
+  etiqueta: string
+  valor: number
+  detalle?: string
+  color?: string
+  /** Segunda cifra, bajo la principal: "3 ped." debajo de "$1,20". Existe
+      porque el dato de apoyo vivia solo en el globo del cursor, y en la
+      tablet del mostrador no hay cursor (Leider, 30-sep). */
+  secundario?: string
+}
 
 /**
  * Barras verticales para pocas categorias con orden propio: los siete dias de
@@ -509,12 +521,17 @@ export function GraficoBarras({
   formato,
   alto = 170,
   resaltar,
+  estirar = false,
 }: {
   datos: BarraDato[]
   formato: (n: number) => string
   alto?: number
   /** Que barra va en cobre (la mayor, la de hoy). Las demas, grafito. */
   resaltar?: (d: BarraDato, i: number) => boolean
+  /** En vez del alto fijo, ocupa el que le deje su contenedor. Con alto fijo
+      dos graficos apilados no llegan al pie de la tarjeta de al lado y la
+      fila queda descuadrada. */
+  estirar?: boolean
 }) {
   const { enHover, Globo } = useGlobo()
   if (datos.length === 0) {
@@ -524,7 +541,12 @@ export function GraficoBarras({
   // Con muchas barras no caben todas las etiquetas: una de cada tantas.
   const salto = Math.ceil(datos.length / 16)
   return (
-    <div className="flex items-end gap-1.5 overflow-x-auto overflow-y-hidden" style={{ height: alto }}>
+    <div
+      className={`flex items-end gap-1.5 overflow-x-auto overflow-y-hidden ${
+        estirar ? 'flex-1 min-h-[120px]' : ''
+      }`}
+      style={estirar ? undefined : { height: alto }}
+    >
       <Globo />
       {datos.map((d, i) => {
         const pct = max > 0 ? (d.valor / max) * 100 : 0
@@ -541,8 +563,13 @@ export function GraficoBarras({
               </>,
             )}
           >
-            <span className="text-[10px] text-neutral-500 tabular-nums whitespace-nowrap">
-              {d.valor > 0 && datos.length <= 12 ? formato(d.valor) : ''}
+            <span className="text-center leading-tight whitespace-nowrap">
+              <span className="block text-xs text-neutral-600 tabular-nums">
+                {d.valor > 0 && datos.length <= 12 ? formato(d.valor) : ''}
+              </span>
+              {d.secundario && datos.length <= 12 && (
+                <span className="block text-xs text-neutral-400 tabular-nums">{d.secundario}</span>
+              )}
             </span>
             <div
               // EL HOVER NO PINTA DE COBRE. El cobre significa "esta es la
@@ -561,7 +588,7 @@ export function GraficoBarras({
                 background: d.color,
               }}
             />
-            <span className="text-[10px] text-neutral-500 whitespace-nowrap h-3">
+            <span className="text-xs text-neutral-500 whitespace-nowrap h-4">
               {i % salto === 0 ? d.etiqueta : ''}
             </span>
           </div>
