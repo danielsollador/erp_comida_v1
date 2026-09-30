@@ -1,4 +1,5 @@
 import type { Explicacion } from '../components/Ayuda'
+import { otroNombre } from './palabras'
 
 /**
  * QUÉ SIGNIFICA CADA NÚMERO DEL ERP.
@@ -853,5 +854,10 @@ export const GLOSARIO: Record<string, Explicacion> = {
 
 /** La explicación de una columna o una cifra. `undefined` si no la hay. */
 export function explicar(clave: string | undefined): Explicacion | undefined {
-  return clave ? GLOSARIO[clave] : undefined
+  if (!clave) return undefined
+  const base = GLOSARIO[clave]
+  if (!base) return undefined
+  // Si el dato tiene dos nombres, la ayuda dice el que NO se esta viendo.
+  const alias = otroNombre(clave)
+  return alias ? { ...base, alias } : base
 }

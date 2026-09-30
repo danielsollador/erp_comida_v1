@@ -9,6 +9,7 @@ import { useRango, nombreRango } from '../lib/fechas'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
+import { nombre } from '../lib/palabras'
 import { Aviso, Boton, Campo, Cifra, FiltroDesplegable, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
@@ -503,13 +504,13 @@ export default function Inventario() {
             detalle={`${activos.filter((i) => i.tipo !== 'reventa').length} materia prima · ${activos.filter((i) => i.tipo === 'reventa').length} reventa`}
           />
           <Cifra
-            titulo="Hay que comprar"
+            titulo={nombre('kpi.bajo_minimo')}
             ayuda="kpi.bajo_minimo"
             valor={String(bajoMinimo.length)}
             detalle={bajoMinimo.length ? 'Toca para verlos' : 'Todo por encima del mínimo'}
             tono={bajoMinimo.length ? 'alerta' : 'bien'}
           />
-          <Cifra titulo="Plata en mercancía" ayuda="kpi.valor_deposito" valor={dinero(valorDeposito)} detalle="Stock × costo promedio, sin IVA" />
+          <Cifra titulo={nombre('kpi.valor_deposito')} ayuda="kpi.valor_deposito" valor={dinero(valorDeposito)} detalle="Stock × costo promedio, sin IVA" />
           <Cifra
             titulo={`Pérdidas · ${nombreRango(rango).toLowerCase()}`}
             ayuda="kpi.perdidas_30"
@@ -591,13 +592,13 @@ export default function Inventario() {
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="nombre">Mercancía</Th>
-                <Th clave="stock" alinear="derecha">Hay</Th>
+                <Th clave="stock" alinear="derecha">{nombre('inventario.stock')}</Th>
                 <Th clave="minimo" alinear="derecha">Mínimo</Th>
-                <Th clave="costo" alinear="derecha">Costo promedio</Th>
+                <Th clave="costo" alinear="derecha">{nombre('inventario.costo')}</Th>
                 {/* El promedio ponderado no dice cuanto cuesta comprar mas: esa
                     es la cuenta que importa para poner precios. */}
-                <Th clave="reponer" alinear="derecha">Última compra</Th>
-                <Th clave="rendimiento" alinear="derecha">Aprovechable</Th>
+                <Th clave="reponer" alinear="derecha">{nombre('inventario.reponer')}</Th>
+                <Th clave="rendimiento" alinear="derecha">{nombre('inventario.rendimiento')}</Th>
                 <Th clave="real" alinear="derecha">Costo real</Th>
                 <Th ayuda="inventario.acciones" alinear="derecha">Acciones</Th>
               </tr>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { nombre } from '../../../lib/palabras'
 import { Ayuda } from '../../../components/Ayuda'
 import {
   BarrasGanancia,
@@ -301,7 +302,7 @@ export default function Ventas({
                   <thead className="text-neutral-500 text-xs uppercase">
                     <tr>
                       <Th clave="producto" className="py-2 px-0">Producto</Th>
-                      <Th clave="uds" alinear="derecha" className="py-2 px-0">Vendidos</Th>
+                      <Th clave="uds" alinear="derecha" className="py-2 px-0">{nombre('productos.uds')}</Th>
                       <Th clave="ingresos" alinear="derecha" className="py-2 px-0">Ingresos</Th>
                       <Th clave="ganancia" alinear="derecha" className="py-2 px-0">Ganancia</Th>
                       <Th clave="margen" alinear="derecha" className="py-2 px-0">Margen</Th>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { nombre } from '../lib/palabras'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
@@ -233,7 +234,7 @@ function Resumen({
           delta={ant && <Variacion pct={ant.cambio_ventas_pct} texto={vs} />}
         />
         <Kpi
-          titulo="Te quedó"
+          titulo={nombre('kpi.ganancia_neta')}
           ayuda="kpi.ganancia_neta"
           valor={dinero(datos.ganancia_neta)}
           tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
@@ -247,7 +248,7 @@ function Resumen({
           delta={ant && <Variacion pct={ant.cambio_pedidos_pct} texto={vs} />}
         />
         <Kpi
-          titulo="Gasta cada cliente"
+          titulo={nombre('kpi.ticket_promedio')}
           ayuda="kpi.ticket_promedio"
           valor={dinero(datos.ticket_promedio)}
           delta={ant && <Variacion pct={ant.cambio_ticket_pct} texto={vs} />}

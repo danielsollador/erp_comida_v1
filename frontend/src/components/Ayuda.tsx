@@ -31,6 +31,8 @@ export type Explicacion = {
   calculo?: string
   /** Un caso concreto, con numeros, o para que decision sirve. */
   ejemplo?: string
+  /** El otro nombre del dato: el tecnico en modo sencillo, y al reves (lib/palabras). */
+  alias?: string
 }
 
 const RETRASO_MS = 140
@@ -170,6 +172,7 @@ function Panel({
     >
       <p className="font-display font-semibold text-sm leading-tight">{titulo}</p>
       <p className="text-[13px] leading-relaxed text-neutral-700 mt-1.5">{explica.que}</p>
+      {explica.alias && <p className="text-[12px] leading-relaxed text-neutral-500 mt-1 italic">{explica.alias}</p>}
       {explica.origen && <Parte rotulo="De dónde sale">{explica.origen}</Parte>}
       {explica.calculo && <Parte rotulo="Cómo se calcula">{explica.calculo}</Parte>}
       {explica.ejemplo && <Parte rotulo="Para qué sirve">{explica.ejemplo}</Parte>}

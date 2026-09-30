@@ -15,9 +15,9 @@ import Icono from './Icono'
  */
 const CLAVE_OCULTO = 'vp-arranque-oculto'
 
-type Paso = { id: string; titulo: string; detalle: string; a: string; hecho: boolean }
+export type Paso = { id: string; titulo: string; detalle: string; a: string; hecho: boolean }
 
-function pasos(a: ArranqueLocal): Paso[] {
+export function pasos(a: ArranqueLocal): Paso[] {
   return [
     {
       id: 'productos',

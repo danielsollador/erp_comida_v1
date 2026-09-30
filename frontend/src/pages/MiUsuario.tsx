@@ -14,6 +14,7 @@ import {
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
 import { api } from '../lib/api'
 import { useTema } from '../lib/tema'
+import { usePalabras } from '../lib/palabras'
 
 /**
  * Mi usuario: quien soy y como quiero ver el sistema.
@@ -356,6 +357,7 @@ function CambiarClave() {
  */
 export function Apariencia() {
   const { tema, cambiar } = useTema()
+  const palabras = usePalabras()
   const [teclado, setTeclado] = useState<PreferenciasTeclado>(leerPreferenciasTeclado)
   const tactil = usaTecladoPropio()
   const telefono = esTelefono()
@@ -397,6 +399,33 @@ export function Apariencia() {
             >
               <span className="w-8 h-1.5 rounded-full" style={{ background: '#525252' }} />
             </div>
+          </Opcion>
+        </div>
+      </Tarjeta>
+
+      {/* Las mismas cifras con dos nombres: el del negocio o el de
+          contabilidad. La ayuda al pasar el cursor siempre dice el otro, asi
+          que no se pierde nada al elegir (Leider, 30-sep). */}
+      <Tarjeta
+        titulo="Palabras"
+        ayuda="Cómo se llaman los números en las tablas y las cifras. Al pasar el cursor por un título, la ayuda siempre dice el otro nombre."
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <Opcion
+            marcada={palabras.modo === 'sencillo'}
+            titulo="Sencillas"
+            detalle="Como lo diría el dueño. La ayuda dice cómo se le suele llamar en contabilidad."
+            onElegir={() => palabras.cambiar('sencillo')}
+          >
+            <Muestra palabras={['Te quedó', 'Hay', 'Gasta en promedio cada cliente']} />
+          </Opcion>
+          <Opcion
+            marcada={palabras.modo === 'tecnico'}
+            titulo="Técnicas"
+            detalle="Las de siempre, para quien viene de otro sistema. La ayuda las explica en palabras simples."
+            onElegir={() => palabras.cambiar('tecnico')}
+          >
+            <Muestra palabras={['Ganancia neta', 'Stock', 'Ticket promedio']} />
           </Opcion>
         </div>
       </Tarjeta>
@@ -496,6 +525,19 @@ export function Apariencia() {
         </>
       )}
     </>
+  )
+}
+
+/** Tres palabras de muestra, como pastillas: se ve de un vistazo que cambia. */
+function Muestra({ palabras }: { palabras: string[] }) {
+  return (
+    <div className="h-12 rounded-lg border border-neutral-200 bg-white flex flex-wrap items-center gap-1 px-2 overflow-hidden">
+      {palabras.map((p) => (
+        <span key={p} className="text-[11px] font-medium text-neutral-700 bg-neutral-100 rounded-full px-2 py-0.5 whitespace-nowrap">
+          {p}
+        </span>
+      ))}
+    </div>
   )
 }
 

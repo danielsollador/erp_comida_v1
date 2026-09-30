@@ -6,6 +6,7 @@ import { FiltroFechas } from '../components/Fechas'
 import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
+import { nombre } from '../lib/palabras'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { Boton, Campo, Modal, Pagina, Pastilla, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
@@ -591,7 +592,7 @@ export default function Compras() {
                 <Th clave="factura">Factura</Th>
                 <Th clave="proveedor">Proveedor</Th>
                 <Th ayuda="compras.detalle">Detalle</Th>
-                <Th clave="base" alinear="derecha">Sin IVA</Th>
+                <Th clave="base" alinear="derecha">{nombre('compras.base')}</Th>
                 <Th clave="iva" alinear="derecha">IVA</Th>
                 <Th clave="total" alinear="derecha">Total</Th>
                 <Th clave="estado">Estado</Th>

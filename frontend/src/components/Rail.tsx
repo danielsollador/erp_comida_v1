@@ -23,32 +23,56 @@ import Icono, { type NombreIcono } from './Icono'
  * Compras, Inventario y Contabilidad; piensa en vender, en su negocio y en
  * lo que el contador le pide una vez al mes:
  *
- *   vender     lo que se toca cien veces al dia: mostrador, cocina, como voy
- *   negocio    lo que se arma y se revisa: menu, mercancia, compras, ventas, caja
- *   contador   lo que se arma SOLO con lo de arriba y solo se abre cuando el
- *              contador lo pide: contabilidad, impuestos, tasa. No va en la
- *              barra: vive detras de una sola puerta ("Para el contador").
+ *   vender     lo que se toca cien veces al dia: mostrador y cocina
+ *   negocio    lo que se arma: menu, mercancia, compras
+ *   numeros    lo que se revisa: reportes, ventas, cierre de caja
+ *   contador   lo que se arma SOLO con lo de arriba y se abre cuando el
+ *              contador lo pide: contabilidad, impuestos, tasa. Esta, pero
+ *              atenuado: secundario, no escondido (Leider, 30-sep).
+ *
+ * Cada modulo conserva su nombre --"Ventas" sigue siendo Ventas-- y lo que
+ * explica la pregunta es su descripcion en la portada.
  */
-export type Grupo = 'vender' | 'negocio' | 'contador'
+export type Grupo = 'vender' | 'negocio' | 'numeros' | 'contador'
 
 export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcono; titulo: string; grupo: Grupo }[] = [
   { to: '/pos', modulo: 'pos', icono: 'pos', titulo: 'Punto de venta', grupo: 'vender' },
   { to: '/cocina', modulo: 'cocina', icono: 'cocina', titulo: 'Cocina', grupo: 'vender' },
-  { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'vender' },
   // Dos permisos detras de un solo icono: quien tenga cualquiera de los dos
   // entra, aunque dentro solo vea su propia pestaña.
   { to: '/menu', modulo: ['menu', 'recetas'], icono: 'menu', titulo: 'Menú', grupo: 'negocio' },
   { to: '/inventario', modulo: 'inventario', icono: 'inventario', titulo: 'Inventario', grupo: 'negocio' },
   { to: '/compras', modulo: 'compras', icono: 'compras', titulo: 'Compras', grupo: 'negocio' },
-  { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'negocio' },
-  { to: '/caja', modulo: 'caja', icono: 'caja', titulo: 'Cierre de caja', grupo: 'negocio' },
+  { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'numeros' },
+  { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'numeros' },
+  { to: '/caja', modulo: 'caja', icono: 'caja', titulo: 'Cierre de caja', grupo: 'numeros' },
   { to: '/contabilidad', modulo: 'contabilidad', icono: 'contabilidad', titulo: 'Contabilidad', grupo: 'contador' },
   { to: '/impuestos', modulo: 'impuestos', icono: 'impuestos', titulo: 'Impuestos', grupo: 'contador' },
   { to: '/tasa', modulo: 'tasa', icono: 'tasa', titulo: 'Tasa de cambio', grupo: 'contador' },
 ]
 
-/** La puerta unica a lo del contador. En la barra es un solo icono. */
+/** La pagina que junta lo del contador y explica que se arma solo. */
 export const CONTADOR = { to: '/contador', icono: 'contabilidad' as NombreIcono, titulo: 'Para el contador' }
+
+/**
+ * Lo que responde cada modulo, en la pregunta del dueño. El modulo conserva
+ * su nombre (hay que poder decir "el modulo de ventas"); la pregunta va
+ * debajo y es LITERAL: dice lo que hay, no una lectura.
+ */
+export const PREGUNTA: Record<string, string> = {
+  '/pos': 'Tomar la comanda y cobrar',
+  '/cocina': 'Las comandas que llegan',
+  '/menu': '¿Qué vendo, a cuánto y cuánto me deja?',
+  '/inventario': '¿Qué tengo y qué me falta?',
+  '/compras': '¿Qué entró y cuánto costó?',
+  '/reportes': '¿Cómo va el negocio?',
+  '/ventas': '¿Qué se vendió y cómo se pagó?',
+  '/caja': '¿Cuadra la gaveta?',
+  '/contabilidad': 'Libros y balances',
+  '/impuestos': 'IVA y libros fiscales',
+  '/tasa': 'Bolívares por dólar de cada día',
+  '/configuracion': 'Mi cuenta, usuarios y pago móvil',
+}
 
 /** Si este usuario entra a ese modulo. Lo dice el servidor. */
 export function entraA(puede: { modulos?: string[] }, modulo: string): boolean {
@@ -88,15 +112,12 @@ export default function Rail() {
 
   const vender = modulosDe(estado.puede, 'vender')
   const negocio = modulosDe(estado.puede, 'negocio')
+  const numeros = modulosDe(estado.puede, 'numeros')
   const contador = modulosDe(estado.puede, 'contador')
   const inicial = (estado.nombre_visible || estado.usuario || '?').slice(0, 1).toUpperCase()
 
   const item = (m: { to: string; icono: NombreIcono; titulo: string }, className = '') => {
-    // La puerta del contador se enciende con cualquiera de sus tres pantallas.
-    const activo =
-      pathname === m.to ||
-      pathname.startsWith(m.to + '/') ||
-      (m.to === CONTADOR.to && contador.some((c) => pathname.startsWith(c.to)))
+    const activo = pathname === m.to || pathname.startsWith(m.to + '/')
     return (
       <LinkVigilado key={m.to} to={m.to} className={`vp-rail-item ${className}`} aria-current={activo ? 'page' : undefined} aria-label={m.titulo}>
         <Icono nombre={m.icono} size={20} />
@@ -115,11 +136,14 @@ export default function Rail() {
       {vender.map((m) => item(m))}
       {negocio.length > 0 && <div className="w-8 h-px bg-neutral-200 my-2" />}
       {negocio.map((m) => item(m))}
+      {numeros.length > 0 && <div className="w-8 h-px bg-neutral-200 my-2" />}
+      {numeros.map((m) => item(m))}
+      {/* Lo del contador, atenuado: esta a la vista, pero no compite con lo
+          de todos los dias. */}
+      {contador.length > 0 && <div className="w-8 h-px bg-neutral-200 my-2" />}
+      {contador.map((m) => item(m, 'opacity-55 hover:opacity-100 aria-[current=page]:opacity-100'))}
 
       <div className="mt-auto flex flex-col items-center gap-1">
-        {/* Lo del contador, atenuado: esta, pero no compite con lo de todos
-            los dias. */}
-        {contador.length > 0 && item(CONTADOR, 'opacity-60 hover:opacity-100')}
         <LinkVigilado to="/configuracion?s=cuenta" className="vp-rail-item" aria-label="Mi cuenta">
           <span className="w-8 h-8 rounded-full bg-neutral-900 text-white grid place-items-center text-xs font-bold font-display">
             {inicial}

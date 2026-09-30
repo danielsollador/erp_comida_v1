@@ -4,7 +4,7 @@ import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
-import { modulosDe } from '../components/Rail'
+import { CONTADOR, PREGUNTA, modulosDe } from '../components/Rail'
 import Arranque from '../components/Arranque'
 import Avisos from '../components/Avisos'
 import UsuarioMenu from '../components/UsuarioMenu'
@@ -16,26 +16,6 @@ import { MonedaToggle, useMoneda } from '../lib/moneda'
 import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import { TemaToggle } from '../lib/tema'
 import type { ReporteResumen } from '../lib/types'
-
-// Lo que se toca todos los dias va grande y arriba; la administracion, que se
-// mira una vez a la semana o al mes, va abajo y mas chica. Un menu donde todo
-// pesa igual obliga a leerlo entero cada vez.
-const DESCRIPCION: Record<string, string> = {
-  '/pos': 'Armar la comanda y cobrar',
-  '/cocina': 'Comandas que llegan arriba',
-  '/ventas': 'Cada venta y qué pasó con ella',
-  '/reportes': 'Cómo va el negocio',
-  // Las de administracion solo se ven en pantallas altas (tablet en
-  // vertical), donde las fichas crecen y una sola palabra las deja vacias.
-  '/menu': 'Productos, precios y recetas',
-  '/inventario': 'Mercancía, stock y costos',
-  '/compras': 'Lo que entra y lo que cuesta',
-  '/caja': 'Cuadrar el día',
-  '/tasa': 'Bolívares por dólar de hoy',
-  '/contabilidad': 'Libro, gastos y resultados',
-  '/impuestos': 'IVA y libros fiscales',
-  '/configuracion': 'Mi cuenta, usuarios y pago móvil',
-}
 
 function saludo(): string {
   const h = new Date().getHours()
@@ -73,13 +53,15 @@ export default function Inicio() {
   const [porCobrar, setPorCobrar] = useState(0)
   const { fmt } = useMoneda()
 
-  // Tres puertas (ver Rail.tsx): vender, mi negocio y, aparte y chiquito, lo
-  // del contador. Configuracion cierra la bandeja del negocio.
+  // Cuatro puertas (ver Rail.tsx): hoy (el panel de arriba), vender, mi
+  // negocio y numeros; y aparte, atenuado, lo del contador. Cada modulo
+  // conserva su nombre y debajo lleva la pregunta que responde.
   const operacion = modulosDe(estado.puede, 'vender')
-  const administracion: { to: string; icono: NombreIcono; titulo: string }[] = [
+  const negocio: { to: string; icono: NombreIcono; titulo: string }[] = [
     ...modulosDe(estado.puede, 'negocio'),
     { to: '/configuracion', icono: 'configuracion', titulo: 'Configuración' },
   ]
+  const numeros = modulosDe(estado.puede, 'numeros')
   const contador = modulosDe(estado.puede, 'contador')
 
   useEffect(() => {
@@ -119,14 +101,14 @@ export default function Inicio() {
   const fecha = new Date().toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' })
   const nombre = estado.nombre || estado.nombre_visible || estado.usuario
 
-  // El mosaico de administracion elige sus columnas segun cuantos modulos ve
-  // este rol, para no dejar celdas vacias (ver `columnasSinHuecos`).
-  const columnas = {
-    '--cols-sm': columnasSinHuecos(administracion.length, [3, 2]),
-    '--cols-lg': columnasSinHuecos(administracion.length, [5, 4, 3, 2]),
-    // En vertical, pocas y anchas: la ficha va en fila y le cabe la descripcion.
-    '--cols-alto': columnasSinHuecos(administracion.length, [2, 3]),
-  } as CSSProperties
+  // Cada bandeja elige sus columnas segun cuantos modulos ve este rol, para
+  // no dejar celdas vacias (ver `columnasSinHuecos`).
+  const columnas = (n: number) =>
+    ({
+      '--cols-sm': columnasSinHuecos(n, [3, 2]),
+      '--cols-lg': columnasSinHuecos(n, [4, 3, 2]),
+      '--cols-alto': columnasSinHuecos(n, [2, 3]),
+    }) as CSSProperties
 
   return (
     // En la TABLET la pantalla se llena, en vertical y en horizontal: es una
@@ -184,11 +166,12 @@ export default function Inicio() {
         {/* Las misiones de arranque: solo mientras el local se arma. */}
         {estado.puede.administrar && <Arranque />}
 
-        {/* ── El dia ──────────────────────────────────────────────────────
+        {/* ── Hoy ─────────────────────────────────────────────────────────
             Un panel ancho con la unica cifra que se pregunta al entrar, y a
             su lado las dos cosas que ESPERAN algo. No es un mosaico de
             cuatro cifras iguales: dos son resultados y dos son trabajo
             pendiente, y mirarlas no cuesta lo mismo. */}
+        <p className="vp-etiqueta -mb-1 lg:-mb-2">Hoy</p>
         <div className="grid grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-3 lg:gap-4">
           <section className="col-span-2 lg:col-span-1 vp-losa relative overflow-hidden p-5 sm:p-7 lg:p-8 bajo:p-4 pc:p-7 flex flex-col justify-center">
             {/* Sin el permiso del rol, un guion y nada mas: ni "no tienes
@@ -240,71 +223,48 @@ export default function Inicio() {
         {/* Lo que el sistema avisa solo. Solo a quien ve las cifras. */}
         {estado.puede.ve_kpis && <Avisos />}
 
-        {/* Operacion: lo que se toca cien veces al dia. Las fichas miden una
+        {/* ── Vender: lo que se toca cien veces al dia. Las fichas miden una
             fraccion fija de la pantalla (21 % del alto, con tope), asi que en
             una tablet en vertical son grandes sin quedarse vacias y en una
-            apaisada dejan sitio al mosaico de abajo. */}
-        <div
-          className={`grid grid-cols-1 gap-3 lg:gap-4 ${operacion.length > 1 ? 'sm:grid-cols-3' : ''}`}
-        >
-          {operacion.map((m, i) => (
-            <Tarjeta
-              key={m.to}
-              to={m.to}
-              icono={m.icono}
-              titulo={m.titulo}
-              desc={DESCRIPCION[m.to] ?? ''}
-              principal={i === 0 && estado.puede.operar}
-            />
-          ))}
-        </div>
-
-        {/* Administracion: UNA bandeja, no nueve cajas. Se usa una vez a la
-            semana; agrupada pesa lo que tiene que pesar y deja el primer
-            golpe de vista para lo de arriba. La bandeja se queda con todo el
-            alto que sobre y lo reparte entre sus filas. */}
-        {administracion.length > 0 && (
-          <div className="flex flex-col min-h-0">
-            <p className="vp-etiqueta mb-2.5">Mi negocio</p>
-            <div className="vp-lista" style={columnas}>
-              {administracion.map((m) => (
-                <Link
+            apaisada dejan sitio a las bandejas de abajo. */}
+        {operacion.length > 0 && (
+          <div>
+            <p className="vp-etiqueta mb-2.5">Vender</p>
+            <div className={`grid grid-cols-1 gap-3 lg:gap-4 ${operacion.length > 2 ? 'sm:grid-cols-3' : operacion.length === 2 ? 'sm:grid-cols-2' : ''}`}>
+              {operacion.map((m, i) => (
+                <Tarjeta
                   key={m.to}
                   to={m.to}
-                  className="group flex items-center gap-3 px-4 py-3 lg:px-5 lg:py-3.5 bajo:px-4 bajo:py-2.5 min-h-[3.25rem] alto:min-h-0 transition-colors duration-200"
-                >
-                  <span className="shrink-0 text-neutral-400 group-hover:text-acento-600 transition-colors duration-200">
-                    <Icono nombre={m.icono} size={19} className="lg:w-5 lg:h-5" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block font-display font-semibold leading-tight text-[15px] lg:text-base">
-                      {m.titulo}
-                    </span>
-                    <span className="hidden alto:block pc:hidden text-sm text-neutral-500 mt-0.5 leading-snug">
-                      {DESCRIPCION[m.to] ?? ''}
-                    </span>
-                  </span>
-                </Link>
+                  icono={m.icono}
+                  titulo={m.titulo}
+                  desc={PREGUNTA[m.to] ?? ''}
+                  principal={i === 0 && estado.puede.operar}
+                />
               ))}
             </div>
-            {/* Lo del contador se arma solo: una linea, no tres fichas. */}
-            {contador.length > 0 && (
-              <p className="mt-3 text-sm text-neutral-500 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                <Link to="/contador" className="font-medium text-neutral-600 hover:text-neutral-900">
-                  Para el contador
-                </Link>
-                <span aria-hidden className="text-neutral-300">·</span>
-                {contador.map((m, i) => (
-                  <span key={m.to} className="contents">
-                    {i > 0 && <span aria-hidden className="text-neutral-300">·</span>}
-                    <Link to={m.to} className="hover:text-neutral-900 hover:underline">
-                      {m.titulo}
-                    </Link>
-                  </span>
-                ))}
-              </p>
-            )}
           </div>
+        )}
+
+        {/* ── Mi negocio y Numeros: dos bandejas, no seis cajas. Se usan una
+            vez al dia o a la semana; agrupadas pesan lo que tienen que pesar
+            y dejan el primer golpe de vista para lo de arriba. */}
+        <div className="grid gap-3 lg:gap-4 lg:grid-cols-2">
+          <Bandeja titulo="Mi negocio" modulos={negocio} estilo={columnas(negocio.length)} />
+          <Bandeja titulo="Números" modulos={numeros} estilo={columnas(numeros.length)} />
+        </div>
+
+        {/* ── Para el contador: se ve, atenuado. Es secundario, no un
+            secreto (Leider, 30-sep). El titulo lleva a la pagina que explica
+            que todo esto se arma solo. */}
+        {contador.length > 0 && (
+          <Bandeja
+            titulo="Para el contador"
+            nota="se arma solo con lo de arriba"
+            a={CONTADOR.to}
+            modulos={contador}
+            estilo={columnas(contador.length)}
+            atenuada
+          />
         )}
         </div>
       </div>
@@ -426,5 +386,63 @@ function Espera({
     </Link>
   ) : (
     (cuerpo as ReactNode)
+  )
+}
+
+/**
+ * Una bandeja de modulos: UNA lamina con filas al ras, cada una con el
+ * nombre del modulo y, debajo, la pregunta que responde. Atenuada para lo
+ * del contador: esta a la vista, pero un escalon mas abajo.
+ */
+function Bandeja({
+  titulo,
+  nota,
+  a,
+  modulos,
+  estilo,
+  atenuada = false,
+}: {
+  titulo: string
+  nota?: string
+  /** Si el titulo lleva a algun lado. */
+  a?: string
+  modulos: { to: string; icono: NombreIcono; titulo: string }[]
+  estilo: CSSProperties
+  atenuada?: boolean
+}) {
+  if (modulos.length === 0) return null
+  const cabecera = (
+    <>
+      {titulo}
+      {nota && <span className="normal-case tracking-normal font-medium text-neutral-400"> · {nota}</span>}
+    </>
+  )
+  return (
+    <div className={`flex flex-col min-h-0 ${atenuada ? 'opacity-80 hover:opacity-100 transition-opacity' : ''}`}>
+      {a ? (
+        <Link to={a} className="vp-etiqueta mb-2.5 hover:text-neutral-700">
+          {cabecera}
+        </Link>
+      ) : (
+        <p className="vp-etiqueta mb-2.5">{cabecera}</p>
+      )}
+      <div className="vp-lista" style={estilo}>
+        {modulos.map((m) => (
+          <Link
+            key={m.to}
+            to={m.to}
+            className="group flex items-center gap-3 px-4 py-3 lg:px-5 lg:py-3.5 bajo:px-4 bajo:py-2.5 min-h-[3.25rem] transition-colors duration-200"
+          >
+            <span className="shrink-0 text-neutral-400 group-hover:text-acento-600 transition-colors duration-200">
+              <Icono nombre={m.icono} size={19} className="lg:w-5 lg:h-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block font-display font-semibold leading-tight text-[15px] lg:text-base">{m.titulo}</span>
+              <span className="block text-[13px] text-neutral-500 mt-0.5 leading-snug">{PREGUNTA[m.to] ?? ''}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
   )
 }
