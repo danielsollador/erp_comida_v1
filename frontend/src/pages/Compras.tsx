@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertasAlGuardar, BandejaAlertas } from '../components/AlertasPrecio'
 import CampoSugerido from '../components/CampoSugerido'
 import {
   BotonFoto,
@@ -20,6 +21,7 @@ import { useMoneda } from '../lib/moneda'
 import { useRevision } from '../lib/revisionFactura'
 import { necesitaReferencia, pedirReferencia } from '../lib/pagos'
 import type {
+  AlertaPrecio,
   ConfiguracionFiscal,
   FacturaCompra,
   Ingrediente,
@@ -66,11 +68,24 @@ type Linea = {
 const SECCIONES = [
   { id: 'facturas', texto: 'Facturas' },
   { id: 'nueva', texto: 'Cargar factura' },
+  { id: 'alertas', texto: 'Alertas' },
   { id: 'proveedores', texto: 'Proveedores' },
 ]
 
 export default function Compras() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  // Las alertas de precio sin ver, en el nombre de la pestaña: es lo que hace
+  // que el dueño se entere aunque la factura la haya cargado otro.
+  const [alertasPendientes, setAlertasPendientes] = useState(0)
+  const [alertasAlGuardar, setAlertasAlGuardar] = useState<AlertaPrecio[]>([])
+  const secciones = useMemo(
+    () =>
+      SECCIONES.map((s) =>
+        s.id === 'alertas' && alertasPendientes > 0 ? { ...s, texto: `Alertas (${alertasPendientes})` } : s,
+      ),
+    [alertasPendientes],
+  )
+  const alCambiarPendientes = useCallback((n: number) => setAlertasPendientes(n), [])
   // Tres meses: una factura a credito se paga a 30 o 60 dias, y hay que verla.
   const [rango, setRango] = useRango('90d')
   const [facturas, setFacturas] = useState<FacturaCompra[]>([])
@@ -170,6 +185,10 @@ export default function Compras() {
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
     api.configFiscal().then(setFiscal)
     api.listarProveedores().then(setProveedores)
+    api
+      .listarAlertasPrecio(true)
+      .then((l) => setAlertasPendientes(l.length))
+      .catch(() => undefined)
   }
 
   // Elegir un proveedor del directorio completa nombre y RIF solos, para no
@@ -499,6 +518,17 @@ export default function Compras() {
       }
     }
 
+    // Lo que llego mas caro. La factura ya entro: si esto falla, no se dice
+    // nada -- no es un error de la carga, y la bandeja se puede revisar igual.
+    async function avisarSubidas(facturaId: number) {
+      try {
+        const alertas = await api.alertasDeFactura(facturaId)
+        if (alertas.length > 0) setAlertasAlGuardar(alertas)
+      } catch {
+        // sin alertas que mostrar
+      }
+    }
+
     // Si no se puede recordar, la factura igual entro: solo se avisa.
     async function recordar(): Promise<string> {
       if (paraRecordar.length === 0) return ''
@@ -548,6 +578,7 @@ export default function Compras() {
             (await adjuntarFoto(guardada.id)) +
             (await recordar()),
         )
+        await avisarSubidas(guardada.id)
       } else {
         const baseNum = Number(base)
         if (!Number.isFinite(baseNum) || baseNum <= 0) {
@@ -721,7 +752,7 @@ export default function Compras() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Compras" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion === 'facturas' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
+      <NavBar titulo="Compras" secciones={secciones} seccion={seccion} alCambiarSeccion={irA} filtro={seccion === 'facturas' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina>
         {seccion === 'facturas' && (
           <>
@@ -1205,6 +1236,12 @@ export default function Compras() {
           </button>
         </div>
           </>
+        )}
+
+        {seccion === 'alertas' && <BandejaAlertas onPendientes={alCambiarPendientes} />}
+
+        {alertasAlGuardar.length > 0 && (
+          <AlertasAlGuardar alertas={alertasAlGuardar} onCerrar={() => setAlertasAlGuardar([])} />
         )}
 
         {seccion === 'proveedores' && (

@@ -1140,6 +1140,42 @@ export type Equivalencia = {
   actualizado: string
 }
 
+/** Un plato que queda en problema con el precio nuevo de su mercancía. */
+export type ProductoAfectado = {
+  nombre: string
+  precio: number
+  margen_antes_pct: number | null
+  margen_despues_pct: number | null
+  precio_sugerido: number | null
+  a_perdida: boolean
+}
+
+/** Algo que llegó más caro en una factura. */
+export type AlertaPrecio = {
+  id: number
+  fecha: string
+  factura_id: number
+  numero_factura: string
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  proveedor_nombre: string
+  costo_anterior: number
+  costo_nuevo: number
+  variacion_pct: number
+  /** "proveedor": contra lo que ese proveedor cobraba; "compras": proveedor nuevo. */
+  base: 'proveedor' | 'compras'
+  /** "unidad": un salto que parece error de unidad, no de precio. */
+  tipo: 'subida' | 'unidad'
+  productos: ProductoAfectado[]
+  alternativa_proveedor: string
+  alternativa_costo: number | null
+  alternativa_fecha: string | null
+  visto: boolean
+  visto_por: string
+  visto_en: string | null
+}
+
 export type RevisionFactura = {
   duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
   precios: AvisoPrecio[]

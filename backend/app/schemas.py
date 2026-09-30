@@ -2040,6 +2040,38 @@ class Equivalencia(BaseModel):
     actualizado: datetime.datetime
 
 
+class ProductoAfectado(BaseModel):
+    nombre: str
+    precio: float
+    margen_antes_pct: Optional[float] = None
+    margen_despues_pct: Optional[float] = None
+    precio_sugerido: Optional[float] = None
+    a_perdida: bool = False
+
+
+class AlertaPrecio(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    factura_id: int
+    numero_factura: str
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    proveedor_nombre: str
+    costo_anterior: float
+    costo_nuevo: float
+    variacion_pct: float
+    base: str  # "proveedor" | "compras"
+    tipo: str  # "subida" | "unidad"
+    productos: List[ProductoAfectado] = []
+    alternativa_proveedor: str = ""
+    alternativa_costo: Optional[float] = None
+    alternativa_fecha: Optional[datetime.datetime] = None
+    visto: bool
+    visto_por: str = ""
+    visto_en: Optional[datetime.datetime] = None
+
+
 class PagoFacturaRequest(BaseModel):
     forma_pago: str = "Efectivo"  # Efectivo|Banco - con que se salda la deuda
     # Obligatoria si no se paga en efectivo, igual que al cobrar una venta.

@@ -33,6 +33,7 @@ import type {
   EstadoAcceso,
   EstadoResultadosContable,
   FacturaCompra,
+  AlertaPrecio,
   Equivalencia,
   LecturaFactura,
   RevisionFactura,
@@ -888,6 +889,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ proveedor_rif, proveedor_nombre, renglones }),
     }),
+  // Alertas de precio: se piden despues de guardar la factura (no la
+  // duplican si se piden dos veces) y quedan en la bandeja de Compras.
+  alertasDeFactura: (facturaId: number) =>
+    req<AlertaPrecio[]>(`/compras/facturas/${facturaId}/alertas`, { method: 'POST' }),
+  listarAlertasPrecio: (pendientes = false) =>
+    req<AlertaPrecio[]>(`/compras/alertas${pendientes ? '?pendientes=true' : ''}`),
+  marcarAlertaVista: (id: number) => req<AlertaPrecio>(`/compras/alertas/${id}/visto`, { method: 'POST' }),
   listarEquivalencias: () => req<Equivalencia[]>('/compras/equivalencias'),
   olvidarEquivalencia: (id: number) => req(`/compras/equivalencias/${id}`, { method: 'DELETE' }),
   /** `referencia` es obligatoria si no se salda en efectivo. */

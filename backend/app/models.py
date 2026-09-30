@@ -743,6 +743,54 @@ class SoporteFactura(Base):
     factura = relationship("FacturaCompra", back_populates="soporte")
 
 
+class AlertaPrecio(Base):
+    """Una mercancia que llego mas cara, y lo que eso le hace al menu.
+
+    Se crea al guardar una factura: quien la carga la ve en el momento, y
+    queda aqui para el dueño, que muchas veces no es quien carga (la factura
+    la mete caja). Queda pendiente hasta que alguien la marca vista.
+
+    La comparacion es primero contra el MISMO proveedor: el historial de un
+    insumo puede tener precios en unidades distintas (antes de la memoria por
+    proveedor, una botella se cargaba a veces por unidad y a veces por litro),
+    y el mismo proveedor casi siempre vende la misma presentacion.
+
+    Lo que se guarda es una FOTO del momento: los productos que quedaban
+    flacos y el proveedor que estaba mas barato ese dia. Si despues cambian
+    los precios del menu, esta alerta sigue diciendo lo que se vio al comprar.
+    """
+
+    __tablename__ = "TRX440_COM_ALERTA_PRECIO"
+    __table_args__ = (UniqueConstraint("factura_id", "ingrediente_id"),)
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(DateTime, default=ahora)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    proveedor_nombre = Column(String, default="")
+    proveedor_rif = Column(String, default="")
+    costo_anterior = Column(Float, nullable=False)
+    costo_nuevo = Column(Float, nullable=False)
+    variacion_pct = Column(Float, nullable=False)
+    # "proveedor": contra lo que ese mismo proveedor cobraba.
+    # "compras": nunca se le habia comprado; contra la mediana de las ultimas.
+    base = Column(String, default="proveedor")
+    # "subida" | "unidad" (un salto que parece error de unidad, no de precio)
+    tipo = Column(String, default="subida")
+    # JSON: [{nombre, margen_antes_pct, margen_despues_pct, precio, precio_sugerido, a_perdida}]
+    productos = Column(Text, default="[]")
+    # Otro proveedor que lo vendio mas barato en los ultimos 90 dias.
+    alternativa_proveedor = Column(String, default="")
+    alternativa_costo = Column(Float, nullable=True)
+    alternativa_fecha = Column(DateTime, nullable=True)
+    visto = Column(Boolean, default=False)
+    visto_por = Column(String, default="")
+    visto_en = Column(DateTime, nullable=True)
+
+    ingrediente = relationship("Ingrediente")
+    factura = relationship("FacturaCompra")
+
+
 class AperturaCaja(Base):
     """Con cuanta plata arranco una gaveta el dia que se abrio la caja.
 
