@@ -760,7 +760,9 @@ def resumen(
         valor_facturado=round(b.valor_facturado, 2),
         por_metodo_pago=por_metodo,
         serie=serie,
-        top_productos=productos[:10],
+        # TODOS los productos, no los 10 primeros: el grafico y la tabla de
+        # Reportes > Ventas los muestran enteros (Leider, 30-sep).
+        top_productos=productos,
         insights=_insights(
             db,
             periodo,

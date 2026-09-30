@@ -682,6 +682,151 @@ export function BarrasApiladas({
   )
 }
 
+export type FilaGanancia = {
+  nombre: string
+  ingreso: number
+  /** null = sin receta: no se sabe cuanto costo. */
+  costo: number | null
+  /** De `ingreso`, lo que se vendio sin receta (solo la fila del total). */
+  sinCosto?: number
+}
+
+/**
+ * Cuanto vende y cuanto deja cada producto, SIN LEYENDA (Leider, 30-sep: "no
+ * me gusta esa leyenda, en tlf se ve peor"). Cada fila dice en palabras lo
+ * que la barra dibuja: la cifra es verde como la parte verde, roja si se
+ * pierde, ambar si falta la receta. No hay que aprender colores.
+ *
+ * La barra mide lo vendido (o lo que costo, si costo mas); gris es lo que se
+ * fue en mercancia, verde lo que quedo, rojo lo que falto para cubrirla, y
+ * rayado lo vendido sin receta: se sabe lo que entro, no lo que dejo.
+ *
+ * Arriba va el total de TODOS los productos, con la misma barra, y la lista
+ * muestra los primeros `primeros` con un boton para ver el resto (Leider,
+ * 30-sep: "me quitaste la totalidad de productos").
+ */
+export function BarrasGanancia({
+  filas,
+  formato,
+  total,
+  primeros = 8,
+}: {
+  filas: FilaGanancia[]
+  formato: (n: number) => string
+  /** La fila de todos: se dibuja arriba y fija la escala de las demas no. */
+  total?: FilaGanancia
+  primeros?: number
+}) {
+  const { enHover, Globo } = useGlobo()
+  const [todas, setTodas] = useState(false)
+  if (filas.length === 0) {
+    return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
+  }
+  const visibles = todas ? filas : filas.slice(0, primeros)
+  // Las filas comparten escala entre ellas; el total tiene la suya (llena el
+  // ancho), si no los productos serian rayitas.
+  const max = Math.max(...filas.map((f) => Math.max(f.ingreso, f.costo ?? 0)), 0.000001)
+
+  const fila = (f: FilaGanancia, esTotal: boolean) => {
+    const sinReceta = f.costo == null
+    const sinCosto = sinReceta ? f.ingreso : (f.sinCosto ?? 0)
+    const conocido = f.ingreso - sinCosto
+    const costo = f.costo ?? 0
+    const queda = conocido - costo
+    const pct = conocido > 0 ? (queda / conocido) * 100 : 0
+    const pierde = !sinReceta && queda < -0.004
+    const escala = esTotal ? Math.max(f.ingreso, costo + sinCosto, 0.000001) : max
+    const ancho = (v: number) => `${(Math.max(v, 0) / escala) * 100}%`
+    return (
+      <li
+        key={esTotal ? '__total' : f.nombre}
+        className={esTotal ? 'pb-4 mb-1 border-b border-neutral-100' : undefined}
+        {...enHover(
+          <>
+            <div className="mb-1 font-semibold text-neutral-500">{f.nombre}</div>
+            <LineaGlobo nombre="Vendió" valor={formato(f.ingreso)} />
+            {!sinReceta && <LineaGlobo nombre="Mercancía" valor={formato(costo)} color="var(--color-neutral-400)" />}
+            {!sinReceta && (
+              <LineaGlobo
+                nombre={pierde ? 'Perdió' : 'Le quedó'}
+                valor={formato(Math.abs(queda))}
+                color={pierde ? 'var(--color-peligro-500)' : 'var(--color-exito-500)'}
+              />
+            )}
+            {sinCosto > 0 && <LineaGlobo nombre="Sin receta" valor={formato(sinCosto)} color="var(--color-aviso-300)" />}
+          </>,
+        )}
+      >
+        {/* En telefono, si el nombre es largo, las cifras bajan a su propio
+            renglon en vez de apretar el nombre. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <span className={`min-w-0 leading-snug text-neutral-800 ${esTotal ? 'text-base font-semibold' : 'text-sm font-medium'}`}>
+            {f.nombre}
+          </span>
+          <span className={`ml-auto text-right whitespace-nowrap ${esTotal ? 'text-base' : 'text-sm'}`}>
+            <span className={`tabular-nums ${esTotal ? 'font-semibold text-neutral-800' : 'text-neutral-600'}`}>{formato(f.ingreso)}</span>
+            <span className="text-neutral-400"> · </span>
+            {sinReceta ? (
+              <span className="text-aviso-700 font-medium">sin receta</span>
+            ) : pierde ? (
+              <span className="text-peligro-600 font-semibold">pierde <span className="tabular-nums">{formato(-queda)}</span></span>
+            ) : (
+              <span className="text-exito-700 font-semibold">
+                deja <span className="tabular-nums">{formato(queda)}</span> <span className="font-normal tabular-nums">({pct.toFixed(0)}%)</span>
+              </span>
+            )}
+          </span>
+        </div>
+        <div className={`mt-1.5 rounded-full bg-neutral-100 overflow-hidden ${esTotal ? 'h-3.5' : 'h-2.5'}`}>
+          <div className="flex h-full rounded-full overflow-hidden" style={{ width: ancho(Math.max(f.ingreso, costo + sinCosto)) }}>
+            {!sinReceta && (
+              <>
+                <div className="vp-barra-h h-full" style={{ flex: `${Math.min(costo, conocido)} 0 0`, background: 'var(--color-neutral-300)' }} />
+                {queda > 0 && <div className="vp-barra-h h-full" style={{ flex: `${queda} 0 0`, background: 'var(--color-exito-500)' }} />}
+                {pierde && <div className="vp-barra-h h-full" style={{ flex: `${-queda} 0 0`, background: 'var(--color-peligro-400)' }} />}
+              </>
+            )}
+            {sinCosto > 0 && (
+              <div
+                className="vp-barra-h h-full"
+                style={{
+                  flex: `${sinCosto} 0 0`,
+                  background:
+                    'repeating-linear-gradient(-45deg, var(--color-aviso-300) 0 5px, color-mix(in srgb, var(--color-aviso-300) 45%, transparent) 5px 10px)',
+                }}
+              />
+            )}
+          </div>
+        </div>
+        {esTotal && sinCosto > 0 && !sinReceta && (
+          <p className="mt-1 text-xs text-aviso-700">
+            <span className="tabular-nums">{formato(sinCosto)}</span> de eso se vendió sin receta{pierde ? '.' : `; el ${pct.toFixed(0)}% es de lo que sí la tiene.`}
+          </p>
+        )}
+      </li>
+    )
+  }
+
+  return (
+    <div>
+      <Globo />
+      <ul className="space-y-3.5">
+        {total && fila(total, true)}
+        {visibles.map((f) => fila(f, false))}
+      </ul>
+      {filas.length > primeros && (
+        <button
+          type="button"
+          onClick={() => setTodas((v) => !v)}
+          className="vp-pulsable mt-3 w-full rounded-xl py-2.5 text-sm font-medium text-neutral-600 bg-neutral-100/70"
+        >
+          {todas ? 'Ver solo los primeros' : `Ver los ${filas.length} productos`}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Mapa de calor ───────────────────────────────────────────────────────────
 
 export type CeldaCalor = { dia: number; hora: number; pedidos: number; ventas: number }

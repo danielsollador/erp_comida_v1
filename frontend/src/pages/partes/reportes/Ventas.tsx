@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Ayuda } from '../../../components/Ayuda'
 import {
-  BarrasApiladas,
+  BarrasGanancia,
   GraficoBarras,
   GraficoDona,
   GraficoLineas,
@@ -252,46 +252,30 @@ export default function Ventas({
             <div className="grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-3">
               <Seccion
                 titulo="Cuánto vende y cuánto deja cada producto"
-                ayuda="La barra completa es el ingreso; la parte verde, lo que quedó después de la mercancía."
+                ayuda="Verde, lo que te queda de cada venta después de pagar la mercancía."
               >
-                <BarrasApiladas
+                <BarrasGanancia
                   formato={dinero}
-                  leyenda={[
-                    { nombre: 'Costo de la mercancía', color: 'var(--color-neutral-300)' },
-                    { nombre: 'Ganancia', color: 'var(--color-exito-500)' },
-                    { nombre: 'Sin receta (costo desconocido)', color: 'var(--color-aviso-300)' },
-                  ]}
-                  filas={datos.top_productos.slice(0, 8).map((p) => ({
+                  total={{
+                    nombre: `Todos los productos (${datos.top_productos.length})`,
+                    ingreso: datos.top_productos.reduce((s, p) => s + p.ingresos, 0),
+                    costo: conCosto.length ? conCosto.reduce((s, p) => s + p.costo, 0) : null,
+                    sinCosto: sinReceta.reduce((s, p) => s + p.ingresos, 0),
+                  }}
+                  filas={datos.top_productos.map((p) => ({
                     nombre: p.nombre,
-                    detalle: p.sin_receta ? '?' : `${p.margen_pct.toFixed(0)}%`,
-                    partes: p.sin_receta
-                      ? [{ nombre: 'Ingreso (sin costo conocido)', valor: p.ingresos, color: 'var(--color-aviso-300)' }]
-                      : [
-                          { nombre: 'Costo de la mercancía', valor: p.costo, color: 'var(--color-neutral-300)' },
-                          { nombre: 'Ganancia', valor: Math.max(p.ganancia, 0), color: 'var(--color-exito-500)' },
-                        ],
+                    ingreso: p.ingresos,
+                    costo: p.sin_receta ? null : p.costo,
                   }))}
                 />
-                {conCosto.length > 0 && (
-                  <p className="text-xs text-neutral-500 mt-3">
-                    En total, {corto(conCosto.reduce((s, p) => s + p.ingresos, 0))} vendidos con receta
-                    dejaron {corto(conCosto.reduce((s, p) => s + p.ganancia, 0))} de ganancia bruta.
-                  </p>
-                )}
-                {/* LO QUE EL GRAFICO NO PUEDE DECIR SOLO. Sin receta no hay
-                    costo, asi que la barra es de un color plano y el margen es
-                    "?": el grafico existe pero no responde su propia pregunta.
-                    Decirlo con la cuenta exacta --y con el enlace a donde se
-                    arregla-- convierte un grafico mudo en una tarea. */}
+                {/* Sin receta no hay costo: la barra va rayada y la fila dice
+                    "sin receta". Aqui, cuantos son y donde se arregla. */}
                 {sinReceta.length > 0 && (
-                  <p className="text-xs text-aviso-800 bg-aviso-500/10 rounded-xl px-3 py-2.5 mt-3">
-                    <strong>
-                      {sinReceta.length} de {datos.top_productos.length} productos sin receta
-                    </strong>{' '}
-                    ({corto(sinReceta.reduce((s, p) => s + p.ingresos, 0))} vendidos). Hasta que las
-                    cargues no se puede saber cuánto deja cada uno: esas barras muestran el ingreso
-                    completo, no la ganancia.{' '}
-                    <a href="/menu?s=recetas" className="underline font-medium">
+                  <p className="text-sm text-aviso-800 bg-aviso-500/10 rounded-xl px-3 py-2.5 mt-3">
+                    {sinReceta.length === 1
+                      ? '1 producto no tiene receta, así que no se sabe cuánto deja. '
+                      : `${sinReceta.length} productos no tienen receta, así que no se sabe cuánto dejan. `}
+                    <a href="/menu?s=recetas" className="underline font-medium whitespace-nowrap">
                       Cargar recetas
                     </a>
                   </p>
