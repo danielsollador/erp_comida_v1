@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, type ButtonHTMLAttributes, type ChangeEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
-import { Ayuda } from './Ayuda'
+import { Ayuda, BotonAyuda } from './Ayuda'
 import { explicar } from '../lib/glosario'
 import Icono, { type NombreIcono } from './Icono'
 import { Numerico } from './Teclado'
@@ -286,8 +286,9 @@ export function Cifra({
         : 'bg-white border-neutral-200'
   const texto = tono === 'alerta' ? 'text-aviso-700' : tono === 'bien' ? 'text-exito-700' : 'text-neutral-500'
   return (
-    <div className={`rounded-2xl border p-4 sm:p-5 ${fondo}`}>
-      <div className={`text-xs font-medium ${texto}`}>
+    <div className={`relative rounded-2xl border p-4 sm:p-5 ${fondo}`}>
+      {ayuda && <BotonAyuda explica={explicar(ayuda)} titulo={titulo} className="absolute top-3 right-3" />}
+      <div className={`text-xs font-medium ${texto} ${ayuda ? 'pr-7' : ''}`}>
         <Ayuda explica={explicar(ayuda)} titulo={titulo}>
           {titulo}
         </Ayuda>

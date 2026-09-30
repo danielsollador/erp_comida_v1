@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Ayuda } from '../../../components/Ayuda'
+import { Ayuda, BotonAyuda } from '../../../components/Ayuda'
 import { explicar } from '../../../lib/glosario'
 
 /**
@@ -73,8 +73,9 @@ export function Kpi({
 }) {
   const color = tono === 'malo' ? 'text-peligro-600' : tono === 'bueno' ? 'text-exito-600' : ''
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-4 sm:p-5">
-      <div className="text-xs text-neutral-500">
+    <div className="relative bg-white rounded-2xl border border-neutral-200 p-4 sm:p-5">
+      {ayuda && <BotonAyuda explica={explicar(ayuda)} titulo={titulo} className="absolute top-3 right-3" />}
+      <div className={`text-xs text-neutral-500 ${ayuda ? 'pr-7' : ''}`}>
         <Ayuda explica={explicar(ayuda)} titulo={titulo}>
           {titulo}
         </Ayuda>

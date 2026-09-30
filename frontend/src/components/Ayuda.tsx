@@ -49,15 +49,31 @@ type Lado = 'abajo' | 'arriba'
  * ordenar: un envoltorio dejaria un boton dentro de otro boton, que ni es
  * HTML valido ni se puede enfocar con el teclado.
  */
-export function useAyuda(explica: Explicacion | undefined, titulo: string) {
+export function useAyuda(
+  explica: Explicacion | undefined,
+  titulo: string,
+  /**
+   * `tocar`: un toque o un clic abre la explicacion (Leider, 30-sep: "si le
+   * doy toque que salte la info, para los de laptop y telefono"). Es lo que
+   * usan las tarjetas de cifras y su "i" de la esquina. Los titulos de las
+   * tablas no: ahi el toque ordena la columna, y la explicacion sale al
+   * posar el raton o dejando el dedo apretado.
+   */
+  { tocar = false }: { tocar?: boolean } = {},
+) {
   const [abierta, setAbierta] = useState(false)
   const [caja, setCaja] = useState<{ x: number; y: number; lado: Lado } | null>(null)
   const ancla = useRef<HTMLElement | null>(null)
   const temporizador = useRef<number | undefined>(undefined)
+  const ultimoPuntero = useRef<string>('mouse')
+  // Abierta con un clic: se queda hasta que se toque fuera, aunque el raton
+  // se mueva para leerla.
+  const fijada = useRef(false)
   const id = useId()
 
   const cerrar = useCallback(() => {
     window.clearTimeout(temporizador.current)
+    fijada.current = false
     setAbierta(false)
   }, [])
 
@@ -89,17 +105,47 @@ export function useAyuda(explica: Explicacion | undefined, titulo: string) {
       if (e.type === 'keydown' && (e as KeyboardEvent).key !== 'Escape') return
       cerrar()
     }
+    // Tocar fuera la cierra: en el telefono no hay "sacar el raton".
+    const alTocarFuera = (e: PointerEvent) => {
+      if (ancla.current && !ancla.current.contains(e.target as Node)) cerrar()
+    }
     window.addEventListener('scroll', alSalir, true)
     window.addEventListener('resize', alSalir)
     window.addEventListener('keydown', alSalir)
+    document.addEventListener('pointerdown', alTocarFuera, true)
     return () => {
       window.removeEventListener('scroll', alSalir, true)
       window.removeEventListener('resize', alSalir)
       window.removeEventListener('keydown', alSalir)
+      document.removeEventListener('pointerdown', alTocarFuera, true)
     }
   }, [abierta, cerrar])
 
   if (!explica) return { props: {}, panel: null, abierta: false }
+
+  // Con `tocar`: el toque abre y cierra; el clic del raton abre (si ya la
+  // habia abierto al posarse, la deja abierta en vez de cerrarla).
+  const alTocar = {
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      ultimoPuntero.current = e.pointerType
+    },
+    onClick: (e: React.MouseEvent<HTMLElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const el = e.currentTarget
+      if (abierta && (ultimoPuntero.current !== 'mouse' || fijada.current)) {
+        cerrar()
+        return
+      }
+      abrir(el, true)
+      fijada.current = true
+    },
+    // El foco solo abre con el teclado: tocar un titulo tambien le da el
+    // foco, y abriria y cerraria en el mismo toque.
+    onFocus: (e: React.FocusEvent<HTMLElement>) => {
+      if (e.currentTarget.matches(':focus-visible')) abrir(e.currentTarget, true)
+    },
+  }
 
   const props = {
     'aria-describedby': abierta ? id : undefined,
@@ -110,7 +156,7 @@ export function useAyuda(explica: Explicacion | undefined, titulo: string) {
       if (e.pointerType === 'mouse') abrir(e.currentTarget)
     },
     onPointerLeave: (e: React.PointerEvent<HTMLElement>) => {
-      if (e.pointerType === 'mouse') cerrar()
+      if (e.pointerType === 'mouse' && !fijada.current) cerrar()
     },
     // En una tablet no hay cursor que posar. La pulsacion LARGA no le quita
     // el sitio a nada: un toque normal sigue ordenando la columna o abriendo
@@ -133,7 +179,10 @@ export function useAyuda(explica: Explicacion | undefined, titulo: string) {
     // Con el teclado: al tabular hasta el titulo se abre igual que al pasar
     // el raton, y Escape la cierra.
     onFocus: (e: React.FocusEvent<HTMLElement>) => abrir(e.currentTarget, true),
-    onBlur: cerrar,
+    onBlur: () => {
+      if (!fijada.current) cerrar()
+    },
+    ...(tocar ? alTocar : {}),
   }
 
   return { props, abierta, panel: <Panel id={id} titulo={titulo} explica={explica} caja={abierta ? caja : null} /> }
@@ -210,12 +259,48 @@ export function Ayuda({
   children: ReactNode
   className?: string
 }) {
-  const { props, panel } = useAyuda(explica, titulo ?? (typeof children === 'string' ? children : ''))
+  const { props, panel } = useAyuda(explica, titulo ?? (typeof children === 'string' ? children : ''), { tocar: true })
   if (!explica) return <span className={className}>{children}</span>
   return (
-    <span {...props} tabIndex={0} className={`vp-con-ayuda ${className}`}>
+    <span {...props} tabIndex={0} role="button" className={`vp-con-ayuda cursor-help ${className}`}>
       {children}
       {panel}
     </span>
+  )
+}
+
+/**
+ * La "i" de la esquina de una tarjeta de cifra: se ve que hay explicacion y
+ * se abre con un toque, en la laptop y en el telefono. Antes la unica puerta
+ * era el titulo punteado --una franja de 17 px-- y en el telefono habia que
+ * adivinar que se dejaba el dedo apretado (Leider, 30-sep).
+ */
+export function BotonAyuda({
+  explica,
+  titulo,
+  className = '',
+}: {
+  explica: Explicacion | undefined
+  titulo: string
+  className?: string
+}) {
+  const { props, panel, abierta } = useAyuda(explica, titulo, { tocar: true })
+  if (!explica) return null
+  return (
+    <button
+      type="button"
+      {...props}
+      aria-label={`Qué es «${titulo}»`}
+      aria-expanded={abierta}
+      className={`vp-pulsable w-7 h-7 -m-1 rounded-full grid place-items-center transition-colors ${
+        abierta ? 'bg-neutral-900 text-white' : 'text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100'
+      } ${className}`}
+    >
+      <svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5.5M12 7.6v.01" strokeWidth="2.2" />
+      </svg>
+      {panel}
+    </button>
   )
 }
