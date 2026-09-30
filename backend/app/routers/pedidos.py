@@ -1402,7 +1402,10 @@ async def cobrar_pedido(
 
     pedido.estado = "pagado"
     # El campo resumen sigue existiendo para mostrar de un vistazo como se pago.
-    pedido.metodo_pago = "Cortesía" if not pagos else pagos[0].metodo if len(pagos) == 1 else "Mixto"
+    # Dos pagos moviles (el cliente mando de menos y completo con otro) siguen
+    # siendo pago movil: "Mixto" es cuando se mezclan formas distintas.
+    metodos = {p.metodo for p in pagos}
+    pedido.metodo_pago = "Cortesía" if not pagos else pagos[0].metodo if len(metodos) == 1 else "Mixto"
     for pago in pagos:
         vuelto = round(max((pago.recibido or pago.monto) - pago.monto, 0), 2)
         # La consulta al banco que respaldo esta referencia, si la hubo. Se

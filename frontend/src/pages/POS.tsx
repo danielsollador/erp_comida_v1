@@ -201,6 +201,8 @@ export default function POS() {
     metodo: string
     monto: number
     resolver: (pago: PagoVerificado | null) => void
+    /** Para montarla de cero: el segundo pago movil no hereda el primero. */
+    vez: number
   } | null>(null)
 
   /**
@@ -210,7 +212,7 @@ export default function POS() {
    */
   function pedirPago(metodo: string, monto: number): Promise<PagoVerificado | null> {
     const verificable = Boolean(pabilo?.configurado && !pabilo.error && pabilo.metodos.includes(metodo))
-    if (verificable) return new Promise((resolver) => setVerificando({ metodo, monto, resolver }))
+    if (verificable) return new Promise((resolver) => setVerificando({ metodo, monto, resolver, vez: Date.now() }))
     return pedirReferencia(metodo, dialogo.pedirTexto).then((r) => (r === null ? null : { referencia: r }))
   }
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
@@ -863,7 +865,7 @@ export default function POS() {
     // mandar el cobro y que rebote.
     const pago = await pedirPago(metodo, aCobrar)
     if (pago === null) return
-    cobrarVerificado(metodo, pago)
+    void cobrarVerificado(metodo, pago)
   }
 
   /**
@@ -882,33 +884,72 @@ export default function POS() {
    * Sin decision (referencia anotada a mano, o sin tasa) se cobra la cuenta
    * tal cual, como siempre.
    */
-  function cobrarVerificado(metodo: string, pago: PagoVerificado) {
-    const parte = { metodo, referencia: pago.referencia, verificacion_id: pago.verificacion_id }
+  /**
+   * Lo que hay que anotar por un pago verificado, segun lo que decidio la
+   * cajera con la diferencia (ver `VerificarPago`). Con `otro_pago` se abre
+   * enseguida la verificacion de un SEGUNDO pago movil por lo que falta, y
+   * lo que diga ese se resuelve igual; asi un cliente que mando Bs 17,00 por
+   * una cuenta de Bs 17,18 manda los Bs 0,18 y todo queda en la misma venta.
+   *
+   * Los montos van SIN redondear a centavos: Bs 0,18 son $0,0002, y
+   * redondeados la parte desaparecia.
+   */
+  async function resolverPago(
+    metodo: string,
+    pedido: number,
+    pago: PagoVerificado,
+  ): Promise<{ partes: typeof partes; propina: number; descuento: number; pendiente: boolean; motivo?: string }> {
+    const base = { metodo, referencia: pago.referencia, verificacion_id: pago.verificacion_id }
     const entro = pago.monto_usd
     if (entro === undefined || !pago.decision || pago.decision === 'exacto') {
-      cobrar(metodo, [{ ...parte, monto: aCobrar }])
-      return
+      return { partes: [{ ...base, monto: pedido }], propina: 0, descuento: 0, pendiente: false }
     }
     if (pago.decision === 'propina') {
-      const propinaTotal = redondear((Number(propina) || 0) + (entro - aCobrar))
-      setPropina(String(propinaTotal))
-      cobrar(metodo, [{ ...parte, monto: entro }], undefined, undefined, { propina: propinaTotal })
-      return
+      return { partes: [{ ...base, monto: entro }], propina: entro - pedido, descuento: 0, pendiente: false }
     }
     if (pago.decision === 'perdonar') {
-      const descuentoTotal = redondear(descuentoNum + (aCobrar - entro))
-      const motivo = motivoDescuento.trim() || 'Diferencia del pago móvil'
+      // En bolivares y exacto: en dolares una diferencia chica redondea a
+      // cero y el motivo es lo unico que dice cuanto se dejo pasar.
+      const faltoBs = pago.monto_bs !== undefined && tasaBcv > 0 ? pedido * tasaBcv - pago.monto_bs : null
+      const motivo = faltoBs !== null ? `Faltaron ${fmtBs(faltoBs)} en el ${metodo.toLowerCase()}` : undefined
+      return { partes: [{ ...base, monto: entro }], propina: 0, descuento: pedido - entro, pendiente: false, motivo }
+    }
+    if (pago.decision === 'resto') {
+      return { partes: [{ ...base, monto: entro }], propina: 0, descuento: 0, pendiente: true }
+    }
+    // otro_pago: lo que falta, por el mismo metodo, verificado aparte.
+    const primera = { ...base, monto: entro }
+    const resto = pedido - entro
+    const segundo = await pedirPago(metodo, resto)
+    // Se echo atras con el segundo: lo que entro queda anotado y el cobro
+    // sigue en pago partido para que cierre lo que falta como quiera.
+    if (segundo === null) return { partes: [primera], propina: 0, descuento: 0, pendiente: true }
+    const r = await resolverPago(metodo, resto, segundo)
+    return { ...r, partes: [primera, ...r.partes] }
+  }
+
+  async function cobrarVerificado(metodo: string, pago: PagoVerificado) {
+    const r = await resolverPago(metodo, aCobrar, pago)
+    const propinaTotal = redondear((Number(propina) || 0) + r.propina)
+    const descuentoTotal = redondear(descuentoNum + r.descuento)
+    const motivo = r.descuento > 0 ? motivoDescuento.trim() || r.motivo || 'Diferencia del pago móvil' : motivoDescuento
+    if (r.propina) setPropina(String(propinaTotal))
+    if (r.descuento) {
       setDescuento(String(descuentoTotal))
       setMotivoDescuento(motivo)
-      cobrar(metodo, [{ ...parte, monto: entro }], undefined, undefined, {
-        descuento: descuentoTotal,
-        motivo_descuento: motivo,
-      })
+    }
+    if (r.pendiente) {
+      // Lo que entro queda anotado y lo que falta se cobra aparte.
+      setPagoMixto(true)
+      setPartes(r.partes)
       return
     }
-    // 'resto': lo que entro queda anotado y lo que falta se cobra aparte.
-    setPagoMixto(true)
-    setPartes([{ ...parte, monto: entro }])
+    // Dos pagos moviles siguen siendo pago movil: el metodo es el mismo.
+    cobrar(metodo, r.partes, undefined, undefined, {
+      propina: propinaTotal,
+      descuento: descuentoTotal,
+      motivo_descuento: motivo,
+    })
   }
 
   /**
@@ -958,21 +999,13 @@ export default function POS() {
     // Si el banco dijo que entro otra cosa, la parte es lo que entro: lo que
     // sobra va a propina, lo que falta sigue pendiente (o se perdona como
     // descuento). Igual que en el cobro de una sola forma.
-    let montoParte = redondear(monto)
-    const entro = pago.monto_usd
-    if (entro !== undefined && pago.decision && pago.decision !== 'exacto') {
-      montoParte = entro
-      if (pago.decision === 'propina') {
-        setPropina(String(redondear((Number(propina) || 0) + (entro - monto))))
-      } else if (pago.decision === 'perdonar') {
-        setDescuento(String(redondear(descuentoNum + (monto - entro))))
-        setMotivoDescuento((m) => m.trim() || 'Diferencia del pago móvil')
-      }
+    const r = await resolverPago(metodo, redondear(monto), pago)
+    if (r.propina) setPropina(String(redondear((Number(propina) || 0) + r.propina)))
+    if (r.descuento) {
+      setDescuento(String(redondear(descuentoNum + r.descuento)))
+      setMotivoDescuento((m) => m.trim() || r.motivo || 'Diferencia del pago móvil')
     }
-    setPartes((p) => [
-      ...p,
-      { metodo, monto: montoParte, referencia: pago.referencia, verificacion_id: pago.verificacion_id },
-    ])
+    setPartes((p) => [...p, ...r.partes])
   }
 
   function cobrarMixto() {
@@ -2059,6 +2092,7 @@ export default function POS() {
               quedaba esperando plata que nunca entro a la gaveta. */}
           {verificando && pabilo ? (
             <VerificarPago
+              key={verificando.vez}
               metodo={verificando.metodo}
               montoUsd={verificando.monto}
               tasa={tasaBcv}

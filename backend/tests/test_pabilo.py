@@ -209,6 +209,32 @@ def test_cobrar_con_verificacion_la_pega_al_pedido(client, db, variante, con_pab
     assert r.json()["pagos"][0]["verificacion_id"] == v["id"]
 
 
+def test_lo_que_falta_se_completa_con_otro_pago_movil(client, db, variante, con_pabilo):
+    """El cliente manda Bs 999,82 por una cuenta de Bs 1.000 y completa los
+    Bs 0,18 con otro pago movil: dos referencias verificadas en la misma
+    venta, una de menos de un centavo de dolar, y la venta es "Pago movil",
+    no "Mixto" (Leider, 30-sep)."""
+    con_tasa(client, 100.0)
+    con_pabilo(*encontrado(999.82))
+    v1 = verificar(client, referencia="11110000").json()
+    con_pabilo(*encontrado(0.18))
+    v2 = verificar(client, referencia="22220000", monto=0.0018).json()
+    p = pedido_de(client, variante)
+    r = client.post(f"/api/pedidos/{p['id']}/cobrar", json={
+        "metodo_pago": "Pago movil",
+        "pagos": [
+            {"metodo": "Pago movil", "monto": 9.9982, "referencia": "11110000", "verificacion_id": v1["id"]},
+            {"metodo": "Pago movil", "monto": 0.0018, "referencia": "22220000", "verificacion_id": v2["id"]},
+        ],
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["metodo_pago"] == "Pago movil"
+    pagos = db.query(models.PagoPedido).filter_by(pedido_id=p["id"]).all()
+    assert len(pagos) == 2
+    assert round(sum(x.monto for x in pagos), 2) == 10.0
+    assert {x.verificacion_id for x in pagos} == {v1["id"], v2["id"]}
+
+
 def test_una_verificacion_no_sirve_para_otra_referencia(client, variante, con_pabilo):
     con_tasa(client)
     con_pabilo(*encontrado(1000.0))

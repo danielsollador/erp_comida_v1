@@ -10,19 +10,26 @@ import { Numerico } from './Teclado'
  * Sin `verificacion_id` es una referencia anotada a mano, como siempre.
  *
  * `monto_usd` es lo que el banco dijo que ENTRO, pasado a dolares a la tasa
- * del cobro, y `decision` que hacer con la diferencia contra la cuenta:
+ * del cobro SIN redondear a centavos (Bs 0,18 son $0,0002: redondeado, la
+ * diferencia desaparecia), y `decision` que hacer con la diferencia contra
+ * la cuenta. NUNCA se decide sola: cualquier diferencia de un centimo para
+ * arriba la decide la cajera (Leider, 30-sep: "si me redondean de menos,
+ * igual confirma el pago y no pasa mas nada").
  *
- *   exacto    entro lo de la cuenta (o el redondeo no cuenta): se cobra.
- *   propina   entro de mas: lo que sobra se anota como propina.
- *   resto     entro de menos: se anota lo que entro y lo que falta se cobra
- *             con otra forma (pago partido).
+ *   exacto    entro exactamente la cuenta: se cobra.
+ *   propina   entro de mas: lo que sobra se suma a la propina, y se dice.
+ *   otro_pago entro de menos: lo que falta se cobra con OTRO pago movil.
+ *   resto     entro de menos: lo que falta se cobra con otra forma (pago
+ *             partido).
  *   perdonar  entro de menos y el local lo deja pasar: descuento.
  */
 export type PagoVerificado = {
   referencia: string
   verificacion_id?: number
   monto_usd?: number
-  decision?: 'exacto' | 'propina' | 'resto' | 'perdonar'
+  /** Lo que entro, en bolivares, tal cual lo dijo el banco. */
+  monto_bs?: number
+  decision?: 'exacto' | 'propina' | 'otro_pago' | 'resto' | 'perdonar'
 }
 
 const redondear = (n: number) => Math.round(n * 100) / 100
@@ -211,8 +218,8 @@ export default function VerificarPago({
               <span className="block mt-1 text-[11px] text-neutral-400 tabular-nums">
                 {corregido ? (
                   <>
-                    La cuenta es {fmtBs(montoBs)}. Si entró más, lo que sobra queda como propina; si entró
-                    menos, se completa con otra forma.
+                    La cuenta es {fmtBs(montoBs)}. Si entró más, lo que sobra se suma a la propina; si entró
+                    menos, eliges cómo se cobra lo que falta.
                   </>
                 ) : (
                   <>Es la cuenta a la tasa del día. Si el cliente mandó otra cantidad, tócalo y escribe lo que mandó.</>
@@ -337,7 +344,7 @@ function Resultado({
   cuentaUsd: number
   tasa: number
   enMixto: boolean
-  onListo: (extra: Pick<PagoVerificado, 'monto_usd' | 'decision'>) => void
+  onListo: (extra: Pick<PagoVerificado, 'monto_usd' | 'monto_bs' | 'decision'>) => void
   onSinVerificar: () => void
   onCorregir: () => void
   onReintentar: () => void
@@ -348,13 +355,20 @@ function Resultado({
   const cuentaBs = tasa > 0 ? redondear(cuentaUsd * tasa) : null
   const entro = r.monto_bs
   const diferencia = encontrado && entro !== null && cuentaBs !== null ? redondear(entro - cuentaBs) : null
-  // Un bolivar o el 0,5 %: la tasa tiene decimales y el cliente redondea.
-  const tolerancia = cuentaBs !== null ? Math.max(1, cuentaBs * 0.005) : 0
-  const entroUsd = entro !== null && tasa > 0 ? redondear(entro / tasa) : undefined
-  const difUsd = diferencia !== null ? redondear(Math.abs(diferencia) / tasa) : 0
+  // SIN margen: antes un bolivar o el 0,5 % pasaban solos como "exacto" y la
+  // cajera no se enteraba de que faltaba plata. Ahora cualquier centimo de
+  // diferencia se muestra y se decide.
+  const entroUsd = entro !== null && tasa > 0 ? entro / tasa : undefined
+  const falta = diferencia !== null ? Math.abs(diferencia) : 0
+  const difUsd = diferencia !== null ? redondear(falta / tasa) : 0
+  // Menos de un centavo de dolar: el sistema lleva las cuentas en dolares
+  // con centavos, asi que esa diferencia no se puede cobrar con otra forma
+  // (efectivo, punto) ni cambia la propina; si se puede pedir otro pago movil.
+  const menosDeUnCentavo = difUsd < 0.01
+  const usd = menosDeUnCentavo ? '' : ` ($${difUsd.toFixed(2)})`
 
   const caso: 'exacto' | 'sobra' | 'falta' | null =
-    diferencia === null ? null : Math.abs(diferencia) <= tolerancia ? 'exacto' : diferencia > 0 ? 'sobra' : 'falta'
+    diferencia === null ? null : Math.abs(diferencia) < 0.005 ? 'exacto' : diferencia > 0 ? 'sobra' : 'falta'
 
   const tono =
     caso === 'exacto' || (caso === null && r.resultado === 'verificado')
@@ -371,9 +385,9 @@ function Resultado({
     caso === 'exacto'
       ? 'Pago confirmado'
       : caso === 'sobra'
-        ? 'Pago confirmado: entró más de la cuenta'
+        ? `Entró ${fmtBs(falta)} de más`
         : caso === 'falta'
-          ? 'El banco lo encontró, pero entró menos'
+          ? `Entró menos: faltan ${fmtBs(falta)}`
           : {
               verificado: 'Pago confirmado',
               monto_distinto: 'El banco lo encontró, pero el monto no cuadra',
@@ -384,9 +398,11 @@ function Resultado({
 
   const detalle =
     caso === 'sobra'
-      ? `Sobran ${fmtBs(Math.abs(diferencia ?? 0))} ($${difUsd.toFixed(2)}).`
+      ? menosDeUnCentavo
+        ? `El banco confirmó el pago. Sobran ${fmtBs(falta)}: es menos de un centavo de dólar, así que no llega a sumar propina.`
+        : `El banco confirmó el pago. Lo que sobra, ${fmtBs(falta)}${usd}, se suma a la propina del equipo: no es venta.`
       : caso === 'falta'
-        ? `Faltan ${fmtBs(Math.abs(diferencia ?? 0))} ($${difUsd.toFixed(2)}).`
+        ? `El banco confirmó el pago, pero entró menos de la cuenta. Decide cómo se cobran los ${fmtBs(falta)}${usd} que faltan.`
         : r.mensaje
 
   return (
@@ -424,13 +440,18 @@ function Resultado({
       {caso === 'sobra' && (
         <>
           {/* Lo que sobra no es venta: es propina. Entra a la gaveta y se le
-              debe al empleado, igual que si la hubieran dejado en efectivo. */}
+              debe al empleado, igual que si la hubieran dejado en efectivo.
+              El boton lo dice con todas sus letras (Leider, 30-sep). */}
           <button
             type="button"
-            onClick={() => onListo({ monto_usd: entroUsd, decision: 'propina' })}
+            onClick={() => onListo({ monto_usd: entroUsd, monto_bs: entro ?? undefined, decision: 'propina' })}
             className="vp-pulsable w-full rounded-xl border border-exito-300 bg-exito-50 text-exito-800 py-3.5 font-semibold"
           >
-            {enMixto ? 'Anotar' : 'Cobrar'} y dejar ${difUsd.toFixed(2)} de propina
+            {menosDeUnCentavo
+              ? enMixto
+                ? `Anotar por ${metodo}`
+                : `Cobrar por ${metodo}`
+              : `${enMixto ? 'Anotar' : 'Cobrar'} y sumar ${fmtBs(falta)} a la propina`}
           </button>
           <button type="button" onClick={onCorregir} className="w-full text-xs text-neutral-500 hover:text-neutral-800 py-1">
             Corregir la referencia
@@ -440,24 +461,38 @@ function Resultado({
 
       {caso === 'falta' && (
         <>
-          {/* Lo normal: se anota lo que entro y el resto se cobra con otra
-              forma. Perdonarlo es un descuento y queda como tal. */}
+          {/* La cajera decide como se cobra lo que falta. Lo que entro queda
+              anotado en los tres casos. */}
+          <p className="text-xs font-semibold text-neutral-600 pt-1">¿Cómo se cobran los {fmtBs(falta)} que faltan?</p>
           <button
             type="button"
-            onClick={() => onListo({ monto_usd: entroUsd, decision: 'resto' })}
+            onClick={() => onListo({ monto_usd: entroUsd, monto_bs: entro ?? undefined, decision: 'otro_pago' })}
             className="vp-pulsable w-full rounded-xl bg-neutral-900 py-3 text-sm font-semibold text-white"
           >
-            {enMixto
-              ? `Anotar $${(entroUsd ?? 0).toFixed(2)} y seguir con otra forma`
-              : `Cobrar $${(entroUsd ?? 0).toFixed(2)} por ${metodo} y el resto con otra forma`}
+            Con otro {metodo.toLowerCase()} por {fmtBs(falta)}
           </button>
+          {!menosDeUnCentavo && (
+            <button
+              type="button"
+              onClick={() => onListo({ monto_usd: entroUsd, monto_bs: entro ?? undefined, decision: 'resto' })}
+              className="vp-control vp-pulsable w-full rounded-xl py-2.5 text-sm font-medium"
+            >
+              Con otra forma de pago (efectivo, punto…)
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => onListo({ monto_usd: entroUsd, decision: 'perdonar' })}
+            onClick={() => onListo({ monto_usd: entroUsd, monto_bs: entro ?? undefined, decision: 'perdonar' })}
             className="vp-control vp-pulsable w-full rounded-xl py-2.5 text-sm font-medium"
           >
-            Perdonar la diferencia (${difUsd.toFixed(2)} de descuento)
+            No cobrarlo: {fmtBs(falta)} de descuento
           </button>
+          {menosDeUnCentavo && (
+            <p className="text-[11px] text-neutral-500 leading-snug">
+              Es menos de un centavo de dólar: el sistema lleva las cuentas en dólares con centavos, así que no se puede
+              cobrar con efectivo o punto. Con otro pago móvil sí.
+            </p>
+          )}
           <button type="button" onClick={onCorregir} className="w-full text-xs text-neutral-500 hover:text-neutral-800 py-1">
             Corregir la referencia
           </button>
