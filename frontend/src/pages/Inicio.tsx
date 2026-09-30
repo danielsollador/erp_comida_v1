@@ -7,6 +7,7 @@ import { explicar } from '../lib/glosario'
 import { CONTADOR, descripcionDe, modulosDe } from '../components/Rail'
 import Arranque from '../components/Arranque'
 import Avisos from '../components/Avisos'
+import AjustarAPantalla from '../components/AjustarAPantalla'
 import UsuarioMenu from '../components/UsuarioMenu'
 import Notificaciones from '../components/Notificaciones'
 import { useAcceso } from '../lib/acceso'
@@ -105,6 +106,9 @@ export default function Inicio() {
     // (`flex-1`). En PC (`pc:`) nada de eso: ancho tope, margenes y letra de
     // escritorio, como cualquier tablero. En un telefono la pagina se
     // desplaza como siempre.
+    // Si no cabe, se reduce parejo hasta caber (ver AjustarAPantalla): la
+    // portada no se desplaza en laptop ni en tablet (Leider, 30-sep).
+    <AjustarAPantalla>
     <div className="min-h-screen flex flex-col">
       <div className="max-w-[100rem] pc:max-w-[84rem] mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 bajo:py-4 pc:py-8 flex-1 flex flex-col">
         {/* Cabecera: marca, a quien y que dia, y los controles. El saludo vive
@@ -269,6 +273,7 @@ export default function Inicio() {
         </div>
       </div>
     </div>
+    </AjustarAPantalla>
   )
 }
 
