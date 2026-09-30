@@ -93,7 +93,7 @@ export default function Inicio() {
   // Una columna por bandeja: filas anchas donde el nombre y la pregunta
   // caben en un renglon. Con tres o cuatro columnas la pregunta se partia en
   // cuatro lineas y la lamina parecia una tabla (Leider, 30-sep).
-  const unaColumna = { '--cols-sm': 1, '--cols-lg': 1, '--cols-alto': 1 } as CSSProperties
+  const unaColumna = { '--cols': 1, '--cols-sm': 1, '--cols-lg': 1, '--cols-alto': 1 } as CSSProperties
 
   return (
     // En la TABLET la pantalla se llena, en vertical y en horizontal: es una
@@ -243,18 +243,24 @@ export default function Inicio() {
             (Leider, 30-sep: secundario, no escondido, y no con el mismo
             estilo). El titulo lleva a la pagina que explica que se arma solo. */}
         {contador.length > 0 && (
-          <div className="pt-1 border-t border-[var(--vp-textura)] flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-neutral-500">
-            <Link to={CONTADOR.to} className="vp-etiqueta hover:text-neutral-700 mr-2">
-              Para el contador
-            </Link>
-            {contador.map((m) => (
-              <Link key={m.to} to={m.to} className="group inline-flex items-center gap-2 py-2 hover:text-neutral-900">
-                <Icono nombre={m.icono} size={16} className="text-neutral-400 group-hover:text-acento-600" />
-                <span className="font-medium">{m.titulo}</span>
-                <span className="hidden md:inline text-neutral-400 group-hover:text-neutral-500">· {PREGUNTA[m.to]}</span>
+          <div className="pt-3 border-t border-[var(--vp-textura)]">
+            <div className="flex items-baseline justify-between gap-3 mb-1">
+              <Link to={CONTADOR.to} className="vp-etiqueta hover:text-neutral-700">
+                Para el contador
               </Link>
-            ))}
-            <span className="ml-auto text-xs text-neutral-400">Se arma solo con lo de arriba</span>
+              <span className="text-xs text-neutral-400">Se arma solo con lo de arriba</span>
+            </div>
+            {/* Una lista pareja: en telefono una debajo de otra, en pantalla
+                ancha las tres en fila. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 text-sm text-neutral-500">
+              {contador.map((m) => (
+                <Link key={m.to} to={m.to} className="group flex items-center gap-2.5 py-2 hover:text-neutral-900">
+                  <Icono nombre={m.icono} size={16} className="shrink-0 text-neutral-400 group-hover:text-acento-600" />
+                  <span className="font-medium">{m.titulo}</span>
+                  <span className="text-neutral-400 truncate">· {PREGUNTA[m.to]}</span>
+                </Link>
+              ))}
+            </div>
           </div>
         )}
         </div>
