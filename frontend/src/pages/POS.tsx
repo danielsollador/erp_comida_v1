@@ -185,7 +185,7 @@ export default function POS() {
   // falta se calcula solo.
   const [pagoMixto, setPagoMixto] = useState(false)
   const [partes, setPartes] = useState<
-    { metodo: string; monto: number; referencia: string; verificacion_id?: number }[]
+    { metodo: string; monto: number; referencia: string; verificacion_id?: number; monto_bs?: number }[]
   >([])
   // Si el local tiene Pabilo, un pago movil se comprueba contra el banco
   // antes de cobrarlo. Se consulta una vez al abrir; si no esta configurado
@@ -899,7 +899,9 @@ export default function POS() {
     pedido: number,
     pago: PagoVerificado,
   ): Promise<{ partes: typeof partes; propina: number; descuento: number; pendiente: boolean; motivo?: string }> {
-    const base = { metodo, referencia: pago.referencia, verificacion_id: pago.verificacion_id }
+    // Los bolivares que dijo el banco viajan con el pago: con ellos el
+    // servidor anota los centimos de mas o de menos en "Redondeo de pagos".
+    const base = { metodo, referencia: pago.referencia, verificacion_id: pago.verificacion_id, monto_bs: pago.monto_bs }
     const entro = pago.monto_usd
     if (entro === undefined || !pago.decision || pago.decision === 'exacto') {
       return { partes: [{ ...base, monto: pedido }], propina: 0, descuento: 0, pendiente: false }

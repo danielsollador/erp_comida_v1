@@ -452,6 +452,8 @@ export const api = {
       referencia?: string
       // La consulta al banco que respaldo esa referencia (verificarPago).
       verificacion_id?: number
+      // Los bolivares que dijo el banco: el servidor guarda el redondeo.
+      monto_bs?: number
     }[],
     extra?: {
       descuento?: number

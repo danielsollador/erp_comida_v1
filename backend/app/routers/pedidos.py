@@ -1406,6 +1406,9 @@ async def cobrar_pedido(
     # siendo pago movil: "Mixto" es cuando se mezclan formas distintas.
     metodos = {p.metodo for p in pagos}
     pedido.metodo_pago = "Cortesía" if not pagos else pagos[0].metodo if len(metodos) == 1 else "Mixto"
+    # Los pagos que trajeron sus bolivares del banco: su redondeo se calcula
+    # con la tasa del cobro, mas abajo.
+    con_bs: list = []
     for pago in pagos:
         vuelto = round(max((pago.recibido or pago.monto) - pago.monto, 0), 2)
         # La consulta al banco que respaldo esta referencia, si la hubo. Se
@@ -1430,18 +1433,20 @@ async def cobrar_pedido(
                     detail="Esa verificación ya se usó para cobrar otro pedido.",
                 )
             verificacion.pedido_id = pedido.id
-        db.add(
-            models.PagoPedido(
-                pedido_id=pedido.id,
-                metodo=pago.metodo,
-                monto=round(pago.monto, 2),
-                recibido=round(pago.recibido, 2) if pago.recibido is not None else None,
-                vuelto_metodo=(pago.vuelto_metodo or pago.metodo) if vuelto > 0 else None,
-                vuelto_monto=vuelto,
-                referencia=(pago.referencia or "").strip(),
-                verificacion_id=verificacion.id if verificacion else None,
-            )
+        registro = models.PagoPedido(
+            pedido_id=pedido.id,
+            metodo=pago.metodo,
+            monto=round(pago.monto, 2),
+            recibido=round(pago.recibido, 2) if pago.recibido is not None else None,
+            vuelto_metodo=(pago.vuelto_metodo or pago.metodo) if vuelto > 0 else None,
+            vuelto_monto=vuelto,
+            referencia=(pago.referencia or "").strip(),
+            verificacion_id=verificacion.id if verificacion else None,
+            monto_bs=round(pago.monto_bs, 2) if pago.monto_bs else None,
         )
+        db.add(registro)
+        if registro.monto_bs:
+            con_bs.append(registro)
     db.flush()
     pedido.cerrado_en = ahora()
     # No todas las ventas se facturan - el dueno decide cual factura a mano
@@ -1457,7 +1462,18 @@ async def cobrar_pedido(
     pedido.tasa_iva = impuestos.tasa_iva(db) if body.facturado else None
     # El stock ya se descontó al crear la comanda. Aca solo se reconoce el
     # costo contra el ingreso, que es cuando corresponde registrarlo.
+    # Lo que el banco dijo en bolivares contra lo que el pago vale en los
+    # libros (sus dolares, ya en centavos, a la tasa del cobro): esa es la
+    # diferencia que va a "Redondeo de pagos".
+    if con_bs and pedido.tasa_bcv:
+        for registro in con_bs:
+            vale_bs = round(registro.monto * pedido.tasa_bcv, 2)
+            registro.redondeo_bs = round(registro.monto_bs - vale_bs, 2)
+            registro.redondeo_usd = registro.redondeo_bs / pedido.tasa_bcv
     contabilidad.registrar_venta(db, pedido)
+    if con_bs and pedido.tasa_bcv:
+        db.flush()
+        contabilidad.asentar_redondeo_del_dia(db, pedido.cerrado_en)
     db.commit()
     db.refresh(pedido)
 

@@ -1223,6 +1223,17 @@ class PagoPedido(Base):
     # Si la referencia se comprobo contra el banco antes de cobrar (Pabilo),
     # el registro de esa consulta. NULL = se anoto a mano, como siempre.
     verificacion_id = Column(Integer, ForeignKey("TRX121_VEN_VERIFICACION.id"), nullable=True)
+    # Los bolivares que entraron de verdad (lo que dijo el banco). Los libros
+    # van en dolares con centavos: Bs 18,00 por una cuenta de Bs 17,20 son
+    # $0,02 en los dos casos, y sin esto los Bs 0,80 de mas no quedaban en
+    # ninguna parte (Leider, 30-sep: "esos centavos en que lado de la
+    # contabilidad caeran").
+    monto_bs = Column(Float, nullable=True)
+    # Lo que entro de mas (+) o de menos (-) contra lo que el pago vale en
+    # los libros, en Bs y en dolares sin redondear. Va a la cuenta 4030
+    # "Redondeo de pagos" en cuanto lo acumulado del dia llega a un centavo.
+    redondeo_bs = Column(Float, default=0)
+    redondeo_usd = Column(Float, default=0)
 
 
 class VerificacionPago(Base):

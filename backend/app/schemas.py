@@ -586,6 +586,9 @@ class PagoInput(BaseModel):
     # La consulta al banco que respaldo esta referencia (POST
     # /api/pagos/verificar). Opcional: sin Pabilo se cobra como siempre.
     verificacion_id: Optional[int] = None
+    # Los bolivares que dijo el banco que entraron. Con ellos se guarda el
+    # redondeo contra los dolares de los libros (cuenta 4030).
+    monto_bs: Optional[float] = None
 
 
 class Pago(BaseModel):
@@ -598,6 +601,8 @@ class Pago(BaseModel):
     vuelto_monto: float = 0
     referencia: str = ""
     verificacion_id: Optional[int] = None
+    monto_bs: Optional[float] = None
+    redondeo_bs: float = 0
 
     class Config:
         from_attributes = True

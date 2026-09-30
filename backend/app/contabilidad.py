@@ -63,6 +63,12 @@ PLAN_DE_CUENTAS = [
     # muestra aparte cuanto se regalo en rebajas, que es informacion que el
     # dueno necesita y que bajar el precio del menu destruia.
     ("4020", "Descuentos concedidos", "ingreso", "acreedora"),
+    # Los centavos que un pago en bolivares trae de mas o de menos contra los
+    # dolares de los libros: el cliente redondea (Bs 18,00 por Bs 17,20) y la
+    # diferencia es menos de un centavo de dolar. Aqui van, para que el banco
+    # en bolivares y los libros en dolares cuadren. Saldo positivo = entro de
+    # mas; negativo = entro de menos.
+    ("4030", "Redondeo de pagos", "ingreso", "acreedora"),
     ("5010", "Costo de ventas (insumos)", "costo", "deudora"),
     ("6010", "Gastos operativos", "gasto", "deudora"),
     ("6020", "Perdida por merma", "gasto", "deudora"),
@@ -444,6 +450,56 @@ def registrar_venta(db: Session, pedido: models.Pedido) -> None:
         referencia_id=pedido.id,
         fecha=pedido.cerrado_en,
     )
+
+
+def asentar_redondeo_del_dia(db: Session, fecha: datetime.datetime) -> None:
+    """Lleva a 4030 "Redondeo de pagos" los centavos del dia que ya suman.
+
+    Cada pago guarda su redondeo en dolares SIN redondear ($0,00093). Uno
+    solo no llega a un centavo y no se puede asentar; muchos si. Aqui se
+    compara lo acumulado en el dia, cuenta por cuenta (el banco, la gaveta de
+    bolivares), contra lo que ya se asento, y la diferencia se asienta en
+    cuanto llega a un centavo. Asi los libros alcanzan al banco solos, sin
+    perder un centimo y sin asientos de $0,00.
+    """
+    from .timeutils import inicio_del_dia
+
+    inicio = inicio_del_dia(fecha.date())
+    fin = inicio + datetime.timedelta(days=1)
+    acumulado: dict = {}
+    for pago in (
+        db.query(models.PagoPedido)
+        .join(models.Pedido, models.Pedido.id == models.PagoPedido.pedido_id)
+        .filter(models.Pedido.cerrado_en >= inicio, models.Pedido.cerrado_en < fin)
+        .filter(models.PagoPedido.redondeo_usd.isnot(None), models.PagoPedido.redondeo_usd != 0)
+        .all()
+    ):
+        cuenta = cuenta_de_pago(pago.metodo, por_defecto="1020")
+        acumulado[cuenta] = acumulado.get(cuenta, 0.0) + (pago.redondeo_usd or 0)
+    if not acumulado:
+        return
+    for cuenta, total in acumulado.items():
+        asentado = (
+            db.query(func.coalesce(func.sum(models.MovimientoContable.debe - models.MovimientoContable.haber), 0.0))
+            .join(models.AsientoContable, models.AsientoContable.id == models.MovimientoContable.asiento_id)
+            .join(models.CuentaContable, models.CuentaContable.id == models.MovimientoContable.cuenta_id)
+            .filter(
+                models.AsientoContable.origen == "redondeo",
+                models.AsientoContable.fecha >= inicio,
+                models.AsientoContable.fecha < fin,
+                models.CuentaContable.codigo == cuenta,
+            )
+            .scalar()
+        ) or 0.0
+        falta = round(total - asentado, 2)
+        if abs(falta) < 0.01:
+            continue
+        lineas = (
+            [(cuenta, falta, 0.0), ("4030", 0.0, falta)]
+            if falta > 0
+            else [(cuenta, 0.0, -falta), ("4030", -falta, 0.0)]
+        )
+        crear_asiento(db, "Redondeo de pagos en bolívares", lineas, origen="redondeo", fecha=fecha)
 
 
 def registrar_ajuste_edicion(

@@ -399,7 +399,7 @@ function Resultado({
   const detalle =
     caso === 'sobra'
       ? menosDeUnCentavo
-        ? `El banco confirmó el pago. Sobran ${fmtBs(falta)}: es menos de un centavo de dólar, así que no llega a sumar propina.`
+        ? `El banco confirmó el pago. Sobran ${fmtBs(falta)}: es menos de un centavo de dólar, así que no es propina. Queda anotado en contabilidad, en «Redondeo de pagos».`
         : `El banco confirmó el pago. Lo que sobra, ${fmtBs(falta)}${usd}, se suma a la propina del equipo: no es venta.`
       : caso === 'falta'
         ? `El banco confirmó el pago, pero entró menos de la cuenta. Decide cómo se cobran los ${fmtBs(falta)}${usd} que faltan.`
@@ -430,7 +430,7 @@ function Resultado({
       {caso === 'exacto' && (
         <button
           type="button"
-          onClick={() => onListo({ monto_usd: cuentaUsd, decision: 'exacto' })}
+          onClick={() => onListo({ monto_usd: cuentaUsd, monto_bs: entro ?? undefined, decision: 'exacto' })}
           className="vp-pulsable w-full rounded-xl border border-exito-300 bg-exito-50 text-exito-800 py-3.5 font-semibold"
         >
           {enMixto ? `Anotar $${cuentaUsd.toFixed(2)} por ${metodo}` : `Cobrar por ${metodo}`}
@@ -485,7 +485,9 @@ function Resultado({
             onClick={() => onListo({ monto_usd: entroUsd, monto_bs: entro ?? undefined, decision: 'perdonar' })}
             className="vp-control vp-pulsable w-full rounded-xl py-2.5 text-sm font-medium"
           >
-            No cobrarlo: {fmtBs(falta)} de descuento
+            {menosDeUnCentavo
+              ? `No cobrarlo: los ${fmtBs(falta)} van a «Redondeo de pagos»`
+              : `No cobrarlo: ${fmtBs(falta)} de descuento`}
           </button>
           {menosDeUnCentavo && (
             <p className="text-[11px] text-neutral-500 leading-snug">
