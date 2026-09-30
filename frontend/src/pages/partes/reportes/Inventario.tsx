@@ -34,7 +34,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
       {/* ── Las cifras ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi
-          titulo="Valor del depósito"
+          titulo="Plata en mercancía"
           ayuda="kpi.valor_deposito"
           valor={dinero(datos.valor_total)}
           destacado
@@ -51,7 +51,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
           }
         />
         <Kpi
-          titulo="Bajo mínimo o agotadas"
+          titulo="Hay que comprar"
           ayuda="kpi.bajo_minimo"
           valor={String(datos.bajo_minimo + datos.agotados)}
           tono={datos.agotados > 0 ? 'malo' : datos.bajo_minimo > 0 ? undefined : 'bueno'}

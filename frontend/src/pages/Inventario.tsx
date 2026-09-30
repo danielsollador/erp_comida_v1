@@ -8,6 +8,7 @@ import { FiltroFechas } from '../components/Fechas'
 import { useRango, nombreRango } from '../lib/fechas'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
+import { useDeshacer } from '../components/Deshacer'
 import { Aviso, Boton, Campo, Cifra, FiltroDesplegable, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
@@ -221,6 +222,8 @@ export default function Inventario() {
     }
   }
 
+  const { deshacible } = useDeshacer()
+
   async function accion(fn: () => Promise<unknown>) {
     setError('')
     try {
@@ -370,18 +373,21 @@ export default function Inventario() {
   }
 
   async function archivar(ing: Ingrediente, activo: boolean) {
-    if (activo === false) {
-      const ok = await dialogo.confirmar({
-        titulo: `¿Archivar ${ing.nombre}?`,
-        texto:
-          'Deja de aparecer en el inventario, en las compras y en las sugerencias. ' +
-          'No se borra: sus recetas, compras y mermas siguen ahí, y se puede volver a activar.',
-        aceptar: 'Archivar',
-        peligro: true,
-      })
-      if (!ok) return
+    if (activo) {
+      await guardarFicha({ ...datosDe(ing), activo }, ing.id)
+      return
     }
-    await guardarFicha({ ...datosDe(ing), activo }, ing.id)
+    // Archivar no borra nada y tiene reverso: se hace de una, y el aviso de
+    // abajo la devuelve si fue un dedo.
+    setFicha(null)
+    deshacible({
+      clave: `mercancia:${ing.id}`,
+      texto: `${ing.nombre} archivada`,
+      ejecutar: () => api.actualizarIngrediente(ing.id, { ...datosDe(ing), activo: false }),
+      revertir: () => api.actualizarIngrediente(ing.id, { ...datosDe(ing), activo: true }),
+      alTerminar: cargar,
+      alFallar: (e) => setError(e instanceof Error ? e.message : 'No se pudo archivar'),
+    })
   }
 
   async function conteoGuardado(r: ResultadoConteo) {
@@ -497,13 +503,13 @@ export default function Inventario() {
             detalle={`${activos.filter((i) => i.tipo !== 'reventa').length} materia prima · ${activos.filter((i) => i.tipo === 'reventa').length} reventa`}
           />
           <Cifra
-            titulo="Bajo mínimo"
+            titulo="Hay que comprar"
             ayuda="kpi.bajo_minimo"
             valor={String(bajoMinimo.length)}
             detalle={bajoMinimo.length ? 'Toca para verlos' : 'Todo por encima del mínimo'}
             tono={bajoMinimo.length ? 'alerta' : 'bien'}
           />
-          <Cifra titulo="Valor en depósito" ayuda="kpi.valor_deposito" valor={dinero(valorDeposito)} detalle="Stock × costo promedio, sin IVA" />
+          <Cifra titulo="Plata en mercancía" ayuda="kpi.valor_deposito" valor={dinero(valorDeposito)} detalle="Stock × costo promedio, sin IVA" />
           <Cifra
             titulo={`Pérdidas · ${nombreRango(rango).toLowerCase()}`}
             ayuda="kpi.perdidas_30"
@@ -585,13 +591,13 @@ export default function Inventario() {
             <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="nombre">Mercancía</Th>
-                <Th clave="stock" alinear="derecha">Stock</Th>
+                <Th clave="stock" alinear="derecha">Hay</Th>
                 <Th clave="minimo" alinear="derecha">Mínimo</Th>
-                <Th clave="costo" alinear="derecha">Costo compra</Th>
+                <Th clave="costo" alinear="derecha">Costo promedio</Th>
                 {/* El promedio ponderado no dice cuanto cuesta comprar mas: esa
                     es la cuenta que importa para poner precios. */}
-                <Th clave="reponer" alinear="derecha">Reponer</Th>
-                <Th clave="rendimiento" alinear="derecha">Rendimiento</Th>
+                <Th clave="reponer" alinear="derecha">Última compra</Th>
+                <Th clave="rendimiento" alinear="derecha">Aprovechable</Th>
                 <Th clave="real" alinear="derecha">Costo real</Th>
                 <Th ayuda="inventario.acciones" alinear="derecha">Acciones</Th>
               </tr>
@@ -1973,6 +1979,8 @@ function SeccionCategorias({
   const nombreActual =
     actual === SIN_CAJON ? 'Sin categoría' : categorias.find((c) => c.id === actual)?.nombre ?? ''
 
+  const { deshacible, oculto } = useDeshacer()
+
   async function intentar(accion: () => Promise<unknown>) {
     setOcupado(true)
     setError('')
@@ -2009,19 +2017,16 @@ function SeccionCategorias({
     await intentar(() => api.renombrarCategoriaInsumo(c.id, nombre))
   }
 
-  async function borrar(c: CategoriaInsumo) {
-    const ok = await dialogo.confirmar({
-      titulo: `¿Borrar la categoría «${c.nombre}»?`,
-      texto: c.usos
-        ? `Su mercancía NO se borra: ${c.usos} artículo(s) quedan sin categoría y se les puede poner otra cuando quieras.`
-        : 'Está vacía, así que no afecta a ninguna mercancía.',
-      aceptar: 'Borrar la categoría',
-      peligro: true,
-    })
-    if (!ok) return
-    await intentar(async () => {
-      await api.borrarCategoriaInsumo(c.id)
-      setElegida(null)
+  function borrar(c: CategoriaInsumo) {
+    // La mercancia no se borra (queda sin cajon), asi que basta con poder
+    // deshacer unos segundos: la categoria se esconde ya y se borra despues.
+    setElegida(null)
+    deshacible({
+      clave: `cajon:${c.id}`,
+      texto: c.usos ? `Categoría «${c.nombre}» borrada · ${c.usos} sin categoría` : `Categoría «${c.nombre}» borrada`,
+      ejecutar: () => api.borrarCategoriaInsumo(c.id),
+      alTerminar: () => void onCambio(),
+      alFallar: (e) => setError(e instanceof Error ? e.message : 'No se pudo'),
     })
   }
 
@@ -2080,7 +2085,7 @@ function SeccionCategorias({
             Categorías
           </p>
           <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
-            {categorias.map((c) =>
+            {categorias.filter((c) => !oculto(`cajon:${c.id}`)).map((c) =>
               fila(
                 c.id,
                 c.nombre,

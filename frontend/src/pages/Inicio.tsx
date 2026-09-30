@@ -4,7 +4,9 @@ import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
-import { MODULOS, entraAModulo } from '../components/Rail'
+import { modulosDe } from '../components/Rail'
+import Arranque from '../components/Arranque'
+import Avisos from '../components/Avisos'
 import UsuarioMenu from '../components/UsuarioMenu'
 import Notificaciones from '../components/Notificaciones'
 import { useAcceso } from '../lib/acceso'
@@ -71,9 +73,14 @@ export default function Inicio() {
   const [porCobrar, setPorCobrar] = useState(0)
   const { fmt } = useMoneda()
 
-  const entra = (m: (typeof MODULOS)[number]) => entraAModulo(estado.puede, m.modulo)
-  const operacion = MODULOS.filter((m) => m.grupo === 'operacion' && entra(m))
-  const administracion = MODULOS.filter((m) => m.grupo === 'administracion' && entra(m))
+  // Tres puertas (ver Rail.tsx): vender, mi negocio y, aparte y chiquito, lo
+  // del contador. Configuracion cierra la bandeja del negocio.
+  const operacion = modulosDe(estado.puede, 'vender')
+  const administracion: { to: string; icono: NombreIcono; titulo: string }[] = [
+    ...modulosDe(estado.puede, 'negocio'),
+    { to: '/configuracion', icono: 'configuracion', titulo: 'Configuración' },
+  ]
+  const contador = modulosDe(estado.puede, 'contador')
 
   useEffect(() => {
     cargar()
@@ -174,6 +181,9 @@ export default function Inicio() {
           <span className="first-letter:uppercase inline-block">{fecha}</span>
         </p>
 
+        {/* Las misiones de arranque: solo mientras el local se arma. */}
+        {estado.puede.administrar && <Arranque />}
+
         {/* ── El dia ──────────────────────────────────────────────────────
             Un panel ancho con la unica cifra que se pregunta al entrar, y a
             su lado las dos cosas que ESPERAN algo. No es un mosaico de
@@ -227,6 +237,9 @@ export default function Inicio() {
           />
         </div>
 
+        {/* Lo que el sistema avisa solo. Solo a quien ve las cifras. */}
+        {estado.puede.ve_kpis && <Avisos />}
+
         {/* Operacion: lo que se toca cien veces al dia. Las fichas miden una
             fraccion fija de la pantalla (21 % del alto, con tope), asi que en
             una tablet en vertical son grandes sin quedarse vacias y en una
@@ -252,7 +265,7 @@ export default function Inicio() {
             alto que sobre y lo reparte entre sus filas. */}
         {administracion.length > 0 && (
           <div className="flex flex-col min-h-0">
-            <p className="vp-etiqueta mb-2.5">Administración</p>
+            <p className="vp-etiqueta mb-2.5">Mi negocio</p>
             <div className="vp-lista" style={columnas}>
               {administracion.map((m) => (
                 <Link
@@ -274,6 +287,23 @@ export default function Inicio() {
                 </Link>
               ))}
             </div>
+            {/* Lo del contador se arma solo: una linea, no tres fichas. */}
+            {contador.length > 0 && (
+              <p className="mt-3 text-sm text-neutral-500 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                <Link to="/contador" className="font-medium text-neutral-600 hover:text-neutral-900">
+                  Para el contador
+                </Link>
+                <span aria-hidden className="text-neutral-300">·</span>
+                {contador.map((m, i) => (
+                  <span key={m.to} className="contents">
+                    {i > 0 && <span aria-hidden className="text-neutral-300">·</span>}
+                    <Link to={m.to} className="hover:text-neutral-900 hover:underline">
+                      {m.titulo}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
           </div>
         )}
         </div>

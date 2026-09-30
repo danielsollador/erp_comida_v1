@@ -1185,6 +1185,30 @@ class Insight(BaseModel):
     detalle: str
 
 
+class Aviso(BaseModel):
+    """Lo que el sistema le dice al dueño SIN que lo pregunte, en la portada:
+    "la harina se te acaba el jueves", "te deben $40". Una frase y a donde ir.
+    (Leider, 30-sep: "el sistema espera a que le pregunten; tiene que avisar".)"""
+
+    id: str
+    tono: str  # ojo | bien | info
+    titulo: str
+    detalle: str = ""
+    # La pantalla que lo resuelve: "/inventario?s=comprar".
+    a: str = ""
+
+
+class ArranqueLocal(BaseModel):
+    """Cuanto lleva armado un local nuevo: lo que cuenta la portada para las
+    misiones de arranque ("carga tus productos", "haz tu primera venta")."""
+
+    productos: int
+    con_receta: int
+    mercancias: int
+    ventas: int
+    cierres: int
+
+
 class PuntoCalor(BaseModel):
     """Una celda del mapa de calor: los pedidos que entraron ese dia de la
     semana a esa hora, sumando todo el periodo. Solo vienen las celdas con

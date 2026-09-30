@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from .. import combos, consolidacion, contabilidad, kardex, models, reposicion, schemas
+from .. import combos, consolidacion, contabilidad, kardex, models, reposicion, schemas, seed
 from ..consolidacion import Bloque, pedidos_pagados as _pedidos_pagados
 from ..database import get_db
 from ..rango import Rango, anterior, granularidad, serie as serie_del_rango
@@ -1257,3 +1257,221 @@ def reporte_inventario(rango: Rango = Depends(), db: Session = Depends(get_db)):
             inflacion["cambio_pct"] if inflacion else None, dias,
         ),
     )
+
+
+# ── La portada: arranque y avisos ─────────────────────────────────────────────
+#
+# "Fight complexity" (Leider, 30-sep): el sistema no espera a que le
+# pregunten. La portada cuenta cuanto lleva armado un local nuevo --para
+# guiarlo paso a paso-- y le dice al dueño lo que hoy tendria que ir a buscar
+# a tres pantallas distintas: que se le acaba, que le deben, que subio.
+
+
+@router.get("/arranque", response_model=schemas.ArranqueLocal)
+def arranque(db: Session = Depends(get_db)):
+    """Cuanto lleva armado el local. Cinco cuentas, una consulta cada una."""
+    # Sin la categoria de envios: son servicios que el sistema trae puestos,
+    # no productos que el local cargo. Un local recien abierto tiene cero.
+    productos = (
+        db.query(models.Producto)
+        .join(models.Categoria)
+        .filter(
+            models.Producto.activo.is_(True),
+            models.Categoria.activo.is_(True),
+            models.Categoria.nombre != seed.CATEGORIA_ENVIOS,
+        )
+        .count()
+    )
+    con_receta = (
+        db.query(models.RecetaItem.variante_id)
+        .join(models.Variante, models.Variante.id == models.RecetaItem.variante_id)
+        .join(models.Producto, models.Producto.id == models.Variante.producto_id)
+        .filter(models.Variante.activo.is_(True), models.Producto.activo.is_(True))
+        .distinct()
+        .count()
+    )
+    mercancias = db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).count()
+    ventas = db.query(models.Pedido).filter(models.Pedido.estado == "pagado").count()
+    cierres = db.query(models.CierreCaja).filter(models.CierreCaja.anulado.isnot(True)).count()
+    return schemas.ArranqueLocal(
+        productos=productos,
+        con_receta=con_receta,
+        mercancias=mercancias,
+        ventas=ventas,
+        cierres=cierres,
+    )
+
+
+def _cuando(dias: float) -> str:
+    """"hoy", "mañana", "el jueves": cuando se acaba algo que dura `dias`."""
+    if dias < 1:
+        return "hoy"
+    if dias < 2:
+        return "mañana"
+    fecha = hoy() + datetime.timedelta(days=int(round(dias)))
+    return f"el {DIAS_LARGOS[fecha.weekday()]}"
+
+
+def _avisos_de_deposito(db: Session) -> List[schemas.Aviso]:
+    """Lo que se acaba, medido con el consumo real de las ultimas dos semanas.
+
+    "La harina se te acaba el jueves" vale mas que una tabla de existencias:
+    el minimo a dedo se pone una vez y se queda viejo; el consumo cambia solo.
+    """
+    corte = ahora()
+    saldos = kardex.existencias_a(db, corte)
+    consumo = kardex.consumo_por_dia_de_todos(db, corte - datetime.timedelta(days=14), corte)
+    agotados: List[str] = []
+    pronto: List[tuple] = []
+    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).all():
+        por_dia = consumo.get(ing.id, 0.0)
+        if por_dia <= 0:
+            continue  # lo que no se mueve no se acaba
+        cantidad = saldos.get(ing.id, ing.stock_actual or 0)
+        if cantidad <= 0:
+            agotados.append(ing.nombre)
+            continue
+        dias = cantidad / por_dia
+        if dias <= 7:
+            pronto.append((dias, ing.nombre))
+    out: List[schemas.Aviso] = []
+    if agotados:
+        nombres = ", ".join(agotados[:3]) + ("…" if len(agotados) > 3 else "")
+        out.append(
+            schemas.Aviso(
+                id="agotados",
+                tono="ojo",
+                titulo=f"Te quedaste sin {nombres}",
+                detalle="Se vende con eso y ya no hay en el depósito.",
+                a="/inventario?s=comprar",
+            )
+        )
+    pronto.sort()
+    if pronto:
+        dias, nombre = pronto[0]
+        resto = len(pronto) - 1
+        out.append(
+            schemas.Aviso(
+                id="se-acaba",
+                tono="ojo",
+                titulo=f"{nombre} se te acaba {_cuando(dias)}",
+                detalle=(
+                    f"Al ritmo de las últimas dos semanas. Y {resto} más esta semana."
+                    if resto
+                    else "Al ritmo de las últimas dos semanas."
+                ),
+                a="/inventario?s=comprar",
+            )
+        )
+    return out
+
+
+def _aviso_de_fiado(db: Session) -> Optional[schemas.Aviso]:
+    pedidos = (
+        db.query(models.Pedido)
+        .join(models.PagoPedido)
+        .filter(
+            models.PagoPedido.metodo == "Fiado",
+            models.Pedido.fiado_saldado.is_(False),
+            models.Pedido.devuelto.is_(False),
+        )
+        .all()
+    )
+    total = round(sum(p.fiado_saldo for p in pedidos), 2)
+    if total <= 0:
+        return None
+    viejo = max(((ahora() - (p.cerrado_en or p.creado_en)).days for p in pedidos), default=0)
+    return schemas.Aviso(
+        id="fiado",
+        tono="ojo",
+        titulo=f"Te deben ${total:.2f} de {len(pedidos)} venta{'s' if len(pedidos) != 1 else ''} a crédito",
+        detalle=f"La más vieja tiene {viejo} día{'s' if viejo != 1 else ''}." if viejo else "",
+        a="/caja?s=fiado",
+    )
+
+
+def _avisos_del_mes(db: Session) -> List[schemas.Aviso]:
+    """Lo que se lee de las ventas del mes: recetas que faltan, el dia fuerte."""
+    fin = ahora()
+    inicio = inicio_del_dia(hoy().replace(day=1))
+    b = consolidacion.bloque_para(db, inicio, fin)
+    out: List[schemas.Aviso] = []
+    if not b.pedidos:
+        return out
+    sin_receta = [g for g in b.productos.values() if g.sin_receta and g.ventas > 0]
+    if sin_receta:
+        vendido = sum(g.ventas for g in sin_receta)
+        n = len(sin_receta)
+        out.append(
+            schemas.Aviso(
+                id="sin-receta",
+                tono="info",
+                titulo=f"{n} producto{'s' if n != 1 else ''} que vendes no {'tienen' if n != 1 else 'tiene'} receta",
+                detalle=f"${vendido:.2f} vendidos este mes sin saber cuánto dejan. Ponles receta y lo ves al instante.",
+                a="/menu?s=recetas",
+            )
+        )
+    # El dia fuerte solo cuando hay con que compararlo: dos semanas de datos.
+    if (fin - inicio).days >= 13:
+        dias = [d for d in _por_dia_semana(b, inicio, fin, b.ventas) if d.promedio]
+        if len(dias) >= 3:
+            mejor = max(dias, key=lambda d: d.promedio or 0)
+            i = DIAS_ES.index(mejor.nombre)
+            out.append(
+                schemas.Aviso(
+                    id="dia-fuerte",
+                    tono="bien",
+                    titulo=f"El {DIAS_LARGOS[i]} es tu día fuerte",
+                    detalle=f"Un {DIAS_LARGOS[i]} típico vende ${mejor.promedio:.2f}. Que no falte nada ese día.",
+                    a="/reportes?s=ventas",
+                )
+            )
+    return out
+
+
+def _aviso_de_iva(db: Session) -> Optional[schemas.Aviso]:
+    """Al final del mes: cuanto IVA se lleva el SENIAT. Impuestos trabaja por
+    debajo; el dueño solo necesita saber la cifra antes de que le toque."""
+    if hoy().day < 24:
+        return None
+    from .impuestos import _totales_iva_del_rango
+
+    inicio = inicio_del_dia(hoy().replace(day=1))
+    debito, credito = _totales_iva_del_rango(db, inicio, ahora())
+    neto = round(debito - credito, 2)
+    if neto <= 0:
+        return None
+    return schemas.Aviso(
+        id="iva",
+        tono="info",
+        titulo=f"Este mes llevas ${neto:.2f} de IVA por pagar",
+        detalle="Cobrado en ventas menos pagado en compras. Los libros ya están armados.",
+        a="/impuestos?s=declaraciones",
+    )
+
+
+@router.get("/avisos", response_model=List[schemas.Aviso])
+def avisos(db: Session = Depends(get_db)):
+    """Lo que el dueño tendria que ir a buscar hoy, dicho en la portada.
+
+    Primero lo que cuesta plata si no se atiende (ojo), despues lo que
+    conviene saber (info), y al final lo bueno. Nunca mas de cuatro: cinco
+    avisos son una lista, y una lista ya no se lee.
+    """
+    todos: List[schemas.Aviso] = []
+    todos += _avisos_de_deposito(db)
+    fiado = _aviso_de_fiado(db)
+    if fiado:
+        todos.append(fiado)
+    # Lo que subio de precio ya lo calcula Reportes: se cuenta en una frase.
+    for i, insight in enumerate(_avisos_de_costos(db)[:1]):
+        todos.append(
+            schemas.Aviso(id=f"costos-{i}", tono="ojo", titulo=insight.titulo, detalle=insight.detalle, a="/menu")
+        )
+    todos += _avisos_del_mes(db)
+    iva = _aviso_de_iva(db)
+    if iva:
+        todos.append(iva)
+    orden = {"ojo": 0, "info": 1, "bien": 2}
+    todos.sort(key=lambda a: orden.get(a.tono, 9))
+    return todos[:4]

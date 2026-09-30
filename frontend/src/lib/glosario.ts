@@ -70,7 +70,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
       'Harina y Queso son materia prima: entran en las recetas. Un refresco en lata es "reventa": se compra y se vende sin cocinar.',
   },
   'inventario.stock': {
-    que: 'Cuánto hay ahora mismo, según el sistema.',
+    que: 'Cuánto hay ahora mismo, según el sistema. Es lo que otros sistemas llaman "stock".',
     origen:
       'No se teclea: sube con cada compra y baja sola con cada venta (descontando lo que dice la receta), con las mermas y con el consumo del personal. El conteo físico lo corrige.',
     calculo: 'Lo que entró menos lo que salió, desde el último conteo.',
@@ -90,7 +90,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
     calculo:
       'Promedio ponderado: (stock viejo × costo viejo + lo que entra × lo que pagaste) ÷ stock total. Por eso no salta de golpe cuando el proveedor sube el precio.',
     ejemplo:
-      'Tenías 10 kg a $1 y compras 10 kg a $2: el costo queda en $1,50, no en $2. Es lo correcto para valorar el depósito, pero para poner precios mira "Reponer".',
+      'Tenías 10 kg a $1 y compras 10 kg a $2: el costo queda en $1,50, no en $2. Es lo correcto para valorar el depósito, pero para poner precios mira "Última compra".',
   },
   'inventario.reponer': {
     que: 'Lo que pagaste la última vez. Es lo que te va a costar comprar más.',
@@ -204,7 +204,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
     que: 'Lo que costó una unidad en esa compra concreta.',
     origen: 'Lo que pagaste dividido entre lo que entró, siempre sin IVA.',
     calculo: 'Total pagado sin IVA ÷ cantidad.',
-    ejemplo: 'La compra más reciente de esta lista es la que aparece como "Reponer" en la tabla de mercancía.',
+    ejemplo: 'La compra más reciente de esta lista es la que aparece como "Última compra" en la tabla de mercancía.',
   },
   'costos.cambio': {
     que: 'Cuánto subió o bajó el precio respecto a la compra anterior.',

@@ -810,7 +810,7 @@ function Resumen({ r, nombre }: { r: ResumenVentas; nombre: string }) {
         <Cifra titulo="Pedidos" ayuda="kpi.pedidos" valor={String(r.pedidos)} detalle={`${r.unidades} unidades`} />
         <Cifra titulo="Pedidos por día" ayuda="kpi.pedidos_por_dia" valor={r.pedidos_por_dia.toFixed(1)} />
         <Cifra
-          titulo="Ticket promedio"
+          titulo="Gasta cada cliente"
           ayuda="kpi.ticket_promedio"
           valor={fmt(r.ticket_promedio)}
           detalle={
@@ -1032,7 +1032,7 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
         <Cifra titulo="Descuentos" ayuda="kpi.descuentos" valor={fmt(p.valor_descuentos)} detalle={`En ${p.con_descuento} venta(s)`} />
         <Cifra titulo="Merma de inventario" ayuda="kpi.merma_inventario" valor={fmt(p.merma_inventario)} detalle="Lo que se botó o se dañó, según el libro" tono={p.merma_inventario > 0 ? 'alerta' : 'normal'} />
         <Cifra titulo="Anuladas" ayuda="kpi.anuladas" valor={fmt(p.valor_anulado)} detalle={`${p.anuladas} pedido(s). No entró: no se suma arriba`} />
-        <Cifra titulo="A crédito por cobrar" ayuda="kpi.fiado_pendiente" valor={fmt(p.valor_fiado_pendiente)} detalle={`${p.fiado_pendiente} venta(s) de este período aún sin pagar`} tono={p.valor_fiado_pendiente > 0 ? 'alerta' : 'normal'} />
+        <Cifra titulo="Te deben" ayuda="kpi.fiado_pendiente" valor={fmt(p.valor_fiado_pendiente)} detalle={`${p.fiado_pendiente} venta(s) de este período aún sin pagar`} tono={p.valor_fiado_pendiente > 0 ? 'alerta' : 'normal'} />
       </div>
 
       <Seccion titulo="Una por una" ayuda="Cada venta que se devolvió, se rebajó, se anuló o quedó a crédito en el período." plano>

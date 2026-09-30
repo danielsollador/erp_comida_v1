@@ -5,7 +5,7 @@ import { FiltroFechas } from '../components/Fechas'
 import { useRango, type Rango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
-import { Boton, Campo, Modal, Pagina, Selector } from '../components/ui'
+import { Aviso, Boton, Campo, Modal, Pagina, Selector } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import Respaldos from './partes/Respaldos'
 import { api } from '../lib/api'
@@ -43,6 +43,10 @@ export default function Contabilidad() {
     <div className="min-h-screen bg-neutral-50">
       <NavBar titulo="Contabilidad" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={conPeriodo ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina>
+        {/* El dueño no opera esto: cada venta y compra ya dejo su asiento. */}
+        <Aviso tono="info">
+          Esto se arma solo con cada venta, compra, gasto y merma. No hay que cargar nada: es para tu contador.
+        </Aviso>
         {seccion === 'plan' && <PlanCuentas />}
         {seccion === 'diario' && <Diario rango={rango} />}
         {seccion === 'comprobacion' && <BalanceComprobacion />}

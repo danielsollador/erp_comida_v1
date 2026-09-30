@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useDialogo } from '../../../components/dialogo'
+import { useDeshacer } from '../../../components/Deshacer'
 import { Aviso, Boton, Campo, Pastilla, Seccion, Selector, Vacio } from '../../../components/ui'
 import { useAcceso } from '../../../lib/acceso'
 import { api } from '../../../lib/api'
@@ -28,7 +28,6 @@ import type { ConfigPabilo, CuentaPabilo, OpcionBanco } from '../../../lib/types
 export default function PagoMovil() {
   const { estado } = useAcceso()
   const vertigo = estado.puede.vertigo
-  const dialogo = useDialogo()
   const [config, setConfig] = useState<ConfigPabilo | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
@@ -65,15 +64,16 @@ export default function PagoMovil() {
     await correr(() => api.elegirCuentaPabilo(c.id), `«${c.descripcion || nombreBanco(c.banco)}» es ahora la cuenta principal.`)
   }
 
-  async function quitar(c: CuentaPabilo) {
-    const seguro = await dialogo.confirmar({
-      titulo: `¿Quitar «${c.descripcion || nombreBanco(c.banco)}»?`,
-      texto: 'Deja de verificarse contra esa cuenta. Las ventas ya cobradas no cambian.',
-      aceptar: 'Quitar',
-      peligro: true,
+  const { deshacible, oculto } = useDeshacer()
+
+  function quitar(c: CuentaPabilo) {
+    // Las ventas ya cobradas no cambian: basta con unos segundos para
+    // deshacer. La cuenta se esconde ya y se quita del banco despues.
+    deshacible({
+      clave: `cuenta:${c.id}`,
+      texto: `«${c.descripcion || nombreBanco(c.banco)}» quitada`,
+      ejecutar: () => correr(() => api.borrarCuentaPabilo(c.id), 'Cuenta quitada.'),
     })
-    if (!seguro) return
-    await correr(() => api.borrarCuentaPabilo(c.id), 'Cuenta quitada.')
   }
 
   if (cargando && !config) {
@@ -132,7 +132,7 @@ export default function PagoMovil() {
             />
           ) : (
             <ul className="divide-y divide-neutral-100">
-              {config!.cuentas.map((c) => (
+              {config!.cuentas.filter((c) => !oculto(`cuenta:${c.id}`)).map((c) => (
                 <FilaCuenta
                   key={c.id}
                   c={c}

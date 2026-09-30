@@ -4,6 +4,7 @@ import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { useRango, etiquetaRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
+import { useDeshacer } from '../components/Deshacer'
 import { Modal, Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
@@ -1043,7 +1044,7 @@ function Movimientos({
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState(METODOS_PAGO[0])
   const [error, setError] = useState('')
-  const dialogo = useDialogo()
+  const { deshacible, oculto } = useDeshacer()
 
   async function registrar() {
     const n = Number(monto.replace(',', '.'))
@@ -1064,18 +1065,16 @@ function Movimientos({
     }
   }
 
-  async function borrarGasto(id: number) {
-    if (!(await dialogo.confirmar({ titulo: '¿Borrar este gasto?', aceptar: 'Borrar', peligro: true })))
-      return
-    await api.eliminarGasto(id)
-    alCambiar()
+  // Sin "¿estás seguro?": la fila se va y durante unos segundos se puede
+  // deshacer (ver components/Deshacer). Borrar no tiene reverso en el
+  // servidor, asi que la orden espera esos segundos antes de salir.
+  const alFallar = (e: unknown) => setError(e instanceof Error ? e.message : 'No se pudo borrar')
+  function borrarGasto(id: number) {
+    deshacible({ clave: `gasto:${id}`, texto: 'Gasto borrado', ejecutar: () => api.eliminarGasto(id), alTerminar: alCambiar, alFallar })
   }
 
-  async function borrarRetiro(id: number) {
-    if (!(await dialogo.confirmar({ titulo: '¿Borrar este retiro?', aceptar: 'Borrar', peligro: true })))
-      return
-    await api.eliminarRetiro(id)
-    alCambiar()
+  function borrarRetiro(id: number) {
+    deshacible({ clave: `retiro:${id}`, texto: 'Retiro borrado', ejecutar: () => api.eliminarRetiro(id), alTerminar: alCambiar, alFallar })
   }
 
   const esGasto = tipo === 'gasto'
@@ -1162,7 +1161,7 @@ function Movimientos({
       <ListaMovimientos
         titulo="Gastos"
         etiqueta={etiquetaRango(rango)}
-        filas={gastos.map((g) => ({
+        filas={gastos.filter((g) => !oculto(`gasto:${g.id}`)).map((g) => ({
           id: g.id,
           fecha: g.fecha,
           texto: g.descripcion,
@@ -1174,7 +1173,7 @@ function Movimientos({
       <ListaMovimientos
         titulo="Retiros del dueño"
         etiqueta={etiquetaRango(rango)}
-        filas={retiros.map((r) => ({
+        filas={retiros.filter((r) => !oculto(`retiro:${r.id}`)).map((r) => ({
           id: r.id,
           fecha: r.fecha,
           texto: r.nota || 'Retiro',

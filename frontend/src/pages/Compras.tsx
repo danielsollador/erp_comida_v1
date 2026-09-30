@@ -5,6 +5,7 @@ import { useSeccion } from '../components/Secciones'
 import { FiltroFechas } from '../components/Fechas'
 import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
+import { useDeshacer } from '../components/Deshacer'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { Boton, Campo, Modal, Pagina, Pastilla, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
@@ -154,10 +155,19 @@ export default function Compras() {
     api.listarProveedores().then(setProveedores)
   }
 
-  async function archivarProveedor(p: Proveedor) {
-    if (!(await dialogo.confirmar({ titulo: `${p.activo ? 'Archivar' : 'Reactivar'} a ${p.nombre}?` }))) return
-    await api.archivarProveedor(p.id, !p.activo)
-    api.listarProveedores().then(setProveedores)
+  const { deshacible, oculto } = useDeshacer()
+
+  // Archivar tiene reverso (reactivar), asi que se hace de una y el aviso
+  // de abajo lo deshace. Nada de "¿estás seguro?" para algo que se revierte.
+  function archivarProveedor(p: Proveedor) {
+    deshacible({
+      clave: `proveedor:${p.id}`,
+      texto: p.activo ? `${p.nombre} archivado` : `${p.nombre} de vuelta`,
+      ejecutar: () => api.archivarProveedor(p.id, !p.activo),
+      revertir: () => api.archivarProveedor(p.id, p.activo),
+      alTerminar: () => void api.listarProveedores().then(setProveedores),
+      alFallar: (e) => setError(e instanceof Error ? e.message : 'No se pudo'),
+    })
   }
 
   const baseLineas = useMemo(
@@ -463,21 +473,15 @@ export default function Compras() {
       })
       return
     }
-    if (
-      !(await dialogo.confirmar({
-        titulo: '¿Borrar esta factura?',
-        texto: 'También se borra su asiento contable.',
-        aceptar: 'Borrar',
-        peligro: true,
-      }))
-    )
-      return
-    try {
-      await api.eliminarFacturaCompra(f.id)
-      cargar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo borrar')
-    }
+    // La factura desaparece ya y se puede deshacer unos segundos; el borrado
+    // de verdad (con su asiento) sale cuando pasan.
+    deshacible({
+      clave: `factura:${f.id}`,
+      texto: 'Factura borrada',
+      ejecutar: () => api.eliminarFacturaCompra(f.id),
+      alTerminar: cargar,
+      alFallar: (e) => setError(e instanceof Error ? e.message : 'No se pudo borrar'),
+    })
   }
 
   async function marcarPagada(f: FacturaCompra) {
@@ -500,6 +504,7 @@ export default function Compras() {
 
   const hoy = new Date()
   const pendientes = facturas
+    .filter((f) => !oculto(`factura:${f.id}`))
     .filter((f) => f.forma_pago === 'Credito' && !f.pagada)
     .sort((a, b) => {
       const va = a.fecha_vencimiento ? new Date(a.fecha_vencimiento).getTime() : Infinity
@@ -586,7 +591,7 @@ export default function Compras() {
                 <Th clave="factura">Factura</Th>
                 <Th clave="proveedor">Proveedor</Th>
                 <Th ayuda="compras.detalle">Detalle</Th>
-                <Th clave="base" alinear="derecha">Base</Th>
+                <Th clave="base" alinear="derecha">Sin IVA</Th>
                 <Th clave="iva" alinear="derecha">IVA</Th>
                 <Th clave="total" alinear="derecha">Total</Th>
                 <Th clave="estado">Estado</Th>
@@ -594,7 +599,7 @@ export default function Compras() {
               </tr>
             </thead>
             <tbody>
-              {orden.ordenar(buscador.filtrar(facturas)).map((f) => (
+              {orden.ordenar(buscador.filtrar(facturas.filter((f) => !oculto(`factura:${f.id}`)))).map((f) => (
                 <tr key={f.id} className="border-t border-neutral-100 align-top">
                   <td className="p-3 whitespace-nowrap">{new Date(f.fecha).toLocaleDateString('es-VE')}</td>
                   <td className="p-3 font-mono text-xs">{f.numero_factura}</td>

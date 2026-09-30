@@ -12,6 +12,7 @@ import Rail, { entraA, sinBarraLateral } from './components/Rail'
 import Conexion from './components/Conexion'
 import Solicitudes from './components/Solicitudes'
 import { DialogoProvider } from './components/dialogo'
+import { DeshacerProvider } from './components/Deshacer'
 import { TecladoProvider } from './components/Teclado'
 import { MonedaProvider } from './lib/moneda'
 import { AccesoProvider, useAcceso } from './lib/acceso'
@@ -85,6 +86,7 @@ const Contabilidad = perezoso(() => import('./pages/Contabilidad'))
 const Compras = perezoso(() => import('./pages/Compras'))
 const Impuestos = perezoso(() => import('./pages/Impuestos'))
 const Configuracion = perezoso(() => import('./pages/Configuracion'))
+const Contador = perezoso(() => import('./pages/Contador'))
 
 /** Lo que se ve el instante que tarda en llegar el modulo. */
 function Cargando() {
@@ -192,6 +194,7 @@ export default function App() {
             numero" tambien lo usan y tienen que verlo. */}
         <TecladoProvider>
         <DialogoProvider>
+        <DeshacerProvider>
         <BrowserRouter>
           <Marco>
             {/* Dentro del <Marco>: la barra lateral y el aviso de conexion no
@@ -219,6 +222,8 @@ export default function App() {
               <Route path="/tasa" element={<Requiere modulo="tasa"><Tasa /></Requiere>} />
               <Route path="/compras" element={<Requiere modulo="compras"><Compras /></Requiere>} />
 
+              {/* La puerta unica a lo que se arma solo: contabilidad, impuestos, tasa. */}
+              <Route path="/contador" element={<RequiereAlguno modulos={['contabilidad', 'impuestos', 'tasa']}><Contador /></RequiereAlguno>} />
               <Route path="/contabilidad" element={<Requiere modulo="contabilidad"><Contabilidad /></Requiere>} />
               <Route path="/impuestos" element={<Requiere modulo="impuestos"><Impuestos /></Requiere>} />
               <Route path="/usuarios" element={<Navigate to="/configuracion?s=usuarios" replace />} />
@@ -229,6 +234,7 @@ export default function App() {
             </SiNoCarga>
           </Marco>
         </BrowserRouter>
+        </DeshacerProvider>
         </DialogoProvider>
         </TecladoProvider>
       </MonedaProvider>

@@ -276,6 +276,12 @@ export type CostoVariante = {
   precio_sugerido: number | null
 }
 
+/** Lo que la portada le dice al dueño sin que lo pregunte. `a` = adónde ir. */
+export type Aviso = { id: string; tono: 'ojo' | 'bien' | 'info'; titulo: string; detalle: string; a: string }
+
+/** Cuánto lleva armado el local: las misiones de arranque de la portada. */
+export type ArranqueLocal = { productos: number; con_receta: number; mercancias: number; ventas: number; cierres: number }
+
 export type Insight = {
   tipo: 'bueno' | 'alerta' | 'info'
   titulo: string

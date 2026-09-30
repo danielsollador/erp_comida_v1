@@ -233,7 +233,7 @@ function Resumen({
           delta={ant && <Variacion pct={ant.cambio_ventas_pct} texto={vs} />}
         />
         <Kpi
-          titulo="Ganancia neta"
+          titulo="Te quedó"
           ayuda="kpi.ganancia_neta"
           valor={dinero(datos.ganancia_neta)}
           tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
@@ -247,7 +247,7 @@ function Resumen({
           delta={ant && <Variacion pct={ant.cambio_pedidos_pct} texto={vs} />}
         />
         <Kpi
-          titulo="Ticket promedio"
+          titulo="Gasta cada cliente"
           ayuda="kpi.ticket_promedio"
           valor={dinero(datos.ticket_promedio)}
           delta={ant && <Variacion pct={ant.cambio_ticket_pct} texto={vs} />}

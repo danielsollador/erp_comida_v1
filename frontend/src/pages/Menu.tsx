@@ -4,6 +4,7 @@ import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
 import Agarre from '../components/Agarre'
 import { useDialogo } from '../components/dialogo'
+import { useDeshacer } from '../components/Deshacer'
 import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
@@ -52,7 +53,6 @@ const SECCIONES = [
   { id: 'retiradas', texto: 'Fuera del menú' },
 ]
 
-const BR = '\n\n'
 
 export default function Menu() {
   const [seccion, irA] = useSeccion(SECCIONES)
@@ -191,20 +191,19 @@ function ElMenu({
     onCambio()
   }
 
-  async function quitarCategoria(cat: Categoria) {
+  const { deshacible } = useDeshacer()
+
+  // Quitar del menu tiene reverso (reactivar) y no toca las ventas hechas:
+  // se hace de una y el aviso de abajo lo devuelve.
+  function quitarCategoria(cat: Categoria) {
     const cuantos = cat.productos.filter((p) => p.activo).length
-    const ok = await dialogo.confirmar({
-      titulo: `¿Quitar "${cat.nombre}" del menú?`,
-      texto:
-        `Deja de aparecer en el punto de venta junto con sus ${cuantos} producto(s).` +
-        BR +
-        'Las ventas que ya se hicieron se conservan intactas, y se puede devolver desde "Fuera del menú".',
-      aceptar: 'Quitar del menú',
-      peligro: true,
+    deshacible({
+      clave: `categoria:${cat.id}`,
+      texto: cuantos ? `«${cat.nombre}» y sus ${cuantos} producto(s) fuera del menú` : `«${cat.nombre}» fuera del menú`,
+      ejecutar: () => api.eliminarCategoria(cat.id),
+      revertir: () => api.reactivarCategoria(cat.id),
+      alTerminar: onCambio,
     })
-    if (!ok) return
-    await api.eliminarCategoria(cat.id)
-    onCambio()
   }
 
   async function renombrarCategoria(cat: Categoria) {
@@ -613,19 +612,16 @@ function TarjetaProducto({
     onCambio()
   }
 
-  async function quitar() {
-    const ok = await dialogo.confirmar({
-      titulo: `¿Quitar "${producto.nombre}" del menú?`,
-      texto:
-        'Deja de aparecer en el punto de venta.' +
-        BR +
-        'Las ventas que ya se hicieron se conservan intactas, y se puede devolver desde "Fuera del menú".',
-      aceptar: 'Quitar del menú',
-      peligro: true,
+  const { deshacible } = useDeshacer()
+
+  function quitar() {
+    deshacible({
+      clave: `producto:${producto.id}`,
+      texto: `«${producto.nombre}» fuera del menú`,
+      ejecutar: () => api.eliminarProducto(producto.id),
+      revertir: () => api.reactivarProducto(producto.id),
+      alTerminar: onCambio,
     })
-    if (!ok) return
-    await api.eliminarProducto(producto.id)
-    onCambio()
   }
 
   async function cambiarPrecio(varianteId: number, nombre: string, precioActual: number) {
