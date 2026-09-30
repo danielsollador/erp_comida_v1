@@ -2072,6 +2072,22 @@ class AlertaPrecio(BaseModel):
     visto_en: Optional[datetime.datetime] = None
 
 
+class CompletarFacturaRequest(BaseModel):
+    """Lo de despues de guardar una factura, en un solo pedido."""
+
+    # La foto leida, si vino de una. Sin foto no hay memoria que aprender.
+    soporte_id: Optional[int] = None
+    proveedor_rif: str = ""
+    proveedor_nombre: str = ""
+    renglones: List[RenglonAprendido] = []
+
+
+class CompletarFactura(BaseModel):
+    foto: bool
+    aprendidas: int
+    alertas: List[AlertaPrecio] = []
+
+
 class PagoFacturaRequest(BaseModel):
     forma_pago: str = "Efectivo"  # Efectivo|Banco - con que se salda la deuda
     # Obligatoria si no se paga en efectivo, igual que al cobrar una venta.

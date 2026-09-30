@@ -19,6 +19,7 @@ import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
 import { useRevision } from '../lib/revisionFactura'
+import { completarDespuesDeGuardar, cuantosPendientes, procesarPendientes } from '../lib/pendientesCompras'
 import { necesitaReferencia, pedirReferencia } from '../lib/pagos'
 import type {
   AlertaPrecio,
@@ -86,6 +87,28 @@ export default function Compras() {
     [alertasPendientes],
   )
   const alCambiarPendientes = useCallback((n: number) => setAlertasPendientes(n), [])
+  // Facturas guardadas desde ESTE dispositivo a las que les falta la foto, la
+  // memoria o las alertas porque se cayo la conexion justo despues.
+  const [porCompletar, setPorCompletar] = useState(cuantosPendientes())
+  const reintentarPendientes = useCallback(async () => {
+    if (cuantosPendientes() === 0) return
+    if ((await procesarPendientes()) > 0) {
+      api
+        .listarAlertasPrecio(true)
+        .then((l) => setAlertasPendientes(l.length))
+        .catch(() => undefined)
+    }
+    setPorCompletar(cuantosPendientes())
+  }, [])
+  useEffect(() => {
+    // Al abrir Compras, lo que quedo de antes; y cada vez que vuelve la red.
+    const t = setTimeout(reintentarPendientes, 0)
+    window.addEventListener('online', reintentarPendientes)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('online', reintentarPendientes)
+    }
+  }, [reintentarPendientes])
   // Tres meses: una factura a credito se paga a 30 o 60 dias, y hay que verla.
   const [rango, setRango] = useRango('90d')
   const [facturas, setFacturas] = useState<FacturaCompra[]>([])
@@ -503,41 +526,28 @@ export default function Compras() {
             costo_unitario: Number(l.costo_unitario),
           }))
       : []
-    const rifGuardado = rif.trim()
-    const proveedorGuardado = proveedor.trim()
-
-    // La foto se engancha despues del guardado de siempre. Si falla, la
-    // factura ya entro: se avisa, no se deshace.
-    async function adjuntarFoto(facturaId: number): Promise<string> {
-      if (!lectura) return ''
-      try {
-        await api.adjuntarSoporteFactura(facturaId, lectura.soporte_id)
-        return ' Foto adjunta.'
-      } catch (e) {
-        return ` Ojo: la foto no se pudo adjuntar (${e instanceof Error ? e.message : 'error'}).`
-      }
+    // Lo de despues de guardar: foto, memoria del proveedor y alertas, en un
+    // pedido que se puede repetir (ver pendientesCompras.ts). La factura ya
+    // entro cuando esto corre: si falla, se avisa y se reintenta, no se deshace.
+    const cuerpoCompletar = {
+      soporte_id: lectura?.soporte_id ?? null,
+      proveedor_rif: rif.trim(),
+      proveedor_nombre: proveedor.trim(),
+      renglones: paraRecordar,
     }
-
-    // Lo que llego mas caro. La factura ya entro: si esto falla, no se dice
-    // nada -- no es un error de la carga, y la bandeja se puede revisar igual.
-    async function avisarSubidas(facturaId: number) {
-      try {
-        const alertas = await api.alertasDeFactura(facturaId)
-        if (alertas.length > 0) setAlertasAlGuardar(alertas)
-      } catch {
-        // sin alertas que mostrar
+    async function completar(facturaId: number, numero: string): Promise<string> {
+      const r = await completarDespuesDeGuardar(facturaId, numero, cuerpoCompletar)
+      setPorCompletar(cuantosPendientes())
+      if (r.estado === 'hecho') {
+        if (r.alertas.length > 0) setAlertasAlGuardar(r.alertas)
+        return r.foto ? ' Foto adjunta.' : ''
       }
-    }
-
-    // Si no se puede recordar, la factura igual entro: solo se avisa.
-    async function recordar(): Promise<string> {
-      if (paraRecordar.length === 0) return ''
-      try {
-        await api.aprenderEquivalencias(rifGuardado, proveedorGuardado, paraRecordar)
-        return ''
-      } catch {
-        return ' (No se pudo recordar la asociación de sus renglones para la próxima.)'
+      if (r.estado === 'pendiente') {
+        return lectura
+          ? ' Sin conexión para terminar: la foto, la memoria del proveedor y las alertas se completan solas al volver.'
+          : ' Sin conexión para revisar los precios: se hace solo al volver.'
       }
+      return ` Ojo: ${r.mensaje}`
     }
 
     try {
@@ -575,10 +585,8 @@ export default function Compras() {
           `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
             `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}). ` +
             `${guardada.items.length} renglón(es) al depósito.` +
-            (await adjuntarFoto(guardada.id)) +
-            (await recordar()),
+            (await completar(guardada.id, guardada.numero_factura)),
         )
-        await avisarSubidas(guardada.id)
       } else {
         const baseNum = Number(base)
         if (!Number.isFinite(baseNum) || baseNum <= 0) {
@@ -604,7 +612,7 @@ export default function Compras() {
         setExito(
           `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
             `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}).` +
-            (await adjuntarFoto(guardada.id)),
+            (await completar(guardada.id, guardada.numero_factura)),
         )
       }
       limpiarFormulario()
@@ -922,6 +930,17 @@ export default function Compras() {
               : 'Alimenta el Libro de Compras y contabiliza sola: activos entran al balance, servicios van directo a gasto.'}
           </p>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
+          {porCompletar > 0 && (
+            <div className="mb-3 rounded-lg bg-aviso-50 ring-1 ring-aviso-200 px-3 py-2 text-sm text-aviso-800 flex items-center justify-between gap-3">
+              <span>
+                {porCompletar === 1 ? 'Una factura guardada espera' : `${porCompletar} facturas guardadas esperan`} conexión
+                para terminar (foto, memoria del proveedor, alertas). Se reintenta sola.
+              </span>
+              <button onClick={reintentarPendientes} className="font-semibold shrink-0 underline">
+                Reintentar ahora
+              </button>
+            </div>
+          )}
           {/* Antes salir bien no decia nada: el formulario se limpiaba y ya, y
               quien la cargo se quedaba sin saber si entro -- con la duda de si
               darle otra vez, que es como se cargan dos facturas iguales. */}

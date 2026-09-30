@@ -1176,6 +1176,22 @@ export type AlertaPrecio = {
   visto_en: string | null
 }
 
+/** Lo de despues de guardar una factura. Montos en la MISMA moneda que el papel. */
+export type CuerpoCompletarFactura = {
+  soporte_id: number | null
+  proveedor_rif: string
+  proveedor_nombre: string
+  renglones: {
+    descripcion: string
+    unidad: string
+    cantidad_papel: number | null
+    precio_papel: number | null
+    ingrediente_id: number
+    cantidad: number
+    costo_unitario: number
+  }[]
+}
+
 export type RevisionFactura = {
   duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
   precios: AvisoPrecio[]

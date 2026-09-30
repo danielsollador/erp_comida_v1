@@ -34,6 +34,7 @@ import type {
   EstadoResultadosContable,
   FacturaCompra,
   AlertaPrecio,
+  CuerpoCompletarFactura,
   Equivalencia,
   LecturaFactura,
   RevisionFactura,
@@ -85,6 +86,17 @@ const conRango = (r?: Rango, extra = '') => {
   return partes.length ? `?${partes.join('&')}` : ''
 }
 
+/** El servidor contesto con error. Guarda el codigo: un 409 no se arregla
+ * reintentando, un 502 (el servidor reiniciando) si. */
+export class ErrorApi extends Error {
+  status: number
+  constructor(mensaje: string, status: number) {
+    super(mensaje)
+    this.name = 'ErrorApi'
+    this.status = status
+  }
+}
+
 /** Se cayo la red (no el servidor): `fetch` rechaza sin respuesta. */
 export class SinConexion extends Error {
   constructor() {
@@ -133,7 +145,7 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     } catch {
       // respuesta no-JSON: se usa el texto tal cual
     }
-    throw new Error(mensaje)
+    throw new ErrorApi(mensaje, res.status)
   }
   return res.json()
 }
@@ -859,10 +871,11 @@ export const api = {
     /** `costo_unitario` en dólares, como se va a guardar. */
     items: { indice: number; ingrediente_id: number; costo_unitario: number }[]
   }) => req<RevisionFactura>('/compras/revision', { method: 'POST', body: JSON.stringify(r) }),
-  adjuntarSoporteFactura: (facturaId: number, soporteId: number) =>
-    req(`/compras/facturas/${facturaId}/soporte`, {
+  /** Lo de despues de guardar (foto, memoria, alertas) en un pedido que se puede repetir. */
+  completarFactura: (facturaId: number, cuerpo: CuerpoCompletarFactura) =>
+    req<{ foto: boolean; aprendidas: number; alertas: AlertaPrecio[] }>(`/compras/facturas/${facturaId}/completar`, {
       method: 'POST',
-      body: JSON.stringify({ soporte_id: soporteId }),
+      body: JSON.stringify(cuerpo),
     }),
   urlSoporteFactura: (facturaId: number) => `/api/compras/facturas/${facturaId}/soporte`,
   // Memoria por proveedor: que es de lo nuestro cada renglon de su factura.
@@ -871,28 +884,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ proveedor_rif, renglones }),
     }),
-  /** Montos en la MISMA moneda que el papel. */
-  aprenderEquivalencias: (
-    proveedor_rif: string,
-    proveedor_nombre: string,
-    renglones: {
-      descripcion: string
-      unidad: string
-      cantidad_papel: number | null
-      precio_papel: number | null
-      ingrediente_id: number
-      cantidad: number
-      costo_unitario: number
-    }[],
-  ) =>
-    req<{ aprendidas: number }>('/compras/equivalencias/aprender', {
-      method: 'POST',
-      body: JSON.stringify({ proveedor_rif, proveedor_nombre, renglones }),
-    }),
-  // Alertas de precio: se piden despues de guardar la factura (no la
-  // duplican si se piden dos veces) y quedan en la bandeja de Compras.
-  alertasDeFactura: (facturaId: number) =>
-    req<AlertaPrecio[]>(`/compras/facturas/${facturaId}/alertas`, { method: 'POST' }),
+  // Alertas de precio: salen de `completarFactura` y quedan en la bandeja.
   listarAlertasPrecio: (pendientes = false) =>
     req<AlertaPrecio[]>(`/compras/alertas${pendientes ? '?pendientes=true' : ''}`),
   marcarAlertaVista: (id: number) => req<AlertaPrecio>(`/compras/alertas/${id}/visto`, { method: 'POST' }),

@@ -116,6 +116,13 @@ def _factor(r: schemas.RenglonAprendido) -> Optional[float]:
 
 
 def aprender(db: Session, body: schemas.AprenderEquivalenciasRequest) -> int:
+    aprendidas = aprender_sin_confirmar(db, body)
+    db.commit()
+    return aprendidas
+
+
+def aprender_sin_confirmar(db: Session, body: schemas.AprenderEquivalenciasRequest) -> int:
+    """Lo mismo, sin commit: para aprender dentro de otra transaccion."""
     rif = _rif(body.proveedor_rif)
     if rif is None:
         return 0
@@ -153,5 +160,4 @@ def aprender(db: Session, body: schemas.AprenderEquivalenciasRequest) -> int:
         e.veces += 1
         e.actualizado = ahora()
         aprendidas += 1
-    db.commit()
     return aprendidas

@@ -14,7 +14,7 @@ from ..timeutils import ahora
 router = APIRouter(prefix="/api/compras", tags=["compras"])
 
 
-def _a_schema(a: models.AlertaPrecio) -> schemas.AlertaPrecio:
+def alerta_a_schema(a: models.AlertaPrecio) -> schemas.AlertaPrecio:
     return schemas.AlertaPrecio(
         id=a.id, fecha=a.fecha, factura_id=a.factura_id,
         numero_factura=a.factura.numero_factura if a.factura else "",
@@ -42,7 +42,7 @@ def alertas_de_factura(factura_id: int, db: Session = Depends(get_db)):
     )
     if factura is None:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
-    return [_a_schema(a) for a in alertas_precio.generar(db, factura)]
+    return [alerta_a_schema(a) for a in alertas_precio.generar(db, factura)]
 
 
 @router.get("/alertas", response_model=List[schemas.AlertaPrecio])
@@ -52,7 +52,7 @@ def listar_alertas(pendientes: bool = False, db: Session = Depends(get_db)):
     )
     if pendientes:
         q = q.filter(models.AlertaPrecio.visto.is_(False))
-    return [_a_schema(a) for a in q.order_by(models.AlertaPrecio.id.desc()).limit(200).all()]
+    return [alerta_a_schema(a) for a in q.order_by(models.AlertaPrecio.id.desc()).limit(200).all()]
 
 
 @router.post("/alertas/{alerta_id}/visto", response_model=schemas.AlertaPrecio)
@@ -66,4 +66,4 @@ def marcar_visto(alerta_id: int, request: Request, db: Session = Depends(get_db)
         a.visto_en = ahora()
         db.commit()
         db.refresh(a)
-    return _a_schema(a)
+    return alerta_a_schema(a)

@@ -9,7 +9,10 @@ Nada de este archivo guarda facturas. El flujo es:
      cargada y que precios se salen de lo normal. Solo consulta.
   3. La persona le da Guardar: `POST /facturas`, el mismo de toda la vida,
      sin cambios. Stock, costo promedio, IVA y asientos salen de ahi.
-  4. `POST /facturas/{id}/soporte`: la foto se engancha a la factura que salio.
+  4. `POST /facturas/{id}/completar`: la foto se engancha a la factura que
+     salio, la memoria del proveedor aprende y salen las alertas de precio.
+     Un solo pedido que se puede repetir sin duplicar nada: si el wifi se cae
+     aqui, el navegador lo reintenta (ver `pendientesCompras.ts`).
 
 Vive aparte de `compras.py` a proposito: el guardado de una factura no tiene
 por que enterarse de que existe una camara.
@@ -21,10 +24,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from .. import impuestos, lectura_facturas, models, reposicion, schemas
+from .. import alertas_precio, equivalencias, impuestos, lectura_facturas, models, reposicion, schemas
 from ..database import get_db
+from .compras_alertas import alerta_a_schema
 
 router = APIRouter(prefix="/api/compras", tags=["compras"])
 
@@ -227,6 +231,68 @@ def adjuntar_soporte(
     soporte.factura_id = factura_id
     db.commit()
     return {"ok": True}
+
+
+@router.post("/facturas/{factura_id}/completar", response_model=schemas.CompletarFactura)
+def completar_factura(
+    factura_id: int, body: schemas.CompletarFacturaRequest, db: Session = Depends(get_db)
+):
+    """Todo lo de despues de guardar, en un pedido que se puede repetir.
+
+    Guardar sigue siendo el POST de siempre. Lo que viene despues -enganchar
+    la foto, que la memoria del proveedor aprenda, generar las alertas de
+    precio- lo manda el navegador, y el wifi se puede caer justo ahi. Por eso
+    es UN pedido y se puede mandar las veces que haga falta: la foto y la
+    memoria van juntas en una transaccion y quedan marcadas en el soporte, asi
+    que un reintento no aprende dos veces; las alertas ya eran idempotentes.
+    """
+    factura = (
+        db.query(models.FacturaCompra)
+        .options(joinedload(models.FacturaCompra.items))
+        .filter_by(id=factura_id)
+        .first()
+    )
+    if factura is None:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    foto, aprendidas = False, 0
+    if body.soporte_id is not None:
+        # Con candado: dos reintentos a la vez esperan uno al otro, y el
+        # segundo ya ve la marca del primero.
+        soporte = (
+            db.query(models.SoporteFactura).filter_by(id=body.soporte_id).with_for_update().first()
+        )
+        if soporte is None:
+            raise HTTPException(status_code=404, detail="Esa foto no existe")
+        if soporte.factura_id not in (None, factura_id):
+            raise HTTPException(status_code=409, detail="Esa foto ya respalda otra factura")
+        if not soporte.completada:
+            if soporte.factura_id is None:
+                otra = db.query(models.SoporteFactura).filter_by(factura_id=factura_id).first()
+                if otra is not None:
+                    raise HTTPException(status_code=409, detail="Esta factura ya tiene su foto")
+                soporte.factura_id = factura_id
+            if body.renglones:
+                aprendidas = equivalencias.aprender_sin_confirmar(
+                    db,
+                    schemas.AprenderEquivalenciasRequest(
+                        proveedor_rif=body.proveedor_rif,
+                        proveedor_nombre=body.proveedor_nombre,
+                        renglones=body.renglones,
+                    ),
+                )
+            soporte.completada = True
+            db.commit()
+        foto = True
+    elif body.renglones:
+        raise HTTPException(
+            status_code=400, detail="La memoria del proveedor solo aprende de facturas leídas de una foto"
+        )
+
+    alertas = alertas_precio.generar(db, factura)
+    return schemas.CompletarFactura(
+        foto=foto, aprendidas=aprendidas, alertas=[alerta_a_schema(a) for a in alertas]
+    )
 
 
 @router.get("/facturas/{factura_id}/soporte")

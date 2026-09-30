@@ -739,6 +739,9 @@ class SoporteFactura(Base):
     # mes seria una estimacion para siempre.
     tokens_entrada = Column(Integer, default=0)
     tokens_salida = Column(Integer, default=0)
+    # Ya se hizo lo de despues de guardar: foto enganchada y memoria del
+    # proveedor aprendida. Es lo que hace que reintentar no aprenda dos veces.
+    completada = Column(Boolean, default=False)
 
     factura = relationship("FacturaCompra", back_populates="soporte")
 
