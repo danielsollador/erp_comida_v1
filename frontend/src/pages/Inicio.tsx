@@ -4,7 +4,7 @@ import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
-import { CONTADOR, PREGUNTA, modulosDe } from '../components/Rail'
+import { CONTADOR, descripcionDe, modulosDe } from '../components/Rail'
 import Arranque from '../components/Arranque'
 import Avisos from '../components/Avisos'
 import UsuarioMenu from '../components/UsuarioMenu'
@@ -15,6 +15,7 @@ import { rangoDe } from '../lib/fechas'
 import { MonedaToggle, useMoneda } from '../lib/moneda'
 import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import { TemaToggle } from '../lib/tema'
+import { segun } from '../lib/palabras'
 import type { ReporteResumen } from '../lib/types'
 
 function saludo(): string {
@@ -156,7 +157,7 @@ export default function Inicio() {
             su lado las dos cosas que ESPERAN algo. No es un mosaico de
             cuatro cifras iguales: dos son resultados y dos son trabajo
             pendiente, y mirarlas no cuesta lo mismo. */}
-        <p className="vp-etiqueta -mb-1 lg:-mb-2">Hoy</p>
+        <p className="vp-etiqueta -mb-1 lg:-mb-2">{segun({ sencillo: 'Hoy', tecnico: 'Resumen del día' })}</p>
         <div className="grid grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-3 lg:gap-4">
           <section className="col-span-2 lg:col-span-1 vp-losa relative overflow-hidden p-5 sm:p-7 lg:p-8 bajo:p-4 pc:p-7 flex flex-col justify-center">
             {/* Sin el permiso del rol, un guion y nada mas: ni "no tienes
@@ -214,7 +215,7 @@ export default function Inicio() {
             apaisada dejan sitio a las bandejas de abajo. */}
         {operacion.length > 0 && (
           <div>
-            <p className="vp-etiqueta mb-2.5">Vender</p>
+            <p className="vp-etiqueta mb-2.5">{segun({ sencillo: 'Vender', tecnico: 'Operación' })}</p>
             <div className={`grid grid-cols-1 gap-3 lg:gap-4 ${operacion.length > 2 ? 'sm:grid-cols-3' : operacion.length === 2 ? 'sm:grid-cols-2' : ''}`}>
               {operacion.map((m, i) => (
                 <Tarjeta
@@ -222,7 +223,7 @@ export default function Inicio() {
                   to={m.to}
                   icono={m.icono}
                   titulo={m.titulo}
-                  desc={PREGUNTA[m.to] ?? ''}
+                  desc={descripcionDe(m.to)}
                   principal={i === 0 && estado.puede.operar}
                 />
               ))}
@@ -234,8 +235,8 @@ export default function Inicio() {
             vez al dia o a la semana; agrupadas pesan lo que tienen que pesar
             y dejan el primer golpe de vista para lo de arriba. */}
         <div className="grid gap-3 lg:gap-4 sm:grid-cols-2">
-          <Bandeja titulo="Mi negocio" modulos={negocio} estilo={unaColumna} />
-          <Bandeja titulo="Números" modulos={numeros} estilo={unaColumna} />
+          <Bandeja titulo={segun({ sencillo: 'Mi negocio', tecnico: 'Administración' })} modulos={negocio} estilo={unaColumna} />
+          <Bandeja titulo={segun({ sencillo: 'Números', tecnico: 'Control' })} modulos={numeros} estilo={unaColumna} />
         </div>
 
         {/* ── Para el contador: sin lamina ni fichas. Una linea de enlaces
@@ -246,9 +247,11 @@ export default function Inicio() {
           <div className="pt-3 border-t border-[var(--vp-textura)]">
             <div className="flex items-baseline justify-between gap-3 mb-1">
               <Link to={CONTADOR.to} className="vp-etiqueta hover:text-neutral-700">
-                Para el contador
+                {segun({ sencillo: 'Para el contador', tecnico: 'Contabilidad y fiscal' })}
               </Link>
-              <span className="text-xs text-neutral-400">Se arma solo con lo de arriba</span>
+              <span className="text-xs text-neutral-400">
+                {segun({ sencillo: 'Se arma solo con lo de arriba', tecnico: 'Asientos automáticos desde las operaciones' })}
+              </span>
             </div>
             {/* Una lista pareja: en telefono una debajo de otra, en pantalla
                 ancha las tres en fila. */}
@@ -257,7 +260,7 @@ export default function Inicio() {
                 <Link key={m.to} to={m.to} className="group flex items-center gap-2.5 py-2 hover:text-neutral-900">
                   <Icono nombre={m.icono} size={16} className="shrink-0 text-neutral-400 group-hover:text-acento-600" />
                   <span className="font-medium">{m.titulo}</span>
-                  <span className="text-neutral-400 truncate">· {PREGUNTA[m.to]}</span>
+                  <span className="text-neutral-400 truncate">· {descripcionDe(m.to)}</span>
                 </Link>
               ))}
             </div>
@@ -415,7 +418,7 @@ function Bandeja({
             </span>
             <span className="min-w-0 flex flex-wrap items-baseline gap-x-2">
               <span className="font-display font-semibold leading-tight text-[15px] lg:text-base">{m.titulo}</span>
-              <span className="text-[13px] text-neutral-500 leading-snug">{PREGUNTA[m.to] ?? ''}</span>
+              <span className="text-[13px] text-neutral-500 leading-snug">{descripcionDe(m.to)}</span>
             </span>
           </Link>
         ))}

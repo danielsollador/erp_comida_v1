@@ -16,6 +16,7 @@ import { DeshacerProvider } from './components/Deshacer'
 import { TecladoProvider } from './components/Teclado'
 import { MonedaProvider } from './lib/moneda'
 import { AccesoProvider, useAcceso } from './lib/acceso'
+import { usePalabras } from './lib/palabras'
 import type { ComponentType, ReactNode } from 'react'
 
 const CLAVE_RECARGA = 'erp-recargado-por-modulo'
@@ -173,12 +174,18 @@ function RequiereAlguno({ modulos, children }: { modulos: string[]; children: Re
 function Marco({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
   const conRail = !sinBarraLateral(pathname)
+  // Las palabras (sencillas o tecnicas) se leen al pintar: al cambiar de
+  // modo en Configuracion › Lenguaje, la pantalla se vuelve a montar para
+  // que TODO cambie de una, no solo lo que casualmente se repinte.
+  const { modo } = usePalabras()
   return (
     <>
       <Rail />
       <div className={conRail ? 'md:pl-[68px]' : ''}>
         <Conexion />
-        {children}
+        <div key={modo} className="contents">
+          {children}
+        </div>
         {/* Los avisos de "fulano pide autorizacion", solo para quien autoriza. */}
         <Solicitudes />
       </div>

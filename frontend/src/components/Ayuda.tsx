@@ -171,8 +171,10 @@ function Panel({
       className="vp-ayuda rounded-xl border border-neutral-200 bg-white p-3.5 shadow-lg text-left"
     >
       <p className="font-display font-semibold text-sm leading-tight">{titulo}</p>
+      {/* Modo sencillo: como se le suele llamar. Arriba, no al final: es lo
+          primero que busca quien viene de otro sistema. */}
+      {explica.alias && <p className="text-[13px] font-medium leading-snug text-acento-700 mt-1">{explica.alias}</p>}
       <p className="text-[13px] leading-relaxed text-neutral-700 mt-1.5">{explica.que}</p>
-      {explica.alias && <p className="text-[12px] leading-relaxed text-neutral-500 mt-1 italic">{explica.alias}</p>}
       {explica.origen && <Parte rotulo="De dónde sale">{explica.origen}</Parte>}
       {explica.calculo && <Parte rotulo="Cómo se calcula">{explica.calculo}</Parte>}
       {explica.ejemplo && <Parte rotulo="Para qué sirve">{explica.ejemplo}</Parte>}

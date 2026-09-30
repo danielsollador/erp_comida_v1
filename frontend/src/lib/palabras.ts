@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
 
 /**
- * Con qué palabras habla el sistema: las del negocio o las de contabilidad.
+ * Con qué palabras habla el sistema: las del negocio o las de siempre.
  *
  *   sencillo   "Te quedó", "Hay", "Gasta en promedio cada cliente". Es como
- *              lo diría el dueño de una arepera. Al pasar el cursor, la ayuda
- *              dice cómo se le suele llamar en contabilidad.
- *   tecnico    "Ganancia neta", "Stock", "Ticket promedio": las palabras de
- *              siempre, para quien viene de otro sistema o le pasa los
- *              números al contador. Al pasar el cursor, la ayuda lo explica
- *              en palabras simples.
+ *              lo diría el dueño de una arepera. La ayuda de cada título
+ *              explica qué es y dice cómo se le suele llamar ("A esto se le
+ *              suele llamar ticket promedio").
+ *   tecnico    "Ganancia neta", "Stock", "Ticket promedio": todo como estaba
+ *              antes, para quien viene de otro sistema o le pasa los números
+ *              al contador. La ayuda, como estaba antes.
  *
- * Es la misma información en los dos: cambia la palabra que se ve y la que
- * se explica (Leider, 30-sep: "no me quites esa parte de información porque
- * me parece valiosa"). Se elige en Configuración › Apariencia y vale para
- * este equipo, como el tema.
+ * Es la misma información en los dos: cambia la palabra que se ve (Leider,
+ * 30-sep: "no me quites esa parte de información porque me parece
+ * valiosa"). Se elige SOLO en Configuración › Lenguaje (Leider, 30-sep: nada
+ * de botones en la barra) y vale para este equipo, como el tema.
  *
  * LITERALIDAD. La palabra sencilla dice EXACTAMENTE lo que es el número, no
  * una lectura: "ticket promedio" es lo que gasta EN PROMEDIO cada cliente,
@@ -40,6 +40,7 @@ export function leerModo(): ModoPalabras {
 }
 
 export function cambiarModo(nuevo: ModoPalabras) {
+  if (nuevo === modoActual) return
   modoActual = nuevo
   try {
     localStorage.setItem(CLAVE, nuevo)
@@ -60,22 +61,23 @@ export function usePalabras() {
 }
 
 /**
- * Cada número que tiene dos nombres. La clave es la del glosario cuando la
- * hay (así la ayuda sabe cuál es el otro nombre); si no, una propia.
+ * Cada número que tiene dos nombres, con lo que es en una línea (para la
+ * lista de Configuración › Lenguaje). La clave es la del glosario cuando la
+ * hay: así la ayuda sabe cuál es el otro nombre.
  */
-export const TERMINOS: Record<string, { tecnico: string; sencillo: string }> = {
-  'inventario.stock': { tecnico: 'Stock', sencillo: 'Hay' },
-  'inventario.costo': { tecnico: 'Costo compra', sencillo: 'Costo promedio' },
-  'inventario.reponer': { tecnico: 'Reponer', sencillo: 'Última compra' },
-  'inventario.rendimiento': { tecnico: 'Rendimiento', sencillo: 'Aprovechable' },
-  'productos.uds': { tecnico: 'Uds', sencillo: 'Vendidos' },
-  'compras.base': { tecnico: 'Base', sencillo: 'Sin IVA' },
-  'kpi.ganancia_neta': { tecnico: 'Ganancia neta', sencillo: 'Te quedó' },
-  'kpi.ticket_promedio': { tecnico: 'Ticket promedio', sencillo: 'Gasta en promedio cada cliente' },
-  'kpi.fiado_pendiente': { tecnico: 'A crédito por cobrar', sencillo: 'Te deben' },
-  'kpi.bajo_minimo': { tecnico: 'Bajo mínimo', sencillo: 'Por debajo del mínimo' },
-  'kpi.bajo_minimo_agotadas': { tecnico: 'Bajo mínimo o agotadas', sencillo: 'Por debajo del mínimo o agotadas' },
-  'kpi.valor_deposito': { tecnico: 'Valor en depósito', sencillo: 'Plata en mercancía' },
+export const TERMINOS: Record<string, { tecnico: string; sencillo: string; donde: string }> = {
+  'kpi.ganancia_neta': { tecnico: 'Ganancia neta', sencillo: 'Te quedó', donde: 'Reportes' },
+  'kpi.ticket_promedio': { tecnico: 'Ticket promedio', sencillo: 'Gasta en promedio cada cliente', donde: 'Reportes y Ventas' },
+  'kpi.fiado_pendiente': { tecnico: 'A crédito por cobrar', sencillo: 'Te deben', donde: 'Ventas' },
+  'kpi.valor_deposito': { tecnico: 'Valor en depósito', sencillo: 'Plata en mercancía', donde: 'Inventario y Reportes' },
+  'kpi.bajo_minimo': { tecnico: 'Bajo mínimo', sencillo: 'Por debajo del mínimo', donde: 'Inventario' },
+  'kpi.bajo_minimo_agotadas': { tecnico: 'Bajo mínimo o agotadas', sencillo: 'Por debajo del mínimo o agotadas', donde: 'Reportes' },
+  'inventario.stock': { tecnico: 'Stock', sencillo: 'Hay', donde: 'Inventario' },
+  'inventario.costo': { tecnico: 'Costo compra', sencillo: 'Costo promedio', donde: 'Inventario' },
+  'inventario.reponer': { tecnico: 'Reponer', sencillo: 'Última compra', donde: 'Inventario' },
+  'inventario.rendimiento': { tecnico: 'Rendimiento', sencillo: 'Aprovechable', donde: 'Inventario' },
+  'productos.uds': { tecnico: 'Uds', sencillo: 'Vendidos', donde: 'Reportes' },
+  'compras.base': { tecnico: 'Base', sencillo: 'Sin IVA', donde: 'Compras' },
 }
 
 /** El nombre que toca según el modo. Si la clave no tiene dos nombres, el que se pase. */
@@ -85,11 +87,18 @@ export function nombre(clave: string, porDefecto = ''): string {
   return modoActual === 'tecnico' ? t.tecnico : t.sencillo
 }
 
-/** La línea de la ayuda que dice el OTRO nombre: la información no se pierde, se invierte. */
+/**
+ * La línea de la ayuda con el otro nombre. Solo en modo sencillo: es donde
+ * hace falta saber "cómo se le suele llamar". En modo técnico la ayuda queda
+ * como estaba antes.
+ */
 export function otroNombre(clave: string): string | undefined {
   const t = TERMINOS[clave]
-  if (!t) return undefined
-  return modoActual === 'tecnico'
-    ? `En palabras simples: ${t.sencillo.charAt(0).toLowerCase()}${t.sencillo.slice(1)}.`
-    : `A esto se le suele llamar «${t.tecnico}».`
+  if (!t || modoActual === 'tecnico') return undefined
+  return `A esto se le suele llamar «${t.tecnico}».`
+}
+
+/** Un texto con sus dos versiones: `segun({ sencillo, tecnico })`. */
+export function segun(t: { sencillo: string; tecnico: string }): string {
+  return modoActual === 'tecnico' ? t.tecnico : t.sencillo
 }

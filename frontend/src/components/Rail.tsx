@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom'
 import LinkVigilado from './LinkVigilado'
 import { useAcceso } from '../lib/acceso'
+import { leerModo } from '../lib/palabras'
 import Icono, { type NombreIcono } from './Icono'
 
 /**
@@ -72,6 +73,27 @@ export const PREGUNTA: Record<string, string> = {
   '/impuestos': 'IVA y libros fiscales',
   '/tasa': 'Bolívares por dólar de cada día',
   '/configuracion': 'Mi cuenta, usuarios y pago móvil',
+}
+
+/** En modo tecnico, las descripciones de antes (lib/palabras). */
+const DESCRIPCION_TECNICA: Record<string, string> = {
+  '/pos': 'Armar la comanda y cobrar',
+  '/cocina': 'Comandas que llegan arriba',
+  '/menu': 'Productos, precios y recetas',
+  '/inventario': 'Mercancía, stock y costos',
+  '/compras': 'Lo que entra y lo que cuesta',
+  '/reportes': 'Cómo va el negocio',
+  '/ventas': 'Cada venta y qué pasó con ella',
+  '/caja': 'Cuadrar el día',
+  '/contabilidad': 'Libro, gastos y resultados',
+  '/impuestos': 'IVA y libros fiscales',
+  '/tasa': 'Bolívares por dólar de hoy',
+  '/configuracion': 'Mi cuenta, usuarios y pago móvil',
+}
+
+/** Lo que dice debajo del nombre del modulo, segun el modo de palabras. */
+export function descripcionDe(to: string): string {
+  return (leerModo() === 'tecnico' ? DESCRIPCION_TECNICA[to] : PREGUNTA[to]) ?? ''
 }
 
 /** Si este usuario entra a ese modulo. Lo dice el servidor. */

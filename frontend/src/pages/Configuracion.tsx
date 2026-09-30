@@ -5,12 +5,14 @@ import { Pagina } from '../components/ui'
 import { useAcceso } from '../lib/acceso'
 import { Apariencia, MiCuenta } from './MiUsuario'
 import PagoMovil from './partes/configuracion/PagoMovil'
+import Lenguaje from './partes/configuracion/Lenguaje'
 import { PanelUsuarios } from './Usuarios'
 
 /**
  * Configuracion: todo lo que se ajusta una vez y se deja, en un solo sitio.
  *
  *   MI CUENTA     mi nombre, mi contraseña y --si mi rol autoriza-- mi PIN.
+ *   LENGUAJE      palabras sencillas o tecnicas en todo el sistema.
  *   APARIENCIA    el tema y como se escribe en esta tablet.
  *   USUARIOS      quien entra al local, y con que rol.        (administra)
  *   ROLES         que abre cada rol.                          (administra)
@@ -24,6 +26,7 @@ import { PanelUsuarios } from './Usuarios'
  */
 const TODAS: Seccion[] = [
   { id: 'cuenta', texto: 'Mi cuenta' },
+  { id: 'lenguaje', texto: 'Lenguaje' },
   { id: 'apariencia', texto: 'Apariencia' },
   { id: 'usuarios', texto: 'Usuarios' },
   { id: 'roles', texto: 'Roles' },
@@ -45,6 +48,7 @@ export default function Configuracion() {
       <NavBar titulo="Configuración" moneda={false} secciones={secciones} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho={ancha ? 'media' : 'angosta'}>
         {seccion === 'cuenta' && <MiCuenta />}
+        {seccion === 'lenguaje' && <Lenguaje />}
         {seccion === 'apariencia' && <Apariencia />}
         {ancha && <PanelUsuarios seccion={seccion as 'usuarios' | 'roles'} />}
         {seccion === 'pago-movil' && <PagoMovil />}
