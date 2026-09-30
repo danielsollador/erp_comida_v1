@@ -32,9 +32,12 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
         const alto = el.offsetHeight
         if (alto > 0) s = Math.min(1, window.innerHeight / alto)
       }
-      // Umbral: ensanchar puede cambiar un pelo el alto, y sin esto la escala
-      // podria oscilar entre dos valores casi iguales.
-      if (Math.abs(s - actual.current) > 0.004 || (s === 1 && actual.current !== 1)) {
+      // Umbral chico: si se pasaba por uno o dos pixeles (un monitor con otro
+      // alto, la barra del navegador), un umbral grande dejaba la escala en 1
+      // y aparecia un scroll minimo (Leider, 30-sep). Pasar de 1 a menos de 1
+      // siempre se aplica; entre dos escalas ya reducidas, solo si cambia algo.
+      const pasaDe1 = actual.current === 1 && s < 1
+      if (pasaDe1 || Math.abs(s - actual.current) > 0.001 || (s === 1 && actual.current !== 1)) {
         actual.current = s
         setEscala(s)
       }

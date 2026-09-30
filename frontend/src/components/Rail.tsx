@@ -41,12 +41,14 @@ export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcon
   { to: '/cocina', modulo: 'cocina', icono: 'cocina', titulo: 'Cocina', grupo: 'vender' },
   // Dos permisos detras de un solo icono: quien tenga cualquiera de los dos
   // entra, aunque dentro solo vea su propia pestaña.
-  { to: '/menu', modulo: ['menu', 'recetas'], icono: 'menu', titulo: 'Menú', grupo: 'negocio' },
-  { to: '/inventario', modulo: 'inventario', icono: 'inventario', titulo: 'Inventario', grupo: 'negocio' },
+  // El orden lo pidio Leider (30-sep): lo que entra, lo que hay y lo que
+  // se vende; y en numeros, del dia (la caja) a lo general (los reportes).
   { to: '/compras', modulo: 'compras', icono: 'compras', titulo: 'Compras', grupo: 'negocio' },
-  { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'numeros' },
-  { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'numeros' },
+  { to: '/inventario', modulo: 'inventario', icono: 'inventario', titulo: 'Inventario', grupo: 'negocio' },
+  { to: '/menu', modulo: ['menu', 'recetas'], icono: 'menu', titulo: 'Menú', grupo: 'negocio' },
   { to: '/caja', modulo: 'caja', icono: 'caja', titulo: 'Cierre de caja', grupo: 'numeros' },
+  { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'numeros' },
+  { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'numeros' },
   { to: '/contabilidad', modulo: 'contabilidad', icono: 'contabilidad', titulo: 'Contabilidad', grupo: 'contador' },
   { to: '/impuestos', modulo: 'impuestos', icono: 'impuestos', titulo: 'Impuestos', grupo: 'contador' },
   { to: '/tasa', modulo: 'tasa', icono: 'tasa', titulo: 'Tasa de cambio', grupo: 'contador' },
