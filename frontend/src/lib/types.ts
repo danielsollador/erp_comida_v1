@@ -1456,6 +1456,22 @@ export type EstadoPabilo = {
   metodos: string[]
   creditos: number | null
   error: string
+  /** Si la cuenta puede MANDAR un pago movil de vuelto (solo juridicas con C2P). */
+  emite_vueltos: boolean
+  /** Bancos a los que se puede mandar el vuelto: [codigo, nombre]. */
+  bancos_destino: [string, string][]
+}
+
+/** Un vuelto mandado por pago movil desde la cuenta del local. */
+export type VueltoEmitido = {
+  id: number
+  resultado: 'enviado' | 'rechazado' | 'error'
+  mensaje: string
+  codigo: string
+  referencia: string
+  autorizacion: string
+  monto_bs: number
+  reintentable: boolean
 }
 
 export type VerificacionPago = {

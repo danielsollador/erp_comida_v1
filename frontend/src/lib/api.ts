@@ -54,6 +54,7 @@ import type {
   ReporteInventario,
   ArranqueLocal,
   Aviso,
+  VueltoEmitido,
   ReportePerdidas,
   RecetaItem,
   Respaldo,
@@ -454,6 +455,9 @@ export const api = {
       verificacion_id?: number
       // Los bolivares que dijo el banco: el servidor guarda el redondeo.
       monto_bs?: number
+      // Vuelto por pago movil: la referencia del banco y el vuelto emitido.
+      vuelto_referencia?: string
+      vuelto_id?: number
     }[],
     extra?: {
       descuento?: number
@@ -690,6 +694,16 @@ export const api = {
   reporteInventario: (r: Rango) => req<ReporteInventario>(`/reportes/inventario${conRango(r)}`),
   /** La portada: cuanto lleva armado el local y lo que hoy hay que saber. */
   arranque: () => req<ArranqueLocal>('/reportes/arranque'),
+  /** Manda el vuelto por pago movil desde la cuenta del local (Pabilo). */
+  emitirVuelto: (datos: {
+    telefono: string
+    cedula: string
+    banco: string
+    monto_bs: number
+    monto_usd?: number
+    pedido_id?: number
+    user_bank_id?: string
+  }) => req<VueltoEmitido>('/pagos/vuelto', { method: 'POST', body: JSON.stringify(datos) }),
   avisos: () => req<Aviso[]>('/reportes/avisos'),
   ventas: (r: Rango, estado?: string) =>
     req<ListaVentas>(`/ventas${conRango(r, estado ? `estado=${estado}` : '')}`),

@@ -85,6 +85,80 @@ def estado():
         moneda=cuenta.moneda,
         campos=extras,
         metodos=list(METODOS_VERIFICABLES),
+        emite_vueltos=pabilo.emite_vueltos(cuenta),
+        bancos_destino=[[c, n] for c, n in pabilo.BANCOS_VE],
+    )
+
+
+@router.post("/vuelto", response_model=schemas.VueltoEmitido)
+def emitir_vuelto(body: schemas.VueltoRequest, request: Request, db: Session = Depends(get_db)):
+    """Manda el vuelto por pago movil desde la cuenta del local.
+
+    Se guarda cada intento. Si el banco lo aprobo, la plata YA salio: el
+    cobro que venga despues lo ata al pedido con `vuelto_id`.
+    """
+    if not pabilo.configurado():
+        raise HTTPException(status_code=409, detail="La verificación de pagos no está activada para este local. Avísale a Vertigo.")
+    if body.monto_bs <= 0:
+        raise HTTPException(status_code=400, detail="El vuelto tiene que ser mayor a cero.")
+    telefono = "".join(ch for ch in body.telefono if ch.isdigit())
+    if len(telefono) != 11 or not telefono.startswith("04"):
+        raise HTTPException(status_code=400, detail="El teléfono va con el código de la operadora: 04141234567.")
+    cedula = body.cedula.replace(".", "").replace("-", "").replace(" ", "").upper()
+    if not cedula or not cedula.lstrip("VEJGP").isdigit():
+        raise HTTPException(status_code=400, detail="La cédula va solo con números, con o sin la letra: V12345678.")
+    if body.banco not in {c for c, _ in pabilo.BANCOS_VE}:
+        raise HTTPException(status_code=400, detail="Elige el banco del cliente.")
+    try:
+        cuenta = pabilo.cuenta_por_id(body.user_bank_id) if body.user_bank_id else pabilo.cuenta_activa()
+    except pabilo.PabiloNoConfigurado:
+        raise HTTPException(status_code=409, detail="La verificación de pagos no está activada para este local. Avísale a Vertigo.")
+    except LookupError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not pabilo.emite_vueltos(cuenta):
+        raise HTTPException(
+            status_code=409,
+            detail=pabilo.MENSAJES_VUELTO["NOT_LEGAL_ACCOUNT"],
+        )
+    try:
+        factura = pabilo.siguiente_factura(cuenta)
+    except pabilo.PabiloError as e:
+        raise _traducir(e)
+    r = pabilo.emitir_vuelto(
+        cuenta, cedula=cedula, telefono=telefono, banco=body.banco, monto_bs=body.monto_bs, factura=factura
+    )
+    operador = operadores.del_turno(db, request, None)
+    vigente = tasas.tasa_vigente(db)
+    registro = models.VueltoPagoMovil(
+        user_bank_id=cuenta.id,
+        telefono=telefono,
+        cedula=cedula,
+        banco=body.banco,
+        monto_bs=round(body.monto_bs, 2),
+        monto_usd=body.monto_usd,
+        tasa=vigente.bcv if vigente else None,
+        factura=factura,
+        resultado="enviado" if r.ok else ("error" if r.codigo in ("SIN_CONEXION", "TIEMPO_AGOTADO") else "rechazado"),
+        codigo=r.codigo,
+        mensaje=r.mensaje,
+        referencia=r.referencia,
+        autorizacion=r.autorizacion,
+        pabilo_id=r.pabilo_id,
+        pedido_id=body.pedido_id,
+        operador_id=operador.id if operador else None,
+    )
+    db.add(registro)
+    db.commit()
+    db.refresh(registro)
+    return schemas.VueltoEmitido(
+        id=registro.id,
+        resultado=registro.resultado,
+        mensaje=r.mensaje,
+        codigo=r.codigo,
+        referencia=r.referencia,
+        autorizacion=r.autorizacion,
+        monto_bs=registro.monto_bs,
+        reintentable=r.codigo in ("SIN_CONEXION", "TIEMPO_AGOTADO"),
     )
 
 

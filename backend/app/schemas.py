@@ -589,6 +589,10 @@ class PagoInput(BaseModel):
     # Los bolivares que dijo el banco que entraron. Con ellos se guarda el
     # redondeo contra los dolares de los libros (cuenta 4030).
     monto_bs: Optional[float] = None
+    # Si el vuelto salio por pago movil: la referencia del banco, y el id del
+    # vuelto emitido por el sistema (POST /api/pagos/vuelto) si lo hubo.
+    vuelto_referencia: Optional[str] = None
+    vuelto_id: Optional[int] = None
 
 
 class Pago(BaseModel):
@@ -603,6 +607,8 @@ class Pago(BaseModel):
     verificacion_id: Optional[int] = None
     monto_bs: Optional[float] = None
     redondeo_bs: float = 0
+    vuelto_referencia: str = ""
+    vuelto_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -2217,4 +2223,32 @@ class EstadoPabilo(BaseModel):
     metodos: List[str] = []
     creditos: Optional[int] = None
     error: str = ""
+    # Si la cuenta principal puede MANDAR un pago movil (vuelto automatico):
+    # solo cuentas juridicas con C2P. Con una de persona natural, el vuelto
+    # por pago movil se hace a mano y se anota la referencia.
+    emite_vueltos: bool = False
+    # Los bancos a los que se puede mandar el vuelto: (codigo, nombre).
+    bancos_destino: List[List[str]] = []
+
+
+class VueltoRequest(BaseModel):
+    telefono: str
+    cedula: str
+    # Codigo de 4 digitos del banco del cliente (0102, 0134...).
+    banco: str
+    monto_bs: float
+    monto_usd: Optional[float] = None
+    pedido_id: Optional[int] = None
+    user_bank_id: Optional[str] = None
+
+
+class VueltoEmitido(BaseModel):
+    id: int
+    resultado: str  # enviado | rechazado | error
+    mensaje: str
+    codigo: str = ""
+    referencia: str = ""
+    autorizacion: str = ""
+    monto_bs: float
+    reintentable: bool = False
 

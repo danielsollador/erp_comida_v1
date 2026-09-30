@@ -1234,6 +1234,41 @@ class PagoPedido(Base):
     # "Redondeo de pagos" en cuanto lo acumulado del dia llega a un centavo.
     redondeo_bs = Column(Float, default=0)
     redondeo_usd = Column(Float, default=0)
+    # El vuelto, cuando salio por pago movil: la referencia del banco y, si
+    # lo mando el sistema (Pabilo), el registro de esa emision.
+    vuelto_referencia = Column(String, default="")
+    vuelto_id = Column(Integer, ForeignKey("TRX123_VEN_VUELTO.id"), nullable=True)
+
+
+class VueltoPagoMovil(Base):
+    """Cada vuelto mandado por pago movil desde la cuenta del local (Pabilo).
+
+    Se guarda TODO intento, salga bien o mal: un vuelto que el banco aprobo
+    es plata que salio de la cuenta, y tiene que quedar atado al pedido que
+    lo origino aunque el cobro se cayera despues.
+    """
+
+    __tablename__ = "TRX123_VEN_VUELTO"
+
+    id = Column(Integer, primary_key=True)
+    creado_en = Column(DateTime, default=ahora)
+    user_bank_id = Column(String, default="")
+    telefono = Column(String, default="")
+    cedula = Column(String, default="")
+    banco = Column(String, default="")
+    monto_bs = Column(Float, nullable=False)
+    monto_usd = Column(Float, nullable=True)
+    tasa = Column(Float, nullable=True)
+    factura = Column(String, default="")
+    # enviado | rechazado | error
+    resultado = Column(String, nullable=False)
+    codigo = Column(String, default="")
+    mensaje = Column(String, default="")
+    referencia = Column(String, default="")
+    autorizacion = Column(String, default="")
+    pabilo_id = Column(String, default="")
+    pedido_id = Column(Integer, ForeignKey("TRX110_VEN_PEDIDO.id"), nullable=True)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
 
 class VerificacionPago(Base):

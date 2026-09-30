@@ -18,6 +18,7 @@ import { useModoLigero } from '../lib/ligero'
 import { etiquetaVariante, variantesParaVender } from '../lib/menu'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import VerificarPago, { type PagoVerificado } from '../components/VerificarPago'
+import VueltoPagoMovil, { type VueltoListo } from '../components/VueltoPagoMovil'
 
 const redondear = (n: number) => Math.round(n * 100) / 100
 import type { EstadoPabilo } from '../lib/types'
@@ -40,10 +41,11 @@ import type {
 // cobro), porque de eso depende cuanta plata queda en la gaveta.
 const METODOS_EFECTIVO = ['Efectivo Bs', 'Efectivo $']
 
-// Por donde puede SALIR el vuelto. No estan tarjeta ni punto de venta: un
-// terminal no devuelve plata. El pago movil si: es lo que se hace cuando en
-// la gaveta no hay sencillo.
-const METODOS_VUELTO = ['Efectivo $', 'Efectivo Bs', 'Pago movil', 'Transferencia', 'Zelle']
+// Por donde puede SALIR el vuelto: las dos gavetas o un pago movil, que es
+// lo que se hace cuando no hay sencillo (Leider, 30-sep: "solo tres
+// opciones"). El pago movil lo manda el sistema si la cuenta conectada puede
+// (ver VueltoPagoMovil); si no, se manda desde el banco y se anota.
+const METODOS_VUELTO = ['Efectivo $', 'Efectivo Bs', 'Pago movil']
 
 // Los billetes que de verdad andan en la calle, para tocar en vez de teclear.
 const BILLETES_USD = [1, 5, 10, 20, 50, 100]
@@ -235,6 +237,12 @@ export default function POS() {
   // venta en dolares no aparecia en ninguna parte.
   const [efectivo, setEfectivo] = useState<{ metodo: string; conVuelto: boolean } | null>(null)
   const [billete, setBillete] = useState('')
+  // El vuelto sale por pago movil: se piden los datos del cliente (o la
+  // referencia, si se mando a mano) antes de cerrar el cobro.
+  const [vueltoMovil, setVueltoMovil] = useState(false)
+  // Descuento y propina van abajo y plegados: son la excepcion, no el cobro
+  // (Leider, 30-sep: "protagonismo exagerado"). Se abren solos si traen algo.
+  const [conAjustes, setConAjustes] = useState(false)
   // En que caja se cobra. Se recuerda en la tablet: se elige una vez por
   // turno, no en cada venta. Quien cobra es quien entro con su clave.
   const [puntos, setPuntos] = useState<PuntoVenta[]>([])
@@ -774,6 +782,8 @@ export default function POS() {
     setCliente('')
     setEfectivo(null)
     setBillete('')
+    setVueltoMovil(false)
+    setConAjustes(false)
     if (verificando) verificando.resolver(null)
     setVerificando(null)
   }
@@ -787,6 +797,9 @@ export default function POS() {
       vuelto_metodo?: string
       referencia?: string
       verificacion_id?: number
+      monto_bs?: number
+      vuelto_referencia?: string
+      vuelto_id?: number
     }[],
     referencia?: string,
     // El nombre recien escrito en un cuadro: `setCliente` no se ha aplicado
@@ -965,8 +978,28 @@ export default function POS() {
    */
   function cobrarConVuelto(vueltoMetodo: string) {
     if (!efectivo) return
+    if (vueltoMetodo === 'Pago movil') {
+      // Primero el pago movil al cliente; el cobro sale cuando el vuelto
+      // ya esta mandado (o anotado).
+      setVueltoMovil(true)
+      return
+    }
     cobrar(efectivo.metodo, [
       { metodo: efectivo.metodo, monto: aCobrar, recibido: entregado, vuelto_metodo: vueltoMetodo },
+    ])
+  }
+
+  function cobrarConVueltoMovil(v: VueltoListo) {
+    if (!efectivo) return
+    cobrar(efectivo.metodo, [
+      {
+        metodo: efectivo.metodo,
+        monto: aCobrar,
+        recibido: entregado,
+        vuelto_metodo: 'Pago movil',
+        vuelto_referencia: v.referencia,
+        vuelto_id: v.vuelto_id,
+      },
     ])
   }
 
@@ -2046,49 +2079,6 @@ export default function POS() {
               className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mt-2"
             />
           )}
-          {/* Rebaja a ESTE cliente. Antes la unica via era bajarle el
-              precio al menu, que se lo bajaba a todos y ademas declaraba IVA
-              sobre un precio que no se cobro. */}
-          <div className="grid grid-cols-2 gap-2 mt-3">
-            <label className="text-xs text-neutral-500">
-              Descuento
-              <Numerico
-                value={descuento}
-                onChange={(e) => setDescuento(e.target.value)}
-                placeholder="0.00"
-                className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
-              />
-            </label>
-            {/* La propina no es venta: entra a la gaveta y se le debe al
-                empleado hasta que se le entrega. */}
-            <label className="text-xs text-neutral-500">
-              Propina
-              <Numerico
-                value={propina}
-                onChange={(e) => setPropina(e.target.value)}
-                placeholder="0.00"
-                className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
-              />
-            </label>
-          </div>
-          {descuentoNum > 0 && (
-            <input
-              value={motivoDescuento}
-              onChange={(e) => setMotivoDescuento(e.target.value)}
-              placeholder="Motivo del descuento"
-              className="w-full border border-neutral-300 rounded-lg px-3 py-1.5 text-sm mt-2"
-            />
-          )}
-
-          {/* Viene puesto si se anoto al tomar la comanda; aqui se corrige o
-              se agrega. Solo fiar lo exige, y ese boton lo pide si falta. */}
-          <input
-            value={cliente}
-            onChange={(e) => setCliente(e.target.value)}
-            placeholder="Cliente (opcional, salvo a crédito)"
-            className="w-full border border-neutral-300 rounded-lg px-3 py-1.5 text-sm mt-2"
-          />
-
           {/* Pago partido: el cliente da algo en efectivo y el resto por
               otra via. Antes habia que elegir un metodo solo y la caja
               quedaba esperando plata que nunca entro a la gaveta. */}
@@ -2109,6 +2099,15 @@ export default function POS() {
                 verificando.resolver(null)
                 setVerificando(null)
               }}
+            />
+          ) : vueltoMovil && efectivo ? (
+            <VueltoPagoMovil
+              montoBs={vuelto * tasaBcv}
+              montoUsd={vuelto}
+              estado={pabilo}
+              pedidoId={cobrando.id}
+              onListo={cobrarConVueltoMovil}
+              onCancelar={() => setVueltoMovil(false)}
             />
           ) : !pagoMixto ? (
             efectivo ? (
@@ -2165,8 +2164,8 @@ export default function POS() {
                     {/* Los billetes de siempre: con un cliente esperando, tocar
                         "20" es mas rapido y se equivoca menos que teclearlo. */}
                     {!enBs && (
-                      <div className="grid grid-cols-4 gap-2">
-                        {BILLETES_USD.filter((b) => b > aCobrar).map((b) => (
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {BILLETES_USD.filter((b) => b > aCobrar).slice(0, 5).map((b) => (
                           <button
                             key={b}
                             onClick={() => setBillete(String(b))}
@@ -2179,18 +2178,14 @@ export default function POS() {
                     )}
                     {vuelto > 0 ? (
                       <>
-                        <p className="text-center text-lg font-bold text-exito-700 tabular-nums pt-1">
-                          Vuelto: ${vuelto.toFixed(2)}
-                          {tasaBcv > 0 && (
-                            <span className="block text-sm font-medium text-neutral-500">
-                              {fmtBs(vuelto * tasaBcv)}
-                            </span>
-                          )}
+                        <p className="flex items-baseline justify-between pt-1">
+                          <span className="text-sm text-neutral-500">Vuelto · ¿por dónde sale?</span>
+                          <span className="text-lg font-bold text-exito-700 tabular-nums">
+                            ${vuelto.toFixed(2)}
+                            {tasaBcv > 0 && <span className="ml-2 text-sm font-medium text-neutral-500">{fmtBs(vuelto * tasaBcv)}</span>}
+                          </span>
                         </p>
-                        <p className="text-xs text-neutral-500">
-                          ¿Por dónde se le devuelve? Sale del fondo de caja.
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                           {METODOS_VUELTO.map((m) => (
                             <button
                               key={m}
@@ -2198,7 +2193,7 @@ export default function POS() {
                               className="vp-control vp-pulsable rounded-xl py-3 text-sm font-medium"
                             >
                               {m}
-                              {m === 'Efectivo Bs' && tasaBcv > 0 && (
+                              {m !== 'Efectivo $' && tasaBcv > 0 && (
                                 <span className="block text-[11px] text-neutral-500 tabular-nums">
                                   {fmtBs(vuelto * tasaBcv)}
                                 </span>
@@ -2337,6 +2332,65 @@ export default function POS() {
               >
                 Volver a un solo pago
               </button>
+            </div>
+          )}
+
+          {/* Lo de vez en cuando, abajo y plegado: el nombre del cliente
+              (solo fiar lo exige, y ese boton lo pide si falta) y el
+              descuento o la propina. */}
+          {!verificando && !vueltoMovil && (
+            <div className="border-t border-neutral-100 pt-2 mt-1 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  value={cliente}
+                  onChange={(e) => setCliente(e.target.value)}
+                  placeholder="Cliente (opcional)"
+                  className="flex-1 min-w-0 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setConAjustes((v) => !v)}
+                  className={`shrink-0 text-xs font-medium px-2.5 py-1.5 rounded-lg ${
+                    conAjustes || descuentoNum > 0 || Number(propina) > 0 ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100'
+                  }`}
+                >
+                  Descuento · propina
+                </button>
+              </div>
+              {(conAjustes || descuentoNum > 0 || Number(propina) > 0) && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-xs text-neutral-500">
+                      Descuento
+                      <Numerico
+                        value={descuento}
+                        onChange={(e) => setDescuento(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
+                      />
+                    </label>
+                    {/* La propina no es venta: entra a la gaveta y se le debe al
+                        empleado hasta que se le entrega. */}
+                    <label className="text-xs text-neutral-500">
+                      Propina
+                      <Numerico
+                        value={propina}
+                        onChange={(e) => setPropina(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-neutral-900"
+                      />
+                    </label>
+                  </div>
+                  {descuentoNum > 0 && (
+                    <input
+                      value={motivoDescuento}
+                      onChange={(e) => setMotivoDescuento(e.target.value)}
+                      placeholder="Motivo del descuento"
+                      className="w-full border border-neutral-300 rounded-lg px-3 py-1.5 text-sm"
+                    />
+                  )}
+                </>
+              )}
             </div>
           )}
         </Modal>

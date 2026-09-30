@@ -1443,7 +1443,19 @@ async def cobrar_pedido(
             referencia=(pago.referencia or "").strip(),
             verificacion_id=verificacion.id if verificacion else None,
             monto_bs=round(pago.monto_bs, 2) if pago.monto_bs else None,
+            vuelto_referencia=(pago.vuelto_referencia or "").strip(),
+            vuelto_id=pago.vuelto_id,
         )
+        # Un vuelto que el sistema ya mando queda atado a ESTE pedido.
+        if pago.vuelto_id:
+            emitido = db.get(models.VueltoPagoMovil, pago.vuelto_id)
+            if not emitido or emitido.resultado != "enviado":
+                raise HTTPException(status_code=400, detail="Ese vuelto por pago móvil no se llegó a mandar.")
+            if emitido.pedido_id and emitido.pedido_id != pedido.id:
+                raise HTTPException(status_code=409, detail="Ese vuelto ya se usó en otro pedido.")
+            emitido.pedido_id = pedido.id
+            if not registro.vuelto_referencia:
+                registro.vuelto_referencia = emitido.referencia
         db.add(registro)
         if registro.monto_bs:
             con_bs.append(registro)

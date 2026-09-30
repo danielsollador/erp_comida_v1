@@ -703,3 +703,135 @@ def cambiar_secreto(user_bank_id: str, secreto: str) -> None:
     global _cache_cuentas
     _llamar(_put, f"/v1/usersbank/{user_bank_id}/change-secret", {"secret": secreto})
     _cache_cuentas = (0.0, [])
+
+
+# ── Vueltos por pago movil (docs/transaction-change) ─────────────────────────
+#
+# Pabilo emite un pago movil SALIENTE ("vuelto automatico", C2P) desde la
+# cuenta del local al telefono del cliente. El banco solo lo permite a
+# cuentas JURIDICAS (RIF J o G) con el servicio C2P contratado: una cuenta de
+# persona natural (BDV personas) no puede, por regulacion. El ERP lo sabe
+# por el proveedor con que se conecto la cuenta.
+PROVEEDORES_JURIDICOS = {"VE_BAN_EMP_V2", "MERCANTIL_EMP_V1", "VE_BANESCO_V1", "VE_BANK_PLAZA_V1"}
+
+# Codigos de los bancos venezolanos a los que se puede mandar un pago movil.
+BANCOS_VE: list[tuple[str, str]] = [
+    ("0102", "Banco de Venezuela"),
+    ("0134", "Banesco"),
+    ("0105", "Mercantil"),
+    ("0108", "Provincial"),
+    ("0191", "BNC"),
+    ("0172", "Bancamiga"),
+    ("0175", "Bicentenario"),
+    ("0163", "Banco del Tesoro"),
+    ("0114", "Bancaribe"),
+    ("0115", "Exterior"),
+    ("0138", "Banco Plaza"),
+    ("0151", "BFC Fondo Común"),
+    ("0156", "100% Banco"),
+    ("0157", "DelSur"),
+    ("0166", "Banco Agrícola"),
+    ("0168", "Bancrecer"),
+    ("0169", "Mi Banco"),
+    ("0171", "Banco Activo"),
+    ("0174", "Banplus"),
+    ("0177", "Banfanb"),
+    ("0104", "Venezolano de Crédito"),
+    ("0128", "Banco Caroní"),
+    ("0137", "Sofitasa"),
+    ("0146", "Bangente"),
+]
+
+
+def emite_vueltos(cuenta: Cuenta) -> bool:
+    """Si con esta cuenta se puede mandar un pago movil de vuelto."""
+    return cuenta.proveedor in PROVEEDORES_JURIDICOS
+
+
+@dataclass
+class VueltoEmitido:
+    ok: bool
+    codigo: str = ""
+    mensaje: str = ""
+    detalle: str = ""
+    referencia: str = ""
+    autorizacion: str = ""
+    estado: str = ""
+    pabilo_id: str = ""
+
+
+MENSAJES_VUELTO = {
+    "INVALID_PHONE": "El teléfono no tiene un formato reconocible: 04141234567.",
+    "INSUFFICIENT_FUNDS": "La cuenta no tiene saldo para ese vuelto.",
+    "C2P_NOT_SUPPORTED": "La cuenta conectada no puede mandar pagos móviles: hace falta una cuenta jurídica con el servicio C2P activo en el banco.",
+    "NOT_LEGAL_ACCOUNT": "La cuenta conectada es de persona natural: el banco solo permite vueltos automáticos a cuentas jurídicas.",
+}
+
+
+def siguiente_factura(cuenta: Cuenta) -> str:
+    """El numero de referencia interno que Pabilo asigna al vuelto."""
+    datos = _llamar(_get, f"/userbankpayment/{cuenta.id}/get-next-invoice-number")
+    if isinstance(datos, dict):
+        for clave in ("invoice_number", "next_invoice_number", "data"):
+            v = datos.get(clave)
+            if isinstance(v, dict):
+                v = v.get("invoice_number") or v.get("next_invoice_number")
+            if v:
+                return str(v)
+    return str(datos)
+
+
+def emitir_vuelto(
+    cuenta: Cuenta,
+    *,
+    cedula: str,
+    telefono: str,
+    banco: str,
+    monto_bs: float,
+    factura: str,
+) -> VueltoEmitido:
+    """Manda el pago movil del vuelto y clasifica lo que responda."""
+    tipo, numero = _partir_cedula(cedula)
+    cuerpo = {
+        "dni": {"code": tipo, "number": numero},
+        "phone_pagador": "".join(ch for ch in telefono if ch.isdigit()),
+        "amount": round(monto_bs, 2),
+        "invoice_number": factura,
+        "destination_bank_code": banco,
+    }
+    try:
+        status, datos = _post(f"/v1/transactionchange/userbank/{cuenta.id}", cuerpo)
+    except httpx.TimeoutException:
+        return VueltoEmitido(ok=False, codigo="TIEMPO_AGOTADO", mensaje=MENSAJES["TIEMPO_AGOTADO"])
+    except httpx.HTTPError as e:
+        log.warning("pabilo sin conexion: %s", e)
+        return VueltoEmitido(ok=False, codigo="SIN_CONEXION", mensaje=MENSAJES["SIN_CONEXION"], detalle=str(e)[:300])
+
+    if 200 <= status < 300 and isinstance(datos, dict):
+        d = datos.get("data") if isinstance(datos.get("data"), dict) else datos
+        t = d.get("transaction_changes") or d.get("transaction_change") or d
+        if not isinstance(t, dict):
+            t = {}
+        estado = str(t.get("status") or "").upper()
+        ok = estado in ("", "APPROVED", "SUCCESS", "COMPLETED", "PROCESSED")
+        return VueltoEmitido(
+            ok=ok,
+            codigo="" if ok else estado,
+            mensaje="Vuelto enviado." if ok else f"El banco respondió {estado}.",
+            detalle=str(datos.get("message") or "")[:300],
+            referencia=str(t.get("reference") or ""),
+            autorizacion=str(t.get("authorization_code") or ""),
+            estado=estado or "APPROVED",
+            pabilo_id=str(t.get("id") or t.get("_id") or ""),
+        )
+    codigo, detalle = _error_de(datos, status)
+    mensaje = MENSAJES_VUELTO.get(codigo) or MENSAJES.get(codigo)
+    if not mensaje:
+        bajo = (detalle or "").lower()
+        if "c2p" in bajo or "legal" in bajo or "jur" in bajo:
+            mensaje = MENSAJES_VUELTO["C2P_NOT_SUPPORTED"]
+        elif "fund" in bajo or "saldo" in bajo or "balance" in bajo:
+            mensaje = MENSAJES_VUELTO["INSUFFICIENT_FUNDS"]
+        else:
+            mensaje = f"No se pudo mandar el vuelto ({codigo}). {detalle[:160]}".strip()
+    return VueltoEmitido(ok=False, codigo=codigo, mensaje=mensaje, detalle=detalle[:300])
