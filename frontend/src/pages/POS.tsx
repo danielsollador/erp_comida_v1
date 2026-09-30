@@ -1999,17 +1999,32 @@ export default function POS() {
           ticket. Ahora es una pastilla chica en la esquina, del color de la
           pantalla, y se va sola a los 20 s. Si se fue, el ticket se imprime
           igual desde Ventas. */}
+      {/* "Cobrado", dicho: la misma marca verde con la que el mostrador
+          confirma la comanda enviada (Leider, 30-sep). Lleva dentro el
+          ofrecimiento de imprimir y se va sola a los 20 s. */}
       {ultimaVenta && (
-        <button
-          type="button"
-          onClick={() => imprimirTicket(ultimaVenta.id)}
-          title={`Imprimir el ticket del pedido #${ultimaVenta.numero}`}
-          className="fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm hover:text-neutral-900 hover:border-neutral-400"
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 rounded-full bg-exito-600 text-white pl-3 pr-1.5 py-1.5 shadow-[0_8px_24px_rgb(0_0_0/0.22)] max-w-[calc(100vw-2rem)]"
           style={{ animation: 'vp-entrar .18s cubic-bezier(.2,.7,.2,1) both' }}
         >
-          <Icono nombre="ventas" size={14} />
-          Imprimir #{ultimaVenta.numero}
-        </button>
+          <span aria-hidden className="grid place-items-center w-5 h-5 shrink-0 rounded-full bg-white/20 text-[11px] leading-none">
+            ✓
+          </span>
+          <span className="text-sm font-semibold whitespace-nowrap">
+            Cobrado #{ultimaVenta.numero}
+            <span className="font-medium text-white/85"> · {fmt(ultimaVenta.a_cobrar ?? ultimaVenta.total)}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => imprimirTicket(ultimaVenta.id)}
+            title={`Imprimir el ticket del pedido #${ultimaVenta.numero}`}
+            className="vp-pulsable shrink-0 inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 px-3 py-1.5 text-xs font-semibold"
+          >
+            <Icono nombre="ventas" size={13} />
+            Imprimir
+          </button>
+        </div>
       )}
 
       {/* Vive en su propio componente porque Ventas abre exactamente el mismo
