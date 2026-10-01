@@ -15,6 +15,7 @@ import { Bloque, Kpi, Vacio, type Dinero } from './comunes'
  * minimo que alguien puso a dedo hace meses.
  */
 export default function Inventario({ datos, dinero, corto }: { datos: ReporteInventario; dinero: Dinero; corto: (x: number) => string }) {
+  const de = datos.filtro ? datos.filtro.ingrediente || datos.filtro.categoria : ''
   const orden = useOrden<InsumoDelDeposito>(
     {
       nombre: (i) => i.nombre,
@@ -35,7 +36,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
       {/* ── Las cifras ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi
-          titulo={nombre('kpi.valor_deposito')}
+          titulo={de ? `${nombre('kpi.valor_deposito')} · ${de}` : nombre('kpi.valor_deposito')}
           ayuda="kpi.valor_deposito"
           valor={dinero(datos.valor_total)}
           destacado

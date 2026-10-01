@@ -253,6 +253,10 @@ export type ProductoVendido = {
   margen_pct: number
   /** Sin receta cargada: el costo es 0 y el margen no significa nada. */
   sin_receta: boolean
+  /** De que producto del menu es (null en la venta libre): para filtrar tocándolo. */
+  producto_id: number | null
+  /** En qué categoría está hoy. */
+  categoria: string
 }
 
 export type CambioPrecio = {
@@ -297,6 +301,8 @@ export type GrupoReporte = {
   pedidos: number
   /** Sobre las ventas del periodo. */
   pct: number
+  /** La categoría del menú, si el grupo es una: para filtrar tocándola. */
+  id: number | null
   /** Solo para dias de la semana: lo que vende ese dia TIPICO. */
   promedio: number | null
 }
@@ -314,6 +320,22 @@ export type Comparativa = {
   cambio_ganancia_pct: number | null
 }
 
+/** Lo que se está mirando cuando Reportes se filtra por el menú. */
+export type FiltroMenu = {
+  categoria_id: number | null
+  categoria: string
+  producto_id: number | null
+  producto: string
+}
+
+/** Lo mismo para Pérdidas e Inventario, que se miran por cajón y mercancía. */
+export type FiltroDeposito = {
+  categoria_id: number | null
+  categoria: string
+  ingrediente_id: number | null
+  ingrediente: string
+}
+
 export type ReporteResumen = {
   periodo: string
   etiqueta: string
@@ -324,6 +346,8 @@ export type ReporteResumen = {
   iva_cobrado: number
   ingresos_netos: number
   pedidos: number
+  /** Cuántas cosas se vendieron, sumando los renglones. */
+  unidades: number
   ticket_promedio: number
   /** Lo que gasta el cliente del medio: el promedio lo mueve un solo pedido. */
   ticket_mediano: number
@@ -352,6 +376,8 @@ export type ReporteResumen = {
   por_dia_semana: GrupoReporte[]
   /** Cuando se guardaron los dias pasados en el mart. null = todo en vivo. */
   consolidado_en: string | null
+  /** Si se está mirando una categoría o un producto y no el negocio entero. */
+  filtro: FiltroMenu | null
 }
 
 export type ActivoFijo = {
@@ -966,6 +992,7 @@ export type ReportePerdidas = {
   costo_cortesias: number
   detalle: Merma[]
   insights: Insight[]
+  filtro: FiltroDeposito | null
 }
 
 export type EstadoDeposito = 'agotado' | 'bajo' | 'ok' | 'sobra' | 'quieto'
@@ -1005,6 +1032,7 @@ export type ReporteInventario = {
   por_insumo: InsumoDelDeposito[]
   por_comprar: SugerenciaCompra[]
   insights: Insight[]
+  filtro: FiltroDeposito | null
 }
 
 export type ReporteCombos = {
@@ -1015,6 +1043,7 @@ export type ReporteCombos = {
   pares: ParCombo[]
   acompanamiento: Acompanamiento | null
   oportunidad: OportunidadCombo | null
+  filtro: FiltroMenu | null
 }
 
 export type Sugerencia = {

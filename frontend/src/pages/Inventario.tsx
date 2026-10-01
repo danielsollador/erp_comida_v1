@@ -4,7 +4,7 @@ import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
 import Agarre from '../components/Agarre'
 import { useArrastre } from '../lib/arrastre'
-import { FiltroFechas } from '../components/Fechas'
+import BarraFiltros from '../components/BarraFiltros'
 import { useRango, nombreRango } from '../lib/fechas'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
@@ -454,8 +454,9 @@ export default function Inventario() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={<FiltroFechas rango={rango} alCambiar={setRango} />} />
+      <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="ancha">
+        <BarraFiltros rango={rango} alCambiar={setRango} />
         {error && <Aviso>{error}</Aviso>}
 
         {/* Arranque del local: mientras no haya insumos ni recetas cargadas,

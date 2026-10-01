@@ -1,4 +1,4 @@
-import { Fragment, useState, type PointerEvent, type ReactNode } from 'react'
+import { Fragment, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 /**
@@ -52,6 +52,26 @@ function useGlobo() {
       : null
 
   return { enHover, Globo }
+}
+
+/**
+ * Cuanto mide de ancho un elemento, al dia. Para decidir cuantos rotulos
+ * caben bajo las barras: en un telefono caben cuatro fechas, en una pantalla
+ * ancha caben las treinta y una.
+ */
+function useAncho<T extends HTMLElement>() {
+  const ref = useRef<T>(null)
+  const [ancho, setAncho] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const medir = () => setAncho(el.getBoundingClientRect().width)
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return { ref, ancho }
 }
 
 /** Una linea del globo: rotulo a la izquierda, cifra a la derecha. */
@@ -177,11 +197,14 @@ export function GraficoLineas({
   return (
     <div>
       <div className="flex gap-2" style={{ height: alto }}>
-        {/* El eje: solo el techo y el piso. Tres numeros mas no dicen nada que
-            la linea no diga, y en una tablet estorban. */}
-        <div className="flex flex-col justify-between py-0.5 text-[10px] tabular-nums text-neutral-400 shrink-0">
-          <span>{formato(techo)}</span>
-          <span>{formato(piso)}</span>
+        {/* El eje, con una cifra en cada linea de referencia: el techo, las
+            tres de en medio y el piso. Solo con techo y piso, un pico a media
+            altura no se podia leer sin posar el cursor (auditoria de graficos,
+            30-sep): un eje sin cifras es un dibujo, no un grafico. */}
+        <div className="flex flex-col justify-between py-0.5 text-[10px] tabular-nums text-neutral-400 shrink-0 text-right">
+          {[0, 25, 50, 75, 100].map((p) => (
+            <span key={p}>{formato(techo - ((techo - piso) * p) / 100)}</span>
+          ))}
         </div>
 
         <div
@@ -380,7 +403,7 @@ export function Variacion({
 
 // ── Dona ────────────────────────────────────────────────────────────────────
 
-export type ParteDona = { nombre: string; valor: number; color?: string; detalle?: string }
+export type ParteDona = { nombre: string; valor: number; color?: string; detalle?: string; id?: number | null }
 
 /**
  * Un reparto: como te pagaron, que parte es comida y que parte bebida.
@@ -395,6 +418,7 @@ export function GraficoDona({
   formato,
   centro,
   pastel = false,
+  alTocar,
 }: {
   partes: ParteDona[]
   formato: (n: number) => string
@@ -404,6 +428,8 @@ export function GraficoDona({
   /** Dos o tres partes de un todo (facturado / sin facturar): una sola
       barra al 100 %, repartida. */
   pastel?: boolean
+  /** Tocar una parte: para bajar a verla sola (filtrar por esa categoria). */
+  alTocar?: (p: ParteDona) => void
 }) {
   // YA NO ES UN ANILLO. Con cinco categorias el pastel se leia; con quince
   // era un abanico de astillas del mismo color con una leyenda que no cabia
@@ -471,7 +497,17 @@ export function GraficoDona({
       )}
       <ul className="space-y-2.5">
         {filas.map((f) => (
-          <li key={f.nombre} className="grid grid-cols-[minmax(0,7.5rem)_1fr_auto] sm:grid-cols-[minmax(0,11rem)_1fr_auto] items-center gap-x-3 text-sm">
+          <li
+            key={f.nombre}
+            className={`grid grid-cols-[minmax(0,7.5rem)_1fr_auto] sm:grid-cols-[minmax(0,11rem)_1fr_auto] items-center gap-x-3 text-sm ${
+              alTocar && f.id != null ? 'cursor-pointer rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-neutral-500/5' : ''
+            }`}
+            role={alTocar && f.id != null ? 'button' : undefined}
+            tabIndex={alTocar && f.id != null ? 0 : undefined}
+            title={alTocar && f.id != null ? `Ver solo ${f.nombre}` : undefined}
+            onClick={alTocar && f.id != null ? () => alTocar(f) : undefined}
+            onKeyDown={alTocar && f.id != null ? (e) => e.key === 'Enter' && alTocar(f) : undefined}
+          >
             {/* El nombre entero, en dos renglones si hace falta: en el
                 anillo se cortaba en "Bebi…" y habia que adivinar. */}
             <span className="min-w-0">
@@ -512,9 +548,20 @@ export type BarraDato = {
 }
 
 /**
- * Barras verticales para pocas categorias con orden propio: los siete dias de
- * la semana, las horas de un dia. Para una serie larga en el tiempo esta
- * `GraficoLineas`, que ademas superpone el periodo anterior.
+ * Barras verticales para pocos tramos con orden propio: los siete dias de la
+ * semana, las horas de un dia, los dias de un mes.
+ *
+ * TAMBIEN PARA LA SERIE EN EL TIEMPO CORTA. La linea de `GraficoLineas` une
+ * puntos, y con un mes de ventas donde se vendio ocho dias la linea sube y
+ * baja por los ceros dibujando una sierra que parece volatilidad; en barras
+ * cada dia es una barra y un dia sin venta es un hueco, que es lo que paso
+ * (auditoria de graficos, 30-sep). La linea queda para series largas, donde
+ * de verdad hay una tendencia que seguir.
+ *
+ * Lo que un grafico de barras tiene que tener para leerse solo: el eje con
+ * cifras (`ejeY`), el periodo anterior detras de cada barra para comparar
+ * (`anterior`, en gris claro y mas ancho, como una sombra), y una linea de
+ * referencia con su rotulo (`referencia`: el promedio, la meta).
  */
 export function GraficoBarras({
   datos,
@@ -522,6 +569,10 @@ export function GraficoBarras({
   alto = 170,
   resaltar,
   estirar = false,
+  anterior,
+  nombres,
+  referencia,
+  ejeY = false,
 }: {
   datos: BarraDato[]
   formato: (n: number) => string
@@ -532,68 +583,162 @@ export function GraficoBarras({
       dos graficos apilados no llegan al pie de la tarjeta de al lado y la
       fila queda descuadrada. */
   estirar?: boolean
+  /** El mismo tramo del periodo anterior, detras de cada barra. */
+  anterior?: (number | null)[]
+  /** Como se llaman las dos series en la leyenda, cuando hay `anterior`. */
+  nombres?: { actual: string; anterior: string }
+  /** Una linea punteada con su rotulo: el promedio, la meta. */
+  referencia?: { valor: number; texto: string }
+  /** El eje con cifras y lineas de referencia. Para una serie en el tiempo;
+      los siete dias de la semana se leen con la cifra encima y ya. */
+  ejeY?: boolean
 }) {
   const { enHover, Globo } = useGlobo()
+  const { ref: plano, ancho } = useAncho<HTMLDivElement>()
   if (datos.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
   }
-  const max = Math.max(...datos.map((d) => d.valor), 0)
-  // Con muchas barras no caben todas las etiquetas: una de cada tantas.
-  const salto = Math.ceil(datos.length / 16)
+  const conAnterior =
+    anterior != null && anterior.length === datos.length && anterior.some((v) => v != null && v > 0)
+  const max = Math.max(
+    ...datos.map((d) => d.valor),
+    ...(conAnterior ? anterior.map((v) => v ?? 0) : []),
+    referencia?.valor ?? 0,
+    0,
+  )
+  const pct = (v: number) => (max > 0 ? (Math.max(v, 0) / max) * 100 : 0)
+  // Con muchas barras no caben todas las etiquetas: una de cada tantas,
+  // segun lo que mida el grafico. La que se muestra puede desbordar su
+  // casilla porque las vecinas van vacias. Mientras no se midio, una de
+  // cada doce, que es lo que cabe en un telefono con fechas "01/09".
+  const letras = Math.max(...datos.map((d) => d.etiqueta.length), 1)
+  const anchoRotulo = letras * 7 + 8
+  const salto = ancho > 0 ? Math.max(1, Math.ceil((datos.length * anchoRotulo) / ancho)) : Math.ceil(datos.length / 12)
+  // Las cifras encima de las barras, solo si caben.
+  const conCifras = datos.length <= 12 && (ancho === 0 || ancho / datos.length >= 36)
+  const columnas = ejeY ? 'auto minmax(0,1fr)' : 'minmax(0,1fr)'
+
   return (
-    <div
-      className={`flex items-end gap-1.5 overflow-x-auto overflow-y-hidden ${
-        estirar ? 'flex-1 min-h-[120px]' : ''
-      }`}
-      style={estirar ? undefined : { height: alto }}
-    >
+    <div className={estirar ? 'flex-1 min-h-[120px] flex flex-col' : ''}>
       <Globo />
-      {datos.map((d, i) => {
-        const pct = max > 0 ? (d.valor / max) * 100 : 0
-        const fuerte = resaltar ? resaltar(d, i) : false
-        return (
-          <div
-            key={d.etiqueta + i}
-            className="group flex-1 min-w-[22px] flex flex-col items-center justify-end h-full gap-1 cursor-default"
-            {...enHover(
-              <>
-                <div className="mb-1 font-semibold text-neutral-500">{d.etiqueta}</div>
-                <LineaGlobo nombre="Total" valor={formato(d.valor)} />
-                {d.detalle && <div className="mt-0.5 text-[11px] text-neutral-400">{d.detalle}</div>}
-              </>,
+      {/* Una rejilla de dos columnas y dos filas (eje | barras / nada |
+          rotulos): asi los rotulos del eje X quedan exactamente bajo las
+          barras sin medir cuanto ocupa el eje Y. */}
+      <div
+        className={`grid gap-x-2 ${estirar ? 'flex-1 min-h-0' : ''}`}
+        style={{ gridTemplateColumns: columnas, gridTemplateRows: estirar ? 'minmax(0,1fr) auto' : `${alto}px auto` }}
+      >
+        {ejeY && (
+          <div className="flex flex-col justify-between pt-5 pb-px text-[10px] tabular-nums text-neutral-400 text-right">
+            {[100, 75, 50, 25, 0].map((p) => (
+              <span key={p}>{formato((max * p) / 100)}</span>
+            ))}
+          </div>
+        )}
+        <div ref={plano} className="relative min-w-0">
+          {/* Veinte pixeles libres arriba, para la cifra de la barra mas alta. */}
+          <div className="absolute inset-x-0 bottom-0 top-5">
+            {ejeY &&
+              [25, 50, 75].map((p) => (
+                <div key={p} className="absolute inset-x-0 border-t border-neutral-100" style={{ top: `${p}%` }} />
+              ))}
+            <div className="absolute inset-x-0 bottom-0 border-t border-neutral-200" />
+            {referencia && max > 0 && referencia.valor > 0 && (
+              <div
+                className="absolute inset-x-0 z-[1] border-t border-dashed border-neutral-400 pointer-events-none"
+                style={{ bottom: `${pct(referencia.valor)}%` }}
+              />
             )}
-          >
-            <span className="text-center leading-tight whitespace-nowrap">
-              <span className="block text-xs text-neutral-600 tabular-nums">
-                {d.valor > 0 && datos.length <= 12 ? formato(d.valor) : ''}
-              </span>
-              {d.secundario && datos.length <= 12 && (
-                <span className="block text-xs text-neutral-400 tabular-nums">{d.secundario}</span>
-              )}
-            </span>
-            <div
-              // EL HOVER NO PINTA DE COBRE. El cobre significa "esta es la
-              // barra fuerte"; usarlo tambien para el cursor hacia que
-              // cualquier barra se disfrazara de la mayor al pasarle por
-              // encima, y ya no se sabia cual era la de verdad (Leider,
-              // 24-sep). El color se queda quieto y lo que cambia es la
-              // opacidad, que ademas se ve en los DOS temas: aclarar no sirve
-              // en modo oscuro, donde la barra normal ya es casi blanca.
-              className={`vp-barra w-full rounded-t-md min-h-[2px] transition-opacity group-hover:opacity-70 ${
-                fuerte ? 'bg-acento-500' : 'bg-neutral-900'
-              }`}
-              style={{
-                height: `${pct}%`,
-                animationDelay: `${Math.min(i * 18, 400)}ms`,
-                background: d.color,
-              }}
-            />
-            <span className="text-xs text-neutral-500 whitespace-nowrap h-4">
+            <div className="absolute inset-0 flex items-end gap-1.5">
+              {datos.map((d, i) => {
+                const fuerte = resaltar ? resaltar(d, i) : false
+                const ant = conAnterior ? anterior[i] : null
+                return (
+                  <div
+                    key={d.etiqueta + i}
+                    className="group relative flex-1 min-w-0 h-full cursor-default"
+                    {...enHover(
+                      <>
+                        <div className="mb-1 font-semibold text-neutral-500">{d.etiqueta}</div>
+                        <LineaGlobo nombre={nombres?.actual ?? 'Total'} valor={formato(d.valor)} />
+                        {ant != null && (
+                          <LineaGlobo nombre={nombres?.anterior ?? 'Anterior'} valor={formato(ant)} color="var(--color-neutral-300)" />
+                        )}
+                        {d.detalle && <div className="mt-0.5 text-[11px] text-neutral-400">{d.detalle}</div>}
+                      </>,
+                    )}
+                  >
+                    {ant != null && ant > 0 && (
+                      <div
+                        className="absolute inset-x-0 bottom-0 rounded-t-md bg-neutral-300/50"
+                        style={{ height: `${pct(ant)}%` }}
+                      />
+                    )}
+                    {/* EL HOVER NO PINTA DE COBRE. El cobre significa "esta es
+                        la barra fuerte"; para el cursor cambia la opacidad,
+                        que se ve en los dos temas. */}
+                    <div
+                      className={`vp-barra absolute bottom-0 rounded-t-md min-h-[2px] transition-opacity group-hover:opacity-70 ${
+                        fuerte ? 'bg-acento-500' : 'bg-neutral-900'
+                      }`}
+                      style={{
+                        height: `${pct(d.valor)}%`,
+                        left: conAnterior ? '18%' : 0,
+                        right: conAnterior ? '18%' : 0,
+                        animationDelay: `${Math.min(i * 18, 400)}ms`,
+                        background: d.color,
+                      }}
+                    />
+                    {conCifras && d.valor > 0 && (
+                      <span
+                        className="pointer-events-none absolute inset-x-0 text-center leading-tight whitespace-nowrap"
+                        style={{ bottom: `calc(${pct(d.valor)}% + 3px)` }}
+                      >
+                        <span className="block text-xs text-neutral-600 tabular-nums">{formato(d.valor)}</span>
+                        {d.secundario && <span className="block text-[11px] text-neutral-400 tabular-nums">{d.secundario}</span>}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        {ejeY && <span />}
+        {/* Los rotulos del eje X: el mismo reparto y la misma separacion que
+            las barras, asi cada uno queda bajo la suya. */}
+        <div className="flex gap-1.5 mt-1 min-w-0">
+          {datos.map((d, i) => (
+            <span key={d.etiqueta + i} className="flex-1 min-w-0 text-center text-xs text-neutral-500 whitespace-nowrap overflow-visible h-4">
               {i % salto === 0 ? d.etiqueta : ''}
             </span>
-          </div>
-        )
-      })}
+          ))}
+        </div>
+      </div>
+      {/* La leyenda: que es cada cosa. El rotulo de la referencia va aqui y
+          no encima de la linea, donde tapaba la ultima barra. */}
+      {(conAnterior || (referencia && referencia.valor > 0)) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
+          {conAnterior && (
+            <>
+              <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+                <span className="h-2.5 w-2.5 rounded-sm bg-neutral-900" />
+                {nombres?.actual ?? 'Este período'}
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+                <span className="h-2.5 w-2.5 rounded-sm bg-neutral-300/70" />
+                {nombres?.anterior ?? 'Período anterior'}
+              </span>
+            </>
+          )}
+          {referencia && referencia.valor > 0 && (
+            <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+              <span className="w-4 border-t border-dashed border-neutral-400" />
+              {referencia.texto} <span className="tabular-nums">{formato(referencia.valor)}</span>
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -689,6 +834,8 @@ export type FilaGanancia = {
   costo: number | null
   /** Cuantas se vendieron. */
   unidades?: number
+  /** El producto del menu, para filtrar tocando la fila. null en la venta libre. */
+  id?: number | null
 }
 
 /**
@@ -709,10 +856,13 @@ export function BarrasGanancia({
   filas,
   formato,
   primeros = 8,
+  alTocar,
 }: {
   filas: FilaGanancia[]
   formato: (n: number) => string
   primeros?: number
+  /** Tocar una fila: bajar a ver solo ese producto. */
+  alTocar?: (f: FilaGanancia) => void
 }) {
   const { enHover, Globo } = useGlobo()
   const [todas, setTodas] = useState(false)
@@ -735,9 +885,16 @@ export function BarrasGanancia({
           const pct = f.ingreso > 0 ? (queda / f.ingreso) * 100 : 0
           const pierde = !sinReceta && queda < -0.004
           const uds = f.unidades
+          const tocable = alTocar != null && f.id != null
           return (
             <li
               key={f.nombre}
+              className={tocable ? 'cursor-pointer rounded-lg -mx-1.5 px-1.5 py-1 hover:bg-neutral-500/5' : ''}
+              role={tocable ? 'button' : undefined}
+              tabIndex={tocable ? 0 : undefined}
+              title={tocable ? `Ver solo ${f.nombre}` : undefined}
+              onClick={tocable ? () => alTocar(f) : undefined}
+              onKeyDown={tocable ? (e) => e.key === 'Enter' && alTocar(f) : undefined}
               {...enHover(
                 <>
                   <div className="mb-1 font-semibold text-neutral-500">{f.nombre}</div>
@@ -946,7 +1103,9 @@ export function MapaCalor({
             la hora más fuerte
           </span>
         )}
-        menos
+        {/* La escala con sus dos extremos en cifras: "menos / mas" sin numero
+            no dice cuanto es el mas oscuro (auditoria de graficos, 30-sep). */}
+        <span>menos</span>
         {[15, 35, 60, 85, 100].map((p) => (
           <span
             key={p}
@@ -954,7 +1113,12 @@ export function MapaCalor({
             style={{ background: `color-mix(in oklab, var(--color-acento-500) ${p}%, transparent)` }}
           />
         ))}
-        más
+        <span>
+          más{' '}
+          <span className="tabular-nums text-neutral-500">
+            · {medida === 'pedidos' ? `${max} ${max === 1 ? 'pedido' : 'pedidos'}` : formato(max)}
+          </span>
+        </span>
       </div>
     </div>
   )
@@ -997,5 +1161,128 @@ export function Sparkline({
       />
       <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>
+  )
+}
+
+
+// ── Cascada ─────────────────────────────────────────────────────────────────
+
+export type PasoCascada = {
+  nombre: string
+  /** Lo que suma o resta. En un `total` o un `resultado`, se ignora el signo. */
+  valor: number
+  /** `total`: la barra arranca de cero (las ventas). `resultado`: lo que queda
+      al final, tambien desde cero. Sin tipo: un paso que suma o resta. */
+  tipo?: 'total' | 'resultado'
+  color?: string
+}
+
+/**
+ * De donde sale la ganancia, como cascada: las ventas enteras a la
+ * izquierda, cada cosa que se lleva una parte baja un escalon, y lo que
+ * queda es la ultima barra, desde cero. Es EL grafico de un estado de
+ * resultados en cualquier tablero (Power BI lo trae de serie), y lo que
+ * tenia antes el Resumen era un vaso dibujado a mano que habia que
+ * aprender a leer (auditoria de graficos, 30-sep).
+ *
+ * Si los costos se pasan de las ventas, el resultado cae por debajo de
+ * cero: la linea del cero queda a la vista y la ultima barra cuelga en
+ * rojo, que es exactamente la noticia.
+ */
+export function GraficoCascada({
+  pasos,
+  formato,
+  alto = 220,
+}: {
+  pasos: PasoCascada[]
+  formato: (n: number) => string
+  alto?: number
+}) {
+  const { enHover, Globo } = useGlobo()
+  if (pasos.length === 0) {
+    return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
+  }
+  // Cada paso va de `desde` a `hasta`; el acumulado es donde queda la cascada.
+  let acumulado = 0
+  const tramos = pasos.map((p) => {
+    if (p.tipo === 'total') {
+      acumulado = p.valor
+      return { ...p, desde: 0, hasta: p.valor }
+    }
+    if (p.tipo === 'resultado') {
+      return { ...p, desde: 0, hasta: acumulado }
+    }
+    const desde = acumulado
+    acumulado += p.valor
+    return { ...p, desde, hasta: acumulado }
+  })
+  const niveles = tramos.flatMap((t) => [t.desde, t.hasta])
+  const techo = Math.max(...niveles, 0)
+  const piso = Math.min(...niveles, 0)
+  const rango = techo - piso || 1
+  const y = (v: number) => ((v - piso) / rango) * 100
+  const colorDe = (t: (typeof tramos)[number]) => {
+    if (t.color) return t.color
+    if (t.tipo === 'total') return 'var(--color-neutral-900)'
+    if (t.tipo === 'resultado') return t.hasta >= 0 ? 'var(--color-exito-500)' : 'var(--color-peligro-500)'
+    return t.valor >= 0 ? 'var(--color-exito-500)' : 'var(--color-neutral-400)'
+  }
+
+  return (
+    <div>
+      <Globo />
+      <div className="relative" style={{ height: alto }}>
+        {/* La linea del cero, y una referencia tenue a mitad de camino. */}
+        <div className="absolute inset-x-0 border-t border-neutral-200" style={{ bottom: `${y(0)}%` }} />
+        <div className="absolute inset-0 flex items-stretch gap-2">
+          {tramos.map((t, i) => {
+            const alto_ = Math.abs(y(t.hasta) - y(t.desde))
+            const base = Math.min(y(t.desde), y(t.hasta))
+            const cifra = t.tipo ? t.hasta : t.valor
+            return (
+              <div
+                key={t.nombre + i}
+                className="group relative flex-1 min-w-0"
+                {...enHover(
+                  <>
+                    <div className="mb-1 font-semibold text-neutral-500">{t.nombre}</div>
+                    <LineaGlobo nombre={t.tipo ? 'Queda' : t.valor >= 0 ? 'Suma' : 'Se lleva'} valor={formato(Math.abs(cifra))} color={colorDe(t)} />
+                    {!t.tipo && <LineaGlobo nombre="Acumulado" valor={formato(t.hasta)} />}
+                  </>,
+                )}
+              >
+                <div
+                  className="vp-barra absolute left-[8%] right-[8%] rounded-md min-h-[2px] transition-opacity group-hover:opacity-70"
+                  style={{ bottom: `${base}%`, height: `${alto_}%`, background: colorDe(t), animationDelay: `${i * 90}ms` }}
+                />
+                {/* El escalon hasta la barra siguiente, punteado. */}
+                {i < tramos.length - 1 && (
+                  <div
+                    className="absolute left-[92%] w-[16%] border-t border-dashed border-neutral-300 pointer-events-none"
+                    style={{ bottom: `${y(t.hasta)}%` }}
+                  />
+                )}
+                <span
+                  className={`pointer-events-none absolute inset-x-0 text-center text-xs tabular-nums font-medium whitespace-nowrap ${
+                    t.tipo === 'resultado' ? (t.hasta >= 0 ? 'text-exito-700' : 'text-peligro-600') : 'text-neutral-700'
+                  }`}
+                  style={{ bottom: `calc(${base + alto_}% + 3px)` }}
+                >
+                  {t.tipo ? (cifra < 0 ? '−' : '') : t.valor >= 0 ? '+' : '−'}
+                  {formato(Math.abs(cifra))}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <div className="flex gap-2 mt-1.5">
+        {tramos.map((t, i) => (
+          <span key={t.nombre + i} className="flex-1 min-w-0 text-center text-[11px] leading-tight text-neutral-500">
+            {t.nombre}
+          </span>
+        ))}
+      </div>
+    </div>
   )
 }

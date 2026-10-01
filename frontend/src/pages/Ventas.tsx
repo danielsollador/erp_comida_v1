@@ -5,7 +5,7 @@ import CorregirPago from '../components/CorregirPago'
 import NavBar from '../components/NavBar'
 import { useDialogo } from '../components/dialogo'
 import { useSeccion } from '../components/Secciones'
-import { FiltroFechas } from '../components/Fechas'
+import BarraFiltros from '../components/BarraFiltros'
 import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Cifra, Filtros, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
@@ -144,9 +144,9 @@ export default function Ventas() {
         secciones={SECCIONES}
         seccion={seccion}
         alCambiarSeccion={irA}
-        filtro={<FiltroFechas rango={rango} alCambiar={setRango} />}
       />
       <Pagina>
+        <BarraFiltros rango={rango} alCambiar={setRango} />
         {cargando && !lista && <p className="text-neutral-400 text-sm">Cargando...</p>}
 
         {seccion === 'historial' && lista && (

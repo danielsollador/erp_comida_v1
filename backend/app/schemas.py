@@ -1188,6 +1188,30 @@ class ProductoVendido(BaseModel):
     # Sin receta el costo entra como cero: el margen que saldria seria 100% y
     # no significa nada. Se marca para no mostrarlo como si fuera bueno.
     sin_receta: bool = False
+    # De que producto del menu es (None en la venta libre) y en que categoria
+    # esta hoy: con eso la pantalla deja tocar una fila para filtrar por ella.
+    producto_id: Optional[int] = None
+    categoria: str = ""
+
+
+class FiltroMenu(BaseModel):
+    """Lo que se esta mirando cuando Reportes se filtra por una categoria o un
+    producto del menu: el eco de lo pedido, con los nombres para el rotulo."""
+
+    categoria_id: Optional[int] = None
+    categoria: str = ""
+    producto_id: Optional[int] = None
+    producto: str = ""
+
+
+class FiltroDeposito(BaseModel):
+    """Lo mismo para Perdidas e Inventario, que se miran por cajon del
+    deposito y por mercancia, no por producto del menu."""
+
+    categoria_id: Optional[int] = None
+    categoria: str = ""
+    ingrediente_id: Optional[int] = None
+    ingrediente: str = ""
 
 
 class Insight(BaseModel):
@@ -1236,6 +1260,8 @@ class GrupoReporte(BaseModel):
     ventas: float
     pedidos: int
     pct: float  # sobre las ventas del periodo
+    # La categoria del menu, si el grupo es una: para filtrar tocandola.
+    id: Optional[int] = None
     # Para los dias de la semana: lo que vende un lunes TIPICO. La suma de
     # todos los lunes crece con el tamaño del rango y no dice nada.
     promedio: Optional[float] = None
@@ -1288,6 +1314,8 @@ class ReporteResumen(BaseModel):
     facturadas: int = 0
     valor_facturado: float = 0
     por_metodo_pago: dict
+    # Cuantas cosas se vendieron, sumando los renglones (sin las cortesias).
+    unidades: int = 0
     serie: List[PuntoSerie]
     top_productos: List[ProductoVendido]
     insights: List[Insight]
@@ -1304,6 +1332,8 @@ class ReporteResumen(BaseModel):
     # Cuando se guardaron por ultima vez los dias pasados en el mart. None si
     # todo lo que se ve se calculo en vivo.
     consolidado_en: Optional[str] = None
+    # Si se esta mirando una categoria o un producto y no el negocio entero.
+    filtro: Optional[FiltroMenu] = None
 
 
 class VentaFila(BaseModel):
@@ -1621,6 +1651,7 @@ class ReportePerdidas(BaseModel):
     costo_cortesias: float = 0  # lo que costo la mercancia regalada
     detalle: List[Merma]
     insights: List[Insight]
+    filtro: Optional[FiltroDeposito] = None
 
 
 class InsumoDelDeposito(BaseModel):
@@ -1664,6 +1695,7 @@ class ReporteInventario(BaseModel):
     por_insumo: List[InsumoDelDeposito]
     por_comprar: List[SugerenciaCompra]
     insights: List[Insight]
+    filtro: Optional[FiltroDeposito] = None
 
 
 class ReporteCombos(BaseModel):
@@ -1674,6 +1706,7 @@ class ReporteCombos(BaseModel):
     pares: List[ParCombo]
     acompanamiento: Optional[Acompanamiento]
     oportunidad: Optional[OportunidadCombo]
+    filtro: Optional[FiltroMenu] = None
 
 
 class Sugerencia(BaseModel):

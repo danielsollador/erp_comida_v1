@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
-import { FiltroFechas } from '../components/Fechas'
+import BarraFiltros from '../components/BarraFiltros'
 import { useRango, type Rango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
@@ -41,8 +41,9 @@ export default function Contabilidad() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Contabilidad" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={conPeriodo ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
+      <NavBar titulo="Contabilidad" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina>
+        {conPeriodo && <BarraFiltros rango={rango} alCambiar={setRango} />}
         {/* El dueño no opera esto: cada venta y compra ya dejo su asiento. */}
         <Aviso tono="info">
           Esto se arma solo con cada venta, compra, gasto y merma. No hay que cargar nada: es para tu contador.

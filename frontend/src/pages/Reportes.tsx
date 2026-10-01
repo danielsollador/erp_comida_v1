@@ -2,35 +2,47 @@ import { useEffect, useMemo, useState } from 'react'
 import { nombre } from '../lib/palabras'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
+import BarraFiltros from '../components/BarraFiltros'
 import { useSeccion } from '../components/Secciones'
-import { FiltroFechas } from '../components/Fechas'
 import { useRango } from '../lib/fechas'
-import { Lecturas, Pagina, Seccion } from '../components/ui'
-import { GraficoDona, GraficoLineas, Variacion } from '../components/Grafico'
-import Vaso, { ResumenVaso } from '../components/Vaso'
+import { idDe, useFiltrosUrl } from '../lib/filtros'
+import { FiltroDesplegable, Lecturas, Pagina, Seccion } from '../components/ui'
+import { GraficoCascada, GraficoDona, Variacion, type PasoCascada } from '../components/Grafico'
 import { api } from '../lib/api'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { etiquetaMetodo } from '../lib/pagos'
-import type { ReporteCombos, ReporteInventario, ReportePerdidas, ReporteResumen } from '../lib/types'
-import { Bloque, Kpi, Linea, type Dinero, recortarSerie } from './partes/reportes/comunes'
-import Ventas from './partes/reportes/Ventas'
+import type {
+  Categoria,
+  CategoriaInsumo,
+  Ingrediente,
+  ReporteCombos,
+  ReporteInventario,
+  ReportePerdidas,
+  ReporteResumen,
+} from '../lib/types'
+import { Bloque, Kpi, Linea, SerieTiempo, capitalizar, recortarSerie, type Dinero } from './partes/reportes/comunes'
+import Ventas, { type CambioFiltro } from './partes/reportes/Ventas'
 import Perdidas from './partes/reportes/Perdidas'
 import Inventario from './partes/reportes/Inventario'
 
 /**
  * Reportes, en cuatro secciones (Leider, 22-sep):
  *
- *   Resumen    lo basico que hay que mirar: las cuatro cifras, la linea de
- *              ventas, cuanto se facturo (pastel), como pagaron, el resultado.
- *   Ventas     cuando se vende (linea, mapa de calor, dias y horas), que se
+ *   Resumen    lo basico que hay que mirar: las cuatro cifras, la serie de
+ *              ventas, cuanto se facturo, como pagaron, el resultado.
+ *   Ventas     cuando se vende (serie, mapa de calor, dias y horas), que se
  *              vendio y que se vende junto.
  *   Perdidas   analisis de merma: que se pierde mas y menos, por que, cuanto
  *              pesa sobre la venta, y las ventas que no llegaron.
  *   Inventario donde esta la plata, para cuantos dias alcanza, que comprar.
  *
- * Antes eran "Resumen / Cuando se vende / Que se vendio / Combinaciones", y
- * el Resumen repetia parte de las otras tres. Cada seccion pide solo SUS
- * datos y sigue el mismo esqueleto: cifras, lecturas, bloques con nombre.
+ * LOS FILTROS VAN EN UNA FILA, ARRIBA DEL CONTENIDO (`BarraFiltros`), no en
+ * el encabezado: el periodo y, al lado, de que parte del negocio se habla.
+ * Resumen y Ventas se filtran por el menu (categoria, producto); Perdidas e
+ * Inventario por el deposito (cajon, mercancia), que es de lo que hablan.
+ * Leider (30-sep): "que la gente pueda filtrar por la categoria de su
+ * producto y hasta por su producto... listas desplegables, porque pueden
+ * haber muchos productos". Todo vive en la URL: `?s=ventas&r=mes&c=3&p=12`.
  */
 // El grano de la serie. El primero es el automatico: `useSeccion` devuelve ese
 // cuando no hay nada en la URL, y entonces no se le manda `paso` al servidor.
@@ -50,8 +62,6 @@ const SECCIONES = [
 
 export default function Reportes() {
   const [seccion, irA] = useSeccion(SECCIONES)
-  // Hoy por defecto: es lo que se mira al cerrar. El filtro del encabezado
-  // abre cualquier otro periodo, y queda en la URL.
   // EL MES EN CURSO, no el dia. Reportes es donde se mira como va el negocio,
   // y "hoy" a las nueve de la manana son dos pedidos: ni el mapa de calor ni la
   // comparacion contra el periodo anterior tienen de que hablar. Ademas deja
@@ -69,6 +79,22 @@ export default function Reportes() {
    * siempre. El selector existe para el "casi" (Leider, 24-sep).
    */
   const [paso, irAPaso] = useSeccion(PASOS, 'g')
+  // Los filtros, en la URL: `c`/`p` categoria y producto del menu (Resumen y
+  // Ventas); `ci`/`m` cajon y mercancia del deposito (Perdidas e Inventario).
+  const [filtros, fijarFiltros] = useFiltrosUrl(['c', 'p', 'ci', 'm'] as const)
+  const delMenu = seccion === 'resumen' || seccion === 'ventas'
+  const filtroMenu = useMemo(
+    () => ({ categoria_id: idDe(filtros.c), producto_id: idDe(filtros.p) }),
+    [filtros.c, filtros.p],
+  )
+  const filtroDeposito = useMemo(
+    () => ({ categoria_id: idDe(filtros.ci), ingrediente_id: idDe(filtros.m) }),
+    [filtros.ci, filtros.m],
+  )
+  const hayFiltro = delMenu
+    ? filtroMenu.categoria_id != null || filtroMenu.producto_id != null
+    : filtroDeposito.categoria_id != null || filtroDeposito.ingrediente_id != null
+
   const [datos, setDatos] = useState<ReporteResumen | null>(null)
   const [combos, setCombos] = useState<ReporteCombos | null>(null)
   const [perdidas, setPerdidas] = useState<ReportePerdidas | null>(null)
@@ -76,6 +102,20 @@ export default function Reportes() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const { fmt, fmtCongelado, sufijo } = useMoneda()
+
+  // Las listas de los desplegables: una vez cada una, cuando toca.
+  const [categorias, setCategorias] = useState<Categoria[] | null>(null)
+  const [cajones, setCajones] = useState<CategoriaInsumo[] | null>(null)
+  const [mercancias, setMercancias] = useState<Ingrediente[] | null>(null)
+  useEffect(() => {
+    if (delMenu && categorias === null) {
+      api.listarCategorias().then(setCategorias).catch(() => setCategorias([]))
+    }
+    if (!delMenu && cajones === null) {
+      api.listarCategoriasInsumo().then(setCajones).catch(() => setCajones([]))
+      api.listarIngredientes().then(setMercancias).catch(() => setMercancias([]))
+    }
+  }, [delMenu, categorias, cajones])
 
   // Cada seccion trae lo suyo y nada mas: Perdidas e Inventario no hacen
   // esperar al Resumen, y el Resumen no calcula la canasta de combos.
@@ -86,17 +126,27 @@ export default function Reportes() {
     const necesitaResumen = seccion === 'resumen' || seccion === 'ventas'
     const pedidos: Promise<unknown>[] = []
     if (necesitaResumen)
-      pedidos.push(api.reporte(rango, paso === 'auto' ? undefined : paso).then((r) => vigente && setDatos(r)))
-    if (seccion === 'ventas') pedidos.push(api.reporteCombos(rango).then((c) => vigente && setCombos(c)).catch(() => vigente && setCombos(null)))
-    if (seccion === 'perdidas') pedidos.push(api.reportePerdidas(rango).then((p) => vigente && setPerdidas(p)))
-    if (seccion === 'inventario') pedidos.push(api.reporteInventario(rango).then((i) => vigente && setInventario(i)))
+      pedidos.push(
+        api.reporte(rango, paso === 'auto' ? undefined : paso, filtroMenu).then((r) => vigente && setDatos(r)),
+      )
+    if (seccion === 'ventas')
+      pedidos.push(
+        api
+          .reporteCombos(rango, filtroMenu)
+          .then((c) => vigente && setCombos(c))
+          .catch(() => vigente && setCombos(null)),
+      )
+    if (seccion === 'perdidas')
+      pedidos.push(api.reportePerdidas(rango, filtroDeposito).then((p) => vigente && setPerdidas(p)))
+    if (seccion === 'inventario')
+      pedidos.push(api.reporteInventario(rango, filtroDeposito).then((i) => vigente && setInventario(i)))
     Promise.all(pedidos)
       .catch((e) => vigente && setError(e instanceof Error ? e.message : 'No se pudo cargar el reporte'))
       .finally(() => vigente && setCargando(false))
     return () => {
       vigente = false
     }
-  }, [rango, seccion, paso])
+  }, [rango, seccion, paso, filtroMenu, filtroDeposito])
 
   // La tasa MEDIA del periodo, sacada de los bolivares que de verdad entraron.
   // En la vista en bolivares manda esta y no la de hoy: si no, el resumen del
@@ -105,73 +155,114 @@ export default function Reportes() {
   const dinero: Dinero = (x, d) => fmtCongelado(x, tasaPeriodo, d)
   const corto = (x: number) => dinero(x, 0)
 
-  const etiqueta = seccion === 'perdidas' ? perdidas?.etiqueta : seccion === 'inventario' ? inventario?.etiqueta : datos?.etiqueta
-
   /**
    * Si YA hay algo que mostrar de esta seccion.
    *
    * Cambiar de periodo no vacia la pantalla: se siguen viendo los numeros del
-   * periodo anterior, un poco apagados, hasta que llegan los nuevos. Antes se
-   * desmontaba todo y se ponia "Cargando...", asi que la pagina se encogia a
-   * una linea y volvia a crecer -- un parpadeo en cada toque del filtro de
-   * fechas (Leider, 24-sep). Y al volver a montarse, la entrada escalonada se
-   * ejecutaba otra vez, que lo hacia mas evidente.
-   *
-   * Solo se vacia cuando de verdad no hay nada que enseñar: la primera carga
-   * de la seccion.
+   * periodo anterior hasta que llegan los nuevos. Antes se desmontaba todo y
+   * se ponia "Cargando...", asi que la pagina se encogia a una linea y volvia
+   * a crecer -- un parpadeo en cada toque del filtro (Leider, 24-sep).
    */
   const hayDatos =
     seccion === 'perdidas' ? perdidas !== null : seccion === 'inventario' ? inventario !== null : datos !== null
   const refrescando = cargando && hayDatos
 
+  // ── Los desplegables ──────────────────────────────────────────────────────
+  // La categoria elegida acota la lista de productos; elegir otra categoria
+  // suelta el producto que no es de ella. Las retiradas tambien se listan:
+  // lo que se vendio de algo que ya no esta sigue siendo su venta.
+  const productos = useMemo(
+    () =>
+      (categorias ?? []).flatMap((c) =>
+        c.productos.map((p) => ({ ...p, categoria: c.nombre, categoriaActiva: c.activo !== false })),
+      ),
+    [categorias],
+  )
+  const opcionesCategoria = [
+    { valor: '', texto: 'Todas' },
+    ...(categorias ?? []).map((c) => ({
+      valor: String(c.id),
+      texto: c.nombre,
+      detalle: c.activo === false ? 'retirada' : undefined,
+    })),
+  ]
+  const opcionesProducto = [
+    { valor: '', texto: 'Todos' },
+    ...productos
+      .filter((p) => filtroMenu.categoria_id == null || p.categoria_id === filtroMenu.categoria_id)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+      .map((p) => ({
+        valor: String(p.id),
+        texto: p.nombre,
+        detalle:
+          [filtroMenu.categoria_id == null ? p.categoria : '', p.activo === false ? 'retirado' : '']
+            .filter(Boolean)
+            .join(' · ') || undefined,
+      })),
+  ]
+  const opcionesCajon = [
+    { valor: '', texto: 'Todos' },
+    ...(cajones ?? []).map((c) => ({ valor: String(c.id), texto: c.nombre, contador: c.usos })),
+  ]
+  const opcionesMercancia = [
+    { valor: '', texto: 'Todas' },
+    ...(mercancias ?? [])
+      .filter((m) => filtroDeposito.categoria_id == null || m.categoria_id === filtroDeposito.categoria_id)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+      .map((m) => ({
+        valor: String(m.id),
+        texto: m.nombre,
+        detalle: filtroDeposito.categoria_id == null && m.categoria ? m.categoria : undefined,
+      })),
+  ]
+
+  const elegirCategoria = (valor: string) => {
+    const sigue = productos.find((p) => String(p.id) === filtros.p && String(p.categoria_id) === valor)
+    fijarFiltros({ c: valor, p: sigue ? filtros.p : '' })
+  }
+  const elegirCajon = (valor: string) => {
+    const sigue = (mercancias ?? []).find((m) => String(m.id) === filtros.m && String(m.categoria_id) === valor)
+    fijarFiltros({ ci: valor, m: sigue ? filtros.m : '' })
+  }
+  const alFiltrar = (cambios: CambioFiltro) => fijarFiltros(cambios)
+  const limpiar = () => (delMenu ? fijarFiltros({ c: '', p: '' }) : fijarFiltros({ ci: '', m: '' }))
+
+  // Lo que resulta del filtro, a la derecha de la fila: el periodo y cuanto.
+  const etiqueta = seccion === 'perdidas' ? perdidas?.etiqueta : seccion === 'inventario' ? inventario?.etiqueta : datos?.etiqueta
+  const cuanto =
+    seccion === 'perdidas' && perdidas
+      ? `${perdidas.registros} ${perdidas.registros === 1 ? 'registro' : 'registros'}`
+      : seccion === 'inventario' && inventario
+        ? `${inventario.activos} ${inventario.activos === 1 ? 'mercancía' : 'mercancías'}`
+        : datos
+          ? `${datos.pedidos} ${datos.pedidos === 1 ? 'pedido' : 'pedidos'}`
+          : ''
+  const resumenFiltro = etiqueta ? `${capitalizar(etiqueta)}${cuanto ? ` · ${cuanto}` : ''}` : undefined
+
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar
-        titulo="Reportes"
-        secciones={SECCIONES}
-        seccion={seccion}
-        alCambiarSeccion={irA}
-        filtro={<FiltroFechas rango={rango} alCambiar={setRango} />}
-      />
+      <NavBar titulo="Reportes" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
 
       <Pagina ocupada={refrescando}>
+        <BarraFiltros rango={rango} alCambiar={setRango} resumen={resumenFiltro} alLimpiar={hayFiltro ? limpiar : undefined}>
+          {delMenu ? (
+            <>
+              <FiltroDesplegable etiqueta="Categoría" valor={filtros.c} alCambiar={elegirCategoria} opciones={opcionesCategoria} />
+              <FiltroDesplegable etiqueta="Producto" valor={filtros.p} alCambiar={(v) => fijarFiltros({ p: v })} opciones={opcionesProducto} />
+            </>
+          ) : (
+            <>
+              <FiltroDesplegable etiqueta="Cajón" valor={filtros.ci} alCambiar={elegirCajon} opciones={opcionesCajon} />
+              <FiltroDesplegable etiqueta="Mercancía" valor={filtros.m} alCambiar={(v) => fijarFiltros({ m: v })} opciones={opcionesMercancia} />
+            </>
+          )}
+        </BarraFiltros>
+
         {cargando && !hayDatos && <p className="text-neutral-400 text-sm">Cargando...</p>}
         {error && !cargando && <p className="text-peligro-600 text-sm">{error}</p>}
 
         {hayDatos && !error && (
           <>
-            {etiqueta && (
-              <div className="space-y-0.5">
-                <p className="text-sm text-neutral-500">
-                  {etiqueta}
-                  {seccion === 'inventario' && ' · el stock es el de hoy'}
-                </p>
-                {datos && (seccion === 'resumen' || seccion === 'ventas') && (
-                  <>
-                    {/* Los bolivares del periodo salen de sumar cada venta a
-                        la tasa de SU dia. */}
-                    {datos.ventas_bs > 0 && (
-                      <p className="text-xs text-neutral-500">
-                        Equivalen a {fmtBs(datos.ventas_bs)} cobrados, cada venta a la tasa de su día.
-                      </p>
-                    )}
-                    {datos.consolidado_en && (
-                      <p className="text-[11px] text-neutral-400">
-                        Días anteriores consolidados el{' '}
-                        {new Date(datos.consolidado_en.replace(/(\.\d{3})\d+$/, '$1')).toLocaleString('es-VE', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                        ; hoy se calcula al momento.
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
             {seccion === 'resumen' && datos && <Resumen datos={datos} dinero={dinero} corto={corto} sufijo={sufijo} />}
             {seccion === 'ventas' && datos && (
               <Ventas
@@ -182,10 +273,16 @@ export default function Reportes() {
                 fmt={fmt}
                 paso={paso}
                 alCambiarPaso={irAPaso}
+                alFiltrar={alFiltrar}
               />
             )}
             {seccion === 'perdidas' && perdidas && <Perdidas datos={perdidas} dinero={dinero} corto={corto} />}
             {seccion === 'inventario' && inventario && <Inventario datos={inventario} dinero={dinero} corto={corto} />}
+
+            {/* Lo que explica de donde salen los numeros, al pie: es
+                informacion de respaldo, no la noticia. Antes iba arriba,
+                bajo el encabezado, delante de las cifras. */}
+            <PieDeDatos seccion={seccion} datos={datos} />
           </>
         )}
       </Pagina>
@@ -193,12 +290,38 @@ export default function Reportes() {
   )
 }
 
+function PieDeDatos({ seccion, datos }: { seccion: string; datos: ReporteResumen | null }) {
+  const partes: string[] = []
+  if ((seccion === 'resumen' || seccion === 'ventas') && datos) {
+    // Los bolivares del periodo salen de sumar cada venta a la tasa de SU dia.
+    if (datos.ventas_bs > 0) partes.push(`Equivalen a ${fmtBs(datos.ventas_bs)} cobrados, cada venta a la tasa de su día.`)
+    if (datos.consolidado_en) {
+      const cuando = new Date(datos.consolidado_en.replace(/(\.\d{3})\d+$/, '$1')).toLocaleString('es-VE', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      partes.push(`Días anteriores consolidados el ${cuando}; hoy se calcula al momento.`)
+    }
+    if (datos.filtro) partes.push('Con un filtro puesto, todo se calcula al momento sobre los pedidos.')
+  }
+  if (seccion === 'inventario') partes.push('El stock es el de hoy; el consumo con que se lee, el del período elegido.')
+  if (partes.length === 0) return null
+  return <p className="text-[11px] leading-relaxed text-neutral-400">{partes.join(' ')}</p>
+}
+
 // ── Resumen ──────────────────────────────────────────────────────────────────
 
 /**
  * Lo basico que el dueño necesita mirar, y nada mas. Lo que aqui se dibuja
- * en chico (la linea de ventas) esta entero en Ventas; lo que aqui es una
+ * en chico (la serie de ventas) esta entero en Ventas; lo que aqui es una
  * cifra (la merma dentro de "gastos") tiene su seccion en Perdidas.
+ *
+ * CON UN FILTRO (una categoria, un producto) el resumen es el de ESA parte:
+ * lo vendido, lo que deja despues de su mercancia, en cuantos pedidos salio
+ * y cuantas unidades. Lo que es del pedido entero --como pagaron, cuanto se
+ * facturo, los gastos del local-- no se reparte y no se muestra.
  */
 function Resumen({
   datos,
@@ -213,51 +336,68 @@ function Resumen({
 }) {
   const ant = datos.anterior
   const vs = ant ? `vs ${ant.etiqueta}` : undefined
+  const filtro = datos.filtro
+  const de = filtro ? filtro.producto || filtro.categoria : ''
   // EXACTAMENTE EL MISMO RECORTE QUE EN VENTAS, y por eso sale del mismo sitio
-  // (`comunes.recortarSerie`): fuera los tramos vacios de los extremos. Al
-  // arreglarlo solo en Ventas, este quedo dibujando nueve meses de raya plana
-  // (Leider, 24-sep: "ponlo exacto como esta en Ventas").
+  // (`comunes.recortarSerie`): fuera los tramos vacios de los extremos.
   const { serie, anterior: serieAnterior } = useMemo(
     () => recortarSerie(datos.serie, datos.serie_anterior),
     [datos.serie, datos.serie_anterior],
   )
+  const promedioTramo = serie.length > 0 ? datos.ventas / serie.length : 0
 
   return (
     <>
       {/* ── 1. Las cifras ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi
-          titulo="Ventas"
+          titulo={de ? `Ventas de ${de}` : 'Ventas'}
           ayuda="kpi.ventas"
           valor={dinero(datos.ventas)}
           destacado
           delta={ant && <Variacion pct={ant.cambio_ventas_pct} texto={vs} />}
         />
+        {filtro ? (
+          <Kpi
+            titulo="Deja"
+            ayuda="kpi.deja"
+            valor={dinero(datos.ganancia_bruta)}
+            tono={datos.ganancia_bruta >= 0 ? 'bueno' : 'malo'}
+            destacado
+            delta={ant && <Variacion pct={ant.cambio_ganancia_pct} texto={vs} />}
+            nota={datos.ventas > 0 ? `${datos.margen_pct.toFixed(0)}% de margen después de la mercancía` : undefined}
+          />
+        ) : (
+          <Kpi
+            titulo={nombre('kpi.ganancia_neta')}
+            ayuda="kpi.ganancia_neta"
+            valor={dinero(datos.ganancia_neta)}
+            tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
+            destacado
+            delta={ant && <Variacion pct={ant.cambio_ganancia_pct} texto={vs} />}
+          />
+        )}
         <Kpi
-          titulo={nombre('kpi.ganancia_neta')}
-          ayuda="kpi.ganancia_neta"
-          valor={dinero(datos.ganancia_neta)}
-          tono={datos.ganancia_neta >= 0 ? 'bueno' : 'malo'}
-          destacado
-          delta={ant && <Variacion pct={ant.cambio_ganancia_pct} texto={vs} />}
-        />
-        <Kpi
-          titulo="Pedidos"
+          titulo={filtro ? 'Pedidos que lo llevan' : 'Pedidos'}
           ayuda="kpi.pedidos"
           valor={String(datos.pedidos)}
           delta={ant && <Variacion pct={ant.cambio_pedidos_pct} texto={vs} />}
         />
-        <Kpi
-          titulo={nombre('kpi.ticket_promedio')}
-          ayuda="kpi.ticket_promedio"
-          valor={dinero(datos.ticket_promedio)}
-          delta={ant && <Variacion pct={ant.cambio_ticket_pct} texto={vs} />}
-          nota={
-            Math.abs(datos.ticket_mediano - datos.ticket_promedio) > 0.01
-              ? `el cliente típico gastó ${dinero(datos.ticket_mediano)}`
-              : undefined
-          }
-        />
+        {filtro ? (
+          <Kpi titulo="Unidades" ayuda="kpi.unidades" valor={String(datos.unidades)} />
+        ) : (
+          <Kpi
+            titulo={nombre('kpi.ticket_promedio')}
+            ayuda="kpi.ticket_promedio"
+            valor={dinero(datos.ticket_promedio)}
+            delta={ant && <Variacion pct={ant.cambio_ticket_pct} texto={vs} />}
+            nota={
+              Math.abs(datos.ticket_mediano - datos.ticket_promedio) > 0.01
+                ? `el cliente típico gastó ${dinero(datos.ticket_mediano)}`
+                : undefined
+            }
+          />
+        )}
       </div>
 
       {/* ── 2. Las ventas ─────────────────────────────────────────────── */}
@@ -265,38 +405,27 @@ function Resumen({
         <Bloque titulo="Ventas" descripcion="El detalle por hora, día y producto está en la pestaña Ventas.">
           <Seccion
             titulo={`Ventas por ${datos.granularidad} · ${sufijo}`}
-            ayuda={ant ? `La línea punteada es ${ant.etiqueta}.` : undefined}
+            ayuda={ant ? `En gris, ${ant.etiqueta}, tramo a tramo. La línea punteada es el promedio por ${datos.granularidad}.` : undefined}
           >
-            <GraficoLineas
+            <SerieTiempo
               alto={200}
-              etiquetas={serie.map((p) => p.etiqueta)}
               formato={corto}
               formatoDetalle={(n) => dinero(n)}
-              series={[
-                {
-                  nombre: 'Este período',
-                  color: 'var(--color-neutral-900)',
-                  valores: serie.map((p) => p.ventas),
-                  relleno: true,
-                },
-                ...(serieAnterior.length === serie.length && ant
-                  ? [
-                      {
-                        nombre: `${ant.etiqueta[0].toUpperCase()}${ant.etiqueta.slice(1)}`,
-                        color: 'var(--color-neutral-400)',
-                        valores: serieAnterior.map((p) => p.ventas),
-                        punteada: true,
-                      },
-                    ]
-                  : []),
-              ]}
+              puntos={serie.map((p) => ({
+                etiqueta: p.etiqueta,
+                valor: p.ventas,
+                detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
+              }))}
+              anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.ventas) : undefined}
+              nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
+              referencia={serie.length > 1 ? { valor: promedioTramo, texto: 'promedio' } : undefined}
             />
           </Seccion>
         </Bloque>
       )}
 
-      {/* ── 3. Facturacion y cobros ───────────────────────────────────── */}
-      {datos.ventas > 0 && (
+      {/* ── 3. Facturacion y cobros (del negocio entero, no de un producto) ── */}
+      {!filtro && datos.ventas > 0 && (
         <Bloque titulo="Facturación y cobros">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <Facturacion datos={datos} dinero={dinero} />
@@ -314,88 +443,68 @@ function Resumen({
       )}
 
       {/* ── 4. El resultado ───────────────────────────────────────────── */}
-      <Bloque titulo="Resultado" descripcion="Los mismos números del Estado de Resultados en Contabilidad.">
+      <Bloque
+        titulo={filtro ? `Qué deja ${de}` : 'Resultado'}
+        descripcion={filtro ? 'Lo vendido menos su mercancía. Los gastos del local no son de un producto.' : 'Los mismos números del Estado de Resultados en Contabilidad.'}
+      >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <h2 className="font-semibold mb-3">De dónde sale la ganancia</h2>
-            {/* El mismo vaso de las recetas, con lo vendido de borde: cada
-                cosa que se lleva una parte --la mercancia, los gastos, el
-                IVA-- es una franja, y lo que queda hasta el borde es la
-                ganancia, en verde. Si los costos se pasan de lo vendido, el
-                vaso se desborda y la linea de las ventas queda por debajo. La
-                cuenta de al lado es la misma, en numeros. */}
-            <div className={datos.ventas > 0 ? 'grid sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 items-start' : ''}>
-              {datos.ventas > 0 && (
-                <div>
-                  <Vaso
-                    tope={datos.ventas}
-                    topeTitulo="vendiste"
-                    restoNombre="ganancia"
-                    desbordeTexto="hasta aquí llegan las ventas"
-                    formato={dinero}
-                    partes={[
-                      ...(datos.iva_cobrado > 0
-                        ? [{ id: 'iva', nombre: 'IVA (del SENIAT)', valor: datos.iva_cobrado, color: 'var(--color-neutral-300)' }]
-                        : []),
-                      { id: 'mercancia', nombre: 'Mercancía', valor: datos.costo_insumos, color: 'var(--color-neutral-500)' },
-                      // Solo si de verdad hubo gasto: un gasto negativo (mas
-                      // sobrantes que mermas) no es una franja.
-                      ...(datos.gastos > 0
-                        ? [{ id: 'gastos', nombre: 'Gastos y mermas', valor: datos.gastos, color: 'var(--color-aviso-400)' }]
-                        : []),
-                    ]}
-                  />
-                  <div className="mt-3">
-                    <ResumenVaso
-                      tope={datos.ventas}
-                      costo={datos.ventas - datos.ganancia_neta}
-                      formato={dinero}
-                      queda="Te queda"
-                      pierde="Perdiste"
-                      de="de lo vendido"
-                    />
-                  </div>
-                </div>
+            <h2 className="font-semibold">De dónde sale la ganancia</h2>
+            <p className="text-xs text-neutral-500 mt-0.5 mb-3">
+              Las ventas enteras a la izquierda; cada cosa que se lleva una parte baja un escalón; lo que queda es la
+              última barra.
+            </p>
+            {/* LA CASCADA. Es el grafico de un estado de resultados en
+                cualquier tablero: se lee de izquierda a derecha sin
+                aprender nada. Si los costos se pasan de las ventas, la
+                ultima barra cuelga bajo el cero, en rojo. La cuenta de al
+                lado es la misma, en numeros. */}
+            <div className="grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-5 items-start">
+              {datos.ventas > 0 ? (
+                <GraficoCascada alto={210} formato={corto} pasos={pasosDeLaCascada(datos)} />
+              ) : (
+                <p className="text-sm text-neutral-400 py-8 text-center">Sin ventas en el período.</p>
               )}
               <div>
-              <Linea dinero={dinero} etiqueta="Ventas cobradas" monto={datos.ventas} />
-              {datos.iva_cobrado > 0 && (
-                <>
-                  <Linea dinero={dinero} etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
-                  <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
-                </>
-              )}
-              <Linea dinero={dinero} etiqueta="Costo de la mercancía" monto={-datos.costo_insumos} />
-              <Linea
-                dinero={dinero}
-                etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
-                monto={datos.ganancia_bruta}
-                subtotal
-              />
-              {/* CUANDO LOS GASTOS SON NEGATIVOS, LA LINEA CAMBIA DE NOMBRE.
-                  Un reverso de merma o un sobrante de conteo restan gasto, y el
-                  total del periodo puede quedar en negativo. Con el rotulo fijo,
-                  la cuenta se leia al reves: "Ganancia bruta 132 / Gastos 2 /
-                  Ganancia neta 134" -- el que mira resta y le da 130 (Leider,
-                  24-sep). Diciendo que ese renglon SUMA, la columna vuelve a
-                  cuadrar a la vista. */}
-              <Linea
-                dinero={dinero}
-                etiqueta={
-                  datos.gastos >= 0 ? 'Gastos, mermas y faltantes' : 'Sobrantes y reversos (suman)'
-                }
-                monto={-datos.gastos}
-              />
-              <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
+                <Linea dinero={dinero} etiqueta={filtro ? `Ventas de ${de}` : 'Ventas cobradas'} monto={datos.ventas} />
+                {datos.iva_cobrado > 0 && (
+                  <>
+                    <Linea dinero={dinero} etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
+                    <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
+                  </>
+                )}
+                <Linea dinero={dinero} etiqueta="Costo de la mercancía" monto={-datos.costo_insumos} />
+                <Linea
+                  dinero={dinero}
+                  etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
+                  monto={datos.ganancia_bruta}
+                  subtotal={!filtro}
+                  total={!!filtro}
+                />
+                {!filtro && (
+                  <>
+                    {/* CUANDO LOS GASTOS SON NEGATIVOS, LA LINEA CAMBIA DE
+                        NOMBRE. Un reverso de merma o un sobrante de conteo
+                        restan gasto; con el rotulo fijo la cuenta se leia al
+                        reves (Leider, 24-sep). Diciendo que ese renglon SUMA,
+                        la columna vuelve a cuadrar a la vista. */}
+                    <Linea
+                      dinero={dinero}
+                      etiqueta={datos.gastos >= 0 ? 'Gastos, mermas y faltantes' : 'Sobrantes y reversos (suman)'}
+                      monto={-datos.gastos}
+                    />
+                    <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
+                  </>
+                )}
               </div>
             </div>
             {ant && (
-              <p className="text-xs text-neutral-500 mt-2">
-                {ant.etiqueta[0].toUpperCase()}
-                {ant.etiqueta.slice(1)}: {dinero(ant.ventas)} en ventas y {dinero(ant.ganancia_neta)} de ganancia neta.
+              <p className="text-xs text-neutral-500 mt-3">
+                {capitalizar(ant.etiqueta)}: {dinero(ant.ventas)} en ventas y {dinero(ant.ganancia_neta)}{' '}
+                {filtro ? 'de ganancia' : 'de ganancia neta'}.
               </p>
             )}
-            {(datos.pedidos_anulados > 0 || datos.devoluciones > 0) && (
+            {!filtro && (datos.pedidos_anulados > 0 || datos.devoluciones > 0) && (
               <p className="text-xs text-aviso-700 mt-3 bg-aviso-50 rounded-lg px-3 py-2">
                 {datos.pedidos_anulados > 0 && (
                   <>Se anularon {datos.pedidos_anulados} pedido(s) por {dinero(datos.valor_anulado)}. </>
@@ -410,7 +519,7 @@ function Resumen({
 
           <div className="space-y-2">
             <h2 className="font-semibold flex items-center gap-2">
-              <Icono nombre="chispa" size={17} className="text-acento-600" /> Análisis del negocio
+              <Icono nombre="chispa" size={17} className="text-acento-600" /> Análisis {de ? `de ${de}` : 'del negocio'}
               {/* Los avisos los redacta el servidor con cifras en dolares. */}
               {sufijo !== 'USD' && <span className="text-xs font-normal text-neutral-400">· cifras en dólares</span>}
             </h2>
@@ -424,6 +533,22 @@ function Resumen({
       </Bloque>
     </>
   )
+}
+
+/** Los escalones de la cascada: de las ventas a lo que queda. */
+function pasosDeLaCascada(datos: ReporteResumen): PasoCascada[] {
+  const pasos: PasoCascada[] = [{ nombre: 'Ventas', valor: datos.ventas, tipo: 'total' }]
+  if (datos.iva_cobrado > 0) pasos.push({ nombre: 'IVA', valor: -datos.iva_cobrado, color: 'var(--color-neutral-300)' })
+  pasos.push({ nombre: 'Mercancía', valor: -datos.costo_insumos, color: 'var(--color-neutral-500)' })
+  if (!datos.filtro) {
+    // Un gasto negativo (mas sobrantes que mermas) sube en vez de bajar.
+    if (datos.gastos > 0) pasos.push({ nombre: 'Gastos y mermas', valor: -datos.gastos, color: 'var(--color-aviso-400)' })
+    else if (datos.gastos < 0) pasos.push({ nombre: 'Sobrantes', valor: -datos.gastos })
+    pasos.push({ nombre: 'Te queda', valor: 0, tipo: 'resultado' })
+  } else {
+    pasos.push({ nombre: 'Deja', valor: 0, tipo: 'resultado' })
+  }
+  return pasos
 }
 
 /**

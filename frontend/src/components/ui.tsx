@@ -1,10 +1,11 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useRef, type ButtonHTMLAttributes, type ChangeEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ChangeEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { Ayuda, BotonAyuda } from './Ayuda'
 import { explicar } from '../lib/glosario'
 import Icono, { type NombreIcono } from './Icono'
 import { Numerico } from './Teclado'
 import MenuAcciones from './MenuAcciones'
+import { llano } from '../lib/filtros'
 
 /**
  * Las piezas del sistema de diseño de Vertigo Pro.
@@ -404,19 +405,49 @@ export function FiltroDesplegable({
   etiqueta: string
   valor: string
   alCambiar: (valor: string) => void
-  /** La primera es la neutra ("Todas"): con ella puesta, el filtro no destaca. */
-  opciones: { valor: string; texto: string; contador?: number | null }[]
+  /** La primera es la neutra ("Todas"): con ella puesta, el filtro no destaca.
+      `detalle` es la linea chica bajo el nombre (la categoria de un producto). */
+  opciones: { valor: string; texto: string; contador?: number | null; detalle?: string }[]
   className?: string
 }) {
+  // CON BUSCADOR CUANDO LA LISTA ES LARGA. Un desplegable de doscientos
+  // productos se recorre con el pulgar, pero se encuentra tecleando tres
+  // letras (Leider, 30-sep: "pensando en que pueden haber muchos productos o
+  // muchas categorias"). Sin tildes ni mayusculas de por medio: "cafe"
+  // encuentra "Café". La neutra ("Todos") se queda siempre a la vista.
+  const [busqueda, setBusqueda] = useState('')
+  const buscable = opciones.length > 8
   const sinFiltrar = opciones.length === 0 || valor === opciones[0].valor
   const elegida = opciones.find((o) => o.valor === valor)
+  const q = llano(busqueda.trim())
+  const visibles = q
+    ? opciones.filter((o, i) => i === 0 || llano(o.texto).includes(q) || (o.detalle ? llano(o.detalle).includes(q) : false))
+    : opciones
   return (
     <MenuAcciones
       etiqueta={etiqueta}
-      opciones={opciones.map((o) => ({
+      alinear="izquierda"
+      encabezado={
+        buscable ? (
+          <div className="p-1 pb-1.5">
+            <input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder={`Buscar ${etiqueta.toLowerCase()}…`}
+              aria-label={`Buscar ${etiqueta.toLowerCase()}`}
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+        ) : undefined
+      }
+      opciones={visibles.map((o) => ({
         texto: o.contador != null && o.contador > 0 ? `${o.texto} · ${o.contador}` : o.texto,
+        ayuda: o.detalle,
         marcada: o.valor === valor,
-        onElegir: () => alCambiar(o.valor),
+        onElegir: () => {
+          setBusqueda('')
+          alCambiar(o.valor)
+        },
       }))}
       disparador={({ abierto, alternar }: { abierto: boolean; alternar: () => void }) => (
         <button

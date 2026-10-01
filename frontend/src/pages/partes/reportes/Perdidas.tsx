@@ -1,8 +1,8 @@
-import { BarrasApiladas, GraficoDona, GraficoLineas, Variacion } from '../../../components/Grafico'
+import { BarrasApiladas, GraficoDona, Variacion } from '../../../components/Grafico'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { Lecturas, Seccion } from '../../../components/ui'
 import type { Merma, ReportePerdidas } from '../../../lib/types'
-import { Bloque, Kpi, Linea, Vacio, type Dinero } from './comunes'
+import { Bloque, Kpi, Linea, SerieTiempo, Vacio, type Dinero } from './comunes'
 
 /**
  * Analisis de perdidas: que se merma mas, que se merma menos, por que, y
@@ -15,6 +15,7 @@ import { Bloque, Kpi, Linea, Vacio, type Dinero } from './comunes'
  * sumarlas sin decirlo escondia justo la que preocupa.
  */
 export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdidas; dinero: Dinero; corto: (x: number) => string }) {
+  const de = datos.filtro ? datos.filtro.ingrediente || datos.filtro.categoria : ''
   const orden = useOrden<Merma>(
     {
       fecha: (m) => m.fecha,
@@ -37,7 +38,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
       {/* ── Las cifras ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi
-          titulo="Merma del período"
+          titulo={de ? `Merma de ${de}` : 'Merma del período'}
           ayuda="kpi.perdidas"
           valor={dinero(datos.merma)}
           tono={datos.merma > 0 ? 'malo' : undefined}
@@ -73,7 +74,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
 
       {datos.merma <= 0 ? (
         <Vacio>
-          No hay mermas registradas en este período.{' '}
+          No hay mermas {de ? `de ${de} ` : ''}registradas en este período.{' '}
           {datos.sin_merma > 0 && `Las ${datos.sin_merma} mercancías activas están sin ninguna pérdida anotada.`}
         </Vacio>
       ) : (
@@ -82,19 +83,20 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
           {datos.serie.length > 1 && (
             <Bloque titulo="Cuándo se perdió">
               <Seccion titulo={`Merma por ${datos.granularidad}`} ayuda="Al costo congelado del momento en que se registró.">
-                <GraficoLineas
+                {/* Barras, no linea: una merma es un hecho suelto, y la
+                    linea unia un registro de $13 con cuatro dias en cero
+                    dibujando un triangulo (auditoria de graficos, 30-sep). */}
+                <SerieTiempo
                   alto={180}
-                  etiquetas={datos.serie.map((p) => p.etiqueta)}
                   formato={corto}
                   formatoDetalle={(n) => dinero(n)}
-                  series={[
-                    {
-                      nombre: 'Merma',
-                      color: 'var(--color-peligro-500)',
-                      valores: datos.serie.map((p) => p.valor),
-                      relleno: true,
-                    },
-                  ]}
+                  color="var(--color-peligro-500)"
+                  nombres={{ actual: 'Merma', anterior: 'Período anterior' }}
+                  puntos={datos.serie.map((p) => ({
+                    etiqueta: p.etiqueta,
+                    valor: p.valor,
+                    detalle: `${p.veces} ${p.veces === 1 ? 'registro' : 'registros'}`,
+                  }))}
                 />
               </Seccion>
             </Bloque>

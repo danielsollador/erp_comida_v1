@@ -1,5 +1,5 @@
 import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
@@ -13,6 +13,75 @@ from ..timeutils import ahora, hoy, inicio_del_dia
 from .inventario import sugerencias_compra
 
 router = APIRouter(prefix="/api/reportes", tags=["reportes"])
+
+
+# ── Los filtros de Reportes ──────────────────────────────────────────────────
+#
+# Leider (30-sep): "que la gente pueda filtrar por la categoria de su producto
+# y hasta por su producto". Resumen y Ventas se filtran por el MENU (categoria,
+# producto); Perdidas e Inventario por el DEPOSITO (cajon, mercancia), que es
+# de lo que hablan. Los dos viajan como parametros de consulta y el reporte
+# devuelve el eco (`filtro`) con los nombres, para el rotulo de la pantalla.
+
+
+def _variantes_del_filtro(
+    db: Session, categoria_id: Optional[int], producto_id: Optional[int]
+) -> Optional[Set[int]]:
+    """Las variantes que abarca el filtro del menu. None = sin filtro.
+
+    Entran tambien las retiradas: lo que se vendio en agosto de un producto
+    que se saco del menu en septiembre sigue siendo venta de ese producto.
+    """
+    if categoria_id is None and producto_id is None:
+        return None
+    q = db.query(models.Variante.id).join(models.Producto, models.Producto.id == models.Variante.producto_id)
+    if producto_id is not None:
+        q = q.filter(models.Producto.id == producto_id)
+    if categoria_id is not None:
+        q = q.filter(models.Producto.categoria_id == categoria_id)
+    return {v for (v,) in q.all()}
+
+
+def _filtro_menu(db: Session, categoria_id: Optional[int], producto_id: Optional[int]) -> Optional[schemas.FiltroMenu]:
+    if categoria_id is None and producto_id is None:
+        return None
+    cat = db.get(models.Categoria, categoria_id) if categoria_id is not None else None
+    prod = db.get(models.Producto, producto_id) if producto_id is not None else None
+    return schemas.FiltroMenu(
+        categoria_id=categoria_id,
+        categoria=cat.nombre if cat else "",
+        producto_id=producto_id,
+        producto=prod.nombre if prod else "",
+    )
+
+
+def _insumos_del_filtro(
+    db: Session, categoria_id: Optional[int], ingrediente_id: Optional[int]
+) -> Optional[Set[int]]:
+    """Las mercancias que abarca el filtro del deposito. None = sin filtro."""
+    if categoria_id is None and ingrediente_id is None:
+        return None
+    q = db.query(models.Ingrediente.id)
+    if ingrediente_id is not None:
+        q = q.filter(models.Ingrediente.id == ingrediente_id)
+    if categoria_id is not None:
+        q = q.filter(models.Ingrediente.categoria_id == categoria_id)
+    return {i for (i,) in q.all()}
+
+
+def _filtro_deposito(
+    db: Session, categoria_id: Optional[int], ingrediente_id: Optional[int]
+) -> Optional[schemas.FiltroDeposito]:
+    if categoria_id is None and ingrediente_id is None:
+        return None
+    cat = db.get(models.CategoriaInsumo, categoria_id) if categoria_id is not None else None
+    ing = db.get(models.Ingrediente, ingrediente_id) if ingrediente_id is not None else None
+    return schemas.FiltroDeposito(
+        categoria_id=categoria_id,
+        categoria=cat.nombre if cat else "",
+        ingrediente_id=ingrediente_id,
+        ingrediente=ing.nombre if ing else "",
+    )
 
 
 def _avisos_de_costos(db: Session) -> List[schemas.Insight]:
@@ -191,7 +260,22 @@ def _serie(periodo: str, b: Bloque, inicio: datetime.datetime, fin: datetime.dat
     return [schemas.PuntoSerie(**p) for p in puntos]
 
 
-def _top_productos(b: Bloque) -> List[schemas.ProductoVendido]:
+def _producto_de_variantes(db: Session, claves) -> Dict[str, tuple]:
+    """"v:<id>" -> (producto_id, categoria). La venta libre no tiene."""
+    ids = [int(c[2:]) for c in claves if c.startswith("v:")]
+    if not ids:
+        return {}
+    filas = (
+        db.query(models.Variante.id, models.Producto.id, models.Categoria.nombre)
+        .join(models.Producto, models.Producto.id == models.Variante.producto_id)
+        .join(models.Categoria, models.Categoria.id == models.Producto.categoria_id)
+        .filter(models.Variante.id.in_(ids))
+        .all()
+    )
+    return {f"v:{v}": (p, c) for v, p, c in filas}
+
+
+def _top_productos(db: Session, b: Bloque) -> List[schemas.ProductoVendido]:
     """Agrupa por variante, NO por el nombre congelado del item.
 
     Agrupar por nombre rompia en las dos direcciones: dos productos distintos
@@ -203,11 +287,13 @@ def _top_productos(b: Bloque) -> List[schemas.ProductoVendido]:
     """
     # El bloque ya agrupo por variante (o por nombre en la venta libre) y ya
     # decidio si a cada uno le falto costo; ver `consolidacion.bloque_en_vivo`.
+    de_que = _producto_de_variantes(db, b.productos.keys())
     productos = []
-    for _clave, g in b.productos.items():
+    for clave, g in b.productos.items():
         ingresos = round(g.ventas, 2)
         costo = round(g.costo, 2)
         ganancia = round(ingresos - costo, 2)
+        producto_id, categoria = de_que.get(clave, (None, ""))
         productos.append(
             schemas.ProductoVendido(
                 nombre=g.nombre,
@@ -219,6 +305,8 @@ def _top_productos(b: Bloque) -> List[schemas.ProductoVendido]:
                 # que no se reporta como si fuera un dato bueno.
                 margen_pct=0.0 if g.sin_receta else (round(ganancia / ingresos * 100, 1) if ingresos else 0.0),
                 sin_receta=bool(g.sin_receta),
+                producto_id=producto_id,
+                categoria=categoria,
             )
         )
     productos.sort(key=lambda x: x.ingresos, reverse=True)
@@ -329,15 +417,18 @@ def _mapa_de_calor(b: Bloque) -> List[schemas.PuntoCalor]:
     return celdas
 
 
-def _por_categoria(b: Bloque, ventas_total: float) -> List[schemas.GrupoReporte]:
+def _por_categoria(db: Session, b: Bloque, ventas_total: float) -> List[schemas.GrupoReporte]:
     """Que parte de la venta es comida, que parte bebida, que parte envios.
-    La venta libre va en su propio grupo."""
+    La venta libre va en su propio grupo. Con el id de la categoria cuando
+    es una del menu, para poder filtrar tocandola."""
+    ids = {c.nombre: c.id for c in db.query(models.Categoria.nombre, models.Categoria.id).all()}
     salida = [
         schemas.GrupoReporte(
             nombre=nombre,
             ventas=round(g.ventas, 2),
             pedidos=g.pedidos,
             pct=round(g.ventas / ventas_total * 100, 1) if ventas_total else 0.0,
+            id=ids.get(nombre),
         )
         for nombre, g in b.por_categoria.items()
     ]
@@ -441,8 +532,14 @@ def _insights(
     ventas_previas: float,
     merma: float = 0,
     incompleto: bool = True,
+    solo_ventas: bool = False,
 ) -> List[schemas.Insight]:
-    """Analisis deterministico: sin llamadas a ningun modelo, sin costo variable."""
+    """Analisis deterministico: sin llamadas a ningun modelo, sin costo variable.
+
+    `solo_ventas`: se esta mirando una categoria o un producto, no el negocio.
+    Lo que es del negocio entero --los gastos, lo que sube de precio, el
+    deposito, la merma-- no se opina: no es de ese producto.
+    """
     insights: List[schemas.Insight] = []
     nombre_periodo = {"dia": "hoy", "semana": "esta semana", "mes": "este mes"}.get(
         periodo, "en este periodo"
@@ -459,7 +556,7 @@ def _insights(
         # Que tus insumos suban importa igual, hayas vendido hoy o no: es
         # justamente el dia flojo cuando te alcanza el tiempo para revisar
         # precios. Estos avisos no dependen de las ventas del periodo.
-        return insights + _avisos_de_costos(db)
+        return insights + ([] if solo_ventas else _avisos_de_costos(db))
 
     # Comparativa contra el periodo anterior. El periodo en curso siempre esta
     # incompleto, asi que se avisa para no leer una caida donde solo falta tiempo.
@@ -586,6 +683,9 @@ def _insights(
                 )
             )
 
+    if solo_ventas:
+        return insights
+
     # Peso de los gastos.
     if gastos > 0 and ventas > 0:
         peso = gastos / ventas * 100
@@ -685,6 +785,8 @@ def _insights(
 def resumen(
     rango: Rango = Depends(),
     paso: Optional[str] = None,
+    categoria_id: Optional[int] = None,
+    producto_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
     """Los numeros del periodo. `desde`/`hasta` o, como antes, `periodo=`.
@@ -693,32 +795,47 @@ def resumen(
     solo segun el largo del rango. Lo manda la pantalla cuando el dueño toca el
     selector del grafico: el automatico acierta casi siempre, pero "casi" no
     sirve cuando lo que quieres ver es justo el dia (Leider, 24-sep).
+
+    `categoria_id` / `producto_id`: solo esa parte del menu. Entonces la
+    ganancia es lo vendido menos su mercancia --un producto no tiene gastos
+    ni IVA propios-- y lo que es del pedido entero (como se pago, cuanto se
+    facturo) viene en cero.
     """
     inicio, fin, etiqueta = rango.resolver(periodo="dia")
     # Las palabras ("hoy", "ayer") solo cuando se pidio con el boton; con un
     # rango de fechas se habla de "este periodo".
     periodo = rango.periodo if rango.periodo in ("dia", "semana", "mes") and rango.desde is None else "rango"
-    # Del mart los dias cerrados, en vivo lo que falta (hoy). Es una sola
-    # definicion de "las ventas del periodo" para las dos fuentes.
-    b = consolidacion.bloque_para(db, inicio, fin)
+    variantes = _variantes_del_filtro(db, categoria_id, producto_id)
+    filtrado = variantes is not None
+    if not filtrado:
+        # Del mart los dias cerrados, en vivo lo que falta (hoy). Es una sola
+        # definicion de "las ventas del periodo" para las dos fuentes.
+        b = consolidacion.bloque_para(db, inicio, fin)
+        # Las ventas brutas (lo que entro por caja) salen de los pedidos,
+        # porque es el numero que el dueno reconoce. Pero la GANANCIA sale de
+        # la contabilidad: el IVA cobrado no es ingreso suyo, y las mermas si
+        # son perdida aunque no sean un "gasto" de la tabla de gastos. Antes
+        # Reportes calculaba los dos por su cuenta y daba 8% mas de ganancia
+        # que el Estado de Resultados.
+        libro = contabilidad.saldos_por_tipo(db, inicio, fin)
+        # Mismo tamano de ventana, inmediatamente anterior.
+        previo = consolidacion.bloque_para(db, *anterior(inicio, fin))
+        libro_previo = contabilidad.saldos_por_tipo(db, *anterior(inicio, fin))
+    else:
+        # Una parte del menu: se lee de los pedidos, renglon a renglon, y lo
+        # que deja es lo vendido menos la mercancia de esos renglones.
+        b = consolidacion.bloque_en_vivo(db, inicio, fin, solo_variantes=variantes)
+        previo = consolidacion.bloque_en_vivo(db, *anterior(inicio, fin), solo_variantes=variantes)
+        libro = {"ingreso": b.ventas, "costo": b.costo_items, "gasto": 0.0}
+        libro_previo = {"ingreso": previo.ventas, "costo": previo.costo_items, "gasto": 0.0}
 
-    # Las ventas brutas (lo que entro por caja) salen de los pedidos, porque es
-    # el numero que el dueno reconoce. Pero la GANANCIA sale de la contabilidad:
-    # el IVA cobrado no es ingreso suyo, y las mermas si son perdida aunque no
-    # sean un "gasto" de la tabla de gastos. Antes Reportes calculaba los dos
-    # por su cuenta y daba 8% mas de ganancia que el Estado de Resultados.
     ventas = b.ventas
     iva_cobrado = b.iva_cobrado
-    libro = contabilidad.saldos_por_tipo(db, inicio, fin)
-    ingresos_netos = libro["ingreso"]
-    costo = libro["costo"]
-    gastos = libro["gasto"]
+    ingresos_netos = round(libro["ingreso"], 2)
+    costo = round(libro["costo"], 2)
+    gastos = round(libro["gasto"], 2)
     ganancia_bruta = round(ingresos_netos - costo, 2)
-
-    # Mismo tamano de ventana, inmediatamente anterior.
-    previo = consolidacion.bloque_para(db, *anterior(inicio, fin))
     ventas_previas = previo.ventas
-    libro_previo = contabilidad.saldos_por_tipo(db, *anterior(inicio, fin))
 
     # Por pago y no por pedido: una venta mixta reparte su monto entre dos
     # metodos en vez de aparecer entera bajo una etiqueta combinada.
@@ -727,14 +844,18 @@ def resumen(
     # El que pidio la pantalla si es uno de los validos; si no, el automatico.
     paso = paso if paso in PASOS_VALIDOS else granularidad(inicio, fin)
     serie = _serie(periodo, b, inicio, fin, paso)
-    productos = _top_productos(b)
+    productos = _top_productos(db, b)
     ganancia_neta = round(ganancia_bruta - gastos, 2)
     # Un dia solo se lee por horas; el mapa y el dia de la semana necesitan
     # varios dias para decir algo.
     varios_dias = (fin - inicio).days >= 2
     calor = _mapa_de_calor(b) if varios_dias else []
     por_dia = _por_dia_semana(b, inicio, fin, ventas) if varios_dias else []
-    consolidado_en = consolidacion.ultima_consolidacion(db) if consolidacion.partir_rango(db, inicio, fin)[0] else None
+    consolidado_en = (
+        consolidacion.ultima_consolidacion(db)
+        if not filtrado and consolidacion.partir_rango(db, inicio, fin)[0]
+        else None
+    )
 
     return schemas.ReporteResumen(
         periodo=periodo,
@@ -745,6 +866,7 @@ def resumen(
         iva_cobrado=iva_cobrado,
         ingresos_netos=ingresos_netos,
         pedidos=b.pedidos,
+        unidades=int(b.unidades),
         ticket_promedio=round(ventas / b.pedidos, 2) if b.pedidos else 0.0,
         ticket_mediano=_mediana(b.totales),
         costo_insumos=round(costo, 2),
@@ -774,9 +896,10 @@ def resumen(
             serie,
             paso,
             ventas_previas,
-            merma=merma_periodo(db, inicio, fin),
+            merma=0.0 if filtrado else merma_periodo(db, inicio, fin),
             # El periodo esta a medias si incluye hoy.
             incompleto=fin > datetime.datetime.now(),
+            solo_ventas=filtrado,
         )
         + _lecturas_de_ritmo(calor, por_dia, b.pedidos),
         anterior=_comparativa(
@@ -785,33 +908,55 @@ def resumen(
         ),
         serie_anterior=_serie_anterior(serie, previo, inicio, fin, paso),
         calor=calor,
-        por_categoria=_por_categoria(b, ventas),
+        por_categoria=_por_categoria(db, b, ventas),
         por_dia_semana=por_dia,
         consolidado_en=consolidado_en.isoformat() if consolidado_en else None,
+        filtro=_filtro_menu(db, categoria_id, producto_id),
     )
 
 
 @router.get("/combos", response_model=schemas.ReporteCombos)
-def reporte_combos(rango: Rango = Depends(), db: Session = Depends(get_db)):
+def reporte_combos(
+    rango: Rango = Depends(),
+    categoria_id: Optional[int] = None,
+    producto_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
     """Que se vende junto y cuanto se pierde por no ofrecer el acompanante.
 
     El periodo por defecto es el mes: la canasta necesita volumen para que los
     porcentajes signifiquen algo, y un solo dia rara vez lo tiene.
+
+    Filtrado por categoria o producto, se miran los pedidos que LLEVAN eso:
+    "con que sale la empanada", no "con que sale todo".
     """
     inicio, fin, etiqueta = rango.resolver(periodo="mes")
     pedidos = _pedidos_pagados(db, inicio, fin)
+    variantes = _variantes_del_filtro(db, categoria_id, producto_id)
+    if variantes is not None:
+        pedidos = [p for p in pedidos if any(i.variante_id in variantes for i in p.items)]
     analisis = combos.analizar(db, pedidos)
 
-    return schemas.ReporteCombos(periodo=rango.periodo or "rango", etiqueta=etiqueta, **analisis)
+    return schemas.ReporteCombos(
+        periodo=rango.periodo or "rango",
+        etiqueta=etiqueta,
+        filtro=_filtro_menu(db, categoria_id, producto_id),
+        **analisis,
+    )
 
 
 # ── Perdidas ─────────────────────────────────────────────────────────────────
 
 
-def _mermas_valoradas(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
+def _mermas_valoradas(
+    db: Session, inicio: datetime.datetime, fin: datetime.datetime, solo: Optional[Set[int]] = None
+):
     """Las mermas vivas del periodo con su valor CONGELADO, como las lista
-    Inventario: el costo de hoy revaloraria una merma de hace un mes."""
-    mermas = (
+    Inventario: el costo de hoy revaloraria una merma de hace un mes.
+    `solo`: las de esas mercancias nada mas (el filtro del deposito)."""
+    if solo is not None and not solo:
+        return []
+    q = (
         db.query(models.Merma)
         .options(joinedload(models.Merma.ingrediente))
         .filter(
@@ -819,9 +964,10 @@ def _mermas_valoradas(db: Session, inicio: datetime.datetime, fin: datetime.date
             models.Merma.fecha < fin,
             models.Merma.revertida.is_(False),
         )
-        .order_by(models.Merma.fecha.desc())
-        .all()
     )
+    if solo is not None:
+        q = q.filter(models.Merma.ingrediente_id.in_(solo))
+    mermas = q.order_by(models.Merma.fecha.desc()).all()
     ids = [m.id for m in mermas] or [0]
     congelado = {
         mv.referencia_id: abs(mv.valor)
@@ -933,14 +1079,25 @@ def _lecturas_de_perdidas(
 
 
 @router.get("/perdidas", response_model=schemas.ReportePerdidas)
-def reporte_perdidas(rango: Rango = Depends(), db: Session = Depends(get_db)):
+def reporte_perdidas(
+    rango: Rango = Depends(),
+    categoria_id: Optional[int] = None,
+    ingrediente_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
     """Analisis de perdidas: que se merma mas, que se merma menos, por que, y
-    cuanto pesa sobre la venta. Mas las ventas que no llegaron."""
+    cuanto pesa sobre la venta. Mas las ventas que no llegaron.
+
+    `categoria_id` / `ingrediente_id`: un cajon del deposito o una mercancia.
+    El peso sigue siendo sobre la venta ENTERA: lo que se pierde de carne se
+    compara con lo que vende el local, no con "las ventas de carne".
+    """
     inicio, fin, etiqueta = rango.resolver(periodo="dia")
     paso = granularidad(inicio, fin)
     b = consolidacion.bloque_para(db, inicio, fin)
+    solo = _insumos_del_filtro(db, categoria_id, ingrediente_id)
 
-    valoradas = _mermas_valoradas(db, inicio, fin)
+    valoradas = _mermas_valoradas(db, inicio, fin, solo)
     total = round(sum(v for _, v in valoradas), 2)
     por_conteo = round(sum(v for m, v in valoradas if m.por_conteo), 2)
 
@@ -990,24 +1147,22 @@ def reporte_perdidas(rango: Rango = Depends(), db: Session = Depends(get_db)):
         for t in serie_del_rango([(m.fecha, v) for m, v in valoradas], inicio, fin, paso)
     ]
 
-    activos = db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).count()
+    activos_q = db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False))
+    if solo is not None:
+        activos_q = activos_q.filter(models.Ingrediente.id.in_(solo or [0]))
+    activos = activos_q.count()
     sin_merma = max(activos - len(grupos), 0)
 
-    consumo_personal = round(
-        sum(
-            abs(mv.valor or 0)
-            for mv in db.query(models.MovimientoInventario)
-            .filter(
-                models.MovimientoInventario.tipo == kardex.CONSUMO_PERSONAL,
-                models.MovimientoInventario.fecha >= inicio,
-                models.MovimientoInventario.fecha < fin,
-            )
-            .all()
-        ),
-        2,
+    consumo_q = db.query(models.MovimientoInventario).filter(
+        models.MovimientoInventario.tipo == kardex.CONSUMO_PERSONAL,
+        models.MovimientoInventario.fecha >= inicio,
+        models.MovimientoInventario.fecha < fin,
     )
+    if solo is not None:
+        consumo_q = consumo_q.filter(models.MovimientoInventario.ingrediente_id.in_(solo or [0]))
+    consumo_personal = round(sum(abs(mv.valor or 0) for mv in consumo_q.all()), 2)
 
-    merma_anterior = round(sum(v for _, v in _mermas_valoradas(db, *anterior(inicio, fin))), 2)
+    merma_anterior = round(sum(v for _, v in _mermas_valoradas(db, *anterior(inicio, fin), solo)), 2)
     cambio = _pct(total, merma_anterior)
 
     # Lo regalado en ventas cobradas del periodo: cuantas unidades, cuanto
@@ -1076,6 +1231,7 @@ def reporte_perdidas(rango: Rango = Depends(), db: Session = Depends(get_db)):
         insights=_lecturas_de_perdidas(
             total, b.ventas, por_insumo, por_conteo, merma_anterior, cambio, b.anulados, b.valor_anulado
         ),
+        filtro=_filtro_deposito(db, categoria_id, ingrediente_id),
     )
 
 
@@ -1167,10 +1323,21 @@ def _lecturas_de_inventario(
 
 
 @router.get("/inventario", response_model=schemas.ReporteInventario)
-def reporte_inventario(rango: Rango = Depends(), db: Session = Depends(get_db)):
+def reporte_inventario(
+    rango: Rango = Depends(),
+    categoria_id: Optional[int] = None,
+    ingrediente_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
     """El deposito de hoy, leido con el consumo del periodo: donde esta la
-    plata, para cuantos dias alcanza, que no se mueve y que hay que comprar."""
+    plata, para cuantos dias alcanza, que no se mueve y que hay que comprar.
+
+    `categoria_id` / `ingrediente_id`: un cajon del deposito o una mercancia.
+    Todo --el valor, la rotacion, lo quieto, la lista de compra-- es de esa
+    parte nada mas.
+    """
     inicio, fin, etiqueta = rango.resolver(periodo="dia")
+    solo = _insumos_del_filtro(db, categoria_id, ingrediente_id)
     corte = ahora()
     # El consumo se mide hasta ahora aunque el rango sea el mes pasado: lo
     # que interesa es cuanto dura lo que HAY, y eso se mide con dias reales.
@@ -1196,7 +1363,10 @@ def reporte_inventario(rango: Rango = Depends(), db: Session = Depends(get_db)):
 
     filas = []
     valor_total = 0.0
-    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).order_by(models.Ingrediente.nombre).all():
+    ingredientes_q = db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False))
+    if solo is not None:
+        ingredientes_q = ingredientes_q.filter(models.Ingrediente.id.in_(solo or [0]))
+    for ing in ingredientes_q.order_by(models.Ingrediente.nombre).all():
         cantidad = saldos.get(ing.id, ing.stock_actual or 0)
         costo = promedios.get(ing.id) or ing.costo_unitario or 0
         valor = round(max(cantidad, 0) * costo, 2)
@@ -1225,9 +1395,22 @@ def reporte_inventario(rango: Rango = Depends(), db: Session = Depends(get_db)):
         f.pct = round(f.valor / valor_total * 100, 1) if valor_total else 0.0
     filas.sort(key=lambda f: f.valor, reverse=True)
 
-    consumido = round(sum(consumido_por.values()), 2)
+    # Lo consumido, solo de lo que se esta mirando.
+    consumido = round(sum(f.consumido for f in filas), 2)
     quietos = [f for f in filas if f.estado == "quieto" and f.valor > 0]
     inflacion = reposicion.inflacion_de_insumos(db, dias)
+    if inflacion and solo is not None:
+        # La subida de precios, solo de esas mercancias: el promedio se
+        # vuelve a sacar sobre ellas.
+        insumos = [i for i in inflacion["insumos"] if i["ingrediente_id"] in solo]
+        inflacion = (
+            {"insumos": insumos, "cambio_pct": round(sum(i["cambio_pct"] for i in insumos) / len(insumos), 1)}
+            if insumos
+            else None
+        )
+    por_comprar = sugerencias_compra(db)
+    if solo is not None:
+        por_comprar = [s for s in por_comprar if s.ingrediente_id in solo]
 
     bajo = sum(1 for f in filas if f.estado == "bajo")
     agotados = sum(1 for f in filas if f.estado == "agotado")
@@ -1251,11 +1434,12 @@ def reporte_inventario(rango: Rango = Depends(), db: Session = Depends(get_db)):
         inflacion_pct=inflacion["cambio_pct"] if inflacion else None,
         inflacion=[schemas.InsumoInflacion(**i) for i in (inflacion["insumos"][:8] if inflacion else [])],
         por_insumo=filas,
-        por_comprar=sugerencias_compra(db),
+        por_comprar=por_comprar,
         insights=_lecturas_de_inventario(
             valor_total, filas, bajo, agotados, len(quietos), valor_quieto, rotacion,
             inflacion["cambio_pct"] if inflacion else None, dias,
         ),
+        filtro=_filtro_deposito(db, categoria_id, ingrediente_id),
     )
 
 

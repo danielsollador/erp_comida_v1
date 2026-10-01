@@ -49,25 +49,21 @@ export function FiltroFechas({
         aria-haspopup="dialog"
         aria-expanded={abierto}
         title="Elegir el período"
-        // En el telefono solo el icono: con el texto, el titulo del modulo se
-        // quedaba sin sitio. El periodo se lee igual en el titulo de la tarjeta.
-        className={`inline-flex items-center justify-center gap-1.5 h-9 w-9 sm:w-auto sm:px-3 rounded-xl border text-sm font-medium whitespace-nowrap ${
-          dark
-            ? 'border-neutral-700 hover:bg-neutral-800'
-            : 'border-neutral-200 bg-white hover:bg-neutral-100'
+        // LA MISMA PASTILLA QUE LOS DEMAS FILTROS (`FiltroDesplegable`): el
+        // rotulo en gris, lo elegido en negrita, la flecha. Vive en la fila de
+        // filtros de cada modulo (`BarraFiltros`) y ya no en el encabezado,
+        // asi que tiene sitio para decir el periodo entero, tambien en el
+        // telefono, donde antes era solo un icono.
+        className={`vp-control inline-flex items-center gap-1.5 h-9 rounded-full px-3 text-sm shrink-0 select-none whitespace-nowrap ${
+          dark ? 'text-white' : 'text-neutral-900'
         }`}
       >
-        <Icono nombre="calendario" size={16} className="shrink-0 opacity-70" />
-        <span className="hidden sm:inline truncate">
-          <span className="hidden md:inline">{nombreRango(rango)}</span>
-          <span className={`hidden md:inline ${dark ? 'text-neutral-600' : 'text-neutral-300'}`}> · </span>
+        <span className="shrink-0 text-neutral-500">Período</span>
+        <span className="font-semibold truncate max-w-[15rem]">
+          <span className="hidden sm:inline">{nombreRango(rango)} · </span>
           <span className="tabular-nums">{etiquetaRango(rango)}</span>
         </span>
-        <Icono
-          nombre="chevron"
-          size={14}
-          className={`hidden sm:block shrink-0 opacity-60 transition-transform ${abierto ? '-rotate-90' : 'rotate-90'}`}
-        />
+        <span aria-hidden className="vp-flecha shrink-0 opacity-60" />
       </button>
       {abierto && (
         <PanelFechas
@@ -116,7 +112,9 @@ function PanelFechas({
     const el = ancla.current
     if (!el || window.innerWidth < 640) return null
     const r = el.getBoundingClientRect()
-    const left = Math.max(8, Math.min(r.right - ANCHO_PANEL, window.innerWidth - ANCHO_PANEL - 8))
+    // Alineado con el borde izquierdo de la pastilla, que es donde esta el
+    // ojo; si no cabe hacia la derecha, se corre lo justo.
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - ANCHO_PANEL - 8))
     return { top: r.bottom + 6, left }
   }, [ancla])
   const [pos, setPos] = useState<{ top: number; left: number } | null>(medir)

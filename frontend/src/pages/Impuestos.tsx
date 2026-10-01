@@ -3,7 +3,7 @@ import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
-import { FiltroFechas } from '../components/Fechas'
+import BarraFiltros from '../components/BarraFiltros'
 import { useRango, queryRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
@@ -91,8 +91,9 @@ export default function Impuestos() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Impuestos" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion !== 'declaraciones' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
+      <NavBar titulo="Impuestos" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina>
+        {seccion !== 'declaraciones' && <BarraFiltros rango={rango} alCambiar={setRango} />}
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-2">Alícuota de IVA</h2>
           <div className="flex flex-wrap gap-2">

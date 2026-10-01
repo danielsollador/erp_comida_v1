@@ -24,7 +24,6 @@ export default function NavBar({
   dark = false,
   moneda = true,
   acciones,
-  filtro,
   secciones,
   seccion,
   alCambiarSeccion,
@@ -34,8 +33,6 @@ export default function NavBar({
   /** El selector de moneda solo tiene sentido donde se ven precios. */
   moneda?: boolean
   acciones?: ReactNode
-  /** El filtro de fechas (`<FiltroFechas>`), cuando la pantalla tiene periodo. */
-  filtro?: ReactNode
   /** Lo que se puede hacer en este modulo. Con una sola, no se muestra nada. */
   secciones?: Seccion[]
   seccion?: string
@@ -80,8 +77,10 @@ export default function NavBar({
           <h1 className="font-display font-semibold text-[17px] leading-none truncate">{titulo}</h1>
         </div>
 
+        {/* Sin el filtro de fechas: un filtro cambia LO QUE se ve y vive con
+            los demas filtros, en la fila de arriba del contenido
+            (`BarraFiltros`). Aqui quedan solo los ajustes de COMO se ve. */}
         <div className="ml-auto flex items-center gap-2 max-sm:basis-full max-sm:justify-end">
-          {filtro}
           {acciones}
           {moneda && <MonedaToggle dark={dark} />}
           <Notificaciones dark={dark} />

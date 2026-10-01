@@ -88,6 +88,15 @@ const conRango = (r?: Rango, extra = '') => {
   return partes.length ? `?${partes.join('&')}` : ''
 }
 
+/** Los filtros de Reportes: una parte del menu, o una parte del deposito. */
+export type FiltroMenuQuery = { categoria_id?: number; producto_id?: number }
+export type FiltroDepositoQuery = { categoria_id?: number; ingrediente_id?: number }
+const conFiltro = (f?: Record<string, number | undefined>) =>
+  Object.entries(f ?? {})
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&')
+
 /** Se cayo la red (no el servidor): `fetch` rechaza sin respuesta. */
 export class SinConexion extends Error {
   constructor() {
@@ -606,8 +615,10 @@ export const api = {
 
   // `paso` fuerza el grano de la serie (dia | semana | mes). Sin el, el
   // servidor lo elige por el largo del rango.
-  reporte: (r: Rango, paso?: string) =>
-    req<ReporteResumen>(`/reportes/resumen${conRango(r)}${paso ? `&paso=${paso}` : ''}`),
+  reporte: (r: Rango, paso?: string, filtro?: FiltroMenuQuery) =>
+    req<ReporteResumen>(
+      `/reportes/resumen${conRango(r, [paso ? `paso=${paso}` : '', conFiltro(filtro)].filter(Boolean).join('&'))}`,
+    ),
 
   notasCreditoCompra: (facturaId: number) =>
     req<NotaCreditoCompra[]>(`/compras/facturas/${facturaId}/notas-credito`),
@@ -689,9 +700,12 @@ export const api = {
       body: JSON.stringify({ vender_sin_inventario }),
     }),
 
-  reporteCombos: (r: Rango) => req<ReporteCombos>(`/reportes/combos${conRango(r)}`),
-  reportePerdidas: (r: Rango) => req<ReportePerdidas>(`/reportes/perdidas${conRango(r)}`),
-  reporteInventario: (r: Rango) => req<ReporteInventario>(`/reportes/inventario${conRango(r)}`),
+  reporteCombos: (r: Rango, filtro?: FiltroMenuQuery) =>
+    req<ReporteCombos>(`/reportes/combos${conRango(r, conFiltro(filtro))}`),
+  reportePerdidas: (r: Rango, filtro?: FiltroDepositoQuery) =>
+    req<ReportePerdidas>(`/reportes/perdidas${conRango(r, conFiltro(filtro))}`),
+  reporteInventario: (r: Rango, filtro?: FiltroDepositoQuery) =>
+    req<ReporteInventario>(`/reportes/inventario${conRango(r, conFiltro(filtro))}`),
   /** La portada: cuanto lleva armado el local y lo que hoy hay que saber. */
   arranque: () => req<ArranqueLocal>('/reportes/arranque'),
   /** Manda el vuelto por pago movil desde la cuenta del local (Pabilo). */

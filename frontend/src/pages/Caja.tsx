@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
-import { FiltroFechas } from '../components/Fechas'
+import BarraFiltros from '../components/BarraFiltros'
 import { useRango, etiquetaRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
@@ -102,11 +102,9 @@ export default function Caja() {
         secciones={SECCIONES}
         seccion={seccion}
         alCambiarSeccion={irA}
-        filtro={
-          seccion === 'historial' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined
-        }
       />
       <Pagina ancho="media">
+        {seccion === 'historial' && <BarraFiltros rango={rango} alCambiar={setRango} />}
         {error && <p className="text-peligro-600 text-sm">{error}</p>}
 
         {seccion === 'cierre' && resumen && (

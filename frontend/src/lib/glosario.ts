@@ -622,6 +622,19 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Un catering de $300 sube el promedio a un número que ningún cliente gasta; por eso al lado aparece "el cliente típico gastó X", que es sobre el que hay que decidir.',
   },
+  'kpi.unidades': {
+    que: 'Cuántas cosas se vendieron en el período.',
+    origen: 'Los renglones de los pedidos cobrados, sumando cantidades. Las cortesías no entran.',
+    ejemplo:
+      'Con un producto elegido en los filtros, es cuántas de ese se vendieron: el número que sirve para saber cuánto preparar.',
+  },
+  'kpi.deja': {
+    que: 'Lo que queda de lo vendido después de pagar la mercancía que lleva.',
+    origen: 'Las ventas de lo que estás mirando y el costo de su receta en cada venta.',
+    calculo: 'Ventas − costo de la mercancía. Sin gastos ni IVA: eso es del negocio entero, no de un producto.',
+    ejemplo:
+      'Si vendes $100 de empanadas y la carne, la harina y el aceite de esas empanadas costaron $38, te dejan $62: un 62% de margen.',
+  },
 
   // Impuestos
   'kpi.iva_debito': {

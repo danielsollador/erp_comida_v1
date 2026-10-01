@@ -48,7 +48,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -251,65 +251,94 @@ def _categoria_de_variantes(db: Session, ids: Iterable[int]) -> Dict[int, str]:
     return salida
 
 
-def bloque_en_vivo(db: Session, inicio: datetime.datetime, fin: datetime.datetime) -> Bloque:
+def bloque_en_vivo(
+    db: Session,
+    inicio: datetime.datetime,
+    fin: datetime.datetime,
+    solo_variantes: Optional[Set[int]] = None,
+) -> Bloque:
     """Los numeros de [inicio, fin) leyendo los pedidos. Es lo que se guarda
-    al consolidar y lo que se calcula para hoy: la misma cosa."""
+    al consolidar y lo que se calcula para hoy: la misma cosa.
+
+    `solo_variantes` es el filtro por categoria o producto de Reportes
+    (Leider, 30-sep: "que la gente pueda filtrar por la categoria de su
+    producto y hasta por su producto"). Con el, se cuentan SOLO los renglones
+    de esas variantes: la venta es la de esos renglones, el pedido cuenta si
+    lleva alguno, y la serie, el mapa de calor y el dia de la semana se
+    arman con esa plata. Lo que es del pedido entero y no se puede repartir
+    --como se pago, si se facturo, el descuento, los anulados-- queda en
+    cero: un refresco no se paga por pago movil ni se factura solo. No pasa
+    por el mart (que guarda el dia entero), se lee de los pedidos siempre.
+    """
     b = Bloque()
     pedidos = pedidos_pagados(db, inicio, fin)
     servicios = seed.variantes_de_servicio(db)
     categoria_de = _categoria_de_variantes(
         db, {i.variante_id for p in pedidos for i in p.items if i.variante_id is not None}
     )
+    filtrado = solo_variantes is not None
 
     for p in pedidos:
-        b.ventas += p.total
-        b.ventas_bs += p.total * (p.tasa_bcv or 0)
+        # Lo regalado no entra al ranking de productos ni al costo de lo
+        # vendido: vendio cero y su costo esta en gastos (6035). Se mira
+        # aparte, en Perdidas.
+        renglones = [
+            i for i in p.items
+            if not i.cortesia and (not filtrado or i.variante_id in solo_variantes)
+        ]
+        if filtrado and not renglones:
+            continue
+        # Filtrado, lo que vale el pedido es lo que lleva de ESO, a precio de
+        # lista: el descuento es del pedido y no se sabe a que renglon fue.
+        monto = (
+            sum(i.precio_unitario * i.cantidad for i in renglones) if filtrado else p.total
+        )
+        b.ventas += monto
+        b.ventas_bs += monto * (p.tasa_bcv or 0)
         b.pedidos += 1
-        b.totales.append(round(p.total, 2))
-        if b.mayor is None or p.total > b.mayor[1]:
-            b.mayor = (p.numero, round(p.total, 2))
-        if p.facturado:
-            _base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
-            b.iva_cobrado += iva
-            b.facturadas += 1
-            b.valor_facturado += p.total
-        if (p.descuento or 0) > 0:
-            b.con_descuento += 1
-            b.valor_descuentos += p.descuento or 0
+        b.totales.append(round(monto, 2))
+        if b.mayor is None or monto > b.mayor[1]:
+            b.mayor = (p.numero, round(monto, 2))
+        if not filtrado:
+            if p.facturado:
+                _base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
+                b.iva_cobrado += iva
+                b.facturadas += 1
+                b.valor_facturado += p.total
+            if (p.descuento or 0) > 0:
+                b.con_descuento += 1
+                b.valor_descuentos += p.descuento or 0
 
         cuando = p.cerrado_en
         dia = _grupo(b.por_dia, cuando.date().isoformat())  # type: ignore[arg-type]
-        dia.ventas += p.total
+        dia.ventas += monto
         dia.pedidos += 1
         hora = _grupo(b.por_hora, f"{cuando.hour:02d}")
-        hora.ventas += p.total
+        hora.ventas += monto
         hora.pedidos += 1
         # Cuando ENTRAN los clientes: por la hora en que se tomo el pedido,
         # que es lo que sirve para armar turnos.
         t = p.creado_en or cuando
         celda = _grupo(b.calor, f"{t.weekday()}-{t.hour:02d}")
-        celda.ventas += p.total
+        celda.ventas += monto
         celda.pedidos += 1
 
         # Por pago y no por pedido: una venta mixta se reparte entre metodos.
-        for pago in p.pagos:
-            m = _grupo(b.por_metodo, pago.metodo)
-            m.ventas += pago.monto
-            m.pedidos += 1
+        # Filtrado no se reparte: el pago es del pedido entero.
+        if not filtrado:
+            for pago in p.pagos:
+                m = _grupo(b.por_metodo, pago.metodo)
+                m.ventas += pago.monto
+                m.pedidos += 1
         op = _grupo(b.por_operador, p.operador or "Sin asignar")
-        op.ventas += p.total
+        op.ventas += monto
         op.pedidos += 1
         pv = _grupo(b.por_punto, p.punto_venta or "Sin asignar")
-        pv.ventas += p.total
+        pv.ventas += monto
         pv.pedidos += 1
 
         categorias_del_pedido = set()
-        for i in p.items:
-            # Lo regalado no entra al ranking de productos ni al costo de lo
-            # vendido: vendio cero y su costo esta en gastos (6035). Se mira
-            # aparte, en Perdidas.
-            if i.cortesia:
-                continue
+        for i in renglones:
             b.unidades += i.cantidad
             b.costo_items += (i.costo_unitario or 0) * i.cantidad
             clave = f"v:{i.variante_id}" if i.variante_id is not None else f"l:{i.nombre}"
@@ -332,12 +361,14 @@ def bloque_en_vivo(db: Session, inicio: datetime.datetime, fin: datetime.datetim
         for nombre_cat in categorias_del_pedido:
             b.por_categoria[nombre_cat].pedidos += 1
 
-    for p in pedidos_anulados(db, inicio, fin):
-        b.anulados += 1
-        b.valor_anulado += p.total
-    for p in devoluciones(db, inicio, fin):
-        b.devoluciones += 1
-        b.valor_devuelto += p.total
+    # Lo anulado y lo devuelto es del pedido entero: filtrado no se cuenta.
+    if not filtrado:
+        for p in pedidos_anulados(db, inicio, fin):
+            b.anulados += 1
+            b.valor_anulado += p.total
+        for p in devoluciones(db, inicio, fin):
+            b.devoluciones += 1
+            b.valor_devuelto += p.total
     return b.redondear()
 
 

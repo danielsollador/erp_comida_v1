@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
-import { FiltroFechas } from '../components/Fechas'
+import BarraFiltros from '../components/BarraFiltros'
 import { useRango } from '../lib/fechas'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
@@ -135,8 +135,9 @@ export default function Tasa() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Tasa de cambio" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion === 'hoy' ? undefined : <FiltroFechas rango={rango} alCambiar={setRango} />} />
+      <NavBar titulo="Tasa de cambio" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="media">
+        {seccion !== 'hoy' && <BarraFiltros rango={rango} alCambiar={setRango} />}
         {error && <p className="text-peligro-600 text-sm">{error}</p>}
         {aviso && <p className="text-exito-700 text-sm">{aviso}</p>}
 

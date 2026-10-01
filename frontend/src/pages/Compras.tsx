@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import CampoSugerido from '../components/CampoSugerido'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
-import { FiltroFechas } from '../components/Fechas'
+import BarraFiltros from '../components/BarraFiltros'
 import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
@@ -522,8 +522,9 @@ export default function Compras() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Compras" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion === 'facturas' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
+      <NavBar titulo="Compras" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina>
+        {seccion === 'facturas' && <BarraFiltros rango={rango} alCambiar={setRango} />}
         {seccion === 'facturas' && (
           <>
         {pendientes.length > 0 && (

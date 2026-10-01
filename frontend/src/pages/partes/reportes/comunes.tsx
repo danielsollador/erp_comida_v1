@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { Ayuda, BotonAyuda } from '../../../components/Ayuda'
+import { GraficoBarras, GraficoLineas } from '../../../components/Grafico'
 import { explicar } from '../../../lib/glosario'
 
 /**
@@ -7,9 +8,9 @@ import { explicar } from '../../../lib/glosario'
  *
  * POR QUE UN ARCHIVO APARTE. El modulo se reorganizo en Resumen, Ventas,
  * Perdidas e Inventario (Leider, 22-sep: "mi principal requerimiento es que
- * todo este mejor ordenado"). Cada seccion sigue el MISMO esqueleto --las
- * cifras arriba, las lecturas, y despues bloques con nombre--, y ese
- * esqueleto vive aqui para que las cuatro se lean igual.
+ * todo este mejor ordenado"). Cada seccion sigue el MISMO esqueleto --la fila
+ * de filtros, las cifras, las lecturas, y despues bloques con nombre--, y
+ * ese esqueleto vive aqui para que las cuatro se lean igual.
  */
 
 export type Dinero = (x: number, d?: number) => string
@@ -140,7 +141,6 @@ export function Vacio({ children }: { children: ReactNode }) {
   )
 }
 
-
 /**
  * La serie sin los tramos vacios de los extremos.
  *
@@ -170,4 +170,97 @@ export function recortarSerie<T extends { pedidos: number; ventas: number }>(
     serie: serie.slice(desde, hasta + 1),
     anterior: anterior.length === serie.length ? anterior.slice(desde, hasta + 1) : anterior,
   }
+}
+
+/** Un punto de una serie en el tiempo, ya con lo que se dibuja de el. */
+export type PuntoTiempo = { etiqueta: string; valor: number; detalle?: string }
+
+// Hasta aqui, barras; de aqui en adelante, linea. Un mes por dias son 31
+// barras y se leen; 90 dias ya son una tendencia, no 90 cosas que comparar.
+const MAX_BARRAS = 31
+
+/**
+ * UNA serie en el tiempo, dibujada como toca segun su largo.
+ *
+ * Con pocos tramos (un dia por horas, una semana, un mes por dias, un año por
+ * meses), BARRAS con el eje y el periodo anterior detras: cada tramo es una
+ * barra, y un tramo sin venta es un hueco que se ve. Con muchos (90 dias por
+ * dias, un año por semanas), la LINEA, que es lo que dibuja una tendencia.
+ * Antes todo era linea, y un mes con ocho dias de venta salia como una
+ * sierra que parecia volatilidad (auditoria de graficos, 30-sep).
+ *
+ * VIVE AQUI porque la usan el Resumen, Ventas y Perdidas: la misma regla en
+ * los tres, para que el mismo mes se vea igual en las tres pestañas.
+ */
+export function SerieTiempo({
+  puntos,
+  anterior,
+  nombres,
+  formato,
+  formatoDetalle,
+  alto = 220,
+  color = 'var(--color-neutral-900)',
+  referencia,
+  pie,
+}: {
+  puntos: PuntoTiempo[]
+  /** El periodo anterior, tramo a tramo. Solo si mide lo mismo que `puntos`. */
+  anterior?: number[]
+  nombres?: { actual: string; anterior: string }
+  /** Para el eje: corto. */
+  formato: (n: number) => string
+  /** Para el globo: entero. */
+  formatoDetalle?: (n: number) => string
+  alto?: number
+  color?: string
+  /** El promedio por tramo, con su rotulo. Solo en barras. */
+  referencia?: { valor: number; texto: string }
+  pie?: ReactNode
+}) {
+  const conAnterior = anterior != null && anterior.length === puntos.length
+  const enBarras = puntos.length <= MAX_BARRAS
+  const etiquetas = useMemo(() => puntos.map((p) => p.etiqueta), [puntos])
+  // El eje con centavos cuando la escala es chica: con el formato corto (sin
+  // decimales) un eje de $0 a $1,20 decia "$1 $1 $1 $0 $0".
+  const mayor = Math.max(...puntos.map((p) => p.valor), ...(conAnterior ? anterior : [0]), 0)
+  const formatoEje = mayor < 10 && formatoDetalle ? formatoDetalle : formato
+  if (puntos.length === 0) {
+    return <p className="text-sm text-neutral-400 py-8 text-center">Sin datos para dibujar.</p>
+  }
+  if (enBarras) {
+    return (
+      <>
+        <GraficoBarras
+          alto={alto}
+          ejeY
+          formato={formatoEje}
+          datos={puntos.map((p) => ({ etiqueta: p.etiqueta, valor: p.valor, detalle: p.detalle, color }))}
+          anterior={conAnterior ? anterior : undefined}
+          nombres={nombres}
+          referencia={referencia}
+        />
+        {pie && <p className="mt-1.5 text-right text-[11px] text-neutral-400">{pie}</p>}
+      </>
+    )
+  }
+  return (
+    <GraficoLineas
+      alto={alto}
+      etiquetas={etiquetas}
+      formato={formatoEje}
+      formatoDetalle={formatoDetalle}
+      series={[
+        { nombre: nombres?.actual ?? 'Este período', color, valores: puntos.map((p) => p.valor), relleno: true },
+        ...(conAnterior
+          ? [{ nombre: nombres?.anterior ?? 'Período anterior', color: 'var(--color-neutral-400)', valores: anterior, punteada: true }]
+          : []),
+      ]}
+      pie={pie}
+    />
+  )
+}
+
+/** "El mes pasado" -> "El mes pasado"; "ayer" -> "Ayer". */
+export function capitalizar(texto: string): string {
+  return texto ? `${texto[0].toUpperCase()}${texto.slice(1)}` : texto
 }

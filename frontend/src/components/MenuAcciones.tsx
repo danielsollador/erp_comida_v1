@@ -25,9 +25,17 @@ export default function MenuAcciones({
   opciones,
   encabezado,
   disparador,
+  alinear = 'derecha',
 }: {
   etiqueta: string
   opciones: Opcion[]
+  /**
+   * De que lado del disparador cuelga el panel. El "⋯" de una fila esta a
+   * la derecha de la pantalla y el panel se abre hacia la izquierda; una
+   * pastilla de filtro esta a la izquierda y el panel tiene que abrirse
+   * hacia la derecha, o se sale por el borde.
+   */
+  alinear?: 'derecha' | 'izquierda'
   /** Algo que se elige de un toque y no cierra el menu, como el color. */
   encabezado?: ReactNode
   /**
@@ -80,12 +88,15 @@ export default function MenuAcciones({
       {abierto && (
         <div
           role="menu"
-          className="vp-menu absolute right-0 top-full mt-1.5 z-30 min-w-56 max-h-[60vh] overflow-y-auto p-1"
+          className={`vp-menu absolute top-full mt-1.5 z-30 min-w-56 max-h-[60vh] overflow-y-auto p-1 ${
+            alinear === 'izquierda' ? 'left-0' : 'right-0'
+          }`}
         >
           {encabezado}
-          {opciones.map((o) => (
+          {opciones.map((o, i) => (
             <button
-              key={o.texto}
+              // Con el indice: dos productos pueden llamarse igual.
+              key={`${i}-${o.texto}`}
               role={o.marcada === undefined ? 'menuitem' : 'menuitemradio'}
               aria-checked={o.marcada}
               onClick={() => {

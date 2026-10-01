@@ -1,19 +1,15 @@
 import { useMemo, useState } from 'react'
 import { nombre } from '../../../lib/palabras'
 import { Ayuda } from '../../../components/Ayuda'
-import {
-  BarrasGanancia,
-  GraficoBarras,
-  GraficoDona,
-  GraficoLineas,
-  MapaCalor,
-  PALETA_CATEGORICA,
-} from '../../../components/Grafico'
+import { BarrasGanancia, GraficoBarras, GraficoDona, MapaCalor, PALETA_CATEGORICA } from '../../../components/Grafico'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { Filtros, Seccion } from '../../../components/ui'
 import { explicar } from '../../../lib/glosario'
 import type { ParCombo, ProductoVendido, ReporteCombos, ReporteResumen } from '../../../lib/types'
-import { Bloque, DIA_LARGO, Vacio, recortarSerie, type Dinero } from './comunes'
+import { Bloque, DIA_LARGO, SerieTiempo, Vacio, capitalizar, recortarSerie, type Dinero } from './comunes'
+
+/** Un cambio de filtro pedido desde un grafico: tocar un producto, una categoria. */
+export type CambioFiltro = { c?: string; p?: string }
 
 /**
  * La seccion Ventas: cuando se vende, que se vende y que se vende junto.
@@ -22,6 +18,11 @@ import { Bloque, DIA_LARGO, Vacio, recortarSerie, type Dinero } from './comunes'
  * el Resumen repetia parte de las dos primeras. Ahora es UNA seccion en tres
  * bloques con nombre, en el orden en que se pregunta: primero cuando, luego
  * que, luego con que.
+ *
+ * SE BAJA TOCANDO. Una categoria en "que parte es cada una" o un producto en
+ * "cuanto deja cada uno" se tocan y la pantalla entera se queda con eso: es
+ * el mismo filtro de la fila de arriba, puesto desde el grafico. Con un
+ * producto elegido, el reparto por categoria no tiene de que hablar y se va.
  */
 export default function Ventas({
   datos,
@@ -31,6 +32,7 @@ export default function Ventas({
   fmt,
   paso,
   alCambiarPaso,
+  alFiltrar,
 }: {
   datos: ReporteResumen
   combos: ReporteCombos | null
@@ -40,6 +42,7 @@ export default function Ventas({
   /** El grano elegido: 'auto' | 'dia' | 'semana' | 'mes'. */
   paso: string
   alCambiarPaso: (id: string) => void
+  alFiltrar: (cambios: CambioFiltro) => void
 }) {
   // Los hooks antes de cualquier salida temprana.
   const ordenProductos = useOrden<ProductoVendido>({
@@ -57,6 +60,10 @@ export default function Ventas({
   const [medida, setMedida] = useState<'pedidos' | 'ventas'>('pedidos')
 
   const ant = datos.anterior
+  const filtro = datos.filtro
+  const de = filtro ? filtro.producto || filtro.categoria : ''
+  const unProducto = filtro?.producto_id != null
+  const unaCategoria = !unProducto && filtro?.categoria_id != null
 
   // Recorta los tramos vacios de los extremos (ver `comunes.recortarSerie`).
   const { serie, anterior: serieAnterior } = useMemo(
@@ -68,6 +75,7 @@ export default function Ventas({
     (m, p) => (p.pedidos > 0 && (!m || p.ventas > m.ventas) ? p : m),
     null,
   )
+  const promedioTramo = serie.length > 0 ? datos.ventas / serie.length : 0
 
   // ── Cuando: el mapa y los dias ──
   const conVentas = datos.por_dia_semana.filter((d) => d.pedidos > 0)
@@ -75,6 +83,9 @@ export default function Ventas({
     (m, d) => (!m || (d.promedio ?? 0) > (m.promedio ?? 0) ? d : m),
     null,
   )
+  const diasConPromedio = datos.por_dia_semana.filter((d) => d.promedio != null && d.pedidos > 0)
+  const promedioDia =
+    diasConPromedio.length > 0 ? diasConPromedio.reduce((t, d) => t + (d.promedio ?? 0), 0) / diasConPromedio.length : 0
   const porHora = new Map<number, { pedidos: number; ventas: number }>()
   for (const c of datos.calor) {
     const h = porHora.get(c.hora) ?? { pedidos: 0, ventas: 0 }
@@ -91,25 +102,25 @@ export default function Ventas({
 
   // ── Que ──
   const sinReceta = datos.top_productos.filter((p) => p.sin_receta)
+  const totalCategorias = datos.por_categoria.reduce((t, g) => t + g.ventas, 0)
 
   return (
     <>
       {/* ── 1. Cuando se vende ─────────────────────────────────────────── */}
-      <Bloque titulo="Cuándo se vende" descripcion="La hora es la de tomar el pedido, no la de cobrarlo.">
+      <Bloque titulo={de ? `Cuándo se vende ${de}` : 'Cuándo se vende'} descripcion="La hora es la de tomar el pedido, no la de cobrarlo.">
         {serie.length > 0 ? (
           <Seccion
             titulo={`Ventas por ${datos.granularidad}`}
             ayuda={
               ant
-                ? `La línea punteada es ${ant.etiqueta}, tramo a tramo: la misma hora, el mismo día de la semana.`
+                ? `En gris, ${ant.etiqueta}, tramo a tramo: la misma hora, el mismo día de la semana. La línea punteada es el promedio por ${datos.granularidad}.`
                 : undefined
             }
             /* EL GRANO LO ELIGE EL DUEÑO. El automatico mira el largo del
                rango y casi siempre acierta, pero "casi" no sirve cuando lo
-               que quieres ver es justo el dia: un rango de nueve meses se
-               dibujaba por semanas y no habia forma de bajarlo (Leider,
-               24-sep). Va en la esquina de la tarjeta, que es donde se busca
-               un ajuste del grafico y no una accion de la pantalla. */
+               que quieres ver es justo el dia (Leider, 24-sep). Va en la
+               esquina de la tarjeta, que es donde se busca un ajuste del
+               grafico y no una accion de la pantalla. */
             accion={
               <Filtros
                 tamano="chico"
@@ -124,29 +135,18 @@ export default function Ventas({
               />
             }
           >
-            <GraficoLineas
+            <SerieTiempo
               alto={240}
-              etiquetas={serie.map((p) => p.etiqueta)}
               formato={corto}
               formatoDetalle={(n) => dinero(n)}
-              series={[
-                {
-                  nombre: 'Este período',
-                  color: 'var(--color-neutral-900)',
-                  valores: serie.map((p) => p.ventas),
-                  relleno: true,
-                },
-                ...(serieAnterior.length === serie.length && ant
-                  ? [
-                      {
-                        nombre: `${ant.etiqueta[0].toUpperCase()}${ant.etiqueta.slice(1)}`,
-                        color: 'var(--color-neutral-400)',
-                        valores: serieAnterior.map((p) => p.ventas),
-                        punteada: true,
-                      },
-                    ]
-                  : []),
-              ]}
+              puntos={serie.map((p) => ({
+                etiqueta: p.etiqueta,
+                valor: p.ventas,
+                detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
+              }))}
+              anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.ventas) : undefined}
+              nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
+              referencia={serie.length > 1 ? { valor: promedioTramo, texto: 'promedio' } : undefined}
               pie={
                 mejor
                   ? `mejor tramo: ${mejor.etiqueta}, ${dinero(mejor.ventas)} en ${mejor.pedidos} pedido(s)`
@@ -155,7 +155,7 @@ export default function Ventas({
             />
           </Seccion>
         ) : (
-          <Vacio>Todavía no hay ventas en este período.</Vacio>
+          <Vacio>Todavía no hay ventas {de ? `de ${de} ` : ''}en este período.</Vacio>
         )}
 
         {unDia ? (
@@ -202,19 +202,22 @@ export default function Ventas({
                   titulo="Qué día vendes más"
                   ayuda={
                     <Ayuda explica={explicar('kpi.dia_tipico')} titulo="Día típico">
-                      Lo que vende un día típico de cada uno, no la suma de todos.
+                      Lo que vende un día típico de cada uno, no la suma de todos. La línea punteada es el promedio.
                     </Ayuda>
                   }
                 >
                   <GraficoBarras
                     estirar
-                    formato={corto}
+                    // Con centavos cuando los dias tipicos son chicos: "$0 $0
+                    // $1 $1" no compara nada.
+                    formato={(promedioDia < 10 ? dinero : corto) as (n: number) => string}
                     datos={datos.por_dia_semana.map((d) => ({
                       etiqueta: d.nombre,
                       valor: d.promedio ?? 0,
                       detalle: `${d.pedidos} pedidos en total`,
                     }))}
                     resaltar={(d) => d.etiqueta === mejorDia?.nombre}
+                    referencia={diasConPromedio.length > 1 ? { valor: promedioDia, texto: 'promedio' } : undefined}
                   />
                   {mejorDia && conVentas.length > 1 && (
                     <p className="text-xs text-neutral-500 mt-2">
@@ -244,12 +247,15 @@ export default function Ventas({
       </Bloque>
 
       {/* ── 2. Que se vendio ──────────────────────────────────────────── */}
-      <Bloque titulo="Qué se vendió" descripcion="Ordenado por ingresos; toca una columna para ordenar por otra.">
+      <Bloque
+        titulo={unProducto ? `Qué dejó ${de}` : unaCategoria ? `Qué se vendió de ${de}` : 'Qué se vendió'}
+        descripcion={unProducto ? undefined : 'Ordenado por ingresos. Toca un producto para ver solo ese.'}
+      >
         {datos.top_productos.length === 0 ? (
-          <Vacio>Todavía no se vendió nada en este período.</Vacio>
+          <Vacio>Todavía no se vendió nada {de ? `de ${de} ` : ''}en este período.</Vacio>
         ) : (
           <>
-            <div className="grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-3">
+            <div className={`grid grid-cols-1 gap-3 ${unProducto ? '' : 'xl:grid-cols-[3fr_2fr]'}`}>
               <Seccion
                 titulo="Cuánto vende y cuánto deja cada producto"
                 ayuda="Verde, lo que te queda de cada venta después de pagar la mercancía."
@@ -261,7 +267,9 @@ export default function Ventas({
                     ingreso: p.ingresos,
                     costo: p.sin_receta ? null : p.costo,
                     unidades: p.unidades,
+                    id: p.producto_id,
                   }))}
+                  alTocar={unProducto ? undefined : (f) => alFiltrar({ p: String(f.id) })}
                 />
                 {/* Sin receta no hay costo: la barra va rayada y la fila dice
                     "sin receta". Aqui, cuantos son y donde se arregla. */}
@@ -276,12 +284,33 @@ export default function Ventas({
                   </p>
                 )}
               </Seccion>
-              {datos.por_categoria.length > 0 && (
-                <Seccion titulo="Qué parte es comida, bebida, envíos" ayuda="Por la categoría de cada producto en el menú.">
+              {/* El reparto: por categoria del menu; dentro de una categoria,
+                  por producto. Con un solo producto no hay reparto. */}
+              {!unProducto && unaCategoria && datos.top_productos.length > 0 && (
+                <Seccion titulo={`Qué parte es cada producto de ${de}`} ayuda="Sobre lo vendido de la categoría. Toca uno para verlo solo.">
                   <GraficoDona
                     formato={dinero}
                     centro={{
-                      valor: dinero(datos.por_categoria.reduce((t, g) => t + g.ventas, 0)),
+                      valor: dinero(datos.ventas),
+                      texto: `en ${datos.top_productos.length} ${datos.top_productos.length === 1 ? 'producto' : 'productos'}`,
+                    }}
+                    partes={datos.top_productos.map((p, i) => ({
+                      nombre: p.nombre,
+                      valor: p.ingresos,
+                      detalle: `${p.unidades} ${p.unidades === 1 ? 'unidad' : 'unidades'}`,
+                      color: PALETA_CATEGORICA[(i + 1) % PALETA_CATEGORICA.length],
+                      id: p.producto_id,
+                    }))}
+                    alTocar={(parte) => alFiltrar({ p: String(parte.id) })}
+                  />
+                </Seccion>
+              )}
+              {!unProducto && !unaCategoria && datos.por_categoria.length > 0 && (
+                <Seccion titulo="Qué parte es comida, bebida, envíos" ayuda="Por la categoría de cada producto en el menú. Toca una para ver solo esa.">
+                  <GraficoDona
+                    formato={dinero}
+                    centro={{
+                      valor: dinero(totalCategorias),
                       texto: `vendidos en ${datos.por_categoria.length} categoría${datos.por_categoria.length === 1 ? '' : 's'}`,
                     }}
                     partes={datos.por_categoria.map((g, i) => ({
@@ -289,7 +318,9 @@ export default function Ventas({
                       valor: g.ventas,
                       detalle: `${g.pedidos} ${g.pedidos === 1 ? 'pedido' : 'pedidos'}`,
                       color: PALETA_CATEGORICA[(i + 1) % PALETA_CATEGORICA.length],
+                      id: g.id,
                     }))}
+                    alTocar={(parte) => alFiltrar({ c: String(parte.id), p: '' })}
                   />
                 </Seccion>
               )}
@@ -313,6 +344,9 @@ export default function Ventas({
                       <tr key={p.nombre} className="border-t border-neutral-100">
                         <td className="py-2 font-medium">
                           {p.nombre}
+                          {!filtro && p.categoria && (
+                            <span className="ml-2 text-xs font-normal text-neutral-400">{p.categoria}</span>
+                          )}
                           {p.sin_receta && (
                             <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
                               sin receta
@@ -351,10 +385,13 @@ export default function Ventas({
 
       {/* ── 3. Que se vende junto ─────────────────────────────────────── */}
       {combos && (
-        <Bloque titulo="Qué se vende junto" descripcion="Sobre los pedidos cobrados del período.">
+        <Bloque
+          titulo={de ? `Qué se vende junto con ${de}` : 'Qué se vende junto'}
+          descripcion={de ? `Sobre los pedidos cobrados del período que llevan ${de}.` : 'Sobre los pedidos cobrados del período.'}
+        >
           {!combos.suficientes_datos ? (
             <Vacio>
-              Llevas {combos.pedidos_analizados} pedido(s) cobrados en este período. Con unos cuantos
+              Llevas {combos.pedidos_analizados} pedido(s) cobrados {de ? `con ${de} ` : ''}en este período. Con unos cuantos
               más el sistema puede decirte qué productos salen juntos y qué ofrecer en caja.
             </Vacio>
           ) : (
