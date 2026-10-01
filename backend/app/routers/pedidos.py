@@ -1076,8 +1076,42 @@ async def editar_pedido(
             status_code=409, detail="No alcanza el inventario para: " + "; ".join(faltantes)
         )
 
+    # -- a cocina o de vitrina, lo que YA ESTABA en la comanda
+    #
+    # Leider (2-oct): "por algun error pude omitir enviar algo a cocina y debo
+    # modificarlo" al editar. Las mismas reglas que `cambiar_cocina`: lo que
+    # pasa a cocina vuelve a la cola sin hacer; a vitrina solo lo que la
+    # cocina no termino (una comanda en el sarten ni siquiera se abre, ver
+    # `_revisar_que_se_puede_editar`). No mueve plata ni inventario: el
+    # renglon ya estaba vendido y descontado. Si el POS no dice nada
+    # (`a_cocina` en None), el renglon queda como estaba.
+    mandar_a_cocina: List[models.PedidoItem] = []
+    mandar_a_vitrina: List[models.PedidoItem] = []
+    for clave, filas in actuales.items():
+        if clave not in pedidas or ejemplo[clave].a_cocina is None:
+            continue
+        fila = filas[0]
+        va_hoy = fila.a_cocina is not False
+        quiere = bool(ejemplo[clave].a_cocina)
+        if quiere == va_hoy:
+            continue
+        if quiere:
+            mandar_a_cocina.append(fila)
+        else:
+            if fila.preparado:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"La cocina ya terminó {fila.nombre} de la comanda "
+                    f"#{pedido.numero}: no pasa a vitrina.",
+                )
+            mandar_a_vitrina.append(fila)
+
     # -- que cambio, en palabras, antes de tocar nada
     cambios = []
+    if mandar_a_cocina:
+        cambios.append("a cocina: " + ", ".join(f"{f.cantidad}x {f.nombre}" for f in mandar_a_cocina))
+    if mandar_a_vitrina:
+        cambios.append("de vitrina: " + ", ".join(f"{f.cantidad}x {f.nombre}" for f in mandar_a_vitrina))
     for clave in list(actuales) + [c for c in pedidas if c not in actuales]:
         antes = sum(f.cantidad for f in actuales.get(clave, []))
         despues = pedidas.get(clave, 0)
@@ -1120,6 +1154,12 @@ async def editar_pedido(
             if cantidad > antes and fila.a_cocina is not False:
                 fila.preparado = False
             fila.cantidad = cantidad
+            if fila in mandar_a_cocina:
+                fila.a_cocina = True
+                fila.preparado = False
+            elif fila in mandar_a_vitrina:
+                fila.a_cocina = False
+                fila.preparado = True
         else:
             item = ejemplo[clave]
             precio, costo = _precio_y_costo(clave)
@@ -1263,7 +1303,7 @@ async def editar_pedido(
     db.expire(pedido, ["items"])
     pedido.a_cocina = any(i.a_cocina is not False for i in pedido.items)
     if any(not i.preparado for i in pedido.items):
-        if cocina_ya_habia_terminado:
+        if cocina_ya_habia_terminado or mandar_a_cocina:
             pedido.cocinando_desde = None
             pedido.cocinando_por_id = None
             pedido.listo_en = None

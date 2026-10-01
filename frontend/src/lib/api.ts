@@ -368,7 +368,8 @@ export const api = {
       nombre_libre?: string
       precio_libre?: number
       cortesia?: boolean
-      // Lo nuevo: si va a cocina. Sin decirlo, lo que sugiera su categoría.
+      // Si va a cocina. Lo nuevo sin decirlo toma lo que sugiera su
+      // categoría; lo que ya estaba sin decirlo queda como estaba.
       a_cocina?: boolean
     }[],
     extra?: {

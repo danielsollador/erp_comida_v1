@@ -515,15 +515,31 @@ export default function POS() {
     // cajera cambia lo que haga falta: la empanada que ya está en la vitrina
     // no se vuelve a hacer.
     //
-    // Editando, solo se pregunta por lo NUEVO: lo que ya estaba conserva lo
-    // que se decidio al tomarlo.
-    const yaEstaban = new Set(enEdicion?.items.map((i) => i.variante_id) ?? [])
-    const renglones = Object.values(carrito).filter((c) => !yaEstaban.has(c.variante.id))
-    if (renglones.length === 0) {
+    // Editando se listan TODOS los renglones, cada uno con lo que se decidio
+    // al tomarlo, y se puede cambiar: un toque de "vitrina" por error dejaba
+    // a la cocina sin ver unos pastelitos y no habia donde corregirlo al
+    // guardar (Leider, 2-oct). Lo que la cocina ya termino queda fijo.
+    if (Object.keys(carrito).length === 0) {
       void mandarComanda({})
       return
     }
-    setDestinos(Object.fromEntries(renglones.map((c) => [c.variante.id, vaACocinaPorDefecto(c.variante.id)])))
+    setDestinos(
+      Object.fromEntries(
+        Object.values(carrito).map((c) => [c.variante.id, cocinaActualDe(c.variante.id) ?? vaACocinaPorDefecto(c.variante.id)]),
+      ),
+    )
+  }
+
+  /** Editando: si este renglon YA ESTABA en el pedido, si iba a cocina. */
+  function cocinaActualDe(varianteId: number): boolean | undefined {
+    const fila = enEdicion?.items.find((i) => i.variante_id === varianteId)
+    return fila ? fila.a_cocina !== false : undefined
+  }
+
+  /** Editando: la cocina ya hizo este renglon, asi que su destino no se toca. */
+  function cocinaLoTermino(varianteId: number): boolean {
+    const fila = enEdicion?.items.find((i) => i.variante_id === varianteId)
+    return Boolean(fila && fila.a_cocina !== false && fila.preparado)
   }
 
   /** Los renglones de la comanda tal como los pide el servidor. */
@@ -533,7 +549,9 @@ export default function POS() {
         variante_id: c.variante.id as number | null,
         cantidad: c.cantidad,
         cortesia: c.cortesia,
-        a_cocina: destinoDe[c.variante.id] ?? vaACocinaPorDefecto(c.variante.id),
+        // Sin decision en el cuadro: lo que ya tenia si estaba, si no lo que
+        // sugiere su categoria.
+        a_cocina: destinoDe[c.variante.id] ?? cocinaActualDe(c.variante.id) ?? vaACocinaPorDefecto(c.variante.id),
       })),
       ...libres.map((l) =>
         l.variante_id !== undefined
@@ -590,7 +608,7 @@ export default function POS() {
     // un error. Se cierra la edicion y se vuelve a los pedidos. Antes el
     // servidor contestaba "no hay ningun cambio" y la pantalla se quedaba
     // trancada en la comanda con el pedido adentro.
-    if (quedoIgual(enEdicion)) {
+    if (quedoIgual(enEdicion, destinoDe)) {
       cerrarSinCambios()
       return
     }
@@ -628,9 +646,12 @@ export default function POS() {
   }
 
   /** Lo que tiene la comanda, contado igual que los renglones del pedido. */
-  function huellaDeLaComanda(): string {
+  function huellaDeLaComanda(destinoDe: Record<number, boolean>): string {
     const partes: string[] = []
-    for (const c of Object.values(carrito)) partes.push(`v${c.variante.id}:${c.cortesia ? 1 : 0}:${c.cantidad}`)
+    for (const c of Object.values(carrito)) {
+      const cocina = destinoDe[c.variante.id] ?? cocinaActualDe(c.variante.id) ?? vaACocinaPorDefecto(c.variante.id)
+      partes.push(`v${c.variante.id}:${c.cortesia ? 1 : 0}:${c.cantidad}:${cocina ? 1 : 0}`)
+    }
     const sueltos = new Map<string, number>()
     for (const l of libres) {
       const k = l.variante_id !== undefined ? `e${l.variante_id}:${l.precio.toFixed(2)}` : `l${l.nombre}:${l.precio.toFixed(2)}`
@@ -648,14 +669,14 @@ export default function POS() {
       if (i.variante_id === null) sumar(`l${i.nombre}:${i.precio_unitario.toFixed(2)}`, i.cantidad)
       else if (categoriaEnvios && categoriaDeVariante.get(i.variante_id) === categoriaEnvios.id)
         sumar(`e${i.variante_id}:${i.precio_unitario.toFixed(2)}`, i.cantidad)
-      else partes.push(`v${i.variante_id}:${i.cortesia ? 1 : 0}:${i.cantidad}`)
+      else partes.push(`v${i.variante_id}:${i.cortesia ? 1 : 0}:${i.cantidad}:${i.a_cocina !== false ? 1 : 0}`)
     }
     for (const [k, n] of sueltos) partes.push(`${k}:${n}`)
     return partes.sort().join('|')
   }
 
-  function quedoIgual(pedido: Pedido): boolean {
-    return huellaDeLaComanda() === huellaDelPedido(pedido)
+  function quedoIgual(pedido: Pedido, destinoDe: Record<number, boolean>): boolean {
+    return huellaDeLaComanda(destinoDe) === huellaDelPedido(pedido)
   }
 
   function cerrarSinCambios() {
@@ -738,6 +759,9 @@ export default function POS() {
     // El nombre recien escrito en un cuadro: `setCliente` no se ha aplicado
     // todavia cuando el cobro sale, y el estado viejo iria vacio.
     clienteAhora?: string,
+    // La propina que se queda ademas de la escrita: el vuelto que el cliente
+    // no quiso (ver `cobrarSinVuelto`).
+    propinaExtra = 0,
   ) {
     if (!cobrando) return
     setError('')
@@ -745,7 +769,7 @@ export default function POS() {
       const cobrado = await api.cobrarPedido(cobrando.id, metodo, facturar, numeroFactura, pagos, {
         descuento: Number(descuento) || 0,
         motivo_descuento: motivoDescuento,
-        propina: Number(propina) || 0,
+        propina: Math.round(((Number(propina) || 0) + propinaExtra) * 100) / 100,
         cliente: clienteAhora ?? cliente,
         punto_venta_id: puntoId,
         referencia,
@@ -821,6 +845,22 @@ export default function POS() {
     cobrar(efectivo.metodo, [
       { metodo: efectivo.metodo, monto: aCobrar, recibido: entregado, vuelto_metodo: vueltoMetodo },
     ])
+  }
+
+  /**
+   * El cliente no quiere el vuelto: "quedate con eso".
+   *
+   * Hasta ahora el cobro obligaba a decir por donde salia el vuelto, y la
+   * cajera terminaba anotando un vuelto que nunca entrego: la gaveta cerraba
+   * con un sobrante que nadie sabia explicar (Leider, 2-oct). Lo que el
+   * cliente deja es una propina: entra completo a la gaveta del metodo con
+   * que pago y se le debe al empleado, igual que la propina que se escribe
+   * a mano. No es venta, asi que no infla lo vendido ni el IVA.
+   */
+  function cobrarSinVuelto() {
+    if (!efectivo || vuelto <= 0) return
+    const monto = Math.round((aCobrar + vuelto) * 100) / 100
+    cobrar(efectivo.metodo, [{ metodo: efectivo.metodo, monto, recibido: entregado }], undefined, undefined, vuelto)
   }
 
   /**
@@ -1690,8 +1730,12 @@ export default function POS() {
 
       {destinos !== null && (
         <Modal
-          titulo={`¿Qué va a cocina? · ${clienteComanda.trim()}`}
-          ayuda="Cada renglón viene con lo que dice su categoría. Toca para cambiarlo: lo que ya está hecho en la vitrina no pasa por cocina."
+          titulo={enEdicion ? `¿Qué va a cocina? · pedido #${enEdicion.numero}` : `¿Qué va a cocina? · ${clienteComanda.trim()}`}
+          ayuda={
+            enEdicion
+              ? 'Cada renglón viene como se mandó. Toca para cambiarlo: lo que faltó mandar a cocina sale ahora. Lo que la cocina ya terminó no se cambia.'
+              : 'Cada renglón viene con lo que dice su categoría. Toca para cambiarlo: lo que ya está hecho en la vitrina no pasa por cocina.'
+          }
           onCerrar={() => setDestinos(null)}
           ancho="sm"
           pie={
@@ -1705,9 +1749,10 @@ export default function POS() {
                   const n = Object.values(destinos)
                   const aCocina = n.filter(Boolean).length
                   const vitrina = n.length - aCocina
-                  if (vitrina === 0) return 'Enviar · todo a cocina'
-                  if (aCocina === 0) return `Enviar · ${vitrina} de vitrina, nada a cocina`
-                  return `Enviar · ${aCocina} a cocina, ${vitrina} de vitrina`
+                  const verbo = enEdicion ? 'Guardar' : 'Enviar'
+                  if (vitrina === 0) return `${verbo} · todo a cocina`
+                  if (aCocina === 0) return `${verbo} · ${vitrina} de vitrina, nada a cocina`
+                  return `${verbo} · ${aCocina} a cocina, ${vitrina} de vitrina`
                 })()}
               </Boton>
             </>
@@ -1719,7 +1764,11 @@ export default function POS() {
               vitrina se marca renglon por renglon. */}
           <div className="flex gap-2 mb-3">
             <button
-              onClick={() => setDestinos(Object.fromEntries(Object.keys(destinos).map((k) => [k, true])))}
+              onClick={() =>
+                setDestinos(
+                  Object.fromEntries(Object.keys(destinos).map((k) => [k, cocinaLoTermino(Number(k)) ? destinos[Number(k)] : true])),
+                )
+              }
               className="flex-1 text-xs font-medium rounded-lg border border-neutral-200 py-2 hover:bg-neutral-50"
             >
               Todo a cocina
@@ -1728,15 +1777,17 @@ export default function POS() {
           <ul className="space-y-2">
             {Object.values(carrito).filter((c) => c.variante.id in destinos).map((c) => {
               const cocina = destinos[c.variante.id] ?? true
+              const hecho = cocinaLoTermino(c.variante.id)
               // Lo que por su categoria va a cocina y se marco de vitrina: se
               // resalta ESE renglon, que es donde suele estar el error.
-              const fueraDeLoNormal = !cocina && vaACocinaPorDefecto(c.variante.id)
+              const fueraDeLoNormal = !cocina && !hecho && vaACocinaPorDefecto(c.variante.id)
               return (
                 <li key={c.variante.id}>
                   <button
+                    disabled={hecho}
                     onClick={() => setDestinos({ ...destinos, [c.variante.id]: !cocina })}
                     aria-pressed={cocina}
-                    className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left ${
+                    className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left disabled:opacity-60 ${
                       fueraDeLoNormal
                         ? 'border-peligro-400 bg-peligro-50'
                         : cocina
@@ -1756,10 +1807,10 @@ export default function POS() {
                     </span>
                     <span
                       className={`shrink-0 text-xs font-semibold rounded-full px-2.5 py-1 ${
-                        cocina ? 'bg-aviso-500 text-white' : 'bg-neutral-800 text-white'
+                        hecho ? 'bg-exito-100 text-exito-700' : cocina ? 'bg-aviso-500 text-white' : 'bg-neutral-800 text-white'
                       }`}
                     >
-                      {cocina ? 'A cocina' : 'De vitrina'}
+                      {hecho ? 'Cocina lo terminó' : cocina ? 'A cocina' : 'De vitrina'}
                     </span>
                   </button>
                 </li>
@@ -2140,6 +2191,17 @@ export default function POS() {
                               )}
                             </button>
                           ))}
+                          {/* "Quedate con eso": no sale nada de la gaveta y
+                              lo que sobra queda como propina. */}
+                          <button
+                            onClick={cobrarSinVuelto}
+                            className="bg-exito-50 hover:bg-exito-100 text-exito-800 rounded-xl py-3 text-sm font-medium"
+                          >
+                            No quiere el vuelto
+                            <span className="block text-[11px] text-exito-700 tabular-nums">
+                              queda como propina ${vuelto.toFixed(2)}
+                            </span>
+                          </button>
                         </div>
                       </>
                     ) : (
