@@ -157,7 +157,7 @@ function PlanCuentas() {
         className="bg-white rounded-2xl border border-neutral-200 overflow-hidden"
       >
         <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+          <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
             <tr>
               <Th clave="codigo">Código</Th>
               <Th clave="nombre">Nombre</Th>
@@ -460,7 +460,7 @@ function Diario({ rango }: { rango: Rango }) {
         className="bg-white rounded-2xl border border-neutral-200 overflow-hidden"
       >
         <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+          <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
             <tr>
               <Th clave="fecha">Fecha</Th>
               <Th clave="descripcion">Descripción</Th>
@@ -514,7 +514,7 @@ function TablaCuentas({ filas }: { filas: FilaBalanceComprobacion[] }) {
   return (
     <Tabla orden={orden} glosario="balance">
     <table className="w-full text-sm">
-      <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+      <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
         <tr>
           <Th clave="cuenta">Cuenta</Th>
           <Th clave="debe" alinear="derecha">Debe</Th>

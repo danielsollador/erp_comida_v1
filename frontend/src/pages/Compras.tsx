@@ -587,7 +587,7 @@ export default function Compras() {
           className="bg-white rounded-2xl border border-neutral-200"
         >
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+            <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="fecha">Fecha</Th>
                 <Th clave="factura">Factura</Th>
@@ -985,7 +985,7 @@ export default function Compras() {
             ) : (
               <Tabla buscador={buscadorProveedores}>
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                  <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
                     <tr>
                       <Th>Nombre</Th>
                       <Th>RIF</Th>

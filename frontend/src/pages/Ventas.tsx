@@ -330,7 +330,7 @@ function Historial({
       ) : (
         <Tabla orden={orden} glosario="ventas">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+            <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="numero">#</Th>
                 <Th clave="fecha">Fecha</Th>
@@ -1039,7 +1039,7 @@ function Perdidas({ r, lista }: { r: ResumenVentas; lista: ListaVentas }) {
         ) : (
           <Tabla orden={orden} glosario="ventas_perdidas">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+              <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
                 <tr>
                   <Th clave="numero">#</Th>
                   <Th clave="fecha">Fecha</Th>

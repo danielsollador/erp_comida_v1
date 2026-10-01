@@ -590,7 +590,7 @@ export default function Inventario() {
 
         <Tabla orden={orden} glosario="inventario" className="bg-white rounded-2xl border border-neutral-200">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+            <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="nombre">Mercancía</Th>
                 <Th clave="stock" alinear="derecha">{nombre('inventario.stock')}</Th>
@@ -804,7 +804,7 @@ export default function Inventario() {
           ) : (
             <Tabla orden={ordenMermas} buscador={buscadorMermas} glosario="perdidas">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
                   <tr>
                     <Th clave="fecha">Fecha</Th>
                     <Th clave="insumo">Mercancía</Th>
@@ -1386,7 +1386,7 @@ function FichaInsumo({
                 )}
                 <Tabla orden={ordenMovimientos} glosario="movimientos" className="border border-neutral-200 rounded-xl">
                   <table className="w-full text-sm">
-                    <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                    <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
                       <tr>
                         <Th clave="fecha">Fecha</Th>
                         <Th clave="movimiento">Movimiento</Th>

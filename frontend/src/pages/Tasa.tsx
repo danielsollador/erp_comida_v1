@@ -652,7 +652,7 @@ export default function Tasa() {
                   </p>
                 </div>
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                  <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
                     <tr>
                       <th className="text-left p-3 font-medium">Billete</th>
                       <th className="text-right p-3 font-medium">Al empezar</th>
@@ -700,7 +700,7 @@ export default function Tasa() {
           </div>
           <Tabla orden={orden} glosario="tasas">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+            <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
               <tr>
                 <Th clave="fecha">Fecha</Th>
                 <Th clave="oficial" alinear="derecha">Oficial</Th>

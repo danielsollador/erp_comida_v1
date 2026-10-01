@@ -2530,7 +2530,7 @@ const ListaProductos = memo(function ListaProductos({
           const color = colorCategoria(g.categoria.id, g.categoria.color)
           return (
             <div key={g.categoria.id}>
-              <div className="sticky top-0 z-[1] flex items-center gap-2 px-4 py-1.5 bg-neutral-50 border-y border-neutral-100 text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-500">
+              <div className="sticky top-0 z-[1] flex items-center gap-2 px-4 py-1.5 bg-neutral-500/8 border-y border-neutral-100 text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-500">
                 <span className={`w-2 h-2 rounded-full ${color.dot}`} />
                 {g.categoria.nombre}
               </div>

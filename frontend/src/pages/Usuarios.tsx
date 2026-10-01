@@ -120,7 +120,7 @@ export function PanelUsuarios({ seccion }: { seccion: 'usuarios' | 'roles' }) {
         >
           <Tabla orden={orden} glosario="usuarios">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+              <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
                 <tr>
                   <Th clave="usuario">Persona</Th>
                   <Th clave="rol">Rol</Th>
