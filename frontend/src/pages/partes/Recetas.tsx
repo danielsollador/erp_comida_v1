@@ -180,10 +180,6 @@ export default function Recetas({
       rendimientoDe: '',
       rendimientoSalen: '',
       modoRendimiento: false,
-      // EN GRAMOS Y MILILITROS POR DEFECTO: una receta rara vez lleva un
-      // kilo de algo (Leider, 1-oct). La mercancia se sigue comprando y
-      // guardando en kilos y litros; esto es solo como se escribe aqui.
-      enChica: esGrande(ingredientes.find((i) => i.id === x.ingrediente_id)?.unidad ?? ''),
     }))
     setFilas(iniciales)
     setHuellaGuardada(huella(iniciales))
@@ -731,7 +727,10 @@ function RenglonReceta({
   // escribe en la chica se guarda convertido a la de la mercancia, asi el
   // costo y el inventario no se enteran del cambio.
   const otra = OTRA_UNIDAD[ing.unidad]
-  const enChica = Boolean(otra && f.enChica)
+  // Sin decision escrita, en la chica: gramos y mililitros por defecto
+  // (Leider, 1-oct). Asi vale tambien para las recetas que se cargan antes
+  // de que llegue la lista de mercancia.
+  const enChica = Boolean(otra && (f.enChica ?? esGrande(ing.unidad)))
   const factor = enChica ? (esGrande(ing.unidad) ? 1000 : 1 / 1000) : 1
   const unidadVista = enChica ? otra : ing.unidad
   const valorVisto = f.cantidad_por_unidad === '' ? '' : sinRuido((Number(f.cantidad_por_unidad) || 0) * factor)
