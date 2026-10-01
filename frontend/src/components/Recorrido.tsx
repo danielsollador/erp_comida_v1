@@ -57,20 +57,25 @@ function sinMovimiento(): boolean {
  *             se tiñe entero.
  *   metro     una linea gruesa como el mapa del metro, paradas en anillo y el
  *             estado en una pastilla.
+ *   mixto     la linea arriba, con su punto que la recorre, y debajo de cada
+ *             punto una capsula con el nombre y como esta (Leider, 1-oct:
+ *             "un mix de linea con capsulas").
  * Se elige con `?estilo=capsulas` (queda guardado en este navegador) o con
  * el selector que solo aparece en desarrollo. Cuando Leider escoja, se deja
  * uno y se borra lo demas.
  */
-export type EstiloRecorrido = 'linea' | 'capsulas' | 'metro'
+export type EstiloRecorrido = 'linea' | 'capsulas' | 'metro' | 'mixto'
 const ESTILOS: { id: EstiloRecorrido; texto: string }[] = [
   { id: 'linea', texto: 'Línea' },
   { id: 'capsulas', texto: 'Cápsulas' },
   { id: 'metro', texto: 'Metro' },
+  { id: 'mixto', texto: 'Mixto' },
 ]
 const CLAVE_ESTILO = 'vp-estilo-recorrido'
 
 function estiloInicial(): EstiloRecorrido {
-  const valido = (v: string | null): v is EstiloRecorrido => v === 'linea' || v === 'capsulas' || v === 'metro'
+  const valido = (v: string | null): v is EstiloRecorrido =>
+    v === 'linea' || v === 'capsulas' || v === 'metro' || v === 'mixto'
   try {
     const pedido = new URLSearchParams(window.location.search).get('estilo')
     if (valido(pedido)) {
@@ -82,7 +87,7 @@ function estiloInicial(): EstiloRecorrido {
   } catch {
     /* sin almacenamiento: el de siempre */
   }
-  return 'capsulas'
+  return 'mixto'
 }
 
 /** Si esta portada se pinta quieta, ya en su estado final. */
@@ -193,7 +198,9 @@ export default function Recorrido({
 
       {estilo === 'capsulas' && <Capsulas items={items} />}
       {estilo === 'metro' && <Metro items={items} />}
-      {estilo === 'linea' && (
+      {/* Mixto es la misma linea: lo que cambia (la capsula bajo cada punto)
+          lo pone `.vp-estilo-mixto` en index.css. */}
+      {(estilo === 'linea' || estilo === 'mixto') && (
 
       <ol
         className="vp-recorrido-pista relative mt-4 lg:mt-5 bajo:mt-3 grid grid-cols-1 sm:grid-flow-col sm:auto-cols-fr gap-1 sm:gap-0"
