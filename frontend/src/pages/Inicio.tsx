@@ -259,7 +259,7 @@ export default function Inicio() {
         <Recorrido datos={recorrido} modulos={rutas} operar={estado.puede.operar} />
         {rutas.includes('/reportes') && <FilaReportes dias={recorrido?.ultimos_7_dias} />}
 
-        {/* ── Zona de contadores (antes "Para el contador"; Leider, 1-oct): sin lamina ni fichas. Una linea de enlaces
+        {/* ── Zona contable (antes "Para el contador"; Leider, 1-oct): sin lamina ni fichas. Una linea de enlaces
             con su icono, en gris: se ve que esta y se ve que es otra cosa
             (Leider, 30-sep: secundario, no escondido, y no con el mismo
             estilo). El titulo lleva a la pagina que explica que se arma solo. */}
@@ -267,7 +267,7 @@ export default function Inicio() {
           <div className="pt-3 border-t border-[var(--vp-textura)]">
             <div className="flex items-baseline justify-between gap-3 mb-1">
               <Link to={CONTADOR.to} className="vp-etiqueta hover:text-neutral-700">
-                {segun({ sencillo: 'Zona de contadores', tecnico: 'Contabilidad y fiscal' })}
+                {segun({ sencillo: 'Zona contable', tecnico: 'Contabilidad y fiscal' })}
               </Link>
               <span className="text-xs text-neutral-400">
                 {segun({ sencillo: 'Se arma solo con lo de arriba', tecnico: 'Asientos automáticos desde las operaciones' })}
@@ -346,8 +346,9 @@ function Tarjeta({
   return (
     <Link
       to={to}
-      onPointerMove={principal ? seguir : undefined}
-      onPointerLeave={principal ? soltar : undefined}
+      // La de Cocina tambien: su luz nace con el cursor (Leider, 1-oct).
+      onPointerMove={principal || icono === 'cocina' ? seguir : undefined}
+      onPointerLeave={principal || icono === 'cocina' ? soltar : undefined}
       className={`vp-pulsable group relative overflow-hidden rounded-3xl p-5 lg:p-6 bajo:p-4 pc:p-6 min-h-[8rem] sm:min-h-[clamp(8.5rem,19vh,17rem)] bajo:min-h-[clamp(6.5rem,16vh,20rem)] pc:min-h-[9.5rem] h-full flex flex-col gap-3 lg:gap-4 bajo:gap-3 pc:gap-3 ${
         principal
           ? 'bg-neutral-900 text-white shadow-[0_2px_6px_-2px_rgb(23_24_27/0.16),0_18px_40px_-18px_rgb(23_24_27/0.45)]'
@@ -361,6 +362,12 @@ function Tarjeta({
           style={{ background: 'var(--vp-acento)' }}
         />
       )}
+      {/* Cocina: una luz calida que en reposo no esta y aparece detras del
+          fuego con el cursor encima, siguiendolo. Mas discreta que la del
+          punto de venta, que es la ficha principal. */}
+      {!principal && icono === 'cocina' && (
+        <span aria-hidden className="vp-luz vp-luz-cocina absolute -left-10 -top-10 w-40 h-40 lg:w-52 lg:h-52 rounded-full blur-2xl" />
+      )}
       <span
         className={`vp-tarjeta-icono ${principal ? 'vp-tarjeta-icono-principal' : ''} relative w-11 h-11 lg:w-13 lg:h-13 bajo:w-11 bajo:h-11 pc:w-12 pc:h-12 rounded-[0.9rem] grid place-items-center ${
           principal
@@ -368,7 +375,11 @@ function Tarjeta({
             : 'bg-acento-50 text-acento-600'
         }`}
       >
-        <Icono nombre={icono} size={22} className="lg:w-7 lg:h-7 bajo:w-6 bajo:h-6 pc:w-6 pc:h-6" />
+        <Icono
+          nombre={icono}
+          size={22}
+          className={`lg:w-7 lg:h-7 bajo:w-6 bajo:h-6 pc:w-6 pc:h-6 ${icono === 'cocina' ? 'vp-llama' : ''}`}
+        />
       </span>
       <span className="relative">
         <span className="block font-display font-semibold leading-tight tracking-[-0.015em] text-lg lg:text-[clamp(1.25rem,1.6vw,1.55rem)] pc:text-xl">

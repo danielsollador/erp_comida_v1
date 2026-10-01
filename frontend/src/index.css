@@ -1748,7 +1748,7 @@ html.vp-ligero .vp-fila-reportes:hover { background: var(--vp-superficie); }
 }
 html.vp-ligero .vp-fila-reportes-icono { transition: none; }
 
-/* Los botones de la Zona de contadores: el cuadrito se refuerza con un marco
+/* Los botones de la Zona contable: el cuadrito se refuerza con un marco
    al pasar el cursor, como los del recorrido y el de Reportes (Leider, 1-oct).
    En tinta: es una zona neutra. */
 .vp-contador-icono { transition: box-shadow 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), color 0.22s; }
@@ -1807,3 +1807,24 @@ html.vp-ligero .vp-tarjeta-icono { transition: none; }
   .vp-luz { transition: none; }
 }
 html.vp-ligero .vp-luz { transition: none; transform: none; will-change: auto; }
+
+/* Cocina: la luz calida que aparece con el cursor y sigue al raton (usa las
+   mismas --luz-x/--luz-y que el punto de venta), y la llama que se mueve como
+   fuego mientras el cursor esta encima. En la tablet, quieta. */
+.vp-luz-cocina { background: var(--color-acento-400); opacity: 0; }
+@media (hover: hover) {
+  .group:hover > .vp-luz-cocina { opacity: 0.22; }
+  html[data-tema="oscuro"] .group:hover > .vp-luz-cocina { opacity: 0.16; }
+}
+@keyframes vp-llama {
+  0%, 100% { transform: rotate(0deg) scale(1, 1); }
+  25% { transform: rotate(-5deg) scale(0.97, 1.05); }
+  50% { transform: rotate(3deg) scale(1.02, 0.97); }
+  75% { transform: rotate(-2deg) scale(0.98, 1.04); }
+}
+.vp-llama { transform-origin: 50% 85%; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .group:hover .vp-llama { animation: vp-llama 0.9s ease-in-out infinite; }
+}
+html.vp-ligero .vp-llama { animation: none !important; }
+html.vp-ligero .vp-luz-cocina { display: none; }
