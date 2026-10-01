@@ -979,7 +979,7 @@ function RenglonReceta({
 function CabeceraLleva() {
   const celda = 'text-[11px] font-semibold uppercase tracking-wide text-neutral-500'
   return (
-    <div className="px-4 py-1.5 flex items-center gap-3 bg-neutral-500/8 border-y border-neutral-100">
+    <div className="px-4 pb-1.5 flex items-center gap-3 border-b border-neutral-100">
       <span className="w-1.5 shrink-0" />
       <span className={`min-w-0 flex-1 ${celda}`}>
         <Ayuda explica={explicar('receta.mercancia')} titulo="Mercancía">Mercancía</Ayuda>
@@ -999,7 +999,7 @@ function CabeceraLleva() {
 function CabeceraAgregar() {
   const celda = 'text-[11px] font-semibold uppercase tracking-wide text-neutral-500'
   return (
-    <div className="px-4 py-1.5 flex items-center gap-3 bg-neutral-500/8 border-y border-neutral-100">
+    <div className="px-4 pb-1.5 flex items-center gap-3 border-b border-neutral-100">
       <span className={`min-w-0 flex-1 ${celda}`}>
         <Ayuda explica={explicar('receta.mercancia')} titulo="Mercancía">Mercancía</Ayuda>
       </span>
