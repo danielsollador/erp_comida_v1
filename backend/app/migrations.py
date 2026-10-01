@@ -120,6 +120,7 @@ COLUMNAS = [
     ("CFG710_IMP_FISCAL", "rif", "VARCHAR DEFAULT ''"),
     ("CFG710_IMP_FISCAL", "direccion", "VARCHAR DEFAULT ''"),
     ("TRX412_COM_FACTURA_SOPORTE", "completada", "BOOLEAN DEFAULT 0"),
+    ("TRX412_COM_FACTURA_SOPORTE", "al_guardar", "TEXT DEFAULT ''"),
     ("CFG910_ADM_PARAMETRO", "vender_sin_inventario", "BOOLEAN DEFAULT 0"),
     # A cocina o no, renglon por renglon (y la sugerencia, por categoria).
     ("DIM210_MEN_CATEGORIA", "va_a_cocina", "BOOLEAN DEFAULT 1"),

@@ -129,3 +129,68 @@ def test_si_la_foto_ya_se_limpio_igual_salen_las_alertas(client, insumo):
     assert d["foto"] is False and d["foto_perdida"] is True
     assert d["aprendidas"] == 0, "sin la foto no hay de que aprender"
     assert len(d["alertas"]) == 1
+
+
+# ------------------------------------- si el navegador no alcanza a completar
+
+def anotar(client, soporte_id, insumo, numero, costo=13.0, rif=RIF):
+    return client.post(f"/api/compras/lectura/{soporte_id}/al-guardar", json={
+        "numero_factura": numero, "proveedor_rif": rif, "proveedor_nombre": "La Montaña",
+        "renglones": [renglon(insumo, costo)],
+    })
+
+
+def test_si_la_tablet_no_completa_el_servidor_lo_termina_solo(client, insumo, db):
+    """Se anota antes de guardar; se guarda; el "completar" nunca llega (se
+    apago la tablet). Desde cualquier equipo, la reconciliacion lo termina."""
+    guardar(client, insumo, 10.0, "F-1")
+    soporte = subir(client)
+    assert anotar(client, soporte, insumo, "F-2").status_code == 200
+    fid = guardar(client, insumo, 13.0, "F-2")
+
+    r = client.post("/api/compras/lectura/reconciliar")
+    assert r.json() == {"completadas": 1}
+    db.expire_all()
+    s = db.get(models.SoporteFactura, soporte)
+    assert s.factura_id == fid and s.completada
+    [e] = client.get("/api/compras/equivalencias").json()
+    assert e["factor"] == 20 and e["veces"] == 1
+    assert [a["variacion_pct"] for a in client.get("/api/compras/alertas").json()] == [30.0]
+
+    # Otra vez no hace nada, y el "completar" tardio tampoco duplica.
+    assert client.post("/api/compras/lectura/reconciliar").json() == {"completadas": 0}
+    assert completar(client, fid, soporte, [renglon(insumo, 13.0)]).json()["aprendidas"] == 0
+    assert client.get("/api/compras/equivalencias").json()[0]["veces"] == 1
+
+
+def test_sin_factura_guardada_la_intencion_espera(client, insumo, db):
+    """Se anoto pero el guardado fallo (un RIF malo, sin red): no hay nada
+    que completar todavia."""
+    soporte = subir(client)
+    anotar(client, soporte, insumo, "F-9")
+    assert client.post("/api/compras/lectura/reconciliar").json() == {"completadas": 0}
+    assert db.get(models.SoporteFactura, soporte).factura_id is None
+
+
+def test_con_dos_facturas_iguales_no_se_adivina(client, insumo, db):
+    soporte = subir(client)
+    anotar(client, soporte, insumo, "F-2")
+    guardar(client, insumo, 13.0, "F-2")
+    guardar(client, insumo, 13.0, "F-2")
+    assert client.post("/api/compras/lectura/reconciliar").json() == {"completadas": 0}
+
+
+def test_una_foto_que_ya_respalda_una_factura_no_se_anota_para_otra(client, insumo):
+    soporte = subir(client)
+    fid = guardar(client, insumo, 13.0, "F-2")
+    completar(client, fid, soporte)
+    assert anotar(client, soporte, insumo, "F-3").status_code == 409
+
+
+def test_la_intencion_reconoce_el_rif_escrito_de_cualquier_forma(client, insumo, db):
+    soporte = subir(client)
+    anotar(client, soporte, insumo, "F-2", rif="j401234567")
+    fid = guardar(client, insumo, 13.0, "F-2")
+    assert client.post("/api/compras/lectura/reconciliar").json() == {"completadas": 1}
+    db.expire_all()
+    assert db.get(models.SoporteFactura, soporte).factura_id == fid

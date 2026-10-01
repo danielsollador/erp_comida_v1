@@ -755,6 +755,12 @@ class SoporteFactura(Base):
     contenido = deferred(Column(LargeBinary, nullable=False))
     lector = Column(String, default="")  # "prueba", "claude-...": quien leyo
     lectura = Column(Text, default="")  # JSON del borrador; vacio si la lectura fallo
+    # Lo que hay que hacer cuando la factura de esta foto se guarde (numero,
+    # RIF y renglones aprendidos), anotado JUSTO ANTES de guardarla. Si el
+    # "completar" de despues no llega (se cayo el wifi, se apago la tablet),
+    # el servidor encuentra la factura por RIF y numero y lo termina solo,
+    # desde cualquier equipo. JSON de schemas.IntencionGuardar; vacio si no.
+    al_guardar = Column(Text, default="")
     error = Column(String, default="")  # por que no se pudo leer, si no se pudo
     # Lo que costo leerla. La API cobra por token: sin esto el gasto real del
     # mes seria una estimacion para siempre.

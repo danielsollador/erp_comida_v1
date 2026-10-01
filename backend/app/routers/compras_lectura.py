@@ -323,7 +323,13 @@ def completar_factura(
     )
     if factura is None:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
+    return _completar(db, factura, body)
 
+
+def _completar(
+    db: Session, factura: models.FacturaCompra, body: schemas.CompletarFacturaRequest
+) -> schemas.CompletarFactura:
+    factura_id = factura.id
     foto, foto_perdida, aprendidas = False, False, 0
     soporte = None
     if body.soporte_id is not None:
@@ -368,6 +374,94 @@ def completar_factura(
         foto=foto, foto_perdida=foto_perdida, aprendidas=aprendidas,
         alertas=[alerta_a_schema(a) for a in alertas],
     )
+
+
+@router.post("/lectura/{soporte_id}/al-guardar")
+def anotar_al_guardar(soporte_id: int, body: schemas.IntencionGuardar, db: Session = Depends(get_db)):
+    """Antes de guardar la factura de esta foto: que hacer cuando quede
+    guardada. Si despues el navegador no alcanza a completarla, la
+    reconciliacion la reconoce por RIF y numero y lo hace sola."""
+    soporte = db.query(models.SoporteFactura).filter_by(id=soporte_id).first()
+    if soporte is None:
+        raise HTTPException(status_code=404, detail="La foto ya no está guardada. Vuelve a cargarla.")
+    if soporte.factura_id is not None:
+        raise HTTPException(status_code=409, detail="Esa foto ya respalda otra factura")
+    soporte.al_guardar = body.model_dump_json()
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/lectura/reconciliar", response_model=schemas.Reconciliacion)
+def reconciliar_endpoint(db: Session = Depends(get_db)):
+    return schemas.Reconciliacion(completadas=reconciliar(db))
+
+
+# Cuanto despues de anotar la intencion se busca su factura. Mas que los
+# reintentos del navegador: es para la tablet que se apago y no volvio.
+DIAS_RECONCILIAR_ALERTAS = 3
+
+
+def reconciliar(db: Session) -> int:
+    """Termina lo que quedo a medias despues de guardar, sin depender de la
+    tablet que lo guardo: la foto con intencion anotada cuya factura ya existe
+    se engancha y la memoria aprende; y las facturas recientes sin alertas de
+    precio se revisan (es idempotente: las que ya tienen, quedan igual).
+    Devuelve cuantas fotos se completaron."""
+    completadas = 0
+    soportes = (
+        db.query(models.SoporteFactura)
+        .filter(
+            models.SoporteFactura.factura_id.is_(None),
+            models.SoporteFactura.completada.isnot(True),
+            models.SoporteFactura.al_guardar.isnot(None),
+            models.SoporteFactura.al_guardar != "",
+        )
+        .all()
+    )
+    for soporte in soportes:
+        try:
+            intencion = schemas.IntencionGuardar.model_validate_json(soporte.al_guardar)
+        except ValueError:
+            continue
+        rif = impuestos.normalizar_rif(intencion.proveedor_rif)
+        candidatas = (
+            db.query(models.FacturaCompra)
+            .options(joinedload(models.FacturaCompra.items))
+            .filter(
+                models.FacturaCompra.proveedor_rif == rif,
+                models.FacturaCompra.numero_factura == intencion.numero_factura.strip(),
+                # La factura es de despues de la foto (con margen por relojes).
+                models.FacturaCompra.fecha >= soporte.fecha - datetime.timedelta(minutes=10),
+                ~models.FacturaCompra.id.in_(
+                    db.query(models.SoporteFactura.factura_id).filter(models.SoporteFactura.factura_id.isnot(None))
+                ),
+            )
+            .order_by(models.FacturaCompra.id.desc())
+            .all()
+        )
+        # Dos facturas iguales sin foto: no se adivina cual es.
+        if len(candidatas) != 1:
+            continue
+        try:
+            _completar(db, candidatas[0], schemas.CompletarFacturaRequest(
+                soporte_id=soporte.id, proveedor_rif=intencion.proveedor_rif,
+                proveedor_nombre=intencion.proveedor_nombre, renglones=intencion.renglones,
+            ))
+            completadas += 1
+        except HTTPException:
+            db.rollback()
+
+    # Las alertas de las facturas cargadas a mano (sin foto) que no
+    # alcanzaron a pedirse.
+    desde = ahora() - datetime.timedelta(days=DIAS_RECONCILIAR_ALERTAS)
+    for factura in (
+        db.query(models.FacturaCompra)
+        .options(joinedload(models.FacturaCompra.items))
+        .filter(models.FacturaCompra.fecha >= desde)
+        .all()
+    ):
+        alertas_precio.generar(db, factura)
+    return completadas
 
 
 @router.get("/facturas/{factura_id}/soporte")

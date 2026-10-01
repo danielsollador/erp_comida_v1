@@ -18,7 +18,7 @@ import { achicarFoto } from '../../../lib/foto'
 import { unirFotosEnPdf } from '../../../lib/pdfDeFotos'
 import { fmtNum } from '../../../lib/moneda'
 import { necesitaReferencia } from '../../../lib/pagos'
-import { completarDespuesDeGuardar } from '../../../lib/pendientesCompras'
+import { anotarAntesDeGuardar, completarDespuesDeGuardar } from '../../../lib/pendientesCompras'
 import { useRevision } from '../../../lib/revisionFactura'
 import type {
   AlertaPrecio,
@@ -528,6 +528,9 @@ export default function CargarFactura({
         fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
         referencia_pago: referenciaPago.trim() || undefined,
       }
+      // Antes de guardar, lo de despues queda anotado en el servidor: si la
+      // conexion se cae justo despues de guardar, el servidor lo termina.
+      await anotarAntesDeGuardar(numeroFactura.trim(), cuerpoCompletar)
       const guardada = await api.crearFacturaCompra(
         esInsumos
           ? { ...comun, items, iva: ivaLineas }
@@ -542,15 +545,15 @@ export default function CargarFactura({
 
       // Foto, memoria y alertas: un pedido que se puede repetir. La factura
       // ya entro: si falla, se avisa y se reintenta, no se deshace.
-      const r = await completarDespuesDeGuardar(guardada.id, guardada.numero_factura, cuerpoCompletar)
+      const r = await completarDespuesDeGuardar(guardada.id, cuerpoCompletar)
       let cola = ''
       if (r.estado === 'hecho') {
         if (r.fotoPerdida) cola = esPdf ? ' Ojo: el PDF ya no estaba guardado y la factura quedó sin él.' : ' Ojo: la foto ya no estaba guardada y la factura quedó sin ella.'
         else if (r.foto) cola = esPdf ? ' PDF adjunto.' : ' Foto adjunta.'
       } else if (r.estado === 'pendiente') {
         cola = cuerpoCompletar.soporte_id
-          ? ' Sin conexión para terminar: la foto, la memoria del proveedor y las alertas se completan solas al volver.'
-          : ' Sin conexión para revisar los precios: se hace solo al volver.'
+          ? ' Sin conexión para terminar: la foto, la memoria del proveedor y las alertas las completa el servidor solo.'
+          : ' Sin conexión para revisar los precios: el servidor lo hace solo.'
       } else {
         cola = ` Ojo: ${r.mensaje}`
       }

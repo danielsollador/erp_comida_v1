@@ -46,7 +46,7 @@ export default function Compras() {
   // memoria o las alertas porque se cayo la conexion justo despues.
   const [porCompletar, setPorCompletar] = useState(cuantosPendientes())
   const reintentarPendientes = useCallback(async () => {
-    if (cuantosPendientes() === 0) return
+    // El servidor termina lo que haya quedado a medias, de cualquier equipo.
     if ((await procesarPendientes()) > 0) {
       api
         .listarAlertasPrecio(true)

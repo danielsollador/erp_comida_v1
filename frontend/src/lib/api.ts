@@ -881,6 +881,17 @@ export const api = {
     items: { indice: number; ingrediente_id: number; costo_unitario: number }[]
   }) => req<RevisionFactura>('/compras/revision', { method: 'POST', body: JSON.stringify(r) }),
   /** Lo de despues de guardar (foto, memoria, alertas) en un pedido que se puede repetir. */
+  // Antes de guardar la factura de una foto: que hacer cuando quede
+  // guardada. Si el "completar" no llega, el servidor lo termina solo.
+  anotarAlGuardar: (
+    soporteId: number,
+    intencion: Omit<CuerpoCompletarFactura, 'soporte_id'> & { numero_factura: string },
+  ) =>
+    req<{ ok: boolean }>(`/compras/lectura/${soporteId}/al-guardar`, {
+      method: 'POST',
+      body: JSON.stringify(intencion),
+    }),
+  reconciliarCompras: () => req<{ completadas: number }>('/compras/lectura/reconciliar', { method: 'POST' }),
   completarFactura: (facturaId: number, cuerpo: CuerpoCompletarFactura) =>
     req<{ foto: boolean; foto_perdida: boolean; aprendidas: number; alertas: AlertaPrecio[] }>(
       `/compras/facturas/${facturaId}/completar`,

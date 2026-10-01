@@ -2116,6 +2116,21 @@ class CompletarFacturaRequest(BaseModel):
     renglones: List[RenglonAprendido] = []
 
 
+class IntencionGuardar(BaseModel):
+    """Lo que se anota en la foto justo antes de guardar su factura: con el
+    RIF y el numero el servidor la reconoce despues, si el navegador no
+    alcanza a completarla."""
+
+    numero_factura: str
+    proveedor_rif: str
+    proveedor_nombre: str = ""
+    renglones: List[RenglonAprendido] = []
+
+
+class Reconciliacion(BaseModel):
+    completadas: int
+
+
 class CompletarFactura(BaseModel):
     foto: bool
     # La foto ya se habia limpiado por suelta (el reintento llego tarde).
