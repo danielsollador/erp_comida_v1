@@ -54,6 +54,7 @@ import type {
   ReporteInventario,
   ArranqueLocal,
   Aviso,
+  Recorrido,
   VueltoEmitido,
   ReportePerdidas,
   RecetaItem,
@@ -729,6 +730,8 @@ export const api = {
     user_bank_id?: string
   }) => req<VueltoEmitido>('/pagos/vuelto', { method: 'POST', body: JSON.stringify(datos) }),
   avisos: () => req<Aviso[]>('/reportes/avisos'),
+  /** El recorrido de la portada: cinco estaciones en una frase y la semana. */
+  recorrido: () => req<Recorrido>('/reportes/recorrido'),
   ventas: (r: Rango, estado?: string) =>
     req<ListaVentas>(`/ventas${conRango(r, estado ? `estado=${estado}` : '')}`),
   resumenVentas: (r: Rango) => req<ResumenVentas>(`/ventas/resumen${conRango(r)}`),

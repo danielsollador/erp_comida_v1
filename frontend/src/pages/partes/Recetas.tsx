@@ -142,7 +142,9 @@ export default function Recetas({
   const renglones: Renglon[] = useMemo(
     () =>
       categorias
-        .filter((c) => c.activo)
+        // Los envios no se cocinan: no llevan receta, y contarlos como "sin
+        // receta" hacia que esta cifra y la de la portada no coincidieran.
+        .filter((c) => c.activo && c.nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase() !== 'envios')
         .flatMap((c) =>
           c.productos
             .filter((p) => p.activo)

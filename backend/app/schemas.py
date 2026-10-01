@@ -1237,6 +1237,38 @@ class Insight(BaseModel):
     detalle: str
 
 
+class PasoRecorrido(BaseModel):
+    """Una estacion del recorrido de la portada: como esta, en una frase.
+
+    `pendiente` = hay algo que hacer ahi (se pinta en ambar). `monto`, si la
+    frase habla de plata: la frase trae "{monto}" y la pantalla lo escribe en
+    la moneda que se este mirando, nunca un "$" fijo.
+    """
+
+    id: str  # compras | inventario | menu | ventas | caja
+    frase: str
+    pendiente: bool = False
+    monto: Optional[float] = None
+    # A donde lleva tocarla: la pantalla que lo resuelve.
+    a: str = ""
+    # Lo que dice la accion al pasar el cursor: "Ver qué comprar".
+    accion: str = ""
+
+
+class DiaVendido(BaseModel):
+    fecha: str
+    ventas: float
+
+
+class Recorrido(BaseModel):
+    """El recorrido del negocio en la portada (Leider, 1-oct): Compras >
+    Inventario > Menu > Ventas > Cierre de caja, y las ventas de la semana
+    para la fila de Reportes."""
+
+    pasos: List[PasoRecorrido]
+    ultimos_7_dias: List[DiaVendido]
+
+
 class Aviso(BaseModel):
     """Lo que el sistema le dice al dueño SIN que lo pregunte, en la portada:
     "la harina se te acaba el jueves", "te deben $40". Una frase y a donde ir.

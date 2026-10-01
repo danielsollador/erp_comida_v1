@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
@@ -7,6 +7,7 @@ import { explicar } from '../lib/glosario'
 import { CONTADOR, descripcionDe, modulosDe } from '../components/Rail'
 import Arranque from '../components/Arranque'
 import Avisos from '../components/Avisos'
+import Recorrido, { FilaReportes } from '../components/Recorrido'
 import AjustarAPantalla from '../components/AjustarAPantalla'
 import UsuarioMenu from '../components/UsuarioMenu'
 import Notificaciones from '../components/Notificaciones'
@@ -17,7 +18,7 @@ import { MonedaToggle, useMoneda } from '../lib/moneda'
 import { PantallaCompletaToggle } from '../lib/pantallaCompleta'
 import { TemaToggle } from '../lib/tema'
 import { segun } from '../lib/palabras'
-import type { ReporteResumen } from '../lib/types'
+import type { Recorrido as DatosRecorrido, ReporteResumen } from '../lib/types'
 
 function saludo(): string {
   const h = new Date().getHours()
@@ -43,6 +44,11 @@ export default function Inicio() {
   const [pedidosHoy, setPedidosHoy] = useState<number | null>(null)
   const [enCocina, setEnCocina] = useState(0)
   const [porCobrar, setPorCobrar] = useState(0)
+  // null = cargando; undefined = este rol no ve las cifras (o no respondio):
+  // el recorrido se pinta igual, con la pregunta de cada modulo.
+  const [recorrido, setRecorrido] = useState<DatosRecorrido | null | undefined>(
+    estado.puede.ve_kpis ? null : undefined,
+  )
   const { fmt } = useMoneda()
 
   // Cuatro puertas (ver Rail.tsx): hoy (el panel de arriba), vender, mi
@@ -68,6 +74,11 @@ export default function Inicio() {
     // Y solo a quien el rol le deja ver las cifras: al resto se le pinta un
     // guion, no un "no tienes permiso" (Leider, 25-sep).
     if (estado.puede.ve_kpis) api.reporte(rangoDe('hoy')).then(setHoy).catch(() => undefined)
+    if (estado.puede.ve_kpis)
+      api
+        .recorrido()
+        .then(setRecorrido)
+        .catch(() => setRecorrido((r) => r ?? undefined))
     // "Pedidos" lo ve todo el mundo: sale del listado de ventas del dia, que
     // caja y cocina si pueden leer (los reportes, no).
     api
@@ -92,10 +103,8 @@ export default function Inicio() {
   const fecha = new Date().toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' })
   const nombre = estado.nombre || estado.nombre_visible || estado.usuario
 
-  // Una columna por bandeja: filas anchas donde el nombre y la pregunta
-  // caben en un renglon. Con tres o cuatro columnas la pregunta se partia en
-  // cuatro lineas y la lamina parecia una tabla (Leider, 30-sep).
-  const unaColumna = { '--cols': 1, '--cols-sm': 1, '--cols-lg': 1, '--cols-alto': 1 } as CSSProperties
+  // Las rutas a las que este usuario entra: el recorrido solo pinta esas.
+  const rutas = [...negocio, ...numeros].map((m) => m.to)
 
   return (
     // En la TABLET la pantalla se llena, en vertical y en horizontal: es una
@@ -235,13 +244,13 @@ export default function Inicio() {
           </div>
         )}
 
-        {/* ── Mi negocio y Numeros: dos bandejas, no seis cajas. Se usan una
-            vez al dia o a la semana; agrupadas pesan lo que tienen que pesar
-            y dejan el primer golpe de vista para lo de arriba. */}
-        <div className="grid gap-3 lg:gap-4 sm:grid-cols-2">
-          <Bandeja titulo={segun({ sencillo: 'Mi negocio', tecnico: 'Administración' })} modulos={negocio} estilo={unaColumna} />
-          <Bandeja titulo={segun({ sencillo: 'Números', tecnico: 'Control' })} modulos={numeros} estilo={unaColumna} />
-        </div>
+        {/* ── El recorrido del negocio y Reportes. Antes eran dos bandejas
+            (Mi negocio | Numeros) con los mismos seis modulos; ahora los cinco
+            del flujo van en el orden en que se mueve la mercancia y la plata
+            --Compras, Inventario, Menu, Ventas, Cierre de caja-- y Reportes,
+            que mira todo eso en el tiempo, en su propia fila (Leider, 1-oct). */}
+        <Recorrido datos={recorrido} modulos={rutas} operar={estado.puede.operar} />
+        {rutas.includes('/reportes') && <FilaReportes dias={recorrido?.ultimos_7_dias} />}
 
         {/* ── Para el contador: sin lamina ni fichas. Una linea de enlaces
             con su icono, en gris: se ve que esta y se ve que es otra cosa
@@ -391,43 +400,5 @@ function Espera({
     </Link>
   ) : (
     (cuerpo as ReactNode)
-  )
-}
-
-/**
- * Una bandeja de modulos: UNA lamina con filas al ras, cada una con el
- * nombre del modulo y, al lado, la pregunta que responde.
- */
-function Bandeja({
-  titulo,
-  modulos,
-  estilo,
-}: {
-  titulo: string
-  modulos: { to: string; icono: NombreIcono; titulo: string }[]
-  estilo: CSSProperties
-}) {
-  if (modulos.length === 0) return null
-  return (
-    <div className="flex flex-col min-h-0">
-      <p className="vp-etiqueta mb-2.5">{titulo}</p>
-      <div className="vp-lista" style={estilo}>
-        {modulos.map((m) => (
-          <Link
-            key={m.to}
-            to={m.to}
-            className="group flex items-center gap-3.5 px-4 py-3 lg:px-5 bajo:py-2.5 min-h-[3.25rem] transition-colors duration-200"
-          >
-            <span className="shrink-0 text-neutral-400 group-hover:text-acento-600 transition-colors duration-200">
-              <Icono nombre={m.icono} size={19} className="lg:w-5 lg:h-5" />
-            </span>
-            <span className="min-w-0 flex flex-wrap items-baseline gap-x-2">
-              <span className="font-display font-semibold leading-tight text-[15px] lg:text-base">{m.titulo}</span>
-              <span className="text-[13px] text-neutral-500 leading-snug">{descripcionDe(m.to)}</span>
-            </span>
-          </Link>
-        ))}
-      </div>
-    </div>
   )
 }

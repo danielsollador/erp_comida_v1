@@ -283,6 +283,18 @@ export type CostoVariante = {
 }
 
 /** Lo que la portada le dice al dueño sin que lo pregunte. `a` = adónde ir. */
+/** Una estacion del recorrido de la portada (Compras > ... > Cierre de caja). */
+export type PasoRecorrido = {
+  id: 'compras' | 'inventario' | 'menu' | 'ventas' | 'caja'
+  /** Puede traer "{monto}": se escribe con `fmt` en la moneda que se mira. */
+  frase: string
+  pendiente: boolean
+  monto: number | null
+  a: string
+  accion: string
+}
+export type Recorrido = { pasos: PasoRecorrido[]; ultimos_7_dias: { fecha: string; ventas: number }[] }
+
 export type Aviso = { id: string; tono: 'ojo' | 'bien' | 'info'; titulo: string; detalle: string; a: string }
 
 /** Cuánto lleva armado el local: las misiones de arranque de la portada. */

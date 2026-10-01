@@ -1640,6 +1640,211 @@ def _aviso_de_iva(db: Session) -> Optional[schemas.Aviso]:
     )
 
 
+# ── El recorrido de la portada ───────────────────────────────────────────────
+#
+# Leider (1-oct): "los negocios tienen flujos, el mas claro de mi ERP es
+# compras > inventario > menu", que termina en el cierre de caja. La portada
+# lo dibuja como el seguimiento de un pedido: cinco estaciones en orden, cada
+# una con UNA frase literal de como esta, y en ambar solo las que piden algo.
+# Sin cifras de plata sueltas: "los numeros esos no estan fight complexity".
+# Cada frase sale del mismo sitio que la pantalla a la que lleva, para que lo
+# de la portada y lo de adentro digan lo mismo.
+
+
+def _lista_corta(nombres: List[str], tope: int = 2) -> str:
+    """"harina", "harina y queso", "harina, queso y 3 más"."""
+    nombres = [n.strip().lower() for n in nombres if n and n.strip()]
+    if len(nombres) <= 1:
+        return "".join(nombres)
+    if len(nombres) <= tope:
+        return " y ".join(nombres)
+    resto = len(nombres) - tope
+    return f"{', '.join(nombres[:tope])} y {resto} más"
+
+
+def _paso_compras(db: Session) -> schemas.PasoRecorrido:
+    # Lo mismo que "Qué comprar" en Inventario: primero lo que se acaba antes.
+    sugeridas = sugerencias_compra(db)
+    if sugeridas:
+        sugeridas = sorted(
+            sugeridas, key=lambda s: (s.dias_restantes is None, s.dias_restantes or 0)
+        )
+        return schemas.PasoRecorrido(
+            id="compras",
+            frase=f"Toca comprar {_lista_corta([s.ingrediente_nombre for s in sugeridas])}",
+            pendiente=True,
+            a="/inventario?s=comprar",
+            accion="Ver qué comprar",
+        )
+    return schemas.PasoRecorrido(id="compras", frase="Nada que comprar", a="/compras", accion="Abrir compras")
+
+
+def _paso_inventario(db: Session) -> schemas.PasoRecorrido:
+    activos = db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).all()
+    if not activos:
+        return schemas.PasoRecorrido(
+            id="inventario", frase="Carga tu mercancía", pendiente=True, a="/inventario", accion="Agregar mercancía"
+        )
+    # Se acabo y se usa: con stock cero lo que no se mueve no molesta a nadie.
+    corte = ahora()
+    consumo = kardex.consumo_por_dia_de_todos(db, corte - datetime.timedelta(days=14), corte)
+    agotados = [i.nombre for i in activos if (i.stock_actual or 0) <= 0 and consumo.get(i.id, 0) > 0]
+    if agotados:
+        return schemas.PasoRecorrido(
+            id="inventario",
+            frase=f"Se acabó {_lista_corta(agotados)}",
+            pendiente=True,
+            a="/inventario?s=comprar",
+            accion="Ver qué falta",
+        )
+    # Solo si ya se conto alguna vez: a un local que nunca conto no se le
+    # recuerda todos los dias algo que todavia no hace.
+    ultimo = db.query(func.max(models.Conteo.fecha)).scalar()
+    if ultimo is not None:
+        dias = (hoy() - ultimo.date()).days
+        if dias > 14:
+            return schemas.PasoRecorrido(
+                id="inventario",
+                frase=f"Hace {dias} días que no se cuenta",
+                pendiente=True,
+                a="/inventario",
+                accion="Contar lo que hay",
+            )
+    return schemas.PasoRecorrido(id="inventario", frase="Hay de todo", a="/inventario", accion="Abrir inventario")
+
+
+def _paso_menu(db: Session) -> schemas.PasoRecorrido:
+    # Lo mismo que cuenta Recetas: las variantes a la venta sin receta. Los
+    # envios no se cocinan, no llevan receta.
+    variantes = (
+        db.query(models.Variante.id)
+        .join(models.Producto, models.Producto.id == models.Variante.producto_id)
+        .join(models.Categoria, models.Categoria.id == models.Producto.categoria_id)
+        .filter(
+            models.Variante.activo.is_(True),
+            models.Producto.activo.is_(True),
+            models.Categoria.activo.is_(True),
+            models.Categoria.nombre != seed.CATEGORIA_ENVIOS,
+        )
+        .all()
+    )
+    if not variantes:
+        return schemas.PasoRecorrido(
+            id="menu", frase="Arma tu menú", pendiente=True, a="/menu", accion="Agregar productos"
+        )
+    con_receta = {v for (v,) in db.query(models.RecetaItem.variante_id).distinct()}
+    faltan = sum(1 for (v,) in variantes if v not in con_receta)
+    if faltan:
+        return schemas.PasoRecorrido(
+            id="menu",
+            frase=f"{faltan} producto{'s' if faltan != 1 else ''} sin receta",
+            pendiente=True,
+            a="/menu?s=recetas",
+            accion="Ponerles receta",
+        )
+    return schemas.PasoRecorrido(id="menu", frase="Todo con receta", a="/menu", accion="Abrir el menú")
+
+
+def _paso_ventas(db: Session) -> schemas.PasoRecorrido:
+    fiadas = (
+        db.query(models.Pedido)
+        .join(models.PagoPedido)
+        .filter(
+            models.PagoPedido.metodo == "Fiado",
+            models.Pedido.fiado_saldado.is_(False),
+            models.Pedido.devuelto.is_(False),
+        )
+        .distinct()
+        .all()
+    )
+    deben = round(sum(p.fiado_saldo for p in fiadas), 2)
+    if deben > 0:
+        return schemas.PasoRecorrido(
+            id="ventas",
+            frase="Te deben {monto}",
+            monto=deben,
+            pendiente=True,
+            a="/caja?s=fiado",
+            accion="Ver quién debe",
+        )
+    # Los mismos "pedidos" del panel de Hoy: lo cobrado desde la medianoche.
+    n = (
+        db.query(models.Pedido)
+        .filter(models.Pedido.estado == "pagado", models.Pedido.cerrado_en >= inicio_del_dia(hoy()))
+        .count()
+    )
+    frase = f"{n} pedido{'s' if n != 1 else ''} hoy" if n else "Sin ventas todavía hoy"
+    return schemas.PasoRecorrido(id="ventas", frase=frase, a="/ventas", accion="Ver las ventas")
+
+
+def _paso_caja(db: Session) -> schemas.PasoRecorrido:
+    def cierre_de(dia: datetime.date):
+        inicio = inicio_del_dia(dia)
+        return (
+            db.query(models.CierreCaja)
+            .filter(
+                models.CierreCaja.fecha >= inicio,
+                models.CierreCaja.fecha < inicio + datetime.timedelta(days=1),
+                models.CierreCaja.anulado.is_(False),
+            )
+            .order_by(models.CierreCaja.fecha.desc())
+            .first()
+        )
+
+    # Primero lo que quedo atras: un dia con ventas y sin cerrar.
+    ayer = hoy() - datetime.timedelta(days=1)
+    vendio_ayer = (
+        db.query(models.Pedido.id)
+        .filter(
+            models.Pedido.estado == "pagado",
+            models.Pedido.cerrado_en >= inicio_del_dia(ayer),
+            models.Pedido.cerrado_en < inicio_del_dia(hoy()),
+        )
+        .first()
+        is not None
+    )
+    if vendio_ayer and cierre_de(ayer) is None:
+        return schemas.PasoRecorrido(
+            id="caja", frase="La caja de ayer no se cerró", pendiente=True, a="/caja", accion="Cerrarla"
+        )
+
+    cerrada = cierre_de(hoy())
+    if cerrada is not None:
+        dif = round(cerrada.diferencia or 0, 2)
+        if abs(dif) < 0.01:
+            return schemas.PasoRecorrido(id="caja", frase="Cerrada: cuadró", a="/caja", accion="Ver el cierre")
+        return schemas.PasoRecorrido(
+            id="caja",
+            frase="Cerrada: faltaron {monto}" if dif < 0 else "Cerrada: sobraron {monto}",
+            monto=abs(dif),
+            a="/caja",
+            accion="Ver el cierre",
+        )
+    abierta = db.query(models.AperturaCaja.id).filter(models.AperturaCaja.dia == hoy()).first() is not None
+    if abierta:
+        return schemas.PasoRecorrido(
+            id="caja", frase="Abierta, se cierra al final del día", a="/caja", accion="Ir a la caja"
+        )
+    return schemas.PasoRecorrido(
+        id="caja", frase="Falta abrirla", pendiente=True, a="/pos", accion="Abrir la caja"
+    )
+
+
+@router.get("/recorrido", response_model=schemas.Recorrido)
+def recorrido(db: Session = Depends(get_db)):
+    """Las cinco estaciones de la portada y las ventas de los ultimos 7 dias."""
+    pasos = [_paso_compras(db), _paso_inventario(db), _paso_menu(db), _paso_ventas(db), _paso_caja(db)]
+    # Las mismas ventas que Reportes: del data mart, un dia a la vez.
+    dias = []
+    for k in range(6, -1, -1):
+        dia = hoy() - datetime.timedelta(days=k)
+        inicio = inicio_del_dia(dia)
+        fin = min(inicio + datetime.timedelta(days=1), ahora())
+        b = consolidacion.bloque_para(db, inicio, fin)
+        dias.append(schemas.DiaVendido(fecha=dia.isoformat(), ventas=round(b.ventas, 2)))
+    return schemas.Recorrido(pasos=pasos, ultimos_7_dias=dias)
+
+
 @router.get("/avisos", response_model=List[schemas.Aviso])
 def avisos(db: Session = Depends(get_db)):
     """Lo que el dueño tendria que ir a buscar hoy, dicho en la portada.
