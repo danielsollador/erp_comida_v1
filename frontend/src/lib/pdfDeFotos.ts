@@ -14,7 +14,7 @@
 
 const ANCHO_PAGINA = 595 // puntos: el ancho de una hoja A4
 
-type Foto = { jpeg: Uint8Array; ancho: number; alto: number }
+export type Foto = { jpeg: Uint8Array; ancho: number; alto: number }
 
 /** La foto como JPEG y su tamaño. Si no es JPEG (PNG, WEBP), se convierte. */
 async function comoJpeg(foto: Blob): Promise<Foto> {
@@ -40,7 +40,12 @@ async function comoJpeg(foto: Blob): Promise<Foto> {
 }
 
 export async function unirFotosEnPdf(fotos: Blob[]): Promise<Blob> {
-  const paginas = await Promise.all(fotos.map(comoJpeg))
+  const pdf = armarPdf(await Promise.all(fotos.map(comoJpeg)))
+  return new Blob([pdf as BlobPart], { type: 'application/pdf' })
+}
+
+/** El PDF con una página por foto. Aparte del navegador para poder probarlo. */
+export function armarPdf(paginas: Foto[]): Uint8Array {
   const codificar = new TextEncoder()
   const partes: Uint8Array[] = []
   const posiciones: number[] = [] // donde empieza cada objeto, para la tabla xref
@@ -91,5 +96,11 @@ export async function unirFotosEnPdf(fotos: Blob[]): Promise<Blob> {
   escribir(`xref\n0 ${total}\n0000000000 65535 f \n`)
   for (let i = 1; i < total; i++) escribir(`${String(posiciones[i]).padStart(10, '0')} 00000 n \n`)
   escribir(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${inicioXref}\n%%EOF\n`)
-  return new Blob(partes as BlobPart[], { type: 'application/pdf' })
+  const pdf = new Uint8Array(largo)
+  let en = 0
+  for (const parte of partes) {
+    pdf.set(parte, en)
+    en += parte.length
+  }
+  return pdf
 }
