@@ -2425,6 +2425,77 @@ export default function POS() {
   )
 }
 
+/** Las filas del menu juntas por producto, en el orden en que aparece cada uno. */
+function agruparPorProducto(filas: { producto: Producto; variante: Variante }[]) {
+  const grupos: { producto: Producto; variantes: Variante[] }[] = []
+  const porId = new Map<number, (typeof grupos)[number]>()
+  for (const f of filas) {
+    let g = porId.get(f.producto.id)
+    if (!g) {
+      g = { producto: f.producto, variantes: [] }
+      porId.set(f.producto.id, g)
+      grupos.push(g)
+    }
+    g.variantes.push(f.variante)
+  }
+  return grupos
+}
+
+/** Un producto de una sola variante: el renglon que suma uno por toque. */
+function RenglonVendible({
+  nombre,
+  precio,
+  enCarrito,
+  pulsando,
+  color,
+  fmt,
+  onAgregar,
+  onQuitar,
+}: {
+  nombre: string
+  /** null = monto libre (los envios). */
+  precio: number | null
+  enCarrito: number
+  pulsando: boolean
+  color: ReturnType<typeof colorCategoria>
+  fmt: (usd: number | null | undefined, decimales?: number) => string
+  onAgregar: () => void
+  onQuitar: () => void
+}) {
+  return (
+    <div className={`vp-celda flex items-stretch ${pulsando ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'}`}>
+      <button
+        type="button"
+        onClick={onAgregar}
+        className={`flex-1 min-w-0 flex items-center justify-between gap-2 px-3 py-3 text-left border-l-4 ${color.border} active:bg-neutral-100`}
+      >
+        {/* Sin `truncate`: un nombre largo se acomoda en dos lineas. Cortarlo
+            con puntos suspensivos deja dos productos distintos leyendose
+            igual, y el cajero toca el que no era. */}
+        <span className="font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">{nombre}</span>
+        <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
+          {precio == null ? <span className="text-xs font-medium text-neutral-500">monto libre</span> : fmt(precio)}
+        </span>
+      </button>
+      {enCarrito > 0 && (
+        <div className="flex items-center gap-1 pr-2 shrink-0">
+          <button
+            type="button"
+            onClick={onQuitar}
+            aria-label={`Quitar uno de ${nombre}`}
+            className="w-9 h-9 rounded-full border border-neutral-300 text-lg leading-none text-neutral-700 active:bg-neutral-200"
+          >
+            −
+          </button>
+          <span className="min-w-[28px] h-7 px-1.5 rounded-full bg-acento-500 text-neutral-50 text-sm font-bold flex items-center justify-center tabular-nums">
+            {enCarrito}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
  * La lista de productos del mostrador, aparte y memorizada.
  *
@@ -2459,6 +2530,9 @@ const ListaProductos = memo(function ListaProductos({
   fmt: (usd: number | null | undefined, decimales?: number) => string
   envioId: number | null
 }) {
+  // Los productos con varias variantes que estan abiertos. Uno solo a la
+  // vez: abrir otro cierra el anterior, asi la lista no crece sin fin.
+  const [abierto, setAbierto] = useState<number | null>(null)
   return (
     // `@container`: las columnas responden al ancho de ESTE panel, no al de la
     // ventana. Entre `md` y `lg` la ventana es ancha pero el panel mide 400 px
@@ -2544,50 +2618,102 @@ const ListaProductos = memo(function ListaProductos({
                   de su fila o columna -- la que cae en el canto la recorta el
                   `overflow-hidden` de la lamina. */}
               <div className="grid grid-cols-1 @lg:grid-cols-2">
-              {g.filas.map(({ producto: p, variante: v }) => {
-                const enCarrito = cantidades[v.id] ?? 0
-                const pulsando = recienAgregado.has(v.id)
+              {agruparPorProducto(g.filas).map(({ producto: p, variantes }) => {
+                // UNA SOLA VARIANTE: el renglon de siempre, un toque suma uno.
+                if (variantes.length === 1) {
+                  const v = variantes[0]
+                  return (
+                    <RenglonVendible
+                      key={v.id}
+                      nombre={etiquetaVariante(p, v)}
+                      precio={envioId !== null && p.categoria_id === envioId ? null : v.precio}
+                      enCarrito={cantidades[v.id] ?? 0}
+                      pulsando={recienAgregado.has(v.id)}
+                      color={color}
+                      fmt={fmt}
+                      onAgregar={() => onAgregar(p, v)}
+                      onQuitar={() => onQuitar(v.id)}
+                    />
+                  )
+                }
+                // VARIAS: un renglon por producto que se toca para elegir la
+                // variante (Leider, 1-oct, la misma jerarquia de Recetas).
+                // "Empanada" una vez en vez de "Empanada - Carne", "Empanada
+                // - Pollo", "Empanada - Queso" en tres renglones. Dos toques.
+                const desplegado = abierto === p.id
+                const enCarrito = variantes.reduce((t, v) => t + (cantidades[v.id] ?? 0), 0)
+                const precios = variantes.map((v) => v.precio)
+                const desde = Math.min(...precios)
+                const igual = precios.every((x) => x === desde)
                 return (
-                  <div
-                    key={v.id}
-                    className={`vp-celda flex items-stretch ${
-                      pulsando ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'
-                    }`}
-                  >
+                  <div key={`p${p.id}`} className={desplegado ? '@lg:col-span-2' : ''}>
                     <button
                       type="button"
-                      onClick={() => onAgregar(p, v)}
-                      className={`flex-1 min-w-0 flex items-center justify-between gap-2 px-3 py-3 text-left border-l-4 ${color.border} active:bg-neutral-100`}
+                      onClick={() => setAbierto(desplegado ? null : p.id)}
+                      aria-expanded={desplegado}
+                      className={`vp-celda w-full flex items-center justify-between gap-2 px-3 py-3 text-left border-l-4 ${color.border} ${
+                        desplegado ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'
+                      } active:bg-neutral-100`}
                     >
-                      {/* Sin `truncate`: un nombre largo se acomoda en dos
-                          lineas. Cortarlo con puntos suspensivos deja dos
-                          empanadas distintas leyendose igual, y el cajero
-                          toca la que no era. Las celdas de una misma fila
-                          crecen juntas, que para eso es una cuadricula. */}
-                      <span className="font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">
-                        {etiquetaVariante(p, v)}
+                      <span className="min-w-0">
+                        <span className="block font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">
+                          {p.nombre}
+                        </span>
+                        <span className="block text-xs text-neutral-500">
+                          {variantes.length} variantes · {desplegado ? 'elige una' : 'toca para elegir'}
+                        </span>
                       </span>
-                      <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
-                        {envioId !== null && p.categoria_id === envioId ? (
-                          <span className="text-xs font-medium text-neutral-500">monto libre</span>
-                        ) : (
-                          fmt(v.precio)
+                      <span className="shrink-0 flex items-center gap-2">
+                        <span className="font-bold text-neutral-700 tabular-nums text-sm">
+                          {igual ? fmt(desde) : `desde ${fmt(desde)}`}
+                        </span>
+                        {enCarrito > 0 && (
+                          <span className="min-w-[28px] h-7 px-1.5 rounded-full bg-acento-500 text-neutral-50 text-sm font-bold flex items-center justify-center tabular-nums">
+                            {enCarrito}
+                          </span>
                         )}
+                        <span aria-hidden className={`vp-flecha opacity-60 transition-transform ${desplegado ? 'rotate-180' : ''}`} />
                       </span>
                     </button>
-                    {enCarrito > 0 && (
-                      <div className="flex items-center gap-1 pr-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => onQuitar(v.id)}
-                          aria-label={`Quitar uno de ${etiquetaVariante(p, v)}`}
-                          className="w-9 h-9 rounded-full border border-neutral-300 text-lg leading-none text-neutral-700 active:bg-neutral-200"
-                        >
-                          −
-                        </button>
-                        <span className="min-w-[28px] h-7 px-1.5 rounded-full bg-acento-500 text-neutral-50 text-sm font-bold flex items-center justify-center tabular-nums">
-                          {enCarrito}
-                        </span>
+                    {desplegado && (
+                      <div className={`grid grid-cols-2 @lg:grid-cols-3 gap-2 p-2 ${color.bg}`}>
+                        {variantes.map((v) => {
+                          const n = cantidades[v.id] ?? 0
+                          return (
+                            <div
+                              key={v.id}
+                              className={`flex items-stretch rounded-xl bg-[var(--vp-superficie)] shadow-sm ${
+                                recienAgregado.has(v.id) ? 'ring-2 ring-acento-400' : ''
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => onAgregar(p, v)}
+                                className="flex-1 min-w-0 px-3 py-2.5 text-left active:bg-neutral-100 rounded-xl"
+                              >
+                                <span className="block font-semibold text-sm leading-snug text-neutral-900 [overflow-wrap:anywhere]">
+                                  {v.nombre}
+                                </span>
+                                <span className="block text-xs font-bold text-neutral-600 tabular-nums">{fmt(v.precio)}</span>
+                              </button>
+                              {n > 0 && (
+                                <div className="flex items-center gap-1 pr-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => onQuitar(v.id)}
+                                    aria-label={`Quitar uno de ${etiquetaVariante(p, v)}`}
+                                    className="w-8 h-8 rounded-full border border-neutral-300 text-base leading-none text-neutral-700 active:bg-neutral-200"
+                                  >
+                                    −
+                                  </button>
+                                  <span className="min-w-[24px] h-6 px-1 rounded-full bg-acento-500 text-neutral-50 text-xs font-bold flex items-center justify-center tabular-nums">
+                                    {n}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
