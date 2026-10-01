@@ -1499,6 +1499,55 @@ select {
   color: var(--vp-superficie);
   box-shadow: 0 0 0 2px var(--vp-superficie);
 }
+/* El globo con la pregunta del modulo, sobre el icono. */
+.vp-recorrido-globo {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.6rem);
+  z-index: 5;
+  width: max-content;
+  max-width: 17rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.7rem;
+  background: var(--vp-tinta);
+  color: var(--vp-superficie);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 10px 24px -10px rgb(23 24 27 / 0.45);
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  pointer-events: none;
+  transition: opacity 0.18s var(--rec-ez), transform 0.18s var(--rec-ez);
+}
+.vp-recorrido-globo::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-top-color: var(--vp-tinta);
+}
+/* La primera y la ultima no se salen de la lamina: se alinean a su borde. */
+.vp-recorrido-globo[data-lado="inicio"] { left: 0; transform: translate(0, 4px); }
+.vp-recorrido-globo[data-lado="inicio"]::after { left: calc(var(--rec-nodo) / 2); }
+.vp-recorrido-globo[data-lado="fin"] { left: auto; right: 0; transform: translate(0, 4px); }
+.vp-recorrido-globo[data-lado="fin"]::after { left: auto; right: calc(var(--rec-nodo) / 2 - 10px); }
+.vp-recorrido-estacion[data-globo] .vp-recorrido-globo,
+.vp-recorrido-estacion:focus-visible .vp-recorrido-globo { opacity: 1; transform: translate(-50%, 0); }
+.vp-recorrido-estacion[data-globo] .vp-recorrido-globo[data-lado],
+.vp-recorrido-estacion:focus-visible .vp-recorrido-globo[data-lado] { transform: none; }
+@media (hover: hover) {
+  .vp-recorrido-estacion:hover .vp-recorrido-globo { opacity: 1; transform: translate(-50%, 0); }
+  .vp-recorrido-estacion:hover .vp-recorrido-globo[data-lado] { transform: none; }
+}
+@media (max-width: 639px) {
+  .vp-recorrido-globo { display: none; }
+}
+.vp-recorrido-estacion { -webkit-touch-callout: none; user-select: none; }
+
 /* La accion ("Ver que comprar") aparece al posar el cursor. En la tablet no
    hay cursor: se toca y se va directo, asi que no ocupa sitio. */
 /* La marca de listo va en tinta, no en el acento: al lado del ambar de lo
@@ -1571,7 +1620,10 @@ select {
 .vp-recorrido-cargando .vp-recorrido-entrada,
 .vp-recorrido-cargando .vp-recorrido-texto { opacity: 0.55; }
 
-/* La entrada: el punto recorre la via y cada estacion se enciende al pasar. */
+/* La entrada: el punto recorre la via y cada estacion se enciende al pasar.
+   `backwards` y no `both`: al terminar, la animacion se suelta y el icono se
+   vuelve a pintar como vector, nitido. Con `both` se quedaba como capa
+   compuesta escalada y se veia borroso (Leider: "no estan en HD"). */
 @keyframes vp-rec-avanza { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 @keyframes vp-rec-viajero { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes vp-rec-enciende {
@@ -1585,21 +1637,21 @@ select {
 
 .vp-recorrido-entra .vp-recorrido-lleno,
 .vp-recorrido-entra .vp-recorrido-carro {
-  animation: vp-rec-avanza var(--rec-viaje) cubic-bezier(0.45, 0.05, 0.25, 1) 0.08s both;
+  animation: vp-rec-avanza var(--rec-viaje) cubic-bezier(0.45, 0.05, 0.25, 1) 0.08s backwards;
 }
 .vp-recorrido-entra .vp-recorrido-viajero {
-  animation: vp-rec-viajero calc(var(--rec-viaje) + 0.15s) linear 0.08s both;
+  animation: vp-rec-viajero calc(var(--rec-viaje) + 0.15s) linear 0.08s backwards;
 }
 .vp-recorrido-entra .vp-recorrido-entrada {
-  animation: vp-rec-enciende 0.5s var(--rec-ez) both;
+  animation: vp-rec-enciende 0.5s var(--rec-ez) backwards;
   animation-delay: calc(0.08s + var(--d, 0ms));
 }
 .vp-recorrido-entra .vp-recorrido-texto {
-  animation: vp-rec-texto 0.45s var(--rec-ez) both;
+  animation: vp-rec-texto 0.45s var(--rec-ez) backwards;
   animation-delay: calc(0.16s + var(--d, 0ms));
 }
 .vp-recorrido-entra .vp-recorrido-marca {
-  animation: vp-rec-marca 0.4s var(--rec-ez) both;
+  animation: vp-rec-marca 0.4s var(--rec-ez) backwards;
   animation-delay: calc(0.3s + var(--d, 0ms));
 }
 /* En el telefono la linea es vertical y no hay viajero: se encienden en fila. */
@@ -1610,7 +1662,7 @@ select {
 }
 .vp-fila-reportes-barra { transform-origin: bottom; }
 .vp-fila-reportes-entra .vp-fila-reportes-barra {
-  animation: vp-rec-barra 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: vp-rec-barra 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
   animation-delay: calc(0.55s + var(--i) * 60ms);
 }
 /* Modo ligero y "reducir movimiento": Recorrido.tsx ni siquiera pone la
