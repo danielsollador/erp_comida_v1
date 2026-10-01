@@ -477,9 +477,14 @@ export default function POS() {
 
   // Los toques de la lista pasan por una referencia: asi la funcion que recibe
   // la lista es siempre la misma y no la obliga a repintarse en cada vuelta.
-  const acciones = useRef({ agregar: (_p: Producto, _v: Variante) => {}, quitar: (_id: number) => {} })
+  const acciones = useRef({
+    agregar: (_p: Producto, _v: Variante) => {},
+    quitar: (_id: number) => {},
+    quitarTodo: (_id: number) => {},
+  })
   const agregarEstable = useCallback((p: Producto, v: Variante) => acciones.current.agregar(p, v), [])
   const quitarEstable = useCallback((id: number) => acciones.current.quitar(id), [])
+  const quitarTodoEstable = useCallback((id: number) => acciones.current.quitarTodo(id), [])
 
   function quitarLibre(id: string) {
     setLibres((l) => l.filter((x) => x.id !== id))
@@ -538,7 +543,7 @@ export default function POS() {
     })
   }
   useEffect(() => {
-    acciones.current = { agregar, quitar }
+    acciones.current = { agregar, quitar, quitarTodo }
   })
 
   // Lo que va a cocina, renglón por renglón, mientras se confirma la comanda.
@@ -1355,6 +1360,7 @@ export default function POS() {
                 recienAgregado={recienAgregado}
                 onAgregar={agregarEstable}
                 onQuitar={quitarEstable}
+                onQuitarTodo={quitarTodoEstable}
                 fmt={fmt}
                 envioId={categoriaEnvios?.id ?? null}
               />
@@ -2483,6 +2489,7 @@ function MenuVariantes({
   fmt,
   onAgregar,
   onQuitar,
+  onQuitarTodo,
   onCerrar,
 }: {
   caja: DOMRect
@@ -2493,6 +2500,7 @@ function MenuVariantes({
   fmt: (usd: number | null | undefined, decimales?: number) => string
   onAgregar: (v: Variante) => void
   onQuitar: (varianteId: number) => void
+  onQuitarTodo: (varianteId: number) => void
   onCerrar: () => void
 }) {
   const panel = useRef<HTMLDivElement>(null)
@@ -2561,6 +2569,16 @@ function MenuVariantes({
             </button>
             {n > 0 && (
               <div className="flex items-center gap-1 pr-1 shrink-0">
+                {/* Las mismas tres piezas del pedido: × todas, − una, cuantas. */}
+                <button
+                  type="button"
+                  onClick={() => onQuitarTodo(v.id)}
+                  aria-label={`Quitar todas las de ${etiquetaVariante(producto, v)}`}
+                  title="Quitar todas"
+                  className="w-8 h-8 rounded-full text-neutral-400 hover:bg-peligro-50 hover:text-peligro-600 active:bg-peligro-50 text-lg leading-none"
+                >
+                  ×
+                </button>
                 <button
                   type="button"
                   onClick={() => onQuitar(v.id)}
@@ -2592,6 +2610,7 @@ function RenglonVendible({
   fmt,
   onAgregar,
   onQuitar,
+  onQuitarTodo,
 }: {
   nombre: string
   /** null = monto libre (los envios). */
@@ -2602,6 +2621,7 @@ function RenglonVendible({
   fmt: (usd: number | null | undefined, decimales?: number) => string
   onAgregar: () => void
   onQuitar: () => void
+  onQuitarTodo: () => void
 }) {
   return (
     <div className={`vp-celda flex items-stretch ${pulsando ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'}`}>
@@ -2620,6 +2640,15 @@ function RenglonVendible({
       </button>
       {enCarrito > 0 && (
         <div className="flex items-center gap-1 pr-2 shrink-0">
+          <button
+            type="button"
+            onClick={onQuitarTodo}
+            aria-label={`Quitar todas las de ${nombre}`}
+            title="Quitar todas"
+            className="w-9 h-9 rounded-full text-neutral-400 hover:bg-peligro-50 hover:text-peligro-600 active:bg-peligro-50 text-xl leading-none"
+          >
+            ×
+          </button>
           <button
             type="button"
             onClick={onQuitar}
@@ -2657,6 +2686,7 @@ const ListaProductos = memo(function ListaProductos({
   recienAgregado,
   onAgregar,
   onQuitar,
+  onQuitarTodo,
   fmt,
   envioId,
 }: {
@@ -2668,6 +2698,7 @@ const ListaProductos = memo(function ListaProductos({
   recienAgregado: Set<number>
   onAgregar: (p: Producto, v: Variante) => void
   onQuitar: (varianteId: number) => void
+  onQuitarTodo: (varianteId: number) => void
   fmt: (usd: number | null | undefined, decimales?: number) => string
   envioId: number | null
 }) {
@@ -2775,6 +2806,7 @@ const ListaProductos = memo(function ListaProductos({
                       fmt={fmt}
                       onAgregar={() => onAgregar(p, v)}
                       onQuitar={() => onQuitar(v.id)}
+                      onQuitarTodo={() => onQuitarTodo(v.id)}
                     />
                   )
                 }
@@ -2829,6 +2861,7 @@ const ListaProductos = memo(function ListaProductos({
                         fmt={fmt}
                         onAgregar={(v) => onAgregar(p, v)}
                         onQuitar={onQuitar}
+                        onQuitarTodo={onQuitarTodo}
                         onCerrar={() => setAbierto(null)}
                       />
                     )}
