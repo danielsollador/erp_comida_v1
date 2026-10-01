@@ -115,6 +115,13 @@ const SECCIONES = [
   { id: 'perdidas', texto: 'Pérdidas' },
   { id: 'categorias', texto: 'Categorías' },
 ]
+// Las que se ven arriba. "Categorias" sigue existiendo (`?s=categorias`) pero
+// no es una pestaña: se administra desde el desplegable de categoria, que es
+// donde se piensa en ellas (Leider, 1-oct, como "Lo que quitaste" del menu).
+const PESTANAS = SECCIONES.filter((x) => x.id !== 'categorias')
+
+// El renglon del desplegable de categoria que lleva a administrarlas.
+const ADMINISTRAR = '__administrar__'
 
 export default function Inventario() {
   const [seccion, irA] = useSeccion(SECCIONES)
@@ -454,15 +461,17 @@ export default function Inventario() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Inventario" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Inventario" secciones={PESTANAS} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="ancha">
         <BarraFiltros rango={rango} alCambiar={setRango} />
         {error && <Aviso>{error}</Aviso>}
 
         {/* Arranque del local: mientras no haya insumos ni recetas cargadas,
-            NO bloquea la venta. Visible en cualquier sub-sección porque es un
-            interruptor de todo el módulo, no solo de "Insumos". */}
-        {config && (
+            NO bloquea la venta. SOLO A LA VISTA CUANDO ESTA PRENDIDO: es un
+            aviso ("ojo, no se controla el stock"), y apagado ocupaba la parte
+            de arriba de las cuatro pestañas sin decir nada (Leider, 1-oct).
+            Prenderlo se hace desde el "⋯" de la mercancia. */}
+        {config?.vender_sin_inventario && (
           <div
             className={`rounded-2xl border p-4 flex items-center justify-between gap-4 ${
               config.vender_sin_inventario
@@ -564,7 +573,7 @@ export default function Inventario() {
             <FiltroDesplegable
               etiqueta="Categoría"
               valor={categoria}
-              alCambiar={setCategoria}
+              alCambiar={(v) => (v === ADMINISTRAR ? irA('categorias') : setCategoria(v))}
               opciones={[
                 { valor: 'todas', texto: 'Todo el depósito' },
                 ...cats.map((c) => ({ valor: String(c.id), texto: c.nombre, contador: c.usos })),
@@ -577,14 +586,41 @@ export default function Inventario() {
                       },
                     ]
                   : []),
+                { valor: ADMINISTRAR, texto: 'Administrar categorías…', detalle: 'crear, renombrar, mover mercancía' },
               ]}
             />
           )}
-          <div className="flex gap-2 shrink-0 ml-auto">
+          {cats.length === 0 && !haySinCategoria && (
+            <button
+              type="button"
+              onClick={() => irA('categorias')}
+              className="h-9 px-3 rounded-full text-sm text-neutral-500 hover:text-neutral-900 hover:bg-neutral-500/10"
+            >
+              Categorías
+            </button>
+          )}
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
             <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
               Conteo físico
             </Boton>
             <Boton onClick={() => setFicha('nuevo')}>+ Nueva mercancía</Boton>
+            {config && (
+              <MenuAcciones
+                etiqueta="Más opciones del inventario"
+                opciones={[
+                  {
+                    texto: config.vender_sin_inventario
+                      ? 'Apagar la venta sin control de inventario'
+                      : 'Vender sin control de inventario',
+                    ayuda: config.vender_sin_inventario
+                      ? 'Las ventas vuelven a descontar y trabarse por stock'
+                      : 'Para arrancar sin mercancía ni recetas: ninguna venta se traba por stock',
+                    onElegir: () => void alternarVentaSinInventario(),
+                  },
+                  { texto: 'Administrar categorías', onElegir: () => irA('categorias') },
+                ]}
+              />
+            )}
           </div>
         </div>
 
@@ -601,7 +637,7 @@ export default function Inventario() {
                 <Th clave="reponer" alinear="derecha">{nombre('inventario.reponer')}</Th>
                 <Th clave="rendimiento" alinear="derecha">{nombre('inventario.rendimiento')}</Th>
                 <Th clave="real" alinear="derecha">Costo real</Th>
-                <Th ayuda="inventario.acciones" alinear="derecha">Acciones</Th>
+                <th aria-label="Abrir" className="w-8" />
               </tr>
             </thead>
             <tbody>
@@ -625,21 +661,26 @@ export default function Inventario() {
                 const estado = estadoStock(ing)
                 const archivado = ing.activo === false
                 return (
-                  <tr key={ing.id} className={`border-t border-neutral-100 ${archivado ? 'opacity-60' : ''}`}>
+                  // UN TOQUE ABRE LA FICHA, donde estan compra, merma, conteo e
+                  // historial. Cada renglon traia tres botones (+ Compra,
+                  // − Merma, Más): con cincuenta mercancias eran ciento
+                  // cincuenta botones (Leider, 1-oct).
+                  <tr
+                    key={ing.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setFicha(ing.id)}
+                    onKeyDown={(e) => e.key === 'Enter' && setFicha(ing.id)}
+                    className={`vp-celda cursor-pointer border-t border-neutral-100 ${archivado ? 'opacity-60' : ''}`}
+                  >
                     <td className="p-3">
-                      <button
-                        type="button"
-                        onClick={() => setFicha(ing.id)}
-                        className="text-left font-medium hover:text-acento-600"
-                        title="Abrir la ficha"
-                      >
-                        {ing.nombre}
-                      </button>
+                      <span className="block text-left font-medium">{ing.nombre}</span>
                       <span className="block text-[11px] text-neutral-400 mt-0.5">
                         {ing.categoria && (
                           <span className="text-neutral-500 font-medium">{ing.categoria} · </span>
                         )}
                         {ing.tipo === 'reventa' ? 'Reventa' : 'Materia prima'} · por {ing.unidad}
+                        {!archivado && <span className="text-neutral-400"> · toca para comprar, mermar o editar</span>}
                       </span>
                     </td>
                     <td className="text-right p-3 tabular-nums whitespace-nowrap">
@@ -659,9 +700,7 @@ export default function Inventario() {
                       {ing.costo_unitario ? (
                         dinero(ing.costo_unitario)
                       ) : (
-                        <button type="button" onClick={() => setFicha(ing.id)} className="text-aviso-600 font-semibold">
-                          cargar
-                        </button>
+                        <span className="text-aviso-600 font-semibold">cargar</span>
                       )}
                     </td>
                     <td className="text-right p-3 tabular-nums">
@@ -688,21 +727,13 @@ export default function Inventario() {
                       )}
                     </td>
                     <td className="text-right p-3 tabular-nums font-semibold">{dinero(ing.costo_efectivo)}</td>
-                    <td className="p-3">
+                    <td className="p-3 pr-4 text-right">
                       {archivado ? (
-                        <div className="flex justify-end">
+                        <span onClick={(e) => e.stopPropagation()}>
                           <AccionFila onClick={() => archivar(ing, true)}>Reactivar</AccionFila>
-                        </div>
+                        </span>
                       ) : (
-                        <div className="flex gap-1.5 justify-end whitespace-nowrap">
-                          <AccionFila onClick={() => comprar(ing)}>+ Compra</AccionFila>
-                          <AccionFila onClick={() => merma(ing)} tono="peligro">
-                            − Merma
-                          </AccionFila>
-                          <AccionFila onClick={() => setFicha(ing.id)} title="Ficha: editar, contar, historial">
-                            Más
-                          </AccionFila>
-                        </div>
+                        <span aria-hidden className="text-neutral-300 text-lg leading-none">›</span>
                       )}
                     </td>
                   </tr>
@@ -780,6 +811,14 @@ export default function Inventario() {
           </>
         )}
 
+        {seccion === 'categorias' && (
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-xl font-semibold tracking-tight">Categorías del depósito</h2>
+            <button type="button" onClick={() => irA('insumos')} className="text-sm text-neutral-500 hover:text-neutral-900">
+              ← Volver a la mercancía
+            </button>
+          </div>
+        )}
         {seccion === 'categorias' && (
           <SeccionCategorias
             categorias={cats}
