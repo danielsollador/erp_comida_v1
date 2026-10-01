@@ -1823,10 +1823,14 @@ html.vp-ligero .vp-metro-anillo { transition: none; }
    en un cuadrado redondeado, como en las capsulas. Todo lo demas es la linea:
    la pregunta arriba, la via, el punto que la recorre y el texto debajo. Lo
    pendiente: el cuadrito entero en ambar, con su halo. */
+/* El cuadrito es EL MISMO de las fichas de la portada (Cocina, Reportes):
+   terracota tenue con el icono en terracota. Un gris propio no pegaba con
+   nada de lo que hay alrededor (Leider, 1-oct). */
 .vp-estilo-mixto .vp-recorrido-nodo {
   border-radius: 0.85rem;
-  background: var(--vp-superficie);
-  box-shadow: inset 0 0 0 1px var(--vp-textura), 0 1px 2px rgb(23 24 27 / 0.08), 0 6px 14px -8px rgb(23 24 27 / 0.25);
+  background: var(--color-acento-50);
+  color: var(--color-acento-600);
+  box-shadow: none;
 }
 /* Lo pendiente en ambar SUAVE: fondo teñido, borde y el icono en el mismo
    ambar de la frase. Relleno solido con brillo gritaba demasiado (Leider,
@@ -1839,14 +1843,7 @@ html.vp-ligero .vp-metro-anillo { transition: none; }
     inset 0 0 0 1.5px color-mix(in oklab, var(--color-aviso-400) 75%, transparent),
     0 0 0 4px color-mix(in oklab, var(--color-aviso-400) 12%, transparent);
 }
-/* En oscuro, lo que esta en orden sube un tono sobre la lamina y el icono va
-   en tinta: con el mismo fondo de la lamina se perdia (Leider: "muy
-   opacos"). */
-html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-nodo {
-  background: color-mix(in oklab, var(--vp-superficie) 84%, var(--vp-tinta));
-  color: var(--vp-tinta);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vp-tinta) 16%, transparent), 0 6px 14px -8px rgb(0 0 0 / 0.5);
-}
+/* En oscuro, lo pendiente un poco mas teñido para que se lea sobre la lamina. */
 html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo .vp-recorrido-nodo,
 html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo:hover .vp-recorrido-nodo {
   background: color-mix(in oklab, var(--color-aviso-400) 20%, var(--vp-superficie));
@@ -1857,7 +1854,8 @@ html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo:hover .vp-recorrido-
 }
 @media (hover: hover) {
   .vp-estilo-mixto .vp-recorrido-estacion:hover .vp-recorrido-nodo {
-    box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--vp-acento) 55%, transparent), 0 10px 20px -10px color-mix(in oklab, var(--vp-acento) 60%, transparent);
+    color: var(--color-acento-600);
+    box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--vp-acento) 45%, transparent), 0 10px 20px -10px color-mix(in oklab, var(--vp-acento) 55%, transparent);
   }
 }
 .vp-estilo-mixto .vp-recorrido-marca { right: -4px; bottom: -4px; }
