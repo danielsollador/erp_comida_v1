@@ -3,7 +3,7 @@ import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
 import { useAltoRestante } from '../lib/altoRestante'
-import { BotonUnidad, CampoCantidad } from '../components/Cantidad'
+import { CampoCantidad, CasillaConUnidad } from '../components/Cantidad'
 import { convertirTexto, factorEntre } from '../lib/unidades'
 import Agarre from '../components/Agarre'
 import { useArrastre } from '../lib/arrastre'
@@ -14,7 +14,6 @@ import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { nombre } from '../lib/palabras'
 import { Aviso, Boton, Campo, Cifra, FiltroDesplegable, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
-import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
 import type {
@@ -1872,14 +1871,25 @@ const GRUPO: Record<string, string> = {
   reverso: 'Movimientos deshechos',
 }
 
-function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) {
+/** Un grupo del resumen del historial (lo que entro, o lo que salio), con su total arriba. */
+function GrupoDelExtracto({
+  titulo,
+  filas,
+  total,
+  signo,
+  tono,
+  unidad,
+}: {
+  titulo: string
+  filas: RenglonPorTipo[]
+  total: number
+  signo: '+' | '−'
+  tono: string
+  unidad: string
+}) {
   const { fmt: dinero } = useMoneda()
-  // UNA TABLA CON SUS CAMPOS: que paso, cuantas veces, cuanto y cuanto vale,
-  // con lo que entro y lo que salio como dos grupos y lo que queda al pie.
-  // Eran dos columnas de numeros sueltos sin rotulo (Leider, 2-oct: "hay
-  // muchos numeros juntos, no hay campos claros").
-  const valorDe = (filas: RenglonPorTipo[]) => filas.reduce((t, x) => t + Math.abs(x.valor), 0)
-  const Grupo = ({ titulo, filas, total, signo, tono }: { titulo: string; filas: RenglonPorTipo[]; total: number; signo: '+' | '−'; tono: string }) => (
+  const valor = filas.reduce((t, x) => t + Math.abs(x.valor), 0)
+  return (
     <>
       <tr className="border-t border-neutral-200">
         <th scope="rowgroup" className="py-2 pl-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
@@ -1888,9 +1898,9 @@ function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) 
         <td />
         <td className={`py-2 text-right tabular-nums font-semibold ${tono}`}>
           {signo}
-          {legible(total, e.unidad)}
+          {legible(total, unidad)}
         </td>
-        <td className="py-2 pr-3 text-right tabular-nums text-neutral-500">{dinero(valorDe(filas))}</td>
+        <td className="py-2 pr-3 text-right tabular-nums text-neutral-500">{dinero(valor)}</td>
       </tr>
       {filas.length === 0 ? (
         <tr>
@@ -1903,13 +1913,20 @@ function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) 
           <tr key={x.tipo}>
             <td className="py-1.5 pl-6 text-neutral-700">{GRUPO[x.tipo] ?? x.etiqueta}</td>
             <td className="py-1.5 text-right tabular-nums text-neutral-500">{x.movimientos}</td>
-            <td className="py-1.5 text-right tabular-nums">{legible(x.cantidad, e.unidad)}</td>
+            <td className="py-1.5 text-right tabular-nums">{legible(x.cantidad, unidad)}</td>
             <td className="py-1.5 pr-3 text-right tabular-nums text-neutral-500">{dinero(Math.abs(x.valor))}</td>
           </tr>
         ))
       )}
     </>
   )
+}
+
+function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) {
+  // UNA TABLA CON SUS CAMPOS: que paso, cuantas veces, cuanto y cuanto vale,
+  // con lo que entro y lo que salio como dos grupos y lo que queda al pie.
+  // Eran dos columnas de numeros sueltos sin rotulo (Leider, 2-oct: "hay
+  // muchos numeros juntos, no hay campos claros").
 
   return (
     <div className="rounded-xl border border-neutral-200 overflow-hidden">
@@ -1933,8 +1950,8 @@ function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) 
               <td />
             </tr>
           )}
-          <Grupo titulo="Entró" filas={e.entradas} total={e.total_entradas} signo="+" tono="text-exito-700" />
-          <Grupo titulo="Salió" filas={e.salidas} total={e.total_salidas} signo="−" tono="text-peligro-600" />
+          <GrupoDelExtracto titulo="Entró" filas={e.entradas} total={e.total_entradas} signo="+" tono="text-exito-700" unidad={e.unidad} />
+          <GrupoDelExtracto titulo="Salió" filas={e.salidas} total={e.total_salidas} signo="−" tono="text-peligro-600" unidad={e.unidad} />
           <tr className="border-t border-neutral-200">
             <th scope="row" className="py-2 pl-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-700">
               Quedan
@@ -2286,26 +2303,23 @@ function ConteoFisico({
                   </td>
                 )}
                 <td className="p-2 text-right">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Numerico
-                      value={texto}
-                      onChange={(e) => setValores((v) => ({ ...v, [ing.id]: e.target.value }))}
-                      placeholder="—"
-                      etiqueta={`Contado de ${ing.nombre} (${vista})`}
-                      aria-label={`Contado de ${ing.nombre}, en ${vista}`}
-                      className={`w-24 text-right border rounded-lg px-2 py-1.5 text-sm tabular-nums ${
-                        texto && !valido ? 'border-peligro-400' : 'border-neutral-300'
-                      }`}
-                    />
-                    <BotonUnidad
-                      unidad={ing.unidad}
-                      vista={vista}
-                      alCambiar={(nueva) => {
-                        setValores((v) => ({ ...v, [ing.id]: convertirTexto(v[ing.id] ?? '', ing.unidad, vista, nueva) }))
-                        setVistas((v) => ({ ...v, [ing.id]: nueva }))
-                      }}
-                    />
-                  </span>
+                  <CasillaConUnidad
+                    unidad={ing.unidad}
+                    vista={vista}
+                    alCambiarVista={(nueva) => {
+                      setValores((v) => ({ ...v, [ing.id]: convertirTexto(v[ing.id] ?? '', ing.unidad, vista, nueva) }))
+                      setVistas((v) => ({ ...v, [ing.id]: nueva }))
+                    }}
+                    value={texto}
+                    onChange={(e) => setValores((v) => ({ ...v, [ing.id]: e.target.value }))}
+                    placeholder="—"
+                    etiqueta={`Contado de ${ing.nombre} (${vista})`}
+                    aria-label={`Contado de ${ing.nombre}, en ${vista}`}
+                    className="w-36 ml-auto"
+                    claseCasilla={`text-right border rounded-lg px-2 py-1.5 text-sm tabular-nums ${
+                      texto && !valido ? 'border-peligro-400' : 'border-neutral-300'
+                    }`}
+                  />
                 </td>
                 {!ciego && (
                   <td className="p-2 text-right tabular-nums whitespace-nowrap">

@@ -2531,7 +2531,7 @@ function MenuVariantes({
       window.removeEventListener('scroll', desplazar, true)
       window.removeEventListener('resize', onCerrar)
     }
-  }, [onCerrar])
+  }, [onCerrar, producto.id])
 
   const ancho = Math.max(caja.width, 260)
   const alto = Math.min(variantes.length * 52 + 16, 360)

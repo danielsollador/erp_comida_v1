@@ -8,8 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Boton, Campo, Modal, Selector } from './ui'
-import { BotonUnidad } from './Cantidad'
-import { Numerico } from './Teclado'
+import { CasillaConUnidad } from './Cantidad'
 import { convertirTexto, factorEntre, otraUnidad, sinRuido } from '../lib/unidades'
 
 /**
@@ -346,25 +345,21 @@ function Formulario({
             return (
               <label key={c.nombre} className="block">
                 <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">{etiqueta}</span>
-                <span className="flex items-center gap-2">
-                  <Numerico
-                    value={valores[c.nombre]}
-                    onChange={(e) => poner(c.nombre, e.target.value)}
-                    placeholder={c.placeholder}
-                    autoFocus={i === 0}
-                    etiqueta={`${c.etiqueta} (${vista})`}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className={`flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm ${error ? 'border-peligro-400' : 'border-neutral-300'}`}
-                  />
-                  <BotonUnidad
-                    unidad={c.sufijo!}
-                    vista={vista}
-                    alCambiar={(nueva) => {
-                      poner(c.nombre, convertirTexto(valores[c.nombre] ?? '', c.sufijo!, vista, nueva))
-                      setVistas((v) => ({ ...v, [c.nombre]: nueva }))
-                    }}
-                  />
-                </span>
+                <CasillaConUnidad
+                  unidad={c.sufijo!}
+                  vista={vista}
+                  alCambiarVista={(nueva) => {
+                    poner(c.nombre, convertirTexto(valores[c.nombre] ?? '', c.sufijo!, vista, nueva))
+                    setVistas((v) => ({ ...v, [c.nombre]: nueva }))
+                  }}
+                  value={valores[c.nombre]}
+                  onChange={(e) => poner(c.nombre, e.target.value)}
+                  placeholder={c.placeholder}
+                  autoFocus={i === 0}
+                  etiqueta={`${c.etiqueta} (${vista})`}
+                  onFocus={(e) => e.currentTarget.select()}
+                  claseCasilla={`border rounded-lg px-3 py-2 text-sm ${error ? 'border-peligro-400' : 'border-neutral-300'}`}
+                />
                 {(error || c.ayuda) && (
                   <span className={`block text-xs mt-1 ${error ? 'text-peligro-600' : 'text-neutral-500'}`}>{error ?? c.ayuda}</span>
                 )}

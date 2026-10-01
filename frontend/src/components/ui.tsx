@@ -658,13 +658,16 @@ export function Modal({
   // pasar aunque manana alguien anime otra cosa.
   return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4"
+      // `--vp-aire`: el margen alrededor del cuadro en pantallas medianas y
+      // grandes. Va en una variable porque los lados y el pie los pone el
+      // `style` de abajo (el teclado), que pisaria un `sm:p-4`.
+      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:pt-4 sm:[--vp-aire:1rem]"
       // Si el teclado propio esta abierto (Teclado.tsx), el cuadro se centra
       // en lo que queda de pantalla en vez de quedar debajo de el.
       style={{
-        paddingBottom: 'var(--vp-teclado-abajo, 0px)',
-        paddingLeft: 'var(--vp-teclado-izquierda, 0px)',
-        paddingRight: 'var(--vp-teclado-derecha, 0px)',
+        paddingBottom: 'calc(var(--vp-teclado-abajo, 0px) + var(--vp-aire, 0px))',
+        paddingLeft: 'calc(var(--vp-teclado-izquierda, 0px) + var(--vp-aire, 0px))',
+        paddingRight: 'calc(var(--vp-teclado-derecha, 0px) + var(--vp-aire, 0px))',
       }}
       onPointerDown={(e) => {
         bajoEnFondo.current = e.target === e.currentTarget
@@ -682,7 +685,12 @@ export function Modal({
         // El clic dentro no cierra: si no, arrastrar para seleccionar un texto
         // y soltar fuera cerraba la ventana con todo a medio llenar.
         onClick={(e) => e.stopPropagation()}
-        className={`vp-menu w-full ${anchos[ancho]} rounded-t-2xl sm:rounded-2xl flex flex-col max-h-[92vh] sm:max-h-[85vh] pb-[env(safe-area-inset-bottom)] sm:pb-0`}
+        // TAN ALTO COMO QUEPA. Con tope en el 85 % de la ventana, un
+        // formulario que se pasaba por un pixel sacaba la barra de
+        // desplazamiento con el resto de la pantalla libre (Leider, 2-oct:
+        // "en teoria cabe todo, y pone un scroll tonto"). Ahora el tope es lo
+        // que deja el margen, y el teclado si esta abierto.
+        className={`vp-menu w-full ${anchos[ancho]} rounded-t-2xl sm:rounded-2xl flex flex-col max-h-[92vh] sm:max-h-full pb-[env(safe-area-inset-bottom)] sm:pb-0`}
         style={{ animation: 'vp-entrar .22s cubic-bezier(.2,.7,.2,1) backwards' }}
       >
         <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-neutral-100 shrink-0">

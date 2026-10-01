@@ -3,7 +3,7 @@ import CampoSugerido from '../components/CampoSugerido'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import BarraFiltros from '../components/BarraFiltros'
-import { BotonUnidad } from '../components/Cantidad'
+import { CasillaConUnidad } from '../components/Cantidad'
 import { convertirTexto, factorEntre } from '../lib/unidades'
 import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
@@ -843,30 +843,35 @@ export default function Compras() {
                       ))}
                       <option value="nuevo">+ Crear mercancía nueva...</option>
                     </select>
-                    <span className="inline-flex items-center gap-1.5">
+                    {ing ? (
+                      <CasillaConUnidad
+                        unidad={ing.unidad}
+                        vista={l.vista ?? ing.unidad}
+                        alCambiarVista={(nueva) =>
+                          setLineas((prev) =>
+                            prev.map((x, idx) =>
+                              idx === i
+                                ? { ...x, cantidad: convertirTexto(x.cantidad, ing.unidad, x.vista ?? ing.unidad, nueva), vista: nueva }
+                                : x,
+                            ),
+                          )
+                        }
+                        value={l.cantidad}
+                        onChange={(e) => actualizarLinea(i, 'cantidad', e.target.value)}
+                        placeholder="Cantidad"
+                        etiqueta={`Cantidad (${l.vista ?? ing.unidad})`}
+                        className="w-36 shrink-0"
+                        claseCasilla="border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
+                      />
+                    ) : (
                       <Numerico
                         value={l.cantidad}
                         onChange={(e) => actualizarLinea(i, 'cantidad', e.target.value)}
                         placeholder="Cantidad"
-                        etiqueta={`Cantidad${ing ? ` (${l.vista ?? ing.unidad})` : ''}`}
-                        className="w-24 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
+                        etiqueta="Cantidad"
+                        className="w-36 shrink-0 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
                       />
-                      {ing && (
-                        <BotonUnidad
-                          unidad={ing.unidad}
-                          vista={l.vista ?? ing.unidad}
-                          alCambiar={(nueva) =>
-                            setLineas((prev) =>
-                              prev.map((x, idx) =>
-                                idx === i
-                                  ? { ...x, cantidad: convertirTexto(x.cantidad, ing.unidad, x.vista ?? ing.unidad, nueva), vista: nueva }
-                                  : x,
-                              ),
-                            )
-                          }
-                        />
-                      )}
-                    </span>
+                    )}
                     <Numerico
                       value={l.costo_unitario}
                       onChange={(e) => actualizarLinea(i, 'costo_unitario', e.target.value)}

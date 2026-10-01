@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Tabla, Th, contiene, palabrasDe, useOrden } from '../../components/Tabla'
 import { Boton, Cifra, FiltroDesplegable, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
+import { CasillaConUnidad } from '../../components/Cantidad'
 import { useDialogo } from '../../components/dialogo'
 import { useGuardiaDeSalida } from '../../lib/sinGuardar'
 import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
@@ -911,7 +912,13 @@ function RenglonReceta({
             {ing.categoria && ` · ${ing.categoria}`}
           </span>
         </span>
-        <Numerico
+        {/* La unidad adentro de la casilla, como en el resto del sistema: el
+            mismo ancho de antes (casilla + boton), en una sola pieza. */}
+        <CasillaConUnidad
+          unidad={ing.unidad}
+          vista={unidadVista}
+          alCambiarVista={() => onCambio({ enChica: !enChica })}
+          rotulo={pieza ? (cantidad === 1 ? 'pieza' : 'piezas') : ing.unidad}
           value={valorVisto}
           onChange={(e) => escribir(e.target.value)}
           placeholder="0"
@@ -919,20 +926,9 @@ function RenglonReceta({
           etiqueta={`${ing.nombre} (${unidadVista})`}
           aria-label={`Cantidad de ${ing.nombre} por unidad, en ${unidadVista}`}
           autoFocus={f.cantidad_por_unidad === ''}
-          className="w-20 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-right tabular-nums"
+          className="w-[8.75rem] shrink-0"
+          claseCasilla="border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-right tabular-nums"
         />
-        {otra ? (
-          <button
-            type="button"
-            onClick={() => onCambio({ enChica: !enChica })}
-            title={`Ver en ${enChica ? ing.unidad : otra}`}
-            className="w-12 shrink-0 rounded-md bg-neutral-100 hover:bg-neutral-200 px-1 py-1 text-xs font-semibold text-neutral-700 tabular-nums"
-          >
-            {unidadVista} ⇄
-          </button>
-        ) : (
-          <span className="w-12 shrink-0 text-xs text-neutral-500">{pieza ? (cantidad === 1 ? 'pieza' : 'piezas') : ing.unidad}</span>
-        )}
         <span className="w-16 text-right text-sm tabular-nums font-semibold">
           {cantidad > 0 ? fmt(cantidad * ing.costo_efectivo) : '—'}
         </span>
