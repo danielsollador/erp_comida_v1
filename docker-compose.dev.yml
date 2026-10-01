@@ -14,6 +14,8 @@ services:
       ERP_BACKUP_ON_STARTUP: "0"   # en dev no ensuciar con respaldos cada rato
       ERP_SEMBRAR_DEMO: "1"        # menu de ejemplo si la base esta vacia (solo aqui)
       ERP_LECTOR_FACTURAS: ${ERP_LECTOR_FACTURAS:-prueba}  # facturas desde foto, sin IA real
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}                  # solo si ERP_LECTOR_FACTURAS=gemini
+      ERP_GEMINI_MODELO: ${ERP_GEMINI_MODELO:-}
       TZ: ${TZ:-America/Caracas}
     volumes:
       - ./backend/app:/app/app:ro   # editar en el host se refleja al instante
