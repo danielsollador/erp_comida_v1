@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import EditarPedido from '../components/EditarPedido'
 import Autorizar from '../components/Autorizar'
 import { useSeccion } from '../components/Secciones'
@@ -2441,6 +2442,122 @@ function agruparPorProducto(filas: { producto: Producto; variante: Variante }[])
   return grupos
 }
 
+/**
+ * Las variantes de un producto, en un menu flotante pegado a su renglon.
+ *
+ * VA EN UN PORTAL AL `body`, posicionado con la caja del renglon: la lista de
+ * productos se desplaza dentro de su panel y un menu escrito dentro se
+ * recortaria contra el borde, justo en los productos de abajo. Se abre hacia
+ * abajo y, si no cabe, hacia arriba.
+ *
+ * NO SE CIERRA AL ELEGIR: cada toque suma uno, como en el resto de la lista,
+ * asi "dos de carne y una de pollo" son tres toques sin volver a abrir. Se
+ * cierra tocando fuera, con Escape o al desplazar la lista.
+ */
+function MenuVariantes({
+  caja,
+  producto,
+  variantes,
+  cantidades,
+  recienAgregado,
+  fmt,
+  onAgregar,
+  onQuitar,
+  onCerrar,
+}: {
+  caja: DOMRect
+  producto: Producto
+  variantes: Variante[]
+  cantidades: Record<number, number>
+  recienAgregado: Set<number>
+  fmt: (usd: number | null | undefined, decimales?: number) => string
+  onAgregar: (v: Variante) => void
+  onQuitar: (varianteId: number) => void
+  onCerrar: () => void
+}) {
+  const panel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const fuera = (e: PointerEvent) => {
+      if (panel.current && !panel.current.contains(e.target as Node)) onCerrar()
+    }
+    const tecla = (e: KeyboardEvent) => e.key === 'Escape' && onCerrar()
+    const desplazar = (e: Event) => {
+      if (panel.current && e.target instanceof Node && panel.current.contains(e.target)) return
+      onCerrar()
+    }
+    // En el siguiente ciclo: el mismo toque que lo abrio no lo cierra.
+    const t = window.setTimeout(() => {
+      document.addEventListener('pointerdown', fuera)
+      document.addEventListener('keydown', tecla)
+      window.addEventListener('scroll', desplazar, true)
+      window.addEventListener('resize', onCerrar)
+    }, 0)
+    return () => {
+      window.clearTimeout(t)
+      document.removeEventListener('pointerdown', fuera)
+      document.removeEventListener('keydown', tecla)
+      window.removeEventListener('scroll', desplazar, true)
+      window.removeEventListener('resize', onCerrar)
+    }
+  }, [onCerrar])
+
+  const ancho = Math.max(caja.width, 260)
+  const alto = Math.min(variantes.length * 52 + 16, 360)
+  const abajo = caja.bottom + 4 + alto <= window.innerHeight - 8
+  const izquierda = Math.max(8, Math.min(caja.left, window.innerWidth - ancho - 8))
+  return createPortal(
+    <div
+      ref={panel}
+      role="menu"
+      aria-label={`Variantes de ${producto.nombre}`}
+      className="vp-menu fixed z-40 p-1.5 overflow-y-auto"
+      style={{
+        left: izquierda,
+        width: ancho,
+        maxHeight: alto,
+        ...(abajo ? { top: caja.bottom + 4 } : { bottom: window.innerHeight - caja.top + 4 }),
+        animation: 'vp-entrar .16s cubic-bezier(.2,.7,.2,1) backwards',
+      }}
+    >
+      {variantes.map((v) => {
+        const n = cantidades[v.id] ?? 0
+        return (
+          <div
+            key={v.id}
+            className={`flex items-center gap-1 rounded-lg ${recienAgregado.has(v.id) ? 'bg-acento-500/15' : ''}`}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => onAgregar(v)}
+              className="flex-1 min-w-0 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-neutral-500/8 active:bg-neutral-500/15"
+            >
+              <span className="font-semibold text-[15px] text-neutral-900 [overflow-wrap:anywhere]">{v.nombre}</span>
+              <span className="shrink-0 font-bold text-neutral-700 tabular-nums">{fmt(v.precio)}</span>
+            </button>
+            {n > 0 && (
+              <div className="flex items-center gap-1 pr-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onQuitar(v.id)}
+                  aria-label={`Quitar uno de ${etiquetaVariante(producto, v)}`}
+                  className="w-8 h-8 rounded-full border border-neutral-300 text-base leading-none text-neutral-700 active:bg-neutral-200"
+                >
+                  −
+                </button>
+                <span className="min-w-[24px] h-6 px-1 rounded-full bg-acento-500 text-neutral-50 text-xs font-bold flex items-center justify-center tabular-nums">
+                  {n}
+                </span>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>,
+    document.body,
+  )
+}
+
 /** Un producto de una sola variante: el renglon que suma uno por toque. */
 function RenglonVendible({
   nombre,
@@ -2530,9 +2647,10 @@ const ListaProductos = memo(function ListaProductos({
   fmt: (usd: number | null | undefined, decimales?: number) => string
   envioId: number | null
 }) {
-  // Los productos con varias variantes que estan abiertos. Uno solo a la
-  // vez: abrir otro cierra el anterior, asi la lista no crece sin fin.
-  const [abierto, setAbierto] = useState<number | null>(null)
+  // El producto cuyas variantes estan a la vista, en un menu flotante
+  // pegado a su renglon: la lista no se mueve al abrirlo (Leider, 1-oct: "no
+  // me gusta que se despliegue hacia abajo, que sea un menu desplegable").
+  const [abierto, setAbierto] = useState<{ id: number; caja: DOMRect } | null>(null)
   return (
     // `@container`: las columnas responden al ancho de ESTE panel, no al de la
     // ventana. Entre `md` y `lg` la ventana es ancha pero el panel mide 400 px
@@ -2640,16 +2758,19 @@ const ListaProductos = memo(function ListaProductos({
                 // variante (Leider, 1-oct, la misma jerarquia de Recetas).
                 // "Empanada" una vez en vez de "Empanada - Carne", "Empanada
                 // - Pollo", "Empanada - Queso" en tres renglones. Dos toques.
-                const desplegado = abierto === p.id
+                const desplegado = abierto?.id === p.id
                 const enCarrito = variantes.reduce((t, v) => t + (cantidades[v.id] ?? 0), 0)
                 const precios = variantes.map((v) => v.precio)
                 const desde = Math.min(...precios)
                 const igual = precios.every((x) => x === desde)
                 return (
-                  <div key={`p${p.id}`} className={desplegado ? '@lg:col-span-2' : ''}>
+                  <div key={`p${p.id}`}>
                     <button
                       type="button"
-                      onClick={() => setAbierto(desplegado ? null : p.id)}
+                      onClick={(e) =>
+                        setAbierto(desplegado ? null : { id: p.id, caja: e.currentTarget.getBoundingClientRect() })
+                      }
+                      aria-haspopup="menu"
                       aria-expanded={desplegado}
                       className={`vp-celda w-full flex items-center justify-between gap-2 px-3 py-3 text-left border-l-4 ${color.border} ${
                         desplegado ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'
@@ -2659,9 +2780,7 @@ const ListaProductos = memo(function ListaProductos({
                         <span className="block font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">
                           {p.nombre}
                         </span>
-                        <span className="block text-xs text-neutral-500">
-                          {variantes.length} variantes · {desplegado ? 'elige una' : 'toca para elegir'}
-                        </span>
+                        <span className="block text-xs text-neutral-500">{variantes.length} variantes</span>
                       </span>
                       <span className="shrink-0 flex items-center gap-2">
                         <span className="font-bold text-neutral-700 tabular-nums text-sm">
@@ -2675,46 +2794,18 @@ const ListaProductos = memo(function ListaProductos({
                         <span aria-hidden className={`vp-flecha opacity-60 transition-transform ${desplegado ? 'rotate-180' : ''}`} />
                       </span>
                     </button>
-                    {desplegado && (
-                      <div className={`grid grid-cols-2 @lg:grid-cols-3 gap-2 p-2 ${color.bg}`}>
-                        {variantes.map((v) => {
-                          const n = cantidades[v.id] ?? 0
-                          return (
-                            <div
-                              key={v.id}
-                              className={`flex items-stretch rounded-xl bg-[var(--vp-superficie)] shadow-sm ${
-                                recienAgregado.has(v.id) ? 'ring-2 ring-acento-400' : ''
-                              }`}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => onAgregar(p, v)}
-                                className="flex-1 min-w-0 px-3 py-2.5 text-left active:bg-neutral-100 rounded-xl"
-                              >
-                                <span className="block font-semibold text-sm leading-snug text-neutral-900 [overflow-wrap:anywhere]">
-                                  {v.nombre}
-                                </span>
-                                <span className="block text-xs font-bold text-neutral-600 tabular-nums">{fmt(v.precio)}</span>
-                              </button>
-                              {n > 0 && (
-                                <div className="flex items-center gap-1 pr-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => onQuitar(v.id)}
-                                    aria-label={`Quitar uno de ${etiquetaVariante(p, v)}`}
-                                    className="w-8 h-8 rounded-full border border-neutral-300 text-base leading-none text-neutral-700 active:bg-neutral-200"
-                                  >
-                                    −
-                                  </button>
-                                  <span className="min-w-[24px] h-6 px-1 rounded-full bg-acento-500 text-neutral-50 text-xs font-bold flex items-center justify-center tabular-nums">
-                                    {n}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
+                    {desplegado && abierto && (
+                      <MenuVariantes
+                        caja={abierto.caja}
+                        producto={p}
+                        variantes={variantes}
+                        cantidades={cantidades}
+                        recienAgregado={recienAgregado}
+                        fmt={fmt}
+                        onAgregar={(v) => onAgregar(p, v)}
+                        onQuitar={onQuitar}
+                        onCerrar={() => setAbierto(null)}
+                      />
                     )}
                   </div>
                 )
