@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useRecordado } from '../lib/memoria'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { ArranqueLocal } from '../lib/types'
@@ -65,13 +66,14 @@ function leerOculto(): boolean {
   }
 }
 
-export default function Arranque() {
-  const [datos, setDatos] = useState<ArranqueLocal | null>(null)
+export default function Arranque({ quien = '' }: { quien?: string }) {
+  // Lo ultimo que se mostro, para no aparecer de golpe al volver a la portada.
+  const [datos, setDatos] = useRecordado<ArranqueLocal | null>(`${quien}:arranque`, null)
   const [oculto, setOculto] = useState(leerOculto)
 
   useEffect(() => {
     api.arranque().then(setDatos).catch(() => undefined)
-  }, [])
+  }, [setDatos])
 
   if (!datos || oculto) return null
   const lista = pasos(datos)

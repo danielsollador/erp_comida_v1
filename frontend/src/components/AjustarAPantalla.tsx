@@ -16,10 +16,15 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
  * Por debajo de `desde` (el telefono) no hace nada: ahi se desplaza como
  * cualquier pagina.
  */
+// La ultima escala, para volver a la pantalla con el tamaño con que se dejo:
+// arrancar siempre en 1 y medir despues era un salto de tamaño al volver del
+// punto de venta (Leider, 1-oct). Vive en memoria; recargar mide de nuevo.
+let ultimaEscala = 1
+
 export default function AjustarAPantalla({ children, desde = 640 }: { children: ReactNode; desde?: number }) {
   const contenido = useRef<HTMLDivElement>(null)
-  const [escala, setEscala] = useState(1)
-  const actual = useRef(1)
+  const [escala, setEscala] = useState(() => (typeof window !== 'undefined' && window.innerWidth >= desde ? ultimaEscala : 1))
+  const actual = useRef(escala)
 
   useLayoutEffect(() => {
     const el = contenido.current
@@ -39,6 +44,7 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
       const pasaDe1 = actual.current === 1 && s < 1
       if (pasaDe1 || Math.abs(s - actual.current) > 0.001 || (s === 1 && actual.current !== 1)) {
         actual.current = s
+        ultimaEscala = s
         setEscala(s)
       }
     }

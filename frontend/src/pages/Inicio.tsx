@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
@@ -12,6 +12,7 @@ import AjustarAPantalla from '../components/AjustarAPantalla'
 import UsuarioMenu from '../components/UsuarioMenu'
 import Notificaciones from '../components/Notificaciones'
 import { useAcceso } from '../lib/acceso'
+import { useRecordado } from '../lib/memoria'
 import { api, connectWs } from '../lib/api'
 import { rangoDe } from '../lib/fechas'
 import { MonedaToggle, useMoneda } from '../lib/moneda'
@@ -40,13 +41,19 @@ function saludo(): string {
  */
 export default function Inicio() {
   const { estado } = useAcceso()
-  const [hoy, setHoy] = useState<ReporteResumen | null>(null)
-  const [pedidosHoy, setPedidosHoy] = useState<number | null>(null)
-  const [enCocina, setEnCocina] = useState(0)
-  const [porCobrar, setPorCobrar] = useState(0)
+  // Todo arranca con LO ULTIMO QUE SE MOSTRO (ver lib/memoria.ts): al volver
+  // del punto de venta la portada vuelve tal cual y se refresca por detras,
+  // en vez de armarse de cero y saltar con cada respuesta. La clave lleva el
+  // usuario: otra persona en la misma pestaña no ve lo del anterior.
+  const quien = estado.usuario || ''
+  const [hoy, setHoy] = useRecordado<ReporteResumen | null>(`${quien}:inicio:hoy`, null)
+  const [pedidosHoy, setPedidosHoy] = useRecordado<number | null>(`${quien}:inicio:pedidos`, null)
+  const [enCocina, setEnCocina] = useRecordado(`${quien}:inicio:cocina`, 0)
+  const [porCobrar, setPorCobrar] = useRecordado(`${quien}:inicio:por-cobrar`, 0)
   // null = cargando; undefined = este rol no ve las cifras (o no respondio):
   // el recorrido se pinta igual, con la pregunta de cada modulo.
-  const [recorrido, setRecorrido] = useState<DatosRecorrido | null | undefined>(
+  const [recorrido, setRecorrido] = useRecordado<DatosRecorrido | null | undefined>(
+    `${quien}:inicio:recorrido`,
     estado.puede.ve_kpis ? null : undefined,
   )
   const { fmt } = useMoneda()
@@ -163,7 +170,7 @@ export default function Inicio() {
         </p>
 
         {/* Las misiones de arranque: solo mientras el local se arma. */}
-        {estado.puede.administrar && <Arranque />}
+        {estado.puede.administrar && <Arranque quien={quien} />}
 
         {/* ── Hoy ─────────────────────────────────────────────────────────
             Un panel ancho con la unica cifra que se pregunta al entrar, y a
@@ -220,7 +227,7 @@ export default function Inicio() {
         </div>
 
         {/* Lo que el sistema avisa solo. Solo a quien ve las cifras. */}
-        {estado.puede.ve_kpis && <Avisos />}
+        {estado.puede.ve_kpis && <Avisos quien={quien} />}
 
         {/* ── Vender: lo que se toca cien veces al dia. Las fichas miden una
             fraccion fija de la pantalla (21 % del alto, con tope), asi que en

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
+import { useRecordado } from '../lib/memoria'
 import { Link } from 'react-router-dom'
 import { api, connectWs } from '../lib/api'
 import type { Aviso } from '../lib/types'
@@ -24,15 +25,16 @@ const TONO: Record<Aviso['tono'], { caja: string; punto: string }> = {
   info: { caja: 'vp-losa', punto: 'bg-acento-500' },
 }
 
-export default function Avisos() {
-  const [lista, setLista] = useState<Aviso[]>([])
+export default function Avisos({ quien = '' }: { quien?: string }) {
+  // Lo ultimo que se mostro, para no aparecer de golpe al volver a la portada.
+  const [lista, setLista] = useRecordado<Aviso[]>(`${quien}:avisos`, [])
 
   useEffect(() => {
     const cargar = () => api.avisos().then(setLista).catch(() => undefined)
     cargar()
     // Una venta o una compra pueden cambiar lo que hay que avisar.
     return connectWs(() => cargar())
-  }, [])
+  }, [setLista])
 
   if (lista.length === 0) return null
   const cols = lista.length >= 4 ? 'lg:grid-cols-4' : lista.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2'
