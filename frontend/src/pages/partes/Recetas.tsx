@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Tabla, Th, contiene, palabrasDe, useOrden } from '../../components/Tabla'
 import { Boton, Cifra, FiltroDesplegable, Vacio } from '../../components/ui'
@@ -51,7 +51,16 @@ const OTRA_UNIDAD: Record<string, string> = { kg: 'g', g: 'kg', lt: 'ml', ml: 'l
 const esGrande = (u: string) => u === 'kg' || u === 'lt'
 const sinRuido = (n: number) => String(Math.round(n * 1e6) / 1e6)
 
-type Renglon = { variante: Variante; nombre: string; categoria: string; info?: CostoVariante }
+type Renglon = {
+  variante: Variante
+  nombre: string
+  categoria: string
+  info?: CostoVariante
+  // El producto al que pertenece: la tabla agrupa sus variantes bajo el.
+  productoId: number
+  producto: string
+  varianteNombre: string
+}
 
 // Los tintes de las franjas. Salen de la paleta (index.css) y esquivan el
 // verde --que es el margen-- y el rojo --que es la perdida--, para que el
@@ -103,8 +112,12 @@ export default function Recetas({
     // Sin receta no hay costo: va al final, que es donde no estorba.
     costo: (r) => r.info?.costo ?? -1,
     precio: (r) => r.variante.precio,
-    ganancia: (r) => (r.info?.sin_receta === false ? (r.info.margen_pct ?? -1e9) : -1e9),
+    // Por la plata que deja, que es lo primero que dice la columna.
+    ganancia: (r) => (r.info?.sin_receta === false && r.info.costo != null ? r.variante.precio - r.info.costo : -1e9),
   })
+  // Que productos estan desglosados en sus variantes. Buscando o filtrando
+  // se abren todos: lo que se busca esta dentro.
+  const [abiertos, setAbiertos] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
@@ -128,6 +141,9 @@ export default function Recetas({
                   nombre: etiquetaVariante(p, v),
                   categoria: c.nombre,
                   info: costos.get(v.id),
+                  productoId: p.id,
+                  producto: p.nombre,
+                  varianteNombre: v.nombre,
                 })),
             ),
         ),
@@ -362,61 +378,67 @@ export default function Recetas({
                 </tr>
               </thead>
               <tbody>
-                {orden.ordenar(visibles).map((r) => {
-                  const falta = r.info?.sin_receta !== false
-                  const margen = falta ? null : r.info?.margen_pct
-                  const costo = falta ? null : (r.info?.costo ?? null)
+                {/* JERARQUIA: un producto con varias variantes es UNA fila
+                    que se toca para desglosarlas (Leider, 1-oct). La fila
+                    del producto no lleva cifras --cada variante tiene las
+                    suyas-- solo cuantas son y cuantas faltan. Con una sola
+                    variante, el producto es la fila y ya. */}
+                {agrupar(orden.ordenar(visibles)).map((g) => {
+                  if (g.renglones.length === 1) {
+                    const r = g.renglones[0]
+                    return <FilaReceta key={r.variante.id} r={r} nombre={r.nombre} onAbrir={() => void abrir(r)} />
+                  }
+                  const desglosado = abiertos.has(g.productoId) || palabras.length > 0 || soloFaltan
+                  const sinReceta = g.renglones.filter((r) => r.info?.sin_receta !== false).length
                   return (
-                    <tr
-                      key={r.variante.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => void abrir(r)}
-                      onKeyDown={(e) => e.key === 'Enter' && void abrir(r)}
-                      className="vp-celda cursor-pointer border-t border-neutral-100"
-                    >
-                      <td className="py-2.5 pl-4 pr-2 min-w-0">
-                        <span className="block truncate font-medium">{r.nombre}</span>
-                        {/* QUE SE TOCA, DICHO. Una fila que abre algo no se
-                            distingue de una que solo informa; el dueño no
-                            sabia que aqui se arma la receta (Leider, 1-oct).
-                            Y la que no tiene receta lo pide en cobre. */}
-                        <span className="block text-[11px] text-neutral-400 truncate">
-                          {r.categoria}
-                          <span className="text-neutral-300"> · </span>
-                          {falta ? (
-                            <span className="font-semibold text-acento-700">Toca para crear la receta</span>
-                          ) : (
-                            <span>Toca para editar la receta</span>
-                          )}
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-right tabular-nums text-neutral-600 hidden sm:table-cell whitespace-nowrap">
-                        {costo != null ? `$${costo.toFixed(2)}` : <span className="text-neutral-300">—</span>}
-                      </td>
-                      <td className="py-2.5 text-right tabular-nums whitespace-nowrap">${r.variante.precio.toFixed(2)}</td>
-                      <td
-                        className={`py-2.5 pr-4 text-right tabular-nums whitespace-nowrap ${
-                          margen == null
-                            ? ''
-                            : margen < 0
-                              ? 'text-peligro-600 font-semibold'
-                              : margen >= 50
-                                ? 'text-exito-600'
-                                : 'text-aviso-600'
-                        }`}
+                    <Fragment key={`p${g.productoId}`}>
+                      <tr
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={desglosado}
+                        onClick={() =>
+                          setAbiertos((prev) => {
+                            const n = new Set(prev)
+                            if (n.has(g.productoId)) n.delete(g.productoId)
+                            else n.add(g.productoId)
+                            return n
+                          })
+                        }
+                        onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLElement).click()}
+                        className="vp-celda cursor-pointer border-t border-neutral-100"
                       >
-                        {margen == null ? (
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
-                            sin receta
+                        <td colSpan={4} className="py-2.5 pl-4 pr-4">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span
+                              aria-hidden
+                              className={`vp-flecha shrink-0 opacity-60 transition-transform ${desglosado ? 'rotate-180' : ''}`}
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">{g.producto}</span>
+                              <span className="block text-[11px] text-neutral-400 truncate">
+                                {g.categoria}
+                                <span className="text-neutral-300"> · </span>
+                                {g.renglones.length} variantes
+                                {sinReceta > 0 && (
+                                  <>
+                                    <span className="text-neutral-300"> · </span>
+                                    <span className="font-semibold text-acento-700">
+                                      {sinReceta === g.renglones.length ? 'sin receta' : `${sinReceta} sin receta`}
+                                    </span>
+                                  </>
+                                )}
+                                <span className="text-neutral-300"> · </span>
+                                {desglosado ? 'Toca para plegar' : 'Toca para ver las variantes'}
+                              </span>
+                            </span>
                           </span>
-                        ) : margen < 0 ? (
-                          'a pérdida'
-                        ) : (
-                          `${margen.toFixed(0)}%`
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                      {desglosado &&
+                        g.renglones.map((r) => (
+                          <FilaReceta key={r.variante.id} r={r} nombre={r.varianteNombre} sangria onAbrir={() => void abrir(r)} />
+                        ))}
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -425,6 +447,88 @@ export default function Recetas({
         )}
       </div>
     </>
+  )
+}
+
+/** Las filas ya ordenadas, juntas por producto y en el orden en que aparece el primero de cada uno. */
+function agrupar(renglones: Renglon[]) {
+  const grupos: { productoId: number; producto: string; categoria: string; renglones: Renglon[] }[] = []
+  const porId = new Map<number, (typeof grupos)[number]>()
+  for (const r of renglones) {
+    let g = porId.get(r.productoId)
+    if (!g) {
+      g = { productoId: r.productoId, producto: r.producto, categoria: r.categoria, renglones: [] }
+      porId.set(r.productoId, g)
+      grupos.push(g)
+    }
+    g.renglones.push(r)
+  }
+  return grupos
+}
+
+/**
+ * Una fila de la tabla: un producto de una sola variante, o una variante
+ * dentro de su producto (con sangria). Se toca para armar o cambiar la
+ * receta, y lo dice.
+ */
+function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombre: string; sangria?: boolean; onAbrir: () => void }) {
+  const falta = r.info?.sin_receta !== false
+  const margen = falta ? null : r.info?.margen_pct
+  const costo = falta ? null : (r.info?.costo ?? null)
+  const precio = r.variante.precio
+  // La ganancia en plata y en porcentaje, las dos (Leider, 1-oct): lo que
+  // deja cada uno y que parte del precio es. A perdida, en negativo y rojo.
+  const ganancia = costo != null ? precio - costo : null
+  return (
+    <tr
+      role="button"
+      tabIndex={0}
+      onClick={onAbrir}
+      onKeyDown={(e) => e.key === 'Enter' && onAbrir()}
+      className={`vp-celda cursor-pointer border-t border-neutral-100 ${sangria ? 'bg-neutral-50/60' : ''}`}
+    >
+      <td className={`py-2.5 pr-2 min-w-0 ${sangria ? 'pl-10' : 'pl-4'}`}>
+        <span className={`block truncate ${sangria ? '' : 'font-medium'}`}>{nombre}</span>
+        {/* QUE SE TOCA, DICHO. Una fila que abre algo no se distingue de una
+            que solo informa; el dueño no sabia que aqui se arma la receta
+            (Leider, 1-oct). Y la que no tiene receta lo pide en cobre. */}
+        <span className="block text-[11px] text-neutral-400 truncate">
+          {!sangria && (
+            <>
+              {r.categoria}
+              <span className="text-neutral-300"> · </span>
+            </>
+          )}
+          {falta ? (
+            <span className="font-semibold text-acento-700">Toca para crear la receta</span>
+          ) : (
+            <span>Toca para editar la receta</span>
+          )}
+        </span>
+      </td>
+      <td className="py-2.5 text-right tabular-nums text-neutral-600 hidden sm:table-cell whitespace-nowrap">
+        {costo != null ? `$${costo.toFixed(2)}` : <span className="text-neutral-300">—</span>}
+      </td>
+      <td className="py-2.5 text-right tabular-nums whitespace-nowrap">${precio.toFixed(2)}</td>
+      <td
+        className={`py-2.5 pr-4 text-right tabular-nums whitespace-nowrap ${
+          ganancia == null ? '' : ganancia < 0 ? 'text-peligro-600' : margen != null && margen >= 50 ? 'text-exito-600' : 'text-aviso-600'
+        }`}
+      >
+        {ganancia == null || margen == null ? (
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
+            sin receta
+          </span>
+        ) : (
+          <>
+            <span className="block font-semibold">
+              {ganancia < 0 ? '−' : '+'}${Math.abs(ganancia).toFixed(2)}
+            </span>
+            <span className="block text-[11px]">{ganancia < 0 ? 'a pérdida' : `${margen.toFixed(0)}% del precio`}</span>
+          </>
+        )}
+      </td>
+    </tr>
   )
 }
 
