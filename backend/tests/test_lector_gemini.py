@@ -41,14 +41,19 @@ def gemini(monkeypatch):
     monkeypatch.setattr(settings, "LECTOR_FACTURAS", "gemini")
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "clave-de-prueba")
     monkeypatch.setattr(settings, "GEMINI_MODELO", "gemini-3.8-flash")
+    # Sin respaldo salvo que la prueba lo pida, y sin esperar entre reintentos.
+    monkeypatch.setattr(settings, "GEMINI_MODELO_RESPALDO", "")
+    monkeypatch.setattr(lectura_facturas.time, "sleep", lambda s: None)
     pedidos = []
 
-    def responder(estado=200, cuerpo=None, error=None):
+    def responder(estado=200, cuerpo=None, error=None, secuencia=None):
+        """`secuencia`: lista de (estado, cuerpo), una por pedido, en orden."""
         def post(url, json=None, headers=None, timeout=None):
             pedidos.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
             if error:
                 raise error
-            return httpx.Response(estado, json=cuerpo, request=httpx.Request("POST", url))
+            e, c = secuencia[len(pedidos) - 1] if secuencia else (estado, cuerpo)
+            return httpx.Response(e, json=c, request=httpx.Request("POST", url))
         monkeypatch.setattr(lectura_facturas.httpx, "post", post)
 
     return pedidos, responder
@@ -135,21 +140,63 @@ def test_ignora_el_razonamiento_y_las_comillas_de_bloque(gemini):
     assert lectura_facturas.leer(JPG, "image/jpeg").borrador.proveedor_rif == "J-40123456-7"
 
 
-@pytest.mark.parametrize("estado, dice", [
-    (401, "clave de Gemini no es válida"),
-    (403, "no tiene permiso"),
-    (404, "ERP_GEMINI_MODELO"),
-    (429, "límite de uso"),
-    (500, "no está disponible"),
-    (503, "no está disponible"),
+@pytest.mark.parametrize("estado, dice, pedidos_hechos", [
+    (401, "clave de Gemini no es válida", 1),
+    (403, "no tiene permiso", 1),
+    (404, "ERP_GEMINI_MODELO", 1),
+    (429, "límite de uso", 1),
+    (418, "no está disponible", 1),
+    (500, "saturado", 3),
+    (503, "saturado", 3),
 ])
-def test_cada_falla_de_google_dice_que_hacer(gemini, estado, dice):
-    _, responder = gemini
+def test_cada_falla_de_google_dice_que_hacer(gemini, estado, dice, pedidos_hechos):
+    pedidos, responder = gemini
     responder(estado=estado, cuerpo={"error": {"message": "detalle interno de la cuenta"}})
     with pytest.raises(lectura_facturas.ErrorDeLectura) as e:
         lectura_facturas.leer(JPG, "image/jpeg")
     assert dice in str(e.value)
     assert "detalle interno" not in str(e.value), "el detalle de Google va al log, no a la pantalla"
+    assert len(pedidos) == pedidos_hechos, "solo lo pasajero se reintenta"
+
+
+def test_si_google_esta_saturado_reintenta_y_lee(gemini):
+    """Paso de verdad: con las 21 facturas reales, la mitad volvio con 503
+    'mucha demanda'. Unos segundos despues se leen."""
+    pedidos, responder = gemini
+    responder(secuencia=[(503, {}), (503, {}), (200, respuesta(json.dumps(BORRADOR)))])
+    l = lectura_facturas.leer(JPG, "image/jpeg")
+    assert l.borrador.numero_factura == "0004512" and l.modelo == "gemini-3.8-flash"
+    assert len(pedidos) == 3
+
+
+def test_si_el_principal_sigue_saturado_lee_el_de_respaldo(gemini, monkeypatch):
+    pedidos, responder = gemini
+    monkeypatch.setattr(settings, "GEMINI_MODELO_RESPALDO", "gemini-3.5-flash-lite")
+    responder(secuencia=[(503, {})] * 3 + [(200, respuesta(json.dumps(BORRADOR)))])
+    l = lectura_facturas.leer(JPG, "image/jpeg")
+    assert l.modelo == "gemini-3.5-flash-lite"
+    assert [p["url"].split("/models/")[1].split(":")[0] for p in pedidos] == (
+        ["gemini-3.8-flash"] * 3 + ["gemini-3.5-flash-lite"]
+    )
+
+
+def test_los_dos_saturados(gemini, monkeypatch):
+    pedidos, responder = gemini
+    monkeypatch.setattr(settings, "GEMINI_MODELO_RESPALDO", "gemini-3.5-flash-lite")
+    responder(estado=503, cuerpo={})
+    with pytest.raises(lectura_facturas.ErrorDeLectura, match="saturado"):
+        lectura_facturas.leer(JPG, "image/jpeg")
+    assert len(pedidos) == 6
+
+
+def test_un_error_que_no_es_pasajero_no_cambia_de_modelo(gemini, monkeypatch):
+    """Una clave mala no se arregla con otro modelo: se dice de una vez."""
+    pedidos, responder = gemini
+    monkeypatch.setattr(settings, "GEMINI_MODELO_RESPALDO", "gemini-3.5-flash-lite")
+    responder(estado=401, cuerpo={})
+    with pytest.raises(lectura_facturas.ErrorDeLectura, match="no es válida"):
+        lectura_facturas.leer(JPG, "image/jpeg")
+    assert len(pedidos) == 1
 
 
 def test_sin_red_o_lento(gemini):
@@ -190,5 +237,29 @@ def test_por_la_api_guarda_lo_que_costo(client, db, gemini):
     responder(cuerpo=respuesta(json.dumps(BORRADOR)))
     r = client.post("/api/compras/lectura", files={"archivo": ("f.jpg", JPG, "image/jpeg")}).json()
     s = db.get(models.SoporteFactura, r["soporte_id"])
-    assert (s.lector, s.tokens_entrada, s.tokens_salida) == ("gemini", 1800, 400)
+    assert (s.lector, s.tokens_entrada, s.tokens_salida) == ("gemini:gemini-3.8-flash", 1800, 400)
     assert r["borrador"]["proveedor_rif"] == "J-40123456-7"
+
+
+def test_los_codigos_de_barra_sueltos_no_son_renglones(gemini):
+    """Paso con una factura real: cada codigo de barras salio como renglon."""
+    _, responder = gemini
+    con_codigos = {**BORRADOR, "renglones": [
+        BORRADOR["renglones"][0],
+        {"descripcion": "076501171709", "cantidad": 1, "unidad": "", "precio_unitario": 0,
+         "subtotal": 0, "exento": None},
+        BORRADOR["renglones"][1],
+    ]}
+    responder(cuerpo=respuesta(json.dumps(con_codigos)))
+    b = lectura_facturas.leer(JPG, "image/jpeg").borrador
+    assert [r.descripcion for r in b.renglones] == ["HARINA PAN 1KG (E)", "QUESO BLANCO DURO"]
+
+
+def test_le_dice_a_gemini_la_fecha_de_hoy(gemini):
+    """Sin esto leia 2020, 2023 o 2024 en facturas de 2026."""
+    import datetime
+    pedidos, responder = gemini
+    responder(cuerpo=respuesta(json.dumps(BORRADOR)))
+    lectura_facturas.leer(JPG, "image/jpeg")
+    texto = pedidos[0]["json"]["contents"][0]["parts"][1]["text"]
+    assert f"Hoy es {datetime.date.today().isoformat()}" in texto

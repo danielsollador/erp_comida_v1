@@ -1973,9 +1973,20 @@ class AvisoPrecio(BaseModel):
     mensaje: str = ""
 
 
+class RifConocido(BaseModel):
+    rif: str
+    nombre: str
+
+
 class RevisionFactura(BaseModel):
     duplicadas: List[FacturaParecida] = []
     precios: List[AvisoPrecio] = []
+    # Por que ese RIF no puede ser correcto (su digito verificador no cuadra).
+    # Vacio si cuadra o no se puede saber. Avisa, no bloquea.
+    rif_aviso: str = ""
+    # Un RIF conocido (de un proveedor o de una factura anterior) que difiere
+    # en un solo caracter: casi seguro es el que la lectura confundio.
+    rif_sugerido: Optional[RifConocido] = None
 
 
 class AdjuntarSoporteRequest(BaseModel):

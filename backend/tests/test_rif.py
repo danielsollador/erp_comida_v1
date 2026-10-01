@@ -60,3 +60,29 @@ def test_validador_reconoce_los_seis_tipos_de_contribuyente():
 
 def test_normalizar_quita_espacios_y_guiones_y_pone_mayusculas():
     assert impuestos.normalizar_rif(" j - 12345678 - 9 ") == "J123456789"
+
+
+# ------------------------------------------------- digito verificador (aviso)
+
+from app import impuestos  # noqa: E402
+
+
+def test_el_digito_verificador_cuadra_con_rif_reales():
+    """Diez RIF de facturas reales de proveedores. Si el calculo estuviera mal,
+    avisaria de mas sobre proveedores legitimos."""
+    for rif in ["J-40223513-5", "J-50115655-7", "J-40909890-7", "J-31366229-1", "J-50269191-0",
+                "J-41247314-0", "J-00020200-1", "J-41002396-1", "J-50484227-3", "J-00010791-2"]:
+        assert impuestos.rif_digito_ok(rif) is True, rif
+
+
+def test_un_digito_mal_leido_se_nota():
+    """Los tres errores que cometio la lectura con IA en facturas reales."""
+    assert impuestos.rif_digito_ok("J-41247314-8") is False
+    assert impuestos.rif_digito_ok("J-40908990-7") is False
+
+
+def test_cuando_no_se_puede_decir_no_se_dice():
+    assert impuestos.rif_digito_ok("J-12345678") is None, "sin digito verificador"
+    assert impuestos.rif_digito_ok("C-12345678-9") is None, "letra sin valor seguro"
+    assert impuestos.rif_digito_ok("") is None
+    assert impuestos.rif_digito_ok("V123") is None

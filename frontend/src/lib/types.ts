@@ -1195,6 +1195,10 @@ export type CuerpoCompletarFactura = {
 export type RevisionFactura = {
   duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
   precios: AvisoPrecio[]
+  /** Por qué ese RIF no puede ser correcto (dígito verificador). Vacío si cuadra. */
+  rif_aviso: string
+  /** Un RIF conocido que difiere en un solo carácter del leído. */
+  rif_sugerido: { rif: string; nombre: string } | null
 }
 
 export type ConfiguracionFiscal = {

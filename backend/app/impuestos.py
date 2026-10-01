@@ -7,7 +7,7 @@ solo resuelve la aritmetica del IVA y donde vive la alicuota vigente.
 """
 
 import re
-from typing import Tuple
+from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,29 @@ def normalizar_rif(rif: str) -> str:
 
 def rif_valido(rif: str) -> bool:
     return bool(_RIF_FORMATO.match(normalizar_rif(rif)))
+
+
+# Valor de la letra para el digito verificador. La C (comunas) no se incluye:
+# no hay certeza de su valor, y un aviso falso es peor que ninguno.
+_VALOR_LETRA_RIF = {"V": 1, "E": 2, "J": 3, "P": 4, "G": 5}
+_PESOS_RIF = (4, 3, 2, 7, 6, 5, 4, 3, 2)
+
+
+def rif_digito_ok(rif: str) -> Optional[bool]:
+    """Si el ultimo digito del RIF cuadra con el resto.
+
+    NO es para rechazar: guardar sigue pidiendo solo el formato (ver arriba).
+    Es para AVISAR al revisar una factura leida de una foto, donde un digito
+    mal leido es el error mas comun -- y con este calculo se ve sin mirar el
+    papel. Comprobado con 10 RIF reales de facturas de proveedores.
+    None si no se puede decir (sin digito verificador o letra sin valor).
+    """
+    r = normalizar_rif(rif)
+    if not _RIF_FORMATO.match(r) or len(r) != 10 or r[0] not in _VALOR_LETRA_RIF:
+        return None
+    suma = sum(p * d for p, d in zip(_PESOS_RIF, [_VALOR_LETRA_RIF[r[0]]] + [int(c) for c in r[1:9]]))
+    digito = 11 - suma % 11
+    return (0 if digito >= 10 else digito) == int(r[9])
 
 
 def _config(db: Session) -> models.ConfiguracionFiscal:

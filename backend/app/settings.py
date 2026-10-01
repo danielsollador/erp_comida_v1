@@ -114,6 +114,10 @@ def _del_env_local(nombre: str) -> str:
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or _del_env_local("GEMINI_API_KEY")
 # Que modelo de Gemini lee. Cambiarlo no requiere tocar codigo.
 GEMINI_MODELO = os.getenv("ERP_GEMINI_MODELO", "").strip() or "gemini-3.8-flash"
+# Con cual se prueba si el principal esta saturado (Google contesta 503 a
+# rachas). "-" lo apaga.
+_respaldo = os.getenv("ERP_GEMINI_MODELO_RESPALDO", "").strip()
+GEMINI_MODELO_RESPALDO = "" if _respaldo == "-" else (_respaldo or "gemini-3.5-flash-lite")
 
 # Siembra del primer usuario, OPCIONAL. Sin esto, la primera visita al ERP
 # pide crear el administrador desde el navegador (modo instalacion).

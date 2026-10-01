@@ -19,6 +19,8 @@ import base64
 import datetime
 import json
 import logging
+import re
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -39,6 +41,7 @@ class Lectura:
     borrador: schemas.BorradorFactura
     tokens_entrada: int = 0
     tokens_salida: int = 0
+    modelo: str = ""  # el que de verdad leyo (puede ser el de respaldo)
 
 
 def lector_activo() -> Optional[str]:
@@ -106,18 +109,41 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{modelo}:g
 # puede tardar mas. Pasado esto, mejor que la persona la cargue a mano.
 GEMINI_TIMEOUT_S = 90
 
-INSTRUCCIONES = """Transcribe esta factura de COMPRA de un restaurante en Venezuela.
-Copia lo que dice el papel; no calcules, no completes ni inventes nada.
+# Google contesta 503 "mucha demanda" a rachas, sobre todo en los modelos mas
+# nuevos: con las 21 facturas reales de la primera prueba fallo la mitad. Es
+# pasajero, asi que se reintenta antes de rendirse, y si el modelo sigue
+# saturado se prueba con el de respaldo. Las esperas son cortas: alguien esta
+# delante de la pantalla esperando.
+ESTADOS_PASAJEROS = (500, 502, 503, 504)
+ESPERAS_REINTENTO_S = (2, 5)
 
-- proveedor_nombre y proveedor_rif: los del EMISOR, quien vende. No los del
-  cliente (el restaurante), que tambien suelen aparecer en la factura.
-- numero_factura: el numero de FACTURA, no el "numero de control".
-- fecha: la de emision, como AAAA-MM-DD. En Venezuela se escribe DD/MM/AAAA.
+# Lo que hay que decirle a Gemini sobre ESTAS facturas lo aprendio una
+# prueba con 21 facturas reales escaneadas (2026-10-01): leia mal el ano,
+# tomaba el RIF del sello de recibido, convertia codigos de barra en
+# renglones y se perdia con los escaneos girados. Cada regla de abajo viene
+# de un error visto, no de una suposicion.
+INSTRUCCIONES = """Transcribe esta factura de COMPRA de un negocio en Venezuela.
+Copia lo que dice el papel; no calcules, no completes ni inventes nada.
+Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.
+
+- El escaneo puede estar girado 90 o 180 grados, o al reves: leelo en su
+  orientacion correcta antes de transcribir.
+- proveedor_nombre y proveedor_rif: los del EMISOR, quien vende (suele estar
+  en el encabezado, junto al logo). NO los del cliente: ni los de "Cliente",
+  "Senores", "Razon social" o "Nombre", ni los del SELLO de recibido (un sello
+  con firma y fecha escrita a mano, casi siempre abajo), que son de quien
+  compra. Si el emisor no muestra su RIF, deja proveedor_rif vacio.
+- numero_factura: el de FACTURA o NOTA DE ENTREGA, no el "numero de control"
+  ni el de pedido, guia o ticket.
+- fecha: la de emision, como AAAA-MM-DD. En Venezuela se escribe DD/MM/AAAA
+  o DD-MM-AAAA. Lee el ano con cuidado: si no se distingue, no lo deduzcas de
+  otro dato, dejalo vacio y dilo en advertencias.
 - moneda: "Bs" si los montos de los renglones estan en bolivares, "$" si
   estan en dolares, "" si no se puede saber.
-- renglones: uno por cada linea de producto, en el orden del papel.
-  descripcion y unidad tal cual (UND, KG, BULTO, CAJA...). precio_unitario
-  SIN IVA. exento: true si el renglon esta marcado como exento ("(E)",
+- renglones: uno por cada PRODUCTO, en el orden del papel. Un codigo de
+  barras o de articulo impreso debajo o al lado del producto es parte de ese
+  renglon, no un renglon aparte. descripcion y unidad tal cual (UND, KG,
+  BULTO, CAJA...). precio_unitario SIN IVA. exento: true si el renglon esta marcado como exento ("(E)",
   "E", "Exento"), false si se ve que grava IVA, null si no se distingue.
 - recargo (flete, recargo) y descuento: montos POSITIVOS sobre el total de
   la factura; 0 si no hay.
@@ -125,7 +151,10 @@ Copia lo que dice el papel; no calcules, no completes ni inventes nada.
   (en la factura suele decir "SUB-TOTAL"). No es la "base imponible", que
   es solo la parte gravada. iva y total: los IMPRESOS.
 - Numeros con punto decimal y sin separador de miles: en Venezuela
-  "1.234,56" significa 1234.56.
+  "1.234,56" significa 1234.56. Si la factura trae montos en Bs y en $,
+  transcribe la moneda de los renglones y sus totales en esa misma moneda.
+- Las marcas a mano (chulitos, tachas, numeros escritos encima) son de
+  quien recibio la mercancia: no cambian lo impreso.
 - Si un dato no se lee con seguridad, dejalo en null ("" si es texto) y
   explicalo en advertencias, en espanol y breve. Un campo vacio se corrige
   en un segundo; uno inventado se cuela en la contabilidad."""
@@ -181,6 +210,14 @@ _MENSAJE_POR_ESTADO = {
 }
 
 
+def _es_codigo_suelto(renglon: dict) -> bool:
+    """Un codigo de barras que se colo como renglon: solo digitos y sin
+    precio ni subtotal (la cantidad no cuenta: a veces le ponen 1). Pasaba
+    aunque las instrucciones digan que no."""
+    descripcion = re.sub(r"\s", "", str(renglon.get("descripcion") or ""))
+    return descripcion.isdigit() and not renglon.get("precio_unitario") and not renglon.get("subtotal")
+
+
 def _sin_bloque(texto: str) -> str:
     """El JSON sin las comillas de bloque de markdown, si las trajo."""
     t = texto.strip()
@@ -192,13 +229,40 @@ def _sin_bloque(texto: str) -> str:
     return t.strip()
 
 
+class _Pasajero(Exception):
+    """Google esta saturado o fallo por su lado: vale la pena otro intento."""
+
+
+def _modelos_a_probar() -> list:
+    principal = settings.GEMINI_MODELO
+    respaldo = settings.GEMINI_MODELO_RESPALDO
+    return [principal] + ([respaldo] if respaldo and respaldo != principal else [])
+
+
 def _leer_con_gemini(archivo: bytes, tipo_mime: str) -> Lectura:
+    modelos = _modelos_a_probar()
+    for i, modelo in enumerate(modelos):
+        for espera in (0,) + ESPERAS_REINTENTO_S:
+            if espera:
+                time.sleep(espera)
+            try:
+                return _pedir_a_gemini(archivo, tipo_mime, modelo)
+            except _Pasajero:
+                continue
+        if i + 1 < len(modelos):
+            log.warning("Gemini %s sigue saturado: se prueba con %s", modelo, modelos[i + 1])
+    raise ErrorDeLectura(
+        "Gemini está saturado en este momento. Intenta en unos minutos o carga la factura a mano."
+    )
+
+
+def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str) -> Lectura:
     cuerpo = {
         "contents": [{
             "role": "user",
             "parts": [
                 {"inline_data": {"mime_type": tipo_mime, "data": base64.b64encode(archivo).decode()}},
-                {"text": INSTRUCCIONES},
+                {"text": INSTRUCCIONES.format(hoy=datetime.date.today().isoformat())},
             ],
         }],
         "generationConfig": {
@@ -210,12 +274,14 @@ def _leer_con_gemini(archivo: bytes, tipo_mime: str) -> Lectura:
     }
     try:
         r = httpx.post(
-            GEMINI_URL.format(modelo=settings.GEMINI_MODELO),
+            GEMINI_URL.format(modelo=modelo),
             json=cuerpo,
             headers={"x-goog-api-key": settings.GEMINI_API_KEY},
             timeout=GEMINI_TIMEOUT_S,
         )
     except httpx.TimeoutException:
+        # No se reintenta: ya se espero GEMINI_TIMEOUT_S, otra vuelta igual
+        # dejaria a la persona minutos frente a la pantalla.
         raise ErrorDeLectura("Gemini tardó demasiado en leer la factura. Intenta otra vez o cárgala a mano.")
     except httpx.HTTPError:
         raise ErrorDeLectura("No se pudo conectar con Gemini. Revisa la conexión del servidor.")
@@ -223,7 +289,9 @@ def _leer_con_gemini(archivo: bytes, tipo_mime: str) -> Lectura:
     if r.status_code != 200:
         # El cuerpo del error va al log (sirve para diagnosticar) pero no a
         # la pantalla: puede traer detalles de la cuenta.
-        log.warning("Gemini respondio %s: %s", r.status_code, r.text[:500])
+        log.warning("Gemini %s respondio %s: %s", modelo, r.status_code, r.text[:500])
+        if r.status_code in ESTADOS_PASAJEROS:
+            raise _Pasajero()
         mensaje = _MENSAJE_POR_ESTADO.get(r.status_code)
         if mensaje is None:
             mensaje = "Gemini no está disponible ahora. Intenta en un rato o carga la factura a mano."
@@ -245,8 +313,12 @@ def _leer_con_gemini(archivo: bytes, tipo_mime: str) -> Lectura:
         leido = json.loads(_sin_bloque(texto))
         # El borrador usa "" para "no se sabe"; el esquema de Gemini, null.
         leido["moneda"] = leido.get("moneda") or ""
+        if isinstance(leido.get("renglones"), list):
+            leido["renglones"] = [
+                r for r in leido["renglones"] if not (isinstance(r, dict) and _es_codigo_suelto(r))
+            ]
         borrador = schemas.BorradorFactura(**leido)
-    except (json.JSONDecodeError, ValidationError, TypeError) as e:
+    except (json.JSONDecodeError, ValidationError, TypeError, AttributeError) as e:
         log.warning("Gemini devolvio algo que no es un borrador: %s / %s", e, texto[:300])
         raise ErrorDeLectura("Gemini devolvió una lectura incompleta. Prueba otra vez o carga la factura a mano.")
 
@@ -256,6 +328,7 @@ def _leer_con_gemini(archivo: bytes, tipo_mime: str) -> Lectura:
         tokens_entrada=int(uso.get("promptTokenCount") or 0),
         # Lo que razona tambien se cobra como salida.
         tokens_salida=int(uso.get("candidatesTokenCount") or 0) + int(uso.get("thoughtsTokenCount") or 0),
+        modelo=modelo,
     )
 
 

@@ -97,6 +97,10 @@ def leer_factura(archivo: UploadFile = File(...), db: Session = Depends(get_db))
         soporte.lectura = borrador.model_dump_json()
         soporte.tokens_entrada = lectura.tokens_entrada
         soporte.tokens_salida = lectura.tokens_salida
+        # Que modelo leyo de verdad (pudo ser el de respaldo): sin esto no se
+        # puede medir cual se equivoca mas.
+        if lectura.modelo:
+            soporte.lector = f"{nombre}:{lectura.modelo}"
     except lectura_facturas.ErrorDeLectura as e:
         # La foto se queda igual: se puede cargar a mano y adjuntarla.
         soporte.error = str(e)
@@ -227,7 +231,31 @@ def revisar_factura(body: schemas.RevisionFacturaRequest, db: Session = Depends(
         aviso = _aviso_de_precio(db, renglon, ingrediente)
         if aviso is not None:
             precios.append(aviso)
-    return schemas.RevisionFactura(duplicadas=_duplicadas(db, body), precios=precios)
+    rif_aviso, rif_sugerido = _revisar_rif(db, body.proveedor_rif)
+    return schemas.RevisionFactura(
+        duplicadas=_duplicadas(db, body), precios=precios,
+        rif_aviso=rif_aviso, rif_sugerido=rif_sugerido,
+    )
+
+
+def _revisar_rif(db: Session, rif: str):
+    if impuestos.rif_digito_ok(rif) is not False:
+        return "", None
+    leido = impuestos.normalizar_rif(rif)
+    conocidos = {}
+    for r, nombre in db.query(models.Proveedor.rif, models.Proveedor.nombre).filter(
+        models.Proveedor.rif.isnot(None)
+    ):
+        conocidos.setdefault(impuestos.normalizar_rif(r), nombre)
+    for r, nombre in db.query(models.FacturaCompra.proveedor_rif, models.FacturaCompra.proveedor_nombre).distinct():
+        conocidos.setdefault(impuestos.normalizar_rif(r or ""), nombre)
+    parecidos = [
+        (r, nombre) for r, nombre in conocidos.items()
+        if len(r) == len(leido) and sum(a != b for a, b in zip(r, leido)) == 1
+        and impuestos.rif_digito_ok(r)
+    ]
+    sugerido = schemas.RifConocido(rif=parecidos[0][0], nombre=parecidos[0][1]) if len(parecidos) == 1 else None
+    return "El dígito verificador de este RIF no cuadra: es probable que un número esté mal leído.", sugerido
     if fecha > hoy():
         return "La fecha de la factura no puede ser futura."
     declarada = (

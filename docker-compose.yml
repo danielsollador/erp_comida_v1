@@ -88,6 +88,7 @@ services:
       ERP_LECTOR_FACTURAS: ${ERP_LECTOR_FACTURAS:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ERP_GEMINI_MODELO: ${ERP_GEMINI_MODELO:-}
+      ERP_GEMINI_MODELO_RESPALDO: ${ERP_GEMINI_MODELO_RESPALDO:-}
       TZ: ${TZ:-America/Caracas}
     volumes:
       # Respaldos (pg_dump) y estado: se puede reconstruir la imagen mil veces

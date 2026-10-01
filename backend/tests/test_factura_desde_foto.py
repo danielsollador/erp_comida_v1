@@ -335,3 +335,21 @@ def test_las_fotos_sueltas_viejas_se_limpian_al_leer_otra(client, db, insumo, le
     quedan = {s.id for s in db.query(models.SoporteFactura).all()}
     assert vieja not in quedan, "suelta y vieja: se va"
     assert {reciente, vieja_con_factura, nueva} <= quedan, "reciente, con factura o nueva: se quedan"
+
+
+# ------------------------------------------------------------------ RIF
+
+def test_la_revision_avisa_un_rif_imposible_y_sugiere_el_conocido(client, db):
+    db.add(models.Proveedor(nombre="Suministros Clean 21", rif="J412473140"))
+    db.commit()
+    rev = revisar(client, numero="1", rif="J-41247314-8")
+    assert "dígito verificador" in rev["rif_aviso"]
+    assert rev["rif_sugerido"] == {"rif": "J412473140", "nombre": "Suministros Clean 21"}
+
+    bien = revisar(client, numero="1", rif="J-41247314-0")
+    assert bien["rif_aviso"] == "" and bien["rif_sugerido"] is None
+
+
+def test_sin_conocido_parecido_avisa_sin_sugerir(client):
+    rev = revisar(client, numero="1", rif="J-40908990-7")
+    assert rev["rif_aviso"] and rev["rif_sugerido"] is None
