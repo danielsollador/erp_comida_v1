@@ -47,6 +47,44 @@ function sinMovimiento(): boolean {
   return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
 }
 
+/**
+ * TRES ESTILOS DEL MISMO RECORRIDO, para escoger viendolos con datos de
+ * verdad (Leider, 1-oct: "sigue sin terminar de convencer, vamos a probar
+ * otro"). Mismas estaciones, mismas frases, mismos destinos; cambia solo como
+ * se dibuja:
+ *   linea     el seguimiento de un pedido: puntos con icono sobre una linea.
+ *   capsulas  cinco fichas unidas, tipo widgets del telefono; lo pendiente
+ *             se tiñe entero.
+ *   metro     una linea gruesa como el mapa del metro, paradas en anillo y el
+ *             estado en una pastilla.
+ * Se elige con `?estilo=capsulas` (queda guardado en este navegador) o con
+ * el selector que solo aparece en desarrollo. Cuando Leider escoja, se deja
+ * uno y se borra lo demas.
+ */
+export type EstiloRecorrido = 'linea' | 'capsulas' | 'metro'
+const ESTILOS: { id: EstiloRecorrido; texto: string }[] = [
+  { id: 'linea', texto: 'Línea' },
+  { id: 'capsulas', texto: 'Cápsulas' },
+  { id: 'metro', texto: 'Metro' },
+]
+const CLAVE_ESTILO = 'vp-estilo-recorrido'
+
+function estiloInicial(): EstiloRecorrido {
+  const valido = (v: string | null): v is EstiloRecorrido => v === 'linea' || v === 'capsulas' || v === 'metro'
+  try {
+    const pedido = new URLSearchParams(window.location.search).get('estilo')
+    if (valido(pedido)) {
+      localStorage.setItem(CLAVE_ESTILO, pedido)
+      return pedido
+    }
+    const guardado = localStorage.getItem(CLAVE_ESTILO)
+    if (valido(guardado)) return guardado
+  } catch {
+    /* sin almacenamiento: el de siempre */
+  }
+  return 'capsulas'
+}
+
 /** Si esta portada se pinta quieta, ya en su estado final. */
 function sinEntrada(): boolean {
   return entradaContada || sinMovimiento()
@@ -68,6 +106,18 @@ export default function Recorrido({
   // La animacion se decide al llegar los datos: animar el esqueleto vacio y
   // despues cambiar las frases seria contar el flujo dos veces.
   const [quieto] = useState(sinEntrada)
+  const [estilo, setEstilo] = useState<EstiloRecorrido>(estiloInicial)
+  // Al cambiar de estilo se vuelve a contar la entrada, para verla en cada uno.
+  const [vuelta, setVuelta] = useState(0)
+  const elegir = (id: EstiloRecorrido) => {
+    setEstilo(id)
+    setVuelta((v) => v + 1)
+    try {
+      localStorage.setItem(CLAVE_ESTILO, id)
+    } catch {
+      /* sin almacenamiento: dura hasta recargar */
+    }
+  }
   const listo = datos !== null
   useEffect(() => {
     if (listo && !quieto) entradaContada = true
@@ -85,23 +135,65 @@ export default function Recorrido({
     return modulos.includes(ruta) || (ruta === '/pos' && operar) ? p.a : e.to
   }
 
+  const items = visibles.map((e, i) => {
+    const m = MODULOS.find((x) => x.to === e.to)!
+    const p = pasoDe(e.id)
+    return {
+      e,
+      m,
+      p,
+      i,
+      ojo: Boolean(p?.pendiente),
+      // La pregunta del modulo se queda SIEMPRE y a la vista (Leider, 1-oct).
+      pregunta: descripcionDe(e.to),
+      frase: p ? p.frase.replace('{monto}', fmt(p.monto ?? 0)) : '',
+      href: destino(e, p),
+      estiloLi: {
+        '--i': i,
+        '--d': `${visibles.length > 1 ? Math.round((i * 1150) / (visibles.length - 1)) : 0}ms`,
+      } as CSSProperties,
+    }
+  })
+  const animada = listo ? (quieto && vuelta === 0 ? 'vp-recorrido-quieto' : 'vp-recorrido-entra') : 'vp-recorrido-cargando'
+
   return (
     <section
+      key={`${estilo}-${vuelta}`}
       aria-label="El recorrido de tu negocio"
-      className={`vp-losa vp-recorrido px-3 sm:px-4 lg:px-6 pt-4 lg:pt-5 bajo:pt-3.5 pb-4 lg:pb-5 bajo:pb-3.5 ${
-        listo ? (quieto ? 'vp-recorrido-quieto' : 'vp-recorrido-entra') : 'vp-recorrido-cargando'
-      }`}
+      className={`vp-losa vp-recorrido vp-estilo-${estilo} px-3 sm:px-4 lg:px-6 pt-4 lg:pt-5 bajo:pt-3.5 pb-4 lg:pb-5 bajo:pb-3.5 ${animada}`}
     >
       <div className="flex items-baseline justify-between gap-3 px-1">
         <h2 className="font-display font-semibold tracking-[-0.015em] leading-tight text-[17px] lg:text-lg">
           {segun({ sencillo: 'Tu negocio hoy', tecnico: 'Flujo del negocio' })}
         </h2>
-        {datos && (
-          <p className={`text-[13px] font-medium ${pendientes ? 'text-aviso-700' : 'text-neutral-500'}`}>
-            {pendientes ? `${pendientes} ${pendientes === 1 ? 'cosa' : 'cosas'} por hacer` : 'Todo al día'}
-          </p>
-        )}
+        <span className="flex items-center gap-3">
+          {import.meta.env.DEV && (
+            // Solo en desarrollo, para escoger: en produccion no existe.
+            <span className="flex rounded-full bg-neutral-500/10 p-0.5 text-[11px] font-semibold" role="group" aria-label="Estilo del recorrido">
+              {ESTILOS.map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  onClick={() => elegir(x.id)}
+                  aria-pressed={estilo === x.id}
+                  className={`rounded-full px-2.5 py-1 ${estilo === x.id ? 'bg-[var(--vp-superficie)] text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}
+                >
+                  {x.texto}
+                </button>
+              ))}
+            </span>
+          )}
+          {datos && (
+            <p className={`text-[13px] font-medium ${pendientes ? 'text-aviso-700' : 'text-neutral-500'}`}>
+              {pendientes ? `${pendientes} ${pendientes === 1 ? 'cosa' : 'cosas'} por hacer` : 'Todo al día'}
+            </p>
+          )}
+        </span>
       </div>
+
+      {estilo === 'capsulas' && <Capsulas items={items} />}
+      {estilo === 'metro' && <Metro items={items} />}
+      {estilo === 'linea' && (
 
       <ol
         className="vp-recorrido-pista relative mt-4 lg:mt-5 bajo:mt-3 grid grid-cols-1 sm:grid-flow-col sm:auto-cols-fr gap-1 sm:gap-0"
@@ -117,24 +209,12 @@ export default function Recorrido({
           <span className="vp-recorrido-viajero" />
         </span>
 
-        {visibles.map((e, i) => {
-          const m = MODULOS.find((x) => x.to === e.to)!
-          const p = pasoDe(e.id)
-          const ojo = Boolean(p?.pendiente)
-          // La pregunta del modulo se queda SIEMPRE: es lo que dice para que
-          // sirve (Leider, 1-oct: "eso no lo podemos quitar"). Debajo, como
-          // esta hoy.
-          const pregunta = descripcionDe(e.to)
-          const frase = p ? p.frase.replace('{monto}', fmt(p.monto ?? 0)) : ''
+        {items.map(({ e, m, p, ojo, pregunta, frase, href, estiloLi }) => {
           return (
             // `--d`: cuando pasa el viajero por esta estacion.
-            <li
-              key={e.id}
-              className="relative"
-              style={{ '--i': i, '--d': `${visibles.length > 1 ? Math.round((i * 1150) / (visibles.length - 1)) : 0}ms` } as CSSProperties}
-            >
+            <li key={e.id} className="relative" style={estiloLi}>
               <Link
-                to={destino(e, p)}
+                to={href}
                 className={`vp-recorrido-estacion group ${ojo ? 'vp-recorrido-ojo' : ''}`}
                 aria-label={`${m.titulo}. ${pregunta}${frase ? ` ${frase}` : ''}`}
               >
@@ -183,7 +263,118 @@ export default function Recorrido({
           )
         })}
       </ol>
+      )}
     </section>
+  )
+}
+
+type Item = {
+  e: (typeof ESTACIONES)[number]
+  m: (typeof MODULOS)[number]
+  p?: PasoRecorrido
+  i: number
+  ojo: boolean
+  pregunta: string
+  frase: string
+  href: string
+  estiloLi: CSSProperties
+}
+
+/** La marca de listo: un visto en tinta. */
+function Visto({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  )
+}
+
+/**
+ * CAPSULAS: cinco fichas unidas por un trazo corto, tipo widgets del
+ * telefono. Arriba el icono y la marca; luego la pregunta, el nombre y como
+ * esta. Lo que pide algo se tiñe entero de ambar: se ve desde lejos.
+ */
+function Capsulas({ items }: { items: Item[] }) {
+  return (
+    <ol
+      className="vp-capsulas mt-4 lg:mt-5 bajo:mt-3 grid grid-cols-1 sm:grid-flow-col sm:auto-cols-fr gap-2 sm:gap-3"
+    >
+      {items.map(({ e, m, p, ojo, pregunta, frase, href, estiloLi }) => (
+        <li key={e.id} className="vp-capsula-li relative" style={estiloLi}>
+          <Link
+            to={href}
+            className={`vp-capsula group ${ojo ? 'vp-capsula-ojo' : ''}`}
+            aria-label={`${m.titulo}. ${pregunta}${frase ? ` ${frase}` : ''}`}
+          >
+            <span className="vp-capsula-arriba">
+              <span className="vp-capsula-icono">
+                <Icono nombre={m.icono} size={20} />
+              </span>
+              {p && (
+                <span className={`vp-capsula-marca ${ojo ? 'vp-capsula-marca-ojo' : ''}`} aria-hidden>
+                  {ojo ? '!' : <Visto size={11} />}
+                </span>
+              )}
+            </span>
+            <span className="min-w-0 flex-1 sm:flex-none">
+              <span className="vp-capsula-pregunta block">{pregunta}</span>
+              <span className="block font-display font-semibold leading-tight tracking-[-0.01em] text-[15px] lg:text-base text-neutral-900 mt-1">
+                {m.titulo}
+              </span>
+              {frase && (
+                <span className={`block mt-1 text-[13px] leading-snug ${ojo ? 'text-aviso-800 font-semibold' : 'text-neutral-600 font-medium'}`}>
+                  {frase}
+                </span>
+              )}
+              {p?.accion && (
+                <span className="vp-recorrido-accion block mt-1.5 text-xs font-semibold text-acento-600">{p.accion} ›</span>
+              )}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+/**
+ * METRO: una linea gruesa como el mapa del metro y las paradas en anillo.
+ * La pregunta arriba de la parada, el nombre debajo y el estado en una
+ * pastilla. Lo pendiente: anillo y pastilla en ambar.
+ */
+function Metro({ items }: { items: Item[] }) {
+  return (
+    <ol
+      className="vp-metro relative mt-4 lg:mt-5 bajo:mt-3 grid grid-cols-1 sm:grid-flow-col sm:auto-cols-fr gap-1 sm:gap-0"
+      style={{ '--n': items.length } as CSSProperties}
+    >
+      <span aria-hidden className="vp-metro-via" />
+      {items.map(({ e, m, p, ojo, pregunta, frase, href, estiloLi }) => (
+        <li key={e.id} className="relative" style={estiloLi}>
+          <Link
+            to={href}
+            className={`vp-metro-parada group ${ojo ? 'vp-metro-ojo' : ''}`}
+            aria-label={`${m.titulo}. ${pregunta}${frase ? ` ${frase}` : ''}`}
+          >
+            <span className="vp-metro-pregunta hidden sm:block" aria-hidden>
+              {pregunta}
+            </span>
+            <span className="vp-metro-anillo" aria-hidden />
+            <span className="vp-metro-texto">
+              <span className="flex items-center gap-1.5 sm:justify-center font-display font-semibold leading-tight tracking-[-0.01em] text-[15px] lg:text-base text-neutral-900">
+                <Icono nombre={m.icono} size={16} className="text-neutral-500 shrink-0" />
+                {m.titulo}
+              </span>
+              <span className="sm:hidden block mt-0.5 text-[13px] leading-snug text-neutral-500">{pregunta}</span>
+              {frase && <span className="vp-metro-pastilla">{frase}</span>}
+              {p?.accion && (
+                <span className="vp-recorrido-accion block mt-1.5 text-xs font-semibold text-acento-600">{p.accion} ›</span>
+              )}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ol>
   )
 }
 
