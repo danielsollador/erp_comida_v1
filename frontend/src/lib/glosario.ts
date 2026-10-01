@@ -291,6 +291,29 @@ export const GLOSARIO: Record<string, Explicacion> = {
   ...Object.fromEntries(Object.entries(baseIvaTotal('compra')).map(([k, v]) => [`librocompras.${k}`, v])),
 
   // ── Reportes: qué se vendió ──────────────────────────────────────────────
+  // Menú > Recetas > armar una receta
+  'receta.mercancia': {
+    que: 'Lo que lleva el producto: cada mercancía del depósito que entra en uno.',
+    origen: 'La lista de mercancía de Inventario, con su costo real.',
+    ejemplo: 'La carne, la harina, el aceite... y también el vaso o la caja: todo lo que se va con cada venta es costo.',
+  },
+  'receta.cantidad': {
+    que: 'Cuánto de esa mercancía lleva UN producto.',
+    origen: 'Lo que escribes aquí, en gramos o mililitros (o en piezas, para lo que se cuenta).',
+    ejemplo: 'Si no sabes cuánto lleva cada una, "de X salen Y" lo calcula: de 1 kg de carne salen 20 empanadas → 50 g cada una. El rendimiento ya se descuenta solo.',
+  },
+  'receta.costo': {
+    que: 'Lo que cuesta esa mercancía en un producto.',
+    origen: 'La cantidad por el costo real de la mercancía (descontada la merma de cocina).',
+    calculo: 'Cantidad × costo real por unidad.',
+    ejemplo: 'La suma de esta columna es lo que cuesta hacer uno; lo que falta hasta el precio es tu margen.',
+  },
+  'receta.costo_unitario': {
+    que: 'Lo que cuesta cada unidad de esa mercancía, lista para usar.',
+    origen: 'El costo promedio de lo que hay en el depósito, descontada la merma de cocina (el rendimiento).',
+    ejemplo: 'Carne a $7,61 el kilo con 80% de rendimiento cuesta $9,51 por kilo utilizable: es ese el que entra en la receta.',
+  },
+
   // Menú > Recetas
   'recetas.producto': {
     que: 'El producto del menú, con su variante si tiene varias.',

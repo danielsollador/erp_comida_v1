@@ -58,3 +58,39 @@ export const PALETA = {
 export function colorSerie(i: number): string {
   return PALETA.serie[i % PALETA.serie.length]
 }
+
+/**
+ * QUINCE TONOS DE LA MISMA FAMILIA, para cuando una cosa se parte en muchas
+ * (las mercancias de una receta): todos salen del acento de la marca
+ * --mismo tono, con la luz, la fuerza y un poco de giro distintos-- y van
+ * ordenados para que dos vecinos nunca se parezcan (Leider, 1-oct: "quince
+ * colores para un mismo producto y que nunca se solapen"). Nada de grises
+ * frios ni de verde o rojo, que significan otra cosa.
+ *
+ * `oklch(from …)` toma el tono del acento: si el dueño cambia el color de su
+ * marca, las franjas lo siguen solas.
+ */
+const FRANJAS: [number, number, number][] = [
+  // [luz, fuerza, giro de tono]
+  [0.6, 0.12, 0],
+  [0.4, 0.09, 12],
+  [0.78, 0.07, -10],
+  [0.52, 0.11, -14],
+  [0.68, 0.1, 16],
+  [0.34, 0.06, 0],
+  [0.84, 0.05, 8],
+  [0.57, 0.08, 20],
+  [0.46, 0.1, -6],
+  [0.72, 0.09, -16],
+  [0.62, 0.05, 4],
+  [0.42, 0.07, -18],
+  [0.8, 0.09, 0],
+  [0.54, 0.06, 10],
+  [0.66, 0.12, -8],
+]
+
+/** El tono `i` de una serie larga de partes (hasta quince sin repetir). */
+export function colorFranja(i: number): string {
+  const [l, c, giro] = FRANJAS[i % FRANJAS.length]
+  return `oklch(from var(--color-acento-500) ${l} ${c} calc(h + ${giro}))`
+}

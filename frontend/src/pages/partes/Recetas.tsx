@@ -8,7 +8,9 @@ import { useGuardiaDeSalida } from '../../lib/sinGuardar'
 import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
-import { PALETA } from '../../lib/paleta'
+import { colorFranja } from '../../lib/paleta'
+import { Ayuda } from '../../components/Ayuda'
+import { explicar } from '../../lib/glosario'
 import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from '../../lib/types'
 
 /**
@@ -70,10 +72,9 @@ type Renglon = {
 // UNO POR MERCANCIA, EN EL ORDEN DE LA RECETA, y no por categoria: harina y
 // carne molida son las dos "Secos" y salian del mismo color, pegadas, como
 // una sola franja (Leider, 29-sep). Vecinas siempre distintas.
-// De la paleta de datos (lib/paleta.ts): cobre, cobre oscuro, cobre claro
-// y neutros calidos, alternados para que dos vecinas nunca se parezcan.
-const TONOS = [PALETA.serie[0], PALETA.serie[3], PALETA.serie[2], PALETA.serie[1], PALETA.serie[5], PALETA.serie[6], PALETA.serie[4], PALETA.serie[7]]
-const tono = (i: number) => TONOS[i % TONOS.length]
+// Quince tonos de la familia del acento (lib/paleta.ts), ordenados para que
+// dos vecinas nunca se parezcan.
+const tono = colorFranja
 const dolares = (n: number) => `$${n.toFixed(2)}`
 
 /** Lo que se cuenta por piezas y no se pesa: el vaso, la tapa, el pitillo,
@@ -637,7 +638,6 @@ function Compositor({
         enChica: esGrande(ing.unidad),
       },
     ])
-    setResaltado(ing.id)
   }
 
   function quitar(id: number) {
@@ -734,6 +734,7 @@ function Compositor({
               {pesadas.length > 0 && (
                 <>
                   <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Lleva</p>
+                  <CabeceraLleva />
                   <ul className="divide-y divide-neutral-100">
                     {pesadas.map((f) => (
                       <RenglonReceta
@@ -763,6 +764,7 @@ function Compositor({
                   >
                     Por unidad · vaso, tapa, empaque
                   </p>
+                  {pesadas.length === 0 && <CabeceraLleva />}
                   <ul className="divide-y divide-neutral-100">
                     {piezas.map((f) => (
                       <RenglonReceta
@@ -813,6 +815,7 @@ function Compositor({
               </p>
             ) : (
               <div className="max-h-[30rem] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto">
+                <CabeceraAgregar />
                 {disponiblesPesadas.length > 0 && (
                   <ul className="divide-y divide-neutral-100">
                     {disponiblesPesadas.map((ing) => (
@@ -883,7 +886,7 @@ function RenglonReceta({
     <li
       onMouseEnter={() => onResaltar(ing.id)}
       onMouseLeave={() => onResaltar(null)}
-      className={`px-4 py-2.5 ${resaltado ? 'bg-neutral-50' : ''}`}
+      className={`px-4 py-2.5 transition-colors ${resaltado ? 'bg-acento-500/10' : ''}`}
     >
       <div className="flex items-center gap-3">
         <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: color }} />
@@ -969,6 +972,42 @@ function RenglonReceta({
         </button>
       )}
     </li>
+  )
+}
+
+/** Que es cada columna de "Lleva": las mismas anchuras que `RenglonReceta`. */
+function CabeceraLleva() {
+  const celda = 'text-[11px] font-semibold uppercase tracking-wide text-neutral-500'
+  return (
+    <div className="px-4 pb-1.5 flex items-center gap-3">
+      <span className="w-1.5 shrink-0" />
+      <span className={`min-w-0 flex-1 ${celda}`}>
+        <Ayuda explica={explicar('receta.mercancia')} titulo="Mercancía">Mercancía</Ayuda>
+      </span>
+      <span className={`w-[8.75rem] shrink-0 text-right ${celda}`}>
+        <Ayuda explica={explicar('receta.cantidad')} titulo="Cantidad">Cantidad</Ayuda>
+      </span>
+      <span className={`w-16 text-right ${celda}`}>
+        <Ayuda explica={explicar('receta.costo')} titulo="Costo">Costo</Ayuda>
+      </span>
+      <span className="w-8 shrink-0" />
+    </div>
+  )
+}
+
+/** Que es cada columna de "Agregar": las mismas anchuras que `OpcionMercancia`. */
+function CabeceraAgregar() {
+  const celda = 'text-[11px] font-semibold uppercase tracking-wide text-neutral-500'
+  return (
+    <div className="px-4 pb-1.5 flex items-center gap-3">
+      <span className={`min-w-0 flex-1 ${celda}`}>
+        <Ayuda explica={explicar('receta.mercancia')} titulo="Mercancía">Mercancía</Ayuda>
+      </span>
+      <span className={`text-right ${celda}`}>
+        <Ayuda explica={explicar('receta.costo_unitario')} titulo="Costo por unidad">Costo por unidad</Ayuda>
+      </span>
+      <span className="w-7 shrink-0" />
+    </div>
   )
 }
 
