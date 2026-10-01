@@ -1863,3 +1863,31 @@ html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo:hover .vp-recorrido-
   }
 }
 .vp-estilo-mixto .vp-recorrido-marca { right: -4px; bottom: -4px; }
+
+/* Lo pendiente, con el cursor encima: se ENCIENDE (Leider, 1-oct: "se
+   opaca"). Antes el efecto general del cursor --tinta-- le ganaba al ambar y
+   lo apagaba. Estas reglas van al final y con un selector mas especifico
+   para ganarle a ese efecto en los dos temas. */
+@media (hover: hover) {
+  html .vp-recorrido-estacion.vp-recorrido-ojo:hover {
+    background: color-mix(in oklab, var(--color-aviso-400) 9%, transparent);
+  }
+  html .vp-recorrido .vp-recorrido-estacion.vp-recorrido-ojo:hover .vp-recorrido-nodo {
+    transform: translateY(-2px);
+    background: color-mix(in oklab, var(--color-aviso-400) 30%, var(--vp-superficie));
+    color: var(--color-aviso-700);
+    box-shadow:
+      inset 0 0 0 2px var(--color-aviso-500),
+      0 0 0 6px color-mix(in oklab, var(--color-aviso-400) 24%, transparent),
+      0 10px 22px -10px color-mix(in oklab, var(--color-aviso-500) 65%, transparent);
+  }
+  html[data-tema="oscuro"] .vp-recorrido .vp-recorrido-estacion.vp-recorrido-ojo:hover .vp-recorrido-nodo {
+    background: color-mix(in oklab, var(--color-aviso-400) 34%, var(--vp-superficie));
+    box-shadow:
+      inset 0 0 0 2px var(--color-aviso-600),
+      0 0 0 6px color-mix(in oklab, var(--color-aviso-400) 22%, transparent),
+      0 10px 22px -10px rgb(0 0 0 / 0.6);
+  }
+}
+/* La accion de lo pendiente ("Ponerles receta") en el ambar de su frase. */
+.vp-recorrido-ojo .vp-recorrido-accion { color: var(--color-aviso-700); }
