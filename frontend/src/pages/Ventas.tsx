@@ -7,17 +7,19 @@ import { useDialogo } from '../components/dialogo'
 import { useSeccion } from '../components/Secciones'
 import BarraFiltros from '../components/BarraFiltros'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Cifra, Filtros, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
+import { Cifra, FiltroDesplegable, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
-import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
+import { useFiltrosUrl } from '../lib/filtros'
+import { PALETA } from '../lib/paleta'
+import { fmtBs, useMoneda } from '../lib/moneda'
+import { SerieTiempo } from './partes/reportes/comunes'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import { imprimirTicket } from '../lib/ticket'
 import type {
   EstadoVenta,
   ListaVentas,
   Pedido,
-  PuntoSerie,
   ResumenVentas,
   VentaFila,
 } from '../lib/types'
@@ -103,6 +105,20 @@ export default function Ventas() {
   const [editando, setEditando] = useState<Pedido | null>(null)
   const dialogoVentas = useDialogo()
   const cargando = cargado !== `${rango.desde}/${rango.hasta}`
+  // Los filtros del historial, en la URL y en la fila de filtros de arriba,
+  // como desplegables: las pastillas ocupaban una fila entera y en el
+  // telefono no cabian (Leider, 1-oct). `e` = que paso; `f` = factura.
+  const [filtros, fijarFiltros] = useFiltrosUrl(['e', 'f'] as const)
+  const estado: FiltroEstado = ESTADOS.some((x) => x.clave === filtros.e) ? (filtros.e as FiltroEstado) : 'todas'
+  const factura: 'todas' | 'si' | 'no' = filtros.f === 'si' || filtros.f === 'no' ? filtros.f : 'todas'
+  const conteo = useMemo(() => {
+    const c: Record<string, number> = { todas: lista?.filas.length ?? 0 }
+    for (const v of lista?.filas ?? []) {
+      const clave = claveDeFila(v)
+      c[clave] = (c[clave] ?? 0) + 1
+    }
+    return c
+  }, [lista])
 
   function cargar() {
     return Promise.all([api.ventas(rango), api.resumenVentas(rango)]).then(([l, r]) => {
@@ -146,13 +162,44 @@ export default function Ventas() {
         alCambiarSeccion={irA}
       />
       <Pagina>
-        <BarraFiltros rango={rango} alCambiar={setRango} />
+        <BarraFiltros
+          rango={rango}
+          alCambiar={setRango}
+          alLimpiar={seccion === 'historial' && (estado !== 'todas' || factura !== 'todas') ? () => fijarFiltros({ e: '', f: '' }) : undefined}
+        >
+          {seccion === 'historial' && (
+            <>
+              <FiltroDesplegable
+                etiqueta="Qué pasó"
+                valor={estado}
+                alCambiar={(v) => fijarFiltros({ e: v === 'todas' ? '' : v })}
+                opciones={ESTADOS.filter((e) => e.clave === 'todas' || (conteo[e.clave] ?? 0) > 0).map((e) => ({
+                  valor: e.clave,
+                  texto: e.texto,
+                  contador: e.clave === 'todas' ? null : conteo[e.clave] ?? 0,
+                }))}
+              />
+              <FiltroDesplegable
+                etiqueta="Factura"
+                valor={factura}
+                alCambiar={(v) => fijarFiltros({ f: v === 'todas' ? '' : v })}
+                opciones={[
+                  { valor: 'todas', texto: 'Todas' },
+                  { valor: 'si', texto: 'Con factura' },
+                  { valor: 'no', texto: 'Sin factura' },
+                ]}
+              />
+            </>
+          )}
+        </BarraFiltros>
         {cargando && !lista && <p className="text-neutral-400 text-sm">Cargando...</p>}
 
         {seccion === 'historial' && lista && (
           <Historial
             lista={lista}
             etiqueta={etiquetaRango(rango)}
+            estado={estado}
+            factura={factura}
             alActualizar={cargar}
             alEditar={abrirEdicion}
           />
@@ -182,19 +229,20 @@ export default function Ventas() {
 function Historial({
   lista,
   etiqueta,
+  estado,
+  factura,
   alActualizar,
   alEditar,
 }: {
   lista: ListaVentas
   etiqueta: string
+  /** Que paso con la venta, y si tiene factura: los desplegables de arriba. */
+  estado: FiltroEstado
+  factura: 'todas' | 'si' | 'no'
   alActualizar: () => void
   alEditar: (id: number) => void
 }) {
   const { fmtCongelado } = useMoneda()
-  const [estado, setEstado] = useState<FiltroEstado>('todas')
-  // Independiente del estado: una venta cobrada puede o no estar facturada,
-  // y el dueño necesita poder aislar "que factura" de "que se cobro".
-  const [factura, setFactura] = useState<'todas' | 'si' | 'no'>('todas')
   const [busqueda, setBusqueda] = useState('')
   const [abierta, setAbierta] = useState<number | null>(null)
   const orden = useOrden<VentaFila>(
@@ -209,15 +257,6 @@ function Historial({
     },
     '-fecha',
   )
-
-  const conteo = useMemo(() => {
-    const c: Record<string, number> = { todas: lista.filas.length }
-    for (const v of lista.filas) {
-      const clave = claveDeFila(v)
-      c[clave] = (c[clave] ?? 0) + 1
-    }
-    return c
-  }, [lista])
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
@@ -262,38 +301,16 @@ function Historial({
       }
       plano
     >
-      <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
-        <Filtros
-          activo={estado}
-          alElegir={setEstado}
-          opciones={ESTADOS.filter((e) => e.clave === 'todas' || (conteo[e.clave] ?? 0) > 0).map((e) => ({
-            valor: e.clave,
-            texto: e.texto,
-            contador: conteo[e.clave] ?? 0,
-          }))}
-        />
-        {/* Filtra por otro eje que el de arriba -una venta cobrada puede estar
-            facturada o no-, así que va rotulado y más chico. Sin el rótulo,
-            seis pastillas idénticas en fila se leen como una sola lista de
-            estados y "Facturada o no" parece un estado más. */}
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="text-xs text-neutral-400 mr-0.5">Factura:</span>
-          <Filtros
-            tamano="chico"
-            activo={factura}
-            alElegir={setFactura}
-            opciones={[
-              { valor: 'todas', texto: 'Todas' },
-              { valor: 'si', texto: 'Con factura' },
-              { valor: 'no', texto: 'Sin factura' },
-            ]}
-          />
-        </div>
+      {/* Los filtros de que paso y factura estan arriba, en la fila de
+          filtros del modulo, con el periodo. Aqui solo el buscador. */}
+      <div className="px-4 pb-3">
         <input
+          type="search"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar: número, cliente, producto, quién cobró…"
-          className="ml-auto w-full sm:w-72 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+          aria-label="Buscar una venta"
+          className="w-full sm:w-80 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
         />
       </div>
 
@@ -849,7 +866,18 @@ function Resumen({ r, nombre }: { r: ResumenVentas; nombre: string }) {
               : nombre
           }
         >
-          <Barras serie={r.serie} fmt={fmt} />
+          <SerieTiempo
+            alto={200}
+            formato={(n) => fmt(n, 0)}
+            formatoDetalle={(n) => fmt(n)}
+            puntos={r.serie.map((p) => ({
+              etiqueta: p.etiqueta,
+              valor: p.ventas,
+              detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
+            }))}
+            nombres={{ actual: 'Ventas', anterior: 'Período anterior' }}
+            referencia={r.serie.length > 1 ? { valor: r.ventas / r.serie.length, texto: 'promedio' } : undefined}
+          />
         </Seccion>
       )}
 
@@ -909,41 +937,10 @@ function Reparto({
             </div>
             <div className="h-1.5 rounded-full bg-neutral-100 mt-1 overflow-hidden">
               <div
-                className="vp-barra-h h-full bg-neutral-900 rounded-full"
-                style={{ width: `${pct}%` }}
+                className="vp-barra-h h-full rounded-full"
+                style={{ width: `${pct}%`, background: PALETA.serie[0] }}
               />
             </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function Barras({ serie, fmt }: { serie: PuntoSerie[]; fmt: (v: number, d?: number) => string }) {
-  const max = Math.max(...serie.map((s) => s.ventas), 0)
-  // Con muchos tramos (un año por semanas) no caben todas las etiquetas: se
-  // muestra una de cada tantas y el resto queda en el title.
-  const salto = Math.ceil(serie.length / 16)
-  return (
-    <div className="flex items-end gap-1 h-44 overflow-x-auto">
-      {serie.map((p, i) => {
-        const alto = max > 0 ? (p.ventas / max) * 100 : 0
-        return (
-          <div
-            key={p.etiqueta + i}
-            className="group flex-1 min-w-[18px] flex flex-col items-center justify-end h-full gap-1 cursor-default"
-            title={`${p.etiqueta}: ${fmt(p.ventas)} en ${p.pedidos} pedido(s)`}
-          >
-            <span className="text-[10px] text-neutral-500 tabular-nums">
-              {/* Sin simbolo: no cabe uno por barra y ya lo dice el titulo. */}
-              {p.ventas > 0 && serie.length <= 16 ? fmtNum(p.ventas, 0) : ''}
-            </span>
-            <div
-              className="vp-barra w-full bg-neutral-900 rounded-t-md min-h-[2px] transition-colors group-hover:bg-acento-500"
-              style={{ height: `${alto}%`, animationDelay: `${Math.min(i * 18, 400)}ms` }}
-            />
-            <span className="text-[10px] text-neutral-500 whitespace-nowrap h-3">{i % salto === 0 ? p.etiqueta : ''}</span>
           </div>
         )
       })}

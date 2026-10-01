@@ -99,10 +99,11 @@ export default function Recetas({
   const [soloFaltan, setSoloFaltan] = useState(false)
   // Por categoria del menu, como en todas las pantallas: "" = todas.
   const [categoria, setCategoria] = useState('')
-  // `?v=<variante>`: abrir directo la receta de un producto. Es como llegan
-  // "Ponle lo que lleva" desde la tarjeta del menu y el paso que sigue a
-  // crear un producto. Se consume al abrir, para que recargar no la vuelva
-  // a abrir.
+  // `?v=<variante>` ES LA RECETA ABIERTA. Asi llegan "Ponle lo que lleva"
+  // desde la tarjeta del menu y el paso que sigue a crear un producto, y
+  // asi la flecha de volver (o el boton atras del navegador) cierra la
+  // receta y vuelve a la lista en vez de saltar a la portada (Leider,
+  // 1-oct). Abrir empuja `v`; cerrar lo quita.
   const [params, setParams] = useSearchParams()
   // Las columnas se ordenan y cada una explica que es (Leider, 1-oct: "le
   // faltan campos arriba, que expliquen que es cada cosa").
@@ -186,19 +187,33 @@ export default function Recetas({
 
   const pedida = params.get('v')
   useEffect(() => {
-    if (!pedida || abierta || renglones.length === 0) return
-    const r = renglones.find((x) => String(x.variante.id) === pedida)
-    const p = new URLSearchParams(params)
-    p.delete('v')
-    setParams(p, { replace: true })
-    if (r) void abrir(r)
-    // Solo cuando llega `v` o aparecen los renglones; `abrir` no cambia.
+    if (pedida) {
+      if (abierta && String(abierta.variante.id) === pedida) return
+      if (renglones.length === 0) return
+      const r = renglones.find((x) => String(x.variante.id) === pedida)
+      if (r) void abrir(r, true)
+      else {
+        const p = new URLSearchParams(params)
+        p.delete('v')
+        setParams(p, { replace: true })
+      }
+    } else if (abierta) {
+      // Se fue `v` (atras del navegador, la flecha): la receta se cierra.
+      setAbierta(null)
+      setFilas([])
+    }
+    // Solo cuando cambia `v` o aparecen los renglones; `abrir` no cambia.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedida, renglones])
 
-  async function abrir(r: Renglon) {
+  async function abrir(r: Renglon, desdeUrl = false) {
     setError('')
     setAbierta(r)
+    if (!desdeUrl) {
+      const p = new URLSearchParams(params)
+      p.set('v', String(r.variante.id))
+      setParams(p)
+    }
     const receta = await api.verReceta(r.variante.id)
     const iniciales: Fila[] = receta.map((x: RecetaItem) => ({
       ingrediente_id: x.ingrediente_id,
@@ -225,6 +240,11 @@ export default function Recetas({
   function cerrar() {
     setAbierta(null)
     setFilas([])
+    if (params.get('v')) {
+      const p = new URLSearchParams(params)
+      p.delete('v')
+      setParams(p, { replace: true })
+    }
   }
 
   /** Salir con cambios sin guardar pide confirmacion (Leider, 29-sep). */

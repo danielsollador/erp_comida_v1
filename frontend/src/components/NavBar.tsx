@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import LinkVigilado from './LinkVigilado'
 import { puedoSalir } from '../lib/sinGuardar'
 import { useAcceso } from '../lib/acceso'
@@ -39,6 +40,19 @@ export default function NavBar({
   alCambiarSeccion?: (id: string) => void
 }) {
   const { estado } = useAcceso()
+  const navegar = useNavigate()
+  // LA FLECHA VUELVE ATRAS, NO AL INICIO. Desde la receta de una empanada
+  // mandaba a la portada, cuando lo que se queria era volver a la lista de
+  // recetas (Leider, 1-oct). Vuelve un paso en el historial; si no hay
+  // (se entro por un enlace directo), al inicio. A la casita se va por el
+  // logo, y en el telefono --donde el logo no cabe-- por el icono de al lado.
+  const volver = () =>
+    void puedoSalir().then((ok) => {
+      if (!ok) return
+      const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0
+      if (idx > 0) navegar(-1)
+      else navegar('/')
+    })
   return (
     <header
       className={`sticky top-0 z-20 border-b ${
@@ -52,19 +66,28 @@ export default function NavBar({
           tambien en el telefono. Es el mismo DOM en los dos casos, asi que las
           notificaciones y su WebSocket se montan una sola vez. */}
       <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1.5 px-4 py-2 sm:py-0 sm:h-14">
-        {/* Volver al inicio, SIEMPRE visible. Estaba solo en movil porque en
-            escritorio la barra lateral ya lleva al inicio, pero el rombo de la
-            barra no se lee como "volver": quien entra a un modulo busca la
-            flecha arriba a la izquierda, que es donde esta en todo lo demas. */}
-        <LinkVigilado
-          to="/"
-          aria-label="Volver al inicio"
-          title="Volver al inicio"
+        {/* Volver, SIEMPRE visible: quien entra a un modulo busca la flecha
+            arriba a la izquierda, que es donde esta en todo lo demas. */}
+        <button
+          type="button"
+          onClick={volver}
+          aria-label="Volver"
+          title="Volver"
           className={`grid place-items-center w-9 h-9 rounded-xl border shrink-0 ${
             dark ? 'border-neutral-700 hover:bg-neutral-800' : 'vp-control'
           }`}
         >
           <Icono nombre="atras" size={18} />
+        </button>
+        <LinkVigilado
+          to="/"
+          aria-label="Ir al inicio"
+          title="Ir al inicio"
+          className={`md:hidden grid place-items-center w-9 h-9 rounded-xl border shrink-0 ${
+            dark ? 'border-neutral-700 hover:bg-neutral-800' : 'vp-control'
+          }`}
+        >
+          <Icono nombre="inicio" size={18} />
         </LinkVigilado>
 
         {/* La miga tambien lleva al inicio: es la otra mitad del mismo gesto.
