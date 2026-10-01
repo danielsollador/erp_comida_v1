@@ -399,6 +399,15 @@ export const api = {
    * monto a una venta ya cobrada. El monto del pago va en positivo siempre: el
    * signo lo pone la diferencia, no quien lo teclea.
    */
+  /**
+   * Corregir, renglón por renglón, qué va a cocina y qué es de vitrina en un
+   * pedido ya tomado. Solo hace falta mandar los que cambian.
+   */
+  cambiarCocina: (pedidoId: number, items: { id: number; a_cocina: boolean }[]) =>
+    req<Pedido>(`/pedidos/${pedidoId}/cocina`, {
+      method: 'PUT',
+      body: JSON.stringify({ items }),
+    }),
   /** Un pedido con sus renglones, pagos y ediciones. */
   verPedido: (id: number) => req<Pedido>(`/pedidos/${id}`),
   /**
@@ -423,7 +432,8 @@ export const api = {
       nombre_libre?: string
       precio_libre?: number
       cortesia?: boolean
-      // Lo nuevo: si va a cocina. Sin decirlo, lo que sugiera su categoría.
+      // Si va a cocina. Lo nuevo sin decirlo toma lo que sugiera su
+      // categoría; lo que ya estaba sin decirlo queda como estaba.
       a_cocina?: boolean
     }[],
     extra?: {
