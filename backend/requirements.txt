@@ -9,3 +9,5 @@ python-multipart==0.0.9
 # PostgreSQL, el motor de produccion. `binary` trae libpq compilada: no hace
 # falta compilar nada en la imagen.
 psycopg[binary]==3.2.3
+# El Libro de Compras en el formato .xlsx del SENIAT (ver libro_compras_seniat.py).
+openpyxl==3.1.5

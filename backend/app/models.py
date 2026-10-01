@@ -523,6 +523,10 @@ class ConfiguracionFiscal(Base):
 
     id = Column(Integer, primary_key=True)
     tasa_iva = Column(Float, default=16.0)  # alicuota general de IVA en Venezuela
+    # Quien lleva los libros: va en la cabecera del Libro de Compras.
+    razon_social = Column(String, default="")
+    rif = Column(String, default="")
+    direccion = Column(String, default="")
 
 
 class Proveedor(Base):
@@ -637,6 +641,23 @@ class FacturaCompra(Base):
     # en billetes deja un numero en alguna parte, y sin el no hay como
     # demostrar un pago que el proveedor dice no haber recibido.
     referencia_pago = Column(String, default="")
+    # Lo que el Libro de Compras pide del papel y no se usa en otra parte.
+    numero_control = Column(String, default="")
+    # El ERP lleva todo en dolares; el Libro de Compras va en bolivares. Por
+    # eso cada factura guarda en que moneda vino y a que tasa se paso, y sus
+    # montos en Bs CONGELADOS al guardarla:
+    #   * vino en Bs: los Bs del papel, exactos (no la vuelta $ -> Bs, que
+    #     corre los centimos);
+    #   * vino en $: a la tasa BCV de la fecha de EMISION (o la que el papel
+    #     imprime), no la del dia en que se carga: una factura del 20 cargada
+    #     el 28 vale en Bs lo que valia el 20.
+    # Vacios en las facturas de antes: el libro los calcula con la tasa
+    # guardada de esa fecha, si la hay.
+    moneda = Column(String, default="$")  # "$" | "Bs": la del papel
+    tasa_bcv = Column(Float, nullable=True)  # Bs por $
+    gravado_bs = Column(Float, nullable=True)  # base imponible, la parte que paga IVA
+    exento_bs = Column(Float, nullable=True)
+    iva_bs = Column(Float, nullable=True)
 
     @property
     def total(self):

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
-from .. import contabilidad, impuestos, models, schemas
+from .. import contabilidad, impuestos, models, schemas, tasas
 from ..database import get_db
 from ..exportar_csv import nombre_de_archivo, respuesta_csv
 from ..rango import Rango
@@ -17,14 +17,30 @@ router = APIRouter(prefix="/api/impuestos", tags=["impuestos"])
 
 @router.get("/config", response_model=schemas.ConfiguracionFiscal)
 def obtener_config(db: Session = Depends(get_db)):
-    return schemas.ConfiguracionFiscal(tasa_iva=impuestos.tasa_iva(db))
+    cfg = impuestos.config(db)
+    return schemas.ConfiguracionFiscal(
+        tasa_iva=cfg.tasa_iva, razon_social=cfg.razon_social or "", rif=cfg.rif or "",
+        direccion=cfg.direccion or "",
+    )
 
 
 @router.put("/config", response_model=schemas.ConfiguracionFiscal)
 def actualizar_config(body: schemas.ConfiguracionFiscal, db: Session = Depends(get_db)):
     if body.tasa_iva < 0:
         raise HTTPException(status_code=400, detail="La tasa de IVA no puede ser negativa")
-    return schemas.ConfiguracionFiscal(tasa_iva=impuestos.fijar_tasa_iva(db, body.tasa_iva))
+    cambios = body.model_dump(exclude_unset=True)
+    if cambios.get("rif") and not impuestos.rif_valido(cambios["rif"]):
+        raise HTTPException(status_code=400, detail="El RIF es una letra (J/G/V/E/P/C) y 8 o 9 dígitos.")
+    cfg = impuestos.config(db)
+    # Solo lo que vino: guardar la alicuota no borra la razon social.
+    for campo in ("razon_social", "direccion"):
+        if campo in cambios:
+            setattr(cfg, campo, (cambios[campo] or "").strip())
+    if "rif" in cambios:
+        cfg.rif = impuestos.normalizar_rif(cambios["rif"] or "")
+    db.commit()
+    impuestos.fijar_tasa_iva(db, body.tasa_iva)
+    return obtener_config(db)
 
 
 def _ventas_del_libro(db: Session, inicio, fin):
@@ -191,43 +207,125 @@ def libro_ventas_exportar(rango: Rango = Depends(), db: Session = Depends(get_db
     )
 
 
+def _gravado_usd(f: models.FacturaCompra, tasa_pct: float) -> float:
+    """La parte de la base que pago IVA, en dolares y sin redondear."""
+    if f.items:
+        bruta = sum(i.cantidad * i.costo_unitario for i in f.items)
+        gravada = sum(i.cantidad * i.costo_unitario for i in f.items if not i.exento)
+        return gravada * (f.base_imponible / bruta) if bruta else 0.0
+    return impuestos.gravado_de(f.base_imponible, f.iva, tasa_pct)
+
+
+def _fila_bs(fila: dict, gravado_bs, exento_bs, iva_bs, tasa, estimada: bool, signo: int = 1) -> dict:
+    if tasa is None:
+        return fila
+    gravado_bs, exento_bs, iva_bs = (round(signo * x, 2) for x in (gravado_bs, exento_bs, iva_bs))
+    fila.update(
+        tasa_bcv=tasa, tasa_estimada=estimada, gravado_bs=gravado_bs, exento_bs=exento_bs,
+        iva_bs=iva_bs, total_bs=round(gravado_bs + exento_bs + iva_bs, 2),
+    )
+    return fila
+
+
+def _filas_de_factura(f: models.FacturaCompra, tasa_pct: float, db: Session) -> List[schemas.FilaLibroCompras]:
+    """La factura y, debajo, cada nota de credito que la afecta (en negativo),
+    como pide el formato del SENIAT."""
+    # Los Bs congelados al guardar; las facturas de antes no los tienen y se
+    # pasan con la tasa guardada de su fecha de emision.
+    estimada = f.gravado_bs is None
+    tasa = f.tasa_bcv
+    if tasa is None:
+        fila_tasa = tasas.tasa_al(db, f.fecha_emision or f.fecha.date())
+        tasa = fila_tasa.bcv if fila_tasa else None
+    if tasa is not None and estimada:
+        gravado_bs, exento_bs, iva_bs = impuestos.montos_bs(
+            f.base_imponible, _gravado_usd(f, tasa_pct), f.iva, tasa,
+            iva_de_la_base=bool(f.items), tasa_pct=tasa_pct,
+        )
+    else:
+        gravado_bs, exento_bs, iva_bs = f.gravado_bs, f.exento_bs, f.iva_bs
+
+    comun = dict(
+        factura_id=f.id, fecha=f.fecha, proveedor_nombre=f.proveedor_nombre,
+        proveedor_rif=f.proveedor_rif, numero_control=f.numero_control or "", moneda=f.moneda or "$",
+    )
+    filas = [schemas.FilaLibroCompras(**_fila_bs(dict(
+        comun, tipo="FAC", fecha_emision=f.fecha_emision or f.fecha.date(),
+        numero_factura=f.numero_factura,
+        base_imponible=f.base_imponible, iva=f.iva, total=f.total,
+    ), gravado_bs, exento_bs, iva_bs, tasa, estimada))]
+    for n in sorted(f.notas_credito, key=lambda n: n.fecha):
+        # La nota se pasa a Bs a la tasa de su factura: devuelve parte de esos
+        # mismos bolivares.
+        nota_bs = (
+            impuestos.montos_bs(
+                n.base_imponible, impuestos.gravado_de(n.base_imponible, n.iva or 0, tasa_pct),
+                n.iva or 0, tasa, iva_de_la_base=False, tasa_pct=tasa_pct,
+            ) if tasa is not None else (0, 0, 0)
+        )
+        filas.append(schemas.FilaLibroCompras(**_fila_bs(dict(
+            comun, tipo="NC", fecha_emision=n.fecha.date(), numero_factura="",
+            numero_nota=n.numero, factura_afectada=f.numero_factura, numero_control="",
+            base_imponible=-round(n.base_imponible, 2), iva=-round(n.iva or 0, 2),
+            total=-round(n.base_imponible + (n.iva or 0), 2),
+        ), *nota_bs, tasa, estimada, signo=-1)))
+    return filas
+
+
 @router.get("/libro-compras", response_model=schemas.LibroCompras)
 def libro_compras(rango: Rango = Depends(), db: Session = Depends(get_db)):
     inicio, fin, etiqueta = rango.resolver(periodo="mes")
     periodo = rango.periodo or "rango"
+    tasa_pct = impuestos.tasa_iva(db)
 
     facturas = (
         db.query(models.FacturaCompra)
+        .options(joinedload(models.FacturaCompra.items), joinedload(models.FacturaCompra.notas_credito))
         .filter(models.FacturaCompra.fecha >= inicio, models.FacturaCompra.fecha < fin)
-        .order_by(models.FacturaCompra.fecha)
+        .order_by(models.FacturaCompra.fecha, models.FacturaCompra.id)
         .all()
     )
 
-    filas = [
-        schemas.FilaLibroCompras(
-            factura_id=f.id,
-            fecha=f.fecha,
-            fecha_emision=f.fecha_emision or f.fecha.date(),
-            numero_factura=f.numero_factura,
-            proveedor_nombre=f.proveedor_nombre,
-            proveedor_rif=f.proveedor_rif,
-            base_imponible=f.base_neta,
-            iva=f.iva_neto,
-            total=f.total_neto,
-        )
-        for f in facturas
-        # Una factura acreditada por completo sale del libro, igual que una
-        # venta devuelta sale del Libro de Ventas.
-        if f.total_neto > 0.01
-    ]
+    # Las notas de credito van en el libro de su factura, igual que hasta
+    # ahora se descontaban de ella: asi el libro y la declaracion de IVA (que
+    # toma el IVA neto de cada factura) siguen diciendo lo mismo.
+    filas = [fila for f in facturas for fila in _filas_de_factura(f, tasa_pct, db)]
+
+    def suma(campo):
+        return round(sum(getattr(f, campo) or 0 for f in filas), 2)
 
     return schemas.LibroCompras(
         periodo=periodo,
         etiqueta=etiqueta,
         filas=filas,
-        total_base=round(sum(f.base_imponible for f in filas), 2),
-        total_iva=round(sum(f.iva for f in filas), 2),
-        total_general=round(sum(f.total for f in filas), 2),
+        total_base=suma("base_imponible"),
+        total_iva=suma("iva"),
+        total_general=suma("total"),
+        total_exento_bs=suma("exento_bs"),
+        total_gravado_bs=suma("gravado_bs"),
+        total_iva_bs=suma("iva_bs"),
+        total_bs=suma("total_bs"),
+        sin_tasa=sum(1 for f in filas if f.total_bs is None),
+        tasa_iva=tasa_pct,
+    )
+
+
+@router.get("/libro-compras/seniat")
+def libro_compras_seniat(rango: Rango = Depends(), db: Session = Depends(get_db)) -> StreamingResponse:
+    """El Libro de Compras en bolivares, con el formato de la planilla del
+    SENIAT (.xlsx)."""
+    from .. import libro_compras_seniat as seniat
+
+    inicio, fin, _ = rango.resolver(periodo="mes")
+    libro = libro_compras(rango, db)
+    contenido = seniat.generar(
+        libro, impuestos.config(db), inicio.date(), (fin - datetime.timedelta(days=1)).date()
+    )
+    nombre = f"libro-compras-{nombre_de_archivo(libro.etiqueta)}.xlsx"
+    return StreamingResponse(
+        iter([contenido]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
     )
 
 

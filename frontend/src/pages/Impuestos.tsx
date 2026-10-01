@@ -10,6 +10,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
+import { fmtNum } from '../lib/moneda'
 import type {
   ConfiguracionFiscal,
   DeclaracionIva,
@@ -26,6 +27,11 @@ const SECCIONES = [
   { id: 'compras', texto: 'Libro de compras' },
   { id: 'declaraciones', texto: 'Declaraciones' },
 ]
+
+/** Un monto en Bs para el libro: sin símbolo (la columna ya lo dice), o un guion. */
+function bs(monto: number | null) {
+  return monto === null ? '-' : fmtNum(monto, 2)
+}
 
 export default function Impuestos() {
   const [seccion, irA] = useSeccion(SECCIONES)
@@ -50,9 +56,10 @@ export default function Impuestos() {
       factura: (f) => f.numero_factura,
       proveedor: (f) => f.proveedor_nombre,
       rif: (f) => f.proveedor_rif,
-      base: (f) => f.base_imponible,
-      iva: (f) => f.iva,
-      total: (f) => f.total,
+      exento: (f) => f.exento_bs ?? -Infinity,
+      base: (f) => f.gravado_bs ?? -Infinity,
+      iva: (f) => f.iva_bs ?? -Infinity,
+      total: (f) => f.total_bs ?? -Infinity,
     },
     'fecha',
   )
@@ -62,9 +69,15 @@ export default function Impuestos() {
   const [ventas, setVentas] = useState<LibroVentas | null>(null)
   const [compras, setCompras] = useState<LibroCompras | null>(null)
   const [resumen, setResumen] = useState<ResumenIva | null>(null)
-  // El valor solo se usa via tasaInput; se guarda el setter para refrescarlo.
+  // El valor solo se usa via los campos; se guarda el setter para refrescarlo.
   const [, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
   const [tasaInput, setTasaInput] = useState('')
+  // Quien lleva los libros: la cabecera del Libro de Compras del SENIAT.
+  const [razonSocial, setRazonSocial] = useState('')
+  const [rifEmpresa, setRifEmpresa] = useState('')
+  const [direccion, setDireccion] = useState('')
+  const [errorFiscal, setErrorFiscal] = useState('')
+  const [guardado, setGuardado] = useState(false)
   // Revisar una factura puntual (un reclamo, una auditoria) es buscarla, no
   // hojear el libro entero mes por mes.
   const [buscarVentas, setBuscarVentas] = useState('')
@@ -80,14 +93,25 @@ export default function Impuestos() {
     api.configFiscal().then((c) => {
       setFiscal(c)
       setTasaInput(String(c.tasa_iva))
+      setRazonSocial(c.razon_social ?? '')
+      setRifEmpresa(c.rif ?? '')
+      setDireccion(c.direccion ?? '')
     })
   }, [])
 
-  async function guardarTasa() {
+  async function guardarFiscal() {
     const valor = Number(tasaInput)
-    if (!Number.isFinite(valor) || valor < 0) return
-    const c = await api.actualizarConfigFiscal(valor)
-    setFiscal(c)
+    if (!Number.isFinite(valor) || valor < 0) return setErrorFiscal('La alícuota no es válida.')
+    setErrorFiscal('')
+    try {
+      const c = await api.actualizarConfigFiscal({ tasa_iva: valor, razon_social: razonSocial, rif: rifEmpresa, direccion })
+      setFiscal(c)
+      setRifEmpresa(c.rif ?? '')
+      setGuardado(true)
+      setTimeout(() => setGuardado(false), 2000)
+    } catch (e) {
+      setErrorFiscal(e instanceof Error ? e.message : 'No se pudo guardar')
+    }
   }
 
   return (
@@ -95,24 +119,56 @@ export default function Impuestos() {
       <NavBar titulo="Impuestos" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} filtro={seccion !== 'declaraciones' ? <FiltroFechas rango={rango} alCambiar={setRango} /> : undefined} />
       <Pagina>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <h2 className="font-semibold mb-2">Alícuota de IVA</h2>
-          <div className="flex flex-wrap gap-2">
-            <Numerico
-              value={tasaInput}
-              onChange={(e) => setTasaInput(e.target.value)}
-              className="w-24 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
-            <span className="flex items-center text-sm text-neutral-500">%</span>
+          <h2 className="font-semibold mb-3">Datos fiscales</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_7rem] gap-3">
+            <label className="text-xs text-neutral-500">
+              Razón social
+              <input
+                value={razonSocial}
+                onChange={(e) => setRazonSocial(e.target.value)}
+                placeholder="Inversiones Ejemplo, C.A."
+                className="mt-1 w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm text-neutral-900"
+              />
+            </label>
+            <label className="text-xs text-neutral-500">
+              RIF
+              <input
+                value={rifEmpresa}
+                onChange={(e) => setRifEmpresa(e.target.value)}
+                placeholder="J-12345678-9"
+                className="mt-1 w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm text-neutral-900"
+              />
+            </label>
+            <label className="text-xs text-neutral-500">
+              Alícuota IVA (%)
+              <Numerico
+                value={tasaInput}
+                onChange={(e) => setTasaInput(e.target.value)}
+                className="mt-1 w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm text-neutral-900"
+              />
+            </label>
+            <label className="text-xs text-neutral-500 sm:col-span-3">
+              Dirección fiscal
+              <input
+                value={direccion}
+                onChange={(e) => setDireccion(e.target.value)}
+                className="mt-1 w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm text-neutral-900"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mt-3">
             <button
-              onClick={guardarTasa}
+              onClick={guardarFiscal}
               className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
             >
               Guardar
             </button>
+            {guardado && <span className="text-sm text-exito-700">Guardado</span>}
+            {errorFiscal && <span className="text-sm text-peligro-600">{errorFiscal}</span>}
           </div>
           <p className="text-xs text-neutral-500 mt-2">
-            Se congela en cada venta facturada al momento de cobrar, así que cambiarla no altera
-            los libros de meses ya cerrados.
+            La razón social, el RIF y la dirección van en la cabecera del Libro de Compras. La alícuota
+            se congela en cada venta facturada al cobrar: cambiarla no altera meses ya cerrados.
           </p>
         </div>
 
@@ -220,25 +276,45 @@ export default function Impuestos() {
               placeholder="Buscar por número de factura o proveedor…"
               className="w-full sm:w-72 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
-            <a
-              href={`/api/impuestos/libro-compras/exportar?${queryRango(rango)}`}
-              className="text-sm font-medium text-acento-700 hover:underline"
-            >
-              Descargar Excel
-            </a>
+            <div className="flex flex-wrap items-center gap-3">
+              <a
+                href={`/api/impuestos/libro-compras/seniat?${queryRango(rango)}`}
+                className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                Descargar libro (formato SENIAT)
+              </a>
+              <a
+                href={`/api/impuestos/libro-compras/exportar?${queryRango(rango)}`}
+                className="text-sm font-medium text-acento-700 hover:underline"
+              >
+                CSV en dólares
+              </a>
+            </div>
           </div>
+          <p className="text-xs text-neutral-500">
+            Montos en bolívares, como se declaran: los de las facturas en Bs tal cual el papel, y los de
+            las facturas en dólares a la tasa BCV de su fecha (o la que imprime la factura).
+          </p>
+          {compras.sin_tasa > 0 && (
+            <div className="rounded-lg border border-aviso-200 bg-aviso-50 px-3 py-2 text-sm text-aviso-800">
+              {compras.sin_tasa === 1 ? 'Una factura no tiene' : `${compras.sin_tasa} facturas no tienen`} monto en
+              bolívares: no hay tasa guardada para su fecha. Están marcadas con «sin tasa» y salen vacías en el libro.
+            </div>
+          )}
           <Tabla orden={ordenCompras} glosario="librocompras" className="bg-white rounded-2xl border border-neutral-200">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                 <tr>
-                  <Th clave="emision">Fecha factura</Th>
+                  <Th clave="emision">Fecha doc.</Th>
                   <Th clave="fecha">Registro</Th>
-                  <Th clave="factura">Factura</Th>
+                  <Th clave="factura">Documento</Th>
                   <Th clave="proveedor">Proveedor</Th>
                   <Th clave="rif">RIF</Th>
-                  <Th clave="base" alinear="derecha">Base</Th>
-                  <Th clave="iva" alinear="derecha">IVA</Th>
-                  <Th clave="total" alinear="derecha">Total</Th>
+                  <Th clave="exento" alinear="derecha">Exento Bs</Th>
+                  <Th clave="base" alinear="derecha">Base Bs</Th>
+                  <Th clave="iva" alinear="derecha">IVA Bs</Th>
+                  <Th clave="total" alinear="derecha">Total Bs</Th>
+                  <Th alinear="derecha">Tasa</Th>
                 </tr>
               </thead>
               <tbody>
@@ -254,24 +330,48 @@ export default function Impuestos() {
                     }),
                   )
                   .map((f) => (
-                    <tr key={f.factura_id} className="border-t border-neutral-100">
+                    <tr key={`${f.tipo}-${f.factura_id}-${f.numero_nota}`} className="border-t border-neutral-100">
                       <td className="p-3 whitespace-nowrap">
                         {new Date(`${f.fecha_emision}T12:00:00`).toLocaleDateString('es-VE')}
                       </td>
                       <td className="p-3 whitespace-nowrap text-neutral-500">
                         {new Date(f.fecha).toLocaleDateString('es-VE')}
                       </td>
-                      <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
+                      <td className="p-3">
+                        {f.tipo === 'NC' ? (
+                          <>
+                            <span className="font-mono text-xs">NC {f.numero_nota}</span>
+                            <span className="block text-xs text-neutral-500">afecta {f.factura_afectada}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-mono text-xs">{f.numero_factura}</span>
+                            {f.numero_control && (
+                              <span className="block text-xs text-neutral-500">control {f.numero_control}</span>
+                            )}
+                          </>
+                        )}
+                      </td>
                       <td className="p-3">{f.proveedor_nombre}</td>
                       <td className="p-3 text-neutral-500">{f.proveedor_rif || '-'}</td>
-                      <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
-                      <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
-                      <td className="text-right p-3 tabular-nums font-semibold">{f.total.toFixed(2)}</td>
+                      <td className="text-right p-3 tabular-nums">{bs(f.exento_bs)}</td>
+                      <td className="text-right p-3 tabular-nums">{bs(f.gravado_bs)}</td>
+                      <td className="text-right p-3 tabular-nums">{bs(f.iva_bs)}</td>
+                      <td className="text-right p-3 tabular-nums font-semibold">
+                        {f.total_bs === null ? <span className="text-aviso-700 font-normal">sin tasa</span> : bs(f.total_bs)}
+                      </td>
+                      <td className="text-right p-3 tabular-nums text-xs text-neutral-500 whitespace-nowrap">
+                        {f.tasa_bcv === null ? '-' : fmtNum(f.tasa_bcv, 2)}
+                        <span className="block">
+                          {f.moneda === 'Bs' ? 'factura en Bs' : `$${fmtNum(f.total, 2)}`}
+                          {f.tasa_estimada && f.tasa_bcv !== null ? ' · de su fecha' : ''}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 {compras.filas.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-neutral-400 py-4 text-center">
+                    <td colSpan={10} className="text-neutral-400 py-4 text-center">
                       Sin facturas de compra en este período.
                     </td>
                   </tr>
@@ -283,9 +383,13 @@ export default function Impuestos() {
                     <td className="p-3" colSpan={5}>
                       Total
                     </td>
-                    <td className="text-right p-3 tabular-nums">{compras.total_base.toFixed(2)}</td>
-                    <td className="text-right p-3 tabular-nums">{compras.total_iva.toFixed(2)}</td>
-                    <td className="text-right p-3 tabular-nums">{compras.total_general.toFixed(2)}</td>
+                    <td className="text-right p-3 tabular-nums">{bs(compras.total_exento_bs)}</td>
+                    <td className="text-right p-3 tabular-nums">{bs(compras.total_gravado_bs)}</td>
+                    <td className="text-right p-3 tabular-nums">{bs(compras.total_iva_bs)}</td>
+                    <td className="text-right p-3 tabular-nums">{bs(compras.total_bs)}</td>
+                    <td className="text-right p-3 tabular-nums text-xs font-normal text-neutral-500">
+                      ${fmtNum(compras.total_general, 2)}
+                    </td>
                   </tr>
                 </tfoot>
               )}

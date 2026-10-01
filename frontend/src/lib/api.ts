@@ -56,6 +56,7 @@ import type {
   Producto,
   ReporteResumen,
   PuntoTasa,
+  TasaDeUnaFecha,
   ReporteCombos,
   ReporteInventario,
   ReportePerdidas,
@@ -664,6 +665,7 @@ export const api = {
     req<EstadoTasa>(`/tasas/refrescar?forzar=${forzar}`, { method: 'POST' }),
   fijarTasa: (bcv: number, paralelo?: number) =>
     req<EstadoTasa>('/tasas', { method: 'PUT', body: JSON.stringify({ bcv, paralelo }) }),
+  tasaDeFecha: (fecha: string) => req<TasaDeUnaFecha>(`/tasas/al?fecha=${encodeURIComponent(fecha)}`),
   historialTasa: (r?: Rango) => req<PuntoTasa[]>(`/tasas/historial${conRango(r)}`),
   analisisTasa: (r?: Rango) => req<AnalisisTasa>(`/tasas/analisis${conRango(r)}`),
 
@@ -825,6 +827,12 @@ export const api = {
     // Obligatorio para el Libro de Compras: el backend rechaza vacio o
     // formato invalido.
     proveedor_rif: string
+    numero_control?: string
+    // La moneda del papel y la tasa (Bs por $) con que se paso a dolares:
+    // los montos de aqui van SIEMPRE en dolares, y con esto el backend
+    // recupera los Bs del papel para el Libro de Compras.
+    moneda?: '$' | 'Bs'
+    tasa_bcv?: number
     categoria: string
     forma_pago: string
     descripcion?: string
@@ -902,8 +910,8 @@ export const api = {
     }),
 
   configFiscal: () => req<ConfiguracionFiscal>('/impuestos/config'),
-  actualizarConfigFiscal: (tasa_iva: number) =>
-    req<ConfiguracionFiscal>('/impuestos/config', { method: 'PUT', body: JSON.stringify({ tasa_iva }) }),
+  actualizarConfigFiscal: (c: Partial<ConfiguracionFiscal> & { tasa_iva: number }) =>
+    req<ConfiguracionFiscal>('/impuestos/config', { method: 'PUT', body: JSON.stringify(c) }),
   libroVentas: (r: Rango) => req<LibroVentas>(`/impuestos/libro-ventas${conRango(r)}`),
   libroCompras: (r: Rango) => req<LibroCompras>(`/impuestos/libro-compras${conRango(r)}`),
   resumenIva: (r: Rango) => req<ResumenIva>(`/impuestos/resumen${conRango(r)}`),

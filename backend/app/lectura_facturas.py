@@ -139,6 +139,8 @@ Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.
   compra. Si el emisor no muestra su RIF, deja proveedor_rif vacio.
 - numero_factura: el de FACTURA o NOTA DE ENTREGA, no el "numero de control"
   ni el de pedido, guia o ticket.
+- numero_control: el "N° de control" que pone la imprenta (suele ser como
+  00-00123456). Vacio si el papel no lo trae.
 - fecha: la de emision, como AAAA-MM-DD. En Venezuela se escribe DD/MM/AAAA
   o DD-MM-AAAA. Lee el ano con cuidado: si no se distingue, no lo deduzcas de
   otro dato, dejalo vacio y dilo en advertencias.
@@ -150,13 +152,18 @@ Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.
   BULTO, CAJA...). precio_unitario SIN IVA. exento: true si el renglon esta marcado como exento ("(E)",
   "E", "Exento"), false si se ve que grava IVA, null si no se distingue.
 - recargo (flete, recargo) y descuento: montos POSITIVOS sobre el total de
-  la factura; 0 si no hay.
+  la factura; 0 si no hay. Un IMPUESTO que no es IVA (impuesto a licores
+  "Art. 18", percepciones) NO es recargo, porque el recargo paga IVA: deja
+  recargo en 0 y dilo en advertencias con su monto.
 - subtotal: la suma de TODOS los renglones antes de IVA, exentos incluidos
   (en la factura suele decir "SUB-TOTAL"). No es la "base imponible", que
   es solo la parte gravada. iva y total: los IMPRESOS.
 - Numeros con punto decimal y sin separador de miles: en Venezuela
   "1.234,56" significa 1234.56. Si la factura trae montos en Bs y en $,
   transcribe la moneda de los renglones y sus totales en esa misma moneda.
+- tasa_cambio: si el papel imprime la tasa de cambio con que convirtio
+  ("Tasa BCV", "Tasa de cambio", "T/C", en Bs por dolar), ese numero; null
+  si no la imprime.
 - Un monto cortado por el borde del papel (por ejemplo "X 1.334,7" o
   "11.035,"): transcribe la parte que SI se ve (1334.7, 11035) y dilo en
   advertencias. Faltan centimos, no el renglon: el cuadre contra el subtotal
@@ -177,6 +184,8 @@ ESQUEMA = {
         "proveedor_nombre": _TEXTO,
         "proveedor_rif": _TEXTO,
         "numero_factura": _TEXTO,
+        "numero_control": _TEXTO,
+        "tasa_cambio": _NUMERO_O_NULL,
         "fecha": {"type": "STRING", "nullable": True, "description": "AAAA-MM-DD"},
         # Gemini no acepta un valor vacio en `enum`: "no se sabe" es null.
         "moneda": {"type": "STRING", "enum": ["$", "Bs"], "nullable": True},
@@ -203,7 +212,7 @@ ESQUEMA = {
         "advertencias": {"type": "ARRAY", "items": _TEXTO},
     },
     "required": [
-        "proveedor_nombre", "proveedor_rif", "numero_factura", "fecha", "moneda",
+        "proveedor_nombre", "proveedor_rif", "numero_factura", "numero_control", "tasa_cambio", "fecha", "moneda",
         "renglones", "recargo", "descuento", "subtotal", "iva", "total", "advertencias",
     ],
 }

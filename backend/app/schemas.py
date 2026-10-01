@@ -1475,6 +1475,16 @@ class TasaManual(BaseModel):
     paralelo: Optional[float] = None
 
 
+class TasaDeUnaFecha(BaseModel):
+    """La tasa con la que se pasa a Bs una factura de esa fecha."""
+
+    pedida: datetime.date
+    # El dia de la fila que se uso: puede ser anterior (fin de semana).
+    fecha: Optional[datetime.date] = None
+    bcv: Optional[float] = None  # None: no hay tasa guardada hasta esa fecha
+    origen: str = ""  # "auto" | "manual": manual es la que fijo el dueno, no la del BCV
+
+
 class PuntoTasa(BaseModel):
     fecha: str
     bcv: float
@@ -1839,6 +1849,13 @@ class FacturaCompraCreate(FacturaCompraBase):
     fecha: Optional[datetime.datetime] = None
     # La del papel. No cambia el periodo: ese lo decide `fecha` (registro).
     fecha_emision: Optional[datetime.date] = None
+    numero_control: str = ""
+    # En que moneda vienen los montos del papel y a que tasa (Bs por $) se
+    # pasaron a dolares. Los montos de abajo llegan SIEMPRE en dolares; con la
+    # moneda y la tasa el servidor recupera los Bs del papel para el Libro de
+    # Compras. Sin tasa se usa la BCV guardada de la fecha de emision.
+    moneda: str = "$"
+    tasa_bcv: Optional[float] = None
     # Con renglones (compra de insumos): la base sale de sumar los renglones,
     # y cada uno actualiza el stock y el costo promedio de su ingrediente.
     items: List[LineaFacturaInput] = []
@@ -1866,6 +1883,9 @@ class FacturaCompra(FacturaCompraBase):
     id: int
     fecha: datetime.datetime
     fecha_emision: Optional[datetime.date] = None
+    numero_control: str = ""
+    moneda: str = "$"
+    tasa_bcv: Optional[float] = None
     # Ya con el recargo y el descuento aplicados: es la base que va al Libro
     # de Compras. Los dos viajan aparte para poder explicar la diferencia con
     # la suma de los renglones.
@@ -1910,8 +1930,11 @@ class BorradorFactura(BaseModel):
     proveedor_nombre: str = ""
     proveedor_rif: str = ""
     numero_factura: str = ""
+    numero_control: str = ""
     fecha: Optional[datetime.date] = None
     moneda: str = ""  # "$" | "Bs" | "" si no se sabe
+    # La tasa de cambio que imprime el papel (Bs por $), si la imprime.
+    tasa_cambio: Optional[float] = None
     renglones: List[RenglonLeido] = []
     recargo: float = 0
     descuento: float = 0
@@ -2157,6 +2180,11 @@ class NotaCreditoCompra(BaseModel):
 
 class ConfiguracionFiscal(BaseModel):
     tasa_iva: float
+    # La cabecera del Libro de Compras. Al guardar solo cambia lo que viene:
+    # quien guarda la alicuota no borra la razon social.
+    razon_social: str = ""
+    rif: str = ""
+    direccion: str = ""
 
 
 class FilaLibroVentas(BaseModel):
@@ -2184,13 +2212,32 @@ class LibroVentas(BaseModel):
 class FilaLibroCompras(BaseModel):
     factura_id: int
     fecha: datetime.datetime  # registro: la que pone la factura en este libro
-    fecha_emision: datetime.date  # la del papel (o la de registro, si no se cargo)
+    fecha_emision: datetime.date  # la del documento (o la de registro, si no se cargo)
     numero_factura: str
     proveedor_nombre: str
     proveedor_rif: Optional[str]
+    # En dolares, como lleva el ERP todo lo demas (y la declaracion de IVA).
     base_imponible: float
     iva: float
     total: float
+    # Lo que pide el formato del SENIAT. Una nota de credito es su propia
+    # fila, en negativo, que apunta a la factura que afecta.
+    tipo: str = "FAC"  # FAC | NC
+    numero_nota: str = ""
+    factura_afectada: str = ""
+    numero_control: str = ""
+    moneda: str = "$"
+    # En bolivares. None si no hay tasa para pasarla (una factura vieja de
+    # una fecha sin tasa guardada): mejor un hueco visible que un monto
+    # inventado.
+    tasa_bcv: Optional[float] = None
+    # True si la tasa no se congelo al guardar la factura sino que se tomo
+    # ahora de la tasa BCV guardada de su fecha (facturas de antes).
+    tasa_estimada: bool = False
+    exento_bs: Optional[float] = None
+    gravado_bs: Optional[float] = None
+    iva_bs: Optional[float] = None
+    total_bs: Optional[float] = None
 
 
 class LibroCompras(BaseModel):
@@ -2200,6 +2247,13 @@ class LibroCompras(BaseModel):
     total_base: float
     total_iva: float
     total_general: float
+    total_exento_bs: float = 0
+    total_gravado_bs: float = 0
+    total_iva_bs: float = 0
+    total_bs: float = 0
+    # Filas sin monto en Bs: el libro en Bs esta incompleto mientras haya.
+    sin_tasa: int = 0
+    tasa_iva: float = 16
 
 
 class DeclaracionIva(BaseModel):

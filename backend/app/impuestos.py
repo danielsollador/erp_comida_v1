@@ -63,6 +63,10 @@ def _config(db: Session) -> models.ConfiguracionFiscal:
     return cfg
 
 
+def config(db: Session) -> models.ConfiguracionFiscal:
+    return _config(db)
+
+
 def tasa_iva(db: Session) -> float:
     return _config(db).tasa_iva
 
@@ -80,3 +84,32 @@ def desglosar(monto_total: float, tasa_pct: float) -> Tuple[float, float]:
     base = round(monto_total / factor, 2)
     iva = round(monto_total - base, 2)
     return base, iva
+
+
+# ------------------------------------------------- montos en bolivares
+
+def gravado_de(base: float, iva: float, tasa_pct: float) -> float:
+    """La parte de una base que paga IVA, cuando no hay renglones que lo digan
+    (servicios, notas de credito): la que corresponde al IVA cobrado."""
+    if iva <= 0 or tasa_pct <= 0:
+        return 0.0
+    gravado = iva * 100 / tasa_pct
+    # El IVA viene redondeado al centimo: una base toda gravada da un
+    # "gravado" corrido unos centimos. Eso no es una parte exenta.
+    return base if gravado >= base - 0.05 else min(gravado, base)
+
+
+def montos_bs(base: float, gravado: float, iva: float, tasa: float, iva_de_la_base: bool,
+              tasa_pct: float) -> Tuple[float, float, float]:
+    """(gravado_bs, exento_bs, iva_bs) a partir de montos en dolares SIN
+    redondear: si la factura vino en Bs, se paso a dolares dividiendo entre
+    la misma tasa, y multiplicar de vuelta devuelve los Bs del papel.
+
+    `iva_de_la_base`: con renglones el IVA en Bs se calcula sobre la base en
+    Bs, como lo calcula el proveedor; sin renglones vale el que se tecleo.
+    """
+    base_bs = round(base * tasa, 2)
+    gravado_bs = round(gravado * tasa, 2)
+    exento_bs = round(base_bs - gravado_bs, 2)
+    iva_bs = round(gravado_bs * tasa_pct / 100, 2) if iva_de_la_base else round(iva * tasa, 2)
+    return gravado_bs, exento_bs, iva_bs

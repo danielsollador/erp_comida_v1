@@ -38,6 +38,23 @@ def tasa_vigente(db: Session) -> Optional[models.TasaCambio]:
     )
 
 
+def tasa_al(db: Session, fecha: datetime.date) -> Optional[models.TasaCambio]:
+    """La tasa que valia ese dia: la ultima guardada hasta esa fecha.
+
+    Es la que pasa a bolivares una factura en dolares para el Libro de
+    Compras: la de su fecha de emision, no la del dia en que se carga. Un
+    sabado o un feriado no tienen fila propia y vale la del ultimo dia habil,
+    igual que en `tasa_vigente`. None si no hay ninguna guardada hasta esa
+    fecha (el ERP empezo a guardar tasas despues).
+    """
+    return (
+        db.query(models.TasaCambio)
+        .filter(models.TasaCambio.fecha <= fecha)
+        .order_by(models.TasaCambio.fecha.desc())
+        .first()
+    )
+
+
 def refrescar(db: Session, forzar: bool = False) -> bool:
     """Baja las tasas reales y las guarda en la fila de hoy.
 

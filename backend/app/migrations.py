@@ -109,6 +109,16 @@ COLUMNAS = [
     ("TRX410_COM_FACTURA", "referencia_pago", "VARCHAR DEFAULT ''"),
     # La fecha impresa en el papel, aparte de la de registro (`fecha`).
     ("TRX410_COM_FACTURA", "fecha_emision", "DATE"),
+    # Libro de Compras en bolivares (ver models.FacturaCompra).
+    ("TRX410_COM_FACTURA", "numero_control", "VARCHAR DEFAULT ''"),
+    ("TRX410_COM_FACTURA", "moneda", "VARCHAR DEFAULT '$'"),
+    ("TRX410_COM_FACTURA", "tasa_bcv", "FLOAT"),
+    ("TRX410_COM_FACTURA", "gravado_bs", "FLOAT"),
+    ("TRX410_COM_FACTURA", "exento_bs", "FLOAT"),
+    ("TRX410_COM_FACTURA", "iva_bs", "FLOAT"),
+    ("CFG710_IMP_FISCAL", "razon_social", "VARCHAR DEFAULT ''"),
+    ("CFG710_IMP_FISCAL", "rif", "VARCHAR DEFAULT ''"),
+    ("CFG710_IMP_FISCAL", "direccion", "VARCHAR DEFAULT ''"),
     ("TRX412_COM_FACTURA_SOPORTE", "completada", "BOOLEAN DEFAULT 0"),
     ("CFG910_ADM_PARAMETRO", "vender_sin_inventario", "BOOLEAN DEFAULT 0"),
     # A cocina o no, renglon por renglon (y la sugerencia, por categoria).

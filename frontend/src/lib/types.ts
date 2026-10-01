@@ -1033,6 +1033,11 @@ export type FacturaCompra = {
   fecha: string
   /** La impresa en el papel (AAAA-MM-DD). null en las cargadas antes de existir. */
   fecha_emision: string | null
+  numero_control: string
+  /** La moneda del papel; los montos de aquí siempre están en dólares. */
+  moneda: '$' | 'Bs'
+  /** Bs por $ con que pasa al Libro de Compras. null en las de antes. */
+  tasa_bcv: number | null
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
   forma_pago: 'Efectivo' | 'Banco' | 'Credito'
   /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
@@ -1072,9 +1077,12 @@ export type BorradorFactura = {
   proveedor_nombre: string
   proveedor_rif: string
   numero_factura: string
+  numero_control: string
   /** AAAA-MM-DD, la del papel. */
   fecha: string | null
   moneda: '$' | 'Bs' | ''
+  /** La tasa (Bs por $) que imprime el papel, si la imprime. */
+  tasa_cambio: number | null
   renglones: RenglonLeido[]
   recargo: number
   descuento: number
@@ -1203,6 +1211,21 @@ export type RevisionFactura = {
 
 export type ConfiguracionFiscal = {
   tasa_iva: number
+  /** Cabecera del Libro de Compras (opcionales: solo Impuestos los usa). */
+  razon_social?: string
+  rif?: string
+  direccion?: string
+}
+
+/** La tasa con que se pasa a Bs una factura de esa fecha. */
+export type TasaDeUnaFecha = {
+  pedida: string
+  /** El día de la tasa usada: puede ser anterior (fin de semana, feriado). */
+  fecha: string | null
+  /** null: no hay tasa guardada hasta esa fecha. */
+  bcv: number | null
+  /** "manual": la fijó el dueño, no es la del BCV. */
+  origen: string
 }
 
 export type Proveedor = {
@@ -1247,9 +1270,24 @@ export type FilaLibroCompras = {
   numero_factura: string
   proveedor_nombre: string
   proveedor_rif: string | null
+  /** En dólares, como el resto del ERP y la declaración de IVA. */
   base_imponible: number
   iva: number
   total: number
+  /** FAC o NC: la nota de crédito es su propia fila, en negativo. */
+  tipo: 'FAC' | 'NC'
+  numero_nota: string
+  factura_afectada: string
+  numero_control: string
+  moneda: '$' | 'Bs'
+  /** En bolívares; null si no hay tasa para pasarla. */
+  tasa_bcv: number | null
+  /** La tasa no se congeló al guardar: se tomó la guardada de su fecha. */
+  tasa_estimada: boolean
+  exento_bs: number | null
+  gravado_bs: number | null
+  iva_bs: number | null
+  total_bs: number | null
 }
 
 export type LibroCompras = {
@@ -1259,6 +1297,13 @@ export type LibroCompras = {
   total_base: number
   total_iva: number
   total_general: number
+  total_exento_bs: number
+  total_gravado_bs: number
+  total_iva_bs: number
+  total_bs: number
+  /** Filas sin monto en Bs. */
+  sin_tasa: number
+  tasa_iva: number
 }
 
 export type DeclaracionIva = {

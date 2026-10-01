@@ -1,3 +1,4 @@
+import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -40,6 +41,15 @@ def fijar(body: schemas.TasaManual, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="La tasa debe ser mayor que cero")
     tasas.fijar_manual(db, body.bcv, body.paralelo)
     return tasas.estado(db)
+
+
+@router.get("/al", response_model=schemas.TasaDeUnaFecha)
+def tasa_de_una_fecha(fecha: datetime.date, db: Session = Depends(get_db)):
+    """La tasa que valia ese dia, para pasar a Bs una factura de esa fecha."""
+    fila = tasas.tasa_al(db, fecha)
+    if fila is None:
+        return schemas.TasaDeUnaFecha(pedida=fecha)
+    return schemas.TasaDeUnaFecha(pedida=fecha, fecha=fila.fecha, bcv=fila.bcv, origen=fila.origen or "auto")
 
 
 @router.get("/historial", response_model=List[schemas.PuntoTasa])

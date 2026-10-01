@@ -15,7 +15,7 @@ import {
   unidadNuestra,
 } from '../../../lib/compras'
 import { achicarFoto } from '../../../lib/foto'
-import { useMoneda } from '../../../lib/moneda'
+import { fmtNum } from '../../../lib/moneda'
 import { necesitaReferencia } from '../../../lib/pagos'
 import { completarDespuesDeGuardar } from '../../../lib/pendientesCompras'
 import { useRevision } from '../../../lib/revisionFactura'
@@ -85,7 +85,6 @@ export default function CargarFactura({
   onVerFacturas: () => void
 }) {
   const dialogo = useDialogo()
-  const { tasa } = useMoneda()
   const hoyISO = new Date().toLocaleDateString('en-CA')
 
   const [error, setError] = useState('')
@@ -99,6 +98,14 @@ export default function CargarFactura({
   const [proveedor, setProveedor] = useState('')
   const [rif, setRif] = useState('')
   const [monedaCarga, setMonedaCarga] = useState<(typeof MONEDAS_DE_CARGA)[number]>('$')
+  const [numeroControl, setNumeroControl] = useState('')
+  // La tasa (Bs por $) con que esta factura pasa al Libro de Compras en Bs, y
+  // con la que una factura en Bs se pasa a dolares. Es la de la FECHA DE LA
+  // FACTURA, no la de hoy: una factura del 20 cargada el 28 vale en Bs lo
+  // que valia el 20. Si el papel imprime su tasa, manda esa.
+  const [tasaFactura, setTasaFactura] = useState('')
+  const [origenTasa, setOrigenTasa] = useState<'' | 'papel' | 'fecha' | 'escrita'>('')
+  const [notaTasa, setNotaTasa] = useState('')
   const [categoria, setCategoria] = useState(CATEGORIAS[0].valor)
   const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0])
   const [referenciaPago, setReferenciaPago] = useState('')
@@ -161,8 +168,39 @@ export default function CargarFactura({
     !!borrador && borrador.renglones.length > 0 && !borrador.iva && esInsumos && lineasConIva > 0 &&
     totalPapel !== null && borrador.subtotal !== null && Math.abs(totalPapel - borrador.subtotal) < 0.01
 
+  // La tasa BCV de la fecha de la factura (o de hoy, sin fecha). No pisa la
+  // que imprime el papel ni la que se escribio a mano.
+  const fechaDeTasa = fechaEmision || hoyISO
+  useEffect(() => {
+    if (origenTasa === 'papel' || origenTasa === 'escrita') return
+    let vigente = true
+    api
+      .tasaDeFecha(fechaDeTasa)
+      .then((t) => {
+        if (!vigente) return
+        setOrigenTasa('fecha')
+        if (t.bcv === null) {
+          setTasaFactura('')
+          setNotaTasa('No hay tasa guardada para esa fecha: escribe la del BCV de ese día.')
+          return
+        }
+        setTasaFactura(String(t.bcv))
+        const dia = new Date(`${t.fecha}T12:00:00`).toLocaleDateString('es-VE')
+        setNotaTasa(
+          t.origen === 'manual'
+            ? `La que se fijó a mano el ${dia}: revisa que sea la del BCV.`
+            : `BCV del ${dia}${t.fecha !== fechaDeTasa ? ' (último día con tasa antes de esa fecha)' : ''}.`,
+        )
+      })
+      .catch(() => undefined)
+    return () => {
+      vigente = false
+    }
+  }, [fechaDeTasa, origenTasa])
+
   // ── Revisión del servidor: duplicado, precios, RIF ──────────────────────
-  const aUsdVista = (monto: number) => (monedaCarga === 'Bs' && tasa?.bcv ? monto / tasa.bcv : monto)
+  const tasaNum = Number(tasaFactura) > 0 ? Number(tasaFactura) : 0
+  const aUsdVista = (monto: number) => (monedaCarga === 'Bs' && tasaNum ? monto / tasaNum : monto)
   const revision = useRevision({
     proveedor_rif: rif.trim(),
     proveedor_nombre: proveedor.trim(),
@@ -195,6 +233,7 @@ export default function CargarFactura({
     })
   }
   if (cuadreAplica && !cuadra) pendientes.push({ texto: 'No cuadra con el papel', tono: 'ojo', ancla: 'cf-totales' })
+  if (!tasaNum) pendientes.push({ texto: 'Falta la tasa', tono: 'mal', ancla: 'cf-tasa' })
 
   function problemaDeRenglon(l: Linea, i: number): { texto: string; tono: Tono } | null {
     const aviso = avisoPrecio(i)
@@ -225,7 +264,15 @@ export default function CargarFactura({
     const b = l.borrador
     if (!b) return
     setNumeroFactura(b.numero_factura)
+    setNumeroControl(b.numero_control ?? '')
     setFechaEmision(b.fecha ?? '')
+    if (b.tasa_cambio) {
+      setTasaFactura(String(b.tasa_cambio))
+      setOrigenTasa('papel')
+      setNotaTasa('La que imprime la factura: con esa calculó el proveedor sus bolívares.')
+    } else if (origenTasa === 'papel') {
+      setOrigenTasa('')
+    }
     // Si el RIF ya esta en el directorio, manda el nombre de alli: es el que
     // agrupa las compras de ese proveedor.
     const soloRif = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
@@ -381,6 +428,8 @@ export default function CargarFactura({
     setDescuentoFactura('')
     setFechaVencimiento('')
     setMonedaCarga('$')
+    setNumeroControl('')
+    setOrigenTasa('')
     setCategoria(CATEGORIAS[0].valor)
     setLectura(null)
     setDocumento(null)
@@ -395,10 +444,11 @@ export default function CargarFactura({
     // valida el formato exacto; aca solo se evita el viaje si esta vacio.
     if (!rif.trim()) return falla('El RIF del proveedor es obligatorio', 'cf-rif')
     if (fechaEmision && fechaEmision > hoyISO) return falla('La fecha de la factura no puede ser futura', 'cf-fecha')
-    // Todo el sistema costea en dolares. Cargar en bolivares es una comodidad
-    // de tecleo: se convierte aca, una sola vez, a la tasa del dia.
-    if (monedaCarga === 'Bs' && !tasa?.bcv) return falla('No se pudo obtener la tasa del día. Intenta de nuevo o carga en dólares.')
-    const aUsd = (monto: number) => (monedaCarga === 'Bs' ? monto / (tasa!.bcv as number) : monto)
+    // Todo el sistema costea en dolares. Una factura en bolivares se pasa aca
+    // a dolares con la tasa de SU fecha, y esa misma tasa viaja al backend:
+    // con ella recupera los Bs del papel, exactos, para el Libro de Compras.
+    if (!tasaNum) return falla('Falta la tasa de cambio de la fecha de la factura: el Libro de Compras va en bolívares.', 'cf-tasa')
+    const aUsd = (monto: number) => (monedaCarga === 'Bs' ? monto / tasaNum : monto)
 
     // Un renglon con cantidad o costo pero sin mercancia se quedaba afuera
     // en silencio.
@@ -464,6 +514,9 @@ export default function CargarFactura({
       const comun = {
         numero_factura: numeroFactura.trim(),
         fecha_emision: fechaEmision || undefined,
+        numero_control: numeroControl.trim(),
+        moneda: monedaCarga,
+        tasa_bcv: tasaNum,
         proveedor_nombre: proveedor.trim(),
         proveedor_rif: rif.trim(),
         categoria,
@@ -674,10 +727,34 @@ export default function CargarFactura({
                 <select value={monedaCarga} onChange={(e) => setMonedaCarga(e.target.value as (typeof MONEDAS_DE_CARGA)[number])} className={clase()}>
                   {MONEDAS_DE_CARGA.map((m) => (
                     <option key={m} value={m}>
-                      {m === '$' ? 'Dólares' : `Bolívares${tasa?.bcv ? ` (a ${tasa.bcv.toFixed(2)})` : ''}`}
+                      {m === '$' ? 'Dólares' : 'Bolívares'}
                     </option>
                   ))}
                 </select>
+              </Dato>
+              <Dato
+                id="cf-tasa"
+                etiqueta="Tasa (Bs por $)"
+                ia={origenTasa === 'papel'}
+                tono={!tasaNum ? 'mal' : undefined}
+                nota={
+                  !tasaNum
+                    ? notaTasa || 'Escribe la tasa BCV del día de la factura.'
+                    : `${notaTasa}${monedaCarga === '$' && totalFormulario > 0 ? ` Al libro: Bs ${fmtNum(totalFormulario * tasaNum, 2)}.` : ''}`
+                }
+              >
+                <Numerico
+                  value={tasaFactura}
+                  onChange={(e) => {
+                    setTasaFactura(e.target.value)
+                    setOrigenTasa('escrita')
+                    setNotaTasa('Escrita a mano.')
+                  }}
+                  className={clase(!tasaNum ? 'mal' : undefined)}
+                />
+              </Dato>
+              <Dato id="cf-control" etiqueta="N.º de control" ia={!!borrador?.numero_control && numeroControl === borrador.numero_control}>
+                <input value={numeroControl} onChange={(e) => setNumeroControl(e.target.value)} placeholder="00-00000000" className={clase()} />
               </Dato>
               <Dato id="cf-categoria" etiqueta="Qué se compró">
                 <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className={clase()}>
