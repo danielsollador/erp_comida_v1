@@ -2478,7 +2478,11 @@ function MenuVariantes({
   const panel = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const fuera = (e: PointerEvent) => {
-      if (panel.current && !panel.current.contains(e.target as Node)) onCerrar()
+      if (panel.current?.contains(e.target as Node)) return
+      // Tocar otra vez el renglon que lo abrio lo cierra su propio click; si
+      // lo cerrara tambien este, el click lo volveria a abrir.
+      if ((e.target as Element | null)?.closest?.(`[data-abre-variantes="${producto.id}"]`)) return
+      onCerrar()
     }
     const tecla = (e: KeyboardEvent) => e.key === 'Escape' && onCerrar()
     const desplazar = (e: Event) => {
@@ -2772,6 +2776,7 @@ const ListaProductos = memo(function ListaProductos({
                       }
                       aria-haspopup="menu"
                       aria-expanded={desplegado}
+                      data-abre-variantes={p.id}
                       className={`vp-celda w-full flex items-center justify-between gap-2 px-3 py-3 text-left border-l-4 ${color.border} ${
                         desplegado ? color.bg : enCarrito > 0 ? 'bg-neutral-50' : 'bg-white'
                       } active:bg-neutral-100`}
