@@ -401,50 +401,37 @@ function Resumen({
         )}
       </div>
 
-      {/* ── 2. Las ventas: la plata y las unidades, lado a lado ────────── */}
+      {/* ── 2. Las ventas: la plata en barras, las unidades en linea ─────── */}
       {serie.length > 0 && (
         <Bloque titulo="Ventas" descripcion="El detalle por hora, día y producto está en la pestaña Ventas.">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <Seccion
-              titulo={`Ventas por ${datos.granularidad} · ${sufijo}`}
-              ayuda={ant ? `En gris, ${ant.etiqueta}, tramo a tramo. La línea punteada es el promedio por ${datos.granularidad}.` : undefined}
-            >
-              <SerieTiempo
-                alto={200}
-                formato={corto}
-                formatoDetalle={(n) => dinero(n)}
-                puntos={serie.map((p) => ({
-                  etiqueta: p.etiqueta,
-                  valor: p.ventas,
-                  detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
-                }))}
-                anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.ventas) : undefined}
-                nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
-                referencia={serie.length > 1 ? { valor: promedioTramo, texto: 'promedio' } : undefined}
-              />
-            </Seccion>
-            {/* Cuantas cosas salieron, no cuanta plata entro: son dos
-                preguntas distintas y la segunda no se veia en ningun lado
-                (Leider, 30-sep: "falta el de las unidades vendidas"). */}
-            <Seccion
-              titulo={`Unidades vendidas por ${datos.granularidad}`}
-              ayuda="Cuántas cosas salieron, sumando los renglones de cada pedido."
-            >
-              <SerieTiempo
-                alto={200}
-                formato={enteros}
-                formatoDetalle={enteros}
-                puntos={serie.map((p) => ({
-                  etiqueta: p.etiqueta,
-                  valor: p.unidades,
-                  detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
-                }))}
-                anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.unidades) : undefined}
-                nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
-                referencia={serie.length > 1 ? { valor: datos.unidades / serie.length, texto: 'promedio' } : undefined}
-              />
-            </Seccion>
-          </div>
+          {/* UNA tarjeta con las dos medidas y dos ejes: las barras son la
+              plata (eje izquierdo) y la linea las unidades (eje derecho).
+              Son dos preguntas distintas --cuanto entro y cuantas cosas
+              salieron-- y se leen juntas: un dia con muchas unidades y poca
+              plata es un dia de cosas baratas (Leider, 30-sep: "un mismo
+              grafico de doble eje"). */}
+          <Seccion
+            titulo={`Ventas y unidades por ${datos.granularidad}`}
+            ayuda={`Barras: la plata en ${sufijo}, eje izquierdo. Línea: las unidades vendidas, eje derecho.${
+              ant ? ` En gris, ${ant.etiqueta}, tramo a tramo.` : ''
+            } La punteada es el promedio de plata por ${datos.granularidad}.`}
+          >
+            <SerieTiempo
+              alto={220}
+              formato={corto}
+              formatoDetalle={(n) => dinero(n)}
+              puntos={serie.map((p) => ({
+                etiqueta: p.etiqueta,
+                valor: p.ventas,
+                detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
+              }))}
+              anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.ventas) : undefined}
+              nombres={{ actual: 'Ventas', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
+              referencia={serie.length > 1 ? { valor: promedioTramo, texto: 'promedio' } : undefined}
+              lineas={[{ nombre: 'Unidades', valores: serie.map((p) => p.unidades) }]}
+              formatoDerecha={enteros}
+            />
+          </Seccion>
         </Bloque>
       )}
 

@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { Ayuda, BotonAyuda } from '../../../components/Ayuda'
-import { GraficoBarras, GraficoLineas } from '../../../components/Grafico'
+import { GraficoBarras, GraficoLineas, type LineaSobreBarras } from '../../../components/Grafico'
 import { explicar } from '../../../lib/glosario'
 
 /**
@@ -201,6 +201,8 @@ export function SerieTiempo({
   alto = 220,
   color = 'var(--color-acento-500)',
   referencia,
+  lineas,
+  formatoDerecha,
   pie,
 }: {
   puntos: PuntoTiempo[]
@@ -215,6 +217,10 @@ export function SerieTiempo({
   color?: string
   /** El promedio por tramo, con su rotulo. Solo en barras. */
   referencia?: { valor: number; texto: string }
+  /** Otras medidas en el mismo grafico, como linea contra el eje derecho
+      (las unidades junto a la plata). Mismo largo que `puntos`. */
+  lineas?: LineaSobreBarras[]
+  formatoDerecha?: (n: number) => string
   pie?: ReactNode
 }) {
   const conAnterior = anterior != null && anterior.length === puntos.length
@@ -238,6 +244,8 @@ export function SerieTiempo({
           anterior={conAnterior ? anterior : undefined}
           nombres={nombres}
           referencia={referencia}
+          lineas={lineas}
+          formatoDerecha={formatoDerecha}
         />
         {pie && <p className="mt-1.5 text-right text-[11px] text-neutral-400">{pie}</p>}
       </>
@@ -249,11 +257,18 @@ export function SerieTiempo({
       etiquetas={etiquetas}
       formato={formatoEje}
       formatoDetalle={formatoDetalle}
+      formatoDerecha={formatoDerecha}
       series={[
         { nombre: nombres?.actual ?? 'Este período', color, valores: puntos.map((p) => p.valor), relleno: true },
         ...(conAnterior
           ? [{ nombre: nombres?.anterior ?? 'Período anterior', color: 'var(--color-neutral-400)', valores: anterior, punteada: true }]
           : []),
+        ...(lineas ?? []).map((l) => ({
+          nombre: l.nombre,
+          color: l.color ?? 'var(--color-neutral-800)',
+          valores: l.valores,
+          eje: 'der' as const,
+        })),
       ]}
       pie={pie}
     />

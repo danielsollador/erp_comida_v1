@@ -113,6 +113,9 @@ export type SerieGrafico = {
   relleno?: boolean
   /** Punteada: para lo que es referencia y no la cifra principal. */
   punteada?: boolean
+  /** `der`: va contra el eje derecho, con su propia escala. Para poner en
+      el mismo grafico dos medidas que no se suman (la plata y las unidades). */
+  eje?: 'izq' | 'der'
 }
 
 export function GraficoLineas({
@@ -120,6 +123,7 @@ export function GraficoLineas({
   series,
   formato = (n) => n.toFixed(2),
   formatoDetalle,
+  formatoDerecha,
   alto = 200,
   pie,
 }: {
@@ -129,6 +133,8 @@ export function GraficoLineas({
   formato?: (n: number) => string
   /** Para el globo: ahi si cabe el numero entero, y es donde se mira de cerca. */
   formatoDetalle?: (n: number) => string
+  /** El formato del eje derecho, si alguna serie va contra el. */
+  formatoDerecha?: (n: number) => string
   alto?: number
   /** Nota bajo el grafico, a la derecha de la leyenda. */
   pie?: ReactNode
@@ -142,33 +148,49 @@ export function GraficoLineas({
     return <p className="text-sm text-neutral-400 py-8 text-center">Sin datos para dibujar.</p>
   }
 
-  const min = Math.min(...todos)
-  const max = Math.max(...todos)
-  // Un margen arriba y abajo para que la linea no toque los bordes. Si todos
-  // los valores son iguales, se inventa un rango para no dividir entre cero.
-  const span = max - min || max * 0.02 || 1
-  const techo = max + span * 0.12
-  // El margen de abajo no cruza el cero si nada es negativo: una serie de
-  // ventas con dias en cero mostraba "$-21" en el eje, y no existe vender
-  // menos de nada. La tasa, que nunca baja de cientos, no lo nota.
-  const pisoCrudo = min - span * 0.12
-  const piso = min >= 0 && pisoCrudo < 0 ? 0 : pisoCrudo
+  // DOS ESCALAS: la del eje izquierdo y, si alguna serie va contra el
+  // derecho, la suya. Cada una con un margen arriba y abajo para que la
+  // linea no toque los bordes; si todos los valores son iguales se inventa
+  // un rango para no dividir entre cero. El margen de abajo no cruza el cero
+  // si nada es negativo: una serie de ventas con dias en cero mostraba
+  // "$-21" en el eje, y no existe vender menos de nada.
+  const escalaDe = (vals: number[]) => {
+    const min = Math.min(...vals)
+    const max = Math.max(...vals)
+    const span = max - min || max * 0.02 || 1
+    const techo = max + span * 0.12
+    const pisoCrudo = min - span * 0.12
+    const piso = min >= 0 && pisoCrudo < 0 ? 0 : pisoCrudo
+    return { techo, piso }
+  }
+  const valoresDe = (lado: 'izq' | 'der') =>
+    series
+      .filter((s) => (s.eje ?? 'izq') === lado)
+      .flatMap((s) => s.valores)
+      .filter((v): v is number => v != null)
+  const conDerecha = series.some((s) => s.eje === 'der')
+  const izq = escalaDe(valoresDe('izq').length ? valoresDe('izq') : todos)
+  const der = conDerecha ? escalaDe(valoresDe('der')) : izq
   const n = etiquetas.length
 
   const x = (i: number) => (n === 1 ? 50 : (i / (n - 1)) * 100)
-  const y = (v: number) => ((techo - v) / (techo - piso)) * 100
+  const y = (v: number, s?: SerieGrafico) => {
+    const e = s?.eje === 'der' ? der : izq
+    return ((e.techo - v) / (e.techo - e.piso)) * 100
+  }
+  const detalleDe = (s: SerieGrafico) => (s.eje === 'der' ? (formatoDerecha ?? detalle) : detalle)
 
   /** Los tramos continuos: un hueco parte la linea en vez de inventar el salto. */
-  const tramos = (valores: (number | null)[]): { x: number; y: number }[][] => {
+  const tramos = (s: SerieGrafico): { x: number; y: number }[][] => {
     const salida: { x: number; y: number }[][] = []
     let actual: { x: number; y: number }[] = []
-    valores.forEach((v, i) => {
+    s.valores.forEach((v, i) => {
       if (v == null) {
         if (actual.length) salida.push(actual)
         actual = []
         return
       }
-      actual.push({ x: x(i), y: y(v) })
+      actual.push({ x: x(i), y: y(v, s) })
     })
     if (actual.length) salida.push(actual)
     return salida
@@ -203,7 +225,7 @@ export function GraficoLineas({
             30-sep): un eje sin cifras es un dibujo, no un grafico. */}
         <div className="flex flex-col justify-between py-0.5 text-[10px] tabular-nums text-neutral-400 shrink-0 text-right">
           {[0, 25, 50, 75, 100].map((p) => (
-            <span key={p}>{formato(techo - ((techo - piso) * p) / 100)}</span>
+            <span key={p}>{formato(izq.techo - ((izq.techo - izq.piso) * p) / 100)}</span>
           ))}
         </div>
 
@@ -250,7 +272,7 @@ export function GraficoLineas({
 
             {series.map((s) =>
               s.relleno
-                ? tramos(s.valores)
+                ? tramos(s)
                     .filter((t) => t.length > 1)
                     .map((t, i) => (
                       <path
@@ -265,7 +287,7 @@ export function GraficoLineas({
             )}
 
             {series.map((s) =>
-              tramos(s.valores).map((t, i) => (
+              tramos(s).map((t, i) => (
                 <path
                   key={`${s.nombre}-${i}`}
                   // Un tramo de un solo punto no dibuja nada con `L`: se le da
@@ -310,7 +332,7 @@ export function GraficoLineas({
                 <span
                   key={`punto-${s.nombre}`}
                   className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
-                  style={{ left: `${x(activo)}%`, top: `${y(v)}%`, background: s.color }}
+                  style={{ left: `${x(activo)}%`, top: `${y(v, s)}%`, background: s.color }}
                 />
               )
             })}
@@ -327,16 +349,23 @@ export function GraficoLineas({
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: s.color }} />
                   <span className="text-neutral-500">{s.nombre}</span>
                   <span className="ml-auto pl-2 font-semibold tabular-nums">
-                    {s.valores[activo] != null ? detalle(s.valores[activo] as number) : '—'}
+                    {s.valores[activo] != null ? detalleDe(s)(s.valores[activo] as number) : '—'}
                   </span>
                 </div>
               ))}
             </div>
           )}
         </div>
+        {conDerecha && (
+          <div className="flex flex-col justify-between py-0.5 text-[10px] tabular-nums text-neutral-400 shrink-0">
+            {[0, 25, 50, 75, 100].map((p) => (
+              <span key={p}>{(formatoDerecha ?? formato)(der.techo - ((der.techo - der.piso) * p) / 100)}</span>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mt-1.5 pl-[3.2rem]">
+      <div className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mt-1.5 pl-[3.2rem] ${conDerecha ? 'pr-[3.2rem]' : ''}`}>
         <span className="text-[10px] tabular-nums text-neutral-400">{etiquetas[0]}</span>
         <span className="text-[10px] tabular-nums text-neutral-400">{etiquetas[n - 1]}</span>
       </div>
@@ -346,6 +375,7 @@ export function GraficoLineas({
           <span key={s.nombre} className="flex items-center gap-1.5 text-[11px] text-neutral-500">
             <span className="h-0.5 w-4 rounded-full" style={{ background: s.color }} />
             {s.nombre}
+            {s.eje === 'der' && <span className="text-neutral-400">· eje derecho</span>}
           </span>
         ))}
         {pie && <span className="ml-auto text-[11px] text-neutral-400">{pie}</span>}
@@ -537,6 +567,9 @@ export function GraficoDona({
 
 // ── Barras ──────────────────────────────────────────────────────────────────
 
+/** Una medida que va ENCIMA de las barras, como linea, contra el eje derecho. */
+export type LineaSobreBarras = { nombre: string; valores: (number | null)[]; color?: string }
+
 export type BarraDato = {
   etiqueta: string
   valor: number
@@ -563,6 +596,12 @@ export type BarraDato = {
  * cifras (`ejeY`), el periodo anterior detras de cada barra para comparar
  * (`anterior`, en gris claro y mas ancho, como una sombra), y una linea de
  * referencia con su rotulo (`referencia`: el promedio, la meta).
+ *
+ * Y OTRA MEDIDA ENCIMA, COMO LINEA, CONTRA EL EJE DERECHO (`lineas`): la
+ * plata en barras y las unidades en linea, en la misma tarjeta, cada una con
+ * su escala. Es el "barras y linea" de cualquier tablero (Leider, 30-sep:
+ * "un mismo grafico de doble eje"). La linea pasa por el centro de cada
+ * barra, asi que se mide donde quedo cada una.
  */
 export function GraficoBarras({
   datos,
@@ -574,6 +613,8 @@ export function GraficoBarras({
   nombres,
   referencia,
   ejeY = false,
+  lineas,
+  formatoDerecha,
 }: {
   datos: BarraDato[]
   formato: (n: number) => string
@@ -593,6 +634,10 @@ export function GraficoBarras({
   /** El eje con cifras y lineas de referencia. Para una serie en el tiempo;
       los siete dias de la semana se leen con la cifra encima y ya. */
   ejeY?: boolean
+  /** Otras medidas, como linea, contra el eje derecho. Mismo largo que `datos`. */
+  lineas?: LineaSobreBarras[]
+  /** El formato del eje derecho (el de las lineas). */
+  formatoDerecha?: (n: number) => string
 }) {
   const { enHover, Globo } = useGlobo()
   const { ref: plano, ancho } = useAncho<HTMLDivElement>()
@@ -601,6 +646,32 @@ export function GraficoBarras({
   }
   const conAnterior =
     anterior != null && anterior.length === datos.length && anterior.some((v) => v != null && v > 0)
+  // Las lineas de encima: solo las que miden lo mismo que las barras.
+  const lineasValidas = (lineas ?? []).filter((l) => l.valores.length === datos.length)
+  const conLineas = lineasValidas.length > 0
+  const maxDer = Math.max(...lineasValidas.flatMap((l) => l.valores.map((v) => v ?? 0)), 0) || 1
+  const fDer = formatoDerecha ?? formato
+  const COLORES_LINEA = ['var(--color-neutral-800)', 'var(--color-exito-600)', 'var(--color-peligro-500)']
+  const colorLinea = (l: LineaSobreBarras, k: number) => l.color ?? COLORES_LINEA[k % COLORES_LINEA.length]
+  // El centro de cada barra, en pixeles: `gap-1.5` son 6 px entre barras.
+  const SEP = 6
+  const anchoBarra = ancho > 0 ? (ancho - SEP * (datos.length - 1)) / datos.length : 0
+  const cx = (i: number) => i * (anchoBarra + SEP) + anchoBarra / 2
+  const yDer = (v: number) => 100 - (Math.max(v, 0) / maxDer) * 100
+  /** El trazo de una linea; un hueco (null) lo parte. */
+  const trazo = (l: LineaSobreBarras) => {
+    let d = ''
+    let nuevo = true
+    l.valores.forEach((v, i) => {
+      if (v == null) {
+        nuevo = true
+        return
+      }
+      d += `${nuevo ? 'M' : 'L'}${cx(i).toFixed(1)},${yDer(v).toFixed(2)} `
+      nuevo = false
+    })
+    return d.trim()
+  }
   const max = Math.max(
     ...datos.map((d) => d.valor),
     ...(conAnterior ? anterior.map((v) => v ?? 0) : []),
@@ -615,9 +686,10 @@ export function GraficoBarras({
   const letras = Math.max(...datos.map((d) => d.etiqueta.length), 1)
   const anchoRotulo = letras * 7 + 8
   const salto = ancho > 0 ? Math.max(1, Math.ceil((datos.length * anchoRotulo) / ancho)) : Math.ceil(datos.length / 12)
-  // Las cifras encima de las barras, solo si caben.
-  const conCifras = datos.length <= 12 && (ancho === 0 || ancho / datos.length >= 36)
-  const columnas = ejeY ? 'auto minmax(0,1fr)' : 'minmax(0,1fr)'
+  // Las cifras encima de las barras, solo si caben y si no hay una linea
+  // pasando por ahi: con la linea, los numeros estan en el eje y en el globo.
+  const conCifras = datos.length <= 12 && (ancho === 0 || ancho / datos.length >= 36) && !conLineas
+  const columnas = `${ejeY ? 'auto ' : ''}minmax(0,1fr)${conLineas ? ' auto' : ''}`
 
   return (
     <div className={estirar ? 'flex-1 min-h-[120px] flex flex-col' : ''}>
@@ -665,6 +737,11 @@ export function GraficoBarras({
                         {ant != null && (
                           <LineaGlobo nombre={nombres?.anterior ?? 'Anterior'} valor={formato(ant)} color="var(--color-neutral-300)" />
                         )}
+                        {lineasValidas.map((l, k) =>
+                          l.valores[i] != null ? (
+                            <LineaGlobo key={l.nombre} nombre={l.nombre} valor={fDer(l.valores[i] as number)} color={colorLinea(l, k)} />
+                          ) : null,
+                        )}
                         {d.detalle && <div className="mt-0.5 text-[11px] text-neutral-400">{d.detalle}</div>}
                       </>,
                     )}
@@ -705,8 +782,53 @@ export function GraficoBarras({
                 )
               })}
             </div>
+            {/* Las lineas, encima de las barras. El SVG mide en pixeles a lo
+                ancho (para pasar por el centro exacto de cada barra) y en
+                porcentaje a lo alto; `preserveAspectRatio="none"` estira
+                cada eje por su lado y `vector-effect` deja el trazo parejo. */}
+            {conLineas && ancho > 0 && (
+              <svg
+                className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+                viewBox={`0 0 ${ancho} 100`}
+                preserveAspectRatio="none"
+                aria-hidden
+              >
+                {lineasValidas.map((l, k) => (
+                  <path
+                    key={l.nombre}
+                    d={trazo(l)}
+                    fill="none"
+                    stroke={colorLinea(l, k)}
+                    strokeWidth="2"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </svg>
+            )}
+            {conLineas &&
+              ancho > 0 &&
+              lineasValidas.map((l, k) =>
+                l.valores.map((v, i) =>
+                  v == null ? null : (
+                    <span
+                      key={`${l.nombre}-${i}`}
+                      className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--vp-superficie)]"
+                      style={{ left: cx(i), top: `${yDer(v)}%`, background: colorLinea(l, k) }}
+                    />
+                  ),
+                ),
+              )}
           </div>
         </div>
+        {conLineas && (
+          <div className="flex flex-col justify-between pt-5 pb-px text-[10px] tabular-nums text-neutral-400 text-left">
+            {[100, 75, 50, 25, 0].map((p) => (
+              <span key={p}>{fDer((maxDer * p) / 100)}</span>
+            ))}
+          </div>
+        )}
         {ejeY && <span />}
         {/* Los rotulos del eje X: el mismo reparto y la misma separacion que
             las barras, asi cada uno queda bajo la suya. */}
@@ -717,10 +839,11 @@ export function GraficoBarras({
             </span>
           ))}
         </div>
+        {conLineas && <span />}
       </div>
       {/* La leyenda: que es cada cosa. El rotulo de la referencia va aqui y
           no encima de la linea, donde tapaba la ultima barra. */}
-      {(conAnterior || (referencia && referencia.valor > 0)) && (
+      {(conAnterior || conLineas || (referencia && referencia.valor > 0)) && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
           {conAnterior && (
             <>
@@ -734,6 +857,14 @@ export function GraficoBarras({
               </span>
             </>
           )}
+          {lineasValidas.map((l, k) => (
+            <span key={l.nombre} className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+              <span className="relative h-0.5 w-4 rounded-full" style={{ background: colorLinea(l, k) }}>
+                <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: colorLinea(l, k) }} />
+              </span>
+              {l.nombre} <span className="text-neutral-400">· eje derecho</span>
+            </span>
+          ))}
           {referencia && referencia.valor > 0 && (
             <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
               <span className="w-4 border-t border-dashed border-neutral-400" />

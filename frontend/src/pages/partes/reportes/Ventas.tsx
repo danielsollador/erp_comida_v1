@@ -109,14 +109,11 @@ export default function Ventas({
       {/* ── 1. Cuando se vende ─────────────────────────────────────────── */}
       <Bloque titulo={de ? `Cuándo se vende ${de}` : 'Cuándo se vende'} descripcion="La hora es la de tomar el pedido, no la de cobrarlo.">
         {serie.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Seccion
-            titulo={`Ventas por ${datos.granularidad}`}
-            ayuda={
-              ant
-                ? `En gris, ${ant.etiqueta}, tramo a tramo: la misma hora, el mismo día de la semana. La línea punteada es el promedio por ${datos.granularidad}.`
-                : undefined
-            }
+            titulo={`Ventas y unidades por ${datos.granularidad}`}
+            ayuda={`Barras: la plata, eje izquierdo. Línea: las unidades vendidas, eje derecho.${
+              ant ? ` En gris, ${ant.etiqueta}, tramo a tramo: la misma hora, el mismo día de la semana.` : ''
+            } La punteada es el promedio de plata por ${datos.granularidad}.`}
             /* EL GRANO LO ELIGE EL DUEÑO. El automatico mira el largo del
                rango y casi siempre acierta, pero "casi" no sirve cuando lo
                que quieres ver es justo el dia (Leider, 24-sep). Va en la
@@ -146,8 +143,10 @@ export default function Ventas({
                 detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
               }))}
               anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.ventas) : undefined}
-              nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
+              nombres={{ actual: 'Ventas', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
               referencia={serie.length > 1 ? { valor: promedioTramo, texto: 'promedio' } : undefined}
+              lineas={[{ nombre: 'Unidades', valores: serie.map((p) => p.unidades) }]}
+              formatoDerecha={enteros}
               pie={
                 mejor
                   ? `mejor tramo: ${mejor.etiqueta}, ${dinero(mejor.ventas)} en ${mejor.pedidos} pedido(s)`
@@ -155,26 +154,6 @@ export default function Ventas({
               }
             />
           </Seccion>
-          {/* Cuantas cosas salieron en cada tramo, con el mismo grano. */}
-          <Seccion
-            titulo={`Unidades vendidas por ${datos.granularidad}`}
-            ayuda="Cuántas cosas salieron, sumando los renglones de cada pedido."
-          >
-            <SerieTiempo
-              alto={240}
-              formato={enteros}
-              formatoDetalle={enteros}
-              puntos={serie.map((p) => ({
-                etiqueta: p.etiqueta,
-                valor: p.unidades,
-                detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
-              }))}
-              anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.unidades) : undefined}
-              nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
-              referencia={serie.length > 1 ? { valor: datos.unidades / serie.length, texto: 'promedio' } : undefined}
-            />
-          </Seccion>
-          </div>
         ) : (
           <Vacio>Todavía no hay ventas {de ? `de ${de} ` : ''}en este período.</Vacio>
         )}
