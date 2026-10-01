@@ -57,9 +57,8 @@ function sinMovimiento(): boolean {
  *             se tiñe entero.
  *   metro     una linea gruesa como el mapa del metro, paradas en anillo y el
  *             estado en una pastilla.
- *   mixto     la linea arriba, con su punto que la recorre, y debajo de cada
- *             punto una capsula con el nombre y como esta (Leider, 1-oct:
- *             "un mix de linea con capsulas").
+ *   mixto     la linea, pero cada icono en un cuadrado redondeado como el de
+ *             las capsulas y no en un circulo (Leider, 1-oct).
  * Se elige con `?estilo=capsulas` (queda guardado en este navegador) o con
  * el selector que solo aparece en desarrollo. Cuando Leider escoja, se deja
  * uno y se borra lo demas.
@@ -198,8 +197,8 @@ export default function Recorrido({
 
       {estilo === 'capsulas' && <Capsulas items={items} />}
       {estilo === 'metro' && <Metro items={items} />}
-      {/* Mixto es la misma linea: lo que cambia (la capsula bajo cada punto)
-          lo pone `.vp-estilo-mixto` en index.css. */}
+      {/* Mixto es la misma linea: lo que cambia (el icono en un cuadrito y
+          no en un circulo) lo pone `.vp-estilo-mixto` en index.css. */}
       {(estilo === 'linea' || estilo === 'mixto') && (
 
       <ol
