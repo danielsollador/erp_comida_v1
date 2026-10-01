@@ -33,6 +33,13 @@ import { useTema } from '../lib/tema'
 export function MiCuenta() {
   const { estado, recargar } = useAcceso()
   const nombre = estado.nombre_visible || estado.usuario || ''
+  // TRES RENGLONES CERRADOS, NO TRES FORMULARIOS ABIERTOS. Nombre, PIN y
+  // contraseña estaban desplegados a la vez, con sus seis casillas, y casi
+  // nunca se cambia mas de uno (Leider, 1-oct, fight complexity). Cada
+  // renglon dice como esta y se abre al tocarlo; abrir otro cierra el que
+  // estaba abierto.
+  const [abierta, setAbierta] = useState<'nombre' | 'pin' | 'clave' | null>(null)
+  const alternar = (cual: 'nombre' | 'pin' | 'clave') => () => setAbierta((a) => (a === cual ? null : cual))
 
   return (
     <>
@@ -53,9 +60,17 @@ export function MiCuenta() {
           </span>
         )}
       </div>
-      <MiNombre nombre={estado.nombre} apellido={estado.apellido} onCambio={recargar} />
-      {estado.puede.autoriza && <MiPin tienePin={estado.tiene_pin} onCambio={recargar} />}
-      <CambiarClave />
+      <MiNombre
+        nombre={estado.nombre}
+        apellido={estado.apellido}
+        onCambio={recargar}
+        abierta={abierta === 'nombre'}
+        alAlternar={alternar('nombre')}
+      />
+      {estado.puede.autoriza && (
+        <MiPin tienePin={estado.tiene_pin} onCambio={recargar} abierta={abierta === 'pin'} alAlternar={alternar('pin')} />
+      )}
+      <CambiarClave abierta={abierta === 'clave'} alAlternar={alternar('clave')} />
     </>
   )
 }
@@ -63,7 +78,42 @@ export function MiCuenta() {
 const campo =
   'w-full border border-neutral-200 rounded-xl px-3 py-2.5 bg-white text-sm focus:outline-none focus:border-neutral-900'
 
-function Tarjeta({ titulo, ayuda, children }: { titulo: string; ayuda?: string; children: ReactNode }) {
+function Tarjeta({
+  titulo,
+  ayuda,
+  children,
+  plegable,
+}: {
+  titulo: string
+  ayuda?: string
+  children: ReactNode
+  /** Un renglon que se abre: cerrado dice `resumen` (como esta) y nada mas. */
+  plegable?: { abierta: boolean; alAlternar: () => void; resumen: string }
+}) {
+  if (plegable) {
+    return (
+      <section className="bg-white rounded-2xl border border-neutral-200">
+        <button
+          type="button"
+          onClick={plegable.alAlternar}
+          aria-expanded={plegable.abierta}
+          className="vp-celda w-full flex items-center justify-between gap-3 p-4 text-left rounded-2xl"
+        >
+          <span className="min-w-0">
+            <span className="block font-semibold">{titulo}</span>
+            <span className="block text-sm text-neutral-500 truncate">{plegable.resumen}</span>
+          </span>
+          <span aria-hidden className={`vp-flecha shrink-0 opacity-60 transition-transform ${plegable.abierta ? 'rotate-180' : ''}`} />
+        </button>
+        {plegable.abierta && (
+          <div className="px-4 pb-4 space-y-3">
+            {ayuda && <p className="text-xs text-neutral-500">{ayuda}</p>}
+            {children}
+          </div>
+        )}
+      </section>
+    )
+  }
   return (
     <section className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
       <div>
@@ -98,7 +148,19 @@ const boton = 'w-full bg-neutral-900 text-white rounded-xl py-2.5 font-medium di
 // ── Mi cuenta ───────────────────────────────────────────────────────────────
 
 /** Como me llamo: lo que se ve al saludar y en lo que autorizo. */
-function MiNombre({ nombre, apellido, onCambio }: { nombre: string; apellido: string; onCambio: () => void }) {
+function MiNombre({
+  nombre,
+  apellido,
+  onCambio,
+  abierta,
+  alAlternar,
+}: {
+  nombre: string
+  apellido: string
+  onCambio: () => void
+  abierta: boolean
+  alAlternar: () => void
+}) {
   const [n, setN] = useState(nombre)
   const [a, setA] = useState(apellido)
   const [error, setError] = useState('')
@@ -127,6 +189,7 @@ function MiNombre({ nombre, apellido, onCambio }: { nombre: string; apellido: st
       <Tarjeta
         titulo="Mi nombre"
         ayuda="Con este nombre te saluda el sistema y queda escrito en lo que autorizas. Tu usuario para entrar no cambia."
+        plegable={{ abierta, alAlternar, resumen: [nombre, apellido].filter(Boolean).join(' ') || 'Sin nombre todavía' }}
       >
         <Error_ texto={error} />
         <Listo texto={listo} />
@@ -152,7 +215,17 @@ function MiNombre({ nombre, apellido, onCambio }: { nombre: string; apellido: st
  * Mi PIN: con el firmo en el mostrador sin escribir usuario ni contrasena.
  * Solo se ofrece a quien tiene un rol que autoriza.
  */
-function MiPin({ tienePin, onCambio }: { tienePin: boolean; onCambio: () => void }) {
+function MiPin({
+  tienePin,
+  onCambio,
+  abierta,
+  alAlternar,
+}: {
+  tienePin: boolean
+  onCambio: () => void
+  abierta: boolean
+  alAlternar: () => void
+}) {
   const [clave, setClave] = useState('')
   const [pin, setPin] = useState('')
   const [pin2, setPin2] = useState('')
@@ -206,7 +279,12 @@ function MiPin({ tienePin, onCambio }: { tienePin: boolean; onCambio: () => void
   return (
     <form onSubmit={guardar}>
       <Tarjeta
-        titulo={tienePin ? 'Cambiar mi PIN' : 'Crear mi PIN'}
+        plegable={{
+          abierta,
+          alAlternar,
+          resumen: tienePin ? 'Ya tienes PIN: autorizas en el mostrador sin tu contraseña' : 'Todavía no tienes: créalo para autorizar en el mostrador',
+        }}
+        titulo={tienePin ? 'Mi PIN' : 'Crear mi PIN'}
         ayuda="De 4 a 6 números. Con él autorizas en el mostrador (por ejemplo, editar una venta ya cobrada) sin escribir usuario ni contraseña. Cuando no estés en el local, las solicitudes te llegan a la aplicación."
       >
         <Error_ texto={error} />
@@ -265,7 +343,7 @@ function MiPin({ tienePin, onCambio }: { tienePin: boolean; onCambio: () => void
   )
 }
 
-function CambiarClave() {
+function CambiarClave({ abierta, alAlternar }: { abierta: boolean; alAlternar: () => void }) {
   const [actual, setActual] = useState('')
   const [nueva, setNueva] = useState('')
   const [nueva2, setNueva2] = useState('')
@@ -295,7 +373,10 @@ function CambiarClave() {
 
   return (
     <form onSubmit={guardar}>
-      <Tarjeta titulo="Cambiar mi contraseña">
+      <Tarjeta
+        titulo="Mi contraseña"
+        plegable={{ abierta, alAlternar, resumen: 'Para cambiarla se pide la actual' }}
+      >
         {listo ? (
           <Listo texto="Listo. Por seguridad se cerraron tus sesiones: vuelve a entrar con la clave nueva." />
         ) : (
