@@ -223,7 +223,7 @@ function ElMenu({
     if (!variante) return
     const ahora = await dialogo.confirmar({
       titulo: `¿Qué lleva ${nombre}?`,
-      texto: 'Ponle la receta ahora y sabrás cuánto te deja cada uno. También puedes hacerlo después, desde Recetas.',
+      texto: 'Ponle la receta ahora y sabrás cuánta ganancia te deja cada uno. También puedes hacerlo después, desde Recetas.',
       aceptar: 'Ponerle la receta',
       cancelar: 'Después',
     })
@@ -780,84 +780,99 @@ function TarjetaProducto({
         />
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mt-2 pl-8">
-        {variantes.map((v) => {
-          const info = costos.get(v.id)
-          const bajoCosto = info?.costo != null && v.precio < info.costo
-          return (
-            <span
-              key={v.id}
-              className={`rounded-full pl-3 pr-1 py-1 text-xs flex items-center gap-2 ${
-                bajoCosto ? 'bg-peligro-50 ring-1 ring-peligro-300' : 'bg-neutral-100'
-              }`}
-            >
-              <button
-                onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}
-                className="py-1 font-medium tabular-nums"
-              >
-                {/* Con una sola subsección, su nombre no aporta nada: la
-                    pastilla dice el precio del producto y ya. */}
-                {variantes.length <= 1 ? `$${v.precio.toFixed(2)}` : `${v.nombre}: $${v.precio.toFixed(2)}`}
-              </button>
-              {info?.margen_pct != null && (
+      {/* LAS VARIANTES, UN RENGLON CADA UNA. Eran pastillas con el precio,
+          el margen, la receta y la equis apretados en una fila que se
+          partia; en renglones cada dato tiene su columna y se lee de un
+          vistazo que se toca: el precio para cambiarlo, la receta para
+          armarla (Leider, 1-oct: "mucho mas fight complexity"). Con una sola
+          variante el renglon dice "Precio" y ya. */}
+      <div className="mt-2 pl-8">
+        <ul className="divide-y divide-neutral-100">
+          {variantes.map((v) => {
+            const info = costos.get(v.id)
+            const bajoCosto = info?.costo != null && v.precio < info.costo
+            return (
+              <li key={v.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
+                <span className="min-w-0 flex-1 basis-[7rem] truncate text-neutral-700">
+                  {variantes.length <= 1 ? 'Precio' : v.nombre}
+                </span>
+                <button
+                  onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}
+                  title="Toca para cambiar el precio"
+                  className={`shrink-0 rounded-lg px-2 py-1 -my-1 font-semibold tabular-nums hover:bg-neutral-100 ${
+                    bajoCosto ? 'text-peligro-600 ring-1 ring-peligro-300' : ''
+                  }`}
+                >
+                  ${v.precio.toFixed(2)}
+                </button>
+                {/* En palabras: "75%" a secas no dice de que. */}
                 <span
-                  className={`tabular-nums ${
+                  className={`shrink-0 w-32 text-right text-xs tabular-nums ${
                     bajoCosto
                       ? 'text-peligro-600 font-semibold'
-                      : info.margen_pct >= 50
-                        ? 'text-exito-600'
-                        : 'text-aviso-600'
+                      : info?.margen_pct != null && !info.sin_receta
+                        ? info.margen_pct >= 50
+                          ? 'text-exito-600'
+                          : 'text-aviso-600'
+                        : 'text-neutral-400'
                   }`}
-                  title={`Cuesta $${info.costo?.toFixed(2)} producirlo`}
+                  title={info?.costo != null ? `Cuesta $${info.costo.toFixed(2)} hacerlo` : undefined}
                 >
-                  {/* En palabras: "75%" a secas no dice de que. */}
-                  {bajoCosto ? '¡a pérdida!' : `te deja ${info.margen_pct.toFixed(0)}%`}
+                  {bajoCosto
+                    ? '¡a pérdida!'
+                    : info?.margen_pct != null && !info.sin_receta
+                      ? `${info.margen_pct.toFixed(0)}% de ganancia`
+                      : ''}
                 </span>
-              )}
-              {/* LA RECETA SE TOCA DESDE AQUI. "sin receta" era una etiqueta
-                  sin salida; ahora es el boton que la pide, y con receta
-                  queda el enlace para editarla (Leider, 1-oct). */}
-              {info?.sin_receta ? (
-                <Link
-                  to={`/menu?s=recetas&v=${v.id}`}
-                  className="font-semibold text-acento-700 hover:underline whitespace-nowrap"
-                  title="Sin receta no se sabe cuánto cuesta ni cuánto deja"
-                >
-                  Ponle lo que lleva
-                </Link>
-              ) : (
-                info?.costo != null && (
+                {/* LA RECETA SE TOCA DESDE AQUI. "sin receta" era una
+                    etiqueta sin salida; ahora es el boton que la pide, y con
+                    receta queda el enlace para editarla. */}
+                {info?.sin_receta ? (
                   <Link
                     to={`/menu?s=recetas&v=${v.id}`}
-                    className="text-neutral-400 hover:text-neutral-800 whitespace-nowrap"
+                    className="shrink-0 w-32 text-right text-xs font-semibold text-acento-700 hover:underline whitespace-nowrap"
+                    title="Sin receta no se sabe cuánto cuesta ni cuánto deja"
+                  >
+                    Ponle lo que lleva
+                  </Link>
+                ) : (
+                  <Link
+                    to={`/menu?s=recetas&v=${v.id}`}
+                    className="shrink-0 w-32 text-right text-xs text-neutral-400 hover:text-neutral-800 whitespace-nowrap"
                     title="Ver o cambiar lo que lleva"
                   >
                     editar receta
                   </Link>
-                )
-              )}
-              {variantes.length > 1 ? (
-                <button
-                  onClick={async () => {
-                    await api.eliminarVariante(v.id)
-                    onCambio()
-                  }}
-                  aria-label={`Quitar ${v.nombre}`}
-                  className="w-6 h-6 grid place-items-center rounded-full text-neutral-400 hover:bg-peligro-100 hover:text-peligro-600"
-                >
-                  ×
-                </button>
-              ) : (
-                <span className="w-1" />
-              )}
-            </span>
-          )
-        })}
+                )}
+                {variantes.length > 1 ? (
+                  <button
+                    onClick={() =>
+                      deshacible({
+                        clave: `variante:${v.id}`,
+                        texto: `«${producto.nombre} - ${v.nombre}» fuera del menú`,
+                        ejecutar: () => api.eliminarVariante(v.id),
+                        revertir: () => api.reactivarVariante(v.id),
+                        alTerminar: onCambio,
+                      })
+                    }
+                    aria-label={`Quitar ${v.nombre}`}
+                    title="Quitar esta variante del menú"
+                    className="w-7 h-7 shrink-0 grid place-items-center rounded-full text-neutral-400 hover:bg-peligro-100 hover:text-peligro-600"
+                  >
+                    ×
+                  </button>
+                ) : (
+                  <span className="w-7 shrink-0" />
+                )}
+              </li>
+            )
+          })}
+        </ul>
 
-        {/* Agregar una subsección se pide, no estorba: el formulario vivía
+        {/* Agregar una variante se pide, no estorba: el formulario vivía
             abierto en cada producto y triplicaba lo que hay que leer. */}
         {abierto ? (
-          <span className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-neutral-100">
             <input
               value={nuevaVariante}
               onChange={(e) => setNuevaVariante(e.target.value)}
@@ -886,11 +901,11 @@ function TarjetaProducto({
             >
               Cancelar
             </button>
-          </span>
+          </div>
         ) : (
           <button
             onClick={() => setAbierto(true)}
-            className="rounded-full px-3 py-1.5 text-xs font-medium text-neutral-500 border border-dashed border-neutral-300 hover:border-neutral-400 hover:text-neutral-800"
+            className="mt-1 py-1 text-xs font-medium text-neutral-500 hover:text-neutral-900"
           >
             + Variante
           </button>

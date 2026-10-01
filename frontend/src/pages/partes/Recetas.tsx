@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { contiene, palabrasDe } from '../../components/Tabla'
+import { Tabla, Th, contiene, palabrasDe, useOrden } from '../../components/Tabla'
 import { Boton, Cifra, FiltroDesplegable, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
 import { useDialogo } from '../../components/dialogo'
@@ -95,6 +95,16 @@ export default function Recetas({
   // crear un producto. Se consume al abrir, para que recargar no la vuelva
   // a abrir.
   const [params, setParams] = useSearchParams()
+  // Las columnas se ordenan y cada una explica que es (Leider, 1-oct: "le
+  // faltan campos arriba, que expliquen que es cada cosa").
+  const orden = useOrden<Renglon>({
+    producto: (r) => r.nombre,
+    categoria: (r) => r.categoria,
+    // Sin receta no hay costo: va al final, que es donde no estorba.
+    costo: (r) => r.info?.costo ?? -1,
+    precio: (r) => r.variante.precio,
+    ganancia: (r) => (r.info?.sin_receta === false ? (r.info.margen_pct ?? -1e9) : -1e9),
+  })
 
   useEffect(() => {
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
@@ -277,7 +287,7 @@ export default function Recetas({
     <>
       <div className="grid grid-cols-2 gap-3">
         <Cifra
-          titulo="Con receta"
+          titulo="Productos con receta"
           valor={`${conReceta.length} de ${delFiltro.length}`}
           detalle={
             delFiltro.length - conReceta.length > 0
@@ -287,8 +297,8 @@ export default function Recetas({
           tono={delFiltro.length - conReceta.length > 0 ? 'alerta' : 'bien'}
         />
         <Cifra
-          titulo="Te deja el producto típico"
-          valor={conReceta.length ? `${margenTipico.toFixed(0)}%` : '—'}
+          titulo="Ganancia que deja el producto típico"
+          valor={conReceta.length ? `${margenTipico.toFixed(0)}% del precio` : '—'}
           detalle={
             !conReceta.length
               ? 'Ponles receta para saberlo'
@@ -341,74 +351,77 @@ export default function Recetas({
             detalle={soloFaltan ? 'El costo y el margen de Reportes son de fiar.' : undefined}
           />
         ) : (
-          <div className="divide-y divide-neutral-100">
-            {visibles.map((r) => {
-              const falta = r.info?.sin_receta !== false
-              const margen = r.info?.margen_pct
-              const costo = r.info?.costo ?? null
-              const precio = r.variante.precio
-              // La misma idea del vaso, en miniatura y acostada: cuanto del
-              // precio se lleva el costo (gris) y cuanto queda (verde).
-              const parteCosto = costo != null && precio > 0 ? Math.min(costo / precio, 1) : 0
-              return (
-                <button
-                  key={r.variante.id}
-                  onClick={() => void abrir(r)}
-                  className="vp-celda w-full flex items-center gap-3 px-4 py-3 text-left"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-sm">{r.nombre}</span>
-                    {/* QUE SE TOCA, DICHO. Una fila que abre algo no se
-                        distingue de una que solo informa; el dueño no sabia
-                        que aqui se arma la receta (Leider, 1-oct). Y la que
-                        no tiene receta lo pide en cobre. */}
-                    <span className="block text-[11px] text-neutral-400 truncate">
-                      {r.categoria}
-                      <span className="text-neutral-300"> · </span>
-                      {falta ? (
-                        <span className="font-semibold text-acento-700">Toca para crear la receta</span>
-                      ) : (
-                        <span>Toca para editar la receta</span>
-                      )}
-                    </span>
-                  </span>
-                  {falta ? (
-                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
-                      sin receta
-                    </span>
-                  ) : (
-                    <>
-                      <span className="shrink-0 text-xs text-neutral-500 tabular-nums hidden sm:inline">
-                        cuesta ${costo?.toFixed(2)}
-                      </span>
-                      <span
-                        aria-hidden
-                        className={`shrink-0 hidden sm:flex w-20 h-2 rounded-full overflow-hidden ${
-                          margen != null && margen < 0 ? 'bg-peligro-400' : 'bg-exito-400'
+          <Tabla orden={orden} glosario="recetas">
+            <table className="w-full text-sm">
+              <thead className="text-neutral-500 text-xs uppercase">
+                <tr>
+                  <Th clave="producto" className="py-2 pl-4 pr-0">Producto</Th>
+                  <Th clave="costo" alinear="derecha" className="py-2 px-0 hidden sm:table-cell">Cuesta hacerlo</Th>
+                  <Th clave="precio" alinear="derecha" className="py-2 px-0">Precio</Th>
+                  <Th clave="ganancia" alinear="derecha" className="py-2 pl-0 pr-4">Ganancia</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {orden.ordenar(visibles).map((r) => {
+                  const falta = r.info?.sin_receta !== false
+                  const margen = falta ? null : r.info?.margen_pct
+                  const costo = falta ? null : (r.info?.costo ?? null)
+                  return (
+                    <tr
+                      key={r.variante.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => void abrir(r)}
+                      onKeyDown={(e) => e.key === 'Enter' && void abrir(r)}
+                      className="vp-celda cursor-pointer border-t border-neutral-100"
+                    >
+                      <td className="py-2.5 pl-4 pr-2 min-w-0">
+                        <span className="block truncate font-medium">{r.nombre}</span>
+                        {/* QUE SE TOCA, DICHO. Una fila que abre algo no se
+                            distingue de una que solo informa; el dueño no
+                            sabia que aqui se arma la receta (Leider, 1-oct).
+                            Y la que no tiene receta lo pide en cobre. */}
+                        <span className="block text-[11px] text-neutral-400 truncate">
+                          {r.categoria}
+                          <span className="text-neutral-300"> · </span>
+                          {falta ? (
+                            <span className="font-semibold text-acento-700">Toca para crear la receta</span>
+                          ) : (
+                            <span>Toca para editar la receta</span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums text-neutral-600 hidden sm:table-cell whitespace-nowrap">
+                        {costo != null ? `$${costo.toFixed(2)}` : <span className="text-neutral-300">—</span>}
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums whitespace-nowrap">${r.variante.precio.toFixed(2)}</td>
+                      <td
+                        className={`py-2.5 pr-4 text-right tabular-nums whitespace-nowrap ${
+                          margen == null
+                            ? ''
+                            : margen < 0
+                              ? 'text-peligro-600 font-semibold'
+                              : margen >= 50
+                                ? 'text-exito-600'
+                                : 'text-aviso-600'
                         }`}
                       >
-                        <span className="block h-full bg-neutral-300" style={{ width: `${parteCosto * 100}%` }} />
-                      </span>
-                    </>
-                  )}
-                  <span className="shrink-0 w-16 text-right text-sm tabular-nums">${precio.toFixed(2)}</span>
-                  <span
-                    className={`shrink-0 w-12 text-right text-sm tabular-nums ${
-                      margen == null
-                        ? 'text-neutral-300'
-                        : margen < 0
-                          ? 'text-peligro-600 font-semibold'
-                          : margen >= 50
-                            ? 'text-exito-600'
-                            : 'text-aviso-600'
-                    }`}
-                  >
-                    {margen == null ? '—' : `${margen.toFixed(0)}%`}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+                        {margen == null ? (
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">
+                            sin receta
+                          </span>
+                        ) : margen < 0 ? (
+                          'a pérdida'
+                        ) : (
+                          `${margen.toFixed(0)}%`
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </Tabla>
         )}
       </div>
     </>

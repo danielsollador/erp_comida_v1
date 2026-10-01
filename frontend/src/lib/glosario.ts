@@ -291,6 +291,30 @@ export const GLOSARIO: Record<string, Explicacion> = {
   ...Object.fromEntries(Object.entries(baseIvaTotal('compra')).map(([k, v]) => [`librocompras.${k}`, v])),
 
   // ── Reportes: qué se vendió ──────────────────────────────────────────────
+  // Menú > Recetas
+  'recetas.producto': {
+    que: 'El producto del menú, con su variante si tiene varias.',
+    origen: 'Lo que está en el menú ahora mismo; lo retirado no aparece.',
+    ejemplo: 'Toca la fila para armar o cambiar lo que lleva. De eso salen el costo y la ganancia.',
+  },
+  'recetas.costo': {
+    que: 'Cuánto cuesta hacer uno, en mercancía.',
+    origen: 'La receta, valorada al costo real de cada mercancía (ya descontada la merma de cocina).',
+    calculo: 'Suma de cantidad × costo real de cada cosa que lleva.',
+    ejemplo: 'Sin receta no hay costo, y sin costo el producto aparece en Reportes como si dejara el 100%: por eso conviene cargarla.',
+  },
+  'recetas.precio': {
+    que: 'A cuánto se vende.',
+    origen: 'El precio puesto en El menú para esa variante.',
+    ejemplo: 'Se cambia en El menú, tocando el precio. Aquí se ve para compararlo con lo que cuesta.',
+  },
+  'recetas.ganancia': {
+    que: 'Qué parte del precio te queda después de pagar la mercancía.',
+    origen: 'El precio y el costo de la receta.',
+    calculo: '(precio − costo) ÷ precio × 100.',
+    ejemplo: 'En comida, de 60% para arriba es sano; por debajo de 30% hay que revisar el precio o la receta. "A pérdida" es que cuesta más de lo que se cobra.',
+  },
+
   'productos.producto': {
     que: 'El producto del menú que se vendió, con su variante.',
     origen: 'Las ventas cobradas del período que estés mirando.',
