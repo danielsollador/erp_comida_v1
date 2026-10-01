@@ -55,7 +55,7 @@ export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcon
 ]
 
 /** La pagina que junta lo del contador y explica que se arma solo. */
-export const CONTADOR = { to: '/contador', icono: 'contabilidad' as NombreIcono, titulo: 'Para el contador' }
+export const CONTADOR = { to: '/contador', icono: 'contabilidad' as NombreIcono, titulo: 'Zona de contadores' }
 
 /**
  * Lo que responde cada modulo, en la pregunta del dueño. El modulo conserva

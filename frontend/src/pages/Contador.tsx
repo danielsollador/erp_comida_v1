@@ -34,7 +34,7 @@ export default function Contador() {
   const pantallas = modulosDe(estado.puede, 'contador')
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Para el contador" moneda={false} />
+      <NavBar titulo="Zona de contadores" moneda={false} />
       <Pagina ancho="media">
         <div className="max-w-2xl">
           <h2 className="font-display text-2xl font-semibold tracking-tight">Esto se arma solo</h2>

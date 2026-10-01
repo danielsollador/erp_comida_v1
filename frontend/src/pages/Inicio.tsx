@@ -259,7 +259,7 @@ export default function Inicio() {
         <Recorrido datos={recorrido} modulos={rutas} operar={estado.puede.operar} />
         {rutas.includes('/reportes') && <FilaReportes dias={recorrido?.ultimos_7_dias} />}
 
-        {/* ── Para el contador: sin lamina ni fichas. Una linea de enlaces
+        {/* ── Zona de contadores (antes "Para el contador"; Leider, 1-oct): sin lamina ni fichas. Una linea de enlaces
             con su icono, en gris: se ve que esta y se ve que es otra cosa
             (Leider, 30-sep: secundario, no escondido, y no con el mismo
             estilo). El titulo lleva a la pagina que explica que se arma solo. */}
@@ -267,7 +267,7 @@ export default function Inicio() {
           <div className="pt-3 border-t border-[var(--vp-textura)]">
             <div className="flex items-baseline justify-between gap-3 mb-1">
               <Link to={CONTADOR.to} className="vp-etiqueta hover:text-neutral-700">
-                {segun({ sencillo: 'Para el contador', tecnico: 'Contabilidad y fiscal' })}
+                {segun({ sencillo: 'Zona de contadores', tecnico: 'Contabilidad y fiscal' })}
               </Link>
               <span className="text-xs text-neutral-400">
                 {segun({ sencillo: 'Se arma solo con lo de arriba', tecnico: 'Asientos automáticos desde las operaciones' })}
@@ -285,7 +285,7 @@ export default function Inicio() {
                   to={m.to}
                   className="vp-pulsable group flex items-center gap-3 rounded-2xl px-3 py-2.5 bajo:py-2 min-h-[3.25rem] bg-neutral-500/[0.05] shadow-[inset_0_0_0_1px_var(--vp-textura)] hover:bg-neutral-500/10"
                 >
-                  <span className="shrink-0 w-9 h-9 rounded-[0.7rem] grid place-items-center bg-neutral-100 text-neutral-600 shadow-[inset_0_0_0_1px_var(--color-neutral-200)] group-hover:text-neutral-900">
+                  <span className="vp-contador-icono shrink-0 w-9 h-9 rounded-[0.7rem] grid place-items-center bg-neutral-100 text-neutral-600 shadow-[inset_0_0_0_1px_var(--color-neutral-200)] group-hover:text-neutral-900">
                     <Icono nombre={m.icono} size={17} />
                   </span>
                   <span className="min-w-0 flex-1">

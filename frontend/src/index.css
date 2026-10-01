@@ -1747,3 +1747,17 @@ html.vp-ligero .vp-fila-reportes:hover { background: var(--vp-superficie); }
   }
 }
 html.vp-ligero .vp-fila-reportes-icono { transition: none; }
+
+/* Los botones de la Zona de contadores: el cuadrito se refuerza con un marco
+   al pasar el cursor, como los del recorrido y el de Reportes (Leider, 1-oct).
+   En tinta: es una zona neutra. */
+.vp-contador-icono { transition: box-shadow 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), color 0.22s; }
+@media (hover: hover) {
+  .group:hover > .vp-contador-icono {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 0 0 1.5px color-mix(in oklab, var(--vp-tinta) 35%, transparent),
+      0 8px 18px -10px rgb(23 24 27 / 0.35);
+  }
+}
+html.vp-ligero .vp-contador-icono { transition: none; }
