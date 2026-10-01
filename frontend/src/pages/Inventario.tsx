@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
+import { useAltoRestante } from '../lib/altoRestante'
 import Agarre from '../components/Agarre'
 import { useArrastre } from '../lib/arrastre'
 import BarraFiltros from '../components/BarraFiltros'
@@ -124,6 +125,10 @@ const PESTANAS = SECCIONES.filter((x) => x.id !== 'categorias')
 const ADMINISTRAR = '__administrar__'
 
 export default function Inventario() {
+  // La lista de mercancia toma el alto que sobra hasta el fondo de la ventana.
+  const lista = useAltoRestante<HTMLDivElement>()
+  // Lo mismo las dos columnas de Perdidas, desde que caben lado a lado.
+  const perdidasCaja = useAltoRestante<HTMLDivElement>({ desde: 1024 })
   const [seccion, irA] = useSeccion(SECCIONES)
   // Solo las perdidas tienen fecha; el stock y que comprar son "a hoy".
   const [rango, setRango] = useRango('30d')
@@ -624,9 +629,17 @@ export default function Inventario() {
           </div>
         </div>
 
-        <Tabla orden={orden} glosario="inventario" className="bg-white rounded-2xl border border-neutral-200">
+        {/* LA PANTALLA CABE ENTERA: cifras y filtros quietos arriba, y la
+            lista toma el alto que sobra y se desplaza por dentro con su
+            cabecera fija (Leider, 1-oct: "que quepa TODO sin scroll, como el
+            hub"). En el telefono la pagina se desplaza entera. */}
+        <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined}>
+        <Tabla orden={orden} glosario="inventario" className={`bg-white rounded-2xl border border-neutral-200 ${lista.alto ? 'h-full overflow-auto' : ''}`}>
           <table className="w-full text-sm">
-            <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
+            <thead
+              className="sticky top-0 z-[1] text-neutral-500 text-xs uppercase"
+              style={{ background: 'color-mix(in oklab, var(--vp-tinta) 4%, var(--vp-superficie))' }}
+            >
               <tr>
                 <Th clave="nombre">Mercancía</Th>
                 <Th clave="stock" alinear="derecha">{nombre('inventario.stock')}</Th>
@@ -669,6 +682,7 @@ export default function Inventario() {
                     key={ing.id}
                     role="button"
                     tabIndex={0}
+                    title={archivado ? undefined : 'Abrir: comprar, mermar, contar o editar'}
                     onClick={() => setFicha(ing.id)}
                     onKeyDown={(e) => e.key === 'Enter' && setFicha(ing.id)}
                     className={`vp-celda cursor-pointer border-t border-neutral-100 ${archivado ? 'opacity-60' : ''}`}
@@ -680,7 +694,6 @@ export default function Inventario() {
                           <span className="text-neutral-500 font-medium">{ing.categoria} · </span>
                         )}
                         {ing.tipo === 'reventa' ? 'Reventa' : 'Materia prima'} · por {ing.unidad}
-                        {!archivado && <span className="text-neutral-400"> · toca para comprar, mermar o editar</span>}
                       </span>
                     </td>
                     <td className="text-right p-3 tabular-nums whitespace-nowrap">
@@ -742,6 +755,7 @@ export default function Inventario() {
             </tbody>
           </table>
         </Tabla>
+        </div>
           </>
         )}
 
@@ -832,6 +846,15 @@ export default function Inventario() {
 
         {seccion === 'perdidas' && (
           <>
+        {/* LADO A LADO Y DENTRO DE LA PANTALLA desde 1024 px: las mermas a la
+            izquierda y los conteos a la derecha, cada columna con su propio
+            desplazamiento (Leider, 1-oct: "que quepa TODO sin scroll"). */}
+        <div
+          ref={perdidasCaja.ref}
+          style={perdidasCaja.alto ? { height: perdidasCaja.alto } : undefined}
+          className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-4"
+        >
+        <div className="lg:min-h-0 lg:overflow-y-auto lg:rounded-2xl">
         {/* Sin esta lista el dueno no podia ver cuanto se perdia ni corregir
             una merma duplicada: era la unica perdida del sistema sin historial. */}
         <Seccion
@@ -897,6 +920,8 @@ export default function Inventario() {
             </Tabla>
           )}
         </Seccion>
+        </div>
+        <div className="space-y-4 lg:min-h-0 lg:overflow-y-auto lg:rounded-2xl">
 
         {/* El faltante siempre tuvo vuelta atras (queda como merma); el
             sobrante no, aunque es el mismo dedo en el mismo formulario. */}
@@ -972,6 +997,8 @@ export default function Inventario() {
             </ul>
           )}
         </Seccion>
+        </div>
+        </div>
           </>
         )}
       </Pagina>
