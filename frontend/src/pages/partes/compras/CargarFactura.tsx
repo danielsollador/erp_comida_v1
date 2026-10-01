@@ -1146,7 +1146,7 @@ function BarraGuardar({
 function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, esPdf: boolean) => void }) {
   const [activo, setActivo] = useState(false)
   const [leyendo, setLeyendo] = useState(false)
-  const [segundos, setSegundos] = useState(0)
+  const [terminando, setTerminando] = useState(false)
   const [encima, setEncima] = useState(false)
   const [error, setError] = useState('')
   const entrada = useRef<HTMLInputElement>(null)
@@ -1158,14 +1158,6 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
       .catch(() => setActivo(false))
   }, [])
 
-  // Leer tarda segundos (mas si el servicio esta saturado): un contador dice
-  // que sigue trabajando y no que se colgo.
-  useEffect(() => {
-    if (!leyendo) return
-    const t = setInterval(() => setSegundos((s) => s + 1), 1000)
-    return () => clearInterval(t)
-  }, [leyendo])
-
   async function leer(archivo: File | undefined) {
     if (!archivo || leyendo) return
     if (!archivo.type.startsWith('image/') && archivo.type !== 'application/pdf') {
@@ -1173,16 +1165,20 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
       return
     }
     setError('')
-    setSegundos(0)
     setLeyendo(true)
     try {
       const subido = await achicarFoto(archivo)
       const lectura = await api.leerFacturaCompra(subido)
+      // La barra llega al final antes de cambiar de pantalla: que se vea que
+      // termino, no que se corto.
+      setTerminando(true)
+      await new Promise((r) => setTimeout(r, 350))
       onLeida(lectura, URL.createObjectURL(subido), subido.type === 'application/pdf')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo leer el archivo')
     } finally {
       setLeyendo(false)
+      setTerminando(false)
       if (entrada.current) entrada.current.value = ''
     }
   }
@@ -1222,12 +1218,7 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
     >
       <input ref={entrada} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => leer(e.target.files?.[0])} />
       {leyendo ? (
-        <div className="space-y-1">
-          <p className="font-semibold">Leyendo la factura… {segundos}s</p>
-          <p className="text-xs text-neutral-500">
-            {segundos < 15 ? 'Suele tardar unos segundos.' : 'El servicio está lento; sigue intentando. Si tarda mucho, puedes cargarla a mano abajo.'}
-          </p>
-        </div>
+        <EsperaLectura terminando={terminando} />
       ) : (
         <>
           <button onClick={() => entrada.current?.click()} className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">
@@ -1240,6 +1231,72 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
         </>
       )}
       {error && <p className="text-peligro-600 text-sm mt-2">{error}</p>}
+    </div>
+  )
+}
+
+// Lo que se va diciendo mientras la IA lee. Es lo que de verdad pasa, en el
+// orden en que pasa: primero lee, despues el sistema revisa, y si algo no
+// cuadra un segundo modelo la relee (ver lectura_facturas.py). Una factura
+// que cuadra a la primera tarda ~3 s y se ven dos o tres; una dificil, ~20 s.
+const MENSAJES_LECTURA = [
+  'Recibiendo la factura',
+  'Enderezando el papel',
+  'Buscando quién la emitió',
+  'Leyendo el RIF dígito por dígito',
+  'Copiando los renglones uno a uno',
+  'Sumando los montos',
+  'Comparando con el total impreso',
+  'Dándole una segunda leída para ir a la segura',
+  'Repasando los céntimos',
+  'Afinando los últimos números',
+]
+const MENSAJES_TARDE = ['Este papel tiene sus detalles, un momento más', 'Ya casi está', 'Revisando renglón por renglón']
+const MS_POR_MENSAJE = 1800
+// Constante de la barra: a los 8 s va por el 63 %, a los 20 s por el 92 %.
+// Nunca llega sola al final: eso lo hace la respuesta.
+const TAU_BARRA_MS = 8000
+
+/**
+ * La espera mientras se lee: una barra que avanza rápido al principio y se
+ * frena después (sin prometer un tiempo que no se sabe) y mensajes cortos de
+ * lo que se está haciendo. Hace que unos segundos se sientan menos.
+ */
+function EsperaLectura({ terminando }: { terminando: boolean }) {
+  const [ms, setMs] = useState(0)
+  useEffect(() => {
+    const inicio = Date.now()
+    const t = setInterval(() => setMs(Date.now() - inicio), 100)
+    return () => clearInterval(t)
+  }, [])
+  const i = Math.floor(ms / MS_POR_MENSAJE)
+  const mensaje = terminando
+    ? 'Listo'
+    : i < MENSAJES_LECTURA.length
+      ? MENSAJES_LECTURA[i]
+      : MENSAJES_TARDE[(i - MENSAJES_LECTURA.length) % MENSAJES_TARDE.length]
+  const avance = terminando ? 100 : 95 * (1 - Math.exp(-ms / TAU_BARRA_MS))
+  return (
+    <div className="max-w-md mx-auto text-left" role="status" aria-live="polite">
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <p key={mensaje} className="text-sm font-semibold" style={{ animation: 'vp-entrar 0.3s ease-out' }}>
+          <Icono nombre="chispa" size={14} className="inline -mt-0.5 mr-1.5 text-acento-500" />
+          {mensaje}
+          {!terminando && '…'}
+        </p>
+        <span className="text-xs text-neutral-400 tabular-nums shrink-0">{Math.floor(ms / 1000)} s</span>
+      </div>
+      <div className="h-2 rounded-full bg-neutral-100 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-acento-500 transition-[width] duration-300 ease-out"
+          style={{ width: `${avance}%` }}
+        />
+      </div>
+      <p className="text-xs text-neutral-500 mt-2">
+        {ms < 30000
+          ? 'La IA lee y el sistema revisa que todo cuadre.'
+          : 'El servicio está lento hoy. Si prefieres, cárgala a mano abajo.'}
+      </p>
     </div>
   )
 }

@@ -27,7 +27,7 @@ from typing import Optional
 import httpx
 from pydantic import ValidationError
 
-from . import schemas, settings
+from . import impuestos, schemas, settings
 
 log = logging.getLogger("erp.lectura")
 
@@ -116,6 +116,10 @@ GEMINI_TIMEOUT_S = 90
 # delante de la pantalla esperando.
 ESTADOS_PASAJEROS = (500, 502, 503, 504)
 ESPERAS_REINTENTO_S = (2, 5)
+
+# Hasta cuantos dias atras una fecha de factura es creible. Mas vieja, se
+# relee: suele ser un ano o un mes mal leido.
+DIAS_FECHA_CREIBLE = 60
 
 # Lo que hay que decirle a Gemini sobre ESTAS facturas lo aprendio una
 # prueba con 21 facturas reales escaneadas (2026-10-01): leia mal el ano,
@@ -237,27 +241,96 @@ class _Pasajero(Exception):
     """Google esta saturado o fallo por su lado: vale la pena otro intento."""
 
 
-def _modelos_a_probar() -> list:
-    principal = settings.GEMINI_MODELO
-    respaldo = settings.GEMINI_MODELO_RESPALDO
-    return [principal] + ([respaldo] if respaldo and respaldo != principal else [])
+def problemas_de_lectura(b: schemas.BorradorFactura, hoy: Optional[datetime.date] = None) -> list:
+    """Lo que delata una lectura mala sin mirar el papel: aritmetica y reglas,
+    no otra IA. Con las facturas reales, cada error de RIF o de ano que hizo
+    un modelo fallaba alguno de estos. Vacio si todo cuadra."""
+    hoy = hoy or datetime.date.today()
+    p = []
+    if not b.proveedor_rif or impuestos.rif_digito_ok(b.proveedor_rif) is not True:
+        p.append("rif")
+    if not b.numero_factura.strip():
+        p.append("numero")
+    # Se carga lo de los ultimos dias: una fecha futura o de meses atras es
+    # casi siempre un ano o un mes mal leido.
+    if b.fecha is None or b.fecha > hoy or (hoy - b.fecha).days > DIAS_FECHA_CREIBLE:
+        p.append("fecha")
+    if b.total is None:
+        p.append("total")
+    subtotales = [r.subtotal for r in b.renglones]
+    if not b.renglones or any(x is None for x in subtotales):
+        p.append("renglones")
+    elif b.subtotal is not None and not _casi_igual(sum(subtotales), b.subtotal, len(subtotales)):
+        p.append("renglones")
+    if b.subtotal is not None and b.total is not None and not _casi_igual(
+        b.subtotal + (b.iva or 0) + b.recargo - b.descuento, b.total, 2
+    ):
+        p.append("totales")
+    return p
+
+
+def _casi_igual(a: float, b: float, sumandos: int) -> bool:
+    # El redondeo deja hasta un centimo por monto sumado, sea la factura de
+    # 10 Bs o de 600.000. Un porcentaje dejaba pasar un precio cortado: en el
+    # ticket de Bella Chacao faltaban 1,03 Bs en 12.370.
+    return abs(a - b) <= 0.02 + 0.01 * sumandos
 
 
 def _leer_con_gemini(archivo: bytes, tipo_mime: str) -> Lectura:
-    modelos = _modelos_a_probar()
-    for i, modelo in enumerate(modelos):
-        for espera in (0,) + ESPERAS_REINTENTO_S:
-            if espera:
-                time.sleep(espera)
-            try:
-                return _pedir_a_gemini(archivo, tipo_mime, modelo)
-            except _Pasajero:
-                continue
-        if i + 1 < len(modelos):
-            log.warning("Gemini %s sigue saturado: se prueba con %s", modelo, modelos[i + 1])
-    raise ErrorDeLectura(
-        "Gemini está saturado en este momento. Intenta en unos minutos o carga la factura a mano."
+    principal = settings.GEMINI_MODELO
+    respaldo = settings.GEMINI_MODELO_RESPALDO
+    if respaldo == principal:
+        respaldo = ""
+    try:
+        primera = _leer_con_reintentos(archivo, tipo_mime, principal)
+    except _Saturado:
+        if not respaldo:
+            raise ErrorDeLectura(_SATURADO)
+        log.warning("Gemini %s sigue saturado: se prueba con %s", principal, respaldo)
+        try:
+            return _leer_con_reintentos(archivo, tipo_mime, respaldo)
+        except _Saturado:
+            raise ErrorDeLectura(_SATURADO)
+
+    problemas = problemas_de_lectura(primera.borrador)
+    if not problemas or not respaldo:
+        return primera
+    # Segunda opinion. Si falla, la primera lectura sigue sirviendo: la
+    # persona la revisa igual y los avisos de la pantalla marcan lo dudoso.
+    log.info("Lectura de %s con %s: se relee con %s", principal, problemas, respaldo)
+    try:
+        segunda = _leer_con_reintentos(archivo, tipo_mime, respaldo)
+    except (_Saturado, ErrorDeLectura) as e:
+        log.warning("No se pudo releer con %s (%s): queda la de %s", respaldo, e, principal)
+        return primera
+    # Queda la que pasa mas controles; empatadas, la del modelo preciso.
+    queda = primera if len(problemas) < len(problemas_de_lectura(segunda.borrador)) else segunda
+    return Lectura(
+        borrador=queda.borrador,
+        # Se pagaron las dos lecturas.
+        tokens_entrada=primera.tokens_entrada + segunda.tokens_entrada,
+        tokens_salida=primera.tokens_salida + segunda.tokens_salida,
+        # "leyo>releyo", y cual quedo: para medir cuanto aporta la segunda.
+        modelo=f"{principal}>{respaldo}={queda.modelo}",
     )
+
+
+_SATURADO = "Gemini está saturado en este momento. Intenta en unos minutos o carga la factura a mano."
+
+
+class _Saturado(Exception):
+    """El modelo siguio saturado despues de los reintentos."""
+
+
+def _leer_con_reintentos(archivo: bytes, tipo_mime: str, modelo: str) -> Lectura:
+    for espera in (0,) + ESPERAS_REINTENTO_S:
+        if espera:
+            time.sleep(espera)
+        try:
+            return _pedir_a_gemini(archivo, tipo_mime, modelo)
+        except _Pasajero:
+            continue
+    raise _Saturado()
 
 
 def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str) -> Lectura:

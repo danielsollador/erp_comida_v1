@@ -7,12 +7,13 @@ llega a la pantalla como un mensaje que dice que hacer -- con la foto
 guardada igual para cargar la factura a mano.
 """
 import base64
+import datetime
 import json
 
 import httpx
 import pytest
 
-from app import lectura_facturas, models, settings
+from app import lectura_facturas, models, schemas, settings
 
 BORRADOR = {
     "proveedor_nombre": "Distribuidora La Montaña, C.A.",
@@ -263,3 +264,99 @@ def test_le_dice_a_gemini_la_fecha_de_hoy(gemini):
     lectura_facturas.leer(JPG, "image/jpeg")
     texto = pedidos[0]["json"]["contents"][0]["parts"][1]["text"]
     assert f"Hoy es {datetime.date.today().isoformat()}" in texto
+
+
+# ------------------------------------------------- los dos modelos en cascada
+
+def borrador_bueno(**cambios):
+    """Una lectura que pasa todos los controles."""
+    b = {
+        "proveedor_nombre": "Megalicores La Castellana, C.A",
+        "proveedor_rif": "J-40223513-5",
+        "numero_factura": "00113422",
+        "fecha": datetime.date.today().isoformat(),
+        "moneda": "Bs",
+        "renglones": [
+            {"descripcion": "MANI MIXTO (E)", "cantidad": 2, "unidad": "UND",
+             "precio_unitario": 50, "subtotal": 100, "exento": True},
+            {"descripcion": "QUESO", "cantidad": 1, "unidad": "KG",
+             "precio_unitario": 200, "subtotal": 200, "exento": False},
+        ],
+        "recargo": 0, "descuento": 0, "subtotal": 300, "iva": 32, "total": 332,
+        "advertencias": [],
+    }
+    b.update(cambios)
+    return b
+
+
+def _modelos(pedidos):
+    return [p["url"].split("/models/")[1].split(":")[0] for p in pedidos]
+
+
+@pytest.fixture()
+def cascada(gemini, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_MODELO", "gemini-3.5-flash-lite")
+    monkeypatch.setattr(settings, "GEMINI_MODELO_RESPALDO", "gemini-3.8-flash")
+    return gemini
+
+
+def test_los_controles_de_una_lectura():
+    hoy = datetime.date(2026, 10, 1)
+    leer = lambda **c: lectura_facturas.problemas_de_lectura(  # noqa: E731
+        schemas.BorradorFactura(**borrador_bueno(**{"fecha": "2026-09-28", **c})), hoy)
+    assert leer() == []
+    # Los errores que hicieron los modelos con las facturas reales.
+    assert leer(proveedor_rif="J-41247314-8") == ["rif"]   # un digito mal leido
+    assert leer(proveedor_rif="J-31366291") == ["rif"]     # le falto un digito
+    assert leer(fecha="2021-08-12") == ["fecha"]           # el ano
+    assert leer(fecha="2026-10-28") == ["fecha"]           # futura
+    assert leer(numero_factura="") == ["numero"]
+    assert leer(total=None) == ["total"]
+    assert leer(total=334) == ["totales"]
+    assert leer(subtotal=310, total=342) == ["renglones"]
+    # Un precio que no se leyo: los renglones no se pueden sumar.
+    renglones = borrador_bueno()["renglones"]
+    renglones[1] = {**renglones[1], "subtotal": None}
+    assert leer(renglones=renglones) == ["renglones"]
+    # Centimos de redondeo no son un error; un precio cortado si (Bella Chacao).
+    assert leer(total=332.03) == []
+    assert leer(subtotal=301.03, total=333.03) == ["renglones"]
+
+
+def test_si_la_primera_lectura_cuadra_no_se_relee(cascada):
+    pedidos, responder = cascada
+    responder(cuerpo=respuesta(json.dumps(borrador_bueno())))
+    l = lectura_facturas.leer(JPG, "image/jpeg")
+    assert _modelos(pedidos) == ["gemini-3.5-flash-lite"]
+    assert l.modelo == "gemini-3.5-flash-lite"
+
+
+def test_si_no_cuadra_relee_con_el_preciso_y_queda_la_buena(cascada):
+    pedidos, responder = cascada
+    mala = borrador_bueno(proveedor_rif="J-40223513-8", fecha="2021-08-12")
+    responder(secuencia=[(200, respuesta(json.dumps(mala))),
+                         (200, respuesta(json.dumps(borrador_bueno()), promptTokenCount=2000))])
+    l = lectura_facturas.leer(JPG, "image/jpeg")
+    assert _modelos(pedidos) == ["gemini-3.5-flash-lite", "gemini-3.8-flash"]
+    assert l.borrador.proveedor_rif == "J-40223513-5"
+    assert l.modelo == "gemini-3.5-flash-lite>gemini-3.8-flash=gemini-3.8-flash"
+    # Se pagaron las dos.
+    assert (l.tokens_entrada, l.tokens_salida) == (3800, 800)
+
+
+def test_si_la_segunda_sale_peor_queda_la_primera(cascada):
+    pedidos, responder = cascada
+    responder(secuencia=[(200, respuesta(json.dumps(borrador_bueno(total=None)))),
+                         (200, respuesta(json.dumps(borrador_bueno(total=None, fecha="2021-01-01"))))])
+    l = lectura_facturas.leer(JPG, "image/jpeg")
+    assert l.modelo.endswith("=gemini-3.5-flash-lite")
+    assert str(l.borrador.fecha) == datetime.date.today().isoformat()
+
+
+def test_si_la_segunda_falla_queda_la_primera(cascada):
+    """La segunda opinion es un extra: si Google falla, no se pierde lo leido."""
+    pedidos, responder = cascada
+    responder(secuencia=[(200, respuesta(json.dumps(borrador_bueno(total=None))))] + [(503, {})] * 3)
+    l = lectura_facturas.leer(JPG, "image/jpeg")
+    assert l.modelo == "gemini-3.5-flash-lite" and l.borrador.total is None
+    assert len(pedidos) == 4
