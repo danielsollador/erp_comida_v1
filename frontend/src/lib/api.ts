@@ -858,9 +858,10 @@ export const api = {
   // formulario de siempre guarda con `crearFacturaCompra`, y despues la foto
   // se engancha a la factura que salio.
   estadoLectorFacturas: () => req<{ activo: boolean; lector: string }>('/compras/lectura'),
-  leerFacturaCompra: async (foto: Blob) => {
+  /** La foto (ya achicada) o el PDF tal cual. */
+  leerFacturaCompra: async (archivo: Blob) => {
     const datos = new FormData()
-    datos.append('archivo', foto, 'factura.jpg')
+    datos.append('archivo', archivo, archivo.type === 'application/pdf' ? 'factura.pdf' : 'factura.jpg')
     // Sin Content-Type: el navegador pone el del multipart con su boundary.
     return req<LecturaFactura>('/compras/lectura', { method: 'POST', body: datos, headers: {} })
   },

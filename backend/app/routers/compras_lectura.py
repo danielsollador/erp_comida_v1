@@ -34,9 +34,12 @@ from .compras_alertas import alerta_a_schema
 
 router = APIRouter(prefix="/api/compras", tags=["compras"])
 
-# Lo que acepta el lector. El frontend achica la foto antes de subirla (queda
-# en unos cientos de KB); el tope es para una foto que llegue sin achicar.
+# Lo que acepta el lector: la foto del papel, o el PDF que el proveedor manda
+# por correo o WhatsApp. El frontend achica la foto antes de subirla (queda en
+# unos cientos de KB); el tope es para una foto sin achicar o un PDF de
+# varias paginas. Un PDF no se achica: se guarda y se lee tal cual.
 TIPOS_DE_IMAGEN = ("image/jpeg", "image/png", "image/webp")
+TIPO_PDF = "application/pdf"
 TAMANO_MAXIMO = 8 * 1024 * 1024
 
 # Una foto leida cuya factura nunca se guardo se borra pasado este plazo. No
@@ -70,15 +73,19 @@ def leer_factura(archivo: UploadFile = File(...), db: Session = Depends(get_db))
             status_code=503, detail="La lectura de facturas desde foto no está activada."
         )
     tipo = (archivo.content_type or "").lower()
-    if tipo not in TIPOS_DE_IMAGEN:
+    if tipo not in TIPOS_DE_IMAGEN and tipo != TIPO_PDF:
         raise HTTPException(
-            status_code=415, detail="La foto tiene que ser JPG, PNG o WEBP."
+            status_code=415, detail="Tiene que ser una foto (JPG, PNG o WEBP) o un PDF."
         )
     imagen = archivo.file.read(TAMANO_MAXIMO + 1)
     if not imagen:
-        raise HTTPException(status_code=400, detail="La foto llegó vacía.")
+        raise HTTPException(status_code=400, detail="El archivo llegó vacío.")
     if len(imagen) > TAMANO_MAXIMO:
-        raise HTTPException(status_code=413, detail="La foto pesa demasiado (máximo 8 MB).")
+        raise HTTPException(status_code=413, detail="El archivo pesa demasiado (máximo 8 MB).")
+    # Que diga PDF no lo hace PDF: un archivo renombrado se guardaria como
+    # soporte y despues no abriria. Todo PDF empieza con esta firma.
+    if tipo == TIPO_PDF and not imagen.startswith(b"%PDF-"):
+        raise HTTPException(status_code=415, detail="El archivo dice ser PDF pero no lo es.")
 
     soporte = models.SoporteFactura(
         tipo_mime=tipo, tamano=len(imagen), contenido=imagen, lector=nombre
@@ -333,5 +340,6 @@ def ver_soporte(factura_id: int, db: Session = Depends(get_db)):
     return Response(
         content=soporte.contenido,
         media_type=soporte.tipo_mime,
-        headers={"Cache-Control": "private, max-age=3600"},
+        # nosniff: el navegador lo trata como lo que dice ser y nada mas.
+        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"},
     )

@@ -10,6 +10,8 @@
  * servidor dice qué formatos acepta.
  */
 export async function achicarFoto(archivo: File, ladoMaximo = 2000, calidad = 0.85): Promise<Blob> {
+  // Un PDF no es una foto: se sube tal cual y el lector lo lee entero.
+  if (archivo.type === 'application/pdf') return archivo
   try {
     const imagen = await createImageBitmap(archivo)
     const escala = Math.min(1, ladoMaximo / Math.max(imagen.width, imagen.height))

@@ -188,6 +188,7 @@ export default function Compras() {
   // La foto leida: su soporte se engancha a la factura al guardar.
   const [lectura, setLectura] = useState<LecturaFactura | null>(null)
   const [fotoLectura, setFotoLectura] = useState('')
+  const [lecturaEsPdf, setLecturaEsPdf] = useState(false)
   const [verSoporte, setVerSoporte] = useState<number | null>(null)
 
   // Con que forma de pago se va a saldar cada factura a credito pendiente -
@@ -291,11 +292,12 @@ export default function Compras() {
 
   // La IA propone; aca solo se llena el formulario. Nada se guarda hasta que
   // alguien lo revisa y le da "Cargar factura".
-  function aplicarLectura(l: LecturaFactura, foto: string) {
+  function aplicarLectura(l: LecturaFactura, foto: string, esPdf: boolean) {
     setError('')
     setExito('')
     setLectura(l)
     setFotoLectura(foto)
+    setLecturaEsPdf(esPdf)
     const b = l.borrador
     if (!b) return
     setNumeroFactura(b.numero_factura)
@@ -540,8 +542,12 @@ export default function Compras() {
       setPorCompletar(cuantosPendientes())
       if (r.estado === 'hecho') {
         if (r.alertas.length > 0) setAlertasAlGuardar(r.alertas)
-        if (r.fotoPerdida) return ' Ojo: la foto ya no estaba guardada y la factura quedó sin ella.'
-        return r.foto ? ' Foto adjunta.' : ''
+        if (r.fotoPerdida) {
+          return lecturaEsPdf
+            ? ' Ojo: el PDF ya no estaba guardado y la factura quedó sin él.'
+            : ' Ojo: la foto ya no estaba guardada y la factura quedó sin ella.'
+        }
+        return r.foto ? (lecturaEsPdf ? ' PDF adjunto.' : ' Foto adjunta.') : ''
       }
       if (r.estado === 'pendiente') {
         return lectura
@@ -899,7 +905,7 @@ export default function Compras() {
                   <td className="p-3 whitespace-nowrap">
                     {f.tiene_soporte && (
                       <button onClick={() => setVerSoporte(f.id)} className="text-acento-700 text-xs mr-3">
-                        Foto
+                        Original
                       </button>
                     )}
                     <button onClick={() => borrar(f)} className="text-peligro-500 text-xs">
@@ -958,6 +964,7 @@ export default function Compras() {
           <PanelRevision
             lectura={lectura}
             foto={fotoLectura}
+            esPdf={lecturaEsPdf}
             monedaFormulario={monedaCarga}
             totalFormulario={
               esInsumos

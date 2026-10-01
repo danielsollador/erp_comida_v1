@@ -19,7 +19,11 @@ import { Aviso, Boton, Modal, Vacio } from './ui'
  */
 
 /** El botón. No aparece si la lectura no está activada en el servidor. */
-export function BotonFoto({ alLeer }: { alLeer: (lectura: LecturaFactura, foto: string) => void }) {
+export function BotonFoto({
+  alLeer,
+}: {
+  alLeer: (lectura: LecturaFactura, url: string, esPdf: boolean) => void
+}) {
   const [activo, setActivo] = useState(false)
   const [leyendo, setLeyendo] = useState(false)
   const [error, setError] = useState('')
@@ -37,11 +41,11 @@ export function BotonFoto({ alLeer }: { alLeer: (lectura: LecturaFactura, foto: 
     setError('')
     setLeyendo(true)
     try {
-      const foto = await achicarFoto(archivo)
-      const lectura = await api.leerFacturaCompra(foto)
-      alLeer(lectura, URL.createObjectURL(foto))
+      const subido = await achicarFoto(archivo)
+      const lectura = await api.leerFacturaCompra(subido)
+      alLeer(lectura, URL.createObjectURL(subido), subido.type === 'application/pdf')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo leer la foto')
+      setError(e instanceof Error ? e.message : 'No se pudo leer el archivo')
     } finally {
       setLeyendo(false)
       // Poder elegir la misma foto otra vez si se reintenta.
@@ -52,17 +56,17 @@ export function BotonFoto({ alLeer }: { alLeer: (lectura: LecturaFactura, foto: 
   if (!activo) return null
   return (
     <div className="mb-3">
-      {/* Sin `capture`: en el teléfono deja elegir entre la cámara y una foto
-          que ya estaba en la galería (la que mandó el proveedor por WhatsApp). */}
+      {/* Sin `capture`: en el teléfono deja elegir entre la cámara, una foto
+          de la galería o el PDF que mandó el proveedor por correo o WhatsApp. */}
       <input
         ref={entrada}
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf"
         className="hidden"
         onChange={(e) => elegida(e.target.files?.[0])}
       />
       <Boton tono="suave" onClick={() => entrada.current?.click()} disabled={leyendo}>
-        {leyendo ? 'Leyendo la factura…' : 'Cargar desde foto'}
+        {leyendo ? 'Leyendo la factura…' : 'Cargar desde foto o PDF'}
       </Boton>
       {error && <p className="text-peligro-600 text-sm mt-2">{error}</p>}
     </div>
@@ -156,6 +160,7 @@ export function RenglonDelPapel({
 export function PanelRevision({
   lectura,
   foto,
+  esPdf,
   monedaFormulario,
   totalFormulario,
   baseFormulario,
@@ -164,6 +169,7 @@ export function PanelRevision({
 }: {
   lectura: LecturaFactura | null
   foto: string
+  esPdf: boolean
   monedaFormulario: string
   totalFormulario: number
   baseFormulario: number
@@ -201,14 +207,20 @@ export function PanelRevision({
       {lectura && (
         <div className="flex gap-3 rounded-xl border border-acento-200 bg-acento-50 p-3 text-sm">
           {foto && (
-            <button onClick={() => setAmpliada(true)} className="shrink-0" title="Ver la foto">
-              <img src={foto} alt="Foto de la factura" className="h-24 w-20 object-cover rounded-lg border" />
+            <button onClick={() => setAmpliada(true)} className="shrink-0" title="Ver la factura">
+              {esPdf ? (
+                <span className="h-24 w-20 rounded-lg border bg-white flex items-center justify-center text-xs font-semibold text-peligro-700">
+                  PDF
+                </span>
+              ) : (
+                <img src={foto} alt="Foto de la factura" className="h-24 w-20 object-cover rounded-lg border" />
+              )}
             </button>
           )}
           <div className="min-w-0 space-y-1 text-acento-900">
             {borrador ? (
               <>
-                <p className="font-semibold">Formulario prellenado desde la foto</p>
+                <p className="font-semibold">Formulario prellenado desde {esPdf ? 'el PDF' : 'la foto'}</p>
                 <p className="text-xs">
                   Revisa cada campo contra el papel y elige la mercancía de cada renglón antes de guardar.
                 </p>
@@ -220,9 +232,10 @@ export function PanelRevision({
               </>
             ) : (
               <>
-                <p className="font-semibold">No se pudo leer la foto</p>
+                <p className="font-semibold">No se pudo leer {esPdf ? 'el PDF' : 'la foto'}</p>
                 <p className="text-xs">
-                  {lectura.error} Puedes cargar la factura a mano: la foto se adjunta igual al guardar.
+                  {lectura.error} Puedes cargar la factura a mano: {esPdf ? 'el PDF' : 'la foto'} se adjunta igual al
+                  guardar.
                 </p>
               </>
             )}
@@ -246,19 +259,52 @@ export function PanelRevision({
       )}
 
       {ampliada && (
-        <Modal titulo="Foto de la factura" onCerrar={() => setAmpliada(false)} ancho="lg">
-          <img src={foto} alt="Foto de la factura" className="w-full rounded-lg" />
+        <Modal titulo="Factura del proveedor" onCerrar={() => setAmpliada(false)} ancho="lg">
+          <VistaSoporte url={foto} esPdf={esPdf} />
         </Modal>
       )}
     </div>
   )
 }
 
-/** Muestra la foto guardada de una factura ya cargada. */
+/** La foto o el PDF de la factura, a tamaño de lectura. */
+function VistaSoporte({ url, esPdf }: { url: string; esPdf: boolean }) {
+  return esPdf ? (
+    <iframe src={url} title="Factura en PDF" className="w-full h-[75vh] rounded-lg border" />
+  ) : (
+    <img src={url} alt="Foto de la factura" className="w-full rounded-lg" />
+  )
+}
+
+/**
+ * La foto o el PDF guardado de una factura ya cargada. Se baja primero para
+ * saber qué es: la lista de facturas no dice si el soporte es foto o PDF.
+ */
 export function VerSoporte({ facturaId, onCerrar }: { facturaId: number; onCerrar: () => void }) {
+  const [soporte, setSoporte] = useState<{ url: string; esPdf: boolean } | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let url = ''
+    fetch(api.urlSoporteFactura(facturaId), { credentials: 'same-origin' })
+      .then((r) => {
+        if (!r.ok) throw new Error('No se pudo abrir el soporte de esta factura')
+        return r.blob()
+      })
+      .then((b) => {
+        url = URL.createObjectURL(b)
+        setSoporte({ url, esPdf: b.type === 'application/pdf' })
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'No se pudo abrir'))
+    return () => {
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [facturaId])
+
   return (
-    <Modal titulo="Foto de la factura" onCerrar={onCerrar} ancho="lg">
-      <img src={api.urlSoporteFactura(facturaId)} alt="Foto de la factura" className="w-full rounded-lg" />
+    <Modal titulo="Factura del proveedor" onCerrar={onCerrar} ancho="lg">
+      {error && <p className="text-peligro-600 text-sm">{error}</p>}
+      {soporte && <VistaSoporte url={soporte.url} esPdf={soporte.esPdf} />}
     </Modal>
   )
 }

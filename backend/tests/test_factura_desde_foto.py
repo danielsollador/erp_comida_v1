@@ -79,9 +79,35 @@ def test_leer_propone_un_borrador_y_no_toca_nada_mas(client, db, insumo, lector_
     assert db.query(models.AsientoContable).filter_by(origen="factura_compra").count() == 0
 
 
-def test_solo_imagenes(client, lector_de_prueba):
-    assert subir(client, b"%PDF-1.4", "application/pdf").status_code == 415
+def test_fotos_o_pdf_y_nada_mas(client, lector_de_prueba):
+    assert subir(client, b"PK\x03\x04", "application/zip").status_code == 415
+    assert subir(client, b"GIF89a", "image/gif").status_code == 415
     assert subir(client, b"", "image/jpeg").status_code == 400
+
+
+PDF = b"%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\n" + b"x" * 2000 + b"\n%%EOF"
+
+
+def test_un_pdf_se_lee_y_se_guarda_tal_cual(client, db, insumo, lector_de_prueba):
+    """El proveedor manda la factura por correo o WhatsApp en PDF: no hay que
+    imprimirla para sacarle una foto."""
+    r = subir(client, PDF, "application/pdf")
+    assert r.status_code == 200, r.text
+    assert r.json()["borrador"]["numero_factura"] == "0004512"
+    soporte = r.json()["soporte_id"]
+    fid = factura(client, insumo)["id"]
+    client.post(f"/api/compras/facturas/{fid}/soporte", json={"soporte_id": soporte})
+    vuelta = client.get(f"/api/compras/facturas/{fid}/soporte")
+    assert vuelta.headers["content-type"] == "application/pdf"
+    assert vuelta.headers["x-content-type-options"] == "nosniff"
+    assert vuelta.content == PDF
+
+
+def test_un_archivo_que_solo_dice_ser_pdf_se_rechaza(client, db, lector_de_prueba):
+    """Renombrado o corrupto: se guardaria como soporte y despues no abriria."""
+    r = subir(client, b"\xff\xd8\xff\xe0 esto es un jpg", "application/pdf")
+    assert r.status_code == 415
+    assert db.query(models.SoporteFactura).count() == 0
 
 
 def test_una_foto_demasiado_pesada_se_rechaza(client, lector_de_prueba):
