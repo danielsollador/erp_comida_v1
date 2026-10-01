@@ -343,7 +343,7 @@ function Tarjeta({
         />
       )}
       <span
-        className={`relative w-11 h-11 lg:w-13 lg:h-13 bajo:w-11 bajo:h-11 pc:w-12 pc:h-12 rounded-[0.9rem] grid place-items-center ${
+        className={`vp-tarjeta-icono ${principal ? 'vp-tarjeta-icono-principal' : ''} relative w-11 h-11 lg:w-13 lg:h-13 bajo:w-11 bajo:h-11 pc:w-12 pc:h-12 rounded-[0.9rem] grid place-items-center ${
           principal
             ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]'
             : 'bg-acento-50 text-acento-600'
