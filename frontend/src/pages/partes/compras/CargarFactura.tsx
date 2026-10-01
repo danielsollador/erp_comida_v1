@@ -245,6 +245,12 @@ export default function CargarFactura({
       return
     }
     setCategoria('Insumos')
+    // Un papel que no cobra IVA (total = subtotal) deja sus renglones sin
+    // IVA de entrada: si no, el formulario lo suma por la ficha de cada
+    // mercancia y la factura nace descuadrada (Improal 7090: 26 renglones).
+    // Lo que el papel marca renglon por renglon manda igual.
+    const papelSinIva =
+      !b.iva && b.subtotal != null && b.total != null && Math.abs(b.total - (b.subtotal + b.recargo - b.descuento)) < 0.01
     // La mercancia de cada renglon la elige quien revisa: el papel dice
     // "HARINA PAN 1KG", no cual de nuestras mercancias es.
     setLineas(
@@ -252,7 +258,7 @@ export default function CargarFactura({
         ...LINEA_VACIA,
         cantidad: r.cantidad == null ? '' : String(r.cantidad),
         costo_unitario: r.precio_unitario == null ? '' : String(r.precio_unitario),
-        exento: r.exento,
+        exento: r.exento ?? (papelSinIva ? true : null),
         leido: r,
       })),
     )
@@ -769,6 +775,13 @@ export default function CargarFactura({
               </div>
             </Grupo>
           )}
+
+          {!!borrador && borrador.renglones.length > 0 && !borrador.iva && !sinIvaEnPapel && esInsumos &&
+            lineas.some((l) => l.exento === true && l.leido && l.leido.exento == null) && (
+              <p className="text-xs text-neutral-500">
+                La factura no cobra IVA: los renglones quedaron sin IVA. Si alguno sí lo lleva, cámbialo en su renglón.
+              </p>
+            )}
 
           {sinIvaEnPapel && (
             <Nota tono="ojo">

@@ -353,3 +353,13 @@ def test_la_revision_avisa_un_rif_imposible_y_sugiere_el_conocido(client, db):
 def test_sin_conocido_parecido_avisa_sin_sugerir(client):
     rev = revisar(client, numero="1", rif="J-40908990-7")
     assert rev["rif_aviso"] and rev["rif_sugerido"] is None
+
+
+def test_un_rif_que_no_pasa_el_calculo_pero_ya_se_uso_no_se_avisa(client, db):
+    """Improal imprime J-33295782-8 en todas sus facturas y no pasa el
+    calculo. Avisar cada vez a quien ya lo comparo con el papel es ruido."""
+    rev = revisar(client, numero="1", rif="J-33295782-8")
+    assert "Compáralo con el papel" in rev["rif_aviso"]
+    db.add(models.Proveedor(nombre="Improal, C.A.", rif="J332957828"))
+    db.commit()
+    assert revisar(client, numero="2", rif="J-33295782-8")["rif_aviso"] == ""
