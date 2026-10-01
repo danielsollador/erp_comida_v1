@@ -1724,9 +1724,12 @@ html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo:hover .vp-recorrido-
 /* Reportes, con el cursor encima: el mismo sombreado fino de fondo que las
    estaciones del recorrido y los botones del contador. Solo cambiaba la
    sombra, que en modo oscuro no se ve (Leider, 1-oct). */
-/* Solo en oscuro: en claro el fondo gris se veia sucio (Leider, 1-oct), y ahi
-   la sombra si se ve, que es lo que hacen las demas fichas. */
+/* En claro, un sombreado CALIDO, del tono del fondo de la pagina (neutral-100
+   es arena, no gris): el gris mezclado con tinta se veia sucio, y quitarlo
+   dejaba la fila sin respuesta al cursor (Leider, 1-oct). En oscuro, la
+   lamina sube un tono. */
 @media (hover: hover) {
+  .vp-fila-reportes:hover { background: color-mix(in oklab, var(--vp-superficie) 45%, var(--color-neutral-100)); }
   html[data-tema="oscuro"] .vp-fila-reportes:hover { background: color-mix(in oklab, var(--vp-superficie) 95%, var(--vp-tinta)); }
 }
 html.vp-ligero .vp-fila-reportes:hover { background: var(--vp-superficie); }
