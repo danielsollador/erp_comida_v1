@@ -218,7 +218,7 @@ export function FilaReportes({ dias }: { dias: { fecha: string; ventas: number }
       to="/reportes"
       className={`vp-losa vp-pulsable vp-fila-reportes ${animar ? 'vp-fila-reportes-entra' : ''} group flex items-center gap-3.5 lg:gap-4 px-4 lg:px-5 py-3.5 bajo:py-2.5 hover:shadow-[inset_0_0_0_1px_var(--vp-textura),0_2px_6px_-2px_rgb(23_24_27/0.06),0_14px_34px_-16px_rgb(23_24_27/0.20)]`}
     >
-      <span className="shrink-0 w-11 h-11 rounded-[0.9rem] grid place-items-center bg-acento-50 text-acento-600">
+      <span className="vp-fila-reportes-icono shrink-0 w-11 h-11 rounded-[0.9rem] grid place-items-center bg-acento-50 text-acento-600">
         <Icono nombre="reportes" size={21} />
       </span>
       <span className="min-w-0 flex-1">

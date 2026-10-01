@@ -1733,3 +1733,17 @@ html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo:hover .vp-recorrido-
   html[data-tema="oscuro"] .vp-fila-reportes:hover { background: color-mix(in oklab, var(--vp-superficie) 95%, var(--vp-tinta)); }
 }
 html.vp-ligero .vp-fila-reportes:hover { background: var(--vp-superficie); }
+
+/* El icono de Reportes se refuerza con un marco al pasar el cursor, como los
+   cuadritos del recorrido (Leider, 1-oct). En su terracota: aqui no hay ambar
+   al lado con que chocar. */
+.vp-fila-reportes-icono { transition: box-shadow 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1); }
+@media (hover: hover) {
+  .vp-fila-reportes:hover .vp-fila-reportes-icono {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 0 0 1.5px color-mix(in oklab, var(--color-acento-500) 45%, transparent),
+      0 8px 18px -10px color-mix(in oklab, var(--color-acento-500) 55%, transparent);
+  }
+}
+html.vp-ligero .vp-fila-reportes-icono { transition: none; }
