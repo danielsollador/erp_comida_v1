@@ -345,7 +345,6 @@ function Resumen({
     () => recortarSerie(datos.serie, datos.serie_anterior),
     [datos.serie, datos.serie_anterior],
   )
-  const promedioTramo = serie.length > 0 ? datos.ventas / serie.length : 0
 
   return (
     <>
@@ -405,32 +404,33 @@ function Resumen({
       {/* ── 2. Las ventas: la plata en barras, las unidades en linea ─────── */}
       {serie.length > 0 && (
         <Bloque titulo="Ventas" descripcion="El detalle por hora, día y producto está en la pestaña Ventas.">
-          {/* UNA tarjeta con las dos medidas y dos ejes: las barras son la
-              plata (eje izquierdo) y la linea las unidades (eje derecho).
-              Son dos preguntas distintas --cuanto entro y cuantas cosas
-              salieron-- y se leen juntas: un dia con muchas unidades y poca
+          {/* UNA tarjeta con las dos medidas y dos ejes: las barras son las
+              unidades (eje izquierdo) y la linea la plata (eje derecho).
+              Son dos preguntas distintas --cuantas cosas salieron y cuanto
+              entro-- y se leen juntas: un dia con muchas unidades y poca
               plata es un dia de cosas baratas (Leider, 30-sep: "un mismo
-              grafico de doble eje"). */}
+              grafico de doble eje"; 1-oct: "que unidades sean las barras y
+              la linea ventas"). */}
           <Seccion
-            titulo={`Ventas y unidades por ${datos.granularidad}`}
-            ayuda={`Barras: la plata en ${sufijo}, eje izquierdo. Línea: las unidades vendidas, eje derecho.${
+            titulo={`Unidades y ventas por ${datos.granularidad}`}
+            ayuda={`Barras: las unidades vendidas, eje izquierdo. Línea: la plata en ${sufijo}, eje derecho.${
               ant ? ` En gris, ${ant.etiqueta}, tramo a tramo.` : ''
-            } La punteada es el promedio de plata por ${datos.granularidad}.`}
+            } La punteada es el promedio de unidades por ${datos.granularidad}.`}
           >
             <SerieTiempo
               alto={220}
-              formato={corto}
-              formatoDetalle={(n) => dinero(n)}
+              formato={enteros}
+              formatoDetalle={enteros}
               puntos={serie.map((p) => ({
                 etiqueta: p.etiqueta,
-                valor: p.ventas,
+                valor: p.unidades,
                 detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
               }))}
-              anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.ventas) : undefined}
-              nombres={{ actual: 'Ventas', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
-              referencia={serie.length > 1 ? { valor: promedioTramo, texto: 'promedio' } : undefined}
-              lineas={[{ nombre: 'Unidades', valores: serie.map((p) => p.unidades) }]}
-              formatoDerecha={enteros}
+              anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.unidades) : undefined}
+              nombres={{ actual: 'Unidades', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
+              referencia={serie.length > 1 ? { valor: datos.unidades / serie.length, texto: 'promedio' } : undefined}
+              lineas={[{ nombre: 'Ventas', valores: serie.map((p) => p.ventas) }]}
+              formatoDerecha={corto}
             />
           </Seccion>
         </Bloque>
