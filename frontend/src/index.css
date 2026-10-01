@@ -188,12 +188,6 @@ html[data-tema="oscuro"] {
   --vp-acento-suave: var(--color-acento-50);
   --vp-textura: rgb(255 255 255 / 0.045);
 
-  /* Sobre fondo oscuro el cobre oscuro no se ve: la segunda serie y la
-     barra fuerte pasan a cobre claro. Los neutros se invierten solos. */
-  --vp-dato-2: var(--color-acento-200);
-  --vp-dato-7: var(--color-acento-300);
-  --vp-dato-fuerte: var(--color-acento-300);
-
   --color-white: #161920;
   --color-black: #f4f5f8;
   --color-neutral-50: #0e1014;
