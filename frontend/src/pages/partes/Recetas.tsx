@@ -8,6 +8,7 @@ import { useGuardiaDeSalida } from '../../lib/sinGuardar'
 import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
+import { PALETA } from '../../lib/paleta'
 import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from '../../lib/types'
 
 /**
@@ -69,8 +70,10 @@ type Renglon = {
 // UNO POR MERCANCIA, EN EL ORDEN DE LA RECETA, y no por categoria: harina y
 // carne molida son las dos "Secos" y salian del mismo color, pegadas, como
 // una sola franja (Leider, 29-sep). Vecinas siempre distintas.
-const TONOS = ['acento-500', 'aviso-400', 'neutral-500', 'acento-300', 'aviso-600', 'neutral-700', 'acento-700', 'aviso-300']
-const tono = (i: number) => `var(--color-${TONOS[i % TONOS.length]})`
+// De la paleta de datos (lib/paleta.ts): cobre, cobre oscuro, cobre claro
+// y neutros calidos, alternados para que dos vecinas nunca se parezcan.
+const TONOS = [PALETA.serie[0], PALETA.serie[3], PALETA.serie[2], PALETA.serie[1], PALETA.serie[5], PALETA.serie[6], PALETA.serie[4], PALETA.serie[7]]
+const tono = (i: number) => TONOS[i % TONOS.length]
 const dolares = (n: number) => `$${n.toFixed(2)}`
 
 /** Lo que se cuenta por piezas y no se pesa: el vaso, la tapa, el pitillo,
@@ -596,7 +599,7 @@ function Compositor({
 }) {
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('')
-  const [resaltado, setResaltado] = useState<number | null>(null)
+  const [resaltado, setResaltado] = useState<number | string | null>(null)
   const precio = renglon.variante.precio
 
   const categoriasDeposito = useMemo(() => {
@@ -718,7 +721,7 @@ function Compositor({
             vacioTexto="Toca a la derecha lo que lleva"
             formato={dolares}
             resaltado={resaltado}
-            onResaltar={(id) => setResaltado(id === null ? null : Number(id))}
+            onResaltar={setResaltado}
           />
           </div>
           <Margen precio={precio} costoReal={costoReal} vacio={filas.length === 0} />

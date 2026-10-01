@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, type PointerEvent } from 'react'
+import { PALETA } from '../lib/paleta'
 
 /**
  * El vaso: un recipiente que se llena, de abajo hacia arriba, con lo que
@@ -17,6 +18,11 @@ import { useState } from 'react'
  * vaso se encogen parejo. Si el costo se pasa del borde, el vaso se llena de
  * costo y la linea del borde queda por debajo: la perdida se ve antes de
  * leerla.
+ *
+ * CADA FRANJA EXPLICA LO SUYO al posar el cursor o, en el telefono, al
+ * tocarla (se queda hasta tocar otra o fuera): cuanto cuesta, que parte del
+ * costo es y que parte del precio; el margen, que parte del precio es
+ * (Leider, 1-oct). Los colores salen de la paleta de datos, suaves.
  */
 export type ParteVaso = { id: number | string; nombre: string; valor: number; color: string }
 
@@ -88,8 +94,50 @@ export default function Vaso({
   // Un id por vaso: dos en la misma pagina no pueden compartir el recorte.
   const [id] = useIdEstable()
 
+  // Lo que se toco con el dedo se queda señalado hasta tocar otra cosa; el
+  // cursor señala mientras pasa. El globo sale para lo uno o lo otro.
+  const [fijado, setFijado] = useState<number | string | null>(null)
+  const mostrado = fijado ?? resaltado
+  const pct = (parte: number, de: number) => (de > 0 ? (parte / de) * 100 : 0)
+  const alTocar = (e: PointerEvent, idParte: number | string) => {
+    if (e.pointerType === 'mouse') return
+    e.preventDefault()
+    const nuevo = fijado === idParte ? null : idParte
+    setFijado(nuevo)
+    onResaltar?.(nuevo)
+  }
+  const franjaMostrada = franjas.find((x) => x.id === mostrado)
+  const globo =
+    mostrado === 'margen' && margenH > 0.5
+      ? {
+          y: yMargen + margenH / 2,
+          titulo: restoNombre[0].toUpperCase() + restoNombre.slice(1),
+          lineas: [`${formato(tope - costo)} por cada uno`, `El ${pct(tope - costo, tope).toFixed(0)}% del precio es ${restoNombre}`],
+        }
+      : franjaMostrada
+        ? {
+            y: franjaMostrada.y + franjaMostrada.h / 2,
+            titulo: franjaMostrada.nombre,
+            lineas: [
+              `Cuesta ${formato(franjaMostrada.valor)} por cada uno`,
+              `Es el ${pct(franjaMostrada.valor, costo).toFixed(0)}% del costo`,
+              `Se lleva el ${pct(franjaMostrada.valor, tope).toFixed(0)}% del precio`,
+            ],
+          }
+        : null
+
   return (
-    <svg viewBox="0 0 260 400" className={`mx-auto block ${className || 'w-full max-w-[280px]'}`} role="img" aria-label={`Cuánto de ${topeTitulo} se lleva cada parte`}>
+    <div
+      className={`relative mx-auto ${className || 'w-full max-w-[280px]'}`}
+      onPointerDown={(e) => {
+        // Tocar fuera de las franjas suelta lo fijado.
+        if (e.pointerType !== 'mouse' && e.target === e.currentTarget) {
+          setFijado(null)
+          onResaltar?.(null)
+        }
+      }}
+    >
+    <svg viewBox="0 0 260 400" className="block w-full h-full" role="img" aria-label={`Cuánto de ${topeTitulo} se lleva cada parte`}>
       <defs>
         <clipPath id={id}>
           <path d={SILUETA} />
@@ -113,25 +161,47 @@ export default function Vaso({
       </text>
 
       {/* Fondo del recipiente: vacio. */}
-      <path d={SILUETA} fill="var(--color-neutral-100)" />
+      <path d={SILUETA} fill={PALETA.vacio} />
 
       <g clipPath={`url(#${id})`}>
         {margenH > 0.5 && partes.length > 0 && (
-          <rect x="0" y={yMargen} width="260" height={margenH} fill="var(--color-exito-500)" opacity="0.9" />
+          <rect
+            x="0"
+            y={yMargen}
+            width="260"
+            height={margenH}
+            fill={PALETA.bien}
+            opacity={mostrado === null || mostrado === 'margen' ? 0.85 : 0.45}
+            onMouseEnter={() => onResaltar?.('margen')}
+            onMouseLeave={() => onResaltar?.(null)}
+            onPointerDown={(e) => alTocar(e, 'margen')}
+            style={{ cursor: 'default', transition: 'opacity .15s' }}
+          />
         )}
         {franjas.map((f) => (
           <g
             key={f.id}
             onMouseEnter={() => onResaltar?.(f.id)}
             onMouseLeave={() => onResaltar?.(null)}
+            onPointerDown={(e) => alTocar(e, f.id)}
             style={{ cursor: 'default' }}
           >
-            <rect x="0" y={f.y} width="260" height={f.h} fill={f.color} opacity={resaltado === null || resaltado === f.id ? 1 : 0.55} />
-            {/* Un hilo del color del papel entre franja y franja: aunque dos
-                tonos se parezcan, se ve donde termina una y empieza la otra. */}
-            <line x1="0" x2="260" y1={f.y} y2={f.y} stroke="var(--vp-papel)" strokeWidth="1.5" />
+            {/* Suave: las franjas van un poco transparentes y la que se
+                señala sube; las demas bajan. */}
+            <rect
+              x="0"
+              y={f.y}
+              width="260"
+              height={f.h}
+              fill={f.color}
+              opacity={mostrado === null ? 0.85 : mostrado === f.id ? 1 : 0.45}
+              style={{ transition: 'opacity .15s' }}
+            />
+            {/* Un hilo del color de la superficie entre franja y franja:
+                aunque dos tonos se parezcan, se ve donde termina una y
+                empieza la otra. */}
+            <line x1="0" x2="260" y1={f.y} y2={f.y} stroke="var(--vp-superficie)" strokeWidth="2" opacity="0.8" />
             {f.h >= 18 && <Rotulo f={f} texto={formato(f.valor)} />}
-            {resaltado === f.id && <rect x="0" y={f.y} width="260" height={f.h} fill="none" stroke="var(--vp-tinta)" strokeWidth="2" />}
           </g>
         ))}
         {desbordado && (
@@ -144,8 +214,8 @@ export default function Vaso({
         )}
       </g>
 
-      {/* El contorno, encima de todo. */}
-      <path d={SILUETA} fill="none" stroke="var(--vp-tinta)" strokeOpacity="0.55" strokeWidth="2.5" strokeLinejoin="round" />
+      {/* El contorno, encima de todo: un pelo, no un marco. */}
+      <path d={SILUETA} fill="none" stroke="var(--vp-tinta)" strokeOpacity="0.22" strokeWidth="2" strokeLinejoin="round" />
 
       {partes.length === 0 && vacioTexto && (
         <text x="130" y="220" textAnchor="middle" fontSize="13" fill="var(--color-neutral-500)">
@@ -153,19 +223,37 @@ export default function Vaso({
         </text>
       )}
       {margenH >= 22 && partes.length > 0 && (
-        <text x="130" y={yMargen + margenH / 2 + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--color-neutral-50)" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.2)', strokeWidth: 2 }}>
+        <text x="130" y={yMargen + margenH / 2 + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="#ffffff" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.18)', strokeWidth: 2, pointerEvents: 'none' }}>
           {restoNombre} {formato(tope - costo)}
         </text>
       )}
     </svg>
+
+      {/* El globo: que es esa franja y que parte se lleva. Va en HTML encima
+          del dibujo, a la altura de la franja, para que se lea igual en el
+          telefono, donde no hay cursor. */}
+      {globo && (
+        <div
+          className="pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs shadow-lg whitespace-nowrap"
+          style={{ top: `calc(${(globo.y / 400) * 100}% - 10px)` }}
+        >
+          <div className="mb-0.5 font-semibold text-neutral-700">{globo.titulo}</div>
+          {globo.lineas.map((l) => (
+            <div key={l} className="text-neutral-500 tabular-nums">
+              {l}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
 const TEXTO = {
   fontSize: 11,
   fontWeight: 600,
-  fill: 'var(--color-neutral-50)',
-  style: { paintOrder: 'stroke' as const, stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 },
+  fill: '#ffffff',
+  style: { paintOrder: 'stroke' as const, stroke: 'rgb(0 0 0 / 0.18)', strokeWidth: 2, pointerEvents: 'none' as const },
 }
 
 /**
