@@ -1,4 +1,4 @@
-"""El delivery como dos productos del menu, no un modulo aparte.
+"""El delivery como un producto del menu, no un modulo aparte.
 
 Un envio no lleva receta -es un servicio, no se cocina-, asi que se cobra con
 margen del 100% y sin tocar el inventario. Es exactamente lo que ya hace el
@@ -16,7 +16,7 @@ def test_la_categoria_de_envios_se_crea_sola(client):
     envios = buscar_envios(client)
     assert envios is not None
     nombres = {p["nombre"] for p in envios["productos"]}
-    assert nombres == {"Delivery corto", "Delivery largo"}
+    assert nombres == {"Delivery"}
 
 
 def test_correr_el_arranque_dos_veces_no_duplica_nada(client, db):
@@ -28,13 +28,13 @@ def test_correr_el_arranque_dos_veces_no_duplica_nada(client, db):
     asegurar_categoria_envios(db)
 
     envios = buscar_envios(client)
-    assert len(envios["productos"]) == 2
+    assert len(envios["productos"]) == 1
 
 
 def test_un_envio_se_vende_sin_tocar_inventario(client, db, insumo):
     envios = buscar_envios(client)
-    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery corto")
-    variante_id = corto["variantes"][0]["id"]
+    delivery = next(p for p in envios["productos"] if p["nombre"] == "Delivery")
+    variante_id = delivery["variantes"][0]["id"]
     stock_antes = insumo.stock_actual
 
     p = client.post("/api/pedidos", json={
@@ -48,8 +48,8 @@ def test_un_envio_se_vende_sin_tocar_inventario(client, db, insumo):
 
 def test_un_envio_se_puede_agregar_junto_con_comida(client, variante):
     envios = buscar_envios(client)
-    largo = next(p for p in envios["productos"] if p["nombre"] == "Delivery largo")
-    variante_envio = largo["variantes"][0]["id"]
+    delivery = next(p for p in envios["productos"] if p["nombre"] == "Delivery")
+    variante_envio = delivery["variantes"][0]["id"]
 
     p = client.post("/api/pedidos", json={
         "items": [
@@ -58,7 +58,7 @@ def test_un_envio_se_puede_agregar_junto_con_comida(client, variante):
         ],
         "nota": "",
     }).json()
-    assert p["total"] == round(variante.precio * 2 + 3.0, 2)
+    assert p["total"] == round(variante.precio * 2 + 1.5, 2)
 
 
 def test_renombrar_la_categoria_no_la_duplica_en_el_siguiente_arranque(client, db):
@@ -83,7 +83,7 @@ def test_renombrar_la_categoria_no_la_duplica_en_el_siguiente_arranque(client, d
     de_envios = [c for c in cats if c["nombre"] in ("Envios", "Envíos")]
     assert len(de_envios) == 1, [c["nombre"] for c in cats]
     assert de_envios[0]["id"] == envios["id"]
-    assert len(de_envios[0]["productos"]) == 2
+    assert len(de_envios[0]["productos"]) == 1
 
 
 def test_el_delivery_renombrado_sigue_siendo_un_servicio(client, db):
@@ -105,18 +105,18 @@ def test_el_delivery_renombrado_sigue_siendo_un_servicio(client, db):
 
 
 def test_renombrar_un_delivery_no_lo_hace_renacer(client, db):
-    """Los dos delivery son un punto de partida, no una plantilla obligatoria.
+    """El delivery es un punto de partida, no una plantilla obligatoria.
 
-    Con la busqueda por nombre exacto, renombrar "Delivery corto" lo hacia
-    volver a nacer en el siguiente arranque y la categoria terminaba con los
-    dos: el renombrado y una copia del original.
+    Con la busqueda por nombre exacto, renombrarlo lo hacia volver a nacer
+    en el siguiente arranque y la categoria terminaba con los dos: el
+    renombrado y una copia del original.
     """
     from app.seed import asegurar_categoria_envios
 
     envios = buscar_envios(client)
-    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery corto")
+    delivery = next(p for p in envios["productos"] if p["nombre"] == "Delivery")
     r = client.put(
-        f"/api/menu/productos/{corto['id']}",
+        f"/api/menu/productos/{delivery['id']}",
         json={"nombre": "Delivery cerca", "categoria_id": envios["id"], "activo": True},
     )
     assert r.status_code == 200, r.text
@@ -125,20 +125,83 @@ def test_renombrar_un_delivery_no_lo_hace_renacer(client, db):
 
     envios = buscar_envios(client)
     nombres = sorted(p["nombre"] for p in envios["productos"])
-    assert nombres == ["Delivery cerca", "Delivery largo"]
+    assert nombres == ["Delivery cerca"]
 
 
-def test_quitar_un_delivery_no_lo_devuelve_solo(client, db):
-    """Un local que no hace envios cortos lo quita, y tiene que quedarse
-    quitado."""
+def test_quitar_el_delivery_no_lo_devuelve_solo(client, db):
+    """Un local que no hace envios lo quita, y tiene que quedarse quitado."""
     from app.seed import asegurar_categoria_envios
 
     envios = buscar_envios(client)
-    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery corto")
-    client.delete(f"/api/menu/productos/{corto['id']}")
+    delivery = next(p for p in envios["productos"] if p["nombre"] == "Delivery")
+    client.delete(f"/api/menu/productos/{delivery['id']}")
 
     asegurar_categoria_envios(db)
 
     envios = buscar_envios(client)
     activos = [p["nombre"] for p in envios["productos"] if p["activo"]]
-    assert activos == ["Delivery largo"]
+    assert activos == []
+
+
+# ── Los dos delivery de antes ("corto" y "largo") se unifican ────────────────
+
+
+def _con_los_dos_de_antes(db):
+    """Un local que nacio antes del 2-oct: la categoria con los dos."""
+    from app import models
+    from app.seed import categoria_envios
+
+    cat = categoria_envios(db)
+    for p in db.query(models.Producto).filter_by(categoria_id=cat.id).all():
+        for v in p.variantes:
+            db.delete(v)
+        db.delete(p)
+    db.flush()
+    for nombre, precio in (("Delivery corto", 1.5), ("Delivery largo", 3.0)):
+        p = models.Producto(categoria_id=cat.id, nombre=nombre, activo=True)
+        db.add(p)
+        db.flush()
+        db.add(models.Variante(producto_id=p.id, nombre="Regular", precio=precio, activo=True))
+    db.commit()
+    return cat
+
+
+def test_los_dos_delivery_de_antes_pasan_a_ser_uno(client, db):
+    """El punto de venta cobra lo que se le diga en cada envio: "corto" y
+    "largo" eran el mismo servicio con dos nombres (Leider, 2-oct)."""
+    from app.seed import asegurar_categoria_envios
+
+    _con_los_dos_de_antes(db)
+    asegurar_categoria_envios(db)
+    db.expire_all()
+
+    envios = buscar_envios(client)
+    activos = [p["nombre"] for p in envios["productos"] if p["activo"]]
+    retirados = [p["nombre"] for p in envios["productos"] if not p["activo"]]
+    assert activos == ["Delivery"]
+    # El largo no se borra: sus ventas viejas siguen nombrandolo.
+    assert retirados == ["Delivery largo"]
+
+    # Y el arranque siguiente no vuelve a tocar nada.
+    asegurar_categoria_envios(db)
+    db.expire_all()
+    envios = buscar_envios(client)
+    assert sorted(p["nombre"] for p in envios["productos"]) == ["Delivery", "Delivery largo"]
+
+
+def test_si_el_dueno_toco_los_delivery_no_se_unifican(client, db):
+    """Si renombro uno, el menu es suyo: no se toca."""
+    from app import models
+    from app.seed import asegurar_categoria_envios
+
+    cat = _con_los_dos_de_antes(db)
+    corto = db.query(models.Producto).filter_by(categoria_id=cat.id, nombre="Delivery corto").one()
+    corto.nombre = "Delivery cerca"
+    db.commit()
+
+    asegurar_categoria_envios(db)
+    db.expire_all()
+
+    envios = buscar_envios(client)
+    activos = sorted(p["nombre"] for p in envios["productos"] if p["activo"])
+    assert activos == ["Delivery cerca", "Delivery largo"]

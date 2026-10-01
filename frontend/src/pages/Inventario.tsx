@@ -58,7 +58,12 @@ import type {
  *     historial de perdidas y conteos.
  */
 
-const UNIDADES = ['kg', 'g', 'lt', 'ml', 'unidad', 'paquete']
+// Las que se ofrecen al crear o cambiar una mercancia. El gramo y el
+// mililitro no son otra medida, son el kilo y el litro en chico, y eso lo
+// maneja el sistema (las recetas se escriben en gramos solas) (Leider, 2-oct).
+// Una mercancia vieja que ya se mide en g o ml la conserva: cambiarle la
+// unidad cambiaria lo que significan sus existencias.
+const UNIDADES_A_ELEGIR = ['kg', 'lt', 'unidad', 'paquete']
 const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco']
 
 type Filtro = 'todos' | 'bajo' | 'sin-costo' | 'insumo' | 'reventa' | 'archivados'
@@ -1198,6 +1203,15 @@ function cuantoDura(dias: number): string {
   return `${d} ${d === 1 ? 'día' : 'días'}`
 }
 
+/** "Hoy tienes 10 kg: se te sugeriría comprar 5 kg", con lo que se escribe. */
+function ejemploIdeal(ideal: number, hay: number, unidad: string): string {
+  if (!Number.isFinite(ideal) || ideal <= 0) return 'Al sugerir compras, se pide lo que falte para llegar a esto.'
+  const falta = ideal - (Number.isFinite(hay) ? hay : 0)
+  return falta > 0
+    ? `Hoy hay ${cantidad(hay)} ${unidad}: se sugeriría comprar ${cantidad(falta)} ${unidad} para llegar.`
+    : `Hoy hay ${cantidad(hay)} ${unidad}: ya estás en lo ideal.`
+}
+
 const fechaCorta = (iso: string) =>
   new Date(iso).toLocaleDateString('es-VE', { day: 'numeric', month: 'short' }).replace('.', '')
 
@@ -1376,12 +1390,12 @@ function FichaInsumo({
         ayuda="Por debajo de esto aparece en «Qué comprar»."
       />
       <Campo
-        etiqueta={`Al comprar, llenar hasta (${f.unidad})`}
+        etiqueta={`Lo ideal tener en el depósito (${f.unidad})`}
         inputMode="decimal"
         value={f.stock_objetivo}
         onChange={(e) => poner('stock_objetivo', e.target.value)}
         placeholder="0"
-        ayuda="Con esto se calcula cuánto sugerir comprar."
+        ayuda={ejemploIdeal(num(f.stock_objetivo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
       />
       {f.tipo !== 'reventa' && (
         <Campo
@@ -1443,7 +1457,7 @@ function FichaInsumo({
         <div className="sm:col-span-2">
           <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Se mide en</span>
           <div className="flex flex-wrap gap-1.5">
-            {UNIDADES.map((x) => (
+            {(UNIDADES_A_ELEGIR.includes(f.unidad) ? UNIDADES_A_ELEGIR : [...UNIDADES_A_ELEGIR, f.unidad]).map((x) => (
               <button
                 key={x}
                 type="button"
@@ -1622,18 +1636,18 @@ function FichaInsumo({
         ) : (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <label className="text-xs text-neutral-500">Desde</label>
-              <input
-                type="date"
-                value={desdeExtracto}
-                onChange={(e) => setDesdeExtracto(e.target.value)}
-                className="border border-neutral-300 rounded-lg px-2 py-1 text-xs"
+              <FiltroDesplegable
+                etiqueta="Período"
+                valor={desdeExtracto}
+                alCambiar={setDesdeExtracto}
+                opciones={[
+                  { valor: '', texto: 'Desde el principio' },
+                  { valor: rangoDe('7d').desde, texto: 'Últimos 7 días' },
+                  { valor: rangoDe('30d').desde, texto: 'Últimos 30 días' },
+                  { valor: rangoDe('mes').desde, texto: 'Este mes' },
+                  { valor: rangoDe('90d').desde, texto: 'Últimos 90 días' },
+                ].filter((o, k, todas) => todas.findIndex((x) => x.valor === o.valor) === k)}
               />
-              {desdeExtracto && (
-                <button type="button" onClick={() => setDesdeExtracto('')} className="text-xs text-neutral-500 hover:text-neutral-800">
-                  Desde el principio
-                </button>
-              )}
               <a
                 href={`/api/inventario/ingredientes/${ing.id}/movimientos/exportar${desdeExtracto ? `?desde=${desdeExtracto}T00:00:00` : ''}`}
                 className="ml-auto text-xs font-medium text-acento-700 hover:underline"
@@ -1741,29 +1755,6 @@ function FichaInsumo({
         )}
       </div>
 
-      {/* Los datos, que cambian una vez al año, en un renglon cerrado. */}
-      <button
-        type="button"
-        onClick={() => setEditando(true)}
-        className="vp-celda w-full flex items-center justify-between gap-3 rounded-xl border border-neutral-200 px-3 py-2.5 text-left"
-      >
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold">Cambiar los datos</span>
-          <span className="block text-xs text-neutral-500 truncate">
-            {[
-              ing.categoria || 'Sin categoría',
-              `se mide en ${ing.unidad}`,
-              ing.stock_minimo > 0 ? `avisa bajo ${cantidad(ing.stock_minimo)}` : null,
-              ing.stock_objetivo > 0 ? `llena hasta ${cantidad(ing.stock_objetivo)}` : null,
-              ing.tipo !== 'reventa' && ing.rendimiento_pct < 100 ? `se aprovecha ${ing.rendimiento_pct}%` : null,
-              ing.exento ? 'no paga IVA' : 'paga IVA',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-        </span>
-        <span aria-hidden className="vp-flecha shrink-0 -rotate-90 opacity-60" />
-      </button>
     </div>
   )
 
@@ -1790,9 +1781,16 @@ function FichaInsumo({
             </Boton>
           </>
         ) : (
-          <Boton tono="suave" onClick={onCerrar}>
-            Cerrar
-          </Boton>
+          <>
+            {/* AL PIE, SIEMPRE A LA VISTA. Al final de la ficha quedaba
+                debajo de cien movimientos y no se encontraba (Leider, 2-oct). */}
+            <Boton tono="suave" onClick={() => setEditando(true)} className="mr-auto">
+              Cambiar los datos
+            </Boton>
+            <Boton tono="suave" onClick={onCerrar}>
+              Cerrar
+            </Boton>
+          </>
         )
       }
     >
@@ -1874,64 +1872,77 @@ const GRUPO: Record<string, string> = {
 }
 
 function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) {
-  const Lado = ({
-    titulo,
-    filas,
-    total,
-    signo,
-  }: {
-    titulo: string
-    filas: RenglonPorTipo[]
-    total: number
-    signo: '+' | '−'
-  }) => (
-    <div>
-      <div className="flex justify-between text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
-        <span>{titulo}</span>
-        <span className="tabular-nums">
+  // UNA TABLA CON SUS CAMPOS: que paso, cuantas veces, cuanto y cuanto vale,
+  // con lo que entro y lo que salio como dos grupos y lo que queda al pie.
+  // Eran dos columnas de numeros sueltos sin rotulo (Leider, 2-oct: "hay
+  // muchos numeros juntos, no hay campos claros").
+  const valorDe = (filas: RenglonPorTipo[]) => filas.reduce((t, x) => t + Math.abs(x.valor), 0)
+  const Grupo = ({ titulo, filas, total, signo, tono }: { titulo: string; filas: RenglonPorTipo[]; total: number; signo: '+' | '−'; tono: string }) => (
+    <>
+      <tr className="border-t border-neutral-200">
+        <th scope="rowgroup" className="py-2 pl-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          {titulo}
+        </th>
+        <td />
+        <td className={`py-2 text-right tabular-nums font-semibold ${tono}`}>
           {signo}
-          {cantidad(total)} {e.unidad}
-        </span>
-      </div>
+          {legible(total, e.unidad)}
+        </td>
+        <td className="py-2 pr-3 text-right tabular-nums text-neutral-500">{dinero(valorDe(filas))}</td>
+      </tr>
       {filas.length === 0 ? (
-        <p className="text-xs text-neutral-400">Nada.</p>
+        <tr>
+          <td colSpan={4} className="pb-2 pl-6 text-xs text-neutral-400">
+            Nada en este período.
+          </td>
+        </tr>
       ) : (
-        <ul className="space-y-0.5">
-          {filas.map((f) => (
-            <li key={f.tipo} className="flex justify-between text-sm gap-2">
-              <span className="text-neutral-600 truncate">
-                {GRUPO[f.tipo] ?? f.etiqueta}
-                <span className="text-neutral-400 text-xs">
-                  {' '}
-                  · {f.movimientos} {f.movimientos === 1 ? 'vez' : 'veces'}
-                </span>
-              </span>
-              <span className="tabular-nums whitespace-nowrap">
-                {legible(f.cantidad, e.unidad)}{' '}
-                <span className="text-neutral-400 text-xs">{dinero(Math.abs(f.valor))}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
+        filas.map((x) => (
+          <tr key={x.tipo}>
+            <td className="py-1.5 pl-6 text-neutral-700">{GRUPO[x.tipo] ?? x.etiqueta}</td>
+            <td className="py-1.5 text-right tabular-nums text-neutral-500">{x.movimientos}</td>
+            <td className="py-1.5 text-right tabular-nums">{legible(x.cantidad, e.unidad)}</td>
+            <td className="py-1.5 pr-3 text-right tabular-nums text-neutral-500">{dinero(Math.abs(x.valor))}</td>
+          </tr>
+        ))
       )}
-    </div>
+    </>
   )
 
   return (
-    <div className="mb-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Lado titulo="Entró" filas={e.entradas} total={e.total_entradas} signo="+" />
-        <Lado titulo="Salió" filas={e.salidas} total={e.total_salidas} signo="−" />
-      </div>
-      {desde && (
-        <p className="mt-3 pt-2 border-t border-neutral-200 text-xs text-neutral-500 tabular-nums">
-          Había {cantidad(e.saldo_inicial)} {e.unidad} · entró {cantidad(e.total_entradas)} ·
-          salió {cantidad(e.total_salidas)} · quedan{' '}
-          <b className="text-neutral-800">
-            {cantidad(e.saldo_final)} {e.unidad}
-          </b>
-        </p>
-      )}
+    <div className="rounded-xl border border-neutral-200 overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="text-[11px] uppercase tracking-wide text-neutral-500">
+          <tr>
+            <th className="py-2 pl-3 text-left font-semibold">Qué pasó</th>
+            <th className="py-2 text-right font-semibold">Veces</th>
+            <th className="py-2 text-right font-semibold">Cantidad</th>
+            <th className="py-2 pr-3 text-right font-semibold">Vale</th>
+          </tr>
+        </thead>
+        <tbody>
+          {desde && (
+            <tr className="border-t border-neutral-200">
+              <th scope="row" className="py-2 pl-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Había al empezar
+              </th>
+              <td />
+              <td className="py-2 text-right tabular-nums font-semibold">{legible(e.saldo_inicial, e.unidad)}</td>
+              <td />
+            </tr>
+          )}
+          <Grupo titulo="Entró" filas={e.entradas} total={e.total_entradas} signo="+" tono="text-exito-700" />
+          <Grupo titulo="Salió" filas={e.salidas} total={e.total_salidas} signo="−" tono="text-peligro-600" />
+          <tr className="border-t border-neutral-200">
+            <th scope="row" className="py-2 pl-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-700">
+              Quedan
+            </th>
+            <td />
+            <td className="py-2 text-right tabular-nums font-bold">{legible(desde ? e.saldo_final : e.stock_actual, e.unidad)}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
     </div>
   )
 }

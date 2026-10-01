@@ -162,7 +162,7 @@ def test_el_reparto_por_categoria_suma_la_venta_y_el_envio_va_aparte(client, db,
 
     # El delivery costo cero porque es un servicio, no porque falte la receta.
     top = {p["nombre"]: p for p in r["top_productos"]}
-    assert top["Delivery corto"]["sin_receta"] is False
+    assert top["Delivery"]["sin_receta"] is False
     empanada = next(p for n, p in top.items() if n.startswith("Empanada"))
     assert empanada["sin_receta"] is False
     assert not any("sin receta" in i["titulo"] for i in r["insights"])

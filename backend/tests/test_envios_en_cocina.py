@@ -20,7 +20,7 @@ def en_cocina(client):
 
 def test_un_pedido_de_solo_delivery_no_se_queda_pegado_en_cocina(client):
     envios = buscar_envios(client)
-    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery corto")
+    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery")
     variante_id = corto["variantes"][0]["id"]
 
     p = client.post("/api/pedidos", json={
@@ -84,7 +84,7 @@ def test_lo_que_nace_todo_preparado_nace_listo_y_el_mostrador_lo_ve(client):
     comanda no estaba en ningun lado. Ahora nace "listo": el mostrador la
     muestra como "cocina termino, falta cobrar"."""
     envios = buscar_envios(client)
-    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery corto")
+    corto = next(p for p in envios["productos"] if p["nombre"] == "Delivery")
     variante_id = corto["variantes"][0]["id"]
     p = client.post("/api/pedidos", json={
         "items": [{"variante_id": variante_id, "cantidad": 1}], "nota": "",
@@ -97,7 +97,7 @@ def test_lo_que_nace_todo_preparado_nace_listo_y_el_mostrador_lo_ve(client):
 
 def test_comida_mas_delivery_si_aparece_hasta_que_la_comida_este_lista(client, variante):
     envios = buscar_envios(client)
-    largo = next(p for p in envios["productos"] if p["nombre"] == "Delivery largo")
+    largo = next(p for p in envios["productos"] if p["nombre"] == "Delivery")
     variante_envio = largo["variantes"][0]["id"]
 
     p = client.post("/api/pedidos", json={

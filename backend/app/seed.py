@@ -102,8 +102,36 @@ def variantes_de_servicio(db) -> set:
     return {v_id for (v_id,) in filas}
 
 
+# El delivery con que nace un local. UNO: el punto de venta cobra lo que se le
+# diga en cada pedido (monto libre), asi que "corto" y "largo" eran el mismo
+# servicio con dos nombres (Leider, 2-oct). El precio es solo la sugerencia
+# del API; el mostrador lo pregunta siempre.
+DELIVERY = ("Delivery", 1.5)
+# Los dos con que nacian los locales hasta el 2-oct-2026.
+_DELIVERY_DE_ANTES = ("Delivery corto", "Delivery largo")
+
+
+def _unificar_delivery_de_antes(db, categoria) -> None:
+    """Los dos delivery de antes pasan a ser uno, si siguen como nacieron.
+
+    Solo si la categoria tiene exactamente esos dos, activos y con su nombre
+    de fabrica: si el dueño renombro alguno, quito uno o agrego otro, el menu
+    es suyo y no se toca. El corto pasa a llamarse "Delivery" (sus ventas
+    viejas quedan bajo el, con su nombre de entonces en cada ticket) y el
+    largo se retira del menu --no se borra: sus ventas siguen nombrandolo--.
+    """
+    productos = db.query(Producto).filter_by(categoria_id=categoria.id).all()
+    if sorted(p.nombre for p in productos) != list(_DELIVERY_DE_ANTES):
+        return
+    if not all(p.activo for p in productos):
+        return
+    por_nombre = {p.nombre: p for p in productos}
+    por_nombre["Delivery corto"].nombre = DELIVERY[0]
+    por_nombre["Delivery largo"].activo = False
+
+
 def asegurar_categoria_envios(db=None):
-    """El delivery como dos productos del menu, no un modulo aparte.
+    """El delivery como un producto del menu, no un modulo aparte.
 
     Un envio no lleva receta ni mueve inventario -es un servicio, no algo que
     se cocine- pero por lo demas es exactamente un producto: tiene precio, se
@@ -131,18 +159,19 @@ def asegurar_categoria_envios(db=None):
             db.add(categoria)
             db.flush()
 
-        # Los dos delivery son un PUNTO DE PARTIDA, no una plantilla que haya
-        # que imponer en cada arranque: por eso se miran si la categoria esta
-        # vacia y no si existe cada nombre.
+        # El delivery es un PUNTO DE PARTIDA, no una plantilla que haya que
+        # imponer en cada arranque: por eso se mira si la categoria esta vacia
+        # y no si existe el nombre.
         #
-        # Con la busqueda por nombre, renombrar "Delivery corto" a "Delivery
-        # cerca" --o borrarlo porque el local no hace envios cortos-- lo hacia
-        # volver a nacer en el siguiente despliegue, y la categoria terminaba
-        # con los dos. El dueño manda sobre su menu; si ya hay algo aqui, no
-        # se toca.
+        # Con la busqueda por nombre, renombrarlo a "Delivery cerca" --o
+        # quitarlo porque el local no hace envios-- lo hacia volver a nacer en
+        # el siguiente despliegue. El dueño manda sobre su menu; si ya hay algo
+        # aqui, no se toca (salvo unificar los dos de antes, si nadie los toco).
         vacia = db.query(Producto).filter_by(categoria_id=categoria.id).count() == 0
+        if not vacia:
+            _unificar_delivery_de_antes(db, categoria)
         if vacia:
-            for nombre, precio in (("Delivery corto", 1.5), ("Delivery largo", 3.0)):
+            for nombre, precio in (DELIVERY,):
                 producto = Producto(categoria_id=categoria.id, nombre=nombre, activo=True)
                 db.add(producto)
                 db.flush()

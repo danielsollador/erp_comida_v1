@@ -528,6 +528,15 @@ export default function POS() {
       return next
     })
   }
+  /** Quita el renglon entero, todas sus unidades de una vez (Leider, 2-oct). */
+  function quitarTodo(varianteId: number) {
+    setCarrito((c) => {
+      if (!c[varianteId]) return c
+      const next = { ...c }
+      delete next[varianteId]
+      return next
+    })
+  }
   useEffect(() => {
     acciones.current = { agregar, quitar }
   })
@@ -1701,8 +1710,19 @@ export default function POS() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Todas las unidades de una vez: diez empanadas eran diez
+                      toques al menos. */}
+                  <button
+                    onClick={() => quitarTodo(variante.id)}
+                    aria-label={`Quitar todas las de ${etiquetaVariante(producto, variante)}`}
+                    title="Quitar todas"
+                    className="w-8 h-8 rounded-full text-neutral-400 hover:bg-peligro-50 hover:text-peligro-600 text-lg leading-none"
+                  >
+                    ×
+                  </button>
                   <button
                     onClick={() => quitar(variante.id)}
+                    aria-label={`Quitar una de ${etiquetaVariante(producto, variante)}`}
                     className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 font-semibold text-base"
                   >
                     -
