@@ -43,9 +43,9 @@ export default function Impuestos() {
       fecha: (f) => f.fecha,
       factura: (f) => f.numero_factura,
       cliente: (f) => f.cliente,
-      base: (f) => f.base_imponible,
-      iva: (f) => f.iva,
-      total: (f) => f.total,
+      base: (f) => f.gravado_bs ?? -Infinity,
+      iva: (f) => f.iva_bs ?? -Infinity,
+      total: (f) => f.total_bs ?? -Infinity,
     },
     'fecha',
   )
@@ -72,7 +72,7 @@ export default function Impuestos() {
   // El valor solo se usa via los campos; se guarda el setter para refrescarlo.
   const [, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
   const [tasaInput, setTasaInput] = useState('')
-  // Quien lleva los libros: la cabecera del Libro de Compras del SENIAT.
+  // Quien lleva los libros: la cabecera de los libros del SENIAT.
   const [razonSocial, setRazonSocial] = useState('')
   const [rifEmpresa, setRifEmpresa] = useState('')
   const [direccion, setDireccion] = useState('')
@@ -167,7 +167,7 @@ export default function Impuestos() {
             {errorFiscal && <span className="text-sm text-peligro-600">{errorFiscal}</span>}
           </div>
           <p className="text-xs text-neutral-500 mt-2">
-            La razón social, el RIF y la dirección van en la cabecera del Libro de Compras. La alícuota
+            La razón social, el RIF y la dirección van en la cabecera de los libros de Compras y de Ventas. La alícuota
             se congela en cada venta facturada al cobrar: cambiarla no altera meses ya cerrados.
           </p>
         </div>
@@ -194,13 +194,30 @@ export default function Impuestos() {
                 placeholder="Buscar por número de factura o cliente…"
                 className="w-full sm:w-72 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
               />
-              <a
-                href={`/api/impuestos/libro-ventas/exportar?${queryRango(rango)}`}
-                className="text-sm font-medium text-acento-700 hover:underline"
-              >
-                Descargar Excel
-              </a>
+              <div className="flex flex-wrap items-center gap-3">
+                <a
+                  href={`/api/impuestos/libro-ventas/seniat?${queryRango(rango)}`}
+                  className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                >
+                  Descargar libro (formato SENIAT)
+                </a>
+                <a
+                  href={`/api/impuestos/libro-ventas/exportar?${queryRango(rango)}`}
+                  className="text-sm font-medium text-acento-700 hover:underline"
+                >
+                  CSV en dólares
+                </a>
+              </div>
             </div>
+            <p className="text-xs text-neutral-500">
+              Montos en bolívares, como se declaran: cada venta a la tasa BCV del momento en que se cobró.
+            </p>
+            {ventas.sin_tasa > 0 && (
+              <div className="rounded-lg border border-aviso-200 bg-aviso-50 px-3 py-2 text-sm text-aviso-800">
+                {ventas.sin_tasa === 1 ? 'Una venta no tiene' : `${ventas.sin_tasa} ventas no tienen`} monto en
+                bolívares: no hay tasa guardada para su fecha. Están marcadas con «sin tasa» y salen vacías en el libro.
+              </div>
+            )}
             {/* El aviso de "además hubo N ventas sin facturar" salió de aquí:
                 el Libro de Ventas es el documento que se le presenta al
                 SENIAT, y lo que no se facturó no tiene por qué asomarse en él.
@@ -211,11 +228,12 @@ export default function Impuestos() {
                 <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
                   <tr>
                     <Th clave="fecha">Fecha</Th>
-                    <Th clave="factura">Factura</Th>
+                    <Th clave="factura">Documento</Th>
                     <Th clave="cliente">Cliente</Th>
-                    <Th clave="base" alinear="derecha">Base</Th>
-                    <Th clave="iva" alinear="derecha">IVA</Th>
-                    <Th clave="total" alinear="derecha">Total</Th>
+                    <Th clave="base" alinear="derecha">Base Bs</Th>
+                    <Th clave="iva" alinear="derecha">IVA Bs</Th>
+                    <Th clave="total" alinear="derecha">Total Bs</Th>
+                    <Th alinear="derecha">Tasa</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -231,20 +249,35 @@ export default function Impuestos() {
                       }),
                     )
                     .map((f) => (
-                      <tr key={f.pedido_id} className="border-t border-neutral-100">
+                      <tr key={`${f.tipo}-${f.pedido_id}`} className="border-t border-neutral-100">
                         <td className="p-3 whitespace-nowrap">
                           {new Date(f.fecha).toLocaleDateString('es-VE')}
                         </td>
-                        <td className="p-3 font-mono text-xs">{f.numero_factura}</td>
+                        <td className="p-3">
+                          {f.tipo === 'NC' ? (
+                            <>
+                              <span className="font-mono text-xs">NC {f.numero_nota}</span>
+                              <span className="block text-xs text-neutral-500">afecta {f.factura_afectada}</span>
+                            </>
+                          ) : (
+                            <span className="font-mono text-xs">{f.numero_factura}</span>
+                          )}
+                        </td>
                         <td className="p-3">{f.cliente}</td>
-                        <td className="text-right p-3 tabular-nums">{f.base_imponible.toFixed(2)}</td>
-                        <td className="text-right p-3 tabular-nums">{f.iva.toFixed(2)}</td>
-                        <td className="text-right p-3 tabular-nums font-semibold">{f.total.toFixed(2)}</td>
+                        <td className="text-right p-3 tabular-nums">{bs(f.gravado_bs)}</td>
+                        <td className="text-right p-3 tabular-nums">{bs(f.iva_bs)}</td>
+                        <td className="text-right p-3 tabular-nums font-semibold">
+                          {f.total_bs === null ? <span className="text-aviso-700 font-normal">sin tasa</span> : bs(f.total_bs)}
+                        </td>
+                        <td className="text-right p-3 tabular-nums text-xs text-neutral-500 whitespace-nowrap">
+                          {f.tasa_bcv === null ? '-' : fmtNum(f.tasa_bcv, 2)}
+                          <span className="block">${fmtNum(f.total, 2)}</span>
+                        </td>
                       </tr>
                     ))}
                   {ventas.filas.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="text-neutral-400 py-4 text-center">
+                      <td colSpan={7} className="text-neutral-400 py-4 text-center">
                         Sin ventas facturadas en este período.
                       </td>
                     </tr>
@@ -256,9 +289,12 @@ export default function Impuestos() {
                       <td className="p-3" colSpan={3}>
                         Total
                       </td>
-                      <td className="text-right p-3 tabular-nums">{ventas.total_base.toFixed(2)}</td>
-                      <td className="text-right p-3 tabular-nums">{ventas.total_iva.toFixed(2)}</td>
-                      <td className="text-right p-3 tabular-nums">{ventas.total_general.toFixed(2)}</td>
+                      <td className="text-right p-3 tabular-nums">{bs(ventas.total_gravado_bs)}</td>
+                      <td className="text-right p-3 tabular-nums">{bs(ventas.total_iva_bs)}</td>
+                      <td className="text-right p-3 tabular-nums">{bs(ventas.total_bs)}</td>
+                      <td className="text-right p-3 tabular-nums text-xs font-normal text-neutral-500">
+                        ${fmtNum(ventas.total_general, 2)}
+                      </td>
                     </tr>
                   </tfoot>
                 )}

@@ -1164,6 +1164,13 @@ class Pedido(Base):
     # IVA debito fiscal); las demas quedan igual que hoy, sin IVA.
     facturado = Column(Boolean, default=False)
     numero_factura = Column(String, nullable=True)
+    # Lo que el Libro de Ventas pide de una factura y no sale del cobro: el
+    # numero de control del talonario o la maquina fiscal, y a quien se le
+    # facturo (RIF o cedula, y su nombre o razon social). Vacios = consumidor
+    # final sin datos.
+    numero_control = Column(String, default="")
+    rif_cliente = Column(String, default="")
+    razon_social_cliente = Column(String, default="")
     # Igual que tasa_bcv: se congela la tasa de IVA del dia para que el Libro
     # de Ventas de un mes cerrado no cambie si despues sube la alicuota.
     tasa_iva = Column(Float, nullable=True)

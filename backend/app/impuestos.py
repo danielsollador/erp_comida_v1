@@ -30,6 +30,21 @@ def rif_valido(rif: str) -> bool:
     return bool(_RIF_FORMATO.match(normalizar_rif(rif)))
 
 
+# El documento de quien recibe una factura de venta: un RIF, o la cedula de
+# una persona sin RIF (6 a 8 digitos). Solo numeros se lee como cedula
+# venezolana: "12345678" es V12345678.
+_DOCUMENTO_CLIENTE = re.compile(r"^[VEJGPC]\d{6,9}$")
+
+
+def normalizar_documento_cliente(texto: str) -> str:
+    limpio = re.sub(r"[\s.\-]", "", (texto or "").strip().upper())
+    return f"V{limpio}" if limpio.isdigit() else limpio
+
+
+def documento_cliente_valido(texto: str) -> bool:
+    return bool(_DOCUMENTO_CLIENTE.match(normalizar_documento_cliente(texto)))
+
+
 # Valor de la letra para el digito verificador. La C (comunas) no se incluye:
 # no hay certeza de su valor, y un aviso falso es peor que ninguno.
 _VALOR_LETRA_RIF = {"V": 1, "E": 2, "J": 3, "P": 4, "G": 5}

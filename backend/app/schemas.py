@@ -632,6 +632,12 @@ class FacturarRequest(BaseModel):
     vender factura, con el numero que transcribe de su talonario."""
 
     numero_factura: str
+    # Para el Libro de Ventas (todos opcionales): numero de control, y a quien
+    # se factura -RIF o cedula, y nombre o razon social-. Sin ellos la factura
+    # va a "Consumidor final".
+    numero_control: Optional[str] = None
+    rif_cliente: Optional[str] = None
+    razon_social_cliente: Optional[str] = None
 
 
 class DevolucionRequest(BaseModel):
@@ -706,6 +712,9 @@ class Pedido(BaseModel):
     entregado_en: Optional[datetime.datetime] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
+    numero_control: str = ""
+    rif_cliente: str = ""
+    razon_social_cliente: str = ""
     # Tasa a la que se cobro. Se expone para que la pantalla muestre los
     # bolivares que de verdad entraron ese dia, y no los que darian esos
     # dolares a la tasa de hoy.
@@ -851,6 +860,12 @@ class CobrarRequest(BaseModel):
     pagos: Optional[List[PagoInput]] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
+    # Para el Libro de Ventas (todos opcionales): numero de control, y a quien
+    # se factura -RIF o cedula, y nombre o razon social-. Sin ellos la factura
+    # va a "Consumidor final".
+    numero_control: Optional[str] = None
+    rif_cliente: Optional[str] = None
+    razon_social_cliente: Optional[str] = None
     # Rebaja a ESTE cliente. Antes habia que bajarle el precio al menu, que se
     # lo bajaba a todos y declaraba IVA sobre un precio que no se cobro.
     descuento: float = 0
@@ -2207,9 +2222,24 @@ class FilaLibroVentas(BaseModel):
     fecha: datetime.datetime
     numero_factura: str
     cliente: str
+    # En dolares, como el resto del ERP y la declaracion de IVA.
     base_imponible: float
     iva: float
     total: float
+    # Lo que pide el formato del SENIAT. La nota de credito es su propio
+    # documento: su numero va aparte y apunta a la factura que afecta.
+    tipo: str = "FAC"  # FAC | NC
+    numero_nota: str = ""
+    factura_afectada: str = ""
+    rif: str = ""  # el ERP no guarda el RIF del cliente: consumidor final
+    numero_control: str = ""
+    # En bolivares, a la tasa BCV congelada al cobrar. None si la venta no
+    # tiene tasa (ventas viejas de una fecha sin tasa guardada).
+    tasa_bcv: Optional[float] = None
+    gravado_bs: Optional[float] = None
+    exento_bs: Optional[float] = None
+    iva_bs: Optional[float] = None
+    total_bs: Optional[float] = None
 
 
 class LibroVentas(BaseModel):
@@ -2222,6 +2252,11 @@ class LibroVentas(BaseModel):
     total_general: float
     ventas_no_facturadas: int
     monto_no_facturado: float
+    total_exento_bs: float = 0
+    total_gravado_bs: float = 0
+    total_iva_bs: float = 0
+    total_bs: float = 0
+    sin_tasa: int = 0
 
 
 class FilaLibroCompras(BaseModel):

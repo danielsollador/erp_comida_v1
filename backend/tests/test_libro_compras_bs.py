@@ -17,7 +17,7 @@ import io
 import pytest
 from openpyxl import load_workbook
 
-from app import libro_compras_seniat, models
+from app import libros_seniat as libro_compras_seniat, models
 from app.timeutils import hoy
 
 EMISION = hoy() - datetime.timedelta(days=8)

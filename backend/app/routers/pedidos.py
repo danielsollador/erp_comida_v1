@@ -1300,6 +1300,7 @@ async def cobrar_pedido(
     if pedido.estado == "anulado":
         raise HTTPException(status_code=409, detail="No se puede cobrar un pedido anulado")
 
+    datos_factura = _datos_de_factura(body) if body.facturado else {}
     if body.facturado and body.numero_factura:
         # El numero lo transcribe el dueno de su talonario. Repetirlo mete dos
         # facturas con el mismo numero en el Libro de Ventas, y eso es un
@@ -1422,6 +1423,8 @@ async def cobrar_pedido(
     # aqui mismo, al cobrar. Solo esa entra al Libro de Ventas y genera IVA.
     pedido.facturado = body.facturado
     pedido.numero_factura = body.numero_factura if body.facturado else None
+    for campo, valor in datos_factura.items():
+        setattr(pedido, campo, valor)
     # Se congela la tasa del momento del cobro: el reporte en bolivares de la
     # semana pasada tiene que seguir mostrando los Bs que entraron entonces, no
     # los que darian los mismos dolares a la tasa de hoy. Igual con el IVA: si
@@ -1438,6 +1441,24 @@ async def cobrar_pedido(
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_pagado", resultado.model_dump(mode="json"))
     return resultado
+
+
+def _datos_de_factura(body) -> dict:
+    """Control y cliente de una factura de venta, limpios y validados. Todos
+    opcionales: sin ellos va a "Consumidor final". Un RIF o cedula mal
+    escrito se rechaza: en el Libro de Ventas no se puede corregir despues."""
+    rif = (body.rif_cliente or "").strip()
+    if rif and not impuestos.documento_cliente_valido(rif):
+        raise HTTPException(
+            status_code=400,
+            detail="El RIF o la cédula del cliente es una letra (V/E/J/G/P/C) y sus números, "
+            "por ejemplo J-12345678-9 o V-12345678.",
+        )
+    return {
+        "numero_control": (body.numero_control or "").strip(),
+        "rif_cliente": impuestos.normalizar_documento_cliente(rif) if rif else "",
+        "razon_social_cliente": (body.razon_social_cliente or "").strip(),
+    }
 
 
 @router.post("/{pedido_id}/facturar", response_model=schemas.Pedido)
@@ -1479,6 +1500,7 @@ async def facturar_pedido(
     numero = (body.numero_factura or "").strip()
     if not numero:
         raise HTTPException(status_code=400, detail="Hace falta el numero de factura")
+    datos_factura = _datos_de_factura(body)
     # Mismo control que al cobrar: dos facturas con el mismo numero es un
     # problema fiscal, no cosmetico.
     repetido = (
@@ -1494,6 +1516,8 @@ async def facturar_pedido(
 
     pedido.facturado = True
     pedido.numero_factura = numero
+    for campo, valor in datos_factura.items():
+        setattr(pedido, campo, valor)
     # La alicuota se congela AHORA, que es cuando de verdad se decide
     # facturar -no la de cuando se vendio, que en este caso no se guardo
     # porque en ese momento no iba a haber factura.

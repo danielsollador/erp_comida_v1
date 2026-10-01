@@ -170,6 +170,10 @@ export default function POS() {
   const [cobrando, setCobrando] = useState<Pedido | null>(null)
   const [facturar, setFacturar] = useState(false)
   const [numeroFactura, setNumeroFactura] = useState('')
+  // Para el Libro de Ventas: control de la factura y a quien se le factura.
+  const [numeroControl, setNumeroControl] = useState('')
+  const [rifCliente, setRifCliente] = useState('')
+  const [razonSocial, setRazonSocial] = useState('')
   // Lo que cambia cuanta plata entra: rebaja al cliente y propina del mesonero.
   const [descuento, setDescuento] = useState('')
   const [motivoDescuento, setMotivoDescuento] = useState('')
@@ -721,6 +725,9 @@ export default function POS() {
     setCobrando(null)
     setFacturar(false)
     setNumeroFactura('')
+    setNumeroControl('')
+    setRifCliente('')
+    setRazonSocial('')
     setPagoMixto(false)
     setPartes([])
     setDescuento('')
@@ -749,6 +756,7 @@ export default function POS() {
         cliente: clienteAhora ?? cliente,
         punto_venta_id: puntoId,
         referencia,
+        factura: { numero_control: numeroControl, rif_cliente: rifCliente, razon_social_cliente: razonSocial },
       })
       limpiarCobro()
       setUltimaVenta(cobrado)
@@ -1992,12 +2000,35 @@ export default function POS() {
             Facturar esta venta
           </label>
           {facturar && (
-            <input
-              value={numeroFactura}
-              onChange={(e) => setNumeroFactura(e.target.value)}
-              placeholder="N. de factura (opcional)"
-              className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mt-2"
-            />
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <input
+                value={numeroFactura}
+                onChange={(e) => setNumeroFactura(e.target.value)}
+                placeholder="N.º de factura"
+                className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <input
+                value={numeroControl}
+                onChange={(e) => setNumeroControl(e.target.value)}
+                placeholder="N.º de control"
+                className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <input
+                value={rifCliente}
+                onChange={(e) => setRifCliente(e.target.value)}
+                placeholder="RIF o cédula"
+                className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <input
+                value={razonSocial}
+                onChange={(e) => setRazonSocial(e.target.value)}
+                placeholder="Nombre o razón social"
+                className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="col-span-2 text-xs text-neutral-500">
+                Todo opcional. Sin RIF ni nombre, va al Libro de Ventas como consumidor final. Siempre con IVA.
+              </p>
+            </div>
           )}
           {/* Rebaja a ESTE cliente. Antes la unica via era bajarle el
               precio al menu, que se lo bajaba a todos y ademas declaraba IVA

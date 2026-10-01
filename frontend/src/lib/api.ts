@@ -151,6 +151,15 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
+/** Lo que el Libro de Ventas pide de una factura y no sale del cobro. Todo
+ * opcional: sin ello va a "Consumidor final". */
+export type DatosFacturaVenta = {
+  numero_control?: string
+  /** RIF o cédula; solo números se lee como cédula venezolana. */
+  rif_cliente?: string
+  razon_social_cliente?: string
+}
+
 export const api = {
   // --- acceso y usuarios ---
   estadoAcceso: () => req<EstadoAcceso>('/acceso/estado'),
@@ -429,6 +438,8 @@ export const api = {
       motivo_descuento?: string
       propina?: number
       cliente?: string
+      // Para el Libro de Ventas, solo si se factura: control y a quien.
+      factura?: DatosFacturaVenta
       operador_id?: number | null
       punto_venta_id?: number | null
       // Solo aplica cuando no se manda `pagos` (un solo metodo para todo).
@@ -449,15 +460,16 @@ export const api = {
         operador_id: extra?.operador_id ?? null,
         punto_venta_id: extra?.punto_venta_id ?? null,
         referencia: extra?.referencia || null,
+        ...(facturado ? extra?.factura : {}),
       }),
     }),
   ticket: (pedidoId: number) => req<Ticket>(`/pedidos/${pedidoId}/ticket`),
   pedidosOlvidados: (horas = 24) => req<Pedido[]>(`/pedidos/olvidados?horas=${horas}`),
   /** Facturar despues de cobrar: el numero de factura sale del talonario. */
-  facturarPedido: (pedidoId: number, numero_factura: string) =>
+  facturarPedido: (pedidoId: number, numero_factura: string, datos?: DatosFacturaVenta) =>
     req<Pedido>(`/pedidos/${pedidoId}/facturar`, {
       method: 'POST',
-      body: JSON.stringify({ numero_factura }),
+      body: JSON.stringify({ numero_factura, ...datos }),
     }),
   devolverPedido: (
     pedidoId: number,

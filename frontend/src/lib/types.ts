@@ -1244,9 +1244,22 @@ export type FilaLibroVentas = {
   fecha: string
   numero_factura: string
   cliente: string
+  /** En dólares, como el resto del ERP y la declaración de IVA. */
   base_imponible: number
   iva: number
   total: number
+  /** FAC o NC: la nota de crédito es su propia fila, en negativo. */
+  tipo: 'FAC' | 'NC'
+  numero_nota: string
+  factura_afectada: string
+  rif: string
+  numero_control: string
+  /** En bolívares, a la tasa BCV congelada al cobrar; null si no hay tasa. */
+  tasa_bcv: number | null
+  gravado_bs: number | null
+  exento_bs: number | null
+  iva_bs: number | null
+  total_bs: number | null
 }
 
 export type LibroVentas = {
@@ -1259,6 +1272,12 @@ export type LibroVentas = {
   total_general: number
   ventas_no_facturadas: number
   monto_no_facturado: number
+  total_exento_bs: number
+  total_gravado_bs: number
+  total_iva_bs: number
+  total_bs: number
+  /** Filas sin monto en Bs. */
+  sin_tasa: number
 }
 
 export type FilaLibroCompras = {

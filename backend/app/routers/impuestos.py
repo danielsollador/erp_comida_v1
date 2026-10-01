@@ -145,6 +145,28 @@ def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
         .all()
     )
 
+    def en_bs(p: models.Pedido, signo: int) -> dict:
+        """La venta en Bs a la tasa BCV congelada al cobrarla (o la guardada
+        de ese dia, en ventas viejas). El IVA se desglosa sobre los Bs, como
+        lo imprime la maquina fiscal."""
+        tasa = p.tasa_bcv
+        if not tasa:
+            fila_tasa = tasas.tasa_al(db, p.cerrado_en.date())
+            tasa = fila_tasa.bcv if fila_tasa else None
+        if not tasa:
+            return {}
+        total_bs = round(p.total * tasa, 2)
+        base_bs, iva_bs = impuestos.desglosar(total_bs, p.tasa_iva or impuestos.IVA_DEFAULT)
+        return dict(
+            tasa_bcv=tasa, gravado_bs=round(signo * base_bs, 2), exento_bs=0.0,
+            iva_bs=round(signo * iva_bs, 2), total_bs=round(signo * total_bs, 2),
+        )
+
+    def cliente(p: models.Pedido) -> str:
+        # La razon social que se pidio al facturar; si no, el nombre del
+        # cliente de la comanda; si no, consumidor final.
+        return (p.razon_social_cliente or "").strip() or (p.cliente or "").strip() or "Consumidor final"
+
     filas = []
     for p in pedidos_facturados:
         base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
@@ -153,10 +175,13 @@ def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
                 pedido_id=p.id,
                 fecha=p.cerrado_en,
                 numero_factura=p.numero_factura or f"P-{p.numero}",
-                cliente="Consumidor final",
+                cliente=cliente(p),
+                rif=p.rif_cliente or "",
+                numero_control=p.numero_control or "",
                 base_imponible=base,
                 iva=iva,
                 total=round(p.total, 2),
+                **en_bs(p, 1),
             )
         )
 
@@ -170,13 +195,21 @@ def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
                 pedido_id=p.id,
                 fecha=p.fecha_devolucion,
                 numero_factura=p.nota_credito or f"NC-{p.numero}",
-                cliente="Consumidor final",
+                cliente=cliente(p),
+                rif=p.rif_cliente or "",
                 base_imponible=round(-base, 2),
                 iva=round(-iva, 2),
                 total=round(-p.total, 2),
+                tipo="NC",
+                numero_nota=p.nota_credito or f"NC-{p.numero}",
+                factura_afectada=p.numero_factura or f"P-{p.numero}",
+                **en_bs(p, -1),
             )
         )
     filas.sort(key=lambda f: f.fecha)
+
+    def suma(campo):
+        return round(sum(getattr(f, campo) or 0 for f in filas), 2)
 
     return schemas.LibroVentas(
         periodo=periodo,
@@ -188,6 +221,30 @@ def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
         total_general=round(sum(f.total for f in filas), 2),
         ventas_no_facturadas=len(no_facturados),
         monto_no_facturado=round(sum(p.total for p in no_facturados), 2),
+        total_exento_bs=suma("exento_bs"),
+        total_gravado_bs=suma("gravado_bs"),
+        total_iva_bs=suma("iva_bs"),
+        total_bs=suma("total_bs"),
+        sin_tasa=sum(1 for f in filas if f.total_bs is None),
+    )
+
+
+@router.get("/libro-ventas/seniat")
+def libro_ventas_seniat(rango: Rango = Depends(), db: Session = Depends(get_db)) -> StreamingResponse:
+    """El Libro de Ventas en bolivares, con el formato de la planilla del
+    SENIAT (.xlsx)."""
+    from .. import libros_seniat as seniat
+
+    inicio, fin, _ = rango.resolver(periodo="mes")
+    libro = libro_ventas(rango, db)
+    contenido = seniat.libro_ventas(
+        libro, impuestos.config(db), inicio.date(), (fin - datetime.timedelta(days=1)).date()
+    )
+    nombre = f"libro-ventas-{nombre_de_archivo(libro.etiqueta)}.xlsx"
+    return StreamingResponse(
+        iter([contenido]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
     )
 
 
@@ -314,11 +371,11 @@ def libro_compras(rango: Rango = Depends(), db: Session = Depends(get_db)):
 def libro_compras_seniat(rango: Rango = Depends(), db: Session = Depends(get_db)) -> StreamingResponse:
     """El Libro de Compras en bolivares, con el formato de la planilla del
     SENIAT (.xlsx)."""
-    from .. import libro_compras_seniat as seniat
+    from .. import libros_seniat as seniat
 
     inicio, fin, _ = rango.resolver(periodo="mes")
     libro = libro_compras(rango, db)
-    contenido = seniat.generar(
+    contenido = seniat.libro_compras(
         libro, impuestos.config(db), inicio.date(), (fin - datetime.timedelta(days=1)).date()
     )
     nombre = f"libro-compras-{nombre_de_archivo(libro.etiqueta)}.xlsx"

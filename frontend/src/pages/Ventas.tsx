@@ -493,13 +493,22 @@ function DetalleVenta({
   async function facturar() {
     const r = await dialogo.pedir({
       titulo: `Facturar la venta #${v.numero}`,
-      texto: 'El número sale del talonario físico.',
-      campos: [{ nombre: 'numero', etiqueta: 'Número de factura' }],
+      texto: 'El número sale del talonario o de la máquina fiscal. El resto es opcional: sin RIF ni nombre va como consumidor final.',
+      campos: [
+        { nombre: 'numero', etiqueta: 'Número de factura' },
+        { nombre: 'control', etiqueta: 'Número de control' },
+        { nombre: 'rif', etiqueta: 'RIF o cédula del cliente', placeholder: 'J-12345678-9 o V-12345678' },
+        { nombre: 'razon', etiqueta: 'Nombre o razón social' },
+      ],
       aceptar: 'Facturar',
     })
     if (!r || !r.numero.trim()) return
     try {
-      await api.facturarPedido(v.id, r.numero.trim())
+      await api.facturarPedido(v.id, r.numero.trim(), {
+        numero_control: r.control,
+        rif_cliente: r.rif,
+        razon_social_cliente: r.razon,
+      })
       alActualizar()
     } catch (e) {
       await dialogo.avisar({

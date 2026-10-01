@@ -37,6 +37,10 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "facturado", "BOOLEAN DEFAULT 0"),
     ("TRX110_VEN_PEDIDO", "numero_factura", "VARCHAR"),
     ("TRX110_VEN_PEDIDO", "tasa_iva", "FLOAT"),
+    # Para el Libro de Ventas: control y a quien se facturo.
+    ("TRX110_VEN_PEDIDO", "numero_control", "VARCHAR DEFAULT ''"),
+    ("TRX110_VEN_PEDIDO", "rif_cliente", "VARCHAR DEFAULT ''"),
+    ("TRX110_VEN_PEDIDO", "razon_social_cliente", "VARCHAR DEFAULT ''"),
     ("DIM310_INV_INGREDIENTE", "rendimiento_pct", "FLOAT DEFAULT 100"),
     ("DIM310_INV_INGREDIENTE", "tipo", "VARCHAR DEFAULT 'insumo'"),
     ("DIM310_INV_INGREDIENTE", "activo", "BOOLEAN DEFAULT 1"),
