@@ -153,6 +153,10 @@ Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.
 - Numeros con punto decimal y sin separador de miles: en Venezuela
   "1.234,56" significa 1234.56. Si la factura trae montos en Bs y en $,
   transcribe la moneda de los renglones y sus totales en esa misma moneda.
+- Un monto cortado por el borde del papel (por ejemplo "X 1.334,7" o
+  "11.035,"): transcribe la parte que SI se ve (1334.7, 11035) y dilo en
+  advertencias. Faltan centimos, no el renglon: el cuadre contra el subtotal
+  los delata. Deja null solo si no se ve ningun digito.
 - Las marcas a mano (chulitos, tachas, numeros escritos encima) son de
   quien recibio la mercancia: no cambian lo impreso.
 - Si un dato no se lee con seguridad, dejalo en null ("" si es texto) y

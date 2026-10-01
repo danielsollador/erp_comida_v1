@@ -28,6 +28,30 @@ const UNIDADES: Record<string, string> = {
   PAQ: 'paquete', PAQUETE: 'paquete',
 }
 
+/** La unidad del papel en las nuestras ("KGS" -> "kg"), o '' si no se sabe. */
+export function unidadNuestra(unidadPapel: string): string {
+  const papel = unidadPapel.trim().toUpperCase().replace(/\.$/, '')
+  return UNIDADES[papel] ?? ''
+}
+
+/**
+ * El nombre para una mercancía nueva a partir del renglón del papel: sin el
+ * código de artículo ni la marca de exento, y en minúsculas como los nombres
+ * de Inventario. "GASNK0040172 NARU MANI MIXTO 0,090 KG. (E)" ->
+ * "Naru mani mixto 0,090 kg.".
+ */
+export function nombreDesdePapel(descripcion: string): string {
+  const limpio = descripcion
+    .replace(/\(\s*E\s*\)/gi, ' ')
+    .split(/\s+/)
+    // Un código: una palabra larga con dígitos al inicio del renglón.
+    .filter((p, i) => !(i === 0 && p.length >= 6 && /\d/.test(p)))
+    .join(' ')
+    .trim()
+    .toLowerCase()
+  return limpio.charAt(0).toUpperCase() + limpio.slice(1)
+}
+
 export function unidadDistinta(unidadPapel: string, unidadNuestra: string | undefined): boolean {
   const papel = unidadPapel.trim().toUpperCase().replace(/\.$/, '')
   if (!papel || !unidadNuestra) return false
@@ -40,13 +64,17 @@ export function conversion(factor: number, unidadPapel: string, unidad: string):
   return `1 ${unidadPapel || 'unidad del papel'} = ${Number(factor.toFixed(4))} ${unidad}`
 }
 
+// Palabras que no dicen que es la mercancia. "con" llego a proponer
+// "Refresco concentrado" para un "SUETER CON TEXTURA".
+const VACIAS = new Set(['con', 'sin', 'para', 'por', 'los', 'las', 'del', 'und', 'unid', 'tipo', 'marca'])
+
 function palabras(texto: string): string[] {
   return texto
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .split(/[^a-z0-9ñ]+/)
-    .filter((p) => p.length >= 3)
+    .filter((p) => p.length >= 3 && !VACIAS.has(p) && !/^\d+$/.test(p))
 }
 
 /**
@@ -60,7 +88,9 @@ export function sugerirMercancia(descripcion: string, ingredientes: Ingrediente[
   if (delPapel.length === 0) return null
   const puntaje = (ing: Ingrediente) =>
     palabras(ing.nombre).filter((p) =>
-      delPapel.some((q) => q === p || (p.length >= 4 && (q.startsWith(p) || p.startsWith(q)))),
+      // Por prefijo solo entre palabras de 4+ letras: "harin" con "harina"
+      // si, "con" con "concentrado" no.
+      delPapel.some((q) => q === p || (Math.min(p.length, q.length) >= 4 && (q.startsWith(p) || p.startsWith(q)))),
     ).length
   const ordenadas = ingredientes
     .map((ing) => ({ ing, puntos: puntaje(ing) }))

@@ -13,7 +13,9 @@ import { Modal, Vacio } from './ui'
 /** La foto o el PDF de la factura, a tamaño de lectura. */
 export function VistaSoporte({ url, esPdf, alto = 'h-[75vh]' }: { url: string; esPdf: boolean; alto?: string }) {
   return esPdf ? (
-    <iframe src={url} title="Factura en PDF" className={`w-full ${alto} rounded-lg border`} />
+    // Sin el panel de miniaturas y a lo ancho: el visor de Chrome abre con
+    // miniaturas y la pagina entera, y un ticket queda ilegible de chico.
+    <iframe src={`${url}#navpanes=0&view=FitH`} title="Factura en PDF" className={`w-full ${alto} rounded-lg border`} />
   ) : (
     <img src={url} alt="Foto de la factura" className="w-full rounded-lg" />
   )

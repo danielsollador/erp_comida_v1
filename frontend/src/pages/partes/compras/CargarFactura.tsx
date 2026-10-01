@@ -5,7 +5,15 @@ import { VistaSoporte } from '../../../components/FacturaDesdeFoto'
 import Icono from '../../../components/Icono'
 import { Numerico } from '../../../components/Teclado'
 import { api } from '../../../lib/api'
-import { CATEGORIAS, conversion, diasDesde, sugerirMercancia, unidadDistinta } from '../../../lib/compras'
+import {
+  CATEGORIAS,
+  conversion,
+  diasDesde,
+  nombreDesdePapel,
+  sugerirMercancia,
+  unidadDistinta,
+  unidadNuestra,
+} from '../../../lib/compras'
 import { achicarFoto } from '../../../lib/foto'
 import { useMoneda } from '../../../lib/moneda'
 import { necesitaReferencia } from '../../../lib/pagos'
@@ -292,13 +300,13 @@ export default function CargarFactura({
             nombre: 'nombre',
             etiqueta: 'Nombre',
             placeholder: 'Ej. Pollo',
-            valor: lineas[i]?.leido?.descripcion ?? '',
+            valor: nombreDesdePapel(lineas[i]?.leido?.descripcion ?? ''),
           },
           {
             nombre: 'unidad',
             etiqueta: 'Unidad',
             tipo: 'opciones',
-            valor: 'kg',
+            valor: unidadNuestra(lineas[i]?.leido?.unidad ?? '') || 'kg',
             opciones: ['kg', 'g', 'lt', 'ml', 'unidad', 'paquete'].map((u) => ({ valor: u, texto: u })),
           },
         ],
@@ -314,7 +322,9 @@ export default function CargarFactura({
         rendimiento_pct: 100,
         tipo: 'insumo',
         activo: true,
-        exento: false,
+        // Lo que dice el papel de este renglón: si la factura lo marca
+        // exento, la ficha nace exenta.
+        exento: Boolean(lineas[i]?.exento ?? lineas[i]?.leido?.exento),
       })
       setIngredientes((prev) => [...prev, creado])
       cambiarLinea(i, { ingrediente_id: creado.id })
