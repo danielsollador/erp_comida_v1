@@ -1346,7 +1346,7 @@ export function BarrasDeCuenta({ filas, formato }: { filas: FilaCuenta[]; format
                   ? PALETA.neutro
                   : PALETA.bien)
           // El signo dice que hace el renglon: se resta, suma, o es el saldo.
-          const signo = f.tipo === 'base' ? '' : negativo ? '−' : resultado || subtotal ? '' : '+'
+          const signo = f.tipo === 'base' || f.valor === 0 ? '' : negativo ? '−' : resultado || subtotal ? '' : '+'
           return (
             <li
               key={f.nombre + i}
