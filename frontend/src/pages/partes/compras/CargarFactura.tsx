@@ -15,6 +15,7 @@ import {
   unidadNuestra,
 } from '../../../lib/compras'
 import { achicarFoto } from '../../../lib/foto'
+import { unirFotosEnPdf } from '../../../lib/pdfDeFotos'
 import { fmtNum } from '../../../lib/moneda'
 import { necesitaReferencia } from '../../../lib/pagos'
 import { completarDespuesDeGuardar } from '../../../lib/pendientesCompras'
@@ -1233,12 +1234,22 @@ function BarraGuardar({
  * cámara, galería o el PDF del correo), o pegarla con Ctrl+V. No aparece si
  * la lectura con IA no está activada.
  */
+// Paginas de una misma factura que se pueden juntar: una factura larga llega
+// en dos o tres fotos. Achicadas pesan unos cientos de KB cada una.
+const MAX_PAGINAS = 8
+
+const esPdf = (f: File) => f.type === 'application/pdf'
+const esFoto = (f: File) => f.type.startsWith('image/')
+
 function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, esPdf: boolean) => void }) {
   const [activo, setActivo] = useState(false)
   const [leyendo, setLeyendo] = useState(false)
   const [terminando, setTerminando] = useState(false)
   const [encima, setEncima] = useState(false)
   const [error, setError] = useState('')
+  // Las fotos de la factura, en orden, antes de leerlas: asi se puede sacar
+  // la segunda foto con el telefono despues de la primera.
+  const [paginas, setPaginas] = useState<{ archivo: File; url: string }[]>([])
   const entrada = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -1248,21 +1259,49 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
       .catch(() => setActivo(false))
   }, [])
 
-  async function leer(archivo: File | undefined) {
-    if (!archivo || leyendo) return
-    if (!archivo.type.startsWith('image/') && archivo.type !== 'application/pdf') {
-      setError('Tiene que ser una foto o un PDF.')
-      return
+  // Las miniaturas viven mientras esten en la bandeja.
+  const urls = useRef<string[]>([])
+  urls.current = paginas.map((p) => p.url)
+  useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), [])
+
+  function recibir(lista: File[]) {
+    if (leyendo || lista.length === 0) return
+    setError('')
+    const validos = lista.filter((f) => esFoto(f) || esPdf(f))
+    if (validos.length < lista.length) return setError('Tiene que ser una foto o un PDF.')
+    const pdfs = validos.filter(esPdf)
+    if (pdfs.length > 0) {
+      // Un PDF ya es el documento entero: no se mezcla con fotos.
+      if (validos.length > 1 || paginas.length > 0) return setError('Un PDF se carga solo, sin fotos al lado.')
+      return leer([pdfs[0]])
     }
+    if (paginas.length + validos.length > MAX_PAGINAS) return setError(`Hasta ${MAX_PAGINAS} fotos por factura.`)
+    setPaginas((prev) => [...prev, ...validos.map((archivo) => ({ archivo, url: URL.createObjectURL(archivo) }))])
+  }
+
+  function quitar(i: number) {
+    setPaginas((prev) => {
+      URL.revokeObjectURL(prev[i].url)
+      return prev.filter((_, j) => j !== i)
+    })
+  }
+
+  async function leer(archivos: File[]) {
+    if (archivos.length === 0 || leyendo) return
     setError('')
     setLeyendo(true)
     try {
-      const subido = await achicarFoto(archivo)
+      // Una foto se sube sola; varias se unen en un PDF de una pagina por
+      // foto, y para el resto del sistema es un PDF como cualquier otro.
+      const achicadas = await Promise.all(archivos.map((a) => achicarFoto(a)))
+      const subido = achicadas.length === 1 ? achicadas[0] : await unirFotosEnPdf(achicadas)
       const lectura = await api.leerFacturaCompra(subido)
       // La barra llega al final antes de cambiar de pantalla: que se vea que
       // termino, no que se corto.
       setTerminando(true)
       await new Promise((r) => setTimeout(r, 350))
+      paginas.forEach((p) => URL.revokeObjectURL(p.url))
+      setPaginas([])
       onLeida(lectura, URL.createObjectURL(subido), subido.type === 'application/pdf')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo leer el archivo')
@@ -1277,12 +1316,10 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
   useEffect(() => {
     if (!activo) return
     const alPegar = (e: ClipboardEvent) => {
-      const archivo = Array.from(e.clipboardData?.files ?? []).find(
-        (f) => f.type.startsWith('image/') || f.type === 'application/pdf',
-      )
-      if (archivo) {
+      const archivos = Array.from(e.clipboardData?.files ?? []).filter((f) => esFoto(f) || esPdf(f))
+      if (archivos.length > 0) {
         e.preventDefault()
-        leer(archivo)
+        recibir(archivos)
       }
     }
     window.addEventListener('paste', alPegar)
@@ -1300,15 +1337,68 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
       onDrop={(e) => {
         e.preventDefault()
         setEncima(false)
-        leer(e.dataTransfer.files?.[0])
+        recibir(Array.from(e.dataTransfer.files ?? []))
       }}
       className={`rounded-2xl border-2 border-dashed p-6 text-center transition-colors ${
         encima ? 'border-acento-500 bg-acento-50' : 'border-neutral-300 bg-white'
       }`}
     >
-      <input ref={entrada} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => leer(e.target.files?.[0])} />
+      <input
+        ref={entrada}
+        type="file"
+        multiple
+        accept="image/*,application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          recibir(Array.from(e.target.files ?? []))
+          e.target.value = ''
+        }}
+      />
       {leyendo ? (
         <EsperaLectura terminando={terminando} />
+      ) : paginas.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-sm font-semibold">
+            {paginas.length === 1 ? '1 foto' : `${paginas.length} fotos`} de la misma factura
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {paginas.map((p, i) => (
+              <div key={p.url} className="relative">
+                <img src={p.url} alt={`Página ${i + 1}`} className="h-24 w-20 object-cover rounded-lg border border-neutral-200" />
+                <span className="absolute left-1 top-1 rounded bg-neutral-900/80 px-1.5 text-[10px] font-semibold text-white">{i + 1}</span>
+                <button
+                  type="button"
+                  onClick={() => quitar(i)}
+                  aria-label={`Quitar la foto ${i + 1}`}
+                  className="absolute -right-1.5 -top-1.5 h-6 w-6 rounded-full bg-white border border-neutral-300 text-xs leading-none shadow-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {paginas.length < MAX_PAGINAS && (
+              <button
+                type="button"
+                onClick={() => entrada.current?.click()}
+                className="h-24 w-20 rounded-lg border-2 border-dashed border-neutral-300 text-xs text-neutral-500 hover:border-acento-500"
+              >
+                + Otra
+                <br />
+                página
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => leer(paginas.map((p) => p.archivo))}
+            className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold"
+          >
+            <Icono nombre="chispa" size={16} />
+            Leer factura
+          </button>
+          <p className="text-xs text-neutral-500">
+            Si la factura sigue en otra hoja, agrega esa foto antes de leer. En orden: la IA junta los renglones de todas.
+          </p>
+        </div>
       ) : (
         <>
           <button onClick={() => entrada.current?.click()} className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">
@@ -1316,7 +1406,7 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
             Cargar factura desde foto o PDF
           </button>
           <p className="text-xs text-neutral-500 mt-2">
-            O arrástrala aquí, o pégala con Ctrl+V. La IA llena el formulario y tú lo revisas antes de guardar.
+            O arrástrala aquí, o pégala con Ctrl+V. ¿Viene en varias hojas? Elige todas las fotos. La IA llena el formulario y tú lo revisas antes de guardar.
           </p>
         </>
       )}

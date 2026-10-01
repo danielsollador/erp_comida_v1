@@ -132,6 +132,10 @@ Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.
 
 - El escaneo puede estar girado 90 o 180 grados, o al reves: leelo en su
   orientacion correcta antes de transcribir.
+- Si el documento tiene varias paginas, son fotos de las hojas de UNA sola
+  factura, en orden: junta los renglones de todas (los totales suelen estar
+  en la ultima). Si dos fotos se solapan y un renglon sale en ambas, va una
+  sola vez.
 - proveedor_nombre y proveedor_rif: los del EMISOR, quien vende (suele estar
   en el encabezado, junto al logo). NO los del cliente: ni los de "Cliente",
   "Senores", "Razon social" o "Nombre", ni los del SELLO de recibido (un sello
