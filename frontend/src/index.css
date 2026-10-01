@@ -1828,11 +1828,32 @@ html.vp-ligero .vp-metro-anillo { transition: none; }
   background: var(--vp-superficie);
   box-shadow: inset 0 0 0 1px var(--vp-textura), 0 1px 2px rgb(23 24 27 / 0.08), 0 6px 14px -8px rgb(23 24 27 / 0.25);
 }
+/* Lo pendiente en ambar SUAVE: fondo teñido, borde y el icono en el mismo
+   ambar de la frase. Relleno solido con brillo gritaba demasiado (Leider,
+   1-oct: "muy chillones"). */
 .vp-estilo-mixto .vp-recorrido-ojo .vp-recorrido-nodo,
 .vp-estilo-mixto .vp-recorrido-ojo:hover .vp-recorrido-nodo {
-  background: var(--color-aviso-500);
-  color: var(--color-white);
-  box-shadow: 0 0 0 5px color-mix(in oklab, var(--color-aviso-400) 22%, transparent), 0 8px 18px -8px color-mix(in oklab, var(--color-aviso-500) 60%, transparent);
+  background: color-mix(in oklab, var(--color-aviso-400) 16%, var(--vp-superficie));
+  color: var(--color-aviso-700);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in oklab, var(--color-aviso-400) 75%, transparent),
+    0 0 0 4px color-mix(in oklab, var(--color-aviso-400) 12%, transparent);
+}
+/* En oscuro, lo que esta en orden sube un tono sobre la lamina y el icono va
+   en tinta: con el mismo fondo de la lamina se perdia (Leider: "muy
+   opacos"). */
+html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-nodo {
+  background: color-mix(in oklab, var(--vp-superficie) 84%, var(--vp-tinta));
+  color: var(--vp-tinta);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vp-tinta) 16%, transparent), 0 6px 14px -8px rgb(0 0 0 / 0.5);
+}
+html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo .vp-recorrido-nodo,
+html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo:hover .vp-recorrido-nodo {
+  background: color-mix(in oklab, var(--color-aviso-400) 20%, var(--vp-superficie));
+  color: var(--color-aviso-700);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in oklab, var(--color-aviso-400) 70%, transparent),
+    0 0 0 4px color-mix(in oklab, var(--color-aviso-400) 10%, transparent);
 }
 @media (hover: hover) {
   .vp-estilo-mixto .vp-recorrido-estacion:hover .vp-recorrido-nodo {
