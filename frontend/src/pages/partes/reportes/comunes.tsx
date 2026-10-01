@@ -265,7 +265,7 @@ export function SerieTiempo({
           : []),
         ...(lineas ?? []).map((l) => ({
           nombre: l.nombre,
-          color: l.color ?? 'var(--color-neutral-800)',
+          color: l.color ?? 'var(--color-exito-600)',
           valores: l.valores,
           eje: 'der' as const,
         })),

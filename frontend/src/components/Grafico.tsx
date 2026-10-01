@@ -375,7 +375,6 @@ export function GraficoLineas({
           <span key={s.nombre} className="flex items-center gap-1.5 text-[11px] text-neutral-500">
             <span className="h-0.5 w-4 rounded-full" style={{ background: s.color }} />
             {s.nombre}
-            {s.eje === 'der' && <span className="text-neutral-400">· eje derecho</span>}
           </span>
         ))}
         {pie && <span className="ml-auto text-[11px] text-neutral-400">{pie}</span>}
@@ -641,6 +640,9 @@ export function GraficoBarras({
 }) {
   const { enHover, Globo } = useGlobo()
   const { ref: plano, ancho } = useAncho<HTMLDivElement>()
+  // El tramo bajo el cursor: la barra se atenua y el punto de la linea
+  // crece, los dos a la vez (Leider, 30-sep: "que haya efecto para las dos").
+  const [activo, setActivo] = useState<number | null>(null)
   if (datos.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
   }
@@ -651,7 +653,8 @@ export function GraficoBarras({
   const conLineas = lineasValidas.length > 0
   const maxDer = Math.max(...lineasValidas.flatMap((l) => l.valores.map((v) => v ?? 0)), 0) || 1
   const fDer = formatoDerecha ?? formato
-  const COLORES_LINEA = ['var(--color-neutral-800)', 'var(--color-exito-600)', 'var(--color-peligro-500)']
+  // Verde primero: es lo que mas contrasta con el cobre de las barras.
+  const COLORES_LINEA = ['var(--color-exito-600)', 'var(--color-aviso-500)', 'var(--color-peligro-500)']
   const colorLinea = (l: LineaSobreBarras, k: number) => l.color ?? COLORES_LINEA[k % COLORES_LINEA.length]
   // El centro de cada barra, en pixeles: `gap-1.5` son 6 px entre barras.
   const SEP = 6
@@ -730,6 +733,8 @@ export function GraficoBarras({
                   <div
                     key={d.etiqueta + i}
                     className="group relative flex-1 min-w-0 h-full cursor-default"
+                    onPointerOver={() => setActivo(i)}
+                    onPointerOut={() => setActivo(null)}
                     {...enHover(
                       <>
                         <div className="mb-1 font-semibold text-neutral-500">{d.etiqueta}</div>
@@ -814,8 +819,10 @@ export function GraficoBarras({
                   v == null ? null : (
                     <span
                       key={`${l.nombre}-${i}`}
-                      className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--vp-superficie)]"
-                      style={{ left: cx(i), top: `${yDer(v)}%`, background: colorLinea(l, k) }}
+                      className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--vp-superficie)] transition-[width,height,box-shadow] duration-150 ${
+                        activo === i ? 'h-3.5 w-3.5 shadow-[0_0_0_3px_color-mix(in_oklab,currentColor_30%,transparent)]' : 'h-2 w-2'
+                      }`}
+                      style={{ left: cx(i), top: `${yDer(v)}%`, background: colorLinea(l, k), color: colorLinea(l, k) }}
                     />
                   ),
                 ),
@@ -862,7 +869,7 @@ export function GraficoBarras({
               <span className="relative h-0.5 w-4 rounded-full" style={{ background: colorLinea(l, k) }}>
                 <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: colorLinea(l, k) }} />
               </span>
-              {l.nombre} <span className="text-neutral-400">· eje derecho</span>
+              {l.nombre}
             </span>
           ))}
           {referencia && referencia.valor > 0 && (
