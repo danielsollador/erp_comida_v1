@@ -716,6 +716,17 @@ export default function Inventario() {
 
         {seccion === 'comprar' && (
           <>
+        {/* Sin nada que comprar la seccion quedaba en blanco y parecia un
+            error (Leider, 1-oct, lo mismo que en Reportes): lo dice. */}
+        {sugerencias.length === 0 && (
+          <div className="bg-white rounded-2xl border border-neutral-200">
+            <Vacio
+              icono="ok"
+              titulo="Nada por comprar ahora mismo"
+              detalle="Todo está por encima del mínimo y alcanza más de una semana al ritmo de venta de las últimas dos semanas."
+            />
+          </div>
+        )}
         {sugerencias.length > 0 && (
           <Seccion
             titulo="Qué comprar"
