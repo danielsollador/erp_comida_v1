@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, type PointerEvent as EventoPuntero, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
@@ -326,9 +326,28 @@ function Tarjeta({
   desc: string
   principal: boolean
 }) {
+  // LA LUZ SIGUE AL CURSOR (Leider, 1-oct: "jugar con el circulo naranja").
+  // Se mueve hacia donde esta el raton, con un tope para no salirse de su
+  // esquina, y al salir vuelve sola. Va por variables CSS escritas en el
+  // propio elemento: mover el raton no repinta React. Solo con raton: en la
+  // tablet no hay cursor y la luz se queda donde siempre.
+  const seguir = (e: EventoPuntero<HTMLAnchorElement>) => {
+    if (e.pointerType !== 'mouse') return
+    const caja = e.currentTarget.getBoundingClientRect()
+    const x = (e.clientX - caja.left) / caja.width - 0.5
+    const y = (e.clientY - caja.top) / caja.height - 0.5
+    e.currentTarget.style.setProperty('--luz-x', `${Math.round(x * caja.width * 0.45)}px`)
+    e.currentTarget.style.setProperty('--luz-y', `${Math.round(y * caja.height * 0.55)}px`)
+  }
+  const soltar = (e: EventoPuntero<HTMLAnchorElement>) => {
+    e.currentTarget.style.removeProperty('--luz-x')
+    e.currentTarget.style.removeProperty('--luz-y')
+  }
   return (
     <Link
       to={to}
+      onPointerMove={principal ? seguir : undefined}
+      onPointerLeave={principal ? soltar : undefined}
       className={`vp-pulsable group relative overflow-hidden rounded-3xl p-5 lg:p-6 bajo:p-4 pc:p-6 min-h-[8rem] sm:min-h-[clamp(8.5rem,19vh,17rem)] bajo:min-h-[clamp(6.5rem,16vh,20rem)] pc:min-h-[9.5rem] h-full flex flex-col gap-3 lg:gap-4 bajo:gap-3 pc:gap-3 ${
         principal
           ? 'bg-neutral-900 text-white shadow-[0_2px_6px_-2px_rgb(23_24_27/0.16),0_18px_40px_-18px_rgb(23_24_27/0.45)]'
@@ -338,7 +357,7 @@ function Tarjeta({
       {principal && (
         <span
           aria-hidden
-          className="absolute -right-12 -top-12 w-44 h-44 lg:w-60 lg:h-60 rounded-full opacity-45 blur-2xl"
+          className="vp-luz absolute -right-12 -top-12 w-44 h-44 lg:w-60 lg:h-60 rounded-full opacity-45 blur-2xl"
           style={{ background: 'var(--vp-acento)' }}
         />
       )}

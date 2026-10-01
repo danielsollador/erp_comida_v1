@@ -1783,3 +1783,27 @@ html.vp-ligero .vp-contador-icono { transition: none; }
   }
 }
 html.vp-ligero .vp-tarjeta-icono { transition: none; }
+
+/* La luz naranja del punto de venta: con el cursor encima crece, brilla un
+   poco mas y se desliza hacia el raton (Inicio.tsx escribe --luz-x/--luz-y);
+   al salir vuelve despacio a su esquina. Solo transform y opacity. */
+.vp-luz {
+  transform: translate(var(--luz-x, 0px), var(--luz-y, 0px)) scale(1);
+  transition:
+    transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: transform;
+}
+@media (hover: hover) {
+  .group:hover > .vp-luz {
+    transform: translate(var(--luz-x, 0px), var(--luz-y, 0px)) scale(1.18);
+    opacity: 0.62;
+    transition:
+      transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1),
+      opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vp-luz { transition: none; }
+}
+html.vp-ligero .vp-luz { transition: none; transform: none; will-change: auto; }
