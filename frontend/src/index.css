@@ -1464,7 +1464,8 @@ select {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: var(--vp-superficie);
+  /* Un punto mas claro que la lamina: en oscuro la profundidad sale del tono. */
+  background: color-mix(in oklab, var(--vp-superficie) 94%, var(--vp-tinta));
   color: var(--color-neutral-700);
   box-shadow: inset 0 0 0 2px var(--rec-tinta-suave), 0 1px 2px rgb(23 24 27 / 0.05);
   transition: transform 0.22s var(--rec-ez), box-shadow 0.22s var(--rec-ez), color 0.22s var(--rec-ez);
@@ -1494,19 +1495,22 @@ select {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: var(--color-acento-500);
-  color: #fff;
+  background: var(--vp-tinta);
+  color: var(--vp-superficie);
   box-shadow: 0 0 0 2px var(--vp-superficie);
 }
 /* La accion ("Ver que comprar") aparece al posar el cursor. En la tablet no
    hay cursor: se toca y se va directo, asi que no ocupa sitio. */
+/* La marca de listo va en tinta, no en el acento: al lado del ambar de lo
+   pendiente, dos naranjas se confundian y lo que pide algo dejaba de saltar
+   a la vista (estilo-savora: color solo con proposito). */
 @media (hover: hover) {
   .vp-recorrido-accion { opacity: 0; transform: translateY(-2px); transition: opacity 0.2s var(--rec-ez), transform 0.2s var(--rec-ez); }
   .vp-recorrido-estacion:hover .vp-recorrido-accion,
   .vp-recorrido-estacion:focus-visible .vp-recorrido-accion { opacity: 1; transform: none; }
 }
 @media (hover: none) {
-  .vp-recorrido-accion { display: none !important; }
+  .vp-recorrido-accion { display: none; }
 }
 
 /* La via. En el telefono, vertical por el centro de los puntos; desde 640 px,
@@ -1547,7 +1551,7 @@ select {
   inset: 0;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--color-acento-500), var(--color-acento-400));
-  opacity: 0.75;
+  opacity: 0.55;
 }
 .vp-recorrido-viajero {
   position: absolute;
@@ -1609,16 +1613,8 @@ select {
   animation: vp-rec-barra 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   animation-delay: calc(0.55s + var(--i) * 60ms);
 }
-
-html.vp-ligero .vp-recorrido *,
-html.vp-ligero .vp-fila-reportes * {
-  animation: none !important;
-  transition: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .vp-recorrido *,
-  .vp-fila-reportes * {
-    animation: none !important;
-    transition: none !important;
-  }
-}
+/* Modo ligero y "reducir movimiento": Recorrido.tsx ni siquiera pone la
+   clase de entrada, asi que no hace falta pisar nada aqui. Solo se apagan
+   las transiciones del cursor, que en la tablet no existen. */
+html.vp-ligero .vp-recorrido-nodo,
+html.vp-ligero .vp-recorrido-estacion { transition: none; }

@@ -10,8 +10,9 @@
  * "los numeros esos no estan fight complexity").
  *
  * La entrada cuenta el flujo: un punto recorre la linea de Compras a la caja y
- * cada estacion se enciende cuando pasa. Una vez por sesion, ~1,3 s, y nunca en
- * el modo ligero de la tablet ni con "reducir movimiento" (ver index.css).
+ * cada estacion se enciende cuando pasa. ~1,3 s, una vez cada vez que se carga
+ * la pagina (volver a la portada desde otro modulo no la repite), y nunca en el
+ * modo ligero de la tablet ni con "reducir movimiento": ahi se pinta quieta.
  *
  * Debajo, Reportes en su propia fila con las ventas de los ultimos 7 dias en
  * barras sin cifras: se ve de un vistazo si la semana sube o baja.
@@ -33,15 +34,22 @@ const ESTACIONES: { id: PasoRecorrido['id']; to: string }[] = [
   { id: 'caja', to: '/caja' },
 ]
 
-const CLAVE_VISTO = 'vp-recorrido-visto'
+// Una vez por carga de pagina. Era una vez por SESION (sessionStorage), y
+// recargar no la volvia a mostrar: parecia que el efecto no existia (Leider,
+// 1-oct). Con una variable del modulo, recargar la repite y volver a la
+// portada desde otro modulo no.
+let entradaContada = false
 
-/** Si la entrada ya se vio en esta pestaña: se cuenta una vez, no cada vuelta. */
-function yaSeVio(): boolean {
-  try {
-    return sessionStorage.getItem(CLAVE_VISTO) === '1'
-  } catch {
-    return true
-  }
+/** Sin movimiento: la tablet en modo ligero o quien pidio reducir movimiento. */
+function sinMovimiento(): boolean {
+  if (typeof window === 'undefined') return true
+  if (document.documentElement.classList.contains('vp-ligero')) return true
+  return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+}
+
+/** Si esta portada se pinta quieta, ya en su estado final. */
+function sinEntrada(): boolean {
+  return entradaContada || sinMovimiento()
 }
 
 export default function Recorrido({
@@ -59,15 +67,10 @@ export default function Recorrido({
   const { fmt } = useMoneda()
   // La animacion se decide al llegar los datos: animar el esqueleto vacio y
   // despues cambiar las frases seria contar el flujo dos veces.
-  const [quieto] = useState(yaSeVio)
+  const [quieto] = useState(sinEntrada)
   const listo = datos !== null
   useEffect(() => {
-    if (!listo || quieto) return
-    try {
-      sessionStorage.setItem(CLAVE_VISTO, '1')
-    } catch {
-      /* sin almacenamiento: se vuelve a ver, no pasa nada */
-    }
+    if (listo && !quieto) entradaContada = true
   }, [listo, quieto])
 
   const visibles = ESTACIONES.filter((e) => modulos.includes(e.to))
@@ -118,7 +121,11 @@ export default function Recorrido({
           const m = MODULOS.find((x) => x.to === e.to)!
           const p = pasoDe(e.id)
           const ojo = Boolean(p?.pendiente)
-          const frase = p ? p.frase.replace('{monto}', fmt(p.monto ?? 0)) : descripcionDe(e.to)
+          // La pregunta del modulo se queda SIEMPRE: es lo que dice para que
+          // sirve (Leider, 1-oct: "eso no lo podemos quitar"). Debajo, como
+          // esta hoy.
+          const pregunta = descripcionDe(e.to)
+          const frase = p ? p.frase.replace('{monto}', fmt(p.monto ?? 0)) : ''
           return (
             // `--d`: cuando pasa el viajero por esta estacion.
             <li
@@ -129,7 +136,7 @@ export default function Recorrido({
               <Link
                 to={destino(e, p)}
                 className={`vp-recorrido-estacion group ${ojo ? 'vp-recorrido-ojo' : ''}`}
-                aria-label={`${m.titulo}: ${frase}`}
+                aria-label={`${m.titulo}. ${pregunta}${frase ? ` ${frase}` : ''}`}
               >
                 <span className="vp-recorrido-entrada">
                   <span className="vp-recorrido-nodo">
@@ -147,13 +154,16 @@ export default function Recorrido({
                   <span className="block font-display font-semibold leading-tight text-[14px] lg:text-[15px] text-neutral-900">
                     {m.titulo}
                   </span>
-                  <span
-                    className={`vp-recorrido-frase block mt-1 text-[13px] leading-snug ${
-                      ojo ? 'text-aviso-700 font-semibold' : 'text-neutral-500'
-                    }`}
-                  >
-                    {frase}
-                  </span>
+                  <span className="block mt-0.5 text-[13px] leading-snug text-neutral-500">{pregunta}</span>
+                  {frase && (
+                    <span
+                      className={`vp-recorrido-frase block mt-1.5 text-[13px] leading-snug ${
+                        ojo ? 'text-aviso-700 font-semibold' : 'text-neutral-800 font-medium'
+                      }`}
+                    >
+                      {frase}
+                    </span>
+                  )}
                   {p?.accion && (
                     <span className="vp-recorrido-accion block mt-1 text-xs font-semibold text-acento-600">
                       {p.accion} ›
@@ -175,7 +185,7 @@ const DIAS = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 export function FilaReportes({ dias }: { dias: { fecha: string; ventas: number }[] | undefined }) {
   const { fmt } = useMoneda()
   // Las barras crecen la misma vez que se cuenta el recorrido.
-  const [animar] = useState(() => !yaSeVio())
+  const [animar] = useState(() => !sinEntrada())
   const tope = Math.max(...(dias ?? []).map((d) => d.ventas), 0)
   return (
     <Link
@@ -191,7 +201,7 @@ export function FilaReportes({ dias }: { dias: { fecha: string; ventas: number }
       </span>
       {dias && dias.length > 0 && (
         <span className="shrink-0 hidden min-[420px]:block" aria-label="Ventas de los últimos 7 días">
-          <span className="flex items-end gap-[5px] h-9 w-[9.5rem]">
+          <span className="flex items-end gap-[5px] h-9 w-[10.5rem]">
             {dias.map((d, i) => {
               const alto = tope > 0 ? Math.max((d.ventas / tope) * 100, 4) : 4
               const esHoy = i === dias.length - 1
@@ -205,7 +215,7 @@ export function FilaReportes({ dias }: { dias: { fecha: string; ventas: number }
               )
             })}
           </span>
-          <span className="flex gap-[5px] w-[9.5rem] mt-1 text-[10px] text-neutral-400">
+          <span className="flex gap-[5px] w-[10.5rem] mt-1 text-xs text-neutral-400">
             {dias.map((d, i) => (
               <span key={d.fecha} className="flex-1 text-center">
                 {i === dias.length - 1 ? 'Hoy' : DIAS[new Date(`${d.fecha}T12:00:00`).getDay()]}
