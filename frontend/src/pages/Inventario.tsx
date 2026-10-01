@@ -6,7 +6,7 @@ import { useAltoRestante } from '../lib/altoRestante'
 import Agarre from '../components/Agarre'
 import { useArrastre } from '../lib/arrastre'
 import BarraFiltros from '../components/BarraFiltros'
-import { useRango, nombreRango } from '../lib/fechas'
+import { useRango, nombreRango, rangoDe } from '../lib/fechas'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
@@ -33,6 +33,7 @@ import type {
   PlanillaLeida,
   RenglonPorTipo,
   CategoriaInsumo,
+  InsumoDelDeposito,
 } from '../lib/types'
 
 /**
@@ -1127,9 +1128,79 @@ function datosDe(ing: Ingrediente): DatosIngrediente {
 // ── La ficha ─────────────────────────────────────────────────────────────────
 
 /**
- * Todo lo de un insumo en un sitio: sus datos, sus movimientos y su historial
- * de costos. Sirve para crear (sin `ing`) y para editar.
+ * La ficha de una mercancia: como esta, que se le anota y que le paso.
+ *
+ * COMO ERA. Abria directo en un formulario de diez casillas (que es, se mide
+ * en, minimo, objetivo, costo sin IVA, rendimiento, exento...) con cuatro
+ * botones encima que no decian nada ("Personal", "Contar"), y debajo un
+ * extracto contable con doscientos renglones. Leider (2-oct): "no se
+ * entiende un carajo, lo abro y no entiendo para que es cada cosa".
+ *
+ * COMO ES. Lo que se viene a mirar arriba, en tres cifras con palabras
+ * --cuanto hay, para cuanto alcanza, cuanto cuesta--; despues lo que se
+ * viene a hacer, con verbos ("Llegó mercancía", "Se dañó o se botó"); despues
+ * lo ultimo que le paso, en frases. Los datos de la mercancia (que cambian
+ * una vez al año) quedan en un renglon cerrado, y el extracto completo detras
+ * de "Ver todo".
+ *
+ * Para crear una (sin `ing`), solo el formulario: primero lo indispensable y
+ * lo demas en "Más detalles", que se puede dejar para despues.
  */
+// El movimiento del libro, dicho como lo diria el dueño.
+function queLePaso(m: MovimientoInventario): string {
+  switch (m.tipo) {
+    case 'compra':
+      return 'Llegó mercancía'
+    case 'venta':
+      return 'Se vendió'
+    case 'merma':
+      return 'Se dañó o se botó'
+    case 'consumo_personal':
+      return 'La usó el personal'
+    case 'reverso':
+      return 'Se deshizo un movimiento'
+    case 'ajuste':
+      if (/existencia al empezar/i.test(m.nota)) return 'Lo que había al empezar'
+      return m.cantidad >= 0 ? 'Al contar, había de más' : 'Al contar, faltaba'
+    default:
+      return m.etiqueta
+  }
+}
+
+// La unidad chica de una grande, para decir el rendimiento en algo que se ve.
+const CHICA: Record<string, { nombre: string; factor: number }> = {
+  kg: { nombre: 'g', factor: 1000 },
+  lt: { nombre: 'ml', factor: 1000 },
+}
+
+/** "de 1 kg comprado quedan 920 g para usar", con el rendimiento que se escribe. */
+function ejemploRendimiento(unidad: string, pct: number): string {
+  if (!Number.isFinite(pct) || pct <= 0) return ''
+  const chica = CHICA[unidad]
+  if (chica) return `De 1 ${unidad} que compras quedan ${Math.round(chica.factor * (pct / 100))} ${chica.nombre} para usar.`
+  const base = unidad === 'g' || unidad === 'ml' ? 100 : 10
+  const queda = Number(((base * pct) / 100).toFixed(1))
+  return `De ${base} ${unidad} que compras quedan ${String(queda).replace('.', ',')} ${unidad} para usar.`
+}
+
+/** Lo poco, en la unidad chica: "43 g" y no "0.043 kg", "70 g al día". */
+function legible(n: number, unidad: string): string {
+  const chica = CHICA[unidad]
+  if (chica && Math.abs(n) < 1 && n !== 0) return `${Math.round(Math.abs(n) * chica.factor)} ${chica.nombre}`
+  return `${cantidad(Math.abs(n))} ${unidad}`
+}
+
+/** "4 días", "3 meses", "más de un año": lo que dura, en lo que se entiende. */
+function cuantoDura(dias: number): string {
+  if (dias > 365) return 'más de un año'
+  if (dias > 60) return `${Math.round(dias / 30)} meses`
+  const d = Math.max(Math.round(dias), 0)
+  return `${d} ${d === 1 ? 'día' : 'días'}`
+}
+
+const fechaCorta = (iso: string) =>
+  new Date(iso).toLocaleDateString('es-VE', { day: 'numeric', month: 'short' }).replace('.', '')
+
 function FichaInsumo({
   ing,
   mermas,
@@ -1171,8 +1242,17 @@ function FichaInsumo({
   }))
   const [aviso, setAviso] = useState('')
   const [guardando, setGuardando] = useState(false)
+  // Viendo la ficha o cambiando los datos. Una nueva nace en el formulario.
+  const [editando, setEditando] = useState(nuevo)
+  // Al crear, lo que no hace falta para empezar va plegado.
+  const [masDetalles, setMasDetalles] = useState(false)
+  // El extracto completo, con filtro de fecha y descarga, detras de "Ver todo".
+  const [todo, setTodo] = useState(false)
   const [historial, setHistorial] = useState<CompraDeInsumo[] | null>(null)
   const [extracto, setExtracto] = useState<ExtractoInsumo | null>(null)
+  // Para cuanto alcanza: el mismo calculo de Reportes > Inventario (consumo
+  // real de los ultimos 30 dias), pedido solo para esta mercancia.
+  const [ritmo, setRitmo] = useState<InsumoDelDeposito | null | undefined>(undefined)
   // Desde cuándo se está auditando. Vacío = toda la vida del insumo, que es
   // como venía; con fecha, el extracto trae saldo de apertura y totales y se
   // puede comprobar que inicial + entradas − salidas da el final.
@@ -1213,6 +1293,14 @@ function FichaInsumo({
       .catch(() => setExtracto(null))
   }, [ing, desdeExtracto])
 
+  useEffect(() => {
+    if (!ing) return
+    api
+      .reporteInventario(rangoDe('30d'), { ingrediente_id: ing.id })
+      .then((r) => setRitmo(r.por_insumo[0] ?? null))
+      .catch(() => setRitmo(null))
+  }, [ing])
+
   const num = (v: string) => Number(v.trim().replace(',', '.'))
   const poner = (k: keyof typeof f, v: string | number | null | boolean) =>
     setF((a) => ({ ...a, [k]: v }))
@@ -1228,7 +1316,7 @@ function FichaInsumo({
     if ([minimo, objetivo, costo, inicial].some((n) => !Number.isFinite(n) || n < 0))
       return setAviso('Las cantidades y el costo tienen que ser números, y no negativos.')
     if (!Number.isFinite(rendimiento) || rendimiento <= 0 || rendimiento > 100)
-      return setAviso('El rendimiento va de 1 a 100.')
+      return setAviso('Lo que se aprovecha va de 1 a 100 %.')
     setGuardando(true)
     await onGuardar({
       nombre: f.nombre.trim(),
@@ -1246,265 +1334,356 @@ function FichaInsumo({
     setGuardando(false)
   }
 
+  async function elegirCategoria(v: string) {
+    if (v !== 'nueva') {
+      poner('categoria_id', v === '' ? null : Number(v))
+      return
+    }
+    const nombreCat = await dialogo.pedirTexto({
+      titulo: 'Nueva categoría',
+      texto: 'Un cajón del depósito: Carnes, Lácteos, Empaques…',
+      etiqueta: 'Nombre',
+    })
+    if (!nombreCat?.trim()) return
+    poner('categoria_id', await onCrearCategoria(nombreCat))
+  }
+
   const perdidaTotal = mermas.reduce((s, m) => s + m.valor, 0)
+  const u = ing?.unidad ?? f.unidad
 
-  return (
-    <Modal
-      titulo={nuevo ? 'Nueva mercancía' : ing.nombre}
-      ayuda={
-        nuevo
-          ? 'Materia prima para las recetas, o mercancía que se compra y se vende tal cual.'
-          : `${ing.tipo === 'reventa' ? 'Reventa' : 'Materia prima'} · hay ${cantidad(ing.stock_actual)} ${ing.unidad} · costo real ${dinero(ing.costo_efectivo)} por ${ing.unidad}`
-      }
-      onCerrar={onCerrar}
-      ancho="lg"
-      pie={
-        <>
-          {!nuevo && (
-            <Boton tono="peligro" onClick={() => acciones.archivar(ing)} className="mr-auto">
-              Archivar
-            </Boton>
-          )}
-          <Boton tono="suave" onClick={onCerrar}>
-            Cancelar
-          </Boton>
-          <Boton onClick={guardar} disabled={guardando}>
-            {nuevo ? 'Crear mercancía' : 'Guardar cambios'}
-          </Boton>
-        </>
-      }
-    >
-      {aviso && (
-        <div className="mb-3">
-          <Aviso>{aviso}</Aviso>
-        </div>
+  // ── El formulario: crear, o cambiar los datos ──────────────────────────────
+  const opcionales = (
+    <>
+      <Selector
+        etiqueta="Categoría"
+        value={f.categoria_id === null ? '' : String(f.categoria_id)}
+        onChange={(e) => void elegirCategoria(e.target.value)}
+      >
+        <option value="">Sin categoría</option>
+        {categorias.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.nombre}
+          </option>
+        ))}
+        <option value="nueva">+ Nueva categoría…</option>
+      </Selector>
+      <Campo
+        etiqueta={`Avísame cuando quede menos de (${f.unidad})`}
+        inputMode="decimal"
+        value={f.stock_minimo}
+        onChange={(e) => poner('stock_minimo', e.target.value)}
+        placeholder="0"
+        ayuda="Por debajo de esto aparece en «Qué comprar»."
+      />
+      <Campo
+        etiqueta={`Al comprar, llenar hasta (${f.unidad})`}
+        inputMode="decimal"
+        value={f.stock_objetivo}
+        onChange={(e) => poner('stock_objetivo', e.target.value)}
+        placeholder="0"
+        ayuda="Con esto se calcula cuánto sugerir comprar."
+      />
+      {f.tipo !== 'reventa' && (
+        <Campo
+          etiqueta="Lo que se aprovecha (%)"
+          inputMode="decimal"
+          value={f.rendimiento_pct}
+          onChange={(e) => poner('rendimiento_pct', e.target.value)}
+          ayuda={ejemploRendimiento(f.unidad, num(f.rendimiento_pct)) || 'Lo que queda después de limpiar o cocinar.'}
+        />
       )}
+      <label className="flex items-start gap-2.5 text-sm sm:col-span-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={f.exento}
+          onChange={(e) => setF((a) => ({ ...a, exento: e.target.checked }))}
+          className="mt-0.5"
+        />
+        <span>
+          No paga IVA
+          <span className="block text-xs text-neutral-500">Harina, arroz, carne y la mayoría de los alimentos básicos.</span>
+        </span>
+      </label>
+    </>
+  )
 
-      {/* Los movimientos van ARRIBA en la ficha de un insumo existente: es a
-          lo que se viene el 90 % de las veces; editar el minimo es raro. */}
-      {!nuevo && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
-          <Boton tono="suave" onClick={() => acciones.comprar(ing)}>
-            + Compra
-          </Boton>
-          <Boton tono="suave" onClick={() => acciones.merma(ing)} className="text-peligro-600">
-            − Merma
-          </Boton>
-          <Boton tono="suave" onClick={() => acciones.consumoPersonal(ing)}>
-            Personal
-          </Boton>
-          <Boton tono="suave" onClick={() => acciones.contar(ing)}>
-            Contar
-          </Boton>
-        </div>
-      )}
-
+  const formulario = (
+    <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Campo etiqueta="Nombre" value={f.nombre} onChange={(e) => poner('nombre', e.target.value)} autoFocus={nuevo} className="sm:col-span-2" />
-        <Selector etiqueta="Qué es" value={f.tipo} onChange={(e) => poner('tipo', e.target.value)}>
-          <option value="insumo">Materia prima (entra en recetas)</option>
-          <option value="reventa">Reventa (se vende tal cual)</option>
-        </Selector>
-        {/* AQUI se le pone cajon a una mercancia, y AQUI se le cambia: es la
-            misma accion. La ultima opcion crea uno nuevo sin salir de la ficha,
-            porque acordarse de la categoria suele pasar justo al cargar algo,
-            y mandar al dueño a otra pantalla en ese momento es perder el hilo. */}
-        <Selector
-          etiqueta="Categoría"
-          value={f.categoria_id === null ? '' : String(f.categoria_id)}
-          onChange={async (e) => {
-            const v = e.target.value
-            if (v !== 'nueva') {
-              poner('categoria_id', v === '' ? null : Number(v))
-              return
-            }
-            const nombre = await dialogo.pedirTexto({
-              titulo: 'Nueva categoría',
-              texto: 'Un cajón del depósito: Carnes, Lácteos, Empaques…',
-              etiqueta: 'Nombre',
-            })
-            if (!nombre?.trim()) return
-            poner('categoria_id', await onCrearCategoria(nombre))
-          }}
-        >
-          <option value="">Sin categoría</option>
-          {categorias.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nombre}
-            </option>
-          ))}
-          <option value="nueva">+ Nueva categoría…</option>
-        </Selector>
-        <Selector etiqueta="Se mide en" value={f.unidad} onChange={(e) => poner('unidad', e.target.value)}>
-          {UNIDADES.map((u) => (
-            <option key={u} value={u}>
-              {u}
-            </option>
-          ))}
-        </Selector>
+        <Campo
+          etiqueta="Nombre"
+          value={f.nombre}
+          onChange={(e) => poner('nombre', e.target.value)}
+          autoFocus={nuevo}
+          placeholder="Ej. Carne molida"
+          className="sm:col-span-2"
+        />
+        <div className="sm:col-span-2">
+          <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Para qué es</span>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { valor: 'insumo' as const, texto: 'Se usa en recetas', detalle: 'carne, harina, aceite' },
+              { valor: 'reventa' as const, texto: 'Se vende tal cual', detalle: 'refresco, chuchería' },
+            ].map((o) => (
+              <button
+                key={o.valor}
+                type="button"
+                onClick={() => poner('tipo', o.valor)}
+                aria-pressed={f.tipo === o.valor}
+                className={`rounded-xl border-2 px-3 py-2 text-left ${
+                  f.tipo === o.valor ? 'border-acento-500 bg-acento-500/8' : 'border-neutral-200 hover:border-neutral-300'
+                }`}
+              >
+                <span className="block text-sm font-semibold">{o.texto}</span>
+                <span className="block text-xs text-neutral-500">{o.detalle}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="sm:col-span-2">
+          <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Se mide en</span>
+          <div className="flex flex-wrap gap-1.5">
+            {UNIDADES.map((x) => (
+              <button
+                key={x}
+                type="button"
+                onClick={() => poner('unidad', x)}
+                aria-pressed={f.unidad === x}
+                className={`min-w-12 rounded-lg border-2 px-3 py-1.5 text-sm font-semibold ${
+                  f.unidad === x ? 'border-acento-500 bg-acento-500/8' : 'border-neutral-200 hover:border-neutral-300'
+                }`}
+              >
+                {x}
+              </button>
+            ))}
+          </div>
+        </div>
         {nuevo && (
           <Campo
-            etiqueta={`Stock inicial (${f.unidad})`}
+            etiqueta={`Cuánto hay hoy (${f.unidad})`}
             inputMode="decimal"
             value={f.stock_actual}
             onChange={(e) => poner('stock_actual', e.target.value)}
             placeholder="0"
-            ayuda="Lo que hay hoy. Después el stock se mueve con compras, mermas y conteos."
+            ayuda="Después se mueve solo con las compras, las ventas y los conteos."
           />
         )}
         <Campo
-          etiqueta={`Mínimo (${f.unidad})`}
-          inputMode="decimal"
-          value={f.stock_minimo}
-          onChange={(e) => poner('stock_minimo', e.target.value)}
-          placeholder="0"
-          ayuda="Por debajo de esto avisa que hay que comprar."
-        />
-        <Campo
-          etiqueta={`Objetivo (${f.unidad})`}
-          inputMode="decimal"
-          value={f.stock_objetivo}
-          onChange={(e) => poner('stock_objetivo', e.target.value)}
-          placeholder="0"
-          ayuda="Hasta dónde se repone al comprar."
-        />
-        <Campo
-          etiqueta={`Costo por ${f.unidad}, sin IVA ($)`}
+          etiqueta={`Lo que pagas por ${f.unidad}, sin IVA ($)`}
           inputMode="decimal"
           value={f.costo_unitario}
           onChange={(e) => poner('costo_unitario', e.target.value)}
           placeholder="0.00"
-          ayuda={nuevo ? 'Lo que pagas hoy. Cada compra lo va promediando.' : 'Promedio de lo que hay. Las compras lo actualizan solas.'}
+          ayuda={nuevo ? 'Lo que pagaste la última vez. Cada compra lo va ajustando.' : 'Se ajusta solo con cada compra.'}
         />
-        {f.tipo !== 'reventa' && (
-          <Campo
-            etiqueta="Rendimiento (%)"
-            inputMode="decimal"
-            value={f.rendimiento_pct}
-            onChange={(e) => poner('rendimiento_pct', e.target.value)}
-            ayuda="Cuánto queda utilizable después de limpiar o cocinar. 100 = no se pierde nada."
-          />
-        )}
-        <label className="flex items-center gap-2 text-sm mt-1 sm:col-span-2">
-          <input
-            type="checkbox"
-            checked={f.exento}
-            onChange={(e) => setF((a) => ({ ...a, exento: e.target.checked }))}
-          />
-          <span>
-            Exento de IVA
-            <span className="block text-xs text-neutral-500">
-              La mayoría de los alimentos básicos lo son. Cambia el IVA de las facturas donde aparezca esta mercancía.
-            </span>
-          </span>
-        </label>
       </div>
 
+      {nuevo ? (
+        <div className="rounded-xl border border-neutral-200">
+          <button
+            type="button"
+            onClick={() => setMasDetalles((v) => !v)}
+            aria-expanded={masDetalles}
+            className="vp-celda w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left rounded-xl"
+          >
+            <span>
+              <span className="block text-sm font-semibold">Más detalles</span>
+              <span className="block text-xs text-neutral-500">Opcional: categoría, cuándo avisar, cuánto se aprovecha, IVA</span>
+            </span>
+            <span aria-hidden className={`vp-flecha shrink-0 opacity-60 transition-transform ${masDetalles ? 'rotate-180' : ''}`} />
+          </button>
+          {masDetalles && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-3 pb-3">{opcionales}</div>}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{opcionales}</div>
+      )}
+
       {!nuevo && (
-        <div className="mt-6 space-y-4">
-          {mermas.length > 0 && (
-            <p className="text-sm text-neutral-600">
-              Pérdidas en 30 días: <b className="text-peligro-600 tabular-nums">{dinero(perdidaTotal)}</b> en{' '}
-              {mermas.length} registro(s).
-            </p>
+        <button
+          type="button"
+          onClick={() => acciones.archivar(ing)}
+          className="text-sm text-peligro-600 hover:underline"
+        >
+          Ya no la uso: archivarla
+        </button>
+      )}
+    </div>
+  )
+
+  // ── La ficha: como esta, que anotar, que le paso ──────────────────────────
+  const estado = ing ? estadoStock(ing) : null
+  const dias = ritmo?.dias_de_stock
+  const ultimos = (extracto?.movimientos ?? [])
+    .slice()
+    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+    .slice(0, 6)
+
+  const vista = ing && (
+    <div className="space-y-5">
+      {/* Las tres preguntas, en cifras con palabras. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <CifraFicha
+          titulo="Hay"
+          valor={`${cantidad(ing.stock_actual)} ${u}`}
+          tono={estado?.tono}
+          detalle={
+            estado
+              ? estado.tono === 'mal'
+                ? 'Se acabó'
+                : `Bajo el mínimo de ${cantidad(ing.stock_minimo)} ${u}`
+              : ing.stock_minimo > 0
+                ? `Avisa por debajo de ${cantidad(ing.stock_minimo)} ${u}`
+                : 'Sin mínimo puesto'
+          }
+        />
+        <CifraFicha
+          titulo="Te alcanza para"
+          valor={
+            ritmo === undefined
+              ? '…'
+              : dias == null
+                ? '—'
+                : cuantoDura(dias)
+          }
+          detalle={
+            ritmo === undefined
+              ? ' '
+              : !ritmo || ritmo.por_dia <= 0
+                ? 'No se usó en los últimos 30 días'
+                : `Se usan ${legible(ritmo.por_dia, u)} al día`
+          }
+        />
+        <CifraFicha
+          titulo="Te cuesta"
+          valor={`${dinero(ing.costo_efectivo)} el ${u}`}
+          detalle={
+            ing.tipo !== 'reventa' && ing.rendimiento_pct < 100
+              ? `Pagas ${dinero(ing.costo_unitario)} y se aprovecha el ${ing.rendimiento_pct}%`
+              : 'Lo que pagas, sin IVA'
+          }
+        />
+      </div>
+
+      {perdidaTotal > 0 && (
+        <p className="text-sm text-neutral-600">
+          Se perdieron <b className="text-peligro-600 tabular-nums">{dinero(perdidaTotal)}</b> en los últimos 30 días
+          {mermas.length > 1 ? ` (${mermas.length} veces)` : ''}.
+        </p>
+      )}
+
+      {/* Lo que se viene a hacer, con verbos. */}
+      <div>
+        <p className="vp-etiqueta mb-2">Anotar</p>
+        <div className="grid grid-cols-2 gap-2">
+          <BotonAnotar titulo="Llegó mercancía" detalle="Una compra sin factura" onClick={() => acciones.comprar(ing)} />
+          <BotonAnotar titulo="Se dañó o se botó" detalle="Queda como pérdida" peligro onClick={() => acciones.merma(ing)} />
+          <BotonAnotar titulo="La usó el personal" detalle="Comida de empleados: no es pérdida" onClick={() => acciones.consumoPersonal(ing)} />
+          <BotonAnotar titulo="Contar lo que hay" detalle="Lo que diga la balanza manda" onClick={() => acciones.contar(ing)} />
+        </div>
+      </div>
+
+      {/* Lo ultimo que le paso, en frases. El extracto entero, detras. */}
+      <div>
+        <div className="flex items-baseline justify-between gap-2 mb-2">
+          <p className="vp-etiqueta">{todo ? 'Todo lo que le pasó' : 'Lo último que le pasó'}</p>
+          {extracto && (todo || extracto.movimientos.length > 0) && (
+            <button type="button" onClick={() => setTodo((v) => !v)} className="text-sm font-medium text-acento-700 hover:underline">
+              {todo ? 'Ver menos' : 'Ver todo'}
+            </button>
           )}
-          {/* El extracto va primero: "que paso con mi queso" es la pregunta
-              que trae al dueno aca. Antes habia que abrir cuatro pantallas y
-              aun asi faltaban el consumo del personal y las compras sueltas. */}
-          <div>
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <p className="vp-etiqueta">Movimientos</p>
-              <div className="ml-auto flex items-center gap-2">
-                <label className="text-xs text-neutral-500">Desde</label>
-                <input
-                  type="date"
-                  value={desdeExtracto}
-                  onChange={(e) => setDesdeExtracto(e.target.value)}
-                  className="border border-neutral-300 rounded-lg px-2 py-1 text-xs"
-                />
-                {desdeExtracto && (
-                  <button
-                    type="button"
-                    onClick={() => setDesdeExtracto('')}
-                    className="text-xs text-neutral-500 hover:text-neutral-800"
-                  >
-                    Todo
-                  </button>
-                )}
-                <a
-                  href={`/api/inventario/ingredientes/${ing.id}/movimientos/exportar${
-                    desdeExtracto ? `?desde=${desdeExtracto}T00:00:00` : ''
-                  }`}
-                  className="text-xs font-medium text-acento-700 hover:underline"
-                >
-                  Descargar
-                </a>
-              </div>
+        </div>
+        {extracto === null ? (
+          <p className="text-sm text-neutral-400">Cargando…</p>
+        ) : extracto.movimientos.length === 0 && !desdeExtracto ? (
+          <p className="text-sm text-neutral-500">Todavía no le ha pasado nada: no se ha comprado, vendido ni contado.</p>
+        ) : !todo ? (
+          <ul className="divide-y divide-neutral-100 rounded-xl border border-neutral-200">
+            {ultimos.map((m) => (
+              <li key={m.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                <span className="w-14 shrink-0 text-xs text-neutral-500 tabular-nums whitespace-nowrap">{fechaCorta(m.fecha)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium truncate">{queLePaso(m)}</span>
+                  {(m.nota || m.operador) && (
+                    <span className="block text-[11px] text-neutral-400 truncate">
+                      {[m.nota, m.operador].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-right tabular-nums">
+                  <span className={`block font-semibold ${m.cantidad < 0 ? 'text-peligro-600' : 'text-exito-700'}`}>
+                    {m.cantidad > 0 ? '+' : '−'}
+                    {legible(m.cantidad, u)}
+                  </span>
+                  <span className="block text-[11px] text-neutral-400">quedó {cantidad(m.saldo)} {u}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-neutral-500">Desde</label>
+              <input
+                type="date"
+                value={desdeExtracto}
+                onChange={(e) => setDesdeExtracto(e.target.value)}
+                className="border border-neutral-300 rounded-lg px-2 py-1 text-xs"
+              />
+              {desdeExtracto && (
+                <button type="button" onClick={() => setDesdeExtracto('')} className="text-xs text-neutral-500 hover:text-neutral-800">
+                  Desde el principio
+                </button>
+              )}
+              <a
+                href={`/api/inventario/ingredientes/${ing.id}/movimientos/exportar${desdeExtracto ? `?desde=${desdeExtracto}T00:00:00` : ''}`}
+                className="ml-auto text-xs font-medium text-acento-700 hover:underline"
+              >
+                Descargar la lista
+              </a>
             </div>
-            {extracto === null ? (
-              <p className="text-sm text-neutral-400">Cargando…</p>
-            ) : extracto.movimientos.length === 0 ? (
-              <p className="text-sm text-neutral-500">
-                {desdeExtracto
-                  ? 'No se movió nada en ese período.'
-                  : 'Todavía no se ha movido nada.'}
-              </p>
+            {extracto.movimientos.length === 0 ? (
+              <p className="text-sm text-neutral-500">No se movió nada en ese período.</p>
             ) : (
               <>
                 <ResumenDelExtracto e={extracto} desde={desdeExtracto} />
                 {!extracto.cuadra && (
-                  <div className="mb-2">
-                    <Aviso tono="mal">
-                      El libro suma {cantidad(extracto.saldo_segun_libro)} {ing.unidad} y la
-                      existencia dice {cantidad(extracto.stock_actual)}. Algo movió el stock sin
-                      anotarlo: avísale a quien mantiene el sistema.
-                    </Aviso>
-                  </div>
+                  <Aviso tono="mal">
+                    El libro suma {cantidad(extracto.saldo_segun_libro)} {u} y la existencia dice{' '}
+                    {cantidad(extracto.stock_actual)}. Algo movió el stock sin anotarlo: avísale a quien mantiene el sistema.
+                  </Aviso>
                 )}
                 <Tabla orden={ordenMovimientos} glosario="movimientos" className="border border-neutral-200 rounded-xl">
                   <table className="w-full text-sm">
-                    <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
+                    <thead className="text-neutral-500 text-xs uppercase">
                       <tr>
                         <Th clave="fecha">Fecha</Th>
-                        <Th clave="movimiento">Movimiento</Th>
+                        <Th clave="movimiento">Qué pasó</Th>
                         <Th clave="quien">Quién</Th>
                         <Th clave="cantidad" alinear="derecha">Cantidad</Th>
-                        <Th clave="valor" alinear="derecha">Costo</Th>
-                        <Th clave="saldo" alinear="derecha">Saldo</Th>
+                        <Th clave="valor" alinear="derecha">Vale</Th>
+                        <Th clave="saldo" alinear="derecha">Quedó</Th>
                       </tr>
                     </thead>
                     <tbody>
                       {ordenMovimientos.ordenar(extracto.movimientos).map((m) => (
                         <tr key={m.id} className="border-t border-neutral-100">
-                          <td className="p-2 text-neutral-500 whitespace-nowrap">
-                            {new Date(m.fecha).toLocaleDateString('es-VE')}
-                          </td>
+                          <td className="p-2 text-neutral-500 whitespace-nowrap">{new Date(m.fecha).toLocaleDateString('es-VE')}</td>
                           <td className="p-2">
-                            <b className="font-medium">{m.etiqueta}</b>
-                            {m.nota && (
-                              <span className="block text-[11px] text-neutral-400">{m.nota}</span>
-                            )}
+                            <b className="font-medium">{queLePaso(m)}</b>
+                            {m.nota && <span className="block text-[11px] text-neutral-400">{m.nota}</span>}
                           </td>
                           <td className="p-2 text-neutral-500">{m.operador ?? '—'}</td>
-                          <td
-                            className={`p-2 text-right tabular-nums font-medium ${
-                              m.cantidad < 0 ? 'text-peligro-600' : 'text-exito-700'
-                            }`}
-                          >
+                          <td className={`p-2 text-right tabular-nums font-medium ${m.cantidad < 0 ? 'text-peligro-600' : 'text-exito-700'}`}>
                             {m.cantidad > 0 ? '+' : ''}
-                            {cantidad(m.cantidad)} {ing.unidad}
+                            {cantidad(m.cantidad)} {u}
                           </td>
                           {/* El equivalente en plata: sin esto, "-0.025" no dice
                               si eso que salio costo un centavo o un dolar. */}
-                          <td
-                            className={`p-2 text-right tabular-nums ${
-                              m.valor < 0 ? 'text-peligro-600' : 'text-neutral-500'
-                            }`}
-                          >
+                          <td className={`p-2 text-right tabular-nums ${m.valor < 0 ? 'text-peligro-600' : 'text-neutral-500'}`}>
                             ${Math.abs(m.valor).toFixed(2)}
                           </td>
                           <td className="p-2 text-right tabular-nums text-neutral-500">
-                            {cantidad(m.saldo)} {ing.unidad}
+                            {cantidad(m.saldo)} {u}
                           </td>
                         </tr>
                       ))}
@@ -1513,56 +1692,164 @@ function FichaInsumo({
                 </Tabla>
               </>
             )}
-          </div>
 
-          {/* La curva de inflacion de cada insumo estaba en las facturas desde
-              el primer dia; no habia por donde verla. */}
-          <div>
-            <p className="vp-etiqueta mb-2">Historial de costos</p>
-            {historial === null ? (
-              <p className="text-sm text-neutral-400">Cargando…</p>
-            ) : historial.length === 0 ? (
-              <p className="text-sm text-neutral-500">Todavía no hay compras registradas.</p>
-            ) : (
-              <Tabla orden={ordenHistorial} glosario="costos" className="border border-neutral-200 rounded-xl">
-                <table className="w-full text-sm">
-                  <thead className="text-neutral-500 text-xs uppercase">
-                    <tr>
-                      <Th clave="fecha">Fecha</Th>
-                      <Th clave="cantidad" alinear="derecha">Cantidad</Th>
-                      <Th clave="costo" alinear="derecha">Costo</Th>
-                      <Th clave="cambio" alinear="derecha">Cambio</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ordenHistorial.ordenar(conVariacion(historial)).map((c, i) => (
-                      <tr key={`${c.fecha}-${i}`} className="border-t border-neutral-100">
-                        <td className="p-2">
-                          {new Date(c.fecha).toLocaleDateString('es-VE')}
-                          <span className="block text-[11px] text-neutral-400">{c.origen}</span>
-                        </td>
-                        <td className="p-2 text-right text-neutral-500 tabular-nums">
-                          {cantidad(c.cantidad)} {ing.unidad}
-                        </td>
-                        <td className="p-2 text-right tabular-nums font-medium">{dinero(c.costo_unitario)}</td>
-                        <td className="p-2 text-right tabular-nums">
-                          {c.cambio != null && Math.abs(c.cambio) >= 1 && (
-                            <span className={c.cambio > 0 ? 'text-aviso-600' : 'text-exito-600'}>
-                              {c.cambio > 0 ? '+' : ''}
-                              {c.cambio.toFixed(0)}%
-                            </span>
-                          )}
-                        </td>
+            {/* Lo que se ha pagado por ella, compra a compra. */}
+            <div>
+              <p className="vp-etiqueta mb-2">Lo que has pagado</p>
+              {historial === null ? (
+                <p className="text-sm text-neutral-400">Cargando…</p>
+              ) : historial.length === 0 ? (
+                <p className="text-sm text-neutral-500">Todavía no hay compras registradas.</p>
+              ) : (
+                <Tabla orden={ordenHistorial} glosario="costos" className="border border-neutral-200 rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead className="text-neutral-500 text-xs uppercase">
+                      <tr>
+                        <Th clave="fecha">Fecha</Th>
+                        <Th clave="cantidad" alinear="derecha">Cantidad</Th>
+                        <Th clave="costo" alinear="derecha">Costo</Th>
+                        <Th clave="cambio" alinear="derecha">Cambio</Th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Tabla>
-            )}
+                    </thead>
+                    <tbody>
+                      {ordenHistorial.ordenar(conVariacion(historial)).map((c, i) => (
+                        <tr key={`${c.fecha}-${i}`} className="border-t border-neutral-100">
+                          <td className="p-2">
+                            {new Date(c.fecha).toLocaleDateString('es-VE')}
+                            <span className="block text-[11px] text-neutral-400">{c.origen}</span>
+                          </td>
+                          <td className="p-2 text-right text-neutral-500 tabular-nums">
+                            {cantidad(c.cantidad)} {u}
+                          </td>
+                          <td className="p-2 text-right tabular-nums font-medium">{dinero(c.costo_unitario)}</td>
+                          <td className="p-2 text-right tabular-nums">
+                            {c.cambio != null && Math.abs(c.cambio) >= 1 && (
+                              <span className={c.cambio > 0 ? 'text-aviso-600' : 'text-exito-600'}>
+                                {c.cambio > 0 ? '+' : ''}
+                                {c.cambio.toFixed(0)}%
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Tabla>
+              )}
+            </div>
           </div>
+        )}
+      </div>
+
+      {/* Los datos, que cambian una vez al año, en un renglon cerrado. */}
+      <button
+        type="button"
+        onClick={() => setEditando(true)}
+        className="vp-celda w-full flex items-center justify-between gap-3 rounded-xl border border-neutral-200 px-3 py-2.5 text-left"
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold">Cambiar los datos</span>
+          <span className="block text-xs text-neutral-500 truncate">
+            {[
+              ing.categoria || 'Sin categoría',
+              `se mide en ${ing.unidad}`,
+              ing.stock_minimo > 0 ? `avisa bajo ${cantidad(ing.stock_minimo)}` : null,
+              ing.stock_objetivo > 0 ? `llena hasta ${cantidad(ing.stock_objetivo)}` : null,
+              ing.tipo !== 'reventa' && ing.rendimiento_pct < 100 ? `se aprovecha ${ing.rendimiento_pct}%` : null,
+              ing.exento ? 'no paga IVA' : 'paga IVA',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        </span>
+        <span aria-hidden className="vp-flecha shrink-0 -rotate-90 opacity-60" />
+      </button>
+    </div>
+  )
+
+  return (
+    <Modal
+      titulo={nuevo ? 'Nueva mercancía' : ing.nombre}
+      ayuda={
+        nuevo
+          ? 'Lo indispensable para empezar; lo demás se puede poner después.'
+          : editando
+            ? 'Cambiar los datos de esta mercancía'
+            : `${ing.categoria || 'Sin categoría'} · ${ing.tipo === 'reventa' ? 'se vende tal cual' : 'se usa en recetas'}`
+      }
+      onCerrar={onCerrar}
+      ancho="lg"
+      pie={
+        editando ? (
+          <>
+            <Boton tono="suave" onClick={() => (nuevo ? onCerrar() : setEditando(false))}>
+              {nuevo ? 'Cancelar' : 'Volver'}
+            </Boton>
+            <Boton onClick={guardar} disabled={guardando}>
+              {nuevo ? 'Crear mercancía' : 'Guardar cambios'}
+            </Boton>
+          </>
+        ) : (
+          <Boton tono="suave" onClick={onCerrar}>
+            Cerrar
+          </Boton>
+        )
+      }
+    >
+      {aviso && (
+        <div className="mb-3">
+          <Aviso>{aviso}</Aviso>
         </div>
       )}
+      {editando ? formulario : vista}
     </Modal>
+  )
+}
+
+/** Una de las tres cifras de arriba de la ficha. */
+function CifraFicha({
+  titulo,
+  valor,
+  detalle,
+  tono,
+}: {
+  titulo: string
+  valor: string
+  detalle: string
+  tono?: 'mal' | 'ojo'
+}) {
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2.5 ${
+        tono === 'mal' ? 'border-peligro-200 bg-peligro-50' : tono === 'ojo' ? 'border-aviso-200 bg-aviso-50' : 'border-neutral-200'
+      }`}
+    >
+      <span className="block text-xs text-neutral-500">{titulo}</span>
+      <span className="block font-display text-xl font-semibold tracking-tight tabular-nums leading-tight mt-0.5">{valor}</span>
+      <span className={`block text-[11px] leading-snug mt-0.5 ${tono === 'mal' ? 'text-peligro-700' : tono === 'ojo' ? 'text-aviso-700' : 'text-neutral-500'}`}>
+        {detalle}
+      </span>
+    </div>
+  )
+}
+
+/** Un boton de "Anotar": el verbo grande, lo que significa debajo. */
+function BotonAnotar({
+  titulo,
+  detalle,
+  peligro = false,
+  onClick,
+}: {
+  titulo: string
+  detalle: string
+  peligro?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button type="button" onClick={onClick} className="vp-control vp-pulsable rounded-xl px-3 py-2.5 text-left">
+      <span className={`block text-sm font-semibold ${peligro ? 'text-peligro-600' : ''}`}>{titulo}</span>
+      <span className="block text-xs text-neutral-500">{detalle}</span>
+    </button>
   )
 }
 
@@ -1576,6 +1863,16 @@ function FichaInsumo({
  * -apertura + entradas − salidas = final-, que es lo que hace que el
  * extracto sirva para auditar y no solo para mirar.
  */
+// Los grupos del resumen, dichos como en la lista de movimientos.
+const GRUPO: Record<string, string> = {
+  compra: 'Compras',
+  venta: 'Ventas',
+  merma: 'Se dañó o se botó',
+  consumo_personal: 'La usó el personal',
+  ajuste: 'Conteos',
+  reverso: 'Movimientos deshechos',
+}
+
 function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) {
   const Lado = ({
     titulo,
@@ -1603,11 +1900,14 @@ function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) 
           {filas.map((f) => (
             <li key={f.tipo} className="flex justify-between text-sm gap-2">
               <span className="text-neutral-600 truncate">
-                {f.etiqueta}
-                <span className="text-neutral-400 text-xs"> ·{f.movimientos}</span>
+                {GRUPO[f.tipo] ?? f.etiqueta}
+                <span className="text-neutral-400 text-xs">
+                  {' '}
+                  · {f.movimientos} {f.movimientos === 1 ? 'vez' : 'veces'}
+                </span>
               </span>
               <span className="tabular-nums whitespace-nowrap">
-                {cantidad(f.cantidad)}{' '}
+                {legible(f.cantidad, e.unidad)}{' '}
                 <span className="text-neutral-400 text-xs">{dinero(Math.abs(f.valor))}</span>
               </span>
             </li>
