@@ -259,7 +259,7 @@ export default function Recorrido({
                     </span>
                   )}
                   {p?.accion && (
-                    <span className="vp-recorrido-accion block mt-1 text-xs font-semibold text-acento-600">
+                    <span className="vp-recorrido-accion block mt-1 text-xs font-semibold text-neutral-700">
                       {p.accion} ›
                     </span>
                   )}
@@ -333,7 +333,7 @@ function Capsulas({ items }: { items: Item[] }) {
                 </span>
               )}
               {p?.accion && (
-                <span className="vp-recorrido-accion block mt-1.5 text-xs font-semibold text-acento-600">{p.accion} ›</span>
+                <span className="vp-recorrido-accion block mt-1.5 text-xs font-semibold text-neutral-700">{p.accion} ›</span>
               )}
             </span>
           </Link>
@@ -374,7 +374,7 @@ function Metro({ items }: { items: Item[] }) {
               <span className="sm:hidden block mt-0.5 text-[13px] leading-snug text-neutral-500">{pregunta}</span>
               {frase && <span className="vp-metro-pastilla">{frase}</span>}
               {p?.accion && (
-                <span className="vp-recorrido-accion block mt-1.5 text-xs font-semibold text-acento-600">{p.accion} ›</span>
+                <span className="vp-recorrido-accion block mt-1.5 text-xs font-semibold text-neutral-700">{p.accion} ›</span>
               )}
             </span>
           </Link>
