@@ -1499,54 +1499,24 @@ select {
   color: var(--vp-superficie);
   box-shadow: 0 0 0 2px var(--vp-superficie);
 }
-/* El globo con la pregunta del modulo, sobre el icono. */
-.vp-recorrido-globo {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 0.6rem);
-  z-index: 5;
-  width: max-content;
-  max-width: 17rem;
-  padding: 0.45rem 0.7rem;
-  border-radius: 0.7rem;
-  background: var(--vp-tinta);
-  color: var(--vp-superficie);
-  font-size: 0.8rem;
-  font-weight: 500;
-  line-height: 1.35;
-  text-align: center;
-  box-shadow: 0 10px 24px -10px rgb(23 24 27 / 0.45);
-  opacity: 0;
-  transform: translate(-50%, 4px);
-  pointer-events: none;
-  transition: opacity 0.18s var(--rec-ez), transform 0.18s var(--rec-ez);
+/* La pregunta del modulo, arriba del punto: dos lineas de alto fijo para
+   que la linea pase por el centro de todos los puntos. */
+.vp-recorrido {
+  --rec-pregunta: 2.15rem;
 }
-.vp-recorrido-globo::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  margin-left: -5px;
-  border: 5px solid transparent;
-  border-top-color: var(--vp-tinta);
+.vp-recorrido-pregunta {
+  height: var(--rec-pregunta);
+  margin-bottom: 0.45rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.78rem;
+  line-height: 1.075rem;
+  color: var(--color-neutral-500);
+  max-width: 13rem;
 }
-/* La primera y la ultima no se salen de la lamina: se alinean a su borde. */
-.vp-recorrido-globo[data-lado="inicio"] { left: 0; transform: translate(0, 4px); }
-.vp-recorrido-globo[data-lado="inicio"]::after { left: calc(var(--rec-nodo) / 2); }
-.vp-recorrido-globo[data-lado="fin"] { left: auto; right: 0; transform: translate(0, 4px); }
-.vp-recorrido-globo[data-lado="fin"]::after { left: auto; right: calc(var(--rec-nodo) / 2 - 10px); }
-.vp-recorrido-estacion[data-globo] .vp-recorrido-globo,
-.vp-recorrido-estacion:focus-visible .vp-recorrido-globo { opacity: 1; transform: translate(-50%, 0); }
-.vp-recorrido-estacion[data-globo] .vp-recorrido-globo[data-lado],
-.vp-recorrido-estacion:focus-visible .vp-recorrido-globo[data-lado] { transform: none; }
-@media (hover: hover) {
-  .vp-recorrido-estacion:hover .vp-recorrido-globo { opacity: 1; transform: translate(-50%, 0); }
-  .vp-recorrido-estacion:hover .vp-recorrido-globo[data-lado] { transform: none; }
-}
-@media (max-width: 639px) {
-  .vp-recorrido-globo { display: none; }
-}
-.vp-recorrido-estacion { -webkit-touch-callout: none; user-select: none; }
+.vp-recorrido-estacion { -webkit-touch-callout: none; }
 
 /* La accion ("Ver que comprar") aparece al posar el cursor. En la tablet no
    hay cursor: se toca y se va directo, asi que no ocupa sitio. */
@@ -1587,7 +1557,7 @@ select {
     display: block;
     left: calc(100% / var(--n) / 2);
     right: calc(100% / var(--n) / 2);
-    top: calc(0.25rem + var(--rec-nodo) / 2 - 1.5px);
+    top: calc(0.25rem + var(--rec-pregunta) + 0.45rem + var(--rec-nodo) / 2 - 1.5px);
     bottom: auto;
     width: auto;
     height: 3px;

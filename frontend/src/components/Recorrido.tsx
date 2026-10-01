@@ -17,7 +17,7 @@
  * Debajo, Reportes en su propia fila con las ventas de los ultimos 7 dias en
  * barras sin cifras: se ve de un vistazo si la semana sube o baja.
  */
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import Icono from './Icono'
 import { MODULOS, descripcionDe } from './Rail'
@@ -72,23 +72,6 @@ export default function Recorrido({
   useEffect(() => {
     if (listo && !quieto) entradaContada = true
   }, [listo, quieto])
-
-  // La pregunta de cada modulo vive en un globo sobre su icono (Leider,
-  // 1-oct: "para que no solape con lo de abajo"). Con cursor sale al
-  // posarlo; en la tablet, al mantener presionado. Un toque corto sigue
-  // abriendo el modulo.
-  const [globo, setGlobo] = useState<string | null>(null)
-  const presion = useRef<{ t: number; larga: boolean }>({ t: 0, larga: false })
-  useEffect(() => {
-    if (!globo) return
-    const cerrar = () => setGlobo(null)
-    const t = window.setTimeout(cerrar, 2600)
-    document.addEventListener('pointerdown', cerrar)
-    return () => {
-      window.clearTimeout(t)
-      document.removeEventListener('pointerdown', cerrar)
-    }
-  }, [globo])
 
   const visibles = ESTACIONES.filter((e) => modulos.includes(e.to))
   if (visibles.length === 0) return null
@@ -153,39 +136,18 @@ export default function Recorrido({
               <Link
                 to={destino(e, p)}
                 className={`vp-recorrido-estacion group ${ojo ? 'vp-recorrido-ojo' : ''}`}
-                data-globo={globo === e.id ? '' : undefined}
                 aria-label={`${m.titulo}. ${pregunta}${frase ? ` ${frase}` : ''}`}
-                onPointerDown={(ev) => {
-                  if (ev.pointerType === 'mouse') return
-                  presion.current.larga = false
-                  window.clearTimeout(presion.current.t)
-                  presion.current.t = window.setTimeout(() => {
-                    presion.current.larga = true
-                    setGlobo(e.id)
-                  }, 450)
-                }}
-                onPointerUp={() => window.clearTimeout(presion.current.t)}
-                onPointerLeave={() => window.clearTimeout(presion.current.t)}
-                onPointerCancel={() => window.clearTimeout(presion.current.t)}
-                onContextMenu={(ev) => ev.preventDefault()}
-                onClick={(ev) => {
-                  // Se mantuvo presionado para leer la pregunta: no se navega.
-                  if (presion.current.larga) {
-                    ev.preventDefault()
-                    presion.current.larga = false
-                  }
-                }}
               >
+                {/* LA PREGUNTA, SIEMPRE A LA VISTA y arriba del icono (Leider,
+                    1-oct: en el telefono y la tablet nadie posa un cursor).
+                    Alto fijo de dos lineas, para que todos los puntos queden
+                    a la misma altura sobre la linea. */}
+                <span className="vp-recorrido-pregunta hidden sm:block" aria-hidden>
+                  {pregunta}
+                </span>
                 <span className="vp-recorrido-entrada">
-                  <span
-                    className="vp-recorrido-globo"
-                    data-lado={i === 0 ? 'inicio' : i === visibles.length - 1 ? 'fin' : undefined}
-                    aria-hidden
-                  >
-                    {pregunta}
-                  </span>
                   <span className="vp-recorrido-nodo">
-                    <IconoEstacion id={e.id} />
+                    <Icono nombre={m.icono} size={22} />
                     {p && !ojo && (
                       <span className="vp-recorrido-marca" aria-hidden>
                         <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
@@ -225,68 +187,6 @@ export default function Recorrido({
   )
 }
 
-/**
- * LOS ICONOS DEL RECORRIDO, dibujados para este tamaño. Los del sistema son
- * de 20 px y trazo fino para la barra lateral; a 24 px dentro de un circulo
- * se veian pobres (Leider, 1-oct: "no estan en HD"). Estos van a dos capas
- * --un relleno suave del mismo color y el trazo encima-- sobre la cuadricula
- * de 24, con trazo de 1,6 y puntas redondas.
- */
-const DIBUJOS: Record<string, { relleno: string; trazo: string }> = {
-  // Una bolsa de compras con su asa.
-  compras: {
-    relleno: 'M5.6 8.2h12.8l-.95 10.9a2 2 0 0 1-2 1.83H8.55a2 2 0 0 1-2-1.83Z',
-    trazo: 'M5.6 8.2h12.8l-.95 10.9a2 2 0 0 1-2 1.83H8.55a2 2 0 0 1-2-1.83ZM9 10.6V7.2a3 3 0 0 1 6 0v3.4',
-  },
-  // La caja del deposito, con la tapa iluminada.
-  inventario: {
-    relleno: 'M12 3.2 20.3 7.6 12 12 3.7 7.6Z',
-    trazo: 'M12 3.2 20.3 7.6v8.8L12 20.8l-8.3-4.4V7.6ZM3.7 7.6 12 12l8.3-4.4M12 12v8.8M7.9 5.4l8.3 4.4',
-  },
-  // La campana del plato: lo que se sirve.
-  menu: {
-    relleno: 'M4.6 16.2a7.4 7.4 0 0 1 14.8 0Z',
-    trazo: 'M4.6 16.2a7.4 7.4 0 0 1 14.8 0M3 16.2h18M12 8.8V7M10.4 7h3.2M6 19.6h12',
-  },
-  // El recibo de la venta, con su borde de corte.
-  ventas: {
-    relleno: 'M6 3.4h12v17.2l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3Z',
-    trazo: 'M6 3.4h12v17.2l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3ZM9 8.2h6M9 11.6h6M9 15h3.6',
-  },
-  // La caja registradora: pantalla, cuerpo y la gaveta.
-  caja: {
-    relleno: 'M3.6 13.6h16.8v5.9a1.5 1.5 0 0 1-1.5 1.5H5.1a1.5 1.5 0 0 1-1.5-1.5Z',
-    trazo: 'M8.4 3.6h7.2v3.9H8.4ZM12 7.5v1.1M5.4 8.6h13.2l1.8 5H3.6ZM3.6 13.6h16.8v5.9a1.5 1.5 0 0 1-1.5 1.5H5.1a1.5 1.5 0 0 1-1.5-1.5ZM10 17.3h4',
-  },
-  // Las barras de la semana dentro de su marco.
-  reportes: {
-    relleno: 'M7 3.8h10a3.2 3.2 0 0 1 3.2 3.2v10a3.2 3.2 0 0 1-3.2 3.2H7A3.2 3.2 0 0 1 3.8 17V7A3.2 3.2 0 0 1 7 3.8Z',
-    trazo: 'M8 16.4v-3.6M12 16.4V7.6M16 16.4v-6',
-  },
-}
-
-export function IconoEstacion({ id, size = 24 }: { id: string; size?: number }): ReactNode {
-  const d = DIBUJOS[id]
-  if (!d) return null
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={id === 'reportes' ? 2 : 1.6}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      shapeRendering="geometricPrecision"
-      aria-hidden
-    >
-      <path d={d.relleno} fill="currentColor" fillOpacity={0.16} stroke="none" />
-      <path d={d.trazo} />
-    </svg>
-  )
-}
-
 const DIAS = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 
 /** Reportes en su fila: la pregunta y la semana en barras, sin cifras. */
@@ -301,7 +201,7 @@ export function FilaReportes({ dias }: { dias: { fecha: string; ventas: number }
       className={`vp-losa vp-pulsable vp-fila-reportes ${animar ? 'vp-fila-reportes-entra' : ''} group flex items-center gap-3.5 lg:gap-4 px-4 lg:px-5 py-3.5 bajo:py-2.5 hover:shadow-[inset_0_0_0_1px_var(--vp-textura),0_2px_6px_-2px_rgb(23_24_27/0.06),0_14px_34px_-16px_rgb(23_24_27/0.20)]`}
     >
       <span className="shrink-0 w-11 h-11 rounded-[0.9rem] grid place-items-center bg-acento-50 text-acento-600">
-        <IconoEstacion id="reportes" size={24} />
+        <Icono nombre="reportes" size={21} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block font-display font-semibold leading-tight text-[15px] lg:text-base">Reportes</span>
