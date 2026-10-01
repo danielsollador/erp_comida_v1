@@ -9,6 +9,8 @@ import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
 import { colorFranja } from '../../lib/paleta'
+import { useMoneda } from '../../lib/moneda'
+import { useAltoRestante } from '../../lib/altoRestante'
 import { Ayuda } from '../../components/Ayuda'
 import { explicar } from '../../lib/glosario'
 import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from '../../lib/types'
@@ -75,7 +77,9 @@ type Renglon = {
 // Quince tonos de la familia del acento (lib/paleta.ts), ordenados para que
 // dos vecinas nunca se parezcan.
 const tono = colorFranja
-const dolares = (n: number) => `$${n.toFixed(2)}`
+// Los montos, en la moneda elegida arriba (dolares, bolivares...): cada
+// componente toma `fmt` de `useMoneda`. Era "$" fijo, y en bolivares la
+// receta seguia en dolares (Leider, 2-oct).
 
 /** Lo que se cuenta por piezas y no se pesa: el vaso, la tapa, el pitillo,
  *  la caja. Tambien es costo, y va en su propio apartado. */
@@ -91,6 +95,9 @@ export default function Recetas({
   costos: Map<number, CostoVariante>
   onCambio: () => void
 }) {
+  // La lista de productos toma el alto que sobra y se desplaza por dentro:
+  // la pagina cabe entera, como Inventario (Leider, 2-oct).
+  const lista = useAltoRestante<HTMLDivElement>()
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [abierta, setAbierta] = useState<Renglon | null>(null)
   const [filas, setFilas] = useState<Fila[]>([])
@@ -378,7 +385,7 @@ export default function Recetas({
         </button>
       </div>
 
-      <div className="vp-losa overflow-hidden">
+      <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined} className="vp-losa overflow-hidden">
         {visibles.length === 0 ? (
           <Vacio
             titulo={
@@ -391,9 +398,12 @@ export default function Recetas({
             detalle={soloFaltan ? 'El costo y el margen de Reportes son de fiar.' : undefined}
           />
         ) : (
-          <Tabla orden={orden} glosario="recetas">
+          <Tabla orden={orden} glosario="recetas" className={lista.alto ? 'h-full overflow-auto' : ''}>
             <table className="w-full text-sm">
-              <thead className="text-neutral-500 text-xs uppercase">
+              <thead
+                className="sticky top-0 z-[1] text-neutral-500 text-xs uppercase"
+                style={{ background: 'color-mix(in oklab, var(--vp-tinta) 4%, var(--vp-superficie))' }}
+              >
                 <tr>
                   <Th clave="producto" className="py-2 pl-4 pr-0">Producto</Th>
                   <Th clave="costo" alinear="derecha" className="py-2 px-0 hidden sm:table-cell">Cuesta hacerlo</Th>
@@ -496,6 +506,7 @@ function agrupar(renglones: Renglon[]) {
  * receta, y lo dice.
  */
 function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombre: string; sangria?: boolean; onAbrir: () => void }) {
+  const { fmt } = useMoneda()
   const falta = r.info?.sin_receta !== false
   const margen = falta ? null : r.info?.margen_pct
   const costo = falta ? null : (r.info?.costo ?? null)
@@ -531,9 +542,9 @@ function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombr
         </span>
       </td>
       <td className="py-2.5 text-right tabular-nums text-neutral-600 hidden sm:table-cell whitespace-nowrap">
-        {costo != null ? `$${costo.toFixed(2)}` : <span className="text-neutral-300">—</span>}
+        {costo != null ? fmt(costo) : <span className="text-neutral-300">—</span>}
       </td>
-      <td className="py-2.5 text-right tabular-nums whitespace-nowrap">${precio.toFixed(2)}</td>
+      <td className="py-2.5 text-right tabular-nums whitespace-nowrap">{fmt(precio)}</td>
       <td
         className={`py-2.5 pr-4 text-right tabular-nums whitespace-nowrap ${
           ganancia == null ? '' : ganancia < 0 ? 'text-peligro-600' : margen != null && margen >= 50 ? 'text-exito-600' : 'text-aviso-600'
@@ -546,7 +557,8 @@ function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombr
         ) : (
           <>
             <span className="block font-semibold">
-              {ganancia < 0 ? '−' : '+'}${Math.abs(ganancia).toFixed(2)}
+              {ganancia < 0 ? '−' : '+'}
+              {fmt(Math.abs(ganancia))}
             </span>
             <span className="block text-[11px]">{ganancia < 0 ? 'a pérdida' : `${margen.toFixed(0)}% del precio`}</span>
           </>
@@ -598,6 +610,7 @@ function Compositor({
   onGuardar: () => void
   onCerrar: () => void
 }) {
+  const { fmt } = useMoneda()
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('')
   const [resaltado, setResaltado] = useState<number | string | null>(null)
@@ -719,7 +732,7 @@ function Compositor({
             restoNombre="margen"
             desbordeTexto="hasta aquí llega el precio"
             vacioTexto="Toca a la derecha lo que lleva"
-            formato={dolares}
+            formato={fmt}
             resaltado={resaltado}
             onResaltar={setResaltado}
           />
@@ -863,6 +876,7 @@ function RenglonReceta({
   onQuitar: () => void
   onRendimiento: () => void
 }) {
+  const { fmt } = useMoneda()
   const cantidad = Number(f.cantidad_por_unidad) || 0
   const pieza = porUnidad(ing)
   // MUCHOS MIDEN EN GRAMOS Y MILILITROS aunque compren por kilo y por litro
@@ -893,7 +907,7 @@ function RenglonReceta({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {enChica ? `$${(ing.costo_efectivo / factor).toFixed(4)} por ${otra}` : `$${ing.costo_efectivo.toFixed(3)} por ${ing.unidad}`}
+            {enChica ? `${fmt(ing.costo_efectivo / factor, 4)} por ${otra}` : `${fmt(ing.costo_efectivo, 3)} por ${ing.unidad}`}
             {ing.categoria && ` · ${ing.categoria}`}
           </span>
         </span>
@@ -920,7 +934,7 @@ function RenglonReceta({
           <span className="w-12 shrink-0 text-xs text-neutral-500">{pieza ? (cantidad === 1 ? 'pieza' : 'piezas') : ing.unidad}</span>
         )}
         <span className="w-16 text-right text-sm tabular-nums font-semibold">
-          {cantidad > 0 ? `$${(cantidad * ing.costo_efectivo).toFixed(2)}` : '—'}
+          {cantidad > 0 ? fmt(cantidad * ing.costo_efectivo) : '—'}
         </span>
         <button
           type="button"
@@ -1012,6 +1026,7 @@ function CabeceraAgregar() {
 }
 
 function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () => void }) {
+  const { fmt } = useMoneda()
   return (
     <li>
       <button type="button" onClick={onAgregar} className="vp-celda w-full flex items-center gap-3 px-4 py-2.5 text-left">
@@ -1020,7 +1035,7 @@ function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () =
           <span className="block text-[11px] text-neutral-400">{ing.categoria || 'Sin categoría'}</span>
         </span>
         <span className="text-xs text-neutral-500 tabular-nums">
-          ${ing.costo_efectivo.toFixed(3)} / {ing.unidad}
+          {fmt(ing.costo_efectivo, 3)} / {ing.unidad}
         </span>
         <span className="w-7 h-7 grid place-items-center rounded-full bg-neutral-100 text-neutral-600 text-base leading-none">+</span>
       </button>
@@ -1029,6 +1044,7 @@ function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () =
 }
 
 function Margen({ precio, costoReal, vacio }: { precio: number; costoReal: number; vacio: boolean }) {
+  const { fmt } = useMoneda()
   if (vacio) {
     return (
       <p className="mt-4 text-sm text-neutral-500 text-center">
@@ -1038,10 +1054,10 @@ function Margen({ precio, costoReal, vacio }: { precio: number; costoReal: numbe
   }
   return (
     <div className="mt-4 space-y-2">
-      <ResumenVaso tope={precio} costo={costoReal} formato={dolares} queda="Tu margen es" pierde="Pierdes por unidad" de="de este producto" />
+      <ResumenVaso tope={precio} costo={costoReal} formato={fmt} queda="Tu margen es" pierde="Pierdes por unidad" de="de este producto" />
       <div className="flex justify-between text-xs text-neutral-500 tabular-nums pt-2 border-t border-neutral-100">
         <span>Cuesta hacerlo</span>
-        <span className="font-semibold text-neutral-700">${costoReal.toFixed(2)}</span>
+        <span className="font-semibold text-neutral-700">{fmt(costoReal)}</span>
       </div>
       {precio <= 0 && <p className="text-xs text-aviso-700">Este producto no tiene precio: ponlo en el menú.</p>}
     </div>

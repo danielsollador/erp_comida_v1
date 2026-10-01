@@ -8,6 +8,9 @@ import {
   type ReactNode,
 } from 'react'
 import { Boton, Campo, Modal, Selector } from './ui'
+import { BotonUnidad } from './Cantidad'
+import { Numerico } from './Teclado'
+import { convertirTexto, factorEntre, otraUnidad, sinRuido } from '../lib/unidades'
 
 /**
  * Las ventanas de pregunta del ERP: confirmar, elegir, pedir datos, avisar.
@@ -47,7 +50,9 @@ export type CampoDialogo = {
   tipo?: 'texto' | 'numero' | 'fecha' | 'opciones' | 'nota'
   valor?: string | number
   opciones?: OpcionDialogo[]
-  /** La unidad, pegada a la etiqueta: "Cantidad (kg)". */
+  /** La unidad, pegada a la etiqueta: "Cantidad (kg)". Si es kg, g, lt o ml
+      la casilla lleva su interruptor (kg ⇄ g) y el valor vuelve SIEMPRE en
+      esa unidad, se haya escrito en la que se haya escrito. */
   sufijo?: string
   ayuda?: string
   placeholder?: string
@@ -257,6 +262,10 @@ function Formulario({
     Object.fromEntries(campos.map((c) => [c.nombre, c.valor == null ? (c.tipo === 'opciones' ? c.opciones?.[0]?.valor ?? '' : '') : String(c.valor)])),
   )
   const [errores, setErrores] = useState<Record<string, string>>({})
+  // En que unidad se esta escribiendo cada cantidad (kg ⇄ g, lt ⇄ ml).
+  const [vistas, setVistas] = useState<Record<string, string>>({})
+  const conUnidad = (c: CampoDialogo) => c.tipo === 'numero' && !!c.sufijo && otraUnidad(c.sufijo) !== null
+  const vistaDe = (c: CampoDialogo) => vistas[c.nombre] ?? c.sufijo ?? ''
 
   function validar(): Record<string, string> | null {
     const malos: Record<string, string> = {}
@@ -272,21 +281,25 @@ function Formulario({
         continue
       }
       if (c.tipo === 'numero') {
-        const n = aNumero(crudo)
-        if (!Number.isFinite(n)) {
+        const escrito = aNumero(crudo)
+        if (!Number.isFinite(escrito)) {
           malos[c.nombre] = 'Tiene que ser un número'
           continue
         }
+        // Lo escrito en gramos se devuelve en kilos (o lo que diga la ficha).
+        const factor = conUnidad(c) ? factorEntre(c.sufijo!, vistaDe(c)) : 1
+        const n = escrito / factor
         const min = c.min ?? 0
+        const enVista = (x: number) => `${sinRuido(x * factor)}${conUnidad(c) ? ` ${vistaDe(c)}` : ''}`
         if (n < min) {
-          malos[c.nombre] = min === 0 ? 'No puede ser negativo' : `Mínimo ${min}`
+          malos[c.nombre] = min === 0 ? 'No puede ser negativo' : `Mínimo ${enVista(min)}`
           continue
         }
         if (c.max != null && n > c.max) {
-          malos[c.nombre] = `Máximo ${c.max}`
+          malos[c.nombre] = `Máximo ${enVista(c.max)}`
           continue
         }
-        limpios[c.nombre] = String(n)
+        limpios[c.nombre] = sinRuido(n)
         continue
       }
       limpios[c.nombre] = crudo
@@ -326,8 +339,38 @@ function Formulario({
       <form id="vp-dialogo-form" onSubmit={enviar} className="space-y-3">
         <Texto>{texto}</Texto>
         {campos.map((c, i) => {
-          const etiqueta = c.sufijo ? `${c.etiqueta} (${c.sufijo})` : c.etiqueta
+          const etiqueta = c.sufijo && !conUnidad(c) ? `${c.etiqueta} (${c.sufijo})` : c.etiqueta
           const error = errores[c.nombre]
+          if (conUnidad(c)) {
+            const vista = vistaDe(c)
+            return (
+              <label key={c.nombre} className="block">
+                <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">{etiqueta}</span>
+                <span className="flex items-center gap-2">
+                  <Numerico
+                    value={valores[c.nombre]}
+                    onChange={(e) => poner(c.nombre, e.target.value)}
+                    placeholder={c.placeholder}
+                    autoFocus={i === 0}
+                    etiqueta={`${c.etiqueta} (${vista})`}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className={`flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm ${error ? 'border-peligro-400' : 'border-neutral-300'}`}
+                  />
+                  <BotonUnidad
+                    unidad={c.sufijo!}
+                    vista={vista}
+                    alCambiar={(nueva) => {
+                      poner(c.nombre, convertirTexto(valores[c.nombre] ?? '', c.sufijo!, vista, nueva))
+                      setVistas((v) => ({ ...v, [c.nombre]: nueva }))
+                    }}
+                  />
+                </span>
+                {(error || c.ayuda) && (
+                  <span className={`block text-xs mt-1 ${error ? 'text-peligro-600' : 'text-neutral-500'}`}>{error ?? c.ayuda}</span>
+                )}
+              </label>
+            )
+          }
           if (c.tipo === 'opciones') {
             return (
               <div key={c.nombre}>

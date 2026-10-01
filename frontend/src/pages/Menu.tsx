@@ -10,6 +10,7 @@ import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina, Vacio } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
+import { useMoneda } from '../lib/moneda'
 import { useArrastre } from '../lib/arrastre'
 import { SUBSECCION_INICIAL } from '../lib/menu'
 import { COLORES, NOMBRES_COLOR, NOMBRE_COLOR, colorCategoria } from '../lib/theme'
@@ -625,6 +626,7 @@ function TarjetaProducto({
   /** En los resultados de búsqueda se dice de qué categoría es cada uno. */
   conCategoria?: boolean
 }) {
+  const { fmt } = useMoneda()
   const dialogo = useDialogo()
   const [nuevaVariante, setNuevaVariante] = useState('')
   const [nuevoPrecio, setNuevoPrecio] = useState('')
@@ -647,7 +649,7 @@ function TarjetaProducto({
       return []
     const quien = variantes.length > 1 ? `${v.nombre}: ` : ''
     const cuanto = info.margen_reposicion_pct < 0 ? 'lo venderías a pérdida' : `te dejaría ${info.margen_reposicion_pct.toFixed(0)}%`
-    const sugerido = info.precio_sugerido != null ? ` Para mantener tu margen, cóbralo a $${info.precio_sugerido.toFixed(2)}.` : ''
+    const sugerido = info.precio_sugerido != null ? ` Para mantener tu margen, cóbralo a ${fmt(info.precio_sugerido)}.` : ''
     return [`${quien}con los precios de hoy ${cuanto}.${sugerido}`]
   })
 
@@ -803,7 +805,7 @@ function TarjetaProducto({
                     bajoCosto ? 'text-peligro-600 ring-1 ring-peligro-300' : ''
                   }`}
                 >
-                  ${v.precio.toFixed(2)}
+                  {fmt(v.precio)}
                 </button>
                 {/* En palabras: "75%" a secas no dice de que. */}
                 <span
@@ -816,7 +818,7 @@ function TarjetaProducto({
                           : 'text-aviso-600'
                         : 'text-neutral-400'
                   }`}
-                  title={info?.costo != null ? `Cuesta $${info.costo.toFixed(2)} hacerlo` : undefined}
+                  title={info?.costo != null ? `Cuesta ${fmt(info.costo)} hacerlo` : undefined}
                 >
                   {bajoCosto
                     ? '¡a pérdida!'

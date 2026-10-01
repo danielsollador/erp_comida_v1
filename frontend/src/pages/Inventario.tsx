@@ -3,6 +3,8 @@ import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
 import { useAltoRestante } from '../lib/altoRestante'
+import { BotonUnidad, CampoCantidad } from '../components/Cantidad'
+import { convertirTexto, factorEntre } from '../lib/unidades'
 import Agarre from '../components/Agarre'
 import { useArrastre } from '../lib/arrastre'
 import BarraFiltros from '../components/BarraFiltros'
@@ -83,7 +85,8 @@ const FILTROS: { valor: Filtro; texto: string }[] = [
 ]
 
 const cantidad = (n: number) => String(Number(n.toFixed(3)))
-const dinero = (n: number) => `$${n.toFixed(2)}`
+// Los montos, en la moneda que se eligio arriba (dolares, bolivares...):
+// cada componente toma `fmt` de `useMoneda` con este nombre.
 
 type CompraConVariacion = CompraDeInsumo & { cambio: number | null }
 
@@ -139,7 +142,7 @@ export default function Inventario() {
   // Solo las perdidas tienen fecha; el stock y que comprar son "a hoy".
   const [rango, setRango] = useRango('30d')
   const dialogo = useDialogo()
-  const { tasa } = useMoneda()
+  const { tasa, fmt: dinero } = useMoneda()
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
   const [sugerencias, setSugerencias] = useState<SugerenciaCompra[]>([])
   const [mermas, setMermas] = useState<Merma[]>([])
@@ -1240,6 +1243,7 @@ function FichaInsumo({
     archivar: (i: Ingrediente) => void
   }
 }) {
+  const { fmt: dinero } = useMoneda()
   const nuevo = ing === null
   const dialogo = useDialogo()
   const [f, setF] = useState(() => ({
@@ -1381,20 +1385,18 @@ function FichaInsumo({
         ))}
         <option value="nueva">+ Nueva categoría…</option>
       </Selector>
-      <Campo
-        etiqueta={`Avísame cuando quede menos de (${f.unidad})`}
-        inputMode="decimal"
-        value={f.stock_minimo}
-        onChange={(e) => poner('stock_minimo', e.target.value)}
-        placeholder="0"
+      <CampoCantidad
+        etiqueta="Avísame cuando quede menos de"
+        unidad={f.unidad}
+        valor={f.stock_minimo}
+        alCambiar={(v) => poner('stock_minimo', v)}
         ayuda="Por debajo de esto aparece en «Qué comprar»."
       />
-      <Campo
-        etiqueta={`Lo ideal tener en el depósito (${f.unidad})`}
-        inputMode="decimal"
-        value={f.stock_objetivo}
-        onChange={(e) => poner('stock_objetivo', e.target.value)}
-        placeholder="0"
+      <CampoCantidad
+        etiqueta="Lo ideal tener en el depósito"
+        unidad={f.unidad}
+        valor={f.stock_objetivo}
+        alCambiar={(v) => poner('stock_objetivo', v)}
         ayuda={ejemploIdeal(num(f.stock_objetivo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
       />
       {f.tipo !== 'reventa' && (
@@ -1473,12 +1475,11 @@ function FichaInsumo({
           </div>
         </div>
         {nuevo && (
-          <Campo
-            etiqueta={`Cuánto hay hoy (${f.unidad})`}
-            inputMode="decimal"
-            value={f.stock_actual}
-            onChange={(e) => poner('stock_actual', e.target.value)}
-            placeholder="0"
+          <CampoCantidad
+            etiqueta="Cuánto hay hoy"
+            unidad={f.unidad}
+            valor={f.stock_actual}
+            alCambiar={(v) => poner('stock_actual', v)}
             ayuda="Después se mueve solo con las compras, las ventas y los conteos."
           />
         )}
@@ -1694,7 +1695,7 @@ function FichaInsumo({
                           {/* El equivalente en plata: sin esto, "-0.025" no dice
                               si eso que salio costo un centavo o un dolar. */}
                           <td className={`p-2 text-right tabular-nums ${m.valor < 0 ? 'text-peligro-600' : 'text-neutral-500'}`}>
-                            ${Math.abs(m.valor).toFixed(2)}
+                            {dinero(Math.abs(m.valor))}
                           </td>
                           <td className="p-2 text-right tabular-nums text-neutral-500">
                             {cantidad(m.saldo)} {u}
@@ -1872,6 +1873,7 @@ const GRUPO: Record<string, string> = {
 }
 
 function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) {
+  const { fmt: dinero } = useMoneda()
   // UNA TABLA CON SUS CAMPOS: que paso, cuantas veces, cuanto y cuanto vale,
   // con lo que entro y lo que salio como dos grupos y lo que queda al pie.
   // Eran dos columnas de numeros sueltos sin rotulo (Leider, 2-oct: "hay
@@ -1956,6 +1958,7 @@ function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) 
  * de lo que hace creíble al conteo.
  */
 function DetalleConteo({ id, onCerrar }: { id: number; onCerrar: () => void }) {
+  const { fmt: dinero } = useMoneda()
   const [d, setD] = useState<ConteoDetalle | null>(null)
 
   useEffect(() => {
@@ -2069,8 +2072,13 @@ function ConteoFisico({
   onCerrar: () => void
   onGuardado: (r: ResultadoConteo) => void
 }) {
+  const { fmt: dinero } = useMoneda()
   const dialogo = useDialogo()
   const [valores, setValores] = useState<Record<number, string>>({})
+  // En que unidad se escribe cada renglon (kg ⇄ g). Lo que se guarda va
+  // siempre en la de la ficha.
+  const [vistas, setVistas] = useState<Record<number, string>>({})
+  const vistaDe = (i: Ingrediente) => vistas[i.id] ?? i.unidad
   const [buscar, setBuscar] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
@@ -2090,6 +2098,12 @@ function ConteoFisico({
         ...v,
         ...Object.fromEntries(r.filas.map((f) => [f.ingrediente_id, String(f.contado)])),
       }))
+      // La planilla trae lo contado en la unidad de cada ficha.
+      setVistas((v) => {
+        const n = { ...v }
+        for (const fila of r.filas) delete n[fila.ingrediente_id]
+        return n
+      })
     } catch (e) {
       setLeido(null)
       setError(e instanceof Error ? e.message : 'No se pudo leer la planilla')
@@ -2107,7 +2121,7 @@ function ConteoFisico({
   const contados = ingredientes
     .map((i) => ({ ing: i, texto: valores[i.id] ?? '' }))
     .filter((x) => x.texto.trim() !== '')
-    .map((x) => ({ ing: x.ing, real: num(x.texto) }))
+    .map((x) => ({ ing: x.ing, real: num(x.texto) / factorEntre(x.ing.unidad, vistaDe(x.ing)) }))
   const invalidos = contados.filter((c) => !Number.isFinite(c.real) || c.real < 0)
   const diferencias = contados
     .filter((c) => Number.isFinite(c.real) && c.real >= 0)
@@ -2256,7 +2270,8 @@ function ConteoFisico({
         <tbody>
           {lista.map((ing) => {
             const texto = valores[ing.id] ?? ''
-            const real = texto.trim() === '' ? null : num(texto)
+            const vista = vistaDe(ing)
+            const real = texto.trim() === '' ? null : num(texto) / factorEntre(ing.unidad, vista)
             const valido = real !== null && Number.isFinite(real) && real >= 0
             const dif = valido ? real - ing.stock_actual : null
             return (
@@ -2271,16 +2286,26 @@ function ConteoFisico({
                   </td>
                 )}
                 <td className="p-2 text-right">
-                  <Numerico
-                    value={texto}
-                    onChange={(e) => setValores((v) => ({ ...v, [ing.id]: e.target.value }))}
-                    placeholder="—"
-                    etiqueta={`Contado de ${ing.nombre}`}
-                    aria-label={`Contado de ${ing.nombre}`}
-                    className={`w-28 text-right border rounded-lg px-2 py-1.5 text-sm tabular-nums ${
-                      texto && !valido ? 'border-peligro-400' : 'border-neutral-300'
-                    }`}
-                  />
+                  <span className="inline-flex items-center gap-1.5">
+                    <Numerico
+                      value={texto}
+                      onChange={(e) => setValores((v) => ({ ...v, [ing.id]: e.target.value }))}
+                      placeholder="—"
+                      etiqueta={`Contado de ${ing.nombre} (${vista})`}
+                      aria-label={`Contado de ${ing.nombre}, en ${vista}`}
+                      className={`w-24 text-right border rounded-lg px-2 py-1.5 text-sm tabular-nums ${
+                        texto && !valido ? 'border-peligro-400' : 'border-neutral-300'
+                      }`}
+                    />
+                    <BotonUnidad
+                      unidad={ing.unidad}
+                      vista={vista}
+                      alCambiar={(nueva) => {
+                        setValores((v) => ({ ...v, [ing.id]: convertirTexto(v[ing.id] ?? '', ing.unidad, vista, nueva) }))
+                        setVistas((v) => ({ ...v, [ing.id]: nueva }))
+                      }}
+                    />
+                  </span>
                 </td>
                 {!ciego && (
                   <td className="p-2 text-right tabular-nums whitespace-nowrap">

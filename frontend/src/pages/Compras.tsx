@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import CampoSugerido from '../components/CampoSugerido'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import BarraFiltros from '../components/BarraFiltros'
+import { BotonUnidad } from '../components/Cantidad'
+import { convertirTexto, factorEntre } from '../lib/unidades'
 import { useRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
@@ -35,7 +37,9 @@ const TEXTO_CATEGORIA = Object.fromEntries(CATEGORIAS.map((c) => [c.valor, c.tex
 
 type Linea = {
   ingrediente_id: number
+  /** Como se escribio: en `vista` (kg ⇄ g). Se guarda en la unidad de la ficha. */
   cantidad: string
+  vista?: string
   costo_unitario: string
   /** null = lo que diga la ficha de la mercancía; true/false = lo dice ESTA factura. */
   exento: boolean | null
@@ -171,14 +175,24 @@ export default function Compras() {
     })
   }
 
+  /** La cantidad de un renglon en la unidad de su mercancia (se pudo escribir en g). */
+  const cantidadDe = useCallback(
+    (l: Linea) => {
+      const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
+      const n = Number(String(l.cantidad).replace(',', '.')) || 0
+      return ing && l.vista ? n / factorEntre(ing.unidad, l.vista) : n
+    },
+    [ingredientes],
+  )
+
   const baseLineas = useMemo(
     () =>
       lineas.reduce((sum, l) => {
-        const cantidad = Number(l.cantidad) || 0
+        const cantidad = cantidadDe(l)
         const costo = Number(l.costo_unitario) || 0
         return sum + cantidad * costo
       }, 0),
-    [lineas],
+    [lineas, cantidadDe],
   )
   const recargoNum = Number(recargo) || 0
   const descuentoNum = Number(descuentoFactura) || 0
@@ -189,19 +203,16 @@ export default function Compras() {
   // criterio al guardar. El recargo y el descuento se reparten entre los
   // renglones, asi que tambien mueven el IVA.
   const ivaLineas = useMemo(() => {
-    const bruta = lineas.reduce(
-      (sum, l) => sum + (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0),
-      0,
-    )
+    const bruta = lineas.reduce((sum, l) => sum + cantidadDe(l) * (Number(l.costo_unitario) || 0), 0)
     const gravada = lineas.reduce((sum, l) => {
       const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
       const exento = l.exento === null ? Boolean(ing?.exento) : l.exento
       if (exento) return sum
-      return sum + (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0)
+      return sum + cantidadDe(l) * (Number(l.costo_unitario) || 0)
     }, 0)
     const factor = bruta > 0 ? (bruta + recargoNum - descuentoNum) / bruta : 1
     return Math.round(gravada * factor * (fiscal.tasa_iva / 100) * 100) / 100
-  }, [lineas, ingredientes, fiscal.tasa_iva, recargoNum, descuentoNum])
+  }, [lineas, ingredientes, fiscal.tasa_iva, recargoNum, descuentoNum, cantidadDe])
 
   function actualizarLinea(i: number, campo: keyof Linea, valor: string) {
     setLineas((prev) =>
@@ -234,7 +245,8 @@ export default function Compras() {
             etiqueta: 'Unidad',
             tipo: 'opciones',
             valor: 'kg',
-            opciones: ['kg', 'g', 'lt', 'ml', 'unidad', 'paquete'].map((u) => ({ valor: u, texto: u })),
+            // Kilo y litro: el gramo y el mililitro los maneja el sistema.
+            opciones: ['kg', 'lt', 'unidad', 'paquete'].map((u) => ({ valor: u, texto: u })),
           },
         ],
       })
@@ -324,10 +336,10 @@ export default function Compras() {
     try {
       if (esInsumos) {
         const items = lineas
-          .filter((l) => l.ingrediente_id && Number(l.cantidad) > 0 && Number(l.costo_unitario) >= 0)
+          .filter((l) => l.ingrediente_id && cantidadDe(l) > 0 && Number(l.costo_unitario) >= 0)
           .map((l) => ({
             ingrediente_id: l.ingrediente_id,
-            cantidad: Number(l.cantidad),
+            cantidad: Number(cantidadDe(l).toFixed(6)),
             costo_unitario: aUsd(Number(l.costo_unitario)),
             // Solo viaja cuando ESTA factura contradice a la ficha; si no, se
             // omite y manda lo que diga la mercancía.
@@ -815,7 +827,7 @@ export default function Compras() {
             <div className="space-y-2 mb-3">
               {lineas.map((l, i) => {
                 const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
-                const subtotal = (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0)
+                const subtotal = cantidadDe(l) * (Number(l.costo_unitario) || 0)
                 return (
                   <div key={i} className="flex flex-wrap gap-2 items-center bg-neutral-50 rounded-lg p-2">
                     <select
@@ -831,17 +843,35 @@ export default function Compras() {
                       ))}
                       <option value="nuevo">+ Crear mercancía nueva...</option>
                     </select>
-                    <Numerico
-                      value={l.cantidad}
-                      onChange={(e) => actualizarLinea(i, 'cantidad', e.target.value)}
-                      placeholder={`Cantidad${ing ? ` (${ing.unidad})` : ''}`}
-                      className="w-28 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                    />
+                    <span className="inline-flex items-center gap-1.5">
+                      <Numerico
+                        value={l.cantidad}
+                        onChange={(e) => actualizarLinea(i, 'cantidad', e.target.value)}
+                        placeholder="Cantidad"
+                        etiqueta={`Cantidad${ing ? ` (${l.vista ?? ing.unidad})` : ''}`}
+                        className="w-24 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
+                      />
+                      {ing && (
+                        <BotonUnidad
+                          unidad={ing.unidad}
+                          vista={l.vista ?? ing.unidad}
+                          alCambiar={(nueva) =>
+                            setLineas((prev) =>
+                              prev.map((x, idx) =>
+                                idx === i
+                                  ? { ...x, cantidad: convertirTexto(x.cantidad, ing.unidad, x.vista ?? ing.unidad, nueva), vista: nueva }
+                                  : x,
+                              ),
+                            )
+                          }
+                        />
+                      )}
+                    </span>
                     <Numerico
                       value={l.costo_unitario}
                       onChange={(e) => actualizarLinea(i, 'costo_unitario', e.target.value)}
-                      placeholder={`Costo/unidad sin IVA (${monedaCarga})`}
-                      className="w-32 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
+                      placeholder={`Costo por ${ing?.unidad ?? 'unidad'} sin IVA (${monedaCarga})`}
+                      className="w-40 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
                     />
                     {/* La ficha de la mercancía es el valor por defecto, no la
                         ultima palabra: la misma cosa puede venir exenta de un
