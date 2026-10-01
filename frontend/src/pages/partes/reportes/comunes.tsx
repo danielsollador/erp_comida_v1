@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { Ayuda, BotonAyuda } from '../../../components/Ayuda'
 import { GraficoBarras, GraficoLineas, type LineaSobreBarras } from '../../../components/Grafico'
+import { PALETA, colorSerie } from '../../../lib/paleta'
 import { explicar } from '../../../lib/glosario'
 
 /**
@@ -199,7 +200,7 @@ export function SerieTiempo({
   formato,
   formatoDetalle,
   alto = 220,
-  color = 'var(--color-acento-500)',
+  color = PALETA.serie[0],
   referencia,
   lineas,
   formatoDerecha,
@@ -261,11 +262,11 @@ export function SerieTiempo({
       series={[
         { nombre: nombres?.actual ?? 'Este período', color, valores: puntos.map((p) => p.valor), relleno: true },
         ...(conAnterior
-          ? [{ nombre: nombres?.anterior ?? 'Período anterior', color: 'var(--color-neutral-400)', valores: anterior, punteada: true }]
+          ? [{ nombre: nombres?.anterior ?? 'Período anterior', color: PALETA.referencia, valores: anterior, punteada: true }]
           : []),
-        ...(lineas ?? []).map((l) => ({
+        ...(lineas ?? []).map((l, k) => ({
           nombre: l.nombre,
-          color: l.color ?? 'var(--color-exito-600)',
+          color: l.color ?? colorSerie(k + 1),
           valores: l.valores,
           eje: 'der' as const,
         })),

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { nombre } from '../../../lib/palabras'
 import { BarrasApiladas, GraficoDona } from '../../../components/Grafico'
+import { colorSerie } from '../../../lib/paleta'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { Lecturas, Seccion } from '../../../components/ui'
 import type { EstadoDeposito, InsumoDelDeposito, ReporteInventario } from '../../../lib/types'
@@ -87,8 +88,8 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                   <BarrasApiladas
                     formato={dinero}
                     leyenda={[
-                      { nombre: 'Materia prima', color: 'var(--color-acento-500)' },
-                      { nombre: 'Reventa', color: 'var(--color-neutral-400)' },
+                      { nombre: 'Materia prima', color: colorSerie(0) },
+                      { nombre: 'Reventa', color: colorSerie(2) },
                     ]}
                     filas={top.map((i) => ({
                       nombre: i.nombre,
@@ -97,7 +98,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                         {
                           nombre: i.tipo === 'reventa' ? 'Reventa' : 'Materia prima',
                           valor: i.valor,
-                          color: i.tipo === 'reventa' ? 'var(--color-neutral-400)' : 'var(--color-acento-500)',
+                          color: i.tipo === 'reventa' ? colorSerie(2) : colorSerie(0),
                         },
                       ],
                     }))}
@@ -112,8 +113,8 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                     formato={dinero}
                     centro={{ valor: corto(datos.valor_total), texto: 'en el depósito' }}
                     partes={[
-                      { nombre: 'Materia prima', valor: datos.valor_insumos, color: 'var(--color-acento-500)' },
-                      { nombre: 'Reventa', valor: datos.valor_reventa, color: 'var(--color-neutral-400)' },
+                      { nombre: 'Materia prima', valor: datos.valor_insumos, color: colorSerie(0) },
+                      { nombre: 'Reventa', valor: datos.valor_reventa, color: colorSerie(2) },
                     ].filter((p) => p.valor > 0)}
                   />
                 </Seccion>

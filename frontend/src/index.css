@@ -144,6 +144,32 @@
   --vp-acento-tinta: #ffffff;
   --vp-acento-suave: var(--color-acento-50);
   --vp-textura: rgb(23 24 27 / 0.05);
+
+  /* ── La paleta de datos: de aqui sale el color de todo grafico ─────────
+     Las series van en la familia del cobre y los neutros calidos: tonos de
+     UN color, que combinan siempre entre si. Verde, ambar y rojo solo cuando
+     el color significa algo (ganancia, aviso, perdida). Los nombres estan en
+     `lib/paleta.ts`; ningun componente escribe un color suelto. Cambiar la
+     familia del acento cambia todos los graficos a la vez (Leider, 30-sep:
+     "una paleta de colores central... y que el dueño la pueda
+     personalizar"). */
+  --vp-dato-1: var(--color-acento-500);
+  --vp-dato-2: var(--color-acento-800);
+  --vp-dato-3: var(--color-acento-300);
+  --vp-dato-4: var(--color-neutral-500);
+  --vp-dato-5: var(--color-acento-200);
+  --vp-dato-6: var(--color-neutral-300);
+  --vp-dato-7: var(--color-acento-700);
+  --vp-dato-8: var(--color-neutral-700);
+  --vp-dato-fuerte: var(--color-acento-700);
+  --vp-dato-anterior: var(--color-neutral-300);
+  --vp-dato-referencia: var(--color-neutral-400);
+  --vp-dato-vacio: var(--color-neutral-100);
+  --vp-dato-bien: var(--color-exito-500);
+  --vp-dato-ojo: var(--color-aviso-400);
+  --vp-dato-mal: var(--color-peligro-500);
+  --vp-dato-neutro: var(--color-neutral-300);
+  --vp-dato-incierto: var(--color-aviso-300);
 }
 
 /*
@@ -161,6 +187,12 @@ html[data-tema="oscuro"] {
   --vp-acento-tinta: #0e0f12;
   --vp-acento-suave: var(--color-acento-50);
   --vp-textura: rgb(255 255 255 / 0.045);
+
+  /* Sobre fondo oscuro el cobre oscuro no se ve: la segunda serie y la
+     barra fuerte pasan a cobre claro. Los neutros se invierten solos. */
+  --vp-dato-2: var(--color-acento-200);
+  --vp-dato-7: var(--color-acento-300);
+  --vp-dato-fuerte: var(--color-acento-300);
 
   --color-white: #161920;
   --color-black: #f4f5f8;

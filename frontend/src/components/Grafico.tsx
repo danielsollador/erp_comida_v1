@@ -1,5 +1,6 @@
 import { Fragment, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { PALETA, colorSerie } from '../lib/paleta'
 
 /**
  * El globo de informacion que sigue al cursor, compartido por todos los
@@ -264,7 +265,7 @@ export function GraficoLineas({
                 x2="100"
                 y1={p}
                 y2={p}
-                stroke="var(--color-neutral-100)"
+                stroke={PALETA.vacio}
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
               />
@@ -314,7 +315,7 @@ export function GraficoLineas({
                 x2={x(activo)}
                 y1="0"
                 y2="100"
-                stroke="var(--color-neutral-300)"
+                stroke={PALETA.referencia}
                 strokeWidth="1"
                 strokeDasharray="3 3"
                 vectorEffect="non-scaling-stroke"
@@ -386,22 +387,10 @@ export function GraficoLineas({
 // ── Lo que comparten los graficos nuevos ────────────────────────────────────
 
 /**
- * Colores para series SIN orden (categorias, metodos de pago). El primero es
- * el cobre del logo; siguen el ambar y el verde, que contrastan con el y
- * entre si; el grafito va al final (Leider, 30-sep: "no es logico que el
- * color principal de las barras sea negro"). Salen de la paleta y no de un
- * hexadecimal, asi el modo oscuro los invierte solo.
+ * Colores para series SIN orden (categorias, metodos de pago): las series de
+ * la paleta de datos (`lib/paleta.ts`), tonos del cobre y neutros calidos.
  */
-export const PALETA_CATEGORICA = [
-  'var(--color-acento-500)',
-  'var(--color-aviso-500)',
-  'var(--color-exito-500)',
-  'var(--color-acento-300)',
-  'var(--color-neutral-400)',
-  'var(--color-peligro-400)',
-  'var(--color-aviso-300)',
-  'var(--color-neutral-800)',
-]
+export const PALETA_CATEGORICA = PALETA.serie
 
 /**
  * Cuanto cambio algo contra el periodo anterior, en un chip: ▲ 12% en verde,
@@ -477,7 +466,7 @@ export function GraficoDona({
       ...p,
       valor: Math.max(p.valor, 0),
       pct: (Math.max(p.valor, 0) / total) * 100,
-      color: p.color ?? PALETA_CATEGORICA[i % PALETA_CATEGORICA.length],
+      color: p.color ?? colorSerie(i),
     }))
     .sort((a, b) => b.valor - a.valor)
   const max = filas[0].valor
@@ -653,9 +642,8 @@ export function GraficoBarras({
   const conLineas = lineasValidas.length > 0
   const maxDer = Math.max(...lineasValidas.flatMap((l) => l.valores.map((v) => v ?? 0)), 0) || 1
   const fDer = formatoDerecha ?? formato
-  // Verde primero: es lo que mas contrasta con el cobre de las barras.
-  const COLORES_LINEA = ['var(--color-exito-600)', 'var(--color-aviso-500)', 'var(--color-peligro-500)']
-  const colorLinea = (l: LineaSobreBarras, k: number) => l.color ?? COLORES_LINEA[k % COLORES_LINEA.length]
+  // Las lineas siguen a las barras en la paleta: la segunda serie, la tercera...
+  const colorLinea = (l: LineaSobreBarras, k: number) => l.color ?? colorSerie(k + 1)
   // El centro de cada barra, en pixeles: `gap-1.5` son 6 px entre barras.
   const SEP = 6
   const anchoBarra = ancho > 0 ? (ancho - SEP * (datos.length - 1)) / datos.length : 0
@@ -721,8 +709,8 @@ export function GraficoBarras({
             <div className="absolute inset-x-0 bottom-0 border-t border-neutral-200" />
             {referencia && max > 0 && referencia.valor > 0 && (
               <div
-                className="absolute inset-x-0 z-[1] border-t border-dashed border-neutral-400 pointer-events-none"
-                style={{ bottom: `${pct(referencia.valor)}%` }}
+                className="absolute inset-x-0 z-[1] border-t border-dashed pointer-events-none"
+                style={{ bottom: `${pct(referencia.valor)}%`, borderColor: PALETA.referencia }}
               />
             )}
             <div className="absolute inset-0 flex items-end gap-1.5">
@@ -740,7 +728,7 @@ export function GraficoBarras({
                         <div className="mb-1 font-semibold text-neutral-500">{d.etiqueta}</div>
                         <LineaGlobo nombre={nombres?.actual ?? 'Total'} valor={formato(d.valor)} />
                         {ant != null && (
-                          <LineaGlobo nombre={nombres?.anterior ?? 'Anterior'} valor={formato(ant)} color="var(--color-neutral-300)" />
+                          <LineaGlobo nombre={nombres?.anterior ?? 'Anterior'} valor={formato(ant)} color={PALETA.anterior} />
                         )}
                         {lineasValidas.map((l, k) =>
                           l.valores[i] != null ? (
@@ -753,8 +741,8 @@ export function GraficoBarras({
                   >
                     {ant != null && ant > 0 && (
                       <div
-                        className="absolute inset-x-0 bottom-0 rounded-t-md bg-neutral-300/50"
-                        style={{ height: `${pct(ant)}%` }}
+                        className="absolute inset-x-0 bottom-0 rounded-t-md opacity-50"
+                        style={{ height: `${pct(ant)}%`, background: PALETA.anterior }}
                       />
                     )}
                     {/* COBRE, NO NEGRO: la barra normal es el color de la
@@ -763,15 +751,13 @@ export function GraficoBarras({
                         el color, cambia la opacidad, que se ve en los dos
                         temas. */}
                     <div
-                      className={`vp-barra absolute bottom-0 rounded-t-md min-h-[2px] transition-opacity group-hover:opacity-70 ${
-                        fuerte ? 'bg-acento-700' : 'bg-acento-500'
-                      }`}
+                      className="vp-barra absolute bottom-0 rounded-t-md min-h-[2px] transition-opacity group-hover:opacity-70"
                       style={{
                         height: `${pct(d.valor)}%`,
                         left: conAnterior ? '18%' : 0,
                         right: conAnterior ? '18%' : 0,
                         animationDelay: `${Math.min(i * 18, 400)}ms`,
-                        background: d.color,
+                        background: d.color ?? (fuerte ? PALETA.fuerte : PALETA.serie[0]),
                       }}
                     />
                     {conCifras && d.valor > 0 && (
@@ -855,11 +841,11 @@ export function GraficoBarras({
           {conAnterior && (
             <>
               <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
-                <span className="h-2.5 w-2.5 rounded-sm bg-acento-500" />
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ background: PALETA.serie[0] }} />
                 {nombres?.actual ?? 'Este período'}
               </span>
               <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
-                <span className="h-2.5 w-2.5 rounded-sm bg-neutral-300/70" />
+                <span className="h-2.5 w-2.5 rounded-sm opacity-60" style={{ background: PALETA.anterior }} />
                 {nombres?.anterior ?? 'Período anterior'}
               </span>
             </>
@@ -874,7 +860,7 @@ export function GraficoBarras({
           ))}
           {referencia && referencia.valor > 0 && (
             <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
-              <span className="w-4 border-t border-dashed border-neutral-400" />
+              <span className="w-4 border-t border-dashed" style={{ borderColor: PALETA.referencia }} />
               {referencia.texto} <span className="tabular-nums">{formato(referencia.valor)}</span>
             </span>
           )}
@@ -1041,12 +1027,12 @@ export function BarrasGanancia({
                   <div className="mb-1 font-semibold text-neutral-500">{f.nombre}</div>
                   {uds != null && <LineaGlobo nombre="Unidades" valor={`${uds}`} />}
                   <LineaGlobo nombre="Vendió" valor={formato(f.ingreso)} />
-                  {!sinReceta && <LineaGlobo nombre="Mercancía" valor={formato(costo)} color="var(--color-neutral-400)" />}
+                  {!sinReceta && <LineaGlobo nombre="Mercancía" valor={formato(costo)} color={PALETA.neutro} />}
                   {!sinReceta && (
                     <LineaGlobo
                       nombre={pierde ? 'Perdió' : 'Le quedó'}
                       valor={formato(Math.abs(queda))}
-                      color={pierde ? 'var(--color-peligro-500)' : 'var(--color-exito-500)'}
+                      color={pierde ? PALETA.mal : PALETA.bien}
                     />
                   )}
                 </>,
@@ -1087,14 +1073,14 @@ export function BarrasGanancia({
                     style={{
                       width: ancho(f.ingreso),
                       background:
-                        'repeating-linear-gradient(-45deg, var(--color-aviso-300) 0 5px, color-mix(in srgb, var(--color-aviso-300) 45%, transparent) 5px 10px)',
+                        `repeating-linear-gradient(-45deg, ${PALETA.incierto} 0 5px, color-mix(in srgb, ${PALETA.incierto} 45%, transparent) 5px 10px)`,
                     }}
                   />
                 ) : (
                   <div className="flex h-full rounded-full overflow-hidden" style={{ width: ancho(Math.max(f.ingreso, costo)) }}>
-                    <div className="vp-barra-h h-full" style={{ flex: `${Math.min(costo, f.ingreso)} 0 0`, background: 'var(--color-neutral-300)' }} />
-                    {queda > 0 && <div className="vp-barra-h h-full" style={{ flex: `${queda} 0 0`, background: 'var(--color-exito-500)' }} />}
-                    {pierde && <div className="vp-barra-h h-full" style={{ flex: `${-queda} 0 0`, background: 'var(--color-peligro-400)' }} />}
+                    <div className="vp-barra-h h-full" style={{ flex: `${Math.min(costo, f.ingreso)} 0 0`, background: PALETA.neutro }} />
+                    {queda > 0 && <div className="vp-barra-h h-full" style={{ flex: `${queda} 0 0`, background: PALETA.bien }} />}
+                    {pierde && <div className="vp-barra-h h-full" style={{ flex: `${-queda} 0 0`, background: PALETA.mal }} />}
                   </div>
                 )}
               </div>
@@ -1204,7 +1190,7 @@ export function MapaCalor({
                   }`}
                   style={
                     intensidad
-                      ? { background: `color-mix(in oklab, var(--color-acento-500) ${intensidad.toFixed(0)}%, transparent)` }
+                      ? { background: `color-mix(in oklab, ${PALETA.serie[0]} ${intensidad.toFixed(0)}%, transparent)` }
                       : undefined
                   }
                   {...enHover(
@@ -1251,7 +1237,7 @@ export function MapaCalor({
           <span
             key={p}
             className="h-2.5 w-2.5 rounded-[3px]"
-            style={{ background: `color-mix(in oklab, var(--color-acento-500) ${p}%, transparent)` }}
+            style={{ background: `color-mix(in oklab, ${PALETA.serie[0]} ${p}%, transparent)` }}
           />
         ))}
         <span>
@@ -1275,7 +1261,7 @@ export function MapaCalor({
  */
 export function Sparkline({
   valores,
-  color = 'var(--color-acento-500)',
+  color = PALETA.serie[0],
   alto = 36,
 }: {
   valores: (number | null)[]
@@ -1351,14 +1337,14 @@ export function BarrasDeCuenta({ filas, formato }: { filas: FilaCuenta[]; format
           const color =
             f.color ??
             (f.tipo === 'base'
-              ? 'var(--color-acento-500)'
+              ? PALETA.serie[0]
               : resultado || subtotal
                 ? negativo
-                  ? 'var(--color-peligro-500)'
-                  : 'var(--color-exito-500)'
+                  ? PALETA.mal
+                  : PALETA.bien
                 : negativo
-                  ? 'var(--color-neutral-300)'
-                  : 'var(--color-exito-400)')
+                  ? PALETA.neutro
+                  : PALETA.bien)
           // El signo dice que hace el renglon: se resta, suma, o es el saldo.
           const signo = f.tipo === 'base' ? '' : negativo ? '−' : resultado || subtotal ? '' : '+'
           return (

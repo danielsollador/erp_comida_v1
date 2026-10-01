@@ -1,4 +1,5 @@
 import { BarrasApiladas, GraficoDona, Variacion } from '../../../components/Grafico'
+import { PALETA } from '../../../lib/paleta'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { Lecturas, Seccion } from '../../../components/ui'
 import type { Merma, ReportePerdidas } from '../../../lib/types'
@@ -90,7 +91,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                   alto={180}
                   formato={corto}
                   formatoDetalle={(n) => dinero(n)}
-                  color="var(--color-peligro-500)"
+                  color={PALETA.mal}
                   nombres={{ actual: 'Merma', anterior: 'Período anterior' }}
                   puntos={datos.serie.map((p) => ({
                     etiqueta: p.etiqueta,
@@ -112,15 +113,15 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                 <BarrasApiladas
                   formato={dinero}
                   leyenda={[
-                    { nombre: 'Registrada (se botó, se dañó)', color: 'var(--color-peligro-500)' },
-                    { nombre: 'Faltante de conteo', color: 'var(--color-aviso-400)' },
+                    { nombre: 'Registrada (se botó, se dañó)', color: PALETA.mal },
+                    { nombre: 'Faltante de conteo', color: PALETA.ojo },
                   ]}
                   filas={top.map((p) => ({
                     nombre: p.nombre,
                     detalle: `${p.pct.toFixed(0)}% · ${p.cantidad.toLocaleString('es-VE', { maximumFractionDigits: 2 })} ${p.unidad}`,
                     partes: [
-                      { nombre: 'Registrada', valor: Math.max(p.valor - p.valor_conteo, 0), color: 'var(--color-peligro-500)' },
-                      { nombre: 'Faltante de conteo', valor: p.valor_conteo, color: 'var(--color-aviso-400)' },
+                      { nombre: 'Registrada', valor: Math.max(p.valor - p.valor_conteo, 0), color: PALETA.mal },
+                      { nombre: 'Faltante de conteo', valor: p.valor_conteo, color: PALETA.ojo },
                     ],
                   }))}
                 />
@@ -165,7 +166,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                     nombre: m.motivo,
                     valor: m.valor,
                     detalle: `${m.veces} vez/veces`,
-                    color: m.motivo === 'Conteo fisico' ? 'var(--color-aviso-400)' : undefined,
+                    color: m.motivo === 'Conteo fisico' ? PALETA.ojo : undefined,
                   }))}
                 />
               </Seccion>

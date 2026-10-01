@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { nombre } from '../../../lib/palabras'
 import { Ayuda } from '../../../components/Ayuda'
-import { BarrasGanancia, GraficoBarras, GraficoDona, MapaCalor, PALETA_CATEGORICA } from '../../../components/Grafico'
+import { BarrasGanancia, GraficoBarras, GraficoDona, MapaCalor } from '../../../components/Grafico'
+import { colorSerie } from '../../../lib/paleta'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { Filtros, Seccion } from '../../../components/ui'
 import { explicar } from '../../../lib/glosario'
@@ -298,7 +299,7 @@ export default function Ventas({
                       nombre: p.nombre,
                       valor: p.ingresos,
                       detalle: `${p.unidades} ${p.unidades === 1 ? 'unidad' : 'unidades'}`,
-                      color: PALETA_CATEGORICA[(i + 1) % PALETA_CATEGORICA.length],
+                      color: colorSerie(i),
                       id: p.producto_id,
                     }))}
                     alTocar={(parte) => alFiltrar({ p: String(parte.id) })}
@@ -317,7 +318,7 @@ export default function Ventas({
                       nombre: g.nombre,
                       valor: g.ventas,
                       detalle: `${g.pedidos} ${g.pedidos === 1 ? 'pedido' : 'pedidos'}`,
-                      color: PALETA_CATEGORICA[(i + 1) % PALETA_CATEGORICA.length],
+                      color: colorSerie(i),
                       id: g.id,
                     }))}
                     alTocar={(parte) => alFiltrar({ c: String(parte.id), p: '' })}

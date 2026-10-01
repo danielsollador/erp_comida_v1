@@ -9,6 +9,7 @@ import { idDe, useFiltrosUrl } from '../lib/filtros'
 import { FiltroDesplegable, Lecturas, Pagina, Seccion } from '../components/ui'
 import { BarrasDeCuenta, GraficoDona, Variacion, type FilaCuenta } from '../components/Grafico'
 import { api } from '../lib/api'
+import { PALETA } from '../lib/paleta'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { etiquetaMetodo } from '../lib/pagos'
 import type {
@@ -515,7 +516,7 @@ function filasDeLaCuenta(datos: ReporteResumen): FilaCuenta[] {
     filas.push({ nombre: 'IVA cobrado', nota: 'se le debe al SENIAT', valor: -datos.iva_cobrado })
     filas.push({ nombre: 'Ingreso del negocio', valor: datos.ingresos_netos, tipo: 'subtotal' })
   }
-  filas.push({ nombre: 'Costo de la mercancía', valor: -datos.costo_insumos, color: 'var(--color-neutral-400)' })
+  filas.push({ nombre: 'Costo de la mercancía', valor: -datos.costo_insumos, color: PALETA.neutro })
   const margen = datos.ventas > 0 ? `${datos.margen_pct.toFixed(0)}% de margen` : undefined
   if (filtro) {
     filas.push({ nombre: 'Deja', valor: datos.ganancia_bruta, tipo: 'resultado', nota: margen })
@@ -526,7 +527,7 @@ function filasDeLaCuenta(datos: ReporteResumen): FilaCuenta[] {
   // de merma o un sobrante de conteo restan gasto; con el rotulo fijo la
   // cuenta se leia al reves (Leider, 24-sep). Diciendo que ese renglon SUMA,
   // la columna vuelve a cuadrar a la vista.
-  if (datos.gastos >= 0) filas.push({ nombre: 'Gastos, mermas y faltantes', valor: -datos.gastos, color: 'var(--color-aviso-400)' })
+  if (datos.gastos >= 0) filas.push({ nombre: 'Gastos, mermas y faltantes', valor: -datos.gastos, color: PALETA.ojo })
   else filas.push({ nombre: 'Sobrantes y reversos', nota: 'suman', valor: -datos.gastos })
   filas.push({ nombre: nombre('kpi.ganancia_neta'), valor: datos.ganancia_neta, tipo: 'resultado' })
   return filas
@@ -562,13 +563,13 @@ function Facturacion({ datos, dinero }: { datos: ReporteResumen; dinero: Dinero 
             nombre: 'Con factura',
             valor: datos.valor_facturado,
             detalle: `${datos.facturadas} ${datos.facturadas === 1 ? 'venta' : 'ventas'}`,
-            color: 'var(--color-exito-500)',
+            color: PALETA.bien,
           },
           {
             nombre: 'Sin factura',
             valor: sinFacturar,
             detalle: `${ventasSinFactura} ${ventasSinFactura === 1 ? 'venta' : 'ventas'}`,
-            color: 'var(--color-neutral-300)',
+            color: PALETA.neutro,
           },
         ]}
       />
