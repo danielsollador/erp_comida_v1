@@ -540,6 +540,7 @@ export default function Compras() {
       setPorCompletar(cuantosPendientes())
       if (r.estado === 'hecho') {
         if (r.alertas.length > 0) setAlertasAlGuardar(r.alertas)
+        if (r.fotoPerdida) return ' Ojo: la foto ya no estaba guardada y la factura quedó sin ella.'
         return r.foto ? ' Foto adjunta.' : ''
       }
       if (r.estado === 'pendiente') {

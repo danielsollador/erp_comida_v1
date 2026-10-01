@@ -114,7 +114,18 @@ def test_una_foto_de_otra_factura_no_se_roba(client, insumo):
     assert completar(client, a, otra).status_code == 409, "la factura ya tiene su foto"
 
 
-def test_lo_que_no_existe(client, insumo):
+def test_factura_que_no_existe(client):
     assert completar(client, 9999).status_code == 404
-    fid = guardar(client, insumo, 10.0, "F-1")
-    assert completar(client, fid, 9999).status_code == 404
+
+
+def test_si_la_foto_ya_se_limpio_igual_salen_las_alertas(client, insumo):
+    """El reintento llego despues del plazo y la foto se borro por suelta. Un
+    404 hacia que el navegador descartara todo, alertas incluidas."""
+    guardar(client, insumo, 10.0, "F-1")
+    fid = guardar(client, insumo, 13.0, "F-2")
+    r = completar(client, fid, 9999, [renglon(insumo, 13.0)])
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["foto"] is False and d["foto_perdida"] is True
+    assert d["aprendidas"] == 0, "sin la foto no hay de que aprender"
+    assert len(d["alertas"]) == 1

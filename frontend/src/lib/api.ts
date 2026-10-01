@@ -873,10 +873,13 @@ export const api = {
   }) => req<RevisionFactura>('/compras/revision', { method: 'POST', body: JSON.stringify(r) }),
   /** Lo de despues de guardar (foto, memoria, alertas) en un pedido que se puede repetir. */
   completarFactura: (facturaId: number, cuerpo: CuerpoCompletarFactura) =>
-    req<{ foto: boolean; aprendidas: number; alertas: AlertaPrecio[] }>(`/compras/facturas/${facturaId}/completar`, {
-      method: 'POST',
-      body: JSON.stringify(cuerpo),
-    }),
+    req<{ foto: boolean; foto_perdida: boolean; aprendidas: number; alertas: AlertaPrecio[] }>(
+      `/compras/facturas/${facturaId}/completar`,
+      {
+        method: 'POST',
+        body: JSON.stringify(cuerpo),
+      },
+    ),
   urlSoporteFactura: (facturaId: number) => `/api/compras/facturas/${facturaId}/soporte`,
   // Memoria por proveedor: que es de lo nuestro cada renglon de su factura.
   buscarEquivalencias: (proveedor_rif: string, renglones: { descripcion: string; unidad: string }[]) =>

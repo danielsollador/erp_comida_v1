@@ -2084,6 +2084,8 @@ class CompletarFacturaRequest(BaseModel):
 
 class CompletarFactura(BaseModel):
     foto: bool
+    # La foto ya se habia limpiado por suelta (el reintento llego tarde).
+    foto_perdida: bool = False
     aprendidas: int
     alertas: List[AlertaPrecio] = []
 

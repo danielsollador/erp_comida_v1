@@ -280,3 +280,32 @@ def test_el_csv_lleva_las_dos_fechas(client, insumo):
     encabezado, fila = texto.strip().splitlines()[:2]
     assert encabezado.startswith("Factura,Fecha factura,Fecha registro,N. Factura")
     assert ",20/08/2026," in fila
+
+
+# ------------------------------------------------------------------ fotos sueltas
+
+def test_las_fotos_sueltas_viejas_se_limpian_al_leer_otra(client, db, insumo, lector_de_prueba):
+    """Una foto leida cuya factura nunca se guardo no respalda nada. Se borra
+    pasado el plazo, no antes: puede ser de una factura ya guardada cuyo
+    'completar' espera en una tablet sin conexion."""
+    import datetime
+    from app.routers.compras_lectura import DIAS_FOTO_SUELTA
+
+    vieja = subir(client).json()["soporte_id"]
+    reciente = subir(client).json()["soporte_id"]
+    vieja_con_factura = subir(client).json()["soporte_id"]
+    fid = factura(client, insumo)["id"]
+    client.post(f"/api/compras/facturas/{fid}/soporte", json={"soporte_id": vieja_con_factura})
+
+    hace = datetime.datetime.now() - datetime.timedelta(days=DIAS_FOTO_SUELTA + 1)
+    casi = datetime.datetime.now() - datetime.timedelta(days=DIAS_FOTO_SUELTA - 1)
+    db.get(models.SoporteFactura, vieja).fecha = hace
+    db.get(models.SoporteFactura, vieja_con_factura).fecha = hace
+    db.get(models.SoporteFactura, reciente).fecha = casi
+    db.commit()
+
+    nueva = subir(client).json()["soporte_id"]
+    db.expire_all()
+    quedan = {s.id for s in db.query(models.SoporteFactura).all()}
+    assert vieja not in quedan, "suelta y vieja: se va"
+    assert {reciente, vieja_con_factura, nueva} <= quedan, "reciente, con factura o nueva: se quedan"

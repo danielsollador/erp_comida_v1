@@ -50,7 +50,7 @@ function valeReintentar(e: unknown): boolean {
 }
 
 export type ResultadoCompletar =
-  | { estado: 'hecho'; foto: boolean; alertas: AlertaPrecio[] }
+  | { estado: 'hecho'; foto: boolean; fotoPerdida: boolean; alertas: AlertaPrecio[] }
   | { estado: 'pendiente' }
   | { estado: 'fallo'; mensaje: string }
 
@@ -69,7 +69,7 @@ export async function completarDespuesDeGuardar(
     try {
       const r = await api.completarFactura(facturaId, cuerpo)
       quitar(facturaId)
-      return { estado: 'hecho', foto: r.foto, alertas: r.alertas }
+      return { estado: 'hecho', foto: r.foto, fotoPerdida: r.foto_perdida, alertas: r.alertas }
     } catch (e) {
       if (!valeReintentar(e)) {
         quitar(facturaId)

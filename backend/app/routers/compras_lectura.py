@@ -18,6 +18,7 @@ Vive aparte de `compras.py` a proposito: el guardado de una factura no tiene
 por que enterarse de que existe una camara.
 """
 
+import datetime
 import re
 import statistics
 from typing import List, Optional
@@ -28,6 +29,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import alertas_precio, equivalencias, impuestos, lectura_facturas, models, reposicion, schemas
 from ..database import get_db
+from ..timeutils import ahora
 from .compras_alertas import alerta_a_schema
 
 router = APIRouter(prefix="/api/compras", tags=["compras"])
@@ -36,6 +38,12 @@ router = APIRouter(prefix="/api/compras", tags=["compras"])
 # en unos cientos de KB); el tope es para una foto que llegue sin achicar.
 TIPOS_DE_IMAGEN = ("image/jpeg", "image/png", "image/webp")
 TAMANO_MAXIMO = 8 * 1024 * 1024
+
+# Una foto leida cuya factura nunca se guardo se borra pasado este plazo. No
+# antes: una foto sin factura tambien puede ser de una factura YA guardada
+# cuyo "completar" espera en la cola de una tablet sin conexion (ver
+# `pendientesCompras.ts`), y esa tablet puede tardar dias en volver.
+DIAS_FOTO_SUELTA = 30
 
 # Cuanto se puede alejar un precio de lo que se venia pagando antes de
 # avisar. Por debajo de esto es el vaiven normal de un proveedor (y de la
@@ -86,11 +94,27 @@ def leer_factura(archivo: UploadFile = File(...), db: Session = Depends(get_db))
         # La foto se queda igual: se puede cargar a mano y adjuntarla.
         soporte.error = str(e)
 
+    _limpiar_fotos_sueltas(db)
     db.add(soporte)
     db.commit()
     db.refresh(soporte)
     return schemas.LecturaFactura(
         soporte_id=soporte.id, lector=nombre, borrador=borrador, error=soporte.error or ""
+    )
+
+
+def _limpiar_fotos_sueltas(db: Session) -> int:
+    """Borra las fotos leidas que nadie termino de guardar, pasado el plazo.
+
+    Se hace al leer una foto nueva porque es el unico momento en que nacen
+    fotos sueltas: si nadie lee fotos, no aparecen nuevas que limpiar. Es un
+    DELETE sin traer las imagenes (la columna es diferida).
+    """
+    limite = ahora() - datetime.timedelta(days=DIAS_FOTO_SUELTA)
+    return (
+        db.query(models.SoporteFactura)
+        .filter(models.SoporteFactura.factura_id.is_(None), models.SoporteFactura.fecha < limite)
+        .delete(synchronize_session=False)
     )
 
 
@@ -255,15 +279,20 @@ def completar_factura(
     if factura is None:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
-    foto, aprendidas = False, 0
+    foto, foto_perdida, aprendidas = False, False, 0
+    soporte = None
     if body.soporte_id is not None:
         # Con candado: dos reintentos a la vez esperan uno al otro, y el
         # segundo ya ve la marca del primero.
         soporte = (
             db.query(models.SoporteFactura).filter_by(id=body.soporte_id).with_for_update().first()
         )
-        if soporte is None:
-            raise HTTPException(status_code=404, detail="Esa foto no existe")
+        # Ya no esta: el reintento llego despues de DIAS_FOTO_SUELTA y la
+        # foto se limpio por suelta. La factura se queda sin foto y sin lo
+        # que la memoria iba a aprender de ella, pero las alertas si salen:
+        # un 404 aqui haria que el navegador descartara todo.
+        foto_perdida = soporte is None
+    if soporte is not None:
         if soporte.factura_id not in (None, factura_id):
             raise HTTPException(status_code=409, detail="Esa foto ya respalda otra factura")
         if not soporte.completada:
@@ -284,14 +313,15 @@ def completar_factura(
             soporte.completada = True
             db.commit()
         foto = True
-    elif body.renglones:
+    elif body.renglones and not foto_perdida:
         raise HTTPException(
             status_code=400, detail="La memoria del proveedor solo aprende de facturas leídas de una foto"
         )
 
     alertas = alertas_precio.generar(db, factura)
     return schemas.CompletarFactura(
-        foto=foto, aprendidas=aprendidas, alertas=[alerta_a_schema(a) for a in alertas]
+        foto=foto, foto_perdida=foto_perdida, aprendidas=aprendidas,
+        alertas=[alerta_a_schema(a) for a in alertas],
     )
 
 
