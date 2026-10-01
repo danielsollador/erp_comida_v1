@@ -21,7 +21,7 @@ import type {
   ReportePerdidas,
   ReporteResumen,
 } from '../lib/types'
-import { Bloque, Kpi, SerieTiempo, capitalizar, enteros, recortarSerie, type Dinero } from './partes/reportes/comunes'
+import { Bloque, Kpi, SerieTiempo, SinDatos, capitalizar, enteros, recortarSerie, type Dinero } from './partes/reportes/comunes'
 import Ventas, { type CambioFiltro } from './partes/reportes/Ventas'
 import Perdidas from './partes/reportes/Perdidas'
 import Inventario from './partes/reportes/Inventario'
@@ -402,8 +402,9 @@ function Resumen({
       </div>
 
       {/* ── 2. Las ventas: la plata en barras, las unidades en linea ─────── */}
-      {serie.length > 0 && (
-        <Bloque titulo="Ventas" descripcion="El detalle por hora, día y producto está en la pestaña Ventas.">
+      {/* El bloque se queda aunque no haya ventas: un grafico que
+          desaparece parece un error (Leider, 1-oct). */}
+      <Bloque titulo="Ventas" descripcion="El detalle por hora, día y producto está en la pestaña Ventas.">
           {/* UNA tarjeta con las dos medidas y dos ejes: las barras son las
               unidades (eje izquierdo) y la linea la plata (eje derecho).
               Son dos preguntas distintas --cuantas cosas salieron y cuanto
@@ -432,23 +433,27 @@ function Resumen({
               lineas={[{ nombre: 'Ventas', valores: serie.map((p) => p.ventas) }]}
               formatoDerecha={corto}
             />
+            {serie.length === 0 && <SinDatos que="ventas" alto={220} />}
           </Seccion>
         </Bloque>
-      )}
 
       {/* ── 3. Facturacion y cobros (del negocio entero, no de un producto) ── */}
-      {!filtro && datos.ventas > 0 && (
+      {!filtro && (
         <Bloque titulo="Facturación y cobros">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <Facturacion datos={datos} dinero={dinero} />
             <Seccion titulo="Cómo te pagaron" ayuda="Por pago, no por pedido: una venta mixta se reparte.">
-              <GraficoDona
-                formato={dinero}
-                centro={{ valor: corto(datos.ventas), texto: 'cobrado' }}
-                partes={Object.entries(datos.por_metodo_pago)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([metodo, monto]) => ({ nombre: etiquetaMetodo(metodo), valor: monto }))}
-              />
+              {datos.ventas > 0 ? (
+                <GraficoDona
+                  formato={dinero}
+                  centro={{ valor: corto(datos.ventas), texto: 'cobrado' }}
+                  partes={Object.entries(datos.por_metodo_pago)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([metodo, monto]) => ({ nombre: etiquetaMetodo(metodo), valor: monto }))}
+                />
+              ) : (
+                <SinDatos que="cobros" />
+              )}
             </Seccion>
           </div>
         </Bloque>
@@ -540,7 +545,7 @@ function filasDeLaCuenta(datos: ReporteResumen): FilaCuenta[] {
  */
 function Facturacion({ datos, dinero }: { datos: ReporteResumen; dinero: Dinero }) {
   const sinFacturar = Math.max(Math.round((datos.ventas - datos.valor_facturado) * 100) / 100, 0)
-  const pct = (datos.valor_facturado / datos.ventas) * 100
+  const pct = datos.ventas > 0 ? (datos.valor_facturado / datos.ventas) * 100 : 0
   const ventasSinFactura = Math.max(datos.pedidos - datos.facturadas, 0)
 
   return (
@@ -549,11 +554,13 @@ function Facturacion({ datos, dinero }: { datos: ReporteResumen; dinero: Dinero 
       ayuda="No todo se factura al momento: se puede decidir después, desde el histórico de Ventas."
       accion={
         <div className="text-right">
-          <div className="text-3xl font-bold tabular-nums leading-none">{pct.toFixed(0)}%</div>
+          <div className="text-3xl font-bold tabular-nums leading-none">{datos.ventas > 0 ? `${pct.toFixed(0)}%` : '—'}</div>
           <div className="text-[11px] text-neutral-500">facturado</div>
         </div>
       }
     >
+      {datos.ventas === 0 && <SinDatos que="ventas" alto={120} />}
+      {datos.ventas > 0 && (
       <GraficoDona
         pastel
         alto={140}
@@ -573,6 +580,7 @@ function Facturacion({ datos, dinero }: { datos: ReporteResumen; dinero: Dinero 
           },
         ]}
       />
+      )}
       {datos.iva_cobrado > 0 && (
         <p className="mt-3 text-xs text-neutral-500">
           De la parte facturada salen {dinero(datos.iva_cobrado)} de IVA que se le deben al SENIAT. Lo que no se

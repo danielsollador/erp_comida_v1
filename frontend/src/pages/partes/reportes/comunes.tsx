@@ -231,9 +231,8 @@ export function SerieTiempo({
   // decimales) un eje de $0 a $1,20 decia "$1 $1 $1 $0 $0".
   const mayor = Math.max(...puntos.map((p) => p.valor), ...(conAnterior ? anterior : [0]), 0)
   const formatoEje = mayor < 10 && formatoDetalle ? formatoDetalle : formato
-  if (puntos.length === 0) {
-    return <p className="text-sm text-neutral-400 py-8 text-center">Sin datos para dibujar.</p>
-  }
+  // Vacia no dibuja nada: quien la usa pone `SinDatos` en su sitio.
+  if (puntos.length === 0) return null
   if (enBarras) {
     return (
       <>
@@ -283,3 +282,25 @@ export function capitalizar(texto: string): string {
 
 /** Para contar cosas: "1.250", sin decimales. */
 export const enteros = (n: number) => Math.round(n).toLocaleString('es-VE', { maximumFractionDigits: 0 })
+
+/**
+ * El sitio de un grafico cuando no hay nada que dibujar.
+ *
+ * ANTES EL GRAFICO DESAPARECIA. Un mes sin ventas dejaba la pantalla sin
+ * una sola tarjeta y parecia un error (Leider, 1-oct: "a simple vista
+ * parece que es un error, yo pense que era un error"). Ahora cada grafico
+ * se queda en su sitio, con su titulo, y dice por que esta vacio.
+ */
+export function SinDatos({ que, alto = 160 }: { que: string; alto?: number }) {
+  return (
+    <div
+      className="grid place-items-center rounded-xl border border-dashed border-neutral-200 px-4 text-center"
+      style={{ minHeight: alto }}
+    >
+      <p className="text-sm text-neutral-500">
+        No hay {que} en el período elegido.
+        <span className="block text-xs text-neutral-400 mt-1">El gráfico se llena solo cuando las haya.</span>
+      </p>
+    </div>
+  )
+}

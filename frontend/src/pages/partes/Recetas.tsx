@@ -160,6 +160,10 @@ export default function Recetas({
       rendimientoDe: '',
       rendimientoSalen: '',
       modoRendimiento: false,
+      // EN GRAMOS Y MILILITROS POR DEFECTO: una receta rara vez lleva un
+      // kilo de algo (Leider, 1-oct). La mercancia se sigue comprando y
+      // guardando en kilos y litros; esto es solo como se escribe aqui.
+      enChica: esGrande(ingredientes.find((i) => i.id === x.ingrediente_id)?.unidad ?? ''),
     }))
     setFilas(iniciales)
     setHuellaGuardada(huella(iniciales))
@@ -454,6 +458,8 @@ function Compositor({
         rendimientoDe: '',
         rendimientoSalen: '',
         modoRendimiento: false,
+        // Gramos y mililitros por defecto (Leider, 1-oct).
+        enChica: esGrande(ing.unidad),
       },
     ])
     setResaltado(ing.id)

@@ -70,7 +70,7 @@ export const PREGUNTA: Record<string, string> = {
   '/compras': '¿Qué entró y cuánto costó?',
   '/reportes': '¿Cómo va el negocio?',
   '/ventas': '¿Qué se vendió y cómo se pagó?',
-  '/caja': '¿Cuadra la gaveta?',
+  '/caja': '¿Cuadran las ventas del día?',
   '/contabilidad': 'Libros y balances',
   '/impuestos': 'IVA y libros fiscales',
   '/tasa': 'Bolívares por dólar de cada día',

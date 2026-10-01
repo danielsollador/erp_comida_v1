@@ -3,7 +3,7 @@ import { PALETA } from '../../../lib/paleta'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { Lecturas, Seccion } from '../../../components/ui'
 import type { Merma, ReportePerdidas } from '../../../lib/types'
-import { Bloque, Kpi, Linea, SerieTiempo, Vacio, type Dinero } from './comunes'
+import { Bloque, Kpi, Linea, SerieTiempo, SinDatos, Vacio, type Dinero } from './comunes'
 
 /**
  * Analisis de perdidas: que se merma mas, que se merma menos, por que, y
@@ -73,20 +73,26 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
 
       {datos.insights.length > 0 && <Lecturas items={datos.insights} />}
 
-      {datos.merma <= 0 ? (
+      {/* Sin mermas los bloques se quedan en su sitio, cada grafico diciendo
+          que esta vacio: una pantalla que se queda sin tarjetas parece un
+          error (Leider, 1-oct). */}
+      {datos.merma <= 0 && (
         <Vacio>
           No hay mermas {de ? `de ${de} ` : ''}registradas en este período.{' '}
           {datos.sin_merma > 0 && `Las ${datos.sin_merma} mercancías activas están sin ninguna pérdida anotada.`}
         </Vacio>
-      ) : (
+      )}
+      {(
         <>
           {/* ── Cuando ───────────────────────────────────────────────── */}
-          {datos.serie.length > 1 && (
+          {(datos.serie.length > 1 || datos.merma <= 0) && (
             <Bloque titulo="Cuándo se perdió">
               <Seccion titulo={`Merma por ${datos.granularidad}`} ayuda="Al costo congelado del momento en que se registró.">
                 {/* Barras, no linea: una merma es un hecho suelto, y la
                     linea unia un registro de $13 con cuatro dias en cero
                     dibujando un triangulo (auditoria de graficos, 30-sep). */}
+                {datos.merma <= 0 && <SinDatos que="mermas" alto={180} />}
+                {datos.merma > 0 && (
                 <SerieTiempo
                   alto={180}
                   formato={corto}
@@ -99,6 +105,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                     detalle: `${p.veces} ${p.veces === 1 ? 'registro' : 'registros'}`,
                   }))}
                 />
+                )}
               </Seccion>
             </Bloque>
           )}
@@ -110,6 +117,8 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                 titulo="Lo que más se pierde"
                 ayuda="La barra completa es lo perdido; la parte ámbar salió de un conteo, no de un registro."
               >
+                {top.length === 0 && <SinDatos que="mermas" alto={160} />}
+                {top.length > 0 && (
                 <BarrasApiladas
                   formato={dinero}
                   leyenda={[
@@ -125,6 +134,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                     ],
                   }))}
                 />
+                )}
               </Seccion>
 
               <Seccion titulo="Lo que menos se pierde" ayuda="Y lo que no se perdió nada, que también es un dato.">
@@ -159,6 +169,8 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
           <Bloque titulo="Por qué se perdió">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <Seccion titulo="Motivos" ayuda="El motivo que se escribió al registrar. Los faltantes de conteo van aparte.">
+                {datos.por_motivo.length === 0 && <SinDatos que="mermas" alto={160} />}
+                {datos.por_motivo.length > 0 && (
                 <GraficoDona
                   formato={dinero}
                   centro={{ valor: corto(datos.merma), texto: 'perdidos' }}
@@ -169,6 +181,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                     color: m.motivo === 'Conteo fisico' ? PALETA.ojo : undefined,
                   }))}
                 />
+                )}
               </Seccion>
               <Seccion titulo="Registrada contra encontrada">
                 <Linea dinero={dinero} etiqueta="Merma registrada a mano" monto={datos.merma_registrada} />
@@ -186,6 +199,8 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
           {/* ── Detalle ──────────────────────────────────────────────── */}
           <Bloque titulo="Registro por registro">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+              {datos.detalle.length === 0 && <SinDatos que="registros de merma" alto={100} />}
+              {datos.detalle.length > 0 && (
               <Tabla orden={orden} glosario="perdidas">
                 <table className="w-full text-sm">
                   <thead className="text-neutral-500 text-xs uppercase">
@@ -222,6 +237,7 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                   </tbody>
                 </table>
               </Tabla>
+              )}
             </div>
           </Bloque>
         </>

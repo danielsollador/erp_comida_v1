@@ -7,7 +7,7 @@ import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { Filtros, Seccion } from '../../../components/ui'
 import { explicar } from '../../../lib/glosario'
 import type { ParCombo, ProductoVendido, ReporteCombos, ReporteResumen } from '../../../lib/types'
-import { Bloque, DIA_LARGO, SerieTiempo, Vacio, capitalizar, enteros, recortarSerie, type Dinero } from './comunes'
+import { Bloque, DIA_LARGO, SerieTiempo, SinDatos, Vacio, capitalizar, enteros, recortarSerie, type Dinero } from './comunes'
 
 /** Un cambio de filtro pedido desde un grafico: tocar un producto, una categoria. */
 export type CambioFiltro = { c?: string; p?: string }
@@ -108,8 +108,9 @@ export default function Ventas({
     <>
       {/* ── 1. Cuando se vende ─────────────────────────────────────────── */}
       <Bloque titulo={de ? `Cuándo se vende ${de}` : 'Cuándo se vende'} descripcion="La hora es la de tomar el pedido, no la de cobrarlo.">
-        {serie.length > 0 ? (
-          <Seccion
+        {/* Las tarjetas se quedan aunque no haya nada: un grafico que
+            desaparece parece un error (Leider, 1-oct). */}
+        <Seccion
             titulo={`Unidades y ventas por ${datos.granularidad}`}
             ayuda={`Barras: las unidades vendidas, eje izquierdo. Línea: la plata, eje derecho.${
               ant ? ` En gris, ${ant.etiqueta}, tramo a tramo: la misma hora, el mismo día de la semana.` : ''
@@ -153,10 +154,8 @@ export default function Ventas({
                   : undefined
               }
             />
+            {serie.length === 0 && <SinDatos que={de ? `ventas de ${de}` : 'ventas'} alto={240} />}
           </Seccion>
-        ) : (
-          <Vacio>Todavía no hay ventas {de ? `de ${de} ` : ''}en este período.</Vacio>
-        )}
 
         {unDia ? (
           datos.pedidos > 0 && (
@@ -167,7 +166,7 @@ export default function Ventas({
           )
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-3">
-            {datos.calor.length > 0 && (
+            {(
               <Seccion
                 titulo="A qué hora y qué día entran los clientes"
                 ayuda="Cada casilla es una hora de un día de la semana, sumando todo el período. Más oscuro, más movimiento."
@@ -183,7 +182,11 @@ export default function Ventas({
                   />
                 }
               >
-                <MapaCalor celdas={datos.calor} medida={medida} formato={dinero} />
+                {datos.calor.length > 0 ? (
+                  <MapaCalor celdas={datos.calor} medida={medida} formato={dinero} />
+                ) : (
+                  <SinDatos que="pedidos" alto={220} />
+                )}
                 {horaPico && (
                   <p className="text-xs text-neutral-500 mt-3">
                     La hora con más pedidos es las {horaPico[0]}:00, con {horaPico[1].pedidos} en el
@@ -196,7 +199,7 @@ export default function Ventas({
                 con alto fijo se quedaban cortas y la fila terminaba escalonada
                 (Leider, 30-sep). */}
             <div className="flex flex-col gap-3">
-              {datos.por_dia_semana.length > 0 && (
+              {(
                 <Seccion
                   estirar
                   titulo="Qué día vendes más"
@@ -206,6 +209,8 @@ export default function Ventas({
                     </Ayuda>
                   }
                 >
+                  {conVentas.length === 0 && <SinDatos que="ventas" alto={120} />}
+                  {conVentas.length > 0 && (
                   <GraficoBarras
                     estirar
                     // Con centavos cuando los dias tipicos son chicos: "$0 $0
@@ -219,6 +224,7 @@ export default function Ventas({
                     resaltar={(d) => d.etiqueta === mejorDia?.nombre}
                     referencia={diasConPromedio.length > 1 ? { valor: promedioDia, texto: 'promedio' } : undefined}
                   />
+                  )}
                   {mejorDia && conVentas.length > 1 && (
                     <p className="text-xs text-neutral-500 mt-2">
                       El {DIA_LARGO[mejorDia.nombre] ?? mejorDia.nombre.toLowerCase()} típico vende{' '}
@@ -227,8 +233,10 @@ export default function Ventas({
                   )}
                 </Seccion>
               )}
-              {horas.length > 0 && (
+              {(
                 <Seccion estirar titulo="Pedidos por hora" ayuda="Sumando todos los días del período.">
+                  {horas.length === 0 && <SinDatos que="pedidos" alto={120} />}
+                  {horas.length > 0 && (
                   <GraficoBarras
                     estirar
                     formato={(n) => `${n}`}
@@ -239,6 +247,7 @@ export default function Ventas({
                     }))}
                     resaltar={(d) => horaPico != null && d.etiqueta === `${horaPico[0]}`}
                   />
+                  )}
                 </Seccion>
               )}
             </div>
@@ -252,7 +261,14 @@ export default function Ventas({
         descripcion={unProducto ? undefined : 'Ordenado por ingresos. Toca un producto para ver solo ese.'}
       >
         {datos.top_productos.length === 0 ? (
-          <Vacio>Todavía no se vendió nada {de ? `de ${de} ` : ''}en este período.</Vacio>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[3fr_2fr]">
+            <Seccion titulo="Cuánto vende y cuánto deja cada producto" ayuda="Verde, lo que te queda de cada venta después de pagar la mercancía.">
+              <SinDatos que={de ? `ventas de ${de}` : 'productos vendidos'} alto={200} />
+            </Seccion>
+            <Seccion titulo="Qué parte es comida, bebida, envíos" ayuda="Por la categoría de cada producto en el menú.">
+              <SinDatos que="ventas" alto={200} />
+            </Seccion>
+          </div>
         ) : (
           <>
             <div className={`grid grid-cols-1 gap-3 ${unProducto ? '' : 'xl:grid-cols-[3fr_2fr]'}`}>
