@@ -266,14 +266,28 @@ export default function Inicio() {
                 {segun({ sencillo: 'Se arma solo con lo de arriba', tecnico: 'Asientos automáticos desde las operaciones' })}
               </span>
             </div>
-            {/* Una lista pareja: en telefono una debajo de otra, en pantalla
-                ancha las tres en fila. */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 text-sm text-neutral-500">
+            {/* TRES BOTONES LIVIANOS, no tres enlaces grises. Sueltos en gris
+                parecian la letra pequeña de la politica de privacidad, no algo
+                que se toca (Leider, 1-oct). Siguen siendo secundarios --sin
+                sombra ni color, el gris del sistema-- pero con su cuadrito, su
+                borde y la flecha que se mueve, se ve que se pueden tocar. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mt-1.5">
               {contador.map((m) => (
-                <Link key={m.to} to={m.to} className="group flex items-center gap-2.5 py-2 hover:text-neutral-900">
-                  <Icono nombre={m.icono} size={16} className="shrink-0 text-neutral-400 group-hover:text-acento-600" />
-                  <span className="font-medium">{m.titulo}</span>
-                  <span className="text-neutral-400 truncate">· {descripcionDe(m.to)}</span>
+                <Link
+                  key={m.to}
+                  to={m.to}
+                  className="vp-pulsable group flex items-center gap-3 rounded-2xl px-3 py-2.5 bajo:py-2 min-h-[3.25rem] bg-neutral-500/[0.05] shadow-[inset_0_0_0_1px_var(--vp-textura)] hover:bg-neutral-500/10"
+                >
+                  <span className="shrink-0 w-9 h-9 rounded-[0.7rem] grid place-items-center bg-neutral-100 text-neutral-600 shadow-[inset_0_0_0_1px_var(--color-neutral-200)] group-hover:text-neutral-900">
+                    <Icono nombre={m.icono} size={17} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-display font-semibold leading-tight text-[14px] text-neutral-800">{m.titulo}</span>
+                    <span className="block text-[12.5px] leading-snug text-neutral-500 truncate">{descripcionDe(m.to)}</span>
+                  </span>
+                  <span className="shrink-0 w-6 h-6 rounded-full grid place-items-center text-neutral-400 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:translate-x-0.5 group-hover:text-neutral-700">
+                    <Icono nombre="chevron" size={14} />
+                  </span>
                 </Link>
               ))}
             </div>
