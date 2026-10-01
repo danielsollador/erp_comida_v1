@@ -358,19 +358,20 @@ export function GraficoLineas({
 
 /**
  * Colores para series SIN orden (categorias, metodos de pago). El primero es
- * el cobre del logo y el segundo el grafito, que son los dos que mas
- * contrastan entre si y con el papel; de ahi en adelante se alterna. Salen de
- * la paleta y no de un hexadecimal, asi el modo oscuro los invierte solo.
+ * el cobre del logo; siguen el ambar y el verde, que contrastan con el y
+ * entre si; el grafito va al final (Leider, 30-sep: "no es logico que el
+ * color principal de las barras sea negro"). Salen de la paleta y no de un
+ * hexadecimal, asi el modo oscuro los invierte solo.
  */
 export const PALETA_CATEGORICA = [
   'var(--color-acento-500)',
-  'var(--color-neutral-800)',
   'var(--color-aviso-500)',
   'var(--color-exito-500)',
   'var(--color-acento-300)',
   'var(--color-neutral-400)',
   'var(--color-peligro-400)',
   'var(--color-aviso-300)',
+  'var(--color-neutral-800)',
 ]
 
 /**
@@ -577,7 +578,7 @@ export function GraficoBarras({
   datos: BarraDato[]
   formato: (n: number) => string
   alto?: number
-  /** Que barra va en cobre (la mayor, la de hoy). Las demas, grafito. */
+  /** Que barra va en cobre oscuro (la mayor, la de hoy). Las demas, cobre. */
   resaltar?: (d: BarraDato, i: number) => boolean
   /** En vez del alto fijo, ocupa el que le deje su contenedor. Con alto fijo
       dos graficos apilados no llegan al pie de la tarjeta de al lado y la
@@ -674,12 +675,14 @@ export function GraficoBarras({
                         style={{ height: `${pct(ant)}%` }}
                       />
                     )}
-                    {/* EL HOVER NO PINTA DE COBRE. El cobre significa "esta es
-                        la barra fuerte"; para el cursor cambia la opacidad,
-                        que se ve en los dos temas. */}
+                    {/* COBRE, NO NEGRO: la barra normal es el color de la
+                        marca y la fuerte (la mayor, la de hoy) el mismo
+                        cobre mas oscuro (Leider, 30-sep). El cursor no cambia
+                        el color, cambia la opacidad, que se ve en los dos
+                        temas. */}
                     <div
                       className={`vp-barra absolute bottom-0 rounded-t-md min-h-[2px] transition-opacity group-hover:opacity-70 ${
-                        fuerte ? 'bg-acento-500' : 'bg-neutral-900'
+                        fuerte ? 'bg-acento-700' : 'bg-acento-500'
                       }`}
                       style={{
                         height: `${pct(d.valor)}%`,
@@ -722,7 +725,7 @@ export function GraficoBarras({
           {conAnterior && (
             <>
               <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
-                <span className="h-2.5 w-2.5 rounded-sm bg-neutral-900" />
+                <span className="h-2.5 w-2.5 rounded-sm bg-acento-500" />
                 {nombres?.actual ?? 'Este período'}
               </span>
               <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
@@ -1165,124 +1168,102 @@ export function Sparkline({
 }
 
 
-// ── Cascada ─────────────────────────────────────────────────────────────────
+// ── La cuenta, en barras ────────────────────────────────────────────────────
 
-export type PasoCascada = {
+export type FilaCuenta = {
   nombre: string
-  /** Lo que suma o resta. En un `total` o un `resultado`, se ignora el signo. */
+  /** Con su signo: lo que se resta va en negativo. */
   valor: number
-  /** `total`: la barra arranca de cero (las ventas). `resultado`: lo que queda
-      al final, tambien desde cero. Sin tipo: un paso que suma o resta. */
-  tipo?: 'total' | 'resultado'
+  /** `base`: de donde se parte (las ventas). `subtotal`: una suma de en
+      medio (la ganancia bruta). `resultado`: lo que queda al final. Sin
+      tipo: un pedazo que se lleva algo (o que suma, si es positivo). */
+  tipo?: 'base' | 'subtotal' | 'resultado'
   color?: string
+  /** Una aclaracion bajo el nombre: "24% de margen". */
+  nota?: string
 }
 
 /**
- * De donde sale la ganancia, como cascada: las ventas enteras a la
- * izquierda, cada cosa que se lleva una parte baja un escalon, y lo que
- * queda es la ultima barra, desde cero. Es EL grafico de un estado de
- * resultados en cualquier tablero (Power BI lo trae de serie), y lo que
- * tenia antes el Resumen era un vaso dibujado a mano que habia que
- * aprender a leer (auditoria de graficos, 30-sep).
+ * De donde sale la ganancia: la cuenta de siempre (ventas, menos esto,
+ * menos aquello, queda tanto) con una barra en cada renglon, todas a la
+ * misma escala. Se lee como una factura y se VE como un grafico: la barra
+ * mas larga es lo que mas pesa, y si lo que se resta es mas largo que lo
+ * vendido, el resultado sale en rojo.
  *
- * Si los costos se pasan de las ventas, el resultado cae por debajo de
- * cero: la linea del cero queda a la vista y la ultima barra cuelga en
- * rojo, que es exactamente la noticia.
+ * Antes era una cascada (barras flotantes, escalon a escalon), que es lo que
+ * trae cualquier tablero pero hay que saber leerla: con los gastos cuatro
+ * veces mayores que la venta, la barra de ventas quedaba diminuta arriba y
+ * nada mas flotaba por debajo del cero (Leider, 30-sep: "no se entiende
+ * nada"). Aqui no hay nada que flote: cada renglon es un numero y su barra.
  */
-export function GraficoCascada({
-  pasos,
-  formato,
-  alto = 220,
-}: {
-  pasos: PasoCascada[]
-  formato: (n: number) => string
-  alto?: number
-}) {
+export function BarrasDeCuenta({ filas, formato }: { filas: FilaCuenta[]; formato: (n: number) => string }) {
   const { enHover, Globo } = useGlobo()
-  if (pasos.length === 0) {
+  if (filas.length === 0) {
     return <p className="text-sm text-neutral-400 py-6 text-center">Sin datos para dibujar.</p>
   }
-  // Cada paso va de `desde` a `hasta`; el acumulado es donde queda la cascada.
-  let acumulado = 0
-  const tramos = pasos.map((p) => {
-    if (p.tipo === 'total') {
-      acumulado = p.valor
-      return { ...p, desde: 0, hasta: p.valor }
-    }
-    if (p.tipo === 'resultado') {
-      return { ...p, desde: 0, hasta: acumulado }
-    }
-    const desde = acumulado
-    acumulado += p.valor
-    return { ...p, desde, hasta: acumulado }
-  })
-  const niveles = tramos.flatMap((t) => [t.desde, t.hasta])
-  const techo = Math.max(...niveles, 0)
-  const piso = Math.min(...niveles, 0)
-  const rango = techo - piso || 1
-  const y = (v: number) => ((v - piso) / rango) * 100
-  const colorDe = (t: (typeof tramos)[number]) => {
-    if (t.color) return t.color
-    if (t.tipo === 'total') return 'var(--color-neutral-900)'
-    if (t.tipo === 'resultado') return t.hasta >= 0 ? 'var(--color-exito-500)' : 'var(--color-peligro-500)'
-    return t.valor >= 0 ? 'var(--color-exito-500)' : 'var(--color-neutral-400)'
-  }
-
+  const max = Math.max(...filas.map((f) => Math.abs(f.valor)), 0.000001)
   return (
     <div>
       <Globo />
-      <div className="relative" style={{ height: alto }}>
-        {/* La linea del cero, y una referencia tenue a mitad de camino. */}
-        <div className="absolute inset-x-0 border-t border-neutral-200" style={{ bottom: `${y(0)}%` }} />
-        <div className="absolute inset-0 flex items-stretch gap-2">
-          {tramos.map((t, i) => {
-            const alto_ = Math.abs(y(t.hasta) - y(t.desde))
-            const base = Math.min(y(t.desde), y(t.hasta))
-            const cifra = t.tipo ? t.hasta : t.valor
-            return (
-              <div
-                key={t.nombre + i}
-                className="group relative flex-1 min-w-0"
-                {...enHover(
-                  <>
-                    <div className="mb-1 font-semibold text-neutral-500">{t.nombre}</div>
-                    <LineaGlobo nombre={t.tipo ? 'Queda' : t.valor >= 0 ? 'Suma' : 'Se lleva'} valor={formato(Math.abs(cifra))} color={colorDe(t)} />
-                    {!t.tipo && <LineaGlobo nombre="Acumulado" valor={formato(t.hasta)} />}
-                  </>,
-                )}
-              >
+      <ul>
+        {filas.map((f, i) => {
+          const resultado = f.tipo === 'resultado'
+          const subtotal = f.tipo === 'subtotal'
+          const negativo = f.valor < 0
+          const color =
+            f.color ??
+            (f.tipo === 'base'
+              ? 'var(--color-acento-500)'
+              : resultado || subtotal
+                ? negativo
+                  ? 'var(--color-peligro-500)'
+                  : 'var(--color-exito-500)'
+                : negativo
+                  ? 'var(--color-neutral-300)'
+                  : 'var(--color-exito-400)')
+          // El signo dice que hace el renglon: se resta, suma, o es el saldo.
+          const signo = f.tipo === 'base' ? '' : negativo ? '−' : resultado || subtotal ? '' : '+'
+          return (
+            <li
+              key={f.nombre + i}
+              className={`grid grid-cols-[minmax(0,8rem)_1fr_auto] sm:grid-cols-[minmax(0,13rem)_1fr_auto] items-center gap-x-3 py-1.5 ${
+                resultado ? 'border-t border-neutral-200 mt-1 pt-2.5' : subtotal ? 'border-t border-neutral-100 mt-0.5 pt-2' : ''
+              }`}
+              {...enHover(
+                <>
+                  <div className="mb-1 font-semibold text-neutral-500">{f.nombre}</div>
+                  <LineaGlobo nombre={resultado ? 'Queda' : subtotal ? 'Suma' : negativo ? 'Se lleva' : 'Suma'} valor={formato(Math.abs(f.valor))} color={color} />
+                  {f.nota && <div className="mt-0.5 text-[11px] text-neutral-400">{f.nota}</div>}
+                </>,
+              )}
+            >
+              <span className={`min-w-0 leading-tight ${resultado ? 'font-bold' : subtotal ? 'font-semibold text-sm' : 'text-sm text-neutral-700'}`}>
+                <span className="line-clamp-2">{f.nombre}</span>
+                {f.nota && <span className="block text-[11px] font-normal text-neutral-400 truncate">{f.nota}</span>}
+              </span>
+              <div className="h-4 rounded-md bg-neutral-100 overflow-hidden">
                 <div
-                  className="vp-barra absolute left-[8%] right-[8%] rounded-md min-h-[2px] transition-opacity group-hover:opacity-70"
-                  style={{ bottom: `${base}%`, height: `${alto_}%`, background: colorDe(t), animationDelay: `${i * 90}ms` }}
+                  className={`vp-barra-h h-full rounded-md ${subtotal ? 'opacity-45' : ''}`}
+                  style={{
+                    width: `${(Math.abs(f.valor) / max) * 100}%`,
+                    minWidth: f.valor !== 0 ? 3 : 0,
+                    background: color,
+                    animationDelay: `${i * 60}ms`,
+                  }}
                 />
-                {/* El escalon hasta la barra siguiente, punteado. */}
-                {i < tramos.length - 1 && (
-                  <div
-                    className="absolute left-[92%] w-[16%] border-t border-dashed border-neutral-300 pointer-events-none"
-                    style={{ bottom: `${y(t.hasta)}%` }}
-                  />
-                )}
-                <span
-                  className={`pointer-events-none absolute inset-x-0 text-center text-xs tabular-nums font-medium whitespace-nowrap ${
-                    t.tipo === 'resultado' ? (t.hasta >= 0 ? 'text-exito-700' : 'text-peligro-600') : 'text-neutral-700'
-                  }`}
-                  style={{ bottom: `calc(${base + alto_}% + 3px)` }}
-                >
-                  {t.tipo ? (cifra < 0 ? '−' : '') : t.valor >= 0 ? '+' : '−'}
-                  {formato(Math.abs(cifra))}
-                </span>
               </div>
-            )
-          })}
-        </div>
-      </div>
-      <div className="flex gap-2 mt-1.5">
-        {tramos.map((t, i) => (
-          <span key={t.nombre + i} className="flex-1 min-w-0 text-center text-[11px] leading-tight text-neutral-500">
-            {t.nombre}
-          </span>
-        ))}
-      </div>
+              <span
+                className={`text-right tabular-nums whitespace-nowrap ${
+                  resultado ? 'font-bold text-base' : subtotal ? 'font-semibold text-sm' : 'text-sm text-neutral-700'
+                } ${(resultado || subtotal) && negativo ? 'text-peligro-600' : ''}`}
+              >
+                {signo}
+                {formato(Math.abs(f.valor))}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

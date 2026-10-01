@@ -156,10 +156,11 @@ def serie(
 ) -> List[dict]:
     """Agrupa (fecha, monto) en el paso que toca, con los huecos en cero.
 
-    `puntos` es un iterable de (datetime, monto). Devuelve una lista de
-    {etiqueta, ventas, pedidos} ordenada en el tiempo, con TODOS los tramos
-    del rango aunque no hayan vendido nada: un grafico que se salta los dias
-    en cero esconde justo los dias que hay que mirar.
+    `puntos` es un iterable de (datetime, monto[, cuantos[, unidades]]).
+    Devuelve una lista de {etiqueta, ventas, pedidos, unidades} ordenada en
+    el tiempo, con TODOS los tramos del rango aunque no hayan vendido nada:
+    un grafico que se salta los dias en cero esconde justo los dias que hay
+    que mirar.
     """
     paso = paso or granularidad(inicio, fin)
     acumulado: Dict[str, dict] = {}
@@ -180,7 +181,7 @@ def serie(
     if paso == "hora":
         for h in range(24):
             k = f"{h:02d}:00"
-            acumulado[k] = {"etiqueta": k, "ventas": 0.0, "pedidos": 0}
+            acumulado[k] = {"etiqueta": k, "ventas": 0.0, "pedidos": 0, "unidades": 0}
             orden.append(k)
     else:
         if paso == "semana":
@@ -190,7 +191,7 @@ def serie(
         while t < fin:
             k = clave_de(t)
             if k not in acumulado:
-                acumulado[k] = {"etiqueta": k, "ventas": 0.0, "pedidos": 0}
+                acumulado[k] = {"etiqueta": k, "ventas": 0.0, "pedidos": 0, "unidades": 0}
                 orden.append(k)
             if paso == "dia":
                 t += datetime.timedelta(days=1)
@@ -201,9 +202,11 @@ def serie(
 
     for punto in puntos:
         # (fecha, monto) es un pedido; (fecha, monto, cuantos) es un dia ya
-        # sumado por el mart, que vale por `cuantos` pedidos.
+        # sumado por el mart, que vale por `cuantos` pedidos; el cuarto, si
+        # viene, son las unidades vendidas en ese tramo.
         fecha, monto = punto[0], punto[1]
         cuantos = punto[2] if len(punto) > 2 else 1
+        unidades = punto[3] if len(punto) > 3 else 0
         if fecha is None:
             continue
         k = clave_de(fecha)
@@ -212,11 +215,14 @@ def serie(
             continue
         e["ventas"] += monto
         e["pedidos"] += cuantos
+        e["unidades"] += unidades
 
     salida = []
     for k in orden:
         e = acumulado[k]
-        salida.append({"etiqueta": k, "ventas": round(e["ventas"], 2), "pedidos": int(e["pedidos"])})
+        salida.append(
+            {"etiqueta": k, "ventas": round(e["ventas"], 2), "pedidos": int(e["pedidos"]), "unidades": int(e["unidades"])}
+        )
     # Por horas: solo desde la primera venta hasta la ultima. Las 24 barras con
     # 16 en cero (de medianoche a la apertura) aplastaban las que importan.
     if paso == "hora":

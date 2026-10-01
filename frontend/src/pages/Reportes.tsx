@@ -7,7 +7,7 @@ import { useSeccion } from '../components/Secciones'
 import { useRango } from '../lib/fechas'
 import { idDe, useFiltrosUrl } from '../lib/filtros'
 import { FiltroDesplegable, Lecturas, Pagina, Seccion } from '../components/ui'
-import { GraficoCascada, GraficoDona, Variacion, type PasoCascada } from '../components/Grafico'
+import { BarrasDeCuenta, GraficoDona, Variacion, type FilaCuenta } from '../components/Grafico'
 import { api } from '../lib/api'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { etiquetaMetodo } from '../lib/pagos'
@@ -20,7 +20,7 @@ import type {
   ReportePerdidas,
   ReporteResumen,
 } from '../lib/types'
-import { Bloque, Kpi, Linea, SerieTiempo, capitalizar, recortarSerie, type Dinero } from './partes/reportes/comunes'
+import { Bloque, Kpi, SerieTiempo, capitalizar, enteros, recortarSerie, type Dinero } from './partes/reportes/comunes'
 import Ventas, { type CambioFiltro } from './partes/reportes/Ventas'
 import Perdidas from './partes/reportes/Perdidas'
 import Inventario from './partes/reportes/Inventario'
@@ -382,6 +382,7 @@ function Resumen({
           ayuda="kpi.pedidos"
           valor={String(datos.pedidos)}
           delta={ant && <Variacion pct={ant.cambio_pedidos_pct} texto={vs} />}
+          nota={!filtro && datos.unidades > 0 ? `${enteros(datos.unidades)} unidades vendidas` : undefined}
         />
         {filtro ? (
           <Kpi titulo="Unidades" ayuda="kpi.unidades" valor={String(datos.unidades)} />
@@ -400,27 +401,50 @@ function Resumen({
         )}
       </div>
 
-      {/* ── 2. Las ventas ─────────────────────────────────────────────── */}
+      {/* ── 2. Las ventas: la plata y las unidades, lado a lado ────────── */}
       {serie.length > 0 && (
         <Bloque titulo="Ventas" descripcion="El detalle por hora, día y producto está en la pestaña Ventas.">
-          <Seccion
-            titulo={`Ventas por ${datos.granularidad} · ${sufijo}`}
-            ayuda={ant ? `En gris, ${ant.etiqueta}, tramo a tramo. La línea punteada es el promedio por ${datos.granularidad}.` : undefined}
-          >
-            <SerieTiempo
-              alto={200}
-              formato={corto}
-              formatoDetalle={(n) => dinero(n)}
-              puntos={serie.map((p) => ({
-                etiqueta: p.etiqueta,
-                valor: p.ventas,
-                detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
-              }))}
-              anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.ventas) : undefined}
-              nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
-              referencia={serie.length > 1 ? { valor: promedioTramo, texto: 'promedio' } : undefined}
-            />
-          </Seccion>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <Seccion
+              titulo={`Ventas por ${datos.granularidad} · ${sufijo}`}
+              ayuda={ant ? `En gris, ${ant.etiqueta}, tramo a tramo. La línea punteada es el promedio por ${datos.granularidad}.` : undefined}
+            >
+              <SerieTiempo
+                alto={200}
+                formato={corto}
+                formatoDetalle={(n) => dinero(n)}
+                puntos={serie.map((p) => ({
+                  etiqueta: p.etiqueta,
+                  valor: p.ventas,
+                  detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
+                }))}
+                anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.ventas) : undefined}
+                nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
+                referencia={serie.length > 1 ? { valor: promedioTramo, texto: 'promedio' } : undefined}
+              />
+            </Seccion>
+            {/* Cuantas cosas salieron, no cuanta plata entro: son dos
+                preguntas distintas y la segunda no se veia en ningun lado
+                (Leider, 30-sep: "falta el de las unidades vendidas"). */}
+            <Seccion
+              titulo={`Unidades vendidas por ${datos.granularidad}`}
+              ayuda="Cuántas cosas salieron, sumando los renglones de cada pedido."
+            >
+              <SerieTiempo
+                alto={200}
+                formato={enteros}
+                formatoDetalle={enteros}
+                puntos={serie.map((p) => ({
+                  etiqueta: p.etiqueta,
+                  valor: p.unidades,
+                  detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
+                }))}
+                anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.unidades) : undefined}
+                nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
+                referencia={serie.length > 1 ? { valor: datos.unidades / serie.length, texto: 'promedio' } : undefined}
+              />
+            </Seccion>
+          </div>
         </Bloque>
       )}
 
@@ -451,53 +475,13 @@ function Resumen({
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <h2 className="font-semibold">De dónde sale la ganancia</h2>
             <p className="text-xs text-neutral-500 mt-0.5 mb-3">
-              Las ventas enteras a la izquierda; cada cosa que se lleva una parte baja un escalón; lo que queda es la
-              última barra.
+              Lo vendido arriba; cada renglón se lleva un pedazo; lo que queda, abajo. La barra más larga es lo que más
+              pesa.
             </p>
-            {/* LA CASCADA. Es el grafico de un estado de resultados en
-                cualquier tablero: se lee de izquierda a derecha sin
-                aprender nada. Si los costos se pasan de las ventas, la
-                ultima barra cuelga bajo el cero, en rojo. La cuenta de al
-                lado es la misma, en numeros. */}
-            <div className="grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-5 items-start">
-              {datos.ventas > 0 ? (
-                <GraficoCascada alto={210} formato={corto} pasos={pasosDeLaCascada(datos)} />
-              ) : (
-                <p className="text-sm text-neutral-400 py-8 text-center">Sin ventas en el período.</p>
-              )}
-              <div>
-                <Linea dinero={dinero} etiqueta={filtro ? `Ventas de ${de}` : 'Ventas cobradas'} monto={datos.ventas} />
-                {datos.iva_cobrado > 0 && (
-                  <>
-                    <Linea dinero={dinero} etiqueta="IVA cobrado (se le debe al SENIAT)" monto={-datos.iva_cobrado} />
-                    <Linea dinero={dinero} etiqueta="Ingreso del negocio" monto={datos.ingresos_netos} subtotal />
-                  </>
-                )}
-                <Linea dinero={dinero} etiqueta="Costo de la mercancía" monto={-datos.costo_insumos} />
-                <Linea
-                  dinero={dinero}
-                  etiqueta={`Ganancia bruta (${datos.margen_pct.toFixed(0)}% margen)`}
-                  monto={datos.ganancia_bruta}
-                  subtotal={!filtro}
-                  total={!!filtro}
-                />
-                {!filtro && (
-                  <>
-                    {/* CUANDO LOS GASTOS SON NEGATIVOS, LA LINEA CAMBIA DE
-                        NOMBRE. Un reverso de merma o un sobrante de conteo
-                        restan gasto; con el rotulo fijo la cuenta se leia al
-                        reves (Leider, 24-sep). Diciendo que ese renglon SUMA,
-                        la columna vuelve a cuadrar a la vista. */}
-                    <Linea
-                      dinero={dinero}
-                      etiqueta={datos.gastos >= 0 ? 'Gastos, mermas y faltantes' : 'Sobrantes y reversos (suman)'}
-                      monto={-datos.gastos}
-                    />
-                    <Linea dinero={dinero} etiqueta="Ganancia neta" monto={datos.ganancia_neta} total />
-                  </>
-                )}
-              </div>
-            </div>
+            {/* LA CUENTA CON UNA BARRA EN CADA RENGLON. Se lee como una
+                factura y se ve como un grafico. La cascada que hubo antes no
+                se entendia (Leider, 30-sep). */}
+            <BarrasDeCuenta formato={dinero} filas={filasDeLaCuenta(datos)} />
             {ant && (
               <p className="text-xs text-neutral-500 mt-3">
                 {capitalizar(ant.etiqueta)}: {dinero(ant.ventas)} en ventas y {dinero(ant.ganancia_neta)}{' '}
@@ -535,20 +519,30 @@ function Resumen({
   )
 }
 
-/** Los escalones de la cascada: de las ventas a lo que queda. */
-function pasosDeLaCascada(datos: ReporteResumen): PasoCascada[] {
-  const pasos: PasoCascada[] = [{ nombre: 'Ventas', valor: datos.ventas, tipo: 'total' }]
-  if (datos.iva_cobrado > 0) pasos.push({ nombre: 'IVA', valor: -datos.iva_cobrado, color: 'var(--color-neutral-300)' })
-  pasos.push({ nombre: 'Mercancía', valor: -datos.costo_insumos, color: 'var(--color-neutral-500)' })
-  if (!datos.filtro) {
-    // Un gasto negativo (mas sobrantes que mermas) sube en vez de bajar.
-    if (datos.gastos > 0) pasos.push({ nombre: 'Gastos y mermas', valor: -datos.gastos, color: 'var(--color-aviso-400)' })
-    else if (datos.gastos < 0) pasos.push({ nombre: 'Sobrantes', valor: -datos.gastos })
-    pasos.push({ nombre: 'Te queda', valor: 0, tipo: 'resultado' })
-  } else {
-    pasos.push({ nombre: 'Deja', valor: 0, tipo: 'resultado' })
+/** Los renglones de la cuenta: de las ventas a lo que queda. */
+function filasDeLaCuenta(datos: ReporteResumen): FilaCuenta[] {
+  const filtro = datos.filtro
+  const de = filtro ? filtro.producto || filtro.categoria : ''
+  const filas: FilaCuenta[] = [{ nombre: filtro ? `Ventas de ${de}` : 'Ventas cobradas', valor: datos.ventas, tipo: 'base' }]
+  if (datos.iva_cobrado > 0) {
+    filas.push({ nombre: 'IVA cobrado', nota: 'se le debe al SENIAT', valor: -datos.iva_cobrado })
+    filas.push({ nombre: 'Ingreso del negocio', valor: datos.ingresos_netos, tipo: 'subtotal' })
   }
-  return pasos
+  filas.push({ nombre: 'Costo de la mercancía', valor: -datos.costo_insumos, color: 'var(--color-neutral-400)' })
+  const margen = datos.ventas > 0 ? `${datos.margen_pct.toFixed(0)}% de margen` : undefined
+  if (filtro) {
+    filas.push({ nombre: 'Deja', valor: datos.ganancia_bruta, tipo: 'resultado', nota: margen })
+    return filas
+  }
+  filas.push({ nombre: 'Ganancia bruta', valor: datos.ganancia_bruta, tipo: 'subtotal', nota: margen })
+  // CUANDO LOS GASTOS SON NEGATIVOS, EL RENGLON CAMBIA DE NOMBRE. Un reverso
+  // de merma o un sobrante de conteo restan gasto; con el rotulo fijo la
+  // cuenta se leia al reves (Leider, 24-sep). Diciendo que ese renglon SUMA,
+  // la columna vuelve a cuadrar a la vista.
+  if (datos.gastos >= 0) filas.push({ nombre: 'Gastos, mermas y faltantes', valor: -datos.gastos, color: 'var(--color-aviso-400)' })
+  else filas.push({ nombre: 'Sobrantes y reversos', nota: 'suman', valor: -datos.gastos })
+  filas.push({ nombre: nombre('kpi.ganancia_neta'), valor: datos.ganancia_neta, tipo: 'resultado' })
+  return filas
 }
 
 /**

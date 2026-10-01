@@ -6,7 +6,7 @@ import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { Filtros, Seccion } from '../../../components/ui'
 import { explicar } from '../../../lib/glosario'
 import type { ParCombo, ProductoVendido, ReporteCombos, ReporteResumen } from '../../../lib/types'
-import { Bloque, DIA_LARGO, SerieTiempo, Vacio, capitalizar, recortarSerie, type Dinero } from './comunes'
+import { Bloque, DIA_LARGO, SerieTiempo, Vacio, capitalizar, enteros, recortarSerie, type Dinero } from './comunes'
 
 /** Un cambio de filtro pedido desde un grafico: tocar un producto, una categoria. */
 export type CambioFiltro = { c?: string; p?: string }
@@ -109,6 +109,7 @@ export default function Ventas({
       {/* ── 1. Cuando se vende ─────────────────────────────────────────── */}
       <Bloque titulo={de ? `Cuándo se vende ${de}` : 'Cuándo se vende'} descripcion="La hora es la de tomar el pedido, no la de cobrarlo.">
         {serie.length > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Seccion
             titulo={`Ventas por ${datos.granularidad}`}
             ayuda={
@@ -154,6 +155,26 @@ export default function Ventas({
               }
             />
           </Seccion>
+          {/* Cuantas cosas salieron en cada tramo, con el mismo grano. */}
+          <Seccion
+            titulo={`Unidades vendidas por ${datos.granularidad}`}
+            ayuda="Cuántas cosas salieron, sumando los renglones de cada pedido."
+          >
+            <SerieTiempo
+              alto={240}
+              formato={enteros}
+              formatoDetalle={enteros}
+              puntos={serie.map((p) => ({
+                etiqueta: p.etiqueta,
+                valor: p.unidades,
+                detalle: `${p.pedidos} ${p.pedidos === 1 ? 'pedido' : 'pedidos'}`,
+              }))}
+              anterior={ant && serieAnterior.length === serie.length ? serieAnterior.map((p) => p.unidades) : undefined}
+              nombres={{ actual: 'Este período', anterior: ant ? capitalizar(ant.etiqueta) : 'Período anterior' }}
+              referencia={serie.length > 1 ? { valor: datos.unidades / serie.length, texto: 'promedio' } : undefined}
+            />
+          </Seccion>
+          </div>
         ) : (
           <Vacio>Todavía no hay ventas {de ? `de ${de} ` : ''}en este período.</Vacio>
         )}

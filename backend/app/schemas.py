@@ -1176,6 +1176,8 @@ class PuntoSerie(BaseModel):
     etiqueta: str
     ventas: float
     pedidos: int
+    # Cuantas cosas salieron en ese tramo (los renglones, sin cortesias).
+    unidades: int = 0
 
 
 class ProductoVendido(BaseModel):

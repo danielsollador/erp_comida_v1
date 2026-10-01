@@ -230,11 +230,16 @@ def _puntos_del_bloque(b: Bloque, paso: str):
         if dia is None:
             return []
         return [
-            (datetime.datetime.combine(dia, datetime.time(int(h), 0)), g.ventas, g.pedidos)
+            (datetime.datetime.combine(dia, datetime.time(int(h), 0)), g.ventas, g.pedidos, g.unidades)
             for h, g in b.por_hora.items()
         ]
     return [
-        (inicio_del_dia(consolidacion.fecha_de_clave(clave)) + datetime.timedelta(hours=12), g.ventas, g.pedidos)
+        (
+            inicio_del_dia(consolidacion.fecha_de_clave(clave)) + datetime.timedelta(hours=12),
+            g.ventas,
+            g.pedidos,
+            g.unidades,
+        )
         for clave, g in b.por_dia.items()
     ]
 
@@ -393,11 +398,12 @@ def _serie_anterior(
                 etiqueta=s.etiqueta,
                 ventas=por_hora.get(s.etiqueta, {}).get("ventas", 0.0),
                 pedidos=por_hora.get(s.etiqueta, {}).get("pedidos", 0),
+                unidades=por_hora.get(s.etiqueta, {}).get("unidades", 0),
             )
             for s in serie_actual
         ]
     salida = [
-        schemas.PuntoSerie(etiqueta=s.etiqueta, ventas=pt["ventas"], pedidos=pt["pedidos"])
+        schemas.PuntoSerie(etiqueta=s.etiqueta, ventas=pt["ventas"], pedidos=pt["pedidos"], unidades=pt["unidades"])
         for s, pt in zip(serie_actual, puntos)
     ]
     # Meses de distinto largo pueden dar un tramo mas o menos: se rellena.

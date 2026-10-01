@@ -205,3 +205,21 @@ def test_inventario_por_cajon(client, db, insumo):
     # Un cajon vacio no rompe nada.
     vacio = client.get(f"/api/reportes/inventario?periodo=mes&categoria_id={carnes.id + 100}").json()
     assert vacio["valor_total"] == 0 and vacio["activos"] == 0 and vacio["por_insumo"] == []
+
+
+# ── Las unidades de cada tramo de la serie ───────────────────────────────────
+
+
+def test_la_serie_trae_las_unidades_de_cada_tramo(client, db, variante):
+    refresco = refresco_de(db)
+    pedido(client, (variante, 2), (refresco, 3))
+    pedido(client, (refresco, 1))
+
+    r = resumen(client)
+    assert r["unidades"] == 6
+    assert sum(p["unidades"] for p in r["serie"]) == 6
+    # Y por horas (un dia se mira por horas) cada punto lleva las suyas.
+    assert all("unidades" in p for p in r["serie"])
+
+    f = resumen(client, producto_id=refresco.producto_id)
+    assert sum(p["unidades"] for p in f["serie"]) == 4

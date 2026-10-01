@@ -87,8 +87,8 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                   <BarrasApiladas
                     formato={dinero}
                     leyenda={[
-                      { nombre: 'Materia prima', color: 'var(--color-neutral-800)' },
-                      { nombre: 'Reventa', color: 'var(--color-acento-500)' },
+                      { nombre: 'Materia prima', color: 'var(--color-acento-500)' },
+                      { nombre: 'Reventa', color: 'var(--color-neutral-400)' },
                     ]}
                     filas={top.map((i) => ({
                       nombre: i.nombre,
@@ -97,7 +97,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                         {
                           nombre: i.tipo === 'reventa' ? 'Reventa' : 'Materia prima',
                           valor: i.valor,
-                          color: i.tipo === 'reventa' ? 'var(--color-acento-500)' : 'var(--color-neutral-800)',
+                          color: i.tipo === 'reventa' ? 'var(--color-neutral-400)' : 'var(--color-acento-500)',
                         },
                       ],
                     }))}
@@ -112,8 +112,8 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                     formato={dinero}
                     centro={{ valor: corto(datos.valor_total), texto: 'en el depósito' }}
                     partes={[
-                      { nombre: 'Materia prima', valor: datos.valor_insumos, color: 'var(--color-neutral-800)' },
-                      { nombre: 'Reventa', valor: datos.valor_reventa, color: 'var(--color-acento-500)' },
+                      { nombre: 'Materia prima', valor: datos.valor_insumos, color: 'var(--color-acento-500)' },
+                      { nombre: 'Reventa', valor: datos.valor_reventa, color: 'var(--color-neutral-400)' },
                     ].filter((p) => p.valor > 0)}
                   />
                 </Seccion>

@@ -199,7 +199,7 @@ export function SerieTiempo({
   formato,
   formatoDetalle,
   alto = 220,
-  color = 'var(--color-neutral-900)',
+  color = 'var(--color-acento-500)',
   referencia,
   pie,
 }: {
@@ -264,3 +264,6 @@ export function SerieTiempo({
 export function capitalizar(texto: string): string {
   return texto ? `${texto[0].toUpperCase()}${texto.slice(1)}` : texto
 }
+
+/** Para contar cosas: "1.250", sin decimales. */
+export const enteros = (n: number) => Math.round(n).toLocaleString('es-VE', { maximumFractionDigits: 0 })

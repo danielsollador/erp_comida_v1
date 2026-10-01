@@ -61,7 +61,8 @@ log = logging.getLogger("erp.consolidacion")
 
 # Sube cuando cambie QUE se guarda o COMO se calcula: los dias guardados con
 # una version vieja se vuelven a consolidar la noche siguiente.
-VERSION = 1
+# 2: las unidades vendidas por dia y por hora (la serie de unidades, 30-sep).
+VERSION = 2
 
 # A que hora del local corre la consolidacion nocturna.
 HORA_NOCTURNA = datetime.time(3, 30)
@@ -309,13 +310,18 @@ def bloque_en_vivo(
                 b.con_descuento += 1
                 b.valor_descuentos += p.descuento or 0
 
+        # Cuantas cosas salieron en el pedido: la serie de unidades vendidas
+        # (Leider, 30-sep: "falta el grafico de las unidades vendidas").
+        cuantas = sum(i.cantidad for i in renglones)
         cuando = p.cerrado_en
         dia = _grupo(b.por_dia, cuando.date().isoformat())  # type: ignore[arg-type]
         dia.ventas += monto
         dia.pedidos += 1
+        dia.unidades += cuantas
         hora = _grupo(b.por_hora, f"{cuando.hour:02d}")
         hora.ventas += monto
         hora.pedidos += 1
+        hora.unidades += cuantas
         # Cuando ENTRAN los clientes: por la hora en que se tomo el pedido,
         # que es lo que sirve para armar turnos.
         t = p.creado_en or cuando
@@ -570,6 +576,7 @@ def bloque_desde_mart(db: Session, dias: List[datetime.date]) -> Bloque:
             dia = _grupo(b.por_dia, f.fecha.isoformat())
             dia.ventas += f.ventas
             dia.pedidos += f.pedidos
+            dia.unidades += f.unidades
 
     destino = {tipo: getattr(b, atributo) for tipo, atributo in _TIPOS}
     detalles = (

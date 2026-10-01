@@ -242,6 +242,8 @@ export type PuntoSerie = {
   etiqueta: string
   ventas: number
   pedidos: number
+  /** Cuántas cosas salieron en ese tramo. */
+  unidades: number
 }
 
 export type ProductoVendido = {
