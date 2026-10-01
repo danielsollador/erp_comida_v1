@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
@@ -47,10 +48,12 @@ import type { Categoria, CostoVariante, Producto } from '../lib/types'
  * producto es parte de qué es ese producto, y separarlas obligaba a abrir dos
  * pantallas para una sola pregunta --"¿cuánto me deja esta empanada?".
  */
+// Dos pestañas. "Fuera del menu" era la tercera, al mismo nivel que el menu
+// y las recetas, y es una papelera: ahora es un enlace al pie de las
+// categorias, "Lo que quitaste" (Leider, 1-oct, fight complexity).
 const SECCIONES = [
   { id: 'menu', texto: 'El menú' },
   { id: 'recetas', texto: 'Recetas' },
-  { id: 'retiradas', texto: 'Fuera del menú' },
 ]
 
 
@@ -59,6 +62,8 @@ export default function Menu() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [costos, setCostos] = useState<Map<number, CostoVariante>>(new Map())
   const [cargando, setCargando] = useState(true)
+  const [verRetiradas, setVerRetiradas] = useState(false)
+  const retirados = useMemo(() => cuantosRetirados(categorias), [categorias])
 
   useEffect(() => {
     cargar()
@@ -80,11 +85,26 @@ export default function Menu() {
       <NavBar titulo="Menú" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="ancha">
         {seccion === 'menu' && (
-          <ElMenu categorias={categorias} costos={costos} cargando={cargando} onCambio={cargar} />
+          <ElMenu
+            categorias={categorias}
+            costos={costos}
+            cargando={cargando}
+            onCambio={cargar}
+            retirados={retirados}
+            onVerRetiradas={() => setVerRetiradas(true)}
+          />
         )}
         {seccion === 'recetas' && <Recetas categorias={categorias} costos={costos} onCambio={cargar} />}
-        {seccion === 'retiradas' && <Retiradas categorias={categorias} onCambio={cargar} />}
       </Pagina>
+      {verRetiradas && (
+        <Modal
+          titulo="Lo que quitaste del menú"
+          ayuda="No aparece en el punto de venta. Nada se borra: las ventas viejas siguen nombrándolo."
+          onCerrar={() => setVerRetiradas(false)}
+        >
+          <Retiradas categorias={categorias} onCambio={cargar} />
+        </Modal>
+      )}
     </div>
   )
 }
@@ -96,13 +116,19 @@ function ElMenu({
   costos,
   cargando,
   onCambio,
+  retirados,
+  onVerRetiradas,
 }: {
   categorias: Categoria[]
   costos: Map<number, CostoVariante>
   cargando: boolean
   onCambio: () => void
+  /** Cuantas cosas hay fuera del menu, para el enlace al pie de las categorias. */
+  retirados: number
+  onVerRetiradas: () => void
 }) {
   const dialogo = useDialogo()
+  const navegar = useNavigate()
   const [busqueda, setBusqueda] = useState('')
   const [elegida, setElegida] = useState<number | null>(null)
   // Crear se hace en un cuadro, no escribiendo en una casilla suelta.
@@ -185,10 +211,23 @@ function ElMenu({
   }
 
   async function crearProducto(categoriaId: number, nombre: string, precio: number) {
-    await api.crearProducto(categoriaId, nombre, [{ nombre: SUBSECCION_INICIAL, precio }])
+    const creado = await api.crearProducto(categoriaId, nombre, [{ nombre: SUBSECCION_INICIAL, precio }])
     setElegida(categoriaId)
     setCreando(null)
     onCambio()
+    // UN PRODUCTO NACE CON PRECIO Y, SI SE QUIERE, CON RECETA. Sin receta se
+    // vende sin saber cuanto deja, y nadie vuelve despues a buscarla: se
+    // ofrece aqui mismo, un toque, y se puede dejar para despues (Leider,
+    // 1-oct, fight complexity).
+    const variante = creado.variantes?.[0]
+    if (!variante) return
+    const ahora = await dialogo.confirmar({
+      titulo: `¿Qué lleva ${nombre}?`,
+      texto: 'Ponle la receta ahora y sabrás cuánto te deja cada uno. También puedes hacerlo después, desde Recetas.',
+      aceptar: 'Ponerle la receta',
+      cancelar: 'Después',
+    })
+    if (ahora) navegar(`/menu?s=recetas&v=${variante.id}`)
   }
 
   const { deshacible } = useDeshacer()
@@ -278,6 +317,8 @@ function ElMenu({
             onCambio={onCambio}
             arrastre={arrastre}
             onCrear={() => setCreando('categoria')}
+            retirados={retirados}
+            onVerRetiradas={onVerRetiradas}
           />
           {actual && (
             <ProductosDe
@@ -343,6 +384,8 @@ function ListaCategorias({
   onCambio,
   arrastre,
   onCrear,
+  retirados,
+  onVerRetiradas,
 }: {
   categorias: Categoria[]
   elegida: number | null
@@ -352,6 +395,8 @@ function ListaCategorias({
   onCambio: () => void
   arrastre: Arrastre
   onCrear: () => void
+  retirados: number
+  onVerRetiradas: () => void
 }) {
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-2 md:sticky md:top-[84px]">
@@ -449,6 +494,14 @@ function ListaCategorias({
         >
           + Categoría
         </button>
+        {retirados > 0 && (
+          <button
+            onClick={onVerRetiradas}
+            className="w-full mt-1.5 py-1.5 text-xs text-neutral-500 hover:text-neutral-900"
+          >
+            Lo que quitaste · <span className="tabular-nums">{retirados}</span>
+          </button>
+        )}
       </div>
     </div>
   )
@@ -578,6 +631,25 @@ function TarjetaProducto({
   const [abierto, setAbierto] = useState(false)
   const variantes = producto.variantes.filter((v) => v.activo)
   const moviendose = arrastre.carga?.tipo === 'producto' && arrastre.carga.producto.id === producto.id
+  // El acantilado, en una frase y solo cuando importa: el margen aguanta
+  // con el inventario viejo, pero no con lo que cuesta reponer. Antes era
+  // una flecha "→ 40%" dentro de la pastilla, que nadie entendia.
+  const avisosReposicion = variantes.flatMap((v) => {
+    const info = costos.get(v.id)
+    if (
+      !info ||
+      info.costo == null ||
+      v.precio < info.costo ||
+      info.margen_pct == null ||
+      info.margen_reposicion_pct == null ||
+      info.margen_reposicion_pct >= info.margen_pct - 5
+    )
+      return []
+    const quien = variantes.length > 1 ? `${v.nombre}: ` : ''
+    const cuanto = info.margen_reposicion_pct < 0 ? 'lo venderías a pérdida' : `te dejaría ${info.margen_reposicion_pct.toFixed(0)}%`
+    const sugerido = info.precio_sugerido != null ? ` Para mantener tu margen, cóbralo a $${info.precio_sugerido.toFixed(2)}.` : ''
+    return [`${quien}con los precios de hoy ${cuanto}.${sugerido}`]
+  })
 
   async function renombrar() {
     const nombre = await dialogo.pedirTexto({
@@ -600,7 +672,7 @@ function TarjetaProducto({
     if (otras.length === 0) return
     const destino = await dialogo.elegir({
       titulo: `¿A qué categoría pasa "${producto.nombre}"?`,
-      texto: 'Se lleva sus subsecciones, sus precios y su receta.',
+      texto: 'Se lleva sus variantes, sus precios y su receta.',
       opciones: otras.map((c) => ({ valor: String(c.id), texto: c.nombre })),
     })
     if (destino === null) return
@@ -712,14 +784,6 @@ function TarjetaProducto({
         {variantes.map((v) => {
           const info = costos.get(v.id)
           const bajoCosto = info?.costo != null && v.precio < info.costo
-          // El acantilado: el margen aguanta con el inventario viejo, pero no
-          // con lo que cuesta reponer. Cuando ese stock se acabe, el margen
-          // que queda es el de la derecha -- y así se ve venir.
-          const seDesploma =
-            !bajoCosto &&
-            info?.margen_pct != null &&
-            info.margen_reposicion_pct != null &&
-            info.margen_reposicion_pct < info.margen_pct - 5
           return (
             <span
               key={v.id}
@@ -746,28 +810,31 @@ function TarjetaProducto({
                   }`}
                   title={`Cuesta $${info.costo?.toFixed(2)} producirlo`}
                 >
-                  {bajoCosto ? '¡a pérdida!' : `${info.margen_pct.toFixed(0)}%`}
+                  {/* En palabras: "75%" a secas no dice de que. */}
+                  {bajoCosto ? '¡a pérdida!' : `te deja ${info.margen_pct.toFixed(0)}%`}
                 </span>
               )}
-              {seDesploma && (
-                <span
-                  className={`tabular-nums ${
-                    info!.margen_reposicion_pct! < 0 ? 'text-peligro-600 font-semibold' : 'text-aviso-600'
-                  }`}
-                  title={
-                    `Con los precios de hoy cuesta $${info!.costo_reposicion?.toFixed(2)} producirlo. ` +
-                    (info!.precio_sugerido != null
-                      ? `Para mantener tu margen: $${info!.precio_sugerido.toFixed(2)}.`
-                      : '')
-                  }
+              {/* LA RECETA SE TOCA DESDE AQUI. "sin receta" era una etiqueta
+                  sin salida; ahora es el boton que la pide, y con receta
+                  queda el enlace para editarla (Leider, 1-oct). */}
+              {info?.sin_receta ? (
+                <Link
+                  to={`/menu?s=recetas&v=${v.id}`}
+                  className="font-semibold text-acento-700 hover:underline whitespace-nowrap"
+                  title="Sin receta no se sabe cuánto cuesta ni cuánto deja"
                 >
-                  → {info!.margen_reposicion_pct!.toFixed(0)}%
-                </span>
-              )}
-              {info?.sin_receta && (
-                <span className="text-aviso-700" title="Sin receta: no se sabe cuánto cuesta">
-                  sin receta
-                </span>
+                  Ponle lo que lleva
+                </Link>
+              ) : (
+                info?.costo != null && (
+                  <Link
+                    to={`/menu?s=recetas&v=${v.id}`}
+                    className="text-neutral-400 hover:text-neutral-800 whitespace-nowrap"
+                    title="Ver o cambiar lo que lleva"
+                  >
+                    editar receta
+                  </Link>
+                )
               )}
               {variantes.length > 1 ? (
                 <button
@@ -796,7 +863,7 @@ function TarjetaProducto({
               onChange={(e) => setNuevaVariante(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && agregarVariante()}
               placeholder="Ej. Grande"
-              aria-label="Nombre de la subsección"
+              aria-label="Nombre de la variante"
               autoFocus
               className="w-28 border border-neutral-300 rounded-lg px-2 py-1.5 text-xs"
             />
@@ -804,7 +871,7 @@ function TarjetaProducto({
               value={nuevoPrecio}
               onChange={(e) => setNuevoPrecio(e.target.value)}
               placeholder="Precio"
-              aria-label="Precio de la subsección"
+              aria-label="Precio de la variante"
               className="w-20 border border-neutral-300 rounded-lg px-2 py-1.5 text-xs"
             />
             <button
@@ -825,10 +892,16 @@ function TarjetaProducto({
             onClick={() => setAbierto(true)}
             className="rounded-full px-3 py-1.5 text-xs font-medium text-neutral-500 border border-dashed border-neutral-300 hover:border-neutral-400 hover:text-neutral-800"
           >
-            + Subsección
+            + Variante
           </button>
         )}
       </div>
+      {avisosReposicion.map((aviso) => (
+        <p key={aviso} className="mt-2 pl-8 text-xs text-aviso-700">
+          {aviso[0].toUpperCase()}
+          {aviso.slice(1)}
+        </p>
+      ))}
     </div>
   )
 }
@@ -853,21 +926,15 @@ function Retiradas({ categorias, onCambio }: { categorias: Categoria[]; onCambio
 
   if (!hay) {
     return (
-      <div className="bg-white rounded-2xl border border-neutral-200">
-        <Vacio
-          titulo="No has quitado nada del menú"
-          detalle="Lo que quites aparece aquí para poder devolverlo. Nada se borra: las ventas viejas siguen nombrándolo."
-        />
-      </div>
+      <Vacio
+        titulo="No has quitado nada del menú"
+        detalle="Lo que quites aparece aquí para poder devolverlo. Nada se borra: las ventas viejas siguen nombrándolo."
+      />
     )
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-      <h2 className="font-semibold">Fuera del menú</h2>
-      <p className="text-xs text-neutral-500 mt-0.5 mb-3">
-        No aparecen en el punto de venta. Sus ventas anteriores se conservan.
-      </p>
+    <div>
       <div className="divide-y divide-neutral-100">
         {cats.map((c) => (
           <FilaRetirada
@@ -895,7 +962,7 @@ function Retiradas({ categorias, onCambio }: { categorias: Categoria[]; onCambio
           <FilaRetirada
             key={`v${v.id}`}
             nombre={`${p.nombre} - ${v.nombre}`}
-            detalle="subsección"
+            detalle="variante"
             onVolver={async () => {
               await api.reactivarVariante(v.id)
               onCambio()
@@ -930,6 +997,25 @@ function FilaRetirada({
       </button>
     </div>
   )
+}
+
+/** Cuantas cosas hay fuera del menu: categorias, productos y variantes. */
+function cuantosRetirados(categorias: Categoria[]): number {
+  let n = 0
+  for (const c of categorias) {
+    if (!c.activo) {
+      n += 1
+      continue
+    }
+    for (const p of c.productos) {
+      if (!p.activo) {
+        n += 1
+        continue
+      }
+      n += p.variantes.filter((v) => !v.activo).length
+    }
+  }
+  return n
 }
 
 // ── Piezas sueltas ──────────────────────────────────────────────────────────
@@ -1254,9 +1340,8 @@ function CrearProducto({
       </label>
 
       <p className="text-xs text-neutral-500 mt-4">
-        Si el producto tiene presentaciones --Grande y Pequeño, o por relleno--
-        se le agregan después con "+ Subsección", cada una con su precio. La
-        primera que agregues toma el lugar de este precio.
+        Si viene en varias variantes (Grande y Pequeño, Carne y Queso), se agregan después con «+ Variante», cada
+        una con su precio.
       </p>
     </Modal>
   )

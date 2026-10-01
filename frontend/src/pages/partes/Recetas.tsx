@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { contiene, palabrasDe } from '../../components/Tabla'
 import { Boton, Cifra, FiltroDesplegable, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
@@ -89,6 +90,11 @@ export default function Recetas({
   const [soloFaltan, setSoloFaltan] = useState(false)
   // Por categoria del menu, como en todas las pantallas: "" = todas.
   const [categoria, setCategoria] = useState('')
+  // `?v=<variante>`: abrir directo la receta de un producto. Es como llegan
+  // "Ponle lo que lleva" desde la tarjeta del menu y el paso que sigue a
+  // crear un producto. Se consume al abrir, para que recargar no la vuelva
+  // a abrir.
+  const [params, setParams] = useSearchParams()
 
   useEffect(() => {
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
@@ -137,18 +143,32 @@ export default function Recetas({
     ]
   }, [renglones])
 
-  // Las dos cifras de arriba: cuanto cuesta hacer un producto y cuanto deja,
-  // EN PROMEDIO y de lo que se esta viendo (la categoria filtrada), solo de
-  // los que tienen receta: sin receta el costo es cero y el margen del 100%
-  // mentiria (Leider, 29-sep).
-  const conReceta = renglones.filter(
-    (r) => (!categoria || r.categoria === categoria) && r.info?.sin_receta === false && r.info.costo != null,
-  )
-  const promedio = (f: (r: Renglon) => number) =>
-    conReceta.length ? conReceta.reduce((t, r) => t + f(r), 0) / conReceta.length : 0
-  const costoPromedio = promedio((r) => r.info!.costo!)
-  const margenPromedio = promedio((r) => r.variante.precio - r.info!.costo!)
-  const margenPctPromedio = promedio((r) => r.info!.margen_pct ?? 0)
+  // Las dos cifras de arriba, de lo que se esta viendo (la categoria
+  // filtrada): cuantos tienen receta, y cuanto deja el producto TIPICO.
+  // La mediana y no el promedio: un solo producto a perdida (-3050%) volvia
+  // el promedio "-314% del precio", un numero que no era de nadie (Leider,
+  // 1-oct). Y cuantos estan a perdida, que es lo que hay que ir a arreglar.
+  const delFiltro = renglones.filter((r) => !categoria || r.categoria === categoria)
+  const conReceta = delFiltro.filter((r) => r.info?.sin_receta === false && r.info.costo != null)
+  const margenes = conReceta.map((r) => r.info!.margen_pct ?? 0).sort((a, b) => a - b)
+  const margenTipico = margenes.length
+    ? margenes.length % 2
+      ? margenes[(margenes.length - 1) / 2]
+      : (margenes[margenes.length / 2 - 1] + margenes[margenes.length / 2]) / 2
+    : 0
+  const aPerdida = margenes.filter((m) => m < 0).length
+
+  const pedida = params.get('v')
+  useEffect(() => {
+    if (!pedida || abierta || renglones.length === 0) return
+    const r = renglones.find((x) => String(x.variante.id) === pedida)
+    const p = new URLSearchParams(params)
+    p.delete('v')
+    setParams(p, { replace: true })
+    if (r) void abrir(r)
+    // Solo cuando llega `v` o aparecen los renglones; `abrir` no cambia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedida, renglones])
 
   async function abrir(r: Renglon) {
     setError('')
@@ -261,19 +281,26 @@ export default function Recetas({
     <>
       <div className="grid grid-cols-2 gap-3">
         <Cifra
-          titulo="Cuesta hacer cada producto"
-          valor={conReceta.length ? `$${costoPromedio.toFixed(2)}` : '—'}
+          titulo="Con receta"
+          valor={`${conReceta.length} de ${delFiltro.length}`}
           detalle={
-            conReceta.length
-              ? `promedio de ${conReceta.length} producto${conReceta.length === 1 ? '' : 's'} con receta${categoria ? ` · ${categoria}` : ''}`
-              : 'Ningún producto con receta'
+            delFiltro.length - conReceta.length > 0
+              ? `${delFiltro.length - conReceta.length} sin receta: no se sabe cuánto cuestan ni cuánto dejan`
+              : 'Todos tienen receta: el costo y el margen son de fiar'
           }
+          tono={delFiltro.length - conReceta.length > 0 ? 'alerta' : 'bien'}
         />
         <Cifra
-          titulo="Margen por producto"
-          valor={conReceta.length ? `$${margenPromedio.toFixed(2)}` : '—'}
-          detalle={conReceta.length ? `el ${margenPctPromedio.toFixed(0)}% del precio, en promedio` : 'Ponles receta para saberlo'}
-          tono={!conReceta.length ? 'normal' : margenPctPromedio < 30 ? 'alerta' : 'bien'}
+          titulo="Te deja el producto típico"
+          valor={conReceta.length ? `${margenTipico.toFixed(0)}%` : '—'}
+          detalle={
+            !conReceta.length
+              ? 'Ponles receta para saberlo'
+              : aPerdida > 0
+                ? `${aPerdida} ${aPerdida === 1 ? 'producto se vende' : 'productos se venden'} a pérdida`
+                : 'ninguno a pérdida'
+          }
+          tono={!conReceta.length ? 'normal' : aPerdida > 0 || margenTipico < 30 ? 'alerta' : 'bien'}
         />
       </div>
 
