@@ -335,7 +335,19 @@ export default function Recetas({
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-sm">{r.nombre}</span>
-                    <span className="block text-[11px] text-neutral-400">{r.categoria}</span>
+                    {/* QUE SE TOCA, DICHO. Una fila que abre algo no se
+                        distingue de una que solo informa; el dueño no sabia
+                        que aqui se arma la receta (Leider, 1-oct). Y la que
+                        no tiene receta lo pide en cobre. */}
+                    <span className="block text-[11px] text-neutral-400 truncate">
+                      {r.categoria}
+                      <span className="text-neutral-300"> · </span>
+                      {falta ? (
+                        <span className="font-semibold text-acento-700">Toca para crear la receta</span>
+                      ) : (
+                        <span>Toca para editar la receta</span>
+                      )}
+                    </span>
                   </span>
                   {falta ? (
                     <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-aviso-700 bg-aviso-50 rounded px-1.5 py-0.5">

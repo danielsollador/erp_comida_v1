@@ -299,7 +299,7 @@ export function SinDatos({ que, alto = 160 }: { que: string; alto?: number }) {
     >
       <p className="text-sm text-neutral-500">
         No hay {que} en el período elegido.
-        <span className="block text-xs text-neutral-400 mt-1">El gráfico se llena solo cuando las haya.</span>
+        <span className="block text-xs text-neutral-400 mt-1">Aparece solo cuando las haya.</span>
       </p>
     </div>
   )
