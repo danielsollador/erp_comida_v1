@@ -1720,3 +1720,11 @@ html[data-tema="oscuro"] .vp-estilo-mixto .vp-recorrido-ojo:hover .vp-recorrido-
 }
 /* La accion de lo pendiente ("Ponerles receta") en el ambar de su frase. */
 .vp-recorrido-ojo .vp-recorrido-accion { color: var(--color-aviso-700); }
+
+/* Reportes, con el cursor encima: el mismo sombreado fino de fondo que las
+   estaciones del recorrido y los botones del contador. Solo cambiaba la
+   sombra, que en modo oscuro no se ve (Leider, 1-oct). */
+@media (hover: hover) {
+  .vp-fila-reportes:hover { background: color-mix(in oklab, var(--vp-superficie) 95%, var(--vp-tinta)); }
+}
+html.vp-ligero .vp-fila-reportes:hover { background: var(--vp-superficie); }
