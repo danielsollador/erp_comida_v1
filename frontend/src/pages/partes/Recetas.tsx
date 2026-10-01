@@ -733,7 +733,7 @@ function Compositor({
             <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[45%] lg:overflow-y-auto">
               {pesadas.length > 0 && (
                 <>
-                  <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Lleva</p>
+                  <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">Lleva</h3>
                   <CabeceraLleva />
                   <ul className="divide-y divide-neutral-100">
                     {pesadas.map((f) => (
@@ -757,13 +757,13 @@ function Compositor({
                   la carne (Leider, 29-sep). */}
               {piezas.length > 0 && (
                 <>
-                  <p
-                    className={`px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500 ${
+                  <h3
+                    className={`px-4 pt-3 pb-2 font-display font-semibold tracking-tight ${
                       pesadas.length > 0 ? 'border-t border-neutral-100' : ''
                     }`}
                   >
-                    Por unidad · vaso, tapa, empaque
-                  </p>
+                    Por unidad <span className="text-sm font-normal text-neutral-500">· vaso, tapa, empaque</span>
+                  </h3>
                   {pesadas.length === 0 && <CabeceraLleva />}
                   <ul className="divide-y divide-neutral-100">
                     {piezas.map((f) => (
@@ -787,9 +787,9 @@ function Compositor({
 
           <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
             <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 shrink-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mr-auto">
+              <h3 className="font-display font-semibold tracking-tight mr-auto">
                 {filas.length === 0 ? 'Toca lo que lleva' : 'Agregar'}
-              </p>
+              </h3>
               <div className="relative">
                 <input
                   type="search"
@@ -825,9 +825,9 @@ function Compositor({
                 )}
                 {disponiblesPiezas.length > 0 && (
                   <>
-                    <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500 border-t border-neutral-100">
-                      Por unidad · vaso, tapa, empaque
-                    </p>
+                    <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight border-t border-neutral-100">
+                      Por unidad <span className="text-sm font-normal text-neutral-500">· vaso, tapa, empaque</span>
+                    </h3>
                     <ul className="divide-y divide-neutral-100">
                       {disponiblesPiezas.map((ing) => (
                         <OpcionMercancia key={ing.id} ing={ing} onAgregar={() => agregar(ing)} />
@@ -979,7 +979,7 @@ function RenglonReceta({
 function CabeceraLleva() {
   const celda = 'text-[11px] font-semibold uppercase tracking-wide text-neutral-500'
   return (
-    <div className="px-4 pb-1.5 flex items-center gap-3">
+    <div className="px-4 py-1.5 flex items-center gap-3 bg-neutral-50 border-y border-neutral-100">
       <span className="w-1.5 shrink-0" />
       <span className={`min-w-0 flex-1 ${celda}`}>
         <Ayuda explica={explicar('receta.mercancia')} titulo="Mercancía">Mercancía</Ayuda>
@@ -999,7 +999,7 @@ function CabeceraLleva() {
 function CabeceraAgregar() {
   const celda = 'text-[11px] font-semibold uppercase tracking-wide text-neutral-500'
   return (
-    <div className="px-4 pb-1.5 flex items-center gap-3">
+    <div className="px-4 py-1.5 flex items-center gap-3 bg-neutral-50 border-y border-neutral-100">
       <span className={`min-w-0 flex-1 ${celda}`}>
         <Ayuda explica={explicar('receta.mercancia')} titulo="Mercancía">Mercancía</Ayuda>
       </span>
