@@ -18,8 +18,16 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
  */
 // La ultima escala, para volver a la pantalla con el tamaño con que se dejo:
 // arrancar siempre en 1 y medir despues era un salto de tamaño al volver del
-// punto de venta (Leider, 1-oct). Vive en memoria; recargar mide de nuevo.
-let ultimaEscala = 1
+// punto de venta y al recargar (Leider, 1-oct). Vive en esta pestaña.
+const CLAVE_ESCALA = 'vp-escala'
+let ultimaEscala = (() => {
+  try {
+    const n = Number(sessionStorage.getItem(CLAVE_ESCALA))
+    return n > 0 && n <= 1 ? n : 1
+  } catch {
+    return 1
+  }
+})()
 
 export default function AjustarAPantalla({ children, desde = 640 }: { children: ReactNode; desde?: number }) {
   const contenido = useRef<HTMLDivElement>(null)
@@ -45,6 +53,11 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
       if (pasaDe1 || Math.abs(s - actual.current) > 0.001 || (s === 1 && actual.current !== 1)) {
         actual.current = s
         ultimaEscala = s
+        try {
+          sessionStorage.setItem(CLAVE_ESCALA, String(s))
+        } catch {
+          /* sin almacenamiento: dura hasta recargar */
+        }
         setEscala(s)
       }
     }

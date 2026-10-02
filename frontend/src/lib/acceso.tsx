@@ -43,6 +43,12 @@ export function AccesoProvider({ children }: { children: ReactNode }) {
   }, [recargar])
 
   const salir = useCallback(async () => {
+    // Lo que la pantalla recordaba (lib/memoria.ts) es de quien sale.
+    try {
+      sessionStorage.removeItem('vp-memoria')
+    } catch {
+      /* sin almacenamiento: no habia nada guardado */
+    }
     try {
       await api.salir()
     } catch {

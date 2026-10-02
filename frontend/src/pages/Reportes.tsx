@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { nombre } from '../lib/palabras'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
@@ -25,6 +25,11 @@ import { Bloque, Kpi, SerieTiempo, SinDatos, capitalizar, enteros, recortarSerie
 import Ventas, { type CambioFiltro } from './partes/reportes/Ventas'
 import Perdidas from './partes/reportes/Perdidas'
 import Inventario from './partes/reportes/Inventario'
+
+/** Lo ya visto en Reportes en esta pestaña: volver a una vista es inmediato. */
+const VISTOS = new Map<string, unknown>()
+const claveDe = (tipo: string, r: { desde: string; hasta: string }, paso: string | undefined, filtro: unknown) =>
+  `${tipo}|${r.desde}|${r.hasta}|${paso ?? 'auto'}|${JSON.stringify(filtro ?? {})}`
 
 /**
  * Reportes, en cuatro secciones (Leider, 22-sep):
@@ -120,32 +125,91 @@ export default function Reportes() {
 
   // Cada seccion trae lo suyo y nada mas: Perdidas e Inventario no hacen
   // esperar al Resumen, y el Resumen no calcula la canasta de combos.
+  //
+  // LO YA VISTO SALE AL INSTANTE (Leider, 1-oct: "primero se queda pegado y
+  // luego carga"). Cada respuesta se guarda (`traer`): volver a una vista la
+  // pinta en el acto y se refresca por detras. Y apenas termina, se precargan
+  // en silencio las otras vistas del mismo periodo --dia, semana y mes; las
+  // otras secciones-- para que el primer toque tambien sea inmediato.
+  const [lento, setLento] = useState(false)
+  const precargado = useRef('')
   useEffect(() => {
     let vigente = true
-    setCargando(true)
     setError('')
     const necesitaResumen = seccion === 'resumen' || seccion === 'ventas'
-    const pedidos: Promise<unknown>[] = []
+    const pasoPedido = paso === 'auto' ? undefined : paso
+    const tareas: { clave: string; traer: () => Promise<unknown>; poner: (v: unknown) => void }[] = []
     if (necesitaResumen)
-      pedidos.push(
-        api.reporte(rango, paso === 'auto' ? undefined : paso, filtroMenu).then((r) => vigente && setDatos(r)),
-      )
+      tareas.push({
+        clave: claveDe('resumen', rango, pasoPedido, filtroMenu),
+        traer: () => api.reporte(rango, pasoPedido, filtroMenu),
+        poner: (v) => setDatos(v as ReporteResumen),
+      })
     if (seccion === 'ventas')
-      pedidos.push(
-        api
-          .reporteCombos(rango, filtroMenu)
-          .then((c) => vigente && setCombos(c))
-          .catch(() => vigente && setCombos(null)),
-      )
+      tareas.push({
+        clave: claveDe('combos', rango, undefined, filtroMenu),
+        traer: () => api.reporteCombos(rango, filtroMenu).catch(() => null),
+        poner: (v) => setCombos(v as ReporteCombos | null),
+      })
     if (seccion === 'perdidas')
-      pedidos.push(api.reportePerdidas(rango, filtroDeposito).then((p) => vigente && setPerdidas(p)))
+      tareas.push({
+        clave: claveDe('perdidas', rango, undefined, filtroDeposito),
+        traer: () => api.reportePerdidas(rango, filtroDeposito),
+        poner: (v) => setPerdidas(v as ReportePerdidas),
+      })
     if (seccion === 'inventario')
-      pedidos.push(api.reporteInventario(rango, filtroDeposito).then((i) => vigente && setInventario(i)))
-    Promise.all(pedidos)
+      tareas.push({
+        clave: claveDe('inventario', rango, undefined, filtroDeposito),
+        traer: () => api.reporteInventario(rango, filtroDeposito),
+        poner: (v) => setInventario(v as ReporteInventario),
+      })
+    // Lo guardado, ya: sin espera ni "cargando".
+    const todoGuardado = tareas.every((t) => VISTOS.has(t.clave))
+    for (const t of tareas) if (VISTOS.has(t.clave)) t.poner(VISTOS.get(t.clave))
+    setCargando(!todoGuardado)
+    // Si de verdad tarda, una linea fina arriba lo dice; si llega rapido, nada.
+    const aviso = todoGuardado ? 0 : window.setTimeout(() => vigente && setLento(true), 180)
+    Promise.all(
+      tareas.map((t) =>
+        t.traer().then((v) => {
+          VISTOS.set(t.clave, v)
+          if (vigente) t.poner(v)
+        }),
+      ),
+    )
       .catch((e) => vigente && setError(e instanceof Error ? e.message : 'No se pudo cargar el reporte'))
-      .finally(() => vigente && setCargando(false))
+      .finally(() => {
+        window.clearTimeout(aviso)
+        if (!vigente) return
+        setCargando(false)
+        setLento(false)
+        // Lo que probablemente se toque despues, en silencio y de a uno.
+        const huella = `${rango.desde}|${rango.hasta}|${JSON.stringify(filtroMenu)}|${JSON.stringify(filtroDeposito)}`
+        if (precargado.current === huella) return
+        precargado.current = huella
+        const siguientes: (() => Promise<unknown>)[] = []
+        for (const p of [undefined, 'dia', 'semana', 'mes']) {
+          const clave = claveDe('resumen', rango, p, filtroMenu)
+          if (!VISTOS.has(clave)) siguientes.push(() => api.reporte(rango, p, filtroMenu).then((v) => VISTOS.set(clave, v)))
+        }
+        const sueltas: [string, () => Promise<unknown>][] = [
+          [claveDe('combos', rango, undefined, filtroMenu), () => api.reporteCombos(rango, filtroMenu)],
+          [claveDe('perdidas', rango, undefined, filtroDeposito), () => api.reportePerdidas(rango, filtroDeposito)],
+          [claveDe('inventario', rango, undefined, filtroDeposito), () => api.reporteInventario(rango, filtroDeposito)],
+        ]
+        for (const [clave, traer] of sueltas)
+          if (!VISTOS.has(clave)) siguientes.push(() => traer().then((v) => VISTOS.set(clave, v)))
+        const cadena = async () => {
+          for (const s of siguientes) {
+            await new Promise((r) => window.setTimeout(r, 120))
+            await s().catch(() => undefined)
+          }
+        }
+        void cadena()
+      })
     return () => {
       vigente = false
+      window.clearTimeout(aviso)
     }
   }, [rango, seccion, paso, filtroMenu, filtroDeposito])
 
@@ -153,8 +217,8 @@ export default function Reportes() {
   // En la vista en bolivares manda esta y no la de hoy: si no, el resumen del
   // mes pasado cambiaria solo cada vez que se mueve el dolar.
   const tasaPeriodo = datos && datos.ventas > 0 ? datos.ventas_bs / datos.ventas || null : null
-  const dinero: Dinero = (x, d) => fmtCongelado(x, tasaPeriodo, d)
-  const corto = (x: number) => dinero(x, 0)
+  const dinero: Dinero = useCallback((x, d) => fmtCongelado(x, tasaPeriodo, d), [fmtCongelado, tasaPeriodo])
+  const corto = useCallback((x: number) => dinero(x, 0), [dinero])
 
   /**
    * Si YA hay algo que mostrar de esta seccion.
@@ -225,7 +289,35 @@ export default function Reportes() {
     const sigue = (mercancias ?? []).find((m) => String(m.id) === filtros.m && String(m.categoria_id) === valor)
     fijarFiltros({ ci: valor, m: sigue ? filtros.m : '' })
   }
-  const alFiltrar = (cambios: CambioFiltro) => fijarFiltros(cambios)
+  // Por una referencia: el contenido memorizado recibe siempre la misma
+  // funcion aunque la de la URL cambie en cada vuelta.
+  const fijarRef = useRef(fijarFiltros)
+  fijarRef.current = fijarFiltros
+  const alFiltrar = useCallback((cambios: CambioFiltro) => fijarRef.current(cambios), [])
+  const pasoRef = useRef(irAPaso)
+  pasoRef.current = irAPaso
+  const alCambiarPaso = useCallback((id: string) => pasoRef.current(id), [])
+
+  // LO PESADO VA DETRAS (Leider, 1-oct: "primero se queda pegado y luego
+  // carga"). Redibujar los graficos toma su tiempo; si va en el mismo paso que
+  // el boton, el boton no cambia hasta que terminan y parece trabado. Con
+  // valores diferidos, la barra de secciones y los filtros responden al
+  // instante y los graficos se redibujan en segundo plano, sin bloquear.
+  // La pestaña se marca en el acto con su propio estado; el cambio de la URL
+  // (que el enrutador hace como transicion, junto con todo el redibujo) llega
+  // detras. Sin esto la pestaña tardaba lo mismo que los graficos.
+  const [seccionMarcada, setSeccionMarcada] = useState(seccion)
+  useEffect(() => setSeccionMarcada(seccion), [seccion])
+  const irASeccion = (id: string) => {
+    setSeccionMarcada(id)
+    irA(id)
+  }
+  const seccionVista = useDeferredValue(seccion)
+  const pasoVisto = useDeferredValue(paso)
+  const datosVistos = useDeferredValue(datos)
+  const combosVistos = useDeferredValue(combos)
+  const perdidasVistas = useDeferredValue(perdidas)
+  const inventarioVisto = useDeferredValue(inventario)
   const limpiar = () => (delMenu ? fijarFiltros({ c: '', p: '' }) : fijarFiltros({ ci: '', m: '' }))
 
   // Lo que resulta del filtro, a la derecha de la fila: el periodo y cuanto.
@@ -242,8 +334,10 @@ export default function Reportes() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Reportes" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Reportes" secciones={SECCIONES} seccion={seccionMarcada} alCambiarSeccion={irASeccion} />
 
+      {/* La linea fina de "cargando": solo si de verdad tarda (ver arriba). */}
+      {lento && <div className="vp-cargando-linea" aria-hidden />}
       <Pagina ocupada={refrescando}>
         <BarraFiltros rango={rango} alCambiar={setRango} resumen={resumenFiltro} alLimpiar={hayFiltro ? limpiar : undefined}>
           {delMenu ? (
@@ -263,33 +357,83 @@ export default function Reportes() {
         {error && !cargando && <p className="text-peligro-600 text-sm">{error}</p>}
 
         {hayDatos && !error && (
-          <>
-            {seccion === 'resumen' && datos && <Resumen datos={datos} dinero={dinero} corto={corto} sufijo={sufijo} />}
-            {seccion === 'ventas' && datos && (
-              <Ventas
-                datos={datos}
-                combos={combos}
-                dinero={dinero}
-                corto={corto}
-                fmt={fmt}
-                paso={paso}
-                alCambiarPaso={irAPaso}
-                alFiltrar={alFiltrar}
-              />
-            )}
-            {seccion === 'perdidas' && perdidas && <Perdidas datos={perdidas} dinero={dinero} corto={corto} />}
-            {seccion === 'inventario' && inventario && <Inventario datos={inventario} dinero={dinero} corto={corto} />}
-
-            {/* Lo que explica de donde salen los numeros, al pie: es
-                informacion de respaldo, no la noticia. Antes iba arriba,
-                bajo el encabezado, delante de las cifras. */}
-            <PieDeDatos seccion={seccion} datos={datos} />
-          </>
+          <Contenido
+            seccion={seccionVista}
+            datos={datosVistos}
+            combos={combosVistos}
+            perdidas={perdidasVistas}
+            inventario={inventarioVisto}
+            dinero={dinero}
+            corto={corto}
+            fmt={fmt}
+            sufijo={sufijo}
+            paso={pasoVisto}
+            alCambiarPaso={alCambiarPaso}
+            alFiltrar={alFiltrar}
+          />
         )}
       </Pagina>
     </div>
   )
 }
+
+/**
+ * Lo que se ve de la seccion: graficos y tablas. Memorizado y alimentado con
+ * valores diferidos (ver arriba): mientras el boton ya cambio, esto se
+ * redibuja por detras y no traba la pantalla.
+ */
+const Contenido = memo(function Contenido({
+  seccion,
+  datos,
+  combos,
+  perdidas,
+  inventario,
+  dinero,
+  corto,
+  fmt,
+  sufijo,
+  paso,
+  alCambiarPaso,
+  alFiltrar,
+}: {
+  seccion: string
+  datos: ReporteResumen | null
+  combos: ReporteCombos | null
+  perdidas: ReportePerdidas | null
+  inventario: ReporteInventario | null
+  dinero: Dinero
+  corto: (x: number) => string
+  fmt: ReturnType<typeof useMoneda>['fmt']
+  sufijo: ReturnType<typeof useMoneda>['sufijo']
+  paso: string
+  alCambiarPaso: (id: string) => void
+  alFiltrar: (cambios: CambioFiltro) => void
+}) {
+  return (
+    <>
+      {seccion === 'resumen' && datos && <Resumen datos={datos} dinero={dinero} corto={corto} sufijo={sufijo} />}
+      {seccion === 'ventas' && datos && (
+        <Ventas
+          datos={datos}
+          combos={combos}
+          dinero={dinero}
+          corto={corto}
+          fmt={fmt}
+          paso={paso}
+          alCambiarPaso={alCambiarPaso}
+          alFiltrar={alFiltrar}
+        />
+      )}
+      {seccion === 'perdidas' && perdidas && <Perdidas datos={perdidas} dinero={dinero} corto={corto} />}
+      {seccion === 'inventario' && inventario && <Inventario datos={inventario} dinero={dinero} corto={corto} />}
+
+      {/* Lo que explica de donde salen los numeros, al pie: es
+          informacion de respaldo, no la noticia. Antes iba arriba,
+          bajo el encabezado, delante de las cifras. */}
+      <PieDeDatos seccion={seccion} datos={datos} />
+    </>
+  )
+})
 
 function PieDeDatos({ seccion, datos }: { seccion: string; datos: ReporteResumen | null }) {
   const partes: string[] = []

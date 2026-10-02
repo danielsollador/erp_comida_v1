@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ComponentProps } from 'react'
 import { nombre } from '../../../lib/palabras'
 import { Ayuda } from '../../../components/Ayuda'
 import { BarrasGanancia, GraficoBarras, GraficoDona, MapaCalor } from '../../../components/Grafico'
@@ -121,7 +121,7 @@ export default function Ventas({
                esquina de la tarjeta, que es donde se busca un ajuste del
                grafico y no una accion de la pantalla. */
             accion={
-              <Filtros
+              <FiltrosAlInstante
                 tamano="chico"
                 activo={paso}
                 alElegir={alCambiarPaso}
@@ -478,5 +478,26 @@ export default function Ventas({
         </Bloque>
       )}
     </>
+  )
+}
+
+/**
+ * El selector del grano (Auto/Dia/Semana/Mes) con su propio estado: marca la
+ * opcion en el acto, aunque los graficos tarden en redibujarse detras
+ * (Leider, 1-oct: "primero se queda pegado"). Si la URL cambia por otro lado
+ * --atras del navegador--, se pone al dia.
+ */
+function FiltrosAlInstante<T extends string>(props: ComponentProps<typeof Filtros<T>>) {
+  const [activo, setActivo] = useState(props.activo)
+  useEffect(() => setActivo(props.activo), [props.activo])
+  return (
+    <Filtros
+      {...props}
+      activo={activo}
+      alElegir={(v: T) => {
+        setActivo(v)
+        props.alElegir(v)
+      }}
+    />
   )
 }

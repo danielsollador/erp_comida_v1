@@ -1,4 +1,4 @@
-import { useEffect, type PointerEvent as EventoPuntero, type ReactNode } from 'react'
+import { useEffect, useState, type PointerEvent as EventoPuntero, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icono, { type NombreIcono } from '../components/Icono'
 import Marca from '../components/Marca'
@@ -12,7 +12,7 @@ import AjustarAPantalla from '../components/AjustarAPantalla'
 import UsuarioMenu from '../components/UsuarioMenu'
 import Notificaciones from '../components/Notificaciones'
 import { useAcceso } from '../lib/acceso'
-import { useRecordado } from '../lib/memoria'
+import { recordado, useRecordado } from '../lib/memoria'
 import { api, connectWs } from '../lib/api'
 import { rangoDe } from '../lib/fechas'
 import { MonedaToggle, useMoneda } from '../lib/moneda'
@@ -57,6 +57,30 @@ export default function Inicio() {
     estado.puede.ve_kpis ? null : undefined,
   )
   const { fmt } = useMoneda()
+
+  // LA PORTADA APARECE ENTERA, DE UNA VEZ (Leider, 1-oct: "primero se queda
+  // chiquito, luego se expande y luego carga la linea"). Si ya hay lo ultimo
+  // que se mostro (lib/memoria.ts), se pinta en el acto. Si no --la primera
+  // vez de la pestaña--, se espera a lo que cambia el alto (avisos, misiones,
+  // recorrido) y entra completa con un fundido corto, en vez de armarse a
+  // pedazos y reescalarse con cada respuesta. Nunca mas de 1,5 s.
+  // Se decide UNA vez, al entrar: despues la memoria ya tiene todo y, leida
+  // en cada vuelta, le quitaba el fundido a la portada a mitad de camino.
+  const [yaHabia] = useState(() => !estado.puede.ve_kpis || recordado.tiene(`${quien}:inicio:recorrido`))
+  const [previos, setPrevios] = useState(yaHabia)
+  const [tope, setTope] = useState(false)
+  const lista = yaHabia || tope || (previos && recorrido !== null)
+  useEffect(() => {
+    if (yaHabia) return
+    const t = window.setTimeout(() => setTope(true), 1500)
+    Promise.allSettled([
+      api.avisos().then((v) => recordado.set(`${quien}:avisos`, v)),
+      estado.puede.administrar ? api.arranque().then((v) => recordado.set(`${quien}:arranque`, v)) : Promise.resolve(),
+    ]).then(() => setPrevios(true))
+    return () => window.clearTimeout(t)
+    // Solo al entrar: lo demas lo refresca `cargar`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Cuatro puertas (ver Rail.tsx): hoy (el panel de arriba), vender, mi
   // negocio y numeros; y aparte, atenuado, lo del contador. Cada modulo
@@ -124,8 +148,13 @@ export default function Inicio() {
     // desplaza como siempre.
     // Si no cabe, se reduce parejo hasta caber (ver AjustarAPantalla): la
     // portada no se desplaza en laptop ni en tablet (Leider, 30-sep).
+    !lista ? (
+      // Un instante en blanco (el fondo de siempre) y no una pantalla a medio
+      // armar que salta.
+      <div className="min-h-screen" aria-busy="true" />
+    ) : (
     <AjustarAPantalla>
-    <div className="min-h-screen flex flex-col">
+    <div className={`min-h-screen flex flex-col ${yaHabia ? '' : 'vp-aparece'}`}>
       <div className="max-w-[100rem] pc:max-w-[84rem] mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 bajo:py-4 pc:py-8 flex-1 flex flex-col">
         {/* Cabecera: marca, a quien y que dia, y los controles. El saludo vive
             aqui --pequeño, al lado de la marca-- y no dentro del panel: de
@@ -304,6 +333,7 @@ export default function Inicio() {
       </div>
     </div>
     </AjustarAPantalla>
+    )
   )
 }
 

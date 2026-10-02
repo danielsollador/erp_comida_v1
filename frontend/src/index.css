@@ -1852,3 +1852,34 @@ html.vp-ligero .vp-luz-cocina { display: none; }
 }
 html.vp-ligero .vp-rb,
 html.vp-ligero .vp-fila-reportes:hover .vp-fila-reportes-barra { animation: none; }
+
+/* La portada, la primera vez de la pestaña: entra completa con un fundido
+   corto, en vez de armarse a pedazos (ver Inicio.tsx). */
+@keyframes vp-aparece { from { opacity: 0; } to { opacity: 1; } }
+.vp-aparece { animation: vp-aparece 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+
+/* Reportes: la linea fina de "cargando" arriba de la pantalla, solo cuando
+   una consulta tarda de verdad. Sin atenuar ni vaciar nada (Leider, 24-sep). */
+.vp-cargando-linea {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.vp-cargando-linea::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--vp-acento), transparent);
+  animation: vp-cargando-corre 0.9s cubic-bezier(0.45, 0.05, 0.25, 1) infinite;
+}
+@keyframes vp-cargando-corre { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) {
+  .vp-aparece { animation: none; }
+  .vp-cargando-linea::before { animation-duration: 2s; }
+}

@@ -751,7 +751,9 @@ export function GraficoBarras({
                         el color, cambia la opacidad, que se ve en los dos
                         temas. */}
                     <div
-                      className="vp-barra absolute bottom-0 rounded-t-md min-h-[2px] transition-opacity group-hover:opacity-70"
+                      // La altura se desliza al llegar otros numeros (el
+                      // mismo dia, otro filtro) en vez de saltar.
+                      className="vp-barra absolute bottom-0 rounded-t-md min-h-[2px] [transition:height_0.45s_cubic-bezier(0.2,0.7,0.2,1),opacity_0.15s] group-hover:opacity-70"
                       style={{
                         height: `${pct(d.valor)}%`,
                         left: conAnterior ? '18%' : 0,
