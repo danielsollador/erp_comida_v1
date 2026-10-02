@@ -219,7 +219,25 @@ export function FilaReportes({ dias }: { dias: { fecha: string; ventas: number }
       className={`vp-losa vp-pulsable vp-fila-reportes ${animar ? 'vp-fila-reportes-entra' : ''} group flex items-center gap-3.5 lg:gap-4 px-4 lg:px-5 py-3.5 bajo:py-2.5 hover:shadow-[inset_0_0_0_1px_var(--vp-textura),0_2px_6px_-2px_rgb(23_24_27/0.06),0_14px_34px_-16px_rgb(23_24_27/0.20)]`}
     >
       <span className="vp-fila-reportes-icono shrink-0 w-11 h-11 rounded-[0.9rem] grid place-items-center bg-acento-50 text-acento-600">
-        <Icono nombre="reportes" size={21} />
+        {/* El mismo dibujo del icono del sistema (ejes y tres barras), con las
+            barras sueltas para que con el cursor encima bajen y suban como un
+            ecualizador (Leider, 1-oct: "esta como sencillito"). */}
+        <svg
+          viewBox="0 0 24 24"
+          width={21}
+          height={21}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 3v18h18" />
+          <path className="vp-rb" style={{ '--k': 0 } as CSSProperties} d="M8 17v-3" />
+          <path className="vp-rb" style={{ '--k': 1 } as CSSProperties} d="M13 17V5" />
+          <path className="vp-rb" style={{ '--k': 2 } as CSSProperties} d="M18 17V9" />
+        </svg>
       </span>
       <span className="min-w-0 flex-1">
         <span className="block font-display font-semibold leading-tight text-[15px] lg:text-base">Reportes</span>
