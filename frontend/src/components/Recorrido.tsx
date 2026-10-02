@@ -210,8 +210,16 @@ const DIAS = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 /** Reportes en su fila: la pregunta y la semana en barras, sin cifras. */
 export function FilaReportes({ dias }: { dias: { fecha: string; ventas: number }[] | undefined }) {
   const { fmt } = useMoneda()
-  // Las barras crecen la misma vez que se cuenta el recorrido.
-  const [animar] = useState(() => !sinEntrada())
+  // Las barras crecen la misma vez que se cuenta el recorrido, y despues se
+  // quita la clase: si se quedaba puesta, al sacar el cursor la animacion de
+  // entrada volvia a empezar --desde cero y con medio segundo de espera-- y
+  // las barras se veian pegadas (Leider, 1-oct).
+  const [animar, setAnimar] = useState(() => !sinEntrada())
+  useEffect(() => {
+    if (!animar) return
+    const t = window.setTimeout(() => setAnimar(false), 1700)
+    return () => window.clearTimeout(t)
+  }, [animar])
   const tope = Math.max(...(dias ?? []).map((d) => d.ventas), 0)
   return (
     <Link

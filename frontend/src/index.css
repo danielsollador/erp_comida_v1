@@ -1839,19 +1839,20 @@ html.vp-ligero .vp-luz-cocina { display: none; }
   65% { transform: scaleY(1.18); }
   100% { transform: scaleY(1); }
 }
-@keyframes vp-rep-ola { from { transform: scaleY(0.15); } to { transform: scaleY(1); } }
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .vp-fila-reportes:hover .vp-rb {
     animation: vp-rb-ecualiza 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
     animation-delay: calc(var(--k) * 90ms);
   }
-  .vp-fila-reportes:hover .vp-fila-reportes-barra {
-    animation: vp-rep-ola 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
-    animation-delay: calc(0.1s + var(--i) * 45ms);
+  /* Las de la semana se encienden en ola, rapido y sin encogerse: encogerlas
+     y volverlas a subir se sentia lento (Leider, 1-oct). */
+  .vp-fila-reportes:hover .vp-fila-reportes-barra:not(.bg-acento-500) {
+    background-color: var(--color-neutral-500);
+    transition-delay: calc(var(--i) * 30ms);
   }
 }
-html.vp-ligero .vp-rb,
-html.vp-ligero .vp-fila-reportes:hover .vp-fila-reportes-barra { animation: none; }
+.vp-fila-reportes-barra { transition: background-color 0.18s cubic-bezier(0.2, 0.7, 0.2, 1); }
+html.vp-ligero .vp-rb { animation: none; }
 
 /* La portada, la primera vez de la pestaña: entra completa con un fundido
    corto, en vez de armarse a pedazos (ver Inicio.tsx). */
