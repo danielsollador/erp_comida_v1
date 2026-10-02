@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentProps } from 'react'
+import { useMemo, useState, type ComponentProps } from 'react'
 import { nombre } from '../../../lib/palabras'
 import { Ayuda } from '../../../components/Ayuda'
 import { BarrasGanancia, GraficoBarras, GraficoDona, MapaCalor } from '../../../components/Grafico'
@@ -489,7 +489,11 @@ export default function Ventas({
  */
 function FiltrosAlInstante<T extends string>(props: ComponentProps<typeof Filtros<T>>) {
   const [activo, setActivo] = useState(props.activo)
-  useEffect(() => setActivo(props.activo), [props.activo])
+  const [antes, setAntes] = useState(props.activo)
+  if (props.activo !== antes) {
+    setAntes(props.activo)
+    setActivo(props.activo)
+  }
   return (
     <Filtros
       {...props}

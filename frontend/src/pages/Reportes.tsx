@@ -1,4 +1,4 @@
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { nombre } from '../lib/palabras'
 import Icono from '../components/Icono'
 import NavBar from '../components/NavBar'
@@ -292,10 +292,12 @@ export default function Reportes() {
   // Por una referencia: el contenido memorizado recibe siempre la misma
   // funcion aunque la de la URL cambie en cada vuelta.
   const fijarRef = useRef(fijarFiltros)
-  fijarRef.current = fijarFiltros
-  const alFiltrar = useCallback((cambios: CambioFiltro) => fijarRef.current(cambios), [])
   const pasoRef = useRef(irAPaso)
-  pasoRef.current = irAPaso
+  useLayoutEffect(() => {
+    fijarRef.current = fijarFiltros
+    pasoRef.current = irAPaso
+  })
+  const alFiltrar = useCallback((cambios: CambioFiltro) => fijarRef.current(cambios), [])
   const alCambiarPaso = useCallback((id: string) => pasoRef.current(id), [])
 
   // LO PESADO VA DETRAS (Leider, 1-oct: "primero se queda pegado y luego
@@ -307,7 +309,13 @@ export default function Reportes() {
   // (que el enrutador hace como transicion, junto con todo el redibujo) llega
   // detras. Sin esto la pestaña tardaba lo mismo que los graficos.
   const [seccionMarcada, setSeccionMarcada] = useState(seccion)
-  useEffect(() => setSeccionMarcada(seccion), [seccion])
+  // Si la URL cambia por otro lado (atras del navegador), se pone al dia al
+  // dibujar, sin un efecto que obligue a otra vuelta.
+  const [seccionAntes, setSeccionAntes] = useState(seccion)
+  if (seccion !== seccionAntes) {
+    setSeccionAntes(seccion)
+    setSeccionMarcada(seccion)
+  }
   const irASeccion = (id: string) => {
     setSeccionMarcada(id)
     irA(id)
