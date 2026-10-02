@@ -6,7 +6,7 @@ siempre, y los controles (duplicado y precio) avisan sin bloquear.
 """
 import pytest
 
-from app import models, settings
+from app import lectura_facturas, models, settings
 
 JPG = b"\xff\xd8\xff\xe0" + b"foto-de-prueba" * 50
 
@@ -119,7 +119,7 @@ def test_una_foto_demasiado_pesada_se_rechaza(client, lector_de_prueba):
 def test_si_el_lector_falla_la_foto_queda_para_cargar_a_mano(client, db, lector_de_prueba, monkeypatch):
     from app import lectura_facturas
 
-    def falla(imagen, tipo):
+    def falla(imagen, tipo, comprador=""):
         raise lectura_facturas.ErrorDeLectura("No se distingue el texto")
 
     monkeypatch.setitem(lectura_facturas._LECTORES, "prueba", falla)
@@ -363,3 +363,24 @@ def test_un_rif_que_no_pasa_el_calculo_pero_ya_se_uso_no_se_avisa(client, db):
     db.add(models.Proveedor(nombre="Improal, C.A.", rif="J332957828"))
     db.commit()
     assert revisar(client, numero="2", rif="J-33295782-8")["rif_aviso"] == ""
+
+
+def test_el_rif_de_la_empresa_no_es_el_del_proveedor(client):
+    """La factura de compra trae el RIF del comprador (la empresa): si se
+    toma por el del proveedor, el Libro de Compras queda mal."""
+    client.put("/api/impuestos/config", json={"tasa_iva": 16, "razon_social": "Alimentos Savorella, C.A.", "rif": "J508531736"})
+    rev = revisar(client, numero="1", rif="J-50853173-6")
+    assert "RIF de la empresa" in rev["rif_aviso"]
+
+
+def test_la_ia_sabe_quien_compra(client, lector_de_prueba, monkeypatch):
+    client.put("/api/impuestos/config", json={"tasa_iva": 16, "razon_social": "Alimentos Savorella, C.A.", "rif": "J508531736"})
+    recibido = {}
+
+    def lector(imagen, tipo, comprador=""):
+        recibido["comprador"] = comprador
+        raise lectura_facturas.ErrorDeLectura("no importa")
+
+    monkeypatch.setitem(lectura_facturas._LECTORES, "prueba", lector)
+    subir(client)
+    assert recibido["comprador"] == "Alimentos Savorella, C.A. (J508531736)"

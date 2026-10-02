@@ -1038,6 +1038,13 @@ export type FacturaCompra = {
   moneda: '$' | 'Bs'
   /** Bs por $ con que pasa al Libro de Compras. null en las de antes. */
   tasa_bcv: number | null
+  /** Retención de IVA practicada (agente de retención). */
+  retencion_pct: number
+  iva_retenido: number
+  iva_retenido_bs: number | null
+  comprobante_retencion: string
+  /** Lo que se le paga al proveedor: total menos lo retenido. */
+  a_pagar: number
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
   forma_pago: 'Efectivo' | 'Banco' | 'Credito'
   /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
@@ -1078,6 +1085,8 @@ export type BorradorFactura = {
   proveedor_rif: string
   numero_factura: string
   numero_control: string
+  /** A nombre de quién está la factura (el RIF del cliente en el papel). */
+  cliente_rif: string
   /** AAAA-MM-DD, la del papel. */
   fecha: string | null
   moneda: '$' | 'Bs' | ''
@@ -1215,6 +1224,8 @@ export type ConfiguracionFiscal = {
   razon_social?: string
   rif?: string
   direccion?: string
+  /** Contribuyente especial: retiene el IVA de sus proveedores. */
+  agente_retencion?: boolean
 }
 
 /** La tasa con que se pasa a Bs una factura de esa fecha. */
@@ -1237,6 +1248,8 @@ export type Proveedor = {
   contacto: string
   nota: string
   activo: boolean
+  /** % de su IVA que se le retiene (agente de retención): el último usado. */
+  porcentaje_retencion?: number
 }
 
 export type FilaLibroVentas = {
@@ -1307,6 +1320,40 @@ export type FilaLibroCompras = {
   gravado_bs: number | null
   iva_bs: number | null
   total_bs: number | null
+  fecha_retencion: string | null
+  comprobante_retencion: string
+  iva_retenido_bs: number | null
+}
+
+/** Una retención practicada: una línea del TXT de la quincena. */
+export type RetencionIva = {
+  factura_id: number
+  fecha_factura: string
+  fecha_retencion: string
+  proveedor_nombre: string
+  proveedor_rif: string
+  numero_factura: string
+  numero_control: string
+  comprobante: string
+  porcentaje: number
+  total_bs: number | null
+  base_bs: number | null
+  exento_bs: number | null
+  iva_bs: number | null
+  retenido_bs: number | null
+}
+
+export type RetencionesQuincena = {
+  anio: number
+  mes: number
+  quincena: 1 | 2
+  etiqueta: string
+  retenciones: RetencionIva[]
+  total_retenido_bs: number
+  total_retenido: number
+  sin_tasa: number
+  enterada: boolean
+  fecha_enterada: string | null
 }
 
 export type LibroCompras = {
@@ -1339,6 +1386,13 @@ export type DeclaracionIva = {
   iva_a_pagar: number
   /** Lo que sobra y pasa al mes siguiente. */
   credito_excedente: number
+  /** Lo declarado al SENIAT, en Bs. null en declaraciones de antes. */
+  iva_debito_bs: number | null
+  iva_credito_bs: number | null
+  credito_arrastrado_bs: number | null
+  credito_usado_bs: number | null
+  iva_a_pagar_bs: number | null
+  credito_excedente_bs: number | null
   fecha_declaracion: string
   pagada: boolean
   fecha_pago: string | null
@@ -1351,6 +1405,10 @@ export type PeriodoPendiente = {
   etiqueta: string
   iva_debito: number
   iva_credito: number
+  iva_debito_bs: number
+  iva_credito_bs: number
+  /** Documentos del mes sin tasa: hasta cargarla no se puede declarar. */
+  sin_tasa: number
 }
 
 export type ResumenIva = {
@@ -1359,6 +1417,9 @@ export type ResumenIva = {
   iva_debito: number
   iva_credito: number
   iva_a_pagar: number
+  iva_debito_bs: number
+  iva_credito_bs: number
+  iva_a_pagar_bs: number
 }
 
 // ------------------------------------------------------------------ acceso

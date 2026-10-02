@@ -58,14 +58,17 @@ def lector_activo() -> Optional[str]:
     return nombre
 
 
-def leer(imagen: bytes, tipo_mime: str) -> Lectura:
+def leer(imagen: bytes, tipo_mime: str, comprador: str = "") -> Lectura:
+    """`comprador`: "RAZON SOCIAL (RIF)" de quien compra, si se conoce. Las
+    facturas de compra van a su nombre: su RIF aparece en el papel y nunca es
+    el del proveedor."""
     nombre = lector_activo()
     if nombre is None:
         raise ErrorDeLectura("La lectura de facturas desde foto no está activada.")
-    return _LECTORES[nombre](imagen, tipo_mime)
+    return _LECTORES[nombre](imagen, tipo_mime, comprador)
 
 
-def _leer_de_prueba(imagen: bytes, tipo_mime: str) -> Lectura:
+def _leer_de_prueba(imagen: bytes, tipo_mime: str, comprador: str = "") -> Lectura:
     """Siempre la misma factura, inventada, sin mirar la imagen.
 
     Esta hecha para que ejercite lo que importa del formulario: un renglon
@@ -128,7 +131,7 @@ DIAS_FECHA_CREIBLE = 60
 # de un error visto, no de una suposicion.
 INSTRUCCIONES = """Transcribe esta factura de COMPRA de un negocio en Venezuela.
 Copia lo que dice el papel; no calcules, no completes ni inventes nada.
-Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.
+Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.{comprador}
 
 - El escaneo puede estar girado 90 o 180 grados, o al reves: leelo en su
   orientacion correcta antes de transcribir.
@@ -143,6 +146,8 @@ Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.
   compra. Si el emisor no muestra su RIF, deja proveedor_rif vacio.
 - numero_factura: el de FACTURA o NOTA DE ENTREGA, no el "numero de control"
   ni el de pedido, guia o ticket.
+- cliente_rif: el RIF del CLIENTE, a nombre de quien esta la factura (en
+  "Cliente", "Razon social", "Senores"). Vacio si no aparece.
 - numero_control: el "N° de control" que pone la imprenta (suele ser como
   00-00123456). Vacio si el papel no lo trae.
 - fecha: la de emision, como AAAA-MM-DD. En Venezuela se escribe DD/MM/AAAA
@@ -189,6 +194,7 @@ ESQUEMA = {
         "proveedor_rif": _TEXTO,
         "numero_factura": _TEXTO,
         "numero_control": _TEXTO,
+        "cliente_rif": _TEXTO,
         "tasa_cambio": _NUMERO_O_NULL,
         "fecha": {"type": "STRING", "nullable": True, "description": "AAAA-MM-DD"},
         # Gemini no acepta un valor vacio en `enum`: "no se sabe" es null.
@@ -216,7 +222,7 @@ ESQUEMA = {
         "advertencias": {"type": "ARRAY", "items": _TEXTO},
     },
     "required": [
-        "proveedor_nombre", "proveedor_rif", "numero_factura", "numero_control", "tasa_cambio", "fecha", "moneda",
+        "proveedor_nombre", "proveedor_rif", "numero_factura", "numero_control", "cliente_rif", "tasa_cambio", "fecha", "moneda",
         "renglones", "recargo", "descuento", "subtotal", "iva", "total", "advertencias",
     ],
 }
@@ -289,19 +295,19 @@ def _casi_igual(a: float, b: float, sumandos: int) -> bool:
     return abs(a - b) <= 0.02 + 0.01 * sumandos
 
 
-def _leer_con_gemini(archivo: bytes, tipo_mime: str) -> Lectura:
+def _leer_con_gemini(archivo: bytes, tipo_mime: str, comprador: str = "") -> Lectura:
     principal = settings.GEMINI_MODELO
     respaldo = settings.GEMINI_MODELO_RESPALDO
     if respaldo == principal:
         respaldo = ""
     try:
-        primera = _leer_con_reintentos(archivo, tipo_mime, principal)
+        primera = _leer_con_reintentos(archivo, tipo_mime, principal, comprador)
     except _Saturado:
         if not respaldo:
             raise ErrorDeLectura(_SATURADO)
         log.warning("Gemini %s sigue saturado: se prueba con %s", principal, respaldo)
         try:
-            return _leer_con_reintentos(archivo, tipo_mime, respaldo)
+            return _leer_con_reintentos(archivo, tipo_mime, respaldo, comprador)
         except _Saturado:
             raise ErrorDeLectura(_SATURADO)
 
@@ -312,7 +318,7 @@ def _leer_con_gemini(archivo: bytes, tipo_mime: str) -> Lectura:
     # persona la revisa igual y los avisos de la pantalla marcan lo dudoso.
     log.info("Lectura de %s con %s: se relee con %s", principal, problemas, respaldo)
     try:
-        segunda = _leer_con_reintentos(archivo, tipo_mime, respaldo)
+        segunda = _leer_con_reintentos(archivo, tipo_mime, respaldo, comprador)
     except (_Saturado, ErrorDeLectura) as e:
         log.warning("No se pudo releer con %s (%s): queda la de %s", respaldo, e, principal)
         return primera
@@ -335,24 +341,32 @@ class _Saturado(Exception):
     """El modelo siguio saturado despues de los reintentos."""
 
 
-def _leer_con_reintentos(archivo: bytes, tipo_mime: str, modelo: str) -> Lectura:
+def _leer_con_reintentos(archivo: bytes, tipo_mime: str, modelo: str, comprador: str = "") -> Lectura:
     for espera in (0,) + ESPERAS_REINTENTO_S:
         if espera:
             time.sleep(espera)
         try:
-            return _pedir_a_gemini(archivo, tipo_mime, modelo)
+            return _pedir_a_gemini(archivo, tipo_mime, modelo, comprador)
         except _Pasajero:
             continue
     raise _Saturado()
 
 
-def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str) -> Lectura:
+def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str, comprador: str = "") -> Lectura:
     cuerpo = {
         "contents": [{
             "role": "user",
             "parts": [
                 {"inline_data": {"mime_type": tipo_mime, "data": base64.b64encode(archivo).decode()}},
-                {"text": INSTRUCCIONES.format(hoy=datetime.date.today().isoformat())},
+                {"text": INSTRUCCIONES.format(
+                    hoy=datetime.date.today().isoformat(),
+                    # Quien compra: su RIF sale en la factura y la IA lo tomaba
+                    # por el del proveedor (pasaba con el sello de recibido).
+                    comprador=(
+                        f"\nQuien COMPRA es {comprador}: ese RIF es el del cliente, nunca el del proveedor."
+                        if comprador else ""
+                    ),
+                )},
             ],
         }],
         "generationConfig": {

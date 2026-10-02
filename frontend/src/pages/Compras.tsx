@@ -264,7 +264,8 @@ export default function Compras() {
       const vb = b.fecha_vencimiento ? new Date(b.fecha_vencimiento).getTime() : Infinity
       return va - vb
     })
-  const totalPendiente = pendientes.reduce((sum, f) => sum + f.total, 0)
+  // Lo que se le debe al proveedor: sin el IVA retenido, que es del SENIAT.
+  const totalPendiente = pendientes.reduce((sum, f) => sum + (f.a_pagar ?? f.total), 0)
 
   function diasVencida(f: FacturaCompra): number | null {
     if (!f.fecha_vencimiento) return null

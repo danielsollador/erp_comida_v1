@@ -44,6 +44,7 @@ import type {
   Gasto,
   Ingrediente,
   Proveedor,
+  FilaLibroCompras,
   LibroCompras,
   LibroVentas,
   ListaUsuarios,
@@ -67,6 +68,7 @@ import type {
   Restauracion,
   ResumenCaja,
   ResumenIva,
+  RetencionesQuincena,
   RetiroPropietario,
   Rol,
   SaludContable,
@@ -845,6 +847,8 @@ export const api = {
     // recupera los Bs del papel para el Libro de Compras.
     moneda?: '$' | 'Bs'
     tasa_bcv?: number
+    // Siendo agente de retención: 0, 75 o 100. Sin dato, el del proveedor.
+    retencion_pct?: number
     categoria: string
     forma_pago: string
     descripcion?: string
@@ -936,6 +940,17 @@ export const api = {
   actualizarConfigFiscal: (c: Partial<ConfiguracionFiscal> & { tasa_iva: number }) =>
     req<ConfiguracionFiscal>('/impuestos/config', { method: 'PUT', body: JSON.stringify(c) }),
   libroVentas: (r: Rango) => req<LibroVentas>(`/impuestos/libro-ventas${conRango(r)}`),
+  cambiarTasaCompra: (facturaId: number, tasa_bcv: number) =>
+    req<FilaLibroCompras>(`/impuestos/compras/${facturaId}/tasa`, { method: 'PUT', body: JSON.stringify({ tasa_bcv }) }),
+  cambiarTasaVenta: (pedidoId: number, tasa_bcv: number) =>
+    req<{ ok: boolean }>(`/impuestos/ventas/${pedidoId}/tasa`, { method: 'PUT', body: JSON.stringify({ tasa_bcv }) }),
+  retencionesIva: (anio: number, mes: number, quincena: number) =>
+    req<RetencionesQuincena>(`/impuestos/retenciones-iva?anio=${anio}&mes=${mes}&quincena=${quincena}`),
+  enterarRetenciones: (anio: number, mes: number, quincena: number, forma_pago: string, referencia?: string) =>
+    req<RetencionesQuincena>('/impuestos/retenciones-iva/enterar', {
+      method: 'POST',
+      body: JSON.stringify({ anio, mes, quincena, forma_pago, referencia }),
+    }),
   libroCompras: (r: Rango) => req<LibroCompras>(`/impuestos/libro-compras${conRango(r)}`),
   resumenIva: (r: Rango) => req<ResumenIva>(`/impuestos/resumen${conRango(r)}`),
   listarDeclaraciones: () => req<DeclaracionIva[]>('/impuestos/declaraciones'),

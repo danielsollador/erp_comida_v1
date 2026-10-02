@@ -92,7 +92,11 @@ def leer_factura(archivo: UploadFile = File(...), db: Session = Depends(get_db))
     )
     borrador: Optional[schemas.BorradorFactura] = None
     try:
-        lectura = lectura_facturas.leer(imagen, tipo)
+        fiscal = impuestos.config(db)
+        comprador = (
+            f"{fiscal.razon_social} ({impuestos.normalizar_rif(fiscal.rif)})" if fiscal.rif else ""
+        )
+        lectura = lectura_facturas.leer(imagen, tipo, comprador)
         borrador = lectura.borrador
         soporte.lectura = borrador.model_dump_json()
         soporte.tokens_entrada = lectura.tokens_entrada
@@ -239,6 +243,13 @@ def revisar_factura(body: schemas.RevisionFacturaRequest, db: Session = Depends(
 
 
 def _revisar_rif(db: Session, rif: str):
+    propio = impuestos.normalizar_rif(impuestos.config(db).rif or "")
+    if propio and impuestos.normalizar_rif(rif) == propio:
+        return (
+            "Ese es el RIF de la empresa (el comprador), no el del proveedor: "
+            "va el del que emite la factura.",
+            None,
+        )
     if impuestos.rif_digito_ok(rif) is not False:
         return "", None
     leido = impuestos.normalizar_rif(rif)

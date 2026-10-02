@@ -139,7 +139,8 @@ def _filas(ws, filas, montos: Sequence[int], alicuotas: Dict[int, int], alicuota
 
 
 def _resumen(ws, r0: int, filas, alicuota: float, fiscales: str,
-             conceptos: List[Tuple[str, Tuple[Optional[str], Optional[str]]]], total: str) -> None:
+             conceptos: List[Tuple[str, Tuple[Optional[str], Optional[str]]]], total: str,
+             retenciones: float = 0) -> None:
     """El cuadro del pie, con facturas y notas de credito por separado, como
     las planillas."""
 
@@ -178,8 +179,9 @@ def _resumen(ws, r0: int, filas, alicuota: float, fiscales: str,
         c.number_format, c.font = MONTO, NEGRITA
     ws.cell(r + 1, 1, len(conceptos) + 2)
     ws.cell(r + 1, 2, "Total Retenciones")
-    for col in range(3, 9):
-        ws.cell(r + 1, col, 0).number_format = MONTO
+    # Como la planilla: lo retenido va en la columna del impuesto (y en el neto).
+    for col, v in zip(range(3, 9), (0, retenciones, 0, 0, 0, retenciones)):
+        ws.cell(r + 1, col, v).number_format = MONTO
 
 
 def _gravadas(alicuota: float, pct: float):
@@ -211,12 +213,20 @@ def libro_compras(libro: schemas.LibroCompras, fiscal, desde: datetime.date, has
             7: f.numero_nota if f.tipo == "NC" else "", 8: "",
             9: f.numero_control, 10: "01-REG", 11: f.factura_afectada or "--",
             27: "-", 28: "--",
+            40: _f(f.fecha_retencion) if f.fecha_retencion else None,
+            41: f.comprobante_retencion or None,
+            42: f.iva_retenido_bs or 0,
         }
 
     alicuota = float(libro.tasa_iva)
-    montos = [12, 13, 14, 15, 17, 18, 20, 21, 23, 24, 25, 26, 29, 30, 32, 33, 35, 36, 38, 39, 42]
+    montos = [12, 13, 14, 15, 17, 18, 20, 21, 23, 24, 25, 26, 29, 30, 32, 33, 35, 36, 38, 39]
     alicuotas = {16: 16, 19: 8, 22: 31, 31: 16, 34: 8, 37: 31}
     r = _filas(ws, libro.filas, montos, alicuotas, alicuota, detalle)
+    # El IVA retenido (AP) lo pone el detalle: va con formato y suma propia.
+    for fila in range(PRIMERA_FILA, r):
+        ws.cell(fila, 42).number_format = MONTO
+    c = ws.cell(r, 42, f"=SUM(AP{PRIMERA_FILA}:AP{r - 1})" if libro.filas else 0)
+    c.number_format, c.font = MONTO, NEGRITA
     _resumen(ws, r + 2, libro.filas, alicuota, "Créditos Fiscales", [
         ("Compras Internas no Gravadas", ("exento_bs", None)),
         ("Importaciones Gravadas por Alícuota Reducida", (None, None)),
@@ -226,7 +236,8 @@ def libro_compras(libro: schemas.LibroCompras, fiscal, desde: datetime.date, has
         ("Compras Internas Gravadas por Alícuota General más Adicional", _gravadas(alicuota, 31.0)),
         ("Compras Internas Gravadas por Alícuota Reducida", _gravadas(alicuota, 8.0)),
         ("Ajustes a los Créditos Fiscales de Periodos Anteriores", (None, None)),
-    ], "Total Compras y Créditos Fiscales del Periodo")
+    ], "Total Compras y Créditos Fiscales del Periodo",
+        retenciones=round(sum(f.iva_retenido_bs or 0 for f in libro.filas), 2))
     return _terminar(ws, len(ENCABEZADOS))
 
 

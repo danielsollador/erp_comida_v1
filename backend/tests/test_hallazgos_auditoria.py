@@ -11,10 +11,20 @@ import datetime
 import threading
 import time
 
+import pytest
 from sqlalchemy import text
 
 from app import contabilidad, costeo, models
 from tests.conftest import saldo
+
+
+@pytest.fixture(autouse=True)
+def _con_tasa_de_cambio(db):
+    """Declarar el IVA exige bolivares, y sin tasa de cambio no hay como
+    pasar a Bs las ventas y compras de estas pruebas: una tasa vieja vale
+    para todas sus fechas."""
+    db.merge(models.TasaCambio(fecha=datetime.date(2000, 1, 1), bcv=40.0, origen="auto"))
+    db.commit()
 
 
 # ---------------------------------------------------------------- E: costeo

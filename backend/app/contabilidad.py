@@ -53,6 +53,9 @@ PLAN_DE_CUENTAS = [
     # debe. Sin esta cuenta el cierre la reportaba como sobrante y terminaba
     # engordando la utilidad (y pagando impuesto sobre plata ajena).
     ("2040", "Propinas por entregar", "pasivo", "acreedora"),
+    # El IVA que se le retiene al proveedor (agente de retencion) no es del
+    # proveedor ni del negocio: se le debe al SENIAT hasta enterarlo.
+    ("2050", "IVA retenido por enterar", "pasivo", "acreedora"),
     ("3010", "Capital del propietario", "patrimonio", "acreedora"),
     ("3020", "Utilidades retenidas", "patrimonio", "acreedora"),
     # Contra-cuenta de patrimonio (ver CUENTAS_CONTRA): se debita, su saldo
@@ -1165,7 +1168,11 @@ def registrar_factura_compra(db: Session, factura: models.FacturaCompra) -> None
     lineas = [(cuenta_concepto, factura.base_imponible, 0.0)]
     if factura.iva > 0:
         lineas.append(("1030", factura.iva, 0.0))
-    lineas.append((cuenta_pago, 0.0, factura.total))
+    # Lo retenido no se le paga al proveedor: queda debiendosele al SENIAT.
+    retenido = round(factura.iva_retenido or 0, 2)
+    lineas.append((cuenta_pago, 0.0, round(factura.total - retenido, 2)))
+    if retenido > 0:
+        lineas.append(("2050", 0.0, retenido))
 
     crear_asiento(
         db,
@@ -1186,7 +1193,7 @@ def registrar_pago_factura(db: Session, factura: models.FacturaCompra, forma_pag
     crear_asiento(
         db,
         f"Pago factura {factura.numero_factura} ({factura.proveedor_nombre})",
-        [("2010", factura.total, 0.0), (cuenta_pago, 0.0, factura.total)],
+        [("2010", factura.a_pagar, 0.0), (cuenta_pago, 0.0, factura.a_pagar)],
         origen="pago_factura",
         referencia_id=factura.id,
     )
@@ -1327,6 +1334,21 @@ def registrar_pago_iva(db: Session, declaracion: models.DeclaracionIva, forma_pa
         [("2020", declaracion.iva_a_pagar, 0.0), (cuenta_pago, 0.0, declaracion.iva_a_pagar)],
         origen="pago_iva",
         referencia_id=declaracion.id,
+    )
+
+
+def registrar_enteramiento_retenciones(db: Session, enterada: models.RetencionIvaEnterada) -> None:
+    """Paga al SENIAT el IVA retenido de una quincena: baja la deuda (2050)
+    y sale la plata."""
+    if enterada.monto <= 0:
+        return
+    cuenta_pago = cuenta_de_pago(enterada.forma_pago, por_defecto="1020")
+    crear_asiento(
+        db,
+        f"Retenciones de IVA {enterada.quincena}a quincena {enterada.mes:02d}/{enterada.anio}",
+        [("2050", enterada.monto, 0.0), (cuenta_pago, 0.0, enterada.monto)],
+        origen="retenciones_iva",
+        referencia_id=enterada.id,
     )
 
 

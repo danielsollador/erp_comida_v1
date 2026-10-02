@@ -1490,6 +1490,10 @@ class TasaManual(BaseModel):
     paralelo: Optional[float] = None
 
 
+class CambiarTasaRequest(BaseModel):
+    tasa_bcv: float  # Bs por $
+
+
 class TasaDeUnaFecha(BaseModel):
     """La tasa con la que se pasa a Bs una factura de esa fecha."""
 
@@ -1842,6 +1846,8 @@ class ProveedorCreate(BaseModel):
 
 class Proveedor(ProveedorCreate):
     id: int
+    # Lo que se le retiene de IVA (agente de retencion): el ultimo usado.
+    porcentaje_retencion: float = 75
     activo: bool = True
 
     class Config:
@@ -1871,6 +1877,9 @@ class FacturaCompraCreate(FacturaCompraBase):
     # Compras. Sin tasa se usa la BCV guardada de la fecha de emision.
     moneda: str = "$"
     tasa_bcv: Optional[float] = None
+    # Siendo agente de retencion: cuanto del IVA se le retiene (0, 75 o 100).
+    # Sin dato, el del proveedor (75 si es nuevo).
+    retencion_pct: Optional[float] = None
     # Con renglones (compra de insumos): la base sale de sumar los renglones,
     # y cada uno actualiza el stock y el costo promedio de su ingrediente.
     items: List[LineaFacturaInput] = []
@@ -1901,6 +1910,12 @@ class FacturaCompra(FacturaCompraBase):
     numero_control: str = ""
     moneda: str = "$"
     tasa_bcv: Optional[float] = None
+    retencion_pct: float = 0
+    iva_retenido: float = 0
+    iva_retenido_bs: Optional[float] = None
+    comprobante_retencion: str = ""
+    # Lo que se le paga al proveedor: total menos lo retenido.
+    a_pagar: float = 0
     # Ya con el recargo y el descuento aplicados: es la base que va al Libro
     # de Compras. Los dos viajan aparte para poder explicar la diferencia con
     # la suma de los renglones.
@@ -1946,6 +1961,9 @@ class BorradorFactura(BaseModel):
     proveedor_rif: str = ""
     numero_factura: str = ""
     numero_control: str = ""
+    # A nombre de quien esta la factura: si no es de la empresa, su IVA no se
+    # puede descontar como credito fiscal.
+    cliente_rif: str = ""
     fecha: Optional[datetime.date] = None
     moneda: str = ""  # "$" | "Bs" | "" si no se sabe
     # La tasa de cambio que imprime el papel (Bs por $), si la imprime.
@@ -2215,6 +2233,7 @@ class ConfiguracionFiscal(BaseModel):
     razon_social: str = ""
     rif: str = ""
     direccion: str = ""
+    agente_retencion: bool = False
 
 
 class FilaLibroVentas(BaseModel):
@@ -2288,6 +2307,50 @@ class FilaLibroCompras(BaseModel):
     gravado_bs: Optional[float] = None
     iva_bs: Optional[float] = None
     total_bs: Optional[float] = None
+    # La retencion de IVA que se le practico (agente de retencion).
+    fecha_retencion: Optional[datetime.date] = None
+    comprobante_retencion: str = ""
+    iva_retenido_bs: Optional[float] = None
+
+
+class RetencionIva(BaseModel):
+    """Una retencion practicada: una linea del TXT de la quincena."""
+
+    factura_id: int
+    fecha_factura: datetime.date
+    fecha_retencion: datetime.date
+    proveedor_nombre: str
+    proveedor_rif: str
+    numero_factura: str
+    numero_control: str
+    comprobante: str
+    porcentaje: float
+    total_bs: Optional[float] = None
+    base_bs: Optional[float] = None
+    exento_bs: Optional[float] = None
+    iva_bs: Optional[float] = None
+    retenido_bs: Optional[float] = None
+
+
+class RetencionesQuincena(BaseModel):
+    anio: int
+    mes: int
+    quincena: int
+    etiqueta: str
+    retenciones: List[RetencionIva]
+    total_retenido_bs: float
+    total_retenido: float  # en dolares
+    sin_tasa: int = 0
+    enterada: bool = False
+    fecha_enterada: Optional[datetime.datetime] = None
+
+
+class EnterarRetencionesRequest(BaseModel):
+    anio: int
+    mes: int
+    quincena: int
+    forma_pago: str = "Banco"
+    referencia: Optional[str] = None
 
 
 class LibroCompras(BaseModel):
@@ -2318,6 +2381,13 @@ class DeclaracionIva(BaseModel):
     credito_usado: float
     iva_a_pagar: float
     credito_excedente: float  # lo que pasa al mes siguiente
+    # Lo que se declara al SENIAT, en bolivares. None en declaraciones viejas.
+    iva_debito_bs: Optional[float] = None
+    iva_credito_bs: Optional[float] = None
+    credito_arrastrado_bs: Optional[float] = None
+    credito_usado_bs: Optional[float] = None
+    iva_a_pagar_bs: Optional[float] = None
+    credito_excedente_bs: Optional[float] = None
     fecha_declaracion: datetime.datetime
     pagada: bool
     fecha_pago: Optional[datetime.datetime] = None
@@ -2330,6 +2400,10 @@ class PeriodoPendiente(BaseModel):
     etiqueta: str
     iva_debito: float
     iva_credito: float
+    iva_debito_bs: float = 0
+    iva_credito_bs: float = 0
+    # Documentos del mes sin tasa: sin ella no hay Bs, y no se puede declarar.
+    sin_tasa: int = 0
 
 
 class DeclararIvaRequest(BaseModel):
@@ -2342,6 +2416,10 @@ class PagoIvaRequest(BaseModel):
 
 
 class ResumenIva(BaseModel):
+    # En Bs, como se declara (las de abajo, en dolares, son las del ERP).
+    iva_debito_bs: float = 0
+    iva_credito_bs: float = 0
+    iva_a_pagar_bs: float = 0
     periodo: str
     etiqueta: str
     iva_debito: float

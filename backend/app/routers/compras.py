@@ -12,6 +12,48 @@ from ..timeutils import ahora, hoy, inicio_del_dia
 router = APIRouter(prefix="/api/compras", tags=["compras"])
 
 
+PORCENTAJES_RETENCION = (0, 75, 100)
+
+
+def _siguiente_comprobante(db: Session, fecha: datetime.date) -> str:
+    """AAAAMM + correlativo de 8 digitos. El correlativo sigue de un mes al
+    otro (no vuelve a 1): asi un numero no se repite nunca."""
+    ultimos = [
+        c for (c,) in db.query(models.FacturaCompra.comprobante_retencion)
+        .filter(models.FacturaCompra.comprobante_retencion != "")
+        .all()
+        if c and len(c) == 14 and c.isdigit()
+    ]
+    siguiente = max((int(c[6:]) for c in ultimos), default=0) + 1
+    return f"{fecha.year:04d}{fecha.month:02d}{siguiente:08d}"
+
+
+def _retencion(db: Session, factura, rif: str, iva: float, iva_bs) -> dict:
+    """La retencion de IVA de una factura que se esta guardando, o nada si no
+    se es agente de retencion o la factura no trae IVA."""
+    if not impuestos.config(db).agente_retencion or iva <= 0:
+        return {}
+    proveedor = db.query(models.Proveedor).filter(models.Proveedor.rif == rif).first()
+    pct = factura.retencion_pct
+    if pct is None:
+        pct = proveedor.porcentaje_retencion if proveedor and proveedor.porcentaje_retencion is not None else 75.0
+    if pct not in PORCENTAJES_RETENCION:
+        raise HTTPException(status_code=400, detail="La retención de IVA es de 75 % o 100 % (o 0 si no aplica).")
+    # Se recuerda lo que se le retuvo a este proveedor para la proxima.
+    if proveedor is not None and factura.retencion_pct is not None and pct:
+        proveedor.porcentaje_retencion = pct
+    if not pct:
+        return {"retencion_pct": 0}
+    fecha = hoy()
+    return {
+        "retencion_pct": pct,
+        "iva_retenido": round(iva * pct / 100, 2),
+        "iva_retenido_bs": round(iva_bs * pct / 100, 2) if iva_bs is not None else None,
+        "comprobante_retencion": _siguiente_comprobante(db, fecha),
+        "fecha_retencion": fecha,
+    }
+
+
 def _exento_de(item, ingredientes: dict) -> bool:
     """Si este renglon pago IVA.
 
@@ -53,6 +95,11 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
         numero_control=factura.numero_control or "",
         moneda=factura.moneda or "$",
         tasa_bcv=factura.tasa_bcv,
+        retencion_pct=factura.retencion_pct or 0,
+        iva_retenido=factura.iva_retenido or 0,
+        iva_retenido_bs=factura.iva_retenido_bs,
+        comprobante_retencion=factura.comprobante_retencion or "",
+        a_pagar=factura.a_pagar,
         categoria=factura.categoria,
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
@@ -231,6 +278,8 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             iva_de_la_base=bool(factura.items), tasa_pct=impuestos.tasa_iva(db),
         )
 
+    retencion = _retencion(db, factura, factura_rif, iva_calculado, iva_bs)
+
     es_credito = factura.forma_pago == "Credito"
     db_factura = models.FacturaCompra(
         numero_factura=factura.numero_factura,
@@ -257,6 +306,7 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         gravado_bs=gravado_bs,
         exento_bs=exento_bs,
         iva_bs=iva_bs,
+        **retencion,
     )
     db.add(db_factura)
     db.flush()

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import NavBar from '../components/NavBar'
@@ -10,7 +10,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
-import { fmtNum } from '../lib/moneda'
+import { fmtBs, fmtNum } from '../lib/moneda'
 import type {
   ConfiguracionFiscal,
   DeclaracionIva,
@@ -20,11 +20,13 @@ import type {
   LibroVentas,
   PeriodoPendiente,
   ResumenIva,
+  RetencionesQuincena,
 } from '../lib/types'
 
 const SECCIONES = [
   { id: 'ventas', texto: 'Libro de ventas' },
   { id: 'compras', texto: 'Libro de compras' },
+  { id: 'retenciones', texto: 'Retenciones IVA' },
   { id: 'declaraciones', texto: 'Declaraciones' },
 ]
 
@@ -35,6 +37,7 @@ function bs(monto: number | null) {
 
 export default function Impuestos() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  const dialogo = useDialogo()
   // Los libros del SENIAT se entregan por fecha, pero revisar una factura
   // concreta o la venta mas grande del mes es buscar, no leer: por eso
   // tambien se ordenan por numero de factura, por cliente o por monto.
@@ -76,6 +79,7 @@ export default function Impuestos() {
   const [razonSocial, setRazonSocial] = useState('')
   const [rifEmpresa, setRifEmpresa] = useState('')
   const [direccion, setDireccion] = useState('')
+  const [agenteRetencion, setAgenteRetencion] = useState(false)
   const [errorFiscal, setErrorFiscal] = useState('')
   const [guardado, setGuardado] = useState(false)
   // Revisar una factura puntual (un reclamo, una auditoria) es buscarla, no
@@ -83,11 +87,36 @@ export default function Impuestos() {
   const [buscarVentas, setBuscarVentas] = useState('')
   const [buscarCompras, setBuscarCompras] = useState('')
 
-  useEffect(() => {
+  const cargarLibros = useCallback(() => {
     api.libroVentas(rango).then(setVentas)
     api.libroCompras(rango).then(setCompras)
     api.resumenIva(rango).then(setResumen)
   }, [rango])
+  useEffect(() => {
+    cargarLibros()
+  }, [cargarLibros])
+
+  // La tasa de un documento del libro: propone la que tiene, o la BCV del dia
+  // del documento si no tiene; se puede cambiar por la que diga el papel.
+  async function editarTasa(tipo: 'compra' | 'venta', id: number, actual: number | null, fecha: string) {
+    let propuesta = actual
+    if (propuesta === null) propuesta = (await api.tasaDeFecha(fecha).catch(() => null))?.bcv ?? null
+    const r = await dialogo.pedir({
+      titulo: 'Tasa de cambio del documento',
+      texto: `Bs por dólar con que pasa al libro. Por defecto, la BCV del ${new Date(`${fecha}T12:00:00`).toLocaleDateString('es-VE')}; cámbiala si el papel dice otra.`,
+      campos: [{ nombre: 'tasa', etiqueta: 'Tasa (Bs por $)', valor: propuesta === null ? '' : String(propuesta) }],
+      aceptar: 'Guardar',
+    })
+    if (!r) return
+    const tasa = Number(String(r.tasa).replace(',', '.'))
+    try {
+      if (tipo === 'compra') await api.cambiarTasaCompra(id, tasa)
+      else await api.cambiarTasaVenta(id, tasa)
+      cargarLibros()
+    } catch (e) {
+      await dialogo.avisar({ titulo: 'No se pudo cambiar la tasa', texto: e instanceof Error ? e.message : 'Intenta de nuevo.' })
+    }
+  }
 
   useEffect(() => {
     api.configFiscal().then((c) => {
@@ -96,6 +125,7 @@ export default function Impuestos() {
       setRazonSocial(c.razon_social ?? '')
       setRifEmpresa(c.rif ?? '')
       setDireccion(c.direccion ?? '')
+      setAgenteRetencion(Boolean(c.agente_retencion))
     })
   }, [])
 
@@ -104,7 +134,13 @@ export default function Impuestos() {
     if (!Number.isFinite(valor) || valor < 0) return setErrorFiscal('La alícuota no es válida.')
     setErrorFiscal('')
     try {
-      const c = await api.actualizarConfigFiscal({ tasa_iva: valor, razon_social: razonSocial, rif: rifEmpresa, direccion })
+      const c = await api.actualizarConfigFiscal({
+        tasa_iva: valor,
+        razon_social: razonSocial,
+        rif: rifEmpresa,
+        direccion,
+        agente_retencion: agenteRetencion,
+      })
       setFiscal(c)
       setRifEmpresa(c.rif ?? '')
       setGuardado(true)
@@ -156,6 +192,21 @@ export default function Impuestos() {
               />
             </label>
           </div>
+          <label className="flex items-start gap-2 mt-3 text-sm">
+            <input
+              type="checkbox"
+              checked={agenteRetencion}
+              onChange={(e) => setAgenteRetencion(e.target.checked)}
+              className="w-4 h-4 mt-0.5"
+            />
+            <span>
+              Somos agente de retención de IVA (contribuyente especial)
+              <span className="block text-xs text-neutral-500">
+                Al cargar una factura de compra se retiene el 75 % o el 100 % de su IVA, con su comprobante, y cada
+                quincena sale el TXT para el portal del SENIAT.
+              </span>
+            </span>
+          </label>
           <div className="flex flex-wrap items-center gap-3 mt-3">
             <button
               onClick={guardarFiscal}
@@ -174,12 +225,12 @@ export default function Impuestos() {
 
         {resumen && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Kpi titulo="IVA débito (ventas)" ayuda="kpi.iva_debito" valor={resumen.iva_debito} />
-            <Kpi titulo="IVA crédito (compras)" ayuda="kpi.iva_credito" valor={resumen.iva_credito} />
+            <Kpi titulo="IVA débito (ventas)" ayuda="kpi.iva_debito" valor={resumen.iva_debito_bs} />
+            <Kpi titulo="IVA crédito (compras)" ayuda="kpi.iva_credito" valor={resumen.iva_credito_bs} />
             <Kpi
-              titulo={resumen.iva_a_pagar >= 0 ? 'IVA a pagar' : 'IVA a favor'}
+              titulo={resumen.iva_a_pagar_bs >= 0 ? 'IVA a pagar' : 'IVA a favor'}
               ayuda="kpi.iva_a_pagar"
-              valor={Math.abs(resumen.iva_a_pagar)}
+              valor={Math.abs(resumen.iva_a_pagar_bs)}
               destacado
             />
           </div>
@@ -215,7 +266,7 @@ export default function Impuestos() {
             {ventas.sin_tasa > 0 && (
               <div className="rounded-lg border border-aviso-200 bg-aviso-50 px-3 py-2 text-sm text-aviso-800">
                 {ventas.sin_tasa === 1 ? 'Una venta no tiene' : `${ventas.sin_tasa} ventas no tienen`} monto en
-                bolívares: no hay tasa guardada para su fecha. Están marcadas con «sin tasa» y salen vacías en el libro.
+                bolívares: no hay tasa guardada para su fecha. Cárgala con «cargar tasa» en su fila: hasta entonces salen vacías y el mes no se puede declarar.
               </div>
             )}
             {/* El aviso de "además hubo N ventas sin facturar" salió de aquí:
@@ -270,7 +321,13 @@ export default function Impuestos() {
                           {f.total_bs === null ? <span className="text-aviso-700 font-normal">sin tasa</span> : bs(f.total_bs)}
                         </td>
                         <td className="text-right p-3 tabular-nums text-xs text-neutral-500 whitespace-nowrap">
-                          {f.tasa_bcv === null ? '-' : fmtNum(f.tasa_bcv, 2)}
+                          <button
+                            onClick={() => editarTasa('venta', f.pedido_id, f.tasa_bcv, f.fecha.slice(0, 10))}
+                            className={`underline decoration-dotted ${f.tasa_bcv === null ? 'text-aviso-700 font-semibold' : ''}`}
+                            title="Cambiar la tasa"
+                          >
+                            {f.tasa_bcv === null ? 'cargar tasa' : fmtNum(f.tasa_bcv, 2)}
+                          </button>
                           <span className="block">${fmtNum(f.total, 2)}</span>
                         </td>
                       </tr>
@@ -334,7 +391,7 @@ export default function Impuestos() {
           {compras.sin_tasa > 0 && (
             <div className="rounded-lg border border-aviso-200 bg-aviso-50 px-3 py-2 text-sm text-aviso-800">
               {compras.sin_tasa === 1 ? 'Una factura no tiene' : `${compras.sin_tasa} facturas no tienen`} monto en
-              bolívares: no hay tasa guardada para su fecha. Están marcadas con «sin tasa» y salen vacías en el libro.
+              bolívares: no hay tasa guardada para su fecha. Cárgala con «cargar tasa» en su fila: hasta entonces salen vacías y el mes no se puede declarar.
             </div>
           )}
           <Tabla orden={ordenCompras} glosario="librocompras" className="bg-white rounded-2xl border border-neutral-200">
@@ -397,7 +454,17 @@ export default function Impuestos() {
                         {f.total_bs === null ? <span className="text-aviso-700 font-normal">sin tasa</span> : bs(f.total_bs)}
                       </td>
                       <td className="text-right p-3 tabular-nums text-xs text-neutral-500 whitespace-nowrap">
-                        {f.tasa_bcv === null ? '-' : fmtNum(f.tasa_bcv, 2)}
+                        {f.moneda === 'Bs' && !f.tasa_estimada ? (
+                          fmtNum(f.tasa_bcv ?? 0, 2)
+                        ) : (
+                          <button
+                            onClick={() => editarTasa('compra', f.factura_id, f.tasa_bcv, f.fecha_emision)}
+                            className={`underline decoration-dotted ${f.tasa_bcv === null ? 'text-aviso-700 font-semibold' : ''}`}
+                            title="Cambiar la tasa"
+                          >
+                            {f.tasa_bcv === null ? 'cargar tasa' : fmtNum(f.tasa_bcv, 2)}
+                          </button>
+                        )}
                         <span className="block">
                           {f.moneda === 'Bs' ? 'factura en Bs' : `$${fmtNum(f.total, 2)}`}
                           {f.tasa_estimada && f.tasa_bcv !== null ? ' · de su fecha' : ''}
@@ -434,6 +501,8 @@ export default function Impuestos() {
           </div>
         )}
 
+        {seccion === 'retenciones' && <Retenciones agente={agenteRetencion} />}
+
         {seccion === 'declaraciones' && <Declaraciones />}
       </Pagina>
     </div>
@@ -448,6 +517,179 @@ export default function Impuestos() {
  * siempre. Declarar un mes lo cierra contra el credito fiscal y deja la
  * diferencia como deuda real hasta que se paga.
  */
+/**
+ * Las retenciones de IVA de una quincena: lo que se le retuvo a cada
+ * proveedor, el TXT para el portal del SENIAT y el registro del pago.
+ */
+function Retenciones({ agente }: { agente: boolean }) {
+  const dialogo = useDialogo()
+  const hoyD = new Date()
+  const [anio, setAnio] = useState(hoyD.getFullYear())
+  const [mes, setMes] = useState(hoyD.getMonth() + 1)
+  const [quincena, setQuincena] = useState<1 | 2>(hoyD.getDate() <= 15 ? 1 : 2)
+  const [datos, setDatos] = useState<RetencionesQuincena | null>(null)
+  const [error, setError] = useState('')
+
+  const cargar = useCallback(() => {
+    api
+      .retencionesIva(anio, mes, quincena)
+      .then((d) => {
+        setDatos(d)
+        setError('')
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'No se pudo cargar'))
+  }, [anio, mes, quincena])
+  useEffect(() => {
+    cargar()
+  }, [cargar])
+
+  function mover(paso: number) {
+    // De quincena en quincena: 2da de un mes -> 1ra del siguiente.
+    let q = quincena + paso
+    let m = mes
+    let a = anio
+    if (q > 2) {
+      q = 1
+      m += 1
+    } else if (q < 1) {
+      q = 2
+      m -= 1
+    }
+    if (m > 12) {
+      m = 1
+      a += 1
+    } else if (m < 1) {
+      m = 12
+      a -= 1
+    }
+    setQuincena(q as 1 | 2)
+    setMes(m)
+    setAnio(a)
+  }
+
+  async function enterar() {
+    if (!datos) return
+    const forma = await dialogo.elegir({
+      titulo: `Enterar las retenciones de la ${datos.etiqueta}`,
+      texto: `Son ${fmtBs(datos.total_retenido_bs)} para el SENIAT. ¿De dónde sale?`,
+      opciones: [
+        { valor: 'Banco', texto: 'Por banco' },
+        { valor: 'Efectivo', texto: 'En efectivo', detalle: 'Sale de la gaveta.' },
+      ],
+    })
+    if (!forma) return
+    try {
+      setDatos(await api.enterarRetenciones(anio, mes, quincena, forma))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar')
+    }
+  }
+
+  const txt = `/api/impuestos/retenciones-iva/txt?anio=${anio}&mes=${mes}&quincena=${quincena}`
+  return (
+    <div className="space-y-3">
+      {!agente && (
+        <div className="rounded-lg border border-aviso-200 bg-aviso-50 px-3 py-2 text-sm text-aviso-800">
+          Para retener IVA, marca «Somos agente de retención» en Datos fiscales. Hasta entonces las facturas no retienen.
+        </div>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <button onClick={() => mover(-1)} className="px-2 py-1 rounded-lg border border-neutral-300 text-sm" aria-label="Quincena anterior">
+            ‹
+          </button>
+          <span className="font-semibold text-sm min-w-[14rem] text-center">{datos?.etiqueta ?? '…'}</span>
+          <button onClick={() => mover(1)} className="px-2 py-1 rounded-lg border border-neutral-300 text-sm" aria-label="Quincena siguiente">
+            ›
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <a href={txt} className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            Descargar TXT para el SENIAT
+          </a>
+          {datos && datos.retenciones.length > 0 && !datos.enterada && (
+            <button onClick={enterar} className="text-sm font-medium text-acento-700 hover:underline">
+              Registrar pago al SENIAT
+            </button>
+          )}
+          {datos?.enterada && (
+            <span className="text-xs text-exito-700 bg-exito-50 rounded-full px-2 py-0.5 font-medium">
+              enterada {datos.fecha_enterada ? new Date(datos.fecha_enterada).toLocaleDateString('es-VE') : ''}
+            </span>
+          )}
+        </div>
+      </div>
+      {error && <p className="text-peligro-600 text-sm">{error}</p>}
+      {datos && datos.sin_tasa > 0 && (
+        <div className="rounded-lg border border-aviso-200 bg-aviso-50 px-3 py-2 text-sm text-aviso-800">
+          {datos.sin_tasa} retención(es) sin tasa de cambio: cárgala en el Libro de compras para poder sacar el TXT.
+        </div>
+      )}
+      {datos && (
+        <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+              <tr>
+                <th className="text-left p-3">Comprobante</th>
+                <th className="text-left p-3">Proveedor</th>
+                <th className="text-left p-3">Factura</th>
+                <th className="text-right p-3">IVA Bs</th>
+                <th className="text-right p-3">%</th>
+                <th className="text-right p-3">Retenido Bs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {datos.retenciones.map((r) => (
+                <tr key={r.factura_id} className="border-t border-neutral-100">
+                  <td className="p-3 font-mono text-xs whitespace-nowrap">
+                    {r.comprobante}
+                    <span className="block text-neutral-500 font-sans">
+                      {new Date(`${r.fecha_retencion}T12:00:00`).toLocaleDateString('es-VE')}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    {r.proveedor_nombre}
+                    <span className="block text-xs text-neutral-500">{r.proveedor_rif}</span>
+                  </td>
+                  <td className="p-3 font-mono text-xs">
+                    {r.numero_factura}
+                    {r.numero_control && <span className="block text-neutral-500">control {r.numero_control}</span>}
+                  </td>
+                  <td className="text-right p-3 tabular-nums">{bs(r.iva_bs)}</td>
+                  <td className="text-right p-3 tabular-nums">{r.porcentaje} %</td>
+                  <td className="text-right p-3 tabular-nums font-semibold">{bs(r.retenido_bs)}</td>
+                </tr>
+              ))}
+              {datos.retenciones.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-neutral-400 py-4 text-center">
+                    Sin retenciones en esta quincena. El TXT sale vacío: es la declaración en cero.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {datos.retenciones.length > 0 && (
+              <tfoot className="border-t-2 border-neutral-300 font-bold">
+                <tr>
+                  <td className="p-3" colSpan={5}>
+                    Total a enterar
+                  </td>
+                  <td className="text-right p-3 tabular-nums">{bs(datos.total_retenido_bs)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Lo declarado en Bs; si la declaracion es de antes de existir los Bs, en $. */
+function monto(bs: number | null, usd: number) {
+  return bs === null ? `$${fmtNum(usd, 2)}` : fmtBs(bs)
+}
+
 function Declaraciones() {
   const [declaraciones, setDeclaraciones] = useState<DeclaracionIva[]>([])
   const [pendientes, setPendientes] = useState<PeriodoPendiente[]>([])
@@ -478,15 +720,22 @@ function Declaraciones() {
   }
 
   async function declarar(p: PeriodoPendiente) {
-    const neto = p.iva_debito - p.iva_credito
+    if (p.sin_tasa > 0) {
+      await dialogo.avisar({
+        titulo: `Falta la tasa en ${p.etiqueta}`,
+        texto: `${p.sin_tasa} documento(s) de ese mes no tienen tasa de cambio, y sin ella no hay bolívares que declarar. Cárgales la tasa desde el libro y vuelve a declarar.`,
+      })
+      return
+    }
+    const neto = p.iva_debito_bs - p.iva_credito_bs
     const resumen =
       neto > 0
-        ? `Quedaría por pagar hasta $${neto.toFixed(2)} (menos el crédito que venga arrastrado).`
-        : `El crédito fiscal cubre el débito: no se paga nada y sobran $${Math.abs(neto).toFixed(2)} para el mes siguiente.`
+        ? `Quedaría por pagar hasta ${fmtBs(neto)} (menos el crédito que venga arrastrado).`
+        : `El crédito fiscal cubre el débito: no se paga nada y sobran ${fmtBs(Math.abs(neto))} para el mes siguiente.`
     if (
       !(await dialogo.confirmar({
         titulo: `¿Declarar ${p.etiqueta}?`,
-        texto: `IVA cobrado en ventas: $${p.iva_debito.toFixed(2)}\nIVA pagado en compras: $${p.iva_credito.toFixed(2)}\n\n${resumen}`,
+        texto: `IVA cobrado en ventas: ${fmtBs(p.iva_debito_bs)}\nIVA pagado en compras: ${fmtBs(p.iva_credito_bs)}\n\n${resumen}`,
         aceptar: 'Declarar',
       }))
     )
@@ -512,7 +761,7 @@ function Declaraciones() {
   async function pagar(d: DeclaracionIva) {
     const forma = await dialogo.elegir({
       titulo: `Pagar el IVA de ${d.etiqueta}`,
-      texto: `Son $${d.iva_a_pagar.toFixed(2)}. ¿De dónde sale?`,
+      texto: `Son ${monto(d.iva_a_pagar_bs, d.iva_a_pagar)}. ¿De dónde sale?`,
       opciones: [
         { valor: 'Banco', texto: 'Por banco' },
         { valor: 'Efectivo', texto: 'En efectivo', detalle: 'Sale de la gaveta.' },
@@ -522,7 +771,12 @@ function Declaraciones() {
     accion(() => api.pagarDeclaracion(d.id, forma))
   }
 
-  const porPagar = declaraciones.filter((d) => !d.pagada && d.iva_a_pagar > 0)
+  // Lo declarado va en Bs; las declaraciones de antes de existir los Bs se
+  // muestran en dolares, como se hicieron.
+  const aPagar = (d: DeclaracionIva) => d.iva_a_pagar_bs ?? d.iva_a_pagar
+  const porPagar = declaraciones.filter((d) => !d.pagada && aPagar(d) > 0)
+  const porPagarBs = porPagar.filter((d) => d.iva_a_pagar_bs !== null)
+  const porPagarUsd = porPagar.filter((d) => d.iva_a_pagar_bs === null)
   const ultima = declaraciones[0]
 
   return (
@@ -543,7 +797,8 @@ function Declaraciones() {
               >
                 <span className="font-medium flex-1 min-w-[120px]">{p.etiqueta}</span>
                 <span className="text-neutral-600 tabular-nums text-xs">
-                  débito ${p.iva_debito.toFixed(2)} · crédito ${p.iva_credito.toFixed(2)}
+                  débito {fmtBs(p.iva_debito_bs)} · crédito {fmtBs(p.iva_credito_bs)}
+                  {p.sin_tasa > 0 && <span className="text-aviso-700"> · {p.sin_tasa} sin tasa</span>}
                 </span>
                 <button
                   onClick={() => declarar(p)}
@@ -558,9 +813,9 @@ function Declaraciones() {
         </div>
       )}
 
-      {ultima && ultima.credito_excedente > 0 && (
+      {ultima && (ultima.credito_excedente_bs ?? ultima.credito_excedente) > 0 && (
         <div className="bg-exito-50 border border-exito-200 rounded-xl px-3 py-2 text-sm text-exito-800">
-          Tienes ${ultima.credito_excedente.toFixed(2)} de crédito fiscal a favor de{' '}
+          Tienes {monto(ultima.credito_excedente_bs, ultima.credito_excedente)} de crédito fiscal a favor de{' '}
           {ultima.etiqueta}: se descuentan del IVA del mes siguiente.
         </div>
       )}
@@ -570,8 +825,13 @@ function Declaraciones() {
           <h2 className="font-semibold">Declaraciones presentadas</h2>
           {porPagar.length > 0 && (
             <span className="text-sm text-peligro-600 font-medium">
-              {porPagar.length} sin pagar por $
-              {porPagar.reduce((s, d) => s + d.iva_a_pagar, 0).toFixed(2)}
+              {porPagar.length} sin pagar por{' '}
+              {[
+                porPagarBs.length ? fmtBs(porPagarBs.reduce((s, d) => s + (d.iva_a_pagar_bs ?? 0), 0)) : '',
+                porPagarUsd.length ? `$${fmtNum(porPagarUsd.reduce((s, d) => s + d.iva_a_pagar, 0), 2)}` : '',
+              ]
+                .filter(Boolean)
+                .join(' + ')}
             </span>
           )}
         </div>
@@ -599,7 +859,7 @@ function Declaraciones() {
                     Anular
                   </button>
                 </span>
-                {d.iva_a_pagar > 0 ? (
+                {aPagar(d) > 0 ? (
                   d.pagada ? (
                     <span className="text-xs text-exito-700 bg-exito-50 rounded-full px-2 py-0.5 font-medium">
                       pagada · {d.forma_pago}
@@ -607,7 +867,7 @@ function Declaraciones() {
                   ) : (
                     <span className="flex items-center gap-2">
                       <span className="font-semibold tabular-nums text-peligro-600">
-                        ${d.iva_a_pagar.toFixed(2)}
+                        {monto(d.iva_a_pagar_bs, d.iva_a_pagar)}
                       </span>
                       <button
                         onClick={() => pagar(d)}
@@ -623,9 +883,11 @@ function Declaraciones() {
                 )}
               </div>
               <div className="text-xs text-neutral-500 tabular-nums">
-                débito ${d.iva_debito.toFixed(2)} · crédito ${d.iva_credito.toFixed(2)}
-                {d.credito_arrastrado > 0 && ` (+ $${d.credito_arrastrado.toFixed(2)} arrastrado)`}
-                {d.credito_excedente > 0 && ` · sobran $${d.credito_excedente.toFixed(2)}`}
+                débito {monto(d.iva_debito_bs, d.iva_debito)} · crédito {monto(d.iva_credito_bs, d.iva_credito)}
+                {(d.credito_arrastrado_bs ?? d.credito_arrastrado) > 0 &&
+                  ` (+ ${monto(d.credito_arrastrado_bs, d.credito_arrastrado)} arrastrado)`}
+                {(d.credito_excedente_bs ?? d.credito_excedente) > 0 &&
+                  ` · sobran ${monto(d.credito_excedente_bs, d.credito_excedente)}`}
               </div>
             </div>
           ))}
@@ -654,9 +916,8 @@ function Kpi({
           {titulo}
         </Ayuda>
       </div>
-      <div className={`font-bold tabular-nums ${destacado ? 'text-2xl' : 'text-xl'}`}>
-        ${valor.toFixed(2)}
-      </div>
+      {/* En Bs: es lo que se declara al SENIAT. */}
+      <div className={`font-bold tabular-nums ${destacado ? 'text-2xl' : 'text-xl'}`}>{fmtBs(valor)}</div>
     </div>
   )
 }

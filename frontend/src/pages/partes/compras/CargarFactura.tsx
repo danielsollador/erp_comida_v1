@@ -107,6 +107,8 @@ export default function CargarFactura({
   const [tasaFactura, setTasaFactura] = useState('')
   const [origenTasa, setOrigenTasa] = useState<'' | 'papel' | 'fecha' | 'escrita'>('')
   const [notaTasa, setNotaTasa] = useState('')
+  // Retencion de IVA (si se es agente): '' = la del proveedor (75 si es nuevo).
+  const [retencion, setRetencion] = useState<'' | '0' | '75' | '100'>('')
   const [categoria, setCategoria] = useState(CATEGORIAS[0].valor)
   const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0])
   const [referenciaPago, setReferenciaPago] = useState('')
@@ -146,6 +148,12 @@ export default function CargarFactura({
   }, [lineas, ingredientes, fiscal.tasa_iva, recargoNum, descuentoNum, baseLineas])
   const baseMostrada = esInsumos ? baseFinal : Number(base) || 0
   const ivaMostrado = esInsumos ? ivaLineas : Number(iva) || 0
+  // La retencion que se va a aplicar: la elegida, o la que se le hizo la
+  // ultima vez a este proveedor (75 si es nuevo).
+  const proveedorConocido = proveedores.find(
+    (p) => p.rif && rif && p.rif.toUpperCase().replace(/[^0-9A-Z]/g, '') === rif.toUpperCase().replace(/[^0-9A-Z]/g, ''),
+  )
+  const retencionEfectiva = retencion || String(proveedorConocido?.porcentaje_retencion ?? 75)
   const totalFormulario = Math.round((baseMostrada + ivaMostrado) * 100) / 100
 
   // El cuadre contra el papel, solo en la misma moneda. El IVA se redondea
@@ -165,6 +173,12 @@ export default function CargarFactura({
         return Number(l.cantidad) > 0 && !(l.exento === null ? ing?.exento : l.exento)
       }).length
     : 0
+  // Una factura de compra tiene que estar a nombre de la empresa: si el papel
+  // trae otro RIF de cliente, su IVA no se puede descontar como credito fiscal.
+  const soloRifCliente = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
+  const clienteAjeno =
+    !!borrador?.cliente_rif && !!fiscal.rif && soloRifCliente(borrador.cliente_rif) !== soloRifCliente(fiscal.rif)
+
   const sinIvaEnPapel =
     !!borrador && borrador.renglones.length > 0 && !borrador.iva && esInsumos && lineasConIva > 0 &&
     totalPapel !== null && borrador.subtotal !== null && Math.abs(totalPapel - borrador.subtotal) < 0.01
@@ -431,6 +445,7 @@ export default function CargarFactura({
     setMonedaCarga('$')
     setNumeroControl('')
     setOrigenTasa('')
+    setRetencion('')
     setCategoria(CATEGORIAS[0].valor)
     setLectura(null)
     setDocumento(null)
@@ -518,6 +533,7 @@ export default function CargarFactura({
         numero_control: numeroControl.trim(),
         moneda: monedaCarga,
         tasa_bcv: tasaNum,
+        retencion_pct: fiscal.agente_retencion ? Number(retencionEfectiva) : undefined,
         proveedor_nombre: proveedor.trim(),
         proveedor_rif: rif.trim(),
         categoria,
@@ -631,6 +647,13 @@ export default function CargarFactura({
             <Nota tono="ojo">
               No se pudo leer {documento?.esPdf ? 'el PDF' : 'la foto'}: {lectura.error} Cárgala a mano mirando el
               documento: se adjunta igual al guardar.
+            </Nota>
+          )}
+          {clienteAjeno && (
+            <Nota tono="mal">
+              Esta factura está a nombre del RIF {borrador?.cliente_rif}, no de {fiscal.razon_social || 'la empresa'} (
+              {fiscal.rif}). Su IVA no se puede usar como crédito fiscal: pídele al proveedor una factura a nombre de la
+              empresa.
             </Nota>
           )}
           {borrador?.advertencias.map((a) => (
@@ -775,6 +798,23 @@ export default function CargarFactura({
           {/* ── Pago ── */}
           <Grupo titulo="Pago">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {fiscal.agente_retencion && ivaMostrado > 0 && (
+                <Dato
+                  id="cf-retencion"
+                  etiqueta="Retención de IVA"
+                  nota={
+                    Number(retencionEfectiva) > 0
+                      ? `Se retienen ${monedaCarga}${(ivaMostrado * Number(retencionEfectiva) / 100).toFixed(2)} (van al SENIAT, con su comprobante). Al proveedor: ${monedaCarga}${(totalFormulario - (ivaMostrado * Number(retencionEfectiva)) / 100).toFixed(2)}.`
+                      : 'No se retiene: al proveedor se le paga el total.'
+                  }
+                >
+                  <select value={retencionEfectiva} onChange={(e) => setRetencion(e.target.value as '0' | '75' | '100')} className={clase()}>
+                    <option value="75">75 %</option>
+                    <option value="100">100 %</option>
+                    <option value="0">No retener</option>
+                  </select>
+                </Dato>
+              )}
               <Dato id="cf-pago" etiqueta="Forma de pago">
                 <select value={formaPago} onChange={(e) => setFormaPago(e.target.value)} className={clase()}>
                   {FORMAS_PAGO.map((f) => (

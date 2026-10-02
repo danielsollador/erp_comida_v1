@@ -419,6 +419,16 @@ class DeclaracionIva(Base):
     credito_usado = Column(Float, default=0)
     iva_a_pagar = Column(Float, default=0)
     credito_excedente = Column(Float, default=0)  # lo que pasa al mes siguiente
+    # Lo mismo en BOLIVARES: es lo que se declara al SENIAT. Lo de arriba, en
+    # dolares, es lo que mueve el libro mayor del ERP (que va en dolares). El
+    # excedente se arrastra en Bs, como en la declaracion. Vacios en las
+    # declaraciones de antes de que existieran.
+    iva_debito_bs = Column(Float, nullable=True)
+    iva_credito_bs = Column(Float, nullable=True)
+    credito_arrastrado_bs = Column(Float, nullable=True)
+    credito_usado_bs = Column(Float, nullable=True)
+    iva_a_pagar_bs = Column(Float, nullable=True)
+    credito_excedente_bs = Column(Float, nullable=True)
     fecha_declaracion = Column(DateTime, default=ahora)
     pagada = Column(Boolean, default=False)
     fecha_pago = Column(DateTime, nullable=True)
@@ -523,10 +533,31 @@ class ConfiguracionFiscal(Base):
 
     id = Column(Integer, primary_key=True)
     tasa_iva = Column(Float, default=16.0)  # alicuota general de IVA en Venezuela
+    # Contribuyente especial designado por el SENIAT: retiene el IVA de sus
+    # proveedores y lo entera por quincena (TXT de retenciones).
+    agente_retencion = Column(Boolean, default=False)
     # Quien lleva los libros: va en la cabecera del Libro de Compras.
     razon_social = Column(String, default="")
     rif = Column(String, default="")
     direccion = Column(String, default="")
+
+
+class RetencionIvaEnterada(Base):
+    """El pago al SENIAT de las retenciones de IVA de una quincena. Una fila
+    por quincena: enterarla dos veces seria pagar dos veces."""
+
+    __tablename__ = "TRX720_IMP_RETENCION_ENTERADA"
+    __table_args__ = (UniqueConstraint("anio", "mes", "quincena"),)
+
+    id = Column(Integer, primary_key=True)
+    anio = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    quincena = Column(Integer, nullable=False)  # 1: del 1 al 15; 2: del 16 al fin de mes
+    monto_bs = Column(Float, default=0)
+    monto = Column(Float, default=0)  # en dolares, lo que sale de 2050
+    fecha = Column(DateTime, default=ahora)
+    forma_pago = Column(String, default="Banco")
+    referencia = Column(String, default="")
 
 
 class Proveedor(Base):
@@ -555,6 +586,10 @@ class Proveedor(Base):
     contacto = Column(String, default="")
     nota = Column(String, default="")
     activo = Column(Boolean, default=True)
+    # Cuanto de su IVA se le retiene (siendo agente de retencion): 75 lo
+    # normal, 100 en los casos que manda la norma. Se recuerda el ultimo que
+    # se uso con el en una factura.
+    porcentaje_retencion = Column(Float, default=75.0)
 
 
 class EquivalenciaProveedor(Base):
@@ -655,6 +690,14 @@ class FacturaCompra(Base):
     # guardada de esa fecha, si la hay.
     moneda = Column(String, default="$")  # "$" | "Bs": la del papel
     tasa_bcv = Column(Float, nullable=True)  # Bs por $
+    # Retencion de IVA practicada al proveedor (si se es agente de
+    # retencion): se le paga el total MENOS esto, que se le debe al SENIAT
+    # (2050) hasta enterarlo. El comprobante: AAAAMM + correlativo de 8.
+    retencion_pct = Column(Float, default=0)
+    iva_retenido = Column(Float, default=0)  # en dolares, para el libro mayor
+    iva_retenido_bs = Column(Float, nullable=True)  # lo declarado
+    comprobante_retencion = Column(String, default="")
+    fecha_retencion = Column(Date, nullable=True)
     gravado_bs = Column(Float, nullable=True)  # base imponible, la parte que paga IVA
     exento_bs = Column(Float, nullable=True)
     iva_bs = Column(Float, nullable=True)
@@ -662,6 +705,11 @@ class FacturaCompra(Base):
     @property
     def total(self):
         return round(self.base_imponible + self.iva, 2)
+
+    @property
+    def a_pagar(self):
+        """Lo que se le paga al proveedor: el total menos el IVA retenido."""
+        return round(self.total - (self.iva_retenido or 0), 2)
 
     items = relationship("FacturaCompraItem", back_populates="factura", cascade="all, delete-orphan")
     notas_credito = relationship(
