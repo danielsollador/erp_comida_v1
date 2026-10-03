@@ -96,6 +96,44 @@ export default function Impuestos() {
     cargarLibros()
   }, [cargarLibros])
 
+  // El comprobante de retencion que entrega un cliente contribuyente
+  // especial: casi siempre el 75 % del IVA, a veces dias despues de la factura.
+  async function registrarRetencion(f: FilaLibroVentas) {
+    const hoyISO = new Date().toLocaleDateString('en-CA')
+    const r = await dialogo.pedir({
+      titulo: `Retención de IVA de la factura ${f.numero_factura}`,
+      texto: `${f.cliente}${f.rif ? ` (${f.rif})` : ''}. Los datos salen del comprobante que entregó el cliente.`,
+      campos: [
+        { nombre: 'comprobante', etiqueta: 'N.º de comprobante (14 dígitos)', placeholder: 'AAAAMM00000000' },
+        { nombre: 'fecha', etiqueta: 'Fecha del comprobante (AAAA-MM-DD)', valor: hoyISO },
+        { nombre: 'monto', etiqueta: 'IVA retenido (Bs)', valor: f.iva_bs === null ? '' : (f.iva_bs * 0.75).toFixed(2) },
+      ],
+      aceptar: 'Registrar',
+    })
+    if (!r) return
+    try {
+      await api.registrarRetencionRecibida(f.pedido_id, {
+        comprobante: r.comprobante,
+        fecha: r.fecha,
+        monto_bs: Number(String(r.monto).replace(',', '.')),
+      })
+      cargarLibros()
+    } catch (e) {
+      await dialogo.avisar({ titulo: 'No se pudo registrar', texto: e instanceof Error ? e.message : 'Intenta de nuevo.' })
+    }
+  }
+
+  async function quitarRetencion(pedidoId: number) {
+    if (!(await dialogo.confirmar({ titulo: '¿Quitar la retención?', texto: 'Deja de descontarse en la declaración.', aceptar: 'Quitar', peligro: true })))
+      return
+    try {
+      await api.quitarRetencionRecibida(pedidoId)
+      cargarLibros()
+    } catch (e) {
+      await dialogo.avisar({ titulo: 'No se pudo quitar', texto: e instanceof Error ? e.message : 'Intenta de nuevo.' })
+    }
+  }
+
   // La tasa de un documento del libro: propone la que tiene, o la BCV del dia
   // del documento si no tiene; se puede cambiar por la que diga el papel.
   async function editarTasa(tipo: 'compra' | 'venta', id: number, actual: number | null, fecha: string) {
@@ -285,6 +323,7 @@ export default function Impuestos() {
                     <Th clave="iva" alinear="derecha">IVA Bs</Th>
                     <Th clave="total" alinear="derecha">Total Bs</Th>
                     <Th alinear="derecha">Tasa</Th>
+                    <Th alinear="derecha">Retenido Bs</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -310,6 +349,11 @@ export default function Impuestos() {
                               <span className="font-mono text-xs">NC {f.numero_nota}</span>
                               <span className="block text-xs text-neutral-500">afecta {f.factura_afectada}</span>
                             </>
+                          ) : f.tipo === 'RET' ? (
+                            <>
+                              <span className="text-xs">Retención</span>
+                              <span className="block text-xs text-neutral-500">factura {f.factura_afectada}</span>
+                            </>
                           ) : (
                             <span className="font-mono text-xs">{f.numero_factura}</span>
                           )}
@@ -330,11 +374,28 @@ export default function Impuestos() {
                           </button>
                           <span className="block">${fmtNum(f.total, 2)}</span>
                         </td>
+                        <td className="text-right p-3 tabular-nums text-xs whitespace-nowrap">
+                          {f.iva_retenido_bs !== null ? (
+                            <>
+                              <span className="font-semibold text-sm">{bs(f.iva_retenido_bs)}</span>
+                              <span className="block text-neutral-500 font-mono">{f.comprobante_retencion}</span>
+                              <button onClick={() => quitarRetencion(f.pedido_id)} className="text-peligro-600 underline">
+                                quitar
+                              </button>
+                            </>
+                          ) : f.tipo === 'FAC' && f.iva_bs !== null ? (
+                            <button onClick={() => registrarRetencion(f)} className="text-acento-700 underline">
+                              + retención
+                            </button>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
                       </tr>
                     ))}
                   {ventas.filas.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-neutral-400 py-4 text-center">
+                      <td colSpan={8} className="text-neutral-400 py-4 text-center">
                         Sin ventas facturadas en este período.
                       </td>
                     </tr>
@@ -352,6 +413,7 @@ export default function Impuestos() {
                       <td className="text-right p-3 tabular-nums text-xs font-normal text-neutral-500">
                         ${fmtNum(ventas.total_general, 2)}
                       </td>
+                      <td className="text-right p-3 tabular-nums">{bs(ventas.total_retenido_bs)}</td>
                     </tr>
                   </tfoot>
                 )}
@@ -727,7 +789,7 @@ function Declaraciones() {
       })
       return
     }
-    const neto = p.iva_debito_bs - p.iva_credito_bs
+    const neto = p.iva_debito_bs - p.iva_credito_bs - p.retenciones_bs
     const resumen =
       neto > 0
         ? `Quedaría por pagar hasta ${fmtBs(neto)} (menos el crédito que venga arrastrado).`
@@ -735,7 +797,7 @@ function Declaraciones() {
     if (
       !(await dialogo.confirmar({
         titulo: `¿Declarar ${p.etiqueta}?`,
-        texto: `IVA cobrado en ventas: ${fmtBs(p.iva_debito_bs)}\nIVA pagado en compras: ${fmtBs(p.iva_credito_bs)}\n\n${resumen}`,
+        texto: `IVA cobrado en ventas: ${fmtBs(p.iva_debito_bs)}\nIVA pagado en compras: ${fmtBs(p.iva_credito_bs)}${p.retenciones_bs ? `\nRetenido por clientes: ${fmtBs(p.retenciones_bs)}` : ''}\n\n${resumen}`,
         aceptar: 'Declarar',
       }))
     )
@@ -888,6 +950,8 @@ function Declaraciones() {
                   ` (+ ${monto(d.credito_arrastrado_bs, d.credito_arrastrado)} arrastrado)`}
                 {(d.credito_excedente_bs ?? d.credito_excedente) > 0 &&
                   ` · sobran ${monto(d.credito_excedente_bs, d.credito_excedente)}`}
+                {(d.retenciones_usadas_bs ?? 0) > 0 && ` · retenciones descontadas ${fmtBs(d.retenciones_usadas_bs ?? 0)}`}
+                {(d.retenciones_excedente_bs ?? 0) > 0 && ` · retenciones por descontar ${fmtBs(d.retenciones_excedente_bs ?? 0)}`}
               </div>
             </div>
           ))}

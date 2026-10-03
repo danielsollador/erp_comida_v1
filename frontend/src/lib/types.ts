@@ -1261,8 +1261,9 @@ export type FilaLibroVentas = {
   base_imponible: number
   iva: number
   total: number
-  /** FAC o NC: la nota de crédito es su propia fila, en negativo. */
-  tipo: 'FAC' | 'NC'
+  /** FAC o NC (en negativo); RET: un comprobante de retención que llegó en
+   * este mes por una factura de otro. */
+  tipo: 'FAC' | 'NC' | 'RET'
   numero_nota: string
   factura_afectada: string
   rif: string
@@ -1273,6 +1274,10 @@ export type FilaLibroVentas = {
   exento_bs: number | null
   iva_bs: number | null
   total_bs: number | null
+  /** La retención de IVA que hizo el cliente (contribuyente especial). */
+  fecha_retencion: string | null
+  comprobante_retencion: string
+  iva_retenido_bs: number | null
 }
 
 export type LibroVentas = {
@@ -1291,6 +1296,7 @@ export type LibroVentas = {
   total_bs: number
   /** Filas sin monto en Bs. */
   sin_tasa: number
+  total_retenido_bs: number
 }
 
 export type FilaLibroCompras = {
@@ -1393,6 +1399,11 @@ export type DeclaracionIva = {
   credito_usado_bs: number | null
   iva_a_pagar_bs: number | null
   credito_excedente_bs: number | null
+  /** Retenciones de IVA que hicieron los clientes: bajan lo que se paga. */
+  retenciones_bs: number | null
+  retenciones_arrastradas_bs: number | null
+  retenciones_usadas_bs: number | null
+  retenciones_excedente_bs: number | null
   fecha_declaracion: string
   pagada: boolean
   fecha_pago: string | null
@@ -1407,6 +1418,7 @@ export type PeriodoPendiente = {
   iva_credito: number
   iva_debito_bs: number
   iva_credito_bs: number
+  retenciones_bs: number
   /** Documentos del mes sin tasa: hasta cargarla no se puede declarar. */
   sin_tasa: number
 }

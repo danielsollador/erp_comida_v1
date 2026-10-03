@@ -429,6 +429,13 @@ class DeclaracionIva(Base):
     credito_usado_bs = Column(Float, nullable=True)
     iva_a_pagar_bs = Column(Float, nullable=True)
     credito_excedente_bs = Column(Float, nullable=True)
+    # Las retenciones de IVA que le hicieron los clientes: se descuentan de
+    # lo que queda por pagar despues del credito fiscal, y lo que sobra pasa
+    # al mes siguiente, igual que el credito.
+    retenciones_bs = Column(Float, nullable=True)
+    retenciones_arrastradas_bs = Column(Float, nullable=True)
+    retenciones_usadas_bs = Column(Float, nullable=True)
+    retenciones_excedente_bs = Column(Float, nullable=True)
     fecha_declaracion = Column(DateTime, default=ahora)
     pagada = Column(Boolean, default=False)
     fecha_pago = Column(DateTime, nullable=True)
@@ -1219,6 +1226,12 @@ class Pedido(Base):
     numero_control = Column(String, default="")
     rif_cliente = Column(String, default="")
     razon_social_cliente = Column(String, default="")
+    # El IVA que le retuvo el cliente (contribuyente especial) a esta factura,
+    # segun su comprobante. Se descuenta del IVA a pagar en la declaracion
+    # del mes del comprobante. En Bs, como lo dice el comprobante.
+    retencion_iva_bs = Column(Float, nullable=True)
+    comprobante_retencion_iva = Column(String, default="")
+    fecha_retencion_iva = Column(Date, nullable=True)
     # Igual que tasa_bcv: se congela la tasa de IVA del dia para que el Libro
     # de Ventas de un mes cerrado no cambie si despues sube la alicuota.
     tasa_iva = Column(Float, nullable=True)

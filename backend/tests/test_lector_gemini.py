@@ -360,3 +360,55 @@ def test_si_la_segunda_falla_queda_la_primera(cascada):
     l = lectura_facturas.leer(JPG, "image/jpeg")
     assert l.modelo == "gemini-3.5-flash-lite" and l.borrador.total is None
     assert len(pedidos) == 4
+
+
+def test_un_ticket_con_descuento_por_renglon(gemini):
+    """Ferreteria EPA: cada producto con su DESC debajo, el "descuento
+    general" que los suma, y sin cantidades. Antes salian 22 renglones y el
+    descuento contado dos veces."""
+    pedidos, responder = gemini
+    ticket = {**BORRADOR, "subtotal": 2700.0, "descuento": 300.0, "renglones": [
+        {"descripcion": "GUS.3 COB VIDRIO (G)", "cantidad": None, "unidad": "", "precio_unitario": None, "subtotal": 1000.0, "exento": False},
+        {"descripcion": "DESC", "cantidad": None, "unidad": "", "precio_unitario": None, "subtotal": -100.0, "exento": None},
+        {"descripcion": "TOMA DOBLE (G)", "cantidad": 2, "unidad": "UND", "precio_unitario": 1000.0, "subtotal": 2000.0, "exento": False},
+        {"descripcion": "DESC.", "cantidad": None, "unidad": "", "precio_unitario": None, "subtotal": -200.0, "exento": None},
+    ]}
+    responder(cuerpo=respuesta(json.dumps(ticket)))
+    b = lectura_facturas.leer(JPG, "image/jpeg").borrador
+    assert [(r.descripcion, r.cantidad, r.precio_unitario, r.subtotal) for r in b.renglones] == [
+        ("GUS.3 COB VIDRIO (G)", 1, 900.0, 900.0),
+        ("TOMA DOBLE (G)", 2, 900.0, 1800.0),
+    ]
+    assert b.descuento == 0, "el descuento general era la suma de los DESC"
+    assert any("sin cantidad" in a for a in b.advertencias)
+
+
+def test_un_descuento_general_que_no_es_la_suma_se_queda(gemini):
+    pedidos, responder = gemini
+    ticket = {**BORRADOR, "descuento": 50.0, "renglones": [
+        {"descripcion": "A", "cantidad": 1, "unidad": "", "precio_unitario": 100.0, "subtotal": 100.0, "exento": False},
+        {"descripcion": "DESC", "cantidad": None, "unidad": "", "precio_unitario": None, "subtotal": -10.0, "exento": None},
+    ]}
+    responder(cuerpo=respuesta(json.dumps(ticket)))
+    b = lectura_facturas.leer(JPG, "image/jpeg").borrador
+    assert (b.descuento, b.renglones[0].subtotal) == (50.0, 90.0)
+
+
+def test_la_ia_copia_el_rif_del_cliente_aunque_no_sea_el_de_la_empresa(gemini):
+    pedidos, responder = gemini
+    responder(cuerpo=respuesta(json.dumps(BORRADOR)))
+    lectura_facturas.leer(JPG, "image/jpeg", "ALIMENTOS SAVORELLA, C.A. (J508531736)")
+    texto = pedidos[0]["json"]["contents"][0]["parts"][1]["text"]
+    assert "J508531736" in texto and "sea o no el de la empresa" in texto
+
+
+def test_precio_de_lista_con_subtotal_rebajado_se_alinea(gemini):
+    """El modelo resta el DESC del subtotal pero deja el precio de lista: si
+    los subtotales cuadran con el papel, el precio se toma del subtotal."""
+    pedidos, responder = gemini
+    ticket = {**BORRADOR, "subtotal": 1429.40, "descuento": 0, "renglones": [
+        {"descripcion": "GUS.3 COB VIDRIO (G)", "cantidad": 1, "unidad": "", "precio_unitario": 1588.22, "subtotal": 1429.40, "exento": False},
+    ]}
+    responder(cuerpo=respuesta(json.dumps(ticket)))
+    [r] = lectura_facturas.leer(JPG, "image/jpeg").borrador.renglones
+    assert (r.precio_unitario, r.subtotal) == (1429.40, 1429.40)

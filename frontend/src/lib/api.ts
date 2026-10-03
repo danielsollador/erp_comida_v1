@@ -45,6 +45,7 @@ import type {
   Ingrediente,
   Proveedor,
   FilaLibroCompras,
+  FilaLibroVentas,
   LibroCompras,
   LibroVentas,
   ListaUsuarios,
@@ -951,6 +952,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ anio, mes, quincena, forma_pago, referencia }),
     }),
+  /** El comprobante de retención de IVA que entregó el cliente. Sin monto, el 75 % del IVA. */
+  registrarRetencionRecibida: (pedidoId: number, r: { comprobante: string; fecha: string; monto_bs?: number }) =>
+    req<FilaLibroVentas>(`/impuestos/ventas/${pedidoId}/retencion`, { method: 'POST', body: JSON.stringify(r) }),
+  quitarRetencionRecibida: (pedidoId: number) =>
+    req<{ ok: boolean }>(`/impuestos/ventas/${pedidoId}/retencion`, { method: 'DELETE' }),
   libroCompras: (r: Rango) => req<LibroCompras>(`/impuestos/libro-compras${conRango(r)}`),
   resumenIva: (r: Rango) => req<ResumenIva>(`/impuestos/resumen${conRango(r)}`),
   listarDeclaraciones: () => req<DeclaracionIva[]>('/impuestos/declaraciones'),

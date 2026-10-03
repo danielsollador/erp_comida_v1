@@ -146,8 +146,10 @@ Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.{comprador}
   compra. Si el emisor no muestra su RIF, deja proveedor_rif vacio.
 - numero_factura: el de FACTURA o NOTA DE ENTREGA, no el "numero de control"
   ni el de pedido, guia o ticket.
-- cliente_rif: el RIF del CLIENTE, a nombre de quien esta la factura (en
-  "Cliente", "Razon social", "Senores"). Vacio si no aparece.
+- cliente_rif: el RIF o cedula del CLIENTE, a nombre de quien esta la
+  factura (en "Cliente", "Rif", "Razon social", "Senores"), copiado TAL CUAL
+  del papel aunque no sea el de la empresa que carga la factura: esa
+  diferencia es justo lo que hay que avisar. Vacio si no aparece.
 - numero_control: el "N° de control" que pone la imprenta (suele ser como
   00-00123456). Vacio si el papel no lo trae.
 - fecha: la de emision, como AAAA-MM-DD. En Venezuela se escribe DD/MM/AAAA
@@ -158,7 +160,11 @@ Hoy es {hoy}: la factura es de hoy o de pocas semanas atras.{comprador}
 - renglones: uno por cada PRODUCTO, en el orden del papel. Un codigo de
   barras o de articulo impreso debajo o al lado del producto es parte de ese
   renglon, no un renglon aparte. descripcion y unidad tal cual (UND, KG,
-  BULTO, CAJA...). precio_unitario SIN IVA. exento: true si el renglon esta marcado como exento ("(E)",
+  BULTO, CAJA...). precio_unitario SIN IVA. Una linea "DESC" o "DESCUENTO"
+  con monto negativo justo debajo de un producto es el descuento de ESE
+  producto: no es un renglon, restalo de su subtotal. Y entonces el
+  "descuento general" o "usted se ha ahorrado" del pie, que suma esos
+  descuentos, NO va en descuento (ya esta restado). exento: true si el renglon esta marcado como exento ("(E)",
   "E", "Exento"), false si se ve que grava IVA, null si no se distingue.
 - recargo (flete, recargo) y descuento: montos POSITIVOS sobre el total de
   la factura; 0 si no hay. Un IMPUESTO que no es IVA (impuesto a licores
@@ -243,6 +249,80 @@ def _es_codigo_suelto(renglon: dict) -> bool:
     aunque las instrucciones digan que no."""
     descripcion = re.sub(r"\s", "", str(renglon.get("descripcion") or ""))
     return descripcion.isdigit() and not renglon.get("precio_unitario") and not renglon.get("subtotal")
+
+
+_LINEA_DE_DESCUENTO = re.compile(r"^\s*(DESC|DESCUENTO|DCTO|DSCTO)\b\.?", re.IGNORECASE)
+
+
+def _monto(x) -> Optional[float]:
+    return float(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else None
+
+
+def _arreglar_ticket(leido: dict) -> None:
+    """Lo que los tickets de caja traen distinto de una factura, y que el
+    modelo a veces copia tal cual aunque las instrucciones digan otra cosa:
+
+    * una linea "DESC" con monto negativo debajo de cada producto: es el
+      descuento de ese producto, no un renglon. Se resta de su subtotal; y
+      si el "descuento" del pie es la suma de esos DESC (el "usted se ha
+      ahorrado"), se quita para no descontarlo dos veces (paso con un ticket
+      de Ferreteria EPA: 11 productos, 11 DESC y el descuento general).
+    * renglones con solo el monto, sin cantidad ni precio: se toma 1 unidad
+      a ese monto, y se avisa, para no hacer escribir cada uno a mano.
+    """
+    renglones = [r for r in leido["renglones"] if isinstance(r, dict)]
+    limpios, fusionado = [], 0.0
+    for r in renglones:
+        sub = _monto(r.get("subtotal"))
+        if limpios and _LINEA_DE_DESCUENTO.match(str(r.get("descripcion") or "")) and sub is not None and sub < 0:
+            anterior = limpios[-1]
+            base = _monto(anterior.get("subtotal"))
+            if base is not None:
+                anterior["subtotal"] = round(base + sub, 2)
+                cantidad = _monto(anterior.get("cantidad"))
+                if cantidad:
+                    anterior["precio_unitario"] = round(anterior["subtotal"] / cantidad, 4)
+                fusionado += -sub
+                continue
+        limpios.append(r)
+
+    descuento = _monto(leido.get("descuento")) or 0.0
+    if fusionado and abs(descuento - fusionado) <= 0.05:
+        leido["descuento"] = 0
+
+    sin_cantidad = 0
+    for r in limpios:
+        sub = _monto(r.get("subtotal"))
+        if sub is not None and r.get("cantidad") is None and r.get("precio_unitario") is None:
+            r["cantidad"] = 1
+            r["precio_unitario"] = sub
+            sin_cantidad += 1
+    # Precio de lista con el subtotal ya rebajado (el modelo resta el DESC
+    # del subtotal pero deja el precio impreso): si los subtotales cuadran
+    # con el del papel y cantidad x precio no, manda el subtotal. El
+    # formulario multiplica cantidad x precio y si no, descuadraba.
+    def _cuadra(a, b):
+        return abs(a - b) <= 0.02 + 0.01 * len(limpios)
+
+    subtotal_papel = _monto(leido.get("subtotal"))
+    subtotales = [_monto(r.get("subtotal")) for r in limpios]
+    precios = [(_monto(r.get("cantidad")), _monto(r.get("precio_unitario"))) for r in limpios]
+    if (
+        subtotal_papel is not None and limpios and None not in subtotales
+        and all(c and p is not None for c, p in precios)
+        and _cuadra(sum(subtotales), subtotal_papel)
+        and not _cuadra(sum(c * p for c, p in precios), subtotal_papel)
+    ):
+        for r, sub, (c, p) in zip(limpios, subtotales, precios):
+            if abs(c * p - sub) > 0.01:
+                r["precio_unitario"] = round(sub / c, 4)
+
+    leido["renglones"] = limpios
+    if sin_cantidad:
+        avisos = leido.get("advertencias") if isinstance(leido.get("advertencias"), list) else []
+        leido["advertencias"] = avisos + [
+            f"{sin_cantidad} renglón(es) sin cantidad impresa: se tomó 1 unidad por el monto. Revísalo."
+        ]
 
 
 def _sin_bloque(texto: str) -> str:
@@ -363,7 +443,9 @@ def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str, comprador: str 
                     # Quien compra: su RIF sale en la factura y la IA lo tomaba
                     # por el del proveedor (pasaba con el sello de recibido).
                     comprador=(
-                        f"\nQuien COMPRA es {comprador}: ese RIF es el del cliente, nunca el del proveedor."
+                        f"\nLa empresa que carga esta factura es {comprador}. Si ese RIF aparece en "
+                        "el papel es el del cliente, nunca el del proveedor. Para cliente_rif copia lo "
+                        "que diga el papel, sea o no el de la empresa."
                         if comprador else ""
                     ),
                 )},
@@ -421,6 +503,7 @@ def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str, comprador: str 
             leido["renglones"] = [
                 r for r in leido["renglones"] if not (isinstance(r, dict) and _es_codigo_suelto(r))
             ]
+            _arreglar_ticket(leido)
         borrador = schemas.BorradorFactura(**leido)
     except (json.JSONDecodeError, ValidationError, TypeError, AttributeError) as e:
         log.warning("Gemini devolvio algo que no es un borrador: %s / %s", e, texto[:300])

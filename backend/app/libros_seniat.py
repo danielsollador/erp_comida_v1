@@ -254,12 +254,20 @@ def libro_ventas(libro: schemas.LibroVentas, fiscal, desde: datetime.date, hasta
             6: f.numero_factura if f.tipo == "FAC" else "--",
             7: f.numero_nota if f.tipo == "NC" else "--", 8: "--",
             9: f.numero_control, 10: "01-REG", 11: f.factura_afectada or "--",
+            25: _f(f.fecha_retencion) if f.fecha_retencion else None,
+            26: f.comprobante_retencion or None,
+            27: f.iva_retenido_bs or 0,
         }
 
     alicuota = float(libro.tasa_iva)
-    montos = [12, 13, 14, 15, 17, 18, 20, 21, 23, 24, 27]
+    montos = [12, 13, 14, 15, 17, 18, 20, 21, 23, 24]
     alicuotas = {16: 16, 19: 8, 22: 31}
     r = _filas(ws, libro.filas, montos, alicuotas, alicuota, detalle)
+    # El IVA retenido (AA) lo pone el detalle: va con formato y suma propia.
+    for fila in range(PRIMERA_FILA, r):
+        ws.cell(fila, 27).number_format = MONTO
+    c = ws.cell(r, 27, f"=SUM(AA{PRIMERA_FILA}:AA{r - 1})" if libro.filas else 0)
+    c.number_format, c.font = MONTO, NEGRITA
     _resumen(ws, r + 2, libro.filas, alicuota, "Débitos Fiscales", [
         ("Ventas Internas no Gravadas", ("exento_bs", None)),
         ("Ventas de Exportación", (None, None)),
@@ -267,5 +275,5 @@ def libro_ventas(libro: schemas.LibroVentas, fiscal, desde: datetime.date, hasta
         ("Ventas Internas Gravadas por Alícuota Reducida", _gravadas(alicuota, 8.0)),
         ("Ventas Internas Gravadas por Alícuota General más Adicional", _gravadas(alicuota, 31.0)),
         ("Ajustes a los Débitos Fiscales de Periodos Anteriores", (None, None)),
-    ], "Total Ventas y Débitos Fiscales del Periodo")
+    ], "Total Ventas y Débitos Fiscales del Periodo", retenciones=libro.total_retenido_bs)
     return _terminar(ws, len(ENCABEZADOS_VENTAS))

@@ -1,5 +1,6 @@
 import calendar
 import datetime
+import re
 from typing import List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -106,6 +107,7 @@ def _totales_iva_del_rango(db: Session, inicio, fin) -> dict:
     return {
         "debito": ventas.total_iva, "credito": compras.total_iva,
         "debito_bs": ventas.total_iva_bs, "credito_bs": compras.total_iva_bs,
+        "retenciones_bs": ventas.total_retenido_bs,
         "sin_tasa": ventas.sin_tasa + compras.sin_tasa,
     }
 
@@ -119,6 +121,24 @@ def libro_ventas(rango: Rango = Depends(), db: Session = Depends(get_db)):
     """
     inicio, fin, etiqueta = rango.resolver(periodo="mes")
     return armar_libro_ventas(db, inicio, fin, etiqueta, rango.periodo or "rango")
+
+
+def _venta_bs(db: Session, p: models.Pedido, signo: int = 1) -> dict:
+    """La venta en Bs a la tasa BCV congelada al cobrarla (o la guardada de
+    ese dia, en ventas viejas). El IVA se desglosa sobre los Bs, como lo
+    imprime la maquina fiscal."""
+    tasa = p.tasa_bcv
+    if not tasa:
+        fila_tasa = tasas.tasa_al(db, p.cerrado_en.date())
+        tasa = fila_tasa.bcv if fila_tasa else None
+    if not tasa:
+        return {}
+    total_bs = round(p.total * tasa, 2)
+    base_bs, iva_bs = impuestos.desglosar(total_bs, p.tasa_iva or impuestos.IVA_DEFAULT)
+    return dict(
+        tasa_bcv=tasa, gravado_bs=round(signo * base_bs, 2), exento_bs=0.0,
+        iva_bs=round(signo * iva_bs, 2), total_bs=round(signo * total_bs, 2),
+    )
 
 
 def armar_libro_ventas(db: Session, inicio, fin, etiqueta: str = "", periodo: str = "rango") -> schemas.LibroVentas:
@@ -140,20 +160,15 @@ def armar_libro_ventas(db: Session, inicio, fin, etiqueta: str = "", periodo: st
     )
 
     def en_bs(p: models.Pedido, signo: int) -> dict:
-        """La venta en Bs a la tasa BCV congelada al cobrarla (o la guardada
-        de ese dia, en ventas viejas). El IVA se desglosa sobre los Bs, como
-        lo imprime la maquina fiscal."""
-        tasa = p.tasa_bcv
-        if not tasa:
-            fila_tasa = tasas.tasa_al(db, p.cerrado_en.date())
-            tasa = fila_tasa.bcv if fila_tasa else None
-        if not tasa:
-            return {}
-        total_bs = round(p.total * tasa, 2)
-        base_bs, iva_bs = impuestos.desglosar(total_bs, p.tasa_iva or impuestos.IVA_DEFAULT)
+        return _venta_bs(db, p, signo)
+
+    def en_el_periodo(fecha) -> bool:
+        return fecha is not None and inicio.date() <= fecha < fin.date()
+
+    def retencion(p: models.Pedido) -> dict:
         return dict(
-            tasa_bcv=tasa, gravado_bs=round(signo * base_bs, 2), exento_bs=0.0,
-            iva_bs=round(signo * iva_bs, 2), total_bs=round(signo * total_bs, 2),
+            fecha_retencion=p.fecha_retencion_iva, comprobante_retencion=p.comprobante_retencion_iva or "",
+            iva_retenido_bs=p.retencion_iva_bs,
         )
 
     def cliente(p: models.Pedido) -> str:
@@ -176,6 +191,36 @@ def armar_libro_ventas(db: Session, inicio, fin, etiqueta: str = "", periodo: st
                 iva=iva,
                 total=round(p.total, 2),
                 **en_bs(p, 1),
+                # La retencion va en su factura si el comprobante es de este mes.
+                **(retencion(p) if en_el_periodo(p.fecha_retencion_iva) else {}),
+            )
+        )
+
+    # Comprobantes de retencion que llegaron este mes por facturas de otro
+    # mes: van en el libro del mes del comprobante, en su propia fila.
+    for p in (
+        db.query(models.Pedido)
+        .filter(
+            models.Pedido.facturado.is_(True),
+            models.Pedido.retencion_iva_bs.isnot(None),
+            models.Pedido.fecha_retencion_iva >= inicio.date(),
+            models.Pedido.fecha_retencion_iva < fin.date(),
+            (models.Pedido.cerrado_en < inicio) | (models.Pedido.cerrado_en >= fin),
+        )
+        .all()
+    ):
+        filas.append(
+            schemas.FilaLibroVentas(
+                pedido_id=p.id,
+                fecha=datetime.datetime.combine(p.fecha_retencion_iva, datetime.time(12)),
+                numero_factura="",
+                cliente=cliente(p),
+                rif=p.rif_cliente or "",
+                base_imponible=0, iva=0, total=0,
+                tipo="RET",
+                factura_afectada=p.numero_factura or f"P-{p.numero}",
+                gravado_bs=0, exento_bs=0, iva_bs=0, total_bs=0, tasa_bcv=p.tasa_bcv,
+                **retencion(p),
             )
         )
 
@@ -220,7 +265,63 @@ def armar_libro_ventas(db: Session, inicio, fin, etiqueta: str = "", periodo: st
         total_iva_bs=suma("iva_bs"),
         total_bs=suma("total_bs"),
         sin_tasa=sum(1 for f in filas if f.total_bs is None),
+        total_retenido_bs=suma("iva_retenido_bs"),
     )
+
+
+@router.post("/ventas/{pedido_id}/retencion", response_model=schemas.FilaLibroVentas)
+def registrar_retencion_recibida(
+    pedido_id: int, body: schemas.RetencionRecibidaRequest, db: Session = Depends(get_db)
+):
+    """El comprobante de retencion de IVA que le entrego el cliente
+    (contribuyente especial) por una factura de venta."""
+    p = db.query(models.Pedido).filter_by(id=pedido_id).first()
+    if p is None or not p.facturado:
+        raise HTTPException(status_code=404, detail="Venta facturada no encontrada")
+    comprobante = re.sub(r"\D", "", body.comprobante or "")
+    if len(comprobante) != 14:
+        raise HTTPException(
+            status_code=400,
+            detail="El número de comprobante tiene 14 dígitos: año, mes y correlativo (AAAAMM + 8).",
+        )
+    if body.fecha > hoy():
+        raise HTTPException(status_code=400, detail="La fecha del comprobante no puede ser futura.")
+    if p.cerrado_en and body.fecha < p.cerrado_en.date():
+        raise HTTPException(status_code=400, detail="El comprobante no puede ser de antes de la factura.")
+    _sin_periodo_cerrado(db, datetime.datetime.combine(body.fecha, datetime.time(12)))
+    if p.fecha_retencion_iva:
+        _sin_periodo_cerrado(db, datetime.datetime.combine(p.fecha_retencion_iva, datetime.time(12)))
+    bs = _venta_bs(db, p)
+    if not bs:
+        raise HTTPException(status_code=409, detail="La venta no tiene tasa: cárgala primero en el Libro de Ventas.")
+    monto = body.monto_bs if body.monto_bs is not None else round(bs["iva_bs"] * 0.75, 2)
+    if monto <= 0 or monto > bs["iva_bs"] + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La retención va de más de 0 hasta el IVA de la factura (Bs {bs['iva_bs']:.2f}).",
+        )
+    p.retencion_iva_bs = round(monto, 2)
+    p.comprobante_retencion_iva = comprobante
+    p.fecha_retencion_iva = body.fecha
+    db.commit()
+    return schemas.FilaLibroVentas(
+        pedido_id=p.id, fecha=p.cerrado_en, numero_factura=p.numero_factura or "", cliente=p.cliente or "",
+        base_imponible=0, iva=0, total=0, fecha_retencion=p.fecha_retencion_iva,
+        comprobante_retencion=p.comprobante_retencion_iva, iva_retenido_bs=p.retencion_iva_bs, **bs,
+    )
+
+
+@router.delete("/ventas/{pedido_id}/retencion")
+def quitar_retencion_recibida(pedido_id: int, db: Session = Depends(get_db)):
+    p = db.query(models.Pedido).filter_by(id=pedido_id).first()
+    if p is None or p.retencion_iva_bs is None:
+        raise HTTPException(status_code=404, detail="Esa venta no tiene retención registrada")
+    _sin_periodo_cerrado(db, datetime.datetime.combine(p.fecha_retencion_iva, datetime.time(12)))
+    p.retencion_iva_bs = None
+    p.comprobante_retencion_iva = ""
+    p.fecha_retencion_iva = None
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/libro-ventas/seniat")
@@ -646,6 +747,10 @@ def _a_schema(d: models.DeclaracionIva) -> schemas.DeclaracionIva:
         credito_usado_bs=d.credito_usado_bs,
         iva_a_pagar_bs=d.iva_a_pagar_bs,
         credito_excedente_bs=d.credito_excedente_bs,
+        retenciones_bs=d.retenciones_bs,
+        retenciones_arrastradas_bs=d.retenciones_arrastradas_bs,
+        retenciones_usadas_bs=d.retenciones_usadas_bs,
+        retenciones_excedente_bs=d.retenciones_excedente_bs,
         fecha_declaracion=d.fecha_declaracion,
         pagada=d.pagada,
         fecha_pago=d.fecha_pago,
@@ -701,7 +806,7 @@ def periodos_pendientes(db: Session = Depends(get_db)):
             t = _totales_iva_del_rango(db, inicio, fin)
             # Un mes sin ventas ni compras no tiene nada que declarar: listarlo
             # solo llenaria la pantalla de meses vacios.
-            if t["debito"] or t["credito"]:
+            if t["debito"] or t["credito"] or t["retenciones_bs"]:
                 pendientes.append(
                     schemas.PeriodoPendiente(
                         anio=anio,
@@ -711,6 +816,7 @@ def periodos_pendientes(db: Session = Depends(get_db)):
                         iva_credito=t["credito"],
                         iva_debito_bs=t["debito_bs"],
                         iva_credito_bs=t["credito_bs"],
+                        retenciones_bs=t["retenciones_bs"],
                         sin_tasa=t["sin_tasa"],
                     )
                 )
@@ -780,6 +886,11 @@ def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)
     debito_bs, credito_bs = t["debito_bs"], t["credito_bs"]
     disponible_bs = round(credito_bs + arrastrado_bs, 2)
     usado_bs = round(min(disponible_bs, debito_bs), 2)
+    # Despues del credito fiscal, las retenciones que hicieron los clientes:
+    # bajan lo que queda por pagar, y lo que sobra se arrastra.
+    ret_arrastradas = (anterior.retenciones_excedente_bs or 0.0) if anterior else 0.0
+    ret_disponibles = round(t["retenciones_bs"] + ret_arrastradas, 2)
+    ret_usadas = round(min(ret_disponibles, round(debito_bs - usado_bs, 2)), 2)
 
     declaracion = models.DeclaracionIva(
         anio=body.anio,
@@ -794,8 +905,12 @@ def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)
         iva_credito_bs=credito_bs,
         credito_arrastrado_bs=arrastrado_bs,
         credito_usado_bs=usado_bs,
-        iva_a_pagar_bs=round(debito_bs - usado_bs, 2),
+        iva_a_pagar_bs=round(debito_bs - usado_bs - ret_usadas, 2),
         credito_excedente_bs=round(disponible_bs - usado_bs, 2),
+        retenciones_bs=t["retenciones_bs"],
+        retenciones_arrastradas_bs=ret_arrastradas,
+        retenciones_usadas_bs=ret_usadas,
+        retenciones_excedente_bs=round(ret_disponibles - ret_usadas, 2),
     )
     db.add(declaracion)
     db.flush()

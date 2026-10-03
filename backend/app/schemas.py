@@ -715,6 +715,9 @@ class Pedido(BaseModel):
     numero_control: str = ""
     rif_cliente: str = ""
     razon_social_cliente: str = ""
+    retencion_iva_bs: Optional[float] = None
+    comprobante_retencion_iva: str = ""
+    fecha_retencion_iva: Optional[datetime.date] = None
     # Tasa a la que se cobro. Se expone para que la pantalla muestre los
     # bolivares que de verdad entraron ese dia, y no los que darian esos
     # dolares a la tasa de hoy.
@@ -2250,7 +2253,7 @@ class FilaLibroVentas(BaseModel):
     tipo: str = "FAC"  # FAC | NC
     numero_nota: str = ""
     factura_afectada: str = ""
-    rif: str = ""  # el ERP no guarda el RIF del cliente: consumidor final
+    rif: str = ""  # vacio: consumidor final
     numero_control: str = ""
     # En bolivares, a la tasa BCV congelada al cobrar. None si la venta no
     # tiene tasa (ventas viejas de una fecha sin tasa guardada).
@@ -2259,6 +2262,20 @@ class FilaLibroVentas(BaseModel):
     exento_bs: Optional[float] = None
     iva_bs: Optional[float] = None
     total_bs: Optional[float] = None
+    # La retencion que hizo el cliente. Va en la fila de su factura si el
+    # comprobante es del mismo mes; si llego en otro, en una fila "RET" en el
+    # libro del mes del comprobante.
+    fecha_retencion: Optional[datetime.date] = None
+    comprobante_retencion: str = ""
+    iva_retenido_bs: Optional[float] = None
+
+
+class RetencionRecibidaRequest(BaseModel):
+    comprobante: str
+    fecha: datetime.date
+    # Sin monto, el 75 % del IVA de la factura en Bs (lo de un contribuyente
+    # ordinario).
+    monto_bs: Optional[float] = None
 
 
 class LibroVentas(BaseModel):
@@ -2276,6 +2293,7 @@ class LibroVentas(BaseModel):
     total_iva_bs: float = 0
     total_bs: float = 0
     sin_tasa: int = 0
+    total_retenido_bs: float = 0
 
 
 class FilaLibroCompras(BaseModel):
@@ -2388,6 +2406,10 @@ class DeclaracionIva(BaseModel):
     credito_usado_bs: Optional[float] = None
     iva_a_pagar_bs: Optional[float] = None
     credito_excedente_bs: Optional[float] = None
+    retenciones_bs: Optional[float] = None
+    retenciones_arrastradas_bs: Optional[float] = None
+    retenciones_usadas_bs: Optional[float] = None
+    retenciones_excedente_bs: Optional[float] = None
     fecha_declaracion: datetime.datetime
     pagada: bool
     fecha_pago: Optional[datetime.datetime] = None
@@ -2402,6 +2424,7 @@ class PeriodoPendiente(BaseModel):
     iva_credito: float
     iva_debito_bs: float = 0
     iva_credito_bs: float = 0
+    retenciones_bs: float = 0
     # Documentos del mes sin tasa: sin ella no hay Bs, y no se puede declarar.
     sin_tasa: int = 0
 
