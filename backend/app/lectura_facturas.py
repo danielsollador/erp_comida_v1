@@ -36,6 +36,11 @@ class ErrorDeLectura(Exception):
     """El archivo no se pudo leer. El mensaje es para quien carga la factura."""
 
 
+class _LecturaMala(ErrorDeLectura):
+    """El modelo contesto, pero algo que no sirve (vacio o mal formado): otro
+    modelo puede leerlo bien. Una clave mala o sin saldo, no."""
+
+
 @dataclass
 class Lectura:
     borrador: schemas.BorradorFactura
@@ -110,7 +115,12 @@ def _leer_de_prueba(imagen: bytes, tipo_mime: str, comprador: str = "") -> Lectu
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
 # Una factura de una o dos paginas tarda unos segundos; con la red del local
 # puede tardar mas. Pasado esto, mejor que la persona la cargue a mano.
-GEMINI_TIMEOUT_S = 90
+GEMINI_TIMEOUT_S = 150
+# La respuesta llega en streaming: mientras el modelo razona va mandando
+# trozos. Sin streaming, un ticket largo dejaba la conexion muda mas de un
+# minuto y se cortaba siempre a los 60 s ("Server disconnected"), aunque el
+# modelo lo estuviera leyendo bien. Esto es el silencio maximo entre trozos.
+GEMINI_SILENCIO_S = 60
 
 # Google contesta 503 "mucha demanda" a rachas, sobre todo en los modelos mas
 # nuevos: con las 21 facturas reales de la primera prueba fallo la mitad. Es
@@ -325,6 +335,21 @@ def _arreglar_ticket(leido: dict) -> None:
         ]
 
 
+def _fecha_que_exista(leido: dict) -> None:
+    """Una fecha que no existe (paso: "2027-02-30" en un ticket del
+    02-07-2026) tumbaba la lectura entera. Se deja vacia y se avisa: la
+    persona la escribe mirando el papel."""
+    fecha = leido.get("fecha")
+    if not fecha:
+        return
+    try:
+        datetime.date.fromisoformat(str(fecha))
+    except ValueError:
+        leido["fecha"] = None
+        avisos = leido.get("advertencias") if isinstance(leido.get("advertencias"), list) else []
+        leido["advertencias"] = avisos + [f"La fecha leída ({fecha}) no existe: escríbela mirando el papel."]
+
+
 def _sin_bloque(texto: str) -> str:
     """El JSON sin las comillas de bloque de markdown, si las trajo."""
     t = texto.strip()
@@ -382,6 +407,15 @@ def _leer_con_gemini(archivo: bytes, tipo_mime: str, comprador: str = "") -> Lec
         respaldo = ""
     try:
         primera = _leer_con_reintentos(archivo, tipo_mime, principal, comprador)
+    except _LecturaMala:
+        # Un ticket largo y borroso salio mal formado: el preciso lo lee.
+        if not respaldo:
+            raise
+        log.warning("Gemini %s devolvio una lectura que no sirve: se prueba con %s", principal, respaldo)
+        try:
+            return _leer_con_reintentos(archivo, tipo_mime, respaldo, comprador)
+        except _Saturado:
+            raise ErrorDeLectura(_SATURADO)
     except _Saturado:
         if not respaldo:
             raise ErrorDeLectura(_SATURADO)
@@ -414,7 +448,10 @@ def _leer_con_gemini(archivo: bytes, tipo_mime: str, comprador: str = "") -> Lec
     )
 
 
-_SATURADO = "Gemini está saturado en este momento. Intenta en unos minutos o carga la factura a mano."
+_SATURADO = (
+    "Gemini no responde en este momento (saturado o sin conexión). "
+    "Intenta en unos minutos o carga la factura a mano."
+)
 
 
 class _Saturado(Exception):
@@ -430,6 +467,44 @@ def _leer_con_reintentos(archivo: bytes, tipo_mime: str, modelo: str, comprador:
         except _Pasajero:
             continue
     raise _Saturado()
+
+
+@dataclass
+class _Respuesta:
+    status_code: int
+    datos: dict
+    text: str = ""
+
+
+def _llamar(url: str, cuerpo: dict) -> _Respuesta:
+    """Pide en streaming (SSE) y junta los trozos en una sola respuesta, con
+    la misma forma que la de generateContent."""
+    url = url.replace(":generateContent", ":streamGenerateContent") + "?alt=sse"
+    inicio = time.monotonic()
+    with httpx.stream(
+        "POST", url, json=cuerpo, headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+        timeout=httpx.Timeout(30.0, read=GEMINI_SILENCIO_S),
+    ) as r:
+        if r.status_code != 200:
+            r.read()
+            return _Respuesta(r.status_code, {}, r.text)
+        partes, final, uso, aviso = [], "", {}, {}
+        for linea in r.iter_lines():
+            if time.monotonic() - inicio > GEMINI_TIMEOUT_S:
+                raise httpx.ReadTimeout("la lectura paso del tiempo maximo")
+            if not linea.startswith("data:"):
+                continue
+            evento = json.loads(linea[5:])
+            for c in evento.get("candidates") or []:
+                partes += (c.get("content") or {}).get("parts", [])
+                final = c.get("finishReason") or final
+            uso = evento.get("usageMetadata") or uso
+            aviso = evento.get("promptFeedback") or aviso
+    datos = {"candidates": [{"content": {"parts": partes}, "finishReason": final}] if partes or final else [],
+             "usageMetadata": uso}
+    if aviso:
+        datos["promptFeedback"] = aviso
+    return _Respuesta(200, datos)
 
 
 def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str, comprador: str = "") -> Lectura:
@@ -456,21 +531,22 @@ def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str, comprador: str 
             "response_schema": ESQUEMA,
             # Transcribir no es crear: la misma foto tiene que dar lo mismo.
             "temperature": 0,
+            # Que mande lo que va razonando: mantiene viva la conexion (ver
+            # GEMINI_SILENCIO_S). Esas partes no cuentan como respuesta.
+            "thinkingConfig": {"includeThoughts": True},
         },
     }
     try:
-        r = httpx.post(
-            GEMINI_URL.format(modelo=modelo),
-            json=cuerpo,
-            headers={"x-goog-api-key": settings.GEMINI_API_KEY},
-            timeout=GEMINI_TIMEOUT_S,
-        )
+        r = _llamar(GEMINI_URL.format(modelo=modelo), cuerpo)
     except httpx.TimeoutException:
         # No se reintenta: ya se espero GEMINI_TIMEOUT_S, otra vuelta igual
         # dejaria a la persona minutos frente a la pantalla.
         raise ErrorDeLectura("Gemini tardó demasiado en leer la factura. Intenta otra vez o cárgala a mano.")
-    except httpx.HTTPError:
-        raise ErrorDeLectura("No se pudo conectar con Gemini. Revisa la conexión del servidor.")
+    except httpx.HTTPError as e:
+        # Un corte de conexion suele ser pasajero (paso releyendo un ticket
+        # largo): se reintenta como cuando Google esta saturado.
+        log.warning("Gemini %s: fallo la conexion (%s)", modelo, e)
+        raise _Pasajero()
 
     if r.status_code != 200:
         # El cuerpo del error va al log (sirve para diagnosticar) pero no a
@@ -483,7 +559,7 @@ def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str, comprador: str 
             mensaje = "Gemini no está disponible ahora. Intenta en un rato o carga la factura a mano."
         raise ErrorDeLectura(mensaje)
 
-    datos = r.json()
+    datos = r.datos
     if datos.get("promptFeedback", {}).get("blockReason"):
         raise ErrorDeLectura("Gemini se negó a leer este archivo. Carga la factura a mano.")
     candidatos = datos.get("candidates") or []
@@ -494,11 +570,12 @@ def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str, comprador: str 
     if not texto.strip():
         motivo = candidatos[0].get("finishReason", "") if candidatos else ""
         log.warning("Gemini devolvio una respuesta vacia (finishReason=%s)", motivo)
-        raise ErrorDeLectura("Gemini no devolvió nada legible. Prueba con una foto más nítida.")
+        raise _LecturaMala("Gemini no devolvió nada legible. Prueba con una foto más nítida.")
     try:
         leido = json.loads(_sin_bloque(texto))
         # El borrador usa "" para "no se sabe"; el esquema de Gemini, null.
         leido["moneda"] = leido.get("moneda") or ""
+        _fecha_que_exista(leido)
         if isinstance(leido.get("renglones"), list):
             leido["renglones"] = [
                 r for r in leido["renglones"] if not (isinstance(r, dict) and _es_codigo_suelto(r))
@@ -507,7 +584,7 @@ def _pedir_a_gemini(archivo: bytes, tipo_mime: str, modelo: str, comprador: str 
         borrador = schemas.BorradorFactura(**leido)
     except (json.JSONDecodeError, ValidationError, TypeError, AttributeError) as e:
         log.warning("Gemini devolvio algo que no es un borrador: %s / %s", e, texto[:300])
-        raise ErrorDeLectura("Gemini devolvió una lectura incompleta. Prueba otra vez o carga la factura a mano.")
+        raise _LecturaMala("Gemini devolvió una lectura incompleta. Prueba otra vez o carga la factura a mano.")
 
     uso = datos.get("usageMetadata") or {}
     return Lectura(

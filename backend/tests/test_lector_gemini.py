@@ -49,15 +49,37 @@ def gemini(monkeypatch):
 
     def responder(estado=200, cuerpo=None, error=None, secuencia=None):
         """`secuencia`: lista de (estado, cuerpo), una por pedido, en orden."""
-        def post(url, json=None, headers=None, timeout=None):
+        def stream(metodo, url, json=None, headers=None, timeout=None):
             pedidos.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
             if error:
                 raise error
             e, c = secuencia[len(pedidos) - 1] if secuencia else (estado, cuerpo)
-            return httpx.Response(e, json=c, request=httpx.Request("POST", url))
-        monkeypatch.setattr(lectura_facturas.httpx, "post", post)
+            return FlujoFalso(e, c)
+        monkeypatch.setattr(lectura_facturas.httpx, "stream", stream)
 
     return pedidos, responder
+
+
+class FlujoFalso:
+    """La respuesta en streaming (SSE) de Google: el cuerpo entero en un
+    evento, o el error tal cual."""
+
+    def __init__(self, estado, cuerpo):
+        self.status_code = estado
+        self.text = json.dumps(cuerpo)
+        self._cuerpo = cuerpo
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def read(self):
+        return self.text.encode()
+
+    def iter_lines(self):
+        yield "data: " + json.dumps(self._cuerpo)
 
 
 def respuesta(texto, **uso):
@@ -80,7 +102,7 @@ def test_pide_lo_que_debe(gemini):
     responder(cuerpo=respuesta(json.dumps(BORRADOR)))
     lectura_facturas.leer(JPG, "image/jpeg")
     [p] = pedidos
-    assert p["url"].endswith("/models/gemini-3.8-flash:generateContent")
+    assert p["url"].endswith("/models/gemini-3.8-flash:streamGenerateContent?alt=sse")
     assert "clave-de-prueba" not in p["url"], "la clave va en la cabecera, no en la URL (queda en logs)"
     assert p["headers"]["x-goog-api-key"] == "clave-de-prueba"
     parte = p["json"]["contents"][0]["parts"][0]["inline_data"]
@@ -88,6 +110,8 @@ def test_pide_lo_que_debe(gemini):
     config = p["json"]["generationConfig"]
     assert config["response_mime_type"] == "application/json"
     assert config["temperature"] == 0
+    # En streaming y con lo que va razonando: asi la conexion no queda muda.
+    assert config["thinkingConfig"] == {"includeThoughts": True}
     assert "renglones" in config["response_schema"]["properties"]
 
 
@@ -205,9 +229,28 @@ def test_sin_red_o_lento(gemini):
     responder(error=httpx.ReadTimeout("lento"))
     with pytest.raises(lectura_facturas.ErrorDeLectura, match="tardó demasiado"):
         lectura_facturas.leer(JPG, "image/jpeg")
+    # Sin red se reintenta (suele ser un corte pasajero) y despues se dice.
+    pedidos, _ = gemini
+    antes = len(pedidos)
     responder(error=httpx.ConnectError("sin red"))
-    with pytest.raises(lectura_facturas.ErrorDeLectura, match="No se pudo conectar"):
+    with pytest.raises(lectura_facturas.ErrorDeLectura, match="sin conexión"):
         lectura_facturas.leer(JPG, "image/jpeg")
+    assert len(pedidos) - antes == 3
+
+
+def test_un_corte_de_conexion_se_reintenta(gemini, monkeypatch):
+    pedidos, _ = gemini
+    llamadas = []
+
+    def stream(metodo, url, json=None, headers=None, timeout=None):
+        llamadas.append(url)
+        if len(llamadas) == 1:
+            raise httpx.RemoteProtocolError("se corto")
+        return FlujoFalso(200, respuesta(__import__("json").dumps(BORRADOR)))
+
+    monkeypatch.setattr(lectura_facturas.httpx, "stream", stream)
+    assert lectura_facturas.leer(JPG, "image/jpeg").borrador.numero_factura == "0004512"
+    assert len(llamadas) == 2
 
 
 @pytest.mark.parametrize("cuerpo, dice", [
@@ -412,3 +455,45 @@ def test_precio_de_lista_con_subtotal_rebajado_se_alinea(gemini):
     responder(cuerpo=respuesta(json.dumps(ticket)))
     [r] = lectura_facturas.leer(JPG, "image/jpeg").borrador.renglones
     assert (r.precio_unitario, r.subtotal) == (1429.40, 1429.40)
+
+
+def test_una_fecha_que_no_existe_no_tumba_la_lectura(gemini):
+    """Ticket de Daka: "2027-02-30" rechazaba la lectura entera."""
+    pedidos, responder = gemini
+    responder(cuerpo=respuesta(json.dumps({**BORRADOR, "fecha": "2027-02-30"})))
+    b = lectura_facturas.leer(JPG, "image/jpeg").borrador
+    assert b.fecha is None and b.numero_factura == "0004512"
+    assert any("2027-02-30" in a for a in b.advertencias)
+
+
+def test_si_el_rapido_devuelve_algo_que_no_sirve_lee_el_preciso(gemini, monkeypatch):
+    pedidos, responder = gemini
+    monkeypatch.setattr(settings, "GEMINI_MODELO", "gemini-3.5-flash-lite")
+    monkeypatch.setattr(settings, "GEMINI_MODELO_RESPALDO", "gemini-3.8-flash")
+    responder(secuencia=[(200, respuesta("{no es json")), (200, respuesta(json.dumps(BORRADOR)))])
+    l = lectura_facturas.leer(JPG, "image/jpeg")
+    assert l.modelo == "gemini-3.8-flash" and l.borrador.numero_factura == "0004512"
+
+
+def test_los_trozos_del_streaming_se_juntan(gemini, monkeypatch):
+    """Lo que va razonando llega en trozos aparte y no cuenta como respuesta;
+    el JSON puede venir partido en varios."""
+    pedidos, _ = gemini
+    texto = json.dumps(BORRADOR)
+    eventos = [
+        {"candidates": [{"content": {"parts": [{"text": "leyendo el papel...", "thought": True}]}}]},
+        {"candidates": [{"content": {"parts": [{"text": texto[:40]}]}}]},
+        {"candidates": [{"content": {"parts": [{"text": texto[40:]}]}, "finishReason": "STOP"}],
+         "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 20, "thoughtsTokenCount": 5}},
+    ]
+
+    class Varios(FlujoFalso):
+        def iter_lines(self):
+            for e in eventos:
+                yield "data: " + json.dumps(e)
+                yield ""
+
+    monkeypatch.setattr(lectura_facturas.httpx, "stream", lambda *a, **k: Varios(200, {}))
+    l = lectura_facturas.leer(JPG, "image/jpeg")
+    assert l.borrador.numero_factura == "0004512"
+    assert (l.tokens_entrada, l.tokens_salida) == (10, 25)
