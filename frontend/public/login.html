@@ -351,7 +351,31 @@
   // lleva el login. Por defecto NO es el hub.
   var ES_HUB = false;
 
-  fetch("/api/acceso/estado", { credentials: "same-origin" })
+  // LA APP (Android / iOS). Esta pagina viene dentro del paquete y el servidor
+  // vive en otra direccion: la deja escrita la app al arrancar (vp-api-base,
+  // ver src/lib/plataforma.ts). La sesion es un token que el servidor entrega
+  // en la cabecera X-Vp-Token y se guarda en el telefono (vp-token). En el
+  // navegador nada de esto aplica: mismo origen y cookie, como siempre.
+  var ES_APP = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  function leerLocal(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function guardarLocal(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var BASE = ES_APP ? (leerLocal("vp-api-base") || "") : "";
+  function cabeceras(extra) {
+    var h = extra || {};
+    if (ES_APP) {
+      h["X-Vp-App"] = "1";
+      var t = leerLocal("vp-token");
+      if (t) h["Authorization"] = "Bearer " + t;
+    }
+    return h;
+  }
+  function recogerToken(r) {
+    if (!ES_APP) return;
+    var t = r.headers.get("X-Vp-Token");
+    if (t) guardarLocal("vp-token", t);
+  }
+
+  fetch(BASE + "/api/acceso/estado", { credentials: "same-origin", headers: cabeceras() })
     .then(function (r) { if (!r.ok) throw new Error("sin estado"); return r.json(); })
     .then(function (d) {
       ES_HUB = !!(d && d.es_hub);
@@ -416,14 +440,15 @@
     boton.disabled = true;
     boton.innerHTML = '<span class="puntos"><span></span><span></span><span></span></span>';
 
-    fetch(instalando ? "/api/acceso/setup" : "/api/acceso/login", {
+    fetch(BASE + (instalando ? "/api/acceso/setup" : "/api/acceso/login"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: cabeceras({ "Content-Type": "application/json" }),
       // Sin esto el navegador descarta la cookie de sesion y el login entra en bucle.
       credentials: "same-origin",
       body: JSON.stringify({ usuario: usuario.value, clave: clave.value })
     })
       .then(function (r) {
+        recogerToken(r);
         if (r.ok) {
           return r.json().catch(function () { return {}; }).then(function (d) {
             // Si el servidor dice `redirigir`, se va AHI: es el hub mandando

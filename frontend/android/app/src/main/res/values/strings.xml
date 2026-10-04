@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sávora</string>
+    <string name="title_activity_main">Sávora</string>
+    <string name="package_name">tech.vertigopro.savora</string>
+    <string name="custom_url_scheme">tech.vertigopro.savora</string>
+</resources>

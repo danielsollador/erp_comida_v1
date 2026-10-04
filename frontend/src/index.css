@@ -1884,3 +1884,34 @@ html.vp-ligero .vp-rb { animation: none; }
   .vp-aparece { animation: none; }
   .vp-cargando-linea::before { animation-duration: 2s; }
 }
+
+/* ── La app nativa (lib/nativo.ts pone `vp-app` en <html>) ──────────────────
+   Lo que delata a una web metida en una app: el rebote al final de la
+   pagina, el texto que se selecciona al mantener el dedo, el menu de "copiar
+   enlace" al apretar un boton, el destello gris al tocar. En la app no va
+   nada de eso. Los campos donde se escribe siguen seleccionables. */
+html.vp-app,
+html.vp-app body {
+  overscroll-behavior: none;
+}
+html.vp-app body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+html.vp-app input,
+html.vp-app textarea,
+html.vp-app [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* iPhone y iPad: la barra de estado va SOBRE la app; el contenido empieza
+   debajo de ella y del notch, y termina antes de la barra de inicio. */
+html.vp-app-ios body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+html.vp-app-ios .vp-rail {
+  padding-top: env(safe-area-inset-top);
+}

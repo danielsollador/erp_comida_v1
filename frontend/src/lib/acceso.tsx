@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api } from './api'
+import { esApp, olvidarToken } from './plataforma'
 import type { EstadoAcceso } from './types'
 
 /**
@@ -53,6 +54,13 @@ export function AccesoProvider({ children }: { children: ReactNode }) {
       await api.salir()
     } catch {
       // aunque falle, se va al login: la cookie se borra alli al recargar
+    }
+    // En la app la sesion es un token guardado en el telefono: se borra, y
+    // el login es la pagina que viene dentro de la app (no hay hub que cerrar).
+    if (esApp) {
+      olvidarToken()
+      window.location.replace('/login.html')
+      return
     }
     // Hub y panel son dominios distintos con cookies distintas. Cerrar aqui no
     // cierra la del hub, asi que se encadena: el hub cierra la suya y devuelve

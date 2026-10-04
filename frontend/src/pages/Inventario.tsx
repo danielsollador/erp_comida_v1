@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import EnlaceDescarga from '../components/EnlaceDescarga'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
@@ -1648,12 +1649,13 @@ function FichaInsumo({
                   { valor: rangoDe('90d').desde, texto: 'Últimos 90 días' },
                 ].filter((o, k, todas) => todas.findIndex((x) => x.valor === o.valor) === k)}
               />
-              <a
-                href={`/api/inventario/ingredientes/${ing.id}/movimientos/exportar${desdeExtracto ? `?desde=${desdeExtracto}T00:00:00` : ''}`}
+              <EnlaceDescarga
+                ruta={`/api/inventario/ingredientes/${ing.id}/movimientos/exportar${desdeExtracto ? `?desde=${desdeExtracto}T00:00:00` : ''}`}
+                nombre={`movimientos-${ing.nombre}.csv`}
                 className="ml-auto text-xs font-medium text-acento-700 hover:underline"
               >
                 Descargar la lista
-              </a>
+              </EnlaceDescarga>
             </div>
             {extracto.movimientos.length === 0 ? (
               <p className="text-sm text-neutral-500">No se movió nada en ese período.</p>
@@ -1990,12 +1992,13 @@ function DetalleConteo({ id, onCerrar }: { id: number; onCerrar: () => void }) {
       pie={
         <>
           {d && (
-            <a
-              href={`/api/inventario/conteos/${d.id}/exportar`}
+            <EnlaceDescarga
+              ruta={`/api/inventario/conteos/${d.id}/exportar`}
+              nombre={`conteo-${d.id}.csv`}
               className="mr-auto self-center text-sm font-medium text-acento-700 hover:underline"
             >
               Descargar
-            </a>
+            </EnlaceDescarga>
           )}
           <Boton onClick={onCerrar}>Cerrar</Boton>
         </>
@@ -2216,12 +2219,13 @@ function ConteoFisico({
           placeholder="Buscar…"
           className="border border-neutral-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-40"
         />
-        <a
-          href="/api/inventario/conteos/planilla"
+        <EnlaceDescarga
+          ruta="/api/inventario/conteos/planilla"
+          nombre="planilla-de-conteo.csv"
           className="text-sm font-medium text-acento-700 hover:underline whitespace-nowrap"
         >
           Descargar planilla
-        </a>
+        </EnlaceDescarga>
         {/* La vuelta del viaje: la planilla que el trabajador llenó en el
             depósito entra por aquí y rellena las casillas. No guarda nada
             todavía: se revisa en pantalla y se guarda con el mismo botón de

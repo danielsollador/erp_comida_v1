@@ -81,6 +81,7 @@ import type {
   OpcionBanco,
   VerificacionPago,
 } from './types'
+import { abrirCanalEnVivo, cabecerasApp, recogerToken, urlApi } from './plataforma'
 import { queryRango, type Rango } from './fechas'
 
 /** `?desde=…&hasta=…` si hay rango; sin el, el endpoint usa su defecto. */
@@ -109,8 +110,9 @@ export class SinConexion extends Error {
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`/api${path}`, {
-      headers: { 'Content-Type': 'application/json' },
+    // En la app, la direccion del servidor y el token (ver lib/plataforma.ts).
+    res = await fetch(urlApi(`/api${path}`), {
+      headers: { 'Content-Type': 'application/json', ...cabecerasApp() },
       // SIN CACHE. El API no manda `Cache-Control` ni `ETag`, asi que el
       // navegador puede decidir por su cuenta reutilizar la respuesta
       // anterior de un GET: se borraba algo, se volvia a pedir la lista y
@@ -130,6 +132,7 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     // "Failed to fetch", que no le dice que hacer.
     throw new SinConexion()
   }
+  recogerToken(res)
   // Sesion caducada o cerrada en otra pestaña: al login, no a un error rojo.
   // Las rutas del propio acceso no: alli el 401 es "clave incorrecta".
   if (res.status === 401 && !path.startsWith('/acceso/')) {
@@ -683,9 +686,10 @@ export const api = {
     // no se usa `req`, que fuerza application/json.
     const datos = new FormData()
     datos.append('archivo', archivo)
-    const res = await fetch('/api/respaldos/restaurar-archivo?confirmar=true', {
+    const res = await fetch(urlApi('/api/respaldos/restaurar-archivo?confirmar=true'), {
       method: 'POST',
       body: datos,
+      headers: cabecerasApp(),
     })
     const texto = await res.text()
     if (!res.ok) {
@@ -999,8 +1003,8 @@ function programarReconexion() {
 
 function abrirCanal() {
   if (!hayQuienEscuche() || canal) return
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const ws = new WebSocket(`${proto}://${window.location.host}/ws`)
+  // En la app, la direccion del servidor y el token (ver lib/plataforma.ts).
+  const ws = abrirCanalEnVivo()
   canal = ws
   ws.onopen = () => {
     espera = 1500

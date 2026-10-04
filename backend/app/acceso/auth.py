@@ -68,10 +68,42 @@ def acceso_ok(token: str | None) -> bool:
         sesion.leer(token, generacion_actual=usuarios.generacion)) is not None
 
 
+# ── La app (Android / iOS) ─────────────────────────────────────────────────
+#
+# La app nativa trae sus pantallas adentro y llama a la API desde otro origen
+# (`https://localhost` en Android, `capacitor://localhost` en iOS). Ahi la
+# cookie no sirve: es de otro dominio y el WebView no la manda. Por eso la app
+# se identifica con `X-Vp-App: 1` y recibe el MISMO token firmado en la
+# cabecera `X-Vp-Token`; lo devuelve en `Authorization: Bearer`. La web sigue
+# exactamente igual, con su cookie HttpOnly.
+CABECERA_APP = "x-vp-app"
+CABECERA_TOKEN = "X-Vp-Token"
+
+
+def es_app(request) -> bool:
+    return request.headers.get(CABECERA_APP) == "1"
+
+
+def token_de(request) -> str | None:
+    """El token de la sesion: la cookie del navegador o el de la app."""
+    galleta = request.cookies.get(COOKIE_SESION)
+    if galleta:
+        return galleta
+    cabecera = request.headers.get("authorization", "")
+    if cabecera[:7].lower() == "bearer ":
+        return cabecera[7:].strip() or None
+    return None
+
+
 def poner_cookie(response, token: str, request) -> None:
     """UNA sola definicion de la cookie. `secure` se decide por el esquema real
     (detras de Traefik llega en X-Forwarded-Proto); forzarlo rompe el login en
-    http://localhost sin ningun mensaje."""
+    http://localhost sin ningun mensaje.
+
+    A la app, ademas, el token va en la cabecera: es por donde le llega el de
+    entrar y cada renovacion (ver `token_de`)."""
+    if es_app(request):
+        response.headers[CABECERA_TOKEN] = token
     reenviado = request.headers.get("x-forwarded-proto", "")
     response.set_cookie(
         COOKIE_SESION, token,
@@ -98,8 +130,7 @@ def quien(request: Request) -> str | None:
 
 
 def sesion_actual(request: Request) -> dict:
-    s = getattr(request.state, "sesion", None) or datos_acceso(
-        request.cookies.get(COOKIE_SESION))
+    s = getattr(request.state, "sesion", None) or datos_acceso(token_de(request))
     if not s:
         raise HTTPException(401, "Sesión requerida.")
     return s

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { urlApi } from '../lib/plataforma'
 
 /**
  * La barra que aparece cuando se cae el internet.
@@ -28,7 +29,7 @@ export default function Conexion() {
       }
       try {
         // Barata y siempre disponible: solo interesa que el servidor conteste.
-        const r = await fetch('/api/acceso/check', { method: 'GET', cache: 'no-store' })
+        const r = await fetch(urlApi('/api/acceso/check'), { method: 'GET', cache: 'no-store' })
         if (vivo) setCaida(!r.ok && r.status !== 401)
       } catch {
         if (vivo) setCaida(true)

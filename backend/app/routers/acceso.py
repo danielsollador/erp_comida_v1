@@ -152,7 +152,7 @@ def login(datos: Credenciales, request: Request, response: Response) -> dict:
 def pase(datos: PidoPase, request: Request) -> dict:
     """Un pase para entrar a otro dominio sin volver a poner la clave. Dura un
     minuto, vale para ese destino y se gasta una vez."""
-    s = auth.datos_acceso(request.cookies.get(auth.COOKIE_SESION))
+    s = auth.datos_acceso(auth.token_de(request))
     if not s:
         raise HTTPException(401, "Sesión requerida.")
     # El permiso se comprueba aca Y en el destino al canjearlo: dos cerraduras.
@@ -246,7 +246,7 @@ def estado(request: Request, response: Response) -> dict:
     """Si la sesion sirve, y lo que la pantalla de acceso necesita ANTES de
     que haya sesion. Existe porque la cookie es HttpOnly y el frontend no la
     puede leer."""
-    token = request.cookies.get(auth.COOKIE_SESION)
+    token = auth.token_de(request)
     nuevo = auth.conviene_renovar(token)
     if nuevo:
         auth.poner_cookie(response, nuevo, request)

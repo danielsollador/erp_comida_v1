@@ -1,0 +1,46 @@
+# La app de Android, compilada en la nube (en la computadora de desarrollo no
+# hay Java ni el kit de Android). Se lanza a mano desde la pestaña Actions de
+# GitHub ("Run workflow") y deja el instalador como artefacto descargable.
+#
+# Por ahora es la version de PRUEBA (debug), para instalar directo en una
+# tablet o un telefono. La de Google Play (AAB firmado) necesita la llave de
+# firma en los secretos del repositorio: ver frontend/APP.md.
+name: App Android
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Pantallas de la app (apuntan al servidor de .env.app)
+        run: |
+          npm ci
+          npm run build:app
+          npx cap sync android
+
+      - name: Compilar el APK de prueba
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: savora-android-prueba
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk

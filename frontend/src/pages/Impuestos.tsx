@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import EnlaceDescarga from '../components/EnlaceDescarga'
 import { Ayuda } from '../components/Ayuda'
 import { explicar } from '../lib/glosario'
 import NavBar from '../components/NavBar'
@@ -138,12 +139,13 @@ export default function Impuestos() {
                 placeholder="Buscar por número de factura o cliente…"
                 className="w-full sm:w-72 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
               />
-              <a
-                href={`/api/impuestos/libro-ventas/exportar?${queryRango(rango)}`}
+              <EnlaceDescarga
+                ruta={`/api/impuestos/libro-ventas/exportar?${queryRango(rango)}`}
+                nombre="libro-de-ventas.xlsx"
                 className="text-sm font-medium text-acento-700 hover:underline"
               >
                 Descargar Excel
-              </a>
+              </EnlaceDescarga>
             </div>
             {/* El aviso de "además hubo N ventas sin facturar" salió de aquí:
                 el Libro de Ventas es el documento que se le presenta al
@@ -220,12 +222,13 @@ export default function Impuestos() {
               placeholder="Buscar por número de factura o proveedor…"
               className="w-full sm:w-72 border border-neutral-300 rounded-lg px-3 py-2 text-sm"
             />
-            <a
-              href={`/api/impuestos/libro-compras/exportar?${queryRango(rango)}`}
+            <EnlaceDescarga
+              ruta={`/api/impuestos/libro-compras/exportar?${queryRango(rango)}`}
+              nombre="libro-de-compras.xlsx"
               className="text-sm font-medium text-acento-700 hover:underline"
             >
               Descargar Excel
-            </a>
+            </EnlaceDescarga>
           </div>
           <Tabla orden={ordenCompras} glosario="librocompras" className="bg-white rounded-2xl border border-neutral-200">
             <table className="w-full text-sm">

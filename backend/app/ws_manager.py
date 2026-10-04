@@ -15,8 +15,9 @@ class ConnectionManager:
     def __init__(self):
         self.active: Dict[WebSocket, dict] = {}
 
-    async def connect(self, websocket: WebSocket, sesion: Optional[dict] = None):
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, sesion: Optional[dict] = None, subprotocolo: Optional[str] = None):
+        # Con el subprotocolo que eligio la app (`vp`); el navegador no manda ninguno.
+        await websocket.accept(subprotocol=subprotocolo)
         self.active[websocket] = sesion or {}
 
     def disconnect(self, websocket: WebSocket):

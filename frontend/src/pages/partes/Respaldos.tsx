@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import EnlaceDescarga from '../../components/EnlaceDescarga'
 import { useDialogo } from '../../components/dialogo'
 import { Tabla, Th, useOrden } from '../../components/Tabla'
 import { Boton, Modal } from '../../components/ui'
@@ -234,13 +235,14 @@ export default function Respaldos() {
                   <td className="p-3">{new Date(r.creado_en).toLocaleString('es-VE')}</td>
                   <td className="text-right p-3 tabular-nums">{r.tamano_kb} KB</td>
                   <td className="p-3 text-right whitespace-nowrap">
-                    <a
-                      href={`/api/respaldos/${r.nombre}/descargar`}
+                    <EnlaceDescarga
+                      ruta={`/api/respaldos/${r.nombre}/descargar`}
+                      nombre={r.nombre}
                       onClick={() => setTimeout(cargar, 1500)}
                       className="text-acento-600 font-medium"
                     >
                       Descargar
-                    </a>
+                    </EnlaceDescarga>
                     <button
                       onClick={() => elegir(r)}
                       className="ml-3 text-neutral-600 font-medium"

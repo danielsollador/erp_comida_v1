@@ -157,6 +157,8 @@ app.add_middleware(
     allow_credentials=CORS_ORIGINS != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    # La app lee aqui el token de entrar y cada renovacion (ver auth.es_app).
+    expose_headers=[auth.CABECERA_TOKEN],
 )
 
 # Lo que se puede pedir sin sesion: las rutas del propio acceso --que son las
@@ -185,7 +187,8 @@ async def exigir_sesion(request: Request, call_next):
     if settings.ES_HUB and not ruta.startswith(SOLO_HUB):
         return JSONResponse({"detail": "No encontrado."}, status_code=404)
 
-    galleta = request.cookies.get(auth.COOKIE_SESION)
+    # La cookie del navegador, o el token de la app (ver `auth.token_de`).
+    galleta = auth.token_de(request)
     s = auth.datos_acceso(galleta)
     if not s:
         return JSONResponse({"detail": "Sesión requerida."}, status_code=401)
@@ -242,13 +245,22 @@ async def websocket_endpoint(websocket: WebSocket):
     # El middleware HTTP no cubre los WebSockets: la cookie se comprueba aqui,
     # ANTES de aceptar. Sin esto, la cocina en tiempo real --cada comanda con
     # sus items-- se podia escuchar sin haber entrado.
-    sesion_ws = auth.datos_acceso(websocket.cookies.get(auth.COOKIE_SESION))
+    # La app no tiene la cookie: manda el token como subprotocolo
+    # (`vp, <token>`), que viaja en la cabecera del saludo y no en la URL --en
+    # la URL quedaria escrito en los registros del servidor.
+    token = websocket.cookies.get(auth.COOKIE_SESION)
+    subprotocolo = None
+    if not token:
+        partes = [p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",")]
+        if len(partes) == 2 and partes[0] == "vp" and partes[1]:
+            token, subprotocolo = partes[1], "vp"
+    sesion_ws = auth.datos_acceso(token)
     if not sesion_ws:
         await websocket.close(code=1008)
         return
     # La sesion viaja con la conexion: asi una solicitud de autorizacion le
     # llega solo a quien puede resolverla.
-    await manager.connect(websocket, sesion_ws)
+    await manager.connect(websocket, sesion_ws, subprotocolo)
     try:
         while True:
             await websocket.receive_text()
