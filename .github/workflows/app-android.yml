@@ -38,7 +38,7 @@ jobs:
 
       - name: Compilar el APK de prueba
         working-directory: frontend/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
