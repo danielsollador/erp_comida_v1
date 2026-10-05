@@ -1,0 +1,92 @@
+# GOOGLE CLOUD. Se usa ENCIMA del base y del de produccion:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.gcp.yml up -d
+#
+# Lo que cambia respecto al VPS de Hostinger:
+#
+#   1. LAS IMAGENES NO SE CONSTRUYEN EN LA MAQUINA. La VM es una e2-micro
+#      (1 GB): compilar el frontend ahi la tumba. Las construye Cloud Build y
+#      las deja en Artifact Registry; aqui solo se descargan (`IMAGEN_TAG` en
+#      el .env dice cual version).
+#   2. TRAEFIK VA DENTRO DEL MISMO COMPOSE, en su propia red de Docker y no en
+#      red de host: una sola carpeta, un solo `up -d`, y las etiquetas del
+#      prod.yml se usan tal cual.
+#   3. LOS DOMINIOS SON VARIABLES (`DOMINIO_SAVORA`, `DOMINIO_HUB`). Asi la misma
+#      VM sirve primero `savora-gcp.vertigopro.tech` para probar y, el dia del
+#      cambio, `savora.vertigopro.tech` editando dos lineas del .env.
+#
+# Los secretos (.env) los escribe el script de arranque leyendo Secret
+# Manager; no se copian a mano ni viven en el repositorio.
+
+x-imagen-backend: &imagen-backend
+  image: ${REGISTRO:-us-east1-docker.pkg.dev/vertigo-erp-produccion/vertigo}/backend:${IMAGEN_TAG:?Define IMAGEN_TAG en .env}
+  pull_policy: missing
+
+x-imagen-frontend: &imagen-frontend
+  image: ${REGISTRO:-us-east1-docker.pkg.dev/vertigo-erp-produccion/vertigo}/frontend:${IMAGEN_TAG:?Define IMAGEN_TAG en .env}
+  pull_policy: missing
+
+services:
+  traefik:
+    image: traefik:v3
+    restart: unless-stopped
+    environment:
+      # El Docker de la VM es nuevo y rechaza clientes con API < 1.40; sin
+      # esto Traefik no descubre ningun contenedor y no pide certificados.
+      DOCKER_API_VERSION: "1.44"
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Todo http va a https, en todos los dominios.
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?Define ACME_EMAIL en .env}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--log.level=WARN"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    <<: *imagen-backend
+    # En una e2-micro el primer arranque (migraciones + respaldo inicial) pasa
+    # de los 30 s del healthcheck de la imagen y Compose daba el backend por
+    # enfermo antes de que terminara.
+    healthcheck:
+      start_period: 120s
+    environment:
+      ERP_CORS_ORIGINS: https://${DOMINIO_SAVORA:?Define DOMINIO_SAVORA en .env}
+      ERP_HUB_URL: https://${DOMINIO_HUB:?Define DOMINIO_HUB en .env}
+
+  frontend:
+    <<: *imagen-frontend
+    labels:
+      - "traefik.http.routers.savora.rule=Host(`${DOMINIO_SAVORA}`)"
+
+  hub-backend:
+    <<: *imagen-backend
+    environment:
+      ERP_CORS_ORIGINS: https://${DOMINIO_HUB}
+
+  hub-frontend:
+    <<: *imagen-frontend
+    labels:
+      - "traefik.http.routers.hub.rule=Host(`${DOMINIO_HUB}`)"
+      - "traefik.http.routers.hub-www.rule=Host(`www.${DOMINIO_HUB}`)"
+
+volumes:
+  letsencrypt:
+    name: vertigo_letsencrypt

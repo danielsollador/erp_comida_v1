@@ -18,7 +18,7 @@
  * barras sin cifras: se ve de un vistazo si la semana sube o baja.
  */
 import { useEffect, useState, type CSSProperties } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Icono from './Icono'
 import { MODULOS, descripcionDe } from './Rail'
 import { useMoneda } from '../lib/moneda'
@@ -74,6 +74,7 @@ export default function Recorrido({
   operar: boolean
 }) {
   const { fmt } = useMoneda()
+  const navegar = useNavigate()
   // La animacion se decide al llegar los datos: animar el esqueleto vacio y
   // despues cambiar las frases seria contar el flujo dos veces.
   const [quieto] = useState(sinEntrada)
@@ -87,11 +88,14 @@ export default function Recorrido({
 
   const pasoDe = (id: string) => datos?.pasos.find((p) => p.id === id)
   const pendientes = visibles.filter((e) => pasoDe(e.id)?.pendiente).length
-  // A donde lleva: la pantalla que lo resuelve, si el usuario puede entrar.
-  const destino = (e: (typeof ESTACIONES)[number], p?: PasoRecorrido) => {
-    if (!p?.a) return e.to
+  // LA ESTACION ABRE SU MODULO, siempre (Leider, 5-oct: "si le doy clic a
+  // ventas me manda a cierre de caja"). La pantalla que RESUELVE lo pendiente
+  // (Caja > Fiado, Menu > Recetas) es un segundo destino, en la linea de
+  // accion de abajo, y solo si el usuario puede entrar ahi.
+  const destinoAccion = (e: (typeof ESTACIONES)[number], p?: PasoRecorrido) => {
+    if (!p?.a || p.a === e.to) return null
     const ruta = p.a.split('?')[0]
-    return modulos.includes(ruta) || (ruta === '/pos' && operar) ? p.a : e.to
+    return modulos.includes(ruta) || (ruta === '/pos' && operar) ? p.a : null
   }
 
   const items = visibles.map((e, i) => {
@@ -106,7 +110,8 @@ export default function Recorrido({
       // La pregunta del modulo se queda SIEMPRE y a la vista (Leider, 1-oct).
       pregunta: descripcionDe(e.to),
       frase: p ? p.frase.replace('{monto}', fmt(p.monto ?? 0)) : '',
-      href: destino(e, p),
+      href: e.to,
+      accionA: destinoAccion(e, p),
       estiloLi: {
         '--i': i,
         '--d': `${visibles.length > 1 ? Math.round((i * 1150) / (visibles.length - 1)) : 0}ms`,
@@ -147,7 +152,7 @@ export default function Recorrido({
           <span className="vp-recorrido-viajero" />
         </span>
 
-        {items.map(({ e, m, p, ojo, pregunta, frase, href, estiloLi }) => {
+        {items.map(({ e, m, p, ojo, pregunta, frase, href, accionA, estiloLi }) => {
           return (
             // `--d`: cuando pasa el viajero por esta estacion.
             <li key={e.id} className="relative" style={estiloLi}>
@@ -191,7 +196,23 @@ export default function Recorrido({
                     </span>
                   )}
                   {p?.accion && (
-                    <span className="vp-recorrido-accion block mt-1 text-xs font-semibold text-neutral-700">
+                    // Un enlace dentro de otro no es HTML valido: va como span
+                    // que navega por su cuenta y no deja que el clic suba.
+                    <span
+                      role={accionA ? 'link' : undefined}
+                      onClick={
+                        accionA
+                          ? (ev) => {
+                              ev.preventDefault()
+                              ev.stopPropagation()
+                              navegar(accionA)
+                            }
+                          : undefined
+                      }
+                      className={`vp-recorrido-accion block mt-1 text-xs font-semibold text-neutral-700 ${
+                        accionA ? 'hover:underline' : ''
+                      }`}
+                    >
                       {p.accion} ›
                     </span>
                   )}

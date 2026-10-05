@@ -1,0 +1,14 @@
+# Lo que NO se sube a Cloud Build (mismo criterio que .dockerignore).
+.gcloudignore
+__pycache__/
+*.py[cod]
+*.db
+*.db-journal
+backups/
+.venv/
+venv/
+.env
+.pytest_cache/
+demo_data.py
+tests/
+compartido/
