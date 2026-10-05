@@ -74,16 +74,7 @@ export function useTema() {
       raiz.style.setProperty('--vp-x', `${(x / window.innerWidth) * 100}%`)
       raiz.style.setProperty('--vp-y', `${(y / window.innerHeight) * 100}%`)
       raiz.style.setProperty('--vp-radio', `${Math.ceil(radio)}px`)
-      // MIENTRAS DURA EL CIRCULO, SIN LAS LUCES DESENFOCADAS (index.css,
-      // `html.vp-transicion`). Chrome captura la pantalla entera dos veces
-      // para la transicion, y un desenfoque de 40 px es lo mas caro de
-      // capturar: en la portada nueva el primer cambio costaba un fotograma
-      // de 117 ms contra 67 ms sin ellas (medido 5-oct en el Chrome de
-      // Leider). La clase se pone ANTES de la captura vieja y se quita al
-      // terminar; las luces vuelven solas con su fundido de medio segundo.
-      raiz.classList.add('vp-transicion')
-      const quitar = () => raiz.classList.remove('vp-transicion')
-      doc.startViewTransition(aplicar).finished.then(quitar, quitar)
+      doc.startViewTransition(aplicar)
       return
     }
 
