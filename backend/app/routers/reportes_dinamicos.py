@@ -78,11 +78,11 @@ def _rango(desde: datetime.date, hasta: datetime.date):
     return inicio, fin, etiqueta
 
 
-def _consulta(p: PedidoConsulta) -> rd.Consulta:
+def _consulta(p: PedidoConsulta, limite: int = rd.MAX_GRUPOS) -> rd.Consulta:
     inicio, fin, _ = _rango(p.desde, p.hasta)
     return rd.Consulta(
         fuente=p.fuente, inicio=inicio, fin=fin, filas=p.filas, columna=p.columna,
-        medidas=p.medidas, filtros=p.filtros,
+        medidas=p.medidas, filtros=p.filtros, limite=limite,
     )
 
 
@@ -130,7 +130,7 @@ def exportar(q: str, request: Request, db: Session = Depends(get_db)):
     except ValueError:
         raise HTTPException(status_code=400, detail="La consulta a exportar no se entiende.")
     try:
-        r = rd.consultar(db, _consulta(p), _ve_sensibles(request))
+        r = rd.consultar(db, _consulta(p, rd.MAX_GRUPOS_EXPORTAR), _ve_sensibles(request))
     except rd.ErrorDeConsulta as e:
         raise HTTPException(status_code=400, detail=str(e))
     encabezados = [c["nombre"] for c in r["campos_fila"]]

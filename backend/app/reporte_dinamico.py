@@ -60,11 +60,15 @@ Fila = Dict[str, Any]
 # Lo que se calcula leyendo pedidos, compras o mermas. Mas que esto es un
 # volcado: para mirar varios años se agrupa por mes, y eso sale del mart.
 MAX_DIAS_EN_VIVO = 400
-# Grupos que se devuelven. Un reporte de 5.000 filas no se lee: se filtra.
-MAX_GRUPOS = 5000
-# Valores distintos del campo que va en columnas. Treinta columnas ya no caben
-# en una tablet; mas es casi siempre haber elegido el campo equivocado.
-MAX_COLUMNAS = 30
+# Filas que se mandan a la PANTALLA. La tablet tiene 3 GB: quinientas filas
+# ya no se leen y miles de celdas la ponen lenta. El Excel trae todas
+# (`MAX_GRUPOS_EXPORTAR`): para revisar fila por fila esta el archivo.
+MAX_GRUPOS = 500
+MAX_GRUPOS_EXPORTAR = 50000
+# Valores distintos del campo que va en columnas. 31 para que quepan los dias
+# de un mes; mas ya no se lee en una tablet y casi siempre es haber elegido
+# el campo equivocado.
+MAX_COLUMNAS = 31
 
 SIN_DATO = "(sin dato)"
 DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
@@ -223,8 +227,89 @@ def _si_no(valor: bool, si: str, no: str) -> str:
     return si if valor else no
 
 
-def _forma_de_pago(pedido: models.Pedido) -> str:
-    metodos = sorted({p.metodo for p in pedido.pagos})
+# ── Las ventas, leidas por columnas ──────────────────────────────────────────
+#
+# POR QUE NO `consolidacion.pedidos_pagados`. Esa funcion trae cada pedido
+# como objeto del ORM con sus renglones, pagos, cajera y caja. Para el dia de
+# hoy da igual; un reporte a medida de un año son decenas de miles de pedidos:
+# medido, ~0,4 ms y varios KB por pedido, o sea 10 segundos y cientos de MB
+# por consulta en un servidor que comparten varios locales. Aqui se leen solo
+# las columnas que hacen falta, en tres consultas planas.
+#
+# Las REGLAS no se copian: el filtro es el mismo de `pedidos_pagados` (ver
+# `_pagados_en`) y el total del pedido lo calculan las propiedades
+# `Pedido.subtotal` y `Pedido.total` del modelo, llamadas sobre un objeto
+# liviano. Los tests comparan contra el Resumen y contra el mart.
+
+
+class _PedidoLigero:
+    __slots__ = ("id", "cerrado_en", "tasa_bcv", "facturado", "tasa_iva", "descuento", "propina",
+                 "cliente", "metodo_pago", "operador", "punto_venta", "items", "pagos", "subtotal")
+
+    @property
+    def total(self) -> float:
+        return models.Pedido.total.fget(self)  # type: ignore[attr-defined]
+
+
+class _Renglon:
+    __slots__ = ("variante_id", "nombre", "precio_unitario", "costo_unitario", "cantidad", "cortesia", "a_cocina")
+
+
+def _pagados_en(q, inicio, fin):
+    """El mismo filtro que `consolidacion.pedidos_pagados`: cobrados, sin los
+    devueltos (el cliente trajo la comida de vuelta: no hubo venta)."""
+    return q.filter(
+        models.Pedido.estado == "pagado",
+        models.Pedido.devuelto.is_(False),
+        models.Pedido.cerrado_en >= inicio,
+        models.Pedido.cerrado_en < fin,
+    )
+
+
+def _pedidos_ligeros(db: Session, inicio, fin, con_pagos: bool = False) -> List[_PedidoLigero]:
+    P = models.Pedido
+    filas = _pagados_en(
+        db.query(P.id, P.cerrado_en, P.tasa_bcv, P.facturado, P.tasa_iva, P.descuento, P.propina,
+                 P.cliente, P.metodo_pago, models.Operador.nombre, models.PuntoVenta.nombre)
+        .outerjoin(models.Operador, models.Operador.id == P.operador_id)
+        .outerjoin(models.PuntoVenta, models.PuntoVenta.id == P.punto_venta_id),
+        inicio, fin,
+    ).all()
+    pedidos: Dict[int, _PedidoLigero] = {}
+    for (pid, cerrado, tasa_bcv, facturado, tasa_iva, descuento, propina, cliente, metodo,
+         operador, punto) in filas:
+        p = _PedidoLigero()
+        p.id, p.cerrado_en, p.tasa_bcv, p.facturado, p.tasa_iva = pid, cerrado, tasa_bcv, facturado, tasa_iva
+        p.descuento, p.propina, p.cliente, p.metodo_pago = descuento, propina, cliente, metodo
+        # Igual que las propiedades `Pedido.operador` y `Pedido.punto_venta`.
+        p.operador, p.punto_venta = operador or "", punto or ""
+        p.items, p.pagos = [], []
+        pedidos[pid] = p
+    if not pedidos:
+        return []
+    I = models.PedidoItem
+    for (pid, variante_id, nombre, precio, costo, cantidad, cortesia, a_cocina) in _pagados_en(
+        db.query(I.pedido_id, I.variante_id, I.nombre, I.precio_unitario, I.costo_unitario,
+                 I.cantidad, I.cortesia, I.a_cocina).join(P, P.id == I.pedido_id),
+        inicio, fin,
+    ):
+        r = _Renglon()
+        r.variante_id, r.nombre, r.precio_unitario, r.costo_unitario = variante_id, nombre, precio, costo
+        r.cantidad, r.cortesia, r.a_cocina = cantidad, cortesia, a_cocina
+        pedidos[pid].items.append(r)
+    if con_pagos:
+        G = models.PagoPedido
+        for (pid, metodo, monto) in _pagados_en(
+            db.query(G.pedido_id, G.metodo, G.monto).join(P, P.id == G.pedido_id), inicio, fin,
+        ):
+            pedidos[pid].pagos.append((metodo, monto))
+    for p in pedidos.values():
+        p.subtotal = models.Pedido.subtotal.fget(p)  # type: ignore[attr-defined]
+    return list(pedidos.values())
+
+
+def _forma_de_pago(pedido: _PedidoLigero) -> str:
+    metodos = sorted({metodo for metodo, _monto in pedido.pagos})
     if not metodos:
         return pedido.metodo_pago or SIN_DATO
     return metodos[0] if len(metodos) == 1 else "Mixto"
@@ -232,10 +317,11 @@ def _forma_de_pago(pedido: models.Pedido) -> str:
 
 def _filas_ventas(db: Session, inicio, fin) -> Iterable[Fila]:
     servicios = seed.variantes_de_servicio(db)
-    for p in consolidacion.pedidos_pagados(db, inicio, fin):
+    for p in _pedidos_ligeros(db, inicio, fin, con_pagos=True):
+        total = p.total
         iva = 0.0
         if p.facturado:
-            _base, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.IVA_DEFAULT)
+            _base, iva = impuestos.desglosar(total, p.tasa_iva or impuestos.IVA_DEFAULT)
         yield {
             "_fecha": p.cerrado_en,
             "hora": p.cerrado_en.hour,
@@ -247,8 +333,8 @@ def _filas_ventas(db: Session, inicio, fin) -> Iterable[Fila]:
             "delivery": _si_no(any(i.variante_id in servicios for i in p.items), "Con delivery", "Sin delivery"),
             "descuento": _si_no((p.descuento or 0) > 0, "Con descuento", "Sin descuento"),
             "n": 1,
-            "ventas": p.total,
-            "ventas_bs": p.total * (p.tasa_bcv or 0),
+            "ventas": total,
+            "ventas_bs": total * (p.tasa_bcv or 0),
             "iva": iva,
             "descuentos": p.descuento or 0,
             "propinas": p.propina or 0,
@@ -260,7 +346,7 @@ def _categoria_de_variantes(db: Session, ids) -> Dict[int, str]:
 
 
 def _filas_productos(db: Session, inicio, fin) -> Iterable[Fila]:
-    pedidos = consolidacion.pedidos_pagados(db, inicio, fin)
+    pedidos = _pedidos_ligeros(db, inicio, fin)
     categoria_de = _categoria_de_variantes(
         db, {i.variante_id for p in pedidos for i in p.items if i.variante_id is not None}
     )
@@ -312,15 +398,15 @@ def _etiquetas_productos(db: Session, campo: str, valores: List[Any]) -> Dict[An
 
 
 def _filas_cobros(db: Session, inicio, fin) -> Iterable[Fila]:
-    for p in consolidacion.pedidos_pagados(db, inicio, fin):
-        for pago in p.pagos:
+    for p in _pedidos_ligeros(db, inicio, fin, con_pagos=True):
+        for metodo, monto in p.pagos:
             yield {
                 "_fecha": p.cerrado_en,
                 "hora": p.cerrado_en.hour,
-                "metodo": pago.metodo,
+                "metodo": metodo,
                 "cajera": p.operador or "Sin asignar",
                 "caja": p.punto_venta or "Sin asignar",
-                "monto": pago.monto,
+                "monto": monto,
                 "n": 1,
             }
 
@@ -357,6 +443,42 @@ def _filas_compras(db: Session, inicio, fin) -> Iterable[Fila]:
                 "insumo": f"{ing.nombre} ({ing.unidad})" if ing else SIN_DATO,
                 "cantidad": i.cantidad,
                 "monto": i.cantidad * i.costo_unitario * factor,
+            }
+    # Las notas de credito del proveedor RESTAN, en la fecha de la nota: una
+    # devolucion de harina baja lo que se le compro a ese proveedor. Sin esto
+    # "Compras por proveedor" quedaba inflado. No cuentan como factura.
+    notas = (
+        db.query(models.NotaCreditoCompra)
+        .options(
+            selectinload(models.NotaCreditoCompra.items).joinedload(models.NotaCreditoCompraItem.ingrediente),
+            joinedload(models.NotaCreditoCompra.factura),
+        )
+        .filter(models.NotaCreditoCompra.fecha >= inicio, models.NotaCreditoCompra.fecha < fin)
+        .all()
+    )
+    for n in notas:
+        f = n.factura
+        comun = {
+            "_fecha": n.fecha,
+            "proveedor": (f.proveedor_nombre if f else "") or SIN_DATO,
+            "tipo": (f.categoria if f else "") or SIN_DATO,
+            "origen": "Nota de crédito",
+            "forma_pago": (f.forma_pago if f else "") or SIN_DATO,
+            "estado": _si_no(bool(f and f.pagada), "Pagada", "Por pagar"),
+            "documento": None,
+        }
+        if not n.items:
+            yield {**comun, "insumo": "(descuento del proveedor)", "cantidad": 0.0, "monto": -(n.base_imponible or 0)}
+            continue
+        bruta = sum(i.cantidad * i.costo_unitario for i in n.items)
+        factor = (n.base_imponible / bruta) if bruta else 1.0
+        for i in n.items:
+            ing = i.ingrediente
+            yield {
+                **comun,
+                "insumo": f"{ing.nombre} ({ing.unidad})" if ing else SIN_DATO,
+                "cantidad": -i.cantidad,
+                "monto": -i.cantidad * i.costo_unitario * factor,
             }
     sueltas = (
         db.query(models.CompraSuelta)
@@ -509,7 +631,7 @@ _registrar(Fuente(
 _registrar(Fuente(
     id="compras",
     nombre="Compras",
-    descripcion="Renglones de las facturas de compra y las compras sin factura. Montos sin IVA, con flete y descuento repartidos.",
+    descripcion="Renglones de las facturas de compra y las compras sin factura, menos las notas de crédito. Montos sin IVA, con flete y descuento repartidos.",
     campos=CAMPOS_FECHA + [
         Campo("proveedor", "Proveedor"),
         Campo("insumo", "Insumo"),
@@ -580,6 +702,8 @@ class Consulta:
     medidas: List[str] = field(default_factory=list)
     # campo -> valores permitidos (como texto). Vacio: sin filtro.
     filtros: Dict[str, List[str]] = field(default_factory=dict)
+    # Cuantas filas devolver: la pantalla, pocas; el Excel, todas.
+    limite: int = MAX_GRUPOS
 
 
 class _Acumulado:
@@ -594,6 +718,12 @@ class _Acumulado:
         for clave, valores in self.distintos.items():
             salida[clave] = salida.get(clave, 0.0) + len(valores)
         return salida
+
+
+def _texto(valor: Any) -> str:
+    """Un valor como lo manda y lo recibe la pantalla. None es "" en los dos
+    sentidos: si no, filtrar por "(sin dato)" no encontraba nada."""
+    return "" if valor is None else str(valor)
 
 
 def _valor_de(fila: Fila, campo: Campo) -> Any:
@@ -619,12 +749,16 @@ def _clave_de_fila(m: Medida) -> str:
     return m.suma or m.distintos or m.id
 
 
+def _campos_usados(c: Consulta) -> Set[str]:
+    """Los campos que la consulta toca. Un filtro sin valores no es filtro."""
+    return set(c.filas) | ({c.columna} if c.columna else set()) | {k for k, v in c.filtros.items() if v}
+
+
 def _plan_mart(fuente: Fuente, c: Consulta, base: List[Medida]) -> Optional[DetalleMart]:
     """El detalle del mart que responde esta consulta, o None si va en vivo."""
     if not fuente.mart:
         return None
-    usados = set(c.filas) | ({c.columna} if c.columna else set()) | set(c.filtros)
-    detalles = usados - IDS_FECHA
+    detalles = _campos_usados(c) - IDS_FECHA
     if len(detalles) > 1:
         return None
     clave = next(iter(detalles)) if detalles else ""
@@ -684,7 +818,7 @@ def _agrupar(
     nombres: Dict[Any, Tuple[datetime.datetime, str]],
 ) -> None:
     for fila in filas:
-        if any(str(_valor_de(fila, cf)) not in permitidos for cf, permitidos in filtros.items()):
+        if any(_texto(_valor_de(fila, cf)) not in permitidos for cf, permitidos in filtros.items()):
             continue
         clave = tuple(_valor_de(fila, cf) for cf in campos_fila)
         col = _valor_de(fila, campo_col) if campo_col else None
@@ -700,7 +834,10 @@ def _agrupar(
                 for m in base:
                     k = _clave_de_fila(m)
                     if m.distintos:
-                        celda.distintos[m.id].add(fila.get(k))
+                        # Lo que no es documento (una nota de credito) no
+                        # cuenta como factura.
+                        if fila.get(k) is not None:
+                            celda.distintos[m.id].add(fila.get(k))
                     else:
                         celda.sumas[m.id] += float(fila.get(k, 0) or 0)
 
@@ -752,7 +889,7 @@ def consultar(db: Session, c: Consulta, ve_sensibles: bool) -> dict:
     plan = _plan_mart(fuente, c, base)
     if plan is not None:
         dias, tramos = consolidacion.partir_rango(db, c.inicio, c.fin)
-        detalle = next(iter((set(c.filas) | ({c.columna} if c.columna else set()) | set(c.filtros)) - IDS_FECHA), "")
+        detalle = next(iter(_campos_usados(c) - IDS_FECHA), "")
         en_vivo = [(t0 or c.inicio, t1 or c.fin) for t0, t1 in tramos]
     else:
         dias, detalle = [], ""
@@ -814,7 +951,7 @@ def consultar(db: Session, c: Consulta, ve_sensibles: bool) -> dict:
         return {
             "total": _medidas_finales(fuente, c.medidas, (por_col.get("__total__") or _Acumulado()).final()),
             "por_columna": {
-                str(col): _medidas_finales(fuente, c.medidas, por_col[col].final())
+                _texto(col): _medidas_finales(fuente, c.medidas, por_col[col].final())
                 for col in columnas_vistas if col in por_col
             },
         }
@@ -822,7 +959,7 @@ def consultar(db: Session, c: Consulta, ve_sensibles: bool) -> dict:
     filas_salida = []
     for clave, por_col in grupos.items():
         filas_salida.append({
-            "claves": [str(v) if v is not None else "" for v in clave],
+            "claves": [_texto(v) for v in clave],
             "etiquetas": [etiquetas[cf.id].get(v, SIN_DATO) for cf, v in zip(campos_fila, clave)],
             "_orden": [_orden(cf, v) for cf, v in zip(campos_fila, clave)],
             **valores_de(por_col),
@@ -835,7 +972,7 @@ def consultar(db: Session, c: Consulta, ve_sensibles: bool) -> dict:
         filas_salida.sort(key=lambda f: (-(f["total"].get(primera) or 0), f["_orden"]))
     for f in filas_salida:
         del f["_orden"]
-    truncado = len(filas_salida) > MAX_GRUPOS
+    truncado = len(filas_salida) > c.limite
 
     return {
         "fuente": fuente.id,
@@ -844,14 +981,14 @@ def consultar(db: Session, c: Consulta, ve_sensibles: bool) -> dict:
             {
                 "id": campo_col.id, "nombre": campo_col.nombre, "tipo": campo_col.tipo,
                 "valores": [
-                    {"valor": str(v), "etiqueta": etiquetas[campo_col.id].get(v, SIN_DATO)}
+                    {"valor": _texto(v), "etiqueta": etiquetas[campo_col.id].get(v, SIN_DATO)}
                     for v in columnas_vistas
                 ],
             }
             if campo_col else None
         ),
         "medidas": [{"id": m.id, "nombre": m.nombre, "formato": m.formato} for m in medidas],
-        "filas": filas_salida[:MAX_GRUPOS],
+        "filas": filas_salida[:c.limite],
         "totales": valores_de(totales_col),
         "truncado": truncado,
         "desde_mart": bool(dias),
@@ -880,7 +1017,7 @@ def valores_posibles(db: Session, fuente_id: str, campo_id: str,
             nombres[v] = fila["_nombre_producto"]
     propias = fuente.etiquetas(db, campo.id, list(vistos)) if fuente.etiquetas else {}
     salida = [
-        {"valor": str(v) if v is not None else "", "etiqueta": propias.get(v) or nombres.get(v) or etiqueta_de(campo, v)}
+        {"valor": _texto(v), "etiqueta": propias.get(v) or nombres.get(v) or etiqueta_de(campo, v)}
         for v in vistos
     ]
     salida.sort(key=lambda x: (x["valor"] if campo.de_fecha else x["etiqueta"].lower()))

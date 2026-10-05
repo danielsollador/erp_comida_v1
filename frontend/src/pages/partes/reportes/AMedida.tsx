@@ -81,7 +81,9 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
   const turno = useRef(0)
   useEffect(() => {
     if (!catalogo || def.medidas.length === 0) {
+      turno.current++
       setResultado(null)
+      setCargando(false)
       return
     }
     const mio = ++turno.current
@@ -404,6 +406,7 @@ function Agregar({
   return (
     <select
       value=""
+      aria-label={texto.replace('+ ', '')}
       onChange={(e) => e.target.value && alElegir(e.target.value)}
       className="rounded-full px-3.5 py-1.5 text-sm font-medium border border-dashed border-neutral-300 bg-white text-neutral-600"
     >
@@ -436,6 +439,10 @@ function FiltroValores({
 }) {
   const [valores, setValores] = useState<ValorCampo[] | null>(null)
   const [marcados, setMarcados] = useState<Set<string>>(() => new Set(elegidos))
+  // Lo que ya estaba filtrado al abrir. En una ref y no como dependencia:
+  // `elegidos` llega como un arreglo nuevo en cada pintada de la pantalla,
+  // y cada resultado que llegaba volvia a pedir los valores al servidor.
+  const yaElegidos = useRef(elegidos)
   const [busqueda, setBusqueda] = useState('')
   const [error, setError] = useState('')
 
@@ -446,10 +453,11 @@ function FiltroValores({
         // Lo que ya estaba filtrado y en este periodo no aparece igual se
         // muestra: si no, no habria forma de desmarcarlo.
         const vistos = new Set(v.map((x) => x.valor))
-        setValores([...v, ...elegidos.filter((e) => !vistos.has(e)).map((e) => ({ valor: e, etiqueta: e }))])
+        const sueltos = yaElegidos.current.filter((e) => !vistos.has(e))
+        setValores([...v, ...sueltos.map((e) => ({ valor: e, etiqueta: e }))])
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'No se pudieron cargar los valores'))
-  }, [fuente, campo, rango, elegidos])
+  }, [fuente, campo, rango])
 
   const q = busqueda.trim().toLowerCase()
   const visibles = (valores ?? []).filter((v) => !q || v.etiqueta.toLowerCase().includes(q))
@@ -542,7 +550,8 @@ function Resultado({ resultado: r, cargando, url }: { resultado: ResultadoDinami
     >
       {r.truncado && (
         <p className="mb-3 text-xs text-aviso-700 bg-aviso-50 rounded-lg px-3 py-2">
-          Se muestran las primeras {r.filas.length} filas. Filtra o agrupa por menos campos para verlo completo.
+          Se muestran las primeras {r.filas.length} filas. El Excel las trae todas; para verlas aquí, filtra o
+          agrupa por menos campos.
         </p>
       )}
       {r.filas.length === 0 ? (

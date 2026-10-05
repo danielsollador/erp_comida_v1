@@ -244,6 +244,45 @@ def test_compras_suman_la_base_de_la_factura(client, insumo):
     assert fila["total"]["documentos"] == 1 and fila["total"]["cantidad"] == 2
 
 
+def test_las_notas_de_credito_restan_y_no_cuentan_como_factura(client, insumo):
+    fac = client.post("/api/compras/facturas", json={
+        "numero_factura": "F-1", "proveedor_nombre": "Carnes SA", "proveedor_rif": "J123456789",
+        "categoria": "Insumos", "forma_pago": "Credito",
+        "items": [{"ingrediente_id": insumo.id, "cantidad": 4, "costo_unitario": 10.0}],
+    }).json()
+    r = client.post(f"/api/compras/facturas/{fac['id']}/notas-credito", json={
+        "numero": "NC-1", "tipo": "devolucion", "items": [{"ingrediente_id": insumo.id, "cantidad": 1}],
+    })
+    assert r.status_code == 200, r.text
+    r = consulta(client, "compras", ["proveedor"], ["monto", "documentos", "cantidad"])
+    total = r["filas"][0]["total"]
+    assert total["monto"] == 30.0 and total["cantidad"] == 3 and total["documentos"] == 1
+
+
+def test_un_mes_de_dias_cabe_en_columnas(client, db, variante):
+    for d in range(31):
+        vender_hace(client, db, variante, d)
+    r = consulta(client, "ventas", [], ["pedidos"], columna="dia", desde=30)
+    assert len(r["columna"]["valores"]) == 31
+
+
+def test_la_pantalla_recibe_pocas_filas_y_el_excel_todas(client, db, variante, monkeypatch):
+    import json
+
+    from app.routers import reportes_dinamicos as rt
+    for d in range(4):
+        vender_hace(client, db, variante, d)
+    # La pantalla con tope de 2 filas; el Excel pide el suyo, que es mayor.
+    original = rt._consulta
+    monkeypatch.setattr(rt, "_consulta", lambda p, limite=2: original(p, limite))
+    r = consulta(client, "ventas", ["dia"], ["pedidos"])
+    assert len(r["filas"]) == 2 and r["truncado"] is True
+    q = json.dumps({"fuente": "ventas", "filas": ["dia"], "medidas": ["pedidos"], "columna": None,
+                    "filtros": {}, "desde": iso(7), "hasta": iso(0)})
+    texto = client.get("/api/reportes/dinamico/exportar", params={"q": q}).content.decode("utf-8-sig")
+    assert len(texto.strip().splitlines()) == 1 + 4 + 1  # encabezado, 4 dias, total
+
+
 def test_periodo_muy_largo_en_vivo_se_rechaza(client):
     r = consulta(client, "productos", ["producto", "cajera"], ["unidades"], desde=500, esperado=400)
     assert "días" in r["detail"]
