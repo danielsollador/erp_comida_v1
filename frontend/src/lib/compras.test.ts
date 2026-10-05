@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conversion, diasDesde, nombreDesdePapel, sugerirMercancia, unidadDistinta, unidadNuestra } from './compras'
+import { conversion, diasDesde, ivaRetenido, nombreDesdePapel, sugerirMercancia, unidadDistinta, unidadNuestra } from './compras'
 import type { Ingrediente } from './types'
 
 // Solo importa el nombre para sugerir: el resto de la ficha da igual.
@@ -64,5 +64,14 @@ describe('diasDesde', () => {
   it('cuenta días enteros, sin correrse por la hora', () => {
     expect(diasDesde('2026-09-28', '2026-10-01')).toBe(3)
     expect(diasDesde('2026-10-02', '2026-10-01')).toBe(-1)
+  })
+})
+
+describe('ivaRetenido', () => {
+  it('da el mismo céntimo que el servidor, con la mitad hacia arriba', () => {
+    // $50 con IVA: IVA 6,90; el 75 % es 5,175 -> 5,18 (el servidor también).
+    expect(ivaRetenido(50, 75)).toBe(5.18)
+    expect(ivaRetenido(48, 75)).toBe(4.97)
+    expect(ivaRetenido(50, 100)).toBe(6.9)
   })
 })

@@ -41,6 +41,7 @@ PLAN_DE_CUENTAS = [
     # 1020 (que es Bs) ni la 1011 (que si se cuenta fisicamente al cerrar).
     ("1021", "Banco USD (Zelle)", "activo", "deudora"),
     ("1030", "IVA credito fiscal", "activo", "deudora"),
+    ("1035", "IVA retenido por clientes", "activo", "deudora"),
     ("1040", "Inventario de insumos", "activo", "deudora"),
     ("1050", "Equipos y mobiliario", "activo", "deudora"),
     # Contra-cuenta de activo (ver CUENTAS_CONTRA): se acredita, asi que su
@@ -104,6 +105,11 @@ CUENTA_POR_METODO_PAGO = {
     # cuenta por cobrar. Antes habia que elegir entre no registrar la venta
     # (y descuadrar el inventario) o marcarla cobrada (y descuadrar la caja).
     "Fiado": "1015",
+    # La parte del IVA que retiene un cliente contribuyente especial: no entra
+    # a la gaveta, queda como un credito contra el IVA a pagar hasta que la
+    # declaracion la descuenta (ver registrar_declaracion_iva). No es un
+    # metodo que se elija: lo arma el cobro cuando el cliente retiene.
+    "Retención IVA": "1035",
 }
 
 # Las gavetas fisicas que se cuentan al cerrar. El resto de los metodos no se
@@ -116,7 +122,9 @@ METODOS_DE_EFECTIVO = {"Efectivo", "Efectivo Bs", "Efectivo $"}
 # el, reclamar un pago duplicado o un cobro que nunca llego es la palabra del
 # cliente contra la del negocio. El efectivo no tiene nada que anotar: un
 # billete no trae referencia.
-METODOS_CON_REFERENCIA = set(CUENTA_POR_METODO_PAGO) - METODOS_DE_EFECTIVO - {"Fiado"}
+# Lo que no es plata: ni se arquea, ni lleva referencia, ni sirve para pagar.
+METODOS_SIN_PLATA = {"Fiado", "Retención IVA"}
+METODOS_CON_REFERENCIA = set(CUENTA_POR_METODO_PAGO) - METODOS_DE_EFECTIVO - METODOS_SIN_PLATA
 
 # Con que se PAGA algo (un gasto, un retiro, una factura, el IVA, una compra
 # suelta): la plata sale de una de las dos gavetas o del banco. Es la misma
@@ -125,7 +133,7 @@ METODOS_CON_REFERENCIA = set(CUENTA_POR_METODO_PAGO) - METODOS_DE_EFECTIVO - {"F
 # existia la gaveta de dolares: los verdes entraban por ventas y nunca podian
 # salir, asi que 1011 solo crecia y la de bolivares mostraba faltantes cuando
 # al proveedor se le pagaba en dolares, que es lo normal en Venezuela.
-METODOS_DE_PAGO = {m: c for m, c in CUENTA_POR_METODO_PAGO.items() if m != "Fiado"}
+METODOS_DE_PAGO = {m: c for m, c in CUENTA_POR_METODO_PAGO.items() if m not in METODOS_SIN_PLATA}
 
 
 def cuenta_de_pago(metodo: Optional[str], por_defecto: str = "1010") -> str:
@@ -1310,6 +1318,9 @@ def registrar_declaracion_iva(db: Session, declaracion: models.DeclaracionIva) -
         lineas.append(("2030", declaracion.iva_debito, 0.0))
     if declaracion.credito_usado > 0:
         lineas.append(("1030", 0.0, declaracion.credito_usado))
+    # Lo que retuvieron los clientes y se descuenta este mes sale de 1035.
+    if (declaracion.retenciones_usadas or 0) > 0:
+        lineas.append(("1035", 0.0, declaracion.retenciones_usadas))
     if declaracion.iva_a_pagar > 0:
         lineas.append(("2020", 0.0, declaracion.iva_a_pagar))
     if not lineas:

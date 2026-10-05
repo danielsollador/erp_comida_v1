@@ -128,3 +128,12 @@ def montos_bs(base: float, gravado: float, iva: float, tasa: float, iva_de_la_ba
     exento_bs = round(base_bs - gravado_bs, 2)
     iva_bs = round(gravado_bs * tasa_pct / 100, 2) if iva_de_la_base else round(iva * tasa, 2)
     return gravado_bs, exento_bs, iva_bs
+
+
+def porcentaje_de(monto: float, pct: float) -> float:
+    """El pct de un monto, en centimos enteros y la mitad hacia arriba
+    (5,175 -> 5,18). Con floats, 6,90 x 75 % daba 5,17 o 5,18 segun como se
+    escribiera la cuenta, y la caja (que lo calcula igual en el navegador)
+    descuadraba por un centimo."""
+    centimos = round(monto * 100)
+    return ((centimos * int(round(pct * 100)) + 5000) // 10000) / 100

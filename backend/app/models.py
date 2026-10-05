@@ -436,6 +436,9 @@ class DeclaracionIva(Base):
     retenciones_arrastradas_bs = Column(Float, nullable=True)
     retenciones_usadas_bs = Column(Float, nullable=True)
     retenciones_excedente_bs = Column(Float, nullable=True)
+    # Lo mismo en dolares, para el libro mayor: lo que sale de 1035.
+    retenciones_usadas = Column(Float, default=0)
+    retenciones_excedente = Column(Float, default=0)
     fecha_declaracion = Column(DateTime, default=ahora)
     pagada = Column(Boolean, default=False)
     fecha_pago = Column(DateTime, nullable=True)
@@ -1232,6 +1235,10 @@ class Pedido(Base):
     retencion_iva_bs = Column(Float, nullable=True)
     comprobante_retencion_iva = Column(String, default="")
     fecha_retencion_iva = Column(Date, nullable=True)
+    # Si se retuvo al cobrar: el % y lo que no entro a la gaveta (en dolares,
+    # el pago "Retencion IVA" contra 1035). El comprobante puede llegar despues.
+    retencion_iva_pct = Column(Float, nullable=True)
+    retencion_iva_usd = Column(Float, nullable=True)
     # Igual que tasa_bcv: se congela la tasa de IVA del dia para que el Libro
     # de Ventas de un mes cerrado no cambie si despues sube la alicuota.
     tasa_iva = Column(Float, nullable=True)

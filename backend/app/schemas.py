@@ -718,6 +718,8 @@ class Pedido(BaseModel):
     retencion_iva_bs: Optional[float] = None
     comprobante_retencion_iva: str = ""
     fecha_retencion_iva: Optional[datetime.date] = None
+    retencion_iva_pct: Optional[float] = None
+    retencion_iva_usd: Optional[float] = None
     # Tasa a la que se cobro. Se expone para que la pantalla muestre los
     # bolivares que de verdad entraron ese dia, y no los que darian esos
     # dolares a la tasa de hoy.
@@ -863,6 +865,9 @@ class CobrarRequest(BaseModel):
     pagos: Optional[List[PagoInput]] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
+    # El cliente (contribuyente especial) retiene este % del IVA: se cobra el
+    # total menos eso. Solo con factura. 75 o 100.
+    retencion_iva_pct: Optional[float] = None
     # Para el Libro de Ventas (todos opcionales): numero de control, y a quien
     # se factura -RIF o cedula, y nombre o razon social-. Sin ellos la factura
     # va a "Consumidor final".
@@ -2268,6 +2273,9 @@ class FilaLibroVentas(BaseModel):
     fecha_retencion: Optional[datetime.date] = None
     comprobante_retencion: str = ""
     iva_retenido_bs: Optional[float] = None
+    # Se retuvo al cobrar y todavia no llego el comprobante: no se descuenta
+    # hasta tenerlo.
+    retencion_pendiente_bs: Optional[float] = None
 
 
 class RetencionRecibidaRequest(BaseModel):
@@ -2406,6 +2414,8 @@ class DeclaracionIva(BaseModel):
     credito_usado_bs: Optional[float] = None
     iva_a_pagar_bs: Optional[float] = None
     credito_excedente_bs: Optional[float] = None
+    # En dolares: lo que el libro mayor saca de 1035 (retenido en caja).
+    retenciones_usadas: float = 0
     retenciones_bs: Optional[float] = None
     retenciones_arrastradas_bs: Optional[float] = None
     retenciones_usadas_bs: Optional[float] = None

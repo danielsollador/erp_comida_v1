@@ -193,6 +193,9 @@ def armar_libro_ventas(db: Session, inicio, fin, etiqueta: str = "", periodo: st
                 **en_bs(p, 1),
                 # La retencion va en su factura si el comprobante es de este mes.
                 **(retencion(p) if en_el_periodo(p.fecha_retencion_iva) else {}),
+                retencion_pendiente_bs=(
+                    p.retencion_iva_bs if p.retencion_iva_bs is not None and p.fecha_retencion_iva is None else None
+                ),
             )
         )
 
@@ -278,6 +281,9 @@ def registrar_retencion_recibida(
     p = db.query(models.Pedido).filter_by(id=pedido_id).first()
     if p is None or not p.facturado:
         raise HTTPException(status_code=404, detail="Venta facturada no encontrada")
+    if body.monto_bs is None and p.retencion_iva_usd:
+        # Se retuvo al cobrar: el monto es el de entonces.
+        body.monto_bs = p.retencion_iva_bs
     comprobante = re.sub(r"\D", "", body.comprobante or "")
     if len(comprobante) != 14:
         raise HTTPException(
@@ -294,7 +300,7 @@ def registrar_retencion_recibida(
     bs = _venta_bs(db, p)
     if not bs:
         raise HTTPException(status_code=409, detail="La venta no tiene tasa: cárgala primero en el Libro de Ventas.")
-    monto = body.monto_bs if body.monto_bs is not None else round(bs["iva_bs"] * 0.75, 2)
+    monto = body.monto_bs if body.monto_bs is not None else impuestos.porcentaje_de(bs["iva_bs"], 75)
     if monto <= 0 or monto > bs["iva_bs"] + 0.01:
         raise HTTPException(
             status_code=400,
@@ -316,8 +322,12 @@ def quitar_retencion_recibida(pedido_id: int, db: Session = Depends(get_db)):
     p = db.query(models.Pedido).filter_by(id=pedido_id).first()
     if p is None or p.retencion_iva_bs is None:
         raise HTTPException(status_code=404, detail="Esa venta no tiene retención registrada")
-    _sin_periodo_cerrado(db, datetime.datetime.combine(p.fecha_retencion_iva, datetime.time(12)))
-    p.retencion_iva_bs = None
+    if p.fecha_retencion_iva:
+        _sin_periodo_cerrado(db, datetime.datetime.combine(p.fecha_retencion_iva, datetime.time(12)))
+    # Si se retuvo al cobrar, la plata no entro: lo retenido se queda y solo
+    # se quita el comprobante (estaba mal cargado).
+    if not p.retencion_iva_usd:
+        p.retencion_iva_bs = None
     p.comprobante_retencion_iva = ""
     p.fecha_retencion_iva = None
     db.commit()
@@ -747,6 +757,7 @@ def _a_schema(d: models.DeclaracionIva) -> schemas.DeclaracionIva:
         credito_usado_bs=d.credito_usado_bs,
         iva_a_pagar_bs=d.iva_a_pagar_bs,
         credito_excedente_bs=d.credito_excedente_bs,
+        retenciones_usadas=d.retenciones_usadas or 0,
         retenciones_bs=d.retenciones_bs,
         retenciones_arrastradas_bs=d.retenciones_arrastradas_bs,
         retenciones_usadas_bs=d.retenciones_usadas_bs,
@@ -857,6 +868,16 @@ def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)
             ),
         )
     debito, credito = t["debito"], t["credito"]
+    # Retenciones cobradas en caja (en dolares, en 1035) con comprobante de
+    # este mes: las que el libro mayor descuenta.
+    ret_usd = round(sum(
+        p.retencion_iva_usd or 0
+        for p in db.query(models.Pedido).filter(
+            models.Pedido.retencion_iva_usd.isnot(None),
+            models.Pedido.fecha_retencion_iva >= inicio.date(),
+            models.Pedido.fecha_retencion_iva < fin.date(),
+        )
+    ), 2)
 
     # El credito que sobro del mes anterior sigue disponible: es como funciona
     # el excedente de credito fiscal, no se pierde.
@@ -869,7 +890,9 @@ def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)
 
     disponible = round(credito + arrastrado, 2)
     usado = round(min(disponible, debito), 2)
-    a_pagar = round(debito - usado, 2)
+    ret_disp_usd = round(ret_usd + ((anterior.retenciones_excedente or 0) if anterior else 0), 2)
+    ret_usadas_usd = round(min(ret_disp_usd, debito - usado), 2)
+    a_pagar = round(debito - usado - ret_usadas_usd, 2)
     excedente = round(disponible - usado, 2)
 
     # Lo mismo en bolivares, que es lo que se declara. El excedente que viene
@@ -911,6 +934,8 @@ def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)
         retenciones_arrastradas_bs=ret_arrastradas,
         retenciones_usadas_bs=ret_usadas,
         retenciones_excedente_bs=round(ret_disponibles - ret_usadas, 2),
+        retenciones_usadas=ret_usadas_usd,
+        retenciones_excedente=round(ret_disp_usd - ret_usadas_usd, 2),
     )
     db.add(declaracion)
     db.flush()

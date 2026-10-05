@@ -1278,6 +1278,8 @@ export type FilaLibroVentas = {
   fecha_retencion: string | null
   comprobante_retencion: string
   iva_retenido_bs: number | null
+  /** Retenido al cobrar, esperando el comprobante (no se descuenta aún). */
+  retencion_pendiente_bs: number | null
 }
 
 export type LibroVentas = {

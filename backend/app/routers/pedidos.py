@@ -1345,7 +1345,10 @@ async def cobrar_pedido(
     # Un pago puede venir partido: $5 en efectivo y el resto por pago movil es
     # cosa de todos los dias. Sin esto habia que elegir un metodo y mentir, y
     # el cierre de caja mostraba un faltante que no existia.
-    a_cobrar = pedido.a_cobrar
+    # Un cliente contribuyente especial retiene parte del IVA: paga el total
+    # menos eso, y lo retenido entra como un pago aparte que no es plata.
+    retenido = _retencion_al_cobrar(db, pedido, body)
+    a_cobrar = round(pedido.a_cobrar - retenido, 2)
     # Una comanda regalada entera (todo cortesia) no tiene nada que cobrar:
     # se cierra sin pagos, y la gaveta no se entera. El costo si se reconoce
     # abajo, en `registrar_venta`, como gasto de cortesias.
@@ -1356,6 +1359,11 @@ async def cobrar_pedido(
             schemas.PagoInput(metodo=body.metodo_pago, monto=a_cobrar, referencia=body.referencia)
         ]
     for pago in pagos:
+        if pago.metodo == "Retención IVA":
+            raise HTTPException(
+                status_code=400,
+                detail="La retención de IVA no se elige como pago: marca que el cliente retiene.",
+            )
         if pago.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
             raise HTTPException(
                 status_code=400,
@@ -1404,6 +1412,8 @@ async def cobrar_pedido(
     pedido.estado = "pagado"
     # El campo resumen sigue existiendo para mostrar de un vistazo como se pago.
     pedido.metodo_pago = "Cortesía" if not pagos else pagos[0].metodo if len(pagos) == 1 else "Mixto"
+    if retenido:
+        pagos = list(pagos) + [schemas.PagoInput(metodo="Retención IVA", monto=retenido)]
     for pago in pagos:
         vuelto = round(max((pago.recibido or pago.monto) - pago.monto, 0), 2)
         db.add(
@@ -1432,6 +1442,15 @@ async def cobrar_pedido(
     vigente = tasas.tasa_vigente(db)
     pedido.tasa_bcv = vigente.bcv if vigente else None
     pedido.tasa_iva = impuestos.tasa_iva(db) if body.facturado else None
+    if retenido:
+        # Lo retenido en Bs, como lo dira el comprobante: el % del IVA de la
+        # factura en Bs. El comprobante (numero y fecha) se carga cuando llegue.
+        pedido.retencion_iva_pct = body.retencion_iva_pct
+        pedido.retencion_iva_usd = retenido
+        if pedido.tasa_bcv:
+            total_bs = round(pedido.total * pedido.tasa_bcv, 2)
+            _, iva_bs = impuestos.desglosar(total_bs, pedido.tasa_iva)
+            pedido.retencion_iva_bs = impuestos.porcentaje_de(iva_bs, body.retencion_iva_pct)
     # El stock ya se descontó al crear la comanda. Aca solo se reconoce el
     # costo contra el ingreso, que es cuando corresponde registrarlo.
     contabilidad.registrar_venta(db, pedido)
@@ -1441,6 +1460,19 @@ async def cobrar_pedido(
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_pagado", resultado.model_dump(mode="json"))
     return resultado
+
+
+def _retencion_al_cobrar(db: Session, pedido: models.Pedido, body) -> float:
+    """Cuanto del IVA (en dolares) retiene el cliente, o 0."""
+    pct = body.retencion_iva_pct
+    if not pct:
+        return 0.0
+    if not body.facturado:
+        raise HTTPException(status_code=400, detail="Solo se retiene IVA de una venta facturada.")
+    if pct not in (75, 100):
+        raise HTTPException(status_code=400, detail="La retención de IVA es de 75 % o 100 %.")
+    _, iva = impuestos.desglosar(pedido.total, impuestos.tasa_iva(db))
+    return impuestos.porcentaje_de(iva, pct)
 
 
 def _datos_de_factura(body) -> dict:

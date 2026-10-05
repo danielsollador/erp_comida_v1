@@ -106,7 +106,16 @@ export default function Impuestos() {
       campos: [
         { nombre: 'comprobante', etiqueta: 'N.º de comprobante (14 dígitos)', placeholder: 'AAAAMM00000000' },
         { nombre: 'fecha', etiqueta: 'Fecha del comprobante (AAAA-MM-DD)', valor: hoyISO },
-        { nombre: 'monto', etiqueta: 'IVA retenido (Bs)', valor: f.iva_bs === null ? '' : (f.iva_bs * 0.75).toFixed(2) },
+        {
+          nombre: 'monto',
+          etiqueta: 'IVA retenido (Bs)',
+          valor:
+            f.retencion_pendiente_bs !== null
+              ? f.retencion_pendiente_bs.toFixed(2)
+              : f.iva_bs === null
+                ? ''
+                : (f.iva_bs * 0.75).toFixed(2),
+        },
       ],
       aceptar: 'Registrar',
     })
@@ -381,6 +390,13 @@ export default function Impuestos() {
                               <span className="block text-neutral-500 font-mono">{f.comprobante_retencion}</span>
                               <button onClick={() => quitarRetencion(f.pedido_id)} className="text-peligro-600 underline">
                                 quitar
+                              </button>
+                            </>
+                          ) : f.retencion_pendiente_bs !== null ? (
+                            <>
+                              <span className="block">{bs(f.retencion_pendiente_bs)} retenido en caja</span>
+                              <button onClick={() => registrarRetencion(f)} className="text-aviso-700 underline font-semibold">
+                                cargar comprobante
                               </button>
                             </>
                           ) : f.tipo === 'FAC' && f.iva_bs !== null ? (

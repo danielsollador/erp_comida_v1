@@ -443,6 +443,9 @@ export const api = {
       cliente?: string
       // Para el Libro de Ventas, solo si se factura: control y a quien.
       factura?: DatosFacturaVenta
+      // El cliente (contribuyente especial) retiene este % del IVA: se cobra
+      // el total menos eso. Solo con factura.
+      retencion_iva_pct?: number
       operador_id?: number | null
       punto_venta_id?: number | null
       // Solo aplica cuando no se manda `pagos` (un solo metodo para todo).
@@ -464,6 +467,7 @@ export const api = {
         punto_venta_id: extra?.punto_venta_id ?? null,
         referencia: extra?.referencia || null,
         ...(facturado ? extra?.factura : {}),
+        retencion_iva_pct: facturado && extra?.retencion_iva_pct ? extra.retencion_iva_pct : null,
       }),
     }),
   ticket: (pedidoId: number) => req<Ticket>(`/pedidos/${pedidoId}/ticket`),

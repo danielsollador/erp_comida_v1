@@ -9,6 +9,7 @@ import { Boton, Campo, Modal, Selector } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
+import { ivaRetenido } from '../lib/compras'
 import { enPreparacion, estadoCocina, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
@@ -174,6 +175,15 @@ export default function POS() {
   const [numeroControl, setNumeroControl] = useState('')
   const [rifCliente, setRifCliente] = useState('')
   const [razonSocial, setRazonSocial] = useState('')
+  // El cliente es contribuyente especial y retiene parte del IVA: '' = no.
+  const [retencion, setRetencion] = useState<'' | '75' | '100'>('')
+  const [tasaIva, setTasaIva] = useState(16)
+  useEffect(() => {
+    api
+      .configFiscal()
+      .then((c) => setTasaIva(c.tasa_iva))
+      .catch(() => undefined)
+  }, [])
   // Lo que cambia cuanta plata entra: rebaja al cliente y propina del mesonero.
   const [descuento, setDescuento] = useState('')
   const [motivoDescuento, setMotivoDescuento] = useState('')
@@ -235,7 +245,10 @@ export default function POS() {
   // Lo que de verdad se recibe: la comida menos el descuento, mas la propina.
   const subtotalCobro = cobrando?.total ?? 0
   const descuentoNum = Math.min(Number(descuento) || 0, subtotalCobro)
-  const aCobrar = Math.round((subtotalCobro - descuentoNum + (Number(propina) || 0)) * 100) / 100
+  // Lo que retiene un cliente contribuyente especial no entra a la gaveta.
+  const retenidoIva = facturar && retencion ? ivaRetenido(subtotalCobro - descuentoNum, Number(retencion), tasaIva) : 0
+  const aCobrar =
+    Math.round((subtotalCobro - descuentoNum + (Number(propina) || 0) - retenidoIva) * 100) / 100
   // Lo que entrego el cliente, SIEMPRE en dolares: en la gaveta de bolivares
   // el cajero teclea bolivares --que es lo que tiene en la mano-- y se
   // convierte a la tasa del dia, que es como se guarda la venta.
@@ -728,6 +741,7 @@ export default function POS() {
     setNumeroControl('')
     setRifCliente('')
     setRazonSocial('')
+    setRetencion('')
     setPagoMixto(false)
     setPartes([])
     setDescuento('')
@@ -757,6 +771,7 @@ export default function POS() {
         punto_venta_id: puntoId,
         referencia,
         factura: { numero_control: numeroControl, rif_cliente: rifCliente, razon_social_cliente: razonSocial },
+        retencion_iva_pct: retencion ? Number(retencion) : undefined,
       })
       limpiarCobro()
       setUltimaVenta(cobrado)
@@ -2028,6 +2043,32 @@ export default function POS() {
               <p className="col-span-2 text-xs text-neutral-500">
                 Todo opcional. Sin RIF ni nombre, va al Libro de Ventas como consumidor final. Siempre con IVA.
               </p>
+              <label className="col-span-2 flex flex-wrap items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!retencion}
+                  onChange={(e) => setRetencion(e.target.checked ? '75' : '')}
+                  className="w-4 h-4"
+                />
+                El cliente retiene IVA (contribuyente especial)
+                {retencion && (
+                  <select
+                    value={retencion}
+                    onChange={(e) => setRetencion(e.target.value as '75' | '100')}
+                    className="border border-neutral-300 rounded-lg px-2 py-1 text-sm"
+                  >
+                    <option value="75">75 %</option>
+                    <option value="100">100 %</option>
+                  </select>
+                )}
+              </label>
+              {retenidoIva > 0 && (
+                <p className="col-span-2 text-xs text-neutral-600">
+                  Retiene {fmt(retenidoIva)} de IVA: se cobra el resto. Lo retenido no entra a la gaveta; su comprobante
+                  se carga en el Libro de Ventas cuando llegue.
+                </p>
+              )}
+
             </div>
           )}
           {/* Rebaja a ESTE cliente. Antes la unica via era bajarle el

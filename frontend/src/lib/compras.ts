@@ -101,6 +101,18 @@ export function sugerirMercancia(descripcion: string, ingredientes: Ingrediente[
   return ordenadas[0].ing
 }
 
+/**
+ * El IVA que retiene un cliente contribuyente especial sobre una venta con
+ * IVA incluido, en dólares. Misma cuenta que el servidor, al céntimo: IVA
+ * desglosado del total y el % en céntimos enteros con la mitad hacia arriba
+ * (6,90 × 75 % = 5,18). Si no diera lo mismo, la caja rechazaría el cobro.
+ */
+export function ivaRetenido(totalConIva: number, pct: number, tasaIvaPct = 16): number {
+  const base = Math.round((totalConIva / (1 + tasaIvaPct / 100)) * 100) / 100
+  const ivaCentimos = Math.round((totalConIva - base) * 100)
+  return Math.floor((ivaCentimos * Math.round(pct * 100) + 5000) / 10000) / 100
+}
+
 /** Días entre una fecha AAAA-MM-DD y hoy (positivo = en el pasado). */
 export function diasDesde(fecha: string, hoyISO: string): number {
   return Math.round(
