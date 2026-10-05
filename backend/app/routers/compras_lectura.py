@@ -277,19 +277,6 @@ def _revisar_rif(db: Session, rif: str):
         "si dice lo mismo, está bien leído y puedes dejarlo.",
         sugerido,
     )
-    if fecha > hoy():
-        return "La fecha de la factura no puede ser futura."
-    declarada = (
-        db.query(models.DeclaracionIva)
-        .filter(models.DeclaracionIva.anio == fecha.year, models.DeclaracionIva.mes == fecha.month)
-        .first()
-    )
-    if declarada:
-        return (
-            f"El IVA de {declarada.periodo} ya fue declarado: una factura con esa fecha "
-            "cambiaría ese Libro de Compras. Consulta con quien lleva la contabilidad."
-        )
-    return ""
 
 
 @router.post("/facturas/{factura_id}/soporte")
