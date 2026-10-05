@@ -28,6 +28,7 @@ from .routers import (
     pedidos,
     proveedores,
     reportes,
+    reportes_dinamicos,
     respaldos,
     tasas,
     usuarios as usuarios_router,
@@ -217,6 +218,7 @@ app.include_router(pedidos.router)
 app.include_router(inventario.router)
 app.include_router(config.router)
 app.include_router(caja.router)
+app.include_router(reportes_dinamicos.router)
 app.include_router(reportes.router)
 app.include_router(ventas.router)
 app.include_router(respaldos.router)

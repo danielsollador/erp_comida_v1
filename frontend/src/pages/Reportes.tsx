@@ -14,6 +14,7 @@ import { Bloque, Kpi, Linea, type Dinero } from './partes/reportes/comunes'
 import Ventas from './partes/reportes/Ventas'
 import Perdidas from './partes/reportes/Perdidas'
 import Inventario from './partes/reportes/Inventario'
+import AMedida from './partes/reportes/AMedida'
 
 /**
  * Reportes, en cuatro secciones (Leider, 22-sep):
@@ -26,6 +27,10 @@ import Inventario from './partes/reportes/Inventario'
  *              pesa sobre la venta, y las ventas que no llegaron.
  *   Inventario donde esta la plata, para cuantos dias alcanza, que comprar.
  *
+ *   A medida   la tabla dinamica: el usuario elige que mirar, como agruparlo
+ *              y que sumar, y lo guarda con nombre. Es la respuesta a "¿y
+ *              como vemos esto?" sin programar una pantalla nueva.
+ *
  * Antes eran "Resumen / Cuando se vende / Que se vendio / Combinaciones", y
  * el Resumen repetia parte de las otras tres. Cada seccion pide solo SUS
  * datos y sigue el mismo esqueleto: cifras, lecturas, bloques con nombre.
@@ -35,6 +40,7 @@ const SECCIONES = [
   { id: 'ventas', texto: 'Ventas' },
   { id: 'perdidas', texto: 'Pérdidas' },
   { id: 'inventario', texto: 'Inventario' },
+  { id: 'a_medida', texto: 'A medida' },
 ]
 
 export default function Reportes() {
@@ -90,10 +96,13 @@ export default function Reportes() {
       />
 
       <Pagina>
-        {cargando && <p className="text-neutral-400 text-sm">Cargando...</p>}
+        {/* Fuera del "cargando" de las demas: cada cambio de fechas la
+            desmontaria y perderia lo que se estaba armando. */}
+        {seccion === 'a_medida' && <AMedida rango={rango} alCambiarRango={setRango} />}
+        {seccion !== 'a_medida' && cargando && <p className="text-neutral-400 text-sm">Cargando...</p>}
         {error && !cargando && <p className="text-peligro-600 text-sm">{error}</p>}
 
-        {!cargando && !error && (
+        {seccion !== 'a_medida' && !cargando && !error && (
           <>
             {etiqueta && (
               <div className="space-y-0.5">

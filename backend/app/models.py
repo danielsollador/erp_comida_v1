@@ -1370,3 +1370,24 @@ class DmCuentaDia(Base):
     cuenta_id = Column(Integer, ForeignKey("DIM610_CON_CUENTA.id"), nullable=False)
     debe = Column(Float, default=0)
     haber = Column(Float, default=0)
+
+
+class ReporteGuardado(Base):
+    """Un reporte a medida con nombre, para volver a abrirlo con un clic.
+
+    Es lo que hace escalable el modulo de reportes: cuando el cliente pregunta
+    "¿como vemos esto?", la respuesta es armarlo y guardarlo, no programar una
+    pantalla nueva. La definicion va en JSON (fuente, campos, medidas, filtros,
+    periodo) y la interpreta `reporte_dinamico.py`; si manana el catalogo gana
+    un campo, los reportes viejos siguen abriendo igual.
+    """
+
+    __tablename__ = "CFG920_ADM_REPORTE_GUARDADO"
+
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String, nullable=False)
+    fuente = Column(String, nullable=False)
+    definicion = Column(Text, nullable=False, default="{}")
+    creado_por = Column(String, default="")
+    creado_en = Column(DateTime, default=ahora)
+    actualizado_en = Column(DateTime, default=ahora)

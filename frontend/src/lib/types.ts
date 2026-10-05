@@ -1426,3 +1426,60 @@ export type EstadoApertura = {
   nota: string
   fondos: FondoApertura[]
 }
+
+// ── Reportes a medida (backend/app/reporte_dinamico.py) ────────────────────
+
+export type TipoCampo = 'fecha' | 'semana' | 'mes' | 'anio' | 'dia_semana' | 'hora' | 'texto'
+export type FormatoMedida = 'dinero' | 'bs' | 'entero' | 'numero' | 'pct'
+
+export type CampoDinamico = { id: string; nombre: string; tipo: TipoCampo; ayuda: string }
+export type MedidaDinamica = { id: string; nombre: string; formato: FormatoMedida; ayuda: string }
+
+export type FuenteDinamica = {
+  id: string
+  nombre: string
+  descripcion: string
+  campos: CampoDinamico[]
+  medidas: MedidaDinamica[]
+}
+
+export type DefinicionReporte = {
+  fuente: string
+  filas: string[]
+  columna: string | null
+  medidas: string[]
+  /** campo -> valores permitidos. */
+  filtros: Record<string, string[]>
+}
+
+export type ValoresMedidas = Record<string, number | null>
+export type CeldasReporte = { total: ValoresMedidas; por_columna?: Record<string, ValoresMedidas> }
+
+export type ResultadoDinamico = {
+  fuente: string
+  etiqueta: string
+  campos_fila: { id: string; nombre: string; tipo: TipoCampo }[]
+  columna: {
+    id: string
+    nombre: string
+    tipo: TipoCampo
+    valores: { valor: string; etiqueta: string }[]
+  } | null
+  medidas: { id: string; nombre: string; formato: FormatoMedida }[]
+  filas: ({ claves: string[]; etiquetas: string[] } & CeldasReporte)[]
+  totales: CeldasReporte
+  truncado: boolean
+  desde_mart: boolean
+}
+
+export type ValorCampo = { valor: string; etiqueta: string }
+
+export type ReporteGuardado = {
+  id: string
+  nombre: string
+  definicion: Partial<DefinicionReporte> & { fuente: string; medidas: string[] }
+  /** Atajo de fechas con que abre ('mes', '7d'...), o null. */
+  periodo: string | null
+  creado_por: string
+  de_fabrica: boolean
+}
