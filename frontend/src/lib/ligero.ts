@@ -13,7 +13,7 @@
  * animaciones de entrada. Los datos, los colores y los botones son los
  * mismos; el circulo al cambiar de tema tambien se queda, que es puntual.
  *
- * Se enciende solo en un aparato tactil o con poca memoria, y SIEMPRE en
+ * Se enciende solo en un aparato tactil (puntero grueso), y SIEMPRE en
  * Punto de venta y Cocina, que son las pantallas que viven horas abiertas.
  * Para probarlo o forzarlo: localStorage.setItem('vp-ligero', 'siempre' | 'nunca').
  */
@@ -31,10 +31,12 @@ export function esAparatoLigero(): boolean {
   } catch {
     // sin almacenamiento: se decide por el aparato
   }
-  // `deviceMemory` solo existe en Chrome (que es lo que corre la tablet):
-  // 4 GB o menos es una tablet o un telefono, no una laptop.
-  const memoria = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
-  if (memoria !== undefined && memoria <= 4) return true
+  // SOLO POR EL TIPO DE APARATO: un puntero grueso (dedo) es una tablet o un
+  // telefono. Antes tambien se miraba `navigator.deviceMemory` ("4 GB o menos
+  // = tablet"), pero Chrome lo redondea hacia abajo por privacidad: la laptop
+  // de Leider, con 16 GB, reporta 4, y la portada le salia sin llama ni luz
+  // (5-oct, en la VM de Google; en local su Chrome hacia lo mismo). La tablet
+  // del mostrador es tactil, asi que la cubre la regla del puntero.
   return Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
 }
 
