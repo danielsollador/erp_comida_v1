@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Tabla, Th, contiene, palabrasDe, useOrden } from '../../components/Tabla'
 import { Boton, Cifra, FiltroDesplegable, Vacio } from '../../components/ui'
 import { Numerico } from '../../components/Teclado'
@@ -116,7 +116,13 @@ export default function Recetas({
   // asi la flecha de volver (o el boton atras del navegador) cierra la
   // receta y vuelve a la lista en vez de saltar a la portada (Leider,
   // 1-oct). Abrir empuja `v`; cerrar lo quita.
-  const [params, setParams] = useSearchParams()
+  const [params] = useSearchParams()
+  // LA RECETA ABIERTA VA EN EL HISTORIAL, NO EN LA DIRECCION (Leider, 5-oct:
+  // "/menu/recetas?v=2 no tiene sentido, solo recetas"). Abrir agrega un paso
+  // con `state.receta`, asi que el atras del navegador o de la tablet la sigue
+  // cerrando, y la barra solo dice /menu/recetas.
+  const location = useLocation()
+  const navegar = useNavigate()
   // Las columnas se ordenan y cada una explica que es (Leider, 1-oct: "le
   // faltan campos arriba, que expliquen que es cada cosa").
   const orden = useOrden<Renglon>({
@@ -199,18 +205,27 @@ export default function Recetas({
     : 0
   const aPerdida = margenes.filter((m) => m < 0).length
 
-  const pedida = params.get('v')
+  const pedidaEstado = (location.state as { receta?: number } | null)?.receta
+  const pedida = pedidaEstado !== undefined ? String(pedidaEstado) : null
+  // Un enlace viejo con `?v=`: se pasa al historial y se limpia la direccion.
+  const vieja = params.get('v')
+  useEffect(() => {
+    if (!vieja) return
+    const p = new URLSearchParams(params)
+    p.delete('v')
+    const q = p.toString()
+    navegar(`${location.pathname}${q ? `?${q}` : ''}`, { replace: true, state: { receta: Number(vieja) } })
+    // Tambien con cada paso (`key`): el modulo, en el mismo momento, pasa
+    // `?s=recetas` a la ruta con sus parametros de antes y devolvia el `?v=`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vieja, location.key])
   useEffect(() => {
     if (pedida) {
       if (abierta && String(abierta.variante.id) === pedida) return
       if (renglones.length === 0) return
       const r = renglones.find((x) => String(x.variante.id) === pedida)
       if (r) void abrir(r, true)
-      else {
-        const p = new URLSearchParams(params)
-        p.delete('v')
-        setParams(p, { replace: true })
-      }
+      else navegar(location.pathname + location.search, { replace: true, state: null })
     } else if (abierta) {
       // Se fue `v` (atras del navegador, la flecha): la receta se cierra.
       setAbierta(null)
@@ -223,11 +238,7 @@ export default function Recetas({
   async function abrir(r: Renglon, desdeUrl = false) {
     setError('')
     setAbierta(r)
-    if (!desdeUrl) {
-      const p = new URLSearchParams(params)
-      p.set('v', String(r.variante.id))
-      setParams(p)
-    }
+    if (!desdeUrl) navegar(location.pathname + location.search, { state: { receta: r.variante.id } })
     const receta = await api.verReceta(r.variante.id)
     const iniciales: Fila[] = receta.map((x: RecetaItem) => ({
       ingrediente_id: x.ingrediente_id,
@@ -254,11 +265,7 @@ export default function Recetas({
   function cerrar() {
     setAbierta(null)
     setFilas([])
-    if (params.get('v')) {
-      const p = new URLSearchParams(params)
-      p.delete('v')
-      setParams(p, { replace: true })
-    }
+    if (pedida) navegar(location.pathname + location.search, { replace: true, state: null })
   }
 
   /** Salir con cambios sin guardar pide confirmacion (Leider, 29-sep). */
