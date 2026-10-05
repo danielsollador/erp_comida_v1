@@ -14,6 +14,7 @@ import {
 import { NOMBRE_ROL, useAcceso } from '../lib/acceso'
 import { api } from '../lib/api'
 import { useTema } from '../lib/tema'
+import { TAMANOS, useTamanoCocina } from '../lib/cocinaTexto'
 
 /**
  * Mi usuario: quien soy y como quiero ver el sistema.
@@ -437,6 +438,7 @@ function CambiarClave({ abierta, alAlternar }: { abierta: boolean; alAlternar: (
  */
 export function Apariencia() {
   const { tema, cambiar } = useTema()
+  const cocina = useTamanoCocina()
   const [teclado, setTeclado] = useState<PreferenciasTeclado>(leerPreferenciasTeclado)
   const tactil = usaTecladoPropio()
   const telefono = esTelefono()
@@ -479,6 +481,38 @@ export function Apariencia() {
               <span className="w-8 h-1.5 rounded-full" style={{ background: '#525252' }} />
             </div>
           </Opcion>
+        </div>
+      </Tarjeta>
+
+      {/* El tamaño del texto de las comandas lo decide quien cocina, desde la
+          tablet de la cocina (Leider, 5-oct: "que la misma gente se lo
+          cambie"). La muestra es un renglon de comanda al tamaño real. */}
+      <Tarjeta
+        titulo="Texto en Cocina"
+        ayuda="Cuánto se agrandan las comandas en la pantalla de Cocina. Vale para este equipo: cada tablet guarda el suyo."
+      >
+        <div className="grid grid-cols-2 gap-3">
+          {TAMANOS.map((t) => (
+            <Opcion
+              key={t.id}
+              marcada={cocina.tamano === t.id}
+              titulo={t.titulo}
+              detalle={t.detalle}
+              onElegir={() => cocina.cambiar(t.id)}
+            >
+              <div className="h-16 rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden flex items-center px-3">
+                <div style={{ zoom: t.zoom }} className="flex items-center gap-2 whitespace-nowrap">
+                  <span className="w-6 h-6 rounded-md bg-neutral-900 text-neutral-50 text-xs font-bold grid place-items-center tabular-nums">
+                    2
+                  </span>
+                  <span className="text-[13px] font-semibold text-neutral-800">Pastelito de queso</span>
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-exito-500/15 text-exito-700">
+                    3 min
+                  </span>
+                </div>
+              </div>
+            </Opcion>
+          ))}
         </div>
       </Tarjeta>
 

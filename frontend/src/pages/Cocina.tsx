@@ -6,6 +6,7 @@ import { api, connectWs } from '../lib/api'
 import { editandoAhora } from '../lib/comandas'
 import type { Categoria, Pedido } from '../lib/types'
 import { useModoLigero } from '../lib/ligero'
+import { useTamanoCocina } from '../lib/cocinaTexto'
 import { colorCategoria, type TinteCategoria } from '../lib/theme'
 
 const CLAVE_SONIDO = 'cocina.sonido'
@@ -37,6 +38,9 @@ export default function Cocina() {
   const dialogo = useDialogo()
   // Horas abierta en una tablet: sin desenfoques ni animaciones (lib/ligero).
   useModoLigero()
+  // El tamaño del texto lo elige la gente de cocina en Configuracion >
+  // Apariencia (lib/cocinaTexto); se aplica al tablero, no a la barra.
+  const { zoom } = useTamanoCocina()
   // El color de la categoria en cada renglon, igual que en el mostrador
   // (Leider, 21-sep: "los colores tienen que estar para cocina tambien").
   // Los renglones traen solo la variante, asi que el menu se carga una vez
@@ -280,7 +284,10 @@ export default function Cocina() {
         </div>
       )}
 
-      <div className="p-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
+      <div
+        className="p-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2"
+        style={zoom !== 1 ? { zoom } : undefined}
+      >
         {pedidos.map((pedido) => {
           const minutos = minutosDesde(pedido.creado_en)
           const estilo = estiloAntiguedad(minutos)
