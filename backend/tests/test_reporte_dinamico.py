@@ -58,11 +58,11 @@ def un_poco_de_todo(client, db, variante):
 
 CONSULTAS = [
     ("ventas", ["dia"], ["ventas", "pedidos", "ticket"], None),
-    ("ventas", [], ["ventas", "pedidos", "ventas_bs", "iva", "descuentos"], None),
+    ("ventas", [], ["ventas", "pedidos", "iva", "descuentos"], None),
     ("ventas", ["dia"], ["ventas"], "cajera"),
     ("ventas", ["hora"], ["pedidos"], "dia_semana"),
     ("ventas", ["mes", "caja"], ["ventas", "pedidos"], None),
-    ("productos", ["producto"], ["unidades", "ventas", "costo", "margen"], None),
+    ("productos", ["producto"], ["unidades", "ventas", "precio_promedio"], None),
     ("productos", ["categoria", "dia"], ["unidades", "ventas", "precio_promedio"], None),
     ("cobros", ["dia"], ["monto", "cobros"], "metodo"),
 ]
@@ -79,6 +79,20 @@ def test_da_lo_mismo_desde_el_mart_que_en_vivo(client, db, variante):
     assert all(r["desde_mart"] for r in del_mart)
     for a, b in zip(en_vivo, del_mart):
         assert sin_origen(a) == sin_origen(b)
+
+
+def test_el_costo_no_cambia_con_un_filtro(client, db, variante):
+    """El costo tiene fracciones de centavo y el mart lo guarda redondeado
+    por dia: si se leyera de ahi, el margen de un producto cambiaba un
+    centavo al ponerle un filtro (que lo manda a calcular en vivo)."""
+    jugo = un_poco_de_todo(client, db, variante)
+    consolidacion.consolidar_pendientes(db)
+    solo = consulta(client, "productos", ["producto"], ["costo", "margen"])
+    assert solo["desde_mart"] is False
+    filtrado = consulta(client, "productos", ["producto"], ["costo", "margen"],
+                        filtros={"categoria": ["Bebidas frías"]})
+    fila = lambda r: next(f["total"] for f in r["filas"] if f["claves"][0] == f"v:{jugo.id}")
+    assert fila(solo) == fila(filtrado)
 
 
 def test_lo_que_no_cabe_en_el_mart_se_calcula_en_vivo(client, db, variante):
@@ -212,6 +226,8 @@ def test_exportar_csv(client, db, variante):
     assert lineas[0].startswith("Día,")
     assert "Total · Ventas" in lineas[0]
     assert lineas[-1].startswith("Total,")
+    # Los pedidos son conteos: sin ".0".
+    assert lineas[-1].split(",")[-1] == "5"
 
 
 def test_compras_suman_la_base_de_la_factura(client, insumo):

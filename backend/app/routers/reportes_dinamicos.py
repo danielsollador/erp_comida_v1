@@ -110,8 +110,12 @@ def valores(p: PedidoValores, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-def _numero(v):
-    return "" if v is None else v
+def _numero(v, formato: str):
+    """Un conteo va sin decimales: "16", no "16.0", que Excel muestra igual
+    pero confunde a quien abre el archivo en otro programa."""
+    if v is None:
+        return ""
+    return int(round(v)) if formato == "entero" else v
 
 
 @router.get("/exportar")
@@ -144,8 +148,8 @@ def exportar(q: str, request: Request, db: Session = Depends(get_db)):
         if r["columna"]:
             for v in r["columna"]["valores"]:
                 cel = valores.get("por_columna", {}).get(v["valor"], {})
-                salida += [_numero(cel.get(m["id"])) for m in medidas]
-        salida += [_numero(valores["total"].get(m["id"])) for m in medidas]
+                salida += [_numero(cel.get(m["id"]), m["formato"]) for m in medidas]
+        salida += [_numero(valores["total"].get(m["id"]), m["formato"]) for m in medidas]
         return salida
 
     filas = [f["etiquetas"] + celdas(f) for f in r["filas"]]

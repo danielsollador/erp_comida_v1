@@ -35,11 +35,13 @@ vivo. Como el mart es literalmente lo que `bloque_en_vivo` calculo, el numero
 es el mismo venga de donde venga; `test_reporte_dinamico.py` lo comprueba.
 Lo que no cabe (producto x cajera) se calcula en vivo con tope de fechas.
 
-UNA SALVEDAD, DE CENTAVOS. El mart guarda el COSTO de cada dia ya redondeado
-a centavos, y el costo de un renglon tiene fracciones de centavo (sale de
-la receta). Por eso el costo de un mes leido del mart puede diferir en
-centavos del calculado en vivo; las ventas no, que son precios exactos. Es
-la misma cifra que muestran Reportes y Ventas, que leen el mismo mart.
+DEL MART, SOLO LO EXACTO. El mart guarda cada dia ya redondeado a centavos.
+Para ventas, unidades, IVA y cobros da igual: son precios exactos. Para el
+COSTO (fracciones de centavo, sale de la receta) y los Bs no: la suma de un
+mes cambiaria de centavos segun saliera del mart o en vivo, y el mismo
+producto mostraria otro margen al ponerle un filtro. Esos se calculan
+siempre en vivo. Contra Reportes, que si lee el costo del mart, puede haber
+centavos de diferencia en un mes; aqui se prefirio la cifra exacta.
 """
 from __future__ import annotations
 
@@ -436,7 +438,10 @@ _registrar(Fuente(
     filas=_filas_ventas,
     mart={
         # Sin detalle: la fila del dia (DM_FACT110).
-        "": DetalleMart("dia", {"ventas": "ventas", "n": "pedidos", "ventas_bs": "ventas_bs",
+        # Solo lo que es exacto al centavo: ventas, IVA y descuentos son
+        # precios. Los Bs no: el mart guarda cada dia ya redondeado y la suma
+        # de un mes cambiaria de centavos segun de donde salga.
+        "": DetalleMart("dia", {"ventas": "ventas", "n": "pedidos",
                                 "iva": "iva_cobrado", "descuentos": "valor_descuentos"}),
         "cajera": DetalleMart(consolidacion.OPERADOR, {"ventas": "ventas", "n": "pedidos"}),
         "caja": DetalleMart(consolidacion.PUNTO, {"ventas": "ventas", "n": "pedidos"}),
@@ -471,8 +476,10 @@ _registrar(Fuente(
     ],
     filas=_filas_productos,
     mart={
-        "producto": DetalleMart(consolidacion.PRODUCTO,
-                                {"unidades": "unidades", "ventas": "ventas", "costo": "costo"}),
+        # El costo NO se lee del mart: tiene fracciones de centavo (sale de
+        # la receta) y el mart lo guarda redondeado por dia. Leido de ahi, el
+        # margen del cafe cambiaba un centavo al ponerle un filtro.
+        "producto": DetalleMart(consolidacion.PRODUCTO, {"unidades": "unidades", "ventas": "ventas"}),
         # "Pedidos" de una categoria NO se lee del mart: es un conteo de
         # pedidos distintos, y un pedido con jugo y empanada esta en las dos
         # categorias. Sumarlo para el total lo contaria dos veces.
