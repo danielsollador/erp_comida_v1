@@ -500,8 +500,11 @@ export function Apariencia() {
               detalle={t.detalle}
               onElegir={() => cocina.cambiar(t.id)}
             >
-              <div className="h-16 rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden flex items-center px-3">
-                <div style={{ zoom: t.zoom }} className="flex items-center gap-2 whitespace-nowrap">
+              {/* Alto libre y renglon que se parte: en Enorme la etiqueta de
+                  minutos se salia de la muestra (Leider, 5-oct). Asi se ve
+                  tambien como se comportara la comanda real: baja de linea. */}
+              <div className="min-h-16 rounded-lg border border-neutral-200 bg-neutral-50 flex items-center px-3 py-2">
+                <div style={{ zoom: t.zoom }} className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="w-6 h-6 rounded-md bg-neutral-900 text-neutral-50 text-xs font-bold grid place-items-center tabular-nums">
                     2
                   </span>
