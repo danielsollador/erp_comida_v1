@@ -77,11 +77,11 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
             </div>
           </div>
           <div className={`h-px mx-1 mb-1 ${dark ? 'bg-neutral-800' : 'bg-neutral-100'}`} />
-          <Link to="/configuracion?s=cuenta" className={item} onClick={() => setAbierto(false)}>
+          <Link to="/configuracion/cuenta" className={item} onClick={() => setAbierto(false)}>
             <Icono nombre="cuenta" size={16} className="text-neutral-400" /> Mi cuenta
           </Link>
           {estado.puede.administrar && (
-            <Link to="/configuracion?s=usuarios" className={item} onClick={() => setAbierto(false)}>
+            <Link to="/configuracion/usuarios" className={item} onClick={() => setAbierto(false)}>
               <Icono nombre="configuracion" size={16} className="text-neutral-400" /> Configuración
             </Link>
           )}

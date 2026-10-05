@@ -91,7 +91,7 @@ def test_avisa_lo_que_se_acaba(client, db, insumo, variante):
     assert "Carne molida" in mio["titulo"]
     assert "se te acaba" in mio["titulo"]
     assert "stock" not in mio["titulo"].lower()
-    assert mio["a"] == "/inventario?s=comprar"
+    assert mio["a"] == "/inventario/comprar"
 
 
 def test_lo_que_no_se_mueve_no_se_acaba(client, db, insumo, variante):
@@ -106,7 +106,7 @@ def test_avisa_lo_que_le_deben(client, db, insumo, variante):
     fiado = next((a for a in lista if a["id"] == "fiado"), None)
     assert fiado is not None, lista
     assert fiado["titulo"].startswith("Te deben $5.00")
-    assert fiado["a"] == "/caja?s=fiado"
+    assert fiado["a"] == "/ventas?e=fiada&r=90d"
 
 
 def test_producto_sin_receta_vendido_este_mes(client, db):
@@ -122,4 +122,4 @@ def test_producto_sin_receta_vendido_este_mes(client, db):
     assert a is not None, lista
     assert a["titulo"] == "1 producto que vendes no tiene receta"
     assert "$1.50" in a["detalle"]
-    assert a["a"] == "/menu?s=recetas"
+    assert a["a"] == "/menu/recetas"

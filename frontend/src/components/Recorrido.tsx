@@ -94,7 +94,8 @@ export default function Recorrido({
   // accion de abajo, y solo si el usuario puede entrar ahi.
   const destinoAccion = (e: (typeof ESTACIONES)[number], p?: PasoRecorrido) => {
     if (!p?.a || p.a === e.to) return null
-    const ruta = p.a.split('?')[0]
+    // El modulo es el primer tramo: `/caja/fiado` entra si entra a `/caja`.
+    const ruta = '/' + (p.a.split('?')[0].split('/')[1] ?? '')
     return modulos.includes(ruta) || (ruta === '/pos' && operar) ? p.a : null
   }
 

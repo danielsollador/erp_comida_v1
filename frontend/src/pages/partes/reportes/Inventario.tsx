@@ -201,7 +201,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                 </ul>
                 <p className="text-xs text-neutral-500 mt-3">
                   La lista completa, con proveedores y precios, está en{' '}
-                  <Link to="/inventario?s=comprar" className="underline">Inventario · Qué comprar</Link>.
+                  <Link to="/inventario/comprar" className="underline">Inventario · Qué comprar</Link>.
                 </p>
               </div>
             )}

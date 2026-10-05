@@ -228,7 +228,7 @@ function ElMenu({
       aceptar: 'Ponerle la receta',
       cancelar: 'Después',
     })
-    if (ahora) navegar(`/menu?s=recetas&v=${variante.id}`)
+    if (ahora) navegar(`/menu/recetas?v=${variante.id}`)
   }
 
   const { deshacible } = useDeshacer()
@@ -831,7 +831,7 @@ function TarjetaProducto({
                     receta queda el enlace para editarla. */}
                 {info?.sin_receta ? (
                   <Link
-                    to={`/menu?s=recetas&v=${v.id}`}
+                    to={`/menu/recetas?v=${v.id}`}
                     className="shrink-0 w-32 text-right text-xs font-semibold text-acento-700 hover:underline whitespace-nowrap"
                     title="Sin receta no se sabe cuánto cuesta ni cuánto deja"
                   >
@@ -839,7 +839,7 @@ function TarjetaProducto({
                   </Link>
                 ) : (
                   <Link
-                    to={`/menu?s=recetas&v=${v.id}`}
+                    to={`/menu/recetas?v=${v.id}`}
                     className="shrink-0 w-32 text-right text-xs text-neutral-400 hover:text-neutral-800 whitespace-nowrap"
                     title="Ver o cambiar lo que lleva"
                   >

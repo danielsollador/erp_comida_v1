@@ -48,7 +48,7 @@ const claveDe = (tipo: string, r: { desde: string; hasta: string }, paso: string
  * Inventario por el deposito (cajon, mercancia), que es de lo que hablan.
  * Leider (30-sep): "que la gente pueda filtrar por la categoria de su
  * producto y hasta por su producto... listas desplegables, porque pueden
- * haber muchos productos". Todo vive en la URL: `?s=ventas&r=mes&c=3&p=12`.
+ * haber muchos productos". Todo vive en la URL: `/reportes/ventas?r=mes&c=3&p=12`.
  */
 // El grano de la serie. El primero es el automatico: `useSeccion` devuelve ese
 // cuando no hay nada en la URL, y entonces no se le manda `paso` al servidor.

@@ -1533,7 +1533,7 @@ def _avisos_de_deposito(db: Session) -> List[schemas.Aviso]:
                 tono="ojo",
                 titulo=f"Te quedaste sin {nombres}",
                 detalle="Se vende con eso y ya no hay en el depósito.",
-                a="/inventario?s=comprar",
+                a="/inventario/comprar",
             )
         )
     pronto.sort()
@@ -1550,7 +1550,7 @@ def _avisos_de_deposito(db: Session) -> List[schemas.Aviso]:
                     if resto
                     else "Al ritmo de las últimas dos semanas."
                 ),
-                a="/inventario?s=comprar",
+                a="/inventario/comprar",
             )
         )
     return out
@@ -1576,7 +1576,7 @@ def _aviso_de_fiado(db: Session) -> Optional[schemas.Aviso]:
         tono="ojo",
         titulo=f"Te deben ${total:.2f} de {len(pedidos)} venta{'s' if len(pedidos) != 1 else ''} a crédito",
         detalle=f"La más vieja tiene {viejo} día{'s' if viejo != 1 else ''}." if viejo else "",
-        a="/caja?s=fiado",
+        a="/ventas?e=fiada&r=90d",
     )
 
 
@@ -1598,7 +1598,7 @@ def _avisos_del_mes(db: Session) -> List[schemas.Aviso]:
                 tono="info",
                 titulo=f"{n} producto{'s' if n != 1 else ''} que vendes no {'tienen' if n != 1 else 'tiene'} receta",
                 detalle=f"${vendido:.2f} vendidos este mes sin saber cuánto dejan. Ponles receta y lo ves al instante.",
-                a="/menu?s=recetas",
+                a="/menu/recetas",
             )
         )
     # El dia fuerte solo cuando hay con que compararlo: dos semanas de datos.
@@ -1613,7 +1613,7 @@ def _avisos_del_mes(db: Session) -> List[schemas.Aviso]:
                     tono="bien",
                     titulo=f"El {DIAS_LARGOS[i]} es tu día fuerte",
                     detalle=f"Un {DIAS_LARGOS[i]} típico vende ${mejor.promedio:.2f}. Que no falte nada ese día.",
-                    a="/reportes?s=ventas",
+                    a="/reportes/ventas",
                 )
             )
     return out
@@ -1636,7 +1636,7 @@ def _aviso_de_iva(db: Session) -> Optional[schemas.Aviso]:
         tono="info",
         titulo=f"Este mes llevas ${neto:.2f} de IVA por pagar",
         detalle="Cobrado en ventas menos pagado en compras. Los libros ya están armados.",
-        a="/impuestos?s=declaraciones",
+        a="/impuestos/declaraciones",
     )
 
 
@@ -1673,7 +1673,7 @@ def _paso_compras(db: Session) -> schemas.PasoRecorrido:
             id="compras",
             frase=f"Toca comprar {_lista_corta([s.ingrediente_nombre for s in sugeridas])}",
             pendiente=True,
-            a="/inventario?s=comprar",
+            a="/inventario/comprar",
             accion="Ver qué comprar",
         )
     return schemas.PasoRecorrido(id="compras", frase="Nada que comprar", a="/compras", accion="Abrir compras")
@@ -1694,7 +1694,7 @@ def _paso_inventario(db: Session) -> schemas.PasoRecorrido:
             id="inventario",
             frase=f"Se acabó {_lista_corta(agotados)}",
             pendiente=True,
-            a="/inventario?s=comprar",
+            a="/inventario/comprar",
             accion="Ver qué falta",
         )
     # Solo si ya se conto alguna vez: a un local que nunca conto no se le
@@ -1739,7 +1739,7 @@ def _paso_menu(db: Session) -> schemas.PasoRecorrido:
             id="menu",
             frase=f"{faltan} producto{'s' if faltan != 1 else ''} sin receta",
             pendiente=True,
-            a="/menu?s=recetas",
+            a="/menu/recetas",
             accion="Ponerles receta",
         )
     return schemas.PasoRecorrido(id="menu", frase="Todo con receta", a="/menu", accion="Abrir el menú")
@@ -1764,7 +1764,7 @@ def _paso_ventas(db: Session) -> schemas.PasoRecorrido:
             frase="Te deben {monto}",
             monto=deben,
             pendiente=True,
-            a="/caja?s=fiado",
+            a="/ventas?e=fiada&r=90d",
             accion="Ver quién debe",
         )
     # Los mismos "pedidos" del panel de Hoy: lo cobrado desde la medianoche.

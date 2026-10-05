@@ -294,7 +294,7 @@ export default function Ventas({
                     {sinReceta.length === 1
                       ? '1 producto no tiene receta, así que no se sabe cuánto deja. '
                       : `${sinReceta.length} productos no tienen receta, así que no se sabe cuánto dejan. `}
-                    <a href="/menu?s=recetas" className="underline font-medium whitespace-nowrap">
+                    <a href="/menu/recetas" className="underline font-medium whitespace-nowrap">
                       Cargar recetas
                     </a>
                   </p>

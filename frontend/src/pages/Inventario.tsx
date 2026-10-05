@@ -125,7 +125,7 @@ const SECCIONES = [
   { id: 'perdidas', texto: 'Pérdidas' },
   { id: 'categorias', texto: 'Categorías' },
 ]
-// Las que se ven arriba. "Categorias" sigue existiendo (`?s=categorias`) pero
+// Las que se ven arriba. "Categorias" sigue existiendo (`/inventario/categorias`) pero
 // no es una pestaña: se administra desde el desplegable de categoria, que es
 // donde se piensa en ellas (Leider, 1-oct, como "Lo que quitaste" del menu).
 const PESTANAS = SECCIONES.filter((x) => x.id !== 'categorias')
@@ -272,7 +272,7 @@ export default function Inventario() {
         <>
           Compra <strong>sin factura</strong>: entra al depósito y sale de la gaveta, pero{' '}
           <strong>no descuenta IVA</strong>.{' '}
-          <a href="/compras?s=nueva" className="underline font-medium">
+          <a href="/compras/nueva" className="underline font-medium">
             Si tienes la factura, cárgala en Compras
           </a>{' '}
           para aprovechar el crédito fiscal.

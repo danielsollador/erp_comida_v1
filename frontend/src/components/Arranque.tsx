@@ -38,7 +38,7 @@ export function pasos(a: ArranqueLocal): Paso[] {
       id: 'receta',
       titulo: 'Ponle receta a un producto',
       detalle: a.con_receta ? `${a.con_receta} con receta` : 'Y descubre cuánto te deja cada uno',
-      a: '/menu?s=recetas',
+      a: '/menu/recetas',
       hecho: a.con_receta >= 1,
     },
     {

@@ -1278,7 +1278,7 @@ class Aviso(BaseModel):
     tono: str  # ojo | bien | info
     titulo: str
     detalle: str = ""
-    # La pantalla que lo resuelve: "/inventario?s=comprar".
+    # La pantalla que lo resuelve: "/inventario/comprar".
     a: str = ""
 
 

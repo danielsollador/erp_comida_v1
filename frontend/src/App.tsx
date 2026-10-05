@@ -214,26 +214,26 @@ export default function App() {
               {/* Configuracion es de todos; dentro, las pestañas de administrar
                   solo se ofrecen a quien administra (y el backend responde 403
                   al resto). Las rutas viejas siguen llegando a su pestaña. */}
-              <Route path="/configuracion" element={<Configuracion />} />
-              <Route path="/mi-usuario" element={<Navigate to="/configuracion?s=cuenta" replace />} />
+              <Route path="/configuracion/:seccion?" element={<Configuracion />} />
+              <Route path="/mi-usuario" element={<Navigate to="/configuracion/cuenta" replace />} />
               {/* La pantalla se llamaba "Mi cuenta": el enlace viejo sigue llevando. */}
-              <Route path="/mi-cuenta" element={<Navigate to="/configuracion?s=cuenta" replace />} />
+              <Route path="/mi-cuenta" element={<Navigate to="/configuracion/cuenta" replace />} />
 
-              <Route path="/pos" element={<Requiere modulo="pos"><POS /></Requiere>} />
-              <Route path="/inventario" element={<Requiere modulo="inventario"><Inventario /></Requiere>} />
-              <Route path="/menu" element={<RequiereAlguno modulos={['menu', 'recetas']}><Menu /></RequiereAlguno>} />
-              <Route path="/recetas" element={<Navigate to="/menu?s=recetas" replace />} />
-              <Route path="/caja" element={<Requiere modulo="caja"><Caja /></Requiere>} />
-              <Route path="/ventas" element={<Requiere modulo="ventas"><Ventas /></Requiere>} />
-              <Route path="/reportes" element={<Requiere modulo="reportes"><Reportes /></Requiere>} />
-              <Route path="/tasa" element={<Requiere modulo="tasa"><Tasa /></Requiere>} />
-              <Route path="/compras" element={<Requiere modulo="compras"><Compras /></Requiere>} />
+              <Route path="/pos/:seccion?" element={<Requiere modulo="pos"><POS /></Requiere>} />
+              <Route path="/inventario/:seccion?" element={<Requiere modulo="inventario"><Inventario /></Requiere>} />
+              <Route path="/menu/:seccion?" element={<RequiereAlguno modulos={['menu', 'recetas']}><Menu /></RequiereAlguno>} />
+              <Route path="/recetas" element={<Navigate to="/menu/recetas" replace />} />
+              <Route path="/caja/:seccion?" element={<Requiere modulo="caja"><Caja /></Requiere>} />
+              <Route path="/ventas/:seccion?" element={<Requiere modulo="ventas"><Ventas /></Requiere>} />
+              <Route path="/reportes/:seccion?" element={<Requiere modulo="reportes"><Reportes /></Requiere>} />
+              <Route path="/tasa/:seccion?" element={<Requiere modulo="tasa"><Tasa /></Requiere>} />
+              <Route path="/compras/:seccion?" element={<Requiere modulo="compras"><Compras /></Requiere>} />
 
               {/* La puerta unica a lo que se arma solo: contabilidad, impuestos, tasa. */}
               <Route path="/contador" element={<RequiereAlguno modulos={['contabilidad', 'impuestos', 'tasa']}><Contador /></RequiereAlguno>} />
-              <Route path="/contabilidad" element={<Requiere modulo="contabilidad"><Contabilidad /></Requiere>} />
-              <Route path="/impuestos" element={<Requiere modulo="impuestos"><Impuestos /></Requiere>} />
-              <Route path="/usuarios" element={<Navigate to="/configuracion?s=usuarios" replace />} />
+              <Route path="/contabilidad/:seccion?" element={<Requiere modulo="contabilidad"><Contabilidad /></Requiere>} />
+              <Route path="/impuestos/:seccion?" element={<Requiere modulo="impuestos"><Impuestos /></Requiere>} />
+              <Route path="/usuarios" element={<Navigate to="/configuracion/usuarios" replace />} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

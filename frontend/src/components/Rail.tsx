@@ -168,7 +168,7 @@ export default function Rail() {
       {contador.map((m) => item(m, 'opacity-55 hover:opacity-100 aria-[current=page]:opacity-100'))}
 
       <div className="mt-auto flex flex-col items-center gap-1">
-        <LinkVigilado to="/configuracion?s=cuenta" className="vp-rail-item" aria-label="Mi cuenta">
+        <LinkVigilado to="/configuracion/cuenta" className="vp-rail-item" aria-label="Mi cuenta">
           <span className="w-8 h-8 rounded-full bg-neutral-900 text-white grid place-items-center text-xs font-bold font-display">
             {inicial}
           </span>

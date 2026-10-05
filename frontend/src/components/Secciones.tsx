@@ -1,4 +1,5 @@
-import { useSearchParams } from 'react-router-dom'
+import { useEffect } from 'react'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 /**
  * Las secciones de un módulo, arriba y centradas.
@@ -15,7 +16,14 @@ import { useSearchParams } from 'react-router-dom'
  * Arriba y centrado, en el encabezado: el mismo sitio en todas las pantallas,
  * así deja de ser algo que hay que buscar.
  *
- * LA SECCION VIVE EN LA URL (`?s=`), no en un `useState`. Con estado local, el
+ * LA SECCION VIVE EN LA RUTA (`/configuracion/apariencia`), no en un
+ * `useState` ni en `?s=`. Leider (5-oct): las direcciones tienen que verse
+ * bien, y `?s=apariencia` se leia como basura. Los enlaces viejos con `?s=`
+ * siguen sirviendo: se pasan a la ruta solos, sin dejar paso en el historial.
+ * Las sub-secciones de una seccion (`param` distinto de 's', como el paso de
+ * Reportes) siguen en la consulta: dos niveles de ruta no aportan.
+ *
+ * Con la URL y no con un `useState`. Con estado local, el
  * botón de volver del navegador --y el gesto de volver de la tablet-- se
  * saltaban las secciones y sacaban del módulo entero; y no se podía mandar a
  * alguien directo a "Crear cuenta". Con la URL, volver hace lo que se espera y
@@ -44,17 +52,40 @@ export function useSeccion(
   param = 's',
 ): [string, (id: string) => void] {
   const [params, setParams] = useSearchParams()
-  const pedida = params.get(param)
+  const { seccion: enRuta } = useParams()
+  const { pathname } = useLocation()
+  const navegar = useNavigate()
+  const enRutaMode = param === 's'
+  // La base del modulo: el primer tramo de la ruta (`/configuracion`).
+  const base = '/' + (pathname.split('/')[1] ?? '')
+  const vieja = enRutaMode ? params.get('s') : null
+  const pedida = enRutaMode ? (vieja ?? enRuta ?? null) : params.get(param)
   const activa = secciones.some((s) => s.id === pedida) ? (pedida as string) : secciones[0].id
+
   // `replace`: elegir sección no llena el historial de pasos intermedios, pero
   // la URL sí queda compartible. Los demás parámetros (el rango de fechas,
-  // `?r=`/`?d=`/`?h=`) se conservan: cambiar de sección no cambia el periodo.
+  // `?r=`/`?d=`/`?h=`, la receta abierta `?v=`) se conservan.
+  const irEnRuta = (id: string, p: URLSearchParams) => {
+    p.delete('s')
+    const q = p.toString()
+    navegar(`${id === secciones[0].id ? base : `${base}/${id}`}${q ? `?${q}` : ''}`, { replace: true })
+  }
   const ir = (id: string) => {
     const p = new URLSearchParams(params)
+    if (enRutaMode) return irEnRuta(id, p)
     if (id === secciones[0].id) p.delete(param)
     else p.set(param, id)
     setParams(p, { replace: true })
   }
+
+  // Un enlace viejo (`/caja?s=fiado`) o una seccion que no existe en la ruta:
+  // se corrige la direccion sin cambiar lo que se ve.
+  const rutaMala = enRutaMode && enRuta !== undefined && !secciones.some((s) => s.id === enRuta)
+  useEffect(() => {
+    if (vieja !== null || rutaMala) irEnRuta(activa, new URLSearchParams(params))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vieja, rutaMala])
+
   return [activa, ir]
 }
 

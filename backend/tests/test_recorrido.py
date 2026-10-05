@@ -27,7 +27,7 @@ def test_menu_cuenta_lo_que_falta_por_receta(client, variante, db):
     db.commit()
     menu = pasos(client)["menu"]
     assert menu["frase"] == "1 producto sin receta" and menu["pendiente"] is True
-    assert menu["a"] == "/menu?s=recetas"
+    assert menu["a"] == "/menu/recetas"
 
 
 def test_los_envios_no_cuentan_como_sin_receta(client, variante, db):
@@ -48,7 +48,7 @@ def test_compras_dice_que_comprar(client, variante, insumo, db):
     compras = pasos(client)["compras"]
     assert compras["pendiente"] is True
     assert compras["frase"] == "Toca comprar carne molida"
-    assert compras["a"] == "/inventario?s=comprar"
+    assert compras["a"] == "/inventario/comprar"
 
 
 def test_ventas_cuenta_los_pedidos_de_hoy(client, variante):
