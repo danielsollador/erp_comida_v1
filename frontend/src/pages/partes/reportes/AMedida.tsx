@@ -47,7 +47,7 @@ const ORDEN_GRUPOS = ['Cuándo', 'Qué', 'Quién', 'Cómo']
 
 function formatear(formato: FormatoMedida, v: number | null | undefined, corto = false): string {
   if (v === null || v === undefined) return '—'
-  const d = corto && Math.abs(v) >= 100 ? 0 : 2
+  const d = corto && (Math.abs(v) >= 100 || Number.isInteger(v)) ? 0 : 2
   switch (formato) {
     case 'dinero':
       return `${v < 0 ? '-' : ''}$${fmtNum(Math.abs(v), d)}`
@@ -305,12 +305,13 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
         <FiltroDesplegable
           etiqueta="Filtrar"
           valor=""
+          accion
           alCambiar={(v) => v && cambiar({ filtros: { ...def.filtros, [v]: [] } })}
-          opciones={[{ valor: '', texto: 'por…' }, ...libres(filtrados).map(opcionCampo)]}
+          opciones={libres(filtrados).map(opcionCampo)}
         />
-      </BarraFiltros>
-
-      <div className="flex flex-wrap items-center gap-2">
+        {/* El reporte guardado y sus acciones, en la MISMA fila: en su propia
+            linea eran una fila mas antes del resultado (en la tablet, la
+            tercera). */}
         <FiltroDesplegable
           etiqueta="Reporte"
           valor={abierto?.id ?? ''}
@@ -330,7 +331,7 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
             ...(abierto && !abierto.de_fabrica ? [{ texto: 'Borrar este reporte', peligro: true, onElegir: () => void borrar() }] : []),
           ]}
         />
-      </div>
+      </BarraFiltros>
 
       {error ? (
         <Vacio>{error}</Vacio>
@@ -399,7 +400,13 @@ function Grafica({ r, principal: m }: { r: ResultadoDinamico; principal: Resulta
   if (r.campos_fila.length !== 1 || r.filas.length < 2) return null
   const campo = r.campos_fila[0]
   const fmt = (n: number) => formatear(m.formato, n, true)
-  const etiqueta = (f: ResultadoDinamico['filas'][number]) => f.etiquetas[0]
+  // Bajo las barras, las fechas sin el año cuando todas son del mismo: el
+  // año ya esta en el subtitulo, y "Jue 01/10/2026" no cabia bajo la ultima
+  // barra del telefono. La tabla las sigue diciendo enteras.
+  const anios = new Set(r.filas.map((f) => /\/(\d{4})$/.exec(f.etiquetas[0])?.[1] ?? '-'))
+  const sinAnio = anios.size === 1 && !anios.has('-')
+  const etiqueta = (f: ResultadoDinamico['filas'][number]) =>
+    sinAnio ? f.etiquetas[0].replace(/\/\d{4}$/, '') : f.etiquetas[0]
 
   // Comparando, y la medida se puede sumar: cada fila es una barra partida
   // en sus partes (dia por cajera, categoria por mes).
@@ -428,7 +435,10 @@ function Grafica({ r, principal: m }: { r: ResultadoDinamico; principal: Resulta
         alto={220}
         ejeY
         datos={r.filas.map((f) => ({ etiqueta: etiqueta(f), valor: f.total[m.id] ?? 0 }))}
-        formato={fmt}
+        // La cifra de cada barra, exacta como en la tabla ($114,50 y no
+        // $115); el eje, redondo.
+        formato={(n) => formatear(m.formato, n)}
+        formatoEje={fmt}
         lineas={otra ? [{ nombre: otra.nombre, valores: r.filas.map((f) => f.total[otra.id] ?? null) }] : undefined}
         formatoDerecha={otra ? (n) => formatear(otra.formato, n, true) : undefined}
       />

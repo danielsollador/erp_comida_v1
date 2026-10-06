@@ -603,9 +603,14 @@ export function GraficoBarras({
   ejeY = false,
   lineas,
   formatoDerecha,
+  formatoEje,
 }: {
   datos: BarraDato[]
   formato: (n: number) => string
+  /** El formato de las cifras del eje izquierdo, si no es el de las barras:
+      el eje puede ir redondeado ("$150") y la barra exacta ("$114,50"), que
+      es lo que dice la tabla de abajo. */
+  formatoEje?: (n: number) => string
   alto?: number
   /** Que barra va en cobre oscuro (la mayor, la de hoy). Las demas, cobre. */
   resaltar?: (d: BarraDato, i: number) => boolean
@@ -640,7 +645,7 @@ export function GraficoBarras({
   // Las lineas de encima: solo las que miden lo mismo que las barras.
   const lineasValidas = (lineas ?? []).filter((l) => l.valores.length === datos.length)
   const conLineas = lineasValidas.length > 0
-  const maxDer = Math.max(...lineasValidas.flatMap((l) => l.valores.map((v) => v ?? 0)), 0) || 1
+  const maxDerCrudo = Math.max(...lineasValidas.flatMap((l) => l.valores.map((v) => v ?? 0)), 0)
   const fDer = formatoDerecha ?? formato
   // Las lineas siguen a las barras en la paleta: la segunda serie, la tercera...
   const colorLinea = (l: LineaSobreBarras, k: number) => l.color ?? colorSerie(k + 1)
@@ -669,7 +674,18 @@ export function GraficoBarras({
     referencia?.valor ?? 0,
     0,
   )
-  const pct = (v: number) => (max > 0 ? (Math.max(v, 0) / max) * 100 : 0)
+  // CON EJE, EL TOPE ES UNA CIFRA REDONDA. Partir el maximo en cuartos daba
+  // marcas como $85,88 y $28,63, que no se leen; ahora el paso es 1, 2, 2,5 o
+  // 5 por la potencia de diez que toque, y la barra mas alta llega hasta
+  // donde le corresponde contra ese tope.
+  const marcas = ejeY ? marcasRedondas(max) : []
+  const tope = ejeY && marcas.length ? marcas[marcas.length - 1] : max
+  const pct = (v: number) => (tope > 0 ? (Math.max(v, 0) / tope) * 100 : 0)
+  const fEje = formatoEje ?? formato
+  // El eje derecho comparte las lineas de la rejilla con el izquierdo: los
+  // mismos tramos, con un paso redondo propio.
+  const tramos = marcas.length > 1 ? marcas.length - 1 : 4
+  const maxDer = maxDerCrudo > 0 ? pasoRedondo(maxDerCrudo / tramos) * tramos : 1
   // Con muchas barras no caben todas las etiquetas: una de cada tantas,
   // segun lo que mida el grafico. La que se muestra puede desbordar su
   // casilla porque las vecinas van vacias. Mientras no se midio, una de
@@ -694,8 +710,8 @@ export function GraficoBarras({
       >
         {ejeY && (
           <div className="flex flex-col justify-between pt-5 pb-px text-[10px] tabular-nums text-neutral-400 text-right">
-            {[100, 75, 50, 25, 0].map((p) => (
-              <span key={p}>{formato((max * p) / 100)}</span>
+            {[...marcas].reverse().map((m) => (
+              <span key={m}>{fEje(m)}</span>
             ))}
           </div>
         )}
@@ -703,8 +719,8 @@ export function GraficoBarras({
           {/* Veinte pixeles libres arriba, para la cifra de la barra mas alta. */}
           <div className="absolute inset-x-0 bottom-0 top-5">
             {ejeY &&
-              [25, 50, 75].map((p) => (
-                <div key={p} className="absolute inset-x-0 border-t border-neutral-100" style={{ top: `${p}%` }} />
+              marcas.slice(1, -1).map((m) => (
+                <div key={m} className="absolute inset-x-0 border-t border-neutral-100" style={{ bottom: `${pct(m)}%` }} />
               ))}
             <div className="absolute inset-x-0 bottom-0 border-t border-neutral-200" />
             {referencia && max > 0 && referencia.valor > 0 && (
@@ -819,8 +835,11 @@ export function GraficoBarras({
         </div>
         {conLineas && (
           <div className="flex flex-col justify-between pt-5 pb-px text-[10px] tabular-nums text-neutral-400 text-left">
-            {[100, 75, 50, 25, 0].map((p) => (
-              <span key={p}>{fDer((maxDer * p) / 100)}</span>
+            {/* Tantas marcas como a la izquierda, para que compartan las
+                lineas de la rejilla: el paso de la derecha es su tope entre
+                el numero de tramos de la izquierda. */}
+            {Array.from({ length: tramos + 1 }, (_, i) => tramos - i).map((k) => (
+              <span key={k}>{fDer((maxDer * k) / tramos)}</span>
             ))}
           </div>
         )}
@@ -828,11 +847,22 @@ export function GraficoBarras({
         {/* Los rotulos del eje X: el mismo reparto y la misma separacion que
             las barras, asi cada uno queda bajo la suya. */}
         <div className="flex gap-1.5 mt-1 min-w-0">
-          {datos.map((d, i) => (
-            <span key={d.etiqueta + i} className="flex-1 min-w-0 text-center text-xs text-neutral-500 whitespace-nowrap overflow-visible h-4">
-              {i % salto === 0 ? d.etiqueta : ''}
-            </span>
-          ))}
+          {datos.map((d, i) => {
+            // Un rotulo mas ancho que su barra desborda a los dos lados; en
+            // las puntas eso lo saca del grafico ("Mar 06/10/202" en el
+            // telefono). El primero se apoya a la izquierda y el ultimo a la
+            // derecha, y asi quedan enteros.
+            const desborda = anchoBarra > 0 && d.etiqueta.length * 7 > anchoBarra
+            const borde = !desborda ? '' : i === 0 ? 'flex justify-start' : i === datos.length - 1 ? 'flex justify-end' : ''
+            return (
+              <span
+                key={d.etiqueta + i}
+                className={`flex-1 min-w-0 text-center text-xs text-neutral-500 whitespace-nowrap overflow-visible h-4 ${borde}`}
+              >
+                {i % salto === 0 ? d.etiqueta : ''}
+              </span>
+            )
+          })}
         </div>
         {conLineas && <span />}
       </div>
@@ -870,6 +900,21 @@ export function GraficoBarras({
       )}
     </div>
   )
+}
+
+/** Las marcas del eje: de 0 a un tope redondo, con un paso de 1, 2, 2,5 o 5
+    por potencia de diez, y de tres a cinco marcas. */
+function marcasRedondas(max: number): number[] {
+  if (!(max > 0)) return [0]
+  const paso = pasoRedondo(max / 4)
+  const n = Math.ceil(max / paso - 1e-9)
+  return Array.from({ length: n + 1 }, (_, i) => +(i * paso).toPrecision(12))
+}
+
+/** El menor paso redondo (1, 2, 2,5 o 5 por potencia de diez) que cubre `crudo`. */
+function pasoRedondo(crudo: number): number {
+  const potencia = 10 ** Math.floor(Math.log10(crudo))
+  return [1, 2, 2.5, 5, 10].map((f) => +(f * potencia).toPrecision(12)).find((p) => p >= crudo) ?? 10 * potencia
 }
 
 export type ParteApilada = { nombre: string; valor: number; color: string }

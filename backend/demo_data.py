@@ -169,6 +169,19 @@ def generar(db, dias=45):
                 )
             )
 
+    vigente = tasas.tasa_vigente(db)
+    tasa_hoy = vigente.bcv if vigente and vigente.bcv else 840.0
+
+    def tasa_del_dia(dias_atras):
+        """Tasa BCV plausible para una fecha pasada (~0.4% diario de deslizamiento).
+
+        Las ventas y las compras del historico tienen que quedar con la tasa de SU dia: es lo
+        que hace que el reporte en bolivares del mes pasado no se mueva cuando
+        sube el dolar hoy. Una factura de compra sin tasa, ademas, no deja
+        declarar el IVA de su mes (el libro no tiene bolivares que sumar).
+        """
+        return round(tasa_hoy / (1.004**dias_atras), 4)
+
     hoy = datetime.date.today()
 
     # Los equipos se cargan primero, con fecha anterior al historico de ventas:
@@ -184,6 +197,7 @@ def generar(db, dias=45):
             descripcion=desc,
             base_imponible=base,
             iva=iva,
+            tasa_bcv=tasa_del_dia(dias_atras),
             pagada=True,
             fecha_pago=fecha_compra,
         )
@@ -209,18 +223,6 @@ def generar(db, dias=45):
     # tres compras a credito" sale siempre igual de parejo.
     compra_num = 0
     tasa_iva_actual = impuestos.tasa_iva(db)
-
-    vigente = tasas.tasa_vigente(db)
-    tasa_hoy = vigente.bcv if vigente and vigente.bcv else 840.0
-
-    def tasa_del_dia(dias_atras):
-        """Tasa BCV plausible para una fecha pasada (~0.4% diario de deslizamiento).
-
-        Las ventas del historico tienen que quedar con la tasa de SU dia: es lo
-        que hace que el reporte en bolivares del mes pasado no se mueva cuando
-        sube el dolar hoy.
-        """
-        return round(tasa_hoy / (1.004**dias_atras), 4)
 
     for delta in range(dias, -1, -1):
         fecha = hoy - datetime.timedelta(days=delta)
@@ -357,6 +359,7 @@ def generar(db, dias=45):
                 forma_pago="Credito" if a_credito else "Efectivo",
                 base_imponible=0,  # se calcula abajo, sumando los renglones reales
                 iva=0,
+                tasa_bcv=tasa_del_dia(delta),
                 pagada=not a_credito,
                 fecha_vencimiento=fecha_compra + datetime.timedelta(days=15) if a_credito else None,
                 fecha_pago=None if a_credito else fecha_compra,

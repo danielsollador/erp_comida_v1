@@ -401,6 +401,7 @@ export function FiltroDesplegable({
   alCambiar,
   opciones,
   className = '',
+  accion = false,
 }: {
   etiqueta: string
   valor: string
@@ -409,6 +410,10 @@ export function FiltroDesplegable({
       `detalle` es la linea chica bajo el nombre (la categoria de un producto). */
   opciones: { valor: string; texto: string; contador?: number | null; detalle?: string }[]
   className?: string
+  /** No guarda un valor: elegir HACE algo ("Filtrar" agrega un filtro). La
+      pastilla dice solo su nombre y la lista no marca ninguna opcion; antes
+      mostraba "por…" con un ✓, como si "por…" fuera algo elegido. */
+  accion?: boolean
 }) {
   // CON BUSCADOR CUANDO LA LISTA ES LARGA. Un desplegable de doscientos
   // productos se recorre con el pulgar, pero se encuentra tecleando tres
@@ -417,11 +422,15 @@ export function FiltroDesplegable({
   // encuentra "Café". La neutra ("Todos") se queda siempre a la vista.
   const [busqueda, setBusqueda] = useState('')
   const buscable = opciones.length > 8
-  const sinFiltrar = opciones.length === 0 || valor === opciones[0].valor
-  const elegida = opciones.find((o) => o.valor === valor)
+  const sinFiltrar = accion || opciones.length === 0 || valor === opciones[0].valor
+  const elegida = accion ? undefined : opciones.find((o) => o.valor === valor)
+  // Una pastilla opcional sin nada puesto ("y por —") dice solo su nombre: el
+  // guion no informa nada y en el telefono cada pastilla corta es una fila
+  // menos antes del resultado.
+  const valorVisible = elegida && !(sinFiltrar && elegida.texto === '—') ? elegida.texto : ''
   const q = llano(busqueda.trim())
   const visibles = q
-    ? opciones.filter((o, i) => i === 0 || llano(o.texto).includes(q) || (o.detalle ? llano(o.detalle).includes(q) : false))
+    ? opciones.filter((o, i) => (i === 0 && !accion) || llano(o.texto).includes(q) || (o.detalle ? llano(o.detalle).includes(q) : false))
     : opciones
   return (
     <MenuAcciones
@@ -443,7 +452,7 @@ export function FiltroDesplegable({
       opciones={visibles.map((o) => ({
         texto: o.contador != null && o.contador > 0 ? `${o.texto} · ${o.contador}` : o.texto,
         ayuda: o.detalle,
-        marcada: o.valor === valor,
+        marcada: !accion && o.valor === valor,
         onElegir: () => {
           setBusqueda('')
           alCambiar(o.valor)
@@ -455,6 +464,7 @@ export function FiltroDesplegable({
           onClick={alternar}
           aria-haspopup="menu"
           aria-expanded={abierto}
+          aria-label={valorVisible ? `${etiqueta}: ${valorVisible}` : etiqueta}
           className={`vp-control inline-flex items-center gap-1.5 h-9 rounded-full px-3 text-sm shrink-0 select-none ${
             sinFiltrar ? 'text-neutral-600' : 'text-neutral-900'
           } ${className}`}
@@ -464,7 +474,7 @@ export function FiltroDesplegable({
               que la lista de abajo NO es todo lo que hay. Sin el, el dueño mira
               media mercancia y cree que le falta la otra mitad. */}
           {!sinFiltrar && <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-acento-500 shrink-0" />}
-          <span className="font-semibold truncate max-w-[11rem]">{elegida?.texto ?? ''}</span>
+          {valorVisible && <span className="font-semibold truncate max-w-[11rem]">{valorVisible}</span>}
           <span aria-hidden className="vp-flecha shrink-0 opacity-60" />
         </button>
       )}
