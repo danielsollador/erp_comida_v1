@@ -46,12 +46,20 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
       - "--log.level=WARN"
+      # Certificados cargados a mano (carpeta /docker/erp/certs de la VM): los
+      # de Let's Encrypt que traia Hostinger, para no quedar sin HTTPS el dia
+      # del cambio (6-oct: LE bloqueo una hora tras validar antes del DNS).
+      # Traefik usa uno de aqui si cubre el dominio; si la carpeta esta vacia,
+      # pide los suyos a Let's Encrypt como siempre.
+      - "--providers.file.directory=/certs"
+      - "--providers.file.watch=true"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
+      - /docker/erp/certs:/certs:ro
     security_opt:
       - no-new-privileges:true
     logging:

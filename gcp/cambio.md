@@ -1,5 +1,17 @@
 # El cambio a Google: paso a paso
 
+> **Hecho el 6-oct-2026, 02:13-02:50 (Caracas).** Conteos idénticos (329
+> pedidos, último id 374, 300 pagos, 23 cierres, 394 asientos). DNS en
+> Hostinger: A `@` y `savora` → 35.231.43.80 (TTL 300), AAAA de `@` borrado.
+> Lecciones para el próximo local:
+> - Poner los dominios reales en la VM (paso 5) **después** de que el DNS ya
+>   apunte (paso 6): si no, Traefik valida antes de tiempo, falla y Let's
+>   Encrypt bloquea ese nombre una hora.
+> - Revisar si hay registro **AAAA** (IPv6): la VM no tiene IPv6.
+> - Esa noche se cargaron en `/docker/erp/certs` los certificados que traía
+>   Hostinger (vencen el 14-dic-2026). **Pendiente:** vaciar esa carpeta y
+>   reiniciar Traefik para que Let's Encrypt emita los suyos y los renueve solo.
+
 Se hace **con Leider presente**, en un momento sin ventas (por la noche o antes
 de abrir). Dura unos 20 minutos. Hostinger queda encendido una semana más como
 respaldo; no se borra nada ese día.
