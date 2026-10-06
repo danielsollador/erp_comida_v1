@@ -4,12 +4,54 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from .. import contabilidad, costeo, impuestos, kardex, models, schemas
+from .. import contabilidad, costeo, impuestos, kardex, models, schemas, tasas
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/compras", tags=["compras"])
+
+
+PORCENTAJES_RETENCION = (0, 75, 100)
+
+
+def _siguiente_comprobante(db: Session, fecha: datetime.date) -> str:
+    """AAAAMM + correlativo de 8 digitos. El correlativo sigue de un mes al
+    otro (no vuelve a 1): asi un numero no se repite nunca."""
+    ultimos = [
+        c for (c,) in db.query(models.FacturaCompra.comprobante_retencion)
+        .filter(models.FacturaCompra.comprobante_retencion != "")
+        .all()
+        if c and len(c) == 14 and c.isdigit()
+    ]
+    siguiente = max((int(c[6:]) for c in ultimos), default=0) + 1
+    return f"{fecha.year:04d}{fecha.month:02d}{siguiente:08d}"
+
+
+def _retencion(db: Session, factura, rif: str, iva: float, iva_bs) -> dict:
+    """La retencion de IVA de una factura que se esta guardando, o nada si no
+    se es agente de retencion o la factura no trae IVA."""
+    if not impuestos.config(db).agente_retencion or iva <= 0:
+        return {}
+    proveedor = db.query(models.Proveedor).filter(models.Proveedor.rif == rif).first()
+    pct = factura.retencion_pct
+    if pct is None:
+        pct = proveedor.porcentaje_retencion if proveedor and proveedor.porcentaje_retencion is not None else 75.0
+    if pct not in PORCENTAJES_RETENCION:
+        raise HTTPException(status_code=400, detail="La retención de IVA es de 75 % o 100 % (o 0 si no aplica).")
+    # Se recuerda lo que se le retuvo a este proveedor para la proxima.
+    if proveedor is not None and factura.retencion_pct is not None and pct:
+        proveedor.porcentaje_retencion = pct
+    if not pct:
+        return {"retencion_pct": 0}
+    fecha = hoy()
+    return {
+        "retencion_pct": pct,
+        "iva_retenido": round(iva * pct / 100, 2),
+        "iva_retenido_bs": round(iva_bs * pct / 100, 2) if iva_bs is not None else None,
+        "comprobante_retencion": _siguiente_comprobante(db, fecha),
+        "fecha_retencion": fecha,
+    }
 
 
 def _exento_de(item, ingredientes: dict) -> bool:
@@ -49,6 +91,15 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
         proveedor_nombre=factura.proveedor_nombre,
         proveedor_rif=factura.proveedor_rif,
         fecha=factura.fecha,
+        fecha_emision=factura.fecha_emision,
+        numero_control=factura.numero_control or "",
+        moneda=factura.moneda or "$",
+        tasa_bcv=factura.tasa_bcv,
+        retencion_pct=factura.retencion_pct or 0,
+        iva_retenido=factura.iva_retenido or 0,
+        iva_retenido_bs=factura.iva_retenido_bs,
+        comprobante_retencion=factura.comprobante_retencion or "",
+        a_pagar=factura.a_pagar,
         categoria=factura.categoria,
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
@@ -87,7 +138,14 @@ def listar_facturas(rango: Rango = Depends(), db: Session = Depends(get_db)):
         .order_by(models.FacturaCompra.id.desc())
         .all()
     )
-    return [_a_schema(f) for f in facturas]
+    # Que facturas tienen la foto del papel, en una sola consulta.
+    con_foto = {
+        fid
+        for (fid,) in db.query(models.SoporteFactura.factura_id).filter(
+            models.SoporteFactura.factura_id.in_([f.id for f in facturas])
+        )
+    } if facturas else set()
+    return [_a_schema(f).model_copy(update={"tiene_soporte": f.id in con_foto}) for f in facturas]
 
 
 @router.post("/facturas", response_model=schemas.FacturaCompra)
@@ -117,6 +175,24 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             detail="El RIF del proveedor es obligatorio: letra (J/G/V/E/P/C) + 8 o 9 dígitos.",
         )
     factura_rif = impuestos.normalizar_rif(factura.proveedor_rif)
+    if factura.fecha_emision and factura.fecha_emision > hoy():
+        raise HTTPException(status_code=400, detail="La fecha de la factura no puede ser futura.")
+    if factura.moneda not in ("$", "Bs"):
+        raise HTTPException(status_code=400, detail="La moneda de la factura es $ o Bs.")
+    if factura.tasa_bcv is not None and factura.tasa_bcv <= 0:
+        raise HTTPException(status_code=400, detail="La tasa de cambio debe ser mayor que cero.")
+    # La tasa que pasa la factura a Bs en el Libro de Compras: la que manda
+    # quien carga (la del papel, o la BCV de su fecha que propone el
+    # formulario), o la BCV guardada de la fecha de emision.
+    tasa_bcv = factura.tasa_bcv
+    if tasa_bcv is None:
+        fila_tasa = tasas.tasa_al(db, factura.fecha_emision or (factura.fecha or ahora()).date())
+        tasa_bcv = fila_tasa.bcv if fila_tasa else None
+    if factura.moneda == "Bs" and tasa_bcv is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Una factura en bolívares necesita la tasa con la que se pasó a dólares.",
+        )
     # Antes de tocar stock ni costos: si falta el comprobante hay que rebotar
     # con la factura entera sin cargar, no a mitad de los renglones. A credito
     # no se pide, que todavia no ha salido plata.
@@ -141,7 +217,8 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
                 raise HTTPException(status_code=404, detail=f"Ingrediente {item.ingrediente_id} no existe")
             if item.cantidad <= 0:
                 raise HTTPException(status_code=400, detail="La cantidad de cada renglón debe ser mayor a cero")
-        base_bruta = round(sum(it.cantidad * it.costo_unitario for it in factura.items), 2)
+        bruta_exacta = sum(it.cantidad * it.costo_unitario for it in factura.items)
+        base_bruta = round(bruta_exacta, 2)
         ajuste = round(factura.recargo - factura.descuento, 2)
         base_imponible = round(base_bruta + ajuste, 2)
         if base_imponible <= 0:
@@ -170,6 +247,12 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             2,
         )
         iva_calculado = round(base_gravada * impuestos.tasa_iva(db) / 100, 2)
+        # Lo mismo sin redondear, para los Bs del libro (ver impuestos.montos_bs).
+        base_exacta = bruta_exacta + factura.recargo - factura.descuento
+        gravado_exacto = (
+            sum(it.cantidad * it.costo_unitario for it in factura.items if not _exento_de(it, ingredientes))
+            * (base_exacta / bruta_exacta if bruta_exacta else 1.0)
+        )
     else:
         if not factura.base_imponible or factura.base_imponible <= 0:
             raise HTTPException(status_code=400, detail="La base imponible debe ser mayor a cero")
@@ -185,6 +268,17 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         # que no es el que dice la factura.
         iva_calculado = factura.iva
         factor = 1.0
+        base_exacta = factura.base_imponible + factura.recargo - factura.descuento
+        gravado_exacto = impuestos.gravado_de(base_exacta, factura.iva, impuestos.tasa_iva(db))
+
+    gravado_bs = exento_bs = iva_bs = None
+    if tasa_bcv:
+        gravado_bs, exento_bs, iva_bs = impuestos.montos_bs(
+            base_exacta, gravado_exacto, iva_calculado, tasa_bcv,
+            iva_de_la_base=bool(factura.items), tasa_pct=impuestos.tasa_iva(db),
+        )
+
+    retencion = _retencion(db, factura, factura_rif, iva_calculado, iva_bs)
 
     es_credito = factura.forma_pago == "Credito"
     db_factura = models.FacturaCompra(
@@ -192,6 +286,7 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         proveedor_nombre=factura.proveedor_nombre,
         proveedor_rif=factura_rif,
         fecha=factura.fecha or ahora(),
+        fecha_emision=factura.fecha_emision,
         categoria=factura.categoria,
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
@@ -205,6 +300,13 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         fecha_vencimiento=factura.fecha_vencimiento if es_credito else None,
         fecha_pago=None if es_credito else (factura.fecha or ahora()),
         referencia_pago=referencia_pago,
+        numero_control=(factura.numero_control or "").strip(),
+        moneda=factura.moneda,
+        tasa_bcv=tasa_bcv,
+        gravado_bs=gravado_bs,
+        exento_bs=exento_bs,
+        iva_bs=iva_bs,
+        **retencion,
     )
     db.add(db_factura)
     db.flush()

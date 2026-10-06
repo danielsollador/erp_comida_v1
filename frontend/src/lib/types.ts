@@ -1085,7 +1085,22 @@ export type FacturaCompra = {
   numero_factura: string
   proveedor_nombre: string
   proveedor_rif: string | null
+  /** De registro: decide el período del Libro de Compras y la declaración. */
   fecha: string
+  /** La impresa en el papel (AAAA-MM-DD). null en las cargadas antes de existir. */
+  fecha_emision: string | null
+  numero_control: string
+  /** La moneda del papel; los montos de aquí siempre están en dólares. */
+  moneda: '$' | 'Bs'
+  /** Bs por $ con que pasa al Libro de Compras. null en las de antes. */
+  tasa_bcv: number | null
+  /** Retención de IVA practicada (agente de retención). */
+  retencion_pct: number
+  iva_retenido: number
+  iva_retenido_bs: number | null
+  comprobante_retencion: string
+  /** Lo que se le paga al proveedor: total menos lo retenido. */
+  a_pagar: number
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
   forma_pago: 'Efectivo' | 'Banco' | 'Credito'
   /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
@@ -1103,10 +1118,181 @@ export type FacturaCompra = {
   /** El comprobante con que se le pagó al proveedor. Vacío si fue en efectivo. */
   referencia_pago: string
   items: LineaFactura[]
+  /** Si tiene la foto del papel enganchada. */
+  tiene_soporte?: boolean
+}
+
+/** Un renglón tal como viene impreso: todavía no es una mercancía nuestra. */
+export type RenglonLeido = {
+  descripcion: string
+  cantidad: number | null
+  /** La unidad del papel ("UND", "BULTO"), que rara vez es la nuestra. */
+  unidad: string
+  /** Sin IVA, en la moneda de la factura. */
+  precio_unitario: number | null
+  subtotal: number | null
+  /** null = el papel no lo marca. */
+  exento: boolean | null
+}
+
+/** Lo que el lector sacó de la foto: una propuesta, no una factura. */
+export type BorradorFactura = {
+  proveedor_nombre: string
+  proveedor_rif: string
+  numero_factura: string
+  numero_control: string
+  /** A nombre de quién está la factura (el RIF del cliente en el papel). */
+  cliente_rif: string
+  /** AAAA-MM-DD, la del papel. */
+  fecha: string | null
+  moneda: '$' | 'Bs' | ''
+  /** La tasa (Bs por $) que imprime el papel, si la imprime. */
+  tasa_cambio: number | null
+  renglones: RenglonLeido[]
+  recargo: number
+  descuento: number
+  /** Los totales IMPRESOS, para ver si lo que se va a guardar cuadra. */
+  subtotal: number | null
+  iva: number | null
+  total: number | null
+  advertencias: string[]
+}
+
+export type LecturaFactura = {
+  soporte_id: number
+  lector: string
+  borrador: BorradorFactura | null
+  /** Si no se pudo leer, por qué. La foto queda guardada igual. */
+  error: string
+}
+
+export type AvisoPrecio = {
+  /** Posición del renglón en el formulario. */
+  indice: number
+  ingrediente_id: number
+  costo_unitario: number
+  referencia: number
+  /** "compras": mediana de las últimas; "promedio": la ficha, si nunca se compró. */
+  base: 'compras' | 'promedio'
+  muestras: number
+  variacion_pct: number
+  /** "unidad": más parece un error de unidad que un cambio de precio. */
+  nivel: 'normal' | 'alto' | 'bajo' | 'unidad'
+  mensaje: string
+}
+
+/** Lo que ese proveedor ya trajo antes: a qué mercancía nuestra corresponde. */
+export type SugerenciaRenglon = {
+  indice: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  /** La nuestra. */
+  unidad: string
+  /** Cuántas unidades nuestras trae una del papel (1 BULTO = 20 kg → 20). */
+  factor: number
+  unidad_papel: string
+  descripcion_recordada: string
+  /** Cuántas facturas lo confirmaron. */
+  veces: number
+  /** false = no es el mismo texto sino uno muy parecido. */
+  exacta: boolean
+}
+
+export type Equivalencia = {
+  id: number
+  proveedor_rif: string
+  /** Como venía en la última factura. */
+  proveedor_nombre: string
+  descripcion: string
+  unidad_papel: string
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  factor: number
+  veces: number
+  actualizado: string
+}
+
+/** Un plato que queda en problema con el precio nuevo de su mercancía. */
+export type ProductoAfectado = {
+  nombre: string
+  precio: number
+  margen_antes_pct: number | null
+  margen_despues_pct: number | null
+  precio_sugerido: number | null
+  a_perdida: boolean
+}
+
+/** Algo que llegó más caro en una factura. */
+export type AlertaPrecio = {
+  id: number
+  fecha: string
+  factura_id: number
+  numero_factura: string
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  proveedor_nombre: string
+  costo_anterior: number
+  costo_nuevo: number
+  variacion_pct: number
+  /** "proveedor": contra lo que ese proveedor cobraba; "compras": proveedor nuevo. */
+  base: 'proveedor' | 'compras'
+  /** "unidad": un salto que parece error de unidad, no de precio. */
+  tipo: 'subida' | 'unidad'
+  productos: ProductoAfectado[]
+  alternativa_proveedor: string
+  alternativa_costo: number | null
+  alternativa_fecha: string | null
+  visto: boolean
+  visto_por: string
+  visto_en: string | null
+}
+
+/** Lo de despues de guardar una factura. Montos en la MISMA moneda que el papel. */
+export type CuerpoCompletarFactura = {
+  soporte_id: number | null
+  proveedor_rif: string
+  proveedor_nombre: string
+  renglones: {
+    descripcion: string
+    unidad: string
+    cantidad_papel: number | null
+    precio_papel: number | null
+    ingrediente_id: number
+    cantidad: number
+    costo_unitario: number
+  }[]
+}
+
+export type RevisionFactura = {
+  duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
+  precios: AvisoPrecio[]
+  /** Por qué ese RIF no puede ser correcto (dígito verificador). Vacío si cuadra. */
+  rif_aviso: string
+  /** Un RIF conocido que difiere en un solo carácter del leído. */
+  rif_sugerido: { rif: string; nombre: string } | null
 }
 
 export type ConfiguracionFiscal = {
   tasa_iva: number
+  /** Cabecera del Libro de Compras (opcionales: solo Impuestos los usa). */
+  razon_social?: string
+  rif?: string
+  direccion?: string
+  /** Contribuyente especial: retiene el IVA de sus proveedores. */
+  agente_retencion?: boolean
+}
+
+/** La tasa con que se pasa a Bs una factura de esa fecha. */
+export type TasaDeUnaFecha = {
+  pedida: string
+  /** El día de la tasa usada: puede ser anterior (fin de semana, feriado). */
+  fecha: string | null
+  /** null: no hay tasa guardada hasta esa fecha. */
+  bcv: number | null
+  /** "manual": la fijó el dueño, no es la del BCV. */
+  origen: string
 }
 
 export type Proveedor = {
@@ -1118,6 +1304,8 @@ export type Proveedor = {
   contacto: string
   nota: string
   activo: boolean
+  /** % de su IVA que se le retiene (agente de retención): el último usado. */
+  porcentaje_retencion?: number
 }
 
 export type FilaLibroVentas = {
@@ -1125,9 +1313,29 @@ export type FilaLibroVentas = {
   fecha: string
   numero_factura: string
   cliente: string
+  /** En dólares, como el resto del ERP y la declaración de IVA. */
   base_imponible: number
   iva: number
   total: number
+  /** FAC o NC (en negativo); RET: un comprobante de retención que llegó en
+   * este mes por una factura de otro. */
+  tipo: 'FAC' | 'NC' | 'RET'
+  numero_nota: string
+  factura_afectada: string
+  rif: string
+  numero_control: string
+  /** En bolívares, a la tasa BCV congelada al cobrar; null si no hay tasa. */
+  tasa_bcv: number | null
+  gravado_bs: number | null
+  exento_bs: number | null
+  iva_bs: number | null
+  total_bs: number | null
+  /** La retención de IVA que hizo el cliente (contribuyente especial). */
+  fecha_retencion: string | null
+  comprobante_retencion: string
+  iva_retenido_bs: number | null
+  /** Retenido al cobrar, esperando el comprobante (no se descuenta aún). */
+  retencion_pendiente_bs: number | null
 }
 
 export type LibroVentas = {
@@ -1140,17 +1348,76 @@ export type LibroVentas = {
   total_general: number
   ventas_no_facturadas: number
   monto_no_facturado: number
+  total_exento_bs: number
+  total_gravado_bs: number
+  total_iva_bs: number
+  total_bs: number
+  /** Filas sin monto en Bs. */
+  sin_tasa: number
+  total_retenido_bs: number
 }
 
 export type FilaLibroCompras = {
   factura_id: number
+  /** De registro: la que pone la factura en este libro. */
   fecha: string
+  /** La del papel (AAAA-MM-DD); la de registro si no se cargó. */
+  fecha_emision: string
   numero_factura: string
   proveedor_nombre: string
   proveedor_rif: string | null
+  /** En dólares, como el resto del ERP y la declaración de IVA. */
   base_imponible: number
   iva: number
   total: number
+  /** FAC o NC: la nota de crédito es su propia fila, en negativo. */
+  tipo: 'FAC' | 'NC'
+  numero_nota: string
+  factura_afectada: string
+  numero_control: string
+  moneda: '$' | 'Bs'
+  /** En bolívares; null si no hay tasa para pasarla. */
+  tasa_bcv: number | null
+  /** La tasa no se congeló al guardar: se tomó la guardada de su fecha. */
+  tasa_estimada: boolean
+  exento_bs: number | null
+  gravado_bs: number | null
+  iva_bs: number | null
+  total_bs: number | null
+  fecha_retencion: string | null
+  comprobante_retencion: string
+  iva_retenido_bs: number | null
+}
+
+/** Una retención practicada: una línea del TXT de la quincena. */
+export type RetencionIva = {
+  factura_id: number
+  fecha_factura: string
+  fecha_retencion: string
+  proveedor_nombre: string
+  proveedor_rif: string
+  numero_factura: string
+  numero_control: string
+  comprobante: string
+  porcentaje: number
+  total_bs: number | null
+  base_bs: number | null
+  exento_bs: number | null
+  iva_bs: number | null
+  retenido_bs: number | null
+}
+
+export type RetencionesQuincena = {
+  anio: number
+  mes: number
+  quincena: 1 | 2
+  etiqueta: string
+  retenciones: RetencionIva[]
+  total_retenido_bs: number
+  total_retenido: number
+  sin_tasa: number
+  enterada: boolean
+  fecha_enterada: string | null
 }
 
 export type LibroCompras = {
@@ -1160,6 +1427,13 @@ export type LibroCompras = {
   total_base: number
   total_iva: number
   total_general: number
+  total_exento_bs: number
+  total_gravado_bs: number
+  total_iva_bs: number
+  total_bs: number
+  /** Filas sin monto en Bs. */
+  sin_tasa: number
+  tasa_iva: number
 }
 
 export type DeclaracionIva = {
@@ -1176,6 +1450,18 @@ export type DeclaracionIva = {
   iva_a_pagar: number
   /** Lo que sobra y pasa al mes siguiente. */
   credito_excedente: number
+  /** Lo declarado al SENIAT, en Bs. null en declaraciones de antes. */
+  iva_debito_bs: number | null
+  iva_credito_bs: number | null
+  credito_arrastrado_bs: number | null
+  credito_usado_bs: number | null
+  iva_a_pagar_bs: number | null
+  credito_excedente_bs: number | null
+  /** Retenciones de IVA que hicieron los clientes: bajan lo que se paga. */
+  retenciones_bs: number | null
+  retenciones_arrastradas_bs: number | null
+  retenciones_usadas_bs: number | null
+  retenciones_excedente_bs: number | null
   fecha_declaracion: string
   pagada: boolean
   fecha_pago: string | null
@@ -1188,6 +1474,11 @@ export type PeriodoPendiente = {
   etiqueta: string
   iva_debito: number
   iva_credito: number
+  iva_debito_bs: number
+  iva_credito_bs: number
+  retenciones_bs: number
+  /** Documentos del mes sin tasa: hasta cargarla no se puede declarar. */
+  sin_tasa: number
 }
 
 export type ResumenIva = {
@@ -1196,6 +1487,9 @@ export type ResumenIva = {
   iva_debito: number
   iva_credito: number
   iva_a_pagar: number
+  iva_debito_bs: number
+  iva_credito_bs: number
+  iva_a_pagar_bs: number
 }
 
 // ------------------------------------------------------------------ acceso

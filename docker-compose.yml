@@ -86,6 +86,13 @@ services:
       # respaldo. Sin esto los respaldos viven en el mismo volumen que la base.
       ERP_BACKUP_MIRROR_DIR: ${ERP_BACKUP_MIRROR_DIR:-}
       ERP_CORS_ORIGINS: ${ERP_CORS_ORIGINS:-*}
+      # Facturas de compra desde foto o PDF. Vacio = apagado (el boton no
+      # aparece). Para encenderlo: ERP_LECTOR_FACTURAS=gemini y la clave en
+      # el .env del servidor.
+      ERP_LECTOR_FACTURAS: ${ERP_LECTOR_FACTURAS:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ERP_GEMINI_MODELO: ${ERP_GEMINI_MODELO:-}
+      ERP_GEMINI_MODELO_RESPALDO: ${ERP_GEMINI_MODELO_RESPALDO:-}
       TZ: ${TZ:-America/Caracas}
     volumes:
       # Respaldos (pg_dump) y estado: se puede reconstruir la imagen mil veces

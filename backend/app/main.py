@@ -19,6 +19,9 @@ from .routers import (
     autorizaciones as autorizaciones_router,
     caja,
     compras,
+    compras_alertas,
+    compras_equivalencias,
+    compras_lectura,
     config,
     contabilidad as contabilidad_router,
     impuestos as impuestos_router,
@@ -230,6 +233,9 @@ app.include_router(respaldos.router)
 app.include_router(tasas.router)
 app.include_router(contabilidad_router.router)
 app.include_router(compras.router)
+app.include_router(compras_lectura.router)
+app.include_router(compras_equivalencias.router)
+app.include_router(compras_alertas.router)
 app.include_router(proveedores.router)
 app.include_router(impuestos_router.router)
 

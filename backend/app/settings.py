@@ -76,6 +76,52 @@ HUB_URL = os.getenv("ERP_HUB_URL", "").strip().rstrip("/")
 # maquina de desarrollo lo enciende (docker-compose.dev.yml).
 SEMBRAR_DEMO = os.getenv("ERP_SEMBRAR_DEMO", "0").strip().lower() in ("1", "true", "yes")
 
+# Quien lee las fotos de facturas de compra (ver `lectura_facturas.py`):
+#   ""       apagado -- el boton "Cargar desde foto" ni aparece. Por defecto.
+#   "prueba" devuelve siempre la misma factura inventada, sin llamar a nadie:
+#            para desarrollar y probar el formulario sin gastar un centavo.
+#   "gemini" la API de Google Gemini (necesita GEMINI_API_KEY). Es el que se
+#            usa porque opera en Venezuela; Claude y OpenAI no.
+# Apagado por defecto por la misma razon que la demo: que una imagen nueva en
+# produccion no empiece a mandar facturas a ningun lado sin decidirlo.
+LECTOR_FACTURAS = os.getenv("ERP_LECTOR_FACTURAS", "").strip().lower()
+
+
+def _del_env_local(nombre: str) -> str:
+    """Un valor del `.env` de la raiz del repo, para correr sin Docker.
+
+    En Docker ese archivo no entra en la imagen (el contexto es `backend/`):
+    alli las variables llegan por el compose. Fuera de Docker es la forma de
+    tener la clave en la laptop sin escribirla en ningun archivo versionado
+    (`.env` esta en el .gitignore).
+    """
+    ruta = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"
+    )
+    try:
+        with open(ruta, encoding="utf-8-sig") as f:
+            for linea in f:
+                clave, _, valor = linea.strip().partition("=")
+                if clave.strip() == nombre:
+                    return valor.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
+
+
+# La clave de la API de Gemini. Es un secreto: va en el `.env`, nunca en el
+# codigo ni en el compose versionado.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or _del_env_local("GEMINI_API_KEY")
+# Leen dos modelos en cascada (medido con 21 facturas reales, 2026-10-01):
+# el PRINCIPAL, rapido y barato, lee todas; si su lectura no pasa los
+# controles (RIF, fecha, sumas) o Google lo tiene saturado, la relee el de
+# RESPALDO, mas lento y preciso. Juntos acertaron mas que cada uno solo.
+# Cambiarlos no requiere tocar codigo.
+GEMINI_MODELO = os.getenv("ERP_GEMINI_MODELO", "").strip() or "gemini-3.5-flash-lite"
+# "-" apaga la segunda lectura.
+_respaldo = os.getenv("ERP_GEMINI_MODELO_RESPALDO", "").strip()
+GEMINI_MODELO_RESPALDO = "" if _respaldo == "-" else (_respaldo or "gemini-3.8-flash")
+
 # Siembra del primer usuario, OPCIONAL. Sin esto, la primera visita al ERP
 # pide crear el administrador desde el navegador (modo instalacion).
 APP_USER = os.getenv("ERP_APP_USER", "admin").strip() or "admin"

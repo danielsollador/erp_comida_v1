@@ -14,6 +14,15 @@ import pytest
 from app import models
 
 
+@pytest.fixture(autouse=True)
+def _con_tasa_de_cambio(db):
+    """Declarar el IVA exige bolivares, y sin tasa de cambio no hay como
+    pasar a Bs las ventas y compras de estas pruebas: una tasa vieja vale
+    para todas sus fechas."""
+    db.merge(models.TasaCambio(fecha=datetime.date(2000, 1, 1), bcv=40.0, origen="auto"))
+    db.commit()
+
+
 def saldo(db, codigo):
     cuenta = db.query(models.CuentaContable).filter_by(codigo=codigo).first()
     movs = db.query(models.MovimientoContable).filter_by(cuenta_id=cuenta.id).all()

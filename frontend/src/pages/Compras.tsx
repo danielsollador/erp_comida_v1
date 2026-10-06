@@ -1,58 +1,71 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import CampoSugerido from '../components/CampoSugerido'
+import { AlertasAlGuardar, BandejaAlertas } from '../components/AlertasPrecio'
+import { MemoriaProveedores, VerSoporte } from '../components/FacturaDesdeFoto'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import BarraFiltros from '../components/BarraFiltros'
-import { CasillaConUnidad } from '../components/Cantidad'
-import { convertirTexto, factorEntre } from '../lib/unidades'
-import { useRango } from '../lib/fechas'
-import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { nombre } from '../lib/palabras'
+import { useRango } from '../lib/fechas'
+import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { Boton, Campo, Modal, Pagina, Pastilla, Vacio } from '../components/ui'
-import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
-import { useMoneda } from '../lib/moneda'
-import { necesitaReferencia, pedirReferencia } from '../lib/pagos'
-import type { ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor } from '../lib/types'
-
-const MONEDAS_DE_CARGA = ['$', 'Bs'] as const
-
-// El valor que viaja y se guarda NO cambia: "Insumos" es la clave con la que
-// la contabilidad decide a que cuenta va cada compra, y la llevan las facturas
-// que ya estan cargadas. Lo que cambia es la palabra que se lee: quien carga
-// una factura de proveedor compra mercancia, no "insumos" -- esa palabra es de
-// Inventario, donde lo mismo ya entro al deposito y va a una receta.
-const CATEGORIAS = [
-  { valor: 'Insumos', texto: 'Mercancía' },
-  { valor: 'Servicios', texto: 'Servicios' },
-  { valor: 'Activos', texto: 'Activos' },
-  { valor: 'Otros', texto: 'Otros' },
-]
-const FORMAS_PAGO = ['Efectivo', 'Efectivo $', 'Banco', 'Credito']
-
-/** Como se lee una categoria guardada. Es el mismo mapa, al reves. */
-const TEXTO_CATEGORIA = Object.fromEntries(CATEGORIAS.map((c) => [c.valor, c.texto]))
-
-type Linea = {
-  ingrediente_id: number
-  /** Como se escribio: en `vista` (kg ⇄ g). Se guarda en la unidad de la ficha. */
-  cantidad: string
-  vista?: string
-  costo_unitario: string
-  /** null = lo que diga la ficha de la mercancía; true/false = lo dice ESTA factura. */
-  exento: boolean | null
-}
+import { TEXTO_CATEGORIA } from '../lib/compras'
+import CargarFactura from './partes/compras/CargarFactura'
+import { cuantosPendientes, procesarPendientes } from '../lib/pendientesCompras'
+import { pedirReferencia } from '../lib/pagos'
+import type {
+  AlertaPrecio,
+  ConfiguracionFiscal,
+  FacturaCompra,
+  Ingrediente,
+  Proveedor,
+} from '../lib/types'
 
 const SECCIONES = [
   { id: 'facturas', texto: 'Facturas' },
   { id: 'nueva', texto: 'Cargar factura' },
+  { id: 'alertas', texto: 'Alertas' },
   { id: 'proveedores', texto: 'Proveedores' },
 ]
 
 export default function Compras() {
   const [seccion, irA] = useSeccion(SECCIONES)
+  // Las alertas de precio sin ver, en el nombre de la pestaña: es lo que hace
+  // que el dueño se entere aunque la factura la haya cargado otro.
+  const [alertasPendientes, setAlertasPendientes] = useState(0)
+  const [alertasAlGuardar, setAlertasAlGuardar] = useState<AlertaPrecio[]>([])
+  const secciones = useMemo(
+    () =>
+      SECCIONES.map((s) =>
+        s.id === 'alertas' && alertasPendientes > 0 ? { ...s, texto: `Alertas (${alertasPendientes})` } : s,
+      ),
+    [alertasPendientes],
+  )
+  const alCambiarPendientes = useCallback((n: number) => setAlertasPendientes(n), [])
+  // Facturas guardadas desde ESTE dispositivo a las que les falta la foto, la
+  // memoria o las alertas porque se cayo la conexion justo despues.
+  const [porCompletar, setPorCompletar] = useState(cuantosPendientes())
+  const reintentarPendientes = useCallback(async () => {
+    // El servidor termina lo que haya quedado a medias, de cualquier equipo.
+    if ((await procesarPendientes()) > 0) {
+      api
+        .listarAlertasPrecio(true)
+        .then((l) => setAlertasPendientes(l.length))
+        .catch(() => undefined)
+    }
+    setPorCompletar(cuantosPendientes())
+  }, [])
+  useEffect(() => {
+    // Al abrir Compras, lo que quedo de antes; y cada vez que vuelve la red.
+    const t = setTimeout(reintentarPendientes, 0)
+    window.addEventListener('online', reintentarPendientes)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('online', reintentarPendientes)
+    }
+  }, [reintentarPendientes])
   // Tres meses: una factura a credito se paga a 30 o 60 dias, y hay que verla.
   const [rango, setRango] = useRango('90d')
   const [facturas, setFacturas] = useState<FacturaCompra[]>([])
@@ -87,48 +100,12 @@ export default function Compras() {
   const [error, setError] = useState('')
   const dialogo = useDialogo()
 
-  const { tasa } = useMoneda()
-  const [numeroFactura, setNumeroFactura] = useState('')
-  const [proveedor, setProveedor] = useState('')
-  const [rif, setRif] = useState('')
-  // La factura del proveedor puede venir en cualquiera de las dos: el que
-  // vende insumos suele cobrar en dolares, pero el de servicios (luz, gas,
-  // alquiler) casi siempre factura en bolivares.
-  const [monedaCarga, setMonedaCarga] = useState<(typeof MONEDAS_DE_CARGA)[number]>('$')
-  const [categoria, setCategoria] = useState(CATEGORIAS[0].valor)
-  const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0])
-  // El comprobante de con qué se le pagó al proveedor. Solo cuando la factura
-  // se carga ya pagada y no en efectivo (a crédito todavía no ha salido plata).
-  const [referenciaPago, setReferenciaPago] = useState('')
-  const [descripcion, setDescripcion] = useState('')
-
-  // Con insumos: renglones por ingrediente, que reabastecen el stock solos.
-  const [lineas, setLineas] = useState<Linea[]>([
-    { ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null },
-  ])
-  // Lo que el proveedor suma o rebaja sobre el total: flete, recargo por pagar
-  // a credito, descuento por volumen. Van en positivo los dos.
-  const [recargo, setRecargo] = useState('')
-  const [descuentoFactura, setDescuentoFactura] = useState('')
-  // Cargar una factura no decia nada al salir bien: el formulario se limpiaba
-  // y ya. Eso deja a quien la cargo sin saber si entro, y la unica salida era
-  // ir a la lista a buscarla.
-  const [exito, setExito] = useState('')
-  // Sin insumos (servicios, activos...): un monto suelto, como antes.
-  const [base, setBase] = useState('')
-  const [iva, setIva] = useState('')
-  const [fechaVencimiento, setFechaVencimiento] = useState('')
-  // Cuantos meses dura el equipo. Define la cuota de depreciacion mensual.
-  const [vidaUtil, setVidaUtil] = useState('60')
+  const [verSoporte, setVerSoporte] = useState<number | null>(null)
 
   // Con que forma de pago se va a saldar cada factura a credito pendiente -
   // una por fila, para el boton "Marcar pagada" de cuentas por pagar.
   const [liquidacion, setLiquidacion] = useState<Record<number, string>>({})
   const [pagando, setPagando] = useState<number | null>(null)
-
-  const esInsumos = categoria === 'Insumos'
-  const esCredito = formaPago === 'Credito'
-  const esActivo = categoria === 'Activos'
 
   useEffect(() => {
     cargar()
@@ -139,15 +116,10 @@ export default function Compras() {
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
     api.configFiscal().then(setFiscal)
     api.listarProveedores().then(setProveedores)
-  }
-
-  // Elegir un proveedor del directorio completa nombre y RIF solos, para no
-  // volver a tipearlos cada vez con el riesgo de que un error de tecleo
-  // separe "Carnes SA" de "Carnes S.A." en dos proveedores para siempre.
-  function elegirProveedorConocido(nombre: string) {
-    setProveedor(nombre)
-    const p = proveedores.find((x) => x.nombre === nombre)
-    if (p?.rif) setRif(p.rif)
+    api
+      .listarAlertasPrecio(true)
+      .then((l) => setAlertasPendientes(l.length))
+      .catch(() => undefined)
   }
 
   async function guardarProveedor(datos: Omit<Proveedor, 'id' | 'activo'>) {
@@ -173,232 +145,6 @@ export default function Compras() {
       alTerminar: () => void api.listarProveedores().then(setProveedores),
       alFallar: (e) => setError(e instanceof Error ? e.message : 'No se pudo'),
     })
-  }
-
-  /** La cantidad de un renglon en la unidad de su mercancia (se pudo escribir en g). */
-  const cantidadDe = useCallback(
-    (l: Linea) => {
-      const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
-      const n = Number(String(l.cantidad).replace(',', '.')) || 0
-      return ing && l.vista ? n / factorEntre(ing.unidad, l.vista) : n
-    },
-    [ingredientes],
-  )
-
-  const baseLineas = useMemo(
-    () =>
-      lineas.reduce((sum, l) => {
-        const cantidad = cantidadDe(l)
-        const costo = Number(l.costo_unitario) || 0
-        return sum + cantidad * costo
-      }, 0),
-    [lineas, cantidadDe],
-  )
-  const recargoNum = Number(recargo) || 0
-  const descuentoNum = Number(descuentoFactura) || 0
-  // La base que de verdad se va a guardar: los renglones, mas el recargo,
-  // menos el descuento.
-  const baseFinal = Math.round((baseLineas + recargoNum - descuentoNum) * 100) / 100
-  // Solo de vista previa: el numero real lo calcula el backend con el mismo
-  // criterio al guardar. El recargo y el descuento se reparten entre los
-  // renglones, asi que tambien mueven el IVA.
-  const ivaLineas = useMemo(() => {
-    const bruta = lineas.reduce((sum, l) => sum + cantidadDe(l) * (Number(l.costo_unitario) || 0), 0)
-    const gravada = lineas.reduce((sum, l) => {
-      const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
-      const exento = l.exento === null ? Boolean(ing?.exento) : l.exento
-      if (exento) return sum
-      return sum + cantidadDe(l) * (Number(l.costo_unitario) || 0)
-    }, 0)
-    const factor = bruta > 0 ? (bruta + recargoNum - descuentoNum) / bruta : 1
-    return Math.round(gravada * factor * (fiscal.tasa_iva / 100) * 100) / 100
-  }, [lineas, ingredientes, fiscal.tasa_iva, recargoNum, descuentoNum, cantidadDe])
-
-  function actualizarLinea(i: number, campo: keyof Linea, valor: string) {
-    setLineas((prev) =>
-      prev.map((l, idx) => (idx === i ? { ...l, [campo]: campo === 'ingrediente_id' ? Number(valor) : valor } : l)),
-    )
-  }
-
-  function agregarLinea() {
-    setLineas((prev) => [...prev, { ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null }])
-  }
-
-  function quitarLinea(i: number) {
-    setLineas((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev))
-  }
-
-  // Al escribir un costo unitario, se rellena con lo que ya cuesta ese insumo
-  // hoy en el sistema - el dueno solo corrige si el proveedor le vendio distinto.
-  async function elegirIngrediente(i: number, ingredienteId: string) {
-    if (ingredienteId === 'nuevo') {
-      // Sin esto, un insumo que llega por primera vez (un proveedor nuevo
-      // trae algo que no estaba en el menu todavia) obligaba a salir de
-      // Compras, ir a Inventario a crearlo, y volver a cargar la factura
-      // desde cero.
-      const datos = await dialogo.pedir({
-        titulo: 'Mercancía nueva',
-        campos: [
-          { nombre: 'nombre', etiqueta: 'Nombre', placeholder: 'Ej. Pollo' },
-          {
-            nombre: 'unidad',
-            etiqueta: 'Unidad',
-            tipo: 'opciones',
-            valor: 'kg',
-            // Kilo y litro: el gramo y el mililitro los maneja el sistema.
-            opciones: ['kg', 'lt', 'unidad', 'paquete'].map((u) => ({ valor: u, texto: u })),
-          },
-        ],
-      })
-      if (!datos) return
-      const creado = await api.crearIngrediente({
-        nombre: datos.nombre,
-        unidad: datos.unidad,
-        stock_actual: 0,
-        stock_minimo: 0,
-        stock_objetivo: 0,
-        costo_unitario: 0,
-        rendimiento_pct: 100,
-        // Sin clasificar: la mercancia nace aqui de urgencia, cargando una
-        // factura, y ese no es el momento de pararse a pensar el cajon del
-        // deposito. Se le pone despues desde Inventario.
-        categoria_id: null,
-        tipo: 'insumo',
-        activo: true,
-        exento: false,
-      })
-      setIngredientes((prev) => [...prev, creado])
-      setLineas((prev) => prev.map((l, idx) => (idx === i ? { ...l, ingrediente_id: creado.id } : l)))
-      return
-    }
-
-    const ing = ingredientes.find((x) => x.id === Number(ingredienteId))
-    setLineas((prev) =>
-      prev.map((l, idx) =>
-        idx === i
-          ? {
-              ...l,
-              ingrediente_id: Number(ingredienteId),
-              costo_unitario: l.costo_unitario || (ing ? String(ing.costo_unitario) : ''),
-            }
-          : l,
-      ),
-    )
-  }
-
-  // Al escribir la base (solo cuando NO es Insumos), se sugiere el IVA con la
-  // tasa vigente - el usuario puede corregirlo si la factura trae otro monto.
-  function actualizarBase(valor: string) {
-    setBase(valor)
-    const num = Number(valor)
-    if (Number.isFinite(num) && num > 0) {
-      setIva((Math.round(num * (fiscal.tasa_iva / 100) * 100) / 100).toString())
-    }
-  }
-
-  function limpiarFormulario() {
-    setNumeroFactura('')
-    setProveedor('')
-    setRif('')
-    setDescripcion('')
-    setLineas([{ ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null }])
-    setBase('')
-    setIva('')
-    setRecargo('')
-    setDescuentoFactura('')
-    setFechaVencimiento('')
-    setMonedaCarga('$')
-  }
-
-  async function agregarFactura() {
-    setError('')
-    setExito('')
-    if (!numeroFactura.trim() || !proveedor.trim()) {
-      setError('Completa al menos el número de factura y el proveedor')
-      return
-    }
-    // Sin RIF el Libro de Compras queda incompleto para el SENIAT. El backend
-    // valida el formato exacto; aca solo se evita el viaje si esta vacio.
-    if (!rif.trim()) {
-      setError('El RIF del proveedor es obligatorio')
-      return
-    }
-    // Todo el sistema costea en dolares (recetas, margenes, balance). Cargar
-    // en bolivares es una comodidad de tecleo -la factura del gas casi
-    // siempre viene en Bs-, no una segunda moneda que el resto del ERP tenga
-    // que entender: se convierte aca, una sola vez, a la tasa del dia.
-    if (monedaCarga === 'Bs' && !tasa?.bcv) {
-      setError('No se pudo obtener la tasa del día. Intenta de nuevo o carga en dólares.')
-      return
-    }
-    const aUsd = (monto: number) => (monedaCarga === 'Bs' ? monto / (tasa!.bcv as number) : monto)
-
-    try {
-      if (esInsumos) {
-        const items = lineas
-          .filter((l) => l.ingrediente_id && cantidadDe(l) > 0 && Number(l.costo_unitario) >= 0)
-          .map((l) => ({
-            ingrediente_id: l.ingrediente_id,
-            cantidad: Number(cantidadDe(l).toFixed(6)),
-            costo_unitario: aUsd(Number(l.costo_unitario)),
-            // Solo viaja cuando ESTA factura contradice a la ficha; si no, se
-            // omite y manda lo que diga la mercancía.
-            ...(l.exento === null ? {} : { exento: l.exento }),
-          }))
-        if (items.length === 0) {
-          setError('Agrega al menos un renglón con cantidad y costo')
-          return
-        }
-        const guardada = await api.crearFacturaCompra({
-          numero_factura: numeroFactura.trim(),
-          proveedor_nombre: proveedor.trim(),
-          proveedor_rif: rif.trim(),
-          categoria,
-          forma_pago: formaPago,
-          descripcion: descripcion.trim(),
-          items,
-          iva: ivaLineas,
-          recargo: aUsd(recargoNum),
-          descuento: aUsd(descuentoNum),
-          fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
-          referencia_pago: referenciaPago.trim() || undefined,
-        })
-        setExito(
-          `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
-            `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}). ` +
-            `${guardada.items.length} renglón(es) al depósito.`,
-        )
-      } else {
-        const baseNum = Number(base)
-        if (!Number.isFinite(baseNum) || baseNum <= 0) {
-          setError('La base imponible debe ser mayor a cero')
-          return
-        }
-        const guardada = await api.crearFacturaCompra({
-          numero_factura: numeroFactura.trim(),
-          proveedor_nombre: proveedor.trim(),
-          proveedor_rif: rif.trim(),
-          categoria,
-          forma_pago: formaPago,
-          descripcion: descripcion.trim(),
-          base_imponible: aUsd(baseNum),
-          iva: aUsd(Number(iva) || 0),
-          recargo: aUsd(recargoNum),
-          descuento: aUsd(descuentoNum),
-          fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
-          vida_util_meses: esActivo ? Number(vidaUtil) || 60 : undefined,
-          referencia_pago: referenciaPago.trim() || undefined,
-        })
-        setExito(
-          `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
-            `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}).`,
-        )
-      }
-      limpiarFormulario()
-      cargar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo cargar la factura')
-    }
   }
 
   async function notaCredito(f: FacturaCompra) {
@@ -524,7 +270,8 @@ export default function Compras() {
       const vb = b.fecha_vencimiento ? new Date(b.fecha_vencimiento).getTime() : Infinity
       return va - vb
     })
-  const totalPendiente = pendientes.reduce((sum, f) => sum + f.total, 0)
+  // Lo que se le debe al proveedor: sin el IVA retenido, que es del SENIAT.
+  const totalPendiente = pendientes.reduce((sum, f) => sum + (f.a_pagar ?? f.total), 0)
 
   function diasVencida(f: FacturaCompra): number | null {
     if (!f.fecha_vencimiento) return null
@@ -534,11 +281,14 @@ export default function Compras() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <NavBar titulo="Compras" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
+      <NavBar titulo="Compras" secciones={secciones} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina>
         {seccion === 'facturas' && <BarraFiltros rango={rango} alCambiar={setRango} />}
         {seccion === 'facturas' && (
           <>
+        {/* Borrar o pagar una factura puede fallar: antes el mensaje solo se
+            veia en "Cargar factura", donde nadie lo estaba mirando. */}
+        {error && <p className="text-peligro-600 text-sm">{error}</p>}
         {pendientes.length > 0 && (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <div className="flex justify-between items-baseline mb-3">
@@ -670,7 +420,12 @@ export default function Compras() {
                       <span className="text-neutral-300 text-xs">—</span>
                     )}
                   </td>
-                  <td className="p-3">
+                  <td className="p-3 whitespace-nowrap">
+                    {f.tiene_soporte && (
+                      <button onClick={() => setVerSoporte(f.id)} className="text-acento-700 text-xs mr-3">
+                        Original
+                      </button>
+                    )}
                     <button onClick={() => borrar(f)} className="text-peligro-500 text-xs">
                       Borrar
                     </button>
@@ -699,311 +454,30 @@ export default function Compras() {
         )}
 
         {seccion === 'nueva' && (
-          <>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <h2 className="font-semibold mb-2">Cargar factura de proveedor</h2>
-          <p className="text-xs text-neutral-500 mb-3">
-            {esInsumos
-              ? 'Cada renglón reabastece el stock de esa mercancía y recalcula su costo promedio - no hace falta cargarlo aparte en Inventario.'
-              : 'Alimenta el Libro de Compras y contabiliza sola: activos entran al balance, servicios van directo a gasto.'}
-          </p>
-          {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
-          {/* Antes salir bien no decia nada: el formulario se limpiaba y ya, y
-              quien la cargo se quedaba sin saber si entro -- con la duda de si
-              darle otra vez, que es como se cargan dos facturas iguales. */}
-          {exito && (
-            <div className="mb-3 rounded-lg bg-exito-500/10 ring-1 ring-exito-500/30 px-3 py-2 text-sm text-exito-800 flex items-start justify-between gap-3">
-              <span>{exito}</span>
-              <button onClick={() => irA('facturas')} className="font-semibold shrink-0 underline">
-                Verla
-              </button>
-            </div>
-          )}
+          <CargarFactura
+            ingredientes={ingredientes}
+            setIngredientes={setIngredientes}
+            proveedores={proveedores}
+            fiscal={fiscal}
+            porCompletar={porCompletar}
+            onReintentar={reintentarPendientes}
+            onGuardada={(alertas) => {
+              if (alertas.length > 0) setAlertasAlGuardar(alertas)
+              setPorCompletar(cuantosPendientes())
+              cargar()
+            }}
+            onVerFacturas={() => irA('facturas')}
+          />
+        )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
-            <input
-              value={numeroFactura}
-              onChange={(e) => setNumeroFactura(e.target.value)}
-              placeholder="N. de factura"
-              className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
-            {/* Un proveedor no registrado se puede tipear igual: el directorio
-                es una comodidad, no un requisito para poder comprar. */}
-            <CampoSugerido
-              value={proveedor}
-              onChange={elegirProveedorConocido}
-              opciones={proveedores.filter((p) => p.activo).map((p) => p.nombre)}
-              placeholder="Proveedor"
-              vacio="Todavía no hay proveedores guardados"
-            />
-            <input
-              value={rif}
-              onChange={(e) => setRif(e.target.value)}
-              placeholder="RIF (ej. J-12345678-9)"
-              required
-              className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
-            <select
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value)}
-              className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-            >
-              {CATEGORIAS.map((c) => (
-                <option key={c.valor} value={c.valor}>
-                  {c.texto}
-                </option>
-              ))}
-            </select>
-            <select
-              value={formaPago}
-              onChange={(e) => setFormaPago(e.target.value)}
-              className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-            >
-              {FORMAS_PAGO.map((f) => (
-                <option key={f} value={f}>
-                  {f === 'Credito' ? 'A crédito (por pagar)' : f}
-                </option>
-              ))}
-            </select>
-            {/* Solo cuando la plata ya salió y no fue en billetes. El backend
-                la exige igual, así que se pide antes de mandar la factura. */}
-            {necesitaReferencia(formaPago) && (
-              <input
-                value={referenciaPago}
-                onChange={(e) => setReferenciaPago(e.target.value)}
-                placeholder="Referencia del pago"
-                required
-                className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-              />
-            )}
-            <input
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              placeholder="Descripción (opcional)"
-              className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
-            <label className="flex items-center gap-2 text-sm border border-neutral-300 rounded-lg px-3 py-2">
-              <span className="text-neutral-500">Factura en</span>
-              <select
-                value={monedaCarga}
-                onChange={(e) => setMonedaCarga(e.target.value as (typeof MONEDAS_DE_CARGA)[number])}
-                className="flex-1 outline-none bg-transparent"
-              >
-                {MONEDAS_DE_CARGA.map((m) => (
-                  <option key={m} value={m}>
-                    {m === '$' ? 'Dólares' : `Bolívares${tasa?.bcv ? ` (a ${tasa.bcv.toFixed(2)})` : ''}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {esCredito && (
-              <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
-                Vence
-                <input
-                  value={fechaVencimiento}
-                  onChange={(e) => setFechaVencimiento(e.target.value)}
-                  type="date"
-                  className="flex-1 outline-none text-neutral-800"
-                />
-              </label>
-            )}
-            {/* Un equipo se gasta con los años: sin este dato entraba al
-                balance a valor de compra y se quedaba ahi para siempre. */}
-            {esActivo && (
-              <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
-                Dura
-                <Numerico
-                  value={vidaUtil}
-                  onChange={(e) => setVidaUtil(e.target.value)}
-                  min="1"
-                  className="w-16 outline-none text-neutral-800 text-right"
-                />
-                meses
-              </label>
-            )}
-          </div>
+        {seccion === 'alertas' && <BandejaAlertas onPendientes={alCambiarPendientes} />}
 
-          {esInsumos ? (
-            <div className="space-y-2 mb-3">
-              {lineas.map((l, i) => {
-                const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
-                const subtotal = cantidadDe(l) * (Number(l.costo_unitario) || 0)
-                return (
-                  <div key={i} className="flex flex-wrap gap-2 items-center bg-neutral-50 rounded-lg p-2">
-                    <select
-                      value={l.ingrediente_id}
-                      onChange={(e) => elegirIngrediente(i, e.target.value)}
-                      className="flex-1 min-w-[140px] border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                    >
-                      <option value={0}>Mercancía...</option>
-                      {ingredientes.map((ing2) => (
-                        <option key={ing2.id} value={ing2.id}>
-                          {ing2.nombre} ({ing2.unidad})
-                        </option>
-                      ))}
-                      <option value="nuevo">+ Crear mercancía nueva...</option>
-                    </select>
-                    {ing ? (
-                      <CasillaConUnidad
-                        unidad={ing.unidad}
-                        vista={l.vista ?? ing.unidad}
-                        alCambiarVista={(nueva) =>
-                          setLineas((prev) =>
-                            prev.map((x, idx) =>
-                              idx === i
-                                ? { ...x, cantidad: convertirTexto(x.cantidad, ing.unidad, x.vista ?? ing.unidad, nueva), vista: nueva }
-                                : x,
-                            ),
-                          )
-                        }
-                        value={l.cantidad}
-                        onChange={(e) => actualizarLinea(i, 'cantidad', e.target.value)}
-                        placeholder="Cantidad"
-                        etiqueta={`Cantidad (${l.vista ?? ing.unidad})`}
-                        className="w-36 shrink-0"
-                        claseCasilla="border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                      />
-                    ) : (
-                      <Numerico
-                        value={l.cantidad}
-                        onChange={(e) => actualizarLinea(i, 'cantidad', e.target.value)}
-                        placeholder="Cantidad"
-                        etiqueta="Cantidad"
-                        className="w-36 shrink-0 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                      />
-                    )}
-                    <Numerico
-                      value={l.costo_unitario}
-                      onChange={(e) => actualizarLinea(i, 'costo_unitario', e.target.value)}
-                      placeholder={`Costo por ${ing?.unidad ?? 'unidad'} sin IVA (${monedaCarga})`}
-                      className="w-40 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                    />
-                    {/* La ficha de la mercancía es el valor por defecto, no la
-                        ultima palabra: la misma cosa puede venir exenta de un
-                        proveedor y gravada de otro, y quien tiene el papel
-                        delante es quien sabe. */}
-                    <select
-                      value={l.exento === null ? 'ficha' : l.exento ? 'exento' : 'grava'}
-                      onChange={(e) =>
-                        setLineas((prev) =>
-                          prev.map((x, idx) =>
-                            idx === i
-                              ? { ...x, exento: e.target.value === 'ficha' ? null : e.target.value === 'exento' }
-                              : x,
-                          ),
-                        )
-                      }
-                      title="Si este renglón paga IVA"
-                      className="w-32 border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                    >
-                      <option value="ficha">
-                        {ing ? (ing.exento ? 'Exento (ficha)' : `IVA ${fiscal.tasa_iva}% (ficha)`) : 'Según la ficha'}
-                      </option>
-                      <option value="grava">Lleva IVA {fiscal.tasa_iva}%</option>
-                      <option value="exento">Exento</option>
-                    </select>
-                    <span className="text-sm font-medium text-neutral-600 w-24 text-right">
-                      {monedaCarga}
-                      {subtotal.toFixed(2)}
-                    </span>
-                    <button
-                      onClick={() => quitarLinea(i)}
-                      className="text-peligro-400 text-sm px-1"
-                      disabled={lineas.length === 1}
-                    >
-                      x
-                    </button>
-                  </div>
-                )
-              })}
-              <button onClick={agregarLinea} className="text-sm text-neutral-500 font-medium">
-                + renglón
-              </button>
-
-              {/* Casi ninguna factura es la suma limpia de sus renglones: viene
-                  con flete, con recargo por pagar a credito, o con un descuento
-                  por volumen. Sin donde ponerlos habia que falsear un costo
-                  unitario -- y ahi el costo de receta empieza a mentir. */}
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-200">
-                <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
-                  Recargo
-                  <Numerico
-                    value={recargo}
-                    onChange={(e) => setRecargo(e.target.value)}
-                    min="0"
-                    placeholder="0.00"
-                    className="w-full outline-none text-neutral-800 text-right"
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-sm text-neutral-500 border border-neutral-300 rounded-lg px-3 py-2">
-                  Descuento
-                  <Numerico
-                    value={descuentoFactura}
-                    onChange={(e) => setDescuentoFactura(e.target.value)}
-                    min="0"
-                    placeholder="0.00"
-                    className="w-full outline-none text-neutral-800 text-right"
-                  />
-                </label>
-              </div>
-              <p className="text-xs text-neutral-500">
-                Se reparten entre los renglones: la mercancía entra al depósito por lo que de
-                verdad costó, flete y rebajas incluidos.
-              </p>
-
-              <div className="flex justify-end gap-6 text-sm pt-2 border-t border-neutral-200 flex-wrap">
-                <span className="text-neutral-500">
-                  Renglones{' '}
-                  <span className="font-semibold text-neutral-800">{monedaCarga}{baseLineas.toFixed(2)}</span>
-                </span>
-                {(recargoNum > 0 || descuentoNum > 0) && (
-                  <span className="text-neutral-500">
-                    Base{' '}
-                    <span className="font-semibold text-neutral-800">{monedaCarga}{baseFinal.toFixed(2)}</span>
-                  </span>
-                )}
-                <span className="text-neutral-500">
-                  IVA ({fiscal.tasa_iva}%){' '}
-                  <span className="font-semibold text-neutral-800">{monedaCarga}{ivaLineas.toFixed(2)}</span>
-                </span>
-                <span className="text-neutral-500">
-                  Total{' '}
-                  <span className="font-bold text-neutral-900">{monedaCarga}{(baseFinal + ivaLineas).toFixed(2)}</span>
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
-              <Numerico
-                value={base}
-                onChange={(e) => actualizarBase(e.target.value)}
-                placeholder={`Base imponible (${monedaCarga})`}
-                className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-              />
-              <Numerico
-                value={iva}
-                onChange={(e) => setIva(e.target.value)}
-                placeholder={`IVA ${fiscal.tasa_iva}% (${monedaCarga})`}
-                className="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-              />
-              <div className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 text-sm font-medium">
-                <span className="text-neutral-500">Total</span>
-                <span>{monedaCarga}{((Number(base) || 0) + (Number(iva) || 0)).toFixed(2)}</span>
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={agregarFactura}
-            className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            Cargar factura
-          </button>
-        </div>
-          </>
+        {alertasAlGuardar.length > 0 && (
+          <AlertasAlGuardar alertas={alertasAlGuardar} onCerrar={() => setAlertasAlGuardar([])} />
         )}
 
         {seccion === 'proveedores' && (
+          <>
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -1058,7 +532,11 @@ export default function Compras() {
               </Tabla>
             )}
           </div>
+          <MemoriaProveedores proveedores={proveedores} />
+          </>
         )}
+
+        {verSoporte !== null && <VerSoporte facturaId={verSoporte} onCerrar={() => setVerSoporte(null)} />}
 
         {fichaProveedor && (
           <FichaProveedor

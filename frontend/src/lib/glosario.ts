@@ -267,9 +267,14 @@ export const GLOSARIO: Record<string, Explicacion> = {
   ...Object.fromEntries(Object.entries(baseIvaTotal('venta')).map(([k, v]) => [`libroventas.${k}`, v])),
 
   // ── Impuestos: libro de compras ──────────────────────────────────────────
+  'librocompras.emision': fecha(
+    'La fecha impresa en la factura del proveedor.',
+    'La del papel: la lee la IA de la foto o se teclea en Compras. En facturas cargadas antes de existir este dato, la de registro.',
+    'No mueve la factura de mes: una factura de agosto que llega en octubre se registra en octubre.',
+  ),
   'librocompras.fecha': fecha(
-    'La fecha de la factura del proveedor.',
-    'La que cargaste en Compras.',
+    'El día en que la factura se registró en Compras.',
+    'La pone el sistema al cargarla.',
     'Determina en qué declaración entra ese crédito fiscal.',
   ),
   'librocompras.factura': {

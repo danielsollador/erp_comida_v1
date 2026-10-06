@@ -674,6 +674,12 @@ class FacturarRequest(BaseModel):
     vender factura, con el numero que transcribe de su talonario."""
 
     numero_factura: str
+    # Para el Libro de Ventas (todos opcionales): numero de control, y a quien
+    # se factura -RIF o cedula, y nombre o razon social-. Sin ellos la factura
+    # va a "Consumidor final".
+    numero_control: Optional[str] = None
+    rif_cliente: Optional[str] = None
+    razon_social_cliente: Optional[str] = None
 
 
 class DevolucionRequest(BaseModel):
@@ -748,6 +754,14 @@ class Pedido(BaseModel):
     entregado_en: Optional[datetime.datetime] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
+    numero_control: str = ""
+    rif_cliente: str = ""
+    razon_social_cliente: str = ""
+    retencion_iva_bs: Optional[float] = None
+    comprobante_retencion_iva: str = ""
+    fecha_retencion_iva: Optional[datetime.date] = None
+    retencion_iva_pct: Optional[float] = None
+    retencion_iva_usd: Optional[float] = None
     # Tasa a la que se cobro. Se expone para que la pantalla muestre los
     # bolivares que de verdad entraron ese dia, y no los que darian esos
     # dolares a la tasa de hoy.
@@ -893,6 +907,15 @@ class CobrarRequest(BaseModel):
     pagos: Optional[List[PagoInput]] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
+    # El cliente (contribuyente especial) retiene este % del IVA: se cobra el
+    # total menos eso. Solo con factura. 75 o 100.
+    retencion_iva_pct: Optional[float] = None
+    # Para el Libro de Ventas (todos opcionales): numero de control, y a quien
+    # se factura -RIF o cedula, y nombre o razon social-. Sin ellos la factura
+    # va a "Consumidor final".
+    numero_control: Optional[str] = None
+    rif_cliente: Optional[str] = None
+    razon_social_cliente: Optional[str] = None
     # Rebaja a ESTE cliente. Antes habia que bajarle el precio al menu, que se
     # lo bajaba a todos y declaraba IVA sobre un precio que no se cobro.
     descuento: float = 0
@@ -1605,6 +1628,20 @@ class TasaManual(BaseModel):
     paralelo: Optional[float] = None
 
 
+class CambiarTasaRequest(BaseModel):
+    tasa_bcv: float  # Bs por $
+
+
+class TasaDeUnaFecha(BaseModel):
+    """La tasa con la que se pasa a Bs una factura de esa fecha."""
+
+    pedida: datetime.date
+    # El dia de la fila que se uso: puede ser anterior (fin de semana).
+    fecha: Optional[datetime.date] = None
+    bcv: Optional[float] = None  # None: no hay tasa guardada hasta esa fecha
+    origen: str = ""  # "auto" | "manual": manual es la que fijo el dueno, no la del BCV
+
+
 class PuntoTasa(BaseModel):
     fecha: str
     bcv: float
@@ -1950,6 +1987,8 @@ class ProveedorCreate(BaseModel):
 
 class Proveedor(ProveedorCreate):
     id: int
+    # Lo que se le retiene de IVA (agente de retencion): el ultimo usado.
+    porcentaje_retencion: float = 75
     activo: bool = True
 
     class Config:
@@ -1970,6 +2009,18 @@ class FacturaCompraBase(BaseModel):
 
 class FacturaCompraCreate(FacturaCompraBase):
     fecha: Optional[datetime.datetime] = None
+    # La del papel. No cambia el periodo: ese lo decide `fecha` (registro).
+    fecha_emision: Optional[datetime.date] = None
+    numero_control: str = ""
+    # En que moneda vienen los montos del papel y a que tasa (Bs por $) se
+    # pasaron a dolares. Los montos de abajo llegan SIEMPRE en dolares; con la
+    # moneda y la tasa el servidor recupera los Bs del papel para el Libro de
+    # Compras. Sin tasa se usa la BCV guardada de la fecha de emision.
+    moneda: str = "$"
+    tasa_bcv: Optional[float] = None
+    # Siendo agente de retencion: cuanto del IVA se le retiene (0, 75 o 100).
+    # Sin dato, el del proveedor (75 si es nuevo).
+    retencion_pct: Optional[float] = None
     # Con renglones (compra de insumos): la base sale de sumar los renglones,
     # y cada uno actualiza el stock y el costo promedio de su ingrediente.
     items: List[LineaFacturaInput] = []
@@ -1996,6 +2047,16 @@ class FacturaCompraCreate(FacturaCompraBase):
 class FacturaCompra(FacturaCompraBase):
     id: int
     fecha: datetime.datetime
+    fecha_emision: Optional[datetime.date] = None
+    numero_control: str = ""
+    moneda: str = "$"
+    tasa_bcv: Optional[float] = None
+    retencion_pct: float = 0
+    iva_retenido: float = 0
+    iva_retenido_bs: Optional[float] = None
+    comprobante_retencion: str = ""
+    # Lo que se le paga al proveedor: total menos lo retenido.
+    a_pagar: float = 0
     # Ya con el recargo y el descuento aplicados: es la base que va al Libro
     # de Compras. Los dos viajan aparte para poder explicar la diferencia con
     # la suma de los renglones.
@@ -2009,9 +2070,247 @@ class FacturaCompra(FacturaCompraBase):
     fecha_pago: Optional[datetime.datetime] = None
     referencia_pago: str = ""
     items: List[LineaFactura] = []
+    # Si tiene la foto del papel enganchada. Solo lo llena el listado.
+    tiene_soporte: bool = False
 
     class Config:
         from_attributes = True
+
+
+# ------------------------------------------------ factura de compra desde foto
+class RenglonLeido(BaseModel):
+    """Un renglon tal como viene impreso: todavia no es un insumo nuestro.
+
+    Casar "HARINA PAN 1KG" con nuestra "Harina de maiz (kg)" lo hace quien
+    revisa; la unidad del papel viaja aparte porque rara vez es la nuestra.
+    """
+
+    descripcion: str = ""
+    cantidad: Optional[float] = None
+    unidad: str = ""
+    precio_unitario: Optional[float] = None  # sin IVA, en la moneda de la factura
+    subtotal: Optional[float] = None
+    # None = el papel no lo marca. Muchas facturas marcan "(E)" lo exento.
+    exento: Optional[bool] = None
+
+
+class BorradorFactura(BaseModel):
+    """Lo que el lector saco de la foto. Es una PROPUESTA para el formulario,
+    no una factura: nada de esto se guarda sin que alguien lo revise."""
+
+    proveedor_nombre: str = ""
+    proveedor_rif: str = ""
+    numero_factura: str = ""
+    numero_control: str = ""
+    # A nombre de quien esta la factura: si no es de la empresa, su IVA no se
+    # puede descontar como credito fiscal.
+    cliente_rif: str = ""
+    fecha: Optional[datetime.date] = None
+    moneda: str = ""  # "$" | "Bs" | "" si no se sabe
+    # La tasa de cambio que imprime el papel (Bs por $), si la imprime.
+    tasa_cambio: Optional[float] = None
+    renglones: List[RenglonLeido] = []
+    recargo: float = 0
+    descuento: float = 0
+    # Los totales IMPRESOS. Son los que permiten saber si lo que se va a
+    # guardar cuadra con el papel.
+    subtotal: Optional[float] = None
+    iva: Optional[float] = None
+    total: Optional[float] = None
+    # Lo que el lector no pudo leer bien, dicho por el.
+    advertencias: List[str] = []
+
+
+class LecturaFactura(BaseModel):
+    soporte_id: int
+    lector: str
+    borrador: Optional[BorradorFactura] = None
+    # Si no se pudo leer, por que. La foto queda guardada igual: se puede
+    # cargar a mano y adjuntarla.
+    error: str = ""
+
+
+class EstadoLector(BaseModel):
+    activo: bool
+    lector: str = ""
+
+
+class RenglonARevisar(BaseModel):
+    indice: int  # posicion en el formulario, para devolver el aviso a su renglon
+    ingrediente_id: int
+    costo_unitario: float  # en dolares, como se va a guardar
+
+
+class RevisionFacturaRequest(BaseModel):
+    proveedor_rif: str = ""
+    proveedor_nombre: str = ""
+    numero_factura: str = ""
+    items: List[RenglonARevisar] = []
+
+
+class FacturaParecida(BaseModel):
+    id: int
+    numero_factura: str
+    proveedor_nombre: str
+    fecha: datetime.datetime
+    total: float
+
+
+class AvisoPrecio(BaseModel):
+    indice: int
+    ingrediente_id: int
+    costo_unitario: float
+    referencia: float
+    # De donde sale la referencia: "compras" (mediana de las ultimas) o
+    # "promedio" (la ficha, cuando nunca se ha comprado).
+    base: str
+    muestras: int
+    variacion_pct: float
+    nivel: str  # "normal" | "alto" | "bajo" | "unidad"
+    mensaje: str = ""
+
+
+class RifConocido(BaseModel):
+    rif: str
+    nombre: str
+
+
+class RevisionFactura(BaseModel):
+    duplicadas: List[FacturaParecida] = []
+    precios: List[AvisoPrecio] = []
+    # Por que ese RIF no puede ser correcto (su digito verificador no cuadra).
+    # Vacio si cuadra o no se puede saber. Avisa, no bloquea.
+    rif_aviso: str = ""
+    # Un RIF conocido (de un proveedor o de una factura anterior) que difiere
+    # en un solo caracter: casi seguro es el que la lectura confundio.
+    rif_sugerido: Optional[RifConocido] = None
+
+
+class AdjuntarSoporteRequest(BaseModel):
+    soporte_id: int
+
+
+# ------------------------------------------------- memoria por proveedor
+class RenglonABuscar(BaseModel):
+    descripcion: str
+    unidad: str = ""
+
+
+class BuscarEquivalenciasRequest(BaseModel):
+    proveedor_rif: str
+    renglones: List[RenglonABuscar] = []
+
+
+class SugerenciaRenglon(BaseModel):
+    indice: int  # posicion del renglon en lo que se pregunto
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str  # la nuestra
+    # Cuantas unidades nuestras trae una del papel.
+    factor: float
+    unidad_papel: str
+    descripcion_recordada: str
+    veces: int
+    # False = no es el mismo texto sino uno muy parecido: vale la pena mirarlo.
+    exacta: bool
+
+
+class RenglonAprendido(BaseModel):
+    """Un renglon ya guardado: lo que decia el papel y lo que quedo."""
+
+    descripcion: str
+    unidad: str = ""
+    cantidad_papel: Optional[float] = None
+    precio_papel: Optional[float] = None
+    ingrediente_id: int
+    # Lo que quedo en el formulario, en la MISMA moneda que el papel.
+    cantidad: float
+    costo_unitario: float
+
+
+class AprenderEquivalenciasRequest(BaseModel):
+    proveedor_rif: str
+    proveedor_nombre: str = ""
+    renglones: List[RenglonAprendido] = []
+
+
+class Equivalencia(BaseModel):
+    id: int
+    proveedor_rif: str
+    proveedor_nombre: str
+    descripcion: str
+    unidad_papel: str
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    factor: float
+    veces: int
+    actualizado: datetime.datetime
+
+
+class ProductoAfectado(BaseModel):
+    nombre: str
+    precio: float
+    margen_antes_pct: Optional[float] = None
+    margen_despues_pct: Optional[float] = None
+    precio_sugerido: Optional[float] = None
+    a_perdida: bool = False
+
+
+class AlertaPrecio(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    factura_id: int
+    numero_factura: str
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    proveedor_nombre: str
+    costo_anterior: float
+    costo_nuevo: float
+    variacion_pct: float
+    base: str  # "proveedor" | "compras"
+    tipo: str  # "subida" | "unidad"
+    productos: List[ProductoAfectado] = []
+    alternativa_proveedor: str = ""
+    alternativa_costo: Optional[float] = None
+    alternativa_fecha: Optional[datetime.datetime] = None
+    visto: bool
+    visto_por: str = ""
+    visto_en: Optional[datetime.datetime] = None
+
+
+class CompletarFacturaRequest(BaseModel):
+    """Lo de despues de guardar una factura, en un solo pedido."""
+
+    # La foto leida, si vino de una. Sin foto no hay memoria que aprender.
+    soporte_id: Optional[int] = None
+    proveedor_rif: str = ""
+    proveedor_nombre: str = ""
+    renglones: List[RenglonAprendido] = []
+
+
+class IntencionGuardar(BaseModel):
+    """Lo que se anota en la foto justo antes de guardar su factura: con el
+    RIF y el numero el servidor la reconoce despues, si el navegador no
+    alcanza a completarla."""
+
+    numero_factura: str
+    proveedor_rif: str
+    proveedor_nombre: str = ""
+    renglones: List[RenglonAprendido] = []
+
+
+class Reconciliacion(BaseModel):
+    completadas: int
+
+
+class CompletarFactura(BaseModel):
+    foto: bool
+    # La foto ya se habia limpiado por suelta (el reintento llego tarde).
+    foto_perdida: bool = False
+    aprendidas: int
+    alertas: List[AlertaPrecio] = []
 
 
 class PagoFacturaRequest(BaseModel):
@@ -2070,6 +2369,12 @@ class NotaCreditoCompra(BaseModel):
 
 class ConfiguracionFiscal(BaseModel):
     tasa_iva: float
+    # La cabecera del Libro de Compras. Al guardar solo cambia lo que viene:
+    # quien guarda la alicuota no borra la razon social.
+    razon_social: str = ""
+    rif: str = ""
+    direccion: str = ""
+    agente_retencion: bool = False
 
 
 class FilaLibroVentas(BaseModel):
@@ -2077,9 +2382,41 @@ class FilaLibroVentas(BaseModel):
     fecha: datetime.datetime
     numero_factura: str
     cliente: str
+    # En dolares, como el resto del ERP y la declaracion de IVA.
     base_imponible: float
     iva: float
     total: float
+    # Lo que pide el formato del SENIAT. La nota de credito es su propio
+    # documento: su numero va aparte y apunta a la factura que afecta.
+    tipo: str = "FAC"  # FAC | NC
+    numero_nota: str = ""
+    factura_afectada: str = ""
+    rif: str = ""  # vacio: consumidor final
+    numero_control: str = ""
+    # En bolivares, a la tasa BCV congelada al cobrar. None si la venta no
+    # tiene tasa (ventas viejas de una fecha sin tasa guardada).
+    tasa_bcv: Optional[float] = None
+    gravado_bs: Optional[float] = None
+    exento_bs: Optional[float] = None
+    iva_bs: Optional[float] = None
+    total_bs: Optional[float] = None
+    # La retencion que hizo el cliente. Va en la fila de su factura si el
+    # comprobante es del mismo mes; si llego en otro, en una fila "RET" en el
+    # libro del mes del comprobante.
+    fecha_retencion: Optional[datetime.date] = None
+    comprobante_retencion: str = ""
+    iva_retenido_bs: Optional[float] = None
+    # Se retuvo al cobrar y todavia no llego el comprobante: no se descuenta
+    # hasta tenerlo.
+    retencion_pendiente_bs: Optional[float] = None
+
+
+class RetencionRecibidaRequest(BaseModel):
+    comprobante: str
+    fecha: datetime.date
+    # Sin monto, el 75 % del IVA de la factura en Bs (lo de un contribuyente
+    # ordinario).
+    monto_bs: Optional[float] = None
 
 
 class LibroVentas(BaseModel):
@@ -2092,17 +2429,87 @@ class LibroVentas(BaseModel):
     total_general: float
     ventas_no_facturadas: int
     monto_no_facturado: float
+    total_exento_bs: float = 0
+    total_gravado_bs: float = 0
+    total_iva_bs: float = 0
+    total_bs: float = 0
+    sin_tasa: int = 0
+    total_retenido_bs: float = 0
 
 
 class FilaLibroCompras(BaseModel):
     factura_id: int
-    fecha: datetime.datetime
+    fecha: datetime.datetime  # registro: la que pone la factura en este libro
+    fecha_emision: datetime.date  # la del documento (o la de registro, si no se cargo)
     numero_factura: str
     proveedor_nombre: str
     proveedor_rif: Optional[str]
+    # En dolares, como lleva el ERP todo lo demas (y la declaracion de IVA).
     base_imponible: float
     iva: float
     total: float
+    # Lo que pide el formato del SENIAT. Una nota de credito es su propia
+    # fila, en negativo, que apunta a la factura que afecta.
+    tipo: str = "FAC"  # FAC | NC
+    numero_nota: str = ""
+    factura_afectada: str = ""
+    numero_control: str = ""
+    moneda: str = "$"
+    # En bolivares. None si no hay tasa para pasarla (una factura vieja de
+    # una fecha sin tasa guardada): mejor un hueco visible que un monto
+    # inventado.
+    tasa_bcv: Optional[float] = None
+    # True si la tasa no se congelo al guardar la factura sino que se tomo
+    # ahora de la tasa BCV guardada de su fecha (facturas de antes).
+    tasa_estimada: bool = False
+    exento_bs: Optional[float] = None
+    gravado_bs: Optional[float] = None
+    iva_bs: Optional[float] = None
+    total_bs: Optional[float] = None
+    # La retencion de IVA que se le practico (agente de retencion).
+    fecha_retencion: Optional[datetime.date] = None
+    comprobante_retencion: str = ""
+    iva_retenido_bs: Optional[float] = None
+
+
+class RetencionIva(BaseModel):
+    """Una retencion practicada: una linea del TXT de la quincena."""
+
+    factura_id: int
+    fecha_factura: datetime.date
+    fecha_retencion: datetime.date
+    proveedor_nombre: str
+    proveedor_rif: str
+    numero_factura: str
+    numero_control: str
+    comprobante: str
+    porcentaje: float
+    total_bs: Optional[float] = None
+    base_bs: Optional[float] = None
+    exento_bs: Optional[float] = None
+    iva_bs: Optional[float] = None
+    retenido_bs: Optional[float] = None
+
+
+class RetencionesQuincena(BaseModel):
+    anio: int
+    mes: int
+    quincena: int
+    etiqueta: str
+    retenciones: List[RetencionIva]
+    total_retenido_bs: float
+    total_retenido: float  # en dolares
+    sin_tasa: int = 0
+    enterada: bool = False
+    fecha_enterada: Optional[datetime.datetime] = None
+
+
+class EnterarRetencionesRequest(BaseModel):
+    anio: int
+    mes: int
+    quincena: int
+    forma_pago: str = "Banco"
+    referencia: Optional[str] = None
 
 
 class LibroCompras(BaseModel):
@@ -2112,6 +2519,13 @@ class LibroCompras(BaseModel):
     total_base: float
     total_iva: float
     total_general: float
+    total_exento_bs: float = 0
+    total_gravado_bs: float = 0
+    total_iva_bs: float = 0
+    total_bs: float = 0
+    # Filas sin monto en Bs: el libro en Bs esta incompleto mientras haya.
+    sin_tasa: int = 0
+    tasa_iva: float = 16
 
 
 class DeclaracionIva(BaseModel):
@@ -2126,6 +2540,19 @@ class DeclaracionIva(BaseModel):
     credito_usado: float
     iva_a_pagar: float
     credito_excedente: float  # lo que pasa al mes siguiente
+    # Lo que se declara al SENIAT, en bolivares. None en declaraciones viejas.
+    iva_debito_bs: Optional[float] = None
+    iva_credito_bs: Optional[float] = None
+    credito_arrastrado_bs: Optional[float] = None
+    credito_usado_bs: Optional[float] = None
+    iva_a_pagar_bs: Optional[float] = None
+    credito_excedente_bs: Optional[float] = None
+    # En dolares: lo que el libro mayor saca de 1035 (retenido en caja).
+    retenciones_usadas: float = 0
+    retenciones_bs: Optional[float] = None
+    retenciones_arrastradas_bs: Optional[float] = None
+    retenciones_usadas_bs: Optional[float] = None
+    retenciones_excedente_bs: Optional[float] = None
     fecha_declaracion: datetime.datetime
     pagada: bool
     fecha_pago: Optional[datetime.datetime] = None
@@ -2138,6 +2565,11 @@ class PeriodoPendiente(BaseModel):
     etiqueta: str
     iva_debito: float
     iva_credito: float
+    iva_debito_bs: float = 0
+    iva_credito_bs: float = 0
+    retenciones_bs: float = 0
+    # Documentos del mes sin tasa: sin ella no hay Bs, y no se puede declarar.
+    sin_tasa: int = 0
 
 
 class DeclararIvaRequest(BaseModel):
@@ -2150,6 +2582,10 @@ class PagoIvaRequest(BaseModel):
 
 
 class ResumenIva(BaseModel):
+    # En Bs, como se declara (las de abajo, en dolares, son las del ERP).
+    iva_debito_bs: float = 0
+    iva_credito_bs: float = 0
+    iva_a_pagar_bs: float = 0
     periodo: str
     etiqueta: str
     iva_debito: float

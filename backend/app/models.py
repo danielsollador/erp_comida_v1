@@ -30,8 +30,11 @@ solo. Las restricciones e indices siguen la misma linea (PK_, FK_, IX_, UQ_,
 CK_; ver `database.py`), y los nombres viejos se migran al arrancar
 (`migrations.RENOMBRES`).
 """
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import (
+    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import deferred, relationship
 
 from .database import Base
 from .timeutils import ahora
@@ -452,6 +455,26 @@ class DeclaracionIva(Base):
     credito_usado = Column(Float, default=0)
     iva_a_pagar = Column(Float, default=0)
     credito_excedente = Column(Float, default=0)  # lo que pasa al mes siguiente
+    # Lo mismo en BOLIVARES: es lo que se declara al SENIAT. Lo de arriba, en
+    # dolares, es lo que mueve el libro mayor del ERP (que va en dolares). El
+    # excedente se arrastra en Bs, como en la declaracion. Vacios en las
+    # declaraciones de antes de que existieran.
+    iva_debito_bs = Column(Float, nullable=True)
+    iva_credito_bs = Column(Float, nullable=True)
+    credito_arrastrado_bs = Column(Float, nullable=True)
+    credito_usado_bs = Column(Float, nullable=True)
+    iva_a_pagar_bs = Column(Float, nullable=True)
+    credito_excedente_bs = Column(Float, nullable=True)
+    # Las retenciones de IVA que le hicieron los clientes: se descuentan de
+    # lo que queda por pagar despues del credito fiscal, y lo que sobra pasa
+    # al mes siguiente, igual que el credito.
+    retenciones_bs = Column(Float, nullable=True)
+    retenciones_arrastradas_bs = Column(Float, nullable=True)
+    retenciones_usadas_bs = Column(Float, nullable=True)
+    retenciones_excedente_bs = Column(Float, nullable=True)
+    # Lo mismo en dolares, para el libro mayor: lo que sale de 1035.
+    retenciones_usadas = Column(Float, default=0)
+    retenciones_excedente = Column(Float, default=0)
     fecha_declaracion = Column(DateTime, default=ahora)
     pagada = Column(Boolean, default=False)
     fecha_pago = Column(DateTime, nullable=True)
@@ -556,6 +579,31 @@ class ConfiguracionFiscal(Base):
 
     id = Column(Integer, primary_key=True)
     tasa_iva = Column(Float, default=16.0)  # alicuota general de IVA en Venezuela
+    # Contribuyente especial designado por el SENIAT: retiene el IVA de sus
+    # proveedores y lo entera por quincena (TXT de retenciones).
+    agente_retencion = Column(Boolean, default=False)
+    # Quien lleva los libros: va en la cabecera del Libro de Compras.
+    razon_social = Column(String, default="")
+    rif = Column(String, default="")
+    direccion = Column(String, default="")
+
+
+class RetencionIvaEnterada(Base):
+    """El pago al SENIAT de las retenciones de IVA de una quincena. Una fila
+    por quincena: enterarla dos veces seria pagar dos veces."""
+
+    __tablename__ = "TRX720_IMP_RETENCION_ENTERADA"
+    __table_args__ = (UniqueConstraint("anio", "mes", "quincena"),)
+
+    id = Column(Integer, primary_key=True)
+    anio = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    quincena = Column(Integer, nullable=False)  # 1: del 1 al 15; 2: del 16 al fin de mes
+    monto_bs = Column(Float, default=0)
+    monto = Column(Float, default=0)  # en dolares, lo que sale de 2050
+    fecha = Column(DateTime, default=ahora)
+    forma_pago = Column(String, default="Banco")
+    referencia = Column(String, default="")
 
 
 class Proveedor(Base):
@@ -584,6 +632,48 @@ class Proveedor(Base):
     contacto = Column(String, default="")
     nota = Column(String, default="")
     activo = Column(Boolean, default=True)
+    # Cuanto de su IVA se le retiene (siendo agente de retencion): 75 lo
+    # normal, 100 en los casos que manda la norma. Se recuerda el ultimo que
+    # se uso con el en una factura.
+    porcentaje_retencion = Column(Float, default=75.0)
+
+
+class EquivalenciaProveedor(Base):
+    """Lo que un proveedor escribe en su factura, y que es de lo nuestro.
+
+    "HARINA PAN BULTO" de Distribuidora La Montaña es nuestra Harina (kg), y
+    un bulto son 20 kg. Se aprende sola al guardar una factura leida de una
+    foto: el papel dice una cosa, la persona que la reviso dejo otra, y la
+    diferencia es la equivalencia. La proxima factura de ese proveedor llega
+    con esos renglones ya asociados y convertidos -- y la persona igual revisa.
+
+    Va por RIF y no por la ficha del proveedor, igual que la factura: no todo
+    proveedor tiene ficha, pero toda factura tiene RIF.
+
+    `factor` son cuantas unidades NUESTRAS trae una unidad del papel:
+    2 BULTO a $30 con factor 20 entran como 40 kg a $1.50. El subtotal no
+    cambia, que es lo que hace que la conversion no descuadre la factura.
+    """
+
+    __tablename__ = "DIM420_COM_EQUIVALENCIA"
+    __table_args__ = (UniqueConstraint("proveedor_rif", "clave"),)
+
+    id = Column(Integer, primary_key=True)
+    proveedor_rif = Column(String, nullable=False)  # normalizado, como en la factura
+    # Como se llamaba en la ultima factura: para mostrarlo sin exigir ficha.
+    proveedor_nombre = Column(String, default="")
+    # El texto del renglon sin espacios, signos, tildes ni la marca de exento:
+    # lo que se compara. `descripcion` es como venia, para mostrarlo.
+    clave = Column(String, nullable=False)
+    descripcion = Column(String, default="")
+    unidad_papel = Column(String, default="")
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    factor = Column(Float, default=1.0)
+    # Cuantas facturas lo confirmaron. Uno solo puede ser casualidad.
+    veces = Column(Integer, default=1)
+    actualizado = Column(DateTime, default=ahora)
+
+    ingrediente = relationship("Ingrediente")
 
 
 class FacturaCompra(Base):
@@ -601,7 +691,15 @@ class FacturaCompra(Base):
     numero_factura = Column(String, nullable=False)
     proveedor_nombre = Column(String, nullable=False)
     proveedor_rif = Column(String, nullable=True)
+    # Fecha de REGISTRO: cuando se cargo. Es la que manda en el periodo del
+    # Libro de Compras, en la declaracion de IVA, en el asiento y en el
+    # inventario. Una factura de agosto que llega en octubre se registra en
+    # octubre, y agosto -tal vez ya declarado- no se toca.
     fecha = Column(DateTime, default=ahora)
+    # Fecha de EMISION: la impresa en el papel del proveedor. Solo se muestra
+    # (columna del Libro de Compras); no mueve la factura de periodo. Vacia en
+    # las facturas cargadas antes de que existiera: ahi vale la de registro.
+    fecha_emision = Column(Date, nullable=True)
     categoria = Column(String, default="Insumos")  # Insumos|Servicios|Activos|Otros
     forma_pago = Column(String, default="Efectivo")  # Efectivo|Banco|Credito
     base_imponible = Column(Float, nullable=False)
@@ -624,14 +722,49 @@ class FacturaCompra(Base):
     # en billetes deja un numero en alguna parte, y sin el no hay como
     # demostrar un pago que el proveedor dice no haber recibido.
     referencia_pago = Column(String, default="")
+    # Lo que el Libro de Compras pide del papel y no se usa en otra parte.
+    numero_control = Column(String, default="")
+    # El ERP lleva todo en dolares; el Libro de Compras va en bolivares. Por
+    # eso cada factura guarda en que moneda vino y a que tasa se paso, y sus
+    # montos en Bs CONGELADOS al guardarla:
+    #   * vino en Bs: los Bs del papel, exactos (no la vuelta $ -> Bs, que
+    #     corre los centimos);
+    #   * vino en $: a la tasa BCV de la fecha de EMISION (o la que el papel
+    #     imprime), no la del dia en que se carga: una factura del 20 cargada
+    #     el 28 vale en Bs lo que valia el 20.
+    # Vacios en las facturas de antes: el libro los calcula con la tasa
+    # guardada de esa fecha, si la hay.
+    moneda = Column(String, default="$")  # "$" | "Bs": la del papel
+    tasa_bcv = Column(Float, nullable=True)  # Bs por $
+    # Retencion de IVA practicada al proveedor (si se es agente de
+    # retencion): se le paga el total MENOS esto, que se le debe al SENIAT
+    # (2050) hasta enterarlo. El comprobante: AAAAMM + correlativo de 8.
+    retencion_pct = Column(Float, default=0)
+    iva_retenido = Column(Float, default=0)  # en dolares, para el libro mayor
+    iva_retenido_bs = Column(Float, nullable=True)  # lo declarado
+    comprobante_retencion = Column(String, default="")
+    fecha_retencion = Column(Date, nullable=True)
+    gravado_bs = Column(Float, nullable=True)  # base imponible, la parte que paga IVA
+    exento_bs = Column(Float, nullable=True)
+    iva_bs = Column(Float, nullable=True)
 
     @property
     def total(self):
         return round(self.base_imponible + self.iva, 2)
 
+    @property
+    def a_pagar(self):
+        """Lo que se le paga al proveedor: el total menos el IVA retenido."""
+        return round(self.total - (self.iva_retenido or 0), 2)
+
     items = relationship("FacturaCompraItem", back_populates="factura", cascade="all, delete-orphan")
     notas_credito = relationship(
         "NotaCreditoCompra", back_populates="factura", cascade="all, delete-orphan"
+    )
+    # La foto del papel. Si la factura se borra (solo se puede sin renglones)
+    # la foto se va con ella: una imagen suelta no respalda nada.
+    soporte = relationship(
+        "SoporteFactura", back_populates="factura", uselist=False, cascade="all, delete-orphan"
     )
 
     @property
@@ -683,6 +816,103 @@ class FacturaCompraItem(Base):
     @property
     def subtotal(self):
         return round(self.cantidad * self.costo_unitario, 2)
+
+
+class SoporteFactura(Base):
+    """La foto de la factura del proveedor, y lo que la IA leyo en ella.
+
+    Nace ANTES que la factura: se sube la foto, la IA prellena el formulario,
+    una persona lo revisa y guarda por el camino de siempre, y recien ahi la
+    foto se engancha a la factura que salio. Por eso `factura_id` es opcional:
+    una foto leida que nadie termino de guardar queda suelta.
+
+    La imagen va en la base y no en disco a proposito: asi entra en el mismo
+    `pg_dump` que la factura, restaurar un respaldo trae las fotos que le
+    corresponden, y cada local ve solo las suyas por su esquema.
+
+    `lectura` guarda el borrador tal como lo devolvio el lector, sin las
+    correcciones de quien lo reviso. Comparado con lo que de verdad se guardo
+    es lo que dice en que se equivoca la IA -- y lo que la memoria por
+    proveedor va a aprender.
+    """
+
+    __tablename__ = "TRX412_COM_FACTURA_SOPORTE"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(
+        Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=True, unique=True, index=True
+    )
+    fecha = Column(DateTime, default=ahora)
+    tipo_mime = Column(String, nullable=False)
+    tamano = Column(Integer, default=0)  # bytes
+    # Diferido: listar soportes no tiene por que traerse cientos de KB por fila.
+    contenido = deferred(Column(LargeBinary, nullable=False))
+    lector = Column(String, default="")  # "prueba", "claude-...": quien leyo
+    lectura = Column(Text, default="")  # JSON del borrador; vacio si la lectura fallo
+    # Lo que hay que hacer cuando la factura de esta foto se guarde (numero,
+    # RIF y renglones aprendidos), anotado JUSTO ANTES de guardarla. Si el
+    # "completar" de despues no llega (se cayo el wifi, se apago la tablet),
+    # el servidor encuentra la factura por RIF y numero y lo termina solo,
+    # desde cualquier equipo. JSON de schemas.IntencionGuardar; vacio si no.
+    al_guardar = Column(Text, default="")
+    error = Column(String, default="")  # por que no se pudo leer, si no se pudo
+    # Lo que costo leerla. La API cobra por token: sin esto el gasto real del
+    # mes seria una estimacion para siempre.
+    tokens_entrada = Column(Integer, default=0)
+    tokens_salida = Column(Integer, default=0)
+    # Ya se hizo lo de despues de guardar: foto enganchada y memoria del
+    # proveedor aprendida. Es lo que hace que reintentar no aprenda dos veces.
+    completada = Column(Boolean, default=False)
+
+    factura = relationship("FacturaCompra", back_populates="soporte")
+
+
+class AlertaPrecio(Base):
+    """Una mercancia que llego mas cara, y lo que eso le hace al menu.
+
+    Se crea al guardar una factura: quien la carga la ve en el momento, y
+    queda aqui para el dueño, que muchas veces no es quien carga (la factura
+    la mete caja). Queda pendiente hasta que alguien la marca vista.
+
+    La comparacion es primero contra el MISMO proveedor: el historial de un
+    insumo puede tener precios en unidades distintas (antes de la memoria por
+    proveedor, una botella se cargaba a veces por unidad y a veces por litro),
+    y el mismo proveedor casi siempre vende la misma presentacion.
+
+    Lo que se guarda es una FOTO del momento: los productos que quedaban
+    flacos y el proveedor que estaba mas barato ese dia. Si despues cambian
+    los precios del menu, esta alerta sigue diciendo lo que se vio al comprar.
+    """
+
+    __tablename__ = "TRX440_COM_ALERTA_PRECIO"
+    __table_args__ = (UniqueConstraint("factura_id", "ingrediente_id"),)
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(DateTime, default=ahora)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    proveedor_nombre = Column(String, default="")
+    proveedor_rif = Column(String, default="")
+    costo_anterior = Column(Float, nullable=False)
+    costo_nuevo = Column(Float, nullable=False)
+    variacion_pct = Column(Float, nullable=False)
+    # "proveedor": contra lo que ese mismo proveedor cobraba.
+    # "compras": nunca se le habia comprado; contra la mediana de las ultimas.
+    base = Column(String, default="proveedor")
+    # "subida" | "unidad" (un salto que parece error de unidad, no de precio)
+    tipo = Column(String, default="subida")
+    # JSON: [{nombre, margen_antes_pct, margen_despues_pct, precio, precio_sugerido, a_perdida}]
+    productos = Column(Text, default="[]")
+    # Otro proveedor que lo vendio mas barato en los ultimos 90 dias.
+    alternativa_proveedor = Column(String, default="")
+    alternativa_costo = Column(Float, nullable=True)
+    alternativa_fecha = Column(DateTime, nullable=True)
+    visto = Column(Boolean, default=False)
+    visto_por = Column(String, default="")
+    visto_en = Column(DateTime, nullable=True)
+
+    ingrediente = relationship("Ingrediente")
+    factura = relationship("FacturaCompra")
 
 
 class AperturaCaja(Base):
@@ -1028,6 +1258,23 @@ class Pedido(Base):
     # IVA debito fiscal); las demas quedan igual que hoy, sin IVA.
     facturado = Column(Boolean, default=False)
     numero_factura = Column(String, nullable=True)
+    # Lo que el Libro de Ventas pide de una factura y no sale del cobro: el
+    # numero de control del talonario o la maquina fiscal, y a quien se le
+    # facturo (RIF o cedula, y su nombre o razon social). Vacios = consumidor
+    # final sin datos.
+    numero_control = Column(String, default="")
+    rif_cliente = Column(String, default="")
+    razon_social_cliente = Column(String, default="")
+    # El IVA que le retuvo el cliente (contribuyente especial) a esta factura,
+    # segun su comprobante. Se descuenta del IVA a pagar en la declaracion
+    # del mes del comprobante. En Bs, como lo dice el comprobante.
+    retencion_iva_bs = Column(Float, nullable=True)
+    comprobante_retencion_iva = Column(String, default="")
+    fecha_retencion_iva = Column(Date, nullable=True)
+    # Si se retuvo al cobrar: el % y lo que no entro a la gaveta (en dolares,
+    # el pago "Retencion IVA" contra 1035). El comprobante puede llegar despues.
+    retencion_iva_pct = Column(Float, nullable=True)
+    retencion_iva_usd = Column(Float, nullable=True)
     # Igual que tasa_bcv: se congela la tasa de IVA del dia para que el Libro
     # de Ventas de un mes cerrado no cambie si despues sube la alicuota.
     tasa_iva = Column(Float, nullable=True)

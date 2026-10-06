@@ -33,11 +33,19 @@ import type {
   EstadoAcceso,
   EstadoResultadosContable,
   FacturaCompra,
+  AlertaPrecio,
+  CuerpoCompletarFactura,
+  Equivalencia,
+  LecturaFactura,
+  RevisionFactura,
+  SugerenciaRenglon,
   FilaBalanceComprobacion,
   FilaMayor,
   Gasto,
   Ingrediente,
   Proveedor,
+  FilaLibroCompras,
+  FilaLibroVentas,
   LibroCompras,
   LibroVentas,
   ListaUsuarios,
@@ -50,6 +58,7 @@ import type {
   Producto,
   ReporteResumen,
   PuntoTasa,
+  TasaDeUnaFecha,
   ReporteCombos,
   ReporteInventario,
   ArranqueLocal,
@@ -64,6 +73,7 @@ import type {
   Restauracion,
   ResumenCaja,
   ResumenIva,
+  RetencionesQuincena,
   RetiroPropietario,
   Rol,
   SaludContable,
@@ -98,6 +108,17 @@ const conFiltro = (f?: Record<string, number | undefined>) =>
     .filter(([, v]) => v != null)
     .map(([k, v]) => `${k}=${v}`)
     .join('&')
+
+/** El servidor contesto con error. Guarda el codigo: un 409 no se arregla
+ * reintentando, un 502 (el servidor reiniciando) si. */
+export class ErrorApi extends Error {
+  status: number
+  constructor(mensaje: string, status: number) {
+    super(mensaje)
+    this.name = 'ErrorApi'
+    this.status = status
+  }
+}
 
 /** Se cayo la red (no el servidor): `fetch` rechaza sin respuesta. */
 export class SinConexion extends Error {
@@ -176,9 +197,18 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     } catch {
       // respuesta no-JSON: se usa el texto tal cual
     }
-    throw new Error(mensaje)
+    throw new ErrorApi(mensaje, res.status)
   }
   return res.json()
+}
+
+/** Lo que el Libro de Ventas pide de una factura y no sale del cobro. Todo
+ * opcional: sin ello va a "Consumidor final". */
+export type DatosFacturaVenta = {
+  numero_control?: string
+  /** RIF o cédula; solo números se lee como cédula venezolana. */
+  rif_cliente?: string
+  razon_social_cliente?: string
 }
 
 export const api = {
@@ -514,6 +544,11 @@ export const api = {
       motivo_descuento?: string
       propina?: number
       cliente?: string
+      // Para el Libro de Ventas, solo si se factura: control y a quien.
+      factura?: DatosFacturaVenta
+      // El cliente (contribuyente especial) retiene este % del IVA: se cobra
+      // el total menos eso. Solo con factura.
+      retencion_iva_pct?: number
       operador_id?: number | null
       punto_venta_id?: number | null
       // Solo aplica cuando no se manda `pagos` (un solo metodo para todo).
@@ -534,15 +569,17 @@ export const api = {
         operador_id: extra?.operador_id ?? null,
         punto_venta_id: extra?.punto_venta_id ?? null,
         referencia: extra?.referencia || null,
+        ...(facturado ? extra?.factura : {}),
+        retencion_iva_pct: facturado && extra?.retencion_iva_pct ? extra.retencion_iva_pct : null,
       }),
     }),
   ticket: (pedidoId: number) => req<Ticket>(`/pedidos/${pedidoId}/ticket`),
   pedidosOlvidados: (horas = 24) => req<Pedido[]>(`/pedidos/olvidados?horas=${horas}`),
   /** Facturar despues de cobrar: el numero de factura sale del talonario. */
-  facturarPedido: (pedidoId: number, numero_factura: string) =>
+  facturarPedido: (pedidoId: number, numero_factura: string, datos?: DatosFacturaVenta) =>
     req<Pedido>(`/pedidos/${pedidoId}/facturar`, {
       method: 'POST',
-      body: JSON.stringify({ numero_factura }),
+      body: JSON.stringify({ numero_factura, ...datos }),
     }),
   devolverPedido: (
     pedidoId: number,
@@ -774,6 +811,7 @@ export const api = {
     req<EstadoTasa>(`/tasas/refrescar?forzar=${forzar}`, { method: 'POST' }),
   fijarTasa: (bcv: number, paralelo?: number) =>
     req<EstadoTasa>('/tasas', { method: 'PUT', body: JSON.stringify({ bcv, paralelo }) }),
+  tasaDeFecha: (fecha: string) => req<TasaDeUnaFecha>(`/tasas/al?fecha=${encodeURIComponent(fecha)}`),
   historialTasa: (r?: Rango) => req<PuntoTasa[]>(`/tasas/historial${conRango(r)}`),
   analisisTasa: (r?: Rango) => req<AnalisisTasa>(`/tasas/analisis${conRango(r)}`),
 
@@ -929,9 +967,20 @@ export const api = {
   crearFacturaCompra: (f: {
     numero_factura: string
     proveedor_nombre: string
+    // La impresa en el papel (AAAA-MM-DD). Solo se muestra: el periodo del
+    // Libro de Compras lo decide la fecha de registro, que pone el backend.
+    fecha_emision?: string
     // Obligatorio para el Libro de Compras: el backend rechaza vacio o
     // formato invalido.
     proveedor_rif: string
+    numero_control?: string
+    // La moneda del papel y la tasa (Bs por $) con que se paso a dolares:
+    // los montos de aqui van SIEMPRE en dolares, y con esto el backend
+    // recupera los Bs del papel para el Libro de Compras.
+    moneda?: '$' | 'Bs'
+    tasa_bcv?: number
+    // Siendo agente de retención: 0, 75 o 100. Sin dato, el del proveedor.
+    retencion_pct?: number
     categoria: string
     forma_pago: string
     descripcion?: string
@@ -960,6 +1009,58 @@ export const api = {
     referencia_pago?: string
   }) => req<FacturaCompra>('/compras/facturas', { method: 'POST', body: JSON.stringify(f) }),
   eliminarFacturaCompra: (id: number) => req(`/compras/facturas/${id}`, { method: 'DELETE' }),
+
+  // Factura desde foto. Nada de esto guarda facturas: la lectura propone, el
+  // formulario de siempre guarda con `crearFacturaCompra`, y despues la foto
+  // se engancha a la factura que salio.
+  estadoLectorFacturas: () => req<{ activo: boolean; lector: string }>('/compras/lectura'),
+  /** La foto (ya achicada) o el PDF tal cual. */
+  leerFacturaCompra: async (archivo: Blob) => {
+    const datos = new FormData()
+    datos.append('archivo', archivo, archivo.type === 'application/pdf' ? 'factura.pdf' : 'factura.jpg')
+    // Sin Content-Type: el navegador pone el del multipart con su boundary.
+    return req<LecturaFactura>('/compras/lectura', { method: 'POST', body: datos, headers: {} })
+  },
+  revisarFacturaCompra: (r: {
+    proveedor_rif: string
+    proveedor_nombre: string
+    numero_factura: string
+    /** `costo_unitario` en dólares, como se va a guardar. */
+    items: { indice: number; ingrediente_id: number; costo_unitario: number }[]
+  }) => req<RevisionFactura>('/compras/revision', { method: 'POST', body: JSON.stringify(r) }),
+  /** Lo de despues de guardar (foto, memoria, alertas) en un pedido que se puede repetir. */
+  // Antes de guardar la factura de una foto: que hacer cuando quede
+  // guardada. Si el "completar" no llega, el servidor lo termina solo.
+  anotarAlGuardar: (
+    soporteId: number,
+    intencion: Omit<CuerpoCompletarFactura, 'soporte_id'> & { numero_factura: string },
+  ) =>
+    req<{ ok: boolean }>(`/compras/lectura/${soporteId}/al-guardar`, {
+      method: 'POST',
+      body: JSON.stringify(intencion),
+    }),
+  reconciliarCompras: () => req<{ completadas: number }>('/compras/lectura/reconciliar', { method: 'POST' }),
+  completarFactura: (facturaId: number, cuerpo: CuerpoCompletarFactura) =>
+    req<{ foto: boolean; foto_perdida: boolean; aprendidas: number; alertas: AlertaPrecio[] }>(
+      `/compras/facturas/${facturaId}/completar`,
+      {
+        method: 'POST',
+        body: JSON.stringify(cuerpo),
+      },
+    ),
+  urlSoporteFactura: (facturaId: number) => `/api/compras/facturas/${facturaId}/soporte`,
+  // Memoria por proveedor: que es de lo nuestro cada renglon de su factura.
+  buscarEquivalencias: (proveedor_rif: string, renglones: { descripcion: string; unidad: string }[]) =>
+    req<SugerenciaRenglon[]>('/compras/equivalencias/buscar', {
+      method: 'POST',
+      body: JSON.stringify({ proveedor_rif, renglones }),
+    }),
+  // Alertas de precio: salen de `completarFactura` y quedan en la bandeja.
+  listarAlertasPrecio: (pendientes = false) =>
+    req<AlertaPrecio[]>(`/compras/alertas${pendientes ? '?pendientes=true' : ''}`),
+  marcarAlertaVista: (id: number) => req<AlertaPrecio>(`/compras/alertas/${id}/visto`, { method: 'POST' }),
+  listarEquivalencias: () => req<Equivalencia[]>('/compras/equivalencias'),
+  olvidarEquivalencia: (id: number) => req(`/compras/equivalencias/${id}`, { method: 'DELETE' }),
   /** `referencia` es obligatoria si no se salda en efectivo. */
   pagarFacturaCompra: (id: number, forma_pago: string, referencia?: string) =>
     req<FacturaCompra>(`/compras/facturas/${id}/pagar`, {
@@ -968,9 +1069,25 @@ export const api = {
     }),
 
   configFiscal: () => req<ConfiguracionFiscal>('/impuestos/config'),
-  actualizarConfigFiscal: (tasa_iva: number) =>
-    req<ConfiguracionFiscal>('/impuestos/config', { method: 'PUT', body: JSON.stringify({ tasa_iva }) }),
+  actualizarConfigFiscal: (c: Partial<ConfiguracionFiscal> & { tasa_iva: number }) =>
+    req<ConfiguracionFiscal>('/impuestos/config', { method: 'PUT', body: JSON.stringify(c) }),
   libroVentas: (r: Rango) => req<LibroVentas>(`/impuestos/libro-ventas${conRango(r)}`),
+  cambiarTasaCompra: (facturaId: number, tasa_bcv: number) =>
+    req<FilaLibroCompras>(`/impuestos/compras/${facturaId}/tasa`, { method: 'PUT', body: JSON.stringify({ tasa_bcv }) }),
+  cambiarTasaVenta: (pedidoId: number, tasa_bcv: number) =>
+    req<{ ok: boolean }>(`/impuestos/ventas/${pedidoId}/tasa`, { method: 'PUT', body: JSON.stringify({ tasa_bcv }) }),
+  retencionesIva: (anio: number, mes: number, quincena: number) =>
+    req<RetencionesQuincena>(`/impuestos/retenciones-iva?anio=${anio}&mes=${mes}&quincena=${quincena}`),
+  enterarRetenciones: (anio: number, mes: number, quincena: number, forma_pago: string, referencia?: string) =>
+    req<RetencionesQuincena>('/impuestos/retenciones-iva/enterar', {
+      method: 'POST',
+      body: JSON.stringify({ anio, mes, quincena, forma_pago, referencia }),
+    }),
+  /** El comprobante de retención de IVA que entregó el cliente. Sin monto, el 75 % del IVA. */
+  registrarRetencionRecibida: (pedidoId: number, r: { comprobante: string; fecha: string; monto_bs?: number }) =>
+    req<FilaLibroVentas>(`/impuestos/ventas/${pedidoId}/retencion`, { method: 'POST', body: JSON.stringify(r) }),
+  quitarRetencionRecibida: (pedidoId: number) =>
+    req<{ ok: boolean }>(`/impuestos/ventas/${pedidoId}/retencion`, { method: 'DELETE' }),
   libroCompras: (r: Rango) => req<LibroCompras>(`/impuestos/libro-compras${conRango(r)}`),
   resumenIva: (r: Rango) => req<ResumenIva>(`/impuestos/resumen${conRango(r)}`),
   listarDeclaraciones: () => req<DeclaracionIva[]>('/impuestos/declaraciones'),

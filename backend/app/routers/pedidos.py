@@ -1340,6 +1340,7 @@ async def cobrar_pedido(
     if pedido.estado == "anulado":
         raise HTTPException(status_code=409, detail="No se puede cobrar un pedido anulado")
 
+    datos_factura = _datos_de_factura(body) if body.facturado else {}
     if body.facturado and body.numero_factura:
         # El numero lo transcribe el dueno de su talonario. Repetirlo mete dos
         # facturas con el mismo numero en el Libro de Ventas, y eso es un
@@ -1384,7 +1385,10 @@ async def cobrar_pedido(
     # Un pago puede venir partido: $5 en efectivo y el resto por pago movil es
     # cosa de todos los dias. Sin esto habia que elegir un metodo y mentir, y
     # el cierre de caja mostraba un faltante que no existia.
-    a_cobrar = pedido.a_cobrar
+    # Un cliente contribuyente especial retiene parte del IVA: paga el total
+    # menos eso, y lo retenido entra como un pago aparte que no es plata.
+    retenido = _retencion_al_cobrar(db, pedido, body)
+    a_cobrar = round(pedido.a_cobrar - retenido, 2)
     # Una comanda regalada entera (todo cortesia) no tiene nada que cobrar:
     # se cierra sin pagos, y la gaveta no se entera. El costo si se reconoce
     # abajo, en `registrar_venta`, como gasto de cortesias.
@@ -1395,6 +1399,11 @@ async def cobrar_pedido(
             schemas.PagoInput(metodo=body.metodo_pago, monto=a_cobrar, referencia=body.referencia)
         ]
     for pago in pagos:
+        if pago.metodo == "Retención IVA":
+            raise HTTPException(
+                status_code=400,
+                detail="La retención de IVA no se elige como pago: marca que el cliente retiene.",
+            )
         if pago.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
             raise HTTPException(
                 status_code=400,
@@ -1448,6 +1457,11 @@ async def cobrar_pedido(
     pedido.metodo_pago = "Cortesía" if not pagos else pagos[0].metodo if len(metodos) == 1 else "Mixto"
     # Los pagos que trajeron sus bolivares del banco: su redondeo se calcula
     # con la tasa del cobro, mas abajo.
+    # Un cliente contribuyente especial retiene parte del IVA (Daniel, oct):
+    # entra como un pago aparte que no es plata. Va DESPUES de decidir el
+    # metodo: una retencion no convierte un pago en "Mixto".
+    if retenido:
+        pagos = list(pagos) + [schemas.PagoInput(metodo="Retención IVA", monto=retenido)]
     con_bs: list = []
     for pago in pagos:
         vuelto = round(max((pago.recibido or pago.monto) - pago.monto, 0), 2)
@@ -1505,6 +1519,8 @@ async def cobrar_pedido(
     # aqui mismo, al cobrar. Solo esa entra al Libro de Ventas y genera IVA.
     pedido.facturado = body.facturado
     pedido.numero_factura = body.numero_factura if body.facturado else None
+    for campo, valor in datos_factura.items():
+        setattr(pedido, campo, valor)
     # Se congela la tasa del momento del cobro: el reporte en bolivares de la
     # semana pasada tiene que seguir mostrando los Bs que entraron entonces, no
     # los que darian los mismos dolares a la tasa de hoy. Igual con el IVA: si
@@ -1512,6 +1528,15 @@ async def cobrar_pedido(
     vigente = tasas.tasa_vigente(db)
     pedido.tasa_bcv = vigente.bcv if vigente else None
     pedido.tasa_iva = impuestos.tasa_iva(db) if body.facturado else None
+    if retenido:
+        # Lo retenido en Bs, como lo dira el comprobante: el % del IVA de la
+        # factura en Bs. El comprobante (numero y fecha) se carga cuando llegue.
+        pedido.retencion_iva_pct = body.retencion_iva_pct
+        pedido.retencion_iva_usd = retenido
+        if pedido.tasa_bcv:
+            total_bs = round(pedido.total * pedido.tasa_bcv, 2)
+            _, iva_bs = impuestos.desglosar(total_bs, pedido.tasa_iva)
+            pedido.retencion_iva_bs = impuestos.porcentaje_de(iva_bs, body.retencion_iva_pct)
     # El stock ya se descontó al crear la comanda. Aca solo se reconoce el
     # costo contra el ingreso, que es cuando corresponde registrarlo.
     # Lo que el banco dijo en bolivares contra lo que el pago vale en los
@@ -1532,6 +1557,37 @@ async def cobrar_pedido(
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_pagado", resultado.model_dump(mode="json"))
     return resultado
+
+
+def _retencion_al_cobrar(db: Session, pedido: models.Pedido, body) -> float:
+    """Cuanto del IVA (en dolares) retiene el cliente, o 0."""
+    pct = body.retencion_iva_pct
+    if not pct:
+        return 0.0
+    if not body.facturado:
+        raise HTTPException(status_code=400, detail="Solo se retiene IVA de una venta facturada.")
+    if pct not in (75, 100):
+        raise HTTPException(status_code=400, detail="La retención de IVA es de 75 % o 100 %.")
+    _, iva = impuestos.desglosar(pedido.total, impuestos.tasa_iva(db))
+    return impuestos.porcentaje_de(iva, pct)
+
+
+def _datos_de_factura(body) -> dict:
+    """Control y cliente de una factura de venta, limpios y validados. Todos
+    opcionales: sin ellos va a "Consumidor final". Un RIF o cedula mal
+    escrito se rechaza: en el Libro de Ventas no se puede corregir despues."""
+    rif = (body.rif_cliente or "").strip()
+    if rif and not impuestos.documento_cliente_valido(rif):
+        raise HTTPException(
+            status_code=400,
+            detail="El RIF o la cédula del cliente es una letra (V/E/J/G/P/C) y sus números, "
+            "por ejemplo J-12345678-9 o V-12345678.",
+        )
+    return {
+        "numero_control": (body.numero_control or "").strip(),
+        "rif_cliente": impuestos.normalizar_documento_cliente(rif) if rif else "",
+        "razon_social_cliente": (body.razon_social_cliente or "").strip(),
+    }
 
 
 @router.post("/{pedido_id}/facturar", response_model=schemas.Pedido)
@@ -1573,6 +1629,7 @@ async def facturar_pedido(
     numero = (body.numero_factura or "").strip()
     if not numero:
         raise HTTPException(status_code=400, detail="Hace falta el numero de factura")
+    datos_factura = _datos_de_factura(body)
     # Mismo control que al cobrar: dos facturas con el mismo numero es un
     # problema fiscal, no cosmetico.
     repetido = (
@@ -1588,6 +1645,8 @@ async def facturar_pedido(
 
     pedido.facturado = True
     pedido.numero_factura = numero
+    for campo, valor in datos_factura.items():
+        setattr(pedido, campo, valor)
     # La alicuota se congela AHORA, que es cuando de verdad se decide
     # facturar -no la de cuando se vendio, que en este caso no se guardo
     # porque en ese momento no iba a haber factura.
