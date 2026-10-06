@@ -37,6 +37,8 @@ export type NombreIcono =
   | 'campana'
   | 'campana-muda'
   | 'chispa'
+  | 'camara'
+  | 'imagen'
 
 const TRAZOS: Record<NombreIcono, string> = {
   inicio: 'M3 10.5 12 3l9 7.5M5 9.8V21h14V9.8M10 21v-6h4v6',
@@ -77,6 +79,8 @@ const TRAZOS: Record<NombreIcono, string> = {
   'campana-muda': 'M10.3 21a1.94 1.94 0 0 0 3.4 0M18 8a6 6 0 0 0-9.3-5M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h13M2 2l20 20',
   // El destello: lo que hoy se entiende como "esto lo calculo el sistema".
   chispa: 'M12 3v3m0 12v3M4.2 7.2l2.1 2.1m11.4 11.4-2.1-2.1M3 12h3m12 0h3M4.2 16.8l2.1-2.1M17.7 3.3l-2.1 2.1M12 8.5 13.2 11 15.5 12l-2.3 1L12 15.5 10.8 13 8.5 12l2.3-1z',
+  camara: 'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
+  imagen: 'M3 3h18v18H3zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3M21 15l-5-5L5 21',
 }
 
 export default function Icono({

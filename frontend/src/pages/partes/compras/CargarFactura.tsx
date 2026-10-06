@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import CampoSugerido from '../../../components/CampoSugerido'
 import { CasillaConUnidad } from '../../../components/Cantidad'
 import { aBase, convertirTexto, otraUnidad } from '../../../lib/unidades'
@@ -16,7 +16,7 @@ import {
   unidadDistinta,
   unidadNuestra,
 } from '../../../lib/compras'
-import { achicarFoto } from '../../../lib/foto'
+import { achicarFoto, revisarFoto, TEXTO_PROBLEMA, type Problema } from '../../../lib/foto'
 import { unirFotosEnPdf } from '../../../lib/pdfDeFotos'
 import { fmtNum } from '../../../lib/moneda'
 import { necesitaReferencia } from '../../../lib/pagos'
@@ -1320,9 +1320,20 @@ function BarraGuardar({
 }
 
 /**
- * Donde entra la factura: arrastrarla, tocar para elegir (en el teléfono:
- * cámara, galería o el PDF del correo), o pegarla con Ctrl+V. No aparece si
- * la lectura con IA no está activada.
+ * Donde entra la factura. No aparece si la lectura con IA no está activada.
+ *
+ * EN EL TELEFONO Y LA TABLET (el cliente, 6-oct: "que pueda escanear desde el
+ * telefono... abrir camara o en su defecto cargar imagenes, no pdf"): dos
+ * botones que dicen lo que hacen, "Tomar foto" (la camara trasera, directo) y
+ * "Elegir de la galería". Antes era un solo boton que abria el selector de
+ * archivos, y la camara habia que encontrarla adentro. El PDF queda para la
+ * computadora, que es donde llegan las facturas por correo.
+ *
+ * EN LA COMPUTADORA: elegir foto o PDF, arrastrarla, o pegarla con Ctrl+V.
+ *
+ * Cada foto se REVISA al llegar (`lib/foto.ts`): movida, oscura o demasiado
+ * chica se marca en su miniatura y se avisa antes de leer, para no gastar
+ * una lectura de IA en una foto que va a salir mal. Igual se puede leer.
  */
 // Paginas de una misma factura que se pueden juntar: una factura larga llega
 // en dos o tres fotos. Achicadas pesan unos cientos de KB cada una.
@@ -1330,17 +1341,27 @@ const MAX_PAGINAS = 8
 
 const esPdf = (f: File) => f.type === 'application/pdf'
 const esFoto = (f: File) => f.type.startsWith('image/')
+// Un dedo y no un mouse: telefono o tablet. Es lo mismo que mira el modo
+// ligero (lib/ligero.ts) para saber que es una tablet.
+const esTactil = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches)
+
+type Pagina = { archivo: File; url: string; problemas: Problema[] | null }
 
 function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, esPdf: boolean) => void }) {
+  const dialogo = useDialogo()
   const [activo, setActivo] = useState(false)
   const [leyendo, setLeyendo] = useState(false)
   const [terminando, setTerminando] = useState(false)
   const [encima, setEncima] = useState(false)
   const [error, setError] = useState('')
+  const [tactil] = useState(esTactil)
   // Las fotos de la factura, en orden, antes de leerlas: asi se puede sacar
-  // la segunda foto con el telefono despues de la primera.
-  const [paginas, setPaginas] = useState<{ archivo: File; url: string }[]>([])
+  // la segunda foto con el telefono despues de la primera. `problemas` en
+  // null mientras se revisa.
+  const [paginas, setPaginas] = useState<Pagina[]>([])
   const entrada = useRef<HTMLInputElement>(null)
+  const camara = useRef<HTMLInputElement>(null)
+  const galeria = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     api
@@ -1358,7 +1379,7 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
     if (leyendo || lista.length === 0) return
     setError('')
     const validos = lista.filter((f) => esFoto(f) || esPdf(f))
-    if (validos.length < lista.length) return setError('Tiene que ser una foto o un PDF.')
+    if (validos.length < lista.length) return setError(tactil ? 'Tiene que ser una foto.' : 'Tiene que ser una foto o un PDF.')
     const pdfs = validos.filter(esPdf)
     if (pdfs.length > 0) {
       // Un PDF ya es el documento entero: no se mezcla con fotos.
@@ -1366,7 +1387,15 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
       return leer([pdfs[0]])
     }
     if (paginas.length + validos.length > MAX_PAGINAS) return setError(`Hasta ${MAX_PAGINAS} fotos por factura.`)
-    setPaginas((prev) => [...prev, ...validos.map((archivo) => ({ archivo, url: URL.createObjectURL(archivo) }))])
+    const nuevas: Pagina[] = validos.map((archivo) => ({ archivo, url: URL.createObjectURL(archivo), problemas: null }))
+    setPaginas((prev) => [...prev, ...nuevas])
+    // La revision corre aparte: la miniatura aparece al instante y el aviso,
+    // si lo hay, unos milisegundos despues.
+    for (const p of nuevas) {
+      revisarFoto(p.archivo).then((problemas) =>
+        setPaginas((prev) => prev.map((x) => (x.url === p.url ? { ...x, problemas } : x))),
+      )
+    }
   }
 
   function quitar(i: number) {
@@ -1398,8 +1427,30 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
     } finally {
       setLeyendo(false)
       setTerminando(false)
-      if (entrada.current) entrada.current.value = ''
+      for (const r of [entrada, camara, galeria]) if (r.current) r.current.value = ''
     }
+  }
+
+  // Antes de leer: si alguna foto salio mal, se dice cual y por que. Repetirla
+  // cuesta un toque; leerla mal cuesta una lectura y llenar a mano.
+  async function leerRevisadas() {
+    const malas = paginas
+      .map((p, i) => ({ i, problemas: p.problemas ?? [] }))
+      .filter((p) => p.problemas.length > 0)
+    if (malas.length > 0) {
+      const sola = paginas.length === 1
+      const lineas = malas.map(
+        (m) => `${sola ? 'La foto' : `La foto ${m.i + 1}`} ${m.problemas.map((x) => TEXTO_PROBLEMA[x]).join(' y ')}.`,
+      )
+      const seguir = await dialogo.confirmar({
+        titulo: sola ? 'Esta foto puede leerse mal' : 'Hay fotos que pueden leerse mal',
+        texto: `${lineas.join(' ')} La IA puede equivocarse o no leer nada. Si puedes, tómala de nuevo con buena luz y el teléfono quieto.`,
+        aceptar: 'Leer igual',
+        cancelar: 'Volver',
+      })
+      if (!seguir) return
+    }
+    return leer(paginas.map((p) => p.archivo))
   }
 
   // Pegar una captura o un PDF copiado (Ctrl+V), sin pasar por el disco.
@@ -1417,6 +1468,11 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
   })
 
   if (!activo) return null
+  const alElegir = (e: ChangeEvent<HTMLInputElement>) => {
+    recibir(Array.from(e.target.files ?? []))
+    e.target.value = ''
+  }
+  const conProblemas = paginas.filter((p) => p.problemas && p.problemas.length > 0).length
   return (
     <div
       onDragOver={(e) => {
@@ -1433,17 +1489,12 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
         encima ? 'border-acento-500 bg-acento-50' : 'border-neutral-300 bg-white'
       }`}
     >
-      <input
-        ref={entrada}
-        type="file"
-        multiple
-        accept="image/*,application/pdf"
-        className="hidden"
-        onChange={(e) => {
-          recibir(Array.from(e.target.files ?? []))
-          e.target.value = ''
-        }}
-      />
+      {/* Computadora: foto o PDF, varias a la vez. */}
+      <input ref={entrada} type="file" multiple accept="image/*,application/pdf" className="hidden" onChange={alElegir} />
+      {/* Telefono: la camara trasera directo (`capture`), una foto por vez. */}
+      <input ref={camara} type="file" accept="image/*" capture="environment" className="hidden" onChange={alElegir} />
+      {/* Telefono: la galeria, varias fotos, sin PDF. */}
+      <input ref={galeria} type="file" multiple accept="image/*" className="hidden" onChange={alElegir} />
       {leyendo ? (
         <EsperaLectura terminando={terminando} />
       ) : paginas.length > 0 ? (
@@ -1452,34 +1503,52 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
             {paginas.length === 1 ? '1 foto' : `${paginas.length} fotos`} de la misma factura
           </p>
           <div className="flex flex-wrap justify-center gap-2">
-            {paginas.map((p, i) => (
-              <div key={p.url} className="relative">
-                <img src={p.url} alt={`Página ${i + 1}`} className="h-24 w-20 object-cover rounded-lg border border-neutral-200" />
-                <span className="absolute left-1 top-1 rounded bg-neutral-900/80 px-1.5 text-[10px] font-semibold text-white">{i + 1}</span>
-                <button
-                  type="button"
-                  onClick={() => quitar(i)}
-                  aria-label={`Quitar la foto ${i + 1}`}
-                  className="absolute -right-1.5 -top-1.5 h-6 w-6 rounded-full bg-white border border-neutral-300 text-xs leading-none shadow-sm"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+            {paginas.map((p, i) => {
+              const mala = p.problemas !== null && p.problemas.length > 0
+              return (
+                <div key={p.url} className="relative">
+                  <img
+                    src={p.url}
+                    alt={`Página ${i + 1}`}
+                    className={`h-24 w-20 object-cover rounded-lg border ${mala ? 'border-2 border-aviso-500' : 'border-neutral-200'}`}
+                  />
+                  <span className="absolute left-1 top-1 rounded bg-neutral-900/80 px-1.5 text-[10px] font-semibold text-white">{i + 1}</span>
+                  {mala && (
+                    <span className="absolute inset-x-1 bottom-1 rounded bg-aviso-500 px-1 text-[10px] font-semibold text-white">
+                      {p.problemas!.includes('movida') ? 'Movida' : p.problemas!.includes('pequena') ? 'Muy chica' : 'Oscura'}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => quitar(i)}
+                    aria-label={`Quitar la foto ${i + 1}`}
+                    className="absolute -right-1.5 -top-1.5 h-6 w-6 rounded-full bg-white border border-neutral-300 text-xs leading-none shadow-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )
+            })}
             {paginas.length < MAX_PAGINAS && (
               <button
                 type="button"
-                onClick={() => entrada.current?.click()}
-                className="h-24 w-20 rounded-lg border-2 border-dashed border-neutral-300 text-xs text-neutral-500 hover:border-acento-500"
+                onClick={() => (tactil ? camara : entrada).current?.click()}
+                className="h-24 w-20 rounded-lg border-2 border-dashed border-neutral-300 text-xs text-neutral-500 hover:border-acento-500 inline-flex flex-col items-center justify-center gap-1"
               >
-                + Otra
+                {tactil && <Icono nombre="camara" size={18} />}
+                Otra
                 <br />
                 página
               </button>
             )}
           </div>
+          {conProblemas > 0 && (
+            <p className="text-xs text-aviso-700">
+              {conProblemas === 1 ? 'Una foto' : `${conProblemas} fotos`} pueden leerse mal: toca ✕ y tómala de nuevo.
+            </p>
+          )}
           <button
-            onClick={() => leer(paginas.map((p) => p.archivo))}
+            onClick={() => void leerRevisadas()}
             className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold"
           >
             <Icono nombre="chispa" size={16} />
@@ -1487,8 +1556,39 @@ function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, 
           </button>
           <p className="text-xs text-neutral-500">
             Si la factura sigue en otra hoja, agrega esa foto antes de leer. En orden: la IA junta los renglones de todas.
+            {tactil && (
+              <>
+                {' '}
+                <button type="button" onClick={() => galeria.current?.click()} className="underline">
+                  Agregar desde la galería
+                </button>
+              </>
+            )}
           </p>
         </div>
+      ) : tactil ? (
+        <>
+          <div className="flex flex-col sm:flex-row items-stretch justify-center gap-2">
+            <button
+              onClick={() => camara.current?.click()}
+              className="inline-flex items-center justify-center gap-2 bg-neutral-900 text-white px-5 py-3 rounded-lg text-sm font-semibold"
+            >
+              <Icono nombre="camara" size={18} />
+              Tomar foto de la factura
+            </button>
+            <button
+              onClick={() => galeria.current?.click()}
+              className="inline-flex items-center justify-center gap-2 border border-neutral-300 bg-white px-5 py-3 rounded-lg text-sm font-semibold"
+            >
+              <Icono nombre="imagen" size={18} />
+              Elegir de la galería
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 mt-2">
+            La factura entera, derecha, con buena luz y el teléfono quieto. ¿Varias hojas? Una foto por hoja. La IA
+            llena el formulario y tú lo revisas antes de guardar.
+          </p>
+        </>
       ) : (
         <>
           <button onClick={() => entrada.current?.click()} className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">
