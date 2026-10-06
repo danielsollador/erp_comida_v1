@@ -1,8 +1,9 @@
 # Migración a Google Cloud: propuesta
 
-Proyecto: `vertigo-erp-produccion`. Estado (5-oct-2026): **ambiente de prueba
-levantado** con los datos reales copiados (ver `gcp/README.md` para operarlo).
-Hostinger sigue siendo producción hasta que Daniel y Leider decidan el cambio.
+Proyecto: `vertigo-erp-produccion`. Estado (6-oct-2026): **la VM corre la
+línea integrada (`master` = `integrar-daniel`) con los datos reales copiados el
+5-oct**, en `e2-small`, con snapshot diario y Gemini activo. Falta solo el
+cambio (`gcp/cambio.md`). Hostinger sigue siendo producción hasta ese día.
 
 ## Lo que hay hoy (medido en el VPS el 5-oct-2026, solo lectura)
 
