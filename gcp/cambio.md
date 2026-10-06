@@ -9,8 +9,8 @@
 >   Encrypt bloquea ese nombre una hora.
 > - Revisar si hay registro **AAAA** (IPv6): la VM no tiene IPv6.
 > - Esa noche se cargaron en `/docker/erp/certs` los certificados que traía
->   Hostinger (vencen el 14-dic-2026). **Pendiente:** vaciar esa carpeta y
->   reiniciar Traefik para que Let's Encrypt emita los suyos y los renueve solo.
+>   Hostinger (vencen el 14-dic-2026). Luego se vació esa carpeta y se
+>   reiniciar Traefik. **Hecho a las 23:20:** Let's Encrypt emitió los 3 (vencen 4-ene-2027, se renuevan solos).
 
 Se hace **con Leider presente**, en un momento sin ventas (por la noche o antes
 de abrir). Dura unos 20 minutos. Hostinger queda encendido una semana más como
