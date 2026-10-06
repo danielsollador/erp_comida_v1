@@ -712,7 +712,7 @@ function Retenciones({ agente }: { agente: boolean }) {
       {datos && (
         <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+            <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
               <tr>
                 <th className="text-left p-3">Comprobante</th>
                 <th className="text-left p-3">Proveedor</th>

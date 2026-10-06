@@ -98,7 +98,7 @@ export function MemoriaProveedores({ proveedores }: { proveedores: Proveedor[] }
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+            <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
               <tr>
                 <th className="p-2 text-left">Proveedor</th>
                 <th className="p-2 text-left">En su factura</th>
