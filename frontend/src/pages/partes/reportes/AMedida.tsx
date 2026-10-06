@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import BarraFiltros from '../../../components/BarraFiltros'
+import MenuAcciones from '../../../components/MenuAcciones'
 import { useDialogo } from '../../../components/dialogo'
-import { GraficoBarras, GraficoLineas } from '../../../components/Grafico'
+import { BarrasApiladas, GraficoBarras } from '../../../components/Grafico'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
-import { Boton, Modal, Seccion } from '../../../components/ui'
+import { FiltroDesplegable, Seccion } from '../../../components/ui'
 import { api } from '../../../lib/api'
 import { ATAJOS, rangoDe, type ClaveRango, type Rango } from '../../../lib/fechas'
 import { fmtBs, fmtNum } from '../../../lib/moneda'
+import { colorSerie } from '../../../lib/paleta'
 import type {
+  CampoDinamico,
   DefinicionReporte,
   FormatoMedida,
   FuenteDinamica,
@@ -20,31 +24,41 @@ import { Vacio } from './comunes'
  * Reportes a medida: la tabla dinamica del ERP (motor en
  * backend/app/reporte_dinamico.py).
  *
- * POR QUE. Cada "¿y como vemos esto?" del cliente terminaba en una pantalla
- * nueva. Aqui se elige QUE mirar (una fuente: ventas, productos, cobros,
- * compras, mermas), POR QUE agruparlo (filas y, si se quiere, columnas), QUE
- * sumar y QUE filtrar, y el resultado se arma solo. Lo que sirve se guarda
- * con nombre y queda a un clic para la proxima vez.
+ * PENSADA PARA EL TELEFONO (el cliente, 6-oct): "no debo scrollear para
+ * seleccionar filtros ni nada... todo se ve demasiado tecnico... la interfaz
+ * debe ser la mas sencilla y completa que exista". Por eso:
+ *
+ *  - TODO ES UNA FILA DE PASTILLAS, la misma `BarraFiltros` de los demas
+ *    modulos: el periodo, que mirar (Ventas, Compras, Inventario... los
+ *    modulos del ERP), por que agrupar, que medir y los filtros. Cada pastilla
+ *    dice lo que tiene puesto ("Por Día", "Medir Total vendido") y se toca
+ *    para cambiarlo. No hay un formulario que recorrer antes de ver algo.
+ *  - LAS PALABRAS SON LAS DEL NEGOCIO: "Por", "Comparar", "Medir", y una
+ *    sola lista de conceptos para todos los modulos (Persona, Producto,
+ *    Forma de pago...). Nada de "dimension", "fila", "columna" ni "medida".
+ *  - EL RESULTADO VA AL CENTRO: la cifra grande, el grafico y la tabla.
  *
  * Todo se agrupa en el servidor: la tablet recibe solo el resultado.
  */
 
-const VACIA: DefinicionReporte = { fuente: 'ventas', filas: ['dia'], columna: null, medidas: ['ventas', 'pedidos'], filtros: {} }
-const TEMPORALES = new Set(['fecha', 'semana', 'mes', 'anio'])
+const INICIAL: DefinicionReporte = { fuente: 'ventas', filas: ['dia'], columna: null, medidas: ['ventas'], filtros: {} }
+const TEMPORALES = new Set(['fecha', 'semana', 'mes', 'anio', 'hora', 'dia_semana'])
+const ORDEN_GRUPOS = ['Cuándo', 'Qué', 'Quién', 'Cómo']
 
-function formatear(formato: FormatoMedida, v: number | null | undefined): string {
+function formatear(formato: FormatoMedida, v: number | null | undefined, corto = false): string {
   if (v === null || v === undefined) return '—'
+  const d = corto && Math.abs(v) >= 100 ? 0 : 2
   switch (formato) {
     case 'dinero':
-      return `${v < 0 ? '-' : ''}$${fmtNum(Math.abs(v), 2)}`
+      return `${v < 0 ? '-' : ''}$${fmtNum(Math.abs(v), d)}`
     case 'bs':
-      return fmtBs(v)
+      return fmtBs(v, d)
     case 'entero':
       return fmtNum(v, 0)
     case 'pct':
       return `${fmtNum(v, 1)}%`
     default:
-      return fmtNum(v, Number.isInteger(v) ? 0 : 2)
+      return fmtNum(v, Number.isInteger(v) ? 0 : corto ? 0 : 2)
   }
 }
 
@@ -52,41 +66,51 @@ function completar(d: Partial<DefinicionReporte> & { fuente: string; medidas: st
   return { filas: [], columna: null, filtros: {}, ...d }
 }
 
+/** Los campos en el orden en que se piensan: cuando, que, quien, como. */
+function ordenados(campos: CampoDinamico[]): CampoDinamico[] {
+  const puesto = (c: CampoDinamico) => {
+    const i = ORDEN_GRUPOS.indexOf(c.grupo)
+    return i < 0 ? ORDEN_GRUPOS.length : i
+  }
+  return [...campos].sort((a, b) => puesto(a) - puesto(b))
+}
+
 export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCambiarRango: (r: Rango) => void }) {
   const dialogo = useDialogo()
   const [catalogo, setCatalogo] = useState<FuenteDinamica[] | null>(null)
   const [guardados, setGuardados] = useState<ReporteGuardado[]>([])
-  const [def, setDef] = useState<DefinicionReporte>(VACIA)
+  const [def, setDef] = useState<DefinicionReporte>(INICIAL)
   // El reporte guardado que esta abierto: "Guardar" lo actualiza.
   const [abierto, setAbierto] = useState<ReporteGuardado | null>(null)
   const [resultado, setResultado] = useState<ResultadoDinamico | null>(null)
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
-  const [filtrando, setFiltrando] = useState<string | null>(null)
+  // Los valores de cada campo filtrado, para su desplegable.
+  const [valores, setValores] = useState<Record<string, ValorCampo[]>>({})
 
   useEffect(() => {
     Promise.all([api.catalogoReportes(), api.reportesGuardados()])
       .then(([c, g]) => {
         setCatalogo(c)
         setGuardados(g)
+        // Si este rol no entra a Ventas, abre en lo primero que si ve.
+        if (c.length && !c.some((f) => f.id === INICIAL.fuente)) {
+          setDef({ fuente: c[0].id, filas: ['dia'], columna: null, medidas: [c[0].medidas[0].id], filtros: {} })
+        }
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'No se pudo cargar el catálogo'))
+      .catch((e) => setError(e instanceof Error ? e.message : 'No se pudo cargar'))
   }, [])
 
   const fuente = catalogo?.find((f) => f.id === def.fuente) ?? null
-  const nombreCampo = (id: string) => fuente?.campos.find((c) => c.id === id)?.nombre ?? id
+  const campos = useMemo(() => ordenados(fuente?.campos ?? []), [fuente])
+  const nombreCampo = (id: string) => campos.find((c) => c.id === id)?.nombre ?? id
 
-  // Cada cambio vuelve a consultar, con una pausa corta: elegir tres medidas
-  // seguidas no tiene por que disparar tres consultas.
+  // Cada cambio vuelve a consultar, con una pausa corta: cambiar dos
+  // pastillas seguidas no tiene por que disparar dos consultas.
   const turno = useRef(0)
   useEffect(() => {
-    if (!catalogo || def.medidas.length === 0) {
-      turno.current++
-      setResultado(null)
-      setCargando(false)
-      return
-    }
     const mio = ++turno.current
+    if (!catalogo || def.medidas.length === 0) return
     setCargando(true)
     const t = setTimeout(() => {
       api
@@ -102,9 +126,26 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
           setError(e instanceof Error ? e.message : 'No se pudo armar el reporte')
         })
         .finally(() => mio === turno.current && setCargando(false))
-    }, 250)
+    }, 200)
     return () => clearTimeout(t)
   }, [def, rango, catalogo])
+
+  // Los valores de los campos filtrados: una vez por campo y periodo.
+  const claveValores = (campo: string) => `${def.fuente}|${campo}|${rango.desde}|${rango.hasta}`
+  const filtrados = Object.keys(def.filtros)
+  useEffect(() => {
+    for (const campo of filtrados) {
+      const clave = claveValores(campo)
+      if (valores[clave]) continue
+      api
+        .valoresDeCampo(def.fuente, campo, rango)
+        .then((v) => setValores((antes) => ({ ...antes, [clave]: v })))
+        .catch(() => setValores((antes) => ({ ...antes, [clave]: [] })))
+    }
+    // `claveValores` y `valores` cambian con lo de abajo; pedir de nuevo lo
+    // que ya se tiene es justo lo que este efecto evita.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [def.fuente, filtrados.join('|'), rango.desde, rango.hasta])
 
   const cambiar = (parcial: Partial<DefinicionReporte>) => setDef((d) => ({ ...d, ...parcial }))
 
@@ -113,18 +154,24 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
     const f = catalogo?.find((x) => x.id === id)
     if (!f) return
     setAbierto(null)
+    setResultado(null)
     setDef({ fuente: id, filas: ['dia'], columna: null, medidas: [f.medidas[0].id], filtros: {} })
   }
 
   const abrir = (id: string) => {
+    if (!id) {
+      setAbierto(null)
+      return
+    }
     const g = guardados.find((x) => x.id === id)
     if (!g) return
     // Un reporte guardado por alguien con mas permisos puede traer costo o
-    // margen; aqui solo se piden las medidas que este usuario puede ver.
+    // ganancia: aqui solo se piden las medidas que este usuario puede ver.
     const f = catalogo?.find((x) => x.id === g.definicion.fuente)
     const visibles = new Set(f?.medidas.map((m) => m.id))
     const d = completar(g.definicion)
-    setDef({ ...d, medidas: d.medidas.filter((m) => visibles.has(m)) })
+    const medidas = d.medidas.filter((m) => visibles.has(m))
+    setDef({ ...d, medidas: medidas.length ? medidas : f ? [f.medidas[0].id] : [] })
     setAbierto(g)
     if (g.periodo && ATAJOS.some((a) => a.clave === g.periodo)) alCambiarRango(rangoDe(g.periodo as ClaveRango))
   }
@@ -134,9 +181,10 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
   const guardar = async (comoNuevo: boolean) => {
     const propio = abierto && !abierto.de_fabrica && !comoNuevo ? abierto : null
     const nombre = await dialogo.pedirTexto({
-      titulo: propio ? 'Guardar cambios' : 'Guardar reporte',
+      titulo: propio ? 'Guardar cambios' : 'Guardar este reporte',
       etiqueta: 'Nombre',
       valor: propio?.nombre ?? '',
+      placeholder: 'Ej.: Ventas de la semana por cajera',
       ayuda: periodoActual
         ? `Abrirá con el período «${ATAJOS.find((a) => a.clave === periodoActual)?.texto}».`
         : 'Abrirá con el período que esté elegido en ese momento.',
@@ -176,355 +224,133 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
     return error ? <p className="text-peligro-600 text-sm">{error}</p> : <p className="text-neutral-400 text-sm">Cargando...</p>
   }
 
+  // ── Las opciones de cada pastilla ─────────────────────────────────────────
+  const opcionCampo = (c: CampoDinamico) => ({ valor: c.id, texto: c.nombre, detalle: c.ayuda || c.grupo })
+  const libres = (excepto: (string | null | undefined)[]) => campos.filter((c) => !excepto.includes(c.id))
+  const [por, yPor] = [def.filas[0] ?? '', def.filas[1] ?? '']
+  const [medir, ademas] = [def.medidas[0] ?? '', def.medidas[1] ?? '']
+  const medidasDe = fuente?.medidas ?? []
+
   const propios = guardados.filter((g) => !g.de_fabrica)
   const deFabrica = guardados.filter((g) => g.de_fabrica)
-  const libres = fuente?.campos.filter((c) => !def.filas.includes(c.id) && c.id !== def.columna) ?? []
 
   return (
-    <div className="space-y-5">
-      <Seccion
-        titulo="Armar reporte"
-        ayuda="Elige qué mirar, cómo agruparlo y qué sumar. El resultado se actualiza solo; si sirve, guárdalo con nombre."
-      >
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="block min-w-[14rem] flex-1">
-              <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
-                Reportes guardados
-              </span>
-              <select
-                value={abierto?.id ?? ''}
-                onChange={(e) => (e.target.value ? abrir(e.target.value) : setAbierto(null))}
-                className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm bg-white"
-              >
-                <option value="">— Reporte nuevo —</option>
-                {propios.length > 0 && (
-                  <optgroup label="Guardados">
-                    {propios.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.nombre}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                <optgroup label="Del sistema">
-                  {deFabrica.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.nombre}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </label>
-            {abierto && !abierto.de_fabrica ? (
-              <>
-                <Boton tono="suave" onClick={() => void guardar(false)}>
-                  Guardar
-                </Boton>
-                <Boton tono="suave" onClick={() => void guardar(true)}>
-                  Guardar como…
-                </Boton>
-                <Boton tono="peligro" onClick={() => void borrar()}>
-                  Borrar
-                </Boton>
-              </>
-            ) : (
-              <Boton tono="suave" onClick={() => void guardar(true)} disabled={def.medidas.length === 0}>
-                Guardar como…
-              </Boton>
-            )}
-          </div>
+    <div className="space-y-4">
+      <BarraFiltros rango={rango} alCambiar={alCambiarRango}>
+        <FiltroDesplegable
+          etiqueta="Ver"
+          valor={def.fuente}
+          alCambiar={elegirFuente}
+          opciones={catalogo.map((f) => ({ valor: f.id, texto: f.nombre, detalle: f.descripcion }))}
+        />
+        <FiltroDesplegable
+          etiqueta="Por"
+          valor={por}
+          alCambiar={(v) => cambiar({ filas: v ? [v, ...(yPor && yPor !== v ? [yPor] : [])] : [], columna: def.columna === v ? null : def.columna })}
+          opciones={[{ valor: '', texto: 'Todo junto', detalle: 'Un solo total' }, ...libres([def.columna]).map(opcionCampo)]}
+        />
+        {por && (
+          <FiltroDesplegable
+            etiqueta="y por"
+            valor={yPor}
+            alCambiar={(v) => cambiar({ filas: v ? [por, v] : [por] })}
+            opciones={[{ valor: '', texto: '—' }, ...libres([por, def.columna]).map(opcionCampo)]}
+          />
+        )}
+        <FiltroDesplegable
+          etiqueta="Comparar"
+          valor={def.columna ?? ''}
+          alCambiar={(v) => cambiar({ columna: v || null })}
+          opciones={[{ valor: '', texto: '—', detalle: 'Sin comparar' }, ...libres([por, yPor]).map(opcionCampo)]}
+        />
+        <FiltroDesplegable
+          etiqueta="Medir"
+          valor={medir}
+          alCambiar={(v) => cambiar({ medidas: [v, ...(ademas && ademas !== v ? [ademas] : [])] })}
+          opciones={medidasDe.map((m) => ({ valor: m.id, texto: m.nombre, detalle: m.ayuda || undefined }))}
+        />
+        <FiltroDesplegable
+          etiqueta="y también"
+          valor={ademas}
+          alCambiar={(v) => cambiar({ medidas: v ? [medir, v] : [medir] })}
+          opciones={[
+            { valor: '', texto: '—' },
+            ...medidasDe.filter((m) => m.id !== medir).map((m) => ({ valor: m.id, texto: m.nombre, detalle: m.ayuda || undefined })),
+          ]}
+        />
+        {filtrados.map((campo) => {
+          const elegido = def.filtros[campo]?.[0] ?? ''
+          const lista = valores[claveValores(campo)]
+          return (
+            <FiltroDesplegable
+              key={campo}
+              etiqueta={nombreCampo(campo)}
+              valor={elegido}
+              alCambiar={(v) => {
+                if (v === '__cargando__') return
+                const filtros = { ...def.filtros }
+                if (v === '__quitar__') delete filtros[campo]
+                else filtros[campo] = v ? [v] : []
+                cambiar({ filtros })
+              }}
+              opciones={[
+                { valor: '', texto: 'Todos' },
+                ...(lista ?? []).map((x) => ({ valor: x.valor, texto: x.etiqueta })),
+                ...(lista === undefined ? [{ valor: '__cargando__', texto: 'Cargando…' }] : []),
+                { valor: '__quitar__', texto: 'Quitar este filtro' },
+              ]}
+            />
+          )
+        })}
+        <FiltroDesplegable
+          etiqueta="Filtrar"
+          valor=""
+          alCambiar={(v) => v && cambiar({ filtros: { ...def.filtros, [v]: [] } })}
+          opciones={[{ valor: '', texto: 'por…' }, ...libres(filtrados).map(opcionCampo)]}
+        />
+      </BarraFiltros>
 
-          <Grupo titulo="Qué mirar">
-            {catalogo.map((f) => (
-              <Ficha key={f.id} activa={f.id === def.fuente} onClick={() => elegirFuente(f.id)}>
-                {f.nombre}
-              </Ficha>
-            ))}
-          </Grupo>
-          {fuente && <p className="-mt-2 text-xs text-neutral-500">{fuente.descripcion}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <FiltroDesplegable
+          etiqueta="Reporte"
+          valor={abierto?.id ?? ''}
+          alCambiar={abrir}
+          opciones={[
+            { valor: '', texto: 'Nuevo' },
+            ...propios.map((g) => ({ valor: g.id, texto: g.nombre, detalle: g.creado_por ? `Lo guardó ${g.creado_por}` : 'Guardado' })),
+            ...deFabrica.map((g) => ({ valor: g.id, texto: g.nombre, detalle: 'Listo para usar' })),
+          ]}
+        />
+        <MenuAcciones
+          etiqueta="Guardar o descargar"
+          opciones={[
+            ...(abierto && !abierto.de_fabrica ? [{ texto: 'Guardar cambios', onElegir: () => void guardar(false) }] : []),
+            { texto: abierto && !abierto.de_fabrica ? 'Guardar como otro' : 'Guardar este reporte', onElegir: () => void guardar(true) },
+            { texto: 'Descargar en Excel', onElegir: () => window.location.assign(api.urlExportarReporte(def, rango)) },
+            ...(abierto && !abierto.de_fabrica ? [{ texto: 'Borrar este reporte', peligro: true, onElegir: () => void borrar() }] : []),
+          ]}
+        />
+      </div>
 
-          {fuente && (
-            <>
-              <Grupo titulo="Agrupar por" ayuda="En este orden. Toca uno para quitarlo.">
-                {def.filas.map((id, i) => (
-                  <Ficha key={id} activa onClick={() => cambiar({ filas: def.filas.filter((x) => x !== id) })}>
-                    {i > 0 && <span className="opacity-60">›</span>}
-                    {nombreCampo(id)}
-                    <span aria-hidden className="opacity-60">
-                      ×
-                    </span>
-                  </Ficha>
-                ))}
-                <Agregar
-                  texto="+ Agregar"
-                  opciones={libres.map((c) => ({ id: c.id, nombre: c.nombre }))}
-                  alElegir={(id) => cambiar({ filas: [...def.filas, id] })}
-                />
-              </Grupo>
-
-              <Grupo titulo="En columnas" ayuda="Opcional: cruza las filas con otro campo, como una tabla dinámica.">
-                {def.columna ? (
-                  <Ficha activa onClick={() => cambiar({ columna: null })}>
-                    {nombreCampo(def.columna)}
-                    <span aria-hidden className="opacity-60">
-                      ×
-                    </span>
-                  </Ficha>
-                ) : (
-                  <Agregar
-                    texto="+ Elegir campo"
-                    opciones={libres.map((c) => ({ id: c.id, nombre: c.nombre }))}
-                    alElegir={(id) => cambiar({ columna: id })}
-                  />
-                )}
-              </Grupo>
-
-              <Grupo titulo="Medir">
-                {fuente.medidas.map((m) => {
-                  const activa = def.medidas.includes(m.id)
-                  return (
-                    <Ficha
-                      key={m.id}
-                      activa={activa}
-                      titulo={m.ayuda || undefined}
-                      onClick={() =>
-                        cambiar({
-                          medidas: activa ? def.medidas.filter((x) => x !== m.id) : [...def.medidas, m.id],
-                        })
-                      }
-                    >
-                      {m.nombre}
-                    </Ficha>
-                  )
-                })}
-              </Grupo>
-
-              <Grupo titulo="Filtros" ayuda="Solo lo que cumple todos los filtros.">
-                {Object.entries(def.filtros)
-                  .filter(([, v]) => v.length > 0)
-                  .map(([campo, valores]) => (
-                    <Ficha key={campo} activa onClick={() => setFiltrando(campo)}>
-                      {nombreCampo(campo)}: {valores.length === 1 ? '1 valor' : `${valores.length} valores`}
-                    </Ficha>
-                  ))}
-                <Agregar
-                  texto="+ Filtrar por"
-                  opciones={fuente.campos
-                    .filter((c) => !(def.filtros[c.id]?.length))
-                    .map((c) => ({ id: c.id, nombre: c.nombre }))}
-                  alElegir={(id) => setFiltrando(id)}
-                />
-              </Grupo>
-            </>
-          )}
-        </div>
-      </Seccion>
-
-      {def.medidas.length === 0 ? (
-        <Vacio>Elige al menos una medida para ver el reporte.</Vacio>
-      ) : error ? (
-        <p className="text-peligro-600 text-sm">{error}</p>
-      ) : resultado ? (
-        <Resultado resultado={resultado} cargando={cargando} url={api.urlExportarReporte(def, rango)} />
+      {error ? (
+        <Vacio>{error}</Vacio>
+      ) : resultado && resultado.fuente === def.fuente ? (
+        <Resultado resultado={resultado} cargando={cargando} />
       ) : (
         <p className="text-neutral-400 text-sm">Armando el reporte...</p>
       )}
-
-      {filtrando && fuente && (
-        <FiltroValores
-          fuente={fuente.id}
-          campo={filtrando}
-          nombre={nombreCampo(filtrando)}
-          rango={rango}
-          elegidos={def.filtros[filtrando] ?? []}
-          alCerrar={() => setFiltrando(null)}
-          alAplicar={(valores) => {
-            const filtros = { ...def.filtros }
-            if (valores.length) filtros[filtrando] = valores
-            else delete filtros[filtrando]
-            cambiar({ filtros })
-            setFiltrando(null)
-          }}
-        />
-      )}
     </div>
-  )
-}
-
-// ── Piezas del armador ──────────────────────────────────────────────────────
-
-function Grupo({ titulo, ayuda, children }: { titulo: string; ayuda?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">
-        {titulo}
-        {ayuda && <span className="ml-2 normal-case tracking-normal font-normal text-neutral-400">{ayuda}</span>}
-      </p>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </div>
-  )
-}
-
-function Ficha({
-  activa,
-  titulo,
-  onClick,
-  children,
-}: {
-  activa: boolean
-  titulo?: string
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={titulo}
-      aria-pressed={activa}
-      className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ${
-        activa ? 'bg-neutral-900 text-white' : 'bg-white border border-neutral-200 text-neutral-700 hover:border-neutral-400'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
-/** Un desplegable que parece ficha: elegir agrega, y vuelve a "+ Agregar". */
-function Agregar({
-  texto,
-  opciones,
-  alElegir,
-}: {
-  texto: string
-  opciones: { id: string; nombre: string }[]
-  alElegir: (id: string) => void
-}) {
-  if (opciones.length === 0) return null
-  return (
-    <select
-      value=""
-      aria-label={texto.replace('+ ', '')}
-      onChange={(e) => e.target.value && alElegir(e.target.value)}
-      className="rounded-full px-3.5 py-1.5 text-sm font-medium border border-dashed border-neutral-300 bg-white text-neutral-600"
-    >
-      <option value="">{texto}</option>
-      {opciones.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.nombre}
-        </option>
-      ))}
-    </select>
-  )
-}
-
-function FiltroValores({
-  fuente,
-  campo,
-  nombre,
-  rango,
-  elegidos,
-  alCerrar,
-  alAplicar,
-}: {
-  fuente: string
-  campo: string
-  nombre: string
-  rango: Rango
-  elegidos: string[]
-  alCerrar: () => void
-  alAplicar: (valores: string[]) => void
-}) {
-  const [valores, setValores] = useState<ValorCampo[] | null>(null)
-  const [marcados, setMarcados] = useState<Set<string>>(() => new Set(elegidos))
-  // Lo que ya estaba filtrado al abrir. En una ref y no como dependencia:
-  // `elegidos` llega como un arreglo nuevo en cada pintada de la pantalla,
-  // y cada resultado que llegaba volvia a pedir los valores al servidor.
-  const yaElegidos = useRef(elegidos)
-  const [busqueda, setBusqueda] = useState('')
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    api
-      .valoresDeCampo(fuente, campo, rango)
-      .then((v) => {
-        // Lo que ya estaba filtrado y en este periodo no aparece igual se
-        // muestra: si no, no habria forma de desmarcarlo.
-        const vistos = new Set(v.map((x) => x.valor))
-        const sueltos = yaElegidos.current.filter((e) => !vistos.has(e))
-        setValores([...v, ...sueltos.map((e) => ({ valor: e, etiqueta: e }))])
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : 'No se pudieron cargar los valores'))
-  }, [fuente, campo, rango])
-
-  const q = busqueda.trim().toLowerCase()
-  const visibles = (valores ?? []).filter((v) => !q || v.etiqueta.toLowerCase().includes(q))
-  const alternar = (v: string) =>
-    setMarcados((m) => {
-      const n = new Set(m)
-      if (n.has(v)) n.delete(v)
-      else n.add(v)
-      return n
-    })
-
-  return (
-    <Modal
-      titulo={`Filtrar por ${nombre.toLowerCase()}`}
-      ayuda="Marca lo que quieres ver. Sin nada marcado no se filtra."
-      onCerrar={alCerrar}
-      ancho="sm"
-      pie={
-        <>
-          <Boton tono="fantasma" onClick={() => alAplicar([])}>
-            Quitar filtro
-          </Boton>
-          <Boton onClick={() => alAplicar([...marcados])}>Aplicar</Boton>
-        </>
-      }
-    >
-      {error && <p className="text-peligro-600 text-sm">{error}</p>}
-      {!valores && !error && <p className="text-neutral-400 text-sm">Cargando...</p>}
-      {valores && (
-        <div className="space-y-2">
-          {valores.length > 8 && (
-            <input
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar"
-              className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm"
-            />
-          )}
-          {valores.length === 0 && <p className="text-sm text-neutral-500">No hay datos en este período.</p>}
-          <ul className="max-h-[50vh] overflow-y-auto divide-y divide-neutral-100">
-            {visibles.map((v) => (
-              <li key={v.valor}>
-                <label className="flex items-center gap-3 py-2.5 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={marcados.has(v.valor)}
-                    onChange={() => alternar(v.valor)}
-                    className="h-4 w-4"
-                  />
-                  {v.etiqueta}
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </Modal>
   )
 }
 
 // ── El resultado ────────────────────────────────────────────────────────────
 
-function Resultado({ resultado: r, cargando, url }: { resultado: ResultadoDinamico; cargando: boolean; url: string }) {
+function Resultado({ resultado: r, cargando }: { resultado: ResultadoDinamico; cargando: boolean }) {
+  const principal = r.medidas[0]
   const titulo = [
-    r.medidas.map((m) => m.nombre).join(', '),
+    r.medidas.map((m) => m.nombre).join(' y '),
     r.campos_fila.length ? `por ${r.campos_fila.map((c) => c.nombre.toLowerCase()).join(' y ')}` : '',
-    r.columna ? `y ${r.columna.nombre.toLowerCase()}` : '',
+    r.columna ? `· comparando ${r.columna.nombre.toLowerCase()}` : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -534,62 +360,88 @@ function Resultado({ resultado: r, cargando, url }: { resultado: ResultadoDinami
       titulo={titulo}
       ayuda={
         <>
-          {r.etiqueta} · {r.filas.length} {r.filas.length === 1 ? 'fila' : 'filas'}
-          {r.medidas.some((m) => m.formato === 'dinero') && ' · montos en dólares'}
+          {r.etiqueta}
+          {r.medidas.some((m) => m.formato === 'dinero') && ' · en dólares'}
           {cargando && ' · actualizando…'}
         </>
       }
-      accion={
-        <a
-          href={url}
-          className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-white border border-neutral-200 hover:border-neutral-400"
-        >
-          Exportar a Excel
-        </a>
-      }
     >
+      {/* La cifra que responde la pregunta, antes que cualquier grafico. */}
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 mb-4">
+        {r.medidas.map((m, i) => (
+          <div key={m.id}>
+            <p className={`tabular-nums font-semibold ${i === 0 ? 'text-3xl' : 'text-xl text-neutral-600'}`}>
+              {formatear(m.formato, r.totales.total[m.id])}
+            </p>
+            <p className="text-xs text-neutral-500">{m.nombre}{m.sumable ? ' en total' : ''}</p>
+          </div>
+        ))}
+      </div>
+
       {r.truncado && (
         <p className="mb-3 text-xs text-aviso-700 bg-aviso-50 rounded-lg px-3 py-2">
-          Se muestran las primeras {r.filas.length} filas. El Excel las trae todas; para verlas aquí, filtra o
-          agrupa por menos campos.
+          Se muestran las primeras {r.filas.length} filas. El Excel las trae todas.
         </p>
       )}
       {r.filas.length === 0 ? (
         <p className="text-sm text-neutral-500 py-6 text-center">No hay datos en este período con estos filtros.</p>
       ) : (
         <div className="space-y-5">
-          <Grafica r={r} />
-          {r.columna ? <TablaCruzada r={r} /> : <TablaSimple r={r} />}
+          <Grafica r={r} principal={principal} />
+          {r.columna ? <TablaCruzada r={r} /> : r.campos_fila.length > 0 && <TablaSimple r={r} />}
         </div>
       )}
     </Seccion>
   )
 }
 
-function Grafica({ r }: { r: ResultadoDinamico }) {
-  // Solo cuando se lee de un vistazo: un campo, sin columnas, una medida de
-  // referencia (la primera).
-  if (r.campos_fila.length !== 1 || r.columna || r.filas.length < 2) return null
+function Grafica({ r, principal: m }: { r: ResultadoDinamico; principal: ResultadoDinamico['medidas'][number] }) {
+  if (r.campos_fila.length !== 1 || r.filas.length < 2) return null
   const campo = r.campos_fila[0]
-  const m = r.medidas[0]
-  const fmt = (n: number) => formatear(m.formato, n)
-  if (TEMPORALES.has(campo.tipo)) {
+  const fmt = (n: number) => formatear(m.formato, n, true)
+  const etiqueta = (f: ResultadoDinamico['filas'][number]) => f.etiquetas[0]
+
+  // Comparando, y la medida se puede sumar: cada fila es una barra partida
+  // en sus partes (dia por cajera, categoria por mes).
+  if (r.columna) {
+    if (!m.sumable) return null
+    const partes = r.columna.valores
+    const filas = (campo.tipo === 'texto' ? r.filas.slice(0, 15) : r.filas).map((f) => ({
+      nombre: etiqueta(f),
+      partes: partes.map((p, i) => ({
+        nombre: p.etiqueta,
+        valor: f.por_columna?.[p.valor]?.[m.id] ?? 0,
+        color: colorSerie(i),
+      })),
+    }))
     return (
-      <GraficoLineas
-        etiquetas={r.filas.map((f) => f.etiquetas[0])}
-        series={[{ nombre: m.nombre, color: 'var(--color-acento-500)', valores: r.filas.map((f) => f.total[m.id] ?? null), relleno: true }]}
+      <BarrasApiladas filas={filas} formato={fmt} leyenda={partes.map((p, i) => ({ nombre: p.etiqueta, color: colorSerie(i) }))} />
+    )
+  }
+
+  // Un orden propio (dias, horas, semanas): barras verticales con su eje.
+  // La segunda medida, si la hay, va encima como linea.
+  if (TEMPORALES.has(campo.tipo)) {
+    const otra = r.medidas[1]
+    return (
+      <GraficoBarras
+        alto={220}
+        ejeY
+        datos={r.filas.map((f) => ({ etiqueta: etiqueta(f), valor: f.total[m.id] ?? 0 }))}
         formato={fmt}
+        lineas={otra ? [{ nombre: otra.nombre, valores: r.filas.map((f) => f.total[otra.id] ?? null) }] : undefined}
+        formatoDerecha={otra ? (n) => formatear(otra.formato, n, true) : undefined}
       />
     )
   }
-  // Los textos van de mayor a menor; con muchos, los primeros 20.
-  const filas = campo.tipo === 'texto' ? r.filas.slice(0, 20) : r.filas
-  return (
-    <GraficoBarras
-      datos={filas.map((f) => ({ etiqueta: f.etiquetas[0], valor: f.total[m.id] ?? 0 }))}
-      formato={fmt}
-    />
-  )
+
+  // Nombres (productos, cajeras, proveedores): barras acostadas, de mayor a
+  // menor, que se leen en un telefono sin girar la cabeza.
+  const filas = r.filas.slice(0, 15).map((f) => ({
+    nombre: etiqueta(f),
+    partes: [{ nombre: m.nombre, valor: Math.max(f.total[m.id] ?? 0, 0), color: colorSerie(0) }],
+  }))
+  return <BarrasApiladas filas={filas} formato={fmt} />
 }
 
 function TablaSimple({ r }: { r: ResultadoDinamico }) {
@@ -643,11 +495,9 @@ function TablaSimple({ r }: { r: ResultadoDinamico }) {
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-neutral-300 font-semibold">
-            {r.campos_fila.length > 0 && (
-              <td colSpan={r.campos_fila.length} className="py-2">
-                Total
-              </td>
-            )}
+            <td colSpan={r.campos_fila.length} className="py-2">
+              Total
+            </td>
             {r.medidas.map((m) => (
               <td key={m.id} className="text-right py-2 pl-4 tabular-nums">
                 {formatear(m.formato, r.totales.total[m.id])}
@@ -664,6 +514,7 @@ function TablaCruzada({ r }: { r: ResultadoDinamico }) {
   const columna = r.columna!
   const varias = r.medidas.length > 1
   const celda = 'text-right py-2 pl-4 tabular-nums whitespace-nowrap'
+  const fija = 'sticky left-0 bg-[var(--vp-superficie)]'
   return (
     // Una tabla cruzada no se puede apilar en fichas sin perder el cruce: en
     // pantallas angostas se desliza de lado, y la primera columna queda fija.
@@ -672,7 +523,7 @@ function TablaCruzada({ r }: { r: ResultadoDinamico }) {
         <thead className="text-neutral-500 text-xs uppercase">
           <tr>
             {r.campos_fila.map((cf) => (
-              <th key={cf.id} rowSpan={varias ? 2 : 1} className="text-left py-2 pr-3 sticky left-0 bg-white">
+              <th key={cf.id} rowSpan={varias ? 2 : 1} className={`text-left py-2 pr-3 ${fija}`}>
                 {cf.nombre}
               </th>
             ))}
@@ -701,7 +552,7 @@ function TablaCruzada({ r }: { r: ResultadoDinamico }) {
           {r.filas.map((f) => (
             <tr key={f.claves.join('|')} className="border-t border-neutral-100">
               {f.etiquetas.map((e, i) => (
-                <td key={i} className="py-2 pr-3 font-medium whitespace-nowrap sticky left-0 bg-white">
+                <td key={i} className={`py-2 pr-3 font-medium whitespace-nowrap ${fija}`}>
                   {e}
                 </td>
               ))}
@@ -723,7 +574,7 @@ function TablaCruzada({ r }: { r: ResultadoDinamico }) {
         <tfoot>
           <tr className="border-t-2 border-neutral-300 font-semibold">
             {r.campos_fila.length > 0 && (
-              <td colSpan={r.campos_fila.length} className="py-2 sticky left-0 bg-white">
+              <td colSpan={r.campos_fila.length} className={`py-2 ${fija}`}>
                 Total
               </td>
             )}

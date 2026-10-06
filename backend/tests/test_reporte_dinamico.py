@@ -59,12 +59,12 @@ def un_poco_de_todo(client, db, variante):
 CONSULTAS = [
     ("ventas", ["dia"], ["ventas", "pedidos", "ticket"], None),
     ("ventas", [], ["ventas", "pedidos", "iva", "descuentos"], None),
-    ("ventas", ["dia"], ["ventas"], "cajera"),
+    ("ventas", ["dia"], ["ventas"], "persona"),
     ("ventas", ["hora"], ["pedidos"], "dia_semana"),
     ("ventas", ["mes", "caja"], ["ventas", "pedidos"], None),
     ("productos", ["producto"], ["unidades", "ventas", "precio_promedio"], None),
     ("productos", ["categoria", "dia"], ["unidades", "ventas", "precio_promedio"], None),
-    ("cobros", ["dia"], ["monto", "cobros"], "metodo"),
+    ("cobros", ["dia"], ["monto", "cobros"], "forma_pago"),
 ]
 
 
@@ -98,7 +98,7 @@ def test_el_costo_no_cambia_con_un_filtro(client, db, variante):
 def test_lo_que_no_cabe_en_el_mart_se_calcula_en_vivo(client, db, variante):
     un_poco_de_todo(client, db, variante)
     consolidacion.consolidar_pendientes(db)
-    r = consulta(client, "productos", ["producto", "cajera"], ["unidades"])
+    r = consulta(client, "productos", ["producto", "persona"], ["unidades"])
     assert r["desde_mart"] is False
     assert r["totales"]["total"]["unidades"] == 2 + 1 + 3 + 2 + 2
 
@@ -135,7 +135,7 @@ def test_pedidos_distintos_y_columnas(client, db, variante):
 
 def test_filtros(client, db, variante):
     un_poco_de_todo(client, db, variante)
-    r = consulta(client, "cobros", ["metodo"], ["monto", "cobros"], filtros={"metodo": ["Pago movil"]})
+    r = consulta(client, "cobros", ["forma_pago"], ["monto", "cobros"], filtros={"forma_pago": ["Pago movil"]})
     assert [f["claves"][0] for f in r["filas"]] == ["Pago movil"]
     assert r["totales"]["total"]["cobros"] == 1
     # Filtro por hora: solo lo cobrado a las 13.
@@ -216,7 +216,7 @@ def test_exportar_csv(client, db, variante):
     un_poco_de_todo(client, db, variante)
     import json
     q = json.dumps({
-        "fuente": "ventas", "filas": ["dia"], "medidas": ["ventas", "pedidos"], "columna": "cajera",
+        "fuente": "ventas", "filas": ["dia"], "medidas": ["ventas", "pedidos"], "columna": "persona",
         "filtros": {}, "desde": iso(7), "hasta": iso(0),
     })
     r = client.get("/api/reportes/dinamico/exportar", params={"q": q})
@@ -224,7 +224,7 @@ def test_exportar_csv(client, db, variante):
     texto = r.content.decode("utf-8-sig")
     lineas = texto.strip().splitlines()
     assert lineas[0].startswith("Día,")
-    assert "Total · Ventas" in lineas[0]
+    assert "Total · Total vendido" in lineas[0]
     assert lineas[-1].startswith("Total,")
     # Los pedidos son conteos: sin ".0".
     assert lineas[-1].split(",")[-1] == "5"
@@ -284,7 +284,7 @@ def test_la_pantalla_recibe_pocas_filas_y_el_excel_todas(client, db, variante, m
 
 
 def test_periodo_muy_largo_en_vivo_se_rechaza(client):
-    r = consulta(client, "productos", ["producto", "cajera"], ["unidades"], desde=500, esperado=400)
+    r = consulta(client, "productos", ["producto", "persona"], ["unidades"], desde=500, esperado=400)
     assert "días" in r["detail"]
 
 
@@ -296,3 +296,98 @@ def test_valores_para_filtrar(client, db, variante):
     assert r.status_code == 200, r.text
     valores = {v["valor"]: v["etiqueta"] for v in r.json()}
     assert valores[f"v:{jugo.id}"] == "Jugo"
+
+
+# ── Los modulos nuevos: Inventario, Cocina, Contabilidad y Tasa ────────────
+
+
+def test_inventario_trae_las_mermas_con_su_motivo_y_valor(client, insumo):
+    r = client.post(f"/api/inventario/ingredientes/{insumo.id}/merma", json={"cantidad": 2, "motivo": "se dano"})
+    assert r.status_code == 200, r.text
+    r = consulta(client, "inventario", ["producto", "motivo"], ["v_sale", "sale"],
+                 filtros={"tipo": ["Merma"]})
+    fila = r["filas"][0]
+    assert fila["etiquetas"][1] == "se dano"
+    # El mismo valor que lista Inventario > mermas.
+    valor = client.get("/api/inventario/mermas").json()[0]["valor"]
+    assert fila["total"]["v_sale"] == valor and fila["total"]["sale"] == 2
+
+
+def test_cocina_mide_cuanto_tardo_cada_comanda(client, db, variante):
+    import datetime as dt
+
+    p = comanda(client, variante)
+    assert client.post(f"/api/pedidos/{p['id']}/marcar-listo").status_code == 200
+    pedido = db.get(models.Pedido, p["id"])
+    pedido.listo_en = pedido.creado_en + dt.timedelta(minutes=12)
+    db.commit()
+    r = consulta(client, "cocina", [], ["comandas", "minutos"], desde=1)
+    assert r["totales"]["total"] == {"comandas": 1, "minutos": 12.0}
+
+
+def test_contabilidad_cuadra_debe_y_haber(client, db, variante):
+    un_poco_de_todo(client, db, variante)
+    r = consulta(client, "contabilidad", ["tipo"], ["debe", "haber"])
+    total = r["totales"]["total"]
+    assert total["debe"] == total["haber"] > 0
+    ingreso = next(f for f in r["filas"] if f["claves"][0] == "Ingreso")
+    saldo = consulta(client, "contabilidad", [], ["saldo"], filtros={"tipo": ["Ingreso"]})
+    # Los ingresos salen en positivo: en el sentido de la cuenta.
+    assert saldo["totales"]["total"]["saldo"] == ingreso["total"]["haber"] - ingreso["total"]["debe"] > 0
+
+
+def test_tasa_promedia_por_semana(client, db):
+    hoy_ = hoy()
+    for d, bcv in ((0, 100.0), (1, 102.0)):
+        db.merge(models.TasaCambio(fecha=hoy_ - datetime.timedelta(days=d), bcv=bcv, paralelo=None))
+    db.commit()
+    r = consulta(client, "tasa", [], ["bcv", "paralelo"], desde=1)
+    assert r["totales"]["total"]["bcv"] == 101.0
+    # Sin datos de paralelo: no inventa un cero.
+    assert r["totales"]["total"]["paralelo"] is None
+
+
+def test_cada_fuente_solo_para_quien_entra_a_su_modulo(db, variante):
+    from fastapi.testclient import TestClient
+
+    from app import settings
+    from app.acceso import usuarios
+    from app.database import get_db
+    from app.main import app
+    from conftest import entrar
+
+    cajera = ("cajera_modulos", "clave-de-la-cajera-larga")
+    try:
+        usuarios.crear(cajera[0], cajera[1], rol="caja", locales=[settings.LOCAL_SLUG],
+                       nombre="Carla", apellido="Caja")
+    except usuarios.ErrorUsuarios:
+        pass
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        with TestClient(app) as c:
+            entrar(c, *cajera)
+            fuentes = {f["id"] for f in c.get("/api/reportes/dinamico/catalogo").json()}
+            # La caja no entra a Contabilidad: la fuente no aparece...
+            assert "contabilidad" not in fuentes and "ventas" in fuentes
+            # ...ni se puede pedir directo...
+            consulta(c, "contabilidad", [], ["saldo"], esperado=400)
+            # ...ni sus reportes de fabrica salen en la lista.
+            guardados = {g["definicion"]["fuente"] for g in c.get("/api/reportes/dinamico/guardados").json()}
+            assert "contabilidad" not in guardados
+    finally:
+        app.dependency_overrides.clear()
+        try:
+            usuarios.borrar(cajera[0])
+        except usuarios.ErrorUsuarios:
+            pass
+
+
+def test_el_catalogo_usa_los_mismos_conceptos_en_todos_los_modulos(client):
+    from app import reporte_dinamico as rd
+
+    for f in client.get("/api/reportes/dinamico/catalogo").json():
+        for c in f["campos"]:
+            nombre, grupo, _tipo = rd.CONCEPTOS[c["id"]]
+            assert c["nombre"] == nombre and c["grupo"] == grupo, (f["id"], c)
+        # Las sumas de trabajo (minutos en total, sumas de la tasa) no se ofrecen.
+        assert all(m["nombre"] for m in f["medidas"])

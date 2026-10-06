@@ -93,6 +93,8 @@ class Campo:
     ayuda: str = ""
     # Los campos de fecha salen todos de `_fecha`; los demas, de la fila.
     de_fecha: bool = False
+    # Cuando | Que | Quien | Como: como se agrupan en el menu de la pantalla.
+    grupo: str = ""
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,9 @@ class Medida:
     # Costo y margen: solo quien administra el local.
     sensible: bool = False
     ayuda: str = ""
+    # Una suma de trabajo (el total de minutos detras del promedio): se
+    # calcula, pero no se ofrece en la pantalla.
+    oculta: bool = False
 
 
 @dataclass
@@ -137,6 +142,10 @@ class Fuente:
     # Como se muestra un valor de un campo (clave interna -> texto). Lo que no
     # este aqui se muestra tal cual.
     etiquetas: Optional[Callable[[Session, str, List[Any]], Dict[Any, str]]] = None
+    # El modulo del ERP del que salen los datos (`acceso.permisos.MODULOS`):
+    # la fuente solo la ve quien entra a ese modulo. Una cajera sin
+    # Contabilidad no la ve aparecer aqui por la puerta de atras.
+    modulo: str = ""
 
     def campo(self, id_: str) -> Campo:
         for c in self.campos:
@@ -151,15 +160,53 @@ class Fuente:
         raise ErrorDeConsulta(f"«{self.nombre}» no tiene la medida «{id_}».")
 
 
+# ── Los conceptos: UNA lista para todos los modulos ─────────────────────────
+#
+# El cliente (6-oct): "en agrupar deberia tener una lista amplia de conceptos
+# que tengan relacion con mis areas, generales, que calcen con casi todos los
+# modulos... todo se ve demasiado tecnico". Por eso cada fuente no inventa sus
+# nombres: elige de este vocabulario. "Persona" es la cajera en Ventas y quien
+# registro la merma en Inventario; "Producto" es lo del menu en Ventas y el
+# insumo en Compras. El dueño aprende una sola lista y le sirve en todas
+# partes. Lo que un modulo no tiene, sencillamente no aparece.
+#
+#   id: (nombre, grupo, tipo)
+CONCEPTOS: Dict[str, Tuple[str, str, str]] = {
+    "dia": ("Día", "Cuándo", "fecha"),
+    "semana": ("Semana", "Cuándo", "semana"),
+    "mes": ("Mes", "Cuándo", "mes"),
+    "anio": ("Año", "Cuándo", "anio"),
+    "dia_semana": ("Día de la semana", "Cuándo", "dia_semana"),
+    "hora": ("Hora", "Cuándo", "hora"),
+    "producto": ("Producto", "Qué", "texto"),
+    "categoria": ("Categoría", "Qué", "texto"),
+    "tipo": ("Tipo", "Qué", "texto"),
+    "motivo": ("Motivo", "Qué", "texto"),
+    "cuenta": ("Cuenta", "Qué", "texto"),
+    "persona": ("Persona", "Quién", "texto"),
+    "cliente": ("Cliente", "Quién", "texto"),
+    "proveedor": ("Proveedor", "Quién", "texto"),
+    "caja": ("Caja", "Cómo", "texto"),
+    "forma_pago": ("Forma de pago", "Cómo", "texto"),
+    "estado": ("Estado", "Cómo", "texto"),
+    "documento": ("Documento", "Cómo", "texto"),
+    "factura": ("Factura", "Cómo", "texto"),
+    "delivery": ("Delivery", "Cómo", "texto"),
+    "descuento": ("Descuento", "Cómo", "texto"),
+    "preparacion": ("Cocina o vitrina", "Cómo", "texto"),
+}
+IDS_FECHA = {"dia", "semana", "mes", "anio", "dia_semana"}
+
+
+def C(id_: str, ayuda: str = "") -> Campo:
+    """Un campo de una fuente: el concepto comun, con la aclaracion de que es
+    en ESE modulo ("la cajera que cobro")."""
+    nombre, grupo, tipo = CONCEPTOS[id_]
+    return Campo(id_, nombre, tipo, ayuda, de_fecha=id_ in IDS_FECHA, grupo=grupo)
+
+
 # Los campos de fecha son los mismos en todas las fuentes y salen de `_fecha`.
-CAMPOS_FECHA = [
-    Campo("dia", "Día", "fecha", de_fecha=True),
-    Campo("semana", "Semana", "semana", "Semana de lunes a domingo.", de_fecha=True),
-    Campo("mes", "Mes", "mes", de_fecha=True),
-    Campo("anio", "Año", "anio", de_fecha=True),
-    Campo("dia_semana", "Día de la semana", "dia_semana", de_fecha=True),
-]
-IDS_FECHA = {c.id for c in CAMPOS_FECHA}
+CAMPOS_FECHA = [C("dia"), C("semana", "De lunes a domingo."), C("mes"), C("anio"), C("dia_semana")]
 
 
 def _valor_de_fecha(campo: str, cuando: datetime.datetime) -> Any:
@@ -325,11 +372,11 @@ def _filas_ventas(db: Session, inicio, fin) -> Iterable[Fila]:
         yield {
             "_fecha": p.cerrado_en,
             "hora": p.cerrado_en.hour,
-            "cajera": p.operador or "Sin asignar",
+            "persona": p.operador or "Sin asignar",
             "caja": p.punto_venta or "Sin asignar",
             "cliente": (p.cliente or "").strip() or SIN_DATO,
             "forma_pago": _forma_de_pago(p),
-            "facturado": _si_no(p.facturado, "Facturado", "Sin factura"),
+            "factura": _si_no(p.facturado, "Con factura", "Sin factura"),
             "delivery": _si_no(any(i.variante_id in servicios for i in p.items), "Con delivery", "Sin delivery"),
             "descuento": _si_no((p.descuento or 0) > 0, "Con descuento", "Sin descuento"),
             "n": 1,
@@ -364,7 +411,7 @@ def _filas_productos(db: Session, inicio, fin) -> Iterable[Fila]:
                     "Venta libre" if i.variante_id is None
                     else categoria_de.get(i.variante_id, "Sin categoría")
                 ),
-                "cajera": p.operador or "Sin asignar",
+                "persona": p.operador or "Sin asignar",
                 "caja": p.punto_venta or "Sin asignar",
                 "preparacion": _si_no(i.a_cocina is not False, "Cocina", "Vitrina"),
                 "pedido_id": p.id,
@@ -403,15 +450,29 @@ def _filas_cobros(db: Session, inicio, fin) -> Iterable[Fila]:
             yield {
                 "_fecha": p.cerrado_en,
                 "hora": p.cerrado_en.hour,
-                "metodo": metodo,
-                "cajera": p.operador or "Sin asignar",
+                "forma_pago": metodo,
+                "persona": p.operador or "Sin asignar",
                 "caja": p.punto_venta or "Sin asignar",
                 "monto": monto,
                 "n": 1,
             }
 
 
+def _cajones(db: Session) -> Dict[int, str]:
+    """El cajon del deposito de cada insumo (la categoria de Inventario)."""
+    nombres = {c.id: c.nombre for c in db.query(models.CategoriaInsumo)}
+    return {
+        iid: nombres.get(cid, "Sin categoría")
+        for iid, cid in db.query(models.Ingrediente.id, models.Ingrediente.categoria_id)
+    }
+
+
+def _insumo(ing) -> str:
+    return f"{ing.nombre} ({ing.unidad})" if ing else SIN_DATO
+
+
 def _filas_compras(db: Session, inicio, fin) -> Iterable[Fila]:
+    cajon = _cajones(db)
     facturas = (
         db.query(models.FacturaCompra)
         .options(selectinload(models.FacturaCompra.items).joinedload(models.FacturaCompraItem.ingrediente))
@@ -423,13 +484,14 @@ def _filas_compras(db: Session, inicio, fin) -> Iterable[Fila]:
             "_fecha": f.fecha,
             "proveedor": f.proveedor_nombre or SIN_DATO,
             "tipo": f.categoria or SIN_DATO,
-            "origen": "Factura",
+            "documento": "Factura",
             "forma_pago": f.forma_pago or SIN_DATO,
             "estado": _si_no(bool(f.pagada), "Pagada", "Por pagar"),
-            "documento": f"f:{f.id}",
+            "_doc": f"f:{f.id}",
         }
         if not f.items:
-            yield {**comun, "insumo": "(sin detalle de insumos)", "cantidad": 0.0, "monto": f.base_imponible or 0}
+            yield {**comun, "producto": "(sin detalle de insumos)", "categoria": SIN_DATO,
+                   "cantidad": 0.0, "monto": f.base_imponible or 0}
             continue
         # La base de la factura ya trae el flete y el descuento repartidos
         # (ver compras._crear_factura); repartirlos igual aqui hace que la
@@ -437,10 +499,10 @@ def _filas_compras(db: Session, inicio, fin) -> Iterable[Fila]:
         bruta = sum(i.cantidad * i.costo_unitario for i in f.items)
         factor = (f.base_imponible / bruta) if bruta else 1.0
         for i in f.items:
-            ing = i.ingrediente
             yield {
                 **comun,
-                "insumo": f"{ing.nombre} ({ing.unidad})" if ing else SIN_DATO,
+                "producto": _insumo(i.ingrediente),
+                "categoria": cajon.get(i.ingrediente_id, "Sin categoría"),
                 "cantidad": i.cantidad,
                 "monto": i.cantidad * i.costo_unitario * factor,
             }
@@ -462,21 +524,22 @@ def _filas_compras(db: Session, inicio, fin) -> Iterable[Fila]:
             "_fecha": n.fecha,
             "proveedor": (f.proveedor_nombre if f else "") or SIN_DATO,
             "tipo": (f.categoria if f else "") or SIN_DATO,
-            "origen": "Nota de crédito",
+            "documento": "Nota de crédito",
             "forma_pago": (f.forma_pago if f else "") or SIN_DATO,
             "estado": _si_no(bool(f and f.pagada), "Pagada", "Por pagar"),
-            "documento": None,
+            "_doc": None,
         }
         if not n.items:
-            yield {**comun, "insumo": "(descuento del proveedor)", "cantidad": 0.0, "monto": -(n.base_imponible or 0)}
+            yield {**comun, "producto": "(descuento del proveedor)", "categoria": SIN_DATO,
+                   "cantidad": 0.0, "monto": -(n.base_imponible or 0)}
             continue
         bruta = sum(i.cantidad * i.costo_unitario for i in n.items)
         factor = (n.base_imponible / bruta) if bruta else 1.0
         for i in n.items:
-            ing = i.ingrediente
             yield {
                 **comun,
-                "insumo": f"{ing.nombre} ({ing.unidad})" if ing else SIN_DATO,
+                "producto": _insumo(i.ingrediente),
+                "categoria": cajon.get(i.ingrediente_id, "Sin categoría"),
                 "cantidad": -i.cantidad,
                 "monto": -i.cantidad * i.costo_unitario * factor,
             }
@@ -487,37 +550,135 @@ def _filas_compras(db: Session, inicio, fin) -> Iterable[Fila]:
         .all()
     )
     for c in sueltas:
-        ing = c.ingrediente
         yield {
             "_fecha": c.fecha,
             "proveedor": "(compra sin factura)",
             "tipo": "Insumos",
-            "origen": "Compra sin factura",
+            "documento": "Sin factura",
             "forma_pago": SIN_DATO,
             "estado": "Pagada",
-            "documento": f"s:{c.id}",
-            "insumo": f"{ing.nombre} ({ing.unidad})" if ing else SIN_DATO,
+            "_doc": f"s:{c.id}",
+            "producto": _insumo(c.ingrediente),
+            "categoria": cajon.get(c.ingrediente_id, "Sin categoría"),
             "cantidad": c.cantidad,
             "monto": c.cantidad * c.costo_unitario,
         }
 
 
-def _filas_mermas(db: Session, inicio, fin) -> Iterable[Fila]:
-    # El valor CONGELADO de cada merma, el mismo que muestra Perdidas.
-    from .routers.reportes import _mermas_valoradas
+def _filas_inventario(db: Session, inicio, fin) -> Iterable[Fila]:
+    """El libro de movimientos del deposito (`kardex.py`): cada entrada y cada
+    salida, con su valor congelado al costo de ese momento. Es lo mismo que
+    lee Inventario > movimientos; las mermas estan aqui como un tipo mas."""
+    from . import kardex
 
+    M = models.MovimientoInventario
+    ingredientes = {i.id: _insumo(i) for i in db.query(models.Ingrediente)}
+    cajon = _cajones(db)
     operadores = {o.id: o.nombre for o in db.query(models.Operador)}
-    for m, valor in _mermas_valoradas(db, inicio, fin):
-        ing = m.ingrediente
+    filas = (
+        db.query(M.fecha, M.ingrediente_id, M.tipo, M.cantidad, M.valor, M.origen, M.referencia_id,
+                 M.operador_id)
+        .filter(M.fecha >= inicio, M.fecha < fin)
+        .all()
+    )
+    # El motivo de cada merma: el movimiento solo trae el id de la merma.
+    ids_merma = {r for (_f, _i, _t, _c, _v, o, r, _op) in filas if o == "merma" and r is not None}
+    motivo_de = {
+        m.id: (m.motivo or "").strip() or SIN_DATO
+        for m in db.query(models.Merma).filter(models.Merma.id.in_(ids_merma or [0]))
+    }
+    for fecha, iid, tipo, cantidad, valor, origen, ref, operador_id in filas:
+        cantidad = cantidad or 0
+        valor = abs(valor or 0)
         yield {
-            "_fecha": m.fecha,
-            "insumo": f"{ing.nombre} ({ing.unidad})" if ing else SIN_DATO,
-            "motivo": (m.motivo or "").strip() or SIN_DATO,
-            "origen": _si_no(bool(m.por_conteo), "Faltante de conteo", "Registrada"),
-            "responsable": operadores.get(m.operador_id, "Sin asignar"),
-            "cantidad": m.cantidad,
-            "valor": valor,
+            "_fecha": fecha,
+            "producto": ingredientes.get(iid, SIN_DATO),
+            "categoria": cajon.get(iid, "Sin categoría"),
+            "tipo": kardex.ETIQUETAS.get(tipo, (tipo or SIN_DATO).capitalize()),
+            "motivo": motivo_de.get(ref, SIN_DATO) if origen == "merma" else SIN_DATO,
+            "persona": operadores.get(operador_id, "Sin asignar"),
+            "entra": cantidad if cantidad > 0 else 0.0,
+            "sale": -cantidad if cantidad < 0 else 0.0,
+            "v_entra": valor if cantidad > 0 else 0.0,
+            "v_sale": valor if cantidad < 0 else 0.0,
             "n": 1,
+        }
+
+
+def _filas_cocina(db: Session, inicio, fin) -> Iterable[Fila]:
+    """Las comandas que pasaron por cocina y cuanto tardaron: de que se tomo el
+    pedido a que la cocina lo marco listo."""
+    P = models.Pedido
+    filas = (
+        db.query(P.creado_en, P.listo_en, models.Operador.nombre, models.PuntoVenta.nombre)
+        .outerjoin(models.Operador, models.Operador.id == P.operador_id)
+        .outerjoin(models.PuntoVenta, models.PuntoVenta.id == P.punto_venta_id)
+        .filter(
+            P.a_cocina.is_(True),
+            P.estado != "anulado",
+            P.listo_en.isnot(None),
+            P.creado_en >= inicio,
+            P.creado_en < fin,
+        )
+        .all()
+    )
+    for creado, listo, operador, punto in filas:
+        minutos = max((listo - creado).total_seconds() / 60, 0)
+        yield {
+            "_fecha": creado,
+            "hora": creado.hour,
+            "persona": operador or "Sin asignar",
+            "caja": punto or "Sin asignar",
+            "n": 1,
+            "minutos": minutos,
+        }
+
+
+_TIPO_CUENTA = {"activo": "Activo", "pasivo": "Pasivo", "patrimonio": "Patrimonio",
+                "ingreso": "Ingreso", "costo": "Costo", "gasto": "Gasto"}
+_ORIGEN_ASIENTO = {"venta": "Venta", "factura_compra": "Compra", "compra_insumo": "Compra",
+                   "gasto": "Gasto", "merma": "Merma", "manual": "Asiento manual",
+                   "correccion_pago": "Corrección de pago"}
+
+
+def _filas_contabilidad(db: Session, inicio, fin) -> Iterable[Fila]:
+    A, Mv, Cu = models.AsientoContable, models.MovimientoContable, models.CuentaContable
+    filas = (
+        db.query(A.fecha, A.origen, Cu.codigo, Cu.nombre, Cu.tipo, Cu.naturaleza, Mv.debe, Mv.haber)
+        .join(A, A.id == Mv.asiento_id)
+        .join(Cu, Cu.id == Mv.cuenta_id)
+        .filter(A.fecha >= inicio, A.fecha < fin)
+        .all()
+    )
+    for fecha, origen, codigo, nombre, tipo, naturaleza, debe, haber in filas:
+        debe, haber = debe or 0, haber or 0
+        yield {
+            "_fecha": fecha,
+            "cuenta": f"{codigo} · {nombre}",
+            "tipo": _TIPO_CUENTA.get(tipo, (tipo or SIN_DATO).capitalize()),
+            "documento": _ORIGEN_ASIENTO.get(origen, (origen or SIN_DATO).replace("_", " ").capitalize()),
+            "debe": debe,
+            "haber": haber,
+            # El saldo en el sentido de la cuenta: un gasto sube con el debe,
+            # un ingreso con el haber. Asi "Ingreso" y "Gasto" salen positivos.
+            "saldo": (debe - haber) if naturaleza == "deudora" else (haber - debe),
+        }
+
+
+def _filas_tasa(db: Session, inicio, fin) -> Iterable[Fila]:
+    T = models.TasaCambio
+    for fecha, bcv, eur, paralelo in (
+        db.query(T.fecha, T.bcv, T.eur, T.paralelo)
+        .filter(T.fecha >= inicio.date(), T.fecha < fin.date() + datetime.timedelta(days=1))
+    ):
+        momento = inicio_del_dia(fecha)
+        if not (inicio <= momento < fin):
+            continue
+        yield {
+            "_fecha": momento,
+            "s_bcv": bcv or 0, "n_bcv": 1 if bcv else 0,
+            "s_eur": eur or 0, "n_eur": 1 if eur else 0,
+            "s_par": paralelo or 0, "n_par": 1 if paralelo else 0,
         }
 
 
@@ -534,26 +695,27 @@ def _registrar(f: Fuente) -> None:
 
 _registrar(Fuente(
     id="ventas",
-    nombre="Ventas (por pedido)",
-    descripcion="Cada pedido cobrado. Las devoluciones no cuentan como venta.",
+    nombre="Ventas",
+    descripcion="Cada venta cobrada. Las devoluciones no cuentan.",
+    modulo="ventas",
     campos=CAMPOS_FECHA + [
-        Campo("hora", "Hora del cobro", "hora"),
-        Campo("cajera", "Cajera"),
-        Campo("caja", "Caja"),
-        Campo("cliente", "Cliente"),
-        Campo("forma_pago", "Forma de pago", ayuda="«Mixto» si se pagó con más de un método."),
-        Campo("facturado", "Factura"),
-        Campo("delivery", "Delivery"),
-        Campo("descuento", "Descuento"),
+        C("hora", "La hora en que se cobró."),
+        C("persona", "La cajera que cobró."),
+        C("caja"),
+        C("cliente"),
+        C("forma_pago", "«Mixto» si se pagó de más de una forma."),
+        C("factura"),
+        C("delivery"),
+        C("descuento"),
     ],
     medidas=[
-        Medida("ventas", "Ventas", "dinero", suma="ventas"),
-        Medida("pedidos", "Pedidos", "entero", suma="n"),
-        Medida("ticket", "Ticket promedio", "dinero", derivada=_division("ventas", "pedidos"),
-               depende=("ventas", "pedidos"), ayuda="Ventas entre pedidos."),
-        Medida("ventas_bs", "Ventas en Bs", "bs", suma="ventas_bs",
+        Medida("ventas", "Total vendido", "dinero", suma="ventas"),
+        Medida("pedidos", "Número de ventas", "entero", suma="n"),
+        Medida("ticket", "Venta promedio", "dinero", derivada=_division("ventas", "pedidos"),
+               depende=("ventas", "pedidos"), ayuda="Total vendido entre el número de ventas."),
+        Medida("ventas_bs", "Total en bolívares", "bs", suma="ventas_bs",
                ayuda="Cada venta a la tasa de su día."),
-        Medida("iva", "IVA cobrado", "dinero", suma="iva", ayuda="Solo de los pedidos facturados."),
+        Medida("iva", "IVA cobrado", "dinero", suma="iva", ayuda="Solo de las ventas con factura."),
         Medida("descuentos", "Descuentos", "dinero", suma="descuentos"),
         Medida("propinas", "Propinas", "dinero", suma="propinas"),
     ],
@@ -565,7 +727,7 @@ _registrar(Fuente(
         # de un mes cambiaria de centavos segun de donde salga.
         "": DetalleMart("dia", {"ventas": "ventas", "n": "pedidos",
                                 "iva": "iva_cobrado", "descuentos": "valor_descuentos"}),
-        "cajera": DetalleMart(consolidacion.OPERADOR, {"ventas": "ventas", "n": "pedidos"}),
+        "persona": DetalleMart(consolidacion.OPERADOR, {"ventas": "ventas", "n": "pedidos"}),
         "caja": DetalleMart(consolidacion.PUNTO, {"ventas": "ventas", "n": "pedidos"}),
         "hora": DetalleMart(consolidacion.HORA, {"ventas": "ventas", "n": "pedidos"}, _hora_del_mart),
     },
@@ -573,27 +735,29 @@ _registrar(Fuente(
 
 _registrar(Fuente(
     id="productos",
-    nombre="Productos vendidos",
-    descripcion="Cada renglón vendido en un pedido cobrado. Las cortesías no cuentan (están en Pérdidas).",
+    nombre="Menú",
+    descripcion="Lo que se vendió de tu menú, producto por producto. Las cortesías no cuentan.",
+    modulo="menu",
     campos=CAMPOS_FECHA + [
-        Campo("hora", "Hora del cobro", "hora"),
-        Campo("producto", "Producto"),
-        Campo("categoria", "Categoría"),
-        Campo("cajera", "Cajera"),
-        Campo("caja", "Caja"),
-        Campo("preparacion", "Cocina o vitrina"),
+        C("hora", "La hora en que se cobró."),
+        C("producto"),
+        C("categoria", "La categoría del menú."),
+        C("persona", "La cajera que cobró."),
+        C("caja"),
+        C("preparacion"),
     ],
     medidas=[
-        Medida("unidades", "Unidades", "entero", suma="unidades"),
-        Medida("ventas", "Ventas", "dinero", suma="ventas"),
-        Medida("pedidos", "Pedidos", "entero", distintos="pedido_id",
-               ayuda="En cuántos pedidos distintos apareció."),
+        Medida("unidades", "Unidades vendidas", "entero", suma="unidades"),
+        Medida("ventas", "Total vendido", "dinero", suma="ventas"),
+        Medida("pedidos", "Número de ventas", "entero", distintos="pedido_id",
+               ayuda="En cuántas ventas distintas apareció."),
         Medida("precio_promedio", "Precio promedio", "dinero", derivada=_division("ventas", "unidades"),
                depende=("ventas", "unidades")),
         Medida("costo", "Costo", "dinero", suma="costo", sensible=True,
-               ayuda="Costo de receta al momento de la venta."),
-        Medida("margen", "Margen", "dinero", derivada=_margen, depende=("ventas", "costo"), sensible=True),
-        Medida("margen_pct", "Margen %", "pct", derivada=_margen_pct, depende=("ventas", "costo"),
+               ayuda="Costo de la receta al momento de la venta."),
+        Medida("margen", "Ganancia", "dinero", derivada=_margen, depende=("ventas", "costo"), sensible=True,
+               ayuda="Total vendido menos el costo."),
+        Medida("margen_pct", "Ganancia %", "pct", derivada=_margen_pct, depende=("ventas", "costo"),
                sensible=True),
     ],
     filas=_filas_productos,
@@ -602,9 +766,9 @@ _registrar(Fuente(
         # la receta) y el mart lo guarda redondeado por dia. Leido de ahi, el
         # margen del cafe cambiaba un centavo al ponerle un filtro.
         "producto": DetalleMart(consolidacion.PRODUCTO, {"unidades": "unidades", "ventas": "ventas"}),
-        # "Pedidos" de una categoria NO se lee del mart: es un conteo de
-        # pedidos distintos, y un pedido con jugo y empanada esta en las dos
-        # categorias. Sumarlo para el total lo contaria dos veces.
+        # "Numero de ventas" de una categoria NO se lee del mart: es un conteo
+        # de pedidos distintos, y un pedido con jugo y empanada esta en las
+        # dos categorias. Sumarlo para el total lo contaria dos veces.
         "categoria": DetalleMart(consolidacion.CATEGORIA, {"unidades": "unidades", "ventas": "ventas"}),
     },
     etiquetas=_etiquetas_productos,
@@ -612,78 +776,163 @@ _registrar(Fuente(
 
 _registrar(Fuente(
     id="cobros",
-    nombre="Cobros",
-    descripcion="Cada pago recibido por las ventas cobradas. Una venta mixta aparece en cada método.",
+    nombre="Caja",
+    descripcion="Cada pago recibido. Una venta pagada de dos formas aparece en las dos.",
+    modulo="caja",
     campos=CAMPOS_FECHA + [
-        Campo("hora", "Hora del cobro", "hora"),
-        Campo("metodo", "Método de pago"),
-        Campo("cajera", "Cajera"),
-        Campo("caja", "Caja"),
+        C("hora", "La hora en que se cobró."),
+        C("forma_pago"),
+        C("persona", "La cajera que cobró."),
+        C("caja"),
     ],
     medidas=[
-        Medida("monto", "Monto", "dinero", suma="monto"),
-        Medida("cobros", "Cobros", "entero", suma="n"),
+        Medida("monto", "Total cobrado", "dinero", suma="monto"),
+        Medida("cobros", "Número de cobros", "entero", suma="n"),
     ],
     filas=_filas_cobros,
-    mart={"metodo": DetalleMart(consolidacion.METODO, {"monto": "ventas", "n": "pedidos"})},
+    mart={"forma_pago": DetalleMart(consolidacion.METODO, {"monto": "ventas", "n": "pedidos"})},
 ))
 
 _registrar(Fuente(
     id="compras",
     nombre="Compras",
-    descripcion="Renglones de las facturas de compra y las compras sin factura, menos las notas de crédito. Montos sin IVA, con flete y descuento repartidos.",
+    descripcion="Lo comprado a proveedores, sin IVA, menos las notas de crédito.",
+    modulo="compras",
     campos=CAMPOS_FECHA + [
-        Campo("proveedor", "Proveedor"),
-        Campo("insumo", "Insumo"),
-        Campo("tipo", "Tipo de compra", ayuda="Insumos, Servicios, Activos u Otros."),
-        Campo("origen", "Origen"),
-        Campo("forma_pago", "Forma de pago"),
-        Campo("estado", "Estado"),
+        C("proveedor"),
+        C("producto", "El insumo comprado."),
+        C("categoria", "El cajón del depósito del insumo."),
+        C("tipo", "Insumos, servicios, activos u otros."),
+        C("documento", "Factura, nota de crédito o compra sin factura."),
+        C("forma_pago"),
+        C("estado", "Pagada o por pagar."),
     ],
     medidas=[
-        Medida("monto", "Monto sin IVA", "dinero", suma="monto"),
+        Medida("monto", "Total comprado", "dinero", suma="monto",
+               ayuda="Sin IVA, con flete y descuentos repartidos."),
         Medida("cantidad", "Cantidad", "numero", suma="cantidad",
-               ayuda="Solo tiene sentido agrupando por insumo: cada uno tiene su unidad."),
-        Medida("documentos", "Facturas", "entero", distintos="documento"),
+               ayuda="Tiene sentido por producto: cada insumo tiene su unidad."),
+        Medida("documentos", "Facturas", "entero", distintos="_doc"),
         Medida("costo_promedio", "Costo promedio", "dinero", derivada=_division("monto", "cantidad"),
-               depende=("monto", "cantidad"), ayuda="Monto entre cantidad, por unidad del insumo."),
+               depende=("monto", "cantidad"), ayuda="Por unidad del insumo."),
     ],
     filas=_filas_compras,
 ))
 
 _registrar(Fuente(
-    id="mermas",
-    nombre="Mermas",
-    descripcion="Lo que se dañó, se botó o faltó en un conteo, con su valor al costo de ese día.",
+    id="inventario",
+    nombre="Inventario",
+    descripcion="Todo lo que entró y salió del depósito: compras, consumo de las ventas, mermas y ajustes.",
+    modulo="inventario",
     campos=CAMPOS_FECHA + [
-        Campo("insumo", "Insumo"),
-        Campo("motivo", "Motivo"),
-        Campo("origen", "Origen"),
-        Campo("responsable", "Registró"),
+        C("producto", "El insumo."),
+        C("categoria", "El cajón del depósito."),
+        C("tipo", "Compra, venta, merma, ajuste por conteo..."),
+        C("motivo", "Por qué se perdió (solo las mermas)."),
+        C("persona", "Quien lo registró."),
     ],
     medidas=[
-        Medida("valor", "Valor", "dinero", suma="valor"),
-        Medida("cantidad", "Cantidad", "numero", suma="cantidad",
-               ayuda="Solo tiene sentido agrupando por insumo: cada uno tiene su unidad."),
-        Medida("registros", "Registros", "entero", suma="n"),
+        Medida("v_sale", "Valor que salió", "dinero", suma="v_sale", ayuda="Al costo de ese momento."),
+        Medida("v_entra", "Valor que entró", "dinero", suma="v_entra"),
+        Medida("sale", "Cantidad que salió", "numero", suma="sale",
+               ayuda="Tiene sentido por producto: cada insumo tiene su unidad."),
+        Medida("entra", "Cantidad que entró", "numero", suma="entra",
+               ayuda="Tiene sentido por producto: cada insumo tiene su unidad."),
+        Medida("movimientos", "Movimientos", "entero", suma="n"),
     ],
-    filas=_filas_mermas,
+    filas=_filas_inventario,
+))
+
+_registrar(Fuente(
+    id="cocina",
+    nombre="Cocina",
+    descripcion="Las comandas que pasaron por cocina y cuánto tardaron en estar listas.",
+    modulo="cocina",
+    campos=CAMPOS_FECHA + [
+        C("hora", "La hora en que se tomó el pedido."),
+        C("persona", "La cajera que tomó el pedido."),
+        C("caja"),
+    ],
+    medidas=[
+        Medida("comandas", "Comandas", "entero", suma="n"),
+        Medida("minutos", "Minutos promedio", "numero", derivada=_division("t_min", "comandas"),
+               depende=("t_min", "comandas"), ayuda="De que se tomó el pedido a que la cocina lo marcó listo."),
+        Medida("t_min", "Minutos en total", "numero", suma="minutos", oculta=True),
+    ],
+    filas=_filas_cocina,
+))
+
+_registrar(Fuente(
+    id="contabilidad",
+    nombre="Contabilidad",
+    descripcion="Los movimientos de cada cuenta contable.",
+    modulo="contabilidad",
+    campos=CAMPOS_FECHA + [
+        C("cuenta"),
+        C("tipo", "Activo, pasivo, ingreso, costo, gasto..."),
+        C("documento", "De dónde salió el asiento: venta, compra, gasto..."),
+    ],
+    medidas=[
+        Medida("saldo", "Saldo del período", "dinero", suma="saldo",
+               ayuda="En el sentido de cada cuenta: ingresos y gastos salen en positivo."),
+        Medida("debe", "Debe", "dinero", suma="debe"),
+        Medida("haber", "Haber", "dinero", suma="haber"),
+    ],
+    filas=_filas_contabilidad,
+))
+
+_registrar(Fuente(
+    id="tasa",
+    nombre="Tasa de cambio",
+    descripcion="Cómo se movió la tasa del dólar y del euro.",
+    modulo="tasa",
+    campos=list(CAMPOS_FECHA),
+    medidas=[
+        Medida("bcv", "Dólar BCV", "bs", derivada=_division("s_bcv", "n_bcv"), depende=("s_bcv", "n_bcv"),
+               ayuda="Promedio del período."),
+        Medida("paralelo", "Dólar paralelo", "bs", derivada=_division("s_par", "n_par"),
+               depende=("s_par", "n_par"), ayuda="Promedio del período."),
+        Medida("eur", "Euro BCV", "bs", derivada=_division("s_eur", "n_eur"), depende=("s_eur", "n_eur"),
+               ayuda="Promedio del período."),
+        Medida("s_bcv", "", "bs", suma="s_bcv", oculta=True),
+        Medida("n_bcv", "", "entero", suma="n_bcv", oculta=True),
+        Medida("s_par", "", "bs", suma="s_par", oculta=True),
+        Medida("n_par", "", "entero", suma="n_par", oculta=True),
+        Medida("s_eur", "", "bs", suma="s_eur", oculta=True),
+        Medida("n_eur", "", "entero", suma="n_eur", oculta=True),
+    ],
+    filas=_filas_tasa,
 ))
 
 
-def catalogo(ve_sensibles: bool) -> List[dict]:
+def _sumable(m: Medida) -> bool:
+    """Si las partes de esta medida suman el total: el total vendido si; un
+    promedio o un porcentaje no. Decide si el grafico puede apilarla."""
+    return m.derivada is None and not m.distintos
+
+
+def puede_ver(fuente: "Fuente", modulos: Optional[Sequence[str]]) -> bool:
+    """Si quien pregunta entra al modulo de esta fuente. None: sin limite
+    (los tests y los usos internos)."""
+    return modulos is None or not fuente.modulo or fuente.modulo in modulos
+
+
+def catalogo(ve_sensibles: bool, modulos: Optional[Sequence[str]] = None) -> List[dict]:
     return [
         {
             "id": f.id,
             "nombre": f.nombre,
             "descripcion": f.descripcion,
-            "campos": [{"id": c.id, "nombre": c.nombre, "tipo": c.tipo, "ayuda": c.ayuda} for c in f.campos],
+            "campos": [
+                {"id": c.id, "nombre": c.nombre, "tipo": c.tipo, "ayuda": c.ayuda, "grupo": c.grupo}
+                for c in f.campos
+            ],
             "medidas": [
-                {"id": m.id, "nombre": m.nombre, "formato": m.formato, "ayuda": m.ayuda}
-                for m in f.medidas if ve_sensibles or not m.sensible
+                {"id": m.id, "nombre": m.nombre, "formato": m.formato, "ayuda": m.ayuda, "sumable": _sumable(m)}
+                for m in f.medidas if (ve_sensibles or not m.sensible) and not m.oculta
             ],
         }
-        for f in FUENTES.values()
+        for f in FUENTES.values() if puede_ver(f, modulos)
     ]
 
 
@@ -864,10 +1113,18 @@ def _orden(campo: Campo, valor: Any):
     return (0, str(valor).lower())
 
 
-def consultar(db: Session, c: Consulta, ve_sensibles: bool) -> dict:
-    fuente = FUENTES.get(c.fuente)
+def _fuente_para(fuente_id: str, modulos: Optional[Sequence[str]]) -> Fuente:
+    fuente = FUENTES.get(fuente_id)
     if fuente is None:
-        raise ErrorDeConsulta(f"No existe la fuente «{c.fuente}».")
+        raise ErrorDeConsulta(f"No existe la fuente «{fuente_id}».")
+    if not puede_ver(fuente, modulos):
+        raise ErrorDeConsulta(f"Tu rol no entra a {fuente.nombre}: pídele acceso al dueño del local.")
+    return fuente
+
+
+def consultar(db: Session, c: Consulta, ve_sensibles: bool,
+              modulos: Optional[Sequence[str]] = None) -> dict:
+    fuente = _fuente_para(c.fuente, modulos)
     if not c.medidas:
         raise ErrorDeConsulta("Elige al menos una medida.")
     if len(c.filas) != len(set(c.filas)):
@@ -987,7 +1244,8 @@ def consultar(db: Session, c: Consulta, ve_sensibles: bool) -> dict:
             }
             if campo_col else None
         ),
-        "medidas": [{"id": m.id, "nombre": m.nombre, "formato": m.formato} for m in medidas],
+        "medidas": [{"id": m.id, "nombre": m.nombre, "formato": m.formato, "sumable": _sumable(m)}
+                    for m in medidas],
         "filas": filas_salida[:c.limite],
         "totales": valores_de(totales_col),
         "truncado": truncado,
@@ -996,11 +1254,10 @@ def consultar(db: Session, c: Consulta, ve_sensibles: bool) -> dict:
 
 
 def valores_posibles(db: Session, fuente_id: str, campo_id: str,
-                     inicio: datetime.datetime, fin: datetime.datetime) -> List[dict]:
+                     inicio: datetime.datetime, fin: datetime.datetime,
+                     modulos: Optional[Sequence[str]] = None) -> List[dict]:
     """Los valores que tiene un campo en el periodo: lo que se ofrece al filtrar."""
-    fuente = FUENTES.get(fuente_id)
-    if fuente is None:
-        raise ErrorDeConsulta(f"No existe la fuente «{fuente_id}».")
+    fuente = _fuente_para(fuente_id, modulos)
     campo = fuente.campo(campo_id)
     if campo.tipo == "dia_semana":
         return [{"valor": str(i), "etiqueta": d} for i, d in enumerate(DIAS_SEMANA)]

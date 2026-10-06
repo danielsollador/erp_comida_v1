@@ -53,24 +53,38 @@ class ReporteGuardadoIn(BaseModel):
 # y sirven de ejemplo de lo que se puede armar.
 DE_FABRICA = [
     {"id": "f-cajera-dia", "nombre": "Ventas por cajera y día", "periodo": "mes",
-     "definicion": {"fuente": "ventas", "filas": ["dia"], "columna": "cajera", "medidas": ["ventas"]}},
-    {"id": "f-productos", "nombre": "Productos más vendidos", "periodo": "mes",
-     "definicion": {"fuente": "productos", "filas": ["producto"], "medidas": ["unidades", "ventas", "pedidos"]}},
+     "definicion": {"fuente": "ventas", "filas": ["dia"], "columna": "persona", "medidas": ["ventas"]}},
+    {"id": "f-productos", "nombre": "Lo más vendido", "periodo": "mes",
+     "definicion": {"fuente": "productos", "filas": ["producto"], "medidas": ["unidades"]}},
     {"id": "f-categoria-mes", "nombre": "Ventas por categoría y mes", "periodo": "anio",
      "definicion": {"fuente": "productos", "filas": ["categoria"], "columna": "mes", "medidas": ["ventas"]}},
-    {"id": "f-hora-dia", "nombre": "Pedidos por hora y día de la semana", "periodo": "30d",
+    {"id": "f-hora-dia", "nombre": "Ventas por hora y día de la semana", "periodo": "30d",
      "definicion": {"fuente": "ventas", "filas": ["hora"], "columna": "dia_semana", "medidas": ["pedidos"]}},
-    {"id": "f-cobros-metodo", "nombre": "Cobros por método y día", "periodo": "semana",
-     "definicion": {"fuente": "cobros", "filas": ["dia"], "columna": "metodo", "medidas": ["monto"]}},
+    {"id": "f-cobros-metodo", "nombre": "Cobros por forma de pago", "periodo": "semana",
+     "definicion": {"fuente": "cobros", "filas": ["dia"], "columna": "forma_pago", "medidas": ["monto"]}},
     {"id": "f-compras-proveedor", "nombre": "Compras por proveedor", "periodo": "mes",
-     "definicion": {"fuente": "compras", "filas": ["proveedor"], "medidas": ["monto", "documentos"]}},
-    {"id": "f-mermas-insumo", "nombre": "Mermas por insumo y motivo", "periodo": "mes",
-     "definicion": {"fuente": "mermas", "filas": ["insumo", "motivo"], "medidas": ["valor", "cantidad"]}},
+     "definicion": {"fuente": "compras", "filas": ["proveedor"], "medidas": ["monto"]}},
+    {"id": "f-mermas-insumo", "nombre": "Pérdidas por producto y motivo", "periodo": "mes",
+     "definicion": {"fuente": "inventario", "filas": ["producto", "motivo"], "medidas": ["v_sale"],
+                    "filtros": {"tipo": ["Merma"]}}},
+    {"id": "f-cocina-hora", "nombre": "Tiempo de cocina por hora", "periodo": "30d",
+     "definicion": {"fuente": "cocina", "filas": ["hora"], "medidas": ["minutos"]}},
+    {"id": "f-gastos-cuenta", "nombre": "Gastos por cuenta", "periodo": "mes",
+     "definicion": {"fuente": "contabilidad", "filas": ["cuenta"], "medidas": ["saldo"],
+                    "filtros": {"tipo": ["Gasto"]}}},
+    {"id": "f-tasa-semana", "nombre": "La tasa semana a semana", "periodo": "90d",
+     "definicion": {"fuente": "tasa", "filas": ["semana"], "medidas": ["bcv"]}},
 ]
 
 
 def _ve_sensibles(request: Request) -> bool:
     return permisos.administra(auth.sesion_actual(request).get("rol"))
+
+
+def _modulos(request: Request):
+    """A que modulos entra quien pregunta: cada fuente es de un modulo, y la
+    que no es suya no aparece."""
+    return permisos.modulos_de(auth.sesion_actual(request).get("rol"))
 
 
 def _rango(desde: datetime.date, hasta: datetime.date):
@@ -88,13 +102,13 @@ def _consulta(p: PedidoConsulta, limite: int = rd.MAX_GRUPOS) -> rd.Consulta:
 
 @router.get("/catalogo")
 def catalogo(request: Request):
-    return rd.catalogo(_ve_sensibles(request))
+    return rd.catalogo(_ve_sensibles(request), _modulos(request))
 
 
 @router.post("/consulta")
 def consultar(p: PedidoConsulta, request: Request, db: Session = Depends(get_db)):
     try:
-        resultado = rd.consultar(db, _consulta(p), _ve_sensibles(request))
+        resultado = rd.consultar(db, _consulta(p), _ve_sensibles(request), _modulos(request))
     except rd.ErrorDeConsulta as e:
         raise HTTPException(status_code=400, detail=str(e))
     resultado["etiqueta"] = _rango(p.desde, p.hasta)[2]
@@ -102,10 +116,10 @@ def consultar(p: PedidoConsulta, request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/valores")
-def valores(p: PedidoValores, db: Session = Depends(get_db)):
+def valores(p: PedidoValores, request: Request, db: Session = Depends(get_db)):
     inicio, fin, _ = _rango(p.desde, p.hasta)
     try:
-        return rd.valores_posibles(db, p.fuente, p.campo, inicio, fin)
+        return rd.valores_posibles(db, p.fuente, p.campo, inicio, fin, _modulos(request))
     except rd.ErrorDeConsulta as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -130,7 +144,7 @@ def exportar(q: str, request: Request, db: Session = Depends(get_db)):
     except ValueError:
         raise HTTPException(status_code=400, detail="La consulta a exportar no se entiende.")
     try:
-        r = rd.consultar(db, _consulta(p, rd.MAX_GRUPOS_EXPORTAR), _ve_sensibles(request))
+        r = rd.consultar(db, _consulta(p, rd.MAX_GRUPOS_EXPORTAR), _ve_sensibles(request), _modulos(request))
     except rd.ErrorDeConsulta as e:
         raise HTTPException(status_code=400, detail=str(e))
     encabezados = [c["nombre"] for c in r["campos_fila"]]
@@ -180,6 +194,8 @@ def _validar(db: Session, d: Definicion, request: Request) -> None:
     fuente = rd.FUENTES.get(d.fuente)
     if fuente is None:
         raise HTTPException(400, f"No existe la fuente «{d.fuente}».")
+    if not rd.puede_ver(fuente, _modulos(request)):
+        raise HTTPException(403, f"Tu rol no entra a {fuente.nombre}.")
     try:
         for c in d.filas + ([d.columna] if d.columna else []) + list(d.filtros):
             fuente.campo(c)
@@ -193,10 +209,17 @@ def _validar(db: Session, d: Definicion, request: Request) -> None:
 
 
 @router.get("/guardados")
-def listar_guardados(db: Session = Depends(get_db)):
+def listar_guardados(request: Request, db: Session = Depends(get_db)):
+    # Solo los reportes de modulos a los que entra quien pregunta.
+    modulos = _modulos(request)
+
+    def visible(definicion: dict) -> bool:
+        fuente = rd.FUENTES.get(definicion.get("fuente", ""))
+        return fuente is not None and rd.puede_ver(fuente, modulos)
+
     propios = [_a_dict(r) for r in db.query(models.ReporteGuardado).order_by(models.ReporteGuardado.nombre)]
     fabrica = [{**f, "creado_por": "", "de_fabrica": True} for f in DE_FABRICA]
-    return propios + fabrica
+    return [g for g in propios + fabrica if visible(g["definicion"])]
 
 
 @router.post("/guardados")

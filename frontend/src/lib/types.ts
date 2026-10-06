@@ -1897,8 +1897,10 @@ export type CategoriaInsumo = {
 export type TipoCampo = 'fecha' | 'semana' | 'mes' | 'anio' | 'dia_semana' | 'hora' | 'texto'
 export type FormatoMedida = 'dinero' | 'bs' | 'entero' | 'numero' | 'pct'
 
-export type CampoDinamico = { id: string; nombre: string; tipo: TipoCampo; ayuda: string }
-export type MedidaDinamica = { id: string; nombre: string; formato: FormatoMedida; ayuda: string }
+/** `grupo`: Cuándo, Qué, Quién o Cómo. El mismo concepto en todos los modulos. */
+export type CampoDinamico = { id: string; nombre: string; tipo: TipoCampo; ayuda: string; grupo: string }
+/** `sumable`: si las partes suman el total (un promedio no): decide si se puede apilar. */
+export type MedidaDinamica = { id: string; nombre: string; formato: FormatoMedida; ayuda: string; sumable: boolean }
 
 export type FuenteDinamica = {
   id: string
@@ -1930,7 +1932,7 @@ export type ResultadoDinamico = {
     tipo: TipoCampo
     valores: { valor: string; etiqueta: string }[]
   } | null
-  medidas: { id: string; nombre: string; formato: FormatoMedida }[]
+  medidas: { id: string; nombre: string; formato: FormatoMedida; sumable: boolean }[]
   filas: ({ claves: string[]; etiquetas: string[] } & CeldasReporte)[]
   totales: CeldasReporte
   truncado: boolean

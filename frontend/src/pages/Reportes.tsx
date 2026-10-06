@@ -354,6 +354,9 @@ export default function Reportes() {
       {/* La linea fina de "cargando": solo si de verdad tarda (ver arriba). */}
       {lento && <div className="vp-cargando-linea" aria-hidden />}
       <Pagina ocupada={refrescando}>
+        {/* "A medida" dibuja su propia fila: el periodo y, al lado, que mirar y
+            como, con las mismas pastillas. */}
+        {!aMedida && (
         <BarraFiltros
           rango={rango}
           alCambiar={setRango}
@@ -372,6 +375,7 @@ export default function Reportes() {
             </>
           )}
         </BarraFiltros>
+        )}
 
         {/* A medida va fuera del "cargando" de las demas secciones: cada
             cambio de fechas la desmontaria y perderia lo que se estaba armando. */}
