@@ -51,8 +51,9 @@ secreto() {
   echo "# Generado por gcp/arranque.sh en cada encendido. NO editar a mano."
   echo "TZ=America/Caracas"
   echo "ERP_LOCAL=savora"
-  for v in POSTGRES_PASSWORD ERP_SESSION_SECRET PABILO_API_KEY PABILO_USER_BANK_ID \
-           DOMINIO_SAVORA DOMINIO_HUB ACME_EMAIL IMAGEN_TAG; do
+  # Las de Gemini (facturas desde foto): sin secreto quedan vacias y el boton
+  # de la foto no aparece; con ERP_LECTOR_FACTURAS=prueba se prueba sin clave.
+  for v in POSTGRES_PASSWORD ERP_SESSION_SECRET PABILO_API_KEY PABILO_USER_BANK_ID \n           DOMINIO_SAVORA DOMINIO_HUB ACME_EMAIL IMAGEN_TAG \n           ERP_LECTOR_FACTURAS GEMINI_API_KEY ERP_GEMINI_MODELO ERP_GEMINI_MODELO_RESPALDO; do
     n=$(echo "$v" | tr 'A-Z_' 'a-z-')
     echo "$v=$(secreto "$n")"
   done
