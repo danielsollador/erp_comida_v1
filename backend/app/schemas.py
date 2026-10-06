@@ -2002,7 +2002,7 @@ class FacturaCompraBase(BaseModel):
     # (letra + 8/9 digitos), no aca, porque el mensaje de error necesita decir
     # exactamente que formato se espera.
     proveedor_rif: str
-    categoria: str = "Insumos"  # Insumos|Servicios|Activos|Otros
+    categoria: str = "Insumos"  # Insumos|Suministros|Servicios|Activos|Otros
     forma_pago: str = "Efectivo"  # Efectivo|Banco|Credito
     descripcion: str = ""
 

@@ -153,6 +153,7 @@ def metodo_de_pago_valido(metodo: Optional[str]) -> bool:
 # Categoria de la factura de compra -> cuenta donde se contabiliza el gasto/activo.
 CUENTA_POR_CATEGORIA_COMPRA = {
     "Insumos": "1040",
+    "Suministros": "6010",  # limpieza, desechables, papeleria
     "Servicios": "6010",
     "Activos": "1050",
     "Otros": "6010",

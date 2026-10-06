@@ -700,7 +700,7 @@ class FacturaCompra(Base):
     # (columna del Libro de Compras); no mueve la factura de periodo. Vacia en
     # las facturas cargadas antes de que existiera: ahi vale la de registro.
     fecha_emision = Column(Date, nullable=True)
-    categoria = Column(String, default="Insumos")  # Insumos|Servicios|Activos|Otros
+    categoria = Column(String, default="Insumos")  # Insumos|Suministros|Servicios|Activos|Otros
     forma_pago = Column(String, default="Efectivo")  # Efectivo|Banco|Credito
     base_imponible = Column(Float, nullable=False)
     iva = Column(Float, default=0)

@@ -62,6 +62,9 @@ type Linea = {
 
 const LINEA_VACIA: Linea = { ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null }
 
+// Los campos que en el telefono viven dentro del resumen plegado.
+const CAMPOS_DE_DATOS = new Set(['cf-proveedor', 'cf-rif', 'cf-numero', 'cf-fecha', 'cf-moneda', 'cf-tasa', 'cf-control'])
+
 type Tono = 'mal' | 'ojo'
 /** Algo que mirar antes de guardar. `ancla` es el id del elemento al que lleva. */
 type Pendiente = { texto: string; tono: Tono; ancla: string }
@@ -243,26 +246,54 @@ export default function CargarFactura({
     pendientes.push({ texto: 'Factura vieja', tono: 'ojo', ancla: 'cf-fecha' })
   else if (borrador && !fechaEmision) pendientes.push({ texto: 'Fecha sin leer', tono: 'ojo', ancla: 'cf-fecha' })
   if (esInsumos) {
+    // El mismo problema en varios renglones es UN aviso ("11 renglones sin
+    // mercancía") que lleva al primero, no once lineas iguales que tapaban
+    // media pantalla del telefono.
+    const porTipo = new Map<string, { tono: Tono; renglones: number[] }>()
     lineas.forEach((l, i) => {
-      if (!l.ingrediente_id && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0))
-        pendientes.push({ texto: `Renglón ${i + 1}: falta la mercancía`, tono: 'mal', ancla: `cf-renglon-${i}` })
-      else if (problemaDeRenglon(l, i)) pendientes.push({ ...problemaDeRenglon(l, i)!, ancla: `cf-renglon-${i}` })
+      const p = sinMercanciaEn(l) ? { texto: 'sin mercancía', tono: 'mal' as Tono } : problemaDeRenglon(l, i)
+      if (!p) return
+      const grupo = porTipo.get(p.texto) ?? { tono: p.tono, renglones: [] }
+      grupo.renglones.push(i)
+      porTipo.set(p.texto, grupo)
     })
+    for (const [texto, g] of porTipo)
+      pendientes.push({
+        texto: g.renglones.length === 1 ? `Renglón ${g.renglones[0] + 1}: ${texto}` : `${g.renglones.length} renglones ${texto}`,
+        tono: g.tono,
+        ancla: `cf-renglon-${g.renglones[0]}`,
+      })
   }
   if (cuadreAplica && !cuadra) pendientes.push({ texto: 'No cuadra con el papel', tono: 'ojo', ancla: 'cf-totales' })
   if (!tasaNum) pendientes.push({ texto: 'Falta la tasa', tono: 'mal', ancla: 'cf-tasa' })
 
+  function sinMercanciaEn(l: Linea) {
+    return !l.ingrediente_id && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0)
+  }
+
   function problemaDeRenglon(l: Linea, i: number): { texto: string; tono: Tono } | null {
     const aviso = avisoPrecio(i)
-    if (aviso?.nivel === 'unidad') return { texto: `Renglón ${i + 1}: posible error de unidad`, tono: 'mal' }
+    if (aviso?.nivel === 'unidad') return { texto: 'con posible error de unidad', tono: 'mal' }
     const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
     if (l.leido && !l.recordada && ing && unidadDistinta(l.leido.unidad, ing.unidad))
-      return { texto: `Renglón ${i + 1}: unidad distinta`, tono: 'ojo' }
-    if (aviso) return { texto: `Renglón ${i + 1}: precio fuera de lo normal`, tono: 'ojo' }
+      return { texto: 'con unidad distinta', tono: 'ojo' }
+    if (aviso) return { texto: 'con precio fuera de lo normal', tono: 'ojo' }
     return null
   }
 
+  // En el telefono los datos de la factura quedan en un resumen plegado: si
+  // un aviso lleva a uno de ellos, primero se despliega.
+  const [verDatos, setVerDatos] = useState(false)
   function irA(ancla: string) {
+    if (CAMPOS_DE_DATOS.has(ancla) && !verDatos) {
+      setVerDatos(true)
+      // Despues de que se pinten los campos.
+      setTimeout(() => enfocar(ancla), 50)
+      return
+    }
+    enfocar(ancla)
+  }
+  function enfocar(ancla: string) {
     const el = document.getElementById(ancla)
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     // El campo antes que los botones: en un renglon el primero es el de quitarlo.
@@ -421,6 +452,17 @@ export default function CargarFactura({
     )
   }
 
+  // Pasar una factura leida a gasto (limpieza, servicios...): los renglones
+  // dejan de importar y manda el monto del papel. Sin esto, la base quedaba
+  // vacia y habia que copiarla a mano del ticket.
+  function cambiarCategoria(valor: string) {
+    setCategoria(valor)
+    if (valor !== 'Insumos' && borrador && !base && borrador.subtotal != null) {
+      setBase(String(Math.round((borrador.subtotal + (borrador.recargo || 0) - (borrador.descuento || 0)) * 100) / 100))
+      setIva(borrador.iva == null ? '' : String(borrador.iva))
+    }
+  }
+
   // Al escribir la base (solo cuando NO es mercancia), se sugiere el IVA con
   // la tasa vigente; se corrige si la factura trae otro monto.
   function actualizarBase(valor: string) {
@@ -454,6 +496,7 @@ export default function CargarFactura({
     setOrigenTasa('')
     setRetencion('')
     setCategoria(CATEGORIAS[0].valor)
+    setVerDatos(false)
     setLectura(null)
     setDocumento(null)
   }
@@ -631,7 +674,7 @@ export default function CargarFactura({
       <div className={conDocumento ? 'lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-4 lg:items-start' : ''}>
         {conDocumento && <VisorDocumento url={documento.url} esPdf={documento.esPdf} />}
 
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-5">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-3 sm:p-4 space-y-4 sm:space-y-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="font-semibold">{conDocumento ? 'Revisa contra la factura' : 'Cargar factura de proveedor'}</h2>
@@ -672,12 +715,26 @@ export default function CargarFactura({
 
           {/* ── Datos de la factura ── */}
           <Grupo titulo="Factura">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* En el telefono, despues de leer, los datos van en un resumen de
+                cuatro lineas: eran siete campos apilados que habia que
+                pasar de largo para llegar a los renglones. */}
+            {conDocumento && !verDatos && (
+              <ResumenDatos
+                proveedor={proveedor}
+                rif={rif}
+                numero={numeroFactura}
+                fecha={fechaEmision}
+                moneda={monedaCarga}
+                tasa={tasaNum}
+                onEditar={() => setVerDatos(true)}
+              />
+            )}
+            <div className={`grid grid-cols-2 gap-3 ${conDocumento && !verDatos ? 'hidden sm:grid' : ''}`}>
               <Dato
                 id="cf-proveedor"
                 etiqueta="Proveedor"
                 ia={!!borrador && proveedor === (borrador.proveedor_nombre || proveedor)}
-                className="sm:col-span-2"
+                className="col-span-2"
               >
                 {/* Un proveedor no registrado se puede tipear igual: el
                     directorio es una comodidad, no un requisito. */}
@@ -732,7 +789,7 @@ export default function CargarFactura({
                     : undefined
                 }
               >
-                <input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="El de la factura, no el de control" className={clase(revision?.duplicadas.length ? 'mal' : undefined)} />
+                <input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="00001234" className={clase(revision?.duplicadas.length ? 'mal' : undefined)} />
               </Dato>
               <Dato
                 id="cf-fecha"
@@ -752,7 +809,7 @@ export default function CargarFactura({
                       ? `Tiene ${diasDesde(fechaEmision, hoyISO)} días. Revisa el año; si está bien, entra al Libro de Compras de este mes: confirma con quien lleva la contabilidad si ese crédito fiscal todavía se puede descontar.`
                       : borrador && !fechaEmision
                         ? 'La IA no la leyó con seguridad: escríbela mirando el papel.'
-                        : 'La del papel. El mes del Libro de Compras lo decide el día en que se registra.'
+                        : 'La del papel. El mes del libro lo pone el día de registro.'
                 }
               >
                 <input value={fechaEmision} onChange={(e) => setFechaEmision(e.target.value)} type="date" max={hoyISO} className={clase()} />
@@ -790,24 +847,33 @@ export default function CargarFactura({
               <Dato id="cf-control" etiqueta="N.º de control" ia={!!borrador?.numero_control && numeroControl === borrador.numero_control}>
                 <input value={numeroControl} onChange={(e) => setNumeroControl(e.target.value)} placeholder="00-00000000" className={clase()} />
               </Dato>
-              <Dato id="cf-categoria" etiqueta="Qué se compró">
-                <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className={clase()}>
-                  {CATEGORIAS.map((c) => (
-                    <option key={c.valor} value={c.valor}>
-                      {c.texto}
-                    </option>
-                  ))}
-                </select>
-              </Dato>
             </div>
+            {conDocumento && verDatos && (
+              <button type="button" onClick={() => setVerDatos(false)} className="sm:hidden mt-2 text-xs font-medium text-neutral-500 underline">
+                Plegar datos
+              </button>
+            )}
+          </Grupo>
+
+          <Grupo titulo="Qué se compró">
+            <Dato id="cf-categoria" etiqueta="" nota={CATEGORIAS.find((c) => c.valor === categoria)?.ayuda}>
+              <select value={categoria} onChange={(e) => cambiarCategoria(e.target.value)} className={clase()}>
+                {CATEGORIAS.map((c) => (
+                  <option key={c.valor} value={c.valor}>
+                    {c.texto}
+                  </option>
+                ))}
+              </select>
+            </Dato>
           </Grupo>
 
           {/* ── Pago ── */}
           <Grupo titulo="Pago">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               {fiscal.agente_retencion && ivaMostrado > 0 && (
                 <Dato
                   id="cf-retencion"
+                  className="col-span-2 sm:col-span-1"
                   etiqueta="Retención de IVA"
                   nota={
                     Number(retencionEfectiva) > 0
@@ -849,7 +915,7 @@ export default function CargarFactura({
                   <Numerico value={vidaUtil} onChange={(e) => setVidaUtil(e.target.value)} min="1" className={clase()} />
                 </Dato>
               )}
-              <Dato id="cf-descripcion" etiqueta="Nota (opcional)" className="sm:col-span-2">
+              <Dato id="cf-descripcion" etiqueta="Nota (opcional)" className="col-span-2">
                 <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className={clase()} />
               </Dato>
             </div>
@@ -861,7 +927,7 @@ export default function CargarFactura({
               <div className="space-y-2">
                 {lineas.map((l, i) => (
                   <Renglon
-                    key={i}
+                    key={l.leido ? `papel-${i}` : `mano-${i}`}
                     indice={i}
                     linea={l}
                     ingredientes={ingredientes}
@@ -986,14 +1052,16 @@ function Dato({
   const colorNota = tono === 'mal' ? 'text-peligro-700' : tono === 'ojo' ? 'text-aviso-800' : 'text-neutral-500'
   return (
     <div id={id} className={`scroll-mt-24 ${className}`}>
-      <div className="flex items-center gap-1 mb-1">
-        <span className="text-xs font-medium text-neutral-600">{etiqueta}</span>
-        {ia && (
-          <span className="text-acento-600 text-xs" title="Lo leyó la IA de la factura">
-            ✦
-          </span>
-        )}
-      </div>
+      {(etiqueta || ia) && (
+        <div className="flex items-center gap-1 mb-1">
+          <span className="text-xs font-medium text-neutral-600">{etiqueta}</span>
+          {ia && (
+            <span className="text-acento-600 text-xs" title="Lo leyó la IA de la factura">
+              ✦
+            </span>
+          )}
+        </div>
+      )}
       {children}
       {nota && <p className={`text-xs mt-1 ${colorNota}`}>{nota}</p>}
     </div>
@@ -1003,6 +1071,46 @@ function Dato({
 function Nota({ tono, children }: { tono: Tono; children: ReactNode }) {
   const tonos = { mal: 'bg-peligro-50 border-peligro-200 text-peligro-700', ojo: 'bg-aviso-50 border-aviso-200 text-aviso-800' }
   return <div className={`rounded-lg border px-3 py-2 text-sm ${tonos[tono]}`}>{children}</div>
+}
+
+/** Los datos de la factura en cuatro líneas, para el teléfono. */
+function ResumenDatos({
+  proveedor,
+  rif,
+  numero,
+  fecha,
+  moneda,
+  tasa,
+  onEditar,
+}: {
+  proveedor: string
+  rif: string
+  numero: string
+  fecha: string
+  moneda: string
+  tasa: number
+  onEditar: () => void
+}) {
+  const falta = <span className="text-peligro-600">falta</span>
+  return (
+    <div className="sm:hidden rounded-xl bg-neutral-50 px-3 py-2.5 text-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <p className="font-semibold truncate">{proveedor || falta}</p>
+          <p className="text-xs text-neutral-500">RIF {rif || falta}</p>
+          <p className="text-xs text-neutral-500">
+            N.º {numero || falta} · {fecha ? new Date(`${fecha}T12:00:00`).toLocaleDateString('es-VE') : falta}
+          </p>
+          <p className="text-xs text-neutral-500">
+            En {moneda === '$' ? 'dólares' : 'bolívares'} · Tasa {tasa ? fmtNum(tasa, 2) : falta}
+          </p>
+        </div>
+        <button type="button" onClick={onEditar} className="shrink-0 text-xs font-semibold border border-neutral-300 bg-white rounded-lg px-3 py-1.5">
+          Editar
+        </button>
+      </div>
+    </div>
+  )
 }
 
 /** Un renglón: lo que dice el papel arriba, y lo que va a entrar al depósito abajo. */
@@ -1073,89 +1181,108 @@ function Renglon({
     Math.abs(l.leido.cantidad * l.leido.precio_unitario - l.leido.subtotal) > Math.max(0.05, Math.abs(l.leido.subtotal) * 0.01)
   const estado = problema?.tono === 'mal' ? 'bg-peligro-500' : problema || papelNoCuadra ? 'bg-aviso-500' : l.ingrediente_id ? 'bg-exito-500' : 'bg-neutral-300'
 
+  // EN EL TELEFONO, una fila: lo que dice el papel, su total y la mercancía.
+  // Cantidad, costo e IVA ya vienen leídos: se abren solo para corregirlos.
+  // Eran tres casillas por renglón, y con 11 renglones metros de pantalla.
+  // Un renglón a mano (sin papel) nace abierto: hay que escribirlo.
+  const [abierto, setAbierto] = useState(!l.leido)
+  const cantidadPapel = l.leido?.cantidad ?? null
+  const precioPapel = l.leido?.precio_unitario ?? null
+
   return (
-    <div id={`cf-renglon-${indice}`} className="scroll-mt-24 rounded-xl border border-neutral-200 p-3 space-y-2">
+    <div id={`cf-renglon-${indice}`} className="scroll-mt-24 rounded-xl border border-neutral-200 p-2.5 sm:p-3 space-y-2">
       <div className="flex items-start gap-2">
         <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${estado}`} />
-        <div className="flex-1 min-w-0 text-xs">
+        <button type="button" onClick={() => setAbierto((v) => !v)} className="flex-1 min-w-0 text-left">
           {l.leido ? (
-            <p className="text-neutral-700">
-              <span className="font-medium">{l.leido.descripcion || '(sin descripción)'}</span>
-              <span className="text-neutral-500">
-                {' · '}
-                {l.leido.cantidad ?? '?'} {l.leido.unidad} × {moneda}
-                {l.leido.precio_unitario ?? '?'}
-                {l.leido.subtotal != null ? ` = ${moneda}${l.leido.subtotal}` : ''}
+            <>
+              <p className="text-sm font-medium leading-snug line-clamp-2">{l.leido.descripcion || '(sin descripción)'}</p>
+              <p className="text-xs text-neutral-500 tabular-nums">
+                {cantidadPapel == null ? '?' : fmtNum(cantidadPapel, cantidadPapel % 1 ? 3 : 0)} {l.leido.unidad} × {moneda}
+                {precioPapel == null ? '?' : fmtNum(precioPapel, 2)}
                 {l.leido.exento ? ' · exento' : ''}
-              </span>
-            </p>
+              </p>
+            </>
           ) : (
-            <p className="text-neutral-400">Renglón {indice + 1}</p>
+            <p className="text-sm text-neutral-500">Renglón {indice + 1}</p>
           )}
-        </div>
+        </button>
+        <span className="text-sm font-semibold tabular-nums text-neutral-800 shrink-0">
+          {moneda}
+          {fmtNum(subtotal, 2)}
+        </span>
         {puedeQuitar && (
-          <button onClick={onQuitar} className="text-neutral-400 hover:text-peligro-600 text-sm px-1" title="Quitar renglón">
+          <button onClick={onQuitar} className="text-neutral-400 hover:text-peligro-600 text-sm px-1 -mr-1" title="Quitar renglón" aria-label={`Quitar el renglón ${indice + 1}`}>
             ✕
           </button>
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_7rem_8rem_8.5rem] gap-2 items-center">
-        <select
-          value={l.ingrediente_id}
-          onChange={(e) => onMercancia(e.target.value)}
-          className={`${clase(!l.ingrediente_id && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0) ? 'mal' : undefined)} col-span-2 sm:col-span-1`}
-        >
-          <option value={0}>Mercancía…</option>
-          {ingredientes.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.nombre} ({x.unidad})
-            </option>
-          ))}
-          <option value="nuevo">+ Crear mercancía nueva…</option>
-        </select>
-        {ing && otraUnidad(ing.unidad) ? (
-          <CasillaConUnidad
-            unidad={ing.unidad}
-            vista={vista || ing.unidad}
-            alCambiarVista={cambiarVista}
-            value={texto}
-            onChange={(e) => escribirCantidad(e.target.value)}
-            placeholder="Cant."
-            claseCasilla={clase()}
-          />
-        ) : (
+      <select
+        value={l.ingrediente_id}
+        onChange={(e) => onMercancia(e.target.value)}
+        className={clase(!l.ingrediente_id && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0) ? 'mal' : undefined)}
+      >
+        <option value={0}>¿Qué mercancía es?</option>
+        {ingredientes.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.nombre} ({x.unidad})
+          </option>
+        ))}
+        <option value="nuevo">+ Crear mercancía nueva…</option>
+      </select>
+
+      <div className={`${abierto ? 'grid' : 'hidden sm:grid'} grid-cols-2 sm:grid-cols-3 gap-2 items-end`}>
+        <label className="block">
+          <span className="block text-[11px] text-neutral-500 mb-0.5">Cantidad{ing ? ` (${ing.unidad})` : ''}</span>
+          {ing && otraUnidad(ing.unidad) ? (
+            <CasillaConUnidad
+              unidad={ing.unidad}
+              vista={vista || ing.unidad}
+              alCambiarVista={cambiarVista}
+              value={texto}
+              onChange={(e) => escribirCantidad(e.target.value)}
+              placeholder="0"
+              claseCasilla={clase()}
+            />
+          ) : (
+            <Numerico value={l.cantidad} onChange={(e) => onCambiar({ cantidad: e.target.value })} placeholder="0" className={clase()} />
+          )}
+        </label>
+        <label className="block">
+          <span className="block text-[11px] text-neutral-500 mb-0.5">Costo c/u ({moneda})</span>
           <Numerico
-            value={l.cantidad}
-            onChange={(e) => onCambiar({ cantidad: e.target.value })}
-            placeholder={`Cant.${ing ? ` (${ing.unidad})` : ''}`}
-            className={clase()}
+            value={l.costo_unitario}
+            onChange={(e) => onCambiar({ costo_unitario: e.target.value })}
+            placeholder="0.00"
+            className={clase(aviso ? (aviso.nivel === 'unidad' ? 'mal' : 'ojo') : undefined)}
           />
-        )}
-        <Numerico
-          value={l.costo_unitario}
-          onChange={(e) => onCambiar({ costo_unitario: e.target.value })}
-          placeholder={`Costo/u (${moneda})`}
-          className={clase(aviso ? (aviso.nivel === 'unidad' ? 'mal' : 'ojo') : undefined)}
-        />
+        </label>
         {/* La ficha es el valor por defecto, no la ultima palabra: la misma
             cosa puede venir exenta de un proveedor y gravada de otro. */}
-        <select
-          value={l.exento === null ? 'ficha' : l.exento ? 'exento' : 'grava'}
-          onChange={(e) => onCambiar({ exento: e.target.value === 'ficha' ? null : e.target.value === 'exento' })}
-          title="Si este renglón paga IVA"
-          className={clase()}
-        >
-          <option value="ficha">{ing ? (ing.exento ? 'Exento (ficha)' : `IVA ${tasaIva}% (ficha)`) : 'IVA: ficha'}</option>
-          <option value="grava">IVA {tasaIva}%</option>
-          <option value="exento">Exento</option>
-        </select>
+        <label className="block col-span-2 sm:col-span-1">
+          <span className="block text-[11px] text-neutral-500 mb-0.5">IVA</span>
+          <select
+            value={l.exento === null ? 'ficha' : l.exento ? 'exento' : 'grava'}
+            onChange={(e) => onCambiar({ exento: e.target.value === 'ficha' ? null : e.target.value === 'exento' })}
+            className={clase()}
+          >
+            <option value="ficha">{ing ? (ing.exento ? 'Exento (ficha)' : `${tasaIva}% (ficha)`) : 'Según la ficha'}</option>
+            <option value="grava">{tasaIva}%</option>
+            <option value="exento">Exento</option>
+          </select>
+        </label>
       </div>
+      {!abierto && (
+        <button type="button" onClick={() => setAbierto(true)} className="sm:hidden text-xs text-neutral-500 underline">
+          Corregir cantidad, costo o IVA
+        </button>
+      )}
 
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
-        <div className="space-y-0.5 min-w-0">
+      {(sugerida || recordada || (l.leido && !recordada && ing && unidadDistinta(l.leido.unidad, ing.unidad)) || papelNoCuadra || aviso) && (
+        <div className="space-y-0.5 text-xs">
           {sugerida && (
-            <button onClick={() => onMercancia(String(sugerida.id))} className="text-acento-700 font-medium">
+            <button onClick={() => onMercancia(String(sugerida.id))} className="text-acento-700 font-medium text-left">
               ¿Es {sugerida.nombre} ({sugerida.unidad})? Usarla
             </button>
           )}
@@ -1184,11 +1311,7 @@ function Renglon({
             </p>
           )}
         </div>
-        <span className="font-semibold text-neutral-700 tabular-nums ml-auto">
-          {moneda}
-          {subtotal.toFixed(2)}
-        </span>
-      </div>
+      )}
     </div>
   )
 }
@@ -1289,7 +1412,7 @@ function BarraGuardar({
           )}
           {cuadre && cuadre !== 'cuadra' && pendientes.length > 0 && <p className="text-xs text-neutral-500 truncate">{cuadre}</p>}
           {abierta && pendientes.length > 1 && (
-            <ul className="absolute bottom-full mb-2 left-0 w-72 max-w-[85vw] rounded-xl border border-neutral-200 bg-white shadow-lg p-1">
+            <ul className="absolute bottom-full mb-2 left-0 w-72 max-w-[85vw] max-h-[50vh] overflow-auto rounded-xl border border-neutral-200 bg-white shadow-lg p-1">
               {pendientes.map((p, i) => (
                 <li key={i}>
                   <button
@@ -1679,12 +1802,14 @@ function EsperaLectura({ terminando }: { terminando: boolean }) {
 function VisorDocumento({ url, esPdf }: { url: string; esPdf: boolean }) {
   const [giro, setGiro] = useState(0)
   const [cerca, setCerca] = useState(false)
-  const [abierto, setAbierto] = useState(true)
+  // En el telefono arranca plegada: abierta ocupaba media pantalla antes del
+  // primer campo. Se abre de un toque para comparar.
+  const [abierto, setAbierto] = useState(() => Boolean(window.matchMedia?.('(min-width: 1024px)').matches))
   return (
     <div className="mb-3 lg:mb-0 lg:sticky lg:top-4 bg-white rounded-2xl border border-neutral-200 overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-neutral-100">
         <button onClick={() => setAbierto((v) => !v)} className="text-sm font-semibold lg:pointer-events-none">
-          Factura {esPdf ? '(PDF)' : ''} <span className="lg:hidden text-neutral-400">{abierto ? '▾' : '▸'}</span>
+          {abierto ? 'Factura' : 'Ver la factura'} {esPdf ? '(PDF)' : ''} <span className="lg:hidden text-neutral-400">{abierto ? '▾' : '▸'}</span>
         </button>
         {!esPdf && abierto && (
           <div className="flex gap-1">
@@ -1699,11 +1824,11 @@ function VisorDocumento({ url, esPdf }: { url: string; esPdf: boolean }) {
       </div>
       {abierto &&
         (esPdf ? (
-          <div className="h-[60vh] lg:h-[calc(100vh-7rem)]">
+          <div className="h-[50vh] lg:h-[calc(100vh-7rem)]">
             <VistaSoporte url={url} esPdf alto="h-full" />
           </div>
         ) : (
-          <div className="h-[60vh] lg:h-[calc(100vh-7rem)] overflow-auto bg-neutral-100 flex items-start justify-center">
+          <div className="h-[50vh] lg:h-[calc(100vh-7rem)] overflow-auto bg-neutral-100 flex items-start justify-center">
             <img
               src={url}
               alt="Factura del proveedor"

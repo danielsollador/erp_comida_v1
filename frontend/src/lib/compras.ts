@@ -5,11 +5,17 @@ import type { Ingrediente } from './types'
 // que ya estan cargadas. Lo que cambia es la palabra que se lee: quien carga
 // una factura de proveedor compra mercancia, no "insumos" -- esa palabra es de
 // Inventario, donde lo mismo ya entro al deposito y va a una receta.
+//
+// "Suministros" (6-oct): la limpieza, los desechables y la papeleria no tenian
+// donde ir. Como "Mercancia" pedian emparejar cada renglon con el inventario
+// (nadie cuenta bidones de cloro) y como "Otros" no se encontraban despues.
+// Contablemente es gasto, igual que Servicios.
 export const CATEGORIAS = [
-  { valor: 'Insumos', texto: 'Mercancía' },
-  { valor: 'Servicios', texto: 'Servicios' },
-  { valor: 'Activos', texto: 'Activos' },
-  { valor: 'Otros', texto: 'Otros' },
+  { valor: 'Insumos', texto: 'Mercancía para inventario', ayuda: 'Comida, bebidas y lo que va a recetas: entra al depósito renglón por renglón.' },
+  { valor: 'Suministros', texto: 'Limpieza y suministros', ayuda: 'Cloro, bolsas, papel, desechables, papelería: va a gasto, sin renglones.' },
+  { valor: 'Servicios', texto: 'Servicios', ayuda: 'Luz, agua, internet, gas, reparaciones, delivery: va a gasto.' },
+  { valor: 'Activos', texto: 'Equipos y mobiliario', ayuda: 'Neveras, cocinas, mesas: entra al balance y se deprecia con los meses.' },
+  { valor: 'Otros', texto: 'Otros gastos', ayuda: 'Lo que no encaja en lo anterior: va a gasto.' },
 ]
 
 /** Como se lee una categoria guardada. Es el mismo mapa, al reves. */
