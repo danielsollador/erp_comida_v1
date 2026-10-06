@@ -60,7 +60,7 @@ Plan B si 1 GB de RAM queda corto (hoy se usan ~320 MB más el sistema):
   viven en el mismo disco que la base). Más un snapshot diario del disco.
 - Sin puerto 22 abierto: SSH por IAP con la cuenta de Google de cada uno.
 - Secretos en Secret Manager (`POSTGRES_PASSWORD`, `ERP_SESSION_SECRET`,
-  `PABILO_*`, la clave de Gemini de Daniel): la VM los lee al arrancar con una
+  `PABILO_*`, `ERP_LECTOR_FACTURAS` y la clave de Gemini): la VM los lee al arrancar con una
   cuenta de servicio de permisos mínimos. Nada en el repositorio ni en imágenes.
 - Las imágenes se construyen en Cloud Build y la VM solo las descarga: en
   1 GB no se puede compilar el frontend.

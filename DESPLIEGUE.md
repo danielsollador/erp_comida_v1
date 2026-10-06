@@ -113,6 +113,18 @@ tar --exclude=./.git --exclude=./frontend/node_modules --exclude=./backend/.venv
 **El `.env` no viaja.** Vive solo en el servidor y lleva `ERP_SESSION_SECRET` y
 `POSTGRES_PASSWORD` (los dos generados allá con `openssl rand`).
 
+Variables opcionales del `.env`:
+
+| Variable | Qué hace |
+|---|---|
+| `PABILO_API_KEY`, `PABILO_USER_BANK_ID` | Verificar pagos móviles contra el banco (sin clave, la caja anota la referencia) |
+| `ERP_LECTOR_FACTURAS` | `gemini` lee facturas de compra desde foto o PDF con IA; `prueba` devuelve una factura inventada para probar el flujo sin gastar; vacío = el botón de la foto no aparece |
+| `GEMINI_API_KEY` | La clave de Gemini. Solo con `ERP_LECTOR_FACTURAS=gemini` |
+| `ERP_GEMINI_MODELO`, `ERP_GEMINI_MODELO_RESPALDO` | Modelos de Gemini; por defecto `gemini-3.5-flash-lite` y `gemini-3.8-flash` |
+
+En Google Cloud estas variables no van en un `.env` a mano: salen de Secret
+Manager (ver `gcp/README.md`).
+
 ### 2. Levantar
 
 ```bash

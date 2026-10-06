@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import CampoSugerido from '../../../components/CampoSugerido'
+import { CasillaConUnidad } from '../../../components/Cantidad'
+import { aBase, convertirTexto, otraUnidad } from '../../../lib/unidades'
 import { useDialogo } from '../../../components/dialogo'
 import { VistaSoporte } from '../../../components/FacturaDesdeFoto'
 import Icono from '../../../components/Icono'
@@ -1030,6 +1032,34 @@ function Renglon({
   onQuitar: () => void
 }) {
   const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
+  // LA CANTIDAD SE ESCRIBE EN kg O EN g (la casilla con la unidad adentro, la
+  // misma de Inventario y de las recetas). La linea sigue guardando la
+  // cantidad EN LA UNIDAD DE LA FICHA, que es lo que viaja al servidor y lo
+  // que trae la foto; aqui solo vive lo tecleado y en que unidad se tecleo.
+  const unidad = ing?.unidad ?? ''
+  const [vista, setVista] = useState(unidad)
+  const [texto, setTexto] = useState(l.cantidad)
+  useEffect(() => {
+    // Cambio la mercancia: se vuelve a escribir en su unidad.
+    setVista(unidad)
+    setTexto(l.cantidad)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unidad])
+  useEffect(() => {
+    // La cantidad llego de afuera (la foto, la memoria del proveedor): se
+    // muestra en la unidad que se estaba usando.
+    const enBase = !vista || vista === unidad ? texto : aBase(texto, unidad, vista)
+    if (enBase !== l.cantidad) setTexto(vista && vista !== unidad ? convertirTexto(l.cantidad, unidad, unidad, vista) : l.cantidad)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [l.cantidad])
+  const escribirCantidad = (t: string) => {
+    setTexto(t)
+    onCambiar({ cantidad: !vista || vista === unidad ? t : aBase(t, unidad, vista) })
+  }
+  const cambiarVista = (nueva: string) => {
+    setTexto(convertirTexto(texto, unidad, vista || unidad, nueva))
+    setVista(nueva)
+  }
   const subtotal = (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0)
   const recordada = l.recordada?.ingrediente_id === l.ingrediente_id ? l.recordada : undefined
   const sugerida = !l.ingrediente_id && l.leido ? sugerirMercancia(l.leido.descripcion, ingredientes) : null
@@ -1084,12 +1114,24 @@ function Renglon({
           ))}
           <option value="nuevo">+ Crear mercancía nueva…</option>
         </select>
-        <Numerico
-          value={l.cantidad}
-          onChange={(e) => onCambiar({ cantidad: e.target.value })}
-          placeholder={`Cant.${ing ? ` (${ing.unidad})` : ''}`}
-          className={clase()}
-        />
+        {ing && otraUnidad(ing.unidad) ? (
+          <CasillaConUnidad
+            unidad={ing.unidad}
+            vista={vista || ing.unidad}
+            alCambiarVista={cambiarVista}
+            value={texto}
+            onChange={(e) => escribirCantidad(e.target.value)}
+            placeholder="Cant."
+            claseCasilla={clase()}
+          />
+        ) : (
+          <Numerico
+            value={l.cantidad}
+            onChange={(e) => onCambiar({ cantidad: e.target.value })}
+            placeholder={`Cant.${ing ? ` (${ing.unidad})` : ''}`}
+            className={clase()}
+          />
+        )}
         <Numerico
           value={l.costo_unitario}
           onChange={(e) => onCambiar({ costo_unitario: e.target.value })}

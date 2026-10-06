@@ -8,7 +8,7 @@ Proyecto `vertigo-erp-produccion`, región `us-east1`. Todo se hace con `gcloud`
 | VM | `vertigo-erp` (`e2-micro`, zona `us-east1-b`), IP fija `35.231.43.80` |
 | Código en la VM | `/docker/erp` (los tres compose + `locales/`) |
 | Imágenes | Artifact Registry `us-east1-docker.pkg.dev/vertigo-erp-produccion/vertigo/{backend,frontend}:<tag>` |
-| Secretos | Secret Manager: `postgres-password`, `erp-session-secret`, `pabilo-api-key`, `pabilo-user-bank-id`, `acme-email`, `dominio-savora`, `dominio-hub`, `imagen-tag` |
+| Secretos | Secret Manager: `postgres-password`, `erp-session-secret`, `pabilo-api-key`, `pabilo-user-bank-id`, `acme-email`, `dominio-savora`, `dominio-hub`, `imagen-tag`, `erp-lector-facturas` (`prueba` o `gemini`), `gemini-api-key`, `erp-gemini-modelo`, `erp-gemini-modelo-respaldo` |
 | Respaldos | el ERP hace `pg_dump` cada 6 h; un temporizador los copia cada hora a `gs://vertigo-erp-respaldos` |
 | Cuenta de la VM | `vm-erp@…` con solo: leer imágenes, leer secretos, escribir en el bucket, logs y métricas |
 

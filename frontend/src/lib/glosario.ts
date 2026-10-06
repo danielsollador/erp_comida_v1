@@ -293,6 +293,12 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Un RIF mal escrito hace que el cruce del SENIAT no encuentre la operación y te pueden objetar ese crédito fiscal.',
   },
+  'librocompras.exento': {
+    que: 'La parte de la factura que no lleva IVA, en bolívares.',
+    origen: 'Los renglones marcados como exentos (por la ficha de la mercancía o en esa factura), convertidos con la tasa BCV del día de emisión.',
+    calculo: 'Suma de los renglones exentos × tasa del día.',
+    ejemplo: 'Una factura con pollo (gravado) y harina (exenta) reparte su total entre esta columna y la base: el SENIAT las pide separadas.',
+  },
   ...Object.fromEntries(Object.entries(baseIvaTotal('compra')).map(([k, v]) => [`librocompras.${k}`, v])),
 
   // ── Reportes: qué se vendió ──────────────────────────────────────────────
@@ -537,6 +543,12 @@ export const GLOSARIO: Record<string, Explicacion> = {
     que: 'La tasa del BCV: la que manda para facturar y declarar.',
     origen: 'La trae el sistema del BCV; si no hay conexión, la cargas a mano.',
     ejemplo: 'Es la que el SENIAT espera ver en tus libros. Facturar con otra tasa es un problema fiscal, no una decisión comercial.',
+  },
+  'tasas.variacion': {
+    que: 'Cuánto subió o bajó la tasa oficial respecto al día anterior.',
+    origen: 'Las dos tasas del BCV, la de ese día y la del día anterior con dato.',
+    calculo: '(tasa de hoy − tasa de ayer) ÷ tasa de ayer, en porcentaje.',
+    ejemplo: 'Si ayer fue 36,50 y hoy 36,87, el cambio es +1,0 %: los precios en Bs del menú subieron ese 1 % sin que nadie los tocara.',
   },
   'tasas.euro': {
     que: 'El euro oficial del BCV de ese día: cuántos bolívares vale un euro.',
