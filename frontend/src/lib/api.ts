@@ -107,7 +107,34 @@ export class SinConexion extends Error {
   }
 }
 
+/**
+ * LO QUE PIDEN VARIAS PANTALLAS A LA VEZ, UNA SOLA VEZ (Leider, 5-oct: "para
+ * saltar de una pagina a otra esta lento"). La campana de la barra, los
+ * avisos y la lista de arranque de la portada pedian lo mismo en cada cambio
+ * de pantalla --tres y hasta seis consultas iguales--, y el servidor las
+ * atiende de a una. Ahora una consulta en curso se comparte y su respuesta
+ * vale unos segundos. Cualquier evento del canal en vivo (una venta, una
+ * solicitud) la da por vieja, asi que nada se queda desactualizado.
+ */
+const COMPARTIDAS = new Map<string, { promesa: Promise<unknown>; hasta: number }>()
+const FRESCA_MS = 15000
+function compartida<T>(path: string): Promise<T> {
+  const ahora = Date.now()
+  const hay = COMPARTIDAS.get(path)
+  if (hay && hay.hasta > ahora) return hay.promesa as Promise<T>
+  const promesa = req<T>(path)
+  COMPARTIDAS.set(path, { promesa, hasta: ahora + FRESCA_MS })
+  // Un error no se guarda: la proxima vez se vuelve a intentar.
+  promesa.catch(() => COMPARTIDAS.delete(path))
+  return promesa
+}
+export function olvidarCompartidas() {
+  COMPARTIDAS.clear()
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
+  // Quien escribe (cobra, compra, aprueba) cambia lo que se comparte.
+  if (options?.method && options.method !== 'GET') olvidarCompartidas()
   let res: Response
   try {
     // En la app, la direccion del servidor y el token (ver lib/plataforma.ts).
@@ -216,7 +243,7 @@ export const api = {
     req<SolicitudAutorizacion>('/autorizaciones', { method: 'POST', body: JSON.stringify(d) }),
   solicitudesPendientes: () => req<SolicitudAutorizacion[]>('/autorizaciones'),
   /** El buzon: las ultimas solicitudes, resueltas o no. */
-  historialAutorizaciones: () => req<SolicitudAutorizacion[]>('/autorizaciones/historial'),
+  historialAutorizaciones: () => compartida<SolicitudAutorizacion[]>('/autorizaciones/historial'),
   verSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}`),
   aprobarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}/aprobar`, { method: 'POST' }),
   rechazarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}/rechazar`, { method: 'POST' }),
@@ -722,7 +749,7 @@ export const api = {
   reporteInventario: (r: Rango, filtro?: FiltroDepositoQuery) =>
     req<ReporteInventario>(`/reportes/inventario${conRango(r, conFiltro(filtro))}`),
   /** La portada: cuanto lleva armado el local y lo que hoy hay que saber. */
-  arranque: () => req<ArranqueLocal>('/reportes/arranque'),
+  arranque: () => compartida<ArranqueLocal>('/reportes/arranque'),
   /** Manda el vuelto por pago movil desde la cuenta del local (Pabilo). */
   emitirVuelto: (datos: {
     telefono: string
@@ -733,7 +760,7 @@ export const api = {
     pedido_id?: number
     user_bank_id?: string
   }) => req<VueltoEmitido>('/pagos/vuelto', { method: 'POST', body: JSON.stringify(datos) }),
-  avisos: () => req<Aviso[]>('/reportes/avisos'),
+  avisos: () => compartida<Aviso[]>('/reportes/avisos'),
   /** El recorrido de la portada: cinco estaciones en una frase y la semana. */
   recorrido: () => req<Recorrido>('/reportes/recorrido'),
   ventas: (r: Rango, estado?: string) =>
@@ -1016,6 +1043,8 @@ function abrirCanal() {
     } catch {
       return // ignore malformed message
     }
+    // Algo cambio en el local: lo compartido ya no vale.
+    olvidarCompartidas()
     // Una copia: un oyente que se desuscribe al recibir no corta a los demas.
     for (const oyente of [...oyentes]) {
       try {
