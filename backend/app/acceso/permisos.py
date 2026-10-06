@@ -68,7 +68,10 @@ MODULOS: dict[str, dict] = {
         "lectura": ("/api/pedidos", "/api/menu"),
         "escribe_solo": ("/api/pedidos/items/", "/marcar-listo", "/cocinando"),
     },
-    "reportes": {"nombre": "Reportes", "rutas": (), "lectura": ("/api/reportes",)},
+    # Los reportes a medida se consultan por POST (la definicion viaja en el
+    # cuerpo) y se guardan con nombre: quien ve Reportes los puede armar.
+    "reportes": {"nombre": "Reportes", "rutas": (), "lectura": ("/api/reportes",),
+                 "escribe_solo": ("/api/reportes/dinamico",)},
     "ventas": {"nombre": "Ventas", "rutas": (), "lectura": ("/api/ventas",)},
     "menu": {"nombre": "Menú", "rutas": ("/api/menu",), "lectura": ("/api/inventario",)},
     "recetas": {

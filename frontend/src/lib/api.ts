@@ -90,6 +90,11 @@ import type {
   ConfigPabilo,
   OpcionBanco,
   VerificacionPago,
+  DefinicionReporte,
+  FuenteDinamica,
+  ReporteGuardado,
+  ResultadoDinamico,
+  ValorCampo,
 } from './types'
 import { abrirCanalEnVivo, cabecerasApp, recogerToken, urlApi } from './plataforma'
 import { queryRango, type Rango } from './fechas'
@@ -697,6 +702,35 @@ export const api = {
     req<ReporteResumen>(
       `/reportes/resumen${conRango(r, [paso ? `paso=${paso}` : '', conFiltro(filtro)].filter(Boolean).join('&'))}`,
     ),
+
+  // --- reportes a medida ---
+  catalogoReportes: () => req<FuenteDinamica[]>('/reportes/dinamico/catalogo'),
+  /** Por POST: la definicion (campos, medidas, filtros) viaja en el cuerpo. */
+  consultarReporte: (d: DefinicionReporte, r: Rango) =>
+    req<ResultadoDinamico>('/reportes/dinamico/consulta', {
+      method: 'POST',
+      body: JSON.stringify({ ...d, desde: r.desde, hasta: r.hasta }),
+    }),
+  valoresDeCampo: (fuente: string, campo: string, r: Rango) =>
+    req<ValorCampo[]>('/reportes/dinamico/valores', {
+      method: 'POST',
+      body: JSON.stringify({ fuente, campo, desde: r.desde, hasta: r.hasta }),
+    }),
+  /** Enlace de descarga (GET), como las demas exportaciones del ERP. */
+  urlExportarReporte: (d: DefinicionReporte, r: Rango) =>
+    `/api/reportes/dinamico/exportar?q=${encodeURIComponent(JSON.stringify({ ...d, desde: r.desde, hasta: r.hasta }))}`,
+  reportesGuardados: () => req<ReporteGuardado[]>('/reportes/dinamico/guardados'),
+  guardarReporte: (nombre: string, definicion: DefinicionReporte, periodo: string | null) =>
+    req<ReporteGuardado>('/reportes/dinamico/guardados', {
+      method: 'POST',
+      body: JSON.stringify({ nombre, definicion, periodo }),
+    }),
+  actualizarReporte: (id: string, nombre: string, definicion: DefinicionReporte, periodo: string | null) =>
+    req<ReporteGuardado>(`/reportes/dinamico/guardados/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ nombre, definicion, periodo }),
+    }),
+  borrarReporte: (id: string) => req<{ ok: boolean }>(`/reportes/dinamico/guardados/${id}`, { method: 'DELETE' }),
 
   notasCreditoCompra: (facturaId: number) =>
     req<NotaCreditoCompra[]>(`/compras/facturas/${facturaId}/notas-credito`),

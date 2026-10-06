@@ -25,6 +25,7 @@ import { Bloque, Kpi, SerieTiempo, SinDatos, capitalizar, enteros, recortarSerie
 import Ventas, { type CambioFiltro } from './partes/reportes/Ventas'
 import Perdidas from './partes/reportes/Perdidas'
 import Inventario from './partes/reportes/Inventario'
+import AMedida from './partes/reportes/AMedida'
 
 /** Lo ya visto en Reportes en esta pestaña: volver a una vista es inmediato. */
 const VISTOS = new Map<string, unknown>()
@@ -49,6 +50,10 @@ const claveDe = (tipo: string, r: { desde: string; hasta: string }, paso: string
  * Leider (30-sep): "que la gente pueda filtrar por la categoria de su
  * producto y hasta por su producto... listas desplegables, porque pueden
  * haber muchos productos". Todo vive en la URL: `/reportes/ventas?r=mes&c=3&p=12`.
+ *
+ * A MEDIDA (Daniel, oct): la tabla dinamica. El usuario elige que mirar, como
+ * agruparlo y que sumar, y lo guarda con nombre. Usa la misma barra de
+ * periodo que las demas; sus propios filtros viven dentro.
  */
 // El grano de la serie. El primero es el automatico: `useSeccion` devuelve ese
 // cuando no hay nada en la URL, y entonces no se le manda `paso` al servidor.
@@ -64,6 +69,7 @@ const SECCIONES = [
   { id: 'ventas', texto: 'Ventas' },
   { id: 'perdidas', texto: 'Pérdidas' },
   { id: 'inventario', texto: 'Inventario' },
+  { id: 'a_medida', texto: 'A medida' },
 ]
 
 export default function Reportes() {
@@ -89,6 +95,7 @@ export default function Reportes() {
   // Ventas); `ci`/`m` cajon y mercancia del deposito (Perdidas e Inventario).
   const [filtros, fijarFiltros] = useFiltrosUrl(['c', 'p', 'ci', 'm'] as const)
   const delMenu = seccion === 'resumen' || seccion === 'ventas'
+  const aMedida = seccion === 'a_medida'
   const filtroMenu = useMemo(
     () => ({ categoria_id: idDe(filtros.c), producto_id: idDe(filtros.p) }),
     [filtros.c, filtros.p],
@@ -347,8 +354,13 @@ export default function Reportes() {
       {/* La linea fina de "cargando": solo si de verdad tarda (ver arriba). */}
       {lento && <div className="vp-cargando-linea" aria-hidden />}
       <Pagina ocupada={refrescando}>
-        <BarraFiltros rango={rango} alCambiar={setRango} resumen={resumenFiltro} alLimpiar={hayFiltro ? limpiar : undefined}>
-          {delMenu ? (
+        <BarraFiltros
+          rango={rango}
+          alCambiar={setRango}
+          resumen={aMedida ? undefined : resumenFiltro}
+          alLimpiar={hayFiltro && !aMedida ? limpiar : undefined}
+        >
+          {aMedida ? null : delMenu ? (
             <>
               <FiltroDesplegable etiqueta="Categoría" valor={filtros.c} alCambiar={elegirCategoria} opciones={opcionesCategoria} />
               <FiltroDesplegable etiqueta="Producto" valor={filtros.p} alCambiar={(v) => fijarFiltros({ p: v })} opciones={opcionesProducto} />
@@ -361,10 +373,13 @@ export default function Reportes() {
           )}
         </BarraFiltros>
 
-        {cargando && !hayDatos && <p className="text-neutral-400 text-sm">Cargando...</p>}
-        {error && !cargando && <p className="text-peligro-600 text-sm">{error}</p>}
+        {/* A medida va fuera del "cargando" de las demas secciones: cada
+            cambio de fechas la desmontaria y perderia lo que se estaba armando. */}
+        {aMedida && <AMedida rango={rango} alCambiarRango={setRango} />}
+        {!aMedida && cargando && !hayDatos && <p className="text-neutral-400 text-sm">Cargando...</p>}
+        {!aMedida && error && !cargando && <p className="text-peligro-600 text-sm">{error}</p>}
 
-        {hayDatos && !error && (
+        {!aMedida && hayDatos && !error && (
           <Contenido
             seccion={seccionVista}
             datos={datosVistos}
