@@ -806,7 +806,7 @@ function SobroHoy({ p, onCerrar, onHecho }: { p: Preparacion; onCerrar: () => vo
 // ── La olla: el editor de la receta ─────────────────────────────────────────
 
 const aNum = (t: string) => Number(String(t).replace(',', '.'))
-const fmtCant = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 3 })
+const fmtCant = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 2 })
 const sinRuido = (n: number) => String(Math.round(n * 1e6) / 1e6)
 const clase = 'w-full border border-neutral-300 rounded-xl px-3 py-2 text-sm bg-white'
 const rotulo = 'block text-xs font-medium text-neutral-600 mb-1'
@@ -1161,7 +1161,7 @@ function RenglonOlla({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {enChica ? `${dinero(costoU / factor, 4)} por ${otra}` : `${dinero(costoU, 3)} por ${ing.unidad}`} · hay {fmtCant(ing.stock_actual)} {ing.unidad}
+            {enChica ? `${dinero(costoU / factor, 2)} por ${otra}` : `${dinero(costoU, 2)} por ${ing.unidad}`} · hay {fmtCant(ing.stock_actual)} {ing.unidad}
           </span>
         </span>
         <CasillaConUnidad

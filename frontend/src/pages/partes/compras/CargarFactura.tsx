@@ -1288,7 +1288,7 @@ function Renglon({
               <button type="button" onClick={() => setAbierto((v) => !v)} className="mt-1.5 text-left text-xs text-neutral-500">
                 <span className="text-neutral-400">Papel:</span> {l.leido.descripcion || '(sin descripción)'} ·{' '}
                 <span className="tabular-nums">
-                  {cantidadPapel == null ? '?' : fmtNum(cantidadPapel, cantidadPapel % 1 ? 3 : 0)} {l.leido.unidad} × {moneda}
+                  {cantidadPapel == null ? '?' : fmtNum(cantidadPapel, cantidadPapel % 1 ? 2 : 0)} {l.leido.unidad} × {moneda}
                   {precioPapel == null ? '?' : fmtNum(precioPapel, 2)}
                 </span>
                 {l.leido.exento ? ' · exento' : ''}
@@ -1379,12 +1379,12 @@ function Renglon({
               </span>
               {trae > 0 && Number(l.cantidad) > 0 ? (
                 <span className="font-semibold tabular-nums text-neutral-900">
-                  {fmtNum(Number(l.cantidad), Number(l.cantidad) % 1 ? 3 : 0)} {unidad}
+                  {fmtNum(Number(l.cantidad), Number(l.cantidad) % 1 ? 2 : 0)} {unidad}
                   {Number(l.costo_unitario) > 0 && (
                     <span className="font-normal text-neutral-600">
                       {' '}
                       a {moneda}
-                      {fmtNum(Number(l.costo_unitario), 4)} cada {unidad === 'unidad' ? 'una' : unidad}
+                      {fmtNum(Number(l.costo_unitario), 2)} cada {unidad === 'unidad' ? 'una' : unidad}
                     </span>
                   )}
                 </span>

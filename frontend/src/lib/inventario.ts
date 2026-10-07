@@ -2,7 +2,7 @@ import type { DatosIngrediente, Ingrediente, MovimientoInventario, CompraDeInsum
 
 /** Lo que comparten las pantallas de Inventario: formatos, estados y la ficha mínima. */
 
-export const cantidad = (n: number) => String(Number(n.toFixed(3)))
+export const cantidad = (n: number) => String(Number(n.toFixed(2)))
 
 export type CompraConVariacion = CompraDeInsumo & { cambio: number | null }
 

@@ -92,7 +92,7 @@ export default function Control({
     '-fecha',
   )
 
-  const fmt = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 3 })
+  const fmt = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 2 })
   const perdido = (teorico ?? []).reduce((s, f) => s + Math.min(f.valor_diferencia, 0), 0)
   const conConteo = (teorico ?? []).some((f) => f.diferencia_conteo !== 0)
   const variantes = categorias.flatMap((c) =>

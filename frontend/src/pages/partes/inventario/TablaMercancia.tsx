@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import AccionFila from '../../../components/AccionFila'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { FiltroDesplegable, Pastilla, Vacio, Boton } from '../../../components/ui'
@@ -23,6 +23,7 @@ const ADMINISTRAR = '__administrar__'
 export default function TablaMercancia({
   tipo,
   resumen,
+  acciones,
   ingredientes,
   categorias,
   onAbrir,
@@ -33,6 +34,8 @@ export default function TablaMercancia({
   tipo: TipoArticulo
   /** Las cifras del almacén: van chicas en la barra, son complemento de la tabla. */
   resumen?: ResumenAlmacen
+  /** Contar y crear: viven en la barra de la tabla. */
+  acciones?: ReactNode
   /** Todas las de este tipo, activas y archivadas. */
   ingredientes: Ingrediente[]
   categorias: CategoriaInsumo[]
@@ -89,64 +92,65 @@ export default function TablaMercancia({
 
   return (
     <div className="space-y-3">
-      <div className="vp-losa p-3 flex flex-wrap items-center gap-2">
-        <input
-          type="search"
-          value={buscar}
-          onChange={(e) => setBuscar(e.target.value)}
-          placeholder={`Buscar en ${a.texto.toLowerCase()}…`}
-          className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full sm:w-56 shrink-0"
-        />
-        <FiltroDesplegable
-          etiqueta="Ver"
-          valor={filtro}
-          alCambiar={(v) => setFiltro(v as Filtro)}
-          opciones={[
-            { valor: 'todos', texto: 'Todas' },
-            { valor: 'bajo', texto: 'Bajo mínimo', contador: bajo },
-            { valor: 'sin-costo', texto: 'Sin costo', contador: sinCosto },
-            ...(archivados > 0 ? [{ valor: 'archivados', texto: 'Archivadas', contador: archivados }] : []),
-          ]}
-        />
-        {(cats.length > 0 || haySinCategoria) && (
+      {/* LA BARRA, PARTIDA EN DOS: a la izquierda lo que se hace (buscar,
+          filtrar, contar, crear); a la derecha las cifras del almacén en
+          cuadritos. Son complemento de la tabla: viven en su barra y no
+          encima (Leider, 7-oct). */}
+      <div className="vp-losa p-3 grid grid-cols-1 lg:grid-cols-2 gap-3 items-center">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={buscar}
+            onChange={(e) => setBuscar(e.target.value)}
+            placeholder={`Buscar en ${a.texto.toLowerCase()}…`}
+            className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full sm:w-48 shrink-0"
+          />
           <FiltroDesplegable
-            etiqueta="Categoría"
-            valor={categoria}
-            alCambiar={(v) => (v === ADMINISTRAR ? onCategorias() : setCategoria(v))}
+            etiqueta="Ver"
+            valor={filtro}
+            alCambiar={(v) => setFiltro(v as Filtro)}
             opciones={[
-              { valor: 'todas', texto: 'Todas' },
-              ...cats.map((c) => ({ valor: String(c.id), texto: c.nombre, contador: ingredientes.filter((i) => i.categoria_id === c.id && i.activo !== false).length })),
-              ...(haySinCategoria ? [{ valor: SIN_CATEGORIA, texto: 'Sin categoría', contador: activos.filter((i) => !i.categoria_id).length }] : []),
-              { valor: ADMINISTRAR, texto: 'Administrar categorías…', detalle: 'crear, renombrar, mover mercancía' },
+              { valor: 'todos', texto: 'Todas' },
+              { valor: 'bajo', texto: 'Bajo mínimo', contador: bajo },
+              { valor: 'sin-costo', texto: 'Sin costo', contador: sinCosto },
+              ...(archivados > 0 ? [{ valor: 'archivados', texto: 'Archivadas', contador: archivados }] : []),
             ]}
           />
-        )}
-        {/* Las cifras del almacén, chicas y a la derecha: complementan la
-            tabla, no la tapan (Leider, 7-oct). Bajo mínimo filtra al tocar. */}
-        <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-500 tabular-nums">
-          {resumen && (
-            <>
-              <span>
-                <b className="text-neutral-900 text-sm">{dinero(resumen.plata)}</b> en el depósito
-              </span>
-              <button
-                type="button"
-                onClick={() => setFiltro(filtro === 'bajo' ? 'todos' : 'bajo')}
-                className={`${resumen.bajoMinimo > 0 ? 'text-aviso-700 font-semibold' : 'text-exito-700'} hover:underline`}
-              >
-                {resumen.bajoMinimo > 0 ? `${resumen.bajoMinimo} bajo mínimo` : 'nada bajo mínimo'}
-              </button>
-              {resumen.sinCosto > 0 && (
-                <button type="button" onClick={() => setFiltro(filtro === 'sin-costo' ? 'todos' : 'sin-costo')} className="text-aviso-700 hover:underline">
-                  {resumen.sinCosto} sin costo
-                </button>
-              )}
-            </>
+          {(cats.length > 0 || haySinCategoria) && (
+            <FiltroDesplegable
+              etiqueta="Categoría"
+              valor={categoria}
+              alCambiar={(v) => (v === ADMINISTRAR ? onCategorias() : setCategoria(v))}
+              opciones={[
+                { valor: 'todas', texto: 'Todas' },
+                ...cats.map((c) => ({ valor: String(c.id), texto: c.nombre, contador: ingredientes.filter((i) => i.categoria_id === c.id && i.activo !== false).length })),
+                ...(haySinCategoria ? [{ valor: SIN_CATEGORIA, texto: 'Sin categoría', contador: activos.filter((i) => !i.categoria_id).length }] : []),
+                { valor: ADMINISTRAR, texto: 'Administrar categorías…', detalle: 'crear, renombrar, mover mercancía' },
+              ]}
+            />
           )}
-          <span>
-            {visibles.length} de {activos.length}
-          </span>
+          {acciones && <div className="flex items-center gap-2">{acciones}</div>}
         </div>
+        {resumen && (
+          <div className="grid grid-cols-4 gap-2">
+            <Cuadrito titulo="Mercancías" valor={String(visibles.length === activos.length ? activos.length : `${visibles.length} de ${activos.length}`)} />
+            <Cuadrito titulo="En el depósito" valor={dinero(resumen.plata)} />
+            <Cuadrito
+              titulo="Bajo mínimo"
+              valor={String(resumen.bajoMinimo)}
+              tono={resumen.bajoMinimo > 0 ? 'ojo' : 'bien'}
+              alTocar={() => setFiltro(filtro === 'bajo' ? 'todos' : 'bajo')}
+              activo={filtro === 'bajo'}
+            />
+            <Cuadrito
+              titulo="Sin costo"
+              valor={String(resumen.sinCosto)}
+              tono={resumen.sinCosto > 0 ? 'ojo' : undefined}
+              alTocar={() => setFiltro(filtro === 'sin-costo' ? 'todos' : 'sin-costo')}
+              activo={filtro === 'sin-costo'}
+            />
+          </div>
+        )}
       </div>
 
       <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined}>
@@ -265,5 +269,36 @@ export default function TablaMercancia({
         </Tabla>
       </div>
     </div>
+  )
+}
+
+/** Una cifra chica del almacén, en la barra. Las que filtran se tocan. */
+function Cuadrito({
+  titulo,
+  valor,
+  tono,
+  alTocar,
+  activo = false,
+}: {
+  titulo: string
+  valor: string
+  tono?: 'ojo' | 'bien'
+  alTocar?: () => void
+  activo?: boolean
+}) {
+  const color = tono === 'ojo' ? 'text-aviso-700' : tono === 'bien' ? 'text-exito-700' : 'text-neutral-900'
+  const cuerpo = (
+    <>
+      <span className="block text-[11px] text-neutral-500 leading-tight truncate">{titulo}</span>
+      <span className={`block font-display text-base font-semibold tabular-nums leading-tight mt-0.5 truncate ${color}`}>{valor}</span>
+    </>
+  )
+  const clase = `rounded-xl px-2.5 py-1.5 text-left min-w-0 ${activo ? 'bg-neutral-900/8 ring-1 ring-neutral-900/20' : 'bg-neutral-500/6'}`
+  return alTocar ? (
+    <button type="button" onClick={alTocar} aria-pressed={activo} className={`${clase} vp-pulsable hover:bg-neutral-500/10`}>
+      {cuerpo}
+    </button>
+  ) : (
+    <div className={clase}>{cuerpo}</div>
   )
 }

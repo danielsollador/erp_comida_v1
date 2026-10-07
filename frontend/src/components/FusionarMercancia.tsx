@@ -40,7 +40,7 @@ export default function FusionarMercancia({
   const otraUnidad = !!destino && destino.unidad !== origen.unidad
   const factorNum = otraUnidad ? Number(factor.replace(',', '.')) : 1
   const stock = origen.stock_actual || 0
-  const fmt = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 3 })
+  const fmt = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 2 })
 
   async function fundir() {
     setError('')

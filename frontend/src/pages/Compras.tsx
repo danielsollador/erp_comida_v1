@@ -568,7 +568,7 @@ function FilaFactura({
                       <span className="font-medium flex-1 min-w-0 truncate">{it.ingrediente_nombre}</span>
                       <span className="text-xs text-neutral-500 shrink-0">{ALMACEN_DE[it.tipo].destino === 'gasto' ? 'a gasto' : 'al depósito'}</span>
                       <span className="tabular-nums text-neutral-600 shrink-0">
-                        {fmtNum(it.cantidad, it.cantidad % 1 ? 3 : 0)} {it.unidad} × ${fmtNum(it.costo_unitario, 2)}
+                        {fmtNum(it.cantidad, it.cantidad % 1 ? 2 : 0)} {it.unidad} × ${fmtNum(it.costo_unitario, 2)}
                         {it.exento && <span className="text-neutral-400"> · exento</span>}
                       </span>
                       <span className="tabular-nums font-semibold w-20 text-right shrink-0">${fmtNum(it.subtotal, 2)}</span>

@@ -921,7 +921,7 @@ function RenglonReceta({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {enChica ? `${fmt(ing.costo_efectivo / factor, 4)} por ${otra}` : `${fmt(ing.costo_efectivo, 3)} por ${ing.unidad}`}
+            {enChica ? `${fmt(ing.costo_efectivo / factor, 2)} por ${otra}` : `${fmt(ing.costo_efectivo, 2)} por ${ing.unidad}`}
             {ing.categoria && ` · ${ing.categoria}`}
           </span>
         </span>
@@ -1044,7 +1044,7 @@ function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () =
           <span className="block text-[11px] text-neutral-400">{ing.categoria || 'Sin categoría'}</span>
         </span>
         <span className="text-xs text-neutral-500 tabular-nums">
-          {fmt(ing.costo_efectivo, 3)} / {ing.unidad}
+          {fmt(ing.costo_efectivo, 2)} / {ing.unidad}
         </span>
         <span className="w-7 h-7 grid place-items-center rounded-full bg-neutral-100 text-neutral-600 text-base leading-none">+</span>
       </button>

@@ -426,6 +426,9 @@ export default function Inventario() {
         {/* ── Dentro de un almacén ── */}
         {almacen && tipoActual && (
           <>
+            {/* Una sola fila: volver, el titulo y, cuando la pantalla no
+                es una tabla, las acciones. Los de la tabla van dentro de su
+                barra (Leider, 7-oct: "administrar bien el espacio"). */}
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -435,31 +438,27 @@ export default function Inventario() {
                 <Icono nombre="atras" size={14} />
                 Almacenes
               </button>
-              <div className="ml-auto flex items-center gap-2">
-                {almacen.destino !== 'gasto' && (
-                  <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
-                    Conteo físico
-                  </Boton>
-                )}
-                <Boton onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
-                  Nueva mercancía
-                </Boton>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className={`inline-grid place-items-center w-11 h-11 rounded-2xl ${almacen.sello}`}>
-                <Icono nombre={almacen.icono} size={22} />
+              <span className={`inline-grid place-items-center w-9 h-9 rounded-xl ${almacen.sello}`}>
+                <Icono nombre={almacen.icono} size={18} />
               </span>
-              <div>
-                <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight">{almacen.texto}</h2>
-                <p className="text-xs text-neutral-500">{almacen.detalle}</p>
+              <div className="min-w-0">
+                <h2 className="font-display text-xl font-semibold tracking-tight leading-tight">{almacen.texto}</h2>
+                <p className="text-xs text-neutral-500 leading-tight">{almacen.detalle}</p>
               </div>
+              {(tipoActual === 'desechable' || (tipoActual === 'insumo' && cara === 'preparado')) && (
+                <div className="ml-auto flex items-center gap-2">
+                  {tipoActual !== 'desechable' && (
+                    <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
+                      Conteo físico
+                    </Boton>
+                  )}
+                  <Boton onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
+                    Nueva mercancía
+                  </Boton>
+                </div>
+              )}
             </div>
 
-            {/* Las dos caras de la materia prima, ARRIBA y grandes: es la
-                decision principal de esta pantalla, no un filtro de esquina
-                (Leider, 7-oct). */}
             {tipoActual === 'insumo' && (
               <div role="tablist" className="grid grid-cols-2 gap-2">
                 {(
@@ -512,6 +511,16 @@ export default function Inventario() {
                 <TablaMercancia
                   tipo={tipoActual}
                   resumen={resumenActual}
+                  acciones={
+                    <>
+                      <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
+                        Conteo físico
+                      </Boton>
+                      <Boton onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
+                        Nueva mercancía
+                      </Boton>
+                    </>
+                  }
                   ingredientes={delAlmacen}
                   categorias={cats}
                   onAbrir={(id) => setFicha(id)}
