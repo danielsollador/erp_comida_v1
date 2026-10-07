@@ -452,27 +452,74 @@ export default function Inventario() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className={`inline-grid place-items-center w-11 h-11 rounded-2xl ${almacen.sello}`}>
-                  <Icono nombre={almacen.icono} size={22} />
-                </span>
-                <div>
-                  <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight">{almacen.texto}</h2>
-                  <p className="text-xs text-neutral-500">{almacen.detalle}</p>
-                </div>
+            <div className="flex items-center gap-3">
+              <span className={`inline-grid place-items-center w-11 h-11 rounded-2xl ${almacen.sello}`}>
+                <Icono nombre={almacen.icono} size={22} />
+              </span>
+              <div>
+                <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight">{almacen.texto}</h2>
+                <p className="text-xs text-neutral-500">{almacen.detalle}</p>
               </div>
-              {tipoActual === 'insumo' && (
-                <Filtros
-                  opciones={[
-                    { valor: 'crudo' as const, texto: 'Crudo', contador: delAlmacen.filter((i) => i.activo !== false).length },
-                    { valor: 'preparado' as const, texto: 'Preparado', contador: resumenActual?.preparaciones ?? 0 },
-                  ]}
-                  activo={cara}
-                  alElegir={setCara}
-                />
-              )}
             </div>
+
+            {/* Las dos caras de la materia prima, ARRIBA y grandes: es la
+                decision principal de esta pantalla, no un filtro de esquina
+                (Leider, 7-oct). */}
+            {tipoActual === 'insumo' && (
+              <div role="tablist" className="grid grid-cols-2 gap-3">
+                {(
+                  [
+                    {
+                      v: 'crudo' as const,
+                      t: 'Crudo',
+                      n: `${delAlmacen.filter((i) => i.activo !== false).length} mercancía${delAlmacen.filter((i) => i.activo !== false).length === 1 ? '' : 's'}`,
+                      d: 'Lo que llegó, tal cual se compró.',
+                      cifra: dinero(resumenActual?.plata ?? 0),
+                      pie: 'en el depósito',
+                      icono: 'paquete' as const,
+                    },
+                    {
+                      v: 'preparado' as const,
+                      t: 'Preparado',
+                      n: `${resumenActual?.preparaciones ?? 0} preparaci${(resumenActual?.preparaciones ?? 0) === 1 ? 'ón' : 'ones'}`,
+                      d: 'Lo que la cocina hace con el crudo: guiso, mechada, salsa.',
+                      cifra: null,
+                      pie: 'cuánto podrías hacer hoy',
+                      icono: 'cocina' as const,
+                    },
+                  ] as const
+                ).map((c) => {
+                  const esta = cara === c.v
+                  return (
+                    <button
+                      key={c.v}
+                      type="button"
+                      role="tab"
+                      aria-selected={esta}
+                      onClick={() => setCara(c.v)}
+                      className={`vp-pulsable text-left rounded-2xl p-4 sm:p-5 transition-colors flex items-start gap-4 ${
+                        esta ? 'bg-neutral-900 text-white shadow-[0_12px_32px_-14px_rgb(23_24_27/0.6)]' : 'vp-losa hover:bg-neutral-500/5'
+                      }`}
+                    >
+                      <span className={`inline-grid place-items-center w-11 h-11 rounded-2xl shrink-0 ${esta ? 'bg-white/12' : almacen.sello}`}>
+                        <Icono nombre={c.icono} size={22} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline justify-between gap-3">
+                          <span className="font-display text-xl font-semibold tracking-tight leading-tight">{c.t}</span>
+                          <span className={`text-xs tabular-nums ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
+                        </span>
+                        <span className={`block text-xs mt-0.5 ${esta ? 'text-white/70' : 'text-neutral-500'}`}>{c.d}</span>
+                        <span className={`block text-xs mt-2 ${esta ? 'text-white/60' : 'text-neutral-400'}`}>
+                          {c.cifra && <span className={`font-display text-lg font-semibold tabular-nums mr-1.5 ${esta ? 'text-white' : 'text-neutral-900'}`}>{c.cifra}</span>}
+                          {c.pie}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
             {tipoActual === 'desechable' ? (
               <>
