@@ -8,7 +8,7 @@ import { PuntoTipo } from '../components/compras/Almacenes'
 import { useRango, nombreRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
-import { Aviso, Boton, Cifra, Filtros, Modal, Pagina, Seccion, Vacio } from '../components/ui'
+import { Aviso, Boton, Cifra, Modal, Pagina, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { cantidad, datosDe } from '../lib/inventario'
 import { useMoneda } from '../lib/moneda'
@@ -435,11 +435,6 @@ export default function Inventario() {
                 <Icono nombre="atras" size={14} />
                 Almacenes
               </button>
-              <Filtros
-                opciones={ALMACENES.map((a) => ({ valor: a.valor, texto: a.texto }))}
-                activo={tipoActual}
-                alElegir={(t) => irA(RUTA_DE[t])}
-              />
               <div className="ml-auto flex items-center gap-2">
                 {almacen.destino !== 'gasto' && (
                   <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>

@@ -46,6 +46,8 @@ export default function Preparaciones({
   const [editando, setEditando] = useState<Preparacion | 'nueva' | null>(null)
   const [anotando, setAnotando] = useState<Preparacion | null>(null)
   const [sobro, setSobro] = useState<Preparacion | null>(null)
+  // La que se eligió con un toque se queda; el cursor solo adelanta.
+  const [seleccion, setSeleccion] = useState<number | null>(null)
   const [resaltada, setResaltada] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
@@ -128,14 +130,24 @@ export default function Preparaciones({
         <>
           <Seccion
             titulo="Qué crudo usa cada preparación"
-            ayuda="Una línea por cada ingrediente. Una materia prima con varias líneas la comparten varias preparaciones: compiten por ella."
+            ayuda="Toca una preparación y se queda fija: su crudo, cuánto pesa cada cosa y quién más lo usa. Lo que comparten dos preparaciones va en ámbar: compiten por ello."
             accion={
               <Boton onClick={() => setEditando('nueva')} icono="mas">
                 Nueva preparación
               </Boton>
             }
           >
-            <Mapa preps={preps} ingredientes={ingredientes} disp={disp} colorDe={colorDe} resaltada={resaltada} onResaltar={setResaltada} dinero={dinero} />
+            <Mapa
+              preps={preps}
+              ingredientes={ingredientes}
+              disp={disp}
+              colorDe={colorDe}
+              seleccion={seleccion}
+              onSeleccionar={setSeleccion}
+              resaltada={resaltada}
+              onResaltar={setResaltada}
+              dinero={dinero}
+            />
           </Seccion>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
@@ -145,8 +157,9 @@ export default function Preparaciones({
                 p={p}
                 d={dispDe(p)}
                 color={colorDe.get(p.id) ?? 'var(--color-neutral-400)'}
-                resaltada={resaltada === p.id}
+                resaltada={seleccion === p.id || (seleccion === null && resaltada === p.id)}
                 onResaltar={setResaltada}
+                onSeleccionar={() => setSeleccion(seleccion === p.id ? null : p.id)}
                 dinero={dinero}
                 onEditar={() => setEditando(p)}
                 onTanda={() => setAnotando(p)}
@@ -215,19 +228,26 @@ export default function Preparaciones({
 
 const FILA = 60
 const ANCHO_LINEAS = 160
+// Con mas preparaciones que esto, el mapa completo se vuelve una maraña de
+// lineas que se cruzan: se pide elegir una, y el mapa muestra solo la suya.
+const MAXIMO_MAPA_COMPLETO = 6
 
 /**
- * Dos columnas y las líneas que las unen. La izquierda es el crudo que usa
- * alguna preparación; la derecha, las preparaciones. El grosor de la línea es
- * cuánto pesa ese ingrediente en el costo de la tanda. Tocar una preparación
- * (o pasar el cursor) deja solo sus líneas; una materia prima con dos o más
- * líneas está compartida, y se marca.
+ * Pensado para MUCHAS preparaciones (Leider, 7-oct): la elegida se queda
+ * elegida (un toque, no el cursor), y el mapa se enfoca en ella: su crudo a
+ * la izquierda, ella sola a la derecha, y en cada crudo quiénes más lo usan.
+ *
+ * Sin elegir ninguna, con pocas se ve el mapa completo (y pasar el cursor
+ * adelanta lo que un toque fijaría); con muchas, la lista inversa: cada crudo
+ * con las preparaciones que lo llevan, para tocar una y entrar.
  */
 function Mapa({
   preps,
   ingredientes,
   disp,
   colorDe,
+  seleccion,
+  onSeleccionar,
   resaltada,
   onResaltar,
   dinero,
@@ -236,120 +256,322 @@ function Mapa({
   ingredientes: Ingrediente[]
   disp: Disponibilidad[]
   colorDe: Map<number, string>
+  seleccion: number | null
+  onSeleccionar: (id: number | null) => void
   resaltada: number | null
   onResaltar: (id: number | null) => void
   dinero: (n: number) => string
 }) {
+  const [busqueda, setBusqueda] = useState('')
   const porId = useMemo(() => new Map(ingredientes.map((i) => [i.id, i])), [ingredientes])
-  // Las materias primas, ordenadas por cuántas preparaciones las usan (las
-  // compartidas arriba) y luego por nombre.
-  const crudos = useMemo(() => {
-    const usos = new Map<number, { ing: Ingrediente | undefined; nombre: string; unidad: string; preps: number }>()
+  // Que preparaciones usan cada crudo.
+  const usosDe = useMemo(() => {
+    const m = new Map<number, { nombre: string; unidad: string; tipo: Ingrediente['tipo']; preps: { p: Preparacion; cantidad: number; costo: number }[] }>()
     for (const p of preps)
       for (const l of p.lineas) {
-        const u = usos.get(l.ingrediente_id) ?? { ing: porId.get(l.ingrediente_id), nombre: l.nombre, unidad: l.unidad, preps: 0 }
-        u.preps += 1
-        usos.set(l.ingrediente_id, u)
+        const u = m.get(l.ingrediente_id) ?? { nombre: l.nombre, unidad: l.unidad, tipo: l.tipo, preps: [] }
+        u.preps.push({ p, cantidad: l.cantidad, costo: l.costo })
+        m.set(l.ingrediente_id, u)
       }
-    return [...usos.entries()]
-      .map(([id, u]) => ({ id, ...u }))
-      .sort((a, b) => b.preps - a.preps || a.nombre.localeCompare(b.nombre))
-  }, [preps, porId])
-  const filaDe = new Map(crudos.map((c, i) => [c.id, i]))
-  const alto = Math.max(crudos.length, preps.length) * FILA
-  const yDe = (i: number) => i * FILA + FILA / 2
+    return m
+  }, [preps])
+  const elegida = seleccion !== null ? (preps.find((p) => p.id === seleccion) ?? null) : null
+  const q = busqueda.trim().toLowerCase()
+  const visibles = q ? preps.filter((p) => p.nombre.toLowerCase().includes(q)) : preps
 
-  const lineas = preps.flatMap((p, j) =>
-    p.lineas.map((l) => {
-      const i = filaDe.get(l.ingrediente_id) ?? 0
-      const peso = p.costo_tanda > 0 ? l.costo / p.costo_tanda : 1 / p.lineas.length
-      return { clave: `${p.id}-${l.ingrediente_id}`, prep: p.id, ing: l.ingrediente_id, y1: yDe(i), y2: yDe(j), peso, color: colorDe.get(p.id) ?? '#999' }
-    }),
+  const chips = (
+    <div className="flex flex-wrap items-center gap-1.5 mb-4">
+      {preps.length > 8 && (
+        <div className="relative mr-1">
+          <input
+            type="search"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar preparación"
+            aria-label="Buscar preparación"
+            className="w-44 bg-white border border-neutral-300 rounded-full pl-8 pr-3 py-1.5 text-sm"
+          />
+          <Icono nombre="buscar" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => onSeleccionar(null)}
+        aria-pressed={seleccion === null}
+        className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${seleccion === null ? 'bg-neutral-900 text-white' : 'vp-control text-neutral-600'}`}
+      >
+        Todas
+      </button>
+      {visibles.map((p) => {
+        const esta = seleccion === p.id
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onSeleccionar(esta ? null : p.id)}
+            aria-pressed={esta}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${esta ? 'bg-neutral-900 text-white' : 'vp-control text-neutral-700'}`}
+          >
+            <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: colorDe.get(p.id) }} />
+            {p.nombre}
+          </button>
+        )
+      })}
+    </div>
   )
-  const enResaltada = (ingId: number) => resaltada !== null && preps.find((p) => p.id === resaltada)?.lineas.some((l) => l.ingrediente_id === ingId)
 
-  return (
-    <div className="hidden md:grid grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] gap-0 items-start" onMouseLeave={() => onResaltar(null)}>
+  // ── Una preparación elegida: su crudo, y quién más lo usa ──
+  if (elegida) {
+    const lineas = [...elegida.lineas].sort((a, b) => b.costo - a.costo)
+    const alto = Math.max(lineas.length, 1) * FILA
+    const yCentro = alto / 2
+    const d = disp.find((x) => x.preparacion_id === elegida.id)
+    const color = colorDe.get(elegida.id) ?? '#999'
+    return (
       <div>
-        <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
-          <Icono nombre="paquete" size={12} /> Crudo
-        </p>
-        <ul>
-          {crudos.map((c) => {
-            const apagada = resaltada !== null && !enResaltada(c.id)
-            return (
-              <li key={c.id} style={{ height: FILA }} className={`flex items-center transition-opacity ${apagada ? 'opacity-30' : ''}`}>
-                <div className={`flex-1 min-w-0 rounded-2xl px-3.5 py-2 ${c.preps > 1 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
-                  <span className="flex items-center gap-2">
-                    <PuntoTipo tipo={c.ing?.tipo ?? 'insumo'} />
-                    <span className="font-medium truncate flex-1">{c.nombre}</span>
-                    {c.preps > 1 && <span className="text-[11px] font-semibold text-aviso-700 shrink-0">la comparten {c.preps}</span>}
-                  </span>
-                  <span className="block text-xs text-neutral-500 pl-4 tabular-nums">
-                    {c.ing ? `hay ${fmtCant(c.ing.stock_actual)} ${c.ing.unidad}` : '—'}
-                    {c.ing?.costo_efectivo ? ` · ${dinero(c.ing.costo_efectivo)} el ${c.ing.unidad}` : ''}
-                  </span>
+        {chips}
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] items-start">
+          <div>
+            <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
+              <Icono nombre="paquete" size={12} /> Lleva, por tanda
+            </p>
+            <ul>
+              {lineas.map((l) => {
+                const ing = porId.get(l.ingrediente_id)
+                const otras = (usosDe.get(l.ingrediente_id)?.preps ?? []).filter((x) => x.p.id !== elegida.id)
+                const peso = elegida.costo_tanda > 0 ? l.costo / elegida.costo_tanda : 0
+                return (
+                  <li key={l.ingrediente_id} style={{ height: FILA }} className="flex items-center">
+                    <div className={`flex-1 min-w-0 rounded-2xl px-3.5 py-1.5 ${otras.length > 0 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
+                      <span className="flex items-center gap-2">
+                        <PuntoTipo tipo={l.tipo} />
+                        <span className="font-medium truncate flex-1">{l.nombre}</span>
+                        <span className="text-sm font-semibold tabular-nums shrink-0">
+                          {fmtCant(l.cantidad)} {l.unidad}
+                        </span>
+                      </span>
+                      <span className="mt-1 block h-1 rounded-full bg-neutral-500/10 overflow-hidden">
+                        <span className="block h-full rounded-full" style={{ width: `${Math.max(peso * 100, 2)}%`, background: color }} />
+                      </span>
+                      <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-500 leading-tight">
+                        <span className="tabular-nums">
+                          {Math.round(peso * 100)} % del costo{ing ? ` · hay ${fmtCant(ing.stock_actual)} ${ing.unidad}` : ''}
+                        </span>
+                        {otras.length > 0 && (
+                          <span className="inline-flex items-center gap-1 text-aviso-700">
+                            también en
+                            {otras.map((o) => (
+                              <button
+                                key={o.p.id}
+                                type="button"
+                                onClick={() => onSeleccionar(o.p.id)}
+                                className="inline-flex items-center gap-1 rounded-full px-1.5 font-semibold hover:underline"
+                              >
+                                <span aria-hidden className="w-1.5 h-1.5 rounded-full" style={{ background: colorDe.get(o.p.id) }} />
+                                {o.p.nombre}
+                              </button>
+                            ))}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+
+          <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden md:block mt-[1.65rem]" aria-hidden>
+            {lineas.map((l, i) => {
+              const y1 = i * FILA + FILA / 2
+              const peso = elegida.costo_tanda > 0 ? l.costo / elegida.costo_tanda : 1 / lineas.length
+              const c = ANCHO_LINEAS * 0.45
+              return (
+                <path
+                  key={l.ingrediente_id}
+                  d={`M0 ${y1} C ${c} ${y1}, ${ANCHO_LINEAS - c} ${yCentro}, ${ANCHO_LINEAS} ${yCentro}`}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={Math.max(2, Math.min(14, 2 + peso * 14))}
+                  strokeLinecap="round"
+                  opacity={0.85}
+                />
+              )
+            })}
+          </svg>
+
+          <div className="hidden md:flex flex-col" style={{ minHeight: alto + 28 }}>
+            <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
+              <Icono nombre="cocina" size={12} /> Preparado
+            </p>
+            <div className="flex-1 flex items-center">
+              <div className="w-full rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3">
+                <span aria-hidden className="w-1.5 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-display text-lg font-semibold tracking-tight leading-tight">{elegida.nombre}</p>
+                  <p className="text-xs text-white/70 mt-0.5">
+                    Rinde {fmtCant(elegida.rinde)} {elegida.unidad} por tanda · la tanda cuesta {dinero(elegida.costo_tanda)}
+                  </p>
+                  <p className="font-display text-2xl font-semibold tabular-nums mt-3 leading-none">
+                    {elegida.modo_produccion === 'producir'
+                      ? `${fmtCant(elegida.stock_actual)} ${elegida.unidad}`
+                      : d?.potencial != null
+                        ? `${fmtCant(d.potencial)} ${elegida.unidad}`
+                        : '—'}
+                  </p>
+                  <p className="text-[11px] text-white/60 mt-1">
+                    {elegida.modo_produccion === 'producir' ? 'hecho ahora mismo' : d?.limita ? `podrías hacer hoy · lo limita ${d.limita}` : 'podrías hacer hoy'}
+                  </p>
+                  <p className="text-xs text-white/70 mt-3">
+                    Sale a <b className="text-white tabular-nums">{dinero(elegida.costo_unitario)}</b> el {elegida.unidad}
+                  </p>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Muchas preparaciones sin elegir: cada crudo con quiénes lo llevan ──
+  if (preps.length > MAXIMO_MAPA_COMPLETO) {
+    const crudos = [...usosDe.entries()].map(([id, u]) => ({ id, ...u })).sort((a, b) => b.preps.length - a.preps.length || a.nombre.localeCompare(b.nombre))
+    return (
+      <div>
+        {chips}
+        <p className="text-xs text-neutral-500 mb-2">Toca una preparación para ver su crudo. Abajo, cada materia prima con las preparaciones que la llevan.</p>
+        <ul className="divide-y divide-neutral-500/10">
+          {crudos.map((c) => {
+            const ing = porId.get(c.id)
+            return (
+              <li key={c.id} className="py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span className="flex items-center gap-2 min-w-[12rem]">
+                  <PuntoTipo tipo={c.tipo} />
+                  <span className="font-medium truncate">{c.nombre}</span>
+                  {c.preps.length > 1 && <span className="text-[11px] font-semibold text-aviso-700">la comparten {c.preps.length}</span>}
+                </span>
+                <span className="text-xs text-neutral-500 tabular-nums">{ing ? `hay ${fmtCant(ing.stock_actual)} ${ing.unidad}` : ''}</span>
+                <span className="flex flex-wrap gap-1 ml-auto">
+                  {c.preps.map((x) => (
+                    <button key={x.p.id} type="button" onClick={() => onSeleccionar(x.p.id)} className="vp-control inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs">
+                      <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: colorDe.get(x.p.id) }} />
+                      {x.p.nombre}
+                      <span className="text-neutral-500 tabular-nums">
+                        {fmtCant(x.cantidad)} {c.unidad}
+                      </span>
+                    </button>
+                  ))}
+                </span>
               </li>
             )
           })}
         </ul>
       </div>
+    )
+  }
 
-      <svg width={ANCHO_LINEAS} height={alto + 28} className="mt-[1.65rem] block" aria-hidden>
-        {lineas.map((l) => {
-          const apagada = resaltada !== null && l.prep !== resaltada
-          const x1 = 0
-          const x2 = ANCHO_LINEAS
-          const c = ANCHO_LINEAS * 0.45
-          return (
-            <path
-              key={l.clave}
-              d={`M${x1} ${l.y1} C ${x1 + c} ${l.y1}, ${x2 - c} ${l.y2}, ${x2} ${l.y2}`}
-              fill="none"
-              stroke={l.color}
-              strokeWidth={Math.max(2, Math.min(12, 2 + l.peso * 12))}
-              strokeLinecap="round"
-              opacity={apagada ? 0.12 : resaltada !== null ? 0.95 : 0.6}
-              className="transition-opacity duration-200"
-            />
-          )
-        })}
-      </svg>
+  // ── Pocas preparaciones: el mapa completo ──
+  const crudos = [...usosDe.entries()]
+    .map(([id, u]) => ({ id, ...u, ing: porId.get(id) }))
+    .sort((a, b) => b.preps.length - a.preps.length || a.nombre.localeCompare(b.nombre))
+  const filaDe = new Map(crudos.map((c, i) => [c.id, i]))
+  const alto = Math.max(crudos.length, preps.length) * FILA
+  const yDe = (i: number) => i * FILA + FILA / 2
+  const lineas = preps.flatMap((p, j) =>
+    p.lineas.map((l) => {
+      const i = filaDe.get(l.ingrediente_id) ?? 0
+      const peso = p.costo_tanda > 0 ? l.costo / p.costo_tanda : 1 / p.lineas.length
+      return { clave: `${p.id}-${l.ingrediente_id}`, prep: p.id, y1: yDe(i), y2: yDe(j), peso, color: colorDe.get(p.id) ?? '#999' }
+    }),
+  )
+  const enResaltada = (ingId: number) => resaltada !== null && preps.find((p) => p.id === resaltada)?.lineas.some((l) => l.ingrediente_id === ingId)
 
-      <div>
-        <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
-          <Icono nombre="cocina" size={12} /> Preparado
-        </p>
-        <ul>
-          {preps.map((p) => {
-            const d = disp.find((x) => x.preparacion_id === p.id)
-            const apagada = resaltada !== null && resaltada !== p.id
-            return (
-              <li key={p.id} style={{ height: FILA }} className={`flex items-center transition-opacity ${apagada ? 'opacity-30' : ''}`}>
-                <button
-                  type="button"
-                  onMouseEnter={() => onResaltar(p.id)}
-                  onClick={() => onResaltar(resaltada === p.id ? null : p.id)}
-                  className="vp-pulsable flex-1 min-w-0 text-left rounded-2xl px-3.5 py-2 bg-neutral-500/6 flex items-center gap-3"
-                >
-                  <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: colorDe.get(p.id) }} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium truncate">{p.nombre}</span>
-                    <span className="block text-xs text-neutral-500 tabular-nums">
-                      {p.modo_produccion === 'producir'
-                        ? `hay ${fmtCant(p.stock_actual)} ${p.unidad} hecho`
-                        : d?.potencial != null
-                          ? `podrías hacer ${fmtCant(d.potencial)} ${p.unidad}`
-                          : `rinde ${fmtCant(p.rinde)} ${p.unidad} por tanda`}
+  return (
+    <div>
+      {chips}
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] gap-0 items-start" onMouseLeave={() => onResaltar(null)}>
+        <div>
+          <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
+            <Icono nombre="paquete" size={12} /> Crudo
+          </p>
+          <ul>
+            {crudos.map((c) => {
+              const apagada = resaltada !== null && !enResaltada(c.id)
+              return (
+                <li key={c.id} style={{ height: FILA }} className={`flex items-center transition-opacity ${apagada ? 'opacity-30' : ''}`}>
+                  <div className={`flex-1 min-w-0 rounded-2xl px-3.5 py-2 ${c.preps.length > 1 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
+                    <span className="flex items-center gap-2">
+                      <PuntoTipo tipo={c.tipo} />
+                      <span className="font-medium truncate flex-1">{c.nombre}</span>
+                      {c.preps.length > 1 && <span className="text-[11px] font-semibold text-aviso-700 shrink-0">la comparten {c.preps.length}</span>}
                     </span>
-                  </span>
-                  <span className="text-xs text-neutral-500 tabular-nums shrink-0">{dinero(p.costo_unitario)}/{p.unidad}</span>
-                </button>
-              </li>
+                    <span className="block text-xs text-neutral-500 pl-4 tabular-nums">
+                      {c.ing ? `hay ${fmtCant(c.ing.stock_actual)} ${c.ing.unidad}` : '—'}
+                      {c.ing?.costo_efectivo ? ` · ${dinero(c.ing.costo_efectivo)} el ${c.ing.unidad}` : ''}
+                    </span>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+
+        <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden md:block mt-[1.65rem]" aria-hidden>
+          {lineas.map((l) => {
+            const apagada = resaltada !== null && l.prep !== resaltada
+            const c = ANCHO_LINEAS * 0.45
+            return (
+              <path
+                key={l.clave}
+                d={`M0 ${l.y1} C ${c} ${l.y1}, ${ANCHO_LINEAS - c} ${l.y2}, ${ANCHO_LINEAS} ${l.y2}`}
+                fill="none"
+                stroke={l.color}
+                strokeWidth={Math.max(2, Math.min(12, 2 + l.peso * 12))}
+                strokeLinecap="round"
+                opacity={apagada ? 0.12 : resaltada !== null ? 0.95 : 0.6}
+                className="transition-opacity duration-200"
+              />
             )
           })}
-        </ul>
+        </svg>
+
+        <div>
+          <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
+            <Icono nombre="cocina" size={12} /> Preparado · toca una para fijarla
+          </p>
+          <ul>
+            {preps.map((p) => {
+              const d = disp.find((x) => x.preparacion_id === p.id)
+              const apagada = resaltada !== null && resaltada !== p.id
+              return (
+                <li key={p.id} style={{ height: FILA }} className={`flex items-center transition-opacity ${apagada ? 'opacity-30' : ''}`}>
+                  <button
+                    type="button"
+                    onMouseEnter={() => onResaltar(p.id)}
+                    onClick={() => onSeleccionar(p.id)}
+                    className="vp-pulsable flex-1 min-w-0 text-left rounded-2xl px-3.5 py-2 bg-neutral-500/6 flex items-center gap-3"
+                  >
+                    <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: colorDe.get(p.id) }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium truncate">{p.nombre}</span>
+                      <span className="block text-xs text-neutral-500 tabular-nums">
+                        {p.modo_produccion === 'producir'
+                          ? `hay ${fmtCant(p.stock_actual)} ${p.unidad} hecho`
+                          : d?.potencial != null
+                            ? `podrías hacer ${fmtCant(d.potencial)} ${p.unidad}`
+                            : `rinde ${fmtCant(p.rinde)} ${p.unidad} por tanda`}
+                      </span>
+                    </span>
+                    <span className="text-xs text-neutral-500 tabular-nums shrink-0">
+                      {dinero(p.costo_unitario)}/{p.unidad}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       </div>
     </div>
   )
@@ -364,6 +586,7 @@ function TarjetaPreparacion({
   color,
   resaltada,
   onResaltar,
+  onSeleccionar,
   dinero,
   onEditar,
   onTanda,
@@ -374,6 +597,7 @@ function TarjetaPreparacion({
   color: string
   resaltada: boolean
   onResaltar: (id: number | null) => void
+  onSeleccionar: () => void
   dinero: (n: number) => string
   onEditar: () => void
   onTanda: () => void
@@ -391,12 +615,12 @@ function TarjetaPreparacion({
     >
       <div className="flex items-start gap-3">
         <span aria-hidden className="w-1.5 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
-        <div className="min-w-0 flex-1">
+        <button type="button" onClick={onSeleccionar} className="min-w-0 flex-1 text-left" title="Fijarla en el mapa">
           <h3 className="font-display font-semibold tracking-tight leading-tight truncate">{p.nombre}</h3>
           <p className="text-xs text-neutral-500 mt-0.5">
             Rinde {fmtCant(p.rinde)} {p.unidad} por tanda · {dinero(p.costo_unitario)} el {p.unidad}
           </p>
-        </div>
+        </button>
         <Pastilla tono={produce ? 'acento' : 'neutro'}>{produce ? 'Se produce' : 'Del crudo'}</Pastilla>
       </div>
 
