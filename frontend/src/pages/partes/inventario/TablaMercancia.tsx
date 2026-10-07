@@ -150,7 +150,7 @@ export default function TablaMercancia({
       </div>
 
       <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined}>
-        <Tabla orden={orden} glosario="inventario" className={`vp-losa overflow-hidden ${lista.alto ? 'h-full overflow-auto' : ''}`}>
+        <Tabla orden={orden} glosario="inventario" className={`vp-losa ${lista.alto ? 'h-full overflow-auto' : 'overflow-hidden'}`}>
           <table className="w-full text-sm">
             <thead
               className="sticky top-0 z-[1] text-neutral-500 text-xs"
