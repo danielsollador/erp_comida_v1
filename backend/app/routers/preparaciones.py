@@ -86,13 +86,13 @@ def _a_schema(db: Session, prep: models.Ingrediente) -> schemas.Preparacion:
         id=prep.id,
         nombre=prep.nombre,
         unidad=prep.unidad,
-        rinde=prep.rinde or 1,
+        rinde=prep.rinde_real or 1,
         modo_produccion=prep.modo_produccion or "descontar",
         vida_util_horas=prep.vida_util_horas,
         stock_actual=round(prep.stock_actual or 0, 4),
         lineas=lineas,
         costo_tanda=costo_tanda,
-        costo_unitario=round(costo_tanda / (prep.rinde or 1), 4),
+        costo_unitario=round(costo_tanda / (prep.rinde_real or 1), 4),
         rendimiento_real=round(salio / esperado, 4) if esperado else None,
         tandas=len(tandas),
     )
@@ -246,7 +246,7 @@ def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Se
         receta = {linea.ingrediente_id: linea for linea in prep.lineas_preparacion}
         if not receta:
             raise HTTPException(status_code=400, detail="Esta preparación no tiene receta todavía.")
-        rinde = prep.rinde or 1
+        rinde = prep.rinde_real or 1
 
         if body.usado:
             usado = {u.ingrediente_id: u.cantidad for u in body.usado}

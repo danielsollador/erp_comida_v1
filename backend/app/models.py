@@ -280,6 +280,33 @@ class Ingrediente(Base):
         return self.tipo == "preparacion"
 
     @property
+    def rinde_real(self) -> float:
+        """Lo que SALE de una tanda, calculado desde el crudo.
+
+        La merma de cocinar es del crudo, no de lo preparado (Leider, 7-oct):
+        el pollo pierde el 30 % en cualquier guiso. Asi que lo que rinde la
+        tanda no se escribe: es la suma de lo que queda de cada crudo que se
+        mide como la preparacion (1 kg de pollo al 70 % = 0,7 kg de guiso).
+        Otra preparacion adentro entra ya preparada: cuenta entera. Si nada se
+        mide como ella (una tanda en unidades hecha de kilos), vale lo que se
+        guardo en `rinde`.
+        """
+        if self.tipo != "preparacion":
+            return 1.0
+        total = 0.0
+        hay_en_su_unidad = False
+        for linea in self.lineas_preparacion:
+            ing = linea.ingrediente
+            if ing is None or ing.unidad != self.unidad:
+                continue
+            hay_en_su_unidad = True
+            pct = 100.0 if ing.tipo == "preparacion" else (ing.rendimiento_pct or 100.0)
+            total += linea.cantidad * pct / 100.0
+        if hay_en_su_unidad and total > 0:
+            return round(total, 6)
+        return self.rinde or 0.0
+
+    @property
     def costo_estandar(self) -> float:
         """Lo que cuesta 1 unidad de una preparacion segun su receta, a los
         costos de hoy de lo que lleva. Para lo comprado es su costo.
@@ -315,13 +342,13 @@ class Ingrediente(Base):
 def _costo_de(ing: "Ingrediente", visitados: frozenset) -> float:
     if ing.tipo != "preparacion":
         return ing.costo_unitario or 0
-    if ing.id in visitados or not ing.rinde or ing.rinde <= 0:
+    if ing.id in visitados or not ing.rinde_real or ing.rinde_real <= 0:
         return 0.0
     if ing.modo_produccion == "producir" and visitados and (ing.stock_actual or 0) > 0:
         return ing.costo_unitario or 0
     dentro = visitados | {ing.id}
     total = sum(linea.cantidad * _costo_de(linea.ingrediente, dentro) for linea in ing.lineas_preparacion)
-    return total / ing.rinde
+    return total / ing.rinde_real
 
 
 class LineaPreparacion(Base):

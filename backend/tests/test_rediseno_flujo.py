@@ -67,8 +67,14 @@ def stock(db, iid):
 
 @pytest.fixture()
 def guiso(client, libros):
-    """Guiso de pollo: 1 kg de pollo crudo + 0,1 kg de cebolla rinden 0,8 kg."""
-    pollo = alta(client, "Pollo", stock=10, costo=4.0)
+    """Guiso de pollo: 1 kg de pollo crudo + 0,1 kg de cebolla rinden 0,8 kg.
+
+    La merma de cocinar es del crudo: el pollo rinde 70 % (0,7 kg) y la
+    cebolla 100 % (0,1 kg), asi que la tanda rinde 0,7 + 0,1 = 0,8 kg. El
+    `rinde` que se manda al crear la preparacion solo queda guardado; lo que
+    manda es `rinde_real`.
+    """
+    pollo = alta(client, "Pollo", stock=10, costo=4.0, rendimiento_pct=70)
     cebolla = alta(client, "Cebolla", stock=2, costo=1.0)
     r = client.post(
         "/api/inventario/preparaciones",
@@ -286,8 +292,9 @@ def test_editar_la_comanda_devuelve_el_guiso_producido_y_no_el_pollo(client, db,
 
 
 def test_una_preparacion_rinde_100_en_la_ficha(client, db, guiso):
-    """La merma de cocinar ya esta en `rinde`; un rendimiento aparte la
-    contaba dos veces al vender."""
+    """La merma de cocinar es del crudo (el pollo al 70 %) y ya esta en lo
+    que rinde la tanda; un rendimiento aparte en la preparacion la contaba
+    dos veces al vender."""
     g = guiso["guiso"]
     r = client.put(f"/api/inventario/ingredientes/{g['id']}", json={
         "nombre": g["nombre"], "unidad": "kg", "tipo": "preparacion", "rendimiento_pct": 50,
@@ -442,11 +449,29 @@ def test_la_disponibilidad_avisa_que_el_pollo_es_compartido(client, guiso):
         "lineas": [{"ingrediente_id": guiso["pollo"]["id"], "cantidad": 1}],
     })
     filas = {f["nombre"]: f for f in client.get("/api/inventario/preparaciones/disponibilidad").json()}
-    # 10 kg de pollo dan 8 kg de guiso de pollo (la cebolla da para 16), o 10 de ranchero.
+    # 10 kg de pollo dan 8 kg de guiso de pollo (la cebolla da para 16), o 7 de
+    # ranchero: el pollo rinde 70 % aunque la ficha del ranchero diga 1.
     assert filas["Guiso de pollo"]["potencial"] == 8
     assert filas["Guiso de pollo"]["limita"] == "Pollo"
     assert filas["Guiso de pollo"]["comparte_con"] == ["Guiso ranchero"]
-    assert filas["Guiso ranchero"]["potencial"] == 10
+    assert filas["Guiso ranchero"]["potencial"] == 7
+
+
+def test_la_merma_del_crudo_manda_sobre_el_rinde_escrito(client, libros):
+    """Pollo al 70 % y un guiso de 1 kg de pollo con `rinde` 0,8 escrito a
+    mano: la tanda rinde 0,7 y 10 kg de pollo dan 7 kg, no 8."""
+    pollo = alta(client, "Pollo", stock=10, costo=4.0, rendimiento_pct=70)
+    r = client.post("/api/inventario/preparaciones", json={
+        "nombre": "Guiso", "unidad": "kg", "rinde": 0.8,
+        "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1}],
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["rinde"] == 0.7
+    lista = client.get("/api/inventario/preparaciones").json()
+    assert next(p for p in lista if p["id"] == r.json()["id"])["rinde"] == 0.7
+    filas = {f["nombre"]: f for f in client.get("/api/inventario/preparaciones/disponibilidad").json()}
+    assert filas["Guiso"]["potencial"] == 7
+    assert filas["Guiso"]["limita"] == "Pollo"
 
 
 # ── Fase 4: control y costos ─────────────────────────────────────────────────

@@ -150,14 +150,14 @@ def costo_reposicion_efectivo(ingrediente, ultimos: Dict[int, dict], _visitados=
     reponerlo cuesta lo que cuesta reponer su pollo y su cebolla.
     """
     if ingrediente.tipo == "preparacion":
-        if ingrediente.id in _visitados or not ingrediente.rinde:
+        if ingrediente.id in _visitados or not ingrediente.rinde_real:
             return 0.0
         dentro = _visitados | {ingrediente.id}
         total = sum(
             linea.cantidad * _bruto_reposicion(linea.ingrediente, ultimos, dentro)
             for linea in ingrediente.lineas_preparacion
         )
-        return round(total / ingrediente.rinde, 6)
+        return round(total / ingrediente.rinde_real, 6)
     ultimo = ultimos.get(ingrediente.id)
     if ultimo:
         return costo_efectivo_de(ultimo["costo"], ingrediente.rendimiento_pct) or 0.0

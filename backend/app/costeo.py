@@ -97,8 +97,8 @@ def explotar(ingrediente: models.Ingrediente, cantidad: float, modo: str = "vent
     if (
         ingrediente.tipo != "preparacion"
         or not ingrediente.lineas_preparacion
-        or not ingrediente.rinde
-        or ingrediente.rinde <= 0
+        or not ingrediente.rinde_real
+        or ingrediente.rinde_real <= 0
         or ingrediente.id in _visitados
         or (modo == "devolucion" and ingrediente.modo_produccion == "producir")
     ):
@@ -114,7 +114,7 @@ def explotar(ingrediente: models.Ingrediente, cantidad: float, modo: str = "vent
             return resultado
     dentro = _visitados | {ingrediente.id}
     for linea in ingrediente.lineas_preparacion:
-        parte = resto * linea.cantidad / ingrediente.rinde
+        parte = resto * linea.cantidad / ingrediente.rinde_real
         for hoja, q in explotar(linea.ingrediente, parte, modo, dentro).items():
             resultado[hoja] = resultado.get(hoja, 0) + q
     return resultado

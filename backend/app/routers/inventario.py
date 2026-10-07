@@ -881,7 +881,7 @@ def _se_cuenta_en_crudo(ing: models.Ingrediente) -> bool:
         ing.tipo == "preparacion"
         and (ing.modo_produccion or "descontar") == "descontar"
         and bool(ing.lineas_preparacion)
-        and (ing.rinde or 0) > 0
+        and (ing.rinde_real or 0) > 0
     )
 
 
