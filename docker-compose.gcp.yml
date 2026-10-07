@@ -76,7 +76,12 @@ services:
     healthcheck:
       start_period: 120s
     environment:
-      ERP_CORS_ORIGINS: https://${DOMINIO_SAVORA:?Define DOMINIO_SAVORA en .env}
+      # Ademas del dominio, la app nativa: Android sirve sus pantallas desde
+      # https://localhost y iOS desde capacitor://localhost, y sin estos dos
+      # el navegador de la app corta cada llamada (CORS) y el login dice
+      # "el servidor no esta respondiendo". La sesion de la app va por token
+      # (Authorization), no por cookie.
+      ERP_CORS_ORIGINS: https://${DOMINIO_SAVORA:?Define DOMINIO_SAVORA en .env},https://localhost,capacitor://localhost
       ERP_HUB_URL: https://${DOMINIO_HUB:?Define DOMINIO_HUB en .env}
 
   frontend:
@@ -87,7 +92,7 @@ services:
   hub-backend:
     <<: *imagen-backend
     environment:
-      ERP_CORS_ORIGINS: https://${DOMINIO_HUB}
+      ERP_CORS_ORIGINS: https://${DOMINIO_HUB},https://localhost,capacitor://localhost
 
   hub-frontend:
     <<: *imagen-frontend

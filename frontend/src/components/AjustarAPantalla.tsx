@@ -15,7 +15,18 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
  *
  * Por debajo de `desde` (el telefono) no hace nada: ahi se desplaza como
  * cualquier pagina.
+ *
+ * TAMPOCO EN UNA PANTALLA TACTIL, NI POR DEBAJO DE `MINIMA`. En el Fire HD 8
+ * acostado quedan 520 px de alto y la portada se reducia al 47 %: letra de
+ * 6 px, botones que no se atinan con el dedo (Leider, 6-oct: "se ve
+ * horrible"). En una tablet se desliza con el dedo sin pensarlo; lo que no
+ * se puede es leer a medio tamaño. Y en una laptop, si caber exige bajar de
+ * `MINIMA`, se deja en su tamaño y se desplaza: una pantalla entera que no
+ * se lee no sirve de nada.
  */
+const MINIMA = 0.8
+const esTactil = () => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true
+
 // La ultima escala, para volver a la pantalla con el tamaño con que se dejo:
 // arrancar siempre en 1 y medir despues era un salto de tamaño al volver del
 // punto de venta y al recargar (Leider, 1-oct). Vive en esta pestaña.
@@ -23,7 +34,7 @@ const CLAVE_ESCALA = 'vp-escala'
 let ultimaEscala = (() => {
   try {
     const n = Number(sessionStorage.getItem(CLAVE_ESCALA))
-    return n > 0 && n <= 1 ? n : 1
+    return n >= MINIMA && n <= 1 ? n : 1
   } catch {
     return 1
   }
@@ -31,7 +42,9 @@ let ultimaEscala = (() => {
 
 export default function AjustarAPantalla({ children, desde = 640 }: { children: ReactNode; desde?: number }) {
   const contenido = useRef<HTMLDivElement>(null)
-  const [escala, setEscala] = useState(() => (typeof window !== 'undefined' && window.innerWidth >= desde ? ultimaEscala : 1))
+  const [escala, setEscala] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth >= desde && !esTactil() ? ultimaEscala : 1,
+  )
   const actual = useRef(escala)
 
   useLayoutEffect(() => {
@@ -39,11 +52,12 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
     if (!el) return
     const medir = () => {
       let s = 1
-      if (window.innerWidth >= desde) {
+      if (window.innerWidth >= desde && !esTactil()) {
         // `offsetHeight` es el alto de maquetacion: no lo cambia el
         // `transform`, asi que medir no depende de la escala puesta.
         const alto = el.offsetHeight
         if (alto > 0) s = Math.min(1, window.innerHeight / alto)
+        if (s < MINIMA) s = 1
       }
       // Umbral chico: si se pasaba por uno o dos pixeles (un monitor con otro
       // alto, la barra del navegador), un umbral grande dejaba la escala en 1
