@@ -626,8 +626,8 @@ export default function POS() {
 
   /** Editando: la cocina ya hizo este renglon, asi que su destino no se toca. */
   function cocinaLoTermino(varianteId: number): boolean {
-    const fila = enEdicion?.items.find((i) => i.variante_id === varianteId)
-    return Boolean(fila && fila.a_cocina !== false && fila.preparado)
+    const filas = enEdicion?.items.filter((i) => i.variante_id === varianteId) ?? []
+    return filas.length > 0 && filas.every((i) => i.a_cocina !== false && i.preparado)
   }
 
   /** Los renglones de la comanda tal como los pide el servidor. */
@@ -753,12 +753,20 @@ export default function POS() {
     const partes: string[] = []
     const sueltos = new Map<string, number>()
     const sumar = (k: string, n: number) => sueltos.set(k, (sueltos.get(k) ?? 0) + n)
+    const menu = new Map<string, { n: number; cocina: boolean }>()
     for (const i of pedido.items) {
       if (i.variante_id === null) sumar(`l${i.nombre}:${i.precio_unitario.toFixed(2)}`, i.cantidad)
       else if (categoriaEnvios && categoriaDeVariante.get(i.variante_id) === categoriaEnvios.id)
         sumar(`e${i.variante_id}:${i.precio_unitario.toFixed(2)}`, i.cantidad)
-      else partes.push(`v${i.variante_id}:${i.cortesia ? 1 : 0}:${i.cantidad}:${i.a_cocina !== false ? 1 : 0}`)
+      else {
+        // Lo hecho y lo agregado despues son dos renglones del mismo producto:
+        // se cuentan juntos, igual que en la comanda.
+        const k = `v${i.variante_id}:${i.cortesia ? 1 : 0}`
+        const previo = menu.get(k)
+        menu.set(k, { n: (previo?.n ?? 0) + i.cantidad, cocina: previo?.cocina ?? i.a_cocina !== false })
+      }
     }
+    for (const [k, { n, cocina }] of menu) partes.push(`${k}:${n}:${cocina ? 1 : 0}`)
     for (const [k, n] of sueltos) partes.push(`${k}:${n}`)
     return partes.sort().join('|')
   }
@@ -1272,7 +1280,15 @@ export default function POS() {
           sueltos.push({ id: uuid(), nombre: i.nombre, precio: i.precio_unitario, variante_id: i.variante_id })
         continue
       }
-      if (nuevo[i.variante_id]) return false
+      // El mismo producto puede venir en dos renglones: lo que la cocina ya
+      // hizo y lo que se agrego despues (el servidor los separa para no
+      // mandar a cocina lo ya hecho). En la comanda es una sola linea.
+      const ya = nuevo[i.variante_id]
+      if (ya) {
+        if (ya.cortesia !== i.cortesia) return false
+        ya.cantidad += i.cantidad
+        continue
+      }
       nuevo[i.variante_id] = {
         ...menu,
         cantidad: i.cantidad,

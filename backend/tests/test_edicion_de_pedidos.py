@@ -212,7 +212,9 @@ def test_un_pedido_no_puede_quedar_vacio(client, variante):
 
 
 def test_subir_la_cantidad_devuelve_el_renglon_a_la_cola_de_cocina(client, variante, insumo, db):
-    """Dos empanadas cuando ya estaba marcada una: hay comida nueva que hacer.
+    """Dos empanadas cuando ya estaba marcada una: hay UNA nueva que hacer, no
+    dos. Lo hecho se queda hecho y lo agregado va a su propio renglon sin
+    hacer (Leider, 6-oct: 4 pastelitos hechos + 1 la cocina veia 5).
 
     Con otro renglon todavia crudo: si TODO estuviera hecho la comanda ya no
     se edita (ver `test_lo_que_la_cocina_termino_ya_no_se_edita`)."""
@@ -231,8 +233,10 @@ def test_subir_la_cantidad_devuelve_el_renglon_a_la_cola_de_cocina(client, varia
         {"variante_id": otra.id, "cantidad": 1},
     ])
     assert r.status_code == 200, r.text
-    empanada = next(i for i in r.json()["items"] if i["variante_id"] == variante.id)
-    assert empanada["preparado"] is False
+    empanadas = sorted(
+        ((i["preparado"], i["cantidad"]) for i in r.json()["items"] if i["variante_id"] == variante.id)
+    )
+    assert empanadas == [(False, 1), (True, 1)]
 
 
 def test_el_precio_de_lo_que_ya_estaba_no_se_recalcula(client, variante, db):
@@ -509,7 +513,8 @@ def test_a_lo_que_la_cocina_termino_se_le_puede_agregar(client, variante, db):
     q = r.json()
     assert q["estado"] == "pendiente"
     assert q["cocinando_desde"] is None
-    assert [i["preparado"] for i in q["items"]] == [False]
+    # La que ya estaba hecha sigue hecha; la cocina solo tiene la nueva.
+    assert sorted((i["preparado"], i["cantidad"]) for i in q["items"]) == [(False, 1), (True, 1)]
 
 
 def test_una_comanda_sin_cocina_se_edita(client, variante, insumo, db):

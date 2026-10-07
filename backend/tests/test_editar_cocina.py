@@ -126,3 +126,54 @@ def test_la_plata_y_el_inventario_no_se_mueven(client, variante, insumo, db):
     db.refresh(insumo)
     assert insumo.stock_actual == stock
     assert len(q["pagos"]) == 1 and q["ediciones"][-1]["diferencia"] == 0
+
+
+def _hechos_y_pendientes(pedido, variante_id):
+    filas = [i for i in pedido["items"] if i["variante_id"] == variante_id]
+    hechos = sum(i["cantidad"] for i in filas if i["preparado"])
+    pendientes = sum(i["cantidad"] for i in filas if not i["preparado"])
+    return hechos, pendientes
+
+
+def test_agregar_uno_igual_a_lo_ya_cocinado_manda_solo_el_nuevo(client, variante):
+    # Leider (6-oct): 4 pastelitos ya hechos + 1 al editar = la cocina veia 5.
+    p = client.post("/api/pedidos", json={"cliente": "Ana", "items": [
+        {"variante_id": variante.id, "cantidad": 4},
+    ]}).json()
+    for i in p["items"]:
+        client.post(f"/api/pedidos/items/{i['id']}/preparado")
+
+    abrir(client, p["id"])
+    r = client.put(f"/api/pedidos/{p['id']}", json={"items": [
+        {"variante_id": variante.id, "cantidad": 5},
+    ]})
+    assert r.status_code == 200, r.text
+    q = r.json()
+    assert _hechos_y_pendientes(q, variante.id) == (4, 1)
+    assert q["total"] == round(p["total"] / 4 * 5, 2)
+
+    # Otra edicion que agrega uno mas lo suma al que ya espera, sin tocar lo hecho.
+    abrir(client, p["id"])
+    q = client.put(f"/api/pedidos/{p['id']}", json={"items": [
+        {"variante_id": variante.id, "cantidad": 6},
+    ]}).json()
+    assert _hechos_y_pendientes(q, variante.id) == (4, 2)
+
+    # Y al quitar, sale primero lo que la cocina no ha hecho.
+    abrir(client, p["id"])
+    q = client.put(f"/api/pedidos/{p['id']}", json={"items": [
+        {"variante_id": variante.id, "cantidad": 5},
+    ]}).json()
+    assert _hechos_y_pendientes(q, variante.id) == (4, 1)
+
+
+def test_sin_cocinar_todavia_agregar_suma_al_mismo_renglon(client, variante):
+    p = client.post("/api/pedidos", json={"cliente": "Ana", "items": [
+        {"variante_id": variante.id, "cantidad": 4},
+    ]}).json()
+    abrir(client, p["id"])
+    q = client.put(f"/api/pedidos/{p['id']}", json={"items": [
+        {"variante_id": variante.id, "cantidad": 5},
+    ]}).json()
+    filas = [i for i in q["items"] if i["variante_id"] == variante.id]
+    assert len(filas) == 1 and filas[0]["cantidad"] == 5 and not filas[0]["preparado"]

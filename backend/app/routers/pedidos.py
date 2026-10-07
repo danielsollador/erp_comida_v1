@@ -692,6 +692,11 @@ def _clave_pedida(
     )
 
 
+def _ya_hecho(fila: models.PedidoItem) -> bool:
+    """Comida que la cocina ya termino para esta comanda (lo de vitrina no)."""
+    return bool(fila.preparado) and fila.a_cocina is not False
+
+
 def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int]) -> None:
     """Todo lo que impide tocar esta comanda, con el motivo escrito."""
     if pedido.estado == "anulado":
@@ -1041,26 +1046,35 @@ async def editar_pedido(
             variante_id = actuales[clave][0].variante_id
             # Solo es comida perdida lo que la COCINA hizo para esta comanda.
             # Lo de la vitrina que se quita vuelve a la vitrina: se vendera
-            # otra vez, y esa venta lo descontara de nuevo.
-            ya_hecho = actuales[clave][0].preparado and actuales[clave][0].a_cocina is not False
+            # otra vez, y esa venta lo descontara de nuevo. Un mismo producto
+            # puede estar en dos renglones (lo hecho y lo que se agrego
+            # despues, ver "se aplica"): al quitar sale primero lo que la
+            # cocina todavia no hizo, igual que en los renglones.
+            hecho = sum(f.cantidad for f in actuales[clave] if _ya_hecho(f))
         else:
-            variante_id, ya_hecho = ejemplo[clave].variante_id, False
+            variante_id, hecho = ejemplo[clave].variante_id, 0
         # La venta libre no tiene receta: no mueve inventario, ni al entrar ni
         # al salir. Su costo tampoco se conoce, y eso es honesto.
         if variante_id is None or not recetas.get(variante_id):
             continue
         if despues > antes:
-            destino, cantidad = aumento, despues - antes
+            tramos = [(aumento, despues - antes)]
         else:
-            destino, cantidad = (perdida if ya_hecho else retorno), antes - despues
-            if ya_hecho:
+            quitado = antes - despues
+            sin_hacer = antes - hecho
+            botado = max(quitado - sin_hacer, 0)
+            tramos = [(retorno, quitado - botado), (perdida, botado)]
+            if botado:
                 if _es_cortesia(clave):
-                    cortesia_perdida += (actuales[clave][0].costo_unitario or 0) * cantidad
+                    cortesia_perdida += (actuales[clave][0].costo_unitario or 0) * botado
                 else:
-                    costo_perdido += (actuales[clave][0].costo_unitario or 0) * cantidad
-        for receta in recetas[variante_id]:
-            bruto = costeo.consumo_bruto(receta, cantidad)
-            destino[receta.ingrediente] = destino.get(receta.ingrediente, 0) + bruto
+                    costo_perdido += (actuales[clave][0].costo_unitario or 0) * botado
+        for destino, cantidad in tramos:
+            if cantidad <= 0:
+                continue
+            for receta in recetas[variante_id]:
+                bruto = costeo.consumo_bruto(receta, cantidad)
+                destino[receta.ingrediente] = destino.get(receta.ingrediente, 0) + bruto
     costo_perdido = round(costo_perdido, 2)
     cortesia_perdida = round(cortesia_perdida, 2)
 
@@ -1096,22 +1110,28 @@ async def editar_pedido(
         if quiere == va_hoy:
             continue
         if quiere:
-            mandar_a_cocina.append(fila)
+            mandar_a_cocina.extend(filas)
         else:
-            if fila.preparado:
+            if any(f.preparado for f in filas):
                 raise HTTPException(
                     status_code=409,
                     detail=f"La cocina ya terminó {fila.nombre} de la comanda "
                     f"#{pedido.numero}: no pasa a vitrina.",
                 )
-            mandar_a_vitrina.append(fila)
+            mandar_a_vitrina.extend(filas)
 
     # -- que cambio, en palabras, antes de tocar nada
     cambios = []
+    def _juntos(filas: List[models.PedidoItem]) -> str:
+        cuenta: Dict[str, int] = {}
+        for f in filas:
+            cuenta[f.nombre] = cuenta.get(f.nombre, 0) + f.cantidad
+        return ", ".join(f"{c}x {n}" for n, c in cuenta.items())
+
     if mandar_a_cocina:
-        cambios.append("a cocina: " + ", ".join(f"{f.cantidad}x {f.nombre}" for f in mandar_a_cocina))
+        cambios.append("a cocina: " + _juntos(mandar_a_cocina))
     if mandar_a_vitrina:
-        cambios.append("de vitrina: " + ", ".join(f"{f.cantidad}x {f.nombre}" for f in mandar_a_vitrina))
+        cambios.append("de vitrina: " + _juntos(mandar_a_vitrina))
     for clave in list(actuales) + [c for c in pedidas if c not in actuales]:
         antes = sum(f.cantidad for f in actuales.get(clave, []))
         despues = pedidas.get(clave, 0)
@@ -1143,23 +1163,54 @@ async def editar_pedido(
     for clave, cantidad in pedidas.items():
         filas = actuales.get(clave)
         if filas:
-            fila = filas[0]
-            # Si la misma cosa estaba en dos renglones, se consolida en uno.
-            for sobrante in filas[1:]:
-                db.delete(sobrante)
+            for f in filas:
+                if f in mandar_a_cocina:
+                    f.a_cocina = True
+                    f.preparado = False
+                elif f in mandar_a_vitrina:
+                    f.a_cocina = False
+                    f.preparado = True
             antes = sum(f.cantidad for f in filas)
-            # Hay comida nueva que hacer: vuelve a la cola de cocina aunque el
-            # renglon ya estuviera marcado. Lo de vitrina no: sale de la
-            # vitrina igual que lo primero.
-            if cantidad > antes and fila.a_cocina is not False:
-                fila.preparado = False
-            fila.cantidad = cantidad
-            if fila in mandar_a_cocina:
-                fila.a_cocina = True
-                fila.preparado = False
-            elif fila in mandar_a_vitrina:
-                fila.a_cocina = False
-                fila.preparado = True
+            if cantidad > antes:
+                # LO QUE YA SE HIZO NO VUELVE A LA COCINA. Leider (6-oct): con
+                # 4 pastelitos ya hechos, agregar 1 subia el renglon a 5 y lo
+                # devolvia entero a la cola: la cocina veia 5 por hacer. Lo
+                # agregado va a un renglon sin hacer (el que ya esperaba en la
+                # cola, si hay uno, o uno nuevo al mismo precio); lo hecho se
+                # queda hecho. Lo de vitrina no pasa por cocina: se suma igual.
+                extra = cantidad - antes
+                espera = next((f for f in filas if f.a_cocina is False or not f.preparado), None)
+                if espera is not None:
+                    espera.cantidad += extra
+                else:
+                    base = filas[0]
+                    db.add(
+                        models.PedidoItem(
+                            pedido_id=pedido.id,
+                            variante_id=base.variante_id,
+                            nombre=base.nombre,
+                            precio_unitario=base.precio_unitario,
+                            costo_unitario=base.costo_unitario,
+                            cantidad=extra,
+                            nota=base.nota,
+                            preparado=False,
+                            a_cocina=base.a_cocina,
+                            cortesia=base.cortesia,
+                            precio_lista=base.precio_lista,
+                        )
+                    )
+            elif cantidad < antes:
+                # Al quitar, primero lo que la cocina no ha hecho (es lo que
+                # vuelve al deposito, ver el inventario arriba).
+                quitar = antes - cantidad
+                for f in sorted(filas, key=_ya_hecho):
+                    if quitar <= 0:
+                        break
+                    menos = min(f.cantidad, quitar)
+                    f.cantidad -= menos
+                    quitar -= menos
+                    if f.cantidad == 0:
+                        db.delete(f)
         else:
             item = ejemplo[clave]
             precio, costo = _precio_y_costo(clave)
