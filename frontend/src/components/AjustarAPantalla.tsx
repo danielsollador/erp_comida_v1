@@ -28,6 +28,12 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 const minima = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 0.85 : 0.7
 
+// SOLO EN LA TABLET (dedo). En la laptop la portada se veia achicada en
+// produccion y a tamaño normal en local, segun hubiera avisos o no (Leider,
+// 7-oct: "quitemos eso"): con raton se queda en su tamaño y, si hace falta,
+// se desplaza. En la tablet sigue cabiendo entera, que es donde se pidio.
+const tactil = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches)
+
 // La ultima escala, para volver a la pantalla con el tamaño con que se dejo:
 // arrancar siempre en 1 y medir despues era un salto de tamaño al volver del
 // punto de venta y al recargar (Leider, 1-oct). Vive en esta pestaña.
@@ -43,7 +49,7 @@ let ultimaEscala = (() => {
 
 export default function AjustarAPantalla({ children, desde = 640 }: { children: ReactNode; desde?: number }) {
   const contenido = useRef<HTMLDivElement>(null)
-  const [escala, setEscala] = useState(() => (typeof window !== 'undefined' && window.innerWidth >= desde ? ultimaEscala : 1))
+  const [escala, setEscala] = useState(() => (tactil() && window.innerWidth >= desde ? ultimaEscala : 1))
   const actual = useRef(escala)
 
   useLayoutEffect(() => {
@@ -51,7 +57,7 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
     if (!el) return
     const medir = () => {
       let s = 1
-      if (window.innerWidth >= desde) {
+      if (tactil() && window.innerWidth >= desde) {
         // `offsetHeight` es el alto de maquetacion: no lo cambia el
         // `transform`, asi que medir no depende de la escala puesta.
         const alto = el.offsetHeight
