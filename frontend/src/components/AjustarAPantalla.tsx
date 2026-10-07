@@ -51,11 +51,41 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
   const contenido = useRef<HTMLDivElement>(null)
   const [escala, setEscala] = useState(() => (tactil() && window.innerWidth >= desde ? ultimaEscala : 1))
   const actual = useRef(escala)
+  // Con raton no se achica: se APRIETA (la clase `vp-apretado` activa la
+  // variante `apretado:` de las piezas). `ahorro` es cuanto gano apretar la
+  // ultima vez: con eso se sabe si sin apretar ya cabria, sin medir dos veces.
+  const [apretado, setApretado] = useState(false)
+  const apretadoRef = useRef(false)
+  const ahorro = useRef(0)
+  const altoSuelto = useRef(0)
 
   useLayoutEffect(() => {
     const el = contenido.current
     if (!el) return
     const medir = () => {
+      if (!tactil()) {
+        const alto = el.offsetHeight
+        const ventana = window.innerHeight
+        if (!apretadoRef.current) {
+          if (window.innerWidth >= desde && alto > ventana + 1) {
+            altoSuelto.current = alto
+            apretadoRef.current = true
+            setApretado(true)
+          }
+        } else {
+          if (altoSuelto.current && ahorro.current === 0 && alto < altoSuelto.current) ahorro.current = altoSuelto.current - alto
+          if (window.innerWidth < desde || (ahorro.current > 0 && alto + ahorro.current <= ventana)) {
+            apretadoRef.current = false
+            ahorro.current = 0
+            setApretado(false)
+          }
+        }
+        if (actual.current !== 1) {
+          actual.current = 1
+          setEscala(1)
+        }
+        return
+      }
       let s = 1
       if (tactil() && window.innerWidth >= desde) {
         // `offsetHeight` es el alto de maquetacion: no lo cambia el
@@ -98,7 +128,7 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
 
   const reducido = escala < 1
   return (
-    <div style={reducido ? { height: '100dvh', overflow: 'hidden' } : undefined}>
+    <div className={apretado ? 'vp-apretado' : undefined} style={reducido ? { height: '100dvh', overflow: 'hidden' } : undefined}>
       <div
         ref={contenido}
         style={

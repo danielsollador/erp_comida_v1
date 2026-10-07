@@ -28,6 +28,10 @@
    Va declarada la ultima a proposito: cuando fija la misma propiedad que
    `lg:`, `alto:` o `bajo:`, manda ella. */
 @custom-variant pc (@media (min-width: 1440px));
+/* La portada con raton cuando no cabe: en vez de achicarla entera (se leia
+   mas chica en produccion, Leider 7-oct), se aprietan sus piezas. Lo pone
+   AjustarAPantalla con la clase `vp-apretado`. */
+@custom-variant apretado (&:where(.vp-apretado *));
 
 /*
   SISTEMA DE DISEÑO DE VERTIGO PRO

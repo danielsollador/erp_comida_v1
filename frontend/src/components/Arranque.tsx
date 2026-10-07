@@ -92,7 +92,7 @@ export default function Arranque({ quien = '' }: { quien?: string }) {
   }
 
   return (
-    <section className="vp-losa p-5 sm:p-6 bajo:p-4 apaisado:px-4 apaisado:py-3">
+    <section className="vp-losa p-5 sm:p-6 bajo:p-4 apaisado:px-4 apaisado:py-3 apretado:px-5 apretado:py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="vp-etiqueta">Para arrancar</p>
