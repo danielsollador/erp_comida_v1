@@ -142,6 +142,37 @@ def costo_efectivo_de(costo: Optional[float], rendimiento_pct: Optional[float]) 
     return round(costo / rendimiento, 4)
 
 
+def costo_reposicion_efectivo(ingrediente, ultimos: Dict[int, dict], _visitados=frozenset()) -> float:
+    """Lo que cuesta HOY 1 unidad utilizable de algo, a ultimo precio pagado.
+
+    Para lo comprado, su ultimo precio corregido por rendimiento. Para una
+    PREPARACION, su receta a ultimos precios: el guiso no se compra, asi que
+    reponerlo cuesta lo que cuesta reponer su pollo y su cebolla.
+    """
+    if ingrediente.tipo == "preparacion":
+        if ingrediente.id in _visitados or not ingrediente.rinde:
+            return 0.0
+        dentro = _visitados | {ingrediente.id}
+        total = sum(
+            linea.cantidad * _bruto_reposicion(linea.ingrediente, ultimos, dentro)
+            for linea in ingrediente.lineas_preparacion
+        )
+        return round(total / ingrediente.rinde, 6)
+    ultimo = ultimos.get(ingrediente.id)
+    if ultimo:
+        return costo_efectivo_de(ultimo["costo"], ingrediente.rendimiento_pct) or 0.0
+    return ingrediente.costo_efectivo or 0.0
+
+
+def _bruto_reposicion(ingrediente, ultimos, visitados) -> float:
+    """Dentro de una preparacion va la cantidad tal como sale del deposito:
+    su costo sin corregir por rendimiento (la merma ya esta en lo que rinde)."""
+    if ingrediente.tipo == "preparacion":
+        return costo_reposicion_efectivo(ingrediente, ultimos, visitados)
+    ultimo = ultimos.get(ingrediente.id)
+    return ultimo["costo"] if ultimo else (ingrediente.costo_unitario or 0)
+
+
 def variacion_pct(reposicion: Optional[float], promedio: Optional[float]) -> Optional[float]:
     """Cuanto subestima el promedio al costo de reponer."""
     if not reposicion or not promedio:

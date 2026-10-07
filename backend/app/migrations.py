@@ -169,6 +169,14 @@ COLUMNAS = [
     ("TRX111_VEN_PEDIDO_DET", "a_cocina", "BOOLEAN DEFAULT 1"),
     # En 0 para todos: a igual puesto manda el id, que es el orden de siempre.
     ("DIM220_MEN_PRODUCTO", "orden", "INTEGER DEFAULT 0"),
+    # Rediseño compras -> inventario -> produccion (docs/plan-compras-...).
+    ("DIM310_INV_INGREDIENTE", "rinde", "FLOAT DEFAULT 1"),
+    ("DIM310_INV_INGREDIENTE", "modo_produccion", "VARCHAR DEFAULT 'descontar'"),
+    ("DIM310_INV_INGREDIENTE", "vida_util_horas", "INTEGER"),
+    ("DIM310_INV_INGREDIENTE", "es_indirecto", "BOOLEAN DEFAULT 0"),
+    ("TRX411_COM_FACTURA_DET", "cuenta", "VARCHAR DEFAULT ''"),
+    ("DIM230_MEN_VARIANTE", "se_frie", "BOOLEAN DEFAULT 0"),
+    ("CFG910_ADM_PARAMETRO", "costo_para_precios", "VARCHAR DEFAULT 'reposicion'"),
 ]
 
 

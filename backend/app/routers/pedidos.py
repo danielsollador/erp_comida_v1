@@ -316,7 +316,9 @@ def _consumo_del_pedido(items, recetas_por_variante) -> Dict[models.Ingrediente,
         for receta in recetas_por_variante.get(item.variante_id, []):
             bruto = costeo.consumo_bruto(receta, item.cantidad)
             consumo[receta.ingrediente] = consumo.get(receta.ingrediente, 0) + bruto
-    return consumo
+    # Las preparaciones (el guiso del pastelito) se bajan hasta la materia
+    # prima: es lo que de verdad sale del deposito.
+    return costeo.explotar_consumo(consumo)
 
 
 def _faltantes(consumo: Dict[models.Ingrediente, float]) -> List[str]:
@@ -1077,6 +1079,12 @@ async def editar_pedido(
                 destino[receta.ingrediente] = destino.get(receta.ingrediente, 0) + bruto
     costo_perdido = round(costo_perdido, 2)
     cortesia_perdida = round(cortesia_perdida, 2)
+
+    # Lo que sale y lo que vuelve, por el mismo camino: la receta hasta la
+    # materia prima.
+    aumento = costeo.explotar_consumo(aumento, usar_stock=False)
+    retorno = costeo.explotar_consumo(retorno, usar_stock=False)
+    perdida = costeo.explotar_consumo(perdida, usar_stock=False)
 
     neto = {}
     for ingrediente in set(aumento) | set(retorno):

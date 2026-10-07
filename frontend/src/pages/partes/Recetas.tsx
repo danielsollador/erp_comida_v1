@@ -15,6 +15,7 @@ import { useAltoRestante } from '../../lib/altoRestante'
 import { Ayuda } from '../../components/Ayuda'
 import { explicar } from '../../lib/glosario'
 import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from '../../lib/types'
+import { vaEnReceta } from '../../lib/tiposArticulo'
 
 /**
  * Qué lleva cada producto: la receta, y con ella el costo y el margen.
@@ -638,6 +639,9 @@ function Compositor({
   const palabras = palabrasDe(busqueda)
   const disponibles = ingredientes.filter((i) => {
     if (enReceta.has(i.id)) return false
+    // Ni desechables (van a gasto) ni el aceite de freir (se reparte por
+    // pieza). Las preparaciones si: el pastelito lleva "50 g de guiso".
+    if (!vaEnReceta(i)) return false
     if (categoria && (i.categoria || '__sin__') !== categoria) return false
     if (palabras.length === 0) return true
     return contiene(`${i.nombre} ${i.categoria}`, palabras)

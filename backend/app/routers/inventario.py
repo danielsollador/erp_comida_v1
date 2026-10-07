@@ -406,6 +406,9 @@ def crear_ingrediente(ingrediente: schemas.IngredienteCreate, db: Session = Depe
     # arranca en cero mientras el stock dice diez, y el libro no cuadra desde
     # el primer dia.
     inicial = datos.pop("stock_actual", 0) or 0
+    # Un desechable no lleva stock: lo que se diga que hay no se anota.
+    if datos.get("tipo") == "desechable":
+        inicial = 0
     db_ingrediente = models.Ingrediente(stock_actual=0, **datos)
     db.add(db_ingrediente)
     db.flush()
@@ -438,6 +441,12 @@ def actualizar_ingrediente(
     # que registra la merma o el sobrante como corresponde.
     datos = ingrediente.model_dump()
     datos.pop("stock_actual", None)
+    # Lo de las preparaciones y el costo indirecto se toca solo si viene: la
+    # ficha que no los conoce (o una pantalla vieja) no puede dejar un guiso
+    # rindiendo 1 ni apagar el aceite cada vez que guarda un minimo.
+    for campo in ("rinde", "modo_produccion", "vida_util_horas", "es_indirecto"):
+        if campo not in ingrediente.model_fields_set:
+            datos.pop(campo, None)
     datos["nombre"] = nombre_limpio(datos["nombre"])
     if not datos["nombre"]:
         raise HTTPException(status_code=400, detail="La mercancía necesita un nombre.")
@@ -1223,6 +1232,18 @@ def actualizar_receta(
     if not variante:
         raise HTTPException(status_code=404, detail="Variante no encontrada")
 
+    for item in items:
+        ing = db.get(models.Ingrediente, item.ingrediente_id)
+        if ing is None:
+            raise HTTPException(status_code=400, detail=f"La mercancía {item.ingrediente_id} no existe.")
+        # Una servilleta no se puede atar a lo vendido, y el aceite de freir
+        # se reparte aparte (costo indirecto): ninguno va en una receta.
+        if ing.tipo == "desechable" or ing.es_indirecto:
+            raise HTTPException(
+                status_code=400,
+                detail=f"«{ing.nombre}» no va en recetas: "
+                + ("es desechable y va directo a gasto." if ing.tipo == "desechable" else "es un costo indirecto que se reparte por pieza frita."),
+            )
     db.query(models.RecetaItem).filter(models.RecetaItem.variante_id == variante_id).delete()
     for item in items:
         db.add(
@@ -1300,10 +1321,12 @@ def _consumo_diario(db: Session, dias: int = 14) -> dict:
     for pedido in pedidos:
         for item in pedido.items:
             for receta in recetas.get(item.variante_id, []):
-                consumo[receta.ingrediente_id] = consumo.get(
-                    receta.ingrediente_id, 0
+                consumo[receta.ingrediente] = consumo.get(
+                    receta.ingrediente, 0
                 ) + costeo.consumo_bruto(receta, item.cantidad)
-    return {ing_id: total / dias for ing_id, total in consumo.items()}
+    # El guiso no se compra: lo que hay que reponer es su pollo y su cebolla.
+    hojas = costeo.explotar_consumo(consumo, usar_stock=False)
+    return {ing.id: total / dias for ing, total in hojas.items()}
 
 
 @router.get("/sugerencias", response_model=List[schemas.SugerenciaCompra])
@@ -1312,6 +1335,10 @@ def sugerencias_compra(db: Session = Depends(get_db)):
     sugerencias = []
     # Lo archivado no se compra: si sigue bajo minimo es porque ya no se usa.
     for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.isnot(False)).all():
+        # Ni los desechables (no llevan stock) ni las preparaciones (se
+        # hacen, no se compran: lo que se compra es su materia prima).
+        if ing.tipo in ("desechable", "preparacion"):
+            continue
         por_dia = consumo_diario.get(ing.id, 0)
         dias_restantes = (ing.stock_actual / por_dia) if por_dia > 0 else None
         bajo_minimo = ing.stock_actual <= ing.stock_minimo

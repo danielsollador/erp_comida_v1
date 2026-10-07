@@ -57,6 +57,55 @@ def consumo_bruto(receta: models.RecetaItem, unidades: float) -> float:
     return receta.cantidad_por_unidad * unidades / rendimiento
 
 
+def explotar(ingrediente: models.Ingrediente, cantidad: float, usar_stock: bool = True, _visitados=frozenset()):
+    """Lo que de verdad sale del deposito por `cantidad` de algo.
+
+    Lo comprado sale tal cual. Una PREPARACION se baja por su receta hasta la
+    materia prima: 50 g de guiso de pollo que rinde 0,85 kg por cada 1 kg de
+    pollo son 58,8 g de pollo, mas su cebolla y su pimenton. Una preparacion
+    que se PRODUCE sale primero de lo producido y, si no alcanza, el resto
+    del crudo (lo que en la industria se llama *backflush*): la venta nunca
+    se traba porque la cocina no anoto la tanda.
+
+    `usar_stock=False` baja siempre por la receta: es lo que usan las
+    ediciones de comandas, que devuelven y sacan por el mismo camino.
+    """
+    if (
+        ingrediente.tipo != "preparacion"
+        or not ingrediente.lineas_preparacion
+        or not ingrediente.rinde
+        or ingrediente.rinde <= 0
+        or ingrediente.id in _visitados
+    ):
+        return {ingrediente: cantidad}
+    resultado = {}
+    resto = cantidad
+    if usar_stock and ingrediente.modo_produccion == "producir":
+        de_lo_hecho = min(max(ingrediente.stock_actual or 0, 0), cantidad)
+        if de_lo_hecho > 0:
+            resultado[ingrediente] = de_lo_hecho
+            resto = cantidad - de_lo_hecho
+        if resto <= 1e-9:
+            return resultado
+    dentro = _visitados | {ingrediente.id}
+    for linea in ingrediente.lineas_preparacion:
+        parte = resto * linea.cantidad / ingrediente.rinde
+        for hoja, q in explotar(linea.ingrediente, parte, usar_stock, dentro).items():
+            resultado[hoja] = resultado.get(hoja, 0) + q
+    return resultado
+
+
+def explotar_consumo(consumo: dict, usar_stock: bool = True) -> dict:
+    """`explotar` sobre un consumo ya sumado por insumo. Se suma ANTES de
+    explotar para que dos renglones con el mismo guiso no cuenten dos veces
+    lo que ya esta producido."""
+    resultado = {}
+    for ingrediente, cantidad in consumo.items():
+        for hoja, q in explotar(ingrediente, cantidad, usar_stock).items():
+            resultado[hoja] = resultado.get(hoja, 0) + q
+    return resultado
+
+
 def registrar_entrada(
     ingrediente: models.Ingrediente,
     cantidad: float,

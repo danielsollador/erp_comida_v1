@@ -86,6 +86,9 @@ PLAN_DE_CUENTAS = [
     ("6035", "Cortesias a clientes", "gasto", "deudora"),
     ("6030", "Faltante / sobrante de caja", "gasto", "deudora"),
     ("6040", "Depreciacion", "gasto", "deudora"),
+    # Servilletas, bolsas, papel: se compran con la mercancia pero no llevan
+    # stock (no hay forma de atarlos a lo vendido). Van a gasto del mes.
+    ("6050", "Desechables y suministros", "gasto", "deudora"),
 ]
 
 # Cuentas que viven dentro de un grupo pero con el saldo invertido a proposito:
@@ -158,6 +161,50 @@ CUENTA_POR_CATEGORIA_COMPRA = {
     "Activos": "1050",
     "Otros": "6010",
 }
+
+# Tipo de mercancia -> a que cuenta va al comprarla, dentro de una factura de
+# mercancia. Lo que no esta aqui va al inventario (1040). Es por TIPO y no
+# por mercancia: el usuario nunca elige cuenta.
+CUENTA_POR_TIPO_ARTICULO = {
+    "desechable": "6050",
+}
+
+
+def cuenta_de_articulo(ingrediente) -> str:
+    return CUENTA_POR_TIPO_ARTICULO.get(getattr(ingrediente, "tipo", "") or "", "1040")
+
+
+def porciones_de_factura(factura, base: float) -> list:
+    """`base` repartida entre las cuentas de los renglones de la factura.
+
+    Una factura de mercancia trae carne (1040) y servilletas (6050) juntas.
+    Se reparte en proporcion a lo que pesa cada renglon -el recargo y el
+    descuento caen parejo sobre todos, igual que en el costo- y el ultimo
+    se lleva el resto, para que la suma de exacta al centavo.
+    """
+    concepto = CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
+    items = list(factura.items or [])
+    bruto = sum(i.cantidad * i.costo_unitario for i in items)
+    if not items or bruto <= 0:
+        return [(concepto, round(base, 2))]
+    pesos = {}
+    for i in items:
+        cuenta = i.cuenta or concepto
+        pesos[cuenta] = pesos.get(cuenta, 0) + i.cantidad * i.costo_unitario
+    if len(pesos) == 1:
+        return [(next(iter(pesos)), round(base, 2))]
+    porciones = []
+    repartido = 0.0
+    cuentas = sorted(pesos)
+    for n, cuenta in enumerate(cuentas):
+        if n == len(cuentas) - 1:
+            monto = round(base - repartido, 2)
+        else:
+            monto = round(base * pesos[cuenta] / bruto, 2)
+            repartido += monto
+        porciones.append((cuenta, monto))
+    return porciones
+
 
 # Forma de pago de la factura de compra -> cuenta que sale (o la deuda que entra).
 CUENTA_PAGO_COMPRA = {
@@ -1173,7 +1220,7 @@ def registrar_reverso_declaracion_iva(db: Session, declaracion: models.Declaraci
 
 
 def registrar_nota_credito_compra(
-    db: Session, nota: models.NotaCreditoCompra, cuenta_concepto: str
+    db: Session, nota: models.NotaCreditoCompra, cuenta_concepto
 ) -> None:
     """Asiento espejo de la compra, por lo que el proveedor acredita.
 
@@ -1184,8 +1231,15 @@ def registrar_nota_credito_compra(
     """
     factura = nota.factura
     lineas = []
-    if nota.base_imponible > 0:
-        lineas.append((cuenta_concepto, 0.0, nota.base_imponible))
+    # Una cuenta, o la base ya repartida [(cuenta, monto)] cuando la factura
+    # mezclaba inventario y desechables.
+    if isinstance(cuenta_concepto, str):
+        porciones = [(cuenta_concepto, nota.base_imponible)]
+    else:
+        porciones = cuenta_concepto
+    for cuenta, monto in porciones:
+        if monto > 0:
+            lineas.append((cuenta, 0.0, round(monto, 2)))
     if nota.iva > 0:
         lineas.append(("1030", 0.0, nota.iva))
 
@@ -1254,10 +1308,9 @@ def registrar_compra_insumo(
 
 
 def registrar_factura_compra(db: Session, factura: models.FacturaCompra) -> None:
-    cuenta_concepto = CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
     cuenta_pago = CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010")
 
-    lineas = [(cuenta_concepto, factura.base_imponible, 0.0)]
+    lineas = [(cuenta, monto, 0.0) for cuenta, monto in porciones_de_factura(factura, factura.base_imponible) if monto]
     if factura.iva > 0:
         lineas.append(("1030", factura.iva, 0.0))
     # Lo retenido no se le paga al proveedor: queda debiendosele al SENIAT.
@@ -1455,6 +1508,21 @@ def registrar_merma(db: Session, ingrediente: models.Ingrediente, valor: float, 
         f"Merma de {ingrediente.nombre}",
         [("6020", valor, 0.0), ("1040", 0.0, valor)],
         origen="merma",
+        referencia_id=referencia_id,
+    )
+
+
+def registrar_carga_indirecto(db: Session, ingrediente, valor: float, referencia_id: int) -> None:
+    """Se cargo la freidora: el aceite sale del inventario y pasa a costo de
+    ventas. Es costo de producir (sin aceite no hay pastelito), no un gasto
+    general; por pieza se reparte en los reportes (costo indirecto)."""
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Carga a la freidora: {ingrediente.nombre}",
+        [("5010", valor, 0.0), ("1040", 0.0, valor)],
+        origen="carga_indirecto",
         referencia_id=referencia_id,
     )
 

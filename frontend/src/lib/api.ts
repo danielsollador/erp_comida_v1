@@ -95,9 +95,24 @@ import type {
   ReporteGuardado,
   ResultadoDinamico,
   ValorCampo,
+  Preparacion,
+  DatosPreparacion,
+  Produccion,
+  Disponibilidad,
+  CostoTeoricoFila,
+  CostoIndirecto,
+  CostoParaPrecios,
 } from './types'
 import { abrirCanalEnVivo, cabecerasApp, recogerToken, urlApi } from './plataforma'
 import { queryRango, type Rango } from './fechas'
+
+/** `?a=1&b=2` con lo que venga definido, o '' si nada. */
+function qs(params: Record<string, string | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v)
+  const t = q.toString()
+  return t ? `?${t}` : ''
+}
 
 /** `?desde=…&hasta=…` si hay rango; sin el, el endpoint usa su defecto. */
 const conRango = (r?: Rango, extra = '') => {
@@ -332,6 +347,12 @@ export const api = {
     req<Variante>(`/menu/variantes/${id}`, {
       method: 'PUT',
       body: JSON.stringify({ nombre, precio, activo }),
+    }),
+  // Solo la marca de fritura: el resto de la variante va tal cual estaba.
+  marcarFritura: (v: { id: number; nombre: string; precio: number; activo: boolean }, se_frie: boolean) =>
+    req<Variante>(`/menu/variantes/${v.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ nombre: v.nombre, precio: v.precio, activo: v.activo, se_frie }),
     }),
   eliminarVariante: (id: number) => req(`/menu/variantes/${id}`, { method: 'DELETE' }),
   reactivarVariante: (id: number) =>
@@ -620,6 +641,30 @@ export const api = {
     req<Ingrediente>('/inventario/ingredientes', { method: 'POST', body: JSON.stringify(i) }),
   actualizarIngrediente: (id: number, i: DatosIngrediente) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
+  // ── Preparaciones, produccion y control (docs/plan-compras-...) ──
+  listarPreparaciones: () => req<Preparacion[]>('/inventario/preparaciones'),
+  crearPreparacion: (d: DatosPreparacion) =>
+    req<Preparacion>('/inventario/preparaciones', { method: 'POST', body: JSON.stringify(d) }),
+  actualizarPreparacion: (id: number, d: DatosPreparacion) =>
+    req<Preparacion>(`/inventario/preparaciones/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  registrarProduccion: (d: { preparacion_id: number; cantidad: number; usado?: { ingrediente_id: number; cantidad: number }[]; nota?: string }) =>
+    req<Produccion>('/inventario/produccion', { method: 'POST', body: JSON.stringify(d) }),
+  listarProduccion: () => req<Produccion[]>('/inventario/produccion'),
+  preparacionesVencidas: () => req<Preparacion[]>('/inventario/preparaciones/vencidas'),
+  disponibilidad: () => req<Disponibilidad[]>('/inventario/preparaciones/disponibilidad'),
+  costoTeorico: (desde?: string, hasta?: string) =>
+    req<CostoTeoricoFila[]>(`/inventario/costo-teorico${qs({ desde, hasta })}`),
+  costosIndirectos: (desde?: string, hasta?: string) =>
+    req<CostoIndirecto[]>(`/inventario/indirectos${qs({ desde, hasta })}`),
+  cargarIndirecto: (id: number, cantidad: number, motivo = '') =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}/cargar-indirecto`, {
+      method: 'POST',
+      body: JSON.stringify({ cantidad, motivo }),
+    }),
+  productoDesdeMercancia: (id: number, d: { categoria_id: number; precio: number; nombre?: string }) =>
+    req<Producto>(`/menu/desde-mercancia/${id}`, { method: 'POST', body: JSON.stringify(d) }),
+  fijarCostoParaPrecios: (costo_para_precios: CostoParaPrecios) =>
+    req<Configuracion>('/config/costo-precios', { method: 'PUT', body: JSON.stringify({ costo_para_precios }) }),
   // `factor`: cuantas unidades de la que queda trae 1 de la que se va.
   fusionarIngrediente: (id: number, destino_id: number, factor = 1) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/fusionar`, {

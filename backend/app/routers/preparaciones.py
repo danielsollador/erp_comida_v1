@@ -1,0 +1,552 @@
+"""Preparaciones, produccion y los numeros que salen de ellas.
+
+Ver docs/plan-compras-inventario-produccion.md (fases 2 a 4). En corto:
+
+  - Una PREPARACION (el guiso de pollo) es una mercancia mas, de tipo
+    "preparacion", con su receta por tanda y lo que rinde. El pastelito dice
+    "50 g de guiso" y no "5 g de cebolla"; al venderlo, el sistema baja por
+    la receta hasta la materia prima (costeo.explotar).
+  - La PRODUCCION es opcional: solo las preparaciones en modo "producir"
+    registran tandas, con su rendimiento real.
+  - COSTO TEORICO vs REAL: lo que debio gastarse segun recetas contra lo que
+    dice el conteo. Es el control que no depende de que la cocina anote.
+  - COSTOS INDIRECTOS: el aceite de freir se carga a la freidora y se reparte
+    por pieza frita.
+"""
+
+import datetime
+from typing import Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from .. import contabilidad, costeo, kardex, models, schemas
+from ..database import get_db
+from ..texto import nombre_limpio
+from ..timeutils import ahora, hoy, inicio_del_dia
+from . import operadores
+from .inventario import _gemela, _ingrediente_para_actualizar
+
+router = APIRouter(prefix="/api/inventario", tags=["preparaciones"])
+
+# Lo que puede ir dentro de una preparacion: materia prima, empaques que la
+# acompañan y otras preparaciones (la salsa dentro del guiso). No la reventa
+# (se vende tal cual), ni los desechables (no llevan stock), ni el aceite de
+# freir (se reparte aparte, ver costo indirecto).
+TIPOS_EN_PREPARACION = {"insumo", "consumible", "preparacion"}
+
+# Lo que puede ir en la receta de un producto del menu.
+TIPOS_EN_RECETA = {"insumo", "reventa", "consumible", "preparacion"}
+
+
+def _rango(desde: Optional[datetime.date], hasta: Optional[datetime.date], dias: int = 30):
+    hasta = hasta or hoy()
+    desde = desde or (hasta - datetime.timedelta(days=dias))
+    return inicio_del_dia(desde), inicio_del_dia(hasta + datetime.timedelta(days=1))
+
+
+# ── Preparaciones ───────────────────────────────────────────────────────────
+
+
+def _contiene(ingrediente: models.Ingrediente, buscado_id: int, visitados=frozenset()) -> bool:
+    """Si `ingrediente` lleva (directa o indirectamente) a `buscado_id`."""
+    if ingrediente.id == buscado_id:
+        return True
+    if ingrediente.tipo != "preparacion" or ingrediente.id in visitados:
+        return False
+    dentro = visitados | {ingrediente.id}
+    return any(_contiene(linea.ingrediente, buscado_id, dentro) for linea in ingrediente.lineas_preparacion)
+
+
+def _a_schema(db: Session, prep: models.Ingrediente) -> schemas.Preparacion:
+    lineas = [
+        schemas.LineaPreparacion(
+            ingrediente_id=linea.ingrediente_id,
+            nombre=linea.ingrediente.nombre,
+            unidad=linea.ingrediente.unidad,
+            tipo=linea.ingrediente.tipo,
+            cantidad=linea.cantidad,
+            costo=round(linea.cantidad * models._costo_de(linea.ingrediente, frozenset({prep.id})), 4),
+        )
+        for linea in prep.lineas_preparacion
+    ]
+    costo_tanda = round(sum(linea.costo for linea in lineas), 4)
+    # Rendimiento real: lo que salio sobre lo esperado, en las ultimas 10.
+    tandas = (
+        db.query(models.Produccion)
+        .filter(models.Produccion.preparacion_id == prep.id, models.Produccion.cantidad_esperada > 0)
+        .order_by(models.Produccion.id.desc())
+        .limit(10)
+        .all()
+    )
+    salio = sum(t.cantidad for t in tandas)
+    esperado = sum(t.cantidad_esperada for t in tandas)
+    return schemas.Preparacion(
+        id=prep.id,
+        nombre=prep.nombre,
+        unidad=prep.unidad,
+        rinde=prep.rinde or 1,
+        modo_produccion=prep.modo_produccion or "descontar",
+        vida_util_horas=prep.vida_util_horas,
+        stock_actual=round(prep.stock_actual or 0, 4),
+        lineas=lineas,
+        costo_tanda=costo_tanda,
+        costo_unitario=round(costo_tanda / (prep.rinde or 1), 4),
+        rendimiento_real=round(salio / esperado, 4) if esperado else None,
+        tandas=len(tandas),
+    )
+
+
+def _validar_lineas(db: Session, prep_id: Optional[int], lineas: List[schemas.LineaPreparacionInput]):
+    if not lineas:
+        raise HTTPException(status_code=400, detail="La preparación necesita al menos un ingrediente.")
+    ids = [linea.ingrediente_id for linea in lineas]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=400, detail="Un ingrediente aparece dos veces: súmalo en una sola línea.")
+    for linea in lineas:
+        ing = db.get(models.Ingrediente, linea.ingrediente_id)
+        if ing is None or not ing.activo:
+            raise HTTPException(status_code=400, detail=f"La mercancía {linea.ingrediente_id} no existe o está archivada.")
+        if ing.tipo not in TIPOS_EN_PREPARACION or ing.es_indirecto:
+            raise HTTPException(
+                status_code=400,
+                detail=f"«{ing.nombre}» no puede ir dentro de una preparación: solo materia prima, empaques u otras preparaciones.",
+            )
+        if prep_id is not None and _contiene(ing, prep_id):
+            raise HTTPException(status_code=400, detail=f"«{ing.nombre}» ya lleva esta preparación: se contendría a sí misma.")
+
+
+def _guardar_lineas(prep: models.Ingrediente, lineas: List[schemas.LineaPreparacionInput]):
+    prep.lineas_preparacion.clear()
+    for linea in lineas:
+        prep.lineas_preparacion.append(
+            models.LineaPreparacion(ingrediente_id=linea.ingrediente_id, cantidad=linea.cantidad)
+        )
+
+
+@router.get("/preparaciones", response_model=List[schemas.Preparacion])
+def listar_preparaciones(db: Session = Depends(get_db)):
+    preps = (
+        db.query(models.Ingrediente)
+        .filter(models.Ingrediente.tipo == "preparacion", models.Ingrediente.activo.isnot(False))
+        .order_by(models.Ingrediente.nombre)
+        .all()
+    )
+    return [_a_schema(db, p) for p in preps]
+
+
+@router.post("/preparaciones", response_model=schemas.Preparacion)
+def crear_preparacion(body: schemas.PreparacionInput, db: Session = Depends(get_db)):
+    nombre = nombre_limpio(body.nombre)
+    if not nombre:
+        raise HTTPException(status_code=400, detail="La preparación necesita un nombre.")
+    gemela = _gemela(db, nombre)
+    if gemela:
+        raise HTTPException(status_code=409, detail=f"Ya existe «{gemela.nombre}». Ponle un nombre distinto.")
+    _validar_lineas(db, None, body.lineas)
+    prep = models.Ingrediente(
+        nombre=nombre,
+        unidad=body.unidad,
+        tipo="preparacion",
+        rinde=body.rinde,
+        modo_produccion=body.modo_produccion,
+        vida_util_horas=body.vida_util_horas,
+        stock_actual=0,
+        costo_unitario=0,
+        activo=True,
+    )
+    db.add(prep)
+    db.flush()
+    _guardar_lineas(prep, body.lineas)
+    db.flush()
+    prep.costo_unitario = round(prep.costo_estandar, 4)
+    db.commit()
+    db.refresh(prep)
+    return _a_schema(db, prep)
+
+
+@router.put("/preparaciones/{prep_id}", response_model=schemas.Preparacion)
+def actualizar_preparacion(prep_id: int, body: schemas.PreparacionInput, db: Session = Depends(get_db)):
+    """Cambiar la receta o lo que rinde. La cocina afina estos numeros con el
+    tiempo: el sistema escala con lo ultimo que se guardo."""
+    prep = db.get(models.Ingrediente, prep_id)
+    if prep is None or prep.tipo != "preparacion":
+        raise HTTPException(status_code=404, detail="Preparación no encontrada")
+    nombre = nombre_limpio(body.nombre)
+    gemela = _gemela(db, nombre, salvo_id=prep_id)
+    if gemela:
+        raise HTTPException(status_code=409, detail=f"Ya existe «{gemela.nombre}». Ponle un nombre distinto.")
+    if prep.modo_produccion == "producir" and body.modo_produccion == "descontar" and (prep.stock_actual or 0) > 0.0001:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Hay {prep.stock_actual:g} {prep.unidad} producidos: úsalos o anótalos como merma antes de dejar de producirla.",
+        )
+    _validar_lineas(db, prep_id, body.lineas)
+    prep.nombre = nombre
+    prep.unidad = body.unidad
+    prep.rinde = body.rinde
+    prep.modo_produccion = body.modo_produccion
+    prep.vida_util_horas = body.vida_util_horas
+    _guardar_lineas(prep, body.lineas)
+    db.flush()
+    if prep.modo_produccion != "producir" or (prep.stock_actual or 0) <= 0:
+        prep.costo_unitario = round(prep.costo_estandar, 4)
+    db.commit()
+    db.refresh(prep)
+    return _a_schema(db, prep)
+
+
+# ── Produccion ──────────────────────────────────────────────────────────────
+
+
+def _produccion_a_schema(p: models.Produccion) -> schemas.ProduccionOut:
+    return schemas.ProduccionOut(
+        id=p.id,
+        fecha=p.fecha,
+        preparacion_id=p.preparacion_id,
+        preparacion=p.preparacion.nombre,
+        unidad=p.preparacion.unidad,
+        cantidad=p.cantidad,
+        cantidad_esperada=p.cantidad_esperada,
+        rendimiento_real=p.rendimiento_real,
+        costo_total=p.costo_total,
+    )
+
+
+@router.post("/produccion", response_model=schemas.ProduccionOut)
+def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Session = Depends(get_db)):
+    """Una tanda: sale lo que se uso, entra lo que salio.
+
+    Lo que se uso, si no se dice, es la receta escalada a lo que salio (como
+    si hubiera rendido exacto). Si se dice ("use 3 kg de pollo"), se compara
+    lo que salio con lo que la receta esperaba de eso: ese es el rendimiento
+    real que despues sugiere corregir el estandar.
+
+    El valor no cambia, se transforma: lo que sale del crudo entra en la
+    preparacion al mismo costo total. Las dos viven en el inventario (1040):
+    no hay asiento. Si el crudo no alcanza se registra igual y queda en
+    negativo: el conteo lo corrige, la cocina no se traba.
+    """
+    quien = operadores.del_turno(db, request)
+    operador_id = quien.id if quien else None
+    with costeo.bloqueo_inventario():
+        prep = _ingrediente_para_actualizar(db, body.preparacion_id)
+        if prep.tipo != "preparacion":
+            raise HTTPException(status_code=400, detail="Solo se producen preparaciones.")
+        if prep.modo_produccion != "producir":
+            raise HTTPException(
+                status_code=400,
+                detail=f"«{prep.nombre}» se descuenta del crudo al vender. Para anotar tandas, cámbiala a «se produce».",
+            )
+        receta = {linea.ingrediente_id: linea for linea in prep.lineas_preparacion}
+        if not receta:
+            raise HTTPException(status_code=400, detail="Esta preparación no tiene receta todavía.")
+        rinde = prep.rinde or 1
+
+        if body.usado:
+            usado = {u.ingrediente_id: u.cantidad for u in body.usado}
+        else:
+            usado = {iid: linea.cantidad * body.cantidad / rinde for iid, linea in receta.items()}
+
+        # Lo que se esperaba sacar con lo usado: por el ingrediente que mas
+        # pesa en el costo de la receta (en el guiso, el pollo). Promediar
+        # todos mezclaria el pollo con la sal.
+        principal = max(
+            receta.values(),
+            key=lambda linea: linea.cantidad * models._costo_de(linea.ingrediente, frozenset({prep.id})),
+        )
+        escala = usado.get(principal.ingrediente_id, 0) / principal.cantidad if principal.cantidad else 0
+        esperado = round(escala * rinde, 4)
+
+        nota = f"Producción de {prep.nombre}: {body.cantidad:g} {prep.unidad}"
+        # Todos primero y despues se mueven: buscar uno a uno refresca la
+        # sesion y perderia lo que ya se le saco al anterior.
+        usados = []
+        for iid, cantidad in usado.items():
+            if cantidad > 0:
+                usados.append((_ingrediente_para_actualizar(db, iid), cantidad))
+        prep = db.get(models.Ingrediente, prep.id)
+        consumo = {}
+        for ing, cantidad in usados:
+            # Lo usado puede ser otra preparacion que se descuenta del crudo:
+            # entonces sale su materia prima.
+            for hoja, q in costeo.explotar(ing, cantidad).items():
+                consumo[hoja] = consumo.get(hoja, 0) + q
+        costo_total = 0.0
+        for hoja, q in consumo.items():
+            costo = hoja.costo_unitario or 0
+            kardex.anotar(
+                db, hoja, -q, kardex.PRODUCCION, costo_unitario=costo,
+                origen="produccion", referencia_id=prep.id, nota=nota, operador_id=operador_id,
+            )
+            costo_total += q * costo
+
+        costo_total = round(costo_total, 4)
+        produccion = models.Produccion(
+            preparacion_id=prep.id,
+            cantidad=body.cantidad,
+            cantidad_esperada=esperado,
+            costo_total=costo_total,
+            operador_id=operador_id,
+            nota=body.nota,
+        )
+        db.add(produccion)
+        db.flush()
+        costeo.registrar_entrada(
+            prep, body.cantidad, costo_total / body.cantidad, db,
+            origen="produccion", referencia_id=produccion.id, nota=nota, tipo=kardex.PRODUCIDO,
+        )
+        db.commit()
+        db.refresh(produccion)
+        return _produccion_a_schema(produccion)
+
+
+@router.get("/produccion", response_model=List[schemas.ProduccionOut])
+def listar_produccion(
+    desde: Optional[datetime.date] = Query(None),
+    hasta: Optional[datetime.date] = Query(None),
+    db: Session = Depends(get_db),
+):
+    inicio, fin = _rango(desde, hasta, dias=7)
+    filas = (
+        db.query(models.Produccion)
+        .filter(models.Produccion.fecha >= inicio, models.Produccion.fecha < fin)
+        .order_by(models.Produccion.id.desc())
+        .limit(200)
+        .all()
+    )
+    return [_produccion_a_schema(p) for p in filas]
+
+
+@router.get("/preparaciones/vencidas", response_model=List[schemas.Preparacion])
+def preparaciones_vencidas(db: Session = Depends(get_db)):
+    """Las preparaciones producidas que ya pasaron su vida util y tienen
+    existencia: lo que sobro y hay que botar (o confirmar que se uso).
+
+    Se mira la ultima tanda: si salio hace mas horas que su vida util, lo que
+    queda es de esa tanda o de antes.
+    """
+    ahora_ = ahora()
+    vencidas = []
+    for prep in (
+        db.query(models.Ingrediente)
+        .filter(
+            models.Ingrediente.tipo == "preparacion",
+            models.Ingrediente.modo_produccion == "producir",
+            models.Ingrediente.vida_util_horas.isnot(None),
+            models.Ingrediente.stock_actual > 0,
+        )
+        .all()
+    ):
+        ultima = db.query(func.max(models.Produccion.fecha)).filter(models.Produccion.preparacion_id == prep.id).scalar()
+        if ultima is None or ultima + datetime.timedelta(hours=prep.vida_util_horas) <= ahora_:
+            vencidas.append(_a_schema(db, prep))
+    return vencidas
+
+
+# ── Disponibilidad ──────────────────────────────────────────────────────────
+
+
+@router.get("/preparaciones/disponibilidad", response_model=List[schemas.Disponibilidad])
+def disponibilidad(db: Session = Depends(get_db)):
+    """Cuanto se podria hacer de cada preparacion con el crudo que hay.
+
+    El pollo es UNO: si alcanza para 11 kg de guiso de pollo o para 9 de
+    ranchero, no alcanza para los dos. Cada fila dice que materia prima pone
+    el limite y que otras preparaciones compiten por ella, para que nadie lea
+    los potenciales como si se sumaran.
+    """
+    preps = (
+        db.query(models.Ingrediente)
+        .filter(models.Ingrediente.tipo == "preparacion", models.Ingrediente.activo.isnot(False))
+        .order_by(models.Ingrediente.nombre)
+        .all()
+    )
+    hojas_de: Dict[int, Dict[models.Ingrediente, float]] = {
+        p.id: costeo.explotar(p, 1.0, usar_stock=False) for p in preps
+    }
+    filas = []
+    for prep in preps:
+        hojas = {h: q for h, q in hojas_de[prep.id].items() if q > 0 and h.id != prep.id}
+        potencial, limita = None, None
+        for hoja, por_unidad in hojas.items():
+            alcanza = max(hoja.stock_actual or 0, 0) / por_unidad
+            if potencial is None or alcanza < potencial:
+                potencial, limita = alcanza, hoja
+        comparte = []
+        if limita is not None:
+            comparte = [
+                otra.nombre
+                for otra in preps
+                if otra.id != prep.id and any(h.id == limita.id for h in hojas_de[otra.id])
+            ]
+        filas.append(
+            schemas.Disponibilidad(
+                preparacion_id=prep.id,
+                nombre=prep.nombre,
+                unidad=prep.unidad,
+                stock_actual=round(prep.stock_actual or 0, 4),
+                potencial=round(potencial, 3) if potencial is not None else None,
+                limita=limita.nombre if limita is not None else None,
+                comparte_con=comparte,
+            )
+        )
+    return filas
+
+
+# ── Costo teorico vs real ───────────────────────────────────────────────────
+
+
+@router.get("/costo-teorico", response_model=List[schemas.CostoTeoricoFila])
+def costo_teorico(
+    desde: Optional[datetime.date] = Query(None),
+    hasta: Optional[datetime.date] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Lo que debio gastarse segun las recetas, contra lo que dice el conteo.
+
+    Es LA metrica de cualquier restaurante (*food cost* teorico vs real) y
+    la que no depende de que la cocina anote nada: el kardex ya sabe lo que
+    salio por ventas y produccion (lo teorico), lo que se anoto como merma, y
+    lo que el conteo fisico encontro de menos o de mas (la diferencia). Una
+    diferencia grande en el pollo es porcion generosa, merma sin anotar o
+    algo peor, y se ve por mercancia y en plata.
+    """
+    inicio, fin = _rango(desde, hasta)
+    teoricos = [kardex.VENTA, kardex.REVERSO, kardex.PRODUCCION, kardex.CONSUMO_PERSONAL, kardex.CARGA_INDIRECTO]
+    filas = (
+        db.query(
+            models.MovimientoInventario.ingrediente_id,
+            models.MovimientoInventario.tipo,
+            func.sum(models.MovimientoInventario.cantidad),
+            func.sum(models.MovimientoInventario.valor),
+        )
+        .filter(
+            models.MovimientoInventario.fecha >= inicio,
+            models.MovimientoInventario.fecha < fin,
+            # La existencia que se declaro al dar de alta (o al estrenar el
+            # kardex) tambien es un "ajuste", pero no es lo que encontro un
+            # conteo: no es diferencia de nada.
+            models.MovimientoInventario.origen.notin_(["alta_insumo", "apertura_kardex"]),
+        )
+        .group_by(models.MovimientoInventario.ingrediente_id, models.MovimientoInventario.tipo)
+        .all()
+    )
+    por: Dict[int, Dict[str, list]] = {}
+    for iid, tipo, cantidad, valor in filas:
+        por.setdefault(iid, {})[tipo] = [cantidad or 0, valor or 0]
+    salida = []
+    for iid, tipos in por.items():
+        ing = db.get(models.Ingrediente, iid)
+        if ing is None:
+            continue
+        teorico = -sum(tipos.get(t, [0, 0])[0] for t in teoricos)
+        valor_teorico = -sum(tipos.get(t, [0, 0])[1] for t in teoricos)
+        mermas = -tipos.get(kardex.MERMA, [0, 0])[0]
+        dif, valor_dif = tipos.get(kardex.AJUSTE, [0, 0])
+        if not teorico and not mermas and not dif:
+            continue
+        salida.append(
+            schemas.CostoTeoricoFila(
+                ingrediente_id=iid,
+                nombre=ing.nombre,
+                unidad=ing.unidad,
+                teorico=round(teorico, 4),
+                mermas=round(mermas, 4),
+                diferencia_conteo=round(dif, 4),
+                valor_teorico=round(valor_teorico, 2),
+                valor_diferencia=round(valor_dif, 2),
+                pct_desvio=round(-dif / teorico * 100, 1) if teorico > 0 else None,
+            )
+        )
+    # Primero lo que mas plata se fue sin explicacion.
+    salida.sort(key=lambda f: f.valor_diferencia)
+    return salida
+
+
+# ── Costos indirectos (aceite de freir) ─────────────────────────────────────
+
+
+@router.post("/ingredientes/{ingrediente_id}/cargar-indirecto", response_model=schemas.Ingrediente)
+def cargar_indirecto(
+    ingrediente_id: int, body: schemas.MermaRequest, request: Request, db: Session = Depends(get_db)
+):
+    """Se lleno la freidora con 5 L: salen del deposito y pasan a costo.
+
+    Nadie sabe cuanto aceite lleva un pastelito, y no hace falta: con lo que
+    se carga en el mes y las piezas fritas que se vendieron, el reporte
+    calcula el costo por pieza (ver `costos_indirectos`).
+    """
+    if body.cantidad <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero")
+    quien = operadores.del_turno(db, request)
+    with costeo.bloqueo_inventario():
+        ing = _ingrediente_para_actualizar(db, ingrediente_id)
+        if not ing.es_indirecto:
+            raise HTTPException(status_code=400, detail=f"«{ing.nombre}» no está marcado como costo indirecto.")
+        valor = round(body.cantidad * (ing.costo_unitario or 0), 2)
+        kardex.anotar(
+            db, ing, -body.cantidad, kardex.CARGA_INDIRECTO,
+            origen="carga_indirecto", nota=body.motivo or "Carga a la freidora",
+            operador_id=quien.id if quien else None,
+        )
+        contabilidad.registrar_carga_indirecto(db, ing, valor, ing.id)
+        db.commit()
+        db.refresh(ing)
+        return ing
+
+
+def costo_indirecto_por_pieza(db: Session, desde: datetime.datetime, hasta: datetime.datetime) -> List[schemas.CostoIndirecto]:
+    piezas = (
+        db.query(func.sum(models.PedidoItem.cantidad))
+        .join(models.Pedido, models.Pedido.id == models.PedidoItem.pedido_id)
+        .join(models.Variante, models.Variante.id == models.PedidoItem.variante_id)
+        .filter(
+            models.Pedido.estado == "pagado",
+            models.Pedido.cerrado_en >= desde,
+            models.Pedido.cerrado_en < hasta,
+            models.Variante.se_frie.is_(True),
+        )
+        .scalar()
+    ) or 0
+    salida = []
+    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.es_indirecto.is_(True)).all():
+        cantidad, valor = (
+            db.query(func.sum(models.MovimientoInventario.cantidad), func.sum(models.MovimientoInventario.valor))
+            .filter(
+                models.MovimientoInventario.ingrediente_id == ing.id,
+                models.MovimientoInventario.tipo == kardex.CARGA_INDIRECTO,
+                models.MovimientoInventario.fecha >= desde,
+                models.MovimientoInventario.fecha < hasta,
+            )
+            .one()
+        )
+        cargado = -(cantidad or 0)
+        valor = -(valor or 0)
+        salida.append(
+            schemas.CostoIndirecto(
+                ingrediente_id=ing.id,
+                nombre=ing.nombre,
+                unidad=ing.unidad,
+                cargado=round(cargado, 4),
+                valor=round(valor, 2),
+                piezas=piezas,
+                por_pieza=round(valor / piezas, 4) if piezas else None,
+                cantidad_por_pieza=round(cargado / piezas, 5) if piezas else None,
+            )
+        )
+    return salida
+
+
+@router.get("/indirectos", response_model=List[schemas.CostoIndirecto])
+def costos_indirectos(
+    desde: Optional[datetime.date] = Query(None),
+    hasta: Optional[datetime.date] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """El aceite de freir repartido por pieza frita, en el periodo (30 dias
+    por defecto). Es el prorrateo por volumen de produccion que se usa en la
+    industria para costos indirectos de fabricacion."""
+    inicio, fin = _rango(desde, hasta)
+    return costo_indirecto_por_pieza(db, inicio, fin)

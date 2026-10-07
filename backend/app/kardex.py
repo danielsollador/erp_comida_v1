@@ -52,6 +52,9 @@ CONSUMO_PERSONAL = "consumo_personal"
 DEVOLUCION_PROVEEDOR = "devolucion_proveedor"
 REVERSO = "reverso"                  # se deshizo algo que se habia anotado mal
 FUSION = "fusion"                    # dos fichas eran la misma mercancia: el stock pasa a la que queda
+PRODUCCION = "produccion"            # salio materia prima para hacer una preparacion
+PRODUCIDO = "producido"              # entro la preparacion que salio de esa tanda
+CARGA_INDIRECTO = "carga_indirecto"  # se cargo la freidora: el aceite pasa a costo
 
 ETIQUETAS = {
     COMPRA: "Compra",
@@ -63,7 +66,15 @@ ETIQUETAS = {
     DEVOLUCION_PROVEEDOR: "Devolucion a proveedor",
     REVERSO: "Reverso",
     FUSION: "Fusión de fichas",
+    PRODUCCION: "Usado en producción",
+    PRODUCIDO: "Producido",
+    CARGA_INDIRECTO: "Cargado a la freidora",
 }
+
+# Lo que de verdad se gasto: lo vendido, lo botado, lo que comio el personal,
+# lo que se uso para producir y lo que se cargo a la freidora. No entran los
+# ajustes de conteo (corregir el sistema no es gastar) ni las compras.
+SALIDAS_DE_CONSUMO = [VENTA, MERMA, CONSUMO_PERSONAL, PRODUCCION, CARGA_INDIRECTO]
 
 
 def anotar(
@@ -276,7 +287,7 @@ def consumo_por_dia_de_todos(db: Session, desde, hasta) -> dict:
             func.sum(models.MovimientoInventario.cantidad),
         )
         .filter(
-            models.MovimientoInventario.tipo.in_([VENTA, MERMA, CONSUMO_PERSONAL]),
+            models.MovimientoInventario.tipo.in_(SALIDAS_DE_CONSUMO),
             models.MovimientoInventario.fecha >= desde,
             models.MovimientoInventario.fecha <= hasta,
         )
@@ -299,7 +310,7 @@ def consumo_por_dia(db: Session, ingrediente_id: int, desde, hasta) -> float:
         db.query(func.sum(models.MovimientoInventario.cantidad))
         .filter(
             models.MovimientoInventario.ingrediente_id == ingrediente_id,
-            models.MovimientoInventario.tipo.in_([VENTA, MERMA, CONSUMO_PERSONAL]),
+            models.MovimientoInventario.tipo.in_(SALIDAS_DE_CONSUMO),
             models.MovimientoInventario.fecha >= desde,
             models.MovimientoInventario.fecha <= hasta,
         )

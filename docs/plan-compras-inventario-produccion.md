@@ -1,6 +1,6 @@
 # Plan: compras → inventario → producción → venta
 
-**Estado:** propuesta para revisar (7-oct-2026). No hay nada implementado ni desplegado.
+**Estado (7-oct-2026):** fases 0 a 4 implementadas en la rama `rediseno-flujo`. **No desplegado.** Ver la sección 10 para lo hecho, las decisiones tomadas y lo que queda.
 **Para:** Daniel, Leider, Leidy.
 
 ---
@@ -170,3 +170,35 @@ Para que no quede a la medida, se hace genérico desde el inicio: ubicaciones, v
 2. ¿Producción opcional (descontar del crudo por defecto)?
 3. Cuando el crudo no alcanza: ¿bloquear la venta o solo avisar? (Hoy se permite vender en negativo.)
 4. ¿Las subcuentas 1041–1043 / 5011–5013 y la 6050, o mantener 1040/5010 con desglose solo en reportes?
+
+---
+
+## 10. Implementación (rama `rediseno-flujo`, sin desplegar)
+
+### Decisiones tomadas para avanzar
+Se pueden cambiar; están aisladas en el código.
+
+1. **Costo:** el costo contable sigue siendo el promedio ponderado. El costo para fijar precios es configurable y por defecto usa el último costo (Inventario → Control).
+2. **Producción opcional:** cada preparación elige su modo. Por defecto «se descuenta del crudo» y nadie anota nada.
+3. **Crudo insuficiente:** se mantiene lo de hoy. La venta respeta el interruptor «vender sin inventario» y la producción nunca se bloquea: queda en negativo y el conteo lo corrige.
+4. **Cuentas:** NO se partió la 1040 ni la 5010. Partirlas tocaba todos los asientos y reportes que existen. Se agregó solo la **6050 Desechables y suministros**. El desglose por tipo se puede sacar del kardex en un reporte.
+
+### Qué hay por fase
+| Fase | Backend | Pantalla |
+|---|---|---|
+| 0 | Bloqueo de nombres iguales; limpieza de palabras repetidas; `POST /inventario/ingredientes/{id}/fusionar` | Ventana «Mercancía nueva» con parecidas; «fusionarlas» en la ficha |
+| 1 | Tipos `insumo` (materia prima), `reventa`, `consumible`, `desechable`, `preparacion`. Cada renglón de factura guarda su cuenta (`TRX411.cuenta`): desechable → 6050 sin stock. Notas de crédito repartidas igual. `POST /menu/desde-mercancia/{id}` | 4 tipos en la ventana nueva y en la ficha; «Venderla en el menú» en la reventa; las recetas no ofrecen desechables ni aceite |
+| 2 | `REL311_INV_PREPARACION_DET` (receta por tanda) + `rinde`. Costo en cadena con protección contra ciclos (`Ingrediente.costo_efectivo`). La venta baja hasta la materia prima (`costeo.explotar`) | Inventario → Preparaciones: editor con escalador «para hacer X kg» |
+| 3 | `TRX360_INV_PRODUCCION`; `POST /inventario/produccion` (sale el crudo y entra la preparación al mismo valor; guarda el rendimiento real); lo producido se vende primero y lo que falta sale del crudo; `/preparaciones/vencidas`; `/preparaciones/disponibilidad` con insumos compartidos | Anotar tanda; botar lo vencido; «usar el rendimiento real»; cuánto podrías hacer hoy |
+| 4 | `/inventario/costo-teorico`; aceite: `es_indirecto` + `cargar-indirecto` (5010/1040) + `/inventario/indirectos` por pieza (`Variante.se_frie`); `Configuracion.costo_para_precios`; el costo del menú incluye el indirecto y el costo de reposición de las preparaciones | Inventario → Control: teórico vs real, aceite por pieza y qué se fríe, método de costo para precios |
+
+### Límites conocidos
+- **Editar una comanda** devuelve y saca por la receta estándar, aunque la preparación se produzca. Es una aproximación que queda documentada en `pedidos.py`.
+- **Venta que mezcla lo producido y el crudo:** el costo congelado en la venta usa el promedio de lo producido mientras haya existencia. Si una venta toma parte de lo producido y parte del crudo, el costo puede diferir unos centavos del valor del kardex.
+- **Pruebas en pantalla:** las pantallas nuevas no se recorrieron en el navegador. Hace falta revisarlas en local antes de desplegar.
+
+### Lo que queda (fase 5 en adelante)
+- **Ubicaciones de stock** (depósito / cocina / barra / sede). Toca todos los caminos del stock, así que va en su propia fase.
+- Modificadores con receta («extra queso»), lotes y vencimiento.
+- Partir 1040 y 5010 en subcuentas por tipo, si el contador lo pide.
+- Al desplegar: fusionar los duplicados reales de producción (las 3 cremas de leche; MASA / Disco (Masa)) y clasificar los artículos existentes con los tipos nuevos.

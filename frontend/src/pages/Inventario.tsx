@@ -5,6 +5,10 @@ import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
 import FusionarMercancia from '../components/FusionarMercancia'
 import { parecidos } from '../lib/parecidos'
+import { TIPOS_DE_COMPRA } from '../lib/tiposArticulo'
+import VenderEnMenu from '../components/VenderEnMenu'
+import Preparaciones from './partes/inventario/Preparaciones'
+import Control from './partes/inventario/Control'
 import { useAltoRestante } from '../lib/altoRestante'
 import { CampoCantidad, CasillaConUnidad } from '../components/Cantidad'
 import { convertirTexto, factorEntre } from '../lib/unidades'
@@ -38,6 +42,7 @@ import type {
   RenglonPorTipo,
   CategoriaInsumo,
   InsumoDelDeposito,
+  TipoArticulo,
 } from '../lib/types'
 
 /**
@@ -125,6 +130,10 @@ const SECCIONES = [
   { id: 'insumos', texto: 'Mercancía' },
   { id: 'comprar', texto: 'Qué comprar' },
   { id: 'perdidas', texto: 'Pérdidas' },
+  // Lo que la cocina hace con materia prima (guiso, mechada) y el control
+  // del deposito: ver docs/plan-compras-inventario-produccion.md.
+  { id: 'preparaciones', texto: 'Preparaciones' },
+  { id: 'control', texto: 'Control' },
   { id: 'categorias', texto: 'Categorías' },
 ]
 // Las que se ven arriba. "Categorias" sigue existiendo (`/inventario/categorias`) pero
@@ -855,6 +864,9 @@ export default function Inventario() {
           />
         )}
 
+        {seccion === 'preparaciones' && <Preparaciones ingredientes={ingredientes} onCambio={cargar} />}
+        {seccion === 'control' && <Control />}
+
         {seccion === 'perdidas' && (
           <>
         {/* LADO A LADO Y DENTRO DE LA PANTALLA desde 1024 px: las mermas a la
@@ -1033,7 +1045,7 @@ export default function Inventario() {
           }}
           acciones={{ comprar, merma, consumoPersonal, contar, archivar: (ing) => archivar(ing, false) }}
           todas={ingredientes}
-          onFusionada={(destino) => {
+          onRecargar={(destino) => {
             cargar()
             setFicha(destino.id)
           }}
@@ -1234,14 +1246,14 @@ function FichaInsumo({
   onGuardar,
   acciones,
   todas,
-  onFusionada,
+  onRecargar,
 }: {
   ing: Ingrediente | null
   mermas: Merma[]
   /** Todas las mercancías: para avisar de las parecidas y para fusionar. */
   todas: Ingrediente[]
   /** Se fundió en otra: se abre la que quedó. */
-  onFusionada: (destino: Ingrediente) => void
+  onRecargar: (destino: Ingrediente) => void
   /** Los cajones del deposito, para elegir en cual va esta mercancia. */
   categorias: CategoriaInsumo[]
   /** Crear uno nuevo sin salir de la ficha. Devuelve su id. */
@@ -1261,7 +1273,8 @@ function FichaInsumo({
   const dialogo = useDialogo()
   const [f, setF] = useState(() => ({
     nombre: ing?.nombre ?? '',
-    tipo: (ing?.tipo ?? 'insumo') as 'insumo' | 'reventa',
+    tipo: (ing?.tipo ?? 'insumo') as TipoArticulo,
+    es_indirecto: ing?.es_indirecto ?? false,
     categoria_id: ing?.categoria_id ?? null,
     unidad: ing?.unidad ?? 'kg',
     stock_actual: '',
@@ -1274,6 +1287,28 @@ function FichaInsumo({
   const [aviso, setAviso] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [fusionando, setFusionando] = useState(false)
+  const [alMenu, setAlMenu] = useState(false)
+
+  // El aceite no va en recetas: se anota cuando se carga la freidora, y el
+  // reporte lo reparte por pieza frita.
+  async function cargarFreidora() {
+    if (!ing) return
+    const cantidadCargada = await dialogo.pedirNumero({
+      titulo: `Cargar ${ing.nombre} a la freidora`,
+      etiqueta: 'Cuánto se cargó',
+      sufijo: ing.unidad,
+      ayuda: 'Sale del depósito y pasa a costo. Por pieza se reparte solo, con lo que se fríe en el mes.',
+      min: 0.001,
+    })
+    if (!cantidadCargada) return
+    try {
+      await api.cargarIndirecto(ing.id, cantidadCargada, 'Carga a la freidora')
+      setAviso(`Cargado: ${cantidadCargada} ${ing.unidad}.`)
+      onRecargar(ing)
+    } catch (e) {
+      setAviso(e instanceof Error ? e.message : 'No se pudo anotar')
+    }
+  }
   // Al crear: las que ya existen y se le parecen. "Crema de leche lata
   // grande" junto a "Crema de Leche Lata" nacio por no verlas.
   const similares = useMemo(
@@ -1349,7 +1384,8 @@ function FichaInsumo({
     const minimo = f.stock_minimo === '' ? 0 : num(f.stock_minimo)
     const objetivo = f.stock_objetivo === '' ? 0 : num(f.stock_objetivo)
     const costo = f.costo_unitario === '' ? 0 : num(f.costo_unitario)
-    const rendimiento = f.tipo === 'reventa' ? 100 : num(f.rendimiento_pct)
+    // Solo la materia prima tiene merma de cocina que medir.
+    const rendimiento = f.tipo === 'insumo' ? num(f.rendimiento_pct) : 100
     const inicial = f.stock_actual === '' ? 0 : num(f.stock_actual)
     if ([minimo, objetivo, costo, inicial].some((n) => !Number.isFinite(n) || n < 0))
       return setAviso('Las cantidades y el costo tienen que ser números, y no negativos.')
@@ -1367,7 +1403,8 @@ function FichaInsumo({
       rendimiento_pct: rendimiento,
       activo: ing?.activo !== false,
       exento: f.exento,
-      ...(nuevo ? { stock_actual: inicial } : {}),
+      es_indirecto: f.tipo === 'insumo' && f.es_indirecto,
+      ...(nuevo ? { stock_actual: f.tipo === 'desechable' ? 0 : inicial } : {}),
     })
     setGuardando(false)
   }
@@ -1405,6 +1442,7 @@ function FichaInsumo({
         ))}
         <option value="nueva">+ Nueva categoría…</option>
       </Selector>
+      {f.tipo !== 'desechable' && (<>
       <CampoCantidad
         etiqueta="Avísame cuando quede menos de"
         unidad={f.unidad}
@@ -1419,7 +1457,8 @@ function FichaInsumo({
         alCambiar={(v) => poner('stock_objetivo', v)}
         ayuda={ejemploIdeal(num(f.stock_objetivo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
       />
-      {f.tipo !== 'reventa' && (
+      </>)}
+      {f.tipo === 'insumo' && (
         <Campo
           etiqueta="Lo que se aprovecha (%)"
           inputMode="decimal"
@@ -1440,6 +1479,22 @@ function FichaInsumo({
           <span className="block text-xs text-neutral-500">Harina, arroz, carne y la mayoría de los alimentos básicos.</span>
         </span>
       </label>
+      {f.tipo === 'insumo' && (
+        <label className="flex items-start gap-2.5 text-sm sm:col-span-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={f.es_indirecto}
+            onChange={(e) => setF((a) => ({ ...a, es_indirecto: e.target.checked }))}
+            className="mt-0.5"
+          />
+          <span>
+            Costo indirecto, como el aceite de freír
+            <span className="block text-xs text-neutral-500">
+              No va en recetas: se anota cuando se carga la freidora y se reparte entre lo que se fríe.
+            </span>
+          </span>
+        </label>
+      )}
     </>
   )
 
@@ -1461,12 +1516,9 @@ function FichaInsumo({
           </p>
         )}
         <div className="sm:col-span-2">
-          <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Para qué es</span>
+          <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Qué es</span>
           <div className="grid grid-cols-2 gap-2">
-            {[
-              { valor: 'insumo' as const, texto: 'Se usa en recetas', detalle: 'carne, harina, aceite' },
-              { valor: 'reventa' as const, texto: 'Se vende tal cual', detalle: 'refresco, chuchería' },
-            ].map((o) => (
+            {(f.tipo === 'preparacion' ? [{ valor: 'preparacion' as const, texto: 'Preparación', detalle: 'se edita en Preparaciones' }] : TIPOS_DE_COMPRA).map((o) => (
               <button
                 key={o.valor}
                 type="button"
@@ -1500,7 +1552,7 @@ function FichaInsumo({
             ))}
           </div>
         </div>
-        {nuevo && (
+        {nuevo && f.tipo !== 'desechable' && (
           <CampoCantidad
             etiqueta="Cuánto hay hoy"
             unidad={f.unidad}
@@ -1541,6 +1593,16 @@ function FichaInsumo({
 
       {!nuevo && (
         <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {ing.tipo === 'reventa' && (
+            <button type="button" onClick={() => setAlMenu(true)} className="text-sm text-acento-700 font-medium hover:underline">
+              Venderla en el menú
+            </button>
+          )}
+          {ing.es_indirecto && (
+            <button type="button" onClick={() => void cargarFreidora()} className="text-sm text-acento-700 font-medium hover:underline">
+              Cargar a la freidora
+            </button>
+          )}
           <button type="button" onClick={() => setFusionando(true)} className="text-sm text-neutral-600 hover:underline">
             Es la misma que otra: fusionarlas
           </button>
@@ -1553,6 +1615,16 @@ function FichaInsumo({
           </button>
         </div>
       )}
+      {alMenu && ing && (
+        <VenderEnMenu
+          mercancia={ing}
+          onCerrar={() => setAlMenu(false)}
+          onHecho={() => {
+            setAlMenu(false)
+            setAviso(`${ing.nombre} ya está en el menú: venderla descuenta su existencia.`)
+          }}
+        />
+      )}
       {fusionando && ing && (
         <FusionarMercancia
           origen={ing}
@@ -1560,7 +1632,7 @@ function FichaInsumo({
           onCerrar={() => setFusionando(false)}
           onHecho={(destino) => {
             setFusionando(false)
-            onFusionada(destino)
+            onRecargar(destino)
           }}
         />
       )}

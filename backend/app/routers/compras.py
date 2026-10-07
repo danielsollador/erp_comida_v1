@@ -322,8 +322,15 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
                 # es lo que hay que poder cotejar con la factura del proveedor.
                 costo_unitario=item.costo_unitario,
                 exento=_exento_de(item, ingredientes),
+                # La cuenta la decide el tipo de la mercancia: la carne al
+                # inventario, las servilletas a gasto. Una factura trae las dos.
+                cuenta=contabilidad.cuenta_de_articulo(ingrediente),
             )
         )
+        # Un desechable no lleva stock: no hay forma de atarlo a lo vendido
+        # (un pastelito puede llevarse 40 servilletas). Va entero a gasto.
+        if ingrediente.tipo == "desechable":
+            continue
         # El costo del insumo se promedia con lo que ya habia - mismo motor
         # que "Registrar compra" en Inventario (ver costeo.py), para que las
         # dos vias de cargar una compra lleguen siempre al mismo numero. Aca si
@@ -464,6 +471,7 @@ def crear_nota_credito(
         db.flush()
 
         for ingrediente, cantidad, costo in lineas:
+            es_desechable = ingrediente.tipo == "desechable"
             db.add(
                 models.NotaCreditoCompraItem(
                     nota_id=nota.id,
@@ -474,7 +482,10 @@ def crear_nota_credito(
             )
             # La mercancia se va: sale del stock al costo al que entro. El
             # promedio ponderado no se toca, porque lo devuelto costaba
-            # exactamente lo que el resto de esa factura.
+            # exactamente lo que el resto de esa factura. Un desechable nunca
+            # entro al stock: solo se acredita el gasto.
+            if es_desechable:
+                continue
             kardex.anotar(
                 db, ingrediente, -cantidad, kardex.DEVOLUCION_PROVEEDOR,
                 costo_unitario=costo, origen="nota_credito", referencia_id=nota.id,
@@ -484,8 +495,23 @@ def crear_nota_credito(
         if body.tipo == "descuento":
             _abaratar_insumos(db, factura, base)
 
-        cuenta = contabilidad.CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
-        contabilidad.registrar_nota_credito_compra(db, nota, cuenta)
+        if body.tipo == "devolucion" and factura.items:
+            # Cada renglon devuelto vuelve a la cuenta por la que entro.
+            concepto = contabilidad.CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
+            cuenta_de = {i.ingrediente_id: (i.cuenta or concepto) for i in factura.items}
+            por_cuenta = {}
+            for ingrediente, cantidad, costo in lineas:
+                c = cuenta_de.get(ingrediente.id, concepto)
+                por_cuenta[c] = por_cuenta.get(c, 0) + cantidad * costo
+            cuentas = sorted(por_cuenta)
+            porciones, repartido = [], 0.0
+            for n, c in enumerate(cuentas):
+                monto = round(nota.base_imponible - repartido, 2) if n == len(cuentas) - 1 else round(por_cuenta[c], 2)
+                repartido += monto
+                porciones.append((c, monto))
+        else:
+            porciones = contabilidad.porciones_de_factura(factura, nota.base_imponible)
+        contabilidad.registrar_nota_credito_compra(db, nota, porciones)
         db.commit()
         db.refresh(nota)
         return _nota_a_schema(nota)

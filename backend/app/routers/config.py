@@ -32,6 +32,7 @@ def obtener_config(db: Session = Depends(get_db)):
     return schemas.Configuracion(
         tasa_bcv=vigente.bcv if vigente else 0,
         vender_sin_inventario=bool(fila.vender_sin_inventario),
+        costo_para_precios=fila.costo_para_precios or "reposicion",
     )
 
 
@@ -52,6 +53,7 @@ def actualizar_config(body: schemas.Configuracion, db: Session = Depends(get_db)
     return schemas.Configuracion(
         tasa_bcv=vigente.bcv if vigente else 0,
         vender_sin_inventario=bool(fila.vender_sin_inventario),
+        costo_para_precios=fila.costo_para_precios or "reposicion",
     )
 
 
@@ -76,4 +78,23 @@ def actualizar_venta_sin_inventario(
     return schemas.Configuracion(
         tasa_bcv=vigente.bcv if vigente else 0,
         vender_sin_inventario=bool(fila.vender_sin_inventario),
+        costo_para_precios=fila.costo_para_precios or "reposicion",
+    )
+
+
+@router.put("/costo-precios", response_model=schemas.Configuracion)
+def actualizar_costo_para_precios(body: schemas.CostoParaPreciosRequest, db: Session = Depends(get_db)):
+    """Con que costo se miran los margenes y se sugieren precios en el menu.
+
+    Solo cambia lo que se MUESTRA para decidir precios. Los libros siguen a
+    costo promedio, que es lo unico que la norma acepta para el inventario.
+    """
+    fila = _fila(db)
+    fila.costo_para_precios = body.costo_para_precios
+    db.commit()
+    vigente = tasas.tasa_vigente(db)
+    return schemas.Configuracion(
+        tasa_bcv=vigente.bcv if vigente else 0,
+        vender_sin_inventario=bool(fila.vender_sin_inventario),
+        costo_para_precios=fila.costo_para_precios,
     )

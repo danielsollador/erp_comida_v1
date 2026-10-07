@@ -4,6 +4,8 @@ export type Variante = {
   nombre: string
   precio: number
   activo: boolean
+  /** Pasa por la freidora: carga su parte del aceite por pieza. */
+  se_frie?: boolean | null
 }
 
 export type Producto = {
@@ -62,6 +64,8 @@ export type PedidoItem = {
   a_cocina: boolean
 }
 
+export type TipoArticulo = 'insumo' | 'reventa' | 'consumible' | 'desechable' | 'preparacion'
+
 export type Ingrediente = {
   id: number
   nombre: string
@@ -72,8 +76,15 @@ export type Ingrediente = {
   /** Promedio ponderado: lo que costo el stock que hay en el deposito. */
   costo_unitario: number
   rendimiento_pct: number
-  /** Materia prima de recetas, o mercancia que se compra y se vende tal cual. */
-  tipo: 'insumo' | 'reventa'
+  /** Que es: ver lib/tiposArticulo.ts. "insumo" se lee "Materia prima". */
+  tipo: TipoArticulo
+  /** Preparaciones: cuanto sale de una tanda de su receta. */
+  rinde?: number
+  /** Preparaciones: se descuenta del crudo al vender, o se produce por tandas. */
+  modo_produccion?: 'descontar' | 'producir'
+  vida_util_horas?: number | null
+  /** El aceite de freir: no va en recetas, se reparte por pieza frita. */
+  es_indirecto?: boolean
   /** En que cajon del deposito vive. null = sin clasificar, que es normal. */
   categoria_id: number | null
   /** El nombre de esa categoria, ya resuelto por el servidor. '' si no tiene. */
@@ -103,7 +114,8 @@ export type DatosIngrediente = Pick<
   | 'categoria_id'
   | 'activo'
   | 'exento'
-> & {
+> &
+  Partial<Pick<Ingrediente, 'rinde' | 'modo_produccion' | 'vida_util_horas' | 'es_indirecto'>> & {
   /** Solo al crear: lo que hay hoy. Despues el stock se mueve con compras, mermas y conteos. */
   stock_actual?: number
 }
@@ -280,6 +292,11 @@ export type CostoVariante = {
   margen_reposicion_pct: number | null
   /** Precio que conserva el margen actual si tuvieras que reponer hoy. */
   precio_sugerido: number | null
+  /** Su parte del aceite de freir por pieza (0 si no se frie). */
+  costo_indirecto?: number
+  /** El costo con que se decide el precio (segun Configuracion), indirecto incluido. */
+  costo_para_precio?: number | null
+  margen_para_precio_pct?: number | null
 }
 
 /** Lo que la portada le dice al dueño sin que lo pregunte. `a` = adónde ir. */
@@ -707,6 +724,92 @@ export type Configuracion = {
   tasa_bcv: number
   /** Mientras está prendido, una venta se hace aunque falte inventario. */
   vender_sin_inventario: boolean
+  /** Con que costo se miran margenes y precios: los libros van siempre a promedio. */
+  costo_para_precios?: CostoParaPrecios
+}
+
+export type CostoParaPrecios = 'reposicion' | 'promedio' | 'mayor'
+
+// ── Preparaciones y produccion (docs/plan-compras-inventario-produccion.md) ──
+
+export type LineaPreparacion = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  tipo: TipoArticulo
+  cantidad: number
+  /** Lo que aporta al costo de una tanda, a costo de hoy. */
+  costo: number
+}
+
+export type Preparacion = {
+  id: number
+  nombre: string
+  unidad: string
+  rinde: number
+  modo_produccion: 'descontar' | 'producir'
+  vida_util_horas: number | null
+  stock_actual: number
+  lineas: LineaPreparacion[]
+  costo_tanda: number
+  costo_unitario: number
+  /** Lo que rindieron las ultimas tandas contra la receta (1 = exacto). */
+  rendimiento_real: number | null
+  tandas: number
+}
+
+export type DatosPreparacion = {
+  nombre: string
+  unidad: string
+  rinde: number
+  modo_produccion: 'descontar' | 'producir'
+  vida_util_horas: number | null
+  lineas: { ingrediente_id: number; cantidad: number }[]
+}
+
+export type Produccion = {
+  id: number
+  fecha: string
+  preparacion_id: number
+  preparacion: string
+  unidad: string
+  cantidad: number
+  cantidad_esperada: number
+  rendimiento_real: number | null
+  costo_total: number
+}
+
+export type Disponibilidad = {
+  preparacion_id: number
+  nombre: string
+  unidad: string
+  stock_actual: number
+  potencial: number | null
+  limita: string | null
+  comparte_con: string[]
+}
+
+export type CostoTeoricoFila = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  teorico: number
+  mermas: number
+  diferencia_conteo: number
+  valor_teorico: number
+  valor_diferencia: number
+  pct_desvio: number | null
+}
+
+export type CostoIndirecto = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  cargado: number
+  valor: number
+  piezas: number
+  por_pieza: number | null
+  cantidad_por_pieza: number | null
 }
 
 export type Respaldo = {

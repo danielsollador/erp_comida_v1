@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { MUY_PARECIDO, parecidos } from '../lib/parecidos'
-import type { Ingrediente } from '../lib/types'
+import { TIPOS_DE_COMPRA } from '../lib/tiposArticulo'
+import type { Ingrediente, TipoArticulo } from '../lib/types'
 import { Boton, Modal } from './ui'
 
 /**
@@ -13,8 +14,9 @@ import { Boton, Modal } from './ui'
  * "CREMA DE LECHE LATA 250G" del papel). Si hay una casi igual, crear pide un
  * segundo toque ("Es otra, crearla"). El servidor rechaza los nombres iguales.
  *
- * Solo lo que hace falta para empezar: nombre, unidad, para qué es y si paga
- * IVA. El resto (categoría, mínimos, rendimiento) se completa en Inventario.
+ * Solo lo que hace falta para empezar: nombre, unidad, qué es y si paga
+ * IVA. Qué es decide su camino: la materia prima y la reventa entran al
+ * depósito, el desechable (servilletas) va directo a gasto sin stock. El resto (categoría, mínimos, rendimiento) se completa en Inventario.
  */
 
 const UNIDADES = [
@@ -46,7 +48,7 @@ export default function NuevaMercancia({
 }) {
   const [nombre, setNombre] = useState(nombreInicial)
   const [unidad, setUnidad] = useState(unidadInicial)
-  const [tipo, setTipo] = useState<'insumo' | 'reventa'>('insumo')
+  const [tipo, setTipo] = useState<TipoArticulo>('insumo')
   const [exento, setExento] = useState(exentoInicial)
   const [confirmando, setConfirmando] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -170,16 +172,14 @@ export default function NuevaMercancia({
         </div>
 
         <div>
-          <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Para qué es</span>
+          <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Qué es</span>
           <div className="grid grid-cols-2 gap-1.5">
-            <button type="button" onClick={() => setTipo('insumo')} className={chip(tipo === 'insumo')}>
-              <span className="block font-medium">Se usa en recetas</span>
-              <span className={`block text-xs ${tipo === 'insumo' ? 'text-white/70' : 'text-neutral-500'}`}>carne, harina, aceite</span>
-            </button>
-            <button type="button" onClick={() => setTipo('reventa')} className={chip(tipo === 'reventa')}>
-              <span className="block font-medium">Se vende tal cual</span>
-              <span className={`block text-xs ${tipo === 'reventa' ? 'text-white/70' : 'text-neutral-500'}`}>refresco, chuchería</span>
-            </button>
+            {TIPOS_DE_COMPRA.map((o) => (
+              <button key={o.valor} type="button" onClick={() => setTipo(o.valor)} className={chip(tipo === o.valor)}>
+                <span className="block font-medium">{o.texto}</span>
+                <span className={`block text-xs ${tipo === o.valor ? 'text-white/70' : 'text-neutral-500'}`}>{o.detalle}</span>
+              </button>
+            ))}
           </div>
         </div>
 

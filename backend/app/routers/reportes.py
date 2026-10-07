@@ -757,7 +757,7 @@ def _insights(
     bajos = [
         i
         for i in db.query(models.Ingrediente).all()
-        if i.stock_actual <= i.stock_minimo
+        if i.stock_actual <= i.stock_minimo and i.tipo not in ("desechable", "preparacion")
     ]
     if bajos:
         nombres = ", ".join(i.nombre for i in bajos[:3])
@@ -1373,6 +1373,8 @@ def reporte_inventario(
     if solo is not None:
         ingredientes_q = ingredientes_q.filter(models.Ingrediente.id.in_(solo or [0]))
     for ing in ingredientes_q.order_by(models.Ingrediente.nombre).all():
+        if ing.tipo == "desechable":
+            continue  # no lleva stock: no hay nada que valorar en el deposito
         cantidad = saldos.get(ing.id, ing.stock_actual or 0)
         costo = promedios.get(ing.id) or ing.costo_unitario or 0
         valor = round(max(cantidad, 0) * costo, 2)

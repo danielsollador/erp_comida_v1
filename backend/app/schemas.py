@@ -34,6 +34,8 @@ class VarianteBase(BaseModel):
     nombre: str
     precio: float
     activo: bool = True
+    # Pasa por la freidora (ver models.Variante.se_frie). None = no se toca.
+    se_frie: Optional[bool] = None
 
 
 class VarianteCreate(VarianteBase):
@@ -71,6 +73,13 @@ class CostoVariante(BaseModel):
     margen_reposicion_pct: Optional[float] = None
     # A cuanto habria que venderlo para conservar el margen contable actual.
     precio_sugerido: Optional[float] = None
+    # Su parte del aceite de freir (y otros indirectos), por pieza. 0 si no
+    # se frie o si todavia no hay cargas registradas.
+    costo_indirecto: float = 0
+    # El costo con que se decide el precio, segun Configuracion
+    # (reposicion / promedio / mayor), indirecto incluido, y su margen.
+    costo_para_precio: Optional[float] = None
+    margen_para_precio_pct: Optional[float] = None
 
 
 class ProductoBase(BaseModel):
@@ -169,8 +178,13 @@ class IngredienteBase(BaseModel):
     # (0, 100] no tiene sentido fisico: 0 o negativo es "no rinde nada" y mas
     # de 100 diria que sale mas producto util del que se compro.
     rendimiento_pct: float = Field(default=100, gt=0, le=100)
-    # Materia prima de recetas, o mercancia de reventa (ver models.Ingrediente).
-    tipo: Literal["insumo", "reventa"] = "insumo"
+    # Ver models.Ingrediente.tipo. "insumo" se lee "Materia prima".
+    tipo: Literal["insumo", "reventa", "consumible", "desechable", "preparacion"] = "insumo"
+    # Solo de las preparaciones (ver models.Ingrediente).
+    rinde: float = Field(default=1.0, gt=0)
+    modo_produccion: Literal["descontar", "producir"] = "descontar"
+    vida_util_horas: Optional[int] = Field(default=None, ge=1)
+    es_indirecto: bool = False
     # En que parte del deposito vive (ver models.CategoriaInsumo). None = sin
     # clasificar, que es un estado normal y no un error.
     categoria_id: Optional[int] = None
@@ -185,6 +199,119 @@ class IngredienteBase(BaseModel):
 
 class IngredienteCreate(IngredienteBase):
     pass
+
+
+class LineaPreparacionInput(BaseModel):
+    ingrediente_id: int
+    cantidad: float = Field(gt=0)
+
+
+class LineaPreparacion(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    tipo: str
+    cantidad: float
+    # Lo que aporta esta linea al costo de UNA TANDA, a costo de hoy.
+    costo: float
+
+
+class Preparacion(BaseModel):
+    """Una preparacion con su receta y lo que cuesta."""
+
+    id: int
+    nombre: str
+    unidad: str
+    rinde: float
+    modo_produccion: str
+    vida_util_horas: Optional[int] = None
+    stock_actual: float
+    lineas: List[LineaPreparacion]
+    costo_tanda: float
+    costo_unitario: float  # por 1 unidad de lo que sale (1 kg de guiso)
+    # Rendimiento real de las ultimas tandas registradas contra la receta
+    # (1 = rindio lo que dice la receta). None sin tandas.
+    rendimiento_real: Optional[float] = None
+    tandas: int = 0
+
+
+class PreparacionInput(BaseModel):
+    nombre: str
+    unidad: str = "kg"
+    rinde: float = Field(gt=0)
+    modo_produccion: Literal["descontar", "producir"] = "descontar"
+    vida_util_horas: Optional[int] = Field(default=None, ge=1)
+    lineas: List[LineaPreparacionInput]
+
+
+class ProduccionInput(BaseModel):
+    """Una tanda: lo que salio. `usado` es opcional: sin el, se asume la
+    receta escalada a lo que se esperaba sacar."""
+
+    preparacion_id: int
+    cantidad: float = Field(gt=0)
+    usado: Optional[List[LineaPreparacionInput]] = None
+    nota: str = ""
+
+
+class ProduccionOut(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    preparacion_id: int
+    preparacion: str
+    unidad: str
+    cantidad: float
+    cantidad_esperada: float
+    rendimiento_real: Optional[float] = None
+    costo_total: float
+
+
+class AlMenuInput(BaseModel):
+    """Una mercancia de reventa pasa al menu tal cual: su producto, su
+    precio y su receta de 1 unidad, de una vez."""
+
+    categoria_id: int
+    precio: float = Field(gt=0)
+    nombre: Optional[str] = None
+
+
+class Disponibilidad(BaseModel):
+    """Cuanto se podria hacer de una preparacion con lo que hay en crudo."""
+
+    preparacion_id: int
+    nombre: str
+    unidad: str
+    stock_actual: float
+    potencial: Optional[float]
+    # La materia prima que pone el limite.
+    limita: Optional[str] = None
+    # Otras preparaciones que usan esa misma materia prima: compiten por ella.
+    comparte_con: List[str] = []
+
+
+class CostoTeoricoFila(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    teorico: float  # lo que debio salir: ventas, produccion, consumo del personal, freidora
+    mermas: float  # lo que se boto y se anoto
+    diferencia_conteo: float  # lo que el conteo encontro de menos (negativo) o de mas
+    valor_teorico: float
+    valor_diferencia: float
+    pct_desvio: Optional[float] = None
+
+
+class CostoIndirecto(BaseModel):
+    """El aceite (o el gas) repartido entre lo que se frie."""
+
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    cargado: float  # cuanto se cargo en el periodo
+    valor: float
+    piezas: float  # piezas vendidas que se frien
+    por_pieza: Optional[float] = None  # $ por pieza
+    cantidad_por_pieza: Optional[float] = None
 
 
 class FusionIngrediente(BaseModel):
@@ -980,6 +1107,12 @@ class Configuracion(BaseModel):
     # Mientras esta encendido, una venta se hace aunque falte inventario: es
     # para arrancar un local que todavia no cargo insumos ni recetas.
     vender_sin_inventario: bool = False
+    # Ver models.Configuracion.costo_para_precios.
+    costo_para_precios: str = "reposicion"
+
+
+class CostoParaPreciosRequest(BaseModel):
+    costo_para_precios: Literal["reposicion", "promedio", "mayor"]
 
 
 class VenderSinInventarioRequest(BaseModel):
