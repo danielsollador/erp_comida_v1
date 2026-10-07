@@ -92,18 +92,17 @@ export default function TablaMercancia({
 
   return (
     <div className="space-y-3">
-      {/* LA BARRA, PARTIDA EN DOS: a la izquierda lo que se hace (buscar,
-          filtrar, contar, crear); a la derecha las cifras del almacén en
-          cuadritos. Son complemento de la tabla: viven en su barra y no
-          encima (Leider, 7-oct). */}
-      <div className="vp-losa p-3 grid grid-cols-1 lg:grid-cols-2 gap-3 items-center">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* TRES CUADROS EN UNA LINEA, cada uno con lo suyo: filtrar, las
+          cifras del almacén, y las acciones. Nada comparte cuadro con nada
+          (Leider, 7-oct). */}
+      <div className="flex flex-wrap xl:flex-nowrap items-stretch gap-3">
+        <div className="vp-losa p-2.5 flex flex-wrap items-center gap-2 flex-1 min-w-[18rem]">
           <input
             type="search"
             value={buscar}
             onChange={(e) => setBuscar(e.target.value)}
             placeholder={`Buscar en ${a.texto.toLowerCase()}…`}
-            className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full sm:w-48 shrink-0"
+            className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full sm:w-44 shrink-0"
           />
           <FiltroDesplegable
             etiqueta="Ver"
@@ -129,10 +128,9 @@ export default function TablaMercancia({
               ]}
             />
           )}
-          {acciones && <div className="flex items-center gap-2">{acciones}</div>}
         </div>
         {resumen && (
-          <div className="grid grid-cols-4 gap-2">
+          <div className="vp-losa p-2.5 grid grid-cols-4 gap-2 flex-1 min-w-[22rem]">
             <Cuadrito titulo="Mercancías" valor={String(visibles.length === activos.length ? activos.length : `${visibles.length} de ${activos.length}`)} />
             <Cuadrito titulo="En el depósito" valor={dinero(resumen.plata)} />
             <Cuadrito
@@ -151,6 +149,7 @@ export default function TablaMercancia({
             />
           </div>
         )}
+        {acciones && <div className="vp-losa p-2.5 flex items-center gap-2 shrink-0">{acciones}</div>}
       </div>
 
       <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined}>
