@@ -127,6 +127,7 @@ export default function Inventario() {
   // Con la receta de una preparación abierta, la franja Crudo/Preparado y
   // las acciones no tienen sentido: para salir se vuelve atrás.
   const [editandoPrep, setEditandoPrep] = useState(false)
+  const [abrirNuevaPrep, setAbrirNuevaPrep] = useState(0)
 
   useEffect(() => {
     cargar()
@@ -460,7 +461,7 @@ export default function Inventario() {
             )}
 
             {tipoActual === 'insumo' && !editandoPrep && (
-              <div role="tablist" className="grid grid-cols-2 gap-2">
+              <div role="tablist" className={`grid gap-2 ${cara === 'preparado' ? 'grid-cols-[1fr_1fr_auto]' : 'grid-cols-2'}`}>
                 {(
                   [
                     { v: 'crudo' as const, t: 'Crudo', d: 'lo que llegó, tal cual', n: `${delAlmacen.filter((i) => i.activo !== false).length} mercancías`, icono: 'paquete' as const },
@@ -490,6 +491,11 @@ export default function Inventario() {
                     </button>
                   )
                 })}
+                {cara === 'preparado' && (
+                  <Boton onClick={() => setAbrirNuevaPrep((n) => n + 1)} icono="mas" className="self-center">
+                    Nueva preparación
+                  </Boton>
+                )}
               </div>
             )}
 
@@ -505,7 +511,7 @@ export default function Inventario() {
                 />
               </>
             ) : tipoActual === 'insumo' && cara === 'preparado' ? (
-              <Preparaciones ingredientes={ingredientes} onCambio={cargar} onEditando={setEditandoPrep} />
+              <Preparaciones ingredientes={ingredientes} onCambio={cargar} onEditando={setEditandoPrep} abrirNueva={abrirNuevaPrep} />
             ) : (
               <>
                 <TablaMercancia

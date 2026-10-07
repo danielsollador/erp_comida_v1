@@ -34,12 +34,15 @@ export default function Preparaciones({
   ingredientes,
   onCambio,
   onEditando,
+  abrirNueva,
 }: {
   ingredientes: Ingrediente[]
   /** Algo movió el depósito (una tanda, una merma): que se recargue. */
   onCambio: () => void
   /** Se abrió (o cerró) la receta: la pantalla de arriba esconde lo que no va. */
   onEditando?: (abierta: boolean) => void
+  /** Cada vez que cambia, se abre una preparación nueva (el botón vive arriba, junto a Crudo/Preparado). */
+  abrirNueva?: number
 }) {
   const { fmt: dinero } = useMoneda()
   const [preps, setPreps] = useState<Preparacion[] | null>(null)
@@ -54,6 +57,10 @@ export default function Preparaciones({
   const [resaltada, setResaltada] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
+
+  useEffect(() => {
+    if (abrirNueva) setEditando('nueva')
+  }, [abrirNueva])
 
   useEffect(() => {
     onEditando?.(editando !== null)
@@ -136,11 +143,6 @@ export default function Preparaciones({
         </div>
       ) : (
         <>
-          <div className="flex justify-end">
-            <Boton onClick={() => setEditando('nueva')} icono="mas">
-              Nueva preparación
-            </Boton>
-          </div>
           <Seccion
             titulo="Qué crudo usa cada preparación"
             ayuda="Elige una preparación y el mapa se queda en ella: qué crudo lleva y quién más lo usa. Lo que comparten dos preparaciones va en ámbar: compiten por ello. Tócala otra vez para soltarla."
