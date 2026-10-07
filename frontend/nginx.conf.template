@@ -186,6 +186,16 @@ server {
   # valida con basura dentro. Es la segunda de dos cerraduras: el backend
   # valida la sesion por su cuenta (ver `main.py`).
   location /api/ {
+    # LA PREGUNTA PREVIA DEL NAVEGADOR (CORS) PASA SIN SESION. La app nativa
+    # llama desde https://localhost (Android) o capacitor://localhost (iOS):
+    # antes de cada llamada con token el WebView manda un OPTIONS sin
+    # credenciales --asi lo exige el estandar--, y la puerta lo cortaba con
+    # 401. El login pasaba (`/api/acceso/` esta abierta) y todo lo demas
+    # fallaba: "Vendido hoy —" en la tablet (6-oct). El `return` corre antes
+    # que `auth_request` (fase de reescritura antes que la de acceso), y el
+    # OPTIONS solo lo contesta el CORS del backend: no lee ni escribe datos.
+    if ($request_method = OPTIONS) { return 418; }
+    error_page 418 = @preflight;
     auth_request /_auth;
     proxy_pass $destino$request_uri;
     proxy_http_version 1.1;
@@ -196,6 +206,15 @@ server {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_buffering off;
+  }
+
+  location @preflight {
+    auth_request off;
+    proxy_pass $destino$request_uri;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
   }
 
   # WebSocket para la pantalla de cocina / POS en tiempo real. Tambien con
