@@ -158,7 +158,7 @@ export default function Preparaciones({
             />
           </Seccion>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
             {preps.map((p) => (
               <TarjetaPreparacion
                 key={p.id}
@@ -234,7 +234,7 @@ export default function Preparaciones({
 
 // ── El mapa: materia prima ↔ preparaciones ──────────────────────────────────
 
-const FILA = 60
+const FILA = 50
 const ANCHO_LINEAS = 160
 // Con mas preparaciones que esto, el mapa completo se vuelve una maraña de
 // lineas que se cruzan: se pide elegir una, y el mapa muestra solo la suya.
@@ -323,7 +323,7 @@ function Mapa({
                 const pierde = pierdeAlCocinar(ing)
                 return (
                   <li key={l.ingrediente_id} style={{ height: FILA }} className="flex items-center">
-                    <div className={`flex-1 min-w-0 rounded-2xl px-3.5 py-2 ${otras.length > 0 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
+                    <div className={`flex-1 min-w-0 rounded-2xl px-3 py-1.5 ${otras.length > 0 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
                       <span className="flex items-center gap-2">
                         <PuntoTipo tipo={l.tipo} />
                         <span className="font-medium truncate flex-1">{l.nombre}</span>
@@ -477,7 +477,7 @@ function Mapa({
               const pierde = pierdeAlCocinar(c.ing)
               return (
                 <li key={c.id} style={{ height: FILA }} className={`flex items-center transition-opacity ${apagada ? 'opacity-30' : ''}`}>
-                  <div className={`flex-1 min-w-0 rounded-2xl px-3.5 py-2 ${c.preps.length > 1 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
+                  <div className={`flex-1 min-w-0 rounded-2xl px-3 py-1.5 ${c.preps.length > 1 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
                     <span className="flex items-center gap-2">
                       <PuntoTipo tipo={c.tipo} />
                       <span className="font-medium truncate flex-1">{c.nombre}</span>
@@ -527,7 +527,7 @@ function Mapa({
                     type="button"
                     onMouseEnter={() => onResaltar(p.id)}
                     onClick={() => onSeleccionar(p.id)}
-                    className="vp-pulsable flex-1 min-w-0 text-left rounded-2xl px-3.5 py-2 bg-neutral-500/6 flex items-center gap-3"
+                    className="vp-pulsable flex-1 min-w-0 text-left rounded-2xl px-3 py-1.5 bg-neutral-500/6 flex items-center gap-3"
                   >
                     <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: colorDe.get(p.id) }} />
                     <span className="min-w-0 flex-1">
@@ -589,7 +589,7 @@ function TarjetaPreparacion({
     <div
       onMouseEnter={() => onResaltar(p.id)}
       onMouseLeave={() => onResaltar(null)}
-      className={`vp-losa p-4 sm:p-5 flex flex-col gap-4 transition-shadow ${resaltada ? 'ring-2' : ''}`}
+      className={`vp-losa p-3.5 flex flex-col gap-3 transition-shadow ${resaltada ? 'ring-2' : ''}`}
       style={resaltada ? { ['--tw-ring-color' as string]: color } : undefined}
     >
       <div className="flex items-start gap-3">
@@ -602,11 +602,11 @@ function TarjetaPreparacion({
         </button>
       </div>
 
-      <div className="rounded-2xl bg-neutral-500/6 p-3.5">
-        <p className="font-display text-3xl font-semibold tracking-tight tabular-nums leading-none">
+      <div className="rounded-2xl bg-neutral-500/6 px-3.5 py-2.5">
+        <p className="font-display text-2xl font-semibold tracking-tight tabular-nums leading-none">
           {produce ? `${fmtCant(p.stock_actual)} ${p.unidad}` : potencial == null ? '—' : `${fmtCant(potencial)} ${p.unidad}`}
         </p>
-        <p className="text-xs text-neutral-600 mt-1.5 leading-snug">
+        <p className="text-xs text-neutral-600 mt-1 leading-snug">
           {produce
             ? potencial != null
               ? `hay hecho ahora mismo; con el crudo se podrían hacer ${fmtCant(potencial)} ${p.unidad} más`
@@ -618,7 +618,7 @@ function TarjetaPreparacion({
       </div>
 
       <ul className="text-xs text-neutral-600 space-y-1">
-        {p.lineas.slice(0, 4).map((l) => (
+        {p.lineas.slice(0, 3).map((l) => (
           <li key={l.ingrediente_id} className="flex items-center gap-2">
             <PuntoTipo tipo={l.tipo} />
             <span className="truncate flex-1">{l.nombre}</span>
@@ -627,7 +627,7 @@ function TarjetaPreparacion({
             </span>
           </li>
         ))}
-        {p.lineas.length > 4 && <li className="text-neutral-400 pl-4">y {p.lineas.length - 4} más</li>}
+        {p.lineas.length > 3 && <li className="text-neutral-400 pl-4">y {p.lineas.length - 3} más</li>}
       </ul>
 
       {desvio && (
@@ -636,16 +636,16 @@ function TarjetaPreparacion({
         </p>
       )}
 
-      <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
-        <button type="button" onClick={onEditar} className="vp-pulsable inline-flex items-center gap-2 rounded-xl bg-neutral-900 text-white px-3.5 py-2 text-sm font-semibold">
+      <div className="mt-auto flex flex-wrap items-center gap-2">
+        <button type="button" onClick={onEditar} className="vp-pulsable inline-flex items-center gap-2 rounded-xl bg-neutral-900 text-white px-3 py-1.5 text-sm font-semibold">
           <Icono nombre="recetas" size={15} />
           Ver la receta
         </button>
-        <button type="button" onClick={onSobro} className="vp-control vp-pulsable rounded-xl px-3.5 py-2 text-sm font-medium">
+        <button type="button" onClick={onSobro} className="vp-control vp-pulsable rounded-xl px-3 py-1.5 text-sm font-medium">
           Sobró hoy
         </button>
         {produce && (
-          <button type="button" onClick={onTanda} className="vp-control vp-pulsable rounded-xl px-3.5 py-2 text-sm font-medium">
+          <button type="button" onClick={onTanda} className="vp-control vp-pulsable rounded-xl px-3 py-1.5 text-sm font-medium">
             Anotar tanda
           </button>
         )}
