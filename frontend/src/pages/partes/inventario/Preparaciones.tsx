@@ -136,14 +136,14 @@ export default function Preparaciones({
         </div>
       ) : (
         <>
+          <div className="flex justify-end">
+            <Boton onClick={() => setEditando('nueva')} icono="mas">
+              Nueva preparación
+            </Boton>
+          </div>
           <Seccion
             titulo="Qué crudo usa cada preparación"
-            ayuda="Elige una preparación y el mapa se queda en ella: qué crudo lleva y quién más lo usa. Lo que comparten dos preparaciones va en ámbar: compiten por ello."
-            accion={
-              <Boton onClick={() => setEditando('nueva')} icono="mas">
-                Nueva preparación
-              </Boton>
-            }
+            ayuda="Elige una preparación y el mapa se queda en ella: qué crudo lleva y quién más lo usa. Lo que comparten dos preparaciones va en ámbar: compiten por ello. Tócala otra vez para soltarla."
           >
             <Mapa
               preps={preps}
@@ -377,7 +377,12 @@ function Mapa({
               <Icono nombre="cocina" size={12} /> Lo que sale
             </p>
             <div className="flex-1 flex items-center">
-              <div className="w-full rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3">
+              <button
+                type="button"
+                onClick={() => onSeleccionar(null)}
+                title="Soltar"
+                className="vp-pulsable w-full text-left rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3"
+              >
                 <span aria-hidden className="w-1.5 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
                 <div className="min-w-0 flex-1 space-y-3">
                   <p className="font-display text-lg font-semibold tracking-tight leading-tight">{elegida.nombre}</p>
@@ -402,7 +407,7 @@ function Mapa({
                     <b className="text-white tabular-nums">{dinero(elegida.costo_unitario)}</b>
                   </p>
                 </div>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -526,7 +531,7 @@ function Mapa({
                   <button
                     type="button"
                     onMouseEnter={() => onResaltar(p.id)}
-                    onClick={() => onSeleccionar(p.id)}
+                    onClick={() => onSeleccionar(seleccion === p.id ? null : p.id)}
                     className="vp-pulsable flex-1 min-w-0 text-left rounded-2xl px-3 py-1.5 bg-neutral-500/6 flex items-center gap-3"
                   >
                     <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: colorDe.get(p.id) }} />
