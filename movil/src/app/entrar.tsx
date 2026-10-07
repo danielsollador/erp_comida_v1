@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { BotonTema } from '../componentes/Encabezado'
+import Fondo from '../componentes/Fondo'
 import { Boton } from '../componentes/ui'
 import { API_BASE, ErrorApi } from '../lib/api'
 import { useSesion } from '../lib/sesion'
@@ -19,6 +21,7 @@ export default function Entrar() {
   const [error, setError] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const campoClave = useRef<TextInput>(null)
+  const borde = useSafeAreaInsets()
 
   async function enviar() {
     if (!usuario.trim() || !clave) {
@@ -44,7 +47,13 @@ export default function Entrar() {
   const campo = [estilos.campo, { backgroundColor: t.superficie, borderColor: t.linea, color: t.tinta }]
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: t.papel }}>
+    <View style={{ flex: 1, backgroundColor: t.papel }}>
+    <Fondo />
+    <SafeAreaView style={{ flex: 1 }}>
+      {/* El tema, arriba a la derecha, como en el login de la web. */}
+      <View style={[estilos.esquina, { top: borde.top + 8 }]}>
+        <BotonTema />
+      </View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={estilos.contenido} keyboardShouldPersistTaps="handled">
           <View style={estilos.marca}>
@@ -99,10 +108,12 @@ export default function Entrar() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+    </View>
   )
 }
 
 const estilos = StyleSheet.create({
+  esquina: { position: 'absolute', right: 16, zIndex: 2 },
   contenido: { flexGrow: 1, justifyContent: 'center', padding: 28, maxWidth: 460, width: '100%', alignSelf: 'center' },
   marca: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 28 },
   rombo: { width: 10, height: 10, borderRadius: 3, transform: [{ rotate: '45deg' }] },

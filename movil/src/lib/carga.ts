@@ -22,7 +22,7 @@ export async function parte<T>(promesa: Promise<T>): Promise<Parte<T>> {
  * hacia abajo. Lo ultimo que llego se queda en pantalla mientras se refresca:
  * nada de parpadear a "cargando" cada minuto.
  */
-export function useCarga<T>(cargar: () => Promise<T>, cadaSegundos = 60) {
+export function useCarga<T>(cargar: () => Promise<T>, cadaSegundos = 60, clave?: string) {
   const [datos, setDatos] = useState<T | null>(null)
   const [error, setError] = useState('')
   const [refrescando, setRefrescando] = useState(false)
@@ -52,6 +52,17 @@ export function useCarga<T>(cargar: () => Promise<T>, cadaSegundos = 60) {
       return () => clearInterval(id)
     }, [correr, cadaSegundos]),
   )
+
+  // Cambio lo que se pide (otro periodo, otro filtro): se vuelve a cargar ya,
+  // dejando lo anterior en pantalla mientras llega.
+  const primera = useRef(true)
+  useEffect(() => {
+    if (primera.current) {
+      primera.current = false
+      return
+    }
+    correr(false)
+  }, [clave, correr])
 
   return { datos, error, refrescando, refrescar: () => correr(true) }
 }

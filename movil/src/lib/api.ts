@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store'
 import { hoyEnCaracas, inicioDelMes } from './formato'
 import type {
+  ArranqueLocal,
   Aviso,
   BalanceGeneral,
   CuentaPorCobrar,
@@ -10,6 +11,7 @@ import type {
   PeriodoPendiente,
   Recorrido,
   ReporteResumen,
+  SolicitudAutorizacion,
 } from './tipos'
 
 /**
@@ -53,7 +55,12 @@ export function cuandoCaduque(fn: () => void) {
   alCaducar = fn
 }
 
-async function req<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
+/**
+ * Una llamada a la API con la sesion de la app. Exportada para que cada
+ * pantalla agregue sus llamadas en su propio modulo (lib/api-*.ts) con las
+ * mismas reglas: token, renovacion, 401 = salir, errores en palabras.
+ */
+export async function req<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
   const cabeceras: Record<string, string> = { 'X-Vp-App': '1', Accept: 'application/json' }
   if (opciones.body) cabeceras['Content-Type'] = 'application/json'
   if (token) cabeceras.Authorization = `Bearer ${token}`
@@ -87,7 +94,7 @@ async function req<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T)
 }
 
-const rango = (desde: string, hasta: string) => `desde=${desde}&hasta=${hasta}`
+export const rango = (desde: string, hasta: string) => `desde=${desde}&hasta=${hasta}`
 
 export const api = {
   async entrar(usuario: string, clave: string) {
@@ -131,6 +138,14 @@ export const api = {
   porCobrar: () => req<unknown[]>('/pedidos?estado=listo'),
   avisos: () => req<Aviso[]>('/reportes/avisos'),
   recorrido: () => req<Recorrido>('/reportes/recorrido'),
+  arranque: () => req<ArranqueLocal>('/reportes/arranque'),
+  resumen: (desde: string, hasta: string) => req<ReporteResumen>(`/reportes/resumen?${rango(desde, hasta)}`),
+
+  // Las autorizaciones: la caja pide permiso y quien autoriza lo resuelve aqui
+  solicitudesPendientes: () => req<SolicitudAutorizacion[]>('/autorizaciones'),
+  historialAutorizaciones: () => req<SolicitudAutorizacion[]>('/autorizaciones/historial'),
+  aprobarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}/aprobar`, { method: 'POST' }),
+  rechazarSolicitud: (id: number) => req<SolicitudAutorizacion>(`/autorizaciones/${id}/rechazar`, { method: 'POST' }),
 
   // La zona contable, solo para consultar
   resultadosDelMes: () =>

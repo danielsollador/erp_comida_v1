@@ -1,39 +1,60 @@
-import Feather from '@expo/vector-icons/Feather'
+import { useEffect } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
-import { Cargando, Cifra, Etiqueta, Ficha, Nota, Pantalla, Problema, Titulo, type NombreIcono } from '../../componentes/ui'
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
+import { Controles, Marca } from '../../componentes/Encabezado'
+import { Arranque, Avisos, BotonContador, Espera, TarjetaVender } from '../../componentes/inicio/Fichas'
+import Recorrido, { FilaReportes } from '../../componentes/inicio/Recorrido'
+import { Etiqueta, Ficha, Pantalla, Problema } from '../../componentes/ui'
 import { api } from '../../lib/api'
 import { parte, useCarga } from '../../lib/carga'
-import { dolares, fechaDeHoy, inicialDelDia, saludo } from '../../lib/formato'
+import { fechaDeHoy, saludo } from '../../lib/formato'
+import { MODULOS, entraA } from '../../lib/modulos'
+import { useMoneda } from '../../lib/moneda'
 import { useSesion } from '../../lib/sesion'
-import { LETRA, useTema, type Tema } from '../../lib/tema'
-import type { Aviso, PasoRecorrido } from '../../lib/tipos'
+import { LETRA, useTema } from '../../lib/tema'
 
 /**
- * HOY: lo mismo que la portada de la web (pages/Inicio.tsx), en el orden en
- * que se pregunta al sacar el telefono: cuanto se vendio, que esta
- * esperando, que avisa el sistema, como va cada parte del negocio y la
- * semana. Las mismas llamadas a la API; ninguna cifra se calcula aqui.
+ * EL INICIO, igual que la portada de la web (pages/Inicio.tsx) en un telefono:
+ * la marca y los controles arriba, el saludo, las misiones de arranque, el
+ * panel de hoy con lo que espera, los avisos, vender, el recorrido del
+ * negocio, reportes y la zona contable. Las mismas llamadas a la API, el
+ * mismo orden y las mismas palabras.
  */
-export default function Hoy() {
+let yaSeVio = false
+
+export default function Inicio() {
   const t = useTema()
   const { acceso } = useSesion()
-  const veCifras = acceso?.puede.ve_kpis ?? false
+  const { fmt } = useMoneda()
+  const puede = acceso?.puede
+  const veCifras = puede?.ve_kpis ?? false
 
   const { datos, error, refrescando, refrescar } = useCarga(async () => {
-    const [resumen, pedidos, cocina, cobrar, avisos, recorrido] = await Promise.all([
+    const [resumen, pedidos, cocina, cobrar, avisos, recorrido, arranque] = await Promise.all([
       veCifras ? parte(api.resumenDeHoy()) : Promise.resolve(null),
       parte(api.pedidosDelDia()),
       parte(api.enCocina()),
       parte(api.porCobrar()),
       veCifras ? parte(api.avisos()) : Promise.resolve(null),
       veCifras ? parte(api.recorrido()) : Promise.resolve(null),
+      puede?.administrar ? parte(api.arranque()) : Promise.resolve(null),
     ])
-    // Si no llego nada, es un problema de conexion o de sesion: se dice.
-    const todas = [resumen, pedidos, cocina, cobrar, avisos, recorrido].filter((p) => p !== null)
+    const todas = [resumen, pedidos, cocina, cobrar].filter((p) => p !== null)
     const caida = todas.find((p) => !p.ok)
     if (caida && !caida.ok && todas.every((p) => !p.ok)) throw new Error(caida.error)
-    return { resumen, pedidos, cocina, cobrar, avisos, recorrido }
+    return { resumen, pedidos, cocina, cobrar, avisos, recorrido, arranque }
   })
+
+  // La portada entra entera, de una vez, con un fundido corto (vp-aparece),
+  // y solo la primera vez: al volver de otra pantalla ya esta.
+  const aparece = useSharedValue(yaSeVio ? 1 : 0)
+  useEffect(() => {
+    if (datos && !yaSeVio) {
+      yaSeVio = true
+      aparece.set(withTiming(1, { duration: 320 }))
+    }
+  }, [datos, aparece])
+  const estiloAparece = useAnimatedStyle(() => ({ opacity: aparece.value }))
 
   const nombre = acceso?.nombre || acceso?.nombre_visible || acceso?.usuario || ''
   const ventas = datos?.resumen?.ok ? datos.resumen.valor.ventas : null
@@ -41,168 +62,102 @@ export default function Hoy() {
   const enCocina = datos?.cocina?.ok ? datos.cocina.valor.length : null
   const porCobrar = datos?.cobrar?.ok ? datos.cobrar.valor.length : null
   const avisos = datos?.avisos?.ok ? datos.avisos.valor : []
-  const recorrido = datos?.recorrido?.ok ? datos.recorrido.valor : null
+  const recorrido = datos ? (datos.recorrido?.ok ? datos.recorrido.valor : veCifras ? null : undefined) : null
+  const arranque = datos?.arranque?.ok ? datos.arranque.valor : null
+
+  const modulos = puede?.modulos ?? []
+  const vender = MODULOS.filter((m) => (m.to === '/pos' || m.to === '/cocina') && entraA(modulos, m))
+  const rutas = MODULOS.filter((m) => entraA(modulos, m)).map((m) => m.to)
+  const contador = MODULOS.filter((m) => ['/contabilidad', '/impuestos', '/tasa'].includes(m.to) && entraA(modulos, m))
 
   return (
     <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
-      <View style={{ marginTop: 6, marginBottom: 4 }}>
-        <Etiqueta>{acceso?.local.nombre || 'Vertigo Pro'}</Etiqueta>
-        <Text style={[estilos.saludo, { color: t.tinta }]}>
-          {saludo()}
-          {nombre ? `, ${nombre}` : ''}
-        </Text>
-        <Nota>{fechaDeHoy()}</Nota>
+      {/* Cabecera: la marca del local y los controles. */}
+      <View style={estilos.cabecera}>
+        <Marca />
+        <Controles />
       </View>
+      <Text style={[estilos.saludo, { color: t.suave }]}>
+        {saludo()}, <Text style={{ color: t.fuerte, fontFamily: LETRA.textoFuerte }}>{nombre}</Text>
+        <Text style={{ color: t.tenue }}> · </Text>
+        {fechaDeHoy()}
+      </Text>
 
       {error && !datos ? <Problema mensaje={error} alReintentar={refrescar} /> : null}
-      {!datos && !error ? <Cargando /> : null}
 
-      {datos && (
-        <>
-          <Ficha>
-            <Etiqueta>Vendido hoy</Etiqueta>
-            <View style={{ marginTop: 8 }}>
-              <Cifra tamano="grande">{veCifras ? dolares(ventas) : '—'}</Cifra>
-            </View>
-            <Nota style={{ marginTop: 4 }}>
-              {nPedidos === null ? ' ' : `${nPedidos} ${nPedidos === 1 ? 'pedido' : 'pedidos'}`}
-              {veCifras && datos.resumen?.ok && datos.resumen.valor.pedidos > 0
-                ? ` · ticket promedio ${dolares(datos.resumen.valor.ticket_promedio)}`
-                : ''}
-            </Nota>
-          </Ficha>
+      <Animated.View style={[{ gap: 12 }, estiloAparece]}>
+        <Arranque datos={arranque} />
 
-          <View style={estilos.par}>
-            <Espera titulo="En cocina" valor={enCocina} nota="comandas preparándose" />
-            <Espera titulo="Por cobrar" valor={porCobrar} nota="listas, falta cobrar" />
+        {/* ── Hoy ── */}
+        <Etiqueta style={{ marginTop: 4, marginBottom: -4 }}>Hoy</Etiqueta>
+        <Ficha style={{ paddingVertical: 22 }}>
+          <Text style={[estilos.vendido, { color: t.tinta }]} numberOfLines={1} adjustsFontSizeToFit>
+            {veCifras && ventas !== null ? fmt(ventas) : '—'}
+          </Text>
+          <Text style={[estilos.vendidoNota, { color: t.suave }]}>
+            Vendido hoy
+            {nPedidos !== null && (
+              <>
+                <Text style={{ color: t.tenue }}> · </Text>
+                <Text style={{ color: t.fuerte, fontFamily: LETRA.textoFuerte }}>{nPedidos}</Text> {nPedidos === 1 ? 'pedido' : 'pedidos'}
+              </>
+            )}
+          </Text>
+        </Ficha>
+        <View style={estilos.par}>
+          <Espera titulo="En cocina" valor={enCocina} nota="comandas preparándose" to="/cocina" />
+          <Espera titulo="Por cobrar" valor={porCobrar} nota="listas, falta cobrar" to={puede?.operar ? '/pos' : undefined} />
+        </View>
+
+        {veCifras && <Avisos lista={avisos} />}
+
+        {/* ── Vender ── */}
+        {vender.length > 0 && (
+          <View style={{ gap: 10 }}>
+            <Etiqueta style={{ marginTop: 4 }}>Vender</Etiqueta>
+            {vender.map((m, i) => (
+              <TarjetaVender
+                key={m.to}
+                to={m.to}
+                icono={m.icono}
+                titulo={m.titulo}
+                desc={m.to === '/pos' ? 'Tomar la comanda y cobrar' : 'Las comandas que llegan'}
+                principal={i === 0 && Boolean(puede?.operar)}
+              />
+            ))}
           </View>
+        )}
 
-          {avisos.length > 0 && (
-            <View style={{ gap: 10 }}>
-              <Etiqueta style={{ marginTop: 6 }}>¿Sabías que…?</Etiqueta>
-              {avisos.map((a) => (
-                <TarjetaAviso key={a.id} aviso={a} t={t} />
+        {/* ── El recorrido del negocio y Reportes ── */}
+        <Recorrido datos={recorrido} modulos={rutas} />
+        {rutas.includes('/reportes') && <FilaReportes dias={datos?.recorrido?.ok ? datos.recorrido.valor.ultimos_7_dias : undefined} />}
+
+        {/* ── Zona contable ── */}
+        {contador.length > 0 && (
+          <View style={[estilos.contable, { borderTopColor: t.gris200 }]}>
+            <View style={estilos.contableCabeza}>
+              <Etiqueta>Zona contable</Etiqueta>
+              <Text style={[estilos.contableNota, { color: t.tenue }]}>Se arma solo con lo de arriba</Text>
+            </View>
+            <View style={{ gap: 8 }}>
+              {contador.map((m) => (
+                <BotonContador key={m.to} to={m.to} icono={m.icono} titulo={m.titulo} desc={m.pregunta} />
               ))}
             </View>
-          )}
-
-          {recorrido && (
-            <Ficha>
-              <Titulo>Tu negocio hoy</Titulo>
-              <View style={{ marginTop: 6 }}>
-                {recorrido.pasos.map((p, i) => (
-                  <Estacion key={p.id} paso={p} ultima={i === recorrido.pasos.length - 1} t={t} />
-                ))}
-              </View>
-            </Ficha>
-          )}
-
-          {recorrido && recorrido.ultimos_7_dias.length > 0 && (
-            <Ficha>
-              <Etiqueta>Últimos 7 días</Etiqueta>
-              <Semana dias={recorrido.ultimos_7_dias} t={t} />
-            </Ficha>
-          )}
-        </>
-      )}
+          </View>
+        )}
+      </Animated.View>
     </Pantalla>
   )
 }
 
-/** En cero se queda callada; con algo dentro se enciende, como en la web. */
-function Espera({ titulo, valor, nota }: { titulo: string; valor: number | null; nota: string }) {
-  const t = useTema()
-  const hay = (valor ?? 0) > 0
-  return (
-    <Ficha tono={hay ? 'aviso' : undefined} style={{ flex: 1, padding: 16 }}>
-      <Text style={[estilos.esperaTitulo, { color: hay ? t.aviso : t.suave }]}>{titulo}</Text>
-      <View style={{ marginTop: 6 }}>
-        <Cifra tamano="media" color={hay ? t.aviso : t.tinta}>
-          {valor === null ? '—' : String(valor)}
-        </Cifra>
-      </View>
-      <Text style={[estilos.esperaNota, { color: hay ? t.aviso : t.tenue }]}>{nota}</Text>
-    </Ficha>
-  )
-}
-
-function TarjetaAviso({ aviso, t }: { aviso: Aviso; t: Tema }) {
-  const punto = aviso.tono === 'ojo' ? t.aviso : aviso.tono === 'bien' ? t.exito : t.acento
-  return (
-    <Ficha style={{ flexDirection: 'row', gap: 12, padding: 16 }}>
-      <View style={[estilos.punto, { backgroundColor: punto }]} />
-      <View style={{ flex: 1 }}>
-        <Text style={[estilos.avisoTitulo, { color: t.tinta }]}>{aviso.titulo}</Text>
-        {!!aviso.detalle && <Nota style={{ marginTop: 3 }}>{aviso.detalle}</Nota>}
-      </View>
-    </Ficha>
-  )
-}
-
-const ESTACION: Record<PasoRecorrido['id'], { nombre: string; icono: NombreIcono }> = {
-  compras: { nombre: 'Compras', icono: 'file-text' },
-  inventario: { nombre: 'Inventario', icono: 'package' },
-  menu: { nombre: 'Menú', icono: 'book-open' },
-  ventas: { nombre: 'Ventas', icono: 'clipboard' },
-  caja: { nombre: 'Cierre de caja', icono: 'dollar-sign' },
-}
-
-function Estacion({ paso, ultima, t }: { paso: PasoRecorrido; ultima: boolean; t: Tema }) {
-  const e = ESTACION[paso.id] ?? { nombre: paso.id, icono: 'circle' as NombreIcono }
-  // La frase puede traer "{monto}": se escribe con el formato de la app.
-  const frase = paso.frase.replace('{monto}', dolares(paso.monto))
-  return (
-    <View style={[estilos.estacion, !ultima && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.linea }]}>
-      <View
-        style={[
-          estilos.estacionIcono,
-          { backgroundColor: paso.pendiente ? t.avisoSuave : t.acentoSuave, borderColor: paso.pendiente ? t.avisoLinea : 'transparent' },
-        ]}
-      >
-        <Feather name={e.icono} size={17} color={paso.pendiente ? t.aviso : t.acento} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[estilos.estacionNombre, { color: t.tinta }]}>{e.nombre}</Text>
-        <Text style={[estilos.estacionFrase, { color: paso.pendiente ? t.aviso : t.suave }]}>{frase}</Text>
-      </View>
-      {paso.pendiente ? <Feather name="alert-circle" size={17} color={t.aviso} /> : <Feather name="check" size={17} color={t.exito} />}
-    </View>
-  )
-}
-
-function Semana({ dias, t }: { dias: { fecha: string; ventas: number }[]; t: Tema }) {
-  const max = Math.max(...dias.map((d) => d.ventas), 0)
-  return (
-    <View style={estilos.semana}>
-      {dias.map((d, i) => {
-        const esHoy = i === dias.length - 1
-        const alto = max > 0 ? Math.max((d.ventas / max) * 84, d.ventas > 0 ? 4 : 2) : 2
-        return (
-          <View key={d.fecha} style={estilos.semanaDia}>
-            <View style={estilos.semanaPista}>
-              <View style={{ height: alto, borderRadius: 5, backgroundColor: esHoy ? t.acento : t.barra }} />
-            </View>
-            <Text style={[estilos.semanaLetra, { color: esHoy ? t.acento : t.tenue }]}>{esHoy ? 'Hoy' : inicialDelDia(d.fecha)}</Text>
-          </View>
-        )
-      })}
-    </View>
-  )
-}
-
 const estilos = StyleSheet.create({
-  saludo: { fontFamily: LETRA.tituloFuerte, fontSize: 26, letterSpacing: -0.6, marginTop: 4 },
+  cabecera: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 4 },
+  saludo: { fontFamily: LETRA.texto, fontSize: 15, marginTop: 2, marginBottom: 2 },
+  vendido: { fontFamily: LETRA.tituloFuerte, fontSize: 48, letterSpacing: -1.5, lineHeight: 52 },
+  vendidoNota: { fontFamily: LETRA.texto, fontSize: 15, marginTop: 8 },
   par: { flexDirection: 'row', gap: 12 },
-  esperaTitulo: { fontFamily: LETRA.textoFuerte, fontSize: 13.5 },
-  esperaNota: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 4 },
-  punto: { width: 8, height: 8, borderRadius: 4, marginTop: 7 },
-  avisoTitulo: { fontFamily: LETRA.textoFuerte, fontSize: 15, lineHeight: 21 },
-  estacion: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
-  estacionIcono: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  estacionNombre: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
-  estacionFrase: { fontFamily: LETRA.texto, fontSize: 13.5, marginTop: 2, lineHeight: 19 },
-  semana: { flexDirection: 'row', gap: 8, marginTop: 14 },
-  semanaDia: { flex: 1, alignItems: 'center', gap: 6 },
-  semanaPista: { height: 84, width: '100%', justifyContent: 'flex-end' },
-  semanaLetra: { fontFamily: LETRA.textoFuerte, fontSize: 12 },
+  contable: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, marginTop: 4, gap: 8 },
+  contableCabeza: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
+  contableNota: { fontFamily: LETRA.texto, fontSize: 12 },
 })

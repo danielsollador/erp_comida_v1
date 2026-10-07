@@ -5,13 +5,15 @@ import { useFonts } from 'expo-font'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { View } from 'react-native'
+import { MonedaProvider } from '../lib/moneda'
 import { SesionProvider, useSesion } from '../lib/sesion'
-import { useTema } from '../lib/tema'
+import { TemaProvider, useModo, useTema } from '../lib/tema'
 
 /**
- * La raiz: las letras de la marca, la sesion y dos puertas. Sin sesion solo
- * existe `entrar`; con sesion, las pestañas. `Stack.Protected` hace que un
- * enlace a la portada sin sesion termine en el login, y al reves.
+ * La raiz: las letras de la marca, el tema (claro u oscuro, como la web), la
+ * sesion, la moneda y dos puertas. Sin sesion solo existe `entrar`; con
+ * sesion, el inicio y lo que cuelga de el. `Stack.Protected` hace que un
+ * enlace adentro sin sesion termine en el login, y al reves.
  */
 export default function Raiz() {
   const [letras] = useFonts({
@@ -23,21 +25,24 @@ export default function Raiz() {
     JetBrainsMono_700Bold,
   })
   return (
-    <SesionProvider>
-      <Puertas listas={letras} />
-    </SesionProvider>
+    <TemaProvider>
+      <SesionProvider>
+        <Puertas listas={letras} />
+      </SesionProvider>
+    </TemaProvider>
   )
 }
 
 function Puertas({ listas }: { listas: boolean }) {
   const { fase } = useSesion()
+  const { modo } = useModo()
   const t = useTema()
   // Mientras cargan las letras o se prueba la sesion guardada: el fondo, y
   // nada que salte despues.
   if (!listas || fase === 'cargando') return <View style={{ flex: 1, backgroundColor: t.papel }} />
   return (
-    <>
-      <StatusBar style="auto" />
+    <MonedaProvider activa={fase === 'dentro'}>
+      <StatusBar style={modo === 'oscuro' ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.papel } }}>
         <Stack.Protected guard={fase === 'dentro'}>
           <Stack.Screen name="(app)" />
@@ -46,6 +51,6 @@ function Puertas({ listas }: { listas: boolean }) {
           <Stack.Screen name="entrar" />
         </Stack.Protected>
       </Stack>
-    </>
+    </MonedaProvider>
   )
 }

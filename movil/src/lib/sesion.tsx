@@ -9,6 +9,8 @@ type Sesion = {
   acceso: EstadoAcceso | null
   entrar: (usuario: string, clave: string) => Promise<void>
   salir: () => Promise<void>
+  /** Vuelve a pedir quien esta dentro (despues de cambiar el nombre, el PIN, el rol). */
+  recargar: () => Promise<void>
 }
 
 const Contexto = createContext<Sesion | null>(null)
@@ -65,7 +67,12 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     setFase('fuera')
   }, [])
 
-  const valor = useMemo(() => ({ fase, acceso, entrar, salir }), [fase, acceso, entrar, salir])
+  const recargar = useCallback(async () => {
+    const a = await api.estado()
+    if (a.autenticado) setAcceso(a)
+  }, [])
+
+  const valor = useMemo(() => ({ fase, acceso, entrar, salir, recargar }), [fase, acceso, entrar, salir, recargar])
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>
 }
 
