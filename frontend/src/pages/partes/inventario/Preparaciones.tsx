@@ -4,11 +4,11 @@ import { PuntoTipo } from '../../../components/compras/Almacenes'
 import Icono from '../../../components/Icono'
 import { Numerico } from '../../../components/Teclado'
 import { contiene, palabrasDe } from '../../../components/Tabla'
-import { useDialogo } from '../../../components/dialogo'
 import { Boton, FiltroDesplegable, Modal, Seccion, Vacio } from '../../../components/ui'
 import { api } from '../../../lib/api'
 import { useMoneda } from '../../../lib/moneda'
 import { colorFranja } from '../../../lib/paleta'
+import { datosDe } from '../../../lib/inventario'
 import { ALMACEN_DE, vaEnPreparacion } from '../../../lib/tiposArticulo'
 import type { DatosPreparacion, Disponibilidad, Ingrediente, Preparacion, Produccion } from '../../../lib/types'
 
@@ -33,10 +33,13 @@ import type { DatosPreparacion, Disponibilidad, Ingrediente, Preparacion, Produc
 export default function Preparaciones({
   ingredientes,
   onCambio,
+  onEditando,
 }: {
   ingredientes: Ingrediente[]
   /** Algo movió el depósito (una tanda, una merma): que se recargue. */
   onCambio: () => void
+  /** Se abrió (o cerró) la receta: la pantalla de arriba esconde lo que no va. */
+  onEditando?: (abierta: boolean) => void
 }) {
   const { fmt: dinero } = useMoneda()
   const [preps, setPreps] = useState<Preparacion[] | null>(null)
@@ -51,6 +54,11 @@ export default function Preparaciones({
   const [resaltada, setResaltada] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
+
+  useEffect(() => {
+    onEditando?.(editando !== null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editando])
 
   const cargar = useCallback(() => {
     Promise.all([api.listarPreparaciones(), api.disponibilidad(), api.preparacionesVencidas(), api.listarProduccion()])
@@ -768,14 +776,26 @@ const rotulo = 'block text-xs font-medium text-neutral-600 mb-1'
 const OTRA_UNIDAD: Record<string, string> = { kg: 'g', g: 'kg', lt: 'ml', ml: 'lt' }
 const esGrande = (u: string) => u === 'kg' || u === 'lt'
 
-type Fila = { ingrediente_id: number; cantidad: string; enChica?: boolean }
+type Fila = {
+  ingrediente_id: number
+  /** Lo que entra, crudo, en la unidad de la ficha. */
+  cantidad: string
+  /** Lo que se aprovecha de ese crudo al cocinarlo (%). Es de la FICHA del
+      crudo (el pollo pierde lo mismo en cualquier guiso) y se guarda ahí. */
+  aprovechable: string
+  enChica?: boolean
+}
 
 /**
  * Misma forma que la receta del menú: a la izquierda el recipiente que se
- * llena con lo que lleva; a la derecha "Lleva" y "Agregar". Dos diferencias
- * a propósito: solo se ofrece materia prima (y otras preparaciones), y no
- * hay precio ni margen. Lo que la olla dice arriba es cuánto RINDE la tanda
- * y a cuánto sale el kilo.
+ * llena con lo que lleva; a la derecha "Lleva" y "Agregar". Cabe en la
+ * pantalla sin desplazar la página, como la receta.
+ *
+ * LA MERMA VA EN EL CRUDO, NO EN LO PREPARADO (Leider, 7-oct): a cada
+ * ingrediente se le dice cuánto entra y cuánto se aprovecha al cocinarlo
+ * ("1 kg de pollo, queda el 80 %"); lo que rinde la tanda es la suma de lo
+ * que queda. No se escribe: sale solo. El porcentaje es de la ficha del
+ * crudo y se guarda ahí, así que sirve para todas las preparaciones.
  */
 function Olla({
   prep,
@@ -789,20 +809,24 @@ function Olla({
   onGuardada: () => void
 }) {
   const { fmt: dinero } = useMoneda()
-  const dialogo = useDialogo()
   const [nombre, setNombre] = useState(prep?.nombre ?? '')
   const [unidad, setUnidad] = useState(prep?.unidad ?? 'kg')
-  const [rinde, setRinde] = useState(prep ? String(prep.rinde) : '')
-  const [modo, setModo] = useState<'descontar' | 'producir'>(prep?.modo_produccion ?? 'descontar')
-  const [vida, setVida] = useState(prep?.vida_util_horas ? String(prep.vida_util_horas) : '')
-  const [filas, setFilas] = useState<Fila[]>(prep ? prep.lineas.map((l) => ({ ingrediente_id: l.ingrediente_id, cantidad: String(l.cantidad) })) : [])
+  const porId = useMemo(() => new Map(ingredientes.map((i) => [i.id, i])), [ingredientes])
+  const [filas, setFilas] = useState<Fila[]>(() =>
+    prep
+      ? prep.lineas.map((l) => ({
+          ingrediente_id: l.ingrediente_id,
+          cantidad: String(l.cantidad),
+          aprovechable: String(porId.get(l.ingrediente_id)?.rendimiento_pct ?? 100),
+        }))
+      : [],
+  )
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('')
   const [resaltado, setResaltado] = useState<number | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
 
-  const porId = useMemo(() => new Map(ingredientes.map((i) => [i.id, i])), [ingredientes])
   const enReceta = new Set(filas.map((f) => f.ingrediente_id))
   const palabras = palabrasDe(busqueda)
   const disponibles = ingredientes
@@ -816,19 +840,31 @@ function Olla({
     return [...cuenta.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([n, c]) => ({ valor: n || '__sin__', texto: n || 'Sin categoría', contador: c }))
   }, [ingredientes])
 
-  // Lo que pesa cada cosa en la olla, por costo. Un color por ingrediente.
+  // Lo que pesa cada cosa en la olla, por costo; y lo que queda de cada una.
   const partes = filas
     .map((f, i) => {
       const ing = porId.get(f.ingrediente_id)
+      if (!ing) return null
       const cantidad = aNum(f.cantidad) || 0
-      return ing ? { id: ing.id, nombre: ing.nombre, cantidad, unidad: ing.unidad, costo: cantidad * (ing.costo_efectivo || ing.costo_unitario || 0), color: colorFranja(i) } : null
+      const pct = Math.min(Math.max(aNum(f.aprovechable) || 0, 0), 100)
+      return {
+        id: ing.id,
+        nombre: ing.nombre,
+        cantidad,
+        unidad: ing.unidad,
+        queda: cantidad * (pct / 100),
+        costo: cantidad * (ing.costo_unitario || 0),
+        color: colorFranja(i),
+      }
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
   const costoTanda = partes.reduce((s, p) => s + p.costo, 0)
-  const rindeNum = aNum(rinde)
-  // Lo que entra en la misma unidad en que se mide la preparación: para
-  // decir "rinde el 80 % del crudo".
-  const bruto = partes.filter((p) => p.unidad === unidad).reduce((s, p) => s + p.cantidad, 0)
+  // Lo que rinde la tanda: la suma de lo que queda de cada crudo que se mide
+  // como ella. Una preparación en kilos no suma unidades.
+  const enSuUnidad = partes.filter((p) => p.unidad === unidad)
+  const entra = enSuUnidad.reduce((s, p) => s + p.cantidad, 0)
+  const rinde = enSuUnidad.reduce((s, p) => s + p.queda, 0)
+  const sinMedida = partes.length > 0 && enSuUnidad.length === 0
 
   function actualizar(id: number, cambios: Partial<Fila>) {
     setFilas((prev) => prev.map((f) => (f.ingrediente_id === id ? { ...f, ...cambios } : f)))
@@ -839,17 +875,25 @@ function Olla({
     const limpias = filas.filter((f) => f.ingrediente_id && aNum(f.cantidad) > 0)
     if (!nombre.trim()) return setError('Ponle nombre a la preparación.')
     if (limpias.length === 0) return setError('Agrega al menos un ingrediente con su cantidad.')
-    if (!(rindeNum > 0)) return setError('Di cuánto rinde la tanda.')
-    const datos: DatosPreparacion = {
-      nombre: nombre.trim(),
-      unidad,
-      rinde: rindeNum,
-      modo_produccion: modo,
-      vida_util_horas: modo === 'producir' && aNum(vida) > 0 ? Math.round(aNum(vida)) : null,
-      lineas: limpias.map((l) => ({ ingrediente_id: l.ingrediente_id, cantidad: aNum(l.cantidad) })),
-    }
+    if (!(rinde > 0)) return setError(`Nada de lo que lleva se mide en ${unidad}: cambia en qué se mide la preparación.`)
     setGuardando(true)
     try {
+      // El % que se aprovecha es del crudo: si cambió, se guarda en su ficha.
+      for (const f of limpias) {
+        const ing = porId.get(f.ingrediente_id)
+        const pct = Math.min(Math.max(aNum(f.aprovechable) || 100, 1), 100)
+        if (ing && ing.tipo !== 'preparacion' && Math.abs(pct - ing.rendimiento_pct) > 0.001) {
+          await api.actualizarIngrediente(ing.id, { ...datosDe(ing), rendimiento_pct: pct })
+        }
+      }
+      const datos: DatosPreparacion = {
+        nombre: nombre.trim(),
+        unidad,
+        rinde: Math.round(rinde * 1000) / 1000,
+        modo_produccion: prep?.modo_produccion ?? 'descontar',
+        vida_util_horas: prep?.vida_util_horas ?? null,
+        lineas: limpias.map((l) => ({ ingrediente_id: l.ingrediente_id, cantidad: aNum(l.cantidad) })),
+      }
       if (prep) await api.actualizarPreparacion(prep.id, datos)
       else await api.crearPreparacion(datos)
       onGuardada()
@@ -860,22 +904,8 @@ function Olla({
     }
   }
 
-  async function usarRendimientoReal() {
-    if (!prep?.rendimiento_real) return
-    const nuevo = Math.round(prep.rinde * prep.rendimiento_real * 1000) / 1000
-    const ok = await dialogo.confirmar({
-      titulo: 'Corregir lo que rinde',
-      texto: `Las últimas ${prep.tandas} tandas rindieron ${Math.round(prep.rendimiento_real * 100)} % de lo que dice la receta. La tanda pasa a rendir ${nuevo} ${prep.unidad} en vez de ${prep.rinde}.`,
-      aceptar: 'Corregir',
-    })
-    if (ok) setRinde(String(nuevo))
-  }
-
-  const chip = (activo: boolean) =>
-    `vp-pulsable rounded-xl px-3 py-2 text-left text-sm transition-colors ${activo ? 'bg-neutral-900 text-white' : 'bg-neutral-500/6 hover:bg-neutral-500/10'}`
-
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 lg:h-[calc(100dvh-15.5rem)] lg:flex lg:flex-col">
       <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <button type="button" onClick={onCerrar} className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Preparado
@@ -889,12 +919,12 @@ function Olla({
           </Boton>
         </div>
       </div>
-      {error && <p className="text-peligro-600 text-sm">{error}</p>}
+      {error && <p className="text-peligro-600 text-sm shrink-0">{error}</p>}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
         {/* ── La olla ──────────────────────────────────────────────── */}
-        <section className="vp-losa p-4 sm:p-5">
-          <div className="flex items-start gap-2">
+        <section className="vp-losa p-4 sm:p-5 lg:flex lg:flex-col lg:min-h-0">
+          <div className="flex items-start gap-2 shrink-0">
             <input
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
@@ -909,87 +939,57 @@ function Olla({
               <option value="unidad">unidad</option>
             </select>
           </div>
-          <p className="text-xs text-neutral-500 mt-1">Una tanda, tal como la hace la cocina. El sistema escala.</p>
+          <p className="text-xs text-neutral-500 mt-1 shrink-0">Una tanda, tal como la hace la cocina. El sistema escala.</p>
 
-          <div className="flex justify-center mt-3">
+          <div className="lg:flex-1 lg:min-h-0 flex justify-center mt-3">
             <DibujoOlla
               partes={partes.map((p) => ({ id: p.id, nombre: p.nombre, valor: p.costo, color: p.color }))}
               total={costoTanda}
-              rinde={rindeNum}
+              rinde={rinde}
               unidad={unidad}
               formato={dinero}
               resaltado={resaltado}
               onResaltar={setResaltado}
-              className="w-full max-w-[250px]"
+              className="w-full max-w-[250px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
             />
           </div>
 
-          <div className="mt-3 space-y-2">
-            <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2 items-stretch">
-              <label className="block">
-                <span className={rotulo}>Rinde, ya preparado</span>
-                <CasillaConUnidad
-                  unidad={unidad}
-                  vista={unidad}
-                  alCambiarVista={() => undefined}
-                  value={rinde}
-                  onChange={(e) => setRinde(e.target.value)}
-                  placeholder={bruto > 0 ? `menos de ${fmtCant(bruto)}` : '0,8'}
-                  etiqueta={`Rinde (${unidad})`}
-                  claseCasilla={`${clase} text-right text-lg font-semibold tabular-nums`}
-                />
-              </label>
-              <div className="rounded-xl bg-neutral-500/6 px-3 py-2 flex flex-col justify-center">
-                <span className="text-[11px] text-neutral-500">Sale a</span>
-                <span className="font-display text-lg font-semibold tabular-nums leading-tight">
-                  {costoTanda > 0 && rindeNum > 0 ? dinero(costoTanda / rindeNum) : '—'}
-                  <span className="text-xs font-normal text-neutral-500"> el {unidad}</span>
-                </span>
-              </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 shrink-0">
+            <div className="rounded-xl bg-neutral-500/6 px-3 py-2">
+              <span className="text-[11px] text-neutral-500">Entra crudo</span>
+              <span className="block font-display text-lg font-semibold tabular-nums leading-tight">
+                {entra > 0 ? `${fmtCant(entra)} ${unidad}` : '—'}
+              </span>
+              <span className="block text-[11px] text-neutral-500 leading-tight">
+                {entra > 0 && rinde > 0 ? `queda ${fmtCant(rinde)} ${unidad}: la cocina se lleva el ${Math.round((1 - rinde / entra) * 100)} %` : 'lo que se mide como la preparación'}
+              </span>
             </div>
-            <p className="text-xs text-neutral-500">
-              Aquí va la merma de cocinar: entra crudo, sale menos.
-              {bruto > 0 && rindeNum > 0 && rindeNum < bruto && <> Esta tanda rinde el {Math.round((rindeNum / bruto) * 100)} % del crudo.</>}
-              {bruto > 0 && rindeNum > bruto && <span className="text-aviso-700"> Rinde más de lo que entra: revisa el número.</span>}
-            </p>
-            {prep?.rendimiento_real != null && Math.abs(prep.rendimiento_real - 1) > 0.05 && (
-              <button type="button" onClick={() => void usarRendimientoReal()} className="text-xs font-semibold text-acento-700 underline">
-                Las tandas reales rindieron {Math.round(prep.rendimiento_real * 100)} %: usar ese
-              </button>
-            )}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              {(
-                [
-                  { v: 'descontar', t: 'Del crudo', d: 'Al vender sale la materia prima. Nadie anota nada.' },
-                  { v: 'producir', t: 'Se produce', d: 'La cocina anota cada tanda: se mide lo real.' },
-                ] as const
-              ).map((o) => (
-                <button key={o.v} type="button" onClick={() => setModo(o.v)} className={chip(modo === o.v)}>
-                  <span className="block font-semibold">{o.t}</span>
-                  <span className={`block text-xs ${modo === o.v ? 'text-white/70' : 'text-neutral-500'}`}>{o.d}</span>
-                </button>
-              ))}
+            <div className="rounded-xl bg-neutral-500/6 px-3 py-2">
+              <span className="text-[11px] text-neutral-500">Sale a</span>
+              <span className="block font-display text-lg font-semibold tabular-nums leading-tight">
+                {costoTanda > 0 && rinde > 0 ? dinero(costoTanda / rinde) : '—'}
+                <span className="text-xs font-normal text-neutral-500"> el {unidad}</span>
+              </span>
+              <span className="block text-[11px] text-neutral-500 leading-tight">ya preparado, con la merma de cocinar</span>
             </div>
-            {modo === 'producir' && (
-              <label className="block">
-                <span className={rotulo}>Dura hecha (horas)</span>
-                <Numerico value={vida} onChange={(e) => setVida(e.target.value)} entero placeholder="Ej. 24" className={clase} />
-              </label>
-            )}
           </div>
+          {sinMedida && (
+            <p className="text-xs text-aviso-700 mt-2 shrink-0">Nada de lo que lleva se mide en {unidad}: cambia arriba en qué se mide la preparación.</p>
+          )}
         </section>
 
         {/* ── Lleva y Agregar ──────────────────────────────────────── */}
-        <section className="space-y-3">
+        <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
           {filas.length > 0 && (
-            <div className="vp-losa overflow-hidden max-h-[22rem] overflow-y-auto">
+            <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[50%] lg:overflow-y-auto">
               <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">
-                Lleva una tanda <span className="text-sm font-normal text-neutral-500">· crudo, tal como se compró</span>
+                Lleva una tanda <span className="text-sm font-normal text-neutral-500">· crudo, y cuánto queda al cocinarlo</span>
               </h3>
               <div className="px-4 pb-1.5 flex items-center gap-3 border-b border-neutral-100 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
                 <span className="w-1.5 shrink-0" />
                 <span className="min-w-0 flex-1">Mercancía</span>
-                <span className="w-[8.75rem] shrink-0 text-right">Cantidad</span>
+                <span className="w-[8.75rem] shrink-0 text-right">Entra</span>
+                <span className="w-[4.5rem] shrink-0 text-right">Queda</span>
                 <span className="w-16 text-right">Costo</span>
                 <span className="w-8 shrink-0" />
               </div>
@@ -1015,7 +1015,7 @@ function Olla({
             </div>
           )}
 
-          <div className="vp-losa overflow-hidden">
+          <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
             <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 shrink-0">
               <h3 className="font-display font-semibold tracking-tight mr-auto">{filas.length === 0 ? 'Toca lo que lleva' : 'Agregar'}</h3>
               <div className="relative">
@@ -1037,7 +1037,7 @@ function Olla({
             {disponibles.length === 0 ? (
               <p className="px-4 pb-4 text-sm text-neutral-400">{ingredientes.length === 0 ? 'No hay materia prima en el depósito todavía.' : 'Nada coincide.'}</p>
             ) : (
-              <div className="max-h-[26rem] overflow-y-auto">
+              <div className="max-h-[26rem] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto">
                 <div className="px-4 pb-1.5 flex items-center gap-3 border-b border-neutral-100 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
                   <span className="min-w-0 flex-1">Mercancía</span>
                   <span className="text-right">Hay · costo</span>
@@ -1048,7 +1048,12 @@ function Olla({
                     <li key={ing.id}>
                       <button
                         type="button"
-                        onClick={() => setFilas((prev) => [...prev, { ingrediente_id: ing.id, cantidad: '', enChica: esGrande(ing.unidad) }])}
+                        onClick={() =>
+                          setFilas((prev) => [
+                            ...prev,
+                            { ingrediente_id: ing.id, cantidad: '', aprovechable: String(ing.tipo === 'preparacion' ? 100 : ing.rendimiento_pct), enChica: esGrande(ing.unidad) },
+                          ])
+                        }
                         className="vp-celda w-full flex items-center gap-3 px-4 py-2.5 text-left"
                       >
                         <PuntoTipo tipo={ing.tipo} />
@@ -1056,11 +1061,12 @@ function Olla({
                           <span className="block text-sm truncate">{ing.nombre}</span>
                           <span className="block text-[11px] text-neutral-400">
                             {ing.tipo === 'preparacion' ? 'preparación' : ing.categoria || ALMACEN_DE[ing.tipo].texto}
+                            {ing.tipo !== 'preparacion' && ing.rendimiento_pct < 100 && ` · se aprovecha el ${Math.round(ing.rendimiento_pct)} %`}
                           </span>
                         </span>
                         <span className="text-xs text-neutral-500 tabular-nums text-right">
                           {fmtCant(ing.stock_actual)} {ing.unidad}
-                          <span className="block">{dinero(ing.costo_efectivo || ing.costo_unitario)} / {ing.unidad}</span>
+                          <span className="block">{dinero(ing.costo_unitario)} / {ing.unidad}</span>
                         </span>
                         <span className="w-7 h-7 grid place-items-center rounded-full bg-neutral-500/10 text-neutral-600 shrink-0">
                           <Icono nombre="mas" size={14} />
@@ -1078,6 +1084,7 @@ function Olla({
   )
 }
 
+/** Un crudo de la tanda: cuánto entra, qué % se aprovecha y cuánto queda. */
 function RenglonOlla({
   f,
   ing,
@@ -1102,8 +1109,11 @@ function RenglonOlla({
   const factor = enChica ? (esGrande(ing.unidad) ? 1000 : 1 / 1000) : 1
   const unidadVista = enChica ? otra : ing.unidad
   const cantidad = aNum(f.cantidad) || 0
+  const pct = Math.min(Math.max(aNum(f.aprovechable) || 0, 0), 100)
+  const queda = cantidad * (pct / 100)
   const valorVisto = f.cantidad === '' ? '' : sinRuido(cantidad * factor)
-  const costoU = ing.costo_efectivo || ing.costo_unitario || 0
+  const costoU = ing.costo_unitario || 0
+  const esPrep = ing.tipo === 'preparacion'
   const escribir = (texto: string) => {
     if (!enChica) return onCambio({ cantidad: texto })
     const n = aNum(texto)
@@ -1116,7 +1126,7 @@ function RenglonOlla({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {enChica ? `${dinero(costoU / factor, 2)} por ${otra}` : `${dinero(costoU, 2)} por ${ing.unidad}`} · hay {fmtCant(ing.stock_actual)} {ing.unidad}
+            {dinero(costoU, 2)} por {ing.unidad} · hay {fmtCant(ing.stock_actual)} {ing.unidad}
           </span>
         </span>
         <CasillaConUnidad
@@ -1127,11 +1137,31 @@ function RenglonOlla({
           onChange={(e) => escribir(e.target.value)}
           placeholder="0"
           etiqueta={`${ing.nombre} (${unidadVista})`}
-          aria-label={`Cantidad de ${ing.nombre} por tanda, en ${unidadVista}`}
+          aria-label={`Cantidad de ${ing.nombre} que entra, en ${unidadVista}`}
           autoFocus={f.cantidad === ''}
           className="w-[8.75rem] shrink-0"
           claseCasilla="border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-right tabular-nums"
         />
+        <span className="w-[4.5rem] shrink-0 text-right text-sm tabular-nums">
+          {cantidad > 0 ? (
+            <>
+              <span className="block font-semibold">{enChica ? `${fmtCant(queda * factor)} ${otra}` : `${fmtCant(queda)} ${ing.unidad}`}</span>
+              {!esPrep && (
+                <span className="inline-flex items-center justify-end gap-0.5 text-[11px] text-neutral-500">
+                  <Numerico
+                    value={f.aprovechable}
+                    onChange={(e) => onCambio({ aprovechable: e.target.value })}
+                    aria-label={`Porcentaje de ${ing.nombre} que queda al cocinar`}
+                    className="w-10 border-b border-neutral-300 bg-transparent !rounded-none !px-0 !py-0 text-right text-[11px] tabular-nums"
+                  />
+                  %
+                </span>
+              )}
+            </>
+          ) : (
+            '—'
+          )}
+        </span>
         <span className="w-16 text-right text-sm tabular-nums font-semibold">{cantidad > 0 ? dinero(cantidad * costoU) : '—'}</span>
         <button type="button" onClick={onQuitar} aria-label={`Quitar ${ing.nombre}`} className="w-8 h-8 shrink-0 grid place-items-center rounded-lg text-neutral-400 hover:bg-peligro-500/10 hover:text-peligro-600">
           <Icono nombre="quitar" size={14} />
@@ -1214,7 +1244,7 @@ function DibujoOlla({
       {/* La tapa: lo que rinde */}
       <rect x="26" y="78" width="208" height="12" rx="6" fill="var(--color-neutral-300)" />
       <text x="130" y="40" textAnchor="middle" fontSize="12" fill="var(--color-neutral-500)">
-        {rinde > 0 ? 'rinde' : 'cuánto rinde la tanda'}
+        {rinde > 0 ? 'sale' : 'lo que sale de la tanda'}
       </text>
       <text x="130" y="68" textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--color-neutral-900)" style={{ fontFamily: 'var(--font-display)' }}>
         {rinde > 0 ? `${fmtCant(rinde)} ${unidad}` : '—'}

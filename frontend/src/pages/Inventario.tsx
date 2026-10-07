@@ -124,6 +124,9 @@ export default function Inventario() {
   const [cambiandoConfig, setCambiandoConfig] = useState(false)
   // La materia prima tiene dos caras.
   const [cara, setCara] = useState<'crudo' | 'preparado'>('crudo')
+  // Con la receta de una preparación abierta, la franja Crudo/Preparado y
+  // las acciones no tienen sentido: para salir se vuelve atrás.
+  const [editandoPrep, setEditandoPrep] = useState(false)
 
   useEffect(() => {
     cargar()
@@ -445,7 +448,7 @@ export default function Inventario() {
                 <h2 className="font-display text-xl font-semibold tracking-tight leading-tight">{almacen.texto}</h2>
                 <p className="text-xs text-neutral-500 leading-tight">{almacen.detalle}</p>
               </div>
-              {(tipoActual === 'desechable' || (tipoActual === 'insumo' && cara === 'preparado')) && (
+              {(tipoActual === 'desechable' || (tipoActual === 'insumo' && cara === 'preparado' && !editandoPrep)) && (
                 <div className="ml-auto flex items-center gap-2">
                   {tipoActual !== 'desechable' && (
                     <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
@@ -459,7 +462,7 @@ export default function Inventario() {
               )}
             </div>
 
-            {tipoActual === 'insumo' && (
+            {tipoActual === 'insumo' && !editandoPrep && (
               <div role="tablist" className="grid grid-cols-2 gap-2">
                 {(
                   [
@@ -505,7 +508,7 @@ export default function Inventario() {
                 />
               </>
             ) : tipoActual === 'insumo' && cara === 'preparado' ? (
-              <Preparaciones ingredientes={ingredientes} onCambio={cargar} />
+              <Preparaciones ingredientes={ingredientes} onCambio={cargar} onEditando={setEditandoPrep} />
             ) : (
               <>
                 <TablaMercancia
