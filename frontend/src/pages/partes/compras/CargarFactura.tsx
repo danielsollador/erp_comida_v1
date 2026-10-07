@@ -5,6 +5,7 @@ import { aBase, convertirTexto, otraUnidad } from '../../../lib/unidades'
 import { useDialogo } from '../../../components/dialogo'
 import { VistaSoporte } from '../../../components/FacturaDesdeFoto'
 import Icono from '../../../components/Icono'
+import NuevaMercancia from '../../../components/NuevaMercancia'
 import { Numerico } from '../../../components/Teclado'
 import { api } from '../../../lib/api'
 import {
@@ -390,50 +391,16 @@ export default function CargarFactura({
     setLineas((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...cambio } : l)))
   }
 
+  // El renglon para el que se esta creando una mercancia nueva.
+  const [creandoEn, setCreandoEn] = useState<number | null>(null)
+
   async function elegirMercancia(i: number, valor: string) {
     if (valor === 'nuevo') {
       // Un insumo que llega por primera vez obligaba a salir de Compras, ir a
-      // Inventario a crearlo y volver a cargar la factura desde cero.
-      const datos = await dialogo.pedir({
-        titulo: 'Mercancía nueva',
-        campos: [
-          {
-            nombre: 'nombre',
-            etiqueta: 'Nombre',
-            placeholder: 'Ej. Pollo',
-            valor: nombreDesdePapel(lineas[i]?.leido?.descripcion ?? ''),
-          },
-          {
-            nombre: 'unidad',
-            etiqueta: 'Unidad',
-            tipo: 'opciones',
-            valor: unidadNuestra(lineas[i]?.leido?.unidad ?? '') || 'kg',
-            // Kilo y litro: el gramo y el mililitro los maneja el sistema.
-            opciones: ['kg', 'lt', 'unidad', 'paquete'].map((u) => ({ valor: u, texto: u })),
-          },
-        ],
-      })
-      if (!datos) return
-      const creado = await api.crearIngrediente({
-        nombre: datos.nombre,
-        unidad: datos.unidad,
-        stock_actual: 0,
-        stock_minimo: 0,
-        stock_objetivo: 0,
-        costo_unitario: 0,
-        rendimiento_pct: 100,
-        // Sin clasificar: la mercancia nace aqui de urgencia, cargando una
-        // factura, y ese no es el momento de pararse a pensar el cajon del
-        // deposito. Se le pone despues desde Inventario.
-        categoria_id: null,
-        tipo: 'insumo',
-        activo: true,
-        // Lo que dice el papel de este renglón: si la factura lo marca
-        // exento, la ficha nace exenta.
-        exento: Boolean(lineas[i]?.exento ?? lineas[i]?.leido?.exento),
-      })
-      setIngredientes((prev) => [...prev, creado])
-      cambiarLinea(i, { ingrediente_id: creado.id })
+      // Inventario a crearlo y volver a cargar la factura desde cero. Ahora
+      // es una ventana que, antes que nada, muestra las parecidas que ya
+      // existen (ver NuevaMercancia).
+      setCreandoEn(i)
       return
     }
     // Sin costo todavia, se propone lo que ya cuesta esa mercancia: solo se
@@ -1002,6 +969,28 @@ export default function CargarFactura({
           />
         </div>
       </div>
+
+      {creandoEn !== null && (
+        <NuevaMercancia
+          ingredientes={ingredientes}
+          nombre={nombreDesdePapel(lineas[creandoEn]?.leido?.descripcion ?? '')}
+          unidad={unidadNuestra(lineas[creandoEn]?.leido?.unidad ?? '') || 'kg'}
+          // Si la factura marca exento el renglon, la ficha nace exenta.
+          exento={Boolean(lineas[creandoEn]?.exento ?? lineas[creandoEn]?.leido?.exento)}
+          delPapel={lineas[creandoEn]?.leido?.descripcion}
+          onUsar={(ing) => {
+            const i = creandoEn
+            setCreandoEn(null)
+            void elegirMercancia(i, String(ing.id))
+          }}
+          onCreada={(creada) => {
+            setIngredientes((prev) => [...prev, creada])
+            cambiarLinea(creandoEn, { ingrediente_id: creada.id })
+            setCreandoEn(null)
+          }}
+          onCerrar={() => setCreandoEn(null)}
+        />
+      )}
 
       <BarraGuardar
         pendientes={pendientes}

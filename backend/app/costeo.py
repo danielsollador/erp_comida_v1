@@ -66,6 +66,7 @@ def registrar_entrada(
     origen: str = "",
     referencia_id=None,
     nota: str = "",
+    tipo: str = "",
 ) -> None:
     """Suma stock y recalcula el costo promedio ponderado. No hace commit.
 
@@ -107,7 +108,7 @@ def registrar_entrada(
         db,
         ingrediente,
         cantidad,
-        kardex.COMPRA,
+        tipo or kardex.COMPRA,
         costo_unitario=costo_unitario,
         origen=origen,
         referencia_id=referencia_id,

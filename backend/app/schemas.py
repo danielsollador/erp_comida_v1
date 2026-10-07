@@ -187,6 +187,18 @@ class IngredienteCreate(IngredienteBase):
     pass
 
 
+class FusionIngrediente(BaseModel):
+    """Fundir una ficha en otra: `destino_id` es la que se queda.
+
+    `factor`: cuantas unidades de la que se queda trae UNA de la que se va.
+    Con la misma unidad es 1. "Crema de leche lata" (unidad) dentro de
+    "Crema de leche" (kg), con latas de 250 g, es 0.25.
+    """
+
+    destino_id: int
+    factor: float = 1.0
+
+
 class Ingrediente(IngredienteBase):
     id: int
     # El NOMBRE de su categoria, ya resuelto: la pantalla lo pinta en cada

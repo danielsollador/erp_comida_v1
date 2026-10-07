@@ -24,3 +24,24 @@ def comparable(texto: str) -> str:
     plano = unicodedata.normalize("NFD", texto or "")
     sin_tildes = "".join(c for c in plano if not unicodedata.combining(c))
     return " ".join(sin_tildes.lower().split())
+
+
+def nombre_limpio(texto: str) -> str:
+    """El nombre como se guarda: sin espacios de mas ni palabras repetidas
+    seguidas.
+
+    Las palabras repetidas no son teoria: en produccion hubo una "crema de
+    leche leche leche leche" (el dedo que se queda en el autocompletar del
+    telefono). Se quita la repeticion SEGUIDA y nada mas: "pan de pan" es un
+    nombre posible y se respeta.
+
+    >>> nombre_limpio("  Crema de  leche Leche leche ")
+    'Crema de leche'
+    """
+    palabras = (texto or "").split()
+    limpias = []
+    for p in palabras:
+        if limpias and comparable(limpias[-1]) == comparable(p):
+            continue
+        limpias.append(p)
+    return " ".join(limpias)

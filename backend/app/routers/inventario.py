@@ -11,7 +11,7 @@ from . import operadores
 from ..database import get_db
 from ..exportar_csv import nombre_de_archivo, respuesta_csv
 from ..rango import Rango
-from ..texto import comparable
+from ..texto import comparable, nombre_limpio
 from ..timeutils import ahora, hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
@@ -368,9 +368,38 @@ def borrar_categoria(categoria_id: int, db: Session = Depends(get_db)):
     return {"sin_categoria": sueltos}
 
 
+def _gemela(db: Session, nombre: str, salvo_id: Optional[int] = None) -> Optional[models.Ingrediente]:
+    """La mercancia activa que se llama igual (sin mirar tildes, mayusculas
+    ni espacios), si hay.
+
+    Sin esto nacieron "Crema de leche" y "Crema de Leche" lado a lado: dos
+    fichas con su stock y su costo cada una, y ninguna con la verdad. La
+    pantalla ya avisa de los PARECIDOS mientras se escribe; aqui se cierra la
+    puerta a los IGUALES, venga de donde venga el pedido.
+    """
+    clave = comparable(nombre)
+    return next(
+        (
+            o
+            for o in db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all()
+            if o.id != salvo_id and comparable(o.nombre) == clave
+        ),
+        None,
+    )
+
+
 @router.post("/ingredientes", response_model=schemas.Ingrediente)
 def crear_ingrediente(ingrediente: schemas.IngredienteCreate, db: Session = Depends(get_db)):
     datos = ingrediente.model_dump()
+    datos["nombre"] = nombre_limpio(datos["nombre"])
+    if not datos["nombre"]:
+        raise HTTPException(status_code=400, detail="La mercancía necesita un nombre.")
+    gemela = _gemela(db, datos["nombre"])
+    if gemela:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ya existe «{gemela.nombre}» ({gemela.unidad}). Usa esa o ponle un nombre que las distinga.",
+        )
     # Nace en cero y es el movimiento el que lo deja en su existencia. Dar de
     # alta un insumo que ya tiene mercancia en el deposito TAMBIEN es un
     # movimiento: esa mercancia entro alguna vez. Sin esa fila el extracto
@@ -409,11 +438,124 @@ def actualizar_ingrediente(
     # que registra la merma o el sobrante como corresponde.
     datos = ingrediente.model_dump()
     datos.pop("stock_actual", None)
+    datos["nombre"] = nombre_limpio(datos["nombre"])
+    if not datos["nombre"]:
+        raise HTTPException(status_code=400, detail="La mercancía necesita un nombre.")
+    # Reactivar tambien cuenta: una archivada que vuelve no puede pisar a la
+    # que ocupo su nombre mientras tanto.
+    gemela = _gemela(db, datos["nombre"], salvo_id=ingrediente_id) if datos.get("activo", True) else None
+    if gemela:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ya hay otra mercancía llamada «{gemela.nombre}». Si son la misma, fusiónalas desde su ficha.",
+        )
     for key, value in datos.items():
         setattr(db_ingrediente, key, value)
     db.commit()
     db.refresh(db_ingrediente)
     return db_ingrediente
+
+
+@router.post("/ingredientes/{ingrediente_id}/fusionar", response_model=schemas.Ingrediente)
+def fusionar_ingrediente(
+    ingrediente_id: int, body: schemas.FusionIngrediente, request: Request,
+    db: Session = Depends(get_db),
+):
+    """Dos fichas eran la misma mercancia: esta se funde en `destino_id`.
+
+    LA HISTORIA NO SE REESCRIBE. Las facturas, mermas y movimientos viejos
+    siguen apuntando a la ficha que se va: asi se registraron, y el kardex de
+    cada una cuadra consigo mismo. Lo que pasa a la que queda es lo VIVO:
+      - el stock, con un movimiento de "fusion" que sale de una y entra en
+        la otra al costo de la que se va (el valor del deposito no cambia);
+      - las recetas que la usaban;
+      - lo que se aprendio de los proveedores (sus renglones apuntan ahora a
+        la que queda, con la conversion de unidad);
+      - el consumo de las comandas, para que anular o devolver una vieja
+        devuelva a la ficha viva y no a la archivada.
+    Despues la que se va queda archivada. Las dos estan en la cuenta de
+    inventario (1040): mover el stock entre ellas no lleva asiento.
+    """
+    if body.destino_id == ingrediente_id:
+        raise HTTPException(status_code=400, detail="Elige otra mercancía: no se puede fundir consigo misma.")
+    if not body.factor or body.factor <= 0:
+        raise HTTPException(status_code=400, detail="La conversión tiene que ser mayor que cero.")
+    quien = operadores.del_turno(db, request)
+    operador_id = quien.id if quien else None
+    with costeo.bloqueo_inventario():
+        origen = _ingrediente_para_actualizar(db, ingrediente_id)
+        destino = _ingrediente_para_actualizar(db, body.destino_id)
+        if not origen.activo or not destino.activo:
+            raise HTTPException(status_code=409, detail="Las dos mercancías tienen que estar activas.")
+        factor = body.factor
+        if origen.unidad != destino.unidad and factor == 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{origen.nombre} se lleva en {origen.unidad} y {destino.nombre} en {destino.unidad}: "
+                f"di cuántos {destino.unidad} trae 1 {origen.unidad}.",
+            )
+        nota = f"Fusión: {origen.nombre} → {destino.nombre}"
+        if factor != 1:
+            nota += f" (1 {origen.unidad} = {factor:g} {destino.unidad})"
+
+        stock = round(origen.stock_actual or 0, 4)
+        costo = origen.costo_unitario or 0
+        if stock:
+            kardex.anotar(
+                db, origen, -stock, kardex.FUSION, costo_unitario=costo,
+                origen="fusion", referencia_id=destino.id, nota=nota, operador_id=operador_id,
+            )
+            if stock > 0:
+                # Entra como una compra al costo de la que se va: el promedio
+                # de la que queda se mezcla igual que con mercancia nueva.
+                costeo.registrar_entrada(
+                    destino, stock * factor, costo / factor, db,
+                    origen="fusion", referencia_id=origen.id, nota=nota, tipo=kardex.FUSION,
+                )
+            else:
+                # Un faltante (stock negativo) se arrastra tal cual: no tiene
+                # costo que promediar.
+                kardex.anotar(
+                    db, destino, stock * factor, kardex.FUSION, costo_unitario=costo / factor,
+                    origen="fusion", referencia_id=origen.id, nota=nota, operador_id=operador_id,
+                )
+
+        # Recetas: si la receta ya llevaba las dos, queda una sola linea sumada.
+        for linea in db.query(models.RecetaItem).filter(models.RecetaItem.ingrediente_id == origen.id).all():
+            hermana = (
+                db.query(models.RecetaItem)
+                .filter(
+                    models.RecetaItem.variante_id == linea.variante_id,
+                    models.RecetaItem.ingrediente_id == destino.id,
+                )
+                .first()
+            )
+            if hermana:
+                hermana.cantidad_por_unidad = round(hermana.cantidad_por_unidad + linea.cantidad_por_unidad * factor, 6)
+                db.delete(linea)
+            else:
+                linea.ingrediente_id = destino.id
+                linea.cantidad_por_unidad = round(linea.cantidad_por_unidad * factor, 6)
+
+        for eq in (
+            db.query(models.EquivalenciaProveedor)
+            .filter(models.EquivalenciaProveedor.ingrediente_id == origen.id)
+            .all()
+        ):
+            eq.ingrediente_id = destino.id
+            eq.factor = round((eq.factor or 1) * factor, 6)
+
+        for consumo in db.query(models.PedidoConsumo).filter(models.PedidoConsumo.ingrediente_id == origen.id).all():
+            consumo.ingrediente_id = destino.id
+            consumo.cantidad = round(consumo.cantidad * factor, 6)
+
+        # Lo que se avisaba para reponer se suma: eran dos mitades del mismo.
+        destino.stock_minimo = round((destino.stock_minimo or 0) + (origen.stock_minimo or 0) * factor, 4)
+        destino.stock_objetivo = round((destino.stock_objetivo or 0) + (origen.stock_objetivo or 0) * factor, 4)
+        origen.activo = False
+        db.commit()
+        db.refresh(destino)
+        return destino
 
 
 @router.post("/ingredientes/{ingrediente_id}/comprar", response_model=schemas.ImpactoDeCompra)

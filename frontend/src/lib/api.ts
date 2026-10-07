@@ -620,6 +620,12 @@ export const api = {
     req<Ingrediente>('/inventario/ingredientes', { method: 'POST', body: JSON.stringify(i) }),
   actualizarIngrediente: (id: number, i: DatosIngrediente) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
+  // `factor`: cuantas unidades de la que queda trae 1 de la que se va.
+  fusionarIngrediente: (id: number, destino_id: number, factor = 1) =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}/fusionar`, {
+      method: 'POST',
+      body: JSON.stringify({ destino_id, factor }),
+    }),
   // Todo el deposito de una vez; lo que no se anoto no se toca.
   conteoFisico: (
     items: { ingrediente_id: number; stock_real: number }[],

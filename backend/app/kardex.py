@@ -51,6 +51,7 @@ AJUSTE = "ajuste"                    # conteo fisico: lo que dice la balanza
 CONSUMO_PERSONAL = "consumo_personal"
 DEVOLUCION_PROVEEDOR = "devolucion_proveedor"
 REVERSO = "reverso"                  # se deshizo algo que se habia anotado mal
+FUSION = "fusion"                    # dos fichas eran la misma mercancia: el stock pasa a la que queda
 
 ETIQUETAS = {
     COMPRA: "Compra",
@@ -61,6 +62,7 @@ ETIQUETAS = {
     CONSUMO_PERSONAL: "Consumo del personal",
     DEVOLUCION_PROVEEDOR: "Devolucion a proveedor",
     REVERSO: "Reverso",
+    FUSION: "Fusión de fichas",
 }
 
 

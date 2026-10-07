@@ -3,6 +3,8 @@ import EnlaceDescarga from '../components/EnlaceDescarga'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import MenuAcciones from '../components/MenuAcciones'
+import FusionarMercancia from '../components/FusionarMercancia'
+import { parecidos } from '../lib/parecidos'
 import { useAltoRestante } from '../lib/altoRestante'
 import { CampoCantidad, CasillaConUnidad } from '../components/Cantidad'
 import { convertirTexto, factorEntre } from '../lib/unidades'
@@ -1030,6 +1032,11 @@ export default function Inventario() {
             return ok
           }}
           acciones={{ comprar, merma, consumoPersonal, contar, archivar: (ing) => archivar(ing, false) }}
+          todas={ingredientes}
+          onFusionada={(destino) => {
+            cargar()
+            setFicha(destino.id)
+          }}
         />
       )}
 
@@ -1226,9 +1233,15 @@ function FichaInsumo({
   onCerrar,
   onGuardar,
   acciones,
+  todas,
+  onFusionada,
 }: {
   ing: Ingrediente | null
   mermas: Merma[]
+  /** Todas las mercancías: para avisar de las parecidas y para fusionar. */
+  todas: Ingrediente[]
+  /** Se fundió en otra: se abre la que quedó. */
+  onFusionada: (destino: Ingrediente) => void
   /** Los cajones del deposito, para elegir en cual va esta mercancia. */
   categorias: CategoriaInsumo[]
   /** Crear uno nuevo sin salir de la ficha. Devuelve su id. */
@@ -1260,6 +1273,13 @@ function FichaInsumo({
   }))
   const [aviso, setAviso] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [fusionando, setFusionando] = useState(false)
+  // Al crear: las que ya existen y se le parecen. "Crema de leche lata
+  // grande" junto a "Crema de Leche Lata" nacio por no verlas.
+  const similares = useMemo(
+    () => (nuevo ? parecidos(f.nombre, todas) : []),
+    [nuevo, f.nombre, todas],
+  )
   // Viendo la ficha o cambiando los datos. Una nueva nace en el formulario.
   const [editando, setEditando] = useState(nuevo)
   // Al crear, lo que no hace falta para empezar va plegado.
@@ -1434,6 +1454,12 @@ function FichaInsumo({
           placeholder="Ej. Carne molida"
           className="sm:col-span-2"
         />
+        {similares.length > 0 && (
+          <p className="sm:col-span-2 -mt-1 rounded-lg bg-aviso-50 px-3 py-2 text-xs text-aviso-800">
+            Ya tienes parecidas: {similares.map((x) => `${x.ing.nombre} (${x.ing.unidad})`).join(', ')}. Si es la misma,
+            no la crees: usa esa.
+          </p>
+        )}
         <div className="sm:col-span-2">
           <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Para qué es</span>
           <div className="grid grid-cols-2 gap-2">
@@ -1514,13 +1540,29 @@ function FichaInsumo({
       )}
 
       {!nuevo && (
-        <button
-          type="button"
-          onClick={() => acciones.archivar(ing)}
-          className="text-sm text-peligro-600 hover:underline"
-        >
-          Ya no la uso: archivarla
-        </button>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          <button type="button" onClick={() => setFusionando(true)} className="text-sm text-neutral-600 hover:underline">
+            Es la misma que otra: fusionarlas
+          </button>
+          <button
+            type="button"
+            onClick={() => acciones.archivar(ing)}
+            className="text-sm text-peligro-600 hover:underline"
+          >
+            Ya no la uso: archivarla
+          </button>
+        </div>
+      )}
+      {fusionando && ing && (
+        <FusionarMercancia
+          origen={ing}
+          ingredientes={todas}
+          onCerrar={() => setFusionando(false)}
+          onHecho={(destino) => {
+            setFusionando(false)
+            onFusionada(destino)
+          }}
+        />
       )}
     </div>
   )
