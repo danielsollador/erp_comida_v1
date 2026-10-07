@@ -69,3 +69,13 @@ def test_el_canal_en_vivo_sin_token_se_cierra(sin_cookie):
     with pytest.raises(WebSocketDisconnect):
         with sin_cookie.websocket_connect("/ws") as ws:
             ws.receive_text()
+
+
+def test_la_puerta_de_nginx_acepta_el_token_de_la_app(sin_cookie):
+    # nginx pregunta a /api/acceso/check antes de dejar pasar cada llamada:
+    # si solo miraba la cookie, la app quedaba fuera de todo /api.
+    token = token_de_la_app(sin_cookie)
+    assert sin_cookie.get("/api/acceso/check").status_code == 401
+    assert sin_cookie.get("/api/acceso/check", headers={"Authorization": f"Bearer {token}"}).status_code == 200
+    assert sin_cookie.get("/api/acceso/check", headers={"Sec-WebSocket-Protocol": f"vp, {token}"}).status_code == 200
+    assert sin_cookie.get("/api/acceso/check", headers={"Authorization": "Bearer falso"}).status_code == 401

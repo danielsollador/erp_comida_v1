@@ -187,7 +187,7 @@ export default function Inicio() {
             no todo al final. Con `safe center` el navegador vuelve a alinear
             arriba cuando el contenido no cabe --en un telefono apaisado--, de
             modo que centrar nunca recorta la primera fila. */}
-        <div className="flex-1 flex flex-col gap-3 lg:gap-4 [justify-content:safe_center] min-h-0 apaisado:grid apaisado:grid-cols-[0.92fr_1.08fr] apaisado:items-start apaisado:gap-x-3 apaisado:gap-y-2.5 apaisado:content-center">
+        <div className="flex-1 flex flex-col gap-3 lg:gap-4 [justify-content:safe_center] min-h-0 apaisado:grid apaisado:grid-cols-2 apaisado:items-stretch apaisado:gap-3 apaisado:content-center">
         {/* En el telefono y en la tablet en vertical el saludo no cabe al lado
             de la marca --se cortaba en "Buenas tardes, re..."--, asi que va
             aqui, en su propio renglon. A partir de 1024 px vive arriba y esta
@@ -205,19 +205,25 @@ export default function Inicio() {
           </div>
         )}
 
-        {/* DOS COLUMNAS EN LA TABLET ACOSTADA (`apaisado:`): a la izquierda
-            hoy y vender, a la derecha lo que avisa y el recorrido. En las
-            demas pantallas estas dos cajas no existen (`contents`) y todo va
-            en una columna, en el orden de siempre (por eso los `order-`). */}
-        <div className="contents apaisado:flex apaisado:flex-col apaisado:gap-2.5 apaisado:min-w-0">
+        {/* REJILLA SIMETRICA EN LA TABLET ACOSTADA (`apaisado:`; Leider,
+            6-oct: "los cuadros no estan simetricos"). Filas de dos bloques
+            de la MISMA altura, alineados arriba y abajo:
+              avisos (a todo el ancho)
+              hoy + en cocina / por cobrar  |  recorrido
+              punto de venta + cocina       |  reportes
+              zona contable (a todo el ancho)
+            En una columna (telefono, tablet parada, laptop) manda el orden de
+            siempre (`order-`); en la rejilla, el de `apaisado:order-`. Las
+            etiquetas ("Hoy", "Vender") se esconden: en dos columnas
+            descuadraban la primera fila y las fichas ya dicen lo que son. */}
 
         {/* ── Hoy ─────────────────────────────────────────────────────────
             Un panel ancho con la unica cifra que se pregunta al entrar, y a
             su lado las dos cosas que ESPERAN algo. No es un mosaico de
             cuatro cifras iguales: dos son resultados y dos son trabajo
             pendiente, y mirarlas no cuesta lo mismo. */}
-        <p className="order-1 vp-etiqueta -mb-1 lg:-mb-2 apaisado:mb-0">{segun({ sencillo: 'Hoy', tecnico: 'Resumen del día' })}</p>
-        <div className="order-2 grid grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-3 lg:gap-4 apaisado:gap-2.5">
+        <p className="order-1 vp-etiqueta -mb-1 lg:-mb-2 apaisado:hidden">{segun({ sencillo: 'Hoy', tecnico: 'Resumen del día' })}</p>
+        <div className="order-2 apaisado:order-2 grid grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-3 lg:gap-4 apaisado:gap-3">
           <section className="col-span-2 lg:col-span-1 vp-losa relative overflow-hidden p-5 sm:p-7 lg:p-8 bajo:p-4 apaisado:px-5 apaisado:py-3.5 pc:p-7 flex flex-col justify-center">
             {/* Sin el permiso del rol, un guion y nada mas: ni "no tienes
                 permiso" ni un panel distinto (Leider, 25-sep). "Pedidos" si lo
@@ -271,9 +277,9 @@ export default function Inicio() {
             una tablet en vertical son grandes sin quedarse vacias y en una
             apaisada dejan sitio a las bandejas de abajo. */}
         {operacion.length > 0 && (
-          <div className="order-4">
-            <p className="vp-etiqueta mb-2.5">{segun({ sencillo: 'Vender', tecnico: 'Operación' })}</p>
-            <div className={`grid grid-cols-1 gap-3 lg:gap-4 ${operacion.length > 2 ? 'sm:grid-cols-3' : operacion.length === 2 ? 'sm:grid-cols-2' : ''}`}>
+          <div className="order-4 apaisado:order-4">
+            <p className="vp-etiqueta mb-2.5 apaisado:hidden">{segun({ sencillo: 'Vender', tecnico: 'Operación' })}</p>
+            <div className={`grid grid-cols-1 gap-3 lg:gap-4 apaisado:h-full ${operacion.length > 2 ? 'sm:grid-cols-3' : operacion.length === 2 ? 'sm:grid-cols-2' : ''}`}>
               {operacion.map((m, i) => (
                 <Tarjeta
                   key={m.to}
@@ -287,12 +293,10 @@ export default function Inicio() {
             </div>
           </div>
         )}
-        </div>
 
-        <div className="contents apaisado:flex apaisado:flex-col apaisado:gap-2.5 apaisado:min-w-0">
         {/* Lo que el sistema avisa solo. Solo a quien ve las cifras. */}
         {estado.puede.ve_kpis && (
-          <div className="order-3">
+          <div className="order-3 apaisado:order-1 apaisado:col-span-2">
             <Avisos quien={quien} />
           </div>
         )}
@@ -302,11 +306,11 @@ export default function Inicio() {
             del flujo van en el orden en que se mueve la mercancia y la plata
             --Compras, Inventario, Menu, Ventas, Cierre de caja-- y Reportes,
             que mira todo eso en el tiempo, en su propia fila (Leider, 1-oct). */}
-        <div className="order-5">
+        <div className="order-5 apaisado:order-3 apaisado:[&>*]:h-full apaisado:[&>*]:flex apaisado:[&>*]:flex-col apaisado:[&>*]:justify-center">
           <Recorrido datos={recorrido} modulos={rutas} operar={estado.puede.operar} />
         </div>
         {rutas.includes('/reportes') && (
-          <div className="order-6">
+          <div className="order-6 apaisado:order-5 apaisado:[&>*]:h-full">
             <FilaReportes dias={recorrido?.ultimos_7_dias} />
           </div>
         )}
@@ -317,8 +321,8 @@ export default function Inicio() {
             (Leider, 30-sep: secundario, no escondido, y no con el mismo
             estilo). El titulo lleva a la pagina que explica que se arma solo. */}
         {contador.length > 0 && (
-          <div className="order-7 pt-3 apaisado:pt-2 border-t border-[var(--vp-textura)]">
-            <div className="flex items-baseline justify-between gap-3 mb-1">
+          <div className="order-7 apaisado:order-6 apaisado:col-span-2 pt-3 apaisado:pt-0 apaisado:border-t-0 border-t border-[var(--vp-textura)]">
+            <div className="flex items-baseline justify-between gap-3 mb-1 apaisado:hidden">
               <Link to={CONTADOR.to} className="vp-etiqueta hover:text-neutral-700">
                 {segun({ sencillo: 'Zona contable', tecnico: 'Contabilidad y fiscal' })}
               </Link>
@@ -331,7 +335,7 @@ export default function Inicio() {
                 que se toca (Leider, 1-oct). Siguen siendo secundarios --sin
                 sombra ni color, el gris del sistema-- pero con su cuadrito, su
                 borde y la flecha que se mueve, se ve que se pueden tocar. */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mt-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mt-1.5 apaisado:mt-0">
               {contador.map((m) => (
                 <Link
                   key={m.to}
@@ -353,7 +357,6 @@ export default function Inicio() {
             </div>
           </div>
         )}
-        </div>
         </div>
       </div>
     </div>
@@ -437,7 +440,7 @@ function Tarjeta({
         />
       </span>
       <span className="relative min-w-0">
-        <span className="block font-display font-semibold leading-tight tracking-[-0.015em] text-lg lg:text-[clamp(1.25rem,1.6vw,1.55rem)] apaisado:text-[15px] pc:text-xl">
+        <span className="block font-display font-semibold leading-tight tracking-[-0.015em] text-lg lg:text-[clamp(1.25rem,1.6vw,1.55rem)] apaisado:text-[16px] apaisado:whitespace-nowrap pc:text-xl">
           {titulo}
         </span>
         <span className={`block mt-1 text-sm lg:text-[0.95rem] pc:text-sm apaisado:hidden ${principal ? 'text-white/65' : 'text-neutral-500'}`}>

@@ -223,8 +223,19 @@ def salir(volver: str = ""):
 @router.get("/check")
 def check(request: Request) -> Response:
     """Lo consulta nginx (`auth_request`) por cada archivo del panel. 200 o 401
-    y SIN cuerpo: nginx solo mira el codigo."""
-    if auth.acceso_ok(request.cookies.get(auth.COOKIE_SESION)):
+    y SIN cuerpo: nginx solo mira el codigo.
+
+    Vale la cookie de la web Y el token de la app: el de `Authorization:
+    Bearer` en cada llamada, y el del subprotocolo (`vp, <token>`) en el
+    saludo del WebSocket. Solo con la cookie, nginx cortaba con 401 todo lo
+    que pedia la app --sin cabeceras CORS, asi que el WebView ni lo leia-- y
+    la tablet mostraba "Vendido hoy —" (6-oct)."""
+    token = auth.token_de(request)
+    if not token:
+        partes = [p.strip() for p in request.headers.get("sec-websocket-protocol", "").split(",")]
+        if len(partes) == 2 and partes[0] == "vp" and partes[1]:
+            token = partes[1]
+    if auth.acceso_ok(token):
         return Response(status_code=200)
     return Response(status_code=401)
 
