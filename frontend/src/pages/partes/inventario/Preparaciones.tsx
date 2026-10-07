@@ -232,40 +232,6 @@ export default function Preparaciones({
   )
 }
 
-// ── Lo que se lleva la cocina ───────────────────────────────────────────────
-
-/**
- * La merma de cocinar de una preparación: entra tanto crudo (lo que se mide
- * en la misma unidad que ella), sale lo que rinde. La diferencia se la lleva
- * la cocina: agua que se evapora, grasa, hueso. Null si no se puede comparar
- * (la tanda se mide en unidades y el crudo en kilos, por ejemplo).
- */
-function mermaDeCocina(p: Preparacion): { entra: number; sale: number; pierde: number; pct: number } | null {
-  const entra = p.lineas.filter((l) => l.unidad === p.unidad).reduce((s, l) => s + l.cantidad, 0)
-  if (!(entra > 0) || !(p.rinde > 0) || p.rinde > entra) return null
-  const pierde = entra - p.rinde
-  return { entra, sale: p.rinde, pierde, pct: pierde / entra }
-}
-
-/** La barra: lo que entra es el ancho; lo que sale, lleno; lo que se pierde, en ámbar. */
-function BarraMerma({ m, color, chica = false }: { m: ReturnType<typeof mermaDeCocina>; color: string; chica?: boolean }) {
-  if (!m) return null
-  return (
-    <span className={`flex w-full overflow-hidden rounded-full bg-aviso-500/25 ${chica ? 'h-1.5' : 'h-2'}`} aria-hidden>
-      <span className="h-full rounded-full" style={{ width: `${(1 - m.pct) * 100}%`, background: color }} />
-    </span>
-  )
-}
-
-/** "La cocina se lleva 200 g de cada kilo (20 %)", en una frase. */
-function fraseMerma(m: NonNullable<ReturnType<typeof mermaDeCocina>>, unidad: string): string {
-  const porUno = m.pct
-  const chica = unidad === 'kg' ? 'g' : unidad === 'lt' ? 'ml' : null
-  const parte = chica ? `${Math.round(porUno * 1000)} ${chica}` : `${fmtCant(porUno)} ${unidad}`
-  const uno = unidad === 'kg' ? 'de cada kilo' : unidad === 'lt' ? 'de cada litro' : 'de cada unidad'
-  return `La cocina se lleva ${parte} ${uno} (${Math.round(porUno * 100)} %)`
-}
-
 // ── El mapa: materia prima ↔ preparaciones ──────────────────────────────────
 
 const FILA = 60
@@ -281,7 +247,7 @@ const MAXIMO_MAPA_COMPLETO = 6
  * quiénes más lo usan.
  *
  * Pocos números, y cada uno con su frase: cuánto hay de cada crudo, cuánto
- * lleva la tanda, cuánto podrías hacer hoy y cuánto se lleva la cocina.
+ * lleva la tanda y cuánto podrías hacer hoy. La merma es del crudo, no de aquí.
  */
 function Mapa({
   preps,
@@ -342,7 +308,6 @@ function Mapa({
     const yCentro = alto / 2
     const d = disp.find((x) => x.preparacion_id === elegida.id)
     const color = colorDe.get(elegida.id) ?? '#999'
-    const merma = mermaDeCocina(elegida)
     return (
       <div>
         {filtro}
@@ -432,14 +397,6 @@ function Mapa({
                           : 'podrías hacer hoy con el crudo que hay'}
                     </p>
                   </div>
-                  {merma && (
-                    <div>
-                      <BarraMerma m={merma} color={color} />
-                      <p className="text-xs text-white/70 mt-1.5">
-                        Entra {fmtCant(merma.entra)} {elegida.unidad} de crudo, sale {fmtCant(merma.sale)} {elegida.unidad}. {fraseMerma(merma, elegida.unidad)}.
-                      </p>
-                    </div>
-                  )}
                   <p className="text-xs text-white/70">
                     Cada {elegida.unidad === 'kg' ? 'kilo' : elegida.unidad === 'lt' ? 'litro' : 'unidad'} ya preparado cuesta{' '}
                     <b className="text-white tabular-nums">{dinero(elegida.costo_unitario)}</b>
@@ -564,7 +521,6 @@ function Mapa({
             {preps.map((p) => {
               const d = disp.find((x) => x.preparacion_id === p.id)
               const apagada = resaltada !== null && resaltada !== p.id
-              const merma = mermaDeCocina(p)
               return (
                 <li key={p.id} style={{ height: FILA }} className={`flex items-center transition-opacity ${apagada ? 'opacity-30' : ''}`}>
                   <button
@@ -582,7 +538,6 @@ function Mapa({
                           : d?.potencial != null
                             ? `podrías hacer ${fmtCant(d.potencial)} ${p.unidad} hoy`
                             : `rinde ${fmtCant(p.rinde)} ${p.unidad} por tanda`}
-                        {merma && <span className="text-aviso-700"> · la cocina se lleva el {Math.round(merma.pct * 100)} %</span>}
                       </span>
                     </span>
                   </button>
@@ -600,7 +555,7 @@ function Mapa({
 
 /**
  * Una preparación en una tarjeta: UN número grande (cuánto podrías hacer
- * hoy), con su frase; lo que se lleva la cocina, con su barra; lo que lleva,
+ * hoy), con su frase; lo que lleva,
  * sin cifras de plata; y el botón de la receta a la vista.
  */
 function TarjetaPreparacion({
@@ -629,7 +584,6 @@ function TarjetaPreparacion({
   const produce = p.modo_produccion === 'producir'
   const potencial = d?.potencial ?? null
   const desvio = p.rendimiento_real != null && Math.abs(p.rendimiento_real - 1) > 0.05
-  const merma = mermaDeCocina(p)
   const unidadLarga = p.unidad === 'kg' ? 'kilo' : p.unidad === 'lt' ? 'litro' : 'unidad'
   return (
     <div
@@ -662,15 +616,6 @@ function TarjetaPreparacion({
               : 'podrías hacer hoy con el crudo que hay'}
         </p>
       </div>
-
-      {merma && (
-        <div>
-          <BarraMerma m={merma} color={color} />
-          <p className="text-xs text-neutral-600 mt-1.5 leading-snug">
-            Entra {fmtCant(merma.entra)} {p.unidad} de crudo y sale {fmtCant(merma.sale)} {p.unidad}. {fraseMerma(merma, p.unidad)}.
-          </p>
-        </div>
-      )}
 
       <ul className="text-xs text-neutral-600 space-y-1">
         {p.lineas.slice(0, 4).map((l) => (
@@ -961,7 +906,7 @@ function Olla({
                 {entra > 0 ? `${fmtCant(entra)} ${unidad}` : '—'}
               </span>
               <span className="block text-[11px] text-neutral-500 leading-tight">
-                {entra > 0 && rinde > 0 ? `queda ${fmtCant(rinde)} ${unidad}: la cocina se lleva el ${Math.round((1 - rinde / entra) * 100)} %` : 'lo que se mide como la preparación'}
+                {entra > 0 && rinde > 0 ? `y sale ${fmtCant(rinde)} ${unidad} ya preparado` : 'lo que se mide como la preparación'}
               </span>
             </div>
             <div className="rounded-xl bg-neutral-500/6 px-3 py-2">
@@ -970,7 +915,7 @@ function Olla({
                 {costoTanda > 0 && rinde > 0 ? dinero(costoTanda / rinde) : '—'}
                 <span className="text-xs font-normal text-neutral-500"> el {unidad}</span>
               </span>
-              <span className="block text-[11px] text-neutral-500 leading-tight">ya preparado, con la merma de cocinar</span>
+              <span className="block text-[11px] text-neutral-500 leading-tight">cada {unidad === 'kg' ? 'kilo' : unidad === 'lt' ? 'litro' : 'unidad'} ya preparado</span>
             </div>
           </div>
           {sinMedida && (
@@ -983,7 +928,7 @@ function Olla({
           {filas.length > 0 && (
             <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[50%] lg:overflow-y-auto">
               <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">
-                Lleva una tanda <span className="text-sm font-normal text-neutral-500">· crudo, y cuánto queda al cocinarlo</span>
+                Lleva una tanda <span className="text-sm font-normal text-neutral-500">· crudo, y lo que queda de cada uno</span>
               </h3>
               <div className="px-4 pb-1.5 flex items-center gap-3 border-b border-neutral-100 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
                 <span className="w-1.5 shrink-0" />

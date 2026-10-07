@@ -432,6 +432,7 @@ export default function Inventario() {
             {/* Una sola fila: volver, el titulo y, cuando la pantalla no
                 es una tabla, las acciones. Los de la tabla van dentro de su
                 barra (Leider, 7-oct: "administrar bien el espacio"). */}
+            {!editandoPrep && (
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -448,19 +449,15 @@ export default function Inventario() {
                 <h2 className="font-display text-xl font-semibold tracking-tight leading-tight">{almacen.texto}</h2>
                 <p className="text-xs text-neutral-500 leading-tight">{almacen.detalle}</p>
               </div>
-              {(tipoActual === 'desechable' || (tipoActual === 'insumo' && cara === 'preparado' && !editandoPrep)) && (
+              {tipoActual === 'desechable' && (
                 <div className="ml-auto flex items-center gap-2">
-                  {tipoActual !== 'desechable' && (
-                    <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
-                      Conteo físico
-                    </Boton>
-                  )}
                   <Boton onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
                     Nueva mercancía
                   </Boton>
                 </div>
               )}
             </div>
+            )}
 
             {tipoActual === 'insumo' && !editandoPrep && (
               <div role="tablist" className="grid grid-cols-2 gap-2">
