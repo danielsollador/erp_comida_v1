@@ -12,6 +12,14 @@
    se desplaza de todas formas. */
 @custom-variant bajo (@media (max-height: 850px) and (min-width: 640px));
 
+/* `apaisado:` = una tablet ACOSTADA de verdad: menos de 640 px de alto y
+   768 o mas de ancho (el Fire HD 8 deja 962 x 520). Ahi el inicio tiene que
+   verse ENTERO de un vistazo, sin desplazar y a tamaño legible (Leider,
+   6-oct: "no quiero hacer scroll, el pantallazo tiene que ser instantaneo").
+   Reducirlo todo no sirvio (quedaba al 47 %): se reacomoda en dos columnas.
+   Una laptop no llega aqui: ninguna tiene menos de 640 px de alto util. */
+@custom-variant apaisado (@media (max-height: 640px) and (min-width: 768px));
+
 /* `pc:` = un monitor de escritorio o un portatil grande (>= 1440 px; la
    tablet mas ancha, un iPad de 13" apaisado, mide 1376). En PC el inicio NO
    llena la pantalla: es un tablero normal, con margenes, ancho tope y letra
@@ -1503,6 +1511,12 @@ select {
    que la linea pase por el centro de todos los puntos. */
 .vp-recorrido {
   --rec-pregunta: 2.15rem;
+}
+/* Tablet acostada: sin la pregunta (cuesta dos lineas por estacion) y la
+   via sube con el punto: -0.45rem anula el margen que ya no existe. */
+@media (max-height: 640px) and (min-width: 768px) {
+  .vp-recorrido { --rec-pregunta: -0.45rem; }
+  .vp-recorrido .vp-recorrido-pregunta { display: none; }
 }
 .vp-recorrido-pregunta {
   height: var(--rec-pregunta);

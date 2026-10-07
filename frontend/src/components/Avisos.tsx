@@ -41,7 +41,7 @@ export default function Avisos({ quien = '' }: { quien?: string }) {
 
   return (
     <section>
-      <p className="vp-etiqueta mb-2.5">¿Sabías que…?</p>
+      <p className="vp-etiqueta mb-2.5 apaisado:mb-1.5">¿Sabías que…?</p>
       <div className={`grid gap-3 sm:grid-cols-2 ${cols}`}>
         {lista.map((a) => {
           const t = TONO[a.tono] ?? TONO.info
@@ -49,12 +49,12 @@ export default function Avisos({ quien = '' }: { quien?: string }) {
             <Link
               key={a.id}
               to={a.a || '/'}
-              className={`vp-pulsable group rounded-3xl p-4 sm:p-4.5 flex gap-3 items-start ${t.caja}`}
+              className={`vp-pulsable group rounded-3xl p-4 sm:p-4.5 apaisado:px-3.5 apaisado:py-3 flex gap-3 apaisado:gap-2 items-start ${t.caja}`}
             >
               <span className={`mt-1.5 shrink-0 w-2 h-2 rounded-full ${t.punto}`} />
               <span className="min-w-0 flex-1">
-                <span className="block font-display font-semibold leading-snug text-[15px]">{a.titulo}</span>
-                {a.detalle && <span className="block mt-1 text-[13px] leading-snug opacity-75">{a.detalle}</span>}
+                <span className="block font-display font-semibold leading-snug text-[15px] apaisado:text-[14px]">{a.titulo}</span>
+                {a.detalle && <span className="block mt-1 text-[13px] leading-snug opacity-75 apaisado:hidden">{a.detalle}</span>}
               </span>
               <span className="shrink-0 mt-0.5 w-7 h-7 rounded-full grid place-items-center bg-black/5 opacity-60 group-hover:opacity-100 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:translate-x-0.5">
                 <Icono nombre="chevron" size={14} />

@@ -92,11 +92,11 @@ export default function Arranque({ quien = '' }: { quien?: string }) {
   }
 
   return (
-    <section className="vp-losa p-5 sm:p-6 bajo:p-4">
+    <section className="vp-losa p-5 sm:p-6 bajo:p-4 apaisado:px-4 apaisado:py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="vp-etiqueta">Para arrancar</p>
-          <h2 className="mt-1 font-display text-xl sm:text-2xl font-semibold tracking-tight leading-tight">
+          <h2 className="mt-1 apaisado:mt-0.5 font-display text-xl sm:text-2xl apaisado:text-lg font-semibold tracking-tight leading-tight">
             {siguiente ? siguiente.titulo : 'Listo'}
           </h2>
           <p className="mt-1 text-sm text-neutral-500">
@@ -127,14 +127,14 @@ export default function Arranque({ quien = '' }: { quien?: string }) {
       </div>
 
       {/* La barra: cuanto del negocio esta armado. */}
-      <div className="mt-4 h-2 rounded-full bg-neutral-100 overflow-hidden">
+      <div className="mt-4 apaisado:mt-2.5 h-2 apaisado:h-1.5 rounded-full bg-neutral-100 overflow-hidden">
         <div
           className="vp-barra-h h-full rounded-full bg-exito-500"
           style={{ width: `${(hechos / lista.length) * 100}%` }}
         />
       </div>
 
-      <ol className="mt-4 grid gap-2 sm:grid-cols-5">
+      <ol className="mt-4 grid gap-2 sm:grid-cols-5 apaisado:hidden">
         {lista.map((p, i) => (
           <li key={p.id}>
             <Link

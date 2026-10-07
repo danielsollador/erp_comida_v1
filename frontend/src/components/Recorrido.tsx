@@ -182,14 +182,14 @@ export default function Recorrido({
                   </span>
                 </span>
                 <span className="vp-recorrido-texto">
-                  <span className="block font-display font-semibold leading-tight text-[14px] lg:text-[15px] text-neutral-900">
+                  <span className="block font-display font-semibold leading-tight text-[14px] lg:text-[15px] apaisado:text-[13px] text-neutral-900">
                     {m.titulo}
                   </span>
                   {/* En el telefono la fila es ancha y la pregunta cabe en linea. */}
                   <span className="sm:hidden block mt-0.5 text-[13px] leading-snug text-neutral-500">{pregunta}</span>
                   {frase && (
                     <span
-                      className={`vp-recorrido-frase block mt-1.5 text-[13px] leading-snug ${
+                      className={`vp-recorrido-frase block mt-1.5 apaisado:mt-1 text-[13px] apaisado:text-[12px] leading-snug ${
                         ojo ? 'text-aviso-700 font-semibold' : 'text-neutral-800 font-medium'
                       }`}
                     >

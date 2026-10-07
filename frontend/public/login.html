@@ -151,6 +151,25 @@
   }
   .aviso.visible { display: block; }
   .pie { margin-top: 18px; font-size: 11px; color: var(--tenue); text-align: center; }
+  /* TABLET ACOSTADA (Fire HD 8: 962 x 520 utiles). En una columna la tarjeta
+     mide ~640 px y el pie quedaba fuera de la pantalla (Leider, 6-oct: "no
+     quiero hacer scroll"). Aqui va en dos: a la izquierda quien es el local,
+     a la derecha el formulario. Mismo contenido, mismos tamaños de letra. */
+  @media (max-height: 640px) and (min-width: 700px) {
+    body { padding: 16px; }
+    .caja {
+      max-width: 760px; display: grid; grid-template-columns: 1fr 1.1fr;
+      column-gap: 40px; align-items: center; padding: 26px 30px 20px;
+      grid-template-areas: "marca form" "logo form" "titulo form" "sub form" "aviso form" "pie pie";
+    }
+    .marca { grid-area: marca; margin-bottom: 16px; }
+    .logo { grid-area: logo; margin-bottom: 14px; }
+    h1 { grid-area: titulo; }
+    .sub { grid-area: sub; margin-bottom: 0; }
+    .aviso { grid-area: aviso; margin: 12px 0 0; }
+    form { grid-area: form; padding-top: 40px; }
+    .pie { grid-area: pie; margin-top: 12px; }
+  }
   /* Los dos interruptores de la esquina: tema y pantalla completa. En una
      tablet de mostrador el login es la PRIMERA pantalla del turno, asi que
      es el sitio natural para quitar la barra del navegador de una vez, en
