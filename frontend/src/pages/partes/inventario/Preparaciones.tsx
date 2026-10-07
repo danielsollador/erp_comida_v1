@@ -128,8 +128,6 @@ export default function Preparaciones({
         </div>
       ) : (
         <>
-          <ResumenCocina preps={preps} />
-
           <Seccion
             titulo="Qué crudo usa cada preparación"
             ayuda="Elige una preparación y el mapa se queda en ella: qué crudo lleva y quién más lo usa. Lo que comparten dos preparaciones va en ámbar: compiten por ello."
@@ -227,49 +225,6 @@ export default function Preparaciones({
 }
 
 // ── Lo que se lleva la cocina ───────────────────────────────────────────────
-
-/**
- * El número que importa de todo el preparado, arriba y explicado: de cada
- * kilo crudo que entra a la cocina, cuánto sale. Es la merma de cocinar de
- * todas las preparaciones juntas, pesada por lo que entra a cada una.
- */
-function ResumenCocina({ preps }: { preps: Preparacion[] }) {
-  const porUnidad = new Map<string, { entra: number; sale: number; n: number }>()
-  for (const p of preps) {
-    const m = mermaDeCocina(p)
-    if (!m) continue
-    const u = porUnidad.get(p.unidad) ?? { entra: 0, sale: 0, n: 0 }
-    u.entra += m.entra
-    u.sale += m.sale
-    u.n += 1
-    porUnidad.set(p.unidad, u)
-  }
-  const kg = porUnidad.get('kg') ?? porUnidad.get('lt')
-  if (!kg || kg.entra <= 0) return null
-  const unidad = porUnidad.has('kg') ? 'kg' : 'lt'
-  const pct = 1 - kg.sale / kg.entra
-  const chica = unidad === 'kg' ? 'g' : 'ml'
-  const salen = Math.round((kg.sale / kg.entra) * 1000)
-  return (
-    <div className="vp-losa p-4 sm:p-5 flex flex-wrap items-center gap-x-6 gap-y-3">
-      <div className="min-w-[14rem]">
-        <p className="vp-etiqueta">Lo que se lleva la cocina</p>
-        <p className="font-display text-3xl font-semibold tracking-tight tabular-nums leading-none mt-1.5">
-          {salen} {chica} <span className="text-base font-normal text-neutral-500">de cada {unidad === 'kg' ? 'kilo' : 'litro'} crudo</span>
-        </p>
-      </div>
-      <div className="flex-1 min-w-[16rem]">
-        <span className="flex w-full h-2.5 overflow-hidden rounded-full bg-aviso-500/25" aria-hidden>
-          <span className="h-full rounded-full bg-neutral-900" style={{ width: `${(1 - pct) * 100}%` }} />
-        </span>
-        <p className="text-xs text-neutral-600 mt-2 leading-snug">
-          Es lo que sale ya preparado; el resto ({Math.round(pct * 100)} %) se queda en la cocina: agua, grasa, hueso. Sale de las recetas de{' '}
-          {kg.n === 1 ? 'la preparación' : `las ${kg.n} preparaciones`}: entra tanto crudo, rinde tanto. Si una tanda real rinde distinto, se corrige en su receta.
-        </p>
-      </div>
-    </div>
-  )
-}
 
 /**
  * La merma de cocinar de una preparación: entra tanto crudo (lo que se mide
