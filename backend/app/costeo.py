@@ -50,14 +50,30 @@ def consumo_bruto(receta: models.RecetaItem, unidades: float) -> float:
     Antes se descontaba la cantidad util tal cual mientras el costo si usaba
     `costo_efectivo`, y esa asimetria hacia que el inventario contable y el
     fisico se separaran solos.
+
+    Una PREPARACION rinde 100 % a nivel de ficha: su merma de cocina ya vive
+    en `rinde` (1 kg de pollo rinde 0,8 kg de guiso) y `explotar` la aplica
+    al bajar por la receta. Dividir ademas por un `rendimiento_pct` la
+    contaba dos veces.
     """
+    if receta.ingrediente.tipo == "preparacion":
+        return receta.cantidad_por_unidad * unidades
     rendimiento = (receta.ingrediente.rendimiento_pct or 100) / 100
     if rendimiento <= 0:
         rendimiento = 1
     return receta.cantidad_por_unidad * unidades / rendimiento
 
 
-def explotar(ingrediente: models.Ingrediente, cantidad: float, usar_stock: bool = True, _visitados=frozenset()):
+# Como se baja una preparacion hasta lo que de verdad se mueve en el deposito
+# (ver `explotar`):
+#   venta       lo producido primero y el resto por la receta (backflush)
+#   receta      siempre por la receta, sin mirar lo producido
+#   devolucion  una preparacion que se PRODUCE vuelve (o se pierde) como ella
+#               misma; una que se descuenta, por la receta
+MODOS_EXPLOTAR = ("venta", "receta", "devolucion")
+
+
+def explotar(ingrediente: models.Ingrediente, cantidad: float, modo: str = "venta", _visitados=frozenset()):
     """Lo que de verdad sale del deposito por `cantidad` de algo.
 
     Lo comprado sale tal cual. Una PREPARACION se baja por su receta hasta la
@@ -65,22 +81,31 @@ def explotar(ingrediente: models.Ingrediente, cantidad: float, usar_stock: bool 
     pollo son 58,8 g de pollo, mas su cebolla y su pimenton. Una preparacion
     que se PRODUCE sale primero de lo producido y, si no alcanza, el resto
     del crudo (lo que en la industria se llama *backflush*): la venta nunca
-    se traba porque la cocina no anoto la tanda.
+    se traba porque la cocina no anoto la tanda. Ese es el modo "venta".
 
-    `usar_stock=False` baja siempre por la receta: es lo que usan las
-    ediciones de comandas, que devuelven y sacan por el mismo camino.
+    "receta" baja siempre por la receta, sin mirar lo producido: es lo que
+    usan la disponibilidad y la sugerencia de compra, que preguntan por el
+    crudo que hace falta y no por lo que hay hecho.
+
+    "devolucion" es el camino de vuelta: lo que se quita de una comanda. Una
+    preparacion que se produce NO se explota: el guiso vuelve a la olla (o se
+    bota como guiso), no vuelve como pollo crudo. Una que se descuenta del
+    crudo si baja por la receta, porque nunca tuvo existencia propia.
     """
+    if modo not in MODOS_EXPLOTAR:
+        raise ValueError(f"modo de explotar desconocido: {modo!r}")
     if (
         ingrediente.tipo != "preparacion"
         or not ingrediente.lineas_preparacion
         or not ingrediente.rinde
         or ingrediente.rinde <= 0
         or ingrediente.id in _visitados
+        or (modo == "devolucion" and ingrediente.modo_produccion == "producir")
     ):
         return {ingrediente: cantidad}
     resultado = {}
     resto = cantidad
-    if usar_stock and ingrediente.modo_produccion == "producir":
+    if modo == "venta" and ingrediente.modo_produccion == "producir":
         de_lo_hecho = min(max(ingrediente.stock_actual or 0, 0), cantidad)
         if de_lo_hecho > 0:
             resultado[ingrediente] = de_lo_hecho
@@ -90,18 +115,18 @@ def explotar(ingrediente: models.Ingrediente, cantidad: float, usar_stock: bool 
     dentro = _visitados | {ingrediente.id}
     for linea in ingrediente.lineas_preparacion:
         parte = resto * linea.cantidad / ingrediente.rinde
-        for hoja, q in explotar(linea.ingrediente, parte, usar_stock, dentro).items():
+        for hoja, q in explotar(linea.ingrediente, parte, modo, dentro).items():
             resultado[hoja] = resultado.get(hoja, 0) + q
     return resultado
 
 
-def explotar_consumo(consumo: dict, usar_stock: bool = True) -> dict:
+def explotar_consumo(consumo: dict, modo: str = "venta") -> dict:
     """`explotar` sobre un consumo ya sumado por insumo. Se suma ANTES de
     explotar para que dos renglones con el mismo guiso no cuenten dos veces
     lo que ya esta producido."""
     resultado = {}
     for ingrediente, cantidad in consumo.items():
-        for hoja, q in explotar(ingrediente, cantidad, usar_stock).items():
+        for hoja, q in explotar(ingrediente, cantidad, modo).items():
             resultado[hoja] = resultado.get(hoja, 0) + q
     return resultado
 

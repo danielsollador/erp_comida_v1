@@ -96,6 +96,7 @@ import type {
   ResultadoDinamico,
   ValorCampo,
   Preparacion,
+  SobrantePreparacion,
   DatosPreparacion,
   Produccion,
   Disponibilidad,
@@ -651,6 +652,9 @@ export const api = {
     req<Produccion>('/inventario/produccion', { method: 'POST', body: JSON.stringify(d) }),
   listarProduccion: () => req<Produccion[]>('/inventario/produccion'),
   preparacionesVencidas: () => req<Preparacion[]>('/inventario/preparaciones/vencidas'),
+  /** Al cierre: lo que sobró de una preparación se guarda para mañana o se bota (y sale el crudo por la receta). */
+  sobrantePreparacion: (id: number, cuerpo: { cantidad: number; accion: 'botar' | 'guardar'; motivo?: string }) =>
+    req<SobrantePreparacion>(`/inventario/preparaciones/${id}/sobrante`, { method: 'POST', body: JSON.stringify(cuerpo) }),
   disponibilidad: () => req<Disponibilidad[]>('/inventario/preparaciones/disponibilidad'),
   costoTeorico: (desde?: string, hasta?: string) =>
     req<CostoTeoricoFila[]>(`/inventario/costo-teorico${qs({ desde, hasta })}`),
@@ -1145,6 +1149,9 @@ export const api = {
     req<AlertaPrecio[]>(`/compras/alertas${pendientes ? '?pendientes=true' : ''}`),
   marcarAlertaVista: (id: number) => req<AlertaPrecio>(`/compras/alertas/${id}/visto`, { method: 'POST' }),
   listarEquivalencias: () => req<Equivalencia[]>('/compras/equivalencias'),
+  /** Una presentación escrita a mano ("caja de 24") también se recuerda para ese proveedor. */
+  aprenderEquivalencias: (cuerpo: Omit<CuerpoCompletarFactura, 'soporte_id'>) =>
+    req<{ aprendidas: number }>('/compras/equivalencias/aprender', { method: 'POST', body: JSON.stringify(cuerpo) }),
   olvidarEquivalencia: (id: number) => req(`/compras/equivalencias/${id}`, { method: 'DELETE' }),
   /** `referencia` es obligatoria si no se salda en efectivo. */
   pagarFacturaCompra: (id: number, forma_pago: string, referencia?: string) =>

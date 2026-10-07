@@ -193,9 +193,29 @@ Se pueden cambiar; están aisladas en el código.
 | 4 | `/inventario/costo-teorico`; aceite: `es_indirecto` + `cargar-indirecto` (5010/1040) + `/inventario/indirectos` por pieza (`Variante.se_frie`); `Configuracion.costo_para_precios`; el costo del menú incluye el indirecto y el costo de reposición de las preparaciones | Inventario → Control: teórico vs real, aceite por pieza y qué se fríe, método de costo para precios |
 
 ### Límites conocidos
-- **Editar una comanda** devuelve y saca por la receta estándar, aunque la preparación se produzca. Es una aproximación que queda documentada en `pedidos.py`.
+- **Editar una comanda:** lo que se agrega sale como en la venta (lo producido primero); lo que se quita de una preparación que se produce vuelve (o se pierde) como la preparación misma, y lo que se descuenta del crudo vuelve por la receta (`costeo.explotar`, modo `devolucion`).
 - **Venta que mezcla lo producido y el crudo:** el costo congelado en la venta usa el promedio de lo producido mientras haya existencia. Si una venta toma parte de lo producido y parte del crudo, el costo puede diferir unos centavos del valor del kardex.
-- **Pruebas en pantalla:** las pantallas nuevas no se recorrieron en el navegador. Hace falta revisarlas en local antes de desplegar.
+- **Pruebas en pantalla:** recorridas en local el 7-oct (Inventario completo, Compras, ficha, Preparado, «Sobró hoy», conteo). Falta recorrerlas en la tablet y en el teléfono real antes de desplegar.
+
+### Pantallas (7-oct, pizarra de Leider y Daniel)
+Inventario se reconstruyó alrededor de los **cuatro almacenes**; Compras se ajustó para alimentarlos. Lo nuevo:
+
+| Dónde | Qué |
+|---|---|
+| Inventario → Almacenes | Portada con las cuatro fichas (materia prima, reventa, consumible, desechable): mercancías, plata en stock (o gastado, en desechables), bajo mínimo y el camino de cada una. Debajo, «Qué comprar» y «Control» resumidos. |
+| Inventario → Materia prima | Dos caras: **Crudo** (tabla con aprovechable y costo real) y **Preparado** (`Preparaciones.tsx`): tarjetas con «podrías hacer hoy», qué la limita, con quién compite, la receta y **«Sobró hoy»** → `POST /inventario/preparaciones/{id}/sobrante` (`guardar` no mueve nada; `botar` saca el crudo por la receta como merma, o la preparación misma si se produce). |
+| Inventario → Reventa / Consumible | Tabla con «vale» (stock × costo). |
+| Inventario → Desechable | Sin stock: lo gastado en el período por mercancía y por proveedor (sale de los renglones de factura, que ahora traen `tipo` y `cuenta`). |
+| Inventario → Control | Un solo sitio con cuatro vistas: debió salir vs. hay, pérdidas (mermas + conteos que sumaron), conteos hechos, aceite y costo para precios. Usa el período de la barra. |
+| Conteo físico | Acepta preparado: «hay 0,8 kg de guiso» se traduce a crudo y se suma a lo contado de cada materia prima (`ResultadoConteo.no_contadas` avisa si falta alguna). |
+| Ficha de mercancía (`FichaMercancia.tsx`) | Selector de tipo con las cuatro fichas, «cómo te llega» (las presentaciones recordadas por proveedor), sin la unidad «paquete» para fichas nuevas. |
+| Compras → Cargar factura | Tres pasos (la factura, qué trae, el pago). Cada renglón busca su mercancía escribiendo, muestra su tipo con color y puede marcar **«viene en caja o paquete»** (2 cajas de 24 a $12 → entran 48 a $0,50); las presentaciones escritas a mano también se aprenden (`POST /compras/equivalencias/aprender`). «A dónde va la plata» por tipo. |
+| Compras → Facturas | Comprado / al depósito / a gasto / por pagar; «a dónde fue la plata» del período; cada factura con los puntos de sus almacenes y su detalle plegable. |
+| Mercancía nueva | Nombre con parecidas, qué es (cuatro fichas), se lleva en, **cómo te llega** (suelta, o en caja de N: la presentación queda para ese proveedor). |
+
+Código compartido: `lib/tiposArticulo.ts` (`ALMACENES`, color e ícono por tipo), `components/compras/Almacenes.tsx` (`PuntoTipo`, `SelloTipo`, `ElegirAlmacen`, `DestinoPlata`), `components/compras/ElegirMercancia.tsx`, `lib/inventario.ts`.
+
+Correcciones de la revisión del 7-oct: fusionar mueve las recetas de preparaciones y rechaza tipos distintos y ciclos; editar una comanda devuelve lo producido como producido; los duplicados ya existentes se pueden editar sin cambiarles el nombre; una preparación rinde 100 % a nivel de ficha (la merma va solo en `rinde`).
 
 ### Lo que queda (fase 5 en adelante)
 - **Ubicaciones de stock** (depósito / cocina / barra / sede). Toca todos los caminos del stock, así que va en su propia fase.

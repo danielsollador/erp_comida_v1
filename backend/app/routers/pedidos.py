@@ -1080,11 +1080,14 @@ async def editar_pedido(
     costo_perdido = round(costo_perdido, 2)
     cortesia_perdida = round(cortesia_perdida, 2)
 
-    # Lo que sale y lo que vuelve, por el mismo camino: la receta hasta la
-    # materia prima.
-    aumento = costeo.explotar_consumo(aumento, usar_stock=False)
-    retorno = costeo.explotar_consumo(retorno, usar_stock=False)
-    perdida = costeo.explotar_consumo(perdida, usar_stock=False)
+    # Lo que se agrega sale igual que en la venta: el guiso producido primero
+    # y el resto por la receta. Lo que se quita NO vuelve por la receta: un
+    # guiso que se produce vuelve a la olla (o se bota) como guiso, no como
+    # pollo crudo; solo lo que se descuenta del crudo se devuelve por la
+    # receta, porque nunca tuvo existencia propia (ver costeo.explotar).
+    aumento = costeo.explotar_consumo(aumento, modo="venta")
+    retorno = costeo.explotar_consumo(retorno, modo="devolucion")
+    perdida = costeo.explotar_consumo(perdida, modo="devolucion")
 
     neto = {}
     for ingrediente in set(aumento) | set(retorno):

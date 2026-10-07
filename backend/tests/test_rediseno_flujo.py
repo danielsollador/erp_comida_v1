@@ -252,6 +252,59 @@ def test_lo_vendido_sale_de_lo_producido_y_lo_que_falta_del_crudo(client, db, gu
     libros_cuadrados(client, db)
 
 
+def test_editar_la_comanda_devuelve_el_guiso_producido_y_no_el_pollo(client, db, guiso):
+    """La venta salio de lo producido; al quitar el renglon, el guiso vuelve
+    a la olla como guiso. Devolverlo como pollo crudo (lo que hacia antes)
+    dejaba el guiso en menos y el pollo en mas."""
+    g = _a_producir(client, guiso)
+    r = client.post("/api/inventario/produccion", json={
+        "preparacion_id": g["id"], "cantidad": 2,
+        "usado": [{"ingrediente_id": guiso["pollo"]["id"], "cantidad": 2.5}, {"ingrediente_id": guiso["cebolla"]["id"], "cantidad": 0.25}],
+    })
+    assert r.status_code == 200, r.text
+    disco = alta(client, "Disco", unidad="unidad", stock=100, costo=0.1)
+    pastelito = producto(db, "Pastelito", [(g["id"], 0.05)])
+    pan = producto(db, "Pan", [(disco["id"], 1)])
+
+    r = client.post("/api/pedidos", json={
+        "items": [{"variante_id": pastelito.id, "cantidad": 1}, {"variante_id": pan.id, "cantidad": 1}], "nota": "",
+    })
+    assert r.status_code == 200, r.text
+    assert stock(db, g["id"]) == 1.95
+    assert stock(db, guiso["pollo"]["id"]) == 7.5
+
+    pedido_id = r.json()["id"]
+    r = client.put(f"/api/pedidos/{pedido_id}", json={"items": [{"variante_id": pan.id, "cantidad": 1}]})
+    assert r.status_code == 200, r.text
+    assert stock(db, g["id"]) == 2
+    assert stock(db, guiso["pollo"]["id"]) == 7.5
+    assert stock(db, guiso["cebolla"]["id"]) == 1.75
+    # El costo de la venta se asienta al cobrar: recien ahi se auditan los libros.
+    r = client.post(f"/api/pedidos/{pedido_id}/cobrar", json={"metodo_pago": "Efectivo Bs"})
+    assert r.status_code == 200, r.text
+    libros_cuadrados(client, db)
+
+
+def test_una_preparacion_rinde_100_en_la_ficha(client, db, guiso):
+    """La merma de cocinar ya esta en `rinde`; un rendimiento aparte la
+    contaba dos veces al vender."""
+    g = guiso["guiso"]
+    r = client.put(f"/api/inventario/ingredientes/{g['id']}", json={
+        "nombre": g["nombre"], "unidad": "kg", "tipo": "preparacion", "rendimiento_pct": 50,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["rendimiento_pct"] == 100
+    assert alta(client, "Salsa", tipo="preparacion", rendimiento_pct=50)["rendimiento_pct"] == 100
+
+    # Aunque la base diga otra cosa (fichas viejas), la venta no lo aplica.
+    prep = db.get(models.Ingrediente, g["id"])
+    prep.rendimiento_pct = 50
+    db.commit()
+    pastelito = producto(db, "Pastelito", [(g["id"], 0.08)])
+    vender(client, pastelito.id, 10)  # 0,8 kg de guiso = 1 kg de pollo, no 2
+    assert stock(db, guiso["pollo"]["id"]) == 9
+
+
 def test_no_se_anotan_tandas_de_lo_que_se_descuenta_del_crudo(client, guiso):
     r = client.post("/api/inventario/produccion", json={"preparacion_id": guiso["guiso"]["id"], "cantidad": 1})
     assert r.status_code == 400
@@ -270,6 +323,116 @@ def test_lo_que_sobra_vencido_se_ofrece_para_botar(client, db, guiso):
     # Se bota con la merma de siempre.
     r = client.post(f"/api/inventario/ingredientes/{g['id']}/merma", json={"cantidad": 0.8, "motivo": "Sobró del día"})
     assert r.status_code == 200, r.text
+    libros_cuadrados(client, db)
+
+
+def _sobrante(client, prep_id, cantidad, accion, motivo=""):
+    return client.post(
+        f"/api/inventario/preparaciones/{prep_id}/sobrante",
+        json={"cantidad": cantidad, "accion": accion, "motivo": motivo},
+    )
+
+
+def test_botar_lo_que_sobra_de_un_guiso_que_se_descuenta_bota_el_pollo(client, db, guiso):
+    """El guiso nunca tuvo stock: lo que se bota es el pollo y la cebolla que
+    la receta dice que lleva, como una merma normal (6020)."""
+    antes_6020 = saldo(db, "6020")
+    r = _sobrante(client, guiso["guiso"]["id"], 0.2, "botar")
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    # 0,2 kg de guiso que rinde 0,8 por kilo de pollo son 0,25 kg de pollo y 0,025 de cebolla.
+    assert cuerpo["ok"] is True
+    assert cuerpo["movimientos"] == 2
+    por_nombre = {d["nombre"]: d for d in cuerpo["detalle"]}
+    assert por_nombre["Pollo"]["cantidad"] == 0.25
+    assert por_nombre["Pollo"]["valor"] == 1.0  # a $4 el kilo
+    assert por_nombre["Pollo"]["unidad"] == "kg"
+    assert por_nombre["Cebolla"]["cantidad"] == 0.025
+    assert cuerpo["valor"] == round(sum(d["valor"] for d in cuerpo["detalle"]), 2)
+    assert stock(db, guiso["pollo"]["id"]) == 9.75
+    assert stock(db, guiso["cebolla"]["id"]) == 1.975
+    assert stock(db, guiso["guiso"]["id"]) == 0
+    # Una merma por materia prima, con el motivo por defecto y el valor del pollo.
+    mermas = {m.ingrediente_id: m for m in db.query(models.Merma).all()}
+    assert set(mermas) == {guiso["pollo"]["id"], guiso["cebolla"]["id"]}
+    assert mermas[guiso["pollo"]["id"]].cantidad == 0.25
+    assert mermas[guiso["pollo"]["id"]].motivo == "Sobró Guiso de pollo: se botó"
+    pollo_kardex = db.query(models.MovimientoInventario).filter_by(
+        ingrediente_id=guiso["pollo"]["id"], tipo=kardex.MERMA
+    ).one()
+    assert pollo_kardex.valor == -1.0
+    assert round(saldo(db, "6020") - antes_6020, 2) == cuerpo["valor"]
+    libros_cuadrados(client, db)
+
+
+def test_guardar_lo_que_sobra_no_mueve_nada(client, db, guiso):
+    r = _sobrante(client, guiso["guiso"]["id"], 0.5, "guardar")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"ok": True, "movimientos": 0, "valor": 0.0, "detalle": []}
+    assert stock(db, guiso["pollo"]["id"]) == 10
+    assert db.query(models.Merma).count() == 0
+    assert db.query(models.MovimientoInventario).filter_by(tipo=kardex.MERMA).count() == 0
+
+
+def test_botar_lo_que_sobra_de_un_guiso_producido_baja_el_guiso(client, db, guiso):
+    g = _a_producir(client, guiso)
+    client.post("/api/inventario/produccion", json={"preparacion_id": g["id"], "cantidad": 0.8})
+    assert stock(db, g["id"]) == 0.8
+    r = _sobrante(client, g["id"], 0.3, "botar", motivo="Quedó del almuerzo")
+    assert r.status_code == 200, r.text
+    assert r.json()["movimientos"] == 1
+    assert r.json()["detalle"][0]["ingrediente_id"] == g["id"]
+    assert r.json()["detalle"][0]["cantidad"] == 0.3
+    assert stock(db, g["id"]) == 0.5
+    assert stock(db, guiso["pollo"]["id"]) == 9  # el pollo ya salio en la tanda
+    assert db.query(models.Merma).one().motivo == "Quedó del almuerzo"
+    # Pedir mas de lo que hay bota lo que hay.
+    r = _sobrante(client, g["id"], 5, "botar")
+    assert r.status_code == 200, r.text
+    assert r.json()["detalle"][0]["cantidad"] == 0.5
+    assert stock(db, g["id"]) == 0
+    # Y sin existencia no hay nada que botar.
+    assert _sobrante(client, g["id"], 1, "botar").json()["movimientos"] == 0
+    libros_cuadrados(client, db)
+
+
+def test_el_sobrante_solo_existe_para_preparaciones(client, guiso):
+    assert _sobrante(client, guiso["pollo"]["id"], 1, "botar").status_code == 404
+    assert _sobrante(client, 99999, 1, "guardar").status_code == 404
+
+
+def test_el_conteo_acepta_el_guiso_y_lo_traduce_a_pollo(client, db, guiso):
+    """En la nevera hay 0,8 kg de guiso y en el deposito 9 kg de pollo: el
+    sistema dice 10 kg de pollo y cuadra, porque ese guiso ES 1 kg de pollo."""
+    r = client.post("/api/inventario/conteo", json={"items": [
+        {"ingrediente_id": guiso["pollo"]["id"], "stock_real": 9},
+        {"ingrediente_id": guiso["guiso"]["id"], "stock_real": 0.8},
+    ]})
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["ajustes"] == []
+    assert cuerpo["sin_cambio"] == 1  # el guiso no genera ajuste
+    assert cuerpo["no_contadas"] == ["Cebolla"]  # la cebolla del guiso no se conto: se ignora
+    assert stock(db, guiso["pollo"]["id"]) == 10
+    assert stock(db, guiso["guiso"]["id"]) == 0
+    assert db.query(models.Merma).count() == 0
+
+
+def test_el_conteo_con_guiso_encuentra_el_faltante_real(client, db, guiso):
+    r = client.post("/api/inventario/conteo", json={"items": [
+        {"ingrediente_id": guiso["pollo"]["id"], "stock_real": 8.5},
+        {"ingrediente_id": guiso["cebolla"]["id"], "stock_real": 1.9},
+        {"ingrediente_id": guiso["guiso"]["id"], "stock_real": 0.8},
+    ]})
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["no_contadas"] == []
+    ajustes = {a["nombre"]: a for a in cuerpo["ajustes"]}
+    assert ajustes["Pollo"]["diferencia"] == -0.5
+    assert ajustes["Pollo"]["valor"] == 2.0
+    assert "Cebolla" not in ajustes  # 1,9 + 0,1 del guiso = 2: cuadra
+    assert stock(db, guiso["pollo"]["id"]) == 9.5
+    assert db.query(models.Merma).one().por_conteo is True
     libros_cuadrados(client, db)
 
 

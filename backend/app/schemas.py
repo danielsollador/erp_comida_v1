@@ -266,6 +266,37 @@ class ProduccionOut(BaseModel):
     costo_total: float
 
 
+class SobrantePreparacionRequest(BaseModel):
+    """Lo que sobro de una preparacion al cierre y que se decidio hacer.
+
+    `guardar` no mueve nada (queda para mañana); `botar` es merma: de la
+    preparacion misma si se produce, o de su materia prima por la receta si
+    se descuenta del crudo.
+    """
+
+    cantidad: float = Field(gt=0)
+    accion: Literal["botar", "guardar"]
+    motivo: str = ""
+
+
+class SobranteDetalle(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    cantidad: float
+    unidad: str
+    valor: float
+
+
+class SobrantePreparacion(BaseModel):
+    ok: bool = True
+    # Mermas registradas: 0 al guardar, 1 si se produce, una por materia
+    # prima si se descuenta del crudo.
+    movimientos: int
+    # Lo que se perdio, en $.
+    valor: float = 0.0
+    detalle: List[SobranteDetalle] = []
+
+
 class AlMenuInput(BaseModel):
     """Una mercancia de reventa pasa al menu tal cual: su producto, su
     precio y su receta de 1 unidad, de una vez."""
@@ -584,6 +615,9 @@ class ResultadoConteo(BaseModel):
     sin_cambio: int
     # El documento que quedo guardado, para poder abrirlo despues.
     conteo_id: Optional[int] = None
+    # Materia prima de una preparacion contada en crudo que NO vino en el
+    # conteo: esa parte del preparado no se pudo sumar a nada.
+    no_contadas: List[str] = []
 
 
 class ConteoResumen(BaseModel):
@@ -2116,6 +2150,11 @@ class LineaFactura(BaseModel):
     costo_unitario: float
     subtotal: float
     exento: bool = False
+    # Que es la mercancia (insumo, reventa, consumible, desechable): con esto
+    # el listado dice a donde fue la plata de cada factura sin otra consulta.
+    tipo: str = "insumo"
+    # A que cuenta fue el renglon (1040, 6050...). Vacio en las viejas.
+    cuenta: str = ""
 
     class Config:
         from_attributes = True

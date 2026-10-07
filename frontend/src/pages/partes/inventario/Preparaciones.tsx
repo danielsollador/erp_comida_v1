@@ -1,23 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { PuntoTipo } from '../../../components/compras/Almacenes'
+import ElegirMercancia from '../../../components/compras/ElegirMercancia'
+import Icono from '../../../components/Icono'
+import { Numerico } from '../../../components/Teclado'
 import { useDialogo } from '../../../components/dialogo'
 import { Boton, Modal, Pastilla, Seccion, Vacio } from '../../../components/ui'
 import { api } from '../../../lib/api'
 import { useMoneda } from '../../../lib/moneda'
-import { TEXTO_TIPO, vaEnPreparacion } from '../../../lib/tiposArticulo'
+import { vaEnPreparacion } from '../../../lib/tiposArticulo'
 import type { DatosPreparacion, Disponibilidad, Ingrediente, Preparacion, Produccion } from '../../../lib/types'
 
 /**
- * Las preparaciones de la cocina: el guiso de pollo, la carne mechada, la
- * salsa. Ver docs/plan-compras-inventario-produccion.md (fases 2 y 3).
+ * PREPARADO: la segunda cara de la materia prima. El guiso, la mechada, la
+ * salsa: lo que la cocina hace con el crudo.
  *
- * Cada una tiene su receta POR TANDA tal como la dice la cocina ("con 1 kg de
- * pollo, 100 g de cebolla... rindió 800 g") y el sistema escala. El pastelito
- * lleva "50 g de guiso" en su receta del menú, y al venderlo baja hasta el
- * pollo crudo.
+ * Es un almacén IMAGINARIO (pizarra del 7-oct): no dice cuánto guiso hay en
+ * la nevera, dice cuánto se PODRÍA hacer con el crudo que hay. Al vender un
+ * pastelito se baja por la receta hasta el pollo, y nadie pesa nada. Las dos
+ * cosas que sí se anotan son al cierre: "sobró guiso, lo boto o lo guardo".
+ * Si lo guarda, no pasa nada; si lo bota, sale el crudo por la receta como
+ * pérdida.
  *
- * Producir es OPCIONAL: por defecto la preparación se descuenta del crudo al
- * vender y nadie anota nada. Si la cocina quiere medir el rendimiento real,
- * se pasa a "se produce" y se anota cada tanda con un número: cuánto salió.
+ * Quien quiera precisión pasa una preparación a "se produce" y anota cada
+ * tanda; ahí sí hay stock real y rendimiento medido.
  */
 export default function Preparaciones({
   ingredientes,
@@ -28,14 +33,15 @@ export default function Preparaciones({
   onCambio: () => void
 }) {
   const { fmt: dinero } = useMoneda()
-  const dialogo = useDialogo()
   const [preps, setPreps] = useState<Preparacion[] | null>(null)
   const [disp, setDisp] = useState<Disponibilidad[]>([])
   const [vencidas, setVencidas] = useState<Preparacion[]>([])
   const [tandas, setTandas] = useState<Produccion[]>([])
   const [editando, setEditando] = useState<Preparacion | 'nueva' | null>(null)
   const [anotando, setAnotando] = useState<Preparacion | null>(null)
+  const [sobro, setSobro] = useState<Preparacion | null>(null)
   const [error, setError] = useState('')
+  const [aviso, setAviso] = useState('')
 
   const cargar = useCallback(() => {
     Promise.all([api.listarPreparaciones(), api.disponibilidad(), api.preparacionesVencidas(), api.listarProduccion()])
@@ -54,158 +60,85 @@ export default function Preparaciones({
     onCambio()
   }
 
-  async function botar(p: Preparacion) {
-    const ok = await dialogo.confirmar({
-      titulo: `Botar lo que sobró de ${p.nombre}`,
-      texto: `Se anotan ${p.stock_actual} ${p.unidad} como merma: ya pasó su tiempo de vida.`,
-      aceptar: 'Botar',
-      peligro: true,
-    })
-    if (!ok) return
-    try {
-      await api.registrarMerma(p.id, p.stock_actual, 'Sobró: se venció')
-      recargarTodo()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo anotar')
-    }
-  }
-
-  async function usarRendimientoReal(p: Preparacion) {
-    if (!p.rendimiento_real) return
-    const nuevo = Math.round(p.rinde * p.rendimiento_real * 1000) / 1000
-    const ok = await dialogo.confirmar({
-      titulo: 'Corregir lo que rinde',
-      texto: `Las últimas ${p.tandas} tandas rindieron ${Math.round(p.rendimiento_real * 100)} % de lo que dice la receta. La tanda pasa a rendir ${nuevo} ${p.unidad} en vez de ${p.rinde}.`,
-      aceptar: 'Corregir',
-    })
-    if (!ok) return
-    try {
-      await api.actualizarPreparacion(p.id, { ...datosDe(p), rinde: nuevo })
-      recargarTodo()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar')
-    }
-  }
-
-  const producibles = (preps ?? []).filter((p) => p.modo_produccion === 'producir')
+  const dispDe = (p: Preparacion) => disp.find((d) => d.preparacion_id === p.id)
 
   return (
     <div className="space-y-4">
-      {error && <p className="rounded-lg bg-peligro-50 px-3 py-2 text-sm text-peligro-700">{error}</p>}
+      {error && <p className="rounded-2xl bg-peligro-500/10 px-4 py-3 text-sm text-peligro-700">{error}</p>}
+      {aviso && (
+        <p className="rounded-2xl bg-exito-500/10 px-4 py-3 text-sm text-exito-800 flex items-center justify-between gap-3">
+          <span>{aviso}</span>
+          <button type="button" onClick={() => setAviso('')} className="text-xs font-semibold underline">
+            Cerrar
+          </button>
+        </p>
+      )}
 
       {vencidas.length > 0 && (
-        <div className="rounded-2xl border border-aviso-300 bg-aviso-50 p-3 space-y-2">
+        <div className="rounded-2xl bg-aviso-500/10 p-4 space-y-2">
           <p className="text-sm font-semibold text-aviso-800">Sobró de antes y ya pasó su tiempo</p>
           {vencidas.map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-3 text-sm">
               <span>
                 {p.nombre}: <b className="tabular-nums">{p.stock_actual} {p.unidad}</b>
               </span>
-              <button type="button" onClick={() => void botar(p)} className="text-sm font-semibold text-peligro-700 underline">
-                Botar
+              <button type="button" onClick={() => setSobro(p)} className="text-sm font-semibold text-aviso-800 underline">
+                Decidir
               </button>
             </div>
           ))}
         </div>
       )}
 
-      <Seccion
-        titulo="Preparaciones"
-        ayuda="Lo que la cocina hace con materia prima. La receta va por tanda, como la dice la cocina; el sistema escala."
-        accion={
-          <div className="flex gap-2">
-            {producibles.length > 0 && (
-              <Boton tono="suave" onClick={() => setAnotando(producibles[0])}>
-                Anotar tanda
-              </Boton>
-            )}
-            <Boton onClick={() => setEditando('nueva')}>+ Nueva</Boton>
-          </div>
-        }
-      >
-        {preps === null ? (
-          <p className="text-sm text-neutral-500 py-6 text-center">Cargando…</p>
-        ) : preps.length === 0 ? (
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-lg font-semibold tracking-tight">Lo que la cocina hace con el crudo</h2>
+          <p className="text-xs text-neutral-500 mt-0.5 max-w-xl leading-relaxed">
+            Cada preparación dice qué lleva una tanda y cuánto rinde. No se pesa nada: lo que se ve es cuánto podrías hacer hoy con
+            la materia prima que hay. Al cierre, si sobró, se decide: se guarda o se bota.
+          </p>
+        </div>
+        <Boton onClick={() => setEditando('nueva')} icono="mas">
+          Nueva preparación
+        </Boton>
+      </div>
+
+      {preps === null ? (
+        <p className="text-sm text-neutral-500 py-6 text-center">Cargando…</p>
+      ) : preps.length === 0 ? (
+        <div className="vp-losa">
           <Vacio
+            icono="cocina"
             titulo="Todavía no hay preparaciones"
             detalle="Ej.: guiso de pollo. Con 1 kg de pollo, 100 g de cebolla y 50 g de pimentón, rinde 800 g. Después el pastelito lleva «50 g de guiso»."
             accion={<Boton onClick={() => setEditando('nueva')}>Crear la primera</Boton>}
           />
-        ) : (
-          <ul className="divide-y divide-neutral-100">
-            {preps.map((p) => (
-              <li key={p.id} className="py-3 flex items-start justify-between gap-3">
-                <button type="button" onClick={() => setEditando(p)} className="min-w-0 text-left flex-1">
-                  <span className="block font-semibold">{p.nombre}</span>
-                  <span className="block text-xs text-neutral-500">
-                    Rinde {p.rinde} {p.unidad} por tanda · {p.lineas.length} ingrediente{p.lineas.length === 1 ? '' : 's'} ·{' '}
-                    {dinero(p.costo_unitario)} el {p.unidad}
-                  </span>
-                  <span className="mt-1 flex flex-wrap gap-1.5">
-                    <Pastilla tono={p.modo_produccion === 'producir' ? 'acento' : 'neutro'}>
-                      {p.modo_produccion === 'producir' ? `Se produce · hay ${p.stock_actual} ${p.unidad}` : 'Se descuenta del crudo'}
-                    </Pastilla>
-                    {p.rendimiento_real != null && (
-                      <Pastilla tono={Math.abs(p.rendimiento_real - 1) > 0.05 ? 'ojo' : 'bien'}>
-                        Rinde {Math.round(p.rendimiento_real * 100)} % de lo esperado
-                      </Pastilla>
-                    )}
-                  </span>
-                </button>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  {p.modo_produccion === 'producir' && (
-                    <button type="button" onClick={() => setAnotando(p)} className="text-xs font-semibold border border-neutral-300 rounded-lg px-2.5 py-1">
-                      Anotar tanda
-                    </button>
-                  )}
-                  {p.rendimiento_real != null && Math.abs(p.rendimiento_real - 1) > 0.05 && (
-                    <button type="button" onClick={() => void usarRendimientoReal(p)} className="text-xs text-acento-700 underline">
-                      Usar el real
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Seccion>
-
-      {disp.length > 0 && (
-        <Seccion
-          titulo="Cuánto podrías hacer hoy"
-          ayuda="Con la materia prima que hay. Las que comparten un ingrediente compiten por él: no se suman."
-        >
-          <ul className="divide-y divide-neutral-100 text-sm">
-            {disp.map((d) => (
-              <li key={d.preparacion_id} className="py-2.5 flex items-start justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block font-medium">{d.nombre}</span>
-                  {d.limita && (
-                    <span className="block text-xs text-neutral-500">
-                      Lo limita {d.limita}
-                      {d.comparte_con.length > 0 && <> · compite con {d.comparte_con.join(', ')}</>}
-                    </span>
-                  )}
-                </span>
-                <span className="font-semibold tabular-nums shrink-0">
-                  {d.potencial == null ? '—' : `${d.potencial.toLocaleString('es-VE', { maximumFractionDigits: 2 })} ${d.unidad}`}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Seccion>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+          {preps.map((p) => (
+            <TarjetaPreparacion
+              key={p.id}
+              p={p}
+              d={dispDe(p)}
+              dinero={dinero}
+              onEditar={() => setEditando(p)}
+              onTanda={() => setAnotando(p)}
+              onSobro={() => setSobro(p)}
+            />
+          ))}
+        </div>
       )}
 
       {tandas.length > 0 && (
-        <Seccion titulo="Tandas de esta semana">
-          <ul className="divide-y divide-neutral-100 text-sm">
+        <Seccion titulo="Tandas de esta semana" ayuda="Lo que la cocina anotó, con lo que rindió contra la receta.">
+          <ul className="divide-y divide-neutral-500/10 text-sm">
             {tandas.map((t) => (
               <li key={t.id} className="py-2 flex items-center justify-between gap-3">
                 <span className="min-w-0">
                   <span className="block font-medium">{t.preparacion}</span>
                   <span className="block text-xs text-neutral-500">
-                    {new Date(t.fecha).toLocaleString('es-VE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · costó{' '}
-                    {dinero(t.costo_total)}
+                    {new Date(t.fecha).toLocaleString('es-VE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · costó {dinero(t.costo_total)}
                   </span>
                 </span>
                 <span className="text-right shrink-0">
@@ -238,7 +171,7 @@ export default function Preparaciones({
       {anotando && (
         <AnotarTanda
           inicial={anotando}
-          producibles={producibles}
+          producibles={(preps ?? []).filter((p) => p.modo_produccion === 'producir')}
           ingredientes={ingredientes}
           onCerrar={() => setAnotando(null)}
           onHecho={() => {
@@ -247,7 +180,181 @@ export default function Preparaciones({
           }}
         />
       )}
+      {sobro && (
+        <SobroHoy
+          p={sobro}
+          onCerrar={() => setSobro(null)}
+          onHecho={(mensaje) => {
+            setSobro(null)
+            setAviso(mensaje)
+            recargarTodo()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/** Una preparación: cuánto podrías hacer hoy, qué la limita, qué lleva. */
+function TarjetaPreparacion({
+  p,
+  d,
+  dinero,
+  onEditar,
+  onTanda,
+  onSobro,
+}: {
+  p: Preparacion
+  d?: Disponibilidad
+  dinero: (n: number) => string
+  onEditar: () => void
+  onTanda: () => void
+  onSobro: () => void
+}) {
+  const produce = p.modo_produccion === 'producir'
+  const potencial = d?.potencial ?? null
+  const desvio = p.rendimiento_real != null && Math.abs(p.rendimiento_real - 1) > 0.05
+  return (
+    <div className="vp-losa p-4 sm:p-5 flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-display font-semibold tracking-tight leading-tight truncate">{p.nombre}</h3>
+          <p className="text-xs text-neutral-500 mt-0.5">
+            Rinde {fmtCant(p.rinde)} {p.unidad} por tanda · {dinero(p.costo_unitario)} el {p.unidad}
+          </p>
+        </div>
+        <Pastilla tono={produce ? 'acento' : 'neutro'}>{produce ? 'Se produce' : 'Del crudo'}</Pastilla>
+      </div>
+
+      <div className="rounded-2xl bg-neutral-500/6 p-3.5">
+        {produce ? (
+          <>
+            <p className="text-xs text-neutral-500">Hay hecho</p>
+            <p className="font-display text-2xl font-semibold tracking-tight tabular-nums leading-none mt-1">
+              {fmtCant(p.stock_actual)} {p.unidad}
+            </p>
+            <p className="text-[11px] text-neutral-500 mt-1.5">
+              {potencial != null ? `y podrías hacer ${fmtCant(potencial)} ${p.unidad} más con el crudo` : 'la cocina anota cada tanda'}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-neutral-500">Podrías hacer hoy</p>
+            <p className="font-display text-2xl font-semibold tracking-tight tabular-nums leading-none mt-1">
+              {potencial == null ? '—' : `${fmtCant(potencial)} ${p.unidad}`}
+            </p>
+            <p className="text-[11px] text-neutral-500 mt-1.5">
+              {d?.limita ? (
+                <>
+                  Lo limita <span className="font-semibold text-neutral-700">{d.limita}</span>
+                  {d.comparte_con.length > 0 && <> · compite con {d.comparte_con.join(', ')}</>}
+                </>
+              ) : (
+                'con la materia prima que hay'
+              )}
+            </p>
+          </>
+        )}
+      </div>
+
+      <ul className="text-xs text-neutral-600 space-y-1">
+        {p.lineas.slice(0, 4).map((l) => (
+          <li key={l.ingrediente_id} className="flex items-center gap-2">
+            <PuntoTipo tipo={l.tipo} />
+            <span className="truncate flex-1">{l.nombre}</span>
+            <span className="tabular-nums text-neutral-500 shrink-0">
+              {fmtCant(l.cantidad)} {l.unidad}
+            </span>
+          </li>
+        ))}
+        {p.lineas.length > 4 && <li className="text-neutral-400">y {p.lineas.length - 4} más</li>}
+      </ul>
+
+      {desvio && (
+        <p className="text-xs text-aviso-800 rounded-xl bg-aviso-500/10 px-3 py-2">
+          Las últimas {p.tandas} tandas rindieron {Math.round(p.rendimiento_real! * 100)} % de lo que dice la receta.
+        </p>
+      )}
+
+      <div className="mt-auto flex flex-wrap gap-1.5">
+        <button type="button" onClick={onSobro} className="vp-control vp-pulsable rounded-full px-3 py-1.5 text-xs font-semibold">
+          Sobró hoy
+        </button>
+        {produce && (
+          <button type="button" onClick={onTanda} className="vp-control vp-pulsable rounded-full px-3 py-1.5 text-xs font-semibold">
+            Anotar tanda
+          </button>
+        )}
+        <button type="button" onClick={onEditar} className="ml-auto text-xs font-medium text-neutral-500 hover:text-neutral-900 px-1">
+          Receta
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * El cierre del preparado: sobró guiso. Guardarlo no mueve nada (mañana se
+ * vende y se descuenta el crudo ahí). Botarlo saca el crudo por la receta y
+ * queda como pérdida: si no, la carne de ese guiso nunca sale del sistema.
+ */
+function SobroHoy({ p, onCerrar, onHecho }: { p: Preparacion; onCerrar: () => void; onHecho: (mensaje: string) => void }) {
+  const { fmt: dinero } = useMoneda()
+  const [cantidad, setCantidad] = useState(p.modo_produccion === 'producir' && p.stock_actual > 0 ? String(p.stock_actual) : '')
+  const [ocupado, setOcupado] = useState(false)
+  const [error, setError] = useState('')
+  const n = aNum(cantidad)
+  const valor = n > 0 ? n * p.costo_unitario : 0
+
+  async function decidir(accion: 'botar' | 'guardar') {
+    setError('')
+    if (!(n > 0)) return setError('¿Cuánto sobró?')
+    setOcupado(true)
+    try {
+      const r = await api.sobrantePreparacion(p.id, { cantidad: n, accion })
+      onHecho(
+        accion === 'guardar'
+          ? `${fmtCant(n)} ${p.unidad} de ${p.nombre} se guardan para mañana. No se mueve nada: al venderse se descuenta el crudo.`
+          : `Se botaron ${fmtCant(n)} ${p.unidad} de ${p.nombre}: ${dinero(r.valor ?? valor)} de pérdida, descontados del crudo.`,
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo anotar')
+    } finally {
+      setOcupado(false)
+    }
+  }
+
+  return (
+    <Modal titulo={`Sobró ${p.nombre}`} ayuda="Al cierre. Lo que diga la olla manda." onCerrar={onCerrar} ancho="sm">
+      <div className="space-y-4 text-sm">
+        <label className="block">
+          <span className={rotulo}>Cuánto sobró ({p.unidad})</span>
+          <Numerico value={cantidad} onChange={(e) => setCantidad(e.target.value)} autoFocus placeholder="0" className={`${clase} text-lg font-semibold`} />
+          {valor > 0 && <span className="block text-xs text-neutral-500 mt-1">Vale unos {dinero(valor)} en materia prima.</span>}
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={ocupado}
+            onClick={() => void decidir('guardar')}
+            className="vp-pulsable rounded-2xl bg-neutral-900 text-white p-3.5 text-left disabled:opacity-50"
+          >
+            <span className="block font-semibold">Lo guardo</span>
+            <span className="block text-xs text-white/70 mt-0.5">para mañana · no se mueve nada</span>
+          </button>
+          <button
+            type="button"
+            disabled={ocupado}
+            onClick={() => void decidir('botar')}
+            className="vp-pulsable rounded-2xl bg-peligro-500/10 text-peligro-700 p-3.5 text-left disabled:opacity-50"
+          >
+            <span className="block font-semibold">Lo boto</span>
+            <span className="block text-xs opacity-80 mt-0.5">queda como pérdida · sale el crudo</span>
+          </button>
+        </div>
+        {error && <p className="text-peligro-600">{error}</p>}
+      </div>
+    </Modal>
   )
 }
 
@@ -261,11 +368,12 @@ function datosDe(p: Preparacion): DatosPreparacion {
     lineas: p.lineas.map((l) => ({ ingrediente_id: l.ingrediente_id, cantidad: l.cantidad })),
   }
 }
+void datosDe
 
 const aNum = (t: string) => Number(String(t).replace(',', '.'))
 const fmtCant = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 3 })
-const clase = 'w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm bg-white'
-const rotulo = 'block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1'
+const clase = 'w-full border border-neutral-300 rounded-xl px-3 py-2 text-sm bg-white'
+const rotulo = 'block text-xs font-medium text-neutral-600 mb-1'
 
 type Linea = { ingrediente_id: number; cantidad: string }
 
@@ -282,6 +390,7 @@ function EditorPreparacion({
   onGuardada: () => void
 }) {
   const { fmt: dinero } = useMoneda()
+  const dialogo = useDialogo()
   const [nombre, setNombre] = useState(prep?.nombre ?? '')
   const [unidad, setUnidad] = useState(prep?.unidad ?? 'kg')
   const [rinde, setRinde] = useState(prep ? String(prep.rinde) : '')
@@ -302,6 +411,10 @@ function EditorPreparacion({
   const rindeNum = aNum(rinde)
   // Estimado con los costos de la lista; el exacto lo da el servidor al guardar.
   const costoTanda = lineas.reduce((s, l) => s + (aNum(l.cantidad) || 0) * (porId.get(l.ingrediente_id)?.costo_unitario || 0), 0)
+  const bruto = lineas.reduce((s, l) => {
+    const ing = porId.get(l.ingrediente_id)
+    return ing && ing.unidad === unidad ? s + (aNum(l.cantidad) || 0) : s
+  }, 0)
   const escalaNum = aNum(escala)
   const factor = rindeNum > 0 && escalaNum > 0 ? escalaNum / rindeNum : null
 
@@ -331,9 +444,24 @@ function EditorPreparacion({
     }
   }
 
+  async function usarRendimientoReal() {
+    if (!prep?.rendimiento_real) return
+    const nuevo = Math.round(prep.rinde * prep.rendimiento_real * 1000) / 1000
+    const ok = await dialogo.confirmar({
+      titulo: 'Corregir lo que rinde',
+      texto: `Las últimas ${prep.tandas} tandas rindieron ${Math.round(prep.rendimiento_real * 100)} % de lo que dice la receta. La tanda pasa a rendir ${nuevo} ${prep.unidad} en vez de ${prep.rinde}.`,
+      aceptar: 'Corregir',
+    })
+    if (ok) setRinde(String(nuevo))
+  }
+
+  const chip = (activo: boolean) =>
+    `vp-pulsable rounded-xl px-3 py-2.5 text-left transition-colors ${activo ? 'bg-neutral-900 text-white' : 'bg-neutral-500/6 hover:bg-neutral-500/10'}`
+
   return (
     <Modal
       titulo={prep ? prep.nombre : 'Nueva preparación'}
+      ayuda="La receta de UNA tanda, tal como la dice la cocina. El sistema escala."
       onCerrar={onCerrar}
       ancho="md"
       pie={
@@ -347,7 +475,7 @@ function EditorPreparacion({
         </>
       }
     >
-      <div className="space-y-4 text-sm">
+      <div className="space-y-5 text-sm">
         <div className="grid grid-cols-3 gap-2">
           <label className="block col-span-2">
             <span className={rotulo}>Nombre</span>
@@ -365,30 +493,25 @@ function EditorPreparacion({
 
         <div>
           <span className={rotulo}>Lo que lleva una tanda</span>
-          <p className="text-xs text-neutral-500 mb-2">
-            Tal como sale del depósito: el pollo crudo, como se compró. La merma de cocinar va en «rinde».
-          </p>
+          <p className="text-xs text-neutral-500 mb-2">Tal como sale del depósito: el pollo crudo, como se compró. La merma de cocinar va en «rinde».</p>
           <div className="space-y-2">
             {lineas.map((l, i) => {
               const ing = porId.get(l.ingrediente_id)
               return (
                 <div key={i} className="flex items-center gap-2">
-                  <select
-                    value={l.ingrediente_id}
-                    onChange={(e) => setLineas((prev) => prev.map((x, j) => (j === i ? { ...x, ingrediente_id: Number(e.target.value) } : x)))}
-                    className={`${clase} flex-1 min-w-0`}
-                  >
-                    <option value={0}>Ingrediente…</option>
-                    {opciones.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.nombre} ({o.unidad}){o.tipo !== 'insumo' ? ` · ${TEXTO_TIPO[o.tipo]}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <input
+                  <div className="flex-1 min-w-0">
+                    <ElegirMercancia
+                      ingredientes={opciones}
+                      valor={l.ingrediente_id}
+                      alElegir={(id) => setLineas((prev) => prev.map((x, j) => (j === i ? { ...x, ingrediente_id: id } : x)))}
+                      alCrear={() => undefined}
+                      permitirPreparaciones
+                      placeholder="Ingrediente…"
+                    />
+                  </div>
+                  <Numerico
                     value={l.cantidad}
                     onChange={(e) => setLineas((prev) => prev.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)))}
-                    inputMode="decimal"
                     placeholder={ing ? ing.unidad : 'cant.'}
                     className={`${clase} w-24`}
                   />
@@ -396,33 +519,44 @@ function EditorPreparacion({
                     type="button"
                     onClick={() => setLineas((prev) => prev.filter((_, j) => j !== i))}
                     aria-label="Quitar"
-                    className="text-neutral-400 hover:text-peligro-600 px-1"
+                    className="w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:text-peligro-600 hover:bg-peligro-500/10"
                   >
-                    ✕
+                    <Icono nombre="quitar" size={14} />
                   </button>
                 </div>
               )
             })}
-            <button type="button" onClick={() => setLineas((prev) => [...prev, { ingrediente_id: 0, cantidad: '' }])} className="text-sm font-medium text-neutral-600">
-              + ingrediente
+            <button
+              type="button"
+              onClick={() => setLineas((prev) => [...prev, { ingrediente_id: 0, cantidad: '' }])}
+              className="vp-control inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium"
+            >
+              <Icono nombre="mas" size={13} />
+              Otro ingrediente
             </button>
           </div>
         </div>
 
         <label className="block">
           <span className={rotulo}>Rinde ({unidad})</span>
-          <input value={rinde} onChange={(e) => setRinde(e.target.value)} inputMode="decimal" placeholder="Ej. 0,8" className={clase} />
+          <Numerico value={rinde} onChange={(e) => setRinde(e.target.value)} placeholder={bruto > 0 ? `menos de ${fmtCant(bruto)}` : 'Ej. 0,8'} className={clase} />
           <span className="block text-xs text-neutral-500 mt-1">
-            Cuánto sale de esa tanda ya preparado.
-            {costoTanda > 0 && rindeNum > 0 && <> Sale a unos {dinero(costoTanda / rindeNum)} el {unidad}.</>}
+            Cuánto sale de esa tanda ya preparado: ahí va la merma de cocinar.
+            {costoTanda > 0 && rindeNum > 0 && <> Sale a unos <b className="text-neutral-700">{dinero(costoTanda / rindeNum)}</b> el {unidad}.</>}
+            {bruto > 0 && rindeNum > 0 && rindeNum < bruto && <> Rinde el {Math.round((rindeNum / bruto) * 100)} % del crudo.</>}
           </span>
+          {prep?.rendimiento_real != null && Math.abs(prep.rendimiento_real - 1) > 0.05 && (
+            <button type="button" onClick={() => void usarRendimientoReal()} className="mt-1 text-xs font-semibold text-acento-700 underline">
+              Las tandas reales rindieron {Math.round(prep.rendimiento_real * 100)} %: usar ese
+            </button>
+          )}
         </label>
 
         {lineas.some((l) => l.ingrediente_id && aNum(l.cantidad) > 0) && rindeNum > 0 && (
-          <div className="rounded-xl bg-neutral-50 p-3">
+          <div className="rounded-2xl bg-neutral-500/6 p-3.5">
             <label className="flex items-center gap-2">
               <span className="text-xs font-semibold text-neutral-600 shrink-0">Para hacer</span>
-              <input value={escala} onChange={(e) => setEscala(e.target.value)} inputMode="decimal" placeholder={String(rindeNum * 2)} className={`${clase} w-24`} />
+              <Numerico value={escala} onChange={(e) => setEscala(e.target.value)} placeholder={String(rindeNum * 2)} className={`${clase} w-24`} />
               <span className="text-xs text-neutral-600">{unidad} hace falta:</span>
             </label>
             {factor && (
@@ -450,17 +584,12 @@ function EditorPreparacion({
           <div className="grid grid-cols-2 gap-2">
             {(
               [
-                { v: 'descontar', t: 'Se descuenta del crudo', d: 'Al vender, sale la materia prima. Nadie anota nada.' },
+                { v: 'descontar', t: 'Del crudo', d: 'Al vender sale la materia prima. Nadie anota nada.' },
                 { v: 'producir', t: 'Se produce', d: 'La cocina anota cada tanda: se mide el rendimiento real.' },
               ] as const
             ).map((o) => (
-              <button
-                key={o.v}
-                type="button"
-                onClick={() => setModo(o.v)}
-                className={`rounded-lg border px-3 py-2 text-left ${modo === o.v ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-300 bg-white'}`}
-              >
-                <span className="block font-medium">{o.t}</span>
+              <button key={o.v} type="button" onClick={() => setModo(o.v)} className={chip(modo === o.v)}>
+                <span className="block font-semibold">{o.t}</span>
                 <span className={`block text-xs ${modo === o.v ? 'text-white/70' : 'text-neutral-500'}`}>{o.d}</span>
               </button>
             ))}
@@ -469,8 +598,8 @@ function EditorPreparacion({
         {modo === 'producir' && (
           <label className="block">
             <span className={rotulo}>Dura hecha (horas)</span>
-            <input value={vida} onChange={(e) => setVida(e.target.value)} inputMode="numeric" placeholder="Ej. 24" className={clase} />
-            <span className="block text-xs text-neutral-500 mt-1">Pasado ese tiempo, lo que sobre se ofrece para botar.</span>
+            <Numerico value={vida} onChange={(e) => setVida(e.target.value)} entero placeholder="Ej. 24" className={clase} />
+            <span className="block text-xs text-neutral-500 mt-1">Pasado ese tiempo, lo que sobre se ofrece para decidir.</span>
           </label>
         )}
         {error && <p className="text-peligro-600">{error}</p>}
@@ -568,7 +697,7 @@ function AnotarTanda({
         )}
         <label className="block">
           <span className={rotulo}>Cuánto salió ({prep.unidad})</span>
-          <input value={salio} onChange={(e) => setSalio(e.target.value)} inputMode="decimal" autoFocus className={`${clase} text-lg font-semibold`} />
+          <Numerico value={salio} onChange={(e) => setSalio(e.target.value)} autoFocus className={`${clase} text-lg font-semibold`} />
         </label>
         <div>
           <span className={rotulo}>Lo que se usó</span>
@@ -576,10 +705,9 @@ function AnotarTanda({
             {prep.lineas.map((l) => (
               <li key={l.ingrediente_id} className="flex items-center gap-2">
                 <span className="flex-1 min-w-0 truncate">{l.nombre}</span>
-                <input
+                <Numerico
                   value={usado[l.ingrediente_id] ?? ''}
                   onChange={(e) => setUsado((u) => ({ ...u, [l.ingrediente_id]: e.target.value }))}
-                  inputMode="decimal"
                   className={`${clase} w-24`}
                 />
                 <span className="w-12 text-xs text-neutral-500">{porId.get(l.ingrediente_id)?.unidad ?? l.unidad}</span>
@@ -588,7 +716,7 @@ function AnotarTanda({
           </ul>
         </div>
         {rendimiento != null && (
-          <p className={`rounded-lg px-3 py-2 ${Math.abs(rendimiento - 1) > 0.05 ? 'bg-aviso-50 text-aviso-800' : 'bg-neutral-50 text-neutral-700'}`}>
+          <p className={`rounded-xl px-3 py-2 ${Math.abs(rendimiento - 1) > 0.05 ? 'bg-aviso-500/10 text-aviso-800' : 'bg-neutral-500/6 text-neutral-700'}`}>
             Con eso la receta esperaba {fmtCant(esperado)} {prep.unidad}: rindió {Math.round(rendimiento * 100)} %.
           </p>
         )}

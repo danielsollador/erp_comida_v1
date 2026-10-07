@@ -16,13 +16,34 @@ from app import models
 from app.texto import nombre_limpio
 
 
-def alta(client, nombre, unidad="kg", stock=0.0, costo=0.0):
+def alta(client, nombre, unidad="kg", stock=0.0, costo=0.0, **extra):
     r = client.post(
         "/api/inventario/ingredientes",
-        json={"nombre": nombre, "unidad": unidad, "stock_actual": stock, "costo_unitario": costo},
+        json={"nombre": nombre, "unidad": unidad, "stock_actual": stock, "costo_unitario": costo, **extra},
     )
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def preparacion(client, nombre, lineas, rinde=1.0, **extra):
+    r = client.post(
+        "/api/inventario/preparaciones",
+        json={"nombre": nombre, "unidad": "kg", "rinde": rinde, "lineas": lineas, **extra},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def fundir(client, origen_id, destino_id, factor=1.0):
+    return client.post(f"/api/inventario/ingredientes/{origen_id}/fusionar", json={"destino_id": destino_id, "factor": factor})
+
+
+def lineas_de(db, prep_id):
+    db.expire_all()
+    return sorted(
+        (l.ingrediente_id, round(l.cantidad, 6))
+        for l in db.query(models.LineaPreparacion).filter_by(preparacion_id=prep_id).all()
+    )
 
 
 def saldo(db, codigo):
@@ -78,6 +99,24 @@ def test_no_se_renombra_a_un_nombre_ocupado(client):
     # Guardarse con su propio nombre (editar otra cosa) sigue andando.
     r = client.put(f"/api/inventario/ingredientes/{otra['id']}", json={"nombre": "Harina de maiz", "unidad": "kg", "stock_minimo": 2})
     assert r.status_code == 200, r.text
+
+
+def test_los_duplicados_que_ya_existen_se_pueden_editar(client, db):
+    """En produccion ya conviven "Crema de leche" y "Crema de Leche" (nacieron
+    antes del bloqueo). Guardarles un minimo no puede fallar por el nombre:
+    si no, ninguna se podria editar ni fusionar."""
+    a = models.Ingrediente(nombre="Crema de leche", unidad="kg")
+    b = models.Ingrediente(nombre="Crema de Leche", unidad="kg")
+    db.add_all([a, b])
+    db.commit()
+
+    r = client.put(f"/api/inventario/ingredientes/{a.id}", json={"nombre": "Crema de leche", "unidad": "kg", "stock_minimo": 2})
+    assert r.status_code == 200, r.text
+    assert r.json()["stock_minimo"] == 2 and r.json()["nombre"] == "Crema de leche"
+    # Pero ponerle el nombre de la otra, no: eso si es un cambio de nombre.
+    r = client.put(f"/api/inventario/ingredientes/{a.id}", json={"nombre": "Crema de Leche", "unidad": "kg"})
+    assert r.status_code == 409
+    assert "fusiónalas" in r.json()["detail"]
 
 
 # ── Fundir ────────────────────────────────────────────────────────────────
@@ -155,3 +194,73 @@ def test_las_recetas_y_la_memoria_del_proveedor_pasan_a_la_que_queda(client, db,
     eq = db.query(models.EquivalenciaProveedor).filter_by(clave="DISCOMASA").one()
     # 1 renglón del papel eran 10 discos; ahora son 10 x 0.05 = 0.5 kg de masa.
     assert eq.ingrediente_id == queda["id"] and round(eq.factor, 6) == 0.5
+
+
+def test_las_recetas_de_las_preparaciones_pasan_a_la_que_queda(client, db):
+    queda = alta(client, "Pollo")
+    se_va = alta(client, "Pollo pechuga", unidad="unidad")  # 1 pechuga = 0.4 kg
+    guiso = preparacion(client, "Guiso", [{"ingrediente_id": se_va["id"], "cantidad": 2}], rinde=0.8)
+    mixto = preparacion(
+        client, "Mixto",
+        [{"ingrediente_id": se_va["id"], "cantidad": 1}, {"ingrediente_id": queda["id"], "cantidad": 0.5}],
+    )
+
+    r = fundir(client, se_va["id"], queda["id"], factor=0.4)
+    assert r.status_code == 200, r.text
+    # El guiso llevaba 2 pechugas: ahora lleva 0,8 kg de pollo.
+    assert lineas_de(db, guiso["id"]) == [(queda["id"], 0.8)]
+    # El mixto llevaba las dos: queda UNA línea, 0,5 + 1 x 0,4.
+    assert lineas_de(db, mixto["id"]) == [(queda["id"], 0.9)]
+    # Y la pantalla de preparaciones lo cuenta igual.
+    por_nombre = {p["nombre"]: p for p in client.get("/api/inventario/preparaciones").json()}
+    assert [(l["ingrediente_id"], l["cantidad"]) for l in por_nombre["Guiso"]["lineas"]] == [(queda["id"], 0.8)]
+
+
+def test_no_se_funden_tipos_distintos(client):
+    carne = alta(client, "Carne")
+    pepsi = alta(client, "Pepsi", unidad="unidad", tipo="reventa")
+    r = fundir(client, carne["id"], pepsi["id"])
+    assert r.status_code == 409
+    assert "materia prima" in r.json()["detail"] and "reventa" in r.json()["detail"]
+
+
+def test_fundir_dos_preparaciones_hereda_la_receta_si_la_que_queda_no_tiene(client, db):
+    """La ficha "Guiso pollo" nacio desde Inventario, sin receta; la que tiene
+    la receta y las tandas es la otra. Al fundirlas, la receta, el modo y las
+    tandas pasan a la que queda."""
+    pollo = alta(client, "Pollo", stock=10, costo=4.0)
+    se_va = preparacion(
+        client, "Guiso de pollo", [{"ingrediente_id": pollo["id"], "cantidad": 1}],
+        rinde=0.8, modo_produccion="producir",
+    )
+    queda = alta(client, "Guiso pollo", tipo="preparacion")
+    r = client.post("/api/inventario/produccion", json={"preparacion_id": se_va["id"], "cantidad": 0.8})
+    assert r.status_code == 200, r.text
+
+    r = fundir(client, se_va["id"], queda["id"])
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    destino = db.get(models.Ingrediente, queda["id"])
+    assert lineas_de(db, queda["id"]) == [(pollo["id"], 1)]
+    assert (destino.rinde, destino.modo_produccion) == (0.8, "producir")
+    assert round(destino.stock_actual, 4) == 0.8, "lo producido pasa con el stock"
+    assert db.query(models.Produccion).one().preparacion_id == queda["id"]
+    assert db.get(models.Ingrediente, se_va["id"]).activo is False
+
+
+def test_fundir_no_puede_cerrar_un_ciclo(client, db):
+    """El relleno lleva guiso; fundir el relleno EN el guiso (que no tiene
+    receta) dejaria al guiso llevandose a si mismo."""
+    pollo = alta(client, "Pollo")
+    guiso = alta(client, "Guiso", tipo="preparacion")
+    relleno = preparacion(
+        client, "Relleno",
+        [{"ingrediente_id": guiso["id"], "cantidad": 0.5}, {"ingrediente_id": pollo["id"], "cantidad": 0.5}],
+    )
+    r = fundir(client, relleno["id"], guiso["id"])
+    assert r.status_code == 409
+    assert "sí misma" in r.json()["detail"]
+    db.expire_all()
+    # No se fundio nada.
+    assert db.get(models.Ingrediente, relleno["id"]).activo is True
+    assert lineas_de(db, guiso["id"]) == []

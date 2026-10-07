@@ -388,6 +388,24 @@ def _gemela(db: Session, nombre: str, salvo_id: Optional[int] = None) -> Optiona
     )
 
 
+def _sin_merma_si_es_preparacion(datos: dict) -> None:
+    """Una preparacion rinde 100 % a nivel de ficha: su merma de cocina ya
+    esta en `rinde`, y un rendimiento aparte la contaria dos veces (ver
+    costeo.consumo_bruto)."""
+    if datos.get("tipo") == "preparacion":
+        datos["rendimiento_pct"] = 100.0
+
+
+# Como se lee cada tipo en un mensaje (ver models.Ingrediente.tipo).
+TIPO_LEGIBLE = {
+    "insumo": "materia prima",
+    "reventa": "reventa",
+    "consumible": "consumible",
+    "desechable": "desechable",
+    "preparacion": "preparación",
+}
+
+
 @router.post("/ingredientes", response_model=schemas.Ingrediente)
 def crear_ingrediente(ingrediente: schemas.IngredienteCreate, db: Session = Depends(get_db)):
     datos = ingrediente.model_dump()
@@ -400,6 +418,7 @@ def crear_ingrediente(ingrediente: schemas.IngredienteCreate, db: Session = Depe
             status_code=409,
             detail=f"Ya existe «{gemela.nombre}» ({gemela.unidad}). Usa esa o ponle un nombre que las distinga.",
         )
+    _sin_merma_si_es_preparacion(datos)
     # Nace en cero y es el movimiento el que lo deja en su existencia. Dar de
     # alta un insumo que ya tiene mercancia en el deposito TAMBIEN es un
     # movimiento: esa mercancia entro alguna vez. Sin esa fila el extracto
@@ -447,17 +466,31 @@ def actualizar_ingrediente(
     for campo in ("rinde", "modo_produccion", "vida_util_horas", "es_indirecto"):
         if campo not in ingrediente.model_fields_set:
             datos.pop(campo, None)
-    datos["nombre"] = nombre_limpio(datos["nombre"])
-    if not datos["nombre"]:
-        raise HTTPException(status_code=400, detail="La mercancía necesita un nombre.")
-    # Reactivar tambien cuenta: una archivada que vuelve no puede pisar a la
-    # que ocupo su nombre mientras tanto.
-    gemela = _gemela(db, datos["nombre"], salvo_id=ingrediente_id) if datos.get("activo", True) else None
+    # El nombre que no se toco se guarda tal cual, sin limpiarlo ni buscarle
+    # gemela: en produccion ya conviven "Crema de leche" y "Crema de Leche",
+    # y si guardar un minimo rechazara la ficha por el nombre, ninguna de las
+    # dos se podria editar nunca (ni fusionar, que tambien pasa por aqui).
+    # La gemela se busca solo cuando el nombre CAMBIA o cuando una archivada
+    # vuelve: la que vuelve no puede pisar a la que ocupo su nombre mientras.
+    nombre_nuevo = (datos["nombre"] or "").strip()
+    if nombre_nuevo == db_ingrediente.nombre:
+        datos["nombre"] = db_ingrediente.nombre
+        cambia_nombre = False
+    else:
+        datos["nombre"] = nombre_limpio(nombre_nuevo)
+        if not datos["nombre"]:
+            raise HTTPException(status_code=400, detail="La mercancía necesita un nombre.")
+        cambia_nombre = datos["nombre"] != db_ingrediente.nombre
+    reactiva = datos.get("activo", True) and not db_ingrediente.activo
+    gemela = None
+    if datos.get("activo", True) and (cambia_nombre or reactiva):
+        gemela = _gemela(db, datos["nombre"], salvo_id=ingrediente_id)
     if gemela:
         raise HTTPException(
             status_code=409,
             detail=f"Ya hay otra mercancía llamada «{gemela.nombre}». Si son la misma, fusiónalas desde su ficha.",
         )
+    _sin_merma_si_es_preparacion(datos)
     for key, value in datos.items():
         setattr(db_ingrediente, key, value)
     db.commit()
@@ -496,6 +529,16 @@ def fusionar_ingrediente(
         destino = _ingrediente_para_actualizar(db, body.destino_id)
         if not origen.activo or not destino.activo:
             raise HTTPException(status_code=409, detail="Las dos mercancías tienen que estar activas.")
+        # Fundir una materia prima con una reventa (o un guiso con un vaso)
+        # dejaria recetas y cuentas apuntando a algo que no es lo mismo.
+        tipo_origen, tipo_destino = origen.tipo or "insumo", destino.tipo or "insumo"
+        if tipo_origen != tipo_destino:
+            de, a = TIPO_LEGIBLE.get(tipo_origen, tipo_origen), TIPO_LEGIBLE.get(tipo_destino, tipo_destino)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Una {de} no se puede fundir con una {a}: las dos tienen que ser del mismo tipo. "
+                f"Cambia el tipo de una de las fichas si de verdad son lo mismo.",
+            )
         factor = body.factor
         if origen.unidad != destino.unidad and factor == 1:
             raise HTTPException(
@@ -558,10 +601,76 @@ def fusionar_ingrediente(
             consumo.ingrediente_id = destino.id
             consumo.cantidad = round(consumo.cantidad * factor, 6)
 
+        # Las recetas de las PREPARACIONES que la llevaban (el guiso que lleva
+        # este pollo): misma regla que las recetas del menu, una sola linea si
+        # ya llevaba las dos. Si el guiso llevaba a la que queda, la linea se
+        # borra: una preparacion no se lleva a si misma.
+        tocadas = set()
+        for linea in (
+            db.query(models.LineaPreparacion).filter(models.LineaPreparacion.ingrediente_id == origen.id).all()
+        ):
+            if linea.preparacion_id == destino.id:
+                db.delete(linea)
+                continue
+            tocadas.add(linea.preparacion_id)
+            hermana = (
+                db.query(models.LineaPreparacion)
+                .filter(
+                    models.LineaPreparacion.preparacion_id == linea.preparacion_id,
+                    models.LineaPreparacion.ingrediente_id == destino.id,
+                )
+                .first()
+            )
+            if hermana:
+                hermana.cantidad = round(hermana.cantidad + linea.cantidad * factor, 6)
+                db.delete(linea)
+            else:
+                linea.ingrediente_id = destino.id
+                linea.cantidad = round(linea.cantidad * factor, 6)
+
+        # Dos preparaciones: manda la receta de la que queda. Si no tenia,
+        # hereda la de la que se va (las cantidades de la tanda son las
+        # mismas; lo que rinde se pasa a la unidad de la que queda). Las
+        # tandas anotadas pasan tambien, para que el rendimiento real y lo
+        # vencido sigan diciendo algo de la que queda.
+        if origen.tipo == "preparacion":
+            propias = db.query(models.LineaPreparacion).filter(models.LineaPreparacion.preparacion_id == destino.id).count()
+            if not propias and origen.lineas_preparacion:
+                for linea in (
+                    db.query(models.LineaPreparacion).filter(models.LineaPreparacion.preparacion_id == origen.id).all()
+                ):
+                    linea.preparacion_id = destino.id
+                destino.rinde = round((origen.rinde or 1) * factor, 6)
+                destino.modo_produccion = origen.modo_produccion
+                destino.vida_util_horas = origen.vida_util_horas
+                tocadas.add(destino.id)
+            for tanda in db.query(models.Produccion).filter(models.Produccion.preparacion_id == origen.id).all():
+                tanda.preparacion_id = destino.id
+                tanda.cantidad = round(tanda.cantidad * factor, 6)
+                tanda.cantidad_esperada = round((tanda.cantidad_esperada or 0) * factor, 6)
+
         # Lo que se avisaba para reponer se suma: eran dos mitades del mismo.
         destino.stock_minimo = round((destino.stock_minimo or 0) + (origen.stock_minimo or 0) * factor, 4)
         destino.stock_objetivo = round((destino.stock_objetivo or 0) + (origen.stock_objetivo or 0) * factor, 4)
         origen.activo = False
+
+        # Mover lineas puede cerrar un ciclo (el guiso lleva a la que queda y
+        # la que queda ahora lleva al guiso). Se mira con las recetas ya
+        # movidas, y si lo hay no se funde nada.
+        db.flush()
+        db.expire_all()
+        from .preparaciones import _contiene  # evita la importacion circular
+
+        for prep_id in tocadas:
+            prep = db.get(models.Ingrediente, prep_id)
+            if prep is not None and any(_contiene(l.ingrediente, prep.id) for l in prep.lineas_preparacion):
+                db.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Fundirlas dejaría a «{prep.nombre}» llevándose a sí misma. "
+                    "Revisa las recetas de las preparaciones antes de fusionar.",
+                )
+        destino = db.get(models.Ingrediente, destino.id)
         db.commit()
         db.refresh(destino)
         return destino
@@ -648,6 +757,29 @@ def registrar_compra(
         )
 
 
+def anotar_merma(
+    db: Session, ingrediente: models.Ingrediente, cantidad: float, motivo: str,
+    operador_id: Optional[int] = None,
+) -> float:
+    """Una merma completa: la fila, el movimiento del kardex y el asiento
+    (6020 contra 1040). Devuelve el valor de lo perdido en $. No hace commit.
+
+    Es el mismo camino para la merma suelta ("se cayo al piso") y para lo
+    que sobra de una preparacion al cierre, que puede ser la preparacion
+    misma o, si se descuenta del crudo, cada materia prima de su receta.
+    """
+    db_merma = models.Merma(ingrediente_id=ingrediente.id, cantidad=cantidad, motivo=motivo)
+    db.add(db_merma)
+    db.flush()
+    kardex.anotar(
+        db, ingrediente, -cantidad, kardex.MERMA,
+        origen="merma", referencia_id=db_merma.id, nota=motivo, operador_id=operador_id,
+    )
+    valor = round(cantidad * (ingrediente.costo_unitario or 0), 2)
+    contabilidad.registrar_merma(db, ingrediente, valor, db_merma.id)
+    return valor
+
+
 @router.post("/ingredientes/{ingrediente_id}/merma", response_model=schemas.Ingrediente)
 def registrar_merma(
     ingrediente_id: int, body: schemas.MermaRequest, request: Request,
@@ -660,22 +792,7 @@ def registrar_merma(
     quien = operadores.del_turno(db, request)
     with costeo.bloqueo_inventario():
         db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
-        db_merma = models.Merma(
-            ingrediente_id=ingrediente_id, cantidad=body.cantidad, motivo=body.motivo
-        )
-        db.add(db_merma)
-        db.flush()
-        kardex.anotar(
-            db, db_ingrediente, -body.cantidad, kardex.MERMA,
-            origen="merma", referencia_id=db_merma.id, nota=body.motivo,
-            operador_id=quien.id if quien else None,
-        )
-        contabilidad.registrar_merma(
-            db,
-            db_ingrediente,
-            round(body.cantidad * (db_ingrediente.costo_unitario or 0), 2),
-            db_merma.id,
-        )
+        anotar_merma(db, db_ingrediente, body.cantidad, body.motivo, quien.id if quien else None)
         db.commit()
         db.refresh(db_ingrediente)
         return db_ingrediente
@@ -757,6 +874,17 @@ def ajustar_stock(
         return db_ingrediente
 
 
+def _se_cuenta_en_crudo(ing: models.Ingrediente) -> bool:
+    """Una preparacion que se descuenta del crudo no tiene existencia propia:
+    lo que se cuente de ella se traduce por la receta a su materia prima."""
+    return (
+        ing.tipo == "preparacion"
+        and (ing.modo_produccion or "descontar") == "descontar"
+        and bool(ing.lineas_preparacion)
+        and (ing.rinde or 0) > 0
+    )
+
+
 @router.post("/conteo", response_model=schemas.ResultadoConteo)
 def conteo_fisico(body: schemas.ConteoRequest, request: Request, db: Session = Depends(get_db)):
     """El inventario fisico de verdad: se cuenta TODO de una vez.
@@ -765,6 +893,15 @@ def conteo_fisico(body: schemas.ConteoRequest, request: Request, db: Session = D
     insumos y, peor, a decidir en cada uno; aqui se recorre el deposito con la
     tablet, se anota lo que hay y se guarda una sola vez. Lo que no se anoto
     no se toca. Todo o nada: si un id no existe, ningun stock cambia.
+
+    Se puede contar lo PREPARADO. Una preparacion que se descuenta del crudo
+    no tiene stock propio (al vender sale el pollo por la receta), pero en la
+    nevera hay 0,8 kg de guiso: contarlos como guiso se traduce a crudo por la
+    receta y se SUMA a lo contado de cada materia prima que venga en el mismo
+    conteo. El guiso no genera ajuste. Si una materia prima de la receta no
+    se conto, esa parte se ignora y se avisa en `no_contadas`. Una
+    preparacion que se PRODUCE tiene stock propio y se cuenta como cualquier
+    otra mercancia.
     """
     if not body.items:
         raise HTTPException(status_code=400, detail="No se contó ninguna mercancía")
@@ -778,10 +915,27 @@ def conteo_fisico(body: schemas.ConteoRequest, request: Request, db: Session = D
         # de que el primer stock cambie, no a mitad del lote.
         ingredientes = [_ingrediente_para_actualizar(db, item.ingrediente_id) for item in body.items]
         costos = {i.id: round(i.costo_unitario or 0, 4) for i in ingredientes}
+
+        # Lo preparado se reparte en crudo antes de comparar nada.
+        contado = {item.ingrediente_id: item.stock_real for item in body.items}
+        traducidas = {ing.id for ing in ingredientes if _se_cuenta_en_crudo(ing)}
+        no_contadas: List[str] = []
+        for ing in ingredientes:
+            if ing.id not in traducidas:
+                continue
+            for hoja, q in costeo.explotar(ing, contado[ing.id], modo="receta").items():
+                if hoja.id == ing.id or q <= 0:
+                    continue
+                if hoja.id in contado and hoja.id not in traducidas:
+                    contado[hoja.id] += q
+                elif hoja.nombre not in no_contadas:
+                    no_contadas.append(hoja.nombre)
+
         ajustes = [
-            _aplicar_conteo(db, ingrediente, item.stock_real, body.motivo,
+            _aplicar_conteo(db, ingrediente, contado[ingrediente.id], body.motivo,
                             quien.id if quien else None)
-            for ingrediente, item in zip(ingredientes, body.items)
+            for ingrediente in ingredientes
+            if ingrediente.id not in traducidas
         ]
 
         faltante = round(sum(a.valor for a in ajustes if a.diferencia < 0), 2)
@@ -821,6 +975,7 @@ def conteo_fisico(body: schemas.ConteoRequest, request: Request, db: Session = D
         sobrante_valor=sobrante,
         sin_cambio=sum(1 for a in ajustes if a.diferencia == 0),
         conteo_id=conteo.id,
+        no_contadas=no_contadas,
     )
 
 
@@ -1325,7 +1480,7 @@ def _consumo_diario(db: Session, dias: int = 14) -> dict:
                     receta.ingrediente, 0
                 ) + costeo.consumo_bruto(receta, item.cantidad)
     # El guiso no se compra: lo que hay que reponer es su pollo y su cebolla.
-    hojas = costeo.explotar_consumo(consumo, usar_stock=False)
+    hojas = costeo.explotar_consumo(consumo, modo="receta")
     return {ing.id: total / dias for ing, total in hojas.items()}
 
 

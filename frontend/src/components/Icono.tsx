@@ -39,8 +39,33 @@ export type NombreIcono =
   | 'chispa'
   | 'camara'
   | 'imagen'
+  // Los cuatro almacenes de Compras (ver lib/tiposArticulo.ts) y lo que los
+  // rodea: la caja en que llega la mercancia, el papel de la factura.
+  | 'olla'
+  | 'botella'
+  | 'vaso'
+  | 'servilleta'
+  | 'paquete'
+  | 'factura'
+  | 'mas'
+  | 'quitar'
+  | 'buscar'
 
 const TRAZOS: Record<NombreIcono, string> = {
+  // Materia prima: la olla con su tapa, lo que se cocina.
+  olla: 'M3 10h18M5 10v7a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-7M8 10V8a4 4 0 0 1 8 0v2M12 4v1M2 13h2M20 13h2',
+  // Reventa: la botella que se compra y se vende tal cual.
+  botella: 'M10 2h4v3l2 3.5V20a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V8.5L10 5zM8 12h8M8 17h8',
+  // Consumible: el vaso que va en la receta del jugo.
+  vaso: 'M5 3h14l-1.5 17a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2zM6 9h12',
+  // Desechable: la servilleta doblada, lo que se gasta sin contar.
+  servilleta: 'M4 4h16v16H4zM4 4l16 16M12 4v8',
+  // En que llega: la caja cerrada del proveedor.
+  paquete: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5',
+  factura: 'M6 2h9l5 5v15H6zM15 2v5h5M9 12h6M9 16h6',
+  mas: 'M12 5v14M5 12h14',
+  quitar: 'M18 6 6 18M6 6l12 12',
+  buscar: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5',
   inicio: 'M3 10.5 12 3l9 7.5M5 9.8V21h14V9.8M10 21v-6h4v6',
   pos: 'M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4ZM3 6h18M16 10a4 4 0 0 1-8 0',
   cocina:

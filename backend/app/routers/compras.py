@@ -122,6 +122,8 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
                 costo_unitario=i.costo_unitario,
                 subtotal=i.subtotal,
                 exento=bool(i.exento),
+                tipo=i.ingrediente.tipo or "insumo",
+                cuenta=i.cuenta or "",
             )
             for i in factura.items
         ],

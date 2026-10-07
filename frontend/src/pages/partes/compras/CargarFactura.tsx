@@ -1,31 +1,33 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import CampoSugerido from '../../../components/CampoSugerido'
 import { CasillaConUnidad } from '../../../components/Cantidad'
-import { aBase, convertirTexto, otraUnidad } from '../../../lib/unidades'
+import { aBase, convertirTexto, otraUnidad, sinRuido } from '../../../lib/unidades'
 import { useDialogo } from '../../../components/dialogo'
-import { VistaSoporte } from '../../../components/FacturaDesdeFoto'
+import { ZonaDocumento, VisorDocumento } from '../../../components/compras/Documento'
+import { DestinoPlata, PuntoTipo, SelloTipo, type ParteDeLaPlata } from '../../../components/compras/Almacenes'
+import ElegirMercancia from '../../../components/compras/ElegirMercancia'
 import Icono from '../../../components/Icono'
-import NuevaMercancia from '../../../components/NuevaMercancia'
+import NuevaMercancia, { type Presentacion } from '../../../components/NuevaMercancia'
 import { Numerico } from '../../../components/Teclado'
+import { Filtros } from '../../../components/ui'
 import { api } from '../../../lib/api'
 import {
   CATEGORIAS,
-  conversion,
   diasDesde,
   nombreDesdePapel,
   sugerirMercancia,
   unidadDistinta,
   unidadNuestra,
 } from '../../../lib/compras'
-import { achicarFoto, revisarFoto, TEXTO_PROBLEMA, type Problema } from '../../../lib/foto'
-import { unirFotosEnPdf } from '../../../lib/pdfDeFotos'
 import { fmtNum } from '../../../lib/moneda'
 import { necesitaReferencia } from '../../../lib/pagos'
 import { anotarAntesDeGuardar, completarDespuesDeGuardar } from '../../../lib/pendientesCompras'
 import { useRevision } from '../../../lib/revisionFactura'
+import { ALMACEN_DE } from '../../../lib/tiposArticulo'
 import type {
   AlertaPrecio,
   ConfiguracionFiscal,
+  Equivalencia,
   Ingrediente,
   LecturaFactura,
   Proveedor,
@@ -34,24 +36,49 @@ import type {
 } from '../../../lib/types'
 
 /**
- * Cargar una factura de proveedor: a mano, o desde una foto o PDF que la IA
- * lee y PRELLENA. Pensada para revisar rápido: la factura queda a la vista
- * junto al formulario, cada dato dudoso se marca en su campo, y la barra de
- * abajo dice si cuadra con el papel y cuánto falta revisar.
+ * Cargar una factura de proveedor, en tres pasos que se leen de arriba abajo:
+ * la factura (quién, cuál, cuándo), qué trae y cómo se pagó. A mano, o desde
+ * una foto o PDF que la IA lee y PRELLENA.
+ *
+ * LO QUE CAMBIA RESPECTO A ANTES (pizarra del 7-oct): cada renglón dice QUÉ
+ * ES su mercancía --materia prima, reventa, consumible, desechable-- y eso
+ * decide solo a dónde va la plata: al depósito o a gasto. Y la caja de 24
+ * maltas se carga como caja y entra como 24 maltas: la presentación es del
+ * proveedor, la mercancía es la malta. Abajo, "a dónde va la plata" lo
+ * resume sin pasar por la contabilidad.
  *
  * Guardar sigue siendo `POST /api/compras/facturas`, el de siempre.
  */
 
 const MONEDAS_DE_CARGA = ['$', 'Bs'] as const
-const FORMAS_PAGO = ['Efectivo', 'Efectivo $', 'Banco', 'Credito']
+const FORMAS_PAGO = [
+  { valor: 'Efectivo', texto: 'Efectivo Bs' },
+  { valor: 'Efectivo $', texto: 'Efectivo $' },
+  { valor: 'Banco', texto: 'Banco' },
+  { valor: 'Credito', texto: 'A crédito' },
+]
 
 // Una factura mas vieja que esto se avisa, no se bloquea: el plazo real para
 // descontar ese credito fiscal lo confirma quien lleva la contabilidad.
 const DIAS_FACTURA_VIEJA = 60
 
+/** Cómo llegó el renglón: en un envase que trae varias unidades nuestras. */
+type Paquete = {
+  /** "caja", "bulto", "paquete": como lo llama el proveedor. */
+  nombre: string
+  /** Cuántas unidades NUESTRAS trae uno. */
+  trae: string
+  /** Cuántos vinieron. */
+  paquetes: string
+  /** Lo que costó UNO, sin IVA, en la moneda del papel. */
+  precio: string
+}
+
 type Linea = {
   ingrediente_id: number
+  /** En la unidad de la ficha: es lo que viaja al servidor. */
   cantidad: string
+  /** Por unidad de la ficha, sin IVA, en la moneda del papel. */
   costo_unitario: string
   /** null = lo que diga la ficha de la mercancía; true/false = lo dice ESTA factura. */
   exento: boolean | null
@@ -59,6 +86,8 @@ type Linea = {
   leido?: RenglonLeido
   /** Lo que se recordaba de este proveedor para este renglón, si se aplicó. */
   recordada?: SugerenciaRenglon
+  /** Si vino en caja o paquete: cantidad y costo salen de aquí. */
+  paquete?: Paquete
 }
 
 const LINEA_VACIA: Linea = { ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null }
@@ -69,6 +98,20 @@ const CAMPOS_DE_DATOS = new Set(['cf-proveedor', 'cf-rif', 'cf-numero', 'cf-fech
 type Tono = 'mal' | 'ojo'
 /** Algo que mirar antes de guardar. `ancla` es el id del elemento al que lleva. */
 type Pendiente = { texto: string; tono: Tono; ancla: string }
+
+const soloRif = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
+
+/** Cantidad y costo por unidad nuestra a partir del paquete, o null si falta algo. */
+function desdePaquete(p: Paquete): { cantidad: string; costo_unitario: string } | null {
+  const trae = Number(p.trae)
+  const paquetes = Number(p.paquetes)
+  const precio = Number(p.precio)
+  if (!(trae > 0)) return null
+  return {
+    cantidad: paquetes > 0 ? sinRuido(paquetes * trae) : '',
+    costo_unitario: precio >= 0 && p.precio !== '' ? sinRuido(precio / trae) : '',
+  }
+}
 
 export default function CargarFactura({
   ingredientes,
@@ -108,15 +151,14 @@ export default function CargarFactura({
   const [numeroControl, setNumeroControl] = useState('')
   // La tasa (Bs por $) con que esta factura pasa al Libro de Compras en Bs, y
   // con la que una factura en Bs se pasa a dolares. Es la de la FECHA DE LA
-  // FACTURA, no la de hoy: una factura del 20 cargada el 28 vale en Bs lo
-  // que valia el 20. Si el papel imprime su tasa, manda esa.
+  // FACTURA, no la de hoy. Si el papel imprime su tasa, manda esa.
   const [tasaFactura, setTasaFactura] = useState('')
   const [origenTasa, setOrigenTasa] = useState<'' | 'papel' | 'fecha' | 'escrita'>('')
   const [notaTasa, setNotaTasa] = useState('')
   // Retencion de IVA (si se es agente): '' = la del proveedor (75 si es nuevo).
   const [retencion, setRetencion] = useState<'' | '0' | '75' | '100'>('')
   const [categoria, setCategoria] = useState(CATEGORIAS[0].valor)
-  const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0])
+  const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0].valor)
   const [referenciaPago, setReferenciaPago] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [lineas, setLineas] = useState<Linea[]>([LINEA_VACIA])
@@ -130,6 +172,16 @@ export default function CargarFactura({
   // La foto o PDF leido: su soporte se engancha a la factura al guardar.
   const [lectura, setLectura] = useState<LecturaFactura | null>(null)
   const [documento, setDocumento] = useState<{ url: string; esPdf: boolean } | null>(null)
+
+  // Lo que se recuerda de cada proveedor: las presentaciones ("caja de 24")
+  // con que ya trajo cada mercancia, para ofrecerlas de un toque.
+  const [memoria, setMemoria] = useState<Equivalencia[]>([])
+  useEffect(() => {
+    api
+      .listarEquivalencias()
+      .then(setMemoria)
+      .catch(() => undefined)
+  }, [])
 
   const esInsumos = categoria === 'Insumos'
   const esCredito = formaPago === 'Credito'
@@ -154,37 +206,39 @@ export default function CargarFactura({
   }, [lineas, ingredientes, fiscal.tasa_iva, recargoNum, descuentoNum, baseLineas])
   const baseMostrada = esInsumos ? baseFinal : Number(base) || 0
   const ivaMostrado = esInsumos ? ivaLineas : Number(iva) || 0
-  // La retencion que se va a aplicar: la elegida, o la que se le hizo la
-  // ultima vez a este proveedor (75 si es nuevo).
-  const proveedorConocido = proveedores.find(
-    (p) => p.rif && rif && p.rif.toUpperCase().replace(/[^0-9A-Z]/g, '') === rif.toUpperCase().replace(/[^0-9A-Z]/g, ''),
-  )
+  const proveedorConocido = proveedores.find((p) => p.rif && rif && soloRif(p.rif) === soloRif(rif))
   const retencionEfectiva = retencion || String(proveedorConocido?.porcentaje_retencion ?? 75)
   const totalFormulario = Math.round((baseMostrada + ivaMostrado) * 100) / 100
 
-  // El cuadre contra el papel, solo en la misma moneda. El IVA se redondea
-  // renglón por renglón en unas facturas y al final en otras: unos centavos
-  // no son un error.
+  // A donde va la plata de esta factura, por tipo de mercancia. Con el
+  // recargo y el descuento repartidos, igual que lo hace el servidor.
+  const partes: ParteDeLaPlata[] = useMemo(() => {
+    if (!esInsumos) return []
+    const factor = baseLineas > 0 ? baseFinal / baseLineas : 1
+    const por = new Map<string, number>()
+    for (const l of lineas) {
+      const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
+      if (!ing) continue
+      const monto = (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0) * factor
+      if (monto > 0) por.set(ing.tipo, (por.get(ing.tipo) ?? 0) + monto)
+    }
+    return [...por].map(([tipo, monto]) => ({ tipo: tipo as Ingrediente['tipo'], monto }))
+  }, [lineas, ingredientes, esInsumos, baseLineas, baseFinal])
+
+  // El cuadre contra el papel, solo en la misma moneda. Unos centimos no son
+  // un error: el IVA se redondea distinto en cada factura.
   const totalPapel = borrador?.total ?? null
   const cuadreAplica = totalPapel !== null && (!borrador?.moneda || borrador.moneda === monedaCarga)
   const diferencia = totalPapel === null ? 0 : Math.round((totalFormulario - totalPapel) * 100) / 100
   const cuadra = cuadreAplica && Math.abs(diferencia) <= Math.max(0.05, Math.abs(totalPapel!) * 0.001)
 
-  // Notas de entrega y facturas informales no traen IVA: si el papel no lo
-  // trae y el formulario lo esta sumando (por la ficha de cada mercancia),
-  // se ofrece corregirlo de un toque en vez de renglon por renglon.
   const lineasConIva = esInsumos
     ? lineas.filter((l) => {
         const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
         return Number(l.cantidad) > 0 && !(l.exento === null ? ing?.exento : l.exento)
       }).length
     : 0
-  // Una factura de compra tiene que estar a nombre de la empresa: si el papel
-  // trae otro RIF de cliente, su IVA no se puede descontar como credito fiscal.
-  const soloRifCliente = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
-  const clienteAjeno =
-    !!borrador?.cliente_rif && !!fiscal.rif && soloRifCliente(borrador.cliente_rif) !== soloRifCliente(fiscal.rif)
-
+  const clienteAjeno = !!borrador?.cliente_rif && !!fiscal.rif && soloRif(borrador.cliente_rif) !== soloRif(fiscal.rif)
   const sinIvaEnPapel =
     !!borrador && borrador.renglones.length > 0 && !borrador.iva && esInsumos && lineasConIva > 0 &&
     totalPapel !== null && borrador.subtotal !== null && Math.abs(totalPapel - borrador.subtotal) < 0.01
@@ -228,11 +282,7 @@ export default function CargarFactura({
     numero_factura: numeroFactura.trim(),
     items: esInsumos
       ? lineas
-          .map((l, indice) => ({
-            indice,
-            ingrediente_id: l.ingrediente_id,
-            costo_unitario: aUsdVista(Number(l.costo_unitario) || 0),
-          }))
+          .map((l, indice) => ({ indice, ingrediente_id: l.ingrediente_id, costo_unitario: aUsdVista(Number(l.costo_unitario) || 0) }))
           .filter((x) => x.ingrediente_id && x.costo_unitario > 0)
       : [],
   })
@@ -247,9 +297,7 @@ export default function CargarFactura({
     pendientes.push({ texto: 'Factura vieja', tono: 'ojo', ancla: 'cf-fecha' })
   else if (borrador && !fechaEmision) pendientes.push({ texto: 'Fecha sin leer', tono: 'ojo', ancla: 'cf-fecha' })
   if (esInsumos) {
-    // El mismo problema en varios renglones es UN aviso ("11 renglones sin
-    // mercancía") que lleva al primero, no once lineas iguales que tapaban
-    // media pantalla del telefono.
+    // El mismo problema en varios renglones es UN aviso que lleva al primero.
     const porTipo = new Map<string, { tono: Tono; renglones: number[] }>()
     lineas.forEach((l, i) => {
       const p = sinMercanciaEn(l) ? { texto: 'sin mercancía', tono: 'mal' as Tono } : problemaDeRenglon(l, i)
@@ -276,7 +324,7 @@ export default function CargarFactura({
     const aviso = avisoPrecio(i)
     if (aviso?.nivel === 'unidad') return { texto: 'con posible error de unidad', tono: 'mal' }
     const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
-    if (l.leido && !l.recordada && ing && unidadDistinta(l.leido.unidad, ing.unidad))
+    if (l.leido && !l.recordada && !l.paquete && ing && unidadDistinta(l.leido.unidad, ing.unidad))
       return { texto: 'con unidad distinta', tono: 'ojo' }
     if (aviso) return { texto: 'con precio fuera de lo normal', tono: 'ojo' }
     return null
@@ -288,7 +336,6 @@ export default function CargarFactura({
   function irA(ancla: string) {
     if (CAMPOS_DE_DATOS.has(ancla) && !verDatos) {
       setVerDatos(true)
-      // Despues de que se pinten los campos.
       setTimeout(() => enfocar(ancla), 50)
       return
     }
@@ -297,7 +344,6 @@ export default function CargarFactura({
   function enfocar(ancla: string) {
     const el = document.getElementById(ancla)
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    // El campo antes que los botones: en un renglon el primero es el de quitarlo.
     const campo = el?.querySelector<HTMLElement>('select, input') ?? el?.querySelector<HTMLElement>('button')
     campo?.focus({ preventScroll: true })
   }
@@ -322,12 +368,8 @@ export default function CargarFactura({
     } else if (origenTasa === 'papel') {
       setOrigenTasa('')
     }
-    // Si el RIF ya esta en el directorio, manda el nombre de alli: es el que
-    // agrupa las compras de ese proveedor.
-    const soloRif = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
-    const conocido = b.proveedor_rif
-      ? proveedores.find((p) => p.rif && soloRif(p.rif) === soloRif(b.proveedor_rif))
-      : undefined
+    // Si el RIF ya esta en el directorio, manda el nombre de alli.
+    const conocido = b.proveedor_rif ? proveedores.find((p) => p.rif && soloRif(p.rif) === soloRif(b.proveedor_rif)) : undefined
     setProveedor(conocido?.nombre ?? b.proveedor_nombre)
     const rifFactura = conocido?.rif ?? b.proveedor_rif
     setRif(rifFactura)
@@ -342,13 +384,9 @@ export default function CargarFactura({
     }
     setCategoria('Insumos')
     // Un papel que no cobra IVA (total = subtotal) deja sus renglones sin
-    // IVA de entrada: si no, el formulario lo suma por la ficha de cada
-    // mercancia y la factura nace descuadrada (Improal 7090: 26 renglones).
-    // Lo que el papel marca renglon por renglon manda igual.
+    // IVA de entrada. Lo que el papel marca renglon por renglon manda igual.
     const papelSinIva =
       !b.iva && b.subtotal != null && b.total != null && Math.abs(b.total - (b.subtotal + b.recargo - b.descuento)) < 0.01
-    // La mercancia de cada renglon la elige quien revisa: el papel dice
-    // "HARINA PAN 1KG", no cual de nuestras mercancias es.
     setLineas(
       b.renglones.map((r) => ({
         ...LINEA_VACIA,
@@ -359,26 +397,33 @@ export default function CargarFactura({
       })),
     )
     // Lo que ya se sabe de este proveedor: mercancia y conversion de unidad.
-    // Llega despues del prellenado; si alguien ya toco ese renglon, manda
-    // lo que toco.
+    // Llega despues del prellenado; si alguien ya toco ese renglon, manda lo
+    // que toco. Una conversion ("1 BULTO = 20 kg") se muestra como el paquete
+    // del renglon: se ve y se corrige en el mismo sitio que una escrita a mano.
     api
-      .buscarEquivalencias(
-        rifFactura,
-        b.renglones.map((r) => ({ descripcion: r.descripcion, unidad: r.unidad })),
-      )
+      .buscarEquivalencias(rifFactura, b.renglones.map((r) => ({ descripcion: r.descripcion, unidad: r.unidad })))
       .then((sugerencias) =>
         setLineas((prev) =>
           prev.map((l, i) => {
             const s = sugerencias.find((x) => x.indice === i)
             if (!s || l.leido !== b.renglones[i] || l.ingrediente_id) return l
-            const redondeo = (x: number) => String(Math.round(x * 10000) / 10000)
+            const enPaquete = Math.abs(s.factor - 1) > 1e-9 && s.factor > 0
+            const paquete: Paquete | undefined = enPaquete
+              ? {
+                  nombre: s.unidad_papel || 'paquete',
+                  trae: sinRuido(s.factor),
+                  paquetes: l.leido.cantidad == null ? '' : String(l.leido.cantidad),
+                  precio: l.leido.precio_unitario == null ? '' : String(l.leido.precio_unitario),
+                }
+              : undefined
+            const calc = paquete ? desdePaquete(paquete) : null
             return {
               ...l,
               ingrediente_id: s.ingrediente_id,
-              cantidad: l.leido.cantidad == null ? l.cantidad : redondeo(l.leido.cantidad * s.factor),
-              costo_unitario:
-                l.leido.precio_unitario == null ? l.costo_unitario : redondeo(l.leido.precio_unitario / s.factor),
+              cantidad: calc ? calc.cantidad : l.cantidad,
+              costo_unitario: calc ? calc.costo_unitario : l.costo_unitario,
               recordada: s,
+              paquete,
             }
           }),
         ),
@@ -394,34 +439,41 @@ export default function CargarFactura({
   // El renglon para el que se esta creando una mercancia nueva.
   const [creandoEn, setCreandoEn] = useState<number | null>(null)
 
-  async function elegirMercancia(i: number, valor: string) {
-    if (valor === 'nuevo') {
-      // Un insumo que llega por primera vez obligaba a salir de Compras, ir a
-      // Inventario a crearlo y volver a cargar la factura desde cero. Ahora
-      // es una ventana que, antes que nada, muestra las parecidas que ya
-      // existen (ver NuevaMercancia).
-      setCreandoEn(i)
-      return
-    }
+  function elegirMercancia(i: number, id: number) {
     // Sin costo todavia, se propone lo que ya cuesta esa mercancia: solo se
     // corrige si el proveedor la vendio distinto.
-    const ing = ingredientes.find((x) => x.id === Number(valor))
+    const ing = ingredientes.find((x) => x.id === id)
     setLineas((prev) =>
       prev.map((l, idx) =>
         idx === i
           ? {
               ...l,
-              ingrediente_id: Number(valor),
-              costo_unitario: l.costo_unitario || (ing ? String(ing.costo_unitario) : ''),
+              ingrediente_id: id,
+              costo_unitario: l.costo_unitario || (ing && ing.costo_unitario ? String(ing.costo_unitario) : ''),
+              // Cambio la mercancia: la conversion que se recordaba era de la otra.
+              paquete: l.paquete && l.recordada && l.recordada.ingrediente_id !== id ? undefined : l.paquete,
             }
           : l,
       ),
     )
   }
 
+  /** Las presentaciones con que este proveedor ya trajo esa mercancía. */
+  function paquetesConocidos(ingredienteId: number): Equivalencia[] {
+    if (!rif.trim() || !ingredienteId) return []
+    const r = soloRif(rif)
+    const vistos = new Set<string>()
+    return memoria.filter((e) => {
+      if (e.ingrediente_id !== ingredienteId || soloRif(e.proveedor_rif) !== r || Math.abs(e.factor - 1) < 1e-9) return false
+      const clave = `${e.unidad_papel.toLowerCase()}|${e.factor}`
+      if (vistos.has(clave)) return false
+      vistos.add(clave)
+      return true
+    })
+  }
+
   // Pasar una factura leida a gasto (limpieza, servicios...): los renglones
-  // dejan de importar y manda el monto del papel. Sin esto, la base quedaba
-  // vacia y habia que copiarla a mano del ticket.
+  // dejan de importar y manda el monto del papel.
   function cambiarCategoria(valor: string) {
     setCategoria(valor)
     if (valor !== 'Insumos' && borrador && !base && borrador.subtotal != null) {
@@ -473,18 +525,13 @@ export default function CargarFactura({
     setError('')
     setExito('')
     if (!numeroFactura.trim() || !proveedor.trim()) return falla('Completa al menos el número de factura y el proveedor', 'cf-numero')
-    // Sin RIF el Libro de Compras queda incompleto para el SENIAT. El backend
-    // valida el formato exacto; aca solo se evita el viaje si esta vacio.
     if (!rif.trim()) return falla('El RIF del proveedor es obligatorio', 'cf-rif')
     if (fechaEmision && fechaEmision > hoyISO) return falla('La fecha de la factura no puede ser futura', 'cf-fecha')
     // Todo el sistema costea en dolares. Una factura en bolivares se pasa aca
-    // a dolares con la tasa de SU fecha, y esa misma tasa viaja al backend:
-    // con ella recupera los Bs del papel, exactos, para el Libro de Compras.
+    // a dolares con la tasa de SU fecha, y esa misma tasa viaja al backend.
     if (!tasaNum) return falla('Falta la tasa de cambio de la fecha de la factura: el Libro de Compras va en bolívares.', 'cf-tasa')
     const aUsd = (monto: number) => (monedaCarga === 'Bs' ? monto / tasaNum : monto)
 
-    // Un renglon con cantidad o costo pero sin mercancia se quedaba afuera
-    // en silencio.
     const sinMercancia = esInsumos
       ? lineas.findIndex((l) => !l.ingrediente_id && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0))
       : -1
@@ -496,7 +543,6 @@ export default function CargarFactura({
         ingrediente_id: l.ingrediente_id,
         cantidad: Number(l.cantidad),
         costo_unitario: aUsd(Number(l.costo_unitario)),
-        // Solo viaja cuando ESTA factura contradice a la ficha.
         ...(l.exento === null ? {} : { exento: l.exento }),
       }))
     if (esInsumos && items.length === 0) return falla('Agrega al menos un renglón con cantidad y costo')
@@ -540,6 +586,24 @@ export default function CargarFactura({
             }))
         : [],
     }
+    // Un paquete escrito a mano ("2 cajas de 24") tambien se recuerda para
+    // ese proveedor: la proxima vez la caja aparece de un toque.
+    const paquetesAMano = lectura
+      ? []
+      : lineas
+          .filter((l) => l.paquete && l.ingrediente_id && Number(l.cantidad) > 0 && Number(l.paquete.trae) > 0)
+          .map((l) => {
+            const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
+            return {
+              descripcion: `${ing?.nombre ?? ''} ${l.paquete!.nombre} de ${l.paquete!.trae}`.trim(),
+              unidad: l.paquete!.nombre,
+              cantidad_papel: Number(l.paquete!.paquetes) || null,
+              precio_papel: Number(l.paquete!.precio) || null,
+              ingrediente_id: l.ingrediente_id,
+              cantidad: Number(l.cantidad),
+              costo_unitario: Number(l.costo_unitario),
+            }
+          })
     const esPdf = documento?.esPdf ?? false
 
     setGuardando(true)
@@ -561,20 +625,20 @@ export default function CargarFactura({
         fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
         referencia_pago: referenciaPago.trim() || undefined,
       }
-      // Antes de guardar, lo de despues queda anotado en el servidor: si la
-      // conexion se cae justo despues de guardar, el servidor lo termina.
       await anotarAntesDeGuardar(numeroFactura.trim(), cuerpoCompletar)
       const guardada = await api.crearFacturaCompra(
         esInsumos
           ? { ...comun, items, iva: ivaLineas }
-          : {
-              ...comun,
-              base_imponible: aUsd(baseNum),
-              iva: aUsd(Number(iva) || 0),
-              vida_util_meses: esActivo ? Number(vidaUtil) || 60 : undefined,
-            },
+          : { ...comun, base_imponible: aUsd(baseNum), iva: aUsd(Number(iva) || 0), vida_util_meses: esActivo ? Number(vidaUtil) || 60 : undefined },
       )
       limpiarFormulario()
+
+      if (paquetesAMano.length > 0) {
+        api
+          .aprenderEquivalencias({ proveedor_rif: comun.proveedor_rif, proveedor_nombre: comun.proveedor_nombre, renglones: paquetesAMano })
+          .then(() => api.listarEquivalencias().then(setMemoria))
+          .catch(() => undefined)
+      }
 
       // Foto, memoria y alertas: un pedido que se puede repetir. La factura
       // ya entro: si falla, se avisa y se reintenta, no se deshace.
@@ -612,10 +676,11 @@ export default function CargarFactura({
 
   // ── Pantalla ────────────────────────────────────────────────────────────
   const conDocumento = documento !== null
+  const categoriaActual = CATEGORIAS.find((c) => c.valor === categoria)
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {porCompletar > 0 && (
-        <div className="rounded-lg bg-aviso-50 ring-1 ring-aviso-200 px-3 py-2 text-sm text-aviso-800 flex items-center justify-between gap-3">
+        <div className="rounded-2xl bg-aviso-500/10 px-4 py-3 text-sm text-aviso-800 flex items-center justify-between gap-3">
           <span>
             {porCompletar === 1 ? 'Una factura guardada espera' : `${porCompletar} facturas guardadas esperan`} conexión para
             terminar (foto, memoria del proveedor, alertas). Se reintenta sola.
@@ -625,11 +690,12 @@ export default function CargarFactura({
           </button>
         </div>
       )}
-      {/* Salir bien tiene que decirse: sin esto quedaba la duda de si darle
-          otra vez, que es como se cargan dos facturas iguales. */}
       {exito && (
-        <div className="rounded-lg bg-exito-500/10 ring-1 ring-exito-500/30 px-3 py-2 text-sm text-exito-800 flex items-start justify-between gap-3">
-          <span>{exito}</span>
+        <div className="rounded-2xl bg-exito-500/10 px-4 py-3 text-sm text-exito-800 flex items-start justify-between gap-3">
+          <span className="flex items-start gap-2">
+            <Icono nombre="ok" size={16} className="mt-0.5 shrink-0" />
+            {exito}
+          </span>
           <button onClick={onVerFacturas} className="font-semibold shrink-0 underline">
             Verla
           </button>
@@ -641,25 +707,7 @@ export default function CargarFactura({
       <div className={conDocumento ? 'lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-4 lg:items-start' : ''}>
         {conDocumento && <VisorDocumento url={documento.url} esPdf={documento.esPdf} />}
 
-        <div className="bg-white rounded-2xl border border-neutral-200 p-3 sm:p-4 space-y-4 sm:space-y-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="font-semibold">{conDocumento ? 'Revisa contra la factura' : 'Cargar factura de proveedor'}</h2>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                {conDocumento
-                  ? 'Lo marcado con ✦ lo leyó la IA. Compáralo con el papel y corrige lo que haga falta.'
-                  : esInsumos
-                    ? 'Cada renglón reabastece el stock de esa mercancía y recalcula su costo promedio.'
-                    : 'Alimenta el Libro de Compras y contabiliza sola: activos entran al balance, servicios van a gasto.'}
-              </p>
-            </div>
-            {conDocumento && (
-              <button onClick={limpiarFormulario} className="text-xs text-neutral-500 font-medium shrink-0 underline">
-                Descartar
-              </button>
-            )}
-          </div>
-
+        <div className="space-y-4">
           {lectura && !borrador && (
             <Nota tono="ojo">
               No se pudo leer {documento?.esPdf ? 'el PDF' : 'la foto'}: {lectura.error} Cárgala a mano mirando el
@@ -680,31 +728,24 @@ export default function CargarFactura({
           ))}
           {error && <Nota tono="mal">{error}</Nota>}
 
-          {/* ── Datos de la factura ── */}
-          <Grupo titulo="Factura">
-            {/* En el telefono, despues de leer, los datos van en un resumen de
-                cuatro lineas: eran siete campos apilados que habia que
-                pasar de largo para llegar a los renglones. */}
+          {/* ── Paso 1: la factura ── */}
+          <Paso
+            numero={1}
+            titulo="La factura"
+            detalle={conDocumento ? 'Lo marcado con ✦ lo leyó la IA. Compáralo con el papel.' : 'Quién la emitió, cuál es y de cuándo.'}
+            accion={
+              conDocumento ? (
+                <button onClick={limpiarFormulario} className="text-xs text-neutral-500 font-medium underline">
+                  Descartar
+                </button>
+              ) : undefined
+            }
+          >
             {conDocumento && !verDatos && (
-              <ResumenDatos
-                proveedor={proveedor}
-                rif={rif}
-                numero={numeroFactura}
-                fecha={fechaEmision}
-                moneda={monedaCarga}
-                tasa={tasaNum}
-                onEditar={() => setVerDatos(true)}
-              />
+              <ResumenDatos proveedor={proveedor} rif={rif} numero={numeroFactura} fecha={fechaEmision} moneda={monedaCarga} tasa={tasaNum} onEditar={() => setVerDatos(true)} />
             )}
             <div className={`grid grid-cols-2 gap-3 ${conDocumento && !verDatos ? 'hidden sm:grid' : ''}`}>
-              <Dato
-                id="cf-proveedor"
-                etiqueta="Proveedor"
-                ia={!!borrador && proveedor === (borrador.proveedor_nombre || proveedor)}
-                className="col-span-2"
-              >
-                {/* Un proveedor no registrado se puede tipear igual: el
-                    directorio es una comodidad, no un requisito. */}
+              <Dato id="cf-proveedor" etiqueta="Proveedor" ia={!!borrador && proveedor === (borrador.proveedor_nombre || proveedor)} className="col-span-2">
                 <CampoSugerido
                   value={proveedor}
                   onChange={elegirProveedorConocido}
@@ -715,7 +756,7 @@ export default function CargarFactura({
               </Dato>
               <Dato
                 id="cf-rif"
-                etiqueta="RIF del proveedor"
+                etiqueta="RIF"
                 ia={!!borrador && rif === borrador.proveedor_rif && !!rif}
                 tono={revision?.rif_aviso ? 'ojo' : undefined}
                 nota={
@@ -776,19 +817,24 @@ export default function CargarFactura({
                       ? `Tiene ${diasDesde(fechaEmision, hoyISO)} días. Revisa el año; si está bien, entra al Libro de Compras de este mes: confirma con quien lleva la contabilidad si ese crédito fiscal todavía se puede descontar.`
                       : borrador && !fechaEmision
                         ? 'La IA no la leyó con seguridad: escríbela mirando el papel.'
-                        : 'La del papel. El mes del libro lo pone el día de registro.'
+                        : undefined
                 }
               >
                 <input value={fechaEmision} onChange={(e) => setFechaEmision(e.target.value)} type="date" max={hoyISO} className={clase()} />
               </Dato>
+              <Dato id="cf-control" etiqueta="N.º de control" ia={!!borrador?.numero_control && numeroControl === borrador.numero_control}>
+                <input value={numeroControl} onChange={(e) => setNumeroControl(e.target.value)} placeholder="00-00000000" className={clase()} />
+              </Dato>
               <Dato id="cf-moneda" etiqueta="Montos en" ia={!!borrador?.moneda && monedaCarga === borrador.moneda}>
-                <select value={monedaCarga} onChange={(e) => setMonedaCarga(e.target.value as (typeof MONEDAS_DE_CARGA)[number])} className={clase()}>
-                  {MONEDAS_DE_CARGA.map((m) => (
-                    <option key={m} value={m}>
-                      {m === '$' ? 'Dólares' : 'Bolívares'}
-                    </option>
-                  ))}
-                </select>
+                <Filtros
+                  tamano="chico"
+                  opciones={[
+                    { valor: '$' as const, texto: 'Dólares' },
+                    { valor: 'Bs' as const, texto: 'Bolívares' },
+                  ]}
+                  activo={monedaCarga}
+                  alElegir={setMonedaCarga}
+                />
               </Dato>
               <Dato
                 id="cf-tasa"
@@ -811,60 +857,105 @@ export default function CargarFactura({
                   className={clase(!tasaNum ? 'mal' : undefined)}
                 />
               </Dato>
-              <Dato id="cf-control" etiqueta="N.º de control" ia={!!borrador?.numero_control && numeroControl === borrador.numero_control}>
-                <input value={numeroControl} onChange={(e) => setNumeroControl(e.target.value)} placeholder="00-00000000" className={clase()} />
-              </Dato>
             </div>
             {conDocumento && verDatos && (
               <button type="button" onClick={() => setVerDatos(false)} className="sm:hidden mt-2 text-xs font-medium text-neutral-500 underline">
                 Plegar datos
               </button>
             )}
-          </Grupo>
+          </Paso>
 
-          <Grupo titulo="Qué se compró">
-            <Dato id="cf-categoria" etiqueta="" nota={CATEGORIAS.find((c) => c.valor === categoria)?.ayuda}>
-              <select value={categoria} onChange={(e) => cambiarCategoria(e.target.value)} className={clase()}>
-                {CATEGORIAS.map((c) => (
-                  <option key={c.valor} value={c.valor}>
-                    {c.texto}
-                  </option>
-                ))}
-              </select>
-            </Dato>
-          </Grupo>
-
-          {/* ── Pago ── */}
-          <Grupo titulo="Pago">
-            <div className="grid grid-cols-2 gap-3">
-              {fiscal.agente_retencion && ivaMostrado > 0 && (
-                <Dato
-                  id="cf-retencion"
-                  className="col-span-2 sm:col-span-1"
-                  etiqueta="Retención de IVA"
-                  nota={
-                    Number(retencionEfectiva) > 0
-                      ? `Se retienen ${monedaCarga}${(ivaMostrado * Number(retencionEfectiva) / 100).toFixed(2)} (van al SENIAT, con su comprobante). Al proveedor: ${monedaCarga}${(totalFormulario - (ivaMostrado * Number(retencionEfectiva)) / 100).toFixed(2)}.`
-                      : 'No se retiene: al proveedor se le paga el total.'
-                  }
-                >
-                  <select value={retencionEfectiva} onChange={(e) => setRetencion(e.target.value as '0' | '75' | '100')} className={clase()}>
-                    <option value="75">75 %</option>
-                    <option value="100">100 %</option>
-                    <option value="0">No retener</option>
-                  </select>
-                </Dato>
-              )}
-              <Dato id="cf-pago" etiqueta="Forma de pago">
-                <select value={formaPago} onChange={(e) => setFormaPago(e.target.value)} className={clase()}>
-                  {FORMAS_PAGO.map((f) => (
-                    <option key={f} value={f}>
-                      {f === 'Credito' ? 'A crédito (por pagar)' : f}
-                    </option>
+          {/* ── Paso 2: qué trae ── */}
+          <Paso numero={2} titulo="Qué trae" detalle={categoriaActual?.ayuda}>
+            <Filtros
+              opciones={CATEGORIAS.map((c) => ({ valor: c.valor, texto: c.texto }))}
+              activo={categoria}
+              alElegir={cambiarCategoria}
+              className="mb-4"
+            />
+            {esInsumos ? (
+              <>
+                <div className="space-y-2.5">
+                  {lineas.map((l, i) => (
+                    <Renglon
+                      key={l.leido ? `papel-${i}` : `mano-${i}`}
+                      indice={i}
+                      linea={l}
+                      ingredientes={ingredientes}
+                      moneda={monedaCarga}
+                      tasaIva={fiscal.tasa_iva}
+                      aviso={avisoPrecio(i)}
+                      problema={sinMercanciaEn(l) ? { texto: 'Falta elegir la mercancía', tono: 'mal' } : problemaDeRenglon(l, i)}
+                      puedeQuitar={lineas.length > 1}
+                      conocidos={paquetesConocidos(l.ingrediente_id)}
+                      onCambiar={(cambio) => cambiarLinea(i, cambio)}
+                      onMercancia={(id) => elegirMercancia(i, id)}
+                      onCrear={() => setCreandoEn(i)}
+                      onQuitar={() => setLineas((prev) => prev.filter((_, idx) => idx !== i))}
+                    />
                   ))}
-                </select>
-              </Dato>
-              {/* Solo cuando la plata ya salió y no fue en billetes. */}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLineas((prev) => [...prev, LINEA_VACIA])}
+                  className="vp-control mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium"
+                >
+                  <Icono nombre="mas" size={14} />
+                  Otro renglón
+                </button>
+
+                {/* Casi ninguna factura es la suma limpia de sus renglones:
+                    el flete y la rebaja se reparten entre ellos. */}
+                <div className="grid grid-cols-2 gap-3 mt-5">
+                  <Dato id="cf-recargo" etiqueta="Recargo o flete" ia={!!borrador?.recargo && Number(recargo) === borrador.recargo}>
+                    <Numerico value={recargo} onChange={(e) => setRecargo(e.target.value)} min="0" placeholder="0.00" className={clase()} />
+                  </Dato>
+                  <Dato id="cf-descuento" etiqueta="Descuento" ia={!!borrador?.descuento && Number(descuentoFactura) === borrador.descuento}>
+                    <Numerico value={descuentoFactura} onChange={(e) => setDescuentoFactura(e.target.value)} min="0" placeholder="0.00" className={clase()} />
+                  </Dato>
+                </div>
+
+                {sinIvaEnPapel && (
+                  <div className="mt-4">
+                    <Nota tono="ojo">
+                      La factura no trae IVA, pero {lineasConIva} renglón(es) lo están sumando según la ficha de la mercancía.{' '}
+                      <button type="button" className="font-semibold underline" onClick={() => setLineas((prev) => prev.map((l) => ({ ...l, exento: true })))}>
+                        Marcar todos exentos
+                      </button>
+                    </Nota>
+                  </div>
+                )}
+
+                {partes.length > 0 && (
+                  <div className="mt-5 rounded-2xl bg-neutral-500/6 p-4">
+                    <DestinoPlata partes={partes} moneda={monedaCarga} titulo="A dónde va la plata" />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <Dato id="cf-base" etiqueta={`Base imponible (${monedaCarga})`} ia={!!borrador && Number(base) === borrador.subtotal}>
+                  <Numerico value={base} onChange={(e) => actualizarBase(e.target.value)} className={clase()} />
+                </Dato>
+                <Dato id="cf-iva" etiqueta={`IVA ${fiscal.tasa_iva}% (${monedaCarga})`} ia={!!borrador && Number(iva) === borrador.iva}>
+                  <Numerico value={iva} onChange={(e) => setIva(e.target.value)} className={clase()} />
+                </Dato>
+                {esActivo && (
+                  <Dato id="cf-vida" etiqueta="Dura (meses)" nota="Un equipo se gasta con los años: con esto se deprecia solo.">
+                    <Numerico value={vidaUtil} onChange={(e) => setVidaUtil(e.target.value)} min="1" className={clase()} />
+                  </Dato>
+                )}
+                <Dato id="cf-descripcion" etiqueta="Qué es" className={esActivo ? '' : 'col-span-2'}>
+                  <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Ej. Internet de octubre" className={clase()} />
+                </Dato>
+              </div>
+            )}
+          </Paso>
+
+          {/* ── Paso 3: el pago ── */}
+          <Paso numero={3} titulo="El pago" detalle={esCredito ? 'Queda en cuentas por pagar hasta que se registre el pago.' : 'La plata ya salió al cargarla.'}>
+            <Filtros opciones={FORMAS_PAGO} activo={formaPago} alElegir={setFormaPago} className="mb-3" />
+            <div className="grid grid-cols-2 gap-3">
               {necesitaReferencia(formaPago) && (
                 <Dato id="cf-referencia" etiqueta="Referencia del pago">
                   <input value={referenciaPago} onChange={(e) => setReferenciaPago(e.target.value)} className={clase()} />
@@ -875,87 +966,30 @@ export default function CargarFactura({
                   <input value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} type="date" className={clase()} />
                 </Dato>
               )}
-              {/* Un equipo se gasta con los años: sin este dato entraba al
-                  balance a valor de compra para siempre. */}
-              {esActivo && (
-                <Dato id="cf-vida" etiqueta="Dura (meses)">
-                  <Numerico value={vidaUtil} onChange={(e) => setVidaUtil(e.target.value)} min="1" className={clase()} />
+              {fiscal.agente_retencion && ivaMostrado > 0 && (
+                <Dato
+                  id="cf-retencion"
+                  etiqueta="Retención de IVA"
+                  nota={
+                    Number(retencionEfectiva) > 0
+                      ? `Se retienen ${monedaCarga}${((ivaMostrado * Number(retencionEfectiva)) / 100).toFixed(2)} (van al SENIAT). Al proveedor: ${monedaCarga}${(totalFormulario - (ivaMostrado * Number(retencionEfectiva)) / 100).toFixed(2)}.`
+                      : 'No se retiene: al proveedor se le paga el total.'
+                  }
+                >
+                  <select value={retencionEfectiva} onChange={(e) => setRetencion(e.target.value as '0' | '75' | '100')} className={clase()}>
+                    <option value="75">75 %</option>
+                    <option value="100">100 %</option>
+                    <option value="0">No retener</option>
+                  </select>
                 </Dato>
               )}
-              <Dato id="cf-descripcion" etiqueta="Nota (opcional)" className="col-span-2">
-                <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className={clase()} />
-              </Dato>
+              {esInsumos && (
+                <Dato id="cf-descripcion" etiqueta="Nota (opcional)" className="col-span-2">
+                  <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className={clase()} />
+                </Dato>
+              )}
             </div>
-          </Grupo>
-
-          {/* ── Renglones o monto ── */}
-          {esInsumos ? (
-            <Grupo titulo={`Renglones (${lineas.length})`}>
-              <div className="space-y-2">
-                {lineas.map((l, i) => (
-                  <Renglon
-                    key={l.leido ? `papel-${i}` : `mano-${i}`}
-                    indice={i}
-                    linea={l}
-                    ingredientes={ingredientes}
-                    moneda={monedaCarga}
-                    tasaIva={fiscal.tasa_iva}
-                    aviso={avisoPrecio(i)}
-                    problema={!l.ingrediente_id && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0) ? { texto: 'Falta elegir la mercancía', tono: 'mal' } : problemaDeRenglon(l, i)}
-                    puedeQuitar={lineas.length > 1}
-                    onCambiar={(cambio) => cambiarLinea(i, cambio)}
-                    onMercancia={(v) => elegirMercancia(i, v)}
-                    onQuitar={() => setLineas((prev) => prev.filter((_, idx) => idx !== i))}
-                  />
-                ))}
-                <button onClick={() => setLineas((prev) => [...prev, LINEA_VACIA])} className="text-sm text-neutral-600 font-medium">
-                  + renglón
-                </button>
-              </div>
-              {/* Casi ninguna factura es la suma limpia de sus renglones: sin
-                  donde poner el flete o la rebaja habia que falsear un costo
-                  unitario, y ahi el costo de receta empieza a mentir. */}
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <Dato id="cf-recargo" etiqueta="Recargo / flete" ia={!!borrador?.recargo && Number(recargo) === borrador.recargo}>
-                  <Numerico value={recargo} onChange={(e) => setRecargo(e.target.value)} min="0" placeholder="0.00" className={clase()} />
-                </Dato>
-                <Dato id="cf-descuento" etiqueta="Descuento" ia={!!borrador?.descuento && Number(descuentoFactura) === borrador.descuento}>
-                  <Numerico value={descuentoFactura} onChange={(e) => setDescuentoFactura(e.target.value)} min="0" placeholder="0.00" className={clase()} />
-                </Dato>
-              </div>
-            </Grupo>
-          ) : (
-            <Grupo titulo="Monto">
-              <div className="grid grid-cols-2 gap-3">
-                <Dato id="cf-base" etiqueta={`Base imponible (${monedaCarga})`} ia={!!borrador && Number(base) === borrador.subtotal}>
-                  <Numerico value={base} onChange={(e) => actualizarBase(e.target.value)} className={clase()} />
-                </Dato>
-                <Dato id="cf-iva" etiqueta={`IVA ${fiscal.tasa_iva}% (${monedaCarga})`} ia={!!borrador && Number(iva) === borrador.iva}>
-                  <Numerico value={iva} onChange={(e) => setIva(e.target.value)} className={clase()} />
-                </Dato>
-              </div>
-            </Grupo>
-          )}
-
-          {!!borrador && borrador.renglones.length > 0 && !borrador.iva && !sinIvaEnPapel && esInsumos &&
-            lineas.some((l) => l.exento === true && l.leido && l.leido.exento == null) && (
-              <p className="text-xs text-neutral-500">
-                La factura no cobra IVA: los renglones quedaron sin IVA. Si alguno sí lo lleva, cámbialo en su renglón.
-              </p>
-            )}
-
-          {sinIvaEnPapel && (
-            <Nota tono="ojo">
-              La factura no trae IVA, pero {lineasConIva} renglón(es) lo están sumando según la ficha de la mercancía.{' '}
-              <button
-                type="button"
-                className="font-semibold underline"
-                onClick={() => setLineas((prev) => prev.map((l) => ({ ...l, exento: true })))}
-              >
-                Marcar todos exentos
-              </button>
-            </Nota>
-          )}
+          </Paso>
 
           <Totales
             id="cf-totales"
@@ -975,17 +1009,30 @@ export default function CargarFactura({
           ingredientes={ingredientes}
           nombre={nombreDesdePapel(lineas[creandoEn]?.leido?.descripcion ?? '')}
           unidad={unidadNuestra(lineas[creandoEn]?.leido?.unidad ?? '') || 'kg'}
-          // Si la factura marca exento el renglon, la ficha nace exenta.
           exento={Boolean(lineas[creandoEn]?.exento ?? lineas[creandoEn]?.leido?.exento)}
           delPapel={lineas[creandoEn]?.leido?.descripcion}
           onUsar={(ing) => {
             const i = creandoEn
             setCreandoEn(null)
-            void elegirMercancia(i, String(ing.id))
+            elegirMercancia(i, ing.id)
           }}
-          onCreada={(creada) => {
+          onCreada={(creada, presentacion: Presentacion | null) => {
             setIngredientes((prev) => [...prev, creada])
-            cambiarLinea(creandoEn, { ingrediente_id: creada.id })
+            const l = lineas[creandoEn]
+            const paquete: Paquete | undefined = presentacion
+              ? {
+                  nombre: presentacion.nombre,
+                  trae: sinRuido(presentacion.trae),
+                  paquetes: l?.leido?.cantidad != null ? String(l.leido.cantidad) : l?.cantidad ?? '',
+                  precio: l?.leido?.precio_unitario != null ? String(l.leido.precio_unitario) : l?.costo_unitario ?? '',
+                }
+              : undefined
+            const calc = paquete ? desdePaquete(paquete) : null
+            cambiarLinea(creandoEn, {
+              ingrediente_id: creada.id,
+              paquete,
+              ...(calc ? { cantidad: calc.cantidad, costo_unitario: calc.costo_unitario } : {}),
+            })
             setCreandoEn(null)
           }}
           onCerrar={() => setCreandoEn(null)}
@@ -995,7 +1042,7 @@ export default function CargarFactura({
       <BarraGuardar
         pendientes={pendientes}
         cuadre={cuadreAplica ? (cuadra ? 'cuadra' : `No cuadra: diferencia ${monedaCarga}${diferencia.toFixed(2)}`) : null}
-        total={`${monedaCarga}${totalFormulario.toFixed(2)}`}
+        total={`${monedaCarga}${fmtNum(totalFormulario, 2)}`}
         guardando={guardando}
         onIrA={irA}
         onGuardar={guardar}
@@ -1008,13 +1055,35 @@ export default function CargarFactura({
 
 function clase(tono?: Tono) {
   const borde = tono === 'mal' ? 'border-peligro-400 ring-1 ring-peligro-200' : tono === 'ojo' ? 'border-aviso-400 ring-1 ring-aviso-200' : 'border-neutral-300'
-  return `w-full border ${borde} rounded-lg px-3 py-2 text-sm bg-white`
+  return `w-full border ${borde} rounded-xl px-3 py-2 text-sm bg-white`
 }
 
-function Grupo({ titulo, children }: { titulo: string; children: ReactNode }) {
+/** Un paso de la carga: su número, su título y lo que va dentro. */
+function Paso({
+  numero,
+  titulo,
+  detalle,
+  accion,
+  children,
+}: {
+  numero: number
+  titulo: string
+  detalle?: ReactNode
+  accion?: ReactNode
+  children: ReactNode
+}) {
   return (
-    <section>
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">{titulo}</h3>
+    <section className="vp-losa p-4 sm:p-5">
+      <div className="flex items-start gap-3 mb-4">
+        <span className="shrink-0 w-7 h-7 rounded-full bg-neutral-900 text-white grid place-items-center text-xs font-bold tabular-nums">
+          {numero}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display font-semibold tracking-tight leading-tight">{titulo}</h2>
+          {detalle && <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{detalle}</p>}
+        </div>
+        {accion && <div className="shrink-0">{accion}</div>}
+      </div>
       {children}
     </section>
   )
@@ -1058,8 +1127,8 @@ function Dato({
 }
 
 function Nota({ tono, children }: { tono: Tono; children: ReactNode }) {
-  const tonos = { mal: 'bg-peligro-50 border-peligro-200 text-peligro-700', ojo: 'bg-aviso-50 border-aviso-200 text-aviso-800' }
-  return <div className={`rounded-lg border px-3 py-2 text-sm ${tonos[tono]}`}>{children}</div>
+  const tonos = { mal: 'bg-peligro-500/10 text-peligro-700', ojo: 'bg-aviso-500/10 text-aviso-800' }
+  return <div className={`rounded-2xl px-4 py-3 text-sm ${tonos[tono]}`}>{children}</div>
 }
 
 /** Los datos de la factura en cuatro líneas, para el teléfono. */
@@ -1082,7 +1151,7 @@ function ResumenDatos({
 }) {
   const falta = <span className="text-peligro-600">falta</span>
   return (
-    <div className="sm:hidden rounded-xl bg-neutral-50 px-3 py-2.5 text-sm">
+    <div className="sm:hidden rounded-2xl bg-neutral-500/6 px-3.5 py-3 text-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-0.5">
           <p className="font-semibold truncate">{proveedor || falta}</p>
@@ -1094,7 +1163,7 @@ function ResumenDatos({
             En {moneda === '$' ? 'dólares' : 'bolívares'} · Tasa {tasa ? fmtNum(tasa, 2) : falta}
           </p>
         </div>
-        <button type="button" onClick={onEditar} className="shrink-0 text-xs font-semibold border border-neutral-300 bg-white rounded-lg px-3 py-1.5">
+        <button type="button" onClick={onEditar} className="vp-control shrink-0 text-xs font-semibold rounded-full px-3 py-1.5">
           Editar
         </button>
       </div>
@@ -1102,7 +1171,13 @@ function ResumenDatos({
   )
 }
 
-/** Un renglón: lo que dice el papel arriba, y lo que va a entrar al depósito abajo. */
+/**
+ * Un renglón: qué mercancía es (con su color), cuánto vino y a cuánto.
+ *
+ * Si vino en caja o paquete, se escribe como vino --"2 cajas de 24 a $12"-- y
+ * el renglón muestra lo que entra: 48 unidades a $0,50. La cantidad y el
+ * costo que viajan al servidor son siempre los de la unidad de la ficha.
+ */
 function Renglon({
   indice,
   linea: l,
@@ -1112,8 +1187,10 @@ function Renglon({
   aviso,
   problema,
   puedeQuitar,
+  conocidos,
   onCambiar,
   onMercancia,
+  onCrear,
   onQuitar,
 }: {
   indice: number
@@ -1124,27 +1201,24 @@ function Renglon({
   aviso?: { nivel: string; mensaje: string; base: string; referencia: number; muestras: number }
   problema: { texto: string; tono: Tono } | null
   puedeQuitar: boolean
+  conocidos: Equivalencia[]
   onCambiar: (cambio: Partial<Linea>) => void
-  onMercancia: (valor: string) => void
+  onMercancia: (id: number) => void
+  onCrear: () => void
   onQuitar: () => void
 }) {
   const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
-  // LA CANTIDAD SE ESCRIBE EN kg O EN g (la casilla con la unidad adentro, la
-  // misma de Inventario y de las recetas). La linea sigue guardando la
-  // cantidad EN LA UNIDAD DE LA FICHA, que es lo que viaja al servidor y lo
-  // que trae la foto; aqui solo vive lo tecleado y en que unidad se tecleo.
   const unidad = ing?.unidad ?? ''
+  // LA CANTIDAD SE ESCRIBE EN kg O EN g (la casilla con la unidad adentro).
+  // La linea guarda la cantidad EN LA UNIDAD DE LA FICHA.
   const [vista, setVista] = useState(unidad)
   const [texto, setTexto] = useState(l.cantidad)
   useEffect(() => {
-    // Cambio la mercancia: se vuelve a escribir en su unidad.
     setVista(unidad)
     setTexto(l.cantidad)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unidad])
   useEffect(() => {
-    // La cantidad llego de afuera (la foto, la memoria del proveedor): se
-    // muestra en la unidad que se estaba usando.
     const enBase = !vista || vista === unidad ? texto : aBase(texto, unidad, vista)
     if (enBase !== l.cantidad) setTexto(vista && vista !== unidad ? convertirTexto(l.cantidad, unidad, unidad, vista) : l.cantidad)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1157,150 +1231,248 @@ function Renglon({
     setTexto(convertirTexto(texto, unidad, vista || unidad, nueva))
     setVista(nueva)
   }
+
+  const enPaquete = !!l.paquete
+  function cambiarPaquete(cambio: Partial<Paquete>) {
+    const p = { ...(l.paquete ?? { nombre: 'caja', trae: '', paquetes: '', precio: '' }), ...cambio }
+    const calc = desdePaquete(p)
+    onCambiar({ paquete: p, ...(calc ?? {}) })
+  }
+  function activarPaquete(desde?: Equivalencia) {
+    cambiarPaquete({
+      nombre: desde?.unidad_papel || 'caja',
+      trae: desde ? sinRuido(desde.factor) : '',
+      // Lo que ya estaba escrito pasa a ser "cuantos paquetes": es lo que se
+      // tecleo mirando el papel.
+      paquetes: l.leido?.cantidad != null ? String(l.leido.cantidad) : l.cantidad,
+      precio: l.leido?.precio_unitario != null ? String(l.leido.precio_unitario) : l.costo_unitario,
+    })
+  }
+
   const subtotal = (Number(l.cantidad) || 0) * (Number(l.costo_unitario) || 0)
   const recordada = l.recordada?.ingrediente_id === l.ingrediente_id ? l.recordada : undefined
   const sugerida = !l.ingrediente_id && l.leido ? sugerirMercancia(l.leido.descripcion, ingredientes) : null
-  const conv = recordada ? conversion(recordada.factor, recordada.unidad_papel, recordada.unidad) : ''
-  // La linea del papel tiene que cuadrar consigo misma: si cantidad x precio
-  // no da su total, la IA leyo mal alguno de los tres.
   const papelNoCuadra =
     l.leido?.cantidad != null &&
     l.leido.precio_unitario != null &&
     l.leido.subtotal != null &&
     Math.abs(l.leido.cantidad * l.leido.precio_unitario - l.leido.subtotal) > Math.max(0.05, Math.abs(l.leido.subtotal) * 0.01)
-  const estado = problema?.tono === 'mal' ? 'bg-peligro-500' : problema || papelNoCuadra ? 'bg-aviso-500' : l.ingrediente_id ? 'bg-exito-500' : 'bg-neutral-300'
+  const unidadChoca = !!l.leido && !recordada && !enPaquete && !!ing && unidadDistinta(l.leido.unidad, ing.unidad)
 
-  // EN EL TELEFONO, una fila: lo que dice el papel, su total y la mercancía.
-  // Cantidad, costo e IVA ya vienen leídos: se abren solo para corregirlos.
-  // Eran tres casillas por renglón, y con 11 renglones metros de pantalla.
-  // Un renglón a mano (sin papel) nace abierto: hay que escribirlo.
+  const estado = problema?.tono === 'mal' ? 'bg-peligro-500' : problema || papelNoCuadra ? 'bg-aviso-500' : ing ? ALMACEN_DE[ing.tipo].punto : 'bg-neutral-300'
   const [abierto, setAbierto] = useState(!l.leido)
   const cantidadPapel = l.leido?.cantidad ?? null
   const precioPapel = l.leido?.precio_unitario ?? null
+  const trae = Number(l.paquete?.trae) || 0
 
   return (
-    <div id={`cf-renglon-${indice}`} className="scroll-mt-24 rounded-xl border border-neutral-200 p-2.5 sm:p-3 space-y-2">
-      <div className="flex items-start gap-2">
-        <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${estado}`} />
-        <button type="button" onClick={() => setAbierto((v) => !v)} className="flex-1 min-w-0 text-left">
-          {l.leido ? (
-            <>
-              <p className="text-sm font-medium leading-snug line-clamp-2">{l.leido.descripcion || '(sin descripción)'}</p>
-              <p className="text-xs text-neutral-500 tabular-nums">
-                {cantidadPapel == null ? '?' : fmtNum(cantidadPapel, cantidadPapel % 1 ? 3 : 0)} {l.leido.unidad} × {moneda}
-                {precioPapel == null ? '?' : fmtNum(precioPapel, 2)}
-                {l.leido.exento ? ' · exento' : ''}
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-neutral-500">Renglón {indice + 1}</p>
-          )}
-        </button>
-        <span className="text-sm font-semibold tabular-nums text-neutral-800 shrink-0">
-          {moneda}
-          {fmtNum(subtotal, 2)}
-        </span>
-        {puedeQuitar && (
-          <button onClick={onQuitar} className="text-neutral-400 hover:text-peligro-600 text-sm px-1 -mr-1" title="Quitar renglón" aria-label={`Quitar el renglón ${indice + 1}`}>
-            ✕
-          </button>
-        )}
-      </div>
-
-      <select
-        value={l.ingrediente_id}
-        onChange={(e) => onMercancia(e.target.value)}
-        className={clase(!l.ingrediente_id && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0) ? 'mal' : undefined)}
-      >
-        <option value={0}>¿Qué mercancía es?</option>
-        {ingredientes.map((x) => (
-          <option key={x.id} value={x.id}>
-            {x.nombre} ({x.unidad})
-          </option>
-        ))}
-        <option value="nuevo">+ Crear mercancía nueva…</option>
-      </select>
-
-      <div className={`${abierto ? 'grid' : 'hidden sm:grid'} grid-cols-2 sm:grid-cols-3 gap-2 items-end`}>
-        <label className="block">
-          <span className="block text-[11px] text-neutral-500 mb-0.5">Cantidad{ing ? ` (${ing.unidad})` : ''}</span>
-          {ing && otraUnidad(ing.unidad) ? (
-            <CasillaConUnidad
-              unidad={ing.unidad}
-              vista={vista || ing.unidad}
-              alCambiarVista={cambiarVista}
-              value={texto}
-              onChange={(e) => escribirCantidad(e.target.value)}
-              placeholder="0"
-              claseCasilla={clase()}
+    <div
+      id={`cf-renglon-${indice}`}
+      className={`scroll-mt-24 relative rounded-2xl bg-neutral-500/6 p-3 sm:p-3.5 ${
+        problema?.tono === 'mal' ? 'ring-1 ring-peligro-300' : problema ? 'ring-1 ring-aviso-300' : ''
+      }`}
+    >
+      <span aria-hidden className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${estado}`} />
+      <div className="pl-2.5 space-y-2.5">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <ElegirMercancia
+              ingredientes={ingredientes}
+              valor={l.ingrediente_id}
+              alElegir={onMercancia}
+              alCrear={onCrear}
+              tono={problema?.tono === 'mal' && !l.ingrediente_id ? 'mal' : undefined}
+              sugerencia={l.leido?.descripcion}
             />
-          ) : (
-            <Numerico value={l.cantidad} onChange={(e) => onCambiar({ cantidad: e.target.value })} placeholder="0" className={clase()} />
-          )}
-        </label>
-        <label className="block">
-          <span className="block text-[11px] text-neutral-500 mb-0.5">Costo c/u ({moneda})</span>
-          <Numerico
-            value={l.costo_unitario}
-            onChange={(e) => onCambiar({ costo_unitario: e.target.value })}
-            placeholder="0.00"
-            className={clase(aviso ? (aviso.nivel === 'unidad' ? 'mal' : 'ojo') : undefined)}
-          />
-        </label>
-        {/* La ficha es el valor por defecto, no la ultima palabra: la misma
-            cosa puede venir exenta de un proveedor y gravada de otro. */}
-        <label className="block col-span-2 sm:col-span-1">
-          <span className="block text-[11px] text-neutral-500 mb-0.5">IVA</span>
-          <select
-            value={l.exento === null ? 'ficha' : l.exento ? 'exento' : 'grava'}
-            onChange={(e) => onCambiar({ exento: e.target.value === 'ficha' ? null : e.target.value === 'exento' })}
-            className={clase()}
-          >
-            <option value="ficha">{ing ? (ing.exento ? 'Exento (ficha)' : `${tasaIva}% (ficha)`) : 'Según la ficha'}</option>
-            <option value="grava">{tasaIva}%</option>
-            <option value="exento">Exento</option>
-          </select>
-        </label>
-      </div>
-      {!abierto && (
-        <button type="button" onClick={() => setAbierto(true)} className="sm:hidden text-xs text-neutral-500 underline">
-          Corregir cantidad, costo o IVA
-        </button>
-      )}
-
-      {(sugerida || recordada || (l.leido && !recordada && ing && unidadDistinta(l.leido.unidad, ing.unidad)) || papelNoCuadra || aviso) && (
-        <div className="space-y-0.5 text-xs">
-          {sugerida && (
-            <button onClick={() => onMercancia(String(sugerida.id))} className="text-acento-700 font-medium text-left">
-              ¿Es {sugerida.nombre} ({sugerida.unidad})? Usarla
+            {l.leido && (
+              <button type="button" onClick={() => setAbierto((v) => !v)} className="mt-1.5 text-left text-xs text-neutral-500">
+                <span className="text-neutral-400">Papel:</span> {l.leido.descripcion || '(sin descripción)'} ·{' '}
+                <span className="tabular-nums">
+                  {cantidadPapel == null ? '?' : fmtNum(cantidadPapel, cantidadPapel % 1 ? 3 : 0)} {l.leido.unidad} × {moneda}
+                  {precioPapel == null ? '?' : fmtNum(precioPapel, 2)}
+                </span>
+                {l.leido.exento ? ' · exento' : ''}
+              </button>
+            )}
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="block text-sm font-semibold tabular-nums text-neutral-900">
+              {moneda}
+              {fmtNum(subtotal, 2)}
+            </span>
+            {ing && (
+              <span className="mt-1 inline-block">
+                <SelloTipo tipo={ing.tipo} />
+              </span>
+            )}
+          </div>
+          {puedeQuitar && (
+            <button
+              onClick={onQuitar}
+              className="shrink-0 -mr-1 w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:text-peligro-600 hover:bg-peligro-500/10"
+              title="Quitar renglón"
+              aria-label={`Quitar el renglón ${indice + 1}`}
+            >
+              <Icono nombre="quitar" size={14} />
             </button>
           )}
-          {recordada && (
-            <p className="text-exito-700">
-              Recordado de este proveedor{conv ? `: ${conv}, ya convertido` : ''} ·{' '}
-              {recordada.veces === 1 ? '1 factura' : `${recordada.veces} facturas`}
-              {!recordada.exacta && <span className="text-aviso-700"> · parecido a «{recordada.descripcion_recordada}», revísalo</span>}
-            </p>
-          )}
-          {l.leido && !recordada && ing && unidadDistinta(l.leido.unidad, ing.unidad) && (
-            <p className="text-aviso-800">
-              La factura dice {l.leido.unidad} y {ing.nombre} se lleva en {ing.unidad}: ajusta cantidad y costo si no es
-              uno a uno.
-            </p>
-          )}
-          {papelNoCuadra && (
-            <p className="text-aviso-800">En el papel, cantidad × precio no da el total del renglón: revisa esos números.</p>
-          )}
-          {aviso && (
-            <p className={aviso.nivel === 'unidad' ? 'text-peligro-700' : 'text-aviso-800'}>
-              {aviso.mensaje}{' '}
-              {aviso.base === 'compras'
-                ? `Se venía pagando $${aviso.referencia.toFixed(2)} (últimas ${aviso.muestras} compras).`
-                : `Costo promedio: $${aviso.referencia.toFixed(2)}.`}
-            </p>
-          )}
         </div>
-      )}
+
+        {/* Cómo vino: suelta, o en caja/paquete. */}
+        {ing && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => (enPaquete ? onCambiar({ paquete: undefined }) : activarPaquete())}
+              aria-pressed={enPaquete}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                enPaquete ? 'bg-neutral-900 text-white' : 'vp-control text-neutral-600'
+              }`}
+            >
+              <Icono nombre="paquete" size={13} />
+              {enPaquete ? `Viene en ${l.paquete!.nombre || 'paquete'}` : 'Viene en caja o paquete'}
+            </button>
+            {!enPaquete &&
+              conocidos.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => activarPaquete(c)}
+                  className="vp-control inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-neutral-600"
+                  title={`Este proveedor ya la trajo así ${c.veces === 1 ? '1 vez' : `${c.veces} veces`}`}
+                >
+                  {c.unidad_papel || 'paquete'} × {sinRuido(c.factor)}
+                </button>
+              ))}
+          </div>
+        )}
+
+        {enPaquete ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+              <label className="block">
+                <span className="block text-[11px] text-neutral-500 mb-0.5">Cuántos</span>
+                <Numerico value={l.paquete!.paquetes} onChange={(e) => cambiarPaquete({ paquetes: e.target.value })} placeholder="2" className={clase()} />
+              </label>
+              <label className="block">
+                <span className="block text-[11px] text-neutral-500 mb-0.5">Envase</span>
+                <input value={l.paquete!.nombre} onChange={(e) => cambiarPaquete({ nombre: e.target.value })} placeholder="caja" className={clase()} />
+              </label>
+              <label className="block">
+                <span className="block text-[11px] text-neutral-500 mb-0.5">Cada uno trae ({unidad})</span>
+                <Numerico value={l.paquete!.trae} onChange={(e) => cambiarPaquete({ trae: e.target.value })} placeholder="24" className={clase()} />
+              </label>
+              <label className="block">
+                <span className="block text-[11px] text-neutral-500 mb-0.5">Precio c/u ({moneda})</span>
+                <Numerico
+                  value={l.paquete!.precio}
+                  onChange={(e) => cambiarPaquete({ precio: e.target.value })}
+                  placeholder="0.00"
+                  className={clase(aviso ? (aviso.nivel === 'unidad' ? 'mal' : 'ojo') : undefined)}
+                />
+              </label>
+            </div>
+            <p className="text-xs text-neutral-600 flex flex-wrap items-center gap-x-2">
+              <span className="inline-flex items-center gap-1 text-neutral-400">
+                <Icono nombre="inventario" size={13} />
+                Entra al depósito:
+              </span>
+              {trae > 0 && Number(l.cantidad) > 0 ? (
+                <span className="font-semibold tabular-nums text-neutral-900">
+                  {fmtNum(Number(l.cantidad), Number(l.cantidad) % 1 ? 3 : 0)} {unidad}
+                  {Number(l.costo_unitario) > 0 && (
+                    <span className="font-normal text-neutral-600">
+                      {' '}
+                      a {moneda}
+                      {fmtNum(Number(l.costo_unitario), 4)} cada {unidad === 'unidad' ? 'una' : unidad}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span>escribe cuántos vinieron y cuánto trae cada uno</span>
+              )}
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className={`${abierto ? 'grid' : 'hidden sm:grid'} grid-cols-2 sm:grid-cols-3 gap-2 items-end`}>
+              <label className="block">
+                <span className="block text-[11px] text-neutral-500 mb-0.5">Cantidad{ing ? ` (${ing.unidad})` : ''}</span>
+                {ing && otraUnidad(ing.unidad) ? (
+                  <CasillaConUnidad
+                    unidad={ing.unidad}
+                    vista={vista || ing.unidad}
+                    alCambiarVista={cambiarVista}
+                    value={texto}
+                    onChange={(e) => escribirCantidad(e.target.value)}
+                    placeholder="0"
+                    claseCasilla={clase()}
+                  />
+                ) : (
+                  <Numerico value={l.cantidad} onChange={(e) => onCambiar({ cantidad: e.target.value })} placeholder="0" className={clase()} />
+                )}
+              </label>
+              <label className="block">
+                <span className="block text-[11px] text-neutral-500 mb-0.5">Costo c/u ({moneda})</span>
+                <Numerico
+                  value={l.costo_unitario}
+                  onChange={(e) => onCambiar({ costo_unitario: e.target.value })}
+                  placeholder="0.00"
+                  className={clase(aviso ? (aviso.nivel === 'unidad' ? 'mal' : 'ojo') : undefined)}
+                />
+              </label>
+              <label className="block col-span-2 sm:col-span-1">
+                <span className="block text-[11px] text-neutral-500 mb-0.5">IVA</span>
+                <select
+                  value={l.exento === null ? 'ficha' : l.exento ? 'exento' : 'grava'}
+                  onChange={(e) => onCambiar({ exento: e.target.value === 'ficha' ? null : e.target.value === 'exento' })}
+                  className={clase()}
+                >
+                  <option value="ficha">{ing ? (ing.exento ? 'Exento (ficha)' : `${tasaIva}% (ficha)`) : 'Según la ficha'}</option>
+                  <option value="grava">{tasaIva}%</option>
+                  <option value="exento">Exento</option>
+                </select>
+              </label>
+            </div>
+            {!abierto && (
+              <button type="button" onClick={() => setAbierto(true)} className="sm:hidden text-xs text-neutral-500 underline">
+                Corregir cantidad, costo o IVA
+              </button>
+            )}
+          </>
+        )}
+
+        {(sugerida || recordada || unidadChoca || papelNoCuadra || aviso) && (
+          <div className="space-y-0.5 text-xs">
+            {sugerida && (
+              <button type="button" onClick={() => onMercancia(sugerida.id)} className="text-acento-700 font-medium text-left inline-flex items-center gap-1">
+                <PuntoTipo tipo={sugerida.tipo} />
+                ¿Es {sugerida.nombre} ({sugerida.unidad})? Usarla
+              </button>
+            )}
+            {recordada && (
+              <p className="text-exito-700">
+                Recordado de este proveedor · {recordada.veces === 1 ? '1 factura' : `${recordada.veces} facturas`}
+                {!recordada.exacta && <span className="text-aviso-700"> · parecido a «{recordada.descripcion_recordada}», revísalo</span>}
+              </p>
+            )}
+            {unidadChoca && (
+              <p className="text-aviso-800">
+                La factura dice {l.leido!.unidad} y {ing!.nombre} se lleva en {ing!.unidad}: si viene en caja o paquete, márcalo arriba y el sistema convierte.
+              </p>
+            )}
+            {papelNoCuadra && <p className="text-aviso-800">En el papel, cantidad × precio no da el total del renglón: revisa esos números.</p>}
+            {aviso && (
+              <p className={aviso.nivel === 'unidad' ? 'text-peligro-700' : 'text-aviso-800'}>
+                {aviso.mensaje}{' '}
+                {aviso.base === 'compras'
+                  ? `Se venía pagando $${aviso.referencia.toFixed(2)} (últimas ${aviso.muestras} compras).`
+                  : `Costo promedio: $${aviso.referencia.toFixed(2)}.`}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -1327,17 +1499,15 @@ function Totales({
   const fila = (rotulo: string, nuestro: number, delPapel?: number | null, fuerte = false) => (
     <tr className={fuerte ? 'font-semibold text-neutral-900' : 'text-neutral-600'}>
       <td className="py-1">{rotulo}</td>
-      <td className="py-1 text-right tabular-nums">
+      <td className={`py-1 text-right tabular-nums ${fuerte ? 'font-display text-lg' : ''}`}>
         {moneda}
-        {nuestro.toFixed(2)}
+        {fmtNum(nuestro, 2)}
       </td>
-      {papel && (
-        <td className="py-1 text-right tabular-nums text-neutral-500">{delPapel == null ? '—' : `${moneda}${delPapel.toFixed(2)}`}</td>
-      )}
+      {papel && <td className="py-1 text-right tabular-nums text-neutral-500">{delPapel == null ? '—' : `${moneda}${fmtNum(delPapel, 2)}`}</td>}
     </tr>
   )
   return (
-    <div id={id} className={`scroll-mt-24 rounded-xl p-3 ${papel ? (cuadra ? 'bg-exito-50' : 'bg-aviso-50') : 'bg-neutral-50'}`}>
+    <div id={id} className={`scroll-mt-24 rounded-2xl p-4 ${papel ? (cuadra ? 'bg-exito-500/10' : 'bg-aviso-500/10') : 'vp-losa'}`}>
       <table className="w-full text-sm">
         {papel && (
           <thead>
@@ -1382,7 +1552,7 @@ function BarraGuardar({
   const [abierta, setAbierta] = useState(false)
   const graves = pendientes.filter((p) => p.tono === 'mal').length
   return (
-    <div className="sticky bottom-3 z-20 rounded-2xl border border-neutral-200 bg-white/95 backdrop-blur shadow-lg px-4 py-3">
+    <div className="sticky bottom-3 z-20 vp-menu px-4 py-3">
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0 relative">
           {pendientes.length > 0 ? (
@@ -1401,7 +1571,7 @@ function BarraGuardar({
           )}
           {cuadre && cuadre !== 'cuadra' && pendientes.length > 0 && <p className="text-xs text-neutral-500 truncate">{cuadre}</p>}
           {abierta && pendientes.length > 1 && (
-            <ul className="absolute bottom-full mb-2 left-0 w-72 max-w-[85vw] max-h-[50vh] overflow-auto rounded-xl border border-neutral-200 bg-white shadow-lg p-1">
+            <ul className="vp-menu absolute bottom-full mb-2 left-0 w-72 max-w-[85vw] max-h-[50vh] overflow-auto p-1">
               {pendientes.map((p, i) => (
                 <li key={i}>
                   <button
@@ -1409,7 +1579,7 @@ function BarraGuardar({
                       setAbierta(false)
                       onIrA(p.ancla)
                     }}
-                    className={`w-full text-left text-sm px-3 py-2 rounded-lg hover:bg-neutral-50 ${p.tono === 'mal' ? 'text-peligro-700' : 'text-aviso-800'}`}
+                    className={`w-full text-left text-sm px-3 py-2 rounded-lg hover:bg-neutral-500/10 ${p.tono === 'mal' ? 'text-peligro-700' : 'text-aviso-800'}`}
                   >
                     {p.texto}
                   </button>
@@ -1418,414 +1588,15 @@ function BarraGuardar({
             </ul>
           )}
         </div>
-        <span className="text-sm font-semibold tabular-nums text-neutral-800 hidden sm:block">{total}</span>
+        <span className="font-display text-base font-semibold tabular-nums text-neutral-900 hidden sm:block">{total}</span>
         <button
           onClick={onGuardar}
           disabled={guardando}
-          className="bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 shrink-0"
+          className="vp-pulsable bg-neutral-900 text-white px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 shrink-0"
         >
           {guardando ? 'Guardando…' : 'Guardar factura'}
         </button>
       </div>
-    </div>
-  )
-}
-
-/**
- * Donde entra la factura. No aparece si la lectura con IA no está activada.
- *
- * EN EL TELEFONO Y LA TABLET (el cliente, 6-oct: "que pueda escanear desde el
- * telefono... abrir camara o en su defecto cargar imagenes, no pdf"): dos
- * botones que dicen lo que hacen, "Tomar foto" (la camara trasera, directo) y
- * "Elegir de la galería". Antes era un solo boton que abria el selector de
- * archivos, y la camara habia que encontrarla adentro. El PDF queda para la
- * computadora, que es donde llegan las facturas por correo.
- *
- * EN LA COMPUTADORA: elegir foto o PDF, arrastrarla, o pegarla con Ctrl+V.
- *
- * Cada foto se REVISA al llegar (`lib/foto.ts`): movida, oscura o demasiado
- * chica se marca en su miniatura y se avisa antes de leer, para no gastar
- * una lectura de IA en una foto que va a salir mal. Igual se puede leer.
- */
-// Paginas de una misma factura que se pueden juntar: una factura larga llega
-// en dos o tres fotos. Achicadas pesan unos cientos de KB cada una.
-const MAX_PAGINAS = 8
-
-const esPdf = (f: File) => f.type === 'application/pdf'
-const esFoto = (f: File) => f.type.startsWith('image/')
-// Un dedo y no un mouse: telefono o tablet. Es lo mismo que mira el modo
-// ligero (lib/ligero.ts) para saber que es una tablet.
-const esTactil = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches)
-
-type Pagina = { archivo: File; url: string; problemas: Problema[] | null }
-
-function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: string, esPdf: boolean) => void }) {
-  const dialogo = useDialogo()
-  const [activo, setActivo] = useState(false)
-  const [leyendo, setLeyendo] = useState(false)
-  const [terminando, setTerminando] = useState(false)
-  const [encima, setEncima] = useState(false)
-  const [error, setError] = useState('')
-  const [tactil] = useState(esTactil)
-  // Las fotos de la factura, en orden, antes de leerlas: asi se puede sacar
-  // la segunda foto con el telefono despues de la primera. `problemas` en
-  // null mientras se revisa.
-  const [paginas, setPaginas] = useState<Pagina[]>([])
-  const entrada = useRef<HTMLInputElement>(null)
-  const camara = useRef<HTMLInputElement>(null)
-  const galeria = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    api
-      .estadoLectorFacturas()
-      .then((e) => setActivo(e.activo))
-      .catch(() => setActivo(false))
-  }, [])
-
-  // Las miniaturas viven mientras esten en la bandeja.
-  const urls = useRef<string[]>([])
-  urls.current = paginas.map((p) => p.url)
-  useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), [])
-
-  function recibir(lista: File[]) {
-    if (leyendo || lista.length === 0) return
-    setError('')
-    const validos = lista.filter((f) => esFoto(f) || esPdf(f))
-    if (validos.length < lista.length) return setError(tactil ? 'Tiene que ser una foto.' : 'Tiene que ser una foto o un PDF.')
-    const pdfs = validos.filter(esPdf)
-    if (pdfs.length > 0) {
-      // Un PDF ya es el documento entero: no se mezcla con fotos.
-      if (validos.length > 1 || paginas.length > 0) return setError('Un PDF se carga solo, sin fotos al lado.')
-      return leer([pdfs[0]])
-    }
-    if (paginas.length + validos.length > MAX_PAGINAS) return setError(`Hasta ${MAX_PAGINAS} fotos por factura.`)
-    const nuevas: Pagina[] = validos.map((archivo) => ({ archivo, url: URL.createObjectURL(archivo), problemas: null }))
-    setPaginas((prev) => [...prev, ...nuevas])
-    // La revision corre aparte: la miniatura aparece al instante y el aviso,
-    // si lo hay, unos milisegundos despues.
-    for (const p of nuevas) {
-      revisarFoto(p.archivo).then((problemas) =>
-        setPaginas((prev) => prev.map((x) => (x.url === p.url ? { ...x, problemas } : x))),
-      )
-    }
-  }
-
-  function quitar(i: number) {
-    setPaginas((prev) => {
-      URL.revokeObjectURL(prev[i].url)
-      return prev.filter((_, j) => j !== i)
-    })
-  }
-
-  async function leer(archivos: File[]) {
-    if (archivos.length === 0 || leyendo) return
-    setError('')
-    setLeyendo(true)
-    try {
-      // Una foto se sube sola; varias se unen en un PDF de una pagina por
-      // foto, y para el resto del sistema es un PDF como cualquier otro.
-      const achicadas = await Promise.all(archivos.map((a) => achicarFoto(a)))
-      const subido = achicadas.length === 1 ? achicadas[0] : await unirFotosEnPdf(achicadas)
-      const lectura = await api.leerFacturaCompra(subido)
-      // La barra llega al final antes de cambiar de pantalla: que se vea que
-      // termino, no que se corto.
-      setTerminando(true)
-      await new Promise((r) => setTimeout(r, 350))
-      paginas.forEach((p) => URL.revokeObjectURL(p.url))
-      setPaginas([])
-      onLeida(lectura, URL.createObjectURL(subido), subido.type === 'application/pdf')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo leer el archivo')
-    } finally {
-      setLeyendo(false)
-      setTerminando(false)
-      for (const r of [entrada, camara, galeria]) if (r.current) r.current.value = ''
-    }
-  }
-
-  // Antes de leer: si alguna foto salio mal, se dice cual y por que. Repetirla
-  // cuesta un toque; leerla mal cuesta una lectura y llenar a mano.
-  async function leerRevisadas() {
-    const malas = paginas
-      .map((p, i) => ({ i, problemas: p.problemas ?? [] }))
-      .filter((p) => p.problemas.length > 0)
-    if (malas.length > 0) {
-      const sola = paginas.length === 1
-      const lineas = malas.map(
-        (m) => `${sola ? 'La foto' : `La foto ${m.i + 1}`} ${m.problemas.map((x) => TEXTO_PROBLEMA[x]).join(' y ')}.`,
-      )
-      const seguir = await dialogo.confirmar({
-        titulo: sola ? 'Esta foto puede leerse mal' : 'Hay fotos que pueden leerse mal',
-        texto: `${lineas.join(' ')} La IA puede equivocarse o no leer nada. Si puedes, tómala de nuevo con buena luz y el teléfono quieto.`,
-        aceptar: 'Leer igual',
-        cancelar: 'Volver',
-      })
-      if (!seguir) return
-    }
-    return leer(paginas.map((p) => p.archivo))
-  }
-
-  // Pegar una captura o un PDF copiado (Ctrl+V), sin pasar por el disco.
-  useEffect(() => {
-    if (!activo) return
-    const alPegar = (e: ClipboardEvent) => {
-      const archivos = Array.from(e.clipboardData?.files ?? []).filter((f) => esFoto(f) || esPdf(f))
-      if (archivos.length > 0) {
-        e.preventDefault()
-        recibir(archivos)
-      }
-    }
-    window.addEventListener('paste', alPegar)
-    return () => window.removeEventListener('paste', alPegar)
-  })
-
-  if (!activo) return null
-  const alElegir = (e: ChangeEvent<HTMLInputElement>) => {
-    recibir(Array.from(e.target.files ?? []))
-    e.target.value = ''
-  }
-  const conProblemas = paginas.filter((p) => p.problemas && p.problemas.length > 0).length
-  return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault()
-        setEncima(true)
-      }}
-      onDragLeave={() => setEncima(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setEncima(false)
-        recibir(Array.from(e.dataTransfer.files ?? []))
-      }}
-      className={`rounded-2xl border-2 border-dashed p-6 text-center transition-colors ${
-        encima ? 'border-acento-500 bg-acento-50' : 'border-neutral-300 bg-white'
-      }`}
-    >
-      {/* Computadora: foto o PDF, varias a la vez. */}
-      <input ref={entrada} type="file" multiple accept="image/*,application/pdf" className="hidden" onChange={alElegir} />
-      {/* Telefono: la camara trasera directo (`capture`), una foto por vez. */}
-      <input ref={camara} type="file" accept="image/*" capture="environment" className="hidden" onChange={alElegir} />
-      {/* Telefono: la galeria, varias fotos, sin PDF. */}
-      <input ref={galeria} type="file" multiple accept="image/*" className="hidden" onChange={alElegir} />
-      {leyendo ? (
-        <EsperaLectura terminando={terminando} />
-      ) : paginas.length > 0 ? (
-        <div className="space-y-3">
-          <p className="text-sm font-semibold">
-            {paginas.length === 1 ? '1 foto' : `${paginas.length} fotos`} de la misma factura
-          </p>
-          <div className="flex flex-wrap justify-center gap-2">
-            {paginas.map((p, i) => {
-              const mala = p.problemas !== null && p.problemas.length > 0
-              return (
-                <div key={p.url} className="relative">
-                  <img
-                    src={p.url}
-                    alt={`Página ${i + 1}`}
-                    className={`h-24 w-20 object-cover rounded-lg border ${mala ? 'border-2 border-aviso-500' : 'border-neutral-200'}`}
-                  />
-                  <span className="absolute left-1 top-1 rounded bg-neutral-900/80 px-1.5 text-[10px] font-semibold text-white">{i + 1}</span>
-                  {mala && (
-                    <span className="absolute inset-x-1 bottom-1 rounded bg-aviso-500 px-1 text-[10px] font-semibold text-white">
-                      {p.problemas!.includes('movida') ? 'Movida' : p.problemas!.includes('pequena') ? 'Muy chica' : 'Oscura'}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => quitar(i)}
-                    aria-label={`Quitar la foto ${i + 1}`}
-                    className="absolute -right-1.5 -top-1.5 h-6 w-6 rounded-full bg-white border border-neutral-300 text-xs leading-none shadow-sm"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )
-            })}
-            {paginas.length < MAX_PAGINAS && (
-              <button
-                type="button"
-                onClick={() => (tactil ? camara : entrada).current?.click()}
-                className="h-24 w-20 rounded-lg border-2 border-dashed border-neutral-300 text-xs text-neutral-500 hover:border-acento-500 inline-flex flex-col items-center justify-center gap-1"
-              >
-                {tactil && <Icono nombre="camara" size={18} />}
-                Otra
-                <br />
-                página
-              </button>
-            )}
-          </div>
-          {conProblemas > 0 && (
-            <p className="text-xs text-aviso-700">
-              {conProblemas === 1 ? 'Una foto' : `${conProblemas} fotos`} pueden leerse mal: toca ✕ y tómala de nuevo.
-            </p>
-          )}
-          <button
-            onClick={() => void leerRevisadas()}
-            className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold"
-          >
-            <Icono nombre="chispa" size={16} />
-            Leer factura
-          </button>
-          <p className="text-xs text-neutral-500">
-            Si la factura sigue en otra hoja, agrega esa foto antes de leer. En orden: la IA junta los renglones de todas.
-            {tactil && (
-              <>
-                {' '}
-                <button type="button" onClick={() => galeria.current?.click()} className="underline">
-                  Agregar desde la galería
-                </button>
-              </>
-            )}
-          </p>
-        </div>
-      ) : tactil ? (
-        <>
-          <div className="flex flex-col sm:flex-row items-stretch justify-center gap-2">
-            <button
-              onClick={() => camara.current?.click()}
-              className="inline-flex items-center justify-center gap-2 bg-neutral-900 text-white px-5 py-3 rounded-lg text-sm font-semibold"
-            >
-              <Icono nombre="camara" size={18} />
-              Tomar foto de la factura
-            </button>
-            <button
-              onClick={() => galeria.current?.click()}
-              className="inline-flex items-center justify-center gap-2 border border-neutral-300 bg-white px-5 py-3 rounded-lg text-sm font-semibold"
-            >
-              <Icono nombre="imagen" size={18} />
-              Elegir de la galería
-            </button>
-          </div>
-          <p className="text-xs text-neutral-500 mt-2">
-            La factura entera, derecha, con buena luz y el teléfono quieto. ¿Varias hojas? Una foto por hoja. La IA
-            llena el formulario y tú lo revisas antes de guardar.
-          </p>
-        </>
-      ) : (
-        <>
-          <button onClick={() => entrada.current?.click()} className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">
-            <Icono nombre="chispa" size={16} />
-            Cargar factura desde foto o PDF
-          </button>
-          <p className="text-xs text-neutral-500 mt-2">
-            O arrástrala aquí, o pégala con Ctrl+V. ¿Viene en varias hojas? Elige todas las fotos. La IA llena el formulario y tú lo revisas antes de guardar.
-          </p>
-        </>
-      )}
-      {error && <p className="text-peligro-600 text-sm mt-2">{error}</p>}
-    </div>
-  )
-}
-
-// Lo que se va diciendo mientras la IA lee. Es lo que de verdad pasa, en el
-// orden en que pasa: primero lee, despues el sistema revisa, y si algo no
-// cuadra un segundo modelo la relee (ver lectura_facturas.py). Una factura
-// que cuadra a la primera tarda ~3 s y se ven dos o tres; una dificil, ~20 s.
-const MENSAJES_LECTURA = [
-  'Recibiendo la factura',
-  'Enderezando el papel',
-  'Buscando quién la emitió',
-  'Leyendo el RIF dígito por dígito',
-  'Copiando los renglones uno a uno',
-  'Sumando los montos',
-  'Comparando con el total impreso',
-  'Dándole una segunda leída para ir a la segura',
-  'Repasando los céntimos',
-  'Afinando los últimos números',
-]
-const MENSAJES_TARDE = ['Este papel tiene sus detalles, un momento más', 'Ya casi está', 'Revisando renglón por renglón']
-const MS_POR_MENSAJE = 1800
-// Constante de la barra: a los 8 s va por el 63 %, a los 20 s por el 92 %.
-// Nunca llega sola al final: eso lo hace la respuesta.
-const TAU_BARRA_MS = 8000
-
-/**
- * La espera mientras se lee: una barra que avanza rápido al principio y se
- * frena después (sin prometer un tiempo que no se sabe) y mensajes cortos de
- * lo que se está haciendo. Hace que unos segundos se sientan menos.
- */
-function EsperaLectura({ terminando }: { terminando: boolean }) {
-  const [ms, setMs] = useState(0)
-  useEffect(() => {
-    const inicio = Date.now()
-    const t = setInterval(() => setMs(Date.now() - inicio), 100)
-    return () => clearInterval(t)
-  }, [])
-  const i = Math.floor(ms / MS_POR_MENSAJE)
-  const mensaje = terminando
-    ? 'Listo'
-    : i < MENSAJES_LECTURA.length
-      ? MENSAJES_LECTURA[i]
-      : MENSAJES_TARDE[(i - MENSAJES_LECTURA.length) % MENSAJES_TARDE.length]
-  const avance = terminando ? 100 : 95 * (1 - Math.exp(-ms / TAU_BARRA_MS))
-  return (
-    <div className="max-w-md mx-auto text-left" role="status" aria-live="polite">
-      <div className="flex items-baseline justify-between gap-3 mb-2">
-        <p key={mensaje} className="text-sm font-semibold" style={{ animation: 'vp-entrar 0.3s ease-out' }}>
-          <Icono nombre="chispa" size={14} className="inline -mt-0.5 mr-1.5 text-acento-500" />
-          {mensaje}
-          {!terminando && '…'}
-        </p>
-        <span className="text-xs text-neutral-400 tabular-nums shrink-0">{Math.floor(ms / 1000)} s</span>
-      </div>
-      <div className="h-2 rounded-full bg-neutral-100 overflow-hidden">
-        <div
-          className="h-full rounded-full bg-acento-500 transition-[width] duration-300 ease-out"
-          style={{ width: `${avance}%` }}
-        />
-      </div>
-      <p className="text-xs text-neutral-500 mt-2">
-        {ms < 30000
-          ? 'La IA lee y el sistema revisa que todo cuadre.'
-          : 'El servicio está lento hoy. Si prefieres, cárgala a mano abajo.'}
-      </p>
-    </div>
-  )
-}
-
-/**
- * La factura a la vista mientras se revisa. En pantalla ancha queda fija al
- * lado del formulario; en el teléfono, arriba y plegable. Se puede girar:
- * muchas llegan escaneadas de lado.
- */
-function VisorDocumento({ url, esPdf }: { url: string; esPdf: boolean }) {
-  const [giro, setGiro] = useState(0)
-  const [cerca, setCerca] = useState(false)
-  // En el telefono arranca plegada: abierta ocupaba media pantalla antes del
-  // primer campo. Se abre de un toque para comparar.
-  const [abierto, setAbierto] = useState(() => Boolean(window.matchMedia?.('(min-width: 1024px)').matches))
-  return (
-    <div className="mb-3 lg:mb-0 lg:sticky lg:top-4 bg-white rounded-2xl border border-neutral-200 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-neutral-100">
-        <button onClick={() => setAbierto((v) => !v)} className="text-sm font-semibold lg:pointer-events-none">
-          {abierto ? 'Factura' : 'Ver la factura'} {esPdf ? '(PDF)' : ''} <span className="lg:hidden text-neutral-400">{abierto ? '▾' : '▸'}</span>
-        </button>
-        {!esPdf && abierto && (
-          <div className="flex gap-1">
-            <button onClick={() => setGiro((g) => (g + 90) % 360)} className="text-xs px-2 py-1 rounded-md border border-neutral-200" title="Girar">
-              ↻ Girar
-            </button>
-            <button onClick={() => setCerca((v) => !v)} className="text-xs px-2 py-1 rounded-md border border-neutral-200">
-              {cerca ? 'Ajustar' : 'Acercar'}
-            </button>
-          </div>
-        )}
-      </div>
-      {abierto &&
-        (esPdf ? (
-          <div className="h-[50vh] lg:h-[calc(100vh-7rem)]">
-            <VistaSoporte url={url} esPdf alto="h-full" />
-          </div>
-        ) : (
-          <div className="h-[50vh] lg:h-[calc(100vh-7rem)] overflow-auto bg-neutral-100 flex items-start justify-center">
-            <img
-              src={url}
-              alt="Factura del proveedor"
-              style={{ transform: `rotate(${giro}deg)`, transformOrigin: 'center' }}
-              className={`${cerca ? 'max-w-none w-[200%]' : giro % 180 ? 'max-h-full max-w-[75%] mt-16' : 'max-w-full'} transition-transform`}
-            />
-          </div>
-        ))}
     </div>
   )
 }

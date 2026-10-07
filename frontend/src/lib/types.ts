@@ -138,6 +138,8 @@ export type ResultadoConteo = {
   sin_cambio: number
   /** La planilla que quedó guardada, para poder abrirla después. */
   conteo_id: number | null
+  /** Preparado contado cuya materia prima no vino en el conteo: esa parte no se tradujo. */
+  no_contadas?: string[]
 }
 
 export type ConteoResumen = {
@@ -779,6 +781,14 @@ export type Produccion = {
   costo_total: number
 }
 
+export type SobrantePreparacion = {
+  ok: boolean
+  movimientos: number
+  /** Lo que se perdió en $, si se botó. */
+  valor?: number
+  detalle?: { ingrediente_id: number; nombre: string; cantidad: number; unidad: string; valor: number }[]
+}
+
 export type Disponibilidad = {
   preparacion_id: number
   nombre: string
@@ -1181,6 +1191,10 @@ export type LineaFactura = {
   subtotal: number
   /** Si ESTE renglón pagó IVA. Se congela al cargar la factura. */
   exento: boolean
+  /** Qué es la mercancía: decide a qué almacén (o a gasto) fue la plata. */
+  tipo: TipoArticulo
+  /** La cuenta a la que fue el renglón. '' en las facturas de antes. */
+  cuenta: string
 }
 
 export type FacturaCompra = {

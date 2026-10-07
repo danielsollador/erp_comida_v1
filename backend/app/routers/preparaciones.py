@@ -26,7 +26,7 @@ from ..database import get_db
 from ..texto import nombre_limpio
 from ..timeutils import ahora, hoy, inicio_del_dia
 from . import operadores
-from .inventario import _gemela, _ingrediente_para_actualizar
+from .inventario import _gemela, _ingrediente_para_actualizar, anotar_merma
 
 router = APIRouter(prefix="/api/inventario", tags=["preparaciones"])
 
@@ -152,6 +152,9 @@ def crear_preparacion(body: schemas.PreparacionInput, db: Session = Depends(get_
         rinde=body.rinde,
         modo_produccion=body.modo_produccion,
         vida_util_horas=body.vida_util_horas,
+        # La merma de cocinar vive en `rinde`; un rendimiento aparte la
+        # contaria dos veces (ver costeo.consumo_bruto).
+        rendimiento_pct=100.0,
         stock_actual=0,
         costo_unitario=0,
         activo=True,
@@ -188,6 +191,7 @@ def actualizar_preparacion(prep_id: int, body: schemas.PreparacionInput, db: Ses
     prep.rinde = body.rinde
     prep.modo_produccion = body.modo_produccion
     prep.vida_util_horas = body.vida_util_horas
+    prep.rendimiento_pct = 100.0
     _guardar_lineas(prep, body.lineas)
     db.flush()
     if prep.modo_produccion != "producir" or (prep.stock_actual or 0) <= 0:
@@ -345,6 +349,63 @@ def preparaciones_vencidas(db: Session = Depends(get_db)):
     return vencidas
 
 
+@router.post("/preparaciones/{prep_id}/sobrante", response_model=schemas.SobrantePreparacion)
+def sobrante_preparacion(
+    prep_id: int, body: schemas.SobrantePreparacionRequest, request: Request, db: Session = Depends(get_db)
+):
+    """Al cierre sobro guiso: se guarda para mañana o se bota.
+
+    Guardar no mueve nada: la pantalla solo deja constancia de la decision.
+    Botar es una merma de siempre (6020 contra 1040), pero depende de como
+    vive la preparacion:
+
+      - Si se PRODUCE, tiene stock propio y la merma es de ella misma, con
+        tope en lo que hay (pedir botar 2 kg con 1,5 en existencia bota 1,5).
+      - Si se DESCUENTA del crudo, nunca tuvo existencia: lo que se bota es
+        el pollo y la cebolla que la receta dice que lleva ("almacen
+        imaginario"), una merma por cada materia prima, todas con el mismo
+        motivo. Asi el costo teorico ve la perdida donde de verdad ocurrio.
+    """
+    quien = operadores.del_turno(db, request)
+    operador_id = quien.id if quien else None
+    with costeo.bloqueo_inventario():
+        prep = _ingrediente_para_actualizar(db, prep_id)
+        if prep.tipo != "preparacion":
+            raise HTTPException(status_code=404, detail="Preparación no encontrada")
+        if body.accion == "guardar":
+            return schemas.SobrantePreparacion(ok=True, movimientos=0)
+
+        motivo = body.motivo or f"Sobró {prep.nombre}: se botó"
+        if prep.modo_produccion == "producir":
+            cantidad = round(min(body.cantidad, max(prep.stock_actual or 0, 0)), 4)
+            a_botar = [(prep, cantidad)] if cantidad > 0 else []
+        else:
+            # Todos primero y despues se mueven: buscar uno a uno refresca la
+            # sesion y perderia lo que ya se le saco al anterior.
+            hojas = costeo.explotar(prep, body.cantidad, modo="receta")
+            a_botar = [
+                (_ingrediente_para_actualizar(db, hoja.id), round(q, 4))
+                for hoja, q in hojas.items()
+                if hoja.id != prep.id and q > 0
+            ]
+
+        detalle = []
+        for ing, cantidad in a_botar:
+            valor = anotar_merma(db, ing, cantidad, motivo, operador_id)
+            detalle.append(
+                schemas.SobranteDetalle(
+                    ingrediente_id=ing.id, nombre=ing.nombre, cantidad=cantidad, unidad=ing.unidad, valor=valor,
+                )
+            )
+        db.commit()
+        return schemas.SobrantePreparacion(
+            ok=True,
+            movimientos=len(detalle),
+            valor=round(sum(d.valor for d in detalle), 2),
+            detalle=detalle,
+        )
+
+
 # ── Disponibilidad ──────────────────────────────────────────────────────────
 
 
@@ -364,7 +425,7 @@ def disponibilidad(db: Session = Depends(get_db)):
         .all()
     )
     hojas_de: Dict[int, Dict[models.Ingrediente, float]] = {
-        p.id: costeo.explotar(p, 1.0, usar_stock=False) for p in preps
+        p.id: costeo.explotar(p, 1.0, modo="receta") for p in preps
     }
     filas = []
     for prep in preps:
