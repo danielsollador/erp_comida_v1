@@ -8,6 +8,7 @@ import { useMoneda } from '../../../lib/moneda'
 import { nombre } from '../../../lib/palabras'
 import { ALMACEN_DE } from '../../../lib/tiposArticulo'
 import type { CategoriaInsumo, Ingrediente, TipoArticulo } from '../../../lib/types'
+import type { ResumenAlmacen } from './Almacenes'
 
 /**
  * La mercancía de UN almacén, en una tabla que cabe en la pantalla. Un toque
@@ -21,6 +22,7 @@ const ADMINISTRAR = '__administrar__'
 
 export default function TablaMercancia({
   tipo,
+  resumen,
   ingredientes,
   categorias,
   onAbrir,
@@ -29,6 +31,8 @@ export default function TablaMercancia({
   onCategorias,
 }: {
   tipo: TipoArticulo
+  /** Las cifras del almacén: van chicas en la barra, son complemento de la tabla. */
+  resumen?: ResumenAlmacen
   /** Todas las de este tipo, activas y archivadas. */
   ingredientes: Ingrediente[]
   categorias: CategoriaInsumo[]
@@ -117,9 +121,32 @@ export default function TablaMercancia({
             ]}
           />
         )}
-        <span className="ml-auto text-xs text-neutral-500 tabular-nums">
-          {visibles.length} de {activos.length}
-        </span>
+        {/* Las cifras del almacén, chicas y a la derecha: complementan la
+            tabla, no la tapan (Leider, 7-oct). Bajo mínimo filtra al tocar. */}
+        <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-500 tabular-nums">
+          {resumen && (
+            <>
+              <span>
+                <b className="text-neutral-900 text-sm">{dinero(resumen.plata)}</b> en el depósito
+              </span>
+              <button
+                type="button"
+                onClick={() => setFiltro(filtro === 'bajo' ? 'todos' : 'bajo')}
+                className={`${resumen.bajoMinimo > 0 ? 'text-aviso-700 font-semibold' : 'text-exito-700'} hover:underline`}
+              >
+                {resumen.bajoMinimo > 0 ? `${resumen.bajoMinimo} bajo mínimo` : 'nada bajo mínimo'}
+              </button>
+              {resumen.sinCosto > 0 && (
+                <button type="button" onClick={() => setFiltro(filtro === 'sin-costo' ? 'todos' : 'sin-costo')} className="text-aviso-700 hover:underline">
+                  {resumen.sinCosto} sin costo
+                </button>
+              )}
+            </>
+          )}
+          <span>
+            {visibles.length} de {activos.length}
+          </span>
+        </div>
       </div>
 
       <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined}>

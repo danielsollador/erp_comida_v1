@@ -8,7 +8,7 @@ import { PuntoTipo } from '../components/compras/Almacenes'
 import { useRango, nombreRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
-import { Aviso, Boton, Cifra, Modal, Pagina, Seccion, Vacio } from '../components/ui'
+import { Aviso, Boton, Modal, Pagina, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { cantidad, datosDe } from '../lib/inventario'
 import { useMoneda } from '../lib/moneda'
@@ -461,27 +461,11 @@ export default function Inventario() {
                 decision principal de esta pantalla, no un filtro de esquina
                 (Leider, 7-oct). */}
             {tipoActual === 'insumo' && (
-              <div role="tablist" className="grid grid-cols-2 gap-3">
+              <div role="tablist" className="grid grid-cols-2 gap-2">
                 {(
                   [
-                    {
-                      v: 'crudo' as const,
-                      t: 'Crudo',
-                      n: `${delAlmacen.filter((i) => i.activo !== false).length} mercancía${delAlmacen.filter((i) => i.activo !== false).length === 1 ? '' : 's'}`,
-                      d: 'Lo que llegó, tal cual se compró.',
-                      cifra: dinero(resumenActual?.plata ?? 0),
-                      pie: 'en el depósito',
-                      icono: 'paquete' as const,
-                    },
-                    {
-                      v: 'preparado' as const,
-                      t: 'Preparado',
-                      n: `${resumenActual?.preparaciones ?? 0} preparaci${(resumenActual?.preparaciones ?? 0) === 1 ? 'ón' : 'ones'}`,
-                      d: 'Lo que la cocina hace con el crudo: guiso, mechada, salsa.',
-                      cifra: null,
-                      pie: 'cuánto podrías hacer hoy',
-                      icono: 'cocina' as const,
-                    },
+                    { v: 'crudo' as const, t: 'Crudo', d: 'lo que llegó, tal cual', n: `${delAlmacen.filter((i) => i.activo !== false).length} mercancías`, icono: 'paquete' as const },
+                    { v: 'preparado' as const, t: 'Preparado', d: 'lo que la cocina hace con el crudo', n: `${resumenActual?.preparaciones ?? 0} preparaciones`, icono: 'cocina' as const },
                   ] as const
                 ).map((c) => {
                   const esta = cara === c.v
@@ -492,24 +476,18 @@ export default function Inventario() {
                       role="tab"
                       aria-selected={esta}
                       onClick={() => setCara(c.v)}
-                      className={`vp-pulsable text-left rounded-2xl p-4 sm:p-5 transition-colors flex items-start gap-4 ${
-                        esta ? 'bg-neutral-900 text-white shadow-[0_12px_32px_-14px_rgb(23_24_27/0.6)]' : 'vp-losa hover:bg-neutral-500/5'
+                      className={`vp-pulsable text-left rounded-2xl px-3.5 py-2.5 transition-colors flex items-center gap-3 ${
+                        esta ? 'bg-neutral-900 text-white' : 'vp-losa hover:bg-neutral-500/5'
                       }`}
                     >
-                      <span className={`inline-grid place-items-center w-11 h-11 rounded-2xl shrink-0 ${esta ? 'bg-white/12' : almacen.sello}`}>
-                        <Icono nombre={c.icono} size={22} />
+                      <span className={`inline-grid place-items-center w-8 h-8 rounded-xl shrink-0 ${esta ? 'bg-white/12' : almacen.sello}`}>
+                        <Icono nombre={c.icono} size={16} />
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-baseline justify-between gap-3">
-                          <span className="font-display text-xl font-semibold tracking-tight leading-tight">{c.t}</span>
-                          <span className={`text-xs tabular-nums ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
-                        </span>
-                        <span className={`block text-xs mt-0.5 ${esta ? 'text-white/70' : 'text-neutral-500'}`}>{c.d}</span>
-                        <span className={`block text-xs mt-2 ${esta ? 'text-white/60' : 'text-neutral-400'}`}>
-                          {c.cifra && <span className={`font-display text-lg font-semibold tabular-nums mr-1.5 ${esta ? 'text-white' : 'text-neutral-900'}`}>{c.cifra}</span>}
-                          {c.pie}
-                        </span>
+                      <span className="min-w-0 flex-1 leading-tight">
+                        <span className="font-display font-semibold">{c.t}</span>
+                        <span className={`text-xs ml-2 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.d}</span>
                       </span>
+                      <span className={`text-xs tabular-nums shrink-0 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
                     </button>
                   )
                 })}
@@ -531,24 +509,9 @@ export default function Inventario() {
               <Preparaciones ingredientes={ingredientes} onCambio={cargar} />
             ) : (
               <>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <Cifra titulo="Mercancías" valor={String(resumenActual?.mercancias ?? 0)} detalle={`en ${almacen.texto.toLowerCase()}`} />
-                  <Cifra
-                    titulo="Bajo mínimo"
-                    valor={String(resumenActual?.bajoMinimo ?? 0)}
-                    detalle={resumenActual?.bajoMinimo ? 'Toca «Ver» para filtrarlas' : 'Todo por encima del mínimo'}
-                    tono={resumenActual?.bajoMinimo ? 'alerta' : 'bien'}
-                  />
-                  <Cifra titulo="Plata en el depósito" valor={dinero(resumenActual?.plata ?? 0)} detalle="Stock × costo promedio, sin IVA" />
-                  <Cifra
-                    titulo="Sin costo"
-                    valor={String(resumenActual?.sinCosto ?? 0)}
-                    detalle={resumenActual?.sinCosto ? 'Nunca se compraron: cárgales un costo' : 'Todas con costo'}
-                    tono={resumenActual?.sinCosto ? 'alerta' : 'normal'}
-                  />
-                </div>
                 <TablaMercancia
                   tipo={tipoActual}
+                  resumen={resumenActual}
                   ingredientes={delAlmacen}
                   categorias={cats}
                   onAbrir={(id) => setFicha(id)}
