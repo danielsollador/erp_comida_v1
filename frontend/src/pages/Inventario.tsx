@@ -128,7 +128,22 @@ export default function Inventario() {
   const [config, setConfig] = useState<Configuracion | null>(null)
   const [cambiandoConfig, setCambiandoConfig] = useState(false)
   // La materia prima tiene dos caras.
-  const [cara, setCara] = useState<'crudo' | 'preparado'>('crudo')
+  // Se recuerda al volver (Leider, 8-oct: "que se guarde dónde estuviste").
+  const [cara, setCaraViva] = useState<'crudo' | 'preparado'>(() => {
+    try {
+      return sessionStorage.getItem('vp-inventario-cara') === 'preparado' ? 'preparado' : 'crudo'
+    } catch {
+      return 'crudo'
+    }
+  })
+  const setCara = (c: 'crudo' | 'preparado') => {
+    setCaraViva(c)
+    try {
+      sessionStorage.setItem('vp-inventario-cara', c)
+    } catch {
+      // sin almacenamiento: vale para esta visita
+    }
+  }
   // Con la receta de una preparación abierta, la franja Crudo/Preparado y
   // las acciones no tienen sentido: para salir se vuelve atrás.
   const [editandoPrep, setEditandoPrep] = useState(false)
@@ -435,9 +450,12 @@ export default function Inventario() {
           <>
             {/* Una sola fila: volver, el titulo y, cuando la pantalla no
                 es una tabla, las acciones. Los de la tabla van dentro de su
-                barra (Leider, 7-oct: "administrar bien el espacio"). */}
+                barra (Leider, 7-oct: "administrar bien el espacio"). En la
+                tablet acostada (poca altura) Crudo/Preparado sube a esa misma
+                fila: el alto es para las filas de la tabla (8-oct). */}
             {!editandoPrep && (
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="space-y-3 apaisado:space-y-0 apaisado:flex apaisado:items-center apaisado:gap-4">
+            <div className={`flex flex-wrap items-center gap-3 ${tipoActual === 'insumo' ? 'apaisado:shrink-0' : 'apaisado:flex-1'}`}>
               <button
                 type="button"
                 onClick={() => irA('almacenes')}
@@ -451,7 +469,7 @@ export default function Inventario() {
               </span>
               <div className="min-w-0">
                 <h2 className="font-display text-xl font-semibold tracking-tight leading-tight">{almacen.texto}</h2>
-                <p className="text-xs text-neutral-500 leading-tight">{almacen.detalle}</p>
+                <p className="text-xs text-neutral-500 leading-tight apaisado:hidden">{almacen.detalle}</p>
               </div>
               {tipoActual === 'desechable' && (
                 <div className="ml-auto flex items-center gap-2">
@@ -461,10 +479,8 @@ export default function Inventario() {
                 </div>
               )}
             </div>
-            )}
-
-            {tipoActual === 'insumo' && !editandoPrep && (
-              <div role="tablist" className="grid grid-cols-2 gap-2">
+            {tipoActual === 'insumo' && (
+              <div role="tablist" className="grid grid-cols-2 gap-2 apaisado:flex-1">
                 {(
                   [
                     { v: 'crudo' as const, t: 'Crudo', d: 'lo que llegó, tal cual', n: `${delAlmacen.filter((i) => i.activo !== false).length} mercancías`, icono: 'paquete' as const },
@@ -479,7 +495,7 @@ export default function Inventario() {
                       role="tab"
                       aria-selected={esta}
                       onClick={() => setCara(c.v)}
-                      className={`vp-pulsable min-w-0 text-left rounded-2xl px-3 sm:px-3.5 py-2.5 transition-colors flex items-center gap-2.5 sm:gap-3 ${
+                      className={`vp-pulsable min-w-0 text-left rounded-2xl px-3 sm:px-3.5 py-2.5 apaisado:py-1.5 transition-colors flex items-center gap-2.5 sm:gap-3 ${
                         esta ? 'bg-neutral-900 text-white' : 'vp-losa hover:bg-neutral-500/5'
                       }`}
                     >
@@ -498,6 +514,8 @@ export default function Inventario() {
                   )
                 })}
               </div>
+            )}
+            </div>
             )}
 
             {tipoActual === 'desechable' ? (

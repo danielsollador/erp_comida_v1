@@ -71,7 +71,7 @@ export function Pagina({
     // por que volver a aparecer porque cambiaron unos numeros.
     <div
       aria-busy={ocupada || undefined}
-      className={`${topes[ancho]} mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 space-y-5 lg:space-y-6 ${className}`}
+      className={`${topes[ancho]} mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 space-y-5 lg:space-y-6 apaisado:py-3 apaisado:space-y-3 ${className}`}
     >
       {children}
     </div>

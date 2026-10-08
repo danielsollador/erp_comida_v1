@@ -859,6 +859,9 @@ const clase = 'w-full border border-neutral-300 rounded-xl px-3 py-2 text-sm bg-
 const rotulo = 'block text-xs font-medium text-neutral-600 mb-1'
 const OTRA_UNIDAD: Record<string, string> = { kg: 'g', g: 'kg', lt: 'ml', ml: 'lt' }
 const esGrande = (u: string) => u === 'kg' || u === 'lt'
+/** "1 kg", "500 g", "2 unidades": lo que entra, en la medida que mejor se lee. */
+const cantidadLegible = (n: number, u: string) =>
+  esGrande(u) && n > 0 && n < 1 ? `${fmtCant(n * 1000)} ${OTRA_UNIDAD[u]}` : `${fmtCant(n)} ${unidadDe(n, u)}`
 
 type Fila = {
   ingrediente_id: number
@@ -1019,7 +1022,7 @@ function Olla({
       </div>
       {error && <p className="text-peligro-600 text-sm shrink-0">{error}</p>}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
         {/* ── La olla ──────────────────────────────────────────────── */}
         <section className="vp-losa p-4 sm:p-5 lg:flex lg:flex-col lg:min-h-0">
           <div className="flex items-start gap-2 shrink-0">
@@ -1041,14 +1044,14 @@ function Olla({
 
           <div className="lg:flex-1 lg:min-h-0 flex justify-center mt-3">
             <DibujoOlla
-              partes={partes.map((p) => ({ id: p.id, nombre: p.nombre, valor: p.costo, color: p.color }))}
+              partes={partes.map((p) => ({ id: p.id, nombre: p.nombre, detalle: p.cantidad > 0 ? cantidadLegible(p.cantidad, p.unidad) : '', valor: p.costo, color: p.color }))}
               total={costoTanda}
               rinde={rinde}
               unidad={unidad}
               formato={dinero}
               resaltado={resaltado}
               onResaltar={setResaltado}
-              className="w-full max-w-[250px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
+              className="w-full max-w-[230px] sm:max-w-[250px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
             />
           </div>
 
@@ -1102,9 +1105,9 @@ function Olla({
           {filas.length > 0 && (
             <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[50%] lg:overflow-y-auto">
               <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">
-                Lleva una tanda <span className="text-sm font-normal text-neutral-500">· crudo, y lo que queda de cada uno</span>
+                Lleva una tanda <span className="hidden sm:inline text-sm font-normal text-neutral-500">· crudo, y lo que queda de cada uno</span>
               </h3>
-              <div className="px-4 pb-1.5 flex items-center gap-3 border-b border-neutral-100 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              <div className="hidden sm:flex px-4 pb-1.5 items-center gap-3 border-b border-neutral-100 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
                 <span className="w-1.5 shrink-0" />
                 <span className="min-w-0 flex-1">Mercancía</span>
                 <span className="w-[8.75rem] shrink-0 text-right">Entra</span>
@@ -1137,7 +1140,7 @@ function Olla({
           <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
             <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 shrink-0">
               <h3 className="font-display font-semibold tracking-tight mr-auto">{filas.length === 0 ? 'Toca lo que lleva' : 'Agregar'}</h3>
-              <div className="relative">
+              <div className="relative basis-full sm:basis-auto order-last sm:order-none">
                 <input
                   type="search"
                   value={busqueda}
@@ -1145,7 +1148,7 @@ function Olla({
                   onKeyDown={(e) => e.key === 'Escape' && setBusqueda('')}
                   placeholder="Buscar materia prima"
                   aria-label="Buscar materia prima"
-                  className="w-48 bg-white border border-neutral-300 rounded-xl pl-8 pr-3 py-1.5 text-sm"
+                  className="w-full sm:w-48 bg-white border border-neutral-300 rounded-xl pl-8 pr-3 py-1.5 text-sm"
                 />
                 <Icono nombre="buscar" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               </div>
@@ -1242,7 +1245,10 @@ function RenglonOlla({
     <li onMouseEnter={() => onResaltar(ing.id)} onMouseLeave={() => onResaltar(null)} className={`px-4 py-2.5 transition-colors ${resaltado ? 'bg-acento-500/10' : ''}`}>
       <div className="flex items-center gap-3">
         <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: color }} />
-        <span className="min-w-0 flex-1">
+        {/* Teléfono: el nombre arriba y, debajo, cuánto entra, cuánto queda y
+            cuánto cuesta. Desde tablet, todo en una línea con sus columnas. */}
+        <div className="min-w-0 flex-1 flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2">
+        <span className="min-w-0 basis-full sm:basis-auto sm:flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
             {dinero(costoU, 2)} por {ing.unidad} · hay {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}
@@ -1258,10 +1264,10 @@ function RenglonOlla({
           etiqueta={`${ing.nombre} (${unidadVista})`}
           aria-label={`Cantidad de ${ing.nombre} que entra, en ${unidadVista}`}
           autoFocus={f.cantidad === ''}
-          className="w-[8.75rem] shrink-0"
+          className="flex-1 min-w-0 sm:flex-none sm:w-[8.75rem] sm:shrink-0"
           claseCasilla="border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-right tabular-nums"
         />
-        <span className="w-[4.5rem] shrink-0 text-right text-sm tabular-nums">
+        <span className="w-16 sm:w-[4.5rem] shrink-0 text-right text-sm tabular-nums">
           {cantidad > 0 ? (
             <>
               <span className="block font-semibold">{enChica ? `${fmtCant(queda * factor)} ${otra}` : `${fmtCant(queda)} ${unidadDe(queda, ing.unidad)}`}</span>
@@ -1281,7 +1287,9 @@ function RenglonOlla({
             '—'
           )}
         </span>
-        <span className="w-16 text-right text-sm tabular-nums font-semibold">{cantidad > 0 ? dinero(cantidad * costoU) : '—'}</span>
+        {/* En el teléfono el costo de cada cosa ya está en la olla: aquí no cabe. */}
+        <span className="hidden sm:block w-16 shrink-0 text-right text-sm tabular-nums font-semibold">{cantidad > 0 ? dinero(cantidad * costoU) : '—'}</span>
+        </div>
         <button type="button" onClick={onQuitar} aria-label={`Quitar ${ing.nombre}`} className="w-8 h-8 shrink-0 grid place-items-center rounded-lg text-neutral-400 hover:bg-peligro-500/10 hover:text-peligro-600">
           <Icono nombre="quitar" size={14} />
         </button>
@@ -1305,7 +1313,8 @@ function DibujoOlla({
   onResaltar,
   className = '',
 }: {
-  partes: { id: number; nombre: string; valor: number; color: string }[]
+  /** `detalle`: cuánto entra de cada cosa ("1 kg", "500 g", "2 unidades"). */
+  partes: { id: number; nombre: string; detalle: string; valor: number; color: string }[]
   total: number
   rinde: number
   unidad: string
@@ -1346,10 +1355,26 @@ function DibujoOlla({
         {franjas.map((f) => (
           <g key={f.id} onMouseEnter={() => onResaltar(f.id)} onMouseLeave={() => onResaltar(null)} style={{ cursor: 'default' }}>
             <rect x="32" y={f.y} width="196" height={f.h} fill={f.color} opacity={resaltado !== null && resaltado !== f.id ? 0.45 : 1} />
-            {f.h >= 26 && (
-              <text x="44" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="#fff" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
+            {/* El nombre y, debajo, cuánto entra; si la franja es baja, en
+                una sola línea. El precio va a la derecha. */}
+            {f.h >= 40 ? (
+              <text x="44" y={f.y + f.h / 2 - 3} fontSize="11" fontWeight="600" fill="#fff" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
                 {f.nombre.length > 22 ? `${f.nombre.slice(0, 21)}…` : f.nombre}
+                {f.detalle && (
+                  <tspan x="44" dy="14" fontSize="10" fontWeight="500" opacity={0.9}>
+                    {f.detalle}
+                  </tspan>
+                )}
               </text>
+            ) : (
+              f.h >= 26 && (
+                <text x="44" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="#fff" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
+                  {(() => {
+                    const t = f.detalle ? `${f.nombre} · ${f.detalle}` : f.nombre
+                    return t.length > 24 ? `${t.slice(0, 23)}…` : t
+                  })()}
+                </text>
+              )
             )}
             {f.h >= 26 && (
               <text x="216" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="#fff" textAnchor="end" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>

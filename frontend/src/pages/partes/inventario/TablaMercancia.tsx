@@ -95,7 +95,10 @@ export default function TablaMercancia({
       {/* TRES CUADROS EN UNA LINEA, cada uno con lo suyo: filtrar, las
           cifras del almacén, y las acciones. Nada comparte cuadro con nada
           (Leider, 7-oct). */}
-      <div className="flex flex-wrap xl:flex-nowrap items-stretch gap-3">
+      {/* En tablet y teléfono la tabla es lo que manda: los filtros y las
+          acciones comparten fila, y las cifras bajan a una franja delgada
+          debajo (Leider, 8-oct: "el protagonista siempre son los registros"). */}
+      <div className="flex flex-wrap xl:flex-nowrap items-stretch gap-2 xl:gap-3">
         <div className="vp-losa p-2.5 flex flex-wrap items-center gap-2 flex-1 basis-full sm:basis-auto sm:min-w-[18rem]">
           <input
             type="search"
@@ -130,7 +133,7 @@ export default function TablaMercancia({
           )}
         </div>
         {resumen && (
-          <div className="vp-losa p-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 flex-1 basis-full sm:basis-auto sm:min-w-[22rem]">
+          <div className="vp-losa order-last xl:order-none basis-full xl:basis-auto p-1.5 xl:p-2.5 flex flex-wrap items-center gap-1 xl:grid xl:grid-cols-4 xl:gap-2 xl:flex-1 xl:min-w-[22rem]">
             <Cuadrito titulo="Mercancías" valor={String(visibles.length === activos.length ? activos.length : `${visibles.length} de ${activos.length}`)} />
             <Cuadrito titulo="En el depósito" valor={dinero(resumen.plata)} />
             <Cuadrito
@@ -162,12 +165,15 @@ export default function TablaMercancia({
               <tr>
                 <Th clave="nombre">Mercancía</Th>
                 <Th clave="stock" alinear="derecha">{nombre('inventario.stock')}</Th>
-                <Th clave="minimo" alinear="derecha">Mínimo</Th>
-                <Th clave="costo" alinear="derecha">{nombre('inventario.costo')}</Th>
-                <Th clave="reponer" alinear="derecha">{nombre('inventario.reponer')}</Th>
+                {/* Lo que no cabe en una pantalla angosta se esconde, de lo
+                    menos a lo más necesario: el mínimo (ya lo avisa la
+                    pastilla de "Hay"), lo aprovechable, el promedio. */}
+                <Th clave="minimo" alinear="derecha" className="hidden xl:table-cell">Mínimo</Th>
+                <Th clave="costo" alinear="derecha" className="hidden md:table-cell">{nombre('inventario.costo')}</Th>
+                <Th clave="reponer" alinear="derecha" className="hidden sm:table-cell">{nombre('inventario.reponer')}</Th>
                 {esMateria ? (
                   <>
-                    <Th clave="rendimiento" alinear="derecha">{nombre('inventario.rendimiento')}</Th>
+                    <Th clave="rendimiento" alinear="derecha" className="hidden lg:table-cell">{nombre('inventario.rendimiento')}</Th>
                     <Th clave="real" alinear="derecha">Costo real</Th>
                   </>
                 ) : (
@@ -201,7 +207,7 @@ export default function TablaMercancia({
                     onKeyDown={(e) => e.key === 'Enter' && onAbrir(ing.id)}
                     className={`vp-celda cursor-pointer border-t border-neutral-100 ${archivado ? 'opacity-60' : ''}`}
                   >
-                    <td className="p-3">
+                    <td className="p-3 py-2.5 xl:py-3">
                       <span className="block font-medium">{ing.nombre}</span>
                       <span className="block text-[11px] text-neutral-400 mt-0.5">
                         {ing.categoria && <span className="text-neutral-500 font-medium">{ing.categoria} · </span>}
@@ -209,23 +215,23 @@ export default function TablaMercancia({
                         {ing.es_indirecto && ' · costo indirecto'}
                       </span>
                     </td>
-                    <td className="text-right p-3 tabular-nums whitespace-nowrap">
+                    <td className="text-right p-3 py-2.5 xl:py-3 tabular-nums whitespace-nowrap">
                       <span className={estado ? 'font-semibold' : ''}>
                         {cantidad(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}
                       </span>
                       {estado && (
-                        <span className="ml-2 align-middle">
+                        <span className="block mt-0.5 xl:inline xl:mt-0 xl:ml-2 align-middle">
                           <Pastilla tono={estado.tono}>{estado.texto}</Pastilla>
                         </span>
                       )}
                     </td>
-                    <td className="text-right p-3 text-neutral-500 tabular-nums">
+                    <td className="hidden xl:table-cell text-right p-3 text-neutral-500 tabular-nums">
                       {cantidad(ing.stock_minimo)} {unidadDe(ing.stock_minimo, ing.unidad)}
                     </td>
-                    <td className="text-right p-3 tabular-nums">
+                    <td className="hidden md:table-cell text-right p-3 tabular-nums">
                       {ing.costo_unitario ? dinero(ing.costo_unitario) : <span className="text-aviso-600 font-semibold">cargar</span>}
                     </td>
-                    <td className="text-right p-3 tabular-nums">
+                    <td className="hidden sm:table-cell text-right p-3 tabular-nums">
                       {ing.costo_reposicion != null ? (
                         <>
                           <span className={ing.variacion_pct != null && ing.variacion_pct >= 15 ? 'text-aviso-600 font-semibold' : ''}>
@@ -241,7 +247,7 @@ export default function TablaMercancia({
                     </td>
                     {esMateria ? (
                       <>
-                        <td className="text-right p-3 tabular-nums">
+                        <td className="hidden lg:table-cell text-right p-3 tabular-nums">
                           <span className={ing.rendimiento_pct < 100 ? 'text-aviso-600 font-medium' : 'text-neutral-400'}>{ing.rendimiento_pct}%</span>
                         </td>
                         <td className="text-right p-3 tabular-nums font-semibold">{dinero(ing.costo_efectivo)}</td>
@@ -286,13 +292,15 @@ function Cuadrito({
   activo?: boolean
 }) {
   const color = tono === 'ojo' ? 'text-aviso-700' : tono === 'bien' ? 'text-exito-700' : 'text-neutral-900'
+  // Angosto: una pastilla "5 bajo mínimo" (la cifra primero). Ancho: el
+  // cuadrito de siempre, rótulo arriba y cifra abajo.
   const cuerpo = (
     <>
-      <span className="block text-[11px] text-neutral-500 leading-tight truncate">{titulo}</span>
-      <span className={`block font-display text-base font-semibold tabular-nums leading-tight mt-0.5 truncate ${color}`}>{valor}</span>
+      <span className="order-2 xl:order-none block text-xs xl:text-[11px] text-neutral-500 leading-tight truncate">{titulo}</span>
+      <span className={`order-1 xl:order-none block font-display text-sm xl:text-base font-semibold tabular-nums leading-tight xl:mt-0.5 truncate ${color}`}>{valor}</span>
     </>
   )
-  const clase = `rounded-xl px-2.5 py-1.5 text-left min-w-0 ${activo ? 'bg-neutral-900/8 ring-1 ring-neutral-900/20' : 'bg-neutral-500/6'}`
+  const clase = `rounded-xl px-2.5 py-1 xl:py-1.5 text-left min-w-0 inline-flex items-baseline gap-1.5 xl:block ${activo ? 'bg-neutral-900/8 ring-1 ring-neutral-900/20' : 'bg-neutral-500/6'}`
   return alTocar ? (
     <button type="button" onClick={alTocar} aria-pressed={activo} className={`${clase} vp-pulsable hover:bg-neutral-500/10`}>
       {cuerpo}

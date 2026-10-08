@@ -74,7 +74,7 @@ export const TERMINOS: Record<string, { tecnico: string; sencillo: string; donde
   'kpi.bajo_minimo_agotadas': { tecnico: 'Bajo mínimo o agotadas', sencillo: 'Por debajo del mínimo o agotadas', donde: 'Reportes' },
   'inventario.stock': { tecnico: 'Stock', sencillo: 'Hay', donde: 'Inventario' },
   'inventario.costo': { tecnico: 'Costo compra', sencillo: 'Costo promedio', donde: 'Inventario' },
-  'inventario.reponer': { tecnico: 'Reponer', sencillo: 'Última compra', donde: 'Inventario' },
+  'inventario.reponer': { tecnico: 'Costo última compra', sencillo: 'Costo última compra', donde: 'Inventario' },
   'inventario.rendimiento': { tecnico: 'Rendimiento', sencillo: 'Aprovechable', donde: 'Inventario' },
   'productos.uds': { tecnico: 'Uds', sencillo: 'Vendidos', donde: 'Reportes' },
   'compras.base': { tecnico: 'Base', sencillo: 'Sin IVA', donde: 'Compras' },

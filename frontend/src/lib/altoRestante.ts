@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
  * El `ref` es de callback: la lista suele aparecer despues de cargar los
  * datos, y un `useRef` medido al montar la pantalla la encontraria vacia.
  */
-export function useAltoRestante<T extends HTMLElement>({ margen = 44, desde = 768, minimo = 220 } = {}) {
+export function useAltoRestante<T extends HTMLElement>({ margen = 44, desde = 768, minimo = 260 } = {}) {
   const [el, setEl] = useState<T | null>(null)
   const [alto, setAlto] = useState<number | undefined>(undefined)
   const ref = useCallback((nodo: T | null) => setEl(nodo), [])
@@ -29,7 +29,12 @@ export function useAltoRestante<T extends HTMLElement>({ margen = 44, desde = 76
         return
       }
       const arriba = el.getBoundingClientRect().top + window.scrollY
-      setAlto(Math.max(minimo, Math.floor(window.innerHeight - arriba - margen)))
+      const sobra = Math.floor(window.innerHeight - arriba - margen)
+      // Si lo que sobra no da para una lista que se vea (la tablet acostada,
+      // ~450 px de alto), NO se encierra: la página se desplaza entera y la
+      // lista ocupa la pantalla. Una caja de dos filas no sirve (Leider,
+      // 8-oct: "ni siquiera una fila se puede ver bien").
+      setAlto(sobra >= minimo ? sobra : undefined)
     }
     medir()
     // Y otra vez cuando terminan de cargar las fuentes: con la tipografia
