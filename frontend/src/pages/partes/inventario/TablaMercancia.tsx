@@ -96,7 +96,7 @@ export default function TablaMercancia({
           cifras del almacén, y las acciones. Nada comparte cuadro con nada
           (Leider, 7-oct). */}
       <div className="flex flex-wrap xl:flex-nowrap items-stretch gap-3">
-        <div className="vp-losa p-2.5 flex flex-wrap items-center gap-2 flex-1 min-w-[18rem]">
+        <div className="vp-losa p-2.5 flex flex-wrap items-center gap-2 flex-1 basis-full sm:basis-auto sm:min-w-[18rem]">
           <input
             type="search"
             value={buscar}
@@ -130,7 +130,7 @@ export default function TablaMercancia({
           )}
         </div>
         {resumen && (
-          <div className="vp-losa p-2.5 grid grid-cols-4 gap-2 flex-1 min-w-[22rem]">
+          <div className="vp-losa p-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 flex-1 basis-full sm:basis-auto sm:min-w-[22rem]">
             <Cuadrito titulo="Mercancías" valor={String(visibles.length === activos.length ? activos.length : `${visibles.length} de ${activos.length}`)} />
             <Cuadrito titulo="En el depósito" valor={dinero(resumen.plata)} />
             <Cuadrito

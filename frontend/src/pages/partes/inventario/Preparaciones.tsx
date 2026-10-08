@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CasillaConUnidad } from '../../../components/Cantidad'
 import { PuntoTipo } from '../../../components/compras/Almacenes'
 import Icono from '../../../components/Icono'
@@ -319,52 +319,119 @@ function Mapa({
     const yCentro = alto / 2
     const d = disp.find((x) => x.preparacion_id === elegida.id)
     const color = colorDe.get(elegida.id) ?? '#999'
+    const pastilla = (l: (typeof lineas)[number]) => {
+      const ing = porId.get(l.ingrediente_id)
+      const otras = (usosDe.get(l.ingrediente_id)?.preps ?? []).filter((x) => x.p.id !== elegida.id)
+      const pierde = pierdeAlCocinar(ing)
+      return (
+        <div className={`min-w-0 rounded-2xl px-3 py-1.5 ${otras.length > 0 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
+          <span className="flex items-center gap-2">
+            <PuntoTipo tipo={l.tipo} />
+            <span className="font-medium truncate flex-1">{l.nombre}</span>
+            <span className="text-sm font-semibold tabular-nums shrink-0">
+              {fmtCant(l.cantidad)} {unidadDe(l.cantidad, l.unidad)}
+            </span>
+          </span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-500 leading-tight pl-4">
+            {ing && <span className="tabular-nums">hay {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}</span>}
+            {pierde && <span className="text-aviso-700">{pierde}</span>}
+            {otras.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-aviso-700">
+                también en
+                {otras.map((o) => (
+                  <button key={o.p.id} type="button" onClick={() => onSeleccionar(o.p.id)} className="inline-flex items-center gap-1 font-semibold hover:underline">
+                    <span aria-hidden className="w-1.5 h-1.5 rounded-full" style={{ background: colorDe.get(o.p.id) }} />
+                    {o.p.nombre}
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+        </div>
+      )
+    }
+    // Tocar la tarjeta la suelta (como en la cuadrícula); el botón de la
+    // receta va adentro y no la suelta.
+    const tarjeta = (
+      <div
+        onClick={() => onSeleccionar(null)}
+        title="Soltar"
+        className="vp-pulsable cursor-pointer w-full text-left rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3"
+      >
+        <span aria-hidden className="w-1.5 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex items-start gap-2">
+            <p className="font-display text-lg font-semibold tracking-tight leading-tight flex-1 min-w-0">{elegida.nombre}</p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSeleccionar(null)
+              }}
+              aria-label="Soltar la preparación"
+              className="shrink-0 -mt-1 -mr-1 w-7 h-7 rounded-full grid place-items-center text-white/60 hover:text-white hover:bg-white/10"
+            >
+              <Icono nombre="quitar" size={14} />
+            </button>
+          </div>
+          <div>
+            <p className="font-display text-2xl font-semibold tabular-nums leading-none">
+              {elegida.modo_produccion === 'producir'
+                ? `${fmtCant(elegida.stock_actual)} ${unidadDe(elegida.stock_actual, elegida.unidad)}`
+                : d?.potencial != null
+                  ? `${fmtCant(d.potencial)} ${unidadDe(d.potencial, elegida.unidad)}`
+                  : '—'}
+            </p>
+            <p className="text-xs text-white/70 mt-1">
+              {elegida.modo_produccion === 'producir'
+                ? 'hay hecho ahora mismo'
+                : d?.limita
+                  ? `podrías hacer hoy con el crudo que hay · lo que se acaba primero: ${d.limita}`
+                  : 'podrías hacer hoy con el crudo que hay'}
+            </p>
+          </div>
+          <p className="text-xs text-white/70">
+            Cada {elegida.unidad === 'kg' ? 'kilo' : elegida.unidad === 'lt' ? 'litro' : 'unidad'} ya preparado cuesta{' '}
+            <b className="text-white tabular-nums">{dinero(elegida.costo_unitario)}</b>
+          </p>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEditar(elegida)
+            }}
+            className="vp-pulsable inline-flex items-center gap-2 rounded-xl bg-white text-neutral-900 px-3 py-1.5 text-sm font-semibold"
+          >
+            <Icono nombre="recetas" size={15} />
+            Ver la receta
+          </button>
+        </div>
+      </div>
+    )
     return (
       <div>
         {filtro}
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] items-start">
+        <Arbol
+          className="lg:hidden"
+          color={color}
+          filas={lineas.map((l) => ({ clave: l.ingrediente_id, contenido: pastilla(l) }))}
+          final={tarjeta}
+        />
+        <div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] items-start">
           <div>
             <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
               <Icono nombre="paquete" size={12} /> Lo que lleva una tanda
             </p>
             <ul>
-              {lineas.map((l) => {
-                const ing = porId.get(l.ingrediente_id)
-                const otras = (usosDe.get(l.ingrediente_id)?.preps ?? []).filter((x) => x.p.id !== elegida.id)
-                const pierde = pierdeAlCocinar(ing)
-                return (
-                  <li key={l.ingrediente_id} style={{ height: FILA }} className="flex items-center">
-                    <div className={`flex-1 min-w-0 rounded-2xl px-3 py-1.5 ${otras.length > 0 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
-                      <span className="flex items-center gap-2">
-                        <PuntoTipo tipo={l.tipo} />
-                        <span className="font-medium truncate flex-1">{l.nombre}</span>
-                        <span className="text-sm font-semibold tabular-nums shrink-0">
-                          {fmtCant(l.cantidad)} {unidadDe(l.cantidad, l.unidad)}
-                        </span>
-                      </span>
-                      <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-500 leading-tight pl-4">
-                        {ing && <span className="tabular-nums">hay {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}</span>}
-                        {pierde && <span className="text-aviso-700">{pierde}</span>}
-                        {otras.length > 0 && (
-                          <span className="inline-flex items-center gap-1 text-aviso-700">
-                            también en
-                            {otras.map((o) => (
-                              <button key={o.p.id} type="button" onClick={() => onSeleccionar(o.p.id)} className="inline-flex items-center gap-1 font-semibold hover:underline">
-                                <span aria-hidden className="w-1.5 h-1.5 rounded-full" style={{ background: colorDe.get(o.p.id) }} />
-                                {o.p.nombre}
-                              </button>
-                            ))}
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </li>
-                )
-              })}
+              {lineas.map((l) => (
+                <li key={l.ingrediente_id} style={{ height: FILA }} className="flex items-center">
+                  <div className="flex-1 min-w-0">{pastilla(l)}</div>
+                </li>
+              ))}
             </ul>
           </div>
 
-          <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden md:block mt-[1.65rem]" aria-hidden>
+          <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden lg:block mt-[1.65rem]" aria-hidden>
             {lineas.map((l, i) => {
               const y1 = i * FILA + FILA / 2
               const peso = elegida.costo_tanda > 0 ? l.costo / elegida.costo_tanda : 1 / lineas.length
@@ -383,68 +450,11 @@ function Mapa({
             })}
           </svg>
 
-          <div className="hidden md:flex flex-col" style={{ minHeight: alto + 28 }}>
+          <div className="hidden lg:flex flex-col" style={{ minHeight: alto + 28 }}>
             <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
               <Icono nombre="cocina" size={12} /> Lo que sale
             </p>
-            <div className="flex-1 flex items-center">
-              {/* Tocar la tarjeta la suelta (como en la cuadrícula); el botón de
-                  la receta va adentro y no la suelta. */}
-              <div
-                onClick={() => onSeleccionar(null)}
-                title="Soltar"
-                className="vp-pulsable cursor-pointer w-full text-left rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3"
-              >
-                <span aria-hidden className="w-1.5 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
-                <div className="min-w-0 flex-1 space-y-3">
-                  <div className="flex items-start gap-2">
-                    <p className="font-display text-lg font-semibold tracking-tight leading-tight flex-1 min-w-0">{elegida.nombre}</p>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSeleccionar(null)
-                      }}
-                      aria-label="Soltar la preparación"
-                      className="shrink-0 -mt-1 -mr-1 w-7 h-7 rounded-full grid place-items-center text-white/60 hover:text-white hover:bg-white/10"
-                    >
-                      <Icono nombre="quitar" size={14} />
-                    </button>
-                  </div>
-                  <div>
-                    <p className="font-display text-2xl font-semibold tabular-nums leading-none">
-                      {elegida.modo_produccion === 'producir'
-                        ? `${fmtCant(elegida.stock_actual)} ${unidadDe(elegida.stock_actual, elegida.unidad)}`
-                        : d?.potencial != null
-                          ? `${fmtCant(d.potencial)} ${unidadDe(d.potencial, elegida.unidad)}`
-                          : '—'}
-                    </p>
-                    <p className="text-xs text-white/70 mt-1">
-                      {elegida.modo_produccion === 'producir'
-                        ? 'hay hecho ahora mismo'
-                        : d?.limita
-                          ? `podrías hacer hoy con el crudo que hay · lo que se acaba primero: ${d.limita}`
-                          : 'podrías hacer hoy con el crudo que hay'}
-                    </p>
-                  </div>
-                  <p className="text-xs text-white/70">
-                    Cada {elegida.unidad === 'kg' ? 'kilo' : elegida.unidad === 'lt' ? 'litro' : 'unidad'} ya preparado cuesta{' '}
-                    <b className="text-white tabular-nums">{dinero(elegida.costo_unitario)}</b>
-                  </p>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onEditar(elegida)
-                    }}
-                    className="vp-pulsable inline-flex items-center gap-2 rounded-xl bg-white text-neutral-900 px-3 py-1.5 text-sm font-semibold"
-                  >
-                    <Icono nombre="recetas" size={15} />
-                    Ver la receta
-                  </button>
-                </div>
-              </div>
-            </div>
+            <div className="flex-1 flex items-center">{tarjeta}</div>
           </div>
         </div>
       </div>
@@ -507,7 +517,56 @@ function Mapa({
   return (
     <div>
       {filtro}
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] gap-0 items-start" onMouseLeave={() => onResaltar(null)}>
+      {/* Teléfono y tablet: un árbol por preparación, su crudo arriba y ella abajo. */}
+      <div className="lg:hidden grid gap-x-6 gap-y-5 sm:grid-cols-2">
+        {preps.map((p) => {
+          const d = disp.find((x) => x.preparacion_id === p.id)
+          const color = colorDe.get(p.id) ?? '#999'
+          return (
+            <Arbol
+              key={p.id}
+              color={color}
+              filas={[...p.lineas]
+                .sort((a, b) => b.costo - a.costo)
+                .map((l) => {
+                  const compartida = (usosDe.get(l.ingrediente_id)?.preps.length ?? 0) > 1
+                  return {
+                    clave: l.ingrediente_id,
+                    contenido: (
+                      <div className={`min-w-0 rounded-xl px-3 py-1.5 flex items-center gap-2 text-sm ${compartida ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
+                        <PuntoTipo tipo={l.tipo} />
+                        <span className="font-medium truncate flex-1">{l.nombre}</span>
+                        <span className="tabular-nums text-neutral-600 shrink-0">
+                          {fmtCant(l.cantidad)} {unidadDe(l.cantidad, l.unidad)}
+                        </span>
+                      </div>
+                    ),
+                  }
+                })}
+              final={
+                <button
+                  type="button"
+                  onClick={() => onSeleccionar(p.id)}
+                  className="vp-pulsable w-full min-w-0 text-left rounded-xl px-3 py-2 bg-neutral-500/10 flex items-center gap-3"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-display font-semibold truncate">{p.nombre}</span>
+                    <span className="block text-xs text-neutral-500 tabular-nums">
+                      {p.modo_produccion === 'producir'
+                        ? `hay ${fmtCant(p.stock_actual)} ${unidadDe(p.stock_actual, p.unidad)} hecho`
+                        : d?.potencial != null
+                          ? `podrías hacer ${fmtCant(d.potencial)} ${unidadDe(d.potencial, p.unidad)} hoy`
+                          : `rinde ${fmtCant(p.rinde)} ${unidadDe(p.rinde, p.unidad)} por tanda`}
+                    </span>
+                  </span>
+                  <span aria-hidden className="text-neutral-400 text-lg leading-none shrink-0">›</span>
+                </button>
+              }
+            />
+          )
+        })}
+      </div>
+      <div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] gap-0 items-start" onMouseLeave={() => onResaltar(null)}>
         <div>
           <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
             <Icono nombre="paquete" size={12} /> Crudo
@@ -535,7 +594,7 @@ function Mapa({
           </ul>
         </div>
 
-        <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden md:block mt-[1.65rem]" aria-hidden>
+        <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden lg:block mt-[1.65rem]" aria-hidden>
           {lineas.map((l) => {
             const apagada = resaltada !== null && l.prep !== resaltada
             const c = ANCHO_LINEAS * 0.45
@@ -589,6 +648,45 @@ function Mapa({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * El flujo en pantalla angosta (teléfono, tablet parada), donde no caben las
+ * tres columnas con las curvas: el crudo arriba, una línea del color de la
+ * preparación que lo junta, y abajo, con su flecha, lo que sale. Sin SVG de
+ * alto fijo: cada renglón dibuja su tramo, así aguanta textos de dos líneas.
+ */
+function Arbol({
+  color,
+  filas,
+  final,
+  className = '',
+}: {
+  color: string
+  filas: { clave: number; contenido: ReactNode }[]
+  final: ReactNode
+  className?: string
+}) {
+  // El riel va a 9 px del borde; los renglones empiezan a 28 px (pl-7).
+  const riel = 'absolute left-[9px] w-[3px] rounded-full'
+  return (
+    <ul className={`space-y-1.5 ${className}`}>
+      {filas.map((f, i) => (
+        <li key={f.clave} className="relative pl-7">
+          <span aria-hidden className={riel} style={{ background: color, top: i === 0 ? '50%' : -6, bottom: -6 }} />
+          <span aria-hidden className="absolute left-[9px] top-1/2 -mt-[1.5px] w-[19px] h-[3px] rounded-full" style={{ background: color }} />
+          {f.contenido}
+        </li>
+      ))}
+      <li className="relative pl-7">
+        {filas.length > 0 && <span aria-hidden className={riel} style={{ background: color, top: -6, height: 'calc(50% + 6px)' }} />}
+        <svg aria-hidden width="19" height="14" viewBox="0 0 19 14" className="absolute left-[9px] top-1/2 -mt-[7px]">
+          <path d="M1.5 7H15M10.5 2.5 15.5 7l-5 4.5" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {final}
+      </li>
+    </ul>
   )
 }
 

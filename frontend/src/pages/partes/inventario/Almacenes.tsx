@@ -63,7 +63,7 @@ export default function Almacenes({
   return (
     <div className="space-y-4">
       {/* Arriba, chico: lo que hay que vigilar. Son tres cifras y se tocan. */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
         <Vigilado
           titulo={`Pérdidas · ${nombreRango.toLowerCase()}`}
           valor={dinero(perdidas)}
@@ -148,10 +148,19 @@ function Vigilado({
 }) {
   const color = tono === 'mal' ? 'text-peligro-600' : tono === 'ojo' ? 'text-aviso-700' : tono === 'bien' ? 'text-exito-700' : 'text-neutral-900'
   return (
-    <button type="button" onClick={alTocar} className="vp-losa vp-pulsable text-left px-4 py-3 min-w-0">
-      <span className="block text-[11px] text-neutral-500 truncate">{titulo}</span>
-      <span className={`block font-display text-xl font-semibold tabular-nums leading-tight mt-0.5 ${color}`}>{valor}</span>
-      <span className="block text-[11px] text-neutral-500 truncate mt-0.5">{detalle}</span>
+    // En el teléfono, una fila: el rótulo y su frase a la izquierda, la cifra
+    // a la derecha. Desde tablet, las tres lado a lado.
+    <button
+      type="button"
+      onClick={alTocar}
+      className="vp-losa vp-pulsable text-left px-4 py-2.5 sm:py-3 min-w-0 flex items-center gap-3 sm:flex-col sm:items-stretch sm:gap-0"
+    >
+      <span className="min-w-0 flex-1 sm:flex-none">
+        <span className="block text-xs sm:text-[11px] text-neutral-500 truncate">{titulo}</span>
+        <span className="block sm:hidden text-xs text-neutral-500 truncate mt-0.5">{detalle}</span>
+      </span>
+      <span className={`block shrink-0 font-display text-xl font-semibold tabular-nums leading-tight sm:mt-0.5 ${color}`}>{valor}</span>
+      <span className="hidden sm:block text-[11px] text-neutral-500 truncate mt-0.5">{detalle}</span>
     </button>
   )
 }
@@ -164,7 +173,7 @@ function FichaAlmacen({ a, r, nombreRango, onEntrar }: { a: Almacen; r?: Resumen
     <button
       type="button"
       onClick={onEntrar}
-      className="vp-losa vp-pulsable group text-left p-4 sm:p-5 flex flex-col gap-5 min-h-[16rem] hover:shadow-[0_1px_2px_rgb(23_24_27/0.04),0_18px_40px_-16px_rgb(23_24_27/0.22)] transition-shadow"
+      className="vp-losa vp-pulsable group text-left p-4 sm:p-5 flex flex-col gap-3 sm:gap-5 sm:min-h-[16rem] hover:shadow-[0_1px_2px_rgb(23_24_27/0.04),0_18px_40px_-16px_rgb(23_24_27/0.22)] transition-shadow"
     >
       <div className="flex items-start justify-between gap-3">
         <span className={`inline-grid place-items-center w-11 h-11 rounded-2xl ${a.sello}`}>
@@ -173,7 +182,7 @@ function FichaAlmacen({ a, r, nombreRango, onEntrar }: { a: Almacen; r?: Resumen
         <span className="text-xs text-neutral-500 tabular-nums text-right">
           {r ? `${r.mercancias} mercancía${r.mercancias === 1 ? '' : 's'}` : '…'}
           {r?.preparaciones != null && r.preparaciones > 0 && (
-            <span className="block">{r.preparaciones} preparación{r.preparaciones === 1 ? '' : 'es'}</span>
+            <span className="block">{r.preparaciones} {r.preparaciones === 1 ? 'preparación' : 'preparaciones'}</span>
           )}
         </span>
       </div>

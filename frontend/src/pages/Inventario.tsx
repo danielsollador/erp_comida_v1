@@ -5,7 +5,7 @@ import MenuAcciones from '../components/MenuAcciones'
 import BarraFiltros from '../components/BarraFiltros'
 import Icono from '../components/Icono'
 import { PuntoTipo } from '../components/compras/Almacenes'
-import { useRango, nombreRango } from '../lib/fechas'
+import { useRango, nombreRango, rangoDe } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { Aviso, Boton, Modal, Pagina, Seccion, Vacio } from '../components/ui'
@@ -88,8 +88,13 @@ const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco']
 
 export default function Inventario() {
   const [seccion, irA] = useSeccion(SECCIONES)
-  // Pérdidas, compras de desechables y control tienen fecha; el stock es "a hoy".
-  const [rango, setRango] = useRango('30d')
+  // El inventario es lo que hay hoy: sin filtro de fechas (Leider, 8-oct: "no
+  // tiene sentido ese filtro"). Las pérdidas y el gasto en desechables de la
+  // portada miran los últimos 30 días; solo Control elige el período, porque
+  // ahí sí se revisa la historia de mermas y conteos.
+  const [rangoControl, setRango] = useRango('30d')
+  const treintaDias = useMemo(() => rangoDe('30d'), [])
+  const rango = seccion === 'control' ? rangoControl : treintaDias
   const dialogo = useDialogo()
   const { tasa, fmt: dinero } = useMoneda()
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
@@ -385,8 +390,7 @@ export default function Inventario() {
         {/* ── La portada: los cuatro almacenes ── */}
         {seccion === 'almacenes' && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <BarraFiltros rango={rango} alCambiar={setRango} />
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <div className="flex items-center gap-2">
                 <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
                   Conteo físico
@@ -475,18 +479,21 @@ export default function Inventario() {
                       role="tab"
                       aria-selected={esta}
                       onClick={() => setCara(c.v)}
-                      className={`vp-pulsable text-left rounded-2xl px-3.5 py-2.5 transition-colors flex items-center gap-3 ${
+                      className={`vp-pulsable min-w-0 text-left rounded-2xl px-3 sm:px-3.5 py-2.5 transition-colors flex items-center gap-2.5 sm:gap-3 ${
                         esta ? 'bg-neutral-900 text-white' : 'vp-losa hover:bg-neutral-500/5'
                       }`}
                     >
                       <span className={`inline-grid place-items-center w-8 h-8 rounded-xl shrink-0 ${esta ? 'bg-white/12' : almacen.sello}`}>
                         <Icono nombre={c.icono} size={16} />
                       </span>
+                      {/* Angosto: nombre y cuántas, uno sobre otro; la frase
+                          que lo explica solo cuando cabe entera. */}
                       <span className="min-w-0 flex-1 leading-tight">
-                        <span className="font-display font-semibold">{c.t}</span>
-                        <span className={`text-xs ml-2 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.d}</span>
+                        <span className="block lg:inline font-display font-semibold truncate">{c.t}</span>
+                        <span className={`hidden xl:inline text-xs ml-2 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.d}</span>
+                        <span className={`block lg:hidden text-xs truncate ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
                       </span>
-                      <span className={`text-xs tabular-nums shrink-0 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
+                      <span className={`hidden lg:inline text-xs tabular-nums shrink-0 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
                     </button>
                   )
                 })}
@@ -495,7 +502,6 @@ export default function Inventario() {
 
             {tipoActual === 'desechable' ? (
               <>
-                <BarraFiltros rango={rango} alCambiar={setRango} />
                 <Desechables
                   ingredientes={delAlmacen}
                   facturas={facturas}
