@@ -24,7 +24,7 @@ import { fmtNum } from '../../../lib/moneda'
 import { necesitaReferencia } from '../../../lib/pagos'
 import { anotarAntesDeGuardar, completarDespuesDeGuardar } from '../../../lib/pendientesCompras'
 import { useRevision } from '../../../lib/revisionFactura'
-import { ALMACEN_DE } from '../../../lib/tiposArticulo'
+import { ALMACEN_DE, TIPOS_DE_COMPRA } from '../../../lib/tiposArticulo'
 import type {
   AlertaPrecio,
   ConceptoGasto,
@@ -35,6 +35,7 @@ import type {
   Proveedor,
   RenglonLeido,
   SugerenciaRenglon,
+  TipoArticulo,
 } from '../../../lib/types'
 
 /**
@@ -108,6 +109,8 @@ type Linea = {
   vidaUtil?: string
   /** Desplegado para editar. Plegado, el renglón es una sola línea. */
   abierta?: boolean
+  /** Qué tipo de mercancía se eligió primero: filtra la lista de mercancías. */
+  tipo?: TipoArticulo
 }
 
 const LINEA_VACIA: Linea = { ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null, abierta: true }
@@ -514,6 +517,23 @@ export default function CargarFactura({
       vistos.add(clave)
       return true
     })
+  }
+
+  // El primer desplegable del renglon: que es. Un tipo de mercancia filtra el
+  // segundo (y si la elegida era de otro tipo, se suelta); un concepto (flete,
+  // servicio) lo vuelve un renglon de gasto.
+  function elegirTipo(i: number, valor: string) {
+    if (CONCEPTOS.some((c) => c.valor === valor)) return elegirConcepto(i, valor as ConceptoGasto)
+    const tipo = (valor || undefined) as TipoArticulo | undefined
+    if (lineas[i]?.concepto) elegirConcepto(i, undefined)
+    setLineas((prev) =>
+      prev.map((l, idx) => {
+        if (idx !== i) return l
+        const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
+        const suelta = !!ing && !!tipo && ing.tipo !== tipo
+        return { ...l, tipo, ...(suelta ? { ingrediente_id: 0, paquete: undefined, recordada: undefined } : {}) }
+      }),
+    )
   }
 
   // El renglon deja de ser mercancia (o vuelve a serlo). Lo escrito del papel
@@ -965,6 +985,7 @@ export default function CargarFactura({
                   onCambiar={(cambio) => cambiarLinea(i, cambio)}
                   onMercancia={(id) => elegirMercancia(i, id)}
                   onConcepto={(c) => elegirConcepto(i, c)}
+                  onTipo={(v) => elegirTipo(i, v)}
                   onCrear={() => setCreandoEn(i)}
                   onQuitar={() => setLineas((prev) => prev.filter((_, idx) => idx !== i))}
                 />
@@ -1071,7 +1092,6 @@ export default function CargarFactura({
           <Totales
             id="cf-totales"
             moneda={monedaCarga}
-            renglones={baseLineas}
             recargo={recargo}
             descuento={descuentoFactura}
             onRecargo={setRecargo}
@@ -1095,6 +1115,7 @@ export default function CargarFactura({
           nombre={nombreDesdePapel(lineas[creandoEn]?.leido?.descripcion ?? '')}
           unidad={unidadNuestra(lineas[creandoEn]?.leido?.unidad ?? '') || 'kg'}
           exento={Boolean(lineas[creandoEn]?.exento ?? lineas[creandoEn]?.leido?.exento)}
+          tipo={lineas[creandoEn]?.tipo ?? null}
           delPapel={lineas[creandoEn]?.leido?.descripcion}
           onUsar={(ing) => {
             const i = creandoEn
@@ -1319,6 +1340,7 @@ function Renglon({
   onCambiar,
   onMercancia,
   onConcepto,
+  onTipo,
   onCrear,
   onQuitar,
 }: {
@@ -1336,6 +1358,8 @@ function Renglon({
   onCambiar: (cambio: Partial<Linea>) => void
   onMercancia: (id: number) => void
   onConcepto: (c: ConceptoGasto | undefined) => void
+  /** El primer desplegable: un tipo de mercancía o un concepto de gasto. */
+  onTipo: (valor: string) => void
   onCrear: () => void
   onQuitar: () => void
 }) {
@@ -1399,6 +1423,33 @@ function Renglon({
   const completa = lineaCompleta(l)
   const anillo = problema?.tono === 'mal' ? 'ring-1 ring-peligro-300' : problema ? 'ring-1 ring-aviso-300' : ''
   const cant = (n: number) => fmtNum(n, n % 1 ? 2 : 0)
+
+  // El primer desplegable: qué es. Con una mercancía elegida manda su ficha.
+  const tipoElegido: TipoArticulo | undefined = ing?.tipo ?? l.tipo
+  const selectorTipo = (
+    <select
+      value={l.concepto ?? tipoElegido ?? ''}
+      onChange={(e) => onTipo(e.target.value)}
+      aria-label="Qué es"
+      className={clase(problema?.tono === 'mal' && !l.ingrediente_id && !l.concepto ? 'mal' : undefined)}
+    >
+      <option value="">Qué es…</option>
+      <optgroup label="Mercancía">
+        {TIPOS_DE_COMPRA.map((t) => (
+          <option key={t.valor} value={t.valor}>
+            {t.texto}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="No es mercancía">
+        {CONCEPTOS.map((c) => (
+          <option key={c.valor} value={c.valor}>
+            {c.texto}
+          </option>
+        ))}
+      </optgroup>
+    </select>
+  )
 
   // ── Plegado: una línea ──
   if (!l.abierta && completa) {
@@ -1480,23 +1531,9 @@ function Renglon({
         <div className="pl-2.5 space-y-2.5">
           <div className="flex items-start gap-2">
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap gap-1.5">
-                {CONCEPTOS.map((c) => (
-                  <button
-                    key={c.valor}
-                    type="button"
-                    onClick={() => onConcepto(c.valor)}
-                    aria-pressed={c.valor === l.concepto}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      c.valor === l.concepto ? 'bg-neutral-900 text-white' : 'vp-control text-neutral-600'
-                    }`}
-                  >
-                    {c.texto}
-                  </button>
-                ))}
-                <button type="button" onClick={() => onConcepto(undefined)} className="rounded-full px-3 py-1 text-xs font-medium text-acento-700">
-                  Es mercancía
-                </button>
+              <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
+                {selectorTipo}
+                <input value={l.detalle ?? ''} onChange={(e) => onCambiar({ detalle: e.target.value })} placeholder={`Ej. ${concepto.ejemplo}`} aria-label="Qué es" className={clase()} />
               </div>
               {delPapel}
             </div>
@@ -1506,11 +1543,7 @@ function Renglon({
             </span>
             {quitar}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
-            <label className="block col-span-2">
-              <span className="block text-[11px] text-neutral-500 mb-0.5">Qué es</span>
-              <input value={l.detalle ?? ''} onChange={(e) => onCambiar({ detalle: e.target.value })} placeholder={`Ej. ${concepto.ejemplo}`} className={clase()} />
-            </label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
             <label className="block">
               <span className="block text-[11px] text-neutral-500 mb-0.5">Monto sin IVA ({moneda})</span>
               <Numerico value={l.costo_unitario} onChange={(e) => onCambiar({ costo_unitario: e.target.value, cantidad: '1' })} placeholder="0.00" className={clase()} />
@@ -1549,16 +1582,19 @@ function Renglon({
       <div className="pl-2.5 space-y-2.5">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            <ElegirMercancia
-              ingredientes={ingredientes}
-              valor={l.ingrediente_id}
-              alElegir={onMercancia}
-              alCrear={onCrear}
-              alConcepto={onConcepto}
-              tono={problema?.tono === 'mal' && !l.ingrediente_id ? 'mal' : undefined}
-              sugerencia={l.leido?.descripcion}
-              placeholder="¿Qué es? Mercancía, flete, servicio…"
-            />
+            <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
+              {selectorTipo}
+              <ElegirMercancia
+                ingredientes={ingredientes}
+                valor={l.ingrediente_id}
+                alElegir={onMercancia}
+                alCrear={onCrear}
+                tipo={tipoElegido}
+                tono={problema?.tono === 'mal' && !l.ingrediente_id ? 'mal' : undefined}
+                sugerencia={l.leido?.descripcion}
+                placeholder={tipoElegido ? `¿Cuál ${ALMACEN_DE[tipoElegido].texto.toLowerCase()}?` : '¿Cuál mercancía?'}
+              />
+            </div>
             {delPapel}
           </div>
           <div className="shrink-0 text-right">
@@ -1737,7 +1773,6 @@ function Renglon({
 function Totales({
   id,
   moneda,
-  renglones,
   recargo,
   descuento,
   onRecargo,
@@ -1754,8 +1789,6 @@ function Totales({
 }: {
   id: string
   moneda: string
-  /** La suma de los renglones, antes del recargo y el descuento. */
-  renglones: number
   recargo: string
   descuento: string
   onRecargo: (v: string) => void
@@ -1809,7 +1842,6 @@ function Totales({
           </thead>
         )}
         <tbody>
-          {fila('Renglones', renglones)}
           {casilla('Recargo', 'cf-recargo', recargo, onRecargo, iaRecargo, '+', papelAjustes?.recargo)}
           {casilla('Descuento', 'cf-descuento', descuento, onDescuento, iaDescuento, '−', papelAjustes?.descuento)}
           {fila('Base', base, papel?.subtotal)}

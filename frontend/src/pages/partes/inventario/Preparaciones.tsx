@@ -738,6 +738,12 @@ type Fila = {
   enChica?: boolean
 }
 
+// Que mide cada unidad y cuanto vale en la grande (1 g = 0,001 kg). Igual
+// que `_MEDIDA` en models.py: lo que se ve aquí es lo que guarda el servidor.
+const MEDIDA: Record<string, [string, number]> = { kg: ['peso', 1], g: ['peso', 0.001], lt: ['volumen', 1], ml: ['volumen', 0.001] }
+const mismaMedida = (a: string, b: string) => a === b || (!!MEDIDA[a] && !!MEDIDA[b] && MEDIDA[a][0] === MEDIDA[b][0])
+const aLaGrande = (u: string) => MEDIDA[u]?.[1] ?? 1
+
 /**
  * Misma forma que la receta del menú: a la izquierda el recipiente que se
  * llena con lo que lleva; a la derecha "Lleva" y "Agregar". Cabe en la
@@ -775,6 +781,9 @@ function Olla({
   )
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('')
+  // Lo que sale de una tanda cuando no se puede sumar (un jugo en litros
+  // hecho de kilos de naranja): lo escribe la cocina.
+  const [rindeEscrito, setRindeEscrito] = useState(prep ? String(prep.rinde) : '')
   const [resaltado, setResaltado] = useState<number | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
@@ -804,7 +813,9 @@ function Olla({
         nombre: ing.nombre,
         cantidad,
         unidad: ing.unidad,
-        queda: cantidad * (pct / 100),
+        // En la medida de la preparacion: 500 g suman 0,5 kg a un guiso en kg.
+        enSuMedida: mismaMedida(ing.unidad, unidad) ? cantidad * aLaGrande(ing.unidad) / aLaGrande(unidad) : null,
+        queda: (mismaMedida(ing.unidad, unidad) ? cantidad * aLaGrande(ing.unidad) / aLaGrande(unidad) : 0) * (pct / 100),
         costo: cantidad * (ing.costo_unitario || 0),
         color: colorFranja(i),
       }
@@ -812,11 +823,13 @@ function Olla({
     .filter((x): x is NonNullable<typeof x> => x !== null)
   const costoTanda = partes.reduce((s, p) => s + p.costo, 0)
   // Lo que rinde la tanda: la suma de lo que queda de cada crudo que se mide
-  // como ella. Una preparación en kilos no suma unidades.
-  const enSuUnidad = partes.filter((p) => p.unidad === unidad)
-  const entra = enSuUnidad.reduce((s, p) => s + p.cantidad, 0)
-  const rinde = enSuUnidad.reduce((s, p) => s + p.queda, 0)
+  // como ella (kg con g, lt con ml). Cuando nada se mide así --el jugo en
+  // litros hecho de kilos de naranja-- no hay suma posible: lo escribe la
+  // cocina, que sabe cuánto jugo sale de 4 kg de naranja.
+  const enSuUnidad = partes.filter((p) => p.enSuMedida !== null)
+  const entra = enSuUnidad.reduce((s, p) => s + (p.enSuMedida ?? 0), 0)
   const sinMedida = partes.length > 0 && enSuUnidad.length === 0
+  const rinde = sinMedida ? aNum(rindeEscrito) || 0 : enSuUnidad.reduce((s, p) => s + p.queda, 0)
 
   function actualizar(id: number, cambios: Partial<Fila>) {
     setFilas((prev) => prev.map((f) => (f.ingrediente_id === id ? { ...f, ...cambios } : f)))
@@ -827,7 +840,8 @@ function Olla({
     const limpias = filas.filter((f) => f.ingrediente_id && aNum(f.cantidad) > 0)
     if (!nombre.trim()) return setError('Ponle nombre a la preparación.')
     if (limpias.length === 0) return setError('Agrega al menos un ingrediente con su cantidad.')
-    if (!(rinde > 0)) return setError(`Nada de lo que lleva se mide en ${unidad}: cambia en qué se mide la preparación.`)
+    if (!(rinde > 0))
+      return setError(sinMedida ? `Escribe cuántos ${unidad} salen de una tanda.` : 'Lo que lleva no deja nada: revisa cuánto se aprovecha de cada cosa.')
     setGuardando(true)
     try {
       // El % que se aprovecha es del crudo: si cambió, se guarda en su ficha.
@@ -907,15 +921,33 @@ function Olla({
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2 shrink-0">
-            <div className="rounded-xl bg-neutral-500/6 px-3 py-2">
-              <span className="text-[11px] text-neutral-500">Entra crudo</span>
-              <span className="block font-display text-lg font-semibold tabular-nums leading-tight">
-                {entra > 0 ? `${fmtCant(entra)} ${unidad}` : '—'}
-              </span>
-              <span className="block text-[11px] text-neutral-500 leading-tight">
-                {entra > 0 && rinde > 0 ? `y sale ${fmtCant(rinde)} ${unidad} ya preparado` : 'lo que se mide como la preparación'}
-              </span>
-            </div>
+            {sinMedida ? (
+              <label className="rounded-xl bg-acento-500/10 px-3 py-2 block">
+                <span className="text-[11px] text-acento-800 font-medium">¿Cuánto sale de la tanda?</span>
+                <span className="flex items-baseline gap-1.5">
+                  <input
+                    value={rindeEscrito}
+                    onChange={(e) => setRindeEscrito(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="0"
+                    aria-label={`Cuántos ${unidad} salen de una tanda`}
+                    className="w-20 !py-0.5 !px-1.5 font-display text-lg font-semibold tabular-nums"
+                  />
+                  <span className="text-sm text-neutral-600">{unidad}</span>
+                </span>
+                <span className="block text-[11px] text-neutral-500 leading-tight">ya preparado: mídelo la próxima tanda</span>
+              </label>
+            ) : (
+              <div className="rounded-xl bg-neutral-500/6 px-3 py-2">
+                <span className="text-[11px] text-neutral-500">Entra crudo</span>
+                <span className="block font-display text-lg font-semibold tabular-nums leading-tight">
+                  {entra > 0 ? `${fmtCant(entra)} ${unidad}` : '—'}
+                </span>
+                <span className="block text-[11px] text-neutral-500 leading-tight">
+                  {entra > 0 && rinde > 0 ? `y sale ${fmtCant(rinde)} ${unidad} ya preparado` : 'lo que se mide como la preparación'}
+                </span>
+              </div>
+            )}
             <div className="rounded-xl bg-neutral-500/6 px-3 py-2">
               <span className="text-[11px] text-neutral-500">Sale a</span>
               <span className="block font-display text-lg font-semibold tabular-nums leading-tight">
@@ -926,7 +958,10 @@ function Olla({
             </div>
           </div>
           {sinMedida && (
-            <p className="text-xs text-aviso-700 mt-2 shrink-0">Nada de lo que lleva se mide en {unidad}: cambia arriba en qué se mide la preparación.</p>
+            <p className="text-xs text-neutral-500 mt-2 shrink-0">
+              Lo que lleva no se mide en {unidad === 'lt' ? 'litros' : unidad === 'kg' ? 'kilos' : 'unidades'}, así que el sistema no puede sumarlo: escribe arriba
+              cuánto sale de una tanda como esta.
+            </p>
           )}
         </section>
 

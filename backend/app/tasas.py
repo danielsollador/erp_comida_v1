@@ -66,6 +66,15 @@ def refrescar(db: Session, forzar: bool = False) -> bool:
     if not anclas:
         return False
 
+    # El BCV publica en la tarde la tasa que rige desde su "Fecha Valor", que
+    # es el proximo dia habil. Guardarla en la fila de hoy hacia que lo que se
+    # cobraba y facturaba esa tarde saliera a la tasa de manana. Va en su
+    # fecha; hoy conserva la suya y solo se le actualiza el paralelo.
+    valor = fecha_valor(anclas.get("actualizado"))
+    if valor and valor > hoy():
+        _guardar_futura(db, valor, anclas)
+        return True
+
     fecha = hoy()
     fila = db.query(models.TasaCambio).filter(models.TasaCambio.fecha == fecha).first()
 
@@ -100,6 +109,46 @@ def refrescar(db: Session, forzar: bool = False) -> bool:
         )
     db.commit()
     return True
+
+
+_MESES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7,
+    "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+}
+
+
+def fecha_valor(texto: Optional[str]) -> Optional[datetime.date]:
+    """'08 Octubre 2026' (lo que imprime el BCV) -> date. None si no se entiende."""
+    partes = (texto or "").strip().lower().split()
+    if len(partes) != 3 or partes[1] not in _MESES:
+        return None
+    try:
+        return datetime.date(int(partes[2]), _MESES[partes[1]], int(partes[0]))
+    except ValueError:
+        return None
+
+
+def _guardar_futura(db: Session, valor: datetime.date, anclas: dict) -> None:
+    """La tasa ya publicada que rige desde `valor`, y hoy sin tocar su oficial."""
+    futura = db.query(models.TasaCambio).filter(models.TasaCambio.fecha == valor).first()
+    if futura is None:
+        db.add(models.TasaCambio(fecha=valor, bcv=anclas["bcv"], eur=anclas.get("eur"), paralelo=anclas.get("paralelo"), origen="auto"))
+    elif futura.origen != "manual":
+        futura.bcv = anclas["bcv"]
+        futura.eur = anclas.get("eur") or futura.eur
+        futura.paralelo = anclas.get("paralelo") or futura.paralelo
+        futura.actualizado_en = ahora()
+
+    de_hoy = db.query(models.TasaCambio).filter(models.TasaCambio.fecha == hoy()).first()
+    if de_hoy is None:
+        # Un sabado o la tarde de un feriado: hoy vale la ultima publicada
+        # hasta hoy. Se le hace su fila para que no se lea como desactualizada.
+        previa = tasa_al(db, hoy())
+        if previa is not None:
+            db.add(models.TasaCambio(fecha=hoy(), bcv=previa.bcv, eur=previa.eur, paralelo=anclas.get("paralelo") or previa.paralelo, origen="auto"))
+    elif anclas.get("paralelo"):
+        de_hoy.paralelo = anclas["paralelo"]
+    db.commit()
 
 
 def fijar_manual(db: Session, bcv: float, paralelo: Optional[float] = None) -> models.TasaCambio:

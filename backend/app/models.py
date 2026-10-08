@@ -208,6 +208,11 @@ class CategoriaInsumo(Base):
     activo = Column(Boolean, default=True)
 
 
+# Que mide cada unidad y cuanto vale en la grande: 1 g = 0,001 kg. Con esto
+# 500 g de cebolla suman a un guiso que se mide en kg.
+_MEDIDA = {"kg": ("peso", 1.0), "g": ("peso", 0.001), "lt": ("volumen", 1.0), "ml": ("volumen", 0.001)}
+
+
 class Ingrediente(Base):
     __tablename__ = "DIM310_INV_INGREDIENTE"
 
@@ -287,21 +292,25 @@ class Ingrediente(Base):
         el pollo pierde el 30 % en cualquier guiso. Asi que lo que rinde la
         tanda no se escribe: es la suma de lo que queda de cada crudo que se
         mide como la preparacion (1 kg de pollo al 70 % = 0,7 kg de guiso).
-        Otra preparacion adentro entra ya preparada: cuenta entera. Si nada se
-        mide como ella (una tanda en unidades hecha de kilos), vale lo que se
-        guardo en `rinde`.
+        El gramo cuenta como milesima de kilo y el mililitro de litro: 500 g
+        de cebolla suman 0,5 kg. Otra preparacion adentro entra ya preparada:
+        cuenta entera. Si nada se mide como ella (un jugo en litros hecho de
+        kilos de naranja), vale lo que la cocina escribio en `rinde`.
         """
         if self.tipo != "preparacion":
             return 1.0
+        propia = _MEDIDA.get(self.unidad)
         total = 0.0
         hay_en_su_unidad = False
         for linea in self.lineas_preparacion:
             ing = linea.ingrediente
-            if ing is None or ing.unidad != self.unidad:
+            medida = _MEDIDA.get(ing.unidad) if ing is not None else None
+            if ing is None or (ing.unidad != self.unidad and (not medida or not propia or medida[0] != propia[0])):
                 continue
             hay_en_su_unidad = True
+            factor = medida[1] / propia[1] if medida and propia else 1.0
             pct = 100.0 if ing.tipo == "preparacion" else (ing.rendimiento_pct or 100.0)
-            total += linea.cantidad * pct / 100.0
+            total += linea.cantidad * factor * pct / 100.0
         if hay_en_su_unidad and total > 0:
             return round(total, 6)
         return self.rinde or 0.0

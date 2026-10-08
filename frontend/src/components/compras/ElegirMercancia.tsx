@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CONCEPTOS } from '../../lib/compras'
 import { llano } from '../../lib/filtros'
 import { ALMACEN_DE } from '../../lib/tiposArticulo'
-import type { ConceptoGasto, Ingrediente } from '../../lib/types'
+import type { ConceptoGasto, Ingrediente, TipoArticulo } from '../../lib/types'
 import Icono from '../Icono'
 import { PuntoTipo } from './Almacenes'
 
@@ -28,6 +28,7 @@ export default function ElegirMercancia({
   permitirPreparaciones = false,
   placeholder,
   alConcepto,
+  tipo,
 }: {
   ingredientes: Ingrediente[]
   valor: number
@@ -42,6 +43,8 @@ export default function ElegirMercancia({
   placeholder?: string
   /** Para un renglón de factura: marcarlo como flete, servicio, equipo u otro. */
   alConcepto?: (c: ConceptoGasto) => void
+  /** Solo las de este tipo (el renglón ya dijo qué es). */
+  tipo?: TipoArticulo
 }) {
   const [abierto, setAbierto] = useState(false)
   const [texto, setTexto] = useState('')
@@ -54,7 +57,9 @@ export default function ElegirMercancia({
 
   const visibles = useMemo(() => {
     const q = llano(texto.trim())
-    const activas = ingredientes.filter((i) => i.activo !== false && (permitirPreparaciones || i.tipo !== 'preparacion'))
+    const activas = ingredientes.filter(
+      (i) => i.activo !== false && (permitirPreparaciones || i.tipo !== 'preparacion') && (!tipo || i.tipo === tipo),
+    )
     if (!q) return activas.slice(0, 40)
     const palabras = q.split(/\s+/)
     return activas
@@ -67,7 +72,7 @@ export default function ElegirMercancia({
       .sort((a, b) => b.puntos - a.puntos || a.i.nombre.localeCompare(b.i.nombre))
       .slice(0, 40)
       .map((x) => x.i)
-  }, [texto, ingredientes, permitirPreparaciones])
+  }, [texto, ingredientes, permitirPreparaciones, tipo])
 
   useEffect(() => {
     if (!abierto) return
@@ -186,7 +191,9 @@ export default function ElegirMercancia({
             )
           })}
           {visibles.length === 0 && (
-            <li className="px-2.5 py-2 text-sm text-neutral-500">Ninguna se llama así.</li>
+            <li className="px-2.5 py-2 text-sm text-neutral-500">
+              {tipo && !texto.trim() ? `Todavía no hay ${ALMACEN_DE[tipo].texto.toLowerCase()}.` : 'Ninguna se llama así.'}
+            </li>
           )}
           <li
             role="option"

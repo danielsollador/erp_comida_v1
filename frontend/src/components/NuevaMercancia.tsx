@@ -37,6 +37,7 @@ export default function NuevaMercancia({
   nombre: nombreInicial = '',
   unidad: unidadInicial = 'kg',
   exento: exentoInicial = false,
+  tipo: tipoInicial = null,
   delPapel,
   onUsar,
   onCreada,
@@ -46,6 +47,8 @@ export default function NuevaMercancia({
   nombre?: string
   unidad?: string
   exento?: boolean
+  /** Si ya se dijo qué es (el renglón de la factura lo eligió antes). */
+  tipo?: TipoArticulo | null
   /** Lo que dice la factura, para tenerlo a la vista mientras se nombra. */
   delPapel?: string
   onUsar: (ing: Ingrediente) => void
@@ -54,7 +57,7 @@ export default function NuevaMercancia({
 }) {
   const [nombre, setNombre] = useState(nombreInicial)
   const [unidad, setUnidad] = useState(unidadInicial === 'paquete' ? 'unidad' : unidadInicial)
-  const [tipo, setTipo] = useState<TipoArticulo | null>(null)
+  const [tipo, setTipo] = useState<TipoArticulo | null>(tipoInicial)
   const [exento, setExento] = useState(exentoInicial)
   const [enPaquete, setEnPaquete] = useState(false)
   const [paqueteNombre, setPaqueteNombre] = useState('caja')
