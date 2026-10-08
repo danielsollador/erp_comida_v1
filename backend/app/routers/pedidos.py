@@ -699,8 +699,18 @@ def _ya_hecho(fila: models.PedidoItem) -> bool:
     return bool(fila.preparado) and fila.a_cocina is not False
 
 
-def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int]) -> None:
-    """Todo lo que impide tocar esta comanda, con el motivo escrito."""
+def _revisar_que_se_puede_editar(
+    pedido: models.Pedido, quien_id: Optional[int], forzar: bool = False
+) -> None:
+    """Todo lo que impide tocar esta comanda, con el motivo escrito.
+
+    Un pedido sin cobrar se edita SIEMPRE, las veces que haga falta (Leider,
+    8-oct). Ni la cocina preparandolo lo traba: lo que ya termino no se quita
+    (ver `editar_pedido`) y lo que se agrega va a cocina como pendiente. El
+    candado de otra caja tampoco es una pared: quien abre puede tomarla
+    (`forzar`), porque una tablet que se recargo a mitad de una edicion dejaba
+    la comanda trancada cinco minutos.
+    """
     if pedido.estado == "anulado":
         raise HTTPException(status_code=409, detail="Un pedido anulado ya no se edita")
     if pedido.devuelto:
@@ -708,21 +718,11 @@ def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int])
             status_code=409,
             detail="Esta venta se devolvió entera. Si el cliente quiere otra cosa, es un pedido nuevo.",
         )
-    if la_tiene_cocina(pedido):
-        quien = pedido.cocinando_por or "La cocina"
-        desde = pedido.cocinando_desde.strftime("%H:%M") if pedido.cocinando_desde else ""
-        detalle = f"{quien} ya está preparando la comanda #{pedido.numero}"
-        if desde:
-            detalle += f" (desde las {desde})"
-        raise HTTPException(
-            status_code=409,
-            detail=detalle + ". Habla con cocina: lo que está en el sartén ya no se cambia desde aquí.",
-        )
     # Lo que la cocina ya termino no se QUITA (ver `editar_pedido`), pero la
     # comanda se sigue pudiendo abrir: agregarle un refresco a un pedido ya
     # hecho no bota comida. Antes se trancaba entera apenas todo estaba
     # "preparado", y eso incluia la comanda de vitrina, que la cocina nunca vio.
-    if edicion_viva(pedido) and pedido.editando_por_id not in (None, quien_id):
+    if not forzar and edicion_viva(pedido) and pedido.editando_por_id not in (None, quien_id):
         raise HTTPException(
             status_code=409,
             detail=f"{pedido.editando_por or 'Otra caja'} está editando la comanda "
@@ -740,7 +740,9 @@ def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int])
 
 
 @router.post("/{pedido_id}/edicion", response_model=schemas.Pedido)
-async def abrir_edicion(pedido_id: int, request: Request, db: Session = Depends(get_db)):
+async def abrir_edicion(
+    pedido_id: int, request: Request, forzar: bool = False, db: Session = Depends(get_db)
+):
     """El punto de venta agarra la comanda para cambiarla.
 
     Avisa a la cocina ANTES de que el cajero empiece a tocar renglones, no
@@ -749,7 +751,7 @@ async def abrir_edicion(pedido_id: int, request: Request, db: Session = Depends(
     """
     pedido = _buscar(db, pedido_id)
     quien = operadores.del_turno(db, request)
-    _revisar_que_se_puede_editar(pedido, quien.id if quien else None)
+    _revisar_que_se_puede_editar(pedido, quien.id if quien else None, forzar=forzar)
 
     pedido.editando_desde = ahora()
     pedido.editando_por_id = quien.id if quien else None
@@ -1512,6 +1514,10 @@ async def cobrar_pedido(
     pedido.punto_venta_id = punto.id if punto else None
 
     pedido.estado = "pagado"
+    # Cobrada, la edicion que estuviera abierta termino: un candado colgado
+    # despues del cobro dejaba la cocina viendo "la caja la esta editando".
+    pedido.editando_desde = None
+    pedido.editando_por_id = None
     # El campo resumen sigue existiendo para mostrar de un vistazo como se pago.
     # Dos pagos moviles (el cliente mando de menos y completo con otro) siguen
     # siendo pago movil: "Mixto" es cuando se mezclan formas distintas.

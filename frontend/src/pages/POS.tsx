@@ -1242,8 +1242,23 @@ export default function POS() {
     }
     try {
       // Se toma el candado ANTES de que el cajero empiece a tocar renglones:
-      // avisarle a la cocina cuando ya se guardo no sirve de nada.
-      const abierto = await api.abrirEdicion(pedido.id)
+      // avisarle a la cocina cuando ya se guardo no sirve de nada. Si otra
+      // caja la tiene abierta (o quedo colgada de una tablet que se recargo),
+      // se pregunta y se toma: sin cobrar se edita siempre.
+      let abierto: Pedido
+      try {
+        abierto = await api.abrirEdicion(pedido.id)
+      } catch (e) {
+        const mensaje = e instanceof Error ? e.message : ''
+        if (!mensaje.includes('está editando')) throw e
+        const tomar = await dialogo.confirmar({
+          titulo: mensaje.replace(/ en este momento\.?$/, ''),
+          texto: 'Si la tomas, lo que esa caja no haya guardado se pierde. Úsalo si quedó abierta por error o se recargó la pantalla.',
+          aceptar: 'Tomarla y editar',
+        })
+        if (!tomar) return
+        abierto = await api.abrirEdicion(pedido.id, true)
+      }
       // En la pantalla de tomar pedido, como si se pidiera de cero (el
       // cliente, 23-sep). Lo que la comanda no sabe mostrar --un producto
       // que ya salio del menu, el mismo producto cobrado y regalado a la
