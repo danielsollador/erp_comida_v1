@@ -11,7 +11,7 @@ from . import operadores
 from ..database import get_db
 from ..exportar_csv import nombre_de_archivo, respuesta_csv
 from ..rango import Rango
-from ..texto import comparable, nombre_limpio
+from ..texto import clave_de_nombre, comparable, nombre_limpio
 from ..timeutils import ahora, hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/inventario", tags=["inventario"])
@@ -377,12 +377,12 @@ def _gemela(db: Session, nombre: str, salvo_id: Optional[int] = None) -> Optiona
     pantalla ya avisa de los PARECIDOS mientras se escribe; aqui se cierra la
     puerta a los IGUALES, venga de donde venga el pedido.
     """
-    clave = comparable(nombre)
+    clave = clave_de_nombre(nombre)
     return next(
         (
             o
             for o in db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all()
-            if o.id != salvo_id and comparable(o.nombre) == clave
+            if o.id != salvo_id and clave_de_nombre(o.nombre) == clave
         ),
         None,
     )

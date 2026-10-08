@@ -414,9 +414,11 @@ def disponibilidad(db: Session = Depends(get_db)):
     """Cuanto se podria hacer de cada preparacion con el crudo que hay.
 
     El pollo es UNO: si alcanza para 11 kg de guiso de pollo o para 9 de
-    ranchero, no alcanza para los dos. Cada fila dice que materia prima pone
-    el limite y que otras preparaciones compiten por ella, para que nadie lea
-    los potenciales como si se sumaran.
+    ranchero, no alcanza para los dos. Por eso el crudo que comparten se
+    REPARTE (8-oct): a cada preparacion le toca segun lo que se vendio de
+    ella en los ultimos 14 dias, o en partes iguales si todavia no hay
+    ventas. `potencial` es lo que le toca; `potencial_solo`, lo que saldria
+    si todo el crudo fuera para ella.
     """
     preps = (
         db.query(models.Ingrediente)
@@ -427,14 +429,36 @@ def disponibilidad(db: Session = Depends(get_db)):
     hojas_de: Dict[int, Dict[models.Ingrediente, float]] = {
         p.id: costeo.explotar(p, 1.0, modo="receta") for p in preps
     }
+    uso = _uso_reciente(db, preps)
+    # Quien usa cada crudo.
+    usan: Dict[int, List[int]] = {}
+    for p in preps:
+        for h, q in hojas_de[p.id].items():
+            if q > 0 and h.id != p.id:
+                usan.setdefault(h.id, []).append(p.id)
+
+    def parte(hoja_id: int, prep_id: int):
+        """Que fraccion del crudo le toca a esta preparacion, y por que."""
+        rivales = usan.get(hoja_id, [prep_id])
+        if len(rivales) <= 1:
+            return 1.0, ""
+        total = sum(uso.get(r, 0) for r in rivales)
+        if total > 0:
+            return uso.get(prep_id, 0) / total, "ventas"
+        return 1.0 / len(rivales), "iguales"
+
     filas = []
     for prep in preps:
         hojas = {h: q for h, q in hojas_de[prep.id].items() if q > 0 and h.id != prep.id}
-        potencial, limita = None, None
+        potencial, limita, solo, reparto, segun = None, None, None, None, ""
         for hoja, por_unidad in hojas.items():
-            alcanza = max(hoja.stock_actual or 0, 0) / por_unidad
+            stock = max(hoja.stock_actual or 0, 0)
+            fraccion, criterio = parte(hoja.id, prep.id)
+            alcanza = stock * fraccion / por_unidad
+            solo = stock / por_unidad if solo is None else min(solo, stock / por_unidad)
             if potencial is None or alcanza < potencial:
                 potencial, limita = alcanza, hoja
+                reparto, segun = (round(fraccion * 100, 1), criterio) if criterio else (None, "")
         comparte = []
         if limita is not None:
             comparte = [
@@ -451,9 +475,36 @@ def disponibilidad(db: Session = Depends(get_db)):
                 potencial=round(potencial, 3) if potencial is not None else None,
                 limita=limita.nombre if limita is not None else None,
                 comparte_con=comparte,
+                potencial_solo=round(solo, 3) if solo is not None else None,
+                reparto_pct=reparto,
+                reparto_segun=segun,
             )
         )
     return filas
+
+
+def _uso_reciente(db: Session, preps) -> Dict[int, float]:
+    """Cuanto se vendio de cada preparacion en los ultimos 14 dias, por las
+    recetas de lo vendido (50 g de guiso por pastelito x pastelitos)."""
+    ids = {p.id for p in preps}
+    if not ids:
+        return {}
+    desde = ahora() - datetime.timedelta(days=14)
+    filas = (
+        db.query(models.RecetaItem.ingrediente_id, models.RecetaItem.cantidad_por_unidad, models.PedidoItem.cantidad)
+        .join(models.PedidoItem, models.PedidoItem.variante_id == models.RecetaItem.variante_id)
+        .join(models.Pedido, models.Pedido.id == models.PedidoItem.pedido_id)
+        .filter(
+            models.RecetaItem.ingrediente_id.in_(ids),
+            models.Pedido.estado == "pagado",
+            models.Pedido.creado_en >= desde,
+        )
+        .all()
+    )
+    uso: Dict[int, float] = {}
+    for iid, por, cantidad in filas:
+        uso[iid] = uso.get(iid, 0) + (por or 0) * (cantidad or 0)
+    return uso
 
 
 # ── Costo teorico vs real ───────────────────────────────────────────────────

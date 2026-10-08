@@ -318,6 +318,12 @@ class Disponibilidad(BaseModel):
     limita: Optional[str] = None
     # Otras preparaciones que usan esa misma materia prima: compiten por ella.
     comparte_con: List[str] = []
+    # Lo que saldria si TODO el crudo fuera para esta. `potencial` es lo que le
+    # toca cuando el crudo se reparte con las otras que lo usan.
+    potencial_solo: Optional[float] = None
+    # Que parte del crudo que limita le toca (0-100) y por que criterio.
+    reparto_pct: Optional[float] = None
+    reparto_segun: str = ""  # "ventas" (ultimos 14 dias) | "iguales" | ""
 
 
 class CostoTeoricoFila(BaseModel):
@@ -1143,6 +1149,14 @@ class Configuracion(BaseModel):
     vender_sin_inventario: bool = False
     # Ver models.Configuracion.costo_para_precios.
     costo_para_precios: str = "reposicion"
+
+
+class CostosParaPrecios(BaseModel):
+    """Costo de 1 unidad utilizable de cada mercancia, con el metodo elegido."""
+
+    metodo: str
+    por_ingrediente: Dict[int, float] = {}
+    indirecto_por_pieza: float = 0.0
 
 
 class CostoParaPreciosRequest(BaseModel):

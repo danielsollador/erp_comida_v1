@@ -88,6 +88,19 @@ const tono = colorFranja
 const porUnidad = (ing: Ingrediente) => ing.unidad === 'unidad' || ing.unidad === 'paquete'
 
 
+// LO QUE SE VE AQUÍ ES LO QUE SE USA PARA DECIDIR EL PRECIO (8-oct): con el
+// método elegido en Configuración (último costo pagado, promedio o el mayor)
+// y con su parte del aceite si se fríe. Antes era siempre el promedio y sin
+// aceite: un pastelito frito salía con 93 % de margen cuando dejaba 56 %.
+function renglon_se_frie(r: { variante: { se_frie?: boolean | null } }): boolean {
+  return Boolean(r.variante.se_frie)
+}
+
+function paraPrecio(c: CostoVariante | undefined): CostoVariante | undefined {
+  if (!c || c.costo_para_precio == null) return c
+  return { ...c, costo: c.costo_para_precio, margen_pct: c.margen_para_precio_pct ?? c.margen_pct }
+}
+
 export default function Recetas({
   categorias,
   costos,
@@ -109,6 +122,8 @@ export default function Recetas({
   // (y se ve el margen) o el margen (y sale el precio). Primero el costo,
   // después el precio: así se hace en cualquier cocina.
   const [precio, setPrecio] = useState('')
+  // El aceite de freír por pieza (últimos 30 días): lo carga lo que se fríe.
+  const [indirecto, setIndirecto] = useState(0)
   const dialogo = useDialogo()
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
@@ -144,7 +159,16 @@ export default function Recetas({
   const [abiertos, setAbiertos] = useState<Set<number>>(new Set())
 
   useEffect(() => {
-    api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
+    Promise.all([api.listarIngredientes(), api.costosParaPrecios().catch(() => null)]).then(([l, cp]) => {
+      if (cp) setIndirecto(cp.indirecto_por_pieza)
+      // Cada mercancía, a lo que cuesta con el método de precios: así el
+      // costo de cada renglón y el total cuadran con la lista.
+      setIngredientes(
+        l
+          .filter((i) => i.activo !== false)
+          .map((i) => (cp && cp.por_ingrediente[i.id] != null ? { ...i, costo_efectivo: cp.por_ingrediente[i.id] } : i)),
+      )
+    })
   }, [])
 
   const mapaIngredientes = useMemo(() => new Map(ingredientes.map((i) => [i.id, i])), [ingredientes])
@@ -166,7 +190,7 @@ export default function Recetas({
                   variante: v,
                   nombre: etiquetaVariante(p, v),
                   categoria: c.nombre,
-                  info: costos.get(v.id),
+                  info: paraPrecio(costos.get(v.id)),
                   productoId: p.id,
                   producto: p.nombre,
                   varianteNombre: v.nombre,
@@ -347,6 +371,7 @@ export default function Recetas({
         setFilas={setFilas}
         precio={precio}
         setPrecio={setPrecio}
+        indirecto={renglon_se_frie(abierta) ? indirecto : 0}
         error={error}
         guardando={guardando}
         onGuardar={() => void guardar()}
@@ -622,6 +647,7 @@ function Compositor({
   setFilas,
   precio: precioTexto,
   setPrecio,
+  indirecto,
   error,
   guardando,
   onGuardar,
@@ -635,6 +661,8 @@ function Compositor({
   /** El precio que se está decidiendo, como texto. */
   precio: string
   setPrecio: (p: string) => void
+  /** Lo que le toca de aceite por pieza, si se fríe. */
+  indirecto: number
   error: string
   guardando: boolean
   onGuardar: () => void
@@ -720,6 +748,10 @@ function Compositor({
     costoReal += costo
     if (costo > 0) partes.push({ id: ing.id, nombre: ing.nombre, valor: costo, color: tono(i) })
   })
+  if (indirecto > 0) {
+    costoReal += indirecto
+    partes.push({ id: 'aceite', nombre: 'Aceite de freír', valor: indirecto, color: '#b8a27a' })
+  }
   const esPieza = (f: Fila) => {
     const ing = mapaIngredientes.get(f.ingrediente_id)
     return Boolean(ing && porUnidad(ing))

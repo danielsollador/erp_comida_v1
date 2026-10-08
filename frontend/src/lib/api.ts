@@ -360,6 +360,9 @@ export const api = {
   reactivarVariante: (id: number) =>
     req<Variante>(`/menu/variantes/${id}/reactivar`, { method: 'POST' }),
   costosVariantes: () => req<CostoVariante[]>('/menu/costos'),
+  /** Costo de 1 unidad utilizable de cada mercancía con el método elegido para precios, y el aceite por pieza. */
+  costosParaPrecios: () =>
+    req<{ metodo: string; por_ingrediente: Record<string, number>; indirecto_por_pieza: number }>('/menu/costos-para-precios'),
   historialPrecios: (varianteId: number) =>
     req<CambioPrecio[]>(`/menu/variantes/${varianteId}/precios`),
 

@@ -403,6 +403,14 @@ function Mapa({
                           ? `podrías hacer hoy con el crudo que hay · lo que se acaba primero: ${d.limita}`
                           : 'podrías hacer hoy con el crudo que hay'}
                     </p>
+                    {elegida.modo_produccion !== 'producir' && d?.reparto_pct != null && d.limita && (
+                      <p className="text-xs text-white/70 mt-1">
+                        {/* El crudo compartido se reparte: los potenciales no se suman. */}
+                        Le toca el {fmtCant(d.reparto_pct)} % del {d.limita.toLowerCase()}{' '}
+                        {d.reparto_segun === 'ventas' ? 'según lo vendido en 14 días' : 'en partes iguales'} con {d.comparte_con.join(', ')}.
+                        {d.potencial_solo != null && ` Si fuera todo para este: ${fmtCant(d.potencial_solo)} ${elegida.unidad}.`}
+                      </p>
+                    )}
                   </div>
                   <p className="text-xs text-white/70">
                     Cada {elegida.unidad === 'kg' ? 'kilo' : elegida.unidad === 'lt' ? 'litro' : 'unidad'} ya preparado cuesta{' '}

@@ -281,6 +281,30 @@ def historial_precios(variante_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/costos-para-precios", response_model=schemas.CostosParaPrecios)
+def costos_para_precios(db: Session = Depends(get_db)):
+    """Lo que cuesta 1 unidad utilizable de cada mercancia con el metodo que
+    se eligio para decidir precios, y el aceite por pieza frita.
+
+    Es lo que la pantalla de Recetas necesita para que el margen que se ve al
+    poner el precio sea el mismo que calcula `/costos`: con el ultimo costo
+    pagado (o el mayor) y con el aceite, no siempre al promedio y sin aceite.
+    """
+    from .preparaciones import costo_indirecto_por_pieza
+
+    config = db.query(models.Configuracion).first()
+    metodo = (config.costo_para_precios if config else None) or "reposicion"
+    ultimos = reposicion.costos_reposicion(db)
+    por = {}
+    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all():
+        promedio = ing.costo_efectivo or 0.0
+        hoy_ = reposicion.costo_reposicion_efectivo(ing, ultimos)
+        por[ing.id] = round(promedio if metodo == "promedio" else max(promedio, hoy_) if metodo == "mayor" else hoy_, 6)
+    fin = inicio_del_dia(hoy() + datetime.timedelta(days=1))
+    indirecto = sum(c.por_pieza or 0 for c in costo_indirecto_por_pieza(db, fin - datetime.timedelta(days=31), fin))
+    return schemas.CostosParaPrecios(metodo=metodo, por_ingrediente=por, indirecto_por_pieza=round(indirecto, 4))
+
+
 @router.get("/costos", response_model=List[schemas.CostoVariante])
 def costos_por_variante(db: Session = Depends(get_db)):
     """Cuanto cuesta producir cada variante y que margen deja a su precio actual.

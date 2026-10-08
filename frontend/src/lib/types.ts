@@ -797,6 +797,11 @@ export type Disponibilidad = {
   potencial: number | null
   limita: string | null
   comparte_con: string[]
+  /** Si todo el crudo fuera para esta (sin repartir con las otras). */
+  potencial_solo?: number | null
+  /** Qué parte del crudo que limita le toca, en %. */
+  reparto_pct?: number | null
+  reparto_segun?: '' | 'ventas' | 'iguales'
 }
 
 export type CostoTeoricoFila = {
