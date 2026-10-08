@@ -4,7 +4,7 @@ import { CasillaConUnidad } from '../../../components/Cantidad'
 import { useDialogo } from '../../../components/dialogo'
 import { Aviso, Boton, Modal, Pastilla } from '../../../components/ui'
 import { api } from '../../../lib/api'
-import { cantidad } from '../../../lib/inventario'
+import { cantidad, unidadDe } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import { convertirTexto, factorEntre } from '../../../lib/unidades'
 import type { ConteoDetalle, Ingrediente, PlanillaLeida, ResultadoConteo } from '../../../lib/types'
@@ -375,7 +375,7 @@ export default function ConteoFisico({
                     ) : (
                       <span className={dif < 0 ? 'text-peligro-600 font-medium' : 'text-aviso-600 font-medium'}>
                         {dif > 0 ? '+' : ''}
-                        {cantidad(dif)} {ing.unidad}
+                        {cantidad(dif)} {unidadDe(dif, ing.unidad)}
                         <span className="block text-[11px] font-normal text-neutral-500">
                           {dinero(Math.abs(dif) * (ing.costo_unitario || 0))}
                         </span>

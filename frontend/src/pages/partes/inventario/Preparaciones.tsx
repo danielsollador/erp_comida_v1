@@ -8,7 +8,7 @@ import { Boton, FiltroDesplegable, Modal, Seccion, Vacio } from '../../../compon
 import { api } from '../../../lib/api'
 import { useMoneda } from '../../../lib/moneda'
 import { colorFranja } from '../../../lib/paleta'
-import { datosDe } from '../../../lib/inventario'
+import { datosDe, unidadDe } from '../../../lib/inventario'
 import { ALMACEN_DE, vaEnPreparacion } from '../../../lib/tiposArticulo'
 import type { DatosPreparacion, Disponibilidad, Ingrediente, Preparacion, Produccion } from '../../../lib/types'
 
@@ -34,15 +34,12 @@ export default function Preparaciones({
   ingredientes,
   onCambio,
   onEditando,
-  abrirNueva,
 }: {
   ingredientes: Ingrediente[]
   /** Algo movió el depósito (una tanda, una merma): que se recargue. */
   onCambio: () => void
   /** Se abrió (o cerró) la receta: la pantalla de arriba esconde lo que no va. */
   onEditando?: (abierta: boolean) => void
-  /** Cada vez que cambia, se abre una preparación nueva (el botón vive arriba, junto a Crudo/Preparado). */
-  abrirNueva?: number
 }) {
   const { fmt: dinero } = useMoneda()
   const [preps, setPreps] = useState<Preparacion[] | null>(null)
@@ -57,10 +54,6 @@ export default function Preparaciones({
   const [resaltada, setResaltada] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
-
-  useEffect(() => {
-    if (abrirNueva) setEditando('nueva')
-  }, [abrirNueva])
 
   useEffect(() => {
     onEditando?.(editando !== null)
@@ -120,7 +113,7 @@ export default function Preparaciones({
           {vencidas.map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-3 text-sm">
               <span>
-                {p.nombre}: <b className="tabular-nums">{p.stock_actual} {p.unidad}</b>
+                {p.nombre}: <b className="tabular-nums">{p.stock_actual} {unidadDe(p.stock_actual, p.unidad)}</b>
               </span>
               <button type="button" onClick={() => setSobro(p)} className="text-sm font-semibold text-aviso-800 underline">
                 Decidir
@@ -156,6 +149,7 @@ export default function Preparaciones({
               onSeleccionar={setSeleccion}
               resaltada={resaltada}
               onResaltar={setResaltada}
+              onEditar={setEditando}
               dinero={dinero}
             />
           </Seccion>
@@ -176,6 +170,19 @@ export default function Preparaciones({
                 onSobro={() => setSobro(p)}
               />
             ))}
+            {/* Una tarjeta más, al final: no le quita sitio a Crudo/Preparado
+                ni ocupa una fila propia arriba (Leider, 8-oct). */}
+            <button
+              type="button"
+              onClick={() => setEditando('nueva')}
+              className="vp-pulsable rounded-2xl border-2 border-dashed border-neutral-500/25 hover:border-neutral-500/45 hover:bg-neutral-500/4 p-3.5 min-h-[140px] flex flex-col items-center justify-center gap-2 text-center text-neutral-600 transition-colors"
+            >
+              <span className="inline-grid place-items-center w-10 h-10 rounded-full bg-neutral-900 text-white">
+                <Icono nombre="mas" size={18} />
+              </span>
+              <span className="font-display font-semibold text-neutral-900">Nueva preparación</span>
+              <span className="text-xs text-neutral-500 max-w-[16rem]">Qué crudo lleva una tanda y cuánto rinde, como una receta.</span>
+            </button>
           </div>
         </>
       )}
@@ -193,7 +200,7 @@ export default function Preparaciones({
                 </span>
                 <span className="text-right shrink-0">
                   <span className="block font-semibold tabular-nums">
-                    {t.cantidad} {t.unidad}
+                    {t.cantidad} {unidadDe(t.cantidad, t.unidad)}
                   </span>
                   {t.rendimiento_real != null && (
                     <span className={`block text-xs ${Math.abs(t.rendimiento_real - 1) > 0.05 ? 'text-aviso-700' : 'text-neutral-500'}`}>
@@ -260,6 +267,7 @@ function Mapa({
   onSeleccionar,
   resaltada,
   onResaltar,
+  onEditar,
   dinero,
 }: {
   preps: Preparacion[]
@@ -270,6 +278,7 @@ function Mapa({
   onSeleccionar: (id: number | null) => void
   resaltada: number | null
   onResaltar: (id: number | null) => void
+  onEditar: (p: Preparacion) => void
   dinero: (n: number) => string
 }) {
   const porId = useMemo(() => new Map(ingredientes.map((i) => [i.id, i])), [ingredientes])
@@ -294,7 +303,7 @@ function Mapa({
         alCambiar={(v) => onSeleccionar(v === '' ? null : Number(v))}
         opciones={[
           { valor: '', texto: 'Todas' },
-          ...preps.map((p) => ({ valor: String(p.id), texto: p.nombre, detalle: `rinde ${fmtCant(p.rinde)} ${p.unidad} por tanda` })),
+          ...preps.map((p) => ({ valor: String(p.id), texto: p.nombre, detalle: `rinde ${fmtCant(p.rinde)} ${unidadDe(p.rinde, p.unidad)} por tanda` })),
         ]}
       />
     </div>
@@ -330,11 +339,11 @@ function Mapa({
                         <PuntoTipo tipo={l.tipo} />
                         <span className="font-medium truncate flex-1">{l.nombre}</span>
                         <span className="text-sm font-semibold tabular-nums shrink-0">
-                          {fmtCant(l.cantidad)} {l.unidad}
+                          {fmtCant(l.cantidad)} {unidadDe(l.cantidad, l.unidad)}
                         </span>
                       </span>
                       <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-500 leading-tight pl-4">
-                        {ing && <span className="tabular-nums">hay {fmtCant(ing.stock_actual)} {ing.unidad}</span>}
+                        {ing && <span className="tabular-nums">hay {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}</span>}
                         {pierde && <span className="text-aviso-700">{pierde}</span>}
                         {otras.length > 0 && (
                           <span className="inline-flex items-center gap-1 text-aviso-700">
@@ -379,21 +388,35 @@ function Mapa({
               <Icono nombre="cocina" size={12} /> Lo que sale
             </p>
             <div className="flex-1 flex items-center">
-              <button
-                type="button"
+              {/* Tocar la tarjeta la suelta (como en la cuadrícula); el botón de
+                  la receta va adentro y no la suelta. */}
+              <div
                 onClick={() => onSeleccionar(null)}
                 title="Soltar"
-                className="vp-pulsable w-full text-left rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3"
+                className="vp-pulsable cursor-pointer w-full text-left rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3"
               >
                 <span aria-hidden className="w-1.5 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
                 <div className="min-w-0 flex-1 space-y-3">
-                  <p className="font-display text-lg font-semibold tracking-tight leading-tight">{elegida.nombre}</p>
+                  <div className="flex items-start gap-2">
+                    <p className="font-display text-lg font-semibold tracking-tight leading-tight flex-1 min-w-0">{elegida.nombre}</p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSeleccionar(null)
+                      }}
+                      aria-label="Soltar la preparación"
+                      className="shrink-0 -mt-1 -mr-1 w-7 h-7 rounded-full grid place-items-center text-white/60 hover:text-white hover:bg-white/10"
+                    >
+                      <Icono nombre="quitar" size={14} />
+                    </button>
+                  </div>
                   <div>
                     <p className="font-display text-2xl font-semibold tabular-nums leading-none">
                       {elegida.modo_produccion === 'producir'
-                        ? `${fmtCant(elegida.stock_actual)} ${elegida.unidad}`
+                        ? `${fmtCant(elegida.stock_actual)} ${unidadDe(elegida.stock_actual, elegida.unidad)}`
                         : d?.potencial != null
-                          ? `${fmtCant(d.potencial)} ${elegida.unidad}`
+                          ? `${fmtCant(d.potencial)} ${unidadDe(d.potencial, elegida.unidad)}`
                           : '—'}
                     </p>
                     <p className="text-xs text-white/70 mt-1">
@@ -408,8 +431,19 @@ function Mapa({
                     Cada {elegida.unidad === 'kg' ? 'kilo' : elegida.unidad === 'lt' ? 'litro' : 'unidad'} ya preparado cuesta{' '}
                     <b className="text-white tabular-nums">{dinero(elegida.costo_unitario)}</b>
                   </p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onEditar(elegida)
+                    }}
+                    className="vp-pulsable inline-flex items-center gap-2 rounded-xl bg-white text-neutral-900 px-3 py-1.5 text-sm font-semibold"
+                  >
+                    <Icono nombre="recetas" size={15} />
+                    Ver la receta
+                  </button>
                 </div>
-              </button>
+              </div>
             </div>
           </div>
         </div>
@@ -434,14 +468,14 @@ function Mapa({
                   <span className="font-medium truncate">{c.nombre}</span>
                   {c.preps.length > 1 && <span className="text-[11px] font-semibold text-aviso-700">la comparten {c.preps.length}</span>}
                 </span>
-                <span className="text-xs text-neutral-500 tabular-nums">{ing ? `hay ${fmtCant(ing.stock_actual)} ${ing.unidad}` : ''}</span>
+                <span className="text-xs text-neutral-500 tabular-nums">{ing ? `hay ${fmtCant(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}` : ''}</span>
                 <span className="flex flex-wrap gap-1 ml-auto">
                   {c.preps.map((x) => (
                     <button key={x.p.id} type="button" onClick={() => onSeleccionar(x.p.id)} className="vp-control inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs">
                       <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: colorDe.get(x.p.id) }} />
                       {x.p.nombre}
                       <span className="text-neutral-500 tabular-nums">
-                        {fmtCant(x.cantidad)} {c.unidad}
+                        {fmtCant(x.cantidad)} {unidadDe(x.cantidad, c.unidad)}
                       </span>
                     </button>
                   ))}
@@ -491,7 +525,7 @@ function Mapa({
                       {c.preps.length > 1 && <span className="text-[11px] font-semibold text-aviso-700 shrink-0">la comparten {c.preps.length}</span>}
                     </span>
                     <span className="block text-xs text-neutral-500 pl-4 tabular-nums truncate">
-                      {c.ing ? `hay ${fmtCant(c.ing.stock_actual)} ${c.ing.unidad}` : '—'}
+                      {c.ing ? `hay ${fmtCant(c.ing.stock_actual)} ${unidadDe(c.ing.stock_actual, c.ing.unidad)}` : '—'}
                       {pierde && <span className="text-aviso-700"> · {pierde}</span>}
                     </span>
                   </div>
@@ -541,10 +575,10 @@ function Mapa({
                       <span className="block font-medium truncate">{p.nombre}</span>
                       <span className="block text-xs text-neutral-500 tabular-nums truncate">
                         {p.modo_produccion === 'producir'
-                          ? `hay ${fmtCant(p.stock_actual)} ${p.unidad} hecho`
+                          ? `hay ${fmtCant(p.stock_actual)} ${unidadDe(p.stock_actual, p.unidad)} hecho`
                           : d?.potencial != null
-                            ? `podrías hacer ${fmtCant(d.potencial)} ${p.unidad} hoy`
-                            : `rinde ${fmtCant(p.rinde)} ${p.unidad} por tanda`}
+                            ? `podrías hacer ${fmtCant(d.potencial)} ${unidadDe(d.potencial, p.unidad)} hoy`
+                            : `rinde ${fmtCant(p.rinde)} ${unidadDe(p.rinde, p.unidad)} por tanda`}
                       </span>
                     </span>
                   </button>
@@ -611,12 +645,12 @@ function TarjetaPreparacion({
 
       <div className="rounded-2xl bg-neutral-500/6 px-3.5 py-2.5">
         <p className="font-display text-2xl font-semibold tracking-tight tabular-nums leading-none">
-          {produce ? `${fmtCant(p.stock_actual)} ${p.unidad}` : potencial == null ? '—' : `${fmtCant(potencial)} ${p.unidad}`}
+          {produce ? `${fmtCant(p.stock_actual)} ${unidadDe(p.stock_actual, p.unidad)}` : potencial == null ? '—' : `${fmtCant(potencial)} ${unidadDe(potencial, p.unidad)}`}
         </p>
         <p className="text-xs text-neutral-600 mt-1 leading-snug">
           {produce
             ? potencial != null
-              ? `hay hecho ahora mismo; con el crudo se podrían hacer ${fmtCant(potencial)} ${p.unidad} más`
+              ? `hay hecho ahora mismo; con el crudo se podrían hacer ${fmtCant(potencial)} ${unidadDe(potencial, p.unidad)} más`
               : 'hay hecho ahora mismo'
             : d?.limita
               ? `podrías hacer hoy con el crudo que hay. Lo que se acaba primero: ${d.limita}${d.comparte_con.length > 0 ? `, que también usa ${d.comparte_con.join(' y ')}` : ''}`
@@ -630,7 +664,7 @@ function TarjetaPreparacion({
             <PuntoTipo tipo={l.tipo} />
             <span className="truncate flex-1">{l.nombre}</span>
             <span className="tabular-nums text-neutral-500 shrink-0">
-              {fmtCant(l.cantidad)} {l.unidad}
+              {fmtCant(l.cantidad)} {unidadDe(l.cantidad, l.unidad)}
             </span>
           </li>
         ))}
@@ -684,8 +718,8 @@ function SobroHoy({ p, onCerrar, onHecho }: { p: Preparacion; onCerrar: () => vo
       const r = await api.sobrantePreparacion(p.id, { cantidad: n, accion })
       onHecho(
         accion === 'guardar'
-          ? `${fmtCant(n)} ${p.unidad} de ${p.nombre} se guardan para mañana. No se mueve nada: al venderse se descuenta el crudo.`
-          : `Se botaron ${fmtCant(n)} ${p.unidad} de ${p.nombre}: ${dinero(r.valor ?? valor)} de pérdida, descontados del crudo.`,
+          ? `${fmtCant(n)} ${unidadDe(n, p.unidad)} de ${p.nombre} se guardan para mañana. No se mueve nada: al venderse se descuenta el crudo.`
+          : `Se botaron ${fmtCant(n)} ${unidadDe(n, p.unidad)} de ${p.nombre}: ${dinero(r.valor ?? valor)} de pérdida, descontados del crudo.`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo anotar')
@@ -841,7 +875,7 @@ function Olla({
     if (!nombre.trim()) return setError('Ponle nombre a la preparación.')
     if (limpias.length === 0) return setError('Agrega al menos un ingrediente con su cantidad.')
     if (!(rinde > 0))
-      return setError(sinMedida ? `Escribe cuántos ${unidad} salen de una tanda.` : 'Lo que lleva no deja nada: revisa cuánto se aprovecha de cada cosa.')
+      return setError(sinMedida ? `Escribe ${unidad === 'unidad' ? 'cuántas unidades' : `cuántos ${unidad}`} salen de una tanda.` : 'Lo que lleva no deja nada: revisa cuánto se aprovecha de cada cosa.')
     setGuardando(true)
     try {
       // El % que se aprovecha es del crudo: si cambió, se guarda en su ficha.
@@ -930,10 +964,10 @@ function Olla({
                     onChange={(e) => setRindeEscrito(e.target.value)}
                     inputMode="decimal"
                     placeholder="0"
-                    aria-label={`Cuántos ${unidad} salen de una tanda`}
+                    aria-label={`${unidad === 'unidad' ? 'Cuántas unidades' : `Cuántos ${unidad}`} salen de una tanda`}
                     className="w-20 !py-0.5 !px-1.5 font-display text-lg font-semibold tabular-nums"
                   />
-                  <span className="text-sm text-neutral-600">{unidad}</span>
+                  <span className="text-sm text-neutral-600">{unidadDe(Number(rindeEscrito) || 0, unidad)}</span>
                 </span>
                 <span className="block text-[11px] text-neutral-500 leading-tight">ya preparado: mídelo la próxima tanda</span>
               </label>
@@ -941,10 +975,10 @@ function Olla({
               <div className="rounded-xl bg-neutral-500/6 px-3 py-2">
                 <span className="text-[11px] text-neutral-500">Entra crudo</span>
                 <span className="block font-display text-lg font-semibold tabular-nums leading-tight">
-                  {entra > 0 ? `${fmtCant(entra)} ${unidad}` : '—'}
+                  {entra > 0 ? `${fmtCant(entra)} ${unidadDe(entra, unidad)}` : '—'}
                 </span>
                 <span className="block text-[11px] text-neutral-500 leading-tight">
-                  {entra > 0 && rinde > 0 ? `y sale ${fmtCant(rinde)} ${unidad} ya preparado` : 'lo que se mide como la preparación'}
+                  {entra > 0 && rinde > 0 ? `y sale ${fmtCant(rinde)} ${unidadDe(rinde, unidad)} ya preparado` : 'lo que se mide como la preparación'}
                 </span>
               </div>
             )}
@@ -1052,7 +1086,7 @@ function Olla({
                           </span>
                         </span>
                         <span className="text-xs text-neutral-500 tabular-nums text-right">
-                          {fmtCant(ing.stock_actual)} {ing.unidad}
+                          {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}
                           <span className="block">{dinero(ing.costo_unitario)} / {ing.unidad}</span>
                         </span>
                         <span className="w-7 h-7 grid place-items-center rounded-full bg-neutral-500/10 text-neutral-600 shrink-0">
@@ -1113,7 +1147,7 @@ function RenglonOlla({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {dinero(costoU, 2)} por {ing.unidad} · hay {fmtCant(ing.stock_actual)} {ing.unidad}
+            {dinero(costoU, 2)} por {ing.unidad} · hay {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}
           </span>
         </span>
         <CasillaConUnidad
@@ -1132,7 +1166,7 @@ function RenglonOlla({
         <span className="w-[4.5rem] shrink-0 text-right text-sm tabular-nums">
           {cantidad > 0 ? (
             <>
-              <span className="block font-semibold">{enChica ? `${fmtCant(queda * factor)} ${otra}` : `${fmtCant(queda)} ${ing.unidad}`}</span>
+              <span className="block font-semibold">{enChica ? `${fmtCant(queda * factor)} ${otra}` : `${fmtCant(queda)} ${unidadDe(queda, ing.unidad)}`}</span>
               {!esPrep && (
                 <span className="inline-flex items-center justify-end gap-0.5 text-[11px] text-neutral-500">
                   <Numerico
@@ -1234,7 +1268,7 @@ function DibujoOlla({
         {rinde > 0 ? 'sale' : 'lo que sale de la tanda'}
       </text>
       <text x="130" y="68" textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--color-neutral-900)" style={{ fontFamily: 'var(--font-display)' }}>
-        {rinde > 0 ? `${fmtCant(rinde)} ${unidad}` : '—'}
+        {rinde > 0 ? `${fmtCant(rinde)} ${unidadDe(rinde, unidad)}` : '—'}
       </text>
       {vacia && (
         <text x="130" y="230" textAnchor="middle" fontSize="12" fill="var(--color-neutral-400)">
@@ -1356,7 +1390,7 @@ function AnotarTanda({
         </div>
         {rendimiento != null && (
           <p className={`rounded-xl px-3 py-2 ${Math.abs(rendimiento - 1) > 0.05 ? 'bg-aviso-500/10 text-aviso-800' : 'bg-neutral-500/6 text-neutral-700'}`}>
-            Con eso la receta esperaba {fmtCant(esperado)} {prep.unidad}: rindió {Math.round(rendimiento * 100)} %.
+            Con eso la receta esperaba {fmtCant(esperado)} {unidadDe(esperado, prep.unidad)}: rindió {Math.round(rendimiento * 100)} %.
           </p>
         )}
         {error && <p className="text-peligro-600">{error}</p>}

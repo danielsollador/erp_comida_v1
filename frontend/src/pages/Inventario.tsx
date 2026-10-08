@@ -10,7 +10,7 @@ import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { Aviso, Boton, Modal, Pagina, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
-import { cantidad, datosDe } from '../lib/inventario'
+import { cantidad, datosDe, unidadDe } from '../lib/inventario'
 import { useMoneda } from '../lib/moneda'
 import { ALMACENES, ALMACEN_DE } from '../lib/tiposArticulo'
 import Almacenes, { type ResumenAlmacen } from './partes/inventario/Almacenes'
@@ -127,7 +127,6 @@ export default function Inventario() {
   // Con la receta de una preparación abierta, la franja Crudo/Preparado y
   // las acciones no tienen sentido: para salir se vuelve atrás.
   const [editandoPrep, setEditandoPrep] = useState(false)
-  const [abrirNuevaPrep, setAbrirNuevaPrep] = useState(0)
 
   useEffect(() => {
     cargar()
@@ -257,7 +256,7 @@ export default function Inventario() {
   async function contar(ing: Ingrediente) {
     const real = await dialogo.pedirNumero({
       titulo: `Contar ${ing.nombre}`,
-      texto: `El sistema dice ${cantidad(ing.stock_actual)} ${ing.unidad}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
+      texto: `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
       etiqueta: 'Cuánto hay realmente',
       sufijo: ing.unidad,
       valor: cantidad(ing.stock_actual),
@@ -270,7 +269,7 @@ export default function Inventario() {
   async function revertirMerma(m: Merma) {
     const ok = await dialogo.confirmar({
       titulo: '¿Revertir esta merma?',
-      texto: `Vuelven ${cantidad(m.cantidad)} ${m.unidad} de ${m.ingrediente_nombre} al inventario.\n\nLa merma original no se borra: queda marcada como revertida con su asiento de reverso.`,
+      texto: `Vuelven ${cantidad(m.cantidad)} ${unidadDe(m.cantidad, m.unidad)} de ${m.ingrediente_nombre} al inventario.\n\nLa merma original no se borra: queda marcada como revertida con su asiento de reverso.`,
       aceptar: 'Revertir',
     })
     if (ok) accion(() => api.revertirMerma(m.id))
@@ -279,7 +278,7 @@ export default function Inventario() {
   async function revertirSobrante(sb: SobranteInventario) {
     const ok = await dialogo.confirmar({
       titulo: '¿Revertir este conteo?',
-      texto: `Salen ${cantidad(sb.cantidad)} ${sb.unidad} de ${sb.ingrediente_nombre} que habían entrado por un conteo hacia arriba.\n\nEl sobrante no se borra: queda marcado como revertido con su contra-asiento.`,
+      texto: `Salen ${cantidad(sb.cantidad)} ${unidadDe(sb.cantidad, sb.unidad)} de ${sb.ingrediente_nombre} que habían entrado por un conteo hacia arriba.\n\nEl sobrante no se borra: queda marcado como revertido con su contra-asiento.`,
       aceptar: 'Revertir',
     })
     if (ok) accion(() => api.revertirSobrante(sb.id))
@@ -312,7 +311,7 @@ export default function Inventario() {
     cargar()
     const lineas = r.ajustes
       .slice(0, 8)
-      .map((a) => `${a.nombre}: ${a.diferencia > 0 ? '+' : ''}${cantidad(a.diferencia)} ${a.unidad} (${dinero(a.valor)})`)
+      .map((a) => `${a.nombre}: ${a.diferencia > 0 ? '+' : ''}${cantidad(a.diferencia)} ${unidadDe(a.diferencia, a.unidad)} (${dinero(a.valor)})`)
       .join('\n')
     const noContadas = r.no_contadas?.length ? `\n\nOjo: el preparado contado llevaba ${r.no_contadas.join(', ')}, que no se contó: esa parte no se tradujo.` : ''
     await dialogo.avisar({
@@ -461,7 +460,7 @@ export default function Inventario() {
             )}
 
             {tipoActual === 'insumo' && !editandoPrep && (
-              <div role="tablist" className={`grid gap-2 ${cara === 'preparado' ? 'grid-cols-[1fr_1fr_auto]' : 'grid-cols-2'}`}>
+              <div role="tablist" className="grid grid-cols-2 gap-2">
                 {(
                   [
                     { v: 'crudo' as const, t: 'Crudo', d: 'lo que llegó, tal cual', n: `${delAlmacen.filter((i) => i.activo !== false).length} mercancías`, icono: 'paquete' as const },
@@ -491,11 +490,6 @@ export default function Inventario() {
                     </button>
                   )
                 })}
-                {cara === 'preparado' && (
-                  <Boton onClick={() => setAbrirNuevaPrep((n) => n + 1)} icono="mas" className="self-center">
-                    Nueva preparación
-                  </Boton>
-                )}
               </div>
             )}
 
@@ -511,7 +505,7 @@ export default function Inventario() {
                 />
               </>
             ) : tipoActual === 'insumo' && cara === 'preparado' ? (
-              <Preparaciones ingredientes={ingredientes} onCambio={cargar} onEditando={setEditandoPrep} abrirNueva={abrirNuevaPrep} />
+              <Preparaciones ingredientes={ingredientes} onCambio={cargar} onEditando={setEditandoPrep} />
             ) : (
               <>
                 <TablaMercancia
@@ -566,7 +560,7 @@ export default function Inventario() {
                           </div>
                         </div>
                         <span className="font-semibold tabular-nums whitespace-nowrap">
-                          +{cantidad(s.cantidad_sugerida)} {s.unidad}
+                          +{cantidad(s.cantidad_sugerida)} {unidadDe(s.cantidad_sugerida, s.unidad)}
                         </span>
                         {ing && <AccionFila onClick={() => comprar(ing)}>Llegó</AccionFila>}
                       </li>

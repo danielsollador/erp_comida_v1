@@ -1,6 +1,6 @@
 import Icono from '../../../components/Icono'
 import { Seccion } from '../../../components/ui'
-import { cantidad } from '../../../lib/inventario'
+import { cantidad, unidadDe } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import { ALMACENES, ALMACEN_DE, type Almacen } from '../../../lib/tiposArticulo'
 import type { ConteoResumen, Ingrediente, SugerenciaCompra, TipoArticulo } from '../../../lib/types'
@@ -115,7 +115,7 @@ export default function Almacenes({
                     <span className="block text-xs text-neutral-500 truncate">{s.razon}</span>
                   </span>
                   <span className="font-semibold tabular-nums whitespace-nowrap">
-                    +{cantidad(s.cantidad_sugerida)} {s.unidad}
+                    +{cantidad(s.cantidad_sugerida)} {unidadDe(s.cantidad_sugerida, s.unidad)}
                   </span>
                   {ing && (
                     <button type="button" onClick={() => onComprar(ing)} className="vp-control shrink-0 rounded-full px-3 py-1 text-xs font-semibold">

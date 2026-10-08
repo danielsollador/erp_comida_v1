@@ -3,7 +3,7 @@ import AccionFila from '../../../components/AccionFila'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { FiltroDesplegable, Pastilla, Vacio, Boton } from '../../../components/ui'
 import { useAltoRestante } from '../../../lib/altoRestante'
-import { cantidad, estadoStock } from '../../../lib/inventario'
+import { cantidad, estadoStock, unidadDe } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import { nombre } from '../../../lib/palabras'
 import { ALMACEN_DE } from '../../../lib/tiposArticulo'
@@ -211,7 +211,7 @@ export default function TablaMercancia({
                     </td>
                     <td className="text-right p-3 tabular-nums whitespace-nowrap">
                       <span className={estado ? 'font-semibold' : ''}>
-                        {cantidad(ing.stock_actual)} {ing.unidad}
+                        {cantidad(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}
                       </span>
                       {estado && (
                         <span className="ml-2 align-middle">
@@ -220,7 +220,7 @@ export default function TablaMercancia({
                       )}
                     </td>
                     <td className="text-right p-3 text-neutral-500 tabular-nums">
-                      {cantidad(ing.stock_minimo)} {ing.unidad}
+                      {cantidad(ing.stock_minimo)} {unidadDe(ing.stock_minimo, ing.unidad)}
                     </td>
                     <td className="text-right p-3 tabular-nums">
                       {ing.costo_unitario ? dinero(ing.costo_unitario) : <span className="text-aviso-600 font-semibold">cargar</span>}

@@ -20,6 +20,7 @@ import {
   legible,
   queLePaso,
   type CompraConVariacion,
+  unidadDe,
 } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import { parecidos } from '../../../lib/parecidos'
@@ -135,7 +136,7 @@ export default function FichaMercancia({
     if (!cantidadCargada) return
     try {
       await api.cargarIndirecto(ing.id, cantidadCargada, 'Carga a la freidora')
-      setAviso(`Cargado: ${cantidadCargada} ${ing.unidad}.`)
+      setAviso(`Cargado: ${cantidadCargada} ${unidadDe(Number(cantidadCargada), ing.unidad)}.`)
       onRecargar(ing)
     } catch (e) {
       setAviso(e instanceof Error ? e.message : 'No se pudo anotar')
@@ -544,7 +545,7 @@ export default function FichaMercancia({
             {presentaciones.map((e) => (
               <li key={e.id} className="vp-control inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs">
                 <span className="font-semibold">
-                  1 {e.unidad_papel || 'paquete'} = {Number(e.factor.toFixed(4))} {e.unidad}
+                  1 {e.unidad_papel || 'paquete'} = {Number(e.factor.toFixed(4))} {unidadDe(e.factor, e.unidad)}
                 </span>
                 <span className="text-neutral-500">· {e.proveedor_nombre || e.proveedor_rif}</span>
               </li>

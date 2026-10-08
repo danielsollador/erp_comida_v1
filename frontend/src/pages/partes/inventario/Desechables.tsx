@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Seccion, Vacio, Boton } from '../../../components/ui'
 import { useMoneda } from '../../../lib/moneda'
 import type { FacturaCompra, Ingrediente } from '../../../lib/types'
+import { unidadDe } from '../../../lib/inventario'
 
 /**
  * Los desechables no se cuentan: servilletas, bolsas, cloro. Van directo a
@@ -80,7 +81,7 @@ export default function Desechables({
                     <span className="block font-medium truncate">{i.nombre}</span>
                     <span className="block text-xs text-neutral-500">
                       {g
-                        ? `${g.veces} compra${g.veces === 1 ? '' : 's'} · ${Number(g.cantidad.toFixed(2))} ${i.unidad} · última ${new Date(g.ultima).toLocaleDateString('es-VE')}`
+                        ? `${g.veces} compra${g.veces === 1 ? '' : 's'} · ${Number(g.cantidad.toFixed(2))} ${unidadDe(g.cantidad, i.unidad)} · última ${new Date(g.ultima).toLocaleDateString('es-VE')}`
                         : i.costo_reposicion != null
                           ? `Sin compras en el período · último costo ${dinero(i.costo_reposicion)}`
                           : 'Sin compras todavía'}

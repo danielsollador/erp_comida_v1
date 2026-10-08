@@ -3,7 +3,7 @@ import AccionFila from '../../../components/AccionFila'
 import { Tabla, Th, useBuscador, useOrden } from '../../../components/Tabla'
 import { Filtros, Pastilla, Seccion, Vacio } from '../../../components/ui'
 import { api } from '../../../lib/api'
-import { cantidad } from '../../../lib/inventario'
+import { cantidad, unidadDe } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import type { Rango } from '../../../lib/fechas'
 import type { Categoria, ConteoResumen, CostoIndirecto, CostoParaPrecios, CostoTeoricoFila, Merma, SobranteInventario } from '../../../lib/types'
@@ -169,14 +169,14 @@ export default function Control({
                       <tr key={f.ingrediente_id}>
                         <td className="py-2 font-medium">{f.nombre}</td>
                         <td className="py-2 text-right tabular-nums">
-                          {fmt(f.teorico)} {f.unidad}
+                          {fmt(f.teorico)} {unidadDe(f.teorico, f.unidad)}
                         </td>
-                        <td className="py-2 text-right tabular-nums text-neutral-600">{f.mermas ? `${fmt(f.mermas)} ${f.unidad}` : '—'}</td>
+                        <td className="py-2 text-right tabular-nums text-neutral-600">{f.mermas ? `${fmt(f.mermas)} ${unidadDe(f.mermas, f.unidad)}` : '—'}</td>
                         <td className="py-2 text-right tabular-nums">
                           {f.diferencia_conteo ? (
                             <span className={f.diferencia_conteo < 0 ? 'text-peligro-700' : 'text-exito-700'}>
                               {f.diferencia_conteo > 0 ? '+' : ''}
-                              {fmt(f.diferencia_conteo)} {f.unidad}
+                              {fmt(f.diferencia_conteo)} {unidadDe(f.diferencia_conteo, f.unidad)}
                               <span className="block text-xs">
                                 {dinero(f.valor_diferencia)}
                                 {f.pct_desvio != null && ` · ${Math.abs(f.pct_desvio)} %`}
@@ -230,7 +230,7 @@ export default function Control({
                         <td className="p-3 text-neutral-500 whitespace-nowrap">{new Date(m.fecha).toLocaleDateString('es-VE')}</td>
                         <td className="p-3 font-medium">{m.ingrediente_nombre}</td>
                         <td className="p-3 text-right tabular-nums whitespace-nowrap">
-                          {cantidad(m.cantidad)} {m.unidad}
+                          {cantidad(m.cantidad)} {unidadDe(m.cantidad, m.unidad)}
                         </td>
                         <td className="p-3 text-neutral-500">
                           {m.por_conteo && <Pastilla tono="ojo">conteo</Pastilla>} {m.motivo || '—'}
@@ -257,7 +257,7 @@ export default function Control({
                     <span className={sb.revertido ? 'text-neutral-400 line-through' : ''}>
                       {sb.ingrediente_nombre}
                       <span className="ml-1 text-xs text-neutral-400">
-                        +{cantidad(sb.cantidad)} {sb.unidad} · {new Date(sb.fecha).toLocaleDateString('es-VE')}
+                        +{cantidad(sb.cantidad)} {unidadDe(sb.cantidad, sb.unidad)} · {new Date(sb.fecha).toLocaleDateString('es-VE')}
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
@@ -324,7 +324,7 @@ export default function Control({
                     <span>
                       <span className="block font-medium">{i.nombre}</span>
                       <span className="block text-xs text-neutral-500">
-                        Cargado {fmt(i.cargado)} {i.unidad} ({dinero(i.valor)}) · {fmt(i.piezas)} piezas fritas
+                        Cargado {fmt(i.cargado)} {unidadDe(i.cargado, i.unidad)} ({dinero(i.valor)}) · {fmt(i.piezas)} piezas fritas
                       </span>
                     </span>
                     <span className="text-right shrink-0">
