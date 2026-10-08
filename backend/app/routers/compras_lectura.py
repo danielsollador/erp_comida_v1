@@ -334,7 +334,7 @@ def _completar(
         # Con candado: dos reintentos a la vez esperan uno al otro, y el
         # segundo ya ve la marca del primero.
         soporte = (
-            db.query(models.SoporteFactura).filter_by(id=body.soporte_id).with_for_update().first()
+            db.query(models.SoporteFactura).filter_by(id=body.soporte_id).with_for_update(of=models.SoporteFactura).first()
         )
         # Ya no esta: el reintento llego despues de DIAS_FOTO_SUELTA y la
         # foto se limpio por suelta. La factura se queda sin foto y sin lo

@@ -212,7 +212,7 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             i.id: i
             for i in db.query(models.Ingrediente)
             .filter(models.Ingrediente.id.in_([it.ingrediente_id for it in factura.items]))
-            .with_for_update()
+            .with_for_update(of=models.Ingrediente)
         }
         for item in factura.items:
             if item.ingrediente_id not in ingredientes:
@@ -599,7 +599,7 @@ def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
         ingrediente = (
             db.query(models.Ingrediente)
             .filter(models.Ingrediente.id == pedido_item.ingrediente_id)
-            .with_for_update()
+            .with_for_update(of=models.Ingrediente)
             .first()
         )
         base += pedido_item.cantidad * linea.costo_unitario
@@ -632,7 +632,7 @@ def _abaratar_insumos(db: Session, factura: models.FacturaCompra, rebaja: float)
         ingrediente = (
             db.query(models.Ingrediente)
             .filter(models.Ingrediente.id == linea.ingrediente_id)
-            .with_for_update()
+            .with_for_update(of=models.Ingrediente)
             .first()
         )
         if ingrediente is None or (ingrediente.stock_actual or 0) <= 0:

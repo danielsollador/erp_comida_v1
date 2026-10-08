@@ -29,7 +29,7 @@ def _ingrediente_para_actualizar(db: Session, ingrediente_id: int) -> models.Ing
     ingrediente = (
         db.query(models.Ingrediente)
         .filter(models.Ingrediente.id == ingrediente_id)
-        .with_for_update()
+        .with_for_update(of=models.Ingrediente)
         .first()
     )
     if not ingrediente:
