@@ -984,7 +984,6 @@ export default function CargarFactura({
                   conocidos={paquetesConocidos(l.ingrediente_id)}
                   onCambiar={(cambio) => cambiarLinea(i, cambio)}
                   onMercancia={(id) => elegirMercancia(i, id)}
-                  onConcepto={(c) => elegirConcepto(i, c)}
                   onTipo={(v) => elegirTipo(i, v)}
                   onCrear={() => setCreandoEn(i)}
                   onQuitar={() => setLineas((prev) => prev.filter((_, idx) => idx !== i))}
@@ -1339,7 +1338,6 @@ function Renglon({
   conocidos,
   onCambiar,
   onMercancia,
-  onConcepto,
   onTipo,
   onCrear,
   onQuitar,
@@ -1357,7 +1355,6 @@ function Renglon({
   conocidos: Equivalencia[]
   onCambiar: (cambio: Partial<Linea>) => void
   onMercancia: (id: number) => void
-  onConcepto: (c: ConceptoGasto | undefined) => void
   /** El primer desplegable: un tipo de mercancía o un concepto de gasto. */
   onTipo: (valor: string) => void
   onCrear: () => void
