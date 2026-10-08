@@ -5,7 +5,7 @@ import Icono from '../../../components/Icono'
 import { Numerico } from '../../../components/Teclado'
 import { contiene, palabrasDe } from '../../../components/Tabla'
 import { Boton, FiltroDesplegable, Modal, Seccion, Vacio } from '../../../components/ui'
-import { api } from '../../../lib/api'
+import { api, ErrorApi } from '../../../lib/api'
 import { useMoneda } from '../../../lib/moneda'
 import { colorFranja } from '../../../lib/paleta'
 import { datosDe, unidadDe } from '../../../lib/inventario'
@@ -1488,6 +1488,8 @@ function AnotarTanda({
   const salioNum = aNum(salio)
   const rendimiento = esperado > 0 && salioNum > 0 ? salioNum / esperado : null
 
+  // Si no alcanza el crudo, el servidor avisa; la segunda vez va confirmada.
+  const [confirmarFalta, setConfirmarFalta] = useState('')
   async function guardar() {
     setError('')
     if (!(salioNum > 0)) return setError('Di cuánto salió.')
@@ -1497,9 +1499,15 @@ function AnotarTanda({
         preparacion_id: prep.id,
         cantidad: salioNum,
         usado: prep.lineas.map((l) => ({ ingrediente_id: l.ingrediente_id, cantidad: aNum(usado[l.ingrediente_id] ?? '0') || 0 })),
+        forzar: !!confirmarFalta,
       })
       onHecho()
     } catch (e) {
+      if (e instanceof ErrorApi && e.status === 409 && e.message.startsWith('No alcanza')) {
+        setConfirmarFalta(e.message)
+        setError(`${e.message} Si de verdad se usó eso, vuelve a tocar «Anotar» y queda en negativo hasta el próximo conteo.`)
+        return
+      }
       setError(e instanceof Error ? e.message : 'No se pudo anotar')
     } finally {
       setGuardando(false)

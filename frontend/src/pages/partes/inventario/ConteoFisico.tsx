@@ -292,6 +292,17 @@ export default function ConteoFisico({
             {leido.en_blanco > 0 && `, ${leido.en_blanco} en blanco que no se tocan`}.
             {leido.filas.length > 0 && ' Revísalos abajo y guarda.'}
           </p>
+          {leido.filas.some((f) => f.aviso) && (
+            <ul className="mt-2 list-disc pl-5 text-aviso-800 space-y-0.5">
+              {leido.filas
+                .filter((f) => f.aviso)
+                .map((f) => (
+                  <li key={f.ingrediente_id}>
+                    {f.nombre}: {f.aviso}
+                  </li>
+                ))}
+            </ul>
+          )}
           {leido.errores.length > 0 && (
             <ul className="mt-2 list-disc pl-5 text-peligro-700 space-y-0.5">
               {leido.errores.map((e) => (

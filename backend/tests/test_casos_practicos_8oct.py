@@ -353,3 +353,96 @@ def test_una_cantidad_rara_en_la_factura_avisa(client, db, libros):
     rara = revisar(20)
     assert rara and rara[0]["referencia"] == 2.5 and "Revisa la cantidad" in rara[0]["mensaje"]
     assert revisar(0.2)
+
+
+# ── cuarta tanda (8-oct): inventario ─────────────────────────────────────────
+
+
+def test_la_planilla_respeta_su_unidad(client, db, libros):
+    queso = alta(client, "Queso")
+    comprar(client, "P-1", [{"ingrediente_id": queso["id"], "cantidad": 1, "costo_unitario": 6}])
+    def leer(unidad, contado):
+        csv = f"ID;Insumo;Unidad;Contado\n{queso['id']};Queso;{unidad};{contado}\n".encode()
+        return client.post("/api/inventario/conteos/leer-planilla", files={"archivo": ("c.csv", csv, "text/csv")}).json()
+    assert leer("g", "850")["filas"][0]["contado"] == 0.85
+    assert leer("kg", "0,85")["filas"][0]["contado"] == 0.85
+    sin = leer("", "850")["filas"][0]
+    assert sin["contado"] == 850 and "¿eran g?" in sin["aviso"]
+    assert "se cuenta en kg" in leer("unidad", "3")["errores"][0]
+
+
+def test_una_tanda_con_mas_crudo_del_que_hay_pide_confirmar(client, db, libros):
+    pollo = alta(client, "Pollo", rendimiento_pct=70)
+    comprar(client, "P-2", [{"ingrediente_id": pollo["id"], "cantidad": 3, "costo_unitario": 4}])
+    g = client.post("/api/inventario/preparaciones", json={"nombre": "Guiso", "unidad": "kg", "rinde": 1, "modo_produccion": "producir",
+                                                          "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1}]}).json()
+    cuerpo = {"preparacion_id": g["id"], "cantidad": 3.5, "usado": [{"ingrediente_id": pollo["id"], "cantidad": 5}]}
+    r = client.post("/api/inventario/produccion", json=cuerpo)
+    assert r.status_code == 409 and r.json()["detail"].startswith("No alcanza: Pollo")
+    db.expire_all()
+    assert db.get(models.Ingrediente, pollo["id"]).stock_actual == 3
+    assert client.post("/api/inventario/produccion", json={**cuerpo, "forzar": True}).status_code == 200
+
+
+def _editar(client, iid, **cambios):
+    f = next(i for i in client.get("/api/inventario/ingredientes").json() if i["id"] == iid)
+    cuerpo = {k: f[k] for k in ("nombre", "unidad", "tipo", "stock_minimo", "stock_objetivo", "costo_unitario", "exento", "rendimiento_pct")}
+    return client.put(f"/api/inventario/ingredientes/{iid}", json={**cuerpo, **cambios})
+
+
+def test_pasar_a_desechable_con_stock_lo_manda_a_gasto(client, db, libros):
+    from conftest import libros_cuadrados, saldo
+    vaso = alta(client, "Vaso", unidad="unidad", tipo="consumible")
+    comprar(client, "V-1", [{"ingrediente_id": vaso["id"], "cantidad": 80, "costo_unitario": 0.08}])
+    r = _editar(client, vaso["id"], tipo="desechable")
+    assert r.status_code == 409 and r.json()["detail"].startswith("Confirmar: quedan 80 unidad")
+    antes = saldo(db, "6050")
+    assert _editar(client, vaso["id"], tipo="desechable", confirmar=True).status_code == 200
+    db.expire_all()
+    assert db.get(models.Ingrediente, vaso["id"]).stock_actual == 0
+    assert round(saldo(db, "6050") - antes, 2) == 6.4
+    libros_cuadrados(client, db)
+    # Si va en una receta, ni confirmando.
+    jarra = alta(client, "Jarra", unidad="unidad", tipo="consumible")
+    producto(db, "Limonada", [(jarra["id"], 1)])
+    assert "va en la receta de Limonada" in _editar(client, jarra["id"], tipo="desechable", confirmar=True).json()["detail"]
+
+
+def test_archivar_lo_que_lleva_una_receta_pide_confirmar(client, db, libros):
+    cebolla = alta(client, "Cebolla")
+    client.post("/api/inventario/preparaciones", json={"nombre": "Guiso", "unidad": "kg", "rinde": 1, "lineas": [{"ingrediente_id": cebolla["id"], "cantidad": 0.1}]})
+    r = _editar(client, cebolla["id"], activo=False)
+    assert r.status_code == 409 and "va en Guiso" in r.json()["detail"]
+    assert _editar(client, cebolla["id"], activo=False, confirmar=True).status_code == 200
+    suelta = alta(client, "Perejil")
+    assert _editar(client, suelta["id"], activo=False).status_code == 200
+
+
+def test_una_caja_distinta_no_cambia_lo_aprendido(client, db, libros):
+    malta = alta(client, "Malta", unidad="unidad", tipo="reventa")
+    def aprender(trae):
+        client.post("/api/compras/equivalencias/aprender", json={"proveedor_rif": "J123456789", "renglones": [
+            {"descripcion": "MALTA CAJA 24", "unidad": "CAJA", "cantidad_papel": 1, "precio_papel": 12, "ingrediente_id": malta["id"], "cantidad": trae, "costo_unitario": 12 / trae}]})
+    def factor():
+        return client.post("/api/compras/equivalencias/buscar", json={"proveedor_rif": "J123456789", "renglones": [{"descripcion": "MALTA CAJA 24", "unidad": "CAJA"}]}).json()[0]["factor"]
+    aprender(24)
+    aprender(24)
+    aprender(20)
+    assert factor() == 24, "una caja abierta no es la nueva regla"
+    aprender(24)
+    aprender(20)
+    assert factor() == 24
+    aprender(20)
+    assert factor() == 20, "dos seguidas: el proveedor cambió la presentación"
+
+
+def test_una_categoria_borrada_revive_con_su_mercancia(client, db, libros):
+    cat = client.post("/api/inventario/categorias", json={"nombre": "Lácteos"}).json()
+    for n in ("Queso", "Leche"):
+        alta(client, n, categoria_id=cat["id"])
+    client.delete(f"/api/inventario/categorias/{cat['id']}")
+    otra = alta(client, "Crema")
+    r = client.post("/api/inventario/categorias", json={"nombre": "lacteos"}).json()
+    assert r["id"] == cat["id"] and r["usos"] == 2
+    nombres = {i["nombre"]: i["categoria"] for i in client.get("/api/inventario/ingredientes").json()}
+    assert nombres["Queso"] == "Lácteos" and nombres["Leche"] == "Lácteos" and not nombres["Crema"]

@@ -260,6 +260,16 @@ def categoria_del_deposito(db: Session, nombre: str) -> Optional[models.Categori
     for cat in db.query(models.CategoriaInsumo).filter(models.CategoriaInsumo.activo.is_(True)).all():
         if comparable(cat.nombre) == comparable(limpio):
             return cat
+    # Una que se borro y se vuelve a crear: revive con lo que tenia, si esa
+    # mercancia no se paso a otra categoria mientras tanto.
+    for cat in db.query(models.CategoriaInsumo).filter(models.CategoriaInsumo.activo.is_(False)).all():
+        if comparable(cat.nombre) == comparable(limpio):
+            cat.activo = True
+            db.query(models.Ingrediente).filter(
+                models.Ingrediente.categoria_borrada_id == cat.id, models.Ingrediente.categoria_id.is_(None)
+            ).update({"categoria_id": cat.id, "categoria_borrada_id": None}, synchronize_session=False)
+            db.flush()
+            return cat
     cat = models.CategoriaInsumo(nombre=limpio)
     db.add(cat)
     db.flush()
@@ -295,7 +305,8 @@ def crear_categoria(body: schemas.CategoriaInsumoInput, db: Session = Depends(ge
     cat = categoria_del_deposito(db, body.nombre)
     db.commit()
     db.refresh(cat)
-    return schemas.CategoriaInsumo(id=cat.id, nombre=cat.nombre, usos=0)
+    usos = db.query(models.Ingrediente).filter(models.Ingrediente.categoria_id == cat.id).count()
+    return schemas.CategoriaInsumo(id=cat.id, nombre=cat.nombre, usos=usos)
 
 
 @router.put("/categorias/{categoria_id}", response_model=schemas.CategoriaInsumo)
@@ -361,7 +372,7 @@ def borrar_categoria(categoria_id: int, db: Session = Depends(get_db)):
     sueltos = (
         db.query(models.Ingrediente)
         .filter(models.Ingrediente.categoria_id == cat.id)
-        .update({"categoria_id": None}, synchronize_session=False)
+        .update({"categoria_id": None, "categoria_borrada_id": cat.id}, synchronize_session=False)
     )
     cat.activo = False
     db.commit()
@@ -409,6 +420,7 @@ TIPO_LEGIBLE = {
 @router.post("/ingredientes", response_model=schemas.Ingrediente)
 def crear_ingrediente(ingrediente: schemas.IngredienteCreate, db: Session = Depends(get_db)):
     datos = ingrediente.model_dump()
+    datos.pop("confirmar", None)
     datos["nombre"] = nombre_limpio(datos["nombre"])
     if not datos["nombre"]:
         raise HTTPException(status_code=400, detail="La mercancía necesita un nombre.")
@@ -491,11 +503,73 @@ def actualizar_ingrediente(
             detail=f"Ya hay otra mercancía llamada «{gemela.nombre}». Si son la misma, fusiónalas desde su ficha.",
         )
     _sin_merma_si_es_preparacion(datos)
+    confirmar = datos.pop("confirmar", False)
+    a_gasto = _revisar_cambio_delicado(db, db_ingrediente, datos, confirmar)
     for key, value in datos.items():
         setattr(db_ingrediente, key, value)
+    if a_gasto:
+        # Lo que quedaba en el deposito ya no se va a contar: pasa a gasto.
+        valor = round(a_gasto * (db_ingrediente.costo_unitario or 0), 2)
+        kardex.anotar(db, db_ingrediente, -a_gasto, kardex.RECLASIFICACION, origen="reclasificacion",
+                      nota="Pasó a desechable: lo que quedaba va a gasto")
+        if valor:
+            contabilidad.crear_asiento(
+                db, f"{db_ingrediente.nombre} pasó a desechable: lo que quedaba va a gasto",
+                [("6050", valor, 0.0), ("1040", 0.0, valor)], origen="reclasificacion", referencia_id=db_ingrediente.id,
+            )
     db.commit()
     db.refresh(db_ingrediente)
     return db_ingrediente
+
+
+def _quien_lo_lleva(db: Session, ingrediente_id: int) -> List[str]:
+    """Los productos y preparaciones activos cuya receta lleva esa mercancia."""
+    nombres = []
+    for (v,) in db.query(models.RecetaItem.variante_id).filter(models.RecetaItem.ingrediente_id == ingrediente_id).distinct():
+        var = db.get(models.Variante, v)
+        if var is not None and var.activo and var.producto is not None and var.producto.activo:
+            nombres.append(var.producto.nombre)
+    for (pid,) in db.query(models.LineaPreparacion.preparacion_id).filter(models.LineaPreparacion.ingrediente_id == ingrediente_id).distinct():
+        prep = db.get(models.Ingrediente, pid)
+        if prep is not None and prep.activo is not False:
+            nombres.append(prep.nombre)
+    return sorted(set(nombres))
+
+
+def _revisar_cambio_delicado(db: Session, ing: models.Ingrediente, datos: dict, confirmar: bool) -> float:
+    """Lo que no se hace sin preguntar. Devuelve el stock que pasa a gasto.
+
+    - Pasar a DESECHABLE con stock: un desechable no se cuenta ni va en
+      recetas, asi que lo que hay quedaria en el inventario para siempre.
+      Se pregunta y, confirmando, va a gasto (6050).
+    - ARCHIVAR algo que lleva una receta: se sigue descontando al vender pero
+      ya no aparece para comprar, y se acaba sin que nadie lo vea.
+    """
+    if datos.get("tipo") == "desechable" and ing.tipo != "desechable":
+        lo_llevan = _quien_lo_lleva(db, ing.id)
+        if lo_llevan:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{ing.nombre} va en la receta de {', '.join(lo_llevan[:4])}: un desechable no va en recetas. Quítalo de ahí primero.",
+            )
+        hay = round(ing.stock_actual or 0, 4)
+        if hay > 0:
+            if not confirmar:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Confirmar: quedan {hay:g} {ing.unidad} de {ing.nombre} (${hay * (ing.costo_unitario or 0):.2f}) en el depósito. "
+                    "Como desechable no se cuentan: pasan a gasto del mes.",
+                )
+            return hay
+    if datos.get("activo") is False and ing.activo is not False and not confirmar:
+        lo_llevan = _quien_lo_lleva(db, ing.id)
+        if lo_llevan:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Confirmar: {ing.nombre} va en {', '.join(lo_llevan[:4])}. Archivada se sigue descontando al vender, "
+                "pero ya no aparece para comprar. Lo mejor es cambiarla en esas recetas primero.",
+            )
+    return 0.0
 
 
 @router.post("/ingredientes/{ingrediente_id}/fusionar", response_model=schemas.Ingrediente)
@@ -1082,6 +1156,21 @@ def _numero_de_planilla(texto: str) -> float:
     return float(limpio)
 
 
+_UNIDADES_PLANILLA = {
+    "kg": "kg", "kgs": "kg", "kilo": "kg", "kilos": "kg", "k": "kg",
+    "g": "g", "gr": "g", "grs": "g", "gramo": "g", "gramos": "g",
+    "lt": "lt", "l": "lt", "lts": "lt", "litro": "lt", "litros": "lt",
+    "ml": "ml", "mililitro": "ml", "mililitros": "ml",
+    "unidad": "unidad", "unidades": "unidad", "und": "unidad", "un": "unidad", "u": "unidad",
+}
+# (lo que dice la planilla, la unidad de la ficha) -> cuanto vale uno.
+_FACTOR_PLANILLA = {("g", "kg"): 0.001, ("kg", "g"): 1000, ("ml", "lt"): 0.001, ("lt", "ml"): 1000}
+
+
+def _unidad_de_planilla(texto: str) -> str:
+    return _UNIDADES_PLANILLA.get(comparable(texto).rstrip("."), "") if texto else ""
+
+
 @router.post("/conteos/leer-planilla", response_model=schemas.PlanillaLeida)
 async def leer_planilla(archivo: UploadFile = File(...), db: Session = Depends(get_db)):
     """Lee la planilla que el trabajador lleno y la cruza contra el deposito.
@@ -1127,6 +1216,7 @@ async def leer_planilla(archivo: UploadFile = File(...), db: Session = Depends(g
     col_id = columna("id", "ingrediente_id")
     col_nombre = columna("insumo", "nombre", "mercancia", "mercancía")
     col_contado = columna("contado", "cantidad", "conteo", "fisico", "físico")
+    col_unidad = columna("unidad", "medida")
     if col_contado is None:
         raise HTTPException(
             status_code=400,
@@ -1177,10 +1267,30 @@ async def leer_planilla(archivo: UploadFile = File(...), db: Session = Depends(g
             errores.append(f"Fila {numero} ({ing.nombre}): no se puede contar una cantidad negativa.")
             continue
 
+        # La unidad que dice la planilla manda (8-oct, caso 10): "850 g" de
+        # una ficha en kg son 0,85 kg, no 850 kg.
+        aviso = ""
+        escrita = _unidad_de_planilla(celda(col_unidad))
+        if escrita and escrita != ing.unidad:
+            factor = _FACTOR_PLANILLA.get((escrita, ing.unidad))
+            if factor is None:
+                errores.append(
+                    f"Fila {numero} ({ing.nombre}): dice «{celda(col_unidad)}» y {ing.nombre} se cuenta en {ing.unidad}."
+                )
+                continue
+            aviso = f"Venía en {escrita}: {contado:g} {escrita} = {contado * factor:g} {ing.unidad}."
+            contado = contado * factor
+        elif not escrita and ing.unidad in ("kg", "lt"):
+            # Sin unidad: un numero mil veces lo que hay casi seguro son gramos.
+            hay = max(ing.stock_actual or 0, 0)
+            if contado >= 50 and contado > hay * 20 and contado / 1000 <= max(hay * 5, 1):
+                chica = "g" if ing.unidad == "kg" else "ml"
+                aviso = f"{contado:g} {ing.unidad} es mucho para lo que hay ({hay:g} {ing.unidad}): ¿eran {chica}? Revísalo antes de guardar."
+
         vistos.add(ing.id)
         filas.append(schemas.FilaLeida(
             ingrediente_id=ing.id, nombre=ing.nombre, unidad=ing.unidad,
-            contado=round(contado, 4),
+            contado=round(contado, 4), aviso=aviso,
         ))
 
     return schemas.PlanillaLeida(filas=filas, errores=errores, en_blanco=en_blanco)

@@ -176,7 +176,10 @@ export type FilaLeida = {
   ingrediente_id: number
   nombre: string
   unidad: string
+  /** Ya en la unidad de la ficha. */
   contado: number
+  /** "Venía en g", o "¿eran gramos?": lo que hay que mirar antes de guardar. */
+  aviso?: string
 }
 
 /** Lo que el ERP entendió de la planilla llena. Leerla no guarda nada. */

@@ -229,8 +229,9 @@ def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Se
 
     El valor no cambia, se transforma: lo que sale del crudo entra en la
     preparacion al mismo costo total. Las dos viven en el inventario (1040):
-    no hay asiento. Si el crudo no alcanza se registra igual y queda en
-    negativo: el conteo lo corrige, la cocina no se traba.
+    no hay asiento. Si el crudo no alcanza se avisa primero (casi siempre es
+    un numero mal escrito); confirmando (`forzar`) se registra igual y queda
+    en negativo: el conteo lo corrige, la cocina no se traba.
     """
     quien = operadores.del_turno(db, request)
     operador_id = quien.id if quien else None
@@ -277,6 +278,13 @@ def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Se
             # entonces sale su materia prima.
             for hoja, q in costeo.explotar(ing, cantidad).items():
                 consumo[hoja] = consumo.get(hoja, 0) + q
+        faltan = [
+            f"{hoja.nombre} (hay {max(hoja.stock_actual or 0, 0):g} {hoja.unidad}, la tanda usa {q:g})"
+            for hoja, q in consumo.items()
+            if q > (hoja.stock_actual or 0) + 1e-6
+        ]
+        if faltan and not body.forzar:
+            raise HTTPException(status_code=409, detail="No alcanza: " + "; ".join(faltan) + ".")
         costo_total = 0.0
         for hoja, q in consumo.items():
             costo = hoja.costo_unitario or 0

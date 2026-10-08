@@ -646,15 +646,16 @@ export const api = {
   listarIngredientes: () => req<Ingrediente[]>('/inventario/ingredientes'),
   crearIngrediente: (i: DatosIngrediente) =>
     req<Ingrediente>('/inventario/ingredientes', { method: 'POST', body: JSON.stringify(i) }),
-  actualizarIngrediente: (id: number, i: DatosIngrediente) =>
-    req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
+  /** `confirmar`: ya se dijo que sí a pasar a desechable con stock o a archivar algo que va en recetas. */
+  actualizarIngrediente: (id: number, i: DatosIngrediente, confirmar = false) =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify({ ...i, confirmar }) }),
   // ── Preparaciones, produccion y control (docs/plan-compras-...) ──
   listarPreparaciones: () => req<Preparacion[]>('/inventario/preparaciones'),
   crearPreparacion: (d: DatosPreparacion) =>
     req<Preparacion>('/inventario/preparaciones', { method: 'POST', body: JSON.stringify(d) }),
   actualizarPreparacion: (id: number, d: DatosPreparacion) =>
     req<Preparacion>(`/inventario/preparaciones/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
-  registrarProduccion: (d: { preparacion_id: number; cantidad: number; usado?: { ingrediente_id: number; cantidad: number }[]; nota?: string }) =>
+  registrarProduccion: (d: { preparacion_id: number; cantidad: number; usado?: { ingrediente_id: number; cantidad: number }[]; nota?: string; forzar?: boolean }) =>
     req<Produccion>('/inventario/produccion', { method: 'POST', body: JSON.stringify(d) }),
   listarProduccion: () => req<Produccion[]>('/inventario/produccion'),
   preparacionesVencidas: () => req<Preparacion[]>('/inventario/preparaciones/vencidas'),

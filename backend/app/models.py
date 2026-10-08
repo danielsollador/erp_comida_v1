@@ -244,6 +244,9 @@ class Ingrediente(Base):
     # clasificar, que es un estado normal: cargar mercancia no puede depender
     # de haber pensado antes en que cajon va.
     categoria_id = Column(Integer, ForeignKey("DIM305_INV_CATEGORIA.id"), nullable=True, index=True)
+    # La categoria de la que salio cuando la borraron: si se vuelve a crear
+    # con el mismo nombre, la mercancia vuelve sola (8-oct).
+    categoria_borrada_id = Column(Integer, nullable=True)
     categoria = relationship("CategoriaInsumo", lazy="joined")
     # Un insumo que ya no se compra no se borra: tiene recetas, compras y
     # mermas colgando. Se archiva y deja de aparecer en listas y sugerencias.
@@ -876,6 +879,10 @@ class EquivalenciaProveedor(Base):
     unidad_papel = Column(String, default="")
     ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     factor = Column(Float, default=1.0)
+    # Una caja que llego distinta (20 en vez de 24) no cambia lo aprendido:
+    # la medida nueva se adopta si se repite dos veces seguidas (8-oct).
+    factor_nuevo = Column(Float, nullable=True)
+    veces_nuevo = Column(Integer, default=0)
     # Cuantas facturas lo confirmaron. Uno solo puede ser casualidad.
     veces = Column(Integer, default=1)
     actualizado = Column(DateTime, default=ahora)

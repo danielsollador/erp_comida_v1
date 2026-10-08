@@ -323,10 +323,29 @@ export default function Inventario() {
     if (ok) accion(() => api.revertirSobrante(sb.id))
   }
 
+  // Lo que el servidor pide confirmar (pasar a desechable con stock, archivar
+  // algo que va en recetas) se pregunta aquí y se manda confirmado.
+  async function preguntarSiHaceFalta(e: unknown): Promise<boolean> {
+    if (!(e instanceof ErrorApi && e.status === 409 && e.message.startsWith('Confirmar: '))) return false
+    return dialogo.confirmar({ titulo: '¿Seguro?', texto: e.message.slice('Confirmar: '.length), aceptar: 'Sí, seguir', peligro: true })
+  }
+
   async function guardarFicha(datos: DatosIngrediente, id: number | null) {
-    const ok = await accion(() => (id === null ? api.crearIngrediente(datos) : api.actualizarIngrediente(id, datos)))
-    if (ok) setFicha(null)
-    return ok
+    setError('')
+    try {
+      if (id === null) await api.crearIngrediente(datos)
+      else
+        await api.actualizarIngrediente(id, datos).catch(async (e) => {
+          if (!(await preguntarSiHaceFalta(e))) throw e
+          return api.actualizarIngrediente(id, datos, true)
+        })
+      cargar()
+      setFicha(null)
+      return true
+    } catch (e) {
+      if (!(e instanceof ErrorApi && e.message.startsWith('Confirmar: '))) setError(e instanceof Error ? e.message : 'Ocurrió un error')
+      return false
+    }
   }
 
   async function archivar(ing: Ingrediente, activo: boolean) {
@@ -341,7 +360,14 @@ export default function Inventario() {
       ejecutar: () => api.actualizarIngrediente(ing.id, { ...datosDe(ing), activo: false }),
       revertir: () => api.actualizarIngrediente(ing.id, { ...datosDe(ing), activo: true }),
       alTerminar: cargar,
-      alFallar: (e) => setError(e instanceof Error ? e.message : 'No se pudo archivar'),
+      alFallar: async (e) => {
+        // Va en recetas: se pregunta, y confirmando se archiva igual.
+        if (await preguntarSiHaceFalta(e)) {
+          await accion(() => api.actualizarIngrediente(ing.id, { ...datosDe(ing), activo: false }, true))
+          return
+        }
+        setError(e instanceof Error ? e.message : 'No se pudo archivar')
+      },
     })
   }
 

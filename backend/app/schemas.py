@@ -198,7 +198,9 @@ class IngredienteBase(BaseModel):
 
 
 class IngredienteCreate(IngredienteBase):
-    pass
+    # Para lo que pide confirmacion al editar: pasar a desechable con stock,
+    # o archivar algo que lleva una receta (8-oct, casos 1 y 3).
+    confirmar: bool = False
 
 
 class LineaPreparacionInput(BaseModel):
@@ -252,6 +254,9 @@ class ProduccionInput(BaseModel):
     cantidad: float = Field(gt=0)
     usado: Optional[List[LineaPreparacionInput]] = None
     nota: str = ""
+    # Usar mas crudo del que hay se avisa (8-oct, caso 9): con esto se anota
+    # igual, porque la cocina no se traba y el conteo lo corrige.
+    forzar: bool = False
 
 
 class ProduccionOut(BaseModel):
@@ -692,7 +697,10 @@ class FilaLeida(BaseModel):
     ingrediente_id: int
     nombre: str
     unidad: str
-    contado: float
+    contado: float  # ya en la unidad de la ficha
+    # Lo que habia que mirar: "venia en g y se paso a kg", o "850 kg es mucho
+    # para lo que hay: ¿eran gramos?". Vacio si nada.
+    aviso: str = ""
 
 
 class PlanillaLeida(BaseModel):
