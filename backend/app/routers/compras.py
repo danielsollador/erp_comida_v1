@@ -694,6 +694,7 @@ def _reclamo_a_schema(r: models.ReclamoProveedor) -> schemas.Reclamo:
         cantidad=r.cantidad, valor=r.valor, motivo=r.motivo or "", fecha=r.fecha, estado=r.estado,
         numero_factura=r.factura.numero_factura if r.factura else "",
         proveedor_nombre=r.factura.proveedor_nombre if r.factura else "",
+        dias=max((ahora() - r.fecha).days, 0) if r.fecha else 0,
     )
 
 

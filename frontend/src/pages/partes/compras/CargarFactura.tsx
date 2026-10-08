@@ -313,10 +313,16 @@ export default function CargarFactura({
     proveedor_nombre: proveedor.trim(),
     numero_factura: numeroFactura.trim(),
     items: lineas
-      .map((l, indice) => ({ indice, ingrediente_id: l.ingrediente_id, costo_unitario: aUsdVista(Number(l.costo_unitario) || 0) }))
+      .map((l, indice) => ({
+        indice,
+        ingrediente_id: l.concepto ? 0 : l.ingrediente_id,
+        costo_unitario: aUsdVista(Number(l.costo_unitario) || 0),
+        cantidad: Number(l.cantidad) || undefined,
+      }))
       .filter((x) => x.ingrediente_id && x.costo_unitario > 0),
   })
   const avisoPrecio = (i: number) => revision?.precios.find((p) => p.indice === i && p.nivel !== 'normal')
+  const avisoCantidad = (i: number) => revision?.cantidades?.find((c) => c.indice === i)
 
   // ── Lo que falta revisar, en orden de pantalla ──────────────────────────
   const pendientes: Pendiente[] = []
@@ -364,6 +370,7 @@ export default function CargarFactura({
     if (l.leido && !l.recordada && !l.paquete && ing && unidadDistinta(l.leido.unidad, ing.unidad))
       return { texto: 'con unidad distinta', tono: 'ojo' }
     if (aviso) return { texto: 'con precio fuera de lo normal', tono: 'ojo' }
+    if (avisoCantidad(i)) return { texto: 'con cantidad fuera de lo normal', tono: 'ojo' }
     return null
   }
 
@@ -989,6 +996,7 @@ export default function CargarFactura({
                   tasaIva={fiscal.tasa_iva}
                   exento={exentoDe(l)}
                   aviso={avisoPrecio(i)}
+                  avisoCantidad={avisoCantidad(i)?.mensaje}
                   problema={sinMercanciaEn(l) ? { texto: 'Falta decir qué es', tono: 'mal' } : problemaDeRenglon(l, i)}
                   puedeQuitar={lineas.length > 1}
                   conocidos={paquetesConocidos(l.ingrediente_id)}
@@ -1343,6 +1351,7 @@ function Renglon({
   tasaIva,
   exento,
   aviso,
+  avisoCantidad,
   problema,
   puedeQuitar,
   conocidos,
@@ -1360,6 +1369,8 @@ function Renglon({
   /** Si paga IVA, ya resuelto con la ficha. */
   exento: boolean
   aviso?: { nivel: string; mensaje: string; base: string; referencia: number; muestras: number }
+  /** La cantidad es muy distinta de lo que se suele comprar. */
+  avisoCantidad?: string
   problema: { texto: string; tono: Tono } | null
   puedeQuitar: boolean
   conocidos: Equivalencia[]
@@ -1735,7 +1746,7 @@ function Renglon({
           </div>
         )}
 
-        {(sugerida || recordada || unidadChoca || papelNoCuadra || aviso) && (
+        {(sugerida || recordada || unidadChoca || papelNoCuadra || aviso || avisoCantidad) && (
           <div className="space-y-0.5 text-xs">
             {sugerida && (
               <button type="button" onClick={() => onMercancia(sugerida.id)} className="text-acento-700 font-medium text-left inline-flex items-center gap-1">
@@ -1755,6 +1766,7 @@ function Renglon({
               </p>
             )}
             {papelNoCuadra && <p className="text-aviso-800">En el papel, cantidad × precio no da el total del renglón: revisa esos números.</p>}
+            {avisoCantidad && <p className="text-aviso-800">{avisoCantidad}</p>}
             {aviso && (
               <p className={aviso.nivel === 'unidad' ? 'text-peligro-700' : 'text-aviso-800'}>
                 {aviso.mensaje}{' '}

@@ -1515,6 +1515,43 @@ def _cuando(dias: float) -> str:
     return f"el {DIAS_LARGOS[fecha.weekday()]}"
 
 
+def _avisos_de_cocina_y_proveedores(db: Session) -> List[schemas.Aviso]:
+    """Lo que nadie va a buscar (8-oct, casos 2, 11 y 21): lo que se vencio en
+    la nevera, las tandas que rinden menos que su ficha y lo que un proveedor
+    debe hace mas de una semana."""
+    from .preparaciones import preparaciones_vencidas, rendimientos_recientes
+
+    out: List[schemas.Aviso] = []
+    vencidas = preparaciones_vencidas(db)
+    if vencidas:
+        nombres = ", ".join(f"{p.nombre} ({p.stock_actual:g} {p.unidad})" for p in vencidas[:2]) + ("…" if len(vencidas) > 2 else "")
+        out.append(schemas.Aviso(
+            id="vencidas", tono="ojo", titulo=f"Ya pasó su tiempo: {nombres}",
+            detalle="Sobró de una tanda vieja. Decide si se bota o se usa hoy.", a="/inventario/materia-prima?ver=preparado",
+        ))
+    for r in rendimientos_recientes(db)[:1]:
+        detalle = f"Las últimas {r.tandas} tandas salieron al {r.real_pct:g} % de lo esperado."
+        if r.sugerido_pct is not None:
+            detalle += f" La ficha de {r.crudo} dice {r.ficha_pct:g} %: con {r.sugerido_pct:g} % el costo diría la verdad."
+        out.append(schemas.Aviso(
+            id=f"rinde-{r.preparacion_id}", tono="info" if r.real_pct > 100 else "ojo",
+            titulo=f"{r.nombre} rinde {'más' if r.real_pct > 100 else 'menos'} de lo que dice su ficha",
+            detalle=detalle, a="/inventario/materia-prima?ver=preparado",
+        ))
+    corte = ahora() - datetime.timedelta(days=7)
+    viejos = db.query(models.ReclamoProveedor).filter(models.ReclamoProveedor.estado == "abierto", models.ReclamoProveedor.fecha <= corte).all()
+    if viejos:
+        total = round(sum(r.valor for r in viejos), 2)
+        mas_viejo = min(r.fecha for r in viejos)
+        out.append(schemas.Aviso(
+            id="reclamos", tono="ojo",
+            titulo=f"Los proveedores te deben ${total:.2f} de mercancía que no llegó",
+            detalle=f"{len(viejos)} reclamo(s) sin nota de crédito; el más viejo, de hace {(ahora() - mas_viejo).days} días.",
+            a="/compras",
+        ))
+    return out
+
+
 def _avisos_de_deposito(db: Session) -> List[schemas.Aviso]:
     """Lo que se acaba, medido con el consumo real de las ultimas dos semanas.
 
@@ -1868,6 +1905,7 @@ def avisos(db: Session = Depends(get_db)):
     """
     todos: List[schemas.Aviso] = []
     todos += _avisos_de_deposito(db)
+    todos += _avisos_de_cocina_y_proveedores(db)
     fiado = _aviso_de_fiado(db)
     if fiado:
         todos.append(fiado)

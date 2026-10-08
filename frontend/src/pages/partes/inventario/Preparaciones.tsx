@@ -48,6 +48,8 @@ export default function Preparaciones({
   const [preps, setPreps] = useState<Preparacion[] | null>(null)
   const [disp, setDisp] = useState<Disponibilidad[]>([])
   const [vencidas, setVencidas] = useState<Preparacion[]>([])
+  // Las que rinden distinto de su ficha en las últimas tandas (8-oct).
+  const [rindeDistinto, setRindeDistinto] = useState<Awaited<ReturnType<typeof api.rendimientosReales>>>([])
   const [tandas, setTandas] = useState<Produccion[]>([])
   const [editando, setEditando] = useState<Preparacion | 'nueva' | null>(null)
   const [anotando, setAnotando] = useState<Preparacion | null>(null)
@@ -76,7 +78,19 @@ export default function Preparaciones({
         setTandas(t)
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'No se pudieron traer las preparaciones'))
+    api.rendimientosReales().then(setRindeDistinto).catch(() => undefined)
   }, [])
+  // El % del crudo en su ficha, a lo que de verdad rinde.
+  async function ajustarFicha(r: (typeof rindeDistinto)[number]) {
+    const ing = ingredientes.find((i) => i.id === r.crudo_id)
+    if (!ing || r.sugerido_pct == null) return
+    try {
+      await api.actualizarIngrediente(ing.id, { ...datosDe(ing), rendimiento_pct: r.sugerido_pct })
+      recargarTodo()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo ajustar la ficha')
+    }
+  }
   useEffect(cargar, [cargar])
 
   function recargarTodo() {
@@ -113,6 +127,24 @@ export default function Preparaciones({
           </button>
         </p>
       )}
+
+      {rindeDistinto.map((r) => (
+        <div key={r.preparacion_id} className="rounded-2xl bg-aviso-500/10 p-4 text-sm flex flex-wrap items-center gap-3">
+          <span className="flex-1 min-w-[220px] text-aviso-900">
+            <b>{r.nombre}</b>: las últimas {r.tandas} tandas salieron al <b className="tabular-nums">{r.real_pct} %</b> de lo esperado.
+            {r.sugerido_pct != null && (
+              <>
+                {' '}La ficha de {r.crudo} dice {r.ficha_pct} %; con <b className="tabular-nums">{r.sugerido_pct} %</b> el costo diría la verdad.
+              </>
+            )}
+          </span>
+          {r.sugerido_pct != null && (
+            <button type="button" onClick={() => void ajustarFicha(r)} className="font-semibold text-aviso-900 underline">
+              Ajustar {r.crudo} a {r.sugerido_pct} %
+            </button>
+          )}
+        </div>
+      ))}
 
       {vencidas.length > 0 && (
         <div className="rounded-2xl bg-aviso-500/10 p-4 space-y-2">

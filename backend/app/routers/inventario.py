@@ -565,12 +565,18 @@ def fusionar_ingrediente(
                     origen="fusion", referencia_id=origen.id, nota=nota, tipo=kardex.FUSION,
                 )
             else:
-                # Un faltante (stock negativo) se arrastra tal cual: no tiene
-                # costo que promediar.
+                # Un faltante (stock negativo) se arrastra a SU costo, y el
+                # costo de la que queda lo absorbe: el deposito tiene que
+                # valer lo mismo antes y despues. Antes los -1,5 kg pasaban a
+                # valer al costo de la que queda y el inventario se separaba
+                # de los libros sin asiento (8-oct, caso 14).
+                valor_antes = (destino.stock_actual or 0) * (destino.costo_unitario or 0)
                 kardex.anotar(
                     db, destino, stock * factor, kardex.FUSION, costo_unitario=costo / factor,
                     origen="fusion", referencia_id=origen.id, nota=nota, operador_id=operador_id,
                 )
+                if (destino.stock_actual or 0) > 1e-9:
+                    destino.costo_unitario = round((valor_antes + stock * costo) / destino.stock_actual, 6)
 
         # Recetas: si la receta ya llevaba las dos, queda una sola linea sumada.
         for linea in db.query(models.RecetaItem).filter(models.RecetaItem.ingrediente_id == origen.id).all():
@@ -757,6 +763,24 @@ def registrar_compra(
         )
 
 
+def _no_mas_de_lo_que_hay(ingrediente: models.Ingrediente, body: schemas.MermaRequest) -> None:
+    """Sacar mas de lo que hay casi siempre es la unidad equivocada: 300 en una
+    ficha en kg que eran 300 gramos dejaba el queso en -298 kg y una perdida de
+    $1.800 (8-oct, caso 18). Se frena y se pregunta; confirmando, pasa."""
+    hay = max(ingrediente.stock_actual or 0, 0)
+    if body.forzar or body.cantidad <= hay + 1e-6:
+        return
+    pista = ""
+    if ingrediente.unidad in ("kg", "lt") and body.cantidad / 1000 <= hay + 1e-6:
+        chica = "g" if ingrediente.unidad == "kg" else "ml"
+        pista = f" ¿Eran {body.cantidad:g} {chica} ({body.cantidad / 1000:g} {ingrediente.unidad})?"
+    raise HTTPException(
+        status_code=409,
+        detail=f"Hay {hay:g} {ingrediente.unidad} de {ingrediente.nombre} y se están sacando "
+        f"{body.cantidad:g} {ingrediente.unidad}.{pista}",
+    )
+
+
 def anotar_merma(
     db: Session, ingrediente: models.Ingrediente, cantidad: float, motivo: str,
     operador_id: Optional[int] = None,
@@ -795,6 +819,7 @@ def registrar_merma(
     quien = operadores.del_turno(db, request)
     with costeo.bloqueo_inventario():
         db_ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
+        _no_mas_de_lo_que_hay(db_ingrediente, body)
         anotar_merma(db, db_ingrediente, body.cantidad, body.motivo, quien.id if quien else None)
         db.commit()
         db.refresh(db_ingrediente)
@@ -1222,6 +1247,7 @@ def consumo_personal(
     quien = operadores.del_turno(db, request)
     with costeo.bloqueo_inventario():
         ingrediente = _ingrediente_para_actualizar(db, ingrediente_id)
+        _no_mas_de_lo_que_hay(ingrediente, body)
         valor = round(body.cantidad * (ingrediente.costo_unitario or 0), 2)
         kardex.anotar(
             db, ingrediente, -body.cantidad, kardex.CONSUMO_PERSONAL,

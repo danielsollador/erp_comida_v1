@@ -467,6 +467,10 @@ class Produccion(Base):
     cantidad = Column(Float, nullable=False)
     # Lo que la receta dice que debio salir con lo que se uso.
     cantidad_esperada = Column(Float, default=0)
+    # De que tamaño fue la tanda, en recetas (2 = el doble de la receta). Con
+    # esto lo esperado se recalcula con la ficha de HOY: si se ajusto el % del
+    # pollo, las tandas viejas dejan de avisar que rinden menos.
+    escala = Column(Float, nullable=True)
     costo_total = Column(Float, default=0)
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
     nota = Column(String, default="")

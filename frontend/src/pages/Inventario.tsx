@@ -9,7 +9,7 @@ import { useRango, nombreRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { Aviso, Boton, Modal, Pagina, Seccion, Vacio } from '../components/ui'
-import { api } from '../lib/api'
+import { api, ErrorApi } from '../lib/api'
 import { cantidad, datosDe } from '../lib/inventario'
 import { useMoneda } from '../lib/moneda'
 import { ALMACENES, ALMACEN_DE } from '../lib/tiposArticulo'
@@ -123,7 +123,10 @@ export default function Inventario() {
   const [config, setConfig] = useState<Configuracion | null>(null)
   const [cambiandoConfig, setCambiandoConfig] = useState(false)
   // La materia prima tiene dos caras.
-  const [cara, setCara] = useState<'crudo' | 'preparado'>('crudo')
+  // `?ver=preparado` abre lo preparado: así llegan los avisos de la portada.
+  const [cara, setCara] = useState<'crudo' | 'preparado'>(() =>
+    new URLSearchParams(window.location.search).get('ver') === 'preparado' ? 'preparado' : 'crudo',
+  )
   // Con la receta de una preparación abierta, la franja Crudo/Preparado y
   // las acciones no tienen sentido: para salir se vuelve atrás.
   const [editandoPrep, setEditandoPrep] = useState(false)
@@ -230,14 +233,31 @@ export default function Inventario() {
       titulo: `Merma de ${ing.nombre}`,
       texto: 'Lo que se dañó, se quemó o se botó. Es plata perdida y así queda registrada.',
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto se perdió', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
+        { nombre: 'cantidad', etiqueta: 'Cuánto se perdió', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${cantidad(ing.stock_actual)} ${ing.unidad}.` },
         { nombre: 'motivo', etiqueta: 'Motivo', placeholder: 'Se quemó, se dañó, se cayó...', opcional: true },
       ],
       aceptar: 'Registrar merma',
       peligro: true,
     })
     if (!r) return
-    accion(() => api.registrarMerma(ing.id, Number(r.cantidad), r.motivo))
+    void sacarConConfirmacion((forzar) => api.registrarMerma(ing.id, Number(r.cantidad), r.motivo, forzar))
+  }
+
+  // Más de lo que hay casi siempre es la unidad equivocada: el servidor la
+  // frena y aquí se pregunta antes de anotarla igual.
+  async function sacarConConfirmacion(fn: (forzar: boolean) => Promise<unknown>) {
+    setError('')
+    try {
+      await fn(false)
+      cargar()
+    } catch (e) {
+      if (e instanceof ErrorApi && e.status === 409 && e.message.startsWith('Hay ')) {
+        if (await dialogo.confirmar({ titulo: '¿Seguro que es esa cantidad?', texto: `${e.message} Revisa la unidad antes de anotarla.`, aceptar: 'Anotar igual', peligro: true }))
+          await accion(() => fn(true))
+        return
+      }
+      setError(e instanceof Error ? e.message : 'Ocurrió un error')
+    }
   }
 
   async function consumoPersonal(ing: Ingrediente) {
@@ -245,13 +265,13 @@ export default function Inventario() {
       titulo: `Consumo del personal: ${ing.nombre}`,
       texto: 'Se lo comió un empleado. Es costo laboral, no pérdida: no ensucia el indicador de merma.',
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
+        { nombre: 'cantidad', etiqueta: 'Cuánto', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${cantidad(ing.stock_actual)} ${ing.unidad}.` },
         { nombre: 'motivo', etiqueta: 'Para quién / qué turno', opcional: true },
       ],
       aceptar: 'Registrar',
     })
     if (!r) return
-    accion(() => api.consumoPersonal(ing.id, Number(r.cantidad), r.motivo))
+    void sacarConConfirmacion((forzar) => api.consumoPersonal(ing.id, Number(r.cantidad), r.motivo, forzar))
   }
 
   async function contar(ing: Ingrediente) {

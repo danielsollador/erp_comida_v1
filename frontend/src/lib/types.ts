@@ -1231,6 +1231,8 @@ export type Reclamo = {
   estado: 'abierto' | 'acreditado' | 'perdido'
   numero_factura: string
   proveedor_nombre: string
+  /** Cuántos días lleva abierto. */
+  dias?: number
 }
 
 /** "Hoy el pollo es pavo": vigente hasta `hasta`. */
@@ -1444,6 +1446,8 @@ export type CuerpoCompletarFactura = {
 export type RevisionFactura = {
   duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
   precios: AvisoPrecio[]
+  /** Cantidades muy distintas de lo que se suele comprar (¿bultos leídos como kilos?). */
+  cantidades?: { indice: number; ingrediente_id: number; cantidad: number; referencia: number; muestras: number; veces: number; mensaje: string }[]
   /** Por qué ese RIF no puede ser correcto (dígito verificador). Vacío si cuadra. */
   rif_aviso: string
   /** Un RIF conocido que difiere en un solo carácter del leído. */

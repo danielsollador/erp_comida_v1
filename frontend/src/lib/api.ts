@@ -662,6 +662,11 @@ export const api = {
   sobrantePreparacion: (id: number, cuerpo: { cantidad: number; accion: 'botar' | 'guardar'; motivo?: string }) =>
     req<SobrantePreparacion>(`/inventario/preparaciones/${id}/sobrante`, { method: 'POST', body: JSON.stringify(cuerpo) }),
   disponibilidad: () => req<Disponibilidad[]>('/inventario/preparaciones/disponibilidad'),
+  /** Las preparaciones cuyas últimas tandas rinden distinto de su ficha. */
+  rendimientosReales: () =>
+    req<{ preparacion_id: number; nombre: string; tandas: number; real_pct: number; crudo_id: number | null; crudo: string; ficha_pct: number | null; sugerido_pct: number | null }[]>(
+      '/inventario/preparaciones/rendimientos',
+    ),
   costoTeorico: (desde?: string, hasta?: string) =>
     req<CostoTeoricoFila[]>(`/inventario/costo-teorico${qs({ desde, hasta })}`),
   costosIndirectos: (desde?: string, hasta?: string) =>
@@ -719,10 +724,10 @@ export const api = {
     req<CompraDeInsumo[]>(`/inventario/ingredientes/${id}/costos`),
   inflacionInsumos: (dias = 30) =>
     req<InflacionInsumos | null>(`/inventario/inflacion?dias=${dias}`),
-  consumoPersonal: (id: number, cantidad: number, motivo: string) =>
+  consumoPersonal: (id: number, cantidad: number, motivo: string, forzar = false) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/consumo-personal`, {
       method: 'POST',
-      body: JSON.stringify({ cantidad, motivo }),
+      body: JSON.stringify({ cantidad, motivo, forzar }),
     }),
   listarSobrantes: (r?: Rango) => req<SobranteInventario[]>(`/inventario/sobrantes${conRango(r)}`),
   revertirSobrante: (id: number) =>
@@ -730,10 +735,11 @@ export const api = {
   historialReceta: (varianteId: number) =>
     req<CambioReceta[]>(`/inventario/recetas/${varianteId}/historial`),
 
-  registrarMerma: (id: number, cantidad: number, motivo: string) =>
+  /** `forzar`: anotarla aunque sea más de lo que hay (se confirmó). */
+  registrarMerma: (id: number, cantidad: number, motivo: string, forzar = false) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/merma`, {
       method: 'POST',
-      body: JSON.stringify({ cantidad, motivo }),
+      body: JSON.stringify({ cantidad, motivo, forzar }),
     }),
   ajustarStock: (id: number, stock_real: number) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/ajustar`, {
@@ -1140,7 +1146,7 @@ export const api = {
     proveedor_nombre: string
     numero_factura: string
     /** `costo_unitario` en dólares, como se va a guardar. */
-    items: { indice: number; ingrediente_id: number; costo_unitario: number }[]
+    items: { indice: number; ingrediente_id: number; costo_unitario: number; cantidad?: number }[]
   }) => req<RevisionFactura>('/compras/revision', { method: 'POST', body: JSON.stringify(r) }),
   /** Lo de despues de guardar (foto, memoria, alertas) en un pedido que se puede repetir. */
   // Antes de guardar la factura de una foto: que hacer cuando quede

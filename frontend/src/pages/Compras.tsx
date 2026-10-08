@@ -405,6 +405,9 @@ export default function Compras() {
                         {r.cantidad} {r.unidad} de {r.ingrediente_nombre}
                         <span className="block text-xs text-neutral-500">
                           {r.proveedor_nombre} · fact. {r.numero_factura} · {new Date(r.fecha).toLocaleDateString('es-VE')}
+                          {(r.dias ?? 0) > 0 && (
+                            <span className={(r.dias ?? 0) > 7 ? 'text-peligro-600 font-semibold' : ''}> · hace {r.dias} {r.dias === 1 ? 'día' : 'días'}</span>
+                          )}
                           {r.motivo && ` · ${r.motivo}`}
                         </span>
                       </span>

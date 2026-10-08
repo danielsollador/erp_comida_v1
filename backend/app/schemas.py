@@ -306,6 +306,22 @@ class AlMenuInput(BaseModel):
     nombre: Optional[str] = None
 
 
+class RendimientoReal(BaseModel):
+    """Lo que de verdad rinden las ultimas tandas contra lo que dice la ficha."""
+
+    preparacion_id: int
+    nombre: str
+    tandas: int
+    # Lo que salio contra lo esperado, en % (100 = lo que dice la ficha).
+    real_pct: float
+    # El crudo que mas pesa en la tanda y lo que convendria ponerle en su ficha
+    # para que la proxima tanda se espere lo que de verdad sale.
+    crudo_id: Optional[int] = None
+    crudo: str = ""
+    ficha_pct: Optional[float] = None
+    sugerido_pct: Optional[float] = None
+
+
 class Disponibilidad(BaseModel):
     """Cuanto se podria hacer de una preparacion con lo que hay en crudo."""
 
@@ -540,6 +556,9 @@ class MermaRequest(BaseModel):
     cantidad: float
     motivo: str = ""
     operador_id: Optional[int] = None
+    # Mas de lo que hay en el deposito casi siempre es la unidad equivocada
+    # (300 "kg" que eran gramos). Se rechaza salvo que se confirme.
+    forzar: bool = False
 
 
 class Merma(BaseModel):
@@ -2420,6 +2439,21 @@ class RenglonARevisar(BaseModel):
     indice: int  # posicion en el formulario, para devolver el aviso a su renglon
     ingrediente_id: int
     costo_unitario: float  # en dolares, como se va a guardar
+    # En la unidad de la ficha. Sin dato, no se revisa la cantidad.
+    cantidad: Optional[float] = None
+
+
+class AvisoCantidad(BaseModel):
+    """Una cantidad muy distinta de lo que se suele comprar: "20 kg" cuando
+    siempre son 2 es casi seguro un bulto leido como kilo (8-oct, caso 13)."""
+
+    indice: int
+    ingrediente_id: int
+    cantidad: float
+    referencia: float  # la mediana de las ultimas compras
+    muestras: int
+    veces: float  # cuantas veces lo normal (0,1 = la decima parte)
+    mensaje: str = ""
 
 
 class RevisionFacturaRequest(BaseModel):
@@ -2459,6 +2493,7 @@ class RifConocido(BaseModel):
 class RevisionFactura(BaseModel):
     duplicadas: List[FacturaParecida] = []
     precios: List[AvisoPrecio] = []
+    cantidades: List[AvisoCantidad] = []
     # Por que ese RIF no puede ser correcto (su digito verificador no cuadra).
     # Vacio si cuadra o no se puede saber. Avisa, no bloquea.
     rif_aviso: str = ""
@@ -2614,6 +2649,8 @@ class Reclamo(BaseModel):
     estado: str
     numero_factura: str = ""
     proveedor_nombre: str = ""
+    # Cuantos dias lleva abierto: un reclamo viejo es plata que se olvida.
+    dias: int = 0
 
 
 class AbonoFacturaRequest(BaseModel):

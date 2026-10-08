@@ -291,6 +291,7 @@ def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Se
             preparacion_id=prep.id,
             cantidad=body.cantidad,
             cantidad_esperada=esperado,
+            escala=round(escala, 6),
             costo_total=costo_total,
             operador_id=operador_id,
             nota=body.nota,
@@ -407,6 +408,57 @@ def sobrante_preparacion(
 
 
 # ── Disponibilidad ──────────────────────────────────────────────────────────
+
+
+# Desde cuantas tandas y cuanta diferencia vale la pena avisar.
+TANDAS_PARA_AVISAR = 3
+DESVIO_PARA_AVISAR = 0.05
+
+
+def rendimientos_recientes(db: Session) -> List[schemas.RendimientoReal]:
+    """Las preparaciones cuyas ultimas tandas rinden distinto de su ficha.
+
+    La ficha del pollo dice 70 % y tres tandas seguidas salen al 62 %: si la
+    preparacion se descuenta del crudo, esa diferencia se esconde en las
+    ventas para siempre (8-oct, caso 21). Se propone el % del crudo que mas
+    pesa para que lo esperado sea lo que de verdad sale.
+    """
+    out = []
+    for prep in db.query(models.Ingrediente).filter(models.Ingrediente.tipo == "preparacion", models.Ingrediente.activo.isnot(False)).all():
+        tandas = (
+            db.query(models.Produccion).filter(models.Produccion.preparacion_id == prep.id)
+            .order_by(models.Produccion.fecha.desc()).limit(TANDAS_PARA_AVISAR).all()
+        )
+        rinde = prep.rinde_real or 0
+        # Lo esperado con la ficha de hoy (si la tanda sabe su tamaño).
+        esperado = lambda t: t.escala * rinde if t.escala and rinde > 0 else (t.cantidad_esperada or 0)  # noqa: E731
+        validas = [t for t in tandas if esperado(t) > 0]
+        if len(validas) < TANDAS_PARA_AVISAR:
+            continue
+        razon = sum(t.cantidad for t in validas) / sum(esperado(t) for t in validas)
+        if abs(razon - 1) < DESVIO_PARA_AVISAR:
+            continue
+        fila = schemas.RendimientoReal(preparacion_id=prep.id, nombre=prep.nombre, tandas=len(validas), real_pct=round(razon * 100, 1))
+        # El crudo que mas aporta a lo que sale (cantidad x su %).
+        lineas = [l for l in prep.lineas_preparacion if l.ingrediente is not None and l.ingrediente.tipo != "preparacion"]
+        if lineas:
+            aporte = lambda l: l.cantidad * (l.ingrediente.rendimiento_pct or 100) / 100  # noqa: E731
+            principal = max(lineas, key=aporte)
+            esperado = sum(aporte(l) for l in lineas)
+            resto = esperado - aporte(principal)
+            nuevo = (esperado * razon - resto) / principal.cantidad * 100
+            if 1 <= nuevo <= 100:
+                fila.crudo_id = principal.ingrediente.id
+                fila.crudo = principal.ingrediente.nombre
+                fila.ficha_pct = principal.ingrediente.rendimiento_pct
+                fila.sugerido_pct = round(nuevo, 1)
+        out.append(fila)
+    return out
+
+
+@router.get("/preparaciones/rendimientos", response_model=List[schemas.RendimientoReal])
+def listar_rendimientos(db: Session = Depends(get_db)):
+    return rendimientos_recientes(db)
 
 
 @router.get("/preparaciones/disponibilidad", response_model=List[schemas.Disponibilidad])

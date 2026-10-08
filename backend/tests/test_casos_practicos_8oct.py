@@ -267,3 +267,89 @@ def test_hoy_el_pollo_es_pavo(client, db, libros):
     assert client.get("/api/inventario/sustituciones").json() == []
     from conftest import libros_cuadrados
     libros_cuadrados(client, db)
+
+
+# ── tercera tanda (8-oct): merma, fusión, rendimiento, avisos, cantidades ────
+
+
+def test_una_merma_mayor_que_el_stock_se_frena(client, db, libros):
+    queso = alta(client, "Queso")
+    comprar(client, "Q-1", [{"ingrediente_id": queso["id"], "cantidad": 2, "costo_unitario": 6}])
+    r = client.post(f"/api/inventario/ingredientes/{queso['id']}/merma", json={"cantidad": 300, "motivo": "se dañó"})
+    assert r.status_code == 409
+    assert "¿Eran 300 g (0.3 kg)?" in r.json()["detail"]
+    db.expire_all()
+    assert db.get(models.Ingrediente, queso["id"]).stock_actual == 2
+    assert client.post(f"/api/inventario/ingredientes/{queso['id']}/merma", json={"cantidad": 0.3}).status_code == 200
+    # Confirmando, pasa (alguien sabe que el sistema estaba mal).
+    assert client.post(f"/api/inventario/ingredientes/{queso['id']}/consumo-personal", json={"cantidad": 5}).status_code == 409
+    assert client.post(f"/api/inventario/ingredientes/{queso['id']}/merma", json={"cantidad": 5, "forzar": True}).status_code == 200
+
+
+def test_fusionar_stock_negativo_no_separa_libros_y_deposito(client, db, libros):
+    from conftest import libros_cuadrados
+    a = alta(client, "Pollo entero")
+    b = alta(client, "Pollo")
+    comprar(client, "N-1", [{"ingrediente_id": a["id"], "cantidad": 1, "costo_unitario": 4}, {"ingrediente_id": b["id"], "cantidad": 10, "costo_unitario": 5}])
+    v = producto(db, "Asado", [(a["id"], 0.5)], 4)
+    r = client.post("/api/pedidos", json={"items": [{"variante_id": v.id, "cantidad": 5}], "nota": "", "permitir_sin_stock": True})
+    client.post(f"/api/pedidos/{r.json()['id']}/cobrar", json={"metodo_pago": "Efectivo Bs"})
+    libros_cuadrados(client, db)
+    assert client.post(f"/api/inventario/ingredientes/{a['id']}/fusionar", json={"destino_id": b["id"]}).status_code == 200
+    db.expire_all()
+    pb = db.get(models.Ingrediente, b["id"])
+    assert pb.stock_actual == 8.5
+    assert round(pb.stock_actual * pb.costo_unitario, 2) == 44.0, "50 - 1,5 kg a $4"
+    libros_cuadrados(client, db)
+
+
+def test_avisa_cuando_las_tandas_rinden_menos_que_la_ficha(client, db, libros):
+    pollo = alta(client, "Pollo", rendimiento_pct=70)
+    comprar(client, "R-1", [{"ingrediente_id": pollo["id"], "cantidad": 30, "costo_unitario": 4}])
+    g = client.post("/api/inventario/preparaciones", json={"nombre": "Guiso", "unidad": "kg", "rinde": 1, "modo_produccion": "producir",
+                                                          "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1}]}).json()
+    for _ in range(3):
+        client.post("/api/inventario/produccion", json={"preparacion_id": g["id"], "cantidad": 3.1, "usado": [{"ingrediente_id": pollo["id"], "cantidad": 5}]})
+    r = client.get("/api/inventario/preparaciones/rendimientos").json()
+    assert [(x["nombre"], x["crudo"], x["ficha_pct"], x["sugerido_pct"]) for x in r] == [("Guiso", "Pollo", 70, 62.0)]
+    assert any(a["id"].startswith("rinde-") for a in client.get("/api/reportes/avisos").json())
+    # Se ajusta la ficha: el aviso se va, aunque las tandas sean las mismas.
+    ficha = client.get("/api/inventario/ingredientes").json()
+    p = next(i for i in ficha if i["id"] == pollo["id"])
+    assert client.put(f"/api/inventario/ingredientes/{pollo['id']}", json={**{k: p[k] for k in ("nombre", "unidad", "tipo", "stock_minimo", "stock_objetivo", "costo_unitario", "exento")}, "rendimiento_pct": 62}).status_code == 200
+    assert client.get("/api/inventario/preparaciones/rendimientos").json() == []
+
+
+def test_vencidas_y_reclamos_viejos_en_los_avisos(client, db, libros):
+    import datetime
+    from app.timeutils import ahora
+    carne = alta(client, "Carne", rendimiento_pct=60)
+    comprar(client, "V-1", [{"ingrediente_id": carne["id"], "cantidad": 10, "costo_unitario": 7}])
+    m = client.post("/api/inventario/preparaciones", json={"nombre": "Mechada", "unidad": "kg", "rinde": 0.6, "modo_produccion": "producir",
+                                                          "vida_util_horas": 48, "lineas": [{"ingrediente_id": carne["id"], "cantidad": 1}]}).json()
+    client.post("/api/inventario/produccion", json={"preparacion_id": m["id"], "cantidad": 3, "usado": [{"ingrediente_id": carne["id"], "cantidad": 5}]})
+    f = client.get("/api/compras/facturas").json()[0]
+    client.post(f"/api/compras/facturas/{f['id']}/faltantes", json={"items": [{"ingrediente_id": carne["id"], "cantidad": 1}]})
+    ids = {a["id"] for a in client.get("/api/reportes/avisos").json()}
+    assert "vencidas" not in ids and "reclamos" not in ids
+    for t in db.query(models.Produccion).all():
+        t.fecha = ahora() - datetime.timedelta(hours=72)
+    for r in db.query(models.ReclamoProveedor).all():
+        r.fecha = ahora() - datetime.timedelta(days=10)
+    db.commit()
+    ids = {a["id"] for a in client.get("/api/reportes/avisos").json()}
+    assert {"vencidas", "reclamos"} <= ids
+    assert client.get("/api/compras/reclamos").json()[0]["dias"] == 10
+
+
+def test_una_cantidad_rara_en_la_factura_avisa(client, db, libros):
+    harina = alta(client, "Harina")
+    comprar(client, "H-1", [{"ingrediente_id": harina["id"], "cantidad": 2, "costo_unitario": 26}])
+    comprar(client, "H-2", [{"ingrediente_id": harina["id"], "cantidad": 3, "costo_unitario": 26}])
+    def revisar(cantidad):
+        return client.post("/api/compras/revision", json={"proveedor_rif": "J123456789", "numero_factura": "H-3",
+                                                          "items": [{"indice": 0, "ingrediente_id": harina["id"], "costo_unitario": 26, "cantidad": cantidad}]}).json()["cantidades"]
+    assert revisar(3) == []
+    rara = revisar(20)
+    assert rara and rara[0]["referencia"] == 2.5 and "Revisa la cantidad" in rara[0]["mensaje"]
+    assert revisar(0.2)
