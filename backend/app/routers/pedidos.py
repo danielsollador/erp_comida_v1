@@ -275,6 +275,21 @@ def _revisar_precio_de_envios(items, variantes, categoria_envios_id) -> None:
             raise HTTPException(status_code=400, detail="El envío necesita su monto")
 
 
+def _revisar_sin_precio(items, variantes, categoria_envios_id) -> None:
+    """Un producto nuevo puede nacer sin precio (se decide en Recetas, con el
+    costo a la vista). Mientras no lo tenga no se vende: saldria regalado."""
+    for item in items:
+        v = variantes.get(item.variante_id)
+        if v is None or item.cortesia or _es_envio(v, categoria_envios_id):
+            continue
+        if (v.precio or 0) <= 0:
+            nombre = v.producto.nombre if getattr(v, "producto", None) else "Este producto"
+            raise HTTPException(
+                status_code=400,
+                detail=f"«{nombre}» todavía no tiene precio: pónselo en Recetas antes de venderlo.",
+            )
+
+
 def _renglon_va_a_cocina(
     item: schemas.PedidoItemCreate,
     variante: Optional[models.Variante],
@@ -391,6 +406,7 @@ async def crear_pedido(
     envios = seed.categoria_envios(db)
     categoria_envios_id = envios.id if envios else None
     _revisar_precio_de_envios(del_menu, variantes, categoria_envios_id)
+    _revisar_sin_precio(del_menu, variantes, categoria_envios_id)
 
     # El inventario se mueve ACA, no al cobrar: la cocina empieza a gastar
     # insumos apenas le llega la comanda. Descontar al cobrar dejaba una
@@ -917,6 +933,7 @@ async def editar_pedido(
     envios = seed.categoria_envios(db)
     categoria_envios_id = envios.id if envios else None
     _revisar_precio_de_envios(del_menu, variantes, categoria_envios_id)
+    _revisar_sin_precio(del_menu, variantes, categoria_envios_id)
     ids_envio = (
         frozenset(
             v_id

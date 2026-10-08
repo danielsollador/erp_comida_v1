@@ -222,6 +222,13 @@ function ElMenu({
     // 1-oct, fight complexity).
     const variante = creado.variantes?.[0]
     if (!variante) return
+    // Sin precio: primero el costo. Se va derecho a la receta, donde el
+    // precio sale del margen que se quiera. Mientras no tenga precio no se
+    // puede vender (no aparece en la caja).
+    if (!(precio > 0)) {
+      navegar('/menu/recetas', { state: { receta: variante.id } })
+      return
+    }
     const ahora = await dialogo.confirmar({
       titulo: `¿Qué lleva ${nombre}?`,
       texto: 'Ponle la receta ahora y sabrás cuánta ganancia te deja cada uno. También puedes hacerlo después, desde Recetas.',
@@ -1287,8 +1294,8 @@ function CrearProducto({
   const [donde, setDonde] = useState(categoriaId)
   const [guardando, setGuardando] = useState(false)
 
-  const monto = Number(String(precio).replace(',', '.'))
-  const listo = nombre.trim().length > 0 && Number.isFinite(monto) && monto >= 0 && precio !== ''
+  const monto = precio === '' ? 0 : Number(String(precio).replace(',', '.'))
+  const listo = nombre.trim().length > 0 && Number.isFinite(monto) && monto >= 0
 
   async function guardar() {
     if (!listo || guardando) return
@@ -1303,7 +1310,7 @@ function CrearProducto({
   return (
     <Modal
       titulo="Nuevo producto"
-      ayuda="Con su precio: así se puede vender desde el primer momento."
+      ayuda="Si ya sabes el precio, ponlo. Si no, déjalo vacío: arma la receta y el sistema te lo calcula con el margen que quieras."
       onCerrar={onCerrar}
       pie={
         <div className="flex items-center justify-between w-full gap-3">
@@ -1311,7 +1318,7 @@ function CrearProducto({
             Cancelar
           </Boton>
           <Boton onClick={guardar} disabled={!listo || guardando}>
-            {guardando ? 'Creando…' : 'Crear producto'}
+            {guardando ? 'Creando…' : precio === '' ? 'Crear y armar la receta' : 'Crear producto'}
           </Boton>
         </div>
       }
@@ -1331,7 +1338,7 @@ function CrearProducto({
 
       <label className="block mt-4">
         <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
-          Precio
+          Precio <span className="normal-case font-normal tracking-normal text-neutral-400">(opcional)</span>
         </span>
         <Numerico
           value={precio}

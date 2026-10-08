@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import BarraFiltros from '../components/BarraFiltros'
@@ -24,7 +24,7 @@ import type {
 // restaura el dia que algo se rompe.
 const SECCIONES = [
   { id: 'plan', texto: 'Plan de cuentas' },
-  { id: 'diario', texto: 'Diario' },
+  { id: 'diario', texto: 'Asientos' },
   { id: 'comprobacion', texto: 'Balance de comprobación' },
   { id: 'resultados', texto: 'Estado de resultados' },
   { id: 'general', texto: 'Balance general' },
@@ -81,6 +81,33 @@ const ORIGEN_LABEL: Record<string, string> = {
   nota_credito_compra: 'Nota de crédito del proveedor',
   depreciacion: 'Depreciación',
   baja_activo: 'Baja de equipo',
+  alta_activo: 'Alta de equipo',
+  alta_insumo: 'Alta de mercancía',
+  apertura_kardex: 'Apertura de inventario',
+  carga_indirecto: 'Carga de aceite / indirecto',
+  cierre_ejercicio: 'Cierre del año',
+  cobro_fiado: 'Cobro de fiado',
+  compra_suelta: 'Compra suelta',
+  consumo_personal: 'Consumo del personal',
+  conteo: 'Conteo físico',
+  correccion_pago: 'Corrección de pago',
+  declaracion_iva: 'Declaración de IVA',
+  devolucion: 'Devolución de venta',
+  edicion_pedido: 'Pedido editado',
+  entrega_propinas: 'Entrega de propinas',
+  factura_tardia: 'Factura tardía',
+  fusion: 'Fusión de mercancía',
+  merma_revertida: 'Merma revertida',
+  nota_credito: 'Nota de crédito',
+  pago_iva: 'Pago de IVA',
+  pedido_anulado: 'Pedido anulado',
+  pedido_editado: 'Pedido editado',
+  produccion: 'Producción',
+  redondeo: 'Redondeo',
+  retenciones_iva: 'Retenciones de IVA',
+  retiro: 'Retiro del dueño',
+  sobrante_revertido: 'Sobrante revertido',
+  apertura_dia: 'Apertura del día',
 }
 
 const TIPO_LABEL: Record<string, string> = {
@@ -319,69 +346,69 @@ function NuevaCuenta({ onCerrar, onCreada }: { onCerrar: () => void; onCreada: (
   )
 }
 
+/**
+ * Los asientos del periodo, para buscar uno y ver cómo aterrizó: por cuenta
+ * (todo lo que movió la 6060), por origen (solo las ventas), por número o por
+ * lo que diga ("#495", "Zelle", "Distribuidora"). Cada asiento se lee como en
+ * papel: sus cuentas con el debe y el haber, y el total que cuadra. El
+ * asiento a mano, que casi nunca hace falta, queda detrás de un botón.
+ */
 function Diario({ rango }: { rango: Rango }) {
   const [asientos, setAsientos] = useState<AsientoContable[]>([])
-  // Lo ultimo asentado arriba; por Origen se separa de un vistazo lo que
-  // escribio una persona a mano de lo que asento el sistema solo.
-  const ordenAsientos = useOrden<AsientoContable>(
-    {
-      fecha: (a) => new Date(a.fecha),
-      descripcion: (a) => a.descripcion,
-      origen: (a) => ORIGEN_LABEL[a.origen] ?? a.origen,
-    },
-    '-fecha',
-  )
-  // La descripcion es lo unico por lo que se busca un asiento: "alquiler",
-  // "#412", "Zelle". El origen entra tambien, para aislar lo manual.
-  const buscadorAsientos = useBuscador<AsientoContable>(
-    (a) => [
-      a.descripcion,
-      ORIGEN_LABEL[a.origen] ?? a.origen,
-      ...a.movimientos.map((m) => `${m.cuenta_codigo} ${m.cuenta_nombre}`),
-    ],
-    'Buscar por descripción, cuenta u origen',
-  )
+  const [cargando, setCargando] = useState(true)
   const [cuentas, setCuentas] = useState<CuentaContable[]>([])
   const [error, setError] = useState('')
-  const [nuevaDescripcion, setNuevaDescripcion] = useState('')
-  const [lineas, setLineas] = useState([
-    { cuenta_id: 0, debe: '', haber: '' },
-    { cuenta_id: 0, debe: '', haber: '' },
-  ])
+  const [cuenta, setCuenta] = useState('')
+  const [origen, setOrigen] = useState('')
+  const [texto, setTexto] = useState('')
+  const [ver, setVer] = useState(50)
+  const [creando, setCreando] = useState(false)
 
   useEffect(() => {
     cargar()
     api.planCuentas().then(setCuentas)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rango])
 
   function cargar() {
-    api.listarAsientos(rango).then(setAsientos)
+    setCargando(true)
+    api
+      .listarAsientos(rango)
+      .then(setAsientos)
+      .finally(() => setCargando(false))
   }
 
-  function actualizarLinea(i: number, campo: 'cuenta_id' | 'debe' | 'haber', valor: string) {
-    setLineas((prev) =>
-      prev.map((l, idx) => (idx === i ? { ...l, [campo]: campo === 'cuenta_id' ? Number(valor) : valor } : l)),
-    )
-  }
+  // Los orígenes que de verdad hay en el periodo, con cuántos de cada uno.
+  const origenes = useMemo(() => {
+    const n = new Map<string, number>()
+    for (const a of asientos) n.set(a.origen, (n.get(a.origen) ?? 0) + 1)
+    return [...n.entries()].sort((a, b) => (ORIGEN_LABEL[a[0]] ?? a[0]).localeCompare(ORIGEN_LABEL[b[0]] ?? b[0]))
+  }, [asientos])
 
-  async function guardarAsiento() {
-    setError('')
-    const cuerpo = lineas
-      .filter((l) => l.cuenta_id)
-      .map((l) => ({ cuenta_id: l.cuenta_id, debe: Number(l.debe) || 0, haber: Number(l.haber) || 0 }))
-    if (!nuevaDescripcion.trim() || cuerpo.length < 2) return
-    try {
-      await api.crearAsiento(nuevaDescripcion.trim(), cuerpo)
-      setNuevaDescripcion('')
-      setLineas([
-        { cuenta_id: 0, debe: '', haber: '' },
-        { cuenta_id: 0, debe: '', haber: '' },
-      ])
-      cargar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo crear el asiento')
-    }
-  }
+  const filtrados = useMemo(() => {
+    const q = texto.trim().toLowerCase().replace(/^#/, '')
+    return asientos
+      .filter((a) => !origen || a.origen === origen)
+      .filter((a) => !cuenta || a.movimientos.some((m) => m.cuenta_codigo === cuenta))
+      .filter(
+        (a) =>
+          !q ||
+          String(a.id) === q ||
+          String(a.referencia_id ?? '') === q ||
+          a.descripcion.toLowerCase().includes(q) ||
+          a.movimientos.some((m) => `${m.cuenta_codigo} ${m.cuenta_nombre}`.toLowerCase().includes(q)),
+      )
+      .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime() || b.id - a.id)
+  }, [asientos, origen, cuenta, texto])
+
+  // Con una cuenta elegida: lo que se movió en ella en lo filtrado.
+  const deLaCuenta = useMemo(() => {
+    if (!cuenta) return null
+    let debe = 0
+    let haber = 0
+    for (const a of filtrados) for (const m of a.movimientos) if (m.cuenta_codigo === cuenta) (debe += m.debe), (haber += m.haber)
+    return { debe, haber }
+  }, [filtrados, cuenta])
 
   async function borrar(id: number) {
     setError('')
@@ -393,109 +420,213 @@ function Diario({ rango }: { rango: Rango }) {
     }
   }
 
+  const filtro = 'border border-neutral-300 rounded-xl px-3 py-2 text-sm bg-white min-w-0'
+  const hayFiltro = !!(cuenta || origen || texto)
+  const nombreCuenta = cuentas.find((c) => c.codigo === cuenta)?.nombre
+  const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-        <h2 className="font-semibold mb-2">Nuevo asiento manual</h2>
-        <p className="text-xs text-neutral-500 mb-3">
-          Los que genera el sistema solo (ventas, gastos, compras, merma) no aparecen aquí para
-          crear - solo para consultar. Este formulario es para lo que no encaja en ningún flujo,
-          por ejemplo un aporte de capital.
-        </p>
-        {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
-        <input
-          value={nuevaDescripcion}
-          onChange={(e) => setNuevaDescripcion(e.target.value)}
-          placeholder="Descripción del asiento"
-          className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mb-2"
-        />
-        {lineas.map((l, i) => (
-          <div key={i} className="flex gap-2 mb-2">
-            <select
-              value={l.cuenta_id}
-              onChange={(e) => actualizarLinea(i, 'cuenta_id', e.target.value)}
-              className="flex-1 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-            >
-              <option value={0}>Selecciona cuenta...</option>
-              {cuentas.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.codigo} - {c.nombre}
-                </option>
-              ))}
-            </select>
-            <Numerico
-              value={l.debe}
-              onChange={(e) => actualizarLinea(i, 'debe', e.target.value)}
-              placeholder="Debe"
-              className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-            />
-            <Numerico
-              value={l.haber}
-              onChange={(e) => actualizarLinea(i, 'haber', e.target.value)}
-              placeholder="Haber"
-              className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-            />
-          </div>
-        ))}
-        <div className="flex flex-wrap gap-2">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Buscar: #495, Zelle, proveedor…" aria-label="Buscar asiento" className={`${filtro} flex-1 basis-56`} />
+        <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} aria-label="Cuenta" className={`${filtro} basis-48 flex-1 sm:flex-none`}>
+          <option value="">Todas las cuentas</option>
+          {cuentas.map((c) => (
+            <option key={c.id} value={c.codigo}>
+              {c.codigo} · {c.nombre}
+            </option>
+          ))}
+        </select>
+        <select value={origen} onChange={(e) => setOrigen(e.target.value)} aria-label="Origen" className={`${filtro} basis-40 flex-1 sm:flex-none`}>
+          <option value="">Todo origen</option>
+          {origenes.map(([o, n]) => (
+            <option key={o} value={o}>
+              {ORIGEN_LABEL[o] ?? o} ({n})
+            </option>
+          ))}
+        </select>
+        {hayFiltro && (
           <button
-            onClick={() => setLineas((prev) => [...prev, { cuenta_id: 0, debe: '', haber: '' }])}
-            className="text-sm text-neutral-500"
+            type="button"
+            onClick={() => {
+              setCuenta('')
+              setOrigen('')
+              setTexto('')
+            }}
+            className="text-sm text-neutral-500 underline"
           >
-            + linea
+            Quitar filtros
           </button>
-          <button
-            onClick={guardarAsiento}
-            className="ml-auto bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            Guardar asiento
-          </button>
-        </div>
+        )}
+        <Boton tono="suave" onClick={() => setCreando(true)} className="ml-auto">
+          Asiento manual
+        </Boton>
       </div>
 
-      <Tabla
-        orden={ordenAsientos}
-        buscador={buscadorAsientos}
-        glosario="diario"
-        className="bg-white rounded-2xl border border-neutral-200 overflow-hidden"
-      >
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
-            <tr>
-              <Th clave="fecha">Fecha</Th>
-              <Th clave="descripcion">Descripción</Th>
-              <Th clave="origen">Origen</Th>
-              <Th ayuda="diario.movimientos">Movimientos</Th>
-              <Th />
-            </tr>
-          </thead>
-          <tbody>
-            {ordenAsientos.ordenar(buscadorAsientos.filtrar(asientos)).map((a) => (
-              <tr key={a.id} className="border-t border-neutral-100 align-top">
-                <td className="p-3 whitespace-nowrap">{new Date(a.fecha).toLocaleDateString('es-VE')}</td>
-                <td className="p-3 font-medium">{a.descripcion}</td>
-                <td className="p-3 text-neutral-500">{ORIGEN_LABEL[a.origen] ?? a.origen}</td>
-                <td className="p-3">
-                  {a.movimientos.map((m) => (
-                    <div key={m.id} className="text-xs text-neutral-600">
-                      {m.cuenta_codigo} {m.cuenta_nombre}:{' '}
-                      {m.debe ? `Debe $${m.debe.toFixed(2)}` : `Haber $${m.haber.toFixed(2)}`}
-                    </div>
-                  ))}
-                </td>
-                <td className="p-3">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-neutral-600">
+        <span>
+          <span className="font-semibold text-neutral-900 tabular-nums">{filtrados.length}</span> {filtrados.length === 1 ? 'asiento' : 'asientos'}
+          {hayFiltro && ` de ${asientos.length}`}
+        </span>
+        {deLaCuenta && (
+          <span className="tabular-nums">
+            {cuenta} {nombreCuenta}: debe ${fmt(deLaCuenta.debe)} · haber ${fmt(deLaCuenta.haber)} · neto{' '}
+            <span className="font-semibold text-neutral-900">${fmt(deLaCuenta.debe - deLaCuenta.haber)}</span>
+          </span>
+        )}
+      </div>
+      {error && <p className="text-peligro-600 text-sm">{error}</p>}
+
+      {cargando ? (
+        <p className="text-sm text-neutral-500">Cargando asientos…</p>
+      ) : filtrados.length === 0 ? (
+        <p className="vp-losa p-6 text-sm text-neutral-500 text-center">
+          {asientos.length === 0 ? 'No hay asientos en este periodo.' : 'Ningún asiento coincide con el filtro.'}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {filtrados.slice(0, ver).map((a) => {
+            const debe = a.movimientos.reduce((x, m) => x + m.debe, 0)
+            const haber = a.movimientos.reduce((x, m) => x + m.haber, 0)
+            return (
+              <li key={a.id} className="vp-losa p-3 sm:p-4">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="font-mono text-xs text-neutral-400">#{a.id}</span>
+                  <span className="text-xs text-neutral-500 tabular-nums">
+                    {new Date(a.fecha).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <span className="rounded-full bg-neutral-500/10 px-2 py-0.5 text-[11px] font-medium text-neutral-600">{ORIGEN_LABEL[a.origen] ?? a.origen}</span>
                   {a.origen === 'manual' && (
-                    <button onClick={() => borrar(a.id)} className="text-peligro-500 text-xs">
+                    <button onClick={() => void borrar(a.id)} className="ml-auto text-peligro-600 text-xs">
                       Borrar
                     </button>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Tabla>
+                </div>
+                <p className="font-medium text-sm mt-1">{a.descripcion}</p>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-xs tabular-nums">
+                    <thead className="text-neutral-400">
+                      <tr>
+                        <th className="text-left font-medium py-1">Cuenta</th>
+                        <th className="text-right font-medium py-1 w-24">Debe</th>
+                        <th className="text-right font-medium py-1 w-24">Haber</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {a.movimientos.map((m) => (
+                        <tr key={m.id} className={`border-t border-neutral-100 ${m.cuenta_codigo === cuenta ? 'bg-acento-500/10 font-semibold' : ''}`}>
+                          <td className={`py-1 ${m.haber && !m.debe ? 'pl-4' : ''}`}>
+                            <span className="font-mono text-neutral-400 mr-1.5">{m.cuenta_codigo}</span>
+                            {m.cuenta_nombre}
+                          </td>
+                          <td className="text-right py-1">{m.debe ? fmt(m.debe) : ''}</td>
+                          <td className="text-right py-1">{m.haber ? fmt(m.haber) : ''}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t border-neutral-300 text-neutral-500">
+                        <td className="py-1">Total</td>
+                        <td className="text-right py-1">{fmt(debe)}</td>
+                        <td className="text-right py-1">{fmt(haber)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {filtrados.length > ver && (
+        <div className="text-center">
+          <Boton tono="suave" onClick={() => setVer((v) => v + 50)}>
+            Ver 50 más ({filtrados.length - ver} quedan)
+          </Boton>
+        </div>
+      )}
+
+      {creando && (
+        <AsientoManual
+          cuentas={cuentas}
+          onCerrar={() => setCreando(false)}
+          onCreado={() => {
+            setCreando(false)
+            cargar()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/** Lo que no encaja en ningún flujo (un aporte de capital): casi nunca hace falta. */
+function AsientoManual({ cuentas, onCerrar, onCreado }: { cuentas: CuentaContable[]; onCerrar: () => void; onCreado: () => void }) {
+  const [descripcion, setDescripcion] = useState('')
+  const [error, setError] = useState('')
+  const [lineas, setLineas] = useState([
+    { cuenta_id: 0, debe: '', haber: '' },
+    { cuenta_id: 0, debe: '', haber: '' },
+  ])
+  const debe = lineas.reduce((x, l) => x + (Number(l.debe) || 0), 0)
+  const haber = lineas.reduce((x, l) => x + (Number(l.haber) || 0), 0)
+
+  function actualizar(i: number, campo: 'cuenta_id' | 'debe' | 'haber', valor: string) {
+    setLineas((prev) => prev.map((l, idx) => (idx === i ? { ...l, [campo]: campo === 'cuenta_id' ? Number(valor) : valor } : l)))
+  }
+
+  async function guardar() {
+    setError('')
+    const cuerpo = lineas.filter((l) => l.cuenta_id).map((l) => ({ cuenta_id: l.cuenta_id, debe: Number(l.debe) || 0, haber: Number(l.haber) || 0 }))
+    if (!descripcion.trim()) return setError('Ponle una descripción.')
+    if (cuerpo.length < 2) return setError('Un asiento lleva al menos dos cuentas.')
+    if (Math.abs(debe - haber) > 0.005) return setError('El debe y el haber tienen que dar lo mismo.')
+    try {
+      await api.crearAsiento(descripcion.trim(), cuerpo)
+      onCreado()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo crear el asiento')
+    }
+  }
+
+  return (
+    <Modal
+      titulo="Asiento manual"
+      ayuda="Las ventas, compras, gastos y mermas ya dejan su asiento solos. Esto es para lo que no encaja en ningún flujo, como un aporte de capital."
+      onCerrar={onCerrar}
+      ancho="md"
+      pie={
+        <>
+          <Boton tono="fantasma" onClick={onCerrar}>
+            Cancelar
+          </Boton>
+          <Boton onClick={() => void guardar()}>Guardar asiento</Boton>
+        </>
+      }
+    >
+      {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
+      <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Descripción del asiento" className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm mb-2" />
+      {lineas.map((l, i) => (
+        <div key={i} className="flex gap-2 mb-2">
+          <select value={l.cuenta_id} onChange={(e) => actualizar(i, 'cuenta_id', e.target.value)} className="flex-1 min-w-0 border border-neutral-300 rounded-lg px-2 py-2 text-sm">
+            <option value={0}>Cuenta…</option>
+            {cuentas.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.codigo} - {c.nombre}
+              </option>
+            ))}
+          </select>
+          <Numerico value={l.debe} onChange={(e) => actualizar(i, 'debe', e.target.value)} placeholder="Debe" className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm" />
+          <Numerico value={l.haber} onChange={(e) => actualizar(i, 'haber', e.target.value)} placeholder="Haber" className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm" />
+        </div>
+      ))}
+      <div className="flex items-center gap-3 text-sm">
+        <button onClick={() => setLineas((prev) => [...prev, { cuenta_id: 0, debe: '', haber: '' }])} className="text-neutral-500">
+          + línea
+        </button>
+        <span className={`ml-auto tabular-nums ${Math.abs(debe - haber) > 0.005 ? 'text-aviso-700' : 'text-exito-700'}`}>
+          Debe {debe.toFixed(2)} · Haber {haber.toFixed(2)}
+        </span>
+      </div>
+    </Modal>
   )
 }
 
