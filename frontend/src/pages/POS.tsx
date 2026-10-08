@@ -433,7 +433,13 @@ export default function POS() {
         categoria: c,
         filas: c.productos
           .filter((p) => p.activo)
-          .flatMap((p) => variantesParaVender(p).map((v) => ({ producto: p, variante: v }))),
+          // Un producto recien creado sin precio todavia no se vende: su
+          // precio se decide en Recetas. Los envios si, que cobran lo que se escriba.
+          .flatMap((p) =>
+            variantesParaVender(p)
+              .filter((v) => v.precio > 0 || sinTildes(c.nombre) === 'envios')
+              .map((v) => ({ producto: p, variante: v })),
+          ),
       })),
     [categorias],
   )

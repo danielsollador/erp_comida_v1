@@ -105,6 +105,10 @@ export default function Recetas({
   const [filas, setFilas] = useState<Fila[]>([])
   // Lo que se guardo por ultima vez, para saber si hay cambios sin guardar.
   const [huellaGuardada, setHuellaGuardada] = useState('')
+  // El precio se decide AQUÍ, con el costo a la vista: escribiendo el precio
+  // (y se ve el margen) o el margen (y sale el precio). Primero el costo,
+  // después el precio: así se hace en cualquier cocina.
+  const [precio, setPrecio] = useState('')
   const dialogo = useDialogo()
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
@@ -239,6 +243,7 @@ export default function Recetas({
   async function abrir(r: Renglon, desdeUrl = false) {
     setError('')
     setAbierta(r)
+    setPrecio(r.variante.precio > 0 ? String(r.variante.precio) : '')
     if (!desdeUrl) navegar(location.pathname + location.search, { state: { receta: r.variante.id } })
     const receta = await api.verReceta(r.variante.id)
     const iniciales: Fila[] = receta.map((x: RecetaItem) => ({
@@ -270,7 +275,9 @@ export default function Recetas({
   }
 
   /** Salir con cambios sin guardar pide confirmacion (Leider, 29-sep). */
-  const hayCambios = abierta !== null && huella(filas) !== huellaGuardada
+  const precioNum = Number(precio.replace(',', '.'))
+  const cambioPrecio = abierta !== null && precio !== '' && Number.isFinite(precioNum) && Math.abs(precioNum - abierta.variante.precio) > 0.0001
+  const hayCambios = abierta !== null && (huella(filas) !== huellaGuardada || cambioPrecio)
   const preguntar = useCallback(
     () =>
       dialogo.confirmar({
@@ -300,9 +307,14 @@ export default function Recetas({
       setError('Ponle al menos una mercancía con su cantidad.')
       return
     }
+    if (precio !== '' && !(precioNum > 0)) {
+      setError('El precio tiene que ser mayor que cero.')
+      return
+    }
     setGuardando(true)
     try {
       await api.actualizarReceta(abierta.variante.id, items)
+      if (cambioPrecio) await api.actualizarVariante(abierta.variante.id, abierta.variante.nombre, Math.round(precioNum * 100) / 100, true)
       cerrar()
       // El costo y el margen de todo el menú cambian con esto.
       onCambio()
@@ -333,6 +345,8 @@ export default function Recetas({
         mapaIngredientes={mapaIngredientes}
         filas={filas}
         setFilas={setFilas}
+        precio={precio}
+        setPrecio={setPrecio}
         error={error}
         guardando={guardando}
         onGuardar={() => void guardar()}
@@ -606,6 +620,8 @@ function Compositor({
   mapaIngredientes,
   filas,
   setFilas,
+  precio: precioTexto,
+  setPrecio,
   error,
   guardando,
   onGuardar,
@@ -616,6 +632,9 @@ function Compositor({
   mapaIngredientes: Map<number, Ingrediente>
   filas: Fila[]
   setFilas: (f: Fila[] | ((prev: Fila[]) => Fila[])) => void
+  /** El precio que se está decidiendo, como texto. */
+  precio: string
+  setPrecio: (p: string) => void
   error: string
   guardando: boolean
   onGuardar: () => void
@@ -625,7 +644,7 @@ function Compositor({
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('')
   const [resaltado, setResaltado] = useState<number | string | null>(null)
-  const precio = renglon.variante.precio
+  const precio = Number(precioTexto.replace(',', '.')) || 0
 
   const categoriasDeposito = useMemo(() => {
     const cuenta = new Map<string, number>()
@@ -752,6 +771,7 @@ function Compositor({
           />
           </div>
           <Margen precio={precio} costoReal={costoReal} vacio={filas.length === 0} />
+          <PrecioConMargen costo={costoReal} precio={precioTexto} onPrecio={setPrecio} guardado={renglon.variante.precio} />
         </section>
 
         {/* ── La mercancía ────────────────────────────────────────────── */}
@@ -1068,7 +1088,81 @@ function Margen({ precio, costoReal, vacio }: { precio: number; costoReal: numbe
         <span>Cuesta hacerlo</span>
         <span className="font-semibold text-neutral-700">{fmt(costoReal)}</span>
       </div>
-      {precio <= 0 && <p className="text-xs text-aviso-700">Este producto no tiene precio: ponlo en el menú.</p>}
+    </div>
+  )
+}
+
+// Margen sobre el PRECIO (lo que queda de cada venta), no recargo sobre el
+// costo: "70 %" es que de $10 te quedan $7. Es como se habla en cocina: el
+// costo de la mercancía ronda el 25-35 % del precio, y en bebidas menos.
+const MARGENES_TIPICOS = [60, 65, 70, 75]
+
+/**
+ * El precio, decidido con el costo a la vista y en las dos direcciones:
+ * escribe el precio y ve el margen, o escribe el margen y sale el precio.
+ */
+function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number; precio: string; onPrecio: (p: string) => void; guardado: number }) {
+  const precioNum = Number(precio.replace(',', '.')) || 0
+  const margenDe = (p: number) => (p > 0 ? ((p - costo) / p) * 100 : null)
+  const [margen, setMargen] = useState(() => {
+    const m = margenDe(precioNum)
+    return m == null ? '' : String(Math.round(m))
+  })
+  // Si cambia el costo o el precio por fuera, el margen se recalcula.
+  useEffect(() => {
+    const m = margenDe(precioNum)
+    setMargen(m == null ? '' : String(Math.round(m * 10) / 10))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [costo, precio])
+
+  function desdeMargen(texto: string) {
+    setMargen(texto)
+    const m = Number(texto.replace(',', '.'))
+    if (!(costo > 0) || !Number.isFinite(m) || m >= 100 || m < 0) return
+    // Redondeado a la decena de centavo: $3,47 queda en $3,50.
+    onPrecio(String(Math.ceil((costo / (1 - m / 100)) * 10) / 10))
+  }
+
+  const m = margenDe(precioNum)
+  const costoPct = precioNum > 0 ? (costo / precioNum) * 100 : null
+  return (
+    <div className="mt-3 rounded-2xl bg-neutral-500/6 p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="block text-[11px] font-medium text-neutral-600 mb-0.5">Precio de venta ($)</span>
+          <Numerico value={precio} onChange={(e) => onPrecio(e.target.value)} placeholder="0.00" className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-base font-semibold tabular-nums bg-white" />
+        </label>
+        <label className="block">
+          <span className="block text-[11px] font-medium text-neutral-600 mb-0.5">Margen (% del precio)</span>
+          <Numerico
+            value={margen}
+            onChange={(e) => desdeMargen(e.target.value)}
+            placeholder={costo > 0 ? '70' : '—'}
+            disabled={!(costo > 0)}
+            className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-base font-semibold tabular-nums bg-white disabled:opacity-50"
+          />
+        </label>
+      </div>
+      {costo > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-neutral-500">Con margen de</span>
+          {MARGENES_TIPICOS.map((p) => (
+            <button key={p} type="button" onClick={() => desdeMargen(String(p))} className="vp-control rounded-full px-2.5 py-0.5 text-xs font-medium text-neutral-700">
+              {p}%
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-neutral-500 leading-relaxed">
+        {!(costo > 0)
+          ? 'Ponle primero lo que lleva: con el costo se calcula el precio para el margen que quieras.'
+          : precioNum > 0 && m != null
+            ? m < 0
+              ? `A ese precio pierdes $${(costo - precioNum).toFixed(2)} por unidad.`
+              : `La mercancía es el ${costoPct!.toFixed(0)} % del precio y te quedan $${(precioNum - costo).toFixed(2)} por unidad${costoPct! > 35 ? ': en cocina se apunta a que la mercancía no pase del 35 %.' : '.'}`
+            : 'Escribe el precio o el margen que quieres: el otro sale solo.'}
+        {guardado > 0 && Math.abs(precioNum - guardado) > 0.0001 && ` Hoy se vende a $${guardado.toFixed(2)}: el precio nuevo se guarda con la receta.`}
+      </p>
     </div>
   )
 }

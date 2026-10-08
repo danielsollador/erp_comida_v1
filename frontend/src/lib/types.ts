@@ -1197,6 +1197,19 @@ export type LineaFactura = {
   cuenta: string
 }
 
+/** Lo que la factura cobra y no es mercancía: no mueve stock. */
+export type ConceptoGasto = 'Flete' | 'Servicio' | 'Equipo' | 'Otro'
+
+export type LineaGasto = {
+  id: number
+  concepto: ConceptoGasto
+  descripcion: string
+  /** Sin IVA, en dólares, como dice el papel. */
+  monto: number
+  exento: boolean
+  cuenta: string
+}
+
 export type FacturaCompra = {
   id: number
   numero_factura: string
@@ -1235,6 +1248,8 @@ export type FacturaCompra = {
   /** El comprobante con que se le pagó al proveedor. Vacío si fue en efectivo. */
   referencia_pago: string
   items: LineaFactura[]
+  /** Flete, servicios, equipos: los renglones que no son mercancía. */
+  gastos?: LineaGasto[]
   /** Si tiene la foto del papel enganchada. */
   tiene_soporte?: boolean
 }

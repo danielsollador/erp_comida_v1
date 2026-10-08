@@ -1,4 +1,5 @@
 import type {
+  ConceptoGasto,
   ActivoFijo,
   AsientoContable,
   BalanceGeneral,
@@ -1081,6 +1082,15 @@ export const api = {
       cantidad: number
       costo_unitario: number
       exento?: boolean
+    }[]
+    // Lo que no es mercancia, renglon por renglon: flete, servicio, equipo.
+    // Se suma a la base con la mercancia y no mueve stock.
+    gastos?: {
+      concepto: ConceptoGasto
+      descripcion?: string
+      monto: number
+      exento?: boolean
+      vida_util_meses?: number
     }[]
     // Sin renglones (servicios, activos...): se carga la base a mano.
     base_imponible?: number

@@ -89,6 +89,9 @@ PLAN_DE_CUENTAS = [
     # Servilletas, bolsas, papel: se compran con la mercancia pero no llevan
     # stock (no hay forma de atarlos a lo vendido). Van a gasto del mes.
     ("6050", "Desechables y suministros", "gasto", "deudora"),
+    # El flete que cobra el proveedor en la factura. Aparte de los gastos
+    # operativos porque el transporte lleva retencion de ISLR propia.
+    ("6060", "Fletes y transporte", "gasto", "deudora"),
 ]
 
 # Cuentas que viven dentro de un grupo pero con el saldo invertido a proposito:
@@ -170,6 +173,15 @@ CUENTA_POR_TIPO_ARTICULO = {
 }
 
 
+# Renglon de factura que no es mercancia -> su cuenta.
+CUENTA_POR_CONCEPTO_GASTO = {
+    "Flete": "6060",
+    "Servicio": "6010",
+    "Equipo": "1050",
+    "Otro": "6010",
+}
+
+
 def cuenta_de_articulo(ingrediente) -> str:
     return CUENTA_POR_TIPO_ARTICULO.get(getattr(ingrediente, "tipo", "") or "", "1040")
 
@@ -183,14 +195,16 @@ def porciones_de_factura(factura, base: float) -> list:
     se lleva el resto, para que la suma de exacta al centavo.
     """
     concepto = CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
-    items = list(factura.items or [])
-    bruto = sum(i.cantidad * i.costo_unitario for i in items)
-    if not items or bruto <= 0:
+    # Cada renglon con su cuenta y lo que pesa: la mercancia y lo que no lo
+    # es (flete, servicio) van en la misma bolsa.
+    renglones = [(i.cuenta or concepto, i.cantidad * i.costo_unitario) for i in (factura.items or [])]
+    renglones += [(g.cuenta or concepto, g.monto) for g in (getattr(factura, "gastos", None) or [])]
+    bruto = sum(m for _, m in renglones)
+    if not renglones or bruto <= 0:
         return [(concepto, round(base, 2))]
     pesos = {}
-    for i in items:
-        cuenta = i.cuenta or concepto
-        pesos[cuenta] = pesos.get(cuenta, 0) + i.cantidad * i.costo_unitario
+    for cuenta, monto in renglones:
+        pesos[cuenta] = pesos.get(cuenta, 0) + monto
     if len(pesos) == 1:
         return [(next(iter(pesos)), round(base, 2))]
     porciones = []

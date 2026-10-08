@@ -2141,6 +2141,29 @@ class LineaFacturaInput(BaseModel):
     exento: Optional[bool] = None
 
 
+class LineaGastoInput(BaseModel):
+    """Un renglon que no es mercancia: flete, servicio, equipo u otro gasto."""
+
+    concepto: str  # Flete|Servicio|Equipo|Otro
+    descripcion: str = ""
+    monto: float  # sin IVA, en dolares
+    exento: bool = False
+    # Solo para concepto="Equipo": en cuantos meses se deprecia.
+    vida_util_meses: Optional[int] = None
+
+
+class LineaGasto(BaseModel):
+    id: int
+    concepto: str
+    descripcion: str = ""
+    monto: float
+    exento: bool = False
+    cuenta: str = ""
+
+    class Config:
+        from_attributes = True
+
+
 class LineaFactura(BaseModel):
     id: int
     ingrediente_id: int
@@ -2208,6 +2231,9 @@ class FacturaCompraCreate(FacturaCompraBase):
     # Con renglones (compra de insumos): la base sale de sumar los renglones,
     # y cada uno actualiza el stock y el costo promedio de su ingrediente.
     items: List[LineaFacturaInput] = []
+    # Lo que no es mercancia, renglon por renglon: el flete, un servicio. Se
+    # suma a la base junto con los renglones de mercancia.
+    gastos: List[LineaGastoInput] = []
     # Sin renglones (servicios, activos, cualquier compra que no sea insumo
     # puntual): se carga la base a mano, como antes.
     base_imponible: Optional[float] = None
@@ -2254,6 +2280,7 @@ class FacturaCompra(FacturaCompraBase):
     fecha_pago: Optional[datetime.datetime] = None
     referencia_pago: str = ""
     items: List[LineaFactura] = []
+    gastos: List[LineaGasto] = []
     # Si tiene la foto del papel enganchada. Solo lo llena el listado.
     tiene_soporte: bool = False
 

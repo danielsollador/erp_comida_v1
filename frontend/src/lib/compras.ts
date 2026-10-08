@@ -1,4 +1,4 @@
-import type { Ingrediente } from './types'
+import type { ConceptoGasto, Ingrediente } from './types'
 
 // El valor que viaja y se guarda NO cambia: "Insumos" es la clave con la que
 // la contabilidad decide a que cuenta va cada compra, y la llevan las facturas
@@ -17,6 +17,25 @@ export const CATEGORIAS = [
   { valor: 'Activos', texto: 'Equipos y mobiliario', ayuda: 'Neveras, cocinas, mesas: entra al balance y se deprecia con los meses.' },
   { valor: 'Otros', texto: 'Otros gastos', ayuda: 'Lo que no encaja en lo anterior: va a gasto.' },
 ]
+
+/**
+ * Lo que la factura cobra y NO es mercancía (7-oct). Antes se elegía una
+ * categoría para la factura entera, y una factura de pollo que también
+ * cobraba el flete no tenía cómo decirlo. Ahora cada renglón dice qué es: la
+ * mercancía por su ficha, y lo demás por uno de estos. El flete va aparte
+ * porque lleva retención de ISLR propia.
+ */
+export const CONCEPTOS: { valor: ConceptoGasto; texto: string; ayuda: string; ejemplo: string }[] = [
+  { valor: 'Flete', texto: 'Flete', ayuda: 'El transporte que cobra el proveedor.', ejemplo: 'Flete, traslado, envío' },
+  { valor: 'Servicio', texto: 'Servicio', ayuda: 'Luz, agua, internet, gas, reparaciones.', ejemplo: 'Internet de octubre' },
+  { valor: 'Equipo', texto: 'Equipo', ayuda: 'Neveras, cocinas, mesas: se deprecia con los meses.', ejemplo: 'Licuadora industrial' },
+  { valor: 'Otro', texto: 'Otro gasto', ayuda: 'Lo que no encaja en lo anterior.', ejemplo: 'Qué es' },
+]
+
+export const TEXTO_CONCEPTO: Record<ConceptoGasto, string> = Object.fromEntries(CONCEPTOS.map((c) => [c.valor, c.texto])) as Record<
+  ConceptoGasto,
+  string
+>
 
 /** Como se lee una categoria guardada. Es el mismo mapa, al reves. */
 export const TEXTO_CATEGORIA: Record<string, string> = Object.fromEntries(CATEGORIAS.map((c) => [c.valor, c.texto]))
