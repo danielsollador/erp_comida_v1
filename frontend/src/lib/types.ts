@@ -1110,6 +1110,8 @@ export type ReportePerdidas = {
   cambio_pct: number | null
   por_insumo: PerdidaPorInsumo[]
   por_motivo: PerdidaPorMotivo[]
+  /** Quién anotó las mermas (sin los conteos). */
+  por_operador?: { operador: string; valor: number; veces: number }[]
   serie: PuntoPerdida[]
   sin_merma: number
   anulados: number

@@ -103,3 +103,16 @@ def test_un_signo_no_hace_otra_mercancia(client, libros):
     alta(client, "Queso 0,5 kg", unidad="unidad")
     r = client.post("/api/inventario/ingredientes", json={"nombre": "Queso 0.5 KG", "unidad": "unidad", "tipo": "insumo"})
     assert r.status_code == 409
+
+
+def test_la_merma_guarda_quien_la_anoto(client, db, libros):
+    """La merma guardaba quién solo en el kardex: la lista y el reporte de
+    pérdidas no podían decir si una misma persona botaba todos los días."""
+    pollo = alta(client, "Pollo")
+    comprar(client, "M-1", [{"ingrediente_id": pollo["id"], "cantidad": 10, "costo_unitario": 4}])
+    for _ in range(3):
+        assert client.post(f"/api/inventario/ingredientes/{pollo['id']}/merma", json={"cantidad": 0.5, "motivo": "se dañó"}).status_code == 200
+    mermas = client.get("/api/inventario/mermas").json()
+    assert {m["operador"] for m in mermas} == {"admin"}
+    per = client.get("/api/reportes/perdidas").json()["por_operador"]
+    assert per == [{"operador": "admin", "valor": 6.0, "veces": 3}]

@@ -768,7 +768,10 @@ def anotar_merma(
     que sobra de una preparacion al cierre, que puede ser la preparacion
     misma o, si se descuenta del crudo, cada materia prima de su receta.
     """
-    db_merma = models.Merma(ingrediente_id=ingrediente.id, cantidad=cantidad, motivo=motivo)
+    # Quien la anoto va en la merma misma, no solo en el kardex: es lo que leen
+    # la lista de mermas y el reporte de perdidas (8-oct: no habia forma de ver
+    # si una misma persona botaba todos los dias).
+    db_merma = models.Merma(ingrediente_id=ingrediente.id, cantidad=cantidad, motivo=motivo, operador_id=operador_id)
     db.add(db_merma)
     db.flush()
     kardex.anotar(
@@ -1327,6 +1330,7 @@ def listar_mermas(rango: Rango = Depends(), db: Session = Depends(get_db)):
             fecha=m.fecha,
             revertida=m.revertida,
             por_conteo=bool(m.por_conteo),
+            operador=m.operador.nombre if m.operador else None,
         )
         for m in mermas
     ]

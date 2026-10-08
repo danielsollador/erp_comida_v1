@@ -1109,7 +1109,13 @@ def reporte_perdidas(
 
     grupos: Dict[int, dict] = {}
     motivos: Dict[str, dict] = {}
+    personas: Dict[str, dict] = {}
     for m, v in valoradas:
+        if not m.por_conteo:
+            quien = m.operador.nombre if getattr(m, "operador", None) else "Sin registrar"
+            pe = personas.setdefault(quien, {"valor": 0.0, "veces": 0})
+            pe["valor"] += v
+            pe["veces"] += 1
         g = grupos.setdefault(
             m.ingrediente_id,
             {"nombre": m.ingrediente.nombre, "unidad": m.ingrediente.unidad, "cantidad": 0.0, "valor": 0.0, "veces": 0, "conteo": 0.0},
@@ -1222,6 +1228,11 @@ def reporte_perdidas(
         cambio_pct=cambio,
         por_insumo=por_insumo,
         por_motivo=por_motivo,
+        por_operador=sorted(
+            (schemas.PerdidaPorOperador(operador=k, valor=round(x["valor"], 2), veces=x["veces"]) for k, x in personas.items()),
+            key=lambda x: x.valor,
+            reverse=True,
+        ),
         serie=serie,
         sin_merma=sin_merma,
         anulados=b.anulados,

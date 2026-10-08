@@ -556,6 +556,8 @@ class Merma(BaseModel):
     # "el sistema estaba mal" y "se cayo al piso" son dos problemas distintos
     # y sumarlos en el mismo informe de perdidas no deja decidir nada.
     por_conteo: bool = False
+    # Quien la anoto. None en las de antes del 8-oct y en las de un conteo viejo.
+    operador: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -1889,6 +1891,14 @@ class PerdidaPorMotivo(BaseModel):
     veces: int
 
 
+class PerdidaPorOperador(BaseModel):
+    """Lo que anoto cada persona como merma (sin los conteos)."""
+
+    operador: str
+    valor: float
+    veces: int
+
+
 class PuntoPerdida(BaseModel):
     etiqueta: str
     valor: float
@@ -1914,6 +1924,8 @@ class ReportePerdidas(BaseModel):
     cambio_pct: Optional[float] = None
     por_insumo: List[PerdidaPorInsumo]
     por_motivo: List[PerdidaPorMotivo]
+    # Quien anoto las mermas: para ver si una misma persona bota de mas.
+    por_operador: List[PerdidaPorOperador] = []
     serie: List[PuntoPerdida]
     # Mercancias activas que no tuvieron NINGUNA merma en el periodo.
     sin_merma: int

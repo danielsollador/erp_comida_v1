@@ -730,6 +730,7 @@ class Merma(Base):
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
     ingrediente = relationship("Ingrediente")
+    operador = relationship("Operador")
 
 
 class ConfiguracionFiscal(Base):

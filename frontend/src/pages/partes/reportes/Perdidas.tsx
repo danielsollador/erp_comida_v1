@@ -187,6 +187,14 @@ export default function Perdidas({ datos, dinero, corto }: { datos: ReportePerdi
                 <Linea dinero={dinero} etiqueta="Merma registrada a mano" monto={datos.merma_registrada} />
                 <Linea dinero={dinero} etiqueta="Faltantes que encontró un conteo" monto={datos.merma_por_conteo} />
                 <Linea dinero={dinero} etiqueta="Total perdido" monto={datos.merma} total />
+                {(datos.por_operador?.length ?? 0) > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Quién la anotó</p>
+                    {datos.por_operador!.map((o) => (
+                      <Linea key={o.operador} dinero={dinero} etiqueta={`${o.operador} · ${o.veces} ${o.veces === 1 ? 'vez' : 'veces'}`} monto={o.valor} />
+                    ))}
+                  </div>
+                )}
                 <p className="text-xs text-neutral-500 mt-3">
                   Lo registrado a mano se arregla en la cocina: porciones, almacenamiento, compras de más.
                   Lo que aparece en un conteo nadie lo anotó cuando pasó: o se bota sin avisar, o se está
