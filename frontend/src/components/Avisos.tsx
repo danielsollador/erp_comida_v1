@@ -41,7 +41,7 @@ export default function Avisos({ quien = '' }: { quien?: string }) {
 
   return (
     <section>
-      <p className="vp-etiqueta mb-2.5 apaisado:hidden apretado:hidden">¿Sabías que…?</p>
+      <p className="vp-etiqueta mb-2.5 apaisado:hidden">¿Sabías que…?</p>
       <div className={`grid gap-3 sm:grid-cols-2 ${cols}`}>
         {lista.map((a, i) => {
           const t = TONO[a.tono] ?? TONO.info
@@ -49,7 +49,7 @@ export default function Avisos({ quien = '' }: { quien?: string }) {
             <Link
               key={a.id}
               to={a.a || '/'}
-              className={`vp-pulsable group rounded-3xl p-4 sm:p-4.5 apaisado:px-3.5 apaisado:py-2.5 apretado:py-3 flex gap-3 apaisado:gap-2 items-start apaisado:items-center ${i >= 2 ? 'apaisado:hidden' : ''} ${t.caja}`}
+              className={`vp-pulsable group rounded-3xl p-4 sm:p-4.5 apaisado:px-3.5 apaisado:py-2.5 flex gap-3 apaisado:gap-2 items-start apaisado:items-center ${i >= 2 ? 'apaisado:hidden' : ''} ${t.caja}`}
             >
               <span className={`mt-1.5 shrink-0 w-2 h-2 rounded-full ${t.punto}`} />
               <span className="min-w-0 flex-1">

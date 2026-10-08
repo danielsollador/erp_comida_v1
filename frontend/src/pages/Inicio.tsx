@@ -155,13 +155,13 @@ export default function Inicio() {
     ) : (
     <AjustarAPantalla>
     <div className={`min-h-screen flex flex-col ${yaHabia ? '' : 'vp-aparece'}`}>
-      <div className="max-w-[100rem] pc:max-w-[84rem] mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 bajo:py-4 apaisado:py-3 pc:py-8 apretado:py-3 flex-1 flex flex-col">
+      <div className="max-w-[100rem] pc:max-w-[84rem] mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-9 bajo:py-4 apaisado:py-3 pc:py-8 flex-1 flex flex-col">
         {/* Cabecera: marca, a quien y que dia, y los controles. El saludo vive
             aqui --pequeño, al lado de la marca-- y no dentro del panel: de
             titular gigante no informaba nada, y en el panel le robaba una
             linea a la cifra. De paso esta franja deja de ser una barra vacia
             con dos cosas en los extremos. */}
-        <div className="flex items-center justify-between gap-4 mb-4 sm:mb-5 lg:mb-6 bajo:mb-3 apaisado:mb-2.5 apretado:mb-2">
+        <div className="flex items-center justify-between gap-4 mb-4 sm:mb-5 lg:mb-6 bajo:mb-3 apaisado:mb-2.5">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <Marca className="h-8 sm:h-9 lg:h-10 bajo:h-8 pc:h-8 shrink-0" />
             <span aria-hidden className="hidden lg:block apaisado:block w-px h-8 bg-[var(--vp-textura)] shrink-0" />
@@ -187,7 +187,7 @@ export default function Inicio() {
             no todo al final. Con `safe center` el navegador vuelve a alinear
             arriba cuando el contenido no cabe --en un telefono apaisado--, de
             modo que centrar nunca recorta la primera fila. */}
-        <div className="flex-1 flex flex-col gap-3 lg:gap-4 apretado:gap-2.5 [justify-content:safe_center] min-h-0 apaisado:grid apaisado:grid-cols-2 apaisado:items-stretch apaisado:gap-3 apaisado:content-center">
+        <div className="flex-1 flex flex-col gap-3 lg:gap-4 [justify-content:safe_center] min-h-0 apaisado:grid apaisado:grid-cols-2 apaisado:items-stretch apaisado:gap-3 apaisado:content-center">
         {/* En el telefono y en la tablet en vertical el saludo no cabe al lado
             de la marca --se cortaba en "Buenas tardes, re..."--, asi que va
             aqui, en su propio renglon. A partir de 1024 px vive arriba y esta
@@ -199,8 +199,12 @@ export default function Inicio() {
         </p>
 
         {/* Las misiones de arranque: solo mientras el local se arma. */}
+        {/* Con raton y si no cabe, los pasos de arranque y los avisos se
+            esconden (tambien estan en la campana, y los avisos repiten "Tu
+            negocio hoy"): asi la portada cabe con sus margenes y su letra,
+            sin achicarse ni apretarse (Leider, 7-oct). */}
         {estado.puede.administrar && (
-          <div className="apaisado:col-span-2">
+          <div className="apaisado:col-span-2 apretado:hidden">
             <Arranque quien={quien} />
           </div>
         )}
@@ -222,13 +226,13 @@ export default function Inicio() {
             su lado las dos cosas que ESPERAN algo. No es un mosaico de
             cuatro cifras iguales: dos son resultados y dos son trabajo
             pendiente, y mirarlas no cuesta lo mismo. */}
-        <p className="order-1 vp-etiqueta -mb-1 lg:-mb-2 apaisado:hidden apretado:hidden">{segun({ sencillo: 'Hoy', tecnico: 'Resumen del día' })}</p>
+        <p className="order-1 vp-etiqueta -mb-1 lg:-mb-2 apaisado:hidden">{segun({ sencillo: 'Hoy', tecnico: 'Resumen del día' })}</p>
         <div className="order-2 apaisado:order-2 grid grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-3 lg:gap-4 apaisado:gap-3">
-          <section className="col-span-2 lg:col-span-1 vp-losa relative overflow-hidden p-5 sm:p-7 lg:p-8 bajo:p-4 apaisado:px-5 apaisado:py-3.5 pc:p-7 apretado:py-4 flex flex-col justify-center">
+          <section className="col-span-2 lg:col-span-1 vp-losa relative overflow-hidden p-5 sm:p-7 lg:p-8 bajo:p-4 apaisado:px-5 apaisado:py-3.5 pc:p-7 flex flex-col justify-center">
             {/* Sin el permiso del rol, un guion y nada mas: ni "no tienes
                 permiso" ni un panel distinto (Leider, 25-sep). "Pedidos" si lo
                 ve todo el mundo: sale del listado de ventas del dia. */}
-            <p className="font-display font-bold tabular-nums leading-[0.95] tracking-[-0.03em] text-[clamp(2.6rem,6.5vw,4.6rem)] bajo:text-[clamp(2rem,4.2vw,3rem)] pc:text-[3.4rem] apretado:text-[2.6rem]">
+            <p className="font-display font-bold tabular-nums leading-[0.95] tracking-[-0.03em] text-[clamp(2.6rem,6.5vw,4.6rem)] bajo:text-[clamp(2rem,4.2vw,3rem)] pc:text-[3.4rem]">
               {estado.puede.ve_kpis && hoy ? fmt(hoy.ventas) : '—'}
             </p>
                 {/* Una sola linea de apoyo en vez de etiqueta arriba y nota
@@ -278,7 +282,7 @@ export default function Inicio() {
             apaisada dejan sitio a las bandejas de abajo. */}
         {operacion.length > 0 && (
           <div className="order-4 apaisado:order-4">
-            <p className="vp-etiqueta mb-2.5 apaisado:hidden apretado:hidden">{segun({ sencillo: 'Vender', tecnico: 'Operación' })}</p>
+            <p className="vp-etiqueta mb-2.5 apaisado:hidden">{segun({ sencillo: 'Vender', tecnico: 'Operación' })}</p>
             <div className={`grid grid-cols-1 gap-3 lg:gap-4 apaisado:h-full ${operacion.length > 2 ? 'sm:grid-cols-3' : operacion.length === 2 ? 'sm:grid-cols-2' : ''}`}>
               {operacion.map((m, i) => (
                 <Tarjeta
@@ -296,7 +300,7 @@ export default function Inicio() {
 
         {/* Lo que el sistema avisa solo. Solo a quien ve las cifras. */}
         {estado.puede.ve_kpis && (
-          <div className="order-3 apaisado:order-1 apaisado:col-span-2">
+          <div className="order-3 apaisado:order-1 apaisado:col-span-2 apretado:hidden">
             <Avisos quien={quien} />
           </div>
         )}
@@ -321,7 +325,7 @@ export default function Inicio() {
             (Leider, 30-sep: secundario, no escondido, y no con el mismo
             estilo). El titulo lleva a la pagina que explica que se arma solo. */}
         {contador.length > 0 && (
-          <div className="order-7 apaisado:order-6 apaisado:col-span-2 pt-3 apretado:pt-2 apaisado:pt-0 apaisado:border-t-0 border-t border-[var(--vp-textura)]">
+          <div className="order-7 apaisado:order-6 apaisado:col-span-2 pt-3 apaisado:pt-0 apaisado:border-t-0 border-t border-[var(--vp-textura)]">
             <div className="flex items-baseline justify-between gap-3 mb-1 apaisado:hidden">
               <Link to={CONTADOR.to} className="vp-etiqueta hover:text-neutral-700">
                 {segun({ sencillo: 'Zona contable', tecnico: 'Contabilidad y fiscal' })}
@@ -407,7 +411,7 @@ function Tarjeta({
       // La de Cocina tambien: su luz nace con el cursor (Leider, 1-oct).
       onPointerMove={principal || icono === 'cocina' ? seguir : undefined}
       onPointerLeave={principal || icono === 'cocina' ? soltar : undefined}
-      className={`vp-pulsable group relative overflow-hidden rounded-3xl p-5 lg:p-6 bajo:p-4 pc:p-6 min-h-[8rem] sm:min-h-[clamp(8.5rem,19vh,17rem)] bajo:min-h-[clamp(6.5rem,16vh,20rem)] apaisado:min-h-0 apaisado:p-3.5 apaisado:flex-row apaisado:items-center pc:min-h-[9.5rem] apretado:min-h-0 apretado:p-4 apretado:flex-row apretado:items-center h-full flex flex-col gap-3 lg:gap-4 bajo:gap-3 pc:gap-3 ${
+      className={`vp-pulsable group relative overflow-hidden rounded-3xl p-5 lg:p-6 bajo:p-4 pc:p-6 min-h-[8rem] sm:min-h-[clamp(8.5rem,19vh,17rem)] bajo:min-h-[clamp(6.5rem,16vh,20rem)] apaisado:min-h-0 apaisado:p-3.5 apaisado:flex-row apaisado:items-center pc:min-h-[9.5rem] h-full flex flex-col gap-3 lg:gap-4 bajo:gap-3 pc:gap-3 ${
         principal
           ? 'bg-neutral-900 text-white shadow-[0_2px_6px_-2px_rgb(23_24_27/0.16),0_18px_40px_-18px_rgb(23_24_27/0.45)]'
           : 'vp-losa hover:shadow-[inset_0_0_0_1px_var(--vp-textura),0_2px_6px_-2px_rgb(23_24_27/0.06),0_18px_44px_-18px_rgb(23_24_27/0.20)]'
@@ -447,7 +451,7 @@ function Tarjeta({
           {desc}
         </span>
       </span>
-      <span className="relative mt-auto apretado:mt-0 apretado:ml-auto flex items-center gap-2 apaisado:hidden">
+      <span className="relative mt-auto flex items-center gap-2 apaisado:hidden">
         <span
           className={`w-7 h-7 rounded-full grid place-items-center transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:translate-x-0.5 ${
             principal ? 'bg-white/12 text-white' : 'bg-neutral-100 text-neutral-500 group-hover:text-acento-600'
@@ -484,7 +488,7 @@ function Espera({
   const hay = valor > 0
   const cuerpo = (
     <div
-      className={`vp-pulsable rounded-3xl p-4 sm:p-5 bajo:p-4 apaisado:px-4 apaisado:py-3 pc:p-5 apretado:py-3 h-full flex flex-col justify-center ${
+      className={`vp-pulsable rounded-3xl p-4 sm:p-5 bajo:p-4 apaisado:px-4 apaisado:py-3 pc:p-5 h-full flex flex-col justify-center ${
         hay
           ? 'bg-aviso-50 text-aviso-900 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-aviso-400)_45%,transparent),0_10px_28px_-14px_color-mix(in_oklab,var(--color-aviso-500)_55%,transparent)]'
           : 'vp-losa'

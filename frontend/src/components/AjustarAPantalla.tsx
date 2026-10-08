@@ -28,10 +28,11 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 const minima = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 0.85 : 0.7
 
-// SOLO EN LA TABLET (dedo). En la laptop la portada se veia achicada en
-// produccion y a tamaño normal en local, segun hubiera avisos o no (Leider,
-// 7-oct: "quitemos eso"): con raton se queda en su tamaño y, si hace falta,
-// se desplaza. En la tablet sigue cabiendo entera, que es donde se pidio.
+// CON RATON, PRIMERO SE ESCONDE LO QUE SOBRA. En produccion la portada se
+// veia mas chica que en local: los avisos la hacian mas alta y el achique
+// era mayor (Leider, 7-oct). Ahora, si no cabe, primero se esconden los
+// avisos y los pasos de arranque (clase `vp-apretado`; estan tambien en la
+// campana) y lo que quede se ajusta parejo: el mismo achique leve de local.
 const tactil = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches)
 
 // La ultima escala, para volver a la pantalla con el tamaño con que se dejo:
@@ -49,7 +50,7 @@ let ultimaEscala = (() => {
 
 export default function AjustarAPantalla({ children, desde = 640 }: { children: ReactNode; desde?: number }) {
   const contenido = useRef<HTMLDivElement>(null)
-  const [escala, setEscala] = useState(() => (tactil() && window.innerWidth >= desde ? ultimaEscala : 1))
+  const [escala, setEscala] = useState(() => (typeof window !== 'undefined' && window.innerWidth >= desde ? ultimaEscala : 1))
   const actual = useRef(escala)
   // Con raton no se achica: se APRIETA (la clase `vp-apretado` activa la
   // variante `apretado:` de las piezas). `ahorro` es cuanto gano apretar la
@@ -71,6 +72,10 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
             altoSuelto.current = alto
             apretadoRef.current = true
             setApretado(true)
+            // Se mide otra vez ya sin los avisos: ajustar ahora usaria el alto
+            // con ellos y la achicaria de mas.
+            window.setTimeout(medir, 60)
+            return
           }
         } else {
           if (altoSuelto.current && ahorro.current === 0 && alto < altoSuelto.current) ahorro.current = altoSuelto.current - alto
@@ -78,16 +83,15 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
             apretadoRef.current = false
             ahorro.current = 0
             setApretado(false)
+            window.setTimeout(medir, 60)
+            return
           }
         }
-        if (actual.current !== 1) {
-          actual.current = 1
-          setEscala(1)
-        }
-        return
+        // Y despues, como siempre, el ajuste parejo con lo que quede: sin los
+        // avisos es el mismo achique leve que se ve en local.
       }
       let s = 1
-      if (tactil() && window.innerWidth >= desde) {
+      if (window.innerWidth >= desde) {
         // `offsetHeight` es el alto de maquetacion: no lo cambia el
         // `transform`, asi que medir no depende de la escala puesta.
         const alto = el.offsetHeight

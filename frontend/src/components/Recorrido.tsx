@@ -124,7 +124,7 @@ export default function Recorrido({
   return (
     <section
       aria-label="El recorrido de tu negocio"
-      className={`vp-losa vp-recorrido vp-estilo-mixto px-3 sm:px-4 lg:px-6 pt-4 lg:pt-5 bajo:pt-3.5 pb-4 lg:pb-5 bajo:pb-3.5 apretado:pt-3 apretado:pb-3 ${animada}`}
+      className={`vp-losa vp-recorrido vp-estilo-mixto px-3 sm:px-4 lg:px-6 pt-4 lg:pt-5 bajo:pt-3.5 pb-4 lg:pb-5 bajo:pb-3.5 ${animada}`}
     >
       <div className="flex items-baseline justify-between gap-3 px-1">
         <h2 className="font-display font-semibold tracking-[-0.015em] leading-tight text-[17px] lg:text-lg">
@@ -140,7 +140,7 @@ export default function Recorrido({
       </div>
 
       <ol
-        className="vp-recorrido-pista relative mt-4 lg:mt-5 bajo:mt-3 apretado:mt-2 grid grid-cols-1 sm:grid-flow-col sm:auto-cols-fr gap-1 sm:gap-0"
+        className="vp-recorrido-pista relative mt-4 lg:mt-5 bajo:mt-3 grid grid-cols-1 sm:grid-flow-col sm:auto-cols-fr gap-1 sm:gap-0"
         style={{ '--n': visibles.length } as CSSProperties}
       >
         {/* La via, el tramo que se va llenando y el punto que lo recorre.
@@ -246,7 +246,7 @@ export function FilaReportes({ dias }: { dias: { fecha: string; ventas: number }
   return (
     <Link
       to="/reportes"
-      className={`vp-losa vp-pulsable vp-fila-reportes ${animar ? 'vp-fila-reportes-entra' : ''} group flex items-center gap-3.5 lg:gap-4 px-4 lg:px-5 py-3.5 bajo:py-2.5 apretado:py-2 hover:shadow-[inset_0_0_0_1px_var(--vp-textura),0_2px_6px_-2px_rgb(23_24_27/0.06),0_14px_34px_-16px_rgb(23_24_27/0.20)]`}
+      className={`vp-losa vp-pulsable vp-fila-reportes ${animar ? 'vp-fila-reportes-entra' : ''} group flex items-center gap-3.5 lg:gap-4 px-4 lg:px-5 py-3.5 bajo:py-2.5 hover:shadow-[inset_0_0_0_1px_var(--vp-textura),0_2px_6px_-2px_rgb(23_24_27/0.06),0_14px_34px_-16px_rgb(23_24_27/0.20)]`}
     >
       <span className="vp-fila-reportes-icono shrink-0 w-11 h-11 rounded-[0.9rem] grid place-items-center bg-acento-50 text-acento-600">
         {/* El mismo dibujo del icono del sistema (ejes y tres barras), con las
