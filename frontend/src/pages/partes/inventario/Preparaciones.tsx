@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CasillaConUnidad } from '../../../components/Cantidad'
 import { PuntoTipo } from '../../../components/compras/Almacenes'
 import Icono from '../../../components/Icono'
@@ -8,7 +8,7 @@ import { Boton, FiltroDesplegable, Modal, Seccion, Vacio } from '../../../compon
 import { api } from '../../../lib/api'
 import { useMoneda } from '../../../lib/moneda'
 import { colorFranja } from '../../../lib/paleta'
-import { datosDe } from '../../../lib/inventario'
+import { datosDe, unidadDe } from '../../../lib/inventario'
 import { ALMACEN_DE, vaEnPreparacion } from '../../../lib/tiposArticulo'
 import type { DatosPreparacion, Disponibilidad, Ingrediente, Preparacion, Produccion } from '../../../lib/types'
 
@@ -34,15 +34,12 @@ export default function Preparaciones({
   ingredientes,
   onCambio,
   onEditando,
-  abrirNueva,
 }: {
   ingredientes: Ingrediente[]
   /** Algo movió el depósito (una tanda, una merma): que se recargue. */
   onCambio: () => void
   /** Se abrió (o cerró) la receta: la pantalla de arriba esconde lo que no va. */
   onEditando?: (abierta: boolean) => void
-  /** Cada vez que cambia, se abre una preparación nueva (el botón vive arriba, junto a Crudo/Preparado). */
-  abrirNueva?: number
 }) {
   const { fmt: dinero } = useMoneda()
   const [preps, setPreps] = useState<Preparacion[] | null>(null)
@@ -59,10 +56,6 @@ export default function Preparaciones({
   const [resaltada, setResaltada] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
-
-  useEffect(() => {
-    if (abrirNueva) setEditando('nueva')
-  }, [abrirNueva])
 
   useEffect(() => {
     onEditando?.(editando !== null)
@@ -152,7 +145,7 @@ export default function Preparaciones({
           {vencidas.map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-3 text-sm">
               <span>
-                {p.nombre}: <b className="tabular-nums">{p.stock_actual} {p.unidad}</b>
+                {p.nombre}: <b className="tabular-nums">{p.stock_actual} {unidadDe(p.stock_actual, p.unidad)}</b>
               </span>
               <button type="button" onClick={() => setSobro(p)} className="text-sm font-semibold text-aviso-800 underline">
                 Decidir
@@ -188,6 +181,7 @@ export default function Preparaciones({
               onSeleccionar={setSeleccion}
               resaltada={resaltada}
               onResaltar={setResaltada}
+              onEditar={setEditando}
               dinero={dinero}
             />
           </Seccion>
@@ -208,6 +202,19 @@ export default function Preparaciones({
                 onSobro={() => setSobro(p)}
               />
             ))}
+            {/* Una tarjeta más, al final: no le quita sitio a Crudo/Preparado
+                ni ocupa una fila propia arriba (Leider, 8-oct). */}
+            <button
+              type="button"
+              onClick={() => setEditando('nueva')}
+              className="vp-pulsable rounded-2xl border-2 border-dashed border-neutral-500/25 hover:border-neutral-500/45 hover:bg-neutral-500/4 p-3.5 min-h-[140px] flex flex-col items-center justify-center gap-2 text-center text-neutral-600 transition-colors"
+            >
+              <span className="inline-grid place-items-center w-10 h-10 rounded-full bg-neutral-900 text-white">
+                <Icono nombre="mas" size={18} />
+              </span>
+              <span className="font-display font-semibold text-neutral-900">Nueva preparación</span>
+              <span className="text-xs text-neutral-500 max-w-[16rem]">Qué crudo lleva una tanda y cuánto rinde, como una receta.</span>
+            </button>
           </div>
         </>
       )}
@@ -225,7 +232,7 @@ export default function Preparaciones({
                 </span>
                 <span className="text-right shrink-0">
                   <span className="block font-semibold tabular-nums">
-                    {t.cantidad} {t.unidad}
+                    {t.cantidad} {unidadDe(t.cantidad, t.unidad)}
                   </span>
                   {t.rendimiento_real != null && (
                     <span className={`block text-xs ${Math.abs(t.rendimiento_real - 1) > 0.05 ? 'text-aviso-700' : 'text-neutral-500'}`}>
@@ -292,6 +299,7 @@ function Mapa({
   onSeleccionar,
   resaltada,
   onResaltar,
+  onEditar,
   dinero,
 }: {
   preps: Preparacion[]
@@ -302,6 +310,7 @@ function Mapa({
   onSeleccionar: (id: number | null) => void
   resaltada: number | null
   onResaltar: (id: number | null) => void
+  onEditar: (p: Preparacion) => void
   dinero: (n: number) => string
 }) {
   const porId = useMemo(() => new Map(ingredientes.map((i) => [i.id, i])), [ingredientes])
@@ -326,7 +335,7 @@ function Mapa({
         alCambiar={(v) => onSeleccionar(v === '' ? null : Number(v))}
         opciones={[
           { valor: '', texto: 'Todas' },
-          ...preps.map((p) => ({ valor: String(p.id), texto: p.nombre, detalle: `rinde ${fmtCant(p.rinde)} ${p.unidad} por tanda` })),
+          ...preps.map((p) => ({ valor: String(p.id), texto: p.nombre, detalle: `rinde ${fmtCant(p.rinde)} ${unidadDe(p.rinde, p.unidad)} por tanda` })),
         ]}
       />
     </div>
@@ -342,52 +351,127 @@ function Mapa({
     const yCentro = alto / 2
     const d = disp.find((x) => x.preparacion_id === elegida.id)
     const color = colorDe.get(elegida.id) ?? '#999'
+    const pastilla = (l: (typeof lineas)[number]) => {
+      const ing = porId.get(l.ingrediente_id)
+      const otras = (usosDe.get(l.ingrediente_id)?.preps ?? []).filter((x) => x.p.id !== elegida.id)
+      const pierde = pierdeAlCocinar(ing)
+      return (
+        <div className={`min-w-0 rounded-2xl px-3 py-1.5 ${otras.length > 0 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
+          <span className="flex items-center gap-2">
+            <PuntoTipo tipo={l.tipo} />
+            <span className="font-medium truncate flex-1">{l.nombre}</span>
+            <span className="text-sm font-semibold tabular-nums shrink-0">
+              {fmtCant(l.cantidad)} {unidadDe(l.cantidad, l.unidad)}
+            </span>
+          </span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-500 leading-tight pl-4">
+            {ing && <span className="tabular-nums">hay {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}</span>}
+            {pierde && <span className="text-aviso-700">{pierde}</span>}
+            {otras.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-aviso-700">
+                también en
+                {otras.map((o) => (
+                  <button key={o.p.id} type="button" onClick={() => onSeleccionar(o.p.id)} className="inline-flex items-center gap-1 font-semibold hover:underline">
+                    <span aria-hidden className="w-1.5 h-1.5 rounded-full" style={{ background: colorDe.get(o.p.id) }} />
+                    {o.p.nombre}
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+        </div>
+      )
+    }
+    // Tocar la tarjeta la suelta (como en la cuadrícula); el botón de la
+    // receta va adentro y no la suelta.
+    const tarjeta = (
+      <div
+        onClick={() => onSeleccionar(null)}
+        title="Soltar"
+        className="vp-pulsable cursor-pointer w-full text-left rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3"
+      >
+        <span aria-hidden className="w-1.5 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex items-start gap-2">
+            <p className="font-display text-lg font-semibold tracking-tight leading-tight flex-1 min-w-0">{elegida.nombre}</p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSeleccionar(null)
+              }}
+              aria-label="Soltar la preparación"
+              className="shrink-0 -mt-1 -mr-1 w-7 h-7 rounded-full grid place-items-center text-white/60 hover:text-white hover:bg-white/10"
+            >
+              <Icono nombre="quitar" size={14} />
+            </button>
+          </div>
+          <div>
+            <p className="font-display text-2xl font-semibold tabular-nums leading-none">
+              {elegida.modo_produccion === 'producir'
+                ? `${fmtCant(elegida.stock_actual)} ${unidadDe(elegida.stock_actual, elegida.unidad)}`
+                : d?.potencial != null
+                  ? `${fmtCant(d.potencial)} ${unidadDe(d.potencial, elegida.unidad)}`
+                  : '—'}
+            </p>
+            <p className="text-xs text-white/70 mt-1">
+              {elegida.modo_produccion === 'producir'
+                ? 'hay hecho ahora mismo'
+                : d?.limita
+                  ? `podrías hacer hoy con el crudo que hay · lo que se acaba primero: ${d.limita}`
+                  : 'podrías hacer hoy con el crudo que hay'}
+            </p>
+            {elegida.modo_produccion !== 'producir' && d?.reparto_pct != null && d.limita && (
+              <p className="text-xs text-white/70 mt-1">
+                {/* El crudo compartido se reparte: los potenciales no se suman. */}
+                Le toca el {fmtCant(d.reparto_pct)} % del {d.limita.toLowerCase()}{' '}
+                {d.reparto_segun === 'ventas' ? 'según lo vendido en 14 días' : 'en partes iguales'} con {d.comparte_con.join(', ')}.
+                {d.potencial_solo != null && ` Si fuera todo para este: ${fmtCant(d.potencial_solo)} ${unidadDe(d.potencial_solo, elegida.unidad)}.`}
+              </p>
+            )}
+          </div>
+          <p className="text-xs text-white/70">
+            Cada {elegida.unidad === 'kg' ? 'kilo' : elegida.unidad === 'lt' ? 'litro' : 'unidad'} ya preparado cuesta{' '}
+            <b className="text-white tabular-nums">{dinero(elegida.costo_unitario)}</b>
+          </p>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEditar(elegida)
+            }}
+            className="vp-pulsable inline-flex items-center gap-2 rounded-xl bg-white text-neutral-900 px-3 py-1.5 text-sm font-semibold"
+          >
+            <Icono nombre="recetas" size={15} />
+            Ver la receta
+          </button>
+        </div>
+      </div>
+    )
     return (
       <div>
         {filtro}
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] items-start">
+        <Arbol
+          className="lg:hidden"
+          color={color}
+          filas={lineas.map((l) => ({ clave: l.ingrediente_id, contenido: pastilla(l) }))}
+          final={tarjeta}
+        />
+        <div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] items-start">
           <div>
             <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
               <Icono nombre="paquete" size={12} /> Lo que lleva una tanda
             </p>
             <ul>
-              {lineas.map((l) => {
-                const ing = porId.get(l.ingrediente_id)
-                const otras = (usosDe.get(l.ingrediente_id)?.preps ?? []).filter((x) => x.p.id !== elegida.id)
-                const pierde = pierdeAlCocinar(ing)
-                return (
-                  <li key={l.ingrediente_id} style={{ height: FILA }} className="flex items-center">
-                    <div className={`flex-1 min-w-0 rounded-2xl px-3 py-1.5 ${otras.length > 0 ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
-                      <span className="flex items-center gap-2">
-                        <PuntoTipo tipo={l.tipo} />
-                        <span className="font-medium truncate flex-1">{l.nombre}</span>
-                        <span className="text-sm font-semibold tabular-nums shrink-0">
-                          {fmtCant(l.cantidad)} {l.unidad}
-                        </span>
-                      </span>
-                      <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-500 leading-tight pl-4">
-                        {ing && <span className="tabular-nums">hay {fmtCant(ing.stock_actual)} {ing.unidad}</span>}
-                        {pierde && <span className="text-aviso-700">{pierde}</span>}
-                        {otras.length > 0 && (
-                          <span className="inline-flex items-center gap-1 text-aviso-700">
-                            también en
-                            {otras.map((o) => (
-                              <button key={o.p.id} type="button" onClick={() => onSeleccionar(o.p.id)} className="inline-flex items-center gap-1 font-semibold hover:underline">
-                                <span aria-hidden className="w-1.5 h-1.5 rounded-full" style={{ background: colorDe.get(o.p.id) }} />
-                                {o.p.nombre}
-                              </button>
-                            ))}
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </li>
-                )
-              })}
+              {lineas.map((l) => (
+                <li key={l.ingrediente_id} style={{ height: FILA }} className="flex items-center">
+                  <div className="flex-1 min-w-0">{pastilla(l)}</div>
+                </li>
+              ))}
             </ul>
           </div>
 
-          <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden md:block mt-[1.65rem]" aria-hidden>
+          <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden lg:block mt-[1.65rem]" aria-hidden>
             {lineas.map((l, i) => {
               const y1 = i * FILA + FILA / 2
               const peso = elegida.costo_tanda > 0 ? l.costo / elegida.costo_tanda : 1 / lineas.length
@@ -406,51 +490,11 @@ function Mapa({
             })}
           </svg>
 
-          <div className="hidden md:flex flex-col" style={{ minHeight: alto + 28 }}>
+          <div className="hidden lg:flex flex-col" style={{ minHeight: alto + 28 }}>
             <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
               <Icono nombre="cocina" size={12} /> Lo que sale
             </p>
-            <div className="flex-1 flex items-center">
-              <button
-                type="button"
-                onClick={() => onSeleccionar(null)}
-                title="Soltar"
-                className="vp-pulsable w-full text-left rounded-2xl bg-neutral-900 text-white p-4 flex items-start gap-3"
-              >
-                <span aria-hidden className="w-1.5 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
-                <div className="min-w-0 flex-1 space-y-3">
-                  <p className="font-display text-lg font-semibold tracking-tight leading-tight">{elegida.nombre}</p>
-                  <div>
-                    <p className="font-display text-2xl font-semibold tabular-nums leading-none">
-                      {elegida.modo_produccion === 'producir'
-                        ? `${fmtCant(elegida.stock_actual)} ${elegida.unidad}`
-                        : d?.potencial != null
-                          ? `${fmtCant(d.potencial)} ${elegida.unidad}`
-                          : '—'}
-                    </p>
-                    <p className="text-xs text-white/70 mt-1">
-                      {elegida.modo_produccion === 'producir'
-                        ? 'hay hecho ahora mismo'
-                        : d?.limita
-                          ? `podrías hacer hoy con el crudo que hay · lo que se acaba primero: ${d.limita}`
-                          : 'podrías hacer hoy con el crudo que hay'}
-                    </p>
-                    {elegida.modo_produccion !== 'producir' && d?.reparto_pct != null && d.limita && (
-                      <p className="text-xs text-white/70 mt-1">
-                        {/* El crudo compartido se reparte: los potenciales no se suman. */}
-                        Le toca el {fmtCant(d.reparto_pct)} % del {d.limita.toLowerCase()}{' '}
-                        {d.reparto_segun === 'ventas' ? 'según lo vendido en 14 días' : 'en partes iguales'} con {d.comparte_con.join(', ')}.
-                        {d.potencial_solo != null && ` Si fuera todo para este: ${fmtCant(d.potencial_solo)} ${elegida.unidad}.`}
-                      </p>
-                    )}
-                  </div>
-                  <p className="text-xs text-white/70">
-                    Cada {elegida.unidad === 'kg' ? 'kilo' : elegida.unidad === 'lt' ? 'litro' : 'unidad'} ya preparado cuesta{' '}
-                    <b className="text-white tabular-nums">{dinero(elegida.costo_unitario)}</b>
-                  </p>
-                </div>
-              </button>
-            </div>
+            <div className="flex-1 flex items-center">{tarjeta}</div>
           </div>
         </div>
       </div>
@@ -474,14 +518,14 @@ function Mapa({
                   <span className="font-medium truncate">{c.nombre}</span>
                   {c.preps.length > 1 && <span className="text-[11px] font-semibold text-aviso-700">la comparten {c.preps.length}</span>}
                 </span>
-                <span className="text-xs text-neutral-500 tabular-nums">{ing ? `hay ${fmtCant(ing.stock_actual)} ${ing.unidad}` : ''}</span>
+                <span className="text-xs text-neutral-500 tabular-nums">{ing ? `hay ${fmtCant(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}` : ''}</span>
                 <span className="flex flex-wrap gap-1 ml-auto">
                   {c.preps.map((x) => (
                     <button key={x.p.id} type="button" onClick={() => onSeleccionar(x.p.id)} className="vp-control inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs">
                       <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: colorDe.get(x.p.id) }} />
                       {x.p.nombre}
                       <span className="text-neutral-500 tabular-nums">
-                        {fmtCant(x.cantidad)} {c.unidad}
+                        {fmtCant(x.cantidad)} {unidadDe(x.cantidad, c.unidad)}
                       </span>
                     </button>
                   ))}
@@ -513,7 +557,56 @@ function Mapa({
   return (
     <div>
       {filtro}
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] gap-0 items-start" onMouseLeave={() => onResaltar(null)}>
+      {/* Teléfono y tablet: un árbol por preparación, su crudo arriba y ella abajo. */}
+      <div className="lg:hidden grid gap-x-6 gap-y-5 sm:grid-cols-2">
+        {preps.map((p) => {
+          const d = disp.find((x) => x.preparacion_id === p.id)
+          const color = colorDe.get(p.id) ?? '#999'
+          return (
+            <Arbol
+              key={p.id}
+              color={color}
+              filas={[...p.lineas]
+                .sort((a, b) => b.costo - a.costo)
+                .map((l) => {
+                  const compartida = (usosDe.get(l.ingrediente_id)?.preps.length ?? 0) > 1
+                  return {
+                    clave: l.ingrediente_id,
+                    contenido: (
+                      <div className={`min-w-0 rounded-xl px-3 py-1.5 flex items-center gap-2 text-sm ${compartida ? 'bg-aviso-500/10' : 'bg-neutral-500/6'}`}>
+                        <PuntoTipo tipo={l.tipo} />
+                        <span className="font-medium truncate flex-1">{l.nombre}</span>
+                        <span className="tabular-nums text-neutral-600 shrink-0">
+                          {fmtCant(l.cantidad)} {unidadDe(l.cantidad, l.unidad)}
+                        </span>
+                      </div>
+                    ),
+                  }
+                })}
+              final={
+                <button
+                  type="button"
+                  onClick={() => onSeleccionar(p.id)}
+                  className="vp-pulsable w-full min-w-0 text-left rounded-xl px-3 py-2 bg-neutral-500/10 flex items-center gap-3"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-display font-semibold truncate">{p.nombre}</span>
+                    <span className="block text-xs text-neutral-500 tabular-nums">
+                      {p.modo_produccion === 'producir'
+                        ? `hay ${fmtCant(p.stock_actual)} ${unidadDe(p.stock_actual, p.unidad)} hecho`
+                        : d?.potencial != null
+                          ? `podrías hacer ${fmtCant(d.potencial)} ${unidadDe(d.potencial, p.unidad)} hoy`
+                          : `rinde ${fmtCant(p.rinde)} ${unidadDe(p.rinde, p.unidad)} por tanda`}
+                    </span>
+                  </span>
+                  <span aria-hidden className="text-neutral-400 text-lg leading-none shrink-0">›</span>
+                </button>
+              }
+            />
+          )
+        })}
+      </div>
+      <div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_160px_minmax(0,1fr)] gap-0 items-start" onMouseLeave={() => onResaltar(null)}>
         <div>
           <p className="vp-etiqueta mb-2 flex items-center gap-1.5">
             <Icono nombre="paquete" size={12} /> Crudo
@@ -531,7 +624,7 @@ function Mapa({
                       {c.preps.length > 1 && <span className="text-[11px] font-semibold text-aviso-700 shrink-0">la comparten {c.preps.length}</span>}
                     </span>
                     <span className="block text-xs text-neutral-500 pl-4 tabular-nums truncate">
-                      {c.ing ? `hay ${fmtCant(c.ing.stock_actual)} ${c.ing.unidad}` : '—'}
+                      {c.ing ? `hay ${fmtCant(c.ing.stock_actual)} ${unidadDe(c.ing.stock_actual, c.ing.unidad)}` : '—'}
                       {pierde && <span className="text-aviso-700"> · {pierde}</span>}
                     </span>
                   </div>
@@ -541,7 +634,7 @@ function Mapa({
           </ul>
         </div>
 
-        <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden md:block mt-[1.65rem]" aria-hidden>
+        <svg width={ANCHO_LINEAS} height={alto + 28} className="hidden lg:block mt-[1.65rem]" aria-hidden>
           {lineas.map((l) => {
             const apagada = resaltada !== null && l.prep !== resaltada
             const c = ANCHO_LINEAS * 0.45
@@ -581,10 +674,10 @@ function Mapa({
                       <span className="block font-medium truncate">{p.nombre}</span>
                       <span className="block text-xs text-neutral-500 tabular-nums truncate">
                         {p.modo_produccion === 'producir'
-                          ? `hay ${fmtCant(p.stock_actual)} ${p.unidad} hecho`
+                          ? `hay ${fmtCant(p.stock_actual)} ${unidadDe(p.stock_actual, p.unidad)} hecho`
                           : d?.potencial != null
-                            ? `podrías hacer ${fmtCant(d.potencial)} ${p.unidad} hoy`
-                            : `rinde ${fmtCant(p.rinde)} ${p.unidad} por tanda`}
+                            ? `podrías hacer ${fmtCant(d.potencial)} ${unidadDe(d.potencial, p.unidad)} hoy`
+                            : `rinde ${fmtCant(p.rinde)} ${unidadDe(p.rinde, p.unidad)} por tanda`}
                       </span>
                     </span>
                   </button>
@@ -595,6 +688,45 @@ function Mapa({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * El flujo en pantalla angosta (teléfono, tablet parada), donde no caben las
+ * tres columnas con las curvas: el crudo arriba, una línea del color de la
+ * preparación que lo junta, y abajo, con su flecha, lo que sale. Sin SVG de
+ * alto fijo: cada renglón dibuja su tramo, así aguanta textos de dos líneas.
+ */
+function Arbol({
+  color,
+  filas,
+  final,
+  className = '',
+}: {
+  color: string
+  filas: { clave: number; contenido: ReactNode }[]
+  final: ReactNode
+  className?: string
+}) {
+  // El riel va a 9 px del borde; los renglones empiezan a 28 px (pl-7).
+  const riel = 'absolute left-[9px] w-[3px] rounded-full'
+  return (
+    <ul className={`space-y-1.5 ${className}`}>
+      {filas.map((f, i) => (
+        <li key={f.clave} className="relative pl-7">
+          <span aria-hidden className={riel} style={{ background: color, top: i === 0 ? '50%' : -6, bottom: -6 }} />
+          <span aria-hidden className="absolute left-[9px] top-1/2 -mt-[1.5px] w-[19px] h-[3px] rounded-full" style={{ background: color }} />
+          {f.contenido}
+        </li>
+      ))}
+      <li className="relative pl-7">
+        {filas.length > 0 && <span aria-hidden className={riel} style={{ background: color, top: -6, height: 'calc(50% + 6px)' }} />}
+        <svg aria-hidden width="19" height="14" viewBox="0 0 19 14" className="absolute left-[9px] top-1/2 -mt-[7px]">
+          <path d="M1.5 7H15M10.5 2.5 15.5 7l-5 4.5" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {final}
+      </li>
+    </ul>
   )
 }
 
@@ -651,12 +783,12 @@ function TarjetaPreparacion({
 
       <div className="rounded-2xl bg-neutral-500/6 px-3.5 py-2.5">
         <p className="font-display text-2xl font-semibold tracking-tight tabular-nums leading-none">
-          {produce ? `${fmtCant(p.stock_actual)} ${p.unidad}` : potencial == null ? '—' : `${fmtCant(potencial)} ${p.unidad}`}
+          {produce ? `${fmtCant(p.stock_actual)} ${unidadDe(p.stock_actual, p.unidad)}` : potencial == null ? '—' : `${fmtCant(potencial)} ${unidadDe(potencial, p.unidad)}`}
         </p>
         <p className="text-xs text-neutral-600 mt-1 leading-snug">
           {produce
             ? potencial != null
-              ? `hay hecho ahora mismo; con el crudo se podrían hacer ${fmtCant(potencial)} ${p.unidad} más`
+              ? `hay hecho ahora mismo; con el crudo se podrían hacer ${fmtCant(potencial)} ${unidadDe(potencial, p.unidad)} más`
               : 'hay hecho ahora mismo'
             : d?.limita
               ? `podrías hacer hoy con el crudo que hay. Lo que se acaba primero: ${d.limita}${d.comparte_con.length > 0 ? `, que también usa ${d.comparte_con.join(' y ')}` : ''}`
@@ -670,7 +802,7 @@ function TarjetaPreparacion({
             <PuntoTipo tipo={l.tipo} />
             <span className="truncate flex-1">{l.nombre}</span>
             <span className="tabular-nums text-neutral-500 shrink-0">
-              {fmtCant(l.cantidad)} {l.unidad}
+              {fmtCant(l.cantidad)} {unidadDe(l.cantidad, l.unidad)}
             </span>
           </li>
         ))}
@@ -724,8 +856,8 @@ function SobroHoy({ p, onCerrar, onHecho }: { p: Preparacion; onCerrar: () => vo
       const r = await api.sobrantePreparacion(p.id, { cantidad: n, accion })
       onHecho(
         accion === 'guardar'
-          ? `${fmtCant(n)} ${p.unidad} de ${p.nombre} se guardan para mañana. No se mueve nada: al venderse se descuenta el crudo.`
-          : `Se botaron ${fmtCant(n)} ${p.unidad} de ${p.nombre}: ${dinero(r.valor ?? valor)} de pérdida, descontados del crudo.`,
+          ? `${fmtCant(n)} ${unidadDe(n, p.unidad)} de ${p.nombre} se guardan para mañana. No se mueve nada: al venderse se descuenta el crudo.`
+          : `Se botaron ${fmtCant(n)} ${unidadDe(n, p.unidad)} de ${p.nombre}: ${dinero(r.valor ?? valor)} de pérdida, descontados del crudo.`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo anotar')
@@ -767,6 +899,9 @@ const clase = 'w-full border border-neutral-300 rounded-xl px-3 py-2 text-sm bg-
 const rotulo = 'block text-xs font-medium text-neutral-600 mb-1'
 const OTRA_UNIDAD: Record<string, string> = { kg: 'g', g: 'kg', lt: 'ml', ml: 'lt' }
 const esGrande = (u: string) => u === 'kg' || u === 'lt'
+/** "1 kg", "500 g", "2 unidades": lo que entra, en la medida que mejor se lee. */
+const cantidadLegible = (n: number, u: string) =>
+  esGrande(u) && n > 0 && n < 1 ? `${fmtCant(n * 1000)} ${OTRA_UNIDAD[u]}` : `${fmtCant(n)} ${unidadDe(n, u)}`
 
 type Fila = {
   ingrediente_id: number
@@ -881,7 +1016,7 @@ function Olla({
     if (!nombre.trim()) return setError('Ponle nombre a la preparación.')
     if (limpias.length === 0) return setError('Agrega al menos un ingrediente con su cantidad.')
     if (!(rinde > 0))
-      return setError(sinMedida ? `Escribe cuántos ${unidad} salen de una tanda.` : 'Lo que lleva no deja nada: revisa cuánto se aprovecha de cada cosa.')
+      return setError(sinMedida ? `Escribe ${unidad === 'unidad' ? 'cuántas unidades' : `cuántos ${unidad}`} salen de una tanda.` : 'Lo que lleva no deja nada: revisa cuánto se aprovecha de cada cosa.')
     setGuardando(true)
     try {
       // El % que se aprovecha es del crudo: si cambió, se guarda en su ficha.
@@ -927,7 +1062,7 @@ function Olla({
       </div>
       {error && <p className="text-peligro-600 text-sm shrink-0">{error}</p>}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
         {/* ── La olla ──────────────────────────────────────────────── */}
         <section className="vp-losa p-4 sm:p-5 lg:flex lg:flex-col lg:min-h-0">
           <div className="flex items-start gap-2 shrink-0">
@@ -949,14 +1084,14 @@ function Olla({
 
           <div className="lg:flex-1 lg:min-h-0 flex justify-center mt-3">
             <DibujoOlla
-              partes={partes.map((p) => ({ id: p.id, nombre: p.nombre, valor: p.costo, color: p.color }))}
+              partes={partes.map((p) => ({ id: p.id, nombre: p.nombre, detalle: p.cantidad > 0 ? cantidadLegible(p.cantidad, p.unidad) : '', valor: p.costo, color: p.color }))}
               total={costoTanda}
               rinde={rinde}
               unidad={unidad}
               formato={dinero}
               resaltado={resaltado}
               onResaltar={setResaltado}
-              className="w-full max-w-[250px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
+              className="w-full max-w-[230px] sm:max-w-[250px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
             />
           </div>
 
@@ -970,10 +1105,10 @@ function Olla({
                     onChange={(e) => setRindeEscrito(e.target.value)}
                     inputMode="decimal"
                     placeholder="0"
-                    aria-label={`Cuántos ${unidad} salen de una tanda`}
+                    aria-label={`${unidad === 'unidad' ? 'Cuántas unidades' : `Cuántos ${unidad}`} salen de una tanda`}
                     className="w-20 !py-0.5 !px-1.5 font-display text-lg font-semibold tabular-nums"
                   />
-                  <span className="text-sm text-neutral-600">{unidad}</span>
+                  <span className="text-sm text-neutral-600">{unidadDe(Number(rindeEscrito) || 0, unidad)}</span>
                 </span>
                 <span className="block text-[11px] text-neutral-500 leading-tight">ya preparado: mídelo la próxima tanda</span>
               </label>
@@ -981,10 +1116,10 @@ function Olla({
               <div className="rounded-xl bg-neutral-500/6 px-3 py-2">
                 <span className="text-[11px] text-neutral-500">Entra crudo</span>
                 <span className="block font-display text-lg font-semibold tabular-nums leading-tight">
-                  {entra > 0 ? `${fmtCant(entra)} ${unidad}` : '—'}
+                  {entra > 0 ? `${fmtCant(entra)} ${unidadDe(entra, unidad)}` : '—'}
                 </span>
                 <span className="block text-[11px] text-neutral-500 leading-tight">
-                  {entra > 0 && rinde > 0 ? `y sale ${fmtCant(rinde)} ${unidad} ya preparado` : 'lo que se mide como la preparación'}
+                  {entra > 0 && rinde > 0 ? `y sale ${fmtCant(rinde)} ${unidadDe(rinde, unidad)} ya preparado` : 'lo que se mide como la preparación'}
                 </span>
               </div>
             )}
@@ -1010,9 +1145,9 @@ function Olla({
           {filas.length > 0 && (
             <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[50%] lg:overflow-y-auto">
               <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">
-                Lleva una tanda <span className="text-sm font-normal text-neutral-500">· crudo, y lo que queda de cada uno</span>
+                Lleva una tanda <span className="hidden sm:inline text-sm font-normal text-neutral-500">· crudo, y lo que queda de cada uno</span>
               </h3>
-              <div className="px-4 pb-1.5 flex items-center gap-3 border-b border-neutral-100 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              <div className="hidden sm:flex px-4 pb-1.5 items-center gap-3 border-b border-neutral-100 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
                 <span className="w-1.5 shrink-0" />
                 <span className="min-w-0 flex-1">Mercancía</span>
                 <span className="w-[8.75rem] shrink-0 text-right">Entra</span>
@@ -1045,7 +1180,7 @@ function Olla({
           <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
             <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 shrink-0">
               <h3 className="font-display font-semibold tracking-tight mr-auto">{filas.length === 0 ? 'Toca lo que lleva' : 'Agregar'}</h3>
-              <div className="relative">
+              <div className="relative basis-full sm:basis-auto order-last sm:order-none">
                 <input
                   type="search"
                   value={busqueda}
@@ -1053,7 +1188,7 @@ function Olla({
                   onKeyDown={(e) => e.key === 'Escape' && setBusqueda('')}
                   placeholder="Buscar materia prima"
                   aria-label="Buscar materia prima"
-                  className="w-48 bg-white border border-neutral-300 rounded-xl pl-8 pr-3 py-1.5 text-sm"
+                  className="w-full sm:w-48 bg-white border border-neutral-300 rounded-xl pl-8 pr-3 py-1.5 text-sm"
                 />
                 <Icono nombre="buscar" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               </div>
@@ -1092,7 +1227,7 @@ function Olla({
                           </span>
                         </span>
                         <span className="text-xs text-neutral-500 tabular-nums text-right">
-                          {fmtCant(ing.stock_actual)} {ing.unidad}
+                          {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}
                           <span className="block">{dinero(ing.costo_unitario)} / {ing.unidad}</span>
                         </span>
                         <span className="w-7 h-7 grid place-items-center rounded-full bg-neutral-500/10 text-neutral-600 shrink-0">
@@ -1150,10 +1285,13 @@ function RenglonOlla({
     <li onMouseEnter={() => onResaltar(ing.id)} onMouseLeave={() => onResaltar(null)} className={`px-4 py-2.5 transition-colors ${resaltado ? 'bg-acento-500/10' : ''}`}>
       <div className="flex items-center gap-3">
         <span aria-hidden className="w-1.5 self-stretch min-h-[28px] rounded-full shrink-0" style={{ background: color }} />
-        <span className="min-w-0 flex-1">
+        {/* Teléfono: el nombre arriba y, debajo, cuánto entra, cuánto queda y
+            cuánto cuesta. Desde tablet, todo en una línea con sus columnas. */}
+        <div className="min-w-0 flex-1 flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2">
+        <span className="min-w-0 basis-full sm:basis-auto sm:flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {dinero(costoU, 2)} por {ing.unidad} · hay {fmtCant(ing.stock_actual)} {ing.unidad}
+            {dinero(costoU, 2)} por {ing.unidad} · hay {fmtCant(ing.stock_actual)} {unidadDe(ing.stock_actual, ing.unidad)}
           </span>
         </span>
         <CasillaConUnidad
@@ -1166,13 +1304,13 @@ function RenglonOlla({
           etiqueta={`${ing.nombre} (${unidadVista})`}
           aria-label={`Cantidad de ${ing.nombre} que entra, en ${unidadVista}`}
           autoFocus={f.cantidad === ''}
-          className="w-[8.75rem] shrink-0"
+          className="flex-1 min-w-0 sm:flex-none sm:w-[8.75rem] sm:shrink-0"
           claseCasilla="border border-neutral-300 rounded-lg px-2 py-1.5 text-sm text-right tabular-nums"
         />
-        <span className="w-[4.5rem] shrink-0 text-right text-sm tabular-nums">
+        <span className="w-16 sm:w-[4.5rem] shrink-0 text-right text-sm tabular-nums">
           {cantidad > 0 ? (
             <>
-              <span className="block font-semibold">{enChica ? `${fmtCant(queda * factor)} ${otra}` : `${fmtCant(queda)} ${ing.unidad}`}</span>
+              <span className="block font-semibold">{enChica ? `${fmtCant(queda * factor)} ${otra}` : `${fmtCant(queda)} ${unidadDe(queda, ing.unidad)}`}</span>
               {!esPrep && (
                 <span className="inline-flex items-center justify-end gap-0.5 text-[11px] text-neutral-500">
                   <Numerico
@@ -1189,7 +1327,9 @@ function RenglonOlla({
             '—'
           )}
         </span>
-        <span className="w-16 text-right text-sm tabular-nums font-semibold">{cantidad > 0 ? dinero(cantidad * costoU) : '—'}</span>
+        {/* En el teléfono el costo de cada cosa ya está en la olla: aquí no cabe. */}
+        <span className="hidden sm:block w-16 shrink-0 text-right text-sm tabular-nums font-semibold">{cantidad > 0 ? dinero(cantidad * costoU) : '—'}</span>
+        </div>
         <button type="button" onClick={onQuitar} aria-label={`Quitar ${ing.nombre}`} className="w-8 h-8 shrink-0 grid place-items-center rounded-lg text-neutral-400 hover:bg-peligro-500/10 hover:text-peligro-600">
           <Icono nombre="quitar" size={14} />
         </button>
@@ -1213,7 +1353,8 @@ function DibujoOlla({
   onResaltar,
   className = '',
 }: {
-  partes: { id: number; nombre: string; valor: number; color: string }[]
+  /** `detalle`: cuánto entra de cada cosa ("1 kg", "500 g", "2 unidades"). */
+  partes: { id: number; nombre: string; detalle: string; valor: number; color: string }[]
   total: number
   rinde: number
   unidad: string
@@ -1254,10 +1395,26 @@ function DibujoOlla({
         {franjas.map((f) => (
           <g key={f.id} onMouseEnter={() => onResaltar(f.id)} onMouseLeave={() => onResaltar(null)} style={{ cursor: 'default' }}>
             <rect x="32" y={f.y} width="196" height={f.h} fill={f.color} opacity={resaltado !== null && resaltado !== f.id ? 0.45 : 1} />
-            {f.h >= 26 && (
-              <text x="44" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="#fff" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
+            {/* El nombre y, debajo, cuánto entra; si la franja es baja, en
+                una sola línea. El precio va a la derecha. */}
+            {f.h >= 40 ? (
+              <text x="44" y={f.y + f.h / 2 - 3} fontSize="11" fontWeight="600" fill="#fff" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
                 {f.nombre.length > 22 ? `${f.nombre.slice(0, 21)}…` : f.nombre}
+                {f.detalle && (
+                  <tspan x="44" dy="14" fontSize="10" fontWeight="500" opacity={0.9}>
+                    {f.detalle}
+                  </tspan>
+                )}
               </text>
+            ) : (
+              f.h >= 26 && (
+                <text x="44" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="#fff" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
+                  {(() => {
+                    const t = f.detalle ? `${f.nombre} · ${f.detalle}` : f.nombre
+                    return t.length > 24 ? `${t.slice(0, 23)}…` : t
+                  })()}
+                </text>
+              )
             )}
             {f.h >= 26 && (
               <text x="216" y={f.y + f.h / 2 + 4} fontSize="11" fontWeight="600" fill="#fff" textAnchor="end" style={{ paintOrder: 'stroke', stroke: 'rgb(0 0 0 / 0.25)', strokeWidth: 2 }}>
@@ -1274,7 +1431,7 @@ function DibujoOlla({
         {rinde > 0 ? 'sale' : 'lo que sale de la tanda'}
       </text>
       <text x="130" y="68" textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--color-neutral-900)" style={{ fontFamily: 'var(--font-display)' }}>
-        {rinde > 0 ? `${fmtCant(rinde)} ${unidad}` : '—'}
+        {rinde > 0 ? `${fmtCant(rinde)} ${unidadDe(rinde, unidad)}` : '—'}
       </text>
       {vacia && (
         <text x="130" y="230" textAnchor="middle" fontSize="12" fill="var(--color-neutral-400)">
@@ -1396,7 +1553,7 @@ function AnotarTanda({
         </div>
         {rendimiento != null && (
           <p className={`rounded-xl px-3 py-2 ${Math.abs(rendimiento - 1) > 0.05 ? 'bg-aviso-500/10 text-aviso-800' : 'bg-neutral-500/6 text-neutral-700'}`}>
-            Con eso la receta esperaba {fmtCant(esperado)} {prep.unidad}: rindió {Math.round(rendimiento * 100)} %.
+            Con eso la receta esperaba {fmtCant(esperado)} {unidadDe(esperado, prep.unidad)}: rindió {Math.round(rendimiento * 100)} %.
           </p>
         )}
         {error && <p className="text-peligro-600">{error}</p>}

@@ -4,6 +4,18 @@ import type { DatosIngrediente, Ingrediente, MovimientoInventario, CompraDeInsum
 
 export const cantidad = (n: number) => String(Number(n.toFixed(2)))
 
+/**
+ * La unidad en concordancia con la cantidad: "1 unidad", "18 unidades",
+ * "2 paquetes". Kilos y litros van en su simbolo y no cambian (Leider, 8-oct:
+ * "si es mas de 1 unidad, tienes que poner unidades").
+ */
+export function unidadDe(n: number, unidad: string): string {
+  const uno = Math.abs(n) === 1
+  if (unidad === 'unidad') return uno ? 'unidad' : 'unidades'
+  if (unidad === 'paquete') return uno ? 'paquete' : 'paquetes'
+  return unidad
+}
+
 export type CompraConVariacion = CompraDeInsumo & { cambio: number | null }
 
 /**

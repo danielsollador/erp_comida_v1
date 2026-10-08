@@ -91,14 +91,14 @@ export const GLOSARIO: Record<string, Explicacion> = {
     calculo:
       'Promedio ponderado: (stock viejo × costo viejo + lo que entra × lo que pagaste) ÷ stock total. Por eso no salta de golpe cuando el proveedor sube el precio.',
     ejemplo:
-      'Tenías 10 kg a $1 y compras 10 kg a $2: el costo queda en $1,50, no en $2. Es lo correcto para valorar el depósito, pero para poner precios mira "Reponer".',
+      'Tenías 10 kg a $1 y compras 10 kg a $2: el costo queda en $1,50, no en $2. Es lo correcto para valorar el depósito, pero para poner precios mira "Costo última compra".',
   },
   'inventario.reponer': {
     que: 'Lo que pagaste la última vez. Es lo que te va a costar comprar más.',
     origen: 'La última compra registrada de esa mercancía, venga de una factura o de una compra suelta.',
     calculo: 'El costo unitario de la compra más reciente. Si está muy por encima del promedio, sale el porcentaje en naranja.',
     ejemplo:
-      'Con el promedio en $1,50 y reponer en $2, un producto que parece dejarte 40% de margen en realidad te deja 25%. Para fijar precios manda este número, no el promedio.',
+      'Con el promedio en $1,50 y la última compra en $2, un producto que parece dejarte 40% de margen en realidad te deja 25%. Para fijar precios manda este número, no el promedio.',
   },
   'inventario.rendimiento': {
     que: 'Cuánto de lo que compras queda realmente utilizable después de limpiar, pelar o cocinar.',

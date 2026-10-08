@@ -30,10 +30,6 @@ function minutosDesde(iso: string | null): number | null {
 }
 
 /** El punto de venta tiene la comanda abierta AHORA: la cocina no la toca. */
-function esElMismo(a: string | null | undefined, b: string | null | undefined): boolean {
-  return Boolean(a && b) && a!.trim().toLowerCase() === b!.trim().toLowerCase()
-}
-
 export function editandoAhora(pedido: Pedido): boolean {
   const minutos = minutosDesde(pedido.editando_desde)
   return minutos !== null && minutos < MINUTOS_EDITANDO
@@ -77,16 +73,15 @@ export function estadoCocina(pedido: Pedido): 'en_cocina' | 'lista' | 'sin_cocin
  * ya lo deja volver a entrar, y aqui se le decia "Otra caja la esta editando"
  * a la misma caja (bug de produccion, 25-sep).
  */
-export function porQueNoSeEdita(pedido: Pedido, quien?: string | null): string | null {
+export function porQueNoSeEdita(pedido: Pedido, _quien?: string | null): string | null {
   if (pedido.estado === 'anulado') return 'Este pedido está anulado'
   if (pedido.devuelto) return 'Esta venta se devolvió entera'
-  if (enPreparacion(pedido))
-    return `${pedido.cocinando_por || 'La cocina'} ya está preparando esta comanda`
-  // Lo que la cocina ya termino no se QUITA, pero la comanda se abre igual:
-  // agregarle algo no bota comida, y lo de vitrina nunca paso por cocina. El
-  // servidor rechaza quitar lo ya cocinado y dice por que.
-  if (editandoAhora(pedido) && !esElMismo(pedido.editando_por, quien))
-    return `${pedido.editando_por || 'Otra caja'} la está editando`
+  // Sin cobrar se edita SIEMPRE (Leider, 8-oct): ni la cocina preparandola ni
+  // el candado de otra caja apagan el boton. Lo que la cocina ya termino no se
+  // QUITA (lo dice el servidor), y si otra caja la tiene abierta, al tocar
+  // "Editar" se pregunta si tomarla. Antes el candado propio bloqueaba: el
+  // servidor guarda el USUARIO ("admin") y aqui se comparaba con el nombre
+  // visible ("Leider Mota"), asi que tras recargar nadie podia volver a entrar.
   // Una venta cobrada AYER ya entro al cierre de caja de ayer: moverle el monto
   // hoy deja la gaveta diciendo una cosa y los libros otra. El servidor la
   // rechaza igual; aca se apaga el boton para no hacer teclear una edicion

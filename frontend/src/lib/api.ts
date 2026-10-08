@@ -481,8 +481,8 @@ export const api = {
   marcarCocinando: (pedidoId: number) =>
     req<Pedido>(`/pedidos/${pedidoId}/cocinando`, { method: 'POST' }),
   /** El punto de venta agarra la comanda: la cocina la ve bloqueada. */
-  abrirEdicion: (pedidoId: number) =>
-    req<Pedido>(`/pedidos/${pedidoId}/edicion`, { method: 'POST' }),
+  abrirEdicion: (pedidoId: number, forzar = false) =>
+    req<Pedido>(`/pedidos/${pedidoId}/edicion${forzar ? '?forzar=true' : ''}`, { method: 'POST' }),
   /** Se cerro el cuadro sin guardar: la cocina puede seguir. */
   soltarEdicion: (pedidoId: number) =>
     req<Pedido>(`/pedidos/${pedidoId}/edicion`, { method: 'DELETE' }),

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { unidadDe } from '../../lib/inventario'
 import { CONCEPTOS } from '../../lib/compras'
 import { llano } from '../../lib/filtros'
 import { ALMACEN_DE } from '../../lib/tiposArticulo'
@@ -185,7 +186,7 @@ export default function ElegirMercancia({
                 <span className="ml-auto text-xs text-neutral-500 tabular-nums shrink-0">
                   {i.tipo === 'desechable'
                     ? 'sin stock'
-                    : `hay ${Number(i.stock_actual || 0).toLocaleString('es-VE', { maximumFractionDigits: 2 })} ${i.unidad}`}
+                    : `hay ${Number(i.stock_actual || 0).toLocaleString('es-VE', { maximumFractionDigits: 2 })} ${unidadDe(Number(i.stock_actual || 0), i.unidad)}`}
                 </span>
               </li>
             )

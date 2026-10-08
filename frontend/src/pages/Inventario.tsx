@@ -5,12 +5,12 @@ import MenuAcciones from '../components/MenuAcciones'
 import BarraFiltros from '../components/BarraFiltros'
 import Icono from '../components/Icono'
 import { PuntoTipo } from '../components/compras/Almacenes'
-import { useRango, nombreRango } from '../lib/fechas'
+import { useRango, nombreRango, rangoDe } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { Aviso, Boton, Modal, Pagina, Seccion, Vacio } from '../components/ui'
 import { api, ErrorApi } from '../lib/api'
-import { cantidad, datosDe } from '../lib/inventario'
+import { cantidad, datosDe, unidadDe } from '../lib/inventario'
 import { useMoneda } from '../lib/moneda'
 import { ALMACENES, ALMACEN_DE } from '../lib/tiposArticulo'
 import Almacenes, { type ResumenAlmacen } from './partes/inventario/Almacenes'
@@ -88,8 +88,13 @@ const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco']
 
 export default function Inventario() {
   const [seccion, irA] = useSeccion(SECCIONES)
-  // Pérdidas, compras de desechables y control tienen fecha; el stock es "a hoy".
-  const [rango, setRango] = useRango('30d')
+  // El inventario es lo que hay hoy: sin filtro de fechas (Leider, 8-oct: "no
+  // tiene sentido ese filtro"). Las pérdidas y el gasto en desechables de la
+  // portada miran los últimos 30 días; solo Control elige el período, porque
+  // ahí sí se revisa la historia de mermas y conteos.
+  const [rangoControl, setRango] = useRango('30d')
+  const treintaDias = useMemo(() => rangoDe('30d'), [])
+  const rango = seccion === 'control' ? rangoControl : treintaDias
   const dialogo = useDialogo()
   const { tasa, fmt: dinero } = useMoneda()
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([])
@@ -123,14 +128,27 @@ export default function Inventario() {
   const [config, setConfig] = useState<Configuracion | null>(null)
   const [cambiandoConfig, setCambiandoConfig] = useState(false)
   // La materia prima tiene dos caras.
-  // `?ver=preparado` abre lo preparado: así llegan los avisos de la portada.
-  const [cara, setCara] = useState<'crudo' | 'preparado'>(() =>
-    new URLSearchParams(window.location.search).get('ver') === 'preparado' ? 'preparado' : 'crudo',
-  )
+  // Se recuerda al volver (Leider, 8-oct: "que se guarde dónde estuviste").
+  // `?ver=preparado` manda sobre lo recordado: así llegan los avisos de la portada.
+  const [cara, setCaraViva] = useState<'crudo' | 'preparado'>(() => {
+    if (new URLSearchParams(window.location.search).get('ver') === 'preparado') return 'preparado'
+    try {
+      return sessionStorage.getItem('vp-inventario-cara') === 'preparado' ? 'preparado' : 'crudo'
+    } catch {
+      return 'crudo'
+    }
+  })
+  const setCara = (c: 'crudo' | 'preparado') => {
+    setCaraViva(c)
+    try {
+      sessionStorage.setItem('vp-inventario-cara', c)
+    } catch {
+      // sin almacenamiento: vale para esta visita
+    }
+  }
   // Con la receta de una preparación abierta, la franja Crudo/Preparado y
   // las acciones no tienen sentido: para salir se vuelve atrás.
   const [editandoPrep, setEditandoPrep] = useState(false)
-  const [abrirNuevaPrep, setAbrirNuevaPrep] = useState(0)
 
   useEffect(() => {
     cargar()
@@ -277,7 +295,7 @@ export default function Inventario() {
   async function contar(ing: Ingrediente) {
     const real = await dialogo.pedirNumero({
       titulo: `Contar ${ing.nombre}`,
-      texto: `El sistema dice ${cantidad(ing.stock_actual)} ${ing.unidad}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
+      texto: `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
       etiqueta: 'Cuánto hay realmente',
       sufijo: ing.unidad,
       valor: cantidad(ing.stock_actual),
@@ -290,7 +308,7 @@ export default function Inventario() {
   async function revertirMerma(m: Merma) {
     const ok = await dialogo.confirmar({
       titulo: '¿Revertir esta merma?',
-      texto: `Vuelven ${cantidad(m.cantidad)} ${m.unidad} de ${m.ingrediente_nombre} al inventario.\n\nLa merma original no se borra: queda marcada como revertida con su asiento de reverso.`,
+      texto: `Vuelven ${cantidad(m.cantidad)} ${unidadDe(m.cantidad, m.unidad)} de ${m.ingrediente_nombre} al inventario.\n\nLa merma original no se borra: queda marcada como revertida con su asiento de reverso.`,
       aceptar: 'Revertir',
     })
     if (ok) accion(() => api.revertirMerma(m.id))
@@ -299,7 +317,7 @@ export default function Inventario() {
   async function revertirSobrante(sb: SobranteInventario) {
     const ok = await dialogo.confirmar({
       titulo: '¿Revertir este conteo?',
-      texto: `Salen ${cantidad(sb.cantidad)} ${sb.unidad} de ${sb.ingrediente_nombre} que habían entrado por un conteo hacia arriba.\n\nEl sobrante no se borra: queda marcado como revertido con su contra-asiento.`,
+      texto: `Salen ${cantidad(sb.cantidad)} ${unidadDe(sb.cantidad, sb.unidad)} de ${sb.ingrediente_nombre} que habían entrado por un conteo hacia arriba.\n\nEl sobrante no se borra: queda marcado como revertido con su contra-asiento.`,
       aceptar: 'Revertir',
     })
     if (ok) accion(() => api.revertirSobrante(sb.id))
@@ -332,7 +350,7 @@ export default function Inventario() {
     cargar()
     const lineas = r.ajustes
       .slice(0, 8)
-      .map((a) => `${a.nombre}: ${a.diferencia > 0 ? '+' : ''}${cantidad(a.diferencia)} ${a.unidad} (${dinero(a.valor)})`)
+      .map((a) => `${a.nombre}: ${a.diferencia > 0 ? '+' : ''}${cantidad(a.diferencia)} ${unidadDe(a.diferencia, a.unidad)} (${dinero(a.valor)})`)
       .join('\n')
     const noContadas = r.no_contadas?.length ? `\n\nOjo: el preparado contado llevaba ${r.no_contadas.join(', ')}, que no se contó: esa parte no se tradujo.` : ''
     await dialogo.avisar({
@@ -406,8 +424,7 @@ export default function Inventario() {
         {/* ── La portada: los cuatro almacenes ── */}
         {seccion === 'almacenes' && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <BarraFiltros rango={rango} alCambiar={setRango} />
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <div className="flex items-center gap-2">
                 <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
                   Conteo físico
@@ -452,9 +469,12 @@ export default function Inventario() {
           <>
             {/* Una sola fila: volver, el titulo y, cuando la pantalla no
                 es una tabla, las acciones. Los de la tabla van dentro de su
-                barra (Leider, 7-oct: "administrar bien el espacio"). */}
+                barra (Leider, 7-oct: "administrar bien el espacio"). En la
+                tablet acostada (poca altura) Crudo/Preparado sube a esa misma
+                fila: el alto es para las filas de la tabla (8-oct). */}
             {!editandoPrep && (
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="space-y-3 apaisado:space-y-0 apaisado:flex apaisado:items-center apaisado:gap-4">
+            <div className={`flex flex-wrap items-center gap-3 ${tipoActual === 'insumo' ? 'apaisado:shrink-0' : 'apaisado:flex-1'}`}>
               <button
                 type="button"
                 onClick={() => irA('almacenes')}
@@ -468,7 +488,7 @@ export default function Inventario() {
               </span>
               <div className="min-w-0">
                 <h2 className="font-display text-xl font-semibold tracking-tight leading-tight">{almacen.texto}</h2>
-                <p className="text-xs text-neutral-500 leading-tight">{almacen.detalle}</p>
+                <p className="text-xs text-neutral-500 leading-tight apaisado:hidden">{almacen.detalle}</p>
               </div>
               {tipoActual === 'desechable' && (
                 <div className="ml-auto flex items-center gap-2">
@@ -478,10 +498,8 @@ export default function Inventario() {
                 </div>
               )}
             </div>
-            )}
-
-            {tipoActual === 'insumo' && !editandoPrep && (
-              <div role="tablist" className={`grid gap-2 ${cara === 'preparado' ? 'grid-cols-[1fr_1fr_auto]' : 'grid-cols-2'}`}>
+            {tipoActual === 'insumo' && (
+              <div role="tablist" className="grid grid-cols-2 gap-2 apaisado:flex-1">
                 {(
                   [
                     { v: 'crudo' as const, t: 'Crudo', d: 'lo que llegó, tal cual', n: `${delAlmacen.filter((i) => i.activo !== false).length} mercancías`, icono: 'paquete' as const },
@@ -496,32 +514,31 @@ export default function Inventario() {
                       role="tab"
                       aria-selected={esta}
                       onClick={() => setCara(c.v)}
-                      className={`vp-pulsable text-left rounded-2xl px-3.5 py-2.5 transition-colors flex items-center gap-3 ${
+                      className={`vp-pulsable min-w-0 text-left rounded-2xl px-3 sm:px-3.5 py-2.5 apaisado:py-1.5 transition-colors flex items-center gap-2.5 sm:gap-3 ${
                         esta ? 'bg-neutral-900 text-white' : 'vp-losa hover:bg-neutral-500/5'
                       }`}
                     >
                       <span className={`inline-grid place-items-center w-8 h-8 rounded-xl shrink-0 ${esta ? 'bg-white/12' : almacen.sello}`}>
                         <Icono nombre={c.icono} size={16} />
                       </span>
+                      {/* Angosto: nombre y cuántas, uno sobre otro; la frase
+                          que lo explica solo cuando cabe entera. */}
                       <span className="min-w-0 flex-1 leading-tight">
-                        <span className="font-display font-semibold">{c.t}</span>
-                        <span className={`text-xs ml-2 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.d}</span>
+                        <span className="block lg:inline font-display font-semibold truncate">{c.t}</span>
+                        <span className={`hidden xl:inline text-xs ml-2 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.d}</span>
+                        <span className={`block lg:hidden text-xs truncate ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
                       </span>
-                      <span className={`text-xs tabular-nums shrink-0 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
+                      <span className={`hidden lg:inline text-xs tabular-nums shrink-0 ${esta ? 'text-white/60' : 'text-neutral-500'}`}>{c.n}</span>
                     </button>
                   )
                 })}
-                {cara === 'preparado' && (
-                  <Boton onClick={() => setAbrirNuevaPrep((n) => n + 1)} icono="mas" className="self-center">
-                    Nueva preparación
-                  </Boton>
-                )}
               </div>
+            )}
+            </div>
             )}
 
             {tipoActual === 'desechable' ? (
               <>
-                <BarraFiltros rango={rango} alCambiar={setRango} />
                 <Desechables
                   ingredientes={delAlmacen}
                   facturas={facturas}
@@ -531,7 +548,7 @@ export default function Inventario() {
                 />
               </>
             ) : tipoActual === 'insumo' && cara === 'preparado' ? (
-              <Preparaciones ingredientes={ingredientes} onCambio={cargar} onEditando={setEditandoPrep} abrirNueva={abrirNuevaPrep} />
+              <Preparaciones ingredientes={ingredientes} onCambio={cargar} onEditando={setEditandoPrep} />
             ) : (
               <>
                 <TablaMercancia
@@ -586,7 +603,7 @@ export default function Inventario() {
                           </div>
                         </div>
                         <span className="font-semibold tabular-nums whitespace-nowrap">
-                          +{cantidad(s.cantidad_sugerida)} {s.unidad}
+                          +{cantidad(s.cantidad_sugerida)} {unidadDe(s.cantidad_sugerida, s.unidad)}
                         </span>
                         {ing && <AccionFila onClick={() => comprar(ing)}>Llegó</AccionFila>}
                       </li>
