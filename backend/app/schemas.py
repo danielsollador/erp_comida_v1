@@ -712,6 +712,40 @@ class Gasto(GastoBase):
         from_attributes = True
 
 
+class SustitucionInput(BaseModel):
+    original_id: int
+    sustituto_id: int
+    factor: float = Field(default=1.0, gt=0)
+    # Sin dato: hasta el final de hoy.
+    hasta: Optional[datetime.datetime] = None
+    nota: str = ""
+
+
+class SustitucionOut(BaseModel):
+    id: int
+    original_id: int
+    original: str
+    sustituto_id: int
+    sustituto: str
+    unidad_original: str
+    unidad_sustituto: str
+    factor: float
+    desde: datetime.datetime
+    hasta: datetime.datetime
+    nota: str = ""
+
+
+class ComboItemInput(BaseModel):
+    variante_id: int
+    cantidad: float = Field(default=1, gt=0)
+
+
+class ComboItemOut(BaseModel):
+    variante_id: int
+    nombre: str
+    cantidad: float
+
+
 class RecetaItemInput(BaseModel):
     ingrediente_id: int
     cantidad_por_unidad: float
@@ -2278,6 +2312,10 @@ class FacturaCompraCreate(FacturaCompraBase):
     # El comprobante, cuando la factura se carga ya pagada y no en efectivo.
     # A credito no aplica: todavia no ha salido plata.
     referencia_pago: Optional[str] = None
+    # Ya hay una factura con este numero de este proveedor y quien carga dijo
+    # "guardar igual". Sin esto el servidor la rechaza: dos tablets guardando
+    # la misma a la vez duplicaban la mercancia (caso 11, 8-oct).
+    confirmar_duplicado: bool = False
 
 
 class FacturaCompra(FacturaCompraBase):
@@ -2293,6 +2331,12 @@ class FacturaCompra(FacturaCompraBase):
     comprobante_retencion: str = ""
     # Lo que se le paga al proveedor: total menos lo retenido.
     a_pagar: float = 0
+    # Lo que ya se le abono y lo que falta (a credito).
+    abonado: float = 0
+    saldo: float = 0
+    abonos: List["AbonoFactura"] = []
+    # Lo que no llego y el proveedor todavia debe (abiertos).
+    reclamos: List["Reclamo"] = []
     # Ya con el recargo y el descuento aplicados: es la base que va al Libro
     # de Compras. Los dos viajan aparte para poder explicar la diferencia con
     # la suma de los renglones.
@@ -2550,6 +2594,48 @@ class CompletarFactura(BaseModel):
     alertas: List[AlertaPrecio] = []
 
 
+class FaltanteRequest(BaseModel):
+    """Lo que la factura dice y no llego, renglon por renglon."""
+
+    items: List["NotaCreditoItemCreate"]
+    motivo: str = ""
+
+
+class Reclamo(BaseModel):
+    id: int
+    factura_id: int
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    cantidad: float
+    valor: float
+    motivo: str = ""
+    fecha: datetime.datetime
+    estado: str
+    numero_factura: str = ""
+    proveedor_nombre: str = ""
+
+
+class AbonoFacturaRequest(BaseModel):
+    monto: float = Field(gt=0)
+    forma_pago: str = "Efectivo"
+    referencia: Optional[str] = None
+
+
+class AbonoFactura(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    monto: float
+    forma_pago: str
+    referencia: str = ""
+
+    class Config:
+        from_attributes = True
+
+
+FacturaCompra.model_rebuild()
+
+
 class PagoFacturaRequest(BaseModel):
     forma_pago: str = "Efectivo"  # Efectivo|Banco - con que se salda la deuda
     # Obligatoria si no se paga en efectivo, igual que al cobrar una venta.
@@ -2573,7 +2659,7 @@ class NotaCreditoCompraCreate(BaseModel):
     """
 
     numero: str
-    tipo: str  # devolucion | descuento
+    tipo: str  # devolucion | descuento | faltante (cierra lo que no llego)
     motivo: str = ""
     fecha: Optional[datetime.datetime] = None
     base_imponible: Optional[float] = None  # solo para 'descuento'
@@ -3007,3 +3093,7 @@ class VueltoEmitido(BaseModel):
     monto_bs: float
     reintentable: bool = False
 
+
+
+FaltanteRequest.model_rebuild()
+FacturaCompra.model_rebuild()

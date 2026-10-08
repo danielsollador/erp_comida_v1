@@ -128,6 +128,57 @@ def explotar_consumo(consumo: dict, modo: str = "venta") -> dict:
     for ingrediente, cantidad in consumo.items():
         for hoja, q in explotar(ingrediente, cantidad, modo).items():
             resultado[hoja] = resultado.get(hoja, 0) + q
+    if modo in ("venta", "devolucion") and resultado:
+        resultado = _sustituir(resultado)
+    return resultado
+
+
+def diferencia_por_sustitucion(ingrediente: models.Ingrediente, bruto: float) -> float:
+    """Cuanto cambia el costo de `bruto` de algo por los cambios de hoy: el
+    pavo bruto que sale en lugar del pollo, a su costo, menos el pollo."""
+    hojas = explotar(ingrediente, bruto, "venta")
+    if not hojas:
+        return 0.0
+    cambiado = _sustituir(dict(hojas))
+    antes = sum(q * (h.costo_unitario or 0) for h, q in hojas.items())
+    despues = sum(q * (h.costo_unitario or 0) for h, q in cambiado.items())
+    return despues - antes
+
+
+def _sustituir(consumo: dict) -> dict:
+    """Los cambios de hoy: lo que sale del pollo sale del pavo.
+
+    La cantidad que se cambia es la UTIL (lo que el plato lleva): el pollo
+    bruto se pasa a util con su rendimiento y de ahi a pavo bruto con el del
+    pavo, por el factor que se dijo.
+    """
+    from sqlalchemy.orm import object_session
+
+    from .timeutils import ahora
+
+    db = object_session(next(iter(consumo)))
+    if db is None:
+        return consumo
+    momento = ahora()
+    vigentes = {
+        s.original_id: s
+        for s in db.query(models.Sustitucion).filter(
+            models.Sustitucion.activa.is_(True),
+            models.Sustitucion.desde <= momento,
+            models.Sustitucion.hasta > momento,
+        )
+    }
+    if not vigentes:
+        return consumo
+    resultado = {}
+    for ing, q in consumo.items():
+        s = vigentes.get(ing.id)
+        if s is None or s.sustituto is None:
+            resultado[ing] = resultado.get(ing, 0) + q
+            continue
+        util = q * (ing.rendimiento_pct or 100) / 100
+        bruto = util * (s.factor or 1) * 100 / (s.sustituto.rendimiento_pct or 100)
+        resultado[s.sustituto] = resultado.get(s.sustituto, 0) + bruto
     return resultado
 
 

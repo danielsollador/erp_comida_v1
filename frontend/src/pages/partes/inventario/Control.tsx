@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import AccionFila from '../../../components/AccionFila'
+import CambiosDeHoy from '../../../components/CambiosDeHoy'
 import { Tabla, Th, useBuscador, useOrden } from '../../../components/Tabla'
 import { Filtros, Pastilla, Seccion, Vacio } from '../../../components/ui'
 import { api } from '../../../lib/api'
@@ -123,6 +124,8 @@ export default function Control({
           Conteo físico
         </button>
       </div>
+
+      <CambiosDeHoy />
 
       {vista === 'teorico' && (
         <Seccion

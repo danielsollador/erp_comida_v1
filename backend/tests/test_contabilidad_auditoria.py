@@ -356,11 +356,10 @@ def test_lo_que_se_asienta_con_fecha_de_un_año_cerrado_cae_en_el_abierto(client
         "numero_factura": "F-viejo", "proveedor_nombre": "Gas SA", "proveedor_rif": "J123456789", "categoria": "Servicios",
         "forma_pago": "Banco", "referencia_pago": "TRF-T", "iva": 0, "base_imponible": 12.0, "fecha": "2025-05-10T10:00:00",
     })
-    assert fac.status_code == 200, fac.text
-    asiento = db.query(models.AsientoContable).filter_by(origen="factura_compra",
-                                                         referencia_id=fac.json()["id"]).first()
-    assert asiento.fecha >= datetime.datetime(2026, 1, 1), asiento.fecha
-    assert "2025-05-10" in asiento.descripcion
+    # Una FACTURA ya no entra en un año cerrado (8-oct): su asiento podia caer
+    # en el abierto, pero ella quedaba en un Libro de Compras ya declarado.
+    assert fac.status_code == 409, fac.text
+    assert "ya está cerrado" in fac.json()["detail"]
 
     # Junio de 2025 sigue diciendo lo mismo que cuando se cerro.
     assert client.get("/api/contabilidad/estado-resultados?anio=2025&mes=6").json()["utilidad_neta"] == resultado_2025

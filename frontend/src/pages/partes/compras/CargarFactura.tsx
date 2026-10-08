@@ -10,7 +10,7 @@ import Icono from '../../../components/Icono'
 import NuevaMercancia, { type Presentacion } from '../../../components/NuevaMercancia'
 import { Numerico } from '../../../components/Teclado'
 import { Filtros } from '../../../components/ui'
-import { api } from '../../../lib/api'
+import { api, ErrorApi } from '../../../lib/api'
 import {
   CONCEPTOS,
   TEXTO_CONCEPTO,
@@ -594,7 +594,7 @@ export default function CargarFactura({
   }
 
   // ── Guardar ─────────────────────────────────────────────────────────────
-  async function guardar() {
+  async function guardar(forzarDuplicado = false) {
     setError('')
     setExito('')
     if (!numeroFactura.trim() || !proveedor.trim()) return falla('Completa al menos el número de factura y el proveedor', 'cf-numero')
@@ -636,6 +636,7 @@ export default function CargarFactura({
       .then((r) => r.duplicadas)
       .catch(() => [])
     if (
+      !forzarDuplicado &&
       yaCargadas.length > 0 &&
       !(await dialogo.confirmar({
         titulo: 'Esta factura parece ya cargada',
@@ -706,6 +707,8 @@ export default function CargarFactura({
         descuento: aUsd(descuentoNum),
         fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
         referencia_pago: referenciaPago.trim() || undefined,
+        // Ya se pregunto y se dijo "guardar igual": el servidor no la rechaza.
+        confirmar_duplicado: forzarDuplicado || yaCargadas.length > 0,
       }
       await anotarAntesDeGuardar(numeroFactura.trim(), cuerpoCompletar)
       const guardada = await api.crearFacturaCompra({ ...comun, items, gastos, iva: ivaLineas })
@@ -742,6 +745,13 @@ export default function CargarFactura({
       onGuardada(r.estado === 'hecho' ? r.alertas : [])
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
+      // Otra tablet la guardo justo antes: el servidor la frena y se pregunta.
+      if (e instanceof ErrorApi && e.status === 409 && e.message.startsWith('Ya está cargada')) {
+        setGuardando(false)
+        if (await dialogo.confirmar({ titulo: 'Esta factura ya entró', texto: `${e.message} ¿La guardo igual?`, aceptar: 'Guardar igual', peligro: true }))
+          return guardar(true)
+        return
+      }
       setError(e instanceof Error ? e.message : 'No se pudo cargar la factura')
     } finally {
       setGuardando(false)
@@ -1150,7 +1160,7 @@ export default function CargarFactura({
         total={`${monedaCarga}${fmtNum(totalFormulario, 2)}`}
         guardando={guardando}
         onIrA={irA}
-        onGuardar={guardar}
+        onGuardar={() => void guardar()}
       />
     </div>
   )

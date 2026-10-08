@@ -424,6 +424,30 @@ class MovimientoInventario(Base):
     ingrediente = relationship("Ingrediente")
 
 
+class Sustitucion(Base):
+    """Hoy se usa otra cosa: "no hay pollo, los pastelitos de pollo llevan
+    pavo". Mientras este vigente, lo que se vende descuenta el sustituto en
+    vez del original, sin tocar ninguna receta (8-oct, caso 2).
+
+    `factor`: cuanto sustituto por cada unidad UTIL del original (1 = lo
+    mismo). La merma de cada uno la pone su ficha: el pavo rinde lo suyo.
+    """
+
+    __tablename__ = "TRX366_INV_SUSTITUCION"
+
+    id = Column(Integer, primary_key=True)
+    original_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    sustituto_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    factor = Column(Float, default=1.0)
+    desde = Column(DateTime, default=ahora)
+    hasta = Column(DateTime, nullable=False)
+    nota = Column(String, default="")
+    activa = Column(Boolean, default=True)
+
+    original = relationship("Ingrediente", foreign_keys=[original_id])
+    sustituto = relationship("Ingrediente", foreign_keys=[sustituto_id])
+
+
 class Produccion(Base):
     """Una tanda de una preparacion: "hoy hice guiso de pollo y salieron 2,6 kg".
 
@@ -453,6 +477,26 @@ class Produccion(Base):
     def rendimiento_real(self):
         """Lo que salio sobre lo que debio salir: 0.92 = rindio 8 % menos."""
         return round(self.cantidad / self.cantidad_esperada, 4) if self.cantidad_esperada else None
+
+
+class ComboItem(Base):
+    """Un producto del menu dentro de otro: el combo "pastelito + jugo".
+
+    El combo no tiene receta propia que alguien escriba: su receta
+    (RecetaItem) se arma SOLA sumando las de sus productos, y se rearma cada
+    vez que una de ellas cambia. Asi todo lo que lee recetas --la venta, el
+    costo, los reportes, el kardex-- funciona igual con un combo, y si cambia
+    el pastelito, el combo se entera (8-oct).
+    """
+
+    __tablename__ = "REL251_REC_COMBO"
+
+    id = Column(Integer, primary_key=True)
+    combo_variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
+    variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
+    cantidad = Column(Float, default=1.0)
+
+    variante = relationship("Variante", foreign_keys=[variante_id])
 
 
 class RecetaItem(Base):
@@ -916,11 +960,30 @@ class FacturaCompra(Base):
         """Lo que se le paga al proveedor: el total menos el IVA retenido."""
         return round(self.total - (self.iva_retenido or 0), 2)
 
+    @property
+    def abonado(self) -> float:
+        """Lo que ya se le pago a cuenta de una factura a credito."""
+        return round(sum(a.monto for a in (self.abonos or [])), 2)
+
+    @property
+    def saldo(self) -> float:
+        """Lo que todavia se le debe al proveedor por esta factura."""
+        if self.pagada:
+            return 0.0
+        # Una nota de credito sobre una factura que todavia se debe baja la
+        # deuda (2010): pagar despues el total original pagaba de mas.
+        notas = sum((n.base_imponible or 0) + (n.iva or 0) for n in (self.notas_credito or []))
+        return round(max(self.a_pagar - notas - self.abonado, 0), 2)
+
     items = relationship("FacturaCompraItem", back_populates="factura", cascade="all, delete-orphan")
     # Lo que la factura cobra y NO es mercancia: el flete, un servicio, un
     # equipo. Va renglon por renglon junto a la mercancia (una factura trae
     # pollo y el flete juntos) y no mueve stock.
     gastos = relationship("FacturaCompraGasto", back_populates="factura", cascade="all, delete-orphan")
+    # Pagos a cuenta de una factura a credito (8-oct): antes solo se podia
+    # pagar entera de una vez.
+    reclamos = relationship("ReclamoProveedor", back_populates="factura", cascade="all, delete-orphan", order_by="ReclamoProveedor.id")
+    abonos = relationship("FacturaCompraAbono", back_populates="factura", cascade="all, delete-orphan", order_by="FacturaCompraAbono.id")
     notas_credito = relationship(
         "NotaCreditoCompra", back_populates="factura", cascade="all, delete-orphan"
     )
@@ -1010,6 +1073,50 @@ class FacturaCompraGasto(Base):
     @property
     def subtotal(self):
         return round(self.monto, 2)
+
+
+class FacturaCompraAbono(Base):
+    """Un pago a cuenta de una factura a credito: $20 hoy, el resto el viernes."""
+
+    __tablename__ = "TRX417_COM_FACTURA_ABONO"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    fecha = Column(DateTime, default=ahora)
+    monto = Column(Float, nullable=False)
+    forma_pago = Column(String, nullable=False)
+    referencia = Column(String, default="")
+
+    factura = relationship("FacturaCompra", back_populates="abonos")
+
+
+class ReclamoProveedor(Base):
+    """Lo que la factura cobra y no llego: "dice 10 kg, vinieron 8".
+
+    Sale del deposito (no esta) y su valor pasa a 1045 Reclamos a proveedores:
+    el proveedor lo debe. Cuando manda la nota de credito, el reclamo se cierra
+    contra ella; si nunca la manda, se da por perdido y entonces si es merma.
+    """
+
+    __tablename__ = "TRX418_COM_FACTURA_RECLAMO"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)
+    costo_unitario = Column(Float, nullable=False)  # el de la factura, sin IVA
+    cuenta = Column(String, default="1040")  # por donde habia entrado
+    motivo = Column(String, default="")
+    fecha = Column(DateTime, default=ahora)
+    estado = Column(String, default="abierto")  # abierto | acreditado | perdido
+    nota_id = Column(Integer, ForeignKey("TRX420_COM_NOTA_CREDITO.id"), nullable=True)
+
+    factura = relationship("FacturaCompra", back_populates="reclamos")
+    ingrediente = relationship("Ingrediente")
+
+    @property
+    def valor(self) -> float:
+        return round(self.cantidad * self.costo_unitario, 2)
 
 
 class SoporteFactura(Base):

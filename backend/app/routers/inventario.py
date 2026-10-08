@@ -1390,7 +1390,20 @@ def actualizar_receta(
     variante = db.query(models.Variante).filter(models.Variante.id == variante_id).first()
     if not variante:
         raise HTTPException(status_code=404, detail="Variante no encontrada")
+    if db.query(models.ComboItem).filter(models.ComboItem.combo_variante_id == variante_id).count():
+        raise HTTPException(
+            status_code=409,
+            detail="Es un combo: su receta sale de los productos que lleva. Cambia el combo o la receta de esos productos.",
+        )
+    _guardar_receta(db, variante_id, [(i.ingrediente_id, i.cantidad_por_unidad) for i in items])
+    _rearmar_combos_con(db, variante_id)
+    db.commit()
+    return ver_receta(variante_id, db)
 
+
+def _guardar_receta(db: Session, variante_id: int, items: List[tuple]) -> None:
+    """Reemplaza la receta de una variante y deja su historial. No hace commit."""
+    items = [schemas.RecetaItemInput(ingrediente_id=i, cantidad_por_unidad=q) for i, q in items]
     for item in items:
         ing = db.get(models.Ingrediente, item.ingrediente_id)
         if ing is None:
@@ -1438,8 +1451,132 @@ def actualizar_receta(
             costo_resultante=round(costo, 4),
         )
     )
+    db.flush()
+
+
+def _armar_receta_de_combo(db: Session, combo_variante_id: int) -> None:
+    """La receta del combo = la suma de las recetas de sus productos."""
+    suma: dict = {}
+    for c in db.query(models.ComboItem).filter(models.ComboItem.combo_variante_id == combo_variante_id).all():
+        for r in db.query(models.RecetaItem).filter(models.RecetaItem.variante_id == c.variante_id).all():
+            suma[r.ingrediente_id] = suma.get(r.ingrediente_id, 0) + r.cantidad_por_unidad * (c.cantidad or 1)
+    _guardar_receta(db, combo_variante_id, [(i, round(q, 6)) for i, q in suma.items()])
+
+
+def _rearmar_combos_con(db: Session, variante_id: int) -> None:
+    """Cambio la receta de un producto: los combos que lo llevan se enteran."""
+    for (combo_id,) in (
+        db.query(models.ComboItem.combo_variante_id).filter(models.ComboItem.variante_id == variante_id).distinct().all()
+    ):
+        _armar_receta_de_combo(db, combo_id)
+
+
+def _sustitucion_a_schema(s: models.Sustitucion) -> schemas.SustitucionOut:
+    return schemas.SustitucionOut(
+        id=s.id, original_id=s.original_id, original=s.original.nombre, sustituto_id=s.sustituto_id,
+        sustituto=s.sustituto.nombre, unidad_original=s.original.unidad, unidad_sustituto=s.sustituto.unidad,
+        factor=s.factor, desde=s.desde, hasta=s.hasta, nota=s.nota or "",
+    )
+
+
+@router.get("/sustituciones", response_model=List[schemas.SustitucionOut])
+def listar_sustituciones(db: Session = Depends(get_db)):
+    """Los cambios vigentes: "hoy el pollo es pavo"."""
+    momento = ahora()
+    return [
+        _sustitucion_a_schema(s)
+        for s in db.query(models.Sustitucion).filter(models.Sustitucion.activa.is_(True), models.Sustitucion.hasta > momento)
+        .order_by(models.Sustitucion.id).all()
+    ]
+
+
+@router.post("/sustituciones", response_model=schemas.SustitucionOut)
+def crear_sustitucion(body: schemas.SustitucionInput, db: Session = Depends(get_db)):
+    """Hoy se usa otra cosa en lugar de una mercancia, sin tocar recetas."""
+    original = db.get(models.Ingrediente, body.original_id)
+    sustituto = db.get(models.Ingrediente, body.sustituto_id)
+    if original is None or sustituto is None:
+        raise HTTPException(status_code=404, detail="Mercancía no encontrada")
+    if original.id == sustituto.id:
+        raise HTTPException(status_code=400, detail="Elige otra mercancía para reemplazarla.")
+    if original.tipo == "preparacion" or sustituto.tipo == "preparacion":
+        raise HTTPException(status_code=400, detail="El cambio es de crudo por crudo (pollo por pavo): las preparaciones siguen su receta.")
+    if sustituto.tipo == "desechable" or sustituto.es_indirecto:
+        raise HTTPException(status_code=400, detail=f"«{sustituto.nombre}» no va en recetas.")
+    momento = ahora()
+    hasta = body.hasta or inicio_del_dia(hoy() + datetime.timedelta(days=1))
+    if hasta <= momento:
+        raise HTTPException(status_code=400, detail="El cambio tiene que durar hasta más tarde que ahora.")
+    # Uno vigente por mercancía: el nuevo reemplaza al anterior.
+    for s in db.query(models.Sustitucion).filter(
+        models.Sustitucion.original_id == original.id, models.Sustitucion.activa.is_(True), models.Sustitucion.hasta > momento
+    ):
+        s.activa = False
+    s = models.Sustitucion(original_id=original.id, sustituto_id=sustituto.id, factor=body.factor, desde=momento, hasta=hasta, nota=body.nota)
+    db.add(s)
     db.commit()
-    return ver_receta(variante_id, db)
+    db.refresh(s)
+    return _sustitucion_a_schema(s)
+
+
+@router.delete("/sustituciones/{sustitucion_id}")
+def terminar_sustitucion(sustitucion_id: int, db: Session = Depends(get_db)):
+    """Ya llegó el pollo: se vuelve a la receta de siempre."""
+    s = db.get(models.Sustitucion, sustitucion_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="Cambio no encontrado")
+    s.activa = False
+    s.hasta = min(s.hasta, ahora())
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/combos/{variante_id}", response_model=List[schemas.ComboItemOut])
+def ver_combo(variante_id: int, db: Session = Depends(get_db)):
+    filas = db.query(models.ComboItem).filter(models.ComboItem.combo_variante_id == variante_id).all()
+    return [
+        schemas.ComboItemOut(
+            variante_id=f.variante_id,
+            nombre=(f.variante.producto.nombre if f.variante and f.variante.producto else "")
+            + (f" ({f.variante.nombre})" if f.variante and f.variante.nombre not in ("", "Regular") else ""),
+            cantidad=f.cantidad,
+        )
+        for f in filas
+    ]
+
+
+@router.put("/combos/{variante_id}", response_model=List[schemas.ComboItemOut])
+def guardar_combo(variante_id: int, items: List[schemas.ComboItemInput], db: Session = Depends(get_db)):
+    """Lo que lleva un combo: otros productos del menu. Lista vacia = deja de
+    ser combo (y se queda sin receta, para volver a armarla a mano)."""
+    if db.get(models.Variante, variante_id) is None:
+        raise HTTPException(status_code=404, detail="Variante no encontrada")
+    for it in items:
+        if it.variante_id == variante_id:
+            raise HTTPException(status_code=400, detail="Un combo no puede llevarse a sí mismo.")
+        if db.get(models.Variante, it.variante_id) is None:
+            raise HTTPException(status_code=400, detail=f"El producto {it.variante_id} no existe.")
+        if db.query(models.ComboItem).filter(models.ComboItem.combo_variante_id == it.variante_id).count():
+            raise HTTPException(status_code=400, detail="Un combo no puede llevar otro combo: agrega sus productos sueltos.")
+    if items and db.query(models.ComboItem).filter(models.ComboItem.variante_id == variante_id).count():
+        raise HTTPException(status_code=400, detail="Este producto va dentro de otro combo: no puede ser combo él también.")
+    db.query(models.ComboItem).filter(models.ComboItem.combo_variante_id == variante_id).delete()
+    juntos: dict = {}
+    for it in items:
+        juntos[it.variante_id] = juntos.get(it.variante_id, 0) + it.cantidad
+    for vid, cant in juntos.items():
+        db.add(models.ComboItem(combo_variante_id=variante_id, variante_id=vid, cantidad=cant))
+    db.flush()
+    # Si lleva algo frito, el combo carga su parte del aceite como lo frito.
+    db.get(models.Variante, variante_id).se_frie = any(
+        bool(getattr(db.get(models.Variante, vid), "se_frie", False)) for vid in juntos
+    )
+    if juntos:
+        _armar_receta_de_combo(db, variante_id)
+    else:
+        _guardar_receta(db, variante_id, [])
+    db.commit()
+    return ver_combo(variante_id, db)
 
 
 @router.get("/recetas/{variante_id}/historial", response_model=List[schemas.CambioReceta])

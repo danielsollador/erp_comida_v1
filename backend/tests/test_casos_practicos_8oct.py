@@ -116,3 +116,154 @@ def test_la_merma_guarda_quien_la_anoto(client, db, libros):
     assert {m["operador"] for m in mermas} == {"admin"}
     per = client.get("/api/reportes/perdidas").json()["por_operador"]
     assert per == [{"operador": "admin", "valor": 6.0, "veces": 3}]
+
+
+def test_la_misma_factura_dos_veces_se_frena_en_el_servidor(client, db, libros):
+    """Dos tablets guardando la misma factura casi a la vez: la segunda llega
+    cuando la primera ya entró y se rechaza, en vez de duplicar el stock."""
+    pollo = alta(client, "Pollo")
+    cuerpo = {"numero_factura": "0001133", "proveedor_nombre": "Mayorista", "proveedor_rif": "J123456789",
+              "forma_pago": "Credito", "tasa_bcv": 100, "items": [{"ingrediente_id": pollo["id"], "cantidad": 10, "costo_unitario": 4}]}
+    assert client.post("/api/compras/facturas", json=cuerpo).status_code == 200
+    r = client.post("/api/compras/facturas", json={**cuerpo, "numero_factura": "1133"})
+    assert r.status_code == 409 and r.json()["detail"].startswith("Ya está cargada")
+    db.expire_all()
+    assert db.get(models.Ingrediente, pollo["id"]).stock_actual == 10
+    # Si quien carga confirma, entra.
+    assert client.post("/api/compras/facturas", json={**cuerpo, "confirmar_duplicado": True}).status_code == 200
+
+
+def test_abonos_a_una_factura_a_credito(client, db, libros):
+    from conftest import libros_cuadrados, saldo
+    pollo = alta(client, "Pollo")
+    comprar(client, "A-1", [{"ingrediente_id": pollo["id"], "cantidad": 10, "costo_unitario": 4}])
+    f = client.get("/api/compras/facturas").json()[0]
+    assert f["saldo"] == 46.4
+    deuda = saldo(db, "2010")
+    r = client.post(f"/api/compras/facturas/{f['id']}/abonos", json={"monto": 20, "forma_pago": "Efectivo Bs"})
+    assert r.status_code == 200, r.text
+    assert (r.json()["abonado"], r.json()["saldo"], r.json()["pagada"]) == (20, 26.4, False)
+    assert round(deuda - saldo(db, "2010"), 2) == 20
+    assert client.post(f"/api/compras/facturas/{f['id']}/abonos", json={"monto": 30, "forma_pago": "Efectivo Bs"}).status_code == 400
+    assert client.delete(f"/api/compras/facturas/{f['id']}").status_code == 409
+    r = client.post(f"/api/compras/facturas/{f['id']}/abonos", json={"monto": 26.4, "forma_pago": "Efectivo Bs"})
+    assert r.json()["pagada"] is True and r.json()["saldo"] == 0
+    assert round(deuda - saldo(db, "2010"), 2) == 46.4
+    libros_cuadrados(client, db)
+
+
+def test_pagar_despues_de_una_nota_de_credito_paga_lo_que_se_debe(client, db, libros):
+    """Antes se pagaba el total original y la deuda quedaba en negativo."""
+    from conftest import libros_cuadrados, saldo
+    pollo = alta(client, "Pollo")
+    comprar(client, "N-1", [{"ingrediente_id": pollo["id"], "cantidad": 10, "costo_unitario": 4}])
+    f = client.get("/api/compras/facturas").json()[0]
+    deuda = saldo(db, "2010")
+    client.post(f"/api/compras/facturas/{f['id']}/notas-credito", json={"numero": "NC-1", "tipo": "devolucion", "items": [{"ingrediente_id": pollo["id"], "cantidad": 2}]})
+    assert client.get("/api/compras/facturas").json()[0]["saldo"] == 37.12
+    client.post(f"/api/compras/facturas/{f['id']}/abonos", json={"monto": 10, "forma_pago": "Efectivo Bs"})
+    r = client.post(f"/api/compras/facturas/{f['id']}/pagar", json={"forma_pago": "Efectivo"})
+    assert r.status_code == 200, r.text
+    assert round(saldo(db, "2010") - (deuda - 46.4), 2) == 0, "la deuda queda en cero, no en negativo"
+    libros_cuadrados(client, db)
+
+
+def test_llego_menos_queda_como_reclamo_y_la_nota_lo_cierra(client, db, libros):
+    from conftest import libros_cuadrados, saldo
+    pollo = alta(client, "Pollo")
+    comprar(client, "F-1", [{"ingrediente_id": pollo["id"], "cantidad": 10, "costo_unitario": 4}])
+    f = client.get("/api/compras/facturas").json()[0]
+    antes = {c: saldo(db, c) for c in ("1040", "1045", "6020", "2010")}
+
+    r = client.post(f"/api/compras/facturas/{f['id']}/faltantes", json={"items": [{"ingrediente_id": pollo["id"], "cantidad": 2}], "motivo": "llegaron 8"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(models.Ingrediente, pollo["id"]).stock_actual == 8
+    assert round(saldo(db, "1045") - antes["1045"], 2) == 8.0, "el proveedor debe $8"
+    assert round(saldo(db, "6020") - antes["6020"], 2) == 0, "no es merma"
+    assert [x["cantidad"] for x in client.get("/api/compras/reclamos").json()] == [2]
+    libros_cuadrados(client, db)
+
+    # Llega la nota: cierra el reclamo, baja la deuda y el IVA, y el stock no se mueve otra vez.
+    r = client.post(f"/api/compras/facturas/{f['id']}/notas-credito", json={"numero": "NC-9", "tipo": "faltante"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(models.Ingrediente, pollo["id"]).stock_actual == 8
+    assert round(saldo(db, "1045") - antes["1045"], 2) == 0
+    assert round(antes["2010"] - saldo(db, "2010"), 2) == 9.28
+    assert client.get("/api/compras/reclamos").json() == []
+    libros_cuadrados(client, db)
+
+
+def test_un_reclamo_que_nunca_se_acredita_pasa_a_perdida(client, db, libros):
+    from conftest import libros_cuadrados, saldo
+    pollo = alta(client, "Pollo")
+    comprar(client, "F-2", [{"ingrediente_id": pollo["id"], "cantidad": 10, "costo_unitario": 4}])
+    f = client.get("/api/compras/facturas").json()[0]
+    client.post(f"/api/compras/facturas/{f['id']}/faltantes", json={"items": [{"ingrediente_id": pollo["id"], "cantidad": 3}]})
+    assert client.post(f"/api/compras/facturas/{f['id']}/faltantes", json={"items": [{"ingrediente_id": pollo["id"], "cantidad": 8}]}).status_code == 409
+    rid = client.get("/api/compras/reclamos").json()[0]["id"]
+    antes = saldo(db, "6020")
+    assert client.post(f"/api/compras/reclamos/{rid}/perder").status_code == 200
+    assert round(saldo(db, "6020") - antes, 2) == 12.0
+    assert saldo(db, "1045") == 0
+    libros_cuadrados(client, db)
+
+
+def test_un_combo_suma_las_recetas_de_sus_productos_y_se_entera_de_los_cambios(client, db, libros):
+    harina = alta(client, "Harina")
+    naranja = alta(client, "Naranja")
+    comprar(client, "K-1", [{"ingrediente_id": harina["id"], "cantidad": 10, "costo_unitario": 1}, {"ingrediente_id": naranja["id"], "cantidad": 10, "costo_unitario": 2}])
+    pastelito = producto(db, "Pastelito", [(harina["id"], 0.05)], 1.0)
+    jugo = producto(db, "Jugo", [(naranja["id"], 0.5)], 3.0)
+    combo = producto(db, "Combo", [], 3.5)
+
+    r = client.put(f"/api/inventario/combos/{combo.id}", json=[{"variante_id": pastelito.id, "cantidad": 2}, {"variante_id": jugo.id, "cantidad": 1}])
+    assert r.status_code == 200, r.text
+    receta = {x["ingrediente_id"]: x["cantidad_por_unidad"] for x in client.get(f"/api/inventario/recetas/{combo.id}").json()}
+    assert receta == {harina["id"]: 0.1, naranja["id"]: 0.5}
+    c = next(x for x in client.get("/api/menu/costos").json() if x["variante_id"] == combo.id)
+    assert round(c["costo"], 4) == 1.1  # 2 pastelitos ($0,05) + 1 jugo ($1)
+
+    # Cambia la receta del pastelito: el combo se rearma solo.
+    assert client.put(f"/api/inventario/recetas/{pastelito.id}", json=[{"ingrediente_id": harina["id"], "cantidad_por_unidad": 0.08}]).status_code == 200
+    receta = {x["ingrediente_id"]: x["cantidad_por_unidad"] for x in client.get(f"/api/inventario/recetas/{combo.id}").json()}
+    assert receta[harina["id"]] == 0.16
+
+    # Vender el combo descuenta todo.
+    vender(client, combo.id, 1)
+    db.expire_all()
+    assert round(db.get(models.Ingrediente, naranja["id"]).stock_actual, 3) == 9.5
+
+    # La receta del combo no se edita a mano, y un combo no lleva otro combo.
+    assert client.put(f"/api/inventario/recetas/{combo.id}", json=[]).status_code == 409
+    otro = producto(db, "Combo doble", [], 6)
+    assert client.put(f"/api/inventario/combos/{otro.id}", json=[{"variante_id": combo.id, "cantidad": 1}]).status_code == 400
+    assert client.put(f"/api/inventario/combos/{combo.id}", json=[{"variante_id": combo.id, "cantidad": 1}]).status_code == 400
+
+
+def test_hoy_el_pollo_es_pavo(client, db, libros):
+    """No hay pollo: se anota el cambio y lo vendido descuenta pavo, sin tocar recetas."""
+    pollo = alta(client, "Pollo", rendimiento_pct=70)
+    pavo = alta(client, "Pavo", rendimiento_pct=80)
+    comprar(client, "S-1", [{"ingrediente_id": pollo["id"], "cantidad": 0.2, "costo_unitario": 4}, {"ingrediente_id": pavo["id"], "cantidad": 5, "costo_unitario": 6}])
+    g = client.post("/api/inventario/preparaciones", json={"nombre": "Guiso de pollo", "unidad": "kg", "rinde": 1, "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1}]}).json()
+    v = producto(db, "Pastelito de pollo", [(g["id"], 0.07)])
+    r = client.post("/api/pedidos", json={"items": [{"variante_id": v.id, "cantidad": 10}], "nota": ""})
+    assert r.status_code == 409, "sin pollo no se vende"
+
+    r = client.post("/api/inventario/sustituciones", json={"original_id": pollo["id"], "sustituto_id": pavo["id"], "nota": "no llegó el pollo"})
+    assert r.status_code == 200, r.text
+    sid = r.json()["id"]
+    assert [s["sustituto"] for s in client.get("/api/inventario/sustituciones").json()] == ["Pavo"]
+    vender(client, v.id, 10)
+    db.expire_all()
+    # 10 × 70 g de guiso = 0,7 kg de guiso = 1 kg de pollo bruto = 0,7 kg útil = 0,875 kg de pavo bruto.
+    assert round(db.get(models.Ingrediente, pavo["id"]).stock_actual, 3) == round(5 - 0.875, 3)
+    assert db.get(models.Ingrediente, pollo["id"]).stock_actual == 0.2, "el pollo no se tocó"
+    assert [r.ingrediente_id for r in db.query(models.RecetaItem).filter_by(variante_id=v.id)] == [g["id"]], "la receta sigue igual"
+
+    assert client.delete(f"/api/inventario/sustituciones/{sid}").status_code == 200
+    assert client.get("/api/inventario/sustituciones").json() == []
+    from conftest import libros_cuadrados
+    libros_cuadrados(client, db)

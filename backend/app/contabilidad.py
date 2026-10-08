@@ -43,6 +43,9 @@ PLAN_DE_CUENTAS = [
     ("1030", "IVA credito fiscal", "activo", "deudora"),
     ("1035", "IVA retenido por clientes", "activo", "deudora"),
     ("1040", "Inventario de insumos", "activo", "deudora"),
+    # Lo que se facturo y no llego (8-oct): el proveedor lo debe hasta que
+    # mande su nota de credito. No es merma: nadie lo boto.
+    ("1045", "Reclamos a proveedores", "activo", "deudora"),
     ("1050", "Equipos y mobiliario", "activo", "deudora"),
     # Contra-cuenta de activo (ver CUENTAS_CONTRA): se acredita, asi que su
     # saldo sale negativo y resta del total de activos, como debe presentarse.
@@ -1343,16 +1346,18 @@ def registrar_factura_compra(db: Session, factura: models.FacturaCompra) -> None
     )
 
 
-def registrar_pago_factura(db: Session, factura: models.FacturaCompra, forma_pago: str) -> None:
+def registrar_pago_factura(db: Session, factura: models.FacturaCompra, forma_pago: str, monto: Optional[float] = None) -> None:
     """Salda una factura que habia quedado a credito: baja la deuda (2010) y
     sale la plata de donde de verdad salio. Sin esto, `2010 Cuentas por
     pagar` solo crece y nunca refleja que ya se le pago al proveedor.
     """
     cuenta_pago = CUENTA_LIQUIDACION_CREDITO.get(forma_pago, "1010")
+    # Sin monto, lo que falta: la factura entera, o el resto despues de abonos.
+    pagado = round(factura.saldo if monto is None else monto, 2)
     crear_asiento(
         db,
-        f"Pago factura {factura.numero_factura} ({factura.proveedor_nombre})",
-        [("2010", factura.a_pagar, 0.0), (cuenta_pago, 0.0, factura.a_pagar)],
+        f"{'Abono a' if monto is not None else 'Pago'} factura {factura.numero_factura} ({factura.proveedor_nombre})",
+        [("2010", pagado, 0.0), (cuenta_pago, 0.0, pagado)],
         origen="pago_factura",
         referencia_id=factura.id,
     )

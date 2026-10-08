@@ -18,7 +18,7 @@ import { ALMACEN_DE } from '../lib/tiposArticulo'
 import CargarFactura from './partes/compras/CargarFactura'
 import { cuantosPendientes, procesarPendientes } from '../lib/pendientesCompras'
 import { pedirReferencia } from '../lib/pagos'
-import type { AlertaPrecio, ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor } from '../lib/types'
+import type { AlertaPrecio, ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor, Reclamo } from '../lib/types'
 
 /**
  * Compras: lo que entra al negocio y a dónde va la plata.
@@ -71,6 +71,8 @@ export default function Compras() {
   // Tres meses: una factura a credito se paga a 30 o 60 dias, y hay que verla.
   const [rango, setRango] = useRango('90d')
   const [facturas, setFacturas] = useState<FacturaCompra[]>([])
+  // Lo que no llegó y los proveedores todavía deben (de cualquier fecha).
+  const [reclamos, setReclamos] = useState<Reclamo[]>([])
   const orden = useOrden<FacturaCompra>(
     {
       fecha: (f) => new Date(f.fecha),
@@ -110,6 +112,7 @@ export default function Compras() {
 
   function cargar() {
     api.listarFacturasCompra(rango).then(setFacturas)
+    api.listarReclamos().then(setReclamos).catch(() => undefined)
     api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
     api.configFiscal().then(setFiscal)
     api.listarProveedores().then(setProveedores)
@@ -149,11 +152,49 @@ export default function Compras() {
       titulo: `Nota de crédito de ${f.proveedor_nombre}`,
       texto: `Sobre la factura ${f.numero_factura}. ¿Qué pasó?`,
       opciones: [
+        { valor: 'faltante_anotar', texto: 'Llegó menos de lo facturado', detalle: 'Todavía sin nota del proveedor: lo que falta sale del inventario y queda como reclamo, no como pérdida.' },
+        ...((f.reclamos?.length ?? 0) > 0
+          ? [{ valor: 'faltante', texto: 'Llegó la nota por lo que faltó', detalle: `Cierra lo reclamado: ${f.reclamos!.map((r) => `${r.cantidad} ${r.unidad} de ${r.ingrediente_nombre}`).join(', ')}.` }]
+          : []),
         { valor: 'devolucion', texto: 'Devolución', detalle: 'La mercancía vuelve al proveedor y sale del inventario.' },
         { valor: 'descuento', texto: 'Descuento', detalle: 'Te quedas la mercancía y te rebajan el precio.' },
       ],
-    })) as 'devolucion' | 'descuento' | null
+    })) as 'devolucion' | 'descuento' | 'faltante' | 'faltante_anotar' | null
     if (!tipo) return
+
+    if (tipo === 'faltante_anotar') {
+      const r = await dialogo.pedir({
+        titulo: 'Lo que no llegó',
+        texto: 'Cuánto faltó de cada renglón. Queda como reclamo al proveedor hasta que mande su nota de crédito.',
+        ancho: 'md',
+        campos: [
+          { nombre: 'motivo', etiqueta: 'Qué pasó', placeholder: 'Llegaron 8 de 10', opcional: true },
+          ...f.items.map((it) => ({
+            nombre: `item_${it.ingrediente_id}`,
+            etiqueta: it.ingrediente_nombre,
+            sufijo: `${it.unidad}, la factura trae ${it.cantidad}`,
+            tipo: 'numero' as const,
+            valor: 0,
+            max: it.cantidad,
+          })),
+        ],
+        aceptar: 'Anotar faltante',
+      })
+      if (!r) return
+      const items = f.items
+        .map((it) => ({ ingrediente_id: it.ingrediente_id, cantidad: Number(r[`item_${it.ingrediente_id}`]) }))
+        .filter((it) => it.cantidad > 0)
+      if (items.length === 0) return
+      await accionFactura(() => api.anotarFaltantes(f.id, items, r.motivo))
+      return
+    }
+
+    if (tipo === 'faltante') {
+      const numero = await dialogo.pedirTexto({ titulo: 'Nota de crédito por lo que faltó', etiqueta: 'Número de la nota de crédito' })
+      if (!numero) return
+      await accionFactura(() => api.crearNotaCredito(f.id, { numero, tipo: 'faltante' }))
+      return
+    }
 
     if (tipo === 'descuento') {
       const r = await dialogo.pedir({
@@ -242,6 +283,33 @@ export default function Compras() {
     }
   }
 
+  // Un pago a cuenta: lo que se le da hoy al proveedor, sin saldar la factura.
+  async function abonar(f: FacturaCompra) {
+    const forma = liquidacion[f.id] || 'Efectivo'
+    const debe = f.saldo ?? f.a_pagar
+    const monto = await dialogo.pedirNumero({
+      titulo: `Abono a ${f.proveedor_nombre}`,
+      texto: `Factura ${f.numero_factura}: se deben $${fmtNum(debe, 2)}${f.abonado ? ` (ya se abonaron $${fmtNum(f.abonado, 2)})` : ''}.`,
+      etiqueta: 'Cuánto se le paga hoy',
+      sufijo: '$',
+      min: 0,
+      aceptar: 'Registrar abono',
+    })
+    if (monto === null || !(monto > 0)) return
+    const referencia = await pedirReferencia(forma, dialogo.pedirTexto)
+    if (referencia === null) return
+    setError('')
+    setPagando(f.id)
+    try {
+      await api.abonarFacturaCompra(f.id, monto, forma, referencia)
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar el abono')
+    } finally {
+      setPagando(null)
+    }
+  }
+
   const hoy = new Date()
   const visibles = facturas.filter((f) => !oculto(`factura:${f.id}`))
   const pendientes = visibles
@@ -252,7 +320,7 @@ export default function Compras() {
       return va - vb
     })
   // Lo que se le debe al proveedor: sin el IVA retenido, que es del SENIAT.
-  const totalPendiente = pendientes.reduce((sum, f) => sum + (f.a_pagar ?? f.total), 0)
+  const totalPendiente = pendientes.reduce((sum, f) => sum + (f.saldo ?? f.a_pagar ?? f.total), 0)
   function diasVencida(f: FacturaCompra): number | null {
     if (!f.fecha_vencimiento) return null
     return Math.floor((hoy.getTime() - new Date(f.fecha_vencimiento).getTime()) / 86400000)
@@ -320,6 +388,44 @@ export default function Compras() {
               </Seccion>
             )}
 
+            {reclamos.length > 0 && (
+              <Seccion
+                titulo="Lo que los proveedores deben"
+                ayuda="Mercancía facturada que no llegó. Cuando llegue la nota de crédito, regístrala en la factura; si nunca llega, dala por perdida."
+                accion={
+                  <span className="text-sm text-neutral-500">
+                    Nos deben <span className="font-display font-semibold text-neutral-900 tabular-nums">${fmtNum(reclamos.reduce((s, r) => s + r.valor, 0), 2)}</span>
+                  </span>
+                }
+              >
+                <div className="space-y-2">
+                  {reclamos.map((r) => (
+                    <div key={r.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-neutral-500/6 px-3 py-2.5 text-sm">
+                      <span className="font-medium flex-1 min-w-[160px]">
+                        {r.cantidad} {r.unidad} de {r.ingrediente_nombre}
+                        <span className="block text-xs text-neutral-500">
+                          {r.proveedor_nombre} · fact. {r.numero_factura} · {new Date(r.fecha).toLocaleDateString('es-VE')}
+                          {r.motivo && ` · ${r.motivo}`}
+                        </span>
+                      </span>
+                      <span className="font-semibold tabular-nums w-24 text-right">${fmtNum(r.valor, 2)}</span>
+                      <Boton
+                        tono="suave"
+                        className="!py-1.5 !px-3 !text-xs"
+                        onClick={async () => {
+                          if (!(await dialogo.confirmar({ titulo: '¿Dar por perdido?', texto: `El proveedor no va a acreditar ${r.cantidad} ${r.unidad} de ${r.ingrediente_nombre}: pasa a pérdida ($${fmtNum(r.valor, 2)}).`, aceptar: 'Dar por perdido', peligro: true })))
+                            return
+                          await accionFactura(() => api.darReclamoPorPerdido(r.id))
+                        }}
+                      >
+                        Dar por perdido
+                      </Boton>
+                    </div>
+                  ))}
+                </div>
+              </Seccion>
+            )}
+
             {pendientes.length > 0 && (
               <Seccion
                 titulo="Cuentas por pagar"
@@ -347,7 +453,10 @@ export default function Compras() {
                               : `Vence ${new Date(f.fecha_vencimiento).toLocaleDateString('es-VE')}`
                             : 'Sin fecha de vencimiento'}
                         </span>
-                        <span className="font-semibold tabular-nums w-24 text-right">${fmtNum(f.a_pagar ?? f.total, 2)}</span>
+                        <span className="font-semibold tabular-nums w-28 text-right">
+                          ${fmtNum(f.saldo ?? f.a_pagar ?? f.total, 2)}
+                          {!!f.abonado && <span className="block text-[11px] font-normal text-neutral-500">abonado ${fmtNum(f.abonado, 2)}</span>}
+                        </span>
                         <select
                           value={liquidacion[f.id] || 'Efectivo'}
                           onChange={(e) => setLiquidacion((prev) => ({ ...prev, [f.id]: e.target.value }))}
@@ -357,8 +466,11 @@ export default function Compras() {
                           <option value="Efectivo">Efectivo</option>
                           <option value="Banco">Banco</option>
                         </select>
+                        <Boton tono="suave" onClick={() => void abonar(f)} disabled={pagando === f.id} className="!py-1.5 !px-3 !text-xs">
+                          Abonar
+                        </Boton>
                         <Boton onClick={() => marcarPagada(f)} disabled={pagando === f.id} className="!py-1.5 !px-3 !text-xs">
-                          Marcar pagada
+                          {f.abonado ? 'Pagar el resto' : 'Marcar pagada'}
                         </Boton>
                       </div>
                     )

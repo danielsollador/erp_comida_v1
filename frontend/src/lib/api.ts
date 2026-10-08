@@ -1,5 +1,7 @@
 import type {
   ConceptoGasto,
+  Reclamo,
+  Sustitucion,
   ActivoFijo,
   AsientoContable,
   BalanceGeneral,
@@ -744,6 +746,14 @@ export const api = {
     req<Ingrediente>(`/inventario/mermas/${id}/revertir`, { method: 'POST' }),
 
   verReceta: (varianteId: number) => req<RecetaItem[]>(`/inventario/recetas/${varianteId}`),
+  listarSustituciones: () => req<Sustitucion[]>('/inventario/sustituciones'),
+  crearSustitucion: (d: { original_id: number; sustituto_id: number; factor: number; nota?: string }) =>
+    req<Sustitucion>('/inventario/sustituciones', { method: 'POST', body: JSON.stringify(d) }),
+  terminarSustitucion: (id: number) => req<{ ok: boolean }>(`/inventario/sustituciones/${id}`, { method: 'DELETE' }),
+  /** Lo que lleva un combo (otros productos del menú). Vacío = no es combo. */
+  verCombo: (varianteId: number) => req<{ variante_id: number; nombre: string; cantidad: number }[]>(`/inventario/combos/${varianteId}`),
+  guardarCombo: (varianteId: number, items: { variante_id: number; cantidad: number }[]) =>
+    req<{ variante_id: number; nombre: string; cantidad: number }[]>(`/inventario/combos/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
   actualizarReceta: (varianteId: number, items: { ingrediente_id: number; cantidad_por_unidad: number }[]) =>
     req<RecetaItem[]>(`/inventario/recetas/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
 
@@ -797,7 +807,7 @@ export const api = {
     facturaId: number,
     datos: {
       numero: string
-      tipo: 'devolucion' | 'descuento'
+      tipo: 'devolucion' | 'descuento' | 'faltante'
       motivo?: string
       base_imponible?: number
       iva?: number
@@ -1106,6 +1116,8 @@ export const api = {
     fecha_vencimiento?: string
     // Solo si categoria es "Activos": en cuantos meses se gasta el equipo.
     vida_util_meses?: number
+    // Ya se aviso que parece cargada y se dijo "guardar igual".
+    confirmar_duplicado?: boolean
     // Obligatoria si se carga ya pagada y no fue en efectivo (el backend la
     // exige igual, ver contabilidad.METODOS_CON_REFERENCIA).
     referencia_pago?: string
@@ -1167,6 +1179,15 @@ export const api = {
     req<{ aprendidas: number }>('/compras/equivalencias/aprender', { method: 'POST', body: JSON.stringify(cuerpo) }),
   olvidarEquivalencia: (id: number) => req(`/compras/equivalencias/${id}`, { method: 'DELETE' }),
   /** `referencia` es obligatoria si no se salda en efectivo. */
+  anotarFaltantes: (id: number, items: { ingrediente_id: number; cantidad: number }[], motivo?: string) =>
+    req<FacturaCompra>(`/compras/facturas/${id}/faltantes`, { method: 'POST', body: JSON.stringify({ items, motivo }) }),
+  listarReclamos: () => req<Reclamo[]>('/compras/reclamos'),
+  darReclamoPorPerdido: (id: number) => req<Reclamo>(`/compras/reclamos/${id}/perder`, { method: 'POST' }),
+  abonarFacturaCompra: (id: number, monto: number, forma_pago: string, referencia?: string) =>
+    req<FacturaCompra>(`/compras/facturas/${id}/abonos`, {
+      method: 'POST',
+      body: JSON.stringify({ monto, forma_pago, referencia }),
+    }),
   pagarFacturaCompra: (id: number, forma_pago: string, referencia?: string) =>
     req<FacturaCompra>(`/compras/facturas/${id}/pagar`, {
       method: 'POST',

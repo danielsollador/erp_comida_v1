@@ -1217,6 +1217,37 @@ export type LineaGasto = {
   cuenta: string
 }
 
+/** Lo que la factura cobra y no llegó: el proveedor lo debe hasta su nota. */
+export type Reclamo = {
+  id: number
+  factura_id: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  cantidad: number
+  valor: number
+  motivo: string
+  fecha: string
+  estado: 'abierto' | 'acreditado' | 'perdido'
+  numero_factura: string
+  proveedor_nombre: string
+}
+
+/** "Hoy el pollo es pavo": vigente hasta `hasta`. */
+export type Sustitucion = {
+  id: number
+  original_id: number
+  original: string
+  sustituto_id: number
+  sustituto: string
+  unidad_original: string
+  unidad_sustituto: string
+  factor: number
+  desde: string
+  hasta: string
+  nota: string
+}
+
 export type FacturaCompra = {
   id: number
   numero_factura: string
@@ -1238,6 +1269,12 @@ export type FacturaCompra = {
   comprobante_retencion: string
   /** Lo que se le paga al proveedor: total menos lo retenido. */
   a_pagar: number
+  /** A crédito: lo que ya se abonó y lo que falta (con las notas de crédito descontadas). */
+  abonado?: number
+  saldo?: number
+  abonos?: { id: number; fecha: string; monto: number; forma_pago: string; referencia: string }[]
+  /** Lo que no llegó y el proveedor todavía debe. */
+  reclamos?: Reclamo[]
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
   forma_pago: 'Efectivo' | 'Banco' | 'Credito'
   /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
