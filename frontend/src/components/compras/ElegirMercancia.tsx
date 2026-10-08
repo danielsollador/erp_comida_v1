@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CONCEPTOS } from '../../lib/compras'
 import { llano } from '../../lib/filtros'
 import { ALMACEN_DE } from '../../lib/tiposArticulo'
-import type { Ingrediente } from '../../lib/types'
+import type { ConceptoGasto, Ingrediente } from '../../lib/types'
 import Icono from '../Icono'
 import { PuntoTipo } from './Almacenes'
 
@@ -12,6 +13,9 @@ import { PuntoTipo } from './Almacenes'
  * se lleva y cuánto hay, para no confundir "Queso" en kg con "Queso" en
  * unidad. Al final siempre está "Crear mercancía nueva", que abre la ventana
  * con las parecidas (NuevaMercancia).
+ *
+ * En una factura el renglón puede no ser mercancía (el flete, un servicio):
+ * con `alConcepto`, debajo salen esos conceptos para marcarlo de un toque.
  */
 export default function ElegirMercancia({
   ingredientes,
@@ -23,6 +27,7 @@ export default function ElegirMercancia({
   sugerencia,
   permitirPreparaciones = false,
   placeholder,
+  alConcepto,
 }: {
   ingredientes: Ingrediente[]
   valor: number
@@ -35,6 +40,8 @@ export default function ElegirMercancia({
   /** Una receta de preparación puede llevar otra preparación. */
   permitirPreparaciones?: boolean
   placeholder?: string
+  /** Para un renglón de factura: marcarlo como flete, servicio, equipo u otro. */
+  alConcepto?: (c: ConceptoGasto) => void
 }) {
   const [abierto, setAbierto] = useState(false)
   const [texto, setTexto] = useState('')
@@ -193,6 +200,27 @@ export default function ElegirMercancia({
             <Icono nombre="mas" size={15} />
             Crear mercancía nueva{texto.trim() ? `: «${texto.trim()}»` : ''}
           </li>
+          {alConcepto && (
+            <li role="presentation" className="mt-1 border-t border-neutral-500/10 px-2.5 pt-2 pb-1.5">
+              <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">No es mercancía</span>
+              <span className="flex flex-wrap gap-1.5">
+                {CONCEPTOS.map((c) => (
+                  <button
+                    key={c.valor}
+                    type="button"
+                    onClick={() => {
+                      setAbierto(false)
+                      alConcepto(c.valor)
+                    }}
+                    title={c.ayuda}
+                    className="vp-control rounded-full px-3 py-1 text-xs font-medium text-neutral-700"
+                  >
+                    {c.texto}
+                  </button>
+                ))}
+              </span>
+            </li>
+          )}
         </ul>
       )}
     </div>

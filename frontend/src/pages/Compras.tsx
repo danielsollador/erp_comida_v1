@@ -12,7 +12,7 @@ import Icono from '../components/Icono'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
-import { TEXTO_CATEGORIA } from '../lib/compras'
+import { TEXTO_CATEGORIA, TEXTO_CONCEPTO } from '../lib/compras'
 import { fmtNum } from '../lib/moneda'
 import { ALMACEN_DE } from '../lib/tiposArticulo'
 import CargarFactura from './partes/compras/CargarFactura'
@@ -267,13 +267,16 @@ export default function Compras() {
     let base = 0
     for (const f of visibles) {
       base += f.base_imponible
-      if (f.items.length === 0) {
+      const gastos = f.gastos ?? []
+      if (f.items.length === 0 && gastos.length === 0) {
         otros += f.base_imponible
         continue
       }
-      const suma = f.items.reduce((s, i) => s + i.subtotal, 0)
+      // El recargo y el descuento caen parejo sobre la mercancia y lo demas.
+      const suma = f.items.reduce((s, i) => s + i.subtotal, 0) + gastos.reduce((s, g) => s + g.monto, 0)
       const factor = suma > 0 ? f.base_imponible / suma : 1
       for (const i of f.items) por.set(i.tipo, (por.get(i.tipo) ?? 0) + i.subtotal * factor)
+      for (const g of gastos) otros += g.monto * factor
     }
     const partes: ParteDeLaPlata[] = [...por].map(([tipo, monto]) => ({ tipo: tipo as Ingrediente['tipo'], monto }))
     const deposito = partes.filter((p) => ALMACEN_DE[p.tipo].destino === 'deposito').reduce((s, p) => s + p.monto, 0)
@@ -512,6 +515,7 @@ function FilaFactura({
   const porTipo = new Map<Ingrediente['tipo'], number>()
   for (const it of f.items) porTipo.set(it.tipo, (porTipo.get(it.tipo) ?? 0) + 1)
   const tipos = [...porTipo.entries()]
+  const gastos = f.gastos ?? []
   return (
     <>
       <tr className="border-t border-neutral-100 align-top cursor-pointer hover:bg-neutral-500/5" onClick={alAbrir}>
@@ -521,12 +525,18 @@ function FilaFactura({
         </td>
         <td className="p-3 font-medium">{f.proveedor_nombre}</td>
         <td className="p-3 text-neutral-600">
-          {f.items.length > 0 ? (
+          {f.items.length > 0 || gastos.length > 0 ? (
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               {tipos.map(([tipo, n]) => (
                 <span key={tipo} className="inline-flex items-center gap-1.5">
                   <PuntoTipo tipo={tipo} />
                   {n} {ALMACEN_DE[tipo].texto.toLowerCase()}
+                </span>
+              ))}
+              {gastos.map((g) => (
+                <span key={`g-${g.id}`} className="inline-flex items-center gap-1.5">
+                  <span aria-hidden className="w-2 h-2 rounded-full ring-1 ring-neutral-400" />
+                  {TEXTO_CONCEPTO[g.concepto].toLowerCase()}
                 </span>
               ))}
             </span>
@@ -560,7 +570,7 @@ function FilaFactura({
         <tr className="bg-neutral-500/4">
           <td colSpan={6} className="px-3 pb-3 pt-1">
             <div className="rounded-2xl bg-neutral-500/6 p-3 sm:p-4">
-              {f.items.length > 0 ? (
+              {f.items.length > 0 || gastos.length > 0 ? (
                 <ul className="divide-y divide-neutral-500/10">
                   {f.items.map((it) => (
                     <li key={it.id} className="flex items-center gap-3 py-2 text-sm">
@@ -572,6 +582,18 @@ function FilaFactura({
                         {it.exento && <span className="text-neutral-400"> · exento</span>}
                       </span>
                       <span className="tabular-nums font-semibold w-20 text-right shrink-0">${fmtNum(it.subtotal, 2)}</span>
+                    </li>
+                  ))}
+                  {gastos.map((g) => (
+                    <li key={`g-${g.id}`} className="flex items-center gap-3 py-2 text-sm">
+                      <span aria-hidden className="w-2 h-2 rounded-full ring-1 ring-neutral-400 shrink-0" />
+                      <span className="font-medium flex-1 min-w-0 truncate">
+                        {TEXTO_CONCEPTO[g.concepto]}
+                        {g.descripcion && <span className="font-normal text-neutral-500"> · {g.descripcion}</span>}
+                      </span>
+                      <span className="text-xs text-neutral-500 shrink-0">{g.concepto === 'Equipo' ? 'a equipos' : 'a gasto'}</span>
+                      {g.exento && <span className="text-xs text-neutral-400 shrink-0">exento</span>}
+                      <span className="tabular-nums font-semibold w-20 text-right shrink-0">${fmtNum(g.monto, 2)}</span>
                     </li>
                   ))}
                 </ul>

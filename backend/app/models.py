@@ -907,6 +907,10 @@ class FacturaCompra(Base):
         return round(self.total - (self.iva_retenido or 0), 2)
 
     items = relationship("FacturaCompraItem", back_populates="factura", cascade="all, delete-orphan")
+    # Lo que la factura cobra y NO es mercancia: el flete, un servicio, un
+    # equipo. Va renglon por renglon junto a la mercancia (una factura trae
+    # pollo y el flete juntos) y no mueve stock.
+    gastos = relationship("FacturaCompraGasto", back_populates="factura", cascade="all, delete-orphan")
     notas_credito = relationship(
         "NotaCreditoCompra", back_populates="factura", cascade="all, delete-orphan"
     )
@@ -969,6 +973,33 @@ class FacturaCompraItem(Base):
     @property
     def subtotal(self):
         return round(self.cantidad * self.costo_unitario, 2)
+
+
+class FacturaCompraGasto(Base):
+    """Un renglon de la factura que no es mercancia: flete, servicio, equipo.
+
+    Vive aparte de FacturaCompraItem a proposito: todo lo que lee los
+    renglones de mercancia (kardex, costo, alertas de precio, reposicion)
+    supone que cada uno tiene su insumo, y este no lo tiene. El flete va
+    separado y con su propia cuenta porque lleva retencion de ISLR aparte.
+    """
+
+    __tablename__ = "TRX416_COM_FACTURA_GASTO"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    concepto = Column(String, nullable=False)  # Flete|Servicio|Equipo|Otro
+    descripcion = Column(String, default="")
+    monto = Column(Float, nullable=False)  # sin IVA, en dolares, como el papel
+    exento = Column(Boolean, default=False)
+    # Congelada al guardar, igual que la del renglon de mercancia.
+    cuenta = Column(String, default="")
+
+    factura = relationship("FacturaCompra", back_populates="gastos")
+
+    @property
+    def subtotal(self):
+        return round(self.monto, 2)
 
 
 class SoporteFactura(Base):

@@ -2,7 +2,7 @@ import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import contabilidad, costeo, impuestos, kardex, models, schemas, tasas
 from ..database import get_db
@@ -84,6 +84,21 @@ def _referencia_del_pago(forma_pago: str, referencia) -> str:
     return limpia
 
 
+# Con renglones de gasto la categoria de la factura ya no la elige nadie: sale
+# de lo que trae. Se sigue guardando porque los listados y las facturas viejas
+# la usan para saber de que se trata.
+_CATEGORIA_DE_CONCEPTO = {"Flete": "Servicios", "Servicio": "Servicios", "Equipo": "Activos", "Otro": "Otros"}
+
+
+def _categoria_de(factura: schemas.FacturaCompraCreate) -> str:
+    if not factura.gastos:
+        return factura.categoria
+    if factura.items:
+        return "Insumos"
+    categorias = {_CATEGORIA_DE_CONCEPTO[g.concepto] for g in factura.gastos}
+    return categorias.pop() if len(categorias) == 1 else "Otros"
+
+
 def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
     return schemas.FacturaCompra(
         id=factura.id,
@@ -127,6 +142,7 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
             )
             for i in factura.items
         ],
+        gastos=[schemas.LineaGasto.model_validate(g) for g in (factura.gastos or [])],
     )
 
 
@@ -135,7 +151,10 @@ def listar_facturas(rango: Rango = Depends(), db: Session = Depends(get_db)):
     inicio, fin, _ = rango.resolver(dias=60)
     facturas = (
         db.query(models.FacturaCompra)
-        .options(joinedload(models.FacturaCompra.items).joinedload(models.FacturaCompraItem.ingrediente))
+        .options(
+            joinedload(models.FacturaCompra.items).joinedload(models.FacturaCompraItem.ingrediente),
+            selectinload(models.FacturaCompra.gastos),
+        )
         .filter(models.FacturaCompra.fecha >= inicio, models.FacturaCompra.fecha < fin)
         .order_by(models.FacturaCompra.id.desc())
         .all()
@@ -203,23 +222,32 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         else _referencia_del_pago(factura.forma_pago, factura.referencia_pago)
     )
 
-    if factura.items:
+    for g in factura.gastos:
+        if g.concepto not in contabilidad.CUENTA_POR_CONCEPTO_GASTO:
+            raise HTTPException(status_code=400, detail=f"«{g.concepto}» no es un concepto de gasto: Flete, Servicio, Equipo u Otro.")
+        if g.monto <= 0:
+            raise HTTPException(status_code=400, detail=f"El monto del renglón de {g.concepto.lower()} debe ser mayor a cero")
+    ingredientes = {}
+    if factura.items or factura.gastos:
         # Con renglones: la base la calcula el sistema sumando lo que de
         # verdad se compro, no lo que alguien tipeo aparte - evita que un
         # numero de cabecera quede desincronizado de sus propios renglones.
         db.expire_all()  # otro hilo pudo haber movido el stock de estos insumos
-        ingredientes = {
-            i.id: i
-            for i in db.query(models.Ingrediente)
-            .filter(models.Ingrediente.id.in_([it.ingrediente_id for it in factura.items]))
-            .with_for_update(of=models.Ingrediente)
-        }
+        if factura.items:
+            ingredientes = {
+                i.id: i
+                for i in db.query(models.Ingrediente)
+                .filter(models.Ingrediente.id.in_([it.ingrediente_id for it in factura.items]))
+                .with_for_update(of=models.Ingrediente)
+            }
         for item in factura.items:
             if item.ingrediente_id not in ingredientes:
                 raise HTTPException(status_code=404, detail=f"Ingrediente {item.ingrediente_id} no existe")
             if item.cantidad <= 0:
                 raise HTTPException(status_code=400, detail="La cantidad de cada renglón debe ser mayor a cero")
-        bruta_exacta = sum(it.cantidad * it.costo_unitario for it in factura.items)
+        bruta_exacta = sum(it.cantidad * it.costo_unitario for it in factura.items) + sum(
+            g.monto for g in factura.gastos
+        )
         base_bruta = round(bruta_exacta, 2)
         ajuste = round(factura.recargo - factura.descuento, 2)
         base_imponible = round(base_bruta + ajuste, 2)
@@ -239,22 +267,14 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         # El IVA se calcula aca, no se confia en lo que mando el cliente: solo
         # asi el "exento" tiene efecto real. Sin esto, marcar la harina como
         # exenta no cambiaba un centavo del IVA de la factura.
-        base_gravada = round(
-            sum(
-                it.cantidad * it.costo_unitario
-                for it in factura.items
-                if not _exento_de(it, ingredientes)
-            )
-            * factor,
-            2,
-        )
+        gravado_bruto = sum(
+            it.cantidad * it.costo_unitario for it in factura.items if not _exento_de(it, ingredientes)
+        ) + sum(g.monto for g in factura.gastos if not g.exento)
+        base_gravada = round(gravado_bruto * factor, 2)
         iva_calculado = round(base_gravada * impuestos.tasa_iva(db) / 100, 2)
         # Lo mismo sin redondear, para los Bs del libro (ver impuestos.montos_bs).
         base_exacta = bruta_exacta + factura.recargo - factura.descuento
-        gravado_exacto = (
-            sum(it.cantidad * it.costo_unitario for it in factura.items if not _exento_de(it, ingredientes))
-            * (base_exacta / bruta_exacta if bruta_exacta else 1.0)
-        )
+        gravado_exacto = gravado_bruto * (base_exacta / bruta_exacta if bruta_exacta else 1.0)
     else:
         if not factura.base_imponible or factura.base_imponible <= 0:
             raise HTTPException(status_code=400, detail="La base imponible debe ser mayor a cero")
@@ -277,19 +297,20 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
     if tasa_bcv:
         gravado_bs, exento_bs, iva_bs = impuestos.montos_bs(
             base_exacta, gravado_exacto, iva_calculado, tasa_bcv,
-            iva_de_la_base=bool(factura.items), tasa_pct=impuestos.tasa_iva(db),
+            iva_de_la_base=bool(factura.items or factura.gastos), tasa_pct=impuestos.tasa_iva(db),
         )
 
     retencion = _retencion(db, factura, factura_rif, iva_calculado, iva_bs)
 
     es_credito = factura.forma_pago == "Credito"
+    categoria = _categoria_de(factura)
     db_factura = models.FacturaCompra(
         numero_factura=factura.numero_factura,
         proveedor_nombre=factura.proveedor_nombre,
         proveedor_rif=factura_rif,
         fecha=factura.fecha or ahora(),
         fecha_emision=factura.fecha_emision,
-        categoria=factura.categoria,
+        categoria=categoria,
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
         base_imponible=base_imponible,
@@ -345,12 +366,40 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             nota=f"Factura {db_factura.numero_factura} - {db_factura.proveedor_nombre}",
         )
 
+    gastos = []
+    for g in factura.gastos:
+        gasto = models.FacturaCompraGasto(
+            factura_id=db_factura.id,
+            concepto=g.concepto,
+            descripcion=(g.descripcion or "").strip(),
+            monto=round(g.monto, 2),
+            exento=g.exento,
+            cuenta=contabilidad.CUENTA_POR_CONCEPTO_GASTO[g.concepto],
+        )
+        db.add(gasto)
+        gastos.append((gasto, g))
+
     db.flush()
+    db.refresh(db_factura, ["gastos"])
     contabilidad.registrar_factura_compra(db, db_factura)
+
+    # Un equipo comprado renglon por renglon nace como bien, con el recargo o
+    # el descuento que le toca, igual que la mercancia.
+    for gasto, g in gastos:
+        if gasto.concepto == "Equipo":
+            db.add(
+                models.ActivoFijo(
+                    nombre=gasto.descripcion or f"Equipo (fact. {db_factura.numero_factura})",
+                    valor=round(gasto.monto * factor, 2),
+                    fecha_compra=db_factura.fecha,
+                    vida_util_meses=g.vida_util_meses or 60,
+                    factura_id=db_factura.id,
+                )
+            )
 
     # Una compra de activos crea el bien para que empiece a depreciarse. Antes
     # entraba a 1050 y se quedaba ahi a valor de compra para siempre.
-    if db_factura.categoria == "Activos":
+    if db_factura.categoria == "Activos" and not factura.gastos:
         db.add(
             models.ActivoFijo(
                 nombre=db_factura.descripcion or f"Activo (fact. {db_factura.numero_factura})",
