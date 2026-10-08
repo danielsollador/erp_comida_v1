@@ -949,16 +949,19 @@ async def editar_pedido(
     # barra: quitarla es botar comida por la puerta de atras; lo que toca es
     # anular, o devolver y volver a cobrar, que dejan rastro. Agregar si se
     # puede, y lo de la vitrina se cambia libre: la cocina nunca lo toco.
-    if cocina_termino(pedido):
-        for clave, filas in actuales.items():
-            hechas = [f for f in filas if f.a_cocina is not False and f.preparado]
-            if hechas and pedidas.get(clave, 0) < sum(f.cantidad for f in filas):
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"La cocina ya terminó {filas[0].nombre} de la comanda "
-                    f"#{pedido.numero}: eso ya no se quita. Puedes agregar cosas; "
-                    "para quitar lo que ya se cocinó, anúlala o devuélvela y vuelve a cobrar.",
-                )
+    # Vale renglon por renglon y no solo con la comanda terminada: desde el
+    # 8-oct se edita con la cocina a medias, y una empanada ya hecha es comida
+    # en la barra aunque los pastelitos sigan en el sarten. Se puede bajar
+    # hasta lo que la cocina hizo, nunca por debajo.
+    for clave, filas in actuales.items():
+        hecho = sum(f.cantidad for f in filas if _ya_hecho(f))
+        if hecho and pedidas.get(clave, 0) < hecho:
+            raise HTTPException(
+                status_code=409,
+                detail=f"La cocina ya terminó {hecho} de {filas[0].nombre} en la comanda "
+                f"#{pedido.numero}: eso ya no se quita. Puedes agregar cosas; "
+                "para quitar lo que ya se cocinó, anúlala o devuélvela y vuelve a cobrar.",
+            )
 
     def _precio_y_costo(clave: tuple) -> tuple:
         """El precio de un renglon que YA ESTABA no se recalcula.
@@ -1366,6 +1369,16 @@ async def editar_pedido(
     db.flush()
     db.expire(pedido, ["items"])
     pedido.a_cocina = any(i.a_cocina is not False for i in pedido.items)
+    # Si ya se le habia entregado al cliente y se le agrego algo, lo nuevo
+    # todavia hay que darselo: vuelve al mostrador ("por entregar") en cuanto
+    # este listo. Sin esto la cocina lo hacia y nadie lo entregaba.
+    if pedido.entregado_en is not None and any(
+        pedidas.get(c, 0) > sum(f.cantidad for f in actuales.get(c, [])) for c in pedidas
+    ):
+        pedido.entregado_en = None
+        # Un refresco de vitrina ya esta listo: su reloj del mostrador empieza
+        # ahora. Lo que va a cocina lo pone la cocina al terminarlo.
+        pedido.listo_en = None if any(not i.preparado for i in pedido.items) else ahora()
     if any(not i.preparado for i in pedido.items):
         if cocina_ya_habia_terminado or mandar_a_cocina:
             pedido.cocinando_desde = None
@@ -1805,6 +1818,16 @@ async def cambiar_cocina(
     # Como queda frente a la cocina: la misma regla que al editar.
     db.flush()
     pedido.a_cocina = any(i.a_cocina is not False for i in pedido.items)
+    # Si ya se le habia entregado al cliente y se le agrego algo, lo nuevo
+    # todavia hay que darselo: vuelve al mostrador ("por entregar") en cuanto
+    # este listo. Sin esto la cocina lo hacia y nadie lo entregaba.
+    if pedido.entregado_en is not None and any(
+        pedidas.get(c, 0) > sum(f.cantidad for f in actuales.get(c, [])) for c in pedidas
+    ):
+        pedido.entregado_en = None
+        # Un refresco de vitrina ya esta listo: su reloj del mostrador empieza
+        # ahora. Lo que va a cocina lo pone la cocina al terminarlo.
+        pedido.listo_en = None if any(not i.preparado for i in pedido.items) else ahora()
     if any(not i.preparado for i in pedido.items):
         if ya_tenia_cocina or a_cocina:
             # Lo nuevo por cocinar la devuelve a la cola como nueva: si no,
