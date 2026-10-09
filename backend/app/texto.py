@@ -11,6 +11,7 @@ Es SOLO para comparar. Lo que se guarda y lo que se muestra es siempre el
 texto tal como lo escribio el dueño.
 """
 
+import re
 import unicodedata
 
 
@@ -45,3 +46,14 @@ def nombre_limpio(texto: str) -> str:
             continue
         limpias.append(p)
     return " ".join(limpias)
+
+
+def clave_de_nombre(texto: str) -> str:
+    """Para saber si dos mercancias son LA MISMA por su nombre: ademas de
+    tildes, mayusculas y espacios, ignora los signos ("Crema de leche." y
+    "Crema de leche" son una; "Queso 0,5 kg" y "Queso 0.5 kg" tambien).
+
+    >>> clave_de_nombre("Crema de leche.") == clave_de_nombre("crema de LECHE")
+    True
+    """
+    return " ".join(re.sub(r"[^\w\s]|_", " ", comparable(texto)).split())

@@ -108,6 +108,8 @@ const ORIGEN_LABEL: Record<string, string> = {
   retiro: 'Retiro del dueño',
   sobrante_revertido: 'Sobrante revertido',
   apertura_dia: 'Apertura del día',
+  reclamo_proveedor: 'Faltante reclamado al proveedor',
+  reclamo_perdido: 'Faltante no acreditado',
 }
 
 const TIPO_LABEL: Record<string, string> = {

@@ -450,12 +450,16 @@ def test_la_disponibilidad_avisa_que_el_pollo_es_compartido(client, guiso):
         "lineas": [{"ingrediente_id": guiso["pollo"]["id"], "cantidad": 1 / 0.7}],
     })
     filas = {f["nombre"]: f for f in client.get("/api/inventario/preparaciones/disponibilidad").json()}
-    # 10 kg de pollo dan 8 kg de guiso de pollo (la cebolla da para 16), o 7 de
-    # ranchero, que lleva 1,43 kg de pollo por kilo.
-    assert filas["Guiso de pollo"]["potencial"] == 8
+    # Todo el pollo daria 8 kg de guiso de pollo (la cebolla da para 16) o 7
+    # de ranchero, que lleva 1,43 kg de pollo por kilo.
+    # Pero el pollo es UNO (8-oct): sin ventas todavia, mitad para cada uno.
+    assert filas["Guiso de pollo"]["potencial_solo"] == 8
+    assert filas["Guiso de pollo"]["potencial"] == 4
     assert filas["Guiso de pollo"]["limita"] == "Pollo"
     assert filas["Guiso de pollo"]["comparte_con"] == ["Guiso ranchero"]
-    assert filas["Guiso ranchero"]["potencial"] == 7
+    assert filas["Guiso de pollo"]["reparto_segun"] == "iguales"
+    assert filas["Guiso ranchero"]["potencial_solo"] == 7
+    assert filas["Guiso ranchero"]["potencial"] == 3.5
 
 
 def test_la_receta_es_por_uno(client, libros):

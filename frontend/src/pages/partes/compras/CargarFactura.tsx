@@ -10,7 +10,7 @@ import Icono from '../../../components/Icono'
 import NuevaMercancia, { type Presentacion } from '../../../components/NuevaMercancia'
 import { Numerico } from '../../../components/Teclado'
 import { Filtros } from '../../../components/ui'
-import { api } from '../../../lib/api'
+import { api, ErrorApi } from '../../../lib/api'
 import {
   CONCEPTOS,
   TEXTO_CONCEPTO,
@@ -340,10 +340,16 @@ export default function CargarFactura({
     proveedor_nombre: proveedor.trim(),
     numero_factura: numeroFactura.trim(),
     items: lineas
-      .map((l, indice) => ({ indice, ingrediente_id: l.ingrediente_id, costo_unitario: aUsdVista(Number(l.costo_unitario) || 0) }))
+      .map((l, indice) => ({
+        indice,
+        ingrediente_id: l.concepto ? 0 : l.ingrediente_id,
+        costo_unitario: aUsdVista(Number(l.costo_unitario) || 0),
+        cantidad: Number(l.cantidad) || undefined,
+      }))
       .filter((x) => x.ingrediente_id && x.costo_unitario > 0),
   })
   const avisoPrecio = (i: number) => revision?.precios.find((p) => p.indice === i && p.nivel !== 'normal')
+  const avisoCantidad = (i: number) => revision?.cantidades?.find((c) => c.indice === i)
 
   // ── El pago mixto: las partes tienen que dar lo que se le paga ──────────
   const retenidoFormulario = fiscal.agente_retencion && ivaMostrado > 0 ? (ivaMostrado * Number(retencionEfectiva)) / 100 : 0
@@ -423,6 +429,7 @@ export default function CargarFactura({
     if (l.leido && !l.recordada && !l.paquete && ing && unidadDistinta(l.leido.unidad, ing.unidad))
       return { texto: 'con unidad distinta', tono: 'ojo' }
     if (aviso) return { texto: 'con costo fuera de lo normal', tono: 'ojo' }
+    if (avisoCantidad(i)) return { texto: 'con cantidad fuera de lo normal', tono: 'ojo' }
     return null
   }
 
@@ -654,7 +661,7 @@ export default function CargarFactura({
   }
 
   // ── Guardar ─────────────────────────────────────────────────────────────
-  async function guardar() {
+  async function guardar(forzarDuplicado = false) {
     setError('')
     setExito('')
     if (!numeroFactura.trim() || !proveedor.trim()) return falla('Completa al menos el número de factura y el proveedor', 'cf-numero')
@@ -700,6 +707,7 @@ export default function CargarFactura({
       .then((r) => r.duplicadas)
       .catch(() => [])
     if (
+      !forzarDuplicado &&
       yaCargadas.length > 0 &&
       !(await dialogo.confirmar({
         titulo: 'Esta factura parece ya cargada',
@@ -775,6 +783,8 @@ export default function CargarFactura({
         pagos: esMixto
           ? partesPago.map((p) => ({ forma_pago: p.forma, monto: aUsd(Number(p.monto)), referencia: p.referencia.trim() || undefined }))
           : undefined,
+        // Ya se pregunto y se dijo "guardar igual": el servidor no la rechaza.
+        confirmar_duplicado: forzarDuplicado || yaCargadas.length > 0,
       }
       await anotarAntesDeGuardar(numeroFactura.trim(), cuerpoCompletar)
       const guardada = await api.crearFacturaCompra({ ...comun, items, gastos, iva: ivaLineas })
@@ -811,6 +821,13 @@ export default function CargarFactura({
       onGuardada(r.estado === 'hecho' ? r.alertas : [])
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
+      // Otra tablet la guardo justo antes: el servidor la frena y se pregunta.
+      if (e instanceof ErrorApi && e.status === 409 && e.message.startsWith('Ya está cargada')) {
+        setGuardando(false)
+        if (await dialogo.confirmar({ titulo: 'Esta factura ya entró', texto: `${e.message} ¿La guardo igual?`, aceptar: 'Guardar igual', peligro: true }))
+          return guardar(true)
+        return
+      }
       setError(e instanceof Error ? e.message : 'No se pudo cargar la factura')
     } finally {
       setGuardando(false)
@@ -1067,6 +1084,7 @@ export default function CargarFactura({
                   tasaIva={fiscal.tasa_iva}
                   exento={exentoDe(l)}
                   aviso={avisoPrecio(i)}
+                  avisoCantidad={avisoCantidad(i)?.mensaje}
                   problema={sinMercanciaEn(l) ? { texto: 'Falta decir qué es', tono: 'mal' } : problemaDeRenglon(l, i)}
                   puedeQuitar={lineas.length > 1}
                   conocidos={paquetesConocidos(l.ingrediente_id)}
@@ -1309,7 +1327,7 @@ export default function CargarFactura({
         total={`${monedaCarga}${fmtNum(totalFormulario, 2)}`}
         guardando={guardando}
         onIrA={irA}
-        onGuardar={guardar}
+        onGuardar={() => void guardar()}
       />
     </div>
   )
@@ -1499,6 +1517,7 @@ function Renglon({
   tasaIva,
   exento,
   aviso,
+  avisoCantidad,
   problema,
   puedeQuitar,
   conocidos,
@@ -1518,6 +1537,8 @@ function Renglon({
   /** Si paga IVA, ya resuelto con la ficha. */
   exento: boolean
   aviso?: { nivel: string; mensaje: string; base: string; referencia: number; muestras: number }
+  /** La cantidad es muy distinta de lo que se suele comprar. */
+  avisoCantidad?: string
   problema: { texto: string; tono: Tono } | null
   puedeQuitar: boolean
   conocidos: Equivalencia[]
@@ -1944,7 +1965,7 @@ function Renglon({
           </div>
         )}
 
-        {(sugerida || recordada || unidadChoca || papelNoCuadra || aviso) && (
+        {(sugerida || recordada || unidadChoca || papelNoCuadra || aviso || avisoCantidad) && (
           <div className="space-y-0.5 text-xs">
             {sugerida && (
               <button type="button" onClick={() => onMercancia(sugerida.id)} className="text-acento-700 font-medium text-left inline-flex items-center gap-1">
@@ -1964,6 +1985,7 @@ function Renglon({
               </p>
             )}
             {papelNoCuadra && <p className="text-aviso-800">En el papel, cantidad × costo no da el total del renglón: revisa esos números.</p>}
+            {avisoCantidad && <p className="text-aviso-800">{avisoCantidad}</p>}
             {aviso && (
               <p className={aviso.nivel === 'unidad' ? 'text-peligro-700' : 'text-aviso-800'}>
                 {aviso.mensaje}{' '}

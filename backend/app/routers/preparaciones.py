@@ -231,8 +231,9 @@ def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Se
 
     El valor no cambia, se transforma: lo que sale del crudo entra en la
     preparacion al mismo costo total. Las dos viven en el inventario (1040):
-    no hay asiento. Si el crudo no alcanza se registra igual y queda en
-    negativo: el conteo lo corrige, la cocina no se traba.
+    no hay asiento. Si el crudo no alcanza se avisa primero (casi siempre es
+    un numero mal escrito); confirmando (`forzar`) se registra igual y queda
+    en negativo: el conteo lo corrige, la cocina no se traba.
     """
     quien = operadores.del_turno(db, request)
     operador_id = quien.id if quien else None
@@ -279,6 +280,13 @@ def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Se
             # entonces sale su materia prima.
             for hoja, q in costeo.explotar(ing, cantidad).items():
                 consumo[hoja] = consumo.get(hoja, 0) + q
+        faltan = [
+            f"{hoja.nombre} (hay {max(hoja.stock_actual or 0, 0):g} {hoja.unidad}, la tanda usa {q:g})"
+            for hoja, q in consumo.items()
+            if q > (hoja.stock_actual or 0) + 1e-6
+        ]
+        if faltan and not body.forzar:
+            raise HTTPException(status_code=409, detail="No alcanza: " + "; ".join(faltan) + ".")
         costo_total = 0.0
         for hoja, q in consumo.items():
             costo = hoja.costo_unitario or 0
@@ -293,6 +301,7 @@ def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Se
             preparacion_id=prep.id,
             cantidad=body.cantidad,
             cantidad_esperada=esperado,
+            escala=round(escala, 6),
             costo_total=costo_total,
             operador_id=operador_id,
             nota=body.nota,
@@ -411,14 +420,67 @@ def sobrante_preparacion(
 # ── Disponibilidad ──────────────────────────────────────────────────────────
 
 
+# Desde cuantas tandas y cuanta diferencia vale la pena avisar.
+TANDAS_PARA_AVISAR = 3
+DESVIO_PARA_AVISAR = 0.05
+
+
+def rendimientos_recientes(db: Session) -> List[schemas.RendimientoReal]:
+    """Las preparaciones cuyas ultimas tandas rinden distinto de su ficha.
+
+    La ficha del pollo dice 70 % y tres tandas seguidas salen al 62 %: si la
+    preparacion se descuenta del crudo, esa diferencia se esconde en las
+    ventas para siempre (8-oct, caso 21). Se propone el % del crudo que mas
+    pesa para que lo esperado sea lo que de verdad sale.
+    """
+    out = []
+    for prep in db.query(models.Ingrediente).filter(models.Ingrediente.tipo == "preparacion", models.Ingrediente.activo.isnot(False)).all():
+        tandas = (
+            db.query(models.Produccion).filter(models.Produccion.preparacion_id == prep.id)
+            .order_by(models.Produccion.fecha.desc()).limit(TANDAS_PARA_AVISAR).all()
+        )
+        rinde = prep.rinde_real or 0
+        # Lo esperado con la ficha de hoy (si la tanda sabe su tamaño).
+        esperado = lambda t: t.escala * rinde if t.escala and rinde > 0 else (t.cantidad_esperada or 0)  # noqa: E731
+        validas = [t for t in tandas if esperado(t) > 0]
+        if len(validas) < TANDAS_PARA_AVISAR:
+            continue
+        razon = sum(t.cantidad for t in validas) / sum(esperado(t) for t in validas)
+        if abs(razon - 1) < DESVIO_PARA_AVISAR:
+            continue
+        fila = schemas.RendimientoReal(preparacion_id=prep.id, nombre=prep.nombre, tandas=len(validas), real_pct=round(razon * 100, 1))
+        # El crudo que mas aporta a lo que sale (cantidad x su %).
+        lineas = [l for l in prep.lineas_preparacion if l.ingrediente is not None and l.ingrediente.tipo != "preparacion"]
+        if lineas:
+            aporte = lambda l: l.cantidad * (l.ingrediente.rendimiento_pct or 100) / 100  # noqa: E731
+            principal = max(lineas, key=aporte)
+            esperado = sum(aporte(l) for l in lineas)
+            resto = esperado - aporte(principal)
+            nuevo = (esperado * razon - resto) / principal.cantidad * 100
+            if 1 <= nuevo <= 100:
+                fila.crudo_id = principal.ingrediente.id
+                fila.crudo = principal.ingrediente.nombre
+                fila.ficha_pct = principal.ingrediente.rendimiento_pct
+                fila.sugerido_pct = round(nuevo, 1)
+        out.append(fila)
+    return out
+
+
+@router.get("/preparaciones/rendimientos", response_model=List[schemas.RendimientoReal])
+def listar_rendimientos(db: Session = Depends(get_db)):
+    return rendimientos_recientes(db)
+
+
 @router.get("/preparaciones/disponibilidad", response_model=List[schemas.Disponibilidad])
 def disponibilidad(db: Session = Depends(get_db)):
     """Cuanto se podria hacer de cada preparacion con el crudo que hay.
 
     El pollo es UNO: si alcanza para 11 kg de guiso de pollo o para 9 de
-    ranchero, no alcanza para los dos. Cada fila dice que materia prima pone
-    el limite y que otras preparaciones compiten por ella, para que nadie lea
-    los potenciales como si se sumaran.
+    ranchero, no alcanza para los dos. Por eso el crudo que comparten se
+    REPARTE (8-oct): a cada preparacion le toca segun lo que se vendio de
+    ella en los ultimos 14 dias, o en partes iguales si todavia no hay
+    ventas. `potencial` es lo que le toca; `potencial_solo`, lo que saldria
+    si todo el crudo fuera para ella.
     """
     preps = (
         db.query(models.Ingrediente)
@@ -429,14 +491,36 @@ def disponibilidad(db: Session = Depends(get_db)):
     hojas_de: Dict[int, Dict[models.Ingrediente, float]] = {
         p.id: costeo.explotar(p, 1.0, modo="receta") for p in preps
     }
+    uso = _uso_reciente(db, preps)
+    # Quien usa cada crudo.
+    usan: Dict[int, List[int]] = {}
+    for p in preps:
+        for h, q in hojas_de[p.id].items():
+            if q > 0 and h.id != p.id:
+                usan.setdefault(h.id, []).append(p.id)
+
+    def parte(hoja_id: int, prep_id: int):
+        """Que fraccion del crudo le toca a esta preparacion, y por que."""
+        rivales = usan.get(hoja_id, [prep_id])
+        if len(rivales) <= 1:
+            return 1.0, ""
+        total = sum(uso.get(r, 0) for r in rivales)
+        if total > 0:
+            return uso.get(prep_id, 0) / total, "ventas"
+        return 1.0 / len(rivales), "iguales"
+
     filas = []
     for prep in preps:
         hojas = {h: q for h, q in hojas_de[prep.id].items() if q > 0 and h.id != prep.id}
-        potencial, limita = None, None
+        potencial, limita, solo, reparto, segun = None, None, None, None, ""
         for hoja, por_unidad in hojas.items():
-            alcanza = max(hoja.stock_actual or 0, 0) / por_unidad
+            stock = max(hoja.stock_actual or 0, 0)
+            fraccion, criterio = parte(hoja.id, prep.id)
+            alcanza = stock * fraccion / por_unidad
+            solo = stock / por_unidad if solo is None else min(solo, stock / por_unidad)
             if potencial is None or alcanza < potencial:
                 potencial, limita = alcanza, hoja
+                reparto, segun = (round(fraccion * 100, 1), criterio) if criterio else (None, "")
         comparte = []
         if limita is not None:
             comparte = [
@@ -453,9 +537,36 @@ def disponibilidad(db: Session = Depends(get_db)):
                 potencial=round(potencial, 3) if potencial is not None else None,
                 limita=limita.nombre if limita is not None else None,
                 comparte_con=comparte,
+                potencial_solo=round(solo, 3) if solo is not None else None,
+                reparto_pct=reparto,
+                reparto_segun=segun,
             )
         )
     return filas
+
+
+def _uso_reciente(db: Session, preps) -> Dict[int, float]:
+    """Cuanto se vendio de cada preparacion en los ultimos 14 dias, por las
+    recetas de lo vendido (50 g de guiso por pastelito x pastelitos)."""
+    ids = {p.id for p in preps}
+    if not ids:
+        return {}
+    desde = ahora() - datetime.timedelta(days=14)
+    filas = (
+        db.query(models.RecetaItem.ingrediente_id, models.RecetaItem.cantidad_por_unidad, models.PedidoItem.cantidad)
+        .join(models.PedidoItem, models.PedidoItem.variante_id == models.RecetaItem.variante_id)
+        .join(models.Pedido, models.Pedido.id == models.PedidoItem.pedido_id)
+        .filter(
+            models.RecetaItem.ingrediente_id.in_(ids),
+            models.Pedido.estado == "pagado",
+            models.Pedido.creado_en >= desde,
+        )
+        .all()
+    )
+    uso: Dict[int, float] = {}
+    for iid, por, cantidad in filas:
+        uso[iid] = uso.get(iid, 0) + (por or 0) * (cantidad or 0)
+    return uso
 
 
 # ── Costo teorico vs real ───────────────────────────────────────────────────

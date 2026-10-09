@@ -228,6 +228,7 @@ def revisar_factura(body: schemas.RevisionFacturaRequest, db: Session = Depends(
         i.id: i for i in db.query(models.Ingrediente).filter(models.Ingrediente.id.in_(ids))
     } if ids else {}
     precios = []
+    cantidades = []
     for renglon in body.items:
         ingrediente = ingredientes.get(renglon.ingrediente_id)
         if ingrediente is None:
@@ -235,10 +236,43 @@ def revisar_factura(body: schemas.RevisionFacturaRequest, db: Session = Depends(
         aviso = _aviso_de_precio(db, renglon, ingrediente)
         if aviso is not None:
             precios.append(aviso)
+        de_cantidad = _aviso_de_cantidad(db, renglon, ingrediente)
+        if de_cantidad is not None:
+            cantidades.append(de_cantidad)
     rif_aviso, rif_sugerido = _revisar_rif(db, body.proveedor_rif)
     return schemas.RevisionFactura(
-        duplicadas=_duplicadas(db, body), precios=precios,
+        duplicadas=_duplicadas(db, body), precios=precios, cantidades=cantidades,
         rif_aviso=rif_aviso, rif_sugerido=rif_sugerido,
+    )
+
+
+# Cuantas veces lo normal (o la fraccion) ya huele a unidad equivocada.
+VECES_CANTIDAD_RARA = 5
+
+
+def _aviso_de_cantidad(db: Session, renglon: schemas.RenglonARevisar, ingrediente: models.Ingrediente):
+    """La cantidad contra lo que se suele comprar de esa mercancia."""
+    if not renglon.cantidad or renglon.cantidad <= 0:
+        return None
+    anteriores = [
+        c["cantidad"] for c in reposicion.historial_de_costos(db, ingrediente.id, limite=MUESTRAS_DE_REFERENCIA)
+        if c.get("cantidad") and c["cantidad"] > 0
+    ]
+    if len(anteriores) < 2:
+        return None  # sin historia no hay "lo normal"
+    referencia = statistics.median(anteriores)
+    veces = renglon.cantidad / referencia
+    if 1 / VECES_CANTIDAD_RARA < veces < VECES_CANTIDAD_RARA:
+        return None
+    u = ingrediente.unidad
+    mensaje = (
+        f"Se están cargando {renglon.cantidad:g} {u} y normalmente se compran {referencia:g} {u}: "
+        f"{'es ' + format(veces, '.0f') + ' veces más' if veces > 1 else 'es mucho menos'}. "
+        "Revisa la cantidad contra el papel (¿bultos o cajas leídos como unidades?)."
+    )
+    return schemas.AvisoCantidad(
+        indice=renglon.indice, ingrediente_id=ingrediente.id, cantidad=renglon.cantidad,
+        referencia=round(referencia, 4), muestras=len(anteriores), veces=round(veces, 2), mensaje=mensaje,
     )
 
 

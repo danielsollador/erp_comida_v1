@@ -23,10 +23,10 @@ def subir(client):
     return client.post("/api/compras/lectura", files={"archivo": ("f.jpg", JPG, "image/jpeg")}).json()["soporte_id"]
 
 
-def guardar(client, insumo, costo, numero):
+def guardar(client, insumo, costo, numero, repetida=False):
     r = client.post("/api/compras/facturas", json={
         "numero_factura": numero, "proveedor_nombre": "La Montaña", "proveedor_rif": RIF,
-        "categoria": "Insumos", "forma_pago": "Efectivo",
+        "categoria": "Insumos", "forma_pago": "Efectivo", "confirmar_duplicado": repetida,
         "items": [{"ingrediente_id": insumo.id, "cantidad": 40, "costo_unitario": costo}],
     })
     assert r.status_code == 200, r.text
@@ -176,7 +176,7 @@ def test_con_dos_facturas_iguales_no_se_adivina(client, insumo, db):
     soporte = subir(client)
     anotar(client, soporte, insumo, "F-2")
     guardar(client, insumo, 13.0, "F-2")
-    guardar(client, insumo, 13.0, "F-2")
+    guardar(client, insumo, 13.0, "F-2", repetida=True)  # dijeron "guardar igual"
     assert client.post("/api/compras/lectura/reconciliar").json() == {"completadas": 0}
 
 

@@ -1,5 +1,7 @@
 import type {
   ConceptoGasto,
+  Reclamo,
+  Sustitucion,
   ActivoFijo,
   AsientoContable,
   BalanceGeneral,
@@ -360,6 +362,9 @@ export const api = {
   reactivarVariante: (id: number) =>
     req<Variante>(`/menu/variantes/${id}/reactivar`, { method: 'POST' }),
   costosVariantes: () => req<CostoVariante[]>('/menu/costos'),
+  /** Costo de 1 unidad utilizable de cada mercancía con el método elegido para precios, y el aceite por pieza. */
+  costosParaPrecios: () =>
+    req<{ metodo: string; por_ingrediente: Record<string, number>; indirecto_por_pieza: number }>('/menu/costos-para-precios'),
   historialPrecios: (varianteId: number) =>
     req<CambioPrecio[]>(`/menu/variantes/${varianteId}/precios`),
 
@@ -641,15 +646,16 @@ export const api = {
   listarIngredientes: () => req<Ingrediente[]>('/inventario/ingredientes'),
   crearIngrediente: (i: DatosIngrediente) =>
     req<Ingrediente>('/inventario/ingredientes', { method: 'POST', body: JSON.stringify(i) }),
-  actualizarIngrediente: (id: number, i: DatosIngrediente) =>
-    req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify(i) }),
+  /** `confirmar`: ya se dijo que sí a pasar a desechable con stock o a archivar algo que va en recetas. */
+  actualizarIngrediente: (id: number, i: DatosIngrediente, confirmar = false) =>
+    req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify({ ...i, confirmar }) }),
   // ── Preparaciones, produccion y control (docs/plan-compras-...) ──
   listarPreparaciones: () => req<Preparacion[]>('/inventario/preparaciones'),
   crearPreparacion: (d: DatosPreparacion) =>
     req<Preparacion>('/inventario/preparaciones', { method: 'POST', body: JSON.stringify(d) }),
   actualizarPreparacion: (id: number, d: DatosPreparacion) =>
     req<Preparacion>(`/inventario/preparaciones/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
-  registrarProduccion: (d: { preparacion_id: number; cantidad: number; usado?: { ingrediente_id: number; cantidad: number }[]; nota?: string }) =>
+  registrarProduccion: (d: { preparacion_id: number; cantidad: number; usado?: { ingrediente_id: number; cantidad: number }[]; nota?: string; forzar?: boolean }) =>
     req<Produccion>('/inventario/produccion', { method: 'POST', body: JSON.stringify(d) }),
   listarProduccion: () => req<Produccion[]>('/inventario/produccion'),
   preparacionesVencidas: () => req<Preparacion[]>('/inventario/preparaciones/vencidas'),
@@ -657,6 +663,11 @@ export const api = {
   sobrantePreparacion: (id: number, cuerpo: { cantidad: number; accion: 'botar' | 'guardar'; motivo?: string }) =>
     req<SobrantePreparacion>(`/inventario/preparaciones/${id}/sobrante`, { method: 'POST', body: JSON.stringify(cuerpo) }),
   disponibilidad: () => req<Disponibilidad[]>('/inventario/preparaciones/disponibilidad'),
+  /** Las preparaciones cuyas últimas tandas rinden distinto de su ficha. */
+  rendimientosReales: () =>
+    req<{ preparacion_id: number; nombre: string; tandas: number; real_pct: number; crudo_id: number | null; crudo: string; ficha_pct: number | null; sugerido_pct: number | null }[]>(
+      '/inventario/preparaciones/rendimientos',
+    ),
   costoTeorico: (desde?: string, hasta?: string) =>
     req<CostoTeoricoFila[]>(`/inventario/costo-teorico${qs({ desde, hasta })}`),
   costosIndirectos: (desde?: string, hasta?: string) =>
@@ -714,10 +725,10 @@ export const api = {
     req<CompraDeInsumo[]>(`/inventario/ingredientes/${id}/costos`),
   inflacionInsumos: (dias = 30) =>
     req<InflacionInsumos | null>(`/inventario/inflacion?dias=${dias}`),
-  consumoPersonal: (id: number, cantidad: number, motivo: string) =>
+  consumoPersonal: (id: number, cantidad: number, motivo: string, forzar = false) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/consumo-personal`, {
       method: 'POST',
-      body: JSON.stringify({ cantidad, motivo }),
+      body: JSON.stringify({ cantidad, motivo, forzar }),
     }),
   listarSobrantes: (r?: Rango) => req<SobranteInventario[]>(`/inventario/sobrantes${conRango(r)}`),
   revertirSobrante: (id: number) =>
@@ -725,10 +736,11 @@ export const api = {
   historialReceta: (varianteId: number) =>
     req<CambioReceta[]>(`/inventario/recetas/${varianteId}/historial`),
 
-  registrarMerma: (id: number, cantidad: number, motivo: string) =>
+  /** `forzar`: anotarla aunque sea más de lo que hay (se confirmó). */
+  registrarMerma: (id: number, cantidad: number, motivo: string, forzar = false) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/merma`, {
       method: 'POST',
-      body: JSON.stringify({ cantidad, motivo }),
+      body: JSON.stringify({ cantidad, motivo, forzar }),
     }),
   ajustarStock: (id: number, stock_real: number) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}/ajustar`, {
@@ -741,6 +753,14 @@ export const api = {
     req<Ingrediente>(`/inventario/mermas/${id}/revertir`, { method: 'POST' }),
 
   verReceta: (varianteId: number) => req<RecetaItem[]>(`/inventario/recetas/${varianteId}`),
+  listarSustituciones: () => req<Sustitucion[]>('/inventario/sustituciones'),
+  crearSustitucion: (d: { original_id: number; sustituto_id: number; factor: number; nota?: string }) =>
+    req<Sustitucion>('/inventario/sustituciones', { method: 'POST', body: JSON.stringify(d) }),
+  terminarSustitucion: (id: number) => req<{ ok: boolean }>(`/inventario/sustituciones/${id}`, { method: 'DELETE' }),
+  /** Lo que lleva un combo (otros productos del menú). Vacío = no es combo. */
+  verCombo: (varianteId: number) => req<{ variante_id: number; nombre: string; cantidad: number }[]>(`/inventario/combos/${varianteId}`),
+  guardarCombo: (varianteId: number, items: { variante_id: number; cantidad: number }[]) =>
+    req<{ variante_id: number; nombre: string; cantidad: number }[]>(`/inventario/combos/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
   actualizarReceta: (varianteId: number, items: { ingrediente_id: number; cantidad_por_unidad: number }[]) =>
     req<RecetaItem[]>(`/inventario/recetas/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
 
@@ -794,7 +814,7 @@ export const api = {
     facturaId: number,
     datos: {
       numero: string
-      tipo: 'devolucion' | 'descuento'
+      tipo: 'devolucion' | 'descuento' | 'faltante'
       motivo?: string
       base_imponible?: number
       iva?: number
@@ -1103,6 +1123,8 @@ export const api = {
     fecha_vencimiento?: string
     // Solo si categoria es "Activos": en cuantos meses se gasta el equipo.
     vida_util_meses?: number
+    // Ya se aviso que parece cargada y se dijo "guardar igual".
+    confirmar_duplicado?: boolean
     // Obligatoria si se carga ya pagada y no fue en efectivo (el backend la
     // exige igual, ver contabilidad.METODOS_CON_REFERENCIA).
     referencia_pago?: string
@@ -1128,7 +1150,7 @@ export const api = {
     proveedor_nombre: string
     numero_factura: string
     /** `costo_unitario` en dólares, como se va a guardar. */
-    items: { indice: number; ingrediente_id: number; costo_unitario: number }[]
+    items: { indice: number; ingrediente_id: number; costo_unitario: number; cantidad?: number }[]
   }) => req<RevisionFactura>('/compras/revision', { method: 'POST', body: JSON.stringify(r) }),
   /** Lo de despues de guardar (foto, memoria, alertas) en un pedido que se puede repetir. */
   // Antes de guardar la factura de una foto: que hacer cuando quede
@@ -1169,6 +1191,15 @@ export const api = {
     req<{ aprendidas: number }>('/compras/equivalencias/aprender', { method: 'POST', body: JSON.stringify(cuerpo) }),
   olvidarEquivalencia: (id: number) => req(`/compras/equivalencias/${id}`, { method: 'DELETE' }),
   /** `referencia` es obligatoria si no se salda en efectivo. */
+  anotarFaltantes: (id: number, items: { ingrediente_id: number; cantidad: number }[], motivo?: string) =>
+    req<FacturaCompra>(`/compras/facturas/${id}/faltantes`, { method: 'POST', body: JSON.stringify({ items, motivo }) }),
+  listarReclamos: () => req<Reclamo[]>('/compras/reclamos'),
+  darReclamoPorPerdido: (id: number) => req<Reclamo>(`/compras/reclamos/${id}/perder`, { method: 'POST' }),
+  abonarFacturaCompra: (id: number, monto: number, forma_pago: string, referencia?: string) =>
+    req<FacturaCompra>(`/compras/facturas/${id}/abonos`, {
+      method: 'POST',
+      body: JSON.stringify({ monto, forma_pago, referencia }),
+    }),
   pagarFacturaCompra: (id: number, forma_pago: string, referencia?: string) =>
     req<FacturaCompra>(`/compras/facturas/${id}/pagar`, {
       method: 'POST',

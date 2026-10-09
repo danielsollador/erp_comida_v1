@@ -176,7 +176,10 @@ export type FilaLeida = {
   ingrediente_id: number
   nombre: string
   unidad: string
+  /** Ya en la unidad de la ficha. */
   contado: number
+  /** "Venía en g", o "¿eran gramos?": lo que hay que mirar antes de guardar. */
+  aviso?: string
 }
 
 /** Lo que el ERP entendió de la planilla llena. Leerla no guarda nada. */
@@ -793,6 +796,11 @@ export type Disponibilidad = {
   potencial: number | null
   limita: string | null
   comparte_con: string[]
+  /** Si todo el crudo fuera para esta (sin repartir con las otras). */
+  potencial_solo?: number | null
+  /** Qué parte del crudo que limita le toca, en %. */
+  reparto_pct?: number | null
+  reparto_segun?: '' | 'ventas' | 'iguales'
 }
 
 export type CostoTeoricoFila = {
@@ -1101,6 +1109,8 @@ export type ReportePerdidas = {
   cambio_pct: number | null
   por_insumo: PerdidaPorInsumo[]
   por_motivo: PerdidaPorMotivo[]
+  /** Quién anotó las mermas (sin los conteos). */
+  por_operador?: { operador: string; valor: number; veces: number }[]
   serie: PuntoPerdida[]
   sin_merma: number
   anulados: number
@@ -1206,6 +1216,39 @@ export type LineaGasto = {
   cuenta: string
 }
 
+/** Lo que la factura cobra y no llegó: el proveedor lo debe hasta su nota. */
+export type Reclamo = {
+  id: number
+  factura_id: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  cantidad: number
+  valor: number
+  motivo: string
+  fecha: string
+  estado: 'abierto' | 'acreditado' | 'perdido'
+  numero_factura: string
+  proveedor_nombre: string
+  /** Cuántos días lleva abierto. */
+  dias?: number
+}
+
+/** "Hoy el pollo es pavo": vigente hasta `hasta`. */
+export type Sustitucion = {
+  id: number
+  original_id: number
+  original: string
+  sustituto_id: number
+  sustituto: string
+  unidad_original: string
+  unidad_sustituto: string
+  factor: number
+  desde: string
+  hasta: string
+  nota: string
+}
+
 export type FacturaCompra = {
   id: number
   numero_factura: string
@@ -1227,6 +1270,12 @@ export type FacturaCompra = {
   comprobante_retencion: string
   /** Lo que se le paga al proveedor: total menos lo retenido. */
   a_pagar: number
+  /** A crédito: lo que ya se abonó y lo que falta (con las notas de crédito descontadas). */
+  abonado?: number
+  saldo?: number
+  abonos?: { id: number; fecha: string; monto: number; forma_pago: string; referencia: string }[]
+  /** Lo que no llegó y el proveedor todavía debe. */
+  reclamos?: Reclamo[]
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
   forma_pago: 'Efectivo' | 'Efectivo $' | 'Banco' | 'Credito' | 'Mixto'
   /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
@@ -1397,6 +1446,8 @@ export type CuerpoCompletarFactura = {
 export type RevisionFactura = {
   duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
   precios: AvisoPrecio[]
+  /** Cantidades muy distintas de lo que se suele comprar (¿bultos leídos como kilos?). */
+  cantidades?: { indice: number; ingrediente_id: number; cantidad: number; referencia: number; muestras: number; veces: number; mensaje: string }[]
   /** Por qué ese RIF no puede ser correcto (dígito verificador). Vacío si cuadra. */
   rif_aviso: string
   /** Un RIF conocido que difiere en un solo carácter del leído. */

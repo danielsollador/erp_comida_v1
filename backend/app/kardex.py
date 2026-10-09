@@ -55,6 +55,7 @@ FUSION = "fusion"                    # dos fichas eran la misma mercancia: el st
 PRODUCCION = "produccion"            # salio materia prima para hacer una preparacion
 PRODUCIDO = "producido"              # entro la preparacion que salio de esa tanda
 CARGA_INDIRECTO = "carga_indirecto"  # se cargo la freidora: el aceite pasa a costo
+RECLASIFICACION = "reclasificacion"  # paso a desechable: lo que quedaba va a gasto
 
 ETIQUETAS = {
     COMPRA: "Compra",
@@ -69,6 +70,7 @@ ETIQUETAS = {
     PRODUCCION: "Usado en producción",
     PRODUCIDO: "Producido",
     CARGA_INDIRECTO: "Cargado a la freidora",
+    RECLASIFICACION: "Pasó a gasto (ahora es desechable)",
 }
 
 # Lo que de verdad se gasto: lo vendido, lo botado, lo que comio el personal,

@@ -207,6 +207,10 @@ def _costo_por_variante(variante_ids: List[int], db: Session) -> Dict[int, float
     costos: Dict[int, float] = {}
     for receta in recetas:
         aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_efectivo or 0)
+        # Con un cambio de hoy (pollo por pavo), lo que sale del deposito es
+        # otra cosa y a otro costo: el costo de la venta tiene que ser el de
+        # lo que de verdad salio, o los libros y el deposito se separan.
+        aporte += costeo.diferencia_por_sustitucion(receta.ingrediente, costeo.consumo_bruto(receta, 1))
         costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
     return costos
 

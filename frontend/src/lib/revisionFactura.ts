@@ -12,7 +12,7 @@ export function useRevision(datos: {
   proveedor_nombre: string
   numero_factura: string
   /** `costo_unitario` en dólares, como se va a guardar. */
-  items: { indice: number; ingrediente_id: number; costo_unitario: number }[]
+  items: { indice: number; ingrediente_id: number; costo_unitario: number; cantidad?: number }[]
 }): RevisionFactura | null {
   const [revision, setRevision] = useState<{ clave: string; r: RevisionFactura } | null>(null)
   const vacio = !datos.numero_factura && datos.items.length === 0

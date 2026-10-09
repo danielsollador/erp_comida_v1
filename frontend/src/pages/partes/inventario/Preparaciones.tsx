@@ -5,7 +5,7 @@ import Icono from '../../../components/Icono'
 import { Numerico } from '../../../components/Teclado'
 import { contiene, palabrasDe } from '../../../components/Tabla'
 import { Boton, FiltroDesplegable, Modal, Seccion, Vacio } from '../../../components/ui'
-import { api } from '../../../lib/api'
+import { api, ErrorApi } from '../../../lib/api'
 import { useMoneda } from '../../../lib/moneda'
 import { colorFranja } from '../../../lib/paleta'
 import { datosDe, unidadDe } from '../../../lib/inventario'
@@ -47,6 +47,8 @@ export default function Preparaciones({
   const [preps, setPreps] = useState<Preparacion[] | null>(null)
   const [disp, setDisp] = useState<Disponibilidad[]>([])
   const [vencidas, setVencidas] = useState<Preparacion[]>([])
+  // Las que rinden distinto de su ficha en las últimas tandas (8-oct).
+  const [rindeDistinto, setRindeDistinto] = useState<Awaited<ReturnType<typeof api.rendimientosReales>>>([])
   const [tandas, setTandas] = useState<Produccion[]>([])
   const [editando, setEditando] = useState<Preparacion | 'nueva' | null>(null)
   const [anotando, setAnotando] = useState<Preparacion | null>(null)
@@ -71,7 +73,19 @@ export default function Preparaciones({
         setTandas(t)
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'No se pudieron traer las preparaciones'))
+    api.rendimientosReales().then(setRindeDistinto).catch(() => undefined)
   }, [])
+  // El % del crudo en su ficha, a lo que de verdad rinde.
+  async function ajustarFicha(r: (typeof rindeDistinto)[number]) {
+    const ing = ingredientes.find((i) => i.id === r.crudo_id)
+    if (!ing || r.sugerido_pct == null) return
+    try {
+      await api.actualizarIngrediente(ing.id, { ...datosDe(ing), rendimiento_pct: r.sugerido_pct })
+      recargarTodo()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo ajustar la ficha')
+    }
+  }
   useEffect(cargar, [cargar])
 
   function recargarTodo() {
@@ -108,6 +122,24 @@ export default function Preparaciones({
           </button>
         </p>
       )}
+
+      {rindeDistinto.map((r) => (
+        <div key={r.preparacion_id} className="rounded-2xl bg-aviso-500/10 p-4 text-sm flex flex-wrap items-center gap-3">
+          <span className="flex-1 min-w-[220px] text-aviso-900">
+            <b>{r.nombre}</b>: las últimas {r.tandas} tandas salieron al <b className="tabular-nums">{r.real_pct} %</b> de lo esperado.
+            {r.sugerido_pct != null && (
+              <>
+                {' '}La ficha de {r.crudo} dice {r.ficha_pct} %; con <b className="tabular-nums">{r.sugerido_pct} %</b> el costo diría la verdad.
+              </>
+            )}
+          </span>
+          {r.sugerido_pct != null && (
+            <button type="button" onClick={() => void ajustarFicha(r)} className="font-semibold text-aviso-900 underline">
+              Ajustar {r.crudo} a {r.sugerido_pct} %
+            </button>
+          )}
+        </div>
+      ))}
 
       {vencidas.length > 0 && (
         <div className="rounded-2xl bg-aviso-500/10 p-4 space-y-2">
@@ -391,6 +423,14 @@ function Mapa({
                   ? `podrías hacer hoy con el crudo que hay · lo que se acaba primero: ${d.limita}`
                   : 'podrías hacer hoy con el crudo que hay'}
             </p>
+            {elegida.modo_produccion !== 'producir' && d?.reparto_pct != null && d.limita && (
+              <p className="text-xs text-white/70 mt-1">
+                {/* El crudo compartido se reparte: los potenciales no se suman. */}
+                Le toca el {fmtCant(d.reparto_pct)} % del {d.limita.toLowerCase()}{' '}
+                {d.reparto_segun === 'ventas' ? 'según lo vendido en 14 días' : 'en partes iguales'} con {d.comparte_con.join(', ')}.
+                {d.potencial_solo != null && ` Si fuera todo para este: ${fmtCant(d.potencial_solo)} ${unidadDe(d.potencial_solo, elegida.unidad)}.`}
+              </p>
+            )}
           </div>
           <p className="text-xs text-white/70">
             Cada {elegida.unidad === 'kg' ? 'kilo' : elegida.unidad === 'lt' ? 'litro' : 'unidad'} ya preparado cuesta{' '}
@@ -1442,6 +1482,8 @@ function AnotarTanda({
   const esperado = principal && principal.cantidad > 0 ? aNum(usadoDe(principal) || '0') / principal.cantidad : 0
   const rendimiento = esperado > 0 && salioNum > 0 ? salioNum / esperado : null
 
+  // Si no alcanza el crudo, el servidor avisa; la segunda vez va confirmada.
+  const [confirmarFalta, setConfirmarFalta] = useState('')
   async function guardar() {
     setError('')
     if (!(salioNum > 0)) return setError('Di cuánto salió.')
@@ -1451,9 +1493,15 @@ function AnotarTanda({
         preparacion_id: prep.id,
         cantidad: salioNum,
         usado: prep.lineas.map((l) => ({ ingrediente_id: l.ingrediente_id, cantidad: aNum(usadoDe(l) || '0') || 0 })),
+        forzar: !!confirmarFalta,
       })
       onHecho()
     } catch (e) {
+      if (e instanceof ErrorApi && e.status === 409 && e.message.startsWith('No alcanza')) {
+        setConfirmarFalta(e.message)
+        setError(`${e.message} Si de verdad se usó eso, vuelve a tocar «Anotar» y queda en negativo hasta el próximo conteo.`)
+        return
+      }
       setError(e instanceof Error ? e.message : 'No se pudo anotar')
     } finally {
       setGuardando(false)

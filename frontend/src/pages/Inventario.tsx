@@ -9,7 +9,7 @@ import { useRango, nombreRango, rangoDe } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { Aviso, Boton, Modal, Pagina, Seccion, Vacio } from '../components/ui'
-import { api } from '../lib/api'
+import { api, ErrorApi } from '../lib/api'
 import { cantidad, datosDe, unidadDe } from '../lib/inventario'
 import { useMoneda } from '../lib/moneda'
 import { ALMACENES, ALMACEN_DE } from '../lib/tiposArticulo'
@@ -129,7 +129,9 @@ export default function Inventario() {
   const [cambiandoConfig, setCambiandoConfig] = useState(false)
   // La materia prima tiene dos caras.
   // Se recuerda al volver (Leider, 8-oct: "que se guarde dónde estuviste").
+  // `?ver=preparado` manda sobre lo recordado: así llegan los avisos de la portada.
   const [cara, setCaraViva] = useState<'crudo' | 'preparado'>(() => {
+    if (new URLSearchParams(window.location.search).get('ver') === 'preparado') return 'preparado'
     try {
       return sessionStorage.getItem('vp-inventario-cara') === 'preparado' ? 'preparado' : 'crudo'
     } catch {
@@ -249,14 +251,31 @@ export default function Inventario() {
       titulo: `Merma de ${ing.nombre}`,
       texto: 'Lo que se dañó, se quemó o se botó. Es plata perdida y así queda registrada.',
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto se perdió', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
+        { nombre: 'cantidad', etiqueta: 'Cuánto se perdió', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${cantidad(ing.stock_actual)} ${ing.unidad}.` },
         { nombre: 'motivo', etiqueta: 'Motivo', placeholder: 'Se quemó, se dañó, se cayó...', opcional: true },
       ],
       aceptar: 'Registrar merma',
       peligro: true,
     })
     if (!r) return
-    accion(() => api.registrarMerma(ing.id, Number(r.cantidad), r.motivo))
+    void sacarConConfirmacion((forzar) => api.registrarMerma(ing.id, Number(r.cantidad), r.motivo, forzar))
+  }
+
+  // Más de lo que hay casi siempre es la unidad equivocada: el servidor la
+  // frena y aquí se pregunta antes de anotarla igual.
+  async function sacarConConfirmacion(fn: (forzar: boolean) => Promise<unknown>) {
+    setError('')
+    try {
+      await fn(false)
+      cargar()
+    } catch (e) {
+      if (e instanceof ErrorApi && e.status === 409 && e.message.startsWith('Hay ')) {
+        if (await dialogo.confirmar({ titulo: '¿Seguro que es esa cantidad?', texto: `${e.message} Revisa la unidad antes de anotarla.`, aceptar: 'Anotar igual', peligro: true }))
+          await accion(() => fn(true))
+        return
+      }
+      setError(e instanceof Error ? e.message : 'Ocurrió un error')
+    }
   }
 
   async function consumoPersonal(ing: Ingrediente) {
@@ -264,13 +283,13 @@ export default function Inventario() {
       titulo: `Consumo del personal: ${ing.nombre}`,
       texto: 'Se lo comió un empleado. Es costo laboral, no pérdida: no ensucia el indicador de merma.',
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
+        { nombre: 'cantidad', etiqueta: 'Cuánto', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${cantidad(ing.stock_actual)} ${ing.unidad}.` },
         { nombre: 'motivo', etiqueta: 'Para quién / qué turno', opcional: true },
       ],
       aceptar: 'Registrar',
     })
     if (!r) return
-    accion(() => api.consumoPersonal(ing.id, Number(r.cantidad), r.motivo))
+    void sacarConConfirmacion((forzar) => api.consumoPersonal(ing.id, Number(r.cantidad), r.motivo, forzar))
   }
 
   async function contar(ing: Ingrediente) {
@@ -304,10 +323,29 @@ export default function Inventario() {
     if (ok) accion(() => api.revertirSobrante(sb.id))
   }
 
+  // Lo que el servidor pide confirmar (pasar a desechable con stock, archivar
+  // algo que va en recetas) se pregunta aquí y se manda confirmado.
+  async function preguntarSiHaceFalta(e: unknown): Promise<boolean> {
+    if (!(e instanceof ErrorApi && e.status === 409 && e.message.startsWith('Confirmar: '))) return false
+    return dialogo.confirmar({ titulo: '¿Seguro?', texto: e.message.slice('Confirmar: '.length), aceptar: 'Sí, seguir', peligro: true })
+  }
+
   async function guardarFicha(datos: DatosIngrediente, id: number | null) {
-    const ok = await accion(() => (id === null ? api.crearIngrediente(datos) : api.actualizarIngrediente(id, datos)))
-    if (ok) setFicha(null)
-    return ok
+    setError('')
+    try {
+      if (id === null) await api.crearIngrediente(datos)
+      else
+        await api.actualizarIngrediente(id, datos).catch(async (e) => {
+          if (!(await preguntarSiHaceFalta(e))) throw e
+          return api.actualizarIngrediente(id, datos, true)
+        })
+      cargar()
+      setFicha(null)
+      return true
+    } catch (e) {
+      if (!(e instanceof ErrorApi && e.message.startsWith('Confirmar: '))) setError(e instanceof Error ? e.message : 'Ocurrió un error')
+      return false
+    }
   }
 
   async function archivar(ing: Ingrediente, activo: boolean) {
@@ -322,7 +360,14 @@ export default function Inventario() {
       ejecutar: () => api.actualizarIngrediente(ing.id, { ...datosDe(ing), activo: false }),
       revertir: () => api.actualizarIngrediente(ing.id, { ...datosDe(ing), activo: true }),
       alTerminar: cargar,
-      alFallar: (e) => setError(e instanceof Error ? e.message : 'No se pudo archivar'),
+      alFallar: async (e) => {
+        // Va en recetas: se pregunta, y confirmando se archiva igual.
+        if (await preguntarSiHaceFalta(e)) {
+          await accion(() => api.actualizarIngrediente(ing.id, { ...datosDe(ing), activo: false }, true))
+          return
+        }
+        setError(e instanceof Error ? e.message : 'No se pudo archivar')
+      },
     })
   }
 
