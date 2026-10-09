@@ -75,15 +75,23 @@ export default function Preparaciones({
       .catch((e) => setError(e instanceof Error ? e.message : 'No se pudieron traer las preparaciones'))
     api.rendimientosReales().then(setRindeDistinto).catch(() => undefined)
   }, [])
-  // El % del crudo en su ficha, a lo que de verdad rinde.
-  async function ajustarFicha(r: (typeof rindeDistinto)[number]) {
-    const ing = ingredientes.find((i) => i.id === r.crudo_id)
-    if (!ing || r.sugerido_pct == null) return
+  // La receta (por uno) a lo que de verdad rinde: el crudo que más pesa pasa a
+  // la cantidad que las tandas dicen que hace falta.
+  async function ajustarReceta(r: (typeof rindeDistinto)[number]) {
+    const p = preps?.find((x) => x.id === r.preparacion_id)
+    if (!p || r.crudo_id == null || r.sugerida_cantidad == null) return
     try {
-      await api.actualizarIngrediente(ing.id, { ...datosDe(ing), rendimiento_pct: r.sugerido_pct })
+      await api.actualizarPreparacion(p.id, {
+        nombre: p.nombre,
+        unidad: p.unidad,
+        rinde: 1,
+        modo_produccion: p.modo_produccion,
+        vida_util_horas: p.vida_util_horas,
+        lineas: p.lineas.map((l) => ({ ingrediente_id: l.ingrediente_id, cantidad: l.ingrediente_id === r.crudo_id ? r.sugerida_cantidad! : l.cantidad })),
+      })
       recargarTodo()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo ajustar la ficha')
+      setError(e instanceof Error ? e.message : 'No se pudo ajustar la receta')
     }
   }
   useEffect(cargar, [cargar])
@@ -127,15 +135,16 @@ export default function Preparaciones({
         <div key={r.preparacion_id} className="rounded-2xl bg-aviso-500/10 p-4 text-sm flex flex-wrap items-center gap-3">
           <span className="flex-1 min-w-[220px] text-aviso-900">
             <b>{r.nombre}</b>: las últimas {r.tandas} tandas salieron al <b className="tabular-nums">{r.real_pct} %</b> de lo esperado.
-            {r.sugerido_pct != null && (
+            {r.sugerida_cantidad != null && (
               <>
-                {' '}La ficha de {r.crudo} dice {r.ficha_pct} %; con <b className="tabular-nums">{r.sugerido_pct} %</b> el costo diría la verdad.
+                {' '}La receta dice {fmtCant(r.receta_cantidad ?? 0)} {unidadDe(r.receta_cantidad ?? 0, r.unidad)} de {r.crudo}; con{' '}
+                <b className="tabular-nums">{fmtCant(r.sugerida_cantidad)} {unidadDe(r.sugerida_cantidad, r.unidad)}</b> el costo diría la verdad.
               </>
             )}
           </span>
-          {r.sugerido_pct != null && (
-            <button type="button" onClick={() => void ajustarFicha(r)} className="font-semibold text-aviso-900 underline">
-              Ajustar {r.crudo} a {r.sugerido_pct} %
+          {r.sugerida_cantidad != null && (
+            <button type="button" onClick={() => void ajustarReceta(r)} className="font-semibold text-aviso-900 underline">
+              Ajustar la receta a {fmtCant(r.sugerida_cantidad)} {unidadDe(r.sugerida_cantidad, r.unidad)}
             </button>
           )}
         </div>

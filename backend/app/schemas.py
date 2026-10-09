@@ -322,12 +322,15 @@ class RendimientoReal(BaseModel):
     tandas: int
     # Lo que salio contra lo esperado, en % (100 = lo que dice la ficha).
     real_pct: float
-    # El crudo que mas pesa en la tanda y lo que convendria ponerle en su ficha
-    # para que la proxima tanda se espere lo que de verdad sale.
+    # El crudo que mas pesa en la receta: lo que dice la receta por 1 (kg, lt
+    # o unidad) y lo que convendria poner para que la proxima tanda se espere
+    # lo que de verdad sale. La receta es por uno (8-oct): se ajusta la
+    # receta, no la ficha del crudo.
     crudo_id: Optional[int] = None
     crudo: str = ""
-    ficha_pct: Optional[float] = None
-    sugerido_pct: Optional[float] = None
+    unidad: str = ""
+    receta_cantidad: Optional[float] = None
+    sugerida_cantidad: Optional[float] = None
 
 
 class Disponibilidad(BaseModel):

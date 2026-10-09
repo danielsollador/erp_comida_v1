@@ -174,6 +174,8 @@ COLUMNAS = [
     ("DIM310_INV_INGREDIENTE", "modo_produccion", "VARCHAR DEFAULT 'descontar'"),
     ("DIM310_INV_INGREDIENTE", "vida_util_horas", "INTEGER"),
     ("TRX360_INV_PRODUCCION", "escala", "FLOAT"),
+    ("TRX360_INV_PRODUCCION", "principal_id", "INTEGER"),
+    ("TRX360_INV_PRODUCCION", "usado_principal", "FLOAT"),
     ("DIM310_INV_INGREDIENTE", "categoria_borrada_id", "INTEGER"),
     ("DIM420_COM_EQUIVALENCIA", "factor_nuevo", "FLOAT"),
     ("DIM420_COM_EQUIVALENCIA", "veces_nuevo", "INTEGER DEFAULT 0"),

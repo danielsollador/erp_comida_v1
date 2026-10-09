@@ -665,7 +665,7 @@ export const api = {
   disponibilidad: () => req<Disponibilidad[]>('/inventario/preparaciones/disponibilidad'),
   /** Las preparaciones cuyas últimas tandas rinden distinto de su ficha. */
   rendimientosReales: () =>
-    req<{ preparacion_id: number; nombre: string; tandas: number; real_pct: number; crudo_id: number | null; crudo: string; ficha_pct: number | null; sugerido_pct: number | null }[]>(
+    req<{ preparacion_id: number; nombre: string; tandas: number; real_pct: number; crudo_id: number | null; crudo: string; unidad: string; receta_cantidad: number | null; sugerida_cantidad: number | null }[]>(
       '/inventario/preparaciones/rendimientos',
     ),
   costoTeorico: (desde?: string, hasta?: string) =>

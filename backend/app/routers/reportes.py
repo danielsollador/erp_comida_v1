@@ -1531,11 +1531,11 @@ def _avisos_de_cocina_y_proveedores(db: Session) -> List[schemas.Aviso]:
         ))
     for r in rendimientos_recientes(db)[:1]:
         detalle = f"Las últimas {r.tandas} tandas salieron al {r.real_pct:g} % de lo esperado."
-        if r.sugerido_pct is not None:
-            detalle += f" La ficha de {r.crudo} dice {r.ficha_pct:g} %: con {r.sugerido_pct:g} % el costo diría la verdad."
+        if r.sugerida_cantidad is not None:
+            detalle += f" La receta dice {r.receta_cantidad:g} {r.unidad} de {r.crudo} por cada uno que sale: con {r.sugerida_cantidad:g} el costo diría la verdad."
         out.append(schemas.Aviso(
             id=f"rinde-{r.preparacion_id}", tono="info" if r.real_pct > 100 else "ojo",
-            titulo=f"{r.nombre} rinde {'más' if r.real_pct > 100 else 'menos'} de lo que dice su ficha",
+            titulo=f"{r.nombre} rinde {'más' if r.real_pct > 100 else 'menos'} de lo que dice su receta",
             detalle=detalle, a="/inventario/materia-prima?ver=preparado",
         ))
     corte = ahora() - datetime.timedelta(days=7)

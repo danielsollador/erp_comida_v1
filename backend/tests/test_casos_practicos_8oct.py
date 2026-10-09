@@ -247,7 +247,8 @@ def test_hoy_el_pollo_es_pavo(client, db, libros):
     pollo = alta(client, "Pollo", rendimiento_pct=70)
     pavo = alta(client, "Pavo", rendimiento_pct=80)
     comprar(client, "S-1", [{"ingrediente_id": pollo["id"], "cantidad": 0.2, "costo_unitario": 4}, {"ingrediente_id": pavo["id"], "cantidad": 5, "costo_unitario": 6}])
-    g = client.post("/api/inventario/preparaciones", json={"nombre": "Guiso de pollo", "unidad": "kg", "rinde": 1, "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1}]}).json()
+    # La receta es por kilo (8-oct): 1 kg de guiso lleva 1,43 kg de pollo (el 70 % queda).
+    g = client.post("/api/inventario/preparaciones", json={"nombre": "Guiso de pollo", "unidad": "kg", "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1 / 0.7}]}).json()
     v = producto(db, "Pastelito de pollo", [(g["id"], 0.07)])
     r = client.post("/api/pedidos", json={"items": [{"variante_id": v.id, "cantidad": 10}], "nota": ""})
     assert r.status_code == 409, "sin pollo no se vende"
@@ -306,17 +307,18 @@ def test_fusionar_stock_negativo_no_separa_libros_y_deposito(client, db, libros)
 def test_avisa_cuando_las_tandas_rinden_menos_que_la_ficha(client, db, libros):
     pollo = alta(client, "Pollo", rendimiento_pct=70)
     comprar(client, "R-1", [{"ingrediente_id": pollo["id"], "cantidad": 30, "costo_unitario": 4}])
-    g = client.post("/api/inventario/preparaciones", json={"nombre": "Guiso", "unidad": "kg", "rinde": 1, "modo_produccion": "producir",
-                                                          "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1}]}).json()
+    # Por kilo: 1,43 kg de pollo al 70 % dan 1 kg. Con 5 kg se esperan 3,5 y salen 3,1.
+    g = client.post("/api/inventario/preparaciones", json={"nombre": "Guiso", "unidad": "kg", "modo_produccion": "producir",
+                                                          "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1 / 0.7}]}).json()
     for _ in range(3):
         client.post("/api/inventario/produccion", json={"preparacion_id": g["id"], "cantidad": 3.1, "usado": [{"ingrediente_id": pollo["id"], "cantidad": 5}]})
     r = client.get("/api/inventario/preparaciones/rendimientos").json()
-    assert [(x["nombre"], x["crudo"], x["ficha_pct"], x["sugerido_pct"]) for x in r] == [("Guiso", "Pollo", 70, 62.0)]
+    # Rindio el 88,6 %: el kilo no lleva 1,43 kg de pollo sino 1,61.
+    assert [(x["nombre"], x["crudo"], x["receta_cantidad"], x["sugerida_cantidad"]) for x in r] == [("Guiso", "Pollo", 1.4286, 1.6129)]
     assert any(a["id"].startswith("rinde-") for a in client.get("/api/reportes/avisos").json())
-    # Se ajusta la ficha: el aviso se va, aunque las tandas sean las mismas.
-    ficha = client.get("/api/inventario/ingredientes").json()
-    p = next(i for i in ficha if i["id"] == pollo["id"])
-    assert client.put(f"/api/inventario/ingredientes/{pollo['id']}", json={**{k: p[k] for k in ("nombre", "unidad", "tipo", "stock_minimo", "stock_objetivo", "costo_unitario", "exento")}, "rendimiento_pct": 62}).status_code == 200
+    # Se ajusta la receta: el aviso se va, aunque las tandas sean las mismas.
+    assert client.put(f"/api/inventario/preparaciones/{g['id']}", json={"nombre": "Guiso", "unidad": "kg", "modo_produccion": "producir",
+                                                                       "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1.6129}]}).status_code == 200
     assert client.get("/api/inventario/preparaciones/rendimientos").json() == []
 
 

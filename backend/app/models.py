@@ -456,10 +456,13 @@ class Produccion(Base):
     cantidad = Column(Float, nullable=False)
     # Lo que la receta dice que debio salir con lo que se uso.
     cantidad_esperada = Column(Float, default=0)
-    # De que tamaño fue la tanda, en recetas (2 = el doble de la receta). Con
-    # esto lo esperado se recalcula con la ficha de HOY: si se ajusto el % del
-    # pollo, las tandas viejas dejan de avisar que rinden menos.
+    # De que tamaño fue la tanda, en recetas (2 = el doble de la receta).
     escala = Column(Float, nullable=True)
+    # Cuanto se uso del crudo que mas pesa, y cual era (8-oct). Con esto lo
+    # esperado se recalcula con la RECETA de hoy: si se ajusto cuanto pollo
+    # lleva el kilo, las tandas viejas dejan de avisar que rinden menos.
+    principal_id = Column(Integer, nullable=True)
+    usado_principal = Column(Float, nullable=True)
     costo_total = Column(Float, default=0)
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
     nota = Column(String, default="")
@@ -1071,7 +1074,7 @@ class PagoCompra(Base):
     PagoPedido en ventas: cada parte sale de su propia cuenta en el asiento.
     """
 
-    __tablename__ = "TRX417_COM_FACTURA_PAGO"
+    __tablename__ = "TRX419_COM_FACTURA_PAGO"
 
     id = Column(Integer, primary_key=True)
     factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False, index=True)
