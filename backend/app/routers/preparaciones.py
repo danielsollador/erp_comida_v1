@@ -3,9 +3,10 @@
 Ver docs/plan-compras-inventario-produccion.md (fases 2 a 4). En corto:
 
   - Una PREPARACION (el guiso de pollo) es una mercancia mas, de tipo
-    "preparacion", con su receta por tanda y lo que rinde. El pastelito dice
-    "50 g de guiso" y no "5 g de cebolla"; al venderlo, el sistema baja por
-    la receta hasta la materia prima (costeo.explotar).
+    "preparacion", con su receta POR UNO: lo que lleva 1 kg (o 1 lt, o 1
+    unidad). El pastelito dice "50 g de guiso" y no "5 g de cebolla"; al
+    venderlo, el sistema baja por la receta hasta la materia prima
+    (costeo.explotar).
   - La PRODUCCION es opcional: solo las preparaciones en modo "producir"
     registran tandas, con su rendimiento real.
   - COSTO TEORICO vs REAL: lo que debio gastarse segun recetas contra lo que
@@ -149,7 +150,8 @@ def crear_preparacion(body: schemas.PreparacionInput, db: Session = Depends(get_
         nombre=nombre,
         unidad=body.unidad,
         tipo="preparacion",
-        rinde=body.rinde,
+        # La receta es por uno: lo que rinde es, por definicion, 1.
+        rinde=1.0,
         modo_produccion=body.modo_produccion,
         vida_util_horas=body.vida_util_horas,
         # La merma de cocinar vive en `rinde`; un rendimiento aparte la
@@ -171,8 +173,8 @@ def crear_preparacion(body: schemas.PreparacionInput, db: Session = Depends(get_
 
 @router.put("/preparaciones/{prep_id}", response_model=schemas.Preparacion)
 def actualizar_preparacion(prep_id: int, body: schemas.PreparacionInput, db: Session = Depends(get_db)):
-    """Cambiar la receta o lo que rinde. La cocina afina estos numeros con el
-    tiempo: el sistema escala con lo ultimo que se guardo."""
+    """Cambiar la receta. La cocina afina estos numeros con el tiempo: el
+    sistema escala con lo ultimo que se guardo."""
     prep = db.get(models.Ingrediente, prep_id)
     if prep is None or prep.tipo != "preparacion":
         raise HTTPException(status_code=404, detail="Preparación no encontrada")
@@ -188,7 +190,7 @@ def actualizar_preparacion(prep_id: int, body: schemas.PreparacionInput, db: Ses
     _validar_lineas(db, prep_id, body.lineas)
     prep.nombre = nombre
     prep.unidad = body.unidad
-    prep.rinde = body.rinde
+    prep.rinde = 1.0
     prep.modo_produccion = body.modo_produccion
     prep.vida_util_horas = body.vida_util_horas
     prep.rendimiento_pct = 100.0

@@ -1,8 +1,9 @@
-"""Lo que rinde una preparación cuando lo que lleva se mide distinto (7-oct).
+"""La receta de una preparación es por UNO: lo que lleva 1 kg, 1 lt o 1 unidad (8-oct).
 
-El jugo de naranja se mide en litros y se hace con kilos de naranja: no hay
-forma de sumar kilos a litros, así que lo que sale de la tanda lo escribe la
-cocina. Y 500 g de cebolla sí suman 0,5 kg a un guiso que se mide en kg.
+Antes era "una tanda" y lo que salía se calculaba sumando lo que quedaba de
+cada crudo medido como la preparación; con leche en litros dentro de un guiso
+en kilos la suma se quedaba corta y el costo salía inflado. Ahora no hay nada
+que sumar: 1 kg cuesta lo que lleva, se mida como se mida.
 """
 
 
@@ -15,33 +16,43 @@ def alta(client, nombre, unidad="kg", **extra):
     return r.json()
 
 
-def preparacion(client, nombre, unidad, rinde, lineas):
+def preparacion(client, nombre, unidad, lineas, **extra):
     r = client.post(
         "/api/inventario/preparaciones",
-        json={"nombre": nombre, "unidad": unidad, "rinde": rinde, "lineas": lineas},
+        json={"nombre": nombre, "unidad": unidad, "lineas": lineas, **extra},
     )
     assert r.status_code == 200, r.text
     return r.json()
 
 
-def test_jugo_en_litros_hecho_de_kilos_usa_lo_que_escribio_la_cocina(client, libros):
+def test_un_litro_de_jugo_cuesta_lo_que_lleva(client, libros):
     naranja = alta(client, "Naranja", rendimiento_pct=45)
     azucar = alta(client, "Azucar")
     jugo = preparacion(
-        client, "Jugo de naranja", "lt", 1.8,
-        [{"ingrediente_id": naranja["id"], "cantidad": 4}, {"ingrediente_id": azucar["id"], "cantidad": 0.05}],
+        client, "Jugo de naranja", "lt",
+        [{"ingrediente_id": naranja["id"], "cantidad": 2.2}, {"ingrediente_id": azucar["id"], "cantidad": 0.03}],
+        rinde=1.8,  # se ignora: la receta ya es por litro
     )
-    assert jugo["rinde"] == 1.8
-    # 4 kg de naranja + 50 g de azucar a $2 = $8,10 la tanda, que da 1,8 lt.
-    assert round(jugo["costo_unitario"], 2) == round(8.1 / 1.8, 2)
+    assert jugo["rinde"] == 1
+    # 2,2 kg de naranja + 30 g de azucar a $2 = $4,46 el litro. El 45 % de la
+    # naranja no se aplica otra vez: ya esta en los 2,2 kg.
+    assert round(jugo["costo_unitario"], 2) == 4.46
+    assert jugo["costo_tanda"] == jugo["costo_unitario"]
 
 
-def test_los_gramos_suman_a_una_preparacion_en_kilos(client, libros):
+def test_la_leche_en_litros_cuenta_dentro_de_un_guiso_en_kilos(client, libros):
     pollo = alta(client, "Pollo", rendimiento_pct=70)
+    leche = alta(client, "Leche", unidad="lt")
     cebolla = alta(client, "Cebolla", unidad="g")
     guiso = preparacion(
-        client, "Guiso", "kg", 9,
-        [{"ingrediente_id": pollo["id"], "cantidad": 1}, {"ingrediente_id": cebolla["id"], "cantidad": 500}],
+        client, "Guiso", "kg",
+        [
+            {"ingrediente_id": pollo["id"], "cantidad": 1},
+            {"ingrediente_id": leche["id"], "cantidad": 0.5},
+            {"ingrediente_id": cebolla["id"], "cantidad": 100},
+        ],
     )
-    # 1 kg de pollo al 70 % + 500 g de cebolla = 0,7 + 0,5 kg.
-    assert guiso["rinde"] == 1.2
+    # 1 kg x $2 + 0,5 lt x $2 + 100 g x $2 = $203 el kilo: cada cosa a su costo,
+    # sin que la leche (en litros) se quede fuera de la cuenta.
+    assert guiso["rinde"] == 1
+    assert guiso["costo_unitario"] == 203.0

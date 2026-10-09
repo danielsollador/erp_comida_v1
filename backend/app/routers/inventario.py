@@ -629,8 +629,9 @@ def fusionar_ingrediente(
                 linea.cantidad = round(linea.cantidad * factor, 6)
 
         # Dos preparaciones: manda la receta de la que queda. Si no tenia,
-        # hereda la de la que se va (las cantidades de la tanda son las
-        # mismas; lo que rinde se pasa a la unidad de la que queda). Las
+        # hereda la de la que se va, pasada a la unidad de la que queda (la
+        # receta es por 1: si 1 de la que se va son `factor` de la que
+        # queda, lo que lleva 1 de la que queda es 1/factor de aquello). Las
         # tandas anotadas pasan tambien, para que el rendimiento real y lo
         # vencido sigan diciendo algo de la que queda.
         if origen.tipo == "preparacion":
@@ -640,7 +641,8 @@ def fusionar_ingrediente(
                     db.query(models.LineaPreparacion).filter(models.LineaPreparacion.preparacion_id == origen.id).all()
                 ):
                     linea.preparacion_id = destino.id
-                destino.rinde = round((origen.rinde or 1) * factor, 6)
+                    linea.cantidad = round(linea.cantidad / factor, 6)
+                destino.rinde = 1.0
                 destino.modo_produccion = origen.modo_produccion
                 destino.vida_util_horas = origen.vida_util_horas
                 tocadas.add(destino.id)

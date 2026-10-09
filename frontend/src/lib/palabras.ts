@@ -69,7 +69,7 @@ export const TERMINOS: Record<string, { tecnico: string; sencillo: string; donde
   'kpi.ganancia_neta': { tecnico: 'Ganancia neta', sencillo: 'Te quedó', donde: 'Reportes' },
   'kpi.ticket_promedio': { tecnico: 'Ticket promedio', sencillo: 'Gasta en promedio cada cliente', donde: 'Reportes y Ventas' },
   'kpi.fiado_pendiente': { tecnico: 'A crédito por cobrar', sencillo: 'Te deben', donde: 'Ventas' },
-  'kpi.valor_deposito': { tecnico: 'Valor en depósito', sencillo: 'Plata en mercancía', donde: 'Inventario y Reportes' },
+  'kpi.valor_deposito': { tecnico: 'Valor en inventario', sencillo: 'Plata en mercancía', donde: 'Inventario y Reportes' },
   'kpi.bajo_minimo': { tecnico: 'Bajo mínimo', sencillo: 'Por debajo del mínimo', donde: 'Inventario' },
   'kpi.bajo_minimo_agotadas': { tecnico: 'Bajo mínimo o agotadas', sencillo: 'Por debajo del mínimo o agotadas', donde: 'Reportes' },
   'inventario.stock': { tecnico: 'Stock', sencillo: 'Hay', donde: 'Inventario' },

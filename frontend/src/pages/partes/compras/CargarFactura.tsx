@@ -20,6 +20,7 @@ import {
   unidadDistinta,
   unidadNuestra,
 } from '../../../lib/compras'
+import { unidadDe } from '../../../lib/inventario'
 import { fmtNum } from '../../../lib/moneda'
 import { necesitaReferencia } from '../../../lib/pagos'
 import { anotarAntesDeGuardar, completarDespuesDeGuardar } from '../../../lib/pendientesCompras'
@@ -45,7 +46,7 @@ import type {
  *
  * LO QUE CAMBIA RESPECTO A ANTES (pizarra del 7-oct): cada renglón dice QUÉ
  * ES su mercancía --materia prima, reventa, consumible, desechable-- y eso
- * decide solo a dónde va la plata: al depósito o a gasto. Y la caja de 24
+ * decide solo a dónde va la plata: al inventario o a gasto. Y la caja de 24
  * maltas se carga como caja y entra como 24 maltas: la presentación es del
  * proveedor, la mercancía es la malta. Abajo, "a dónde va la plata" lo
  * resume sin pasar por la contabilidad.
@@ -66,6 +67,15 @@ const FORMAS_PAGO = [
   { valor: 'Efectivo $', texto: 'Efectivo $' },
   { valor: 'Banco', texto: 'Banco' },
   { valor: 'Credito', texto: 'A crédito' },
+  { valor: 'Mixto', texto: 'Mixto' },
+]
+// Con qué puede ir cada parte de un pago mixto: plata de verdad, no deuda.
+const FORMAS_PARTE = FORMAS_PAGO.filter((f) => f.valor !== 'Credito' && f.valor !== 'Mixto')
+/** Una parte de un pago mixto, en la moneda del papel. */
+type ParteDePago = { forma: string; monto: string; referencia: string }
+const PARTES_INICIALES: ParteDePago[] = [
+  { forma: 'Efectivo', monto: '', referencia: '' },
+  { forma: 'Banco', monto: '', referencia: '' },
 ]
 
 // Una factura mas vieja que esto se avisa, no se bloquea: el plazo real para
@@ -74,7 +84,7 @@ const DIAS_FACTURA_VIEJA = 60
 
 /** Cómo llegó el renglón: en un envase que trae varias unidades nuestras. */
 type Paquete = {
-  /** "caja", "bulto", "paquete": como lo llama el proveedor. */
+  /** "empaque" (desde el 8-oct no se escribe), o como lo llamó el papel del proveedor. */
   nombre: string
   /** Cuántas unidades NUESTRAS trae uno. */
   trae: string
@@ -120,10 +130,15 @@ function lineaCompleta(l: Linea): boolean {
   return (!!l.ingrediente_id || !!l.concepto) && Number(l.cantidad) > 0 && l.costo_unitario !== ''
 }
 
+/** Todavía no dice nada: ni qué es ni cuánto. Es el renglón que queda al final. */
+function renglonVacio(l: Linea): boolean {
+  return !l.ingrediente_id && !l.concepto && !(Number(l.cantidad) > 0) && !(Number(l.costo_unitario) > 0)
+}
+
 // En qué paso vive cada campo: un aviso que lleva a él primero abre su paso.
 const PASO_DE: Record<string, Numero> = {
   'cf-proveedor': 1, 'cf-rif': 1, 'cf-numero': 1, 'cf-fecha': 1, 'cf-moneda': 1, 'cf-tasa': 1, 'cf-control': 1,
-  'cf-referencia': 3, 'cf-vence': 3, 'cf-retencion': 3, 'cf-descripcion': 3,
+  'cf-referencia': 3, 'cf-mixto': 3, 'cf-vence': 3, 'cf-retencion': 3, 'cf-descripcion': 3,
 }
 type Numero = 1 | 2 | 3
 
@@ -191,6 +206,17 @@ export default function CargarFactura({
   const [retencion, setRetencion] = useState<'' | '0' | '75' | '100'>('')
   const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0].valor)
   const [referenciaPago, setReferenciaPago] = useState('')
+  // Pago mixto: con qué, cuánto y el comprobante de cada parte (Leider, 8-oct).
+  const [partesPago, setPartesPago] = useState<ParteDePago[]>(PARTES_INICIALES)
+  // Los servicios ya cargados (Internet, Luz): son fijos, se ofrecen de un
+  // toque para no escribirlos distinto cada mes.
+  const [servicios, setServicios] = useState<string[]>([])
+  useEffect(() => {
+    api
+      .listarServicios()
+      .then(setServicios)
+      .catch(() => undefined)
+  }, [])
   const [descripcion, setDescripcion] = useState('')
   const [lineas, setLineas] = useState<Linea[]>([LINEA_VACIA])
   const [recargo, setRecargo] = useState('')
@@ -214,6 +240,7 @@ export default function CargarFactura({
   }, [])
 
   const esCredito = formaPago === 'Credito'
+  const esMixto = formaPago === 'Mixto'
   const borrador = lectura?.borrador ?? null
 
   // ── Cuentas del formulario ──────────────────────────────────────────────
@@ -318,6 +345,28 @@ export default function CargarFactura({
   })
   const avisoPrecio = (i: number) => revision?.precios.find((p) => p.indice === i && p.nivel !== 'normal')
 
+  // ── El pago mixto: las partes tienen que dar lo que se le paga ──────────
+  const retenidoFormulario = fiscal.agente_retencion && ivaMostrado > 0 ? (ivaMostrado * Number(retencionEfectiva)) / 100 : 0
+  const aPagarFormulario = Math.round((totalFormulario - retenidoFormulario) * 100) / 100
+  const sumaPartes = Math.round(partesPago.reduce((t, p) => t + (Number(p.monto) || 0), 0) * 100) / 100
+  const faltaMixto = Math.round((aPagarFormulario - sumaPartes) * 100) / 100
+  const partesListas =
+    partesPago.length >= 2 &&
+    Math.abs(faltaMixto) < 0.005 &&
+    partesPago.every((p) => Number(p.monto) > 0 && (!necesitaReferencia(p.forma) || !!p.referencia.trim()))
+  const problemaMixto = !esMixto
+    ? ''
+    : faltaMixto > 0.004
+      ? `Al pago mixto le faltan ${monedaCarga}${fmtNum(faltaMixto, 2)}`
+      : faltaMixto < -0.004
+        ? `El pago mixto se pasa por ${monedaCarga}${fmtNum(-faltaMixto, 2)}`
+        : partesListas
+          ? ''
+          : 'Falta una referencia en el pago mixto'
+  function cambiarParte(i: number, cambio: Partial<ParteDePago>) {
+    setPartesPago((prev) => prev.map((p, k) => (k === i ? { ...p, ...cambio } : p)))
+  }
+
   // ── Lo que falta revisar, en orden de pantalla ──────────────────────────
   const pendientes: Pendiente[] = []
   if (revision?.duplicadas.length) pendientes.push({ texto: 'Parece ya cargada', tono: 'mal', ancla: 'cf-numero' })
@@ -342,8 +391,18 @@ export default function CargarFactura({
         tono: g.tono,
         ancla: `cf-renglon-${g.renglones[0]}`,
       })
+    // Cada renglón se cierra con "Listo" antes de guardar (Leider, 8-oct): un
+    // renglón abierto es un renglón a medias.
+    const sinListo = lineas.map((l, i) => (l.abierta && !renglonVacio(l) ? i : -1)).filter((i) => i >= 0)
+    if (sinListo.length > 0)
+      pendientes.push({
+        texto: sinListo.length === 1 ? `Renglón ${sinListo[0] + 1}: dale Listo` : `${sinListo.length} renglones sin Listo`,
+        tono: 'mal',
+        ancla: `cf-renglon-${sinListo[0]}`,
+      })
   }
   if (cuadreAplica && !cuadra) pendientes.push({ texto: 'No cuadra con el papel', tono: 'ojo', ancla: 'cf-totales' })
+  if (problemaMixto) pendientes.push({ texto: problemaMixto, tono: 'mal', ancla: 'cf-mixto' })
   if (!tasaNum) pendientes.push({ texto: 'Falta la tasa', tono: 'mal', ancla: 'cf-tasa' })
 
   function sinMercanciaEn(l: Linea) {
@@ -363,7 +422,7 @@ export default function CargarFactura({
     const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
     if (l.leido && !l.recordada && !l.paquete && ing && unidadDistinta(l.leido.unidad, ing.unidad))
       return { texto: 'con unidad distinta', tono: 'ojo' }
-    if (aviso) return { texto: 'con precio fuera de lo normal', tono: 'ojo' }
+    if (aviso) return { texto: 'con costo fuera de lo normal', tono: 'ojo' }
     return null
   }
 
@@ -457,7 +516,7 @@ export default function CargarFactura({
             const enPaquete = Math.abs(s.factor - 1) > 1e-9 && s.factor > 0
             const paquete: Paquete | undefined = enPaquete
               ? {
-                  nombre: s.unidad_papel || 'paquete',
+                  nombre: s.unidad_papel || 'empaque',
                   trae: sinRuido(s.factor),
                   paquetes: l.leido.cantidad == null ? '' : String(l.leido.cantidad),
                   precio: l.leido.precio_unitario == null ? '' : String(l.leido.precio_unitario),
@@ -580,6 +639,7 @@ export default function CargarFactura({
     setRif('')
     setDescripcion('')
     setReferenciaPago('')
+    setPartesPago(PARTES_INICIALES)
     setLineas([LINEA_VACIA])
     setRecargo('')
     setDescuentoFactura('')
@@ -609,6 +669,9 @@ export default function CargarFactura({
     if (sinDecir >= 0) return falla('Falta decir qué es algún renglón: elige la mercancía, márcalo como flete o servicio, o quítalo.', `cf-renglon-${sinDecir}`)
     const gastoSinMonto = lineas.findIndex((l) => l.concepto && !(Number(l.costo_unitario) > 0))
     if (gastoSinMonto >= 0) return falla('Falta el monto de algún renglón.', `cf-renglon-${gastoSinMonto}`)
+    const sinListo = lineas.findIndex((l) => l.abierta && !renglonVacio(l))
+    if (sinListo >= 0) return falla('Dale «Listo» a cada renglón antes de guardar.', `cf-renglon-${sinListo}`)
+    if (problemaMixto) return falla(`${problemaMixto}.`, 'cf-mixto')
 
     const items = lineas
       .filter((l) => !l.concepto && l.ingrediente_id && Number(l.cantidad) > 0 && Number(l.costo_unitario) >= 0)
@@ -622,7 +685,8 @@ export default function CargarFactura({
       .filter((l) => l.concepto && Number(l.costo_unitario) > 0)
       .map((l) => ({
         concepto: l.concepto!,
-        descripcion: (l.detalle ?? '').trim(),
+        // El flete es el flete: no lleva nombre.
+        descripcion: l.concepto === 'Flete' ? '' : (l.detalle ?? '').trim(),
         monto: aUsd(Number(l.costo_unitario)),
         exento: exentoDe(l),
         ...(l.concepto === 'Equipo' ? { vida_util_meses: Number(l.vidaUtil) || 60 } : {}),
@@ -639,7 +703,7 @@ export default function CargarFactura({
       yaCargadas.length > 0 &&
       !(await dialogo.confirmar({
         titulo: 'Esta factura parece ya cargada',
-        texto: `Ya hay una ${yaCargadas[0].numero_factura} de ${yaCargadas[0].proveedor_nombre}. Guardarla otra vez duplica la mercancía en el depósito y el gasto.`,
+        texto: `Ya hay una ${yaCargadas[0].numero_factura} de ${yaCargadas[0].proveedor_nombre}. Guardarla otra vez duplica la mercancía en el inventario y el gasto.`,
         aceptar: 'Guardar igual',
         peligro: true,
       }))
@@ -705,7 +769,12 @@ export default function CargarFactura({
         recargo: aUsd(recargoNum),
         descuento: aUsd(descuentoNum),
         fecha_vencimiento: esCredito && fechaVencimiento ? fechaVencimiento : undefined,
-        referencia_pago: referenciaPago.trim() || undefined,
+        referencia_pago: esMixto ? undefined : referenciaPago.trim() || undefined,
+        // Las partes van en dólares, como todo lo demás; el servidor cuadra
+        // el último centavo contra lo que se le paga al proveedor.
+        pagos: esMixto
+          ? partesPago.map((p) => ({ forma_pago: p.forma, monto: aUsd(Number(p.monto)), referencia: p.referencia.trim() || undefined }))
+          : undefined,
       }
       await anotarAntesDeGuardar(numeroFactura.trim(), cuerpoCompletar)
       const guardada = await api.crearFacturaCompra({ ...comun, items, gastos, iva: ivaLineas })
@@ -728,7 +797,7 @@ export default function CargarFactura({
       } else if (r.estado === 'pendiente') {
         cola = cuerpoCompletar.soporte_id
           ? ' Sin conexión para terminar: la foto, la memoria del proveedor y las alertas las completa el servidor solo.'
-          : ' Sin conexión para revisar los precios: el servidor lo hace solo.'
+          : ' Sin conexión para revisar los costos: el servidor lo hace solo.'
       } else {
         cola = ` Ojo: ${r.mensaje}`
       }
@@ -757,6 +826,21 @@ export default function CargarFactura({
   const conDocumento = documento !== null
   const datosListos = !!proveedor.trim() && !!rif.trim() && !!numeroFactura.trim() && !!tasaNum
   const fmtFecha = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-VE')
+  // "Listo" en un renglón lo pliega y deja el SIGUIENTE arriba en pantalla
+  // (Leider, 8-oct): la factura se llena de arriba abajo, y lo que toca
+  // llenar tiene que quedar a la vista, no donde haya caído la página.
+  function plegarRenglon(i: number) {
+    cambiarLinea(i, { abierta: false })
+    const ancla = i + 1 < lineas.length ? `cf-renglon-${i + 1}` : 'cf-otro-renglon'
+    setTimeout(() => document.getElementById(ancla)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+  }
+  function otroRenglon() {
+    const nuevo = lineas.length
+    // Lo que ya esta completo se pliega: el renglon nuevo queda a la vista.
+    setLineas((prev) => [...prev.map((l) => (lineaCompleta(l) ? { ...l, abierta: false } : l)), LINEA_VACIA])
+    setTimeout(() => document.getElementById(`cf-renglon-${nuevo}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+  }
+
   // "Listo" pliega el paso y abre el siguiente, que queda arriba en pantalla.
   function siguiente(n: Numero | 0) {
     setPaso(n)
@@ -764,6 +848,10 @@ export default function CargarFactura({
     else setTimeout(() => document.getElementById('cf-totales')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60)
   }
   const forma = FORMAS_PAGO.find((f) => f.valor === formaPago)?.texto ?? formaPago
+  const resumenMixto = partesPago
+    .filter((p) => Number(p.monto) > 0)
+    .map((p) => `${FORMAS_PAGO.find((f) => f.valor === p.forma)?.texto ?? p.forma} ${monedaCarga}${fmtNum(Number(p.monto), 2)}`)
+    .join(' + ')
   return (
     <div className="space-y-4">
       {porCompletar > 0 && (
@@ -818,7 +906,7 @@ export default function CargarFactura({
           {/* ── Paso 1: la factura ── */}
           <Paso
             numero={1}
-            titulo="La factura"
+            titulo="Información de la factura"
             detalle={conDocumento ? 'Lo marcado con ✦ lo leyó la IA. Compáralo con el papel.' : 'Quién la emitió, cuál es y de cuándo.'}
             abierto={paso === 1}
             onAbrir={() => setPaso(paso === 1 ? 0 : 1)}
@@ -982,6 +1070,8 @@ export default function CargarFactura({
                   problema={sinMercanciaEn(l) ? { texto: 'Falta decir qué es', tono: 'mal' } : problemaDeRenglon(l, i)}
                   puedeQuitar={lineas.length > 1}
                   conocidos={paquetesConocidos(l.ingrediente_id)}
+                  servicios={servicios}
+                  onListo={() => plegarRenglon(i)}
                   onCambiar={(cambio) => cambiarLinea(i, cambio)}
                   onMercancia={(id) => elegirMercancia(i, id)}
                   onTipo={(v) => elegirTipo(i, v)}
@@ -992,9 +1082,9 @@ export default function CargarFactura({
             </div>
             <button
               type="button"
-              // Lo que ya esta completo se pliega: el renglon nuevo queda a la vista.
-              onClick={() => setLineas((prev) => [...prev.map((l) => (lineaCompleta(l) ? { ...l, abierta: false } : l)), LINEA_VACIA])}
-              className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-neutral-300 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-500/5"
+              id="cf-otro-renglon"
+              onClick={otroRenglon}
+              className="scroll-mt-24 mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-neutral-300 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-500/5"
             >
               <Icono nombre="mas" size={14} />
               Otro renglón
@@ -1038,24 +1128,93 @@ export default function CargarFactura({
             abierto={paso === 3}
             onAbrir={() => setPaso(paso === 3 ? 0 : 3)}
             onListo={() => siguiente(0)}
-            hecho={!necesitaReferencia(formaPago) || !!referenciaPago.trim()}
+            hecho={esMixto ? partesListas : !necesitaReferencia(formaPago) || !!referenciaPago.trim()}
             resumen={
               <>
-                <span className="font-medium text-neutral-800">{forma}</span>
+                <span className="font-medium text-neutral-800">{esMixto && resumenMixto ? resumenMixto : forma}</span>
                 {esCredito && fechaVencimiento && ` · vence ${fmtFecha(fechaVencimiento)}`}
-                {referenciaPago.trim() && ` · ref. ${referenciaPago.trim()}`}
-                {necesitaReferencia(formaPago) && !referenciaPago.trim() && (
+                {referenciaPago.trim() && !esMixto && ` · ref. ${referenciaPago.trim()}`}
+                {(esMixto ? !!problemaMixto : necesitaReferencia(formaPago) && !referenciaPago.trim()) && (
                   <>
                     {' · '}
-                    <Falta>falta la referencia</Falta>
+                    <Falta>{esMixto ? problemaMixto.toLowerCase() : 'falta la referencia'}</Falta>
                   </>
                 )}
               </>
             }
           >
             <Filtros opciones={FORMAS_PAGO} activo={formaPago} alElegir={setFormaPago} className="mb-3" />
+            {esMixto && (
+              <div id="cf-mixto" className="scroll-mt-24 mb-3 space-y-2">
+                {partesPago.map((p, i) => (
+                  <div key={i} className="grid grid-cols-[minmax(0,1fr)_6.5rem] sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_2rem] gap-2 items-end">
+                    <label className="block">
+                      <span className="block text-[11px] text-neutral-500 mb-0.5">Con qué</span>
+                      <select value={p.forma} onChange={(e) => cambiarParte(i, { forma: e.target.value })} aria-label={`Parte ${i + 1}: con qué`} className={clase()}>
+                        {FORMAS_PARTE.map((f) => (
+                          <option key={f.valor} value={f.valor}>
+                            {f.texto}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="block text-[11px] text-neutral-500 mb-0.5">Cuánto ({monedaCarga})</span>
+                      <Numerico value={p.monto} onChange={(e) => cambiarParte(i, { monto: e.target.value })} placeholder="0.00" aria-label={`Parte ${i + 1}: cuánto`} className={clase()} />
+                    </label>
+                    <label className="block">
+                      <span className="block text-[11px] text-neutral-500 mb-0.5">Referencia</span>
+                      <input
+                        value={p.referencia}
+                        onChange={(e) => cambiarParte(i, { referencia: e.target.value })}
+                        disabled={!necesitaReferencia(p.forma)}
+                        placeholder={necesitaReferencia(p.forma) ? '' : 'no lleva'}
+                        aria-label={`Parte ${i + 1}: referencia`}
+                        className={clase()}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setPartesPago((prev) => prev.filter((_, k) => k !== i))}
+                      disabled={partesPago.length <= 2}
+                      aria-label={`Quitar la parte ${i + 1}`}
+                      className="h-9 w-8 grid place-items-center rounded-lg text-neutral-400 hover:text-peligro-600 hover:bg-peligro-500/10 disabled:opacity-30"
+                    >
+                      <Icono nombre="quitar" size={14} />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setPartesPago((prev) => [...prev, { forma: 'Efectivo $', monto: '', referencia: '' }])}
+                    className="text-xs font-semibold text-neutral-600 underline"
+                  >
+                    Otra parte
+                  </button>
+                  {faltaMixto > 0.004 && partesPago.some((p) => !(Number(p.monto) > 0)) ? (
+                    // Lo que falta, de un toque, en la primera parte vacía.
+                    <button
+                      type="button"
+                      onClick={() => cambiarParte(partesPago.findIndex((p) => !(Number(p.monto) > 0)), { monto: faltaMixto.toFixed(2) })}
+                      className="text-aviso-800 tabular-nums underline"
+                    >
+                      Faltan {monedaCarga}{fmtNum(faltaMixto, 2)} de {monedaCarga}{fmtNum(aPagarFormulario, 2)}: ponerlos
+                    </button>
+                  ) : (
+                    <span className={`tabular-nums ${Math.abs(faltaMixto) < 0.005 ? 'text-exito-700' : 'text-aviso-800'}`}>
+                      {Math.abs(faltaMixto) < 0.005
+                        ? `Cuadra: ${monedaCarga}${fmtNum(aPagarFormulario, 2)}`
+                        : faltaMixto > 0
+                          ? `Faltan ${monedaCarga}${fmtNum(faltaMixto, 2)} de ${monedaCarga}${fmtNum(aPagarFormulario, 2)}`
+                          : `Se pasa por ${monedaCarga}${fmtNum(-faltaMixto, 2)}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
-              {necesitaReferencia(formaPago) && (
+              {!esMixto && necesitaReferencia(formaPago) && (
                 <Dato id="cf-referencia" etiqueta="Referencia del pago">
                   <input value={referenciaPago} onChange={(e) => setReferenciaPago(e.target.value)} className={clase()} />
                 </Dato>
@@ -1157,6 +1316,13 @@ export default function CargarFactura({
 }
 
 // ── Piezas ────────────────────────────────────────────────────────────────
+
+/** "2 empaques", "1 empaque", "3 CAJA" (como lo llamó el papel). */
+function nombrePaquete(p: Paquete): string {
+  const n = Number(p.paquetes)
+  const nombre = p.nombre || 'empaque'
+  return nombre === 'empaque' && n !== 1 ? 'empaques' : nombre
+}
 
 function clase(tono?: Tono) {
   const borde = tono === 'mal' ? 'border-peligro-400 ring-1 ring-peligro-200' : tono === 'ojo' ? 'border-aviso-400 ring-1 ring-aviso-200' : 'border-neutral-300'
@@ -1336,6 +1502,8 @@ function Renglon({
   problema,
   puedeQuitar,
   conocidos,
+  servicios,
+  onListo,
   onCambiar,
   onMercancia,
   onTipo,
@@ -1353,6 +1521,10 @@ function Renglon({
   problema: { texto: string; tono: Tono } | null
   puedeQuitar: boolean
   conocidos: Equivalencia[]
+  /** Los servicios ya cargados alguna vez, para elegirlos de un toque. */
+  servicios: string[]
+  /** "Listo": plegar el renglón (y dejar el siguiente a la vista). */
+  onListo: () => void
   onCambiar: (cambio: Partial<Linea>) => void
   onMercancia: (id: number) => void
   /** El primer desplegable: un tipo de mercancía o un concepto de gasto. */
@@ -1387,13 +1559,13 @@ function Renglon({
 
   const enPaquete = !!l.paquete
   function cambiarPaquete(cambio: Partial<Paquete>) {
-    const p = { ...(l.paquete ?? { nombre: 'caja', trae: '', paquetes: '', precio: '' }), ...cambio }
+    const p = { ...(l.paquete ?? { nombre: 'empaque', trae: '', paquetes: '', precio: '' }), ...cambio }
     const calc = desdePaquete(p)
     onCambiar({ paquete: p, ...(calc ?? {}) })
   }
   function activarPaquete(desde?: Equivalencia) {
     cambiarPaquete({
-      nombre: desde?.unidad_papel || 'caja',
+      nombre: desde?.unidad_papel || 'empaque',
       trae: desde ? sinRuido(desde.factor) : '',
       // Lo que ya estaba escrito pasa a ser "cuantos paquetes": es lo que se
       // tecleo mirando el papel.
@@ -1468,7 +1640,7 @@ function Renglon({
             {l.concepto ? (
               <>
                 {concepto?.texto}
-                {l.detalle && <span className="font-normal text-neutral-500"> · {l.detalle}</span>}
+                {l.detalle && l.concepto !== 'Flete' && <span className="font-normal text-neutral-500"> · {l.detalle}</span>}
               </>
             ) : (
               ing?.nombre
@@ -1479,27 +1651,50 @@ function Renglon({
               ? problema.texto
               : l.concepto
                 ? `${l.concepto === 'Equipo' ? 'a equipos' : 'a gasto'}${exento ? ' · exento' : ''}`
-                : `${l.paquete ? `${l.paquete.paquetes} ${l.paquete.nombre} · ` : ''}${cant(Number(l.cantidad))} ${unidad} × ${moneda}${fmtNum(Number(l.costo_unitario), 2)}${exento ? ' · exento' : ''}`}
+                : `${l.paquete ? `${l.paquete.paquetes} ${nombrePaquete(l.paquete)} · ` : ''}${cant(Number(l.cantidad))} ${unidadDe(Number(l.cantidad), unidad)} × ${moneda}${fmtNum(Number(l.costo_unitario), 2)}${exento ? ' · exento' : ''}`}
           </span>
         </span>
         <span className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900">
           {moneda}
           {fmtNum(subtotal, 2)}
         </span>
+        {/* El chevron de la esquina: se abre tocando cualquier parte del renglón. */}
+        <span aria-hidden className="shrink-0 text-neutral-400 rotate-90">
+          <Icono nombre="chevron" size={16} />
+        </span>
       </button>
     )
   }
 
-  const quitar = puedeQuitar && (
-    <button
-      type="button"
-      onClick={onQuitar}
-      className="shrink-0 -mr-1 w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:text-peligro-600 hover:bg-peligro-500/10"
-      title="Quitar renglón"
-      aria-label={`Quitar el renglón ${indice + 1}`}
-    >
-      <Icono nombre="quitar" size={14} />
-    </button>
+  // La esquina: plegar (si ya está completo) y quitar. El mismo chevron que
+  // abre el renglón plegado, ahora apuntando arriba.
+  const quitar = (
+    <span className="shrink-0 -mr-1 flex items-center">
+      {completa && (
+        <button
+          type="button"
+          onClick={onListo}
+          className="w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-500/10"
+          title="Plegar el renglón"
+          aria-label={`Plegar el renglón ${indice + 1}`}
+        >
+          <span className="inline-block -rotate-90">
+            <Icono nombre="chevron" size={16} />
+          </span>
+        </button>
+      )}
+      {puedeQuitar && (
+        <button
+          type="button"
+          onClick={onQuitar}
+          className="w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:text-peligro-600 hover:bg-peligro-500/10"
+          title="Quitar renglón"
+          aria-label={`Quitar el renglón ${indice + 1}`}
+        >
+          <Icono nombre="quitar" size={14} />
+        </button>
+      )}
+    </span>
   )
   const delPapel = l.leido && (
     <p className="mt-1.5 text-xs text-neutral-500">
@@ -1513,7 +1708,7 @@ function Renglon({
   )
   const listo = completa && (
     <div className="flex justify-end">
-      <button type="button" onClick={() => onCambiar({ abierta: false })} className="text-xs font-semibold text-neutral-600 underline">
+      <button type="button" onClick={onListo} className="text-xs font-semibold text-neutral-600 underline">
         Listo
       </button>
     </div>
@@ -1530,7 +1725,24 @@ function Renglon({
             <div className="flex-1 min-w-0">
               <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
                 {selectorTipo}
-                <input value={l.detalle ?? ''} onChange={(e) => onCambiar({ detalle: e.target.value })} placeholder={`Ej. ${concepto.ejemplo}`} aria-label="Qué es" className={clase()} />
+                {l.concepto === 'Flete' ? (
+                  // El flete es el flete: no lleva nombre.
+                  <span className="self-center text-sm text-neutral-500 truncate">{concepto.ayuda}</span>
+                ) : l.concepto === 'Servicio' ? (
+                  // Los servicios son fijos (internet, luz): se eligen de la
+                  // lista de los ya cargados, o se escribe uno nuevo.
+                  <CampoSugerido
+                    value={l.detalle ?? ''}
+                    onChange={(v) => onCambiar({ detalle: v })}
+                    opciones={servicios}
+                    placeholder="Ej. Internet, Luz"
+                    vacio="Escribe cuál: queda en la lista para la próxima"
+                    aria-label="Qué servicio"
+                    className={clase()}
+                  />
+                ) : (
+                  <input value={l.detalle ?? ''} onChange={(e) => onCambiar({ detalle: e.target.value })} placeholder={`Ej. ${concepto.ejemplo}`} aria-label="Qué es" className={clase()} />
+                )}
               </div>
               {delPapel}
             </div>
@@ -1564,7 +1776,7 @@ function Renglon({
               ? 'Va a la cuenta de fletes, aparte de la mercancía: el flete lleva su propia retención de ISLR.'
               : l.concepto === 'Equipo'
                 ? 'Entra como equipo y se deprecia solo con los meses.'
-                : `${concepto.ayuda} Va a gasto, no al depósito.`}
+                : `${concepto.ayuda} Va a gasto, no al inventario.`}
           </p>
           {listo}
         </div>
@@ -1608,20 +1820,31 @@ function Renglon({
           {quitar}
         </div>
 
-        {/* Cómo vino: suelta, o en caja/paquete. */}
+        {/* Cómo vino: suelta, o en empaque. Ya decidido (al crear la mercancía
+            o con un toque), se lee y no se vuelve a preguntar; "¿vino suelta?"
+            es el camino de vuelta. */}
         {ing && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => (enPaquete ? onCambiar({ paquete: undefined }) : activarPaquete())}
-              aria-pressed={enPaquete}
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                enPaquete ? 'bg-neutral-900 text-white' : 'vp-control text-neutral-600'
-              }`}
-            >
-              <Icono nombre="paquete" size={13} />
-              {enPaquete ? `Viene en ${l.paquete!.nombre || 'paquete'}` : 'Viene en caja o paquete'}
-            </button>
+            {enPaquete ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 text-white px-2.5 py-1 text-xs font-medium">
+                  <Icono nombre="paquete" size={13} />
+                  {`Viene en ${l.paquete!.nombre || 'empaque'}`}
+                </span>
+                <button type="button" onClick={() => onCambiar({ paquete: undefined })} className="text-xs text-neutral-500 underline">
+                  ¿Vino suelta?
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => activarPaquete()}
+                className="vp-control inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-neutral-600 transition-colors"
+              >
+                <Icono nombre="paquete" size={13} />
+                Viene en empaque
+              </button>
+            )}
             {!enPaquete &&
               conocidos.map((c) => (
                 <button
@@ -1631,7 +1854,7 @@ function Renglon({
                   className="vp-control inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-neutral-600"
                   title={`Este proveedor ya la trajo así ${c.veces === 1 ? '1 vez' : `${c.veces} veces`}`}
                 >
-                  {c.unidad_papel || 'paquete'} × {sinRuido(c.factor)}
+                  {c.unidad_papel || 'empaque'} × {sinRuido(c.factor)}
                 </button>
               ))}
           </div>
@@ -1639,21 +1862,17 @@ function Renglon({
 
         {enPaquete ? (
           <div className="space-y-2">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+            <div className="grid grid-cols-3 gap-2 items-end">
               <label className="block">
                 <span className="block text-[11px] text-neutral-500 mb-0.5">Cuántos</span>
                 <Numerico value={l.paquete!.paquetes} onChange={(e) => cambiarPaquete({ paquetes: e.target.value })} placeholder="2" className={clase()} />
-              </label>
-              <label className="block">
-                <span className="block text-[11px] text-neutral-500 mb-0.5">Envase</span>
-                <input value={l.paquete!.nombre} onChange={(e) => cambiarPaquete({ nombre: e.target.value })} placeholder="caja" className={clase()} />
               </label>
               <label className="block">
                 <span className="block text-[11px] text-neutral-500 mb-0.5">Cada uno trae ({unidad})</span>
                 <Numerico value={l.paquete!.trae} onChange={(e) => cambiarPaquete({ trae: e.target.value })} placeholder="24" className={clase()} />
               </label>
               <label className="block">
-                <span className="block text-[11px] text-neutral-500 mb-0.5">Precio c/u ({moneda})</span>
+                <span className="block text-[11px] text-neutral-500 mb-0.5">Costo c/u ({moneda})</span>
                 <Numerico
                   value={l.paquete!.precio}
                   onChange={(e) => cambiarPaquete({ precio: e.target.value })}
@@ -1665,11 +1884,11 @@ function Renglon({
             <p className="text-xs text-neutral-600 flex flex-wrap items-center gap-x-2">
               <span className="inline-flex items-center gap-1 text-neutral-400">
                 <Icono nombre="inventario" size={13} />
-                Entra al depósito:
+                Entra al inventario:
               </span>
               {trae > 0 && Number(l.cantidad) > 0 ? (
                 <span className="font-semibold tabular-nums text-neutral-900">
-                  {cant(Number(l.cantidad))} {unidad}
+                  {cant(Number(l.cantidad))} {unidadDe(Number(l.cantidad), unidad)}
                   {Number(l.costo_unitario) > 0 && (
                     <span className="font-normal text-neutral-600">
                       {' '}
@@ -1741,10 +1960,10 @@ function Renglon({
             )}
             {unidadChoca && (
               <p className="text-aviso-800">
-                La factura dice {l.leido!.unidad} y {ing!.nombre} se lleva en {ing!.unidad}: si viene en caja o paquete, márcalo arriba y el sistema convierte.
+                La factura dice {l.leido!.unidad} y {ing!.nombre} se lleva en {ing!.unidad}: si viene en empaque, márcalo arriba y el sistema convierte.
               </p>
             )}
-            {papelNoCuadra && <p className="text-aviso-800">En el papel, cantidad × precio no da el total del renglón: revisa esos números.</p>}
+            {papelNoCuadra && <p className="text-aviso-800">En el papel, cantidad × costo no da el total del renglón: revisa esos números.</p>}
             {aviso && (
               <p className={aviso.nivel === 'unidad' ? 'text-peligro-700' : 'text-aviso-800'}>
                 {aviso.mensaje}{' '}

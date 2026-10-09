@@ -9,7 +9,7 @@ import type { Rango } from '../../../lib/fechas'
 import type { Categoria, ConteoResumen, CostoIndirecto, CostoParaPrecios, CostoTeoricoFila, Merma, SobranteInventario } from '../../../lib/types'
 
 /**
- * El control del depósito: lo que no depende de que la cocina anote nada.
+ * El control del inventario: lo que no depende de que la cocina anote nada.
  *
  *  - TEÓRICO vs REAL: lo que debió salir según las recetas contra lo que
  *    encontró el conteo. Una diferencia grande en el pollo es porción
@@ -146,7 +146,7 @@ export default function Control({
                   )
                 ) : (
                   <>
-                    Para ver la diferencia hace falta contar el depósito.{' '}
+                    Para ver la diferencia hace falta contar el inventario.{' '}
                     <button type="button" onClick={onContar} className="font-semibold underline">
                       Contar ahora
                     </button>
@@ -314,7 +314,7 @@ export default function Control({
 
       {vista === 'costos' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-          <Seccion titulo="Aceite de freír por pieza" ayuda="Lo cargado a la freidora, repartido entre las piezas fritas que se vendieron. Se suma al costo de lo que se fríe.">
+          <Seccion titulo="Aceite de freír por unidad" ayuda="Lo cargado a la freidora, repartido entre las unidades fritas que se vendieron. Se suma al costo de lo que se fríe.">
             {indirectos.length === 0 ? (
               <p className="text-sm text-neutral-500">Marca el aceite como «costo indirecto» en su ficha (Materia prima) y anota cada vez que cargas la freidora.</p>
             ) : (
@@ -324,12 +324,12 @@ export default function Control({
                     <span>
                       <span className="block font-medium">{i.nombre}</span>
                       <span className="block text-xs text-neutral-500">
-                        Cargado {fmt(i.cargado)} {unidadDe(i.cargado, i.unidad)} ({dinero(i.valor)}) · {fmt(i.piezas)} piezas fritas
+                        Cargado {fmt(i.cargado)} {unidadDe(i.cargado, i.unidad)} ({dinero(i.valor)}) · {fmt(i.piezas)} unidades fritas
                       </span>
                     </span>
                     <span className="text-right shrink-0">
                       <span className="block font-semibold tabular-nums">{i.por_pieza != null ? dinero(i.por_pieza) : '—'}</span>
-                      <span className="block text-xs text-neutral-500">por pieza</span>
+                      <span className="block text-xs text-neutral-500">por unidad</span>
                     </span>
                   </li>
                 ))}

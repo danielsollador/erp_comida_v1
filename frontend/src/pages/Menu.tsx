@@ -70,15 +70,19 @@ export default function Menu() {
     cargar()
   }, [])
 
+  // Devuelve la promesa: crear un producto espera a que el menú ya lo tenga
+  // antes de abrir su receta, que si no la pantalla de recetas no lo
+  // encuentra y se queda en la lista.
   function cargar() {
-    api.listarCategorias().then((cs) => {
+    const categorias = api.listarCategorias().then((cs) => {
       setCategorias(cs)
       setCargando(false)
     })
     // Una sola llamada para todo el menú: cuánto cuesta cada subsección y
     // cuál no tiene receta. Las recetas preguntaban variante por variante
     // --cien peticiones para abrir una pantalla-- y esto ya venía calculado.
-    api.costosVariantes().then((cs) => setCostos(new Map(cs.map((c) => [c.variante_id, c]))))
+    const costos = api.costosVariantes().then((cs) => setCostos(new Map(cs.map((c) => [c.variante_id, c]))))
+    return Promise.all([categorias, costos]).then(() => undefined)
   }
 
   return (
@@ -123,7 +127,7 @@ function ElMenu({
   categorias: Categoria[]
   costos: Map<number, CostoVariante>
   cargando: boolean
-  onCambio: () => void
+  onCambio: () => void | Promise<void>
   /** Cuantas cosas hay fuera del menu, para el enlace al pie de las categorias. */
   retirados: number
   onVerRetiradas: () => void
@@ -215,27 +219,15 @@ function ElMenu({
     const creado = await api.crearProducto(categoriaId, nombre, [{ nombre: SUBSECCION_INICIAL, precio }])
     setElegida(categoriaId)
     setCreando(null)
-    onCambio()
-    // UN PRODUCTO NACE CON PRECIO Y, SI SE QUIERE, CON RECETA. Sin receta se
-    // vende sin saber cuanto deja, y nadie vuelve despues a buscarla: se
-    // ofrece aqui mismo, un toque, y se puede dejar para despues (Leider,
-    // 1-oct, fight complexity).
+    // UN PRODUCTO NACE Y SE VA DERECHO A SU RECETA (Leider, 8-oct): sin
+    // receta se vende sin saber cuanto deja, y nadie vuelve despues a
+    // buscarla. Antes preguntaba "¿le pones la receta?" y habia que tocar
+    // otra vez; ahora abre la receta y listo. Se espera a que el menu ya
+    // tenga el producto: la pantalla de recetas lo busca en la lista.
+    await onCambio()
     const variante = creado.variantes?.[0]
     if (!variante) return
-    // Sin precio: primero el costo. Se va derecho a la receta, donde el
-    // precio sale del margen que se quiera. Mientras no tenga precio no se
-    // puede vender (no aparece en la caja).
-    if (!(precio > 0)) {
-      navegar('/menu/recetas', { state: { receta: variante.id } })
-      return
-    }
-    const ahora = await dialogo.confirmar({
-      titulo: `¿Qué lleva ${nombre}?`,
-      texto: 'Ponle la receta ahora y sabrás cuánta ganancia te deja cada uno. También puedes hacerlo después, desde Recetas.',
-      aceptar: 'Ponerle la receta',
-      cancelar: 'Después',
-    })
-    if (ahora) navegar('/menu/recetas', { state: { receta: variante.id } })
+    navegar('/menu/recetas', { state: { receta: variante.id } })
   }
 
   const { deshacible } = useDeshacer()
@@ -656,8 +648,7 @@ function TarjetaProducto({
       return []
     const quien = variantes.length > 1 ? `${v.nombre}: ` : ''
     const cuanto = info.margen_reposicion_pct < 0 ? 'lo venderías a pérdida' : `te dejaría ${info.margen_reposicion_pct.toFixed(0)}%`
-    const sugerido = info.precio_sugerido != null ? ` Para mantener tu margen, cóbralo a ${fmt(info.precio_sugerido)}.` : ''
-    return [`${quien}con los precios de hoy ${cuanto}.${sugerido}`]
+    return [`${quien}con los precios de hoy ${cuanto}.`]
   })
 
   async function renombrar() {
@@ -711,7 +702,7 @@ function TarjetaProducto({
     const info = costos.get(varianteId)
     // El costo promedio mira hacia atrás. Para poner un precio hoy lo que
     // manda es cuánto cuesta reponer los insumos, que con inflación puede ser
-    // varias veces más. Si difieren, se muestran los dos y el precio sugerido.
+    // varias veces más. Si difieren, se muestran los dos.
     const seEncarecio =
       info?.costo != null &&
       info.costo_reposicion != null &&
@@ -720,10 +711,7 @@ function TarjetaProducto({
       ? `\n\nProducirlo cuesta $${info.costo.toFixed(2)}. A $${precioActual.toFixed(2)} te deja ${info.margen_pct?.toFixed(0)}% de margen.` +
         (seEncarecio
           ? `\n\nOJO: con los precios de HOY cuesta $${info.costo_reposicion!.toFixed(2)}, ` +
-            `y a $${precioActual.toFixed(2)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.` +
-            (info.precio_sugerido != null
-              ? `\nPara mantener tu margen tendrías que cobrar $${info.precio_sugerido.toFixed(2)}.`
-              : '')
+            `y a $${precioActual.toFixed(2)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.`
           : '')
       : '\n\n(Este producto no tiene receta, así que no se sabe cuánto cuesta producirlo.)'
     const precio = await dialogo.pedirNumero({

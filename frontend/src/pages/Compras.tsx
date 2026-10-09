@@ -150,7 +150,7 @@ export default function Compras() {
       texto: `Sobre la factura ${f.numero_factura}. ¿Qué pasó?`,
       opciones: [
         { valor: 'devolucion', texto: 'Devolución', detalle: 'La mercancía vuelve al proveedor y sale del inventario.' },
-        { valor: 'descuento', texto: 'Descuento', detalle: 'Te quedas la mercancía y te rebajan el precio.' },
+        { valor: 'descuento', texto: 'Descuento', detalle: 'Te quedas la mercancía y te rebajan el costo.' },
       ],
     })) as 'devolucion' | 'descuento' | null
     if (!tipo) return
@@ -294,7 +294,7 @@ export default function Compras() {
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <Cifra titulo="Comprado" valor={`$${fmtNum(resumen.base, 2)}`} detalle={`${visibles.length} factura${visibles.length === 1 ? '' : 's'} · sin IVA`} />
-              <Cifra titulo="Al depósito" valor={`$${fmtNum(resumen.deposito, 2)}`} detalle="Mercancía que entró al stock" />
+              <Cifra titulo="Al inventario" valor={`$${fmtNum(resumen.deposito, 2)}`} detalle="Mercancía que entró al stock" />
               <Cifra titulo="A gasto" valor={`$${fmtNum(resumen.gasto, 2)}`} detalle="Desechables, servicios, equipos" />
               <Cifra
                 titulo="Por pagar"
@@ -557,7 +557,9 @@ function FilaFactura({
           {f.forma_pago === 'Credito' ? (
             <Pastilla tono={f.pagada ? 'bien' : 'ojo'}>{f.pagada ? 'Pagada' : 'Por pagar'}</Pastilla>
           ) : (
-            <span className="text-xs text-neutral-400">{f.forma_pago}</span>
+            <span className="text-xs text-neutral-400">
+              {f.forma_pago === 'Mixto' && f.pagos?.length ? f.pagos.map((p) => p.forma_pago).join(' + ') : f.forma_pago}
+            </span>
           )}
         </td>
         <td className="p-3 text-right">
@@ -576,7 +578,7 @@ function FilaFactura({
                     <li key={it.id} className="flex items-center gap-3 py-2 text-sm">
                       <PuntoTipo tipo={it.tipo} />
                       <span className="font-medium flex-1 min-w-0 truncate">{it.ingrediente_nombre}</span>
-                      <span className="text-xs text-neutral-500 shrink-0">{ALMACEN_DE[it.tipo].destino === 'gasto' ? 'a gasto' : 'al depósito'}</span>
+                      <span className="text-xs text-neutral-500 shrink-0">{ALMACEN_DE[it.tipo].destino === 'gasto' ? 'a gasto' : 'al inventario'}</span>
                       <span className="tabular-nums text-neutral-600 shrink-0">
                         {fmtNum(it.cantidad, it.cantidad % 1 ? 2 : 0)} {it.unidad} × ${fmtNum(it.costo_unitario, 2)}
                         {it.exento && <span className="text-neutral-400"> · exento</span>}

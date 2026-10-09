@@ -135,7 +135,7 @@ export default function TablaMercancia({
         {resumen && (
           <div className="vp-losa order-last xl:order-none basis-full xl:basis-auto p-1.5 xl:p-2.5 flex flex-wrap items-center gap-1 xl:grid xl:grid-cols-4 xl:gap-2 xl:flex-1 xl:min-w-[22rem]">
             <Cuadrito titulo="Mercancías" valor={String(visibles.length === activos.length ? activos.length : `${visibles.length} de ${activos.length}`)} />
-            <Cuadrito titulo="En el depósito" valor={dinero(resumen.plata)} />
+            <Cuadrito titulo="En el inventario" valor={dinero(resumen.plata)} />
             <Cuadrito
               titulo="Bajo mínimo"
               valor={String(resumen.bajoMinimo)}

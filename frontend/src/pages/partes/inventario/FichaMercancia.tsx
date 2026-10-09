@@ -130,7 +130,7 @@ export default function FichaMercancia({
       titulo: `Cargar ${ing.nombre} a la freidora`,
       etiqueta: 'Cuánto se cargó',
       sufijo: ing.unidad,
-      ayuda: 'Sale del depósito y pasa a costo. Por pieza se reparte solo, con lo que se fríe en el mes.',
+      ayuda: 'Sale del inventario y pasa a costo. Por unidad se reparte solo, con lo que se fríe en el mes.',
       min: 0.001,
     })
     if (!cantidadCargada) return
@@ -263,7 +263,7 @@ export default function FichaMercancia({
     }
     const nombreCat = await dialogo.pedirTexto({
       titulo: 'Nueva categoría',
-      texto: 'Un cajón del depósito: Carnes, Lácteos, Empaques…',
+      texto: 'Un cajón del inventario: Carnes, Lácteos, Empaques…',
       etiqueta: 'Nombre',
     })
     if (!nombreCat?.trim()) return
@@ -298,7 +298,7 @@ export default function FichaMercancia({
         ayuda="Por debajo de esto aparece en «Qué comprar»."
       />
       <CampoCantidad
-        etiqueta="Lo ideal tener en el depósito"
+        etiqueta="Lo ideal tener en el inventario"
         unidad={f.unidad}
         valor={f.stock_objetivo}
         alCambiar={(v) => poner('stock_objetivo', v)}

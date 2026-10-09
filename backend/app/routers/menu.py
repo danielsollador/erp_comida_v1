@@ -350,13 +350,6 @@ def costos_por_variante(db: Session = Depends(get_db)):
                     if costo_hoy is not None and v.precio > 0
                     else None
                 ),
-                # El precio que conserva el margen que el dueno ya tenia, no un
-                # margen inventado por el sistema.
-                precio_sugerido=(
-                    reposicion.precio_para_margen(costo_hoy, margen)
-                    if costo_hoy is not None and margen is not None and margen < 100
-                    else None
-                ),
                 costo_indirecto=indirecto,
                 costo_para_precio=round(para_precio, 4) if para_precio is not None else None,
                 margen_para_precio_pct=(

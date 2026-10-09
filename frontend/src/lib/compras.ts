@@ -11,7 +11,7 @@ import type { ConceptoGasto, Ingrediente } from './types'
 // (nadie cuenta bidones de cloro) y como "Otros" no se encontraban despues.
 // Contablemente es gasto, igual que Servicios.
 export const CATEGORIAS = [
-  { valor: 'Insumos', texto: 'Mercancía para inventario', ayuda: 'Comida, bebidas y lo que va a recetas: entra al depósito renglón por renglón.' },
+  { valor: 'Insumos', texto: 'Mercancía para inventario', ayuda: 'Comida, bebidas y lo que va a recetas: entra al inventario renglón por renglón.' },
   { valor: 'Suministros', texto: 'Limpieza y suministros', ayuda: 'Cloro, bolsas, papel, desechables, papelería: va a gasto, sin renglones.' },
   { valor: 'Servicios', texto: 'Servicios', ayuda: 'Luz, agua, internet, gas, reparaciones, delivery: va a gasto.' },
   { valor: 'Activos', texto: 'Equipos y mobiliario', ayuda: 'Neveras, cocinas, mesas: entra al balance y se deprecia con los meses.' },

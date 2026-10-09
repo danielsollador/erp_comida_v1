@@ -91,7 +91,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
     calculo:
       'Promedio ponderado: (stock viejo × costo viejo + lo que entra × lo que pagaste) ÷ stock total. Por eso no salta de golpe cuando el proveedor sube el precio.',
     ejemplo:
-      'Tenías 10 kg a $1 y compras 10 kg a $2: el costo queda en $1,50, no en $2. Es lo correcto para valorar el depósito, pero para poner precios mira "Costo última compra".',
+      'Tenías 10 kg a $1 y compras 10 kg a $2: el costo queda en $1,50, no en $2. Es lo correcto para valorar el inventario, pero para poner precios mira "Costo última compra".',
   },
   'inventario.reponer': {
     que: 'Lo que pagaste la última vez. Es lo que te va a costar comprar más.',
@@ -304,14 +304,14 @@ export const GLOSARIO: Record<string, Explicacion> = {
   // ── Reportes: qué se vendió ──────────────────────────────────────────────
   // Menú > Recetas > armar una receta
   'receta.mercancia': {
-    que: 'Lo que lleva el producto: cada mercancía del depósito que entra en uno.',
+    que: 'Lo que lleva el producto: cada mercancía del inventario que entra en uno.',
     origen: 'La lista de mercancía de Inventario, con su costo real.',
     ejemplo: 'La carne, la harina, el aceite... y también el vaso o la caja: todo lo que se va con cada venta es costo.',
   },
   'receta.cantidad': {
     que: 'Cuánto de esa mercancía lleva UN producto.',
-    origen: 'Lo que escribes aquí, en gramos o mililitros (o en piezas, para lo que se cuenta).',
-    ejemplo: 'Si no sabes cuánto lleva cada una, "de X salen Y" lo calcula: de 1 kg de carne salen 20 empanadas → 50 g cada una. El rendimiento ya se descuenta solo.',
+    origen: 'Lo que escribes aquí, en gramos o mililitros (o en unidades, para lo que se cuenta).',
+    ejemplo: 'De 1 kg de carne salen 20 empanadas → 50 g cada una. El rendimiento ya se descuenta solo.',
   },
   'receta.costo': {
     que: 'Lo que cuesta esa mercancía en un producto.',
@@ -321,7 +321,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'receta.costo_unitario': {
     que: 'Lo que cuesta cada unidad de esa mercancía, lista para usar.',
-    origen: 'El costo promedio de lo que hay en el depósito, descontada la merma de cocina (el rendimiento).',
+    origen: 'El costo promedio de lo que hay en el inventario, descontada la merma de cocina (el rendimiento).',
     ejemplo: 'Carne a $7,61 el kilo con 80% de rendimiento cuesta $9,51 por kilo utilizable: es ese el que entra en la receta.',
   },
 
@@ -437,7 +437,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   'plan.nombre': {
     que: 'Qué guarda esa cuenta.',
     origen: 'Del plan de cuentas.',
-    ejemplo: '"Inventario de mercancía" acumula el valor de tu depósito; "Ventas", todo lo que facturaste.',
+    ejemplo: '"Inventario de mercancía" acumula el valor de tu inventario; "Ventas", todo lo que facturaste.',
   },
   'plan.tipo': {
     que: 'A qué parte del negocio pertenece la cuenta.',
@@ -647,7 +647,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'kpi.valor_deposito': {
     que: 'Cuánta plata tienes guardada en forma de mercancía.',
-    origen: 'Todo lo que hay en el depósito, valorado al costo.',
+    origen: 'Todo lo que hay en el inventario, valorado al costo.',
     calculo: 'Suma de (stock × costo promedio) de cada mercancía, sin IVA.',
     ejemplo:
       'Es plata quieta: no está en la gaveta ni en el banco, está en el estante. Si crece mientras las ventas no, estás comprando de más.',

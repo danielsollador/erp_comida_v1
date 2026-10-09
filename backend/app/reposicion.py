@@ -180,13 +180,6 @@ def variacion_pct(reposicion: Optional[float], promedio: Optional[float]) -> Opt
     return round((reposicion / promedio - 1) * 100, 1)
 
 
-def precio_para_margen(costo: float, margen_pct: float) -> Optional[float]:
-    """A cuanto hay que vender para dejar ese margen sobre el precio."""
-    if margen_pct >= 100:
-        return None
-    return round(costo / (1 - margen_pct / 100), 2)
-
-
 def impacto_en_productos(
     db: Session, ingrediente_id: int, costo_nuevo: float, costo_anterior: float
 ) -> List[dict]:
@@ -244,9 +237,6 @@ def impacto_en_productos(
         precio = variante.precio or 0
         margen_antes = round((precio - costo_antes) / precio * 100, 1) if precio else None
         margen_despues = round((precio - costo_despues) / precio * 100, 1) if precio else None
-        margen_contable = (
-            round((precio - costo_contable) / precio * 100, 1) if precio else None
-        )
 
         producto = db.query(models.Producto).filter_by(id=variante.producto_id).first()
         # Misma regla que el mostrador: con una sola subseccion activa, su
@@ -264,14 +254,6 @@ def impacto_en_productos(
                 "costo_despues": round(costo_despues, 4),
                 "margen_antes_pct": margen_antes,
                 "margen_despues_pct": margen_despues,
-                # Misma cuenta que hace el menu, para que los dos digan lo
-                # mismo: precio que conserva el margen contable actual si los
-                # insumos hay que reponerlos al precio nuevo.
-                "precio_sugerido": (
-                    precio_para_margen(costo_despues, margen_contable)
-                    if margen_contable is not None and margen_contable < 100
-                    else None
-                ),
                 "a_perdida": margen_despues is not None and margen_despues < 0,
                 "margen_flaco": (
                     margen_despues is not None and 0 <= margen_despues < MARGEN_FLACO_PCT

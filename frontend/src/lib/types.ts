@@ -204,8 +204,6 @@ export type ImpactoEnProducto = {
   costo_despues: number
   margen_antes_pct: number | null
   margen_despues_pct: number | null
-  /** Precio que conserva el margen que tenia antes de la subida. */
-  precio_sugerido: number | null
   a_perdida: boolean
   margen_flaco: boolean
 }
@@ -292,9 +290,7 @@ export type CostoVariante = {
   /** Lo que costaria producirlo con los precios de hoy. */
   costo_reposicion: number | null
   margen_reposicion_pct: number | null
-  /** Precio que conserva el margen actual si tuvieras que reponer hoy. */
-  precio_sugerido: number | null
-  /** Su parte del aceite de freir por pieza (0 si no se frie). */
+  /** Su parte del aceite de freir por unidad (0 si no se frie). */
   costo_indirecto?: number
   /** El costo con que se decide el precio (segun Configuracion), indirecto incluido. */
   costo_para_precio?: number | null
@@ -1232,7 +1228,7 @@ export type FacturaCompra = {
   /** Lo que se le paga al proveedor: total menos lo retenido. */
   a_pagar: number
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
-  forma_pago: 'Efectivo' | 'Banco' | 'Credito'
+  forma_pago: 'Efectivo' | 'Efectivo $' | 'Banco' | 'Credito' | 'Mixto'
   /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
   base_imponible: number
   /** Lo que el proveedor sumó (flete, recargo por crédito) sobre el total. */
@@ -1250,6 +1246,8 @@ export type FacturaCompra = {
   items: LineaFactura[]
   /** Flete, servicios, equipos: los renglones que no son mercancía. */
   gastos?: LineaGasto[]
+  /** Solo con forma_pago "Mixto": con qué se pagó cada parte, en dólares. */
+  pagos?: { id: number; forma_pago: string; monto: number; referencia: string }[]
   /** Si tiene la foto del papel enganchada. */
   tiene_soporte?: boolean
 }
@@ -1351,7 +1349,6 @@ export type ProductoAfectado = {
   precio: number
   margen_antes_pct: number | null
   margen_despues_pct: number | null
-  precio_sugerido: number | null
   a_perdida: boolean
 }
 

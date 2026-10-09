@@ -30,7 +30,7 @@ export function pasos(a: ArranqueLocal): Paso[] {
     {
       id: 'mercancia',
       titulo: 'Anota tu mercancía',
-      detalle: a.mercancias ? `${a.mercancias} en el depósito` : 'Harina, queso, vasos: con lo que cocinas',
+      detalle: a.mercancias ? `${a.mercancias} en el inventario` : 'Harina, queso, vasos: con lo que cocinas',
       a: '/inventario',
       hecho: a.mercancias >= 1,
     },

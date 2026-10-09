@@ -10,9 +10,9 @@ import type { ConteoResumen, Ingrediente, SugerenciaCompra, TipoArticulo } from 
  * lo que importa de él, y debajo lo que pide atención hoy. Se entra a un
  * almacén tocando su ficha.
  *
- *   Reventa        compra → depósito → menú → venta
+ *   Reventa        compra → inventario → menú → venta
  *   Materia prima  compra → crudo → preparado → menú
- *   Consumible     compra → depósito → receta
+ *   Consumible     compra → inventario → receta
  *   Desechable     compra → gasto
  */
 
@@ -28,9 +28,9 @@ export type ResumenAlmacen = {
 }
 
 const CAMINO: Record<TipoArticulo, string[]> = {
-  reventa: ['compra', 'depósito', 'menú', 'venta'],
+  reventa: ['compra', 'inventario', 'menú', 'venta'],
   insumo: ['compra', 'crudo', 'preparado', 'menú'],
-  consumible: ['compra', 'depósito', 'receta'],
+  consumible: ['compra', 'inventario', 'receta'],
   desechable: ['compra', 'gasto'],
   preparacion: ['crudo', 'cocina', 'menú'],
 }
@@ -191,7 +191,7 @@ function FichaAlmacen({ a, r, nombreRango, onEntrar }: { a: Almacen; r?: Resumen
         <p className="text-xs text-neutral-500 mt-0.5 leading-snug">{a.ejemplo}</p>
       </div>
       <div className="mt-auto">
-        <p className="text-xs text-neutral-500">{esGasto ? `Gastado · ${nombreRango.toLowerCase()}` : 'Plata en el depósito'}</p>
+        <p className="text-xs text-neutral-500">{esGasto ? `Gastado · ${nombreRango.toLowerCase()}` : 'Plata en el inventario'}</p>
         <p className="font-display text-3xl font-semibold tracking-tight tabular-nums leading-none mt-1">{r ? dinero(r.plata) : '…'}</p>
         <p className="mt-2 text-xs">
           {!r ? (

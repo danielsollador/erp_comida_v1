@@ -2,6 +2,7 @@ import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import contabilidad, costeo, impuestos, kardex, models, schemas, tasas
@@ -143,7 +144,24 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
             for i in factura.items
         ],
         gastos=[schemas.LineaGasto.model_validate(g) for g in (factura.gastos or [])],
+        pagos=[schemas.PagoCompra.model_validate(p) for p in (factura.pagos or [])],
     )
+
+
+@router.get("/servicios", response_model=List[str])
+def listar_servicios(db: Session = Depends(get_db)):
+    """Los servicios que ya se han cargado alguna vez ("Internet", "Luz"),
+    los mas repetidos primero. Son fijos: se cargan cada mes, y escribirlos
+    de nuevo cada vez termina en "Internet", "internet" e "Internet octubre"
+    como tres gastos distintos (Leider, 8-oct)."""
+    filas = (
+        db.query(models.FacturaCompraGasto.descripcion, func.count(models.FacturaCompraGasto.id))
+        .filter(models.FacturaCompraGasto.concepto == "Servicio", models.FacturaCompraGasto.descripcion != "")
+        .group_by(models.FacturaCompraGasto.descripcion)
+        .order_by(func.count(models.FacturaCompraGasto.id).desc(), models.FacturaCompraGasto.descripcion)
+        .all()
+    )
+    return [descripcion for descripcion, _ in filas]
 
 
 @router.get("/facturas", response_model=List[schemas.FacturaCompra])
@@ -217,10 +235,25 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
     # Antes de tocar stock ni costos: si falta el comprobante hay que rebotar
     # con la factura entera sin cargar, no a mitad de los renglones. A credito
     # no se pide, que todavia no ha salido plata.
+    es_mixto = factura.forma_pago == "Mixto"
+    if es_mixto:
+        if len(factura.pagos) < 2:
+            raise HTTPException(status_code=400, detail="Un pago mixto lleva al menos dos partes.")
+        for parte in factura.pagos:
+            if not contabilidad.metodo_de_pago_valido(parte.forma_pago):
+                raise HTTPException(status_code=400, detail=f"«{parte.forma_pago}» no sirve para pagar una factura.")
+    elif factura.pagos:
+        raise HTTPException(status_code=400, detail="Las partes del pago solo van con la forma de pago «Mixto».")
+    elif factura.forma_pago != "Credito" and not contabilidad.metodo_de_pago_valido(factura.forma_pago):
+        raise HTTPException(status_code=400, detail=f"«{factura.forma_pago}» no sirve para pagar una factura.")
     referencia_pago = (
-        "" if factura.forma_pago == "Credito"
+        "" if factura.forma_pago in ("Credito", "Mixto")
         else _referencia_del_pago(factura.forma_pago, factura.referencia_pago)
     )
+    partes_pago = [
+        (parte.forma_pago, round(parte.monto, 2), _referencia_del_pago(parte.forma_pago, parte.referencia))
+        for parte in factura.pagos
+    ]
 
     for g in factura.gastos:
         if g.concepto not in contabilidad.CUENTA_POR_CONCEPTO_GASTO:
@@ -333,6 +366,29 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
     )
     db.add(db_factura)
     db.flush()
+
+    if es_mixto:
+        # Las partes tienen que dar lo que se le paga al proveedor: ni mas
+        # (plata que sale sin factura) ni menos (deuda que nadie anoto).
+        suma = round(sum(m for _, m, _ in partes_pago), 2)
+        a_pagar = round(db_factura.a_pagar, 2)
+        diferencia = round(a_pagar - suma, 2)
+        if abs(diferencia) > 0.05:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Las partes del pago suman ${suma:.2f} y al proveedor se le pagan ${a_pagar:.2f}.",
+            )
+        if diferencia:
+            # Centavos de redondeo (una factura en bolivares pasada a dolares
+            # parte por parte): los absorbe la parte mas grande, para que el
+            # asiento cuadre al centavo con lo que se le paga.
+            mayor = max(range(len(partes_pago)), key=lambda k: partes_pago[k][1])
+            forma, monto, referencia = partes_pago[mayor]
+            partes_pago[mayor] = (forma, round(monto + diferencia, 2), referencia)
+        for forma, monto, referencia in partes_pago:
+            db.add(models.PagoCompra(factura_id=db_factura.id, forma_pago=forma, monto=monto, referencia=referencia))
+        db.flush()
+        db.refresh(db_factura, ["pagos"])
 
     for item in factura.items:
         ingrediente = ingredientes[item.ingrediente_id]

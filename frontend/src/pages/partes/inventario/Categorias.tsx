@@ -87,7 +87,7 @@ export default function SeccionCategorias({
   async function crear() {
     const nombre = await dialogo.pedirTexto({
       titulo: 'Nueva categoría',
-      texto: 'Un cajón del depósito: Carnes, Lácteos, Empaques…',
+      texto: 'Un cajón del inventario: Carnes, Lácteos, Empaques…',
       etiqueta: 'Nombre',
     })
     if (!nombre?.trim()) return
@@ -206,11 +206,11 @@ export default function SeccionCategorias({
         </div>
 
         <Seccion
-          titulo={nombreActual || 'Categorías del depósito'}
+          titulo={nombreActual || 'Categorías del inventario'}
           ayuda={
             actual === SIN_CAJON
               ? 'Mercancía que todavía no está en ningún cajón. Es normal: se carga una factura a las prisas y se clasifica después. Arrástrala a una categoría de la izquierda.'
-              : 'Lo que hay en este cajón del depósito. Arrastra un renglón a otra categoría para moverlo.'
+              : 'Lo que hay en este cajón del inventario. Arrastra un renglón a otra categoría para moverlo.'
           }
           plano
         >

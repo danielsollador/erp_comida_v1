@@ -67,22 +67,22 @@ def stock(db, iid):
 
 @pytest.fixture()
 def guiso(client, libros):
-    """Guiso de pollo: 1 kg de pollo crudo + 0,1 kg de cebolla rinden 0,8 kg.
+    """Guiso de pollo: 1 kg de guiso lleva 1,25 kg de pollo crudo y 0,125 kg
+    de cebolla.
 
-    La merma de cocinar es del crudo: el pollo rinde 70 % (0,7 kg) y la
-    cebolla 100 % (0,1 kg), asi que la tanda rinde 0,7 + 0,1 = 0,8 kg. El
-    `rinde` que se manda al crear la preparacion solo queda guardado; lo que
-    manda es `rinde_real`.
+    LA RECETA ES POR UNO (8-oct): la merma de cocinar (el pollo pierde el
+    30 %) ya va en esas cantidades. El `rinde` que se manda al crear la
+    preparacion se ignora: siempre es 1.
     """
     pollo = alta(client, "Pollo", stock=10, costo=4.0, rendimiento_pct=70)
     cebolla = alta(client, "Cebolla", stock=2, costo=1.0)
     r = client.post(
         "/api/inventario/preparaciones",
         json={
-            "nombre": "Guiso de pollo", "unidad": "kg", "rinde": 0.8,
+            "nombre": "Guiso de pollo", "unidad": "kg",
             "lineas": [
-                {"ingrediente_id": pollo["id"], "cantidad": 1},
-                {"ingrediente_id": cebolla["id"], "cantidad": 0.1},
+                {"ingrediente_id": pollo["id"], "cantidad": 1.25},
+                {"ingrediente_id": cebolla["id"], "cantidad": 0.125},
             ],
         },
     )
@@ -155,8 +155,9 @@ def test_la_reventa_pasa_al_menu_y_venderla_la_descuenta(client, db, libros):
 
 def test_el_costo_de_la_preparacion_sale_de_su_receta(guiso):
     g = guiso["guiso"]
-    # (1 kg x $4 + 0,1 kg x $1) / 0,8 kg = $5,125 por kg de guiso.
-    assert g["costo_tanda"] == 4.1
+    # 1,25 kg x $4 + 0,125 kg x $1 = $5,125 por kg de guiso: la receta es por
+    # kilo, asi que lo que cuesta la receta y lo que cuesta el kilo es lo mismo.
+    assert g["costo_tanda"] == 5.125
     assert g["costo_unitario"] == 5.125
 
 
@@ -165,7 +166,7 @@ def test_vender_un_pastelito_baja_hasta_el_pollo_crudo(client, db, guiso):
     pastelito = producto(db, "Pastelito de pollo", [(guiso["guiso"]["id"], 0.05), (disco["id"], 1)])
 
     vender(client, pastelito.id, 16)
-    # 16 x 50 g = 0,8 kg de guiso = una tanda: 1 kg de pollo y 0,1 kg de cebolla.
+    # 16 x 50 g = 0,8 kg de guiso: 1 kg de pollo y 0,1 kg de cebolla.
     assert stock(db, guiso["pollo"]["id"]) == 9
     assert stock(db, guiso["cebolla"]["id"]) == 1.9
     assert stock(db, disco["id"]) == 84
@@ -186,7 +187,7 @@ def test_una_preparacion_no_puede_contenerse_a_si_misma(client, guiso):
     assert r.status_code == 200, r.text
     relleno = r.json()
     r = client.put(f"/api/inventario/preparaciones/{g['id']}", json={
-        "nombre": g["nombre"], "unidad": "kg", "rinde": 0.8,
+        "nombre": g["nombre"], "unidad": "kg",
         "lineas": [{"ingrediente_id": guiso["pollo"]["id"], "cantidad": 1}, {"ingrediente_id": relleno["id"], "cantidad": 0.1}],
     })
     assert r.status_code == 400
@@ -216,8 +217,8 @@ def test_una_preparacion_dentro_de_otra(client, db, guiso):
 def _a_producir(client, guiso, vida=None):
     g = guiso["guiso"]
     r = client.put(f"/api/inventario/preparaciones/{g['id']}", json={
-        "nombre": g["nombre"], "unidad": "kg", "rinde": 0.8, "modo_produccion": "producir", "vida_util_horas": vida,
-        "lineas": [{"ingrediente_id": guiso["pollo"]["id"], "cantidad": 1}, {"ingrediente_id": guiso["cebolla"]["id"], "cantidad": 0.1}],
+        "nombre": g["nombre"], "unidad": "kg", "modo_produccion": "producir", "vida_util_horas": vida,
+        "lineas": [{"ingrediente_id": guiso["pollo"]["id"], "cantidad": 1.25}, {"ingrediente_id": guiso["cebolla"]["id"], "cantidad": 0.125}],
     })
     assert r.status_code == 200, r.text
     return r.json()
@@ -347,7 +348,7 @@ def test_botar_lo_que_sobra_de_un_guiso_que_se_descuenta_bota_el_pollo(client, d
     r = _sobrante(client, guiso["guiso"]["id"], 0.2, "botar")
     assert r.status_code == 200, r.text
     cuerpo = r.json()
-    # 0,2 kg de guiso que rinde 0,8 por kilo de pollo son 0,25 kg de pollo y 0,025 de cebolla.
+    # 0,2 kg de guiso son 0,25 kg de pollo y 0,025 de cebolla.
     assert cuerpo["ok"] is True
     assert cuerpo["movimientos"] == 2
     por_nombre = {d["nombre"]: d for d in cuerpo["detalle"]}
@@ -445,30 +446,32 @@ def test_el_conteo_con_guiso_encuentra_el_faltante_real(client, db, guiso):
 
 def test_la_disponibilidad_avisa_que_el_pollo_es_compartido(client, guiso):
     client.post("/api/inventario/preparaciones", json={
-        "nombre": "Guiso ranchero", "unidad": "kg", "rinde": 1,
-        "lineas": [{"ingrediente_id": guiso["pollo"]["id"], "cantidad": 1}],
+        "nombre": "Guiso ranchero", "unidad": "kg",
+        "lineas": [{"ingrediente_id": guiso["pollo"]["id"], "cantidad": 1 / 0.7}],
     })
     filas = {f["nombre"]: f for f in client.get("/api/inventario/preparaciones/disponibilidad").json()}
     # 10 kg de pollo dan 8 kg de guiso de pollo (la cebolla da para 16), o 7 de
-    # ranchero: el pollo rinde 70 % aunque la ficha del ranchero diga 1.
+    # ranchero, que lleva 1,43 kg de pollo por kilo.
     assert filas["Guiso de pollo"]["potencial"] == 8
     assert filas["Guiso de pollo"]["limita"] == "Pollo"
     assert filas["Guiso de pollo"]["comparte_con"] == ["Guiso ranchero"]
     assert filas["Guiso ranchero"]["potencial"] == 7
 
 
-def test_la_merma_del_crudo_manda_sobre_el_rinde_escrito(client, libros):
-    """Pollo al 70 % y un guiso de 1 kg de pollo con `rinde` 0,8 escrito a
-    mano: la tanda rinde 0,7 y 10 kg de pollo dan 7 kg, no 8."""
+def test_la_receta_es_por_uno(client, libros):
+    """Un guiso que lleva 1,43 kg de pollo por kilo: lo que se mande en
+    `rinde` se ignora (siempre 1), cuesta lo que lleva, y 10 kg de pollo dan
+    7 kg. La merma del pollo ya va en la cantidad: no se aplica otra vez."""
     pollo = alta(client, "Pollo", stock=10, costo=4.0, rendimiento_pct=70)
     r = client.post("/api/inventario/preparaciones", json={
         "nombre": "Guiso", "unidad": "kg", "rinde": 0.8,
-        "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1}],
+        "lineas": [{"ingrediente_id": pollo["id"], "cantidad": 1 / 0.7}],
     })
     assert r.status_code == 200, r.text
-    assert r.json()["rinde"] == 0.7
+    assert r.json()["rinde"] == 1
+    assert r.json()["costo_unitario"] == round(4 / 0.7, 4)
     lista = client.get("/api/inventario/preparaciones").json()
-    assert next(p for p in lista if p["id"] == r.json()["id"])["rinde"] == 0.7
+    assert next(p for p in lista if p["id"] == r.json()["id"])["rinde"] == 1
     filas = {f["nombre"]: f for f in client.get("/api/inventario/preparaciones/disponibilidad").json()}
     assert filas["Guiso"]["potencial"] == 7
     assert filas["Guiso"]["limita"] == "Pollo"
@@ -542,8 +545,8 @@ def test_costo_para_precios_configurable(client, db, guiso):
 
 
 def test_guardar_la_ficha_no_pisa_lo_de_la_preparacion(client, db, guiso):
-    """La ficha de Inventario no conoce `rinde` ni el modo: guardar un minimo
-    desde ahi no puede dejar el guiso rindiendo 1."""
+    """La ficha de Inventario no conoce el modo ni la vida util: guardar un
+    minimo desde ahi no puede pisarlos."""
     g = _a_producir(client, guiso, vida=24)
     r = client.put(f"/api/inventario/ingredientes/{g['id']}", json={
         "nombre": g["nombre"], "unidad": "kg", "tipo": "preparacion", "stock_minimo": 1,
@@ -551,5 +554,5 @@ def test_guardar_la_ficha_no_pisa_lo_de_la_preparacion(client, db, guiso):
     assert r.status_code == 200, r.text
     db.expire_all()
     prep = db.get(models.Ingrediente, g["id"])
-    assert (prep.rinde, prep.modo_produccion, prep.vida_util_horas) == (0.8, "producir", 24)
+    assert (prep.rinde, prep.modo_produccion, prep.vida_util_horas) == (1.0, "producir", 24)
     assert prep.stock_minimo == 1

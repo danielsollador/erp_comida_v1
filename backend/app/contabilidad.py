@@ -226,6 +226,18 @@ CUENTA_PAGO_COMPRA = {
     "Credito": "2010",
 }
 
+
+def partes_de_pago_compra(factura) -> list:
+    """[(cuenta, monto)] de lo que se le pago al proveedor.
+
+    Un pago mixto sale de varias cuentas, una por parte; uno sencillo, de la
+    cuenta de su forma de pago. A credito la "salida" es la deuda que entra.
+    """
+    if factura.forma_pago == "Mixto" and factura.pagos:
+        return [(CUENTA_PAGO_COMPRA.get(p.forma_pago, "1010"), round(p.monto, 2)) for p in factura.pagos]
+    retenido = round(factura.iva_retenido or 0, 2)
+    return [(CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010"), round(factura.total - retenido, 2))]
+
 # Con que se salda despues una factura que quedo a credito. No incluye
 # "Credito" - no se puede pagar una deuda con otra deuda.
 CUENTA_LIQUIDACION_CREDITO = dict(METODOS_DE_PAGO)
@@ -1260,7 +1272,8 @@ def registrar_nota_credito_compra(
     if factura.forma_pago == "Credito" and not factura.pagada:
         contrapartida = "2010"  # todavia se le debe: baja la deuda
     else:
-        contrapartida = CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010")
+        # Pagada con varias cosas: la plata vuelve por donde mas salio.
+        contrapartida = max(partes_de_pago_compra(factura), key=lambda p: p[1])[0]
     lineas.append((contrapartida, nota.total, 0.0))
 
     crear_asiento(
@@ -1322,14 +1335,14 @@ def registrar_compra_insumo(
 
 
 def registrar_factura_compra(db: Session, factura: models.FacturaCompra) -> None:
-    cuenta_pago = CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010")
-
     lineas = [(cuenta, monto, 0.0) for cuenta, monto in porciones_de_factura(factura, factura.base_imponible) if monto]
     if factura.iva > 0:
         lineas.append(("1030", factura.iva, 0.0))
     # Lo retenido no se le paga al proveedor: queda debiendosele al SENIAT.
+    # Lo demas sale de donde salio: una cuenta, o una por parte si fue mixto.
     retenido = round(factura.iva_retenido or 0, 2)
-    lineas.append((cuenta_pago, 0.0, round(factura.total - retenido, 2)))
+    for cuenta, monto in partes_de_pago_compra(factura):
+        lineas.append((cuenta, 0.0, monto))
     if retenido > 0:
         lineas.append(("2050", 0.0, retenido))
 

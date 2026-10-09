@@ -41,9 +41,9 @@ import type {
 /**
  * El inventario: los cuatro almacenes de la pizarra (7-oct-2026).
  *
- *   Reventa        compra → depósito → menú → venta
+ *   Reventa        compra → inventario → menú → venta
  *   Materia prima  compra → crudo → preparado → menú
- *   Consumible     compra → depósito → receta
+ *   Consumible     compra → inventario → receta
  *   Desechable     compra → gasto (sin stock)
  *
  * La portada son los cuatro; se entra a uno y se ve su mercancía. La materia
@@ -202,7 +202,7 @@ export default function Inventario() {
       // factura, asi que no genera credito de IVA.
       texto: (
         <>
-          Compra <strong>sin factura</strong>: entra al depósito y sale de la gaveta, pero <strong>no descuenta IVA</strong>.{' '}
+          Compra <strong>sin factura</strong>: entra al inventario y sale de la gaveta, pero <strong>no descuenta IVA</strong>.{' '}
           <a href="/compras/nueva" className="underline font-medium">
             Si tienes la factura, cárgala en Compras
           </a>{' '}
@@ -640,7 +640,7 @@ export default function Inventario() {
         {seccion === 'categorias' && (
           <>
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-display text-xl font-semibold tracking-tight">Categorías del depósito</h2>
+              <h2 className="font-display text-xl font-semibold tracking-tight">Categorías del inventario</h2>
               <button type="button" onClick={() => irA('almacenes')} className="text-sm text-neutral-500 hover:text-neutral-900">
                 ← Volver a los almacenes
               </button>
@@ -716,11 +716,6 @@ export default function Inventario() {
                     margen {p.margen_antes_pct?.toFixed(0)}% → <b className={p.a_perdida ? 'text-peligro-700' : ''}>{p.margen_despues_pct?.toFixed(0)}%</b>
                     {p.a_perdida && ' · lo vendes a pérdida'}
                   </div>
-                  {p.precio_sugerido != null && (
-                    <div className="text-neutral-700 mt-1">
-                      Para mantener tu margen: <b className="tabular-nums">{dinero(p.precio_sugerido)}</b>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>

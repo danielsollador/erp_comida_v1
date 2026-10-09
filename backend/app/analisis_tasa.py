@@ -334,7 +334,7 @@ def _lecturas_de_ritmo(
                 "tipo": "bueno",
                 "titulo": f"Tu mercancía subió menos que el dólar ({inflacion_pct}% contra {variacion:+.1f}%)",
                 "detalle": "Los proveedores no trasladaron toda la subida. Buen momento para "
-                           "comprar lo que aguante en depósito.",
+                           "comprar lo que aguante en inventario.",
             })
 
     return out

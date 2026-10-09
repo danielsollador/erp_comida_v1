@@ -60,7 +60,6 @@ export default function NuevaMercancia({
   const [tipo, setTipo] = useState<TipoArticulo | null>(tipoInicial)
   const [exento, setExento] = useState(exentoInicial)
   const [enPaquete, setEnPaquete] = useState(false)
-  const [paqueteNombre, setPaqueteNombre] = useState('caja')
   const [paqueteTrae, setPaqueteTrae] = useState('')
   const [confirmando, setConfirmando] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -74,7 +73,7 @@ export default function NuevaMercancia({
     if (!nombre.trim()) return setError('Ponle un nombre.')
     if (!tipo) return setError('Di qué es: a eso le dice el sistema a dónde va.')
     const trae = Number(paqueteTrae)
-    if (enPaquete && (!Number.isFinite(trae) || trae <= 0)) return setError('¿Cuántas trae cada paquete?')
+    if (enPaquete && (!Number.isFinite(trae) || trae <= 0)) return setError('¿Cuántas trae cada empaque?')
     if (casiIgual && !confirmando) {
       setConfirmando(true)
       return
@@ -92,11 +91,13 @@ export default function NuevaMercancia({
         costo_unitario: 0,
         rendimiento_pct: 100,
         // Sin clasificar: nace de urgencia cargando una factura, y ese no es
-        // el momento de pensar en qué cajón del depósito va.
+        // el momento de pensar en qué cajón del inventario va.
         categoria_id: null,
         activo: true,
       })
-      onCreada(creada, enPaquete ? { nombre: paqueteNombre.trim() || 'paquete', trae } : null)
+      // "empaque" a secas: caja, bulto o paquete da igual, lo que importa es
+      // cuántas trae (Leider, 8-oct).
+      onCreada(creada, enPaquete ? { nombre: 'empaque', trae } : null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo crear')
     } finally {
@@ -187,7 +188,7 @@ export default function NuevaMercancia({
               {almacen.detalle}{' '}
               {almacen.destino === 'gasto'
                 ? 'No se lleva stock: cada factura va entera al gasto del mes.'
-                : 'Entra al depósito y se descuenta al venderse o usarse en una receta.'}
+                : 'Entra al inventario y se descuenta al venderse o usarse en una receta.'}
             </p>
           )}
         </div>
@@ -214,7 +215,7 @@ export default function NuevaMercancia({
               </span>
             </button>
             <button type="button" onClick={() => setEnPaquete(true)} className={chip(enPaquete)}>
-              <span className="block font-semibold">En caja o paquete</span>
+              <span className="block font-semibold">En empaque</span>
               <span className={`block text-xs ${enPaquete ? 'text-white/70' : 'text-neutral-500'}`}>
                 trae varias; se cuentan de una en una
               </span>
@@ -222,14 +223,7 @@ export default function NuevaMercancia({
           </div>
           {enPaquete && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-neutral-600">1</span>
-              <input
-                value={paqueteNombre}
-                onChange={(e) => setPaqueteNombre(e.target.value)}
-                aria-label="Nombre del paquete"
-                className="w-28 border border-neutral-300 rounded-xl px-3 py-2 text-sm"
-              />
-              <span className="text-neutral-600">trae</span>
+              <span className="text-neutral-600">1 empaque trae</span>
               <Numerico
                 value={paqueteTrae}
                 onChange={(e) => setPaqueteTrae(e.target.value)}

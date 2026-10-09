@@ -71,8 +71,6 @@ class CostoVariante(BaseModel):
     # el margen que importa para fijar precios es este, no el contable.
     costo_reposicion: Optional[float] = None
     margen_reposicion_pct: Optional[float] = None
-    # A cuanto habria que venderlo para conservar el margen contable actual.
-    precio_sugerido: Optional[float] = None
     # Su parte del aceite de freir (y otros indirectos), por pieza. 0 si no
     # se frie o si todavia no hay cargas registradas.
     costo_indirecto: float = 0
@@ -227,8 +225,11 @@ class Preparacion(BaseModel):
     vida_util_horas: Optional[int] = None
     stock_actual: float
     lineas: List[LineaPreparacion]
+    # Lo que cuesta 1 (kg, lt o unidad) con los costos de hoy. Son el mismo
+    # numero desde que la receta es por uno; los dos nombres siguen porque la
+    # pantalla los lee.
     costo_tanda: float
-    costo_unitario: float  # por 1 unidad de lo que sale (1 kg de guiso)
+    costo_unitario: float
     # Rendimiento real de las ultimas tandas registradas contra la receta
     # (1 = rindio lo que dice la receta). None sin tandas.
     rendimiento_real: Optional[float] = None
@@ -238,7 +239,9 @@ class Preparacion(BaseModel):
 class PreparacionInput(BaseModel):
     nombre: str
     unidad: str = "kg"
-    rinde: float = Field(gt=0)
+    # La receta es por 1 (kg, lt o unidad) desde el 8-oct: se acepta por
+    # compatibilidad y se guarda siempre 1 (ver models.Ingrediente.rinde_real).
+    rinde: float = Field(default=1.0, gt=0)
     modo_produccion: Literal["descontar", "producir"] = "descontar"
     vida_util_horas: Optional[int] = Field(default=None, ge=1)
     lineas: List[LineaPreparacionInput]
@@ -412,7 +415,6 @@ class ImpactoEnProducto(BaseModel):
     costo_despues: float
     margen_antes_pct: Optional[float] = None
     margen_despues_pct: Optional[float] = None
-    precio_sugerido: Optional[float] = None
     a_perdida: bool = False
     margen_flaco: bool = False
 
@@ -2164,6 +2166,22 @@ class LineaGasto(BaseModel):
         from_attributes = True
 
 
+class PagoCompraInput(BaseModel):
+    """Una parte de un pago mixto: con que, cuanto (en dolares) y el comprobante."""
+
+    forma_pago: str
+    monto: float = Field(gt=0)
+    referencia: Optional[str] = None
+
+
+class PagoCompra(PagoCompraInput):
+    id: int
+    referencia: str = ""
+
+    class Config:
+        from_attributes = True
+
+
 class LineaFactura(BaseModel):
     id: int
     ingrediente_id: int
@@ -2210,7 +2228,7 @@ class FacturaCompraBase(BaseModel):
     # exactamente que formato se espera.
     proveedor_rif: str
     categoria: str = "Insumos"  # Insumos|Suministros|Servicios|Activos|Otros
-    forma_pago: str = "Efectivo"  # Efectivo|Banco|Credito
+    forma_pago: str = "Efectivo"  # Efectivo|Efectivo $|Banco|Credito|Mixto
     descripcion: str = ""
 
 
@@ -2252,6 +2270,9 @@ class FacturaCompraCreate(FacturaCompraBase):
     # El comprobante, cuando la factura se carga ya pagada y no en efectivo.
     # A credito no aplica: todavia no ha salido plata.
     referencia_pago: Optional[str] = None
+    # Pago mixto: las partes (con forma_pago = "Mixto"). Tienen que sumar lo
+    # que se le paga al proveedor; cada una lleva su comprobante si lo pide.
+    pagos: List[PagoCompraInput] = []
 
 
 class FacturaCompra(FacturaCompraBase):
@@ -2281,6 +2302,7 @@ class FacturaCompra(FacturaCompraBase):
     referencia_pago: str = ""
     items: List[LineaFactura] = []
     gastos: List[LineaGasto] = []
+    pagos: List[PagoCompra] = []
     # Si tiene la foto del papel enganchada. Solo lo llena el listado.
     tiene_soporte: bool = False
 
@@ -2464,7 +2486,6 @@ class ProductoAfectado(BaseModel):
     precio: float
     margen_antes_pct: Optional[float] = None
     margen_despues_pct: Optional[float] = None
-    precio_sugerido: Optional[float] = None
     a_perdida: bool = False
 
 

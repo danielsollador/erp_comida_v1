@@ -154,7 +154,7 @@ export default function ConteoFisico({
       const r = await api.leerPlanillaConteo(archivo)
       setLeido(r)
       // Se rellenan las casillas en vez de guardar: el archivo lo llenó
-      // alguien en el depósito y nadie lo ha mirado todavía en pantalla.
+      // alguien en el inventario y nadie lo ha mirado todavía en pantalla.
       setValores((v) => ({
         ...v,
         ...Object.fromEntries(r.filas.map((f) => [f.ingrediente_id, String(f.contado)])),
@@ -268,7 +268,7 @@ export default function ConteoFisico({
           Descargar planilla
         </EnlaceDescarga>
         {/* La vuelta del viaje: la planilla que el trabajador llenó en el
-            depósito entra por aquí y rellena las casillas. No guarda nada
+            inventario entra por aquí y rellena las casillas. No guarda nada
             todavía: se revisa en pantalla y se guarda con el mismo botón de
             siempre, que es el que sabe asentar cada diferencia. */}
         <label className="text-sm font-medium text-acento-700 hover:underline whitespace-nowrap cursor-pointer">

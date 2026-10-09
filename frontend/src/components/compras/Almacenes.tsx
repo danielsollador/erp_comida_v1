@@ -80,7 +80,7 @@ export function ElegirAlmacen({
                 esta ? 'text-white/60' : a.destino === 'gasto' ? 'text-aviso-700' : 'text-neutral-400'
               }`}
             >
-              {a.destino === 'gasto' ? '→ gasto del mes' : '→ depósito'}
+              {a.destino === 'gasto' ? '→ gasto del mes' : '→ inventario'}
             </span>
           </button>
         )
@@ -140,7 +140,7 @@ export function DestinoPlata({
         ))}
       </ul>
       <p className="mt-2 text-sm text-neutral-600">
-        Al depósito{' '}
+        Al inventario{' '}
         <span className="font-semibold tabular-nums text-neutral-900">
           {moneda}
           {fmtNum(deposito, 2)}

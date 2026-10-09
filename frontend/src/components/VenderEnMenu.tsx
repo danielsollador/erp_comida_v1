@@ -74,7 +74,7 @@ export default function VenderEnMenu({
     >
       <div className="space-y-4 text-sm">
         <p className="text-neutral-600">
-          Se crea el producto con su receta de 1 {mercancia.unidad}: cada venta descuenta una del depósito.
+          Se crea el producto con su receta de 1 {mercancia.unidad}: cada venta descuenta una del inventario.
         </p>
         <label className="block">
           <span className={rotulo}>Nombre en el menú</span>

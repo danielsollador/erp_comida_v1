@@ -257,10 +257,9 @@ class Ingrediente(Base):
     # ── Preparaciones (tipo "preparacion") ──────────────────────────────────
     # El guiso de pollo, la carne mechada, la salsa: no se compran, se hacen
     # con materia prima. Su receta (`lineas_preparacion`) dice lo que lleva
-    # una tanda tal como la cuenta la cocina ("1 kg de pollo crudo, 100 g de
-    # cebolla"), y `rinde` cuanto sale de esa tanda (0.85 kg de guiso). La
-    # merma de cocinar vive AQUI, en la preparacion, y no en el pollo: el
-    # mismo pollo no rinde igual en guiso que a la plancha.
+    # UNO de ella: 1 kg, 1 lt o 1 unidad ("para 1 kg de guiso: 1,43 kg de
+    # pollo crudo, 140 g de cebolla"). La merma de cocinar ya va en esas
+    # cantidades. `rinde` siempre vale 1 desde el 8-oct (ver `rinde_real`).
     rinde = Column(Float, default=1.0)
     # "descontar": no se lleva stock de la preparacion; al vender se baja
     # por la receta hasta la materia prima (lo normal en un local chico).
@@ -286,34 +285,21 @@ class Ingrediente(Base):
 
     @property
     def rinde_real(self) -> float:
-        """Lo que SALE de una tanda, calculado desde el crudo.
+        """Lo que sale de la receta: siempre 1 (1 kg, 1 lt o 1 unidad).
 
-        La merma de cocinar es del crudo, no de lo preparado (Leider, 7-oct):
-        el pollo pierde el 30 % en cualquier guiso. Asi que lo que rinde la
-        tanda no se escribe: es la suma de lo que queda de cada crudo que se
-        mide como la preparacion (1 kg de pollo al 70 % = 0,7 kg de guiso).
-        El gramo cuenta como milesima de kilo y el mililitro de litro: 500 g
-        de cebolla suman 0,5 kg. Otra preparacion adentro entra ya preparada:
-        cuenta entera. Si nada se mide como ella (un jugo en litros hecho de
-        kilos de naranja), vale lo que la cocina escribio en `rinde`.
+        LA RECETA ES POR UNO (Leider, 8-oct): "para 1 kg de guiso lleva
+        1,43 kg de pollo y 1 crema". Antes la receta era una tanda cualquiera
+        ("1 kg de pollo rinde 0,7 kg") y lo que salia se calculaba sumando lo
+        que quedaba de cada crudo; con leche en litros dentro de un guiso en
+        kilos esa suma se quedaba corta y el costo por kilo salia inflado. Con
+        la base en uno no hay nada que calcular: lo que cuesta 1 kg es la suma
+        de lo que lleva, y para hacer 2 kg el sistema multiplica por 2.
+
+        `rinde` queda en la tabla (siempre 1) para no reconstruirla; las
+        recetas de antes se pasaron a base uno al desplegar (ver
+        migrations.pasar_preparaciones_a_base_uno).
         """
-        if self.tipo != "preparacion":
-            return 1.0
-        propia = _MEDIDA.get(self.unidad)
-        total = 0.0
-        hay_en_su_unidad = False
-        for linea in self.lineas_preparacion:
-            ing = linea.ingrediente
-            medida = _MEDIDA.get(ing.unidad) if ing is not None else None
-            if ing is None or (ing.unidad != self.unidad and (not medida or not propia or medida[0] != propia[0])):
-                continue
-            hay_en_su_unidad = True
-            factor = medida[1] / propia[1] if medida and propia else 1.0
-            pct = 100.0 if ing.tipo == "preparacion" else (ing.rendimiento_pct or 100.0)
-            total += linea.cantidad * factor * pct / 100.0
-        if hay_en_su_unidad and total > 0:
-            return round(total, 6)
-        return self.rinde or 0.0
+        return 1.0
 
     @property
     def costo_estandar(self) -> float:
@@ -361,12 +347,12 @@ def _costo_de(ing: "Ingrediente", visitados: frozenset) -> float:
 
 
 class LineaPreparacion(Base):
-    """Lo que lleva UNA TANDA de una preparacion, tal como lo dice la cocina.
+    """Lo que lleva UNO de una preparacion (1 kg, 1 lt o 1 unidad).
 
-    "Para el guiso: 1 kg de pollo, 100 g de cebolla, 50 g de pimenton" y la
-    preparacion dice que rinde 0.85 kg. La cantidad es la que sale del
-    deposito (el pollo crudo, como se compro): la merma de cocinar ya esta en
-    el rendimiento de la preparacion. Para hacer 2 kg el sistema escala.
+    "Para 1 kg de guiso: 1,43 kg de pollo, 140 g de cebolla, 70 g de
+    pimenton". La cantidad es la que sale del inventario (el pollo crudo,
+    como se compro): la merma de cocinar ya esta en ella. Para hacer 2 kg el
+    sistema multiplica por 2.
     """
 
     __tablename__ = "REL311_INV_PREPARACION_DET"
@@ -526,6 +512,21 @@ class Configuracion(Base):
     # vive aqui y nunca sale entera al navegador, solo sus ultimos digitos.
     pabilo_api_key = Column(String, default="")
     pabilo_user_bank_id = Column(String, default="")
+
+
+class MigracionHecha(Base):
+    """Las migraciones de DATOS que ya corrieron, por nombre.
+
+    Las de columnas (migrations.COLUMNAS) se preguntan a la base si la
+    columna ya esta; una que cambia lo guardado --pasar las recetas de las
+    preparaciones a base uno-- no tiene nada que preguntar, y correrla dos
+    veces las cambiaria dos veces. Una fila aqui es la marca de que ya paso.
+    """
+
+    __tablename__ = "CFG930_ADM_MIGRACION"
+
+    nombre = Column(String, primary_key=True)
+    fecha = Column(DateTime, default=ahora)
 
 
 class Gasto(Base):
@@ -920,6 +921,9 @@ class FacturaCompra(Base):
     # equipo. Va renglon por renglon junto a la mercancia (una factura trae
     # pollo y el flete juntos) y no mueve stock.
     gastos = relationship("FacturaCompraGasto", back_populates="factura", cascade="all, delete-orphan")
+    # Solo cuando se pago con mas de una cosa (forma_pago = "Mixto"): una fila
+    # por cada parte. Con una sola forma no hay filas: manda `forma_pago`.
+    pagos = relationship("PagoCompra", back_populates="factura", cascade="all, delete-orphan")
     notas_credito = relationship(
         "NotaCreditoCompra", back_populates="factura", cascade="all, delete-orphan"
     )
@@ -982,6 +986,25 @@ class FacturaCompraItem(Base):
     @property
     def subtotal(self):
         return round(self.cantidad * self.costo_unitario, 2)
+
+
+class PagoCompra(Base):
+    """Una parte de un pago mixto de una factura de compra (Leider, 8-oct).
+
+    Al proveedor se le paga una parte en efectivo y el resto por banco, y
+    hasta ahora la factura solo podia decir una cosa. Es el espejo de
+    PagoPedido en ventas: cada parte sale de su propia cuenta en el asiento.
+    """
+
+    __tablename__ = "TRX417_COM_FACTURA_PAGO"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False, index=True)
+    forma_pago = Column(String, nullable=False)  # Efectivo|Efectivo $|Banco|...
+    monto = Column(Float, nullable=False)  # en dolares, como la factura
+    referencia = Column(String, default="")
+
+    factura = relationship("FacturaCompra", back_populates="pagos")
 
 
 class FacturaCompraGasto(Base):
@@ -1094,7 +1117,7 @@ class AlertaPrecio(Base):
     base = Column(String, default="proveedor")
     # "subida" | "unidad" (un salto que parece error de unidad, no de precio)
     tipo = Column(String, default="subida")
-    # JSON: [{nombre, margen_antes_pct, margen_despues_pct, precio, precio_sugerido, a_perdida}]
+    # JSON: [{nombre, margen_antes_pct, margen_despues_pct, precio, a_perdida}]
     productos = Column(Text, default="[]")
     # Otro proveedor que lo vendio mas barato en los ultimos 90 dias.
     alternativa_proveedor = Column(String, default="")

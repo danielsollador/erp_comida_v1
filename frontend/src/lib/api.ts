@@ -1106,6 +1106,9 @@ export const api = {
     // Obligatoria si se carga ya pagada y no fue en efectivo (el backend la
     // exige igual, ver contabilidad.METODOS_CON_REFERENCIA).
     referencia_pago?: string
+    // Pago mixto (forma_pago "Mixto"): las partes, en dolares. Tienen que
+    // sumar lo que se le paga al proveedor.
+    pagos?: { forma_pago: string; monto: number; referencia?: string }[]
   }) => req<FacturaCompra>('/compras/facturas', { method: 'POST', body: JSON.stringify(f) }),
   eliminarFacturaCompra: (id: number) => req(`/compras/facturas/${id}`, { method: 'DELETE' }),
 
@@ -1159,6 +1162,8 @@ export const api = {
     req<AlertaPrecio[]>(`/compras/alertas${pendientes ? '?pendientes=true' : ''}`),
   marcarAlertaVista: (id: number) => req<AlertaPrecio>(`/compras/alertas/${id}/visto`, { method: 'POST' }),
   listarEquivalencias: () => req<Equivalencia[]>('/compras/equivalencias'),
+  // Los servicios ya cargados alguna vez ("Internet", "Luz"), los mas repetidos primero.
+  listarServicios: () => req<string[]>('/compras/servicios'),
   /** Una presentación escrita a mano ("caja de 24") también se recuerda para ese proveedor. */
   aprenderEquivalencias: (cuerpo: Omit<CuerpoCompletarFactura, 'soporte_id'>) =>
     req<{ aprendidas: number }>('/compras/equivalencias/aprender', { method: 'POST', body: JSON.stringify(cuerpo) }),

@@ -105,8 +105,8 @@ def _avisos_de_costos(db: Session) -> List[schemas.Insight]:
                 titulo=f"Tu mercancía subió {inflacion['cambio_pct']:.0f}% en 30 dias",
                 detalle=(
                     f"{detalle}. Si tus precios no subieron parecido, estas vendiendo "
-                    "mas barato de lo que te va a costar reponer. Revisa el Menu: "
-                    "ahi esta el precio sugerido de cada producto."
+                    "mas barato de lo que te va a costar reponer. Revisa los precios "
+                    "en el Menu."
                 ),
             )
         )
@@ -1288,7 +1288,7 @@ def _lecturas_de_inventario(
             out.append(
                 schemas.Insight(
                     tipo="info",
-                    titulo=f"{top.nombre} es el {top.pct:.0f}% de la plata en el deposito",
+                    titulo=f"{top.nombre} es el {top.pct:.0f}% de la plata en el inventario",
                     detalle=f"${top.valor:.2f} de ${valor_total:.2f}. Conviene contarlo mas seguido que al resto.",
                 )
             )
@@ -1305,7 +1305,7 @@ def _lecturas_de_inventario(
             out.append(
                 schemas.Insight(
                     tipo="info",
-                    titulo=f"El deposito roto {rotacion:.1f} veces en el periodo",
+                    titulo=f"El inventario roto {rotacion:.1f} veces en el periodo",
                     detalle="Hay mas inventario del que la venta necesita: cada dolar en el estante tarda en volver a la gaveta.",
                 )
             )
@@ -1313,7 +1313,7 @@ def _lecturas_de_inventario(
             out.append(
                 schemas.Insight(
                     tipo="bueno",
-                    titulo=f"El deposito roto {rotacion:.1f} veces en el periodo",
+                    titulo=f"El inventario roto {rotacion:.1f} veces en el periodo",
                     detalle="Se compra lo que se vende. Ojo con quedarse corto en los dias fuertes.",
                 )
             )
@@ -1322,7 +1322,7 @@ def _lecturas_de_inventario(
             schemas.Insight(
                 tipo="alerta",
                 titulo=f"La mercancia subio {inflacion_pct:.0f}% en el periodo",
-                detalle="Si los precios del menu no se movieron, el margen se esta achicando solo. Revisa los precios sugeridos en Menu.",
+                detalle="Si los precios del menu no se movieron, el margen se esta achicando solo. Revisa los precios en Menu.",
             )
         )
     return out
@@ -1534,7 +1534,7 @@ def _avisos_de_deposito(db: Session) -> List[schemas.Aviso]:
                 id="agotados",
                 tono="ojo",
                 titulo=f"Te quedaste sin {nombres}",
-                detalle="Se vende con eso y ya no hay en el depósito.",
+                detalle="Se vende con eso y ya no hay en el inventario.",
                 a="/inventario/comprar",
             )
         )

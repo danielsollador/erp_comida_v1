@@ -242,7 +242,7 @@ def test_fundir_dos_preparaciones_hereda_la_receta_si_la_que_queda_no_tiene(clie
     db.expire_all()
     destino = db.get(models.Ingrediente, queda["id"])
     assert lineas_de(db, queda["id"]) == [(pollo["id"], 1)]
-    assert (destino.rinde, destino.modo_produccion) == (0.8, "producir")
+    assert (destino.rinde, destino.modo_produccion) == (1.0, "producir")
     assert round(destino.stock_actual, 4) == 0.8, "lo producido pasa con el stock"
     assert db.query(models.Produccion).one().preparacion_id == queda["id"]
     assert db.get(models.Ingrediente, se_va["id"]).activo is False

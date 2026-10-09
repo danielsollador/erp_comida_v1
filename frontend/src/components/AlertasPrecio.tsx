@@ -44,8 +44,7 @@ function Detalle({ a }: { a: AlertaPrecio }) {
       {a.productos.map((p) => (
         <p key={p.nombre} className={`text-sm ${p.a_perdida ? 'text-peligro-700' : 'text-aviso-700'}`}>
           {p.a_perdida ? 'A pérdida' : 'Queda flaco'}: {p.nombre}, margen{' '}
-          {p.margen_antes_pct?.toFixed(0)}% → {p.margen_despues_pct?.toFixed(0)}% vendiéndolo a {dinero(p.precio)}
-          {p.precio_sugerido ? `. Precio sugerido: ${dinero(p.precio_sugerido)}` : ''}.
+          {p.margen_antes_pct?.toFixed(0)}% → {p.margen_despues_pct?.toFixed(0)}% vendiéndolo a {dinero(p.precio)}.
         </p>
       ))}
       {a.alternativa_costo != null && (

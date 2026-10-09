@@ -196,14 +196,16 @@ export default function ElegirMercancia({
               {tipo && !texto.trim() ? `Todavía no hay ${ALMACEN_DE[tipo].texto.toLowerCase()}.` : 'Ninguna se llama así.'}
             </li>
           )}
+          {/* Fija abajo: con muchas mercancías se perdía al final de la lista. */}
           <li
             role="option"
             aria-selected={false}
             onMouseEnter={() => setMarcada(visibles.length)}
             onClick={alCrear}
-            className={`mt-1 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold cursor-pointer text-acento-700 ${
+            className={`sticky bottom-0 mt-1 -mb-1 pb-1 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold cursor-pointer text-acento-700 border-t border-neutral-500/10 ${
               marcada === visibles.length ? 'bg-neutral-500/10' : ''
             }`}
+            style={{ background: marcada === visibles.length ? undefined : 'var(--vp-superficie)' }}
           >
             <Icono nombre="mas" size={15} />
             Crear mercancía nueva{texto.trim() ? `: «${texto.trim()}»` : ''}

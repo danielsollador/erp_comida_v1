@@ -43,11 +43,6 @@ import { vaEnReceta } from '../../lib/tiposArticulo'
 type Fila = {
   ingrediente_id: number
   cantidad_por_unidad: string
-  // Calculadora opcional: "de tanto sale tanto" - solo para ayudar a escribir
-  // el numero de arriba, no se guarda aparte.
-  rendimientoDe: string
-  rendimientoSalen: string
-  modoRendimiento: boolean
   // Se escribe en la unidad chica (g en vez de kg, ml en vez de lt). La receta
   // se guarda siempre en la unidad de la mercancia; esto es solo como se ve.
   enChica?: boolean
@@ -249,9 +244,6 @@ export default function Recetas({
     const iniciales: Fila[] = receta.map((x: RecetaItem) => ({
       ingrediente_id: x.ingrediente_id,
       cantidad_por_unidad: String(x.cantidad_por_unidad),
-      rendimientoDe: '',
-      rendimientoSalen: '',
-      modoRendimiento: false,
     }))
     setFilas(iniciales)
     setHuellaGuardada(huella(iniciales))
@@ -677,9 +669,6 @@ function Compositor({
         ingrediente_id: ing.id,
         // Un vaso es un vaso: lo que se cuenta por piezas entra con 1.
         cantidad_por_unidad: porUnidad(ing) ? '1' : '',
-        rendimientoDe: '',
-        rendimientoSalen: '',
-        modoRendimiento: false,
         // Gramos y mililitros por defecto (Leider, 1-oct).
         enChica: esGrande(ing.unidad),
       },
@@ -688,23 +677,6 @@ function Compositor({
 
   function quitar(id: number) {
     setFilas((prev) => prev.filter((f) => f.ingrediente_id !== id))
-  }
-
-  // "De 1 kg COMPRADO salen 20 unidades" -> cuanto insumo UTILIZABLE lleva
-  // cada una. El dueño mide sobre lo que compra (es lo unico que puede pesar),
-  // pero la receta guarda cantidad utilizable, que es lo que el sistema
-  // multiplica por el costo real. Sin multiplicar por el rendimiento aca, la
-  // merma de cocina se contaria dos veces.
-  function aplicarRendimiento(f: Fila) {
-    const de = Number(f.rendimientoDe)
-    const salen = Number(f.rendimientoSalen)
-    if (!Number.isFinite(de) || de <= 0 || !Number.isFinite(salen) || salen <= 0) return
-    const ing = mapaIngredientes.get(f.ingrediente_id)
-    const rendimiento = (ing?.rendimiento_pct ?? 100) / 100
-    actualizarFila(f.ingrediente_id, {
-      cantidad_por_unidad: String(Math.round(((de * rendimiento) / salen) * 1e6) / 1e6),
-      modoRendimiento: false,
-    })
   }
 
   // Costo real: descontando la merma de cocina (`costo_efectivo`).
@@ -793,7 +765,6 @@ function Compositor({
                         onResaltar={setResaltado}
                         onCambio={(c) => actualizarFila(f.ingrediente_id, c)}
                         onQuitar={() => quitar(f.ingrediente_id)}
-                        onRendimiento={() => aplicarRendimiento(f)}
                       />
                     ))}
                   </ul>
@@ -823,7 +794,6 @@ function Compositor({
                         onResaltar={setResaltado}
                         onCambio={(c) => actualizarFila(f.ingrediente_id, c)}
                         onQuitar={() => quitar(f.ingrediente_id)}
-                        onRendimiento={() => aplicarRendimiento(f)}
                       />
                     ))}
                   </ul>
@@ -858,7 +828,7 @@ function Compositor({
             </div>
             {disponibles.length === 0 ? (
               <p className="px-4 pb-4 text-sm text-neutral-400">
-                {ingredientes.length === 0 ? 'No hay mercancía en el depósito todavía.' : 'Nada coincide.'}
+                {ingredientes.length === 0 ? 'No hay mercancía en el inventario todavía.' : 'Nada coincide.'}
               </p>
             ) : (
               <div className="max-h-[30rem] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto">
@@ -899,7 +869,6 @@ function RenglonReceta({
   onResaltar,
   onCambio,
   onQuitar,
-  onRendimiento,
 }: {
   f: Fila
   ing: Ingrediente
@@ -908,7 +877,6 @@ function RenglonReceta({
   onResaltar: (id: number | null) => void
   onCambio: (c: Partial<Fila>) => void
   onQuitar: () => void
-  onRendimiento: () => void
 }) {
   const { fmt } = useMoneda()
   const cantidad = Number(f.cantidad_por_unidad) || 0
@@ -951,7 +919,7 @@ function RenglonReceta({
           unidad={ing.unidad}
           vista={unidadVista}
           alCambiarVista={() => onCambio({ enChica: !enChica })}
-          rotulo={pieza ? (cantidad === 1 ? 'pieza' : 'piezas') : ing.unidad}
+          rotulo={pieza ? (cantidad === 1 ? 'unidad' : 'unidades') : ing.unidad}
           value={valorVisto}
           onChange={(e) => escribir(e.target.value)}
           placeholder="0"
@@ -974,46 +942,6 @@ function RenglonReceta({
           ×
         </button>
       </div>
-      {/* La calculadora "de X salen Y", plegada: sirve cuando se mide sobre
-          lo comprado y no sobre cada unidad. Una pieza no se calcula. */}
-      {pieza ? null : f.modoRendimiento ? (
-        <div className="mt-2 ml-4 flex flex-wrap items-center gap-2 text-sm">
-          <span>De</span>
-          <Numerico
-            value={f.rendimientoDe}
-            onChange={(e) => onCambio({ rendimientoDe: e.target.value })}
-            aria-label="Cantidad que compras"
-            className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm"
-          />
-          <span>{ing.unidad} salen</span>
-          <Numerico
-            value={f.rendimientoSalen}
-            onChange={(e) => onCambio({ rendimientoSalen: e.target.value })}
-            aria-label="Unidades que salen"
-            className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm"
-          />
-          <span>unidades</span>
-          <button type="button" onClick={onRendimiento} className="rounded-lg bg-neutral-900 text-white px-2.5 py-1 text-xs font-medium">
-            Calcular
-          </button>
-          <button type="button" onClick={() => onCambio({ modoRendimiento: false })} className="text-xs text-neutral-500">
-            Cerrar
-          </button>
-          {ing.rendimiento_pct < 100 && (
-            <span className="basis-full text-[11px] text-aviso-700">
-              Mide sobre lo que compras, sin limpiar: el {ing.rendimiento_pct}% de rendimiento ya se descuenta solo.
-            </span>
-          )}
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => onCambio({ modoRendimiento: true })}
-          className="ml-4 mt-1 text-[11px] text-neutral-400 hover:text-neutral-700"
-        >
-          ¿No sabes cuánto lleva cada una? Calcúlalo: de X salen Y
-        </button>
-      )}
     </li>
   )
 }
@@ -1093,9 +1021,9 @@ function Margen({ precio, costoReal, vacio }: { precio: number; costoReal: numbe
 }
 
 // Margen sobre el PRECIO (lo que queda de cada venta), no recargo sobre el
-// costo: "70 %" es que de $10 te quedan $7. Es como se habla en cocina: el
-// costo de la mercancía ronda el 25-35 % del precio, y en bebidas menos.
-const MARGENES_TIPICOS = [60, 65, 70, 75]
+// costo: "70 %" es que de $10 te quedan $7. Es como se habla en cocina.
+// Sin margenes "tipicos" ni precios sugeridos: el margen lo decide el dueño
+// (Leider, 8-oct), el sistema solo le hace la cuenta.
 
 /**
  * El precio, decidido con el costo a la vista y en las dos direcciones:
@@ -1143,23 +1071,13 @@ function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number;
           />
         </label>
       </div>
-      {costo > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-neutral-500">Con margen de</span>
-          {MARGENES_TIPICOS.map((p) => (
-            <button key={p} type="button" onClick={() => desdeMargen(String(p))} className="vp-control rounded-full px-2.5 py-0.5 text-xs font-medium text-neutral-700">
-              {p}%
-            </button>
-          ))}
-        </div>
-      )}
       <p className="text-xs text-neutral-500 leading-relaxed">
         {!(costo > 0)
           ? 'Ponle primero lo que lleva: con el costo se calcula el precio para el margen que quieras.'
           : precioNum > 0 && m != null
             ? m < 0
               ? `A ese precio pierdes $${(costo - precioNum).toFixed(2)} por unidad.`
-              : `La mercancía es el ${costoPct!.toFixed(0)} % del precio y te quedan $${(precioNum - costo).toFixed(2)} por unidad${costoPct! > 35 ? ': en cocina se apunta a que la mercancía no pase del 35 %.' : '.'}`
+              : `La mercancía es el ${costoPct!.toFixed(0)} % del precio y te quedan $${(precioNum - costo).toFixed(2)} por unidad.`
             : 'Escribe el precio o el margen que quieres: el otro sale solo.'}
         {guardado > 0 && Math.abs(precioNum - guardado) > 0.0001 && ` Hoy se vende a $${guardado.toFixed(2)}: el precio nuevo se guarda con la receta.`}
       </p>
