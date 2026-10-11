@@ -274,6 +274,9 @@ class Ingrediente(Base):
     # Costo indirecto (el aceite de freir): no va en ninguna receta; se
     # prorratea entre lo que se frie (ver costeo.costo_indirecto_por_pieza).
     es_indirecto = Column(Boolean, default=False)
+    # Viene en empaque de N (11-oct): se dijo al crearla y la factura lo da
+    # por hecho; null = suelta. Cambiarlo en una factura no toca la ficha.
+    empaque_trae = Column(Float, nullable=True)
 
     lineas_preparacion = relationship(
         "LineaPreparacion",

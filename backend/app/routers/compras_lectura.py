@@ -201,8 +201,8 @@ def _aviso_de_precio(
         # paquete que nosotros llevamos entero.
         nivel = "unidad"
         mensaje = (
-            f"Ese precio es {referencia / costo:.0f} veces menor que lo que se venía "
-            f"pagando. Revisa que precio y cantidad estén en {ingrediente.unidad}."
+            f"Ese costo es {referencia / costo:.0f} veces menor que lo que se venía "
+            f"pagando. Revisa que el costo y la cantidad estén en {ingrediente.unidad}."
         )
     elif abs(variacion) >= PRECIO_FUERA_DE_LO_NORMAL_PCT:
         nivel = "alto" if variacion > 0 else "bajo"

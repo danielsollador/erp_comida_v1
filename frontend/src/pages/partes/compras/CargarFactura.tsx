@@ -90,14 +90,16 @@ type Paquete = {
   trae: string
   /** Cuántos vinieron. */
   paquetes: string
-  /** Lo que costó UNO, sin IVA, en la moneda del papel. */
-  precio: string
 }
 
 type Linea = {
   ingrediente_id: number
   /** En la unidad de la ficha: es lo que viaja al servidor. */
   cantidad: string
+  /** Lo que dice el papel del renglón entero, sin IVA, en la moneda del
+      papel (Leider, 11-oct: "en la factura lo que hay es costo total").
+      El costo por unidad sale de aquí entre la cantidad. */
+  costo_total: string
   /** Por unidad de la ficha, sin IVA, en la moneda del papel. */
   costo_unitario: string
   /** null = lo que diga la ficha de la mercancía; true/false = lo dice ESTA factura. */
@@ -123,7 +125,16 @@ type Linea = {
   tipo?: TipoArticulo
 }
 
-const LINEA_VACIA: Linea = { ingrediente_id: 0, cantidad: '', costo_unitario: '', exento: null, abierta: true }
+const LINEA_VACIA: Linea = { ingrediente_id: 0, cantidad: '', costo_total: '', costo_unitario: '', exento: null, abierta: true }
+
+/** El costo por unidad, derivado: total entre cantidad. Un concepto (flete, servicio) ya viene resuelto. */
+function conCostoUnitario(l: Linea): Linea {
+  if (l.concepto) return l
+  const cantidad = Number(l.cantidad)
+  const total = Number(l.costo_total)
+  const costo_unitario = l.costo_total !== '' && Number.isFinite(total) && cantidad > 0 ? sinRuido(total / cantidad) : ''
+  return costo_unitario === l.costo_unitario ? l : { ...l, costo_unitario }
+}
 
 /** Ya dice qué es y cuánto: se puede plegar en una línea. */
 function lineaCompleta(l: Linea): boolean {
@@ -132,7 +143,7 @@ function lineaCompleta(l: Linea): boolean {
 
 /** Todavía no dice nada: ni qué es ni cuánto. Es el renglón que queda al final. */
 function renglonVacio(l: Linea): boolean {
-  return !l.ingrediente_id && !l.concepto && !(Number(l.cantidad) > 0) && !(Number(l.costo_unitario) > 0)
+  return !l.ingrediente_id && !l.concepto && !(Number(l.cantidad) > 0) && !(Number(l.costo_unitario) > 0) && !(Number(l.costo_total) > 0)
 }
 
 // En qué paso vive cada campo: un aviso que lleva a él primero abre su paso.
@@ -148,16 +159,12 @@ type Pendiente = { texto: string; tono: Tono; ancla: string }
 
 const soloRif = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, '')
 
-/** Cantidad y costo por unidad nuestra a partir del paquete, o null si falta algo. */
-function desdePaquete(p: Paquete): { cantidad: string; costo_unitario: string } | null {
+/** La cantidad en unidades nuestras a partir del paquete, o null si falta el "trae". */
+function desdePaquete(p: Paquete): { cantidad: string } | null {
   const trae = Number(p.trae)
   const paquetes = Number(p.paquetes)
-  const precio = Number(p.precio)
   if (!(trae > 0)) return null
-  return {
-    cantidad: paquetes > 0 ? sinRuido(paquetes * trae) : '',
-    costo_unitario: precio >= 0 && p.precio !== '' ? sinRuido(precio / trae) : '',
-  }
+  return { cantidad: paquetes > 0 ? sinRuido(paquetes * trae) : '' }
 }
 
 export default function CargarFactura({
@@ -412,7 +419,7 @@ export default function CargarFactura({
   if (!tasaNum) pendientes.push({ texto: 'Falta la tasa', tono: 'mal', ancla: 'cf-tasa' })
 
   function sinMercanciaEn(l: Linea) {
-    return !l.ingrediente_id && !l.concepto && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0)
+    return !l.ingrediente_id && !l.concepto && (Number(l.cantidad) > 0 || Number(l.costo_unitario) > 0 || Number(l.costo_total) > 0)
   }
 
   /** Si el renglón paga IVA: lo que diga esta factura, o la ficha de la mercancía. */
@@ -424,7 +431,8 @@ export default function CargarFactura({
 
   function problemaDeRenglon(l: Linea, i: number): { texto: string; tono: Tono } | null {
     const aviso = avisoPrecio(i)
-    if (aviso?.nivel === 'unidad') return { texto: 'con posible error de unidad', tono: 'mal' }
+    // Un costo muy distinto es una sospecha, no un error: se avisa, no se tacha.
+    if (aviso?.nivel === 'unidad') return { texto: 'con posible error de unidad', tono: 'ojo' }
     const ing = ingredientes.find((x) => x.id === l.ingrediente_id)
     if (l.leido && !l.recordada && !l.paquete && ing && unidadDistinta(l.leido.unidad, ing.unidad))
       return { texto: 'con unidad distinta', tono: 'ojo' }
@@ -503,6 +511,7 @@ export default function CargarFactura({
       b.renglones.map((r) => ({
         ...LINEA_VACIA,
         cantidad: r.cantidad == null ? '' : String(r.cantidad),
+        costo_total: r.subtotal != null ? sinRuido(r.subtotal) : r.cantidad != null && r.precio_unitario != null ? sinRuido(r.cantidad * r.precio_unitario) : '',
         costo_unitario: r.precio_unitario == null ? '' : String(r.precio_unitario),
         exento: r.exento ?? (papelSinIva ? true : null),
         leido: r,
@@ -526,18 +535,16 @@ export default function CargarFactura({
                   nombre: s.unidad_papel || 'empaque',
                   trae: sinRuido(s.factor),
                   paquetes: l.leido.cantidad == null ? '' : String(l.leido.cantidad),
-                  precio: l.leido.precio_unitario == null ? '' : String(l.leido.precio_unitario),
                 }
               : undefined
             const calc = paquete ? desdePaquete(paquete) : null
-            return {
+            return conCostoUnitario({
               ...l,
               ingrediente_id: s.ingrediente_id,
               cantidad: calc ? calc.cantidad : l.cantidad,
-              costo_unitario: calc ? calc.costo_unitario : l.costo_unitario,
               recordada: s,
               paquete,
-            }
+            })
           }),
         ),
       )
@@ -546,28 +553,27 @@ export default function CargarFactura({
 
   // ── Renglones ───────────────────────────────────────────────────────────
   function cambiarLinea(i: number, cambio: Partial<Linea>) {
-    setLineas((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...cambio } : l)))
+    setLineas((prev) => prev.map((l, idx) => (idx === i ? conCostoUnitario({ ...l, ...cambio }) : l)))
   }
 
   // El renglon para el que se esta creando una mercancia nueva.
   const [creandoEn, setCreandoEn] = useState<number | null>(null)
 
   function elegirMercancia(i: number, id: number) {
-    // Sin costo todavia, se propone lo que ya cuesta esa mercancia: solo se
-    // corrige si el proveedor la vendio distinto.
     const ing = ingredientes.find((x) => x.id === id)
     setLineas((prev) =>
-      prev.map((l, idx) =>
-        idx === i
-          ? {
-              ...l,
-              ingrediente_id: id,
-              costo_unitario: l.costo_unitario || (ing && ing.costo_unitario ? String(ing.costo_unitario) : ''),
-              // Cambio la mercancia: la conversion que se recordaba era de la otra.
-              paquete: l.paquete && l.recordada && l.recordada.ingrediente_id !== id ? undefined : l.paquete,
-            }
-          : l,
-      ),
+      prev.map((l, idx) => {
+        if (idx !== i) return l
+        // Cambio la mercancia: la conversion que se recordaba era de la otra.
+        let paquete = l.paquete && l.recordada && l.recordada.ingrediente_id !== id ? undefined : l.paquete
+        // La ficha dice que viene en empaque: se da por hecho, sin preguntar
+        // (Leider, 11-oct). "Esta vez vino suelta" es el camino de vuelta.
+        if (!paquete && ing?.empaque_trae) {
+          paquete = { nombre: 'empaque', trae: sinRuido(ing.empaque_trae), paquetes: l.leido?.cantidad != null ? String(l.leido.cantidad) : l.cantidad }
+        }
+        const calc = paquete ? desdePaquete(paquete) : null
+        return conCostoUnitario({ ...l, ingrediente_id: id, paquete, ...(calc && calc.cantidad ? { cantidad: calc.cantidad } : {}) })
+      }),
     )
   }
 
@@ -623,6 +629,7 @@ export default function CargarFactura({
           concepto,
           cantidad: '1',
           costo_unitario: monto,
+          costo_total: monto,
           detalle: l.detalle ?? l.leido?.descripcion ?? '',
           vidaUtil: concepto === 'Equipo' ? l.vidaUtil ?? '60' : undefined,
           exento: l.exento,
@@ -750,7 +757,8 @@ export default function CargarFactura({
               descripcion: `${ing?.nombre ?? ''} ${l.paquete!.nombre} de ${l.paquete!.trae}`.trim(),
               unidad: l.paquete!.nombre,
               cantidad_papel: Number(l.paquete!.paquetes) || null,
-              precio_papel: Number(l.paquete!.precio) || null,
+              // Lo que costo UN paquete: el total entre los que vinieron.
+              precio_papel: Number(l.paquete!.paquetes) > 0 && Number(l.costo_total) > 0 ? Number(l.costo_total) / Number(l.paquete!.paquetes) : null,
               ingrediente_id: l.ingrediente_id,
               cantidad: Number(l.cantidad),
               costo_unitario: Number(l.costo_unitario),
@@ -1306,14 +1314,13 @@ export default function CargarFactura({
                   nombre: presentacion.nombre,
                   trae: sinRuido(presentacion.trae),
                   paquetes: l?.leido?.cantidad != null ? String(l.leido.cantidad) : l?.cantidad ?? '',
-                  precio: l?.leido?.precio_unitario != null ? String(l.leido.precio_unitario) : l?.costo_unitario ?? '',
                 }
               : undefined
             const calc = paquete ? desdePaquete(paquete) : null
             cambiarLinea(creandoEn, {
               ingrediente_id: creada.id,
               paquete,
-              ...(calc ? { cantidad: calc.cantidad, costo_unitario: calc.costo_unitario } : {}),
+              ...(calc ? { cantidad: calc.cantidad } : {}),
             })
             setCreandoEn(null)
           }}
@@ -1397,11 +1404,20 @@ function Paso({
               <span className="block text-xs text-neutral-500 mt-0.5 leading-relaxed truncate">{resumen}</span>
             )}
           </span>
-          <span aria-hidden className={`shrink-0 mt-1 text-neutral-400 transition-transform ${abierto ? 'rotate-90' : ''}`}>
-            <Icono nombre="chevron" size={16} />
-          </span>
         </button>
         {abierto && accion && <div className="shrink-0">{accion}</div>}
+        {/* El chevron de la esquina, con su propio botón y su propio tamaño
+            de toque: plegar o abrir el paso (Leider, 11-oct: no respondía). */}
+        <button
+          type="button"
+          onClick={onAbrir}
+          aria-label={abierto ? `Plegar ${titulo}` : `Abrir ${titulo}`}
+          className="shrink-0 -mr-2 -mt-1.5 w-11 h-11 grid place-items-center rounded-xl text-neutral-400 hover:text-neutral-900 hover:bg-neutral-500/10"
+        >
+          <span className={`inline-block transition-transform ${abierto ? 'rotate-90' : ''}`}>
+            <Icono nombre="chevron" size={18} />
+          </span>
+        </button>
       </div>
       {abierto && (
         <div className="px-4 pb-4 sm:px-5 sm:pb-5 -mt-1">
@@ -1579,19 +1595,20 @@ function Renglon({
   }
 
   const enPaquete = !!l.paquete
+  // La ficha dice que viene en empaque: se da por hecho, no se pregunta.
+  const empaqueDeFicha = !!ing?.empaque_trae
   function cambiarPaquete(cambio: Partial<Paquete>) {
-    const p = { ...(l.paquete ?? { nombre: 'empaque', trae: '', paquetes: '', precio: '' }), ...cambio }
+    const p = { ...(l.paquete ?? { nombre: 'empaque', trae: '', paquetes: '' }), ...cambio }
     const calc = desdePaquete(p)
     onCambiar({ paquete: p, ...(calc ?? {}) })
   }
   function activarPaquete(desde?: Equivalencia) {
     cambiarPaquete({
       nombre: desde?.unidad_papel || 'empaque',
-      trae: desde ? sinRuido(desde.factor) : '',
+      trae: desde ? sinRuido(desde.factor) : ing?.empaque_trae ? sinRuido(ing.empaque_trae) : '',
       // Lo que ya estaba escrito pasa a ser "cuantos paquetes": es lo que se
       // tecleo mirando el papel.
       paquetes: l.leido?.cantidad != null ? String(l.leido.cantidad) : l.cantidad,
-      precio: l.leido?.precio_unitario != null ? String(l.leido.precio_unitario) : l.costo_unitario,
     })
   }
 
@@ -1672,7 +1689,7 @@ function Renglon({
               ? problema.texto
               : l.concepto
                 ? `${l.concepto === 'Equipo' ? 'a equipos' : 'a gasto'}${exento ? ' · exento' : ''}`
-                : `${l.paquete ? `${l.paquete.paquetes} ${nombrePaquete(l.paquete)} · ` : ''}${cant(Number(l.cantidad))} ${unidadDe(Number(l.cantidad), unidad)} × ${moneda}${fmtNum(Number(l.costo_unitario), 2)}${exento ? ' · exento' : ''}`}
+                : `${l.paquete ? `${l.paquete.paquetes} ${nombrePaquete(l.paquete)} · ` : ''}${cant(Number(l.cantidad))} ${unidadDe(Number(l.cantidad), unidad)} a ${moneda}${fmtNum(Number(l.costo_unitario), 2)} c/u${exento ? ' · exento' : ''}`}
           </span>
         </span>
         <span className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900">
@@ -1841,19 +1858,20 @@ function Renglon({
           {quitar}
         </div>
 
-        {/* Cómo vino: suelta, o en empaque. Ya decidido (al crear la mercancía
-            o con un toque), se lee y no se vuelve a preguntar; "¿vino suelta?"
-            es el camino de vuelta. */}
+        {/* Cómo vino. Si la ficha dice que viene en empaque, se da por hecho y
+            solo se avisa; lo único que se toca es "Esta vez vino suelta"
+            (Leider, 11-oct). */}
         {ing && (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
             {enPaquete ? (
               <>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 text-white px-2.5 py-1 text-xs font-medium">
-                  <Icono nombre="paquete" size={13} />
-                  {`Viene en ${l.paquete!.nombre || 'empaque'}`}
+                <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600">
+                  <Icono nombre="paquete" size={13} className="text-neutral-400" />
+                  Viene en {l.paquete!.nombre || 'empaque'}
+                  {empaqueDeFicha && Number(l.paquete!.trae) === ing.empaque_trae ? ` de ${sinRuido(ing.empaque_trae!)}, como dice su ficha` : ''}
                 </span>
-                <button type="button" onClick={() => onCambiar({ paquete: undefined })} className="text-xs text-neutral-500 underline">
-                  ¿Vino suelta?
+                <button type="button" onClick={() => onCambiar({ paquete: undefined })} className="vp-control rounded-full px-2.5 py-1 text-xs font-medium text-neutral-600">
+                  Esta vez vino suelta
                 </button>
               </>
             ) : (
@@ -1863,7 +1881,7 @@ function Renglon({
                 className="vp-control inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-neutral-600 transition-colors"
               >
                 <Icono nombre="paquete" size={13} />
-                Viene en empaque
+                {empaqueDeFicha ? `Vino en empaque de ${sinRuido(ing.empaque_trae!)}` : 'Viene en empaque'}
               </button>
             )}
             {!enPaquete &&
@@ -1893,12 +1911,12 @@ function Renglon({
                 <Numerico value={l.paquete!.trae} onChange={(e) => cambiarPaquete({ trae: e.target.value })} placeholder="24" className={clase()} />
               </label>
               <label className="block">
-                <span className="block text-[11px] text-neutral-500 mb-0.5">Costo c/u ({moneda})</span>
+                <span className="block text-[11px] text-neutral-500 mb-0.5">Costo total ({moneda})</span>
                 <Numerico
-                  value={l.paquete!.precio}
-                  onChange={(e) => cambiarPaquete({ precio: e.target.value })}
+                  value={l.costo_total}
+                  onChange={(e) => onCambiar({ costo_total: e.target.value })}
                   placeholder="0.00"
-                  className={clase(aviso ? (aviso.nivel === 'unidad' ? 'mal' : 'ojo') : undefined)}
+                  className={clase(aviso ? 'ojo' : undefined)}
                 />
               </label>
             </div>
@@ -1942,12 +1960,12 @@ function Renglon({
               )}
             </label>
             <label className="block">
-              <span className="block text-[11px] text-neutral-500 mb-0.5">Costo c/u ({moneda})</span>
+              <span className="block text-[11px] text-neutral-500 mb-0.5">Costo total ({moneda})</span>
               <Numerico
-                value={l.costo_unitario}
-                onChange={(e) => onCambiar({ costo_unitario: e.target.value })}
+                value={l.costo_total}
+                onChange={(e) => onCambiar({ costo_total: e.target.value })}
                 placeholder="0.00"
-                className={clase(aviso ? (aviso.nivel === 'unidad' ? 'mal' : 'ojo') : undefined)}
+                className={clase(aviso ? 'ojo' : undefined)}
               />
             </label>
             <label className="block">
@@ -1962,6 +1980,13 @@ function Renglon({
                 <option value="exento">Exento</option>
               </select>
             </label>
+            {/* El costo por unidad lo saca el sistema: el papel trae el total. */}
+            {Number(l.cantidad) > 0 && Number(l.costo_unitario) > 0 && (
+              <p className="col-span-3 -mt-1 text-xs text-neutral-600 tabular-nums">
+                Sale a {moneda}
+                {fmtNum(Number(l.costo_unitario), 4)} cada {unidad === 'unidad' ? 'una' : unidad}.
+              </p>
+            )}
           </div>
         )}
 
@@ -1987,7 +2012,7 @@ function Renglon({
             {papelNoCuadra && <p className="text-aviso-800">En el papel, cantidad × costo no da el total del renglón: revisa esos números.</p>}
             {avisoCantidad && <p className="text-aviso-800">{avisoCantidad}</p>}
             {aviso && (
-              <p className={aviso.nivel === 'unidad' ? 'text-peligro-700' : 'text-aviso-800'}>
+              <p className="text-aviso-800">
                 {aviso.mensaje}{' '}
                 {aviso.base === 'compras'
                   ? `Se venía pagando $${aviso.referencia.toFixed(2)} (últimas ${aviso.muestras} compras).`

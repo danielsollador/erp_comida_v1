@@ -85,6 +85,8 @@ export type Ingrediente = {
   vida_util_horas?: number | null
   /** El aceite de freir: no va en recetas, se reparte por pieza frita. */
   es_indirecto?: boolean
+  /** Viene en empaque de N (unidades nuestras); null = suelta. */
+  empaque_trae?: number | null
   /** En que cajon del deposito vive. null = sin clasificar, que es normal. */
   categoria_id: number | null
   /** El nombre de esa categoria, ya resuelto por el servidor. '' si no tiene. */
@@ -115,7 +117,7 @@ export type DatosIngrediente = Pick<
   | 'activo'
   | 'exento'
 > &
-  Partial<Pick<Ingrediente, 'rinde' | 'modo_produccion' | 'vida_util_horas' | 'es_indirecto'>> & {
+  Partial<Pick<Ingrediente, 'rinde' | 'modo_produccion' | 'vida_util_horas' | 'es_indirecto' | 'empaque_trae'>> & {
   /** Solo al crear: lo que hay hoy. Despues el stock se mueve con compras, mermas y conteos. */
   stock_actual?: number
 }

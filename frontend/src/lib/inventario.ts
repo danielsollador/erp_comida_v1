@@ -59,6 +59,7 @@ export function datosDe(ing: Ingrediente): DatosIngrediente {
     categoria_id: ing.categoria_id ?? null,
     activo: ing.activo !== false,
     exento: ing.exento ?? false,
+    ...(ing.empaque_trae != null ? { empaque_trae: ing.empaque_trae } : {}),
   }
 }
 

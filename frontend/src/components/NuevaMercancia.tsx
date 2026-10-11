@@ -94,6 +94,8 @@ export default function NuevaMercancia({
         // el momento de pensar en qué cajón del inventario va.
         categoria_id: null,
         activo: true,
+        // Queda en la ficha: la proxima factura ya la da por empacada.
+        empaque_trae: enPaquete ? trae : null,
       })
       // "empaque" a secas: caja, bulto o paquete da igual, lo que importa es
       // cuántas trae (Leider, 8-oct).

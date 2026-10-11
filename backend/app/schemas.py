@@ -183,6 +183,8 @@ class IngredienteBase(BaseModel):
     modo_produccion: Literal["descontar", "producir"] = "descontar"
     vida_util_horas: Optional[int] = Field(default=None, ge=1)
     es_indirecto: bool = False
+    # Viene en empaque de N unidades nuestras; None = suelta.
+    empaque_trae: Optional[float] = Field(default=None, gt=0)
     # En que parte del deposito vive (ver models.CategoriaInsumo). None = sin
     # clasificar, que es un estado normal y no un error.
     categoria_id: Optional[int] = None

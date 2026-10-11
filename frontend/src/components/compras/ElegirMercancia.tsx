@@ -162,11 +162,10 @@ export default function ElegirMercancia({
       )}
 
       {abierto && (
-        <ul
-          ref={lista}
-          role="listbox"
-          className="vp-menu absolute z-30 left-0 right-0 mt-1.5 max-h-72 overflow-auto p-1"
-        >
+        <div className="vp-menu absolute z-30 left-0 right-0 mt-1.5 p-1">
+        {/* La lista se desplaza por dentro; "Crear" va debajo, fijo y sin
+            taparle nada a nadie. */}
+        <ul ref={lista} role="listbox" className="max-h-64 overflow-auto">
           {visibles.map((i, n) => {
             const a = ALMACEN_DE[i.tipo]
             return (
@@ -196,16 +195,16 @@ export default function ElegirMercancia({
               {tipo && !texto.trim() ? `Todavía no hay ${ALMACEN_DE[tipo].texto.toLowerCase()}.` : 'Ninguna se llama así.'}
             </li>
           )}
-          {/* Fija abajo: con muchas mercancías se perdía al final de la lista. */}
+        </ul>
+        <ul role="listbox" aria-label="Más opciones" className="mt-1 border-t border-neutral-500/10 pt-1">
           <li
             role="option"
             aria-selected={false}
             onMouseEnter={() => setMarcada(visibles.length)}
             onClick={alCrear}
-            className={`sticky bottom-0 mt-1 -mb-1 pb-1 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold cursor-pointer text-acento-700 border-t border-neutral-500/10 ${
+            className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold cursor-pointer text-acento-700 ${
               marcada === visibles.length ? 'bg-neutral-500/10' : ''
             }`}
-            style={{ background: marcada === visibles.length ? undefined : 'var(--vp-superficie)' }}
           >
             <Icono nombre="mas" size={15} />
             Crear mercancía nueva{texto.trim() ? `: «${texto.trim()}»` : ''}
@@ -232,6 +231,7 @@ export default function ElegirMercancia({
             </li>
           )}
         </ul>
+        </div>
       )}
     </div>
   )

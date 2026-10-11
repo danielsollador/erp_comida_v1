@@ -475,7 +475,7 @@ def actualizar_ingrediente(
     # Lo de las preparaciones y el costo indirecto se toca solo si viene: la
     # ficha que no los conoce (o una pantalla vieja) no puede dejar un guiso
     # rindiendo 1 ni apagar el aceite cada vez que guarda un minimo.
-    for campo in ("rinde", "modo_produccion", "vida_util_horas", "es_indirecto"):
+    for campo in ("rinde", "modo_produccion", "vida_util_horas", "es_indirecto", "empaque_trae"):
         if campo not in ingrediente.model_fields_set:
             datos.pop(campo, None)
     # El nombre que no se toco se guarda tal cual, sin limpiarlo ni buscarle

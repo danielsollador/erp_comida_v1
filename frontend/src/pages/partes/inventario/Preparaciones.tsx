@@ -1104,7 +1104,14 @@ function Olla({
 
           <div className="lg:flex-1 lg:min-h-0 flex justify-center mt-3">
             <DibujoOlla
-              partes={partes.map((p) => ({ id: p.id, nombre: p.nombre, detalle: p.cantidad > 0 ? cantidadLegible(p.cantidad, p.unidad) : '', valor: p.costo, color: p.color }))}
+              partes={partes.map((p) => ({
+                id: p.id,
+                nombre: p.nombre,
+                detalle: p.cantidad > 0 ? cantidadLegible(p.cantidad, p.unidad) : '',
+                valor: p.costo,
+                medida: p.enSuMedida !== null ? p.queda : null,
+                color: p.color,
+              }))}
               total={costoTanda}
               unidad={unidad}
               formato={dinero}
@@ -1342,9 +1349,13 @@ function RenglonOlla({
 }
 
 /**
- * La olla dibujada: una franja por ingrediente, proporcional a lo que pesa
- * en el costo de 1 kg (o 1 lt, o 1 unidad); arriba, ese "1". Sin margen,
- * porque una preparación no se vende: solo cuesta.
+ * La olla dibujada ES el kilo (o el litro, o la unidad): llena = 1. Cada
+ * franja mide lo que queda ya cocido de ese crudo, así que con 1 kg de
+ * pernil al 70 % la olla va por 0,7 y el resto lo llenan la tocineta y el
+ * maíz (Leider, 11-oct: "límite un kg, para que se entienda la receta").
+ * Lo que no se mide como la preparación (una crema en un guiso en kilos)
+ * va como franja fina. El precio sigue a la derecha de cada franja. Sin
+ * margen, porque una preparación no se vende: solo cuesta.
  */
 function DibujoOlla({
   partes,
@@ -1355,8 +1366,10 @@ function DibujoOlla({
   onResaltar,
   className = '',
 }: {
-  /** `detalle`: cuánto entra de cada cosa ("1 kg", "500 g", "2 unidades"). */
-  partes: { id: number; nombre: string; detalle: string; valor: number; color: string }[]
+  /** `detalle`: cuánto entra de cada cosa ("1 kg", "500 g", "2 unidades");
+      `medida`: cuánto queda ya cocido, en la unidad de la preparación (null
+      si no se mide como ella). */
+  partes: { id: number; nombre: string; detalle: string; valor: number; medida: number | null; color: string }[]
   total: number
   unidad: string
   formato: (n: number) => string
@@ -1368,18 +1381,30 @@ function DibujoOlla({
   const BOCA = 90
   const FONDO = 360
   const ALTO = FONDO - BOCA
-  const MINIMO = 30
-  let alturas = partes.map((p) => (total > 0 ? Math.max((p.valor / total) * ALTO, MINIMO) : 0))
-  const suma = alturas.reduce((t, h) => t + h, 0)
-  if (suma > ALTO) alturas = alturas.map((h) => (h * ALTO) / suma)
+  const FINA = 26
+  const medibles = partes.filter((p) => p.medida !== null)
+  const sumaMedida = medibles.reduce((t, p) => t + (p.medida ?? 0), 0)
+  // Las franjas finas se reservan primero; el resto de la olla es el kilo.
+  const disponible = ALTO - (partes.length - medibles.length) * FINA
+  // Si lo que queda se pasa del kilo, se aprieta todo para que quepa y abajo se avisa.
+  const porUnidad = sumaMedida > 1 ? disponible / sumaMedida : disponible
+  const alturas = partes.map((p) => (p.medida === null ? FINA : p.medida > 0 ? Math.max(p.medida * porUnidad, 6) : 0))
   // De abajo hacia arriba: cada franja empieza donde termina la anterior.
   const franjas = partes.map((p, i) => {
     const h = alturas[i]
     const y = FONDO - alturas.slice(0, i + 1).reduce((t, x) => t + x, 0)
     return { ...p, y, h }
   })
-  const vacia = partes.length === 0 || total <= 0
+  const vacia = partes.length === 0
   const mostrada = franjas.find((f) => f.id === resaltado)
+  const sePasa = sumaMedida > 1.02
+  const pie = sePasa
+    ? `se pasa: queda ${fmtCant(sumaMedida)} ${unidadDe(sumaMedida, unidad)} y la olla es 1 ${unidad}`
+    : mostrada
+      ? mostrada.medida !== null
+        ? `${mostrada.nombre}: ${fmtCant(mostrada.medida)} ${unidadDe(mostrada.medida, unidad)} del ${unidad} · ${formato(mostrada.valor)}`
+        : `${mostrada.nombre}: ${formato(mostrada.valor)}`
+      : `1 ${unidad} cuesta ${formato(total)}`
   return (
     <svg viewBox="0 0 260 400" className={className} role="img" aria-label={`Lo que lleva 1 ${unidad}, por lo que cuesta cada ingrediente`}>
       <defs>
@@ -1440,8 +1465,8 @@ function DibujoOlla({
         </text>
       )}
       {!vacia && (
-        <text x="130" y="385" textAnchor="middle" fontSize="12" fill="var(--color-neutral-500)">
-          {mostrada ? `${mostrada.nombre}: el ${total > 0 ? Math.round((mostrada.valor / total) * 100) : 0} % del costo` : `1 ${unidad} cuesta ${formato(total)}`}
+        <text x="130" y="385" textAnchor="middle" fontSize="12" fill={sePasa ? 'var(--color-aviso-700)' : 'var(--color-neutral-500)'}>
+          {pie}
         </text>
       )}
     </svg>
