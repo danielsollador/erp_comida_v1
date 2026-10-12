@@ -44,7 +44,7 @@ export default function Apariencia() {
           ofrecer opciones que no harian nada. */}
       <Tarjeta
         titulo="Teclado en pantalla"
-        ayuda="En un teléfono se escribe con el teclado del propio teléfono: el del sistema ya está hecho para el pulgar. El teclado de Sávora es para las tablets del mostrador."
+        ayuda="En un teléfono se escribe con el teclado del propio teléfono: el del sistema ya está hecho para el pulgar. El teclado de Vertigo Pro es para las tablets del mostrador."
       >
         <Nota>Sin opciones en este equipo.</Nota>
       </Tarjeta>

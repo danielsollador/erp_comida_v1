@@ -19,6 +19,10 @@ export const apiCuenta = {
 
   quitarMiPin: () => req<Usuario>('/usuarios/mi/pin', { method: 'DELETE' }),
 
+  /** Borra la cuenta propia (App Store 5.1.1(v)). Pide la clave. */
+  eliminarMiCuenta: (clave: string) =>
+    req<{ ok: boolean }>('/usuarios/mi/eliminar', { method: 'POST', body: JSON.stringify({ clave }) }),
+
   cambiarMiClave: (clave_actual: string, clave_nueva: string) =>
     req<{ ok: boolean }>('/usuarios/mi/clave', {
       method: 'POST',

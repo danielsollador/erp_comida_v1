@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, cargarToken, cuandoCaduque } from './api'
+import { api, cargarServidor, cargarToken, cuandoCaduque } from './api'
 import type { EstadoAcceso } from './tipos'
 
 type Fase = 'cargando' | 'fuera' | 'dentro'
@@ -31,6 +31,8 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     })
     ;(async () => {
       try {
+        // Primero A QUE negocio: el token es de ese servidor.
+        await cargarServidor()
         if (!(await cargarToken())) {
           setFase('fuera')
           return

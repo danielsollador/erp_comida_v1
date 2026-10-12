@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 import { apiCuenta } from '../../lib/api-cuenta'
+import { confirmar } from '../../lib/dialogo'
 import { useSesion } from '../../lib/sesion'
 import { LETRA, useTema } from '../../lib/tema'
 import Icono from '../Icono'
@@ -26,7 +27,7 @@ const NOMBRE_ROL: Record<string, string> = {
   cocina: 'Cocina',
 }
 
-type Cual = 'nombre' | 'pin' | 'clave'
+type Cual = 'nombre' | 'pin' | 'clave' | 'eliminar'
 
 export default function MiCuenta() {
   const t = useTema()
@@ -83,6 +84,7 @@ export default function MiCuenta() {
         />
       )}
       <CambiarClave abierta={abierta === 'clave'} alAlternar={alternar('clave')} alTerminar={salir} />
+      <EliminarCuenta abierta={abierta === 'eliminar'} alAlternar={alternar('eliminar')} alTerminar={salir} />
     </>
   )
 }
@@ -499,6 +501,72 @@ function CambiarClave({
           />
         </>
       )}
+    </Tarjeta>
+  )
+}
+
+// ── Eliminar mi cuenta ──────────────────────────────────────────────────────
+// La App Store lo exige a toda app que crea cuentas (guia 5.1.1(v)): cada
+// quien puede borrar la suya desde la app, sin escribirle a nadie.
+
+function EliminarCuenta({
+  abierta,
+  alAlternar,
+  alTerminar,
+}: {
+  abierta: boolean
+  alAlternar: () => void
+  alTerminar: () => Promise<void>
+}) {
+  const [clave, setClave] = useState('')
+  const [error, setError] = useState('')
+  const [borrando, setBorrando] = useState(false)
+
+  async function eliminar() {
+    if (borrando || !clave) return
+    setError('')
+    const seguro = await confirmar({
+      titulo: '¿Eliminar tu cuenta?',
+      texto: 'No se puede deshacer. Para volver a entrar, el dueño tendrá que crearte un usuario nuevo.',
+      aceptar: 'Eliminar',
+      peligro: true,
+    })
+    if (!seguro) return
+    setBorrando(true)
+    try {
+      await apiCuenta.eliminarMiCuenta(clave)
+      await alTerminar()
+    } catch (e) {
+      setError(mensajeDe(e))
+      setBorrando(false)
+    }
+  }
+
+  return (
+    <Tarjeta titulo="Eliminar mi cuenta" plegable={{ abierta, alAlternar, resumen: 'Borra tu usuario de este negocio' }}>
+      <Nota>
+        Se borra tu usuario y ya no podrás entrar. Lo que registraste (ventas, compras, cierres de caja) se queda en el
+        negocio con tu nombre de usuario: son registros contables que la ley obliga a guardar. Si eres el único
+        administrador, primero crea otro.
+      </Nota>
+      {error ? <Aviso tono="peligro" texto={error} /> : null}
+      <Campo
+        rotulo="Tu contraseña"
+        value={clave}
+        onChangeText={setClave}
+        {...CLAVE}
+        autoComplete="current-password"
+        textContentType="password"
+        returnKeyType="done"
+        onSubmitEditing={() => void eliminar()}
+      />
+      <Boton
+        texto={borrando ? 'Eliminando...' : 'Eliminar mi cuenta'}
+        tono="peligro"
+        alTocar={() => void eliminar()}
+        ocupado={borrando}
+        deshabilitado={!clave}
+      />
     </Tarjeta>
   )
 }

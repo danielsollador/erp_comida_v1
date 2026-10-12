@@ -29,8 +29,62 @@ const BASE = (process.env.EXPO_PUBLIC_API_BASE ?? 'https://prueba.vertigopro.tec
 // En el emulador de Android, "127.0.0.1" es el propio emulador: la laptop
 // donde corre el backend de desarrollo se llama 10.0.2.2. Asi la misma
 // variable sirve para el navegador y para el emulador.
-export const API_BASE =
-  Platform.OS === 'android' ? BASE.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:/]|$)/, '//10.0.2.2') : BASE
+const paraEsteEquipo = (url: string) =>
+  Platform.OS === 'android' ? url.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:/]|$)/, '//10.0.2.2') : url
+
+/**
+ * EL SERVIDOR DEL NEGOCIO. Cada local tiene el suyo (savora.vertigopro.tech);
+ * la app trae uno de fabrica y en "Entrar" se puede escribir otro ("Otro
+ * negocio"): asi la misma app sirve a varios locales, y el revisor de la App
+ * Store entra al de demostracion sin ver las ventas de nadie. Se recuerda en
+ * el telefono.
+ */
+export const SERVIDOR_DE_FABRICA = paraEsteEquipo(BASE)
+let base = SERVIDOR_DE_FABRICA
+const CLAVE_SERVIDOR = 'vp-servidor'
+
+/** El servidor con que se habla ahora (https://…, sin barra al final). */
+export function apiBase(): string {
+  return base
+}
+
+export async function cargarServidor(): Promise<string> {
+  const guardado = await almacen.leer(CLAVE_SERVIDOR).catch(() => null)
+  if (guardado) base = guardado
+  return base
+}
+
+/** "demo.vertigopro.tech" → "https://demo.vertigopro.tech". */
+export function normalizarServidor(texto: string): string {
+  const limpio = texto.trim().replace(/\/+$/, '').replace(/\/api$/, '')
+  if (!limpio) return ''
+  return paraEsteEquipo(/^https?:\/\//i.test(limpio) ? limpio : `https://${limpio}`)
+}
+
+/**
+ * Cambia de negocio: primero pregunta si ese servidor es un Vertigo Pro
+ * (/api/health), y solo entonces lo guarda. La sesion de otro servidor no
+ * vale aqui: se borra. `null` vuelve al de fabrica.
+ */
+export async function cambiarServidor(texto: string | null): Promise<string> {
+  const nuevo = texto === null ? SERVIDOR_DE_FABRICA : normalizarServidor(texto)
+  if (!nuevo) throw new ErrorApi('Escribe la dirección del negocio.', 0)
+  if (texto !== null) {
+    let ok = false
+    try {
+      const res = await fetch(`${nuevo}/api/health`, { headers: { Accept: 'application/json' } })
+      ok = res.ok && (await res.json().catch(() => null))?.status === 'ok'
+    } catch {
+      throw new ErrorApi('No se encontró ese negocio. Revisa la dirección y el internet.', 0)
+    }
+    if (!ok) throw new ErrorApi('Esa dirección no es un negocio de Vertigo Pro.', 0)
+  }
+  base = nuevo
+  await guardarToken(null)
+  if (nuevo === SERVIDOR_DE_FABRICA) await almacen.borrar(CLAVE_SERVIDOR)
+  else await almacen.guardar(CLAVE_SERVIDOR, nuevo)
+  return base
+}
 
 const CLAVE_TOKEN = 'vp-token'
 let token: string | null = null
@@ -69,7 +123,7 @@ export function cabecerasDeSesion(): Record<string, string> {
  * ("vp", token), igual que la app de la tablet (frontend/src/lib/plataforma.ts).
  */
 export function abrirCanalEnVivo(): WebSocket {
-  const url = API_BASE.replace(/^http/, 'ws') + '/ws'
+  const url = base.replace(/^http/, 'ws') + '/ws'
   return token ? new WebSocket(url, ['vp', token]) : new WebSocket(url)
 }
 
@@ -92,7 +146,7 @@ export async function req<T>(ruta: string, opciones: RequestInit = {}): Promise<
 
   let res: Response
   try {
-    res = await fetch(`${API_BASE}/api${ruta}`, { ...opciones, headers: cabeceras })
+    res = await fetch(`${base}/api${ruta}`, { ...opciones, headers: cabeceras })
   } catch {
     throw new ErrorApi('No hay conexión con el servidor. Revisa el internet.', 0)
   }
@@ -124,7 +178,7 @@ export const rango = (desde: string, hasta: string) => `desde=${desde}&hasta=${h
 export const api = {
   async entrar(usuario: string, clave: string) {
     await guardarToken(null)
-    const res = await fetch(`${API_BASE}/api/acceso/login`, {
+    const res = await fetch(`${base}/api/acceso/login`, {
       method: 'POST',
       headers: { 'X-Vp-App': '1', 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ usuario: usuario.trim(), clave }),

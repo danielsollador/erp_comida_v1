@@ -2,7 +2,7 @@ import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import { useEffect, useState } from 'react'
 import { Platform, type View } from 'react-native'
-import { API_BASE, cabecerasDeSesion, ErrorApi } from './api'
+import { apiBase, cabecerasDeSesion, ErrorApi } from './api'
 import { apiCompras, type PedidoRevision } from './api-compras'
 import { hoyEnCaracas, miles } from './formato'
 import { aNumero, fechaCorta, sinRuido } from './numeros'
@@ -458,7 +458,7 @@ export function guardarPdf(pdf: Uint8Array): string {
  * (como `VerSoporte` en la web). En el telefono queda en la cache.
  */
 export async function bajarSoporte(facturaId: number): Promise<{ uri: string; esPdf: boolean }> {
-  const url = `${API_BASE}/api/compras/facturas/${facturaId}/soporte`
+  const url = `${apiBase()}/api/compras/facturas/${facturaId}/soporte`
   if (Platform.OS === 'web') {
     const res = await fetch(url, { headers: cabecerasDeSesion() })
     if (!res.ok) throw new ErrorApi('No se pudo abrir el soporte de esta factura', res.status)

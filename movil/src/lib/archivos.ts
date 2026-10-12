@@ -1,7 +1,7 @@
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import { Platform } from 'react-native'
-import { API_BASE, cabecerasDeSesion, ErrorApi } from './api'
+import { apiBase, cabecerasDeSesion, ErrorApi } from './api'
 
 /**
  * DESCARGAR UN ARCHIVO DEL SERVIDOR (el libro de compras en .xlsx, una
@@ -14,7 +14,7 @@ import { API_BASE, cabecerasDeSesion, ErrorApi } from './api'
  * En el navegador, la descarga de siempre.
  */
 export async function descargar(ruta: string, nombre: string): Promise<void> {
-  const url = `${API_BASE}/api${ruta}`
+  const url = `${apiBase()}/api${ruta}`
   if (Platform.OS === 'web') {
     const res = await fetch(url, { headers: cabecerasDeSesion() })
     if (!res.ok) throw new ErrorApi(`No se pudo descargar (${res.status}).`, res.status)

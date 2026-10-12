@@ -1,17 +1,18 @@
-import { useRef, useState } from 'react'
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BotonTema } from '../componentes/Encabezado'
 import Fondo from '../componentes/Fondo'
 import { Boton } from '../componentes/ui'
-import { API_BASE, ErrorApi } from '../lib/api'
+import { apiBase, cambiarServidor, cargarServidor, ErrorApi, SERVIDOR_DE_FABRICA } from '../lib/api'
 import { useSesion } from '../lib/sesion'
 import { LETRA, useTema } from '../lib/tema'
 
 /**
  * La puerta. Los mismos usuarios y claves de la web: es el mismo backend.
- * Abajo, en letra chica, a que servidor se esta entrando: mientras la app se
- * arma es el de PRUEBA, y eso tiene que verse.
+ * Abajo, en letra chica, a que negocio se esta entrando; "Otro negocio"
+ * deja escribir la direccion de otro (cada local tiene su servidor). El de
+ * PRUEBA se marca, porque eso tiene que verse.
  */
 export default function Entrar() {
   const t = useTema()
@@ -22,6 +23,30 @@ export default function Entrar() {
   const [ocupado, setOcupado] = useState(false)
   const campoClave = useRef<TextInput>(null)
   const borde = useSafeAreaInsets()
+  const [servidorActual, setServidorActual] = useState(apiBase())
+  const [otro, setOtro] = useState(false)
+  const [direccion, setDireccion] = useState('')
+  const [buscando, setBuscando] = useState(false)
+
+  useEffect(() => {
+    cargarServidor()
+      .then(setServidorActual)
+      .catch(() => undefined)
+  }, [])
+
+  async function usarServidor(texto: string | null) {
+    setError('')
+    setBuscando(true)
+    try {
+      setServidorActual(await cambiarServidor(texto))
+      setOtro(false)
+      setDireccion('')
+    } catch (e) {
+      setError(e instanceof ErrorApi ? e.message : 'No se encontró ese negocio.')
+    } finally {
+      setBuscando(false)
+    }
+  }
 
   async function enviar() {
     if (!usuario.trim() || !clave) {
@@ -41,8 +66,9 @@ export default function Entrar() {
     }
   }
 
-  const servidor = API_BASE.replace(/^https?:\/\//, '')
+  const servidor = servidorActual.replace(/^https?:\/\//, '')
   const esPrueba = servidor.startsWith('prueba.')
+  const deFabrica = servidorActual === SERVIDOR_DE_FABRICA
 
   const campo = [estilos.campo, { backgroundColor: t.superficie, borderColor: t.linea, color: t.tinta }]
 
@@ -102,9 +128,44 @@ export default function Entrar() {
             <Boton texto="Entrar" alTocar={enviar} ocupado={ocupado} />
           </View>
 
+          {otro ? (
+            <View style={[estilos.otro, { backgroundColor: t.superficie, borderColor: t.linea }]}>
+              <Text style={[estilos.rotulo, { color: t.suave }]}>Dirección del negocio</Text>
+              <TextInput
+                value={direccion}
+                onChangeText={setDireccion}
+                placeholder="minegocio.vertigopro.tech"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                textContentType="URL"
+                returnKeyType="go"
+                onSubmitEditing={() => void usarServidor(direccion)}
+                style={[campo, { marginBottom: 12 }]}
+                placeholderTextColor={t.tenue}
+              />
+              <Boton texto="Usar este negocio" tono="neutro" alTocar={() => void usarServidor(direccion)} ocupado={buscando} />
+              <Pressable onPress={() => setOtro(false)} style={estilos.enlace} accessibilityRole="button">
+                <Text style={[estilos.enlaceTexto, { color: t.suave }]}>Cancelar</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <Text style={[estilos.pie, { color: esPrueba ? t.aviso : t.tenue }]}>
             {esPrueba ? `Servidor de prueba · ${servidor} · nada aquí toca las ventas reales` : servidor}
           </Text>
+          {!otro ? (
+            <View style={estilos.enlaces}>
+              <Pressable onPress={() => setOtro(true)} style={estilos.enlace} accessibilityRole="button">
+                <Text style={[estilos.enlaceTexto, { color: t.suave }]}>Otro negocio</Text>
+              </Pressable>
+              {!deFabrica ? (
+                <Pressable onPress={() => void usarServidor(null)} style={estilos.enlace} accessibilityRole="button">
+                  <Text style={[estilos.enlaceTexto, { color: t.suave }]}>Volver al de siempre</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -132,5 +193,9 @@ const estilos = StyleSheet.create({
     paddingVertical: 13,
     marginBottom: 16,
   },
+  otro: { borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, padding: 16, marginTop: 24 },
+  enlaces: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 4 },
+  enlace: { minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8 },
+  enlaceTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
   pie: { fontFamily: LETRA.texto, fontSize: 12.5, textAlign: 'center', marginTop: 22, lineHeight: 18 },
 })
