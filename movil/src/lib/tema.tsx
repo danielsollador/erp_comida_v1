@@ -1,7 +1,8 @@
 import * as almacen from './almacen'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { StyleSheet, useColorScheme } from 'react-native'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Platform, StyleSheet, useColorScheme, View } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
+import { captureScreen } from 'react-native-view-shot'
 import { scheduleOnRN } from 'react-native-worklets'
 
 /**
@@ -95,16 +96,29 @@ const Contexto = createContext<Ctx | null>(null)
 /**
  * CLARO U OSCURO, COMO EN LA WEB: el boton de la luna y el sol cambia el
  * tema, y la eleccion se recuerda en el telefono. Mientras nadie elija, sigue
- * al telefono. El cambio no es un golpe: el color de antes se desvanece
- * sobre el nuevo en un cuarto de segundo (en la web es el circulo que se
- * abre desde el boton; aqui, un fundido, que es lo que React Native permite
- * sin capturar la pantalla).
+ * al telefono.
+ *
+ * El cambio es el mismo barrido de la web (index.css, `vp-barrido`): una
+ * linea diagonal cruza de derecha a izquierda en 640 ms, con la parte de
+ * arriba 45 % por delante, y deja ver el tema nuevo detras. Para eso se toma
+ * una foto de la pantalla, se pone encima, se cambia el tema por debajo y la
+ * foto se recorta en diagonal mientras se corre a la izquierda; solo se
+ * mueve el borde, la foto queda quieta. Todo con transform, en el hilo de la
+ * interfaz. Si la foto no se puede tomar (la
+ * vista web), queda el fundido corto de antes.
  */
+const BARRIDO_MS = 640
+const ADELANTO = 0.45 // la parte de arriba va 45 % del ancho por delante
+
 export function TemaProvider({ children }: { children: ReactNode }) {
   const sistema = useColorScheme()
   const [elegido, setElegido] = useState<Modo | null>(null)
   const [velo, setVelo] = useState<string | null>(null)
+  const [foto, setFoto] = useState<{ uri: string; nuevo: Modo } | null>(null)
+  const [caja, setCaja] = useState({ ancho: 0, alto: 0 })
   const opacidad = useSharedValue(0)
+  const corrido = useSharedValue(0)
+  const ocupado = useRef(false)
 
   useEffect(() => {
     almacen.leer(CLAVE)
@@ -118,10 +132,13 @@ export function TemaProvider({ children }: { children: ReactNode }) {
   const paleta = modo === 'oscuro' ? OSCURO : CLARO
 
   const quitarVelo = useCallback(() => setVelo(null), [])
+  const quitarFoto = useCallback(() => {
+    setFoto(null)
+    ocupado.current = false
+  }, [])
 
-  const cambiar = useCallback(
+  const fundido = useCallback(
     (nuevo: Modo) => {
-      if (nuevo === modo) return
       // El velo se pinta con el papel de ANTES y se desvanece sobre el nuevo.
       setVelo((modo === 'oscuro' ? OSCURO : CLARO).papel)
       opacidad.set(1)
@@ -129,21 +146,88 @@ export function TemaProvider({ children }: { children: ReactNode }) {
         if (fin) scheduleOnRN(quitarVelo)
       }))
       setElegido(nuevo)
-      almacen.guardar(CLAVE, nuevo).catch(() => undefined)
     },
     [modo, opacidad, quitarVelo],
   )
 
-  const alternar = useCallback(() => cambiar(modo === 'oscuro' ? 'claro' : 'oscuro'), [cambiar, modo])
+  const cambiar = useCallback(
+    async (nuevo: Modo) => {
+      if (nuevo === modo || ocupado.current) return
+      almacen.guardar(CLAVE, nuevo).catch(() => undefined)
+      if (Platform.OS === 'web' || !caja.ancho) return fundido(nuevo)
+      ocupado.current = true
+      try {
+        const uri = await captureScreen({ format: 'jpg', quality: 0.92, result: 'tmpfile' })
+        corrido.set(0)
+        setFoto({ uri, nuevo })
+      } catch {
+        ocupado.current = false
+        fundido(nuevo)
+      }
+    },
+    [modo, caja.ancho, corrido, fundido],
+  )
+
+  // La foto ya esta pintada encima: se cambia el tema por debajo y, un
+  // instante despues (para que el tema nuevo alcance a dibujarse), arranca el
+  // barrido.
+  const fotoLista = useCallback(() => {
+    if (!foto) return
+    setElegido(foto.nuevo)
+    const recorrido = caja.ancho * (1 + ADELANTO)
+    setTimeout(() => {
+      corrido.set(withTiming(-recorrido, { duration: BARRIDO_MS, easing: Easing.bezier(0.4, 0, 0.12, 1) }, (fin) => {
+        if (fin) scheduleOnRN(quitarFoto)
+      }))
+    }, 50)
+  }, [foto, caja.ancho, corrido, quitarFoto])
+
+  const alternar = useCallback(() => {
+    void cambiar(modo === 'oscuro' ? 'claro' : 'oscuro')
+  }, [cambiar, modo])
   const estiloVelo = useAnimatedStyle(() => ({ opacity: opacidad.value }))
-  const valor = useMemo(() => ({ modo, paleta, alternar, cambiar }), [modo, paleta, alternar, cambiar])
+
+  // Una caja muy grande, centrada en la pantalla y girada: su borde derecho
+  // es la linea diagonal. La foto va adentro, centrada en el mismo punto y
+  // girada al reves, asi que queda quieta mientras la caja se corre. (Android
+  // no aplica skewX a las vistas: por eso giro y no inclinacion.)
+  const { ancho, alto } = caja
+  const lado = 3 * Math.max(ancho, alto, 1)
+  const giro = alto ? Math.atan((ancho * ADELANTO) / alto) : 0
+  const inicio = ancho * (0.5 + ADELANTO / 2) - lado / (2 * Math.cos(giro))
+  const estiloRecorte = useAnimatedStyle(() => ({
+    transform: [{ translateX: inicio + corrido.value }, { rotate: `${-giro}rad` }],
+  }))
+  const estiloFoto = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${giro}rad` }, { translateX: -(inicio + corrido.value) }],
+  }))
+
+  const valor = useMemo(
+    () => ({ modo, paleta, alternar, cambiar: (m: Modo) => void cambiar(m) }),
+    [modo, paleta, alternar, cambiar],
+  )
 
   return (
     <Contexto.Provider value={valor}>
-      {children}
-      {velo && (
-        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: velo }, estiloVelo]} />
-      )}
+      <View style={{ flex: 1 }} onLayout={(e) => setCaja({ ancho: e.nativeEvent.layout.width, alto: e.nativeEvent.layout.height })}>
+        {children}
+        {foto && (
+          <Animated.View
+            pointerEvents="none"
+            style={[{ position: 'absolute', top: (alto - lado) / 2, left: (ancho - lado) / 2, width: lado, height: lado, overflow: 'hidden' }, estiloRecorte]}
+          >
+            <Animated.Image
+              source={{ uri: foto.uri }}
+              fadeDuration={0}
+              onLoad={fotoLista}
+              style={[{ position: 'absolute', top: (lado - alto) / 2, left: (lado - ancho) / 2, width: ancho, height: alto }, estiloFoto]}
+            />
+          </Animated.View>
+        )}
+        {velo && (
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: velo }, estiloVelo]} />
+        )}
+      </View>
     </Contexto.Provider>
   )
 }

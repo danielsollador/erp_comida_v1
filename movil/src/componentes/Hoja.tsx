@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
+import { scheduleOnRN } from 'react-native-worklets'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LETRA, useTema } from '../lib/tema'
 import Icono, { type NombreIcono } from './Icono'
@@ -8,7 +10,15 @@ import Icono, { type NombreIcono } from './Icono'
  * El menu que en la web se abre colgando de un boton, en el telefono sube
  * desde abajo: queda al alcance del pulgar y no lo tapa el dedo. Se cierra
  * tocando afuera o con el gesto de atras.
+ *
+ * El fondo oscuro aparece en su sitio (fundido) y solo la hoja sube; con
+ * `animationType="slide"` del Modal subia todo junto, el velo incluido, y se
+ * veia raro. Al cerrar, la hoja baja y el velo se apaga antes de desmontar.
  */
+const ENTRAR_MS = 280
+const SALIR_MS = 200
+const CURVA = Easing.bezier(0.2, 0.7, 0.2, 1)
+
 export function Hoja({
   visible,
   alCerrar,
@@ -22,13 +32,37 @@ export function Hoja({
 }) {
   const t = useTema()
   const borde = useSafeAreaInsets()
+  const { height: altoPantalla } = useWindowDimensions()
+  const [montada, setMontada] = useState(visible)
+  const avance = useSharedValue(0)
+  // Se monta en cuanto se pide abrir (en el render, no en un efecto); se
+  // desmonta solo cuando termino de bajar.
+  if (visible && !montada) setMontada(true)
+
+  useEffect(() => {
+    if (visible) {
+      avance.set(withTiming(1, { duration: ENTRAR_MS, easing: CURVA }))
+    } else {
+      avance.set(withTiming(0, { duration: SALIR_MS, easing: CURVA }, (fin) => {
+        if (fin) scheduleOnRN(setMontada, false)
+      }))
+    }
+  }, [visible, avance])
+
+  const estiloVelo = useAnimatedStyle(() => ({ opacity: avance.value }))
+  const estiloHoja = useAnimatedStyle(() => ({ transform: [{ translateY: (1 - avance.value) * altoPantalla }] }))
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={alCerrar} statusBarTranslucent>
-      <Pressable style={estilos.fondo} onPress={alCerrar} accessibilityLabel="Cerrar" />
-      <View style={[estilos.hoja, { backgroundColor: t.superficie, paddingBottom: 16 + borde.bottom }]}>
-        <View style={[estilos.agarre, { backgroundColor: t.gris200 }]} />
-        {titulo ? <Text style={[estilos.titulo, { color: t.tenue }]}>{titulo}</Text> : null}
-        {children}
+    <Modal visible={montada} transparent animationType="none" onRequestClose={alCerrar} statusBarTranslucent>
+      <View style={estilos.marco}>
+        <Animated.View style={[StyleSheet.absoluteFill, estilos.fondo, estiloVelo]}>
+          <Pressable style={{ flex: 1 }} onPress={alCerrar} accessibilityLabel="Cerrar" />
+        </Animated.View>
+        <Animated.View style={[estilos.hoja, { backgroundColor: t.superficie, paddingBottom: 16 + borde.bottom }, estiloHoja]}>
+          <View style={[estilos.agarre, { backgroundColor: t.gris200 }]} />
+          {titulo ? <Text style={[estilos.titulo, { color: t.tenue }]}>{titulo}</Text> : null}
+          {children}
+        </Animated.View>
       </View>
     </Modal>
   )
@@ -68,7 +102,8 @@ export function OpcionHoja({
 }
 
 const estilos = StyleSheet.create({
-  fondo: { flex: 1, backgroundColor: 'rgba(14,16,20,0.42)' },
+  marco: { flex: 1, justifyContent: 'flex-end' },
+  fondo: { backgroundColor: 'rgba(14,16,20,0.42)' },
   hoja: {
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
