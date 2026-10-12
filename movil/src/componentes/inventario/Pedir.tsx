@@ -198,7 +198,6 @@ function Formulario({ datos, alTerminar }: { datos: Pedido; alTerminar: (v: Reco
               ayuda={c.ayuda}
               error={error}
               placeholder={c.placeholder}
-              autoFocus={i === 0}
             />
           )
         }
@@ -215,7 +214,6 @@ function Formulario({ datos, alTerminar }: { datos: Pedido; alTerminar: (v: Reco
               ayuda={c.ayuda}
               error={error}
               placeholder={c.placeholder}
-              autoFocus={i === 0}
             />
           )
         }
@@ -234,7 +232,6 @@ function Formulario({ datos, alTerminar }: { datos: Pedido; alTerminar: (v: Reco
             value={valores[c.nombre]}
             onChangeText={(v) => poner(c.nombre, v)}
             placeholder={c.placeholder}
-            autoFocus={i === 0}
             ayuda={c.ayuda}
             error={error}
           />

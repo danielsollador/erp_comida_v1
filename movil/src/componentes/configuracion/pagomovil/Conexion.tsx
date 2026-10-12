@@ -127,7 +127,6 @@ export default function Conexion({
             autoComplete="off"
             importantForAutofill="no"
             textContentType="none"
-            autoFocus={editando}
             returnKeyType="done"
             onSubmitEditing={() => void guardar()}
           />

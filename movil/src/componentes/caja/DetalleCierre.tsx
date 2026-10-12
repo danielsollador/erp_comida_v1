@@ -160,7 +160,6 @@ function Anular({ id, alCerrar, alAnular }: { id: number; alCerrar: () => void; 
           setFalta(false)
         }}
         error={falta ? 'Falta este dato' : undefined}
-        autoFocus
       />
     </HojaFormulario>
   )

@@ -193,7 +193,7 @@ export function ElegirMercancia({
               El papel dice «{sugerencia}»
             </Text>
           ) : null}
-          <Buscador valor={texto} alCambiar={setTexto} placeholder="Escribe para buscar" autoFocus={!sugerencia} />
+          <Buscador valor={texto} alCambiar={setTexto} placeholder="Escribe para buscar" />
         </View>
         {/* La lista se desplaza por dentro; "Crear" va debajo, fijo. */}
         <ScrollView style={{ maxHeight: alto * 0.42 }} keyboardShouldPersistTaps="handled">

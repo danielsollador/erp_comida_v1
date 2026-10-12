@@ -145,7 +145,6 @@ export default function FilaCuenta({
             autoComplete="off"
             importantForAutofill="no"
             textContentType="none"
-            autoFocus
             returnKeyType="done"
             onSubmitEditing={() => void guardarClave()}
           />

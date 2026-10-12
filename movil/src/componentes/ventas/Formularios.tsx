@@ -90,7 +90,6 @@ export function FormFacturar({ v, visible, alCerrar, alListo }: Base) {
           setFalta(false)
         }}
         error={falta ? FALTA : undefined}
-        autoFocus
       />
       <Campo rotulo="Número de control" value={control} onChangeText={setControl} />
       <Campo rotulo="RIF o cédula del cliente" value={rif} onChangeText={setRif} placeholder="J-12345678-9 o V-12345678" autoCapitalize="characters" />

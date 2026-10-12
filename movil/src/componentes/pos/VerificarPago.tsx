@@ -162,7 +162,6 @@ export function VerificarPago({
             valor={referencia}
             alCambiar={setReferencia}
             entero
-            autoFocus
             placeholder="Los dígitos que muestra el banco"
           />
           {pideTelefono ? (

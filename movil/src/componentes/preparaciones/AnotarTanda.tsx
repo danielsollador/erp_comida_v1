@@ -114,7 +114,7 @@ export default function AnotarTanda({
           alCambiar={(v) => elegir(Number(v))}
         />
       ) : null}
-      <CampoNumero rotulo={`Cuánto salió (${prep.unidad})`} valor={salio} alCambiar={setSalio} sufijo={prep.unidad} autoFocus />
+      <CampoNumero rotulo={`Cuánto salió (${prep.unidad})`} valor={salio} alCambiar={setSalio} sufijo={prep.unidad} />
       <View style={{ gap: 8 }}>
         <Text style={[e.rotulo, { color: t.suave }]}>Lo que se usó</Text>
         {prep.lineas.map((l) => (

@@ -168,7 +168,6 @@ function Formulario({
             setNombre(v)
             setConfirmando(false)
           }}
-          autoFocus
           placeholder="¿Cómo se llama? Ej. Crema de leche"
           accessibilityLabel="Nombre de la mercancía"
           ayuda="El nombre de la cosa, no del empaque: «Crema de leche», no «Crema de leche lata grande»."

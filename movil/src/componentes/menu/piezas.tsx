@@ -237,7 +237,6 @@ export function PedirTexto({
           setTexto(v)
           setError('')
         }}
-        autoFocus
         returnKeyType="done"
         onSubmitEditing={() => void guardar()}
         error={error}

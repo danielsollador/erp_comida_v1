@@ -374,7 +374,6 @@ export function Cobro({
               alCambiar={setBillete}
               prefijo={enBs ? 'Bs' : '$'}
               placeholder={enBs ? '0,00' : '20.00'}
-              autoFocus
             />
             {/* Los billetes de siempre: tocar "20" es mas rapido y se equivoca menos. */}
             {!enBs ? (

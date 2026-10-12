@@ -213,7 +213,6 @@ export default function Formulario({
           rotulo="Nombre"
           value={f.nombre}
           onChangeText={(v) => poner('nombre', v)}
-          autoFocus={nuevo}
           placeholder="Ej. Carne molida"
           autoCapitalize="sentences"
         />

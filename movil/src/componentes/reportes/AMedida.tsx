@@ -403,7 +403,6 @@ export default function AMedida({ periodo, alCambiarPeriodo }: { periodo: Period
           onChangeText={(v) => setGuardando((x) => (x ? { ...x, nombre: v } : x))}
           placeholder="Ej.: Ventas de la semana por cajera"
           ayuda={textoPeriodo ? `Abrirá con el período «${textoPeriodo}».` : 'Abrirá con el período que esté elegido en ese momento.'}
-          autoFocus
           maxLength={80}
           returnKeyType="done"
           onSubmitEditing={() => void guardar()}

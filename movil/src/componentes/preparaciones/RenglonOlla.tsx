@@ -82,7 +82,6 @@ export default function RenglonOlla({
       alCambiar={escribir}
       placeholder="0"
       etiqueta={`Cantidad de ${ing.nombre} que entra, en ${unidadVista}`}
-      autoFocus={f.cantidad === ''}
       estilo={ancha ? { width: 150 } : { flex: 1 }}
     />
   )

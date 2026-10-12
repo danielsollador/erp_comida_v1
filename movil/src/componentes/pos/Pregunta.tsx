@@ -145,7 +145,6 @@ function CuadroPregunta({ pendiente, alResponder }: { pendiente: Pendiente; alRe
               }}
               sufijo={pendiente.datos.sufijo}
               error={error || undefined}
-              autoFocus
               returnKeyType="done"
               onSubmitEditing={aceptar}
             />
@@ -159,7 +158,6 @@ function CuadroPregunta({ pendiente, alResponder }: { pendiente: Pendiente; alRe
               }}
               placeholder={pendiente.datos.placeholder}
               error={error || undefined}
-              autoFocus
               returnKeyType="done"
               onSubmitEditing={aceptar}
             />

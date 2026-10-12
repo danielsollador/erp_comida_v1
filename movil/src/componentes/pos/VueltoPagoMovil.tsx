@@ -80,7 +80,7 @@ export function VueltoPagoMovil({
 
       {!aMano ? (
         <>
-          <CampoNumero rotulo="Teléfono del cliente" valor={telefono} alCambiar={setTelefono} entero autoFocus placeholder="04141234567" />
+          <CampoNumero rotulo="Teléfono del cliente" valor={telefono} alCambiar={setTelefono} entero placeholder="04141234567" />
           <Campo rotulo="Cédula" value={cedula} onChangeText={setCedula} placeholder="V12345678" autoCapitalize="characters" />
           <Selector
             etiqueta="Banco del cliente"
@@ -114,7 +114,6 @@ export function VueltoPagoMovil({
             valor={referencia}
             alCambiar={setReferencia}
             entero
-            autoFocus
             placeholder="Los dígitos que muestra el banco"
           />
           <Boton texto="Cobrar con ese vuelto" alTocar={() => alListo({ referencia: refLimpia })} deshabilitado={refLimpia.length < 4} />

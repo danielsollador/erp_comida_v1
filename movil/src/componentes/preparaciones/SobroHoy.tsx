@@ -84,7 +84,6 @@ export default function SobroHoy({
         valor={cantidad}
         alCambiar={setCantidad}
         sufijo={p.unidad}
-        autoFocus
         ayuda={valor > 0 ? `Vale unos ${dinero(valor)} en materia prima.` : undefined}
       />
       <View style={s.par}>

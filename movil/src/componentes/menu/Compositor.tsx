@@ -454,7 +454,6 @@ function RenglonMercancia({
               otra={otra ? (enChica ? ing.unidad : otra) : null}
               rotulo={pieza ? unidadDe(cantidad, 'unidad') : ing.unidad}
               entero={pieza}
-              autoFocus={f.cantidad_por_unidad === '' && f.vista === undefined}
               etiqueta={`Cantidad de ${ing.nombre} por unidad, en ${unidadVista}`}
               alCambiarVista={() => alCambiar({ enChica: !enChica, vista: undefined })}
             />

@@ -150,7 +150,6 @@ export default function Olla({ prep, ingredientes }: { prep: Preparacion | null;
           placeholder="¿Cómo se llama? Ej. Guiso de pollo"
           placeholderTextColor={t.tenue}
           accessibilityLabel="Nombre de la preparación"
-          autoFocus={!prep}
           style={[o.nombre, { color: t.tinta }]}
         />
         <View style={o.mide}>

@@ -137,7 +137,7 @@ export function CrearCategoria({
         />
       }
     >
-      <Campo rotulo="Nombre" value={nombre} onChangeText={setNombre} placeholder="Ej. Comida" autoFocus returnKeyType="done" />
+      <Campo rotulo="Nombre" value={nombre} onChangeText={setNombre} placeholder="Ej. Comida" returnKeyType="done" />
       <View>
         <Rotulo>Color en el mostrador</Rotulo>
         <Colores elegido={color} alElegir={setColor} grande />
@@ -214,7 +214,7 @@ export function CrearProducto({
         />
       }
     >
-      <Campo rotulo="Nombre" value={nombre} onChangeText={setNombre} placeholder="Ej. Empanada" autoFocus />
+      <Campo rotulo="Nombre" value={nombre} onChangeText={setNombre} placeholder="Ej. Empanada" />
       <CampoNumero
         rotulo="Precio (opcional)"
         valor={precio}
@@ -280,7 +280,7 @@ export function NuevaVariante({
       titulo={`Variante de ${producto}`}
       pie={<Pie texto="Agregar" alCancelar={alCerrar} alAceptar={() => void guardar()} ocupado={guardando} deshabilitado={!listo} />}
     >
-      <Campo rotulo="Nombre de la variante" value={nombre} onChangeText={setNombre} placeholder="Ej. Grande" autoFocus />
+      <Campo rotulo="Nombre de la variante" value={nombre} onChangeText={setNombre} placeholder="Ej. Grande" />
       <CampoNumero rotulo="Precio de la variante" valor={precio} alCambiar={setPrecio} prefijo="$" placeholder="Precio" />
       {error ? <Nota style={{ color: t.peligro }}>{error}</Nota> : null}
     </HojaFormulario>
@@ -346,7 +346,6 @@ export function CambiarPrecio({
           setError('')
         }}
         prefijo="$"
-        autoFocus
         error={error || undefined}
         returnKeyType="done"
         onSubmitEditing={() => void guardar()}
