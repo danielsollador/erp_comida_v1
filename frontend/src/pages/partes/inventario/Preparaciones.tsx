@@ -1023,7 +1023,8 @@ function Olla({
   // guardar, pero solo se puede saber que falta cuando todo se mide como la
   // preparación (con leche en litros dentro de un guiso en kilos no hay suma).
   const sePasa = queda > 1.02
-  const falta = !sePasa && enSuUnidad.length === partes.length && queda > 0 && queda < 0.98
+  const falta = !sePasa && enSuUnidad.length > 0 && queda > 0 && queda < 0.98
+  const sinMedir = partes.filter((p) => p.enSuMedida === null).map((p) => p.nombre)
 
   function actualizar(id: number, cambios: Partial<Fila>) {
     setFilas((prev) => prev.map((f) => (f.ingrediente_id === id ? { ...f, ...cambios } : f)))
@@ -1160,10 +1161,14 @@ function Olla({
               <span className="block text-[11px] text-neutral-500 leading-tight">cada {unidadLarga} ya preparado</span>
             </div>
           </div>
+        </section>
+
+        {/* ── Lleva y Agregar ──────────────────────────────────────── */}
+        <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
           {/* Por qué la olla es 1 kg y qué hacer si no da. Siempre que no dé, no
               solo al intentar guardar (Leider, 11-oct). */}
           {(sePasa || falta) && (
-            <div className={`mt-2 rounded-xl px-3 py-2.5 text-xs leading-relaxed shrink-0 ${sePasa ? 'bg-peligro-500/10 text-peligro-800' : 'bg-aviso-500/10 text-aviso-900'}`}>
+            <div className={`rounded-xl px-3 py-2.5 text-xs leading-relaxed shrink-0 ${sePasa ? 'bg-peligro-500/10 text-peligro-800' : 'bg-aviso-500/10 text-aviso-900'}`}>
               <p>
                 <b>La receta es lo que lleva 1 {unidadLarga} ya hecho, nada más.</b> Es el inventario teórico: con ella el sistema sabe cuánto crudo
                 se va en cada {unidadLarga} que vendes y cuánto cuesta. Si un día haces 10 {unidad === 'unidad' ? 'unidades' : unidad}, multiplica por 10 solo.
@@ -1171,14 +1176,10 @@ function Olla({
               <p className="mt-1">
                 {sePasa
                   ? `Aquí lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)}: en la olla de 1 ${unidadLarga} no cabe, y así no se puede guardar. Baja las cantidades o toca «Ajustar al ${unidadLarga}», que las reparte en proporción.`
-                  : `Aquí lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)}: ${unidad === 'unidad' ? 'falta' : `faltan ${cantidadLegible(1 - queda, unidad)}`} para el ${unidadLarga}. Trata de que siempre dé el ${unidadLarga}: sube las cantidades, agrega lo que falta o toca «Ajustar al ${unidadLarga}». Si lo guardas así, el ${unidadLarga} queda con menos de lo que lleva de verdad y el costo sale bajo.`}
+                  : `Aquí lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)}${sinMedir.length ? ` (sin contar lo que no se mide en ${unidad}: ${sinMedir.join(', ')})` : ''}: ${unidad === 'unidad' ? 'falta' : `faltan ${cantidadLegible(1 - queda, unidad)}`} para el ${unidadLarga}. Trata de que siempre dé el ${unidadLarga}: sube las cantidades, agrega lo que falta o toca «Ajustar al ${unidadLarga}». Si lo guardas así, el ${unidadLarga} queda con menos de lo que lleva de verdad y el costo sale bajo.`}
               </p>
             </div>
           )}
-        </section>
-
-        {/* ── Lleva y Agregar ──────────────────────────────────────── */}
-        <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
           {filas.length > 0 && (
             <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[50%] lg:overflow-y-auto">
               <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">
