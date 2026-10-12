@@ -243,6 +243,19 @@ export default function CargarFactura({
   const [lectura, setLectura] = useState<LecturaFactura | null>(null)
   const [documento, setDocumento] = useState<{ url: string; esPdf: boolean } | null>(null)
 
+  // Lo primero es decidir COMO se carga (Leider, 12-oct): dos cuadros, foto
+  // o archivo / a mano, y nada mas. Cada uno lleva a su camino y de ahi sigue
+  // el flujo de siempre. Sin el lector de facturas activo no hay que elegir:
+  // va directo a mano.
+  const [modo, setModo] = useState<'elegir' | 'foto' | 'manual'>('elegir')
+  const [lectorActivo, setLectorActivo] = useState<boolean | null>(null)
+  useEffect(() => {
+    api
+      .estadoLectorFacturas()
+      .then((e) => setLectorActivo(e.activo))
+      .catch(() => setLectorActivo(false))
+  }, [])
+
   // Lo que se recuerda de cada proveedor: las presentaciones ("caja de 24")
   // con que ya trajo cada mercancia, para ofrecerlas de un toque.
   const [memoria, setMemoria] = useState<Equivalencia[]>([])
@@ -812,6 +825,7 @@ export default function CargarFactura({
       const aprendidos = new Map(items.filter((it) => it.empaque_trae).map((it) => [it.ingrediente_id, it.empaque_trae!]))
       if (aprendidos.size) setIngredientes((prev) => prev.map((ing) => (aprendidos.has(ing.id) ? { ...ing, empaque_trae: aprendidos.get(ing.id)! } : ing)))
       limpiarFormulario()
+      setModo('elegir')
 
       if (paquetesAMano.length > 0) {
         api
@@ -864,6 +878,8 @@ export default function CargarFactura({
 
   // ── Pantalla ────────────────────────────────────────────────────────────
   const conDocumento = documento !== null
+  const forma = lectorActivo === false ? 'manual' : modo
+  const verFormulario = conDocumento || forma === 'manual'
   const datosListos = !!proveedor.trim() && !!rif.trim() && !!numeroFactura.trim() && !!tasaNum
   const fmtFecha = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-VE')
   // "Listo" en un renglón lo pliega y deja el SIGUIENTE arriba en pantalla
@@ -887,7 +903,7 @@ export default function CargarFactura({
     if (n) setTimeout(() => document.getElementById(`cf-paso-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
     else setTimeout(() => document.getElementById('cf-totales')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60)
   }
-  const forma = FORMAS_PAGO.find((f) => f.valor === formaPago)?.texto ?? formaPago
+  const formaTexto = FORMAS_PAGO.find((f) => f.valor === formaPago)?.texto ?? formaPago
   const resumenMixto = partesPago
     .filter((p) => Number(p.monto) > 0)
     .map((p) => `${FORMAS_PAGO.find((f) => f.valor === p.forma)?.texto ?? p.forma} ${monedaCarga}${fmtNum(Number(p.monto), 2)}`)
@@ -917,440 +933,510 @@ export default function CargarFactura({
         </div>
       )}
 
-      {!conDocumento && <ZonaDocumento onLeida={aplicarLectura} />}
-
-      <div className={conDocumento ? 'lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-4 lg:items-start' : ''}>
-        {conDocumento && <VisorDocumento url={documento.url} esPdf={documento.esPdf} />}
-
-        <div className="space-y-4">
-          {lectura && !borrador && (
-            <Nota tono="ojo">
-              No se pudo leer {documento?.esPdf ? 'el PDF' : 'la foto'}: {lectura.error} Cárgala a mano mirando el
-              documento: se adjunta igual al guardar.
-            </Nota>
-          )}
-          {clienteAjeno && (
-            <Nota tono="mal">
-              Esta factura está a nombre del RIF {borrador?.cliente_rif}, no de {fiscal.razon_social || 'la empresa'} (
-              {fiscal.rif}). Su IVA no se puede usar como crédito fiscal: pídele al proveedor una factura a nombre de la
-              empresa.
-            </Nota>
-          )}
-          {borrador?.advertencias.map((a) => (
-            <Nota key={a} tono="ojo">
-              La IA avisa: {a}
-            </Nota>
-          ))}
-          {error && <Nota tono="mal">{error}</Nota>}
-
-          {/* ── Paso 1: la factura ── */}
-          <Paso
-            numero={1}
-            titulo="Información de la factura"
-            detalle={conDocumento ? 'Lo marcado con «IA» lo leyó la IA de la foto. Compáralo con el papel.' : 'Quién la emitió, cuál es y de cuándo.'}
-            abierto={paso === 1}
-            onAbrir={() => setPaso(paso === 1 ? 0 : 1)}
-            onListo={() => siguiente(2)}
-            hecho={datosListos}
-            resumen={
-              <>
-                <span className="font-medium text-neutral-800">{proveedor || <Falta>falta el proveedor</Falta>}</span>
-                {' · '}N.º {numeroFactura || <Falta>falta</Falta>}
-                {fechaEmision && ` · ${fmtFecha(fechaEmision)}`}
-                {' · '}
-                {monedaCarga === '$' ? 'en $' : 'en Bs'} a {tasaNum ? fmtNum(tasaNum, 2) : <Falta>falta la tasa</Falta>}
-              </>
-            }
-            accion={
-              conDocumento ? (
-                <button onClick={limpiarFormulario} className="text-xs text-neutral-500 font-medium underline">
-                  Descartar
-                </button>
-              ) : undefined
-            }
-          >
-            <div className="grid grid-cols-2 gap-3">
-              <Dato id="cf-proveedor" etiqueta="Proveedor" ia={!!borrador && proveedor === (borrador.proveedor_nombre || proveedor)} className="col-span-2">
-                <CampoSugerido
-                  value={proveedor}
-                  onChange={elegirProveedorConocido}
-                  opciones={proveedores.filter((p) => p.activo).map((p) => p.nombre)}
-                  placeholder="Nombre del proveedor"
-                  vacio="Todavía no hay proveedores guardados"
-                />
-              </Dato>
-              <Dato
-                id="cf-rif"
-                etiqueta="RIF"
-                ia={!!borrador && rif === borrador.proveedor_rif && !!rif}
-                tono={revision?.rif_aviso ? 'ojo' : undefined}
-                nota={
-                  revision?.rif_aviso && (
-                    <>
-                      {revision.rif_aviso}
-                      {revision.rif_sugerido && (
-                        <>
-                          {' '}
-                          <button
-                            type="button"
-                            className="font-semibold underline"
-                            onClick={() => {
-                              setRif(revision.rif_sugerido!.rif)
-                              if (!proveedor.trim()) setProveedor(revision.rif_sugerido!.nombre)
-                            }}
-                          >
-                            ¿Es {revision.rif_sugerido.rif} ({revision.rif_sugerido.nombre})? Usarlo
-                          </button>
-                        </>
-                      )}
-                    </>
-                  )
-                }
-              >
-                <input value={rif} onChange={(e) => setRif(e.target.value)} placeholder="J-12345678-9" className={clase(revision?.rif_aviso ? 'ojo' : undefined)} />
-              </Dato>
-              <Dato
-                id="cf-numero"
-                etiqueta="N.º de factura"
-                ia={!!borrador && numeroFactura === borrador.numero_factura && !!numeroFactura}
-                tono={revision?.duplicadas.length ? 'mal' : undefined}
-                nota={
-                  revision?.duplicadas.length
-                    ? revision.duplicadas
-                        .map((d) => `Ya cargada: ${d.numero_factura} de ${d.proveedor_nombre}, del ${new Date(d.fecha).toLocaleDateString('es-VE')}, por $${fmtNum(d.total)}.`)
-                        .join(' ')
-                    : undefined
-                }
-              >
-                <input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="00001234" className={clase(revision?.duplicadas.length ? 'mal' : undefined)} />
-              </Dato>
-              <Dato
-                id="cf-fecha"
-                etiqueta="Fecha de la factura"
-                ia={!!borrador && !!fechaEmision && fechaEmision === borrador.fecha}
-                tono={
-                  fechaEmision && fechaEmision > hoyISO
-                    ? 'mal'
-                    : (fechaEmision && diasDesde(fechaEmision, hoyISO) > DIAS_FACTURA_VIEJA) || (borrador && !fechaEmision)
-                      ? 'ojo'
-                      : undefined
-                }
-                nota={
-                  fechaEmision && fechaEmision > hoyISO
-                    ? 'Es futura: revisa el año contra el papel.'
-                    : fechaEmision && diasDesde(fechaEmision, hoyISO) > DIAS_FACTURA_VIEJA
-                      ? `Tiene ${diasDesde(fechaEmision, hoyISO)} días. Revisa el año; si está bien, entra al Libro de Compras de este mes: confirma con quien lleva la contabilidad si ese crédito fiscal todavía se puede descontar.`
-                      : borrador && !fechaEmision
-                        ? 'La IA no la leyó con seguridad: escríbela mirando el papel.'
-                        : undefined
-                }
-              >
-                <input value={fechaEmision} onChange={(e) => setFechaEmision(e.target.value)} type="date" max={hoyISO} className={clase()} />
-              </Dato>
-              <Dato id="cf-control" etiqueta="N.º de control" ia={!!borrador?.numero_control && numeroControl === borrador.numero_control}>
-                <input value={numeroControl} onChange={(e) => setNumeroControl(e.target.value)} placeholder="00-00000000" className={clase()} />
-              </Dato>
-              <Dato id="cf-moneda" etiqueta="Montos en" ia={!!borrador?.moneda && monedaCarga === borrador.moneda}>
-                <Filtros
-                  tamano="chico"
-                  opciones={[
-                    { valor: '$' as const, texto: 'Dólares' },
-                    { valor: 'Bs' as const, texto: 'Bolívares' },
-                  ]}
-                  activo={monedaCarga}
-                  alElegir={setMonedaCarga}
-                />
-              </Dato>
-              <Dato
-                id="cf-tasa"
-                etiqueta="Tasa (Bs por $)"
-                ia={origenTasa === 'papel'}
-                tono={!tasaNum ? 'mal' : undefined}
-                nota={
-                  !tasaNum
-                    ? notaTasa || 'Escribe la tasa BCV del día de la factura.'
-                    : `${notaTasa}${monedaCarga === '$' && totalFormulario > 0 ? ` Al libro: Bs ${fmtNum(totalFormulario * tasaNum, 2)}.` : ''}`
-                }
-              >
-                <Numerico
-                  value={tasaFactura}
-                  onChange={(e) => {
-                    setTasaFactura(e.target.value)
-                    setOrigenTasa('escrita')
-                    setNotaTasa('Escrita a mano.')
-                  }}
-                  className={clase(!tasaNum ? 'mal' : undefined)}
-                />
-              </Dato>
-            </div>
-          </Paso>
-
-          {/* ── Paso 2: qué trae ── */}
-          <Paso
-            numero={2}
-            titulo="Qué trae"
-            detalle="Cada renglón dice qué es: una mercancía del inventario, o flete, servicio, equipo u otro gasto."
-            abierto={paso === 2}
-            onAbrir={() => setPaso(paso === 2 ? 0 : 2)}
-            onListo={() => siguiente(3)}
-            hecho={lineas.some(lineaCompleta) && !lineas.some(sinMercanciaEn)}
-            resumen={<ResumenRenglones lineas={lineas} ingredientes={ingredientes} moneda={monedaCarga} total={baseLineas} />}
-          >
-            <div className="space-y-2">
-              {lineas.map((l, i) => (
-                <Renglon
-                  key={l.leido ? `papel-${i}` : `mano-${i}`}
-                  indice={i}
-                  linea={l}
-                  ingredientes={ingredientes}
-                  moneda={monedaCarga}
-                  tasaIva={fiscal.tasa_iva}
-                  exento={exentoDe(l)}
-                  aviso={avisoPrecio(i)}
-                  avisoCantidad={avisoCantidad(i)?.mensaje}
-                  problema={sinMercanciaEn(l) ? { texto: 'Falta decir qué es', tono: 'mal' } : problemaDeRenglon(l, i)}
-                  puedeQuitar={lineas.length > 1}
-                  conocidos={paquetesConocidos(l.ingrediente_id)}
-                  servicios={servicios}
-                  onListo={() => plegarRenglon(i)}
-                  onCambiar={(cambio) => cambiarLinea(i, cambio)}
-                  onMercancia={(id) => elegirMercancia(i, id)}
-                  onTipo={(v) => elegirTipo(i, v)}
-                  onCrear={() => setCreandoEn(i)}
-                  onQuitar={() => setLineas((prev) => prev.filter((_, idx) => idx !== i))}
-                />
-              ))}
-            </div>
-            <button
-              type="button"
-              id="cf-otro-renglon"
-              onClick={otroRenglon}
-              className="scroll-mt-24 mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-neutral-300 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-500/5"
-            >
-              <Icono nombre="mas" size={14} />
-              Otro renglón
-            </button>
-
-            {sinIvaEnPapel && (
-              <div className="mt-4">
-                <Nota tono="ojo">
-                  La factura no trae IVA, pero {lineasConIva} renglón(es) lo están sumando.{' '}
-                  <button type="button" className="font-semibold underline" onClick={() => setLineas((prev) => prev.map((l) => ({ ...l, exento: true })))}>
-                    Marcar todos exentos
-                  </button>
-                </Nota>
-              </div>
-            )}
-
-            {(partes.length > 0 || otrosGastos.length > 0) && (
-              <div className="mt-4 rounded-2xl bg-neutral-500/6 p-4 space-y-2">
-                {partes.length > 0 && <DestinoPlata partes={partes} moneda={monedaCarga} titulo="A dónde va la plata" />}
-                {otrosGastos.length > 0 && (
-                  <p className="text-xs text-neutral-600 flex flex-wrap gap-x-3 gap-y-1">
-                    {partes.length === 0 && <span className="font-semibold text-neutral-700">A dónde va la plata:</span>}
-                    {otrosGastos.map(([c, monto]) => (
-                      <span key={c} className="inline-flex items-center gap-1.5 tabular-nums">
-                        <span aria-hidden className="w-2 h-2 rounded-full ring-1 ring-neutral-400" />
-                        {TEXTO_CONCEPTO[c]} {monedaCarga}
-                        {fmtNum(monto, 2)} {c === 'Equipo' ? 'a equipos' : 'a gasto'}
-                      </span>
-                    ))}
-                  </p>
-                )}
-              </div>
-            )}
-          </Paso>
-
-          {/* ── Paso 3: el pago ── */}
-          <Paso
-            numero={3}
-            titulo="El pago"
-            detalle={esCredito ? 'Queda en cuentas por pagar hasta que se registre el pago.' : 'La plata ya salió al cargarla.'}
-            abierto={paso === 3}
-            onAbrir={() => setPaso(paso === 3 ? 0 : 3)}
-            onListo={() => siguiente(0)}
-            hecho={pagoRevisado && (esMixto ? partesListas : !necesitaReferencia(formaPago) || !!referenciaPago.trim())}
-            resumen={
-              <>
-                <span className="font-medium text-neutral-800">{esMixto && resumenMixto ? resumenMixto : forma}</span>
-                {esCredito && fechaVencimiento && ` · vence ${fmtFecha(fechaVencimiento)}`}
-                {referenciaPago.trim() && !esMixto && ` · ref. ${referenciaPago.trim()}`}
-                {(esMixto ? !!problemaMixto : necesitaReferencia(formaPago) && !referenciaPago.trim()) && (
-                  <>
-                    {' · '}
-                    <Falta>{esMixto ? problemaMixto.toLowerCase() : 'falta la referencia'}</Falta>
-                  </>
-                )}
-              </>
-            }
-          >
-            <Filtros opciones={FORMAS_PAGO} activo={formaPago} alElegir={setFormaPago} className="mb-3" />
-            {esMixto && (
-              <div id="cf-mixto" className="scroll-mt-24 mb-3 space-y-2">
-                {partesPago.map((p, i) => (
-                  <div key={i} className="grid grid-cols-[minmax(0,1fr)_6.5rem] sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_2rem] gap-2 items-end">
-                    <label className="block">
-                      <span className="block text-xs text-neutral-500 mb-0.5">Con qué</span>
-                      <select value={p.forma} onChange={(e) => cambiarParte(i, { forma: e.target.value })} aria-label={`Parte ${i + 1}: con qué`} className={clase()}>
-                        {FORMAS_PARTE.map((f) => (
-                          <option key={f.valor} value={f.valor}>
-                            {f.texto}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="block text-xs text-neutral-500 mb-0.5">Cuánto ({monedaCarga})</span>
-                      <Numerico value={p.monto} onChange={(e) => cambiarParte(i, { monto: e.target.value })} placeholder="0.00" aria-label={`Parte ${i + 1}: cuánto`} className={clase()} />
-                    </label>
-                    <label className="block">
-                      <span className="block text-xs text-neutral-500 mb-0.5">Referencia</span>
-                      <input
-                        value={p.referencia}
-                        onChange={(e) => cambiarParte(i, { referencia: e.target.value })}
-                        disabled={!necesitaReferencia(p.forma)}
-                        placeholder={necesitaReferencia(p.forma) ? '' : 'no lleva'}
-                        aria-label={`Parte ${i + 1}: referencia`}
-                        className={clase()}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setPartesPago((prev) => prev.filter((_, k) => k !== i))}
-                      disabled={partesPago.length <= 2}
-                      aria-label={`Quitar la parte ${i + 1}`}
-                      className="h-9 w-8 grid place-items-center rounded-lg text-neutral-500 hover:text-peligro-600 hover:bg-peligro-500/10 disabled:opacity-30"
-                    >
-                      <Icono nombre="quitar" size={14} />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <button
-                    type="button"
-                    onClick={() => setPartesPago((prev) => [...prev, { forma: 'Efectivo $', monto: '', referencia: '' }])}
-                    className="text-xs font-semibold text-neutral-600 underline"
-                  >
-                    Otra parte
-                  </button>
-                  {faltaMixto > 0.004 && partesPago.some((p) => !(Number(p.monto) > 0)) ? (
-                    // Lo que falta, de un toque, en la primera parte vacía.
-                    <button
-                      type="button"
-                      onClick={() => cambiarParte(partesPago.findIndex((p) => !(Number(p.monto) > 0)), { monto: faltaMixto.toFixed(2) })}
-                      className="text-aviso-800 tabular-nums underline"
-                    >
-                      Faltan {monedaCarga}{fmtNum(faltaMixto, 2)} de {monedaCarga}{fmtNum(aPagarFormulario, 2)}: ponerlos
-                    </button>
-                  ) : (
-                    <span className={`tabular-nums ${Math.abs(faltaMixto) < 0.005 ? 'text-exito-700' : 'text-aviso-800'}`}>
-                      {Math.abs(faltaMixto) < 0.005
-                        ? `Cuadra: ${monedaCarga}${fmtNum(aPagarFormulario, 2)}`
-                        : faltaMixto > 0
-                          ? `Faltan ${monedaCarga}${fmtNum(faltaMixto, 2)} de ${monedaCarga}${fmtNum(aPagarFormulario, 2)}`
-                          : `Se pasa por ${monedaCarga}${fmtNum(-faltaMixto, 2)}`}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              {!esMixto && necesitaReferencia(formaPago) && (
-                <Dato id="cf-referencia" etiqueta="Referencia del pago">
-                  <input value={referenciaPago} onChange={(e) => setReferenciaPago(e.target.value)} className={clase()} />
-                </Dato>
-              )}
-              {esCredito && (
-                <Dato id="cf-vence" etiqueta="Vence">
-                  <input value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} type="date" className={clase()} />
-                </Dato>
-              )}
-              {fiscal.agente_retencion && ivaMostrado > 0 && (
-                <Dato
-                  id="cf-retencion"
-                  etiqueta="Retención de IVA"
-                  nota={
-                    Number(retencionEfectiva) > 0
-                      ? `Se retienen ${monedaCarga}${((ivaMostrado * Number(retencionEfectiva)) / 100).toFixed(2)} (van al SENIAT). Al proveedor: ${monedaCarga}${(totalFormulario - (ivaMostrado * Number(retencionEfectiva)) / 100).toFixed(2)}.`
-                      : 'No se retiene: al proveedor se le paga el total.'
-                  }
-                >
-                  <select value={retencionEfectiva} onChange={(e) => setRetencion(e.target.value as '0' | '75' | '100')} className={clase()}>
-                    <option value="75">75 %</option>
-                    <option value="100">100 %</option>
-                    <option value="0">No retener</option>
-                  </select>
-                </Dato>
-              )}
-              <Dato id="cf-descripcion" etiqueta="Nota (opcional)" className="col-span-2">
-                <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className={clase()} />
-              </Dato>
-            </div>
-          </Paso>
-
-          <Totales
-            id="cf-totales"
-            moneda={monedaCarga}
-            recargo={recargo}
-            descuento={descuentoFactura}
-            onRecargo={setRecargo}
-            onDescuento={setDescuentoFactura}
-            iaRecargo={!!borrador?.recargo && Number(recargo) === borrador.recargo}
-            iaDescuento={!!borrador?.descuento && Number(descuentoFactura) === borrador.descuento}
-            papelAjustes={cuadreAplica && borrador ? { recargo: borrador.recargo, descuento: borrador.descuento } : null}
-            base={baseMostrada}
-            iva={ivaMostrado}
-            total={totalFormulario}
-            tasaIva={fiscal.tasa_iva}
-            papel={cuadreAplica && borrador ? { subtotal: borrador.subtotal, iva: borrador.iva, total: totalPapel! } : null}
-            cuadra={cuadra}
-          />
-        </div>
-      </div>
-
-      {creandoEn !== null && (
-        <NuevaMercancia
-          ingredientes={ingredientes}
-          nombre={nombreDesdePapel(lineas[creandoEn]?.leido?.descripcion ?? '')}
-          unidad={unidadNuestra(lineas[creandoEn]?.leido?.unidad ?? '') || 'kg'}
-          exento={Boolean(lineas[creandoEn]?.exento ?? lineas[creandoEn]?.leido?.exento)}
-          tipo={lineas[creandoEn]?.tipo ?? null}
-          delPapel={lineas[creandoEn]?.leido?.descripcion}
-          onUsar={(ing) => {
-            const i = creandoEn
-            setCreandoEn(null)
-            elegirMercancia(i, ing.id)
-          }}
-          onCreada={(creada, presentacion: Presentacion | null) => {
-            setIngredientes((prev) => [...prev, creada])
-            const l = lineas[creandoEn]
-            const paquete: Paquete | undefined = presentacion
-              ? {
-                  nombre: presentacion.nombre,
-                  trae: sinRuido(presentacion.trae),
-                  paquetes: l?.leido?.cantidad != null ? String(l.leido.cantidad) : l?.cantidad ?? '',
-                }
-              : undefined
-            const calc = paquete ? desdePaquete(paquete) : null
-            cambiarLinea(creandoEn, {
-              ingrediente_id: creada.id,
-              paquete,
-              ...(calc ? { cantidad: calc.cantidad } : {}),
-            })
-            setCreandoEn(null)
-          }}
-          onCerrar={() => setCreandoEn(null)}
-        />
+      {!conDocumento && forma === 'elegir' && lectorActivo !== null && (
+        <ElegirCarga onFoto={() => setModo('foto')} onManual={() => setModo('manual')} />
       )}
 
-      <BarraGuardar
-        pendientes={pendientes}
-        cuadre={cuadreAplica ? (cuadra ? 'cuadra' : `No cuadra: diferencia ${monedaCarga}${diferencia.toFixed(2)}`) : null}
-        total={`${monedaCarga}${fmtNum(totalFormulario, 2)}`}
-        guardando={guardando}
-        onIrA={irA}
-        onGuardar={() => void guardar()}
-      />
+      {!conDocumento && forma !== 'elegir' && lectorActivo && (
+        <button
+          type="button"
+          onClick={() => setModo(forma === 'foto' ? 'manual' : 'foto')}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-neutral-600 hover:text-neutral-900"
+        >
+          <Icono nombre="atras" size={16} />
+          {forma === 'foto' ? 'Mejor la anoto a mano' : 'Mejor con foto o archivo'}
+        </button>
+      )}
+
+      {!conDocumento && forma === 'foto' && <ZonaDocumento onLeida={aplicarLectura} />}
+
+      {verFormulario && (
+        <>
+          <div className={conDocumento ? 'lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-4 lg:items-start' : ''}>
+            {conDocumento && <VisorDocumento url={documento.url} esPdf={documento.esPdf} />}
+
+            <div className="space-y-4">
+              {lectura && !borrador && (
+                <Nota tono="ojo">
+                  No se pudo leer {documento?.esPdf ? 'el PDF' : 'la foto'}: {lectura.error} Cárgala a mano mirando el
+                  documento: se adjunta igual al guardar.
+                </Nota>
+              )}
+              {clienteAjeno && (
+                <Nota tono="mal">
+                  Esta factura está a nombre del RIF {borrador?.cliente_rif}, no de {fiscal.razon_social || 'la empresa'} (
+                  {fiscal.rif}). Su IVA no se puede usar como crédito fiscal: pídele al proveedor una factura a nombre de la
+                  empresa.
+                </Nota>
+              )}
+              {borrador?.advertencias.map((a) => (
+                <Nota key={a} tono="ojo">
+                  La IA avisa: {a}
+                </Nota>
+              ))}
+              {error && <Nota tono="mal">{error}</Nota>}
+
+              {/* ── Paso 1: la factura ── */}
+              <Paso
+                numero={1}
+                titulo="Información de la factura"
+                detalle={conDocumento ? 'Lo marcado con «IA» lo leyó la IA de la foto. Compáralo con el papel.' : 'Quién la emitió, cuál es y de cuándo.'}
+                abierto={paso === 1}
+                onAbrir={() => setPaso(paso === 1 ? 0 : 1)}
+                onListo={() => siguiente(2)}
+                hecho={datosListos}
+                resumen={
+                  <>
+                    <span className="font-medium text-neutral-800">{proveedor || <Falta>falta el proveedor</Falta>}</span>
+                    {' · '}N.º {numeroFactura || <Falta>falta</Falta>}
+                    {fechaEmision && ` · ${fmtFecha(fechaEmision)}`}
+                    {' · '}
+                    {monedaCarga === '$' ? 'en $' : 'en Bs'} a {tasaNum ? fmtNum(tasaNum, 2) : <Falta>falta la tasa</Falta>}
+                  </>
+                }
+                accion={
+                  conDocumento ? (
+                    <button onClick={limpiarFormulario} className="text-xs text-neutral-500 font-medium underline">
+                      Descartar
+                    </button>
+                  ) : undefined
+                }
+              >
+                <div className="grid grid-cols-2 gap-3">
+                  <Dato id="cf-proveedor" etiqueta="Proveedor" ia={!!borrador && proveedor === (borrador.proveedor_nombre || proveedor)} className="col-span-2">
+                    <CampoSugerido
+                      value={proveedor}
+                      onChange={elegirProveedorConocido}
+                      opciones={proveedores.filter((p) => p.activo).map((p) => p.nombre)}
+                      placeholder="Nombre del proveedor"
+                      vacio="Todavía no hay proveedores guardados"
+                    />
+                  </Dato>
+                  <Dato
+                    id="cf-rif"
+                    etiqueta="RIF"
+                    ia={!!borrador && rif === borrador.proveedor_rif && !!rif}
+                    tono={revision?.rif_aviso ? 'ojo' : undefined}
+                    nota={
+                      revision?.rif_aviso && (
+                        <>
+                          {revision.rif_aviso}
+                          {revision.rif_sugerido && (
+                            <>
+                              {' '}
+                              <button
+                                type="button"
+                                className="font-semibold underline"
+                                onClick={() => {
+                                  setRif(revision.rif_sugerido!.rif)
+                                  if (!proveedor.trim()) setProveedor(revision.rif_sugerido!.nombre)
+                                }}
+                              >
+                                ¿Es {revision.rif_sugerido.rif} ({revision.rif_sugerido.nombre})? Usarlo
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )
+                    }
+                  >
+                    <input value={rif} onChange={(e) => setRif(e.target.value)} placeholder="J-12345678-9" className={clase(revision?.rif_aviso ? 'ojo' : undefined)} />
+                  </Dato>
+                  <Dato
+                    id="cf-numero"
+                    etiqueta="N.º de factura"
+                    ia={!!borrador && numeroFactura === borrador.numero_factura && !!numeroFactura}
+                    tono={revision?.duplicadas.length ? 'mal' : undefined}
+                    nota={
+                      revision?.duplicadas.length
+                        ? revision.duplicadas
+                            .map((d) => `Ya cargada: ${d.numero_factura} de ${d.proveedor_nombre}, del ${new Date(d.fecha).toLocaleDateString('es-VE')}, por $${fmtNum(d.total)}.`)
+                            .join(' ')
+                        : undefined
+                    }
+                  >
+                    <input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="00001234" className={clase(revision?.duplicadas.length ? 'mal' : undefined)} />
+                  </Dato>
+                  <Dato
+                    id="cf-fecha"
+                    etiqueta="Fecha de la factura"
+                    ia={!!borrador && !!fechaEmision && fechaEmision === borrador.fecha}
+                    tono={
+                      fechaEmision && fechaEmision > hoyISO
+                        ? 'mal'
+                        : (fechaEmision && diasDesde(fechaEmision, hoyISO) > DIAS_FACTURA_VIEJA) || (borrador && !fechaEmision)
+                          ? 'ojo'
+                          : undefined
+                    }
+                    nota={
+                      fechaEmision && fechaEmision > hoyISO
+                        ? 'Es futura: revisa el año contra el papel.'
+                        : fechaEmision && diasDesde(fechaEmision, hoyISO) > DIAS_FACTURA_VIEJA
+                          ? `Tiene ${diasDesde(fechaEmision, hoyISO)} días. Revisa el año; si está bien, entra al Libro de Compras de este mes: confirma con quien lleva la contabilidad si ese crédito fiscal todavía se puede descontar.`
+                          : borrador && !fechaEmision
+                            ? 'La IA no la leyó con seguridad: escríbela mirando el papel.'
+                            : undefined
+                    }
+                  >
+                    <input value={fechaEmision} onChange={(e) => setFechaEmision(e.target.value)} type="date" max={hoyISO} className={clase()} />
+                  </Dato>
+                  <Dato id="cf-control" etiqueta="N.º de control" ia={!!borrador?.numero_control && numeroControl === borrador.numero_control}>
+                    <input value={numeroControl} onChange={(e) => setNumeroControl(e.target.value)} placeholder="00-00000000" className={clase()} />
+                  </Dato>
+                  <Dato id="cf-moneda" etiqueta="Montos en" ia={!!borrador?.moneda && monedaCarga === borrador.moneda}>
+                    <Filtros
+                      tamano="chico"
+                      opciones={[
+                        { valor: '$' as const, texto: 'Dólares' },
+                        { valor: 'Bs' as const, texto: 'Bolívares' },
+                      ]}
+                      activo={monedaCarga}
+                      alElegir={setMonedaCarga}
+                    />
+                  </Dato>
+                  <Dato
+                    id="cf-tasa"
+                    etiqueta="Tasa (Bs por $)"
+                    ia={origenTasa === 'papel'}
+                    tono={!tasaNum ? 'mal' : undefined}
+                    nota={
+                      !tasaNum
+                        ? notaTasa || 'Escribe la tasa BCV del día de la factura.'
+                        : `${notaTasa}${monedaCarga === '$' && totalFormulario > 0 ? ` Al libro: Bs ${fmtNum(totalFormulario * tasaNum, 2)}.` : ''}`
+                    }
+                  >
+                    <Numerico
+                      value={tasaFactura}
+                      onChange={(e) => {
+                        setTasaFactura(e.target.value)
+                        setOrigenTasa('escrita')
+                        setNotaTasa('Escrita a mano.')
+                      }}
+                      className={clase(!tasaNum ? 'mal' : undefined)}
+                    />
+                  </Dato>
+                </div>
+              </Paso>
+
+              {/* ── Paso 2: qué trae ── */}
+              <Paso
+                numero={2}
+                titulo="Qué trae"
+                detalle="Cada renglón dice qué es: una mercancía del inventario, o flete, servicio, equipo u otro gasto."
+                abierto={paso === 2}
+                onAbrir={() => setPaso(paso === 2 ? 0 : 2)}
+                onListo={() => siguiente(3)}
+                hecho={lineas.some(lineaCompleta) && !lineas.some(sinMercanciaEn)}
+                resumen={<ResumenRenglones lineas={lineas} ingredientes={ingredientes} moneda={monedaCarga} total={baseLineas} />}
+              >
+                <div className="space-y-2">
+                  {lineas.map((l, i) => (
+                    <Renglon
+                      key={l.leido ? `papel-${i}` : `mano-${i}`}
+                      indice={i}
+                      linea={l}
+                      ingredientes={ingredientes}
+                      moneda={monedaCarga}
+                      tasaIva={fiscal.tasa_iva}
+                      exento={exentoDe(l)}
+                      aviso={avisoPrecio(i)}
+                      avisoCantidad={avisoCantidad(i)?.mensaje}
+                      problema={sinMercanciaEn(l) ? { texto: 'Falta decir qué es', tono: 'mal' } : problemaDeRenglon(l, i)}
+                      puedeQuitar={lineas.length > 1}
+                      conocidos={paquetesConocidos(l.ingrediente_id)}
+                      servicios={servicios}
+                      onListo={() => plegarRenglon(i)}
+                      onCambiar={(cambio) => cambiarLinea(i, cambio)}
+                      onMercancia={(id) => elegirMercancia(i, id)}
+                      onTipo={(v) => elegirTipo(i, v)}
+                      onCrear={() => setCreandoEn(i)}
+                      onQuitar={() => setLineas((prev) => prev.filter((_, idx) => idx !== i))}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  id="cf-otro-renglon"
+                  onClick={otroRenglon}
+                  className="scroll-mt-24 mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-neutral-300 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-500/5"
+                >
+                  <Icono nombre="mas" size={14} />
+                  Otro renglón
+                </button>
+
+                {sinIvaEnPapel && (
+                  <div className="mt-4">
+                    <Nota tono="ojo">
+                      La factura no trae IVA, pero {lineasConIva} renglón(es) lo están sumando.{' '}
+                      <button type="button" className="font-semibold underline" onClick={() => setLineas((prev) => prev.map((l) => ({ ...l, exento: true })))}>
+                        Marcar todos exentos
+                      </button>
+                    </Nota>
+                  </div>
+                )}
+
+                {(partes.length > 0 || otrosGastos.length > 0) && (
+                  <div className="mt-4 rounded-2xl bg-neutral-500/6 p-4 space-y-2">
+                    {partes.length > 0 && <DestinoPlata partes={partes} moneda={monedaCarga} titulo="A dónde va la plata" />}
+                    {otrosGastos.length > 0 && (
+                      <p className="text-xs text-neutral-600 flex flex-wrap gap-x-3 gap-y-1">
+                        {partes.length === 0 && <span className="font-semibold text-neutral-700">A dónde va la plata:</span>}
+                        {otrosGastos.map(([c, monto]) => (
+                          <span key={c} className="inline-flex items-center gap-1.5 tabular-nums">
+                            <span aria-hidden className="w-2 h-2 rounded-full ring-1 ring-neutral-400" />
+                            {TEXTO_CONCEPTO[c]} {monedaCarga}
+                            {fmtNum(monto, 2)} {c === 'Equipo' ? 'a equipos' : 'a gasto'}
+                          </span>
+                        ))}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </Paso>
+
+              {/* ── Paso 3: el pago ── */}
+              <Paso
+                numero={3}
+                titulo="El pago"
+                detalle={esCredito ? 'Queda en cuentas por pagar hasta que se registre el pago.' : 'La plata ya salió al cargarla.'}
+                abierto={paso === 3}
+                onAbrir={() => setPaso(paso === 3 ? 0 : 3)}
+                onListo={() => siguiente(0)}
+                hecho={pagoRevisado && (esMixto ? partesListas : !necesitaReferencia(formaPago) || !!referenciaPago.trim())}
+                resumen={
+                  <>
+                    <span className="font-medium text-neutral-800">{esMixto && resumenMixto ? resumenMixto : formaTexto}</span>
+                    {esCredito && fechaVencimiento && ` · vence ${fmtFecha(fechaVencimiento)}`}
+                    {referenciaPago.trim() && !esMixto && ` · ref. ${referenciaPago.trim()}`}
+                    {(esMixto ? !!problemaMixto : necesitaReferencia(formaPago) && !referenciaPago.trim()) && (
+                      <>
+                        {' · '}
+                        <Falta>{esMixto ? problemaMixto.toLowerCase() : 'falta la referencia'}</Falta>
+                      </>
+                    )}
+                  </>
+                }
+              >
+                <Filtros opciones={FORMAS_PAGO} activo={formaPago} alElegir={setFormaPago} className="mb-3" />
+                {esMixto && (
+                  <div id="cf-mixto" className="scroll-mt-24 mb-3 space-y-2">
+                    {partesPago.map((p, i) => (
+                      <div key={i} className="grid grid-cols-[minmax(0,1fr)_6.5rem] sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_2rem] gap-2 items-end">
+                        <label className="block">
+                          <span className="block text-xs text-neutral-500 mb-0.5">Con qué</span>
+                          <select value={p.forma} onChange={(e) => cambiarParte(i, { forma: e.target.value })} aria-label={`Parte ${i + 1}: con qué`} className={clase()}>
+                            {FORMAS_PARTE.map((f) => (
+                              <option key={f.valor} value={f.valor}>
+                                {f.texto}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="block text-xs text-neutral-500 mb-0.5">Cuánto ({monedaCarga})</span>
+                          <Numerico value={p.monto} onChange={(e) => cambiarParte(i, { monto: e.target.value })} placeholder="0.00" aria-label={`Parte ${i + 1}: cuánto`} className={clase()} />
+                        </label>
+                        <label className="block">
+                          <span className="block text-xs text-neutral-500 mb-0.5">Referencia</span>
+                          <input
+                            value={p.referencia}
+                            onChange={(e) => cambiarParte(i, { referencia: e.target.value })}
+                            disabled={!necesitaReferencia(p.forma)}
+                            placeholder={necesitaReferencia(p.forma) ? '' : 'no lleva'}
+                            aria-label={`Parte ${i + 1}: referencia`}
+                            className={clase()}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setPartesPago((prev) => prev.filter((_, k) => k !== i))}
+                          disabled={partesPago.length <= 2}
+                          aria-label={`Quitar la parte ${i + 1}`}
+                          className="h-9 w-8 grid place-items-center rounded-lg text-neutral-500 hover:text-peligro-600 hover:bg-peligro-500/10 disabled:opacity-30"
+                        >
+                          <Icono nombre="quitar" size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setPartesPago((prev) => [...prev, { forma: 'Efectivo $', monto: '', referencia: '' }])}
+                        className="text-xs font-semibold text-neutral-600 underline"
+                      >
+                        Otra parte
+                      </button>
+                      {faltaMixto > 0.004 && partesPago.some((p) => !(Number(p.monto) > 0)) ? (
+                        // Lo que falta, de un toque, en la primera parte vacía.
+                        <button
+                          type="button"
+                          onClick={() => cambiarParte(partesPago.findIndex((p) => !(Number(p.monto) > 0)), { monto: faltaMixto.toFixed(2) })}
+                          className="text-aviso-800 tabular-nums underline"
+                        >
+                          Faltan {monedaCarga}{fmtNum(faltaMixto, 2)} de {monedaCarga}{fmtNum(aPagarFormulario, 2)}: ponerlos
+                        </button>
+                      ) : (
+                        <span className={`tabular-nums ${Math.abs(faltaMixto) < 0.005 ? 'text-exito-700' : 'text-aviso-800'}`}>
+                          {Math.abs(faltaMixto) < 0.005
+                            ? `Cuadra: ${monedaCarga}${fmtNum(aPagarFormulario, 2)}`
+                            : faltaMixto > 0
+                              ? `Faltan ${monedaCarga}${fmtNum(faltaMixto, 2)} de ${monedaCarga}${fmtNum(aPagarFormulario, 2)}`
+                              : `Se pasa por ${monedaCarga}${fmtNum(-faltaMixto, 2)}`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  {!esMixto && necesitaReferencia(formaPago) && (
+                    <Dato id="cf-referencia" etiqueta="Referencia del pago">
+                      <input value={referenciaPago} onChange={(e) => setReferenciaPago(e.target.value)} className={clase()} />
+                    </Dato>
+                  )}
+                  {esCredito && (
+                    <Dato id="cf-vence" etiqueta="Vence">
+                      <input value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} type="date" className={clase()} />
+                    </Dato>
+                  )}
+                  {fiscal.agente_retencion && ivaMostrado > 0 && (
+                    <Dato
+                      id="cf-retencion"
+                      etiqueta="Retención de IVA"
+                      nota={
+                        Number(retencionEfectiva) > 0
+                          ? `Se retienen ${monedaCarga}${((ivaMostrado * Number(retencionEfectiva)) / 100).toFixed(2)} (van al SENIAT). Al proveedor: ${monedaCarga}${(totalFormulario - (ivaMostrado * Number(retencionEfectiva)) / 100).toFixed(2)}.`
+                          : 'No se retiene: al proveedor se le paga el total.'
+                      }
+                    >
+                      <select value={retencionEfectiva} onChange={(e) => setRetencion(e.target.value as '0' | '75' | '100')} className={clase()}>
+                        <option value="75">75 %</option>
+                        <option value="100">100 %</option>
+                        <option value="0">No retener</option>
+                      </select>
+                    </Dato>
+                  )}
+                  <Dato id="cf-descripcion" etiqueta="Nota (opcional)" className="col-span-2">
+                    <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className={clase()} />
+                  </Dato>
+                </div>
+              </Paso>
+
+              <Totales
+                id="cf-totales"
+                moneda={monedaCarga}
+                recargo={recargo}
+                descuento={descuentoFactura}
+                onRecargo={setRecargo}
+                onDescuento={setDescuentoFactura}
+                iaRecargo={!!borrador?.recargo && Number(recargo) === borrador.recargo}
+                iaDescuento={!!borrador?.descuento && Number(descuentoFactura) === borrador.descuento}
+                papelAjustes={cuadreAplica && borrador ? { recargo: borrador.recargo, descuento: borrador.descuento } : null}
+                base={baseMostrada}
+                iva={ivaMostrado}
+                total={totalFormulario}
+                tasaIva={fiscal.tasa_iva}
+                papel={cuadreAplica && borrador ? { subtotal: borrador.subtotal, iva: borrador.iva, total: totalPapel! } : null}
+                cuadra={cuadra}
+              />
+            </div>
+          </div>
+
+          {creandoEn !== null && (
+            <NuevaMercancia
+              ingredientes={ingredientes}
+              nombre={nombreDesdePapel(lineas[creandoEn]?.leido?.descripcion ?? '')}
+              unidad={unidadNuestra(lineas[creandoEn]?.leido?.unidad ?? '') || 'kg'}
+              exento={Boolean(lineas[creandoEn]?.exento ?? lineas[creandoEn]?.leido?.exento)}
+              tipo={lineas[creandoEn]?.tipo ?? null}
+              delPapel={lineas[creandoEn]?.leido?.descripcion}
+              onUsar={(ing) => {
+                const i = creandoEn
+                setCreandoEn(null)
+                elegirMercancia(i, ing.id)
+              }}
+              onCreada={(creada, presentacion: Presentacion | null) => {
+                setIngredientes((prev) => [...prev, creada])
+                const l = lineas[creandoEn]
+                const paquete: Paquete | undefined = presentacion
+                  ? {
+                      nombre: presentacion.nombre,
+                      trae: sinRuido(presentacion.trae),
+                      paquetes: l?.leido?.cantidad != null ? String(l.leido.cantidad) : l?.cantidad ?? '',
+                    }
+                  : undefined
+                const calc = paquete ? desdePaquete(paquete) : null
+                cambiarLinea(creandoEn, {
+                  ingrediente_id: creada.id,
+                  paquete,
+                  ...(calc ? { cantidad: calc.cantidad } : {}),
+                })
+                setCreandoEn(null)
+              }}
+              onCerrar={() => setCreandoEn(null)}
+            />
+          )}
+
+          <BarraGuardar
+            pendientes={pendientes}
+            cuadre={cuadreAplica ? (cuadra ? 'cuadra' : `No cuadra: diferencia ${monedaCarga}${diferencia.toFixed(2)}`) : null}
+            total={`${monedaCarga}${fmtNum(totalFormulario, 2)}`}
+            guardando={guardando}
+            onIrA={irA}
+            onGuardar={() => void guardar()}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * La primera pantalla de la carga: COMO la quieres cargar. Dos cuadros
+ * grandes y nada mas, para que nadie tenga que entender el formulario antes
+ * de empezar.
+ */
+function ElegirCarga({ onFoto, onManual }: { onFoto: () => void; onManual: () => void }) {
+  const opciones = [
+    {
+      icono: 'camara' as const,
+      titulo: 'Foto o archivo',
+      texto: 'Tómale foto a la factura o sube el PDF. La IA la llena y tú la revisas.',
+      alTocar: onFoto,
+      principal: true,
+    },
+    {
+      icono: 'factura' as const,
+      titulo: 'A mano',
+      texto: 'Escribe tú los datos de la factura, renglón por renglón.',
+      alTocar: onManual,
+      principal: false,
+    },
+  ]
+  return (
+    <div className="space-y-4">
+      <h2 className="font-display text-2xl font-semibold tracking-tight">¿Cómo quieres cargar la factura?</h2>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {opciones.map((o) => (
+          <button
+            key={o.titulo}
+            type="button"
+            onClick={o.alTocar}
+            className="vp-losa group flex min-h-52 flex-col justify-between gap-8 rounded-3xl p-7 text-left transition-transform duration-200 [transition-timing-function:cubic-bezier(0.2,0.7,0.2,1)] active:scale-[0.985]"
+          >
+            <span
+              className={`grid h-14 w-14 place-items-center rounded-2xl ${
+                o.principal ? 'bg-neutral-900 text-white' : 'bg-neutral-500/10 text-neutral-800'
+              }`}
+            >
+              <Icono nombre={o.icono} size={26} />
+            </span>
+            <span>
+              <span className="block font-display text-2xl font-semibold tracking-tight">{o.titulo}</span>
+              <span className="mt-1.5 block text-[15px] leading-relaxed text-neutral-500">{o.texto}</span>
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
