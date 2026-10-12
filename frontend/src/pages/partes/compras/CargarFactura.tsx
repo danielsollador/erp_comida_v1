@@ -573,14 +573,12 @@ export default function CargarFactura({
         if (idx !== i) return l
         // Cambio la mercancia: la conversion que se recordaba era de la otra.
         let paquete = l.paquete && l.recordada && l.recordada.ingrediente_id !== id ? undefined : l.paquete
-        // SIEMPRE VIENE EN EMPAQUE, salvo que se diga lo contrario (Leider,
-        // 11-oct): el renglon arranca en empaque con lo que trae segun la
-        // ficha, o segun lo que este proveedor ya trajo, o en blanco para
-        // escribirlo. "Esta vez vino suelta" es la excepcion.
-        if (!paquete) {
-          const conocido = paquetesConocidos(id)[0]
-          const trae = ing?.empaque_trae ? sinRuido(ing.empaque_trae) : conocido ? sinRuido(conocido.factor) : ''
-          paquete = { nombre: 'empaque', trae, paquetes: l.leido?.cantidad != null ? String(l.leido.cantidad) : l.cantidad }
+        // EL EMPAQUE LO DICE LA FICHA (Leider, 11-oct): si en Inventario la
+        // mercancia esta marcada "viene en empaque de N", el renglon arranca
+        // en empaque y "Esta vez vino suelta" es la excepcion. Si no esta
+        // marcada, el renglon ni lo ofrece.
+        if (!paquete && ing?.empaque_trae) {
+          paquete = { nombre: 'empaque', trae: sinRuido(ing.empaque_trae), paquetes: l.leido?.cantidad != null ? String(l.leido.cantidad) : l.cantidad }
         }
         const calc = paquete ? desdePaquete(paquete) : null
         return conCostoUnitario({ ...l, ingrediente_id: id, paquete, ...(calc && calc.cantidad ? { cantidad: calc.cantidad } : {}) })
@@ -1806,7 +1804,7 @@ function Renglon({
                     placeholder="Ej. Internet, Luz"
                     vacio="Escribe cuál: queda en la lista para la próxima"
                     aria-label="Qué servicio"
-                    className={clase()}
+                    className="min-w-0"
                   />
                 ) : (
                   <input value={l.detalle ?? ''} onChange={(e) => onCambiar({ detalle: e.target.value })} placeholder={`Ej. ${concepto.ejemplo}`} aria-label="Qué es" className={clase()} />
@@ -1888,10 +1886,11 @@ function Renglon({
           {quitar}
         </div>
 
-        {/* Cómo vino. Si la ficha dice que viene en empaque, se da por hecho y
-            solo se avisa; lo único que se toca es "Esta vez vino suelta"
-            (Leider, 11-oct). */}
-        {ing && (
+        {/* Cómo vino. Solo si la ficha dice que viene en empaque (o el papel
+            lo trajo así): se da por hecho y se avisa; lo único que se toca es
+            "Esta vez vino suelta". Una mercancía sin empaque en su ficha ni
+            lo ofrece (Leider, 11-oct). */}
+        {ing && (enPaquete || empaqueDeFicha) && (
           <div className="flex flex-wrap items-center gap-2">
             {enPaquete ? (
               <>
@@ -1911,7 +1910,7 @@ function Renglon({
                 className="vp-control inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-neutral-600 transition-colors"
               >
                 <Icono nombre="paquete" size={13} />
-                {empaqueDeFicha ? `Vino en empaque de ${sinRuido(ing.empaque_trae!)}` : 'Viene en empaque'}
+                Vino en empaque de {sinRuido(ing.empaque_trae!)}
               </button>
             )}
             {!enPaquete &&

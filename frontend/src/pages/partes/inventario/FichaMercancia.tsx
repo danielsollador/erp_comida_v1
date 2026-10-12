@@ -116,6 +116,8 @@ export default function FichaMercancia({
     costo_unitario: ing ? String(ing.costo_unitario) : '',
     rendimiento_pct: ing ? String(ing.rendimiento_pct) : '100',
     exento: ing?.exento ?? false,
+    // Viene en empaque de N: con esto cada factura la carga por empaques.
+    empaque_trae: ing?.empaque_trae ? String(ing.empaque_trae) : '',
   }))
   const [aviso, setAviso] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -234,8 +236,10 @@ export default function FichaMercancia({
     // Solo la materia prima tiene merma de cocina que medir.
     const rendimiento = f.tipo === 'insumo' ? num(f.rendimiento_pct) : 100
     const inicial = f.stock_actual === '' ? 0 : num(f.stock_actual)
+    const empaque = f.empaque_trae === '' ? null : num(f.empaque_trae)
     if ([minimo, objetivo, costo, inicial].some((n) => !Number.isFinite(n) || n < 0))
       return setAviso('Las cantidades y el costo tienen que ser números, y no negativos.')
+    if (empaque !== null && !(empaque > 0)) return setAviso('El empaque trae una cantidad mayor que cero, o se deja vacío si viene suelta.')
     if (!Number.isFinite(rendimiento) || rendimiento <= 0 || rendimiento > 100)
       return setAviso('Lo que se aprovecha va de 1 a 100 %.')
     setGuardando(true)
@@ -251,6 +255,7 @@ export default function FichaMercancia({
       activo: ing?.activo !== false,
       exento: f.exento,
       es_indirecto: f.tipo === 'insumo' && f.es_indirecto,
+      empaque_trae: empaque,
       ...(nuevo ? { stock_actual: f.tipo === 'desechable' ? 0 : inicial } : {}),
     })
     setGuardando(false)
@@ -303,6 +308,13 @@ export default function FichaMercancia({
         valor={f.stock_objetivo}
         alCambiar={(v) => poner('stock_objetivo', v)}
         ayuda={ejemploIdeal(num(f.stock_objetivo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
+      />
+      <CampoCantidad
+        etiqueta="Viene en empaque de"
+        unidad={f.unidad}
+        valor={f.empaque_trae}
+        alCambiar={(v) => poner('empaque_trae', v)}
+        ayuda={f.empaque_trae === '' ? 'Vacío: viene suelta. Si el proveedor la trae en caja, bulto o paquete, pon cuántas trae uno y cada factura se carga por empaques.' : `Cada factura pide cuántos empaques vinieron y el sistema los pasa a ${f.unidad === 'unidad' ? 'unidades' : f.unidad}.`}
       />
       </>)}
       {f.tipo === 'insumo' && (
