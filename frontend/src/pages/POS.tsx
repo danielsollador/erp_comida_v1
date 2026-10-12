@@ -12,7 +12,7 @@ import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
 import { ivaRetenido } from '../lib/compras'
 import { enPreparacion, estadoCocina, porQueNoSeEdita } from '../lib/comandas'
-import { fmtBs, useMoneda } from '../lib/moneda'
+import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { uuid } from '../lib/uuid'
 import { colorCategoria } from '../lib/theme'
@@ -2316,8 +2316,8 @@ export default function POS() {
           {(descuentoNum > 0 || Number(propina) > 0) && (
             <p className="text-xs text-neutral-500">
               ${cobrando.total.toFixed(2)} de comida
-              {descuentoNum > 0 && ` - $${descuentoNum.toFixed(2)} de descuento`}
-              {Number(propina) > 0 && ` + $${Number(propina).toFixed(2)} de propina`}
+              {descuentoNum > 0 && ` - $${fmtNum(descuentoNum)} de descuento`}
+              {Number(propina) > 0 && ` + $${fmtNum(Number(propina))} de propina`}
             </p>
           )}
           {tasaBcv > 0 && (
@@ -2463,7 +2463,7 @@ export default function POS() {
                     >
                       Paga exacto ·{' '}
                       <span className="tabular-nums">
-                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${aCobrar.toFixed(2)}`}
+                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${fmtNum(aCobrar)}`}
                       </span>
                     </button>
                     <button
@@ -2541,7 +2541,7 @@ export default function POS() {
                     ) : (
                       <p className="text-xs text-neutral-500">
                         Tiene que ser más de{' '}
-                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${aCobrar.toFixed(2)}`}.
+                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${fmtNum(aCobrar)}`}.
                       </p>
                     )}
                   </div>

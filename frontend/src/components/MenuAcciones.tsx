@@ -110,13 +110,19 @@ export default function MenuAcciones({
                 o.peligro ? 'text-peligro-600' : ''
               } ${o.marcada ? 'font-semibold' : ''}`}
             >
-              {o.marcada !== undefined && (
-                <span aria-hidden className={`inline-block w-4 ${o.marcada ? 'text-acento-700' : 'text-transparent'}`}>
-                  ✓
+              {/* El visto y, al lado, el texto con su linea chica debajo: la
+                  ayuda ("retirada") va bajo el nombre, no bajo el visto. */}
+              <span className="flex items-start gap-0">
+                {o.marcada !== undefined && (
+                  <span aria-hidden className={`inline-block w-4 shrink-0 ${o.marcada ? 'text-acento-700' : 'text-transparent'}`}>
+                    ✓
+                  </span>
+                )}
+                <span className="min-w-0">
+                  {o.texto}
+                  {o.ayuda && <span className="block text-[11px] font-normal text-neutral-400">{o.ayuda}</span>}
                 </span>
-              )}
-              {o.texto}
-              {o.ayuda && <span className="block text-[11px] text-neutral-400">{o.ayuda}</span>}
+              </span>
             </button>
           ))}
         </div>

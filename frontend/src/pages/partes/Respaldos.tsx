@@ -4,6 +4,7 @@ import { useDialogo } from '../../components/dialogo'
 import { Tabla, Th, useOrden } from '../../components/Tabla'
 import { Boton, Modal } from '../../components/ui'
 import { api } from '../../lib/api'
+import { fmtNum } from '../../lib/moneda'
 import type {
   EstadoRespaldos,
   PrevisualizacionRestauracion,
@@ -127,7 +128,7 @@ export default function Respaldos() {
                   <p className="text-sm text-acento-900 mt-1">
                     {r.pedidos_perdidos == null
                       ? 'No se pudo medir cuánto se perdió.'
-                      : `Se perdieron ${r.pedidos_perdidos} pedido(s) por $${(r.monto_perdido ?? 0).toFixed(2)}.`}{' '}
+                      : `Se perdieron ${r.pedidos_perdidos} pedido(s) por $${fmtNum((r.monto_perdido ?? 0))}.`}{' '}
                     Vuelve a cargar las ventas que se hicieron después, o el cierre de caja de
                     hoy va a dar un faltante que no es faltante.
                   </p>

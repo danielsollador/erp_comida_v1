@@ -10,7 +10,7 @@ import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
 import { colorFranja } from '../../lib/paleta'
-import { useMoneda } from '../../lib/moneda'
+import { useMoneda, fmtNum } from '../../lib/moneda'
 import { useAltoRestante } from '../../lib/altoRestante'
 import { Ayuda } from '../../components/Ayuda'
 import { explicar } from '../../lib/glosario'
@@ -1179,10 +1179,10 @@ function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number;
           ? 'Ponle primero lo que lleva: con el costo se calcula el precio para el margen que quieras.'
           : precioNum > 0 && m != null
             ? m < 0
-              ? `A ese precio pierdes $${(costo - precioNum).toFixed(2)} por unidad.`
-              : `La mercancía es el ${costoPct!.toFixed(0)} % del precio y te quedan $${(precioNum - costo).toFixed(2)} por unidad.`
+              ? `A ese precio pierdes $${fmtNum((costo - precioNum))} por unidad.`
+              : `La mercancía es el ${costoPct!.toFixed(0)} % del precio y te quedan $${fmtNum((precioNum - costo))} por unidad.`
             : 'Escribe el precio o el margen que quieres: el otro sale solo.'}
-        {guardado > 0 && Math.abs(precioNum - guardado) > 0.0001 && ` Hoy se vende a $${guardado.toFixed(2)}: el precio nuevo se guarda con la receta.`}
+        {guardado > 0 && Math.abs(precioNum - guardado) > 0.0001 && ` Hoy se vende a $${fmtNum(guardado)}: el precio nuevo se guarda con la receta.`}
       </p>
     </div>
   )

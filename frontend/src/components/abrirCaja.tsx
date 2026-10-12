@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import type { EstadoApertura } from '../lib/types'
 import { Modal } from './ui'
 import { Numerico } from './Teclado'
-import { useMoneda } from '../lib/moneda'
+import { useMoneda, fmtNum } from '../lib/moneda'
 
 /**
  * Abrir la caja: contar el fondo antes de empezar a vender.
@@ -201,7 +201,7 @@ export function AbrirCaja({
               {enBs && d && (
                 <p className="mt-0.5 text-right text-xs text-neutral-500 tabular-nums">
                   {tasa?.bcv
-                    ? `son $${(d.total / tasa.bcv).toFixed(2)} a la tasa de hoy`
+                    ? `son $${fmtNum((d.total / tasa.bcv))} a la tasa de hoy`
                     : 'sin tasa para convertir'}
                 </p>
               )}

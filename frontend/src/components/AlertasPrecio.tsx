@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import type { AlertaPrecio } from '../lib/types'
 import { Boton, Filtros, Modal, Pastilla, Seccion, Vacio } from './ui'
+import { fmtNum } from '../lib/moneda'
 
 /**
  * Alertas de precio: qué llegó más caro en una factura y qué le hace al menú.
@@ -9,7 +10,7 @@ import { Boton, Filtros, Modal, Pastilla, Seccion, Vacio } from './ui'
  * no estaba cuando se cargó.
  */
 
-const dinero = (x: number) => `$${x.toFixed(2)}`
+const dinero = (x: number) => `$${fmtNum(x)}`
 
 /** La factura, como enlace a la lista si quien pinta la alerta sabe llevar allá. */
 function Factura({ numero, onVer }: { numero: string; onVer?: (numero: string) => void }) {

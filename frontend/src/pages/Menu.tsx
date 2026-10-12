@@ -11,7 +11,7 @@ import { Boton, Modal, Pagina, Vacio } from '../components/ui'
 import Icono from '../components/Icono'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
-import { useMoneda } from '../lib/moneda'
+import { useMoneda, fmtNum } from '../lib/moneda'
 import { useArrastre } from '../lib/arrastre'
 import { SUBSECCION_INICIAL } from '../lib/menu'
 import { COLORES, NOMBRES_COLOR, NOMBRE_COLOR, colorCategoria } from '../lib/theme'
@@ -729,10 +729,10 @@ function TarjetaProducto({
       info.costo_reposicion != null &&
       info.costo_reposicion > info.costo * 1.05
     const contexto = info?.costo
-      ? `\n\nProducirlo cuesta $${info.costo.toFixed(2)}. A $${precioActual.toFixed(2)} te deja ${info.margen_pct?.toFixed(0)}% de margen.` +
+      ? `\n\nProducirlo cuesta $${fmtNum(info.costo)}. A $${fmtNum(precioActual)} te deja ${info.margen_pct?.toFixed(0)}% de margen.` +
         (seEncarecio
-          ? `\n\nOJO: con los precios de HOY cuesta $${info.costo_reposicion!.toFixed(2)}, ` +
-            `y a $${precioActual.toFixed(2)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.`
+          ? `\n\nOJO: con los precios de HOY cuesta $${fmtNum(info.costo_reposicion!)}, ` +
+            `y a $${fmtNum(precioActual)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.`
           : '')
       : '\n\n(Este producto no tiene receta, así que no se sabe cuánto cuesta producirlo.)'
     const precio = await dialogo.pedirNumero({
@@ -748,7 +748,7 @@ function TarjetaProducto({
       const perdida = (info.costo - precio).toFixed(2)
       const seguir = await dialogo.confirmar({
         titulo: 'Venderías por debajo del costo',
-        texto: `A $${precio.toFixed(2)} pierdes $${perdida} en cada una: producirla cuesta $${info.costo.toFixed(2)}.`,
+        texto: `A $${fmtNum(precio)} pierdes $${perdida} en cada una: producirla cuesta $${fmtNum(info.costo)}.`,
         aceptar: 'Ponerlo igual',
         peligro: true,
       })

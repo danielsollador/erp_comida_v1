@@ -8,7 +8,7 @@ import { useDeshacer } from '../components/Deshacer'
 import { Modal, Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
-import { fmtBs, useMoneda } from '../lib/moneda'
+import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { api } from '../lib/api'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
 import type {
@@ -50,7 +50,7 @@ function hoyISO() {
 }
 
 function dinero(n: number) {
-  return `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`
+  return `${n < 0 ? '−' : ''}$${fmtNum(Math.abs(n))}`
 }
 
 export default function Caja() {

@@ -835,8 +835,8 @@ export default function CargarFactura({
         cola = ` Ojo: ${r.mensaje}`
       }
       setExito(
-        `Factura ${guardada.numero_factura} cargada: $${guardada.total.toFixed(2)} ` +
-          `(base $${guardada.base_imponible.toFixed(2)} + IVA $${guardada.iva.toFixed(2)}).` +
+        `Factura ${guardada.numero_factura} cargada: $${fmtNum(guardada.total)} ` +
+          `(base $${fmtNum(guardada.base_imponible)} + IVA $${fmtNum(guardada.iva)}).` +
           (guardada.items.length ? ` ${guardada.items.length} renglón(es) de mercancía.` : '') +
           (guardada.gastos?.length ? ` ${guardada.gastos.length} de flete o servicios.` : '') +
           cola,
@@ -1017,7 +1017,7 @@ export default function CargarFactura({
                 nota={
                   revision?.duplicadas.length
                     ? revision.duplicadas
-                        .map((d) => `Ya cargada: ${d.numero_factura} de ${d.proveedor_nombre}, del ${new Date(d.fecha).toLocaleDateString('es-VE')}, por $${d.total.toFixed(2)}.`)
+                        .map((d) => `Ya cargada: ${d.numero_factura} de ${d.proveedor_nombre}, del ${new Date(d.fecha).toLocaleDateString('es-VE')}, por $${fmtNum(d.total)}.`)
                         .join(' ')
                     : undefined
                 }
@@ -2045,8 +2045,8 @@ function Renglon({
               <p className="text-aviso-800">
                 {aviso.mensaje}{' '}
                 {aviso.base === 'compras'
-                  ? `Se venía pagando $${aviso.referencia.toFixed(2)} (últimas ${aviso.muestras} compras).`
-                  : `Costo promedio: $${aviso.referencia.toFixed(2)}.`}
+                  ? `Se venía pagando $${fmtNum(aviso.referencia)} (últimas ${aviso.muestras} compras).`
+                  : `Costo promedio: $${fmtNum(aviso.referencia)}.`}
               </p>
             )}
           </div>

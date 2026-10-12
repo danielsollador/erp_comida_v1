@@ -9,6 +9,7 @@ import { Aviso, Boton, Campo, Modal, Pagina, Selector } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import Respaldos from './partes/Respaldos'
 import { api } from '../lib/api'
+import { fmtNum } from '../lib/moneda'
 import type {
   ActivoFijo,
   AsientoContable,
@@ -834,7 +835,7 @@ function Activos() {
   async function cambiarVida(a: ActivoFijo) {
     const meses = await dialogo.pedirNumero({
       titulo: `Vida útil de ${a.nombre}`,
-      texto: `A ${a.vida_util_meses} meses se gasta $${a.cuota_mensual.toFixed(2)} al mes.`,
+      texto: `A ${a.vida_util_meses} meses se gasta $${fmtNum(a.cuota_mensual)} al mes.`,
       etiqueta: 'Cuántos meses dura',
       valor: a.vida_util_meses,
       min: 1,
@@ -904,7 +905,7 @@ function Activos() {
       const r = await api.cerrarEjercicio(anio)
       await dialogo.avisar({
         titulo: `Ejercicio ${r.anio} cerrado`,
-        texto: `Resultado del año: $${r.resultado.toFixed(2)}`,
+        texto: `Resultado del año: $${fmtNum(r.resultado)}`,
         tono: 'bien',
       })
       cargar()
@@ -916,7 +917,7 @@ function Activos() {
   async function darDeBaja(a: ActivoFijo) {
     const motivo = await dialogo.pedirTexto({
       titulo: `Dar de baja ${a.nombre}`,
-      texto: `Le quedan $${a.valor_en_libros.toFixed(2)} sin depreciar, que se van a reconocer como pérdida de una vez.`,
+      texto: `Le quedan $${fmtNum(a.valor_en_libros)} sin depreciar, que se van a reconocer como pérdida de una vez.`,
       etiqueta: 'Qué pasó',
       valor: 'Se dañó',
       aceptar: 'Dar de baja',

@@ -519,13 +519,13 @@ export default function Tasa() {
               <Dato
                 titulo="Cobrado en bolívares"
                 ayuda="kpi.cobrado_bs"
-                valor={`$${analisis.cobrado_bs_usd.toFixed(2)}`}
+                valor={`$${fmtNum(analisis.cobrado_bs_usd)}`}
                 nota="efectivo Bs, pago móvil, tarjeta · en $"
               />
               <Dato
                 titulo="Se llevó la brecha"
                 ayuda="kpi.costo_brecha"
-                valor={`$${analisis.costo_brecha_usd.toFixed(2)}`}
+                valor={`$${fmtNum(analisis.costo_brecha_usd)}`}
                 nota="al reponer comprando divisas · en $"
               />
               <Dato
@@ -534,7 +534,7 @@ export default function Tasa() {
                 valor={analisis.exposicion_pct != null ? `${analisis.exposicion_pct}%` : '—'}
                 nota={
                   analisis.cobrado_total_usd > 0
-                    ? `de $${analisis.cobrado_total_usd.toFixed(2)} cobrados entró en Bs`
+                    ? `de $${fmtNum(analisis.cobrado_total_usd)} cobrados entró en Bs`
                     : 'de lo cobrado entró en Bs'
                 }
               />
@@ -634,7 +634,7 @@ export default function Tasa() {
                     ${analisis.cobrado_divisas_usd.toFixed(2)}) no aparece: no lo toca la brecha.
                   </p>
                   <GraficoDona
-                    formato={(n) => `$${n.toFixed(2)}`}
+                    formato={(n) => `$${fmtNum(n)}`}
                     centro={{ valor: `$${analisis.cobrado_bs_usd.toFixed(0)}`, texto: 'en bolívares' }}
                     partes={analisis.por_metodo_bs.map((g) => ({ nombre: etiquetaMetodo(g.nombre), valor: g.monto }))}
                   />

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../lib/api'
-import { fmtBs } from '../lib/moneda'
+import { fmtBs, fmtNum } from '../lib/moneda'
 import type { EstadoPabilo, VerificacionPago } from '../lib/types'
 import { Numerico } from './Teclado'
 
@@ -365,7 +365,7 @@ function Resultado({
   // con centavos, asi que esa diferencia no se puede cobrar con otra forma
   // (efectivo, punto) ni cambia la propina; si se puede pedir otro pago movil.
   const menosDeUnCentavo = difUsd < 0.01
-  const usd = menosDeUnCentavo ? '' : ` ($${difUsd.toFixed(2)})`
+  const usd = menosDeUnCentavo ? '' : ` ($${fmtNum(difUsd)})`
 
   const caso: 'exacto' | 'sobra' | 'falta' | null =
     diferencia === null ? null : Math.abs(diferencia) < 0.005 ? 'exacto' : diferencia > 0 ? 'sobra' : 'falta'
@@ -433,7 +433,7 @@ function Resultado({
           onClick={() => onListo({ monto_usd: cuentaUsd, monto_bs: entro ?? undefined, decision: 'exacto' })}
           className="vp-pulsable w-full rounded-xl border border-exito-300 bg-exito-50 text-exito-800 py-3.5 font-semibold"
         >
-          {enMixto ? `Anotar $${cuentaUsd.toFixed(2)} por ${metodo}` : `Cobrar por ${metodo}`}
+          {enMixto ? `Anotar $${fmtNum(cuentaUsd)} por ${metodo}` : `Cobrar por ${metodo}`}
         </button>
       )}
 
