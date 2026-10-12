@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import type { AlertaPrecio } from '../lib/types'
-import { Boton, Modal, Pastilla, Vacio } from './ui'
+import { Boton, Filtros, Modal, Pastilla, Seccion, Vacio } from './ui'
 
 /**
  * Alertas de precio: qué llegó más caro en una factura y qué le hace al menú.
@@ -11,13 +11,26 @@ import { Boton, Modal, Pastilla, Vacio } from './ui'
 
 const dinero = (x: number) => `$${x.toFixed(2)}`
 
+/** La factura, como enlace a la lista si quien pinta la alerta sabe llevar allá. */
+function Factura({ numero, onVer }: { numero: string; onVer?: (numero: string) => void }) {
+  if (!onVer) return <>Factura {numero}</>
+  return (
+    <>
+      Factura{' '}
+      <button type="button" onClick={() => onVer(numero)} className="font-semibold text-acento-700 underline underline-offset-2">
+        {numero}
+      </button>
+    </>
+  )
+}
+
 /** Una alerta, dicha en una frase y con lo que hay que hacer. */
-function Detalle({ a }: { a: AlertaPrecio }) {
+function Detalle({ a, onVerFactura }: { a: AlertaPrecio; onVerFactura?: (numero: string) => void }) {
   if (a.tipo === 'unidad') {
     return (
       <div className="space-y-1">
         <p className="font-semibold text-peligro-700">
-          {a.ingrediente_nombre}: posible error de unidad en la factura {a.numero_factura}
+          {a.ingrediente_nombre}: posible error de unidad en la <Factura numero={a.numero_factura} onVer={onVerFactura} />
         </p>
         <p className="text-sm text-neutral-600">
           Entró a {dinero(a.costo_nuevo)} por {a.unidad} y se venía pagando {dinero(a.costo_anterior)}. Un salto así
@@ -39,7 +52,7 @@ function Detalle({ a }: { a: AlertaPrecio }) {
         {a.base === 'proveedor'
           ? 'Contra lo que ese mismo proveedor cobraba.'
           : 'Es la primera compra a este proveedor: contra las últimas compras de esa mercancía.'}{' '}
-        Factura {a.numero_factura}.
+        <Factura numero={a.numero_factura} onVer={onVerFactura} />.
       </p>
       {a.productos.map((p) => (
         <p key={p.nombre} className={`text-sm ${p.a_perdida ? 'text-peligro-700' : 'text-aviso-700'}`}>
@@ -76,7 +89,7 @@ export function AlertasAlGuardar({ alertas, onCerrar }: { alertas: AlertaPrecio[
 }
 
 /** La bandeja de Compras. `onPendientes` avisa cuántas quedan sin ver. */
-export function BandejaAlertas({ onPendientes }: { onPendientes: (n: number) => void }) {
+export function BandejaAlertas({ onPendientes, onVerFactura }: { onPendientes: (n: number) => void; onVerFactura?: (numero: string) => void }) {
   const [soloPendientes, setSoloPendientes] = useState(true)
   const [alertas, setAlertas] = useState<AlertaPrecio[] | null>(null)
   const [error, setError] = useState('')
@@ -111,25 +124,50 @@ export function BandejaAlertas({ onPendientes }: { onPendientes: (n: number) => 
     }
   }
 
+  // Las que quedan sin ver, de una: el dueño que ya las leyó no tiene por qué
+  // tocar "Visto" diez veces.
+  const [marcando, setMarcando] = useState(false)
+  async function verTodas() {
+    const sinVer = (alertas ?? []).filter((a) => !a.visto)
+    if (sinVer.length === 0) return
+    setError('')
+    setMarcando(true)
+    try {
+      const vistas = await Promise.all(sinVer.map((a) => api.marcarAlertaVista(a.id)))
+      const porId = new Map(vistas.map((v) => [v.id, v]))
+      const lista = (alertas ?? []).map((x) => porId.get(x.id) ?? x).filter((x) => !soloPendientes || !x.visto)
+      setAlertas(lista)
+      if (soloPendientes) onPendientes(lista.length)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudieron marcar')
+    } finally {
+      setMarcando(false)
+    }
+  }
+  const sinVer = (alertas ?? []).filter((a) => !a.visto).length
+
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-        <div className="min-w-0 flex-1 basis-60">
-          <h2 className="font-semibold">Alertas de precio</h2>
-          <p className="text-xs text-neutral-500">
-            Lo que llegó más caro en las facturas: contra lo que ese proveedor cobraba, qué platos quedan flacos y
-            quién lo vendía más barato.
-          </p>
-        </div>
-        <div className="flex gap-1 shrink-0">
-          <Boton tono={soloPendientes ? 'principal' : 'suave'} onClick={() => filtrar(true)}>
-            Sin ver
-          </Boton>
-          <Boton tono={soloPendientes ? 'suave' : 'principal'} onClick={() => filtrar(false)}>
-            Todas
-          </Boton>
-        </div>
-      </div>
+    <Seccion
+      titulo="Alertas de precio"
+      ayuda="Lo que llegó más caro en las facturas: contra lo que ese proveedor cobraba, qué platos quedan flacos y quién lo vendía más barato."
+      accion={
+        <span className="flex flex-wrap items-center gap-2">
+          {sinVer > 0 && (
+            <Boton tono="suave" onClick={() => void verTodas()} disabled={marcando}>
+              {marcando ? 'Marcando…' : `Marcar ${sinVer === 1 ? 'la' : `las ${sinVer}`} como vistas`}
+            </Boton>
+          )}
+          <Filtros
+            opciones={[
+              { valor: 'pendientes', texto: 'Sin ver' },
+              { valor: 'todas', texto: 'Todas' },
+            ]}
+            activo={soloPendientes ? 'pendientes' : 'todas'}
+            alElegir={(v) => filtrar(v === 'pendientes')}
+          />
+        </span>
+      }
+    >
       {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
       {alertas !== null && alertas.length === 0 ? (
         <Vacio
@@ -141,14 +179,14 @@ export function BandejaAlertas({ onPendientes }: { onPendientes: (n: number) => 
           {(alertas ?? []).map((a) => (
             <div key={a.id} className="py-3 flex flex-wrap gap-3 items-start">
               <div className="flex-1 min-w-0 basis-60">
-                <p className="text-xs text-neutral-400 mb-0.5">{new Date(a.fecha).toLocaleDateString('es-VE')}</p>
-                <Detalle a={a} />
+                <p className="text-xs text-neutral-500 mb-0.5">{new Date(a.fecha).toLocaleDateString('es-VE')}</p>
+                <Detalle a={a} onVerFactura={onVerFactura} />
               </div>
               <div className="shrink-0">
                 {a.visto ? (
                   <Pastilla tono="neutro">Vista{a.visto_por ? ` por ${a.visto_por}` : ''}</Pastilla>
                 ) : (
-                  <Boton tono="suave" onClick={() => visto(a)}>
+                  <Boton tono="suave" className="min-h-11" onClick={() => visto(a)}>
                     Visto
                   </Boton>
                 )}
@@ -157,6 +195,6 @@ export function BandejaAlertas({ onPendientes }: { onPendientes: (n: number) => 
           ))}
         </div>
       )}
-    </div>
+    </Seccion>
   )
 }

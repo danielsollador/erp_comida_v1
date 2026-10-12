@@ -205,9 +205,9 @@ export function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: s
                     alt={`Página ${i + 1}`}
                     className={`h-24 w-20 object-cover rounded-lg border ${mala ? 'border-2 border-aviso-500' : 'border-neutral-200'}`}
                   />
-                  <span className="absolute left-1 top-1 rounded bg-neutral-900/80 px-1.5 text-[10px] font-semibold text-white">{i + 1}</span>
+                  <span className="absolute left-1 top-1 rounded bg-neutral-900/80 px-1.5 text-xs font-semibold text-white">{i + 1}</span>
                   {mala && (
-                    <span className="absolute inset-x-1 bottom-1 rounded bg-aviso-500 px-1 text-[10px] font-semibold text-white">
+                    <span className="absolute inset-x-1 bottom-1 rounded bg-aviso-500 px-1 text-xs font-semibold text-white">
                       {p.problemas!.includes('movida') ? 'Movida' : p.problemas!.includes('pequena') ? 'Muy chica' : 'Oscura'}
                     </span>
                   )}
@@ -347,7 +347,7 @@ export function EsperaLectura({ terminando }: { terminando: boolean }) {
           {mensaje}
           {!terminando && '…'}
         </p>
-        <span className="text-xs text-neutral-400 tabular-nums shrink-0">{Math.floor(ms / 1000)} s</span>
+        <span className="text-xs text-neutral-500 tabular-nums shrink-0">{Math.floor(ms / 1000)} s</span>
       </div>
       <div className="h-2 rounded-full bg-neutral-100 overflow-hidden">
         <div
@@ -379,7 +379,7 @@ export function VisorDocumento({ url, esPdf }: { url: string; esPdf: boolean }) 
     <div className="mb-3 lg:mb-0 lg:sticky lg:top-4 bg-white rounded-2xl border border-neutral-200 overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-neutral-100">
         <button onClick={() => setAbierto((v) => !v)} className="text-sm font-semibold lg:pointer-events-none">
-          {abierto ? 'Factura' : 'Ver la factura'} {esPdf ? '(PDF)' : ''} <span className="lg:hidden text-neutral-400">{abierto ? '▾' : '▸'}</span>
+          {abierto ? 'Factura' : 'Ver la factura'} {esPdf ? '(PDF)' : ''} <span className="lg:hidden text-neutral-500">{abierto ? '▾' : '▸'}</span>
         </button>
         {!esPdf && abierto && (
           <div className="flex gap-1">

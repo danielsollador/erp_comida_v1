@@ -125,3 +125,46 @@ def archivar(proveedor_id: int, activo: bool = False, db: Session = Depends(get_
     db.commit()
     db.refresh(proveedor)
     return proveedor
+
+
+def _facturas_del(db: Session, proveedor: models.Proveedor):
+    """Las facturas de un proveedor. La factura no lleva llave foranea al
+    directorio (ver test_rif.py): se enlazan por el RIF normalizado y, si la
+    ficha no tiene RIF, por el nombre tal cual."""
+    query = db.query(models.FacturaCompra)
+    if proveedor.rif:
+        query = query.filter(models.FacturaCompra.proveedor_rif == impuestos.normalizar_rif(proveedor.rif))
+    else:
+        query = query.filter(func.lower(models.FacturaCompra.proveedor_nombre) == proveedor.nombre.strip().lower())
+    return query.order_by(models.FacturaCompra.fecha.desc(), models.FacturaCompra.id.desc()).all()
+
+
+@router.get("/{proveedor_id}/resumen", response_model=schemas.ProveedorResumen)
+def resumen(proveedor_id: int, db: Session = Depends(get_db)):
+    """La ficha: cuanto se le compro, cuanto se le debe y sus ultimas facturas."""
+    proveedor = db.query(models.Proveedor).filter(models.Proveedor.id == proveedor_id).first()
+    if not proveedor:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+    facturas = _facturas_del(db, proveedor)
+    a_credito = [f for f in facturas if f.forma_pago == "Credito" and not f.pagada]
+    hoy = models.ahora()
+    alertas = db.query(models.AlertaPrecio).filter(models.AlertaPrecio.visto.is_(False))
+    if proveedor.rif:
+        alertas = alertas.filter(models.AlertaPrecio.proveedor_rif == impuestos.normalizar_rif(proveedor.rif))
+    else:
+        alertas = alertas.filter(func.lower(models.AlertaPrecio.proveedor_nombre) == proveedor.nombre.strip().lower())
+    return schemas.ProveedorResumen(
+        facturas=len(facturas),
+        comprado=round(sum(f.base_imponible for f in facturas), 2),
+        deuda=round(sum(f.saldo for f in a_credito), 2),
+        vencidas=sum(1 for f in a_credito if f.fecha_vencimiento and f.fecha_vencimiento < hoy),
+        alertas_pendientes=alertas.count(),
+        ultima_compra=facturas[0].fecha if facturas else None,
+        ultimas=[
+            schemas.ProveedorFacturaResumen(
+                id=f.id, fecha=f.fecha, numero_factura=f.numero_factura, total=f.total,
+                forma_pago=f.forma_pago, pagada=bool(f.pagada), saldo=f.saldo,
+            )
+            for f in facturas[:10]
+        ],
+    )

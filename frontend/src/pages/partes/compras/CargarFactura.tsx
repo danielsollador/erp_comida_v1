@@ -231,6 +231,13 @@ export default function CargarFactura({
   const [fechaVencimiento, setFechaVencimiento] = useState('')
   // El paso abierto. 0 = los tres plegados: queda el total y Guardar.
   const [paso, setPaso] = useState<Numero | 0>(1)
+  // El paso del pago nace con "Efectivo" puesto, pero no está revisado hasta
+  // que alguien lo abre: un visto verde en algo que nadie miró es un visto
+  // falso (auditoría UX, 11-oct).
+  const [pagoRevisado, setPagoRevisado] = useState(false)
+  useEffect(() => {
+    if (paso === 3) setPagoRevisado(true)
+  }, [paso])
 
   // La foto o PDF leido: su soporte se engancha a la factura al guardar.
   const [lectura, setLectura] = useState<LecturaFactura | null>(null)
@@ -647,6 +654,7 @@ export default function CargarFactura({
 
   function limpiarFormulario() {
     setError('')
+    setPagoRevisado(false)
     setNumeroFactura('')
     setFechaEmision('')
     setProveedor('')
@@ -932,7 +940,7 @@ export default function CargarFactura({
           <Paso
             numero={1}
             titulo="Información de la factura"
-            detalle={conDocumento ? 'Lo marcado con ✦ lo leyó la IA. Compáralo con el papel.' : 'Quién la emitió, cuál es y de cuándo.'}
+            detalle={conDocumento ? 'Lo marcado con «IA» lo leyó la IA de la foto. Compáralo con el papel.' : 'Quién la emitió, cuál es y de cuándo.'}
             abierto={paso === 1}
             onAbrir={() => setPaso(paso === 1 ? 0 : 1)}
             onListo={() => siguiente(2)}
@@ -1154,7 +1162,7 @@ export default function CargarFactura({
             abierto={paso === 3}
             onAbrir={() => setPaso(paso === 3 ? 0 : 3)}
             onListo={() => siguiente(0)}
-            hecho={esMixto ? partesListas : !necesitaReferencia(formaPago) || !!referenciaPago.trim()}
+            hecho={pagoRevisado && (esMixto ? partesListas : !necesitaReferencia(formaPago) || !!referenciaPago.trim())}
             resumen={
               <>
                 <span className="font-medium text-neutral-800">{esMixto && resumenMixto ? resumenMixto : forma}</span>
@@ -1175,7 +1183,7 @@ export default function CargarFactura({
                 {partesPago.map((p, i) => (
                   <div key={i} className="grid grid-cols-[minmax(0,1fr)_6.5rem] sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_2rem] gap-2 items-end">
                     <label className="block">
-                      <span className="block text-[11px] text-neutral-500 mb-0.5">Con qué</span>
+                      <span className="block text-xs text-neutral-500 mb-0.5">Con qué</span>
                       <select value={p.forma} onChange={(e) => cambiarParte(i, { forma: e.target.value })} aria-label={`Parte ${i + 1}: con qué`} className={clase()}>
                         {FORMAS_PARTE.map((f) => (
                           <option key={f.valor} value={f.valor}>
@@ -1185,11 +1193,11 @@ export default function CargarFactura({
                       </select>
                     </label>
                     <label className="block">
-                      <span className="block text-[11px] text-neutral-500 mb-0.5">Cuánto ({monedaCarga})</span>
+                      <span className="block text-xs text-neutral-500 mb-0.5">Cuánto ({monedaCarga})</span>
                       <Numerico value={p.monto} onChange={(e) => cambiarParte(i, { monto: e.target.value })} placeholder="0.00" aria-label={`Parte ${i + 1}: cuánto`} className={clase()} />
                     </label>
                     <label className="block">
-                      <span className="block text-[11px] text-neutral-500 mb-0.5">Referencia</span>
+                      <span className="block text-xs text-neutral-500 mb-0.5">Referencia</span>
                       <input
                         value={p.referencia}
                         onChange={(e) => cambiarParte(i, { referencia: e.target.value })}
@@ -1204,7 +1212,7 @@ export default function CargarFactura({
                       onClick={() => setPartesPago((prev) => prev.filter((_, k) => k !== i))}
                       disabled={partesPago.length <= 2}
                       aria-label={`Quitar la parte ${i + 1}`}
-                      className="h-9 w-8 grid place-items-center rounded-lg text-neutral-400 hover:text-peligro-600 hover:bg-peligro-500/10 disabled:opacity-30"
+                      className="h-9 w-8 grid place-items-center rounded-lg text-neutral-500 hover:text-peligro-600 hover:bg-peligro-500/10 disabled:opacity-30"
                     >
                       <Icono nombre="quitar" size={14} />
                     </button>
@@ -1351,7 +1359,8 @@ function nombrePaquete(p: Paquete): string {
 
 function clase(tono?: Tono) {
   const borde = tono === 'mal' ? 'border-peligro-400 ring-1 ring-peligro-200' : tono === 'ojo' ? 'border-aviso-400 ring-1 ring-aviso-200' : 'border-neutral-300'
-  return `w-full border ${borde} rounded-xl px-3 py-2 text-sm bg-white`
+  // 44 px de alto: la carga se hace en la tablet del mostrador.
+  return `w-full min-h-11 border ${borde} rounded-xl px-3 py-2 text-sm bg-white`
 }
 
 /**
@@ -1412,7 +1421,7 @@ function Paso({
           type="button"
           onClick={onAbrir}
           aria-label={abierto ? `Plegar ${titulo}` : `Abrir ${titulo}`}
-          className="shrink-0 -mr-2 -mt-1.5 w-11 h-11 grid place-items-center rounded-xl text-neutral-400 hover:text-neutral-900 hover:bg-neutral-500/10"
+          className="shrink-0 -mr-2 -mt-1.5 w-11 h-11 grid place-items-center rounded-xl text-neutral-500 hover:text-neutral-900 hover:bg-neutral-500/10"
         >
           <span className={`inline-block transition-transform ${abierto ? 'rotate-90' : ''}`}>
             <Icono nombre="chevron" size={18} />
@@ -1423,13 +1432,30 @@ function Paso({
         <div className="px-4 pb-4 sm:px-5 sm:pb-5 -mt-1">
           {children}
           <div className="mt-4 flex justify-end">
-            <button type="button" onClick={onListo} className="vp-pulsable bg-neutral-900 text-white rounded-xl px-5 py-2 text-sm font-semibold">
+            <button type="button" onClick={onListo} className="vp-pulsable min-h-11 bg-neutral-900 text-white rounded-xl px-5 py-2 text-sm font-semibold">
               Listo
             </button>
           </div>
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * "Lo leyó la IA": un ícono con su palabra, no un glifo suelto con `title`.
+ * En la tablet no hay cursor que posar, así que el `title` no se veía nunca.
+ */
+function MarcaIA({ className = '' }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded-full bg-acento-500/12 px-1.5 text-acento-700 text-xs font-semibold leading-4 ${className}`}
+      aria-label="Lo leyó la IA de la factura"
+      title="Lo leyó la IA de la factura"
+    >
+      <Icono nombre="chispa" size={10} />
+      IA
+    </span>
   )
 }
 
@@ -1457,11 +1483,7 @@ function Dato({
       {(etiqueta || ia) && (
         <div className="flex items-center gap-1 mb-1">
           <span className="text-xs font-medium text-neutral-600">{etiqueta}</span>
-          {ia && (
-            <span className="text-acento-600 text-xs" title="Lo leyó la IA de la factura">
-              ✦
-            </span>
-          )}
+          {ia && <MarcaIA />}
         </div>
       )}
       {children}
@@ -1697,7 +1719,7 @@ function Renglon({
           {fmtNum(subtotal, 2)}
         </span>
         {/* El chevron de la esquina: se abre tocando cualquier parte del renglón. */}
-        <span aria-hidden className="shrink-0 text-neutral-400 rotate-90">
+        <span aria-hidden className="shrink-0 text-neutral-500 rotate-90">
           <Icono nombre="chevron" size={16} />
         </span>
       </button>
@@ -1712,7 +1734,7 @@ function Renglon({
         <button
           type="button"
           onClick={onListo}
-          className="w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-500/10"
+          className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:text-neutral-900 hover:bg-neutral-500/10"
           title="Plegar el renglón"
           aria-label={`Plegar el renglón ${indice + 1}`}
         >
@@ -1725,7 +1747,7 @@ function Renglon({
         <button
           type="button"
           onClick={onQuitar}
-          className="w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:text-peligro-600 hover:bg-peligro-500/10"
+          className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:text-peligro-600 hover:bg-peligro-500/10"
           title="Quitar renglón"
           aria-label={`Quitar el renglón ${indice + 1}`}
         >
@@ -1736,7 +1758,7 @@ function Renglon({
   )
   const delPapel = l.leido && (
     <p className="mt-1.5 text-xs text-neutral-500">
-      <span className="text-neutral-400">Papel:</span> {l.leido.descripcion || '(sin descripción)'} ·{' '}
+      <span className="text-neutral-500">Papel:</span> {l.leido.descripcion || '(sin descripción)'} ·{' '}
       <span className="tabular-nums">
         {cantidadPapel == null ? '?' : cant(cantidadPapel)} {l.leido.unidad} × {moneda}
         {precioPapel == null ? '?' : fmtNum(precioPapel, 2)}
@@ -1792,11 +1814,11 @@ function Renglon({
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
             <label className="block">
-              <span className="block text-[11px] text-neutral-500 mb-0.5">Monto sin IVA ({moneda})</span>
+              <span className="block text-xs text-neutral-500 mb-0.5">Monto sin IVA ({moneda})</span>
               <Numerico value={l.costo_unitario} onChange={(e) => onCambiar({ costo_unitario: e.target.value, cantidad: '1' })} placeholder="0.00" className={clase()} />
             </label>
             <label className="block">
-              <span className="block text-[11px] text-neutral-500 mb-0.5">IVA</span>
+              <span className="block text-xs text-neutral-500 mb-0.5">IVA</span>
               <select value={exento ? 'exento' : 'grava'} onChange={(e) => onCambiar({ exento: e.target.value === 'exento' })} className={clase()}>
                 <option value="grava">{tasaIva}%</option>
                 <option value="exento">Exento</option>
@@ -1804,7 +1826,7 @@ function Renglon({
             </label>
             {l.concepto === 'Equipo' && (
               <label className="block">
-                <span className="block text-[11px] text-neutral-500 mb-0.5">Dura (meses)</span>
+                <span className="block text-xs text-neutral-500 mb-0.5">Dura (meses)</span>
                 <Numerico value={l.vidaUtil ?? '60'} onChange={(e) => onCambiar({ vidaUtil: e.target.value })} min="1" className={clase()} />
               </label>
             )}
@@ -1866,7 +1888,7 @@ function Renglon({
             {enPaquete ? (
               <>
                 <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600">
-                  <Icono nombre="paquete" size={13} className="text-neutral-400" />
+                  <Icono nombre="paquete" size={13} className="text-neutral-500" />
                   Viene en {l.paquete!.nombre || 'empaque'}
                   {empaqueDeFicha && Number(l.paquete!.trae) === ing.empaque_trae ? ` de ${sinRuido(ing.empaque_trae!)}, como dice su ficha` : ''}
                 </span>
@@ -1903,15 +1925,15 @@ function Renglon({
           <div className="space-y-2">
             <div className="grid grid-cols-3 gap-2 items-end">
               <label className="block">
-                <span className="block text-[11px] text-neutral-500 mb-0.5">Cuántos</span>
+                <span className="block text-xs text-neutral-500 mb-0.5">Cuántos</span>
                 <Numerico value={l.paquete!.paquetes} onChange={(e) => cambiarPaquete({ paquetes: e.target.value })} placeholder="2" className={clase()} />
               </label>
               <label className="block">
-                <span className="block text-[11px] text-neutral-500 mb-0.5">Cada uno trae ({unidad})</span>
+                <span className="block text-xs text-neutral-500 mb-0.5">Cada uno trae ({unidad})</span>
                 <Numerico value={l.paquete!.trae} onChange={(e) => cambiarPaquete({ trae: e.target.value })} placeholder="24" className={clase()} />
               </label>
               <label className="block">
-                <span className="block text-[11px] text-neutral-500 mb-0.5">Costo total ({moneda})</span>
+                <span className="block text-xs text-neutral-500 mb-0.5">Costo total ({moneda})</span>
                 <Numerico
                   value={l.costo_total}
                   onChange={(e) => onCambiar({ costo_total: e.target.value })}
@@ -1921,7 +1943,7 @@ function Renglon({
               </label>
             </div>
             <p className="text-xs text-neutral-600 flex flex-wrap items-center gap-x-2">
-              <span className="inline-flex items-center gap-1 text-neutral-400">
+              <span className="inline-flex items-center gap-1 text-neutral-500">
                 <Icono nombre="inventario" size={13} />
                 Entra al inventario:
               </span>
@@ -1944,7 +1966,7 @@ function Renglon({
         ) : (
           <div className="grid grid-cols-3 gap-2 items-end">
             <label className="block">
-              <span className="block text-[11px] text-neutral-500 mb-0.5">Cantidad{ing ? ` (${ing.unidad})` : ''}</span>
+              <span className="block text-xs text-neutral-500 mb-0.5">Cantidad{ing ? ` (${ing.unidad})` : ''}</span>
               {ing && otraUnidad(ing.unidad) ? (
                 <CasillaConUnidad
                   unidad={ing.unidad}
@@ -1960,7 +1982,7 @@ function Renglon({
               )}
             </label>
             <label className="block">
-              <span className="block text-[11px] text-neutral-500 mb-0.5">Costo total ({moneda})</span>
+              <span className="block text-xs text-neutral-500 mb-0.5">Costo total ({moneda})</span>
               <Numerico
                 value={l.costo_total}
                 onChange={(e) => onCambiar({ costo_total: e.target.value })}
@@ -1969,7 +1991,7 @@ function Renglon({
               />
             </label>
             <label className="block">
-              <span className="block text-[11px] text-neutral-500 mb-0.5">IVA</span>
+              <span className="block text-xs text-neutral-500 mb-0.5">IVA</span>
               <select
                 value={l.exento === null ? 'ficha' : l.exento ? 'exento' : 'grava'}
                 onChange={(e) => onCambiar({ exento: e.target.value === 'ficha' ? null : e.target.value === 'exento' })}
@@ -2080,12 +2102,12 @@ function Totales({
       <td className="py-1">
         <label htmlFor={idCampo}>
           {rotulo}
-          {ia && <span className="text-acento-600 text-xs ml-1" title="Lo leyó la IA de la factura">✦</span>}
+          {ia && <MarcaIA className="ml-1" />}
         </label>
       </td>
       <td className="py-1 text-right">
         <span className="inline-flex items-center justify-end gap-1">
-          <span className="text-neutral-400 text-xs">{signo}</span>
+          <span className="text-neutral-500 text-xs">{signo}</span>
           <Numerico id={idCampo} value={valor} onChange={(e) => cambiar(e.target.value)} min="0" placeholder="0.00" className={`${clase()} !w-28 text-right tabular-nums !py-1.5`} />
         </span>
       </td>
@@ -2100,7 +2122,9 @@ function Totales({
             <tr className="text-xs text-neutral-500">
               <th />
               <th className="text-right font-medium">Formulario</th>
-              <th className="text-right font-medium pl-3">Papel ✦</th>
+              <th className="text-right font-medium pl-3">
+                <span className="inline-flex items-center gap-1">Papel <MarcaIA /></span>
+              </th>
             </tr>
           </thead>
         )}

@@ -18,7 +18,7 @@ import { ALMACEN_DE } from '../lib/tiposArticulo'
 import CargarFactura from './partes/compras/CargarFactura'
 import { cuantosPendientes, procesarPendientes } from '../lib/pendientesCompras'
 import { pedirReferencia } from '../lib/pagos'
-import type { AlertaPrecio, ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor, Reclamo } from '../lib/types'
+import type { AlertaPrecio, ConfiguracionFiscal, FacturaCompra, Ingrediente, Proveedor, ProveedorResumen, Reclamo } from '../lib/types'
 
 /**
  * Compras: lo que entra al negocio y a dónde va la plata.
@@ -44,7 +44,7 @@ export default function Compras() {
   const [alertasPendientes, setAlertasPendientes] = useState(0)
   const [alertasAlGuardar, setAlertasAlGuardar] = useState<AlertaPrecio[]>([])
   const secciones = useMemo(
-    () => SECCIONES.map((s) => (s.id === 'alertas' && alertasPendientes > 0 ? { ...s, contador: alertasPendientes } : s)),
+    () => SECCIONES.map((s) => (s.id === 'alertas' && alertasPendientes > 0 ? { ...s, contador: alertasPendientes, contadorTexto: 'alertas sin ver' } : s)),
     [alertasPendientes],
   )
   const alCambiarPendientes = useCallback((n: number) => setAlertasPendientes(n), [])
@@ -413,8 +413,8 @@ export default function Compras() {
                       </span>
                       <span className="font-semibold tabular-nums w-24 text-right">${fmtNum(r.valor, 2)}</span>
                       <Boton
-                        tono="suave"
-                        className="!py-1.5 !px-3 !text-xs"
+                        tono="peligro"
+                        className="min-h-11"
                         onClick={async () => {
                           if (!(await dialogo.confirmar({ titulo: '¿Dar por perdido?', texto: `El proveedor no va a acreditar ${r.cantidad} ${r.unidad} de ${r.ingrediente_nombre}: pasa a pérdida ($${fmtNum(r.valor, 2)}).`, aceptar: 'Dar por perdido', peligro: true })))
                             return
@@ -458,21 +458,21 @@ export default function Compras() {
                         </span>
                         <span className="font-semibold tabular-nums w-28 text-right">
                           ${fmtNum(f.saldo ?? f.a_pagar ?? f.total, 2)}
-                          {!!f.abonado && <span className="block text-[11px] font-normal text-neutral-500">abonado ${fmtNum(f.abonado, 2)}</span>}
+                          {!!f.abonado && <span className="block text-xs font-normal text-neutral-500">abonado ${fmtNum(f.abonado, 2)}</span>}
                         </span>
                         <select
                           value={liquidacion[f.id] || 'Efectivo'}
                           onChange={(e) => setLiquidacion((prev) => ({ ...prev, [f.id]: e.target.value }))}
-                          className="border border-neutral-300 rounded-lg px-2 py-1 text-xs"
+                          className="border border-neutral-300 rounded-lg px-2 min-h-11 text-sm"
                           aria-label="Con qué se paga"
                         >
                           <option value="Efectivo">Efectivo</option>
                           <option value="Banco">Banco</option>
                         </select>
-                        <Boton tono="suave" onClick={() => void abonar(f)} disabled={pagando === f.id} className="!py-1.5 !px-3 !text-xs">
+                        <Boton tono="suave" onClick={() => void abonar(f)} disabled={pagando === f.id} className="min-h-11">
                           Abonar
                         </Boton>
-                        <Boton onClick={() => marcarPagada(f)} disabled={pagando === f.id} className="!py-1.5 !px-3 !text-xs">
+                        <Boton onClick={() => marcarPagada(f)} disabled={pagando === f.id} className="min-h-11">
                           {f.abonado ? 'Pagar el resto' : 'Marcar pagada'}
                         </Boton>
                       </div>
@@ -541,7 +541,15 @@ export default function Compras() {
           />
         )}
 
-        {seccion === 'alertas' && <BandejaAlertas onPendientes={alCambiarPendientes} />}
+        {seccion === 'alertas' && (
+          <BandejaAlertas
+            onPendientes={alCambiarPendientes}
+            onVerFactura={(numero) => {
+              buscador.fijar(numero)
+              irA('facturas')
+            }}
+          />
+        )}
 
         {alertasAlGuardar.length > 0 && <AlertasAlGuardar alertas={alertasAlGuardar} onCerrar={() => setAlertasAlGuardar([])} />}
 
@@ -568,19 +576,23 @@ export default function Compras() {
                     </thead>
                     <tbody>
                       {buscadorProveedores.filtrar(proveedores).map((p) => (
-                        <tr key={p.id} className={`border-t border-neutral-100 ${!p.activo ? 'opacity-50' : ''}`}>
-                          <td className="p-2.5 font-medium">{p.nombre}</td>
+                        // Archivado NO baja la opacidad de toda la fila: el gris
+                        // sobre gris ya no se leía; lo dice la pastilla.
+                        <tr key={p.id} className="border-t border-neutral-100">
+                          <td className={`p-2.5 font-medium ${!p.activo ? 'text-neutral-500' : ''}`}>{p.nombre}</td>
                           <td className="p-2.5 tabular-nums text-neutral-500">{p.rif || '—'}</td>
                           <td className="p-2.5 text-neutral-500">{p.telefono || '—'}</td>
                           <td className="p-2.5 text-neutral-500">{p.contacto || '—'}</td>
                           <td className="p-2.5 text-right whitespace-nowrap">
-                            {!p.activo && <Pastilla tono="neutro">archivado</Pastilla>}{' '}
-                            <button onClick={() => setFichaProveedor(p)} className="text-xs text-acento-700 font-medium mr-3">
-                              Editar
-                            </button>
-                            <button onClick={() => archivarProveedor(p)} className="text-xs text-neutral-500 font-medium">
-                              {p.activo ? 'Archivar' : 'Reactivar'}
-                            </button>
+                            <span className="inline-flex items-center gap-2">
+                              {!p.activo && <Pastilla tono="neutro">archivado</Pastilla>}
+                              <Boton tono="suave" className="min-h-11" onClick={() => setFichaProveedor(p)}>
+                                Ver ficha
+                              </Boton>
+                              <Boton tono="fantasma" className="min-h-11" onClick={() => archivarProveedor(p)}>
+                                {p.activo ? 'Archivar' : 'Reactivar'}
+                              </Boton>
+                            </span>
                           </td>
                         </tr>
                       ))}
@@ -633,10 +645,24 @@ function FilaFactura({
   const gastos = f.gastos ?? []
   return (
     <>
+      {/* La fila entera responde al clic, pero el teclado y el lector de
+          pantalla necesitan un botón de verdad: va en la primera celda, con
+          `aria-expanded`, y frena el clic para no abrir y cerrar a la vez. */}
       <tr className="border-t border-neutral-100 align-top cursor-pointer hover:bg-neutral-500/5" onClick={alAbrir}>
         <td className="p-3 whitespace-nowrap">
-          {new Date(f.fecha).toLocaleDateString('es-VE')}
-          <span className="block text-xs text-neutral-400 font-mono">{f.numero_factura}</span>
+          <button
+            type="button"
+            aria-expanded={abierta}
+            aria-label={`${abierta ? 'Plegar' : 'Abrir'} la factura ${f.numero_factura} de ${f.proveedor_nombre}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              alAbrir()
+            }}
+            className="text-left rounded-md -m-1 p-1"
+          >
+            {new Date(f.fecha).toLocaleDateString('es-VE')}
+            <span className="block text-xs text-neutral-500 font-mono">{f.numero_factura}</span>
+          </button>
         </td>
         <td className="p-3 font-medium">{f.proveedor_nombre}</td>
         <td className="p-3 text-neutral-600">
@@ -658,13 +684,13 @@ function FilaFactura({
           ) : (
             <span className="text-xs">
               {TEXTO_CATEGORIA[f.categoria] ?? f.categoria}
-              {f.descripcion && <span className="text-neutral-400"> · {f.descripcion}</span>}
+              {f.descripcion && <span className="text-neutral-500"> · {f.descripcion}</span>}
             </span>
           )}
         </td>
         <td className="text-right p-3 tabular-nums font-semibold whitespace-nowrap">
           ${fmtNum(f.total, 2)}
-          <span className="block text-[11px] font-normal text-neutral-400">
+          <span className="block text-xs font-normal text-neutral-500">
             base {fmtNum(f.base_imponible, 2)} · IVA {fmtNum(f.iva, 2)}
           </span>
         </td>
@@ -672,13 +698,13 @@ function FilaFactura({
           {f.forma_pago === 'Credito' ? (
             <Pastilla tono={f.pagada ? 'bien' : 'ojo'}>{f.pagada ? 'Pagada' : 'Por pagar'}</Pastilla>
           ) : (
-            <span className="text-xs text-neutral-400">
+            <span className="text-xs text-neutral-500">
               {f.forma_pago === 'Mixto' && f.pagos?.length ? f.pagos.map((p) => p.forma_pago).join(' + ') : f.forma_pago}
             </span>
           )}
         </td>
         <td className="p-3 text-right">
-          <span className={`inline-block text-neutral-400 transition-transform ${abierta ? 'rotate-90' : ''}`}>
+          <span aria-hidden className={`inline-block text-neutral-500 transition-transform ${abierta ? 'rotate-90' : ''}`}>
             <Icono nombre="chevron" size={16} />
           </span>
         </td>
@@ -696,7 +722,7 @@ function FilaFactura({
                       <span className="text-xs text-neutral-500 shrink-0">{ALMACEN_DE[it.tipo].destino === 'gasto' ? 'a gasto' : 'al inventario'}</span>
                       <span className="tabular-nums text-neutral-600 shrink-0">
                         {fmtNum(it.cantidad, it.cantidad % 1 ? 2 : 0)} {it.unidad} × ${fmtNum(it.costo_unitario, 2)}
-                        {it.exento && <span className="text-neutral-400"> · exento</span>}
+                        {it.exento && <span className="text-neutral-500"> · exento</span>}
                       </span>
                       <span className="tabular-nums font-semibold w-20 text-right shrink-0">${fmtNum(it.subtotal, 2)}</span>
                     </li>
@@ -709,7 +735,7 @@ function FilaFactura({
                         {g.descripcion && <span className="font-normal text-neutral-500"> · {g.descripcion}</span>}
                       </span>
                       <span className="text-xs text-neutral-500 shrink-0">{g.concepto === 'Equipo' ? 'a equipos' : 'a gasto'}</span>
-                      {g.exento && <span className="text-xs text-neutral-400 shrink-0">exento</span>}
+                      {g.exento && <span className="text-xs text-neutral-500 shrink-0">exento</span>}
                       <span className="tabular-nums font-semibold w-20 text-right shrink-0">${fmtNum(g.monto, 2)}</span>
                     </li>
                   ))}
@@ -724,7 +750,7 @@ function FilaFactura({
                   {f.descuento > 0 && `−$${fmtNum(f.descuento, 2)} de descuento`}
                 </p>
               )}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 mt-3 text-xs">
                 <span className="text-neutral-500">
                   RIF {f.proveedor_rif || '—'}
                   {f.fecha_emision && ` · emitida ${new Date(`${f.fecha_emision}T12:00:00`).toLocaleDateString('es-VE')}`}
@@ -733,16 +759,17 @@ function FilaFactura({
                 </span>
                 <span className="flex-1" />
                 {f.tiene_soporte && (
-                  <button onClick={alVerSoporte} className="font-semibold text-acento-700">
+                  <Boton tono="suave" className="min-h-11" onClick={alVerSoporte}>
                     Ver el original
-                  </button>
+                  </Boton>
                 )}
-                <button onClick={alNotaCredito} className="font-semibold text-neutral-700" title="El proveedor mandó menos, o te dio un descuento">
+                <Boton tono="suave" className="min-h-11" onClick={alNotaCredito} title="El proveedor mandó menos, o te dio un descuento">
                   Nota de crédito
-                </button>
-                <button onClick={alBorrar} className="font-semibold text-peligro-600">
+                </Boton>
+                {/* Lo que destruye va aparte y se ve distinto: no pegado a la acción de al lado. */}
+                <Boton tono="peligro" icono="quitar" className="min-h-11 sm:ml-4" onClick={alBorrar}>
                   Borrar
-                </button>
+                </Boton>
               </div>
             </div>
           </td>
@@ -769,6 +796,17 @@ function FichaProveedor({
   const [nota, setNota] = useState(proveedor?.nota ?? '')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  // La ficha de verdad: cuánto se le compró, cuánto se le debe y sus últimas
+  // facturas. Antes esto era una agenda (nombre, RIF, teléfono) y para saber
+  // la deuda había que sumar a ojo en la lista de facturas.
+  const [resumen, setResumen] = useState<ProveedorResumen | null>(null)
+  useEffect(() => {
+    if (!proveedor) return
+    api
+      .resumenProveedor(proveedor.id)
+      .then(setResumen)
+      .catch(() => setResumen(null))
+  }, [proveedor])
 
   async function guardar() {
     if (!nombre.trim()) {
@@ -789,6 +827,7 @@ function FichaProveedor({
   return (
     <Modal
       titulo={proveedor ? proveedor.nombre : 'Nuevo proveedor'}
+      ancho={proveedor ? 'lg' : 'sm'}
       onCerrar={onCerrar}
       pie={
         <>
@@ -802,6 +841,44 @@ function FichaProveedor({
       }
     >
       {error && <p className="text-peligro-600 text-sm mb-3">{error}</p>}
+      {proveedor && resumen && (
+        <div className="mb-4 space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <Cifra titulo="Comprado" valor={`$${fmtNum(resumen.comprado, 2)}`} detalle={`${resumen.facturas} factura${resumen.facturas === 1 ? '' : 's'} · sin IVA`} />
+            <Cifra
+              titulo="Se le debe"
+              valor={`$${fmtNum(resumen.deuda, 2)}`}
+              detalle={resumen.vencidas > 0 ? `${resumen.vencidas} vencida${resumen.vencidas === 1 ? '' : 's'}` : resumen.deuda > 0 ? 'a crédito' : 'Nada pendiente'}
+              tono={resumen.vencidas > 0 ? 'alerta' : resumen.deuda > 0 ? 'normal' : 'bien'}
+            />
+            <Cifra
+              titulo="Última compra"
+              valor={resumen.ultima_compra ? new Date(resumen.ultima_compra).toLocaleDateString('es-VE') : '—'}
+              detalle={resumen.alertas_pendientes > 0 ? `${resumen.alertas_pendientes} alerta${resumen.alertas_pendientes === 1 ? '' : 's'} de precio sin ver` : 'Sin alertas de precio'}
+              tono={resumen.alertas_pendientes > 0 ? 'alerta' : 'normal'}
+            />
+          </div>
+          {resumen.ultimas.length > 0 && (
+            <div className="rounded-2xl bg-neutral-500/6 p-3">
+              <p className="text-xs font-semibold text-neutral-600 mb-1">Últimas facturas</p>
+              <ul className="divide-y divide-neutral-500/10">
+                {resumen.ultimas.map((u) => (
+                  <li key={u.id} className="flex items-center gap-3 py-2 text-sm">
+                    <span className="tabular-nums text-neutral-600 shrink-0">{new Date(u.fecha).toLocaleDateString('es-VE')}</span>
+                    <span className="font-mono text-xs text-neutral-500 flex-1 min-w-0 truncate">{u.numero_factura}</span>
+                    {u.forma_pago === 'Credito' ? (
+                      <Pastilla tono={u.pagada ? 'bien' : 'ojo'}>{u.pagada ? 'Pagada' : `Debe $${fmtNum(u.saldo, 2)}`}</Pastilla>
+                    ) : (
+                      <span className="text-xs text-neutral-500">{u.forma_pago}</span>
+                    )}
+                    <span className="tabular-nums font-semibold w-20 text-right shrink-0">${fmtNum(u.total, 2)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
       <div className="space-y-3">
         <Campo etiqueta="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
         <Campo etiqueta="RIF" value={rif} onChange={(e) => setRif(e.target.value)} placeholder="J-12345678-9 (opcional)" />

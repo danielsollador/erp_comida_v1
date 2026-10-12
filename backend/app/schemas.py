@@ -2312,6 +2312,29 @@ class Proveedor(ProveedorCreate):
         from_attributes = True
 
 
+class ProveedorFacturaResumen(BaseModel):
+    """Una factura en la ficha del proveedor: lo justo para reconocerla."""
+    id: int
+    fecha: datetime.datetime
+    numero_factura: str
+    total: float
+    forma_pago: str
+    pagada: bool
+    saldo: float
+
+
+class ProveedorResumen(BaseModel):
+    """La ficha del proveedor: cuanto se le compro, cuanto se le debe y sus
+    ultimas facturas. Es lo que el dueno quiere ver antes de llamarlo."""
+    facturas: int
+    comprado: float            # suma de bases imponibles, sin IVA
+    deuda: float               # saldo de lo comprado a credito sin pagar
+    vencidas: int              # facturas a credito con fecha de vencimiento pasada
+    alertas_pendientes: int    # alertas de precio de este proveedor sin ver
+    ultima_compra: Optional[datetime.datetime] = None
+    ultimas: List[ProveedorFacturaResumen]
+
+
 class FacturaCompraBase(BaseModel):
     numero_factura: str
     proveedor_nombre: str

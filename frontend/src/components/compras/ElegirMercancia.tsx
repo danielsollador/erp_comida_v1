@@ -122,7 +122,7 @@ export default function ElegirMercancia({
             </>
           ) : (
             <>
-              <Icono nombre="buscar" size={15} className="text-neutral-400 shrink-0" />
+              <Icono nombre="buscar" size={15} className="text-neutral-500 shrink-0" />
               <span className="text-neutral-500 truncate">{placeholder ?? '¿Qué mercancía es?'}</span>
             </>
           )}
@@ -130,7 +130,7 @@ export default function ElegirMercancia({
         </button>
       ) : (
         <div className={`flex items-center gap-2 border rounded-xl px-3 py-2 bg-white ${borde}`}>
-          <Icono nombre="buscar" size={15} className="text-neutral-400 shrink-0" />
+          <Icono nombre="buscar" size={15} className="text-neutral-500 shrink-0" />
           <input
             ref={entrada}
             value={texto}
@@ -211,7 +211,7 @@ export default function ElegirMercancia({
           </li>
           {alConcepto && (
             <li role="presentation" className="mt-1 border-t border-neutral-500/10 px-2.5 pt-2 pb-1.5">
-              <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">No es mercancía</span>
+              <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">No es mercancía</span>
               <span className="flex flex-wrap gap-1.5">
                 {CONCEPTOS.map((c) => (
                   <button

@@ -47,6 +47,7 @@ import type {
   Gasto,
   Ingrediente,
   Proveedor,
+  ProveedorResumen,
   FilaLibroCompras,
   FilaLibroVentas,
   LibroCompras,
@@ -1074,6 +1075,8 @@ export const api = {
     req<Proveedor>(`/proveedores/${id}`, { method: 'PUT', body: JSON.stringify(p) }),
   archivarProveedor: (id: number, activo: boolean) =>
     req<Proveedor>(`/proveedores/${id}/archivar?activo=${activo}`, { method: 'POST' }),
+  /** La ficha: cuánto se le compró, cuánto se le debe y sus últimas facturas. */
+  resumenProveedor: (id: number) => req<ProveedorResumen>(`/proveedores/${id}/resumen`),
   crearFacturaCompra: (f: {
     numero_factura: string
     proveedor_nombre: string

@@ -42,6 +42,8 @@ export type Seccion = {
    * tabulares, que no bailan al cambiar de numero.
    */
   contador?: number
+  /** Qué cuenta el contador, para el lector de pantalla: "alertas sin ver". */
+  contadorTexto?: string
 }
 
 export function useSeccion(
@@ -132,11 +134,14 @@ export function Secciones({
                 pestaña sin cifra se lee mas limpia. */}
             {s.contador != null && s.contador > 0 && (
               <span
+                role="status"
+                aria-atomic="true"
                 className={`rounded-full px-1.5 min-w-[20px] text-center text-[11px] font-semibold tabular-nums ${
                   esta ? 'bg-white/20' : 'bg-neutral-500/15'
                 }`}
               >
                 {s.contador}
+                <span className="sr-only"> {s.contadorTexto ?? 'pendientes'}</span>
               </span>
             )}
           </button>

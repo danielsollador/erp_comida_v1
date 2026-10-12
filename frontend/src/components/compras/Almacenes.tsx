@@ -22,7 +22,7 @@ export function PuntoTipo({ tipo, className = '' }: { tipo: TipoArticulo; classN
 export function SelloTipo({ tipo, icono = false }: { tipo: TipoArticulo; icono?: boolean }) {
   const a = ALMACEN_DE[tipo]
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${a.sello}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${a.sello}`}>
       {icono ? <Icono nombre={a.icono} size={12} /> : <PuntoTipo tipo={tipo} />}
       {a.texto}
     </span>
@@ -76,8 +76,8 @@ export function ElegirAlmacen({
               {compacto ? a.detalle : a.ejemplo}
             </span>
             <span
-              className={`block mt-2 text-[11px] font-semibold tracking-wide ${
-                esta ? 'text-white/60' : a.destino === 'gasto' ? 'text-aviso-700' : 'text-neutral-400'
+              className={`block mt-2 text-xs font-semibold tracking-wide ${
+                esta ? 'text-white/60' : a.destino === 'gasto' ? 'text-aviso-700' : 'text-neutral-500'
               }`}
             >
               {a.destino === 'gasto' ? '→ gasto del mes' : '→ inventario'}

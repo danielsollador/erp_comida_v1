@@ -1490,6 +1490,17 @@ export type Proveedor = {
   porcentaje_retencion?: number
 }
 
+/** La ficha del proveedor: cuánto se le compró, cuánto se le debe y sus últimas facturas. */
+export type ProveedorResumen = {
+  facturas: number
+  comprado: number
+  deuda: number
+  vencidas: number
+  alertas_pendientes: number
+  ultima_compra: string | null
+  ultimas: { id: number; fecha: string; numero_factura: string; total: number; forma_pago: string; pagada: boolean; saldo: number }[]
+}
+
 export type FilaLibroVentas = {
   pedido_id: number
   fecha: string
