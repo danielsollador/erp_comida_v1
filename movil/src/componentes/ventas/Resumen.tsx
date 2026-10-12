@@ -10,7 +10,7 @@ import { Boton, Ficha, Nota, Titulo } from '../ui'
 import { incluyeHoy, useDinero } from './logica'
 
 // El nombre corto de la moneda que se esta viendo, como `sufijo` en la web.
-const SUFIJO: Record<VistaMoneda, string> = { usd: 'USD', bs: 'Bs', usd_calle: 'USD calle', eur: 'EUR' }
+const SUFIJO: Record<VistaMoneda, string> = { usd: 'USD', bs: 'Bs', usd_calle: 'USD paralelo', eur: 'EUR' }
 
 /**
  * RESUMEN, como la seccion de la web (pages/Ventas.tsx): las ocho cifras que

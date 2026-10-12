@@ -219,23 +219,35 @@ export function Controles() {
   )
 }
 
-/** La barra de las pantallas de adentro: volver, el titulo y el tema. */
+/**
+ * La barra de las pantallas de adentro: volver, el titulo y, como arriba en
+ * la web, la moneda, las notificaciones y el tema en TODOS los modulos.
+ */
 export function Barra({ titulo }: { titulo: string }) {
   const t = useTema()
+  const { acceso } = useSesion()
   return (
     <View style={estilos.barra}>
-      <Pressable
-        onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-        accessibilityLabel="Volver"
-        hitSlop={6}
-        style={({ pressed }) => [estilos.control, { borderColor: t.gris200, backgroundColor: t.superficie, opacity: pressed ? 0.7 : 1 }]}
-      >
-        <Icono nombre="atras" size={17} color={t.suave} />
-      </Pressable>
-      <Text style={[estilos.barraTitulo, { color: t.tinta }]} numberOfLines={1}>
+      {/* Arriba volver y los controles; el titulo grande en su linea, como
+          en iOS: con cuatro controles al lado no cabia en un telefono. */}
+      <View style={estilos.barraFila}>
+        <Pressable
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+          accessibilityLabel="Volver"
+          hitSlop={6}
+          style={({ pressed }) => [estilos.control, { borderColor: t.gris200, backgroundColor: t.superficie, opacity: pressed ? 0.7 : 1 }]}
+        >
+          <Icono nombre="atras" size={17} color={t.suave} />
+        </Pressable>
+        <View style={estilos.controles}>
+          {acceso?.puede.operar && <BotonMoneda />}
+          <Campana />
+          <BotonTema />
+        </View>
+      </View>
+      <Text style={[estilos.barraTitulo, { color: t.tinta }]} numberOfLines={2} accessibilityRole="header">
         {titulo}
       </Text>
-      <BotonTema />
     </View>
   )
 }
@@ -274,6 +286,7 @@ const estilos = StyleSheet.create({
   quien: { paddingHorizontal: 12, paddingBottom: 10 },
   quienNombre: { fontFamily: LETRA.titulo, fontSize: 18 },
   quienRol: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 2 },
-  barra: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
-  barraTitulo: { flex: 1, fontFamily: LETRA.tituloFuerte, fontSize: 20, letterSpacing: -0.4 },
+  barra: { paddingTop: 6, paddingBottom: 4, gap: 10 },
+  barraFila: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  barraTitulo: { fontFamily: LETRA.tituloFuerte, fontSize: 28, lineHeight: 33, letterSpacing: -0.6 },
 })

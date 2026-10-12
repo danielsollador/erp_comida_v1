@@ -49,7 +49,7 @@ export const grano = (g: string) => (g === 'dia' ? 'día' : g)
 
 export type Dinero = (x: number, d?: number) => string
 
-const SUFIJOS = { usd: 'USD', bs: 'Bs', usd_calle: 'USD calle', eur: 'EUR' } as const
+const SUFIJOS = { usd: 'USD', bs: 'Bs', usd_calle: 'USD paralelo', eur: 'EUR' } as const
 
 /** El signo menos delante del simbolo: "−$4,42", como la web. */
 function conSigno(simbolo: string, valor: number, cuerpo: string) {

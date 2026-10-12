@@ -13,10 +13,11 @@ import type { EstadoTasa } from './tipos'
 export type VistaMoneda = 'usd' | 'bs' | 'usd_calle' | 'eur'
 
 export const VISTAS: { id: VistaMoneda; nombre: string; detalle: string }[] = [
-  { id: 'usd', nombre: 'Dólares BCV', detalle: 'Lo que dice el sistema' },
+  // Mismos nombres y orden que la web (frontend/src/lib/moneda.tsx).
   { id: 'bs', nombre: 'Bolívares', detalle: 'A la tasa BCV de hoy' },
-  { id: 'usd_calle', nombre: 'Dólares calle', detalle: 'Convertidos a la tasa paralela' },
-  { id: 'eur', nombre: 'Euros', detalle: 'A la tasa BCV del euro' },
+  { id: 'usd', nombre: 'Dólares BCV', detalle: 'Lo que dice el sistema' },
+  { id: 'usd_calle', nombre: 'Dólares Paralelo', detalle: 'Convertidos a la tasa paralela' },
+  { id: 'eur', nombre: 'Euro BCV', detalle: 'A la tasa BCV del euro' },
 ]
 
 const CLAVE = 'erp-vista-moneda'
