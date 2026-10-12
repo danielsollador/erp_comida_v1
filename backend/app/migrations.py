@@ -217,6 +217,8 @@ INDICES = [
 VALORES = [
     ("DIM310_INV_INGREDIENTE", "unidad", "litro", "lt"),
     ("DIM310_INV_INGREDIENTE", "unidad", "litros", "lt"),
+    # "Paquete" y "unidad" son lo mismo (11-oct): se cuentan de uno en uno.
+    ("DIM310_INV_INGREDIENTE", "unidad", "paquete", "unidad"),
 ]
 
 

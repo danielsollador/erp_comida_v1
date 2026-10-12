@@ -1105,6 +1105,8 @@ export const api = {
       cantidad: number
       costo_unitario: number
       exento?: boolean
+      // Vino en empaque de N: la ficha lo aprende.
+      empaque_trae?: number
     }[]
     // Lo que no es mercancia, renglon por renglon: flete, servicio, equipo.
     // Se suma a la base con la mercancia y no mueve stock.

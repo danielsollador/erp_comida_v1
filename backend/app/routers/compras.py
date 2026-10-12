@@ -424,6 +424,9 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
 
     for item in factura.items:
         ingrediente = ingredientes[item.ingrediente_id]
+        # Vino en empaque: la ficha lo aprende y la proxima factura lo da por hecho.
+        if item.empaque_trae:
+            ingrediente.empaque_trae = item.empaque_trae
         db.add(
             models.FacturaCompraItem(
                 factura_id=db_factura.id,

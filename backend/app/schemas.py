@@ -169,6 +169,13 @@ class IngredienteBase(BaseModel):
     nombre: str
     unidad: str
     stock_actual: float = 0
+
+    @field_validator("unidad")
+    @classmethod
+    def _paquete_es_unidad(cls, v: str) -> str:
+        # "Paquete" y "unidad" son lo mismo (Leider, 11-oct): lo que se cuenta
+        # de uno en uno. Como viene el paquete lo dice la factura (empaque).
+        return "unidad" if v == "paquete" else v
     stock_minimo: float = 0
     stock_objetivo: float = 0
     costo_unitario: float = 0
@@ -2228,6 +2235,9 @@ class LineaFacturaInput(BaseModel):
     ingrediente_id: int
     cantidad: float
     costo_unitario: float  # precio pagado por 1 unidad de medida, SIN IVA
+    # Vino en empaque de N: queda en la ficha de la mercancia para que la
+    # proxima factura lo de por hecho (Leider, 11-oct).
+    empaque_trae: Optional[float] = Field(default=None, gt=0)
     # Si ESTE renglon viene exento. None = lo que diga la ficha del insumo,
     # que es lo normal; se manda explicito cuando esta factura viene distinta
     # (la misma mercancia puede llegar exenta de un proveedor y gravada de

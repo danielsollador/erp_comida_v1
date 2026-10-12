@@ -702,6 +702,7 @@ export default function CargarFactura({
         cantidad: Number(l.cantidad),
         costo_unitario: aUsd(Number(l.costo_unitario)),
         ...(l.exento === null ? {} : { exento: l.exento }),
+        ...(l.paquete && Number(l.paquete.trae) > 0 ? { empaque_trae: Number(l.paquete.trae) } : {}),
       }))
     const gastos = lineas
       .filter((l) => l.concepto && Number(l.costo_unitario) > 0)
@@ -804,6 +805,9 @@ export default function CargarFactura({
       }
       await anotarAntesDeGuardar(numeroFactura.trim(), cuerpoCompletar)
       const guardada = await api.crearFacturaCompra({ ...comun, items, gastos, iva: ivaLineas })
+      // La ficha ya aprendio el empaque en el servidor; aqui, sin volver a pedir la lista.
+      const aprendidos = new Map(items.filter((it) => it.empaque_trae).map((it) => [it.ingrediente_id, it.empaque_trae!]))
+      if (aprendidos.size) setIngredientes((prev) => prev.map((ing) => (aprendidos.has(ing.id) ? { ...ing, empaque_trae: aprendidos.get(ing.id)! } : ing)))
       limpiarFormulario()
 
       if (paquetesAMano.length > 0) {
@@ -1858,7 +1862,7 @@ function Renglon({
                 valor={l.ingrediente_id}
                 alElegir={onMercancia}
                 alCrear={onCrear}
-                tipo={tipoElegido}
+                tipo={l.ingrediente_id ? undefined : tipoElegido}
                 tono={problema?.tono === 'mal' && !l.ingrediente_id ? 'mal' : undefined}
                 sugerencia={l.leido?.descripcion}
                 placeholder={tipoElegido ? `¿Cuál ${ALMACEN_DE[tipoElegido].texto.toLowerCase()}?` : '¿Cuál mercancía?'}

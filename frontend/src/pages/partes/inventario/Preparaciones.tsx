@@ -1036,6 +1036,11 @@ function Olla({
     const limpias = filas.filter((f) => f.ingrediente_id && aNum(f.cantidad) > 0)
     if (!nombre.trim()) return setError('Ponle nombre a la preparación.')
     if (limpias.length === 0) return setError('Agrega al menos un ingrediente con su cantidad.')
+    // La olla es 1 kg: una receta que se pasa no se guarda (Leider, 11-oct).
+    // Si todo se mide como la preparación, tampoco una que se queda corta.
+    if (queda > 1.02) return setError(`Lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)} y la olla es 1 ${unidadLarga}: ajusta al ${unidadLarga} o quita algo.`)
+    if (enSuUnidad.length === partes.length && queda > 0 && queda < 0.98)
+      return setError(`Lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)}: falta para el ${unidadLarga}. Ajusta al ${unidadLarga} o agrega algo.`)
     setGuardando(true)
     try {
       // El % que se aprovecha es del crudo: si cambió, se guarda en su ficha.
