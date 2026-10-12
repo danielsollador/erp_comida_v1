@@ -442,7 +442,7 @@ export function Th({
         type="button"
         onClick={() => orden.alternar(clave)}
         title="Ordenar por esta columna"
-        className={`vp-orden inline-flex items-center gap-0.5 ${
+        className={`vp-orden inline-flex items-center gap-0.5 min-h-11 -my-2 -mx-1 px-1 rounded-md ${
           alinear === 'derecha' ? 'flex-row-reverse' : ''
         } ${activa ? 'text-neutral-900' : ''}`}
       >
