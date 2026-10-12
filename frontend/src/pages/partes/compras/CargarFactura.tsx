@@ -571,8 +571,9 @@ export default function CargarFactura({
     setLineas((prev) =>
       prev.map((l, idx) => {
         if (idx !== i) return l
-        // Cambio la mercancia: la conversion que se recordaba era de la otra.
-        let paquete = l.paquete && l.recordada && l.recordada.ingrediente_id !== id ? undefined : l.paquete
+        // Cambio la mercancia: el empaque era de la otra (la que se acababa de
+        // crear "en empaque", o la que recordaba el papel). Se suelta.
+        let paquete = l.ingrediente_id === id ? l.paquete : undefined
         // EL EMPAQUE LO DICE LA FICHA (Leider, 11-oct): si en Inventario la
         // mercancia esta marcada "viene en empaque de N", el renglon arranca
         // en empaque y "Esta vez vino suelta" es la excepcion. Si no esta
