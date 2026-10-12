@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { Controles, Marca } from '../../componentes/Encabezado'
 import { Arranque, Avisos, BotonContador, Espera, TarjetaVender } from '../../componentes/inicio/Fichas'
@@ -8,7 +8,7 @@ import { Etiqueta, Ficha, Pantalla, Problema } from '../../componentes/ui'
 import { api } from '../../lib/api'
 import { parte, useCarga } from '../../lib/carga'
 import { fechaDeHoy, saludo } from '../../lib/formato'
-import { MODULOS, entraA } from '../../lib/modulos'
+import { MODULOS, abrir, entraA } from '../../lib/modulos'
 import { useMoneda } from '../../lib/moneda'
 import { useSesion } from '../../lib/sesion'
 import { LETRA, useTema } from '../../lib/tema'
@@ -135,10 +135,11 @@ export default function Inicio() {
         {/* ── Zona contable ── */}
         {contador.length > 0 && (
           <View style={[estilos.contable, { borderTopColor: t.gris200 }]}>
-            <View style={estilos.contableCabeza}>
+            {/* La cabecera lleva a la Zona contable entera (/contador), como en la web. */}
+            <Pressable onPress={() => abrir('/contador')} accessibilityLabel="Abrir la zona contable" style={estilos.contableCabeza}>
               <Etiqueta>Zona contable</Etiqueta>
               <Text style={[estilos.contableNota, { color: t.tenue }]}>Se arma solo con lo de arriba</Text>
-            </View>
+            </Pressable>
             <View style={{ gap: 8 }}>
               {contador.map((m) => (
                 <BotonContador key={m.to} to={m.to} icono={m.icono} titulo={m.titulo} desc={m.pregunta} />

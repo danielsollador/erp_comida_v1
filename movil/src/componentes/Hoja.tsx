@@ -27,7 +27,7 @@ export function Hoja({
       <Pressable style={estilos.fondo} onPress={alCerrar} accessibilityLabel="Cerrar" />
       <View style={[estilos.hoja, { backgroundColor: t.superficie, paddingBottom: 16 + borde.bottom }]}>
         <View style={[estilos.agarre, { backgroundColor: t.gris200 }]} />
-        {titulo && <Text style={[estilos.titulo, { color: t.tenue }]}>{titulo}</Text>}
+        {titulo ? <Text style={[estilos.titulo, { color: t.tenue }]}>{titulo}</Text> : null}
         {children}
       </View>
     </Modal>
