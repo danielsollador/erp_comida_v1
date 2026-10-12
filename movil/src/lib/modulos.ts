@@ -33,7 +33,7 @@ export function entraA(modulos: string[] | undefined, m: Modulo): boolean {
 }
 
 /** Lo que la app ya tiene; lo demas sigue en la web por ahora. */
-const EN_LA_APP = new Set(['/pos', '/inventario', '/menu', '/caja', '/cocina', '/ventas', '/contador', '/reportes', '/contabilidad', '/impuestos', '/tasa', '/notificaciones', '/configuracion'])
+const EN_LA_APP = new Set(['/pos', '/compras', '/inventario', '/menu', '/caja', '/cocina', '/ventas', '/contador', '/reportes', '/contabilidad', '/impuestos', '/tasa', '/notificaciones', '/configuracion'])
 
 /**
  * Abrir un modulo desde el inicio. Si la app aun no lo tiene, se dice en

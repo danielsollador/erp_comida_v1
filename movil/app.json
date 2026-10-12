@@ -27,7 +27,14 @@
       "expo-status-bar",
       "expo-secure-store",
       "expo-font",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "La cámara se usa para fotografiar las facturas de compra.",
+          "photosPermission": "La galería se usa para subir fotos de facturas de compra."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
