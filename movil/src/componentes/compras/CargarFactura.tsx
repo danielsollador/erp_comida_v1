@@ -137,12 +137,21 @@ export default function CargarFactura({
   // La foto o PDF leido: su soporte se engancha a la factura al guardar.
   const [lectura, setLectura] = useState<LecturaFactura | null>(null)
   const [documento, setDocumento] = useState<DocumentoLeido | null>(null)
+  // Lo primero es decidir COMO se carga (Leider, 12-oct): dos cuadros, foto
+  // o archivo / a mano, y nada mas. Cada uno lleva a su camino y de ahi sigue
+  // el flujo de siempre. Sin el lector de facturas activo va directo a mano.
+  const [modo, setModo] = useState<'elegir' | 'foto' | 'manual'>('elegir')
+  const [lectorActivo, setLectorActivo] = useState<boolean | null>(null)
   // Lo que se recuerda de cada proveedor: las presentaciones ("caja de 24").
   const [memoria, setMemoria] = useState<Equivalencia[]>([])
   // El renglon para el que se esta creando una mercancia nueva, y el nombre con que empieza.
   const [creando, setCreando] = useState<{ en: number; texto: string } | null>(null)
 
   useEffect(() => {
+    apiCompras
+      .estadoLector()
+      .then((e) => setLectorActivo(e.activo))
+      .catch(() => setLectorActivo(false))
     apiCompras
       .servicios()
       .then(setServicios)
@@ -695,6 +704,7 @@ export default function CargarFactura({
       const aprendidos = new Map(items.filter((it) => it.empaque_trae).map((it) => [it.ingrediente_id, it.empaque_trae!]))
       if (aprendidos.size) setIngredientes((prev) => prev.map((ing) => (aprendidos.has(ing.id) ? { ...ing, empaque_trae: aprendidos.get(ing.id)! } : ing)))
       limpiarFormulario()
+      setModo('elegir')
 
       if (paquetesAMano.length > 0) {
         apiCompras
@@ -743,6 +753,8 @@ export default function CargarFactura({
 
   // ── Pantalla ────────────────────────────────────────────────────────────
   const conDocumento = documento !== null
+  const camino = lectorActivo === false ? 'manual' : modo
+  const verFormulario = conDocumento || camino === 'manual'
   const datosListos = !!proveedor.trim() && !!rif.trim() && !!numeroFactura.trim() && !!tasaNum
   // "Listo" en un renglon lo pliega y deja el SIGUIENTE arriba en pantalla
   // (Leider, 8-oct): la factura se llena de arriba abajo.
@@ -1203,13 +1215,28 @@ export default function CargarFactura({
                   <BotonTexto texto="Verla" alTocar={onVerFacturas} tono="neutro" />
                 </View>
               ) : null}
-              {!conDocumento ? <ZonaDocumento onLeida={aplicarLectura} /> : null}
+              {!conDocumento && camino === 'elegir' && lectorActivo !== null ? (
+                <ElegirCarga onFoto={() => setModo('foto')} onManual={() => setModo('manual')} />
+              ) : null}
+              {!conDocumento && camino !== 'elegir' && lectorActivo ? (
+                <Pressable
+                  onPress={() => setModo(camino === 'foto' ? 'manual' : 'foto')}
+                  style={({ pressed }) => [s.cambiarForma, { opacity: pressed ? 0.6 : 1 }]}
+                  accessibilityRole="button"
+                >
+                  <Icono nombre="atras" size={16} color={t.suave} />
+                  <Text style={[s.cambiarFormaTexto, { color: t.suave }]}>
+                    {camino === 'foto' ? 'Mejor la anoto a mano' : 'Mejor con foto o archivo'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {!conDocumento && camino === 'foto' ? <ZonaDocumento onLeida={aplicarLectura} /> : null}
               {conDocumento && documento && !dosColumnas ? <VistaDocumento doc={documento} plegable altoMaximo={alto * 0.5} /> : null}
-              {formulario}
+              {verFormulario ? formulario : null}
             </View>
           </ScrollView>
         </View>
-        <View style={{ paddingBottom: borde.bottom }}>
+        <View style={{ paddingBottom: borde.bottom, display: verFormulario ? 'flex' : 'none' }}>
           <BarraGuardar
             pendientes={pendientes}
             cuadre={cuadreAplica ? (cuadra ? 'cuadra' : `No cuadra: diferencia ${m(diferencia)}`) : null}
@@ -1251,6 +1278,56 @@ export default function CargarFactura({
   )
 }
 
+/**
+ * La primera pantalla de la carga: COMO la quieres cargar. Dos cuadros
+ * grandes y nada mas, para que nadie tenga que entender el formulario antes
+ * de empezar.
+ */
+function ElegirCarga({ onFoto, onManual }: { onFoto: () => void; onManual: () => void }) {
+  const t = useTema()
+  const opciones = [
+    {
+      icono: 'camara' as const,
+      titulo: 'Foto o archivo',
+      texto: 'Tómale foto a la factura o sube el PDF. La IA la llena y tú la revisas.',
+      alTocar: onFoto,
+      principal: true,
+    },
+    {
+      icono: 'factura' as const,
+      titulo: 'A mano',
+      texto: 'Escribe tú los datos de la factura, renglón por renglón.',
+      alTocar: onManual,
+      principal: false,
+    },
+  ]
+  return (
+    <View style={{ gap: 16 }}>
+      <Text style={[s.elegirTitulo, { color: t.tinta }]}>¿Cómo quieres cargar la factura?</Text>
+      {opciones.map((o) => (
+        <Pressable
+          key={o.titulo}
+          onPress={o.alTocar}
+          accessibilityRole="button"
+          accessibilityLabel={o.titulo}
+          style={({ pressed }) => [
+            s.elegirCuadro,
+            { backgroundColor: t.superficie, borderColor: t.gris200, transform: [{ scale: pressed ? 0.985 : 1 }] },
+          ]}
+        >
+          <View style={[s.elegirIcono, { backgroundColor: o.principal ? t.tinta : t.gris100 }]}>
+            <Icono nombre={o.icono} size={26} color={o.principal ? t.papel : t.tinta} />
+          </View>
+          <View>
+            <Text style={[s.elegirNombre, { color: t.tinta }]}>{o.titulo}</Text>
+            <Text style={[s.elegirTexto, { color: t.suave }]}>{o.texto}</Text>
+          </View>
+        </Pressable>
+      ))}
+    </View>
+  )
+}
+
 /** Paso 2 plegado: cuantos renglones, de que, y cuanto suman. */
 function ResumenRenglones({ lineas, ingredientes, total }: { lineas: Linea[]; ingredientes: Ingrediente[]; total: string }) {
   const t = useTema()
@@ -1276,6 +1353,13 @@ function ResumenRenglones({ lineas, ingredientes, total }: { lineas: Linea[]; in
 }
 
 const s = StyleSheet.create({
+  elegirTitulo: { fontFamily: LETRA.titulo, fontSize: 26, lineHeight: 31, letterSpacing: -0.4, marginTop: 8 },
+  elegirCuadro: { borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, padding: 24, minHeight: 200, justifyContent: 'space-between', gap: 28 },
+  elegirIcono: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  elegirNombre: { fontFamily: LETRA.titulo, fontSize: 24, letterSpacing: -0.3 },
+  elegirTexto: { fontFamily: LETRA.texto, fontSize: 15, lineHeight: 22, marginTop: 6 },
+  cambiarForma: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, alignSelf: 'flex-start' },
+  cambiarFormaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
   pantalla: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
   etiqueta: { fontFamily: LETRA.textoFuerte, fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase' },
