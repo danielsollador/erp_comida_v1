@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
@@ -8,6 +8,7 @@ import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina, Vacio } from '../components/ui'
+import Icono from '../components/Icono'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { useMoneda } from '../lib/moneda'
@@ -257,7 +258,7 @@ function ElMenu({
     onCambio()
   }
 
-  if (cargando) return <p className="text-sm text-neutral-400 py-10 text-center">Cargando el menú…</p>
+  if (cargando) return <p className="text-sm text-neutral-500 py-10 text-center">Cargando el menú…</p>
 
   if (activas.length === 0) {
     return (
@@ -322,6 +323,18 @@ function ElMenu({
           />
           {actual && (
             <ProductosDe
+              alPie={
+                <div className="md:hidden flex flex-wrap gap-2 pt-2">
+                  <Boton tono="suave" className="min-h-11 flex-1" onClick={() => setCreando('categoria')}>
+                    + Categoría
+                  </Boton>
+                  {retirados > 0 && (
+                    <Boton tono="fantasma" className="min-h-11 flex-1" onClick={onVerRetiradas}>
+                      Lo que quitaste · {retirados}
+                    </Boton>
+                  )}
+                </div>
+              }
               categoria={actual}
               categorias={activas}
               costos={costos}
@@ -399,8 +412,10 @@ function ListaCategorias({
   onVerRetiradas: () => void
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-2 md:sticky md:top-[84px]">
-      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 px-2 pt-1.5 pb-2">
+    // En el teléfono la lista es una tira de chips pegada bajo el encabezado:
+    // antes ocupaba media pantalla y el primer producto caía bajo el pliegue.
+    <div className="bg-white rounded-2xl border border-neutral-200 p-2 sticky top-0 z-10 md:top-[84px]">
+      <p className="hidden md:block text-xs font-semibold uppercase tracking-wide text-neutral-500 px-2 pt-1.5 pb-2">
         Categorías
       </p>
       <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
@@ -425,14 +440,14 @@ function ListaCategorias({
               <button
                 aria-label={`Mover ${cat.nombre} de puesto`}
                 onPointerDown={(e) => arrastre.empezar(e, { tipo: 'categoria', id: cat.id })}
-                className="hidden md:grid place-items-center w-7 h-10 shrink-0 text-neutral-300 group-hover:text-neutral-500 cursor-grab touch-none"
+                className="hidden md:grid place-items-center w-8 h-11 shrink-0 text-neutral-400 hover:text-neutral-700 cursor-grab touch-none"
               >
                 <Agarre />
               </button>
               <button
                 onClick={() => onElegir(cat.id)}
                 aria-current={activa ? 'true' : undefined}
-                className="flex-1 min-w-0 text-left px-2 md:px-1 py-2.5 min-h-[40px]"
+                className="flex-1 min-w-0 text-left px-2 md:px-1 py-2 min-h-11"
               >
                 <span className={`flex items-center gap-1.5 text-sm ${activa ? 'font-semibold' : ''}`}>
                   {/* El mismo color con el que se pinta en el mostrador: aqui
@@ -443,8 +458,8 @@ function ListaCategorias({
                   />
                   <span className="truncate">{cat.nombre}</span>
                 </span>
-                <span className="block text-[11px] text-neutral-400">
-                  {cat.productos.filter((p) => p.activo).length} producto(s)
+                <span className="block text-xs text-neutral-500">
+                  {plural(cat.productos.filter((p) => p.activo).length, 'producto', 'productos')}
                   {cat.va_a_cocina === false && ' · no va a cocina'}
                 </span>
               </button>
@@ -487,7 +502,7 @@ function ListaCategorias({
         })}
       </div>
 
-      <div className="p-2 pt-2.5 mt-1 border-t border-neutral-100">
+      <div className="hidden md:block p-2 pt-2.5 mt-1 border-t border-neutral-100">
         <button
           onClick={onCrear}
           className="w-full rounded-lg border border-dashed border-neutral-300 py-2.5 text-sm font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-900"
@@ -497,7 +512,7 @@ function ListaCategorias({
         {retirados > 0 && (
           <button
             onClick={onVerRetiradas}
-            className="w-full mt-1.5 py-1.5 text-xs text-neutral-500 hover:text-neutral-900"
+            className="w-full mt-1.5 min-h-11 text-sm text-neutral-600 hover:text-neutral-900"
           >
             Lo que quitaste · <span className="tabular-nums">{retirados}</span>
           </button>
@@ -519,6 +534,7 @@ function ProductosDe({
   onCambio,
   arrastre,
   onCrear,
+  alPie,
 }: {
   categoria: Categoria
   categorias: Categoria[]
@@ -526,6 +542,8 @@ function ProductosDe({
   onCambio: () => void
   arrastre: Arrastre
   onCrear: () => void
+  /** Lo que en el teléfono va debajo de los productos y no arriba. */
+  alPie?: ReactNode
 }) {
   const productos = categoria.productos.filter((p) => p.activo)
 
@@ -557,7 +575,8 @@ function ProductosDe({
           />
         </div>
       ) : (
-        productos.map((producto, i) => {
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2.5 items-start">
+        {productos.map((producto, i) => {
           const encima =
             arrastre.carga?.tipo === 'producto' &&
             arrastre.carga.producto.id !== producto.id &&
@@ -595,8 +614,10 @@ function ProductosDe({
               />
             </div>
           )
-        })
+        })}
+        </div>
       )}
+      {alPie}
     </div>
   )
 }
@@ -748,7 +769,7 @@ function TarjetaProducto({
 
   return (
     <div
-      className={`bg-white rounded-2xl border p-3 transition ${
+      className={`bg-white rounded-2xl border px-2.5 py-2 transition ${
         moviendose ? 'border-acento-400 opacity-50' : 'border-neutral-200'
       }`}
     >
@@ -757,14 +778,24 @@ function TarjetaProducto({
           aria-label={`Mover ${producto.nombre}`}
           title="Arrástralo sobre otro producto para ordenarlo, o hasta la categoría a la que va"
           onPointerDown={(e) => arrastre.empezar(e, { tipo: 'producto', producto })}
-          className="grid place-items-center w-7 h-10 shrink-0 text-neutral-300 hover:text-neutral-500 cursor-grab touch-none"
+          className="grid place-items-center w-8 h-11 shrink-0 text-neutral-400 hover:text-neutral-700 cursor-grab touch-none"
         >
           <Agarre />
         </button>
-        <button onClick={renombrar} className="min-w-0 text-left flex-1 py-1.5">
+        {/* El nombre es texto, no un botón: tocarlo abría "Renombrar" sin
+            querer. Renombrar sigue en el menú de los tres puntos. */}
+        <p className="min-w-0 text-left flex-1 py-1.5">
           <span className="font-medium">{producto.nombre}</span>
-          {conCategoria && <span className="text-xs text-neutral-400"> · {categoria.nombre}</span>}
-        </button>
+          {conCategoria && <span className="text-xs text-neutral-500"> · {categoria.nombre}</span>}
+        </p>
+        {!abierto && (
+          <button
+            onClick={() => setAbierto(true)}
+            className="shrink-0 min-h-10 px-2 rounded-lg text-sm font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-500/8"
+          >
+            + Variante
+          </button>
+        )}
         <MenuAcciones
           etiqueta={`Opciones de ${producto.nombre}`}
           opciones={[
@@ -783,20 +814,22 @@ function TarjetaProducto({
           vistazo que se toca: el precio para cambiarlo, la receta para
           armarla (Leider, 1-oct: "mucho mas fight complexity"). Con una sola
           variante el renglon dice "Precio" y ya. */}
-      <div className="mt-2 pl-8">
+      <div className="pl-9">
         <ul className="divide-y divide-neutral-100">
           {variantes.map((v) => {
             const info = costos.get(v.id)
             const bajoCosto = info?.costo != null && v.precio < info.costo
             return (
-              <li key={v.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
+              <li key={v.id} className="flex flex-wrap items-center gap-x-3 py-0.5 text-sm">
                 <span className="min-w-0 flex-1 basis-[7rem] truncate text-neutral-700">
                   {variantes.length <= 1 ? 'Precio' : v.nombre}
                 </span>
+                {/* Se ve como lo que es: un control que se toca (lámina +
+                    lápiz), no una cifra suelta con la pista en un `title`. */}
                 <button
                   onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}
-                  title="Toca para cambiar el precio"
-                  className={`shrink-0 rounded-lg px-2 py-1 -my-1 font-semibold tabular-nums hover:bg-neutral-100 ${
+                  aria-label={`Cambiar el precio de ${variantes.length <= 1 ? producto.nombre : v.nombre}: ${fmt(v.precio)}`}
+                  className={`vp-control shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 min-h-10 font-semibold tabular-nums ${
                     bajoCosto ? 'text-peligro-600 ring-1 ring-peligro-300' : ''
                   }`}
                 >
@@ -811,7 +844,7 @@ function TarjetaProducto({
                         ? info.margen_pct >= 50
                           ? 'text-exito-600'
                           : 'text-aviso-600'
-                        : 'text-neutral-400'
+                        : 'text-neutral-500'
                   }`}
                   title={info?.costo != null ? `Cuesta ${fmt(info.costo)} hacerlo` : undefined}
                 >
@@ -828,7 +861,7 @@ function TarjetaProducto({
                   <Link
                     to="/menu/recetas"
                     state={{ receta: v.id }}
-                    className="shrink-0 w-32 text-right text-xs font-semibold text-acento-700 hover:underline whitespace-nowrap"
+                    className="shrink-0 w-36 inline-flex items-center justify-end min-h-10 text-sm font-semibold text-acento-700 hover:underline whitespace-nowrap"
                     title="Sin receta no se sabe cuánto cuesta ni cuánto deja"
                   >
                     Ponle lo que lleva
@@ -837,10 +870,10 @@ function TarjetaProducto({
                   <Link
                     to="/menu/recetas"
                     state={{ receta: v.id }}
-                    className="shrink-0 w-32 text-right text-xs text-neutral-400 hover:text-neutral-800 whitespace-nowrap"
+                    className="shrink-0 w-36 inline-flex items-center justify-end min-h-10 text-sm font-medium text-neutral-600 hover:text-neutral-900 hover:underline whitespace-nowrap"
                     title="Ver o cambiar lo que lleva"
                   >
-                    editar receta
+                    Editar receta
                   </Link>
                 )}
                 {variantes.length > 1 ? (
@@ -856,12 +889,12 @@ function TarjetaProducto({
                     }
                     aria-label={`Quitar ${v.nombre}`}
                     title="Quitar esta variante del menú"
-                    className="w-7 h-7 shrink-0 grid place-items-center rounded-full text-neutral-400 hover:bg-peligro-100 hover:text-peligro-600"
+                    className="w-10 h-10 shrink-0 grid place-items-center rounded-full text-peligro-600 hover:bg-peligro-100"
                   >
-                    ×
+                    <Icono nombre="quitar" size={16} />
                   </button>
                 ) : (
-                  <span className="w-7 shrink-0" />
+                  <span className="w-10 shrink-0" />
                 )}
               </li>
             )
@@ -871,7 +904,7 @@ function TarjetaProducto({
         {/* Agregar una variante se pide, no estorba: el formulario vivía
             abierto en cada producto y triplicaba lo que hay que leer. */}
         {abierto ? (
-          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-neutral-100">
+          <div className="flex flex-wrap items-center gap-1.5 py-2 border-t border-neutral-100">
             <input
               value={nuevaVariante}
               onChange={(e) => setNuevaVariante(e.target.value)}
@@ -879,39 +912,26 @@ function TarjetaProducto({
               placeholder="Ej. Grande"
               aria-label="Nombre de la variante"
               autoFocus
-              className="w-28 border border-neutral-300 rounded-lg px-2 py-1.5 text-xs"
+              className="w-36 min-h-11 border border-neutral-300 rounded-xl px-3 text-sm"
             />
             <Numerico
               value={nuevoPrecio}
               onChange={(e) => setNuevoPrecio(e.target.value)}
               placeholder="Precio"
               aria-label="Precio de la variante"
-              className="w-20 border border-neutral-300 rounded-lg px-2 py-1.5 text-xs"
+              className="w-28 min-h-11 border border-neutral-300 rounded-xl px-3 text-sm tabular-nums"
             />
-            <button
-              onClick={agregarVariante}
-              className="bg-neutral-900 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium"
-            >
+            <Boton className="min-h-11" onClick={agregarVariante}>
               Agregar
-            </button>
-            <button
-              onClick={() => setAbierto(false)}
-              className="text-neutral-500 px-1.5 py-1.5 text-xs"
-            >
+            </Boton>
+            <Boton tono="fantasma" className="min-h-11" onClick={() => setAbierto(false)}>
               Cancelar
-            </button>
+            </Boton>
           </div>
-        ) : (
-          <button
-            onClick={() => setAbierto(true)}
-            className="mt-1 py-1 text-xs font-medium text-neutral-500 hover:text-neutral-900"
-          >
-            + Variante
-          </button>
-        )}
+        ) : null}
       </div>
       {avisosReposicion.map((aviso) => (
-        <p key={aviso} className="mt-2 pl-8 text-xs text-aviso-700">
+        <p key={aviso} className="mt-1 pl-9 pb-1 text-xs text-aviso-700">
           {aviso[0].toUpperCase()}
           {aviso.slice(1)}
         </p>
@@ -1044,7 +1064,7 @@ function Buscador({ valor, onCambio }: { valor: string; onCambio: (v: string) =>
         onKeyDown={(e) => e.key === 'Escape' && onCambio('')}
         placeholder="Buscar un producto en todo el menú"
         aria-label="Buscar un producto en todo el menú"
-        className="w-full bg-white border border-neutral-300 rounded-xl pl-9 pr-3 py-2.5 text-sm"
+        className="w-full min-h-11 bg-white border border-neutral-300 rounded-xl pl-9 pr-3 py-2.5 text-sm"
       />
       <svg
         viewBox="0 0 24 24"
@@ -1055,7 +1075,7 @@ function Buscador({ valor, onCambio }: { valor: string; onCambio: (v: string) =>
         strokeWidth="2"
         strokeLinecap="round"
         aria-hidden
-        className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none"
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none"
       >
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
@@ -1326,7 +1346,7 @@ function CrearProducto({
 
       <label className="block mt-4">
         <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
-          Precio <span className="normal-case font-normal tracking-normal text-neutral-400">(opcional)</span>
+          Precio <span className="normal-case font-normal tracking-normal text-neutral-500">(opcional)</span>
         </span>
         <Numerico
           value={precio}
@@ -1359,4 +1379,9 @@ function CrearProducto({
       </p>
     </Modal>
   )
+}
+
+/** "1 producto", "4 productos": nada de "producto(s)". */
+function plural(n: number, uno: string, varios: string): string {
+  return `${n} ${n === 1 ? uno : varios}`
 }
