@@ -10,6 +10,20 @@ comprobacion: si se parcheara, el dia que el middleware se rompa los tests
 seguirian verdes y el ERP quedaria abierto sin que nada avise.
 """
 
+import os
+import tempfile
+
+# CADA PROCESO DE pytest-xdist CON SU PROPIA BASE DE ARRANQUE. El arranque de
+# la app (main.lifespan) hace `create_all` sobre la base de verdad; con cuatro
+# procesos sobre el mismo archivo chocaban ("table already exists"). Va antes
+# de importar `app`, que lee estas variables al cargar.
+_trabajador = os.environ.get("PYTEST_XDIST_WORKER", "solo")
+_carpeta = os.path.join(tempfile.gettempdir(), f"erp-pruebas-{_trabajador}")
+os.makedirs(_carpeta, exist_ok=True)
+os.environ.setdefault("ERP_DATA_DIR", _carpeta)
+os.environ.setdefault("ERP_DB_PATH", os.path.join(_carpeta, "comida.db"))
+os.environ.setdefault("ERP_BACKUP_ON_STARTUP", "0")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
