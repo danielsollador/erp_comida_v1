@@ -10,7 +10,7 @@ Las claves de la cuenta de demostración están en `tienda/REVISOR.local.txt`
 |---|---|
 | Identificador de la app | `tech.vertigopro.app` (`app.json`) |
 | Versión | 1.0.0; el número de compilación lo lleva EAS solo (`eas.json`, `autoIncrement`) |
-| Ícono 1024×1024 sin transparencia | `assets/icon.png` (rombo de Vertigo Pro; provisional hasta el logo definitivo) |
+| Ícono 1024×1024 sin transparencia | `assets/icon.png`: V de Vertigo en blanco perlado sobre fondo oscuro |
 | Pantalla de inicio clara y oscura | `expo-splash-screen` en `app.json` |
 | Textos de permiso (cámara y fotos) | `expo-image-picker` en `app.json`; micrófono apagado |
 | Cifrado de exportación | `ITSAppUsesNonExemptEncryption: false` (solo HTTPS) |
