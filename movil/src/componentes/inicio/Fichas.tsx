@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store'
+import * as almacen from '../../lib/almacen'
 import { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native'
 import Animated, {
@@ -92,7 +92,7 @@ export function Arranque({ datos }: { datos: ArranqueLocal | null }) {
   const t = useTema()
   const [oculto, setOculto] = useState<boolean | null>(null)
   useEffect(() => {
-    SecureStore.getItemAsync(CLAVE_OCULTO)
+    almacen.leer(CLAVE_OCULTO)
       .then((v) => setOculto(v === '1'))
       .catch(() => setOculto(false))
   }, [])
@@ -155,7 +155,7 @@ export function Arranque({ datos }: { datos: ArranqueLocal | null }) {
         <Pressable
           onPress={() => {
             setOculto(true)
-            SecureStore.setItemAsync(CLAVE_OCULTO, '1').catch(() => undefined)
+            almacen.guardar(CLAVE_OCULTO, '1').catch(() => undefined)
           }}
           hitSlop={8}
         >

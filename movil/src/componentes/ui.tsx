@@ -35,12 +35,15 @@ export function Pantalla({
   refrescando = false,
   alRefrescar,
   arriba,
+  abajo,
 }: {
   children: ReactNode
   refrescando?: boolean
   alRefrescar?: () => void
   /** Lo que va fijo arriba, fuera del desplazamiento (la barra de una pantalla interna). */
   arriba?: ReactNode
+  /** Lo que va fijo abajo, siempre a la vista: el total y "Cobrar", "Guardar factura". */
+  abajo?: ReactNode
 }) {
   const t = useTema()
   // Abajo, el aire de la barra del telefono: sin esto lo ultimo queda tapado.
@@ -51,7 +54,7 @@ export function Pantalla({
       <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
         {arriba ? <View style={{ paddingHorizontal: 16 }}>{arriba}</View> : null}
         <ScrollView
-          contentContainerStyle={[estilos.pantalla, { paddingBottom: 48 + borde.bottom }]}
+          contentContainerStyle={[estilos.pantalla, { paddingBottom: abajo ? 24 : 48 + borde.bottom }]}
           keyboardShouldPersistTaps="handled"
           refreshControl={
             alRefrescar ? (
@@ -61,6 +64,7 @@ export function Pantalla({
         >
           {children}
         </ScrollView>
+        {abajo ? <View style={{ paddingBottom: borde.bottom }}>{abajo}</View> : null}
       </SafeAreaView>
     </View>
   )

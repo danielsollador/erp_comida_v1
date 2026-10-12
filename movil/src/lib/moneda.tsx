@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store'
+import * as almacen from './almacen'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api } from './api'
 import { miles } from './formato'
@@ -45,7 +45,7 @@ export function MonedaProvider({ children, activa }: { children: ReactNode; acti
   const [tasa, setTasa] = useState<EstadoTasa | null>(null)
 
   useEffect(() => {
-    SecureStore.getItemAsync(CLAVE)
+    almacen.leer(CLAVE)
       .then((v) => {
         if (v === 'bs' || v === 'usd_calle' || v === 'eur' || v === 'usd') setVistaEstado(v)
       })
@@ -66,7 +66,7 @@ export function MonedaProvider({ children, activa }: { children: ReactNode; acti
 
   const setVista = useCallback((v: VistaMoneda) => {
     setVistaEstado(v)
-    SecureStore.setItemAsync(CLAVE, v).catch(() => undefined)
+    almacen.guardar(CLAVE, v).catch(() => undefined)
   }, [])
 
   const fmt = useCallback(

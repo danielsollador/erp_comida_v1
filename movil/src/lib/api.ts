@@ -1,4 +1,5 @@
-import * as SecureStore from 'expo-secure-store'
+import { Platform } from 'react-native'
+import * as almacen from './almacen'
 import { hoyEnCaracas, inicioDelMes } from './formato'
 import type {
   ArranqueLocal,
@@ -24,7 +25,12 @@ import type {
  * El token se guarda en el almacen cifrado del telefono (Keychain en iOS,
  * Keystore en Android), no en un archivo cualquiera.
  */
-export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE ?? 'https://prueba.vertigopro.tech').replace(/\/+$/, '')
+const BASE = (process.env.EXPO_PUBLIC_API_BASE ?? 'https://prueba.vertigopro.tech').replace(/\/+$/, '')
+// En el emulador de Android, "127.0.0.1" es el propio emulador: la laptop
+// donde corre el backend de desarrollo se llama 10.0.2.2. Asi la misma
+// variable sirve para el navegador y para el emulador.
+export const API_BASE =
+  Platform.OS === 'android' ? BASE.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:/]|$)/, '//10.0.2.2') : BASE
 
 const CLAVE_TOKEN = 'vp-token'
 let token: string | null = null
@@ -40,14 +46,31 @@ export class ErrorApi extends Error {
 }
 
 export async function cargarToken(): Promise<string | null> {
-  token = await SecureStore.getItemAsync(CLAVE_TOKEN)
+  token = await almacen.leer(CLAVE_TOKEN)
   return token
 }
 
 async function guardarToken(nuevo: string | null) {
   token = nuevo
-  if (nuevo) await SecureStore.setItemAsync(CLAVE_TOKEN, nuevo)
-  else await SecureStore.deleteItemAsync(CLAVE_TOKEN)
+  if (nuevo) await almacen.guardar(CLAVE_TOKEN, nuevo)
+  else await almacen.borrar(CLAVE_TOKEN)
+}
+
+/** Las cabeceras de la sesion, para lo que no pasa por `req` (descargas). */
+export function cabecerasDeSesion(): Record<string, string> {
+  const c: Record<string, string> = { 'X-Vp-App': '1' }
+  if (token) c.Authorization = `Bearer ${token}`
+  return c
+}
+
+/**
+ * EL CANAL EN VIVO (/ws): la cocina se entera de una comanda nueva sin
+ * preguntar cada rato. La app no tiene cookie: el token va como subprotocolo
+ * ("vp", token), igual que la app de la tablet (frontend/src/lib/plataforma.ts).
+ */
+export function abrirCanalEnVivo(): WebSocket {
+  const url = API_BASE.replace(/^http/, 'ws') + '/ws'
+  return token ? new WebSocket(url, ['vp', token]) : new WebSocket(url)
 }
 
 /** Lo que hace la sesion cuando el servidor dice que ya no vale (401). */
@@ -62,7 +85,9 @@ export function cuandoCaduque(fn: () => void) {
  */
 export async function req<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
   const cabeceras: Record<string, string> = { 'X-Vp-App': '1', Accept: 'application/json' }
-  if (opciones.body) cabeceras['Content-Type'] = 'application/json'
+  // Un archivo (la foto de una factura) va como FormData: el limite de las
+  // partes lo pone fetch solo. Con "application/json" encima no llega nada.
+  if (opciones.body && !(opciones.body instanceof FormData)) cabeceras['Content-Type'] = 'application/json'
   if (token) cabeceras.Authorization = `Bearer ${token}`
 
   let res: Response

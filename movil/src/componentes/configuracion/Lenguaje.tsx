@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store'
+import * as almacen from '../../lib/almacen'
 import { useSyncExternalStore } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { LETRA, useTema } from '../../lib/tema'
@@ -37,7 +37,7 @@ function avisar() {
 function leerGuardado() {
   if (leido) return
   leido = true
-  SecureStore.getItemAsync(CLAVE)
+  almacen.leer(CLAVE)
     .then((v) => {
       if (v === 'tecnico' && modoActual !== 'tecnico') {
         modoActual = 'tecnico'
@@ -51,7 +51,7 @@ export function cambiarModo(nuevo: ModoPalabras) {
   if (nuevo === modoActual) return
   modoActual = nuevo
   // Sin almacen vale solo hasta cerrar la app; no es motivo para avisar.
-  SecureStore.setItemAsync(CLAVE, nuevo).catch(() => undefined)
+  almacen.guardar(CLAVE, nuevo).catch(() => undefined)
   avisar()
 }
 

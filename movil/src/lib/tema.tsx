@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store'
+import * as almacen from './almacen'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { StyleSheet, useColorScheme } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
@@ -107,7 +107,7 @@ export function TemaProvider({ children }: { children: ReactNode }) {
   const opacidad = useSharedValue(0)
 
   useEffect(() => {
-    SecureStore.getItemAsync(CLAVE)
+    almacen.leer(CLAVE)
       .then((v) => {
         if (v === 'claro' || v === 'oscuro') setElegido(v)
       })
@@ -129,7 +129,7 @@ export function TemaProvider({ children }: { children: ReactNode }) {
         if (fin) scheduleOnRN(quitarVelo)
       }))
       setElegido(nuevo)
-      SecureStore.setItemAsync(CLAVE, nuevo).catch(() => undefined)
+      almacen.guardar(CLAVE, nuevo).catch(() => undefined)
     },
     [modo, opacidad, quitarVelo],
   )
