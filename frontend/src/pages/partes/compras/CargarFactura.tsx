@@ -1790,7 +1790,7 @@ function Renglon({
         <div className="pl-2.5 space-y-2.5">
           <div className="flex items-start gap-2">
             <div className="flex-1 min-w-0">
-              <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
                 {selectorTipo}
                 {l.concepto === 'Flete' ? (
                   // El flete es el flete: no lleva nombre.
@@ -1858,7 +1858,7 @@ function Renglon({
       <div className="pl-2.5 space-y-2.5">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
               {selectorTipo}
               <ElegirMercancia
                 ingredientes={ingredientes}
@@ -2172,7 +2172,7 @@ function BarraGuardar({
   const [abierta, setAbierta] = useState(false)
   const graves = pendientes.filter((p) => p.tono === 'mal').length
   return (
-    <div className="sticky bottom-3 z-20 vp-menu px-4 py-3">
+    <div className="sticky bottom-0 sm:bottom-3 z-20 vp-menu -mx-4 sm:mx-0 max-sm:!rounded-none px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:py-3">
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0 relative">
           {pendientes.length > 0 ? (

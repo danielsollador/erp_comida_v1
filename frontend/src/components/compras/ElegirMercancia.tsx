@@ -180,9 +180,11 @@ export default function ElegirMercancia({
                 }`}
               >
                 <PuntoTipo tipo={i.tipo} />
-                <span className="font-medium min-w-0 truncate">{i.nombre}</span>
-                <span className="text-xs text-neutral-500 shrink-0">{a.texto}</span>
-                <span className="ml-auto text-xs text-neutral-500 tabular-nums shrink-0">
+                {/* El nombre es lo que se busca: se lleva el ancho y puede partir
+                    en dos líneas. En el teléfono el tipo ya lo dice el punto. */}
+                <span className="font-medium min-w-0 flex-1 leading-snug">{i.nombre}</span>
+                <span className="hidden sm:inline text-xs text-neutral-500 shrink-0">{a.texto}</span>
+                <span className="text-xs text-neutral-500 tabular-nums shrink-0">
                   {i.tipo === 'desechable'
                     ? 'sin stock'
                     : `hay ${Number(i.stock_actual || 0).toLocaleString('es-VE', { maximumFractionDigits: 2 })} ${unidadDe(Number(i.stock_actual || 0), i.unidad)}`}

@@ -1933,3 +1933,18 @@ html.vp-app-ios body {
 html.vp-app-ios .vp-rail {
   padding-top: env(safe-area-inset-top);
 }
+
+/* iOS Safari: el `input type=date` tiene un ancho propio que ignora la
+   columna y se montaba sobre el campo de al lado (Compras, 11-oct). Sin
+   apariencia nativa obedece al grid; el texto queda a la izquierda como en
+   los demas campos. */
+input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  display: block;
+}
+input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
+}
