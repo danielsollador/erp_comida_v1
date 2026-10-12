@@ -19,9 +19,6 @@ export const MODULOS: Modulo[] = [
   { to: '/caja', modulo: 'caja', icono: 'caja', titulo: 'Cierre de caja', pregunta: '¿Cuadran las ventas del día?' },
   { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', pregunta: '¿Qué se vendió y cómo se pagó?' },
   { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', pregunta: '¿Cómo va el negocio?' },
-  { to: '/contabilidad', modulo: 'contabilidad', icono: 'contabilidad', titulo: 'Contabilidad', pregunta: 'Libros y balances' },
-  { to: '/impuestos', modulo: 'impuestos', icono: 'impuestos', titulo: 'Impuestos', pregunta: 'IVA y libros fiscales' },
-  { to: '/tasa', modulo: 'tasa', icono: 'tasa', titulo: 'Tasa de cambio', pregunta: 'Bolívares por dólar de cada día' },
 ]
 
 export const moduloDe = (to: string) => MODULOS.find((m) => m.to === to)
@@ -32,8 +29,12 @@ export function entraA(modulos: string[] | undefined, m: Modulo): boolean {
   return ids.some((id) => modulos?.includes(id))
 }
 
-/** Lo que la app ya tiene; lo demas sigue en la web por ahora. */
-const EN_LA_APP = new Set(['/pos', '/compras', '/inventario', '/menu', '/caja', '/cocina', '/ventas', '/contador', '/reportes', '/contabilidad', '/impuestos', '/tasa', '/notificaciones', '/configuracion'])
+/**
+ * Lo que la app tiene. La zona contable (contabilidad, impuestos) se quito a
+ * proposito (Leider, 12-oct): eso se trabaja en la web, no en el telefono.
+ * Tasa queda solo como pantalla a la que lleva el cobro cuando falta la tasa.
+ */
+const EN_LA_APP = new Set(['/pos', '/compras', '/inventario', '/menu', '/caja', '/cocina', '/ventas', '/reportes', '/tasa', '/notificaciones', '/configuracion'])
 
 /**
  * Abrir un modulo desde el inicio. Si la app aun no lo tiene, se dice en

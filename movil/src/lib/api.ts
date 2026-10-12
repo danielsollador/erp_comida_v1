@@ -4,12 +4,10 @@ import { hoyEnCaracas, inicioDelMes } from './formato'
 import type {
   ArranqueLocal,
   Aviso,
-  BalanceGeneral,
   CuentaPorCobrar,
   EstadoAcceso,
   EstadoResultadosContable,
   EstadoTasa,
-  PeriodoPendiente,
   Recorrido,
   ReporteResumen,
   SolicitudAutorizacion,
@@ -229,8 +227,6 @@ export const api = {
   // La zona contable, solo para consultar
   resultadosDelMes: () =>
     req<EstadoResultadosContable>(`/contabilidad/estado-resultados?${rango(inicioDelMes(), hoyEnCaracas())}`),
-  balanceGeneral: () => req<BalanceGeneral>('/contabilidad/balance-general'),
-  ivaPendiente: () => req<PeriodoPendiente[]>('/impuestos/periodos-pendientes'),
   fiado: () => req<CuentaPorCobrar[]>('/caja/fiado'),
   tasa: () => req<EstadoTasa>('/tasas'),
 }

@@ -321,35 +321,6 @@ export function TarjetaVender({
   )
 }
 
-/** Los tres botones livianos de la zona contable. */
-export function BotonContador({ to, icono, titulo, desc }: { to: string; icono: NombreIcono; titulo: string; desc: string }) {
-  const t = useTema()
-  const { modo } = useModo()
-  return (
-    <Pressable
-      onPress={() => abrir(to)}
-      style={({ pressed }) => [
-        estilos.contador,
-        {
-          backgroundColor: modo === 'oscuro' ? 'rgba(161,167,180,0.05)' : 'rgba(109,107,102,0.05)',
-          borderColor: modo === 'oscuro' ? 'rgba(255,255,255,0.05)' : t.linea,
-          transform: [{ scale: pressed ? 0.985 : 1 }],
-        },
-      ]}
-    >
-      <View style={[estilos.contadorIcono, { backgroundColor: t.gris100, borderColor: t.gris200 }]}>
-        <Icono nombre={icono} size={17} color={t.suave} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[estilos.contadorTitulo, { color: t.fuerte }]}>{titulo}</Text>
-        <Text style={[estilos.contadorDesc, { color: t.suave }]} numberOfLines={1}>
-          {desc}
-        </Text>
-      </View>
-      <Icono nombre="chevron" size={14} color={t.tenue} />
-    </Pressable>
-  )
-}
 
 const estilos = StyleSheet.create({
   etiqueta: { fontFamily: LETRA.textoFuerte, fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase' },

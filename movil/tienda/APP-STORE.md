@@ -87,13 +87,13 @@ a revisión.
 - **Subtítulo** (30): `Ventas, cocina e inventario`
 - **Categoría principal**: Negocios · **Secundaria**: Comida y bebida
 - **Palabras clave** (100):
-  `punto de venta,restaurante,cafetería,inventario,caja,facturas,cocina,comandas,contabilidad,bolívares`
+  `punto de venta,restaurante,cafetería,inventario,caja,facturas,cocina,comandas,menú,recetas,bolívares`
 - **Texto promocional** (170):
   `Vende, cobra y lleva el inventario de tu local desde el teléfono. Tómale foto a la factura de compra y se llena sola.`
 - **Descripción**:
 
 ```
-Vertigo Pro es el sistema de tu local de comida: punto de venta, cocina, inventario, compras, caja y contabilidad, en el teléfono y en la tablet del mostrador.
+Vertigo Pro es el sistema de tu local de comida: punto de venta, cocina, inventario, compras, caja y reportes, en el teléfono y en la tablet del mostrador.
 
 VENDE
 • Toma la comanda y cobra en bolívares, dólares o euros, con pago mixto y vuelto.
@@ -113,9 +113,9 @@ TU INVENTARIO, CLARO
 TUS NÚMEROS
 • Cuánto vendiste y cuánto te quedó, contra el periodo anterior.
 • Qué día y a qué hora vendes más, y cuánto deja cada producto.
-• Cierre de caja diario, libros de compras y ventas e IVA.
+• Cierre de caja diario, cuadrado por forma de pago.
 
-Hecho para Venezuela: tasa del BCV del día, montos en bolívares y dólares, y los libros que pide el SENIAT.
+Hecho para Venezuela: tasa del BCV del día y montos en bolívares, dólares o euros.
 
 Vertigo Pro es para negocios: el dueño del local crea el usuario de cada persona del equipo. Para conocerlo, escríbenos.
 ```
@@ -160,7 +160,7 @@ Rastreo: **No**. Publicidad: **No**.
 - **Notas** (en inglés, que es lo que lee el revisor):
 
 ```
-Vertigo Pro is a business app (point of sale, kitchen, inventory, purchases and accounting) for restaurants and cafés. Each business has its own server; accounts are created by the business owner.
+Vertigo Pro is a business app (point of sale, kitchen, inventory, purchases and reports) for restaurants and cafés. Each business has its own server; accounts are created by the business owner.
 
 To review with demo data (a fictional café, no real customers):
 1. On the sign-in screen tap "Otro negocio" (Other business).

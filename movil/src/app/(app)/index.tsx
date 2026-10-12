@@ -1,14 +1,14 @@
 import { useEffect } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { StyleSheet, Text, View } from 'react-native'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { Controles, Marca } from '../../componentes/Encabezado'
-import { Arranque, Avisos, BotonContador, Espera, TarjetaVender } from '../../componentes/inicio/Fichas'
+import { Arranque, Avisos, Espera, TarjetaVender } from '../../componentes/inicio/Fichas'
 import Recorrido, { FilaReportes } from '../../componentes/inicio/Recorrido'
 import { Etiqueta, Ficha, Pantalla, Problema } from '../../componentes/ui'
 import { api } from '../../lib/api'
 import { parte, useCarga } from '../../lib/carga'
 import { fechaDeHoy, saludo } from '../../lib/formato'
-import { MODULOS, abrir, entraA } from '../../lib/modulos'
+import { MODULOS, entraA } from '../../lib/modulos'
 import { useMoneda } from '../../lib/moneda'
 import { useSesion } from '../../lib/sesion'
 import { LETRA, useTema } from '../../lib/tema'
@@ -68,7 +68,6 @@ export default function Inicio() {
   const modulos = puede?.modulos ?? []
   const vender = MODULOS.filter((m) => (m.to === '/pos' || m.to === '/cocina') && entraA(modulos, m))
   const rutas = MODULOS.filter((m) => entraA(modulos, m)).map((m) => m.to)
-  const contador = MODULOS.filter((m) => ['/contabilidad', '/impuestos', '/tasa'].includes(m.to) && entraA(modulos, m))
 
   return (
     <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
@@ -132,21 +131,6 @@ export default function Inicio() {
         <Recorrido datos={recorrido} modulos={rutas} />
         {rutas.includes('/reportes') && <FilaReportes dias={datos?.recorrido?.ok ? datos.recorrido.valor.ultimos_7_dias : undefined} />}
 
-        {/* ── Zona contable ── */}
-        {contador.length > 0 && (
-          <View style={[estilos.contable, { borderTopColor: t.gris200 }]}>
-            {/* La cabecera lleva a la Zona contable entera (/contador), como en la web. */}
-            <Pressable onPress={() => abrir('/contador')} accessibilityLabel="Abrir la zona contable" style={estilos.contableCabeza}>
-              <Etiqueta>Zona contable</Etiqueta>
-              <Text style={[estilos.contableNota, { color: t.tenue }]}>Se arma solo con lo de arriba</Text>
-            </Pressable>
-            <View style={{ gap: 8 }}>
-              {contador.map((m) => (
-                <BotonContador key={m.to} to={m.to} icono={m.icono} titulo={m.titulo} desc={m.pregunta} />
-              ))}
-            </View>
-          </View>
-        )}
       </Animated.View>
     </Pantalla>
   )
@@ -158,7 +142,4 @@ const estilos = StyleSheet.create({
   vendido: { fontFamily: LETRA.tituloFuerte, fontSize: 48, letterSpacing: -1.5, lineHeight: 52 },
   vendidoNota: { fontFamily: LETRA.texto, fontSize: 15, marginTop: 8 },
   par: { flexDirection: 'row', gap: 12 },
-  contable: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, marginTop: 4, gap: 8 },
-  contableCabeza: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
-  contableNota: { fontFamily: LETRA.texto, fontSize: 12 },
 })
