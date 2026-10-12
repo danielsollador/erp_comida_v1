@@ -292,6 +292,11 @@ export const api = {
   ponerMiPin: (clave_actual: string, pin: string) =>
     req<Usuario>('/usuarios/mi/pin', { method: 'POST', body: JSON.stringify({ clave_actual, pin }) }),
   quitarMiPin: () => req<Usuario>('/usuarios/mi/pin', { method: 'DELETE' }),
+  /** Borra la cuenta propia (App Store pide que se pueda desde la app; la web
+   *  queda igual). Pide la contraseña; 400 si es mala o si es el último
+   *  administrador. Al volver, la sesión ya no vale. */
+  eliminarMiCuenta: (clave: string) =>
+    req<{ ok: boolean }>('/usuarios/mi/eliminar', { method: 'POST', body: JSON.stringify({ clave }) }),
 
   // --- autorizaciones: pedir permiso desde la caja, resolverlo desde la app ---
   solicitarAutorizacion: (d: { accion: string; detalle?: string; monto?: number; pedido_id?: number | null }) =>

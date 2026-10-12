@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es-VE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Ayuda para usar Vertigo Pro: cómo entrar, recuperar la contraseña, eliminar la cuenta y contactarnos.">
+<link rel="icon" href="/api/acceso/favicon">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<title>Soporte · Vertigo Pro</title>
+<!--
+  Pagina publica (sin sesion): la App Store pide su URL. HTML plano con su
+  CSS dentro, como login.html; no carga nada del paquete de React. El nombre
+  de la empresa, el correo y la fecha salen de legal-datos.js, pero tambien
+  van escritos aqui por si ese archivo no carga. El CSS es el mismo en
+  privacidad.html, soporte.html y eliminar-cuenta.html: si lo cambias en una,
+  cambialo en las tres.
+-->
+<style>
+  /* Los mismos tokens de login.html (papel y grafito, con el cobre de Savora
+     como unico acento). Aqui el tema lo decide el sistema: sin JavaScript. */
+  :root {
+    --tinta: #17181b; --tinta-suave: #3e3d3a; --apagado: #6d6b66;
+    --tenue: #98948b; --linea: #e2ded5; --fondo: #f6f4ef; --sup: #ffffff;
+    --acento: oklch(51% 0.119 42); --acento-hover: oklch(44% 0.102 42);
+    --textura: rgba(23,24,27,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --tinta: #f1f3f7; --tinta-suave: #d1d5dd; --apagado: #a1a7b4;
+      --tenue: #7c8290; --linea: #262a33; --fondo: #0e1014; --sup: #161920;
+      --acento: oklch(70% 0.106 42); --acento-hover: oklch(78% 0.119 42);
+      --textura: rgba(255,255,255,.045);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--fondo); color: var(--tinta-suave);
+    font-family: "Manrope", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    background-image: radial-gradient(max(56rem, 108vw) 28rem at 50% -14rem,
+      color-mix(in oklab, var(--acento) 14%, transparent), transparent 70%);
+    background-repeat: no-repeat;
+  }
+  .hoja { max-width: 680px; margin: 0 auto; padding: 40px 16px 56px; }
+  .marca {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 36px;
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--apagado);
+  }
+  .marca .punto {
+    width: 9px; height: 9px; border-radius: 3px; background: var(--acento);
+    transform: rotate(45deg);
+  }
+  h1, h2, h3 { font-family: "Sora", "Manrope", sans-serif; color: var(--tinta); letter-spacing: -.02em; }
+  h1 { font-size: clamp(28px, 6vw, 36px); line-height: 1.15; font-weight: 700; margin: 0 0 10px; }
+  h2 { font-size: 20px; line-height: 1.3; font-weight: 600; margin: 44px 0 10px; }
+  h3 { font-size: 16px; line-height: 1.4; font-weight: 600; margin: 24px 0 6px; }
+  p { margin: 0 0 14px; }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  li::marker { color: var(--tenue); }
+  strong { color: var(--tinta); font-weight: 600; }
+  a { color: var(--acento); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:hover { color: var(--acento-hover); }
+  .fecha { font-size: 14px; color: var(--apagado); margin: 0 0 28px; }
+  .entrada { font-size: 18px; line-height: 1.55; color: var(--tinta-suave); }
+  /* El resumen: lo que una persona quiere saber en diez segundos. */
+  .corto {
+    background: var(--sup); border-radius: 20px; padding: 20px 22px 8px;
+    box-shadow: inset 0 0 0 1px var(--textura), 0 1px 2px rgba(23,24,27,.04);
+    margin: 28px 0 8px;
+  }
+  .corto h2 { margin-top: 0; font-size: 16px; }
+  .ruta {
+    font-weight: 600; color: var(--tinta);
+  }
+  .pie {
+    margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--linea);
+    font-size: 14px; color: var(--apagado);
+  }
+  .pie nav { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-bottom: 12px; }
+  .pie nav a { color: var(--tinta-suave); text-decoration: none; padding: 6px 0; }
+  .pie nav a:hover { color: var(--acento); }
+  .pie nav a[aria-current="page"] { color: var(--tinta); font-weight: 600; }
+  .pie p { margin: 0; }
+  @media (max-width: 480px) {
+    .hoja { padding-top: 28px; }
+    .marca { margin-bottom: 28px; }
+    h2 { margin-top: 36px; }
+    .entrada { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+<main class="hoja">
+  <div class="marca"><span class="punto"></span> Vertigo Pro</div>
+
+  <h1>Soporte</h1>
+  <p class="fecha">Última actualización: <span data-legal="actualizada">12 de octubre de 2026</span></p>
+
+  <p class="entrada">
+    Vertigo Pro es un sistema para administrar locales de comida: ventas, caja, compras, inventario y contabilidad,
+    desde la aplicación móvil o desde el navegador.
+  </p>
+
+  <section class="corto" aria-labelledby="t-contacto">
+    <h2 id="t-contacto">Escríbenos</h2>
+    <p>
+      <a data-legal="correo" href="mailto:leideriverson@gmail.com">leideriverson@gmail.com</a><br>
+      Te respondemos en un máximo de 2 días hábiles. Cuéntanos el nombre del local, tu usuario y qué pasó; si puedes,
+      manda una captura de pantalla.
+    </p>
+  </section>
+
+  <h2>Cómo entrar</h2>
+  <p>
+    En Vertigo Pro no hay registro abierto: tu usuario lo crea el dueño o el administrador de tu local. Pídele tu
+    usuario y tu contraseña, abre la aplicación (o la página de tu local en el navegador) y entra con ellos.
+  </p>
+
+  <h2>Olvidé mi contraseña</h2>
+  <p>
+    Pídele al dueño o al administrador de tu local que te la reinicie en
+    <span class="ruta">Configuración → Usuarios</span>. Después entra con la clave nueva y cámbiala por una tuya en
+    <span class="ruta">Configuración → Mi cuenta → Mi contraseña</span>.
+  </p>
+
+  <h2>Cómo eliminar mi cuenta</h2>
+  <p>
+    En la aplicación o en la web, ve a <span class="ruta">Configuración → Mi cuenta → Eliminar mi cuenta</span>, escribe
+    tu contraseña y confirma. También puedes pedirlo escribiendo a
+    <a data-legal="correo" href="mailto:leideriverson@gmail.com">leideriverson@gmail.com</a>.
+    Los detalles están en <a href="eliminar-cuenta.html">cómo eliminar tu cuenta</a>.
+  </p>
+
+  <h2>Privacidad</h2>
+  <p>
+    Qué datos guardamos, para qué y con quién se comparten: <a href="privacidad.html">política de privacidad</a>.
+  </p>
+
+  <footer class="pie">
+    <nav aria-label="Páginas legales">
+      <a href="privacidad.html">Privacidad</a>
+      <a href="soporte.html" aria-current="page">Soporte</a>
+      <a href="eliminar-cuenta.html">Eliminar cuenta</a>
+    </nav>
+    <p><span data-legal="empresa">Vertigo Pro</span> · <span data-legal="pais">Venezuela</span></p>
+  </footer>
+</main>
+<script src="legal-datos.js"></script>
+</body>
+</html>

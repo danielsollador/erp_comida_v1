@@ -90,6 +90,21 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
   }
 
+  # Paginas legales, sin sesion. La App Store exige URLs PUBLICAS de politica
+  # de privacidad y de soporte, y explicar como se elimina la cuenta: Apple
+  # las abre sin haber entrado. Son HTML plano con su CSS dentro y un solo
+  # JS (`legal-datos.js`, el nombre de la empresa y el correo): no cargan nada
+  # del paquete de React. Regex exacta: solo estas cuatro, nada mas.
+  location ~ ^/(privacidad\.html|soporte\.html|eliminar-cuenta\.html|legal-datos\.js)$ {
+    auth_request off;
+    add_header Cache-Control "no-cache";
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  }
+
   # Los iconos, sin sesion: el navegador los pide al cargar CUALQUIER pagina,
   # incluida la de acceso, y ahi todavia no hay cookie. No filtran nada.
   location ~* ^/(favicon[\w-]*\.(png|svg|ico)|apple-touch[\w-]*\.png|logo-[\w-]*\.png|icons\.svg)$ {

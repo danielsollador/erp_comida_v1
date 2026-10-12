@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="es-VE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Qué datos guarda Vertigo Pro, para qué y con quién se comparten.">
+<link rel="icon" href="/api/acceso/favicon">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<title>Política de privacidad · Vertigo Pro</title>
+<!--
+  Pagina publica (sin sesion): la App Store pide su URL. HTML plano con su
+  CSS dentro, como login.html; no carga nada del paquete de React. El nombre
+  de la empresa, el correo y la fecha salen de legal-datos.js, pero tambien
+  van escritos aqui por si ese archivo no carga. El CSS es el mismo en
+  privacidad.html, soporte.html y eliminar-cuenta.html: si lo cambias en una,
+  cambialo en las tres.
+-->
+<style>
+  /* Los mismos tokens de login.html (papel y grafito, con el cobre de Savora
+     como unico acento). Aqui el tema lo decide el sistema: sin JavaScript. */
+  :root {
+    --tinta: #17181b; --tinta-suave: #3e3d3a; --apagado: #6d6b66;
+    --tenue: #98948b; --linea: #e2ded5; --fondo: #f6f4ef; --sup: #ffffff;
+    --acento: oklch(51% 0.119 42); --acento-hover: oklch(44% 0.102 42);
+    --textura: rgba(23,24,27,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --tinta: #f1f3f7; --tinta-suave: #d1d5dd; --apagado: #a1a7b4;
+      --tenue: #7c8290; --linea: #262a33; --fondo: #0e1014; --sup: #161920;
+      --acento: oklch(70% 0.106 42); --acento-hover: oklch(78% 0.119 42);
+      --textura: rgba(255,255,255,.045);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--fondo); color: var(--tinta-suave);
+    font-family: "Manrope", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    background-image: radial-gradient(max(56rem, 108vw) 28rem at 50% -14rem,
+      color-mix(in oklab, var(--acento) 14%, transparent), transparent 70%);
+    background-repeat: no-repeat;
+  }
+  .hoja { max-width: 680px; margin: 0 auto; padding: 40px 16px 56px; }
+  .marca {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 36px;
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--apagado);
+  }
+  .marca .punto {
+    width: 9px; height: 9px; border-radius: 3px; background: var(--acento);
+    transform: rotate(45deg);
+  }
+  h1, h2, h3 { font-family: "Sora", "Manrope", sans-serif; color: var(--tinta); letter-spacing: -.02em; }
+  h1 { font-size: clamp(28px, 6vw, 36px); line-height: 1.15; font-weight: 700; margin: 0 0 10px; }
+  h2 { font-size: 20px; line-height: 1.3; font-weight: 600; margin: 44px 0 10px; }
+  h3 { font-size: 16px; line-height: 1.4; font-weight: 600; margin: 24px 0 6px; }
+  p { margin: 0 0 14px; }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  li::marker { color: var(--tenue); }
+  strong { color: var(--tinta); font-weight: 600; }
+  a { color: var(--acento); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:hover { color: var(--acento-hover); }
+  .fecha { font-size: 14px; color: var(--apagado); margin: 0 0 28px; }
+  .entrada { font-size: 18px; line-height: 1.55; color: var(--tinta-suave); }
+  /* El resumen: lo que una persona quiere saber en diez segundos. */
+  .corto {
+    background: var(--sup); border-radius: 20px; padding: 20px 22px 8px;
+    box-shadow: inset 0 0 0 1px var(--textura), 0 1px 2px rgba(23,24,27,.04);
+    margin: 28px 0 8px;
+  }
+  .corto h2 { margin-top: 0; font-size: 16px; }
+  .ruta {
+    font-weight: 600; color: var(--tinta);
+  }
+  .pie {
+    margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--linea);
+    font-size: 14px; color: var(--apagado);
+  }
+  .pie nav { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-bottom: 12px; }
+  .pie nav a { color: var(--tinta-suave); text-decoration: none; padding: 6px 0; }
+  .pie nav a:hover { color: var(--acento); }
+  .pie nav a[aria-current="page"] { color: var(--tinta); font-weight: 600; }
+  .pie p { margin: 0; }
+  @media (max-width: 480px) {
+    .hoja { padding-top: 28px; }
+    .marca { margin-bottom: 28px; }
+    h2 { margin-top: 36px; }
+    .entrada { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+<main class="hoja">
+  <div class="marca"><span class="punto"></span> Vertigo Pro</div>
+
+  <h1>Política de privacidad</h1>
+  <p class="fecha">Última actualización: <span data-legal="actualizada">12 de octubre de 2026</span></p>
+
+  <p class="entrada">
+    Vertigo Pro es un sistema para administrar locales de comida: ventas, caja, compras, inventario y contabilidad.
+    Aquí te contamos qué datos guarda, para qué y con quién se comparten. Vale para la aplicación móvil y para la
+    versión web.
+  </p>
+
+  <section class="corto" aria-labelledby="t-corto">
+    <h2 id="t-corto">En corto</h2>
+    <ul>
+      <li>Guardamos lo necesario para que el negocio funcione, y nada más.</li>
+      <li>Sin publicidad, sin rastreo, sin vender ni ceder tus datos.</li>
+      <li>Tu contraseña y tu PIN se guardan cifrados: nadie los puede leer.</li>
+      <li>Puedes eliminar tu cuenta desde la misma aplicación.</li>
+    </ul>
+  </section>
+
+  <h2>Quién es el responsable</h2>
+  <p>
+    El responsable de tus datos es <strong data-legal="empresa">Vertigo Pro</strong>, en
+    <span data-legal="pais">Venezuela</span>. Para cualquier pregunta sobre privacidad escríbenos a
+    <a data-legal="correo" href="mailto:leideriverson@gmail.com">leideriverson@gmail.com</a>.
+  </p>
+  <p>
+    Cada negocio que usa el sistema decide qué registra y quién entra. Si trabajas en un local, el dueño o el
+    administrador de ese local es quien creó tu usuario y quien ve lo que registras en él.
+  </p>
+
+  <h2>Qué datos guardamos</h2>
+  <h3>Tu cuenta</h3>
+  <ul>
+    <li>Tu usuario, tu nombre y apellido, tu rol y los locales a los que tienes acceso.</li>
+    <li>Cuándo se creó la cuenta y cuándo entraste por última vez.</li>
+    <li>
+      Tu contraseña y tu PIN, guardados cifrados con un hash (una huella de un solo sentido). Nunca se guardan en
+      claro y nadie, ni siquiera nosotros, los puede leer.
+    </li>
+  </ul>
+
+  <h3>Lo que el negocio registra al operar</h3>
+  <ul>
+    <li>Ventas, pedidos y cobros, con las referencias de los pagos móviles y transferencias.</li>
+    <li>Compras y facturas de proveedores, con su RIF.</li>
+    <li>Inventario, caja, contabilidad e impuestos.</li>
+    <li>
+      Datos de clientes solo cuando el negocio los anota: el nombre en un pedido o en una cuenta a crédito, y el RIF
+      o la razón social cuando se emite una factura a su nombre.
+    </li>
+    <li>
+      Cuando el negocio verifica un pago móvil o envía un vuelto por pago móvil: el teléfono, la cédula y el banco
+      del cliente que pagó o que recibe el vuelto, si el banco los pide.
+    </li>
+  </ul>
+
+  <h3>Fotos y PDF de facturas</h3>
+  <p>
+    Las fotos o los PDF de facturas de compra que subes se guardan junto a la factura, como soporte del gasto.
+  </p>
+
+  <h3>Registros técnicos</h3>
+  <p>
+    El servidor anota la dirección IP y la fecha y hora de cada acceso. Sirven para la seguridad y para limitar los
+    intentos de entrar con una clave equivocada.
+  </p>
+
+  <h2>Para qué los usamos</h2>
+  <p>
+    Solo para que el sistema funcione: operar el negocio, llevar sus cuentas y generar sus libros y reportes.
+  </p>
+  <ul>
+    <li>No mostramos publicidad.</li>
+    <li>No te rastreamos en otras aplicaciones ni sitios web.</li>
+    <li>No vendemos ni cedemos tus datos a nadie.</li>
+    <li>No armamos perfiles sobre ti.</li>
+  </ul>
+
+  <h2>Con quién se comparten</h2>
+  <p>
+    Solo con los proveedores que necesitamos para dar el servicio, y solo lo que cada uno necesita:
+  </p>
+  <ul>
+    <li>
+      <strong>Google Cloud</strong> aloja los servidores y la base de datos, en los Estados Unidos.
+    </li>
+    <li>
+      <strong>Google Gemini</strong> (inteligencia artificial) lee las facturas de compra. Solo si el negocio tiene
+      activada la lectura de facturas y tú pides leer una: se le envía la foto o el PDF de esa factura, junto con el
+      nombre y el RIF del negocio que compra, para que distinga al comprador del proveedor. Devuelve los datos de la
+      factura para prellenar el formulario, que una persona revisa antes de guardar.
+    </li>
+    <li>
+      <strong>Pabilo</strong> verifica pagos móviles contra la cuenta bancaria del negocio, solo si el negocio lo
+      activa. Para verificar un pago se le envía la referencia y, si el banco lo pide, el teléfono, la cédula o el
+      banco de quien pagó. Para enviar un vuelto por pago móvil se le envían el teléfono, la cédula y el banco de
+      quien lo recibe, el monto y el número de factura. Para conectar la cuenta del negocio, el dueño le da a Pabilo
+      los datos de acceso de esa cuenta bancaria.
+    </li>
+    <li>
+      <strong>Tasas de cambio.</strong> El sistema consulta la tasa oficial al Banco Central de Venezuela (y, como
+      referencia, a Binance y DolarAPI). Esas consultas no llevan ningún dato tuyo ni del negocio.
+    </li>
+  </ul>
+  <p>
+    Fuera de esto, solo entregaríamos datos si una autoridad competente lo exige conforme a la ley.
+  </p>
+
+  <h2>Permisos del teléfono</h2>
+  <p>
+    La aplicación usa la <strong>cámara</strong> y tus <strong>fotos</strong> solo para fotografiar o elegir facturas
+    de compra, y solo cuando tocas el botón para hacerlo. No usa tu ubicación, tu micrófono ni tus contactos.
+  </p>
+
+  <h2>Cuánto tiempo los guardamos</h2>
+  <ul>
+    <li>Tu cuenta se guarda mientras exista. Al eliminarla se borra tu usuario.</li>
+    <li>
+      Las ventas, compras, cierres de caja y asientos contables se guardan el tiempo que exige la ley venezolana,
+      porque son registros contables y fiscales del negocio.
+    </li>
+    <li>Los respaldos de la base de datos se rotan: los viejos se borran solos.</li>
+  </ul>
+
+  <h2>Tus derechos</h2>
+  <p>
+    Puedes pedir ver los datos que tenemos de ti, corregirlos o eliminarlos. Tu nombre lo puedes cambiar tú mismo en
+    <span class="ruta">Configuración → Mi cuenta</span>. Para lo demás, escríbenos a
+    <a data-legal="correo" href="mailto:leideriverson@gmail.com">leideriverson@gmail.com</a> con tu usuario y el
+    nombre del local; confirmamos con el dueño del local que la cuenta es tuya.
+  </p>
+  <p>
+    Para eliminar tu cuenta, mira <a href="eliminar-cuenta.html">cómo eliminar tu cuenta</a>.
+  </p>
+
+  <h2>Seguridad</h2>
+  <ul>
+    <li>Todo viaja cifrado por HTTPS.</li>
+    <li>Las contraseñas y los PIN se guardan con hash, nunca en claro.</li>
+    <li>Las sesiones van firmadas y caducan solas; cambiar la contraseña cierra todas las anteriores.</li>
+  </ul>
+
+  <h2>Menores de edad</h2>
+  <p>
+    Vertigo Pro es una herramienta para negocios y su personal. No está dirigida a menores de 18 años.
+  </p>
+
+  <h2>Cambios a esta política</h2>
+  <p>
+    Si cambiamos esta política, publicaremos la versión nueva en esta misma página con su fecha de última
+    actualización.
+  </p>
+
+  <footer class="pie">
+    <nav aria-label="Páginas legales">
+      <a href="privacidad.html" aria-current="page">Privacidad</a>
+      <a href="soporte.html">Soporte</a>
+      <a href="eliminar-cuenta.html">Eliminar cuenta</a>
+    </nav>
+    <p><span data-legal="empresa">Vertigo Pro</span> · <span data-legal="pais">Venezuela</span></p>
+  </footer>
+</main>
+<script src="legal-datos.js"></script>
+</body>
+</html>

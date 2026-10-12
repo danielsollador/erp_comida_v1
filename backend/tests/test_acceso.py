@@ -635,3 +635,16 @@ def test_en_produccion_nada_escucha_en_la_ip_publica():
     assert "Host(`savora.vertigopro.tech`)" in texto
     assert "Host(`vertigopro.tech`)" in texto
     assert "ERP_DB_SCHEMA: HUB" in texto, "el hub tiene que trabajar en su propio esquema"
+
+
+def test_cada_quien_elimina_su_propia_cuenta(fuera):
+    """App Store 5.1.1(v): con su clave, y despues ni su sesion ni su clave
+    sirven. Con la clave mala no se borra nada."""
+    usuarios.crear("efimera", "clave-efimera-larga", rol="caja", locales=[LOCAL])
+    c = entrar(fuera, "efimera", "clave-efimera-larga")
+    assert c.post("/api/usuarios/mi/eliminar", json={"clave": "mala"}).status_code == 400
+    assert c.get("/api/menu/categorias").status_code == 200
+    assert c.post("/api/usuarios/mi/eliminar", json={"clave": "clave-efimera-larga"}).status_code == 200
+    assert c.get("/api/menu/categorias").status_code == 401
+    r = fuera.post("/api/acceso/login", json={"usuario": "efimera", "clave": "clave-efimera-larga"})
+    assert r.status_code == 401
