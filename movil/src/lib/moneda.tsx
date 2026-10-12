@@ -8,7 +8,7 @@ import type { EstadoTasa } from './tipos'
  * EN QUE MONEDA SE MIRAN LOS MONTOS, como el selector de la web
  * (frontend/src/lib/moneda.tsx): todo se guarda en dolares BCV y se muestra
  * en la vista elegida con la tasa del dia. Las mismas cuatro vistas y el
- * mismo formato: "$113.30" en dolares, "Bs 98.535,95" en bolivares.
+ * mismo formato: "$2.685,50" en dolares, "Bs 98.535,95" en bolivares.
  */
 export type VistaMoneda = 'usd' | 'bs' | 'usd_calle' | 'eur'
 
@@ -80,15 +80,16 @@ export function MonedaProvider({ children, activa }: { children: ReactNode; acti
         case 'usd_calle': {
           if (!bcv || !tasa?.paralelo) return '…'
           const v = (usd * bcv) / tasa.paralelo
-          return conSigno('$', v, Math.abs(v).toFixed(d))
+          return conSigno('$', v, miles(Math.abs(v), d))
         }
         case 'eur': {
           if (!bcv || !tasa?.eur) return '…'
           const v = (usd * bcv) / tasa.eur
-          return conSigno('€', v, Math.abs(v).toFixed(d))
+          return conSigno('€', v, miles(Math.abs(v), d))
         }
         default:
-          return conSigno('$', usd, Math.abs(usd).toFixed(d))
+          // Con miles y coma, como la web desde el 11-oct: $2.685,50.
+          return conSigno('$', usd, miles(Math.abs(usd), d))
       }
     },
     [vista, tasa],
