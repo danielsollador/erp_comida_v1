@@ -573,10 +573,14 @@ export default function CargarFactura({
         if (idx !== i) return l
         // Cambio la mercancia: la conversion que se recordaba era de la otra.
         let paquete = l.paquete && l.recordada && l.recordada.ingrediente_id !== id ? undefined : l.paquete
-        // La ficha dice que viene en empaque: se da por hecho, sin preguntar
-        // (Leider, 11-oct). "Esta vez vino suelta" es el camino de vuelta.
-        if (!paquete && ing?.empaque_trae) {
-          paquete = { nombre: 'empaque', trae: sinRuido(ing.empaque_trae), paquetes: l.leido?.cantidad != null ? String(l.leido.cantidad) : l.cantidad }
+        // SIEMPRE VIENE EN EMPAQUE, salvo que se diga lo contrario (Leider,
+        // 11-oct): el renglon arranca en empaque con lo que trae segun la
+        // ficha, o segun lo que este proveedor ya trajo, o en blanco para
+        // escribirlo. "Esta vez vino suelta" es la excepcion.
+        if (!paquete) {
+          const conocido = paquetesConocidos(id)[0]
+          const trae = ing?.empaque_trae ? sinRuido(ing.empaque_trae) : conocido ? sinRuido(conocido.factor) : ''
+          paquete = { nombre: 'empaque', trae, paquetes: l.leido?.cantidad != null ? String(l.leido.cantidad) : l.cantidad }
         }
         const calc = paquete ? desdePaquete(paquete) : null
         return conCostoUnitario({ ...l, ingrediente_id: id, paquete, ...(calc && calc.cantidad ? { cantidad: calc.cantidad } : {}) })

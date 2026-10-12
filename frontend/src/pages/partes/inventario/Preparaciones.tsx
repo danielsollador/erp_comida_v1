@@ -1019,6 +1019,11 @@ function Olla({
   const enSuUnidad = partes.filter((p) => p.enSuMedida !== null)
   const queda = enSuUnidad.reduce((s, p) => s + p.queda, 0)
   const desajuste = enSuUnidad.length > 0 && queda > 0 && Math.abs(queda - 1) > 0.02
+  // Se pasa: no cabe en la olla, no se guarda. Falta: se avisa y se deja
+  // guardar, pero solo se puede saber que falta cuando todo se mide como la
+  // preparación (con leche en litros dentro de un guiso en kilos no hay suma).
+  const sePasa = queda > 1.02
+  const falta = !sePasa && enSuUnidad.length === partes.length && queda > 0 && queda < 0.98
 
   function actualizar(id: number, cambios: Partial<Fila>) {
     setFilas((prev) => prev.map((f) => (f.ingrediente_id === id ? { ...f, ...cambios } : f)))
@@ -1037,10 +1042,12 @@ function Olla({
     if (!nombre.trim()) return setError('Ponle nombre a la preparación.')
     if (limpias.length === 0) return setError('Agrega al menos un ingrediente con su cantidad.')
     // La olla es 1 kg: una receta que se pasa no se guarda (Leider, 11-oct).
-    // Si todo se mide como la preparación, tampoco una que se queda corta.
-    if (queda > 1.02) return setError(`Lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)} y la olla es 1 ${unidadLarga}: ajusta al ${unidadLarga} o quita algo.`)
-    if (enSuUnidad.length === partes.length && queda > 0 && queda < 0.98)
-      return setError(`Lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)}: falta para el ${unidadLarga}. Ajusta al ${unidadLarga} o agrega algo.`)
+    // Una que se queda corta se avisa (abajo, en pantalla) pero se deja guardar.
+    if (sePasa)
+      return setError(
+        `Lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)} y la receta es lo que lleva 1 ${unidadLarga} ya hecho, nada más: ` +
+          `si un día haces 10 ${unidad === 'unidad' ? 'unidades' : unidad}, el sistema multiplica por 10 solo. Baja las cantidades o toca «Ajustar al ${unidadLarga}».`,
+      )
     setGuardando(true)
     try {
       // El % que se aprovecha es del crudo: si cambió, se guarda en su ficha.
@@ -1153,6 +1160,21 @@ function Olla({
               <span className="block text-[11px] text-neutral-500 leading-tight">cada {unidadLarga} ya preparado</span>
             </div>
           </div>
+          {/* Por qué la olla es 1 kg y qué hacer si no da. Siempre que no dé, no
+              solo al intentar guardar (Leider, 11-oct). */}
+          {(sePasa || falta) && (
+            <div className={`mt-2 rounded-xl px-3 py-2.5 text-xs leading-relaxed shrink-0 ${sePasa ? 'bg-peligro-500/10 text-peligro-800' : 'bg-aviso-500/10 text-aviso-900'}`}>
+              <p>
+                <b>La receta es lo que lleva 1 {unidadLarga} ya hecho, nada más.</b> Es el inventario teórico: con ella el sistema sabe cuánto crudo
+                se va en cada {unidadLarga} que vendes y cuánto cuesta. Si un día haces 10 {unidad === 'unidad' ? 'unidades' : unidad}, multiplica por 10 solo.
+              </p>
+              <p className="mt-1">
+                {sePasa
+                  ? `Aquí lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)}: en la olla de 1 ${unidadLarga} no cabe, y así no se puede guardar. Baja las cantidades o toca «Ajustar al ${unidadLarga}», que las reparte en proporción.`
+                  : `Aquí lo que queda cocido suma ${fmtCant(queda)} ${unidadDe(queda, unidad)}: ${unidad === 'unidad' ? 'falta' : `faltan ${cantidadLegible(1 - queda, unidad)}`} para el ${unidadLarga}. Trata de que siempre dé el ${unidadLarga}: sube las cantidades, agrega lo que falta o toca «Ajustar al ${unidadLarga}». Si lo guardas así, el ${unidadLarga} queda con menos de lo que lleva de verdad y el costo sale bajo.`}
+              </p>
+            </div>
+          )}
         </section>
 
         {/* ── Lleva y Agregar ──────────────────────────────────────── */}
