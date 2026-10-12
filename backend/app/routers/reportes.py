@@ -1,8 +1,8 @@
 import datetime
 from typing import Dict, List, Optional, Set
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from .. import combos, consolidacion, contabilidad, kardex, models, reposicion, schemas, seed
@@ -24,63 +24,75 @@ router = APIRouter(prefix="/api/reportes", tags=["reportes"])
 # devuelve el eco (`filtro`) con los nombres, para el rotulo de la pantalla.
 
 
-def _variantes_del_filtro(
-    db: Session, categoria_id: Optional[int], producto_id: Optional[int]
-) -> Optional[Set[int]]:
+# VARIOS A LA VEZ (Leider, 11-oct): `categoria_id=1&categoria_id=2` abarca
+# las dos; igual los productos, los cajones y las mercancias. Un producto
+# cuenta si esta en la lista de productos O su categoria esta en la de
+# categorias: cada pastilla suma lo suyo.
+
+
+def _nombres(db: Session, modelo, ids: List[int]) -> str:
+    """Los nombres de esos ids, en el orden pedido, para el rotulo."""
+    if not ids:
+        return ""
+    por_id = {f.id: f.nombre for f in db.query(modelo).filter(modelo.id.in_(ids)).all()}
+    return ", ".join(por_id[i] for i in ids if i in por_id)
+
+
+def _variantes_del_filtro(db: Session, categorias: List[int], productos: List[int]) -> Optional[Set[int]]:
     """Las variantes que abarca el filtro del menu. None = sin filtro.
 
     Entran tambien las retiradas: lo que se vendio en agosto de un producto
     que se saco del menu en septiembre sigue siendo venta de ese producto.
     """
-    if categoria_id is None and producto_id is None:
+    if not categorias and not productos:
         return None
     q = db.query(models.Variante.id).join(models.Producto, models.Producto.id == models.Variante.producto_id)
-    if producto_id is not None:
-        q = q.filter(models.Producto.id == producto_id)
-    if categoria_id is not None:
-        q = q.filter(models.Producto.categoria_id == categoria_id)
+    if productos and categorias:
+        q = q.filter(or_(models.Producto.id.in_(productos), models.Producto.categoria_id.in_(categorias)))
+    elif productos:
+        q = q.filter(models.Producto.id.in_(productos))
+    else:
+        q = q.filter(models.Producto.categoria_id.in_(categorias))
     return {v for (v,) in q.all()}
 
 
-def _filtro_menu(db: Session, categoria_id: Optional[int], producto_id: Optional[int]) -> Optional[schemas.FiltroMenu]:
-    if categoria_id is None and producto_id is None:
+def _filtro_menu(db: Session, categorias: List[int], productos: List[int]) -> Optional[schemas.FiltroMenu]:
+    if not categorias and not productos:
         return None
-    cat = db.get(models.Categoria, categoria_id) if categoria_id is not None else None
-    prod = db.get(models.Producto, producto_id) if producto_id is not None else None
     return schemas.FiltroMenu(
-        categoria_id=categoria_id,
-        categoria=cat.nombre if cat else "",
-        producto_id=producto_id,
-        producto=prod.nombre if prod else "",
+        categoria_id=categorias[0] if len(categorias) == 1 else None,
+        categoria=_nombres(db, models.Categoria, categorias),
+        categoria_ids=list(categorias),
+        producto_id=productos[0] if len(productos) == 1 else None,
+        producto=_nombres(db, models.Producto, productos),
+        producto_ids=list(productos),
     )
 
 
-def _insumos_del_filtro(
-    db: Session, categoria_id: Optional[int], ingrediente_id: Optional[int]
-) -> Optional[Set[int]]:
+def _insumos_del_filtro(db: Session, categorias: List[int], ingredientes: List[int]) -> Optional[Set[int]]:
     """Las mercancias que abarca el filtro del deposito. None = sin filtro."""
-    if categoria_id is None and ingrediente_id is None:
+    if not categorias and not ingredientes:
         return None
     q = db.query(models.Ingrediente.id)
-    if ingrediente_id is not None:
-        q = q.filter(models.Ingrediente.id == ingrediente_id)
-    if categoria_id is not None:
-        q = q.filter(models.Ingrediente.categoria_id == categoria_id)
+    if ingredientes and categorias:
+        q = q.filter(or_(models.Ingrediente.id.in_(ingredientes), models.Ingrediente.categoria_id.in_(categorias)))
+    elif ingredientes:
+        q = q.filter(models.Ingrediente.id.in_(ingredientes))
+    else:
+        q = q.filter(models.Ingrediente.categoria_id.in_(categorias))
     return {i for (i,) in q.all()}
 
 
-def _filtro_deposito(
-    db: Session, categoria_id: Optional[int], ingrediente_id: Optional[int]
-) -> Optional[schemas.FiltroDeposito]:
-    if categoria_id is None and ingrediente_id is None:
+def _filtro_deposito(db: Session, categorias: List[int], ingredientes: List[int]) -> Optional[schemas.FiltroDeposito]:
+    if not categorias and not ingredientes:
         return None
-    cat = db.get(models.CategoriaInsumo, categoria_id) if categoria_id is not None else None
-    ing = db.get(models.Ingrediente, ingrediente_id) if ingrediente_id is not None else None
     return schemas.FiltroDeposito(
-        categoria_id=categoria_id,
-        categoria=cat.nombre if cat else "",
-        ingrediente_id=ingrediente_id,
-        ingrediente=ing.nombre if ing else "",
+        categoria_id=categorias[0] if len(categorias) == 1 else None,
+        categoria=_nombres(db, models.CategoriaInsumo, categorias),
+        categoria_ids=list(categorias),
+        ingrediente_id=ingredientes[0] if len(ingredientes) == 1 else None,
+        ingrediente=_nombres(db, models.Ingrediente, ingredientes),
+        ingrediente_ids=list(ingredientes),
     )
 
 
@@ -791,8 +803,8 @@ def _insights(
 def resumen(
     rango: Rango = Depends(),
     paso: Optional[str] = None,
-    categoria_id: Optional[int] = None,
-    producto_id: Optional[int] = None,
+    categoria_id: List[int] = Query(default=[]),
+    producto_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
     """Los numeros del periodo. `desde`/`hasta` o, como antes, `periodo=`.
@@ -924,8 +936,8 @@ def resumen(
 @router.get("/combos", response_model=schemas.ReporteCombos)
 def reporte_combos(
     rango: Rango = Depends(),
-    categoria_id: Optional[int] = None,
-    producto_id: Optional[int] = None,
+    categoria_id: List[int] = Query(default=[]),
+    producto_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
     """Que se vende junto y cuanto se pierde por no ofrecer el acompanante.
@@ -1087,8 +1099,8 @@ def _lecturas_de_perdidas(
 @router.get("/perdidas", response_model=schemas.ReportePerdidas)
 def reporte_perdidas(
     rango: Rango = Depends(),
-    categoria_id: Optional[int] = None,
-    ingrediente_id: Optional[int] = None,
+    categoria_id: List[int] = Query(default=[]),
+    ingrediente_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
     """Analisis de perdidas: que se merma mas, que se merma menos, por que, y
@@ -1342,8 +1354,8 @@ def _lecturas_de_inventario(
 @router.get("/inventario", response_model=schemas.ReporteInventario)
 def reporte_inventario(
     rango: Rango = Depends(),
-    categoria_id: Optional[int] = None,
-    ingrediente_id: Optional[int] = None,
+    categoria_id: List[int] = Query(default=[]),
+    ingrediente_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
     """El deposito de hoy, leido con el consumo del periodo: donde esta la

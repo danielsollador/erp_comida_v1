@@ -5,7 +5,7 @@ import NavBar from '../components/NavBar'
 import BarraFiltros from '../components/BarraFiltros'
 import { useSeccion } from '../components/Secciones'
 import { useRango } from '../lib/fechas'
-import { idDe, useFiltrosUrl } from '../lib/filtros'
+import { idsDe, listaUrl, valoresDe, useFiltrosUrl } from '../lib/filtros'
 import { FiltroDesplegable, Lecturas, Pagina, Seccion } from '../components/ui'
 import { BarrasDeCuenta, GraficoDona, Variacion, type FilaCuenta } from '../components/Grafico'
 import { api } from '../lib/api'
@@ -96,17 +96,20 @@ export default function Reportes() {
   const [filtros, fijarFiltros] = useFiltrosUrl(['c', 'p', 'ci', 'm'] as const)
   const delMenu = seccion === 'resumen' || seccion === 'ventas'
   const aMedida = seccion === 'a_medida'
+  // Varios a la vez (Leider, 11-oct): en la URL van con coma, "c=3,7".
   const filtroMenu = useMemo(
-    () => ({ categoria_id: idDe(filtros.c), producto_id: idDe(filtros.p) }),
+    () => ({ categoria_id: idsDe(filtros.c), producto_id: idsDe(filtros.p) }),
     [filtros.c, filtros.p],
   )
   const filtroDeposito = useMemo(
-    () => ({ categoria_id: idDe(filtros.ci), ingrediente_id: idDe(filtros.m) }),
+    () => ({ categoria_id: idsDe(filtros.ci), ingrediente_id: idsDe(filtros.m) }),
     [filtros.ci, filtros.m],
   )
   const hayFiltro = delMenu
-    ? filtroMenu.categoria_id != null || filtroMenu.producto_id != null
-    : filtroDeposito.categoria_id != null || filtroDeposito.ingrediente_id != null
+    ? filtroMenu.categoria_id.length > 0 || filtroMenu.producto_id.length > 0
+    : filtroDeposito.categoria_id.length > 0 || filtroDeposito.ingrediente_id.length > 0
+  const catsMenu = useMemo(() => new Set(filtroMenu.categoria_id), [filtroMenu])
+  const catsDeposito = useMemo(() => new Set(filtroDeposito.categoria_id), [filtroDeposito])
 
   const [datos, setDatos] = useState<ReporteResumen | null>(null)
   const [combos, setCombos] = useState<ReporteCombos | null>(null)
@@ -261,13 +264,13 @@ export default function Reportes() {
   const opcionesProducto = [
     { valor: '', texto: 'Todos' },
     ...productos
-      .filter((p) => filtroMenu.categoria_id == null || p.categoria_id === filtroMenu.categoria_id)
+      .filter((p) => catsMenu.size === 0 || catsMenu.has(p.categoria_id))
       .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
       .map((p) => ({
         valor: String(p.id),
         texto: p.nombre,
         detalle:
-          [filtroMenu.categoria_id == null ? p.categoria : '', p.activo === false ? 'retirado' : '']
+          [catsMenu.size !== 1 ? p.categoria : '', p.activo === false ? 'retirado' : '']
             .filter(Boolean)
             .join(' · ') || undefined,
       })),
@@ -279,22 +282,25 @@ export default function Reportes() {
   const opcionesMercancia = [
     { valor: '', texto: 'Todas' },
     ...(mercancias ?? [])
-      .filter((m) => filtroDeposito.categoria_id == null || m.categoria_id === filtroDeposito.categoria_id)
+      .filter((m) => catsDeposito.size === 0 || (m.categoria_id != null && catsDeposito.has(m.categoria_id)))
       .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
       .map((m) => ({
         valor: String(m.id),
         texto: m.nombre,
-        detalle: filtroDeposito.categoria_id == null && m.categoria ? m.categoria : undefined,
+        detalle: catsDeposito.size !== 1 && m.categoria ? m.categoria : undefined,
       })),
   ]
 
-  const elegirCategoria = (valor: string) => {
-    const sigue = productos.find((p) => String(p.id) === filtros.p && String(p.categoria_id) === valor)
-    fijarFiltros({ c: valor, p: sigue ? filtros.p : '' })
+  // Al cambiar las categorias, los productos elegidos que ya no entran se sueltan.
+  const elegirCategoria = (valores: string[]) => {
+    const cats = new Set(valores)
+    const siguen = valoresDe(filtros.p).filter((id) => cats.size === 0 || productos.some((p) => String(p.id) === id && cats.has(String(p.categoria_id))))
+    fijarFiltros({ c: listaUrl(valores), p: listaUrl(siguen) })
   }
-  const elegirCajon = (valor: string) => {
-    const sigue = (mercancias ?? []).find((m) => String(m.id) === filtros.m && String(m.categoria_id) === valor)
-    fijarFiltros({ ci: valor, m: sigue ? filtros.m : '' })
+  const elegirCajon = (valores: string[]) => {
+    const cats = new Set(valores)
+    const siguen = valoresDe(filtros.m).filter((id) => cats.size === 0 || (mercancias ?? []).some((m) => String(m.id) === id && cats.has(String(m.categoria_id))))
+    fijarFiltros({ ci: listaUrl(valores), m: listaUrl(siguen) })
   }
   // Por una referencia: el contenido memorizado recibe siempre la misma
   // funcion aunque la de la URL cambie en cada vuelta.
@@ -365,13 +371,13 @@ export default function Reportes() {
         >
           {aMedida ? null : delMenu ? (
             <>
-              <FiltroDesplegable etiqueta="Categoría" valor={filtros.c} alCambiar={elegirCategoria} opciones={opcionesCategoria} />
-              <FiltroDesplegable etiqueta="Producto" valor={filtros.p} alCambiar={(v) => fijarFiltros({ p: v })} opciones={opcionesProducto} />
+              <FiltroDesplegable etiqueta="Categoría" plural="categorías" valor="" alCambiar={() => undefined} valores={valoresDe(filtros.c)} alCambiarVarios={elegirCategoria} opciones={opcionesCategoria} />
+              <FiltroDesplegable etiqueta="Producto" plural="productos" valor="" alCambiar={() => undefined} valores={valoresDe(filtros.p)} alCambiarVarios={(vs) => fijarFiltros({ p: listaUrl(vs) })} opciones={opcionesProducto} />
             </>
           ) : (
             <>
-              <FiltroDesplegable etiqueta="Cajón" valor={filtros.ci} alCambiar={elegirCajon} opciones={opcionesCajon} />
-              <FiltroDesplegable etiqueta="Mercancía" valor={filtros.m} alCambiar={(v) => fijarFiltros({ m: v })} opciones={opcionesMercancia} />
+              <FiltroDesplegable etiqueta="Cajón" plural="cajones" valor="" alCambiar={() => undefined} valores={valoresDe(filtros.ci)} alCambiarVarios={elegirCajon} opciones={opcionesCajon} />
+              <FiltroDesplegable etiqueta="Mercancía" plural="mercancías" valor="" alCambiar={() => undefined} valores={valoresDe(filtros.m)} alCambiarVarios={(vs) => fijarFiltros({ m: listaUrl(vs) })} opciones={opcionesMercancia} />
             </>
           )}
         </BarraFiltros>

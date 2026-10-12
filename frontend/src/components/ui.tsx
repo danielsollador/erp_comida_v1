@@ -399,6 +399,9 @@ export function FiltroDesplegable({
   etiqueta,
   valor,
   alCambiar,
+  valores,
+  alCambiarVarios,
+  plural,
   opciones,
   className = '',
   accion = false,
@@ -406,6 +409,12 @@ export function FiltroDesplegable({
   etiqueta: string
   valor: string
   alCambiar: (valor: string) => void
+  /** SELECCION MULTIPLE (Leider, 11-oct): con `valores` el filtro acepta
+      varios a la vez; la neutra los quita todos y el panel no se cierra al
+      marcar. La pastilla dice el nombre si es uno, o "3 categorías". */
+  valores?: string[]
+  alCambiarVarios?: (valores: string[]) => void
+  plural?: string
   /** La primera es la neutra ("Todas"): con ella puesta, el filtro no destaca.
       `detalle` es la linea chica bajo el nombre (la categoria de un producto). */
   opciones: { valor: string; texto: string; contador?: number | null; detalle?: string }[]
@@ -422,12 +431,25 @@ export function FiltroDesplegable({
   // encuentra "Café". La neutra ("Todos") se queda siempre a la vista.
   const [busqueda, setBusqueda] = useState('')
   const buscable = opciones.length > 8
-  const sinFiltrar = accion || opciones.length === 0 || valor === opciones[0].valor
-  const elegida = accion ? undefined : opciones.find((o) => o.valor === valor)
+  const varios = valores !== undefined
+  const sinFiltrar = accion || opciones.length === 0 || (varios ? valores.length === 0 : valor === opciones[0].valor)
+  const elegida = accion ? undefined : varios ? (valores.length === 1 ? opciones.find((o) => o.valor === valores[0]) : undefined) : opciones.find((o) => o.valor === valor)
   // Una pastilla opcional sin nada puesto ("y por —") dice solo su nombre: el
   // guion no informa nada y en el telefono cada pastilla corta es una fila
   // menos antes del resultado.
-  const valorVisible = elegida && !(sinFiltrar && elegida.texto === '—') ? elegida.texto : ''
+  const valorVisible =
+    varios && valores.length > 1
+      ? `${valores.length} ${plural ?? `${etiqueta.toLowerCase()}s`}`
+      : elegida && !(sinFiltrar && elegida.texto === '—')
+        ? elegida.texto
+        : ''
+  const marcadaDe = (o: { valor: string }, i: number) =>
+    accion ? undefined : varios ? (i === 0 ? valores.length === 0 : valores.includes(o.valor)) : o.valor === valor
+  const elegirDe = (o: { valor: string }, i: number) => {
+    if (!varios) return alCambiar(o.valor)
+    if (i === 0) return alCambiarVarios?.([])
+    alCambiarVarios?.(valores.includes(o.valor) ? valores.filter((v) => v !== o.valor) : [...valores, o.valor])
+  }
   const q = llano(busqueda.trim())
   const visibles = q
     ? opciones.filter((o, i) => (i === 0 && !accion) || llano(o.texto).includes(q) || (o.detalle ? llano(o.detalle).includes(q) : false))
@@ -449,15 +471,19 @@ export function FiltroDesplegable({
           </div>
         ) : undefined
       }
-      opciones={visibles.map((o) => ({
-        texto: o.contador != null && o.contador > 0 ? `${o.texto} · ${o.contador}` : o.texto,
-        ayuda: o.detalle,
-        marcada: !accion && o.valor === valor,
-        onElegir: () => {
-          setBusqueda('')
-          alCambiar(o.valor)
-        },
-      }))}
+      mantenerAbierto={varios}
+      opciones={visibles.map((o) => {
+        const i = opciones.indexOf(o)
+        return {
+          texto: o.contador != null && o.contador > 0 ? `${o.texto} · ${o.contador}` : o.texto,
+          ayuda: o.detalle,
+          marcada: marcadaDe(o, i),
+          onElegir: () => {
+            if (!varios) setBusqueda('')
+            elegirDe(o, i)
+          },
+        }
+      })}
       disparador={({ abierto, alternar }: { abierto: boolean; alternar: () => void }) => (
         <button
           type="button"

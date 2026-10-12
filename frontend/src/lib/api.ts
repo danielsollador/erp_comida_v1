@@ -126,12 +126,12 @@ const conRango = (r?: Rango, extra = '') => {
 }
 
 /** Los filtros de Reportes: una parte del menu, o una parte del deposito. */
-export type FiltroMenuQuery = { categoria_id?: number; producto_id?: number }
-export type FiltroDepositoQuery = { categoria_id?: number; ingrediente_id?: number }
-const conFiltro = (f?: Record<string, number | undefined>) =>
+// Varios a la vez: `categoria_id=1&categoria_id=2` (Leider, 11-oct).
+export type FiltroMenuQuery = { categoria_id?: number[]; producto_id?: number[] }
+export type FiltroDepositoQuery = { categoria_id?: number[]; ingrediente_id?: number[] }
+const conFiltro = (f?: Record<string, number[] | undefined>) =>
   Object.entries(f ?? {})
-    .filter(([, v]) => v != null)
-    .map(([k, v]) => `${k}=${v}`)
+    .flatMap(([k, v]) => (v ?? []).map((x) => `${k}=${x}`))
     .join('&')
 
 /** El servidor contesto con error. Guarda el codigo: un 409 no se arregla

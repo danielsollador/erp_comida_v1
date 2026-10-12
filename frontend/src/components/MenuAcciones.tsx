@@ -26,9 +26,12 @@ export default function MenuAcciones({
   encabezado,
   disparador,
   alinear = 'derecha',
+  mantenerAbierto = false,
 }: {
   etiqueta: string
   opciones: Opcion[]
+  /** Seleccion multiple: elegir no cierra el panel y marcar de nuevo desmarca. */
+  mantenerAbierto?: boolean
   /**
    * De que lado del disparador cuelga el panel. El "⋯" de una fila esta a
    * la derecha de la pantalla y el panel se abre hacia la izquierda; una
@@ -97,11 +100,11 @@ export default function MenuAcciones({
             <button
               // Con el indice: dos productos pueden llamarse igual.
               key={`${i}-${o.texto}`}
-              role={o.marcada === undefined ? 'menuitem' : 'menuitemradio'}
+              role={o.marcada === undefined ? 'menuitem' : mantenerAbierto ? 'menuitemcheckbox' : 'menuitemradio'}
               aria-checked={o.marcada}
               onClick={() => {
-                setAbierto(false)
-                if (!o.marcada) o.onElegir()
+                if (!mantenerAbierto) setAbierto(false)
+                if (mantenerAbierto || !o.marcada) o.onElegir()
               }}
               className={`w-full text-left px-3 py-2.5 rounded-lg text-sm hover:bg-neutral-50 ${
                 o.peligro ? 'text-peligro-600' : ''

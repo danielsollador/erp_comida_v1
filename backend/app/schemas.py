@@ -1508,10 +1508,14 @@ class FiltroMenu(BaseModel):
     """Lo que se esta mirando cuando Reportes se filtra por una categoria o un
     producto del menu: el eco de lo pedido, con los nombres para el rotulo."""
 
+    # `categoria_id` / `producto_id`: el elegido cuando es UNO (None si son
+    # varios o ninguno); `*_ids`: todos; el nombre va con comas si son varios.
     categoria_id: Optional[int] = None
     categoria: str = ""
+    categoria_ids: List[int] = []
     producto_id: Optional[int] = None
     producto: str = ""
+    producto_ids: List[int] = []
 
 
 class FiltroDeposito(BaseModel):
@@ -1520,8 +1524,10 @@ class FiltroDeposito(BaseModel):
 
     categoria_id: Optional[int] = None
     categoria: str = ""
+    categoria_ids: List[int] = []
     ingrediente_id: Optional[int] = None
     ingrediente: str = ""
+    ingrediente_ids: List[int] = []
 
 
 class Insight(BaseModel):

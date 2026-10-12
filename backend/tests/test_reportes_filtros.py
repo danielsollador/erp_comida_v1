@@ -68,8 +68,10 @@ def test_filtrar_por_producto_cuenta_solo_sus_renglones(client, db, variante):
     assert r["filtro"] == {
         "categoria_id": None,
         "categoria": "",
+        "categoria_ids": [],
         "producto_id": refresco.producto_id,
         "producto": "Refresco",
+        "producto_ids": [refresco.producto_id],
     }
     assert [p["nombre"] for p in r["top_productos"]] == ["Refresco"]
     assert r["top_productos"][0]["producto_id"] == refresco.producto_id
@@ -175,7 +177,10 @@ def test_perdidas_por_mercancia_y_por_cajon(client, db, insumo):
     assert [m["motivo"] for m in r["por_motivo"]] == ["se mojo"]
     assert [d["ingrediente_nombre"] for d in r["detalle"]] == ["Azucar"]
     assert r["sin_merma"] == 0
-    assert r["filtro"] == {"categoria_id": None, "categoria": "", "ingrediente_id": azucar.id, "ingrediente": "Azucar"}
+    assert r["filtro"] == {
+        "categoria_id": None, "categoria": "", "categoria_ids": [],
+        "ingrediente_id": azucar.id, "ingrediente": "Azucar", "ingrediente_ids": [azucar.id],
+    }
 
     c = client.get(f"/api/reportes/perdidas?periodo=dia&categoria_id={carnes.id}").json()
     assert c["merma"] == 8.0
@@ -223,3 +228,20 @@ def test_la_serie_trae_las_unidades_de_cada_tramo(client, db, variante):
 
     f = resumen(client, producto_id=refresco.producto_id)
     assert sum(p["unidades"] for p in f["serie"]) == 4
+
+
+def test_varios_productos_a_la_vez_suman_lo_suyo(client, db, variante):
+    """Dos pastillas de producto: cuenta lo que lleve cualquiera de los dos
+    (Leider, 11-oct). El eco trae los dos nombres y ningun id "unico"."""
+    refresco = refresco_de(db)
+    pedido(client, (variante, 2))  # $10
+    pedido(client, (refresco, 1))  # $2
+
+    r = client.get(
+        f"/api/reportes/resumen?periodo=dia&producto_id={variante.producto_id}&producto_id={refresco.producto_id}"
+    ).json()
+    assert r["ventas"] == 12.0
+    assert r["pedidos"] == 2
+    assert r["filtro"]["producto_id"] is None
+    assert r["filtro"]["producto_ids"] == [variante.producto_id, refresco.producto_id]
+    assert r["filtro"]["producto"] == "Empanada, Refresco"

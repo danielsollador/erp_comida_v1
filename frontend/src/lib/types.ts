@@ -356,18 +356,24 @@ export type Comparativa = {
 
 /** Lo que se está mirando cuando Reportes se filtra por el menú. */
 export type FiltroMenu = {
+  /** El elegido cuando es uno solo; null si son varios (ver `*_ids`) o ninguno. */
   categoria_id: number | null
+  /** El nombre, o los nombres con comas si son varios. */
   categoria: string
+  categoria_ids?: number[]
   producto_id: number | null
   producto: string
+  producto_ids?: number[]
 }
 
 /** Lo mismo para Pérdidas e Inventario, que se miran por cajón y mercancía. */
 export type FiltroDeposito = {
   categoria_id: number | null
   categoria: string
+  categoria_ids?: number[]
   ingrediente_id: number | null
   ingrediente: string
+  ingrediente_ids?: number[]
 }
 
 export type ReporteResumen = {

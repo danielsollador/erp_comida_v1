@@ -218,7 +218,7 @@ export default function FichaMercancia({
   useEffect(() => {
     if (!ing) return
     api
-      .reporteInventario(rangoDe('30d'), { ingrediente_id: ing.id })
+      .reporteInventario(rangoDe('30d'), { ingrediente_id: [ing.id] })
       .then((r) => setRitmo(r.por_insumo[0] ?? null))
       .catch(() => setRitmo(null))
   }, [ing])
