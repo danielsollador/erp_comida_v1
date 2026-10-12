@@ -199,8 +199,12 @@ export default function Inicio() {
         </p>
 
         {/* Las misiones de arranque: solo mientras el local se arma. */}
+        {/* Con raton y si no cabe, los pasos de arranque y los avisos se
+            esconden (tambien estan en la campana, y los avisos repiten "Tu
+            negocio hoy"): asi la portada cabe con sus margenes y su letra,
+            sin achicarse ni apretarse (Leider, 7-oct). */}
         {estado.puede.administrar && (
-          <div className="apaisado:col-span-2">
+          <div className="apaisado:col-span-2 apretado:hidden">
             <Arranque quien={quien} />
           </div>
         )}
@@ -296,7 +300,7 @@ export default function Inicio() {
 
         {/* Lo que el sistema avisa solo. Solo a quien ve las cifras. */}
         {estado.puede.ve_kpis && (
-          <div className="order-3 apaisado:order-1 apaisado:col-span-2">
+          <div className="order-3 apaisado:order-1 apaisado:col-span-2 apretado:hidden">
             <Avisos quien={quien} />
           </div>
         )}

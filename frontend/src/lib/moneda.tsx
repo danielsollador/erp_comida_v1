@@ -58,8 +58,8 @@ const MonedaCtx = createContext<Ctx>({
   vista: 'usd',
   setVista: () => {},
   tasa: null,
-  fmt: (v) => `$${(v ?? 0).toFixed(2)}`,
-  fmtCongelado: (v) => `$${(v ?? 0).toFixed(2)}`,
+  fmt: (v) => `$${fmtNum(v ?? 0)}`,
+  fmtCongelado: (v) => `$${fmtNum(v ?? 0)}`,
   sufijo: 'USD',
   recargar: () => {},
 })
@@ -139,17 +139,18 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
       case 'usd_calle': {
         if (!bcv || !tasa?.paralelo) return '…'
         const v = (usd * bcv) / tasa.paralelo
-        return conSigno('$', v, Math.abs(v).toFixed(d))
+        return conSigno('$', v, fmtNum(Math.abs(v), d))
       }
       case 'eur': {
         // Se pasa por bolivares a proposito: el precio vale lo que vale en Bs,
         // y el euro dice cuantos euros son esos bolivares al cambio oficial.
         if (!bcv || !tasa?.eur) return '…'
         const v = (usd * bcv) / tasa.eur
-        return conSigno('€', v, Math.abs(v).toFixed(d))
+        return conSigno('€', v, fmtNum(Math.abs(v), d))
       }
       default:
-        return conSigno('$', usd, Math.abs(usd).toFixed(d))
+        // Con separador de miles, como los bolivares: $2.685,50 (Leider, 11-oct).
+        return conSigno('$', usd, fmtNum(Math.abs(usd), d))
     }
   }, [vista, tasa])
 

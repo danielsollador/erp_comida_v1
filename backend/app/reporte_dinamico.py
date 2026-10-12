@@ -801,7 +801,7 @@ _registrar(Fuente(
     campos=CAMPOS_FECHA + [
         C("proveedor"),
         C("producto", "El insumo comprado."),
-        C("categoria", "El cajón del depósito del insumo."),
+        C("categoria", "El cajón del inventario del insumo."),
         C("tipo", "Insumos, servicios, activos u otros."),
         C("documento", "Factura, nota de crédito o compra sin factura."),
         C("forma_pago"),
@@ -822,11 +822,11 @@ _registrar(Fuente(
 _registrar(Fuente(
     id="inventario",
     nombre="Inventario",
-    descripcion="Todo lo que entró y salió del depósito: compras, consumo de las ventas, mermas y ajustes.",
+    descripcion="Todo lo que entró y salió del inventario: compras, consumo de las ventas, mermas y ajustes.",
     modulo="inventario",
     campos=CAMPOS_FECHA + [
         C("producto", "El insumo."),
-        C("categoria", "El cajón del depósito."),
+        C("categoria", "El cajón del inventario."),
         C("tipo", "Compra, venta, merma, ajuste por conteo..."),
         C("motivo", "Por qué se perdió (solo las mermas)."),
         C("persona", "Quien lo registró."),

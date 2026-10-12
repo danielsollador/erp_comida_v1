@@ -108,7 +108,7 @@ export function TemaToggle({ dark = false }: { dark?: boolean }) {
       onClick={onClick}
       aria-label={aOscuro ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
       title={aOscuro ? 'Modo oscuro' : 'Modo claro'}
-      className={`vp-control w-9 h-9 rounded-full border grid place-items-center ${
+      className={`vp-control w-11 h-11 rounded-full border grid place-items-center ${
         dark
           ? 'border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
           : 'border-neutral-200 text-neutral-500 hover:text-neutral-900 hover:border-neutral-400 bg-white'

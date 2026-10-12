@@ -1,8 +1,8 @@
 import datetime
 from typing import Dict, List, Optional, Set
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from .. import combos, consolidacion, contabilidad, kardex, models, reposicion, schemas, seed
@@ -24,63 +24,75 @@ router = APIRouter(prefix="/api/reportes", tags=["reportes"])
 # devuelve el eco (`filtro`) con los nombres, para el rotulo de la pantalla.
 
 
-def _variantes_del_filtro(
-    db: Session, categoria_id: Optional[int], producto_id: Optional[int]
-) -> Optional[Set[int]]:
+# VARIOS A LA VEZ (Leider, 11-oct): `categoria_id=1&categoria_id=2` abarca
+# las dos; igual los productos, los cajones y las mercancias. Un producto
+# cuenta si esta en la lista de productos O su categoria esta en la de
+# categorias: cada pastilla suma lo suyo.
+
+
+def _nombres(db: Session, modelo, ids: List[int]) -> str:
+    """Los nombres de esos ids, en el orden pedido, para el rotulo."""
+    if not ids:
+        return ""
+    por_id = {f.id: f.nombre for f in db.query(modelo).filter(modelo.id.in_(ids)).all()}
+    return ", ".join(por_id[i] for i in ids if i in por_id)
+
+
+def _variantes_del_filtro(db: Session, categorias: List[int], productos: List[int]) -> Optional[Set[int]]:
     """Las variantes que abarca el filtro del menu. None = sin filtro.
 
     Entran tambien las retiradas: lo que se vendio en agosto de un producto
     que se saco del menu en septiembre sigue siendo venta de ese producto.
     """
-    if categoria_id is None and producto_id is None:
+    if not categorias and not productos:
         return None
     q = db.query(models.Variante.id).join(models.Producto, models.Producto.id == models.Variante.producto_id)
-    if producto_id is not None:
-        q = q.filter(models.Producto.id == producto_id)
-    if categoria_id is not None:
-        q = q.filter(models.Producto.categoria_id == categoria_id)
+    if productos and categorias:
+        q = q.filter(or_(models.Producto.id.in_(productos), models.Producto.categoria_id.in_(categorias)))
+    elif productos:
+        q = q.filter(models.Producto.id.in_(productos))
+    else:
+        q = q.filter(models.Producto.categoria_id.in_(categorias))
     return {v for (v,) in q.all()}
 
 
-def _filtro_menu(db: Session, categoria_id: Optional[int], producto_id: Optional[int]) -> Optional[schemas.FiltroMenu]:
-    if categoria_id is None and producto_id is None:
+def _filtro_menu(db: Session, categorias: List[int], productos: List[int]) -> Optional[schemas.FiltroMenu]:
+    if not categorias and not productos:
         return None
-    cat = db.get(models.Categoria, categoria_id) if categoria_id is not None else None
-    prod = db.get(models.Producto, producto_id) if producto_id is not None else None
     return schemas.FiltroMenu(
-        categoria_id=categoria_id,
-        categoria=cat.nombre if cat else "",
-        producto_id=producto_id,
-        producto=prod.nombre if prod else "",
+        categoria_id=categorias[0] if len(categorias) == 1 else None,
+        categoria=_nombres(db, models.Categoria, categorias),
+        categoria_ids=list(categorias),
+        producto_id=productos[0] if len(productos) == 1 else None,
+        producto=_nombres(db, models.Producto, productos),
+        producto_ids=list(productos),
     )
 
 
-def _insumos_del_filtro(
-    db: Session, categoria_id: Optional[int], ingrediente_id: Optional[int]
-) -> Optional[Set[int]]:
+def _insumos_del_filtro(db: Session, categorias: List[int], ingredientes: List[int]) -> Optional[Set[int]]:
     """Las mercancias que abarca el filtro del deposito. None = sin filtro."""
-    if categoria_id is None and ingrediente_id is None:
+    if not categorias and not ingredientes:
         return None
     q = db.query(models.Ingrediente.id)
-    if ingrediente_id is not None:
-        q = q.filter(models.Ingrediente.id == ingrediente_id)
-    if categoria_id is not None:
-        q = q.filter(models.Ingrediente.categoria_id == categoria_id)
+    if ingredientes and categorias:
+        q = q.filter(or_(models.Ingrediente.id.in_(ingredientes), models.Ingrediente.categoria_id.in_(categorias)))
+    elif ingredientes:
+        q = q.filter(models.Ingrediente.id.in_(ingredientes))
+    else:
+        q = q.filter(models.Ingrediente.categoria_id.in_(categorias))
     return {i for (i,) in q.all()}
 
 
-def _filtro_deposito(
-    db: Session, categoria_id: Optional[int], ingrediente_id: Optional[int]
-) -> Optional[schemas.FiltroDeposito]:
-    if categoria_id is None and ingrediente_id is None:
+def _filtro_deposito(db: Session, categorias: List[int], ingredientes: List[int]) -> Optional[schemas.FiltroDeposito]:
+    if not categorias and not ingredientes:
         return None
-    cat = db.get(models.CategoriaInsumo, categoria_id) if categoria_id is not None else None
-    ing = db.get(models.Ingrediente, ingrediente_id) if ingrediente_id is not None else None
     return schemas.FiltroDeposito(
-        categoria_id=categoria_id,
-        categoria=cat.nombre if cat else "",
-        ingrediente_id=ingrediente_id,
-        ingrediente=ing.nombre if ing else "",
+        categoria_id=categorias[0] if len(categorias) == 1 else None,
+        categoria=_nombres(db, models.CategoriaInsumo, categorias),
+        categoria_ids=list(categorias),
+        ingrediente_id=ingredientes[0] if len(ingredientes) == 1 else None,
+        ingrediente=_nombres(db, models.Ingrediente, ingredientes),
+        ingrediente_ids=list(ingredientes),
     )
 
 
@@ -105,8 +117,8 @@ def _avisos_de_costos(db: Session) -> List[schemas.Insight]:
                 titulo=f"Tu mercancía subió {inflacion['cambio_pct']:.0f}% en 30 dias",
                 detalle=(
                     f"{detalle}. Si tus precios no subieron parecido, estas vendiendo "
-                    "mas barato de lo que te va a costar reponer. Revisa el Menu: "
-                    "ahi esta el precio sugerido de cada producto."
+                    "mas barato de lo que te va a costar reponer. Revisa los precios "
+                    "en el Menu."
                 ),
             )
         )
@@ -757,7 +769,7 @@ def _insights(
     bajos = [
         i
         for i in db.query(models.Ingrediente).all()
-        if i.stock_actual <= i.stock_minimo
+        if i.stock_actual <= i.stock_minimo and i.tipo not in ("desechable", "preparacion")
     ]
     if bajos:
         nombres = ", ".join(i.nombre for i in bajos[:3])
@@ -791,8 +803,8 @@ def _insights(
 def resumen(
     rango: Rango = Depends(),
     paso: Optional[str] = None,
-    categoria_id: Optional[int] = None,
-    producto_id: Optional[int] = None,
+    categoria_id: List[int] = Query(default=[]),
+    producto_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
     """Los numeros del periodo. `desde`/`hasta` o, como antes, `periodo=`.
@@ -924,8 +936,8 @@ def resumen(
 @router.get("/combos", response_model=schemas.ReporteCombos)
 def reporte_combos(
     rango: Rango = Depends(),
-    categoria_id: Optional[int] = None,
-    producto_id: Optional[int] = None,
+    categoria_id: List[int] = Query(default=[]),
+    producto_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
     """Que se vende junto y cuanto se pierde por no ofrecer el acompanante.
@@ -1087,8 +1099,8 @@ def _lecturas_de_perdidas(
 @router.get("/perdidas", response_model=schemas.ReportePerdidas)
 def reporte_perdidas(
     rango: Rango = Depends(),
-    categoria_id: Optional[int] = None,
-    ingrediente_id: Optional[int] = None,
+    categoria_id: List[int] = Query(default=[]),
+    ingrediente_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
     """Analisis de perdidas: que se merma mas, que se merma menos, por que, y
@@ -1109,7 +1121,13 @@ def reporte_perdidas(
 
     grupos: Dict[int, dict] = {}
     motivos: Dict[str, dict] = {}
+    personas: Dict[str, dict] = {}
     for m, v in valoradas:
+        if not m.por_conteo:
+            quien = m.operador.nombre if getattr(m, "operador", None) else "Sin registrar"
+            pe = personas.setdefault(quien, {"valor": 0.0, "veces": 0})
+            pe["valor"] += v
+            pe["veces"] += 1
         g = grupos.setdefault(
             m.ingrediente_id,
             {"nombre": m.ingrediente.nombre, "unidad": m.ingrediente.unidad, "cantidad": 0.0, "valor": 0.0, "veces": 0, "conteo": 0.0},
@@ -1222,6 +1240,11 @@ def reporte_perdidas(
         cambio_pct=cambio,
         por_insumo=por_insumo,
         por_motivo=por_motivo,
+        por_operador=sorted(
+            (schemas.PerdidaPorOperador(operador=k, valor=round(x["valor"], 2), veces=x["veces"]) for k, x in personas.items()),
+            key=lambda x: x.valor,
+            reverse=True,
+        ),
         serie=serie,
         sin_merma=sin_merma,
         anulados=b.anulados,
@@ -1288,7 +1311,7 @@ def _lecturas_de_inventario(
             out.append(
                 schemas.Insight(
                     tipo="info",
-                    titulo=f"{top.nombre} es el {top.pct:.0f}% de la plata en el deposito",
+                    titulo=f"{top.nombre} es el {top.pct:.0f}% de la plata en el inventario",
                     detalle=f"${top.valor:.2f} de ${valor_total:.2f}. Conviene contarlo mas seguido que al resto.",
                 )
             )
@@ -1305,7 +1328,7 @@ def _lecturas_de_inventario(
             out.append(
                 schemas.Insight(
                     tipo="info",
-                    titulo=f"El deposito roto {rotacion:.1f} veces en el periodo",
+                    titulo=f"El inventario roto {rotacion:.1f} veces en el periodo",
                     detalle="Hay mas inventario del que la venta necesita: cada dolar en el estante tarda en volver a la gaveta.",
                 )
             )
@@ -1313,7 +1336,7 @@ def _lecturas_de_inventario(
             out.append(
                 schemas.Insight(
                     tipo="bueno",
-                    titulo=f"El deposito roto {rotacion:.1f} veces en el periodo",
+                    titulo=f"El inventario roto {rotacion:.1f} veces en el periodo",
                     detalle="Se compra lo que se vende. Ojo con quedarse corto en los dias fuertes.",
                 )
             )
@@ -1322,7 +1345,7 @@ def _lecturas_de_inventario(
             schemas.Insight(
                 tipo="alerta",
                 titulo=f"La mercancia subio {inflacion_pct:.0f}% en el periodo",
-                detalle="Si los precios del menu no se movieron, el margen se esta achicando solo. Revisa los precios sugeridos en Menu.",
+                detalle="Si los precios del menu no se movieron, el margen se esta achicando solo. Revisa los precios en Menu.",
             )
         )
     return out
@@ -1331,8 +1354,8 @@ def _lecturas_de_inventario(
 @router.get("/inventario", response_model=schemas.ReporteInventario)
 def reporte_inventario(
     rango: Rango = Depends(),
-    categoria_id: Optional[int] = None,
-    ingrediente_id: Optional[int] = None,
+    categoria_id: List[int] = Query(default=[]),
+    ingrediente_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
     """El deposito de hoy, leido con el consumo del periodo: donde esta la
@@ -1373,6 +1396,8 @@ def reporte_inventario(
     if solo is not None:
         ingredientes_q = ingredientes_q.filter(models.Ingrediente.id.in_(solo or [0]))
     for ing in ingredientes_q.order_by(models.Ingrediente.nombre).all():
+        if ing.tipo == "desechable":
+            continue  # no lleva stock: no hay nada que valorar en el deposito
         cantidad = saldos.get(ing.id, ing.stock_actual or 0)
         costo = promedios.get(ing.id) or ing.costo_unitario or 0
         valor = round(max(cantidad, 0) * costo, 2)
@@ -1502,6 +1527,43 @@ def _cuando(dias: float) -> str:
     return f"el {DIAS_LARGOS[fecha.weekday()]}"
 
 
+def _avisos_de_cocina_y_proveedores(db: Session) -> List[schemas.Aviso]:
+    """Lo que nadie va a buscar (8-oct, casos 2, 11 y 21): lo que se vencio en
+    la nevera, las tandas que rinden menos que su ficha y lo que un proveedor
+    debe hace mas de una semana."""
+    from .preparaciones import preparaciones_vencidas, rendimientos_recientes
+
+    out: List[schemas.Aviso] = []
+    vencidas = preparaciones_vencidas(db)
+    if vencidas:
+        nombres = ", ".join(f"{p.nombre} ({p.stock_actual:g} {p.unidad})" for p in vencidas[:2]) + ("…" if len(vencidas) > 2 else "")
+        out.append(schemas.Aviso(
+            id="vencidas", tono="ojo", titulo=f"Ya pasó su tiempo: {nombres}",
+            detalle="Sobró de una tanda vieja. Decide si se bota o se usa hoy.", a="/inventario/materia-prima?ver=preparado",
+        ))
+    for r in rendimientos_recientes(db)[:1]:
+        detalle = f"Las últimas {r.tandas} tandas salieron al {r.real_pct:g} % de lo esperado."
+        if r.sugerida_cantidad is not None:
+            detalle += f" La receta dice {r.receta_cantidad:g} {r.unidad} de {r.crudo} por cada uno que sale: con {r.sugerida_cantidad:g} el costo diría la verdad."
+        out.append(schemas.Aviso(
+            id=f"rinde-{r.preparacion_id}", tono="info" if r.real_pct > 100 else "ojo",
+            titulo=f"{r.nombre} rinde {'más' if r.real_pct > 100 else 'menos'} de lo que dice su receta",
+            detalle=detalle, a="/inventario/materia-prima?ver=preparado",
+        ))
+    corte = ahora() - datetime.timedelta(days=7)
+    viejos = db.query(models.ReclamoProveedor).filter(models.ReclamoProveedor.estado == "abierto", models.ReclamoProveedor.fecha <= corte).all()
+    if viejos:
+        total = round(sum(r.valor for r in viejos), 2)
+        mas_viejo = min(r.fecha for r in viejos)
+        out.append(schemas.Aviso(
+            id="reclamos", tono="ojo",
+            titulo=f"Los proveedores te deben ${total:.2f} de mercancía que no llegó",
+            detalle=f"{len(viejos)} reclamo(s) sin nota de crédito; el más viejo, de hace {(ahora() - mas_viejo).days} días.",
+            a="/compras",
+        ))
+    return out
+
+
 def _avisos_de_deposito(db: Session) -> List[schemas.Aviso]:
     """Lo que se acaba, medido con el consumo real de las ultimas dos semanas.
 
@@ -1532,7 +1594,7 @@ def _avisos_de_deposito(db: Session) -> List[schemas.Aviso]:
                 id="agotados",
                 tono="ojo",
                 titulo=f"Te quedaste sin {nombres}",
-                detalle="Se vende con eso y ya no hay en el depósito.",
+                detalle="Se vende con eso y ya no hay en el inventario.",
                 a="/inventario/comprar",
             )
         )
@@ -1855,6 +1917,7 @@ def avisos(db: Session = Depends(get_db)):
     """
     todos: List[schemas.Aviso] = []
     todos += _avisos_de_deposito(db)
+    todos += _avisos_de_cocina_y_proveedores(db)
     fiado = _aviso_de_fiado(db)
     if fiado:
         todos.append(fiado)

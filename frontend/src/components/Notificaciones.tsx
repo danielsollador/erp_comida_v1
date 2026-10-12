@@ -101,7 +101,7 @@ export default function Notificaciones({ dark = false }: { dark?: boolean }) {
         aria-expanded={abierto}
         aria-label={cuantos ? `${cuantos} notificaciones` : 'Notificaciones'}
         title="Notificaciones"
-        className={`vp-control relative w-9 h-9 rounded-full border grid place-items-center shrink-0 ${
+        className={`vp-control relative w-11 h-11 rounded-full border grid place-items-center shrink-0 ${
           dark
             ? 'border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
             : 'border-neutral-200 text-neutral-500 hover:text-neutral-900 hover:border-neutral-400 bg-white'

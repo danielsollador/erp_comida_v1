@@ -73,7 +73,7 @@ export default function NavBar({
           onClick={volver}
           aria-label="Volver"
           title="Volver"
-          className={`grid place-items-center w-9 h-9 rounded-xl border shrink-0 ${
+          className={`grid place-items-center w-11 h-11 rounded-xl border shrink-0 ${
             dark ? 'border-neutral-700 hover:bg-neutral-800' : 'vp-control'
           }`}
         >
@@ -83,7 +83,7 @@ export default function NavBar({
           to="/"
           aria-label="Ir al inicio"
           title="Ir al inicio"
-          className={`md:hidden grid place-items-center w-9 h-9 rounded-xl border shrink-0 ${
+          className={`md:hidden grid place-items-center w-11 h-11 rounded-xl border shrink-0 ${
             dark ? 'border-neutral-700 hover:bg-neutral-800' : 'vp-control'
           }`}
         >

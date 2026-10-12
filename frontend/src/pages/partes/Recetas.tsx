@@ -10,11 +10,12 @@ import Vaso, { ResumenVaso, type ParteVaso } from '../../components/Vaso'
 import { api } from '../../lib/api'
 import { etiquetaVariante } from '../../lib/menu'
 import { colorFranja } from '../../lib/paleta'
-import { useMoneda } from '../../lib/moneda'
+import { useMoneda, fmtNum } from '../../lib/moneda'
 import { useAltoRestante } from '../../lib/altoRestante'
 import { Ayuda } from '../../components/Ayuda'
 import { explicar } from '../../lib/glosario'
 import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from '../../lib/types'
+import { vaEnReceta } from '../../lib/tiposArticulo'
 
 /**
  * Qué lleva cada producto: la receta, y con ella el costo y el margen.
@@ -42,11 +43,6 @@ import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from
 type Fila = {
   ingrediente_id: number
   cantidad_por_unidad: string
-  // Calculadora opcional: "de tanto sale tanto" - solo para ayudar a escribir
-  // el numero de arriba, no se guarda aparte.
-  rendimientoDe: string
-  rendimientoSalen: string
-  modoRendimiento: boolean
   // Se escribe en la unidad chica (g en vez de kg, ml en vez de lt). La receta
   // se guarda siempre en la unidad de la mercancia; esto es solo como se ve.
   enChica?: boolean
@@ -56,6 +52,9 @@ type Fila = {
 const OTRA_UNIDAD: Record<string, string> = { kg: 'g', g: 'kg', lt: 'ml', ml: 'lt' }
 const esGrande = (u: string) => u === 'kg' || u === 'lt'
 const sinRuido = (n: number) => String(Math.round(n * 1e6) / 1e6)
+
+/** Un producto del menú dentro de un combo, con cuántos lleva (como texto). */
+type FilaCombo = { variante_id: number; cantidad: string }
 
 type Renglon = {
   variante: Variante
@@ -87,6 +86,19 @@ const tono = colorFranja
 const porUnidad = (ing: Ingrediente) => ing.unidad === 'unidad' || ing.unidad === 'paquete'
 
 
+// LO QUE SE VE AQUÍ ES LO QUE SE USA PARA DECIDIR EL PRECIO (8-oct): con el
+// método elegido en Configuración (último costo pagado, promedio o el mayor)
+// y con su parte del aceite si se fríe. Antes era siempre el promedio y sin
+// aceite: un pastelito frito salía con 93 % de margen cuando dejaba 56 %.
+function renglon_se_frie(r: { variante: { se_frie?: boolean | null } }): boolean {
+  return Boolean(r.variante.se_frie)
+}
+
+function paraPrecio(c: CostoVariante | undefined): CostoVariante | undefined {
+  if (!c || c.costo_para_precio == null) return c
+  return { ...c, costo: c.costo_para_precio, margen_pct: c.margen_para_precio_pct ?? c.margen_pct }
+}
+
 export default function Recetas({
   categorias,
   costos,
@@ -104,6 +116,16 @@ export default function Recetas({
   const [filas, setFilas] = useState<Fila[]>([])
   // Lo que se guardo por ultima vez, para saber si hay cambios sin guardar.
   const [huellaGuardada, setHuellaGuardada] = useState('')
+  // El precio se decide AQUÍ, con el costo a la vista: escribiendo el precio
+  // (y se ve el margen) o el margen (y sale el precio). Primero el costo,
+  // después el precio: así se hace en cualquier cocina.
+  const [precio, setPrecio] = useState('')
+  // El aceite de freír por pieza (últimos 30 días): lo carga lo que se fríe.
+  const [indirecto, setIndirecto] = useState(0)
+  // Si el producto es un COMBO: los productos del menú que lleva. null = no
+  // es combo, se arma con mercancía como siempre (8-oct).
+  const [combo, setCombo] = useState<FilaCombo[] | null>(null)
+  const [huellaCombo, setHuellaCombo] = useState('')
   const dialogo = useDialogo()
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
@@ -139,7 +161,16 @@ export default function Recetas({
   const [abiertos, setAbiertos] = useState<Set<number>>(new Set())
 
   useEffect(() => {
-    api.listarIngredientes().then((l) => setIngredientes(l.filter((i) => i.activo !== false)))
+    Promise.all([api.listarIngredientes(), api.costosParaPrecios().catch(() => null)]).then(([l, cp]) => {
+      if (cp) setIndirecto(cp.indirecto_por_pieza)
+      // Cada mercancía, a lo que cuesta con el método de precios: así el
+      // costo de cada renglón y el total cuadran con la lista.
+      setIngredientes(
+        l
+          .filter((i) => i.activo !== false)
+          .map((i) => (cp && cp.por_ingrediente[i.id] != null ? { ...i, costo_efectivo: cp.por_ingrediente[i.id] } : i)),
+      )
+    })
   }, [])
 
   const mapaIngredientes = useMemo(() => new Map(ingredientes.map((i) => [i.id, i])), [ingredientes])
@@ -161,7 +192,7 @@ export default function Recetas({
                   variante: v,
                   nombre: etiquetaVariante(p, v),
                   categoria: c.nombre,
-                  info: costos.get(v.id),
+                  info: paraPrecio(costos.get(v.id)),
                   productoId: p.id,
                   producto: p.nombre,
                   varianteNombre: v.nombre,
@@ -238,17 +269,19 @@ export default function Recetas({
   async function abrir(r: Renglon, desdeUrl = false) {
     setError('')
     setAbierta(r)
+    setPrecio(r.variante.precio > 0 ? String(r.variante.precio) : '')
     if (!desdeUrl) navegar(location.pathname + location.search, { state: { receta: r.variante.id } })
     const receta = await api.verReceta(r.variante.id)
     const iniciales: Fila[] = receta.map((x: RecetaItem) => ({
       ingrediente_id: x.ingrediente_id,
       cantidad_por_unidad: String(x.cantidad_por_unidad),
-      rendimientoDe: '',
-      rendimientoSalen: '',
-      modoRendimiento: false,
     }))
     setFilas(iniciales)
     setHuellaGuardada(huella(iniciales))
+    const c = await api.verCombo(r.variante.id).catch(() => [])
+    const filasCombo = c.length ? c.map((x) => ({ variante_id: x.variante_id, cantidad: String(x.cantidad) })) : null
+    setCombo(filasCombo)
+    setHuellaCombo(huellaDeCombo(filasCombo))
   }
 
   // Solo lo que se guarda: mercancia y cantidad. Abrir la calculadora o
@@ -262,14 +295,22 @@ export default function Recetas({
       .join('|')
   }
 
+  function huellaDeCombo(c: FilaCombo[] | null): string {
+    return c === null ? '' : c.map((x) => `${x.variante_id}:${Number(x.cantidad) || 0}`).sort().join('|') || 'combo'
+  }
+
   function cerrar() {
     setAbierta(null)
     setFilas([])
+    setCombo(null)
     if (pedida) navegar(location.pathname + location.search, { replace: true, state: null })
   }
 
   /** Salir con cambios sin guardar pide confirmacion (Leider, 29-sep). */
-  const hayCambios = abierta !== null && huella(filas) !== huellaGuardada
+  const precioNum = Number(precio.replace(',', '.'))
+  const cambioPrecio = abierta !== null && precio !== '' && Number.isFinite(precioNum) && Math.abs(precioNum - abierta.variante.precio) > 0.0001
+  const hayCambios =
+    abierta !== null && ((combo === null ? huella(filas) !== huellaGuardada : huellaDeCombo(combo) !== huellaCombo) || cambioPrecio)
   const preguntar = useCallback(
     () =>
       dialogo.confirmar({
@@ -292,6 +333,23 @@ export default function Recetas({
   async function guardar() {
     if (!abierta) return
     setError('')
+    if (combo !== null) {
+      const partes = combo.filter((c) => Number(c.cantidad) > 0).map((c) => ({ variante_id: c.variante_id, cantidad: Number(c.cantidad) }))
+      if (partes.length === 0) return setError('Un combo lleva al menos un producto del menú.')
+      if (precio !== '' && !(precioNum > 0)) return setError('El precio tiene que ser mayor que cero.')
+      setGuardando(true)
+      try {
+        await api.guardarCombo(abierta.variante.id, partes)
+        if (cambioPrecio) await api.actualizarVariante(abierta.variante.id, abierta.variante.nombre, Math.round(precioNum * 100) / 100, true)
+        cerrar()
+        onCambio()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'No se pudo guardar el combo')
+      } finally {
+        setGuardando(false)
+      }
+      return
+    }
     const items = filas
       .filter((f) => f.ingrediente_id && Number(f.cantidad_por_unidad) > 0)
       .map((f) => ({ ingrediente_id: f.ingrediente_id, cantidad_por_unidad: Number(f.cantidad_por_unidad) }))
@@ -299,9 +357,14 @@ export default function Recetas({
       setError('Ponle al menos una mercancía con su cantidad.')
       return
     }
+    if (precio !== '' && !(precioNum > 0)) {
+      setError('El precio tiene que ser mayor que cero.')
+      return
+    }
     setGuardando(true)
     try {
       await api.actualizarReceta(abierta.variante.id, items)
+      if (cambioPrecio) await api.actualizarVariante(abierta.variante.id, abierta.variante.nombre, Math.round(precioNum * 100) / 100, true)
       cerrar()
       // El costo y el margen de todo el menú cambian con esto.
       onCambio()
@@ -332,6 +395,13 @@ export default function Recetas({
         mapaIngredientes={mapaIngredientes}
         filas={filas}
         setFilas={setFilas}
+        precio={precio}
+        setPrecio={setPrecio}
+        combo={combo}
+        setCombo={setCombo}
+        productos={renglones.filter((x) => x.variante.id !== abierta.variante.id)}
+        costoDeVariante={(vid) => paraPrecio(costos.get(vid))?.costo ?? 0}
+        indirecto={renglon_se_frie(abierta) ? indirecto : 0}
         error={error}
         guardando={guardando}
         onGuardar={() => void guardar()}
@@ -605,6 +675,13 @@ function Compositor({
   mapaIngredientes,
   filas,
   setFilas,
+  precio: precioTexto,
+  setPrecio,
+  combo,
+  setCombo,
+  productos,
+  costoDeVariante,
+  indirecto,
   error,
   guardando,
   onGuardar,
@@ -615,6 +692,16 @@ function Compositor({
   mapaIngredientes: Map<number, Ingrediente>
   filas: Fila[]
   setFilas: (f: Fila[] | ((prev: Fila[]) => Fila[])) => void
+  /** El precio que se está decidiendo, como texto. */
+  precio: string
+  setPrecio: (p: string) => void
+  /** Lo que le toca de aceite por pieza, si se fríe. */
+  indirecto: number
+  combo: FilaCombo[] | null
+  setCombo: (c: FilaCombo[] | null) => void
+  /** Los productos del menú que pueden ir en un combo. */
+  productos: Renglon[]
+  costoDeVariante: (varianteId: number) => number
   error: string
   guardando: boolean
   onGuardar: () => void
@@ -624,7 +711,7 @@ function Compositor({
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('')
   const [resaltado, setResaltado] = useState<number | string | null>(null)
-  const precio = renglon.variante.precio
+  const precio = Number(precioTexto.replace(',', '.')) || 0
 
   const categoriasDeposito = useMemo(() => {
     const cuenta = new Map<string, number>()
@@ -638,6 +725,9 @@ function Compositor({
   const palabras = palabrasDe(busqueda)
   const disponibles = ingredientes.filter((i) => {
     if (enReceta.has(i.id)) return false
+    // Ni desechables (van a gasto) ni el aceite de freir (se reparte por
+    // pieza). Las preparaciones si: el pastelito lleva "50 g de guiso".
+    if (!vaEnReceta(i)) return false
     if (categoria && (i.categoria || '__sin__') !== categoria) return false
     if (palabras.length === 0) return true
     return contiene(`${i.nombre} ${i.categoria}`, palabras)
@@ -654,9 +744,6 @@ function Compositor({
         ingrediente_id: ing.id,
         // Un vaso es un vaso: lo que se cuenta por piezas entra con 1.
         cantidad_por_unidad: porUnidad(ing) ? '1' : '',
-        rendimientoDe: '',
-        rendimientoSalen: '',
-        modoRendimiento: false,
         // Gramos y mililitros por defecto (Leider, 1-oct).
         enChica: esGrande(ing.unidad),
       },
@@ -665,23 +752,6 @@ function Compositor({
 
   function quitar(id: number) {
     setFilas((prev) => prev.filter((f) => f.ingrediente_id !== id))
-  }
-
-  // "De 1 kg COMPRADO salen 20 unidades" -> cuanto insumo UTILIZABLE lleva
-  // cada una. El dueño mide sobre lo que compra (es lo unico que puede pesar),
-  // pero la receta guarda cantidad utilizable, que es lo que el sistema
-  // multiplica por el costo real. Sin multiplicar por el rendimiento aca, la
-  // merma de cocina se contaria dos veces.
-  function aplicarRendimiento(f: Fila) {
-    const de = Number(f.rendimientoDe)
-    const salen = Number(f.rendimientoSalen)
-    if (!Number.isFinite(de) || de <= 0 || !Number.isFinite(salen) || salen <= 0) return
-    const ing = mapaIngredientes.get(f.ingrediente_id)
-    const rendimiento = (ing?.rendimiento_pct ?? 100) / 100
-    actualizarFila(f.ingrediente_id, {
-      cantidad_por_unidad: String(Math.round(((de * rendimiento) / salen) * 1e6) / 1e6),
-      modoRendimiento: false,
-    })
   }
 
   // Costo real: descontando la merma de cocina (`costo_efectivo`).
@@ -697,6 +767,20 @@ function Compositor({
     costoReal += costo
     if (costo > 0) partes.push({ id: ing.id, nombre: ing.nombre, valor: costo, color: tono(i) })
   })
+  if (combo !== null) {
+    // El combo cuesta lo que cuestan sus productos (con su aceite incluido).
+    costoReal = 0
+    partes.length = 0
+    combo.forEach((c, i) => {
+      const valor = (Number(c.cantidad) || 0) * costoDeVariante(c.variante_id)
+      costoReal += valor
+      const nombre = productos.find((p) => p.variante.id === c.variante_id)?.nombre ?? 'Producto'
+      if (valor > 0) partes.push({ id: `combo-${c.variante_id}`, nombre, valor, color: tono(i) })
+    })
+  } else if (indirecto > 0) {
+    costoReal += indirecto
+    partes.push({ id: 'aceite', nombre: 'Aceite de freír', valor: indirecto, color: '#b8a27a' })
+  }
   const esPieza = (f: Fila) => {
     const ing = mapaIngredientes.get(f.ingrediente_id)
     return Boolean(ing && porUnidad(ing))
@@ -747,11 +831,25 @@ function Compositor({
             onResaltar={setResaltado}
           />
           </div>
-          <Margen precio={precio} costoReal={costoReal} vacio={filas.length === 0} />
+          <Margen precio={precio} costoReal={costoReal} vacio={combo === null ? filas.length === 0 : combo.length === 0} />
+          <PrecioConMargen costo={costoReal} precio={precioTexto} onPrecio={setPrecio} guardado={renglon.variante.precio} />
         </section>
 
-        {/* ── La mercancía ────────────────────────────────────────────── */}
+        {combo !== null ? (
+          <EditorCombo combo={combo} setCombo={setCombo} productos={productos} costoDeVariante={costoDeVariante} />
+        ) : (
+        /* ── La mercancía ────────────────────────────────────────────── */
         <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
+          {filas.length === 0 && (
+            <button
+              type="button"
+              onClick={() => setCombo([])}
+              className="vp-losa w-full text-left px-4 py-3 text-sm text-neutral-600 hover:bg-neutral-500/5"
+            >
+              <span className="font-semibold text-neutral-900">¿Es un combo?</span> Ármalo con productos del menú (pastelito + jugo): su
+              receta se suma sola y se actualiza si cambia la de ellos.
+            </button>
+          )}
           {filas.length > 0 && (
             <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[45%] lg:overflow-y-auto">
               {pesadas.length > 0 && (
@@ -769,7 +867,6 @@ function Compositor({
                         onResaltar={setResaltado}
                         onCambio={(c) => actualizarFila(f.ingrediente_id, c)}
                         onQuitar={() => quitar(f.ingrediente_id)}
-                        onRendimiento={() => aplicarRendimiento(f)}
                       />
                     ))}
                   </ul>
@@ -799,7 +896,6 @@ function Compositor({
                         onResaltar={setResaltado}
                         onCambio={(c) => actualizarFila(f.ingrediente_id, c)}
                         onQuitar={() => quitar(f.ingrediente_id)}
-                        onRendimiento={() => aplicarRendimiento(f)}
                       />
                     ))}
                   </ul>
@@ -834,7 +930,7 @@ function Compositor({
             </div>
             {disponibles.length === 0 ? (
               <p className="px-4 pb-4 text-sm text-neutral-400">
-                {ingredientes.length === 0 ? 'No hay mercancía en el depósito todavía.' : 'Nada coincide.'}
+                {ingredientes.length === 0 ? 'No hay mercancía en el inventario todavía.' : 'Nada coincide.'}
               </p>
             ) : (
               <div className="max-h-[30rem] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto">
@@ -862,6 +958,7 @@ function Compositor({
             )}
           </div>
         </section>
+        )}
       </div>
     </div>
   )
@@ -875,7 +972,6 @@ function RenglonReceta({
   onResaltar,
   onCambio,
   onQuitar,
-  onRendimiento,
 }: {
   f: Fila
   ing: Ingrediente
@@ -884,7 +980,6 @@ function RenglonReceta({
   onResaltar: (id: number | null) => void
   onCambio: (c: Partial<Fila>) => void
   onQuitar: () => void
-  onRendimiento: () => void
 }) {
   const { fmt } = useMoneda()
   const cantidad = Number(f.cantidad_por_unidad) || 0
@@ -917,7 +1012,7 @@ function RenglonReceta({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {enChica ? `${fmt(ing.costo_efectivo / factor, 4)} por ${otra}` : `${fmt(ing.costo_efectivo, 3)} por ${ing.unidad}`}
+            {enChica ? `${fmt(ing.costo_efectivo / factor, 2)} por ${otra}` : `${fmt(ing.costo_efectivo, 2)} por ${ing.unidad}`}
             {ing.categoria && ` · ${ing.categoria}`}
           </span>
         </span>
@@ -927,7 +1022,7 @@ function RenglonReceta({
           unidad={ing.unidad}
           vista={unidadVista}
           alCambiarVista={() => onCambio({ enChica: !enChica })}
-          rotulo={pieza ? (cantidad === 1 ? 'pieza' : 'piezas') : ing.unidad}
+          rotulo={pieza ? (cantidad === 1 ? 'unidad' : 'unidades') : ing.unidad}
           value={valorVisto}
           onChange={(e) => escribir(e.target.value)}
           placeholder="0"
@@ -950,46 +1045,6 @@ function RenglonReceta({
           ×
         </button>
       </div>
-      {/* La calculadora "de X salen Y", plegada: sirve cuando se mide sobre
-          lo comprado y no sobre cada unidad. Una pieza no se calcula. */}
-      {pieza ? null : f.modoRendimiento ? (
-        <div className="mt-2 ml-4 flex flex-wrap items-center gap-2 text-sm">
-          <span>De</span>
-          <Numerico
-            value={f.rendimientoDe}
-            onChange={(e) => onCambio({ rendimientoDe: e.target.value })}
-            aria-label="Cantidad que compras"
-            className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm"
-          />
-          <span>{ing.unidad} salen</span>
-          <Numerico
-            value={f.rendimientoSalen}
-            onChange={(e) => onCambio({ rendimientoSalen: e.target.value })}
-            aria-label="Unidades que salen"
-            className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm"
-          />
-          <span>unidades</span>
-          <button type="button" onClick={onRendimiento} className="rounded-lg bg-neutral-900 text-white px-2.5 py-1 text-xs font-medium">
-            Calcular
-          </button>
-          <button type="button" onClick={() => onCambio({ modoRendimiento: false })} className="text-xs text-neutral-500">
-            Cerrar
-          </button>
-          {ing.rendimiento_pct < 100 && (
-            <span className="basis-full text-[11px] text-aviso-700">
-              Mide sobre lo que compras, sin limpiar: el {ing.rendimiento_pct}% de rendimiento ya se descuenta solo.
-            </span>
-          )}
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => onCambio({ modoRendimiento: true })}
-          className="ml-4 mt-1 text-[11px] text-neutral-400 hover:text-neutral-700"
-        >
-          ¿No sabes cuánto lleva cada una? Calcúlalo: de X salen Y
-        </button>
-      )}
     </li>
   )
 }
@@ -1040,7 +1095,7 @@ function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () =
           <span className="block text-[11px] text-neutral-400">{ing.categoria || 'Sin categoría'}</span>
         </span>
         <span className="text-xs text-neutral-500 tabular-nums">
-          {fmt(ing.costo_efectivo, 3)} / {ing.unidad}
+          {fmt(ing.costo_efectivo, 2)} / {ing.unidad}
         </span>
         <span className="w-7 h-7 grid place-items-center rounded-full bg-neutral-100 text-neutral-600 text-base leading-none">+</span>
       </button>
@@ -1064,7 +1119,148 @@ function Margen({ precio, costoReal, vacio }: { precio: number; costoReal: numbe
         <span>Cuesta hacerlo</span>
         <span className="font-semibold text-neutral-700">{fmt(costoReal)}</span>
       </div>
-      {precio <= 0 && <p className="text-xs text-aviso-700">Este producto no tiene precio: ponlo en el menú.</p>}
     </div>
+  )
+}
+
+// Margen sobre el PRECIO (lo que queda de cada venta), no recargo sobre el
+// costo: "70 %" es que de $10 te quedan $7. Es como se habla en cocina.
+// Sin margenes "tipicos" ni precios sugeridos: el margen lo decide el dueño
+// (Leider, 8-oct), el sistema solo le hace la cuenta.
+
+/**
+ * El precio, decidido con el costo a la vista y en las dos direcciones:
+ * escribe el precio y ve el margen, o escribe el margen y sale el precio.
+ */
+function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number; precio: string; onPrecio: (p: string) => void; guardado: number }) {
+  const precioNum = Number(precio.replace(',', '.')) || 0
+  const margenDe = (p: number) => (p > 0 ? ((p - costo) / p) * 100 : null)
+  const [margen, setMargen] = useState(() => {
+    const m = margenDe(precioNum)
+    return m == null ? '' : String(Math.round(m))
+  })
+  // Si cambia el costo o el precio por fuera, el margen se recalcula.
+  useEffect(() => {
+    const m = margenDe(precioNum)
+    setMargen(m == null ? '' : String(Math.round(m * 10) / 10))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [costo, precio])
+
+  function desdeMargen(texto: string) {
+    setMargen(texto)
+    const m = Number(texto.replace(',', '.'))
+    if (!(costo > 0) || !Number.isFinite(m) || m >= 100 || m < 0) return
+    // Redondeado a la decena de centavo: $3,47 queda en $3,50.
+    onPrecio(String(Math.ceil((costo / (1 - m / 100)) * 10) / 10))
+  }
+
+  const m = margenDe(precioNum)
+  const costoPct = precioNum > 0 ? (costo / precioNum) * 100 : null
+  return (
+    <div className="mt-3 rounded-2xl bg-neutral-500/6 p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="block text-[11px] font-medium text-neutral-600 mb-0.5">Precio de venta ($)</span>
+          <Numerico value={precio} onChange={(e) => onPrecio(e.target.value)} placeholder="0.00" className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-base font-semibold tabular-nums bg-white" />
+        </label>
+        <label className="block">
+          <span className="block text-[11px] font-medium text-neutral-600 mb-0.5">Margen (% del precio)</span>
+          <Numerico
+            value={margen}
+            onChange={(e) => desdeMargen(e.target.value)}
+            placeholder={costo > 0 ? '70' : '—'}
+            disabled={!(costo > 0)}
+            className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-base font-semibold tabular-nums bg-white disabled:opacity-50"
+          />
+        </label>
+      </div>
+      <p className="text-xs text-neutral-500 leading-relaxed">
+        {!(costo > 0)
+          ? 'Ponle primero lo que lleva: con el costo se calcula el precio para el margen que quieras.'
+          : precioNum > 0 && m != null
+            ? m < 0
+              ? `A ese precio pierdes $${fmtNum((costo - precioNum))} por unidad.`
+              : `La mercancía es el ${costoPct!.toFixed(0)} % del precio y te quedan $${fmtNum((precioNum - costo))} por unidad.`
+            : 'Escribe el precio o el margen que quieres: el otro sale solo.'}
+        {guardado > 0 && Math.abs(precioNum - guardado) > 0.0001 && ` Hoy se vende a $${fmtNum(guardado)}: el precio nuevo se guarda con la receta.`}
+      </p>
+    </div>
+  )
+}
+
+/** Lo que lleva un combo: productos del menú, cada uno con su cantidad. */
+function EditorCombo({
+  combo,
+  setCombo,
+  productos,
+  costoDeVariante,
+}: {
+  combo: FilaCombo[]
+  setCombo: (c: FilaCombo[] | null) => void
+  productos: Renglon[]
+  costoDeVariante: (varianteId: number) => number
+}) {
+  const { fmt } = useMoneda()
+  const [busqueda, setBusqueda] = useState('')
+  const usados = new Set(combo.map((c) => c.variante_id))
+  const palabras = palabrasDe(busqueda)
+  const disponibles = productos.filter(
+    (p) => !usados.has(p.variante.id) && (palabras.length === 0 || contiene(`${p.nombre} ${p.categoria}`, palabras)),
+  )
+  const cambiar = (vid: number, cantidad: string) => setCombo(combo.map((c) => (c.variante_id === vid ? { ...c, cantidad } : c)))
+  return (
+    <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
+      <div className="vp-losa overflow-hidden">
+        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+          <h3 className="font-display font-semibold tracking-tight flex-1">El combo lleva</h3>
+          <button type="button" onClick={() => setCombo(null)} className="text-xs text-neutral-500 underline">
+            No es un combo
+          </button>
+        </div>
+        {combo.length === 0 ? (
+          <p className="px-4 pb-4 text-sm text-neutral-500">Agrega abajo los productos del menú que trae.</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100">
+            {combo.map((c) => {
+              const p = productos.find((x) => x.variante.id === c.variante_id)
+              return (
+                <li key={c.variante_id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                  <span className="flex-1 min-w-0 truncate font-medium">{p?.nombre ?? 'Producto'}</span>
+                  <Numerico value={c.cantidad} onChange={(e) => cambiar(c.variante_id, e.target.value)} aria-label="Cuántos lleva" className="w-16 border border-neutral-300 rounded-lg px-2 py-1 text-sm text-right tabular-nums" />
+                  <span className="w-20 text-right tabular-nums text-neutral-600">{fmt((Number(c.cantidad) || 0) * costoDeVariante(c.variante_id))}</span>
+                  <button type="button" onClick={() => setCombo(combo.filter((x) => x.variante_id !== c.variante_id))} className="text-neutral-400 hover:text-peligro-600" aria-label="Quitar">
+                    ×
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+      <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+          <h3 className="font-display font-semibold tracking-tight flex-1">Agregar producto</h3>
+          <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar en el menú" className="border border-neutral-300 rounded-xl px-3 py-1.5 text-sm w-44" />
+        </div>
+        <ul className="divide-y divide-neutral-100 lg:overflow-y-auto lg:min-h-0 max-h-80 overflow-y-auto">
+          {disponibles.map((p) => (
+            <li key={p.variante.id}>
+              <button
+                type="button"
+                onClick={() => setCombo([...combo, { variante_id: p.variante.id, cantidad: '1' }])}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-neutral-500/5"
+              >
+                <span className="flex-1 min-w-0">
+                  <span className="block font-medium truncate">{p.nombre}</span>
+                  <span className="block text-xs text-neutral-500">{p.categoria}</span>
+                </span>
+                <span className="tabular-nums text-xs text-neutral-500">{p.info?.sin_receta === false ? `cuesta ${fmt(costoDeVariante(p.variante.id))}` : 'sin receta'}</span>
+                <span className="text-acento-700 font-semibold">+</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   )
 }

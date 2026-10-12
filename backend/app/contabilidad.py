@@ -43,6 +43,9 @@ PLAN_DE_CUENTAS = [
     ("1030", "IVA credito fiscal", "activo", "deudora"),
     ("1035", "IVA retenido por clientes", "activo", "deudora"),
     ("1040", "Inventario de insumos", "activo", "deudora"),
+    # Lo que se facturo y no llego (8-oct): el proveedor lo debe hasta que
+    # mande su nota de credito. No es merma: nadie lo boto.
+    ("1045", "Reclamos a proveedores", "activo", "deudora"),
     ("1050", "Equipos y mobiliario", "activo", "deudora"),
     # Contra-cuenta de activo (ver CUENTAS_CONTRA): se acredita, asi que su
     # saldo sale negativo y resta del total de activos, como debe presentarse.
@@ -86,6 +89,12 @@ PLAN_DE_CUENTAS = [
     ("6035", "Cortesias a clientes", "gasto", "deudora"),
     ("6030", "Faltante / sobrante de caja", "gasto", "deudora"),
     ("6040", "Depreciacion", "gasto", "deudora"),
+    # Servilletas, bolsas, papel: se compran con la mercancia pero no llevan
+    # stock (no hay forma de atarlos a lo vendido). Van a gasto del mes.
+    ("6050", "Desechables y suministros", "gasto", "deudora"),
+    # El flete que cobra el proveedor en la factura. Aparte de los gastos
+    # operativos porque el transporte lleva retencion de ISLR propia.
+    ("6060", "Fletes y transporte", "gasto", "deudora"),
 ]
 
 # Cuentas que viven dentro de un grupo pero con el saldo invertido a proposito:
@@ -159,11 +168,78 @@ CUENTA_POR_CATEGORIA_COMPRA = {
     "Otros": "6010",
 }
 
+# Tipo de mercancia -> a que cuenta va al comprarla, dentro de una factura de
+# mercancia. Lo que no esta aqui va al inventario (1040). Es por TIPO y no
+# por mercancia: el usuario nunca elige cuenta.
+CUENTA_POR_TIPO_ARTICULO = {
+    "desechable": "6050",
+}
+
+
+# Renglon de factura que no es mercancia -> su cuenta.
+CUENTA_POR_CONCEPTO_GASTO = {
+    "Flete": "6060",
+    "Servicio": "6010",
+    "Equipo": "1050",
+    "Otro": "6010",
+}
+
+
+def cuenta_de_articulo(ingrediente) -> str:
+    return CUENTA_POR_TIPO_ARTICULO.get(getattr(ingrediente, "tipo", "") or "", "1040")
+
+
+def porciones_de_factura(factura, base: float) -> list:
+    """`base` repartida entre las cuentas de los renglones de la factura.
+
+    Una factura de mercancia trae carne (1040) y servilletas (6050) juntas.
+    Se reparte en proporcion a lo que pesa cada renglon -el recargo y el
+    descuento caen parejo sobre todos, igual que en el costo- y el ultimo
+    se lleva el resto, para que la suma de exacta al centavo.
+    """
+    concepto = CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
+    # Cada renglon con su cuenta y lo que pesa: la mercancia y lo que no lo
+    # es (flete, servicio) van en la misma bolsa.
+    renglones = [(i.cuenta or concepto, i.cantidad * i.costo_unitario) for i in (factura.items or [])]
+    renglones += [(g.cuenta or concepto, g.monto) for g in (getattr(factura, "gastos", None) or [])]
+    bruto = sum(m for _, m in renglones)
+    if not renglones or bruto <= 0:
+        return [(concepto, round(base, 2))]
+    pesos = {}
+    for cuenta, monto in renglones:
+        pesos[cuenta] = pesos.get(cuenta, 0) + monto
+    if len(pesos) == 1:
+        return [(next(iter(pesos)), round(base, 2))]
+    porciones = []
+    repartido = 0.0
+    cuentas = sorted(pesos)
+    for n, cuenta in enumerate(cuentas):
+        if n == len(cuentas) - 1:
+            monto = round(base - repartido, 2)
+        else:
+            monto = round(base * pesos[cuenta] / bruto, 2)
+            repartido += monto
+        porciones.append((cuenta, monto))
+    return porciones
+
+
 # Forma de pago de la factura de compra -> cuenta que sale (o la deuda que entra).
 CUENTA_PAGO_COMPRA = {
     **METODOS_DE_PAGO,
     "Credito": "2010",
 }
+
+
+def partes_de_pago_compra(factura) -> list:
+    """[(cuenta, monto)] de lo que se le pago al proveedor.
+
+    Un pago mixto sale de varias cuentas, una por parte; uno sencillo, de la
+    cuenta de su forma de pago. A credito la "salida" es la deuda que entra.
+    """
+    if factura.forma_pago == "Mixto" and factura.pagos:
+        return [(CUENTA_PAGO_COMPRA.get(p.forma_pago, "1010"), round(p.monto, 2)) for p in factura.pagos]
+    retenido = round(factura.iva_retenido or 0, 2)
+    return [(CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010"), round(factura.total - retenido, 2))]
 
 # Con que se salda despues una factura que quedo a credito. No incluye
 # "Credito" - no se puede pagar una deuda con otra deuda.
@@ -1173,7 +1249,7 @@ def registrar_reverso_declaracion_iva(db: Session, declaracion: models.Declaraci
 
 
 def registrar_nota_credito_compra(
-    db: Session, nota: models.NotaCreditoCompra, cuenta_concepto: str
+    db: Session, nota: models.NotaCreditoCompra, cuenta_concepto
 ) -> None:
     """Asiento espejo de la compra, por lo que el proveedor acredita.
 
@@ -1184,15 +1260,23 @@ def registrar_nota_credito_compra(
     """
     factura = nota.factura
     lineas = []
-    if nota.base_imponible > 0:
-        lineas.append((cuenta_concepto, 0.0, nota.base_imponible))
+    # Una cuenta, o la base ya repartida [(cuenta, monto)] cuando la factura
+    # mezclaba inventario y desechables.
+    if isinstance(cuenta_concepto, str):
+        porciones = [(cuenta_concepto, nota.base_imponible)]
+    else:
+        porciones = cuenta_concepto
+    for cuenta, monto in porciones:
+        if monto > 0:
+            lineas.append((cuenta, 0.0, round(monto, 2)))
     if nota.iva > 0:
         lineas.append(("1030", 0.0, nota.iva))
 
     if factura.forma_pago == "Credito" and not factura.pagada:
         contrapartida = "2010"  # todavia se le debe: baja la deuda
     else:
-        contrapartida = CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010")
+        # Pagada con varias cosas: la plata vuelve por donde mas salio.
+        contrapartida = max(partes_de_pago_compra(factura), key=lambda p: p[1])[0]
     lineas.append((contrapartida, nota.total, 0.0))
 
     crear_asiento(
@@ -1254,15 +1338,14 @@ def registrar_compra_insumo(
 
 
 def registrar_factura_compra(db: Session, factura: models.FacturaCompra) -> None:
-    cuenta_concepto = CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
-    cuenta_pago = CUENTA_PAGO_COMPRA.get(factura.forma_pago, "1010")
-
-    lineas = [(cuenta_concepto, factura.base_imponible, 0.0)]
+    lineas = [(cuenta, monto, 0.0) for cuenta, monto in porciones_de_factura(factura, factura.base_imponible) if monto]
     if factura.iva > 0:
         lineas.append(("1030", factura.iva, 0.0))
     # Lo retenido no se le paga al proveedor: queda debiendosele al SENIAT.
+    # Lo demas sale de donde salio: una cuenta, o una por parte si fue mixto.
     retenido = round(factura.iva_retenido or 0, 2)
-    lineas.append((cuenta_pago, 0.0, round(factura.total - retenido, 2)))
+    for cuenta, monto in partes_de_pago_compra(factura):
+        lineas.append((cuenta, 0.0, monto))
     if retenido > 0:
         lineas.append(("2050", 0.0, retenido))
 
@@ -1276,16 +1359,18 @@ def registrar_factura_compra(db: Session, factura: models.FacturaCompra) -> None
     )
 
 
-def registrar_pago_factura(db: Session, factura: models.FacturaCompra, forma_pago: str) -> None:
+def registrar_pago_factura(db: Session, factura: models.FacturaCompra, forma_pago: str, monto: Optional[float] = None) -> None:
     """Salda una factura que habia quedado a credito: baja la deuda (2010) y
     sale la plata de donde de verdad salio. Sin esto, `2010 Cuentas por
     pagar` solo crece y nunca refleja que ya se le pago al proveedor.
     """
     cuenta_pago = CUENTA_LIQUIDACION_CREDITO.get(forma_pago, "1010")
+    # Sin monto, lo que falta: la factura entera, o el resto despues de abonos.
+    pagado = round(factura.saldo if monto is None else monto, 2)
     crear_asiento(
         db,
-        f"Pago factura {factura.numero_factura} ({factura.proveedor_nombre})",
-        [("2010", factura.a_pagar, 0.0), (cuenta_pago, 0.0, factura.a_pagar)],
+        f"{'Abono a' if monto is not None else 'Pago'} factura {factura.numero_factura} ({factura.proveedor_nombre})",
+        [("2010", pagado, 0.0), (cuenta_pago, 0.0, pagado)],
         origen="pago_factura",
         referencia_id=factura.id,
     )
@@ -1455,6 +1540,21 @@ def registrar_merma(db: Session, ingrediente: models.Ingrediente, valor: float, 
         f"Merma de {ingrediente.nombre}",
         [("6020", valor, 0.0), ("1040", 0.0, valor)],
         origen="merma",
+        referencia_id=referencia_id,
+    )
+
+
+def registrar_carga_indirecto(db: Session, ingrediente, valor: float, referencia_id: int) -> None:
+    """Se cargo la freidora: el aceite sale del inventario y pasa a costo de
+    ventas. Es costo de producir (sin aceite no hay pastelito), no un gasto
+    general; por pieza se reparte en los reportes (costo indirecto)."""
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Carga a la freidora: {ingrediente.nombre}",
+        [("5010", valor, 0.0), ("1040", 0.0, valor)],
+        origen="carga_indirecto",
         referencia_id=referencia_id,
     )
 

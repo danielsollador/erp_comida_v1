@@ -28,6 +28,13 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 const minima = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 0.85 : 0.7
 
+// CON RATON, PRIMERO SE ESCONDE LO QUE SOBRA. En produccion la portada se
+// veia mas chica que en local: los avisos la hacian mas alta y el achique
+// era mayor (Leider, 7-oct). Ahora, si no cabe, primero se esconden los
+// avisos y los pasos de arranque (clase `vp-apretado`; estan tambien en la
+// campana) y lo que quede se ajusta parejo: el mismo achique leve de local.
+const tactil = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches)
+
 // La ultima escala, para volver a la pantalla con el tamaño con que se dejo:
 // arrancar siempre en 1 y medir despues era un salto de tamaño al volver del
 // punto de venta y al recargar (Leider, 1-oct). Vive en esta pestaña.
@@ -45,11 +52,44 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
   const contenido = useRef<HTMLDivElement>(null)
   const [escala, setEscala] = useState(() => (typeof window !== 'undefined' && window.innerWidth >= desde ? ultimaEscala : 1))
   const actual = useRef(escala)
+  // Con raton no se achica: se APRIETA (la clase `vp-apretado` activa la
+  // variante `apretado:` de las piezas). `ahorro` es cuanto gano apretar la
+  // ultima vez: con eso se sabe si sin apretar ya cabria, sin medir dos veces.
+  const [apretado, setApretado] = useState(false)
+  const apretadoRef = useRef(false)
+  const ahorro = useRef(0)
+  const altoSuelto = useRef(0)
 
   useLayoutEffect(() => {
     const el = contenido.current
     if (!el) return
     const medir = () => {
+      if (!tactil()) {
+        const alto = el.offsetHeight
+        const ventana = window.innerHeight
+        if (!apretadoRef.current) {
+          if (window.innerWidth >= desde && alto > ventana + 1) {
+            altoSuelto.current = alto
+            apretadoRef.current = true
+            setApretado(true)
+            // Se mide otra vez ya sin los avisos: ajustar ahora usaria el alto
+            // con ellos y la achicaria de mas.
+            window.setTimeout(medir, 60)
+            return
+          }
+        } else {
+          if (altoSuelto.current && ahorro.current === 0 && alto < altoSuelto.current) ahorro.current = altoSuelto.current - alto
+          if (window.innerWidth < desde || (ahorro.current > 0 && alto + ahorro.current <= ventana)) {
+            apretadoRef.current = false
+            ahorro.current = 0
+            setApretado(false)
+            window.setTimeout(medir, 60)
+            return
+          }
+        }
+        // Y despues, como siempre, el ajuste parejo con lo que quede: sin los
+        // avisos es el mismo achique leve que se ve en local.
+      }
       let s = 1
       if (window.innerWidth >= desde) {
         // `offsetHeight` es el alto de maquetacion: no lo cambia el
@@ -92,7 +132,7 @@ export default function AjustarAPantalla({ children, desde = 640 }: { children: 
 
   const reducido = escala < 1
   return (
-    <div style={reducido ? { height: '100dvh', overflow: 'hidden' } : undefined}>
+    <div className={apretado ? 'vp-apretado' : undefined} style={reducido ? { height: '100dvh', overflow: 'hidden' } : undefined}>
       <div
         ref={contenido}
         style={

@@ -94,7 +94,6 @@ def test_dice_que_platos_quedan_flacos_o_a_perdida(client, insumo, variante):
     [p] = a["productos"]
     assert p["nombre"] == "Empanada" and p["a_perdida"] is True
     assert p["margen_despues_pct"] < 0 < p["margen_antes_pct"]
-    assert p["precio_sugerido"] and p["precio_sugerido"] > 5
 
 
 def test_un_plato_que_sigue_bien_no_es_noticia(client, insumo, variante):

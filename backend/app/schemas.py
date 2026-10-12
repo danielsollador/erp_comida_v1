@@ -34,6 +34,8 @@ class VarianteBase(BaseModel):
     nombre: str
     precio: float
     activo: bool = True
+    # Pasa por la freidora (ver models.Variante.se_frie). None = no se toca.
+    se_frie: Optional[bool] = None
 
 
 class VarianteCreate(VarianteBase):
@@ -69,8 +71,13 @@ class CostoVariante(BaseModel):
     # el margen que importa para fijar precios es este, no el contable.
     costo_reposicion: Optional[float] = None
     margen_reposicion_pct: Optional[float] = None
-    # A cuanto habria que venderlo para conservar el margen contable actual.
-    precio_sugerido: Optional[float] = None
+    # Su parte del aceite de freir (y otros indirectos), por pieza. 0 si no
+    # se frie o si todavia no hay cargas registradas.
+    costo_indirecto: float = 0
+    # El costo con que se decide el precio, segun Configuracion
+    # (reposicion / promedio / mayor), indirecto incluido, y su margen.
+    costo_para_precio: Optional[float] = None
+    margen_para_precio_pct: Optional[float] = None
 
 
 class ProductoBase(BaseModel):
@@ -162,6 +169,13 @@ class IngredienteBase(BaseModel):
     nombre: str
     unidad: str
     stock_actual: float = 0
+
+    @field_validator("unidad")
+    @classmethod
+    def _paquete_es_unidad(cls, v: str) -> str:
+        # "Paquete" y "unidad" son lo mismo (Leider, 11-oct): lo que se cuenta
+        # de uno en uno. Como viene el paquete lo dice la factura (empaque).
+        return "unidad" if v == "paquete" else v
     stock_minimo: float = 0
     stock_objetivo: float = 0
     costo_unitario: float = 0
@@ -169,8 +183,15 @@ class IngredienteBase(BaseModel):
     # (0, 100] no tiene sentido fisico: 0 o negativo es "no rinde nada" y mas
     # de 100 diria que sale mas producto util del que se compro.
     rendimiento_pct: float = Field(default=100, gt=0, le=100)
-    # Materia prima de recetas, o mercancia de reventa (ver models.Ingrediente).
-    tipo: Literal["insumo", "reventa"] = "insumo"
+    # Ver models.Ingrediente.tipo. "insumo" se lee "Materia prima".
+    tipo: Literal["insumo", "reventa", "consumible", "desechable", "preparacion"] = "insumo"
+    # Solo de las preparaciones (ver models.Ingrediente).
+    rinde: float = Field(default=1.0, gt=0)
+    modo_produccion: Literal["descontar", "producir"] = "descontar"
+    vida_util_horas: Optional[int] = Field(default=None, ge=1)
+    es_indirecto: bool = False
+    # Viene en empaque de N unidades nuestras; None = suelta.
+    empaque_trae: Optional[float] = Field(default=None, gt=0)
     # En que parte del deposito vive (ver models.CategoriaInsumo). None = sin
     # clasificar, que es un estado normal y no un error.
     categoria_id: Optional[int] = None
@@ -184,7 +205,198 @@ class IngredienteBase(BaseModel):
 
 
 class IngredienteCreate(IngredienteBase):
-    pass
+    # Para lo que pide confirmacion al editar: pasar a desechable con stock,
+    # o archivar algo que lleva una receta (8-oct, casos 1 y 3).
+    confirmar: bool = False
+
+
+class LineaPreparacionInput(BaseModel):
+    ingrediente_id: int
+    cantidad: float = Field(gt=0)
+
+
+class LineaPreparacion(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    tipo: str
+    cantidad: float
+    # Lo que aporta esta linea al costo de UNA TANDA, a costo de hoy.
+    costo: float
+
+
+class Preparacion(BaseModel):
+    """Una preparacion con su receta y lo que cuesta."""
+
+    id: int
+    nombre: str
+    unidad: str
+    rinde: float
+    modo_produccion: str
+    vida_util_horas: Optional[int] = None
+    stock_actual: float
+    lineas: List[LineaPreparacion]
+    # Lo que cuesta 1 (kg, lt o unidad) con los costos de hoy. Son el mismo
+    # numero desde que la receta es por uno; los dos nombres siguen porque la
+    # pantalla los lee.
+    costo_tanda: float
+    costo_unitario: float
+    # Rendimiento real de las ultimas tandas registradas contra la receta
+    # (1 = rindio lo que dice la receta). None sin tandas.
+    rendimiento_real: Optional[float] = None
+    tandas: int = 0
+
+
+class PreparacionInput(BaseModel):
+    nombre: str
+    unidad: str = "kg"
+    # La receta es por 1 (kg, lt o unidad) desde el 8-oct: se acepta por
+    # compatibilidad y se guarda siempre 1 (ver models.Ingrediente.rinde_real).
+    rinde: float = Field(default=1.0, gt=0)
+    modo_produccion: Literal["descontar", "producir"] = "descontar"
+    vida_util_horas: Optional[int] = Field(default=None, ge=1)
+    lineas: List[LineaPreparacionInput]
+
+
+class ProduccionInput(BaseModel):
+    """Una tanda: lo que salio. `usado` es opcional: sin el, se asume la
+    receta escalada a lo que se esperaba sacar."""
+
+    preparacion_id: int
+    cantidad: float = Field(gt=0)
+    usado: Optional[List[LineaPreparacionInput]] = None
+    nota: str = ""
+    # Usar mas crudo del que hay se avisa (8-oct, caso 9): con esto se anota
+    # igual, porque la cocina no se traba y el conteo lo corrige.
+    forzar: bool = False
+
+
+class ProduccionOut(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    preparacion_id: int
+    preparacion: str
+    unidad: str
+    cantidad: float
+    cantidad_esperada: float
+    rendimiento_real: Optional[float] = None
+    costo_total: float
+
+
+class SobrantePreparacionRequest(BaseModel):
+    """Lo que sobro de una preparacion al cierre y que se decidio hacer.
+
+    `guardar` no mueve nada (queda para mañana); `botar` es merma: de la
+    preparacion misma si se produce, o de su materia prima por la receta si
+    se descuenta del crudo.
+    """
+
+    cantidad: float = Field(gt=0)
+    accion: Literal["botar", "guardar"]
+    motivo: str = ""
+
+
+class SobranteDetalle(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    cantidad: float
+    unidad: str
+    valor: float
+
+
+class SobrantePreparacion(BaseModel):
+    ok: bool = True
+    # Mermas registradas: 0 al guardar, 1 si se produce, una por materia
+    # prima si se descuenta del crudo.
+    movimientos: int
+    # Lo que se perdio, en $.
+    valor: float = 0.0
+    detalle: List[SobranteDetalle] = []
+
+
+class AlMenuInput(BaseModel):
+    """Una mercancia de reventa pasa al menu tal cual: su producto, su
+    precio y su receta de 1 unidad, de una vez."""
+
+    categoria_id: int
+    precio: float = Field(gt=0)
+    nombre: Optional[str] = None
+
+
+class RendimientoReal(BaseModel):
+    """Lo que de verdad rinden las ultimas tandas contra lo que dice la ficha."""
+
+    preparacion_id: int
+    nombre: str
+    tandas: int
+    # Lo que salio contra lo esperado, en % (100 = lo que dice la ficha).
+    real_pct: float
+    # El crudo que mas pesa en la receta: lo que dice la receta por 1 (kg, lt
+    # o unidad) y lo que convendria poner para que la proxima tanda se espere
+    # lo que de verdad sale. La receta es por uno (8-oct): se ajusta la
+    # receta, no la ficha del crudo.
+    crudo_id: Optional[int] = None
+    crudo: str = ""
+    unidad: str = ""
+    receta_cantidad: Optional[float] = None
+    sugerida_cantidad: Optional[float] = None
+
+
+class Disponibilidad(BaseModel):
+    """Cuanto se podria hacer de una preparacion con lo que hay en crudo."""
+
+    preparacion_id: int
+    nombre: str
+    unidad: str
+    stock_actual: float
+    potencial: Optional[float]
+    # La materia prima que pone el limite.
+    limita: Optional[str] = None
+    # Otras preparaciones que usan esa misma materia prima: compiten por ella.
+    comparte_con: List[str] = []
+    # Lo que saldria si TODO el crudo fuera para esta. `potencial` es lo que le
+    # toca cuando el crudo se reparte con las otras que lo usan.
+    potencial_solo: Optional[float] = None
+    # Que parte del crudo que limita le toca (0-100) y por que criterio.
+    reparto_pct: Optional[float] = None
+    reparto_segun: str = ""  # "ventas" (ultimos 14 dias) | "iguales" | ""
+
+
+class CostoTeoricoFila(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    teorico: float  # lo que debio salir: ventas, produccion, consumo del personal, freidora
+    mermas: float  # lo que se boto y se anoto
+    diferencia_conteo: float  # lo que el conteo encontro de menos (negativo) o de mas
+    valor_teorico: float
+    valor_diferencia: float
+    pct_desvio: Optional[float] = None
+
+
+class CostoIndirecto(BaseModel):
+    """El aceite (o el gas) repartido entre lo que se frie."""
+
+    ingrediente_id: int
+    nombre: str
+    unidad: str
+    cargado: float  # cuanto se cargo en el periodo
+    valor: float
+    piezas: float  # piezas vendidas que se frien
+    por_pieza: Optional[float] = None  # $ por pieza
+    cantidad_por_pieza: Optional[float] = None
+
+
+class FusionIngrediente(BaseModel):
+    """Fundir una ficha en otra: `destino_id` es la que se queda.
+
+    `factor`: cuantas unidades de la que se queda trae UNA de la que se va.
+    Con la misma unidad es 1. "Crema de leche lata" (unidad) dentro de
+    "Crema de leche" (kg), con latas de 250 g, es 0.25.
+    """
+
+    destino_id: int
+    factor: float = 1.0
 
 
 class Ingrediente(IngredienteBase):
@@ -242,7 +454,6 @@ class ImpactoEnProducto(BaseModel):
     costo_despues: float
     margen_antes_pct: Optional[float] = None
     margen_despues_pct: Optional[float] = None
-    precio_sugerido: Optional[float] = None
     a_perdida: bool = False
     margen_flaco: bool = False
 
@@ -364,6 +575,9 @@ class MermaRequest(BaseModel):
     cantidad: float
     motivo: str = ""
     operador_id: Optional[int] = None
+    # Mas de lo que hay en el deposito casi siempre es la unidad equivocada
+    # (300 "kg" que eran gramos). Se rechaza salvo que se confirme.
+    forzar: bool = False
 
 
 class Merma(BaseModel):
@@ -380,6 +594,8 @@ class Merma(BaseModel):
     # "el sistema estaba mal" y "se cayo al piso" son dos problemas distintos
     # y sumarlos en el mismo informe de perdidas no deja decidir nada.
     por_conteo: bool = False
+    # Quien la anoto. None en las de antes del 8-oct y en las de un conteo viejo.
+    operador: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -445,6 +661,9 @@ class ResultadoConteo(BaseModel):
     sin_cambio: int
     # El documento que quedo guardado, para poder abrirlo despues.
     conteo_id: Optional[int] = None
+    # Materia prima de una preparacion contada en crudo que NO vino en el
+    # conteo: esa parte del preparado no se pudo sumar a nada.
+    no_contadas: List[str] = []
 
 
 class ConteoResumen(BaseModel):
@@ -492,7 +711,10 @@ class FilaLeida(BaseModel):
     ingrediente_id: int
     nombre: str
     unidad: str
-    contado: float
+    contado: float  # ya en la unidad de la ficha
+    # Lo que habia que mirar: "venia en g y se paso a kg", o "850 kg es mucho
+    # para lo que hay: ¿eran gramos?". Vacio si nada.
+    aviso: str = ""
 
 
 class PlanillaLeida(BaseModel):
@@ -529,6 +751,40 @@ class Gasto(GastoBase):
 
     class Config:
         from_attributes = True
+
+
+class SustitucionInput(BaseModel):
+    original_id: int
+    sustituto_id: int
+    factor: float = Field(default=1.0, gt=0)
+    # Sin dato: hasta el final de hoy.
+    hasta: Optional[datetime.datetime] = None
+    nota: str = ""
+
+
+class SustitucionOut(BaseModel):
+    id: int
+    original_id: int
+    original: str
+    sustituto_id: int
+    sustituto: str
+    unidad_original: str
+    unidad_sustituto: str
+    factor: float
+    desde: datetime.datetime
+    hasta: datetime.datetime
+    nota: str = ""
+
+
+class ComboItemInput(BaseModel):
+    variante_id: int
+    cantidad: float = Field(default=1, gt=0)
+
+
+class ComboItemOut(BaseModel):
+    variante_id: int
+    nombre: str
+    cantidad: float
 
 
 class RecetaItemInput(BaseModel):
@@ -968,6 +1224,20 @@ class Configuracion(BaseModel):
     # Mientras esta encendido, una venta se hace aunque falte inventario: es
     # para arrancar un local que todavia no cargo insumos ni recetas.
     vender_sin_inventario: bool = False
+    # Ver models.Configuracion.costo_para_precios.
+    costo_para_precios: str = "reposicion"
+
+
+class CostosParaPrecios(BaseModel):
+    """Costo de 1 unidad utilizable de cada mercancia, con el metodo elegido."""
+
+    metodo: str
+    por_ingrediente: Dict[int, float] = {}
+    indirecto_por_pieza: float = 0.0
+
+
+class CostoParaPreciosRequest(BaseModel):
+    costo_para_precios: Literal["reposicion", "promedio", "mayor"]
 
 
 class VenderSinInventarioRequest(BaseModel):
@@ -1238,10 +1508,14 @@ class FiltroMenu(BaseModel):
     """Lo que se esta mirando cuando Reportes se filtra por una categoria o un
     producto del menu: el eco de lo pedido, con los nombres para el rotulo."""
 
+    # `categoria_id` / `producto_id`: el elegido cuando es UNO (None si son
+    # varios o ninguno); `*_ids`: todos; el nombre va con comas si son varios.
     categoria_id: Optional[int] = None
     categoria: str = ""
+    categoria_ids: List[int] = []
     producto_id: Optional[int] = None
     producto: str = ""
+    producto_ids: List[int] = []
 
 
 class FiltroDeposito(BaseModel):
@@ -1250,8 +1524,10 @@ class FiltroDeposito(BaseModel):
 
     categoria_id: Optional[int] = None
     categoria: str = ""
+    categoria_ids: List[int] = []
     ingrediente_id: Optional[int] = None
     ingrediente: str = ""
+    ingrediente_ids: List[int] = []
 
 
 class Insight(BaseModel):
@@ -1696,6 +1972,14 @@ class PerdidaPorMotivo(BaseModel):
     veces: int
 
 
+class PerdidaPorOperador(BaseModel):
+    """Lo que anoto cada persona como merma (sin los conteos)."""
+
+    operador: str
+    valor: float
+    veces: int
+
+
 class PuntoPerdida(BaseModel):
     etiqueta: str
     valor: float
@@ -1721,6 +2005,8 @@ class ReportePerdidas(BaseModel):
     cambio_pct: Optional[float] = None
     por_insumo: List[PerdidaPorInsumo]
     por_motivo: List[PerdidaPorMotivo]
+    # Quien anoto las mermas: para ver si una misma persona bota de mas.
+    por_operador: List[PerdidaPorOperador] = []
     serie: List[PuntoPerdida]
     # Mercancias activas que no tuvieron NINGUNA merma en el periodo.
     sin_merma: int
@@ -1955,11 +2241,53 @@ class LineaFacturaInput(BaseModel):
     ingrediente_id: int
     cantidad: float
     costo_unitario: float  # precio pagado por 1 unidad de medida, SIN IVA
+    # Vino en empaque de N: queda en la ficha de la mercancia para que la
+    # proxima factura lo de por hecho (Leider, 11-oct).
+    empaque_trae: Optional[float] = Field(default=None, gt=0)
     # Si ESTE renglon viene exento. None = lo que diga la ficha del insumo,
     # que es lo normal; se manda explicito cuando esta factura viene distinta
     # (la misma mercancia puede llegar exenta de un proveedor y gravada de
     # otro, y quien tiene el papel delante es quien sabe).
     exento: Optional[bool] = None
+
+
+class LineaGastoInput(BaseModel):
+    """Un renglon que no es mercancia: flete, servicio, equipo u otro gasto."""
+
+    concepto: str  # Flete|Servicio|Equipo|Otro
+    descripcion: str = ""
+    monto: float  # sin IVA, en dolares
+    exento: bool = False
+    # Solo para concepto="Equipo": en cuantos meses se deprecia.
+    vida_util_meses: Optional[int] = None
+
+
+class LineaGasto(BaseModel):
+    id: int
+    concepto: str
+    descripcion: str = ""
+    monto: float
+    exento: bool = False
+    cuenta: str = ""
+
+    class Config:
+        from_attributes = True
+
+
+class PagoCompraInput(BaseModel):
+    """Una parte de un pago mixto: con que, cuanto (en dolares) y el comprobante."""
+
+    forma_pago: str
+    monto: float = Field(gt=0)
+    referencia: Optional[str] = None
+
+
+class PagoCompra(PagoCompraInput):
+    id: int
+    referencia: str = ""
+
+    class Config:
+        from_attributes = True
 
 
 class LineaFactura(BaseModel):
@@ -1971,6 +2299,11 @@ class LineaFactura(BaseModel):
     costo_unitario: float
     subtotal: float
     exento: bool = False
+    # Que es la mercancia (insumo, reventa, consumible, desechable): con esto
+    # el listado dice a donde fue la plata de cada factura sin otra consulta.
+    tipo: str = "insumo"
+    # A que cuenta fue el renglon (1040, 6050...). Vacio en las viejas.
+    cuenta: str = ""
 
     class Config:
         from_attributes = True
@@ -1995,6 +2328,29 @@ class Proveedor(ProveedorCreate):
         from_attributes = True
 
 
+class ProveedorFacturaResumen(BaseModel):
+    """Una factura en la ficha del proveedor: lo justo para reconocerla."""
+    id: int
+    fecha: datetime.datetime
+    numero_factura: str
+    total: float
+    forma_pago: str
+    pagada: bool
+    saldo: float
+
+
+class ProveedorResumen(BaseModel):
+    """La ficha del proveedor: cuanto se le compro, cuanto se le debe y sus
+    ultimas facturas. Es lo que el dueno quiere ver antes de llamarlo."""
+    facturas: int
+    comprado: float            # suma de bases imponibles, sin IVA
+    deuda: float               # saldo de lo comprado a credito sin pagar
+    vencidas: int              # facturas a credito con fecha de vencimiento pasada
+    alertas_pendientes: int    # alertas de precio de este proveedor sin ver
+    ultima_compra: Optional[datetime.datetime] = None
+    ultimas: List[ProveedorFacturaResumen]
+
+
 class FacturaCompraBase(BaseModel):
     numero_factura: str
     proveedor_nombre: str
@@ -2003,7 +2359,7 @@ class FacturaCompraBase(BaseModel):
     # exactamente que formato se espera.
     proveedor_rif: str
     categoria: str = "Insumos"  # Insumos|Suministros|Servicios|Activos|Otros
-    forma_pago: str = "Efectivo"  # Efectivo|Banco|Credito
+    forma_pago: str = "Efectivo"  # Efectivo|Efectivo $|Banco|Credito|Mixto
     descripcion: str = ""
 
 
@@ -2024,6 +2380,9 @@ class FacturaCompraCreate(FacturaCompraBase):
     # Con renglones (compra de insumos): la base sale de sumar los renglones,
     # y cada uno actualiza el stock y el costo promedio de su ingrediente.
     items: List[LineaFacturaInput] = []
+    # Lo que no es mercancia, renglon por renglon: el flete, un servicio. Se
+    # suma a la base junto con los renglones de mercancia.
+    gastos: List[LineaGastoInput] = []
     # Sin renglones (servicios, activos, cualquier compra que no sea insumo
     # puntual): se carga la base a mano, como antes.
     base_imponible: Optional[float] = None
@@ -2042,6 +2401,13 @@ class FacturaCompraCreate(FacturaCompraBase):
     # El comprobante, cuando la factura se carga ya pagada y no en efectivo.
     # A credito no aplica: todavia no ha salido plata.
     referencia_pago: Optional[str] = None
+    # Pago mixto: las partes (con forma_pago = "Mixto"). Tienen que sumar lo
+    # que se le paga al proveedor; cada una lleva su comprobante si lo pide.
+    pagos: List[PagoCompraInput] = []
+    # Ya hay una factura con este numero de este proveedor y quien carga dijo
+    # "guardar igual". Sin esto el servidor la rechaza: dos tablets guardando
+    # la misma a la vez duplicaban la mercancia (caso 11, 8-oct).
+    confirmar_duplicado: bool = False
 
 
 class FacturaCompra(FacturaCompraBase):
@@ -2057,6 +2423,12 @@ class FacturaCompra(FacturaCompraBase):
     comprobante_retencion: str = ""
     # Lo que se le paga al proveedor: total menos lo retenido.
     a_pagar: float = 0
+    # Lo que ya se le abono y lo que falta (a credito).
+    abonado: float = 0
+    saldo: float = 0
+    abonos: List["AbonoFactura"] = []
+    # Lo que no llego y el proveedor todavia debe (abiertos).
+    reclamos: List["Reclamo"] = []
     # Ya con el recargo y el descuento aplicados: es la base que va al Libro
     # de Compras. Los dos viajan aparte para poder explicar la diferencia con
     # la suma de los renglones.
@@ -2070,6 +2442,8 @@ class FacturaCompra(FacturaCompraBase):
     fecha_pago: Optional[datetime.datetime] = None
     referencia_pago: str = ""
     items: List[LineaFactura] = []
+    gastos: List[LineaGasto] = []
+    pagos: List[PagoCompra] = []
     # Si tiene la foto del papel enganchada. Solo lo llena el listado.
     tiene_soporte: bool = False
 
@@ -2139,6 +2513,21 @@ class RenglonARevisar(BaseModel):
     indice: int  # posicion en el formulario, para devolver el aviso a su renglon
     ingrediente_id: int
     costo_unitario: float  # en dolares, como se va a guardar
+    # En la unidad de la ficha. Sin dato, no se revisa la cantidad.
+    cantidad: Optional[float] = None
+
+
+class AvisoCantidad(BaseModel):
+    """Una cantidad muy distinta de lo que se suele comprar: "20 kg" cuando
+    siempre son 2 es casi seguro un bulto leido como kilo (8-oct, caso 13)."""
+
+    indice: int
+    ingrediente_id: int
+    cantidad: float
+    referencia: float  # la mediana de las ultimas compras
+    muestras: int
+    veces: float  # cuantas veces lo normal (0,1 = la decima parte)
+    mensaje: str = ""
 
 
 class RevisionFacturaRequest(BaseModel):
@@ -2178,6 +2567,7 @@ class RifConocido(BaseModel):
 class RevisionFactura(BaseModel):
     duplicadas: List[FacturaParecida] = []
     precios: List[AvisoPrecio] = []
+    cantidades: List[AvisoCantidad] = []
     # Por que ese RIF no puede ser correcto (su digito verificador no cuadra).
     # Vacio si cuadra o no se puede saber. Avisa, no bloquea.
     rif_aviso: str = ""
@@ -2253,7 +2643,6 @@ class ProductoAfectado(BaseModel):
     precio: float
     margen_antes_pct: Optional[float] = None
     margen_despues_pct: Optional[float] = None
-    precio_sugerido: Optional[float] = None
     a_perdida: bool = False
 
 
@@ -2313,6 +2702,50 @@ class CompletarFactura(BaseModel):
     alertas: List[AlertaPrecio] = []
 
 
+class FaltanteRequest(BaseModel):
+    """Lo que la factura dice y no llego, renglon por renglon."""
+
+    items: List["NotaCreditoItemCreate"]
+    motivo: str = ""
+
+
+class Reclamo(BaseModel):
+    id: int
+    factura_id: int
+    ingrediente_id: int
+    ingrediente_nombre: str
+    unidad: str
+    cantidad: float
+    valor: float
+    motivo: str = ""
+    fecha: datetime.datetime
+    estado: str
+    numero_factura: str = ""
+    proveedor_nombre: str = ""
+    # Cuantos dias lleva abierto: un reclamo viejo es plata que se olvida.
+    dias: int = 0
+
+
+class AbonoFacturaRequest(BaseModel):
+    monto: float = Field(gt=0)
+    forma_pago: str = "Efectivo"
+    referencia: Optional[str] = None
+
+
+class AbonoFactura(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    monto: float
+    forma_pago: str
+    referencia: str = ""
+
+    class Config:
+        from_attributes = True
+
+
+FacturaCompra.model_rebuild()
+
+
 class PagoFacturaRequest(BaseModel):
     forma_pago: str = "Efectivo"  # Efectivo|Banco - con que se salda la deuda
     # Obligatoria si no se paga en efectivo, igual que al cobrar una venta.
@@ -2336,7 +2769,7 @@ class NotaCreditoCompraCreate(BaseModel):
     """
 
     numero: str
-    tipo: str  # devolucion | descuento
+    tipo: str  # devolucion | descuento | faltante (cierra lo que no llego)
     motivo: str = ""
     fecha: Optional[datetime.datetime] = None
     base_imponible: Optional[float] = None  # solo para 'descuento'
@@ -2770,3 +3203,7 @@ class VueltoEmitido(BaseModel):
     monto_bs: float
     reintentable: bool = False
 
+
+
+FaltanteRequest.model_rebuild()
+FacturaCompra.model_rebuild()

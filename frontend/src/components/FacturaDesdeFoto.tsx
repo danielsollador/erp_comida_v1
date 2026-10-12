@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { conversion } from '../lib/compras'
 import type { Equivalencia, Proveedor } from '../lib/types'
-import { Modal, Vacio } from './ui'
+import { Boton, Modal, Vacio } from './ui'
 
 /**
  * Las piezas de la factura con foto que se usan fuera de la carga: ver el
@@ -114,14 +114,15 @@ export function MemoriaProveedores({ proveedores }: { proveedores: Proveedor[] }
                   <td className="p-2">{nombreDe(e)}</td>
                   <td className="p-2 font-mono text-xs">{e.descripcion}</td>
                   <td className="p-2">
-                    {e.ingrediente_nombre} <span className="text-neutral-400">({e.unidad})</span>
+                    {e.ingrediente_nombre} <span className="text-neutral-500">({e.unidad})</span>
                   </td>
                   <td className="p-2 text-neutral-500">{conversion(e.factor, e.unidad_papel, e.unidad) || '—'}</td>
                   <td className="p-2 text-right tabular-nums">{e.veces}</td>
                   <td className="p-2 text-right">
-                    <button onClick={() => olvidar(e)} className="text-xs text-neutral-500 font-medium">
+                    {/* Olvidar borra lo aprendido: se ve como lo que es. */}
+                    <Boton tono="peligro" className="min-h-11" onClick={() => void olvidar(e)}>
                       Olvidar
-                    </button>
+                    </Boton>
                   </td>
                 </tr>
               ))}

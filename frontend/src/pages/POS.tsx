@@ -12,7 +12,7 @@ import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
 import { ivaRetenido } from '../lib/compras'
 import { enPreparacion, estadoCocina, porQueNoSeEdita } from '../lib/comandas'
-import { fmtBs, useMoneda } from '../lib/moneda'
+import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { uuid } from '../lib/uuid'
 import { colorCategoria } from '../lib/theme'
@@ -433,7 +433,13 @@ export default function POS() {
         categoria: c,
         filas: c.productos
           .filter((p) => p.activo)
-          .flatMap((p) => variantesParaVender(p).map((v) => ({ producto: p, variante: v }))),
+          // Un producto recien creado sin precio todavia no se vende: su
+          // precio se decide en Recetas. Los envios si, que cobran lo que se escriba.
+          .flatMap((p) =>
+            variantesParaVender(p)
+              .filter((v) => v.precio > 0 || sinTildes(c.nombre) === 'envios')
+              .map((v) => ({ producto: p, variante: v })),
+          ),
       })),
     [categorias],
   )
@@ -1242,8 +1248,23 @@ export default function POS() {
     }
     try {
       // Se toma el candado ANTES de que el cajero empiece a tocar renglones:
-      // avisarle a la cocina cuando ya se guardo no sirve de nada.
-      const abierto = await api.abrirEdicion(pedido.id)
+      // avisarle a la cocina cuando ya se guardo no sirve de nada. Si otra
+      // caja la tiene abierta (o quedo colgada de una tablet que se recargo),
+      // se pregunta y se toma: sin cobrar se edita siempre.
+      let abierto: Pedido
+      try {
+        abierto = await api.abrirEdicion(pedido.id)
+      } catch (e) {
+        const mensaje = e instanceof Error ? e.message : ''
+        if (!mensaje.includes('está editando')) throw e
+        const tomar = await dialogo.confirmar({
+          titulo: mensaje.replace(/ en este momento\.?$/, ''),
+          texto: 'Si la tomas, lo que esa caja no haya guardado se pierde. Úsalo si quedó abierta por error o se recargó la pantalla.',
+          aceptar: 'Tomarla y editar',
+        })
+        if (!tomar) return
+        abierto = await api.abrirEdicion(pedido.id, true)
+      }
       // En la pantalla de tomar pedido, como si se pidiera de cero (el
       // cliente, 23-sep). Lo que la comanda no sabe mostrar --un producto
       // que ya salio del menu, el mismo producto cobrado y regalado a la
@@ -2295,8 +2316,8 @@ export default function POS() {
           {(descuentoNum > 0 || Number(propina) > 0) && (
             <p className="text-xs text-neutral-500">
               ${cobrando.total.toFixed(2)} de comida
-              {descuentoNum > 0 && ` - $${descuentoNum.toFixed(2)} de descuento`}
-              {Number(propina) > 0 && ` + $${Number(propina).toFixed(2)} de propina`}
+              {descuentoNum > 0 && ` - $${fmtNum(descuentoNum)} de descuento`}
+              {Number(propina) > 0 && ` + $${fmtNum(Number(propina))} de propina`}
             </p>
           )}
           {tasaBcv > 0 && (
@@ -2442,7 +2463,7 @@ export default function POS() {
                     >
                       Paga exacto ·{' '}
                       <span className="tabular-nums">
-                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${aCobrar.toFixed(2)}`}
+                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${fmtNum(aCobrar)}`}
                       </span>
                     </button>
                     <button
@@ -2520,7 +2541,7 @@ export default function POS() {
                     ) : (
                       <p className="text-xs text-neutral-500">
                         Tiene que ser más de{' '}
-                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${aCobrar.toFixed(2)}`}.
+                        {enBs && tasaBcv > 0 ? fmtBs(aCobrar * tasaBcv) : `$${fmtNum(aCobrar)}`}.
                       </p>
                     )}
                   </div>

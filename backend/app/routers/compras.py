@@ -2,7 +2,8 @@ import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import contabilidad, costeo, impuestos, kardex, models, schemas, tasas
 from ..database import get_db
@@ -84,6 +85,21 @@ def _referencia_del_pago(forma_pago: str, referencia) -> str:
     return limpia
 
 
+# Con renglones de gasto la categoria de la factura ya no la elige nadie: sale
+# de lo que trae. Se sigue guardando porque los listados y las facturas viejas
+# la usan para saber de que se trata.
+_CATEGORIA_DE_CONCEPTO = {"Flete": "Servicios", "Servicio": "Servicios", "Equipo": "Activos", "Otro": "Otros"}
+
+
+def _categoria_de(factura: schemas.FacturaCompraCreate) -> str:
+    if not factura.gastos:
+        return factura.categoria
+    if factura.items:
+        return "Insumos"
+    categorias = {_CATEGORIA_DE_CONCEPTO[g.concepto] for g in factura.gastos}
+    return categorias.pop() if len(categorias) == 1 else "Otros"
+
+
 def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
     return schemas.FacturaCompra(
         id=factura.id,
@@ -122,10 +138,34 @@ def _a_schema(factura: models.FacturaCompra) -> schemas.FacturaCompra:
                 costo_unitario=i.costo_unitario,
                 subtotal=i.subtotal,
                 exento=bool(i.exento),
+                tipo=i.ingrediente.tipo or "insumo",
+                cuenta=i.cuenta or "",
             )
             for i in factura.items
         ],
+        gastos=[schemas.LineaGasto.model_validate(g) for g in (factura.gastos or [])],
+        pagos=[schemas.PagoCompra.model_validate(p) for p in (factura.pagos or [])],
+        abonado=factura.abonado,
+        saldo=factura.saldo,
+        reclamos=[_reclamo_a_schema(r) for r in (factura.reclamos or []) if r.estado == "abierto"],
+        abonos=[schemas.AbonoFactura(id=a.id, fecha=a.fecha, monto=a.monto, forma_pago=a.forma_pago, referencia=a.referencia or "") for a in (factura.abonos or [])],
     )
+
+
+@router.get("/servicios", response_model=List[str])
+def listar_servicios(db: Session = Depends(get_db)):
+    """Los servicios que ya se han cargado alguna vez ("Internet", "Luz"),
+    los mas repetidos primero. Son fijos: se cargan cada mes, y escribirlos
+    de nuevo cada vez termina en "Internet", "internet" e "Internet octubre"
+    como tres gastos distintos (Leider, 8-oct)."""
+    filas = (
+        db.query(models.FacturaCompraGasto.descripcion, func.count(models.FacturaCompraGasto.id))
+        .filter(models.FacturaCompraGasto.concepto == "Servicio", models.FacturaCompraGasto.descripcion != "")
+        .group_by(models.FacturaCompraGasto.descripcion)
+        .order_by(func.count(models.FacturaCompraGasto.id).desc(), models.FacturaCompraGasto.descripcion)
+        .all()
+    )
+    return [descripcion for descripcion, _ in filas]
 
 
 @router.get("/facturas", response_model=List[schemas.FacturaCompra])
@@ -133,7 +173,10 @@ def listar_facturas(rango: Rango = Depends(), db: Session = Depends(get_db)):
     inicio, fin, _ = rango.resolver(dias=60)
     facturas = (
         db.query(models.FacturaCompra)
-        .options(joinedload(models.FacturaCompra.items).joinedload(models.FacturaCompraItem.ingrediente))
+        .options(
+            joinedload(models.FacturaCompra.items).joinedload(models.FacturaCompraItem.ingrediente),
+            selectinload(models.FacturaCompra.gastos),
+        )
         .filter(models.FacturaCompra.fecha >= inicio, models.FacturaCompra.fecha < fin)
         .order_by(models.FacturaCompra.id.desc())
         .all()
@@ -175,6 +218,34 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             detail="El RIF del proveedor es obligatorio: letra (J/G/V/E/P/C) + 8 o 9 dígitos.",
         )
     factura_rif = impuestos.normalizar_rif(factura.proveedor_rif)
+    # Un año cerrado no recibe facturas (8-oct): el asiento se podia mover al
+    # año abierto, pero la factura quedaba en el Libro de Compras de un mes ya
+    # declarado. La fecha del PAPEL puede ser vieja (`fecha_emision`); la de
+    # registro, no.
+    cerrado = contabilidad.ultimo_ejercicio_cerrado(db)
+    if factura.fecha is not None and cerrado is not None and factura.fecha.year <= cerrado:
+        raise HTTPException(
+            status_code=409,
+            detail=f"El {factura.fecha.year} ya está cerrado: una factura no puede registrarse en ese año, "
+            "porque cambiaría un Libro de Compras ya declarado. Regístrala con la fecha de hoy; "
+            "la fecha del papel va aparte, en «fecha de la factura».",
+        )
+    # La misma factura dos veces: se pregunta AQUI, dentro del candado, no
+    # solo en la pantalla. Si dos tablets guardan a la vez, la segunda llega
+    # cuando la primera ya entro y se rechaza en vez de duplicar el stock.
+    if not factura.confirmar_duplicado:
+        from .compras_lectura import _duplicadas
+
+        ya = _duplicadas(db, schemas.RevisionFacturaRequest(
+            proveedor_rif=factura_rif, proveedor_nombre=factura.proveedor_nombre,
+            numero_factura=factura.numero_factura, items=[],
+        ))
+        if ya:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya está cargada: la {ya[0].numero_factura} de {ya[0].proveedor_nombre} "
+                f"del {ya[0].fecha:%d/%m/%Y} por ${ya[0].total:.2f}. Guardarla otra vez duplica la mercancía.",
+            )
     if factura.fecha_emision and factura.fecha_emision > hoy():
         raise HTTPException(status_code=400, detail="La fecha de la factura no puede ser futura.")
     if factura.moneda not in ("$", "Bs"):
@@ -196,28 +267,52 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
     # Antes de tocar stock ni costos: si falta el comprobante hay que rebotar
     # con la factura entera sin cargar, no a mitad de los renglones. A credito
     # no se pide, que todavia no ha salido plata.
+    es_mixto = factura.forma_pago == "Mixto"
+    if es_mixto:
+        if len(factura.pagos) < 2:
+            raise HTTPException(status_code=400, detail="Un pago mixto lleva al menos dos partes.")
+        for parte in factura.pagos:
+            if not contabilidad.metodo_de_pago_valido(parte.forma_pago):
+                raise HTTPException(status_code=400, detail=f"«{parte.forma_pago}» no sirve para pagar una factura.")
+    elif factura.pagos:
+        raise HTTPException(status_code=400, detail="Las partes del pago solo van con la forma de pago «Mixto».")
+    elif factura.forma_pago != "Credito" and not contabilidad.metodo_de_pago_valido(factura.forma_pago):
+        raise HTTPException(status_code=400, detail=f"«{factura.forma_pago}» no sirve para pagar una factura.")
     referencia_pago = (
-        "" if factura.forma_pago == "Credito"
+        "" if factura.forma_pago in ("Credito", "Mixto")
         else _referencia_del_pago(factura.forma_pago, factura.referencia_pago)
     )
+    partes_pago = [
+        (parte.forma_pago, round(parte.monto, 2), _referencia_del_pago(parte.forma_pago, parte.referencia))
+        for parte in factura.pagos
+    ]
 
-    if factura.items:
+    for g in factura.gastos:
+        if g.concepto not in contabilidad.CUENTA_POR_CONCEPTO_GASTO:
+            raise HTTPException(status_code=400, detail=f"«{g.concepto}» no es un concepto de gasto: Flete, Servicio, Equipo u Otro.")
+        if g.monto <= 0:
+            raise HTTPException(status_code=400, detail=f"El monto del renglón de {g.concepto.lower()} debe ser mayor a cero")
+    ingredientes = {}
+    if factura.items or factura.gastos:
         # Con renglones: la base la calcula el sistema sumando lo que de
         # verdad se compro, no lo que alguien tipeo aparte - evita que un
         # numero de cabecera quede desincronizado de sus propios renglones.
         db.expire_all()  # otro hilo pudo haber movido el stock de estos insumos
-        ingredientes = {
-            i.id: i
-            for i in db.query(models.Ingrediente)
-            .filter(models.Ingrediente.id.in_([it.ingrediente_id for it in factura.items]))
-            .with_for_update()
-        }
+        if factura.items:
+            ingredientes = {
+                i.id: i
+                for i in db.query(models.Ingrediente)
+                .filter(models.Ingrediente.id.in_([it.ingrediente_id for it in factura.items]))
+                .with_for_update(of=models.Ingrediente)
+            }
         for item in factura.items:
             if item.ingrediente_id not in ingredientes:
                 raise HTTPException(status_code=404, detail=f"Ingrediente {item.ingrediente_id} no existe")
             if item.cantidad <= 0:
                 raise HTTPException(status_code=400, detail="La cantidad de cada renglón debe ser mayor a cero")
-        bruta_exacta = sum(it.cantidad * it.costo_unitario for it in factura.items)
+        bruta_exacta = sum(it.cantidad * it.costo_unitario for it in factura.items) + sum(
+            g.monto for g in factura.gastos
+        )
         base_bruta = round(bruta_exacta, 2)
         ajuste = round(factura.recargo - factura.descuento, 2)
         base_imponible = round(base_bruta + ajuste, 2)
@@ -237,22 +332,14 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
         # El IVA se calcula aca, no se confia en lo que mando el cliente: solo
         # asi el "exento" tiene efecto real. Sin esto, marcar la harina como
         # exenta no cambiaba un centavo del IVA de la factura.
-        base_gravada = round(
-            sum(
-                it.cantidad * it.costo_unitario
-                for it in factura.items
-                if not _exento_de(it, ingredientes)
-            )
-            * factor,
-            2,
-        )
+        gravado_bruto = sum(
+            it.cantidad * it.costo_unitario for it in factura.items if not _exento_de(it, ingredientes)
+        ) + sum(g.monto for g in factura.gastos if not g.exento)
+        base_gravada = round(gravado_bruto * factor, 2)
         iva_calculado = round(base_gravada * impuestos.tasa_iva(db) / 100, 2)
         # Lo mismo sin redondear, para los Bs del libro (ver impuestos.montos_bs).
         base_exacta = bruta_exacta + factura.recargo - factura.descuento
-        gravado_exacto = (
-            sum(it.cantidad * it.costo_unitario for it in factura.items if not _exento_de(it, ingredientes))
-            * (base_exacta / bruta_exacta if bruta_exacta else 1.0)
-        )
+        gravado_exacto = gravado_bruto * (base_exacta / bruta_exacta if bruta_exacta else 1.0)
     else:
         if not factura.base_imponible or factura.base_imponible <= 0:
             raise HTTPException(status_code=400, detail="La base imponible debe ser mayor a cero")
@@ -275,19 +362,20 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
     if tasa_bcv:
         gravado_bs, exento_bs, iva_bs = impuestos.montos_bs(
             base_exacta, gravado_exacto, iva_calculado, tasa_bcv,
-            iva_de_la_base=bool(factura.items), tasa_pct=impuestos.tasa_iva(db),
+            iva_de_la_base=bool(factura.items or factura.gastos), tasa_pct=impuestos.tasa_iva(db),
         )
 
     retencion = _retencion(db, factura, factura_rif, iva_calculado, iva_bs)
 
     es_credito = factura.forma_pago == "Credito"
+    categoria = _categoria_de(factura)
     db_factura = models.FacturaCompra(
         numero_factura=factura.numero_factura,
         proveedor_nombre=factura.proveedor_nombre,
         proveedor_rif=factura_rif,
         fecha=factura.fecha or ahora(),
         fecha_emision=factura.fecha_emision,
-        categoria=factura.categoria,
+        categoria=categoria,
         forma_pago=factura.forma_pago,
         descripcion=factura.descripcion,
         base_imponible=base_imponible,
@@ -311,8 +399,34 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
     db.add(db_factura)
     db.flush()
 
+    if es_mixto:
+        # Las partes tienen que dar lo que se le paga al proveedor: ni mas
+        # (plata que sale sin factura) ni menos (deuda que nadie anoto).
+        suma = round(sum(m for _, m, _ in partes_pago), 2)
+        a_pagar = round(db_factura.a_pagar, 2)
+        diferencia = round(a_pagar - suma, 2)
+        if abs(diferencia) > 0.05:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Las partes del pago suman ${suma:.2f} y al proveedor se le pagan ${a_pagar:.2f}.",
+            )
+        if diferencia:
+            # Centavos de redondeo (una factura en bolivares pasada a dolares
+            # parte por parte): los absorbe la parte mas grande, para que el
+            # asiento cuadre al centavo con lo que se le paga.
+            mayor = max(range(len(partes_pago)), key=lambda k: partes_pago[k][1])
+            forma, monto, referencia = partes_pago[mayor]
+            partes_pago[mayor] = (forma, round(monto + diferencia, 2), referencia)
+        for forma, monto, referencia in partes_pago:
+            db.add(models.PagoCompra(factura_id=db_factura.id, forma_pago=forma, monto=monto, referencia=referencia))
+        db.flush()
+        db.refresh(db_factura, ["pagos"])
+
     for item in factura.items:
         ingrediente = ingredientes[item.ingrediente_id]
+        # Vino en empaque: la ficha lo aprende y la proxima factura lo da por hecho.
+        if item.empaque_trae:
+            ingrediente.empaque_trae = item.empaque_trae
         db.add(
             models.FacturaCompraItem(
                 factura_id=db_factura.id,
@@ -322,8 +436,15 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
                 # es lo que hay que poder cotejar con la factura del proveedor.
                 costo_unitario=item.costo_unitario,
                 exento=_exento_de(item, ingredientes),
+                # La cuenta la decide el tipo de la mercancia: la carne al
+                # inventario, las servilletas a gasto. Una factura trae las dos.
+                cuenta=contabilidad.cuenta_de_articulo(ingrediente),
             )
         )
+        # Un desechable no lleva stock: no hay forma de atarlo a lo vendido
+        # (un pastelito puede llevarse 40 servilletas). Va entero a gasto.
+        if ingrediente.tipo == "desechable":
+            continue
         # El costo del insumo se promedia con lo que ya habia - mismo motor
         # que "Registrar compra" en Inventario (ver costeo.py), para que las
         # dos vias de cargar una compra lleguen siempre al mismo numero. Aca si
@@ -336,12 +457,40 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             nota=f"Factura {db_factura.numero_factura} - {db_factura.proveedor_nombre}",
         )
 
+    gastos = []
+    for g in factura.gastos:
+        gasto = models.FacturaCompraGasto(
+            factura_id=db_factura.id,
+            concepto=g.concepto,
+            descripcion=(g.descripcion or "").strip(),
+            monto=round(g.monto, 2),
+            exento=g.exento,
+            cuenta=contabilidad.CUENTA_POR_CONCEPTO_GASTO[g.concepto],
+        )
+        db.add(gasto)
+        gastos.append((gasto, g))
+
     db.flush()
+    db.refresh(db_factura, ["gastos"])
     contabilidad.registrar_factura_compra(db, db_factura)
+
+    # Un equipo comprado renglon por renglon nace como bien, con el recargo o
+    # el descuento que le toca, igual que la mercancia.
+    for gasto, g in gastos:
+        if gasto.concepto == "Equipo":
+            db.add(
+                models.ActivoFijo(
+                    nombre=gasto.descripcion or f"Equipo (fact. {db_factura.numero_factura})",
+                    valor=round(gasto.monto * factor, 2),
+                    fecha_compra=db_factura.fecha,
+                    vida_util_meses=g.vida_util_meses or 60,
+                    factura_id=db_factura.id,
+                )
+            )
 
     # Una compra de activos crea el bien para que empiece a depreciarse. Antes
     # entraba a 1050 y se quedaba ahi a valor de compra para siempre.
-    if db_factura.categoria == "Activos":
+    if db_factura.categoria == "Activos" and not factura.gastos:
         db.add(
             models.ActivoFijo(
                 nombre=db_factura.descripcion or f"Activo (fact. {db_factura.numero_factura})",
@@ -388,6 +537,39 @@ def pagar_factura(factura_id: int, pago: schemas.PagoFacturaRequest, db: Session
     return _a_schema(db_factura)
 
 
+@router.post("/facturas/{factura_id}/abonos", response_model=schemas.FacturaCompra)
+def abonar_factura(factura_id: int, body: schemas.AbonoFacturaRequest, db: Session = Depends(get_db)):
+    """Un pago a cuenta de una factura a credito. Cuando lo abonado llega al
+    total, la factura queda pagada sola."""
+    db_factura = db.query(models.FacturaCompra).filter(models.FacturaCompra.id == factura_id).first()
+    if not db_factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if db_factura.forma_pago != "Credito":
+        raise HTTPException(status_code=400, detail="Esta factura no quedó a crédito")
+    if db_factura.pagada:
+        raise HTTPException(status_code=409, detail="Esta factura ya está pagada")
+    if not contabilidad.metodo_de_pago_valido(body.forma_pago):
+        raise HTTPException(status_code=400, detail="El abono sale de una gaveta (Efectivo Bs, Efectivo $) o del Banco")
+    monto = round(body.monto, 2)
+    if monto > db_factura.saldo + 0.005:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El abono (${monto:.2f}) es mayor que lo que se debe (${db_factura.saldo:.2f}).",
+        )
+    referencia = _referencia_del_pago(body.forma_pago, body.referencia)
+    contabilidad.registrar_pago_factura(db, db_factura, body.forma_pago, monto)
+    db.add(models.FacturaCompraAbono(factura_id=db_factura.id, monto=monto, forma_pago=body.forma_pago, referencia=referencia or ""))
+    db.flush()
+    db.refresh(db_factura)
+    if db_factura.saldo <= 0.005:
+        db_factura.pagada = True
+        db_factura.fecha_pago = ahora()
+        db_factura.referencia_pago = referencia
+    db.commit()
+    db.refresh(db_factura)
+    return _a_schema(db_factura)
+
+
 @router.get("/facturas/{factura_id}/notas-credito", response_model=List[schemas.NotaCreditoCompra])
 def listar_notas_credito(factura_id: int, db: Session = Depends(get_db)):
     factura = _factura_o_404(db, factura_id)
@@ -416,16 +598,25 @@ def crear_nota_credito(
     with costeo.bloqueo_inventario():
         factura = _factura_o_404(db, factura_id)
 
-        if body.tipo not in ("devolucion", "descuento"):
+        if body.tipo not in ("devolucion", "descuento", "faltante"):
             raise HTTPException(
-                status_code=400, detail="El tipo debe ser 'devolucion' o 'descuento'"
+                status_code=400, detail="El tipo debe ser 'devolucion', 'descuento' o 'faltante'"
             )
+        abiertos = [r for r in factura.reclamos if r.estado == "abierto"]
+        if body.tipo == "faltante":
+            if not abiertos:
+                raise HTTPException(status_code=400, detail="Esa factura no tiene faltantes pendientes con el proveedor.")
+            # Sin renglones: la nota cubre todo lo que se reclamo.
+            if not body.items:
+                body.items = [schemas.NotaCreditoItemCreate(ingrediente_id=r.ingrediente_id, cantidad=r.cantidad) for r in abiertos]
 
         fecha = body.fecha or ahora()
         _bloquear_si_periodo_declarado(db, fecha, factura)
 
         if body.tipo == "devolucion":
             base, lineas = _lineas_de_devolucion(db, factura, body)
+        elif body.tipo == "faltante":
+            base, lineas = _lineas_de_faltante(db, factura, body, abiertos)
         else:
             base, lineas = _base_de_descuento(body), []
 
@@ -464,6 +655,7 @@ def crear_nota_credito(
         db.flush()
 
         for ingrediente, cantidad, costo in lineas:
+            es_desechable = ingrediente.tipo == "desechable"
             db.add(
                 models.NotaCreditoCompraItem(
                     nota_id=nota.id,
@@ -474,7 +666,11 @@ def crear_nota_credito(
             )
             # La mercancia se va: sale del stock al costo al que entro. El
             # promedio ponderado no se toca, porque lo devuelto costaba
-            # exactamente lo que el resto de esa factura.
+            # exactamente lo que el resto de esa factura. Un desechable nunca
+            # entro al stock: solo se acredita el gasto.
+            # Un faltante ya salio del deposito cuando se reclamo.
+            if es_desechable or body.tipo == "faltante":
+                continue
             kardex.anotar(
                 db, ingrediente, -cantidad, kardex.DEVOLUCION_PROVEEDOR,
                 costo_unitario=costo, origen="nota_credito", referencia_id=nota.id,
@@ -484,8 +680,27 @@ def crear_nota_credito(
         if body.tipo == "descuento":
             _abaratar_insumos(db, factura, base)
 
-        cuenta = contabilidad.CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
-        contabilidad.registrar_nota_credito_compra(db, nota, cuenta)
+        if body.tipo == "faltante":
+            # La nota salda el reclamo: baja 1045, no el inventario.
+            porciones = [("1045", nota.base_imponible)]
+            _cerrar_reclamos(abiertos, body.items, nota.id)
+        elif body.tipo == "devolucion" and factura.items:
+            # Cada renglon devuelto vuelve a la cuenta por la que entro.
+            concepto = contabilidad.CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
+            cuenta_de = {i.ingrediente_id: (i.cuenta or concepto) for i in factura.items}
+            por_cuenta = {}
+            for ingrediente, cantidad, costo in lineas:
+                c = cuenta_de.get(ingrediente.id, concepto)
+                por_cuenta[c] = por_cuenta.get(c, 0) + cantidad * costo
+            cuentas = sorted(por_cuenta)
+            porciones, repartido = [], 0.0
+            for n, c in enumerate(cuentas):
+                monto = round(nota.base_imponible - repartido, 2) if n == len(cuentas) - 1 else round(por_cuenta[c], 2)
+                repartido += monto
+                porciones.append((c, monto))
+        else:
+            porciones = contabilidad.porciones_de_factura(factura, nota.base_imponible)
+        contabilidad.registrar_nota_credito_compra(db, nota, porciones)
         db.commit()
         db.refresh(nota)
         return _nota_a_schema(nota)
@@ -531,6 +746,148 @@ def _bloquear_si_periodo_declarado(
         )
 
 
+def _reclamo_a_schema(r: models.ReclamoProveedor) -> schemas.Reclamo:
+    return schemas.Reclamo(
+        id=r.id, factura_id=r.factura_id, ingrediente_id=r.ingrediente_id,
+        ingrediente_nombre=r.ingrediente.nombre, unidad=r.ingrediente.unidad,
+        cantidad=r.cantidad, valor=r.valor, motivo=r.motivo or "", fecha=r.fecha, estado=r.estado,
+        numero_factura=r.factura.numero_factura if r.factura else "",
+        proveedor_nombre=r.factura.proveedor_nombre if r.factura else "",
+        dias=max((ahora() - r.fecha).days, 0) if r.fecha else 0,
+    )
+
+
+def _lineas_de_faltante(db: Session, factura: models.FacturaCompra, body, abiertos):
+    """Los renglones de una nota que salda faltantes: no mas de lo reclamado."""
+    reclamado = {}
+    for r in abiertos:
+        reclamado[r.ingrediente_id] = reclamado.get(r.ingrediente_id, 0) + r.cantidad
+    costo_de = {r.ingrediente_id: r.costo_unitario for r in abiertos}
+    base, lineas = 0.0, []
+    for it in body.items:
+        if it.cantidad <= 0 or it.cantidad > reclamado.get(it.ingrediente_id, 0) + 0.0001:
+            raise HTTPException(
+                status_code=409,
+                detail=f"De esa mercancía se reclamaron {round(reclamado.get(it.ingrediente_id, 0), 4)}: la nota no puede ser por más.",
+            )
+        ing = db.get(models.Ingrediente, it.ingrediente_id)
+        base += it.cantidad * costo_de[it.ingrediente_id]
+        lineas.append((ing, it.cantidad, costo_de[it.ingrediente_id]))
+    return round(base, 2), lineas
+
+
+def _cerrar_reclamos(abiertos, items, nota_id: int) -> None:
+    """Marca acreditado lo que cubre la nota (y parte un reclamo si cubre menos)."""
+    for it in items:
+        falta = it.cantidad
+        for r in abiertos:
+            if falta <= 0.0001 or r.ingrediente_id != it.ingrediente_id or r.estado != "abierto":
+                continue
+            if r.cantidad <= falta + 0.0001:
+                falta -= r.cantidad
+                r.estado, r.nota_id = "acreditado", nota_id
+            else:
+                # La nota cubrio una parte: lo cubierto se cierra, el resto sigue abierto.
+                r.cantidad = round(r.cantidad - falta, 6)
+                r.factura.reclamos.append(models.ReclamoProveedor(
+                    factura_id=r.factura_id, ingrediente_id=r.ingrediente_id, cantidad=falta,
+                    costo_unitario=r.costo_unitario, cuenta=r.cuenta, motivo=r.motivo,
+                    fecha=r.fecha, estado="acreditado", nota_id=nota_id,
+                ))
+                falta = 0
+
+
+@router.post("/facturas/{factura_id}/faltantes", response_model=schemas.FacturaCompra)
+def anotar_faltantes(factura_id: int, body: schemas.FaltanteRequest, db: Session = Depends(get_db)):
+    """La factura dice 10 kg y llegaron 8: los 2 que faltan salen del deposito
+    y quedan como reclamo al proveedor (1045), no como merma."""
+    with costeo.bloqueo_inventario():
+        factura = _factura_o_404(db, factura_id)
+        if not body.items:
+            raise HTTPException(status_code=400, detail="Di qué mercancía no llegó y cuánto.")
+        por_ingrediente = {i.ingrediente_id: i for i in factura.items}
+        ya = {}
+        for n in factura.notas_credito:
+            for it in n.items:
+                ya[it.ingrediente_id] = ya.get(it.ingrediente_id, 0) + it.cantidad
+        for r in factura.reclamos:
+            if r.estado in ("abierto", "perdido"):
+                ya[r.ingrediente_id] = ya.get(r.ingrediente_id, 0) + r.cantidad
+        concepto = contabilidad.CUENTA_POR_CATEGORIA_COMPRA.get(factura.categoria, "6010")
+        lineas = []
+        for it in body.items:
+            linea = por_ingrediente.get(it.ingrediente_id)
+            if linea is None:
+                raise HTTPException(status_code=400, detail=f"La mercancía {it.ingrediente_id} no está en esa factura")
+            restante = linea.cantidad - ya.get(it.ingrediente_id, 0)
+            if it.cantidad <= 0 or it.cantidad > restante + 0.0001:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"De {linea.ingrediente.nombre} la factura trae {linea.cantidad} {linea.ingrediente.unidad}; "
+                    f"quedan {round(restante, 4)} que puedan faltar.",
+                )
+            ing = (
+                db.query(models.Ingrediente).filter(models.Ingrediente.id == it.ingrediente_id)
+                .with_for_update(of=models.Ingrediente).first()
+            )
+            lineas.append((ing, it.cantidad, linea.costo_unitario, linea.cuenta or concepto))
+        total = 0.0
+        por_cuenta = {}
+        for ing, cantidad, costo, cuenta in lineas:
+            r = models.ReclamoProveedor(
+                factura_id=factura.id, ingrediente_id=ing.id, cantidad=cantidad,
+                costo_unitario=costo, cuenta=cuenta, motivo=body.motivo,
+            )
+            db.add(r)
+            db.flush()
+            valor = round(cantidad * costo, 2)
+            total += valor
+            por_cuenta[cuenta] = por_cuenta.get(cuenta, 0) + valor
+            if ing.tipo != "desechable":
+                kardex.anotar(
+                    db, ing, -cantidad, kardex.DEVOLUCION_PROVEEDOR, costo_unitario=costo,
+                    origen="reclamo_proveedor", referencia_id=r.id,
+                    nota=f"No llegó (fact. {factura.numero_factura}): {body.motivo or 'faltante'}",
+                )
+        contabilidad.crear_asiento(
+            db, f"Faltante reclamado a {factura.proveedor_nombre} (fact. {factura.numero_factura})",
+            [("1045", round(total, 2), 0.0)] + [(c, 0.0, round(v, 2)) for c, v in por_cuenta.items()],
+            origen="reclamo_proveedor", referencia_id=factura.id,
+        )
+        db.commit()
+        db.refresh(factura)
+        return _a_schema(factura)
+
+
+@router.get("/reclamos", response_model=List[schemas.Reclamo])
+def listar_reclamos(db: Session = Depends(get_db)):
+    """Lo que los proveedores deben todavia: lo que no llego y sin nota."""
+    return [
+        _reclamo_a_schema(r)
+        for r in db.query(models.ReclamoProveedor).filter(models.ReclamoProveedor.estado == "abierto")
+        .order_by(models.ReclamoProveedor.fecha).all()
+    ]
+
+
+@router.post("/reclamos/{reclamo_id}/perder", response_model=schemas.Reclamo)
+def dar_por_perdido(reclamo_id: int, db: Session = Depends(get_db)):
+    """El proveedor nunca mando la nota: entonces si es una perdida."""
+    r = db.get(models.ReclamoProveedor, reclamo_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Reclamo no encontrado")
+    if r.estado != "abierto":
+        raise HTTPException(status_code=409, detail="Ese reclamo ya está cerrado")
+    r.estado = "perdido"
+    contabilidad.crear_asiento(
+        db, f"Faltante no acreditado por {r.factura.proveedor_nombre} (fact. {r.factura.numero_factura})",
+        [("6020", r.valor, 0.0), ("1045", 0.0, r.valor)],
+        origen="reclamo_perdido", referencia_id=r.id,
+    )
+    db.commit()
+    db.refresh(r)
+    return _reclamo_a_schema(r)
+
+
 def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
     """Valida los renglones devueltos contra los de la factura."""
     if not body.items:
@@ -546,6 +903,10 @@ def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
             ya_devuelto[item.ingrediente_id] = (
                 ya_devuelto.get(item.ingrediente_id, 0) + item.cantidad
             )
+    # Lo que se reclamo como faltante tampoco esta para devolver.
+    for r in factura.reclamos:
+        if r.estado in ("abierto", "perdido"):
+            ya_devuelto[r.ingrediente_id] = ya_devuelto.get(r.ingrediente_id, 0) + r.cantidad
 
     base = 0.0
     lineas = []
@@ -571,7 +932,7 @@ def _lineas_de_devolucion(db: Session, factura: models.FacturaCompra, body):
         ingrediente = (
             db.query(models.Ingrediente)
             .filter(models.Ingrediente.id == pedido_item.ingrediente_id)
-            .with_for_update()
+            .with_for_update(of=models.Ingrediente)
             .first()
         )
         base += pedido_item.cantidad * linea.costo_unitario
@@ -604,7 +965,7 @@ def _abaratar_insumos(db: Session, factura: models.FacturaCompra, rebaja: float)
         ingrediente = (
             db.query(models.Ingrediente)
             .filter(models.Ingrediente.id == linea.ingrediente_id)
-            .with_for_update()
+            .with_for_update(of=models.Ingrediente)
             .first()
         )
         if ingrediente is None or (ingrediente.stock_actual or 0) <= 0:
@@ -665,6 +1026,11 @@ def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
             status_code=409,
             detail="Esta factura ya actualizó el stock y no se puede borrar. "
             "Si fue un error, registra un ajuste de inventario para corregir el stock.",
+        )
+    if db_factura.abonos:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta factura ya tiene abonos con su asiento de pago: no se puede borrar.",
         )
     if db_factura.forma_pago == "Credito" and db_factura.pagada:
         # Ya hay un asiento de pago real (plata que de verdad salio de caja o

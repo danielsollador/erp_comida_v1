@@ -85,16 +85,33 @@ def otra_variante(db, precio=3.0, insumo=None, nombre="Refresco"):
 
 # ── Los dos candados ────────────────────────────────────────────────────────
 
-def test_cuando_la_cocina_agarra_la_comanda_la_caja_ya_no_la_edita(client, variante):
+def test_sin_cobrar_se_edita_aunque_la_cocina_la_este_preparando(client, variante):
+    """Leider, 8-oct: un pedido sin cobrar se edita siempre, las veces que sea."""
     p = comanda(client, variante)
     assert client.post(f"/api/pedidos/{p['id']}/cocinando").status_code == 200
 
-    r = client.post(f"/api/pedidos/{p['id']}/edicion")
-    assert r.status_code == 409
-    assert "preparando" in r.json()["detail"]
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+    assert editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 3}]).status_code == 200
+    # Y otra vez, y otra.
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+    assert editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 2}]).status_code == 200
 
-    # Y tampoco se puede guardar saltandose el paso de abrir.
-    assert editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 3}]).status_code == 409
+
+def test_la_misma_caja_reabre_su_edicion_tras_recargar(client, variante):
+    """Recargar a mitad de una edicion deja el candado puesto: es suyo y no la traba."""
+    p = comanda(client, variante)
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+    assert editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 2}]).status_code == 200
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+
+
+def test_cobrar_suelta_la_edicion(client, variante):
+    p = comanda(client, variante)
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+    assert client.get(f"/api/pedidos/{p['id']}").json()["editando_desde"]
+    assert client.post(f"/api/pedidos/{p['id']}/cobrar", json={"metodo_pago": "Efectivo Bs"}).status_code == 200
+    assert client.get(f"/api/pedidos/{p['id']}").json()["editando_desde"] is None
 
 
 def test_marcar_un_renglon_preparado_ya_es_agarrar_la_comanda(client, variante, insumo, db):
@@ -113,8 +130,9 @@ def test_marcar_un_renglon_preparado_ya_es_agarrar_la_comanda(client, variante, 
 
     traido = client.get("/api/pedidos").json()[0]
     assert traido["cocinando_desde"], "marcar un renglon tiene que dejar constancia"
-    # Falta el otro renglon: la comanda sigue en el sarten.
-    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 409
+    # Falta el otro renglon: la comanda sigue en el sarten, y aun asi se
+    # edita (sin cobrar se edita siempre); lo ya hecho no se quita.
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
 
 
 def test_soltar_la_comanda_devuelve_la_edicion(client, variante):
@@ -474,9 +492,11 @@ def test_la_cocina_suelta_la_comanda_cuando_termina(client, variante):
     """
     p = comanda(client, variante)
     client.post(f"/api/pedidos/{p['id']}/cocinando")
-    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 409
+    # Desde el 8-oct la cocinada no traba la edicion de un pedido sin cobrar.
+    assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
+    client.delete(f"/api/pedidos/{p['id']}/edicion")
 
-    # Soltarla sin terminar SI devuelve la edicion: fue un toque por error.
+    # Soltarla sin terminar devuelve la comanda a la cola, y se sigue editando.
     client.post(f"/api/pedidos/{p['id']}/cocinando")
     assert client.post(f"/api/pedidos/{p['id']}/edicion").status_code == 200
 
@@ -621,3 +641,24 @@ def test_una_venta_fiada_con_saldo_no_se_edita_de_monto(client, variante, db):
     # Cambiar renglones sin mover plata sigue siendo legitimo: no toca la deuda.
     igual = otra_variante(db, precio=5.0, nombre="Arepa")
     assert editar(client, p["id"], [{"variante_id": igual.id, "cantidad": 1}]).status_code == 200
+
+
+def test_la_edicion_de_otra_caja_se_puede_tomar(client, variante, db):
+    """Una tablet que se recargo a mitad de una edicion dejaba la comanda
+    trancada cinco minutos para todos los demas. Ahora se avisa (409) y quien
+    abre puede tomarla."""
+    from app.timeutils import ahora
+
+    p = comanda(client, variante)
+    otra = models.Operador(nombre="otra-caja", rol="cajero", activo=True)
+    db.add(otra)
+    db.flush()
+    pedido = db.query(models.Pedido).get(p["id"])
+    pedido.editando_desde = ahora()
+    pedido.editando_por_id = otra.id
+    db.commit()
+
+    r = client.post(f"/api/pedidos/{p['id']}/edicion")
+    assert r.status_code == 409 and "está editando" in r.json()["detail"]
+    assert client.post(f"/api/pedidos/{p['id']}/edicion?forzar=true").status_code == 200
+    assert editar(client, p["id"], [{"variante_id": variante.id, "cantidad": 2}]).status_code == 200

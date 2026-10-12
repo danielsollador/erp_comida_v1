@@ -26,7 +26,7 @@ def test_la_planilla_que_salio_del_erp_vuelve_a_entrar(client, insumo):
     assert r.status_code == 200, r.text
     datos = r.json()
     assert datos["filas"] == [
-        {"ingrediente_id": insumo.id, "nombre": "Carne molida", "unidad": "kg", "contado": 7.5}
+        {"ingrediente_id": insumo.id, "nombre": "Carne molida", "unidad": "kg", "contado": 7.5, "aviso": ""}
     ]
     assert datos["errores"] == []
 

@@ -47,7 +47,7 @@ export default function UsuarioMenu({ dark = false }: { dark?: boolean }) {
         onClick={() => setAbierto((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={abierto}
-        className={`vp-control h-9 pl-1 pr-3 rounded-full border flex items-center gap-2 text-sm font-medium ${
+        className={`vp-control h-11 pl-1 pr-3 rounded-full border flex items-center gap-2 text-sm font-medium ${
           dark ? 'border-neutral-700 hover:border-neutral-500' : 'border-neutral-200 hover:border-neutral-400 bg-white'
         }`}
       >

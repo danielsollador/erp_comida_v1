@@ -99,17 +99,6 @@ def test_el_menu_muestra_los_dos_margenes(client, db, insumo, variante):
     assert fila["margen_reposicion_pct"] == 20.0  # $5 de precio, $4 de reponer
 
 
-def test_el_precio_sugerido_conserva_el_margen_que_ya_tenia(client, db, insumo, variante):
-    """No un margen inventado por el sistema: el que el dueno ya decidio."""
-    insumo.costo_unitario = 8.0
-    db.commit()
-    _factura(db, insumo, cantidad=2, costo=32.0, numero="F-CARA")
-
-    fila = {c["variante_id"]: c for c in client.get("/api/menu/costos").json()}[variante.id]
-    # margen actual 80%, costo de reponer $4 -> 4 / (1 - 0.8) = $20
-    assert fila["precio_sugerido"] == 20.0
-
-
 def test_comprar_caro_avisa_en_el_momento(client, db, insumo, variante):
     """El promedio tarda semanas en reflejar la subida; para entonces ya
     vendiste con el margen viejo en pantalla."""
@@ -126,11 +115,6 @@ def test_comprar_caro_avisa_en_el_momento(client, db, insumo, variante):
     afectado = next(p for p in respuesta["productos"] if p["variante_id"] == variante.id)
     assert afectado["margen_antes_pct"] == 80.0
     assert afectado["margen_despues_pct"] == 20.0
-
-    # El sugerido sale de la MISMA cuenta que el del menu. Antes eran dos
-    # formulas distintas y el aviso decia $5.12 donde el menu decia $3.96.
-    del_menu = {c["variante_id"]: c for c in client.get("/api/menu/costos").json()}
-    assert afectado["precio_sugerido"] == del_menu[variante.id]["precio_sugerido"]
 
 
 def test_una_compra_al_mismo_precio_no_molesta(client, insumo):

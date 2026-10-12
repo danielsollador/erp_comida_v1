@@ -28,6 +28,10 @@
    Va declarada la ultima a proposito: cuando fija la misma propiedad que
    `lg:`, `alto:` o `bajo:`, manda ella. */
 @custom-variant pc (@media (min-width: 1440px));
+/* La portada con raton cuando no cabe: en vez de achicarla entera (se leia
+   mas chica en produccion, Leider 7-oct), se aprietan sus piezas. Lo pone
+   AjustarAPantalla con la clase `vp-apretado`. */
+@custom-variant apretado (&:where(.vp-apretado *));
 
 /*
   SISTEMA DE DISEÑO DE VERTIGO PRO
@@ -1928,4 +1932,19 @@ html.vp-app-ios body {
 }
 html.vp-app-ios .vp-rail {
   padding-top: env(safe-area-inset-top);
+}
+
+/* iOS Safari: el `input type=date` tiene un ancho propio que ignora la
+   columna y se montaba sobre el campo de al lado (Compras, 11-oct). Sin
+   apariencia nativa obedece al grid; el texto queda a la izquierda como en
+   los demas campos. */
+input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  display: block;
+}
+input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
 }

@@ -30,6 +30,7 @@ from .routers import (
     operadores,
     pagos,
     pedidos,
+    preparaciones,
     proveedores,
     reportes,
     reportes_dinamicos,
@@ -226,6 +227,7 @@ app.include_router(operadores.puntos)
 app.include_router(pedidos.router)
 app.include_router(pagos.router)
 app.include_router(inventario.router)
+app.include_router(preparaciones.router)
 app.include_router(config.router)
 app.include_router(caja.router)
 app.include_router(reportes_dinamicos.router)

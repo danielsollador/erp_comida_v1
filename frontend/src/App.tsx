@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import RecordarScroll from './components/RecordarScroll'
 import { Component, Suspense, lazy } from 'react'
 // EAGER, a proposito: son las dos pantallas que viven montadas en la tablet
 // del mostrador. Tienen que abrir sin esperar nada, y sobre todo tienen que
@@ -181,6 +182,8 @@ function Marco({ children }: { children: ReactNode }) {
   return (
     <>
       <Rail />
+      {/* Cada pantalla abre arriba la primera vez y donde se dejó al volver. */}
+      <RecordarScroll />
       <div className={conRail ? 'md:pl-[68px]' : ''}>
         <Conexion />
         <div key={modo} className="contents">

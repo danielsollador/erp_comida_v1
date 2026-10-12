@@ -12,7 +12,7 @@ import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
 import { useFiltrosUrl } from '../lib/filtros'
 import { PALETA } from '../lib/paleta'
-import { fmtBs, useMoneda } from '../lib/moneda'
+import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { SerieTiempo } from './partes/reportes/comunes'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import { imprimirTicket } from '../lib/ticket'
@@ -531,7 +531,7 @@ function DetalleVenta({
     if (monto === null) return
     const metodo = await dialogo.elegir({
       titulo: `Cobrar a ${v.cliente || 'cliente'}`,
-      texto: `$${monto.toFixed(2)}. ¿Cómo paga?`,
+      texto: `$${fmtNum(monto)}. ¿Cómo paga?`,
       opciones: METODOS_PAGO.map((m) => ({ valor: m, texto: m })),
     })
     if (!metodo) return
@@ -544,7 +544,7 @@ function DetalleVenta({
       if (!r.saldado) {
         await dialogo.avisar({
           titulo: 'Abono registrado',
-          texto: `Entregó $${r.cobrado.toFixed(2)} y queda debiendo $${r.queda.toFixed(2)}.`,
+          texto: `Entregó $${fmtNum(r.cobrado)} y queda debiendo $${fmtNum(r.queda)}.`,
         })
       }
       alActualizar()

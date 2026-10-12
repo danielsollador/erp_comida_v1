@@ -111,7 +111,7 @@ export default function CampoSugerido({
         aria-expanded={abierto}
         aria-autocomplete="list"
         autoComplete="off"
-        className="w-full border border-neutral-300 rounded-lg pl-3 pr-8 py-2 text-sm"
+        className="w-full min-h-11 border border-neutral-300 rounded-lg pl-3 pr-8 py-2 text-sm"
       />
       {/* La misma flecha que dibuja `select` (ver index.css): en la misma fila
           hay desplegables nativos, y dos flechas distintas se notan. */}
@@ -120,7 +120,7 @@ export default function CampoSugerido({
         tabIndex={-1}
         aria-label="Ver la lista"
         onClick={() => setAbierto((v) => !v)}
-        className="absolute right-0 top-0 h-full px-3 flex items-center text-neutral-900"
+        className="absolute right-0 top-0 h-full min-w-11 px-3 flex items-center justify-center text-neutral-900"
       >
         <span className="vp-flecha" />
       </button>

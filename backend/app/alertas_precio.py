@@ -131,7 +131,6 @@ def generar(db: Session, factura: models.FacturaCompra) -> List[models.AlertaPre
                     "precio": p["precio"],
                     "margen_antes_pct": p["margen_antes_pct"],
                     "margen_despues_pct": p["margen_despues_pct"],
-                    "precio_sugerido": p["precio_sugerido"],
                     "a_perdida": p["a_perdida"],
                 }
                 for p in reposicion.impacto_en_productos(db, ingrediente_id, costo, referencia)

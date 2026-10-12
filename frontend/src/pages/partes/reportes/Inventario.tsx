@@ -49,7 +49,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
           destacado
           nota={
             datos.rotacion != null
-              ? `el depósito rotó ${datos.rotacion.toLocaleString('es-VE', { maximumFractionDigits: 1 })} vez/veces`
+              ? `el inventario rotó ${datos.rotacion.toLocaleString('es-VE', { maximumFractionDigits: 1 })} vez/veces`
               : undefined
           }
         />
@@ -111,7 +111,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                 <Seccion titulo="Materia prima y reventa">
                   <GraficoDona
                     formato={dinero}
-                    centro={{ valor: corto(datos.valor_total), texto: 'en el depósito' }}
+                    centro={{ valor: corto(datos.valor_total), texto: 'en el inventario' }}
                     partes={[
                       { nombre: 'Materia prima', valor: datos.valor_insumos, color: colorSerie(0) },
                       { nombre: 'Reventa', valor: datos.valor_reventa, color: colorSerie(2) },

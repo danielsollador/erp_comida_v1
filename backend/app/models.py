@@ -176,6 +176,9 @@ class Variante(Base):
     nombre = Column(String, nullable=False)  # ej. "Grande", "Carne", "Regular"
     precio = Column(Float, nullable=False)
     activo = Column(Boolean, default=True)
+    # Pasa por la freidora: carga su parte del aceite (y de cualquier otro
+    # costo indirecto) prorrateado por pieza. Ver costeo.costo_indirecto_por_pieza.
+    se_frie = Column(Boolean, default=False)
 
     producto = relationship("Producto", back_populates="variantes")
 
@@ -205,6 +208,11 @@ class CategoriaInsumo(Base):
     activo = Column(Boolean, default=True)
 
 
+# Que mide cada unidad y cuanto vale en la grande: 1 g = 0,001 kg. Con esto
+# 500 g de cebolla suman a un guiso que se mide en kg.
+_MEDIDA = {"kg": ("peso", 1.0), "g": ("peso", 0.001), "lt": ("volumen", 1.0), "ml": ("volumen", 0.001)}
+
+
 class Ingrediente(Base):
     __tablename__ = "DIM310_INV_INGREDIENTE"
 
@@ -223,16 +231,22 @@ class Ingrediente(Base):
     # Distinto de la Merma (que es lo que se dano o se boto): esto es perdida
     # normal e inevitable del proceso, no un accidente.
     rendimiento_pct = Column(Float, default=100.0)
-    # Que es: materia prima que entra en recetas ("insumo") o mercancia que se
-    # compra y se vende tal cual ("reventa": el refresco, la botella de agua).
-    # Los dos llevan stock, costo y conteo; se separan para poder mirar el
-    # deposito por partes y porque el de reventa no tiene rendimiento que
-    # medir.
+    # Que es (ver ARTICULO_TIPOS):
+    #   insumo       materia prima que entra en recetas (carne, harina, aceite)
+    #   reventa      se compra y se vende tal cual (refresco, botella de agua)
+    #   consumible   empaque que va en la receta: el vaso y el pitillo del jugo
+    #   desechable   servilletas, bolsas: NO lleva stock, va directo a gasto
+    #   preparacion  se hace en la cocina con materia prima (guiso, mechada)
+    # El valor "insumo" se conserva por las fichas que ya existen; en pantalla
+    # se lee "Materia prima".
     tipo = Column(String, default="insumo")
     # En que parte del deposito vive (ver CategoriaInsumo). NULL = sin
     # clasificar, que es un estado normal: cargar mercancia no puede depender
     # de haber pensado antes en que cajon va.
     categoria_id = Column(Integer, ForeignKey("DIM305_INV_CATEGORIA.id"), nullable=True, index=True)
+    # La categoria de la que salio cuando la borraron: si se vuelve a crear
+    # con el mismo nombre, la mercancia vuelve sola (8-oct).
+    categoria_borrada_id = Column(Integer, nullable=True)
     categoria = relationship("CategoriaInsumo", lazy="joined")
     # Un insumo que ya no se compra no se borra: tiene recetas, compras y
     # mermas colgando. Se archiva y deja de aparecer en listas y sugerencias.
@@ -243,6 +257,66 @@ class Ingrediente(Base):
     # sobre lo que de verdad esta gravado.
     exento = Column(Boolean, default=False)
 
+    # ── Preparaciones (tipo "preparacion") ──────────────────────────────────
+    # El guiso de pollo, la carne mechada, la salsa: no se compran, se hacen
+    # con materia prima. Su receta (`lineas_preparacion`) dice lo que lleva
+    # UNO de ella: 1 kg, 1 lt o 1 unidad ("para 1 kg de guiso: 1,43 kg de
+    # pollo crudo, 140 g de cebolla"). La merma de cocinar ya va en esas
+    # cantidades. `rinde` siempre vale 1 desde el 8-oct (ver `rinde_real`).
+    rinde = Column(Float, default=1.0)
+    # "descontar": no se lleva stock de la preparacion; al vender se baja
+    # por la receta hasta la materia prima (lo normal en un local chico).
+    # "producir": la cocina registra cada tanda; se lleva stock y rendimiento
+    # real. Si al vender no alcanza lo producido, el resto sale del crudo.
+    modo_produccion = Column(String, default="descontar")
+    # Cuanto dura hecha. Al vencerse, lo que sobre se ofrece como merma.
+    vida_util_horas = Column(Integer, nullable=True)
+    # Costo indirecto (el aceite de freir): no va en ninguna receta; se
+    # prorratea entre lo que se frie (ver costeo.costo_indirecto_por_pieza).
+    es_indirecto = Column(Boolean, default=False)
+    # Viene en empaque de N (11-oct): se dijo al crearla y la factura lo da
+    # por hecho; null = suelta. Cambiarlo en una factura no toca la ficha.
+    empaque_trae = Column(Float, nullable=True)
+
+    lineas_preparacion = relationship(
+        "LineaPreparacion",
+        foreign_keys="LineaPreparacion.preparacion_id",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    @property
+    def es_preparacion(self) -> bool:
+        return self.tipo == "preparacion"
+
+    @property
+    def rinde_real(self) -> float:
+        """Lo que sale de la receta: siempre 1 (1 kg, 1 lt o 1 unidad).
+
+        LA RECETA ES POR UNO (Leider, 8-oct): "para 1 kg de guiso lleva
+        1,43 kg de pollo y 1 crema". Antes la receta era una tanda cualquiera
+        ("1 kg de pollo rinde 0,7 kg") y lo que salia se calculaba sumando lo
+        que quedaba de cada crudo; con leche en litros dentro de un guiso en
+        kilos esa suma se quedaba corta y el costo por kilo salia inflado. Con
+        la base en uno no hay nada que calcular: lo que cuesta 1 kg es la suma
+        de lo que lleva, y para hacer 2 kg el sistema multiplica por 2.
+
+        `rinde` queda en la tabla (siempre 1) para no reconstruirla; las
+        recetas de antes se pasaron a base uno al desplegar (ver
+        migrations.pasar_preparaciones_a_base_uno).
+        """
+        return 1.0
+
+    @property
+    def costo_estandar(self) -> float:
+        """Lo que cuesta 1 unidad de una preparacion segun su receta, a los
+        costos de hoy de lo que lleva. Para lo comprado es su costo.
+
+        Recursivo (una preparacion puede llevar otra) y a prueba de ciclos:
+        una receta que se contiene a si misma cuesta 0 en vez de colgarse.
+        """
+        return _costo_de(self, frozenset())
+
     @property
     def costo_efectivo(self):
         """Costo real por unidad UTILIZABLE, una vez descontada la merma de cocina.
@@ -250,11 +324,51 @@ class Ingrediente(Base):
         Es el numero que hay que usar para costear recetas y margenes - el
         costo_unitario a secas subestima el costo real de cualquier insumo que
         rinda menos de 100% (ej. carne, vegetales que se pelan).
+
+        Una preparacion que se descuenta del crudo cuesta su receta: es justo
+        lo que la venta saca del deposito. Una que se produce cuesta lo que
+        costo lo producido (su promedio) mientras haya; sin existencia, su
+        receta, que es de donde saldra.
         """
+        if self.tipo == "preparacion":
+            if self.modo_produccion == "producir" and (self.stock_actual or 0) > 0:
+                return round(self.costo_unitario or 0, 6)
+            return round(self.costo_estandar, 6)
         rendimiento = self.rendimiento_pct or 100.0
         if rendimiento <= 0:
             return self.costo_unitario
         return round(self.costo_unitario / (rendimiento / 100), 6)
+
+
+def _costo_de(ing: "Ingrediente", visitados: frozenset) -> float:
+    if ing.tipo != "preparacion":
+        return ing.costo_unitario or 0
+    if ing.id in visitados or not ing.rinde_real or ing.rinde_real <= 0:
+        return 0.0
+    if ing.modo_produccion == "producir" and visitados and (ing.stock_actual or 0) > 0:
+        return ing.costo_unitario or 0
+    dentro = visitados | {ing.id}
+    total = sum(linea.cantidad * _costo_de(linea.ingrediente, dentro) for linea in ing.lineas_preparacion)
+    return total / ing.rinde_real
+
+
+class LineaPreparacion(Base):
+    """Lo que lleva UNO de una preparacion (1 kg, 1 lt o 1 unidad).
+
+    "Para 1 kg de guiso: 1,43 kg de pollo, 140 g de cebolla, 70 g de
+    pimenton". La cantidad es la que sale del inventario (el pollo crudo,
+    como se compro): la merma de cocinar ya esta en ella. Para hacer 2 kg el
+    sistema multiplica por 2.
+    """
+
+    __tablename__ = "REL311_INV_PREPARACION_DET"
+
+    id = Column(Integer, primary_key=True)
+    preparacion_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False, index=True)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)
+
+    ingrediente = relationship("Ingrediente", foreign_keys=[ingrediente_id])
 
 
 class MovimientoInventario(Base):
@@ -300,6 +414,88 @@ class MovimientoInventario(Base):
     nota = Column(String, default="")
 
     ingrediente = relationship("Ingrediente")
+
+
+class Sustitucion(Base):
+    """Hoy se usa otra cosa: "no hay pollo, los pastelitos de pollo llevan
+    pavo". Mientras este vigente, lo que se vende descuenta el sustituto en
+    vez del original, sin tocar ninguna receta (8-oct, caso 2).
+
+    `factor`: cuanto sustituto por cada unidad UTIL del original (1 = lo
+    mismo). La merma de cada uno la pone su ficha: el pavo rinde lo suyo.
+    """
+
+    __tablename__ = "TRX366_INV_SUSTITUCION"
+
+    id = Column(Integer, primary_key=True)
+    original_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    sustituto_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    factor = Column(Float, default=1.0)
+    desde = Column(DateTime, default=ahora)
+    hasta = Column(DateTime, nullable=False)
+    nota = Column(String, default="")
+    activa = Column(Boolean, default=True)
+
+    original = relationship("Ingrediente", foreign_keys=[original_id])
+    sustituto = relationship("Ingrediente", foreign_keys=[sustituto_id])
+
+
+class Produccion(Base):
+    """Una tanda de una preparacion: "hoy hice guiso de pollo y salieron 2,6 kg".
+
+    Solo para las preparaciones que se producen (modo "producir"). Saca del
+    deposito lo que se uso y mete lo que salio, al costo de lo usado: el
+    valor del deposito no cambia, se transforma. Guarda el rendimiento real
+    contra el de la receta, que es lo que permite corregir el estandar con
+    datos y no a ojo.
+    """
+
+    __tablename__ = "TRX360_INV_PRODUCCION"
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(DateTime, default=ahora, index=True)
+    preparacion_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False, index=True)
+    # Lo que salio, en la unidad de la preparacion.
+    cantidad = Column(Float, nullable=False)
+    # Lo que la receta dice que debio salir con lo que se uso.
+    cantidad_esperada = Column(Float, default=0)
+    # De que tamaño fue la tanda, en recetas (2 = el doble de la receta).
+    escala = Column(Float, nullable=True)
+    # Cuanto se uso del crudo que mas pesa, y cual era (8-oct). Con esto lo
+    # esperado se recalcula con la RECETA de hoy: si se ajusto cuanto pollo
+    # lleva el kilo, las tandas viejas dejan de avisar que rinden menos.
+    principal_id = Column(Integer, nullable=True)
+    usado_principal = Column(Float, nullable=True)
+    costo_total = Column(Float, default=0)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    nota = Column(String, default="")
+
+    preparacion = relationship("Ingrediente")
+
+    @property
+    def rendimiento_real(self):
+        """Lo que salio sobre lo que debio salir: 0.92 = rindio 8 % menos."""
+        return round(self.cantidad / self.cantidad_esperada, 4) if self.cantidad_esperada else None
+
+
+class ComboItem(Base):
+    """Un producto del menu dentro de otro: el combo "pastelito + jugo".
+
+    El combo no tiene receta propia que alguien escriba: su receta
+    (RecetaItem) se arma SOLA sumando las de sus productos, y se rearma cada
+    vez que una de ellas cambia. Asi todo lo que lee recetas --la venta, el
+    costo, los reportes, el kardex-- funciona igual con un combo, y si cambia
+    el pastelito, el combo se entera (8-oct).
+    """
+
+    __tablename__ = "REL251_REC_COMBO"
+
+    id = Column(Integer, primary_key=True)
+    combo_variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
+    variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
+    cantidad = Column(Float, default=1.0)
+
+    variante = relationship("Variante", foreign_keys=[variante_id])
 
 
 class RecetaItem(Base):
@@ -362,12 +558,32 @@ class Configuracion(Base):
     # inventario" aunque en los hechos no haya nada que controlar todavia. Se
     # apaga el dia que carga el inventario de verdad.
     vender_sin_inventario = Column(Boolean, default=False)
+    # Con que costo se fijan precios y se miran margenes en el menu:
+    # "reposicion" (ultimo precio pagado), "promedio" o "mayor" de los dos.
+    # La CONTABILIDAD siempre va a promedio (VEN-NIF / NIC 2 no aceptan el
+    # ultimo costo para valorar inventario); esto es solo para decidir.
+    costo_para_precios = Column(String, default="reposicion")
     # Pago movil con Pabilo, guardado desde Configuracion > Pago movil. Pisa a
     # PABILO_API_KEY / PABILO_USER_BANK_ID del servidor, que siguen valiendo
     # de respaldo. La clave es un "secreto de servidor" (asi la llama Pabilo):
     # vive aqui y nunca sale entera al navegador, solo sus ultimos digitos.
     pabilo_api_key = Column(String, default="")
     pabilo_user_bank_id = Column(String, default="")
+
+
+class MigracionHecha(Base):
+    """Las migraciones de DATOS que ya corrieron, por nombre.
+
+    Las de columnas (migrations.COLUMNAS) se preguntan a la base si la
+    columna ya esta; una que cambia lo guardado --pasar las recetas de las
+    preparaciones a base uno-- no tiene nada que preguntar, y correrla dos
+    veces las cambiaria dos veces. Una fila aqui es la marca de que ya paso.
+    """
+
+    __tablename__ = "CFG930_ADM_MIGRACION"
+
+    nombre = Column(String, primary_key=True)
+    fecha = Column(DateTime, default=ahora)
 
 
 class Gasto(Base):
@@ -572,6 +788,7 @@ class Merma(Base):
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
     ingrediente = relationship("Ingrediente")
+    operador = relationship("Operador")
 
 
 class ConfiguracionFiscal(Base):
@@ -669,6 +886,10 @@ class EquivalenciaProveedor(Base):
     unidad_papel = Column(String, default="")
     ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
     factor = Column(Float, default=1.0)
+    # Una caja que llego distinta (20 en vez de 24) no cambia lo aprendido:
+    # la medida nueva se adopta si se repite dos veces seguidas (8-oct).
+    factor_nuevo = Column(Float, nullable=True)
+    veces_nuevo = Column(Integer, default=0)
     # Cuantas facturas lo confirmaron. Uno solo puede ser casualidad.
     veces = Column(Integer, default=1)
     actualizado = Column(DateTime, default=ahora)
@@ -757,7 +978,33 @@ class FacturaCompra(Base):
         """Lo que se le paga al proveedor: el total menos el IVA retenido."""
         return round(self.total - (self.iva_retenido or 0), 2)
 
+    @property
+    def abonado(self) -> float:
+        """Lo que ya se le pago a cuenta de una factura a credito."""
+        return round(sum(a.monto for a in (self.abonos or [])), 2)
+
+    @property
+    def saldo(self) -> float:
+        """Lo que todavia se le debe al proveedor por esta factura."""
+        if self.pagada:
+            return 0.0
+        # Una nota de credito sobre una factura que todavia se debe baja la
+        # deuda (2010): pagar despues el total original pagaba de mas.
+        notas = sum((n.base_imponible or 0) + (n.iva or 0) for n in (self.notas_credito or []))
+        return round(max(self.a_pagar - notas - self.abonado, 0), 2)
+
     items = relationship("FacturaCompraItem", back_populates="factura", cascade="all, delete-orphan")
+    # Lo que la factura cobra y NO es mercancia: el flete, un servicio, un
+    # equipo. Va renglon por renglon junto a la mercancia (una factura trae
+    # pollo y el flete juntos) y no mueve stock.
+    gastos = relationship("FacturaCompraGasto", back_populates="factura", cascade="all, delete-orphan")
+    # Solo cuando se pago con mas de una cosa (forma_pago = "Mixto"): una fila
+    # por cada parte. Con una sola forma no hay filas: manda `forma_pago`.
+    pagos = relationship("PagoCompra", back_populates="factura", cascade="all, delete-orphan")
+    # Pagos a cuenta de una factura a credito (8-oct): antes solo se podia
+    # pagar entera de una vez.
+    reclamos = relationship("ReclamoProveedor", back_populates="factura", cascade="all, delete-orphan", order_by="ReclamoProveedor.id")
+    abonos = relationship("FacturaCompraAbono", back_populates="factura", cascade="all, delete-orphan", order_by="FacturaCompraAbono.id")
     notas_credito = relationship(
         "NotaCreditoCompra", back_populates="factura", cascade="all, delete-orphan"
     )
@@ -809,12 +1056,106 @@ class FacturaCompraItem(Base):
     # gravada de otro, y cambiarle la marca al insumo el mes que viene no
     # puede reescribir el Libro de Compras de este mes.
     exento = Column(Boolean, default=False)
+    # A que cuenta fue ESTE renglon (1040 inventario, 6050 desechables...),
+    # congelada al guardar: lo decide el tipo de la mercancia, y una factura
+    # trae carne y servilletas juntas. Vacio en las viejas: manda la categoria.
+    cuenta = Column(String, default="")
 
     factura = relationship("FacturaCompra", back_populates="items")
     ingrediente = relationship("Ingrediente")
 
     @property
     def subtotal(self):
+        return round(self.cantidad * self.costo_unitario, 2)
+
+
+class PagoCompra(Base):
+    """Una parte de un pago mixto de una factura de compra (Leider, 8-oct).
+
+    Al proveedor se le paga una parte en efectivo y el resto por banco, y
+    hasta ahora la factura solo podia decir una cosa. Es el espejo de
+    PagoPedido en ventas: cada parte sale de su propia cuenta en el asiento.
+    """
+
+    __tablename__ = "TRX419_COM_FACTURA_PAGO"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False, index=True)
+    forma_pago = Column(String, nullable=False)  # Efectivo|Efectivo $|Banco|...
+    monto = Column(Float, nullable=False)  # en dolares, como la factura
+    referencia = Column(String, default="")
+
+    factura = relationship("FacturaCompra", back_populates="pagos")
+
+
+class FacturaCompraGasto(Base):
+    """Un renglon de la factura que no es mercancia: flete, servicio, equipo.
+
+    Vive aparte de FacturaCompraItem a proposito: todo lo que lee los
+    renglones de mercancia (kardex, costo, alertas de precio, reposicion)
+    supone que cada uno tiene su insumo, y este no lo tiene. El flete va
+    separado y con su propia cuenta porque lleva retencion de ISLR aparte.
+    """
+
+    __tablename__ = "TRX416_COM_FACTURA_GASTO"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    concepto = Column(String, nullable=False)  # Flete|Servicio|Equipo|Otro
+    descripcion = Column(String, default="")
+    monto = Column(Float, nullable=False)  # sin IVA, en dolares, como el papel
+    exento = Column(Boolean, default=False)
+    # Congelada al guardar, igual que la del renglon de mercancia.
+    cuenta = Column(String, default="")
+
+    factura = relationship("FacturaCompra", back_populates="gastos")
+
+    @property
+    def subtotal(self):
+        return round(self.monto, 2)
+
+
+class FacturaCompraAbono(Base):
+    """Un pago a cuenta de una factura a credito: $20 hoy, el resto el viernes."""
+
+    __tablename__ = "TRX417_COM_FACTURA_ABONO"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    fecha = Column(DateTime, default=ahora)
+    monto = Column(Float, nullable=False)
+    forma_pago = Column(String, nullable=False)
+    referencia = Column(String, default="")
+
+    factura = relationship("FacturaCompra", back_populates="abonos")
+
+
+class ReclamoProveedor(Base):
+    """Lo que la factura cobra y no llego: "dice 10 kg, vinieron 8".
+
+    Sale del deposito (no esta) y su valor pasa a 1045 Reclamos a proveedores:
+    el proveedor lo debe. Cuando manda la nota de credito, el reclamo se cierra
+    contra ella; si nunca la manda, se da por perdido y entonces si es merma.
+    """
+
+    __tablename__ = "TRX418_COM_FACTURA_RECLAMO"
+
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey("TRX410_COM_FACTURA.id"), nullable=False)
+    ingrediente_id = Column(Integer, ForeignKey("DIM310_INV_INGREDIENTE.id"), nullable=False)
+    cantidad = Column(Float, nullable=False)
+    costo_unitario = Column(Float, nullable=False)  # el de la factura, sin IVA
+    cuenta = Column(String, default="1040")  # por donde habia entrado
+    motivo = Column(String, default="")
+    fecha = Column(DateTime, default=ahora)
+    estado = Column(String, default="abierto")  # abierto | acreditado | perdido
+    nota_id = Column(Integer, ForeignKey("TRX420_COM_NOTA_CREDITO.id"), nullable=True)
+
+    factura = relationship("FacturaCompra", back_populates="reclamos")
+    ingrediente = relationship("Ingrediente")
+
+    @property
+    def valor(self) -> float:
         return round(self.cantidad * self.costo_unitario, 2)
 
 
@@ -901,7 +1242,7 @@ class AlertaPrecio(Base):
     base = Column(String, default="proveedor")
     # "subida" | "unidad" (un salto que parece error de unidad, no de precio)
     tipo = Column(String, default="subida")
-    # JSON: [{nombre, margen_antes_pct, margen_despues_pct, precio, precio_sugerido, a_perdida}]
+    # JSON: [{nombre, margen_antes_pct, margen_despues_pct, precio, a_perdida}]
     productos = Column(Text, default="[]")
     # Otro proveedor que lo vendio mas barato en los ultimos 90 dias.
     alternativa_proveedor = Column(String, default="")

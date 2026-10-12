@@ -1,3 +1,4 @@
+import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import models, reposicion, schemas
 from ..seed import SUBSECCION_INICIAL
 from ..database import get_db
+from ..timeutils import hoy, inicio_del_dia
 
 router = APIRouter(prefix="/api/menu", tags=["menu"])
 
@@ -247,7 +249,9 @@ def actualizar_variante(variante_id: int, variante: schemas.VarianteCreate, db: 
         raise HTTPException(status_code=404, detail="Variante no encontrada")
 
     precio_anterior = db_variante.precio
-    for key, value in variante.model_dump().items():
+    # Lo que no viene (None) no se toca: una pantalla vieja que no conoce
+    # `se_frie` no puede apagarlo cada vez que guarda un precio.
+    for key, value in variante.model_dump(exclude_none=True).items():
         setattr(db_variante, key, value)
 
     # Queda el rastro del cambio: antes el precio se sobrescribia sin dejar
@@ -277,6 +281,30 @@ def historial_precios(variante_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/costos-para-precios", response_model=schemas.CostosParaPrecios)
+def costos_para_precios(db: Session = Depends(get_db)):
+    """Lo que cuesta 1 unidad utilizable de cada mercancia con el metodo que
+    se eligio para decidir precios, y el aceite por pieza frita.
+
+    Es lo que la pantalla de Recetas necesita para que el margen que se ve al
+    poner el precio sea el mismo que calcula `/costos`: con el ultimo costo
+    pagado (o el mayor) y con el aceite, no siempre al promedio y sin aceite.
+    """
+    from .preparaciones import costo_indirecto_por_pieza
+
+    config = db.query(models.Configuracion).first()
+    metodo = (config.costo_para_precios if config else None) or "reposicion"
+    ultimos = reposicion.costos_reposicion(db)
+    por = {}
+    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all():
+        promedio = ing.costo_efectivo or 0.0
+        hoy_ = reposicion.costo_reposicion_efectivo(ing, ultimos)
+        por[ing.id] = round(promedio if metodo == "promedio" else max(promedio, hoy_) if metodo == "mayor" else hoy_, 6)
+    fin = inicio_del_dia(hoy() + datetime.timedelta(days=1))
+    indirecto = sum(c.por_pieza or 0 for c in costo_indirecto_por_pieza(db, fin - datetime.timedelta(days=31), fin))
+    return schemas.CostosParaPrecios(metodo=metodo, por_ingrediente=por, indirecto_por_pieza=round(indirecto, 4))
+
+
 @router.get("/costos", response_model=List[schemas.CostoVariante])
 def costos_por_variante(db: Session = Depends(get_db)):
     """Cuanto cuesta producir cada variante y que margen deja a su precio actual.
@@ -299,20 +327,36 @@ def costos_por_variante(db: Session = Depends(get_db)):
         aporte = receta.cantidad_por_unidad * (ingrediente.costo_efectivo or 0)
         costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
 
-        ultimo = ultimos.get(receta.ingrediente_id)
-        efectivo_hoy = (
-            reposicion.costo_efectivo_de(ultimo["costo"], ingrediente.rendimiento_pct)
-            if ultimo
-            else (ingrediente.costo_efectivo or 0)  # sin compras: el promedio es lo que hay
-        )
+        # Sin compras, el promedio es lo que hay. Una preparacion se repone
+        # a lo que cuesta reponer su receta.
+        efectivo_hoy = reposicion.costo_reposicion_efectivo(ingrediente, ultimos)
         reponer[receta.variante_id] = reponer.get(receta.variante_id, 0) + (
             receta.cantidad_por_unidad * efectivo_hoy
         )
+
+    # El aceite de freir, repartido por pieza frita en los ultimos 30 dias.
+    from .preparaciones import costo_indirecto_por_pieza
+
+    fin = inicio_del_dia(hoy() + datetime.timedelta(days=1))
+    indirecto_pieza = sum(
+        c.por_pieza or 0 for c in costo_indirecto_por_pieza(db, fin - datetime.timedelta(days=31), fin)
+    )
+    config = db.query(models.Configuracion).first()
+    metodo = (config.costo_para_precios if config else None) or "reposicion"
 
     filas = []
     for v in db.query(models.Variante).all():
         costo = costos.get(v.id)
         costo_hoy = reponer.get(v.id)
+        indirecto = round(indirecto_pieza, 4) if v.se_frie else 0.0
+        if costo is None:
+            para_precio = None
+        elif metodo == "promedio":
+            para_precio = costo + indirecto
+        elif metodo == "mayor":
+            para_precio = max(costo, costo_hoy or 0) + indirecto
+        else:
+            para_precio = (costo_hoy if costo_hoy is not None else costo) + indirecto
         margen = (
             round((v.precio - costo) / v.precio * 100, 1)
             if costo is not None and v.precio > 0
@@ -330,11 +374,11 @@ def costos_por_variante(db: Session = Depends(get_db)):
                     if costo_hoy is not None and v.precio > 0
                     else None
                 ),
-                # El precio que conserva el margen que el dueno ya tenia, no un
-                # margen inventado por el sistema.
-                precio_sugerido=(
-                    reposicion.precio_para_margen(costo_hoy, margen)
-                    if costo_hoy is not None and margen is not None and margen < 100
+                costo_indirecto=indirecto,
+                costo_para_precio=round(para_precio, 4) if para_precio is not None else None,
+                margen_para_precio_pct=(
+                    round((v.precio - para_precio) / v.precio * 100, 1)
+                    if para_precio is not None and v.precio > 0
                     else None
                 ),
             )
@@ -350,3 +394,47 @@ def eliminar_variante(variante_id: int, db: Session = Depends(get_db)):
     db_variante.activo = False
     db.commit()
     return {"ok": True}
+
+
+@router.post("/desde-mercancia/{ingrediente_id}", response_model=schemas.Producto)
+def producto_desde_mercancia(ingrediente_id: int, body: schemas.AlMenuInput, db: Session = Depends(get_db)):
+    """Un refresco de reventa pasa al menu de una vez: su producto, su precio
+    y su receta de 1 unidad.
+
+    Antes el producto del menu y la mercancia del deposito eran dos cosas que
+    alguien tenia que unir a mano con una receta. Nadie lo hacia, y vender
+    una Pepsi no descontaba la Pepsi.
+    """
+    ing = db.get(models.Ingrediente, ingrediente_id)
+    if ing is None or not ing.activo:
+        raise HTTPException(status_code=404, detail="Mercancía no encontrada")
+    if ing.tipo != "reventa":
+        raise HTTPException(status_code=400, detail="Solo la mercancía de reventa pasa al menú tal cual.")
+    if db.get(models.Categoria, body.categoria_id) is None:
+        raise HTTPException(status_code=400, detail="Elige una categoría del menú.")
+    ya = (
+        db.query(models.RecetaItem)
+        .join(models.Variante, models.Variante.id == models.RecetaItem.variante_id)
+        .filter(models.RecetaItem.ingrediente_id == ing.id, models.Variante.activo.isnot(False))
+        .first()
+    )
+    if ya is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"«{ing.nombre}» ya se vende en el menú como «{ya.variante.producto.nombre}».",
+        )
+    producto = models.Producto(
+        nombre=(body.nombre or ing.nombre).strip(),
+        categoria_id=body.categoria_id,
+        activo=True,
+        orden=_siguiente_puesto(db, body.categoria_id),
+    )
+    db.add(producto)
+    db.flush()
+    variante = models.Variante(producto_id=producto.id, nombre="Regular", precio=round(body.precio, 2), activo=True)
+    db.add(variante)
+    db.flush()
+    db.add(models.RecetaItem(variante_id=variante.id, ingrediente_id=ing.id, cantidad_por_unidad=1))
+    db.commit()
+    db.refresh(producto)
+    return producto

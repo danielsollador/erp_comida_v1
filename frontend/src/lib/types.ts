@@ -4,6 +4,8 @@ export type Variante = {
   nombre: string
   precio: number
   activo: boolean
+  /** Pasa por la freidora: carga su parte del aceite por pieza. */
+  se_frie?: boolean | null
 }
 
 export type Producto = {
@@ -62,6 +64,8 @@ export type PedidoItem = {
   a_cocina: boolean
 }
 
+export type TipoArticulo = 'insumo' | 'reventa' | 'consumible' | 'desechable' | 'preparacion'
+
 export type Ingrediente = {
   id: number
   nombre: string
@@ -72,8 +76,17 @@ export type Ingrediente = {
   /** Promedio ponderado: lo que costo el stock que hay en el deposito. */
   costo_unitario: number
   rendimiento_pct: number
-  /** Materia prima de recetas, o mercancia que se compra y se vende tal cual. */
-  tipo: 'insumo' | 'reventa'
+  /** Que es: ver lib/tiposArticulo.ts. "insumo" se lee "Materia prima". */
+  tipo: TipoArticulo
+  /** Preparaciones: cuanto sale de una tanda de su receta. */
+  rinde?: number
+  /** Preparaciones: se descuenta del crudo al vender, o se produce por tandas. */
+  modo_produccion?: 'descontar' | 'producir'
+  vida_util_horas?: number | null
+  /** El aceite de freir: no va en recetas, se reparte por pieza frita. */
+  es_indirecto?: boolean
+  /** Viene en empaque de N (unidades nuestras); null = suelta. */
+  empaque_trae?: number | null
   /** En que cajon del deposito vive. null = sin clasificar, que es normal. */
   categoria_id: number | null
   /** El nombre de esa categoria, ya resuelto por el servidor. '' si no tiene. */
@@ -103,7 +116,8 @@ export type DatosIngrediente = Pick<
   | 'categoria_id'
   | 'activo'
   | 'exento'
-> & {
+> &
+  Partial<Pick<Ingrediente, 'rinde' | 'modo_produccion' | 'vida_util_horas' | 'es_indirecto' | 'empaque_trae'>> & {
   /** Solo al crear: lo que hay hoy. Despues el stock se mueve con compras, mermas y conteos. */
   stock_actual?: number
 }
@@ -126,6 +140,8 @@ export type ResultadoConteo = {
   sin_cambio: number
   /** La planilla que quedó guardada, para poder abrirla después. */
   conteo_id: number | null
+  /** Preparado contado cuya materia prima no vino en el conteo: esa parte no se tradujo. */
+  no_contadas?: string[]
 }
 
 export type ConteoResumen = {
@@ -162,7 +178,10 @@ export type FilaLeida = {
   ingrediente_id: number
   nombre: string
   unidad: string
+  /** Ya en la unidad de la ficha. */
   contado: number
+  /** "Venía en g", o "¿eran gramos?": lo que hay que mirar antes de guardar. */
+  aviso?: string
 }
 
 /** Lo que el ERP entendió de la planilla llena. Leerla no guarda nada. */
@@ -190,8 +209,6 @@ export type ImpactoEnProducto = {
   costo_despues: number
   margen_antes_pct: number | null
   margen_despues_pct: number | null
-  /** Precio que conserva el margen que tenia antes de la subida. */
-  precio_sugerido: number | null
   a_perdida: boolean
   margen_flaco: boolean
 }
@@ -278,8 +295,11 @@ export type CostoVariante = {
   /** Lo que costaria producirlo con los precios de hoy. */
   costo_reposicion: number | null
   margen_reposicion_pct: number | null
-  /** Precio que conserva el margen actual si tuvieras que reponer hoy. */
-  precio_sugerido: number | null
+  /** Su parte del aceite de freir por unidad (0 si no se frie). */
+  costo_indirecto?: number
+  /** El costo con que se decide el precio (segun Configuracion), indirecto incluido. */
+  costo_para_precio?: number | null
+  margen_para_precio_pct?: number | null
 }
 
 /** Lo que la portada le dice al dueño sin que lo pregunte. `a` = adónde ir. */
@@ -336,18 +356,24 @@ export type Comparativa = {
 
 /** Lo que se está mirando cuando Reportes se filtra por el menú. */
 export type FiltroMenu = {
+  /** El elegido cuando es uno solo; null si son varios (ver `*_ids`) o ninguno. */
   categoria_id: number | null
+  /** El nombre, o los nombres con comas si son varios. */
   categoria: string
+  categoria_ids?: number[]
   producto_id: number | null
   producto: string
+  producto_ids?: number[]
 }
 
 /** Lo mismo para Pérdidas e Inventario, que se miran por cajón y mercancía. */
 export type FiltroDeposito = {
   categoria_id: number | null
   categoria: string
+  categoria_ids?: number[]
   ingrediente_id: number | null
   ingrediente: string
+  ingrediente_ids?: number[]
 }
 
 export type ReporteResumen = {
@@ -707,6 +733,105 @@ export type Configuracion = {
   tasa_bcv: number
   /** Mientras está prendido, una venta se hace aunque falte inventario. */
   vender_sin_inventario: boolean
+  /** Con que costo se miran margenes y precios: los libros van siempre a promedio. */
+  costo_para_precios?: CostoParaPrecios
+}
+
+export type CostoParaPrecios = 'reposicion' | 'promedio' | 'mayor'
+
+// ── Preparaciones y produccion (docs/plan-compras-inventario-produccion.md) ──
+
+export type LineaPreparacion = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  tipo: TipoArticulo
+  cantidad: number
+  /** Lo que aporta al costo de una tanda, a costo de hoy. */
+  costo: number
+}
+
+export type Preparacion = {
+  id: number
+  nombre: string
+  unidad: string
+  rinde: number
+  modo_produccion: 'descontar' | 'producir'
+  vida_util_horas: number | null
+  stock_actual: number
+  lineas: LineaPreparacion[]
+  costo_tanda: number
+  costo_unitario: number
+  /** Lo que rindieron las ultimas tandas contra la receta (1 = exacto). */
+  rendimiento_real: number | null
+  tandas: number
+}
+
+export type DatosPreparacion = {
+  nombre: string
+  unidad: string
+  rinde: number
+  modo_produccion: 'descontar' | 'producir'
+  vida_util_horas: number | null
+  lineas: { ingrediente_id: number; cantidad: number }[]
+}
+
+export type Produccion = {
+  id: number
+  fecha: string
+  preparacion_id: number
+  preparacion: string
+  unidad: string
+  cantidad: number
+  cantidad_esperada: number
+  rendimiento_real: number | null
+  costo_total: number
+}
+
+export type SobrantePreparacion = {
+  ok: boolean
+  movimientos: number
+  /** Lo que se perdió en $, si se botó. */
+  valor?: number
+  detalle?: { ingrediente_id: number; nombre: string; cantidad: number; unidad: string; valor: number }[]
+}
+
+export type Disponibilidad = {
+  preparacion_id: number
+  nombre: string
+  unidad: string
+  stock_actual: number
+  potencial: number | null
+  limita: string | null
+  comparte_con: string[]
+  /** Si todo el crudo fuera para esta (sin repartir con las otras). */
+  potencial_solo?: number | null
+  /** Qué parte del crudo que limita le toca, en %. */
+  reparto_pct?: number | null
+  reparto_segun?: '' | 'ventas' | 'iguales'
+}
+
+export type CostoTeoricoFila = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  teorico: number
+  mermas: number
+  diferencia_conteo: number
+  valor_teorico: number
+  valor_diferencia: number
+  pct_desvio: number | null
+}
+
+export type CostoIndirecto = {
+  ingrediente_id: number
+  nombre: string
+  unidad: string
+  cargado: number
+  valor: number
+  piezas: number
+  por_pieza: number | null
+  cantidad_por_pieza: number | null
 }
 
 export type Respaldo = {
@@ -992,6 +1117,8 @@ export type ReportePerdidas = {
   cambio_pct: number | null
   por_insumo: PerdidaPorInsumo[]
   por_motivo: PerdidaPorMotivo[]
+  /** Quién anotó las mermas (sin los conteos). */
+  por_operador?: { operador: string; valor: number; veces: number }[]
   serie: PuntoPerdida[]
   sin_merma: number
   anulados: number
@@ -1078,6 +1205,56 @@ export type LineaFactura = {
   subtotal: number
   /** Si ESTE renglón pagó IVA. Se congela al cargar la factura. */
   exento: boolean
+  /** Qué es la mercancía: decide a qué almacén (o a gasto) fue la plata. */
+  tipo: TipoArticulo
+  /** La cuenta a la que fue el renglón. '' en las facturas de antes. */
+  cuenta: string
+}
+
+/** Lo que la factura cobra y no es mercancía: no mueve stock. */
+export type ConceptoGasto = 'Flete' | 'Servicio' | 'Equipo' | 'Otro'
+
+export type LineaGasto = {
+  id: number
+  concepto: ConceptoGasto
+  descripcion: string
+  /** Sin IVA, en dólares, como dice el papel. */
+  monto: number
+  exento: boolean
+  cuenta: string
+}
+
+/** Lo que la factura cobra y no llegó: el proveedor lo debe hasta su nota. */
+export type Reclamo = {
+  id: number
+  factura_id: number
+  ingrediente_id: number
+  ingrediente_nombre: string
+  unidad: string
+  cantidad: number
+  valor: number
+  motivo: string
+  fecha: string
+  estado: 'abierto' | 'acreditado' | 'perdido'
+  numero_factura: string
+  proveedor_nombre: string
+  /** Cuántos días lleva abierto. */
+  dias?: number
+}
+
+/** "Hoy el pollo es pavo": vigente hasta `hasta`. */
+export type Sustitucion = {
+  id: number
+  original_id: number
+  original: string
+  sustituto_id: number
+  sustituto: string
+  unidad_original: string
+  unidad_sustituto: string
+  factor: number
+  desde: string
+  hasta: string
+  nota: string
 }
 
 export type FacturaCompra = {
@@ -1101,8 +1278,14 @@ export type FacturaCompra = {
   comprobante_retencion: string
   /** Lo que se le paga al proveedor: total menos lo retenido. */
   a_pagar: number
+  /** A crédito: lo que ya se abonó y lo que falta (con las notas de crédito descontadas). */
+  abonado?: number
+  saldo?: number
+  abonos?: { id: number; fecha: string; monto: number; forma_pago: string; referencia: string }[]
+  /** Lo que no llegó y el proveedor todavía debe. */
+  reclamos?: Reclamo[]
   categoria: 'Insumos' | 'Servicios' | 'Activos' | 'Otros'
-  forma_pago: 'Efectivo' | 'Banco' | 'Credito'
+  forma_pago: 'Efectivo' | 'Efectivo $' | 'Banco' | 'Credito' | 'Mixto'
   /** Ya con el recargo y el descuento aplicados: la base que va al Libro de Compras. */
   base_imponible: number
   /** Lo que el proveedor sumó (flete, recargo por crédito) sobre el total. */
@@ -1118,6 +1301,10 @@ export type FacturaCompra = {
   /** El comprobante con que se le pagó al proveedor. Vacío si fue en efectivo. */
   referencia_pago: string
   items: LineaFactura[]
+  /** Flete, servicios, equipos: los renglones que no son mercancía. */
+  gastos?: LineaGasto[]
+  /** Solo con forma_pago "Mixto": con qué se pagó cada parte, en dólares. */
+  pagos?: { id: number; forma_pago: string; monto: number; referencia: string }[]
   /** Si tiene la foto del papel enganchada. */
   tiene_soporte?: boolean
 }
@@ -1219,7 +1406,6 @@ export type ProductoAfectado = {
   precio: number
   margen_antes_pct: number | null
   margen_despues_pct: number | null
-  precio_sugerido: number | null
   a_perdida: boolean
 }
 
@@ -1268,6 +1454,8 @@ export type CuerpoCompletarFactura = {
 export type RevisionFactura = {
   duplicadas: { id: number; numero_factura: string; proveedor_nombre: string; fecha: string; total: number }[]
   precios: AvisoPrecio[]
+  /** Cantidades muy distintas de lo que se suele comprar (¿bultos leídos como kilos?). */
+  cantidades?: { indice: number; ingrediente_id: number; cantidad: number; referencia: number; muestras: number; veces: number; mensaje: string }[]
   /** Por qué ese RIF no puede ser correcto (dígito verificador). Vacío si cuadra. */
   rif_aviso: string
   /** Un RIF conocido que difiere en un solo carácter del leído. */
@@ -1306,6 +1494,17 @@ export type Proveedor = {
   activo: boolean
   /** % de su IVA que se le retiene (agente de retención): el último usado. */
   porcentaje_retencion?: number
+}
+
+/** La ficha del proveedor: cuánto se le compró, cuánto se le debe y sus últimas facturas. */
+export type ProveedorResumen = {
+  facturas: number
+  comprado: number
+  deuda: number
+  vencidas: number
+  alertas_pendientes: number
+  ultima_compra: string | null
+  ultimas: { id: number; fecha: string; numero_factura: string; total: number; forma_pago: string; pagada: boolean; saldo: number }[]
 }
 
 export type FilaLibroVentas = {

@@ -48,6 +48,18 @@ export function idDe(valor: string): number | undefined {
   return valor && Number.isInteger(n) && n > 0 ? n : undefined
 }
 
+/** Varios ids en la URL, separados por coma ("3,7"). Lo que no es id se ignora. */
+export function idsDe(valor: string): number[] {
+  return valor
+    .split(',')
+    .map((v) => idDe(v.trim()))
+    .filter((n): n is number => n !== undefined)
+}
+
+/** Lo que va en la URL para esa lista de valores elegidos. */
+export const listaUrl = (valores: string[]) => valores.filter(Boolean).join(',')
+export const valoresDe = (valor: string) => valor.split(',').filter(Boolean)
+
 /** Para buscar sin que importen las tildes ni las mayusculas. */
 export function llano(texto: string): string {
   return texto

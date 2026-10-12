@@ -39,6 +39,17 @@ export type NombreIcono =
   | 'chispa'
   | 'camara'
   | 'imagen'
+  // Los cuatro almacenes de Compras (ver lib/tiposArticulo.ts) y lo que los
+  // rodea: la caja en que llega la mercancia, el papel de la factura.
+  | 'olla'
+  | 'botella'
+  | 'vaso'
+  | 'servilleta'
+  | 'paquete'
+  | 'factura'
+  | 'mas'
+  | 'quitar'
+  | 'buscar'
 
 export const TRAZOS: Record<NombreIcono, string> = {
   inicio: 'M3 10.5 12 3l9 7.5M5 9.8V21h14V9.8M10 21v-6h4v6',
@@ -81,4 +92,18 @@ export const TRAZOS: Record<NombreIcono, string> = {
   chispa: 'M12 3v3m0 12v3M4.2 7.2l2.1 2.1m11.4 11.4-2.1-2.1M3 12h3m12 0h3M4.2 16.8l2.1-2.1M17.7 3.3l-2.1 2.1M12 8.5 13.2 11 15.5 12l-2.3 1L12 15.5 10.8 13 8.5 12l2.3-1z',
   camara: 'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
   imagen: 'M3 3h18v18H3zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3M21 15l-5-5L5 21',
+  // Materia prima: la olla con su tapa, lo que se cocina.
+  olla: 'M3 10h18M5 10v7a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-7M8 10V8a4 4 0 0 1 8 0v2M12 4v1M2 13h2M20 13h2',
+  // Reventa: la botella que se compra y se vende tal cual.
+  botella: 'M10 2h4v3l2 3.5V20a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V8.5L10 5zM8 12h8M8 17h8',
+  // Consumible: el vaso que va en la receta del jugo.
+  vaso: 'M5 3h14l-1.5 17a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2zM6 9h12',
+  // Desechable: la servilleta doblada, lo que se gasta sin contar.
+  servilleta: 'M4 4h16v16H4zM4 4l16 16M12 4v8',
+  // En que llega: la caja cerrada del proveedor.
+  paquete: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5',
+  factura: 'M6 2h9l5 5v15H6zM15 2v5h5M9 12h6M9 16h6',
+  mas: 'M12 5v14M5 12h14',
+  quitar: 'M18 6 6 18M6 6l12 12',
+  buscar: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5',
 }

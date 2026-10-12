@@ -17,7 +17,8 @@ export const METODOS_PAGO = [
 // Una deuda que nace no es plata que se mueve, asi que no hay comprobante que
 // pedir: llega despues, cuando se salde. 'Fiado' es la venta a credito;
 // 'Credito' es como le llama Compras a lo mismo del otro lado.
-const SIN_COMPROBANTE = new Set(['Fiado', 'Credito'])
+// 'Mixto' tampoco: la referencia la lleva cada parte, no el conjunto.
+const SIN_COMPROBANTE = new Set(['Fiado', 'Credito', 'Mixto'])
 
 /**
  * Si este metodo de pago tiene que traer su numero de confirmacion.

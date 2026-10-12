@@ -207,6 +207,10 @@ def _costo_por_variante(variante_ids: List[int], db: Session) -> Dict[int, float
     costos: Dict[int, float] = {}
     for receta in recetas:
         aporte = receta.cantidad_por_unidad * (receta.ingrediente.costo_efectivo or 0)
+        # Con un cambio de hoy (pollo por pavo), lo que sale del deposito es
+        # otra cosa y a otro costo: el costo de la venta tiene que ser el de
+        # lo que de verdad salio, o los libros y el deposito se separan.
+        aporte += costeo.diferencia_por_sustitucion(receta.ingrediente, costeo.consumo_bruto(receta, 1))
         costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
     return costos
 
@@ -275,6 +279,21 @@ def _revisar_precio_de_envios(items, variantes, categoria_envios_id) -> None:
             raise HTTPException(status_code=400, detail="El envío necesita su monto")
 
 
+def _revisar_sin_precio(items, variantes, categoria_envios_id) -> None:
+    """Un producto nuevo puede nacer sin precio (se decide en Recetas, con el
+    costo a la vista). Mientras no lo tenga no se vende: saldria regalado."""
+    for item in items:
+        v = variantes.get(item.variante_id)
+        if v is None or item.cortesia or _es_envio(v, categoria_envios_id):
+            continue
+        if (v.precio or 0) <= 0:
+            nombre = v.producto.nombre if getattr(v, "producto", None) else "Este producto"
+            raise HTTPException(
+                status_code=400,
+                detail=f"«{nombre}» todavía no tiene precio: pónselo en Recetas antes de venderlo.",
+            )
+
+
 def _renglon_va_a_cocina(
     item: schemas.PedidoItemCreate,
     variante: Optional[models.Variante],
@@ -316,7 +335,9 @@ def _consumo_del_pedido(items, recetas_por_variante) -> Dict[models.Ingrediente,
         for receta in recetas_por_variante.get(item.variante_id, []):
             bruto = costeo.consumo_bruto(receta, item.cantidad)
             consumo[receta.ingrediente] = consumo.get(receta.ingrediente, 0) + bruto
-    return consumo
+    # Las preparaciones (el guiso del pastelito) se bajan hasta la materia
+    # prima: es lo que de verdad sale del deposito.
+    return costeo.explotar_consumo(consumo)
 
 
 def _faltantes(consumo: Dict[models.Ingrediente, float]) -> List[str]:
@@ -389,6 +410,7 @@ async def crear_pedido(
     envios = seed.categoria_envios(db)
     categoria_envios_id = envios.id if envios else None
     _revisar_precio_de_envios(del_menu, variantes, categoria_envios_id)
+    _revisar_sin_precio(del_menu, variantes, categoria_envios_id)
 
     # El inventario se mueve ACA, no al cobrar: la cocina empieza a gastar
     # insumos apenas le llega la comanda. Descontar al cobrar dejaba una
@@ -697,8 +719,18 @@ def _ya_hecho(fila: models.PedidoItem) -> bool:
     return bool(fila.preparado) and fila.a_cocina is not False
 
 
-def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int]) -> None:
-    """Todo lo que impide tocar esta comanda, con el motivo escrito."""
+def _revisar_que_se_puede_editar(
+    pedido: models.Pedido, quien_id: Optional[int], forzar: bool = False
+) -> None:
+    """Todo lo que impide tocar esta comanda, con el motivo escrito.
+
+    Un pedido sin cobrar se edita SIEMPRE, las veces que haga falta (Leider,
+    8-oct). Ni la cocina preparandolo lo traba: lo que ya termino no se quita
+    (ver `editar_pedido`) y lo que se agrega va a cocina como pendiente. El
+    candado de otra caja tampoco es una pared: quien abre puede tomarla
+    (`forzar`), porque una tablet que se recargo a mitad de una edicion dejaba
+    la comanda trancada cinco minutos.
+    """
     if pedido.estado == "anulado":
         raise HTTPException(status_code=409, detail="Un pedido anulado ya no se edita")
     if pedido.devuelto:
@@ -706,21 +738,11 @@ def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int])
             status_code=409,
             detail="Esta venta se devolvió entera. Si el cliente quiere otra cosa, es un pedido nuevo.",
         )
-    if la_tiene_cocina(pedido):
-        quien = pedido.cocinando_por or "La cocina"
-        desde = pedido.cocinando_desde.strftime("%H:%M") if pedido.cocinando_desde else ""
-        detalle = f"{quien} ya está preparando la comanda #{pedido.numero}"
-        if desde:
-            detalle += f" (desde las {desde})"
-        raise HTTPException(
-            status_code=409,
-            detail=detalle + ". Habla con cocina: lo que está en el sartén ya no se cambia desde aquí.",
-        )
     # Lo que la cocina ya termino no se QUITA (ver `editar_pedido`), pero la
     # comanda se sigue pudiendo abrir: agregarle un refresco a un pedido ya
     # hecho no bota comida. Antes se trancaba entera apenas todo estaba
     # "preparado", y eso incluia la comanda de vitrina, que la cocina nunca vio.
-    if edicion_viva(pedido) and pedido.editando_por_id not in (None, quien_id):
+    if not forzar and edicion_viva(pedido) and pedido.editando_por_id not in (None, quien_id):
         raise HTTPException(
             status_code=409,
             detail=f"{pedido.editando_por or 'Otra caja'} está editando la comanda "
@@ -738,7 +760,9 @@ def _revisar_que_se_puede_editar(pedido: models.Pedido, quien_id: Optional[int])
 
 
 @router.post("/{pedido_id}/edicion", response_model=schemas.Pedido)
-async def abrir_edicion(pedido_id: int, request: Request, db: Session = Depends(get_db)):
+async def abrir_edicion(
+    pedido_id: int, request: Request, forzar: bool = False, db: Session = Depends(get_db)
+):
     """El punto de venta agarra la comanda para cambiarla.
 
     Avisa a la cocina ANTES de que el cajero empiece a tocar renglones, no
@@ -747,7 +771,7 @@ async def abrir_edicion(pedido_id: int, request: Request, db: Session = Depends(
     """
     pedido = _buscar(db, pedido_id)
     quien = operadores.del_turno(db, request)
-    _revisar_que_se_puede_editar(pedido, quien.id if quien else None)
+    _revisar_que_se_puede_editar(pedido, quien.id if quien else None, forzar=forzar)
 
     pedido.editando_desde = ahora()
     pedido.editando_por_id = quien.id if quien else None
@@ -915,6 +939,7 @@ async def editar_pedido(
     envios = seed.categoria_envios(db)
     categoria_envios_id = envios.id if envios else None
     _revisar_precio_de_envios(del_menu, variantes, categoria_envios_id)
+    _revisar_sin_precio(del_menu, variantes, categoria_envios_id)
     ids_envio = (
         frozenset(
             v_id
@@ -945,16 +970,19 @@ async def editar_pedido(
     # barra: quitarla es botar comida por la puerta de atras; lo que toca es
     # anular, o devolver y volver a cobrar, que dejan rastro. Agregar si se
     # puede, y lo de la vitrina se cambia libre: la cocina nunca lo toco.
-    if cocina_termino(pedido):
-        for clave, filas in actuales.items():
-            hechas = [f for f in filas if f.a_cocina is not False and f.preparado]
-            if hechas and pedidas.get(clave, 0) < sum(f.cantidad for f in filas):
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"La cocina ya terminó {filas[0].nombre} de la comanda "
-                    f"#{pedido.numero}: eso ya no se quita. Puedes agregar cosas; "
-                    "para quitar lo que ya se cocinó, anúlala o devuélvela y vuelve a cobrar.",
-                )
+    # Vale renglon por renglon y no solo con la comanda terminada: desde el
+    # 8-oct se edita con la cocina a medias, y una empanada ya hecha es comida
+    # en la barra aunque los pastelitos sigan en el sarten. Se puede bajar
+    # hasta lo que la cocina hizo, nunca por debajo.
+    for clave, filas in actuales.items():
+        hecho = sum(f.cantidad for f in filas if _ya_hecho(f))
+        if hecho and pedidas.get(clave, 0) < hecho:
+            raise HTTPException(
+                status_code=409,
+                detail=f"La cocina ya terminó {hecho} de {filas[0].nombre} en la comanda "
+                f"#{pedido.numero}: eso ya no se quita. Puedes agregar cosas; "
+                "para quitar lo que ya se cocinó, anúlala o devuélvela y vuelve a cobrar.",
+            )
 
     def _precio_y_costo(clave: tuple) -> tuple:
         """El precio de un renglon que YA ESTABA no se recalcula.
@@ -1077,6 +1105,15 @@ async def editar_pedido(
                 destino[receta.ingrediente] = destino.get(receta.ingrediente, 0) + bruto
     costo_perdido = round(costo_perdido, 2)
     cortesia_perdida = round(cortesia_perdida, 2)
+
+    # Lo que se agrega sale igual que en la venta: el guiso producido primero
+    # y el resto por la receta. Lo que se quita NO vuelve por la receta: un
+    # guiso que se produce vuelve a la olla (o se bota) como guiso, no como
+    # pollo crudo; solo lo que se descuenta del crudo se devuelve por la
+    # receta, porque nunca tuvo existencia propia (ver costeo.explotar).
+    aumento = costeo.explotar_consumo(aumento, modo="venta")
+    retorno = costeo.explotar_consumo(retorno, modo="devolucion")
+    perdida = costeo.explotar_consumo(perdida, modo="devolucion")
 
     neto = {}
     for ingrediente in set(aumento) | set(retorno):
@@ -1353,6 +1390,16 @@ async def editar_pedido(
     db.flush()
     db.expire(pedido, ["items"])
     pedido.a_cocina = any(i.a_cocina is not False for i in pedido.items)
+    # Si ya se le habia entregado al cliente y se le agrego algo, lo nuevo
+    # todavia hay que darselo: vuelve al mostrador ("por entregar") en cuanto
+    # este listo. Sin esto la cocina lo hacia y nadie lo entregaba.
+    if pedido.entregado_en is not None and any(
+        pedidas.get(c, 0) > sum(f.cantidad for f in actuales.get(c, [])) for c in pedidas
+    ):
+        pedido.entregado_en = None
+        # Un refresco de vitrina ya esta listo: su reloj del mostrador empieza
+        # ahora. Lo que va a cocina lo pone la cocina al terminarlo.
+        pedido.listo_en = None if any(not i.preparado for i in pedido.items) else ahora()
     if any(not i.preparado for i in pedido.items):
         if cocina_ya_habia_terminado or mandar_a_cocina:
             pedido.cocinando_desde = None
@@ -1501,6 +1548,10 @@ async def cobrar_pedido(
     pedido.punto_venta_id = punto.id if punto else None
 
     pedido.estado = "pagado"
+    # Cobrada, la edicion que estuviera abierta termino: un candado colgado
+    # despues del cobro dejaba la cocina viendo "la caja la esta editando".
+    pedido.editando_desde = None
+    pedido.editando_por_id = None
     # El campo resumen sigue existiendo para mostrar de un vistazo como se pago.
     # Dos pagos moviles (el cliente mando de menos y completo con otro) siguen
     # siendo pago movil: "Mixto" es cuando se mezclan formas distintas.
@@ -1788,6 +1839,16 @@ async def cambiar_cocina(
     # Como queda frente a la cocina: la misma regla que al editar.
     db.flush()
     pedido.a_cocina = any(i.a_cocina is not False for i in pedido.items)
+    # Si ya se le habia entregado al cliente y se le agrego algo, lo nuevo
+    # todavia hay que darselo: vuelve al mostrador ("por entregar") en cuanto
+    # este listo. Sin esto la cocina lo hacia y nadie lo entregaba.
+    if pedido.entregado_en is not None and any(
+        pedidas.get(c, 0) > sum(f.cantidad for f in actuales.get(c, [])) for c in pedidas
+    ):
+        pedido.entregado_en = None
+        # Un refresco de vitrina ya esta listo: su reloj del mostrador empieza
+        # ahora. Lo que va a cocina lo pone la cocina al terminarlo.
+        pedido.listo_en = None if any(not i.preparado for i in pedido.items) else ahora()
     if any(not i.preparado for i in pedido.items):
         if ya_tenia_cocina or a_cocina:
             # Lo nuevo por cocinar la devuelve a la cola como nueva: si no,

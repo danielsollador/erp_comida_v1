@@ -151,8 +151,25 @@ def aprender_sin_confirmar(db: Session, body: schemas.AprenderEquivalenciasReque
             e.ingrediente_id = r.ingrediente_id
             e.factor = factor or 1.0
             e.veces = 0
+        elif factor is not None and abs(factor - (e.factor or 0)) > 1e-9:
+            if (e.veces or 0) < 2:
+                # Memoria nueva: se corrige sin mas.
+                e.factor = factor
+            elif e.factor_nuevo is not None and abs(e.factor_nuevo - factor) < 1e-9:
+                e.veces_nuevo = (e.veces_nuevo or 0) + 1
+                if e.veces_nuevo >= 2:
+                    # Dos seguidas: el proveedor cambio la presentacion de verdad.
+                    e.factor, e.veces, e.factor_nuevo, e.veces_nuevo = factor, 0, None, 0
+                else:
+                    continue
+            else:
+                # Una caja distinta (llego abierta, vino incompleta): se anota
+                # como candidata y lo aprendido no cambia.
+                e.factor_nuevo, e.veces_nuevo = factor, 1
+                e.actualizado = ahora()
+                continue
         elif factor is not None:
-            e.factor = factor
+            e.factor_nuevo, e.veces_nuevo = None, 0
         e.descripcion = r.descripcion.strip()
         if body.proveedor_nombre.strip():
             e.proveedor_nombre = body.proveedor_nombre.strip()

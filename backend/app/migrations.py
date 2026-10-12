@@ -169,6 +169,21 @@ COLUMNAS = [
     ("TRX111_VEN_PEDIDO_DET", "a_cocina", "BOOLEAN DEFAULT 1"),
     # En 0 para todos: a igual puesto manda el id, que es el orden de siempre.
     ("DIM220_MEN_PRODUCTO", "orden", "INTEGER DEFAULT 0"),
+    # Rediseño compras -> inventario -> produccion (docs/plan-compras-...).
+    ("DIM310_INV_INGREDIENTE", "rinde", "FLOAT DEFAULT 1"),
+    ("DIM310_INV_INGREDIENTE", "modo_produccion", "VARCHAR DEFAULT 'descontar'"),
+    ("DIM310_INV_INGREDIENTE", "vida_util_horas", "INTEGER"),
+    ("TRX360_INV_PRODUCCION", "escala", "FLOAT"),
+    ("TRX360_INV_PRODUCCION", "principal_id", "INTEGER"),
+    ("TRX360_INV_PRODUCCION", "usado_principal", "FLOAT"),
+    ("DIM310_INV_INGREDIENTE", "categoria_borrada_id", "INTEGER"),
+    ("DIM420_COM_EQUIVALENCIA", "factor_nuevo", "FLOAT"),
+    ("DIM420_COM_EQUIVALENCIA", "veces_nuevo", "INTEGER DEFAULT 0"),
+    ("DIM310_INV_INGREDIENTE", "es_indirecto", "BOOLEAN DEFAULT 0"),
+    ("DIM310_INV_INGREDIENTE", "empaque_trae", "FLOAT"),
+    ("TRX411_COM_FACTURA_DET", "cuenta", "VARCHAR DEFAULT ''"),
+    ("DIM230_MEN_VARIANTE", "se_frie", "BOOLEAN DEFAULT 0"),
+    ("CFG910_ADM_PARAMETRO", "costo_para_precios", "VARCHAR DEFAULT 'reposicion'"),
 ]
 
 
@@ -202,6 +217,8 @@ INDICES = [
 VALORES = [
     ("DIM310_INV_INGREDIENTE", "unidad", "litro", "lt"),
     ("DIM310_INV_INGREDIENTE", "unidad", "litros", "lt"),
+    # "Paquete" y "unidad" son lo mismo (11-oct): se cuentan de uno en uno.
+    ("DIM310_INV_INGREDIENTE", "unidad", "paquete", "unidad"),
 ]
 
 
@@ -580,6 +597,67 @@ def _abrir_kardex() -> None:
         db.close()
 
 
+def pasar_preparaciones_a_base_uno() -> None:
+    """Las recetas de las preparaciones pasan de "una tanda" a "lo que lleva 1".
+
+    Hasta el 8-oct la receta era una tanda cualquiera ("1 kg de pollo y 100 g
+    de cebolla rinden 0,8 kg") y lo que salia se calculaba sumando lo que
+    quedaba de cada crudo medido como la preparacion. Desde ahora la receta
+    dice lo que lleva 1 kg (o 1 lt, o 1 unidad): cada cantidad se divide por
+    lo que rendia la tanda, y el costo por kilo queda exactamente igual.
+
+    Corre UNA sola vez (queda marcada en CFG930_ADM_MIGRACION): si volviera a
+    correr dividiria otra vez, y si el dueño cambiara despues el % que se
+    aprovecha de un crudo, la cuenta vieja ya no daria 1 y le moveria la
+    receta sin que nadie lo pidiera.
+    """
+    from . import models
+    from .database import SessionLocal
+
+    NOMBRE = "preparaciones_base_uno"
+    db = SessionLocal()
+    try:
+        if db.get(models.MigracionHecha, NOMBRE) is not None:
+            return
+        pasadas = 0
+        for prep in db.query(models.Ingrediente).filter(models.Ingrediente.tipo == "preparacion").all():
+            rinde = _rinde_de_tanda(prep)
+            if rinde > 0 and abs(rinde - 1) > 1e-9:
+                for linea in prep.lineas_preparacion:
+                    linea.cantidad = round(linea.cantidad / rinde, 6)
+                pasadas += 1
+            prep.rinde = 1.0
+        db.add(models.MigracionHecha(nombre=NOMBRE))
+        db.commit()
+        if pasadas:
+            log.info("Recetas de preparaciones pasadas a base uno: %d", pasadas)
+    finally:
+        db.close()
+
+
+def _rinde_de_tanda(prep) -> float:
+    """Lo que rendia la tanda con la regla de antes (7-oct): la suma de lo
+    que quedaba de cada crudo medido como la preparacion, y si nada se media
+    asi, lo que la cocina habia escrito en `rinde`."""
+    from .models import _MEDIDA
+
+    propia = _MEDIDA.get(prep.unidad)
+    total = 0.0
+    hay_en_su_unidad = False
+    for linea in prep.lineas_preparacion:
+        ing = linea.ingrediente
+        medida = _MEDIDA.get(ing.unidad) if ing is not None else None
+        if ing is None or (ing.unidad != prep.unidad and (not medida or not propia or medida[0] != propia[0])):
+            continue
+        hay_en_su_unidad = True
+        factor = medida[1] / propia[1] if medida and propia else 1.0
+        pct = 100.0 if ing.tipo == "preparacion" else (ing.rendimiento_pct or 100.0)
+        total += linea.cantidad * factor * pct / 100.0
+    if hay_en_su_unidad and total > 0:
+        return round(total, 6)
+    return prep.rinde or 0.0
+
+
 def aplicar():
     inspector = inspect(engine)
     tablas = set(inspector.get_table_names())
@@ -700,6 +778,7 @@ def aplicar():
     nombrar_secuencias()
     indexar_claves_foraneas()
 
-    # Va de ultimo: necesita que la tabla exista (la crea `create_all`) y que
-    # las columnas nuevas ya esten puestas.
+    # Van de ultimo: necesitan que las tablas existan (las crea `create_all`)
+    # y que las columnas nuevas ya esten puestas.
     _abrir_kardex()
+    pasar_preparaciones_a_base_uno()
