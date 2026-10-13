@@ -177,3 +177,68 @@ def test_sin_cocinar_todavia_agregar_suma_al_mismo_renglon(client, variante):
     ]}).json()
     filas = [i for i in q["items"] if i["variante_id"] == variante.id]
     assert len(filas) == 1 and filas[0]["cantidad"] == 5 and not filas[0]["preparado"]
+
+
+# -- Lo agregado con su propio destino (Leider, 13-oct, pedido #17 en video:
+# 2 Granjero de vitrina, el cliente pide 2 mas, y la cocina o veia los 4 o
+# no veia nada: "tengo que pedirlo por radio").
+
+def filas_de(pedido, variante_id):
+    return [i for i in pedido["items"] if i["variante_id"] == variante_id]
+
+
+def test_dos_mas_sobre_dos_de_vitrina_solo_los_nuevos_van_a_cocina(client, variante):
+    p = client.post("/api/pedidos", json={"cliente": "Orlando", "items": [
+        {"variante_id": variante.id, "cantidad": 2, "a_cocina": False},
+    ]}).json()
+    assert p["estado"] == "listo"
+    abrir(client, p["id"])
+    r = client.put(f"/api/pedidos/{p['id']}", json={"items": [
+        {"variante_id": variante.id, "cantidad": 4, "a_cocina": False, "a_cocina_agregado": True},
+    ]})
+    assert r.status_code == 200, r.text
+    q = r.json()
+    filas = sorted(filas_de(q, variante.id), key=lambda i: i["a_cocina"])
+    assert [(f["cantidad"], f["a_cocina"], f["preparado"]) for f in filas] == [(2, False, True), (2, True, False)]
+    assert q["estado"] == "pendiente" and q["a_cocina"] is True
+    assert "+2 a cocina" in q["ediciones"][-1]["detalle"]
+    en_cocina = client.get("/api/pedidos?en_cocina=true").json()
+    assert any(x["id"] == p["id"] for x in en_cocina)
+
+
+def test_lo_agregado_tambien_puede_salir_de_vitrina(client, variante):
+    p = client.post("/api/pedidos", json={"cliente": "Ana", "items": [
+        {"variante_id": variante.id, "cantidad": 2, "a_cocina": False},
+    ]}).json()
+    abrir(client, p["id"])
+    q = client.put(f"/api/pedidos/{p['id']}", json={"items": [
+        {"variante_id": variante.id, "cantidad": 3, "a_cocina": False, "a_cocina_agregado": False},
+    ]}).json()
+    filas = filas_de(q, variante.id)
+    assert [(f["cantidad"], f["a_cocina"]) for f in filas] == [(3, False)]
+    assert q["estado"] == "listo"
+
+
+def test_lo_agregado_a_cocina_se_junta_con_lo_que_ya_esperaba_en_la_cola(client, variante):
+    p = client.post("/api/pedidos", json={"cliente": "Ana", "items": [
+        {"variante_id": variante.id, "cantidad": 2, "a_cocina": True},
+    ]}).json()
+    abrir(client, p["id"])
+    q = client.put(f"/api/pedidos/{p['id']}", json={"items": [
+        {"variante_id": variante.id, "cantidad": 5, "a_cocina": True, "a_cocina_agregado": True},
+    ]}).json()
+    filas = filas_de(q, variante.id)
+    assert [(f["cantidad"], f["a_cocina"], f["preparado"]) for f in filas] == [(5, True, False)]
+
+
+def test_de_cocina_en_cola_y_lo_agregado_de_vitrina_son_dos_renglones(client, variante):
+    p = client.post("/api/pedidos", json={"cliente": "Ana", "items": [
+        {"variante_id": variante.id, "cantidad": 1, "a_cocina": True},
+    ]}).json()
+    abrir(client, p["id"])
+    q = client.put(f"/api/pedidos/{p['id']}", json={"items": [
+        {"variante_id": variante.id, "cantidad": 3, "a_cocina": True, "a_cocina_agregado": False},
+    ]}).json()
+    filas = sorted(filas_de(q, variante.id), key=lambda i: i["a_cocina"])
+    assert [(f["cantidad"], f["a_cocina"], f["preparado"]) for f in filas] == [(2, False, True), (1, True, False)]
+    assert q["total"] == round(p["total"] * 3, 2)

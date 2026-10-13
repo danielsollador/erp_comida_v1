@@ -895,6 +895,12 @@ class PedidoItemCreate(BaseModel):
     # del pedido), que es como llegaban los pedidos antes de decidirse
     # renglon por renglon.
     a_cocina: Optional[bool] = None
+    # Al EDITAR: a donde van solo las unidades que se agregan a algo que ya
+    # estaba en el pedido. Leider (13-oct): con 2 pastelitos de vitrina,
+    # agregar 2 mas los sumaba al mismo renglon y la cocina o veia los 4 o no
+    # veia nada. Con esto lo agregado es un renglon aparte con su destino, y
+    # `a_cocina` sigue hablando solo de lo que ya estaba. None = como antes.
+    a_cocina_agregado: Optional[bool] = None
 
 
 class PedidoCreate(BaseModel):

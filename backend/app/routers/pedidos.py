@@ -1190,13 +1190,18 @@ async def editar_pedido(
         elif antes == 0:
             cambios.append(f"+{despues} {nombre}")
         else:
-            cambios.append(f"{nombre}: {antes} -> {despues}")
+            detalle = f"{nombre}: {antes} -> {despues}"
+            agregado = ejemplo[clave].a_cocina_agregado if clave in ejemplo else None
+            if despues > antes and agregado is not None:
+                detalle += f" (+{despues - antes} {'a cocina' if agregado else 'de vitrina'})"
+            cambios.append(detalle)
 
     if not cambios and (body.nota is None or body.nota == pedido.nota):
         raise HTTPException(status_code=400, detail="No hay ningún cambio que guardar")
 
     # -- se aplica
     cocina_ya_habia_terminado = cocina_termino(pedido)
+    agregado_a_cocina = False
     for clave, cantidad in pedidas.items():
         filas = actuales.get(clave)
         if filas:
@@ -1208,7 +1213,40 @@ async def editar_pedido(
                     f.a_cocina = False
                     f.preparado = True
             antes = sum(f.cantidad for f in filas)
-            if cantidad > antes:
+            destino_agregado = ejemplo[clave].a_cocina_agregado
+            if cantidad > antes and destino_agregado is not None:
+                # LO AGREGADO CON SU PROPIO DESTINO (Leider, 13-oct): 2 de
+                # vitrina + 2 nuevos que hay que hacer son dos renglones, y a
+                # la cocina solo le llegan los 2 nuevos. Se suma a un renglon
+                # que ya tenga ESE destino y siga abierto (el que espera en la
+                # cola, o el de vitrina); si no hay, uno nuevo al mismo precio.
+                extra = cantidad - antes
+                if destino_agregado:
+                    junto = next((f for f in filas if f.a_cocina is not False and not f.preparado), None)
+                else:
+                    junto = next((f for f in filas if f.a_cocina is False), None)
+                if junto is not None:
+                    junto.cantidad += extra
+                else:
+                    base = filas[0]
+                    db.add(
+                        models.PedidoItem(
+                            pedido_id=pedido.id,
+                            variante_id=base.variante_id,
+                            nombre=base.nombre,
+                            precio_unitario=base.precio_unitario,
+                            costo_unitario=base.costo_unitario,
+                            cantidad=extra,
+                            nota=base.nota,
+                            preparado=not destino_agregado,
+                            a_cocina=destino_agregado,
+                            cortesia=base.cortesia,
+                            precio_lista=base.precio_lista,
+                        )
+                    )
+                if destino_agregado:
+                    agregado_a_cocina = True
+            elif cantidad > antes:
                 # LO QUE YA SE HIZO NO VUELVE A LA COCINA. Leider (6-oct): con
                 # 4 pastelitos ya hechos, agregar 1 subia el renglon a 5 y lo
                 # devolvia entero a la cola: la cocina veia 5 por hacer. Lo
@@ -1401,7 +1439,7 @@ async def editar_pedido(
         # ahora. Lo que va a cocina lo pone la cocina al terminarlo.
         pedido.listo_en = None if any(not i.preparado for i in pedido.items) else ahora()
     if any(not i.preparado for i in pedido.items):
-        if cocina_ya_habia_terminado or mandar_a_cocina:
+        if cocina_ya_habia_terminado or mandar_a_cocina or agregado_a_cocina:
             pedido.cocinando_desde = None
             pedido.cocinando_por_id = None
             pedido.listo_en = None

@@ -535,6 +535,9 @@ export const api = {
       // Si va a cocina. Lo nuevo sin decirlo toma lo que sugiera su
       // categoría; lo que ya estaba sin decirlo queda como estaba.
       a_cocina?: boolean
+      // Solo las unidades que se suman a algo que ya estaba: van a un renglón
+      // aparte con este destino (el resto sigue con `a_cocina`).
+      a_cocina_agregado?: boolean
     }[],
     extra?: {
       nota?: string

@@ -574,6 +574,10 @@ export default function POS() {
   // comanda, y un pedido con un refresco de la nevera y una empanada por
   // hacer no tenía respuesta correcta.
   const [destinos, setDestinos] = useState<Record<number, boolean> | null>(null)
+  // Editando: a dónde va LO AGREGADO a un producto que ya estaba, aparte de lo
+  // que ya estaba (Leider, 13-oct: 2 Granjero de vitrina + 2 nuevos, y la
+  // cocina veía los 4 o nada). Por variante; solo las que crecieron.
+  const [nuevos, setNuevos] = useState<Record<number, boolean>>({})
   // Corregir despues, renglon por renglon, que va a cocina en un pedido ya
   // tomado (el cliente, 29-sep: un toque de "vitrina" por error y la cocina
   // nunca vio unos pastelitos que habia que hacer).
@@ -622,6 +626,30 @@ export default function POS() {
         Object.values(carrito).map((c) => [c.variante.id, cocinaActualDe(c.variante.id) ?? vaACocinaPorDefecto(c.variante.id)]),
       ),
     )
+    // Lo agregado a algo que ya estaba nace con lo que sugiere su categoría,
+    // no con lo que tenía lo de antes: que lo viejo fuera de vitrina no dice
+    // nada de lo nuevo.
+    setNuevos(
+      Object.fromEntries(
+        Object.values(carrito)
+          .filter((c) => agregadoDe(c.variante.id, c.cantidad, c.cortesia) > 0)
+          .map((c) => [c.variante.id, vaACocinaPorDefecto(c.variante.id)]),
+      ),
+    )
+  }
+
+  /** Editando: cuántas unidades de este producto ya tenía el pedido. */
+  function antesDe(varianteId: number, cortesia: boolean): number {
+    return (enEdicion?.items ?? [])
+      .filter((i) => i.variante_id === varianteId && Boolean(i.cortesia) === Boolean(cortesia))
+      .reduce((n, i) => n + i.cantidad, 0)
+  }
+
+  /** Editando: cuántas se le suman a algo que ya estaba (0 si es nuevo o bajó). */
+  function agregadoDe(varianteId: number, cantidad: number, cortesia: boolean): number {
+    if (!enEdicion) return 0
+    const antes = antesDe(varianteId, cortesia)
+    return antes > 0 && cantidad > antes ? cantidad - antes : 0
   }
 
   /** Editando: si este renglon YA ESTABA en el pedido, si iba a cocina. */
@@ -646,6 +674,9 @@ export default function POS() {
         // Sin decision en el cuadro: lo que ya tenia si estaba, si no lo que
         // sugiere su categoria.
         a_cocina: destinoDe[c.variante.id] ?? cocinaActualDe(c.variante.id) ?? vaACocinaPorDefecto(c.variante.id),
+        ...(c.variante.id in nuevos && agregadoDe(c.variante.id, c.cantidad, c.cortesia) > 0
+          ? { a_cocina_agregado: nuevos[c.variante.id] }
+          : {}),
       })),
       ...libres.map((l) =>
         l.variante_id !== undefined
@@ -675,6 +706,7 @@ export default function POS() {
   }
 
   function terminarEdicion() {
+    setNuevos({})
     recordarEdicion(null)
     setEnEdicion(null)
     setDiferencia(null)
@@ -2036,7 +2068,7 @@ export default function POS() {
               <Boton onClick={() => void mandarComanda(destinos)}>
                 {(() => {
                   // La cuenta en el boton: la decision se ve antes de enviar.
-                  const n = Object.values(destinos)
+                  const n = [...Object.values(destinos), ...Object.values(nuevos)]
                   const aCocina = n.filter(Boolean).length
                   const vitrina = n.length - aCocina
                   const verbo = enEdicion ? 'Guardar' : 'Enviar'
@@ -2054,11 +2086,12 @@ export default function POS() {
               vitrina se marca renglon por renglon. */}
           <div className="flex gap-2 mb-3">
             <button
-              onClick={() =>
+              onClick={() => {
                 setDestinos(
                   Object.fromEntries(Object.keys(destinos).map((k) => [k, cocinaLoTermino(Number(k)) ? destinos[Number(k)] : true])),
                 )
-              }
+                setNuevos(Object.fromEntries(Object.keys(nuevos).map((k) => [k, true])))
+              }}
               className="flex-1 text-xs font-medium rounded-lg border border-neutral-200 py-2 hover:bg-neutral-50"
             >
               Todo a cocina
@@ -2068,43 +2101,63 @@ export default function POS() {
             {Object.values(carrito).filter((c) => c.variante.id in destinos).map((c) => {
               const cocina = destinos[c.variante.id] ?? true
               const hecho = cocinaLoTermino(c.variante.id)
+              const agregado = agregadoDe(c.variante.id, c.cantidad, c.cortesia)
+              const nombre = etiquetaVariante(c.producto, c.variante)
               // Lo que por su categoria va a cocina y se marco de vitrina: se
               // resalta ESE renglon, que es donde suele estar el error.
-              const fueraDeLoNormal = !cocina && !hecho && vaACocinaPorDefecto(c.variante.id)
-              return (
-                <li key={c.variante.id}>
-                  <button
-                    disabled={hecho}
-                    onClick={() => setDestinos({ ...destinos, [c.variante.id]: !cocina })}
-                    aria-pressed={cocina}
-                    className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left disabled:opacity-60 ${
-                      fueraDeLoNormal
-                        ? 'border-peligro-400 bg-peligro-50'
-                        : cocina
-                          ? 'border-aviso-300 bg-aviso-50'
-                          : 'border-neutral-200 bg-white'
-                    }`}
-                  >
-                    <span className="min-w-0">
-                      <span className="block font-medium truncate">
-                        {c.cantidad}x {etiquetaVariante(c.producto, c.variante)}
-                      </span>
-                      {fueraDeLoNormal && (
-                        <span className="block text-xs font-medium text-peligro-700">
-                          Normalmente va a cocina: ¿ya está hecho en la vitrina?
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      className={`shrink-0 text-xs font-semibold rounded-full px-2.5 py-1 ${
-                        hecho ? 'bg-exito-100 text-exito-700' : cocina ? 'bg-aviso-500 text-white' : 'bg-neutral-800 text-white'
+              const renglon = (clave: string, texto: string, va: boolean, fijo: boolean, alTocar: () => void, nota?: string) => {
+                const fueraDeLoNormal = !va && !fijo && vaACocinaPorDefecto(c.variante.id)
+                return (
+                  <li key={clave}>
+                    <button
+                      disabled={fijo}
+                      onClick={alTocar}
+                      aria-pressed={va}
+                      className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left disabled:opacity-60 ${
+                        fueraDeLoNormal
+                          ? 'border-peligro-400 bg-peligro-50'
+                          : va
+                            ? 'border-aviso-300 bg-aviso-50'
+                            : 'border-neutral-200 bg-white'
                       }`}
                     >
-                      {hecho ? 'Cocina lo terminó' : cocina ? 'A cocina' : 'De vitrina'}
-                    </span>
-                  </button>
-                </li>
-              )
+                      <span className="min-w-0">
+                        <span className="block font-medium truncate">{texto}</span>
+                        {nota && <span className="block text-xs text-neutral-500">{nota}</span>}
+                        {fueraDeLoNormal && (
+                          <span className="block text-xs font-medium text-peligro-700">
+                            Normalmente va a cocina: ¿ya está hecho en la vitrina?
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className={`shrink-0 text-xs font-semibold rounded-full px-2.5 py-1 ${
+                          fijo && va ? 'bg-exito-100 text-exito-700' : va ? 'bg-aviso-500 text-white' : 'bg-neutral-800 text-white'
+                        }`}
+                      >
+                        {fijo && va ? 'Cocina lo terminó' : va ? 'A cocina' : 'De vitrina'}
+                      </span>
+                    </button>
+                  </li>
+                )
+              }
+              if (agregado === 0) {
+                return renglon(String(c.variante.id), `${c.cantidad}x ${nombre}`, cocina, hecho, () =>
+                  setDestinos({ ...destinos, [c.variante.id]: !cocina }),
+                )
+              }
+              // Creció: lo que ya estaba y lo agregado, cada uno con su destino.
+              const vaLoNuevo = nuevos[c.variante.id] ?? vaACocinaPorDefecto(c.variante.id)
+              return [
+                renglon(`${c.variante.id}-antes`, `${c.cantidad - agregado}x ${nombre}`, cocina, hecho, () =>
+                  setDestinos({ ...destinos, [c.variante.id]: !cocina }),
+                  'Lo que ya estaba en el pedido',
+                ),
+                renglon(`${c.variante.id}-nuevo`, `+${agregado} ${nombre}`, vaLoNuevo, false, () =>
+                  setNuevos({ ...nuevos, [c.variante.id]: !vaLoNuevo }),
+                  'Lo que se agregó ahora',
+                ),
+              ]
             })}
           </ul>
           {libres.length > 0 && (
