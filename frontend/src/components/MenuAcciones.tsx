@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
  * El menu de "⋯" de una fila.
@@ -54,11 +55,54 @@ export default function MenuAcciones({
 }) {
   const [abierto, setAbierto] = useState(false)
   const caja = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const [lugar, setLugar] = useState<CSSProperties | null>(null)
+
+  // EL PANEL FLOTA SOBRE LA PAGINA (portal + fixed), no colgado de la fila.
+  // En el telefono las categorias del menu son una tira que se desliza de
+  // lado (overflow-x-auto), y eso recorta todo lo que se sale de ella: el
+  // "⋯" abria el panel, pero quedaba escondido bajo el borde de la tira y
+  // parecia que no hacia nada (13-oct). Flotando, ningun contenedor lo corta.
+  useLayoutEffect(() => {
+    if (!abierto) {
+      setLugar(null)
+      return
+    }
+    const ubicar = () => {
+      const d = caja.current?.getBoundingClientRect()
+      if (!d) return
+      const margen = 8
+      const ancho = window.innerWidth
+      const alto = window.innerHeight
+      const abajo = alto - d.bottom
+      // Si abajo no cabe y arriba hay mas sitio, se abre hacia arriba.
+      const haciaArriba = abajo < 240 && d.top > abajo
+      const css: CSSProperties = {
+        position: 'fixed',
+        maxHeight: Math.min(alto * 0.6, (haciaArriba ? d.top : abajo) - margen * 2),
+        maxWidth: ancho - margen * 2,
+      }
+      if (haciaArriba) css.bottom = alto - d.top + 6
+      else css.top = d.bottom + 6
+      if (alinear === 'izquierda') css.left = Math.max(margen, d.left)
+      else css.right = Math.max(margen, ancho - d.right)
+      setLugar(css)
+    }
+    ubicar()
+    window.addEventListener('resize', ubicar)
+    window.addEventListener('scroll', ubicar, true)
+    return () => {
+      window.removeEventListener('resize', ubicar)
+      window.removeEventListener('scroll', ubicar, true)
+    }
+  }, [abierto, alinear])
 
   useEffect(() => {
     if (!abierto) return
     const fuera = (e: MouseEvent) => {
-      if (caja.current && !caja.current.contains(e.target as Node)) setAbierto(false)
+      const t = e.target as Node
+      if (caja.current?.contains(t) || panel.current?.contains(t)) return
+      setAbierto(false)
     }
     const escape = (e: KeyboardEvent) => e.key === 'Escape' && setAbierto(false)
     document.addEventListener('mousedown', fuera)
@@ -88,13 +132,8 @@ export default function MenuAcciones({
           </svg>
         </button>
       )}
-      {abierto && (
-        <div
-          role="menu"
-          className={`vp-menu absolute top-full mt-1.5 z-30 min-w-56 max-h-[60vh] overflow-y-auto p-1 ${
-            alinear === 'izquierda' ? 'left-0' : 'right-0'
-          }`}
-        >
+      {abierto && lugar && createPortal(
+        <div ref={panel} role="menu" style={lugar} className="vp-menu z-[60] min-w-56 overflow-y-auto p-1">
           {encabezado}
           {opciones.map((o, i) => (
             <button
@@ -125,7 +164,8 @@ export default function MenuAcciones({
               </span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
