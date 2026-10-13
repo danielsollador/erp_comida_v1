@@ -252,12 +252,32 @@ export function cocinaLoTermino(enEdicion: Pedido | null, varianteId: number): b
   return filas.length > 0 && filas.every((i) => i.a_cocina !== false && i.preparado)
 }
 
+/** Editando: cuantas unidades de este producto ya tenia el pedido. */
+export function antesDe(enEdicion: Pedido | null, varianteId: number, cortesia: boolean): number {
+  return (enEdicion?.items ?? [])
+    .filter((i) => i.variante_id === varianteId && Boolean(i.cortesia) === Boolean(cortesia))
+    .reduce((n, i) => n + i.cantidad, 0)
+}
+
+/**
+ * Editando: cuantas se le suman a algo que YA ESTABA (0 si es nuevo o bajo).
+ * Leider (13-oct): 2 Granjero de vitrina + 2 nuevos, y la cocina veia los 4
+ * o nada. Lo agregado va en su propio renglon, con su propio destino.
+ */
+export function agregadoDe(enEdicion: Pedido | null, varianteId: number, cantidad: number, cortesia: boolean): number {
+  if (!enEdicion) return 0
+  const antes = antesDe(enEdicion, varianteId, cortesia)
+  return antes > 0 && cantidad > antes ? cantidad - antes : 0
+}
+
 /** Los renglones de la comanda tal como los pide el servidor. */
 export function renglonesDeLaComanda(
   carrito: Carrito,
   libres: Libre[],
   destinoDe: Record<number, boolean>,
   cocina: Cocina,
+  nuevos: Record<number, boolean> = {},
+  enEdicion: Pedido | null = null,
 ): RenglonComanda[] {
   return [
     ...Object.values(carrito).map((c) => ({
@@ -267,6 +287,9 @@ export function renglonesDeLaComanda(
       // Sin decision en el cuadro: lo que ya tenia si estaba, si no lo que
       // sugiere su categoria.
       a_cocina: destinoDe[c.variante.id] ?? cocina.actualDe(c.variante.id) ?? cocina.porDefecto(c.variante.id),
+      ...(c.variante.id in nuevos && agregadoDe(enEdicion, c.variante.id, c.cantidad, c.cortesia) > 0
+        ? { a_cocina_agregado: nuevos[c.variante.id] }
+        : {}),
     })),
     ...libres.map((l) =>
       l.variante_id !== undefined

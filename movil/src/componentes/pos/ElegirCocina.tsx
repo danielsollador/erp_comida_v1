@@ -24,6 +24,8 @@ export type FilaCocina = {
   fijo?: 'hecho' | 'preparando'
   /** Por su categoria va a cocina y se marco de vitrina: ahi suele estar el error. */
   fueraDeLoNormal?: boolean
+  /** Una linea chica debajo ("Lo que se agregó ahora"). */
+  detalle?: string
 }
 
 export function ElegirCocina({
@@ -108,6 +110,7 @@ export function ElegirCocina({
                 <Text style={[e.texto, { color: t.tinta }]} numberOfLines={2}>
                   {f.texto}
                 </Text>
+                {f.detalle ? <Text style={[e.detalle, { color: t.suave }]}>{f.detalle}</Text> : null}
                 {f.fueraDeLoNormal ? (
                   <Text style={[e.alerta, { color: t.peligro }]}>Normalmente va a cocina: ¿ya está hecho en la vitrina?</Text>
                 ) : null}
@@ -129,6 +132,7 @@ const e = StyleSheet.create({
   todoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
   fila: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 },
   texto: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
+  detalle: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 2 },
   alerta: { fontFamily: LETRA.textoFuerte, fontSize: 13, marginTop: 3, lineHeight: 18 },
   pastilla: { borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5 },
   pastillaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 12.5 },

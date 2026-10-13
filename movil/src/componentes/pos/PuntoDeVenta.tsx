@@ -11,6 +11,7 @@ import { avisar, confirmar } from '../../lib/dialogo'
 import { useMoneda } from '../../lib/moneda'
 import {
   cocinaActualDe,
+  agregadoDe,
   cocinaLoTermino,
   comandaDelPedido,
   escucharEnVivo,
@@ -56,7 +57,7 @@ import { Cobro } from './Cobro'
 import { Comanda, type AccionesComanda } from './Comanda'
 import { Diferencia } from './Diferencia'
 import { EditarPedido } from './EditarPedido'
-import { ElegirCocina } from './ElegirCocina'
+import { ElegirCocina, type FilaCocina } from './ElegirCocina'
 import { Pedidos, type AccionesPedidos } from './Pedidos'
 import { usePregunta } from './Pregunta'
 import { VentasDeHoy } from './VentasDeHoy'
@@ -144,6 +145,8 @@ export default function PuntoDeVenta() {
   // El cuadro de siempre, para lo que la comanda no sabe mostrar.
   const [editando, setEditando] = useState<Pedido | null>(null)
   const [destinos, setDestinos] = useState<Record<number, boolean> | null>(null)
+  // Editando: a donde va LO AGREGADO a algo que ya estaba (ver `agregadoDe`).
+  const [nuevos, setNuevos] = useState<Record<number, boolean>>({})
   const [diferencia, setDiferencia] = useState<{ destinoDe: Record<number, boolean>; monto: number } | null>(null)
   const [firma, setFirma] = useState<Autorizacion | null>(null)
   const [metodoDif, setMetodoDif] = useState(METODOS_PAGO[0])
@@ -418,6 +421,15 @@ export default function PuntoDeVenta() {
         Object.values(carrito).map((c) => [c.variante.id, cocina.actualDe(c.variante.id) ?? cocina.porDefecto(c.variante.id)]),
       ),
     )
+    // Lo agregado nace con lo que sugiere su categoria: que lo de antes fuera
+    // de vitrina no dice nada de lo nuevo.
+    setNuevos(
+      Object.fromEntries(
+        Object.values(carrito)
+          .filter((c) => agregadoDe(enEdicion, c.variante.id, c.cantidad, c.cortesia) > 0)
+          .map((c) => [c.variante.id, cocina.porDefecto(c.variante.id)]),
+      ),
+    )
   }
 
   function vaciarComanda() {
@@ -488,6 +500,7 @@ export default function PuntoDeVenta() {
   }
 
   function terminarEdicion() {
+    setNuevos({})
     recordarEdicion(null)
     setEnEdicion(null)
     setDiferencia(null)
@@ -527,7 +540,7 @@ export default function PuntoDeVenta() {
     }
     setEnviando(true)
     try {
-      await apiPos.editarPedido(enEdicion.id, renglonesDeLaComanda(carrito, libres, destinoDe, cocina), {
+      await apiPos.editarPedido(enEdicion.id, renglonesDeLaComanda(carrito, libres, destinoDe, cocina, nuevos, enEdicion), {
         autorizacion: mueveDinero && pago?.firma && !autorizoYo ? pago.firma : undefined,
         pagos: mueveDinero && pago ? [{ metodo: pago.metodo, monto: Math.abs(dif), referencia: pago.referencia }] : undefined,
       })
@@ -795,29 +808,47 @@ export default function PuntoDeVenta() {
         }
         filas={Object.values(carrito)
           .filter((c) => c.variante.id in destinos)
-          .map((c) => {
+          .flatMap((c): FilaCocina[] => {
             const va = destinos[c.variante.id] ?? true
             const hecho = cocinaLoTermino(enEdicion, c.variante.id)
-            return {
+            const nombre = nombreDe(c.producto, c.variante)
+            const agregado = agregadoDe(enEdicion, c.variante.id, c.cantidad, c.cortesia)
+            const base = {
               clave: c.variante.id,
-              texto: `${c.cantidad}x ${nombreDe(c.producto, c.variante)}`,
+              texto: `${c.cantidad - agregado}x ${nombre}`,
               cocina: va,
               fijo: hecho ? ('hecho' as const) : undefined,
               fueraDeLoNormal: !va && !hecho && cocina.porDefecto(c.variante.id),
             }
+            if (agregado === 0) return [base]
+            // Crecio: lo que ya estaba y lo agregado, cada uno con su destino.
+            // La clave negativa es la de lo agregado.
+            const vaNuevo = nuevos[c.variante.id] ?? cocina.porDefecto(c.variante.id)
+            return [
+              { ...base, detalle: 'Lo que ya estaba en el pedido' },
+              {
+                clave: -c.variante.id,
+                texto: `+${agregado} ${nombre}`,
+                detalle: 'Lo que se agregó ahora',
+                cocina: vaNuevo,
+                fueraDeLoNormal: !vaNuevo && cocina.porDefecto(c.variante.id),
+              },
+            ]
           })}
         nota={libres.length > 0 ? `${libres.length} envío(s) aparte: no pasan por cocina.` : undefined}
         alAlternar={(id) => {
-          if (!cocinaLoTermino(enEdicion, id)) setDestinos((d) => (d ? { ...d, [id]: !(d[id] ?? true) } : d))
+          if (id < 0) setNuevos((n) => ({ ...n, [-id]: !(n[-id] ?? true) }))
+          else if (!cocinaLoTermino(enEdicion, id)) setDestinos((d) => (d ? { ...d, [id]: !(d[id] ?? true) } : d))
         }}
-        alTodoACocina={() =>
+        alTodoACocina={() => {
           setDestinos((d) =>
             d ? Object.fromEntries(Object.keys(d).map((k) => [k, cocinaLoTermino(enEdicion, Number(k)) ? d[Number(k)] : true])) : d,
           )
-        }
+          setNuevos((n) => Object.fromEntries(Object.keys(n).map((k) => [k, true])))
+        }}
         textoAceptar={(() => {
           // La cuenta en el boton: la decision se ve antes de enviar.
-          const n = Object.values(destinos)
+          const n = [...Object.values(destinos), ...Object.values(nuevos)]
           const aCocina = n.filter(Boolean).length
           const vitrina = n.length - aCocina
           const verbo = enEdicion ? 'Guardar' : 'Enviar'

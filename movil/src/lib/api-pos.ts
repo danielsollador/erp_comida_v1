@@ -34,6 +34,8 @@ export type RenglonComanda = {
   cortesia?: boolean
   /** Si este renglon va a cocina. Sin decirlo, lo que sugiera su categoria. */
   a_cocina?: boolean
+  /** Editando: a donde van solo las unidades que se suman a algo que ya estaba. */
+  a_cocina_agregado?: boolean
 }
 
 /** Una parte del cobro: un pago con su forma, su comprobante y su vuelto. */
