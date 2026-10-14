@@ -190,6 +190,13 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   .mostrador .pie { margin-top: 40px; }
 }
 
+/* ── Ya lo usan: los logos en el color de la tinta, nada más ── */
+.clientes { padding: 0 0 80px; }
+.clientes p { font-size: 14.5px; color: var(--tinta-3); margin-bottom: 22px; }
+.logos { display: flex; align-items: center; gap: 56px; flex-wrap: wrap; }
+.logo { display: inline-block; background: var(--tinta); opacity: .9; -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
+@media (max-width: 640px) { .logos { gap: 36px; } }
+
 /* ── Un día con Vertigo Pro: texto fijo, pantallas que cambian ── */
 .dia { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
 .dia h2 { font-size: clamp(32px, 3.8vw, 48px); max-width: 16ch; }
@@ -203,19 +210,30 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 .momento p { margin-top: 12px; color: var(--tinta-2); max-width: 40ch; }
 .momento .marco { display: none; margin-top: 24px; }
 .pantallas { position: sticky; top: 96px; }
-.pantallas .marco { position: relative; aspect-ratio: 16 / 10; }
+/* Con qué se mira: PC o teléfono. Cada pantalla tiene las dos versiones. */
+.selector { display: flex; gap: 4px; padding: 4px; width: max-content; margin: 0 auto 14px; border: 1px solid var(--linea-2); border-radius: 999px; background: var(--marco); }
+.selector button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: var(--tinta-2); font: 600 14px var(--manrope); cursor: pointer; transition: color .18s var(--curva), background-color .18s var(--curva); }
+.selector button[aria-pressed="true"] { background: var(--tinta); color: var(--fondo); }
+.pantallas .marco { position: relative; }
 .pantallas .marco img { position: absolute; inset: 10px; width: calc(100% - 20px); height: calc(100% - 20px); object-fit: cover; object-position: top left; opacity: 0; transition: opacity .6s var(--curva); }
 .pantallas .marco img.activa { opacity: 1; }
+.pantallas[data-disp="pc"] .marco { aspect-ratio: 16 / 10; }
+/* El teléfono emerge: recortado abajo con un degradado */
+.pantallas[data-disp="tel"] .marco { width: 290px; height: min(62vh, 580px); margin: 0 auto; border-radius: 40px 40px 0 0; border-bottom: 0; padding: 10px 10px 0; box-shadow: none;
+  -webkit-mask-image: linear-gradient(#000 78%, transparent); mask-image: linear-gradient(#000 78%, transparent); }
+.pantallas[data-disp="tel"] .marco img { inset: 10px 10px 0; width: calc(100% - 20px); height: calc(100% - 10px); border-radius: 31px 31px 0 0; object-position: top center; }
 @media (max-width: 900px) {
   .dia { padding-bottom: 48px; }
   .relato { display: flex; flex-direction: column; align-items: stretch; margin-top: 32px; }
   /* El escenario: fijo bajo la barra, con el fondo de la pagina para que los
      momentos pasen por debajo sin verse a traves. */
-  .pantallas { order: -1; position: sticky; top: 64px; z-index: 2; background: var(--fondo); padding: 12px 0 0; margin: 0 -16px; }
+  .pantallas { order: -1; position: sticky; top: 64px; z-index: 2; background: var(--fondo); padding: 10px 16px 0; margin: 0 -16px; }
   .pantallas::after { content: ""; position: absolute; left: 0; right: 0; bottom: -28px; height: 28px; background: linear-gradient(var(--fondo), transparent); pointer-events: none; }
-  .pantallas .marco { aspect-ratio: auto; width: min(236px, 60vw); height: min(46vh, 430px); margin: 0 auto; border-radius: 34px 34px 0 0; border-bottom: 0; padding: 8px 8px 0;
-    -webkit-mask-image: linear-gradient(#000 78%, transparent); mask-image: linear-gradient(#000 78%, transparent); box-shadow: none; }
-  .pantallas .marco img { inset: 8px 8px 0; width: calc(100% - 16px); height: calc(100% - 8px); border-radius: 27px 27px 0 0; object-position: top center; }
+  .selector { margin-bottom: 10px; }
+  .selector button { min-height: 32px; padding: 0 14px; font-size: 13.5px; }
+  .pantallas[data-disp="pc"] .marco { width: 100%; }
+  .pantallas[data-disp="tel"] .marco { width: min(236px, 60vw); height: min(40vh, 400px); border-radius: 34px 34px 0 0; padding: 8px 8px 0; }
+  .pantallas[data-disp="tel"] .marco img { inset: 8px 8px 0; width: calc(100% - 16px); height: calc(100% - 8px); border-radius: 27px 27px 0 0; }
   .momentos { position: relative; z-index: 1; }
   .momento { min-height: 0; padding: 22px 0; opacity: .5; }
   .momento.activo { opacity: 1; }
@@ -379,6 +397,16 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
     </div>
   </section>
 
+  <section class="clientes" id="clientes">
+    <div class="cont">
+      <p>Ya lo usan</p>
+      <div class="logos">
+        <span class="logo" role="img" aria-label="Sávora, pastelitos y tradición" style="--logo: url(/sitio/img/cliente-savora.png); width: 130px; height: 50px;"></span>
+        <span class="logo" role="img" aria-label="Licoteca" style="--logo: url(/sitio/img/cliente-licoteca.png); width: 96px; height: 96px;"></span>
+      </div>
+    </div>
+  </section>
+
   <section class="dia" id="dia">
     <div class="cont">
       <h2>Un día con Vertigo Pro</h2>
@@ -422,8 +450,12 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
             <div class="marco"><img src="/sitio/img/web-reportes-ventas.webp" data-oscuro="/sitio/img/web-reportes-ventas.webp" data-claro="/sitio/img/web-reportes-ventas-claro.webp" width="1800" height="1125" alt="Reportes de ventas: unidades y ventas por día, y a qué hora entran los clientes" loading="lazy"></div>
           </article>
         </div>
-        <div class="pantallas" aria-hidden="true">
-          <div class="marco">
+        <div class="pantallas" id="escenario">
+          <div class="selector" role="group" aria-label="Ver las pantallas en">
+            <button type="button" data-disp="pc" aria-pressed="true">PC</button>
+            <button type="button" data-disp="tel" aria-pressed="false">Teléfono</button>
+          </div>
+          <div class="marco" aria-hidden="true">
             <img class="activa" src="/sitio/img/web-inicio.webp" data-oscuro="/sitio/img/web-inicio.webp" data-claro="/sitio/img/web-inicio-claro.webp" data-tel="/sitio/img/tel-inicio.webp" data-tel-claro="/sitio/img/tel-inicio-claro.webp" alt="" loading="lazy">
             <img src="/sitio/img/web-compras-nueva.webp" data-oscuro="/sitio/img/web-compras-nueva.webp" data-claro="/sitio/img/web-compras-nueva-claro.webp" data-tel="/sitio/img/tel-compras-nueva.webp" data-tel-claro="/sitio/img/tel-compras-nueva-claro.webp" alt="" loading="lazy">
             <img src="/sitio/img/web-recetas.webp" data-oscuro="/sitio/img/web-recetas.webp" data-claro="/sitio/img/web-recetas-claro.webp" data-tel="/sitio/img/tel-recetas.webp" data-tel-claro="/sitio/img/tel-recetas-claro.webp" alt="" loading="lazy">
@@ -553,6 +585,19 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 (function () {
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // Con que dispositivo se miran las pantallas de "Un dia": lo elegido se
+  // recuerda; sin eleccion, el del propio aparato (telefono en el telefono).
+  var escenario = document.querySelector('.pantallas');
+  var CLAVE_DISP = 'vertigo_sitio_disp', dispElegido = null;
+  try { var d0 = localStorage.getItem(CLAVE_DISP); if (d0 === 'pc' || d0 === 'tel') dispElegido = d0; } catch (e) {}
+  function dispActual() { return dispElegido || (window.matchMedia('(max-width: 900px)').matches ? 'tel' : 'pc'); }
+  function pintarDisp() {
+    var d = dispActual();
+    escenario.dataset.disp = d;
+    escenario.querySelectorAll('.selector button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.disp === d)); });
+  }
+  pintarDisp();
+
   // Claro u oscuro: lo elegido se recuerda; sin eleccion, lo que prefiera el
   // sistema. Las pantallas del producto cambian a su version del mismo tema.
   var raiz = document.documentElement, CLAVE_TEMA = 'vertigo_sitio_tema';
@@ -564,9 +609,9 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   function pintarTema() {
     var t = temaActual();
     raiz.classList.toggle('sistema-claro', sistemaClaro.matches);
-    var movil = window.matchMedia('(max-width: 900px)').matches;
+    var enTel = dispActual() === 'tel';
     document.querySelectorAll('img[data-claro]').forEach(function (im) {
-      var quiere = movil && im.dataset.tel
+      var quiere = enTel && im.dataset.tel
         ? (t === 'claro' ? im.dataset.telClaro : im.dataset.tel)
         : (t === 'claro' ? im.dataset.claro : im.dataset.oscuro);
       if (im.getAttribute('src') !== quiere) im.setAttribute('src', quiere);
@@ -638,7 +683,6 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   // Un día: el momento que está a la vista enciende su pantalla.
   var momentos = document.querySelectorAll('.momento');
   var pantallas = document.querySelectorAll('.pantallas img');
-  var escenario = document.querySelector('.pantallas');
   var obsMomentos = null;
   function activar(i) {
     momentos.forEach(function (m, k) { m.classList.toggle('activo', k === i); });
@@ -661,8 +705,15 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
     momentos.forEach(function (m) { obsMomentos.observe(m); });
   }
   armarRelato();
+  escenario.querySelectorAll('.selector button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      dispElegido = b.dataset.disp;
+      try { localStorage.setItem(CLAVE_DISP, dispElegido); } catch (e) {}
+      pintarDisp(); pintarTema(); armarRelato();
+    });
+  });
   var temporizador = null;
-  window.addEventListener('resize', function () { clearTimeout(temporizador); temporizador = setTimeout(function () { pintarTema(); armarRelato(); }, 150); });
+  window.addEventListener('resize', function () { clearTimeout(temporizador); temporizador = setTimeout(function () { pintarDisp(); pintarTema(); armarRelato(); }, 150); });
 
   // Reveal: solo la composición del mostrador, el bento y los teléfonos.
   var obsRevela = new IntersectionObserver(function (entradas) {
