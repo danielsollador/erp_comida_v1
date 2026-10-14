@@ -15,6 +15,15 @@
       "env": {
         "EXPO_PUBLIC_API_BASE": "https://savora.vertigopro.tech"
       }
+    },
+    "publico": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://savora.vertigopro.tech"
+      }
     }
   },
   "submit": {
