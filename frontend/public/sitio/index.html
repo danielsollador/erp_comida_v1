@@ -207,10 +207,21 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 .pantallas .marco img { position: absolute; inset: 10px; width: calc(100% - 20px); height: calc(100% - 20px); object-fit: cover; object-position: top left; opacity: 0; transition: opacity .6s var(--curva); }
 .pantallas .marco img.activa { opacity: 1; }
 @media (max-width: 900px) {
-  .relato { grid-template-columns: 1fr; }
-  .pantallas { display: none; }
-  .momento { min-height: 0; opacity: 1; padding: 28px 0; }
-  .momento .marco { display: block; }
+  .dia { padding-bottom: 48px; }
+  .relato { display: flex; flex-direction: column; align-items: stretch; margin-top: 32px; }
+  /* El escenario: fijo bajo la barra, con el fondo de la pagina para que los
+     momentos pasen por debajo sin verse a traves. */
+  .pantallas { order: -1; position: sticky; top: 64px; z-index: 2; background: var(--fondo); padding: 12px 0 0; margin: 0 -16px; }
+  .pantallas::after { content: ""; position: absolute; left: 0; right: 0; bottom: -28px; height: 28px; background: linear-gradient(var(--fondo), transparent); pointer-events: none; }
+  .pantallas .marco { aspect-ratio: auto; width: min(236px, 60vw); height: min(46vh, 430px); margin: 0 auto; border-radius: 34px 34px 0 0; border-bottom: 0; padding: 8px 8px 0;
+    -webkit-mask-image: linear-gradient(#000 78%, transparent); mask-image: linear-gradient(#000 78%, transparent); box-shadow: none; }
+  .pantallas .marco img { inset: 8px 8px 0; width: calc(100% - 16px); height: calc(100% - 8px); border-radius: 27px 27px 0 0; object-position: top center; }
+  .momentos { position: relative; z-index: 1; }
+  .momento { min-height: 0; padding: 22px 0; opacity: .5; }
+  .momento.activo { opacity: 1; }
+  .momento h3 { font-size: 24px; }
+  .momento .marco { display: none; }
+  .momentos::after { content: ""; display: block; height: 18vh; }
 }
 
 /* ── Módulos: bento de ocho celdas con ritmo ── */
@@ -413,12 +424,12 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
         </div>
         <div class="pantallas" aria-hidden="true">
           <div class="marco">
-            <img class="activa" src="/sitio/img/web-inicio.webp" data-oscuro="/sitio/img/web-inicio.webp" data-claro="/sitio/img/web-inicio-claro.webp" alt="" loading="lazy">
-            <img src="/sitio/img/web-compras-nueva.webp" data-oscuro="/sitio/img/web-compras-nueva.webp" data-claro="/sitio/img/web-compras-nueva-claro.webp" alt="" loading="lazy">
-            <img src="/sitio/img/web-recetas.webp" data-oscuro="/sitio/img/web-recetas.webp" data-claro="/sitio/img/web-recetas-claro.webp" alt="" loading="lazy">
-            <img src="/sitio/img/web-cocina.webp" data-oscuro="/sitio/img/web-cocina.webp" data-claro="/sitio/img/web-cocina-claro.webp" alt="" loading="lazy">
-            <img src="/sitio/img/web-caja.webp" data-oscuro="/sitio/img/web-caja.webp" data-claro="/sitio/img/web-caja-claro.webp" alt="" loading="lazy">
-            <img src="/sitio/img/web-reportes-ventas.webp" data-oscuro="/sitio/img/web-reportes-ventas.webp" data-claro="/sitio/img/web-reportes-ventas-claro.webp" alt="" loading="lazy">
+            <img class="activa" src="/sitio/img/web-inicio.webp" data-oscuro="/sitio/img/web-inicio.webp" data-claro="/sitio/img/web-inicio-claro.webp" data-tel="/sitio/img/tel-inicio.webp" data-tel-claro="/sitio/img/tel-inicio-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-compras-nueva.webp" data-oscuro="/sitio/img/web-compras-nueva.webp" data-claro="/sitio/img/web-compras-nueva-claro.webp" data-tel="/sitio/img/tel-compras-nueva.webp" data-tel-claro="/sitio/img/tel-compras-nueva-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-recetas.webp" data-oscuro="/sitio/img/web-recetas.webp" data-claro="/sitio/img/web-recetas-claro.webp" data-tel="/sitio/img/tel-recetas.webp" data-tel-claro="/sitio/img/tel-recetas-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-cocina.webp" data-oscuro="/sitio/img/web-cocina.webp" data-claro="/sitio/img/web-cocina-claro.webp" data-tel="/sitio/img/tel-cocina.webp" data-tel-claro="/sitio/img/tel-cocina-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-caja.webp" data-oscuro="/sitio/img/web-caja.webp" data-claro="/sitio/img/web-caja-claro.webp" data-tel="/sitio/img/tel-caja.webp" data-tel-claro="/sitio/img/tel-caja-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-reportes-ventas.webp" data-oscuro="/sitio/img/web-reportes-ventas.webp" data-claro="/sitio/img/web-reportes-ventas-claro.webp" data-tel="/sitio/img/tel-reportes-ventas.webp" data-tel-claro="/sitio/img/tel-reportes-ventas-claro.webp" alt="" loading="lazy">
           </div>
         </div>
       </div>
@@ -553,8 +564,11 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   function pintarTema() {
     var t = temaActual();
     raiz.classList.toggle('sistema-claro', sistemaClaro.matches);
+    var movil = window.matchMedia('(max-width: 900px)').matches;
     document.querySelectorAll('img[data-claro]').forEach(function (im) {
-      var quiere = t === 'claro' ? im.dataset.claro : im.dataset.oscuro;
+      var quiere = movil && im.dataset.tel
+        ? (t === 'claro' ? im.dataset.telClaro : im.dataset.tel)
+        : (t === 'claro' ? im.dataset.claro : im.dataset.oscuro);
       if (im.getAttribute('src') !== quiere) im.setAttribute('src', quiere);
     });
     var meta = document.querySelector('meta[name="theme-color"]');
@@ -624,15 +638,31 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   // Un día: el momento que está a la vista enciende su pantalla.
   var momentos = document.querySelectorAll('.momento');
   var pantallas = document.querySelectorAll('.pantallas img');
-  var obsMomentos = new IntersectionObserver(function (entradas) {
-    entradas.forEach(function (e) {
-      if (!e.isIntersecting) return;
-      var i = +e.target.dataset.i;
-      momentos.forEach(function (m, k) { m.classList.toggle('activo', k === i); });
-      pantallas.forEach(function (p, k) { p.classList.toggle('activa', k === i); });
-    });
-  }, { rootMargin: '-45% 0px -45% 0px' });
-  momentos.forEach(function (m) { obsMomentos.observe(m); });
+  var escenario = document.querySelector('.pantallas');
+  var obsMomentos = null;
+  function activar(i) {
+    momentos.forEach(function (m, k) { m.classList.toggle('activo', k === i); });
+    pantallas.forEach(function (p, k) { p.classList.toggle('activa', k === i); });
+  }
+  function armarRelato() {
+    if (obsMomentos) obsMomentos.disconnect();
+    var movil = window.matchMedia('(max-width: 900px)').matches;
+    // En PC, el momento que cruza el centro. En movil, el que entra en la
+    // franja justo debajo del escenario fijo (lo que queda a la vista).
+    var margen = '-45% 0px -45% 0px';
+    if (movil) {
+      // Una linea fina, 36 px bajo el escenario: solo un momento la cruza.
+      var alto = window.innerHeight, linea = 64 + escenario.offsetHeight + 36;
+      margen = '-' + linea + 'px 0px -' + Math.max(0, alto - linea - 24) + 'px 0px';
+    }
+    obsMomentos = new IntersectionObserver(function (entradas) {
+      entradas.forEach(function (e) { if (e.isIntersecting) activar(+e.target.dataset.i); });
+    }, { rootMargin: margen, threshold: 0 });
+    momentos.forEach(function (m) { obsMomentos.observe(m); });
+  }
+  armarRelato();
+  var temporizador = null;
+  window.addEventListener('resize', function () { clearTimeout(temporizador); temporizador = setTimeout(function () { pintarTema(); armarRelato(); }, 150); });
 
   // Reveal: solo la composición del mostrador, el bento y los teléfonos.
   var obsRevela = new IntersectionObserver(function (entradas) {
