@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vertigo Pro: el sistema para pymes de producción y retail</title>
-<meta name="description" content="Vertigo Pro es el ERP de Vertigo para pymes de producción y retail en Venezuela: punto de venta, producción, compras con foto de factura, inventario, caja y reportes. En la tablet del mostrador y en tu teléfono.">
+<title>Vertigo Pro: el sistema administrativo con IA para pymes en Venezuela</title>
+<meta name="description" content="Vertigo Pro es el sistema administrativo de Vertigo para pymes de producción y retail en Venezuela, impulsado con inteligencia artificial: punto de venta, producción, compras por foto, inventario, caja y reportes.">
 <link rel="canonical" href="https://vertigopro.tech/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Vertigo Pro: lo que produces y lo que vendes, en un solo sistema">
-<meta property="og:description" content="ERP para pymes de producción y retail en Venezuela. Punto de venta, producción, compras, inventario, caja y reportes.">
+<meta property="og:title" content="Vertigo Pro: el sistema administrativo con IA para pymes en Venezuela">
+<meta property="og:description" content="Punto de venta, producción, compras por foto, inventario, caja y reportes, con una IA que entiende tu negocio.">
 <meta property="og:image" content="https://vertigopro.tech/sitio/img/web-pedidos.webp">
 <meta property="og:url" content="https://vertigopro.tech/">
 <meta name="theme-color" content="#0b0c0f">
@@ -139,13 +139,13 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 /* ── Héroe ── */
 .heroe { position: relative; min-height: 100dvh; display: grid; align-items: center; padding: 96px 0 48px; overflow: hidden; }
 .heroe::before { content: ""; position: absolute; inset: auto -20% -40% -20%; height: 70%; background: radial-gradient(60% 60% at 70% 50%, var(--halo), transparent 70%); pointer-events: none; }
-.heroe .cont { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 48px; align-items: center; position: relative; }
-.heroe h1 { font-size: clamp(34px, 4.5vw, 60px); font-weight: 700; }
+.heroe .cont { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 40px; align-items: center; position: relative; }
+.heroe h1 { font-size: clamp(30px, 3.45vw, 50px); font-weight: 700; }
 .heroe h1 .l { display: block; overflow: hidden; white-space: nowrap; }
 .heroe h1 .l span { display: block; transform: translateY(110%); animation: subir .9s var(--curva) forwards; }
 .heroe h1 .l:nth-child(2) span { animation-delay: .08s; }
 .heroe h1 .l:nth-child(3) span { animation-delay: .16s; }
-.heroe .sub { margin-top: 24px; font-size: 19px; color: var(--tinta-2); max-width: 46ch; opacity: 0; animation: aparecer .8s var(--curva) .35s forwards; }
+.heroe .sub { margin-top: 24px; font-size: 18px; color: var(--tinta-2); max-width: 52ch; opacity: 0; animation: aparecer .8s var(--curva) .35s forwards; }
 .heroe .ctas { margin-top: 36px; display: flex; gap: 12px; flex-wrap: wrap; opacity: 0; animation: aparecer .8s var(--curva) .5s forwards; }
 @keyframes subir { to { transform: translateY(0); } }
 @keyframes aparecer { to { opacity: 1; } }
@@ -169,7 +169,7 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 @media (max-width: 900px) {
   .heroe { padding-top: 88px; }
   .heroe .cont { grid-template-columns: 1fr; gap: 12px; }
-  .heroe h1 { font-size: clamp(30px, 8.6vw, 44px); }
+  .heroe h1 { font-size: clamp(27px, 7.6vw, 40px); }
   .heroe h1 .l { white-space: normal; }
   .escena { order: -1; max-width: 300px; }
 }
@@ -242,32 +242,46 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   .momentos::after { content: ""; display: block; height: 18vh; }
 }
 
-/* ── Módulos: bento de ocho celdas con ritmo ── */
-.modulos { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
-.modulos h2 { font-size: clamp(32px, 3.8vw, 48px); max-width: 18ch; }
+/* ── Lo que lo hace distinto: seis piezas, cuatro con pantalla ── */
+.distinto { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
+.distinto h2 { font-size: clamp(32px, 3.8vw, 48px); max-width: 16ch; }
 .bento {
-  margin-top: 48px; display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0,1fr)); grid-auto-rows: 230px;
-  grid-template-areas: "pos pos prod comp" "pos pos inv caja" "rep conta inv tasa";
+  margin-top: 48px; display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0,1fr)); grid-auto-rows: 250px;
+  grid-template-areas: "ia ia precios tasas" "ia ia recetas recetas" "foto foto flujo flujo";
 }
 .celda { position: relative; overflow: hidden; background: var(--superficie); border: 1px solid var(--linea); border-radius: var(--radio); padding: 24px; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; }
 .celda h3 { font-size: 20px; }
-.celda p { color: var(--tinta-2); font-size: 15px; max-width: 30ch; }
-.celda.pos { grid-area: pos; } .celda.prod { grid-area: prod; } .celda.comp { grid-area: comp; } .celda.inv { grid-area: inv; }
-.celda.caja { grid-area: caja; } .celda.rep { grid-area: rep; } .celda.conta { grid-area: conta; } .celda.tasa { grid-area: tasa; }
-.celda.pos { justify-content: flex-start; }
-.celda.pos .tapa { position: absolute; left: 24px; right: -40px; top: 128px; bottom: -30px; border-radius: 18px 0 0 0; border: 1px solid var(--linea-2); border-right: 0; border-bottom: 0; overflow: hidden; background: var(--fondo-2); }
-.celda.pos .tapa img { width: 140%; max-width: none; object-position: top left; }
-.celda.inv { justify-content: flex-start; }
-.celda.inv .tapa { position: absolute; left: 24px; right: 24px; top: 150px; bottom: -40px; border-radius: 26px 26px 0 0; border: 1px solid var(--linea-2); border-bottom: 0; overflow: hidden; }
-.celda.inv .tapa img { width: 100%; object-position: top; }
-.celda.tasa { background: linear-gradient(165deg, var(--tasa-a), var(--tasa-b)); border-color: transparent; }
-.celda.tasa h3 { color: var(--tasa-texto); }
-.celda.tasa p { color: var(--tasa-texto-2); }
-.celda.tasa .cifra { font-family: var(--mono); font-size: 13px; color: var(--tasa-texto-2); margin-bottom: auto; }
+.celda p { color: var(--tinta-2); font-size: 15px; max-width: 32ch; }
+.celda.ia { grid-area: ia; } .celda.precios { grid-area: precios; } .celda.tasas { grid-area: tasas; }
+.celda.recetas { grid-area: recetas; } .celda.foto { grid-area: foto; } .celda.flujo { grid-area: flujo; }
+/* celdas con pantalla: el texto arriba, la pantalla asoma por un borde */
+.celda.con-tapa { justify-content: flex-start; }
+.celda.con-tapa h3 { font-size: 22px; }
+.tapa { position: absolute; overflow: hidden; border: 1px solid var(--linea-2); background: var(--fondo-2); }
+.tapa img { max-width: none; }
+/* teléfono que asoma abajo a la derecha */
+.tapa.tel { right: 24px; bottom: -60px; width: 210px; border-radius: 30px 30px 0 0; border-bottom: 0; padding: 7px 7px 0; }
+.tapa.tel img { width: 100%; border-radius: 24px 24px 0 0; }
+.celda.ia .tapa.tel { width: 250px; bottom: -80px; right: 28px; }
+.celda.ia h3 { font-size: 26px; max-width: 12ch; }
+.celda.ia p { max-width: 30ch; }
+/* pantalla de PC que asoma por la derecha */
+.celda.lado { display: grid; grid-template-columns: minmax(0, 46%) minmax(0, 54%); align-items: start; gap: 16px; }
+.celda.lado p { max-width: none; }
+.tapa.der { position: absolute; left: 50%; right: -1px; top: 28px; bottom: -1px; border-radius: 16px 0 0 0; border-right: 0; border-bottom: 0; }
+.tapa.der img { width: 150%; object-position: top left; }
+.celda.precios, .celda.tasas { justify-content: flex-end; }
+.celda.tasas .cifras { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: auto; }
+.celda.tasas .cifras span { font-family: var(--mono); font-size: 12.5px; color: var(--tinta-2); border: 1px solid var(--linea-2); border-radius: 999px; padding: 5px 10px; }
 @media (max-width: 900px) {
-  .bento { grid-template-columns: 1fr; grid-auto-rows: auto; grid-template-areas: "pos" "prod" "comp" "inv" "caja" "rep" "conta" "tasa"; }
+  .bento { grid-template-columns: 1fr; grid-auto-rows: auto; grid-template-areas: "ia" "precios" "tasas" "recetas" "foto" "flujo"; }
   .celda { min-height: 160px; }
-  .celda.pos { min-height: 420px; } .celda.inv { min-height: 420px; }
+  /* en el telefono, la pantalla va debajo del texto, nunca encima */
+  .celda.ia, .celda.foto { min-height: 0; }
+  .celda .tapa.tel, .celda.ia .tapa.tel { position: relative; right: auto; bottom: auto; width: 230px; height: 300px; margin: 20px auto -25px; }
+  .celda.lado { display: flex; }
+  .tapa.der { position: relative; left: auto; right: auto; top: auto; bottom: auto; margin: 16px -24px -24px 0; aspect-ratio: 16 / 10; }
+  .tapa.der img { width: 130%; }
 }
 
 /* ── Hecho para Venezuela: lista tipográfica, sin tarjetas ── */
@@ -369,11 +383,11 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
     <div class="cont">
       <div>
         <h1>
-          <span class="l"><span>Lo que produces</span></span>
-          <span class="l"><span>y lo que vendes,</span></span>
-          <span class="l"><span>en un solo sistema.</span></span>
+          <span class="l"><span>El sistema administrativo</span></span>
+          <span class="l"><span>para pymes en Venezuela,</span></span>
+          <span class="l"><span>impulsado con IA.</span></span>
         </h1>
-        <p class="sub">Vertigo Pro es el ERP para pymes de producción y retail: punto de venta, producción, compras, inventario, caja y reportes.</p>
+        <p class="sub">Punto de venta, producción, compras, inventario, caja y reportes para pymes de producción y retail, con una inteligencia artificial que entiende tu negocio.</p>
         <div class="ctas">
           <a class="boton perla" href="mailto:leideriverson@gmail.com?subject=Demo%20de%20Vertigo%20Pro" data-correo>Pide una demo</a>
           <a class="boton borde" href="#dia">Ver cómo funciona</a>
@@ -468,44 +482,42 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
     </div>
   </section>
 
-  <section class="modulos" id="modulos">
+  <section class="distinto" id="distinto">
     <div class="cont">
-      <h2>Todo el negocio, módulo por módulo</h2>
+      <h2>Lo que lo hace distinto</h2>
       <div class="bento revela">
-        <div class="celda pos">
-          <h3>Punto de venta</h3>
-          <p>Tomar la comanda y cobrar. En tablet, computadora o teléfono.</p>
-          <div class="tapa"><img src="/sitio/img/web-pos.webp" data-oscuro="/sitio/img/web-pos.webp" data-claro="/sitio/img/web-pos-claro.webp" width="1800" height="1125" alt="Punto de venta: el menú por categorías y la comanda actual" loading="lazy"></div>
+        <div class="celda ia con-tapa">
+          <h3>Una IA que entiende tu negocio</h3>
+          <p>Lee tus facturas, te avisa cuando un proveedor sube el costo y te dice qué día vendes más. Aprende de lo que pasa en tu local, no en otro.</p>
+          <div class="tapa tel"><img src="/sitio/img/tel-inicio.webp" data-oscuro="/sitio/img/tel-inicio.webp" data-claro="/sitio/img/tel-inicio-claro.webp" width="780" height="1688" alt="El inicio en el teléfono: lo vendido hoy y un aviso de la IA sobre tu día fuerte" loading="lazy"></div>
         </div>
-        <div class="celda prod">
-          <h3>Producción</h3>
-          <p>Cocina en vivo, recetas por kilo y lo que sobró hoy.</p>
+        <div class="celda precios">
+          <h3>Precios como los manejas tú</h3>
+          <p>Por variante, con descuentos y cortesías. La ganancia de cada producto, calculada sola.</p>
         </div>
-        <div class="celda comp">
-          <h3>Compras</h3>
-          <p>Qué entró y cuánto costó. Avisos cuando un proveedor te sube el costo.</p>
+        <div class="celda tasas">
+          <div class="cifras"><span>BCV $</span><span>BCV €</span><span>Binance</span></div>
+          <h3>Tres tasas, una cuenta</h3>
+          <p>La oficial en dólares y euros, y la de Binance para el paralelo. El sistema las consulta solo.</p>
         </div>
-        <div class="celda inv">
-          <h3>Inventario</h3>
-          <p>Materia prima, lo preparado, reventa y consumibles, cada uno en su lugar.</p>
-          <div class="tapa"><img src="/sitio/img/tel-inventario.webp" data-oscuro="/sitio/img/tel-inventario.webp" data-claro="/sitio/img/tel-inventario-claro.webp" width="780" height="1688" alt="Inventario en el teléfono: los cuatro almacenes y cuánta plata hay en cada uno" loading="lazy"></div>
+        <div class="celda recetas con-tapa lado">
+          <div>
+            <h3>Recetas y preparaciones, a la vista</h3>
+            <p>Armas la receta por kilo y el sistema sabe cuánto cuesta, cuánto deja y cuánto salió de la olla.</p>
+          </div>
+          <div class="tapa der"><img src="/sitio/img/web-recetas.webp" data-oscuro="/sitio/img/web-recetas.webp" data-claro="/sitio/img/web-recetas-claro.webp" width="1800" height="1125" alt="Recetas del menú con su costo y su ganancia por producto" loading="lazy"></div>
         </div>
-        <div class="celda caja">
-          <h3>Caja</h3>
-          <p>Apertura, cierre y cuadre por forma de pago.</p>
+        <div class="celda foto con-tapa">
+          <h3>Compras por foto</h3>
+          <p>Le tomas foto a la factura y queda cargada: proveedor, renglones e IVA. Tú solo revisas.</p>
+          <div class="tapa tel"><img src="/sitio/img/tel-compras-nueva.webp" data-oscuro="/sitio/img/tel-compras-nueva.webp" data-claro="/sitio/img/tel-compras-nueva-claro.webp" width="780" height="1688" alt="Cargar factura en el teléfono: foto o archivo, o a mano" loading="lazy"></div>
         </div>
-        <div class="celda rep">
-          <h3>Reportes</h3>
-          <p>Cuánto vendiste y cuánto te quedó, contra el periodo anterior.</p>
-        </div>
-        <div class="celda conta">
-          <h3>Contabilidad e impuestos</h3>
-          <p>Libros, balances e IVA, desde la computadora.</p>
-        </div>
-        <div class="celda tasa">
-          <span class="cifra">Bs por $</span>
-          <h3>Tasa de cambio</h3>
-          <p>La tasa oficial de cada día, cargada sola. También en paralelo y en euro.</p>
+        <div class="celda flujo con-tapa lado">
+          <div>
+            <h3>Entiende tu flujo</h3>
+            <p>Lo que compras entra como materia prima, lo que preparas pasa a listo y lo que vendes sale. Cuatro almacenes que se mueven solos.</p>
+          </div>
+          <div class="tapa der"><img src="/sitio/img/web-inventario.webp" data-oscuro="/sitio/img/web-inventario.webp" data-claro="/sitio/img/web-inventario-claro.webp" width="1800" height="1125" alt="Inventario: materia prima, reventa, consumible y desechable" loading="lazy"></div>
         </div>
       </div>
     </div>
@@ -546,7 +558,7 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
         <p>La app para el teléfono tiene lo que necesitas fuera del local: las ventas del día, la cocina, compras con foto de factura, inventario y reportes.</p>
         <p>Lo contable se queda en la computadora, donde se trabaja con calma.</p>
         <div class="disp">
-          <span class="lista">Android, disponible</span>
+          <span>Android, pronto</span>
           <span>iPhone, pronto</span>
         </div>
       </div>
