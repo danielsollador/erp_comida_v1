@@ -133,8 +133,10 @@ services:
       # otro: la imagen es la misma. Nombre del SERVICIO: dentro de este
       # compose es unico.
       BACKEND_HOST: hub-backend
-      # En el hub, la raiz es la eleccion de local y no el ERP de un cliente.
-      PAGINA_INICIO: /inicio.html
+      # En el hub, la raiz es el sitio publico (quien somos), sin sesion. La
+      # eleccion de local sigue en /inicio.html, a donde manda el login.
+      PAGINA_INICIO: /sitio/index.html
+      AUTH_RAIZ: "off"
     security_opt:
       - no-new-privileges:true
     read_only: true

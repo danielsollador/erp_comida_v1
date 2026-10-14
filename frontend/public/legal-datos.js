@@ -13,8 +13,11 @@
  *   en un <a data-legal="correo"> además pone href="mailto:..."
  */
 window.VP_LEGAL = {
-  empresa: 'Vertigo Pro',
+  empresa: 'Vertigo',
   correo: 'leideriverson@gmail.com',
+  // WhatsApp para el sitio publico, con codigo de pais y sin espacios ('584121234567').
+  // Vacio = el sitio no muestra el boton de WhatsApp.
+  whatsapp: '',
   pais: 'Venezuela',
   actualizada: '12 de octubre de 2026',
 };

@@ -90,6 +90,20 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
   }
 
+  # EL SITIO PUBLICO (vertigopro.tech): quien somos y que hace Vertigo Pro.
+  # HTML plano con su CSS y su JS dentro, sin nada del paquete de React.
+  # Sin sesion a proposito: es para quien todavia no es cliente.
+  location ^~ /sitio/ {
+    auth_request off;
+    expires 1h;
+    add_header Cache-Control "public";
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  }
+
   # Paginas legales, sin sesion. La App Store exige URLs PUBLICAS de politica
   # de privacidad y de soporte, y explicar como se elimina la cuenta: Apple
   # las abre sin haber entrado. Son HTML plano con su CSS dentro y un solo
@@ -150,8 +164,10 @@ server {
   # LA RAIZ NO ES LA MISMA PAGINA EN EL HUB QUE EN UN PANEL. La imagen es la
   # misma y lleva las dos dentro: `index.html` es el ERP de React,
   # `inicio.html` es la eleccion de local. Lo pone el compose en PAGINA_INICIO.
+  # En el hub la raiz es el sitio publico y no pide sesion (AUTH_RAIZ=off,
+  # lo pone el compose); en un panel sigue siendo el ERP con su login.
   location = / {
-    auth_request /_auth;
+    auth_request ${AUTH_RAIZ};
     error_page 401 403 = @al_login;
     error_page 500 502 503 504 = @sin_backend;
     add_header Cache-Control "no-cache";
