@@ -38,6 +38,9 @@
               ? "oscuro" : "claro";
           }
           document.documentElement.dataset.tema = t;
+          // La marca del local (el cobre solo para Sávora, ver index.css).
+          var m = localStorage.getItem("vertigo_marca");
+          if (m) document.documentElement.dataset.marca = m;
         } catch (e) { document.documentElement.dataset.tema = "claro"; }
       })();
     </script>

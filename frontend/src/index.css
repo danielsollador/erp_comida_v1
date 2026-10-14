@@ -226,6 +226,37 @@ html[data-tema="oscuro"] {
   --color-acento-700: oklch(82% 0.093 42);
   --color-acento-800: oklch(87% 0.076 42);
   --color-acento-900: oklch(92% 0.051 42);
+}
+
+/* ── LA MARCA DE CADA LOCAL ──
+   El cobre es el acento de Sávora, no de Vertigo. El hub, la demo y cualquier
+   otro local llevan el acento de Vertigo: grafito en claro, perla en oscuro.
+   `data-marca` lo pone lib/acceso.tsx con el slug del local (y el arranque de
+   index.html lo recuerda para que no destelle); mientras no se sepa, Vertigo.
+   Va DESPUES de los dos bloques de arriba para ganarles en los dos temas. */
+html:not([data-marca="savora"]) {
+  --color-acento-50: #f0eee9;
+  --color-acento-100: #e4e1da;
+  --color-acento-200: #cfcbc2;
+  --color-acento-300: #a8a49b;
+  --color-acento-400: #6d6b66;
+  --color-acento-500: #54524e;
+  --color-acento-600: #292927;
+  --color-acento-700: #1f1f1e;
+  --color-acento-800: #17181b;
+  --color-acento-900: #0e0f12;
+}
+html[data-tema="oscuro"]:not([data-marca="savora"]) {
+  --color-acento-50: #1b1e26;
+  --color-acento-100: #262a33;
+  --color-acento-200: #333844;
+  --color-acento-300: #4a505c;
+  --color-acento-400: #d1d5dd;
+  --color-acento-500: #bbc0ca;
+  --color-acento-600: #e3e6ec;
+  --color-acento-700: #eceef2;
+  --color-acento-800: #f1f3f7;
+  --color-acento-900: #f6f7f9;
 
   --color-exito-50: oklch(25% 0.03 152);
   --color-exito-100: oklch(29% 0.045 152);

@@ -34,6 +34,15 @@ export function AccesoProvider({ children }: { children: ReactNode }) {
           window.location.replace('/login.html')
           return
         }
+        // La marca del local: el cobre es solo de Sávora (index.css). Se
+        // recuerda para que el próximo arranque no destelle con otro acento.
+        const marca = d.es_hub ? '' : (d.local?.slug ?? '')
+        document.documentElement.dataset.marca = marca
+        try {
+          localStorage.setItem('vertigo_marca', marca)
+        } catch {
+          /* sin almacenamiento: vale solo esta visita */
+        }
         setEstado(d)
       })
       .catch(() => window.location.replace('/login.html?fallo=servidor'))
