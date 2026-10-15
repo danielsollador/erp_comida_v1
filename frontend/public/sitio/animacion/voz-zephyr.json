@@ -1,0 +1,81 @@
+{
+ "voz": "es-US-Chirp3-HD-Zephyr",
+ "duracion": 23.338,
+ "marcas": {
+  "vendes": {
+   "t": 0.4,
+   "fin": 0.984,
+   "texto": "Vendes."
+  },
+  "compras": {
+   "t": 1.124,
+   "fin": 1.67,
+   "texto": "Compras."
+  },
+  "produces": {
+   "t": 1.81,
+   "fin": 2.304,
+   "texto": "Produces,"
+  },
+  "calculas": {
+   "t": 2.344,
+   "fin": 3.192,
+   "texto": "o calculas."
+  },
+  "cuadra": {
+   "t": 3.532,
+   "fin": 4.649,
+   "texto": "Y todo cuadra solo."
+  },
+  "venezuela": {
+   "t": 5.049,
+   "fin": 6.087,
+   "texto": "Hecho para Venezuela."
+  },
+  "tasas": {
+   "t": 6.307,
+   "fin": 7.472,
+   "texto": "Tasas automáticas,"
+  },
+  "brecha": {
+   "t": 7.532,
+   "fin": 9.148,
+   "texto": "pérdida por brecha cambiaria,"
+  },
+  "pago": {
+   "t": 9.208,
+   "fin": 10.588,
+   "texto": "pago móvil verificado"
+  },
+  "vuelto": {
+   "t": 10.618,
+   "fin": 12.003,
+   "texto": "y vueltos automáticos."
+  },
+  "seniat": {
+   "t": 12.323,
+   "fin": 13.744,
+   "texto": "Homologado por el Seniat."
+  },
+  "foto": {
+   "t": 14.084,
+   "fin": 16.695,
+   "texto": "Y la IA lee tus facturas con una foto."
+  },
+  "ia": {
+   "t": 16.955,
+   "fin": 18.928,
+   "texto": "Pregúntale lo que quieras de tu negocio."
+  },
+  "marca": {
+   "t": 19.378,
+   "fin": 20.282,
+   "texto": "Vértigo Pro."
+  },
+  "cierre": {
+   "t": 20.442,
+   "fin": 22.638,
+   "texto": "Todo, impulsado con inteligencia artificial."
+  }
+ }
+}
