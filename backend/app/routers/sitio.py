@@ -36,7 +36,6 @@ EMPLEADOS = ("1 a 5", "6 a 15", "16 a 50", "Más de 50")
 TIPOS = (
     "Restaurante o comida rápida",
     "Panadería, pastelería o café",
-    "Licorería o bodega",
     "Tienda o retail",
     "Producción o distribución",
     "Otro",
