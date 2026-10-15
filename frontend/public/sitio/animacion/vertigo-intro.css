@@ -373,3 +373,8 @@
   .vpi-btn, .vpi-grande, .vpi-ctrl { transition: none; }
 }
 html[data-tema="claro"] .vpi, html.sistema-claro:not([data-tema="oscuro"]) .vpi { box-shadow: 0 30px 60px -34px rgba(23,24,27,.45); border-color: rgba(23,24,27,.12); }
+
+/* todo el video se puede tocar para pausar y reanudar */
+.vpi { cursor: pointer; }
+.vpi-ctrl, .vpi-btn { cursor: default; }
+.vpi-btn, .vpi-grande { cursor: pointer; }

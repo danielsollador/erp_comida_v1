@@ -691,10 +691,20 @@
     // arrancar, el primer toque, clic o tecla en cualquier parte de la página la
     // enciende donde va el video (sin volver a empezar).
     const alGesto = (e) => {
-      if (silenciado || conVoz || estado !== 'corriendo' || !visible || esc.contains(e.target)) return;
+      if (silenciado || conVoz || estado !== 'corriendo' || !visible || e.composedPath().includes(esc)) return;
       conVoz = true; sonar(t); pintar();
     };
     ['click', 'keydown', 'touchend'].forEach((ev) => document.addEventListener(ev, alGesto, { capture: true, passive: true }));
+    // Un clic en el video mismo pausa y reanuda (los botones van aparte). Al reanudar
+    // con un toque, la voz vuelve a sonar si el navegador la había bloqueado.
+    esc.addEventListener('click', (e) => {
+      // composedPath y no closest: los botones cambian su contenido al pulsarlos y el
+      // elemento tocado queda fuera del DOM antes de que llegue aquí
+      if (e.composedPath().some((n) => n.tagName === 'BUTTON')) return;
+      if (estado === 'corriendo') pausar(false);
+      else if (estado === 'pausa') empezar(t, !silenciado);
+      else empezar(0, !silenciado);
+    });
 
     /* arranca sola al entrar en pantalla, con voz si el navegador lo permite; se pausa al salir */
     new IntersectionObserver((ents) => {
