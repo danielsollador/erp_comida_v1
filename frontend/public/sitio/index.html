@@ -211,6 +211,9 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   .logo:hover::after { opacity: 1; }
 }
 @media (max-width: 640px) { .logos { gap: 12px; } }
+/* En pantallas táctiles no hay cursor que mostrar, pero Safari de iPhone solo
+   avisa el toque en algo "clicable": ahí sí va pointer. */
+@media (hover: none) { .logo { cursor: pointer; } }
 
 /* ── Un día con Vertigo Pro: texto fijo, pantallas que cambian ── */
 .dia { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
