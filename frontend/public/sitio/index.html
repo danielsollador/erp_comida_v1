@@ -177,19 +177,22 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 }
 
 /* ── Mostrador: tablet + teléfono con pantallas reales ── */
-.mostrador { padding: 24px 0 96px; }
-.compo { position: relative; max-width: 1040px; margin-inline: auto; padding-right: 160px; }
+.mostrador { padding: 8px 0 72px; }
+/* Más chico (Leider, 15-oct): se llevaba demasiado espacio. */
+.compo { position: relative; max-width: 760px; margin-inline: auto; padding-right: 110px; }
 .marco { background: var(--marco); border: 1px solid var(--linea-2); border-radius: 28px; padding: 10px; box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 40px 80px -30px var(--marco-sombra); }
 .marco img { border-radius: 19px; width: 100%; }
 .marco.tel { border-radius: 36px; padding: 8px; width: 240px; }
 .marco.tel img { border-radius: 29px; }
-.compo .marco.tel { position: absolute; right: 0; bottom: -40px; }
-.mostrador .pie { margin-top: 64px; max-width: 54ch; color: var(--tinta-2); font-size: 18px; }
+.compo .marco.tel { position: absolute; right: 0; bottom: -28px; width: 170px; border-radius: 30px; padding: 6px; }
+.compo .marco.tel img { border-radius: 25px; }
+.mostrador .pie { margin: 48px auto 0; max-width: 760px; color: var(--tinta-2); font-size: 17px; }
+.mostrador .pie span { display: block; max-width: 54ch; }
 .mostrador .pie strong { color: var(--tinta); font-weight: 600; }
 @media (max-width: 900px) {
   .compo { padding-right: 0; }
-  .compo .marco.tel { position: static; width: 200px; margin: -80px auto 0; }
-  .mostrador .pie { margin-top: 40px; }
+  .compo .marco.tel { position: static; width: 150px; margin: -56px auto 0; }
+  .mostrador .pie { margin-top: 32px; }
 }
 
 /* ── Ya lo usan: en reposo, en el color de la tinta; al pasar el cursor (o al
@@ -497,7 +500,7 @@ html:has(.demo[open]) { overflow: hidden; }
         <div class="marco"><img src="/sitio/img/web-pedidos.webp" data-oscuro="/sitio/img/web-pedidos.webp" data-claro="/sitio/img/web-pedidos-claro.webp" width="1800" height="1125" alt="Punto de venta de Vertigo Pro en la tablet: seis comandas en curso, tres cobradas y tres en cocina" loading="eager" fetchpriority="high"></div>
         <div class="marco tel"><img src="/sitio/img/tel-cocina.webp" data-oscuro="/sitio/img/tel-cocina.webp" data-claro="/sitio/img/tel-cocina-claro.webp" width="780" height="1688" alt="La pantalla de Cocina en el teléfono, con las mismas comandas" loading="lazy"></div>
       </div>
-      <p class="pie"><strong>En la tablet del mostrador y en el teléfono del dueño.</strong> La misma información, al mismo tiempo. Lo que la cajera comanda, cocina lo ve al instante y tú lo ves desde donde estés.</p>
+      <p class="pie"><span><strong>En la tablet del mostrador y en el teléfono del dueño.</strong> La misma información, al mismo tiempo. Lo que la cajera comanda, cocina lo ve al instante y tú lo ves desde donde estés.</span></p>
     </div>
   </section>
 
