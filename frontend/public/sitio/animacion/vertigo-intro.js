@@ -196,6 +196,7 @@
   </div>
   <div class="vpi-vineta"></div>
   <button class="vpi-grande" type="button"><span class="vpi-circ">${ICONO.play}</span><span class="vpi-grande-txt"></span></button>
+  <button class="vpi-toca" type="button"><span class="vpi-circ">${ICONO.voz}</span>Toca para escuchar</button>
   <div class="vpi-ctrl">
     <button class="vpi-btn vpi-voz" type="button" aria-pressed="false"><span class="vpi-on">${ICONO.voz}</span><span class="vpi-off">${ICONO.mudo}</span><span class="vpi-voz-txt">Escuchar con voz</span></button>
     <button class="vpi-btn solo vpi-pp" type="button" aria-label="Pausar">${ICONO.pausa}</button>
@@ -637,7 +638,7 @@
         } catch {}
       }
       const p = audio.play();
-      if (p) p.catch(() => { conVoz = false; pintar(); });
+      if (p) p.then(() => { bloqueado = false; pintar(); }, () => { conVoz = false; if (!silenciado) bloqueado = true; pintar(); });
     }
     function empezar(desde, voz) {
       t = desde; conVoz = voz; pausaAuto = false;
@@ -661,6 +662,7 @@
     const segundos = Math.round(T);
     function pintar() {
       esc.dataset.estado = estado;
+      esc.dataset.bloqueado = bloqueado && !conVoz && !silenciado && estado === 'corriendo' ? '1' : '0';
       const txt = { inicio: `Ver con voz <small>· ${segundos} s</small>`, pausa: 'Continuar', fin: 'Ver de nuevo' }[estado];
       if (txt) {
         $('.vpi-grande-txt').innerHTML = txt;
@@ -673,7 +675,10 @@
     }
     grande.addEventListener('click', () => (estado === 'pausa' ? reanudar() : empezar(0, true)));
     // La voz va por defecto (Leider, 15-oct). Solo se apaga si la persona la silencia.
-    let silenciado = false;
+    // Si el navegador la bloquea (sin un toque previo nunca deja sonar), sale grande
+    // "Toca para escuchar" y cualquier toque en la página o en el video la enciende.
+    let silenciado = false, bloqueado = false;
+    $('.vpi-toca').addEventListener('click', () => { silenciado = false; bloqueado = false; empezar(0, true); });
     bVoz.addEventListener('click', () => {
       if (conVoz) { silenciado = true; conVoz = false; audio.pause(); pintar(); return; }
       silenciado = false;
@@ -689,10 +694,10 @@
     audio.addEventListener('ended', () => { if (conVoz && estado === 'corriendo') { t = T; ir(t); terminar(); } });
     // El navegador no deja sonar sin un gesto de la persona: si bloqueó la voz al
     // arrancar, el primer toque, clic o tecla en cualquier parte de la página la
-    // enciende donde va el video (sin volver a empezar).
+    // enciende (si apenas empezó, desde el principio; si no, donde va el video).
     const alGesto = (e) => {
-      if (silenciado || conVoz || estado !== 'corriendo' || !visible || esc.contains(e.target)) return;
-      conVoz = true; sonar(t); pintar();
+      if (silenciado || conVoz || estado !== 'corriendo' || !visible || (e.target.closest && e.target.closest('.vpi button'))) return;
+      if (t < 4) empezar(0, true); else { conVoz = true; sonar(t); pintar(); }
     };
     ['click', 'keydown', 'touchend'].forEach((ev) => document.addEventListener(ev, alGesto, { capture: true, passive: true }));
 

@@ -364,7 +364,27 @@
 .vpi:not([data-listo]) .vpi-camara { opacity: 0; }
 .vpi-ctrl { transition: opacity .3s; }
 
+/* "Toca para escuchar": solo cuando el navegador bloqueó la voz al arrancar */
+.vpi-toca {
+  position: absolute; left: 50%; top: 50%; z-index: 7; display: none; align-items: center; gap: 12px;
+  min-height: 60px; padding: 0 28px 0 12px; border-radius: 999px; border: 0; cursor: pointer;
+  background: linear-gradient(180deg, #f7f3ea, #d9d1c3); color: #0b0c0f; font: 600 17px/1 'Manrope', system-ui, sans-serif;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 24px 60px -12px rgba(0,0,0,.85);
+  transform: translate(-50%, -50%);
+}
+.vpi-toca .vpi-circ { width: 40px; height: 40px; border-radius: 50%; background: #0b0c0f; color: #efe9df; display: grid; place-items: center; }
+.vpi-toca .vpi-circ svg { width: 20px; height: 20px; }
+.vpi-toca::before { content: ""; position: absolute; inset: -6px; border-radius: inherit; border: 2px solid rgba(239,233,223,.7); animation: vpi-latido 1.6s cubic-bezier(.2,.7,.2,1) infinite; pointer-events: none; }
+@keyframes vpi-latido { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.18, 1.45); } }
+.vpi-toca:focus-visible { outline: 2px solid var(--perla); outline-offset: 6px; }
+.vpi[data-bloqueado="1"] .vpi-toca { display: inline-flex; }
+.vpi[data-bloqueado="1"] .vpi-voz { visibility: hidden; }
+.vpi[data-bloqueado="1"] .vpi-camara { filter: brightness(.55); transition: filter .4s; }
+.vpi[data-bloqueado="1"] { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .vpi-toca::before { animation: none; opacity: .5; } }
+
 @media (max-width: 640px) {
+  .vpi-toca { font-size: 16px; min-height: 56px; }
   .vpi-ctrl { padding: 10px; }
   .vpi-btn { font-size: 13.5px; padding: 0 14px; }
   .vpi-grande { font-size: 15px; min-height: 52px; bottom: 16px; }
