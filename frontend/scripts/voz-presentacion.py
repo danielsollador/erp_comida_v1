@@ -1,64 +1,63 @@
-"""(Presentación de sitio/animacion) Genera la narración de la animación de Vertigo Pro con Google Cloud TTS.
+"""Narración + música de la presentación animada de Vertigo Pro (sitio/animacion).
 
-Sintetiza cada frase por separado, recorta el silencio de los bordes, las une
-con pausas medidas, le mezcla efectos sutiles (sintetizados aquí, sin
-licencias) en los mismos segundos en que ocurren en la animación, y escribe un
-mp3 + un JSON con el segundo exacto en que empieza y termina cada frase.
+- Voz: Google Cloud TTS (Chirp3-HD). Se sintetizan FRASES completas (no palabra
+  por palabra) para que fluya; dentro de cada frase, el segundo de cada parte
+  se saca de las pausas que la propia voz hace en las comas.
+- Tratamiento "futurista": aire en los agudos, un doblaje muy leve y un espacio
+  corto (reverb sintética). Nada robótico.
+- Cama musical sintetizada aquí (sin licencias): pad, bajo con pulso, arpegio en
+  la parte de la IA, subida y golpe en la marca. Se agacha cuando habla la voz.
+- Escribe <salida>.mp3 y <salida>.json con el segundo de cada momento; la
+  animación (vertigo-intro.js) se sincroniza con ese JSON.
 
-uso: python voz-presentacion.py "$(gcloud auth print-access-token)" es-US-Chirp3-HD-Leda ../public/sitio/animacion/voz-leda 1.12
-(la animación lee los tiempos del JSON; si cambias el guion, cambia también las escenas de vertigo-intro.js)
+uso: python voz-presentacion.py "$(gcloud auth print-access-token)" es-US-Chirp3-HD-Despina ../public/sitio/animacion/voz-despina 1.04
 """
-import base64, json, os, sys, urllib.request, zlib
+import base64, json, os, sys, tempfile, urllib.request, zlib
 import numpy as np
+from scipy import signal
 import lameenc
 
 TOKEN, VOZ, SALIDA = sys.argv[1], sys.argv[2], sys.argv[3]
 VELOCIDAD = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
 SR = 24000
-CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+CACHE = os.path.join(tempfile.gettempdir(), "vertigo-voz-cache")
 os.makedirs(CACHE, exist_ok=True)
+rng = np.random.default_rng(7)
 
-# (clave, texto, pausa ANTES de la frase en segundos)
+# (pausa ANTES, texto, nombres de las partes separadas por las comas)
 GUION = [
-    ("vendes", "Vendes.", 0.40),
-    ("compras", "Compras.", 0.14),
-    ("produces", "Produces,", 0.14),
-    ("calculas", "o calculas.", 0.04),
-    ("cuadra", "Y todo cuadra solo.", 0.34),
-    ("venezuela", "Hecho para Venezuela.", 0.40),
-    ("tasas", "Tasas automáticas,", 0.22),
-    ("brecha", "pérdida por brecha cambiaria,", 0.06),
-    ("pago", "pago móvil verificado", 0.06),
-    ("vuelto", "y vueltos automáticos.", 0.03),
-    ("seniat", "Homologado por el Seniat.", 0.32),
-    ("foto", "Y la IA lee tus facturas con una foto.", 0.34),
-    ("ia", "Pregúntale lo que quieras de tu negocio.", 0.26),
-    ("marca", "Vértigo Pro.", 0.45),
-    ("cierre", "Todo, impulsado con inteligencia artificial.", 0.16),
+    (0.45, "Vendes, compras, produces o calculas,", ["vendes", "compras", "produces"]),
+    (0.04, "y todo cuadra solo.", ["cuadra"]),
+    (0.40, "Hecho para Venezuela:", ["venezuela"]),
+    (0.10, "tasas automáticas, pérdida por brecha cambiaria, pago móvil verificado, y vueltos automáticos.", ["tasas", "brecha", "pago", "vuelto"]),
+    (0.30, "Homologado por el Seniat.", ["seniat"]),
+    (0.40, "Y en el centro, la IA:", ["ia", "ia2"]),
+    (0.12, "lee tus facturas con una foto,", ["foto"]),
+    (0.06, "te predice qué comprar, cuándo, y dónde te sale mejor,", ["que", "cuando", "donde"]),
+    (0.06, "y responde todo lo que le preguntes.", ["chat"]),
+    (0.36, "Y pronto, en tu teléfono:", ["app"]),
+    (0.08, "tu negocio en vivo, con alertas, recomendaciones, y permisos al instante.", ["vivo", "alertas", "recomendaciones", "permisos"]),
+    (0.50, "Vértigo Pro.", ["marca"]),
+    (0.16, "Todo, impulsado con inteligencia artificial.", ["cierre"]),
 ]
-COLA = 0.7
+COLA = 1.6
 
 
-def sintetizar(clave, texto):
-    cache = os.path.join(CACHE, f"{VOZ}-{VELOCIDAD}-{clave}-{zlib.crc32(texto.encode())}.npy")
+# ── voz ─────────────────────────────────────────────────────────────────
+def sintetizar(texto):
+    cache = os.path.join(CACHE, f"{VOZ}-{VELOCIDAD}-{zlib.crc32(texto.encode())}.npy")
     if os.path.exists(cache):
         return np.load(cache)
-    cuerpo = {
-        "input": {"text": texto},
-        "voice": {"languageCode": VOZ[:5], "name": VOZ},
-        "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": SR, "speakingRate": VELOCIDAD},
-    }
-    req = urllib.request.Request(
-        "https://texttospeech.googleapis.com/v1/text:synthesize",
-        data=json.dumps(cuerpo).encode(),
-        headers={"Authorization": f"Bearer {TOKEN}", "x-goog-user-project": "vertigo-erp-produccion",
-                 "Content-Type": "application/json"},
-    )
+    cuerpo = {"input": {"text": texto}, "voice": {"languageCode": VOZ[:5], "name": VOZ},
+              "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": SR, "speakingRate": VELOCIDAD}}
+    req = urllib.request.Request("https://texttospeech.googleapis.com/v1/text:synthesize", data=json.dumps(cuerpo).encode(),
+                                 headers={"Authorization": f"Bearer {TOKEN}", "x-goog-user-project": "vertigo-erp-produccion",
+                                          "Content-Type": "application/json"})
     datos = base64.b64decode(json.load(urllib.request.urlopen(req))["audioContent"])
-    pcm = np.frombuffer(datos[44:], dtype=np.int16).astype(np.float32) / 32768  # salta la cabecera WAV
+    pcm = np.frombuffer(datos[44:], dtype=np.int16).astype(np.float64) / 32768
     env = np.abs(pcm)
     idx = np.where(env > env.max() * 0.02)[0]
-    a, b = max(idx[0] - int(.03 * SR), 0), min(idx[-1] + int(.06 * SR), len(pcm))
+    a, b = max(idx[0] - int(.03 * SR), 0), min(idx[-1] + int(.08 * SR), len(pcm))
     clip = pcm[a:b].copy()
     r = int(.008 * SR)
     clip[:r] *= np.linspace(0, 1, r); clip[-r:] *= np.linspace(1, 0, r)
@@ -66,115 +65,205 @@ def sintetizar(clave, texto):
     return clip
 
 
-# ── efectos ─────────────────────────────────────────────────────────────
-rng = np.random.default_rng(7)
+def partes(clip, n, texto):
+    """inicio (s) de cada una de las n partes: las n-1 pausas más largas."""
+    if n == 1:
+        return [0.0]
+    hop = int(.01 * SR)
+    rms = np.sqrt(np.maximum(signal.oaconvolve(clip ** 2, np.ones(hop * 2) / (hop * 2), "same"), 0))[::hop]
+    callado = rms < rms.max() * 0.06
+    huecos, i = [], 0
+    while i < len(callado):
+        if callado[i]:
+            j = i
+            while j < len(callado) and callado[j]:
+                j += 1
+            if i > 5 and j < len(callado) - 5 and j - i >= 4:   # >= 40 ms, no en los bordes
+                huecos.append((j - i, j * hop / SR))
+            i = j
+        else:
+            i += 1
+    # dónde "debería" caer cada coma según las letras; a cada una se le asigna
+    # la pausa más larga cerca de ahí (las pausas dentro de una palabra son cortas)
+    trozos = texto.split(",")
+    tot = sum(len(x) for x in trozos); acc, esperado = 0, []
+    for x in trozos[:-1]:
+        acc += len(x); esperado.append(acc / tot * len(clip) / SR)
+    elegidos, usados = [], set()
+    for e in esperado[: n - 1]:
+        mejor = max((h for h in huecos if h[1] not in usados), key=lambda h: h[0] * 0.01 - abs(h[1] - e) * 0.6, default=None)
+        if mejor is None or abs(mejor[1] - e) > 0.9:
+            elegidos.append(e); print("  (por letras)", texto[:30], round(e, 2))
+        else:
+            elegidos.append(mejor[1]); usados.add(mejor[1])
+    return [0.0] + [round(t - 0.02, 3) for t in sorted(elegidos)]
 
 
-def filtrar(x, lo, hi):
-    """paso banda por FFT (suficiente para ráfagas cortas)."""
-    n = len(x); f = np.fft.rfftfreq(n, 1 / SR); X = np.fft.rfft(x)
-    m = ((f >= lo) & (f <= hi)).astype(float)
-    k = np.hanning(31); m = np.convolve(m, k / k.sum(), mode="same")
-    return np.fft.irfft(X * m, n)
+def filtro(x, tipo, f, orden=2):
+    sos = signal.butter(orden, f, btype=tipo, fs=SR, output="sos")
+    return signal.sosfilt(sos, x)
 
 
-def env_ad(n, ataque, caida):
-    t = np.arange(n) / SR
-    return np.minimum(t / max(ataque, 1e-4), 1) * np.exp(-np.maximum(t - ataque, 0) / caida)
+def estante_agudos(x, f, db):
+    alto = filtro(x, "highpass", f)
+    return x + alto * (10 ** (db / 20) - 1)
 
 
+def reverb(x, dur=1.2, mezcla=.12):
+    n = int(dur * SR)
+    ir = rng.standard_normal(n) * np.exp(-np.arange(n) / (SR * dur / 6.5))
+    ir = filtro(ir, "lowpass", 6000); ir[: int(.022 * SR)] = 0
+    ir /= np.sqrt((ir ** 2).sum())
+    mojado = signal.fftconvolve(x, ir)[: len(x)]
+    return x + mojado * mezcla * 3
+
+
+# ── armar la voz ────────────────────────────────────────────────────────
+trozos, marcas, t = [], {}, 0.0
+for pausa, texto, nombres in GUION:
+    trozos.append(np.zeros(int(pausa * SR))); t += pausa
+    clip = sintetizar(texto)
+    dur = len(clip) / SR
+    inis = partes(clip, len(nombres), texto)
+    for k, nom in enumerate(nombres):
+        fin = inis[k + 1] if k + 1 < len(nombres) else dur
+        marcas[nom] = {"t": round(t + inis[k], 3), "fin": round(t + fin, 3)}
+    marcas[nombres[0]]["texto"] = texto
+    trozos.append(clip); t += dur
+trozos.append(np.zeros(int(COLA * SR))); t += COLA
+voz = np.concatenate(trozos)
+voz = filtro(voz, "highpass", 90)
+voz = estante_agudos(voz, 5500, 3.5)
+doble = np.concatenate([np.zeros(int(.013 * SR)), voz])[: len(voz)]
+voz = voz + filtro(doble, "highpass", 1200) * .12           # brillo de doblaje, muy leve
+voz = reverb(voz, 1.1, .11)
+voz = voz / np.abs(voz).max() * .89
+N = len(voz)
+m = {k: v["t"] for k, v in marcas.items()}
+
+# ── cama musical ────────────────────────────────────────────────────────
+def hz(nota):  # 'A2', 'C#4'
+    nombres = {"C": -9, "C#": -8, "D": -7, "D#": -6, "E": -5, "F": -4, "F#": -3, "G": -2, "G#": -1, "A": 0, "A#": 1, "B": 2}
+    return 440 * 2 ** ((nombres[nota[:-1]] + 12 * (int(nota[-1]) - 4)) / 12)
+
+
+TEMPO = 96; PULSO = 60 / TEMPO; COMPAS = PULSO * 4
+ACORDES = [("A1", ["A2", "E3", "A3", "C4", "E4", "B4"]), ("F1", ["F2", "C3", "A3", "C4", "E4", "G4"]),
+           ("C2", ["C3", "G3", "C4", "E4", "G4", "D5"]), ("G1", ["G2", "D3", "B3", "D4", "F#4", "A4"])]
+tt = np.arange(N) / SR
+cuerda = (tt // (2 * COMPAS)).astype(int) % 4             # un acorde cada dos compases
+fin_marca = m["marca"] - 0.12                              # el golpe
+pad_bajo = np.zeros(N); pad_alto = np.zeros(N); bajo = np.zeros(N)
+for k, (raiz, notas) in enumerate(ACORDES):
+    activo = (cuerda == k).astype(float)
+    activo = signal.oaconvolve(activo, np.hanning(int(.6 * SR)) / np.hanning(int(.6 * SR)).sum(), "same")   # fundido entre acordes
+    for nota in notas:
+        f = hz(nota)
+        for det in (-0.004, 0.004):
+            s = signal.sawtooth(2 * np.pi * f * (1 + det) * tt + rng.uniform(0, 6.28))
+            pad_bajo += s * activo * .09
+    bajo += np.sin(2 * np.pi * hz(raiz) * tt) * activo
+pad = filtro(pad_bajo, "lowpass", 700, 4)
+brillo_pad = filtro(pad_bajo, "bandpass", [1500, 5000], 2) * .5
+apertura = np.clip((tt - m["ia"]) / 3, 0, 1) * (tt < fin_marca)    # se abre con la IA
+pad = pad + brillo_pad * apertura
+# bajo con "bombeo" a negras desde Venezuela hasta la marca
+fase = (tt % PULSO) / PULSO
+bombeo = 1 - .7 * np.exp(-fase * 6)
+con_pulso = ((tt > m["venezuela"] - 0.2) & (tt < fin_marca - 0.4)).astype(float)
+con_pulso = signal.oaconvolve(con_pulso, np.ones(int(.4 * SR)) / int(.4 * SR), "same")
+bajo = bajo * (0.55 + 0.45 * con_pulso * bombeo) * .5
+pad = pad * (1 - .45 * con_pulso * (1 - bombeo))
+# bombo suave
+bombo = np.zeros(N)
+n_b = int(.35 * SR); tb = np.arange(n_b) / SR
+golpecito = np.sin(2 * np.pi * np.cumsum(48 + 70 * np.exp(-tb / .03)) / SR) * np.exp(-tb / .12)
+b0 = m["venezuela"] - 0.2
+for s in np.arange(b0, fin_marca - 0.5, PULSO):
+    i = int(s * SR); bombo[i:i + n_b] += golpecito[: N - i]
+# arpegio en la parte de la IA (semicorcheas)
+arpe = np.zeros(N)
+n_a = int(.22 * SR); ta = np.arange(n_a) / SR
+for j, s in enumerate(np.arange(m["ia"] - 0.1, m["marca"] - 0.6, PULSO / 4)):
+    k = int(cuerda[min(int(s * SR), N - 1)])
+    notas = ACORDES[k][1][2:]
+    f = hz(notas[j % len(notas)]) * 2
+    nota = (np.sin(2 * np.pi * f * ta) + .3 * np.sin(2 * np.pi * 2 * f * ta)) * np.exp(-ta / .06)
+    i = int(s * SR); arpe[i:i + n_a] += nota[: N - i] * (.7 if j % 4 == 0 else .45)
+arpe = reverb(arpe, 1.4, .35)
+# subida y golpe en la marca, y un acorde final que se queda
+n_s = int(1.4 * SR); ts = np.arange(n_s) / SR
+subida = filtro(rng.standard_normal(n_s), "bandpass", [1500, 10000]) * (ts / ts[-1]) ** 3
+ng = int(1.8 * SR); tg = np.arange(ng) / SR
+golpe = np.sin(2 * np.pi * np.cumsum(36 + 40 * np.exp(-tg / .07)) / SR) * np.exp(-tg / .5)
+final = np.zeros(N)
+for nota in ["A2", "E3", "B3", "C4", "E4", "B4", "E5"]:
+    final += np.sin(2 * np.pi * hz(nota) * tt + rng.uniform(0, 6.28))
+final = final * np.clip((tt - fin_marca) / .05, 0, 1) * np.exp(-np.clip(tt - fin_marca, 0, None) / 3.2) * .05
+final = reverb(final, 2.0, .5)
+# antes de la marca la música se apaga un instante (silencio dramático)
+hueco = 1 - .85 * np.exp(-((tt - (fin_marca - 0.25)) / .18) ** 2)
+cama = (pad * 1.0 + bajo * .55 + bombo * .35 + arpe * .14) * hueco
+cama[tt >= fin_marca] *= np.exp(-(tt[tt >= fin_marca] - fin_marca) / .6)
+cama += final
+i = int((fin_marca - 1.4) * SR); cama[i:i + n_s] += subida[: N - i] * .10
+i = int(fin_marca * SR); cama[i:i + ng] += golpe[: N - i] * .55
+cama *= np.clip(tt / 1.2, 0, 1)                              # entra suave
+# se agacha cuando habla la voz
+env_voz = np.sqrt(np.maximum(signal.oaconvolve(voz ** 2, np.ones(int(.25 * SR)) / int(.25 * SR), "same"), 0))
+agacha = 1 - .45 * np.clip(env_voz / (env_voz.max() * .3), 0, 1)
+cama = cama * agacha
+cama = cama / (np.sqrt((cama ** 2).mean()) + 1e-9) * np.sqrt((voz ** 2).mean()) * .42
+
+# ── efectos puntuales (los mismos segundos que la animación) ───────────
 def tic():
-    n = int(.06 * SR); t = np.arange(n) / SR
-    ruido = filtrar(rng.standard_normal(n), 2500, 9000) * env_ad(n, .001, .008)
-    tono = np.sin(2 * np.pi * 1800 * t) * env_ad(n, .001, .012) * .5
-    return (ruido / np.abs(ruido).max() + tono) * .5
+    n = int(.05 * SR); x = filtro(rng.standard_normal(n), "highpass", 3000) * np.exp(-np.arange(n) / (SR * .008))
+    return x / np.abs(x).max() * .5
 
 
-def campana(f1, f2, dur=1.1):
-    n = int(dur * SR); t = np.arange(n) / SR
-    s = sum(a * np.sin(2 * np.pi * f * t) for f, a in ((f1, 1), (f2, .55), (f1 * 2.01, .18)))
-    return s * env_ad(n, .004, .28)
+def campana(f1, f2, dur=1.0):
+    n = int(dur * SR); x = np.arange(n) / SR
+    return (np.sin(2 * np.pi * f1 * x) + .55 * np.sin(2 * np.pi * f2 * x)) * np.minimum(x / .004, 1) * np.exp(-x / .25)
 
 
-def soplo(dur=0.7, lo=500, hi=4000):
-    n = int(dur * SR); t = np.arange(n) / SR
-    s = filtrar(rng.standard_normal(n), lo, hi) * np.sin(np.pi * np.clip(t / dur, 0, 1)) ** 2 * (t / dur) ** .4
+def soplo(dur=.6, lo=500, hi=5000):
+    n = int(dur * SR); x = np.arange(n) / SR
+    s = filtro(rng.standard_normal(n), "bandpass", [lo, hi]) * np.sin(np.pi * x / dur) ** 2
     return s / np.abs(s).max()
-
-
-def subida(dur=0.85):
-    n = int(dur * SR); t = np.arange(n) / SR
-    s = filtrar(rng.standard_normal(n), 1500, 11000) * (t / dur) ** 3
-    return s / np.abs(s).max()
-
-
-def golpe():
-    n = int(1.4 * SR); t = np.arange(n) / SR
-    f = 38 + 34 * np.exp(-t / .07)                          # cae de 72 a 38 Hz
-    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * env_ad(n, .003, .45)
-    return s + filtrar(rng.standard_normal(n), 200, 2500) * env_ad(n, .001, .012) * .35
-
-
-def brillo(dur=1.8):
-    n = int(dur * SR); t = np.arange(n) / SR
-    s = np.zeros(n)
-    for f in (2093, 2637, 3136, 3951, 4699):
-        s += np.sin(2 * np.pi * f * t + rng.uniform(0, 6.28)) * (0.5 + 0.5 * np.sin(2 * np.pi * rng.uniform(3, 7) * t))
-    return s / 5 * env_ad(n, .05, .55)
 
 
 def poner(pista, s, seg, vol):
     i = int(seg * SR)
     if i < 0: s, i = s[-i:], 0
-    j = min(i + len(s), len(pista))
-    pista[i:j] += s[: j - i] * vol
+    j = min(i + len(s), len(pista)); pista[i:j] += s[: j - i] * vol
 
 
-# ── armar voz ───────────────────────────────────────────────────────────
-partes, marcas, t = [], {}, 0.0
-for clave, texto, pausa in GUION:
-    partes.append(np.zeros(int(pausa * SR), np.float32)); t += pausa
-    clip = sintetizar(clave, texto)
-    dur = len(clip) / SR
-    marcas[clave] = {"t": round(t, 3), "fin": round(t + dur, 3), "texto": texto}
-    partes.append(clip); t += dur
-partes.append(np.zeros(int(COLA * SR), np.float32)); t += COLA
-voz = np.concatenate(partes).astype(np.float64)
-voz = voz / np.abs(voz).max() * .89
-
-# ── efectos en los mismos segundos que la animación (vertigo-intro.js) ──
-m = {k: v["t"] for k, v in marcas.items()}
-fx = np.zeros_like(voz)
-for k in ("vendes", "compras", "produces", "calculas"):
-    poner(fx, tic(), m[k] - 0.08, .10)
-for d in (0.55, 0.62, 0.67, 0.72):                          # los cuatro lados encajan
+fx = np.zeros(N)
+for d in (0.55, 0.62, 0.67, 0.72):
     poner(fx, tic(), m["cuadra"] + d, .07)
-poner(fx, campana(659.3, 987.8), m["cuadra"] + 0.74, .055)   # visto del cuadro
-poner(fx, brillo(1.4), m["venezuela"] + 0.2, .025)           # las ocho estrellas
-entra = [m["tasas"] - 0.25, m["brecha"] - 0.2, m["pago"] - 0.2]
-for e in entra:
-    poner(fx, soplo(), e - 0.12, .05)
-poner(fx, campana(880, 1318.5), entra[2] + 1.15, .045)       # "Verificado"
-poner(fx, tic(), m["vuelto"] - 0.05, .06)                    # vuelto
-poner(fx, subida(.5) * .7, m["seniat"] + 0.15 - 0.5 + 0.22, .04)
-poner(fx, golpe() * .8, m["seniat"] + 0.37, .3)              # el sello
-poner(fx, soplo(), m["foto"] - 0.37, .05)                     # entra la factura
-poner(fx, soplo(1.3, 1200, 6000) * .6, m["foto"] + 0.35, .035)  # línea de escaneo
-poner(fx, soplo(.6, 300, 3000), m["ia"] - 0.5, .05)           # entra el chat
-for k in range(7):                                            # se escribe la pregunta
-    poner(fx, tic(), m["ia"] - 0.15 + k * 0.1, .03)
-poner(fx, campana(1046.5, 1568), m["ia"] + 1.1, .04)          # responde la IA
-poner(fx, subida(), m["marca"] - 0.12 - 0.85, .06)
-poner(fx, golpe(), m["marca"] - 0.12, .42)
-poner(fx, brillo(), m["marca"] + 0.4, .03)
+poner(fx, campana(659.3, 987.8), m["cuadra"] + .74, .05)
+for k in ("tasas", "brecha", "pago"):
+    poner(fx, soplo(), m[k] - .32, .04)
+poner(fx, campana(880, 1318.5), m["pago"] - .2 + 1.15, .04)
+poner(fx, golpe[: int(.9 * SR)] * .8, m["seniat"] + .37, .22)
+poner(fx, soplo(1.2, 2000, 9000), m["ia"] - .2, .05)             # nace la IA
+poner(fx, campana(1318.5, 1975.5, 1.6), m["ia2"] + .05, .035)
+poner(fx, soplo(1.1, 1200, 6000) * .6, m["foto"] + .3, .03)
+for k in ("que", "cuando", "donde"):
+    poner(fx, tic(), m[k] - .02, .05)
+for k in range(6):
+    poner(fx, tic(), m["chat"] - .2 + k * .08, .025)
+for k in ("alertas", "recomendaciones", "permisos"):
+    poner(fx, campana(1567.98, 2093, .6), m[k] - .05, .035)       # notificación
 
-mezcla = voz + fx
-mezcla = mezcla / max(np.abs(mezcla).max() / .89, 1)
-r = int(.3 * SR); mezcla[-r:] *= np.linspace(1, 0, r)
+mezcla = voz + cama + fx
+mezcla = np.tanh(mezcla / .95) * .95                               # techo suave
+mezcla = mezcla / np.abs(mezcla).max() * .9
+r = int(.5 * SR); mezcla[-r:] *= np.linspace(1, 0, r)
 pista = (mezcla * 32767).astype(np.int16)
 
 enc = lameenc.Encoder()
-enc.set_bit_rate(64); enc.set_in_sample_rate(SR); enc.set_channels(1); enc.set_quality(2)
+enc.set_bit_rate(80); enc.set_in_sample_rate(SR); enc.set_channels(1); enc.set_quality(2)
 with open(SALIDA + ".mp3", "wb") as f:
     f.write(enc.encode(pista.tobytes()) + enc.flush())
 with open(SALIDA + ".json", "w", encoding="utf-8") as f:

@@ -1,0 +1,115 @@
+{
+ "voz": "es-US-Chirp3-HD-Despina",
+ "duracion": 33.068,
+ "marcas": {
+  "vendes": {
+   "t": 0.45,
+   "fin": 1.02,
+   "texto": "Vendes, compras, produces o calculas,"
+  },
+  "compras": {
+   "t": 1.02,
+   "fin": 1.47
+  },
+  "produces": {
+   "t": 1.47,
+   "fin": 2.697
+  },
+  "cuadra": {
+   "t": 2.737,
+   "fin": 3.754,
+   "texto": "y todo cuadra solo."
+  },
+  "venezuela": {
+   "t": 4.154,
+   "fin": 5.108,
+   "texto": "Hecho para Venezuela:"
+  },
+  "tasas": {
+   "t": 5.208,
+   "fin": 6.568,
+   "texto": "tasas automáticas, pérdida por brecha cambiaria, pago móvil verificado, y vueltos automáticos."
+  },
+  "brecha": {
+   "t": 6.568,
+   "fin": 8.248
+  },
+  "pago": {
+   "t": 8.248,
+   "fin": 9.638
+  },
+  "vuelto": {
+   "t": 9.638,
+   "fin": 11.004
+  },
+  "seniat": {
+   "t": 11.304,
+   "fin": 12.638,
+   "texto": "Homologado por el Seniat."
+  },
+  "ia": {
+   "t": 13.038,
+   "fin": 14.858,
+   "texto": "Y en el centro, la IA:"
+  },
+  "ia2": {
+   "t": 14.858,
+   "fin": 15.094
+  },
+  "foto": {
+   "t": 15.214,
+   "fin": 16.935,
+   "texto": "lee tus facturas con una foto,"
+  },
+  "que": {
+   "t": 16.995,
+   "fin": 18.695,
+   "texto": "te predice qué comprar, cuándo, y dónde te sale mejor,"
+  },
+  "cuando": {
+   "t": 18.695,
+   "fin": 19.285
+  },
+  "donde": {
+   "t": 19.285,
+   "fin": 20.423
+  },
+  "chat": {
+   "t": 20.483,
+   "fin": 22.454,
+   "texto": "y responde todo lo que le preguntes."
+  },
+  "app": {
+   "t": 22.814,
+   "fin": 24.092,
+   "texto": "Y pronto, en tu teléfono:"
+  },
+  "vivo": {
+   "t": 24.172,
+   "fin": 25.072,
+   "texto": "tu negocio en vivo, con alertas, recomendaciones, y permisos al instante."
+  },
+  "alertas": {
+   "t": 25.072,
+   "fin": 25.532
+  },
+  "recomendaciones": {
+   "t": 25.532,
+   "fin": 26.672
+  },
+  "permisos": {
+   "t": 26.672,
+   "fin": 27.686
+  },
+  "marca": {
+   "t": 28.186,
+   "fin": 28.947,
+   "texto": "Vértigo Pro."
+  },
+  "cierre": {
+   "t": 29.107,
+   "fin": 31.468,
+   "texto": "Todo, impulsado con inteligencia artificial."
+  }
+ }
+}
