@@ -1,4 +1,4 @@
-/* Presentación animada de Vertigo Pro (~33 s, con voz y música).
+/* Presentación animada de Vertigo Pro (~45 s, con voz y música).
  *
  * Cómo funciona: cada pieza tiene UNA animación (Web Animations API) que dura
  * todo el clip y queda en pausa; el reloj maestro mueve el `currentTime` de
@@ -67,7 +67,7 @@
     </div>
     <div class="vpi-capa vpi-ev">
       <div class="vpi-estrellas">${estrellas}</div>
-      <div class="vpi-titulo">${letras('Hecho para')}<span class="vpi-esp"> </span><br class="vpi-salto"><span class="vpi-brillo-txt">${letras('Venezuela.')}</span></div>
+      <div class="vpi-titulo">${letras('Hecho para')}<br><span class="vpi-brillo-txt">${letras('pymes venezolanas.')}</span></div>
     </div>
     <div class="vpi-capa vpi-tarjetas">
       <div class="vpi-tarjeta">
@@ -167,7 +167,7 @@
       </div>
       ${[['Alerta', 'El queso subió 12 % con tu proveedor.'], ['Recomendación', 'Compra harina el jueves: te ahorras 8 %.'], ['Permiso', 'María pide anular el pedido 214.']].map(([a, b], k) => `
       <div class="vpi-noti"><i class="vpi-noti-ic"><svg viewBox="0 0 100 100"><path d="M32 31.5 L50 71 L68 31.5"/></svg></i><div><p><b>${a}</b><small>ahora</small></p><p>${b}</p>${k === 2 ? '<span class="vpi-noti-btn">Aprobar</span>' : ''}</div></div>`).join('')}
-      <div class="vpi-pronto">${ICONO.chispa}Android · iPhone · <b>muy pronto</b></div>
+      <div class="vpi-pronto">${ICONO.chispa}En tu teléfono: <b>Android</b> y <b>iPhone</b></div>
     </div>
     <div class="vpi-capa vpi-en">
       <div class="vpi-nucleo">
@@ -287,7 +287,7 @@
       K($('.vpi-renglones'), [[tQ - 0.1, { opacity: 0, transform: tf(0, 0, 0, 1.08) }], [tQ + 0.5, { opacity: 1, transform: tf(0, 0, 0, 1) }, EASE], [tVz - 0.4, { opacity: 1 }], [tVz + 0.1, { opacity: 0 }, SUAVE]]);
 
       /* 1 · Vendes. Compras. Produces, o calculas. */
-      const inicios = [tV, tC, tP, tCa], finales = [tC, tP, tCa, tQ];
+      const inicios = [tV, tC, tP, tCa + 0.16], finales = [tC, tP, tCa, tQ];
       $$('.vpi-palabra').forEach((pal, i) => {
         const ls = [...pal.children], n = ls.length;
         const fs = parseFloat(getComputedStyle(pal).fontSize);
@@ -338,7 +338,7 @@
       K($('.vpi-frase em'), [[tQ + 0.7, { backgroundPosition: '100% 0' }], [tQ + 1.9, { backgroundPosition: '0% 0' }, SUAVE]]);
       K($('.vpi-e2'), [[tVz - 0.4, { opacity: 1, transform: tf(0, 0, 0, 1), filter: 'blur(0px)' }], [tVz - 0.05, { opacity: 0, transform: tf(0, -4 * u, 0, .9), filter: 'blur(8px)' }, SALIDA]]);
 
-      /* 3 · Hecho para Venezuela: ocho estrellas en arco */
+      /* 3 · Hecho para pymes venezolanas: ocho estrellas en arco */
       const tituloY = alta ? 9 * u : 6 * u;
       const tit = $('.vpi-titulo'), tfs = parseFloat(getComputedStyle(tit).fontSize);
       K(tit, [[0, { transform: tf(0, tituloY, 0) }]]);
@@ -351,7 +351,7 @@
           [tTa - 0.12 + j * 0.008, { opacity: 0, transform: tf(0, -tfs * .4, 0), filter: 'blur(8px)' }, SALIDA],
         ]);
       });
-      const ra = alta ? 0.5 * u : 0.36 * u, ey = tituloY - (alta ? 21 : 11) * u;
+      const ra = alta ? 0.5 * u : 0.36 * u, ey = tituloY - (alta ? 2 : 6) * u;
       $$('.vpi-estrella').forEach((st, k) => {
         const x = parseFloat(st.style.getPropertyValue('--x')) * ra * 2, y = parseFloat(st.style.getPropertyValue('--y')) * ra * 2 + ey;
         const e = tVz + 0.2 + k * 0.06;
@@ -508,7 +508,7 @@
       $$('.vpi-dias i').forEach((d, k) => K(d, [[tCh + 0.95 + k * 0.05, { transform: 'scale(1, 0)' }], [tCh + 1.5 + k * 0.05, { transform: 'scale(1, 1)' }, REBOTE]]));
       K($('.vpi-chat-cab .vpi-ia-chip'), [[tCh - 0.2, { backgroundPosition: '100% 0' }], [tCh + 1.0, { backgroundPosition: '0% 0' }, SUAVE]]);
 
-      /* 10 · pronto, en tu teléfono: el negocio en vivo y las notificaciones */
+      /* 10 · en tu teléfono: el negocio en vivo y las notificaciones */
       const tel = $('.vpi-tel');
       const telX = alta ? 0 : -0.17 * W, telY = alta ? 0.1 * H : 0;
       K(tel, [...entrar(tel, tAp - 0.3, telX, telY, (alta ? 30 : 14) * u), ...recoger(tM - 0.5, telX, telY)]);

@@ -127,13 +127,10 @@
 .vpi-tenue { color: var(--gris-2); }
 
 /* ── Hecho para Venezuela ── */
-.vpi-titulo { font-family: 'Sora', system-ui, sans-serif; font-weight: 700; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; font-size: min(calc(var(--u) * 9.5), 9.6cqw); }
+.vpi-titulo { font-family: 'Sora', system-ui, sans-serif; font-weight: 700; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; font-size: min(calc(var(--u) * 8.5), 8cqw); }
 .vpi-brillo-txt { color: #fff; }
 .vpi-titulo { text-align: center; }
-.vpi-salto { display: none; }
-.vpi[data-forma="alta"] .vpi-salto { display: inline; }
-.vpi[data-forma="alta"] .vpi-esp { display: none; }
-.vpi[data-forma="alta"] .vpi-titulo { font-size: 13cqw; }
+.vpi[data-forma="alta"] .vpi-titulo { font-size: 8.6cqw; }
 .vpi-estrellas { display: grid; place-items: center; }
 .vpi-estrella { grid-area: 1 / 1; width: calc(var(--u) * 3.6); height: calc(var(--u) * 3.6); fill: var(--perla); filter: drop-shadow(0 0 calc(var(--u) * 1.2) rgba(239,233,223,.55)); }
 .vpi[data-forma="alta"] .vpi-estrella { width: calc(var(--u) * 4.4); height: calc(var(--u) * 4.4); }

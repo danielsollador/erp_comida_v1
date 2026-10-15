@@ -1,114 +1,125 @@
 {
  "voz": "es-US-Chirp3-HD-Callirrhoe",
- "duracion": 33.675,
+ "duracion": 47.867,
  "marcas": {
   "vendes": {
-   "t": 0.45,
-   "fin": 1.29,
-   "texto": "Vendes, compras, produces o calculas,"
+   "t": 0.7,
+   "fin": 1.264,
+   "texto": "Vendes,"
   },
   "compras": {
-   "t": 1.29,
-   "fin": 1.51
+   "t": 1.714,
+   "fin": 2.383,
+   "texto": "compras,"
   },
   "produces": {
-   "t": 1.51,
-   "fin": 2.939
+   "t": 2.833,
+   "fin": 4.569,
+   "texto": "produces o calculas,"
   },
   "cuadra": {
-   "t": 2.979,
-   "fin": 4.089,
+   "t": 5.019,
+   "fin": 6.337,
    "texto": "y todo cuadra solo."
   },
   "venezuela": {
-   "t": 4.489,
-   "fin": 5.378,
-   "texto": "Hecho para Venezuela:"
+   "t": 7.137,
+   "fin": 8.992,
+   "texto": "Hecho para pymes venezolanas."
   },
   "tasas": {
-   "t": 5.478,
-   "fin": 7.038,
-   "texto": "tasas automáticas, pérdida por brecha cambiaria, pago móvil verificado, y vueltos automáticos."
+   "t": 9.592,
+   "fin": 10.955,
+   "texto": "Tasas automáticas."
   },
   "brecha": {
-   "t": 7.038,
-   "fin": 8.808
+   "t": 11.455,
+   "fin": 13.012,
+   "texto": "Pérdida por brecha cambiaria."
   },
   "pago": {
-   "t": 8.808,
-   "fin": 10.268
+   "t": 13.512,
+   "fin": 15.094,
+   "texto": "Pago móvil verificado,"
   },
   "vuelto": {
-   "t": 10.268,
-   "fin": 11.612
+   "t": 15.394,
+   "fin": 16.956,
+   "texto": "y vueltos automáticos."
   },
   "seniat": {
-   "t": 11.912,
-   "fin": 13.303,
+   "t": 17.656,
+   "fin": 19.203,
    "texto": "Homologado por el Seniat."
   },
   "ia": {
-   "t": 13.703,
-   "fin": 14.933,
-   "texto": "Y en el centro, la IA:"
+   "t": 20.103,
+   "fin": 21.455,
+   "texto": "Y en el centro de todo,"
   },
   "ia2": {
-   "t": 14.933,
-   "fin": 15.491
+   "t": 21.705,
+   "fin": 22.406,
+   "texto": "la IA."
   },
   "foto": {
-   "t": 15.611,
-   "fin": 17.204,
-   "texto": "lee tus facturas con una foto,"
+   "t": 23.106,
+   "fin": 24.942,
+   "texto": "Lee tus facturas con una foto."
   },
   "que": {
-   "t": 17.264,
-   "fin": 18.514,
-   "texto": "te predice qué comprar, cuándo, y dónde te sale mejor,"
+   "t": 25.642,
+   "fin": 26.859,
+   "texto": "Te predice qué comprar,"
   },
   "cuando": {
-   "t": 18.514,
-   "fin": 18.914
+   "t": 27.159,
+   "fin": 27.592,
+   "texto": "cuándo,"
   },
   "donde": {
-   "t": 18.914,
-   "fin": 20.0
+   "t": 27.892,
+   "fin": 29.205,
+   "texto": "y dónde te sale mejor."
   },
   "chat": {
-   "t": 20.06,
-   "fin": 21.981,
-   "texto": "y responde todo lo que le preguntes."
+   "t": 29.805,
+   "fin": 31.806,
+   "texto": "Y responde todo lo que le preguntes."
   },
   "app": {
-   "t": 22.341,
-   "fin": 23.622,
-   "texto": "Y pronto, en tu teléfono:"
+   "t": 32.706,
+   "fin": 33.765,
+   "texto": "Y en tu teléfono,"
   },
   "vivo": {
-   "t": 23.702,
-   "fin": 25.102,
-   "texto": "tu negocio en vivo, con alertas, recomendaciones, y permisos al instante."
+   "t": 34.065,
+   "fin": 35.486,
+   "texto": "tu negocio en vivo."
   },
   "alertas": {
-   "t": 25.102,
-   "fin": 25.592
+   "t": 36.086,
+   "fin": 36.973,
+   "texto": "Con alertas,"
   },
   "recomendaciones": {
-   "t": 25.592,
-   "fin": 26.912
+   "t": 37.373,
+   "fin": 38.632,
+   "texto": "recomendaciones,"
   },
   "permisos": {
-   "t": 26.912,
-   "fin": 28.111
+   "t": 39.032,
+   "fin": 40.995,
+   "texto": "y permisos, al instante."
   },
   "marca": {
-   "t": 28.611,
-   "fin": 29.493,
+   "t": 41.895,
+   "fin": 42.87,
    "texto": "Vértigo Pro."
   },
   "cierre": {
-   "t": 29.653,
-   "fin": 32.075,
+   "t": 43.17,
+   "fin": 46.067,
    "texto": "Todo, impulsado con inteligencia artificial."
   }
  }

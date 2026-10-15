@@ -10,7 +10,7 @@
 - Escribe <salida>.mp3 y <salida>.json con el segundo de cada momento; la
   animación (vertigo-intro.js) se sincroniza con ese JSON.
 
-uso: python voz-presentacion.py "$(gcloud auth print-access-token)" es-US-Chirp3-HD-Despina ../public/sitio/animacion/voz-despina 1.04
+uso: python voz-presentacion.py "$(gcloud auth print-access-token)" es-US-Chirp3-HD-Despina ../public/sitio/animacion/voz-despina 0.98
 """
 import base64, json, os, sys, tempfile, urllib.request, zlib
 import numpy as np
@@ -25,22 +25,36 @@ os.makedirs(CACHE, exist_ok=True)
 rng = np.random.default_rng(7)
 
 # (pausa ANTES, texto, nombres de las partes separadas por las comas)
+# Leider (15-oct): "calmalo, que todo vaya en su momento, más que todo al
+# inicio y en lo del teléfono". Cada idea es su propio clip, con aire entre una
+# y otra para que la animación respire.
 GUION = [
-    (0.45, "Vendes, compras, produces o calculas,", ["vendes", "compras", "produces"]),
-    (0.04, "y todo cuadra solo.", ["cuadra"]),
-    (0.40, "Hecho para Venezuela:", ["venezuela"]),
-    (0.10, "tasas automáticas, pérdida por brecha cambiaria, pago móvil verificado, y vueltos automáticos.", ["tasas", "brecha", "pago", "vuelto"]),
-    (0.30, "Homologado por el Seniat.", ["seniat"]),
-    (0.40, "Y en el centro, la IA:", ["ia", "ia2"]),
-    (0.12, "lee tus facturas con una foto,", ["foto"]),
-    (0.06, "te predice qué comprar, cuándo, y dónde te sale mejor,", ["que", "cuando", "donde"]),
-    (0.06, "y responde todo lo que le preguntes.", ["chat"]),
-    (0.36, "Y pronto, en tu teléfono:", ["app"]),
-    (0.08, "tu negocio en vivo, con alertas, recomendaciones, y permisos al instante.", ["vivo", "alertas", "recomendaciones", "permisos"]),
-    (0.50, "Vértigo Pro.", ["marca"]),
-    (0.16, "Todo, impulsado con inteligencia artificial.", ["cierre"]),
+    (0.70, "Vendes,", ["vendes"]),
+    (0.45, "compras,", ["compras"]),
+    (0.45, "produces o calculas,", ["produces"]),
+    (0.45, "y todo cuadra solo.", ["cuadra"]),
+    (0.80, "Hecho para pymes venezolanas.", ["venezuela"]),
+    (0.60, "Tasas automáticas.", ["tasas"]),
+    (0.50, "Pérdida por brecha cambiaria.", ["brecha"]),
+    (0.50, "Pago móvil verificado,", ["pago"]),
+    (0.30, "y vueltos automáticos.", ["vuelto"]),
+    (0.70, "Homologado por el Seniat.", ["seniat"]),
+    (0.90, "Y en el centro de todo,", ["ia"]),
+    (0.25, "la IA.", ["ia2"]),
+    (0.70, "Lee tus facturas con una foto.", ["foto"]),
+    (0.70, "Te predice qué comprar,", ["que"]),
+    (0.30, "cuándo,", ["cuando"]),
+    (0.30, "y dónde te sale mejor.", ["donde"]),
+    (0.60, "Y responde todo lo que le preguntes.", ["chat"]),
+    (0.90, "Y en tu teléfono,", ["app"]),
+    (0.30, "tu negocio en vivo.", ["vivo"]),
+    (0.60, "Con alertas,", ["alertas"]),
+    (0.40, "recomendaciones,", ["recomendaciones"]),
+    (0.40, "y permisos, al instante.", ["permisos"]),
+    (0.90, "Vértigo Pro.", ["marca"]),
+    (0.30, "Todo, impulsado con inteligencia artificial.", ["cierre"]),
 ]
-COLA = 1.6
+COLA = 1.8
 
 
 # ── voz ─────────────────────────────────────────────────────────────────
