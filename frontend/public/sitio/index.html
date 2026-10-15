@@ -198,7 +198,7 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 .clientes { padding: 0 0 80px; text-align: center; }
 .clientes p { font-size: 14.5px; color: var(--tinta-3); margin-bottom: 18px; }
 .logos { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }
-.logo { position: relative; display: inline-block; box-sizing: content-box; width: var(--w); height: var(--h); padding: 14px 22px; border-radius: 20px; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color .35s var(--curva), box-shadow .35s var(--curva); }
+.logo { position: relative; display: inline-block; box-sizing: content-box; width: var(--w); height: var(--h); padding: 14px 22px; border-radius: 20px; cursor: default; -webkit-tap-highlight-color: transparent; transition: background-color .35s var(--curva), box-shadow .35s var(--curva); }
 .logo::before, .logo::after { content: ""; position: absolute; inset: 14px 22px; transition: opacity .35s var(--curva); }
 .logo::before { background: var(--tinta); opacity: .9; -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
 .logo::after { background: var(--logo) center / contain no-repeat; opacity: 0; }
@@ -211,6 +211,9 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   .logo:hover::after { opacity: 1; }
 }
 @media (max-width: 640px) { .logos { gap: 12px; } }
+/* En pantallas táctiles no hay cursor que mostrar, pero Safari de iPhone solo
+   avisa el toque en algo "clicable": ahí sí va pointer. */
+@media (hover: none) { .logo { cursor: pointer; } }
 
 /* ── Un día con Vertigo Pro: texto fijo, pantallas que cambian ── */
 .dia { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
@@ -285,6 +288,8 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 .celda.lado p { max-width: none; }
 .tapa.der { position: absolute; left: 50%; right: -1px; top: 28px; bottom: -1px; border-radius: 16px 0 0 0; border-right: 0; border-bottom: 0; }
 .tapa.der img { width: 150%; object-position: top left; }
+/* la olla de la preparacion ya viene recortada: entera, no ampliada */
+.celda.recetas .tapa.der img { width: 100%; }
 .celda.precios, .celda.tasas { justify-content: flex-end; }
 .celda.tasas .cifras { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: auto; }
 .celda.tasas .cifras span { font-family: var(--mono); font-size: 12.5px; color: var(--tinta-2); border: 1px solid var(--linea-2); border-radius: 999px; padding: 5px 10px; }
@@ -297,6 +302,8 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   .celda.lado { display: flex; }
   .tapa.der { position: relative; left: auto; right: auto; top: auto; bottom: auto; margin: 16px -24px -24px 0; aspect-ratio: 16 / 10; }
   .tapa.der img { width: 130%; }
+  .celda.recetas .tapa.der { aspect-ratio: auto; }
+  .celda.recetas .tapa.der img { width: 100%; }
 }
 
 /* ── Hecho para Venezuela: lista tipográfica, sin tarjetas ── */
@@ -524,9 +531,9 @@ html:has(.demo[open]) { overflow: hidden; }
           </article>
           <article class="momento" data-i="2">
             <span class="hora">10:00 a. m.</span>
-            <h3>Produces</h3>
-            <p>Cada receta sabe cuánto cuesta y cuánto deja. Lo que preparas sale de la materia prima y entra al inventario de lo listo para vender.</p>
-            <div class="marco"><img src="/sitio/img/web-recetas.webp" data-oscuro="/sitio/img/web-recetas.webp" data-claro="/sitio/img/web-recetas-claro.webp" width="1800" height="1125" alt="Recetas del menú con su costo y su ganancia por producto" loading="lazy"></div>
+            <h3>Produces / Calculas</h3>
+            <p>Si produces, armas la receta y el sistema descuenta la materia prima. Si revendes, cargas lo que te costó. En los dos casos ves cuánto cuesta y cuánto te deja cada producto antes de ponerle precio.</p>
+            <div class="marco"><img src="/sitio/img/web-receta.webp" data-oscuro="/sitio/img/web-receta.webp" data-claro="/sitio/img/web-receta-claro.webp" width="1800" height="1125" alt="La receta de una empanada como un vaso: cuánto del precio se lleva cada ingrediente y cuánto margen queda" loading="lazy"></div>
           </article>
           <article class="momento" data-i="3">
             <span class="hora">12:30 p. m.</span>
@@ -555,7 +562,7 @@ html:has(.demo[open]) { overflow: hidden; }
           <div class="marco" aria-hidden="true">
             <img class="activa" src="/sitio/img/web-inicio.webp" data-oscuro="/sitio/img/web-inicio.webp" data-claro="/sitio/img/web-inicio-claro.webp" data-tel="/sitio/img/tel-inicio.webp" data-tel-claro="/sitio/img/tel-inicio-claro.webp" alt="" loading="lazy">
             <img src="/sitio/img/web-compras-nueva.webp" data-oscuro="/sitio/img/web-compras-nueva.webp" data-claro="/sitio/img/web-compras-nueva-claro.webp" data-tel="/sitio/img/tel-compras-nueva.webp" data-tel-claro="/sitio/img/tel-compras-nueva-claro.webp" alt="" loading="lazy">
-            <img src="/sitio/img/web-recetas.webp" data-oscuro="/sitio/img/web-recetas.webp" data-claro="/sitio/img/web-recetas-claro.webp" data-tel="/sitio/img/tel-recetas.webp" data-tel-claro="/sitio/img/tel-recetas-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-receta.webp" data-oscuro="/sitio/img/web-receta.webp" data-claro="/sitio/img/web-receta-claro.webp" data-tel="/sitio/img/tel-receta.webp" data-tel-claro="/sitio/img/tel-receta-claro.webp" alt="" loading="lazy">
             <img src="/sitio/img/web-cocina.webp" data-oscuro="/sitio/img/web-cocina.webp" data-claro="/sitio/img/web-cocina-claro.webp" data-tel="/sitio/img/tel-cocina.webp" data-tel-claro="/sitio/img/tel-cocina-claro.webp" alt="" loading="lazy">
             <img src="/sitio/img/web-caja.webp" data-oscuro="/sitio/img/web-caja.webp" data-claro="/sitio/img/web-caja-claro.webp" data-tel="/sitio/img/tel-caja.webp" data-tel-claro="/sitio/img/tel-caja-claro.webp" alt="" loading="lazy">
             <img src="/sitio/img/web-reportes-ventas.webp" data-oscuro="/sitio/img/web-reportes-ventas.webp" data-claro="/sitio/img/web-reportes-ventas-claro.webp" data-tel="/sitio/img/tel-reportes-ventas.webp" data-tel-claro="/sitio/img/tel-reportes-ventas-claro.webp" alt="" loading="lazy">
@@ -585,10 +592,10 @@ html:has(.demo[open]) { overflow: hidden; }
         </div>
         <div class="celda recetas con-tapa lado">
           <div>
-            <h3>Recetas y preparaciones, a la vista</h3>
-            <p>Armas la receta por kilo y el sistema sabe cuánto cuesta, cuánto deja y cuánto salió de la olla.</p>
+            <h3>Cuánto cuesta y cuánto deja, a la vista</h3>
+            <p>Si produces, armas la receta y la preparación por kilo y ves qué parte del precio se lleva cada ingrediente. Si revendes, el sistema calcula el margen de cada producto con lo que te costó.</p>
           </div>
-          <div class="tapa der"><img src="/sitio/img/web-recetas.webp" data-oscuro="/sitio/img/web-recetas.webp" data-claro="/sitio/img/web-recetas-claro.webp" width="1800" height="1125" alt="Recetas del menú con su costo y su ganancia por producto" loading="lazy"></div>
+          <div class="tapa der"><img src="/sitio/img/web-preparacion.webp" data-oscuro="/sitio/img/web-preparacion.webp" data-claro="/sitio/img/web-preparacion-claro.webp" width="670" height="628" alt="Una preparación como una olla de 1 kg: cuánto lleva de cada materia prima y cuánto cuesta el kilo" loading="lazy"></div>
         </div>
         <div class="celda foto con-tapa">
           <h3>Compras por foto</h3>
@@ -713,7 +720,6 @@ html:has(.demo[open]) { overflow: hidden; }
             <option value="" selected disabled>Elige uno</option>
             <option>Restaurante o comida rápida</option>
             <option>Panadería, pastelería o café</option>
-            <option>Licorería o bodega</option>
             <option>Tienda o retail</option>
             <option>Producción o distribución</option>
             <option>Otro</option>
