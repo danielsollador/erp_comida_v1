@@ -36,6 +36,7 @@
   --halo: rgba(239,233,223,.10); --sombra-v: rgba(0,0,0,.6);
   --tasa-a: #f4efe5; --tasa-b: #d9d1c3; --tasa-texto: #0b0c0f; --tasa-texto-2: #4a4740;
   --vidrio: rgba(11,12,15,.72); --menu: rgba(11,12,15,.96);
+  --placa: #efe9df; --error: #ff8f80;
   --grano: .035;
   color-scheme: dark;
   --sora: 'Sora', system-ui, sans-serif;
@@ -65,6 +66,7 @@ html[data-tema="claro"], html.sistema-claro:not([data-tema="oscuro"]) {
   --halo: rgba(23,24,27,.06); --sombra-v: rgba(23,24,27,.35);
   --tasa-a: #22242a; --tasa-b: #0e0f12; --tasa-texto: #efe9df; --tasa-texto-2: #a1a7b4;
   --vidrio: rgba(246,244,239,.76); --menu: rgba(246,244,239,.97);
+  --placa: #ffffff; --error: #b3261e;
   --grano: .05;
   color-scheme: light;
 }
@@ -190,12 +192,25 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   .mostrador .pie { margin-top: 40px; }
 }
 
-/* ── Ya lo usan: los logos en el color de la tinta, nada más ── */
-.clientes { padding: 0 0 80px; }
-.clientes p { font-size: 14.5px; color: var(--tinta-3); margin-bottom: 22px; }
-.logos { display: flex; align-items: center; gap: 56px; flex-wrap: wrap; }
-.logo { display: inline-block; background: var(--tinta); opacity: .9; -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
-@media (max-width: 640px) { .logos { gap: 36px; } }
+/* ── Ya lo usan: en reposo, en el color de la tinta; al pasar el cursor (o al
+   tocarlo en el teléfono) cada logo enseña sus colores de verdad, sobre una
+   placa perla para que el café de Sávora se lea también en oscuro. ── */
+.clientes { padding: 0 0 80px; text-align: center; }
+.clientes p { font-size: 14.5px; color: var(--tinta-3); margin-bottom: 18px; }
+.logos { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }
+.logo { position: relative; display: inline-block; box-sizing: content-box; width: var(--w); height: var(--h); padding: 14px 22px; border-radius: 20px; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color .35s var(--curva), box-shadow .35s var(--curva); }
+.logo::before, .logo::after { content: ""; position: absolute; inset: 14px 22px; transition: opacity .35s var(--curva); }
+.logo::before { background: var(--tinta); opacity: .9; -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
+.logo::after { background: var(--logo) center / contain no-repeat; opacity: 0; }
+.logo.color, .logo:focus-visible { background: var(--placa); box-shadow: 0 10px 30px -14px var(--marco-sombra); }
+.logo.color::before, .logo:focus-visible::before { opacity: 0; }
+.logo.color::after, .logo:focus-visible::after { opacity: 1; }
+@media (hover: hover) {
+  .logo:hover { background: var(--placa); box-shadow: 0 10px 30px -14px var(--marco-sombra); }
+  .logo:hover::before { opacity: 0; }
+  .logo:hover::after { opacity: 1; }
+}
+@media (max-width: 640px) { .logos { gap: 12px; } }
 
 /* ── Un día con Vertigo Pro: texto fijo, pantallas que cambian ── */
 .dia { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
@@ -322,6 +337,62 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
 .contacto .nota { margin-top: 28px; color: var(--tinta-3); font-size: 15px; }
 .contacto .nota a { color: var(--tinta-2); text-decoration: underline; text-underline-offset: 3px; }
 
+/* ── Pide una demo: un <dialog> nativo; en el teléfono sube como hoja ── */
+html:has(.demo[open]) { overflow: hidden; }
+.demo { width: min(580px, 100% - 32px); max-height: min(92dvh, 900px); padding: 0; border: 1px solid var(--linea-2); border-radius: 28px; background: var(--superficie); color: var(--tinta); box-shadow: 0 40px 120px -40px rgba(0,0,0,.7); overflow: auto; overscroll-behavior: contain; }
+.demo::backdrop { background: rgba(5,6,8,.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.demo[open] { animation: demo-entra .35s var(--curva); }
+@keyframes demo-entra { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+.demo .caja { padding: 28px 28px 26px; }
+.demo .cabeza { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.demo h2 { font-size: 28px; }
+.demo .intro { margin-top: 8px; color: var(--tinta-2); font-size: 15.5px; max-width: 40ch; }
+.demo .x { width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; flex: none; }
+.campos { margin-top: 20px; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px 14px; }
+.campo { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.campo.ancho { grid-column: 1 / -1; }
+.campo > label, .campo > legend { padding: 0; font-size: 13.5px; font-weight: 600; color: var(--tinta-2); }
+.campo .opcional { font-weight: 500; color: var(--tinta-3); }
+.campo input, .campo select, .campo textarea { width: 100%; min-height: 48px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--linea-2); background: var(--fondo); color: var(--tinta); font: 500 16px/1.3 var(--manrope); transition: border-color .18s var(--curva), box-shadow .18s var(--curva); }
+.campo textarea { min-height: 84px; resize: vertical; }
+.campo select { appearance: none; -webkit-appearance: none; padding-right: 42px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%23888' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 16px center; }
+.campo input::placeholder, .campo textarea::placeholder { color: var(--tinta-3); }
+.campo input:focus, .campo select:focus, .campo textarea:focus { outline: none; border-color: var(--tinta-2); box-shadow: 0 0 0 3px var(--halo); }
+.campo [aria-invalid="true"] { border-color: var(--error); }
+.campo .error { font-size: 13px; color: var(--error); }
+.campo .error:empty { display: none; }
+.rangos .opciones { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.rangos .op { position: relative; }
+.rangos .op input { position: absolute; inset: 0; opacity: 0; margin: 0; min-height: 0; cursor: pointer; }
+.rangos .op span { display: flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 8px; border: 1px solid var(--linea-2); border-radius: 14px; font-size: 14.5px; font-weight: 600; color: var(--tinta-2); text-align: center; transition: background-color .18s var(--curva), color .18s var(--curva), border-color .18s var(--curva); pointer-events: none; }
+.rangos .op input:checked + span { background: var(--tinta); color: var(--fondo); border-color: var(--tinta); }
+.rangos .op input:focus-visible + span { outline: 2px solid var(--tinta); outline-offset: 2px; }
+.rangos[aria-invalid="true"] .op span { border-color: var(--error); }
+.trampa { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.demo .envio { margin-top: 22px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.demo .envio .aviso { font-size: 13.5px; color: var(--tinta-3); flex: 1 1 200px; }
+.boton[disabled] { opacity: .65; cursor: progress; }
+.demo .fallo { margin-top: 16px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--error); font-size: 14.5px; color: var(--tinta); }
+.demo .fallo[hidden] { display: none; }
+.demo .fallo a { text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.demo .listo { text-align: center; padding: 28px 8px 6px; }
+.demo .listo .check { width: 60px; height: 60px; margin: 0 auto 18px; border-radius: 50%; display: grid; place-items: center; background: var(--tinta); color: var(--fondo); }
+.demo .listo .check svg { width: 28px; height: 28px; }
+.demo .listo p { margin: 10px auto 0; color: var(--tinta-2); max-width: 36ch; }
+.demo .listo .boton { margin-top: 24px; }
+@media (max-width: 640px) {
+  .demo { width: 100%; max-width: 100%; max-height: 94dvh; margin: auto 0 0; border-radius: 26px 26px 0 0; border-bottom: 0; }
+  .demo[open] { animation: demo-sube .4s var(--curva); }
+  .demo .caja { padding: 22px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .demo h2 { font-size: 24px; }
+  .campos { grid-template-columns: minmax(0,1fr); }
+  .rangos .opciones { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .demo .envio .boton { width: 100%; justify-content: center; }
+}
+@keyframes demo-sube { from { transform: translateY(100%); } }
+
 /* ── Pie ── */
 .pie-pagina { padding: 40px 0 48px; border-top: 1px solid var(--linea); color: var(--tinta-3); font-size: 14.5px; }
 .pie-pagina .cont { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: center; }
@@ -345,7 +416,8 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   .heroe h1 .l span, .heroe .sub, .heroe .ctas, .escena { animation: none; transform: none; opacity: 1; }
   .v-grande { animation: none; }
   .revela { opacity: 1; transform: none; transition: none; }
-  .momento, .pantallas .marco img, .boton { transition: none; }
+  .momento, .pantallas .marco img, .boton, .logo, .logo::before, .logo::after { transition: none; }
+  .demo[open] { animation: none; }
 }
 </style>
 </head>
@@ -415,8 +487,8 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
     <div class="cont">
       <p>Ya lo usan</p>
       <div class="logos">
-        <span class="logo" role="img" aria-label="Sávora, pastelitos y tradición" style="--logo: url(/sitio/img/cliente-savora.png); width: 130px; height: 50px;"></span>
-        <span class="logo" role="img" aria-label="Licoteca" style="--logo: url(/sitio/img/cliente-licoteca.png); width: 96px; height: 96px;"></span>
+        <span class="logo" role="img" tabindex="0" aria-label="Sávora, pastelitos y tradición" style="--logo: url(/sitio/img/cliente-savora.png); --w: 130px; --h: 46px;"></span>
+        <span class="logo" role="img" tabindex="0" aria-label="Licoteca" style="--logo: url(/sitio/img/cliente-licoteca.png); --w: 96px; --h: 90px;"></span>
       </div>
     </div>
   </section>
@@ -576,6 +648,7 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
           Escríbenos por WhatsApp
         </a>
       </div>
+      <p class="nota">Teléfono y WhatsApp: <a href="tel:+584148944748" data-tel>+58 414 894 4748</a></p>
       <p class="nota">¿Ya eres cliente? <a href="/login.html">Entra a tu sistema</a>.</p>
     </div>
   </section>
@@ -591,6 +664,84 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
     </nav>
   </div>
 </footer>
+
+<dialog class="demo" id="demo" aria-labelledby="demo-titulo">
+  <div class="caja">
+    <form id="demo-form" novalidate>
+      <div class="cabeza">
+        <div>
+          <h2 id="demo-titulo">Pide una demo</h2>
+          <p class="intro">Te mostramos Vertigo Pro con los productos de tu negocio. Te escribimos en menos de un día hábil.</p>
+        </div>
+        <button class="boton borde x" type="button" data-cerrar aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="campos">
+        <div class="campo">
+          <label for="d-nombre">Tu nombre</label>
+          <input id="d-nombre" name="nombre" autocomplete="name" maxlength="80" required aria-describedby="e-nombre">
+          <p class="error" id="e-nombre" aria-live="polite"></p>
+        </div>
+        <div class="campo">
+          <label for="d-negocio">Nombre del negocio</label>
+          <input id="d-negocio" name="negocio" autocomplete="organization" maxlength="120" required aria-describedby="e-negocio">
+          <p class="error" id="e-negocio" aria-live="polite"></p>
+        </div>
+        <div class="campo">
+          <label for="d-telefono">Teléfono o WhatsApp</label>
+          <input id="d-telefono" name="telefono" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder="0414 123 4567" required aria-describedby="e-telefono">
+          <p class="error" id="e-telefono" aria-live="polite"></p>
+        </div>
+        <div class="campo">
+          <label for="d-correo">Correo</label>
+          <input id="d-correo" name="correo" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" maxlength="120" placeholder="tu@negocio.com" required aria-describedby="e-correo">
+          <p class="error" id="e-correo" aria-live="polite"></p>
+        </div>
+        <div class="campo ancho">
+          <label for="d-tipo">Tipo de negocio</label>
+          <select id="d-tipo" name="tipo" required aria-describedby="e-tipo">
+            <option value="" selected disabled>Elige uno</option>
+            <option>Restaurante o comida rápida</option>
+            <option>Panadería, pastelería o café</option>
+            <option>Licorería o bodega</option>
+            <option>Tienda o retail</option>
+            <option>Producción o distribución</option>
+            <option>Otro</option>
+          </select>
+          <p class="error" id="e-tipo" aria-live="polite"></p>
+        </div>
+        <fieldset class="campo ancho rangos" id="d-empleados" aria-describedby="e-empleados">
+          <legend>¿Cuántas personas trabajan en el negocio?</legend>
+          <div class="opciones">
+            <label class="op"><input type="radio" name="empleados" value="1 a 5"><span>1 a 5</span></label>
+            <label class="op"><input type="radio" name="empleados" value="6 a 15"><span>6 a 15</span></label>
+            <label class="op"><input type="radio" name="empleados" value="16 a 50"><span>16 a 50</span></label>
+            <label class="op"><input type="radio" name="empleados" value="Más de 50"><span>Más de 50</span></label>
+          </div>
+          <p class="error" id="e-empleados" aria-live="polite"></p>
+        </fieldset>
+        <div class="campo ancho">
+          <label for="d-mensaje">Mensaje <span class="opcional">(opcional)</span></label>
+          <textarea id="d-mensaje" name="mensaje" maxlength="1500" rows="3" placeholder="Qué vendes, cuántos locales tienes, qué te gustaría resolver…"></textarea>
+        </div>
+        <div class="trampa" aria-hidden="true">
+          <label for="d-sitio">No llenar</label>
+          <input id="d-sitio" name="sitio_web" tabindex="-1" autocomplete="off">
+        </div>
+      </div>
+      <p class="fallo" id="demo-fallo" role="alert" hidden></p>
+      <div class="envio">
+        <button class="boton perla" type="submit" id="demo-enviar">Enviar solicitud</button>
+        <p class="aviso">Solo usamos estos datos para contactarte sobre la demo.</p>
+      </div>
+    </form>
+    <div class="listo" id="demo-listo" hidden>
+      <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h2 tabindex="-1" id="demo-listo-titulo">Recibido</h2>
+      <p id="demo-listo-texto">Te escribimos en menos de un día hábil.</p>
+      <button class="boton borde" type="button" data-cerrar>Cerrar</button>
+    </div>
+  </div>
+</dialog>
 
 <script src="/legal-datos.js" defer></script>
 <script>
@@ -651,6 +802,10 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
     if (d.correo) document.querySelectorAll('[data-correo]').forEach(function (a) {
       a.href = 'mailto:' + d.correo + '?subject=' + encodeURIComponent('Demo de Vertigo Pro');
     });
+    if (d.telefono) document.querySelectorAll('[data-tel]').forEach(function (a) {
+      a.textContent = d.telefono;
+      a.href = 'tel:+' + String(d.whatsapp || d.telefono).replace(/\D/g, '');
+    });
     var wa = document.getElementById('whatsapp');
     if (d.whatsapp && wa) {
       wa.href = 'https://wa.me/' + String(d.whatsapp).replace(/\D/g, '') + '?text=' + encodeURIComponent('Hola, quiero una demo de Vertigo Pro.');
@@ -674,6 +829,120 @@ html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]
   abrir.addEventListener('click', function () { menu.setAttribute('open', ''); abrir.setAttribute('aria-expanded', 'true'); });
   document.getElementById('cerrar-menu').addEventListener('click', cerrarMenu);
   menu.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', cerrarMenu); });
+
+  // Ya lo usan: en el teléfono no hay cursor, así que el toque enciende el
+  // color del logo (y apaga el otro); tocar fuera lo devuelve a la tinta.
+  var logos = document.querySelectorAll('.logo');
+  if (!window.matchMedia('(hover: hover)').matches) {
+    logos.forEach(function (l) {
+      l.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var encender = !l.classList.contains('color');
+        logos.forEach(function (o) { o.classList.remove('color'); });
+        l.classList.toggle('color', encender);
+      });
+    });
+    document.addEventListener('click', function () { logos.forEach(function (o) { o.classList.remove('color'); }); });
+  }
+
+  // Pide una demo: el formulario en un <dialog>. Sin JavaScript (o en un
+  // navegador sin <dialog>), el enlace sigue siendo el mailto de siempre.
+  var dlg = document.getElementById('demo'), form = document.getElementById('demo-form');
+  var listo = document.getElementById('demo-listo'), fallo = document.getElementById('demo-fallo');
+  var enviar = document.getElementById('demo-enviar'), intentado = false;
+  function wa() { var d = window.VP_LEGAL || {}; return d.whatsapp ? 'https://wa.me/' + String(d.whatsapp).replace(/\D/g, '') + '?text=' + encodeURIComponent('Hola, quiero una demo de Vertigo Pro.') : ''; }
+  function abrirDemo(ev) {
+    if (typeof dlg.showModal !== 'function') return;
+    ev.preventDefault();
+    cerrarMenu();
+    if (!listo.hidden) { form.reset(); form.hidden = false; listo.hidden = true; intentado = false; limpiarErrores(); }
+    dlg.showModal();
+    // En el teléfono no se abre el teclado solo: primero se lee de qué se trata.
+    if (window.matchMedia('(hover: hover)').matches) form.nombre.focus(); else dlg.querySelector('h2').focus({ preventScroll: true });
+  }
+  dlg.querySelector('h2').setAttribute('tabindex', '-1');
+  document.querySelectorAll('[data-correo]').forEach(function (a) { a.addEventListener('click', abrirDemo); });
+  dlg.querySelectorAll('[data-cerrar]').forEach(function (b) { b.addEventListener('click', function () { dlg.close(); }); });
+  // Un clic en el fondo oscuro (fuera de la caja) también cierra.
+  dlg.addEventListener('click', function (ev) { if (ev.target === dlg) dlg.close(); });
+
+  var REGLAS = {
+    nombre: function (v) { return v.trim().length >= 2 ? '' : 'Escribe tu nombre.'; },
+    negocio: function (v) { return v.trim().length >= 2 ? '' : 'Escribe el nombre del negocio.'; },
+    telefono: function (v) { var n = v.replace(/\D/g, '').length; return n >= 10 && n <= 15 ? '' : (n ? 'Escribe el número completo, con su código de área.' : 'Escribe un teléfono o WhatsApp.'); },
+    correo: function (v) { return /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(v.trim()) ? '' : (v.trim() ? 'Ese correo no parece válido.' : 'Escribe tu correo.'); },
+    tipo: function (v) { return v ? '' : 'Elige el tipo de negocio.'; },
+    empleados: function (v) { return v ? '' : 'Elige un rango.'; }
+  };
+  function marcar(nombre, mensaje) {
+    var el = nombre === 'empleados' ? document.getElementById('d-empleados') : form.elements[nombre];
+    el.setAttribute('aria-invalid', mensaje ? 'true' : 'false');
+    document.getElementById('e-' + nombre).textContent = mensaje;
+  }
+  function limpiarErrores() { Object.keys(REGLAS).forEach(function (n) { marcar(n, ''); }); fallo.hidden = true; }
+  function validar() {
+    var primero = null;
+    Object.keys(REGLAS).forEach(function (n) {
+      var m = REGLAS[n](form.elements[n].value || '');
+      marcar(n, m);
+      if (m && !primero) primero = n;
+    });
+    return primero;
+  }
+  // Tras el primer intento, cada campo se revisa mientras se corrige.
+  form.addEventListener('input', function (ev) { var n = ev.target.name; if (intentado && REGLAS[n]) marcar(n, REGLAS[n](form.elements[n].value || '')); });
+  form.addEventListener('change', function (ev) { var n = ev.target.name; if (intentado && REGLAS[n]) marcar(n, REGLAS[n](form.elements[n].value || '')); });
+
+  function mostrarFallo(texto) {
+    var enlace = wa();
+    fallo.textContent = texto;
+    if (enlace) {
+      var a = document.createElement('a');
+      a.href = enlace; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'escríbenos por WhatsApp';
+      fallo.appendChild(document.createTextNode(' O '));
+      fallo.appendChild(a);
+      fallo.appendChild(document.createTextNode('.'));
+    }
+    fallo.hidden = false;
+  }
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    intentado = true;
+    fallo.hidden = true;
+    var primero = validar();
+    if (primero) {
+      var el = primero === 'empleados' ? form.querySelector('[name="empleados"]') : form.elements[primero];
+      el.focus();
+      return;
+    }
+    var datos = {};
+    ['nombre', 'negocio', 'telefono', 'correo', 'tipo', 'empleados', 'mensaje', 'sitio_web'].forEach(function (n) { datos[n] = (form.elements[n].value || '').trim(); });
+    enviar.disabled = true; enviar.textContent = 'Enviando…';
+    var corte = new AbortController(), reloj = setTimeout(function () { corte.abort(); }, 30000);
+    fetch('/api/sitio/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos), signal: corte.signal })
+      .then(function (r) {
+        if (r.ok) return null;
+        return r.json().catch(function () { return {}; }).then(function (j) { j.status = r.status; return j; });
+      })
+      .then(function (err) {
+        if (!err) {
+          document.getElementById('demo-listo-titulo').textContent = 'Recibido, ' + datos.nombre.split(' ')[0] + '.';
+          document.getElementById('demo-listo-texto').textContent = 'Te escribimos en menos de un día hábil al correo o al WhatsApp que dejaste.';
+          form.hidden = true; listo.hidden = false;
+          document.getElementById('demo-listo-titulo').focus();
+          return;
+        }
+        // 422: el servidor encontró algo que aquí pasó; se marca en su campo.
+        if (err.status === 422 && Array.isArray(err.detail)) {
+          var marcado = false;
+          err.detail.forEach(function (d) { var n = d.loc && d.loc[d.loc.length - 1]; if (REGLAS[n]) { marcar(n, String(d.msg || '').replace(/^Value error, /, '')); marcado = true; } });
+          if (marcado) return;
+        }
+        mostrarFallo(err.status === 429 ? 'Ya recibimos varias solicitudes desde aquí en la última hora.' : 'No pudimos enviar tu solicitud. Intenta de nuevo en un momento.');
+      })
+      .catch(function () { mostrarFallo('No hay conexión o el servidor no respondió. Intenta de nuevo.'); })
+      .then(function () { clearTimeout(reloj); enviar.disabled = false; enviar.textContent = 'Enviar solicitud'; });
+  });
 
   // El brillo de la V sigue el puntero (sin estado de React ni scroll: solo variables CSS).
   var escena = document.getElementById('escena');

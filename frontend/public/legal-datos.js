@@ -9,15 +9,17 @@
  * el texto de respaldo de las páginas (búscalo con `data-legal`).
  *
  * Marcas que entiende, en cualquier elemento:
- *   data-legal="empresa" | "correo" | "pais" | "actualizada"  -> pone el texto
+ *   data-legal="empresa" | "correo" | "telefono" | "pais" | "actualizada"  -> pone el texto
  *   en un <a data-legal="correo"> además pone href="mailto:..."
+ *   en un <a data-legal="telefono"> además pone href="https://wa.me/..." (el WhatsApp)
  */
 window.VP_LEGAL = {
   empresa: 'Vertigo',
   correo: 'leideriverson@gmail.com',
-  // WhatsApp para el sitio publico, con codigo de pais y sin espacios ('584121234567').
-  // Vacio = el sitio no muestra el boton de WhatsApp.
-  whatsapp: '',
+  // El telefono como se lee, y el mismo numero para WhatsApp: con codigo de
+  // pais y sin espacios ('584121234567'). Vacio = el sitio no muestra el boton.
+  telefono: '+58 414 894 4748',
+  whatsapp: '584148944748',
   pais: 'Venezuela',
   actualizada: '12 de octubre de 2026',
 };
@@ -33,6 +35,9 @@ window.VP_LEGAL = {
       el.textContent = valor;
       if (el.tagName === 'A' && el.getAttribute('data-legal') === 'correo') {
         el.setAttribute('href', 'mailto:' + valor);
+      }
+      if (el.tagName === 'A' && el.getAttribute('data-legal') === 'telefono' && datos.whatsapp) {
+        el.setAttribute('href', 'https://wa.me/' + String(datos.whatsapp).replace(/\D/g, ''));
       }
     }
   }

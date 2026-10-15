@@ -19,19 +19,19 @@
   cambialo en las tres.
 -->
 <style>
-  /* Los mismos tokens de login.html (papel y grafito, con el cobre de Savora
-     como unico acento). Aqui el tema lo decide el sistema: sin JavaScript. */
+  /* Los tokens del sitio de Vertigo: papel y grafito, perla en oscuro. Sin cobre:
+     ese acento es solo de Savora. Aqui el tema lo decide el sistema: sin JavaScript. */
   :root {
     --tinta: #17181b; --tinta-suave: #3e3d3a; --apagado: #6d6b66;
     --tenue: #98948b; --linea: #e2ded5; --fondo: #f6f4ef; --sup: #ffffff;
-    --acento: oklch(51% 0.119 42); --acento-hover: oklch(44% 0.102 42);
+    --acento: #17181b; --acento-hover: #3e3d3a;
     --textura: rgba(23,24,27,.05);
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --tinta: #f1f3f7; --tinta-suave: #d1d5dd; --apagado: #a1a7b4;
       --tenue: #7c8290; --linea: #262a33; --fondo: #0e1014; --sup: #161920;
-      --acento: oklch(70% 0.106 42); --acento-hover: oklch(78% 0.119 42);
+      --acento: #efe9df; --acento-hover: #ffffff;
       --textura: rgba(255,255,255,.045);
     }
   }
@@ -111,6 +111,7 @@
     <h2 id="t-contacto">Escríbenos</h2>
     <p>
       <a data-legal="correo" href="mailto:leideriverson@gmail.com">leideriverson@gmail.com</a><br>
+      WhatsApp: <a data-legal="telefono" href="https://wa.me/584148944748">+58 414 894 4748</a><br>
       Te respondemos en un máximo de 2 días hábiles. Cuéntanos el nombre del local, tu usuario y qué pasó; si puedes,
       manda una captura de pantalla.
     </p>

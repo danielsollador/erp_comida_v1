@@ -206,6 +206,19 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
+  # El formulario "Pide una demo" del sitio publico: lo llena quien todavia no
+  # tiene usuario. El backend le pone su propio limite por IP y valida todo.
+  location = /api/sitio/demo {
+    auth_request off;
+    client_max_body_size 16k;
+    proxy_pass $destino$request_uri;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
   location = /api/health {
     auth_request off;
     access_log off;

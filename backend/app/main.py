@@ -35,6 +35,7 @@ from .routers import (
     reportes,
     reportes_dinamicos,
     respaldos,
+    sitio,
     tasas,
     usuarios as usuarios_router,
     ventas,
@@ -167,10 +168,11 @@ app.add_middleware(
 )
 
 # Lo que se puede pedir sin sesion: las rutas del propio acceso --que son las
-# que la crean-- y la salud, que la consulta Docker antes de que exista nadie.
-SIN_SESION = ("/api/acceso/", "/api/health")
+# que la crean--, la salud, que la consulta Docker antes de que exista nadie, y
+# el formulario de demo del sitio publico (ver `routers/sitio.py`).
+SIN_SESION = ("/api/acceso/", "/api/health", "/api/sitio/")
 # Lo unico que el hub sirve. El resto ni existe ahi: el hub no tiene datos.
-SOLO_HUB = ("/api/acceso/", "/api/usuarios", "/api/agencia", "/api/health")
+SOLO_HUB = ("/api/acceso/", "/api/usuarios", "/api/agencia", "/api/health", "/api/sitio/")
 
 
 @app.middleware("http")
@@ -234,6 +236,7 @@ app.include_router(reportes_dinamicos.router)
 app.include_router(reportes.router)
 app.include_router(ventas.router)
 app.include_router(respaldos.router)
+app.include_router(sitio.router)
 app.include_router(tasas.router)
 app.include_router(contabilidad_router.router)
 app.include_router(compras.router)
