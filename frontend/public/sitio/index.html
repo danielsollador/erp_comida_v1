@@ -430,6 +430,7 @@ html:has(.demo[open]) { overflow: hidden; }
   .demo[open] { animation: none; }
 }
 </style>
+<link rel="stylesheet" href="/sitio/animacion/vertigo-intro.css">
 </head>
 <body>
 <a class="salto" href="#producto">Ir al contenido</a>
@@ -472,7 +473,7 @@ html:has(.demo[open]) { overflow: hidden; }
         <p class="sub">Punto de venta, producción, compras, inventario, caja y reportes para pymes de producción y retail, con una inteligencia artificial que entiende tu negocio.</p>
         <div class="ctas">
           <a class="boton perla" href="mailto:leideriverson@gmail.com?subject=Demo%20de%20Vertigo%20Pro" data-correo>Pide una demo</a>
-          <a class="boton borde" href="#dia">Ver cómo funciona</a>
+          <a class="boton borde" href="#conoce">Ver cómo funciona</a>
         </div>
       </div>
       <div class="escena" id="escena" aria-hidden="true">
@@ -480,6 +481,16 @@ html:has(.demo[open]) { overflow: hidden; }
         <div class="sombra"></div>
         <div class="v-grande"></div>
       </div>
+    </div>
+  </section>
+
+  <section class="vpi-seccion" id="conoce" aria-labelledby="conoce-titulo">
+    <div class="cont">
+      <div class="vpi-seccion-cab">
+        <h2 id="conoce-titulo">Conoce Vertigo Pro</h2>
+        <p>Todo lo que hace, en menos de lo que dura un café. Dale a la voz.</p>
+      </div>
+      <div data-vp-intro data-base="/sitio/animacion/" data-voz="despina"></div>
     </div>
   </section>
 
@@ -753,6 +764,7 @@ html:has(.demo[open]) { overflow: hidden; }
 </dialog>
 
 <script src="/legal-datos.js" defer></script>
+<script src="/sitio/animacion/vertigo-intro.js" defer></script>
 <script>
 (function () {
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
