@@ -96,12 +96,6 @@ services:
       ERP_SESSION_SECRET: ${ERP_SESSION_SECRET:-}
       ERP_CORS_ORIGINS: https://vertigopro.tech
       ERP_BACKUP_ON_STARTUP: "0"
-      # El formulario "Pide una demo" del sitio (routers/sitio.py): manda el
-      # correo con una clave de aplicacion de Gmail. Sin ella, el formulario
-      # guarda la solicitud y ofrece WhatsApp.
-      SMTP_USUARIO: ${SMTP_USUARIO:-}
-      SMTP_CLAVE: ${SMTP_CLAVE:-}
-      DEMO_DESTINO: ${DEMO_DESTINO:-}
       TZ: ${TZ:-America/Caracas}
     volumes:
       - hub_data:/data

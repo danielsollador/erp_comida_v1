@@ -6,9 +6,11 @@ Es la UNICA ruta que escribe sin sesion, asi que va con tres cuidados:
     nunca ve y un robot llena: a ese se le contesta "listo" y no se manda nada;
   * cada solicitud se anota PRIMERO en `solicitudes-demo.jsonl` (en DATA_DIR),
     y solo despues se manda el correo: si Gmail falla, el contacto no se pierde;
-  * el correo sale por SMTP con una clave de aplicacion (`SMTP_USUARIO`,
-    `SMTP_CLAVE`); `Reply-To` es el correo de quien pide, para responderle con
-    un clic. Sin clave configurada, responde 503 y el sitio ofrece WhatsApp.
+  * el correo lo manda FormSubmit (formsubmit.co) al buzon de `DESTINO`: no
+    hace falta cuenta ni clave de nadie. La PRIMERA vez FormSubmit le escribe
+    a ese buzon para que active el formulario con un clic; hasta entonces
+    contesta "needs Activation" y aqui sale como error (la solicitud ya quedo
+    anotada). `_replyto` es el correo de quien pide: se le responde con un clic.
 """
 from __future__ import annotations
 
@@ -16,14 +18,11 @@ import json
 import logging
 import os
 import re
-import smtplib
-import ssl
 import threading
 import time
 from datetime import datetime
-from email.message import EmailMessage
-from email.utils import formataddr
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
@@ -45,6 +44,8 @@ TIPOS = (
 _CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 _ARCHIVO = os.path.join(settings.DATA_DIR, "solicitudes-demo.jsonl")
 _lock = threading.Lock()
+DESTINO = os.getenv("DEMO_DESTINO", "").strip() or "leideriverson@gmail.com"
+SITIO = "https://vertigopro.tech/"
 _envios: dict[str, list[float]] = {}  # IP -> horas de sus envios, ultima hora
 LIMITE, VENTANA = 5, 3600
 
@@ -128,34 +129,32 @@ def _anotar(datos: dict) -> None:
 
 
 def _enviar(s: SolicitudDemo) -> None:
-    usuario = os.getenv("SMTP_USUARIO", "").strip()
-    clave = os.getenv("SMTP_CLAVE", "").replace(" ", "").strip()
-    if not usuario or not clave:
-        raise RuntimeError("SMTP sin configurar (SMTP_USUARIO / SMTP_CLAVE)")
-    destino = os.getenv("DEMO_DESTINO", "").strip() or "leideriverson@gmail.com"
-
-    m = EmailMessage()
-    m["Subject"] = f"Demo de Vertigo Pro: {s.negocio} ({s.nombre})"
-    m["From"] = formataddr(("Vertigo Pro · sitio", usuario))
-    m["To"] = destino
-    m["Reply-To"] = formataddr((s.nombre, s.correo))
     wa = re.sub(r"\D", "", s.telefono)
-    m.set_content(
-        "Nueva solicitud de demo desde vertigopro.tech\n\n"
-        f"Nombre:     {s.nombre}\n"
-        f"Negocio:    {s.negocio}\n"
-        f"Tipo:       {s.tipo}\n"
-        f"Empleados:  {s.empleados}\n"
-        f"Teléfono:   {s.telefono}  (WhatsApp: https://wa.me/{wa})\n"
-        f"Correo:     {s.correo}\n\n"
-        f"Mensaje:\n{s.mensaje or '(sin mensaje)'}\n\n"
-        "Responde a este correo y le llega a quien lo pidió.\n"
+    # Las claves con guion bajo son de FormSubmit; el resto sale como tabla.
+    datos = {
+        "_subject": f"Demo de Vertigo Pro: {s.negocio} ({s.nombre})",
+        "_replyto": s.correo,
+        "_template": "table",
+        "Nombre": s.nombre,
+        "Negocio": s.negocio,
+        "Tipo de negocio": s.tipo,
+        "Empleados": s.empleados,
+        "Teléfono": s.telefono,
+        "WhatsApp": f"https://wa.me/{wa}",
+        "Correo": s.correo,
+        "Mensaje": s.mensaje or "(sin mensaje)",
+    }
+    # FormSubmit rechaza lo que no venga de una pagina: se le dice cual.
+    r = httpx.post(
+        f"https://formsubmit.co/ajax/{DESTINO}",
+        json=datos,
+        headers={"Accept": "application/json", "Referer": SITIO, "Origin": SITIO.rstrip("/")},
+        timeout=20,
     )
-    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    puerto = int(os.getenv("SMTP_PUERTO", "465"))
-    with smtplib.SMTP_SSL(host, puerto, context=ssl.create_default_context(), timeout=20) as c:
-        c.login(usuario, clave)
-        c.send_message(m)
+    r.raise_for_status()
+    respuesta = r.json()
+    if str(respuesta.get("success")).lower() != "true":
+        raise RuntimeError(f"FormSubmit: {respuesta.get('message')}")
 
 
 @router.post("/demo")

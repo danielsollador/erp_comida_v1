@@ -88,8 +88,15 @@ def test_si_el_correo_falla_responde_error_pero_la_guarda(fuera, monkeypatch):
     assert len(_anotadas()) == 1
 
 
-def test_sin_clave_no_intenta_conectar(monkeypatch):
-    monkeypatch.delenv("SMTP_USUARIO", raising=False)
-    monkeypatch.delenv("SMTP_CLAVE", raising=False)
-    with pytest.raises(RuntimeError, match="SMTP sin configurar"):
+def test_formsubmit_sin_activar_es_error(monkeypatch):
+    """La primera vez FormSubmit pide activar el buzon: no cuenta como enviado."""
+    class Resp:
+        def raise_for_status(self): pass
+        def json(self): return {"success": "false", "message": "This form needs Activation."}
+    llamadas = []
+    monkeypatch.setattr(sitio.httpx, "post", lambda url, **kw: llamadas.append((url, kw)) or Resp())
+    with pytest.raises(RuntimeError, match="Activation"):
         ENVIAR_REAL(sitio.SolicitudDemo(**BUENO))
+    url, kw = llamadas[0]
+    assert url.endswith("/ajax/leideriverson@gmail.com")
+    assert kw["json"]["_replyto"] == "ana@ejemplo.com"
