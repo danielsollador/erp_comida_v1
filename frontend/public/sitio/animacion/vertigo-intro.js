@@ -11,6 +11,10 @@
  * Para comparar voces: ?voz=despina | callirrhoe | leda | aoede
  */
 (() => {
+  // /sitio/ se guarda 1 h en el navegador: el ?v= del <script> en index.html (cámbialo en
+  // cada despliegue) viaja también al JSON y al mp3 para que nadie vea una versión vieja
+  const VERSION = (document.currentScript && new URL(document.currentScript.src).searchParams.get('v')) || '';
+  const conVersion = (url) => (VERSION ? `${url}?v=${VERSION}` : url);
   const VOCES = ['despina', 'callirrhoe', 'leda', 'aoede'];
   const EASE = 'cubic-bezier(.2,.7,.2,1)';       // la curva del sitio
   const REBOTE = 'cubic-bezier(.34,1.5,.64,1)';
@@ -207,7 +211,7 @@
     let voz = (new URLSearchParams(location.search).get('voz') || raiz.dataset.voz || VOCES[0]).toLowerCase();
     if (!VOCES.includes(voz)) voz = VOCES[0];
     let guion;
-    try { guion = await (await fetch(`${base}voz-${voz}.json`)).json(); } catch { return; }
+    try { guion = await (await fetch(conVersion(`${base}voz-${voz}.json`))).json(); } catch { return; }
     const T = guion.duracion, m = guion.marcas;
     const transcripcion = Object.values(m).map((x) => x.texto).filter(Boolean).join(' ').replace('Vértigo', 'Vertigo');
 
@@ -216,7 +220,7 @@
     const esc = $('.vpi');
     const audio = new Audio();
     audio.preload = 'none';
-    audio.src = `${base}voz-${voz}.mp3`;
+    audio.src = conVersion(`${base}voz-${voz}.mp3`);
 
     const mqReducido = matchMedia('(prefers-reduced-motion: reduce)');
     let reducido = mqReducido.matches;
