@@ -221,7 +221,7 @@
     const mqReducido = matchMedia('(prefers-reduced-motion: reduce)');
     let reducido = mqReducido.matches;
     let anims = [], contadores = [];
-    let t = 0, estado = 'inicio', conVoz = false, pausaAuto = false, raf = 0, ultimo = 0, esperando = 0, visible = false;
+    let t = 0, estado = 'inicio', conVoz = false, pausaAuto = false, raf = 0, ultimo = 0, esperando = 0, visible = false, ajustado = 0;
 
     /* ── Constructor de la línea de tiempo ── */
     function K(el, claves) {
@@ -546,7 +546,7 @@
         K(n, claves);
       });
       K($('.vpi-noti-btn'), [[tPe + 0.6, { transform: 'scale(1)' }], [tPe + 0.75, { transform: 'scale(.92)' }, SUAVE], [tPe + 0.95, { transform: 'scale(1)' }, REBOTE]]);
-      const py = alta ? -0.465 * H : 0.33 * H;
+      const py = alta ? -0.415 * H : 0.33 * H;
       K($('.vpi-pronto'), [
         [tAp + 0.1, { opacity: 0, transform: tf(nx, py + 8, 0) }],
         [tAp + 0.6, { opacity: 1, transform: tf(nx, py, 0) }, EASE],
@@ -604,7 +604,14 @@
       const dt = Math.min((ahora - ultimo) / 1000, 0.1);
       ultimo = ahora;
       if (conVoz) {
-        if (!audio.paused && audio.currentTime > 0) { t = audio.currentTime; esperando = 0; }
+        if (!audio.paused && audio.currentTime > 0) {
+          // el video nunca salta hacia atrás: si el audio quedó desfasado, se mueve el audio
+          if (Math.abs(audio.currentTime - t) > 0.6) {
+            if (!audio.seeking && ahora - ajustado > 1000) { audio.currentTime = t; ajustado = ahora; }
+            t += dt;
+          } else t = audio.currentTime;
+          esperando = 0;
+        }
         else { esperando += dt; if (esperando > 1.2) t += dt; }   // si el audio no arranca, seguimos sin él
       } else t += dt;
       if (t >= T) { t = T; ir(t); return terminar(); }
@@ -613,10 +620,14 @@
     }
     function sonar(desde) {
       audio.preload = 'auto';
+      // el audio tiene que entrar donde va el video, no desde cero: se fija antes
+      // y se corrige cuando ya tiene datos o arranca
+      const ajustar = () => { if (Math.abs(audio.currentTime - t) > 0.25) audio.currentTime = t; };
+      try { audio.currentTime = desde; } catch {}
+      audio.addEventListener('loadedmetadata', ajustar, { once: true });
+      audio.addEventListener('playing', ajustar, { once: true });
       const p = audio.play();
       if (p) p.catch(() => { conVoz = false; pintar(); });
-      if (audio.readyState >= 1) audio.currentTime = desde;
-      else audio.addEventListener('loadedmetadata', () => { audio.currentTime = t; }, { once: true });
     }
     function empezar(desde, voz) {
       t = desde; conVoz = voz; pausaAuto = false;
@@ -632,7 +643,7 @@
     }
     function reanudar() { empezar(t, conVoz); }
     function terminar() {
-      estado = 'fin'; conVoz = false; audio.pause(); cancelAnimationFrame(raf); pintar();
+      estado = 'fin'; audio.pause(); cancelAnimationFrame(raf); pintar();
     }
 
     /* ── Controles ── */
@@ -651,25 +662,36 @@
       bPP.setAttribute('aria-label', pp[0]); bPP.innerHTML = pp[1];
     }
     grande.addEventListener('click', () => (estado === 'pausa' ? reanudar() : empezar(0, true)));
+    // La voz va por defecto (Leider, 15-oct). Solo se apaga si la persona la silencia.
+    let silenciado = false;
     bVoz.addEventListener('click', () => {
-      if (conVoz) { conVoz = false; audio.pause(); pintar(); return; }
+      if (conVoz) { silenciado = true; conVoz = false; audio.pause(); pintar(); return; }
+      silenciado = false;
       // con la voz se ve desde el principio, salvo que apenas haya empezado
       if (estado !== 'corriendo' || t > 1.2) empezar(0, true);
       else { conVoz = true; sonar(t); pintar(); }
     });
     bPP.addEventListener('click', () => {
       if (estado === 'corriendo') pausar(false);
-      else if (estado === 'fin' || estado === 'inicio') empezar(0, conVoz);
+      else if (estado === 'fin' || estado === 'inicio') empezar(0, !silenciado);
       else reanudar();
     });
     audio.addEventListener('ended', () => { if (conVoz && estado === 'corriendo') { t = T; ir(t); terminar(); } });
+    // El navegador no deja sonar sin un gesto de la persona: si bloqueó la voz al
+    // arrancar, el primer toque, clic o tecla en cualquier parte de la página la
+    // enciende donde va el video (sin volver a empezar).
+    const alGesto = (e) => {
+      if (silenciado || conVoz || estado !== 'corriendo' || !visible || esc.contains(e.target)) return;
+      conVoz = true; sonar(t); pintar();
+    };
+    ['click', 'keydown', 'touchend'].forEach((ev) => document.addEventListener(ev, alGesto, { capture: true, passive: true }));
 
-    /* se ve sola y en silencio cuando entra en pantalla; se pausa al salir */
+    /* arranca sola al entrar en pantalla, con voz si el navegador lo permite; se pausa al salir */
     new IntersectionObserver((ents) => {
       for (const e of ents) {
         visible = e.isIntersecting;
-        if (visible && audio.preload === 'none') audio.preload = 'metadata';
-        if (visible && estado === 'inicio' && !reducido) empezar(0, false);
+        if (visible && audio.preload !== 'auto') audio.preload = 'auto';
+        if (visible && estado === 'inicio' && !reducido) empezar(0, !silenciado);
         else if (visible && estado === 'pausa' && pausaAuto) reanudar();
         else if (!visible && estado === 'corriendo') pausar(true);
       }
@@ -696,6 +718,6 @@
     if (reducido) { t = T; ir(T); t = 0; }
     pintar();
     // para revisar un cuadro exacto desde la consola: el.vpi.ver(10.5)
-    raiz.vpi = { T, m, ver: (s) => { pausar(false); t = s; ir(s); } };
+    raiz.vpi = { T, m, ver: (s) => { pausar(false); t = s; ir(s); }, get t() { return t; } };
   }
 })();

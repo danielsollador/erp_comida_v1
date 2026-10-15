@@ -136,10 +136,10 @@
 .vpi[data-forma="alta"] .vpi-estrella { width: calc(var(--u) * 4.4); height: calc(var(--u) * 4.4); }
 
 /* tasas */
-.vpi-tasas { width: 100%; display: grid; gap: 3cqw; }
-.vpi-tasa { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 2.4cqw; border-bottom: 1px solid rgba(255,255,255,.08); }
+.vpi-tasas { width: 100%; display: grid; gap: 2cqw; }
+.vpi-tasa { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 1.6cqw; border-bottom: 1px solid rgba(255,255,255,.08); }
 .vpi-tasa span { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 4.4cqw; color: var(--gris); letter-spacing: .04em; }
-.vpi-tasa b { font-family: 'Sora', system-ui, sans-serif; font-weight: 600; font-size: 9cqw; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.vpi-tasa b { font-family: 'Sora', system-ui, sans-serif; font-weight: 600; font-size: 8cqw; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .vpi-sinc { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 3.6cqw; color: var(--gris-2); display: flex; align-items: center; gap: 2cqw; }
 .vpi-sinc i { width: 1.8cqw; height: 1.8cqw; border-radius: 50%; background: var(--perla); box-shadow: 0 0 2.4cqw rgba(239,233,223,.9); }
 
