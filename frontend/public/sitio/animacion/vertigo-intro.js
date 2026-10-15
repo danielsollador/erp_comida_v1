@@ -626,6 +626,12 @@
       try { audio.currentTime = desde; } catch {}
       audio.addEventListener('loadedmetadata', ajustar, { once: true });
       audio.addEventListener('playing', ajustar, { once: true });
+      // lo que muestra la pantalla bloqueada del teléfono mientras suena
+      if ('mediaSession' in navigator && 'MediaMetadata' in window) {
+        try {
+          navigator.mediaSession.metadata = new MediaMetadata({ title: 'Conoce Vertigo Pro', artist: 'Vertigo', artwork: [{ src: '/sitio/icono-512.png', sizes: '512x512', type: 'image/png' }] });
+        } catch {}
+      }
       const p = audio.play();
       if (p) p.catch(() => { conVoz = false; pintar(); });
     }
