@@ -171,6 +171,17 @@ export default function Inventario() {
 
   async function alternarVentaSinInventario() {
     if (!config) return
+    // Prenderlo cambia TODAS las ventas: se pregunta. Apagarlo es volver a lo normal.
+    if (
+      !config.vender_sin_inventario &&
+      !(await dialogo.confirmar({
+        titulo: '¿Vender sin stock?',
+        texto:
+          'Ninguna venta se va a trabar por falta de inventario, aunque el producto tenga receta. Lo vendido igual se descuenta y el stock puede quedar en negativo hasta que cargues la compra o hagas el conteo.',
+        aceptar: 'Sí, vender sin stock',
+      }))
+    )
+      return
     setCambiandoConfig(true)
     try {
       setConfig(await api.venderSinInventario(!config.vender_sin_inventario))
@@ -434,8 +445,8 @@ export default function Inventario() {
         {config?.vender_sin_inventario && (
           <div className="rounded-2xl bg-aviso-500/10 p-4 flex items-center justify-between gap-4">
             <div>
-              <h2 className="font-semibold text-aviso-900">Vender sin control de inventario</h2>
-              <p className="text-sm mt-0.5 text-aviso-800">Prendido: ninguna venta se traba por falta de stock, aunque un producto tenga receta.</p>
+              <h2 className="font-semibold text-aviso-900">Vendiendo sin stock</h2>
+              <p className="text-sm mt-0.5 text-aviso-800">Ninguna venta se traba por falta de inventario, aunque el producto tenga receta. Apágalo cuando cargues la compra.</p>
             </div>
             <button
               onClick={alternarVentaSinInventario}
@@ -452,6 +463,14 @@ export default function Inventario() {
           <>
             <div className="flex flex-wrap items-center justify-end gap-3">
               <div className="flex items-center gap-2">
+                {/* A la vista y no dentro del "⋯" (17-oct): cuando se acaba
+                    algo en pleno servicio hay que encontrarlo ya. Prendido,
+                    lo apaga el aviso de arriba. */}
+                {config && !config.vender_sin_inventario && (
+                  <Boton tono="suave" onClick={() => void alternarVentaSinInventario()} disabled={cambiandoConfig}>
+                    Vender sin stock
+                  </Boton>
+                )}
                 <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
                   Conteo físico
                 </Boton>
@@ -462,13 +481,6 @@ export default function Inventario() {
                   <MenuAcciones
                     etiqueta="Más opciones del inventario"
                     opciones={[
-                      {
-                        texto: config.vender_sin_inventario ? 'Apagar la venta sin control de inventario' : 'Vender sin control de inventario',
-                        ayuda: config.vender_sin_inventario
-                          ? 'Las ventas vuelven a descontar y trabarse por stock'
-                          : 'Para arrancar sin mercancía ni recetas: ninguna venta se traba por stock',
-                        onElegir: () => void alternarVentaSinInventario(),
-                      },
                       { texto: 'Administrar categorías', onElegir: () => irA('categorias') },
                     ]}
                   />
