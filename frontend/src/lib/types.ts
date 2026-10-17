@@ -485,6 +485,8 @@ export type Pedido = {
   a_cocina: boolean
   /** Cuando se le entregó al cliente. Null = sigue en la barra esperando. */
   entregado_en: string | null
+  /** Desde cuando el cliente lo viene a buscar. Con esto no sale solo del mostrador. */
+  por_retirar_en?: string | null
   facturado: boolean
   numero_factura: string | null
   /** Tasa a la que se cobro. Para montos historicos manda esta, no la de hoy. */

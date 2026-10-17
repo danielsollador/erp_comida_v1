@@ -877,6 +877,15 @@ function CuadrarCaja({
   const [nota, setNota] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  // Lo que el cliente dijo que venia a buscar y no ha venido: al cerrar se
+  // dice, para que no se quede olvidado en la barra (17-oct).
+  const [sinRetirar, setSinRetirar] = useState<{ numero: number; cliente: string }[]>([])
+  useEffect(() => {
+    api
+      .listarPedidosPorEntregar()
+      .then((ps) => setSinRetirar(ps.filter((p) => p.por_retirar_en).map((p) => ({ numero: p.numero, cliente: p.cliente }))))
+      .catch(() => setSinRetirar([]))
+  }, [])
 
   const aCuadrar = resumen.desglose.filter((l) => l.se_cuadra)
 
@@ -942,6 +951,12 @@ function CuadrarCaja({
       }
     >
       {error && <p className="text-peligro-600 text-sm mb-3">{error}</p>}
+      {!corregir && sinRetirar.length > 0 && (
+        <p className="text-xs text-aviso-800 bg-aviso-50 border border-aviso-200 rounded-lg px-3 py-2 mb-3">
+          {sinRetirar.length === 1 ? 'Queda 1 pedido por retirar' : `Quedan ${sinRetirar.length} pedidos por retirar`}:{' '}
+          {sinRetirar.map((p) => `#${p.numero} ${p.cliente}`).join(', ')}. Siguen en el punto de venta hasta que se entreguen.
+        </p>
+      )}
       {!resumen.es_hoy && (
         <p className="text-xs text-aviso-700 bg-aviso-50 border border-aviso-200 rounded-lg px-3 py-2 mb-3">
           Estás cuadrando el día {new Date(dia + 'T00:00:00').toLocaleDateString('es-VE')}, no hoy.

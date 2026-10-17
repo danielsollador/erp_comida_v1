@@ -1014,6 +1014,8 @@ class Pedido(BaseModel):
     a_cocina: bool = True
     # Cuando se le entrego al cliente. Nulo = sigue en la barra esperando.
     entregado_en: Optional[datetime.datetime] = None
+    # Desde cuando el cliente lo viene a buscar. Con esto no sale solo.
+    por_retirar_en: Optional[datetime.datetime] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
     numero_control: str = ""
@@ -1244,6 +1246,13 @@ class CostosParaPrecios(BaseModel):
 
 class CostoParaPreciosRequest(BaseModel):
     costo_para_precios: Literal["reposicion", "promedio", "mayor"]
+
+
+class PorRetirarRequest(BaseModel):
+    # Si la comanda no tenia nombre: es lo que se busca cuando el cliente vuelve.
+    cliente: str = ""
+    # True = ya no: el cliente se lo lleva ahora.
+    quitar: bool = False
 
 
 class VenderSinInventarioRequest(BaseModel):

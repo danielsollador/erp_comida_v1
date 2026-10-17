@@ -427,6 +427,13 @@ export const api = {
   borrarCuentaPabilo: (id: string) => req<ConfigPabilo>(`/pagos/config/cuentas/${id}`, { method: 'DELETE' }),
   /** Cobradas y ya cocinadas, todavia en el mostrador esperando al cliente. */
   listarPedidosPorEntregar: () => req<Pedido[]>('/pedidos?por_entregar=true'),
+  /** Lo que ya salió hoy del mostrador (entregado o por la hora), para rescatar lo que no se llevaron. */
+  listarEntregadosHoy: () => req<Pedido[]>('/pedidos?entregados_hoy=true'),
+  /** "Ahora lo vengo a buscar": no sale solo. `quitar` = se lo lleva ya. */
+  marcarPorRetirar: (pedidoId: number, cliente = '', quitar = false) =>
+    req<Pedido>(`/pedidos/${pedidoId}/por-retirar`, { method: 'POST', body: JSON.stringify({ cliente, quitar }) }),
+  /** Salió del mostrador pero el cliente no se lo llevó: vuelve como "por retirar". */
+  marcarNoEntregado: (pedidoId: number) => req<Pedido>(`/pedidos/${pedidoId}/no-entregado`, { method: 'POST' }),
   /** Las ventas de hoy, para consultarlas sin salir del punto de venta. */
   ventasDelDia: () => req<Pedido[]>('/pedidos?del_dia=true'),
   crearPedido: (

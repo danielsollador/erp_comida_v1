@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
@@ -58,6 +58,7 @@ def listar_pedidos(
     en_cocina: Optional[bool] = None,
     por_entregar: Optional[bool] = None,
     del_dia: Optional[bool] = None,
+    entregados_hoy: Optional[bool] = None,
     db: Session = Depends(get_db),
 ):
     """`en_cocina=true` es lo que pregunta la pantalla de cocina: que falta por
@@ -73,6 +74,13 @@ def listar_pedidos(
     `por_entregar=true` es el otro lado: lo que ya se cobro Y ya se cocino,
     durante `MINUTOS_PARA_ENTREGAR`. Son las que estan en la barra esperando
     que el cliente las venga a buscar, y por eso las sigue viendo la caja.
+
+    Las que el cliente viene a buscar (`por_retirar_en`) no vencen: siguen
+    en `por_entregar` hasta que alguien las entregue, del dia que sean.
+
+    `entregados_hoy=true` es lo que ya salio del mostrador hoy, porque lo
+    entregaron o porque se cumplio la hora: de ahi se rescata con "No se
+    entrego" la que salio sin que el cliente se la llevara.
 
     `del_dia=true` son las ventas de hoy, para consultarlas desde el
     mostrador sin salir a otro modulo.
@@ -92,26 +100,45 @@ def listar_pedidos(
             models.Pedido.estado == "pagado",
             models.Pedido.cerrado_en >= inicio_del_dia(hoy()),
         )
-    if por_entregar:
-        # Ya cobrada, nada pendiente en cocina, y todavia reciente. El reloj es
-        # `listo_en`; para las que nunca pasaron por cocina --una botella-- no
-        # existe, y entonces vale la hora del cobro.
-        falta_cocinar = (
-            db.query(models.PedidoItem.id)
-            .filter(
-                models.PedidoItem.pedido_id == models.Pedido.id,
-                models.PedidoItem.preparado.is_(False),
-            )
-            .exists()
+    falta_cocinar = (
+        db.query(models.PedidoItem.id)
+        .filter(
+            models.PedidoItem.pedido_id == models.Pedido.id,
+            models.PedidoItem.preparado.is_(False),
         )
-        desde = ahora() - datetime.timedelta(minutes=MINUTOS_PARA_ENTREGAR)
+        .exists()
+    )
+    # El reloj del mostrador es `listo_en`; para las que nunca pasaron por
+    # cocina --una botella-- no existe, y entonces vale la hora del cobro.
+    reloj = func.coalesce(models.Pedido.listo_en, models.Pedido.cerrado_en)
+    desde = ahora() - datetime.timedelta(minutes=MINUTOS_PARA_ENTREGAR)
+    if por_entregar:
+        # Ya cobrada, nada pendiente en cocina, y todavia reciente... o la
+        # viene a buscar el cliente, que no vence.
         query = query.filter(
             models.Pedido.estado == "pagado",
             models.Pedido.devuelto.is_(False),
             models.Pedido.entregado_en.is_(None),
             ~falta_cocinar,
-            func.coalesce(models.Pedido.listo_en, models.Pedido.cerrado_en) >= desde,
+            or_(reloj >= desde, models.Pedido.por_retirar_en.isnot(None)),
         )
+    if entregados_hoy:
+        inicio = inicio_del_dia(hoy())
+        query = query.filter(
+            models.Pedido.estado == "pagado",
+            models.Pedido.devuelto.is_(False),
+            ~falta_cocinar,
+            or_(
+                models.Pedido.entregado_en >= inicio,
+                and_(
+                    models.Pedido.entregado_en.is_(None),
+                    models.Pedido.por_retirar_en.is_(None),
+                    reloj < desde,
+                    reloj >= inicio,
+                ),
+            ),
+        )
+        return query.order_by(models.Pedido.id.desc()).limit(80).all()
     if en_cocina:
         query = (
             query.filter(models.Pedido.estado != "anulado")
@@ -613,6 +640,52 @@ async def marcar_item_preparado(item_id: int, request: Request, db: Session = De
         db.commit()
         db.refresh(pedido)
 
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+@router.post("/{pedido_id}/por-retirar", response_model=schemas.Pedido)
+async def marcar_por_retirar(pedido_id: int, body: schemas.PorRetirarRequest, db: Session = Depends(get_db)):
+    """El cliente dijo "ahora lo vengo a buscar": no sale solo del mostrador.
+
+    Lo normal sigue igual --lo listo sale solo a la hora--; esto es el
+    boton para la excepcion (17-oct: "el pedido se pierde"). Hace falta un
+    nombre, porque es lo que se busca cuando el cliente vuelve.
+    """
+    pedido = _buscar(db, pedido_id)
+    if pedido.estado == "anulado" or pedido.devuelto:
+        raise HTTPException(status_code=400, detail="Ese pedido ya no está en curso.")
+    if body.quitar:
+        pedido.por_retirar_en = None
+    else:
+        nombre = body.cliente.strip()
+        if nombre:
+            pedido.cliente = nombre
+        if not (pedido.cliente or "").strip():
+            raise HTTPException(status_code=400, detail="Ponle el nombre de quien lo viene a buscar.")
+        pedido.entregado_en = None
+        if pedido.por_retirar_en is None:
+            pedido.por_retirar_en = ahora()
+    db.commit()
+    db.refresh(pedido)
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+@router.post("/{pedido_id}/no-entregado", response_model=schemas.Pedido)
+async def marcar_no_entregado(pedido_id: int, db: Session = Depends(get_db)):
+    """Salio del mostrador pero el cliente no se lo llevo: vuelve, y como
+    alguien lo tiene que venir a buscar, queda en "Por retirar" (no vence)."""
+    pedido = _buscar(db, pedido_id)
+    if pedido.estado != "pagado" or pedido.devuelto:
+        raise HTTPException(status_code=400, detail="Solo una venta cobrada vuelve al mostrador.")
+    pedido.entregado_en = None
+    if pedido.por_retirar_en is None:
+        pedido.por_retirar_en = ahora()
+    db.commit()
+    db.refresh(pedido)
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado
