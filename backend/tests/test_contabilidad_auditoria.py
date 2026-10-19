@@ -145,9 +145,13 @@ def test_un_dia_completo_deja_los_libros_cuadrados(client, libros, variante, ins
 
     libros_cuadrados(client, db)
 
-    # Y las gavetas dicen lo que los libros dicen (CAJERO).
-    assert gaveta(client, "1010")["esperado"] == saldo(db, "1010")
-    assert gaveta(client, "1011")["esperado"] == saldo(db, "1011")
+    # Y tras el cierre los libros dicen lo que se conto (CAJERO). El "debes
+    # tener" sigue siendo el de antes de contar: el faltante no es una salida
+    # del dia, es la diferencia (19-oct).
+    for codigo in ("1010", "1011"):
+        g = gaveta(client, codigo)
+        assert g["contado"] == saldo(db, codigo)
+        assert round(g["esperado"] + g["diferencia"], 2) == saldo(db, codigo)
     # Nadie debe nada: el fiado se cobro y las propinas se entregaron (E se
     # devolvio con su propina).
     assert saldo(db, "1015") == 0.0

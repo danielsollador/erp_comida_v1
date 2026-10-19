@@ -400,10 +400,16 @@ function Desglose({ r }: { r: ResumenCaja }) {
   const bcv = tasa?.bcv ?? null
   const totalEntro = r.desglose.reduce((s, l) => s + entradaDe(l), 0)
   const totalSalio = r.desglose.reduce((s, l) => s + salidaDe(l), 0)
-  const totalCuadra = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + l.esperado, 0)
   // Las dos columnas del veredicto solo existen si ya se contó: antes del
   // cierre serían dos columnas vacías pidiendo que se llenen a mano.
   const cerrada = r.desglose.some((l) => l.contado !== null)
+  // Cerrado, el total de "debes tener" suma SOLO lo que se contó: comparar
+  // $443 contra $209 metiendo un efectivo que nadie contó parecía un faltante
+  // de $233 que no existía (19-oct).
+  const totalCuadra = r.desglose
+    .filter((l) => l.se_cuadra && (!cerrada || l.contado !== null))
+    .reduce((s, l) => s + l.esperado, 0)
+  const sinContar = cerrada && r.desglose.some((l) => l.se_cuadra && l.contado === null && Math.abs(l.esperado) >= 0.01)
   const totalContado = r.desglose.reduce((s, l) => s + (l.contado ?? 0), 0)
   const totalDif = r.desglose.reduce((s, l) => s + (l.diferencia ?? 0), 0)
   const columnas = cerrada ? 6 : 4
@@ -487,10 +493,13 @@ function Desglose({ r }: { r: ResumenCaja }) {
               {cerrada && (
                 <>
                   <Cifra monto={totalContado} bcv={bcv} />
+                  {/* Rojo solo si falta: un sobrante en rojo se leía como faltante. */}
                   <Cifra
                     monto={totalDif}
                     bcv={bcv}
-                    clase={Math.abs(totalDif) < 0.01 ? 'text-exito-600' : 'text-peligro-600'}
+                    clase={
+                      Math.abs(totalDif) < 0.01 ? 'text-exito-600' : totalDif > 0 ? 'text-aviso-700' : 'text-peligro-600'
+                    }
                   />
                 </>
               )}
@@ -498,6 +507,11 @@ function Desglose({ r }: { r: ResumenCaja }) {
           </tfoot>
         </table>
       </div>
+      {sinContar && (
+        <p className="mt-2 text-xs text-neutral-500">
+          El total de «Debes tener» solo suma lo que se contó al cerrar: lo que quedó «sin verificar» no entra en la comparación.
+        </p>
+      )}
     </div>
   )
 }

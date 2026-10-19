@@ -197,6 +197,44 @@ def _ajuste_apertura(db: Session, dia: datetime.date, codigo: str) -> float:
     return round(sum((m.debe or 0) - (m.haber or 0) for m in filas), 2)
 
 
+ORIGENES_DEL_CIERRE = ("cierre_caja", "reverso_cierre_caja")
+
+
+def _ajustes_de_cierre(db: Session, inicio, fin, codigo: str) -> float:
+    """Lo que el propio arqueo movio en esa cuenta dentro del dia.
+
+    Al cerrar, el faltante o sobrante se lleva a los libros (ver
+    contabilidad.registrar_diferencia_caja). Ese asiento NO es plata que entro
+    o salio en el dia: es el resultado del conteo. Si se deja dentro del
+    movimiento del dia, al volver a abrir un cierre ya hecho el faltante
+    aparecia como "Salio" y la fila decia "cuadra" (19-oct: Zelle faltaban
+    $10 y la pantalla decia que cuadraba). Para los dias siguientes si cuenta:
+    va en el saldo que arrastra la gaveta, que es justo lo que corrige.
+    """
+    filas = (
+        db.query(models.MovimientoContable)
+        .join(models.AsientoContable,
+              models.MovimientoContable.asiento_id == models.AsientoContable.id)
+        .join(models.CuentaContable,
+              models.MovimientoContable.cuenta_id == models.CuentaContable.id)
+        .filter(
+            models.AsientoContable.origen.in_(ORIGENES_DEL_CIERRE),
+            models.AsientoContable.fecha >= inicio,
+            models.AsientoContable.fecha < fin,
+            models.CuentaContable.codigo == codigo,
+        )
+        .all()
+    )
+    return round(sum((m.debe or 0) - (m.haber or 0) for m in filas), 2)
+
+
+def _movimiento_del_dia(db: Session, inicio, fin, codigo: str) -> float:
+    """Lo que la cuenta movio en el dia, sin el resultado del propio arqueo."""
+    return round(
+        contabilidad.movimiento_efectivo(db, inicio, fin, codigo) - _ajustes_de_cierre(db, inicio, fin, codigo), 2
+    )
+
+
 def _desglose(
     db: Session,
     dia: datetime.date,
@@ -254,7 +292,7 @@ def _desglose(
 
         otros = 0.0
         if len(METODOS_POR_CUENTA.get(cuenta, [])) == 1:
-            neto_libro = contabilidad.movimiento_efectivo(db, inicio, fin, cuenta)
+            neto_libro = _movimiento_del_dia(db, inicio, fin, cuenta)
             otros = round(neto_libro - (entro - salio), 2)
 
         # El ajuste de la apertura cae dentro del dia, asi que viene metido en
@@ -309,7 +347,7 @@ def _otros_movimientos(db: Session, inicio, fin, desglose) -> List[schemas.OtroM
     for cuenta, metodos in METODOS_POR_CUENTA.items():
         if len(metodos) == 1:
             continue  # ya va dentro de su propia fila
-        neto_libro = contabilidad.movimiento_efectivo(db, inicio, fin, cuenta)
+        neto_libro = _movimiento_del_dia(db, inicio, fin, cuenta)
         explicado = round(
             sum(l.ventas - l.salidas for l in desglose if l.cuenta == cuenta), 2
         )
