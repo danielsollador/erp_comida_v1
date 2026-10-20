@@ -27,6 +27,13 @@
    donde se toca de pie y de lejos; en un monitor de 27" eso se ve enorme.
    Va declarada la ultima a proposito: cuando fija la misma propiedad que
    `lg:`, `alto:` o `bajo:`, manda ella. */
+/* `olla:` = el editor de preparaciones a pantalla fija (dos columnas que
+   llenan el alto, cada lista con su propio scroll). Solo con alto de sobra:
+   en un portatil de 768 px el navegador deja ~620 y el recuadro «Agregar»
+   quedaba de dos renglones sin poder bajar (video de Yeimer, 20-oct). Por
+   debajo, la pagina se desplaza normal. */
+@custom-variant olla (@media (min-width: 1024px) and (min-height: 800px));
+
 @custom-variant pc (@media (min-width: 1440px));
 /* La portada con raton cuando no cabe: en vez de achicarla entera (se leia
    mas chica en produccion, Leider 7-oct), se aprietan sus piezas. Lo pone
