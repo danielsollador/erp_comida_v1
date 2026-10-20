@@ -791,7 +791,9 @@ function Compositor({
   const disponiblesPiezas = disponibles.filter(porUnidad)
 
   return (
-    <div className="space-y-3 lg:h-[calc(100dvh-11.25rem)] lg:flex lg:flex-col">
+    // Pantalla fija solo con `olla:` (PC y alto de sobra); en un portatil bajo
+    // «Agregar» quedaba aplastado y no se podia bajar. Ver Preparaciones.tsx.
+    <div className="space-y-3 olla:h-[calc(100dvh-11.25rem)] olla:flex olla:flex-col">
       <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <button type="button" onClick={onCerrar} className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Productos
@@ -810,16 +812,16 @@ function Compositor({
       {/* EN UNA PANTALLA, sin desplazar la pagina (Leider, 29-sep): la
           cuadricula mide lo que queda de ventana y lo que no cabe se
           desplaza dentro de su columna. */}
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start olla:items-stretch olla:flex-1 olla:min-h-0">
         {/* ── El producto ─────────────────────────────────────────────── */}
-        <section className="vp-losa p-4 sm:p-5 lg:flex lg:flex-col lg:min-h-0">
+        <section className="vp-losa p-4 sm:p-5 olla:flex olla:flex-col olla:min-h-0">
           <p className="text-xs text-neutral-500">{renglon.categoria}</p>
           <h2 className="font-display text-xl font-semibold tracking-tight leading-tight mb-2">{renglon.nombre}</h2>
           {/* El vaso ocupa lo que queda entre el titulo y el resumen: asi la
               tarjeta nunca es mas alta que la ventana. */}
-          <div className="lg:flex-1 lg:min-h-0 flex justify-center">
+          <div className="olla:flex-1 olla:min-h-0 flex justify-center">
           <Vaso
-            className="w-full max-w-[260px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
+            className="w-full max-w-[260px] olla:w-auto olla:max-w-none olla:h-full olla:min-h-0"
             tope={precio}
             topeTitulo="se vende a"
             partes={partes}
@@ -839,7 +841,7 @@ function Compositor({
           <EditorCombo combo={combo} setCombo={setCombo} productos={productos} costoDeVariante={costoDeVariante} />
         ) : (
         /* ── La mercancía ────────────────────────────────────────────── */
-        <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
+        <section className="space-y-3 olla:flex olla:flex-col olla:min-h-0">
           {filas.length === 0 && (
             <button
               type="button"
@@ -851,7 +853,7 @@ function Compositor({
             </button>
           )}
           {filas.length > 0 && (
-            <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[45%] lg:overflow-y-auto">
+            <div className="vp-losa overflow-hidden olla:shrink olla:min-h-0 olla:max-h-[45%] olla:overflow-y-auto">
               {pesadas.length > 0 && (
                 <>
                   <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">Lleva</h3>
@@ -904,7 +906,7 @@ function Compositor({
             </div>
           )}
 
-          <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+          <div className="vp-losa overflow-hidden olla:flex-1 olla:min-h-0 olla:flex olla:flex-col">
             <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 shrink-0">
               <h3 className="font-display font-semibold tracking-tight mr-auto">
                 {filas.length === 0 ? 'Toca lo que lleva' : 'Agregar'}
@@ -933,7 +935,7 @@ function Compositor({
                 {ingredientes.length === 0 ? 'No hay mercancía en el inventario todavía.' : 'Nada coincide.'}
               </p>
             ) : (
-              <div className="max-h-[30rem] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto">
+              <div className="max-h-[30rem] olla:max-h-none olla:flex-1 olla:min-h-0 overflow-y-auto">
                 <CabeceraAgregar />
                 {disponiblesPesadas.length > 0 && (
                   <ul className="divide-y divide-neutral-100">
