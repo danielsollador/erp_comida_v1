@@ -1,6 +1,7 @@
 import type {
   ConceptoGasto,
   PropuestaCarga,
+  ExplicacionCierre,
   PropuestaRevisada,
   ResultadoCarga,
   Reclamo,
@@ -947,6 +948,9 @@ export const api = {
   resumenCaja: (fecha?: string) =>
     req<ResumenCaja>('/caja/resumen' + (fecha ? `?fecha=${fecha}` : '')),
   /** Cada cobro del día con su referencia: el detalle de la columna "Entró". */
+  /** ¿Por qué no cuadra? Solo lee: no cambia ningún cobro ni el cierre. */
+  explicarCierre: (fecha?: string) =>
+    req<ExplicacionCierre>(`/caja/explicar${fecha ? `?fecha=${fecha}` : ''}`),
   cobrosDelDia: (fecha?: string) =>
     req<CobroDelDia[]>('/caja/cobros' + (fecha ? `?fecha=${fecha}` : '')),
   anularCierre: (id: number, motivo: string) =>

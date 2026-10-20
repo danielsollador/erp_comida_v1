@@ -21,7 +21,7 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 - [ ] 10. Clave de la API de Claude en local y tope de gasto mensual por cliente.
 
 **Otras ideas de IA** (sin empezar)
-- [ ] 11. El cierre de caja explica los descuadres.
+- [x] 11. El cierre de caja explica los descuadres: botón «¿Por qué no cuadra?» en Caja (reglas fijas en `explicar_cierre.py`, la IA solo redacta; no cambia nada). 20-oct, sin desplegar.
 - [ ] 12. «Pregúntale a tu negocio»: chat sobre ventas, márgenes y caja.
 - [ ] 13. Pedido al proveedor redactado para WhatsApp.
 - [ ] 14. Alertas que se explican (mermas raras, precios que suben, cobros repetidos).

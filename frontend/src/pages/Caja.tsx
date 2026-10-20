@@ -15,6 +15,7 @@ import type {
   CierreCaja,
   CobroDelDia,
   EstadoApertura,
+  ExplicacionCierre,
   Gasto,
   LineaMetodo,
   ResumenCaja,
@@ -507,11 +508,67 @@ function Desglose({ r }: { r: ResumenCaja }) {
           </tfoot>
         </table>
       </div>
+      {cerrada && r.desglose.some((l) => l.se_cuadra && ((l.diferencia ?? 0) !== 0 || (l.contado === null && Math.abs(l.esperado) >= 0.01))) && (
+        <PorQueNoCuadra fecha={r.fecha} />
+      )}
       {sinContar && (
         <p className="mt-2 text-xs text-neutral-500">
           El total de «Debes tener» solo suma lo que se contó al cerrar: lo que quedó «sin verificar» no entra en la comparación.
         </p>
       )}
+    </div>
+  )
+}
+
+/**
+ * ¿Por qué no cuadra? (IA, 20-oct). Al cerrar, el sistema dice CUÁNTO falta;
+ * esto dice lo más probable de POR QUÉ: un cobro anotado en la forma
+ * equivocada, el cobro que no entró al banco, céntimos de la tasa. Las causas
+ * salen de reglas fijas y la IA solo las redacta. Solo explica: la
+ * corrección se hace en Ventas con «Editar pago».
+ */
+function PorQueNoCuadra({ fecha }: { fecha: string }) {
+  const [explicacion, setExplicacion] = useState<ExplicacionCierre | null>(null)
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState('')
+  async function pedir() {
+    setCargando(true)
+    setError('')
+    try {
+      setExplicacion(await api.explicarCierre(fecha))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo explicar')
+    } finally {
+      setCargando(false)
+    }
+  }
+  if (!explicacion) {
+    return (
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => void pedir()}
+          disabled={cargando}
+          className="vp-control rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          {cargando ? 'Buscando la causa…' : '¿Por qué no cuadra?'}
+        </button>
+        {error && <p className="mt-1 text-xs text-peligro-600">{error}</p>}
+      </div>
+    )
+  }
+  return (
+    <div className="mt-3 rounded-xl bg-aviso-50 p-3 text-sm text-aviso-900">
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-aviso-800">Lo más probable</p>
+      <div className="space-y-1 whitespace-pre-line">{explicacion.texto}</div>
+      {explicacion.pedidos.length > 0 && (
+        <p className="mt-2 text-xs text-aviso-800">
+          Pedidos a revisar: {explicacion.pedidos.map((n) => `#${n}`).join(', ')}. Se corrigen en Ventas con «Editar pago».
+        </p>
+      )}
+      <p className="mt-2 text-[11px] text-aviso-700">
+        {explicacion.con_ia ? 'Redactado por la IA a partir de las reglas del sistema.' : 'Calculado por el sistema.'} No cambia nada: solo explica.
+      </p>
     </div>
   )
 }

@@ -1405,6 +1405,23 @@ class CobroDelDia(BaseModel):
     repetida: bool = False
 
 
+class PistaCierre(BaseModel):
+    """Una causa probable de un descuadre, sacada con reglas fijas (ver
+    explicar_cierre.py)."""
+
+    tipo: str  # cruce, faltante, sobrante, centimos, repetida, sin_referencia, sin_contar, ventas
+    texto: str
+    pedidos: List[int] = []  # numeros de comanda a revisar
+    monto: float = 0
+
+
+class ExplicacionCierre(BaseModel):
+    texto: str
+    con_ia: bool = False
+    pistas: List[PistaCierre] = []
+    pedidos: List[int] = []
+
+
 class OtroMovimiento(BaseModel):
     """Lo que movio una gaveta sin ser venta, gasto ni retiro.
 

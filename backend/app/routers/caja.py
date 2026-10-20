@@ -536,6 +536,15 @@ def cobros_del_dia(fecha: Optional[datetime.date] = None, db: Session = Depends(
     return cobros
 
 
+@router.get("/explicar", response_model=schemas.ExplicacionCierre)
+def explicar_descuadre(fecha: Optional[datetime.date] = None, db: Session = Depends(get_db)):
+    """¿Por que no cuadra? Las causas probables del descuadre de ese dia, y
+    los pedidos a revisar. Solo lee: no cambia ningun cobro ni el cierre."""
+    from .. import explicar_cierre
+
+    return explicar_cierre.explicar(resumen_caja(fecha, db), cobros_del_dia(fecha, db))
+
+
 @router.get("/estado-apertura", response_model=schemas.EstadoApertura)
 def estado_de_apertura(
     fecha: Optional[datetime.date] = None, db: Session = Depends(get_db)

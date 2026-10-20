@@ -2234,3 +2234,18 @@ export interface ResultadoCarga {
   recetas: string[]
   omitidas: string[]
 }
+
+/** ¿Por qué no cuadra la caja? Causas probables con reglas fijas, redactadas por la IA si está. */
+export interface PistaCierre {
+  tipo: string
+  texto: string
+  pedidos: number[]
+  monto: number
+}
+
+export interface ExplicacionCierre {
+  texto: string
+  con_ia: boolean
+  pistas: PistaCierre[]
+  pedidos: number[]
+}
