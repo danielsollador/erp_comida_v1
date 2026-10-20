@@ -1,0 +1,128 @@
+[
+  {
+    "id": "para-entregar",
+    "pregunta": "hola que significa para entregar en la pantalla de pedidos?",
+    "debe_decir": ["el pedido ya está cobrado", "la comida ya está lista", "falta dárselo al cliente", "con la × se marca entregado", "si nadie la toca sale sola a los 60 minutos"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "vuelvo-luego",
+    "pregunta": "un cliente pago y me dijo que ahorita viene a buscar el pedido, como hago para que no se me pierda?",
+    "debe_decir": ["tocar «Lo viene a buscar» en la tarjeta", "pasa a «Por retirar» y no sale solo", "cuando llegue tocar «Entregado»"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "se-borro-pedido",
+    "pregunta": "le di a la x en un pedido que no era y desaparecio, como lo recupero?",
+    "debe_decir": ["buscarlo en «Entregados hoy» abajo en Pedidos", "tocar «No se entregó»", "vuelve como «Por retirar»"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "vender-sin-stock",
+    "pregunta": "no me deja vender porque dice que no alcanza el inventario pero si tengo la mercancia, que hago?",
+    "debe_decir": ["se puede vender igual desde el aviso, o cargar la compra", "o prender «Vender sin stock» en la portada de Inventario", "lo vendido igual se descuenta y el stock puede quedar negativo"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "zelle-falta-punto-sobra",
+    "pregunta": "en el cierre me faltan 10 dolares en zelle y me sobran 9,55 en el punto de venta, que pudo pasar?",
+    "debe_decir": ["probablemente un cobro se registró en la forma de pago equivocada", "se corrige en Ventas con «Editar pago»"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "corregir-conteo",
+    "pregunta": "cerre la caja y me equivoque escribiendo lo del punto, puedo arreglarlo?",
+    "debe_decir": ["sí, con «Corregir el conteo»", "el cierre viejo queda anulado con su rastro y se guarda el nuevo"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "anular-cobrado",
+    "pregunta": "como anulo un pedido que ya cobre? el cliente lo devolvio",
+    "debe_decir": ["un pedido cobrado no se anula: se devuelve", "desde Ventas con «Devolver»", "pregunta si se preparó (pérdida real) o no se llegó a preparar"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "fiado",
+    "pregunta": "un cliente se llevo la comida y paga mañana, como lo registro?",
+    "debe_decir": ["cobrar con «A crédito»", "hace falta el nombre del cliente", "se cobra después desde Ventas con «Cobrar / abonar»"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "vuelto",
+    "pregunta": "me pagaron con un billete de 20 y era de 12, donde pongo el vuelto?",
+    "debe_decir": ["«Paga con más: hay vuelto» al cobrar", "elegir por dónde sale el vuelto"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "aceite",
+    "pregunta": "como cargo el aceite de freir para que cuente en el costo de los pastelitos?",
+    "debe_decir": ["marcar el aceite como costo indirecto en su ficha", "marcar los productos que se fríen", "anotar cada carga con «Cargar a la freidora»", "no va en la receta"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "no-descuenta",
+    "pregunta": "vendi 20 empanadas y el inventario de queso no bajo nada",
+    "debe_decir": ["el producto no tiene receta (o no lleva queso en la receta)", "ponerle la receta en Menú › Recetas o con «Cargar con IA»"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "caja-24",
+    "pregunta": "compre una caja de 24 maltas, la cargo como 1 o como 24?",
+    "debe_decir": ["se carga como caja tal como viene en la factura", "entra al inventario como 24 maltas", "el sistema recuerda cómo trae cada proveedor cada cosa"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "flete",
+    "pregunta": "la factura del pollo trae el flete cobrado aparte, como lo pongo?",
+    "debe_decir": ["como un renglón propio de la factura", "con «Qué es» = flete (un gasto, no mercancía)"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "faltante-proveedor",
+    "pregunta": "me facturaron 10 kilos de carne y llegaron 8, que hago?",
+    "debe_decir": ["nota de crédito por «Lo que no llegó» (faltante)", "queda en lo que los proveedores deben hasta que se recupere o se dé por perdido"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "receta-guiso",
+    "pregunta": "el guiso lo hago con 2 kilos de pollo y me salen 1,6 kilos, como lo meto?",
+    "debe_decir": ["es una preparación (Inventario, materia prima, cara Preparado)", "la receta de la preparación es por 1 kg", "explica cómo queda por 1 kg: dividir la tanda entre lo que rinde (1,25 kg de pollo por kg de guiso), o decir la tanda con «Cargar con IA» y el sistema lo calcula"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "precio-margen",
+    "pregunta": "quiero que el pastelito me deje 65% de ganancia, como se a cuanto venderlo?",
+    "debe_decir": ["en Menú › Recetas", "se escribe el margen y el sistema calcula el precio (o al revés)"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "efectivo-bs-raro",
+    "pregunta": "el efectivo en bolivares del cierre dice que deberia tener 243 dolares y yo tengo como 30",
+    "debe_decir": ["si nunca se contó arrastra el saldo de los libros desde el principio", "contar lo que hay de verdad en el cierre de hoy", "la diferencia se registra una vez y desde ahí arranca real"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "tres-puntos",
+    "pregunta": "en el telefono le doy a los tres puntitos de la categoria del menu y no sale nada",
+    "debe_decir": ["era un error ya corregido", "recargar la página para tomar la versión nueva"],
+    "fuera_del_manual": false
+  },
+  {
+    "id": "sin-internet",
+    "pregunta": "se nos fue el internet, podemos seguir vendiendo en el sistema?",
+    "debe_decir": ["el manual no dice que se pueda vender sin conexión", "pasarle el caso al equipo de soporte"],
+    "fuera_del_manual": true
+  },
+  {
+    "id": "rappi",
+    "pregunta": "como conecto el sistema con pedidos ya para que entren solos los pedidos?",
+    "debe_decir": ["el manual no tiene una conexión con Pedidos Ya", "pasarle el pedido al equipo (es una funcionalidad nueva)"],
+    "fuera_del_manual": true
+  },
+  {
+    "id": "mesas",
+    "pregunta": "puedo dividir la cuenta de una mesa entre 3 personas?",
+    "debe_decir": ["el manual no tiene dividir una cuenta entre varias personas", "como mucho se puede cobrar con dos formas de pago («Paga con dos formas»)", "pasarle el pedido al equipo"],
+    "fuera_del_manual": true
+  }
+]

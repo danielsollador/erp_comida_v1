@@ -19,3 +19,4 @@ compartido/
 
 # Clave de la cuenta de servicio de GCP: llave maestra, nunca al repo.
 gcp-key*.json
+backend/evals/resultados_soporte.json
