@@ -13,7 +13,7 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 
 **Soporte con IA** (ver `Desktop/plan-soporte-ia-erp.md`)
 - [ ] 4. Cerrar las decisiones del plan (propuesta: Sávora, chat en el ERP, issues en GitHub, pocas consultas de solo lectura).
-- [ ] 5. Manual de Sávora a partir del código y de `frontend/src/lib/glosario.ts`.
+- [x] 5. Manual de Sávora: `docs/manual-savora.md` (20-oct). Revisarlo cuando cambie una pantalla.
 - [ ] 6. Prueba con las preguntas reales de la semana del 13-oct («Para entregar», el Zelle que «cuadraba», vender sin stock, el aceite).
 - [ ] 7. Nivel 1: chat de ayuda dentro del ERP, con los permisos de quien pregunta.
 - [ ] 8. Nivel 2: triaje (duda / bug / pedido) y creación de issues.
@@ -40,7 +40,7 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 
 - [ ] 22. Porcentajes de retención de ISLR del flete.
 - [ ] 23. Declaración de IVA en bolívares y mes de las notas de crédito.
-- [ ] 24. Retenciones de IVA que le hacen a Sávora sus clientes especiales (75 %): registrarlas en ventas.
+- [x] 24. Retenciones de IVA que le hacen a Sávora sus clientes especiales: ya existía en el punto de venta («El cliente retiene IVA», 75 % o 100 %, solo en ventas facturadas). Falta solo que el contador lo confirme.
 
 ## D. Desarrollo para después
 
