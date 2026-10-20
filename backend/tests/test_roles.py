@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from app import settings
 from app.acceso import permisos, roles, usuarios
 from app.database import get_db
-from app.main import app
+from app.main import SIN_SESION, app
 from tests.conftest import entrar
 
 MESONERO = ("mesonero", "clave-de-mesonero-larga")
@@ -359,12 +359,13 @@ def test_el_recorte_es_de_este_local_y_no_del_vecino(admin, clientes, monkeypatc
 
 def _rutas_reales():
     """Los (metodo, ruta) que la API sirve de verdad, con los parametros
-    rellenos. Sin el propio acceso, la salud ni la clave y el PIN propios: el
-    middleware no los evalua."""
+    rellenos. Sin lo que se pide sin sesion (el acceso, la salud, el sitio
+    publico: `SIN_SESION`, la misma lista del middleware) ni la clave y el PIN
+    propios: el middleware no los evalua."""
     salida = set()
     for r in app.routes:
         ruta = getattr(r, "path", "")
-        if (not ruta.startswith("/api/") or ruta.startswith("/api/acceso")
+        if (not ruta.startswith("/api/") or ruta.startswith(SIN_SESION)
                 or ruta == "/api/health" or ruta.startswith("/api/usuarios/mi/")):
             continue
         concreta = re.sub(r"\{[^}]+\}", "1", ruta)
