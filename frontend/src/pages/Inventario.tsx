@@ -21,6 +21,7 @@ import Control from './partes/inventario/Control'
 import FichaMercancia from './partes/inventario/FichaMercancia'
 import ConteoFisico, { DetalleConteo } from './partes/inventario/ConteoFisico'
 import SeccionCategorias from './partes/inventario/Categorias'
+import CargarConIA from './partes/inventario/CargarConIA'
 import AccionFila from '../components/AccionFila'
 import type {
   Configuracion,
@@ -124,6 +125,12 @@ export default function Inventario() {
   // La ficha abierta: 'nuevo' (con el tipo del almacén en que se está) o el id.
   const [ficha, setFicha] = useState<{ nuevo: TipoArticulo } | number | null>(null)
   const [contando, setContando] = useState(false)
+  // Cargar con IA: el boton solo aparece si el lector esta prendido.
+  const [conIA, setConIA] = useState(false)
+  const [iaActiva, setIaActiva] = useState(false)
+  useEffect(() => {
+    api.estadoAsistenteInventario().then((e) => setIaActiva(e.activo)).catch(() => setIaActiva(false))
+  }, [])
   const [conteoAbierto, setConteoAbierto] = useState<number | null>(null)
   const [config, setConfig] = useState<Configuracion | null>(null)
   const [cambiandoConfig, setCambiandoConfig] = useState(false)
@@ -474,6 +481,11 @@ export default function Inventario() {
                 <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
                   Conteo físico
                 </Boton>
+                {iaActiva && (
+                  <Boton tono="suave" onClick={() => setConIA(true)}>
+                    Cargar con IA
+                  </Boton>
+                )}
                 <Boton onClick={() => setFicha({ nuevo: 'insumo' })} icono="mas">
                   Nueva mercancía
                 </Boton>
@@ -738,6 +750,7 @@ export default function Inventario() {
         />
       ) : null}
 
+      {conIA && <CargarConIA onCerrar={() => setConIA(false)} onGuardado={() => cargar()} />}
       {contando && <ConteoFisico ingredientes={activos} onCerrar={() => setContando(false)} onGuardado={conteoGuardado} />}
 
       {impacto && (

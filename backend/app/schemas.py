@@ -3221,4 +3221,103 @@ class VueltoEmitido(BaseModel):
 
 
 FaltanteRequest.model_rebuild()
+
+
+# ── Cargar el inventario con IA (ver asistente_inventario.py) ──────────────
+# La IA PROPONE, la persona GUARDA. Lo que llega del modelo es una propuesta
+# por nombres; la revision la cruza con lo que ya existe y el guardado la
+# convierte en fichas, preparaciones y recetas de verdad.
+
+UNIDADES_CARGA = ("kg", "g", "lt", "ml", "unidad")
+TIPOS_CARGA = ("insumo", "reventa", "consumible", "desechable")
+
+
+class LineaPropuesta(BaseModel):
+    mercancia: str
+    cantidad: float = Field(gt=0)
+    unidad: str  # la que se dijo ("50 g"); al guardar pasa a la de la ficha
+
+
+class MercanciaPropuesta(BaseModel):
+    nombre: str
+    tipo: Literal["insumo", "reventa", "consumible", "desechable"] = "insumo"
+    unidad: Literal["kg", "lt", "unidad"] = "kg"
+    costo_unitario: Optional[float] = Field(default=None, ge=0)
+    exento: bool = False
+
+
+class PreparacionPropuesta(BaseModel):
+    nombre: str
+    unidad: Literal["kg", "lt", "unidad"] = "kg"
+    # Cuanto sale de la tanda descrita, en la unidad de la preparacion
+    # ("con 1 kg de pollo salen 0,8 kg de guiso"). La receta se guarda por 1.
+    rinde: float = Field(gt=0)
+    lineas: List[LineaPropuesta]
+
+
+class RecetaPropuesta(BaseModel):
+    producto: str  # como lo dijo la persona; la revision busca la variante
+    variante_id: Optional[int] = None  # elegida en pantalla
+    lineas: List[LineaPropuesta]
+
+
+class PropuestaCarga(BaseModel):
+    mercancias: List[MercanciaPropuesta] = []
+    preparaciones: List[PreparacionPropuesta] = []
+    recetas: List[RecetaPropuesta] = []
+    dudas: List[str] = []
+
+
+class LineaRevisada(LineaPropuesta):
+    # Con que mercancia quedo (existente o nueva de esta carga), o "" si no
+    # se encontro.
+    se_usa: str = ""
+    unidad_ficha: str = ""
+    cantidad_ficha: Optional[float] = None  # ya en la unidad de la ficha
+    problema: str = ""
+
+
+class MercanciaRevisada(MercanciaPropuesta):
+    ya_existe: Optional[str] = None  # "Pollo (kg)": no se crea, se usa esa
+    parecidas: List[str] = []
+
+
+class PreparacionRevisada(BaseModel):
+    nombre: str
+    unidad: str
+    rinde: float
+    lineas: List[LineaRevisada]
+    ya_existe: Optional[str] = None
+
+
+class VarianteDelMenu(BaseModel):
+    id: int
+    nombre: str  # "Pastelito · Carne", o el producto solo si tiene una
+    tiene_receta: bool = False
+
+
+class RecetaRevisada(BaseModel):
+    producto: str
+    variante_id: Optional[int] = None
+    variante_nombre: str = ""
+    tiene_receta: bool = False
+    lineas: List[LineaRevisada]
+
+
+class PropuestaRevisada(BaseModel):
+    mercancias: List[MercanciaRevisada] = []
+    preparaciones: List[PreparacionRevisada] = []
+    recetas: List[RecetaRevisada] = []
+    dudas: List[str] = []
+    variantes: List[VarianteDelMenu] = []
+    # Para la pantalla: todo lo que se puede elegir en un renglon.
+    mercancias_conocidas: List[str] = []
+    lector: str = ""
+
+
+class ResultadoCarga(BaseModel):
+    mercancias: List[str] = []
+    preparaciones: List[str] = []
+    recetas: List[str] = []
+    omitidas: List[str] = []  # lo que no se guardo y por que
 FacturaCompra.model_rebuild()

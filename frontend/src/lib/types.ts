@@ -2151,3 +2151,86 @@ export type ReporteGuardado = {
   creado_por: string
   de_fabrica: boolean
 }
+
+// ── Cargar el inventario con IA (backend: asistente_inventario.py) ─────────
+// La IA propone por nombres; la revisión lo cruza con lo que existe y el
+// guardado lo convierte en fichas, preparaciones y recetas, todo o nada.
+
+export type UnidadDicha = 'kg' | 'g' | 'lt' | 'ml' | 'unidad'
+export type UnidadFicha = 'kg' | 'lt' | 'unidad'
+export type TipoCarga = 'insumo' | 'reventa' | 'consumible' | 'desechable'
+
+export interface LineaPropuesta {
+  mercancia: string
+  cantidad: number
+  unidad: UnidadDicha
+}
+
+export interface LineaRevisada extends LineaPropuesta {
+  se_usa: string
+  unidad_ficha: string
+  cantidad_ficha: number | null
+  problema: string
+}
+
+export interface MercanciaPropuesta {
+  nombre: string
+  tipo: TipoCarga
+  unidad: UnidadFicha
+  costo_unitario: number | null
+  exento: boolean
+}
+
+export interface MercanciaRevisada extends MercanciaPropuesta {
+  ya_existe: string | null
+  parecidas: string[]
+}
+
+export interface PreparacionPropuesta {
+  nombre: string
+  unidad: UnidadFicha
+  /** Cuánto sale de la tanda descrita, en su unidad. */
+  rinde: number
+  lineas: LineaPropuesta[]
+}
+
+export interface PreparacionRevisada extends Omit<PreparacionPropuesta, 'lineas'> {
+  lineas: LineaRevisada[]
+  ya_existe: string | null
+}
+
+export interface RecetaPropuesta {
+  producto: string
+  variante_id: number | null
+  lineas: LineaPropuesta[]
+}
+
+export interface RecetaRevisada extends Omit<RecetaPropuesta, 'lineas'> {
+  variante_nombre: string
+  tiene_receta: boolean
+  lineas: LineaRevisada[]
+}
+
+export interface PropuestaCarga {
+  mercancias: MercanciaPropuesta[]
+  preparaciones: PreparacionPropuesta[]
+  recetas: RecetaPropuesta[]
+  dudas: string[]
+}
+
+export interface PropuestaRevisada {
+  mercancias: MercanciaRevisada[]
+  preparaciones: PreparacionRevisada[]
+  recetas: RecetaRevisada[]
+  dudas: string[]
+  variantes: { id: number; nombre: string; tiene_receta: boolean }[]
+  mercancias_conocidas: string[]
+  lector: string
+}
+
+export interface ResultadoCarga {
+  mercancias: string[]
+  preparaciones: string[]
+  recetas: string[]
+  omitidas: string[]
+}

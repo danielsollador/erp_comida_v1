@@ -1,5 +1,8 @@
 import type {
   ConceptoGasto,
+  PropuestaCarga,
+  PropuestaRevisada,
+  ResultadoCarga,
   Reclamo,
   Sustitucion,
   ActivoFijo,
@@ -1158,6 +1161,19 @@ export const api = {
   // formulario de siempre guarda con `crearFacturaCompra`, y despues la foto
   // se engancha a la factura que salio.
   estadoLectorFacturas: () => req<{ activo: boolean; lector: string }>('/compras/lectura'),
+  /** Cargar el inventario con IA: si está prendido (mismo interruptor que las facturas). */
+  estadoAsistenteInventario: () => req<{ activo: boolean; lector: string }>('/inventario/asistente'),
+  /** Lo escrito o dictado y las fotos (ya achicadas): devuelve la propuesta revisada. */
+  leerCargaInventario: async (texto: string, fotos: Blob[]) => {
+    const datos = new FormData()
+    datos.append('texto', texto)
+    fotos.forEach((f, i) => datos.append('fotos', f, `hoja-${i + 1}.jpg`))
+    return req<PropuestaRevisada>('/inventario/asistente/leer', { method: 'POST', body: datos, headers: {} })
+  },
+  revisarCargaInventario: (p: PropuestaCarga) =>
+    req<PropuestaRevisada>('/inventario/asistente/revisar', { method: 'POST', body: JSON.stringify(p) }),
+  guardarCargaInventario: (p: PropuestaCarga) =>
+    req<ResultadoCarga>('/inventario/asistente/guardar', { method: 'POST', body: JSON.stringify(p) }),
   /** La foto (ya achicada) o el PDF tal cual. */
   leerFacturaCompra: async (archivo: Blob) => {
     const datos = new FormData()
