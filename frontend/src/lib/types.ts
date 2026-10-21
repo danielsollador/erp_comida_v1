@@ -2249,3 +2249,9 @@ export interface ExplicacionCierre {
   pistas: PistaCierre[]
   pedidos: number[]
 }
+
+/** Un turno del chat de ayuda. */
+export interface TurnoAyuda {
+  rol: 'usuario' | 'asistente'
+  texto: string
+}

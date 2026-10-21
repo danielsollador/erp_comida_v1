@@ -360,13 +360,13 @@ def test_el_recorte_es_de_este_local_y_no_del_vecino(admin, clientes, monkeypatc
 def _rutas_reales():
     """Los (metodo, ruta) que la API sirve de verdad, con los parametros
     rellenos. Sin lo que se pide sin sesion (el acceso, la salud, el sitio
-    publico: `SIN_SESION`, la misma lista del middleware) ni la clave y el PIN
-    propios: el middleware no los evalua."""
+    publico: `SIN_SESION`, la misma lista del middleware) ni lo que puede
+    cualquiera con sesion (`permisos.PARA_TODOS`: la clave propia, la ayuda)."""
     salida = set()
     for r in app.routes:
         ruta = getattr(r, "path", "")
         if (not ruta.startswith("/api/") or ruta.startswith(SIN_SESION)
-                or ruta == "/api/health" or ruta.startswith("/api/usuarios/mi/")):
+                or ruta == "/api/health" or ruta.startswith(permisos.PARA_TODOS)):
             continue
         concreta = re.sub(r"\{[^}]+\}", "1", ruta)
         for metodo in getattr(r, "methods", None) or ():

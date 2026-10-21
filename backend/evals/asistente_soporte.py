@@ -1,5 +1,8 @@
 """Prueba del asistente de soporte: ¿responde bien leyendo SOLO el manual?
 
+Prueba el chat de ayuda del ERP (`app/asistente_ayuda.py`) con sus mismas
+instrucciones, como si preguntara el dueño.
+
 Cada pregunta de `preguntas_soporte.json` es real (o como las que llegan) y
 trae los puntos que una buena respuesta tiene que decir. Algunas son de cosas
 que el sistema NO hace: ahí lo correcto es decirlo y pasarle el caso al
@@ -19,25 +22,10 @@ import sys
 import time
 
 from app import lectura_facturas, settings
+from app.asistente_ayuda import MANUAL, sistema
 
 AQUI = pathlib.Path(__file__).parent
-MANUAL = (AQUI.parent.parent / "docs" / "manual-savora.md").read_text(encoding="utf-8")
 PREGUNTAS = json.loads((AQUI / "preguntas_soporte.json").read_text(encoding="utf-8"))
-
-SISTEMA = """Eres el asistente de ayuda de un ERP para negocios de comida en Venezuela.
-Te escribe alguien del negocio (dueño, cajero o cocina), casi siempre desde el
-teléfono y con prisa.
-
-Reglas:
-- Responde SOLO con lo que dice el manual de abajo. Si el manual no lo dice,
-  di claramente que el sistema no lo tiene o que no estás seguro, y ofrece
-  pasarle el caso al equipo de soporte. No inventes pantallas ni botones.
-- Usa los nombres de los botones tal como están en el manual, entre «».
-- Corto: los pasos justos, numerados si son varios. Sin saludos largos.
-- Español, de tú.
-
-MANUAL:
-{manual}"""
 
 JUEZ = """Evalúa la respuesta de un asistente de soporte de un ERP.
 
@@ -72,14 +60,14 @@ ESQUEMA_JUEZ = {
 }
 
 
-def _gemini(texto: str, sistema: str = "", esquema=None) -> str:
+def _gemini(texto: str, instrucciones: str = "", esquema=None) -> str:
     modelo = settings.GEMINI_MODELO_RESPALDO or settings.GEMINI_MODELO
     cuerpo = {
         "contents": [{"role": "user", "parts": [{"text": texto}]}],
         "generationConfig": {"temperature": 0, "thinkingConfig": {"includeThoughts": True}},
     }
-    if sistema:
-        cuerpo["systemInstruction"] = {"parts": [{"text": sistema}]}
+    if instrucciones:
+        cuerpo["systemInstruction"] = {"parts": [{"text": instrucciones}]}
     if esquema:
         cuerpo["generationConfig"]["response_mime_type"] = "application/json"
         cuerpo["generationConfig"]["response_schema"] = esquema
@@ -95,13 +83,14 @@ def _gemini(texto: str, sistema: str = "", esquema=None) -> str:
 
 
 def correr(solo=None):
-    sistema = SISTEMA.format(manual=MANUAL)
+    # El mismo SISTEMA del chat del ERP: lo que se mide es lo que se despliega.
+    instrucciones = sistema("dueno")
     resultados = []
     for p in PREGUNTAS:
         if solo and p["id"] not in solo:
             continue
         inicio = time.monotonic()
-        respuesta = _gemini(p["pregunta"], sistema)
+        respuesta = _gemini(p["pregunta"], instrucciones)
         segundos = time.monotonic() - inicio
         juicio = json.loads(lectura_facturas._sin_bloque(_gemini(JUEZ.format(
             pregunta=p["pregunta"], respuesta=respuesta,

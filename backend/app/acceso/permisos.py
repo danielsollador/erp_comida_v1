@@ -140,6 +140,9 @@ SOLO_ADMINISTRA = ("/api/contabilidad", "/api/impuestos", "/api/respaldos",
 
 # La cartera de locales de Vertigo. Solo el equipo de la plataforma.
 SOLO_VERTIGO = ("/api/agencia",)
+# Lo que puede cualquiera con sesion, sea el rol que sea: la clave y el PIN
+# propios, y el chat de ayuda (la cocina tambien pregunta).
+PARA_TODOS = ("/api/usuarios/mi/", "/api/ayuda")
 
 # Lecturas que no comprometen nada y que las pantallas piden al cargar, sea
 # quien sea: la tasa del dia y la configuracion (que hoy es solo la tasa).
@@ -303,8 +306,7 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
     metodo = metodo.upper()
     escribe = metodo not in ("GET", "HEAD")
 
-    # La clave y el PIN propios los cambia cada quien, sea el rol que sea.
-    if ruta.startswith("/api/usuarios/mi/"):
+    if ruta.startswith(PARA_TODOS):
         return True
     if ruta.startswith(SOLO_VERTIGO):
         return r == "admin"

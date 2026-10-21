@@ -3,6 +3,7 @@ import type {
   PropuestaCarga,
   ExplicacionCierre,
   PropuestaRevisada,
+  TurnoAyuda,
   ResultadoCarga,
   Reclamo,
   Sustitucion,
@@ -1166,6 +1167,13 @@ export const api = {
   // se engancha a la factura que salio.
   estadoLectorFacturas: () => req<{ activo: boolean; lector: string }>('/compras/lectura'),
   /** Cargar el inventario con IA: si está prendido (mismo interruptor que las facturas). */
+  /** El chat de ayuda (ver backend/app/asistente_ayuda.py). */
+  estadoAyuda: () => req<{ activo: boolean; lector: string }>('/ayuda'),
+  preguntarAyuda: (pregunta: string, pantalla: string, historial: TurnoAyuda[]) =>
+    req<{ texto: string; con_ia: boolean }>('/ayuda', {
+      method: 'POST',
+      body: JSON.stringify({ pregunta, pantalla, historial }),
+    }),
   estadoAsistenteInventario: () => req<{ activo: boolean; lector: string }>('/inventario/asistente'),
   /** Lo escrito o dictado y las fotos (ya achicadas): devuelve la propuesta revisada. */
   leerCargaInventario: async (texto: string, fotos: Blob[]) => {

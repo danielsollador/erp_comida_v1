@@ -13,9 +13,9 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 
 **Soporte con IA** (ver `Desktop/plan-soporte-ia-erp.md`)
 - [ ] 4. Cerrar las decisiones del plan (propuesta: Sávora, chat en el ERP, issues en GitHub, pocas consultas de solo lectura).
-- [x] 5. Manual de Sávora: `docs/manual-savora.md` (20-oct). Revisarlo cuando cambie una pantalla.
+- [x] 5. Manual de Sávora: `backend/app/manual-savora.md` (lo lee el chat de ayuda) (20-oct). Revisarlo cuando cambie una pantalla.
 - [x] 6. Prueba del asistente: `backend/evals/` (21 preguntas, 3 de cosas que el sistema no hace). Gemini solo con el manual: 19/21, sin inventar nada; las 2 omitieron un detalle secundario (20-oct). Falta correrla con Claude.
-- [ ] 7. Nivel 1: chat de ayuda dentro del ERP, con los permisos de quien pregunta.
+- [x] 7. Nivel 1: chat de ayuda dentro del ERP, con los permisos de quien pregunta (21-oct, el «?» de la barra; Gemini por ahora).
 - [ ] 8. Nivel 2: triaje (duda / bug / pedido) y creación de issues.
 - [ ] 9. Nivel 3: agente que propone el arreglo de un bug en un PR; el equipo aprueba.
 - [ ] 10. Clave de la API de Claude en local y tope de gasto mensual por cliente.

@@ -3338,3 +3338,21 @@ class ResultadoCarga(BaseModel):
     recetas: List[str] = []
     omitidas: List[str] = []  # lo que no se guardo y por que
 FacturaCompra.model_rebuild()
+
+
+# ── Chat de ayuda (ver asistente_ayuda.py) ──────────────────────────────────
+
+class TurnoAyuda(BaseModel):
+    rol: str  # "usuario" o "asistente"
+    texto: str
+
+
+class PreguntaAyuda(BaseModel):
+    pregunta: str = Field(..., min_length=1, max_length=4000)
+    pantalla: str = Field("", max_length=200)
+    historial: List[TurnoAyuda] = Field(default_factory=list, max_length=40)
+
+
+class RespuestaAyuda(BaseModel):
+    texto: str
+    con_ia: bool
