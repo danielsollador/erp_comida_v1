@@ -1611,6 +1611,10 @@ class Aviso(BaseModel):
     detalle: str = ""
     # La pantalla que lo resuelve: "/inventario/comprar".
     a: str = ""
+    # Las alertas que se explican (alertas_explicadas.py): por que el sistema
+    # lo marca, con los numeros, y que hacer. Vacias en los avisos de siempre.
+    por_que: str = ""
+    que_hacer: str = ""
 
 
 class ArranqueLocal(BaseModel):

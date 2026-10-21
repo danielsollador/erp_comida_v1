@@ -315,7 +315,16 @@ export type PasoRecorrido = {
 }
 export type Recorrido = { pasos: PasoRecorrido[]; ultimos_7_dias: { fecha: string; ventas: number }[] }
 
-export type Aviso = { id: string; tono: 'ojo' | 'bien' | 'info'; titulo: string; detalle: string; a: string }
+export type Aviso = {
+  id: string
+  tono: 'ojo' | 'bien' | 'info'
+  titulo: string
+  detalle: string
+  a: string
+  /** Las alertas que se explican: por qué lo marca el sistema y qué hacer. */
+  por_que?: string
+  que_hacer?: string
+}
 
 /** Cuánto lleva armado el local: las misiones de arranque de la portada. */
 export type ArranqueLocal = { productos: number; con_receta: number; mercancias: number; ventas: number; cierres: number }

@@ -1915,7 +1915,11 @@ def avisos(db: Session = Depends(get_db)):
     conviene saber (info), y al final lo bueno. Nunca mas de cuatro: cinco
     avisos son una lista, y una lista ya no se lee.
     """
+    from .. import alertas_explicadas
+
     todos: List[schemas.Aviso] = []
+    # Primero: lo que puede ser plata que no entro o que se fue sin explicacion.
+    todos += alertas_explicadas.todas(db)
     todos += _avisos_de_deposito(db)
     todos += _avisos_de_cocina_y_proveedores(db)
     fiado = _aviso_de_fiado(db)

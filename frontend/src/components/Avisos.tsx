@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRecordado } from '../lib/memoria'
 import { Link } from 'react-router-dom'
 import { api, connectWs } from '../lib/api'
@@ -45,6 +45,7 @@ export default function Avisos({ quien = '' }: { quien?: string }) {
       <div className={`grid gap-3 sm:grid-cols-2 ${cols}`}>
         {lista.map((a, i) => {
           const t = TONO[a.tono] ?? TONO.info
+          if (a.por_que) return <Explicada key={a.id} a={a} caja={t.caja} punto={t.punto} oculto={i >= 2} />
           return (
             <Link
               key={a.id}
@@ -64,5 +65,37 @@ export default function Avisos({ quien = '' }: { quien?: string }) {
         })}
       </div>
     </section>
+  )
+}
+
+/**
+ * Una alerta que se explica (merma rara, precio que sube, referencia
+ * repetida): la tarjeta no es un enlace entero porque lleva su propio boton.
+ * «¿Por qué?» abre los numeros que la prueban y lo que hay que hacer.
+ */
+function Explicada({ a, caja, punto, oculto }: { a: Aviso; caja: string; punto: string; oculto: boolean }) {
+  const [abierta, setAbierta] = useState(false)
+  return (
+    <div className={`rounded-3xl p-4 sm:p-4.5 apaisado:px-3.5 apaisado:py-2.5 flex gap-3 apaisado:gap-2 items-start ${oculto ? 'apaisado:hidden' : ''} ${caja}`}>
+      <span className={`mt-1.5 shrink-0 w-2 h-2 rounded-full ${punto}`} />
+      <div className="min-w-0 flex-1">
+        <p className="font-display font-semibold leading-snug text-[15px] apaisado:text-[14px]">{a.titulo}</p>
+        {a.detalle && <p className="mt-1 text-[13px] leading-snug opacity-75 apaisado:hidden">{a.detalle}</p>}
+        {abierta && (
+          <div className="mt-2 flex flex-col gap-1.5 text-[13px] leading-snug">
+            <p><span className="font-semibold">Por qué: </span>{a.por_que}</p>
+            {a.que_hacer && <p><span className="font-semibold">Qué hacer: </span>{a.que_hacer}</p>}
+          </div>
+        )}
+        <div className="mt-2 flex items-center gap-3 text-[13px] font-semibold apaisado:hidden">
+          <button type="button" onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="underline underline-offset-2">
+            {abierta ? 'Ocultar' : '¿Por qué?'}
+          </button>
+          <Link to={a.a || '/'} className="inline-flex items-center gap-0.5 opacity-80 hover:opacity-100">
+            Ir a revisar <Icono nombre="chevron" size={13} />
+          </Link>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -24,7 +24,7 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 - [x] 11. El cierre de caja explica los descuadres: botón «¿Por qué no cuadra?» en Caja (reglas fijas en `explicar_cierre.py`, la IA solo redacta; no cambia nada). 20-oct, sin desplegar.
 - [ ] 12. «Pregúntale a tu negocio»: chat sobre ventas, márgenes y caja.
 - [ ] 13. Pedido al proveedor redactado para WhatsApp.
-- [ ] 14. Alertas que se explican (mermas raras, precios que suben, cobros repetidos).
+- [x] 14. Alertas que se explican (mermas raras, precios que suben, cobros repetidos) (21-oct: en la portada con «¿Por qué?»; reglas fijas, sin IA).
 - [ ] 15. Conciliar pago móvil y estados de cuenta contra los cobros.
 - [ ] 16. Pedidos por WhatsApp como borrador para la cajera.
 
