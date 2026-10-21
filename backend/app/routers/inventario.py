@@ -1763,6 +1763,15 @@ def _consumo_diario(db: Session, dias: int = 14) -> dict:
     return {ing.id: total / dias for ing, total in hojas.items()}
 
 
+@router.get("/pedido-proveedor", response_model=List[schemas.PedidoProveedor])
+def pedido_al_proveedor(db: Session = Depends(get_db)):
+    """«Qué comprar» repartido por proveedor, con el mensaje para WhatsApp.
+    Solo arma el texto: no envia nada (ver pedido_proveedor.py)."""
+    from .. import pedido_proveedor
+
+    return pedido_proveedor.armar(db, sugerencias_compra(db))
+
+
 @router.get("/sugerencias", response_model=List[schemas.SugerenciaCompra])
 def sugerencias_compra(db: Session = Depends(get_db)):
     consumo_diario = _consumo_diario(db)

@@ -3360,3 +3360,32 @@ class PreguntaAyuda(BaseModel):
 class RespuestaAyuda(BaseModel):
     texto: str
     con_ia: bool
+
+
+# ── Pedido al proveedor (ver pedido_proveedor.py) ──────────────────────────
+
+class LineaPedidoProveedor(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    # En NUESTRA unidad; con presentacion, redondeada al bulto entero.
+    cantidad: float
+    unidad: str
+    # Como lo vende el proveedor: "bultos", 2, factor 20 (kg por bulto).
+    presentacion: str = ""
+    cantidad_presentacion: Optional[float] = None
+    factor: Optional[float] = None
+    # Lo que costo la ultima vez, por unidad nuestra (sin IVA).
+    precio: Optional[float] = None
+
+
+class PedidoProveedor(BaseModel):
+    proveedor: str
+    rif: str = ""
+    contacto: str = ""
+    # El numero para wa.me (58414...), si su ficha tiene telefono.
+    whatsapp: str = ""
+    # False: lo que nunca se ha comprado con factura, sin a quien pedirselo.
+    conocido: bool = True
+    lineas: List[LineaPedidoProveedor]
+    estimado: float = 0
+    mensaje: str = ""

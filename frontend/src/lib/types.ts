@@ -2264,3 +2264,27 @@ export interface TurnoAyuda {
   rol: 'usuario' | 'asistente'
   texto: string
 }
+
+/** Un renglón del pedido al proveedor (ver backend/app/pedido_proveedor.py). */
+export interface LineaPedidoProveedor {
+  ingrediente_id: number
+  nombre: string
+  cantidad: number
+  unidad: string
+  presentacion: string
+  cantidad_presentacion: number | null
+  factor: number | null
+  precio: number | null
+}
+
+/** «Qué comprar» de un proveedor, con el mensaje listo para WhatsApp. */
+export interface PedidoProveedor {
+  proveedor: string
+  rif: string
+  contacto: string
+  whatsapp: string
+  conocido: boolean
+  lineas: LineaPedidoProveedor[]
+  estimado: number
+  mensaje: string
+}

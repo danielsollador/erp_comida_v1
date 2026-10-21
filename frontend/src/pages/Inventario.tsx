@@ -22,6 +22,7 @@ import FichaMercancia from './partes/inventario/FichaMercancia'
 import ConteoFisico, { DetalleConteo } from './partes/inventario/ConteoFisico'
 import SeccionCategorias from './partes/inventario/Categorias'
 import CargarConIA from './partes/inventario/CargarConIA'
+import PedirAProveedores from './partes/inventario/PedirAProveedores'
 import AccionFila from '../components/AccionFila'
 import type {
   Configuracion,
@@ -127,6 +128,7 @@ export default function Inventario() {
   const [contando, setContando] = useState(false)
   // Cargar con IA: el boton solo aparece si el lector esta prendido.
   const [conIA, setConIA] = useState(false)
+  const [pidiendo, setPidiendo] = useState(false)
   const [iaActiva, setIaActiva] = useState(false)
   useEffect(() => {
     api.estadoAsistenteInventario().then((e) => setIaActiva(e.activo)).catch(() => setIaActiva(false))
@@ -639,6 +641,11 @@ export default function Inventario() {
               </div>
             ) : (
               <Seccion titulo="Qué comprar" ayuda="Lo que está bajo mínimo o, al ritmo de venta de las últimas dos semanas, no llega a la próxima.">
+                <div className="flex justify-end mb-1">
+                  <Boton tono="suave" onClick={() => setPidiendo(true)}>
+                    Pedir a proveedores
+                  </Boton>
+                </div>
                 <ul className="divide-y divide-neutral-500/10">
                   {sugerencias.map((s) => {
                     const ing = ingredientes.find((i) => i.id === s.ingrediente_id)
@@ -750,6 +757,7 @@ export default function Inventario() {
         />
       ) : null}
 
+      {pidiendo && <PedirAProveedores onCerrar={() => setPidiendo(false)} />}
       {conIA && <CargarConIA onCerrar={() => setConIA(false)} onGuardado={() => cargar()} />}
       {contando && <ConteoFisico ingredientes={activos} onCerrar={() => setContando(false)} onGuardado={conteoGuardado} />}
 

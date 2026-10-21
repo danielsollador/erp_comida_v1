@@ -4,6 +4,7 @@ import type {
   ExplicacionCierre,
   PropuestaRevisada,
   TurnoAyuda,
+  PedidoProveedor,
   ResultadoCarga,
   Reclamo,
   Sustitucion,
@@ -769,6 +770,8 @@ export const api = {
       body: JSON.stringify({ stock_real, motivo: 'Conteo fisico' }),
     }),
   sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
+  /** Lo mismo, repartido por proveedor y con el mensaje para WhatsApp. */
+  pedidoProveedor: () => req<PedidoProveedor[]>('/inventario/pedido-proveedor'),
   listarMermas: (r?: Rango) => req<Merma[]>(`/inventario/mermas${conRango(r)}`),
   revertirMerma: (id: number) =>
     req<Ingrediente>(`/inventario/mermas/${id}/revertir`, { method: 'POST' }),
