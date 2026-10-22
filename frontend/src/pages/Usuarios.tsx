@@ -494,7 +494,7 @@ function CrearUsuario({
         titulo="Nuevo usuario"
         ayuda="Su nombre es con el que se le saluda y el que queda en lo que hace. El usuario va en minúsculas y sin espacios; la clave, 8 caracteres como mínimo."
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-guia="usuarios.datos">
           <Campo
             etiqueta="Nombre"
             value={nombre}
@@ -563,7 +563,7 @@ function CrearUsuario({
         )}
 
         <div className="mt-4">
-          <Boton type="submit" disabled={creando}>
+          <Boton type="submit" disabled={creando} data-guia="usuarios.guardar">
             {creando ? 'Creando…' : 'Crear usuario'}
           </Boton>
         </div>

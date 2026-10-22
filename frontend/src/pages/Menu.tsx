@@ -1342,7 +1342,7 @@ function CrearProducto({
           <Boton tono="fantasma" onClick={onCerrar}>
             Cancelar
           </Boton>
-          <Boton onClick={guardar} disabled={!listo || guardando}>
+          <Boton onClick={guardar} disabled={!listo || guardando} data-guia="producto.crear">
             {guardando ? 'Creando…' : precio === '' ? 'Crear y armar la receta' : 'Crear producto'}
           </Boton>
         </div>
@@ -1356,6 +1356,7 @@ function CrearProducto({
           value={nombre}
           onChange={(e) => setNombre(e.target.value)}
           placeholder="Ej. Empanada"
+          data-guia="producto.nombre"
           autoFocus
           className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-sm"
         />
@@ -1369,6 +1370,7 @@ function CrearProducto({
           value={precio}
           onChange={(e) => setPrecio(e.target.value)}
           placeholder="0.00"
+          data-guia="producto.precio"
           className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-lg font-semibold tabular-nums"
         />
       </label>

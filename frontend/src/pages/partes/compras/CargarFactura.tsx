@@ -2299,6 +2299,7 @@ function BarraGuardar({
         <button
           onClick={onGuardar}
           disabled={guardando}
+          data-guia="compras.guardar"
           className="vp-pulsable bg-neutral-900 text-white px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 shrink-0"
         >
           {guardando ? 'Guardando…' : 'Guardar factura'}

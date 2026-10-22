@@ -13,8 +13,20 @@ import { useLocation, useNavigate } from 'react-router-dom'
  * El resto de la pantalla se oscurece pero NO se bloquea: el dueño puede
  * tocar el botón resaltado y hacerlo él mismo, que es la idea (aprender
  * haciendo, no viendo una película).
+ *
+ * Por eso un paso de "tocar" avanza SOLO cuando el dueño toca el botón (no
+ * con "Siguiente"): el paso siguiente suele estar en lo que ese toque abre
+ * (la receta, el cuadro de conteo). Si el elemento del paso todavía no
+ * existe, la guía lo espera y lo dice, en vez de rendirse.
  */
-export type PasoGuia = { ruta: string; ancla: string; titulo: string; texto: string }
+export type PasoGuia = {
+  ruta: string
+  ancla: string
+  titulo: string
+  texto: string
+  /** tocar: avanza al tocarlo. escribir/mirar: avanza con "Siguiente". */
+  accion?: 'tocar' | 'escribir' | 'mirar'
+}
 
 type Ctx = { iniciar: (pasos: PasoGuia[]) => void; activa: boolean }
 const GuiaCtx = createContext<Ctx>({ iniciar: () => {}, activa: false })
@@ -42,7 +54,7 @@ export function GuiaProvider({ children }: { children: ReactNode }) {
           n={i}
           total={pasos.length}
           onAtras={() => setI((x) => Math.max(0, x - 1))}
-          onSiguiente={() => (i + 1 >= pasos.length ? cerrar() : setI(i + 1))}
+          onSiguiente={() => (i + 1 >= pasos.length ? cerrar() : setI((x) => x + 1))}
           onCerrar={cerrar}
         />
       )}
@@ -85,7 +97,9 @@ function Recorrido({
     let cuadro = 0
     let llevado = false
     const medir = () => {
-      if (!el || !el.isConnected) el = document.querySelector(`[data-guia="${paso.ancla}"]`)
+      // Se busca en cada cuadro: el elemento puede cambiar (otra fila pasa a
+      // ser la primera, la pantalla se vuelve a pintar).
+      el = visible(paso.ancla)
       if (el) {
         const r = el.getBoundingClientRect()
         if (r.width > 0 && r.height > 0) {
@@ -96,9 +110,13 @@ function Recorrido({
             if (r.top < 0 || r.bottom > window.innerHeight) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
           }
           setCaja((antes) => (antes && antes.x === r.x && antes.y === r.y && antes.width === r.width ? antes : r))
+          setPerdido(false)
         }
-      } else if (Date.now() - inicio > ESPERA_MS) {
-        setPerdido(true)
+      } else {
+        // Se sigue buscando: puede aparecer cuando el dueño haga el paso
+        // anterior (abrir el producto, abrir el cuadro de conteo).
+        setCaja(null)
+        if (Date.now() - inicio > ESPERA_MS) setPerdido(true)
       }
       cuadro = requestAnimationFrame(medir)
     }
@@ -108,6 +126,29 @@ function Recorrido({
       cancelAnimationFrame(cuadro)
     }
   }, [paso.ancla, paso.ruta])
+
+  // 3. Un paso de "tocar" avanza cuando se toca el elemento resaltado. Se
+  //    escucha en captura y sin frenar el clic: el botón hace lo suyo (abrir
+  //    la receta) y la guía pasa al siguiente un instante después.
+  const tocar = (paso.accion ?? 'tocar') === 'tocar'
+  useEffect(() => {
+    if (!tocar) return
+    let t = 0
+    const alTocar = (e: MouseEvent) => {
+      const el = visible(paso.ancla)
+      if (!el || !(e.target instanceof Element) || !el.contains(e.target)) return
+      // Lo que solo despliega (un producto con variantes) no es el toque que
+      // se pedía: se espera al de la variante.
+      const plegable = e.target.closest('[aria-expanded]')
+      if (plegable && el.contains(plegable)) return
+      t = window.setTimeout(onSiguiente, 450)
+    }
+    document.addEventListener('click', alTocar, true)
+    return () => {
+      document.removeEventListener('click', alTocar, true)
+      window.clearTimeout(t)
+    }
+  }, [tocar, paso.ancla, onSiguiente])
 
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => e.key === 'Escape' && onCerrar()
@@ -154,9 +195,12 @@ function Recorrido({
         <p className="mt-2 text-[15px] leading-normal text-neutral-700">{paso.texto}</p>
         {perdido && (
           <p className="mt-2 text-[13px] text-aviso-700">
-            No veo ese botón en esta pantalla. Puede que tu usuario no tenga ese permiso.
+            {n > 0
+              ? 'Esto aparece cuando haces el paso anterior. Si ya lo hiciste y no lo ves, toca Atrás.'
+              : 'No veo ese botón en esta pantalla. Puede que tu usuario no tenga ese permiso.'}
           </p>
         )}
+        {tocar && caja && <p className="mt-2 text-[13px] font-medium text-neutral-900">Tócalo para seguir.</p>}
         <div className="mt-4 flex items-center gap-2">
           <button
             type="button"
@@ -175,16 +219,31 @@ function Recorrido({
               Atrás
             </button>
           )}
+          {/* En un paso de "tocar" el avance lo da el toque; el botón queda
+              para saltarlo, más discreto. */}
           <button
             type="button"
             onClick={onSiguiente}
-            className="min-h-11 rounded-xl bg-neutral-900 px-5 text-sm font-medium text-white active:scale-[.97]"
+            className={
+              tocar && caja
+                ? 'min-h-11 rounded-xl px-4 text-sm font-medium text-neutral-500 active:bg-neutral-100'
+                : 'min-h-11 rounded-xl bg-neutral-900 px-5 text-sm font-medium text-white active:scale-[.97]'
+            }
           >
-            {n + 1 >= total ? 'Listo' : 'Siguiente'}
+            {n + 1 >= total ? 'Listo' : tocar && caja ? 'Saltar' : 'Siguiente'}
           </button>
         </div>
       </div>
     </div>,
     document.body,
   )
+}
+
+/** El primer elemento con esa ancla que se ve (una tabla puede tener varias filas marcadas). */
+function visible(ancla: string): Element | null {
+  for (const el of document.querySelectorAll(`[data-guia="${ancla}"]`)) {
+    const r = el.getBoundingClientRect()
+    if (r.width > 0 && r.height > 0) return el
+  }
+  return null
 }

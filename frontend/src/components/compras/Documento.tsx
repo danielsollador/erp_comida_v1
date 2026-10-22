@@ -261,7 +261,7 @@ export function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: s
         </div>
       ) : tactil ? (
         <>
-          <div className="flex flex-col sm:flex-row items-stretch justify-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch justify-center gap-2" data-guia="compras.subir">
             <button
               onClick={() => camara.current?.click()}
               className="inline-flex items-center justify-center gap-2 bg-neutral-900 text-white px-5 py-3 rounded-lg text-sm font-semibold"
@@ -284,7 +284,7 @@ export function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, url: s
         </>
       ) : (
         <>
-          <button onClick={() => entrada.current?.click()} className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">
+          <button onClick={() => entrada.current?.click()} data-guia="compras.subir" className="inline-flex items-center gap-2 bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">
             <Icono nombre="chispa" size={16} />
             Cargar factura desde foto o PDF
           </button>

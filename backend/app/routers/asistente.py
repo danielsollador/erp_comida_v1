@@ -61,6 +61,7 @@ class PasoGuia(BaseModel):
     ancla: str
     titulo: str
     texto: str
+    accion: str = "tocar"
 
 
 class Respuesta(BaseModel):

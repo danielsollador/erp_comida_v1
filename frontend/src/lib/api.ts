@@ -239,7 +239,7 @@ export type DatosFacturaVenta = {
 /** Una vuelta del asistente (spike de IA). La guía, si viene, la recorre `Guia.tsx`. */
 export type RespuestaAsistente = {
   texto: string
-  guia: { ruta: string; ancla: string; titulo: string; texto: string }[] | null
+  guia: { ruta: string; ancla: string; titulo: string; texto: string; accion?: 'tocar' | 'escribir' | 'mirar' }[] | null
   consulto: string[]
   ms: number
   costo_usd: number

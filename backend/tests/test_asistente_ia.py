@@ -170,3 +170,48 @@ def test_sin_clave_avisa_en_vez_de_romper(client, monkeypatch):
     r = client.post("/api/asistente/reporte", json={"frase": "ventas de hoy"})
     assert r.status_code == 503
     assert "ANTHROPIC_API_KEY" in r.json()["detail"]
+
+
+# ── Guías en pantalla ───────────────────────────────────────────────────────
+
+
+def test_cada_recorrido_usa_elementos_del_mapa():
+    from app.asistente import guias
+
+    for tarea, pasos in guias.RECORRIDOS.items():
+        faltan = [p for p in pasos if p not in guias.MAPA]
+        assert not faltan, f"«{tarea}» usa elementos que no están en el mapa: {faltan}"
+
+
+def test_cada_ancla_del_mapa_existe_en_las_pantallas():
+    """Si alguien renombra o quita un botón marcado, la guía quedaría
+    señalando la nada: esto lo ataja antes de que lo vea un cliente."""
+    import pathlib
+    import re as _re
+
+    from app.asistente import guias
+
+    src = pathlib.Path(__file__).resolve().parents[2] / "frontend" / "src"
+    texto = "\n".join(p.read_text(encoding="utf-8") for p in src.rglob("*.tsx"))
+    fijas = set(_re.findall(r'data-guia="([\w.-]+)"', texto))
+    # Y las que se eligen con una expresión: data-guia={x ? 'a' : 'b'}.
+    for expr in _re.findall(r"data-guia=\{([^}]*)\}", texto):
+        fijas |= set(_re.findall(r"'([\w.-]+)'", expr))
+    # Las pestañas se marcan solas: data-guia={`seccion.${s.id}`}.
+    secciones = {f"seccion.{i}" for i in _re.findall(r"\{\s*id:\s*'([\w-]+)'", texto)}
+    faltan = [k for k, v in guias.MAPA.items() if v[1] not in fijas | secciones]
+    assert not faltan, f"Anclas que ya no existen en el frontend: {faltan}"
+
+
+def test_la_guia_no_repite_un_paso_seguido_y_trae_la_accion():
+    from app.asistente import guias
+
+    pasos = guias.validar("admin", [
+        {"elemento": "menu.recetas", "titulo": "1. Abre Recetas", "texto": "x"},
+        {"elemento": "menu.recetas", "titulo": "Otra vez", "texto": "x"},
+        {"elemento": "inventado", "titulo": "x", "texto": "x"},
+        {"elemento": "recetas.cantidad", "titulo": "Cantidades", "texto": "x"},
+    ])
+    assert [p["ancla"] for p in pasos] == ["seccion.recetas", "recetas.cantidad"]
+    assert pasos[0]["titulo"] == "Abre Recetas"
+    assert [p["accion"] for p in pasos] == ["tocar", "escribir"]

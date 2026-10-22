@@ -457,6 +457,7 @@ export default function Recetas({
         <button
           onClick={() => setSoloFaltan((v) => !v)}
           aria-pressed={soloFaltan}
+          data-guia="recetas.sin-receta"
           className={`rounded-xl px-3.5 py-2.5 text-sm font-medium border ${
             soloFaltan ? 'bg-aviso-500 text-white border-aviso-500' : 'bg-white border-neutral-300 hover:border-neutral-400'
           }`}
@@ -465,7 +466,7 @@ export default function Recetas({
         </button>
       </div>
 
-      <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined} className="vp-losa overflow-hidden">
+      <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined} className="vp-losa overflow-hidden" data-guia="recetas.lista">
         {visibles.length === 0 ? (
           <Vacio
             titulo={
@@ -520,6 +521,7 @@ export default function Recetas({
                         }
                         onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLElement).click()}
                         className="vp-celda cursor-pointer border-t border-neutral-100"
+                        data-guia="recetas.grupo"
                       >
                         <td colSpan={4} className="py-2.5 pl-4 pr-4">
                           <span className="flex items-center gap-2 min-w-0">
@@ -600,6 +602,8 @@ function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombr
       tabIndex={0}
       onClick={onAbrir}
       onKeyDown={(e) => e.key === 'Enter' && onAbrir()}
+      // Las guías señalan la primera fila: "toca el producto".
+      data-guia="recetas.producto"
       className={`vp-celda cursor-pointer border-t border-neutral-100 ${sangria ? 'bg-neutral-50/60' : ''}`}
     >
       <td className={`py-2.5 pr-2 min-w-0 ${sangria ? 'pl-10' : 'pl-4'}`}>
@@ -802,7 +806,7 @@ function Compositor({
           <Boton tono="fantasma" onClick={onCerrar}>
             Cancelar
           </Boton>
-          <Boton onClick={onGuardar} disabled={guardando}>
+          <Boton onClick={onGuardar} disabled={guardando} data-guia="recetas.guardar">
             {guardando ? 'Guardando…' : 'Guardar receta'}
           </Boton>
         </div>
@@ -846,6 +850,7 @@ function Compositor({
             <button
               type="button"
               onClick={() => setCombo([])}
+              data-guia="recetas.combo"
               className="vp-losa w-full text-left px-4 py-3 text-sm text-neutral-600 hover:bg-neutral-500/5"
             >
               <span className="font-semibold text-neutral-900">¿Es un combo?</span> Ármalo con productos del menú (pastelito + jugo): su
@@ -853,7 +858,7 @@ function Compositor({
             </button>
           )}
           {filas.length > 0 && (
-            <div className="vp-losa overflow-hidden olla:shrink olla:min-h-0 olla:max-h-[45%] olla:overflow-y-auto">
+            <div className="vp-losa overflow-hidden olla:shrink olla:min-h-0 olla:max-h-[45%] olla:overflow-y-auto" data-guia="recetas.cantidad">
               {pesadas.length > 0 && (
                 <>
                   <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">Lleva</h3>
@@ -919,6 +924,7 @@ function Compositor({
                   onKeyDown={(e) => e.key === 'Escape' && setBusqueda('')}
                   placeholder="Buscar mercancía"
                   aria-label="Buscar mercancía"
+                  data-guia="recetas.buscar-mercancia"
                   className="w-44 bg-white border border-neutral-300 rounded-xl pl-8 pr-3 py-1.5 text-sm"
                 />
                 <Lupa />
@@ -935,7 +941,7 @@ function Compositor({
                 {ingredientes.length === 0 ? 'No hay mercancía en el inventario todavía.' : 'Nada coincide.'}
               </p>
             ) : (
-              <div className="max-h-[30rem] olla:max-h-none olla:flex-1 olla:min-h-0 overflow-y-auto">
+              <div className="max-h-[30rem] olla:max-h-none olla:flex-1 olla:min-h-0 overflow-y-auto" data-guia="recetas.agregar">
                 <CabeceraAgregar />
                 {disponiblesPesadas.length > 0 && (
                   <ul className="divide-y divide-neutral-100">
@@ -1091,7 +1097,7 @@ function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () =
   const { fmt } = useMoneda()
   return (
     <li>
-      <button type="button" onClick={onAgregar} className="vp-celda w-full flex items-center gap-3 px-4 py-2.5 text-left">
+      <button type="button" onClick={onAgregar} data-guia="recetas.mercancia" className="vp-celda w-full flex items-center gap-3 px-4 py-2.5 text-left">
         <span className="min-w-0 flex-1">
           <span className="block text-sm truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">{ing.categoria || 'Sin categoría'}</span>
@@ -1159,7 +1165,7 @@ function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number;
   const m = margenDe(precioNum)
   const costoPct = precioNum > 0 ? (costo / precioNum) * 100 : null
   return (
-    <div className="mt-3 rounded-2xl bg-neutral-500/6 p-3 space-y-2">
+    <div className="mt-3 rounded-2xl bg-neutral-500/6 p-3 space-y-2" data-guia="recetas.precio">
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <span className="block text-[11px] font-medium text-neutral-600 mb-0.5">Precio de venta ($)</span>
