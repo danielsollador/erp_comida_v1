@@ -17,7 +17,7 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 - [x] 6. Prueba del asistente: `backend/evals/` (21 preguntas, 3 de cosas que el sistema no hace). Gemini solo con el manual: 19/21, sin inventar nada; las 2 omitieron un detalle secundario (20-oct). Falta correrla con Claude.
 - [x] 7. Nivel 1: chat de ayuda dentro del ERP, con los permisos de quien pregunta (21-oct, el «?» de la barra; Gemini por ahora).
 - [x] 8. Nivel 2: triaje (duda / bug / pedido) y creación de issues. (22-oct: «?» › «Soporte»; se guarda siempre, issue en GitHub si hay ERP_GITHUB_REPO_SOPORTE y su token).
-- [ ] 9. Nivel 3: agente que propone el arreglo de un bug en un PR; el equipo aprueba.
+- [x] 9. Nivel 3: agente que propone el arreglo de un bug en un PR; el equipo aprueba. (22-oct: `.github/workflows/agente-bugs.yml`, corre con la etiqueta `bug-confirmado`; falta el secreto ANTHROPIC_API_KEY y la app de Claude en el repo. Ver docs/soporte-con-ia.md).
 - [ ] 10. Clave de la API de Claude en local y tope de gasto mensual por cliente.
 
 **Otras ideas de IA** (sin empezar)
