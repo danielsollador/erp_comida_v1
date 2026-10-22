@@ -16,6 +16,8 @@ import { req } from './api'
  * llega ninguno de los dos avisos y pedirselo seria ruido.
  */
 const CLAVE = 'vp_push_token'
+// La ultima notificacion que ya llevo a su pantalla (ver useAbrirAlTocar).
+const CLAVE_USADA = 'vp_push_usada'
 
 // Con la app abierta tambien se muestra el aviso arriba: la campana interna
 // puede no estar a la vista.
@@ -73,8 +75,21 @@ export function useAbrirAlTocar(activo: boolean) {
       const ruta = r?.notification.request.content.data?.ruta
       if (typeof ruta === 'string' && ruta.startsWith('/')) router.push(ruta as Href)
     }
-    // La que abrio la app estando cerrada.
-    ir(Notifications.getLastNotificationResponse())
+    // La que abrio la app estando cerrada. El sistema la recuerda para
+    // siempre: sin anotar que ya se uso, cada entrada a la cuenta volvia a
+    // abrir Notificaciones (Leider, 22-oct). Se lleva una sola vez.
+    const ultima = Notifications.getLastNotificationResponse()
+    const id = ultima?.notification.request.identifier
+    if (id) {
+      almacen
+        .leer(CLAVE_USADA)
+        .then((usada) => {
+          if (usada === id) return
+          void almacen.guardar(CLAVE_USADA, id)
+          ir(ultima)
+        })
+        .catch(() => undefined)
+    }
     const sub = Notifications.addNotificationResponseReceivedListener(ir)
     return () => sub.remove()
   }, [activo])
