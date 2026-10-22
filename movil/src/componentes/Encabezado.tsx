@@ -1,4 +1,4 @@
-import { router } from 'expo-router'
+import { router, usePathname } from 'expo-router'
 import { Image } from 'expo-image'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -152,6 +152,7 @@ export function Campana({ plano = false }: { plano?: boolean }) {
   const t = useTema()
   const { acceso } = useSesion()
   const autoriza = acceso?.puede.autoriza ?? false
+  const ruta = usePathname()
   const [pendientes, setPendientes] = useState(0)
 
   useEffect(() => {
@@ -167,7 +168,9 @@ export function Campana({ plano = false }: { plano?: boolean }) {
   }, [autoriza])
 
   return (
-    <Control alTocar={() => router.push('/notificaciones')} etiqueta={`${pendientes} notificaciones`} plano={plano}>
+    // Ya dentro de Notificaciones no se apila otra igual: tocarla diez veces
+    // abria diez pantallas y habia que volver diez veces (22-oct).
+    <Control alTocar={() => ruta !== '/notificaciones' && router.push('/notificaciones')} etiqueta={`${pendientes} notificaciones`} plano={plano}>
       <Icono nombre="campana" size={17} color={t.suave} />
       {pendientes > 0 && (
         <View style={[estilos.globo, { backgroundColor: t.tinta, borderColor: t.papel }]}>
@@ -242,10 +245,13 @@ export function Controles() {
  * estan en el inicio y en Configuracion.
  */
 export function ControlesCabecera() {
+  const t = useTema()
   const { acceso } = useSesion()
   return (
     <View style={estilos.controlesPlanos}>
       {acceso?.puede.operar && <BotonMoneda plano />}
+      {/* Una raya entre los dos: juntos parecian un solo boton (22-oct). */}
+      {acceso?.puede.operar && <View style={[estilos.divisor, { backgroundColor: t.gris200 }]} />}
       <Campana plano />
     </View>
   )
@@ -255,7 +261,8 @@ const estilos = StyleSheet.create({
   marcaTexto: { fontFamily: LETRA.tituloFuerte, fontSize: 20, letterSpacing: -0.4 },
   logo: { width: 104, height: 34 },
   controles: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  controlesPlanos: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  controlesPlanos: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
+  divisor: { width: StyleSheet.hairlineWidth * 2, height: 20 },
   controlPlano: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   controlPlanoAncho: { height: 36, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6 },
   control: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

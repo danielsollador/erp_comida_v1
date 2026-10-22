@@ -1,6 +1,15 @@
 import * as almacen from '../../lib/almacen'
 import { useEffect, useState } from 'react'
-import { Pressable, StyleSheet, Text, View, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native'
+import {
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from 'react-native'
 import Animated, {
   Easing,
   cancelAnimation,
@@ -49,40 +58,105 @@ export function Espera({ titulo, valor, nota, to }: { titulo: string; valor: num
   )
 }
 
-/** "¿Sabías que…?": lo que el sistema avisa solo. */
+/**
+ * "¿Sabías que…?": lo que el sistema avisa solo. Cada aviso se quita
+ * deslizandolo de lado (Leider, 22-oct: "son tan invasivos"). Lo quitado se
+ * recuerda en el telefono por su texto: si el aviso cambia (otro monto,
+ * otras mercancias), vuelve a salir, porque ya es otra noticia.
+ */
+const CLAVE_QUITADOS = 'vp_avisos_quitados'
+const claveAviso = (a: Aviso) => `${a.id}|${a.titulo}`
+
 export function Avisos({ lista }: { lista: Aviso[] }) {
   const t = useTema()
-  if (lista.length === 0) return null
+  const [quitados, setQuitados] = useState<string[] | null>(null)
+  useEffect(() => {
+    almacen
+      .leer(CLAVE_QUITADOS)
+      .then((v) => setQuitados(v ? (JSON.parse(v) as string[]) : []))
+      .catch(() => setQuitados([]))
+  }, [])
+  if (quitados === null) return null
+  const visibles = lista.filter((a) => !quitados.includes(claveAviso(a)))
+  if (visibles.length === 0) return null
+  const quitar = (a: Aviso) => {
+    // Solo se guardan los de la lista de hoy: lo viejo no se acumula.
+    const hoy = new Set(lista.map(claveAviso))
+    const nuevos = [...quitados.filter((k) => hoy.has(k)), claveAviso(a)]
+    setQuitados(nuevos)
+    almacen.guardar(CLAVE_QUITADOS, JSON.stringify(nuevos)).catch(() => undefined)
+  }
   return (
     <View style={{ gap: 10 }}>
-      <Text style={[estilos.etiqueta, { color: t.tenue, marginTop: 2 }]}>¿Sabías que…?</Text>
-      {lista.map((a) => {
-        const tono = a.tono === 'ojo' ? 'aviso' : undefined
-        const fondo = a.tono === 'bien' ? { backgroundColor: t.exitoSuave, borderColor: t.exitoSuave } : undefined
-        const punto = a.tono === 'ojo' ? t.aviso : a.tono === 'bien' ? t.exito500 : t.acento
-        const tinta = a.tono === 'ojo' ? t.avisoFuerte : a.tono === 'bien' ? t.exito : t.tinta
-        return (
-          <Pressable
-            key={a.id}
-            onPress={() => a.a && abrir(a.a)}
-            accessibilityRole="button"
-            accessibilityLabel={a.titulo}
-            style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.985 : 1 }] }]}
-          >
-            <Ficha tono={tono} style={[estilos.aviso, fondo]}>
-              <View style={[estilos.avisoPunto, { backgroundColor: punto }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[estilos.avisoTitulo, { color: tinta }]}>{a.titulo}</Text>
-                {a.detalle ? <Text style={[estilos.avisoDetalle, { color: tinta }]}>{a.detalle}</Text> : null}
-              </View>
-              <View style={[estilos.avisoFlecha, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
-                <Icono nombre="chevron" size={14} color={tinta} />
-              </View>
-            </Ficha>
-          </Pressable>
-        )
-      })}
+      <Text style={[estilos.etiqueta, { color: t.tenue, marginTop: 2 }]}>¿Sabías que…? · desliza para quitar</Text>
+      {visibles.map((a) => (
+        <AvisoDeslizable key={claveAviso(a)} a={a} alQuitar={() => quitar(a)} />
+      ))}
     </View>
+  )
+}
+
+/** Un aviso que sigue al dedo de lado; pasado un tercio del ancho, se va. */
+function AvisoDeslizable({ a, alQuitar }: { a: Aviso; alQuitar: () => void }) {
+  const t = useTema()
+  const { width } = useWindowDimensions()
+  const x = useSharedValue(0)
+  // El gesto (que se arma una sola vez) solo marca que se fue; el aviso se
+  // quita de la lista despues de que termina de salir.
+  const [ido, setIdo] = useState(false)
+  useEffect(() => {
+    if (!ido) return
+    const id = setTimeout(alQuitar, 190)
+    return () => clearTimeout(id)
+  }, [ido, alQuitar])
+  const [pan] = useState(() =>
+    PanResponder.create({
+      // Solo un gesto claramente de lado: el desplazamiento vertical sigue siendo de la lista.
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderMove: (_, g) => x.set(g.dx),
+      onPanResponderRelease: (_, g) => {
+        if (Math.abs(g.dx) > width / 3 || Math.abs(g.vx) > 0.8) {
+          x.set(withTiming(Math.sign(g.dx || 1) * width, { duration: 180 }))
+          setIdo(true)
+        } else {
+          x.set(withSpring(0))
+        }
+      },
+      onPanResponderTerminate: () => x.set(withSpring(0)),
+    }),
+  )
+  const estilo = useAnimatedStyle(() => ({
+    transform: [{ translateX: x.value }],
+    opacity: 1 - Math.min(Math.abs(x.value) / width, 1),
+  }))
+
+  const tono = a.tono === 'ojo' ? 'aviso' : undefined
+  const fondo = a.tono === 'bien' ? { backgroundColor: t.exitoSuave, borderColor: t.exitoSuave } : undefined
+  const punto = a.tono === 'ojo' ? t.aviso : a.tono === 'bien' ? t.exito500 : t.acento
+  const tinta = a.tono === 'ojo' ? t.avisoFuerte : a.tono === 'bien' ? t.exito : t.tinta
+  return (
+    <Animated.View {...pan.panHandlers} style={estilo}>
+      <Pressable
+        onPress={() => a.a && abrir(a.a)}
+        accessibilityRole="button"
+        accessibilityLabel={a.titulo}
+        accessibilityHint="Desliza de lado para quitar este aviso"
+        accessibilityActions={[{ name: 'quitar', label: 'Quitar aviso' }]}
+        onAccessibilityAction={(e) => e.nativeEvent.actionName === 'quitar' && alQuitar()}
+        style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.985 : 1 }] }]}
+      >
+        <Ficha tono={tono} style={[estilos.aviso, fondo]}>
+          <View style={[estilos.avisoPunto, { backgroundColor: punto }]} />
+          <View style={{ flex: 1 }}>
+            <Text style={[estilos.avisoTitulo, { color: tinta }]}>{a.titulo}</Text>
+            {a.detalle ? <Text style={[estilos.avisoDetalle, { color: tinta }]}>{a.detalle}</Text> : null}
+          </View>
+          <View style={[estilos.avisoFlecha, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
+            <Icono nombre="chevron" size={14} color={tinta} />
+          </View>
+        </Ficha>
+      </Pressable>
+    </Animated.View>
   )
 }
 
