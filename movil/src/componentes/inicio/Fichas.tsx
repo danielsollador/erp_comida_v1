@@ -96,7 +96,7 @@ export function Avisos({ lista }: { lista: Aviso[] }) {
   )
 }
 
-/** Un aviso que sigue al dedo de lado; pasado un tercio del ancho, se va. */
+/** Un aviso que sigue al dedo de lado; pasado un cuarto del ancho (o con un toque rapido), se va. */
 function AvisoDeslizable({ a, alQuitar }: { a: Aviso; alQuitar: () => void }) {
   const t = useTema()
   const { width } = useWindowDimensions()
@@ -112,10 +112,16 @@ function AvisoDeslizable({ a, alQuitar }: { a: Aviso; alQuitar: () => void }) {
   const [pan] = useState(() =>
     PanResponder.create({
       // Solo un gesto claramente de lado: el desplazamiento vertical sigue siendo de la lista.
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      // Basta un gesto mas de lado que de arriba abajo, y se toma ANTES que la
+      // lista (capture): si no, el desplazamiento vertical se quedaba con el
+      // dedo y habia que deslizar "casi perfecto" (Leider, 22-oct).
+      onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy),
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy),
+      // Una vez de lado, la lista no se lo quita a medio camino.
+      onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, g) => x.set(g.dx),
       onPanResponderRelease: (_, g) => {
-        if (Math.abs(g.dx) > width / 3 || Math.abs(g.vx) > 0.8) {
+        if (Math.abs(g.dx) > width / 4 || Math.abs(g.vx) > 0.35) {
           x.set(withTiming(Math.sign(g.dx || 1) * width, { duration: 180 }))
           setIdo(true)
         } else {
