@@ -365,7 +365,8 @@ def _rutas_reales():
     for r in app.routes:
         ruta = getattr(r, "path", "")
         if (not ruta.startswith("/api/") or ruta.startswith("/api/acceso")
-                or ruta == "/api/health" or ruta.startswith("/api/usuarios/mi/")):
+                or ruta == "/api/health" or ruta.startswith("/api/usuarios/mi/")
+                or ruta.startswith("/api/push/")):
             continue
         concreta = re.sub(r"\{[^}]+\}", "1", ruta)
         for metodo in getattr(r, "methods", None) or ():

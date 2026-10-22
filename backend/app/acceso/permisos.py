@@ -306,6 +306,10 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
     # La clave y el PIN propios los cambia cada quien, sea el rol que sea.
     if ruta.startswith("/api/usuarios/mi/"):
         return True
+    # Su propio telefono para los avisos push lo registra cada quien (push.py
+    # decide despues a quien le llega cada aviso).
+    if ruta.startswith("/api/push/"):
+        return True
     if ruta.startswith(SOLO_VERTIGO):
         return r == "admin"
 
