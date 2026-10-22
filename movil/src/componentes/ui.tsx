@@ -1,5 +1,4 @@
 import { Host, Switch } from '@expo/ui'
-import { SegmentedControl } from '@expo/ui/community/segmented-control'
 import * as Haptics from 'expo-haptics'
 import type { ReactNode } from 'react'
 import {
@@ -89,7 +88,8 @@ export function Pantalla({
         >
           {children}
         </ScrollView>
-        {abajo ? <View style={{ paddingBottom: borde.bottom }}>{abajo}</View> : null}
+        {/* El mismo fondo que la barra: si no, bajo ella asoma el papel y la barra parece cortada. */}
+        {abajo ? <View style={{ paddingBottom: borde.bottom, backgroundColor: t.superficie }}>{abajo}</View> : null}
       </SafeAreaView>
     </View>
   )
@@ -386,21 +386,9 @@ export function Pestanas<T extends string>({
     vibrar()
     alCambiar(id)
   }
-  const caben = opciones.length <= 4 && opciones.reduce((n, o) => n + o.texto.length, 0) <= 36
-  if (caben) {
-    return (
-      <View style={estilos.pestanas}>
-        <SegmentedControl
-          values={opciones.map((o) => o.texto)}
-          selectedIndex={Math.max(0, opciones.findIndex((o) => o.id === valor))}
-          onChange={(e) => {
-            const o = opciones[e.nativeEvent.selectedSegmentIndex]
-            if (o) cambiar(o.id)
-          }}
-        />
-      </View>
-    )
-  }
+  // El segmentado nativo se probo (SegmentedControl de @expo/ui) y en iOS, en
+  // modo claro, salia blanco sobre gris claro: ilegible. Las pastillas propias
+  // llevan los colores del tema en los dos modos; se quedan.
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={estilos.pestanas}>
       <View style={[estilos.pestanasCaja, { backgroundColor: t.gris100, borderColor: t.gris200 }]}>

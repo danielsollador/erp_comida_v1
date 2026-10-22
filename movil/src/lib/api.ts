@@ -22,7 +22,7 @@ import type {
  * El token se guarda en el almacen cifrado del telefono (Keychain en iOS,
  * Keystore en Android), no en un archivo cualquiera.
  */
-const BASE = (process.env.EXPO_PUBLIC_API_BASE ?? 'https://prueba.vertigopro.tech').replace(/\/+$/, '')
+const BASE = (process.env.EXPO_PUBLIC_API_BASE ?? 'https://savora.vertigopro.tech').replace(/\/+$/, '')
 // En el emulador de Android, "127.0.0.1" es el propio emulador: la laptop
 // donde corre el backend de desarrollo se llama 10.0.2.2. Asi la misma
 // variable sirve para el navegador y para el emulador.

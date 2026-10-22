@@ -96,7 +96,10 @@ export default function Recorrido({
               conMarca={Boolean(p && !p.pendiente)}
               animar={animar && listo}
               alMedir={(y) => setCentros((c) => (c[i] === y ? c : { ...c, [i]: y }))}
-              alTocar={() => abrir(p?.a && p.a !== e.to ? p.a : e.to)}
+              // Siempre el modulo de la estacion: el servidor a veces manda
+              // "Compras" a Que comprar (Inventario) y en el telefono eso se
+              // siente como tocar una cosa y abrir otra.
+              alTocar={() => abrir(e.to)}
             />
           )
         })}

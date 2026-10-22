@@ -649,7 +649,9 @@ type PropsHojaFormulario = {
 }
 
 export function HojaFormulario(props: PropsHojaFormulario) {
-  if (process.env.EXPO_OS === 'web') return <HojaFormularioWeb {...props} />
+  // Como `Hoja`: en iOS la hoja de SwiftUI no quedo bien en el iPhone; hasta
+  // verla ahi, iOS y web usan la hoja propia (pageSheet). Android, la nativa.
+  if (process.env.EXPO_OS !== 'android') return <HojaFormularioWeb {...props} />
   return <HojaFormularioNativa {...props} />
 }
 
@@ -780,7 +782,8 @@ export function PantallaLista<T>({
           ) : undefined
         }
       />
-      {abajo ? <View style={{ paddingBottom: borde.bottom }}>{abajo}</View> : null}
+      {/* El mismo fondo que la barra: si no, bajo ella asoma el papel y la barra parece cortada. */}
+      {abajo ? <View style={{ paddingBottom: borde.bottom, backgroundColor: t.superficie }}>{abajo}</View> : null}
     </View>
   )
 }

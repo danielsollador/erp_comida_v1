@@ -30,7 +30,10 @@ type PropsHoja = {
 }
 
 export function Hoja(props: PropsHoja) {
-  if (process.env.EXPO_OS === 'web') return <HojaWeb {...props} />
+  // En iOS la hoja de SwiftUI (BottomSheet + RNHostView) salio a pantalla
+  // completa y con el contenido apagado en el iPhone de Leider (22-oct); hasta
+  // verla bien ahi, iOS y web usan la hoja propia. Android si la nativa.
+  if (process.env.EXPO_OS !== 'android') return <HojaWeb {...props} />
   return <HojaNativa {...props} />
 }
 
