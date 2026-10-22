@@ -122,6 +122,12 @@ GEMINI_MODELO = os.getenv("ERP_GEMINI_MODELO", "").strip() or "gemini-3.5-flash-
 _respaldo = os.getenv("ERP_GEMINI_MODELO_RESPALDO", "").strip()
 GEMINI_MODELO_RESPALDO = "" if _respaldo == "-" else (_respaldo or "gemini-3.8-flash")
 
+# Los casos de soporte (triaje.py) se guardan siempre en la base; con estas
+# dos, ademas se abren como issue en GitHub. El token es un secreto (solo
+# permiso de issues sobre ese repositorio) y va en el `.env`.
+GITHUB_REPO_SOPORTE = os.getenv("ERP_GITHUB_REPO_SOPORTE", "").strip()
+GITHUB_TOKEN_SOPORTE = os.getenv("ERP_GITHUB_TOKEN_SOPORTE", "").strip() or _del_env_local("ERP_GITHUB_TOKEN_SOPORTE")
+
 # Siembra del primer usuario, OPCIONAL. Sin esto, la primera visita al ERP
 # pide crear el administrador desde el navegador (modo instalacion).
 APP_USER = os.getenv("ERP_APP_USER", "admin").strip() or "admin"

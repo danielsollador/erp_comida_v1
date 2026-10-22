@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { api } from '../lib/api'
-import type { RespuestaNegocio, TurnoAyuda } from '../lib/types'
+import type { BorradorCaso, RespuestaNegocio, TurnoAyuda } from '../lib/types'
 import Icono from './Icono'
 
 /**
@@ -80,7 +80,9 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
   const [turnos, setTurnos] = useState<Turno[]>(() => leerGuardado('ayuda'))
   const [texto, setTexto] = useState('')
   const [pensando, setPensando] = useState(false)
-  const [copiado, setCopiado] = useState(false)
+  // El caso para soporte: armándose, o el borrador que la persona revisa.
+  const [caso, setCaso] = useState<BorradorCaso | 'armando' | null>(null)
+  const [enviandoCaso, setEnviandoCaso] = useState(false)
   const lista = useRef<HTMLDivElement>(null)
   const campo = useRef<HTMLTextAreaElement>(null)
 
@@ -144,18 +146,36 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
     setPensando(false)
   }
 
-  const copiar = async () => {
-    const todo = turnos.map((t) => `${t.rol === 'usuario' ? 'Yo' : 'Ayuda'}: ${t.texto}`).join('\n\n')
+  // «Soporte»: la IA arma el caso desde la conversación y la persona lo
+  // revisa antes de mandarlo (ver backend/app/triaje.py).
+  const pedirSoporte = async () => {
+    setCaso('armando')
     try {
-      await navigator.clipboard.writeText(`Pantalla: ${pathname}\n\n${todo}`)
-      setCopiado(true)
-      window.setTimeout(() => setCopiado(false), 2000)
+      setCaso(await api.borradorCaso(pathname, turnos.map(({ rol, texto }) => ({ rol, texto }))))
     } catch {
-      // sin portapapeles (http sin cifrar): no hay nada que hacer
+      setCaso({ tipo: 'duda', titulo: turnos.find((t) => t.rol === 'usuario')?.texto.slice(0, 90) ?? '', resumen: '', con_ia: false })
     }
   }
 
+  const mandarCaso = async () => {
+    if (!caso || caso === 'armando' || !caso.titulo.trim()) return
+    setEnviandoCaso(true)
+    let aviso: string
+    try {
+      const r = await api.registrarCaso({ ...caso, pantalla: pathname, historial: turnos.map(({ rol, texto }) => ({ rol, texto })) })
+      aviso = `Listo: tu caso #${r.id} quedó registrado y el equipo lo va a revisar.`
+      setCaso(null)
+    } catch {
+      aviso = 'No pude registrar el caso: revisa la conexión y prueba otra vez.'
+    }
+    const con = [...turnos, { rol: 'asistente' as const, texto: aviso }]
+    setTurnos(con)
+    guardar(modo, con)
+    setEnviandoCaso(false)
+  }
+
   const reiniciar = () => {
+    setCaso(null)
     setTurnos([])
     guardar(modo, [])
     campo.current?.focus()
@@ -199,8 +219,13 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
                 <h2 className="font-display font-semibold text-[17px] flex-1">Ayuda</h2>
                 {turnos.length > 0 && (
                   <>
-                    <button type="button" onClick={() => void copiar()} className="text-xs font-medium text-neutral-500 hover:text-neutral-900 px-2 py-1.5">
-                      {copiado ? 'Copiada' : 'Copiar'}
+                    <button
+                      type="button"
+                      onClick={() => void pedirSoporte()}
+                      disabled={caso !== null || pensando}
+                      className="text-xs font-medium text-neutral-500 hover:text-neutral-900 px-2 py-1.5 disabled:opacity-40"
+                    >
+                      Soporte
                     </button>
                     <button type="button" onClick={reiniciar} className="text-xs font-medium text-neutral-500 hover:text-neutral-900 px-2 py-1.5">
                       Nueva
@@ -282,6 +307,54 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
                     {modo === 'negocio' ? 'Calculando…' : 'Buscando en el manual…'}
                   </p>
                 )}
+                {caso === 'armando' && (
+                  <p className="self-start rounded-2xl bg-neutral-100 px-3.5 py-2 text-sm text-neutral-500" aria-live="polite">
+                    Armando el caso para el equipo…
+                  </p>
+                )}
+                {caso && caso !== 'armando' && (
+                  <div className="rounded-2xl border border-acento-200 bg-acento-50 p-3.5 flex flex-col gap-2.5 text-sm">
+                    <p className="font-semibold">Pasar al equipo de soporte</p>
+                    <p className="text-xs text-neutral-600">Revisa lo que va a recibir el equipo. Va con esta conversación y la pantalla donde estás.</p>
+                    <select
+                      value={caso.tipo}
+                      onChange={(e) => setCaso({ ...caso, tipo: e.target.value })}
+                      className="rounded-lg border border-neutral-200 bg-white px-2 py-2"
+                    >
+                      <option value="duda">Duda de uso</option>
+                      <option value="error">Algo no funciona</option>
+                      <option value="pedido">Quiero algo que el sistema no tiene</option>
+                      <option value="dato">Un dato está mal cargado</option>
+                    </select>
+                    <input
+                      value={caso.titulo}
+                      onChange={(e) => setCaso({ ...caso, titulo: e.target.value })}
+                      maxLength={120}
+                      placeholder="En una línea, qué pasa"
+                      className="rounded-lg border border-neutral-200 bg-white px-3 py-2"
+                    />
+                    <textarea
+                      value={caso.resumen}
+                      onChange={(e) => setCaso({ ...caso, resumen: e.target.value })}
+                      rows={4}
+                      placeholder="Qué querías hacer y qué pasó"
+                      className="rounded-lg border border-neutral-200 bg-white px-3 py-2 resize-y"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void mandarCaso()}
+                        disabled={enviandoCaso || !caso.titulo.trim()}
+                        className="flex-1 rounded-lg bg-neutral-900 text-white py-2 font-medium disabled:opacity-50"
+                      >
+                        {enviandoCaso ? 'Enviando…' : 'Enviar al equipo'}
+                      </button>
+                      <button type="button" onClick={() => setCaso(null)} className="rounded-lg px-3 py-2 text-neutral-600 hover:bg-white">
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <form
@@ -319,7 +392,7 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
                 <p className="mt-2 text-[11px] text-neutral-500">
                   {modo === 'negocio'
                     ? 'La IA elige la consulta y la dice en palabras; los números de la tabla salen del sistema. No cambia nada.'
-                    : 'Solo explica: no cambia nada. Si no lo resuelve, toca «Copiar» y mándaselo a soporte.'}
+                    : 'Solo explica: no cambia nada. Si no lo resuelve, toca «Soporte» y le llega al equipo.'}
                 </p>
               </form>
             </section>

@@ -2359,3 +2359,22 @@ export interface BorradorWhatsApp {
   total: number
   con_ia: boolean
 }
+
+/** Un caso para el equipo de soporte, armado desde el chat (ver backend/app/triaje.py). */
+export interface BorradorCaso {
+  tipo: string
+  titulo: string
+  resumen: string
+  con_ia: boolean
+}
+
+export interface CasoRegistrado {
+  id: number
+  creado_en: string
+  tipo: string
+  titulo: string
+  estado: string
+  issue_url: string
+  usuario: string
+  pantalla: string
+}

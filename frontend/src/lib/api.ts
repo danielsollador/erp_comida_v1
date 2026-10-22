@@ -4,6 +4,8 @@ import type {
   ExplicacionCierre,
   PropuestaRevisada,
   TurnoAyuda,
+  BorradorCaso,
+  CasoRegistrado,
   BorradorWhatsApp,
   ResultadoConciliacion,
   RespuestaNegocio,
@@ -1184,6 +1186,12 @@ export const api = {
   /** Cargar el inventario con IA: si está prendido (mismo interruptor que las facturas). */
   /** El chat de ayuda (ver backend/app/asistente_ayuda.py). */
   estadoAyuda: () => req<{ activo: boolean; negocio: boolean }>('/ayuda'),
+  /** El caso para soporte, armado desde la conversación. No guarda nada. */
+  borradorCaso: (pantalla: string, historial: TurnoAyuda[]) =>
+    req<BorradorCaso>('/ayuda/caso/borrador', { method: 'POST', body: JSON.stringify({ pantalla, historial }) }),
+  registrarCaso: (caso: { tipo: string; titulo: string; resumen: string; pantalla: string; historial: TurnoAyuda[] }) =>
+    req<CasoRegistrado>('/ayuda/caso', { method: 'POST', body: JSON.stringify(caso) }),
+  casosDeSoporte: () => req<CasoRegistrado[]>('/ayuda/casos'),
   /** Pregúntale a tu negocio (ver backend/app/pregunta_negocio.py). */
   preguntarNegocio: (pregunta: string, historial: TurnoAyuda[]) =>
     req<RespuestaNegocio>('/ayuda/negocio', {

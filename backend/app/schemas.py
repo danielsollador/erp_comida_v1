@@ -3495,3 +3495,36 @@ class BorradorWhatsApp(BaseModel):
     lineas: List[LineaBorrador] = Field(default_factory=list)
     total: float = 0
     con_ia: bool = False
+
+
+# ── Casos de soporte (ver triaje.py) ───────────────────────────────────────
+
+class PedidoBorradorCaso(BaseModel):
+    pantalla: str = Field("", max_length=200)
+    historial: List[TurnoAyuda] = Field(default_factory=list, max_length=40)
+
+
+class BorradorCaso(BaseModel):
+    tipo: str  # duda | error | pedido | dato
+    titulo: str
+    resumen: str = ""
+    con_ia: bool = False
+
+
+class CasoNuevo(BaseModel):
+    tipo: str = "duda"
+    titulo: str = Field(..., min_length=1, max_length=200)
+    resumen: str = Field("", max_length=4000)
+    pantalla: str = Field("", max_length=200)
+    historial: List[TurnoAyuda] = Field(default_factory=list, max_length=40)
+
+
+class CasoRegistrado(BaseModel):
+    id: int
+    creado_en: datetime.datetime
+    tipo: str
+    titulo: str
+    estado: str
+    issue_url: str = ""
+    usuario: str = ""
+    pantalla: str = ""
