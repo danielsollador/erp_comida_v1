@@ -3362,6 +3362,27 @@ class RespuestaAyuda(BaseModel):
     con_ia: bool
 
 
+class EstadoAyuda(BaseModel):
+    activo: bool
+    # Si quien pregunta entra a algun reporte: «Mis números» (pregunta_negocio.py).
+    negocio: bool = False
+
+
+class RespuestaNegocio(BaseModel):
+    """La respuesta de «Pregúntale a tu negocio»: lo que redacta la IA y,
+    debajo, la tabla que calculó el sistema, ya formateada."""
+    texto: str
+    con_ia: bool
+    titulo: str = ""
+    columnas: List[str] = Field(default_factory=list)
+    filas: List[List[str]] = Field(default_factory=list)
+    total: List[str] = Field(default_factory=list)
+    # Cuantas columnas del principio son nombres (producto, dia); el resto, numeros.
+    agrupado: int = 0
+    # Filas que no se muestran (las que siguen al tope).
+    mas: int = 0
+
+
 # ── Pedido al proveedor (ver pedido_proveedor.py) ──────────────────────────
 
 class LineaPedidoProveedor(BaseModel):

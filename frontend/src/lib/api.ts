@@ -4,6 +4,7 @@ import type {
   ExplicacionCierre,
   PropuestaRevisada,
   TurnoAyuda,
+  RespuestaNegocio,
   PedidoProveedor,
   ResultadoCarga,
   Reclamo,
@@ -1171,7 +1172,13 @@ export const api = {
   estadoLectorFacturas: () => req<{ activo: boolean; lector: string }>('/compras/lectura'),
   /** Cargar el inventario con IA: si está prendido (mismo interruptor que las facturas). */
   /** El chat de ayuda (ver backend/app/asistente_ayuda.py). */
-  estadoAyuda: () => req<{ activo: boolean; lector: string }>('/ayuda'),
+  estadoAyuda: () => req<{ activo: boolean; negocio: boolean }>('/ayuda'),
+  /** Pregúntale a tu negocio (ver backend/app/pregunta_negocio.py). */
+  preguntarNegocio: (pregunta: string, historial: TurnoAyuda[]) =>
+    req<RespuestaNegocio>('/ayuda/negocio', {
+      method: 'POST',
+      body: JSON.stringify({ pregunta, historial }),
+    }),
   preguntarAyuda: (pregunta: string, pantalla: string, historial: TurnoAyuda[]) =>
     req<{ texto: string; con_ia: boolean }>('/ayuda', {
       method: 'POST',

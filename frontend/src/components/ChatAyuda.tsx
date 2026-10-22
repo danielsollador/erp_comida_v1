@@ -2,15 +2,21 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { api } from '../lib/api'
-import type { TurnoAyuda } from '../lib/types'
+import type { RespuestaNegocio, TurnoAyuda } from '../lib/types'
 import Icono from './Icono'
 
 /**
  * El chat de ayuda: el "?" de la barra de arriba, en todas las pantallas.
  *
- * Responde con el manual del sistema (ver backend/app/asistente_ayuda.py),
- * sabiendo en qué pantalla está quien pregunta y a qué entra su rol. Solo
- * explica: no ve las ventas ni toca nada.
+ * Dos pestañas:
+ *  - «Cómo se hace»: responde con el manual del sistema (ver
+ *    backend/app/asistente_ayuda.py), sabiendo en qué pantalla está quien
+ *    pregunta y a qué entra su rol.
+ *  - «Mis números»: pregúntale a tu negocio (pregunta_negocio.py). La IA
+ *    elige una consulta de los reportes y la dice en palabras; el número lo
+ *    calcula el sistema y su tabla va debajo. Solo si el rol entra a algún
+ *    reporte.
+ * Ninguna de las dos cambia nada.
  *
  * La conversación vive en `sessionStorage` y no en el componente: la barra
  * se vuelve a montar en cada pantalla, y "¿y eso dónde está?" tiene que
@@ -31,24 +37,35 @@ const SUGERENCIAS: Record<string, string[]> = {
 }
 const GENERALES = ['¿Cómo es el día en el sistema, de punta a punta?', '¿Qué hago si no me cuadra la caja?']
 
-let estadoCache: Promise<boolean> | null = null
-function ayudaActiva(): Promise<boolean> {
-  estadoCache ??= api.estadoAyuda().then((e) => e.activo, () => false)
+const DE_NUMEROS = [
+  '¿Cuánto vendí hoy?',
+  '¿Qué fue lo que más vendí esta semana?',
+  '¿Qué día de la semana vendo más?',
+  '¿Cuánto le compré a cada proveedor este mes?',
+]
+
+type Modo = 'ayuda' | 'negocio'
+/** Un turno y, si es de «Mis números», la tabla que calculó el sistema. */
+type Turno = TurnoAyuda & { tabla?: RespuestaNegocio }
+
+let estadoCache: Promise<{ activo: boolean; negocio: boolean }> | null = null
+function estadoAyuda() {
+  estadoCache ??= api.estadoAyuda().catch(() => ({ activo: false, negocio: false }))
   return estadoCache
 }
 
-function leerGuardado(): TurnoAyuda[] {
+function leerGuardado(modo: Modo): Turno[] {
   try {
-    const crudo = sessionStorage.getItem(CLAVE)
-    return crudo ? (JSON.parse(crudo) as TurnoAyuda[]) : []
+    const crudo = sessionStorage.getItem(`${CLAVE}:${modo}`)
+    return crudo ? (JSON.parse(crudo) as Turno[]) : []
   } catch {
     return []
   }
 }
 
-function guardar(turnos: TurnoAyuda[]) {
+function guardar(modo: Modo, turnos: Turno[]) {
   try {
-    sessionStorage.setItem(CLAVE, JSON.stringify(turnos.slice(-30)))
+    sessionStorage.setItem(`${CLAVE}:${modo}`, JSON.stringify(turnos.slice(-30)))
   } catch {
     // sin almacenamiento la conversacion dura lo que dure la pantalla
   }
@@ -57,8 +74,10 @@ function guardar(turnos: TurnoAyuda[]) {
 export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
   const { pathname } = useLocation()
   const [activa, setActiva] = useState(false)
+  const [conNumeros, setConNumeros] = useState(false)
   const [abierto, setAbierto] = useState(false)
-  const [turnos, setTurnos] = useState<TurnoAyuda[]>(leerGuardado)
+  const [modo, setModo] = useState<Modo>('ayuda')
+  const [turnos, setTurnos] = useState<Turno[]>(() => leerGuardado('ayuda'))
   const [texto, setTexto] = useState('')
   const [pensando, setPensando] = useState(false)
   const [copiado, setCopiado] = useState(false)
@@ -66,7 +85,10 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
   const campo = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    void ayudaActiva().then(setActiva)
+    void estadoAyuda().then((e) => {
+      setActiva(e.activo)
+      setConNumeros(e.negocio)
+    })
   }, [])
 
   useEffect(() => {
@@ -84,26 +106,41 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
   if (!activa) return null
 
   const modulo = pathname.split('/')[1] || ''
-  const sugerencias = SUGERENCIAS[modulo] ?? GENERALES
+  const sugerencias = modo === 'negocio' ? DE_NUMEROS : (SUGERENCIAS[modulo] ?? GENERALES)
+
+  const cambiarModo = (nuevo: Modo) => {
+    if (nuevo === modo || pensando) return
+    setModo(nuevo)
+    setTurnos(leerGuardado(nuevo))
+    campo.current?.focus()
+  }
 
   const preguntar = async (pregunta: string) => {
     pregunta = pregunta.trim()
     if (!pregunta || pensando) return
     const antes = turnos
-    const conPregunta = [...antes, { rol: 'usuario' as const, texto: pregunta }]
+    const enModo = modo
+    const conPregunta: Turno[] = [...antes, { rol: 'usuario', texto: pregunta }]
     setTurnos(conPregunta)
-    guardar(conPregunta)
+    guardar(enModo, conPregunta)
     setTexto('')
     setPensando(true)
-    let respuesta: string
+    // Al servidor va solo lo dicho, no las tablas.
+    const historial = antes.map(({ rol, texto }) => ({ rol, texto }))
+    let respuesta: Turno
     try {
-      respuesta = (await api.preguntarAyuda(pregunta, pathname, antes)).texto
+      if (enModo === 'negocio') {
+        const r = await api.preguntarNegocio(pregunta, historial)
+        respuesta = { rol: 'asistente', texto: r.texto, tabla: r.columnas.length ? r : undefined }
+      } else {
+        respuesta = { rol: 'asistente', texto: (await api.preguntarAyuda(pregunta, pathname, historial)).texto }
+      }
     } catch {
-      respuesta = 'No pude responder ahora: revisa la conexión y prueba otra vez.'
+      respuesta = { rol: 'asistente', texto: 'No pude responder ahora: revisa la conexión y prueba otra vez.' }
     }
-    const conRespuesta = [...conPregunta, { rol: 'asistente' as const, texto: respuesta }]
+    const conRespuesta = [...conPregunta, respuesta]
     setTurnos(conRespuesta)
-    guardar(conRespuesta)
+    guardar(enModo, conRespuesta)
     setPensando(false)
   }
 
@@ -120,7 +157,7 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
 
   const reiniciar = () => {
     setTurnos([])
-    guardar([])
+    guardar(modo, [])
     campo.current?.focus()
   }
 
@@ -180,11 +217,37 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
                 </button>
               </header>
 
+              {conNumeros && (
+                <div role="tablist" className="flex gap-1 px-4 pt-3 shrink-0">
+                  {(
+                    [
+                      ['ayuda', 'Cómo se hace'],
+                      ['negocio', 'Mis números'],
+                    ] as const
+                  ).map(([id, nombre]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={modo === id}
+                      onClick={() => cambiarModo(id)}
+                      className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${
+                        modo === id ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'
+                      }`}
+                    >
+                      {nombre}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div ref={lista} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
                 {turnos.length === 0 && (
                   <div className="flex flex-col gap-3">
                     <p className="text-sm text-neutral-600 text-pretty">
-                      Pregunta cómo se hace algo o qué significa lo que ves. Respondo con el manual del sistema.
+                      {modo === 'negocio'
+                        ? 'Pregunta por tus ventas, productos, compras o la caja. El número lo calcula el sistema con tus reportes.'
+                        : 'Pregunta cómo se hace algo o qué significa lo que ves. Respondo con el manual del sistema.'}
                     </p>
                     <div className="flex flex-col gap-2">
                       {sugerencias.map((s) => (
@@ -206,14 +269,17 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
                       {t.texto}
                     </p>
                   ) : (
-                    <div key={i} className="max-w-[92%] rounded-2xl rounded-bl-md bg-neutral-100 px-3.5 py-2.5 text-sm leading-relaxed">
-                      <Respuesta texto={t.texto} />
+                    <div key={i} className="max-w-[92%] flex flex-col gap-2">
+                      <div className="rounded-2xl rounded-bl-md bg-neutral-100 px-3.5 py-2.5 text-sm leading-relaxed">
+                        <Respuesta texto={t.texto} />
+                      </div>
+                      {t.tabla && <TablaDelSistema r={t.tabla} />}
                     </div>
                   ),
                 )}
                 {pensando && (
                   <p className="self-start rounded-2xl bg-neutral-100 px-3.5 py-2 text-sm text-neutral-500" aria-live="polite">
-                    Buscando en el manual…
+                    {modo === 'negocio' ? 'Calculando…' : 'Buscando en el manual…'}
                   </p>
                 )}
               </div>
@@ -251,7 +317,9 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
                   </button>
                 </div>
                 <p className="mt-2 text-[11px] text-neutral-500">
-                  Solo explica: no ve tus ventas ni cambia nada. Si no lo resuelve, toca «Copiar» y mándaselo a soporte.
+                  {modo === 'negocio'
+                    ? 'La IA elige la consulta y la dice en palabras; los números de la tabla salen del sistema. No cambia nada.'
+                    : 'Solo explica: no cambia nada. Si no lo resuelve, toca «Copiar» y mándaselo a soporte.'}
                 </p>
               </form>
             </section>
@@ -259,6 +327,57 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
           document.body,
         )}
     </>
+  )
+}
+
+/** La tabla que calculó el sistema, tal cual: es la que manda, no la frase. */
+function TablaDelSistema({ r }: { r: RespuestaNegocio }) {
+  const alinear = (j: number) => (j < r.agrupado ? 'text-left' : 'text-right tabular-nums whitespace-nowrap')
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white text-[13px]">
+      <p className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wide text-neutral-500">{r.titulo}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="text-neutral-500">
+              {r.columnas.map((c, j) => (
+                <th key={j} className={`px-3 py-1 font-medium ${j < r.agrupado ? 'text-left' : 'text-right'}`}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {r.filas.length === 0 && (
+              <tr>
+                <td colSpan={r.columnas.length} className="px-3 py-2 text-neutral-500">
+                  Sin movimientos en ese período.
+                </td>
+              </tr>
+            )}
+            {r.filas.map((f, i) => (
+              <tr key={i} className="border-t border-neutral-100">
+                {f.map((v, j) => (
+                  <td key={j} className={`px-3 py-1 ${alinear(j)}`}>
+                    {v}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {r.total.length > 0 && (
+              <tr className="border-t border-neutral-200 font-semibold">
+                {r.total.map((v, j) => (
+                  <td key={j} className={`px-3 py-1 ${alinear(j)}`}>
+                    {v}
+                  </td>
+                ))}
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {r.mas > 0 && <p className="px-3 pb-2 text-[11px] text-neutral-500">Y {r.mas} más: el detalle completo está en Reportes.</p>}
+    </div>
   )
 }
 

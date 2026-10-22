@@ -2265,6 +2265,19 @@ export interface TurnoAyuda {
   texto: string
 }
 
+/** La respuesta de «Mis números»: lo que dice la IA y la tabla del sistema. */
+export interface RespuestaNegocio {
+  texto: string
+  con_ia: boolean
+  titulo: string
+  columnas: string[]
+  filas: string[][]
+  total: string[]
+  /** Cuántas columnas del principio son nombres; el resto, números. */
+  agrupado: number
+  mas: number
+}
+
 /** Un renglón del pedido al proveedor (ver backend/app/pedido_proveedor.py). */
 export interface LineaPedidoProveedor {
   ingrediente_id: number

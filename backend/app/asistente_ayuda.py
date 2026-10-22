@@ -16,7 +16,7 @@ ventas de ayer es el nivel siguiente (ver docs/pendientes.md).
 
 Responde Gemini por ahora; la prueba (`evals/asistente_soporte.py`) usa este
 mismo `SISTEMA`, así que lo que se mide es lo que se despliega. Cuando esté la
-clave de Claude, entra como otro proveedor en `_gemini` y se comparan con la
+clave de Claude, entra como otro proveedor en `gemini` y se comparan con la
 misma prueba.
 """
 
@@ -91,7 +91,7 @@ def responder(pregunta: str, historial: Sequence[schemas.TurnoAyuda], rol: str, 
     ]
     contenidos.append({"role": "user", "parts": [{"text": pregunta}]})
     inicio = time.monotonic()
-    texto = _gemini(contenidos, sistema(rol, pantalla))
+    texto = gemini(contenidos, sistema(rol, pantalla))
     log.info("ayuda rol=%s pantalla=%s %.1fs pregunta=%r", rol, pantalla, time.monotonic() - inicio, pregunta[:200])
     if not texto:
         return schemas.RespuestaAyuda(
@@ -101,7 +101,9 @@ def responder(pregunta: str, historial: Sequence[schemas.TurnoAyuda], rol: str, 
     return schemas.RespuestaAyuda(texto=texto, con_ia=True)
 
 
-def _gemini(contenidos: List[dict], instrucciones: str) -> Optional[str]:
+def gemini(contenidos: List[dict], instrucciones: str, esquema: Optional[dict] = None) -> Optional[str]:
+    """Una vuelta con Gemini: el texto de la respuesta, o None si no contestó.
+    Con `esquema`, la respuesta es ese JSON (lo usa pregunta_negocio.py)."""
     # El modelo de la prueba: con el liviano se equivocaba más en los "no lo
     # tiene el sistema". Si está saturado, el liviano antes que nada.
     modelos = [m for m in (settings.GEMINI_MODELO_RESPALDO, settings.GEMINI_MODELO) if m]
@@ -110,6 +112,9 @@ def _gemini(contenidos: List[dict], instrucciones: str) -> Optional[str]:
         "systemInstruction": {"parts": [{"text": instrucciones}]},
         "generationConfig": {"temperature": 0, "thinkingConfig": {"includeThoughts": True}},
     }
+    if esquema:
+        cuerpo["generationConfig"]["response_mime_type"] = "application/json"
+        cuerpo["generationConfig"]["response_schema"] = esquema
     for modelo in modelos:
         try:
             r = lectura_facturas._llamar(lectura_facturas.GEMINI_URL.format(modelo=modelo), cuerpo)

@@ -38,6 +38,18 @@ lleva cada sección.
 - «Vendido hoy»: lo cobrado hoy.
 - «En cocina» y «Por cobrar» solo se encienden si hay algo esperando.
 - La ficha del Punto de venta es la principal: es la que se usa todo el día.
+- «¿Sabías que…?»: avisos del sistema (lo que se acaba, lo que te deben). Las
+  alertas de plata --una merma muy por encima de lo normal, un insumo que subió
+  de golpe, la misma referencia bancaria en dos ventas-- traen «¿Por qué?», que
+  muestra los números que las prueban y qué hacer.
+
+**La ayuda («?», arriba en todas las pantallas):** un chat con dos pestañas.
+- «Cómo se hace»: responde con este manual.
+- «Mis números»: preguntas sobre tus datos («¿cuánto vendí el sábado?», «¿qué
+  producto vendí más este mes?», «¿cuánto le compré a cada proveedor?»). El
+  número lo calcula el sistema con los mismos reportes de Reportes, y debajo de
+  la respuesta sale su tabla. Cada quien ve solo lo de su rol: el costo y la
+  ganancia, solo el dueño. No cambia nada.
 
 ---
 
@@ -199,6 +211,9 @@ comprar» y «Control».
   También se puede subir la planilla: respeta su columna de unidad (850 g
   entra como 0,85 kg).
 - **«Cargar con IA»:** ver 5.6.
+- **«Pedir a proveedores»** (en «Qué comprar»): arma el mensaje de WhatsApp para cada
+  proveedor con lo que falta, en la presentación en que él lo vende (bultos,
+  cajas). Se revisa y se manda con «Abrir WhatsApp» o «Copiar».
 - **«Nueva mercancía»**.
 - En «⋯»: «Administrar categorías».
 

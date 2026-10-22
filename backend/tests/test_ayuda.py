@@ -25,11 +25,11 @@ def gemini(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "clave-de-prueba")
     enviado = {}
 
-    def falsa(contenidos, instrucciones):
+    def falsa(contenidos, instrucciones, esquema=None):
         enviado.update(contenidos=contenidos, instrucciones=instrucciones)
         return "Toca «Lo viene a buscar» en la tarjeta."
 
-    monkeypatch.setattr(asistente_ayuda, "_gemini", falsa)
+    monkeypatch.setattr(asistente_ayuda, "gemini", falsa)
     return enviado
 
 
@@ -69,7 +69,7 @@ def test_sin_ia_lo_dice_y_no_falla(client, monkeypatch):
 
 
 def test_si_la_ia_no_contesta_se_dice(client, gemini, monkeypatch):
-    monkeypatch.setattr(asistente_ayuda, "_gemini", lambda *a: None)
+    monkeypatch.setattr(asistente_ayuda, "gemini", lambda *a: None)
     d = client.post("/api/ayuda", json={"pregunta": "hola"}).json()
     assert d["con_ia"] is False and "otra vez" in d["texto"]
 
