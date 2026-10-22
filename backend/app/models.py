@@ -2120,7 +2120,7 @@ class CasoSoporte(Base):
     como instrucciones.
     """
 
-    __tablename__ = "TRX930_SOP_CASO"
+    __tablename__ = "TRX930_ADM_CASO_SOPORTE"
 
     id = Column(Integer, primary_key=True)
     creado_en = Column(DateTime, default=ahora, index=True)

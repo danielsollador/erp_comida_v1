@@ -21,7 +21,7 @@ Si el chat no resuelve, la persona toca «Soporte». La IA arma el caso desde la
 conversación —tipo (duda, error, pedido o dato), título y resumen— y la persona
 lo revisa antes de mandarlo (`backend/app/triaje.py`).
 
-- Se guarda **siempre** en la base del local (`TRX930_SOP_CASO`), con la
+- Se guarda **siempre** en la base del local (`TRX930_ADM_CASO_SOPORTE`), con la
   pantalla, el rol y la conversación. `GET /api/ayuda/casos`: el dueño ve
   todos, el resto los suyos.
 - Si el local tiene GitHub configurado, además se abre un **issue** con las
