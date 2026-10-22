@@ -111,7 +111,7 @@ export function PanelUsuarios({ seccion }: { seccion: 'usuarios' | 'roles' }) {
           accion={
             <span className="flex items-center gap-3">
               <span className="text-xs text-neutral-400">{lista ? `${lista.usuarios.length} usuarios` : ''}</span>
-              <Boton tono="fantasma" onClick={() => setCreando(true)}>
+              <Boton tono="fantasma" data-guia="usuarios.crear" onClick={() => setCreando(true)}>
                 Crear usuario
               </Boton>
             </span>

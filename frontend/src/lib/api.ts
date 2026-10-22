@@ -236,7 +236,20 @@ export type DatosFacturaVenta = {
   razon_social_cliente?: string
 }
 
+/** Una vuelta del asistente (spike de IA). La guía, si viene, la recorre `Guia.tsx`. */
+export type RespuestaAsistente = {
+  texto: string
+  guia: { ruta: string; ancla: string; titulo: string; texto: string }[] | null
+  consulto: string[]
+  ms: number
+  costo_usd: number
+}
+
 export const api = {
+  // --- asistente ---
+  preguntarAsistente: (mensajes: { rol: 'yo' | 'asistente'; texto: string }[], pantalla: string) =>
+    req<RespuestaAsistente>('/asistente/preguntar', { method: 'POST', body: JSON.stringify({ mensajes, pantalla }) }),
+
   // --- acceso y usuarios ---
   estadoAcceso: () => req<EstadoAcceso>('/acceso/estado'),
   salir: () => req<{ ok: boolean }>('/acceso/logout', { method: 'POST' }),

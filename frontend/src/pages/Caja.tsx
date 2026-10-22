@@ -131,6 +131,7 @@ export default function Caja() {
                 si se anula y se rehace, que los libros no se reescriben). */}
             <button
               onClick={() => setContando(true)}
+              data-guia="caja.cerrar"
               className="w-full bg-neutral-900 text-white rounded-xl py-3.5 font-medium"
             >
               {resumen.cerrada ? 'Corregir el conteo' : 'Hacer cierre de caja'}

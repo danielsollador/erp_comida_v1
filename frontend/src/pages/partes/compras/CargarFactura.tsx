@@ -1420,6 +1420,7 @@ function ElegirCarga({ onFoto, onManual }: { onFoto: () => void; onManual: () =>
           <button
             key={o.titulo}
             type="button"
+            data-guia={o.principal ? 'compras.foto' : 'compras.a-mano'}
             onClick={o.alTocar}
             className="vp-losa group flex min-h-52 flex-col justify-between gap-8 rounded-3xl p-7 text-left transition-transform duration-200 [transition-timing-function:cubic-bezier(0.2,0.7,0.2,1)] active:scale-[0.985]"
           >

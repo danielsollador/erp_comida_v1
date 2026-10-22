@@ -12,6 +12,8 @@ import Inicio from './pages/Inicio'
 import Rail, { entraA, sinBarraLateral } from './components/Rail'
 import Conexion from './components/Conexion'
 import Solicitudes from './components/Solicitudes'
+import Asistente from './components/Asistente'
+import { GuiaProvider } from './components/Guia'
 import { DialogoProvider } from './components/dialogo'
 import { DeshacerProvider } from './components/Deshacer'
 import { TecladoProvider } from './components/Teclado'
@@ -191,6 +193,8 @@ function Marco({ children }: { children: ReactNode }) {
         </div>
         {/* Los avisos de "fulano pide autorizacion", solo para quien autoriza. */}
         <Solicitudes />
+        {/* Spike de IA: preguntar y pedir guías. */}
+        <Asistente />
       </div>
     </>
   )
@@ -206,6 +210,7 @@ export default function App() {
         <DialogoProvider>
         <DeshacerProvider>
         <BrowserRouter>
+          <GuiaProvider>
           <Marco>
             {/* Dentro del <Marco>: la barra lateral y el aviso de conexion no
                 parpadean mientras llega el modulo. */}
@@ -243,6 +248,7 @@ export default function App() {
             </Suspense>
             </SiNoCarga>
           </Marco>
+          </GuiaProvider>
         </BrowserRouter>
         </DeshacerProvider>
         </DialogoProvider>

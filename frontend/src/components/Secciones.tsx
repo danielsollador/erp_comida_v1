@@ -119,6 +119,7 @@ export function Secciones({
           <button
             key={s.id}
             type="button"
+            data-guia={`seccion.${s.id}`}
             onClick={() => alCambiar(s.id)}
             aria-current={esta ? 'page' : undefined}
             className={`vp-seccion shrink-0 inline-flex items-center gap-1.5 px-4 min-h-11 rounded-full text-sm whitespace-nowrap ${

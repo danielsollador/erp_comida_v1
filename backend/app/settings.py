@@ -122,6 +122,15 @@ GEMINI_MODELO = os.getenv("ERP_GEMINI_MODELO", "").strip() or "gemini-3.5-flash-
 _respaldo = os.getenv("ERP_GEMINI_MODELO_RESPALDO", "").strip()
 GEMINI_MODELO_RESPALDO = "" if _respaldo == "-" else (_respaldo or "gemini-3.8-flash")
 
+# El asistente (chat + guías) usa la misma clave. Flash-Lite: en el spike
+# (22-oct-2026, 13 preguntas) respondió igual de bien que Flash, en 4 s y no
+# 6-9 s, a ~US$0,001 por pregunta (Flash ~US$0,003-0,005). Flash escribe
+# respuestas más ricas: cambiar aquí si se prefiere eso a la espera.
+ASISTENTE_MODELO = os.getenv("ERP_ASISTENTE_MODELO", "").strip() or "gemini-3.5-flash-lite"
+# Cuánto "piensa" antes de responder (minimal | low | medium | high). Con el
+# de fábrica (high) Flash tardaba 8-11 s sin responder mejor.
+ASISTENTE_PENSAR = os.getenv("ERP_ASISTENTE_PENSAR", "").strip() or "low"
+
 # Siembra del primer usuario, OPCIONAL. Sin esto, la primera visita al ERP
 # pide crear el administrador desde el navegador (modo instalacion).
 APP_USER = os.getenv("ERP_APP_USER", "admin").strip() or "admin"

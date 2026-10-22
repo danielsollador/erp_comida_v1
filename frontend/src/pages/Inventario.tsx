@@ -471,10 +471,10 @@ export default function Inventario() {
                     Vender sin stock
                   </Boton>
                 )}
-                <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
+                <Boton tono="suave" data-guia="inventario.conteo" onClick={() => setContando(true)} disabled={activos.length === 0}>
                   Conteo físico
                 </Boton>
-                <Boton onClick={() => setFicha({ nuevo: 'insumo' })} icono="mas">
+                <Boton data-guia="inventario.nueva" onClick={() => setFicha({ nuevo: 'insumo' })} icono="mas">
                   Nueva mercancía
                 </Boton>
                 {config && (
@@ -530,7 +530,7 @@ export default function Inventario() {
               </div>
               {tipoActual === 'desechable' && (
                 <div className="ml-auto flex items-center gap-2">
-                  <Boton onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
+                  <Boton data-guia="inventario.nueva" onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
                     Nueva mercancía
                   </Boton>
                 </div>
@@ -594,10 +594,10 @@ export default function Inventario() {
                   resumen={resumenActual}
                   acciones={
                     <>
-                      <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
+                      <Boton tono="suave" data-guia="inventario.conteo" onClick={() => setContando(true)} disabled={activos.length === 0}>
                         Conteo físico
                       </Boton>
-                      <Boton onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
+                      <Boton data-guia="inventario.nueva" onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
                         Nueva mercancía
                       </Boton>
                     </>

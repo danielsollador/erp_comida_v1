@@ -554,6 +554,7 @@ function ProductosDe({
         <h2 className="font-semibold text-lg px-1 mr-auto">{categoria.nombre}</h2>
         <button
           onClick={onCrear}
+          data-guia="menu.nuevo-producto"
           className="bg-neutral-900 text-white px-3.5 py-2.5 rounded-xl text-sm font-medium"
         >
           + Producto

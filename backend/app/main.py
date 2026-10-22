@@ -14,6 +14,7 @@ from .database import Base, SessionLocal, engine, preparar_esquema
 from .migrations import aplicar as aplicar_migraciones
 from .migrations import renombrar_tablas
 from .routers import (
+    asistente,
     acceso as acceso_router,
     agencia,
     autorizaciones as autorizaciones_router,
@@ -245,6 +246,7 @@ app.include_router(compras_equivalencias.router)
 app.include_router(compras_alertas.router)
 app.include_router(proveedores.router)
 app.include_router(impuestos_router.router)
+app.include_router(asistente.router)
 
 
 @app.get("/api/health", tags=["infra"])
