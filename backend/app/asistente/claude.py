@@ -77,6 +77,8 @@ def conversar(
         {"type": "text", "text": sistema_variable},
     ]
     cache_leido = 0
+    cache_escrito = 0
+    previo = []  # texto que vino junto a una llamada a herramienta
     for vuelta in range(1, MAX_VUELTAS + 1):
         r.vueltas = vuelta
         try:
@@ -102,7 +104,8 @@ def conversar(
             raise ErrorDelAsistente(f"Claude respondió {e.status_code}: {str(e.message)[:200]}")
 
         u = resp.usage
-        r.tokens_entrada += (u.input_tokens or 0) + (getattr(u, "cache_creation_input_tokens", 0) or 0)
+        r.tokens_entrada += u.input_tokens or 0
+        cache_escrito += getattr(u, "cache_creation_input_tokens", 0) or 0
         cache_leido += getattr(u, "cache_read_input_tokens", 0) or 0
         r.tokens_salida += u.output_tokens or 0
 
@@ -113,11 +116,18 @@ def conversar(
         llamadas = [b for b in resp.content if b.type == "tool_use"]
         historial.append({"role": "assistant", "content": resp.content})
         if resp.stop_reason != "tool_use" or not llamadas:
-            r.texto = "".join(b.text for b in resp.content if b.type == "text").strip()
+            final = "".join(b.text for b in resp.content if b.type == "text").strip()
+            # Si escribió parte de la respuesta antes de llamar a una
+            # herramienta ("Arriba te dejé las causas..."), esa parte también
+            # va: sin ella el final no se entiende.
+            r.texto = "\n\n".join(t for t in previo + [final] if t)
             if not r.texto:
                 raise ErrorDelAsistente("El asistente no pudo responder. Intenta reformular.")
             break
 
+        dicho = "".join(b.text for b in resp.content if b.type == "text").strip()
+        if dicho:
+            previo.append(dicho)
         resultados = []
         for b in llamadas:
             t = time.monotonic()
@@ -139,10 +149,72 @@ def conversar(
         r.texto = "Me enredé buscando los datos. ¿Puedes preguntarlo de otra forma, más concreta?"
 
     pe, ps, pc = PRECIOS.get(modelo, (2.00, 10.00, 0.20))
-    r.costo_extra = cache_leido * pc / 1_000_000
+    # Escribir el caché cuesta 1,25 veces la entrada; leerlo, la tarifa de caché.
+    r.costo_extra = (cache_leido * pc + cache_escrito * pe * 1.25) / 1_000_000
     r.precios = (pe, ps)
     r.ms = int((time.monotonic() - inicio) * 1000)
     return r
+
+
+def estructurado(
+    sistema_fijo: str,
+    sistema_variable: str,
+    texto: str,
+    schema: dict,
+    esfuerzo: str = "low",
+    modelo: Optional[str] = None,
+) -> tuple:
+    """Una sola llamada que devuelve JSON con la forma de `schema` (validada
+    por Anthropic). Es lo que usan los reportes hablados y los cambios de
+    precio: el modelo NO calcula ni toca datos, solo traduce la frase a una
+    estructura que el ERP valida después.
+
+    Devuelve (dict | None si se negó, Resultado con el costo y el tiempo).
+    """
+    if not settings.ANTHROPIC_API_KEY:
+        raise ErrorDelAsistente("El asistente no tiene clave de Claude configurada (ANTHROPIC_API_KEY).")
+    modelo = modelo or settings.ASISTENTE_MODELO_CLAUDE
+    r = Resultado(texto="", modelo=modelo, vueltas=1)
+    inicio = time.monotonic()
+    try:
+        resp = _cli().beta.messages.create(
+            model=modelo,
+            max_tokens=8000,
+            system=[{"type": "text", "text": sistema_fijo, "cache_control": {"type": "ephemeral"}}]
+            + ([{"type": "text", "text": sistema_variable}] if sistema_variable else []),
+            messages=[{"role": "user", "content": texto}],
+            output_config={"effort": esfuerzo, "format": {"type": "json_schema", "schema": schema}},
+            betas=["server-side-fallback-2026-07-01"],
+            extra_body={"fallbacks": "default"},
+        )
+    except anthropic.AuthenticationError:
+        raise ErrorDelAsistente("La clave de Claude no es válida. Revisa ANTHROPIC_API_KEY.")
+    except (anthropic.RateLimitError, anthropic.InternalServerError):
+        raise ErrorDelAsistente("Claude está saturado en este momento. Intenta en un minuto.")
+    except anthropic.APIConnectionError:
+        raise ErrorDelAsistente("No hubo respuesta de Claude. Revisa la conexión e intenta de nuevo.")
+    except anthropic.APIStatusError as e:
+        raise ErrorDelAsistente(f"Claude respondió {e.status_code}: {str(e.message)[:200]}")
+    u = resp.usage
+    r.tokens_entrada = u.input_tokens or 0
+    r.tokens_salida = u.output_tokens or 0
+    pe, ps, pc = PRECIOS.get(modelo, (2.00, 10.00, 0.20))
+    r.precios = (pe, ps)
+    r.costo_extra = (
+        (getattr(u, "cache_read_input_tokens", 0) or 0) * pc
+        + (getattr(u, "cache_creation_input_tokens", 0) or 0) * pe * 1.25
+    ) / 1_000_000
+    r.ms = int((time.monotonic() - inicio) * 1000)
+    if resp.stop_reason == "refusal":
+        return None, r
+    import json
+
+    texto_json = next((b.text for b in resp.content if b.type == "text"), "")
+    try:
+        return json.loads(texto_json), r
+    except ValueError:
+        # Cortado por max_tokens: el JSON quedó a medias.
+        raise ErrorDelAsistente("La respuesta salió incompleta. Intenta con una frase más corta.")
 
 
 def _a_texto(salida) -> str:

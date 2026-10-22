@@ -245,10 +245,41 @@ export type RespuestaAsistente = {
   costo_usd: number
 }
 
+/** La frase traducida a una definición de A medida (ya validada en el servidor). */
+export type ReporteHablado = {
+  definicion?: {
+    fuente: string
+    filas: string[]
+    columna: string | null
+    medidas: string[]
+    filtros: Record<string, string[]>
+  }
+  desde?: string
+  hasta?: string
+  entendi: string
+  no_se_puede: string | null
+}
+
+/** Los cambios de precio que propone el asistente: la cuenta la hizo el servidor. */
+export type CambioPropuesto = {
+  variante_id: number
+  nombre: string
+  categoria: string
+  precio_anterior: number
+  precio_nuevo: number
+}
+export type PropuestaPrecios = { cambios: CambioPropuesto[]; entendi: string; duda: string | null }
+
 export const api = {
   // --- asistente ---
   preguntarAsistente: (mensajes: { rol: 'yo' | 'asistente'; texto: string }[], pantalla: string) =>
     req<RespuestaAsistente>('/asistente/preguntar', { method: 'POST', body: JSON.stringify({ mensajes, pantalla }) }),
+  reporteHablado: (frase: string) =>
+    req<ReporteHablado>('/asistente/reporte', { method: 'POST', body: JSON.stringify({ frase }) }),
+  proponerPrecios: (instruccion: string) =>
+    req<PropuestaPrecios>('/asistente/precios/proponer', { method: 'POST', body: JSON.stringify({ instruccion }) }),
+  aplicarPrecios: (cambios: { variante_id: number; precio_anterior: number; precio_nuevo: number }[]) =>
+    req<{ aplicados: number }>('/asistente/precios/aplicar', { method: 'POST', body: JSON.stringify({ cambios }) }),
 
   // --- acceso y usuarios ---
   estadoAcceso: () => req<EstadoAcceso>('/acceso/estado'),

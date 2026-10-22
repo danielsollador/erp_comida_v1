@@ -35,6 +35,9 @@ export function GuiaProvider({ children }: { children: ReactNode }) {
       {children}
       {pasos.length > 0 && (
         <Recorrido
+          // Un paso nuevo es un recorrido nuevo: se monta de cero y no arrastra
+          // la caja ni el "no lo veo" del paso anterior.
+          key={i}
           paso={pasos[i]}
           n={i}
           total={pasos.length}
@@ -77,8 +80,6 @@ function Recorrido({
   // 2. Esperar a que el elemento exista (los módulos cargan perezosos) y
   //    seguirlo si la pantalla se mueve.
   useLayoutEffect(() => {
-    setCaja(null)
-    setPerdido(false)
     let el: Element | null = null
     const inicio = Date.now()
     let cuadro = 0

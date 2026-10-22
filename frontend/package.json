@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "glosario": "node scripts/glosario.mjs",
+    "glosario:json": "node scripts/glosario-json.mjs",
     "build:app": "tsc -b && vite build --mode app",
     "app:sync": "npm run build:app && npx cap sync",
     "test": "vitest run"

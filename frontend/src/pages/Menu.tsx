@@ -6,6 +6,7 @@ import MenuAcciones from '../components/MenuAcciones'
 import Agarre from '../components/Agarre'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
+import CambiarPrecios from '../components/CambiarPrecios'
 import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina, Vacio } from '../components/ui'
 import Icono from '../components/Icono'
@@ -144,6 +145,8 @@ function ElMenu({
   // crearia sin el precio". Un producto nace con su precio puesto.
   const [creando, setCreando] = useState<'categoria' | 'producto' | null>(null)
   const [aviso, setAviso] = useState('')
+  // Cambiar varios precios diciéndolo (spike de IA): ver CambiarPrecios.tsx.
+  const [cambiandoPrecios, setCambiandoPrecios] = useState(false)
 
   const activas = useMemo(() => categorias.filter((c) => c.activo), [categorias])
   // La primera vez, y cuando la elegida se retira, se cae en la primera.
@@ -286,7 +289,15 @@ function ElMenu({
 
   return (
     <>
-      <Buscador valor={busqueda} onCambio={setBusqueda} />
+      <div className="flex gap-2">
+        <div className="min-w-0 flex-1">
+          <Buscador valor={busqueda} onCambio={setBusqueda} />
+        </div>
+        <Boton tono="suave" className="min-h-11 shrink-0" data-guia="menu.cambiar-precios" onClick={() => setCambiandoPrecios(true)}>
+          Cambiar precios
+        </Boton>
+      </div>
+      {cambiandoPrecios && <CambiarPrecios onCerrar={() => setCambiandoPrecios(false)} onCambio={onCambio} />}
 
       {buscando ? (
         <div className="space-y-3">

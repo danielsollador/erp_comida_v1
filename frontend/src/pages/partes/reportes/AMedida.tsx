@@ -87,6 +87,12 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
   const [error, setError] = useState('')
   // Los valores de cada campo filtrado, para su desplegable.
   const [valores, setValores] = useState<Record<string, ValorCampo[]>>({})
+  // Pedirlo con palabras (spike de IA, idea 1): la frase, lo que entendió el
+  // asistente y, si el catálogo no alcanza, por qué.
+  const [frase, setFrase] = useState('')
+  const [pensando, setPensando] = useState(false)
+  const [entendi, setEntendi] = useState('')
+  const [falta, setFalta] = useState('')
 
   useEffect(() => {
     Promise.all([api.catalogoReportes(), api.reportesGuardados()])
@@ -147,10 +153,45 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [def.fuente, filtrados.join('|'), rango.desde, rango.hasta])
 
-  const cambiar = (parcial: Partial<DefinicionReporte>) => setDef((d) => ({ ...d, ...parcial }))
+  const cambiar = (parcial: Partial<DefinicionReporte>) => {
+    // Tocar una pastilla cambia lo que se pidió con palabras: el "Entendí"
+    // ya no describiría lo que está en pantalla.
+    setEntendi('')
+    setDef((d) => ({ ...d, ...parcial }))
+  }
+
+  /**
+   * La frase va al asistente, que devuelve una definición YA validada contra
+   * este catálogo. Se pone en las pastillas de siempre: el dueño ve qué se
+   * armó y lo puede corregir tocando, igual que si lo hubiera armado a mano.
+   */
+  const pedir = async () => {
+    const f = frase.trim()
+    if (!f || pensando) return
+    setPensando(true)
+    setFalta('')
+    setEntendi('')
+    try {
+      const r = await api.reporteHablado(f)
+      if (r.no_se_puede || !r.definicion || !r.desde || !r.hasta) {
+        setFalta(r.no_se_puede || 'No logré armar ese reporte.')
+        return
+      }
+      setAbierto(null)
+      setResultado(null)
+      setDef(completar(r.definicion))
+      alCambiarRango({ desde: r.desde, hasta: r.hasta, clave: 'personal' })
+      setEntendi(r.entendi)
+    } catch (e) {
+      setFalta(e instanceof Error ? e.message : 'No se pudo armar el reporte')
+    } finally {
+      setPensando(false)
+    }
+  }
 
   const elegirFuente = (id: string) => {
     if (id === def.fuente) return
+    setEntendi('')
     const f = catalogo?.find((x) => x.id === id)
     if (!f) return
     setAbierto(null)
@@ -236,6 +277,42 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
 
   return (
     <div className="space-y-4">
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void pedir()
+        }}
+      >
+        <input
+          id="reporte-con-palabras"
+          type="text"
+          value={frase}
+          onChange={(e) => setFrase(e.target.value)}
+          placeholder="Pídelo con tus palabras: «empanadas vendidas por día esta semana»"
+          aria-label="Pide el reporte con tus palabras"
+          data-guia="reportes.pedir"
+          className="min-h-11 min-w-0 flex-1 rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-[15px]"
+        />
+        <button
+          type="submit"
+          disabled={!frase.trim() || pensando}
+          className="min-h-11 shrink-0 rounded-xl bg-neutral-900 px-4 text-sm font-medium text-white disabled:opacity-40 active:scale-[.97]"
+        >
+          {pensando ? 'Armando…' : 'Armar'}
+        </button>
+      </form>
+      {entendi && (
+        <p className="text-[14px] text-neutral-600">
+          <span className="text-neutral-500">Entendí: </span>
+          {entendi} <span className="text-neutral-500">Puedes ajustarlo tocando las pastillas.</span>
+        </p>
+      )}
+      {falta && (
+        <div role="status" className="rounded-2xl bg-aviso-500/10 px-4 py-3.5 text-sm text-aviso-800">
+          {falta}
+        </div>
+      )}
       <BarraFiltros rango={rango} alCambiar={alCambiarRango}>
         <FiltroDesplegable
           etiqueta="Ver"
@@ -279,7 +356,10 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
           ]}
         />
         {filtrados.map((campo) => {
-          const elegido = def.filtros[campo]?.[0] ?? ''
+          // Pedido con palabras, un filtro puede traer varios valores ("las
+          // tres empanadas"): la pastilla lo dice en vez de mostrar solo uno.
+          const elegidos = def.filtros[campo] ?? []
+          const elegido = elegidos.length > 1 ? '__varios__' : (elegidos[0] ?? '')
           const lista = valores[claveValores(campo)]
           return (
             <FiltroDesplegable
@@ -287,7 +367,7 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
               etiqueta={nombreCampo(campo)}
               valor={elegido}
               alCambiar={(v) => {
-                if (v === '__cargando__') return
+                if (v === '__cargando__' || v === '__varios__') return
                 const filtros = { ...def.filtros }
                 if (v === '__quitar__') delete filtros[campo]
                 else filtros[campo] = v ? [v] : []
@@ -295,6 +375,13 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
               }}
               opciones={[
                 { valor: '', texto: 'Todos' },
+                ...(elegidos.length > 1
+                  ? [{
+                      valor: '__varios__',
+                      texto: `${elegidos.length} elegidos`,
+                      detalle: (lista ?? []).filter((x) => elegidos.includes(x.valor)).map((x) => x.etiqueta).join(', '),
+                    }]
+                  : []),
                 ...(lista ?? []).map((x) => ({ valor: x.valor, texto: x.etiqueta })),
                 ...(lista === undefined ? [{ valor: '__cargando__', texto: 'Cargando…' }] : []),
                 { valor: '__quitar__', texto: 'Quitar este filtro' },

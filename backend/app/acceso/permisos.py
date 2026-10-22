@@ -70,10 +70,13 @@ MODULOS: dict[str, dict] = {
     },
     # Los reportes a medida se consultan por POST (la definicion viaja en el
     # cuerpo) y se guardan con nombre: quien ve Reportes los puede armar.
+    # El asistente de IA (chat y reportes hablados) es una forma de mirar los
+    # reportes: va con ellos. Solo lee; sus POST no escriben nada.
     "reportes": {"nombre": "Reportes", "rutas": (), "lectura": ("/api/reportes",),
-                 "escribe_solo": ("/api/reportes/dinamico",)},
+                 "escribe_solo": ("/api/reportes/dinamico", "/api/asistente/preguntar", "/api/asistente/reporte")},
     "ventas": {"nombre": "Ventas", "rutas": (), "lectura": ("/api/ventas",)},
-    "menu": {"nombre": "Menú", "rutas": ("/api/menu",), "lectura": ("/api/inventario",)},
+    # Cambiar precios diciéndolo (asistente de IA) es editar el menú.
+    "menu": {"nombre": "Menú", "rutas": ("/api/menu", "/api/asistente/precios"), "lectura": ("/api/inventario",)},
     "recetas": {
         "nombre": "Recetas",
         "rutas": ("/api/inventario/recetas",),
