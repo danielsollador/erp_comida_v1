@@ -21,6 +21,7 @@ import { etiquetaVariante, variantesParaVender } from '../lib/menu'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
 import VerificarPago, { type PagoVerificado } from '../components/VerificarPago'
 import VueltoPagoMovil, { type VueltoListo } from '../components/VueltoPagoMovil'
+import PedidoDeWhatsApp, { type RenglonElegido } from '../components/PedidoDeWhatsApp'
 
 const redondear = (n: number) => Math.round(n * 100) / 100
 import type { EstadoPabilo } from '../lib/types'
@@ -136,6 +137,8 @@ export default function POS() {
   // o tres veces por duda. El numero en la esquina y el salto son la
   // confirmacion inmediata de que si se agrego.
   const [recienAgregado, setRecienAgregado] = useState<Set<number>>(new Set())
+  // El mensaje de WhatsApp de un cliente, pegado para armar la comanda.
+  const [desdeWhatsApp, setDesdeWhatsApp] = useState(false)
   // Abrir la caja es lo primero del turno y lo hace quien atiende, no quien
   // administra. Por eso el botón vive aquí y no solo en Cierre de caja: en el
   // otro módulo simplemente no se haría.
@@ -1373,6 +1376,38 @@ export default function POS() {
     refrescarPedidos()
   }
 
+  /**
+   * Lo que se leyó de un WhatsApp, SUMADO a la comanda actual: si la cajera
+   * ya tenía algo puesto no se le borra. El nombre solo se pone si la
+   * comanda no tenía.
+   */
+  function cargarDeWhatsApp(renglones: RenglonElegido[], nombre: string) {
+    const delMenu = new Map<number, { producto: Producto; variante: Variante }>()
+    for (const c of categorias)
+      for (const p of c.productos) for (const v of p.variantes) delMenu.set(v.id, { producto: p, variante: v })
+    setCarrito((c) => {
+      const nuevo = { ...c }
+      for (const r of renglones) {
+        const item = delMenu.get(r.variante_id)
+        if (!item) continue
+        const antes = nuevo[r.variante_id]
+        nuevo[r.variante_id] = {
+          producto: item.producto,
+          variante: item.variante,
+          cantidad: (antes?.cantidad ?? 0) + r.cantidad,
+          cortesia: antes?.cortesia ?? false,
+          precio: antes?.precio,
+        }
+      }
+      return nuevo
+    })
+    if (nombre && !clienteComanda.trim()) {
+      setClienteComanda(nombre)
+      setFaltaNombre(false)
+    }
+    setDesdeWhatsApp(false)
+  }
+
   /** Pone los renglones del pedido en la comanda. false = no se pudo. */
   function cargarEnLaComanda(pedido: Pedido): boolean {
     const delMenu = new Map<number, { producto: Producto; variante: Variante }>()
@@ -1990,12 +2025,22 @@ export default function POS() {
               </button>
             )}
           </div>
-          <button
-            onClick={agregarDeliveryPersonalizado}
-            className="w-full mb-2 text-xs font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-1.5"
-          >
-            + Delivery
-          </button>
+          <div className="flex gap-2 mb-2">
+            <button
+              onClick={agregarDeliveryPersonalizado}
+              className="flex-1 text-xs font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-1.5"
+            >
+              + Delivery
+            </button>
+            {!enEdicion && (
+              <button
+                onClick={() => setDesdeWhatsApp(true)}
+                className="flex-1 text-xs font-medium text-acento-600 hover:text-acento-700 border border-dashed border-acento-300 rounded-xl py-1.5"
+              >
+                Desde WhatsApp
+              </button>
+            )}
+          </div>
           {error && <p className="text-peligro-600 text-sm mb-2">{error}</p>}
           <div className="flex-1 overflow-y-auto space-y-1.5">
             {Object.values(carrito).map(({ producto, variante, cantidad, cortesia, precio }) => (
@@ -2509,6 +2554,7 @@ export default function POS() {
 
       {/* Vive en su propio componente porque Ventas abre exactamente el mismo
           cuadro: dos copias serian dos reglas distintas para la misma clave. */}
+      {desdeWhatsApp && <PedidoDeWhatsApp onCerrar={() => setDesdeWhatsApp(false)} onCargar={cargarDeWhatsApp} />}
       {editando && (
         <EditarPedido
           pedido={editando}

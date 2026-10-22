@@ -385,6 +385,16 @@ def _vender_sin_inventario(db: Session) -> bool:
     return bool(fila and fila.vender_sin_inventario)
 
 
+@router.post("/whatsapp", response_model=schemas.BorradorWhatsApp)
+def borrador_de_whatsapp(datos: schemas.TextoWhatsApp, db: Session = Depends(get_db)):
+    """El mensaje de un cliente, como borrador de comanda. NO crea el pedido:
+    el punto de venta lo carga para que la cajera lo revise (ver
+    pedido_whatsapp.py)."""
+    from .. import pedido_whatsapp
+
+    return pedido_whatsapp.borrador(db, datos.texto)
+
+
 @router.post("", response_model=schemas.Pedido)
 async def crear_pedido(
     pedido: schemas.PedidoCreate, request: Request, db: Session = Depends(get_db)

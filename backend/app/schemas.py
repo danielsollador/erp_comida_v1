@@ -3464,3 +3464,34 @@ class ResultadoConciliacion(BaseModel):
     sin_sistema: List[MovimientoBanco] = Field(default_factory=list)
     puntos: List[DiaPunto] = Field(default_factory=list)
     lotes_sin_ventas: List[MovimientoBanco] = Field(default_factory=list)
+
+
+# ── Pedido de WhatsApp como borrador (ver pedido_whatsapp.py) ──────────────
+
+class TextoWhatsApp(BaseModel):
+    texto: str = Field(..., min_length=1, max_length=6000)
+
+
+class OpcionMenu(BaseModel):
+    variante_id: int
+    nombre: str
+    precio: float
+
+
+class LineaBorrador(BaseModel):
+    texto: str  # lo que escribio el cliente
+    cantidad: int
+    # El producto del menu; None = no se entendio, la cajera elige.
+    variante_id: Optional[int] = None
+    nombre: str = ""
+    precio: Optional[float] = None
+    # Para corregir: la elegida y las mas parecidas.
+    opciones: List[OpcionMenu] = Field(default_factory=list)
+
+
+class BorradorWhatsApp(BaseModel):
+    cliente: str = ""
+    nota: str = ""
+    lineas: List[LineaBorrador] = Field(default_factory=list)
+    total: float = 0
+    con_ia: bool = False

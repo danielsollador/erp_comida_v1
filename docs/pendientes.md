@@ -26,7 +26,7 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 - [x] 13. Pedido al proveedor redactado para WhatsApp (21-oct: Inventario › Qué comprar › «Pedir a proveedores»).
 - [x] 14. Alertas que se explican (mermas raras, precios que suben, cobros repetidos) (21-oct: en la portada con «¿Por qué?»; reglas fijas, sin IA).
 - [x] 15. Conciliar pago móvil y estados de cuenta contra los cobros. (22-oct: Caja › «Conciliar banco»; PDF del Provincial o Excel/CSV).
-- [ ] 16. Pedidos por WhatsApp como borrador para la cajera.
+- [x] 16. Pedidos por WhatsApp como borrador para la cajera. (22-oct: POS › comanda › «Desde WhatsApp»; con IA o con reglas, no crea el pedido).
 
 ## B. Depende del dueño o del cajero
 

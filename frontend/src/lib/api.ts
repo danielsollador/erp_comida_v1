@@ -4,6 +4,7 @@ import type {
   ExplicacionCierre,
   PropuestaRevisada,
   TurnoAyuda,
+  BorradorWhatsApp,
   ResultadoConciliacion,
   RespuestaNegocio,
   PedidoProveedor,
@@ -771,6 +772,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ stock_real, motivo: 'Conteo fisico' }),
     }),
+  /** El mensaje de un cliente como borrador de comanda. No crea el pedido. */
+  borradorWhatsApp: (texto: string) =>
+    req<BorradorWhatsApp>('/pedidos/whatsapp', { method: 'POST', body: JSON.stringify({ texto }) }),
   sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
   /** Lo mismo, repartido por proveedor y con el mensaje para WhatsApp. */
   pedidoProveedor: () => req<PedidoProveedor[]>('/inventario/pedido-proveedor'),

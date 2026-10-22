@@ -79,6 +79,13 @@ que el cierre de la noche sea solo la cuenta de ese día: fondo + lo que entró
 - Un producto **sin precio** no se puede vender: hay que ponerle precio en
   Menú › Recetas.
 
+**Un pedido que llegó por WhatsApp:** en la comanda, «Desde WhatsApp». Se
+pega el mensaje del cliente tal como llegó y el sistema arma los renglones con
+los productos del menú y el nombre. Lo que no entendió queda para elegir («¿Cuál
+es? Elige…») y lo que el cliente dice aparte (dirección, cómo paga) se muestra
+arriba. «Pasar a la comanda» lo suma a la comanda actual; de ahí se revisa y se
+manda a cocina como siempre. No crea el pedido solo.
+
 ### 2.3 Cobrar
 En la tarjeta del pedido, «Cobrar». Formas de pago: Efectivo Bs, Efectivo $,
 Punto de venta, Pago móvil, Transferencia, Zelle y «A crédito».

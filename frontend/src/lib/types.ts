@@ -2343,3 +2343,19 @@ export interface ResultadoConciliacion {
   }[]
   lotes_sin_ventas: MovimientoBanco[]
 }
+
+/** Un mensaje de WhatsApp leído como borrador de comanda (ver backend/app/pedido_whatsapp.py). */
+export interface BorradorWhatsApp {
+  cliente: string
+  nota: string
+  lineas: {
+    texto: string
+    cantidad: number
+    variante_id: number | null
+    nombre: string
+    precio: number | null
+    opciones: { variante_id: number; nombre: string; precio: number }[]
+  }[]
+  total: number
+  con_ia: boolean
+}
