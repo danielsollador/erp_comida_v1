@@ -741,6 +741,7 @@ export function PantallaLista<T>({
   datos,
   renglon,
   clave,
+  arriba,
   cabecera,
   vacio,
   abajo,
@@ -751,6 +752,8 @@ export function PantallaLista<T>({
   datos: readonly T[]
   renglon: ListRenderItem<T>
   clave: (item: T, i: number) => string
+  /** Lo que va fijo arriba, fuera del desplazamiento: las pestañas del modulo. */
+  arriba?: ReactNode
   cabecera?: ReactElement
   vacio?: ReactElement
   abajo?: ReactNode
@@ -764,6 +767,7 @@ export function PantallaLista<T>({
   return (
     <View style={{ flex: 1, backgroundColor: t.papel }}>
       <Fondo />
+      {arriba ? <View style={{ paddingHorizontal: 16 }}>{arriba}</View> : null}
       <FlatList
         data={datos}
         renderItem={renglon}

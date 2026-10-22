@@ -103,8 +103,12 @@ function Caja() {
   return (
     <View style={{ flex: 1 }}>
       <Stack.Screen options={{ title: 'Cierre de caja' }} />
-      <Pantalla refrescando={delDia.refrescando || delPeriodo.refrescando} alRefrescar={recargar} abajo={abajo}>
-        <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />
+      <Pantalla
+        refrescando={delDia.refrescando || delPeriodo.refrescando}
+        alRefrescar={recargar}
+        abajo={abajo}
+        arriba={<Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />}
+      >
         {errorBorrar ? <Aviso texto={errorBorrar} tono="peligro" /> : null}
 
         {seccion === 'cierre' ? (

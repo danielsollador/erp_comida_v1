@@ -1201,6 +1201,8 @@ export default function CargarFactura({
       <Fondo />
       {/* Sin borde de arriba: el encabezado nativo del Stack ya lo ocupa. */}
       <SafeAreaView edges={['left', 'right']} style={{ flex: 1 }}>
+        {/* Las pestañas del modulo, fijas: no se van al bajar por el formulario. */}
+        <View style={{ paddingHorizontal: 16 }}>{pestanas}</View>
         <View style={{ flex: 1, flexDirection: 'row' }}>
           {dosColumnas && documento ? (
             // La factura a la vista, fija al lado del formulario.
@@ -1217,7 +1219,6 @@ export default function CargarFactura({
             automaticallyAdjustKeyboardInsets
           >
             <View ref={contenido} collapsable={false} style={{ gap: 12 }}>
-              {pestanas}
               <View ref={anclar('cf-arriba')} collapsable={false} />
               {exito ? (
                 <View style={[s.exito, { backgroundColor: t.exitoSuave }]}>

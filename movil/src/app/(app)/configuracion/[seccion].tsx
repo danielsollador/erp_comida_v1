@@ -36,9 +36,8 @@ export default function Configuracion() {
   const seccion: IdSeccion = secciones.some((s) => s.id === pedida) ? (pedida as IdSeccion) : 'cuenta'
 
   return (
-    <Pantalla>
+    <Pantalla arriba={<Pestanas opciones={secciones} valor={seccion} alCambiar={(id) => router.setParams({ seccion: id })} />}>
       <Stack.Screen options={{ title: 'Configuración' }} />
-      <Pestanas opciones={secciones} valor={seccion} alCambiar={(id) => router.setParams({ seccion: id })} />
       {seccion === 'cuenta' && <MiCuenta />}
       {seccion === 'lenguaje' && <Lenguaje />}
       {seccion === 'apariencia' && <Apariencia />}

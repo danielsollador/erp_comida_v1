@@ -1,6 +1,6 @@
 import { Host, Switch } from '@expo/ui'
 import * as Haptics from 'expo-haptics'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ActivityIndicator,
   Pressable,
@@ -386,17 +386,42 @@ export function Pestanas<T extends string>({
     vibrar()
     alCambiar(id)
   }
+  // La pestaña activa siempre a la vista: con mas pestañas de las que caben,
+  // la elegida (o la de la ruta al entrar) quedaba fuera del borde y parecia
+  // que no habia nada elegido (Leider, 22-oct).
+  const lista = useRef<ScrollView>(null)
+  const sitios = useRef<Record<string, { x: number; ancho: number }>>({})
+  const [ancho, setAncho] = useState(0)
+  useEffect(() => {
+    const sitio = sitios.current[valor]
+    if (!sitio || !ancho) return
+    const x = Math.max(0, sitio.x + sitio.ancho / 2 - ancho / 2)
+    lista.current?.scrollTo({ x, animated: true })
+  }, [valor, ancho])
   // El segmentado nativo se probo (SegmentedControl de @expo/ui) y en iOS, en
   // modo claro, salia blanco sobre gris claro: ilegible. Las pastillas propias
   // llevan los colores del tema en los dos modos; se quedan.
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={estilos.pestanas}>
+    <ScrollView
+      ref={lista}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={estilos.pestanas}
+      onLayout={(e) => setAncho(e.nativeEvent.layout.width)}
+    >
       <View style={[estilos.pestanasCaja, { backgroundColor: t.gris100, borderColor: t.gris200 }]}>
         {opciones.map((o) => {
           const activa = o.id === valor
           return (
             <Pressable
               key={o.id}
+              onLayout={(e) => {
+                sitios.current[o.id] = { x: e.nativeEvent.layout.x, ancho: e.nativeEvent.layout.width }
+                if (activa && ancho) {
+                  const x = Math.max(0, e.nativeEvent.layout.x + e.nativeEvent.layout.width / 2 - ancho / 2)
+                  lista.current?.scrollTo({ x, animated: false })
+                }
+              }}
               onPress={() => cambiar(o.id)}
               style={[estilos.pestana, activa && { backgroundColor: t.tinta }]}
               accessibilityState={{ selected: activa }}

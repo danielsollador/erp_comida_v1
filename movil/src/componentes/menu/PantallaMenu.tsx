@@ -28,9 +28,13 @@ export default function PantallaMenu() {
   const tostada = useTostada()
 
   return (
-    <Pantalla refrescando={refrescando} alRefrescar={() => void refrescar()} abajo={tostada.nodo}>
+    <Pantalla
+      refrescando={refrescando}
+      alRefrescar={() => void refrescar()}
+      abajo={tostada.nodo}
+      arriba={<Pestanas opciones={SECCIONES} valor={seccion} alCambiar={(id) => router.setParams({ seccion: id })} />}
+    >
       <Stack.Screen options={{ title: 'Menú' }} />
-      <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={(id) => router.setParams({ seccion: id })} />
       {error && !datos ? <Problema mensaje={error} alReintentar={() => void refrescar()} /> : null}
       {!datos && !error ? <Cargando /> : null}
       {datos && seccion === 'menu' ? (

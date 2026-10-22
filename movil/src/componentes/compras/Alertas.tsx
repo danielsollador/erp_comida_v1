@@ -179,8 +179,8 @@ export default function Alertas({
         setRefrescando(true)
         void cargar(soloPendientes)
       }}
+      arriba={pestanas}
     >
-      {pestanas}
       <Ficha>
         <Cabecera
           titulo="Alertas de precio"

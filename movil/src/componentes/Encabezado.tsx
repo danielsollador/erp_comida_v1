@@ -47,27 +47,36 @@ export function Marca() {
   )
 }
 
-/** El circulo de un control del encabezado: borde fino, fondo de superficie. */
+/**
+ * Un control del encabezado. En el inicio, el circulo de la web (borde fino,
+ * fondo de superficie). En el encabezado nativo de las pantallas de adentro,
+ * `plano`: solo el icono, sin circulo, que ahi el sistema ya pone su propio
+ * marco y con dos circulos el titulo no cabia ("Punto de ven…").
+ */
 function Control({
   children,
   alTocar,
   etiqueta,
   ancho,
+  plano = false,
 }: {
   children: ReactNode
   alTocar: () => void
   etiqueta: string
   ancho?: boolean
+  plano?: boolean
 }) {
   const t = useTema()
   return (
     <Pressable
       onPress={alTocar}
       accessibilityLabel={etiqueta}
-      hitSlop={4}
+      accessibilityRole="button"
+      hitSlop={6}
       style={({ pressed }) => [
-        ancho ? estilos.controlAncho : estilos.control,
-        { borderColor: t.gris200, backgroundColor: t.superficie, transform: [{ scale: pressed ? 0.94 : 1 }] },
+        plano ? (ancho ? estilos.controlPlanoAncho : estilos.controlPlano) : ancho ? estilos.controlAncho : estilos.control,
+        !plano && { borderColor: t.gris200, backgroundColor: t.superficie },
+        { transform: [{ scale: pressed ? 0.94 : 1 }] },
       ]}
     >
       {children}
@@ -100,14 +109,14 @@ export function BotonTema() {
 }
 
 /** "$ Dólares BCV · 873,87": en que moneda se ven los montos, y la tasa. */
-export function BotonMoneda() {
+export function BotonMoneda({ plano = false }: { plano?: boolean }) {
   const t = useTema()
   const { vista, setVista, tasa } = useMoneda()
   const [abierto, setAbierto] = useState(false)
   const simbolo = vista === 'bs' ? 'Bs' : vista === 'eur' ? '€' : '$'
   return (
     <>
-      <Control alTocar={() => setAbierto(true)} etiqueta="Elegir en qué moneda ver los montos" ancho>
+      <Control alTocar={() => setAbierto(true)} etiqueta="Elegir en qué moneda ver los montos" ancho plano={plano}>
         <View style={[estilos.puntoVivo, { backgroundColor: tasa && !tasa.desactualizada ? t.exito500 : t.aviso }]} />
         <Text style={[estilos.monedaTexto, { color: t.tinta }]}>{simbolo}</Text>
         <Icono nombre="chevron" size={12} color={t.tenue} grosor={2.4} />
@@ -139,7 +148,7 @@ export function BotonMoneda() {
 }
 
 /** La campana: las autorizaciones que esperan a quien puede darlas. */
-export function Campana() {
+export function Campana({ plano = false }: { plano?: boolean }) {
   const t = useTema()
   const { acceso } = useSesion()
   const autoriza = acceso?.puede.autoriza ?? false
@@ -158,7 +167,7 @@ export function Campana() {
   }, [autoriza])
 
   return (
-    <Control alTocar={() => router.push('/notificaciones')} etiqueta={`${pendientes} notificaciones`}>
+    <Control alTocar={() => router.push('/notificaciones')} etiqueta={`${pendientes} notificaciones`} plano={plano}>
       <Icono nombre="campana" size={17} color={t.suave} />
       {pendientes > 0 && (
         <View style={[estilos.globo, { backgroundColor: t.tinta, borderColor: t.papel }]}>
@@ -228,17 +237,16 @@ export function Controles() {
 
 /**
  * Lo que va a la derecha del encabezado nativo en las pantallas de adentro:
- * como arriba en la web, la moneda, las notificaciones y el tema en TODOS
- * los modulos. Sin la cuenta: con cuatro controles no cabe el titulo en un
- * telefono, y la cuenta ya esta en el inicio.
+ * la moneda y la campana, planos (sin circulo) y nada mas. Con tres circulos
+ * el titulo no cabia ("Punto de ven…", Leider 22-oct). El tema y la cuenta
+ * estan en el inicio y en Configuracion.
  */
 export function ControlesCabecera() {
   const { acceso } = useSesion()
   return (
-    <View style={estilos.controles}>
-      {acceso?.puede.operar && <BotonMoneda />}
-      <Campana />
-      <BotonTema />
+    <View style={estilos.controlesPlanos}>
+      {acceso?.puede.operar && <BotonMoneda plano />}
+      <Campana plano />
     </View>
   )
 }
@@ -247,6 +255,9 @@ const estilos = StyleSheet.create({
   marcaTexto: { fontFamily: LETRA.tituloFuerte, fontSize: 20, letterSpacing: -0.4 },
   logo: { width: 104, height: 34 },
   controles: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  controlesPlanos: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  controlPlano: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  controlPlanoAncho: { height: 36, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6 },
   control: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   controlAncho: {
     height: 38,

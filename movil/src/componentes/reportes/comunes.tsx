@@ -1,5 +1,5 @@
 import { Children, useMemo, useState, type ReactNode } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import Svg, { Circle, Path } from 'react-native-svg'
 import { LETRA, useTema } from '../../lib/tema'
 import type { Insight } from '../../lib/tipos'
@@ -293,8 +293,11 @@ export function Segmentado<T extends string>({
   alElegir: (v: T) => void
 }) {
   const t = useTema()
+  // Sin ScrollView: dentro de una ficha, el ScrollView horizontal se estiraba
+  // a lo alto y las dos pastillas salian como columnas gigantes (22-oct).
+  // Son dos o tres palabras; caben en una fila.
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    <View style={{ flexDirection: 'row' }}>
       <View style={[c.segmentado, { backgroundColor: t.gris100, borderColor: t.gris200 }]}>
         {opciones.map((o) => {
           const esta = o.valor === activo
@@ -310,7 +313,7 @@ export function Segmentado<T extends string>({
           )
         })}
       </View>
-    </ScrollView>
+    </View>
   )
 }
 

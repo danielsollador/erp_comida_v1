@@ -170,9 +170,9 @@ export default function PantallaVentas() {
     ...ATAJOS.map((a) => ({ valor: a.clave as string, texto: a.texto })),
     ...(rango.clave === 'personal' ? [{ valor: 'personal', texto: 'Personalizado' }] : []),
   ]
+  const pestanas = <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={(id) => fijar({ seccion: id })} />
   const filtros = (
     <View style={{ gap: 10 }}>
-      <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={(id) => fijar({ seccion: id })} />
       <FilaFiltros>
         <Selector
           etiqueta="Período"
@@ -238,7 +238,7 @@ export default function PantallaVentas() {
 
   if (seccion !== 'historial') {
     return (
-      <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+      <Pantalla refrescando={refrescando} alRefrescar={refrescar} arriba={pestanas}>
         {titulo}
         {filtros}
         {problema}
@@ -259,6 +259,7 @@ export default function PantallaVentas() {
       datos={visibles}
       renglon={renglon}
       clave={(v) => String(v.id)}
+      arriba={pestanas}
       refrescando={refrescando}
       alRefrescar={refrescar}
       cabecera={

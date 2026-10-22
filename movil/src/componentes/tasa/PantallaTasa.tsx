@@ -145,9 +145,9 @@ export default function PantallaTasa() {
         setRefrescando(true)
         setVuelta((v) => v + 1)
       }}
+      arriba={<Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />}
     >
       <Stack.Screen options={{ title: 'Tasa de cambio' }} />
-      <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />
       {seccion === 'analisis' || seccion === 'historial' ? (
         <FilaFiltros>
           <ElegirPeriodo periodo={periodo} alCambiar={setPeriodo} />

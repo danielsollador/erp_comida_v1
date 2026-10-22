@@ -66,8 +66,7 @@ export default function Proveedores({
   }
 
   return (
-    <Pantalla refrescando={refrescando} alRefrescar={alRefrescar}>
-      {pestanas}
+    <Pantalla refrescando={refrescando} alRefrescar={alRefrescar} arriba={pestanas}>
       <Ficha>
         <Cabecera titulo="Proveedores" ayuda="Elegir uno al cargar una factura completa su nombre y su RIF solos." />
         <Boton texto="Nuevo proveedor" icono="mas" alTocar={() => setFicha('nuevo')} />

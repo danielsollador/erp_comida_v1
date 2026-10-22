@@ -295,9 +295,9 @@ export default function PantallaReportes() {
         if (!aMedida) setRefrescando(true)
         setVuelta((v) => v + 1)
       }}
+      arriba={<Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />}
     >
       <Stack.Screen options={{ title: 'Reportes' }} />
-      <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />
 
       {aMedida ? (
         // A medida dibuja su propia fila: el periodo y, al lado, que mirar y como.

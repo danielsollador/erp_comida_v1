@@ -62,22 +62,14 @@ export default function PantallaInventario() {
   const conf = config ?? datos?.config ?? null
 
   // Los avisos de la portada llegan con ?ver=preparado: van directo a las
-  // preparaciones. Sin eso, si la ultima vez se eligio "Preparado", se abre
-  // encima del crudo (volver deja en el crudo, no fuera del almacen).
+  // preparaciones. Ya NO se salta solo por la cara recordada: entrar a
+  // Materia prima y aparecer en Preparado desconcertaba (Leider, 22-oct);
+  // la cara se recuerda solo para marcar cual estaba.
   const yaSalto = useRef(false)
   useEffect(() => {
     if (seccion !== 'materia-prima' || yaSalto.current) return
     yaSalto.current = true
-    if (params.ver === 'preparado') {
-      router.replace('/inventario/preparaciones' as Href)
-      return
-    }
-    almacen
-      .leer(CLAVE_CARA)
-      .then((cara) => {
-        if (cara === 'preparado') ir('/inventario/preparaciones')
-      })
-      .catch(() => undefined)
+    if (params.ver === 'preparado') router.replace('/inventario/preparaciones' as Href)
   }, [seccion, params.ver])
 
   function elegirCara(cara: 'crudo' | 'preparado') {
@@ -103,7 +95,12 @@ export default function PantallaInventario() {
     try {
       await apiInventario.actualizar(ing.id, { ...datosDe(ing), activo: true }).catch(async (e) => {
         if (!pideConfirmar(e)) throw e
-        const ok = await confirmar({ titulo: '¿Seguro?', texto: e.message.slice('Confirmar: '.length), aceptar: 'Sí, seguir', peligro: true })
+        const ok = await confirmar({
+          titulo: '¿Seguro?',
+          texto: e.message.slice('Confirmar: '.length),
+          aceptar: 'Sí, seguir',
+          peligro: true,
+        })
         if (!ok) return
         await apiInventario.actualizar(ing.id, { ...datosDe(ing), activo: true }, true)
       })
@@ -183,9 +180,7 @@ export default function PantallaInventario() {
         <CabezaAlmacen tipo="desechable" mercancias={0} preparaciones={0} alCrudo={() => undefined} alPreparado={() => undefined} />
         {problema}
         {cargando ? <Cargando /> : null}
-        {datos ? (
-          <Desechables ingredientes={datos.ingredientes.filter((i) => i.tipo === 'desechable')} facturas={datos.facturas} />
-        ) : null}
+        {datos ? <Desechables ingredientes={datos.ingredientes.filter((i) => i.tipo === 'desechable')} facturas={datos.facturas} /> : null}
       </Pantalla>
     )
   }
@@ -218,7 +213,12 @@ export default function PantallaInventario() {
                 onPress={() => ir('/inventario/conteo')}
                 disabled={!datos || activos.length === 0}
                 accessibilityRole="button"
-                style={({ pressed }) => [s.conteo, { opacity: !datos || activos.length === 0 ? 0.4 : pressed ? 0.6 : 1 }]}
+                style={({ pressed }) => [
+                  s.conteo,
+                  {
+                    opacity: !datos || activos.length === 0 ? 0.4 : pressed ? 0.6 : 1,
+                  },
+                ]}
               >
                 <Text style={[s.conteoTexto, { color: t.tinta }]}>Conteo físico</Text>
               </Pressable>
@@ -228,26 +228,34 @@ export default function PantallaInventario() {
           />
         ) : undefined
       }
+      arriba={
+        <View style={s.acciones}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Pestanas
+              opciones={PESTANAS.map((p) => ({ id: p.id, texto: p.texto }))}
+              valor={seccion === 'comprar' ? 'comprar' : 'almacenes'}
+              alCambiar={(id) => (id === 'control' ? ir('/inventario/control') : router.setParams({ seccion: id }))}
+            />
+          </View>
+          {conf ? (
+            <Pressable
+              onPress={() => setMasOpciones(true)}
+              accessibilityLabel="Más opciones del inventario"
+              style={({ pressed }) => [
+                s.mas,
+                {
+                  borderColor: t.gris200,
+                  backgroundColor: pressed ? t.gris100 : t.superficie,
+                },
+              ]}
+            >
+              <Text style={[s.masTexto, { color: t.suave }]}>⋯</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      }
     >
       <Stack.Screen options={{ title: 'Inventario' }} />
-      <View style={s.acciones}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Pestanas
-            opciones={PESTANAS.map((p) => ({ id: p.id, texto: p.texto }))}
-            valor={seccion === 'comprar' ? 'comprar' : 'almacenes'}
-            alCambiar={(id) => (id === 'control' ? ir('/inventario/control') : router.setParams({ seccion: id }))}
-          />
-        </View>
-        {conf ? (
-          <Pressable
-            onPress={() => setMasOpciones(true)}
-            accessibilityLabel="Más opciones del inventario"
-            style={({ pressed }) => [s.mas, { borderColor: t.gris200, backgroundColor: pressed ? t.gris100 : t.superficie }]}
-          >
-            <Text style={[s.masTexto, { color: t.suave }]}>⋯</Text>
-          </Pressable>
-        ) : null}
-      </View>
       {aviso}
       {sinControl}
       {problema}
@@ -302,10 +310,22 @@ export default function PantallaInventario() {
 
 const s = StyleSheet.create({
   sinControlTitulo: { fontFamily: LETRA.titulo, fontSize: 16 },
-  sinControlTexto: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19, marginTop: 2 },
+  sinControlTexto: {
+    fontFamily: LETRA.texto,
+    fontSize: 13.5,
+    lineHeight: 19,
+    marginTop: 2,
+  },
   acciones: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   conteo: { minHeight: 50, justifyContent: 'center' },
   conteoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
-  mas: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  mas: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   masTexto: { fontFamily: LETRA.textoFuerte, fontSize: 20, lineHeight: 22 },
 })

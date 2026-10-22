@@ -163,7 +163,6 @@ export default function Facturas({
 
   const cabecera = (
     <View style={{ gap: 12 }}>
-      {pestanas}
       <FilaFiltros>
         <ElegirPeriodo periodo={periodo} alCambiar={setPeriodo} />
         <Selector etiqueta="Orden" titulo="Ordenar las facturas" opciones={ORDENES} valor={orden} alCambiar={setOrden} />
@@ -288,6 +287,7 @@ export default function Facturas({
       <PantallaLista
         datos={datos ? visibles : []}
         clave={(f) => String(f.id)}
+        arriba={pestanas}
         cabecera={cabecera}
         refrescando={refrescando}
         alRefrescar={refrescar}

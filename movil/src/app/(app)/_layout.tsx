@@ -17,28 +17,12 @@ import { LETRA, useTema } from '../../lib/tema'
  * marca del local.
  */
 
-// Las portadas de modulo y las listas: titulo grande en iOS. Los
-// formularios, las fichas y el punto de venta no (el titulo grande les
-// quitaria sitio a lo que importa).
-const CON_TITULO_GRANDE = [
-  'ventas/index',
-  'ventas/[seccion]',
-  'inventario/index',
-  'inventario/[seccion]',
-  'inventario/preparaciones/index',
-  'inventario/control',
-  'compras/index',
-  'compras/[seccion]',
-  'menu/index',
-  'menu/[seccion]',
-  'reportes/index',
-  'reportes/[seccion]',
-  'tasa/index',
-  'tasa/[seccion]',
-  'caja/index',
-  'caja/[seccion]',
-  'notificaciones',
-]
+// Titulo grande en iOS solo donde la lista es lo primero de la pantalla. Los
+// modulos con pestañas las llevan fijas arriba del desplazamiento (Leider,
+// 22-oct: que no se escondan al bajar), y con algo fijo encima iOS no
+// encoge el titulo grande: ahi va el compacto. Formularios, fichas y el
+// punto de venta tampoco (el titulo grande les quitaria sitio).
+const CON_TITULO_GRANDE = ['inventario/preparaciones/index', 'inventario/control', 'notificaciones']
 
 export default function Interior() {
   const t = useTema()
