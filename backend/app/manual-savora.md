@@ -353,6 +353,21 @@ equivocada. Al cerrar, cada diferencia queda en los libros.
 dónde salió la plata (Efectivo Bs, Efectivo $ o Banco). Baja lo que se debe
 tener en esa forma de pago.
 
+### 7.2b Conciliar el banco
+En Caja › «Conciliar banco» se sube el estado de cuenta (el PDF del Banco
+Provincial tal como lo baja la banca en línea, o un Excel/CSV de cualquier
+banco) y el sistema lo cruza con los cobros de pago móvil, transferencia y
+punto de venta. No guarda el archivo ni cambia nada.
+- **Cobrado y no entró:** cobros sin un abono del mismo monto ese día o el
+  siguiente. Lo primero a revisar: un pago que nunca llegó o un cobro
+  registrado dos veces. Se corrige en Ventas con «Editar pago».
+- **Entró y no es un cobro:** abonos que no son ningún cobro: un pago que
+  nadie registró, o plata que no es venta.
+- **Punto de venta, día por día:** el banco abona el lote del terminal (TD/TC
+  POS) ese día o el siguiente; se compara la suma del día.
+- Si dice que hay renglones que no cuadran con el saldo, el archivo no se leyó
+  completo: súbelo en Excel.
+
 ### 7.3 Cajas
 Un local puede tener varias cajas físicas (una gaveta por piso) para cerrarlas
 aparte.

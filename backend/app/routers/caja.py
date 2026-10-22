@@ -2,7 +2,7 @@ import datetime
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from .. import contabilidad, models, schemas
@@ -1236,3 +1236,24 @@ def eliminar_gasto(gasto_id: int, db: Session = Depends(get_db)):
     db.delete(db_gasto)
     db.commit()
     return {"ok": True}
+
+
+# Un estado de cuenta de un mes en PDF pesa unos cientos de KB.
+TAMANO_ESTADO_DE_CUENTA = 10 * 1024 * 1024
+
+
+@router.post("/conciliar", response_model=schemas.ResultadoConciliacion)
+def conciliar_banco(archivo: UploadFile = File(...), db: Session = Depends(get_db)):
+    """El estado de cuenta del banco contra los cobros del sistema: lo que se
+    cobro y no entro, y lo que entro y no es ningun cobro. Solo lee: el
+    archivo no se guarda (ver conciliacion.py)."""
+    from .. import conciliacion
+
+    contenido = archivo.file.read(TAMANO_ESTADO_DE_CUENTA + 1)
+    if len(contenido) > TAMANO_ESTADO_DE_CUENTA:
+        raise HTTPException(status_code=413, detail="El archivo pesa demasiado (máximo 10 MB).")
+    try:
+        lectura = conciliacion.leer(archivo.filename or "", contenido)
+    except conciliacion.ErrorDeLectura as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return conciliacion.conciliar(db, lectura)

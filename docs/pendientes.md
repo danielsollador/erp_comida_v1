@@ -25,7 +25,7 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 - [x] 12. «Pregúntale a tu negocio»: chat sobre ventas, márgenes y caja. (22-oct: «?» › «Mis números»; la IA elige la consulta del catálogo de reportes, el sistema calcula).
 - [x] 13. Pedido al proveedor redactado para WhatsApp (21-oct: Inventario › Qué comprar › «Pedir a proveedores»).
 - [x] 14. Alertas que se explican (mermas raras, precios que suben, cobros repetidos) (21-oct: en la portada con «¿Por qué?»; reglas fijas, sin IA).
-- [ ] 15. Conciliar pago móvil y estados de cuenta contra los cobros.
+- [x] 15. Conciliar pago móvil y estados de cuenta contra los cobros. (22-oct: Caja › «Conciliar banco»; PDF del Provincial o Excel/CSV).
 - [ ] 16. Pedidos por WhatsApp como borrador para la cajera.
 
 ## B. Depende del dueño o del cajero

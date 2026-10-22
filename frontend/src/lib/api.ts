@@ -4,6 +4,7 @@ import type {
   ExplicacionCierre,
   PropuestaRevisada,
   TurnoAyuda,
+  ResultadoConciliacion,
   RespuestaNegocio,
   PedidoProveedor,
   ResultadoCarga,
@@ -954,6 +955,12 @@ export const api = {
     req<ResumenCaja>('/caja/resumen' + (fecha ? `?fecha=${fecha}` : '')),
   /** Cada cobro del día con su referencia: el detalle de la columna "Entró". */
   /** ¿Por qué no cuadra? Solo lee: no cambia ningún cobro ni el cierre. */
+  /** El estado de cuenta contra los cobros. Solo lee: el archivo no se guarda. */
+  conciliarBanco: (archivo: File) => {
+    const datos = new FormData()
+    datos.append('archivo', archivo)
+    return req<ResultadoConciliacion>('/caja/conciliar', { method: 'POST', body: datos, headers: {} })
+  },
   explicarCierre: (fecha?: string) =>
     req<ExplicacionCierre>(`/caja/explicar${fecha ? `?fecha=${fecha}` : ''}`),
   cobrosDelDia: (fecha?: string) =>

@@ -3410,3 +3410,57 @@ class PedidoProveedor(BaseModel):
     lineas: List[LineaPedidoProveedor]
     estimado: float = 0
     mensaje: str = ""
+
+
+# ── Conciliar el banco (ver conciliacion.py) ───────────────────────────────
+
+class CobroConciliable(BaseModel):
+    metodo: str
+    tipo: str = "venta"  # venta | abono (de un fiado)
+    pedido_id: int
+    numero: int
+    cliente: str = ""
+    fecha: Optional[datetime.datetime] = None
+    monto: float  # en dolares, como en los libros
+    bs: float  # lo que tuvo que entrar al banco
+    referencia: str = ""
+
+
+class MovimientoBanco(BaseModel):
+    fecha: datetime.date
+    concepto: str
+    monto: float  # + abono, - cargo, en Bs
+    referencia: str = ""
+
+
+class ParConciliado(BaseModel):
+    cobro: CobroConciliable
+    movimiento: MovimientoBanco
+    # Si ademas del monto y la fecha coincidio la referencia.
+    por_referencia: bool = False
+
+
+class DiaPunto(BaseModel):
+    """Lo cobrado por el punto un dia contra los lotes que abono el banco."""
+    fecha: datetime.date
+    fecha_banco: Optional[datetime.date] = None
+    sistema_bs: float
+    banco_bs: float
+    diferencia_bs: float
+    lotes: int = 0
+
+
+class ResultadoConciliacion(BaseModel):
+    banco: str
+    desde: datetime.date
+    hasta: datetime.date
+    movimientos: int
+    # Renglones cuyo monto no cuadra con el saldo: la lectura no es fiable.
+    descuadres_lectura: int = 0
+    abonos_bs: float = 0
+    comisiones_bs: float = 0
+    conciliados: List[ParConciliado] = Field(default_factory=list)
+    sin_banco: List[CobroConciliable] = Field(default_factory=list)
+    sin_sistema: List[MovimientoBanco] = Field(default_factory=list)
+    puntos: List[DiaPunto] = Field(default_factory=list)
+    lotes_sin_ventas: List[MovimientoBanco] = Field(default_factory=list)

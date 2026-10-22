@@ -2301,3 +2301,45 @@ export interface PedidoProveedor {
   estimado: number
   mensaje: string
 }
+
+/** Conciliar el banco (ver backend/app/conciliacion.py). */
+export interface CobroConciliable {
+  metodo: string
+  tipo: 'venta' | 'abono'
+  pedido_id: number
+  numero: number
+  cliente: string
+  fecha: string | null
+  monto: number
+  bs: number
+  referencia: string
+}
+
+export interface MovimientoBanco {
+  fecha: string
+  concepto: string
+  monto: number
+  referencia: string
+}
+
+export interface ResultadoConciliacion {
+  banco: string
+  desde: string
+  hasta: string
+  movimientos: number
+  descuadres_lectura: number
+  abonos_bs: number
+  comisiones_bs: number
+  conciliados: { cobro: CobroConciliable; movimiento: MovimientoBanco; por_referencia: boolean }[]
+  sin_banco: CobroConciliable[]
+  sin_sistema: MovimientoBanco[]
+  puntos: {
+    fecha: string
+    fecha_banco: string | null
+    sistema_bs: number
+    banco_bs: number
+    diferencia_bs: number
+    lotes: number
+  }[]
+  lotes_sin_ventas: MovimientoBanco[]
+}

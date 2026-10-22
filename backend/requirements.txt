@@ -11,3 +11,5 @@ python-multipart==0.0.9
 psycopg[binary]==3.2.3
 # El Libro de Compras en el formato .xlsx del SENIAT (ver libro_compras_seniat.py).
 openpyxl==3.1.5
+# Leer el estado de cuenta en PDF para conciliar el banco (ver conciliacion.py).
+pypdf==5.1.0
