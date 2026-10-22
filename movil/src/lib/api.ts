@@ -1,4 +1,3 @@
-import { Platform } from 'react-native'
 import * as almacen from './almacen'
 import { hoyEnCaracas, inicioDelMes } from './formato'
 import type {
@@ -28,7 +27,7 @@ const BASE = (process.env.EXPO_PUBLIC_API_BASE ?? 'https://prueba.vertigopro.tec
 // donde corre el backend de desarrollo se llama 10.0.2.2. Asi la misma
 // variable sirve para el navegador y para el emulador.
 const paraEsteEquipo = (url: string) =>
-  Platform.OS === 'android' ? url.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:/]|$)/, '//10.0.2.2') : url
+  process.env.EXPO_OS === 'android' ? url.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:/]|$)/, '//10.0.2.2') : url
 
 /**
  * EL SERVIDOR DEL NEGOCIO. Cada local tiene el suyo (savora.vertigopro.tech);

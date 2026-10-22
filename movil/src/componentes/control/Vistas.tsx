@@ -385,5 +385,5 @@ const v = StyleSheet.create({
   casilla: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 },
   cuadro: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   metodos: { flexDirection: 'row', gap: 8 },
-  metodo: { flex: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11, minHeight: 64 },
+  metodo: { flex: 1, borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 12, paddingVertical: 11, minHeight: 64 },
 })

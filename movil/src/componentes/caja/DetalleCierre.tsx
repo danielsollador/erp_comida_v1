@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router'
+import { Stack, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { apiCaja } from '../../lib/api-caja'
@@ -7,7 +7,6 @@ import { hoyEnCaracas } from '../../lib/formato'
 import { useMoneda } from '../../lib/moneda'
 import { horaCorta } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
-import { Barra } from '../Encabezado'
 import { HojaFormulario, ListaFicha, Vacio } from '../kit'
 import { Aviso, Boton, Campo, Cargando, Etiqueta, Ficha, Fila, Nota, Pantalla, Problema } from '../ui'
 import { cuadra, diaLargo, sumarDias } from './logica'
@@ -42,7 +41,8 @@ export default function DetalleCierre() {
   const dif = c ? c.diferencia + c.divisas_diferencia : 0
 
   return (
-    <Pantalla arriba={<Barra titulo="Cierre de caja" />} refrescando={refrescando} alRefrescar={refrescar}>
+    <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+      <Stack.Screen options={{ title: 'Cierre de caja' }} />
       {error && !datos ? <Problema mensaje={error} alReintentar={refrescar} /> : null}
       {!datos && !error ? <Cargando /> : null}
       {datos && !c ? <Vacio icono="caja" titulo="No se encontró ese cierre" detalle="Puede que sea de otra fecha. Búscalo en el Historial." /> : null}

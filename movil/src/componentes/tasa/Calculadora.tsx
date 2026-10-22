@@ -74,7 +74,7 @@ export default function Calculadora({ estado }: { estado: EstadoTasa | null }) {
         ) : (
           <View style={{ gap: 8 }}>
             {/* Bolivares primero: es el pivote de todas las demas y lo que pasa por la gaveta. */}
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, borderRadius: 14, backgroundColor: t.fichaPrincipal, paddingHorizontal: 16, paddingVertical: 14 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, borderRadius: 14, borderCurve: 'continuous', backgroundColor: t.fichaPrincipal, paddingHorizontal: 16, paddingVertical: 14 }}>
               <Text style={[estilos.texto, { color: t.fichaPrincipalTinta, fontFamily: LETRA.textoFuerte }]}>En bolívares</Text>
               <Text style={{ fontFamily: LETRA.cifraFuerte, fontSize: 19, color: t.fichaPrincipalTinta, flexShrink: 1 }} numberOfLines={1} adjustsFontSizeToFit>
                 {fmtBs(bs)}
@@ -86,7 +86,7 @@ export default function Calculadora({ estado }: { estado: EstadoTasa | null }) {
               return (
                 <View
                   key={x.id}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderRadius: 14, backgroundColor: t.gris100, paddingHorizontal: 16, paddingVertical: 12, opacity: esEscrito ? 0.6 : 1 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderRadius: 14, borderCurve: 'continuous', backgroundColor: t.gris100, paddingHorizontal: 16, paddingVertical: 12, opacity: esEscrito ? 0.6 : 1 }}
                 >
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[estilos.texto, { color: t.tinta, fontFamily: LETRA.textoFuerte }]} numberOfLines={1}>
@@ -117,7 +117,7 @@ export default function Calculadora({ estado }: { estado: EstadoTasa | null }) {
             </View>
           </View>
           {/* El numero accionable: no "estas perdiendo", sino "a cuanto tendrias que venderlo". */}
-          <View style={{ borderRadius: 16, backgroundColor: t.acentoSuave, padding: 16 }}>
+          <View style={{ borderRadius: 16, borderCurve: 'continuous', backgroundColor: t.acentoSuave, padding: 16 }}>
             <Text style={{ fontFamily: LETRA.textoFuerte, fontSize: 11.5, letterSpacing: 1.1, textTransform: 'uppercase', color: t.acentoFuerte }}>
               Para que te queden ${num(enBcv, 2)} de verdad
             </Text>

@@ -1,4 +1,4 @@
-import { Platform, Share } from 'react-native'
+import { Share } from 'react-native'
 import { etiquetaMetodo } from '../../../../frontend/src/lib/pagos'
 import { apiVentas } from '../../lib/api-ventas'
 import { miles } from '../../lib/formato'
@@ -15,7 +15,7 @@ import type { Ticket } from '../../lib/tipos'
  * de la impresora bluetooth. En la vista web de la app se imprime como en la
  * web. Lanza si el servidor no da el ticket; quien llama decide como avisar.
  */
-export const TEXTO_BOTON_TICKET = Platform.OS === 'web' ? 'Imprimir ticket' : 'Compartir ticket'
+export const TEXTO_BOTON_TICKET = process.env.EXPO_OS === 'web' ? 'Imprimir ticket' : 'Compartir ticket'
 
 const usd = (n: number) => `$${miles(n)}`
 
@@ -50,7 +50,7 @@ function lineas(t: Ticket): string[] {
 
 export async function sacarTicket(pedidoId: number): Promise<void> {
   const t = await apiVentas.ticket(pedidoId)
-  if (Platform.OS !== 'web') {
+  if (process.env.EXPO_OS !== 'web') {
     await Share.share({ title: `Ticket ${t.numero}`, message: lineas(t).join('\n') })
     return
   }

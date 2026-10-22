@@ -142,10 +142,10 @@ export default function CampoSugerido({
 }
 
 const s = StyleSheet.create({
-  caja: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 14, minHeight: 50, paddingLeft: 14 },
+  caja: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 14, borderCurve: 'continuous', minHeight: 50, paddingLeft: 14 },
   texto: { flex: 1, minWidth: 0, fontFamily: LETRA.texto, fontSize: 16, paddingVertical: 12 },
-  flecha: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  lista: { borderWidth: 1, borderRadius: 14, overflow: 'hidden' },
+  flecha: { width: 46, height: 46, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
+  lista: { borderWidth: 1, borderRadius: 14, borderCurve: 'continuous', overflow: 'hidden' },
   sugerencia: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 8 },
   sugerenciaTexto: { fontFamily: LETRA.texto, fontSize: 15 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },

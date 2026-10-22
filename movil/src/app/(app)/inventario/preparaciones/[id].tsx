@@ -1,6 +1,5 @@
-import { useLocalSearchParams } from 'expo-router'
+import { Stack, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
-import { Barra } from '../../../../componentes/Encabezado'
 import Olla from '../../../../componentes/preparaciones/Olla'
 import { Cargando, Pantalla, Problema } from '../../../../componentes/ui'
 import { apiPreparaciones } from '../../../../lib/api-preparaciones'
@@ -45,7 +44,8 @@ export default function PantallaOlla() {
 
   if (!datos) {
     return (
-      <Pantalla arriba={<Barra titulo={nueva ? 'Nueva preparación' : 'Receta'} />}>
+      <Pantalla>
+        <Stack.Screen options={{ title: nueva ? 'Nueva preparación' : 'Receta' }} />
         {error ? <Problema mensaje={error} alReintentar={reintentar} /> : <Cargando />}
       </Pantalla>
     )

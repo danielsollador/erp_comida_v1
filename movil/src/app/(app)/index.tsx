@@ -70,7 +70,7 @@ export default function Inicio() {
   const rutas = MODULOS.filter((m) => entraA(modulos, m)).map((m) => m.to)
 
   return (
-    <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+    <Pantalla bordeArriba refrescando={refrescando} alRefrescar={refrescar}>
       {/* Cabecera: la marca del local y los controles. */}
       <View style={estilos.cabecera}>
         <Marca />

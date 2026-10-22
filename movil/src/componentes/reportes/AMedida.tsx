@@ -530,7 +530,7 @@ function Resultado({ resultado: r, cargando }: { resultado: ResultadoDinamico; c
       </View>
 
       {r.truncado ? (
-        <View style={{ backgroundColor: t.avisoSuave, borderRadius: 12, padding: 10, marginBottom: 12 }}>
+        <View style={{ backgroundColor: t.avisoSuave, borderRadius: 12, borderCurve: 'continuous', padding: 10, marginBottom: 12 }}>
           <Text style={[c.nota, { color: t.avisoFuerte }]}>Se muestran las primeras {r.filas.length} filas. El Excel las trae todas.</Text>
         </View>
       ) : null}

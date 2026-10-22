@@ -356,11 +356,11 @@ export function CambiarPrecio({
 
 const estilos = StyleSheet.create({
   colores: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  color: { width: 44, height: 44, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  colorGrande: { width: 48, height: 48, borderRadius: 14 },
-  colorMuestra: { width: 26, height: 26, borderRadius: 8 },
-  colorMuestraGrande: { width: 30, height: 30, borderRadius: 9 },
-  opcion: { flex: 1, minHeight: 48, borderWidth: 2, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  color: { width: 44, height: 44, borderRadius: 12, borderCurve: 'continuous', borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  colorGrande: { width: 48, height: 48, borderRadius: 14, borderCurve: 'continuous' },
+  colorMuestra: { width: 26, height: 26, borderRadius: 8, borderCurve: 'continuous' },
+  colorMuestraGrande: { width: 30, height: 30, borderRadius: 9, borderCurve: 'continuous' },
+  opcion: { flex: 1, minHeight: 48, borderWidth: 2, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   opcionTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
   contexto: { fontFamily: LETRA.texto, fontSize: 14.5, lineHeight: 21 },
 })

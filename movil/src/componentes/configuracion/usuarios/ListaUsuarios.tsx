@@ -233,6 +233,6 @@ const estilos = StyleSheet.create({
   detalles: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 2 },
   acceso: { fontFamily: LETRA.texto, fontSize: 12.5 },
   vacio: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24, gap: 12 },
-  vacioIcono: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  vacioIcono: { width: 56, height: 56, borderRadius: 18, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   vacioTexto: { fontFamily: LETRA.titulo, fontSize: 17 },
 })

@@ -1,3 +1,6 @@
+import { Host, Switch } from '@expo/ui'
+import { SegmentedControl } from '@expo/ui/community/segmented-control'
+import * as Haptics from 'expo-haptics'
 import type { ReactNode } from 'react'
 import {
   ActivityIndicator,
@@ -5,7 +8,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -21,6 +23,18 @@ import Icono, { type NombreIcono } from './Icono'
 
 export type { NombreIcono }
 
+/** El toque corto del sistema al cambiar un control; en la web no hay motor que lo de. */
+function vibrar() {
+  if (process.env.EXPO_OS !== 'web') void Haptics.selectionAsync()
+}
+
+/** La sombra de la losa de la web, en una sola cadena; en oscuro, la del tema. */
+export function sombraLosa(modo: 'claro' | 'oscuro', sombra: string): string {
+  return modo === 'oscuro'
+    ? `0 1px 2px ${sombra}, 0 4px 12px -4px ${sombra}`
+    : '0 1px 2px rgba(23,24,27,0.06), 0 4px 12px -4px rgba(23,24,27,0.14)'
+}
+
 /*
  * LAS PIEZAS DE LA APP, copiadas de la web (components/ui.tsx e index.css):
  * la "losa" del inicio (superficie con radio de 24 y sombra difusa, un pelo
@@ -29,13 +43,21 @@ export type { NombreIcono }
  * una vez y las usan las dos.
  */
 
-/** Una pantalla: el papel de la web detras, margen, se desliza y se refresca tirando. */
+/**
+ * Una pantalla: el papel de la web detras, margen, se desliza y se refresca
+ * tirando. Arriba ya no reserva el borde del telefono: las pantallas llevan
+ * el encabezado nativo del Stack y es el desplazamiento el que se ajusta a
+ * el (`contentInsetAdjustmentBehavior`), que ademas encoge el titulo grande
+ * de iOS al bajar. El inicio, que esconde el encabezado y lleva la marca,
+ * pide ese borde con `bordeArriba`.
+ */
 export function Pantalla({
   children,
   refrescando = false,
   alRefrescar,
   arriba,
   abajo,
+  bordeArriba = false,
 }: {
   children: ReactNode
   refrescando?: boolean
@@ -44,6 +66,8 @@ export function Pantalla({
   arriba?: ReactNode
   /** Lo que va fijo abajo, siempre a la vista: el total y "Cobrar", "Guardar factura". */
   abajo?: ReactNode
+  /** Reservar el borde de arriba del telefono: solo la pantalla sin encabezado nativo (el inicio). */
+  bordeArriba?: boolean
 }) {
   const t = useTema()
   // Abajo, el aire de la barra del telefono: sin esto lo ultimo queda tapado.
@@ -51,9 +75,10 @@ export function Pantalla({
   return (
     <View style={{ flex: 1, backgroundColor: t.papel }}>
       <Fondo />
-      <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
+      <SafeAreaView edges={bordeArriba ? ['top', 'left', 'right'] : ['left', 'right']} style={{ flex: 1 }}>
         {arriba ? <View style={{ paddingHorizontal: 16 }}>{arriba}</View> : null}
         <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={[estilos.pantalla, { paddingBottom: abajo ? 24 : 48 + borde.bottom }]}
           keyboardShouldPersistTaps="handled"
           refreshControl={
@@ -85,7 +110,7 @@ export function Ficha({
   const fondo = tono === 'aviso' ? t.avisoSuave : tono === 'acento' ? t.acentoSuave : t.superficie
   const borde = tono === 'aviso' ? t.avisoLinea : modo === 'oscuro' ? 'rgba(255,255,255,0.06)' : t.linea
   return (
-    <View style={[estilos.losa, { backgroundColor: fondo, borderColor: borde, shadowColor: '#17181b' }, style]}>
+    <View style={[estilos.losa, { backgroundColor: fondo, borderColor: borde, boxShadow: sombraLosa(modo, t.sombra) }, style]}>
       {children}
     </View>
   )
@@ -148,7 +173,7 @@ export function Cifra({
   const t = useTema()
   const medida = tamano === 'grande' ? estilos.cifraGrande : tamano === 'media' ? estilos.cifraMedia : estilos.cifraChica
   return (
-    <Text style={[medida, { color: color ?? t.tinta }]} numberOfLines={1} adjustsFontSizeToFit>
+    <Text style={[medida, { color: color ?? t.tinta }]} numberOfLines={1} adjustsFontSizeToFit selectable>
       {children}
     </Text>
   )
@@ -298,7 +323,12 @@ export function Campo({
   )
 }
 
-/** Un interruptor con su texto y su explicacion. */
+/**
+ * Un interruptor con su texto y su explicacion. El interruptor es el del
+ * sistema (@expo/ui: Toggle de SwiftUI, Switch de Material) y va sin
+ * recolorear: asi se ve como el resto del telefono y cambia solo con el
+ * modo oscuro.
+ */
 export function Interruptor({
   texto,
   detalle,
@@ -319,20 +349,27 @@ export function Interruptor({
         <Text style={[estilos.textoFuerte, { color: t.tinta }]}>{texto}</Text>
         {detalle ? <Text style={[estilos.nota, { color: t.suave, marginTop: 2 }]}>{detalle}</Text> : null}
       </View>
-      <Switch
-        value={valor}
-        onValueChange={alCambiar}
-        disabled={deshabilitado}
-        trackColor={{ false: t.gris200, true: t.acento }}
-        thumbColor="#ffffff"
-      />
+      <Host matchContents>
+        <Switch
+          value={valor}
+          onValueChange={(v) => {
+            vibrar()
+            alCambiar(v)
+          }}
+          disabled={deshabilitado}
+        />
+      </Host>
     </View>
   )
 }
 
 /**
  * Las pestañas de una pantalla (las "secciones" de la web: Mi cuenta,
- * Apariencia, Usuarios...): una fila de pastillas que se desliza de lado.
+ * Apariencia, Usuarios...). Cuando caben, son el control segmentado del
+ * sistema (el Picker segmentado de SwiftUI, los botones segmentados de
+ * Material). Con mas de cuatro, o con textos largos ("Debió salir vs. hay"),
+ * el segmentado los corta con puntos suspensivos: ahi siguen las pastillas
+ * que se deslizan de lado.
  */
 export function Pestanas<T extends string>({
   opciones,
@@ -344,6 +381,26 @@ export function Pestanas<T extends string>({
   alCambiar: (id: T) => void
 }) {
   const t = useTema()
+  const cambiar = (id: T) => {
+    if (id === valor) return
+    vibrar()
+    alCambiar(id)
+  }
+  const caben = opciones.length <= 4 && opciones.reduce((n, o) => n + o.texto.length, 0) <= 36
+  if (caben) {
+    return (
+      <View style={estilos.pestanas}>
+        <SegmentedControl
+          values={opciones.map((o) => o.texto)}
+          selectedIndex={Math.max(0, opciones.findIndex((o) => o.id === valor))}
+          onChange={(e) => {
+            const o = opciones[e.nativeEvent.selectedSegmentIndex]
+            if (o) cambiar(o.id)
+          }}
+        />
+      </View>
+    )
+  }
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={estilos.pestanas}>
       <View style={[estilos.pestanasCaja, { backgroundColor: t.gris100, borderColor: t.gris200 }]}>
@@ -352,7 +409,7 @@ export function Pestanas<T extends string>({
           return (
             <Pressable
               key={o.id}
-              onPress={() => alCambiar(o.id)}
+              onPress={() => cambiar(o.id)}
               style={[estilos.pestana, activa && { backgroundColor: t.tinta }]}
               accessibilityState={{ selected: activa }}
             >
@@ -367,15 +424,8 @@ export function Pestanas<T extends string>({
 
 export const estilos = StyleSheet.create({
   pantalla: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 48, gap: 12 },
-  losa: {
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    shadowOpacity: 0.12,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 2,
-  },
+  // Las esquinas "continuas" son las de iOS (la curva de los iconos); en los demas no cambian nada.
+  losa: { borderRadius: 24, borderCurve: 'continuous', padding: 20, borderWidth: 1 },
   etiqueta: { fontFamily: LETRA.textoFuerte, fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase' },
   titulo: { fontFamily: LETRA.titulo, fontSize: 18, letterSpacing: -0.3 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
@@ -390,11 +440,19 @@ export const estilos = StyleSheet.create({
   filaValor: { fontFamily: LETRA.cifra, fontSize: 15 },
   filaValorFuerte: { fontFamily: LETRA.cifraFuerte, fontSize: 16 },
   filaValorTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
-  problema: { borderRadius: 16, padding: 14 },
-  boton: { minHeight: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
+  problema: { borderRadius: 16, borderCurve: 'continuous', padding: 14 },
+  boton: { minHeight: 50, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   botonTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15.5 },
   rotulo: { fontFamily: LETRA.textoFuerte, fontSize: 13 },
-  campo: { fontFamily: LETRA.texto, fontSize: 16, borderWidth: 1, borderRadius: 14, paddingHorizontal: 15, paddingVertical: 12 },
+  campo: {
+    fontFamily: LETRA.texto,
+    fontSize: 16,
+    borderWidth: 1,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
   interruptor: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 8 },
   pestanas: { paddingVertical: 4 },
   pestanasCaja: { flexDirection: 'row', borderRadius: 999, padding: 4, borderWidth: 1, gap: 2 },

@@ -475,7 +475,7 @@ function Arbol({ color, filas, final }: { color: string; filas: { clave: number;
 }
 
 const m = StyleSheet.create({
-  pastilla: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
+  pastilla: { borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 12, paddingVertical: 7 },
   pastillaFila: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   pastillaNombre: { flex: 1, minWidth: 0, fontFamily: LETRA.textoFuerte, fontSize: 14 },
   pastillaCifra: { fontFamily: LETRA.cifra, fontSize: 13.5 },
@@ -484,7 +484,7 @@ const m = StyleSheet.create({
   tambien: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
   tambienBoton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   puntito: { width: 6, height: 6, borderRadius: 4 },
-  elegida: { flexDirection: 'row', gap: 12, borderRadius: 18, padding: 16 },
+  elegida: { flexDirection: 'row', gap: 12, borderRadius: 18, borderCurve: 'continuous', padding: 16 },
   raya: { width: 6, alignSelf: 'stretch', borderRadius: 3, minHeight: 36 },
   elegidaNombre: { flex: 1, fontFamily: LETRA.titulo, fontSize: 18, letterSpacing: -0.3 },
   soltar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', opacity: 0.7 },
@@ -507,7 +507,7 @@ const m = StyleSheet.create({
   riel: { position: 'absolute', left: 9, width: 3, borderRadius: 2 },
   tramo: { position: 'absolute', left: 9, top: '50%', marginTop: -1.5, width: 19, height: 3, borderRadius: 2 },
   flechaArbol: { position: 'absolute', left: 9, top: '50%', marginTop: -7 },
-  final: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, minHeight: 50 },
+  final: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 12, paddingVertical: 9, minHeight: 50 },
   finalNombre: { fontFamily: LETRA.titulo, fontSize: 15.5 },
   flecha: { fontFamily: LETRA.texto, fontSize: 20 },
 })

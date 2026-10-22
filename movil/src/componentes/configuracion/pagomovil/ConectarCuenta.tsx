@@ -207,12 +207,12 @@ function teclado(c: CampoProveedor): TextInputProps {
 }
 
 const estilos = StyleSheet.create({
-  caja: { borderRadius: 18, padding: 14, gap: 14 },
+  caja: { borderRadius: 18, borderCurve: 'continuous', padding: 14, gap: 14 },
   rotulo: { fontFamily: LETRA.textoFuerte, fontSize: 13 },
   selector: {
     minHeight: 50,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 14, borderCurve: 'continuous',
     paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',

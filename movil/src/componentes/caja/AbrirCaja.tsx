@@ -182,7 +182,7 @@ function Gaveta({
 }
 
 const g = StyleSheet.create({
-  gaveta: { borderWidth: 1, borderRadius: 20, padding: 14, gap: 10 },
+  gaveta: { borderWidth: 1, borderRadius: 20, borderCurve: 'continuous', padding: 14, gap: 10 },
   cabeza: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
   nombre: { fontFamily: LETRA.textoFuerte, fontSize: 16 },
   pista: { fontFamily: LETRA.texto, fontSize: 13 },
@@ -194,7 +194,7 @@ const g = StyleSheet.create({
     width: 84,
     minHeight: 46,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 12, borderCurve: 'continuous',
     paddingHorizontal: 10,
     fontFamily: LETRA.cifraFuerte,
     fontSize: 17,

@@ -18,13 +18,14 @@ import { BotonTexto, Cabecera, mensajeDe, NotaTono } from './piezas'
  * sus ultimas facturas) y lo que el sistema recuerda de sus facturas.
  */
 export default function Proveedores({
-  arriba,
+  pestanas,
   proveedores,
   alCambiar,
   refrescando,
   alRefrescar,
 }: {
-  arriba: ReactNode
+  /** Las pestañas de Compras: van al principio de lo que se desplaza. */
+  pestanas: ReactNode
   proveedores: Proveedor[] | null
   /** Se creo, edito o archivo uno: la lista se vuelve a pedir. */
   alCambiar: () => void
@@ -65,7 +66,8 @@ export default function Proveedores({
   }
 
   return (
-    <Pantalla arriba={arriba} refrescando={refrescando} alRefrescar={alRefrescar}>
+    <Pantalla refrescando={refrescando} alRefrescar={alRefrescar}>
+      {pestanas}
       <Ficha>
         <Cabecera titulo="Proveedores" ayuda="Elegir uno al cargar una factura completa su nombre y su RIF solos." />
         <Boton texto="Nuevo proveedor" icono="mas" alTocar={() => setFicha('nuevo')} />

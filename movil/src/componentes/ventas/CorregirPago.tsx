@@ -227,11 +227,11 @@ export default function CorregirPago({
 }
 
 const e = StyleSheet.create({
-  pago: { borderWidth: 1, borderRadius: 18, padding: 12, gap: 10 },
+  pago: { borderWidth: 1, borderRadius: 18, borderCurve: 'continuous', padding: 12, gap: 10 },
   fila: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  quitar: { width: 44, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  otra: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, minHeight: 46, alignItems: 'center', justifyContent: 'center' },
+  quitar: { width: 44, height: 50, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
+  otra: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, borderCurve: 'continuous', minHeight: 46, alignItems: 'center', justifyContent: 'center' },
   otraTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
-  firma: { borderWidth: 1, borderRadius: 18, padding: 14, gap: 10 },
+  firma: { borderWidth: 1, borderRadius: 18, borderCurve: 'continuous', padding: 14, gap: 10 },
   firmaTitulo: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
 })

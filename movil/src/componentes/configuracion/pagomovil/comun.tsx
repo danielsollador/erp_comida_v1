@@ -135,6 +135,6 @@ const estilos = StyleSheet.create({
   datoValor: { fontFamily: LETRA.cifraFuerte, fontSize: 15, marginTop: 3 },
   datoAyuda: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 1 },
   vacio: { alignItems: 'center', paddingVertical: 24, paddingHorizontal: 8, gap: 6 },
-  vacioIcono: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  vacioIcono: { width: 56, height: 56, borderRadius: 18, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   vacioTitulo: { fontFamily: LETRA.titulo, fontSize: 17, letterSpacing: -0.2, textAlign: 'center' },
 })

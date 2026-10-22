@@ -1,4 +1,4 @@
-import { router, type Href } from 'expo-router'
+import { router, Stack, type Href } from 'expo-router'
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { datosDe, unidadDe } from '../../../../frontend/src/lib/inventario'
@@ -6,7 +6,6 @@ import { apiPreparaciones } from '../../lib/api-preparaciones'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useTema } from '../../lib/tema'
 import type { DatosPreparacion, Ingrediente, Preparacion } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import { BarraAccion, useDisposicion } from '../kit'
 import { Aviso, Ficha, Pantalla, Pestanas } from '../ui'
 import Agregar from './Agregar'
@@ -272,7 +271,6 @@ export default function Olla({ prep, ingredientes }: { prep: Preparacion | null;
 
   return (
     <Pantalla
-      arriba={<Barra titulo={prep ? 'Receta' : 'Nueva preparación'} />}
       abajo={
         <View>
           {error ? (
@@ -296,6 +294,7 @@ export default function Olla({ prep, ingredientes }: { prep: Preparacion | null;
         </View>
       }
     >
+      <Stack.Screen options={{ title: prep ? 'Receta' : 'Nueva preparación' }} />
       {tablet ? (
         <View style={o.dos}>
           <View style={{ flex: 5, minWidth: 0 }}>{losaOlla}</View>

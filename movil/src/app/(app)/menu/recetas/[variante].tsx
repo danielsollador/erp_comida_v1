@@ -1,10 +1,9 @@
-import { router, useLocalSearchParams, useNavigation } from 'expo-router'
+import { router, Stack, useLocalSearchParams, useNavigation } from 'expo-router'
 import { usePreventRemove } from 'expo-router/react-navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { Text, View } from 'react-native'
 import Compositor, { armarVaso, huella, huellaDeCombo, type Fila, type FilaCombo } from '../../../../componentes/menu/Compositor'
 import { paraPrecio, renglonesDe, type DatosMenu } from '../../../../componentes/menu/datos'
-import { Barra } from '../../../../componentes/Encabezado'
 import { BarraAccion } from '../../../../componentes/kit'
 import { Cargando, Pantalla, Problema } from '../../../../componentes/ui'
 import { apiMenu } from '../../../../lib/api-menu'
@@ -180,11 +179,12 @@ export default function EditorReceta() {
     }
   }
 
-  const barra = <Barra titulo="Receta" />
+  const titulo = <Stack.Screen options={{ title: 'Receta' }} />
 
   if (!cargado) {
     return (
-      <Pantalla arriba={barra}>
+      <Pantalla>
+        {titulo}
         {errorCarga ? <Problema mensaje={errorCarga} alReintentar={() => setIntento((n) => n + 1)} /> : <Cargando />}
       </Pantalla>
     )
@@ -193,7 +193,8 @@ export default function EditorReceta() {
   // Lo retirado del menu (o un envio, que no se cocina) no lleva receta.
   if (!renglon) {
     return (
-      <Pantalla arriba={barra}>
+      <Pantalla>
+        {titulo}
         <Problema mensaje="Ese producto ya no está en el menú: lo retirado no lleva receta." />
       </Pantalla>
     )
@@ -201,7 +202,6 @@ export default function EditorReceta() {
 
   return (
     <Pantalla
-      arriba={barra}
       abajo={
         <BarraAccion
           izquierda={
@@ -219,6 +219,7 @@ export default function EditorReceta() {
         />
       }
     >
+      {titulo}
       <Compositor
         renglon={renglon}
         ingredientes={cargado.ingredientes}

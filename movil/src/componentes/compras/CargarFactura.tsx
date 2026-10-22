@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics'
 import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -77,7 +78,7 @@ import RenglonFactura from './RenglonFactura'
  * izquierda y el formulario a la derecha, como en la web.
  */
 export default function CargarFactura({
-  arriba,
+  pestanas,
   ingredientes,
   setIngredientes,
   proveedores,
@@ -85,8 +86,8 @@ export default function CargarFactura({
   onGuardada,
   onVerFacturas,
 }: {
-  /** La barra y las pestañas de Compras. */
-  arriba: ReactNode
+  /** Las pestañas de Compras: van al principio de lo que se desplaza. */
+  pestanas: ReactNode
   ingredientes: Ingrediente[]
   setIngredientes: Dispatch<SetStateAction<Ingrediente[]>>
   proveedores: Proveedor[]
@@ -700,6 +701,14 @@ export default function CargarFactura({
       }
       await anotarAntesDeGuardar(numeroFactura.trim(), cuerpoCompletar)
       const guardada = await apiCompras.crearFactura({ ...comun, items, gastos, iva: ivaLineas })
+      // El golpecito de "guardada": si el aparato no vibra, no pasa nada.
+      if (process.env.EXPO_OS !== 'web') {
+        try {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined)
+        } catch {
+          // Sin motor de vibracion.
+        }
+      }
       // La ficha ya aprendio el empaque en el servidor; aqui, sin volver a pedir la lista.
       const aprendidos = new Map(items.filter((it) => it.empaque_trae).map((it) => [it.ingrediente_id, it.empaque_trae!]))
       if (aprendidos.size) setIngredientes((prev) => prev.map((ing) => (aprendidos.has(ing.id) ? { ...ing, empaque_trae: aprendidos.get(ing.id)! } : ing)))
@@ -1190,8 +1199,8 @@ export default function CargarFactura({
   return (
     <View style={{ flex: 1, backgroundColor: t.papel }}>
       <Fondo />
-      <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
-        <View style={{ paddingHorizontal: 16 }}>{arriba}</View>
+      {/* Sin borde de arriba: el encabezado nativo del Stack ya lo ocupa. */}
+      <SafeAreaView edges={['left', 'right']} style={{ flex: 1 }}>
         <View style={{ flex: 1, flexDirection: 'row' }}>
           {dosColumnas && documento ? (
             // La factura a la vista, fija al lado del formulario.
@@ -1203,10 +1212,12 @@ export default function CargarFactura({
             ref={scroll}
             style={{ flex: 7 }}
             contentContainerStyle={s.pantalla}
+            contentInsetAdjustmentBehavior="automatic"
             keyboardShouldPersistTaps="handled"
             automaticallyAdjustKeyboardInsets
           >
             <View ref={contenido} collapsable={false} style={{ gap: 12 }}>
+              {pestanas}
               <View ref={anclar('cf-arriba')} collapsable={false} />
               {exito ? (
                 <View style={[s.exito, { backgroundColor: t.exitoSuave }]}>
@@ -1354,8 +1365,8 @@ function ResumenRenglones({ lineas, ingredientes, total }: { lineas: Linea[]; in
 
 const s = StyleSheet.create({
   elegirTitulo: { fontFamily: LETRA.titulo, fontSize: 26, lineHeight: 31, letterSpacing: -0.4, marginTop: 8 },
-  elegirCuadro: { borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, padding: 24, minHeight: 200, justifyContent: 'space-between', gap: 28 },
-  elegirIcono: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  elegirCuadro: { borderRadius: 24, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth, padding: 24, minHeight: 200, justifyContent: 'space-between', gap: 28 },
+  elegirIcono: { width: 56, height: 56, borderRadius: 18, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   elegirNombre: { fontFamily: LETRA.titulo, fontSize: 24, letterSpacing: -0.3 },
   elegirTexto: { fontFamily: LETRA.texto, fontSize: 15, lineHeight: 22, marginTop: 6 },
   cambiarForma: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, alignSelf: 'flex-start' },
@@ -1363,15 +1374,15 @@ const s = StyleSheet.create({
   pantalla: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
   etiqueta: { fontFamily: LETRA.textoFuerte, fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase' },
-  exito: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 16, paddingLeft: 14, paddingRight: 6, paddingVertical: 6 },
+  exito: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 16, borderCurve: 'continuous', paddingLeft: 14, paddingRight: 6, paddingVertical: 6 },
   grilla: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   entera: { width: '100%' },
   celda: { flexGrow: 1, flexBasis: 140, minWidth: 0 },
-  otro: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, borderRadius: 18, borderWidth: 1, borderStyle: 'dashed' },
+  otro: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed' },
   otroTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
-  plata: { borderRadius: 18, padding: 14 },
+  plata: { borderRadius: 18, borderCurve: 'continuous', padding: 14 },
   gastoFila: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  parte: { borderRadius: 16, padding: 10, gap: 8 },
+  parte: { borderRadius: 16, borderCurve: 'continuous', padding: 10, gap: 8 },
   parteFila: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   quitarParte: { width: 44, height: 50, alignItems: 'center', justifyContent: 'center' },
   mixtoPie: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6 },

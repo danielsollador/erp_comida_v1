@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, cargarServidor, cargarToken, cuandoCaduque } from './api'
+import { marcaDe, useMarca } from './tema'
 import type { EstadoAcceso } from './tipos'
 
 type Fase = 'cargando' | 'fuera' | 'dentro'
@@ -23,6 +24,13 @@ const Contexto = createContext<Sesion | null>(null)
 export function SesionProvider({ children }: { children: ReactNode }) {
   const [fase, setFase] = useState<Fase>('cargando')
   const [acceso, setAcceso] = useState<EstadoAcceso | null>(null)
+  const { ponerMarca } = useMarca()
+
+  // Al saber de que local es la sesion, la app se viste de su marca (el cobre
+  // es solo de Savora; lo demas, Vertigo). Igual que `data-marca` en la web.
+  useEffect(() => {
+    if (acceso) ponerMarca(acceso.es_hub ? 'vertigo' : marcaDe(acceso.local?.slug))
+  }, [acceso, ponerMarca])
 
   useEffect(() => {
     cuandoCaduque(() => {
@@ -79,7 +87,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
 }
 
 export function useSesion(): Sesion {
-  const s = useContext(Contexto)
+  const s = use(Contexto)
   if (!s) throw new Error('useSesion fuera de SesionProvider')
   return s
 }

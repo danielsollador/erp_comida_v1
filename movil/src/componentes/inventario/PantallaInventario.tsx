@@ -1,14 +1,14 @@
-import { router, useLocalSearchParams, type Href } from 'expo-router'
+import { router, Stack, useLocalSearchParams, type Href } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { datosDe } from '../../../../frontend/src/lib/inventario'
+import { ALMACEN_DE } from '../../../../frontend/src/lib/tiposArticulo'
 import * as almacen from '../../lib/almacen'
 import { apiInventario } from '../../lib/api-inventario'
 import { useCarga } from '../../lib/carga'
 import { confirmar } from '../../lib/dialogo'
 import { LETRA, useTema } from '../../lib/tema'
 import type { Configuracion, Ingrediente } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import { Hoja, OpcionHoja } from '../Hoja'
 import { BarraAccion } from '../kit'
 import { Aviso, Boton, Cargando, Ficha, Pantalla, Pestanas, Problema } from '../ui'
@@ -17,7 +17,7 @@ import { useAnotar } from './acciones'
 import Categorias from './Categorias'
 import { cargarInventario, resumenes, SECCIONES, type Seccion } from './datos'
 import Desechables from './Desechables'
-import ListaMercancia, { BarraAlmacen, CabezaAlmacen } from './ListaMercancia'
+import ListaMercancia, { CabezaAlmacen } from './ListaMercancia'
 import Portada from './Portada'
 import QueComprar from './QueComprar'
 
@@ -150,7 +150,6 @@ export default function PantallaInventario() {
           refrescando={refrescando}
           alRefrescar={refrescar}
           alReactivar={(ing) => void reactivar(ing)}
-          arriba={<BarraAlmacen tipo={tipo} />}
           cabeceraExtra={
             <View style={{ gap: 12 }}>
               {aviso}
@@ -176,9 +175,9 @@ export default function PantallaInventario() {
       <Pantalla
         refrescando={refrescando}
         alRefrescar={refrescar}
-        arriba={<BarraAlmacen tipo="desechable" />}
         abajo={<BarraAccion texto="Nueva mercancía" alTocar={() => ir('/inventario/mercancia/nueva?tipo=desechable')} />}
       >
+        <Stack.Screen options={{ title: ALMACEN_DE.desechable.texto }} />
         {aviso}
         {sinControl}
         <CabezaAlmacen tipo="desechable" mercancias={0} preparaciones={0} alCrudo={() => undefined} alPreparado={() => undefined} />
@@ -194,7 +193,8 @@ export default function PantallaInventario() {
   // ── Categorias ──
   if (seccion === 'categorias') {
     return (
-      <Pantalla refrescando={refrescando} alRefrescar={refrescar} arriba={<Barra titulo="Categorías del inventario" />}>
+      <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+        <Stack.Screen options={{ title: 'Categorías del inventario' }} />
         {problema}
         {cargando ? <Cargando /> : null}
         {datos ? <Categorias categorias={datos.categorias} ingredientes={datos.ingredientes} alCambio={refrescar} /> : null}
@@ -208,7 +208,6 @@ export default function PantallaInventario() {
     <Pantalla
       refrescando={refrescando}
       alRefrescar={refrescar}
-      arriba={<Barra titulo="Inventario" />}
       abajo={
         // Las dos acciones de la web, abajo al alcance del pulgar (como en
         // cada almacen): contar a la izquierda, crear como boton principal.
@@ -230,6 +229,7 @@ export default function PantallaInventario() {
         ) : undefined
       }
     >
+      <Stack.Screen options={{ title: 'Inventario' }} />
       <View style={s.acciones}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Pestanas

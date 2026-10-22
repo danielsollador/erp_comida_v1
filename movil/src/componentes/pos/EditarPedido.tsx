@@ -217,6 +217,9 @@ export function EditarPedido({
                 <Pressable
                   onPress={() => alternarCortesia(l.clave)}
                   hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cortesía"
+                  accessibilityState={{ selected: l.cortesia }}
                   style={[e.cortesia, l.cortesia ? { backgroundColor: t.exitoSuave, borderColor: t.exito500 } : { borderColor: t.gris200 }]}
                 >
                   <Text style={[e.cortesiaTexto, { color: l.cortesia ? t.exito : t.tenue }]}>{l.cortesia ? '✓ Cortesía' : 'Cortesía'}</Text>
@@ -241,6 +244,8 @@ export function EditarPedido({
               <Pressable
                 key={variante.id}
                 onPress={() => agregar(producto, variante)}
+                accessibilityRole="button"
+                accessibilityLabel={`Agregar ${producto.nombre}`}
                 style={({ pressed }) => [e.plato, { backgroundColor: pressed ? t.gris200 : t.gris100 }]}
               >
                 <Text style={[e.nombre, { color: t.tinta, fontSize: 14 }]} numberOfLines={2}>
@@ -330,7 +335,7 @@ const e = StyleSheet.create({
   cortesia: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
   cortesiaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 11.5, letterSpacing: 0.6, textTransform: 'uppercase' },
   resultados: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  plato: { flexBasis: '47%', flexGrow: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, minHeight: 52 },
+  plato: { flexBasis: '47%', flexGrow: 1, borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 12, paddingVertical: 10, minHeight: 52 },
   cuentas: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8 },
   etiqueta: { fontFamily: LETRA.textoFuerte, fontSize: 11, letterSpacing: 1.3 },
 })

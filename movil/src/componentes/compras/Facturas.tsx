@@ -42,12 +42,13 @@ function contiene(texto: string, palabras: string[]) {
 }
 
 export default function Facturas({
-  arriba,
+  pestanas,
   version,
   buscar,
   onCargar,
 }: {
-  arriba: ReactNode
+  /** Las pestañas de Compras: van al principio de la lista. */
+  pestanas: ReactNode
   /** Sube cuando otra seccion cambio algo (una factura nueva): se vuelve a pedir. */
   version: number
   /** Lo que llega buscado desde otra parte (una alerta). */
@@ -162,6 +163,7 @@ export default function Facturas({
 
   const cabecera = (
     <View style={{ gap: 12 }}>
+      {pestanas}
       <FilaFiltros>
         <ElegirPeriodo periodo={periodo} alCambiar={setPeriodo} />
         <Selector etiqueta="Orden" titulo="Ordenar las facturas" opciones={ORDENES} valor={orden} alCambiar={setOrden} />
@@ -284,7 +286,6 @@ export default function Facturas({
   return (
     <>
       <PantallaLista
-        arriba={arriba}
         datos={datos ? visibles : []}
         clave={(f) => String(f.id)}
         cabecera={cabecera}

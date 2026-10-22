@@ -1,5 +1,4 @@
-import { useLocalSearchParams } from 'expo-router'
-import { Barra } from '../../../../componentes/Encabezado'
+import { Stack, useLocalSearchParams } from 'expo-router'
 import { Vacio } from '../../../../componentes/kit'
 import { Cargando, Pantalla, Problema } from '../../../../componentes/ui'
 import DetalleVenta from '../../../../componentes/ventas/DetalleVenta'
@@ -32,7 +31,8 @@ export default function PedidoVenta() {
 
   const v = datos?.v ?? null
   return (
-    <Pantalla refrescando={refrescando} alRefrescar={refrescar} arriba={<Barra titulo={v ? `Venta #${v.numero}` : 'Venta'} />}>
+    <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+      <Stack.Screen options={{ title: v ? `Venta #${v.numero}` : 'Venta' }} />
       {error && !datos ? <Problema mensaje={error} alReintentar={refrescar} /> : null}
       {!datos && !error ? <Cargando /> : null}
       {v ? <DetalleVenta v={v} alCambio={refrescar} /> : null}

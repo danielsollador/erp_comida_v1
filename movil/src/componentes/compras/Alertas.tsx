@@ -97,11 +97,12 @@ export function AlertasAlGuardar({ alertas, onCerrar }: { alertas: AlertaPrecio[
 
 /** La bandeja de Compras. `onPendientes` avisa cuantas quedan sin ver. */
 export default function Alertas({
-  arriba,
+  pestanas,
   onPendientes,
   onVerFactura,
 }: {
-  arriba: ReactNode
+  /** Las pestañas de Compras: van al principio de lo que se desplaza. */
+  pestanas: ReactNode
   onPendientes: (n: number) => void
   onVerFactura: (a: AlertaPrecio) => void
 }) {
@@ -173,13 +174,13 @@ export default function Alertas({
 
   return (
     <Pantalla
-      arriba={arriba}
       refrescando={refrescando}
       alRefrescar={() => {
         setRefrescando(true)
         void cargar(soloPendientes)
       }}
     >
+      {pestanas}
       <Ficha>
         <Cabecera
           titulo="Alertas de precio"
@@ -243,6 +244,6 @@ const d = StyleSheet.create({
   texto: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
   fecha: { fontFamily: LETRA.texto, fontSize: 13, marginBottom: 4 },
   controles: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  visto: { minHeight: 44, borderRadius: 14, borderWidth: 1, paddingHorizontal: 20, justifyContent: 'center' },
+  visto: { minHeight: 44, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, paddingHorizontal: 20, justifyContent: 'center' },
   vistoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
 })

@@ -1,6 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import { openURL } from 'expo-linking'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 import { apiCuenta } from '../../lib/api-cuenta'
+import { darConsentimiento, PROVEEDOR_IA, retirarConsentimiento, tieneConsentimiento } from '../../lib/consentimiento-ia'
 import { confirmar } from '../../lib/dialogo'
 import { useSesion } from '../../lib/sesion'
 import { LETRA, useTema } from '../../lib/tema'
@@ -27,7 +29,7 @@ const NOMBRE_ROL: Record<string, string> = {
   cocina: 'Cocina',
 }
 
-type Cual = 'nombre' | 'pin' | 'clave' | 'eliminar'
+type Cual = 'nombre' | 'pin' | 'clave' | 'ia' | 'eliminar'
 
 export default function MiCuenta() {
   const t = useTema()
@@ -84,8 +86,84 @@ export default function MiCuenta() {
         />
       )}
       <CambiarClave abierta={abierta === 'clave'} alAlternar={alternar('clave')} alTerminar={salir} />
+      {acceso.puede.modulos?.includes('compras') ? <LecturaIA abierta={abierta === 'ia'} alAlternar={alternar('ia')} /> : null}
       <EliminarCuenta abierta={abierta === 'eliminar'} alAlternar={alternar('eliminar')} alTerminar={salir} />
+      <Legales />
     </>
+  )
+}
+
+// ── Lectura con IA ──────────────────────────────────────────────────────────
+
+/**
+ * El permiso para mandar facturas a la IA: como esta y como retirarlo. Apple
+ * (5.1.2(i)) pide que se pueda ver y quitar; la primera vez se pregunta al
+ * leer la primera factura (lib/consentimiento-ia.ts).
+ */
+function LecturaIA({ abierta, alAlternar }: { abierta: boolean; alAlternar: () => void }) {
+  const [permitido, setPermitido] = useState<boolean | null>(null)
+  useEffect(() => {
+    tieneConsentimiento()
+      .then(setPermitido)
+      .catch(() => setPermitido(false))
+  }, [])
+
+  async function cambiar() {
+    if (permitido) {
+      await retirarConsentimiento()
+      setPermitido(false)
+    } else {
+      await darConsentimiento()
+      setPermitido(true)
+    }
+  }
+
+  const resumen = permitido === null ? '' : permitido ? `Permitido · ${PROVEEDOR_IA}` : 'Sin permiso: se pedirá al leer una factura'
+  return (
+    <Tarjeta titulo="Lectura de facturas con IA" plegable={{ abierta, alAlternar, resumen }}>
+      <Nota>
+        Al tocar «Leer factura», la foto o el PDF se envía a {PROVEEDOR_IA} (un servicio de Google) con el nombre y el RIF
+        de tu negocio, y vuelve con los datos para que los revises. Sin este permiso, las facturas se cargan a mano.
+      </Nota>
+      <Boton
+        texto={permitido ? 'Retirar el permiso' : 'Permitir la lectura con IA'}
+        tono={permitido ? 'neutro' : 'acento'}
+        alTocar={() => void cambiar()}
+        deshabilitado={permitido === null}
+      />
+    </Tarjeta>
+  )
+}
+
+// ── Privacidad y soporte ────────────────────────────────────────────────────
+
+const ENLACES = [
+  { texto: 'Política de privacidad', url: 'https://vertigopro.tech/privacidad.html' },
+  { texto: 'Soporte', url: 'https://vertigopro.tech/soporte.html' },
+  { texto: 'Cómo eliminar tu cuenta', url: 'https://vertigopro.tech/eliminar-cuenta.html' },
+]
+
+/** Las paginas publicas, a mano desde la app (Apple 5.1.1(i)); abren en el navegador. */
+function Legales() {
+  const t = useTema()
+  return (
+    <Ficha style={{ padding: 0 }}>
+      {ENLACES.map((e, i) => (
+        <Pressable
+          key={e.url}
+          onPress={() => openURL(e.url).catch(() => undefined)}
+          accessibilityRole="link"
+          style={({ pressed }) => [
+            estilos.enlace,
+            i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.gris200 },
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <Text style={[estilos.enlaceTexto, { color: t.tinta }]}>{e.texto}</Text>
+          <Icono nombre="chevron" size={16} color={t.tenue} />
+        </Pressable>
+      ))}
+    </Ficha>
   )
 }
 
@@ -587,4 +665,6 @@ const estilos = StyleSheet.create({
   acciones: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   quitar: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
   quitarTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
+  enlace: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, minHeight: 48 },
+  enlaceTexto: { fontFamily: LETRA.texto, fontSize: 15 },
 })

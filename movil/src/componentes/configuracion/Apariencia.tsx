@@ -100,8 +100,8 @@ function Muestra({ fondo, borde, raya }: { fondo: string; borde: string; raya: s
 
 const estilos = StyleSheet.create({
   par: { flexDirection: 'row', gap: 12 },
-  opcion: { flex: 1, borderWidth: 1, borderRadius: 14, padding: 12 },
-  muestra: { height: 48, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  opcion: { flex: 1, borderWidth: 1, borderRadius: 14, borderCurve: 'continuous', padding: 12 },
+  muestra: { height: 48, borderRadius: 10, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   raya: { width: 32, height: 6, borderRadius: 3 },
   nombre: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   circulo: { width: 14, height: 14, borderRadius: 7, borderWidth: 3 },

@@ -688,5 +688,5 @@ const estilos = StyleSheet.create({
   porUnidad: { fontFamily: LETRA.cifra, fontSize: 13 },
   mas: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   cuesta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10 },
-  cuenta: { borderRadius: 18, padding: 12, gap: 10 },
+  cuenta: { borderRadius: 18, borderCurve: 'continuous', padding: 12, gap: 10 },
 })

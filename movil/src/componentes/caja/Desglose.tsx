@@ -423,8 +423,8 @@ const d = StyleSheet.create({
   montoFuerte: { fontFamily: LETRA.cifraFuerte, fontSize: 15.5 },
   montoBs: { fontFamily: LETRA.cifra, fontSize: 13, marginTop: 1 },
   veredicto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
-  cobros: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 4, marginTop: 2 },
-  cobro: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10 },
+  cobros: { borderRadius: 16, borderCurve: 'continuous', paddingHorizontal: 12, paddingVertical: 4, marginTop: 2 },
+  cobro: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, borderCurve: 'continuous' },
   cobroTexto: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
   repetida: { fontFamily: LETRA.textoFuerte, fontSize: 12, letterSpacing: 0.8 },
 })

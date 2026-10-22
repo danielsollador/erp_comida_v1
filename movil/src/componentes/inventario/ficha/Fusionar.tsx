@@ -151,9 +151,9 @@ export default function Fusionar({
 }
 
 const s = StyleSheet.create({
-  resumen: { borderRadius: 14, padding: 12 },
+  resumen: { borderRadius: 14, borderCurve: 'continuous', padding: 12 },
   rotulo: { fontFamily: LETRA.textoFuerte, fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase', marginTop: 4 },
   grupo: { fontFamily: LETRA.textoFuerte, fontSize: 13 },
-  opcion: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
+  opcion: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   opcionTexto: { flex: 1, fontFamily: LETRA.textoFuerte, fontSize: 15 },
 })

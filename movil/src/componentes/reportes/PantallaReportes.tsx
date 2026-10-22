@@ -1,4 +1,4 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, Text, View } from 'react-native'
 import { apiReportes, type FiltroDepositoQuery, type FiltroMenuQuery, type RangoFechas } from '../../lib/api-reportes'
@@ -6,7 +6,6 @@ import { horaCorta, periodoDe, type Periodo } from '../../lib/numeros'
 import { fmtBs } from '../../lib/moneda'
 import { LETRA, useTema } from '../../lib/tema'
 import type { Categoria, CategoriaInsumo, Ingrediente, ReporteCombos, ReporteInventario, ReportePerdidas, ReporteResumen } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import { ElegirPeriodo, FilaFiltros, Selector, type OpcionSelector } from '../kit'
 import { Cargando, Pantalla, Pestanas, Problema } from '../ui'
 import AMedida from './AMedida'
@@ -290,7 +289,6 @@ export default function PantallaReportes() {
 
   return (
     <Pantalla
-      arriba={<Barra titulo="Reportes" />}
       refrescando={refrescando}
       alRefrescar={() => {
         // En A medida cada cambio ya consulta solo; ahi no hay nada que esperar.
@@ -298,6 +296,7 @@ export default function PantallaReportes() {
         setVuelta((v) => v + 1)
       }}
     >
+      <Stack.Screen options={{ title: 'Reportes' }} />
       <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />
 
       {aMedida ? (
@@ -342,7 +341,13 @@ export default function PantallaReportes() {
                 </>
               )}
               {hayFiltro ? (
-                <Pressable onPress={limpiar} hitSlop={6} style={{ height: 38, justifyContent: 'center', paddingHorizontal: 8 }}>
+                <Pressable
+                  onPress={limpiar}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quitar filtros"
+                  style={{ height: 38, justifyContent: 'center', paddingHorizontal: 8 }}
+                >
                   <Text style={[c.texto, { color: t.suave, fontFamily: LETRA.textoFuerte }]}>Quitar filtros</Text>
                 </Pressable>
               ) : null}

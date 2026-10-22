@@ -1,4 +1,4 @@
-import { router, type Href } from 'expo-router'
+import { router, Stack, type Href } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { cuantoDura, datosDe, estadoStock } from '../../../../../frontend/src/lib/inventario'
@@ -20,7 +20,6 @@ import type {
   Merma,
   TipoArticulo,
 } from '../../../lib/tipos'
-import { Barra } from '../../Encabezado'
 import { useDisposicion } from '../../kit'
 import { Aviso, Boton, Cargando, Ficha, Nota, Pantalla, Problema, Pulsable } from '../../ui'
 import { useAnotar } from '../acciones'
@@ -152,7 +151,8 @@ export function PantallaFicha({ id }: { id: number }) {
 
   if (!ing) {
     return (
-      <Pantalla refrescando={refrescando} alRefrescar={refrescar} arriba={<Barra titulo="Mercancía" />}>
+      <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+        <Stack.Screen options={{ title: 'Mercancía' }} />
         {error ? <Problema mensaje={error} alReintentar={refrescar} /> : datos ? <Problema mensaje="Esa mercancía no existe." /> : <Cargando />}
       </Pantalla>
     )
@@ -253,7 +253,6 @@ export function PantallaFicha({ id }: { id: number }) {
     )
     return (
       <Pantalla
-        arriba={<Barra titulo={ing.nombre} />}
         abajo={
           <PieFormulario
             volver="Volver"
@@ -267,6 +266,7 @@ export function PantallaFicha({ id }: { id: number }) {
           />
         }
       >
+        <Stack.Screen options={{ title: ing.nombre }} />
         <Nota>Cambiar los datos de esta mercancía</Nota>
         {avisos.aviso ? <Aviso texto={avisos.aviso.texto} tono={avisos.aviso.tono} /> : null}
         <Formulario
@@ -357,7 +357,6 @@ export function PantallaFicha({ id }: { id: number }) {
     <Pantalla
       refrescando={refrescando}
       alRefrescar={recargar}
-      arriba={<Barra titulo={ing.nombre} />}
       abajo={
         // AL PIE, SIEMPRE A LA VISTA. Al final de la ficha quedaba debajo de
         // cien movimientos y no se encontraba (Leider, 2-oct).
@@ -374,6 +373,7 @@ export function PantallaFicha({ id }: { id: number }) {
         </View>
       }
     >
+      <Stack.Screen options={{ title: ing.nombre }} />
       <Nota>
         {ing.categoria || 'Sin categoría'} · {ALMACEN_DE[ing.tipo].detalle}
       </Nota>
@@ -551,7 +551,6 @@ export function PantallaNueva({ tipo }: { tipo?: TipoArticulo }) {
 
   return (
     <Pantalla
-      arriba={<Barra titulo="Nueva mercancía" />}
       abajo={
         <PieFormulario
           volver="Cancelar"
@@ -562,6 +561,7 @@ export function PantallaNueva({ tipo }: { tipo?: TipoArticulo }) {
         />
       }
     >
+      <Stack.Screen options={{ title: 'Nueva mercancía' }} />
       <Nota>Lo indispensable para empezar; lo demás se puede poner después.</Nota>
       <Formulario
         ing={null}
@@ -590,7 +590,7 @@ const s = StyleSheet.create({
   chipFuerte: { fontFamily: LETRA.textoFuerte, fontSize: 13 },
   chipTexto: { fontFamily: LETRA.texto, fontSize: 13 },
   anotar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  anotarBoton: { width: '48.6%', flexGrow: 1, borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, minHeight: 64 },
+  anotarBoton: { width: '48.6%', flexGrow: 1, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, minHeight: 64 },
   anotarTitulo: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
   anotarDetalle: { fontFamily: LETRA.texto, fontSize: 13, lineHeight: 17, marginTop: 2 },
 })

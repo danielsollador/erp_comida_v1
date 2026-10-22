@@ -284,7 +284,7 @@ const s = StyleSheet.create({
   cajonCuenta: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 1 },
   mas: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   masTexto: { fontFamily: LETRA.textoFuerte, fontSize: 20, lineHeight: 22 },
-  nueva: { minHeight: 46, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  nueva: { minHeight: 46, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
   nuevaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
   ayuda: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19, paddingHorizontal: 16, paddingBottom: 6 },
   renglon: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 12, minHeight: 56 },

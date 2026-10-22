@@ -215,5 +215,5 @@ export function Autorizar({
 const e = StyleSheet.create({
   texto: { fontFamily: LETRA.texto, fontSize: 14.5, lineHeight: 20 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
-  caja: { borderRadius: 16, padding: 14 },
+  caja: { borderRadius: 16, borderCurve: 'continuous', padding: 14 },
 })

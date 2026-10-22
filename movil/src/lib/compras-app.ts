@@ -1,7 +1,7 @@
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import { useEffect, useState } from 'react'
-import { Platform, type View } from 'react-native'
+import { type View } from 'react-native'
 import { apiBase, cabecerasDeSesion, ErrorApi } from './api'
 import { apiCompras, type PedidoRevision } from './api-compras'
 import { hoyEnCaracas, miles } from './formato'
@@ -436,7 +436,7 @@ export function diasVencida(f: FacturaCompra): number | null {
 
 /** Los bytes de una foto o un PDF del telefono (o del navegador, en la vista web). */
 export async function bytesDe(uri: string): Promise<Uint8Array> {
-  if (Platform.OS === 'web') return new Uint8Array(await (await fetch(uri)).arrayBuffer())
+  if (process.env.EXPO_OS === 'web') return new Uint8Array(await (await fetch(uri)).arrayBuffer())
   return await new File(uri).bytes()
 }
 
@@ -445,7 +445,7 @@ export async function bytesDe(uri: string): Promise<Uint8Array> {
  * y para verlo mientras se revisa. En el navegador, un enlace al Blob.
  */
 export function guardarPdf(pdf: Uint8Array): string {
-  if (Platform.OS === 'web') return URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }))
+  if (process.env.EXPO_OS === 'web') return URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }))
   const archivo = new File(Paths.cache, `factura-fotos-${Date.now()}.pdf`)
   archivo.create({ overwrite: true })
   archivo.write(pdf)
@@ -459,7 +459,7 @@ export function guardarPdf(pdf: Uint8Array): string {
  */
 export async function bajarSoporte(facturaId: number): Promise<{ uri: string; esPdf: boolean }> {
   const url = `${apiBase()}/api/compras/facturas/${facturaId}/soporte`
-  if (Platform.OS === 'web') {
+  if (process.env.EXPO_OS === 'web') {
     const res = await fetch(url, { headers: cabecerasDeSesion() })
     if (!res.ok) throw new ErrorApi('No se pudo abrir el soporte de esta factura', res.status)
     const blob = await res.blob()
@@ -485,7 +485,7 @@ export async function bajarSoporte(facturaId: number): Promise<{ uri: string; es
 
 /** Abrir un PDF: en el telefono, el menu del sistema (visor, Drive, WhatsApp); en el navegador, otra pestaña. */
 export async function abrirPdf(uri: string): Promise<void> {
-  if (Platform.OS === 'web') {
+  if (process.env.EXPO_OS === 'web') {
     globalThis.open?.(uri, '_blank')
     return
   }

@@ -1,9 +1,8 @@
-import { router, useLocalSearchParams } from 'expo-router'
+import { router, Stack, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { View } from 'react-native'
 import { apiCompras } from '../../lib/api-compras'
 import type { AlertaPrecio, ConfiguracionFiscal, Ingrediente, Proveedor } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import { Pestanas } from '../ui'
 import Alertas, { AlertasAlGuardar } from './Alertas'
 import CargarFactura from './CargarFactura'
@@ -83,25 +82,24 @@ export default function PantallaCompras() {
 
   const irA = (id: IdSeccion) => router.setParams({ seccion: id, buscar: undefined })
   const opciones = SECCIONES.map((s) => (s.id === 'alertas' && alertasPendientes > 0 ? { ...s, texto: `Alertas · ${alertasPendientes}` } : s))
-  const arriba = (
-    <View style={{ gap: 4, paddingBottom: 6 }}>
-      <Barra titulo="Compras" />
-      <Pestanas opciones={opciones} valor={seccion} alCambiar={irA} />
-    </View>
-  )
+  // Las pestañas van dentro de lo que se desplaza en cada seccion, como en
+  // los demas modulos: asi la lista es lo primero de la pantalla y el
+  // encabezado nativo la sigue (el titulo grande se encoge al bajar).
+  const pestanas = <Pestanas opciones={opciones} valor={seccion} alCambiar={irA} />
   const capa = (id: IdSeccion) => [{ flex: 1 }, seccion !== id && { display: 'none' as const }]
 
   return (
     <View style={{ flex: 1 }}>
+      <Stack.Screen options={{ title: 'Compras' }} />
       {abiertas.includes('facturas') ? (
         <View style={capa('facturas')}>
-          <Facturas arriba={arriba} version={version} buscar={buscar} onCargar={() => irA('nueva')} />
+          <Facturas pestanas={pestanas} version={version} buscar={buscar} onCargar={() => irA('nueva')} />
         </View>
       ) : null}
       {abiertas.includes('nueva') ? (
         <View style={capa('nueva')}>
           <CargarFactura
-            arriba={arriba}
+            pestanas={pestanas}
             ingredientes={ingredientes}
             setIngredientes={setIngredientes}
             proveedores={proveedores ?? []}
@@ -119,7 +117,7 @@ export default function PantallaCompras() {
       {abiertas.includes('alertas') ? (
         <View style={capa('alertas')}>
           <Alertas
-            arriba={arriba}
+            pestanas={pestanas}
             onPendientes={setAlertasPendientes}
             onVerFactura={(a) => router.push({ pathname: '/compras/factura/[id]', params: { id: String(a.factura_id) } })}
           />
@@ -128,7 +126,7 @@ export default function PantallaCompras() {
       {abiertas.includes('proveedores') ? (
         <View style={capa('proveedores')}>
           <Proveedores
-            arriba={arriba}
+            pestanas={pestanas}
             proveedores={proveedores}
             alCambiar={() => void cargarProveedores()}
             refrescando={refrescandoProveedores}

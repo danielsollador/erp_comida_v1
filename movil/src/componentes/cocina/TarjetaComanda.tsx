@@ -206,12 +206,8 @@ export default memo(TarjetaComanda)
 
 const e = StyleSheet.create({
   tarjeta: {
-    borderRadius: 22,
-    shadowColor: '#17181b',
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
+    borderRadius: 22, borderCurve: 'continuous',
+    boxShadow: '0 8px 18px rgba(23,24,27,0.1)',
   },
   cabeza: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   numero: { fontFamily: LETRA.tituloFuerte, letterSpacing: -0.5 },
@@ -222,15 +218,15 @@ const e = StyleSheet.create({
   minutos: { borderRadius: 999 },
   minutosTexto: { fontFamily: LETRA.cifraFuerte },
   anular: { fontFamily: LETRA.textoFuerte },
-  bloqueo: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, borderWidth: 1, padding: 10 },
+  bloqueo: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, padding: 10 },
   bloqueoTexto: { flex: 1, fontFamily: LETRA.textoFuerte },
-  renglon: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderRadius: 14, borderWidth: 1 },
+  renglon: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1 },
   renglonTexto: { flex: 1, minWidth: 0, fontFamily: LETRA.textoFuerte },
   tachado: { textDecorationLine: 'line-through' },
   cantidad: { fontFamily: LETRA.cifraFuerte },
   cortesia: { fontFamily: LETRA.textoFuerte, letterSpacing: 0.8 },
   check: { alignItems: 'center', justifyContent: 'center' },
   acciones: { flexDirection: 'row' },
-  boton: { flex: 1, minWidth: 0, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  boton: { flex: 1, minWidth: 0, borderRadius: 14, borderCurve: 'continuous', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
   botonTexto: { fontFamily: LETRA.textoFuerte },
 })

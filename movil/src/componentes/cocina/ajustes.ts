@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics'
-import { Platform, Vibration } from 'react-native'
+import { Vibration } from 'react-native'
 import * as almacen from '../../lib/almacen'
 
 /*
@@ -33,13 +33,13 @@ export function guardarAviso(encendido: boolean) {
  * la vista web, el mismo timbre de dos tonos de la web.
  */
 export function avisarComanda() {
-  if (Platform.OS === 'web') {
+  if (process.env.EXPO_OS === 'web') {
     timbreWeb()
     return
   }
   // En Android el patron son esperas y vibraciones alternadas; en iPhone
   // cada vibracion dura lo que el sistema decide y el patron son las pausas.
-  Vibration.vibrate(Platform.OS === 'android' ? [0, 380, 160, 380, 160, 380] : [0, 250, 250])
+  Vibration.vibrate(process.env.EXPO_OS === 'android' ? [0, 380, 160, 380, 160, 380] : [0, 250, 250])
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined)
 }
 

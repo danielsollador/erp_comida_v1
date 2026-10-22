@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native'
 import Svg, { Circle, Defs, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg'
-import { useModo, useTema } from '../lib/tema'
+import { useMarca, useModo, useTema } from '../lib/tema'
 
 /**
  * El papel de la web (index.css, `body::before`): una luz calida y ancha que
@@ -12,13 +12,17 @@ import { useModo, useTema } from '../lib/tema'
 export default function Fondo() {
   const t = useTema()
   const { modo } = useModo()
+  const { marca } = useMarca()
   const oscuro = modo === 'oscuro'
+  // El cobre de Savora aguanta una luz ancha; el grafito de Vertigo a esa
+  // fuerza se lee como una mancha gris, asi que su luz es mas tenue.
+  const luz = marca === 'savora' ? (oscuro ? 0.15 : 0.52) : oscuro ? 0.1 : 0.14
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <Svg width="100%" height="100%">
         <Defs>
           <RadialGradient id="luz" cx="50%" cy="-20%" rx="108%" ry="64%" fx="50%" fy="-20%" gradientUnits="objectBoundingBox">
-            <Stop offset="0" stopColor={t.acento} stopOpacity={oscuro ? 0.15 : 0.52} />
+            <Stop offset="0" stopColor={t.acento} stopOpacity={luz} />
             <Stop offset="0.7" stopColor={t.acento} stopOpacity={0} />
           </RadialGradient>
           <RadialGradient id="vineta" cx="50%" cy="36%" rx="128%" ry="118%" gradientUnits="objectBoundingBox">

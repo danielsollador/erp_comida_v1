@@ -29,7 +29,7 @@ export function Espera({ titulo, valor, nota, to }: { titulo: string; valor: num
   const cuerpo = (
     <Ficha
       tono={hay ? 'aviso' : undefined}
-      style={[{ padding: 16, flex: 1, justifyContent: 'center' }, hay && { shadowColor: '#b96c00', shadowOpacity: 0.3 }]}
+      style={[{ padding: 16, flex: 1, justifyContent: 'center' }, hay && { boxShadow: '0 10px 22px rgba(185,108,0,0.3)' }]}
     >
       <Text style={[estilos.esperaTitulo, { color: hay ? t.avisoFuerte : t.suave }]}>{titulo}</Text>
       <Text style={[estilos.esperaValor, { color: hay ? t.avisoFuerte : t.tinta }]}>{valor === null ? '—' : valor}</Text>
@@ -38,7 +38,12 @@ export function Espera({ titulo, valor, nota, to }: { titulo: string; valor: num
   )
   if (!to) return <View style={{ flex: 1 }}>{cuerpo}</View>
   return (
-    <Pressable onPress={() => abrir(to)} style={({ pressed }) => [{ flex: 1, transform: [{ scale: pressed ? 0.985 : 1 }] }]}>
+    <Pressable
+      onPress={() => abrir(to)}
+      accessibilityRole="button"
+      accessibilityLabel={titulo}
+      style={({ pressed }) => [{ flex: 1, transform: [{ scale: pressed ? 0.985 : 1 }] }]}
+    >
       {cuerpo}
     </Pressable>
   )
@@ -54,10 +59,16 @@ export function Avisos({ lista }: { lista: Aviso[] }) {
       {lista.map((a) => {
         const tono = a.tono === 'ojo' ? 'aviso' : undefined
         const fondo = a.tono === 'bien' ? { backgroundColor: t.exitoSuave, borderColor: t.exitoSuave } : undefined
-        const punto = a.tono === 'ojo' ? '#b96c00' : a.tono === 'bien' ? t.exito500 : '#bc6541'
+        const punto = a.tono === 'ojo' ? t.aviso : a.tono === 'bien' ? t.exito500 : t.acento
         const tinta = a.tono === 'ojo' ? t.avisoFuerte : a.tono === 'bien' ? t.exito : t.tinta
         return (
-          <Pressable key={a.id} onPress={() => a.a && abrir(a.a)} style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.985 : 1 }] }]}>
+          <Pressable
+            key={a.id}
+            onPress={() => a.a && abrir(a.a)}
+            accessibilityRole="button"
+            accessibilityLabel={a.titulo}
+            style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.985 : 1 }] }]}
+          >
             <Ficha tono={tono} style={[estilos.aviso, fondo]}>
               <View style={[estilos.avisoPunto, { backgroundColor: punto }]} />
               <View style={{ flex: 1 }}>
@@ -118,18 +129,20 @@ export function Arranque({ datos }: { datos: ArranqueLocal | null }) {
             <Pressable
               key={p.id}
               onPress={() => abrir(p.a)}
+              accessibilityRole="button"
+              accessibilityLabel={p.titulo}
               style={[estilos.paso, actual && { backgroundColor: t.acentoSuave }]}
             >
               <View
                 style={[
                   estilos.pasoPunto,
-                  { backgroundColor: p.hecho ? t.exito500 : actual ? '#d38566' : t.gris100 },
+                  { backgroundColor: p.hecho ? t.exito500 : actual ? t.acento400 : t.gris100 },
                 ]}
               >
                 {p.hecho ? (
-                  <Icono nombre="ok" size={13} color="#ffffff" grosor={3} />
+                  <Icono nombre="ok" size={13} color={t.acentoTinta} grosor={3} />
                 ) : (
-                  <Text style={[estilos.pasoNumero, { color: actual ? '#ffffff' : t.suave }]}>{i + 1}</Text>
+                  <Text style={[estilos.pasoNumero, { color: actual ? t.acentoTinta : t.suave }]}>{i + 1}</Text>
                 )}
               </View>
               <Text
@@ -146,7 +159,12 @@ export function Arranque({ datos }: { datos: ArranqueLocal | null }) {
         })}
       </View>
       <View style={estilos.arranquePie}>
-        <Pressable onPress={() => abrir(siguiente.a)} style={[estilos.ir, { backgroundColor: t.tinta }]}>
+        <Pressable
+          onPress={() => abrir(siguiente.a)}
+          accessibilityRole="button"
+          accessibilityLabel={`Ir a ${siguiente.titulo}`}
+          style={[estilos.ir, { backgroundColor: t.tinta }]}
+        >
           <Text style={[estilos.irTexto, { color: t.papel }]}>Ir</Text>
           <View style={[estilos.irFlecha, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
             <Icono nombre="chevron" size={14} color={t.papel} />
@@ -158,6 +176,8 @@ export function Arranque({ datos }: { datos: ArranqueLocal | null }) {
             almacen.guardar(CLAVE_OCULTO, '1').catch(() => undefined)
           }}
           hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Ocultar"
         >
           <Text style={[estilos.esperaNota, { color: t.suave }]}>Ocultar</Text>
         </Pressable>
@@ -253,7 +273,7 @@ export function TarjetaVender({
   const fondo = principal ? t.fichaPrincipal : t.superficie
   const tinta = principal ? t.fichaPrincipalTinta : t.tinta
   const tintaSuave = principal ? (modo === 'oscuro' ? 'rgba(14,16,20,0.6)' : 'rgba(255,255,255,0.65)') : t.suave
-  const colorLuz = principal ? t.acento : '#d38566'
+  const colorLuz = principal ? t.acento : t.acento400
 
   return (
     <Pressable
@@ -262,13 +282,14 @@ export function TarjetaVender({
       onTouchMove={seguir}
       onPressOut={soltar}
       onLayout={(e: LayoutChangeEvent) => setCaja({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+      accessibilityRole="button"
+      accessibilityLabel={`${titulo}. ${desc}`}
       style={({ pressed }) => [
         estilos.vender,
         {
           backgroundColor: fondo,
           borderColor: principal ? 'transparent' : modo === 'oscuro' ? 'rgba(255,255,255,0.06)' : t.linea,
-          shadowColor: '#17181b',
-          shadowOpacity: principal ? 0.45 : 0.12,
+          boxShadow: `0 14px 24px rgba(23,24,27,${principal ? 0.45 : 0.12})`,
           transform: [{ scale: pressed ? 0.985 : 1 }],
         },
       ]}
@@ -334,7 +355,7 @@ const estilos = StyleSheet.create({
   avisoFlecha: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', opacity: 0.6 },
   arranqueTitulo: { fontFamily: LETRA.tituloFuerte, fontSize: 20, marginTop: 4, letterSpacing: -0.4 },
   arranqueBarra: { height: 8, borderRadius: 4, marginTop: 14, overflow: 'hidden' },
-  paso: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, paddingHorizontal: 8, borderRadius: 14 },
+  paso: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, paddingHorizontal: 8, borderRadius: 14, borderCurve: 'continuous' },
   pasoPunto: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   pasoNumero: { fontFamily: LETRA.textoFuerte, fontSize: 12 },
   pasoTexto: { fontFamily: LETRA.texto, fontSize: 14.5 },
@@ -343,26 +364,23 @@ const estilos = StyleSheet.create({
   irTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
   irFlecha: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   vender: {
-    borderRadius: 24,
+    borderRadius: 24, borderCurve: 'continuous',
     padding: 20,
     minHeight: 150,
     gap: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 3,
   },
   luzPrincipal: { position: 'absolute', right: -60, top: -60, width: 220, height: 220 },
   luzCocina: { position: 'absolute', left: -50, top: -50, width: 200, height: 200 },
-  venderIcono: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  venderIcono: { width: 46, height: 46, borderRadius: 15, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   venderTitulo: { fontFamily: LETRA.titulo, fontSize: 19, letterSpacing: -0.3 },
   venderDesc: { fontFamily: LETRA.texto, fontSize: 14, marginTop: 3 },
   abrir: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 'auto' },
   abrirFlecha: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   abrirTexto: { fontFamily: LETRA.textoFuerte, fontSize: 12 },
-  contador: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, minHeight: 52, borderWidth: 1 },
-  contadorIcono: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  contador: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderCurve: 'continuous', paddingHorizontal: 12, paddingVertical: 10, minHeight: 52, borderWidth: 1 },
+  contadorIcono: { width: 36, height: 36, borderRadius: 11, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   contadorTitulo: { fontFamily: LETRA.titulo, fontSize: 14 },
   contadorDesc: { fontFamily: LETRA.texto, fontSize: 12.5, marginTop: 1 },
 })

@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
-import { Platform, Text, View } from 'react-native'
+import { Text, View } from 'react-native'
 import Svg, { ClipPath, Defs, G, Path, Rect, Text as TextoSvg, TSpan } from 'react-native-svg'
 import { unidadDe } from '../../../../frontend/src/lib/inventario'
 import { LETRA, useTema } from '../../lib/tema'
@@ -23,7 +23,7 @@ const HALO = 'rgba(0,0,0,0.25)'
 
 // En la vista web, react-native-svg pasa los eventos de toque al <g> y React
 // los rechaza (avisos en rojo): ahi la franja se resalta desde su renglon.
-const tocable = Platform.OS !== 'web'
+const tocable = process.env.EXPO_OS !== 'web'
 
 const corto = (texto: string, max: number) => (texto.length > max ? `${texto.slice(0, max - 1)}…` : texto)
 

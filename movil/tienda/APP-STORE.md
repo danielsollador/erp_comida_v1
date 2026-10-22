@@ -141,14 +141,17 @@ navegador web abierto, etc.). Resultado: **4+**.
 ### 3.4 Privacidad de la app (App Privacy)
 
 "¿Recopilas datos?" → **Sí**. Ninguno se usa para rastrear. Todos están
-vinculados al usuario y su único uso es **Funcionalidad de la app**:
+vinculados al usuario y su único uso es **Funcionalidad de la app**. Desde
+2025 el cuestionario pregunta además qué datos se **comparten con terceros**:
+las fotos de facturas y el nombre/RIF del negocio van a Google Gemini cuando
+el usuario toca "Leer factura" (después de aceptar el permiso en la app).
 
-| Tipo de dato en Apple | Qué es en Vertigo Pro |
-|---|---|
-| Información de contacto → Nombre | Nombre y apellido del usuario |
-| Identificadores → ID de usuario | El usuario con que entra |
-| Fotos o videos | Fotos de facturas de compra que sube |
-| Contenido del usuario → Otro contenido | Ventas, compras, inventario, clientes a crédito que registra el negocio |
+| Tipo de dato en Apple | Qué es en Vertigo Pro | ¿Compartido con terceros? |
+|---|---|---|
+| Información de contacto → Nombre | Nombre y apellido del usuario | No |
+| Identificadores → ID de usuario | El usuario con que entra | No |
+| Fotos o videos | Fotos de facturas de compra que sube | **Sí** (Google Gemini, solo al leer una factura) |
+| Contenido del usuario → Otro contenido | Ventas, compras, inventario, clientes a crédito que registra el negocio; nombre y RIF del negocio | **Sí**, solo el nombre y RIF del negocio, junto con la factura |
 
 Rastreo: **No**. Publicidad: **No**.
 
@@ -157,21 +160,42 @@ Rastreo: **No**. Publicidad: **No**.
 - **Requiere inicio de sesión**: Sí. Usuario `revision` y la contraseña de
   `tienda/REVISOR.local.txt`.
 - **Contacto**: tu nombre, teléfono y correo.
-- **Notas** (en inglés, que es lo que lee el revisor):
+- **Grabación de pantalla**: Apple la pide para una app nueva. Grábala en tu
+  iPhone (Ajustes → Centro de control → Grabación de pantalla) mostrando:
+  entrar, tomar un pedido y cobrarlo, la cocina, el permiso de cámara y el
+  aviso de IA al leer una factura, y Configuración → Mi cuenta (eliminar
+  cuenta y los enlaces de privacidad). Súbela a Drive con enlace público y
+  pégalo en `<URL>` de las notas.
+- **Notas** (en inglés, que es lo que lee el revisor; las seis secciones que
+  pide Apple para una app nueva). Cambia `<URL>` y `<date>`:
 
 ```
-Vertigo Pro is a business app (point of sale, kitchen, inventory, purchases and reports) for restaurants and cafés. Each business has its own server; accounts are created by the business owner.
+1. SCREEN RECORDING
+Recorded on a physical iPhone: <URL>. Shows app launch, sign-in, taking an order and charging it, the kitchen screen, the camera permission prompt, the AI consent screen and invoice photo reading, and account deletion.
 
-To review with demo data (a fictional café, no real customers):
-1. On the sign-in screen tap "Otro negocio" (Other business).
-2. Type: demo.vertigopro.tech and tap "Usar este negocio".
-3. Sign in with the username and password provided above.
+2. APP PURPOSE
+Vertigo Pro is a B2B back-office app for restaurants and cafés (point of sale, kitchen tickets, inventory, supplier purchases, cash closing and reports). It replaces paper tickets and spreadsheets; owners see sales and costs from the phone.
 
-Suggested path: Punto de venta (take an order and charge it), Cocina (the order arrives), Compras → Cargar factura → Foto o archivo (on the demo server the photo is filled with sample data), Reportes.
+3. ACCESS INSTRUCTIONS & TEST CREDENTIALS
+Each business runs its own server; the business owner creates accounts (there is no public sign-up). To review with demo data (a fictional café, no real people):
+1) On the sign-in screen tap "Otro negocio" (Other business).
+2) Type demo.vertigopro.tech and tap "Usar este negocio".
+3) Sign in with the demo credentials provided above (role: owner, full access).
+Suggested path: Punto de venta (take an order and charge it) → Cocina (the order arrives) → Compras → Cargar factura → Foto o archivo (the AI consent screen appears before the first upload; on the demo server the reader returns sample data and nothing is sent to Google) → Reportes.
+Account deletion: Configuración → Mi cuenta → Eliminar mi cuenta (asks for the password). Please use a second test user, or tell us and we will recreate the demo user.
+The demo account stays active through <date>. No remote feature flags gate any user-facing feature; the AI invoice reader is enabled per business by its own server configuration and is visible on the demo server.
 
-Account deletion: Configuración → Mi cuenta → Eliminar mi cuenta (asks for the password). Please use a separate test user if you try it, or tell us and we will recreate the demo user.
+4. EXTERNAL SERVICES
+- Google Cloud (US): hosts the servers and the database.
+- Google Gemini (Generative Language API): reads a supplier invoice photo/PDF only when the user taps "Leer factura", after an in-app consent screen that names Google Gemini (shown before the first upload; the permission can be withdrawn in Configuración → Mi cuenta).
+- Pabilo: verifies Venezuelan "pago móvil" bank payments by reference number (business-level integration configured by the owner).
+No analytics, ads, tracking or payment SDKs. No in-app purchases; the service is contracted outside the app (B2B). Camera and photo access are only used to photograph supplier invoices when the user taps the button.
 
-The app does not sell anything; the service is contracted outside the app (B2B). Camera and photo access are only used to photograph supplier invoices when the user taps the button.
+5. REGIONAL DIFFERENCES
+The app works the same in every region. Currency features (bolívares, BCV exchange rate) are specific to Venezuelan businesses but available everywhere.
+
+6. REGULATED INDUSTRY
+Not applicable.
 ```
 
 ## 4. Antes de mandar a revisión

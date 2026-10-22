@@ -121,6 +121,8 @@ export function VerificarPago({
                   <Pressable
                     key={c.id}
                     onPress={() => setCuentaId(c.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={c.descripcion || c.banco}
                     accessibilityState={{ selected: c.id === cuentaId }}
                     style={[e.segmento, c.id === cuentaId && { backgroundColor: t.tinta }]}
                   >
@@ -287,7 +289,12 @@ function Resultado({
 
   const color = colorDe(tono)
   const verde = (texto: string, alTocar: () => void) => (
-    <Pressable onPress={alTocar} style={({ pressed }) => [e.verde, { backgroundColor: t.exitoSuave, borderColor: t.exito500, opacity: pressed ? 0.85 : 1 }]}>
+    <Pressable
+      onPress={alTocar}
+      accessibilityRole="button"
+      accessibilityLabel={texto}
+      style={({ pressed }) => [e.verde, { backgroundColor: t.exitoSuave, borderColor: t.exito500, opacity: pressed ? 0.85 : 1 }]}
+    >
       <Text style={[e.verdeTexto, { color: t.exito }]}>{texto}</Text>
     </Pressable>
   )
@@ -402,12 +409,12 @@ const e = StyleSheet.create({
   carril: { flexDirection: 'row', borderRadius: 999, padding: 4, borderWidth: 1, gap: 2 },
   segmento: { flex: 1, minHeight: 40, borderRadius: 999, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   segmentoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
-  debe: { borderWidth: 1, borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  debe: { borderWidth: 1, borderRadius: 14, borderCurve: 'continuous', padding: 14, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   cifra: { fontFamily: LETRA.tituloFuerte, fontSize: 22 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
   resTitulo: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
   mini: { fontFamily: LETRA.texto, fontSize: 13 },
   cifraChica: { fontFamily: LETRA.cifraFuerte, fontSize: 15 },
-  verde: { minHeight: 52, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
+  verde: { minHeight: 52, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   verdeTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15.5, textAlign: 'center' },
 })

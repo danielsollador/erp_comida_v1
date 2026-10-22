@@ -1,7 +1,8 @@
 import * as DocumentPicker from 'expo-document-picker'
+import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
 import { useEffect, useState } from 'react'
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Image as ImagenRN, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { apiCompras } from '../../lib/api-compras'
 import {
   abrirPdf,
@@ -19,6 +20,7 @@ import {
   TEXTO_PROBLEMA,
   type Problema,
 } from '../../lib/compras-app'
+import { pedirConsentimiento, PROVEEDOR_IA } from '../../lib/consentimiento-ia'
 import { confirmar } from '../../lib/dialogo'
 import { LETRA, useTema } from '../../lib/tema'
 import type { LecturaFactura } from '../../lib/tipos'
@@ -125,6 +127,8 @@ export function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, doc: D
   }
 
   async function leer(archivo: { uri: string; nombre: string; tipo: string }, doc: DocumentoLeido) {
+    // Nada sale del telefono sin que la persona sepa a donde va (Apple 5.1.2(i)).
+    if (!(await pedirConsentimiento())) return
     setLeyendo(true)
     try {
       const lectura = await apiCompras.leerFactura(archivo)
@@ -271,8 +275,8 @@ export function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, doc: D
             </View>
           </View>
           <Text style={[z.nota, { color: t.tenue, textAlign: 'center' }]}>
-            La factura entera, derecha, con buena luz y el teléfono quieto. ¿Varias hojas? Una foto por hoja. La IA llena el formulario y tú lo revisas
-            antes de guardar.
+            La factura entera, derecha, con buena luz y el teléfono quieto. ¿Varias hojas? Una foto por hoja. La lee {PROVEEDOR_IA} y tú revisas
+            el formulario antes de guardar.
           </Text>
         </View>
       )}
@@ -349,7 +353,7 @@ export function VistaDocumento({
 
   useEffect(() => {
     if (doc.esPdf || (doc.ancho && doc.alto)) return
-    Image.getSize(
+    ImagenRN.getSize(
       doc.uri,
       (w, h) => setMedida({ ancho: w, alto: h }),
       () => undefined,
@@ -401,7 +405,7 @@ export function VistaDocumento({
                     <Image
                       source={{ uri: doc.uri }}
                       accessibilityLabel="Factura del proveedor"
-                      resizeMode="contain"
+                      contentFit="contain"
                       style={
                         giro % 180
                           ? { width: altoFoto, height: anchoFoto, transform: [{ rotate: `${giro}deg` }] }
@@ -420,21 +424,21 @@ export function VistaDocumento({
 }
 
 const z = StyleSheet.create({
-  zona: { borderWidth: 2, borderStyle: 'dashed', borderRadius: 24, padding: 16 },
+  zona: { borderWidth: 2, borderStyle: 'dashed', borderRadius: 24, borderCurve: 'continuous', padding: 16 },
   titulo: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
   fila: { flexDirection: 'row', gap: 10 },
-  principal: { minHeight: 56, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  principal: { minHeight: 56, borderRadius: 16, borderCurve: 'continuous', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   principalTexto: { fontFamily: LETRA.textoFuerte, fontSize: 16 },
   miniaturas: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 },
   miniatura: { width: 80, height: 100 },
-  foto: { width: 80, height: 100, borderRadius: 10 },
+  foto: { width: 80, height: 100, borderRadius: 10, borderCurve: 'continuous' },
   numero: { position: 'absolute', left: 4, top: 4, borderRadius: 6, paddingHorizontal: 6 },
   numeroTexto: { fontFamily: LETRA.textoFuerte, fontSize: 13, color: '#ffffff' },
   mala: { position: 'absolute', left: 4, right: 4, bottom: 4, borderRadius: 6, alignItems: 'center' },
   malaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 13, color: '#ffffff' },
   quitar: { position: 'absolute', right: -8, top: -8, width: 26, height: 26, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  otra: { width: 80, height: 100, borderRadius: 10, borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  otra: { width: 80, height: 100, borderRadius: 10, borderCurve: 'continuous', borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 4 },
   otraTexto: { fontFamily: LETRA.textoFuerte, fontSize: 13, textAlign: 'center' },
   esperaCabeza: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   esperaTexto: { flex: 1, fontFamily: LETRA.textoFuerte, fontSize: 15 },

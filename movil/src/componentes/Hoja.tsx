@@ -1,3 +1,4 @@
+import { BottomSheet, RNHostView } from '@expo/ui'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
@@ -9,27 +10,61 @@ import Icono, { type NombreIcono } from './Icono'
 /**
  * El menu que en la web se abre colgando de un boton, en el telefono sube
  * desde abajo: queda al alcance del pulgar y no lo tapa el dedo. Se cierra
- * tocando afuera o con el gesto de atras.
+ * tocando afuera, arrastrando hacia abajo o con el gesto de atras.
  *
- * El fondo oscuro aparece en su sitio (fundido) y solo la hoja sube; con
- * `animationType="slide"` del Modal subia todo junto, el velo incluido, y se
- * veia raro. Al cerrar, la hoja baja y el velo se apaga antes de desmontar.
+ * En el telefono es la hoja nativa de @expo/ui (SwiftUI en iOS, Material 3
+ * en Android): trae el velo, el agarre, la altura a medida del contenido, el
+ * modo oscuro y el gesto de atras sin que los dibujemos nosotros. Lo de
+ * adentro sigue siendo React Native (las opciones, el buscador, la lista),
+ * y va dentro de `RNHostView`: una hoja se presenta en su propia ventana,
+ * donde nada de arriba reparte los toques, y es ese host el que los toma y
+ * el que le da a las filas el ancho de la hoja.
+ *
+ * En la web se conserva la hoja dibujada a mano de siempre.
+ */
+type PropsHoja = {
+  visible: boolean
+  alCerrar: () => void
+  titulo?: string
+  children: ReactNode
+}
+
+export function Hoja(props: PropsHoja) {
+  if (process.env.EXPO_OS === 'web') return <HojaWeb {...props} />
+  return <HojaNativa {...props} />
+}
+
+function HojaNativa({ visible, alCerrar, titulo, children }: PropsHoja) {
+  const t = useTema()
+  return (
+    <BottomSheet
+      isPresented={visible}
+      onDismiss={alCerrar}
+      containerColor={t.superficie}
+      contentPadding={{ top: 6, bottom: 16, left: 12, right: 12 }}
+    >
+      {/* Solo el alto sale del contenido; el ancho lo pone la hoja, asi los textos se parten. */}
+      <RNHostView matchContents={{ vertical: true }}>
+        <View>
+          {titulo ? <Text style={[estilos.titulo, { color: t.tenue }]}>{titulo}</Text> : null}
+          {children}
+        </View>
+      </RNHostView>
+    </BottomSheet>
+  )
+}
+
+/**
+ * La hoja de la web. El fondo oscuro aparece en su sitio (fundido) y solo la
+ * hoja sube; con `animationType="slide"` del Modal subia todo junto, el velo
+ * incluido, y se veia raro. Al cerrar, la hoja baja y el velo se apaga antes
+ * de desmontar.
  */
 const ENTRAR_MS = 280
 const SALIR_MS = 200
 const CURVA = Easing.bezier(0.2, 0.7, 0.2, 1)
 
-export function Hoja({
-  visible,
-  alCerrar,
-  titulo,
-  children,
-}: {
-  visible: boolean
-  alCerrar: () => void
-  titulo?: string
-  children: ReactNode
-}) {
+function HojaWeb({ visible, alCerrar, titulo, children }: PropsHoja) {
   const t = useTema()
   const borde = useSafeAreaInsets()
   const { height: altoPantalla } = useWindowDimensions()
@@ -68,7 +103,13 @@ export function Hoja({
   )
 }
 
-/** Una opcion de la hoja: icono, texto, detalle chico y la marca si esta elegida. */
+/**
+ * Una opcion de la hoja: icono, texto, detalle chico y la marca si esta
+ * elegida. Es una fila de React Native y no un `ListItem` de @expo/ui a
+ * proposito: quien arma la hoja la mezcla con un buscador, una lista que se
+ * desplaza y un boton "Listo", y la `List` nativa pide su propio `Host` y un
+ * alto fijo, cosa que no cuadra con ese contenido mezclado.
+ */
 export function OpcionHoja({
   texto,
   detalle,
@@ -107,6 +148,7 @@ const estilos = StyleSheet.create({
   hoja: {
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
+    borderCurve: 'continuous',
     paddingHorizontal: 12,
     paddingTop: 10,
   },
@@ -119,7 +161,7 @@ const estilos = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 6,
   },
-  opcion: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 13, borderRadius: 14 },
+  opcion: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 13, borderRadius: 14, borderCurve: 'continuous' },
   opcionTexto: { fontFamily: LETRA.textoFuerte, fontSize: 16 },
   opcionDetalle: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 2 },
 })

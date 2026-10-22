@@ -136,7 +136,7 @@ export const p = StyleSheet.create({
   cabeceraFila: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   botonChico: {
     minHeight: 44,
-    borderRadius: 13,
+    borderRadius: 13, borderCurve: 'continuous',
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -146,5 +146,5 @@ export const p = StyleSheet.create({
   botonChicoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
   enlace: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
   enlaceTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
-  caja: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
+  caja: { borderRadius: 16, borderCurve: 'continuous', paddingHorizontal: 14, paddingVertical: 12 },
 })

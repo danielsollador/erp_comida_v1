@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard'
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, Pressable, Share, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -45,7 +45,6 @@ import type {
   PuntoVenta,
   Variante,
 } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import Fondo from '../Fondo'
 import { Hoja, OpcionHoja } from '../Hoja'
 import Icono from '../Icono'
@@ -933,9 +932,10 @@ export default function PuntoDeVenta() {
   return (
     <View style={{ flex: 1, backgroundColor: t.papel }}>
       <Fondo />
-      <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
-        <View style={{ paddingHorizontal: 16 }}>
-          <Barra titulo="Punto de venta" />
+      <Stack.Screen options={{ title: 'Punto de venta' }} />
+      {/* Sin borde de arriba: el encabezado nativo del Stack ya lo ocupa. */}
+      <SafeAreaView edges={['left', 'right']} style={{ flex: 1 }}>
+        <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
           <Pestanas
             opciones={SECCIONES.map((s) => ({
               ...s,
@@ -955,6 +955,8 @@ export default function PuntoDeVenta() {
             </Text>
             <Pressable
               onPress={() => setAbriendoCaja(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir caja"
               style={({ pressed }) => [e.cajaBoton, { backgroundColor: t.tinta, opacity: pressed ? 0.85 : 1 }]}
             >
               <Text style={[e.cajaBotonTexto, { color: t.papel }]}>Abrir caja</Text>
@@ -1041,6 +1043,8 @@ export default function PuntoDeVenta() {
             </Text>
             <Pressable
               onPress={() => void compartirTicket(ultimaVenta.id)}
+              accessibilityRole="button"
+              accessibilityLabel="Ticket"
               style={({ pressed }) => [e.cobradoBoton, { backgroundColor: pressed ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.18)' }]}
             >
               <Text style={[e.cobradoBotonTexto, { color: t.exitoSuave }]}>Ticket</Text>
@@ -1187,14 +1191,14 @@ const e = StyleSheet.create({
     gap: 10,
     marginHorizontal: 16,
     marginTop: 6,
-    borderRadius: 16,
+    borderRadius: 16, borderCurve: 'continuous',
     borderWidth: 1,
     paddingLeft: 14,
     paddingRight: 8,
     paddingVertical: 8,
   },
   cajaTexto: { flex: 1, fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
-  cajaBoton: { minHeight: 44, borderRadius: 12, paddingHorizontal: 14, justifyContent: 'center' },
+  cajaBoton: { minHeight: 44, borderRadius: 12, borderCurve: 'continuous', paddingHorizontal: 14, justifyContent: 'center' },
   cajaBotonTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
   barra: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 10, gap: 6 },
   barraNota: { fontFamily: LETRA.textoFuerte, fontSize: 13.5 },
@@ -1210,11 +1214,7 @@ const e = StyleSheet.create({
     paddingRight: 6,
     paddingVertical: 6,
     maxWidth: '100%',
-    shadowColor: '#000',
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    boxShadow: '0 8px 18px rgba(0,0,0,0.22)',
   },
   cobradoTexto: { flexShrink: 1, fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
   cobradoBoton: { minHeight: 36, borderRadius: 999, paddingHorizontal: 14, justifyContent: 'center' },

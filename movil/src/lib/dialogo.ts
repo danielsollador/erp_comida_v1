@@ -1,4 +1,4 @@
-import { Alert, Platform } from 'react-native'
+import { Alert } from 'react-native'
 
 /**
  * LAS PREGUNTAS DE SI O NO, iguales en el telefono y en el navegador.
@@ -21,7 +21,7 @@ export function confirmar({
   cancelar?: string
   peligro?: boolean
 }): Promise<boolean> {
-  if (Platform.OS === 'web') {
+  if (process.env.EXPO_OS === 'web') {
     return Promise.resolve(globalThis.confirm(texto ? `${titulo}\n\n${texto}` : titulo))
   }
   return new Promise((resolver) => {
@@ -39,7 +39,7 @@ export function confirmar({
 
 /** Un aviso con un solo boton ("No se pudo guardar", "Listo"). */
 export function avisar(titulo: string, texto = ''): Promise<void> {
-  if (Platform.OS === 'web') {
+  if (process.env.EXPO_OS === 'web') {
     globalThis.alert(texto ? `${titulo}\n\n${texto}` : titulo)
     return Promise.resolve()
   }
@@ -61,7 +61,7 @@ export function elegir<T extends string>(
   opciones: { valor: T; texto: string; peligro?: boolean }[],
   texto = '',
 ): Promise<T | null> {
-  if (Platform.OS === 'web') {
+  if (process.env.EXPO_OS === 'web') {
     const i = globalThis.prompt(`${titulo}\n${opciones.map((o, n) => `${n + 1}. ${o.texto}`).join('\n')}`, '1')
     const n = Number(i) - 1
     return Promise.resolve(opciones[n]?.valor ?? null)

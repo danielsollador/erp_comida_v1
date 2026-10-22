@@ -479,6 +479,6 @@ const e = StyleSheet.create({
   menos: { fontFamily: LETRA.textoFuerte, fontSize: 19, lineHeight: 21 },
   globo: { minWidth: 28, height: 28, borderRadius: 14, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   globoTexto: { fontFamily: LETRA.cifraFuerte, fontSize: 14 },
-  variante: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingHorizontal: 12, borderRadius: 14 },
+  variante: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingHorizontal: 12, borderRadius: 14, borderCurve: 'continuous' },
   vacio: { fontFamily: LETRA.texto, fontSize: 14, textAlign: 'center', paddingVertical: 32 },
 })

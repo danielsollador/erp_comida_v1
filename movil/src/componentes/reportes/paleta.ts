@@ -1,60 +1,60 @@
-import { useModo } from '../../lib/tema'
+import { useMemo } from 'react'
+import { useModo, useTema, type Paleta } from '../../lib/tema'
 
 /**
  * LA PALETA DE DATOS de la web (frontend/src/lib/paleta.ts y los
  * `--vp-dato-*` de index.css): de aqui sale el color de todo lo que se dibuja
- * en un grafico de Reportes y de Tasa. Los mismos nombres y los mismos tonos;
- * la web los escribe en oklch y React Native no los entiende, asi que van ya
- * pasados a hex, como hace lib/tema.tsx con los demas colores.
+ * en un grafico de Reportes y de Tasa. Los mismos nombres y los mismos tonos.
  *
- * La regla es la de la web: las series salen del cobre de la marca y de los
+ * La regla es la de la web: las series salen del acento de la MARCA (cobre
+ * en Savora, grafito o perla en Vertigo: `ACENTOS` de lib/tema.tsx) y de los
  * neutros calidos; verde, ambar y rojo solo cuando el color DICE algo
- * (ganancia, aviso, perdida).
- *
- * Vive aqui y no en lib/tema.tsx porque ese archivo es compartido; cuando
- * otro modulo dibuje graficos, conviene subirla alla (ver el informe).
+ * (ganancia, aviso, perdida). Por eso las series no son hex fijos: se arman
+ * con el acento que este puesto.
  */
-const CLARO = {
-  /** Las series, en orden: acento 500, 800, 300, neutro 500, acento 200, neutro 300, acento 700, neutro 700. */
-  serie: ['#bc6541', '#642e18', '#e8aa92', '#6d6b66', '#f6cdbe', '#cdc7bc', '#803c20', '#3e3d3a'],
-  /** La barra que se destaca (la mayor, la de hoy). */
-  fuerte: '#803c20',
-  /** El periodo anterior, detras: una sombra, no una serie. */
-  anterior: '#cdc7bc',
-  /** Una linea de referencia (el promedio). */
-  referencia: '#98948b',
-  /** El fondo de una barra o de una casilla vacia. */
-  vacio: '#eeebe4',
-  bien: '#239852',
-  ojo: '#cf8b21',
-  mal: '#da4245',
-  /** Lo que no es ni bueno ni malo: la mercancia, el IVA. */
-  neutro: '#cdc7bc',
+type Semaforo = {
+  /** neutral 700: la octava serie. */
+  neutro700: string
+  bien: string
+  ojo: string
+  mal: string
   /** Lo que todavia no se sabe (sin receta). */
-  incierto: '#e4af6c',
+  incierto: string
   /** El ambar de la tasa (euro y brecha), `--color-aviso-500`. */
-  aviso: '#b96c00',
+  aviso: string
 }
 
-const OSCURO: typeof CLARO = {
-  serie: ['#dc8462', '#ffc5ad', '#7f4c38', '#a1a7b4', '#543427', '#333844', '#f8b095', '#d1d5dd'],
-  fuerte: '#f8b095',
-  anterior: '#333844',
-  referencia: '#7c8290',
-  vacio: '#1b1e26',
-  bien: '#4fb772',
-  ojo: '#b67703',
-  mal: '#fb6765',
-  neutro: '#333844',
-  incierto: '#7c5004',
-  aviso: '#d88c00',
+const SEMAFORO_CLARO: Semaforo = { neutro700: '#3e3d3a', bien: '#239852', ojo: '#cf8b21', mal: '#da4245', incierto: '#e4af6c', aviso: '#b96c00' }
+const SEMAFORO_OSCURO: Semaforo = { neutro700: '#d1d5dd', bien: '#4fb772', ojo: '#b67703', mal: '#fb6765', incierto: '#7c5004', aviso: '#d88c00' }
+
+function armar(t: Paleta, s: Semaforo) {
+  return {
+    /** Las series, en orden: acento 500, 800, 300, neutro 500, acento 200, neutro 300, acento 700, neutro 700. */
+    serie: [t.dato.s500, t.dato.s800, t.dato.s300, t.suave, t.dato.s200, t.barra, t.dato.s700, s.neutro700],
+    /** La barra que se destaca (la mayor, la de hoy). */
+    fuerte: t.dato.s700,
+    /** El periodo anterior, detras: una sombra, no una serie. */
+    anterior: t.barra,
+    /** Una linea de referencia (el promedio). */
+    referencia: t.tenue,
+    /** El fondo de una barra o de una casilla vacia. */
+    vacio: t.gris100,
+    bien: s.bien,
+    ojo: s.ojo,
+    mal: s.mal,
+    /** Lo que no es ni bueno ni malo: la mercancia, el IVA. */
+    neutro: t.barra,
+    incierto: s.incierto,
+    aviso: s.aviso,
+  }
 }
 
-export type PaletaDatos = typeof CLARO
+export type PaletaDatos = ReturnType<typeof armar>
 
 export function usePaletaDatos(): PaletaDatos {
+  const t = useTema()
   const { modo } = useModo()
-  return modo === 'oscuro' ? OSCURO : CLARO
+  return useMemo(() => armar(t, modo === 'oscuro' ? SEMAFORO_OSCURO : SEMAFORO_CLARO), [t, modo])
 }
 
 /** El color de la serie `i`, dando la vuelta si hay mas series que colores. */

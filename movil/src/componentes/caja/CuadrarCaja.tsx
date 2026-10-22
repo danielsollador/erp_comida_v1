@@ -152,7 +152,7 @@ export function CuadrarCaja({
 }
 
 const c = StyleSheet.create({
-  forma: { borderWidth: 1, borderRadius: 20, padding: 14, gap: 8 },
+  forma: { borderWidth: 1, borderRadius: 20, borderCurve: 'continuous', padding: 14, gap: 8 },
   cabeza: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
   nombre: { fontFamily: LETRA.textoFuerte, fontSize: 16 },
   moneda: { fontFamily: LETRA.textoFuerte, fontSize: 13 },

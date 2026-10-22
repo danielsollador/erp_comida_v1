@@ -267,17 +267,17 @@ export function ElegirMercancia({
 }
 
 const m = StyleSheet.create({
-  campo: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 50 },
+  campo: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 14, minHeight: 50 },
   campoDentro: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
   campoTexto: { flexShrink: 1, fontFamily: LETRA.texto, fontSize: 16 },
   unidad: { fontFamily: LETRA.texto, fontSize: 13.5 },
   grupo: { fontFamily: LETRA.textoFuerte, fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase', paddingHorizontal: 12, marginBottom: 2 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
-  opcion: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11, borderRadius: 12, minHeight: 48 },
+  opcion: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11, borderRadius: 12, borderCurve: 'continuous', minHeight: 48 },
   opcionNombre: { flex: 1, fontFamily: LETRA.textoFuerte, fontSize: 15 },
   opcionHay: { fontFamily: LETRA.cifra, fontSize: 13 },
   fijo: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 4, paddingTop: 4 },
-  crear: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, minHeight: 50, borderRadius: 12 },
+  crear: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, minHeight: 50, borderRadius: 12, borderCurve: 'continuous' },
   crearTexto: { flex: 1, fontFamily: LETRA.textoFuerte, fontSize: 15 },
   concepto: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 13, minHeight: 36, justifyContent: 'center' },
   conceptoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 13.5 },

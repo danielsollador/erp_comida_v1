@@ -470,17 +470,17 @@ export default function RenglonFactura({
 export const textoDe = aTexto
 
 const r = StyleSheet.create({
-  plegado: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, minHeight: 60 },
+  plegado: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, minHeight: 60 },
   punto: { width: 10, height: 10, borderRadius: 5 },
   nombre: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
   detalle: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 2 },
   subtotal: { fontFamily: LETRA.cifraFuerte, fontSize: 15 },
-  abierto: { flexDirection: 'row', borderRadius: 20, borderWidth: 1, overflow: 'hidden' },
+  abierto: { flexDirection: 'row', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden' },
   barra: { width: 4, marginVertical: 14, marginLeft: 6, borderRadius: 2 },
   dentro: { flex: 1, minWidth: 0, padding: 12, paddingLeft: 10, gap: 10 },
   cabeza: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
   esquina: { flexDirection: 'row', alignItems: 'center' },
-  esquinaBoton: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  esquinaBoton: { width: 44, height: 44, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
   rotulo: { fontFamily: LETRA.textoFuerte, fontSize: 12.5 },
   grilla: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -492,6 +492,6 @@ const r = StyleSheet.create({
   sugerida: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32 },
   pie: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
   subtotalGrande: { fontFamily: LETRA.cifraFuerte, fontSize: 16, marginTop: 1 },
-  listo: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, borderRadius: 14, paddingHorizontal: 18 },
+  listo: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 18 },
   listoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
 })

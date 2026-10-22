@@ -1,6 +1,7 @@
 import { router } from 'expo-router'
+import { Image } from 'expo-image'
 import { useEffect, useState, type ReactNode } from 'react'
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { api } from '../lib/api'
 import { useMoneda, VISTAS } from '../lib/moneda'
 import { useSesion } from '../lib/sesion'
@@ -15,6 +16,11 @@ import Svg, { Path } from 'react-native-svg'
  * del local a la izquierda y, a la derecha, los mismos controles en el mismo
  * orden: moneda, campana, tema y la cuenta. Sin "pantalla completa": en el
  * telefono la app ya ocupa la pantalla.
+ *
+ * Solo el inicio pinta esta cabecera entera. Las pantallas de adentro llevan
+ * el encabezado nativo del Stack (app/(app)/_layout.tsx): el titulo, la
+ * flecha de volver y el gesto de deslizar son del sistema, y a la derecha
+ * van los mismos controles (`ControlesCabecera`).
  */
 
 /** El logo del local, como en la web. En oscuro se aclara para no hundirse. */
@@ -33,8 +39,9 @@ export function Marca() {
     <Image
       source={{ uri }}
       onError={() => setFalla(true)}
-      resizeMode="contain"
-      style={[estilos.logo, modo === 'oscuro' && { tintColor: '#e7e1d8' }]}
+      contentFit="contain"
+      tintColor={modo === 'oscuro' ? t.fuerte : undefined}
+      style={estilos.logo}
       accessibilityLabel={acceso?.local.nombre}
     />
   )
@@ -220,34 +227,18 @@ export function Controles() {
 }
 
 /**
- * La barra de las pantallas de adentro: volver, el titulo y, como arriba en
- * la web, la moneda, las notificaciones y el tema en TODOS los modulos.
+ * Lo que va a la derecha del encabezado nativo en las pantallas de adentro:
+ * como arriba en la web, la moneda, las notificaciones y el tema en TODOS
+ * los modulos. Sin la cuenta: con cuatro controles no cabe el titulo en un
+ * telefono, y la cuenta ya esta en el inicio.
  */
-export function Barra({ titulo }: { titulo: string }) {
-  const t = useTema()
+export function ControlesCabecera() {
   const { acceso } = useSesion()
   return (
-    <View style={estilos.barra}>
-      {/* Arriba volver y los controles; el titulo grande en su linea, como
-          en iOS: con cuatro controles al lado no cabia en un telefono. */}
-      <View style={estilos.barraFila}>
-        <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-          accessibilityLabel="Volver"
-          hitSlop={6}
-          style={({ pressed }) => [estilos.control, { borderColor: t.gris200, backgroundColor: t.superficie, opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Icono nombre="atras" size={17} color={t.suave} />
-        </Pressable>
-        <View style={estilos.controles}>
-          {acceso?.puede.operar && <BotonMoneda />}
-          <Campana />
-          <BotonTema />
-        </View>
-      </View>
-      <Text style={[estilos.barraTitulo, { color: t.tinta }]} numberOfLines={2} accessibilityRole="header">
-        {titulo}
-      </Text>
+    <View style={estilos.controles}>
+      {acceso?.puede.operar && <BotonMoneda />}
+      <Campana />
+      <BotonTema />
     </View>
   )
 }
@@ -286,7 +277,4 @@ const estilos = StyleSheet.create({
   quien: { paddingHorizontal: 12, paddingBottom: 10 },
   quienNombre: { fontFamily: LETRA.titulo, fontSize: 18 },
   quienRol: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 2 },
-  barra: { paddingTop: 6, paddingBottom: 4, gap: 10 },
-  barraFila: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  barraTitulo: { fontFamily: LETRA.tituloFuerte, fontSize: 28, lineHeight: 33, letterSpacing: -0.6 },
 })

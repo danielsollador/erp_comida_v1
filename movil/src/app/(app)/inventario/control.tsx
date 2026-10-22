@@ -1,11 +1,10 @@
-import { router, type Href } from 'expo-router'
+import { router, Stack, type Href } from 'expo-router'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { unidadDe } from '../../../../../frontend/src/lib/inventario'
 import DetalleConteo from '../../../componentes/conteo/DetalleConteo'
 import CambiosDeHoy from '../../../componentes/control/CambiosDeHoy'
 import { Costos, ListaConteos, Perdidas, Teorico } from '../../../componentes/control/Vistas'
-import { Barra } from '../../../componentes/Encabezado'
 import { ElegirPeriodo, FilaFiltros } from '../../../componentes/kit'
 import { fmtCant } from '../../../componentes/preparaciones/cuentas'
 import { BotonChico, mensajeDe } from '../../../componentes/preparaciones/piezas'
@@ -106,7 +105,8 @@ export default function Control() {
   const metodoVisto = metodo ?? datos?.config.costo_para_precios ?? 'reposicion'
 
   return (
-    <Pantalla refrescando={refrescando} alRefrescar={refrescar} arriba={<Barra titulo="Control" />}>
+    <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+      <Stack.Screen options={{ title: 'Control' }} />
       <Pestanas
         opciones={[
           { id: 'teorico' as Vista, texto: 'Debió salir vs. hay' },

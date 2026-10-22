@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BotonTema } from '../componentes/Encabezado'
 import Fondo from '../componentes/Fondo'
@@ -80,7 +80,7 @@ export default function Entrar() {
       <View style={[estilos.esquina, { top: borde.top + 8 }]}>
         <BotonTema />
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={estilos.contenido} keyboardShouldPersistTaps="handled">
           <View style={estilos.marca}>
             <View style={[estilos.rombo, { backgroundColor: t.acento }]} />
@@ -181,19 +181,19 @@ const estilos = StyleSheet.create({
   marcaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 12, letterSpacing: 1.6 },
   titulo: { fontFamily: LETRA.tituloFuerte, fontSize: 32, letterSpacing: -0.8 },
   sub: { fontFamily: LETRA.texto, fontSize: 15, marginTop: 6, marginBottom: 26 },
-  error: { borderRadius: 14, padding: 12, marginBottom: 18 },
+  error: { borderRadius: 14, borderCurve: 'continuous', padding: 12, marginBottom: 18 },
   errorTexto: { fontFamily: LETRA.texto, fontSize: 14, lineHeight: 20 },
   rotulo: { fontFamily: LETRA.textoFuerte, fontSize: 13.5, marginBottom: 7 },
   campo: {
     fontFamily: LETRA.texto,
     fontSize: 16,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 14, borderCurve: 'continuous',
     paddingHorizontal: 15,
     paddingVertical: 13,
     marginBottom: 16,
   },
-  otro: { borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, padding: 16, marginTop: 24 },
+  otro: { borderRadius: 20, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth, padding: 16, marginTop: 24 },
   enlaces: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 4 },
   enlace: { minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8 },
   enlaceTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },

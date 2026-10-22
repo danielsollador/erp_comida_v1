@@ -1,3 +1,4 @@
+import { DateTimePicker } from '@expo/ui/community/datetime-picker'
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { hoyEnCaracas } from '../../lib/formato'
@@ -8,11 +9,12 @@ import Icono from '../Icono'
 import { BotonTexto } from './piezas'
 
 /*
- * ELEGIR UNA FECHA. En la web es el `<input type="date">` del navegador; la
- * app no trae selector de fechas, y teclear "2026-09-28" con el pulgar es
- * buscar errores. Aqui la fecha se toca en un mes dibujado, con los atajos
- * de siempre (hoy, ayer) a un toque. El dia es el del local (Caracas), no el
- * del telefono.
+ * ELEGIR UNA FECHA. En la web es el `<input type="date">` del navegador, y
+ * teclear "2026-09-28" con el pulgar es buscar errores. En el telefono la
+ * fecha se toca en el calendario del sistema (@expo/ui: el DatePicker de
+ * SwiftUI, el de Material 3), dentro de una hoja y con los atajos de siempre
+ * (hoy, ayer) a un toque. En la web, el mes dibujado a mano de antes. El
+ * dia de los atajos es el del local (Caracas), no el del telefono.
  */
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -25,6 +27,17 @@ function sumarDias(fecha: string, dias: number): string {
   const d = new Date(`${fecha}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + dias)
   return d.toISOString().slice(0, 10)
+}
+
+// El calendario nativo trabaja con la hora del telefono. Un dia AAAA-MM-DD
+// se le da al mediodia local y se lee con los getters locales: asi el dia
+// que se toca es el dia que se guarda, sin que el huso lo corra.
+function aFecha(dia: string): Date {
+  const [a, m, d] = dia.slice(0, 10).split('-').map(Number)
+  return new Date(a, m - 1, d, 12)
+}
+function aDia(fecha: Date): string {
+  return iso(fecha.getFullYear(), fecha.getMonth(), fecha.getDate())
 }
 
 export default function ElegirFecha({
@@ -64,20 +77,6 @@ export default function ElegirFecha({
     alCambiar(f)
     setAbierto(false)
   }
-  function mover(delta: number) {
-    setMes(({ a, m }) => {
-      const n = m + delta
-      return { a: a + Math.floor(n / 12), m: ((n % 12) + 12) % 12 }
-    })
-  }
-
-  // La semana empieza el lunes, como en el calendario de pared.
-  const primero = new Date(Date.UTC(mes.a, mes.m, 1)).getUTCDay()
-  const hueco = (primero + 6) % 7
-  const diasDelMes = new Date(Date.UTC(mes.a, mes.m + 1, 0)).getUTCDate()
-  const celdas: (number | null)[] = [...Array(hueco).fill(null), ...Array.from({ length: diasDelMes }, (_, i) => i + 1)]
-  while (celdas.length % 7) celdas.push(null)
-  const siguienteBloqueado = !!maximo && iso(mes.a, mes.m, 1) >= maximo.slice(0, 8) + '01'
   const borde = tono === 'mal' ? t.peligro : tono === 'ojo' ? t.aviso : t.gris200
 
   const accesos =
@@ -105,67 +104,20 @@ export default function ElegirFecha({
         </Text>
       </Pressable>
       <Hoja visible={abierto} alCerrar={() => setAbierto(false)} titulo={titulo}>
-        <View style={e.cabeza}>
-          <Pressable onPress={() => mover(-1)} hitSlop={8} accessibilityLabel="Mes anterior" style={[e.flecha, { backgroundColor: t.gris100 }]}>
-            <View style={{ transform: [{ rotate: '180deg' }] }}>
-              <Icono nombre="chevron" size={16} color={t.fuerte} grosor={2.2} />
-            </View>
-          </Pressable>
-          <Text style={[e.mes, { color: t.tinta }]}>
-            {MESES[mes.m]} {mes.a}
-          </Text>
-          <Pressable
-            onPress={() => mover(1)}
-            disabled={siguienteBloqueado}
-            hitSlop={8}
-            accessibilityLabel="Mes siguiente"
-            style={[e.flecha, { backgroundColor: t.gris100, opacity: siguienteBloqueado ? 0.35 : 1 }]}
-          >
-            <Icono nombre="chevron" size={16} color={t.fuerte} grosor={2.2} />
-          </Pressable>
-        </View>
-        <View style={e.semana}>
-          {DIAS.map((d, i) => (
-            <Text key={i} style={[e.diaSemana, { color: t.tenue }]}>
-              {d}
-            </Text>
-          ))}
-        </View>
-        <View style={e.grilla}>
-          {celdas.map((d, i) => {
-            if (d === null) return <View key={i} style={e.celda} />
-            const f = iso(mes.a, mes.m, d)
-            const elegida = f === valor
-            const esHoy = f === hoy
-            const bloqueada = !!maximo && f > maximo
-            return (
-              <View key={i} style={e.celda}>
-                <Pressable
-                  onPress={() => elegir(f)}
-                  disabled={bloqueada}
-                  accessibilityLabel={fechaCorta(f, true)}
-                  accessibilityState={{ selected: elegida, disabled: bloqueada }}
-                  style={({ pressed }) => [
-                    e.dia,
-                    elegida && { backgroundColor: t.tinta },
-                    !elegida && esHoy && { borderWidth: 1, borderColor: t.acento },
-                    pressed && !elegida && { backgroundColor: t.gris100 },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      e.diaTexto,
-                      { color: elegida ? t.papel : bloqueada ? t.gris200 : t.tinta },
-                      esHoy && !elegida && { color: t.acento },
-                    ]}
-                  >
-                    {d}
-                  </Text>
-                </Pressable>
-              </View>
-            )
-          })}
-        </View>
+        {process.env.EXPO_OS === 'web' ? (
+          <MesDibujado mes={mes} setMes={setMes} valor={valor} hoy={hoy} maximo={maximo} elegir={elegir} />
+        ) : (
+          <DateTimePicker
+            value={aFecha(base)}
+            mode="date"
+            // iOS: el calendario completo (graphical); Android: el de Material, en la hoja y no en un dialogo.
+            display="inline"
+            presentation="inline"
+            maximumDate={maximo ? aFecha(maximo) : undefined}
+            accentColor={t.acento}
+            onValueChange={(_, fecha) => elegir(aDia(fecha))}
+          />
+        )}
         <View style={e.pie}>
           {accesos.map((a) => (
             <BotonTexto key={a.texto} texto={a.texto} alTocar={() => elegir(a.fecha)} tono="neutro" />
@@ -178,8 +130,114 @@ export default function ElegirFecha({
   )
 }
 
+/** Web: el mes dibujado a mano, con la semana empezando el lunes como en el calendario de pared. */
+function MesDibujado({
+  mes,
+  setMes,
+  valor,
+  hoy,
+  maximo,
+  elegir,
+}: {
+  mes: { a: number; m: number }
+  setMes: (f: (m: { a: number; m: number }) => { a: number; m: number }) => void
+  valor: string
+  hoy: string
+  maximo?: string
+  elegir: (f: string) => void
+}) {
+  const t = useTema()
+  function mover(delta: number) {
+    setMes(({ a, m }) => {
+      const n = m + delta
+      return { a: a + Math.floor(n / 12), m: ((n % 12) + 12) % 12 }
+    })
+  }
+  const primero = new Date(Date.UTC(mes.a, mes.m, 1)).getUTCDay()
+  const hueco = (primero + 6) % 7
+  const diasDelMes = new Date(Date.UTC(mes.a, mes.m + 1, 0)).getUTCDate()
+  const celdas: (number | null)[] = [...Array(hueco).fill(null), ...Array.from({ length: diasDelMes }, (_, i) => i + 1)]
+  while (celdas.length % 7) celdas.push(null)
+  const siguienteBloqueado = !!maximo && iso(mes.a, mes.m, 1) >= maximo.slice(0, 8) + '01'
+
+  return (
+    <>
+      <View style={e.cabeza}>
+        <Pressable onPress={() => mover(-1)} hitSlop={8} accessibilityLabel="Mes anterior" style={[e.flecha, { backgroundColor: t.gris100 }]}>
+          <View style={{ transform: [{ rotate: '180deg' }] }}>
+            <Icono nombre="chevron" size={16} color={t.fuerte} grosor={2.2} />
+          </View>
+        </Pressable>
+        <Text style={[e.mes, { color: t.tinta }]}>
+          {MESES[mes.m]} {mes.a}
+        </Text>
+        <Pressable
+          onPress={() => mover(1)}
+          disabled={siguienteBloqueado}
+          hitSlop={8}
+          accessibilityLabel="Mes siguiente"
+          style={[e.flecha, { backgroundColor: t.gris100, opacity: siguienteBloqueado ? 0.35 : 1 }]}
+        >
+          <Icono nombre="chevron" size={16} color={t.fuerte} grosor={2.2} />
+        </Pressable>
+      </View>
+      <View style={e.semana}>
+        {DIAS.map((d, i) => (
+          <Text key={i} style={[e.diaSemana, { color: t.tenue }]}>
+            {d}
+          </Text>
+        ))}
+      </View>
+      <View style={e.grilla}>
+        {celdas.map((d, i) => {
+          if (d === null) return <View key={i} style={e.celda} />
+          const f = iso(mes.a, mes.m, d)
+          const elegida = f === valor
+          const esHoy = f === hoy
+          const bloqueada = !!maximo && f > maximo
+          return (
+            <View key={i} style={e.celda}>
+              <Pressable
+                onPress={() => elegir(f)}
+                disabled={bloqueada}
+                accessibilityLabel={fechaCorta(f, true)}
+                accessibilityState={{ selected: elegida, disabled: bloqueada }}
+                style={({ pressed }) => [
+                  e.dia,
+                  elegida && { backgroundColor: t.tinta },
+                  !elegida && esHoy && { borderWidth: 1, borderColor: t.acento },
+                  pressed && !elegida && { backgroundColor: t.gris100 },
+                ]}
+              >
+                <Text
+                  style={[
+                    e.diaTexto,
+                    { color: elegida ? t.papel : bloqueada ? t.gris200 : t.tinta },
+                    esHoy && !elegida && { color: t.acento },
+                  ]}
+                >
+                  {d}
+                </Text>
+              </Pressable>
+            </View>
+          )
+        })}
+      </View>
+    </>
+  )
+}
+
 const e = StyleSheet.create({
-  campo: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 50 },
+  campo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    paddingHorizontal: 14,
+    minHeight: 50,
+  },
   campoTexto: { flex: 1, fontFamily: LETRA.texto, fontSize: 16 },
   cabeza: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 6 },
   flecha: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

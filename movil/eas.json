@@ -8,13 +8,15 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_BASE": "https://prueba.vertigopro.tech"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_BASE": "https://savora.vertigopro.tech"
-      }
+      },
+      "channel": "production"
     },
     "publico": {
       "distribution": "internal",
@@ -23,7 +25,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE": "https://savora.vertigopro.tech"
-      }
+      },
+      "channel": "publico"
     }
   },
   "submit": {

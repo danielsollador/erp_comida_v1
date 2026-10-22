@@ -1,5 +1,5 @@
 import * as almacen from './almacen'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api } from './api'
 import { miles } from './formato'
 import type { EstadoTasa } from './tipos'
@@ -101,7 +101,7 @@ export function MonedaProvider({ children, activa }: { children: ReactNode; acti
 }
 
 export function useMoneda(): Ctx {
-  const c = useContext(Contexto)
+  const c = use(Contexto)
   if (!c) throw new Error('useMoneda fuera de MonedaProvider')
   return c
 }

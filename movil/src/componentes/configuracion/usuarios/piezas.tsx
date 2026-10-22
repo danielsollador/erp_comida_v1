@@ -240,7 +240,7 @@ const estilos = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 14, borderCurve: 'continuous',
     paddingHorizontal: 14,
     paddingVertical: 12,
     minHeight: 48,

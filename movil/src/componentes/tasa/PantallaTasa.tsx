@@ -1,10 +1,9 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiTasa } from '../../lib/api-tasa'
 import { useMoneda } from '../../lib/moneda'
 import { aNumero, periodoDe, type Periodo } from '../../lib/numeros'
 import type { AnalisisTasa, EstadoTasa, PuntoTasa } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import { ElegirPeriodo, FilaFiltros } from '../kit'
 import { Cargando, Pantalla, Pestanas, Problema } from '../ui'
 import Analisis from './Analisis'
@@ -141,13 +140,13 @@ export default function PantallaTasa() {
 
   return (
     <Pantalla
-      arriba={<Barra titulo="Tasa de cambio" />}
       refrescando={refrescando}
       alRefrescar={() => {
         setRefrescando(true)
         setVuelta((v) => v + 1)
       }}
     >
+      <Stack.Screen options={{ title: 'Tasa de cambio' }} />
       <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />
       {seccion === 'analisis' || seccion === 'historial' ? (
         <FilaFiltros>

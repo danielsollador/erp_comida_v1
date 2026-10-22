@@ -1,11 +1,10 @@
-import { router } from 'expo-router'
+import { router, Stack } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Text, View } from 'react-native'
 import { unidadDe } from '../../../../../frontend/src/lib/inventario'
 import { convertirTexto, factorEntre } from '../../../../../frontend/src/lib/unidades'
 import { AccionesPlanilla, PlanillaLeidaCaja } from '../../../componentes/conteo/Planilla'
 import RenglonConteo from '../../../componentes/conteo/RenglonConteo'
-import { Barra } from '../../../componentes/Encabezado'
 import { BarraAccion, Buscador, llano, PantallaLista } from '../../../componentes/kit'
 import { fmtCant } from '../../../componentes/preparaciones/cuentas'
 import { mensajeDe } from '../../../componentes/preparaciones/piezas'
@@ -181,8 +180,9 @@ export default function ConteoFisico() {
   )
 
   return (
+    <>
+    <Stack.Screen options={{ title: 'Conteo físico' }} />
     <PantallaLista
-      arriba={<Barra titulo="Conteo físico" />}
       cabecera={cabecera}
       datos={lista}
       clave={(i) => String(i.id)}
@@ -222,5 +222,6 @@ export default function ConteoFisico() {
         />
       }
     />
+    </>
   )
 }

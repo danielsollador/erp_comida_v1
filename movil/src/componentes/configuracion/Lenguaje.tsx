@@ -329,7 +329,7 @@ function Muestra({
 
 const estilos = StyleSheet.create({
   parrafo: { fontFamily: LETRA.texto, fontSize: 15, lineHeight: 22 },
-  modo: { borderWidth: 2, borderRadius: 18, padding: 16 },
+  modo: { borderWidth: 2, borderRadius: 18, borderCurve: 'continuous', padding: 16 },
   modoArriba: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   modoTitulo: { fontFamily: LETRA.titulo, fontSize: 18 },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
@@ -337,9 +337,9 @@ const estilos = StyleSheet.create({
   para: { fontFamily: LETRA.texto, fontSize: 14, marginTop: 2 },
   vineta: { width: 4, height: 4, borderRadius: 2, marginTop: 8 },
   puntoTexto: { fontFamily: LETRA.texto, fontSize: 14, lineHeight: 19, flex: 1 },
-  muestra: { borderRadius: 18, padding: 12 },
+  muestra: { borderRadius: 18, borderCurve: 'continuous', padding: 12 },
   muestraModo: { fontFamily: LETRA.textoFuerte, fontSize: 12, marginBottom: 8 },
-  caja: { borderWidth: 1, borderRadius: 14, padding: 14 },
+  caja: { borderWidth: 1, borderRadius: 14, borderCurve: 'continuous', padding: 14 },
   cifraTitulo: {
     fontFamily: LETRA.textoFuerte,
     fontSize: 12,

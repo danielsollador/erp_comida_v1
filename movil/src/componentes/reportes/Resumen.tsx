@@ -167,7 +167,7 @@ export default function Resumen({
               </Text>
             ) : null}
             {!filtro && (datos.pedidos_anulados > 0 || datos.devoluciones > 0) ? (
-              <View style={{ backgroundColor: t.avisoSuave, borderRadius: 12, padding: 12, marginTop: 12 }}>
+              <View style={{ backgroundColor: t.avisoSuave, borderRadius: 12, borderCurve: 'continuous', padding: 12, marginTop: 12 }}>
                 <Text style={[c.nota, { color: t.avisoFuerte }]}>
                   {datos.pedidos_anulados > 0 ? `Se anularon ${datos.pedidos_anulados} pedido(s) por ${dinero(datos.valor_anulado)}. ` : ''}
                   {datos.devoluciones > 0

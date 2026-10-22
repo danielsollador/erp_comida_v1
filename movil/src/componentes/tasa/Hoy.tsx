@@ -117,7 +117,7 @@ export default function Hoy({
           />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
             {BILLETES.map((usd) => (
-              <View key={usd} style={{ width: '31.5%', flexGrow: 1, borderRadius: 14, backgroundColor: t.gris100, paddingVertical: 10, alignItems: 'center' }}>
+              <View key={usd} style={{ width: '31.5%', flexGrow: 1, borderRadius: 14, borderCurve: 'continuous', backgroundColor: t.gris100, paddingVertical: 10, alignItems: 'center' }}>
                 <Text style={[estilos.nota, { color: t.suave, marginTop: 0 }]}>${usd}</Text>
                 <Text style={[estilos.cifra, { color: t.tinta, fontFamily: LETRA.cifraFuerte }]} numberOfLines={1} adjustsFontSizeToFit>
                   {num(usd * bcvHoy, usd >= 20 ? 0 : 2)}

@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router'
+import { router, Stack, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { TEXTO_CONCEPTO } from '../../../../frontend/src/lib/compras'
@@ -11,7 +11,6 @@ import { avisar, confirmar } from '../../lib/dialogo'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useTema } from '../../lib/tema'
 import type { FacturaCompra, NotaCreditoCompra } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import { ListaFicha, Pastilla, Renglon, useDisposicion } from '../kit'
 import { Aviso, Boton, Cargando, Cifra, Ficha, Fila, Nota, Pantalla, Problema, Titulo } from '../ui'
 import { VistaDocumento, type DocumentoLeido } from './FacturaDesdeFoto'
@@ -92,10 +91,11 @@ export default function DetalleFactura() {
     }
   }
 
-  const barra = <Barra titulo={f ? `Factura ${f.numero_factura}` : 'Factura'} />
+  const titulo = <Stack.Screen options={{ title: f ? `Factura ${f.numero_factura}` : 'Factura' }} />
   if (!f) {
     return (
-      <Pantalla arriba={barra} refrescando={refrescando} alRefrescar={refrescar}>
+      <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+        {titulo}
         {error ? <Problema mensaje={error} alReintentar={refrescar} /> : datos ? <Problema mensaje="Esa factura no está: puede que la hayan borrado." /> : <Cargando />}
       </Pantalla>
     )
@@ -264,7 +264,8 @@ export default function DetalleFactura() {
   )
 
   return (
-    <Pantalla arriba={barra} refrescando={refrescando} alRefrescar={refrescar}>
+    <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+      {titulo}
       {aviso ? <Aviso texto={aviso} /> : null}
       {tablet ? (
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>

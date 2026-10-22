@@ -32,15 +32,13 @@
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
             "NSPrivacyAccessedAPITypeReasons": [
               "C617.1",
-              "0A2A.1",
-              "3B52.1"
+              "0A2A.1"
             ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
             "NSPrivacyAccessedAPITypeReasons": [
-              "E174.1",
-              "85F4.1"
+              "E174.1"
             ]
           },
           {
@@ -125,7 +123,8 @@
             "backgroundColor": "#0E1014"
           }
         }
-      ]
+      ],
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true
@@ -136,6 +135,12 @@
         "projectId": "0b372dfd-7a17-469b-ad5b-2ef3e4ecf0b6"
       }
     },
-    "owner": "motaleider7"
+    "owner": "motaleider7",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/0b372dfd-7a17-469b-ad5b-2ef3e4ecf0b6"
+    }
   }
 }

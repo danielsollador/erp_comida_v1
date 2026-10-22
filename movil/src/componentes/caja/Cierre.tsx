@@ -234,7 +234,7 @@ const estilos = StyleSheet.create({
   abiertaCabeza: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
   fondo: { fontFamily: LETRA.cifra, fontSize: 14 },
   avisoTitulo: { fontFamily: LETRA.titulo, fontSize: 17, letterSpacing: -0.2 },
-  alarma: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
+  alarma: { borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 14, paddingVertical: 12 },
   alarmaTexto: { fontFamily: LETRA.texto, fontSize: 14, lineHeight: 20 },
   cerrada: { fontFamily: LETRA.texto, fontSize: 13.5, textAlign: 'center', paddingHorizontal: 12 },
 })

@@ -213,7 +213,7 @@ export default function Ventas({
                 />
                 {/* Sin receta no hay costo: la barra va rayada. Aqui, cuantos son y donde se arregla. */}
                 {sinReceta.length > 0 ? (
-                  <View style={{ backgroundColor: t.avisoSuave, borderRadius: 12, padding: 12, marginTop: 14 }}>
+                  <View style={{ backgroundColor: t.avisoSuave, borderRadius: 12, borderCurve: 'continuous', padding: 12, marginTop: 14 }}>
                     <Text style={[c.nota, { color: t.avisoFuerte }]}>
                       {sinReceta.length === 1
                         ? '1 producto no tiene receta, así que no se sabe cuánto deja. '

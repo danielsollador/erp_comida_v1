@@ -1,5 +1,4 @@
-import { router, useLocalSearchParams, type Href } from 'expo-router'
-import { Barra } from '../Encabezado'
+import { router, Stack, useLocalSearchParams, type Href } from 'expo-router'
 import { Cargando, Pantalla, Pestanas, Problema } from '../ui'
 import { useDatosMenu } from './datos'
 import ElMenu from './ElMenu'
@@ -29,12 +28,8 @@ export default function PantallaMenu() {
   const tostada = useTostada()
 
   return (
-    <Pantalla
-      arriba={<Barra titulo="Menú" />}
-      refrescando={refrescando}
-      alRefrescar={() => void refrescar()}
-      abajo={tostada.nodo}
-    >
+    <Pantalla refrescando={refrescando} alRefrescar={() => void refrescar()} abajo={tostada.nodo}>
+      <Stack.Screen options={{ title: 'Menú' }} />
       <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={(id) => router.setParams({ seccion: id })} />
       {error && !datos ? <Problema mensaje={error} alReintentar={() => void refrescar()} /> : null}
       {!datos && !error ? <Cargando /> : null}

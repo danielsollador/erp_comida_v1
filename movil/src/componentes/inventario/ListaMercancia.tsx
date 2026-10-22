@@ -1,3 +1,4 @@
+import { Stack } from 'expo-router'
 import { useMemo, useState, type ReactElement } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { estadoStock } from '../../../../frontend/src/lib/inventario'
@@ -5,7 +6,6 @@ import { ALMACEN_DE } from '../../../../frontend/src/lib/tiposArticulo'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useTema } from '../../lib/tema'
 import type { CategoriaInsumo, Ingrediente, TipoArticulo } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import Icono from '../Icono'
 import { BarraAccion, Buscador, FilaFiltros, llano, PantallaLista, Pastilla, Selector, useDisposicion, Vacio } from '../kit'
 import { Boton, Cargando, Ficha, Problema, Pulsable } from '../ui'
@@ -40,7 +40,6 @@ export default function ListaMercancia({
   error,
   refrescando,
   alRefrescar,
-  arriba,
   cabeceraExtra,
   alReactivar,
 }: {
@@ -55,7 +54,6 @@ export default function ListaMercancia({
   alRefrescar: () => void
   /** Lo que va arriba, antes de los filtros: el aviso de vender sin inventario, Crudo / Preparado. */
   cabeceraExtra?: ReactElement | null
-  arriba?: ReactElement
   alReactivar: (ing: Ingrediente) => void
 }) {
   const t = useTema()
@@ -206,8 +204,10 @@ export default function ListaMercancia({
   )
 
   return (
+    <>
+    {/* El titulo del encabezado nativo: el nombre del almacen. */}
+    <Stack.Screen options={{ title: a.texto }} />
     <PantallaLista
-      arriba={arriba}
       datos={filas}
       clave={(par) => par.map((i) => i.id).join('-')}
       cabecera={cabecera}
@@ -243,6 +243,7 @@ export default function ListaMercancia({
         />
       }
     />
+    </>
   )
 }
 
@@ -408,14 +409,9 @@ export function CabezaAlmacen({
   )
 }
 
-/** La barra de arriba de un almacen: volver y su nombre. */
-export function BarraAlmacen({ tipo }: { tipo: TipoArticulo }) {
-  return <Barra titulo={ALMACEN_DE[tipo].texto} />
-}
-
 const s = StyleSheet.create({
   par: { flexDirection: 'row', gap: 10 },
-  renglon: { padding: 16, borderRadius: 20 },
+  renglon: { padding: 16, borderRadius: 20, borderCurve: 'continuous' },
   renglonCabeza: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   nombre: { fontFamily: LETRA.textoFuerte, fontSize: 16 },
   hay: { fontFamily: LETRA.cifra, fontSize: 16 },
@@ -424,7 +420,7 @@ const s = StyleSheet.create({
   datoCifra: { fontFamily: LETRA.cifra, fontSize: 13 },
   datoCifraFuerte: { fontFamily: LETRA.cifraFuerte, fontSize: 13 },
   franja: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  cuadrito: { flexDirection: 'row', alignItems: 'baseline', gap: 5, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1 },
+  cuadrito: { flexDirection: 'row', alignItems: 'baseline', gap: 5, borderRadius: 12, borderCurve: 'continuous', paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1 },
   cuadritoValor: { fontFamily: LETRA.cifraFuerte, fontSize: 14 },
   cuadritoTitulo: { fontFamily: LETRA.texto, fontSize: 13 },
   conteo: { minHeight: 50, justifyContent: 'center' },
@@ -432,8 +428,8 @@ const s = StyleSheet.create({
   cabeza: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   cabezaDetalle: { flex: 1, fontFamily: LETRA.texto, fontSize: 14, lineHeight: 19 },
   caras: { flexDirection: 'row', gap: 8 },
-  cara: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 10, minHeight: 56 },
-  caraIcono: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  cara: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 18, borderCurve: 'continuous', paddingHorizontal: 12, paddingVertical: 10, minHeight: 56 },
+  caraIcono: { width: 32, height: 32, borderRadius: 10, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   caraTitulo: { fontFamily: LETRA.titulo, fontSize: 15 },
   caraDetalle: { fontFamily: LETRA.texto, fontSize: 13 },
 })

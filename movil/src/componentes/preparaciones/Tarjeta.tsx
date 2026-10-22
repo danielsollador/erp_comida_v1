@@ -144,7 +144,7 @@ const c = StyleSheet.create({
   nueva: {
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderRadius: 22,
+    borderRadius: 22, borderCurve: 'continuous',
     minHeight: 150,
     padding: 16,
     alignItems: 'center',

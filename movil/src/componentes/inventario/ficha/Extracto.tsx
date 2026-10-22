@@ -285,7 +285,7 @@ function Grupo({
 }
 
 const s = StyleSheet.create({
-  caja: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
+  caja: { borderWidth: 1, borderRadius: 16, borderCurve: 'continuous', overflow: 'hidden' },
   mov: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
   movFecha: { width: 64, fontFamily: LETRA.cifra, fontSize: 13 },
   movQue: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },

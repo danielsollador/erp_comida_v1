@@ -1,5 +1,4 @@
 import * as SecureStore from 'expo-secure-store'
-import { Platform } from 'react-native'
 
 /**
  * LO QUE EL TELEFONO RECUERDA: el token, el tema, la moneda elegida.
@@ -9,7 +8,7 @@ import { Platform } from 'react-native'
  * pantallas mientras se construyen-- SecureStore no existe y se usa
  * localStorage. Las pantallas no se enteran: leen y guardan aqui.
  */
-const web = Platform.OS === 'web'
+const web = process.env.EXPO_OS === 'web'
 
 export async function leer(clave: string): Promise<string | null> {
   if (web) {

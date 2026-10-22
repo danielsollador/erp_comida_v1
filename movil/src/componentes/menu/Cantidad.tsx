@@ -64,9 +64,9 @@ export function CasillaConUnidad({
 }
 
 const estilos = StyleSheet.create({
-  caja: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, minHeight: 46, paddingLeft: 12, paddingRight: 4 },
+  caja: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, borderCurve: 'continuous', minHeight: 46, paddingLeft: 12, paddingRight: 4 },
   texto: { flex: 1, fontFamily: LETRA.cifra, fontSize: 16, paddingVertical: 9, textAlign: 'right', minWidth: 40 },
-  unidad: { minHeight: 38, minWidth: 54, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, marginLeft: 6 },
+  unidad: { minHeight: 38, minWidth: 54, borderRadius: 9, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, marginLeft: 6 },
   unidadTexto: { fontFamily: LETRA.cifraFuerte, fontSize: 13 },
   rotulo: { fontFamily: LETRA.textoFuerte, fontSize: 13, paddingHorizontal: 8, marginLeft: 4 },
 })

@@ -1,4 +1,4 @@
-import { useFocusEffect, useIsFocused } from 'expo-router'
+import { Stack, useFocusEffect, useIsFocused } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useEnVivo } from '../../../componentes/cocina/enVivo'
@@ -6,7 +6,6 @@ import { avisarComanda, guardarAviso, leerAviso, leerTamano, zoomDe } from '../.
 import { columnasPara, tinteDeCategoria, type Tinte } from '../../../componentes/cocina/comanda'
 import ElegirAnulacion from '../../../componentes/cocina/ElegirAnulacion'
 import TarjetaComanda from '../../../componentes/cocina/TarjetaComanda'
-import { Barra } from '../../../componentes/Encabezado'
 import Icono from '../../../componentes/Icono'
 import { useDisposicion, Vacio } from '../../../componentes/kit'
 import { Aviso, Cargando, Pantalla, Problema } from '../../../componentes/ui'
@@ -217,38 +216,39 @@ export default function Cocina() {
       refrescando={refrescando}
       alRefrescar={() => void refrescar(true)}
       arriba={
-        <View>
-          <Barra titulo="Cocina" />
-          <View style={estilos.fila}>
-            {!conectado && pedidos ? <Text style={[estilos.estado, { color: t.tenue }]}>Sin canal en vivo: se revisa cada 5 s</Text> : <View />}
-            {/* Apagado es la unica accion pendiente de la pantalla, y por eso
-                es el unico boton con color: hay que tocarlo al abrir el turno.
-                Encendido es un control mas, con un punto verde. */}
-            <Pressable
-              onPress={alternarAviso}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: aviso }}
-              style={({ pressed }) => [
-                estilos.aviso,
-                aviso
-                  ? { backgroundColor: t.superficie, borderColor: t.gris200 }
-                  : { backgroundColor: t.acento, borderColor: t.acento },
-                { transform: [{ scale: pressed ? 0.97 : 1 }] },
-              ]}
-            >
-              {aviso ? (
-                <View style={[estilos.punto, { backgroundColor: t.exito500 }]} />
-              ) : (
-                <Icono nombre="campana-muda" size={16} color={t.acentoTinta} />
-              )}
-              <Text style={[estilos.avisoTexto, { color: aviso ? t.fuerte : t.acentoTinta }]}>
-                {aviso ? 'Aviso activo' : 'Activar aviso'}
-              </Text>
-            </Pressable>
-          </View>
+        // El interruptor del aviso queda fijo bajo el encabezado, no a la
+        // derecha de el: con la moneda, la campana y el tema ya no cabe un
+        // boton con texto en un telefono.
+        <View style={estilos.fila}>
+          {!conectado && pedidos ? <Text style={[estilos.estado, { color: t.tenue }]}>Sin canal en vivo: se revisa cada 5 s</Text> : <View />}
+          {/* Apagado es la unica accion pendiente de la pantalla, y por eso
+              es el unico boton con color: hay que tocarlo al abrir el turno.
+              Encendido es un control mas, con un punto verde. */}
+          <Pressable
+            onPress={alternarAviso}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: aviso }}
+            style={({ pressed }) => [
+              estilos.aviso,
+              aviso
+                ? { backgroundColor: t.superficie, borderColor: t.gris200 }
+                : { backgroundColor: t.acento, borderColor: t.acento },
+              { transform: [{ scale: pressed ? 0.97 : 1 }] },
+            ]}
+          >
+            {aviso ? (
+              <View style={[estilos.punto, { backgroundColor: t.exito500 }]} />
+            ) : (
+              <Icono nombre="campana-muda" size={16} color={t.acentoTinta} />
+            )}
+            <Text style={[estilos.avisoTexto, { color: aviso ? t.fuerte : t.acentoTinta }]}>
+              {aviso ? 'Aviso activo' : 'Activar aviso'}
+            </Text>
+          </Pressable>
         </View>
       }
     >
+      <Stack.Screen options={{ title: 'Cocina' }} />
       {!aviso ? (
         <Aviso tono="aviso" texto="El aviso está apagado: toca Activar aviso para que vibre cuando entre una comanda." />
       ) : null}
@@ -282,7 +282,7 @@ export default function Cocina() {
 }
 
 const estilos = StyleSheet.create({
-  fila: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingBottom: 6 },
+  fila: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 8, paddingBottom: 6 },
   estado: { fontFamily: LETRA.texto, fontSize: 13, flexShrink: 1 },
   aviso: {
     flexDirection: 'row',

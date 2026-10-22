@@ -1,6 +1,6 @@
+import { Stack } from 'expo-router'
 import { useState } from 'react'
 import { Alert, Text, View } from 'react-native'
-import { Barra } from '../../componentes/Encabezado'
 import { Boton, Cargando, Etiqueta, Ficha, Nota, Pantalla, Problema } from '../../componentes/ui'
 import { api } from '../../lib/api'
 import { parte, useCarga } from '../../lib/carga'
@@ -46,7 +46,8 @@ export default function Notificaciones() {
   const historial = datos?.historial?.ok ? datos.historial.valor.filter((s) => s.estado !== 'pendiente').slice(0, 20) : []
 
   return (
-    <Pantalla refrescando={refrescando} alRefrescar={refrescar} arriba={<Barra titulo="Notificaciones" />}>
+    <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+      <Stack.Screen options={{ title: 'Notificaciones' }} />
       {error && !datos ? <Problema mensaje={error} alReintentar={refrescar} /> : null}
       {!datos && !error ? <Cargando /> : null}
 

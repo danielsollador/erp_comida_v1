@@ -236,7 +236,7 @@ function HojaImpacto({ impacto, alCerrar }: { impacto: ImpactoDeCompra; alCerrar
 }
 
 const s = StyleSheet.create({
-  caja: { borderRadius: 14, padding: 12 },
+  caja: { borderRadius: 14, borderCurve: 'continuous', padding: 12 },
   fila: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   nombre: { fontFamily: LETRA.textoFuerte, fontSize: 15, flexShrink: 1 },
   cifra: { fontFamily: LETRA.cifra, fontSize: 15 },

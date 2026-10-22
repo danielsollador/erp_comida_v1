@@ -1,6 +1,5 @@
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
-import { Platform } from 'react-native'
 import { apiBase, cabecerasDeSesion, ErrorApi } from './api'
 
 /**
@@ -15,7 +14,7 @@ import { apiBase, cabecerasDeSesion, ErrorApi } from './api'
  */
 export async function descargar(ruta: string, nombre: string): Promise<void> {
   const url = `${apiBase()}/api${ruta}`
-  if (Platform.OS === 'web') {
+  if (process.env.EXPO_OS === 'web') {
     const res = await fetch(url, { headers: cabecerasDeSesion() })
     if (!res.ok) throw new ErrorApi(`No se pudo descargar (${res.status}).`, res.status)
     const blob = await res.blob()
@@ -51,7 +50,7 @@ export async function paraSubir(
   nombre: string,
   tipo: string,
 ): Promise<Blob | { uri: string; name: string; type: string }> {
-  if (Platform.OS === 'web') {
+  if (process.env.EXPO_OS === 'web') {
     const res = await fetch(uri)
     return await res.blob()
   }

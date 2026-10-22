@@ -81,5 +81,5 @@ const e = StyleSheet.create({
   nombre: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
   detalle: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 1 },
   cifra: { fontFamily: LETRA.cifraFuerte, fontSize: 15 },
-  ticket: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  ticket: { width: 44, height: 44, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
 })

@@ -182,12 +182,12 @@ export function AbrirCaja({
 
 const e = StyleSheet.create({
   nota: { fontFamily: LETRA.texto, fontSize: 14, lineHeight: 20 },
-  gaveta: { borderWidth: 1, borderRadius: 20, padding: 14, gap: 10 },
+  gaveta: { borderWidth: 1, borderRadius: 20, borderCurve: 'continuous', padding: 14, gap: 10 },
   cabeza: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
   metodo: { fontFamily: LETRA.textoFuerte, fontSize: 15.5 },
   mini: { fontFamily: LETRA.texto, fontSize: 13 },
   rejilla: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  celda: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
+  celda: { borderWidth: 1, borderRadius: 12, borderCurve: 'continuous', paddingHorizontal: 10, paddingVertical: 6 },
   entrada: { fontFamily: LETRA.cifraFuerte, fontSize: 18, paddingVertical: 4, minHeight: 36 },
   total: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   totalCifra: { fontFamily: LETRA.cifraFuerte, fontSize: 17 },

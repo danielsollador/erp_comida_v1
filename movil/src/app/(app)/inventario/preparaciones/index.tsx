@@ -1,7 +1,6 @@
-import { router } from 'expo-router'
+import { router, Stack } from 'expo-router'
 import { useMemo, useState } from 'react'
 import { View } from 'react-native'
-import { Barra } from '../../../../componentes/Encabezado'
 import { useDisposicion, Vacio } from '../../../../componentes/kit'
 import AnotarTanda from '../../../../componentes/preparaciones/AnotarTanda'
 import { RindeDistinto, TandasDeLaSemana, Vencidas } from '../../../../componentes/preparaciones/Avisos'
@@ -94,7 +93,8 @@ export default function Preparado() {
   const anchoTarjeta = columnas === 1 ? undefined : Math.floor((fila - 12 * (columnas - 1)) / columnas) - (anchoFila ? 0 : 1)
 
   return (
-    <Pantalla refrescando={refrescando} alRefrescar={refrescar} arriba={<Barra titulo="Preparado" />}>
+    <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+      <Stack.Screen options={{ title: 'Preparado' }} />
       {error && !datos ? <Problema mensaje={error} alReintentar={refrescar} /> : null}
       {!datos && !error ? <Cargando /> : null}
       {errorAccion ? <Aviso texto={errorAccion} tono="peligro" /> : null}

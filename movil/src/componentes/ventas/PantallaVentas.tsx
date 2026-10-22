@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams, type Href } from 'expo-router'
+import { router, Stack, useLocalSearchParams, type Href } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View, type ListRenderItem } from 'react-native'
 import { etiquetaMetodo } from '../../../../frontend/src/lib/pagos'
@@ -6,7 +6,6 @@ import { apiVentas } from '../../lib/api-ventas'
 import { useCarga } from '../../lib/carga'
 import { LETRA, useTema } from '../../lib/tema'
 import type { VentaFila } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import { Buscador, FilaFiltros, llano, PantallaLista, Selector, useDisposicion, Vacio } from '../kit'
 import { Aviso, Cargando, Nota, Pantalla, Pestanas, Problema, Titulo } from '../ui'
 import FilaVenta from './FilaVenta'
@@ -235,10 +234,12 @@ export default function PantallaVentas() {
   )
 
   const problema = error && !datos ? <Problema mensaje={error} alReintentar={refrescar} /> : null
+  const titulo = <Stack.Screen options={{ title: 'Ventas' }} />
 
   if (seccion !== 'historial') {
     return (
-      <Pantalla refrescando={refrescando} alRefrescar={refrescar} arriba={<Barra titulo="Ventas" />}>
+      <Pantalla refrescando={refrescando} alRefrescar={refrescar}>
+        {titulo}
         {filtros}
         {problema}
         {!datos && !error ? <Cargando /> : null}
@@ -252,13 +253,14 @@ export default function PantallaVentas() {
   }
 
   return (
+    <>
+    {titulo}
     <PantallaLista
       datos={visibles}
       renglon={renglon}
       clave={(v) => String(v.id)}
       refrescando={refrescando}
       alRefrescar={refrescar}
-      arriba={<Barra titulo="Ventas" />}
       cabecera={
         <View style={{ gap: 12 }}>
           {filtros}
@@ -300,6 +302,7 @@ export default function PantallaVentas() {
         )
       }
     />
+    </>
   )
 }
 

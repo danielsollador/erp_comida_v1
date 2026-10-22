@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics'
-import { AppState, Platform, type NativeEventSubscription } from 'react-native'
+import { AppState, type NativeEventSubscription } from 'react-native'
 import { etiquetaMetodo } from '../../../frontend/src/lib/pagos'
 import { etiquetaVariante, variantesParaVender } from '../../../frontend/src/lib/menu'
 import { abrirCanalEnVivo } from './api'
@@ -495,20 +495,20 @@ export function textoDelTicket(t: Ticket, local: string): string {
  * permiso de vibrar; en el navegador no hace nada.
  */
 export function tocarSuave() {
-  if (Platform.OS === 'android') {
+  if (process.env.EXPO_OS === 'android') {
     Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Virtual_Key).catch(() => undefined)
-  } else if (Platform.OS === 'ios') {
+  } else if (process.env.EXPO_OS === 'ios') {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined)
   }
 }
 
 /** Cobrado o comanda enviada: el "listo" que se siente. */
 export function tocarListo() {
-  if (Platform.OS === 'android') {
+  if (process.env.EXPO_OS === 'android') {
     Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Confirm).catch(() =>
       Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Virtual_Key).catch(() => undefined),
     )
-  } else if (Platform.OS === 'ios') {
+  } else if (process.env.EXPO_OS === 'ios') {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined)
   }
 }

@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics'
 import { router } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
@@ -157,6 +158,14 @@ export function Cobro({
         factura: { numero_control: numeroControl, rif_cliente: rifCliente, razon_social_cliente: razonSocial },
         retencion_iva_pct: retencion ? Number(retencion) : undefined,
       })
+      // El golpecito de "cobrado": si el aparato no vibra, no pasa nada.
+      if (process.env.EXPO_OS !== 'web') {
+        try {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined)
+        } catch {
+          // Sin motor de vibracion.
+        }
+      }
       alCobrado(cobrado)
     } catch (e) {
       // Todo el cuadro se vacia, no solo se cierra: la propina o el descuento
@@ -683,13 +692,13 @@ const e = StyleSheet.create({
   bs: { fontFamily: LETRA.cifra, fontSize: 15, marginTop: 2 },
   nota: { fontFamily: LETRA.texto, fontSize: 13.5, lineHeight: 19 },
   dos: { flexDirection: 'row', gap: 10 },
-  pct: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  pct: { flex: 1, minHeight: 44, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   cabezaPaso: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   metodoPaso: { fontFamily: LETRA.textoFuerte, fontSize: 16 },
-  verde: { minHeight: 54, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
+  verde: { minHeight: 54, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   verdeTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15.5, textAlign: 'center' },
   billetes: { flexDirection: 'row', gap: 6 },
-  billete: { flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  billete: { flex: 1, minHeight: 44, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   billeteTexto: { fontFamily: LETRA.cifraFuerte, fontSize: 15 },
   vuelto: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4 },
   vueltoCifra: { fontFamily: LETRA.cifraFuerte, fontSize: 20 },
@@ -698,7 +707,7 @@ const e = StyleSheet.create({
     flexGrow: 1,
     flexBasis: '45%',
     minHeight: 54,
-    borderRadius: 14,
+    borderRadius: 14, borderCurve: 'continuous',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -707,14 +716,14 @@ const e = StyleSheet.create({
   },
   formaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15, textAlign: 'center' },
   formaDetalle: { fontFamily: LETRA.texto, fontSize: 13, textAlign: 'center', marginTop: 1 },
-  falta: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  falta: { borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   faltaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
   faltaCifra: { fontFamily: LETRA.tituloFuerte, fontSize: 22 },
-  parte: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, paddingLeft: 14, paddingRight: 4, minHeight: 52 },
+  parte: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, borderCurve: 'continuous', paddingLeft: 14, paddingRight: 4, minHeight: 52 },
   parteCifra: { fontFamily: LETRA.cifraFuerte, fontSize: 15 },
   quitar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   quitarTexto: { fontSize: 22, lineHeight: 24 },
   ajustes: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, gap: 10 },
-  botonAjustes: { minHeight: 50, borderRadius: 14, paddingHorizontal: 12, justifyContent: 'center' },
+  botonAjustes: { minHeight: 50, borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 12, justifyContent: 'center' },
   ajustesTexto: { fontFamily: LETRA.textoFuerte, fontSize: 13.5 },
 })

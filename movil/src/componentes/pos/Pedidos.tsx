@@ -321,8 +321,8 @@ const e = StyleSheet.create({
   puntoLeyenda: { width: 9, height: 9, borderRadius: 5 },
   textoLeyenda: { fontFamily: LETRA.texto, fontSize: 13 },
   vacio: { fontFamily: LETRA.texto, fontSize: 14, paddingVertical: 24, textAlign: 'center' },
-  anillo: { borderWidth: 2, borderRadius: 24, padding: 2 },
-  tarjeta: { borderWidth: 2, borderRadius: 20, padding: 14, gap: 10 },
+  anillo: { borderWidth: 2, borderRadius: 24, borderCurve: 'continuous', padding: 2 },
+  tarjeta: { borderWidth: 2, borderRadius: 20, borderCurve: 'continuous', padding: 14, gap: 10 },
   arriba: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   numero: { fontFamily: LETRA.tituloFuerte, fontSize: 18 },
   cliente: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
@@ -341,6 +341,6 @@ const e = StyleSheet.create({
   acciones: { flexDirection: 'row', alignItems: 'center', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end', flexShrink: 1 },
   editar: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10 },
   editarTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
-  cobrar: { minHeight: 44, borderRadius: 14, paddingHorizontal: 18, justifyContent: 'center', marginLeft: 4 },
+  cobrar: { minHeight: 44, borderRadius: 14, borderCurve: 'continuous', paddingHorizontal: 18, justifyContent: 'center', marginLeft: 4 },
   cobrarTexto: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
 })

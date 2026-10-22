@@ -199,10 +199,10 @@ const estilos = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 14, borderCurve: 'continuous',
     paddingHorizontal: 15,
     minHeight: 50,
   },
   selectorTexto: { fontFamily: LETRA.texto, fontSize: 16 },
-  resumen: { borderWidth: 1, borderRadius: 16, padding: 14 },
+  resumen: { borderWidth: 1, borderRadius: 16, borderCurve: 'continuous', padding: 14 },
 })

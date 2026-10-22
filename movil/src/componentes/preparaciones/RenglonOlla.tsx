@@ -179,5 +179,5 @@ const e = StyleSheet.create({
   pctTexto: { fontFamily: LETRA.cifra, fontSize: 14, minWidth: 34, textAlign: 'right', paddingVertical: 4 },
   pctSigno: { fontFamily: LETRA.texto, fontSize: 13, marginLeft: 2 },
   costo: { width: 72, textAlign: 'right', fontFamily: LETRA.cifraFuerte, fontSize: 14.5 },
-  quitar: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  quitar: { width: 36, height: 36, borderRadius: 10, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
 })

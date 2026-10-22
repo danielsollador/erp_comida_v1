@@ -97,7 +97,7 @@ export default function SobroHoy({
 
 const s = StyleSheet.create({
   par: { flexDirection: 'row', gap: 10 },
-  opcion: { flex: 1, borderRadius: 18, padding: 15, minHeight: 84, gap: 4 },
+  opcion: { flex: 1, borderRadius: 18, borderCurve: 'continuous', padding: 15, minHeight: 84, gap: 4 },
   opcionTitulo: { fontFamily: LETRA.textoFuerte, fontSize: 16 },
   opcionDetalle: { fontFamily: LETRA.texto, fontSize: 13, lineHeight: 18, opacity: 0.8 },
   error: { fontFamily: LETRA.texto, fontSize: 14 },

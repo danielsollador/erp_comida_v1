@@ -207,7 +207,7 @@ export function Chip({ texto, activo, alTocar }: { texto: string; activo: boolea
 
 export const s = StyleSheet.create({
   cuadros: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  cuadro: { flexGrow: 1, borderRadius: 16, paddingHorizontal: 13, paddingVertical: 11 },
+  cuadro: { flexGrow: 1, borderRadius: 16, borderCurve: 'continuous', paddingHorizontal: 13, paddingVertical: 11 },
   cuadroTitulo: { fontFamily: LETRA.textoFuerte, fontSize: 13 },
   cuadroValor: { fontFamily: LETRA.tituloFuerte, fontSize: 20, letterSpacing: -0.4, marginTop: 3 },
   cuadroValorFuerte: { fontFamily: LETRA.tituloFuerte, fontSize: 23, letterSpacing: -0.5, marginTop: 3 },
@@ -217,7 +217,7 @@ export const s = StyleSheet.create({
   enlace: { minHeight: 44, justifyContent: 'center' },
   enlaceTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
   segmentado: { flexDirection: 'row', gap: 8 },
-  segmento: { flex: 1, minHeight: 46, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  segmento: { flex: 1, minHeight: 46, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   segmentoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
   tipo: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
   tipoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' },

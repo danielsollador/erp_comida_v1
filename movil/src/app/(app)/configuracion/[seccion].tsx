@@ -1,10 +1,9 @@
-import { router, useLocalSearchParams } from 'expo-router'
+import { router, Stack, useLocalSearchParams } from 'expo-router'
 import Apariencia from '../../../componentes/configuracion/Apariencia'
 import Lenguaje from '../../../componentes/configuracion/Lenguaje'
 import MiCuenta from '../../../componentes/configuracion/MiCuenta'
 import PagoMovil from '../../../componentes/configuracion/PagoMovil'
 import Usuarios from '../../../componentes/configuracion/Usuarios'
-import { Barra } from '../../../componentes/Encabezado'
 import { Pantalla, Pestanas } from '../../../componentes/ui'
 import { useSesion } from '../../../lib/sesion'
 
@@ -37,7 +36,8 @@ export default function Configuracion() {
   const seccion: IdSeccion = secciones.some((s) => s.id === pedida) ? (pedida as IdSeccion) : 'cuenta'
 
   return (
-    <Pantalla arriba={<Barra titulo="Configuración" />}>
+    <Pantalla>
+      <Stack.Screen options={{ title: 'Configuración' }} />
       <Pestanas opciones={secciones} valor={seccion} alCambiar={(id) => router.setParams({ seccion: id })} />
       {seccion === 'cuenta' && <MiCuenta />}
       {seccion === 'lenguaje' && <Lenguaje />}

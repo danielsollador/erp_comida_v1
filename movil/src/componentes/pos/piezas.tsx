@@ -63,7 +63,7 @@ export function Renglon({ nombre, cifra, color, fuerte = false }: { nombre: stri
 const e = StyleSheet.create({
   chico: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10 },
   chicoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
-  caja: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, gap: 4 },
+  caja: { borderRadius: 16, borderCurve: 'continuous', paddingHorizontal: 14, paddingVertical: 12, gap: 4 },
   renglon: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, paddingVertical: 3 },
   renglonNombre: { fontFamily: LETRA.texto, fontSize: 14.5, flexShrink: 1 },
   renglonNombreFuerte: { fontFamily: LETRA.textoFuerte, fontSize: 15, flexShrink: 1 },

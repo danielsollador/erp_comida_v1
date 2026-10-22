@@ -1,4 +1,4 @@
-import { Redirect, router, useLocalSearchParams } from 'expo-router'
+import { Redirect, router, Stack, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -8,7 +8,6 @@ import { hoyEnCaracas } from '../../lib/formato'
 import { periodoDe, type Periodo } from '../../lib/numeros'
 import { useSesion } from '../../lib/sesion'
 import type { CierreCaja, Gasto, RetiroPropietario } from '../../lib/tipos'
-import { Barra } from '../Encabezado'
 import { BarraAccion } from '../kit'
 import { Aviso, Pantalla, Pestanas } from '../ui'
 import { AbrirCaja } from './AbrirCaja'
@@ -103,12 +102,8 @@ function Caja() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Pantalla
-        arriba={<Barra titulo="Cierre de caja" />}
-        refrescando={delDia.refrescando || delPeriodo.refrescando}
-        alRefrescar={recargar}
-        abajo={abajo}
-      >
+      <Stack.Screen options={{ title: 'Cierre de caja' }} />
+      <Pantalla refrescando={delDia.refrescando || delPeriodo.refrescando} alRefrescar={recargar} abajo={abajo}>
         <Pestanas opciones={SECCIONES} valor={seccion} alCambiar={irA} />
         {errorBorrar ? <Aviso texto={errorBorrar} tono="peligro" /> : null}
 

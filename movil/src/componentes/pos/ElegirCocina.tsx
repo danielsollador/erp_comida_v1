@@ -128,9 +128,9 @@ export function ElegirCocina({
 }
 
 const e = StyleSheet.create({
-  todo: { borderWidth: 1, borderRadius: 14, minHeight: 46, alignItems: 'center', justifyContent: 'center' },
+  todo: { borderWidth: 1, borderRadius: 14, borderCurve: 'continuous', minHeight: 46, alignItems: 'center', justifyContent: 'center' },
   todoTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14.5 },
-  fila: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 },
+  fila: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, borderCurve: 'continuous', paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 },
   texto: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
   detalle: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 2 },
   alerta: { fontFamily: LETRA.textoFuerte, fontSize: 13, marginTop: 3, lineHeight: 18 },

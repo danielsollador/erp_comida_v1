@@ -189,7 +189,7 @@ function Estacion({
           style={[
             estilos.nodo,
             { backgroundColor: fondoNodo, borderColor: bordeNodo },
-            ojo && { shadowColor: '#cf8b21', shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } },
+            ojo && { boxShadow: '0 0 6px rgba(207,139,33,0.35)' },
           ]}
         >
           <Icono nombre={icono} size={20} color={ojo ? t.aviso : t.fuerte} />
@@ -253,7 +253,7 @@ export function FilaReportes({ dias }: { dias?: { fecha: string; ventas: number 
                   key={d.fecha}
                   i={i}
                   alto={max > 0 ? Math.max((d.ventas / max) * 34, d.ventas > 0 ? 3 : 2) : 2}
-                  color={i === dias!.length - 1 ? '#bc6541' : t.barra}
+                  color={i === dias!.length - 1 ? t.acento : t.barra}
                   animar={animar}
                 />
               ))}
@@ -327,7 +327,7 @@ const estilos = StyleSheet.create({
     bottom: -4,
     width: 19,
     height: 19,
-    borderRadius: 10,
+    borderRadius: 10, borderCurve: 'continuous',
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -337,7 +337,7 @@ const estilos = StyleSheet.create({
   frase: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 4, lineHeight: 18 },
   accion: { fontFamily: LETRA.textoFuerte, fontSize: 12, marginTop: 3 },
   reportes: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 16 },
-  reportesIcono: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  reportesIcono: { width: 44, height: 44, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   reportesTitulo: { fontFamily: LETRA.titulo, fontSize: 15 },
   semana: { flexDirection: 'row', gap: 5, width: 132, height: 36, alignItems: 'flex-end' },
   semanaLetra: { flex: 1, textAlign: 'center', fontFamily: LETRA.texto, fontSize: 10.5 },

@@ -1,9 +1,10 @@
+import { BottomSheet, RNHostView } from '@expo/ui'
+import { imePadding } from '@expo/ui/jetpack-compose/modifiers'
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -17,7 +18,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native'
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { periodoDe, PERIODOS, type IdPeriodo, type Periodo } from '../lib/numeros'
 import { LETRA, useModo, useTema } from '../lib/tema'
 import Fondo from './Fondo'
@@ -627,16 +628,17 @@ export function BarraAccion({
 /**
  * Un formulario que sube desde abajo y ocupa casi toda la pantalla (lo que en
  * la web es un `Modal` con su pie de botones): "Nueva mercancía", "Cobrar",
- * "Registrar gasto". El teclado no tapa el campo: el contenido se desliza.
+ * "Registrar gasto".
+ *
+ * En el telefono es la hoja nativa de @expo/ui a toda altura. El contenido
+ * (React Native) va en un `RNHostView` sin `matchContents`: toma el tamaño
+ * que le da la hoja, y cuando sale el teclado es la propia hoja la que se
+ * encoge (SwiftUI lo hace solo; en Android se lo pedimos con `imePadding`),
+ * asi que el pie con "Guardar" queda siempre a la vista sin un
+ * `KeyboardAvoidingView` que, dentro de una hoja presentada aparte, no sabe
+ * medir donde esta. En la web sigue el Modal de siempre.
  */
-export function HojaFormulario({
-  visible,
-  alCerrar,
-  titulo,
-  subtitulo,
-  children,
-  pie,
-}: {
+type PropsHojaFormulario = {
   visible: boolean
   alCerrar: () => void
   titulo: string
@@ -644,29 +646,47 @@ export function HojaFormulario({
   children: ReactNode
   /** Los botones de abajo (Cancelar / Guardar). */
   pie?: ReactNode
-}) {
+}
+
+export function HojaFormulario(props: PropsHojaFormulario) {
+  if (process.env.EXPO_OS === 'web') return <HojaFormularioWeb {...props} />
+  return <HojaFormularioNativa {...props} />
+}
+
+function HojaFormularioNativa({ visible, alCerrar, titulo, subtitulo, children, pie }: PropsHojaFormulario) {
+  const t = useTema()
+  return (
+    <BottomSheet
+      isPresented={visible}
+      onDismiss={alCerrar}
+      snapPoints={['full']}
+      contentPadding={0}
+      containerColor={t.papel}
+      // Solo Android: la hoja de Material no se aparta del teclado si no se lo piden.
+      modifiers={process.env.EXPO_OS === 'android' ? [imePadding()] : undefined}
+    >
+      <RNHostView>
+        <View style={{ flex: 1 }}>
+          {/* En iOS el agarre flota sobre el contenido; en Android tiene su propio renglon. */}
+          <CabezaFormulario titulo={titulo} subtitulo={subtitulo} alCerrar={alCerrar} arriba={process.env.EXPO_OS === 'ios' ? 22 : 4} />
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
+          {pie ? <View style={[k.hojaPie, { paddingBottom: 12, borderTopColor: t.gris200, backgroundColor: t.superficie }]}>{pie}</View> : null}
+        </View>
+      </RNHostView>
+    </BottomSheet>
+  )
+}
+
+function HojaFormularioWeb({ visible, alCerrar, titulo, subtitulo, children, pie }: PropsHojaFormulario) {
   const t = useTema()
   const borde = useSafeAreaInsets()
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={alCerrar} presentationStyle="pageSheet" statusBarTranslucent>
       <View style={{ flex: 1, backgroundColor: t.papel }}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={[k.hojaCabeza, { paddingTop: Platform.OS === 'android' ? borde.top + 12 : 18, borderBottomColor: t.gris200 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[k.hojaTitulo, { color: t.tinta }]} numberOfLines={2}>
-                {titulo}
-              </Text>
-              {subtitulo ? <Text style={[k.nota, { color: t.suave, marginTop: 2 }]}>{subtitulo}</Text> : null}
-            </View>
-            <Pressable
-              onPress={alCerrar}
-              hitSlop={10}
-              accessibilityLabel="Cerrar"
-              style={({ pressed }) => [k.cerrar, { backgroundColor: pressed ? t.gris200 : t.gris100 }]}
-            >
-              <Icono nombre="quitar" size={16} color={t.suave} />
-            </Pressable>
-          </View>
+        <KeyboardAvoidingView style={{ flex: 1 }}>
+          <CabezaFormulario titulo={titulo} subtitulo={subtitulo} alCerrar={alCerrar} arriba={18} />
           <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
             {children}
           </ScrollView>
@@ -679,12 +699,41 @@ export function HojaFormulario({
   )
 }
 
+/** El titulo del formulario y la "X" para cerrarlo. */
+function CabezaFormulario({ titulo, subtitulo, alCerrar, arriba }: { titulo: string; subtitulo?: string; alCerrar: () => void; arriba: number }) {
+  const t = useTema()
+  return (
+    <View style={[k.hojaCabeza, { paddingTop: arriba, borderBottomColor: t.gris200 }]}>
+      <View style={{ flex: 1 }}>
+        <Text style={[k.hojaTitulo, { color: t.tinta }]} numberOfLines={2}>
+          {titulo}
+        </Text>
+        {subtitulo ? <Text style={[k.nota, { color: t.suave, marginTop: 2 }]}>{subtitulo}</Text> : null}
+      </View>
+      <Pressable
+        onPress={alCerrar}
+        hitSlop={10}
+        accessibilityLabel="Cerrar"
+        style={({ pressed }) => [k.cerrar, { backgroundColor: pressed ? t.gris200 : t.gris100 }]}
+      >
+        <Icono nombre="quitar" size={16} color={t.suave} />
+      </Pressable>
+    </View>
+  )
+}
+
 // ── PantallaLista ───────────────────────────────────────────────────────────
 
 /**
  * Una pantalla cuya parte principal es una lista larga (las ventas del mes,
  * las mercancías): la misma `Pantalla` de siempre, pero con FlatList, que
  * solo dibuja lo que se ve. Lo de arriba de la lista va en `cabecera`.
+ *
+ * La lista es lo primero de la pantalla y ajusta sola su borde de arriba
+ * (`contentInsetAdjustmentBehavior`): asi el encabezado nativo del Stack
+ * sabe que desplazarla encoge el titulo grande de iOS, y tocar la hora
+ * vuelve al principio. El borde de abajo (la barra del telefono) sigue
+ * siendo nuestro.
  */
 export function PantallaLista<T>({
   datos,
@@ -692,7 +741,6 @@ export function PantallaLista<T>({
   clave,
   cabecera,
   vacio,
-  arriba,
   abajo,
   refrescando = false,
   alRefrescar,
@@ -703,7 +751,6 @@ export function PantallaLista<T>({
   clave: (item: T, i: number) => string
   cabecera?: ReactElement
   vacio?: ReactElement
-  arriba?: ReactNode
   abajo?: ReactNode
   refrescando?: boolean
   alRefrescar?: () => void
@@ -715,27 +762,25 @@ export function PantallaLista<T>({
   return (
     <View style={{ flex: 1, backgroundColor: t.papel }}>
       <Fondo />
-      <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
-        {arriba ? <View style={{ paddingHorizontal: 16 }}>{arriba}</View> : null}
-        <FlatList
-          data={datos}
-          renderItem={renglon}
-          keyExtractor={clave}
-          ListHeaderComponent={cabecera}
-          ListHeaderComponentStyle={{ gap: 12, marginBottom: 12 }}
-          ListEmptyComponent={vacio}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: abajo ? 24 : 48 + borde.bottom }}
-          keyboardShouldPersistTaps="handled"
-          onEndReached={alFinal}
-          onEndReachedThreshold={0.4}
-          refreshControl={
-            alRefrescar ? (
-              <RefreshControl refreshing={refrescando} onRefresh={alRefrescar} tintColor={t.acento} colors={[t.acento]} />
-            ) : undefined
-          }
-        />
-        {abajo ? <View style={{ paddingBottom: borde.bottom }}>{abajo}</View> : null}
-      </SafeAreaView>
+      <FlatList
+        data={datos}
+        renderItem={renglon}
+        keyExtractor={clave}
+        ListHeaderComponent={cabecera}
+        ListHeaderComponentStyle={{ gap: 12, marginBottom: 12 }}
+        ListEmptyComponent={vacio}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: abajo ? 24 : 48 + borde.bottom }}
+        keyboardShouldPersistTaps="handled"
+        onEndReached={alFinal}
+        onEndReachedThreshold={0.4}
+        refreshControl={
+          alRefrescar ? (
+            <RefreshControl refreshing={refrescando} onRefresh={alRefrescar} tintColor={t.acento} colors={[t.acento]} />
+          ) : undefined
+        }
+      />
+      {abajo ? <View style={{ paddingBottom: borde.bottom }}>{abajo}</View> : null}
     </View>
   )
 }
@@ -746,12 +791,14 @@ const k = StyleSheet.create({
   vacioIcono: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   vacioTitulo: { fontFamily: LETRA.titulo, fontSize: 17, textAlign: 'center' },
   vacioDetalle: { fontFamily: LETRA.texto, fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 320 },
+  // Las esquinas "continuas" son las de iOS (la curva de los iconos); en los demas no cambian nada.
   buscador: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
     borderRadius: 14,
+    borderCurve: 'continuous',
     paddingHorizontal: 14,
     minHeight: 46,
   },
@@ -763,6 +810,7 @@ const k = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 14,
+    borderCurve: 'continuous',
     paddingHorizontal: 15,
     minHeight: 50,
     gap: 8,
@@ -770,7 +818,7 @@ const k = StyleSheet.create({
   campoNumeroTexto: { flex: 1, fontFamily: LETRA.cifra, fontSize: 17, paddingVertical: 11 },
   afijo: { fontFamily: LETRA.textoFuerte, fontSize: 15 },
   contador: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  contadorBoton: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  contadorBoton: { width: 40, height: 40, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   contadorSigno: { fontFamily: LETRA.textoFuerte, fontSize: 20, lineHeight: 22 },
   contadorValor: { fontFamily: LETRA.cifraFuerte, fontSize: 16, minWidth: 28, textAlign: 'center' },
   renglon: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, minHeight: 56 },
@@ -802,6 +850,7 @@ const k = StyleSheet.create({
     gap: 10,
     borderWidth: 1,
     borderRadius: 14,
+    borderCurve: 'continuous',
     paddingHorizontal: 15,
     minHeight: 50,
   },
