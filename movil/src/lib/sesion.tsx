@@ -1,5 +1,6 @@
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, cargarServidor, cargarToken, cuandoCaduque } from './api'
+import { olvidarTelefono, registrarTelefono } from './push'
 import { marcaDe, useMarca } from './tema'
 import type { EstadoAcceso } from './tipos'
 
@@ -31,6 +32,13 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (acceso) ponerMarca(acceso.es_hub ? 'vertigo' : marcaDe(acceso.local?.slug))
   }, [acceso, ponerMarca])
+
+  // Notificaciones push (lib/push.ts): solo a quien autoriza, que es a quien
+  // le llegan los dos avisos (permisos de la caja y caja sin cerrar).
+  const autoriza = fase === 'dentro' && Boolean(acceso?.puede.autoriza)
+  useEffect(() => {
+    if (autoriza) void registrarTelefono()
+  }, [autoriza])
 
   useEffect(() => {
     cuandoCaduque(() => {
@@ -68,6 +76,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const salir = useCallback(async () => {
+    await olvidarTelefono()
     try {
       await api.salir()
     } catch {

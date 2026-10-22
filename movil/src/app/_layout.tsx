@@ -6,6 +6,7 @@ import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { View } from 'react-native'
 import { MonedaProvider } from '../lib/moneda'
+import { useAbrirAlTocar } from '../lib/push'
 import { SesionProvider, useSesion } from '../lib/sesion'
 import { TemaProvider, useModo, useTema } from '../lib/tema'
 
@@ -39,6 +40,8 @@ function Puertas({ listas }: { listas: boolean }) {
   const t = useTema()
   // Mientras cargan las letras o se prueba la sesion guardada: el fondo, y
   // nada que salte despues.
+  // Tocar un aviso push abre su pantalla, ya con la sesion lista.
+  useAbrirAlTocar(listas && fase === 'dentro')
   if (!listas || fase === 'cargando') return <View style={{ flex: 1, backgroundColor: t.papel }} />
   return (
     <MonedaProvider activa={fase === 'dentro'}>
