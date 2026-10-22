@@ -131,6 +131,17 @@ ASISTENTE_MODELO = os.getenv("ERP_ASISTENTE_MODELO", "").strip() or "gemini-3.5-
 # de fábrica (high) Flash tardaba 8-11 s sin responder mejor.
 ASISTENTE_PENSAR = os.getenv("ERP_ASISTENTE_PENSAR", "").strip() or "low"
 
+# Con quién habla el asistente: "claude" (Sonnet 5.5, decidido por Leider el
+# 22-oct-2026) o "gemini" (la misma clave del lector de facturas).
+ASISTENTE_PROVEEDOR = os.getenv("ERP_ASISTENTE_PROVEEDOR", "").strip().lower() or "claude"
+ASISTENTE_MODELO_CLAUDE = os.getenv("ERP_ASISTENTE_MODELO_CLAUDE", "").strip() or "claude-sonnet-5-5"
+# low | medium | high: cuánto piensa Claude. Para un chat de consultas basta low.
+ASISTENTE_ESFUERZO = os.getenv("ERP_ASISTENTE_ESFUERZO", "").strip() or "low"
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip() or _del_env_local("ANTHROPIC_API_KEY")
+# Se lee de una variable PROPIA y no de ANTHROPIC_BASE_URL: esa la deja puesta
+# Claude Code en la laptop y desviaría las llamadas del ERP.
+ANTHROPIC_URL = os.getenv("ERP_ANTHROPIC_URL", "").strip() or "https://api.anthropic.com"
+
 # Siembra del primer usuario, OPCIONAL. Sin esto, la primera visita al ERP
 # pide crear el administrador desde el navegador (modo instalacion).
 APP_USER = os.getenv("ERP_APP_USER", "admin").strip() or "admin"

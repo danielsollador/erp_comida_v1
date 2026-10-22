@@ -49,11 +49,15 @@ class Resultado:
     vueltas: int = 0
     modelo: str = ""
     ms: int = 0
+    # Los pone el proveedor que no es Gemini (claude.py): su tarifa y lo que
+    # cuesta aparte de entrada/salida (lectura de caché).
+    precios: Optional[tuple] = None
+    costo_extra: float = 0.0
 
     @property
     def costo_usd(self) -> float:
-        pe, ps = PRECIOS.get(self.modelo, (0.75, 3.75))
-        return round((self.tokens_entrada * pe + self.tokens_salida * ps) / 1_000_000, 6)
+        pe, ps = self.precios or PRECIOS.get(self.modelo, (0.75, 3.75))
+        return round((self.tokens_entrada * pe + self.tokens_salida * ps) / 1_000_000 + self.costo_extra, 6)
 
 
 def conversar(

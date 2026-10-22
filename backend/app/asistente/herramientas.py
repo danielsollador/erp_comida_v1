@@ -86,7 +86,11 @@ def ventas(db: Session, desde: Optional[str] = None, hasta: Optional[str] = None
         "por_forma_de_pago_usd": {k: _r(v) for k, v in (r.por_metodo_pago or {}).items()},
         "contra_periodo_anterior": (
             {
-                "cual": f"{a.etiqueta} (completo)",
+                # Con fechas: "el período anterior" a secas se leía como "la
+                # semana pasada completa" y no lo es (son los N días de antes).
+                "desde": (rango.desde - (rango.hasta - rango.desde) - datetime.timedelta(days=1)).isoformat(),
+                "hasta": (rango.desde - datetime.timedelta(days=1)).isoformat(),
+                "que_es": "los mismos días de largo justo antes del período (no la semana o el mes calendario anterior)",
                 "ventas_usd": _r(a.ventas),
                 "pedidos": a.pedidos,
                 "cambio_ventas_pct": a.cambio_ventas_pct,
