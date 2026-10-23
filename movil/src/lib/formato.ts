@@ -66,6 +66,13 @@ export function saludo(): string {
 }
 
 /** La inicial del dia de una fecha AAAA-MM-DD: L M M J V S D. */
+/** La hora del dia de una fecha del servidor ("5:55 p. m."), como `horaDe` de la web (lib/comandas.ts). */
+export function horaDe(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const fecha = new Date(iso.replace(/(\.\d{3})\d+$/, '$1'))
+  return Number.isNaN(fecha.getTime()) ? '' : fecha.toLocaleTimeString('es-VE', { hour: 'numeric', minute: '2-digit' })
+}
+
 export function inicialDelDia(fecha: string): string {
   return ['D', 'L', 'M', 'M', 'J', 'V', 'S'][new Date(`${fecha}T12:00:00Z`).getUTCDay()]
 }

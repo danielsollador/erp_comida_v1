@@ -3,6 +3,7 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View, type ListR
 import { enPreparacion, estadoCocina, porQueNoSeEdita } from '../../../../frontend/src/lib/comandas'
 import type { Tinte } from '../../lib/pos'
 import { LETRA, useTema } from '../../lib/tema'
+import { horaDe } from '../../lib/formato'
 import type { Pedido, PuntoVenta } from '../../lib/tipos'
 import Icono from '../Icono'
 import { Selector } from '../kit'
@@ -207,15 +208,20 @@ const TarjetaPedido = memo(function TarjetaPedido({
         <View style={e.arriba}>
           {/* El numero y, debajo, de quien es: entre ocho comandas vivas el nombre es lo que las distingue. */}
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[e.numero, { color: t.tinta }]}>#{pedido.numero}</Text>
-            {/* En tinta y grande: en gris chico no se leia a quien es (Leider, 23-oct). */}
+            {/* El numero y a que hora se tomo (como en la web): con ocho comandas vivas, la hora dice cual lleva esperando. */}
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+              <Text style={[e.numero, { color: t.tinta }]}>#{pedido.numero}</Text>
+              <Text style={[e.hora, { color: t.tenue }]}>{horaDe(pedido.creado_en)}</Text>
+            </View>
+            {/* En tinta y grande: en gris chico no se leia a quien es (Leider, 23-oct).
+                Sin nombre se dice siempre: una tarjeta sin segunda linea parecia un fallo. */}
             {pedido.cliente ? (
               <Text style={[entregar ? e.clienteFuerte : e.cliente, { color: entregar ? t.acentoFuerte : t.tinta }]} numberOfLines={1}>
                 {pedido.cliente}
               </Text>
-            ) : entregar ? (
+            ) : (
               <Text style={[e.cliente, { color: t.tenue }]}>sin nombre</Text>
-            ) : null}
+            )}
           </View>
           {entregar ? (
             // Ya se le dio al cliente: la tarjeta sale del mostrador (la venta no se borra).
@@ -326,6 +332,7 @@ const e = StyleSheet.create({
   tarjeta: { borderWidth: 2, borderRadius: 20, borderCurve: 'continuous', padding: 14, gap: 10 },
   arriba: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   numero: { fontFamily: LETRA.tituloFuerte, fontSize: 18 },
+  hora: { fontFamily: LETRA.cifra, fontSize: 12 },
   cliente: { fontFamily: LETRA.tituloFuerte, fontSize: 17 },
   clienteFuerte: { fontFamily: LETRA.tituloFuerte, fontSize: 16 },
   entregado: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginTop: -6, marginRight: -6 },
