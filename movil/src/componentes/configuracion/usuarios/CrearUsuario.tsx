@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { apiUsuarios } from '../../../lib/api-usuarios'
+import { Ancla } from '../../../lib/guia'
 import { LETRA, useTema } from '../../../lib/tema'
 import type { Rol, RolInfo } from '../../../lib/tipos'
 import { Hoja, OpcionHoja } from '../../Hoja'
@@ -87,72 +88,75 @@ export default function CrearUsuario({
           titulo="Nuevo usuario"
           ayuda="Su nombre es con el que se le saluda y el que queda en lo que hace. El usuario va en minúsculas y sin espacios; la clave, 8 caracteres como mínimo."
         />
-        <Campo
-          rotulo="Nombre"
-          value={nombre}
-          onChangeText={(v) => {
-            setNombre(v)
-            proponerUsuario(v)
-          }}
-          autoCapitalize="words"
-          placeholder="ej. María"
-          error={intentado ? faltaNombre : ''}
-        />
-        <Campo rotulo="Apellido" value={apellido} onChangeText={setApellido} autoCapitalize="words" placeholder="ej. Pérez" />
-        <Campo
-          rotulo="Usuario (para entrar)"
-          value={usuario}
-          onChangeText={(v) => {
-            setUsuarioTocado(true)
-            setUsuario(v)
-          }}
-          autoCapitalize="none"
-          autoCorrect={false}
-          spellCheck={false}
-          placeholder="ej. maria"
-          error={intentado ? faltaUsuario : ''}
-        />
+        {/* Los datos van juntos para la guia (usuarios.datos, como la rejilla de la web); el mismo gap que la Ficha. */}
+        <Ancla nombre="usuarios.datos" style={{ gap: 16 }}>
+          <Campo
+            rotulo="Nombre"
+            value={nombre}
+            onChangeText={(v) => {
+              setNombre(v)
+              proponerUsuario(v)
+            }}
+            autoCapitalize="words"
+            placeholder="ej. María"
+            error={intentado ? faltaNombre : ''}
+          />
+          <Campo rotulo="Apellido" value={apellido} onChangeText={setApellido} autoCapitalize="words" placeholder="ej. Pérez" />
+          <Campo
+            rotulo="Usuario (para entrar)"
+            value={usuario}
+            onChangeText={(v) => {
+              setUsuarioTocado(true)
+              setUsuario(v)
+            }}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            placeholder="ej. maria"
+            error={intentado ? faltaUsuario : ''}
+          />
 
-        <View style={{ gap: 6 }}>
-          <Text style={[estilos.rotulo, { color: t.suave }]}>Rol</Text>
-          <Pressable
-            onPress={() => setEligiendoRol(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Elegir rol"
-            style={({ pressed }) => [
-              estilos.selector,
-              { backgroundColor: t.superficie, borderColor: t.gris200, opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <Text style={[estilos.selectorTexto, { color: t.tinta }]}>{elegido?.nombre ?? rol}</Text>
-            <View style={{ transform: [{ rotate: '90deg' }] }}>
-              <Icono nombre="chevron" size={18} color={t.tenue} />
-            </View>
-          </Pressable>
-        </View>
+          <View style={{ gap: 6 }}>
+            <Text style={[estilos.rotulo, { color: t.suave }]}>Rol</Text>
+            <Pressable
+              onPress={() => setEligiendoRol(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Elegir rol"
+              style={({ pressed }) => [
+                estilos.selector,
+                { backgroundColor: t.superficie, borderColor: t.gris200, opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <Text style={[estilos.selectorTexto, { color: t.tinta }]}>{elegido?.nombre ?? rol}</Text>
+              <View style={{ transform: [{ rotate: '90deg' }] }}>
+                <Icono nombre="chevron" size={18} color={t.tenue} />
+              </View>
+            </Pressable>
+          </View>
 
-        <Campo
-          rotulo="Contraseña"
-          secureTextEntry
-          autoComplete="new-password"
-          textContentType="newPassword"
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={clave}
-          onChangeText={setClave}
-          error={intentado ? claveCorta : ''}
-        />
-        <Campo
-          rotulo="Repetir contraseña"
-          secureTextEntry
-          autoComplete="new-password"
-          textContentType="newPassword"
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={clave2}
-          onChangeText={setClave2}
-          error={intentado ? clave2Corta : ''}
-        />
+          <Campo
+            rotulo="Contraseña"
+            secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={clave}
+            onChangeText={setClave}
+            error={intentado ? claveCorta : ''}
+          />
+          <Campo
+            rotulo="Repetir contraseña"
+            secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={clave2}
+            onChangeText={setClave2}
+            error={intentado ? clave2Corta : ''}
+          />
+        </Ancla>
 
         {/* Lo que se le está entregando, antes de entregarlo. */}
         {elegido && (
@@ -171,7 +175,9 @@ export default function CrearUsuario({
 
         {/* El error va junto al boton: arriba, con el teclado abierto, no se ve. */}
         {error ? <Aviso texto={error} tono="peligro" /> : null}
-        <Boton texto={creando ? 'Creando…' : 'Crear usuario'} alTocar={() => void crear()} deshabilitado={creando} />
+        <Ancla nombre="usuarios.guardar">
+          <Boton texto={creando ? 'Creando…' : 'Crear usuario'} alTocar={() => void crear()} deshabilitado={creando} />
+        </Ancla>
       </Ficha>
 
       <Hoja visible={eligiendoRol} alCerrar={() => setEligiendoRol(false)} titulo="Rol">

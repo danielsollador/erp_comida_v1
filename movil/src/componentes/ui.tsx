@@ -16,6 +16,7 @@ import {
   type ViewStyle,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Ancla } from '../lib/guia'
 import { LETRA, useModo, useTema } from '../lib/tema'
 import Fondo from './Fondo'
 import Icono, { type NombreIcono } from './Icono'
@@ -412,9 +413,12 @@ export function Pestanas<T extends string>({
       <View style={[estilos.pestanasCaja, { backgroundColor: t.gris100, borderColor: t.gris200 }]}>
         {opciones.map((o) => {
           const activa = o.id === valor
+          // Cada pestaña es un ancla de la guia (`seccion.<id>`, como el
+          // `data-guia` de la web): "toca la pestaña Recetas" la resalta.
           return (
-            <Pressable
+            <Ancla
               key={o.id}
+              nombre={`seccion.${o.id}`}
               onLayout={(e) => {
                 sitios.current[o.id] = { x: e.nativeEvent.layout.x, ancho: e.nativeEvent.layout.width }
                 if (activa && ancho) {
@@ -422,12 +426,15 @@ export function Pestanas<T extends string>({
                   lista.current?.scrollTo({ x, animated: false })
                 }
               }}
-              onPress={() => cambiar(o.id)}
-              style={[estilos.pestana, activa && { backgroundColor: t.tinta }]}
-              accessibilityState={{ selected: activa }}
             >
-              <Text style={[estilos.pestanaTexto, { color: activa ? t.papel : t.suave }]}>{o.texto}</Text>
-            </Pressable>
+              <Pressable
+                onPress={() => cambiar(o.id)}
+                style={[estilos.pestana, activa && { backgroundColor: t.tinta }]}
+                accessibilityState={{ selected: activa }}
+              >
+                <Text style={[estilos.pestanaTexto, { color: activa ? t.papel : t.suave }]}>{o.texto}</Text>
+              </Pressable>
+            </Ancla>
           )
         })}
       </View>

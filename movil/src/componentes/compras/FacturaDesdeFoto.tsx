@@ -22,6 +22,7 @@ import {
 } from '../../lib/compras-app'
 import { pedirConsentimiento, PROVEEDOR_IA } from '../../lib/consentimiento-ia'
 import { confirmar } from '../../lib/dialogo'
+import { Ancla } from '../../lib/guia'
 import { LETRA, useTema } from '../../lib/tema'
 import type { LecturaFactura } from '../../lib/tipos'
 import Icono from '../Icono'
@@ -258,14 +259,17 @@ export function ZonaDocumento({ onLeida }: { onLeida: (l: LecturaFactura, doc: D
         </View>
       ) : (
         <View style={{ gap: 10 }}>
-          <Pressable
-            onPress={() => void camara()}
-            accessibilityRole="button"
-            style={({ pressed }) => [z.principal, { backgroundColor: t.tinta, opacity: pressed ? 0.88 : 1 }]}
-          >
-            <Icono nombre="camara" size={20} color={t.papel} />
-            <Text style={[z.principalTexto, { color: t.papel }]}>Tomar foto de la factura</Text>
-          </Pressable>
+          {/* La guía resalta el botón principal (la web marca la fila entera; aquí Galería y PDF van aparte). */}
+          <Ancla nombre="compras.subir">
+            <Pressable
+              onPress={() => void camara()}
+              accessibilityRole="button"
+              style={({ pressed }) => [z.principal, { backgroundColor: t.tinta, opacity: pressed ? 0.88 : 1 }]}
+            >
+              <Icono nombre="camara" size={20} color={t.papel} />
+              <Text style={[z.principalTexto, { color: t.papel }]}>Tomar foto de la factura</Text>
+            </Pressable>
+          </Ancla>
           <View style={z.fila}>
             <View style={{ flex: 1 }}>
               <Boton texto="Galería" icono="imagen" tono="neutro" alTocar={() => void galeria()} />

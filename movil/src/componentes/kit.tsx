@@ -1,6 +1,6 @@
 import { BottomSheet, RNHostView } from '@expo/ui'
 import { imePadding } from '@expo/ui/jetpack-compose/modifiers'
-import { useMemo, useState, type ReactElement, type ReactNode } from 'react'
+import { useId, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -19,9 +19,11 @@ import {
   type ViewStyle,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Ancla, HojaCtx } from '../lib/guia'
 import { periodoDe, PERIODOS, type IdPeriodo, type Periodo } from '../lib/numeros'
 import { LETRA, useModo, useTema } from '../lib/tema'
 import Fondo from './Fondo'
+import { CapaGuia } from './guia/Capa'
 import { Hoja, OpcionHoja } from './Hoja'
 import Icono, { type NombreIcono } from './Icono'
 import { Boton, Ficha } from './ui'
@@ -44,13 +46,7 @@ export function useDisposicion() {
 // ── Pastilla ────────────────────────────────────────────────────────────────
 
 /** Un estado en una palabra: pagada, por pagar, anulado, vencida (como `Pastilla` de la web). */
-export function Pastilla({
-  texto,
-  tono = 'neutro',
-}: {
-  texto: string
-  tono?: 'neutro' | 'bien' | 'ojo' | 'mal' | 'acento'
-}) {
+export function Pastilla({ texto, tono = 'neutro' }: { texto: string; tono?: 'neutro' | 'bien' | 'ojo' | 'mal' | 'acento' }) {
   const t = useTema()
   const fondo =
     tono === 'bien' ? t.exitoSuave : tono === 'ojo' ? t.avisoSuave : tono === 'mal' ? t.peligroSuave : tono === 'acento' ? t.acentoSuave : t.gris100
@@ -133,10 +129,7 @@ export function Buscador({
 
 /** Para buscar sin que importen las tildes ni las mayusculas ("cafe" encuentra "Café"). */
 export function llano(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
+  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 
 // ── CampoNumero ─────────────────────────────────────────────────────────────
@@ -198,11 +191,7 @@ export function CampoNumero({
         />
         {sufijo ? <Text style={[k.afijo, { color: t.tenue }]}>{sufijo}</Text> : null}
       </View>
-      {error ? (
-        <Text style={[k.nota, { color: t.peligro }]}>{error}</Text>
-      ) : ayuda ? (
-        <Text style={[k.nota, { color: t.tenue }]}>{ayuda}</Text>
-      ) : null}
+      {error ? <Text style={[k.nota, { color: t.peligro }]}>{error}</Text> : ayuda ? <Text style={[k.nota, { color: t.tenue }]}>{ayuda}</Text> : null}
     </View>
   )
 }
@@ -228,10 +217,7 @@ export function Contador({
       disabled={deshabilitado}
       hitSlop={4}
       accessibilityLabel={delta > 0 ? 'Uno más' : 'Uno menos'}
-      style={({ pressed }) => [
-        k.contadorBoton,
-        { backgroundColor: pressed ? t.gris200 : t.gris100, opacity: deshabilitado ? 0.4 : 1 },
-      ]}
+      style={({ pressed }) => [k.contadorBoton, { backgroundColor: pressed ? t.gris200 : t.gris100, opacity: deshabilitado ? 0.4 : 1 }]}
     >
       <Text style={[k.contadorSigno, { color: t.tinta }]}>{signo}</Text>
     </Pressable>
@@ -282,13 +268,7 @@ export function Renglon({
 }) {
   const t = useTema()
   const contenido = (
-    <View
-      style={[
-        k.renglon,
-        !ultima && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.gris200 },
-        apagado && { opacity: 0.55 },
-      ]}
-    >
+    <View style={[k.renglon, !ultima && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.gris200 }, apagado && { opacity: 0.55 }]}>
       {punto ? <View style={[k.punto, { backgroundColor: punto }]} /> : null}
       {icono ? <Icono nombre={icono} size={19} color={t.tenue} /> : null}
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -454,7 +434,7 @@ export function Selector<T extends string>({
   )
   const elegida = varios ? (valores.length === 1 ? opciones.find((o) => o.valor === valores[0]) : undefined) : opciones.find((o) => o.valor === valor)
   const sinFiltrar = varios ? valores.length === 0 : !elegida || (forma === 'pastilla' && opciones[0]?.valor === valor)
-  const texto = varios && valores.length > 1 ? `${valores.length} ${plural ?? etiqueta.toLowerCase()}` : elegida?.texto ?? ''
+  const texto = varios && valores.length > 1 ? `${valores.length} ${plural ?? etiqueta.toLowerCase()}` : (elegida?.texto ?? '')
 
   const cerrar = () => {
     setAbierto(false)
@@ -594,6 +574,7 @@ export function BarraAccion({
   ocupado = false,
   deshabilitado = false,
   aviso,
+  ancla,
 }: {
   izquierda?: ReactNode
   texto: string
@@ -602,22 +583,25 @@ export function BarraAccion({
   deshabilitado?: boolean
   /** Lo que falta, en una linea ("Falta la referencia"): ambar sobre el boton. */
   aviso?: string
+  /** El nombre del boton para la guia paso a paso ("recetas.guardar"). */
+  ancla?: string
 }) {
   const t = useTema()
   const { modo } = useModo()
+  const sitio = izquierda ? { minWidth: 150 } : { flex: 1 }
+  const boton = <Boton texto={texto} alTocar={alTocar} ocupado={ocupado} deshabilitado={deshabilitado} />
   return (
-    <View
-      style={[
-        k.barra,
-        { backgroundColor: t.superficie, borderTopColor: modo === 'oscuro' ? 'rgba(255,255,255,0.06)' : t.gris200 },
-      ]}
-    >
+    <View style={[k.barra, { backgroundColor: t.superficie, borderTopColor: modo === 'oscuro' ? 'rgba(255,255,255,0.06)' : t.gris200 }]}>
       {aviso ? <Text style={[k.nota, { color: t.aviso, marginBottom: 8 }]}>{aviso}</Text> : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         {izquierda ? <View style={{ flex: 1, minWidth: 0 }}>{izquierda}</View> : null}
-        <View style={izquierda ? { minWidth: 150 } : { flex: 1 }}>
-          <Boton texto={texto} alTocar={alTocar} ocupado={ocupado} deshabilitado={deshabilitado} />
-        </View>
+        {ancla ? (
+          <Ancla nombre={ancla} style={sitio}>
+            {boton}
+          </Ancla>
+        ) : (
+          <View style={sitio}>{boton}</View>
+        )}
       </View>
     </View>
   )
@@ -686,22 +670,28 @@ function HojaFormularioNativa({ visible, alCerrar, titulo, subtitulo, children, 
 function HojaFormularioWeb({ visible, alCerrar, titulo, subtitulo, children, pie }: PropsHojaFormulario) {
   const t = useTema()
   const borde = useSafeAreaInsets()
+  // La guia paso a paso: un Modal se dibuja encima del Stack, asi que la
+  // hoja lleva su propia capa y sus anclas saben que viven aqui.
+  const idHoja = useId()
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={alCerrar} presentationStyle="pageSheet" statusBarTranslucent>
-      <View style={{ flex: 1, backgroundColor: t.papel }}>
-        {/* Sin `behavior` iOS no hace nada: el teclado tapaba el campo del
+      <HojaCtx.Provider value={idHoja}>
+        <View style={{ flex: 1, backgroundColor: t.papel }}>
+          {/* Sin `behavior` iOS no hace nada: el teclado tapaba el campo del
             nombre y el boton de enviar (Leider, 23-oct). `padding` encoge la
             hoja y el pie queda justo encima del teclado. */}
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}>
-          <CabezaFormulario titulo={titulo} subtitulo={subtitulo} alCerrar={alCerrar} arriba={18} />
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
-            {children}
-          </ScrollView>
-          {pie ? (
-            <View style={[k.hojaPie, { paddingBottom: 12 + borde.bottom, borderTopColor: t.gris200, backgroundColor: t.superficie }]}>{pie}</View>
-          ) : null}
-        </KeyboardAvoidingView>
-      </View>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}>
+            <CabezaFormulario titulo={titulo} subtitulo={subtitulo} alCerrar={alCerrar} arriba={18} />
+            <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+              {children}
+            </ScrollView>
+            {pie ? (
+              <View style={[k.hojaPie, { paddingBottom: 12 + borde.bottom, borderTopColor: t.gris200, backgroundColor: t.superficie }]}>{pie}</View>
+            ) : null}
+          </KeyboardAvoidingView>
+          <CapaGuia hoja={idHoja} />
+        </View>
+      </HojaCtx.Provider>
     </Modal>
   )
 }
@@ -786,9 +776,7 @@ export function PantallaLista<T>({
         onEndReached={alFinal}
         onEndReachedThreshold={0.4}
         refreshControl={
-          alRefrescar ? (
-            <RefreshControl refreshing={refrescando} onRefresh={alRefrescar} tintColor={t.acento} colors={[t.acento]} />
-          ) : undefined
+          alRefrescar ? <RefreshControl refreshing={refrescando} onRefresh={alRefrescar} tintColor={t.acento} colors={[t.acento]} /> : undefined
         }
       />
       {/* El mismo fondo que la barra: si no, bajo ella asoma el papel y la barra parece cortada. */}

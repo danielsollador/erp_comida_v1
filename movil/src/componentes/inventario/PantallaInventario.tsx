@@ -7,6 +7,7 @@ import * as almacen from '../../lib/almacen'
 import { apiInventario } from '../../lib/api-inventario'
 import { useCarga } from '../../lib/carga'
 import { confirmar } from '../../lib/dialogo'
+import { Ancla } from '../../lib/guia'
 import { LETRA, useTema } from '../../lib/tema'
 import type { Configuracion, Ingrediente } from '../../lib/tipos'
 import { Hoja, OpcionHoja } from '../Hoja'
@@ -206,22 +207,27 @@ export default function PantallaInventario() {
       abajo={
         // Las dos acciones de la web, abajo al alcance del pulgar (como en
         // cada almacen): contar a la izquierda, crear como boton principal.
+        // El boton principal lo arma `BarraAccion` (kit): el ancla va por su
+        // prop `ancla`; la de contar, justa.
         seccion === 'almacenes' ? (
           <BarraAccion
+            ancla="inventario.nueva"
             izquierda={
-              <Pressable
-                onPress={() => ir('/inventario/conteo')}
-                disabled={!datos || activos.length === 0}
-                accessibilityRole="button"
-                style={({ pressed }) => [
-                  s.conteo,
-                  {
-                    opacity: !datos || activos.length === 0 ? 0.4 : pressed ? 0.6 : 1,
-                  },
-                ]}
-              >
-                <Text style={[s.conteoTexto, { color: t.tinta }]}>Conteo físico</Text>
-              </Pressable>
+              <Ancla nombre="inventario.conteo">
+                <Pressable
+                  onPress={() => ir('/inventario/conteo')}
+                  disabled={!datos || activos.length === 0}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    s.conteo,
+                    {
+                      opacity: !datos || activos.length === 0 ? 0.4 : pressed ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={[s.conteoTexto, { color: t.tinta }]}>Conteo físico</Text>
+                </Pressable>
+              </Ancla>
             }
             texto="Nueva mercancía"
             alTocar={() => ir('/inventario/mercancia/nueva?tipo=insumo')}

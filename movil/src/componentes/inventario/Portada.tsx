@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native'
 import { ALMACENES, type Almacen } from '../../../../frontend/src/lib/tiposArticulo'
+import { Ancla } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
 import { fechaCorta } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
@@ -176,7 +177,11 @@ function FichaAlmacen({ a, r }: { a: Almacen; r?: ResumenAlmacen }) {
   const esGasto = a.destino === 'gasto'
   const camino = CAMINO[a.valor]
   const k = colorDe(a.valor, t)
+  // La tarjeta es la "pestaña" del almacen en el telefono: lleva el mismo
+  // nombre de ancla que la pestaña de la web (`seccion.materia-prima`...) para
+  // que la guia la resalte cuando el paso dice "entra a Materia prima".
   return (
+    <Ancla nombre={`seccion.${RUTA_DE[a.valor]}`}>
     <Pulsable alTocar={() => ir(`/inventario/${RUTA_DE[a.valor]}`)} etiqueta={a.texto}>
       <Ficha style={{ gap: 14, padding: 18 }}>
         <View style={s.almCabeza}>
@@ -224,6 +229,7 @@ function FichaAlmacen({ a, r }: { a: Almacen; r?: ResumenAlmacen }) {
         </Text>
       </Ficha>
     </Pulsable>
+    </Ancla>
   )
 }
 

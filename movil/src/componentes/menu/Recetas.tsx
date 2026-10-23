@@ -1,6 +1,7 @@
 import { router, type Href } from 'expo-router'
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Ancla } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useTema } from '../../lib/tema'
 import Icono from '../Icono'
@@ -166,42 +167,46 @@ export default function Recetas({ datos }: { datos: DatosMenu }) {
             const faltanAqui = g.renglones.filter((r) => r.info?.sin_receta !== false).length
             return (
               <View key={`p${g.productoId}`}>
-                <Pressable
-                  onPress={() =>
-                    setAbiertos((prev) => {
-                      const n = new Set(prev)
-                      if (n.has(g.productoId)) n.delete(g.productoId)
-                      else n.add(g.productoId)
-                      return n
-                    })
-                  }
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: desglosado }}
-                  style={({ pressed }) => [
-                    estilos.fila,
-                    (!ultimo || desglosado) && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.gris200 },
-                    pressed && { backgroundColor: t.gris100 },
-                  ]}
-                >
-                  <View style={{ transform: [{ rotate: desglosado ? '-90deg' : '90deg' }] }}>
-                    <Icono nombre="chevron" size={14} color={t.tenue} grosor={2.2} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[estilos.nombre, { color: t.tinta }]} numberOfLines={1}>
-                      {g.producto}
-                    </Text>
-                    <Text style={[estilos.detalle, { color: t.tenue }]} numberOfLines={2}>
-                      {g.categoria} · {g.renglones.length} variantes
-                      {faltanAqui > 0 ? (
-                        <Text style={{ color: t.acento, fontFamily: LETRA.textoFuerte }}>
-                          {' · '}
-                          {faltanAqui === g.renglones.length ? 'sin receta' : `${faltanAqui} sin receta`}
-                        </Text>
-                      ) : null}
-                      {desglosado ? ' · Toca para plegar' : ' · Toca para ver las variantes'}
-                    </Text>
-                  </View>
-                </Pressable>
+                {/* La guía señala la primera fila ("toca el producto"): cada
+                    fila tocable lleva el ancla, como en la web. */}
+                <Ancla nombre="recetas.lista">
+                  <Pressable
+                    onPress={() =>
+                      setAbiertos((prev) => {
+                        const n = new Set(prev)
+                        if (n.has(g.productoId)) n.delete(g.productoId)
+                        else n.add(g.productoId)
+                        return n
+                      })
+                    }
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: desglosado }}
+                    style={({ pressed }) => [
+                      estilos.fila,
+                      (!ultimo || desglosado) && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.gris200 },
+                      pressed && { backgroundColor: t.gris100 },
+                    ]}
+                  >
+                    <View style={{ transform: [{ rotate: desglosado ? '-90deg' : '90deg' }] }}>
+                      <Icono nombre="chevron" size={14} color={t.tenue} grosor={2.2} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[estilos.nombre, { color: t.tinta }]} numberOfLines={1}>
+                        {g.producto}
+                      </Text>
+                      <Text style={[estilos.detalle, { color: t.tenue }]} numberOfLines={2}>
+                        {g.categoria} · {g.renglones.length} variantes
+                        {faltanAqui > 0 ? (
+                          <Text style={{ color: t.acento, fontFamily: LETRA.textoFuerte }}>
+                            {' · '}
+                            {faltanAqui === g.renglones.length ? 'sin receta' : `${faltanAqui} sin receta`}
+                          </Text>
+                        ) : null}
+                        {desglosado ? ' · Toca para plegar' : ' · Toca para ver las variantes'}
+                      </Text>
+                    </View>
+                  </Pressable>
+                </Ancla>
                 {desglosado
                   ? g.renglones.map((r, j) => (
                       <FilaReceta
@@ -267,56 +272,60 @@ function FilaReceta({
   const gan = costo != null ? precio - costo : null
   const colorGan = gan == null ? t.tinta : gan < 0 ? t.peligro : margen != null && margen >= 50 ? t.exito : t.aviso
   return (
-    <Pressable
-      onPress={alTocar}
-      accessibilityRole="button"
-      accessibilityLabel={`${nombre}: ${falta ? 'crear la receta' : 'editar la receta'}`}
-      style={({ pressed }) => [
-        estilos.fila,
-        sangria && { paddingLeft: 42, backgroundColor: t.gris100 },
-        !ultima && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.gris200 },
-        pressed && { backgroundColor: t.gris200 },
-      ]}
-    >
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[sangria ? estilos.nombreSuave : estilos.nombre, { color: t.tinta }]} numberOfLines={2}>
-          {nombre}
-        </Text>
-        <Text style={[estilos.detalle, { color: t.tenue }]} numberOfLines={1}>
-          {sangria ? '' : `${r.categoria} · `}
-          {falta ? (
-            <Text style={{ color: t.acento, fontFamily: LETRA.textoFuerte }}>Toca para crear la receta</Text>
-          ) : (
-            'Toca para editar la receta'
-          )}
-        </Text>
-      </View>
-      {tablet ? (
-        <View style={estilos.columna}>
-          <Text style={[estilos.rotulo, { color: t.tenue }]}>Cuesta hacerlo</Text>
-          <Text style={[estilos.cifra, { color: t.suave }]}>{costo != null ? fmt(costo) : '—'}</Text>
+    // Cada fila lleva el ancla de la guía: se resalta la primera y tocar
+    // cualquiera avanza el paso.
+    <Ancla nombre="recetas.lista">
+      <Pressable
+        onPress={alTocar}
+        accessibilityRole="button"
+        accessibilityLabel={`${nombre}: ${falta ? 'crear la receta' : 'editar la receta'}`}
+        style={({ pressed }) => [
+          estilos.fila,
+          sangria && { paddingLeft: 42, backgroundColor: t.gris100 },
+          !ultima && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.gris200 },
+          pressed && { backgroundColor: t.gris200 },
+        ]}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[sangria ? estilos.nombreSuave : estilos.nombre, { color: t.tinta }]} numberOfLines={2}>
+            {nombre}
+          </Text>
+          <Text style={[estilos.detalle, { color: t.tenue }]} numberOfLines={1}>
+            {sangria ? '' : `${r.categoria} · `}
+            {falta ? (
+              <Text style={{ color: t.acento, fontFamily: LETRA.textoFuerte }}>Toca para crear la receta</Text>
+            ) : (
+              'Toca para editar la receta'
+            )}
+          </Text>
         </View>
-      ) : null}
-      <View style={estilos.columna}>
-        {tablet ? <Text style={[estilos.rotulo, { color: t.tenue }]}>Precio</Text> : null}
-        <Text style={[estilos.cifra, { color: t.tinta }]}>{fmt(precio)}</Text>
-      </View>
-      <View style={[estilos.columna, { minWidth: 86 }]}>
-        {gan == null || margen == null ? (
-          <View style={[estilos.sinReceta, { backgroundColor: t.avisoSuave }]}>
-            <Text style={[estilos.sinRecetaTexto, { color: t.aviso }]}>SIN RECETA</Text>
+        {tablet ? (
+          <View style={estilos.columna}>
+            <Text style={[estilos.rotulo, { color: t.tenue }]}>Cuesta hacerlo</Text>
+            <Text style={[estilos.cifra, { color: t.suave }]}>{costo != null ? fmt(costo) : '—'}</Text>
           </View>
-        ) : (
-          <>
-            <Text style={[estilos.cifraFuerte, { color: colorGan }]}>
-              {gan < 0 ? '−' : '+'}
-              {fmt(Math.abs(gan))}
-            </Text>
-            <Text style={[estilos.rotulo, { color: colorGan }]}>{gan < 0 ? 'a pérdida' : `${margen.toFixed(0)}% del precio`}</Text>
-          </>
-        )}
-      </View>
-    </Pressable>
+        ) : null}
+        <View style={estilos.columna}>
+          {tablet ? <Text style={[estilos.rotulo, { color: t.tenue }]}>Precio</Text> : null}
+          <Text style={[estilos.cifra, { color: t.tinta }]}>{fmt(precio)}</Text>
+        </View>
+        <View style={[estilos.columna, { minWidth: 86 }]}>
+          {gan == null || margen == null ? (
+            <View style={[estilos.sinReceta, { backgroundColor: t.avisoSuave }]}>
+              <Text style={[estilos.sinRecetaTexto, { color: t.aviso }]}>SIN RECETA</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={[estilos.cifraFuerte, { color: colorGan }]}>
+                {gan < 0 ? '−' : '+'}
+                {fmt(Math.abs(gan))}
+              </Text>
+              <Text style={[estilos.rotulo, { color: colorGan }]}>{gan < 0 ? 'a pérdida' : `${margen.toFixed(0)}% del precio`}</Text>
+            </>
+          )}
+        </View>
+      </Pressable>
+    </Ancla>
   )
 }
 

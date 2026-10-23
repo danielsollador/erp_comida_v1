@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native'
 import { etiquetaMetodo } from '../../../../frontend/src/lib/pagos'
+import { Ancla } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useTema } from '../../lib/tema'
 import type { EstadoApertura, ResumenCaja } from '../../lib/tipos'
@@ -162,7 +163,14 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
   const hay = r.gastos > 0 || r.retiros > 0 || r.otros_movimientos.length > 0
   return (
     <Ficha style={{ gap: 10 }}>
-      <Cabecera titulo="Gastos y retiros" derecha={<Enlace texto="Registrar uno" alTocar={irAMovimientos} />} />
+      <Cabecera
+        titulo="Gastos y retiros"
+        derecha={
+          <Ancla nombre="caja.registrar-gasto">
+            <Enlace texto="Registrar uno" alTocar={irAMovimientos} />
+          </Ancla>
+        }
+      />
       <Cuadros
         columnas={2}
         cuadros={[

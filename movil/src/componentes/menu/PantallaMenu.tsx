@@ -1,5 +1,6 @@
 import { router, Stack, useLocalSearchParams, type Href } from 'expo-router'
 import { useState } from 'react'
+import { Ancla } from '../../lib/guia'
 import { useSesion } from '../../lib/sesion'
 import { Boton, Cargando, Pantalla, Pestanas, Problema } from '../ui'
 import CambiarPrecios from './CambiarPrecios'
@@ -47,7 +48,10 @@ export default function PantallaMenu() {
       {!datos && !error ? <Cargando /> : null}
       {datos && seccion === 'menu' && puedePrecios ? (
         <>
-          <Boton texto="Cambiar precios" tono="neutro" icono="chispa" alTocar={() => setCambiandoPrecios(true)} />
+          {/* Ancla de la guía: el mismo `data-guia` que el botón de la web. */}
+          <Ancla nombre="menu.cambiar-precios">
+            <Boton texto="Cambiar precios" tono="neutro" icono="chispa" alTocar={() => setCambiandoPrecios(true)} />
+          </Ancla>
           <CambiarPrecios visible={cambiandoPrecios} alCerrar={() => setCambiandoPrecios(false)} onCambio={refrescar} />
         </>
       ) : null}

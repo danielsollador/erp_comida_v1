@@ -1,4 +1,6 @@
 import { Stack } from 'expo-router'
+import { View } from 'react-native'
+import { CapaGuia } from '../../componentes/guia/Capa'
 import { ControlesCabecera } from '../../componentes/Encabezado'
 import { LETRA, useTema } from '../../lib/tema'
 
@@ -26,27 +28,32 @@ const CON_TITULO_GRANDE = ['inventario/preparaciones/index', 'inventario/control
 
 export default function Interior() {
   const t = useTema()
+  // La capa de la guia paso a paso va encima del Stack entero (y cada hoja
+  // lleva la suya adentro, porque un Modal se dibuja por encima de esto).
   return (
-    <Stack
-      screenOptions={{
-        headerShown: true,
-        headerBackButtonDisplayMode: 'minimal',
-        headerShadowVisible: false,
-        headerStyle: { backgroundColor: t.papel },
-        headerTintColor: t.tinta,
-        headerTitleStyle: { fontFamily: LETRA.titulo, fontSize: 17, color: t.tinta },
-        headerLargeStyle: { backgroundColor: t.papel },
-        headerLargeTitleStyle: { fontFamily: LETRA.tituloFuerte, color: t.tinta },
-        headerLargeTitleShadowVisible: false,
-        headerRight: () => <ControlesCabecera />,
-        contentStyle: { backgroundColor: t.papel },
-        animation: 'slide_from_right',
-      }}
-    >
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      {CON_TITULO_GRANDE.map((nombre) => (
-        <Stack.Screen key={nombre} name={nombre} options={{ headerLargeTitleEnabled: true }} />
-      ))}
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <Stack
+        screenOptions={{
+          headerShown: true,
+          headerBackButtonDisplayMode: 'minimal',
+          headerShadowVisible: false,
+          headerStyle: { backgroundColor: t.papel },
+          headerTintColor: t.tinta,
+          headerTitleStyle: { fontFamily: LETRA.titulo, fontSize: 17, color: t.tinta },
+          headerLargeStyle: { backgroundColor: t.papel },
+          headerLargeTitleStyle: { fontFamily: LETRA.tituloFuerte, color: t.tinta },
+          headerLargeTitleShadowVisible: false,
+          headerRight: () => <ControlesCabecera />,
+          contentStyle: { backgroundColor: t.papel },
+          animation: 'slide_from_right',
+        }}
+      >
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        {CON_TITULO_GRANDE.map((nombre) => (
+          <Stack.Screen key={nombre} name={nombre} options={{ headerLargeTitleEnabled: true }} />
+        ))}
+      </Stack>
+      <CapaGuia />
+    </View>
   )
 }

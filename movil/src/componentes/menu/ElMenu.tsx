@@ -5,6 +5,7 @@ import { SUBSECCION_INICIAL } from '../../../../frontend/src/lib/menu'
 import { apiMenu } from '../../lib/api-menu'
 import { confirmar } from '../../lib/dialogo'
 import { dolares } from '../../lib/formato'
+import { Ancla } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useModo, useTema } from '../../lib/tema'
 import type { Categoria, CostoVariante, Producto, Variante } from '../../lib/tipos'
@@ -645,7 +646,10 @@ function ProductosDe({
           </Text>
         </View>
         <BotonPuntos etiqueta={`Opciones de ${categoria.nombre}`} alTocar={alOpciones} />
-        <Boton texto="+ Producto" alTocar={alCrear} />
+        {/* La guía resalta este botón (`menu.nuevo-producto` en la web). */}
+        <Ancla nombre="menu.nuevo-producto">
+          <Boton texto="+ Producto" alTocar={alCrear} />
+        </Ancla>
       </Ficha>
       {lista.length === 0 ? (
         <Vacio

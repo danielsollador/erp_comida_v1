@@ -1,10 +1,12 @@
 import { BottomSheet, RNHostView } from '@expo/ui'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { scheduleOnRN } from 'react-native-worklets'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { HojaCtx } from '../lib/guia'
 import { LETRA, useTema } from '../lib/tema'
+import { CapaGuia } from './guia/Capa'
 import Icono, { type NombreIcono } from './Icono'
 
 /**
@@ -68,6 +70,8 @@ const SALIR_MS = 200
 const CURVA = Easing.bezier(0.2, 0.7, 0.2, 1)
 
 function HojaWeb({ visible, alCerrar, titulo, children }: PropsHoja) {
+  // La guia paso a paso: la hoja lleva su propia capa (un Modal tapa al Stack).
+  const idHoja = useId()
   const t = useTema()
   const borde = useSafeAreaInsets()
   const { height: altoPantalla } = useWindowDimensions()
@@ -81,9 +85,11 @@ function HojaWeb({ visible, alCerrar, titulo, children }: PropsHoja) {
     if (visible) {
       avance.set(withTiming(1, { duration: ENTRAR_MS, easing: CURVA }))
     } else {
-      avance.set(withTiming(0, { duration: SALIR_MS, easing: CURVA }, (fin) => {
-        if (fin) scheduleOnRN(setMontada, false)
-      }))
+      avance.set(
+        withTiming(0, { duration: SALIR_MS, easing: CURVA }, (fin) => {
+          if (fin) scheduleOnRN(setMontada, false)
+        }),
+      )
     }
   }, [visible, avance])
 
@@ -92,16 +98,19 @@ function HojaWeb({ visible, alCerrar, titulo, children }: PropsHoja) {
 
   return (
     <Modal visible={montada} transparent animationType="none" onRequestClose={alCerrar} statusBarTranslucent>
-      <View style={estilos.marco}>
-        <Animated.View style={[StyleSheet.absoluteFill, estilos.fondo, estiloVelo]}>
-          <Pressable style={{ flex: 1 }} onPress={alCerrar} accessibilityLabel="Cerrar" />
-        </Animated.View>
-        <Animated.View style={[estilos.hoja, { backgroundColor: t.superficie, paddingBottom: 16 + borde.bottom }, estiloHoja]}>
-          <View style={[estilos.agarre, { backgroundColor: t.gris200 }]} />
-          {titulo ? <Text style={[estilos.titulo, { color: t.tenue }]}>{titulo}</Text> : null}
-          {children}
-        </Animated.View>
-      </View>
+      <HojaCtx.Provider value={idHoja}>
+        <View style={estilos.marco}>
+          <Animated.View style={[StyleSheet.absoluteFill, estilos.fondo, estiloVelo]}>
+            <Pressable style={{ flex: 1 }} onPress={alCerrar} accessibilityLabel="Cerrar" />
+          </Animated.View>
+          <Animated.View style={[estilos.hoja, { backgroundColor: t.superficie, paddingBottom: 16 + borde.bottom }, estiloHoja]}>
+            <View style={[estilos.agarre, { backgroundColor: t.gris200 }]} />
+            {titulo ? <Text style={[estilos.titulo, { color: t.tenue }]}>{titulo}</Text> : null}
+            {children}
+          </Animated.View>
+          <CapaGuia hoja={idHoja} />
+        </View>
+      </HojaCtx.Provider>
     </Modal>
   )
 }
@@ -131,10 +140,7 @@ export function OpcionHoja({
   const t = useTema()
   const color = peligro ? t.peligro : t.tinta
   return (
-    <Pressable
-      onPress={alTocar}
-      style={({ pressed }) => [estilos.opcion, { backgroundColor: pressed ? t.gris100 : 'transparent' }]}
-    >
+    <Pressable onPress={alTocar} style={({ pressed }) => [estilos.opcion, { backgroundColor: pressed ? t.gris100 : 'transparent' }]}>
       {icono && <Icono nombre={icono} size={19} color={peligro ? t.peligro : t.tenue} />}
       <View style={{ flex: 1 }}>
         <Text style={[estilos.opcionTexto, { color }]}>{texto}</Text>
@@ -164,7 +170,15 @@ const estilos = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 6,
   },
-  opcion: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 13, borderRadius: 14, borderCurve: 'continuous' },
+  opcion: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+  },
   opcionTexto: { fontFamily: LETRA.textoFuerte, fontSize: 16 },
   opcionDetalle: { fontFamily: LETRA.texto, fontSize: 13, marginTop: 2 },
 })

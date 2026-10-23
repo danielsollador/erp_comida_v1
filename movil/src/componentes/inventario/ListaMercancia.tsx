@@ -3,6 +3,7 @@ import { useMemo, useState, type ReactElement } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { estadoStock } from '../../../../frontend/src/lib/inventario'
 import { ALMACEN_DE } from '../../../../frontend/src/lib/tiposArticulo'
+import { Ancla } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useTema } from '../../lib/tema'
 import type { CategoriaInsumo, Ingrediente, TipoArticulo } from '../../lib/tipos'
@@ -148,9 +149,7 @@ export default function ListaMercancia({
                 texto: c.nombre,
                 contador: ingredientes.filter((i) => i.categoria_id === c.id && i.activo !== false).length,
               })),
-              ...(haySinCategoria
-                ? [{ valor: SIN_CATEGORIA, texto: 'Sin categoría', contador: activos.filter((i) => !i.categoria_id).length }]
-                : []),
+              ...(haySinCategoria ? [{ valor: SIN_CATEGORIA, texto: 'Sin categoría', contador: activos.filter((i) => !i.categoria_id).length }] : []),
               { valor: ADMINISTRAR, texto: 'Administrar categorías…', detalle: 'crear, renombrar, mover mercancía' },
             ]}
             valor={categoria}
@@ -205,44 +204,49 @@ export default function ListaMercancia({
 
   return (
     <>
-    {/* El titulo del encabezado nativo: el nombre del almacen. */}
-    <Stack.Screen options={{ title: a.texto }} />
-    <PantallaLista
-      datos={filas}
-      clave={(par) => par.map((i) => i.id).join('-')}
-      cabecera={cabecera}
-      vacio={vacio}
-      refrescando={refrescando}
-      alRefrescar={alRefrescar}
-      renglon={({ item: par }) => (
-        <View style={[s.par, { marginBottom: 10 }]}>
-          {par.map((ing) => (
-            <View key={ing.id} style={{ flex: 1 }}>
-              <RenglonMercancia ing={ing} esMateria={esMateria} alReactivar={() => alReactivar(ing)} />
-            </View>
-          ))}
-          {par.length === 1 && tablet ? <View style={{ flex: 1 }} /> : null}
-        </View>
-      )}
-      abajo={
-        <BarraAccion
-          izquierda={
-            tipo === 'desechable' ? undefined : (
-              <Pressable
-                onPress={() => ir('/inventario/conteo')}
-                disabled={activos.length === 0}
-                accessibilityRole="button"
-                style={({ pressed }) => [s.conteo, { opacity: activos.length === 0 ? 0.4 : pressed ? 0.6 : 1 }]}
-              >
-                <Text style={[s.conteoTexto, { color: t.tinta }]}>Conteo físico</Text>
-              </Pressable>
-            )
-          }
-          texto="Nueva mercancía"
-          alTocar={() => ir(`/inventario/mercancia/nueva?tipo=${tipo}`)}
-        />
-      }
-    />
+      {/* El titulo del encabezado nativo: el nombre del almacen. */}
+      <Stack.Screen options={{ title: a.texto }} />
+      <PantallaLista
+        datos={filas}
+        clave={(par) => par.map((i) => i.id).join('-')}
+        cabecera={cabecera}
+        vacio={vacio}
+        refrescando={refrescando}
+        alRefrescar={alRefrescar}
+        renglon={({ item: par }) => (
+          <View style={[s.par, { marginBottom: 10 }]}>
+            {par.map((ing) => (
+              <View key={ing.id} style={{ flex: 1 }}>
+                <RenglonMercancia ing={ing} esMateria={esMateria} alReactivar={() => alReactivar(ing)} />
+              </View>
+            ))}
+            {par.length === 1 && tablet ? <View style={{ flex: 1 }} /> : null}
+          </View>
+        )}
+        abajo={
+          // El boton principal lo arma `BarraAccion` (kit): el ancla va por su
+          // prop `ancla`; la de contar, justa.
+          <BarraAccion
+            ancla="inventario.nueva"
+            izquierda={
+              tipo === 'desechable' ? undefined : (
+                <Ancla nombre="inventario.conteo">
+                  <Pressable
+                    onPress={() => ir('/inventario/conteo')}
+                    disabled={activos.length === 0}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [s.conteo, { opacity: activos.length === 0 ? 0.4 : pressed ? 0.6 : 1 }]}
+                  >
+                    <Text style={[s.conteoTexto, { color: t.tinta }]}>Conteo físico</Text>
+                  </Pressable>
+                </Ancla>
+              )
+            }
+            texto="Nueva mercancía"
+            alTocar={() => ir(`/inventario/mercancia/nueva?tipo=${tipo}`)}
+          />
+        }
+      />
     </>
   )
 }
@@ -284,7 +288,12 @@ function RenglonMercancia({ ing, esMateria, alReactivar }: { ing: Ingrediente; e
         <View style={s.datos}>
           {ing.costo_unitario ? dato(palabra('costo'), fmt(ing.costo_unitario)) : dato(palabra('costo'), 'cargar', t.aviso, true)}
           {ing.costo_reposicion != null
-            ? dato(palabra('reponer'), `${fmt(ing.costo_reposicion)}${sube ? ` +${ing.variacion_pct!.toFixed(0)}%` : ''}`, sube ? t.aviso : undefined, sube)
+            ? dato(
+                palabra('reponer'),
+                `${fmt(ing.costo_reposicion)}${sube ? ` +${ing.variacion_pct!.toFixed(0)}%` : ''}`,
+                sube ? t.aviso : undefined,
+                sube,
+              )
             : null}
           {esMateria ? (
             <>
@@ -323,12 +332,7 @@ function Cuadrito({
 }) {
   const t = useTema()
   const cuerpo = (
-    <View
-      style={[
-        s.cuadrito,
-        { backgroundColor: activo ? t.gris200 : t.gris100, borderColor: activo ? t.tinta : 'transparent' },
-      ]}
-    >
+    <View style={[s.cuadrito, { backgroundColor: activo ? t.gris200 : t.gris100, borderColor: activo ? t.tinta : 'transparent' }]}>
       <Text style={[s.cuadritoValor, { color: color ?? t.tinta }]}>{valor}</Text>
       <Text style={[s.cuadritoTitulo, { color: t.suave }]}>{titulo}</Text>
     </View>
@@ -420,7 +424,16 @@ const s = StyleSheet.create({
   datoCifra: { fontFamily: LETRA.cifra, fontSize: 13 },
   datoCifraFuerte: { fontFamily: LETRA.cifraFuerte, fontSize: 13 },
   franja: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  cuadrito: { flexDirection: 'row', alignItems: 'baseline', gap: 5, borderRadius: 12, borderCurve: 'continuous', paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1 },
+  cuadrito: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 5,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+  },
   cuadritoValor: { fontFamily: LETRA.cifraFuerte, fontSize: 14 },
   cuadritoTitulo: { fontFamily: LETRA.texto, fontSize: 13 },
   conteo: { minHeight: 50, justifyContent: 'center' },
@@ -428,7 +441,17 @@ const s = StyleSheet.create({
   cabeza: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   cabezaDetalle: { flex: 1, fontFamily: LETRA.texto, fontSize: 14, lineHeight: 19 },
   caras: { flexDirection: 'row', gap: 8 },
-  cara: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 18, borderCurve: 'continuous', paddingHorizontal: 12, paddingVertical: 10, minHeight: 56 },
+  cara: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 56,
+  },
   caraIcono: { width: 32, height: 32, borderRadius: 10, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   caraTitulo: { fontFamily: LETRA.titulo, fontSize: 15 },
   caraDetalle: { fontFamily: LETRA.texto, fontSize: 13 },

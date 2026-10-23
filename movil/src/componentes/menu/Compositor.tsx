@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { unidadDe } from '../../../../frontend/src/lib/inventario'
 import { vaEnReceta } from '../../../../frontend/src/lib/tiposArticulo'
 import { dolares } from '../../lib/formato'
+import { Ancla } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
 import { aNumero, sinRuido } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
@@ -297,14 +298,17 @@ function Mercancia({
   return (
     <>
       {filas.length === 0 ? (
-        <Pressable onPress={alCombo} accessibilityRole="button" style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.985 : 1 }] }]}>
-          <Ficha style={{ paddingVertical: 14 }}>
-            <Text style={[estilos.texto, { color: t.suave }]}>
-              <Text style={{ fontFamily: LETRA.textoFuerte, color: t.tinta }}>¿Es un combo?</Text> Ármalo con productos del menú
-              (pastelito + jugo): su receta se suma sola y se actualiza si cambia la de ellos.
-            </Text>
-          </Ficha>
-        </Pressable>
+        // `recetas.combo` y `recetas.cantidad`: los mismos nombres que en la web.
+        <Ancla nombre="recetas.combo">
+          <Pressable onPress={alCombo} accessibilityRole="button" style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.985 : 1 }] }]}>
+            <Ficha style={{ paddingVertical: 14 }}>
+              <Text style={[estilos.texto, { color: t.suave }]}>
+                <Text style={{ fontFamily: LETRA.textoFuerte, color: t.tinta }}>¿Es un combo?</Text> Ármalo con productos del menú
+                (pastelito + jugo): su receta se suma sola y se actualiza si cambia la de ellos.
+              </Text>
+            </Ficha>
+          </Pressable>
+        </Ancla>
       ) : (
         <Ficha style={{ paddingHorizontal: 0, paddingVertical: 6 }}>
           {pesadas.length > 0 ? (
@@ -353,7 +357,9 @@ function Mercancia({
             {ingredientes.length === 0 ? 'No hay mercancía en el inventario todavía.' : 'Nada coincide.'}
           </Nota>
         ) : (
-          <>
+          // La guía resalta el bloque entero de mercancía para tocar, como
+          // el `recetas.agregar` de la web (la lista, sin el buscador).
+          <Ancla nombre="recetas.agregar">
             {disponiblesPesadas.map((ing) => (
               <OpcionMercancia key={ing.id} ing={ing} alAgregar={() => alAgregar(ing)} />
             ))}
@@ -374,7 +380,7 @@ function Mercancia({
                 ))}
               </>
             ) : null}
-          </>
+          </Ancla>
         )}
       </Ficha>
     </>
@@ -445,7 +451,8 @@ function RenglonMercancia({
           </Pressable>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ width: 168 }}>
+          {/* La guía señala la casilla de cantidad del primer renglón (`recetas.cantidad`). */}
+          <Ancla nombre="recetas.cantidad" style={{ width: 168 }}>
             <CasillaConUnidad
               valor={valorVisto}
               alCambiar={escribir}
@@ -457,7 +464,7 @@ function RenglonMercancia({
               etiqueta={`Cantidad de ${ing.nombre} por unidad, en ${unidadVista}`}
               alCambiarVista={() => alCambiar({ enChica: !enChica, vista: undefined })}
             />
-          </View>
+          </Ancla>
           <Text style={[estilos.costo, { color: t.tinta }]}>{cantidad > 0 ? fmt(cantidad * ing.costo_efectivo) : '—'}</Text>
         </View>
       </View>
@@ -552,7 +559,8 @@ function PrecioConMargen({ costo, precio, alPrecio, guardado }: { costo: number;
   const m = margenDe(precioNum)
   const costoPct = precioNum > 0 ? (costo / precioNum) * 100 : null
   return (
-    <View style={[estilos.cuenta, { backgroundColor: t.gris100 }]}>
+    // El bloque entero es el `recetas.precio` de la web: precio, margen y la frase.
+    <Ancla nombre="recetas.precio" style={[estilos.cuenta, { backgroundColor: t.gris100 }]}>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <CampoNumero rotulo="Precio de venta ($)" valor={precio} alCambiar={alPrecio} placeholder="0,00" style={{ flex: 1 }} />
         <CampoNumero
@@ -577,7 +585,7 @@ function PrecioConMargen({ costo, precio, alPrecio, guardado }: { costo: number;
           ? ` Hoy se vende a ${dolares(guardado)}: el precio nuevo se guarda con la receta.`
           : ''}
       </Text>
-    </View>
+    </Ancla>
   )
 }
 

@@ -22,7 +22,8 @@ import { LETRA, useModo, useTema } from '../../lib/tema'
  * (components/Asistente.tsx) pero como pantalla propia. Se le pregunta por
  * los numeros ("¿cuanto vendi hoy?"), se le pide un documento ("la ultima
  * factura de carne", que se abre en su pantalla) o como se hace algo. La
- * guia que recorre la pantalla es de la web; aqui se avisa que existe.
+ * guia paso a paso se recorre sobre la pantalla de la app (lib/guia.tsx):
+ * el boton de la respuesta la arranca y la capa lleva a cada boton.
  *
  * Sin estado en el servidor: cada vez se mandan las ultimas 20 vueltas. La
  * conversacion vive en memoria (componentes/asistente/conversacion.ts) para

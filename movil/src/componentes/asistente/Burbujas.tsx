@@ -1,11 +1,12 @@
 import { router, type Href } from 'expo-router'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { rutaDeDocumento, type DocumentoEncontrado } from '../../lib/api-ia'
+import { iniciarGuia } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useModo, useTema } from '../../lib/tema'
 import { frasesPara, Pensando, SelloIA, TextoRico } from '../ia'
 import { ListaFicha, Renglon } from '../kit'
-import { Nota, sombraLosa } from '../ui'
+import { sombraLosa } from '../ui'
 import type { Mensaje } from './conversacion'
 
 /**
@@ -51,7 +52,13 @@ export function BurbujaAsistente({ m, ultima, alReintentar }: { m: Mensaje; ulti
         {m.r?.consulto?.length ? <Text style={[e.consulto, { color: t.tenue }]}>Consultó: {m.r.consulto.join(', ')}</Text> : null}
         {m.r?.documentos?.length ? <Documentos docs={m.r.documentos} /> : null}
         {m.r?.guia?.length ? (
-          <Nota style={{ color: t.suave }}>La guía paso a paso está en la versión web (vertigopro.tech).</Nota>
+          <Pressable
+            onPress={() => iniciarGuia(m.r!.guia!)}
+            accessibilityRole="button"
+            style={({ pressed }) => [e.guia, { backgroundColor: t.tinta, opacity: pressed ? 0.85 : 1 }]}
+          >
+            <Text style={[e.guiaTexto, { color: t.papel }]}>Ver en pantalla, paso a paso · {m.r.guia.length}</Text>
+          </Pressable>
         ) : null}
       </View>
     </View>
@@ -109,6 +116,8 @@ function Documentos({ docs }: { docs: DocumentoEncontrado[] }) {
 }
 
 const e = StyleSheet.create({
+  guia: { alignSelf: 'flex-start', marginTop: 10, minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 12 },
+  guiaTexto: { fontFamily: LETRA.textoFuerte, fontSize: 14 },
   fila: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   // Las esquinas "continuas" son las de iOS; en los demas no cambian nada.
   mia: { maxWidth: '85%', borderRadius: 20, borderBottomRightRadius: 6, borderCurve: 'continuous', paddingHorizontal: 16, paddingVertical: 10 },

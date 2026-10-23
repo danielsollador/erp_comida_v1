@@ -38,6 +38,7 @@ import {
 } from '../../lib/compras-app'
 import { confirmar } from '../../lib/dialogo'
 import { hoyEnCaracas } from '../../lib/formato'
+import { Ancla } from '../../lib/guia'
 import { fechaCorta, sinRuido } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
 import type {
@@ -1317,24 +1318,26 @@ function ElegirCarga({ onFoto, onManual }: { onFoto: () => void; onManual: () =>
     <View style={{ gap: 16 }}>
       <Text style={[s.elegirTitulo, { color: t.tinta }]}>¿Cómo quieres cargar la factura?</Text>
       {opciones.map((o) => (
-        <Pressable
-          key={o.titulo}
-          onPress={o.alTocar}
-          accessibilityRole="button"
-          accessibilityLabel={o.titulo}
-          style={({ pressed }) => [
-            s.elegirCuadro,
-            { backgroundColor: t.superficie, borderColor: t.gris200, transform: [{ scale: pressed ? 0.985 : 1 }] },
-          ]}
-        >
-          <View style={[s.elegirIcono, { backgroundColor: o.principal ? t.tinta : t.gris100 }]}>
-            <Icono nombre={o.icono} size={26} color={o.principal ? t.papel : t.tinta} />
-          </View>
-          <View>
-            <Text style={[s.elegirNombre, { color: t.tinta }]}>{o.titulo}</Text>
-            <Text style={[s.elegirTexto, { color: t.suave }]}>{o.texto}</Text>
-          </View>
-        </Pressable>
+        // Mismas anclas que la web (`data-guia`), para que la guía resalte el cuadro que toca.
+        <Ancla key={o.titulo} nombre={o.principal ? 'compras.foto' : 'compras.a-mano'}>
+          <Pressable
+            onPress={o.alTocar}
+            accessibilityRole="button"
+            accessibilityLabel={o.titulo}
+            style={({ pressed }) => [
+              s.elegirCuadro,
+              { backgroundColor: t.superficie, borderColor: t.gris200, transform: [{ scale: pressed ? 0.985 : 1 }] },
+            ]}
+          >
+            <View style={[s.elegirIcono, { backgroundColor: o.principal ? t.tinta : t.gris100 }]}>
+              <Icono nombre={o.icono} size={26} color={o.principal ? t.papel : t.tinta} />
+            </View>
+            <View>
+              <Text style={[s.elegirNombre, { color: t.tinta }]}>{o.titulo}</Text>
+              <Text style={[s.elegirTexto, { color: t.suave }]}>{o.texto}</Text>
+            </View>
+          </Pressable>
+        </Ancla>
       ))}
     </View>
   )

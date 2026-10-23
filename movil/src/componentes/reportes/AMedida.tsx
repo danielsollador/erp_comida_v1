@@ -4,6 +4,7 @@ import { apiIA } from '../../lib/api-ia'
 import { apiReportes } from '../../lib/api-reportes'
 import { descargar } from '../../lib/archivos'
 import { confirmar, avisar } from '../../lib/dialogo'
+import { Ancla } from '../../lib/guia'
 import { fmtBs } from '../../lib/moneda'
 import { fechaCorta, periodoDe, PERIODOS, type IdPeriodo, type Periodo } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
@@ -296,8 +297,9 @@ export default function AMedida({ periodo, alCambiarPeriodo }: { periodo: Period
 
   return (
     <View style={{ gap: 12 }}>
-      {/* Pedirlo con palabras: la fila de la IA, arriba de las pastillas que arma. */}
-      <View style={ps.pedir}>
+      {/* Pedirlo con palabras: la fila de la IA, arriba de las pastillas que arma.
+          La guia resalta la fila entera (campo + Armar), como la barra de la web. */}
+      <Ancla nombre="reportes.pedir" style={ps.pedir}>
         <Icono nombre="chispa" size={20} color={t.acento} />
         <View style={{ flex: 1 }}>
           <Campo
@@ -311,7 +313,7 @@ export default function AMedida({ periodo, alCambiarPeriodo }: { periodo: Period
           />
         </View>
         <Boton texto="Armar" alTocar={() => void pedir()} deshabilitado={!frase.trim() || pensando} />
-      </View>
+      </Ancla>
       {pensando ? (
         <View style={{ paddingHorizontal: 4 }}>
           <Pensando frases={['Entendiendo lo que pides…', 'Armando el reporte…']} />

@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native'
 import { etiquetaMetodo } from '../../../../frontend/src/lib/pagos'
 import { apiCaja } from '../../lib/api-caja'
 import { bolivares, dolares } from '../../lib/formato'
+import { Ancla } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
 import { aNumero } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
@@ -87,20 +88,25 @@ export function CuadrarCaja({
           <View style={{ flex: 1 }}>
             <Boton texto="Cancelar" tono="neutro" alTocar={alCerrar} />
           </View>
-          <View style={{ flex: 1.3 }}>
+          <Ancla nombre="caja.conciliar" style={{ flex: 1.3 }}>
             <Boton
               texto={corregir ? 'Guardar el conteo' : 'Cerrar y conciliar'}
               alTocar={cerrar}
               ocupado={guardando}
               deshabilitado={conteos.length === 0}
             />
-          </View>
+          </Ancla>
         </>
       }
     >
       {error ? <Aviso texto={error} tono="peligro" /> : null}
       {!resumen.es_hoy ? <Aviso texto={`Estás cuadrando el día ${fechaVE(dia)}, no hoy.`} tono="aviso" /> : null}
 
+      {/* El bloque entero de casillas es un solo ancla de la guia (como el
+          `data-guia="caja.conteo"` de la web): el paso es "cuenta cada forma
+          de pago", no una casilla en particular. El mismo `gap` de la hoja,
+          para que las tarjetas no se peguen al envolverlas. */}
+      <Ancla nombre="caja.conteo" style={{ gap: 14 }}>
       {aCuadrar.map((l) => {
         const enBs = EN_BOLIVARES.has(l.metodo)
         const texto = (contados[l.metodo] ?? '').trim()
@@ -138,6 +144,7 @@ export function CuadrarCaja({
           </View>
         )
       })}
+      </Ancla>
 
       <View style={{ alignSelf: 'flex-start', marginVertical: -6 }}>
         <Enlace

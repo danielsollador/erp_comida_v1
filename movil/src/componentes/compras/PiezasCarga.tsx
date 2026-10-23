@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { enMoneda, type Numero, type Pendiente } from '../../lib/compras-app'
+import { Ancla } from '../../lib/guia'
 import { LETRA, useModo, useTema } from '../../lib/tema'
 import { Hoja, OpcionHoja } from '../Hoja'
 import Icono from '../Icono'
@@ -252,9 +253,10 @@ export function BarraGuardar({
           ) : null}
         </View>
         {tablet ? <Text style={[c.cifraFuerte, { color: t.tinta }]}>{total}</Text> : null}
-        <View style={{ minWidth: 150 }}>
+        {/* El Ancla hace de envoltorio (es un View) para no sumar otra capa en la fila. */}
+        <Ancla nombre="compras.guardar" style={{ minWidth: 150 }}>
           <Boton texto={guardando ? 'Guardando…' : 'Guardar factura'} alTocar={onGuardar} ocupado={guardando} />
-        </View>
+        </Ancla>
       </View>
       <Hoja visible={abierta} alCerrar={() => setAbierta(false)} titulo="Por revisar">
         {pendientes.map((x, i) => (

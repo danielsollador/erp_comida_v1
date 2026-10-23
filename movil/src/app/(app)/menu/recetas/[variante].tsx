@@ -216,6 +216,7 @@ export default function EditorReceta() {
           alTocar={() => void guardar()}
           ocupado={guardando}
           aviso={error || undefined}
+          ancla="recetas.guardar"
         />
       }
     >

@@ -6,6 +6,7 @@ import { apiCaja } from '../../lib/api-caja'
 import { useCarga } from '../../lib/carga'
 import { hoyEnCaracas } from '../../lib/formato'
 import { periodoDe, type Periodo } from '../../lib/numeros'
+import { Ancla } from '../../lib/guia'
 import { useSesion } from '../../lib/sesion'
 import type { CierreCaja, Gasto, RetiroPropietario } from '../../lib/tipos'
 import { BarraAccion } from '../kit'
@@ -94,10 +95,14 @@ function Caja() {
     })
   }
 
-  // El cuadre es la accion de la pantalla: siempre a mano, abajo.
+  // El cuadre es la accion de la pantalla: siempre a mano, abajo. El ancla
+  // envuelve la barra entera porque el boton lo arma `BarraAccion` (kit) y
+  // aqui no hay nada mas en ella: resaltar la barra es resaltar el boton.
   const abajo =
     seccion === 'cierre' && vigente ? (
-      <BarraAccion texto={vigente.resumen.cerrada ? 'Corregir el conteo' : 'Hacer cierre de caja'} alTocar={() => setContando(true)} />
+      <Ancla nombre="caja.cerrar">
+        <BarraAccion texto={vigente.resumen.cerrada ? 'Corregir el conteo' : 'Hacer cierre de caja'} alTocar={() => setContando(true)} />
+      </Ancla>
     ) : undefined
 
   return (

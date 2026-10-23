@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Ancla } from '../../../lib/guia'
 import { LETRA, useTema } from '../../../lib/tema'
 import type { ListaUsuarios as Lista, Rol, Usuario } from '../../../lib/tipos'
 import { Hoja, OpcionHoja } from '../../Hoja'
@@ -97,9 +98,9 @@ export default function ListaUsuarios({
         />
         <View style={estilos.cabeza}>
           <Nota style={{ color: t.tenue }}>{`${lista.usuarios.length} usuarios`}</Nota>
-          <View style={{ flexShrink: 0 }}>
+          <Ancla nombre="usuarios.crear" style={{ flexShrink: 0 }}>
             <Boton texto="Crear usuario" tono="neutro" alTocar={alCrear} />
-          </View>
+          </Ancla>
         </View>
         <View style={estilos.orden}>
           {COLUMNAS.map((c) => {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Ancla } from '../../lib/guia'
 import { aNumero } from '../../lib/numeros'
 import { LETRA, useModo, useTema } from '../../lib/tema'
 import type { Categoria } from '../../lib/tipos'
@@ -20,21 +21,29 @@ import { Rotulo } from './piezas'
  */
 
 /** Cancelar a la izquierda, la accion a la derecha: el pie de todos los cuadros. */
-function Pie({ texto, alCancelar, alAceptar, ocupado, deshabilitado }: {
+function Pie({ texto, alCancelar, alAceptar, ocupado, deshabilitado, ancla }: {
   texto: string
   alCancelar: () => void
   alAceptar: () => void
   ocupado: boolean
   deshabilitado?: boolean
+  /** El nombre con que la guía señala el botón de aceptar (el `data-guia` de la web), si lo tiene. */
+  ancla?: string
 }) {
+  const aceptar = <Boton texto={texto} alTocar={alAceptar} ocupado={ocupado} deshabilitado={deshabilitado} />
   return (
     <>
       <View style={{ flex: 1 }}>
         <Boton texto="Cancelar" tono="neutro" alTocar={alCancelar} />
       </View>
-      <View style={{ flex: 1.4 }}>
-        <Boton texto={texto} alTocar={alAceptar} ocupado={ocupado} deshabilitado={deshabilitado} />
-      </View>
+      {/* El Ancla toma el flex del hueco: envuelve sin cambiar el reparto del pie. */}
+      {ancla ? (
+        <Ancla nombre={ancla} style={{ flex: 1.4 }}>
+          {aceptar}
+        </Ancla>
+      ) : (
+        <View style={{ flex: 1.4 }}>{aceptar}</View>
+      )}
     </>
   )
 }
@@ -211,18 +220,24 @@ export function CrearProducto({
           alAceptar={() => void guardar()}
           ocupado={guardando}
           deshabilitado={!listo}
+          ancla="producto.crear"
         />
       }
     >
-      <Campo rotulo="Nombre" value={nombre} onChangeText={setNombre} placeholder="Ej. Empanada" />
-      <CampoNumero
-        rotulo="Precio (opcional)"
-        valor={precio}
-        alCambiar={setPrecio}
-        prefijo="$"
-        placeholder="0,00"
-        error={precio.trim() !== '' && precioMalo ? 'Tiene que ser un número, y no negativo' : undefined}
-      />
+      {/* Las anclas de la guía, con los nombres de la web (`producto.nombre`, `producto.precio`). */}
+      <Ancla nombre="producto.nombre">
+        <Campo rotulo="Nombre" value={nombre} onChangeText={setNombre} placeholder="Ej. Empanada" />
+      </Ancla>
+      <Ancla nombre="producto.precio">
+        <CampoNumero
+          rotulo="Precio (opcional)"
+          valor={precio}
+          alCambiar={setPrecio}
+          prefijo="$"
+          placeholder="0,00"
+          error={precio.trim() !== '' && precioMalo ? 'Tiene que ser un número, y no negativo' : undefined}
+        />
+      </Ancla>
       <Selector<string>
         etiqueta="Categoría"
         forma="campo"
