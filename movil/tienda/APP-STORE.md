@@ -20,7 +20,7 @@ Las claves de la cuenta de demostración están en `tienda/REVISOR.local.txt`
 | Política de privacidad pública | https://vertigopro.tech/privacidad.html |
 | Página de soporte pública | https://vertigopro.tech/soporte.html |
 | Cómo eliminar la cuenta (página) | https://vertigopro.tech/eliminar-cuenta.html |
-| Cuenta de prueba para el revisor | Servidor de demostración `demo.vertigopro.tech`: local ficticio "Café La Esquina", 45 días de ventas, compras y contabilidad inventadas |
+| Cuenta de prueba para el revisor | Servidor de demostración `demo.vertigopro.tech`: local ficticio "La Despensa" (comida, producción y reventa), 45 días de ventas, compras y contabilidad inventadas |
 | Entrar a otro negocio | Entrar → "Otro negocio" (así entra el revisor a la demo, y sirve para varios locales) |
 | Capturas de iPhone 6,9" (1290×2796) | `tienda/capturas/01…05-iphone-6.9.png` |
 
@@ -174,10 +174,10 @@ Rastreo: **No**. Publicidad: **No**.
 Recorded on a physical iPhone: <URL>. Shows app launch, sign-in, taking an order and charging it, the kitchen screen, the camera permission prompt, the AI consent screen and invoice photo reading, and account deletion.
 
 2. APP PURPOSE
-Vertigo Pro is a B2B back-office app for restaurants and cafés (point of sale, kitchen tickets, inventory, supplier purchases, cash closing and reports). It replaces paper tickets and spreadsheets; owners see sales and costs from the phone.
+Vertigo Pro is a B2B back-office app for food businesses and small retailers (point of sale, kitchen tickets, inventory, supplier purchases, cash closing and reports). It replaces paper tickets and spreadsheets; owners see sales and costs from the phone.
 
 3. ACCESS INSTRUCTIONS & TEST CREDENTIALS
-Each business runs its own server; the business owner creates accounts (there is no public sign-up). To review with demo data (a fictional café, no real people):
+Each business runs its own server; the business owner creates accounts (there is no public sign-up). To review with demo data (a fictional shop, "La Despensa", no real people):
 1) On the sign-in screen tap "Otro negocio" (Other business).
 2) Type demo.vertigopro.tech and tap "Usar este negocio".
 3) Sign in with the demo credentials provided above (role: owner, full access).
