@@ -94,7 +94,10 @@ const SECCIONES: { id: IdSeccionPos; texto: string }[] = [
 function pedidosDelArranque(d: ArranquePos): Pedido[] {
   const porId = new Map<number, Pedido>()
   for (const p of [...d.en_cocina, ...d.listos, ...d.por_entregar]) porId.set(p.id, p)
-  return [...porId.values()].sort((a, b) => b.numero - a.numero)
+  // Por id y no por numero: el numero vuelve a 1 cada dia y un #14 de ayer
+  // abierto quedaba encima del #3 de hoy; el nuevo se iba al fondo y parecia
+  // que no se habia guardado (Leider, 23-oct).
+  return [...porId.values()].sort((a, b) => b.id - a.id)
 }
 
 export default function PuntoDeVenta() {
@@ -185,7 +188,7 @@ export default function PuntoDeVenta() {
         .then(([enCocina, listos, porEntregar]) => {
           const porId = new Map<number, Pedido>()
           for (const p of [...enCocina, ...listos, ...porEntregar]) porId.set(p.id, p)
-          const lista = [...porId.values()].sort((a, b) => b.numero - a.numero)
+          const lista = [...porId.values()].sort((a, b) => b.id - a.id)
           // Con un candado de edicion puesto se repinta cada minuto: vence por
           // reloj sin que el servidor cambie nada.
           const firma =
@@ -448,6 +451,17 @@ export default function PuntoDeVenta() {
       return
     }
     setFaltaNombre(false)
+    // Sin caja abierta no se toman pedidos nuevos, y se dice: antes la
+    // comanda entraba igual y la franja de arriba pasaba desapercibida
+    // (Leider, 23-oct). Editar uno que ya existe si se puede.
+    if (!enEdicion && apertura && !apertura.abierta) {
+      setError(
+        apertura.puede_abrir
+          ? 'La caja no se ha abierto: ábrela arriba (Abrir caja) antes de tomar pedidos.'
+          : 'La caja no se ha abierto: pídele a quien abre la caja que la abra antes de tomar pedidos.',
+      )
+      return
+    }
     if (Object.keys(carrito).length === 0) {
       void mandarComanda({})
       return
