@@ -922,6 +922,10 @@ type Fila = {
       crudo (el pollo pierde lo mismo en cualquier guiso) y se guarda ahí. */
   aprovechable: string
   enChica?: boolean
+  /** Lo que la persona va escribiendo en la unidad chica (g, ml), tal cual.
+      Sin esto, "2," se convertia a kg y volvia como "2": la coma desaparecia
+      y no habia forma de poner 2,5 g (Leider, 23-oct). */
+  textoVisto?: string
 }
 
 // Que mide cada unidad y cuanto vale en la grande (1 g = 0,001 kg). Igual
@@ -1034,7 +1038,7 @@ function Olla({
   function ajustarAUno() {
     if (!(queda > 0)) return
     // A tres decimales: 1,429 kg se lee; 1,428571 no, y el costo no se entera.
-    setFilas((prev) => prev.map((f) => ({ ...f, cantidad: f.cantidad === '' ? '' : sinRuido(Math.round(((aNum(f.cantidad) || 0) / queda) * 1000) / 1000) })))
+    setFilas((prev) => prev.map((f) => ({ ...f, textoVisto: undefined, cantidad: f.cantidad === '' ? '' : sinRuido(Math.round(((aNum(f.cantidad) || 0) / queda) * 1000) / 1000) })))
   }
 
   async function guardar() {
@@ -1314,13 +1318,13 @@ function RenglonOlla({
   const cantidad = aNum(f.cantidad) || 0
   const pct = Math.min(Math.max(aNum(f.aprovechable) || 0, 0), 100)
   const queda = cantidad * (pct / 100)
-  const valorVisto = f.cantidad === '' ? '' : sinRuido(cantidad * factor)
+  const valorVisto = enChica && f.textoVisto !== undefined ? f.textoVisto : f.cantidad === '' ? '' : sinRuido(cantidad * factor)
   const costoU = ing.costo_unitario || 0
   const esPrep = ing.tipo === 'preparacion'
   const escribir = (texto: string) => {
-    if (!enChica) return onCambio({ cantidad: texto })
+    if (!enChica) return onCambio({ cantidad: texto, textoVisto: undefined })
     const n = aNum(texto)
-    onCambio({ cantidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor) })
+    onCambio({ cantidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor), textoVisto: texto })
   }
   return (
     <li onMouseEnter={() => onResaltar(ing.id)} onMouseLeave={() => onResaltar(null)} className={`px-4 py-2.5 transition-colors ${resaltado ? 'bg-acento-500/10' : ''}`}>
@@ -1338,7 +1342,7 @@ function RenglonOlla({
         <CasillaConUnidad
           unidad={ing.unidad}
           vista={unidadVista}
-          alCambiarVista={() => onCambio({ enChica: !enChica })}
+          alCambiarVista={() => onCambio({ enChica: !enChica, textoVisto: undefined })}
           value={valorVisto}
           onChange={(e) => escribir(e.target.value)}
           placeholder="0"

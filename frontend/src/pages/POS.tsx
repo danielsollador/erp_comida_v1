@@ -1663,7 +1663,14 @@ export default function POS() {
                       pastilla de estado ("Cobrado · en cocina") y un nombre
                       normal se cortaba en "Sra. Ca...". */}
                   <span className="min-w-0">
-                    <span className="block font-bold text-base leading-tight">#{pedido.numero}</span>
+                    {/* Con la hora en que se tomo: "el de las 5:40" es como se
+                        busca un pedido en el mostrador (Leider, 23-oct). */}
+                    <span className="block font-bold text-base leading-tight">
+                      #{pedido.numero}
+                      {horaDe(pedido.creado_en) && (
+                        <span className="ml-1.5 text-xs font-medium text-neutral-500 tabular-nums">{horaDe(pedido.creado_en)}</span>
+                      )}
+                    </span>
                     {pedido.cliente ? (
                       <span
                         className={`block truncate ${
