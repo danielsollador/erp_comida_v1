@@ -37,8 +37,8 @@ def guion(monkeypatch):
     return cola, vistos
 
 
-def llama(nombre, **args):
-    return [{"functionCall": {"name": nombre, "args": args}}]
+def llama(_herramienta, **args):
+    return [{"functionCall": {"name": _herramienta, "args": args}}]
 
 
 def dice(texto):
@@ -162,3 +162,58 @@ def test_lo_creado_le_deja_el_id_a_la_ia(client, variante, guion):
     assert "Ana" in p["titulo"], "el nombre como en la comanda"
     r = client.post("/api/ayuda/agente/confirmar", json={"propuesta_id": p["id"]}).json()
     assert r["nota"].startswith("pedido_id=")
+
+
+def _propone_y_confirma(cliente, cola, mensaje, *pasos):
+    cola += list(pasos)
+    [p] = [x["propuesta"] for x in conversar(cliente, mensaje) if "propuesta" in x]
+    r = cliente.post("/api/ayuda/agente/confirmar", json={"propuesta_id": p["id"]}).json()
+    return p, r
+
+
+def test_crea_un_producto_con_su_receta(client, db, variante, insumo, guion):
+    cola, _ = guion
+    cat = variante.producto.categoria_id
+    p, r = _propone_y_confirma(client, cola, "crea el pastelito de carne a 1,5 con 80 g de carne",
+                               llama("crear_producto_menu", nombre="Pastelito de carne", categoria_id=cat,
+                                     variantes=[{"nombre": "Regular", "precio": 1.5}],
+                                     receta=[{"ingrediente_id": insumo.id, "cantidad": 0.08}]))
+    assert "0,08 kg de Carne molida" in " ".join(p["detalle"])
+    assert r["ok"] and "receta" in r["texto"]
+    nuevo = db.query(models.Producto).filter_by(nombre="Pastelito de carne").one()
+    v = nuevo.variantes[0]
+    assert v.precio == 1.5
+    assert db.query(models.RecetaItem).filter_by(variante_id=v.id).one().cantidad_por_unidad == 0.08
+    assert r["nota"].startswith("producto_id=")
+
+
+def test_no_duplica_un_producto_que_ya_existe(client, variante, guion):
+    cola, vistos = guion
+    cola += [llama("crear_producto_menu", nombre="Empanada", categoria_id=variante.producto.categoria_id,
+                   variantes=[{"nombre": "Regular", "precio": 2}]), dice("Ya existe.")]
+    conversar(client, "crea la empanada")
+    assert "Ya hay un «Empanada»" in respuestas_a_herramientas(vistos)[0]["response"]["error"]
+
+
+def test_la_receta_agrega_sin_borrar_lo_que_tenia(client, db, variante, insumo, guion):
+    cola, _ = guion
+    queso = models.Ingrediente(nombre="Queso blanco", unidad="kg", costo_unitario=6)
+    db.add(queso)
+    db.commit()
+    p, r = _propone_y_confirma(client, cola, "a la empanada de carne ponle 20 g de queso",
+                               llama("guardar_receta", variante_id=variante.id, ingredientes=[{"ingrediente_id": queso.id, "cantidad": 0.02}]))
+    assert "0,1 kg de Carne molida" in p["detalle"][0] and "0,02 kg de Queso blanco" in p["detalle"][0]
+    assert r["ok"]
+    assert {(i.ingrediente_id, i.cantidad_por_unidad) for i in db.query(models.RecetaItem).filter_by(variante_id=variante.id)} == {
+        (insumo.id, 0.1), (queso.id, 0.02)}
+
+
+def test_crea_mercancia_y_cambia_un_precio(client, db, variante, guion):
+    cola, _ = guion
+    p, r = _propone_y_confirma(client, cola, "crea la mercancía harina de maíz en kg a 1,2",
+                               llama("crear_mercancia", nombre="Harina de maíz", unidad="kg", costo_unitario=1.2))
+    assert r["ok"] and db.query(models.Ingrediente).filter_by(nombre="Harina de maíz").one().costo_unitario == 1.2
+    p, r = _propone_y_confirma(client, cola, "sube la empanada a 5,5", llama("cambiar_precio", variante_id=variante.id, precio=5.5))
+    assert "$5,00 → $5,50" in p["titulo"] and r["ok"]
+    db.refresh(variante)
+    assert variante.precio == 5.5

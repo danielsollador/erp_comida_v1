@@ -410,6 +410,185 @@ def ejecutar_registrar_gasto(ctx: Contexto, descripcion: str, monto: float, meto
     return f"Listo: gasto de {_usd(monto)} anotado."
 
 
+
+# ── Armar el negocio: productos, mercancías, recetas, precios ───────────────
+
+UNIDADES = ("kg", "g", "lt", "ml", "unidad")
+
+
+def listar_categorias_menu(ctx: Contexto) -> dict:
+    st, cats = ctx.api("GET", "/api/menu/categorias")
+    if st != 200:
+        return {"error": _error(st, cats)}
+    return {"categorias": [{"categoria_id": c["id"], "nombre": c["nombre"]} for c in cats if c.get("activo", True)]}
+
+
+def ver_receta(ctx: Contexto, variante_id: int) -> dict:
+    st, items = ctx.api("GET", f"/api/inventario/recetas/{int(variante_id)}")
+    if st != 200:
+        return {"error": _error(st, items)}
+    return {"receta": [{"ingrediente_id": i["ingrediente_id"], "mercancia": i["ingrediente_nombre"],
+                        "cantidad": i["cantidad_por_unidad"], "unidad": i["unidad"]} for i in items]
+            or "Ese producto no tiene receta todavía."}
+
+
+def _num(x: float) -> str:
+    return pregunta_negocio.formatear(x, "numero")
+
+
+def _lineas_receta(ctx: Contexto, ingredientes: List[dict]) -> List[tuple]:
+    salida = []
+    for it in ingredientes or []:
+        ing = _ingrediente(ctx, it.get("ingrediente_id"))
+        cantidad = float(it.get("cantidad") or 0)
+        if cantidad <= 0:
+            raise ValueError(f"La cantidad de {ing.nombre} tiene que ser mayor que cero.")
+        salida.append((ing, cantidad))
+    return salida
+
+
+def _texto_receta(lineas: List[tuple]) -> str:
+    return ", ".join(f"{_num(c)} {i.unidad} de {i.nombre}" for i, c in lineas)
+
+
+def preparar_crear_producto(ctx: Contexto, nombre: str, variantes: List[dict], categoria_id: int = 0,
+                            categoria_nueva: str = "", receta: Optional[List[dict]] = None) -> Preparado:
+    nombre = " ".join((nombre or "").split())
+    if not nombre:
+        raise ValueError("El producto necesita un nombre.")
+    if not variantes:
+        raise ValueError("Falta el precio: dime cuánto cuesta (y si tiene tamaños o sabores, cada uno con su precio).")
+    existentes = {pedido_whatsapp._clave(o.nombre.split(" · ")[0]) for o in pedido_whatsapp.menu(ctx.db)}
+    if pedido_whatsapp._clave(nombre) in existentes:
+        raise ValueError(f"Ya hay un «{nombre}» en el menú. Si es un sabor o tamaño nuevo, dilo así; si es el precio, usa cambiar_precio.")
+    cat = ""
+    if categoria_nueva:
+        cat = f"{categoria_nueva} (categoría nueva)"
+    else:
+        c = ctx.db.get(models.Categoria, int(categoria_id or 0))
+        if c is None:
+            raise ValueError("Falta la categoría: búscala con listar_categorias_menu o di que es nueva.")
+        cat = c.nombre
+    detalle = [f"Categoría: {cat}"] + [f"{v.get('nombre') or 'Regular'} · {_usd(float(v.get('precio') or 0))}" for v in variantes]
+    if any(float(v.get("precio") or 0) <= 0 for v in variantes):
+        raise ValueError("Cada variante necesita un precio mayor que cero.")
+    if receta:
+        detalle.append("Receta (por cada uno que se vende): " + _texto_receta(_lineas_receta(ctx, receta)))
+        if len(variantes) > 1:
+            detalle.append("La receta va para todas sus variantes.")
+    return Preparado(titulo=f"Nuevo en el menú: {nombre}", detalle=detalle)
+
+
+def ejecutar_crear_producto(ctx: Contexto, nombre: str, variantes: List[dict], categoria_id: int = 0,
+                            categoria_nueva: str = "", receta: Optional[List[dict]] = None) -> str:
+    if categoria_nueva:
+        st, c = ctx.api("POST", "/api/menu/categorias", {"nombre": " ".join(categoria_nueva.split())})
+        if st != 200:
+            raise ValueError(_error(st, c))
+        categoria_id = c["id"]
+    cuerpo = {"nombre": " ".join(nombre.split()), "categoria_id": int(categoria_id),
+              "variantes": [{"nombre": (v.get("nombre") or "Regular").strip(), "precio": float(v["precio"])} for v in variantes]}
+    st, p = ctx.api("POST", "/api/menu/productos", cuerpo)
+    if st != 200:
+        raise ValueError(_error(st, p))
+    ids = [v["id"] for v in p.get("variantes", [])]
+    ctx.nota = f"producto_id={p['id']}, variante_id={','.join(map(str, ids))}"
+    texto = f"Listo: «{p['nombre']}» ya está en el menú."
+    if receta:
+        items = [{"ingrediente_id": int(r["ingrediente_id"]), "cantidad_por_unidad": float(r["cantidad"])} for r in receta]
+        for vid in ids:
+            st, r = ctx.api("PUT", f"/api/inventario/recetas/{vid}", items)
+            if st != 200:
+                return texto + f" La receta no se guardó: {_error(st, r)}"
+        texto += " Con su receta: ya descuenta del inventario al venderse."
+    return texto
+
+
+def preparar_crear_mercancia(ctx: Contexto, nombre: str, unidad: str, tipo: str = "insumo", costo_unitario: float = 0,
+                             stock_minimo: float = 0) -> Preparado:
+    nombre = " ".join((nombre or "").split())
+    if unidad not in UNIDADES:
+        raise ValueError(f"La unidad tiene que ser una de: {', '.join(UNIDADES)}.")
+    parecidas = buscar_mercancia(ctx, nombre).get("mercancias")
+    if isinstance(parecidas, list) and any(pedido_whatsapp._clave(m["nombre"]) == pedido_whatsapp._clave(nombre) for m in parecidas):
+        raise ValueError(f"Ya existe «{nombre}» en el inventario: usa esa (búscala con buscar_mercancia).")
+    tipos = {"insumo": "Materia prima", "reventa": "Reventa", "consumible": "Consumible", "desechable": "Desechable",
+             "preparacion": "Preparación"}
+    detalle = [f"Almacén: {tipos.get(tipo, tipo)} · se mide en {unidad}"]
+    if costo_unitario:
+        detalle.append(f"Cuesta {_usd(costo_unitario)} por {unidad}")
+    if stock_minimo:
+        detalle.append(f"Avisa cuando queden menos de {_num(stock_minimo)} {unidad}")
+    detalle.append("Empieza en cero: lo que haya entra con la próxima compra o un conteo.")
+    return Preparado(titulo=f"Mercancía nueva: {nombre}", detalle=detalle)
+
+
+def ejecutar_crear_mercancia(ctx: Contexto, nombre: str, unidad: str, tipo: str = "insumo", costo_unitario: float = 0,
+                             stock_minimo: float = 0) -> str:
+    st, r = ctx.api("POST", "/api/inventario/ingredientes",
+                    {"nombre": nombre, "unidad": unidad, "tipo": tipo, "costo_unitario": costo_unitario or 0,
+                     "stock_minimo": stock_minimo or 0})
+    if st != 200:
+        raise ValueError(_error(st, r))
+    ctx.nota = f"ingrediente_id={r['id']}"
+    return f"Listo: «{r['nombre']}» ya está en el inventario."
+
+
+def _receta_actual(ctx: Contexto, variante_id: int) -> List[dict]:
+    st, items = ctx.api("GET", f"/api/inventario/recetas/{int(variante_id)}")
+    if st != 200:
+        raise ValueError(_error(st, items))
+    return [{"ingrediente_id": i["ingrediente_id"], "cantidad": i["cantidad_por_unidad"]} for i in items]
+
+
+def _receta_nueva(ctx: Contexto, variante_id: int, ingredientes: List[dict], reemplazar: bool) -> List[dict]:
+    if reemplazar:
+        return ingredientes
+    actual = {r["ingrediente_id"]: r for r in _receta_actual(ctx, variante_id)}
+    for it in ingredientes:
+        actual[int(it["ingrediente_id"])] = {"ingrediente_id": int(it["ingrediente_id"]), "cantidad": float(it["cantidad"])}
+    return [r for r in actual.values() if float(r["cantidad"]) > 0]
+
+
+def preparar_guardar_receta(ctx: Contexto, variante_id: int, ingredientes: List[dict], reemplazar: bool = False) -> Preparado:
+    por_id = {o.variante_id: o for o in pedido_whatsapp.menu(ctx.db)}
+    v = por_id.get(int(variante_id or 0))
+    if v is None:
+        raise ValueError(f"El variante_id {variante_id} no existe en el menú: búscalo con buscar_productos_menu.")
+    _lineas_receta(ctx, ingredientes)  # que existan y tengan cantidad
+    queda = _lineas_receta(ctx, _receta_nueva(ctx, variante_id, ingredientes, reemplazar))
+    return Preparado(titulo=f"Receta de {v.nombre}",
+                     detalle=[("Queda así" if not reemplazar else "Nueva receta") + " (por cada uno que se vende): " + _texto_receta(queda),
+                              "Desde ya, cada venta descuenta eso del inventario."])
+
+
+def ejecutar_guardar_receta(ctx: Contexto, variante_id: int, ingredientes: List[dict], reemplazar: bool = False) -> str:
+    items = [{"ingrediente_id": int(r["ingrediente_id"]), "cantidad_por_unidad": float(r["cantidad"])}
+             for r in _receta_nueva(ctx, variante_id, ingredientes, reemplazar)]
+    st, r = ctx.api("PUT", f"/api/inventario/recetas/{int(variante_id)}", items)
+    if st != 200:
+        raise ValueError(_error(st, r))
+    return "Listo: receta guardada."
+
+
+def preparar_cambiar_precio(ctx: Contexto, variante_id: int, precio: float) -> Preparado:
+    v = ctx.db.get(models.Variante, int(variante_id or 0))
+    if v is None:
+        raise ValueError(f"El variante_id {variante_id} no existe: búscalo con buscar_productos_menu.")
+    if precio <= 0:
+        raise ValueError("El precio tiene que ser mayor que cero.")
+    nombre = next((o.nombre for o in pedido_whatsapp.menu(ctx.db) if o.variante_id == v.id), v.nombre)
+    return Preparado(titulo=f"Precio de {nombre}: {_usd(v.precio)} → {_usd(precio)}", detalle=["Las ventas que ya se hicieron no cambian."])
+
+
+def ejecutar_cambiar_precio(ctx: Contexto, variante_id: int, precio: float) -> str:
+    v = ctx.db.get(models.Variante, int(variante_id))
+    st, r = ctx.api("PUT", f"/api/menu/variantes/{int(variante_id)}", {"nombre": v.nombre, "precio": float(precio), "activo": v.activo})
+    if st != 200:
+        raise ValueError(_error(st, r))
+    return f"Listo: ahora cuesta {_usd(precio)}."
+
+
 # ── El catálogo de herramientas, como lo ve Gemini ──────────────────────────
 
 @dataclass
@@ -488,6 +667,43 @@ HERRAMIENTAS: Dict[str, Herramienta] = {
         "CAMBIA: anota un gasto pagado con plata del negocio (luz, gas, un servicio). Monto en dólares.",
         _obj({"descripcion": S, "monto": N, "metodo_pago": S, "categoria": S}, ["descripcion", "monto"]),
         lambda a: "Preparando el gasto…", preparar=preparar_registrar_gasto, ejecutar=ejecutar_registrar_gasto),
+    # ── armar el negocio ──
+    "listar_categorias_menu": Herramienta(
+        "Las categorías del menú con su categoria_id (para crear un producto).",
+        _obj({}, []), lambda a: "Mirando las categorías del menú…", leer=listar_categorias_menu),
+    "ver_receta": Herramienta(
+        "La receta actual de un producto del menú (variante_id de buscar_productos_menu).",
+        _obj({"variante_id": I}, ["variante_id"]), lambda a: "Mirando la receta…", leer=ver_receta),
+    "crear_producto_menu": Herramienta(
+        "CAMBIA: crea un producto nuevo en el menú con sus variantes (tamaños o sabores, cada una con precio en "
+        "dólares; si es uno solo, nombre 'Regular'). categoria_id de listar_categorias_menu, o categoria_nueva con "
+        "el nombre si no existe. receta opcional: lo que lleva CADA UNO que se vende, con ingrediente_id de "
+        "buscar_mercancia y la cantidad EN LA UNIDAD DE ESA MERCANCÍA (80 g de algo que va en kg = 0.08).",
+        _obj({"nombre": S, "categoria_id": I, "categoria_nueva": S,
+              "variantes": {"type": "ARRAY", "items": _obj({"nombre": S, "precio": N}, ["nombre", "precio"])},
+              "receta": {"type": "ARRAY", "items": _obj({"ingrediente_id": I, "cantidad": N}, ["ingrediente_id", "cantidad"])}},
+             ["nombre", "variantes"]),
+        lambda a: "Preparando el producto…", preparar=preparar_crear_producto, ejecutar=ejecutar_crear_producto),
+    "crear_mercancia": Herramienta(
+        "CAMBIA: crea una mercancía nueva en el inventario. unidad: kg, g, lt, ml o unidad. tipo: insumo (materia "
+        "prima), reventa (se vende tal cual, como un refresco), consumible, desechable. costo_unitario en dólares "
+        "por unidad si se sabe.",
+        _obj({"nombre": S, "unidad": {"type": "STRING", "enum": list(UNIDADES)},
+              "tipo": {"type": "STRING", "enum": ["insumo", "reventa", "consumible", "desechable"]},
+              "costo_unitario": N, "stock_minimo": N}, ["nombre", "unidad"]),
+        lambda a: "Preparando la mercancía…", preparar=preparar_crear_mercancia, ejecutar=ejecutar_crear_mercancia),
+    "guardar_receta": Herramienta(
+        "CAMBIA: pone o cambia la receta de un producto del menú: lo que lleva CADA UNO que se vende. Por defecto "
+        "AGREGA o cambia esos ingredientes y deja los demás (reemplazar=false); con reemplazar=true la receta queda "
+        "solo con lo que mandas. Cantidad en la unidad de la mercancía (100 g de algo en kg = 0.1; 0 lo quita).",
+        _obj({"variante_id": I, "reemplazar": B,
+              "ingredientes": {"type": "ARRAY", "items": _obj({"ingrediente_id": I, "cantidad": N}, ["ingrediente_id", "cantidad"])}},
+             ["variante_id", "ingredientes"]),
+        lambda a: "Preparando la receta…", preparar=preparar_guardar_receta, ejecutar=ejecutar_guardar_receta),
+    "cambiar_precio": Herramienta(
+        "CAMBIA: cambia el precio (en dólares) de un producto del menú. variante_id de buscar_productos_menu.",
+        _obj({"variante_id": I, "precio": N}, ["variante_id", "precio"]),
+        lambda a: "Preparando el cambio de precio…", preparar=preparar_cambiar_precio, ejecutar=ejecutar_cambiar_precio),
 }
 
 
@@ -514,8 +730,13 @@ Reglas:
   Si preguntan por un producto o una categoría, FILTRA por ese campo con el
   nombre como lo dijo la persona ("pastelito"): la tabla que se le muestra
   tiene que ser de eso, no de todo.
-- Si piden algo que no puedes hacer con tus herramientas, dilo y di en qué
-  pantalla se hace.
+- Para una receta, la mercancía tiene que existir: búscala; si no está, propón
+  crearla primero (crear_mercancia) y después la receta. Las cantidades van por
+  CADA UNO que se vende y en la unidad de la mercancía.
+- Si te piden varias cosas a la vez, propón una por una: después de cada
+  confirmación sigues con la siguiente.
+- Si piden algo que no puedes hacer con tus herramientas (cargar una factura con
+  foto, devolver una venta cobrada, editar usuarios), dilo y di en qué pantalla se hace.
 - Responde en español, de tú, cálido y breve (2 a 4 frases), con **negrita** en lo
   importante. Si es el primer mensaje, saluda por el nombre en pocas palabras.
 
