@@ -207,6 +207,22 @@ export const api = {
 
   estado: () => req<EstadoAcceso>('/acceso/estado'),
 
+  /**
+   * La portada en UNA llamada (routers/app_movil.py): con datos moviles cada
+   * viaje tarda uno o dos segundos y siete viajes eran diez segundos de
+   * "Cargando" (Leider, 23-oct). Las piezas sueltas quedan por si el
+   * servidor es viejo y no la tiene (404).
+   */
+  inicio: () =>
+    req<{
+      resumen: ReporteResumen | null
+      pedidos: unknown[]
+      cocina: unknown[]
+      cobrar: unknown[]
+      avisos: Aviso[] | null
+      recorrido: Recorrido | null
+      arranque: ArranqueLocal | null
+    }>('/app/inicio'),
   // La portada (mismas llamadas que pages/Inicio.tsx de la web)
   resumenDeHoy: () => req<ReporteResumen>(`/reportes/resumen?${rango(hoyEnCaracas(), hoyEnCaracas())}`),
   pedidosDelDia: () => req<unknown[]>('/pedidos?del_dia=true'),

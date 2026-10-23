@@ -1,6 +1,7 @@
 import { useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ErrorApi } from './api'
+import { guardarCache, leerCache } from './cache'
 
 /** Un pedazo de la pantalla: llego, o fallo con su motivo (403 = el rol no lo ve). */
 export type Parte<T> = { ok: true; valor: T } | { ok: false; error: string; estado: number }
@@ -22,8 +23,10 @@ export async function parte<T>(promesa: Promise<T>): Promise<Parte<T>> {
  * hacia abajo. Lo ultimo que llego se queda en pantalla mientras se refresca:
  * nada de parpadear a "cargando" cada minuto.
  */
-export function useCarga<T>(cargar: () => Promise<T>, cadaSegundos = 60, clave?: string) {
-  const [datos, setDatos] = useState<T | null>(null)
+export function useCarga<T>(cargar: () => Promise<T>, cadaSegundos = 60, clave?: string, cache?: string) {
+  // Con `cache`, lo ultimo que llego se guarda en el telefono y la proxima
+  // vez la pantalla arranca con eso mientras llega lo nuevo (lib/cache.ts).
+  const [datos, setDatos] = useState<T | null>(() => (cache ? leerCache<T>(cache) : null))
   const [error, setError] = useState('')
   const [refrescando, setRefrescando] = useState(false)
   // La ultima version de `cargar` (puede depender de la sesion), sin que el
@@ -36,13 +39,16 @@ export function useCarga<T>(cargar: () => Promise<T>, cadaSegundos = 60, clave?:
   const correr = useCallback(async (manual: boolean) => {
     if (manual) setRefrescando(true)
     try {
-      setDatos(await cargarRef.current())
+      const nuevos = await cargarRef.current()
+      setDatos(nuevos)
       setError('')
+      if (cache) guardarCache(cache, nuevos)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cargar.')
     } finally {
       setRefrescando(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `cache` es fijo por pantalla
   }, [])
 
   useFocusEffect(

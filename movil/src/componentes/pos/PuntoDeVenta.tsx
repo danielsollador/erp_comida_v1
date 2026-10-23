@@ -6,7 +6,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { porQueNoSeEdita } from '../../../../frontend/src/lib/comandas'
 import { METODOS_PAGO } from '../../../../frontend/src/lib/pagos'
 import * as almacen from '../../lib/almacen'
-import { apiPos } from '../../lib/api-pos'
+import { apiPos, type ArranquePos } from '../../lib/api-pos'
+import { guardarCache, leerCache } from '../../lib/cache'
 import { avisar, confirmar } from '../../lib/dialogo'
 import { useMoneda } from '../../lib/moneda'
 import {
@@ -89,6 +90,13 @@ const SECCIONES: { id: IdSeccionPos; texto: string }[] = [
   { id: 'pedidos', texto: 'Pedidos' },
 ]
 
+/** El piso en una lista: en cocina, listos y por entregar, sin repetir, el mas nuevo primero. */
+function pedidosDelArranque(d: ArranquePos): Pedido[] {
+  const porId = new Map<number, Pedido>()
+  for (const p of [...d.en_cocina, ...d.listos, ...d.por_entregar]) porId.set(p.id, p)
+  return [...porId.values()].sort((a, b) => b.numero - a.numero)
+}
+
 export default function PuntoDeVenta() {
   const t = useTema()
   const { modo } = useModo()
@@ -104,17 +112,20 @@ export default function PuntoDeVenta() {
   const vista: IdSeccionPos = seccion === 'pedidos' ? 'pedidos' : 'tomar'
 
   // ── Lo que se carga ──
-  const [categorias, setCategorias] = useState<Categoria[] | null>(null)
+  // Arranca con lo ultimo que se vio en este servidor (lib/cache.ts): el
+  // mostrador aparece al instante y se corrige cuando llega lo nuevo.
+  const [guardado] = useState(() => leerCache<ArranquePos>('pos'))
+  const [categorias, setCategorias] = useState<Categoria[] | null>(guardado ? guardado.categorias.filter((c) => c.activo) : null)
   const [errorMenu, setErrorMenu] = useState('')
   const [refrescandoMenu, setRefrescandoMenu] = useState(false)
-  const [puntos, setPuntos] = useState<PuntoVenta[]>([])
+  const [puntos, setPuntos] = useState<PuntoVenta[]>(guardado?.puntos_venta ?? [])
   const [puntoId, setPuntoId] = useState<number | null>(null)
   // Si el local tiene Pabilo, un pago movil se comprueba contra el banco.
-  const [pabilo, setPabilo] = useState<EstadoPabilo | null>(null)
-  const [tasaIva, setTasaIva] = useState(16)
-  const [apertura, setApertura] = useState<EstadoApertura | null>(null)
-  const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
-  const [cargandoPedidos, setCargandoPedidos] = useState(true)
+  const [pabilo, setPabilo] = useState<EstadoPabilo | null>(guardado?.pabilo ?? null)
+  const [tasaIva, setTasaIva] = useState(guardado?.fiscal.tasa_iva ?? 16)
+  const [apertura, setApertura] = useState<EstadoApertura | null>(guardado?.apertura ?? null)
+  const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>(() => (guardado ? pedidosDelArranque(guardado) : []))
+  const [cargandoPedidos, setCargandoPedidos] = useState(!guardado)
   const [refrescandoPedidos, setRefrescandoPedidos] = useState(false)
   // Lo ultimo que se pinto, para no repintar cuando el servidor manda lo mismo.
   const firmaPedidos = useRef('')
@@ -209,6 +220,24 @@ export default function PuntoDeVenta() {
     [],
   )
 
+  /** Lo que trae el arranque en una llamada (o la cache), repartido en su sitio. */
+  const recibirArranque = useCallback(
+    (d: ArranquePos) => {
+      setCategorias(d.categorias.filter((c) => c.activo))
+      setErrorMenu('')
+      setRefrescandoMenu(false)
+      setApertura(d.apertura)
+      setPuntos(d.puntos_venta)
+      setPabilo(d.pabilo)
+      setTasaIva(d.fiscal.tasa_iva)
+      const lista = pedidosDelArranque(d)
+      firmaPedidos.current = JSON.stringify(lista)
+      setPedidosActivos(lista)
+      setCargandoPedidos(false)
+    },
+    [],
+  )
+
   const recargarApertura = useCallback(() => {
     apiPos
       .estadoApertura()
@@ -217,15 +246,25 @@ export default function PuntoDeVenta() {
   }, [])
 
   useEffect(() => {
-    void cargarMenu()
-    void refrescarPedidos()
-    recargarApertura()
-    apiPos.puntosVenta().then(setPuntos).catch(() => undefined)
-    apiPos.estadoPabilo().then(setPabilo).catch(() => setPabilo(null))
+    // UNA llamada con todo (routers/app_movil.py). Si el servidor es viejo y
+    // no la tiene (404), las de siempre, una por una.
     apiPos
-      .configFiscal()
-      .then((c) => setTasaIva(c.tasa_iva))
-      .catch(() => undefined)
+      .arranque()
+      .then((d) => {
+        recibirArranque(d)
+        guardarCache('pos', d)
+      })
+      .catch(() => {
+        void cargarMenu()
+        void refrescarPedidos()
+        recargarApertura()
+        apiPos.puntosVenta().then(setPuntos).catch(() => undefined)
+        apiPos.estadoPabilo().then(setPabilo).catch(() => setPabilo(null))
+        apiPos
+          .configFiscal()
+          .then((c) => setTasaIva(c.tasa_iva))
+          .catch(() => undefined)
+      })
     almacen
       .leer(CLAVE_PUNTO)
       .then((v) => setPuntoId(v ? Number(v) || null : null))
@@ -254,7 +293,7 @@ export default function PuntoDeVenta() {
       clearInterval(respaldo)
       vigia.remove()
     }
-  }, [cargarMenu, refrescarPedidos, recargarApertura])
+  }, [cargarMenu, refrescarPedidos, recargarApertura, recibirArranque])
 
   // Al volver a la pantalla (de la tasa, de otro modulo): lo del piso al dia.
   useFocusEffect(

@@ -687,7 +687,10 @@ function HojaFormularioWeb({ visible, alCerrar, titulo, subtitulo, children, pie
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={alCerrar} presentationStyle="pageSheet" statusBarTranslucent>
       <View style={{ flex: 1, backgroundColor: t.papel }}>
-        <KeyboardAvoidingView style={{ flex: 1 }}>
+        {/* Sin `behavior` iOS no hace nada: el teclado tapaba el campo del
+            nombre y el boton de enviar (Leider, 23-oct). `padding` encoge la
+            hoja y el pie queda justo encima del teclado. */}
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}>
           <CabezaFormulario titulo={titulo} subtitulo={subtitulo} alCerrar={alCerrar} arriba={18} />
           <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
             {children}

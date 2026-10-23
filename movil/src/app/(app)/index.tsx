@@ -5,8 +5,8 @@ import { Controles, Marca } from '../../componentes/Encabezado'
 import { Arranque, Avisos, Espera, TarjetaVender } from '../../componentes/inicio/Fichas'
 import Recorrido, { FilaReportes } from '../../componentes/inicio/Recorrido'
 import { Etiqueta, Ficha, Pantalla, Problema } from '../../componentes/ui'
-import { api } from '../../lib/api'
-import { parte, useCarga } from '../../lib/carga'
+import { api, ErrorApi } from '../../lib/api'
+import { parte, useCarga, type Parte } from '../../lib/carga'
 import { fechaDeHoy, saludo } from '../../lib/formato'
 import { MODULOS, entraA } from '../../lib/modulos'
 import { useMoneda } from '../../lib/moneda'
@@ -30,6 +30,22 @@ export default function Inicio() {
   const veCifras = puede?.ve_kpis ?? false
 
   const { datos, error, refrescando, refrescar } = useCarga(async () => {
+    // Una sola llamada. Si el servidor todavia no la tiene (404), las siete de antes.
+    try {
+      const d = await api.inicio()
+      const ok = <V,>(v: V): Parte<V> => ({ ok: true, valor: v })
+      return {
+        resumen: d.resumen ? ok(d.resumen) : null,
+        pedidos: ok(d.pedidos),
+        cocina: ok(d.cocina),
+        cobrar: ok(d.cobrar),
+        avisos: d.avisos ? ok(d.avisos) : null,
+        recorrido: d.recorrido ? ok(d.recorrido) : null,
+        arranque: d.arranque ? ok(d.arranque) : null,
+      }
+    } catch (e) {
+      if (!(e instanceof ErrorApi && e.estado === 404)) throw e
+    }
     const [resumen, pedidos, cocina, cobrar, avisos, recorrido, arranque] = await Promise.all([
       veCifras ? parte(api.resumenDeHoy()) : Promise.resolve(null),
       parte(api.pedidosDelDia()),
@@ -43,7 +59,7 @@ export default function Inicio() {
     const caida = todas.find((p) => !p.ok)
     if (caida && !caida.ok && todas.every((p) => !p.ok)) throw new Error(caida.error)
     return { resumen, pedidos, cocina, cobrar, avisos, recorrido, arranque }
-  })
+  }, 60, undefined, 'inicio')
 
   // La portada entra entera, de una vez, con un fundido corto (vp-aparece),
   // y solo la primera vez: al volver de otra pantalla ya esta.

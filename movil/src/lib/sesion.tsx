@@ -1,5 +1,6 @@
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, cargarServidor, cargarToken, cuandoCaduque } from './api'
+import { vaciarCache } from './cache'
 import { olvidarTelefono, registrarTelefono } from './push'
 import { marcaDe, useMarca } from './tema'
 import type { EstadoAcceso } from './tipos'
@@ -77,6 +78,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
 
   const salir = useCallback(async () => {
     await olvidarTelefono()
+    vaciarCache()
     try {
       await api.salir()
     } catch {

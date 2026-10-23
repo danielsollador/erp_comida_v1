@@ -62,7 +62,20 @@ export type DatosFacturaVenta = {
   razon_social_cliente?: string
 }
 
+/** El punto de venta al abrir, en una llamada (routers/app_movil.py). */
+export type ArranquePos = {
+  categorias: Categoria[]
+  en_cocina: Pedido[]
+  listos: Pedido[]
+  por_entregar: Pedido[]
+  apertura: EstadoApertura
+  puntos_venta: PuntoVenta[]
+  pabilo: EstadoPabilo
+  fiscal: ConfiguracionFiscal
+}
+
 export const apiPos = {
+  arranque: () => req<ArranquePos>('/app/pos'),
   // ── El menu y lo que vive en el piso ──
   categorias: () => req<Categoria[]>('/menu/categorias'),
   /** Lo que cocina todavia tiene que preparar, cobrado o no (el mismo listado de la cocina). */
