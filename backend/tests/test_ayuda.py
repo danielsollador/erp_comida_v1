@@ -25,7 +25,7 @@ def gemini(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "clave-de-prueba")
     enviado = {}
 
-    def falsa(contenidos, instrucciones, esquema=None):
+    def falsa(contenidos, instrucciones, esquema=None, rapido=False):
         enviado.update(contenidos=contenidos, instrucciones=instrucciones)
         return "Toca «Lo viene a buscar» en la tarjeta."
 

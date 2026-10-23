@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
-import { api } from '../lib/api'
+import { api, enVivo } from '../lib/api'
+import { useAcceso } from '../lib/acceso'
 import type { BorradorCaso, RespuestaNegocio, TurnoAyuda } from '../lib/types'
 import Icono from './Icono'
 
@@ -45,8 +46,12 @@ const DE_NUMEROS = [
 ]
 
 type Modo = 'ayuda' | 'negocio'
-/** Un turno y, si es de «Mis números», la tabla que calculó el sistema. */
-type Turno = TurnoAyuda & { tabla?: RespuestaNegocio }
+/**
+ * Un turno y, si es de «Mis números», la tabla que calculó el sistema.
+ * Mientras llega: `paso` es lo que se está haciendo ("Buscando en tus
+ * ventas…") y `escribiendo`, que el texto todavía crece.
+ */
+type Turno = TurnoAyuda & { tabla?: RespuestaNegocio; paso?: string; escribiendo?: boolean }
 
 let estadoCache: Promise<{ activo: boolean; negocio: boolean }> | null = null
 function estadoAyuda() {
@@ -73,6 +78,11 @@ function guardar(modo: Modo, turnos: Turno[]) {
 
 export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
   const { pathname } = useLocation()
+  const { estado } = useAcceso()
+  // El primer nombre, para saludar. Si no tiene nombre cargado, sin nombre:
+  // "Hola, admin" suena a sistema, no a persona.
+  const primerNombre =
+    estado.nombre_visible && estado.nombre_visible !== estado.usuario ? estado.nombre_visible.split(' ')[0] : ''
   const [activa, setActiva] = useState(false)
   const [conNumeros, setConNumeros] = useState(false)
   const [abierto, setAbierto] = useState(false)
@@ -129,18 +139,31 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
     setPensando(true)
     // Al servidor va solo lo dicho, no las tablas.
     const historial = antes.map(({ rol, texto }) => ({ rol, texto }))
-    let respuesta: Turno
-    try {
-      if (enModo === 'negocio') {
-        const r = await api.preguntarNegocio(pregunta, historial)
-        respuesta = { rol: 'asistente', texto: r.texto, tabla: r.columnas.length ? r : undefined }
-      } else {
-        respuesta = { rol: 'asistente', texto: (await api.preguntarAyuda(pregunta, pathname, historial)).texto }
-      }
-    } catch {
-      respuesta = { rol: 'asistente', texto: 'No pude responder ahora: revisa la conexión y prueba otra vez.' }
+    // La respuesta llega en partes: los pasos, la tabla y el texto a medida
+    // que se escribe. Se va pintando sobre el mismo turno.
+    let respuesta: Turno = { rol: 'asistente', texto: '', paso: 'Pensando…', escribiendo: true }
+    const pintar = (cambio: Partial<Turno>) => {
+      respuesta = { ...respuesta, ...cambio }
+      setTurnos([...conPregunta, respuesta])
     }
-    const conRespuesta = [...conPregunta, respuesta]
+    pintar({})
+    try {
+      await enVivo(
+        enModo === 'negocio' ? '/ayuda/negocio/en-vivo' : '/ayuda/en-vivo',
+        { pregunta, pantalla: pathname, historial },
+        (e) => {
+          if (typeof e.paso === 'string') pintar({ paso: e.paso })
+          else if (e.tabla) {
+            const t = e.tabla as RespuestaNegocio
+            pintar({ tabla: t.columnas.length ? t : undefined })
+          } else if (typeof e.texto === 'string') pintar({ texto: respuesta.texto + e.texto, paso: undefined })
+        },
+      )
+    } catch {
+      if (!respuesta.texto) pintar({ texto: 'No pude responder ahora: revisa la conexión y prueba otra vez.' })
+    }
+    const final: Turno = { rol: 'asistente', texto: respuesta.texto || 'No pude responder ahora.', tabla: respuesta.tabla }
+    const conRespuesta = [...conPregunta, final]
     setTurnos(conRespuesta)
     guardar(enModo, conRespuesta)
     setPensando(false)
@@ -269,6 +292,12 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
               <div ref={lista} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
                 {turnos.length === 0 && (
                   <div className="flex flex-col gap-3">
+                    <p className="font-display text-[22px] font-semibold leading-tight text-neutral-900">
+                      Hola{primerNombre ? `, ${primerNombre}` : ''}.
+                      <span className="block text-neutral-500 font-normal text-[17px] mt-0.5">
+                        {modo === 'negocio' ? '¿Qué quieres saber de tu negocio?' : '¿En qué te ayudo?'}
+                      </span>
+                    </p>
                     <p className="text-sm text-neutral-600 text-pretty">
                       {modo === 'negocio'
                         ? 'Pregunta por tus ventas, productos, compras o la caja. El número lo calcula el sistema con tus reportes.'
@@ -294,18 +323,18 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
                       {t.texto}
                     </p>
                   ) : (
-                    <div key={i} className="max-w-[92%] flex flex-col gap-2">
-                      <div className="rounded-2xl rounded-bl-md bg-neutral-100 px-3.5 py-2.5 text-sm leading-relaxed">
-                        <Respuesta texto={t.texto} />
-                      </div>
+                    <div key={i} className="max-w-[92%] flex flex-col gap-2" aria-live={t.escribiendo ? 'polite' : undefined}>
+                      {t.texto ? (
+                        <div className="rounded-2xl rounded-bl-md bg-neutral-100 px-3.5 py-2.5 text-sm leading-relaxed">
+                          {/* El cursor va dentro del texto, al final de la ultima linea. */}
+                          <Respuesta texto={t.escribiendo ? `${t.texto} ▍` : t.texto} />
+                        </div>
+                      ) : (
+                        t.escribiendo && <Pensando paso={t.paso ?? 'Pensando…'} />
+                      )}
                       {t.tabla && <TablaDelSistema r={t.tabla} />}
                     </div>
                   ),
-                )}
-                {pensando && (
-                  <p className="self-start rounded-2xl bg-neutral-100 px-3.5 py-2 text-sm text-neutral-500" aria-live="polite">
-                    {modo === 'negocio' ? 'Calculando…' : 'Buscando en el manual…'}
-                  </p>
                 )}
                 {caso === 'armando' && (
                   <p className="self-start rounded-2xl bg-neutral-100 px-3.5 py-2 text-sm text-neutral-500" aria-live="polite">
@@ -400,6 +429,22 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
           document.body,
         )}
     </>
+  )
+}
+
+/** Lo que se está haciendo mientras llega la respuesta, con tres puntos que laten. */
+function Pensando({ paso }: { paso: string }) {
+  return (
+    <div className="self-start inline-flex items-center gap-2.5 rounded-2xl rounded-bl-md bg-neutral-100 px-3.5 py-2.5 text-sm text-neutral-600">
+      <span className="vp-puntos" aria-hidden>
+        <i />
+        <i />
+        <i />
+      </span>
+      <span key={paso} className="vp-paso">
+        {paso}
+      </span>
+    </div>
   )
 }
 

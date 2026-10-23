@@ -24,7 +24,7 @@ import difflib
 import json
 import logging
 import unicodedata
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -164,13 +164,15 @@ def _contenidos(historial: Sequence[schemas.TurnoAyuda], pregunta: str) -> List[
     return salida
 
 
-def traducir(contenidos: List[dict], fuentes: List[dict], rol: str) -> dict:
+def traducir(contenidos: List[dict], fuentes: List[dict], rol: str, rapido: bool = True) -> dict:
     d = hoy()
     instrucciones = INSTRUCCIONES.format(
         hoy=d.isoformat(), hoy_texto=f"{DIAS[d.weekday()]} {_fecha(d)} de {d.year}",
         tope=TOPE_POR_DEFECTO, rol=permisos.nombre_de(rol), catalogo=_catalogo_texto(fuentes),
     )
-    texto = asistente_ayuda.gemini(contenidos, instrucciones, esquema=_esquema(fuentes))
+    # El liviano primero: elegir una consulta del catalogo es guiado, y tarda
+    # la mitad. Si se equivoca, el reintento va con el bueno (ver `_preparar`).
+    texto = asistente_ayuda.gemini(contenidos, instrucciones, esquema=_esquema(fuentes), rapido=rapido)
     if not texto:
         raise RuntimeError("la IA no contestó")
     return json.loads(_sin_bloque(texto))
@@ -260,8 +262,12 @@ REDACTAR = """Respondes al dueño de un negocio de comida con los números que s
 
 Reglas:
 - Usa SOLO los números de la tabla, escritos igual. No calcules números nuevos
-  (ni sumas, ni promedios, ni porcentajes); comparar cuál es mayor sí.
-- Una o dos frases, de tú, sin saludo. Empieza por la respuesta.
+  (ni sumas, ni promedios, ni porcentajes, ni "casi la mitad" o "una quinta
+  parte"); comparar cuál es mayor sí.
+- Dos o tres frases, de tú. Empieza por la respuesta, en **negrita** el número
+  que importa. Tono cálido de socio que conoce el negocio{nombre}: si el dato es
+  bueno, celébralo en pocas palabras; después, una observación útil que se vea en
+  la tabla (qué destaca, qué conviene mirar). Sin saludo.
 - Si la tabla está vacía, dilo: en ese período no hay movimientos de eso.
 - Di el período como está abajo.
 
@@ -274,60 +280,119 @@ Tabla:
 def _redactar(pregunta: str, fuente: str, periodo: str,
               columnas: List[str], filas: List[List[str]], total: List[str]) -> Optional[str]:
     lineas = [" | ".join(columnas)] + [" | ".join(f) for f in filas] + ([" | ".join(total)] if total else [])
-    texto = REDACTAR.format(pregunta=pregunta, que=", ".join(columnas), fuente=fuente, periodo=periodo,
-                            tabla="\n".join(lineas) if filas else "(vacía)")
-    return asistente_ayuda.gemini([{"role": "user", "parts": [{"text": texto}]}],
-                                  "Eres el asistente de números de un ERP. Respondes corto y exacto.")
+    return asistente_ayuda.gemini([{"role": "user", "parts": [{"text": _texto_redactar(
+        pregunta, fuente, periodo, columnas, filas, total)}]}], "Eres el asistente de números de un ERP. Respondes corto y exacto.",
+        rapido=True)
+
+
+def _texto_redactar(pregunta: str, fuente: str, periodo: str, columnas: List[str], filas: List[List[str]],
+                    total: List[str], nombre: str = "") -> str:
+    lineas = [" | ".join(columnas)] + [" | ".join(f) for f in filas] + ([" | ".join(total)] if total else [])
+    return REDACTAR.format(pregunta=pregunta, que=", ".join(columnas), fuente=fuente, periodo=periodo,
+                           tabla="\n".join(lineas) if filas else "(vacía)",
+                           nombre=f" (se llama {nombre}; usa su nombre como mucho una vez)" if nombre else "")
 
 
 def puede_preguntar(rol: str) -> bool:
     return bool(rd.catalogo(permisos.administra(rol), permisos.modulos_de(rol)))
 
 
-def responder(db: Session, pregunta: str, historial: Sequence[schemas.TurnoAyuda], rol: str) -> schemas.RespuestaNegocio:
-    pregunta = pregunta.strip()[:asistente_ayuda.LARGO_MAXIMO]
+def _preparar(db: Session, pregunta: str, historial: Sequence[schemas.TurnoAyuda], rol: str) -> Iterator[dict]:
+    """Los pasos hasta tener la tabla, contados mientras pasan. Termina con
+    {"listo": {...}} o con {"mensaje": texto, "con_ia": bool}."""
     if not asistente_ayuda.activo():
-        return schemas.RespuestaNegocio(texto="La IA no está encendida en este local.", con_ia=False)
+        yield {"mensaje": "La IA no está encendida en este local.", "con_ia": False}
+        return
     ve_sensibles = permisos.administra(rol)
     modulos = permisos.modulos_de(rol)
     fuentes = [f for f in rd.catalogo(ve_sensibles, modulos) if f["medidas"]]
     if not fuentes:
-        return schemas.RespuestaNegocio(texto="Tu rol no entra a ningún reporte: esto lo ve el dueño.", con_ia=False)
-
+        yield {"mensaje": "Tu rol no entra a ningún reporte: esto lo ve el dueño.", "con_ia": False}
+        return
+    yield {"paso": "Entendiendo tu pregunta…"}
     contenidos = _contenidos(historial, pregunta)
     try:
         for intento in range(2):
-            t = traducir(contenidos, fuentes, rol)
+            t = traducir(contenidos, fuentes, rol, rapido=intento == 0)
             try:
                 consulta, desde, hasta, limite, filtrado = _consulta(db, t, modulos)
+                yield {"paso": f"Buscando en {rd.FUENTES[consulta.fuente].nombre.lower()}, {_periodo(desde, hasta)}…"}
                 resultado = rd.consultar(db, consulta, ve_sensibles, modulos)
                 break
             except rd.ErrorDeConsulta as e:
                 if intento:
                     raise NoSePuede(f"No pude armar esa consulta: {e}")
-                # Una vez: la IA ve el error y corrige.
+                # Una vez, con el modelo bueno: la IA ve el error y corrige.
+                yield {"paso": "Afinando la búsqueda…"}
                 contenidos = contenidos + [
                     {"role": "model", "parts": [{"text": json.dumps(t, ensure_ascii=False)}]},
                     {"role": "user", "parts": [{"text": f"El sistema rechazó esa consulta: {e} Corrígela."}]},
                 ]
     except NoSePuede as e:
-        return schemas.RespuestaNegocio(texto=str(e), con_ia=True)
+        yield {"mensaje": str(e), "con_ia": True}
+        return
     except Exception as e:  # la IA no contesto o contesto algo que no es JSON
         log.warning("Preguntale a tu negocio fallo: %s", e)
-        return schemas.RespuestaNegocio(texto="No pude responder ahora. Prueba otra vez en un momento.", con_ia=False)
+        yield {"mensaje": "No pude responder ahora. Prueba otra vez en un momento.", "con_ia": False}
+        return
 
     nombre_fuente = rd.FUENTES[consulta.fuente].nombre + "".join(f" · solo {n}" for n in filtrado)
     periodo = _periodo(desde, hasta)
     columnas, filas, total = _tabla(resultado, limite)
     log.info("negocio rol=%s consulta=%s", rol, json.dumps(t, ensure_ascii=False)[:400])
-    texto = _redactar(pregunta, nombre_fuente, periodo, columnas, filas, total)
-    return schemas.RespuestaNegocio(
-        texto=texto or f"{nombre_fuente}, {periodo}: mira la tabla.",
-        con_ia=texto is not None,
-        titulo=f"{nombre_fuente} · {periodo}",
-        columnas=columnas,
-        filas=filas,
-        total=total,
-        agrupado=len(resultado["campos_fila"]),
-        mas=max(len(resultado["filas"]) - limite, 0),
-    )
+    yield {"listo": {
+        "fuente": nombre_fuente, "periodo": periodo,
+        "tabla": schemas.RespuestaNegocio(
+            texto="", con_ia=True, titulo=f"{nombre_fuente} · {periodo}", columnas=columnas, filas=filas, total=total,
+            agrupado=len(resultado["campos_fila"]), mas=max(len(resultado["filas"]) - limite, 0)),
+    }}
+
+
+def responder_en_vivo(db: Session, pregunta: str, historial: Sequence[schemas.TurnoAyuda], rol: str,
+                      nombre: str = "") -> Iterator[dict]:
+    """Mis números, contado mientras pasa: los pasos, la tabla del sistema en
+    cuanto esta, y la respuesta escribiendose."""
+    pregunta = pregunta.strip()[:asistente_ayuda.LARGO_MAXIMO]
+    listo = None
+    for e in _preparar(db, pregunta, historial, rol):
+        if "paso" in e:
+            yield e
+        elif "mensaje" in e:
+            yield {"texto": e["mensaje"]}
+            yield {"fin": True, "con_ia": e["con_ia"]}
+            return
+        else:
+            listo = e["listo"]
+    tabla: schemas.RespuestaNegocio = listo["tabla"]
+    yield {"tabla": tabla.model_dump()}
+    escrito = False
+    try:
+        for trozo in asistente_ayuda.gemini_en_vivo(
+            [{"role": "user", "parts": [{"text": _texto_redactar(pregunta, listo["fuente"], listo["periodo"], tabla.columnas,
+                                                                  tabla.filas, tabla.total, nombre)}]}],
+            "Eres el asistente de números de un ERP. Respondes corto y exacto.", rapido=True,
+        ):
+            escrito = True
+            yield {"texto": trozo}
+    except Exception as e:
+        log.warning("La redaccion en vivo se corto: %s", e)
+    if not escrito:
+        yield {"texto": f"{listo['fuente']}, {listo['periodo']}: mira la tabla."}
+    yield {"fin": True, "con_ia": escrito}
+
+
+def responder(db: Session, pregunta: str, historial: Sequence[schemas.TurnoAyuda], rol: str) -> schemas.RespuestaNegocio:
+    """Lo mismo, de una vez (la usan las pruebas y quien no lea en vivo)."""
+    pregunta = pregunta.strip()[:asistente_ayuda.LARGO_MAXIMO]
+    listo = None
+    for e in _preparar(db, pregunta, historial, rol):
+        if "mensaje" in e:
+            return schemas.RespuestaNegocio(texto=e["mensaje"], con_ia=e["con_ia"])
+        if "listo" in e:
+            listo = e["listo"]
+    tabla: schemas.RespuestaNegocio = listo["tabla"]
+    texto = _redactar(pregunta, listo["fuente"], listo["periodo"], tabla.columnas, tabla.filas, tabla.total)
+    return tabla.model_copy(update={
+        "texto": texto or f"{listo['fuente']}, {listo['periodo']}: mira la tabla.",
+        "con_ia": texto is not None,
+    })

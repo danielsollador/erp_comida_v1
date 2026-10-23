@@ -4,10 +4,14 @@ sesión, sea el rol que sea: la cocina también pregunta (ver
 
 from typing import List
 
+import json
+
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from .. import asistente_ayuda, pregunta_negocio, schemas, triaje
+from ..acceso import usuarios
 from ..database import get_db
 
 router = APIRouter(prefix="/api/ayuda", tags=["ayuda"])
@@ -53,3 +57,31 @@ def registrar_caso(datos: schemas.CasoNuevo, request: Request, db: Session = Dep
 def casos(request: Request, db: Session = Depends(get_db)):
     s = request.state.sesion
     return triaje.listar(db, s["usuario"], s["rol"])
+
+
+def _nombre(request: Request) -> str:
+    """El primer nombre de quien pregunta, para que la ayuda lo salude."""
+    ficha = usuarios.ficha(request.state.sesion["usuario"]) or {}
+    return (ficha.get("nombre") or "").strip().split(" ")[0]
+
+
+def _en_vivo(eventos):
+    """Un evento JSON por linea (NDJSON). `X-Accel-Buffering: no` para que el
+    nginx de produccion no lo junte todo y lo mande al final."""
+    def lineas():
+        for e in eventos:
+            yield json.dumps(e, ensure_ascii=False, default=str) + "\n"
+    return StreamingResponse(lineas(), media_type="application/x-ndjson",
+                             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store"})
+
+
+@router.post("/en-vivo")
+def preguntar_en_vivo(datos: schemas.PreguntaAyuda, request: Request):
+    rol = request.state.sesion["rol"]
+    return _en_vivo(asistente_ayuda.responder_en_vivo(datos.pregunta, datos.historial, rol, datos.pantalla, _nombre(request)))
+
+
+@router.post("/negocio/en-vivo")
+def preguntar_al_negocio_en_vivo(datos: schemas.PreguntaAyuda, request: Request, db: Session = Depends(get_db)):
+    rol = request.state.sesion["rol"]
+    return _en_vivo(pregunta_negocio.responder_en_vivo(db, datos.pregunta, datos.historial, rol, _nombre(request)))

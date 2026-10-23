@@ -238,6 +238,47 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
+/**
+ * Una respuesta que llega en partes, un JSON por línea (NDJSON): el chat de
+ * ayuda la muestra mientras se escribe. `alEvento` recibe cada parte.
+ */
+export async function enVivo(path: string, cuerpo: unknown, alEvento: (e: Record<string, unknown>) => void): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(urlApi(`/api${path}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...cabecerasApp() },
+      body: JSON.stringify(cuerpo),
+      cache: 'no-store',
+      credentials: 'same-origin',
+    })
+  } catch {
+    throw new SinConexion()
+  }
+  recogerToken(res)
+  if (res.status === 401) {
+    window.location.replace('/login.html')
+    throw new Error('Sesión requerida.')
+  }
+  if (!res.ok || !res.body) throw new ErrorApi((await res.text()) || `Error ${res.status}`, res.status)
+  const lector = res.body.getReader()
+  const decodificador = new TextDecoder()
+  let resto = ''
+  for (;;) {
+    const { done, value } = await lector.read()
+    if (done) break
+    resto += decodificador.decode(value, { stream: true })
+    let fin = resto.indexOf('\n')
+    while (fin >= 0) {
+      const linea = resto.slice(0, fin).trim()
+      resto = resto.slice(fin + 1)
+      if (linea) alEvento(JSON.parse(linea))
+      fin = resto.indexOf('\n')
+    }
+  }
+  if (resto.trim()) alEvento(JSON.parse(resto))
+}
+
 /** Lo que el Libro de Ventas pide de una factura y no sale del cobro. Todo
  * opcional: sin ello va a "Consumidor final". */
 export type DatosFacturaVenta = {

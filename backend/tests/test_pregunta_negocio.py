@@ -29,7 +29,7 @@ def ia(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "clave-de-prueba")
     cola, vistas = [], []
 
-    def falsa(contenidos, instrucciones, esquema=None):
+    def falsa(contenidos, instrucciones, esquema=None, rapido=False):
         vistas.append({"contenidos": contenidos, "instrucciones": instrucciones, "esquema": esquema})
         if esquema:
             return json.dumps(cola.pop(0))
@@ -105,3 +105,48 @@ def test_lo_que_no_se_puede_preguntar(client, ia):
     cola.append({"tipo": "no_se_puede", "motivo": "No guardo el clima; pregunta por ventas o compras."})
     d = preguntar(client, "¿llovió el sábado?")
     assert d["texto"] == "No guardo el clima; pregunta por ventas o compras."
+
+
+def _eventos(r):
+    assert r.status_code == 200, r.text
+    return [json.loads(l) for l in r.text.splitlines() if l.strip()]
+
+
+def test_en_vivo_cuenta_los_pasos_manda_la_tabla_y_escribe(client, variante, ia, monkeypatch):
+    cola, _ = ia
+    vender(client, variante, "Zelle")
+    cola.append(consulta(fuente="ventas", medidas=["ventas"]))
+    vistas = []
+
+    def en_vivo(contenidos, instrucciones, rapido=False):
+        vistas.append(contenidos[0]["parts"][0]["text"])
+        yield "Hoy vendiste "
+        yield "**$5,00**."
+
+    monkeypatch.setattr(asistente_ayuda, "gemini_en_vivo", en_vivo)
+    e = _eventos(client.post("/api/ayuda/negocio/en-vivo", json={"pregunta": "¿cuánto vendí hoy?"}))
+    pasos = [x["paso"] for x in e if "paso" in x]
+    assert pasos[0] == "Entendiendo tu pregunta…" and pasos[1].startswith("Buscando en ventas")
+    [tabla] = [x["tabla"] for x in e if "tabla" in x]
+    assert tabla["filas"] == [["$5,00"]]
+    assert "".join(x["texto"] for x in e if "texto" in x) == "Hoy vendiste **$5,00**."
+    assert e[-1] == {"fin": True, "con_ia": True}
+    assert "$5,00" in vistas[0], "redacta con la tabla del sistema"
+
+
+def test_la_ayuda_en_vivo_saluda_con_el_nombre(client, monkeypatch):
+    monkeypatch.setattr(settings, "LECTOR_FACTURAS", "gemini")
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "clave-de-prueba")
+    from tests.conftest import USUARIO_TEST
+    usuarios.cambiar_nombre(USUARIO_TEST, "Ana María", "Pérez")
+    vistas = []
+
+    def en_vivo(contenidos, instrucciones, rapido=False):
+        vistas.append(instrucciones)
+        yield "Hola"
+
+    monkeypatch.setattr(asistente_ayuda, "gemini_en_vivo", en_vivo)
+    e = _eventos(client.post("/api/ayuda/en-vivo", json={"pregunta": "hola", "pantalla": "/pos"}))
+    assert e[0] == {"paso": "Buscando en el manual…"} and e[-1] == {"fin": True, "con_ia": True}
+    assert "`/pos`" in vistas[0]
+    assert "Se llama Ana." in vistas[0], "el primer nombre, para saludar"
