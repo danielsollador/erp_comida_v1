@@ -649,12 +649,14 @@ type PropsHojaFormulario = {
 }
 
 export function HojaFormulario(props: PropsHojaFormulario) {
-  // Como `Hoja`: en iOS la hoja de SwiftUI no quedo bien en el iPhone; hasta
-  // verla ahi, iOS y web usan la hoja propia (pageSheet). Android, la nativa.
-  if (process.env.EXPO_OS !== 'android') return <HojaFormularioWeb {...props} />
-  return <HojaFormularioNativa {...props} />
+  // La hoja propia (pageSheet) en todas partes. La de SwiftUI no quedo bien
+  // en el iPhone, y la de Compose en Android no deja desplazar el formulario
+  // largo (Abrir caja no llegaba al boton, 23-oct). La nativa queda para
+  // cuando se pruebe bien en los dos.
+  return <HojaFormularioWeb {...props} />
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- se vuelve a usar cuando la hoja nativa este probada en los dos sistemas
 function HojaFormularioNativa({ visible, alCerrar, titulo, subtitulo, children, pie }: PropsHojaFormulario) {
   const t = useTema()
   return (
