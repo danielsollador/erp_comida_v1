@@ -624,6 +624,18 @@ export default function POS() {
     }
     setFaltaNombre(false)
 
+    // Sin caja abierta no se toman pedidos nuevos, y se dice: antes la
+    // comanda entraba igual y la franja de arriba pasaba desapercibida
+    // (Leider, 23-oct). Editar uno que ya existe sí se puede.
+    if (!enEdicion && apertura && !apertura.abierta) {
+      setError(
+        apertura.puede_abrir
+          ? 'La caja no se ha abierto: ábrela arriba (Abrir caja) antes de tomar pedidos.'
+          : 'La caja no se ha abierto: pídele a quien abre la caja que la abra antes de tomar pedidos.',
+      )
+      return
+    }
+
     // A cocina o de la vitrina, renglón por renglón. Leider (22-sep): "la
     // tienda va a tener ya comida de muestra... al darle al boton tiene que
     // generarte la opcion de si quieres mandarlo a cocina o no". Cada renglón
