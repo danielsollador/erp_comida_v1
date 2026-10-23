@@ -35,6 +35,7 @@ const suscribir = (f: () => void) => {
 }
 
 export function iniciarGuia(pasos: PasoGuia[]) {
+  desplegado = 0
   poner({ pasos: pasos.filter((p) => p.ancla), i: 0 })
 }
 export function cerrarGuia() {
@@ -42,6 +43,7 @@ export function cerrarGuia() {
 }
 export function siguientePaso() {
   const { pasos, i } = estado
+  desplegado = 0
   if (i + 1 >= pasos.length) cerrarGuia()
   else poner({ pasos, i: i + 1 })
 }
@@ -64,16 +66,42 @@ export const rutaApp = (ruta: string) => RUTA_APP[ruta] ?? ruta
 /** En qué hoja (Modal) está montada cada ancla; `null` = la pantalla de fondo. */
 export const HojaCtx = createContext<string | null>(null)
 
-type Registro = { ref: RefObject<View | null>; hoja: string | null }
+type Registro = { ref: RefObject<View | null>; hoja: string | null; plegable: boolean; montado: number }
 const anclas = new Map<string, Set<Registro>>()
 
 export const registrosDe = (ancla: string): Registro[] => Array.from(anclas.get(ancla) ?? [])
 
+/** Cuándo se desplegó algo por última vez (un grupo con variantes). */
+let desplegado = 0
+
+/**
+ * Cuál de las anclas con ese nombre resaltar. Normalmente la primera (como
+ * la web). Pero si el dueño acaba de desplegar un grupo (Café), lo que hay
+ * que tocar ahora son las variantes que aparecieron: las filas montadas
+ * después del despliegue que no son a su vez plegables.
+ */
+export function elegirAncla(lista: Registro[]): Registro | undefined {
+  if (desplegado) {
+    const nuevas = lista.filter((r) => !r.plegable && r.montado >= desplegado)
+    if (nuevas.length) return nuevas[0]
+  }
+  return lista[0]
+}
+
 let avance: ReturnType<typeof setTimeout> | undefined
-/** Se tocó un elemento marcado: si es el del paso y el paso es de tocar, avanza un instante después. */
-function tocada(nombre: string) {
+/**
+ * Se tocó un elemento marcado: si es el del paso y el paso es de tocar,
+ * avanza un instante después. Lo que solo despliega (un producto con
+ * variantes) no es el toque que se pedía: se espera al de la variante,
+ * igual que la web con `aria-expanded`.
+ */
+function tocada(nombre: string, plegable: boolean) {
   const paso = estado.pasos[estado.i]
   if (!paso || paso.ancla !== nombre || (paso.accion ?? 'tocar') !== 'tocar') return
+  if (plegable) {
+    desplegado = Date.now()
+    return
+  }
   clearTimeout(avance)
   avance = setTimeout(siguientePaso, 450)
 }
@@ -89,17 +117,20 @@ export function Ancla({
   children,
   style,
   onLayout,
+  plegable = false,
 }: {
   nombre: string
   children: ReactNode
   style?: StyleProp<ViewStyle>
   onLayout?: (e: LayoutChangeEvent) => void
+  /** Solo despliega lo de adentro (un grupo con variantes): tocarlo no avanza la guía. */
+  plegable?: boolean
 }) {
   const hoja = use(HojaCtx)
   const ref = useRef<View>(null)
   const inicio = useRef<{ x: number; y: number } | null>(null)
   useEffect(() => {
-    const r: Registro = { ref, hoja }
+    const r: Registro = { ref, hoja, plegable, montado: Date.now() }
     const lista = anclas.get(nombre) ?? new Set<Registro>()
     lista.add(r)
     anclas.set(nombre, lista)
@@ -107,7 +138,7 @@ export function Ancla({
       lista.delete(r)
       if (!lista.size) anclas.delete(nombre)
     }
-  }, [nombre, hoja])
+  }, [nombre, hoja, plegable])
   return (
     <View
       ref={ref}
@@ -120,7 +151,7 @@ export function Ancla({
       onTouchEnd={(e) => {
         const s = inicio.current
         inicio.current = null
-        if (s && Math.hypot(e.nativeEvent.pageX - s.x, e.nativeEvent.pageY - s.y) < 12) tocada(nombre)
+        if (s && Math.hypot(e.nativeEvent.pageX - s.x, e.nativeEvent.pageY - s.y) < 12) tocada(nombre, plegable)
       }}
     >
       {children}

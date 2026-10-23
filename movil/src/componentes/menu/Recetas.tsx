@@ -168,8 +168,11 @@ export default function Recetas({ datos }: { datos: DatosMenu }) {
             return (
               <View key={`p${g.productoId}`}>
                 {/* La guía señala la primera fila ("toca el producto"): cada
-                    fila tocable lleva el ancla, como en la web. */}
-                <Ancla nombre="recetas.lista">
+                    fila tocable lleva el ancla, como en la web. Esta solo
+                    despliega las variantes (Café → pequeño, grande): es
+                    `plegable`, no avanza la guía, y al abrirse el anillo pasa
+                    a las variantes (Leider, 23-oct). */}
+                <Ancla nombre="recetas.lista" plegable>
                   <Pressable
                     onPress={() =>
                       setAbiertos((prev) => {

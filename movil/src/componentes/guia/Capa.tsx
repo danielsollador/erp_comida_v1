@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { PasoGuia } from '../../lib/api-ia'
-import { cerrarGuia, pasoAtras, registrosDe, rutaApp, siguientePaso, useGuia } from '../../lib/guia'
+import { cerrarGuia, elegirAncla, pasoAtras, registrosDe, rutaApp, siguientePaso, useGuia } from '../../lib/guia'
 import { LETRA, useTema } from '../../lib/tema'
 import { SelloIA } from '../ia'
 
@@ -66,7 +66,7 @@ function Recorrido({ paso, n, total, hoja }: { paso: PasoGuia; n: number; total:
         if (Date.now() - inicio > ESPERA_MS) setPerdido(true)
         return
       }
-      mios[0].ref.current?.measureInWindow((x, y, w, h) => {
+      elegirAncla(mios)?.ref.current?.measureInWindow((x, y, w, h) => {
         if (!vivo || !(w > 0 && h > 0)) return
         marco.current?.measureInWindow((mx, my) => {
           if (!vivo) return
