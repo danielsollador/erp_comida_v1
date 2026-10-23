@@ -406,7 +406,10 @@ export default function POS() {
         // en cocina abajo) y con una fila de cobrados por entregar los pedidos
         // recien tomados quedaban tapados debajo (Leider, 28-sep). El color de
         // cada tarjeta ya dice en que va.
-        const lista = [...porId.values()].sort((a, b) => b.numero - a.numero)
+        // Por id y no por numero: el numero vuelve a 1 cada dia, y un #14 de
+        // ayer que seguia abierto quedaba encima del #3 de hoy. El pedido
+        // nuevo se iba al fondo y parecia que no se habia guardado (23-oct).
+        const lista = [...porId.values()].sort((a, b) => b.id - a.id)
         // Si llego exactamente lo mismo, no se toca el estado: repintar el
         // mostrador entero por nada es lo que traba a una tablet de 3 GB, y
         // el respaldo de cada minuto casi siempre trae lo mismo.
@@ -620,6 +623,18 @@ export default function POS() {
       return
     }
     setFaltaNombre(false)
+
+    // Sin caja abierta no se toman pedidos nuevos, y se dice: antes la
+    // comanda entraba igual y la franja de arriba pasaba desapercibida
+    // (Leider, 23-oct). Editar uno que ya existe sí se puede.
+    if (!enEdicion && apertura && !apertura.abierta) {
+      setError(
+        apertura.puede_abrir
+          ? 'La caja no se ha abierto: ábrela arriba (Abrir caja) antes de tomar pedidos.'
+          : 'La caja no se ha abierto: pídele a quien abre la caja que la abra antes de tomar pedidos.',
+      )
+      return
+    }
 
     // A cocina o de la vitrina, renglón por renglón. Leider (22-sep): "la
     // tienda va a tener ya comida de muestra... al darle al boton tiene que
@@ -1663,7 +1678,14 @@ export default function POS() {
                       pastilla de estado ("Cobrado · en cocina") y un nombre
                       normal se cortaba en "Sra. Ca...". */}
                   <span className="min-w-0">
-                    <span className="block font-bold text-base leading-tight">#{pedido.numero}</span>
+                    {/* Con la hora en que se tomo: "el de las 5:40" es como se
+                        busca un pedido en el mostrador (Leider, 23-oct). */}
+                    <span className="block font-bold text-base leading-tight">
+                      #{pedido.numero}
+                      {horaDe(pedido.creado_en) && (
+                        <span className="ml-1.5 text-xs font-medium text-neutral-500 tabular-nums">{horaDe(pedido.creado_en)}</span>
+                      )}
+                    </span>
                     {pedido.cliente ? (
                       <span
                         className={`block truncate ${

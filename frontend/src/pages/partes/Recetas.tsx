@@ -46,6 +46,9 @@ type Fila = {
   // Se escribe en la unidad chica (g en vez de kg, ml en vez de lt). La receta
   // se guarda siempre en la unidad de la mercancia; esto es solo como se ve.
   enChica?: boolean
+  // Lo que se va escribiendo en la unidad chica, tal cual: sin esto "2," se
+  // convertia a kg y volvia como "2" y no habia forma de poner 2,5 g (23-oct).
+  textoVisto?: string
 }
 
 /** La unidad "chica" de una grande, y al reves: kg⇄g, lt⇄ml. */
@@ -1003,11 +1006,13 @@ function RenglonReceta({
   const enChica = Boolean(otra && (f.enChica ?? esGrande(ing.unidad)))
   const factor = enChica ? (esGrande(ing.unidad) ? 1000 : 1 / 1000) : 1
   const unidadVista = enChica ? otra : ing.unidad
-  const valorVisto = f.cantidad_por_unidad === '' ? '' : sinRuido((Number(f.cantidad_por_unidad) || 0) * factor)
+  const valorVisto = enChica && f.textoVisto !== undefined
+    ? f.textoVisto
+    : f.cantidad_por_unidad === '' ? '' : sinRuido((Number(f.cantidad_por_unidad) || 0) * factor)
   const escribir = (texto: string) => {
-    if (!enChica) return onCambio({ cantidad_por_unidad: texto })
+    if (!enChica) return onCambio({ cantidad_por_unidad: texto, textoVisto: undefined })
     const n = Number(String(texto).replace(',', '.'))
-    onCambio({ cantidad_por_unidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor) })
+    onCambio({ cantidad_por_unidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor), textoVisto: texto })
   }
   return (
     <li
@@ -1029,7 +1034,7 @@ function RenglonReceta({
         <CasillaConUnidad
           unidad={ing.unidad}
           vista={unidadVista}
-          alCambiarVista={() => onCambio({ enChica: !enChica })}
+          alCambiarVista={() => onCambio({ enChica: !enChica, textoVisto: undefined })}
           rotulo={pieza ? (cantidad === 1 ? 'unidad' : 'unidades') : ing.unidad}
           value={valorVisto}
           onChange={(e) => escribir(e.target.value)}

@@ -17,6 +17,7 @@ from .routers import (
     asistente,
     acceso as acceso_router,
     agencia,
+    app_movil,
     autorizaciones as autorizaciones_router,
     caja,
     compras,
@@ -33,6 +34,7 @@ from .routers import (
     pedidos,
     preparaciones,
     proveedores,
+    push as push_router,
     reportes,
     reportes_dinamicos,
     respaldos,
@@ -42,6 +44,7 @@ from .routers import (
     ventas,
 )
 from .consolidacion import iniciar_consolidacion
+from .push import iniciar_aviso_de_caja
 from .seed import asegurar_categoria_envios, seed_if_empty
 from .settings import BACKUP_ON_STARTUP, CORS_ORIGINS
 from .tasas import iniciar_refresco_automatico
@@ -150,6 +153,8 @@ async def lifespan(app: FastAPI):
         # para que Reportes, Ventas y Contabilidad no recalculen el historico
         # en cada visita (ver consolidacion.py).
         iniciar_consolidacion()
+        # El recordatorio de la caja sin cerrar, al telefono del dueño (push.py).
+        iniciar_aviso_de_caja()
     yield
 
 
@@ -247,6 +252,8 @@ app.include_router(compras_alertas.router)
 app.include_router(proveedores.router)
 app.include_router(impuestos_router.router)
 app.include_router(asistente.router)
+app.include_router(push_router.router)
+app.include_router(app_movil.router)
 
 
 @app.get("/api/health", tags=["infra"])

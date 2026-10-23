@@ -146,7 +146,9 @@ SOLO_VERTIGO = ("/api/agencia",)
 
 # Lecturas que no comprometen nada y que las pantallas piden al cargar, sea
 # quien sea: la tasa del dia y la configuracion (que hoy es solo la tasa).
-LECTURA_LIBRE = ("/api/tasas", "/api/config")
+# `/api/app`: la portada y el punto de venta del telefono en una llamada
+# (routers/app_movil.py); cada pieza ya respeta el rol por su cuenta.
+LECTURA_LIBRE = ("/api/tasas", "/api/config", "/api/app/")
 
 # Los operadores y las cajas fisicas se LEEN desde el POS (para elegir caja),
 # pero se crean y desactivan desde la administracion.
@@ -308,6 +310,10 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
 
     # La clave y el PIN propios los cambia cada quien, sea el rol que sea.
     if ruta.startswith("/api/usuarios/mi/"):
+        return True
+    # Su propio telefono para los avisos push lo registra cada quien (push.py
+    # decide despues a quien le llega cada aviso).
+    if ruta.startswith("/api/push/"):
         return True
     if ruta.startswith(SOLO_VERTIGO):
         return r == "admin"
