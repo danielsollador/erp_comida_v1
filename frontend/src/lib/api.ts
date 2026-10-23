@@ -1251,6 +1251,11 @@ export const api = {
   registrarCaso: (caso: { tipo: string; titulo: string; resumen: string; pantalla: string; historial: TurnoAyuda[] }) =>
     req<CasoRegistrado>('/ayuda/caso', { method: 'POST', body: JSON.stringify(caso) }),
   casosDeSoporte: () => req<CasoRegistrado[]>('/ayuda/casos'),
+  /** El asistente que hace cosas: confirmar o cancelar lo que propuso (ver backend/app/agente.py). */
+  confirmarAccion: (propuesta_id: string) =>
+    req<{ ok: boolean; texto: string; nota: string }>('/ayuda/agente/confirmar', { method: 'POST', body: JSON.stringify({ propuesta_id }) }),
+  cancelarAccion: (propuesta_id: string) =>
+    req<{ ok: boolean }>('/ayuda/agente/cancelar', { method: 'POST', body: JSON.stringify({ propuesta_id }) }),
   /** Pregúntale a tu negocio (ver backend/app/pregunta_negocio.py). */
   preguntarNegocio: (pregunta: string, historial: TurnoAyuda[]) =>
     req<RespuestaNegocio>('/ayuda/negocio', {

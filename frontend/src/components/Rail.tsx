@@ -37,6 +37,9 @@ import Icono, { type NombreIcono } from './Icono'
 export type Grupo = 'vender' | 'negocio' | 'numeros' | 'contador'
 
 export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcono; titulo: string; grupo: Grupo }[] = [
+  // El asistente es de todos: lo que cada quien puede HACER con el lo decide
+  // la API por la que pasan sus acciones (ver backend/app/agente.py).
+  { to: '/asistente', modulo: '*', icono: 'chispa', titulo: 'Asistente', grupo: 'vender' },
   { to: '/pos', modulo: 'pos', icono: 'pos', titulo: 'Punto de venta', grupo: 'vender' },
   { to: '/cocina', modulo: 'cocina', icono: 'cocina', titulo: 'Cocina', grupo: 'vender' },
   // Dos permisos detras de un solo icono: quien tenga cualquiera de los dos
@@ -63,6 +66,7 @@ export const CONTADOR = { to: '/contador', icono: 'contabilidad' as NombreIcono,
  * debajo y es LITERAL: dice lo que hay, no una lectura.
  */
 export const PREGUNTA: Record<string, string> = {
+  '/asistente': 'Pídeselo: vende, descuenta, consulta',
   '/pos': 'Tomar la comanda y cobrar',
   '/cocina': 'Las comandas que llegan',
   '/menu': '¿Qué vendo, a cuánto y cuánto me deja?',
@@ -79,6 +83,7 @@ export const PREGUNTA: Record<string, string> = {
 
 /** En modo tecnico, las descripciones de antes (lib/palabras). */
 const DESCRIPCION_TECNICA: Record<string, string> = {
+  '/asistente': 'Asistente con IA que actúa en el sistema',
   '/pos': 'Armar la comanda y cobrar',
   '/cocina': 'Comandas que llegan arriba',
   '/menu': 'Productos, precios y recetas',

@@ -53,6 +53,23 @@ lleva cada sección.
 
 ---
 
+## 1.1 Asistente (`/asistente`)
+
+Un chat que hace cosas en el sistema. Se le pide como a una persona:
+«regalé dos harinas, descuéntalas», «móntale un pedido a Juanito por dos
+empanadas de queso», «cóbrale el pedido de Ana con pago móvil, ref. 1234»,
+«anota un gasto de $15 de gas», «¿cuántos pastelitos vendí ayer?», «¿qué me
+falta por llenar?», «¿cómo va la contabilidad?».
+- Lo que solo consulta lo responde de una vez (con la tabla del sistema cuando
+  hay números).
+- Lo que **cambia algo** (vender, descontar, cobrar, anular, gastar) llega como
+  una tarjeta **«¿Hago esto?»**: solo al tocar «Confirmar» se hace. «Cancelar»
+  no hace nada.
+- Cada quien puede pedirle lo que su rol puede hacer: lo que no le toca, el
+  sistema no lo deja igual que en la pantalla.
+- Lo que no sabe hacer todavía (crear productos, cargar facturas, recetas) lo
+  dice y explica en qué pantalla se hace.
+
 ## 2. Punto de venta (`/pos`)
 
 **Quién lo usa:** caja y mostrador. Tiene dos secciones: «Tomar pedido» y

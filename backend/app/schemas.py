@@ -3635,3 +3635,21 @@ class RegistrarLineas(BaseModel):
 class AccionLinea(BaseModel):
     accion: Literal["cuenta", "ignorar", "pendiente"]
     cuenta: str = ""
+
+
+# ── El asistente que hace cosas (ver agente.py) ────────────────────────────
+
+class MensajeAgente(BaseModel):
+    mensaje: str = Field(..., min_length=1, max_length=4000)
+    historial: List[TurnoAyuda] = Field(default_factory=list, max_length=40)
+
+
+class ConfirmarAccion(BaseModel):
+    propuesta_id: str = Field(..., min_length=4, max_length=60)
+
+
+class ResultadoAccion(BaseModel):
+    ok: bool
+    texto: str
+    # Para el historial de la IA (el pedido_id de lo creado); no se muestra.
+    nota: str = ""

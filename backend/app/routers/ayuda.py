@@ -85,3 +85,39 @@ def preguntar_en_vivo(datos: schemas.PreguntaAyuda, request: Request):
 def preguntar_al_negocio_en_vivo(datos: schemas.PreguntaAyuda, request: Request, db: Session = Depends(get_db)):
     rol = request.state.sesion["rol"]
     return _en_vivo(pregunta_negocio.responder_en_vivo(db, datos.pregunta, datos.historial, rol, _nombre(request)))
+
+
+# ── El asistente que hace cosas (ver agente.py) ────────────────────────────
+#
+# Abierto a todo el que tenga sesion, como la ayuda: lo que puede HACER cada
+# quien lo decide la API por la que pasan las acciones, con su misma sesion.
+
+def _contexto(request: Request, db: Session):
+    from .. import agente
+    from ..acceso import auth, permisos
+
+    s = request.state.sesion
+    return agente.Contexto(db=db, api=agente._Api(auth.token_de(request) or ""), rol=s["rol"], usuario=s["usuario"],
+                           nombre=_nombre(request), modulos=tuple(permisos.modulos_de(s["rol"])))
+
+
+@router.post("/agente/en-vivo")
+def agente_en_vivo(datos: schemas.MensajeAgente, request: Request, db: Session = Depends(get_db)):
+    from .. import agente
+
+    return _en_vivo(agente.conversar(_contexto(request, db), datos.mensaje, datos.historial))
+
+
+@router.post("/agente/confirmar", response_model=schemas.ResultadoAccion)
+def agente_confirmar(datos: schemas.ConfirmarAccion, request: Request, db: Session = Depends(get_db)):
+    from .. import agente
+
+    return agente.confirmar(_contexto(request, db), datos.propuesta_id)
+
+
+@router.post("/agente/cancelar")
+def agente_cancelar(datos: schemas.ConfirmarAccion, request: Request):
+    from .. import agente
+
+    agente.cancelar(request.state.sesion["usuario"], datos.propuesta_id)
+    return {"ok": True}

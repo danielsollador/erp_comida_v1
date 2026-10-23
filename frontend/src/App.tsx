@@ -89,6 +89,7 @@ const Compras = perezoso(() => import('./pages/Compras'))
 const Impuestos = perezoso(() => import('./pages/Impuestos'))
 const Configuracion = perezoso(() => import('./pages/Configuracion'))
 const Contador = perezoso(() => import('./pages/Contador'))
+const Asistente = perezoso(() => import('./pages/Asistente'))
 
 /** Lo que se ve el instante que tarda en llegar el modulo. */
 function Cargando() {
@@ -214,6 +215,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Inicio />} />
               <Route path="/cocina" element={<Cocina />} />
+              <Route path="/asistente" element={<Asistente />} />
               {/* Configuracion es de todos; dentro, las pestañas de administrar
                   solo se ofrecen a quien administra (y el backend responde 403
                   al resto). Las rutas viejas siguen llegando a su pestaña. */}

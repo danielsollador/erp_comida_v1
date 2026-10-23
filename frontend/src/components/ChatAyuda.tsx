@@ -437,7 +437,7 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
 }
 
 /** Lo que se está haciendo mientras llega la respuesta, con tres puntos que laten. */
-function Pensando({ paso }: { paso: string }) {
+export function Pensando({ paso }: { paso: string }) {
   return (
     <div className="self-start inline-flex items-center gap-2.5 rounded-2xl rounded-bl-md bg-neutral-100 px-3.5 py-2.5 text-sm text-neutral-600">
       <span className="vp-puntos" aria-hidden>
@@ -453,7 +453,7 @@ function Pensando({ paso }: { paso: string }) {
 }
 
 /** La tabla que calculó el sistema, tal cual: es la que manda, no la frase. */
-function TablaDelSistema({ r }: { r: RespuestaNegocio }) {
+export function TablaDelSistema({ r }: { r: RespuestaNegocio }) {
   const alinear = (j: number) => (j < r.agrupado ? 'text-left' : 'text-right tabular-nums whitespace-nowrap')
   return (
     <div className="rounded-xl border border-neutral-200 bg-white text-[13px]">
