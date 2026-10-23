@@ -218,6 +218,7 @@ comprar» y «Control».
   También se puede subir la planilla: respeta su columna de unidad (850 g
   entra como 0,85 kg).
 - **«Cargar con IA»:** ver 5.6.
+  Con «Dictar» (en la computadora o con https) se le habla y lo dicho se escribe solo; en el teléfono sirve el micrófono del teclado.
 - **«Pedir a proveedores»** (en «Qué comprar»): arma el mensaje de WhatsApp para cada
   proveedor con lo que falta, en la presentación en que él lo vende (bultos,
   cajas). Se revisa y se manda con «Abrir WhatsApp» o «Copiar».
@@ -360,21 +361,6 @@ equivocada. Al cerrar, cada diferencia queda en los libros.
 dónde salió la plata (Efectivo Bs, Efectivo $ o Banco). Baja lo que se debe
 tener en esa forma de pago.
 
-### 7.2b Conciliar el banco
-En Caja › «Conciliar banco» se sube el estado de cuenta (el PDF del Banco
-Provincial tal como lo baja la banca en línea, o un Excel/CSV de cualquier
-banco) y el sistema lo cruza con los cobros de pago móvil, transferencia y
-punto de venta. No guarda el archivo ni cambia nada.
-- **Cobrado y no entró:** cobros sin un abono del mismo monto ese día o el
-  siguiente. Lo primero a revisar: un pago que nunca llegó o un cobro
-  registrado dos veces. Se corrige en Ventas con «Editar pago».
-- **Entró y no es un cobro:** abonos que no son ningún cobro: un pago que
-  nadie registró, o plata que no es venta.
-- **Punto de venta, día por día:** el banco abona el lote del terminal (TD/TC
-  POS) ese día o el siguiente; se compara la suma del día.
-- Si dice que hay renglones que no cuadran con el saldo, el archivo no se leyó
-  completo: súbelo en Excel.
-
 ### 7.3 Cajas
 Un local puede tener varias cajas físicas (una gaveta por piso) para cerrarlas
 aparte.
@@ -454,6 +440,21 @@ fiscal).
 genera uno, se baja o se restaura (la palanca de emergencia).
 
 ---
+
+### 11.1 Conciliación bancaria (Contabilidad › «Conciliación bancaria»)
+Se sube el estado de cuenta del banco: el PDF del Provincial, Banesco,
+Venezolano o Mercantil, o el Excel/CSV de cualquier banco. Subir el mismo dos
+veces no duplica nada.
+- Los cobros del sistema (pago móvil, transferencias y los lotes del punto)
+  se reconocen solos: «Cobro del sistema».
+- **Reglas:** «si el concepto dice COMIS y es un cargo, va a 6070 Comisiones y
+  gastos bancarios». Se crean con «Nueva regla» o desde «Se repite mucho» (lo
+  que más aparece entre lo pendiente) y se aplican de una vez.
+- **«Registrar en contabilidad»:** lo que ya sabe a qué cuenta va recibe su
+  asiento contra el banco, en dólares a la tasa BCV de su día. Si falta la tasa
+  de un día, se carga en Tasa.
+- Lo que queda: «A una cuenta…», «Crear regla» o «Ignorar».
+- El porcentaje de arriba dice cuánto del estado de cuenta ya está explicado.
 
 ## 12. Configuración (`/configuracion`)
 

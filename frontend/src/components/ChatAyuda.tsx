@@ -5,6 +5,7 @@ import { api, enVivo } from '../lib/api'
 import { useAcceso } from '../lib/acceso'
 import type { BorradorCaso, RespuestaNegocio, TurnoAyuda } from '../lib/types'
 import Icono from './Icono'
+import Dictado, { dictadoDisponible } from './Dictado'
 
 /**
  * El chat de ayuda: el "?" de la barra de arriba, en todas las pantallas.
@@ -409,6 +410,9 @@ export default function ChatAyuda({ dark = false }: { dark?: boolean }) {
                     placeholder="Escribe tu pregunta…"
                     className="flex-1 resize-none rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-base sm:text-sm max-h-32 focus:outline-none focus:border-acento-400"
                   />
+                  {dictadoDisponible() && (
+                    <Dictado compacto onTexto={(t) => setTexto((v) => (v.trim() ? `${v.trimEnd()} ${t}` : t))} />
+                  )}
                   <button
                     type="submit"
                     disabled={!texto.trim() || pensando}

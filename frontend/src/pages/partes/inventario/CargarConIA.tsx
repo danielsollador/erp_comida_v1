@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Aviso, Boton, Modal, Pastilla } from '../../../components/ui'
 import { api } from '../../../lib/api'
 import { achicarFoto } from '../../../lib/foto'
+import Dictado, { dictadoDisponible } from '../../../components/Dictado'
 import type {
   LineaPropuesta,
   LineaRevisada,
@@ -196,8 +197,14 @@ export default function CargarConIA({ onCerrar, onGuardado }: { onCerrar: () => 
           placeholder={EJEMPLO}
           className="w-full rounded-xl border border-neutral-300 p-3 text-sm"
         />
-        <p className="mt-1 text-xs text-neutral-500">En el teléfono, el micrófono del teclado sirve para dictarlo.</p>
+        <p className="mt-1 text-xs text-neutral-500">
+          {dictadoDisponible()
+            ? 'Toca «Dictar» y habla: lo que digas va apareciendo aquí.'
+            : 'Para dictarlo, usa el micrófono del teclado del teléfono.'}
+        </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Dictado onTexto={(t) => setTexto((v) => (v.trim() ? `${v.trimEnd()}
+${t}` : t))} />
           <label className="vp-control inline-flex cursor-pointer items-center rounded-lg border px-3 py-2 text-sm font-medium">
             Agregar fotos
             <input

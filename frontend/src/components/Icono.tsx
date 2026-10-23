@@ -41,6 +41,7 @@ export type NombreIcono =
   | 'imagen'
   | 'pregunta'
   | 'enviar'
+  | 'microfono'
   // Los cuatro almacenes de Compras (ver lib/tiposArticulo.ts) y lo que los
   // rodea: la caja en que llega la mercancia, el papel de la factura.
   | 'olla'
@@ -111,6 +112,7 @@ const TRAZOS: Record<NombreIcono, string> = {
   // El chat de ayuda: la pregunta y el avion de papel de enviar.
   pregunta: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01',
   enviar: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
+  microfono: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8',
 }
 
 export default function Icono({
