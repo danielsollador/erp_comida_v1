@@ -16,6 +16,7 @@ from .migrations import renombrar_tablas
 from .routers import (
     acceso as acceso_router,
     agencia,
+    app_movil,
     autorizaciones as autorizaciones_router,
     caja,
     compras,
@@ -250,6 +251,7 @@ app.include_router(compras_alertas.router)
 app.include_router(proveedores.router)
 app.include_router(impuestos_router.router)
 app.include_router(push_router.router)
+app.include_router(app_movil.router)
 
 
 @app.get("/api/health", tags=["infra"])
