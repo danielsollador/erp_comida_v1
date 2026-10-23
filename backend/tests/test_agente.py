@@ -246,3 +246,39 @@ def test_sin_caja_abierta_no_propone_pedidos(client, db, variante, guion):
     e = conversar(client, "una empanada")
     assert not any("propuesta" in x for x in e)
     assert "no está abierta" in respuestas_a_herramientas(vistos)[0]["response"]["error"]
+
+
+def test_el_aceite_se_activa_en_tres_pasos(client, db, variante, guion):
+    from app import kardex
+    cola, vistos = guion
+    aceite = models.Ingrediente(nombre="Aceite", unidad="lt", costo_unitario=3.0, stock_minimo=4)
+    db.add(aceite)
+    db.flush()
+    kardex.anotar(db, aceite, 20, kardex.AJUSTE, origen="prueba")
+    db.commit()
+
+    # Sin marcar, no deja cargar la freidora.
+    cola += [llama("cargar_freidora", ingrediente_id=aceite.id, cantidad=5), dice("Primero hay que marcarlo.")]
+    conversar(client, "llené la freidora con 5 litros")
+    assert "no está marcado como costo indirecto" in respuestas_a_herramientas(vistos)[0]["response"]["error"]
+
+    p, r = _propone_y_confirma(client, cola, "el aceite es costo indirecto", llama("marcar_costo_indirecto", ingrediente_id=aceite.id))
+    assert r["ok"], r
+    db.refresh(aceite)
+    assert aceite.es_indirecto and aceite.costo_unitario == 3.0 and aceite.stock_minimo == 4, "no se pierde nada de la ficha"
+
+    p, r = _propone_y_confirma(client, cola, "la empanada se fríe", llama("marcar_se_frie", variante_ids=[variante.id]))
+    assert "Empanada · Carne" in p["titulo"] and r["ok"]
+    db.refresh(variante)
+    assert variante.se_frie is True and variante.precio == 5.0
+
+    p, r = _propone_y_confirma(client, cola, "llené la freidora con 5 litros", llama("cargar_freidora", ingrediente_id=aceite.id, cantidad=5))
+    assert "quedarían 15" in p["detalle"][0] and r["ok"], r
+    db.refresh(aceite)
+    assert aceite.stock_actual == pytest.approx(15)
+
+    cola += [llama("costo_del_aceite"), dice("Va bien.")]
+    conversar(client, "¿cómo va el aceite?")
+    resp = respuestas_a_herramientas(vistos)[-1]["response"]
+    assert resp["ultimos_30_dias"][0]["cargado"] == pytest.approx(5)
+    assert resp["productos_que_se_frien"] == ["Empanada · Carne"]

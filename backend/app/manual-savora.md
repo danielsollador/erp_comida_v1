@@ -67,8 +67,12 @@ falta por llenar?», «¿cómo va la contabilidad?».
   no hace nada.
 - Cada quien puede pedirle lo que su rol puede hacer: lo que no le toca, el
   sistema no lo deja igual que en la pantalla.
-- Lo que no sabe hacer todavía (crear productos, cargar facturas, recetas) lo
-  dice y explica en qué pantalla se hace.
+- También arma el negocio: crear productos (con su receta), mercancías,
+  recetas y precios, y el **aceite de freír**: «quiero activar el aceite» y te
+  lleva por los pasos (marcarlo como costo indirecto, marcar lo que se fríe y
+  cada «llené la freidora con 5 litros»).
+- Lo que no sabe hacer todavía (devoluciones, quitar productos, facturas con
+  foto) lo dice y explica en qué pantalla se hace.
 
 ## 2. Punto de venta (`/pos`)
 

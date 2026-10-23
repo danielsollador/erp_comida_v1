@@ -607,6 +607,104 @@ def ejecutar_consumo_del_personal(ctx: Contexto, variante_id: int, cantidad: flo
     return f"Listo: {cantidad} {v.nombre} como consumo del personal; salió del inventario lo que lleva."
 
 
+# ── El aceite de freír (y cualquier costo indirecto) ────────────────────────
+#
+# Nadie sabe cuánto aceite lleva un pastelito, y no hace falta: se marca el
+# aceite como costo indirecto, se marcan los productos que se fríen, y cada
+# carga de la freidora sale del inventario. El sistema reparte lo cargado
+# entre las piezas fritas vendidas (preparaciones.costo_indirecto_por_pieza).
+
+def _ficha_mercancia(ctx: Contexto, ingrediente_id: int) -> dict:
+    st, lista = ctx.api("GET", "/api/inventario/ingredientes")
+    if st != 200:
+        raise ValueError(_error(st, lista))
+    ficha = next((i for i in lista if i["id"] == int(ingrediente_id or 0)), None)
+    if ficha is None:
+        raise ValueError(f"El ingrediente_id {ingrediente_id} no existe: búscalo con buscar_mercancia.")
+    return ficha
+
+
+def costo_del_aceite(ctx: Contexto) -> dict:
+    st, ind = ctx.api("GET", "/api/inventario/indirectos")
+    if st != 200:
+        return {"error": _error(st, ind)}
+    fritos = [o.nombre for o in pedido_whatsapp.menu(ctx.db)
+              if (v := ctx.db.get(models.Variante, o.variante_id)) is not None and v.se_frie]
+    return {"ultimos_30_dias": ind or "Ninguna mercancía está marcada como costo indirecto todavía.",
+            "productos_que_se_frien": fritos or "Ningún producto está marcado como que se fríe."}
+
+
+def preparar_marcar_costo_indirecto(ctx: Contexto, ingrediente_id: int, activo: bool = True) -> Preparado:
+    ficha = _ficha_mercancia(ctx, ingrediente_id)
+    if bool(ficha.get("es_indirecto")) == bool(activo):
+        raise ValueError(f"«{ficha['nombre']}» ya {'está' if activo else 'no está'} marcada como costo indirecto.")
+    if activo:
+        return Preparado(titulo=f"{ficha['nombre']}: costo indirecto",
+                         detalle=["No va en recetas: cada carga a la freidora sale del inventario y su costo se reparte "
+                                  "entre las piezas fritas que se venden."])
+    return Preparado(titulo=f"{ficha['nombre']}: deja de ser costo indirecto", detalle=["Vuelve a ser una mercancía normal."])
+
+
+def ejecutar_marcar_costo_indirecto(ctx: Contexto, ingrediente_id: int, activo: bool = True) -> str:
+    ficha = _ficha_mercancia(ctx, ingrediente_id)
+    # La ficha completa: lo que no se manda vuelve al valor por defecto.
+    campos = ("nombre", "unidad", "stock_minimo", "stock_objetivo", "costo_unitario", "rendimiento_pct", "tipo",
+              "rinde", "modo_produccion", "vida_util_horas", "empaque_trae", "categoria_id", "exento", "activo")
+    cuerpo = {k: ficha[k] for k in campos if k in ficha and ficha[k] is not None}
+    cuerpo["es_indirecto"] = bool(activo)
+    st, r = ctx.api("PUT", f"/api/inventario/ingredientes/{int(ingrediente_id)}", cuerpo)
+    if st != 200:
+        raise ValueError(_error(st, r))
+    return f"Listo: «{r['nombre']}» {'ya es' if activo else 'dejó de ser'} costo indirecto."
+
+
+def preparar_marcar_se_frie(ctx: Contexto, variante_ids: List[int], se_frie: bool = True) -> Preparado:
+    por_id = {o.variante_id: o for o in pedido_whatsapp.menu(ctx.db)}
+    nombres = []
+    for vid in variante_ids or []:
+        o = por_id.get(int(vid))
+        if o is None:
+            raise ValueError(f"El variante_id {vid} no existe en el menú: búscalo con buscar_productos_menu.")
+        nombres.append(o.nombre)
+    if not nombres:
+        raise ValueError("¿Cuáles productos? Búscalos con buscar_productos_menu.")
+    return Preparado(titulo=("Se fríen: " if se_frie else "Ya no se fríen: ") + ", ".join(nombres),
+                     detalle=["Entre estos se reparte el aceite que se carga a la freidora." if se_frie
+                              else "Dejan de llevarse parte del aceite."])
+
+
+def ejecutar_marcar_se_frie(ctx: Contexto, variante_ids: List[int], se_frie: bool = True) -> str:
+    for vid in variante_ids:
+        v = ctx.db.get(models.Variante, int(vid))
+        st, r = ctx.api("PUT", f"/api/menu/variantes/{int(vid)}",
+                        {"nombre": v.nombre, "precio": v.precio, "activo": v.activo, "se_frie": bool(se_frie)})
+        if st != 200:
+            raise ValueError(_error(st, r))
+        ctx.db.expire(v)
+    return f"Listo: {len(variante_ids)} producto(s) marcados." if se_frie else f"Listo: {len(variante_ids)} producto(s) desmarcados."
+
+
+def preparar_cargar_freidora(ctx: Contexto, ingrediente_id: int, cantidad: float) -> Preparado:
+    ficha = _ficha_mercancia(ctx, ingrediente_id)
+    if not ficha.get("es_indirecto"):
+        raise ValueError(f"«{ficha['nombre']}» no está marcado como costo indirecto: primero márcalo "
+                         "(marcar_costo_indirecto) y después se carga la freidora.")
+    if cantidad <= 0:
+        raise ValueError("La cantidad tiene que ser mayor que cero.")
+    hay = ficha.get("stock_actual") or 0
+    return Preparado(titulo=f"Cargar la freidora: {_num(cantidad)} {ficha['unidad']} de {ficha['nombre']}",
+                     detalle=[f"Sale del inventario (hay {_num(hay)}; quedarían {_num(hay - cantidad)}) y su costo se reparte "
+                              "entre las piezas fritas que se vendan."])
+
+
+def ejecutar_cargar_freidora(ctx: Contexto, ingrediente_id: int, cantidad: float) -> str:
+    st, r = ctx.api("POST", f"/api/inventario/ingredientes/{int(ingrediente_id)}/cargar-indirecto",
+                    {"cantidad": cantidad, "motivo": "Carga a la freidora"})
+    if st != 200:
+        raise ValueError(_error(st, r))
+    return f"Listo: freidora cargada. Quedan {_num(r['stock_actual'])} {r['unidad']} de {r['nombre']}."
+
+
 def preparar_cambiar_precio(ctx: Contexto, variante_id: int, precio: float) -> Preparado:
     v = ctx.db.get(models.Variante, int(variante_id or 0))
     if v is None:
@@ -742,6 +840,25 @@ HERRAMIENTAS: Dict[str, Herramienta] = {
         _obj({"variante_id": I, "cantidad": N, "quien": S}, ["variante_id"]),
         lambda a: "Preparando el consumo del personal…", preparar=preparar_consumo_del_personal,
         ejecutar=ejecutar_consumo_del_personal),
+    "costo_del_aceite": Herramienta(
+        "Cómo va el aceite de freír (o cualquier costo indirecto): cuánto se cargó en 30 días, cuánto sale por pieza "
+        "frita, y qué productos están marcados como que se fríen.",
+        _obj({}, []), lambda a: "Mirando el aceite…", leer=costo_del_aceite),
+    "marcar_costo_indirecto": Herramienta(
+        "CAMBIA: marca una mercancía (el aceite de freír, el gas) como costo indirecto: no va en recetas y se "
+        "reparte entre lo que se fríe. activo=false para desmarcarla. ingrediente_id de buscar_mercancia.",
+        _obj({"ingrediente_id": I, "activo": B}, ["ingrediente_id"]),
+        lambda a: "Preparando el costo indirecto…", preparar=preparar_marcar_costo_indirecto, ejecutar=ejecutar_marcar_costo_indirecto),
+    "marcar_se_frie": Herramienta(
+        "CAMBIA: marca productos del menú que se fríen (entre ellos se reparte el aceite). Varios a la vez. "
+        "se_frie=false para desmarcar. variante_ids de buscar_productos_menu.",
+        _obj({"variante_ids": {"type": "ARRAY", "items": I}, "se_frie": B}, ["variante_ids"]),
+        lambda a: "Preparando lo que se fríe…", preparar=preparar_marcar_se_frie, ejecutar=ejecutar_marcar_se_frie),
+    "cargar_freidora": Herramienta(
+        "CAMBIA: anota una carga de la freidora (se echaron X litros de aceite): sale del inventario como costo "
+        "indirecto. La mercancía tiene que estar marcada como costo indirecto.",
+        _obj({"ingrediente_id": I, "cantidad": N}, ["ingrediente_id", "cantidad"]),
+        lambda a: "Preparando la carga de la freidora…", preparar=preparar_cargar_freidora, ejecutar=ejecutar_cargar_freidora),
     "cambiar_precio": Herramienta(
         "CAMBIA: cambia el precio (en dólares) de un producto del menú. variante_id de buscar_productos_menu.",
         _obj({"variante_id": I, "precio": N}, ["variante_id", "precio"]),
@@ -777,6 +894,10 @@ Reglas:
 - Para una receta, la mercancía tiene que existir: búscala; si no está, propón
   crearla primero (crear_mercancia) y después la receta. Las cantidades van por
   CADA UNO que se vende y en la unidad de la mercancía.
+- Aceite de freír: para activarlo, el aceite se marca como costo indirecto
+  (marcar_costo_indirecto), se marcan los productos que se fríen (marcar_se_frie)
+  y cada vez que se llena la freidora se anota (cargar_freidora). El aceite NUNCA
+  va en una receta. Si no existe la mercancía, propón crearla (en lt).
 - Si te piden varias cosas a la vez, propón una por una: después de cada
   confirmación sigues con la siguiente.
 - Si piden algo que no puedes hacer con tus herramientas (cargar una factura con
