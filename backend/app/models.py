@@ -65,6 +65,23 @@ class Operador(Base):
     punto_venta = Column(String, default="")
 
 
+class DispositivoPush(Base):
+    """Un telefono que recibe notificaciones push de este local (ver push.py).
+
+    El token es el de Expo; es de quien entro por ultima vez en ese telefono.
+    """
+
+    __tablename__ = "DIM920_USU_DISPOSITIVO"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    usuario = Column(String, nullable=False, default="")
+    # ios | android: solo para saber que hay, no cambia como se manda.
+    plataforma = Column(String, default="")
+    creado = Column(DateTime, default=ahora)
+    actualizado = Column(DateTime, default=ahora)
+
+
 class SolicitudAutorizacion(Base):
     """Una autorizacion pedida desde la caja y resuelta desde la aplicacion.
 

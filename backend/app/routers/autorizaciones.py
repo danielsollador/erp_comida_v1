@@ -14,10 +14,10 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import autorizaciones, models, schemas
+from .. import autorizaciones, models, push, schemas
 from ..acceso import auth, permisos, usuarios
 from ..database import get_db
 from ..ws_manager import manager
@@ -83,13 +83,22 @@ def conectados(request: Request) -> dict:
 
 @router.post("", response_model=schemas.SolicitudAutorizacion)
 async def solicitar(
-    datos: schemas.SolicitudAutorizacionCreate, request: Request, db: Session = Depends(get_db)
+    datos: schemas.SolicitudAutorizacionCreate,
+    request: Request,
+    tareas: BackgroundTasks,
+    db: Session = Depends(get_db),
 ):
     s = auth.sesion_actual(request)
     sol = autorizaciones.crear(db, datos, s["usuario"], _nombre(s))
     db.commit()
     db.refresh(sol)
     await manager.broadcast("autorizacion_pendiente", _json(sol), filtro=_es_autorizante)
+    # Y al telefono, aunque la app este cerrada (push.py). Despues de
+    # responder: la caja no espera a que Expo conteste.
+    tokens = push.tokens_de_autorizantes(db, excepto=s["usuario"])
+    if tokens:
+        que = sol.detalle or autorizaciones.ACCIONES.get(sol.accion, sol.accion)
+        tareas.add_task(push.avisar_autorizacion, tokens, sol.solicitante_nombre or sol.solicitante, que, sol.monto)
     return sol
 
 

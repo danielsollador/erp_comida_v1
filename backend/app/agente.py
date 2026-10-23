@@ -277,6 +277,11 @@ def _nombre_cliente(cliente: str) -> str:
 def preparar_crear_pedido(ctx: Contexto, items: List[dict], cliente: str = "", nota: str = "",
                           cobrar_con: str = "", referencia: str = "") -> Preparado:
     cliente = _nombre_cliente(cliente)
+    # La misma regla del punto de venta (Leider, 23-oct): sin caja abierta no
+    # se toman pedidos nuevos.
+    if ctx.db.query(models.AperturaCaja.id).filter(models.AperturaCaja.dia == hoy()).first() is None:
+        raise ValueError("La caja de hoy no está abierta: sin caja abierta no se toman pedidos. Que la abran en el "
+                         "Punto de venta («Abrir la caja») y lo vuelves a pedir.")
     renglones = _variantes(ctx, items)
     total = sum(o.precio * c for o, c, cortesia in renglones if not cortesia)
     detalle = [f"{c} × {o.nombre}" + (" (cortesía)" if cortesia else f" · {_usd(o.precio * c)}") for o, c, cortesia in renglones]

@@ -922,6 +922,10 @@ type Fila = {
       crudo (el pollo pierde lo mismo en cualquier guiso) y se guarda ahí. */
   aprovechable: string
   enChica?: boolean
+  /** Lo que la persona va escribiendo en la unidad chica (g, ml), tal cual.
+      Sin esto, "2," se convertia a kg y volvia como "2": la coma desaparecia
+      y no habia forma de poner 2,5 g (Leider, 23-oct). */
+  textoVisto?: string
 }
 
 // Que mide cada unidad y cuanto vale en la grande (1 g = 0,001 kg). Igual
@@ -1034,7 +1038,7 @@ function Olla({
   function ajustarAUno() {
     if (!(queda > 0)) return
     // A tres decimales: 1,429 kg se lee; 1,428571 no, y el costo no se entera.
-    setFilas((prev) => prev.map((f) => ({ ...f, cantidad: f.cantidad === '' ? '' : sinRuido(Math.round(((aNum(f.cantidad) || 0) / queda) * 1000) / 1000) })))
+    setFilas((prev) => prev.map((f) => ({ ...f, textoVisto: undefined, cantidad: f.cantidad === '' ? '' : sinRuido(Math.round(((aNum(f.cantidad) || 0) / queda) * 1000) / 1000) })))
   }
 
   async function guardar() {
@@ -1078,8 +1082,11 @@ function Olla({
     }
   }
 
+  // A pantalla fija solo con `olla:` (ancho de PC Y alto de sobra). Con `lg:`
+  // a secas, en un portatil de 768 px el recuadro «Agregar» quedaba de dos
+  // renglones y no se podia bajar a ver la mercancia (Yeimer, 20-oct).
   return (
-    <div className="space-y-3 lg:h-[calc(100dvh-15.5rem)] lg:flex lg:flex-col">
+    <div className="space-y-3 olla:h-[calc(100dvh-15.5rem)] olla:flex olla:flex-col">
       <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <button type="button" onClick={onCerrar} className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Preparado
@@ -1095,9 +1102,9 @@ function Olla({
       </div>
       {error && <p className="text-peligro-600 text-sm shrink-0">{error}</p>}
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start olla:items-stretch olla:flex-1 olla:min-h-0">
         {/* ── La olla ──────────────────────────────────────────────── */}
-        <section className="vp-losa p-4 sm:p-5 lg:flex lg:flex-col lg:min-h-0">
+        <section className="vp-losa p-4 sm:p-5 olla:flex olla:flex-col olla:min-h-0">
           <div className="flex items-start gap-2 shrink-0">
             <input
               value={nombre}
@@ -1115,7 +1122,7 @@ function Olla({
           </div>
           <p className="text-xs text-neutral-500 mt-1 shrink-0">Lo que lleva 1 {unidadLarga} ya hecho. Para hacer más, el sistema multiplica.</p>
 
-          <div className="lg:flex-1 lg:min-h-0 flex justify-center mt-3">
+          <div className="olla:flex-1 olla:min-h-0 flex justify-center mt-3">
             <DibujoOlla
               partes={partes.map((p) => ({
                 id: p.id,
@@ -1130,7 +1137,7 @@ function Olla({
               formato={dinero}
               resaltado={resaltado}
               onResaltar={setResaltado}
-              className="w-full max-w-[230px] sm:max-w-[250px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
+              className="w-full max-w-[230px] sm:max-w-[250px] olla:w-auto olla:max-w-none olla:h-full olla:min-h-0"
             />
           </div>
 
@@ -1164,7 +1171,7 @@ function Olla({
         </section>
 
         {/* ── Lleva y Agregar ──────────────────────────────────────── */}
-        <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
+        <section className="space-y-3 olla:flex olla:flex-col olla:min-h-0">
           {/* Por qué la olla es 1 kg y qué hacer si no da. Siempre que no dé, no
               solo al intentar guardar (Leider, 11-oct). */}
           {(sePasa || falta) && (
@@ -1181,7 +1188,7 @@ function Olla({
             </div>
           )}
           {filas.length > 0 && (
-            <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[50%] lg:overflow-y-auto">
+            <div className="vp-losa overflow-hidden olla:shrink olla:min-h-0 olla:max-h-[50%] olla:overflow-y-auto">
               <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">
                 Lleva 1 {unidadLarga} <span className="hidden sm:inline text-sm font-normal text-neutral-500">· crudo, y lo que queda de cada uno</span>
               </h3>
@@ -1215,7 +1222,7 @@ function Olla({
             </div>
           )}
 
-          <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+          <div className="vp-losa overflow-hidden olla:flex-1 olla:min-h-0 olla:flex olla:flex-col">
             <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 shrink-0">
               <h3 className="font-display font-semibold tracking-tight mr-auto">{filas.length === 0 ? 'Toca lo que lleva' : 'Agregar'}</h3>
               <div className="relative basis-full sm:basis-auto order-last sm:order-none">
@@ -1237,7 +1244,7 @@ function Olla({
             {disponibles.length === 0 ? (
               <p className="px-4 pb-4 text-sm text-neutral-400">{ingredientes.length === 0 ? 'No hay materia prima en el inventario todavía.' : 'Nada coincide.'}</p>
             ) : (
-              <div className="max-h-[26rem] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto">
+              <div className="max-h-[26rem] olla:max-h-none olla:flex-1 olla:min-h-0 overflow-y-auto">
                 <div className="px-4 pb-1.5 flex items-center gap-3 border-b border-neutral-100 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
                   <span className="min-w-0 flex-1">Mercancía</span>
                   <span className="text-right">Hay · costo</span>
@@ -1311,13 +1318,13 @@ function RenglonOlla({
   const cantidad = aNum(f.cantidad) || 0
   const pct = Math.min(Math.max(aNum(f.aprovechable) || 0, 0), 100)
   const queda = cantidad * (pct / 100)
-  const valorVisto = f.cantidad === '' ? '' : sinRuido(cantidad * factor)
+  const valorVisto = enChica && f.textoVisto !== undefined ? f.textoVisto : f.cantidad === '' ? '' : sinRuido(cantidad * factor)
   const costoU = ing.costo_unitario || 0
   const esPrep = ing.tipo === 'preparacion'
   const escribir = (texto: string) => {
-    if (!enChica) return onCambio({ cantidad: texto })
+    if (!enChica) return onCambio({ cantidad: texto, textoVisto: undefined })
     const n = aNum(texto)
-    onCambio({ cantidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor) })
+    onCambio({ cantidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor), textoVisto: texto })
   }
   return (
     <li onMouseEnter={() => onResaltar(ing.id)} onMouseLeave={() => onResaltar(null)} className={`px-4 py-2.5 transition-colors ${resaltado ? 'bg-acento-500/10' : ''}`}>
@@ -1335,7 +1342,7 @@ function RenglonOlla({
         <CasillaConUnidad
           unidad={ing.unidad}
           vista={unidadVista}
-          alCambiarVista={() => onCambio({ enChica: !enChica })}
+          alCambiarVista={() => onCambio({ enChica: !enChica, textoVisto: undefined })}
           value={valorVisto}
           onChange={(e) => escribir(e.target.value)}
           placeholder="0"

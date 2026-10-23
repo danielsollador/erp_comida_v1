@@ -22,6 +22,12 @@ def _cocinero():
         pass
 
 
+@pytest.fixture(autouse=True)
+def _caja_abierta(client):
+    """Sin caja abierta no se toman pedidos (la regla del punto de venta)."""
+    client.post("/api/caja/abrir", json={"fondos": [{"metodo": "Efectivo Bs", "cuenta": "1010", "fondo": 0}]})
+
+
 @pytest.fixture()
 def guion(monkeypatch):
     """Las respuestas de la IA, en orden; guarda lo que se le mando."""
@@ -230,3 +236,13 @@ def test_lo_que_se_comio_el_personal_sale_por_su_receta(client, db, variante, in
     db.refresh(insumo)
     assert insumo.stock_actual == pytest.approx(antes - 0.2)
     assert db.query(models.Pedido).count() == antes_pedidos, "no es un pedido"
+
+
+def test_sin_caja_abierta_no_propone_pedidos(client, db, variante, guion):
+    cola, vistos = guion
+    db.query(models.AperturaCaja).delete()
+    db.commit()
+    cola += [llama("crear_pedido", items=[{"variante_id": variante.id, "cantidad": 1}]), dice("Abre la caja primero.")]
+    e = conversar(client, "una empanada")
+    assert not any("propuesta" in x for x in e)
+    assert "no está abierta" in respuestas_a_herramientas(vistos)[0]["response"]["error"]

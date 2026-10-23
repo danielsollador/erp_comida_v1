@@ -141,12 +141,15 @@ SOLO_ADMINISTRA = ("/api/contabilidad", "/api/impuestos", "/api/respaldos",
 # La cartera de locales de Vertigo. Solo el equipo de la plataforma.
 SOLO_VERTIGO = ("/api/agencia",)
 # Lo que puede cualquiera con sesion, sea el rol que sea: la clave y el PIN
-# propios, y el chat de ayuda (la cocina tambien pregunta).
-PARA_TODOS = ("/api/usuarios/mi/", "/api/ayuda")
+# propios, el chat de ayuda (la cocina tambien pregunta) y su propio telefono
+# para los avisos push (push.py decide despues a quien le llega cada aviso).
+PARA_TODOS = ("/api/usuarios/mi/", "/api/ayuda", "/api/push/")
 
 # Lecturas que no comprometen nada y que las pantallas piden al cargar, sea
 # quien sea: la tasa del dia y la configuracion (que hoy es solo la tasa).
-LECTURA_LIBRE = ("/api/tasas", "/api/config")
+# `/api/app`: la portada y el punto de venta del telefono en una llamada
+# (routers/app_movil.py); cada pieza ya respeta el rol por su cuenta.
+LECTURA_LIBRE = ("/api/tasas", "/api/config", "/api/app/")
 
 # Los operadores y las cajas fisicas se LEEN desde el POS (para elegir caja),
 # pero se crean y desactivan desde la administracion.

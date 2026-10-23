@@ -17,6 +17,7 @@ import { SUBSECCION_INICIAL } from '../lib/menu'
 import { COLORES, NOMBRES_COLOR, NOMBRE_COLOR, colorCategoria } from '../lib/theme'
 import Recetas from './partes/Recetas'
 import type { Categoria, CostoVariante, Producto } from '../lib/types'
+import { esVarianteSinNombre } from '../lib/variantes'
 
 /**
  * El menú: qué se vende, a cuánto, y qué lleva cada cosa.
@@ -813,22 +814,26 @@ function TarjetaProducto({
           partia; en renglones cada dato tiene su columna y se lee de un
           vistazo que se toca: el precio para cambiarlo, la receta para
           armarla (Leider, 1-oct: "mucho mas fight complexity"). Con una sola
-          variante el renglon dice "Precio" y ya. */}
+          variante SIN NOMBRE PROPIO (la «Regular» que se crea con el producto)
+          el renglon dice "Precio" y ya. Si la que queda tiene nombre
+          --«Toronja» despues de quitar «Limón»-- se ve su nombre: antes decia
+          "Precio" y parecia que la variante habia desaparecido (Yeimer, 20-oct). */}
       <div className="pl-9">
         <ul className="divide-y divide-neutral-100">
           {variantes.map((v) => {
+            const sinNombre = variantes.length <= 1 && esVarianteSinNombre(v.nombre, producto.nombre)
             const info = costos.get(v.id)
             const bajoCosto = info?.costo != null && v.precio < info.costo
             return (
               <li key={v.id} className="flex flex-wrap items-center gap-x-3 py-0.5 text-sm">
                 <span className="min-w-0 flex-1 basis-[7rem] truncate text-neutral-700">
-                  {variantes.length <= 1 ? 'Precio' : v.nombre}
+                  {sinNombre ? 'Precio' : v.nombre}
                 </span>
                 {/* Se ve como lo que es: un control que se toca (lámina +
                     lápiz), no una cifra suelta con la pista en un `title`. */}
                 <button
                   onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}
-                  aria-label={`Cambiar el precio de ${variantes.length <= 1 ? producto.nombre : v.nombre}: ${fmt(v.precio)}`}
+                  aria-label={`Cambiar el precio de ${sinNombre ? producto.nombre : v.nombre}: ${fmt(v.precio)}`}
                   className={`vp-control shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 min-h-10 font-semibold tabular-nums ${
                     bajoCosto ? 'text-peligro-600 ring-1 ring-peligro-300' : ''
                   }`}
