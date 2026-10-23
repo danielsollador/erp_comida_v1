@@ -60,9 +60,62 @@ def pistas(resumen: schemas.ResumenCaja, cobros: List[schemas.CobroDelDia]) -> L
             tipo="ventas",
             texto=f"Lo cobrado ({_d(resumen.cobrado)}) no coincide con lo que había que cobrar "
                   f"({_d(resumen.a_cobrar)}): hay un pago mal registrado en alguna venta.",
+            accion="Busca en Ventas la venta cuyo cobro no suma lo que vale y corrígela con «Editar pago».",
+            peso=abs(resumen.cobrado - resumen.a_cobrar),
         ))
 
     explicados = set()
+
+    # 0. Lo que delata la causa sin buscar cobro por cobro (23-oct, el cierre
+    #    con $2.500 de fondo y $50 contados: la explicacion repetia la tabla).
+    reportado = sum((l.contado or 0) for l in contadas)
+    if resumen.cantidad_pedidos == 0 and reportado >= CENTIMOS:
+        salida.append(schemas.PistaCierre(
+            tipo="sin_ventas", monto=reportado, peso=reportado,
+            texto=f"Ese día no hay ninguna venta registrada en el sistema, pero se reportaron {_d(reportado)} al cerrar: "
+                  "lo que se cobró no pasó por el punto de venta del sistema, o se registró en otro día.",
+            accion="Confirma con quien estuvo en caja si se vendió sin registrar; si fue así, carga esas ventas con su fecha.",
+        ))
+    for l in contadas:
+        # Contado casi en cero contra una gaveta con plata: no se conto.
+        if l.fisico and l.diferencia <= -CENTIMOS and (l.contado or 0) <= 0.05 and l.esperado >= 1:
+            salida.append(schemas.PistaCierre(
+                tipo="casi_nada", monto=l.diferencia, peso=abs(l.diferencia) * 0.5,
+                texto=f"En {l.metodo} se reportó {_d(l.contado or 0)} contra {_d(l.esperado)} que debería haber: "
+                      "parece que esa gaveta no se contó, no que falte la plata.",
+                accion=f"Cuenta {l.metodo} y usa «Corregir el conteo» con lo que haya de verdad.",
+            ))
+            explicados.add(l.metodo)
+            continue
+        # Falta casi todo el fondo con que se abrio, sin ventas ni salidas:
+        # el fondo se anoto mal al abrir (o salio sin registrarse).
+        if (l.fisico and l.fondo_declarado and l.fondo >= 1 and l.diferencia <= -CENTIMOS
+                and abs(l.ventas) < CENTIMOS and abs(l.salidas) < CENTIMOS and abs(l.otros) < CENTIMOS
+                and abs(-l.diferencia - (l.fondo - (l.contado or 0))) <= 0.05):
+            contado = l.contado or 0
+            razon = contado and l.fondo / contado
+            coma = razon and any(abs(razon - p) <= p * 0.02 for p in (10, 100, 1000))
+            salida.append(schemas.PistaCierre(
+                tipo="fondo", monto=l.diferencia, peso=abs(l.diferencia),
+                texto=(f"En {l.metodo} se abrió con {_d(l.fondo)} y al cerrar se contaron {_d(contado)}, sin ventas ni salidas "
+                       "en el medio. " + (f"Es justo {razon:,.0f} veces: casi seguro la coma o un cero de más al teclear el fondo."
+                                          if coma else
+                                          "Lo más probable es que el fondo se tecleara mal al abrir, no que hayan sacado esa plata.")),
+                accion=f"Pregunta con cuánto se abrió de verdad {l.metodo}. Si el fondo estaba mal, corrige la apertura; "
+                       f"si el error fue al contar, usa «Corregir el conteo».",
+            ))
+            explicados.add(l.metodo)
+            continue
+        # Se reporto plata en el banco o el punto sin ningun cobro por ahi.
+        if not l.fisico and l.diferencia >= CENTIMOS and abs(l.ventas) < CENTIMOS and abs(l.otros) < CENTIMOS:
+            salida.append(schemas.PistaCierre(
+                tipo="sobra_sin_cobros", monto=l.diferencia, peso=l.diferencia,
+                texto=f"Se reportaron {_d(l.contado or 0)} en {l.metodo}, pero el sistema no tiene ningún cobro por {l.metodo} "
+                      "ese día: o se cobró sin registrar la venta, o ese monto es de otro día (el lote de ayer).",
+                accion=f"Compara con el lote o el banco de {l.metodo}: si son ventas sin registrar, cárgalas; "
+                       "si es de otro día, corrige el conteo a lo de este día.",
+            ))
+            explicados.add(l.metodo)
     # 1. Falta en una forma y sobra en otra casi lo mismo: un cobro en la
     #    forma equivocada.
     for f in faltan:
@@ -77,7 +130,12 @@ def pistas(resumen: schemas.ResumenCaja, cobros: List[schemas.CobroDelDia]) -> L
             if candidatos:
                 lista = ", ".join(f"#{c.numero} ({_d(c.monto)})" for c in candidatos[:3])
                 texto += f" El candidato: {lista}. Se corrige en Ventas con «Editar pago»."
-            salida.append(schemas.PistaCierre(tipo="cruce", texto=texto, pedidos=_pedidos(candidatos), monto=f.diferencia))
+            salida.append(schemas.PistaCierre(
+                tipo="cruce", texto=texto, pedidos=_pedidos(candidatos), monto=f.diferencia, peso=abs(f.diferencia) * 1.5,
+                accion=(f"Abre en Ventas el pedido {', '.join('#' + str(c.numero) for c in candidatos[:3])} y cambia la forma de pago "
+                        f"con «Editar pago»." if candidatos else
+                        f"Busca en Ventas un cobro de {f.metodo} por {_d(-f.diferencia)} y cámbialo a {s.metodo} con «Editar pago»."),
+            ))
             explicados.update({f.metodo, s.metodo})
             break
 
@@ -95,7 +153,12 @@ def pistas(resumen: schemas.ResumenCaja, cobros: List[schemas.CobroDelDia]) -> L
                      "un gasto o retiro sacado de la gaveta sin registrar, o billetes contados de menos.")
         else:
             texto = f"Faltan {_d(-f.diferencia)} en {f.metodo} y ningún cobro del día tiene ese monto: compara cobro por cobro con el banco."
-        salida.append(schemas.PistaCierre(tipo="faltante", texto=texto, pedidos=_pedidos(candidatos), monto=f.diferencia))
+        accion = ("Busca ese cobro en el banco o el lote; si no entró, cóbralo de nuevo o anótalo como pendiente."
+                  if candidatos and not f.fisico else
+                  "Revisa si hubo un vuelto, un gasto o un retiro sin anotar (Caja › «Gastos y retiros») y vuelve a contar."
+                  if f.fisico else "Compara cobro por cobro contra el movimiento del banco.")
+        salida.append(schemas.PistaCierre(tipo="faltante", texto=texto, pedidos=_pedidos(candidatos), monto=f.diferencia,
+                                          peso=abs(f.diferencia), accion=accion))
 
     # 3. Un sobrante sin pareja.
     for s in sobran:
@@ -105,7 +168,8 @@ def pistas(resumen: schemas.ResumenCaja, cobros: List[schemas.CobroDelDia]) -> L
                  "cobrada por ahí, o un pago anotado en otra forma de pago.")
         if resumen.propinas and _parecidos(resumen.propinas, s.diferencia, PARECIDO_COBRO):
             texto = f"Sobran {_d(s.diferencia)} en {s.metodo}, lo mismo que las propinas del día: quizá una propina cobrada por ahí y anotada en otra forma."
-        salida.append(schemas.PistaCierre(tipo="sobrante", texto=texto, monto=s.diferencia))
+        salida.append(schemas.PistaCierre(tipo="sobrante", texto=texto, monto=s.diferencia, peso=abs(s.diferencia),
+                                          accion="Revisa si entró un cobro de otro día o una propina sin anotar."))
 
     # 4. Céntimos.
     for l in contadas:
@@ -136,23 +200,35 @@ def pistas(resumen: schemas.ResumenCaja, cobros: List[schemas.CobroDelDia]) -> L
     for l in resumen.desglose:
         if l.se_cuadra and l.diferencia is None and abs(l.esperado) >= 0.01 and resumen.cerrada:
             salida.append(schemas.PistaCierre(
-                tipo="sin_contar", monto=l.esperado,
+                tipo="sin_contar", monto=l.esperado, peso=0.1,
+                accion=f"La próxima vez cuenta {l.metodo} al cerrar.",
                 texto=f"{l.metodo} no se contó (el sistema dice {_d(l.esperado)}). Si nunca se ha contado, "
                       "arrastra el saldo de los libros: cuéntalo una vez y desde ahí arranca real.",
             ))
+    salida.sort(key=lambda p: -p.peso)
     return salida
 
 
-INSTRUCCIONES = """Eres el asistente del cierre de caja de un negocio de comida en Venezuela.
-El dueño cerró la caja y no le cuadra. Explícale en palabras sencillas qué pasó
-y qué revisar, usando SOLO las pistas y los datos de abajo. Las pistas las sacó
-el sistema con reglas exactas: no las contradigas ni agregues causas que no
-estén ahí.
+INSTRUCCIONES = """Eres quien le revisa el cierre de caja al dueño de un negocio de comida en
+Venezuela: un colega que sabe de caja y va al grano. El cierre no cuadra y él ya
+ve la tabla; NO se la repitas forma de pago por forma de pago. Lo que no ve es
+la causa ni qué hacer.
 
-- Empieza por lo que más plata mueve.
-- Nombra los pedidos por su número (#12) y los botones entre «».
-- Dilo como probable, no como seguro.
-- Máximo 6 líneas, de tú, sin saludo.
+Escribe exactamente esto, en markdown:
+
+**Lo más probable:** una o dos frases con la causa que más plata explica y el
+dato que la delata (por qué lo crees). Si dos diferencias tienen la misma causa,
+júntalas.
+
+**Qué hacer ahora:**
+1. La acción más importante, concreta, con el botón entre «» (y el número de
+   pedido solo si una pista lo trae; nunca inventes uno).
+2. La siguiente.
+(2 a 4 pasos, en orden.)
+
+Reglas: usa SOLO las pistas de abajo (las sacó el sistema con reglas exactas;
+no inventes causas ni números). Lo de céntimos o redondeo de la tasa, en media
+línea al final o nada. Dilo como probable, no como seguro. De tú, sin saludo.
 
 Desglose del día (forma de pago, debes tener, reportado, diferencia):
 {desglose}
@@ -170,11 +246,20 @@ def explicar(resumen: schemas.ResumenCaja, cobros: List[schemas.CobroDelDia]) ->
     if lectura_facturas.lector_activo() == "gemini":
         texto = _redactar(resumen, lista)
     return schemas.ExplicacionCierre(
-        texto=texto or "\n".join(p.texto for p in lista),
+        texto=texto or _sin_ia(lista),
         con_ia=texto is not None,
         pistas=lista,
         pedidos=pedidos,
     )
+
+
+def _sin_ia(lista: List[schemas.PistaCierre]) -> str:
+    acciones = list(dict.fromkeys(p.accion for p in lista if p.accion))[:4]
+    partes = ["**Lo más probable:** " + lista[0].texto]
+    partes += [p.texto for p in lista[1:3]]
+    if acciones:
+        partes.append("**Qué hacer ahora:**\n" + "\n".join(f"{i}. {a}" for i, a in enumerate(acciones, 1)))
+    return "\n\n".join(partes)
 
 
 def _redactar(resumen: schemas.ResumenCaja, lista: List[schemas.PistaCierre]) -> Optional[str]:
@@ -185,7 +270,7 @@ def _redactar(resumen: schemas.ResumenCaja, lista: List[schemas.PistaCierre]) ->
     )
     cuerpo = {
         "contents": [{"role": "user", "parts": [{"text": INSTRUCCIONES.format(
-            desglose=desglose, pistas="\n".join(f"- {p.texto}" for p in lista),
+            desglose=desglose, pistas="\n".join(f"- {p.texto}" + (f" Qué hacer: {p.accion}" if p.accion else "") for p in lista),
         )}]}],
         "generationConfig": {"temperature": 0, "thinkingConfig": {"includeThoughts": True}},
     }

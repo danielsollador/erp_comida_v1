@@ -1409,10 +1409,14 @@ class PistaCierre(BaseModel):
     """Una causa probable de un descuadre, sacada con reglas fijas (ver
     explicar_cierre.py)."""
 
-    tipo: str  # cruce, faltante, sobrante, centimos, repetida, sin_referencia, sin_contar, ventas
+    tipo: str  # cruce, faltante, sobrante, centimos, repetida, sin_referencia, sin_contar, ventas, fondo, sin_ventas, casi_nada
     texto: str
     pedidos: List[int] = []  # numeros de comanda a revisar
     monto: float = 0
+    # Lo que hay que hacer, concreto y con el boton por su nombre.
+    accion: str = ""
+    # Cuanto pesa: lo que mueve mas plata va primero en la explicacion.
+    peso: float = 0
 
 
 class ExplicacionCierre(BaseModel):
@@ -3495,6 +3499,17 @@ class BorradorWhatsApp(BaseModel):
     lineas: List[LineaBorrador] = Field(default_factory=list)
     total: float = 0
     con_ia: bool = False
+    # El menu entero, para elegir a mano lo que no se entendio.
+    menu: List[OpcionMenu] = Field(default_factory=list)
+
+
+class EleccionWhatsApp(BaseModel):
+    texto: str = Field(..., min_length=1, max_length=200)
+    variante_id: int
+
+
+class AprenderWhatsApp(BaseModel):
+    elecciones: List[EleccionWhatsApp] = Field(default_factory=list, max_length=40)
 
 
 # ── Casos de soporte (ver triaje.py) ───────────────────────────────────────

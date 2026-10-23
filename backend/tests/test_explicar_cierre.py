@@ -85,3 +85,31 @@ def test_solo_explica_no_cambia_nada(client, variante):
     antes = client.get("/api/caja/resumen").json()
     explicar(client)
     assert client.get("/api/caja/resumen").json() == antes
+
+
+def test_el_cierre_del_23_de_octubre(client):
+    """Se abrio Efectivo $ con $2.500 y se contaron $50, sin ventas ni
+    salidas; se reporto plata en el punto sin ningun cobro por punto. La
+    explicacion tiene que decir la causa (el fondo, ventas sin registrar) y
+    que hacer, no repetir la tabla."""
+    r = client.post("/api/caja/abrir", json={"fondos": [{"metodo": "Efectivo $", "cuenta": "1011", "fondo": 2500}]})
+    assert r.status_code == 200, r.text
+    cerrar(client, [
+        {"metodo": "Efectivo $", "contado": 50},
+        {"metodo": "Punto de venta", "contado": 71.09},
+    ])
+    d = explicar(client)
+    assert d["pistas"][0]["tipo"] in ("fondo", "sin_ventas"), d["pistas"]
+    fondo = por_tipo(d, "fondo")
+    assert fondo and "tecleara mal al abrir" in fondo[0]["texto"], "2.500/50 no es la coma: se dice el fondo mal anotado"
+    assert por_tipo(d, "sin_ventas"), "ese dia no hay ventas y se reporto plata"
+    assert por_tipo(d, "sobra_sin_cobros")
+    assert not por_tipo(d, "faltante"), "el faltante ya lo explica el fondo: no se repite"
+    assert "**Qué hacer ahora:**" in d["texto"]
+
+
+def test_el_fondo_con_la_coma_corrida(client):
+    client.post("/api/caja/abrir", json={"fondos": [{"metodo": "Efectivo $", "cuenta": "1011", "fondo": 2500}]})
+    cerrar(client, [{"metodo": "Efectivo $", "contado": 25}])
+    [p] = por_tipo(explicar(client), "fondo")
+    assert "100 veces" in p["texto"] and "coma" in p["texto"]

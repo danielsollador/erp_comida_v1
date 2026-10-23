@@ -2136,3 +2136,21 @@ class CasoSoporte(Base):
     estado = Column(String, default="registrado")
     issue_numero = Column(Integer, nullable=True)
     issue_url = Column(String, default="")
+
+
+class AliasMenu(Base):
+    """Como le dicen los clientes a un producto del menu: "granjero" es la
+    empanada de tal cosa en ESTE local. Lo aprende el pedido de WhatsApp
+    (pedido_whatsapp.py) cuando la cajera elige a mano que era: la proxima
+    vez lo reconoce solo. `clave` es el texto normalizado (sin tildes, en
+    singular, sin "de"/"la")."""
+
+    __tablename__ = "DIM240_MEN_ALIAS"
+    __table_args__ = (UniqueConstraint("clave"),)
+
+    id = Column(Integer, primary_key=True)
+    clave = Column(String, nullable=False)
+    texto = Column(String, default="")  # como lo escribio el cliente la primera vez
+    variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
+    veces = Column(Integer, default=1)
+    actualizado = Column(DateTime, default=ahora)

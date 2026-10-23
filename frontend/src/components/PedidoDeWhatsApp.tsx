@@ -45,10 +45,23 @@ export default function PedidoDeWhatsApp({
   }
 
   const listos = elegidos.filter((e) => e.variante_id && e.cantidad > 0) as RenglonElegido[]
-  const precioDe = (id: number | null) => b?.lineas.flatMap((l) => l.opciones).find((o) => o.variante_id === id)?.precio ?? 0
+  const precioDe = (id: number | null) => b?.menu.find((o) => o.variante_id === id)?.precio ?? 0
   const total = listos.reduce((s, e) => s + precioDe(e.variante_id) * e.cantidad, 0)
   const cambiar = (i: number, cambio: Partial<{ variante_id: number | null; cantidad: number }>) =>
     setElegidos((lista) => lista.map((e, j) => (j === i ? { ...e, ...cambio } : e)))
+
+  // Lo elegido a mano se le enseña al sistema: "granjero" era tal producto.
+  // Si falla no importa: la comanda se carga igual.
+  const pasar = () => {
+    if (b) {
+      const elecciones = b.lineas
+        .map((l, i) => ({ texto: l.texto, variante_id: elegidos[i]?.variante_id, antes: l.variante_id }))
+        .filter((e) => e.variante_id && e.variante_id !== e.antes)
+        .map((e) => ({ texto: e.texto, variante_id: e.variante_id as number }))
+      if (elecciones.length) void api.aprenderWhatsApp(elecciones).catch(() => undefined)
+    }
+    onCargar(listos, cliente.trim())
+  }
 
   if (!b) {
     return (
@@ -86,7 +99,7 @@ export default function PedidoDeWhatsApp({
           <Boton tono="suave" onClick={() => setB(null)}>
             Volver
           </Boton>
-          <Boton onClick={() => onCargar(listos, cliente.trim())} disabled={listos.length === 0} ancho>
+          <Boton onClick={pasar} disabled={listos.length === 0} ancho>
             Pasar a la comanda{listos.length ? ` · ${fmt(total)}` : ''}
           </Boton>
         </div>
@@ -141,12 +154,25 @@ export default function PedidoDeWhatsApp({
                       e.variante_id ? 'border-neutral-200' : 'border-aviso-400 bg-aviso-50'
                     }`}
                   >
-                    <option value="">{l.opciones.length ? '¿Cuál es? Elige…' : 'No está en el menú: no va'}</option>
-                    {l.opciones.map((o) => (
-                      <option key={o.variante_id} value={o.variante_id}>
-                        {o.nombre} · {fmt(o.precio)}
-                      </option>
-                    ))}
+                    <option value="">{e.variante_id ? 'No va' : l.opciones.length ? '¿Cuál es? Elige…' : 'No lo encontré: elige o no va'}</option>
+                    {l.opciones.length > 0 && (
+                      <optgroup label="Lo más parecido">
+                        {l.opciones.map((o) => (
+                          <option key={o.variante_id} value={o.variante_id}>
+                            {o.nombre} · {fmt(o.precio)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Todo el menú">
+                      {b.menu
+                        .filter((o) => !l.opciones.some((x) => x.variante_id === o.variante_id))
+                        .map((o) => (
+                          <option key={o.variante_id} value={o.variante_id}>
+                            {o.nombre} · {fmt(o.precio)}
+                          </option>
+                        ))}
+                    </optgroup>
                   </select>
                 </div>
               </li>
@@ -155,7 +181,9 @@ export default function PedidoDeWhatsApp({
         </ul>
         {b.lineas.length === 0 && <p className="text-sm text-neutral-500">No encontré productos del menú en ese mensaje.</p>}
         {elegidos.some((e) => !e.variante_id && e.cantidad > 0) && (
-          <p className="text-xs text-aviso-700">Lo que quede sin elegir no se pasa a la comanda.</p>
+          <p className="text-xs text-aviso-700">
+            Lo que quede sin elegir no se pasa a la comanda. Lo que elijas a mano el sistema lo aprende para la próxima.
+          </p>
         )}
       </div>
     </Modal>

@@ -471,7 +471,10 @@ export default function Inventario() {
         {seccion === 'almacenes' && (
           <>
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <div className="flex items-center gap-2">
+              {/* Con wrap: en el telefono los cuatro botones no caben en una
+                  fila, y sin envolver se salian por la IZQUIERDA (la fila va
+                  alineada a la derecha) sin poder desplazarse (23-oct). */}
+              <div className="flex flex-wrap items-center justify-end gap-2 [&>button]:whitespace-nowrap">
                 {/* A la vista y no dentro del "⋯" (17-oct): cuando se acaba
                     algo en pleno servicio hay que encontrarlo ya. Prendido,
                     lo apaga el aviso de arriba. */}

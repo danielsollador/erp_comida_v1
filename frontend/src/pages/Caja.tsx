@@ -10,6 +10,7 @@ import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { api } from '../lib/api'
+import { Respuesta } from '../components/ChatAyuda'
 import ConciliarBanco from './partes/caja/ConciliarBanco'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
 import type {
@@ -564,7 +565,8 @@ function PorQueNoCuadra({ fecha }: { fecha: string }) {
   return (
     <div className="mt-3 rounded-xl bg-aviso-50 p-3 text-sm text-aviso-900">
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-aviso-800">Lo más probable</p>
-      <div className="space-y-1 whitespace-pre-line">{explicacion.texto}</div>
+      {/* Viene en markdown corto: **negritas** y pasos numerados. */}
+      <Respuesta texto={explicacion.texto} />
       {explicacion.pedidos.length > 0 && (
         <p className="mt-2 text-xs text-aviso-800">
           Pedidos a revisar: {explicacion.pedidos.map((n) => `#${n}`).join(', ')}. Se corrigen en Ventas con «Editar pago».

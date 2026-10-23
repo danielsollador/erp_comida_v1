@@ -93,3 +93,24 @@ def test_la_cocina_no_arma_pedidos(fuera, carta):
         pass
     cocina = entrar(fuera, "cocina-wa", "clave-de-cocina-larga")
     assert cocina.post("/api/pedidos/whatsapp", json={"texto": "2 empanadas"}).status_code == 403
+
+
+def test_no_sugiere_lo_que_no_se_parece_y_trae_todo_el_menu(client, carta):
+    d = client.post("/api/pedidos/whatsapp", json={"texto": "3 granjeros"}).json()
+    [l] = d["lineas"]
+    assert l["variante_id"] is None and l["opciones"] == [], "un parecido del 20 % no es sugerencia"
+    assert {o["variante_id"] for o in d["menu"]} >= set(carta.values())
+
+
+def test_aprende_lo_que_la_cajera_elige_a_mano(client, carta):
+    r = client.post("/api/pedidos/whatsapp/aprender",
+                    json={"elecciones": [{"texto": "3 granjeros", "variante_id": carta["Empanada Carne"]}]})
+    assert r.json() == {"aprendidos": 1}
+    d = client.post("/api/pedidos/whatsapp", json={"texto": "dame 2 granjeros porfa"}).json()
+    assert [(l["cantidad"], l["variante_id"]) for l in d["lineas"]] == [(2, carta["Empanada Carne"])]
+
+
+def test_no_guarda_lo_que_ya_acertaba(client, carta):
+    r = client.post("/api/pedidos/whatsapp/aprender",
+                    json={"elecciones": [{"texto": "2 empanadas de queso", "variante_id": carta["Empanada Queso"]}]})
+    assert r.json() == {"aprendidos": 0}

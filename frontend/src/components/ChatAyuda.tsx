@@ -458,7 +458,7 @@ function TablaDelSistema({ r }: { r: RespuestaNegocio }) {
  * Lo poco de formato que usa la respuesta: **negrita**, `codigo`, y listas
  * con "1." o "-". Sin una libreria de markdown para cuatro reglas.
  */
-function Respuesta({ texto }: { texto: string }) {
+export function Respuesta({ texto }: { texto: string }) {
   const bloques: ReactNode[] = []
   let lista: { ordenada: boolean; items: string[] } | null = null
   const cerrarLista = () => {

@@ -777,6 +777,9 @@ export const api = {
   /** El mensaje de un cliente como borrador de comanda. No crea el pedido. */
   borradorWhatsApp: (texto: string) =>
     req<BorradorWhatsApp>('/pedidos/whatsapp', { method: 'POST', body: JSON.stringify({ texto }) }),
+  /** Lo que la cajera eligió a mano: la próxima vez se reconoce solo. */
+  aprenderWhatsApp: (elecciones: { texto: string; variante_id: number }[]) =>
+    req<{ aprendidos: number }>('/pedidos/whatsapp/aprender', { method: 'POST', body: JSON.stringify({ elecciones }) }),
   sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
   /** Lo mismo, repartido por proveedor y con el mensaje para WhatsApp. */
   pedidoProveedor: () => req<PedidoProveedor[]>('/inventario/pedido-proveedor'),

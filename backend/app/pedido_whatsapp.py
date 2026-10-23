@@ -35,6 +35,9 @@ log = logging.getLogger("erp.whatsapp")
 
 LARGO_MAXIMO = 3000
 PARECIDO_MINIMO = 0.55
+# Por debajo de esto no se propone ni como opcion: "granjeros" se parecia
+# un 21 % a "cafe grande" y salia sugerido (23-oct).
+PARECIDO_PARA_SUGERIR = 0.35
 NUMEROS = {
     "un": 1, "una": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "seis": 6,
     "siete": 7, "ocho": 8, "nueve": 9, "diez": 10, "once": 11, "doce": 12, "media docena": 6, "docena": 12,
@@ -101,7 +104,8 @@ def _puntaje(texto: str, opcion: _Opcion) -> float:
 
 
 def _candidatas(texto: str, opciones: List[_Opcion], n: int = 3) -> List[_Opcion]:
-    return [o for p, o in sorted(((_puntaje(texto, o), o) for o in opciones), key=lambda x: -x[0])[:n] if p > 0.2]
+    return [o for p, o in sorted(((_puntaje(texto, o), o) for o in opciones), key=lambda x: -x[0])[:n]
+            if p >= PARECIDO_PARA_SUGERIR]
 
 
 # ── Sin IA: renglón por renglón ─────────────────────────────────────────────
@@ -110,9 +114,11 @@ _A_NOMBRE = re.compile(r"(?:a nombre de|nombre:?|soy)\s+([a-záéíóúñ][\wá�
 # Lo que dice el cliente antes de pedir: se quita para llegar a la cantidad.
 _ANTES = re.compile(
     r"^(?:(?:hola|buen[oa]s?(?: dias| tardes| noches)?|saludos|amig[oa])[\s!,.]*)*"
-    r"(?:(?:me (?:mandas?|envias?|regalas?|traes?|vendes?|das?)|quiero|quisiera|necesito|para pedir|pedido:?|por fa(?:vor)?)\s+)*",
+    r"(?:(?:me (?:mandas?|envias?|regalas?|traes?|vendes?|das?)|dame|mandame|regalame|traeme|vendeme|quiero|quisiera|necesito|para pedir|pedido:?|por fa(?:vor)?)\s+)*",
     re.I,
 )
+# Y lo que dice despues: "2 granjeros porfa" son 2 granjeros.
+_DESPUES = re.compile(r"[\s,!.]+(?:porfa|por favor|gracias|please|plis)[\s!.]*$", re.I)
 _PALABRA_NUMERO = "|".join(sorted((re.escape(k) for k in NUMEROS), key=len, reverse=True))
 _CANTIDAD = re.compile(rf"^(?:(\d+)\s*x?|({_PALABRA_NUMERO}))\s+(.+)$", re.I)
 _ES_NOTA = ("direccion", "llevar", "delivery", "pago", "transferencia", "efectivo", "zelle", "sin ", "aparte",
@@ -149,7 +155,7 @@ def leer_con_reglas(texto: str) -> dict:
         if any(w in _sin_tildes(r) for w in _ES_NOTA):
             notas.append(r)
             continue
-        pedido = _ANTES.sub("", r).strip()
+        pedido = _DESPUES.sub("", _ANTES.sub("", r)).strip()
         if not pedido or RUIDO.match(_sin_tildes(pedido)):
             continue
         cantidad = 1
@@ -199,8 +205,11 @@ ESQUEMA = {
 }
 
 
-def leer_con_ia(texto: str, opciones: List[_Opcion]) -> Optional[dict]:
+def leer_con_ia(texto: str, opciones: List[_Opcion], alias: Optional[Dict[str, int]] = None) -> Optional[dict]:
     lista = "\n".join(f"{o.variante_id}: {o.nombre} — ${o.precio:.2f}" for o in opciones)
+    if alias:
+        lista += "\n\nCómo le dicen los clientes de este local (palabra → variante_id):\n" + "\n".join(
+            f"{k} → {v}" for k, v in list(alias.items())[:200])
     respuesta = asistente_ayuda.gemini([{"role": "user", "parts": [{"text": texto}]}],
                                        INSTRUCCIONES.format(menu=lista), esquema=ESQUEMA)
     if not respuesta:
@@ -214,11 +223,43 @@ def leer_con_ia(texto: str, opciones: List[_Opcion]) -> Optional[dict]:
 
 # ── El borrador ─────────────────────────────────────────────────────────────
 
+def _alias(db: Session) -> Dict[str, int]:
+    return {a.clave: a.variante_id for a in db.query(models.AliasMenu).all()}
+
+
+def aprender(db: Session, elecciones: List[schemas.EleccionWhatsApp]) -> int:
+    """Lo que la cajera eligio a mano: "granjero" era tal producto. Solo se
+    guarda lo que el lector NO habria acertado solo; lo demas ya lo sabe."""
+    validas = {o.variante_id: o for o in menu(db)}
+    guardadas = 0
+    for e in elecciones:
+        clave = _clave(_CANTIDAD_SUELTA.sub("", e.texto))
+        if not clave or e.variante_id not in validas or len(clave) > 80:
+            continue
+        candidatas = _candidatas(clave, list(validas.values()), 1)
+        if candidatas and candidatas[0].variante_id == e.variante_id and _puntaje(clave, candidatas[0]) >= PARECIDO_MINIMO:
+            continue
+        a = db.query(models.AliasMenu).filter_by(clave=clave).first()
+        if a:
+            a.veces = (a.veces or 0) + 1 if a.variante_id == e.variante_id else 1
+            a.variante_id = e.variante_id
+        else:
+            db.add(models.AliasMenu(clave=clave, texto=e.texto[:200], variante_id=e.variante_id))
+        guardadas += 1
+    db.commit()
+    return guardadas
+
+
+# "3 granjeros" -> "granjeros": el alias es el nombre, no la cantidad.
+_CANTIDAD_SUELTA = re.compile(r"^\s*(\d+\s*x?|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|media docena|docena)\s+", re.I)
+
+
 def borrador(db: Session, texto: str) -> schemas.BorradorWhatsApp:
     texto = (texto or "").strip()[:LARGO_MAXIMO]
     opciones = menu(db)
     por_id: Dict[int, _Opcion] = {o.variante_id: o for o in opciones}
-    leido = leer_con_ia(texto, opciones) if asistente_ayuda.activo() else None
+    alias = _alias(db)
+    leido = leer_con_ia(texto, opciones, alias) if asistente_ayuda.activo() else None
     con_ia = leido is not None
     if leido is None:
         leido = leer_con_reglas(texto)
@@ -232,6 +273,10 @@ def borrador(db: Session, texto: str) -> schemas.BorradorWhatsApp:
             cantidad = 1
         dicho = (l.get("texto") or l.get("busca") or "").strip()
         elegida = por_id.get(int(l.get("variante_id") or 0))
+        # Lo que el local ya enseño gana: "granjero" es lo que la cajera dijo.
+        aprendido = por_id.get(alias.get(_clave(_CANTIDAD_SUELTA.sub("", l.get("busca") or dicho)), 0))
+        if aprendido is not None:
+            elegida = aprendido
         candidatas = _candidatas(l.get("busca") or dicho, opciones)
         if elegida is None and candidatas and _puntaje(l.get("busca") or dicho, candidatas[0]) >= PARECIDO_MINIMO:
             elegida = candidatas[0]
@@ -257,4 +302,6 @@ def borrador(db: Session, texto: str) -> schemas.BorradorWhatsApp:
         lineas=lineas,
         total=total,
         con_ia=con_ia,
+        menu=[schemas.OpcionMenu(variante_id=o.variante_id, nombre=o.nombre, precio=o.precio)
+              for o in sorted(opciones, key=lambda o: o.nombre.lower())],
     )

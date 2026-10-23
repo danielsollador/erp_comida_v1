@@ -395,6 +395,15 @@ def borrador_de_whatsapp(datos: schemas.TextoWhatsApp, db: Session = Depends(get
     return pedido_whatsapp.borrador(db, datos.texto)
 
 
+@router.post("/whatsapp/aprender")
+def aprender_de_whatsapp(datos: schemas.AprenderWhatsApp, db: Session = Depends(get_db)):
+    """Lo que la cajera eligio a mano en el borrador: la proxima vez se
+    reconoce solo ("granjero" es tal producto en este local)."""
+    from .. import pedido_whatsapp
+
+    return {"aprendidos": pedido_whatsapp.aprender(db, datos.elecciones)}
+
+
 @router.post("", response_model=schemas.Pedido)
 async def crear_pedido(
     pedido: schemas.PedidoCreate, request: Request, db: Session = Depends(get_db)

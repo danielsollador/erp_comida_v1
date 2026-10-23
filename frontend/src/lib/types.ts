@@ -2358,6 +2358,8 @@ export interface BorradorWhatsApp {
   }[]
   total: number
   con_ia: boolean
+  /** El menú entero, para elegir a mano lo que no se entendió. */
+  menu: { variante_id: number; nombre: string; precio: number }[]
 }
 
 /** Un caso para el equipo de soporte, armado desde el chat (ver backend/app/triaje.py). */
