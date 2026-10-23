@@ -21,7 +21,8 @@ type Propuesta = { id: string; titulo: string; detalle: string[]; peligro: boole
 type Turno = {
   rol: 'usuario' | 'asistente'
   texto: string
-  tabla?: RespuestaNegocio
+  // Todas las consultas que hizo para responder: el texto puede hablar de cualquiera.
+  tablas?: RespuestaNegocio[]
   paso?: string
   escribiendo?: boolean
   propuesta?: Propuesta
@@ -105,7 +106,7 @@ export default function Asistente() {
     try {
       await enVivo('/ayuda/agente/en-vivo', { mensaje, historial: historialDe(antes) }, (e) => {
         if (typeof e.paso === 'string') pintar({ paso: e.paso })
-        else if (e.tabla) pintar({ tabla: e.tabla as RespuestaNegocio })
+        else if (e.tabla) pintar({ tablas: [...(r.tablas ?? []), e.tabla as RespuestaNegocio] })
         else if (typeof e.texto === 'string') pintar({ texto: r.texto + e.texto, paso: undefined })
         else if (e.propuesta) pintar({ propuesta: e.propuesta as Propuesta, paso: undefined })
       })
@@ -193,7 +194,7 @@ export default function Asistente() {
               )}
               {!t.texto && !t.propuesta && t.escribiendo && <Pensando paso={t.paso ?? 'Pensando…'} />}
               {t.texto && t.escribiendo && t.paso && <Pensando paso={t.paso} />}
-              {t.tabla && <TablaDelSistema r={t.tabla} />}
+              {t.tablas?.map((tb, j) => <TablaDelSistema key={j} r={tb} />)}
               {t.propuesta && (
                 <TarjetaPropuesta
                   p={t.propuesta}

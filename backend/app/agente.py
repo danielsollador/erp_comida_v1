@@ -571,6 +571,37 @@ def ejecutar_guardar_receta(ctx: Contexto, variante_id: int, ingredientes: List[
     return "Listo: receta guardada."
 
 
+def _receta_de_menu(ctx: Contexto, variante_id: int):
+    por_id = {o.variante_id: o for o in pedido_whatsapp.menu(ctx.db)}
+    v = por_id.get(int(variante_id or 0))
+    if v is None:
+        raise ValueError(f"El variante_id {variante_id} no existe en el menú: búscalo con buscar_productos_menu.")
+    receta = _receta_actual(ctx, v.variante_id)
+    if not receta:
+        raise ValueError(f"{v.nombre} no tiene receta, así que no sé qué sacar del inventario. Ponle receta primero.")
+    return v, receta
+
+
+def preparar_consumo_del_personal(ctx: Contexto, variante_id: int, cantidad: float = 1, quien: str = "") -> Preparado:
+    v, receta = _receta_de_menu(ctx, variante_id)
+    cantidad = max(1, int(round(float(cantidad or 1))))
+    lineas = _lineas_receta(ctx, [{"ingrediente_id": r["ingrediente_id"], "cantidad": r["cantidad"] * cantidad} for r in receta])
+    return Preparado(titulo=f"Consumo del personal: {cantidad} × {v.nombre}" + (f" ({quien})" if quien else ""),
+                     detalle=["Sale del inventario: " + _texto_receta(lineas), "No es venta ni merma: va a «Consumo del personal»."])
+
+
+def ejecutar_consumo_del_personal(ctx: Contexto, variante_id: int, cantidad: float = 1, quien: str = "") -> str:
+    v, receta = _receta_de_menu(ctx, variante_id)
+    cantidad = max(1, int(round(float(cantidad or 1))))
+    motivo = f"{cantidad} {v.nombre}" + (f" ({quien})" if quien else "")
+    for r in receta:
+        st, res = ctx.api("POST", f"/api/inventario/ingredientes/{r['ingrediente_id']}/consumo-personal",
+                          {"cantidad": round(r["cantidad"] * cantidad, 4), "motivo": motivo, "forzar": True})
+        if st != 200:
+            raise ValueError(_error(st, res))
+    return f"Listo: {cantidad} {v.nombre} como consumo del personal; salió del inventario lo que lleva."
+
+
 def preparar_cambiar_precio(ctx: Contexto, variante_id: int, precio: float) -> Preparado:
     v = ctx.db.get(models.Variante, int(variante_id or 0))
     if v is None:
@@ -700,6 +731,12 @@ HERRAMIENTAS: Dict[str, Herramienta] = {
               "ingredientes": {"type": "ARRAY", "items": _obj({"ingrediente_id": I, "cantidad": N}, ["ingrediente_id", "cantidad"])}},
              ["variante_id", "ingredientes"]),
         lambda a: "Preparando la receta…", preparar=preparar_guardar_receta, ejecutar=ejecutar_guardar_receta),
+    "consumo_del_personal": Herramienta(
+        "CAMBIA: algo del MENÚ que se comió el personal (no se vende ni se regala a un cliente): saca del inventario "
+        "lo que lleva su receta, como consumo del personal. variante_id de buscar_productos_menu.",
+        _obj({"variante_id": I, "cantidad": N, "quien": S}, ["variante_id"]),
+        lambda a: "Preparando el consumo del personal…", preparar=preparar_consumo_del_personal,
+        ejecutar=ejecutar_consumo_del_personal),
     "cambiar_precio": Herramienta(
         "CAMBIA: cambia el precio (en dólares) de un producto del menú. variante_id de buscar_productos_menu.",
         _obj({"variante_id": I, "precio": N}, ["variante_id", "precio"]),
@@ -724,7 +761,9 @@ Reglas:
 - Si algo es ambiguo (dos productos parecidos, no sabes la cantidad), pregunta en
   una frase antes de proponer.
 - "Regalé X" de una mercancía es sacar_de_inventario con tipo=merma y motivo
-  "Regalo"; de algo del menú, un pedido con cortesia=true.
+  "Regalo"; de algo del menú a un CLIENTE, un pedido con cortesia=true.
+- Si se lo comió el PERSONAL: de algo del menú, consumo_del_personal; de una
+  mercancía, sacar_de_inventario con tipo=consumo_personal. Nunca un pedido.
 - Para números usa consultar_reporte con el CATÁLOGO de abajo (mismas reglas de
   fechas: "ayer", "esta semana" = del lunes a hoy, "este mes" = del 1 a hoy).
   Si preguntan por un producto o una categoría, FILTRA por ese campo con el

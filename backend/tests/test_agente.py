@@ -217,3 +217,16 @@ def test_crea_mercancia_y_cambia_un_precio(client, db, variante, guion):
     assert "$5,00 → $5,50" in p["titulo"] and r["ok"]
     db.refresh(variante)
     assert variante.precio == 5.5
+
+
+def test_lo_que_se_comio_el_personal_sale_por_su_receta(client, db, variante, insumo, guion):
+    cola, _ = guion
+    antes_pedidos = db.query(models.Pedido).count()
+    antes = insumo.stock_actual
+    p, r = _propone_y_confirma(client, cola, "el cocinero se comió dos empanadas de carne",
+                               llama("consumo_del_personal", variante_id=variante.id, cantidad=2, quien="cocinero"))
+    assert "0,2 kg de Carne molida" in p["detalle"][0]
+    assert r["ok"], r
+    db.refresh(insumo)
+    assert insumo.stock_actual == pytest.approx(antes - 0.2)
+    assert db.query(models.Pedido).count() == antes_pedidos, "no es un pedido"
