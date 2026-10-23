@@ -241,8 +241,21 @@ export type RespuestaAsistente = {
   texto: string
   guia: { ruta: string; ancla: string; titulo: string; texto: string; accion?: 'tocar' | 'escribir' | 'mirar' }[] | null
   consulto: string[]
+  /** Lo que encontró «buscar documentos»: cada uno con su enlace para abrirlo. */
+  documentos?: DocumentoEncontrado[]
   ms: number
   costo_usd: number
+}
+
+export type DocumentoEncontrado = {
+  tipo: 'compra' | 'venta' | 'gasto'
+  id: number
+  titulo: string
+  detalle: string
+  fecha: string
+  monto_usd: number
+  estado: string
+  enlace: string
 }
 
 /** La frase traducida a una definición de A medida (ya validada en el servidor). */

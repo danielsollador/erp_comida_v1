@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
-import type { RespuestaAsistente } from '../lib/api'
+import type { DocumentoEncontrado, RespuestaAsistente } from '../lib/api'
+import { useMoneda } from '../lib/moneda'
 import { sinBarraLateral } from './Rail'
 import { useGuia } from './Guia'
 
@@ -22,6 +23,7 @@ const SUGERENCIAS = [
   '¿Qué se me está acabando?',
   '¿Qué producto me deja más ganancia?',
   'Enséñame a cargar una factura',
+  'Búscame la última factura de carne',
 ]
 
 export default function Asistente() {
@@ -139,6 +141,12 @@ export default function Asistente() {
                       >
                         {m.error ? m.texto : <TextoRico texto={m.texto} />}
                       </div>
+                      {m.r?.documentos?.length ? (
+                        <Documentos
+                          docs={m.r.documentos}
+                          onAbrir={() => setAbierto(false)}
+                        />
+                      ) : null}
                       {m.r?.guia?.length ? (
                         <button
                           type="button"
@@ -192,6 +200,49 @@ export default function Asistente() {
           document.body,
         )}
     </>
+  )
+}
+
+/**
+ * Lo que encontró «buscar documentos»: cada uno se abre en su pantalla, ya
+ * desplegado (ver lib/abrirDeUrl.ts). La lista la arma el servidor con lo que
+ * hay en la base; el modelo solo dice cuál le parece.
+ */
+function Documentos({ docs, onAbrir }: { docs: DocumentoEncontrado[]; onAbrir: () => void }) {
+  const navegar = useNavigate()
+  const { fmt } = useMoneda()
+  const dia = (iso: string) => {
+    const [a, m, d] = iso.split('-')
+    return `${d}/${m}/${a.slice(2)}`
+  }
+  return (
+    <ul className="mt-2 divide-y divide-neutral-200/70 overflow-hidden rounded-2xl bg-white">
+      {docs.map((d) => (
+        <li key={`${d.tipo}-${d.id}`}>
+          <button
+            type="button"
+            onClick={() => {
+              onAbrir()
+              navegar(d.enlace)
+            }}
+            className="flex min-h-11 w-full items-center gap-3 px-4 py-3 text-left active:bg-neutral-100"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[15px] font-medium text-neutral-900">{d.titulo}</span>
+              <span className="block truncate text-[13px] text-neutral-500">
+                {dia(d.fecha)}
+                {d.estado && ` · ${d.estado}`}
+                {d.detalle && ` · ${d.detalle}`}
+              </span>
+            </span>
+            <span className="shrink-0 text-right">
+              <span className="block text-[15px] font-semibold tabular-nums">{fmt(d.monto_usd)}</span>
+              <span className="block text-[12px] font-medium text-acento-700">Abrir</span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }
 

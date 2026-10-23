@@ -215,3 +215,56 @@ def test_la_guia_no_repite_un_paso_seguido_y_trae_la_accion():
     assert [p["ancla"] for p in pasos] == ["seccion.recetas", "recetas.cantidad"]
     assert pasos[0]["titulo"] == "Abre Recetas"
     assert [p["accion"] for p in pasos] == ["tocar", "escribir"]
+
+
+# ── Buscar documentos hablando ──────────────────────────────────────────────
+
+
+def _documentos(db):
+    import datetime as dt
+
+    from app.timeutils import ahora
+
+    hace = lambda dias: ahora() - dt.timedelta(days=dias)  # noqa: E731
+    db.add_all([
+        models.FacturaCompra(numero_factura="F-100", proveedor_nombre="Makro Comercializadora C.A.", base_imponible=40.0, fecha=hace(8)),
+        models.FacturaCompra(numero_factura="F-101", proveedor_nombre="Makro Comercializadora C.A.", base_imponible=120.0, fecha=hace(9)),
+        models.FacturaCompra(numero_factura="F-200", proveedor_nombre="Carnes La Fresca", base_imponible=38.0, fecha=hace(2)),
+        models.Gasto(descripcion="Bombona de gas", monto=12.0, fecha=hace(3)),
+    ])
+    p = models.Pedido(numero=7, estado="pagado", cliente="Señora Carmen", creado_en=hace(1))
+    p.items = [models.PedidoItem(nombre="Empanada de queso", precio_unitario=1.5, cantidad=4)]
+    db.add(p)
+    db.commit()
+
+
+def test_busca_por_proveedor_y_monto_aproximado(db):
+    from app.asistente import busqueda
+
+    _documentos(db)
+    d = busqueda.buscar(db, "admin", tipo="compra", texto="makro", monto_aproximado=40)
+    assert [x["titulo"] for x in d["documentos"]] == ["Factura F-100 · Makro Comercializadora C.A."]
+    assert "abrir=" in d["documentos"][0]["enlace"]
+
+
+def test_busca_ventas_por_lo_que_llevaban_y_por_cliente(db):
+    from app.asistente import busqueda
+
+    _documentos(db)
+    assert busqueda.buscar(db, "admin", tipo="venta", texto="empanadas")["documentos"][0]["titulo"].startswith("Venta #7")
+    assert busqueda.buscar(db, "admin", tipo="cualquiera", texto="carmen")["documentos"][0]["tipo"] == "venta"
+
+
+def test_un_numero_dicho_descarta_los_demas(db):
+    from app.asistente import busqueda
+
+    _documentos(db)
+    d = busqueda.buscar(db, "admin", tipo="cualquiera", numero="F-200")
+    assert [x["titulo"] for x in d["documentos"]] == ["Factura F-200 · Carnes La Fresca"]
+
+
+def test_cocina_no_busca_compras_ni_ventas(db):
+    from app.asistente import busqueda
+
+    _documentos(db)
+    assert "error" in busqueda.buscar(db, "cocina", tipo="compra", texto="makro")

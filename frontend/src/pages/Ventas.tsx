@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useAbrirDeUrl } from '../lib/abrirDeUrl'
 import { nombre as termino } from '../lib/palabras'
 import EditarPedido from '../components/EditarPedido'
 import CorregirPago from '../components/CorregirPago'
@@ -244,7 +245,9 @@ function Historial({
 }) {
   const { fmtCongelado } = useMoneda()
   const [busqueda, setBusqueda] = useState('')
+  // Una venta que llega por enlace (?abrir=id, la búsqueda del asistente) entra desplegada.
   const [abierta, setAbierta] = useState<number | null>(null)
+  useAbrirDeUrl(setAbierta)
   const orden = useOrden<VentaFila>(
     {
       numero: (v) => v.numero,
@@ -390,6 +393,7 @@ function FilaVenta({
     <>
       <tr
         onClick={alTocar}
+        data-doc={v.id}
         className={`border-t border-neutral-100 cursor-pointer hover:bg-neutral-50 ${apagada ? 'text-neutral-400' : ''}`}
         aria-expanded={desplegada}
       >
