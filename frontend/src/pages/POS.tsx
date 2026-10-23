@@ -406,7 +406,10 @@ export default function POS() {
         // en cocina abajo) y con una fila de cobrados por entregar los pedidos
         // recien tomados quedaban tapados debajo (Leider, 28-sep). El color de
         // cada tarjeta ya dice en que va.
-        const lista = [...porId.values()].sort((a, b) => b.numero - a.numero)
+        // Por id y no por numero: el numero vuelve a 1 cada dia, y un #14 de
+        // ayer que seguia abierto quedaba encima del #3 de hoy. El pedido
+        // nuevo se iba al fondo y parecia que no se habia guardado (23-oct).
+        const lista = [...porId.values()].sort((a, b) => b.id - a.id)
         // Si llego exactamente lo mismo, no se toca el estado: repintar el
         // mostrador entero por nada es lo que traba a una tablet de 3 GB, y
         // el respaldo de cada minuto casi siempre trae lo mismo.
