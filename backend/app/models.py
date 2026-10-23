@@ -2154,3 +2154,80 @@ class AliasMenu(Base):
     variante_id = Column(Integer, ForeignKey("DIM230_MEN_VARIANTE.id"), nullable=False)
     veces = Column(Integer, default=1)
     actualizado = Column(DateTime, default=ahora)
+
+
+class ExtractoBanco(Base):
+    """Un estado de cuenta subido a la conciliacion (conciliacion_bancaria.py).
+
+    Se guarda para que la conciliacion tenga memoria, como en Odoo: lo que se
+    concilio un mes no se vuelve a revisar, lo que quedo pendiente sigue ahi,
+    y subir el mismo archivo dos veces no duplica nada (`huella` de cada
+    movimiento).
+    """
+
+    __tablename__ = "TRX640_CON_EXTRACTO"
+
+    id = Column(Integer, primary_key=True)
+    banco = Column(String, default="")  # el lector que lo leyo: "Banco Provincial"
+    cuenta = Column(String, default="1020")  # la cuenta contable del banco
+    archivo = Column(String, default="")
+    desde = Column(Date, nullable=True)
+    hasta = Column(Date, nullable=True)
+    saldo_final = Column(Float, nullable=True)  # en Bs, el ultimo saldo del estado
+    descuadres = Column(Integer, default=0)
+    cargado_en = Column(DateTime, default=ahora)
+    cargado_por = Column(String, default="")
+
+    lineas = relationship("LineaExtracto", back_populates="extracto", cascade="all, delete-orphan")
+
+
+class LineaExtracto(Base):
+    """Un movimiento del estado de cuenta, y que paso con el.
+
+    estado:
+      pendiente   nadie lo explico todavia.
+      cobro       es un cobro del sistema (o el lote del punto de ese dia):
+                  ya esta en los libros con la venta, no lleva asiento.
+      propuesta   una regla dice a que cuenta va; falta registrarlo.
+      registrado  tiene su asiento (`asiento_id`).
+      ignorado    alguien decidio que no va a los libros.
+    """
+
+    __tablename__ = "TRX641_CON_EXTRACTO_DET"
+    __table_args__ = (UniqueConstraint("huella"),)
+
+    id = Column(Integer, primary_key=True)
+    extracto_id = Column(Integer, ForeignKey("TRX640_CON_EXTRACTO.id"), nullable=False, index=True)
+    fecha = Column(Date, nullable=False)
+    concepto = Column(String, default="")
+    referencia = Column(String, default="")
+    monto = Column(Float, nullable=False)  # Bs: + abono, - cargo
+    saldo = Column(Float, nullable=True)
+    huella = Column(String, nullable=False)
+    estado = Column(String, default="pendiente")
+    detalle = Column(String, default="")
+    pedidos = Column(String, default="")  # "12,15": los pedidos que explica
+    cuenta = Column(String, default="")  # la contrapartida (propuesta o registrada)
+    regla_id = Column(Integer, ForeignKey("CFG640_CON_REGLA_BANCO.id"), nullable=True)
+    asiento_id = Column(Integer, ForeignKey("TRX610_CON_ASIENTO.id"), nullable=True)
+    tasa = Column(Float, nullable=True)  # Bs por dolar con que se registro
+    monto_usd = Column(Float, nullable=True)
+
+    extracto = relationship("ExtractoBanco", back_populates="lineas")
+
+
+class ReglaBanco(Base):
+    """Una regla de conciliacion: "lo que diga COMIS y sea un cargo va a
+    Comisiones bancarias". Es lo que en Odoo se llama modelo de
+    conciliacion: lo que se repite cada mes se explica una vez."""
+
+    __tablename__ = "CFG640_CON_REGLA_BANCO"
+
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String, nullable=False)
+    contiene = Column(String, nullable=False)  # texto del concepto, sin importar mayusculas ni tildes
+    sentido = Column(String, default="cargo")  # cargo | abono | ambos
+    cuenta = Column(String, nullable=False)  # codigo contable de la contrapartida
+    activa = Column(Boolean, default=True)
+    creada_en = Column(DateTime, default=ahora)
+    creada_por = Column(String, default="")

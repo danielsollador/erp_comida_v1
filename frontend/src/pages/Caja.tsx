@@ -11,7 +11,6 @@ import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { api } from '../lib/api'
 import { Respuesta } from '../components/ChatAyuda'
-import ConciliarBanco from './partes/caja/ConciliarBanco'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
 import type {
   CierreCaja,
@@ -43,7 +42,6 @@ const SECCIONES = [
   { id: 'cierre', texto: 'Cierre de caja' },
   { id: 'movimientos', texto: 'Gastos y retiros' },
   { id: 'historial', texto: 'Historial' },
-  { id: 'banco', texto: 'Conciliar banco' },
 ]
 
 const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
@@ -150,8 +148,6 @@ export default function Caja() {
         {seccion === 'movimientos' && (
           <Movimientos gastos={gastos} retiros={retiros} rango={rango} alCambiar={recargar} />
         )}
-
-        {seccion === 'banco' && <ConciliarBanco />}
 
         {seccion === 'historial' && (
           <Historial

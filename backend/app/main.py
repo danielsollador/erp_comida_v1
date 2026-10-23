@@ -23,6 +23,7 @@ from .routers import (
     compras_alertas,
     compras_equivalencias,
     compras_lectura,
+    conciliacion as conciliacion_router,
     config,
     contabilidad as contabilidad_router,
     impuestos as impuestos_router,
@@ -243,6 +244,7 @@ app.include_router(respaldos.router)
 app.include_router(sitio.router)
 app.include_router(tasas.router)
 app.include_router(contabilidad_router.router)
+app.include_router(conciliacion_router.router)
 app.include_router(compras.router)
 app.include_router(compras_lectura.router)
 app.include_router(compras_equivalencias.router)

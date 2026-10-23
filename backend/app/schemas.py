@@ -3543,3 +3543,95 @@ class CasoRegistrado(BaseModel):
     issue_url: str = ""
     usuario: str = ""
     pantalla: str = ""
+
+
+# ── Conciliacion bancaria en Contabilidad (ver conciliacion_bancaria.py) ────
+
+class LineaConciliacion(BaseModel):
+    id: int
+    fecha: datetime.date
+    concepto: str
+    referencia: str = ""
+    monto: float  # Bs: + abono, - cargo
+    estado: str  # pendiente | cobro | propuesta | registrado | ignorado
+    detalle: str = ""
+    pedidos: List[int] = Field(default_factory=list)
+    cuenta: str = ""
+    asiento_id: Optional[int] = None
+    monto_usd: Optional[float] = None
+
+
+class ResumenEstado(BaseModel):
+    estado: str
+    movimientos: int
+    total_bs: float
+
+
+class SugerenciaRegla(BaseModel):
+    contiene: str
+    sentido: str
+    veces: int
+    total_bs: float
+    ejemplo: str = ""
+    cuenta: str = ""  # la que se propone, si se adivina (comisiones -> 6070)
+
+
+class DetalleExtracto(BaseModel):
+    id: int
+    banco: str
+    cuenta: str
+    archivo: str = ""
+    desde: Optional[datetime.date] = None
+    hasta: Optional[datetime.date] = None
+    saldo_final: Optional[float] = None
+    descuadres: int = 0
+    movimientos: int
+    conciliado_pct: float
+    resumen: List[ResumenEstado]
+    lineas: List[LineaConciliacion]
+    sugerencias: List[SugerenciaRegla] = Field(default_factory=list)
+    # codigo -> nombre, para mostrar a que cuenta va cada cosa.
+    cuentas: Dict[str, str] = Field(default_factory=dict)
+
+
+class ExtractoResumen(BaseModel):
+    id: int
+    banco: str
+    archivo: str = ""
+    desde: Optional[datetime.date] = None
+    hasta: Optional[datetime.date] = None
+    movimientos: int
+    pendientes: int
+    cargado_en: Optional[datetime.datetime] = None
+
+
+class Regla(BaseModel):
+    id: int
+    nombre: str
+    contiene: str
+    sentido: str
+    cuenta: str
+    activa: bool = True
+
+
+class ReglaIn(BaseModel):
+    nombre: str = Field("", max_length=80)
+    contiene: str = Field(..., min_length=2, max_length=80)
+    sentido: Literal["cargo", "abono", "ambos"] = "cargo"
+    cuenta: str = Field(..., min_length=3, max_length=10)
+    activa: bool = True
+
+
+class EstadoConciliacion(BaseModel):
+    extractos: List[ExtractoResumen]
+    reglas: List[Regla]
+
+
+class RegistrarLineas(BaseModel):
+    # Sin ids: todo lo propuesto del extracto.
+    ids: Optional[List[int]] = None
+
+
+class AccionLinea(BaseModel):
+    accion: Literal["cuenta", "ignorar", "pendiente"]
+    cuenta: str = ""

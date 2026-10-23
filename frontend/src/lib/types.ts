@@ -2302,46 +2302,69 @@ export interface PedidoProveedor {
   mensaje: string
 }
 
-/** Conciliar el banco (ver backend/app/conciliacion.py). */
-export interface CobroConciliable {
-  metodo: string
-  tipo: 'venta' | 'abono'
-  pedido_id: number
-  numero: number
-  cliente: string
-  fecha: string | null
-  monto: number
-  bs: number
-  referencia: string
-}
-
-export interface MovimientoBanco {
+/** Conciliación bancaria en Contabilidad (ver backend/app/conciliacion_bancaria.py). */
+export interface LineaConciliacion {
+  id: number
   fecha: string
   concepto: string
-  monto: number
   referencia: string
+  /** Bs: + abono, - cargo. */
+  monto: number
+  estado: 'pendiente' | 'cobro' | 'propuesta' | 'registrado' | 'ignorado'
+  detalle: string
+  pedidos: number[]
+  cuenta: string
+  asiento_id: number | null
+  monto_usd: number | null
 }
 
-export interface ResultadoConciliacion {
+export interface SugerenciaRegla {
+  contiene: string
+  sentido: string
+  veces: number
+  total_bs: number
+  ejemplo: string
+  cuenta: string
+}
+
+export interface DetalleExtracto {
+  id: number
   banco: string
-  desde: string
-  hasta: string
+  cuenta: string
+  archivo: string
+  desde: string | null
+  hasta: string | null
+  saldo_final: number | null
+  descuadres: number
   movimientos: number
-  descuadres_lectura: number
-  abonos_bs: number
-  comisiones_bs: number
-  conciliados: { cobro: CobroConciliable; movimiento: MovimientoBanco; por_referencia: boolean }[]
-  sin_banco: CobroConciliable[]
-  sin_sistema: MovimientoBanco[]
-  puntos: {
-    fecha: string
-    fecha_banco: string | null
-    sistema_bs: number
-    banco_bs: number
-    diferencia_bs: number
-    lotes: number
+  conciliado_pct: number
+  resumen: { estado: string; movimientos: number; total_bs: number }[]
+  lineas: LineaConciliacion[]
+  sugerencias: SugerenciaRegla[]
+  cuentas: Record<string, string>
+}
+
+export interface ReglaBanco {
+  id: number
+  nombre: string
+  contiene: string
+  sentido: string
+  cuenta: string
+  activa: boolean
+}
+
+export interface EstadoConciliacion {
+  extractos: {
+    id: number
+    banco: string
+    archivo: string
+    desde: string | null
+    hasta: string | null
+    movimientos: number
+    pendientes: number
+    cargado_en: string | null
   }[]
-  lotes_sin_ventas: MovimientoBanco[]
+  reglas: ReglaBanco[]
 }
 
 /** Un mensaje de WhatsApp leído como borrador de comanda (ver backend/app/pedido_whatsapp.py). */

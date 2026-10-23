@@ -100,14 +100,3 @@ def test_un_csv_cualquiera(client, db, variante):
     r = c.conciliar(db, c.leer("movimientos.csv", csv))
     assert [x.cobro.numero for x in r.conciliados] == [p["numero"]]
     assert r.comisiones_bs == 2.0
-
-
-def test_la_ruta_lee_y_no_guarda(client, db, variante):
-    hoy = ahora().date()
-    _cobrar(client, db, variante, "Pago movil")
-    archivo = f"Fecha,Concepto,Monto\n{hoy:%Y-%m-%d},PAGO MOVIL,1000.00\n".encode()
-    r = client.post("/api/caja/conciliar", files={"archivo": ("edo.csv", archivo, "text/csv")})
-    assert r.status_code == 200, r.text
-    assert len(r.json()["conciliados"]) == 1
-    malo = client.post("/api/caja/conciliar", files={"archivo": ("edo.csv", b"hola\nmundo\n", "text/csv")})
-    assert malo.status_code == 422 and "columnas" in malo.json()["detail"]

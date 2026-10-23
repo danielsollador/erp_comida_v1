@@ -95,6 +95,11 @@ PLAN_DE_CUENTAS = [
     # El flete que cobra el proveedor en la factura. Aparte de los gastos
     # operativos porque el transporte lleva retencion de ISLR propia.
     ("6060", "Fletes y transporte", "gasto", "deudora"),
+    # Lo que cobra el banco: comisiones, mantenimiento, el ITF. Sale de la
+    # conciliacion bancaria (reglas del estado de cuenta).
+    ("6070", "Comisiones y gastos bancarios", "gasto", "deudora"),
+    # Lo que entra sin ser venta: intereses del banco, reintegros.
+    ("4040", "Otros ingresos", "ingreso", "acreedora"),
 ]
 
 # Cuentas que viven dentro de un grupo pero con el saldo invertido a proposito:

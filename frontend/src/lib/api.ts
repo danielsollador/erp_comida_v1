@@ -7,7 +7,9 @@ import type {
   BorradorCaso,
   CasoRegistrado,
   BorradorWhatsApp,
-  ResultadoConciliacion,
+  DetalleExtracto,
+  EstadoConciliacion,
+  ReglaBanco,
   RespuestaNegocio,
   PedidoProveedor,
   ResultadoCarga,
@@ -1005,12 +1007,25 @@ export const api = {
     req<ResumenCaja>('/caja/resumen' + (fecha ? `?fecha=${fecha}` : '')),
   /** Cada cobro del día con su referencia: el detalle de la columna "Entró". */
   /** ¿Por qué no cuadra? Solo lee: no cambia ningún cobro ni el cierre. */
-  /** El estado de cuenta contra los cobros. Solo lee: el archivo no se guarda. */
-  conciliarBanco: (archivo: File) => {
+  // --- conciliación bancaria (Contabilidad) ---
+  conciliacion: () => req<EstadoConciliacion>('/contabilidad/conciliacion'),
+  extracto: (id: number) => req<DetalleExtracto>(`/contabilidad/conciliacion/extractos/${id}`),
+  subirExtracto: (archivo: File, cuenta = '1020') => {
     const datos = new FormData()
     datos.append('archivo', archivo)
-    return req<ResultadoConciliacion>('/caja/conciliar', { method: 'POST', body: datos, headers: {} })
+    datos.append('cuenta', cuenta)
+    return req<DetalleExtracto>('/contabilidad/conciliacion/extractos', { method: 'POST', body: datos, headers: {} })
   },
+  registrarExtracto: (id: number, ids?: number[]) =>
+    req<DetalleExtracto>(`/contabilidad/conciliacion/extractos/${id}/registrar`, { method: 'POST', body: JSON.stringify({ ids }) }),
+  accionLinea: (id: number, accion: 'cuenta' | 'ignorar' | 'pendiente', cuenta = '') =>
+    req<DetalleExtracto>(`/contabilidad/conciliacion/lineas/${id}`, { method: 'POST', body: JSON.stringify({ accion, cuenta }) }),
+  crearReglaBanco: (r: { nombre: string; contiene: string; sentido: string; cuenta: string }) =>
+    req<ReglaBanco>('/contabilidad/conciliacion/reglas', { method: 'POST', body: JSON.stringify(r) }),
+  editarReglaBanco: (id: number, r: { nombre: string; contiene: string; sentido: string; cuenta: string }) =>
+    req<ReglaBanco>(`/contabilidad/conciliacion/reglas/${id}`, { method: 'PUT', body: JSON.stringify(r) }),
+  borrarExtracto: (id: number) => req<{ ok: boolean }>(`/contabilidad/conciliacion/extractos/${id}`, { method: 'DELETE' }),
+  borrarReglaBanco: (id: number) => req<{ ok: boolean }>(`/contabilidad/conciliacion/reglas/${id}`, { method: 'DELETE' }),
   explicarCierre: (fecha?: string) =>
     req<ExplicacionCierre>(`/caja/explicar${fecha ? `?fecha=${fecha}` : ''}`),
   cobrosDelDia: (fecha?: string) =>

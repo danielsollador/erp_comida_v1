@@ -55,6 +55,11 @@ class Movimiento:
     monto: float  # + abono, - cargo
     referencia: str = ""
     saldo: Optional[float] = None
+    # Lo que dijo el cruce: "cobro" si es uno (o un lote) de los cobros del
+    # sistema, con el detalle y los pedidos; si no, sigue "pendiente".
+    estado: str = "pendiente"
+    detalle: str = ""
+    pedidos: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -63,6 +68,8 @@ class Lectura:
     movimientos: List[Movimiento] = field(default_factory=list)
     # Renglones cuyo monto no cuadra con el saldo: si hay, la lectura no es fiable.
     descuadres: int = 0
+    # Esos renglones, tal como venian: para revisarlos.
+    dudosos: List[str] = field(default_factory=list)
 
 
 # ── Leer el archivo ─────────────────────────────────────────────────────────
@@ -129,6 +136,135 @@ def leer_provincial(texto: str) -> Lectura:
             monto=round(firmado, 2), referencia=m["ref"], saldo=nuevo,
         ))
     return lectura
+
+
+_FECHA_SUELTA = re.compile(r"\b(\d{2}[/-]\d{2}[/-](?:\d{4}|\d{2}))\b")
+_MONTO = re.compile(r"(?<![\d.,])-?\d{1,3}(?:[.,]\d{3})*[.,]\d{2}(?![\d])")
+# "Saldo anterior", o "Inicial" solo cuando el PDF partio el renglon (Banesco).
+_ANTERIOR = re.compile(r"(saldo\s+(anterior|inicial)|^inicial)", re.I)
+
+
+def _periodo_del_texto(texto: str) -> Optional[datetime.date]:
+    """El mes del estado de cuenta: la primera fecha completa del encabezado.
+    Hace falta para los bancos que en cada renglon ponen solo el dia."""
+    for f in _FECHA_SUELTA.findall(texto[:4000]):
+        try:
+            return _fecha(f)
+        except ValueError:
+            continue
+    # Banesco: "Período: 04-2026".
+    m = _MES_ANIO.search(texto[:4000])
+    if m:
+        try:
+            return datetime.date(int(m.group(2)), int(m.group(1)), 1)
+        except ValueError:
+            return None
+    return None
+
+
+_MES_ANIO = re.compile(r"per[ií]odo:?\s*(\d{1,2})[-/](\d{4})", re.I)
+
+
+_DIA_AL_INICIO = re.compile(r"^(\d{1,2})\s+\S")
+_NO_ES_MOVIMIENTO = re.compile(r"\b(total|resumen|saldo\s+(final|promedio|disponible|actual)|p[aá]gina)\b", re.I)
+
+
+def leer_pdf_generico(texto: str) -> Lectura:
+    """Cualquier estado de cuenta en PDF que traiga en cada movimiento el
+    monto y el saldo despues de el: el formato de casi todos los bancos. El
+    monto se toma sin signo y el signo sale del saldo (como en el del
+    Provincial), que de paso comprueba que la lectura no se salto nada.
+
+    Aguanta las tres formas que se vieron en Banesco, Venezolano y Mercantil:
+    la fecha completa en el renglon, solo el dia (el mes sale del encabezado),
+    o el monto y el saldo en un renglon aparte del concepto y la fecha.
+    """
+    lectura = Lectura(banco="Estado de cuenta (PDF)")
+    periodo = _periodo_del_texto(texto)
+    saldo = None
+    fecha_vista: Optional[datetime.date] = None
+    concepto_suelto: List[str] = []
+    for linea in texto.splitlines():
+        linea = " ".join(linea.split())
+        if not linea:
+            continue
+        montos = _MONTO.findall(linea)
+        if _ANTERIOR.search(linea) and montos and saldo is None:
+            saldo = numero(montos[-1])
+            continue
+        fechas = _FECHA_SUELTA.findall(linea)
+        fecha = None
+        if fechas:
+            try:
+                fecha = _fecha(fechas[0])
+            except ValueError:
+                fecha = None
+        elif periodo and (m := _DIA_AL_INICIO.match(linea)) and 1 <= int(m.group(1)) <= 31 and len(montos) >= 2:
+            try:
+                fecha = periodo.replace(day=int(m.group(1)))
+            except ValueError:
+                fecha = None
+            linea = linea[len(m.group(1)):].strip()
+        # Cuatro o mas montos en un renglon es un resumen de pagina (totales
+        # de debitos y creditos con su cantidad), no un movimiento (Venezolano).
+        if len(montos) < 2 or len(montos) >= 4 or _NO_ES_MOVIMIENTO.search(linea):
+            # Un renglon sin monto y saldo: puede ser el concepto (o la fecha)
+            # del movimiento que viene en el renglon siguiente.
+            if fecha:
+                fecha_vista, concepto_suelto = fecha, []
+            sin_fechas = linea
+            for f in fechas:
+                sin_fechas = sin_fechas.replace(f, " ")
+            if sin_fechas.strip() and not montos:
+                concepto_suelto = (concepto_suelto + [sin_fechas.strip()])[-3:]
+            continue
+        fecha = fecha or fecha_vista
+        if fecha is None:
+            continue
+        try:
+            monto, nuevo = abs(numero(montos[-2])), numero(montos[-1])
+        except ValueError:
+            continue
+        concepto = linea
+        for f in fechas:
+            concepto = concepto.replace(f, " ")
+        for m_ in montos:
+            concepto = concepto.replace(m_, " ")
+        concepto = " ".join(concepto.split()) or " ".join(concepto_suelto)
+        concepto_suelto = []
+        referencia = next((p.strip("*") for p in concepto.split() if p.strip("*").isdigit() and len(p.strip("*")) >= 4), "")
+        if saldo is not None and abs((nuevo - saldo) - monto) <= 0.011:
+            firmado = monto
+        elif saldo is not None and abs((saldo - nuevo) - monto) <= 0.011:
+            firmado = -monto
+        else:
+            lectura.descuadres += 1
+            firmado = monto if saldo is None or nuevo >= saldo else -monto
+            lectura.dudosos.append(linea)
+        saldo = nuevo
+        lectura.movimientos.append(Movimiento(fecha=fecha, concepto=concepto[:200], monto=round(firmado, 2),
+                                              referencia=referencia, saldo=nuevo))
+    # El primero no tiene contra que comprobarse si el banco no puso el
+    # saldo anterior: no cuenta como descuadre.
+    if lectura.movimientos and lectura.descuadres and not _ANTERIOR.search(texto):
+        lectura.descuadres -= 1
+    return lectura
+
+
+# Los lectores de PDF, del mas especifico al mas general. Agregar un banco es
+# agregar su lector aqui: se queda el que lee mas movimientos sin descuadrar.
+LECTORES_PDF = (("Banco Provincial", leer_provincial), ("Estado de cuenta (PDF)", leer_pdf_generico))
+
+
+def _leer_pdf(texto: str) -> Lectura:
+    mejor = None
+    for nombre, lector in LECTORES_PDF:
+        l = lector(texto)
+        l.banco = nombre
+        buenos = len(l.movimientos) - 2 * l.descuadres
+        if l.movimientos and (mejor is None or buenos > mejor[0]):
+            mejor = (buenos, l)
+    return mejor[1] if mejor else Lectura(banco="")
 
 
 def _texto_del_pdf(contenido: bytes) -> str:
@@ -211,9 +347,13 @@ def leer(nombre: str, contenido: bytes) -> Lectura:
     nombre = (nombre or "").lower()
     if nombre.endswith(".pdf") or contenido[:4] == b"%PDF":
         texto = _texto_del_pdf(contenido)
-        lectura = leer_provincial(texto)
+        if not texto.strip():
+            raise ErrorDeLectura("Ese PDF es una imagen (escaneado): no tiene texto que leer. Bájalo de la banca en línea "
+                                 "en PDF, Excel o CSV.")
+        lectura = _leer_pdf(texto)
         if not lectura.movimientos:
-            raise ErrorDeLectura("Ese PDF no tiene el formato del Banco Provincial. Bájalo en Excel o CSV y súbelo así.")
+            raise ErrorDeLectura("No encontré movimientos en ese PDF: busco renglones con fecha, monto y saldo. "
+                                 "Bájalo en Excel o CSV y súbelo así.")
     elif nombre.endswith((".xlsx", ".xlsm")):
         from openpyxl import load_workbook
 
@@ -360,6 +500,8 @@ def conciliar(db: Session, lectura: Lectura) -> schemas.ResultadoConciliacion:
         candidatos.sort(key=lambda x: (not _misma_referencia(c, x[1]), (x[1].fecha - dia).days, abs(x[1].monto - c.bs)))
         i, m = candidatos[0]
         usados.add(i)
+        m.estado, m.pedidos = "cobro", [c.numero]
+        m.detalle = f"{c.metodo} del pedido #{c.numero}" + (f" (ref. {c.referencia})" if c.referencia else "")
         pares.append(schemas.ParConciliado(cobro=_vista_cobro(c), movimiento=_vista_mov(m),
                                            por_referencia=_misma_referencia(c, m)))
     sin_sistema = [_vista_mov(m) for i, m in enumerate(sueltos) if i not in usados]
@@ -383,6 +525,10 @@ def conciliar(db: Session, lectura: Lectura) -> schemas.ResultadoConciliacion:
             elegido = min(opciones, key=lambda d: (abs(sum(l.monto for l in lotes_dia[d]) - sistema), d))
             dias_usados.add(elegido)
             banco = round(sum(l.monto for l in lotes_dia[elegido]), 2)
+            for l in lotes_dia[elegido]:
+                l.estado = "cobro"
+                l.detalle = (f"Lote del punto: cobros del {dia:%d/%m} por Bs {sistema:,.2f}"
+                             + ("" if abs(banco - sistema) < 1 else f"; diferencia del día Bs {banco - sistema:,.2f}"))
             puntos.append(schemas.DiaPunto(fecha=dia, fecha_banco=elegido, sistema_bs=sistema, banco_bs=banco,
                                            diferencia_bs=round(banco - sistema, 2), lotes=len(lotes_dia[elegido])))
         elif dia >= desde:
