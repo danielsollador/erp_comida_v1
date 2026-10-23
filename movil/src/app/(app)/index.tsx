@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
+import TarjetaInicio from '../../componentes/asistente/TarjetaInicio'
 import { Controles, Marca } from '../../componentes/Encabezado'
 import { Arranque, Avisos, Espera, TarjetaVender } from '../../componentes/inicio/Fichas'
 import Recorrido, { FilaReportes } from '../../componentes/inicio/Recorrido'
@@ -97,6 +98,9 @@ export default function Inicio() {
         <Text style={{ color: t.tenue }}> · </Text>
         {fechaDeHoy()}
       </Text>
+
+      {/* La puerta al chat con la IA (Pregúntame), justo debajo del saludo. */}
+      <TarjetaInicio />
 
       {error && !datos ? <Problema mensaje={error} alReintentar={refrescar} /> : null}
 

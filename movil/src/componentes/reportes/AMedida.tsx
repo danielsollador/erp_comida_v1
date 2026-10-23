@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { apiIA } from '../../lib/api-ia'
 import { apiReportes } from '../../lib/api-reportes'
 import { descargar } from '../../lib/archivos'
 import { confirmar, avisar } from '../../lib/dialogo'
 import { fmtBs } from '../../lib/moneda'
-import { periodoDe, PERIODOS, type IdPeriodo, type Periodo } from '../../lib/numeros'
+import { fechaCorta, periodoDe, PERIODOS, type IdPeriodo, type Periodo } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
 import type { CampoDinamico, DefinicionReporte, FormatoMedida, FuenteDinamica, ReporteGuardado, ResultadoDinamico, ValorCampo } from '../../lib/tipos'
 import { Hoja, OpcionHoja } from '../Hoja'
+import { Pensando, SelloIA } from '../ia'
 import Icono from '../Icono'
 import { Buscador, ElegirPeriodo, FilaFiltros, HojaFormulario, llano, useDisposicion } from '../kit'
-import { Boton, Campo, Cargando, Ficha, Problema } from '../ui'
+import { Boton, Campo, Cargando, Ficha, Nota, Problema } from '../ui'
 import { c, Vacio } from './comunes'
 import { ATAJOS, num, rangoDeAtajo } from './cuentas'
 import { BarrasApiladas, GraficoBarras } from './Grafico'
@@ -74,6 +76,17 @@ function periodoDeAtajo(clave: string): Periodo | null {
   return { id: clave as IdPeriodo, ...r, etiqueta: ATAJOS.find((a) => a.clave === clave)?.texto ?? '' }
 }
 
+/**
+ * El periodo libre que devuelve el asistente ("esta semana" → desde/hasta).
+ * `Periodo` solo conoce los ids del selector, igual que con los atajos de la
+ * web: se usa un id propio y el selector queda sin marcar, como alla.
+ */
+function periodoLibre(desde: string, hasta: string): Periodo {
+  const distintoAnio = desde.slice(0, 4) !== hasta.slice(0, 4)
+  const etiqueta = desde === hasta ? fechaCorta(desde, true) : `${fechaCorta(desde, distintoAnio)} → ${fechaCorta(hasta, true)}`
+  return { id: 'personal' as IdPeriodo, desde, hasta, etiqueta }
+}
+
 export default function AMedida({ periodo, alCambiarPeriodo }: { periodo: Periodo; alCambiarPeriodo: (p: Periodo) => void }) {
   const t = useTema()
   const [catalogo, setCatalogo] = useState<FuenteDinamica[] | null>(null)
@@ -90,6 +103,12 @@ export default function AMedida({ periodo, alCambiarPeriodo }: { periodo: Period
   const [valores, setValores] = useState<Record<string, ValorCampo[]>>({})
   const [menu, setMenu] = useState(false)
   const [guardando, setGuardando] = useState<{ comoNuevo: boolean; nombre: string; ocupado: boolean } | null>(null)
+  // Pedirlo con palabras (como en la web): la frase, lo que entendio el
+  // asistente y, si el catalogo no alcanza, por que.
+  const [frase, setFrase] = useState('')
+  const [pensando, setPensando] = useState(false)
+  const [entendi, setEntendi] = useState('')
+  const [falta, setFalta] = useState('')
 
   useEffect(() => {
     Promise.all([apiReportes.catalogo(), apiReportes.guardados()])
@@ -148,10 +167,45 @@ export default function AMedida({ periodo, alCambiarPeriodo }: { periodo: Period
     }
   }, [def.fuente, llaveFiltrados, periodo])
 
-  const cambiar = (parcial: Partial<DefinicionReporte>) => setDef((d) => ({ ...d, ...parcial }))
+  const cambiar = (parcial: Partial<DefinicionReporte>) => {
+    // Tocar una pastilla cambia lo que se pidio con palabras: el "Entendi"
+    // ya no describiria lo que esta en pantalla.
+    setEntendi('')
+    setDef((d) => ({ ...d, ...parcial }))
+  }
+
+  /**
+   * La frase va al asistente, que devuelve una definicion YA validada contra
+   * este catalogo. Se pone en las pastillas de siempre: el dueno ve que se
+   * armo y lo puede corregir tocando, igual que si lo hubiera armado a mano.
+   */
+  const pedir = async () => {
+    const f = frase.trim()
+    if (!f || pensando) return
+    setPensando(true)
+    setFalta('')
+    setEntendi('')
+    try {
+      const r = await apiIA.reporte(f)
+      if (r.no_se_puede || !r.definicion || !r.desde || !r.hasta) {
+        setFalta(r.no_se_puede || 'No logré armar ese reporte.')
+        return
+      }
+      setAbierto(null)
+      setResultado(null)
+      setDef(completar(r.definicion))
+      alCambiarPeriodo(periodoLibre(r.desde, r.hasta))
+      setEntendi(r.entendi)
+    } catch (e) {
+      setFalta(e instanceof Error ? e.message : 'No se pudo armar el reporte')
+    } finally {
+      setPensando(false)
+    }
+  }
 
   const elegirFuente = (id: string) => {
     if (id === def.fuente) return
+    setEntendi('')
     const f = catalogo?.find((x) => x.id === id)
     if (!f) return
     setAbierto(null)
@@ -242,6 +296,44 @@ export default function AMedida({ periodo, alCambiarPeriodo }: { periodo: Period
 
   return (
     <View style={{ gap: 12 }}>
+      {/* Pedirlo con palabras: la fila de la IA, arriba de las pastillas que arma. */}
+      <View style={ps.pedir}>
+        <Icono nombre="chispa" size={20} color={t.acento} />
+        <View style={{ flex: 1 }}>
+          <Campo
+            value={frase}
+            onChangeText={setFrase}
+            placeholder="Pídelo con tus palabras: «empanadas vendidas por día esta semana»"
+            accessibilityLabel="Pide el reporte con tus palabras"
+            editable={!pensando}
+            returnKeyType="go"
+            onSubmitEditing={() => void pedir()}
+          />
+        </View>
+        <Boton texto="Armar" alTocar={() => void pedir()} deshabilitado={!frase.trim() || pensando} />
+      </View>
+      {pensando ? (
+        <View style={{ paddingHorizontal: 4 }}>
+          <Pensando frases={['Entendiendo lo que pides…', 'Armando el reporte…']} />
+        </View>
+      ) : null}
+      {entendi && !pensando ? (
+        <View style={[ps.entendi, { backgroundColor: t.acentoSuave }]}>
+          <SelloIA tam={28} />
+          <View style={{ flex: 1 }}>
+            <Text style={[c.texto, { color: t.suave }]}>
+              <Text style={{ fontFamily: LETRA.textoFuerte }}>Entendí: </Text>
+              {entendi}
+            </Text>
+            <Nota style={{ color: t.tenue, marginTop: 2 }}>Puedes ajustarlo tocando las pastillas de abajo.</Nota>
+          </View>
+        </View>
+      ) : null}
+      {falta && !pensando ? (
+        <View accessibilityLiveRegion="polite" style={[ps.falta, { backgroundColor: t.avisoSuave }]}>
+          <Text style={[c.nota, { color: t.avisoFuerte }]}>{falta}</Text>
+        </View>
+      ) : null}
       <FilaFiltros>
         <ElegirPeriodo periodo={periodo} alCambiar={alCambiarPeriodo} />
         <PastillaElegir
@@ -673,4 +765,7 @@ const ps = StyleSheet.create({
   etiqueta: { fontFamily: LETRA.texto, fontSize: 14 },
   valor: { fontFamily: LETRA.textoFuerte, fontSize: 14, flexShrink: 1 },
   punto: { width: 6, height: 6, borderRadius: 3 },
+  pedir: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  entendi: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderCurve: 'continuous', paddingHorizontal: 14, paddingVertical: 12 },
+  falta: { borderRadius: 16, borderCurve: 'continuous', paddingHorizontal: 14, paddingVertical: 12 },
 })

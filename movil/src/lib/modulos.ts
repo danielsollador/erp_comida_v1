@@ -34,7 +34,7 @@ export function entraA(modulos: string[] | undefined, m: Modulo): boolean {
  * proposito (Leider, 12-oct): eso se trabaja en la web, no en el telefono.
  * Tasa queda solo como pantalla a la que lleva el cobro cuando falta la tasa.
  */
-const EN_LA_APP = new Set(['/pos', '/compras', '/inventario', '/menu', '/caja', '/cocina', '/ventas', '/reportes', '/tasa', '/notificaciones', '/configuracion'])
+const EN_LA_APP = new Set(['/pos', '/compras', '/inventario', '/menu', '/caja', '/cocina', '/ventas', '/reportes', '/tasa', '/notificaciones', '/configuracion', '/asistente'])
 
 /**
  * Abrir un modulo desde el inicio. Si la app aun no lo tiene, se dice en

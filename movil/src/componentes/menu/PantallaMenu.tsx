@@ -1,5 +1,8 @@
 import { router, Stack, useLocalSearchParams, type Href } from 'expo-router'
-import { Cargando, Pantalla, Pestanas, Problema } from '../ui'
+import { useState } from 'react'
+import { useSesion } from '../../lib/sesion'
+import { Boton, Cargando, Pantalla, Pestanas, Problema } from '../ui'
+import CambiarPrecios from './CambiarPrecios'
 import { useDatosMenu } from './datos'
 import ElMenu from './ElMenu'
 import { useTostada } from './piezas'
@@ -26,6 +29,11 @@ export default function PantallaMenu() {
   const seccion: IdSeccion = pedida === 'recetas' ? 'recetas' : 'menu'
   const { datos, error, refrescando, recargar, refrescar } = useDatosMenu()
   const tostada = useTostada()
+  const { acceso } = useSesion()
+  // Cambiar varios precios diciéndolo (CambiarPrecios.tsx): solo para quien
+  // entra al menú, como el botón junto al buscador de la web.
+  const puedePrecios = acceso?.puede.modulos.includes('menu') ?? false
+  const [cambiandoPrecios, setCambiandoPrecios] = useState(false)
 
   return (
     <Pantalla
@@ -37,6 +45,12 @@ export default function PantallaMenu() {
       <Stack.Screen options={{ title: 'Menú' }} />
       {error && !datos ? <Problema mensaje={error} alReintentar={() => void refrescar()} /> : null}
       {!datos && !error ? <Cargando /> : null}
+      {datos && seccion === 'menu' && puedePrecios ? (
+        <>
+          <Boton texto="Cambiar precios" tono="neutro" icono="chispa" alTocar={() => setCambiandoPrecios(true)} />
+          <CambiarPrecios visible={cambiandoPrecios} alCerrar={() => setCambiandoPrecios(false)} onCambio={refrescar} />
+        </>
+      ) : null}
       {datos && seccion === 'menu' ? (
         <ElMenu
           datos={datos}
