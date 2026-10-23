@@ -5,6 +5,7 @@ import { useDialogo } from '../../../components/dialogo'
 import { BarrasApiladas, GraficoBarras } from '../../../components/Grafico'
 import { Tabla, Th, useOrden } from '../../../components/Tabla'
 import { FiltroDesplegable, Seccion } from '../../../components/ui'
+import { Chispa, Pensando, SelloIA } from '../../../components/ia'
 import { api } from '../../../lib/api'
 import { ATAJOS, rangoDe, type ClaveRango, type Rango } from '../../../lib/fechas'
 import { fmtBs, fmtNum } from '../../../lib/moneda'
@@ -277,13 +278,17 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
 
   return (
     <div className="space-y-4">
+      {/* Pedirlo con palabras: la barra de la IA, arriba de las pastillas que arma. */}
       <form
-        className="flex gap-2"
+        className="vp-ia-campo flex items-center gap-2 rounded-2xl bg-white p-1.5 pl-3.5 shadow-[inset_0_0_0_1px_var(--vp-textura),0_1px_2px_rgb(0_0_0/.04)] transition-shadow"
         onSubmit={(e) => {
           e.preventDefault()
           void pedir()
         }}
       >
+        <span className="shrink-0 text-[var(--vp-acento)]">
+          <Chispa tam={20} />
+        </span>
         <input
           id="reporte-con-palabras"
           type="text"
@@ -292,24 +297,35 @@ export default function AMedida({ rango, alCambiarRango }: { rango: Rango; alCam
           placeholder="Pídelo con tus palabras: «empanadas vendidas por día esta semana»"
           aria-label="Pide el reporte con tus palabras"
           data-guia="reportes.pedir"
-          className="min-h-11 min-w-0 flex-1 rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-[15px]"
+          enterKeyHint="go"
+          disabled={pensando}
+          className="min-h-11 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-neutral-400 sm:text-[15px]"
         />
         <button
           type="submit"
           disabled={!frase.trim() || pensando}
-          className="min-h-11 shrink-0 rounded-xl bg-neutral-900 px-4 text-sm font-medium text-white disabled:opacity-40 active:scale-[.97]"
+          className="min-h-11 shrink-0 rounded-xl bg-neutral-900 px-4 text-sm font-medium text-white transition-[opacity,transform] disabled:opacity-30 active:scale-[.97]"
         >
-          {pensando ? 'Armando…' : 'Armar'}
+          Armar
         </button>
       </form>
-      {entendi && (
-        <p className="text-[14px] text-neutral-600">
-          <span className="text-neutral-500">Entendí: </span>
-          {entendi} <span className="text-neutral-500">Puedes ajustarlo tocando las pastillas.</span>
-        </p>
+      {pensando && (
+        <div className="px-1">
+          <Pensando frases={['Entendiendo lo que pides…', 'Armando el reporte…']} />
+        </div>
       )}
-      {falta && (
-        <div role="status" className="rounded-2xl bg-aviso-500/10 px-4 py-3.5 text-sm text-aviso-800">
+      {entendi && !pensando && (
+        <div className="vp-ia-aparecer flex items-start gap-3 rounded-2xl bg-[var(--vp-acento-suave)] px-4 py-3">
+          <SelloIA tam={28} />
+          <p className="min-w-0 flex-1 text-[15px] leading-normal text-neutral-800">
+            <span className="font-medium">Entendí: </span>
+            {entendi}
+            <span className="mt-0.5 block text-[13px] text-neutral-500">Puedes ajustarlo tocando las pastillas de abajo.</span>
+          </p>
+        </div>
+      )}
+      {falta && !pensando && (
+        <div role="status" className="vp-ia-aparecer rounded-2xl bg-aviso-500/10 px-4 py-3.5 text-sm text-aviso-800">
           {falta}
         </div>
       )}

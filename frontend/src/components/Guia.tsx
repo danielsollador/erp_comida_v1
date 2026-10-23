@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { SelloIA } from './ia'
 
 /**
  * GUÍAS PASO A PASO (spike de IA, 22-oct-2026).
@@ -157,50 +158,90 @@ function Recorrido({
   }, [onCerrar])
 
   const M = 8
-  const abajo = caja ? caja.bottom + 180 < window.innerHeight : true
+  // En el teléfono la tarjeta va pegada abajo (o arriba, si lo señalado está
+  // abajo), a todo el ancho: flotando junto al botón tapaba media pantalla.
+  const chico = window.innerWidth < 640
+  const abajo = caja ? caja.bottom + 200 < window.innerHeight : true
   const tarjetaTop = caja ? (abajo ? caja.bottom + M + 10 : Math.max(12, caja.top - M - 10)) : window.innerHeight / 2
-  const tarjetaLeft = caja ? Math.min(Math.max(12, caja.left), window.innerWidth - 332) : window.innerWidth / 2 - 160
+  const tarjetaLeft = caja ? Math.min(Math.max(12, caja.left), window.innerWidth - 352) : window.innerWidth / 2 - 170
+  const arribaEnTel = !!caja && caja.top + caja.height / 2 > window.innerHeight * 0.55
+  const posicion: CSSProperties = chico
+    ? arribaEnTel
+      ? { left: 12, right: 12, top: 'calc(12px + env(safe-area-inset-top))' }
+      : { left: 12, right: 12, bottom: 'calc(12px + env(safe-area-inset-bottom))' }
+    : {
+        top: tarjetaTop,
+        left: tarjetaLeft,
+        transform: caja && !abajo ? 'translateY(-100%)' : caja ? undefined : 'translateY(-50%)',
+      }
 
   return createPortal(
     <div className="fixed inset-0 z-[60] pointer-events-none" aria-live="polite">
       {caja ? (
-        <div
-          className="fixed rounded-xl ring-2 ring-white/90 transition-all duration-200"
-          style={{
-            top: caja.top - M,
-            left: caja.left - M,
-            width: caja.width + M * 2,
-            height: caja.height + M * 2,
-            boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.55)',
-            transitionTimingFunction: 'cubic-bezier(0.2, 0.7, 0.2, 1)',
-          }}
-        />
+        <>
+          <div
+            className="fixed rounded-2xl transition-all duration-300"
+            style={{
+              top: caja.top - M,
+              left: caja.left - M,
+              width: caja.width + M * 2,
+              height: caja.height + M * 2,
+              boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.55)',
+              transitionTimingFunction: 'cubic-bezier(0.2, 0.7, 0.2, 1)',
+            }}
+          />
+          {/* El anillo va aparte: su pulso anima `box-shadow` y pisaría el velo. */}
+          <div
+            className={`fixed rounded-2xl ring-2 ring-white transition-all duration-300 ${tocar ? 'vp-ia-pulso' : ''}`}
+            style={{
+              top: caja.top - M,
+              left: caja.left - M,
+              width: caja.width + M * 2,
+              height: caja.height + M * 2,
+              transitionTimingFunction: 'cubic-bezier(0.2, 0.7, 0.2, 1)',
+            }}
+          />
+        </>
       ) : (
-        <div className="fixed inset-0 bg-black/55" />
+        <div className="vp-ia-velo fixed inset-0 bg-black/55" />
       )}
       <div
         role="dialog"
         aria-label={paso.titulo}
-        className="fixed w-[320px] max-w-[calc(100vw-24px)] pointer-events-auto rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0/.06),0_12px_32px_rgb(0_0_0/.18)]"
-        style={{
-          top: tarjetaTop,
-          left: tarjetaLeft,
-          transform: caja && !abajo ? 'translateY(-100%)' : caja ? undefined : 'translateY(-50%)',
-        }}
+        className={`vp-ia-aparecer fixed pointer-events-auto rounded-3xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0/.06),0_16px_40px_rgb(0_0_0/.22)] ${chico ? '' : 'w-[340px] max-w-[calc(100vw-24px)]'}`}
+        style={posicion}
       >
-        <p className="text-xs text-neutral-500 tabular-nums">
-          Paso {n + 1} de {total}
-        </p>
-        <h3 className="mt-1 font-[Sora] text-[17px] font-semibold leading-tight tracking-[-0.01em]">{paso.titulo}</h3>
-        <p className="mt-2 text-[15px] leading-normal text-neutral-700">{paso.texto}</p>
+        <div className="flex items-center gap-2.5">
+          <SelloIA tam={26} />
+          <p className="text-xs font-medium text-neutral-500 tabular-nums">
+            Paso {n + 1} de {total}
+          </p>
+        </div>
+        <div className="mt-2.5 flex gap-1" aria-hidden="true">
+          {Array.from({ length: total }, (_, k) => (
+            <span
+              key={k}
+              className={`h-1 flex-1 rounded-full transition-colors duration-300 ${k <= n ? 'bg-[var(--vp-acento)]' : 'bg-neutral-200'}`}
+            />
+          ))}
+        </div>
+        <h3 className="mt-3 font-[Sora] text-[18px] font-semibold leading-tight tracking-[-0.01em]">{paso.titulo}</h3>
+        <p className="mt-1.5 text-[15px] leading-normal text-neutral-700">{paso.texto}</p>
         {perdido && (
-          <p className="mt-2 text-[13px] text-aviso-700">
+          <p className="mt-2 rounded-xl bg-aviso-500/10 px-3 py-2 text-[13px] text-aviso-800">
             {n > 0
               ? 'Esto aparece cuando haces el paso anterior. Si ya lo hiciste y no lo ves, toca Atrás.'
               : 'No veo ese botón en esta pantalla. Puede que tu usuario no tenga ese permiso.'}
           </p>
         )}
-        {tocar && caja && <p className="mt-2 text-[13px] font-medium text-neutral-900">Tócalo para seguir.</p>}
+        {tocar && caja && (
+          <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-neutral-900">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 11V5a2 2 0 1 1 4 0v6M13 10.5V9a2 2 0 1 1 4 0v4.5a6.5 6.5 0 0 1-13 0V12a2 2 0 1 1 4 0" />
+            </svg>
+            Tócalo tú para seguir
+          </p>
+        )}
         <div className="mt-4 flex items-center gap-2">
           <button
             type="button"

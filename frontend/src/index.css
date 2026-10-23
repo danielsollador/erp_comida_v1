@@ -1986,3 +1986,89 @@ input[type='date'] {
 input[type='date']::-webkit-date-and-time-value {
   text-align: left;
 }
+
+/* ── La IA: asistente, guías y "pídelo con tus palabras" ─────────────────────
+   Una sola regla de movimiento: se anima lo que la persona acaba de pedir
+   (abrir el asistente, la respuesta que llega, el paso de la guía) y nada se
+   mueve solo después. El único bucle es el "pensando" mientras de verdad se
+   espera, y el pulso del botón que la guía pide tocar. En el modo ligero y
+   con "menos movimiento" todo esto queda quieto (abajo). */
+@keyframes vp-ia-velo { from { opacity: 0; } }
+@keyframes vp-ia-velo-fuera { to { opacity: 0; } }
+@keyframes vp-ia-subir { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes vp-ia-bajar { to { transform: translateY(100%); } }
+@keyframes vp-ia-desde-derecha { from { opacity: 0; transform: translateX(28px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes vp-ia-hacia-derecha { to { opacity: 0; transform: translateX(28px) scale(0.985); } }
+@keyframes vp-ia-mensaje { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes vp-ia-punto {
+  0%, 70%, 100% { opacity: 0.28; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-3px); }
+}
+@keyframes vp-ia-pulso {
+  from { box-shadow: 0 0 0 0 color-mix(in oklab, var(--vp-acento) 50%, transparent); }
+  to { box-shadow: 0 0 0 16px transparent; }
+}
+@keyframes vp-ia-brillo { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@keyframes vp-ia-aparecer { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+.vp-ia-velo { animation: vp-ia-velo 0.22s ease-out backwards; }
+.vp-ia-velo[data-saliendo] { animation: vp-ia-velo-fuera 0.2s ease-in forwards; }
+/* Teléfono: hoja que sube desde abajo. Desde 640 px: panel que entra por la derecha. */
+.vp-ia-hoja { animation: vp-ia-subir 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.vp-ia-hoja[data-saliendo] { animation: vp-ia-bajar 0.22s cubic-bezier(0.4, 0, 1, 1) forwards; }
+@media (min-width: 640px) {
+  .vp-ia-hoja { animation: vp-ia-desde-derecha 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+  .vp-ia-hoja[data-saliendo] { animation: vp-ia-hacia-derecha 0.18s cubic-bezier(0.4, 0, 1, 1) forwards; }
+}
+.vp-ia-mensaje { animation: vp-ia-mensaje 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+.vp-ia-aparecer { animation: vp-ia-aparecer 0.24s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+.vp-ia-puntos > i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: vp-ia-punto 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+}
+.vp-ia-puntos > i:nth-child(2) { animation-delay: 0.14s; }
+.vp-ia-puntos > i:nth-child(3) { animation-delay: 0.28s; }
+.vp-ia-pulso { animation: vp-ia-pulso 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) infinite; }
+/* El renglón "cargando": la forma de lo que viene, con un brillo que la recorre. */
+.vp-ia-esqueleto {
+  background: linear-gradient(90deg, var(--color-neutral-100) 30%, color-mix(in oklab, var(--color-neutral-100) 40%, var(--vp-superficie)) 50%, var(--color-neutral-100) 70%);
+  background-size: 200% 100%;
+  animation: vp-ia-brillo 1.3s linear infinite;
+}
+/* El botón flotante: se esconde al bajar por la página en el teléfono y vuelve al subir. */
+.vp-ia-lanzador {
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, box-shadow 0.2s ease;
+}
+.vp-ia-lanzador[data-oculto] { transform: translateY(calc(100% + 32px)); opacity: 0; pointer-events: none; }
+@media (hover: hover) {
+  .vp-ia-lanzador:hover { transform: translateY(-2px); }
+}
+/* El campo de la IA: un anillo del acento al escribir, sin borde duro en reposo. */
+.vp-ia-campo:focus-within {
+  box-shadow: 0 0 0 1px var(--vp-acento), 0 0 0 5px color-mix(in oklab, var(--vp-acento) 16%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-ia-velo, .vp-ia-velo[data-saliendo], .vp-ia-hoja, .vp-ia-hoja[data-saliendo], .vp-ia-mensaje,
+  .vp-ia-aparecer, .vp-ia-puntos > i, .vp-ia-pulso, .vp-ia-esqueleto { animation: none !important; }
+  .vp-ia-lanzador { transition: none; }
+}
+html.vp-ligero .vp-ia-velo, html.vp-ligero .vp-ia-hoja, html.vp-ligero .vp-ia-mensaje,
+html.vp-ligero .vp-ia-aparecer, html.vp-ligero .vp-ia-puntos > i, html.vp-ligero .vp-ia-pulso,
+html.vp-ligero .vp-ia-esqueleto { animation: none !important; }
+html.vp-ligero .vp-ia-lanzador { transition: none; }
+/* Dentro de la barra de la IA el campo no lleva caja propia: la caja y el
+   anillo al escribir son del contenedor (`.vp-ia-campo`). Sin esto se veían
+   dos recuadros uno dentro del otro. */
+.vp-ia-campo :is(input, textarea),
+.vp-ia-campo :is(input, textarea):focus,
+.vp-ia-campo :is(input, textarea):disabled {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border-radius: 0;
+}
