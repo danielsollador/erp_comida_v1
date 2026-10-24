@@ -691,8 +691,19 @@ function FilaMetodo({
           {/* La columna del fondo se quito (Leider, 21-sep); lo que arranco
               en la gaveta se dice aqui, que es donde hace falta para que
               "debes tener" se entienda. */}
-          {l.fondo !== 0 &&
-            ` · arrancó con ${dinero(l.fondo)}${l.fondo_declarado ? ' contados al abrir' : ' de días anteriores'}`}
+          {/* Solo lo de HOY (24-oct): el fondo es lo declarado al abrir, y si
+              no se declaro, cero. Nada de arrastre de dias anteriores. */}
+          {l.fisico && l.se_cuadra &&
+            (l.fondo_declarado
+              ? ` · abrió con ${dinero(l.fondo)} declarados`
+              : ' · no se declaró al abrir: arranca en $0')}
+          {/* Lo pagado hoy desde el banco ya esta en los libros: se ve, pero
+              no se resta de lo que hay que cotejar. */}
+          {(l.pagos ?? 0) > 0 && (
+            <span className="block text-aviso-700">
+              Hoy se pagaron {dinero(l.pagos ?? 0)} por aquí (sueldos, gastos): ya están anotados, no los restes. Pon solo lo que se cobró.
+            </span>
+          )}
         </span>
       </td>
       <Cifra monto={entradaDe(l)} bcv={bcv} />

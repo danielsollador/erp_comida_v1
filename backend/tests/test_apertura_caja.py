@@ -1,3 +1,4 @@
+import pytest
 import json
 
 from app import models
@@ -173,3 +174,24 @@ def test_un_desglose_que_no_suma_el_fondo_se_rechaza(client):
     ]})
     assert r.status_code == 400
     assert "suma 40.00" in r.json()["detail"]
+
+
+def test_sin_declarar_al_abrir_arranca_en_cero_y_los_libros_lo_siguen(client, db, variante):
+    """24-oct: "¿por qué debo tener $247 si hubo un solo cobro de $4,50?". El
+    cierre es solo de HOY: lo declarado al abrir (o cero), lo vendido y lo
+    pagado hoy. Lo que los libros traian de dias anteriores no se arrastra; al
+    cerrar, la gaveta queda declarada en cero y lo viejo sale con su asiento."""
+    import datetime as dt
+    from app import contabilidad
+    from tests.conftest import saldo
+    ayer = dt.datetime.now() - dt.timedelta(days=2)
+    contabilidad.crear_asiento(db, "Saldo viejo de los libros", [("1010", 243.19, 0.0), ("3010", 0.0, 243.19)],
+                               origen="manual", fecha=ayer)
+    db.commit()
+    assert linea(client)["fondo"] == 0, "sin declarar, el fondo es cero: nada de dias anteriores"
+    vender(client, variante, "Efectivo Bs")  # $5
+    assert linea(client)["esperado"] == 5
+    r = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo Bs", "contado": 5}]})
+    assert r.status_code == 200, r.text
+    assert linea(client)["diferencia"] == 0
+    assert saldo(db, "1010") == pytest.approx(5), "los libros dicen lo que se conto"

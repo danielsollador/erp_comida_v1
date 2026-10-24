@@ -903,6 +903,8 @@ export type LineaMetodo = {
   fondo_declarado: boolean
   ventas: number
   salidas: number
+  /** Lo pagado hoy desde el banco por esta forma de pago: ya está en los libros, no se resta. */
+  pagos?: number
   /** Lo que movió la cuenta sin ser venta, gasto ni retiro. */
   otros: number
   esperado: number
