@@ -1364,6 +1364,9 @@ class LineaMetodo(BaseModel):
     fondo_declarado: bool = False
     ventas: float = 0
     salidas: float = 0
+    # Lo que se pago desde el banco por esta forma de pago (sueldos,
+    # proveedores): ya esta en los libros y NO se resta del esperado.
+    pagos: float = 0
     # Lo que movio la cuenta sin ser venta, gasto ni retiro: pagarle a un
     # proveedor, cobrar un fiado. El ajuste de la apertura NO entra aqui: ese
     # ya esta dentro de `fondo`, y contarlo dos veces descuadraria la fila.
