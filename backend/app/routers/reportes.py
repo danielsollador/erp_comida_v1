@@ -1689,7 +1689,10 @@ def _aviso_de_iva(db: Session) -> Optional[schemas.Aviso]:
     from .impuestos import _totales_iva_del_rango
 
     inicio = inicio_del_dia(hoy().replace(day=1))
-    debito, credito = _totales_iva_del_rango(db, inicio, ahora())
+    # Devuelve un diccionario (dolares y bolivares): antes eran dos numeros, y
+    # desde el dia 24 de cada mes la portada se caia al desempaquetarlo.
+    totales = _totales_iva_del_rango(db, inicio, ahora())
+    debito, credito = totales["debito"], totales["credito"]
     neto = round(debito - credito, 2)
     if neto <= 0:
         return None
