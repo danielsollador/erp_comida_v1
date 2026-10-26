@@ -48,3 +48,8 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
 - [ ] 26. Repartir el gas igual que el aceite.
 - [ ] 27. Del rediseño de inventario: ubicaciones, modificadores con receta, lotes y vencimiento.
 - [x] 28. Prueba de permisos que fallaba por el formulario de demo del sitio público: la prueba ahora usa `SIN_SESION` del middleware (20-oct).
+
+## E. Módulos nuevos (pedidos el 26-oct)
+
+- [ ] 29. **Pagos sin factura**: nómina, compras sin factura, pagos a externos (ej. la mensualidad del ERP). Hoy existe Caja › Gastos (`TRX620_CON_GASTO`, categorías Insumos/Servicios/Sueldos/Otros, efectivo o banco), pero es corto: sin proveedor/beneficiario, sin referencia del pago, sin moneda Bs/$, sin recurrentes. Decidir si se amplía Gastos o se hace un módulo «Pagos».
+- [ ] 30. **Cuentas por cobrar (CxC)**: PedidosYa paga semanal, así que sus pedidos deben quedar a crédito. Hoy está el «Fiado» (cuenta 1015, abonos de a uno por pedido, cliente como texto libre). Falta: cliente como ficha (PedidosYa, empresas), estado de cuenta por cliente, **cobro masivo** marcando varios pedidos/facturas, y descontar la comisión de PedidosYa al cobrar.
