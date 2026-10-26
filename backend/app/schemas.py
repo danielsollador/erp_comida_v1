@@ -573,6 +573,10 @@ class ComprarIngredienteRequest(BaseModel):
     metodo_pago: str = "Efectivo Bs"
     # El precio se sale de lo de siempre y la persona dijo que si es asi.
     confirmar: bool = False
+    # Si el stock esta en negativo (se vendio sin cargarlo): lo que hay
+    # despues de la compra es lo que llego, y lo vendido se anota como
+    # existencia que no estaba cargada.
+    regularizar_negativo: bool = False
 
 
 class MermaRequest(BaseModel):
