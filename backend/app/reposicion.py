@@ -64,6 +64,7 @@ def salto_sospechoso(costo_nuevo: float, costo_anterior: float) -> Optional[dict
 # es una oferta: es el monto en bolivares, la coma corrida o el total puesto
 # como precio por unidad (26-oct: 10 kg de pernil por $0,08, a $8 el kilo).
 BAJA_SOSPECHOSA = 0.2
+SUBIDA_ABSURDA = 10
 
 
 def precio_absurdo(costo_nuevo: float, referencia: float) -> Optional[str]:
@@ -76,8 +77,12 @@ def precio_absurdo(costo_nuevo: float, referencia: float) -> Optional[str]:
         return (f"Ese precio es {referencia / costo_nuevo:,.0f} veces MENOR que lo de siempre "
                 f"(${costo_nuevo:,.4f} contra ${referencia:,.2f}). ¿Pusiste el monto en bolívares o "
                 "con la coma corrida? El costo va en dólares y por el total de lo que llegó.")
-    sospecha = salto_sospechoso(costo_nuevo, referencia)
-    return sospecha["mensaje"] if sospecha else None
+    # Hacia arriba solo frena lo que no puede ser inflacion: diez veces o mas.
+    # Un 3x o un 5x avisa despues de guardar (salto_sospechoso), como siempre.
+    if costo_nuevo >= referencia * SUBIDA_ABSURDA:
+        sospecha = salto_sospechoso(costo_nuevo, referencia)
+        return sospecha["mensaje"] if sospecha else None
+    return None
 
 
 def historial_de_costos(db: Session, ingrediente_id: int, limite: int = 24) -> List[dict]:

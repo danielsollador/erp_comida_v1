@@ -166,11 +166,13 @@ def test_la_mejor_hora_se_decide_por_clientes_no_por_monto(client, db, variante)
 def test_comprar_un_saco_tecleado_como_1_levanta_sospecha(client, insumo):
     """50x el precio anterior no es inflacion: es un saco de 50 kg tecleado
     como 1. El menu pasaba a decir que vendes a perdida algo que deja 96%."""
-    r = client.post(
-        f"/api/inventario/ingredientes/{insumo.id}/comprar",
-        json={"cantidad": 1, "costo_total": 400.0},  # $400/kg contra $8 que tenia
-    ).json()
+    url = f"/api/inventario/ingredientes/{insumo.id}/comprar"
+    # Desde el 26-oct se pregunta ANTES de guardar.
+    antes = client.post(url, json={"cantidad": 1, "costo_total": 400.0})  # $400/kg contra $8 que tenia
+    assert antes.status_code == 409
+    assert "saco" in antes.json()["detail"]
 
+    r = client.post(url, json={"cantidad": 1, "costo_total": 400.0, "confirmar": True}).json()
     assert r["posible_error_de_unidad"] is not None
     assert "saco" in r["posible_error_de_unidad"]
 
