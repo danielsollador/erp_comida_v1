@@ -780,6 +780,13 @@ def registrar_compra(
             costo_de_esta_compra = db_ingrediente.costo_unitario or 0
             valor = round(body.cantidad * costo_de_esta_compra, 2)
 
+        # Un precio que no tiene sentido se pregunta ANTES de guardar (26-oct:
+        # 10 kg de pernil por $0,08 entraron sin aviso, y la receta quedo en
+        # cero). Con "si, es asi" (`confirmar`), pasa.
+        absurdo = reposicion.precio_absurdo(costo_de_esta_compra, db_ingrediente.costo_unitario or 0)
+        if absurdo and not body.confirmar:
+            raise HTTPException(status_code=409, detail=absurdo)
+
         # Se calcula ANTES de promediar: despues de mezclar, el costo anterior
         # ya no se puede reconstruir.
         costo_anterior = db_ingrediente.costo_unitario or 0
@@ -837,6 +844,46 @@ def registrar_compra(
                 else []
             ),
         )
+
+
+@router.post("/compras-sueltas/{compra_id}/anular", response_model=schemas.Ingrediente)
+def anular_compra_suelta(compra_id: int, db: Session = Depends(get_db)):
+    """Deshacer una compra suelta mal anotada (26-oct).
+
+    No habia como: lo unico a mano era sacar la mercancia con un conteo, y eso
+    dejaba la compra mala como "lo ultimo que se pago" y una perdida falsa en
+    los libros. Aqui sale del stock lo que entro, el asiento lleva su reverso
+    exacto y la compra deja de contar para el costo de reposicion.
+    """
+    with costeo.bloqueo_inventario():
+        compra = db.query(models.CompraSuelta).filter(models.CompraSuelta.id == compra_id).first()
+        if not compra:
+            raise HTTPException(status_code=404, detail="Compra no encontrada")
+        if compra.anulada:
+            raise HTTPException(status_code=409, detail="Esa compra ya estaba anulada")
+        ingrediente = _ingrediente_para_actualizar(db, compra.ingrediente_id)
+        hay = ingrediente.stock_actual or 0
+        if hay + 1e-6 < compra.cantidad:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Hay {hay:g} {ingrediente.unidad} y la compra metió {compra.cantidad:g}: si ya los sacaste "
+                "con un conteo o una merma, revierte eso primero en Inventario › Control.",
+            )
+        # El promedio vuelve a ser el de antes de la compra.
+        resto = hay - compra.cantidad
+        if resto > 1e-6:
+            previo = (hay * (ingrediente.costo_unitario or 0) - compra.cantidad * compra.costo_unitario) / resto
+            if previo > 0:
+                ingrediente.costo_unitario = round(previo, 4)
+        kardex.anotar(
+            db, ingrediente, -compra.cantidad, kardex.REVERSO, costo_unitario=compra.costo_unitario,
+            origen="compra_suelta_anulada", referencia_id=compra.id, nota="Se anula una compra mal anotada",
+        )
+        contabilidad.registrar_reverso_compra_insumo(db, compra.id)
+        compra.anulada = True
+        db.commit()
+        db.refresh(ingrediente)
+        return _con_reposicion(ingrediente, reposicion.costos_reposicion(db))
 
 
 def _no_mas_de_lo_que_hay(ingrediente: models.Ingrediente, body: schemas.MermaRequest) -> None:

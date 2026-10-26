@@ -444,6 +444,8 @@ class CompraDeInsumo(BaseModel):
     costo_unitario: float
     origen: str  # factura | compra suelta
     referencia: str = ""
+    # Solo en las compras sueltas: para poder anularla si se anoto mal.
+    compra_id: Optional[int] = None
 
 
 class ImpactoEnProducto(BaseModel):
@@ -569,6 +571,8 @@ class ComprarIngredienteRequest(BaseModel):
     # De donde salio la plata: Efectivo Bs | Efectivo $ | Banco (y sinonimos de
     # contabilidad.METODOS_DE_PAGO). Salia siempre de la gaveta de bolivares.
     metodo_pago: str = "Efectivo Bs"
+    # El precio se sale de lo de siempre y la persona dijo que si es asi.
+    confirmar: bool = False
 
 
 class MermaRequest(BaseModel):

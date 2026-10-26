@@ -60,6 +60,26 @@ def salto_sospechoso(costo_nuevo: float, costo_anterior: float) -> Optional[dict
     }
 
 
+# Una compra que cuesta menos de la quinta parte de lo de siempre casi nunca
+# es una oferta: es el monto en bolivares, la coma corrida o el total puesto
+# como precio por unidad (26-oct: 10 kg de pernil por $0,08, a $8 el kilo).
+BAJA_SOSPECHOSA = 0.2
+
+
+def precio_absurdo(costo_nuevo: float, referencia: float) -> Optional[str]:
+    """Un precio que no tiene sentido contra lo de siempre, hacia ARRIBA (la
+    unidad equivocada) o hacia ABAJO (bolivares, la coma). Devuelve el aviso
+    en criollo, o None si es un precio posible."""
+    if not referencia or not costo_nuevo or referencia <= 0:
+        return None
+    if costo_nuevo < referencia * BAJA_SOSPECHOSA:
+        return (f"Ese precio es {referencia / costo_nuevo:,.0f} veces MENOR que lo de siempre "
+                f"(${costo_nuevo:,.4f} contra ${referencia:,.2f}). ¿Pusiste el monto en bolívares o "
+                "con la coma corrida? El costo va en dólares y por el total de lo que llegó.")
+    sospecha = salto_sospechoso(costo_nuevo, referencia)
+    return sospecha["mensaje"] if sospecha else None
+
+
 def historial_de_costos(db: Session, ingrediente_id: int, limite: int = 24) -> List[dict]:
     """Cada compra de ese insumo, de la mas nueva a la mas vieja.
 
@@ -86,7 +106,8 @@ def historial_de_costos(db: Session, ingrediente_id: int, limite: int = 24) -> L
         )
 
     for suelta in (
-        db.query(models.CompraSuelta).filter_by(ingrediente_id=ingrediente_id).all()
+        db.query(models.CompraSuelta).filter_by(ingrediente_id=ingrediente_id)
+        .filter(models.CompraSuelta.anulada.isnot(True)).all()
     ):
         compras.append(
             {
@@ -95,6 +116,7 @@ def historial_de_costos(db: Session, ingrediente_id: int, limite: int = 24) -> L
                 "costo_unitario": suelta.costo_unitario,
                 "origen": "compra suelta",
                 "referencia": "",
+                "compra_id": suelta.id,
             }
         )
 
@@ -125,7 +147,7 @@ def costos_reposicion(db: Session) -> Dict[int, dict]:
     for item, fecha in filas:
         considerar(item.ingrediente_id, fecha, item.costo_unitario)
 
-    for suelta in db.query(models.CompraSuelta).all():
+    for suelta in db.query(models.CompraSuelta).filter(models.CompraSuelta.anulada.isnot(True)).all():
         considerar(suelta.ingrediente_id, suelta.fecha, suelta.costo_unitario)
 
     return ultimo
@@ -149,6 +171,13 @@ def costo_reposicion_efectivo(ingrediente, ultimos: Dict[int, dict], _visitados=
     PREPARACION, su receta a ultimos precios: el guiso no se compra, asi que
     reponerlo cuesta lo que cuesta reponer su pollo y su cebolla.
     """
+    # Un ultimo precio absurdo (bolivares, la coma) no se toma: se usa el
+    # promedio de la ficha hasta que llegue una compra con precio de verdad
+    # (26-oct, el pernil a $0,0085 el kilo dejaba la receta en cero).
+    ultimo = ultimos.get(getattr(ingrediente, "id", None))
+    if (ultimo and getattr(ingrediente, "tipo", "") != "preparacion"
+            and precio_absurdo(ultimo.get("costo") or 0, getattr(ingrediente, "costo_unitario", 0) or 0)):
+        return costo_efectivo_de(ingrediente.costo_unitario, ingrediente.rendimiento_pct) or 0.0
     if ingrediente.tipo == "preparacion":
         if ingrediente.id in _visitados or not ingrediente.rinde_real:
             return 0.0
@@ -291,7 +320,7 @@ def compras_por_insumo(db: Session, desde=None) -> Dict[int, List[dict]]:
             }
         )
 
-    sueltas = db.query(models.CompraSuelta)
+    sueltas = db.query(models.CompraSuelta).filter(models.CompraSuelta.anulada.isnot(True))
     if desde is not None:
         sueltas = sueltas.filter(models.CompraSuelta.fecha >= desde)
     for suelta in sueltas.all():
@@ -302,6 +331,7 @@ def compras_por_insumo(db: Session, desde=None) -> Dict[int, List[dict]]:
                 "costo_unitario": suelta.costo_unitario,
                 "origen": "compra suelta",
                 "referencia": "",
+                "compra_id": suelta.id,
             }
         )
 

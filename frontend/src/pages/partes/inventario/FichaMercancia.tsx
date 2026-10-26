@@ -144,6 +144,26 @@ export default function FichaMercancia({
       setAviso(e instanceof Error ? e.message : 'No se pudo anotar')
     }
   }
+  // Una compra suelta mal anotada (el precio en bolívares, la cantidad mal)
+  // se deshace entera: stock, costo y asiento. Sacarla con un conteo dejaba
+  // una pérdida falsa y el precio malo como "lo último que se pagó".
+  async function anularCompra(compraId: number) {
+    if (!ing) return
+    const ok = await dialogo.confirmar({
+      titulo: 'Anular esta compra',
+      texto: 'Sale del inventario lo que entró, el costo vuelve al de antes y el asiento se reversa. Úsalo solo si la compra se anotó mal.',
+      aceptar: 'Anular compra',
+      peligro: true,
+    })
+    if (!ok) return
+    try {
+      await api.anularCompraSuelta(compraId)
+      setAviso('Compra anulada.')
+      onRecargar(ing)
+    } catch (e) {
+      setAviso(e instanceof Error ? e.message : 'No se pudo anular')
+    }
+  }
   // Al crear: las que ya existen y se le parecen. "Crema de leche lata
   // grande" junto a "Crema de Leche Lata" nacio por no verlas.
   const similares = useMemo(
@@ -712,7 +732,14 @@ export default function FichaMercancia({
                         <tr key={`${c.fecha}-${i}`} className="border-t border-neutral-100">
                           <td className="p-2">
                             {new Date(c.fecha).toLocaleDateString('es-VE')}
-                            <span className="block text-[11px] text-neutral-400">{c.origen}</span>
+                            <span className="block text-[11px] text-neutral-400">
+                              {c.origen}
+                              {c.compra_id != null && (
+                                <button type="button" onClick={() => void anularCompra(c.compra_id!)} className="ml-2 underline hover:text-peligro-600">
+                                  Anular
+                                </button>
+                              )}
+                            </span>
                           </td>
                           <td className="p-2 text-right text-neutral-500 tabular-nums">
                             {cantidad(c.cantidad)} {u}

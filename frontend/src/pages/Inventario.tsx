@@ -251,10 +251,24 @@ export default function Inventario() {
       return
     }
     const costoUsd = r.costo && r.moneda === 'Bs' ? Number(r.costo) / (tasa!.bcv as number) : r.costo ? Number(r.costo) : undefined
-    await accion(async () => {
-      const resultado = await api.registrarCompra(ing.id, Number(r.cantidad), costoUsd, r.metodo)
+    // Un precio absurdo (en bolívares, con la coma corrida) el servidor lo
+    // frena ANTES de guardar; aquí se pregunta y, si es así, se anota igual.
+    const registrar = async (confirmar: boolean) => {
+      const resultado = await api.registrarCompra(ing.id, Number(r.cantidad), costoUsd, r.metodo, confirmar)
       if (resultado.revisar_precios) setImpacto(resultado)
-    })
+    }
+    setError('')
+    try {
+      await registrar(false)
+      cargar()
+    } catch (e) {
+      if (e instanceof ErrorApi && e.status === 409) {
+        if (await dialogo.confirmar({ titulo: '¿Seguro que es ese precio?', texto: e.message, aceptar: 'Sí, es así', cancelar: 'Corregir' }))
+          await accion(() => registrar(true))
+        return
+      }
+      setError(e instanceof Error ? e.message : 'Ocurrió un error')
+    }
   }
 
   async function merma(ing: Ingrediente) {

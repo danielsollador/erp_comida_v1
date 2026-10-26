@@ -1316,6 +1316,21 @@ def registrar_existencia_declarada(db: Session, ingrediente, valor: float) -> No
     )
 
 
+def registrar_reverso_compra_insumo(db: Session, compra_id: int) -> None:
+    """El asiento de una compra suelta, al reves y por el mismo monto: lo que
+    se anulo no deja ni un centavo en los libros."""
+    original = (
+        db.query(models.AsientoContable)
+        .filter(models.AsientoContable.origen == "compra_insumo", models.AsientoContable.referencia_id == compra_id)
+        .first()
+    )
+    if original is None:
+        return  # compra sin costo: nunca tuvo asiento
+    lineas = [(m.cuenta.codigo, m.haber or 0.0, m.debe or 0.0) for m in original.movimientos]
+    crear_asiento(db, f"Anulación: {original.descripcion}", lineas, origen="reverso_compra_insumo",
+                  referencia_id=compra_id)
+
+
 def registrar_compra_insumo(
     db: Session,
     ingrediente: models.Ingrediente,
