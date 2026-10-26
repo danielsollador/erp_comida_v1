@@ -199,6 +199,8 @@ export type CompraDeInsumo = {
   costo_unitario: number
   origen: string
   referencia: string
+  /** Solo en las compras sueltas: para anularla si se anotó mal. */
+  compra_id?: number | null
 }
 
 export type ImpactoEnProducto = {

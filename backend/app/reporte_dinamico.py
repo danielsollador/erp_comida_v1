@@ -546,7 +546,8 @@ def _filas_compras(db: Session, inicio, fin) -> Iterable[Fila]:
     sueltas = (
         db.query(models.CompraSuelta)
         .options(joinedload(models.CompraSuelta.ingrediente))
-        .filter(models.CompraSuelta.fecha >= inicio, models.CompraSuelta.fecha < fin)
+        .filter(models.CompraSuelta.fecha >= inicio, models.CompraSuelta.fecha < fin,
+                models.CompraSuelta.anulada.isnot(True))
         .all()
     )
     for c in sueltas:
