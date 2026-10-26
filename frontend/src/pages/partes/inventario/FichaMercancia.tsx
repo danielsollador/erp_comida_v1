@@ -118,6 +118,9 @@ export default function FichaMercancia({
     exento: ing?.exento ?? false,
     // Viene en empaque de N: con esto cada factura la carga por empaques.
     empaque_trae: ing?.empaque_trae ? String(ing.empaque_trae) : '',
+    // Lo que se paga por UN empaque. Es como lo dice la gente: "el paquete de
+    // 200 sobres me cuesta $3,60", no "cada sobre me cuesta $0,018".
+    costo_empaque: ing?.empaque_trae ? String(Math.round(ing.costo_unitario * ing.empaque_trae * 100) / 100) : '',
   }))
   const [aviso, setAviso] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -252,11 +255,18 @@ export default function FichaMercancia({
     if (!f.nombre.trim()) return setAviso('La mercancía necesita un nombre.')
     const minimo = f.stock_minimo === '' ? 0 : num(f.stock_minimo)
     const objetivo = f.stock_objetivo === '' ? 0 : num(f.stock_objetivo)
-    const costo = f.costo_unitario === '' ? 0 : num(f.costo_unitario)
+    const empaque = f.empaque_trae === '' ? null : num(f.empaque_trae)
+    // En empaque, el precio y lo que hay se escriben por empaque y se guardan
+    // por unidad: el sistema cuenta sobres, la gente cuenta paquetes (26-oct:
+    // "$3,60 por unidad" eran $3,60 el paquete de 200, y el inventario subio
+    // $1.432 de mentira).
+    const porEmpaque = empaque !== null && empaque > 1
+    const costo = porEmpaque
+      ? f.costo_empaque === '' ? 0 : num(f.costo_empaque) / empaque
+      : f.costo_unitario === '' ? 0 : num(f.costo_unitario)
     // Solo la materia prima tiene merma de cocina que medir.
     const rendimiento = f.tipo === 'insumo' ? num(f.rendimiento_pct) : 100
-    const inicial = f.stock_actual === '' ? 0 : num(f.stock_actual)
-    const empaque = f.empaque_trae === '' ? null : num(f.empaque_trae)
+    const inicial = (f.stock_actual === '' ? 0 : num(f.stock_actual)) * (porEmpaque ? empaque : 1)
     if ([minimo, objetivo, costo, inicial].some((n) => !Number.isFinite(n) || n < 0))
       return setAviso('Las cantidades y el costo tienen que ser números, y no negativos.')
     if (empaque !== null && !(empaque > 0)) return setAviso('El empaque trae una cantidad mayor que cero, o se deja vacío si viene suelta.')
@@ -297,6 +307,8 @@ export default function FichaMercancia({
 
   const perdidaTotal = mermas.reduce((s, m) => s + m.valor, 0)
   const u = ing?.unidad ?? f.unidad
+  const trae = f.empaque_trae === '' ? 0 : num(f.empaque_trae)
+  const enEmpaque = Number.isFinite(trae) && trae > 1
 
   // ── El formulario: crear, o cambiar los datos ──────────────────────────────
   const opcionales = (
@@ -328,13 +340,6 @@ export default function FichaMercancia({
         valor={f.stock_objetivo}
         alCambiar={(v) => poner('stock_objetivo', v)}
         ayuda={ejemploIdeal(num(f.stock_objetivo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
-      />
-      <CampoCantidad
-        etiqueta="Viene en empaque de"
-        unidad={f.unidad}
-        valor={f.empaque_trae}
-        alCambiar={(v) => poner('empaque_trae', v)}
-        ayuda={f.empaque_trae === '' ? 'Vacío: viene suelta. Si el proveedor la trae en caja, bulto o paquete, pon cuántas trae uno y cada factura se carga por empaques.' : `Cada factura pide cuántos empaques vinieron y el sistema los pasa a ${f.unidad === 'unidad' ? 'unidades' : f.unidad}.`}
       />
       </>)}
       {f.tipo === 'insumo' && (
@@ -422,23 +427,60 @@ export default function FichaMercancia({
             ))}
           </div>
         </div>
+        {/* Va antes del precio y de lo que hay: si viene en paquete, las dos
+            preguntas siguientes son por paquete. Escondido en "más detalles"
+            se llenaba despues, y el precio del paquete quedaba como precio
+            de cada sobre. */}
+        {f.tipo !== 'preparacion' && (
+          <div className="sm:col-span-2">
+            <CampoCantidad
+        etiqueta="Viene en empaque de"
+        unidad={f.unidad}
+        valor={f.empaque_trae}
+        alCambiar={(v) => poner('empaque_trae', v)}
+        ayuda={f.empaque_trae === '' ? 'Vacío: viene suelta. Si el proveedor la trae en caja, bulto o paquete, pon cuántas trae uno y cada factura se carga por empaques.' : `Cada factura pide cuántos empaques vinieron y el sistema los pasa a ${f.unidad === 'unidad' ? 'unidades' : f.unidad}.`}
+      />
+          </div>
+        )}
         {nuevo && f.tipo !== 'desechable' && (
-          <CampoCantidad
-            etiqueta="Cuánto hay hoy"
-            unidad={f.unidad}
-            valor={f.stock_actual}
-            alCambiar={(v) => poner('stock_actual', v)}
-            ayuda="Después se mueve solo con las compras, las ventas y los conteos."
+          enEmpaque ? (
+            <Campo
+              etiqueta={`Cuántos empaques hay hoy`}
+              inputMode="decimal"
+              value={f.stock_actual}
+              onChange={(e) => poner('stock_actual', e.target.value)}
+              placeholder="0"
+              ayuda={`${cantidad((num(f.stock_actual) || 0) * trae)} ${f.unidad} en total. Después se mueve solo con las compras, las ventas y los conteos.`}
+            />
+          ) : (
+            <CampoCantidad
+              etiqueta="Cuánto hay hoy"
+              unidad={f.unidad}
+              valor={f.stock_actual}
+              alCambiar={(v) => poner('stock_actual', v)}
+              ayuda="Después se mueve solo con las compras, las ventas y los conteos."
+            />
+          )
+        )}
+        {enEmpaque ? (
+          <Campo
+            etiqueta={`Lo que pagas por empaque de ${cantidad(trae)}, sin IVA ($)`}
+            inputMode="decimal"
+            value={f.costo_empaque}
+            onChange={(e) => poner('costo_empaque', e.target.value)}
+            placeholder="0.00"
+            ayuda={`Sale a ${dinero((num(f.costo_empaque) || 0) / trae)} cada ${f.unidad}. ${nuevo ? 'Cada compra lo va ajustando.' : 'Se ajusta solo con cada compra.'}`}
+          />
+        ) : (
+          <Campo
+            etiqueta={`Lo que pagas por ${f.unidad}, sin IVA ($)`}
+            inputMode="decimal"
+            value={f.costo_unitario}
+            onChange={(e) => poner('costo_unitario', e.target.value)}
+            placeholder="0.00"
+            ayuda={nuevo ? 'Lo que pagaste la última vez. Cada compra lo va ajustando.' : 'Se ajusta solo con cada compra.'}
           />
         )}
-        <Campo
-          etiqueta={`Lo que pagas por ${f.unidad}, sin IVA ($)`}
-          inputMode="decimal"
-          value={f.costo_unitario}
-          onChange={(e) => poner('costo_unitario', e.target.value)}
-          placeholder="0.00"
-          ayuda={nuevo ? 'Lo que pagaste la última vez. Cada compra lo va ajustando.' : 'Se ajusta solo con cada compra.'}
-        />
       </div>
 
       {nuevo ? (

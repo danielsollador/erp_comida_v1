@@ -208,6 +208,25 @@ export default function Inventario() {
 
   // ── Movimientos ──────────────────────────────────────────────────────────
 
+  // Si viene en empaque se pregunta por empaques (como llega) y se guarda en
+  // unidades (como se gasta). "Entraron 2" eran 2 paquetes de 200 sobres.
+  const trae = (ing: Ingrediente) => (ing.empaque_trae && ing.empaque_trae > 1 ? ing.empaque_trae : 0)
+  const campoComo = (ing: Ingrediente) =>
+    trae(ing)
+      ? [{
+          nombre: 'como',
+          etiqueta: 'Cómo lo cuentas',
+          tipo: 'opciones' as const,
+          valor: 'empaque',
+          opciones: [
+            { valor: 'empaque', texto: `En empaques de ${cantidad(trae(ing))}` },
+            { valor: 'suelta', texto: `En ${ing.unidad} sueltas` },
+          ],
+        }]
+      : []
+  const enUnidades = (ing: Ingrediente, r: Record<string, string>) =>
+    Number(r.cantidad) * (trae(ing) && r.como !== 'suelta' ? trae(ing) : 1)
+
   async function comprar(ing: Ingrediente) {
     const r = await dialogo.pedir({
       titulo: `Compra de ${ing.nombre}`,
@@ -223,7 +242,10 @@ export default function Inventario() {
         </>
       ),
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto entra', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
+        ...campoComo(ing),
+        trae(ing)
+          ? { nombre: 'cantidad', etiqueta: 'Cuánto entra', tipo: 'numero', min: 0.0001, ayuda: `Empaques o ${ing.unidad}, según lo de arriba.` }
+          : { nombre: 'cantidad', etiqueta: 'Cuánto entra', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
         {
           nombre: 'costo',
           etiqueta: 'Cuánto pagaste en total, sin IVA',
@@ -254,7 +276,7 @@ export default function Inventario() {
     // Un precio absurdo (en bolívares, con la coma corrida) el servidor lo
     // frena ANTES de guardar; aquí se pregunta y, si es así, se anota igual.
     const registrar = async (confirmar: boolean) => {
-      const resultado = await api.registrarCompra(ing.id, Number(r.cantidad), costoUsd, r.metodo, confirmar)
+      const resultado = await api.registrarCompra(ing.id, enUnidades(ing, r), costoUsd, r.metodo, confirmar)
       if (resultado.revisar_precios) setImpacto(resultado)
     }
     setError('')
@@ -318,6 +340,21 @@ export default function Inventario() {
   }
 
   async function contar(ing: Ingrediente) {
+    if (trae(ing)) {
+      const empaques = ing.stock_actual / trae(ing)
+      const r = await dialogo.pedir({
+        titulo: `Contar ${ing.nombre}`,
+        texto: `El sistema dice ${cantidad(ing.stock_actual)} ${ing.unidad} (${cantidad(empaques)} empaques de ${cantidad(trae(ing))}). Lo que cuentes manda: la diferencia queda como merma o como sobrante.`,
+        campos: [
+          ...campoComo(ing),
+          { nombre: 'cantidad', etiqueta: 'Cuánto hay realmente', tipo: 'numero', min: 0, valor: cantidad(empaques) },
+        ],
+        aceptar: 'Guardar conteo',
+      })
+      if (!r) return
+      accion(() => api.ajustarStock(ing.id, enUnidades(ing, r)))
+      return
+    }
     const real = await dialogo.pedirNumero({
       titulo: `Contar ${ing.nombre}`,
       texto: `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
