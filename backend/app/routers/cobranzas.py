@@ -85,6 +85,50 @@ def asignar_cliente(pedido_id: int, body: schemas.AsignarCliente, db: Session = 
     return {"ok": True}
 
 
+@router.post("/clientes/{cliente_id}/abono", response_model=schemas.CobroCliente)
+def abonar(cliente_id: int, body: schemas.AbonoACuenta, db: Session = Depends(get_db)):
+    """Un pago "a lo que debo": se aplica de la venta mas vieja a la mas nueva."""
+    c = _cliente(db, cliente_id)
+    try:
+        cobro = cxc.abonar_a_cuenta(db, c, body)
+    except cxc.ErrorCobro as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=e.detalle)
+    db.commit()
+    db.refresh(cobro)
+    return cxc.cobro_a_esquema(cobro)
+
+
+@router.post("/ventas/{pedido_id}/perdida")
+def dar_por_perdida(pedido_id: int, body: schemas.DarPorPerdida, db: Session = Depends(get_db)):
+    """El cliente no va a pagar (PedidosYa no reconocio el pedido): lo que
+    falta se lleva a gasto y deja de deberse. La venta no se toca."""
+    p = db.get(models.Pedido, pedido_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    try:
+        monto = cxc.dar_por_perdida(db, p, body.motivo)
+    except cxc.ErrorCobro as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=e.detalle)
+    db.commit()
+    return {"ok": True, "perdido": monto}
+
+
+@router.delete("/ventas/{pedido_id}/perdida")
+def recuperar_perdida(pedido_id: int, db: Session = Depends(get_db)):
+    p = db.get(models.Pedido, pedido_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    try:
+        cxc.recuperar_perdida(db, p)
+    except cxc.ErrorCobro as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=e.detalle)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/cobros", response_model=List[schemas.CobroCliente])
 def listar_cobros(db: Session = Depends(get_db)):
     cobros = db.query(models.CobroCliente).order_by(models.CobroCliente.fecha.desc()).limit(200).all()

@@ -21,6 +21,7 @@ import type {
   LineaMetodo,
   ResumenCaja,
   RetiroPropietario,
+  Traspaso,
 } from '../lib/types'
 
 /**
@@ -47,6 +48,8 @@ const SECCIONES = [
 // Un retiro de caja sale de una gaveta. Lo que se paga por el banco (un
 // sueldo, el alquiler) va por Pagos, que tambien sabe a quien y por que.
 const GAVETAS = ['Efectivo Bs', 'Efectivo $']
+// A donde se lleva el efectivo que se deposita.
+const BANCOS = ['Transferencia', 'Zelle']
 
 function hoyISO() {
   const d = new Date()
@@ -70,6 +73,7 @@ export default function Caja() {
   const [rango, setRango] = useRango('30d')
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [retiros, setRetiros] = useState<RetiroPropietario[]>([])
+  const [traspasos, setTraspasos] = useState<Traspaso[]>([])
   const [cierres, setCierres] = useState<CierreCaja[]>([])
 
   const [contando, setContando] = useState(false)
@@ -91,6 +95,7 @@ export default function Caja() {
   function cargarPeriodo() {
     api.listarGastos(rango).then(setGastos).catch(() => setGastos([]))
     api.listarRetiros(rango).then(setRetiros).catch(() => setRetiros([]))
+    api.listarTraspasos(rango).then(setTraspasos).catch(() => setTraspasos([]))
     api.listarCierres(rango).then(setCierres).catch(() => setCierres([]))
   }
 
@@ -148,7 +153,7 @@ export default function Caja() {
         )}
 
         {seccion === 'movimientos' && (
-          <Movimientos gastos={gastos} retiros={retiros} rango={rango} alCambiar={recargar} />
+          <Movimientos gastos={gastos} retiros={retiros} traspasos={traspasos} rango={rango} alCambiar={recargar} />
         )}
 
         {seccion === 'historial' && (
@@ -1138,18 +1143,22 @@ function CuadrarCaja({
 function Movimientos({
   gastos,
   retiros,
+  traspasos,
   rango,
   alCambiar,
 }: {
   gastos: Gasto[]
   retiros: RetiroPropietario[]
+  traspasos: Traspaso[]
   rango: ReturnType<typeof useRango>[0]
   alCambiar: () => void
 }) {
-  const [tipo, setTipo] = useState<'gasto' | 'retiro'>('gasto')
+  const [tipo, setTipo] = useState<'gasto' | 'retiro' | 'deposito'>('gasto')
   const [descripcion, setDescripcion] = useState('')
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState(GAVETAS[0])
+  const [banco, setBanco] = useState(BANCOS[0])
+  const [referencia, setReferencia] = useState('')
   const [error, setError] = useState('')
   const { deshacible, oculto } = useDeshacer()
 
@@ -1157,15 +1166,21 @@ function Movimientos({
     const n = Number(monto.replace(',', '.'))
     if (!Number.isFinite(n) || n <= 0) return
     if (tipo === 'gasto' && !descripcion.trim()) return
+    if (tipo === 'deposito' && !referencia.trim()) return setError('Pon la referencia del depósito.')
     setError('')
     try {
       if (tipo === 'gasto') {
         await api.crearGasto(descripcion.trim(), 'Otros', n, metodo)
+      } else if (tipo === 'deposito') {
+        // Llevar el efectivo al banco: sale de la gaveta y entra al banco.
+        // No es gasto, pero si no se anota el cierre da faltante.
+        await api.crearTraspaso({ tipo: 'traspaso', desde: metodo, hacia: banco, monto: n, referencia: referencia.trim(), nota: descripcion.trim() })
       } else {
         await api.crearRetiro(n, metodo, descripcion.trim())
       }
       setDescripcion('')
       setMonto('')
+      setReferencia('')
       alCambiar()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar')
@@ -1184,6 +1199,10 @@ function Movimientos({
     deshacible({ clave: `retiro:${id}`, texto: 'Retiro borrado', ejecutar: () => api.eliminarRetiro(id), alTerminar: alCambiar, alFallar })
   }
 
+  function anularTraspaso(id: number) {
+    deshacible({ clave: `traspaso:${id}`, texto: 'Movimiento anulado', ejecutar: () => api.anularTraspaso(id), alTerminar: alCambiar, alFallar })
+  }
+
   const esGasto = tipo === 'gasto'
 
   return (
@@ -1192,13 +1211,13 @@ function Movimientos({
         <h2 className="font-semibold mb-1">Sacar plata de la caja</h2>
         <p className="text-xs text-neutral-500 mb-3">
           Anota aquí todo billete que salga de la gaveta, para que el cierre cuadre: un{' '}
-          <strong>pago menor</strong> (bombona, hielo, un mandado) o lo que se lleva el dueño. Los
-          sueldos, el alquiler y lo que pagas por el banco van en <strong>Pagos</strong>; la
-          mercancía, en <strong>Compras</strong>.
+          <strong>pago menor</strong> (bombona, hielo, un mandado), lo que se lleva el dueño o el
+          efectivo que se <strong>deposita en el banco</strong>. Los sueldos, el alquiler y lo que pagas
+          por el banco van en <strong>Pagos</strong>; la mercancía, en <strong>Compras</strong>.
         </p>
 
         <div className="flex gap-2 mb-3">
-          {(['gasto', 'retiro'] as const).map((t) => (
+          {(['gasto', 'retiro', 'deposito'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTipo(t)}
@@ -1208,7 +1227,7 @@ function Movimientos({
                   : 'border-neutral-300 text-neutral-600'
               }`}
             >
-              {t === 'gasto' ? 'Pago menor' : 'Retiro del dueño'}
+              {t === 'gasto' ? 'Pago menor' : t === 'retiro' ? 'Retiro del dueño' : 'Depósito al banco'}
             </button>
           ))}
         </div>
@@ -1220,6 +1239,28 @@ function Movimientos({
             placeholder={esGasto ? 'Ej. Bombona de gas' : 'Nota (opcional)'}
             className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm"
           />
+          {tipo === 'deposito' && (
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={banco}
+                onChange={(e) => setBanco(e.target.value)}
+                className="flex-1 min-w-[10rem] border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+                title="A dónde se deposita"
+              >
+                {BANCOS.map((m) => (
+                  <option key={m} value={m}>
+                    {m === 'Zelle' ? 'A la cuenta en dólares (Zelle)' : 'Al banco en bolívares'}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={referencia}
+                onChange={(e) => setReferencia(e.target.value)}
+                placeholder="Referencia del depósito"
+                className="flex-1 min-w-[10rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             {/* DE QUE GAVETA sale la plata. Es lo que hace que el cierre
                 cuadre: los bolivares y los dolares se cuentan aparte. */}
@@ -1276,7 +1317,93 @@ function Movimientos({
           borrar: () => borrarRetiro(r.id),
         }))}
       />
+      <ListaMovimientos
+        titulo="Depósitos y aportes"
+        etiqueta={etiquetaRango(rango)}
+        filas={traspasos
+          .filter((t) => !t.anulado && !oculto(`traspaso:${t.id}`))
+          .map((t) => ({
+            id: t.id,
+            fecha: t.fecha,
+            texto: t.tipo === 'aporte' ? 'Aporte del dueño' : `Depósito de ${t.desde}`,
+            detalle: `a ${t.hacia}${t.referencia ? ` · ref. ${t.referencia}` : ''}${t.nota ? ` · ${t.nota}` : ''}`,
+            monto: t.monto,
+            borrar: () => anularTraspaso(t.id),
+          }))}
+      />
+      <AporteDelDueno alCambiar={alCambiar} />
     </>
+  )
+}
+
+/** Plata que el dueño pone de su bolsillo: no es venta, es capital. Sin
+ * anotarla, el cierre la cuenta como sobrante. */
+function AporteDelDueno({ alCambiar }: { alCambiar: () => void }) {
+  const [monto, setMonto] = useState('')
+  const [hacia, setHacia] = useState('Efectivo Bs')
+  const [referencia, setReferencia] = useState('')
+  const [nota, setNota] = useState('')
+  const [error, setError] = useState('')
+  async function registrar() {
+    const n = Number(monto.replace(',', '.'))
+    if (!Number.isFinite(n) || n <= 0) return
+    if (METODOS_CON_REFERENCIA.has(hacia) && !referencia.trim()) return setError('Pon la referencia de la transferencia.')
+    setError('')
+    try {
+      await api.crearTraspaso({ tipo: 'aporte', desde: null, hacia, monto: n, referencia: referencia.trim(), nota: nota.trim() })
+      setMonto('')
+      setReferencia('')
+      setNota('')
+      alCambiar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar')
+    }
+  }
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+      <h2 className="font-semibold mb-1">Entra plata del dueño</h2>
+      <p className="text-xs text-neutral-500 mb-3">
+        Cuando el dueño pone plata de su bolsillo (para el sencillo, para pagarle a un proveedor). No es venta: sube el capital.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <select
+          value={hacia}
+          onChange={(e) => setHacia(e.target.value)}
+          className="flex-1 min-w-[10rem] border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+          title="A dónde entra"
+        >
+          {['Efectivo Bs', 'Efectivo $', 'Transferencia', 'Zelle'].map((m) => (
+            <option key={m} value={m}>
+              A {m}
+            </option>
+          ))}
+        </select>
+        {METODOS_CON_REFERENCIA.has(hacia) && (
+          <input
+            value={referencia}
+            onChange={(e) => setReferencia(e.target.value)}
+            placeholder="Referencia"
+            className="flex-1 min-w-[8rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+          />
+        )}
+        <input
+          value={nota}
+          onChange={(e) => setNota(e.target.value)}
+          placeholder="Para qué (opcional)"
+          className="flex-1 min-w-[8rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+        />
+        <Numerico
+          value={monto}
+          onChange={(e) => setMonto(e.target.value)}
+          placeholder="$"
+          className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+        />
+        <button onClick={registrar} className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium">
+          Registrar
+        </button>
+      </div>
+      {error && <p className="text-peligro-600 text-sm mt-2">{error}</p>}
+    </div>
   )
 }
 

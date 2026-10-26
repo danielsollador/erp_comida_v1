@@ -128,6 +128,8 @@ import type {
   PagoSinFactura,
   ResumenCxC,
   ResumenPagos,
+  AnticipoPendiente,
+  Traspaso,
 } from './types'
 import { abrirCanalEnVivo, cabecerasApp, recogerToken, urlApi } from './plataforma'
 import { queryRango, type Rango } from './fechas'
@@ -869,10 +871,16 @@ export const api = {
     pedido_ids: number[]
     metodo_pago: string
     referencia: string
-    comision: number
+    recibido: number
+    retencion_iva_pct: number | null
     nota: string
     fecha?: string
   }) => req<CobroCliente>('/cobranzas/cobros', { method: 'POST', body: JSON.stringify(datos) }),
+  abonarACuenta: (clienteId: number, datos: { monto: number; metodo_pago: string; referencia: string; nota: string }) =>
+    req<CobroCliente>(`/cobranzas/clientes/${clienteId}/abono`, { method: 'POST', body: JSON.stringify(datos) }),
+  darPorPerdida: (pedidoId: number, motivo: string) =>
+    req(`/cobranzas/ventas/${pedidoId}/perdida`, { method: 'POST', body: JSON.stringify({ motivo }) }),
+  recuperarPerdida: (pedidoId: number) => req(`/cobranzas/ventas/${pedidoId}/perdida`, { method: 'DELETE' }),
   anularCobroCliente: (id: number) => req<CobroCliente>(`/cobranzas/cobros/${id}/anular`, { method: 'POST' }),
 
   // Pagos sin factura
@@ -887,7 +895,14 @@ export const api = {
       method: id ? 'PUT' : 'POST',
       body: JSON.stringify(f),
     }),
-  pagarFijo: (id: number, datos: { monto?: number; referencia: string }) =>
+  anticipos: () => req<AnticipoPendiente[]>('/egresos/anticipos'),
+  enterarIslr: (datos: { monto?: number; metodo_pago: string; referencia: string }) =>
+    req<{ enterado: number; queda: number }>('/egresos/islr/enterar', { method: 'POST', body: JSON.stringify(datos) }),
+  listarTraspasos: (r?: Rango) => req<Traspaso[]>(`/caja/traspasos${conRango(r)}`),
+  crearTraspaso: (t: { tipo: 'traspaso' | 'aporte'; desde: string | null; hacia: string; monto: number; referencia: string; nota: string }) =>
+    req<Traspaso>('/caja/traspasos', { method: 'POST', body: JSON.stringify(t) }),
+  anularTraspaso: (id: number) => req<Traspaso>(`/caja/traspasos/${id}/anular`, { method: 'POST' }),
+  pagarFijo: (id: number, datos: { monto?: number; referencia: string; descontar_anticipo?: number }) =>
     req<PagoSinFactura>(`/egresos/fijos/${id}/pagar`, { method: 'POST', body: JSON.stringify(datos) }),
 
   listarGastos: (r?: Rango) => req<Gasto[]>(`/caja/gastos${conRango(r)}`),

@@ -2240,6 +2240,11 @@ async def devolver_pedido(
     # Cobrada dentro de un pago agrupado (la semana de PedidosYa): parte de
     # esa plata es la comision, no esta en el banco. Devolverla sacaria del
     # banco mas de lo que entro.
+    if pedido.fiado_castigado:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta venta se dio por perdida en Cuentas por cobrar. Recupérala primero.",
+        )
     if any(a.cobro_id for a in pedido.abonos):
         raise HTTPException(
             status_code=409,

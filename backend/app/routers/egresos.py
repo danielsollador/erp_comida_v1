@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import contabilidad, models, schemas, tasas
+from ..cuentas_por_cobrar import clave_de_nombre
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy
@@ -46,7 +47,10 @@ def _fecha(fecha: Optional[datetime.date]) -> datetime.datetime:
 def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id: Optional[int] = None) -> models.PagoSinFactura:
     _validar(datos["concepto"], datos["metodo_pago"], datos["moneda"], datos["beneficiario"])
     referencia = (datos.get("referencia") or "").strip()
-    if datos["metodo_pago"] in contabilidad.METODOS_CON_REFERENCIA and not referencia:
+    # Si todo el sueldo se cubre con lo adelantado no sale plata: no hay
+    # comprobante que pedir.
+    sale_plata = round(datos["monto"] - (datos.get("descontar_anticipo") or 0), 2) > 0
+    if sale_plata and datos["metodo_pago"] in contabilidad.METODOS_CON_REFERENCIA and not referencia:
         raise HTTPException(status_code=400, detail=f"Un pago por {datos['metodo_pago']} necesita su número de referencia")
     monto, monto_bs, tasa = datos["monto"], None, None
     if datos["moneda"] == "Bs":
@@ -56,6 +60,21 @@ def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id:
         monto_bs, tasa = round(monto, 2), t.bcv
         monto = round(monto_bs / tasa, 2)
     pct = datos.get("retencion_islr_pct") or 0.0
+    if datos["concepto"] == "Anticipo" and pct:
+        raise HTTPException(status_code=400, detail="Un anticipo no lleva retención: se retiene al pagar el sueldo")
+    retencion = round(monto * pct / 100, 2)
+    descuento = round(datos.get("descontar_anticipo") or 0.0, 2)
+    if descuento:
+        if datos["concepto"] != "Sueldos":
+            raise HTTPException(status_code=400, detail="Los anticipos se descuentan de un sueldo")
+        pendiente = anticipos_de(db).get(clave_de_nombre(datos["beneficiario"]), 0.0)
+        if descuento > pendiente + 0.005:
+            raise HTTPException(
+                status_code=400,
+                detail=f"A {datos['beneficiario'].strip()} solo se le adelantaron {pendiente:.2f} por descontar",
+            )
+        if descuento > round(monto - retencion, 2) + 0.005:
+            raise HTTPException(status_code=400, detail="El anticipo a descontar es mayor que el sueldo")
     pago = models.PagoSinFactura(
         fecha=fecha,
         beneficiario=datos["beneficiario"].strip(),
@@ -68,7 +87,8 @@ def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id:
         metodo_pago=datos["metodo_pago"],
         referencia=referencia,
         retencion_islr_pct=pct,
-        retencion_islr=round(monto * pct / 100, 2),
+        retencion_islr=retencion,
+        anticipo_descontado=descuento,
         pago_fijo_id=pago_fijo_id,
         operador_id=datos.get("operador_id"),
     )
@@ -76,6 +96,45 @@ def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id:
     db.flush()
     contabilidad.registrar_pago_sin_factura(db, pago)
     return pago
+
+
+def anticipos_de(db: Session) -> dict:
+    """Lo adelantado a cada empleado que falta por descontar, por nombre."""
+    saldos: dict = {}
+    nombres: dict = {}
+    for p in db.query(models.PagoSinFactura).filter(models.PagoSinFactura.anulado.is_(False)).all():
+        clave = clave_de_nombre(p.beneficiario)
+        if p.concepto == "Anticipo":
+            saldos[clave] = round(saldos.get(clave, 0.0) + p.monto, 2)
+            nombres.setdefault(clave, p.beneficiario)
+        elif p.anticipo_descontado:
+            saldos[clave] = round(saldos.get(clave, 0.0) - p.anticipo_descontado, 2)
+    anticipos_de.nombres = nombres
+    return {k: v for k, v in saldos.items() if v > 0.004}
+
+
+@router.get("/anticipos", response_model=List[schemas.AnticipoPendiente])
+def anticipos(db: Session = Depends(get_db)):
+    saldos = anticipos_de(db)
+    return [schemas.AnticipoPendiente(beneficiario=anticipos_de.nombres[k], saldo=v) for k, v in saldos.items()]
+
+
+@router.post("/islr/enterar")
+def enterar_islr(body: schemas.EnterarIslr, db: Session = Depends(get_db)):
+    """Pagarle al SENIAT lo retenido de ISLR."""
+    pendiente = round(contabilidad.saldo_de_cuenta(db, "2060"), 2)
+    monto = round(body.monto if body.monto is not None else pendiente, 2)
+    if pendiente <= 0:
+        raise HTTPException(status_code=409, detail="No hay ISLR retenido por enterar")
+    if monto <= 0 or monto > pendiente + 0.005:
+        raise HTTPException(status_code=400, detail=f"Hay {pendiente:.2f} retenidos por enterar")
+    if not contabilidad.metodo_de_pago_valido(body.metodo_pago):
+        raise HTTPException(status_code=400, detail="Forma de pago desconocida")
+    if body.metodo_pago in contabilidad.METODOS_CON_REFERENCIA and not body.referencia.strip():
+        raise HTTPException(status_code=400, detail="Pon la referencia de la planilla o del pago")
+    contabilidad.registrar_entero_islr(db, monto, body.metodo_pago, body.referencia.strip(), fecha=_fecha(body.fecha))
+    db.commit()
+    return {"ok": True, "enterado": monto, "queda": round(pendiente - monto, 2)}
 
 
 @router.get("", response_model=List[schemas.PagoSinFactura])
@@ -104,10 +163,14 @@ def resumen(rango: Rango = Depends(), db: Session = Depends(get_db)):
     por_concepto: dict = {}
     for p in pagos:
         por_concepto[p.concepto] = round(por_concepto.get(p.concepto, 0.0) + p.monto, 2)
+    # Un anticipo no es gasto todavia: se cuenta cuando se descuenta del
+    # sueldo, que ya va en "Sueldos" por el monto completo.
+    gastado = [p for p in pagos if p.concepto != "Anticipo"]
     return schemas.ResumenPagos(
-        total=round(sum(p.monto for p in pagos), 2),
+        total=round(sum(p.monto for p in gastado), 2),
         por_concepto=por_concepto,
         islr_por_enterar=round(contabilidad.saldo_de_cuenta(db, "2060"), 2),
+        anticipos_pendientes=round(contabilidad.saldo_de_cuenta(db, "1016"), 2),
     )
 
 
@@ -135,6 +198,13 @@ def anular(pago_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Pago no encontrado")
     if pago.anulado:
         raise HTTPException(status_code=409, detail="Ese pago ya estaba anulado")
+    if pago.concepto == "Anticipo":
+        pendiente = anticipos_de(db).get(clave_de_nombre(pago.beneficiario), 0.0)
+        if pago.monto > pendiente + 0.005:
+            raise HTTPException(
+                status_code=409,
+                detail="Ese anticipo ya se descontó de un sueldo. Anula primero ese pago de sueldo.",
+            )
     try:
         contabilidad.asegurar_ejercicio_abierto(db, pago.fecha, "ese pago")
     except contabilidad.ErrorEjercicioCerrado as e:
@@ -215,6 +285,17 @@ def pagar_fijo(fijo_id: int, body: schemas.PagarFijo, db: Session = Depends(get_
         "retencion_islr_pct": f.retencion_islr_pct,
         "operador_id": body.operador_id,
     }
+    if f.concepto == "Sueldos":
+        # Lo adelantado en la quincena se descuenta solo, salvo que se diga
+        # otra cosa al confirmar.
+        pendiente = anticipos_de(db).get(clave_de_nombre(f.beneficiario), 0.0)
+        monto_usd = datos["monto"]
+        if f.moneda == "Bs":
+            t = tasas.tasa_al(db, _fecha(body.fecha).date())
+            monto_usd = round(datos["monto"] / t.bcv, 2) if t and t.bcv else datos["monto"]
+        tope = round(monto_usd * (1 - (f.retencion_islr_pct or 0) / 100), 2)
+        pedido = pendiente if body.descontar_anticipo is None else body.descontar_anticipo
+        datos["descontar_anticipo"] = round(min(pedido, tope), 2)
     pago = _registrar(db, datos, _fecha(body.fecha), pago_fijo_id=f.id)
     f.proximo = siguiente_fecha(f.proximo, f.frecuencia)
     db.commit()

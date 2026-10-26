@@ -717,6 +717,13 @@ class CobroCliente(Base):
     referencia = Column(String, default="")
     monto = Column(Float, nullable=False)
     comision = Column(Float, default=0.0)
+    # Lo que llego DE MAS (propinas de la app, un ajuste a favor): va a otros
+    # ingresos. Sin esto un deposito mayor que la deuda no se podia anotar.
+    excedente = Column(Float, default=0.0)
+    # El IVA que retuvo el cliente (contribuyente especial) al pagar: no entra
+    # al banco, queda como credito contra el IVA a pagar (1035).
+    retencion_iva = Column(Float, default=0.0)
+    retencion_iva_pct = Column(Float, nullable=True)
     recibido = Column(Float, nullable=False)
     nota = Column(String, default="")
     anulado = Column(Boolean, default=False)
@@ -757,6 +764,9 @@ class PagoSinFactura(Base):
     # retenido no le llega al beneficiario: se le debe al SENIAT (2060).
     retencion_islr_pct = Column(Float, default=0.0)
     retencion_islr = Column(Float, default=0.0)
+    # Lo que ya se le adelanto y se descuenta de este sueldo (ver concepto
+    # "Anticipo"). Tampoco sale de la caja: ya salio el dia del adelanto.
+    anticipo_descontado = Column(Float, default=0.0)
     pago_fijo_id = Column(Integer, ForeignKey("CFG650_CON_PAGO_FIJO.id"), nullable=True)
     anulado = Column(Boolean, default=False)
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
@@ -764,7 +774,30 @@ class PagoSinFactura(Base):
     @property
     def neto(self):
         """Lo que de verdad salio de la gaveta o del banco."""
-        return round(self.monto - (self.retencion_islr or 0), 2)
+        return round(self.monto - (self.retencion_islr or 0) - (self.anticipo_descontado or 0), 2)
+
+
+class TraspasoFondos(Base):
+    """Plata que cambia de sitio sin ser venta ni gasto.
+
+    Dos casos de todas las semanas que solo se podian hacer con un asiento
+    manual: llevar al banco el efectivo de la gaveta (traspaso) y que el
+    dueno ponga plata de su bolsillo (aporte). Sin anotarlos, el deposito
+    salia como faltante en el cierre y el aporte como sobrante.
+    """
+
+    __tablename__ = "TRX660_CON_TRASPASO"
+
+    id = Column(Integer, primary_key=True)
+    tipo = Column(String, nullable=False)  # traspaso | aporte
+    desde = Column(String, nullable=True)  # forma de pago de origen; nulo en un aporte
+    hacia = Column(String, nullable=False)
+    monto = Column(Float, nullable=False)  # en dolares
+    referencia = Column(String, default="")
+    nota = Column(String, default="")
+    fecha = Column(DateTime, default=ahora)
+    anulado = Column(Boolean, default=False)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
 
 
 class PagoFijo(Base):
@@ -1791,6 +1824,10 @@ class Pedido(Base):
     # contado y en los fiados viejos que nadie ha asignado todavia.
     cliente_id = Column(Integer, ForeignKey("DIM120_VEN_CLIENTE.id"), nullable=True, index=True)
     fiado_saldado = Column(Boolean, default=False)
+    # Lo que se dio por perdido de este fiado (el cliente no va a pagar,
+    # PedidosYa no reconocio el pedido). Va a gasto; deja de deberse.
+    fiado_castigado = Column(Float, nullable=True)
+    fecha_castigo = Column(DateTime, nullable=True)
     fecha_cobro_fiado = Column(DateTime, nullable=True)
     # Quien lo cobro y desde que caja. Sin esto no habia forma de saber quien
     # anulo un pedido ni cuanto entro por cada gaveta con dos tablets.
@@ -1929,7 +1966,7 @@ class Pedido(Base):
         """Lo que el cliente debe HOY. Una sola definicion para todos: la
         pantalla de cuentas por cobrar, el cobro y los libros preguntaban lo
         mismo y cada uno lo sumaba por su cuenta."""
-        return round(max(self.fiado_monto - self.fiado_abonado, 0), 2)
+        return round(max(self.fiado_monto - self.fiado_abonado - (self.fiado_castigado or 0), 0), 2)
 
 
 class PagoPedido(Base):

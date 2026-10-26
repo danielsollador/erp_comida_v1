@@ -58,6 +58,18 @@ def _pagos_de(db: Session, inicio, fin):
     )
 
 
+def _traspasos_de(db: Session, inicio, fin):
+    return (
+        db.query(models.TraspasoFondos)
+        .filter(
+            models.TraspasoFondos.fecha >= inicio,
+            models.TraspasoFondos.fecha < fin,
+            models.TraspasoFondos.anulado.is_(False),
+        )
+        .all()
+    )
+
+
 def _retiros_de(db: Session, inicio, fin):
     return (
         db.query(models.RetiroPropietario)
@@ -145,8 +157,15 @@ def _salidas_por_metodo(db: Session, inicio, fin) -> dict:
     # Lo que se pago desde el modulo Pagos (un sueldo, el alquiler): sale por
     # donde se pago, aunque no sea un retiro de caja.
     for p in _pagos_de(db, inicio, fin):
+        if not p.neto:
+            continue
         m = _normalizar(p.metodo_pago)
         por_metodo[m] = round(por_metodo.get(m, 0.0) + p.neto, 2)
+    # Llevar el efectivo al banco tambien saca plata de la gaveta.
+    for t in _traspasos_de(db, inicio, fin):
+        if t.tipo == "traspaso" and t.desde:
+            m = _normalizar(t.desde)
+            por_metodo[m] = round(por_metodo.get(m, 0.0) + t.monto, 2)
     return por_metodo
 
 
@@ -1171,6 +1190,60 @@ def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session =
         "saldado": restante <= 0,
         "cliente": pedido.cliente,
     }
+
+
+@router.get("/traspasos", response_model=List[schemas.Traspaso])
+def listar_traspasos(rango: Rango = Depends(), db: Session = Depends(get_db)):
+    inicio, fin, _ = rango.resolver(dias=30)
+    return (
+        db.query(models.TraspasoFondos)
+        .filter(models.TraspasoFondos.fecha >= inicio, models.TraspasoFondos.fecha < fin)
+        .order_by(models.TraspasoFondos.id.desc())
+        .all()
+    )
+
+
+@router.post("/traspasos", response_model=schemas.Traspaso)
+def crear_traspaso(body: schemas.TraspasoCreate, db: Session = Depends(get_db)):
+    """Llevar el efectivo al banco, cambiar de gaveta, o que el dueño ponga
+    plata. Ninguno es venta ni gasto, pero los dos mueven la caja."""
+    if not contabilidad.metodo_de_pago_valido(body.hacia):
+        raise HTTPException(status_code=400, detail="¿A dónde va la plata?")
+    desde = None
+    if body.tipo == "traspaso":
+        if not contabilidad.metodo_de_pago_valido(body.desde):
+            raise HTTPException(status_code=400, detail="¿De dónde sale la plata?")
+        if contabilidad.cuenta_de_pago(body.desde) == contabilidad.cuenta_de_pago(body.hacia):
+            raise HTTPException(status_code=400, detail="Sale y entra en el mismo sitio: no hay nada que mover")
+        desde = body.desde
+    referencia = body.referencia.strip()
+    if not referencia and body.hacia in contabilidad.METODOS_CON_REFERENCIA:
+        raise HTTPException(status_code=400, detail="Pon la referencia del depósito o la transferencia")
+    t = models.TraspasoFondos(
+        tipo=body.tipo, desde=desde, hacia=body.hacia, monto=round(body.monto, 2),
+        referencia=referencia, nota=body.nota.strip(), fecha=ahora(), operador_id=body.operador_id,
+    )
+    db.add(t)
+    db.flush()
+    contabilidad.registrar_traspaso(db, t)
+    db.commit()
+    db.refresh(t)
+    return t
+
+
+@router.post("/traspasos/{traspaso_id}/anular", response_model=schemas.Traspaso)
+def anular_traspaso(traspaso_id: int, db: Session = Depends(get_db)):
+    t = db.get(models.TraspasoFondos, traspaso_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+    if t.anulado:
+        raise HTTPException(status_code=409, detail="Ese movimiento ya estaba anulado")
+    _solo_si_el_ejercicio_esta_abierto(db, t.fecha, "ese movimiento")
+    contabilidad.reversar_asiento(db, t.tipo, t.id, f"reverso_{t.tipo}")
+    t.anulado = True
+    db.commit()
+    db.refresh(t)
+    return t
 
 
 @router.get("/retiros", response_model=List[schemas.RetiroPropietario])

@@ -3725,9 +3725,32 @@ class CobroClienteCreate(BaseModel):
     # Lo que se quedo la plataforma. Lo que entro al banco es el saldo de las
     # ventas marcadas menos esto.
     comision: float = Field(default=0.0, ge=0)
+    # Lo que llego DE MAS: propinas de la app o un ajuste a favor.
+    excedente: float = Field(default=0.0, ge=0)
+    # Lo que de verdad entro. Si viene, la comision o lo de mas se calculan
+    # solos (despues de la retencion): es lo que la persona tiene delante.
+    recibido: Optional[float] = Field(default=None, gt=0)
+    # Si el cliente es contribuyente especial y retuvo IVA al pagar: 75 o 100.
+    # Se aplica a las ventas facturadas que no tienen ya su retencion.
+    retencion_iva_pct: Optional[float] = None
     nota: str = ""
     fecha: Optional[datetime.date] = None
     operador_id: Optional[int] = None
+
+
+class AbonoACuenta(BaseModel):
+    """Un pago "a lo que debo", sin decir de cual venta: se aplica de la mas
+    vieja a la mas nueva."""
+    monto: float = Field(gt=0)
+    metodo_pago: str
+    referencia: str = ""
+    nota: str = ""
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+
+
+class DarPorPerdida(BaseModel):
+    motivo: str = ""
 
 
 class CobroCliente(BaseModel):
@@ -3739,6 +3762,8 @@ class CobroCliente(BaseModel):
     referencia: str
     monto: float
     comision: float
+    excedente: float = 0.0
+    retencion_iva: float = 0.0
     recibido: float
     nota: str
     anulado: bool
@@ -3748,7 +3773,7 @@ class CobroCliente(BaseModel):
 class MovimientoCuenta(BaseModel):
     """Una linea del estado de cuenta: una venta a credito (cargo) o un pago."""
     fecha: datetime.datetime
-    tipo: Literal["venta", "abono", "cobro"]
+    tipo: Literal["venta", "abono", "cobro", "perdida"]
     detalle: str
     cargo: float = 0.0
     abono: float = 0.0
@@ -3780,6 +3805,8 @@ class PagoSinFacturaCreate(BaseModel):
     metodo_pago: str
     referencia: str = ""
     retencion_islr_pct: float = Field(default=0.0, ge=0, lt=100)
+    # De un sueldo: cuanto de lo ya adelantado se descuenta ahora.
+    descontar_anticipo: float = Field(default=0.0, ge=0)
     fecha: Optional[datetime.date] = None
     operador_id: Optional[int] = None
 
@@ -3798,6 +3825,7 @@ class PagoSinFactura(BaseModel):
     referencia: str
     retencion_islr_pct: float
     retencion_islr: float
+    anticipo_descontado: float = 0.0
     neto: float
     pago_fijo_id: Optional[int] = None
     anulado: bool
@@ -3833,6 +3861,8 @@ class PagarFijo(BaseModel):
     y hay que poner la referencia si salio del banco."""
     monto: Optional[float] = Field(default=None, gt=0)
     referencia: str = ""
+    # De un sueldo: cuanto anticipo descontar. Sin dato, todo lo pendiente.
+    descontar_anticipo: Optional[float] = Field(default=None, ge=0)
     fecha: Optional[datetime.date] = None
     operador_id: Optional[int] = None
 
@@ -3841,3 +3871,42 @@ class ResumenPagos(BaseModel):
     total: float
     por_concepto: Dict[str, float]
     islr_por_enterar: float
+    anticipos_pendientes: float = 0.0
+
+
+class AnticipoPendiente(BaseModel):
+    beneficiario: str
+    saldo: float
+
+
+class EnterarIslr(BaseModel):
+    # Sin monto: todo lo retenido que falta por enterar.
+    monto: Optional[float] = Field(default=None, gt=0)
+    metodo_pago: str = "Transferencia"
+    referencia: str = ""
+    fecha: Optional[datetime.date] = None
+
+
+class TraspasoCreate(BaseModel):
+    tipo: Literal["traspaso", "aporte"]
+    desde: Optional[str] = None
+    hacia: str
+    monto: float = Field(gt=0)
+    referencia: str = ""
+    nota: str = ""
+    operador_id: Optional[int] = None
+
+
+class Traspaso(BaseModel):
+    id: int
+    tipo: str
+    desde: Optional[str] = None
+    hacia: str
+    monto: float
+    referencia: str
+    nota: str
+    fecha: datetime.datetime
+    anulado: bool
+
+    class Config:
+        from_attributes = True

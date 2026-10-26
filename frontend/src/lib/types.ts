@@ -2463,6 +2463,8 @@ export type CobroCliente = {
   referencia: string
   monto: number
   comision: number
+  excedente: number
+  retencion_iva: number
   recibido: number
   nota: string
   anulado: boolean
@@ -2471,7 +2473,7 @@ export type CobroCliente = {
 
 export type MovimientoCuenta = {
   fecha: string
-  tipo: 'venta' | 'abono' | 'cobro'
+  tipo: 'venta' | 'abono' | 'cobro' | 'perdida'
   detalle: string
   cargo: number
   abono: number
@@ -2503,6 +2505,7 @@ export type PagoSinFactura = {
   referencia: string
   retencion_islr_pct: number
   retencion_islr: number
+  anticipo_descontado: number
   neto: number
   pago_fijo_id: number | null
   anulado: boolean
@@ -2517,12 +2520,13 @@ export type NuevoPago = {
   metodo_pago: string
   referencia: string
   retencion_islr_pct: number
+  descontar_anticipo?: number
   fecha?: string
 }
 
 export type Frecuencia = 'semanal' | 'quincenal' | 'mensual'
 
-export type PagoFijo = Omit<NuevoPago, 'referencia' | 'fecha'> & {
+export type PagoFijo = Omit<NuevoPago, 'referencia' | 'fecha' | 'descontar_anticipo'> & {
   id: number
   frecuencia: Frecuencia
   proximo: string
@@ -2534,4 +2538,19 @@ export type ResumenPagos = {
   total: number
   por_concepto: Record<string, number>
   islr_por_enterar: number
+  anticipos_pendientes: number
+}
+
+export type AnticipoPendiente = { beneficiario: string; saldo: number }
+
+export type Traspaso = {
+  id: number
+  tipo: 'traspaso' | 'aporte'
+  desde: string | null
+  hacia: string
+  monto: number
+  referencia: string
+  nota: string
+  fecha: string
+  anulado: boolean
 }

@@ -381,6 +381,10 @@ equivocada. Al cerrar, cada diferencia queda en los libros.
 Todo billete que sale de la gaveta, para que el cierre cuadre: un «Pago menor»
 (bombona, hielo, un mandado) o un «Retiro del dueño», y de qué gaveta salió
 (Efectivo Bs o Efectivo $). Baja lo que se debe tener en esa gaveta.
+«Depósito al banco»: el efectivo que se lleva al banco (o a la cuenta en
+dólares), con la referencia del depósito; no es gasto, solo cambia de sitio.
+«Entra plata del dueño»: cuando el dueño pone plata de su bolsillo; sube el
+capital y no cuenta como venta. Los dos se anulan desde su lista.
 Los sueldos, el alquiler, la mensualidad del sistema y todo lo que se paga
 por el banco NO van aquí: van en **Pagos** (sección 8.2). La mercancía, en
 Compras.
@@ -421,6 +425,17 @@ anotado se anula desde «Cobros hechos» y las ventas vuelven a deberse. Los
 fiados con un nombre que no es de ninguna ficha salen en «A crédito sin
 ficha» para asignarlos. El abono de una sola venta se sigue haciendo desde
 Ventas.
+- **Retuvo IVA**: si hay facturas marcadas, se elige si el cliente retuvo el
+  75 % o el 100 %. Lo retenido no entra al banco; queda como crédito contra el
+  IVA. El comprobante se carga después en Impuestos.
+- **Entró de más** (propinas de la app, un ajuste a favor): se pregunta y lo
+  de más queda como otro ingreso.
+- **Abonar a lo que debe**: un pago sin decir de cuál venta se aplica de la
+  más vieja a la más nueva. Un pago mitad Zelle y mitad pago móvil son dos
+  abonos.
+- **Perdida**: una venta que no se va a cobrar (PedidosYa no la reconoció) se
+  da por perdida: va a gasto de incobrables y deja de deberse; la venta no se
+  toca. Si al final paga, «Recuperar» en el estado de cuenta.
 
 ### 8.2 Pagos (`/pagos`)
 Lo que el negocio paga **sin factura**: sueldos y nómina, honorarios (la
@@ -429,8 +444,12 @@ mantenimiento. Se pone a quién, el concepto, el monto en dólares o en
 bolívares (se pasa con la tasa BCV del día), de dónde salió y la referencia.
 Cada concepto va a su cuenta de gasto, sin IVA (no hay factura). Si toca
 retenerle ISLR, se pone el porcentaje: se le entrega el neto y lo retenido
-queda como «ISLR retenido por enterar». Si se paga en efectivo, el cierre de
-caja ya lo descuenta. «Pagos fijos»: la quincena de cada empleado, el
+queda como «ISLR retenido por enterar»; «Pagar al SENIAT» lo registra cuando
+se paga la planilla. Si se paga en efectivo, el cierre de caja ya lo
+descuenta. «Anticipo de sueldo»: el adelanto a mitad de quincena; no es gasto
+todavía, y al pagar el sueldo de esa persona se descuenta solo (se puede
+cambiar). «Impuestos y tasas municipales»: patente, aseo. Si el servicio trae
+factura con IVA (CANTV, Corpoelec), va por Compras para recuperar el IVA. «Pagos fijos»: la quincena de cada empleado, el
 alquiler; el día que tocan salen arriba en «Toca pagar» y se confirman con un
 toque (nada se paga solo). Solo lo ven el dueño y Vertigo.
 

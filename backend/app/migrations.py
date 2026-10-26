@@ -121,6 +121,12 @@ COLUMNAS = [
     ("TRX430_COM_COMPRA_SUELTA", "anulada", "BOOLEAN DEFAULT 0"),
     ("TRX110_VEN_PEDIDO", "cliente_id", "INTEGER"),
     ("TRX130_VEN_ABONO_FIADO", "cobro_id", "INTEGER"),
+    ("TRX140_VEN_COBRO", "excedente", "FLOAT DEFAULT 0"),
+    ("TRX140_VEN_COBRO", "retencion_iva", "FLOAT DEFAULT 0"),
+    ("TRX140_VEN_COBRO", "retencion_iva_pct", "FLOAT"),
+    ("TRX650_CON_PAGO", "anticipo_descontado", "FLOAT DEFAULT 0"),
+    ("TRX110_VEN_PEDIDO", "fiado_castigado", "FLOAT"),
+    ("TRX110_VEN_PEDIDO", "fecha_castigo", "DATETIME"),
     ("TRX111_VEN_PEDIDO_DET", "cortesia", "BOOLEAN DEFAULT 0"),
     ("TRX111_VEN_PEDIDO_DET", "precio_lista", "FLOAT DEFAULT 0"),
     # Con DEFAULT: sin el, las categorias que ya existen quedan en NULL y el

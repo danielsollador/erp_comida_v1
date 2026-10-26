@@ -239,9 +239,11 @@ function Detalle({
   const [referencia, setReferencia] = useState('')
   const [entro, setEntro] = useState('')
   const [nota, setNota] = useState('')
+  const [retencion, setRetencion] = useState(0)
   const [error, setError] = useState('')
   const [hecho, setHecho] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const dialogo = useDialogo()
 
   function cargar() {
     api
@@ -260,11 +262,18 @@ function Detalle({
     [estado, marcadas],
   )
   const pct = estado?.cliente.comision_pct ?? 0
+  const marcadasFacturadas = estado?.pendientes.filter((p) => marcadas.has(p.pedido_id) && p.facturado) ?? []
+  // El IVA que retiene el cliente especial, aproximado (16 % incluido en el
+  // precio). El exacto lo calcula el servidor con la tasa de cada factura.
+  const retenidoAprox =
+    Math.round(marcadasFacturadas.reduce((s, p) => s + (p.original * 16) / 116, 0) * (retencion / 100) * 100) / 100
   // Lo que se espera que entre, con la comision pactada. Se puede cambiar:
   // lo que manda es lo que de verdad llego al banco.
-  const sugerido = Math.round(total * (1 - pct / 100) * 100) / 100
+  const sugerido = Math.round((total * (1 - pct / 100) - retenidoAprox) * 100) / 100
   const recibido = entro.trim() === '' ? sugerido : Number(entro.replace(',', '.'))
-  const comision = Math.round((total - recibido) * 100) / 100
+  const diferencia = Math.round((total - retenidoAprox - recibido) * 100) / 100
+  const comision = Math.max(diferencia, 0)
+  const sobra = Math.max(-diferencia, 0)
 
   if (!estado) return error ? <Aviso>{error}</Aviso> : null
   const c = estado.cliente
@@ -281,8 +290,18 @@ function Detalle({
     setError('')
     setHecho('')
     if (!Number.isFinite(recibido) || recibido <= 0) return setError('Pon cuánto entró.')
-    if (comision < 0) return setError(`Entró más de lo que se debe (${dinero(total)}). Revisa el monto o marca más ventas.`)
     if (necesitaReferencia(metodo) && !referencia.trim()) return setError(`Un cobro por ${metodo} necesita su referencia.`)
+    // Entró de más: propinas de la app o un ajuste a favor. Puede ser
+    // real, pero tambien es la forma tipica de un digito de mas.
+    if (sobra > 0) {
+      const ok = await dialogo.confirmar({
+        titulo: 'Entró más de lo que se debía',
+        texto: `Se debían ${dinero(total)} y entraron ${dinero(recibido)}. Los ${dinero(sobra)} de más quedan como otro ingreso (propinas de la app, un ajuste a favor). ¿Es así?`,
+        aceptar: 'Sí, es así',
+        cancelar: 'Corregir',
+      })
+      if (!ok) return
+    }
     setEnviando(true)
     try {
       const r = await api.cobrarVentas({
@@ -290,13 +309,18 @@ function Detalle({
         pedido_ids: [...marcadas],
         metodo_pago: metodo,
         referencia: referencia.trim(),
-        comision,
+        recibido,
+        retencion_iva_pct: retencion || null,
         nota: nota.trim(),
       })
       setHecho(
         `Cobradas ${r.ventas.length} venta(s): entró ${dinero(r.recibido)}` +
-          (r.comision ? ` y ${dinero(r.comision)} quedó como comisión.` : '.'),
+          (r.comision ? `, ${dinero(r.comision)} quedó como comisión` : '') +
+          (r.retencion_iva ? `, ${dinero(r.retencion_iva)} de IVA retenido (falta cargar el comprobante en Impuestos)` : '') +
+          (r.excedente ? `, ${dinero(r.excedente)} de más como otro ingreso` : '') +
+          '.',
       )
+      setRetencion(0)
       setReferencia('')
       setEntro('')
       setNota('')
@@ -305,6 +329,35 @@ function Detalle({
       setError(e instanceof Error ? e.message : 'No se pudo cobrar')
     } finally {
       setEnviando(false)
+    }
+  }
+
+  async function perder(p: VentaPorCobrar) {
+    const motivo = await dialogo.pedirTexto({
+      titulo: `Dar por perdida la venta #${p.numero}`,
+      texto: `Los ${dinero(p.saldo)} que faltan dejan de deberse y van a gasto (incobrables). La venta no se toca. Si al final paga, se recupera desde el estado de cuenta.`,
+      etiqueta: 'Por qué',
+      placeholder: 'Ej. PedidosYa no reconoció el pedido',
+      aceptar: 'Dar por perdida',
+      peligro: true,
+    })
+    if (motivo == null) return
+    try {
+      await api.darPorPerdida(p.pedido_id, motivo)
+      setHecho(`Venta #${p.numero} dada por perdida.`)
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo')
+    }
+  }
+
+  async function recuperar(pedidoId: number) {
+    try {
+      await api.recuperarPerdida(pedidoId)
+      setHecho('La venta vuelve a deberse.')
+      cargar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo')
     }
   }
 
@@ -347,7 +400,8 @@ function Detalle({
                   </th>
                   <th className="py-2">Venta</th>
                   <th className="py-2">Fecha</th>
-                  <th className="py-2 text-right pr-4">Debe</th>
+                  <th className="py-2 text-right">Debe</th>
+                  <th className="py-2 pr-4" />
                 </tr>
               </thead>
               <tbody>
@@ -369,7 +423,12 @@ function Detalle({
                     <td className="py-2 tabular-nums">
                       {fecha(p.fecha)} {p.vencida && <Pastilla tono="ojo">vencida</Pastilla>}
                     </td>
-                    <td className="py-2 pr-4 text-right tabular-nums">{dinero(p.saldo)}</td>
+                    <td className="py-2 text-right tabular-nums">{dinero(p.saldo)}</td>
+                    <td className="py-2 pr-4 text-right">
+                      <button onClick={() => void perder(p)} className="text-xs underline text-neutral-500 hover:text-peligro-600">
+                        Perdida
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -396,6 +455,22 @@ function Detalle({
               ayuda={pct ? `Con ${fmtNum(pct, 1)} % de comisión deberían entrar ${dinero(sugerido)}.` : undefined}
             />
             <Campo etiqueta="Nota (opcional)" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej. semana del 19 al 25" />
+            {/* Solo aparece si hay facturas marcadas: un contribuyente
+                especial retiene el IVA al pagar, no al comprar. */}
+            {marcadasFacturadas.length > 0 && (
+              <Selector
+                etiqueta="¿Retuvo IVA?"
+                value={String(retencion)}
+                onChange={(e) => {
+                  setRetencion(Number(e.target.value))
+                  setEntro('')
+                }}
+              >
+                <option value="0">No retuvo</option>
+                <option value="75">Retuvo el 75 %</option>
+                <option value="100">Retuvo el 100 %</option>
+              </Selector>
+            )}
           </div>
           <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-3">
             <div className="text-sm grid grid-cols-3 gap-2 tabular-nums">
@@ -405,16 +480,38 @@ function Detalle({
               <span>
                 Entra <strong className="block text-base">{Number.isFinite(recibido) ? dinero(recibido) : '—'}</strong>
               </span>
-              <span className={comision < 0 ? 'text-peligro-600' : ''}>
-                Comisión <strong className="block text-base">{Number.isFinite(comision) ? dinero(comision) : '—'}</strong>
-              </span>
+              {sobra > 0 ? (
+                <span className="text-aviso-700">
+                  De más <strong className="block text-base">{dinero(sobra)}</strong>
+                </span>
+              ) : (
+                <span>
+                  Comisión <strong className="block text-base">{Number.isFinite(comision) ? dinero(comision) : '—'}</strong>
+                </span>
+              )}
             </div>
+            {retenidoAprox > 0 && (
+              <p className="text-xs text-neutral-500">
+                IVA retenido ≈ {dinero(retenidoAprox)} (el exacto sale de cada factura). No entra al banco: se descuenta del IVA a pagar.
+              </p>
+            )}
             {error && <Aviso>{error}</Aviso>}
             <Boton ancho onClick={() => void cobrar()} disabled={enviando || marcadas.size === 0}>
               Cobrar {marcadas.size} venta(s)
             </Boton>
           </div>
         </Seccion>
+      )}
+
+      {estado.pendientes.length > 0 && (
+        <AbonoACuenta
+          cliente={c}
+          debe={estado.saldo}
+          alAbonar={(texto) => {
+            setHecho(texto)
+            cargar()
+          }}
+        />
       )}
 
       <Seccion titulo="Estado de cuenta" ayuda="Lo que se le vendió a crédito y lo que ha pagado, con el saldo de cada momento." plano>
@@ -436,7 +533,14 @@ function Detalle({
                 {estado.movimientos.map((m, i) => (
                   <tr key={i} className="border-b border-neutral-50">
                     <td className="px-4 py-2 tabular-nums">{fecha(m.fecha)}</td>
-                    <td className="py-2">{m.detalle}</td>
+                    <td className="py-2">
+                      {m.detalle}
+                      {m.tipo === 'perdida' && m.pedido_id != null && (
+                        <button onClick={() => void recuperar(m.pedido_id!)} className="ml-2 text-xs underline text-neutral-500">
+                          Recuperar
+                        </button>
+                      )}
+                    </td>
                     <td className="py-2 text-right tabular-nums">{m.cargo ? dinero(m.cargo) : ''}</td>
                     <td className="py-2 text-right tabular-nums">{m.abono ? dinero(m.abono) : ''}</td>
                     <td className="py-2 pr-4 text-right tabular-nums font-medium">{dinero(m.saldo)}</td>
@@ -448,6 +552,56 @@ function Detalle({
         )}
       </Seccion>
     </>
+  )
+}
+
+/** "Abono a lo que debo": sin elegir venta, se aplica a la más vieja. Un
+ * pago mitad Zelle y mitad pago móvil son dos abonos. */
+function AbonoACuenta({ cliente, debe, alAbonar }: { cliente: ClienteCredito; debe: number; alAbonar: (texto: string) => void }) {
+  const [monto, setMonto] = useState('')
+  const [metodo, setMetodo] = useState('Efectivo Bs')
+  const [referencia, setReferencia] = useState('')
+  const [error, setError] = useState('')
+  async function abonar() {
+    setError('')
+    const n = Number(monto.replace(',', '.'))
+    if (!(n > 0)) return setError('Pon el monto.')
+    if (n > debe + 0.005) return setError(`Debe ${dinero(debe)}. Si pagó de más, usa «Cobrar» arriba.`)
+    if (necesitaReferencia(metodo) && !referencia.trim()) return setError(`Un abono por ${metodo} necesita su referencia.`)
+    try {
+      await api.abonarACuenta(cliente.id, { monto: n, metodo_pago: metodo, referencia: referencia.trim(), nota: '' })
+      setMonto('')
+      setReferencia('')
+      alAbonar(`Abono de ${dinero(n)} aplicado a las ventas más viejas.`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo abonar')
+    }
+  }
+  return (
+    <Seccion
+      titulo="Abonar a lo que debe"
+      ayuda="Cuando paga una parte sin decir de cuál venta: se aplica de la más vieja a la más nueva. Si paga con dos formas (mitad Zelle, mitad pago móvil), son dos abonos."
+    >
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Campo etiqueta="Monto ($)" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        <Selector etiqueta="Cómo pagó" value={metodo} onChange={(e) => setMetodo(e.target.value)}>
+          {METODOS_PAGO.map((m) => (
+            <option key={m}>{m}</option>
+          ))}
+        </Selector>
+        {necesitaReferencia(metodo) ? (
+          <Campo etiqueta="Referencia" value={referencia} onChange={(e) => setReferencia(e.target.value)} />
+        ) : (
+          <div />
+        )}
+      </div>
+      {error && <div className="mt-3"><Aviso>{error}</Aviso></div>}
+      <div className="mt-3">
+        <Boton tono="suave" onClick={() => void abonar()}>
+          Abonar
+        </Boton>
+      </div>
+    </Seccion>
   )
 }
 
@@ -484,6 +638,8 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
                   {fecha(c.fecha)} · {c.metodo_pago}
                   {c.referencia && ` ref. ${c.referencia}`} · {c.ventas.length || '—'} venta(s)
                   {c.comision > 0 && ` · comisión ${dinero(c.comision)}`}
+                  {c.retencion_iva > 0 && ` · IVA retenido ${dinero(c.retencion_iva)}`}
+                  {c.excedente > 0 && ` · de más ${dinero(c.excedente)}`}
                   {c.nota && ` · ${c.nota}`}
                 </span>
               </span>

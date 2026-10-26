@@ -4,8 +4,9 @@ La venta a credito ya existia (el pago "Fiado" del punto de venta, contra
 1015), pero solo se podia cobrar pedido por pedido y el deudor era un nombre
 escrito a mano. PedidosYa paga la semana de una vez y ya restada su comision:
 con eso habia que partir un deposito en veinte abonos y la comision no tenia
-donde ir. Aqui viven la ficha del cliente, lo que debe cada uno y el cobro
-agrupado. Lo contable sigue en `contabilidad.py`.
+donde ir. Aqui viven la ficha del cliente, lo que debe cada uno, el cobro
+agrupado, el abono "a lo que debo" y la deuda que se da por perdida. Lo
+contable sigue en `contabilidad.py`.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from . import contabilidad, models, schemas
+from . import contabilidad, impuestos, models, schemas
 from .timeutils import ahora
 
 
@@ -59,9 +60,9 @@ def pedidos_por_cobrar(db: Session) -> List[models.Pedido]:
             models.Pedido.devuelto.is_(False),
         )
         .distinct()
-        .order_by(models.Pedido.cerrado_en)
         .all()
     )
+    pedidos.sort(key=_fecha)
     return [p for p in pedidos if p.fiado_saldo > 0]
 
 
@@ -124,6 +125,22 @@ def resumen(db: Session) -> schemas.ResumenCxC:
     )
 
 
+def _detalle_cobro(cobro: models.CobroCliente) -> str:
+    detalle = f"Pago · {cobro.metodo_pago}"
+    if cobro.referencia:
+        detalle += f" ref. {cobro.referencia}"
+    partes = []
+    if cobro.comision:
+        partes.append(f"comisión {cobro.comision:.2f}")
+    if cobro.retencion_iva:
+        partes.append(f"IVA retenido {cobro.retencion_iva:.2f}")
+    if cobro.excedente:
+        partes.append(f"de más {cobro.excedente:.2f}")
+    if partes:
+        detalle += f" (entró {cobro.recibido:.2f}; " + ", ".join(partes) + ")"
+    return detalle
+
+
 def estado_de_cuenta(db: Session, cliente: models.Cliente) -> schemas.EstadoDeCuenta:
     """Lo que se le vendio a credito y lo que pago, en orden, con el saldo
     corrido. Es lo que se le manda al cliente cuando dice "yo no debo eso"."""
@@ -152,14 +169,19 @@ def estado_de_cuenta(db: Session, cliente: models.Cliente) -> schemas.EstadoDeCu
                 + (f" ref. {a.referencia}" if a.referencia else ""),
                 abono=a.monto, pedido_id=p.id,
             ))
+        if p.fiado_castigado:
+            movs.append(schemas.MovimientoCuenta(
+                fecha=p.fecha_castigo or hoy_, tipo="perdida", detalle=f"Venta #{p.numero} dada por perdida",
+                abono=p.fiado_castigado, pedido_id=p.id,
+            ))
     for cobro in cobros_vistos.values():
-        detalle = f"Cobro de {len(cobro.abonos)} venta(s) · {cobro.metodo_pago}"
-        if cobro.referencia:
-            detalle += f" ref. {cobro.referencia}"
-        if cobro.comision:
-            detalle += f" (entró {cobro.recibido:.2f}, comisión {cobro.comision:.2f})"
+        # Lo que el cobro desconto de la deuda: si fue un abono parcial, es
+        # solo lo aplicado, no lo que se debia.
+        aplicado = round(sum(a.monto for a in cobro.abonos), 2)
         movs.append(schemas.MovimientoCuenta(
-            fecha=cobro.fecha, tipo="cobro", detalle=detalle, abono=cobro.monto, cobro_id=cobro.id,
+            fecha=cobro.fecha, tipo="cobro",
+            detalle=_detalle_cobro(cobro).replace("Pago", f"Pago de {len(cobro.abonos)} venta(s)", 1),
+            abono=aplicado, cobro_id=cobro.id,
         ))
     movs.sort(key=lambda m: (m.fecha, 0 if m.tipo == "venta" else 1))
     saldo = 0.0
@@ -182,22 +204,57 @@ class ErrorCobro(Exception):
         self.detalle = detalle
 
 
+def _validar_forma(metodo: str, referencia: str) -> str:
+    if metodo == "Fiado" or not contabilidad.metodo_de_pago_valido(metodo):
+        raise ErrorCobro(400, "Forma de cobro inválida")
+    referencia = (referencia or "").strip()
+    if metodo in contabilidad.METODOS_CON_REFERENCIA and not referencia:
+        raise ErrorCobro(400, f"Un cobro por {metodo} necesita su número de referencia")
+    return referencia
+
+
+def _fecha_cobro(fecha: Optional[datetime.date]) -> datetime.datetime:
+    ya = ahora()
+    if fecha and fecha != ya.date():
+        if fecha > ya.date():
+            raise ErrorCobro(400, "Un cobro no puede tener fecha futura")
+        return datetime.datetime.combine(fecha, datetime.time(12, 0))
+    return ya
+
+
+def _cliente(db: Session, cliente_id: Optional[int]) -> Optional[models.Cliente]:
+    if cliente_id is None:
+        return None
+    cliente = db.get(models.Cliente, cliente_id)
+    if cliente is None:
+        raise ErrorCobro(404, "Cliente no encontrado")
+    return cliente
+
+
+def _retener(db: Session, p: models.Pedido, pct: float, fecha: datetime.datetime) -> float:
+    """El IVA que el cliente retuvo de esta venta, en dolares. Se guarda en el
+    pedido igual que si se hubiera retenido al cobrar en el punto: el Libro de
+    Ventas y la declaracion lo leen de ahi."""
+    if not p.facturado or p.retencion_iva_usd:
+        return 0.0
+    _, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.tasa_iva(db))
+    retenido = impuestos.porcentaje_de(iva, pct)
+    p.retencion_iva_pct = pct
+    p.retencion_iva_usd = retenido
+    if p.tasa_bcv:
+        _, iva_bs = impuestos.desglosar(round(p.total * p.tasa_bcv, 2), p.tasa_iva or impuestos.tasa_iva(db))
+        p.retencion_iva_bs = impuestos.porcentaje_de(iva_bs, pct)
+    return retenido
+
+
 def cobrar(db: Session, body: schemas.CobroClienteCreate) -> models.CobroCliente:
     """Salda de una vez las ventas marcadas. No hace commit."""
-    if body.metodo_pago == "Fiado" or not contabilidad.metodo_de_pago_valido(body.metodo_pago):
-        raise ErrorCobro(400, "Forma de cobro inválida")
-    referencia = (body.referencia or "").strip()
-    if body.metodo_pago in contabilidad.METODOS_CON_REFERENCIA and not referencia:
-        raise ErrorCobro(400, f"Un cobro por {body.metodo_pago} necesita su número de referencia")
+    referencia = _validar_forma(body.metodo_pago, body.referencia)
     ids = list(dict.fromkeys(body.pedido_ids))
     pedidos = db.query(models.Pedido).filter(models.Pedido.id.in_(ids)).all()
     if len(pedidos) != len(ids):
         raise ErrorCobro(404, "Alguna de esas ventas no existe")
-    cliente = None
-    if body.cliente_id is not None:
-        cliente = db.get(models.Cliente, body.cliente_id)
-        if cliente is None:
-            raise ErrorCobro(404, "Cliente no encontrado")
+    cliente = _cliente(db, body.cliente_id)
     for p in pedidos:
         if p.devuelto:
             raise ErrorCobro(409, f"La venta #{p.numero} fue devuelta: ya no se debe")
@@ -207,14 +264,25 @@ def cobrar(db: Session, body: schemas.CobroClienteCreate) -> models.CobroCliente
         # forma de que despues nadie sepa quien pago que.
         if cliente is not None and p.cliente_id not in (None, cliente.id):
             raise ErrorCobro(409, f"La venta #{p.numero} es de otro cliente")
+    pct = body.retencion_iva_pct or 0
+    if pct and pct not in (75, 100):
+        raise ErrorCobro(400, "La retención de IVA es de 75 % o 100 %.")
+    if pct and not any(p.facturado for p in pedidos):
+        raise ErrorCobro(400, "Solo se retiene IVA de ventas facturadas, y ninguna de las marcadas lo está.")
     monto = round(sum(p.fiado_saldo for p in pedidos), 2)
     comision = round(body.comision or 0.0, 2)
-    if comision >= monto:
-        raise ErrorCobro(400, f"La comisión ({comision:.2f}) no puede ser igual o mayor que lo cobrado ({monto:.2f})")
+    excedente = round(body.excedente or 0.0, 2)
+    if comision and excedente:
+        raise ErrorCobro(400, "O entró de menos (comisión) o entró de más, no las dos cosas.")
+    fecha = _fecha_cobro(body.fecha)
+    retencion = round(sum(_retener(db, p, pct, fecha) for p in pedidos), 2) if pct else 0.0
+    if body.recibido is not None:
+        diferencia = round(monto - retencion - body.recibido, 2)
+        comision, excedente = max(diferencia, 0.0), max(-diferencia, 0.0)
+    recibido = round(monto - comision - retencion + excedente, 2)
+    if recibido <= 0:
+        raise ErrorCobro(400, f"Con esa comisión no entra nada: se debían {monto:.2f}")
 
-    fecha = ahora()
-    if body.fecha and body.fecha != fecha.date():
-        fecha = datetime.datetime.combine(body.fecha, datetime.time(12, 0))
     cobro = models.CobroCliente(
         cliente_id=cliente.id if cliente else None,
         fecha=fecha,
@@ -222,7 +290,10 @@ def cobrar(db: Session, body: schemas.CobroClienteCreate) -> models.CobroCliente
         referencia=referencia,
         monto=monto,
         comision=comision,
-        recibido=round(monto - comision, 2),
+        excedente=excedente,
+        retencion_iva=retencion,
+        retencion_iva_pct=pct or None,
+        recibido=recibido,
         nota=body.nota.strip(),
         operador_id=body.operador_id,
     )
@@ -244,9 +315,48 @@ def cobrar(db: Session, body: schemas.CobroClienteCreate) -> models.CobroCliente
     return cobro
 
 
+def abonar_a_cuenta(db: Session, cliente: models.Cliente, body: schemas.AbonoACuenta) -> models.CobroCliente:
+    """"Abono a lo que debo": se aplica de la venta mas vieja a la mas nueva.
+    Un pago mitad Zelle y mitad pago movil son dos abonos. No hace commit."""
+    referencia = _validar_forma(body.metodo_pago, body.referencia)
+    pendientes = [p for p in pedidos_por_cobrar(db) if p.cliente_id == cliente.id]
+    debe = round(sum(p.fiado_saldo for p in pendientes), 2)
+    monto = round(body.monto, 2)
+    if not pendientes:
+        raise ErrorCobro(409, f"{cliente.nombre} no debe nada")
+    if monto > debe + 0.005:
+        raise ErrorCobro(400, f"Debe {debe:.2f}: no se puede abonar {monto:.2f}. Si pagó de más, usa el cobro y marca «entró de más».")
+    fecha = _fecha_cobro(body.fecha)
+    cobro = models.CobroCliente(
+        cliente_id=cliente.id, fecha=fecha, metodo_pago=body.metodo_pago, referencia=referencia,
+        monto=monto, comision=0.0, recibido=monto, nota=body.nota.strip() or "Abono a cuenta",
+        operador_id=body.operador_id,
+    )
+    db.add(cobro)
+    db.flush()
+    queda = monto
+    for p in pendientes:
+        if queda <= 0.004:
+            break
+        parte = round(min(p.fiado_saldo, queda), 2)
+        db.add(models.AbonoFiado(
+            pedido_id=p.id, monto=parte, metodo_pago=body.metodo_pago, referencia=referencia,
+            operador_id=body.operador_id, fecha=fecha, cobro_id=cobro.id,
+        ))
+        db.flush()
+        db.refresh(p)
+        queda = round(queda - parte, 2)
+        if p.fiado_saldo < 0.01:
+            p.fiado_saldado = True
+            p.fecha_cobro_fiado = fecha
+    db.flush()
+    db.refresh(cobro)
+    contabilidad.registrar_cobro_cliente(db, cobro, cliente.nombre)
+    return cobro
+
+
 def anular_cobro(db: Session, cobro: models.CobroCliente) -> None:
-    """Las ventas vuelven a deberse enteras y el asiento se compensa. No hace
-    commit."""
+    """Las ventas vuelven a deberse y el asiento se compensa. No hace commit."""
     if cobro.anulado:
         raise ErrorCobro(409, "Ese cobro ya estaba anulado")
     try:
@@ -254,11 +364,46 @@ def anular_cobro(db: Session, cobro: models.CobroCliente) -> None:
     except contabilidad.ErrorEjercicioCerrado as e:
         raise ErrorCobro(409, str(e))
     for a in list(cobro.abonos):
-        a.pedido.fiado_saldado = False
-        a.pedido.fecha_cobro_fiado = None
+        p = a.pedido
+        p.fiado_saldado = False
+        p.fecha_cobro_fiado = None
+        # La retencion que se anoto con este cobro tambien se va: la venta
+        # vuelve a estar como antes de pagarse.
+        if cobro.retencion_iva and p.retencion_iva_usd and not p.comprobante_retencion_iva:
+            p.retencion_iva_pct = None
+            p.retencion_iva_usd = None
+            p.retencion_iva_bs = None
         db.delete(a)
     contabilidad.reversar_asiento(db, "cobro_cliente", cobro.id, "reverso_cobro_cliente")
     cobro.anulado = True
+
+
+def dar_por_perdida(db: Session, p: models.Pedido, motivo: str) -> float:
+    """Lo que falta de esta venta deja de deberse y va a gasto. No hace commit."""
+    if p.devuelto:
+        raise ErrorCobro(409, "Esa venta fue devuelta: ya no se debe")
+    saldo = p.fiado_saldo
+    if saldo <= 0:
+        raise ErrorCobro(409, "Esa venta ya no debe nada")
+    p.fiado_castigado = round((p.fiado_castigado or 0) + saldo, 2)
+    p.fecha_castigo = ahora()
+    p.fiado_saldado = True
+    contabilidad.registrar_castigo_fiado(db, p, saldo, motivo.strip())
+    return saldo
+
+
+def recuperar_perdida(db: Session, p: models.Pedido) -> None:
+    """Se dio por perdida y al final si va a pagar: vuelve a deberse."""
+    if not p.fiado_castigado:
+        raise ErrorCobro(409, "Esa venta no estaba dada por perdida")
+    try:
+        contabilidad.asegurar_ejercicio_abierto(db, p.fecha_castigo, "esa pérdida")
+    except contabilidad.ErrorEjercicioCerrado as e:
+        raise ErrorCobro(409, str(e))
+    contabilidad.reversar_asiento(db, "castigo_fiado", p.id, "reverso_castigo_fiado")
+    p.fiado_castigado = None
+    p.fecha_castigo = None
+    p.fiado_saldado = False
 
 
 def cobro_a_esquema(cobro: models.CobroCliente) -> schemas.CobroCliente:
@@ -271,6 +416,8 @@ def cobro_a_esquema(cobro: models.CobroCliente) -> schemas.CobroCliente:
         referencia=cobro.referencia or "",
         monto=cobro.monto,
         comision=cobro.comision or 0.0,
+        excedente=cobro.excedente or 0.0,
+        retencion_iva=cobro.retencion_iva or 0.0,
         recibido=cobro.recibido,
         nota=cobro.nota or "",
         anulado=bool(cobro.anulado),
