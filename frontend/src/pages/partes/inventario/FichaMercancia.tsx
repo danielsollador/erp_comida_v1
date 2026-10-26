@@ -120,7 +120,7 @@ export default function FichaMercancia({
     empaque_trae: ing?.empaque_trae ? String(ing.empaque_trae) : '',
     // Lo que se paga por UN empaque. Es como lo dice la gente: "el paquete de
     // 200 sobres me cuesta $3,60", no "cada sobre me cuesta $0,018".
-    costo_empaque: ing?.empaque_trae ? String(Math.round(ing.costo_unitario * ing.empaque_trae * 100) / 100) : '',
+    costo_empaque: ing?.empaque_trae ? String(Math.round(ing.costo_unitario * ing.empaque_trae * 10000) / 10000) : '',
   }))
   const [aviso, setAviso] = useState('')
   const [guardando, setGuardando] = useState(false)

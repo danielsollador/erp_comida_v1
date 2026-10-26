@@ -129,6 +129,26 @@ def anotar(
     return mov
 
 
+def revaluar(db: Session, ingrediente: models.Ingrediente, valor: float, nota: str = "") -> models.MovimientoInventario:
+    """Cambia lo que VALE lo que hay, sin mover cantidad: se corrigio el costo
+    en la ficha. Sin este rastro el extracto no explicaria por que el valor
+    del deposito salto sin que entrara ni saliera nada."""
+    mov = models.MovimientoInventario(
+        ingrediente_id=ingrediente.id,
+        fecha=ahora(),
+        tipo=AJUSTE,
+        cantidad=0.0,
+        costo_unitario=round(ingrediente.costo_unitario or 0, 4),
+        valor=round(valor, 2),
+        costo_promedio=round(ingrediente.costo_unitario or 0, 4),
+        saldo=ingrediente.stock_actual,
+        origen="ajuste_costo",
+        nota=nota,
+    )
+    db.add(mov)
+    return mov
+
+
 def movimientos_de(
     db: Session,
     ingrediente_id: int,

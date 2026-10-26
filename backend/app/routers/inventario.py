@@ -505,8 +505,19 @@ def actualizar_ingrediente(
     _sin_merma_si_es_preparacion(datos)
     confirmar = datos.pop("confirmar", False)
     a_gasto = _revisar_cambio_delicado(db, db_ingrediente, datos, confirmar)
+    costo_antes = db_ingrediente.costo_unitario or 0
     for key, value in datos.items():
         setattr(db_ingrediente, key, value)
+    # Corregir el costo a mano cambia lo que vale lo que hay: el inventario de
+    # los libros tiene que seguirlo (antes solo cambiaba la ficha).
+    stock = db_ingrediente.stock_actual or 0
+    costo_nuevo = db_ingrediente.costo_unitario or 0
+    if not a_gasto and stock > 0 and abs(costo_nuevo - costo_antes) > 1e-9:
+        valor = round(stock * (costo_nuevo - costo_antes), 2)
+        if abs(valor) >= 0.01:
+            kardex.revaluar(db, db_ingrediente, valor,
+                            nota=f"Costo corregido en la ficha: {costo_antes:.4f} → {costo_nuevo:.4f}")
+            contabilidad.registrar_ajuste_de_costo(db, db_ingrediente, valor)
     if a_gasto:
         # Lo que quedaba en el deposito ya no se va a contar: pasa a gasto.
         valor = round(a_gasto * (db_ingrediente.costo_unitario or 0), 2)

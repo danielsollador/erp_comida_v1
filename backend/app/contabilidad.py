@@ -1338,6 +1338,23 @@ def registrar_existencia_no_cargada(db: Session, ingrediente, valor: float) -> N
     )
 
 
+def registrar_ajuste_de_costo(db: Session, ingrediente, valor: float) -> None:
+    """Se corrigio a mano el costo de la ficha y lo que hay cambia de valor.
+
+    Pasa casi siempre con mercancia que se conto o se dio de alta sin costo y
+    se le puso despues (26-oct: 19 refrescos a $0 que valian $1). Es corregir
+    lo que se declaro, no ganar ni perder: va contra capital, igual que la
+    existencia del alta. Sin esto el inventario de los libros y el de las
+    fichas se separaban en silencio.
+    """
+    valor = round(valor, 2)
+    if abs(valor) < 0.01:
+        return
+    lineas = [("1040", valor, 0.0), ("3010", 0.0, valor)] if valor > 0 else [("3010", -valor, 0.0), ("1040", 0.0, -valor)]
+    crear_asiento(db, f"Corrección del costo de {ingrediente.nombre}", lineas, origen="ajuste_costo",
+                  referencia_id=ingrediente.id)
+
+
 def registrar_reverso_compra_insumo(db: Session, compra_id: int) -> None:
     """El asiento de una compra suelta, al reves y por el mismo monto: lo que
     se anulo no deja ni un centavo en los libros."""
