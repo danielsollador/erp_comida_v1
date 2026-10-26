@@ -84,7 +84,7 @@ const TIPO_DE: Record<string, TipoArticulo> = {
   desechables: 'desechable',
 }
 
-const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco']
+const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco', 'Plata del dueño']
 
 export default function Inventario() {
   const [seccion, irA] = useSeccion(SECCIONES)

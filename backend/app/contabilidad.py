@@ -149,6 +149,11 @@ METODOS_CON_REFERENCIA = set(CUENTA_POR_METODO_PAGO) - METODOS_DE_EFECTIVO - MET
 # salir, asi que 1011 solo crecia y la de bolivares mostraba faltantes cuando
 # al proveedor se le pagaba en dolares, que es lo normal en Venezuela.
 METODOS_DE_PAGO = {m: c for m, c in CUENTA_POR_METODO_PAGO.items() if m not in METODOS_SIN_PLATA}
+# Lo que el dueño paga con su plata (de su bolsillo o su cuenta): no sale de
+# ninguna gaveta ni del banco del negocio, es capital que pone (26-oct: una
+# factura quedo "en Efectivo Bs" por defecto y el cierre esperaba -$78).
+# Solo para pagar: no es una forma de cobrar una venta.
+METODOS_DE_PAGO["Plata del dueño"] = "3010"
 
 
 def cuenta_de_pago(metodo: Optional[str], por_defecto: str = "1010") -> str:

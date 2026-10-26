@@ -133,6 +133,23 @@ def _salidas_por_metodo(db: Session, inicio, fin) -> dict:
     return por_metodo
 
 
+def _cobros_fiado_por_metodo(db: Session, inicio, fin) -> dict:
+    """Lo que entro ese dia por fiados cobrados, por forma de pago.
+
+    Es plata del dia: si la señora paga su fiado con el punto, el lote del
+    punto lo trae, y el cierre tiene que esperarlo en esa fila.
+    """
+    por_metodo: dict = {}
+    for a in (
+        db.query(models.AbonoFiado)
+        .filter(models.AbonoFiado.fecha >= inicio, models.AbonoFiado.fecha < fin)
+        .all()
+    ):
+        m = _normalizar(a.metodo_pago or "Efectivo Bs")
+        por_metodo[m] = round(por_metodo.get(m, 0.0) + a.monto, 2)
+    return por_metodo
+
+
 def _cuentas_de(metodo: str) -> str:
     return contabilidad.CUENTA_POR_METODO_PAGO.get(metodo, "1010")
 
@@ -282,6 +299,7 @@ def _desglose(
     """
     ventas = _ventas_por_metodo(db, inicio, fin)
     salidas = _salidas_por_metodo(db, inicio, fin)
+    fiados = _cobros_fiado_por_metodo(db, inicio, fin)
     aperturas = _aperturas_de(db, dia)
     # Lo que se reporto al cerrar, si el dia ya se cerro. Se normaliza el
     # nombre: un cierre viejo pudo guardar la fila como "Tarjeta".
@@ -307,6 +325,10 @@ def _desglose(
         if len(METODOS_POR_CUENTA.get(cuenta, [])) == 1:
             neto_libro = _movimiento_del_dia(db, inicio, fin, cuenta)
             otros = round(neto_libro - (entro - salio), 2)
+        else:
+            # En la cuenta compartida no se sabe por cual metodo entro algo,
+            # salvo el fiado cobrado, que guarda su metodo.
+            otros = round(fiados.get(metodo, 0.0), 2)
 
         # El ajuste de la apertura cae dentro del dia, asi que viene metido en
         # `otros`. Se le saca de ahi y se le suma al fondo, que es donde el
@@ -367,7 +389,7 @@ def _otros_movimientos(db: Session, inicio, fin, desglose) -> List[schemas.OtroM
             continue  # ya va dentro de su propia fila
         neto_libro = _movimiento_del_dia(db, inicio, fin, cuenta)
         explicado = round(
-            sum(l.ventas - l.salidas for l in desglose if l.cuenta == cuenta), 2
+            sum(l.ventas - l.salidas + l.otros for l in desglose if l.cuenta == cuenta), 2
         )
         resto = round(neto_libro - explicado, 2)
         if abs(resto) >= 0.01:

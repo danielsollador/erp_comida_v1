@@ -62,10 +62,15 @@ import type {
  */
 
 const MONEDAS_DE_CARGA = ['$', 'Bs'] as const
+// Ninguna viene marcada: una factura "en Efectivo Bs" sin que nadie lo dijera
+// sacaba la plata de la gaveta del dia y el cierre no cuadraba (26-oct). El
+// efectivo dice DE DONDE: la caja de hoy sale en el cierre; la plata del
+// dueño no toca ninguna gaveta.
 const FORMAS_PAGO = [
-  { valor: 'Efectivo', texto: 'Efectivo Bs' },
-  { valor: 'Efectivo $', texto: 'Efectivo $' },
+  { valor: 'Efectivo', texto: 'Efectivo Bs de la caja' },
+  { valor: 'Efectivo $', texto: 'Efectivo $ de la caja' },
   { valor: 'Banco', texto: 'Banco' },
+  { valor: 'Plata del dueño', texto: 'Plata del dueño' },
   { valor: 'Credito', texto: 'A crédito' },
   { valor: 'Mixto', texto: 'Mixto' },
 ]
@@ -211,7 +216,7 @@ export default function CargarFactura({
   const [notaTasa, setNotaTasa] = useState('')
   // Retencion de IVA (si se es agente): '' = la del proveedor (75 si es nuevo).
   const [retencion, setRetencion] = useState<'' | '0' | '75' | '100'>('')
-  const [formaPago, setFormaPago] = useState(FORMAS_PAGO[0].valor)
+  const [formaPago, setFormaPago] = useState('')
   const [referenciaPago, setReferenciaPago] = useState('')
   // Pago mixto: con qué, cuánto y el comprobante de cada parte (Leider, 8-oct).
   const [partesPago, setPartesPago] = useState<ParteDePago[]>(PARTES_INICIALES)
@@ -709,6 +714,7 @@ export default function CargarFactura({
     if (gastoSinMonto >= 0) return falla('Falta el monto de algún renglón.', `cf-renglon-${gastoSinMonto}`)
     const sinListo = lineas.findIndex((l) => l.abierta && !renglonVacio(l))
     if (sinListo >= 0) return falla('Dale «Listo» a cada renglón antes de guardar.', `cf-renglon-${sinListo}`)
+    if (!formaPago) return falla('Elige cómo se pagó: si fue con billetes de la caja de hoy, sale en el cierre.', 'cf-mixto')
     if (problemaMixto) return falla(`${problemaMixto}.`, 'cf-mixto')
 
     const items = lineas
@@ -903,7 +909,7 @@ export default function CargarFactura({
     if (n) setTimeout(() => document.getElementById(`cf-paso-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
     else setTimeout(() => document.getElementById('cf-totales')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60)
   }
-  const formaTexto = FORMAS_PAGO.find((f) => f.valor === formaPago)?.texto ?? formaPago
+  const formaTexto = FORMAS_PAGO.find((f) => f.valor === formaPago)?.texto ?? (formaPago || 'Sin elegir')
   const resumenMixto = partesPago
     .filter((p) => Number(p.monto) > 0)
     .map((p) => `${FORMAS_PAGO.find((f) => f.valor === p.forma)?.texto ?? p.forma} ${monedaCarga}${fmtNum(Number(p.monto), 2)}`)
