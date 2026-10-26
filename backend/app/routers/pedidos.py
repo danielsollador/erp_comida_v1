@@ -12,6 +12,7 @@ from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
 from .. import consolidacion
+from .. import cuentas_por_cobrar
 from .. import seed
 from . import operadores
 
@@ -1669,6 +1670,8 @@ async def cobrar_pedido(
             status_code=400,
             detail="Para fiar hace falta el nombre del cliente: si no, no hay a quien cobrarle.",
         )
+    if any(p.metodo == "Fiado" for p in pagos):
+        cuentas_por_cobrar.vincular_pedido(db, pedido)
 
     # Quien cobro y desde que caja. Sin esto, con dos tablets no habia forma de
     # saber cuanto entro por cada gaveta ni quien atendio.
@@ -2234,6 +2237,14 @@ async def devolver_pedido(
         )
     if pedido.devuelto:
         raise HTTPException(status_code=409, detail="Este pedido ya fue devuelto")
+    # Cobrada dentro de un pago agrupado (la semana de PedidosYa): parte de
+    # esa plata es la comision, no esta en el banco. Devolverla sacaria del
+    # banco mas de lo que entro.
+    if any(a.cobro_id for a in pedido.abonos):
+        raise HTTPException(
+            status_code=409,
+            detail="Esta venta se cobró junto con otras en Cuentas por cobrar. Anula ese cobro primero.",
+        )
     if pedido.facturado and not body.nota_credito:
         raise HTTPException(
             status_code=400,

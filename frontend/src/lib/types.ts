@@ -970,6 +970,7 @@ export type ResumenCaja = {
   devuelto_monto_hoy: number
   gastos: number
   retiros: number
+  pagos_efectivo: number
   desglose: LineaMetodo[]
   otros_movimientos: OtroMovimiento[]
   fiado_por_cobrar: number
@@ -2406,4 +2407,131 @@ export interface CasoRegistrado {
   issue_url: string
   usuario: string
   pantalla: string
+}
+
+// ── Cuentas por cobrar ─────────────────────────────────────────────────────
+
+export type TipoCliente = 'persona' | 'empresa' | 'plataforma'
+
+export type ClienteCredito = {
+  id: number
+  nombre: string
+  tipo: TipoCliente
+  rif: string
+  telefono: string
+  comision_pct: number
+  dias_credito: number
+  nota: string
+  activo: boolean
+}
+
+export type ClienteConSaldo = ClienteCredito & {
+  saldo: number
+  ventas: number
+  mas_vieja_dias: number | null
+  vencido: number
+}
+
+export type VentaPorCobrar = {
+  pedido_id: number
+  numero: number
+  cliente: string
+  cliente_id: number | null
+  fecha: string
+  dias: number
+  original: number
+  abonado: number
+  saldo: number
+  facturado: boolean
+  numero_factura: string | null
+  vencida: boolean
+}
+
+export type ResumenCxC = {
+  total: number
+  vencido: number
+  clientes: ClienteConSaldo[]
+  sin_ficha: VentaPorCobrar[]
+}
+
+export type CobroCliente = {
+  id: number
+  cliente_id: number | null
+  cliente: string
+  fecha: string
+  metodo_pago: string
+  referencia: string
+  monto: number
+  comision: number
+  recibido: number
+  nota: string
+  anulado: boolean
+  ventas: number[]
+}
+
+export type MovimientoCuenta = {
+  fecha: string
+  tipo: 'venta' | 'abono' | 'cobro'
+  detalle: string
+  cargo: number
+  abono: number
+  saldo: number
+  pedido_id: number | null
+  cobro_id: number | null
+}
+
+export type EstadoDeCuenta = {
+  cliente: ClienteCredito
+  saldo: number
+  pendientes: VentaPorCobrar[]
+  movimientos: MovimientoCuenta[]
+}
+
+// ── Pagos sin factura ──────────────────────────────────────────────────────
+
+export type PagoSinFactura = {
+  id: number
+  fecha: string
+  beneficiario: string
+  concepto: string
+  descripcion: string
+  monto: number
+  moneda: 'USD' | 'Bs'
+  monto_bs: number | null
+  tasa: number | null
+  metodo_pago: string
+  referencia: string
+  retencion_islr_pct: number
+  retencion_islr: number
+  neto: number
+  pago_fijo_id: number | null
+  anulado: boolean
+}
+
+export type NuevoPago = {
+  beneficiario: string
+  concepto: string
+  descripcion: string
+  monto: number
+  moneda: 'USD' | 'Bs'
+  metodo_pago: string
+  referencia: string
+  retencion_islr_pct: number
+  fecha?: string
+}
+
+export type Frecuencia = 'semanal' | 'quincenal' | 'mensual'
+
+export type PagoFijo = Omit<NuevoPago, 'referencia' | 'fecha'> & {
+  id: number
+  frecuencia: Frecuencia
+  proximo: string
+  activo: boolean
+  toca: boolean
+}
+
+export type ResumenPagos = {
+  total: number
+  por_concepto: Record<string, number>
+  islr_por_enterar: number
 }

@@ -120,6 +120,14 @@ import type {
   CostoTeoricoFila,
   CostoIndirecto,
   CostoParaPrecios,
+  ClienteCredito,
+  CobroCliente,
+  EstadoDeCuenta,
+  NuevoPago,
+  PagoFijo,
+  PagoSinFactura,
+  ResumenCxC,
+  ResumenPagos,
 } from './types'
 import { abrirCanalEnVivo, cabecerasApp, recogerToken, urlApi } from './plataforma'
 import { queryRango, type Rango } from './fechas'
@@ -843,6 +851,44 @@ export const api = {
     req<{ variante_id: number; nombre: string; cantidad: number }[]>(`/inventario/combos/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
   actualizarReceta: (varianteId: number, items: { ingrediente_id: number; cantidad_por_unidad: number }[]) =>
     req<RecetaItem[]>(`/inventario/recetas/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
+
+  // Cuentas por cobrar
+  resumenCxC: () => req<ResumenCxC>('/cobranzas/resumen'),
+  listarClientesCredito: () => req<ClienteCredito[]>('/cobranzas/clientes'),
+  guardarClienteCredito: (c: Omit<ClienteCredito, 'id'>, id?: number) =>
+    req<ClienteCredito>(id ? `/cobranzas/clientes/${id}` : '/cobranzas/clientes', {
+      method: id ? 'PUT' : 'POST',
+      body: JSON.stringify(c),
+    }),
+  estadoDeCuenta: (clienteId: number) => req<EstadoDeCuenta>(`/cobranzas/clientes/${clienteId}/estado`),
+  asignarClienteAVenta: (pedidoId: number, clienteId: number) =>
+    req(`/cobranzas/ventas/${pedidoId}/cliente`, { method: 'POST', body: JSON.stringify({ cliente_id: clienteId }) }),
+  listarCobrosClientes: () => req<CobroCliente[]>('/cobranzas/cobros'),
+  cobrarVentas: (datos: {
+    cliente_id: number | null
+    pedido_ids: number[]
+    metodo_pago: string
+    referencia: string
+    comision: number
+    nota: string
+    fecha?: string
+  }) => req<CobroCliente>('/cobranzas/cobros', { method: 'POST', body: JSON.stringify(datos) }),
+  anularCobroCliente: (id: number) => req<CobroCliente>(`/cobranzas/cobros/${id}/anular`, { method: 'POST' }),
+
+  // Pagos sin factura
+  listarPagos: (r?: Rango) => req<PagoSinFactura[]>(`/egresos${conRango(r)}`),
+  resumenPagos: (r?: Rango) => req<ResumenPagos>(`/egresos/resumen${conRango(r)}`),
+  beneficiarios: () => req<string[]>('/egresos/beneficiarios'),
+  registrarPago: (p: NuevoPago) => req<PagoSinFactura>('/egresos', { method: 'POST', body: JSON.stringify(p) }),
+  anularPago: (id: number) => req<PagoSinFactura>(`/egresos/${id}/anular`, { method: 'POST' }),
+  listarPagosFijos: () => req<PagoFijo[]>('/egresos/fijos'),
+  guardarPagoFijo: (f: Omit<PagoFijo, 'id' | 'toca'>, id?: number) =>
+    req<PagoFijo>(id ? `/egresos/fijos/${id}` : '/egresos/fijos', {
+      method: id ? 'PUT' : 'POST',
+      body: JSON.stringify(f),
+    }),
+  pagarFijo: (id: number, datos: { monto?: number; referencia: string }) =>
+    req<PagoSinFactura>(`/egresos/fijos/${id}/pagar`, { method: 'POST', body: JSON.stringify(datos) }),
 
   listarGastos: (r?: Rango) => req<Gasto[]>(`/caja/gastos${conRango(r)}`),
   crearGasto: (descripcion: string, categoria: string, monto: number, metodo_pago = 'Efectivo') =>

@@ -11,7 +11,7 @@ import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { api } from '../lib/api'
 import { Respuesta } from '../components/ChatAyuda'
-import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
+import { METODOS_CON_REFERENCIA, etiquetaMetodo } from '../lib/pagos'
 import type {
   CierreCaja,
   CobroDelDia,
@@ -29,7 +29,7 @@ import type {
  * EL ORDEN ES EL DE LA CABEZA DEL DUEÑO, no el del modelo de datos:
  *
  *   1. Qué vendí.              (y qué se anuló, que es la otra mitad)
- *   2. Qué salió.              (gastos y retiros)
+ *   2. Qué salió.              (retiros de caja)
  *   3. Por dónde entró.        (desglose por forma de pago)
  *   4. ¿Cuadra?                (el desglose contra las ventas)
  *   5. Contar.                 (un número por forma de pago)
@@ -40,11 +40,13 @@ import type {
  */
 const SECCIONES = [
   { id: 'cierre', texto: 'Cierre de caja' },
-  { id: 'movimientos', texto: 'Gastos y retiros' },
+  { id: 'movimientos', texto: 'Retiros de caja' },
   { id: 'historial', texto: 'Historial' },
 ]
 
-const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
+// Un retiro de caja sale de una gaveta. Lo que se paga por el banco (un
+// sueldo, el alquiler) va por Pagos, que tambien sabe a quien y por que.
+const GAVETAS = ['Efectivo Bs', 'Efectivo $']
 
 function hoyISO() {
   const d = new Date()
@@ -334,20 +336,20 @@ function Ventas({ r }: { r: ResumenCaja }) {
 
 /** 2. Qué salió de la caja que no fue una venta. */
 function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => void }) {
-  const hay = r.gastos > 0 || r.retiros > 0 || r.otros_movimientos.length > 0
+  const hay = r.gastos > 0 || r.retiros > 0 || r.pagos_efectivo > 0 || r.otros_movimientos.length > 0
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <div className="flex items-baseline justify-between gap-2 mb-3">
-        <h2 className="font-semibold">Gastos y retiros</h2>
+        <h2 className="font-semibold">Retiros de caja</h2>
         <button onClick={irAMovimientos} className="text-xs font-medium text-acento-600 underline">
           Registrar uno
         </button>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Tile
-          titulo="Gastos"
+          titulo="Pagos menores"
           valor={r.gastos}
-          detalle="bombona, vasos, pitillos…"
+          detalle="bombona, hielo, un mandado…"
           tono={r.gastos > 0 ? 'malo' : 'apagado'}
         />
         <Tile
@@ -357,6 +359,13 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
           tono={r.retiros > 0 ? 'malo' : 'apagado'}
         />
       </div>
+      {/* Un sueldo o el alquiler pagado en efectivo desde Pagos tambien sale
+          de la gaveta: se dice aqui para que nadie lo anote dos veces. */}
+      {r.pagos_efectivo > 0 && (
+        <p className="text-xs text-neutral-500 mt-3">
+          Además salieron {dinero(r.pagos_efectivo)} en efectivo por Pagos (sueldos, alquiler…). Ya están descontados.
+        </p>
+      )}
       {/* Pagarle a un proveedor tambien mueve la caja, y no es ninguno de los
           dos. Si no se dijera, al contar apareceria como un descuadre sin
           explicacion. */}
@@ -1115,13 +1124,15 @@ function CuadrarCaja({
 }
 
 /**
- * Gastos y retiros.
+ * Retiros de caja: la plata que sale de la gaveta, para que el cierre cuadre.
  *
- * Los dos salen de la caja, y por eso hay que decir POR DONDE: si se cobro
- * 100 en efectivo y salieron 50 para una bombona, al contar tienen que
- * aparecer 50. Sin esa pregunta, el cierre siempre iba a dar faltante.
+ * Nada mas. Hay que decir de QUE gaveta: si se cobro 100 en efectivo y
+ * salieron 50 para una bombona, al contar tienen que aparecer 50. Antes esto
+ * se llamaba "Gastos" y el dueño buscaba aqui donde anotar la nomina o la
+ * mensualidad del sistema (26-oct): eso es Pagos, que sabe a quien y por que
+ * concepto, y sale casi siempre del banco.
  *
- * NADA DE MERCANCIA. Un gasto no mueve inventario: para eso estan Compras e
+ * NADA DE MERCANCIA. Un retiro no mueve inventario: para eso estan Compras e
  * Inventario, que si registran lo que entro al deposito y a que costo.
  */
 function Movimientos({
@@ -1137,9 +1148,8 @@ function Movimientos({
 }) {
   const [tipo, setTipo] = useState<'gasto' | 'retiro'>('gasto')
   const [descripcion, setDescripcion] = useState('')
-  const [categoria, setCategoria] = useState(CATEGORIAS_GASTO[0])
   const [monto, setMonto] = useState('')
-  const [metodo, setMetodo] = useState(METODOS_PAGO[0])
+  const [metodo, setMetodo] = useState(GAVETAS[0])
   const [error, setError] = useState('')
   const { deshacible, oculto } = useDeshacer()
 
@@ -1150,7 +1160,7 @@ function Movimientos({
     setError('')
     try {
       if (tipo === 'gasto') {
-        await api.crearGasto(descripcion.trim(), categoria, n, metodo)
+        await api.crearGasto(descripcion.trim(), 'Otros', n, metodo)
       } else {
         await api.crearRetiro(n, metodo, descripcion.trim())
       }
@@ -1167,7 +1177,7 @@ function Movimientos({
   // servidor, asi que la orden espera esos segundos antes de salir.
   const alFallar = (e: unknown) => setError(e instanceof Error ? e.message : 'No se pudo borrar')
   function borrarGasto(id: number) {
-    deshacible({ clave: `gasto:${id}`, texto: 'Gasto borrado', ejecutar: () => api.eliminarGasto(id), alTerminar: alCambiar, alFallar })
+    deshacible({ clave: `gasto:${id}`, texto: 'Retiro borrado', ejecutar: () => api.eliminarGasto(id), alTerminar: alCambiar, alFallar })
   }
 
   function borrarRetiro(id: number) {
@@ -1179,11 +1189,12 @@ function Movimientos({
   return (
     <>
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-        <h2 className="font-semibold mb-1">Registrar</h2>
+        <h2 className="font-semibold mb-1">Sacar plata de la caja</h2>
         <p className="text-xs text-neutral-500 mb-3">
-          Un <strong>gasto</strong> es algo que el negocio pagó (bombona, vasos, pitillos). Un{' '}
-          <strong>retiro</strong> es plata que se lleva el dueño. Ninguno de los dos es mercancía:
-          eso va por Compras, que sí mueve el inventario.
+          Anota aquí todo billete que salga de la gaveta, para que el cierre cuadre: un{' '}
+          <strong>pago menor</strong> (bombona, hielo, un mandado) o lo que se lleva el dueño. Los
+          sueldos, el alquiler y lo que pagas por el banco van en <strong>Pagos</strong>; la
+          mercancía, en <strong>Compras</strong>.
         </p>
 
         <div className="flex gap-2 mb-3">
@@ -1197,7 +1208,7 @@ function Movimientos({
                   : 'border-neutral-300 text-neutral-600'
               }`}
             >
-              {t === 'gasto' ? 'Gasto' : 'Retiro del dueño'}
+              {t === 'gasto' ? 'Pago menor' : 'Retiro del dueño'}
             </button>
           ))}
         </div>
@@ -1210,29 +1221,15 @@ function Movimientos({
             className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm"
           />
           <div className="flex flex-wrap gap-2">
-            {esGasto && (
-              <select
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-                className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-              >
-                {CATEGORIAS_GASTO.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            )}
-            {/* POR DONDE sale la plata. Es lo que hace que el cierre cuadre:
-                sin esto, un sueldo pagado por transferencia bajaba igual el
-                efectivo esperado. */}
+            {/* DE QUE GAVETA sale la plata. Es lo que hace que el cierre
+                cuadre: los bolivares y los dolares se cuentan aparte. */}
             <select
               value={metodo}
               onChange={(e) => setMetodo(e.target.value)}
               className="flex-1 min-w-[10rem] border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-              title="De dónde sale la plata"
+              title="De qué gaveta sale la plata"
             >
-              {METODOS_PAGO.map((m) => (
+              {GAVETAS.map((m) => (
                 <option key={m} value={m}>
                   De {m}
                 </option>
@@ -1256,13 +1253,13 @@ function Movimientos({
       </div>
 
       <ListaMovimientos
-        titulo="Gastos"
+        titulo="Pagos menores"
         etiqueta={etiquetaRango(rango)}
         filas={gastos.filter((g) => !oculto(`gasto:${g.id}`)).map((g) => ({
           id: g.id,
           fecha: g.fecha,
           texto: g.descripcion,
-          detalle: `${g.categoria} · de ${g.metodo_pago}`,
+          detalle: `de ${g.metodo_pago}`,
           monto: g.monto,
           borrar: () => borrarGasto(g.id),
         }))}

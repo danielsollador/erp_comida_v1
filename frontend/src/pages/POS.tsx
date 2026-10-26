@@ -247,6 +247,15 @@ export default function POS() {
   const [motivoDescuento, setMotivoDescuento] = useState('')
   const [propina, setPropina] = useState('')
   const [cliente, setCliente] = useState('')
+  // Los clientes a credito (PedidosYa, empresas): se sugieren al escribir el
+  // nombre para que el fiado caiga en su cuenta y no en un nombre suelto.
+  const [clientesCredito, setClientesCredito] = useState<string[]>([])
+  useEffect(() => {
+    api
+      .listarClientesCredito()
+      .then((cs) => setClientesCredito(cs.filter((c) => c.activo).map((c) => c.nombre)))
+      .catch(() => setClientesCredito([]))
+  }, [])
   // A nombre de quien va la comanda que se esta armando. Es otro estado que
   // `cliente`: aquel es el del cobro (una comanda ya tomada), este viaja con
   // el pedido cuando se manda a cocina.
@@ -2968,8 +2977,14 @@ export default function POS() {
                   value={cliente}
                   onChange={(e) => setCliente(e.target.value)}
                   placeholder="Cliente (opcional)"
+                  list="clientes-credito"
                   className="flex-1 min-w-0 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm"
                 />
+                <datalist id="clientes-credito">
+                  {clientesCredito.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
                 <button
                   type="button"
                   onClick={() => setConAjustes((v) => !v)}

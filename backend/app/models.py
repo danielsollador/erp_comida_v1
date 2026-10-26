@@ -662,8 +662,132 @@ class AbonoFiado(Base):
     referencia = Column(String, default="")
     fecha = Column(DateTime, default=ahora)
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    # Si entro en un cobro agrupado (PedidosYa paga la semana de una vez), el
+    # cobro. Nulo = abono suelto desde Ventas.
+    cobro_id = Column(Integer, ForeignKey("TRX140_VEN_COBRO.id"), nullable=True, index=True)
 
     pedido = relationship("Pedido", back_populates="abonos")
+    cobro = relationship("CobroCliente", back_populates="abonos")
+
+
+class Cliente(Base):
+    """A quien se le vende a credito: PedidosYa, una empresa, un vecino.
+
+    Antes el fiado guardaba solo un nombre escrito a mano en el pedido, y
+    "PedidosYa", "Pedidos ya" y "PEDIDOSYA" eran tres deudores distintos: no
+    habia forma de decir cuanto debe cada uno ni de cobrarle la semana junta.
+    El pedido sigue guardando su nombre (`Pedido.cliente`) para que uno viejo
+    no cambie si la ficha se edita; `cliente_id` es lo que lo ata a la cuenta.
+    """
+
+    __tablename__ = "DIM120_VEN_CLIENTE"
+
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String, nullable=False)
+    tipo = Column(String, default="persona")  # persona | empresa | plataforma
+    rif = Column(String, default="")
+    telefono = Column(String, default="")
+    # Lo que la plataforma se queda de cada venta. Se propone al cobrar, no se
+    # impone: el monto que de verdad llego al banco es el que manda.
+    comision_pct = Column(Float, default=0.0)
+    # Plazo que se le da. Pasado el plazo la deuda se ve como vencida.
+    dias_credito = Column(Integer, default=0)
+    nota = Column(String, default="")
+    activo = Column(Boolean, default=True)
+    creado = Column(DateTime, default=ahora)
+
+
+class CobroCliente(Base):
+    """Un pago que salda varias ventas a credito de una vez.
+
+    PedidosYa no paga pedido por pedido: deposita la semana, ya restada su
+    comision. Cobrarlo de a uno obligaba a partir un solo deposito en veinte
+    abonos con la misma referencia, y la comision no tenia donde ir: o se
+    dejaba la deuda viva por la diferencia o se inventaba un "descuento".
+    Aqui `monto` es lo que se descuenta de lo que debia, `comision` lo que se
+    quedo la plataforma (va a gasto) y `recibido` lo que entro al banco.
+    """
+
+    __tablename__ = "TRX140_VEN_COBRO"
+
+    id = Column(Integer, primary_key=True)
+    cliente_id = Column(Integer, ForeignKey("DIM120_VEN_CLIENTE.id"), nullable=True, index=True)
+    fecha = Column(DateTime, default=ahora)
+    metodo_pago = Column(String, nullable=False)
+    referencia = Column(String, default="")
+    monto = Column(Float, nullable=False)
+    comision = Column(Float, default=0.0)
+    recibido = Column(Float, nullable=False)
+    nota = Column(String, default="")
+    anulado = Column(Boolean, default=False)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+
+    cliente = relationship("Cliente")
+    abonos = relationship("AbonoFiado", back_populates="cobro")
+
+
+class PagoSinFactura(Base):
+    """Lo que el negocio paga sin factura de por medio: un sueldo, el alquiler,
+    un tecnico, la mensualidad del sistema.
+
+    No es Caja > Retiros de caja: eso es la plata que sale de la gaveta y nada
+    mas. Un sueldo se paga casi siempre por pago movil y no toca la gaveta, y
+    lo que el dueno necesita saber de el es a quien, por que concepto y cuanto
+    va en el mes -- no solo que salio. Tampoco es Compras: no hay factura, asi
+    que no hay credito fiscal ni va al Libro de Compras. La mercancia sin
+    factura si va por Compras (compra suelta): mueve inventario.
+    """
+
+    __tablename__ = "TRX650_CON_PAGO"
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(DateTime, default=ahora)
+    beneficiario = Column(String, nullable=False)
+    concepto = Column(String, nullable=False)  # ver contabilidad.CUENTA_POR_CONCEPTO_PAGO
+    descripcion = Column(String, default="")
+    # En dolares, como todos los libros. Si se pago en bolivares, `monto_bs` y
+    # la tasa del dia quedan congelados al lado.
+    monto = Column(Float, nullable=False)
+    moneda = Column(String, default="USD")  # USD | Bs
+    monto_bs = Column(Float, nullable=True)
+    tasa = Column(Float, nullable=True)
+    metodo_pago = Column(String, nullable=False)
+    referencia = Column(String, default="")
+    # Retencion de ISLR (honorarios a una persona natural, por ejemplo). Lo
+    # retenido no le llega al beneficiario: se le debe al SENIAT (2060).
+    retencion_islr_pct = Column(Float, default=0.0)
+    retencion_islr = Column(Float, default=0.0)
+    pago_fijo_id = Column(Integer, ForeignKey("CFG650_CON_PAGO_FIJO.id"), nullable=True)
+    anulado = Column(Boolean, default=False)
+    operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+
+    @property
+    def neto(self):
+        """Lo que de verdad salio de la gaveta o del banco."""
+        return round(self.monto - (self.retencion_islr or 0), 2)
+
+
+class PagoFijo(Base):
+    """Un pago que se repite: la nomina de la quincena, el alquiler del mes.
+
+    No se paga solo -- nadie quiere que el sistema mueva plata sin que lo vea
+    una persona--: el dia que toca aparece como pendiente, ya lleno, y basta
+    confirmarlo.
+    """
+
+    __tablename__ = "CFG650_CON_PAGO_FIJO"
+
+    id = Column(Integer, primary_key=True)
+    beneficiario = Column(String, nullable=False)
+    concepto = Column(String, nullable=False)
+    descripcion = Column(String, default="")
+    monto = Column(Float, nullable=False)  # en la moneda de `moneda`
+    moneda = Column(String, default="USD")
+    metodo_pago = Column(String, nullable=False)
+    retencion_islr_pct = Column(Float, default=0.0)
+    frecuencia = Column(String, default="mensual")  # semanal | quincenal | mensual
+    proximo = Column(Date, nullable=False)
+    activo = Column(Boolean, default=True)
 
 
 class DeclaracionIva(Base):
@@ -1663,6 +1787,9 @@ class Pedido(Base):
     # segundo intento devuelve el pedido que ya existe en vez de crear otro.
     clave_cliente = Column(String, nullable=True, unique=True, index=True)
     cliente = Column(String, default="")
+    # La ficha del cliente a credito (ver Cliente). Nulo en las ventas de
+    # contado y en los fiados viejos que nadie ha asignado todavia.
+    cliente_id = Column(Integer, ForeignKey("DIM120_VEN_CLIENTE.id"), nullable=True, index=True)
     fiado_saldado = Column(Boolean, default=False)
     fecha_cobro_fiado = Column(DateTime, nullable=True)
     # Quien lo cobro y desde que caja. Sin esto no habia forma de saber quien

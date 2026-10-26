@@ -1470,6 +1470,8 @@ class ResumenCaja(BaseModel):
     # --- lo que salio ---
     gastos: float = 0
     retiros: float = 0
+    # Lo que se pago desde Pagos (sueldos, alquiler) en efectivo ese dia.
+    pagos_efectivo: float = 0
 
     desglose: List[LineaMetodo] = []
     otros_movimientos: List[OtroMovimiento] = []
@@ -3660,3 +3662,182 @@ class ResultadoAccion(BaseModel):
     texto: str
     # Para el historial de la IA (el pedido_id de lo creado); no se muestra.
     nota: str = ""
+
+
+# ── Cuentas por cobrar ──────────────────────────────────────────────────────
+
+class ClienteCreate(BaseModel):
+    nombre: str
+    tipo: Literal["persona", "empresa", "plataforma"] = "persona"
+    rif: str = ""
+    telefono: str = ""
+    comision_pct: float = Field(default=0.0, ge=0, lt=100)
+    dias_credito: int = Field(default=0, ge=0)
+    nota: str = ""
+    activo: bool = True
+
+
+class Cliente(ClienteCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ClienteConSaldo(Cliente):
+    """Una fila de la portada de cuentas por cobrar."""
+    saldo: float
+    ventas: int
+    # Dias de la venta mas vieja que sigue debiendose.
+    mas_vieja_dias: Optional[int] = None
+    vencido: float = 0.0
+
+
+class VentaPorCobrar(BaseModel):
+    pedido_id: int
+    numero: int
+    cliente: str
+    cliente_id: Optional[int] = None
+    fecha: datetime.datetime
+    dias: int
+    original: float
+    abonado: float
+    saldo: float
+    facturado: bool = False
+    numero_factura: Optional[str] = None
+    vencida: bool = False
+
+
+class ResumenCxC(BaseModel):
+    total: float
+    vencido: float
+    clientes: List[ClienteConSaldo]
+    # Fiados con un nombre escrito a mano que no es de ninguna ficha: hay que
+    # asignarlos para que entren en la cuenta de alguien.
+    sin_ficha: List[VentaPorCobrar]
+
+
+class CobroClienteCreate(BaseModel):
+    cliente_id: Optional[int] = None
+    pedido_ids: List[int] = Field(min_length=1)
+    metodo_pago: str
+    referencia: str = ""
+    # Lo que se quedo la plataforma. Lo que entro al banco es el saldo de las
+    # ventas marcadas menos esto.
+    comision: float = Field(default=0.0, ge=0)
+    nota: str = ""
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+
+
+class CobroCliente(BaseModel):
+    id: int
+    cliente_id: Optional[int] = None
+    cliente: str = ""
+    fecha: datetime.datetime
+    metodo_pago: str
+    referencia: str
+    monto: float
+    comision: float
+    recibido: float
+    nota: str
+    anulado: bool
+    ventas: List[int] = []
+
+
+class MovimientoCuenta(BaseModel):
+    """Una linea del estado de cuenta: una venta a credito (cargo) o un pago."""
+    fecha: datetime.datetime
+    tipo: Literal["venta", "abono", "cobro"]
+    detalle: str
+    cargo: float = 0.0
+    abono: float = 0.0
+    saldo: float = 0.0
+    pedido_id: Optional[int] = None
+    cobro_id: Optional[int] = None
+
+
+class EstadoDeCuenta(BaseModel):
+    cliente: Cliente
+    saldo: float
+    pendientes: List[VentaPorCobrar]
+    movimientos: List[MovimientoCuenta]
+
+
+class AsignarCliente(BaseModel):
+    cliente_id: int
+
+
+# ── Pagos sin factura ───────────────────────────────────────────────────────
+
+class PagoSinFacturaCreate(BaseModel):
+    beneficiario: str
+    concepto: str
+    descripcion: str = ""
+    # En la moneda de `moneda`. En Bs se pasa a dolares con la tasa BCV del dia.
+    monto: float = Field(gt=0)
+    moneda: Literal["USD", "Bs"] = "USD"
+    metodo_pago: str
+    referencia: str = ""
+    retencion_islr_pct: float = Field(default=0.0, ge=0, lt=100)
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+
+
+class PagoSinFactura(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    beneficiario: str
+    concepto: str
+    descripcion: str
+    monto: float
+    moneda: str
+    monto_bs: Optional[float] = None
+    tasa: Optional[float] = None
+    metodo_pago: str
+    referencia: str
+    retencion_islr_pct: float
+    retencion_islr: float
+    neto: float
+    pago_fijo_id: Optional[int] = None
+    anulado: bool
+
+    class Config:
+        from_attributes = True
+
+
+class PagoFijoCreate(BaseModel):
+    beneficiario: str
+    concepto: str
+    descripcion: str = ""
+    monto: float = Field(gt=0)
+    moneda: Literal["USD", "Bs"] = "USD"
+    metodo_pago: str
+    retencion_islr_pct: float = Field(default=0.0, ge=0, lt=100)
+    frecuencia: Literal["semanal", "quincenal", "mensual"] = "mensual"
+    proximo: datetime.date
+    activo: bool = True
+
+
+class PagoFijo(PagoFijoCreate):
+    id: int
+    # El dia que toca ya llego (o paso) y no se ha pagado.
+    toca: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class PagarFijo(BaseModel):
+    """Confirmar un pago fijo: se puede corregir el monto (subio el alquiler)
+    y hay que poner la referencia si salio del banco."""
+    monto: Optional[float] = Field(default=None, gt=0)
+    referencia: str = ""
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+
+
+class ResumenPagos(BaseModel):
+    total: float
+    por_concepto: Dict[str, float]
+    islr_por_enterar: float

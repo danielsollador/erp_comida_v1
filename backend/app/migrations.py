@@ -119,6 +119,8 @@ COLUMNAS = [
     ("TRX110_VEN_PEDIDO", "entregado_en", "DATETIME"),
     ("TRX110_VEN_PEDIDO", "por_retirar_en", "DATETIME"),
     ("TRX430_COM_COMPRA_SUELTA", "anulada", "BOOLEAN DEFAULT 0"),
+    ("TRX110_VEN_PEDIDO", "cliente_id", "INTEGER"),
+    ("TRX130_VEN_ABONO_FIADO", "cobro_id", "INTEGER"),
     ("TRX111_VEN_PEDIDO_DET", "cortesia", "BOOLEAN DEFAULT 0"),
     ("TRX111_VEN_PEDIDO_DET", "precio_lista", "FLOAT DEFAULT 0"),
     # Con DEFAULT: sin el, las categorias que ya existen quedan en NULL y el

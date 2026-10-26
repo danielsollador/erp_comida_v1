@@ -36,6 +36,8 @@ from .routers import (
     pedidos,
     preparaciones,
     proveedores,
+    cobranzas,
+    egresos,
     push as push_router,
     reportes,
     reportes_dinamicos,
@@ -255,6 +257,8 @@ app.include_router(compras_lectura.router)
 app.include_router(compras_equivalencias.router)
 app.include_router(compras_alertas.router)
 app.include_router(proveedores.router)
+app.include_router(cobranzas.router)
+app.include_router(egresos.router)
 app.include_router(impuestos_router.router)
 app.include_router(push_router.router)
 app.include_router(app_movil.router)

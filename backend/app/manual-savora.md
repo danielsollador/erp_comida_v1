@@ -377,10 +377,13 @@ equivocada. Al cerrar, cada diferencia queda en los libros.
 - **Anular un cierre:** desde Historial, «Anular este cierre», y se vuelve a
   cerrar el día.
 
-### 7.2 Gastos y retiros
-«Registrar uno»: un gasto del local (gas, luz) o un retiro del dueño, y de
-dónde salió la plata (Efectivo Bs, Efectivo $ o Banco). Baja lo que se debe
-tener en esa forma de pago.
+### 7.2 Retiros de caja
+Todo billete que sale de la gaveta, para que el cierre cuadre: un «Pago menor»
+(bombona, hielo, un mandado) o un «Retiro del dueño», y de qué gaveta salió
+(Efectivo Bs o Efectivo $). Baja lo que se debe tener en esa gaveta.
+Los sueldos, el alquiler, la mensualidad del sistema y todo lo que se paga
+por el banco NO van aquí: van en **Pagos** (sección 8.2). La mercancía, en
+Compras.
 
 ### 7.3 Cajas
 Un local puede tener varias cajas físicas (una gaveta por piso) para cerrarlas
@@ -405,6 +408,31 @@ En cada venta:
   monto; una facturada tampoco sin pasar por la factura.
 
 ---
+
+### 8.1 Cuentas por cobrar (`/cobranzas`)
+Lo que se vendió a crédito (el pago «A crédito» del punto de venta) y falta
+cobrar, por cliente. Se crea la ficha del cliente (PedidosYa, una empresa)
+con su comisión y su plazo; los fiados a ese nombre entran solos en su
+cuenta, aunque se escriba distinto. Al abrir un cliente se ve lo que debe y su
+estado de cuenta, y se cobra **varias ventas de una vez**: se marcan, se pone
+cómo pagó, la referencia y **lo que entró de verdad**. La diferencia con lo
+que se debía queda como comisión de la plataforma (un gasto). Un cobro mal
+anotado se anula desde «Cobros hechos» y las ventas vuelven a deberse. Los
+fiados con un nombre que no es de ninguna ficha salen en «A crédito sin
+ficha» para asignarlos. El abono de una sola venta se sigue haciendo desde
+Ventas.
+
+### 8.2 Pagos (`/pagos`)
+Lo que el negocio paga **sin factura**: sueldos y nómina, honorarios (la
+mensualidad del sistema, el contador), alquiler, servicios públicos,
+mantenimiento. Se pone a quién, el concepto, el monto en dólares o en
+bolívares (se pasa con la tasa BCV del día), de dónde salió y la referencia.
+Cada concepto va a su cuenta de gasto, sin IVA (no hay factura). Si toca
+retenerle ISLR, se pone el porcentaje: se le entrega el neto y lo retenido
+queda como «ISLR retenido por enterar». Si se paga en efectivo, el cierre de
+caja ya lo descuenta. «Pagos fijos»: la quincena de cada empleado, el
+alquiler; el día que tocan salen arriba en «Toca pagar» y se confirman con un
+toque (nada se paga solo). Solo lo ven el dueño y Vertigo.
 
 ## 9. Reportes (`/reportes`)
 

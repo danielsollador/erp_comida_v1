@@ -46,6 +46,18 @@ def _gastos_de(db: Session, inicio, fin):
     )
 
 
+def _pagos_de(db: Session, inicio, fin):
+    return (
+        db.query(models.PagoSinFactura)
+        .filter(
+            models.PagoSinFactura.fecha >= inicio,
+            models.PagoSinFactura.fecha < fin,
+            models.PagoSinFactura.anulado.is_(False),
+        )
+        .all()
+    )
+
+
 def _retiros_de(db: Session, inicio, fin):
     return (
         db.query(models.RetiroPropietario)
@@ -130,6 +142,11 @@ def _salidas_por_metodo(db: Session, inicio, fin) -> dict:
     for r in _retiros_de(db, inicio, fin):
         m = _normalizar(r.metodo_pago or "Efectivo Bs")
         por_metodo[m] = round(por_metodo.get(m, 0.0) + r.monto, 2)
+    # Lo que se pago desde el modulo Pagos (un sueldo, el alquiler): sale por
+    # donde se pago, aunque no sea un retiro de caja.
+    for p in _pagos_de(db, inicio, fin):
+        m = _normalizar(p.metodo_pago)
+        por_metodo[m] = round(por_metodo.get(m, 0.0) + p.neto, 2)
     return por_metodo
 
 
@@ -483,6 +500,7 @@ def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(ge
         devuelto_monto_hoy=devuelto_monto,
         gastos=total_gastos,
         retiros=total_retiros,
+        pagos_efectivo=round(sum(p.neto for p in _pagos_de(db, inicio, fin) if p.metodo_pago.startswith("Efectivo")), 2),
         desglose=desglose,
         otros_movimientos=_otros_movimientos(db, inicio, fin, desglose),
         fiado_por_cobrar=round(contabilidad.saldo_de_cuenta(db, "1015"), 2),
