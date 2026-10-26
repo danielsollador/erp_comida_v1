@@ -264,6 +264,20 @@ export default function Inventario() {
           ],
         },
         { nombre: 'metodo', etiqueta: 'De dónde salió la plata', tipo: 'opciones', opciones: METODOS_DE_PAGO.map((m) => ({ valor: m, texto: m })) },
+        // En negativo: se vendio sin cargarlo. Sumarle la compra a un
+        // negativo dejaba "cargué 7 y quedaron 4" (26-oct, carne mechada).
+        ...(ing.stock_actual < 0
+          ? [{
+              nombre: 'negativo',
+              etiqueta: `El sistema tiene ${cantidad(ing.stock_actual)} ${ing.unidad}: se vendió sin estar cargado`,
+              tipo: 'opciones' as const,
+              valor: 'regularizar',
+              opciones: [
+                { valor: 'regularizar', texto: 'Lo que hay ahora es lo que llegó', detalle: 'Lo vendido salió de mercancía que ya tenías y no estaba cargada' },
+                { valor: 'restar', texto: 'Restarle lo vendido a lo que llegó', detalle: 'Lo vendido salió de esta misma compra' },
+              ],
+            }]
+          : []),
       ],
       aceptar: 'Registrar compra',
     })
@@ -276,7 +290,7 @@ export default function Inventario() {
     // Un precio absurdo (en bolívares, con la coma corrida) el servidor lo
     // frena ANTES de guardar; aquí se pregunta y, si es así, se anota igual.
     const registrar = async (confirmar: boolean) => {
-      const resultado = await api.registrarCompra(ing.id, enUnidades(ing, r), costoUsd, r.metodo, confirmar)
+      const resultado = await api.registrarCompra(ing.id, enUnidades(ing, r), costoUsd, r.metodo, confirmar, r.negativo === 'regularizar')
       if (resultado.revisar_precios) setImpacto(resultado)
     }
     setError('')
@@ -339,6 +353,19 @@ export default function Inventario() {
     void sacarConConfirmacion((forzar) => api.consumoPersonal(ing.id, Number(r.cantidad), r.motivo, forzar))
   }
 
+  // Contar 400 donde el sistema dice 2 casi nunca es mercancia nueva: es
+  // otra unidad (paquetes contra sobres). 26-oct: ese conteo subio el
+  // inventario $1.432 de mentira.
+  async function saltoCreible(ing: Ingrediente, nuevo: number) {
+    if (!(ing.stock_actual > 0) || nuevo < ing.stock_actual * 10) return true
+    return dialogo.confirmar({
+      titulo: '¿Contaste en otra unidad?',
+      texto: `El sistema dice ${cantidad(ing.stock_actual)} ${ing.unidad} y pusiste ${cantidad(nuevo)}: ${Math.round(nuevo / ing.stock_actual)} veces más. Si contaste paquetes, cajas o sobres en vez de ${ing.unidad}, corrígelo. Si de verdad hay eso, la diferencia entra al inventario al costo de ${ing.unidad}.`,
+      aceptar: 'Sí, hay eso',
+      cancelar: 'Corregir',
+    })
+  }
+
   async function contar(ing: Ingrediente) {
     if (trae(ing)) {
       const empaques = ing.stock_actual / trae(ing)
@@ -352,18 +379,24 @@ export default function Inventario() {
         aceptar: 'Guardar conteo',
       })
       if (!r) return
-      accion(() => api.ajustarStock(ing.id, enUnidades(ing, r)))
+      const nuevo = enUnidades(ing, r)
+      if (!(await saltoCreible(ing, nuevo))) return
+      accion(() => api.ajustarStock(ing.id, nuevo))
       return
     }
     const real = await dialogo.pedirNumero({
       titulo: `Contar ${ing.nombre}`,
-      texto: `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
+      texto:
+        ing.stock_actual < 0
+          ? `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}: se vendió sin estar cargado. Lo que cuentes queda como mercancía que ya tenías (no como ganancia).`
+          : `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
       etiqueta: 'Cuánto hay realmente',
       sufijo: ing.unidad,
       valor: cantidad(ing.stock_actual),
       aceptar: 'Guardar conteo',
     })
     if (real === null) return
+    if (!(await saltoCreible(ing, real))) return
     accion(() => api.ajustarStock(ing.id, real))
   }
 

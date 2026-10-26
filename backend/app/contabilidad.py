@@ -1316,6 +1316,23 @@ def registrar_existencia_declarada(db: Session, ingrediente, valor: float) -> No
     )
 
 
+def registrar_existencia_no_cargada(db: Session, ingrediente, valor: float) -> None:
+    """Lo que se vendio sin estar cargado: el stock quedo en negativo porque
+    la mercancia existia pero nunca entro al sistema (26-oct: la carne mechada
+    se vendio cinco dias sin cargarla). Es lo mismo que la existencia del alta
+    -algo que el dueño ya tenia-, asi que va contra su capital, no como
+    ganancia de un conteo."""
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Existencia que no estaba cargada: {ingrediente.nombre}",
+        [("1040", valor, 0.0), ("3010", 0.0, valor)],
+        origen="existencia_no_cargada",
+        referencia_id=ingrediente.id,
+    )
+
+
 def registrar_reverso_compra_insumo(db: Session, compra_id: int) -> None:
     """El asiento de una compra suelta, al reves y por el mismo monto: lo que
     se anulo no deja ni un centavo en los libros."""

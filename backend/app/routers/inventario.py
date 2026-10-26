@@ -801,6 +801,11 @@ def registrar_compra(
         #
         # Se crea ANTES de mover el stock porque el movimiento del kardex apunta
         # a esta fila: sin id, el extracto diria "compra" sin decir cual.
+        # Estaba en negativo y se dijo que lo que hay es lo que llego: lo
+        # vendido sin cargar se anota primero como existencia, al costo que
+        # tenia (con ese costo salio en las ventas).
+        if body.regularizar_negativo:
+            _regularizar_negativo(db, db_ingrediente)
         compra = models.CompraSuelta(
             ingrediente_id=db_ingrediente.id,
             cantidad=body.cantidad,
@@ -949,6 +954,27 @@ def registrar_merma(
         return db_ingrediente
 
 
+def _regularizar_negativo(
+    db: Session, ingrediente: models.Ingrediente, hasta: float = 0.0, operador_id: Optional[int] = None,
+) -> float:
+    """Lleva un stock negativo hasta `hasta` como existencia que no estaba
+    cargada (capital, no ganancia). Negativo quiere decir que se vendio algo
+    que el sistema no sabia que habia."""
+    sistema = ingrediente.stock_actual or 0
+    if sistema >= 0 or hasta <= sistema:
+        return 0.0
+    cantidad = round(hasta - sistema, 4)
+    costo = ingrediente.costo_unitario or 0
+    kardex.anotar(
+        db, ingrediente, cantidad, kardex.AJUSTE, costo_unitario=costo,
+        origen="existencia_no_cargada", operador_id=operador_id,
+        nota="Se vendió antes de cargarlo: había mercancía que no estaba en el sistema",
+    )
+    contabilidad.registrar_existencia_no_cargada(db, ingrediente, round(cantidad * costo, 2))
+    db.flush()
+    return cantidad
+
+
 def _aplicar_conteo(
     db: Session, ingrediente: models.Ingrediente, stock_real: float, motivo: str,
     operador_id: Optional[int] = None,
@@ -960,6 +986,19 @@ def _aplicar_conteo(
     inventario contable y el real no se separen sin dejar rastro.
     """
     sistema = ingrediente.stock_actual or 0
+    if sistema < 0 and stock_real > sistema:
+        # Estaba en negativo: lo contado nunca entro al sistema. No es un
+        # sobrante (ganancia), es mercancia que ya estaba y no se cargo.
+        _regularizar_negativo(db, ingrediente, hasta=stock_real, operador_id=operador_id)
+        return schemas.AjusteConteo(
+            ingrediente_id=ingrediente.id,
+            nombre=ingrediente.nombre,
+            unidad=ingrediente.unidad,
+            sistema=round(sistema, 4),
+            contado=stock_real,
+            diferencia=round(stock_real - sistema, 4),
+            valor=round((stock_real - sistema) * (ingrediente.costo_unitario or 0), 2),
+        )
     faltante = sistema - stock_real
     valor = round(abs(faltante) * (ingrediente.costo_unitario or 0), 2)
     if faltante > 0:
@@ -1807,7 +1846,11 @@ def _consumo_diario(db: Session, dias: int = 14) -> dict:
                 ) + costeo.consumo_bruto(receta, item.cantidad)
     # El guiso no se compra: lo que hay que reponer es su pollo y su cebolla.
     hojas = costeo.explotar_consumo(consumo, modo="receta")
-    return {ing.id: total / dias for ing, total in hojas.items()}
+    # Entre los dias que de verdad hubo ventas, no los de la ventana: con una
+    # semana vendiendo, dividir entre 14 pedia la mitad de lo que se gasta.
+    primero = min((p.cerrado_en for p in pedidos if p.cerrado_en), default=None)
+    medidos = kardex.dias_medidos(desde, ahora(), primero)
+    return {ing.id: total / medidos for ing, total in hojas.items()}
 
 
 @router.get("/sugerencias", response_model=List[schemas.SugerenciaCompra])
