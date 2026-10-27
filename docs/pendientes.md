@@ -56,3 +56,30 @@ a lo más difícil; después lo que necesita al equipo, al dueño o al contador.
   - Hecho: módulo `/cobranzas` (fichas de cliente, saldo y vencido, estado de cuenta, cobro agrupado con comisión a 6130, anular cobro) y `/pagos` (conceptos a 6080-6120, Bs con tasa BCV, retención ISLR a 2060, pagos fijos). Caja › «Gastos y retiros» pasó a «Retiros de caja», solo gavetas.
 - [ ] 31. Que el contador confirme: comisión de PedidosYa como gasto sin IVA (si PedidosYa factura la comisión, va por Compras), retención de ISLR en pagos sin factura y cómo enterar el 2060. Nómina sin aportes (IVSS, FAOV, INCES) por ahora.
 - [x] 32. (26-oct, en local) Los 20 casos del mes: depósito al banco y aporte del dueño (Caja), retención de IVA al cobrar a crédito, entró de más (4040), abono a cuenta de la venta más vieja, dar por perdida (6140) y recuperar, anticipo de sueldo (1016) que se descuenta solo, pagar el ISLR retenido al SENIAT, concepto Impuestos y tasas (6150), aviso de facturas con IVA en Pagos. Pruebas en `tests/test_casos_del_mes.py`.
+
+
+## Estado al 27-oct (lista vigente)
+
+En producción hasta `7a86571`: compra suelta con precio absurdo y anular, mercancía en empaque, stock negativo, «alcanza para» con días reales, aviso de conteo en otra unidad, cierre solo del día (compras sin forma de pago por defecto, «Plata del dueño», fiado cobrado entra en su fila), costo corregido en ficha mueve los libros. Datos corregidos: azúcar, mechada, molida, tocineta, pernil, cierres del 24 y 26-oct, inventario libros = fichas.
+
+**Del cliente**
+- [ ] 1. Los $4,40 en dólares del sábado 24-oct: cómo se pagó el pedido #16 ($6,40), efectivo $ o punto.
+- [ ] 2. 13 mercancías en negativo (quesos, jamones, papa, crema…): al cargar la compra, dejar «Lo que hay ahora es lo que llegó».
+- [ ] 3. Azúcar en sobres: cambiar a «Consumible».
+- [ ] 4. Activar el aceite de freír (ver 18).
+- [ ] 5. Recargar el inventario completo (ver 17).
+
+**En local, sin desplegar (espera revisión del usuario)**
+- [ ] 6. Cuentas por cobrar (29, 30, 32).
+- [ ] 7. Pagos sin factura (29, 32).
+- [ ] 8. Retiros de caja: nombre nuevo, depósito al banco, aporte del dueño.
+- [ ] 9. Lo de IA (sección A): falta la clave de Claude y decidir cuándo.
+
+**Del contador**
+- [ ] 10. Comisión de PedidosYa: gasto sin IVA o por Compras si la factura (31).
+- [ ] 11. ISLR: porcentajes (flete, honorarios) y cómo se declara lo retenido (22, 31).
+- [ ] 12. IVA en bolívares y mes de las notas de crédito (23).
+- [ ] 13. Nómina: aportes IVSS, FAOV, INCES (31).
+
+**Para después**
+- [ ] 14. Vender sin internet, gas como el aceite, ubicaciones/lotes/vencimiento (25-27).
