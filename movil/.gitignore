@@ -42,3 +42,6 @@ yarn-error.*
 
 # Claves de la cuenta de demostración (no van al repo)
 tienda/*.local.txt
+
+# Google Play: la clave de la cuenta de servicio no va a git
+tienda/play/*.json
