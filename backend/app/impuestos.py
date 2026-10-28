@@ -93,6 +93,19 @@ def fijar_tasa_iva(db: Session, valor: float) -> float:
     return cfg.tasa_iva
 
 
+def precio_neto(precio: float, tasa_pct: float, exento: bool = False) -> float:
+    """Lo que de verdad queda del precio de venta: sin el IVA.
+
+    El precio del menu lleva el IVA adentro (al facturar se desglosa). Ese IVA
+    es del fisco, no del negocio, asi que el margen se calcula sobre el
+    precio neto; si no, el jugo de $3 parecia dejar $1,35 cuando deja $0,94
+    (Leider, 28-oct). Un producto exento no lleva IVA: su precio es neto.
+    """
+    if exento or not tasa_pct:
+        return round(precio or 0, 4)
+    return round((precio or 0) / (1 + tasa_pct / 100), 4)
+
+
 def desglosar(monto_total: float, tasa_pct: float) -> Tuple[float, float]:
     """De un monto final (IVA incluido) saca (base_imponible, iva)."""
     factor = 1 + (tasa_pct / 100)

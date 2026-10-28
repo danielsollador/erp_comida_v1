@@ -78,6 +78,27 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Si la empanada lleva 0,05 kg de harina y vendes 10, bajan 0,5 kg sin que nadie toque nada. Cuando queda por debajo del mínimo aparece la etiqueta "Bajo".',
   },
+  'inventario.costoElegido': {
+    que: 'Lo que te cuesta una unidad, con el costo que elegiste mirar. Se cambia en el desplegable "Costo" de arriba.',
+    origen:
+      'Es el mismo ajuste de Configuración → Control, "Con qué costo fijar precios": último costo (lo que pagaste la última vez), promedio (lo que costó lo que tienes) o el mayor de los dos. Vale para el Menú, las Recetas y esta tabla, así el margen siempre sale del mismo número.',
+    ejemplo:
+      'Tenías 10 a $1 y compraste 10 a $2: el promedio dice $1,50; el último, $2. Con inflación, el último es el que te dice cuánto te costará reponerlo.',
+  },
+  'inventario.vende': {
+    que: 'A cuánto lo vendes en el menú, y qué parte de eso te queda.',
+    origen: 'El precio sale del menú (solo la mercancía que se vende tal cual). El margen compara lo que queda sin IVA contra el costo elegido.',
+    calculo:
+      'El precio del menú lleva el IVA adentro y ese IVA es del SENIAT. Se le quita (precio ÷ 1,16) y a eso se le resta el costo. Si la mercancía no paga IVA, el precio entero es tuyo.',
+    ejemplo:
+      'Jugo a $3,00 con costo $1,65: sin IVA quedan $2,59, y te deja $0,94 (36 %). Si compararas los $3 con el costo parecería 45 %, y no es verdad.',
+  },
+  'inventario.vale': {
+    que: 'Cuánta plata tienes guardada en esa mercancía, al costo con que la miras.',
+    origen: 'El sistema lo calcula; no se escribe.',
+    calculo: 'Lo que hay × el costo elegido. Si cambias el costo en el desplegable "Costo" de arriba, cambia también esto.',
+    ejemplo: '15 maltas a $0,69 son $10,37 parados en el depósito. La suma de la columna es lo que dice "En el inventario" arriba.',
+  },
   'inventario.minimo': {
     que: 'El punto en el que hay que volver a comprar.',
     origen: 'Lo pones tú en la ficha de la mercancía.',

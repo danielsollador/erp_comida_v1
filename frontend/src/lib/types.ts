@@ -101,6 +101,12 @@ export type Ingrediente = {
   ultima_compra: string | null
   /** Cuanto subestima el promedio al costo de reponer, en %. */
   variacion_pct: number | null
+  /** El costo con que se mira (Configuración: último, promedio o el mayor). */
+  costo_elegido?: number | null
+  /** Reventa que está en el menú: su precio (con IVA), lo que queda sin IVA y el margen sobre eso. */
+  precio_venta?: number | null
+  precio_neto?: number | null
+  margen_pct?: number | null
 }
 
 /** Lo que se escribe de un insumo (el resto lo calcula el sistema). */
@@ -300,6 +306,8 @@ export type CostoVariante = {
   /** El costo con que se decide el precio (segun Configuracion), indirecto incluido. */
   costo_para_precio?: number | null
   margen_para_precio_pct?: number | null
+  /** El precio sin el IVA: sobre este se miden los margenes. */
+  precio_neto?: number | null
 }
 
 /** Lo que la portada le dice al dueño sin que lo pregunte. `a` = adónde ir. */

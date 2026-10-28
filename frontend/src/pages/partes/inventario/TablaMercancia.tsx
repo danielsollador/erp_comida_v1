@@ -7,14 +7,29 @@ import { cantidad, estadoStock, unidadDe } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import { nombre } from '../../../lib/palabras'
 import { ALMACEN_DE } from '../../../lib/tiposArticulo'
-import type { CategoriaInsumo, Ingrediente, TipoArticulo } from '../../../lib/types'
+import type { CategoriaInsumo, CostoParaPrecios, Ingrediente, TipoArticulo } from '../../../lib/types'
 import type { ResumenAlmacen } from './Almacenes'
 
 /**
  * La mercancía de UN almacén, en una tabla que cabe en la pantalla. Un toque
  * en la fila abre la ficha. Las columnas dependen de lo que es: solo la
  * materia prima tiene merma de cocina ("aprovechable") y costo real.
+ *
+ * UN SOLO COSTO A LA VISTA (Leider, 28-oct): antes salían promedio y último
+ * costo lado a lado y nunca se sabía contra cuál medir el margen. Ahora hay
+ * una columna "Costo" y el título dice cuál es; tocarlo cambia el ajuste de
+ * Configuración ("Con qué costo fijar precios"), el mismo que usan el Menú y
+ * las Recetas. "Vale" y el margen salen de ese mismo número.
  */
+
+const COSTOS: { valor: CostoParaPrecios; texto: string; detalle: string }[] = [
+  { valor: 'reposicion', texto: 'Último costo', detalle: 'lo que pagaste la última vez' },
+  { valor: 'promedio', texto: 'Costo promedio', detalle: 'lo que costó lo que tienes' },
+  { valor: 'mayor', texto: 'El mayor', detalle: 'el más alto de los dos' },
+]
+
+/** Lo que vale lo que hay, al costo elegido. Nunca negativo. */
+const vale = (i: Ingrediente) => Math.max(i.stock_actual, 0) * (i.costo_elegido ?? i.costo_unitario ?? 0)
 
 type Filtro = 'todos' | 'bajo' | 'sin-costo' | 'archivados'
 const SIN_CATEGORIA = '__sin_categoria__'
@@ -30,6 +45,8 @@ export default function TablaMercancia({
   onReactivar,
   onNueva,
   onCategorias,
+  metodoCosto = 'reposicion',
+  onMetodoCosto,
 }: {
   tipo: TipoArticulo
   /** Las cifras del almacén: van chicas en la barra, son complemento de la tabla. */
@@ -43,6 +60,9 @@ export default function TablaMercancia({
   onReactivar: (ing: Ingrediente) => void
   onNueva: () => void
   onCategorias: () => void
+  /** Con qué costo se mira la tabla (Configuración > Control). */
+  metodoCosto?: CostoParaPrecios
+  onMetodoCosto?: (m: CostoParaPrecios) => void
 }) {
   const { fmt: dinero } = useMoneda()
   const lista = useAltoRestante<HTMLDivElement>()
@@ -55,15 +75,15 @@ export default function TablaMercancia({
     {
       nombre: (i) => i.nombre,
       stock: (i) => i.stock_actual,
-      minimo: (i) => i.stock_minimo,
-      costo: (i) => i.costo_unitario,
-      reponer: (i) => i.costo_reposicion,
+      costoElegido: (i) => i.costo_elegido ?? i.costo_unitario,
+      vende: (i) => i.margen_pct ?? -1e9,
       rendimiento: (i) => i.rendimiento_pct,
       real: (i) => i.costo_efectivo,
-      vale: (i) => Math.max(i.stock_actual, 0) * (i.costo_unitario || 0),
+      vale,
     },
     'nombre',
   )
+  const costoActual = COSTOS.find((c) => c.valor === metodoCosto) ?? COSTOS[0]
 
   const activos = ingredientes.filter((i) => i.activo !== false)
   const archivados = ingredientes.length - activos.length
@@ -88,7 +108,7 @@ export default function TablaMercancia({
   }, [ingredientes, filtro, buscar, categoria])
 
   const a = ALMACEN_DE[tipo]
-  const columnas = esMateria ? 8 : 7
+  const columnas = esMateria ? 7 : 6
 
   return (
     <div className="space-y-3">
@@ -118,6 +138,17 @@ export default function TablaMercancia({
               ...(archivados > 0 ? [{ valor: 'archivados', texto: 'Archivadas', contador: archivados }] : []),
             ]}
           />
+          {/* CON QUÉ COSTO SE MIRA LA TABLA. Un solo costo a la vista; este
+              desplegable dice cuál y lo cambia. Es el mismo ajuste de
+              Configuración > Control, así el Menú y las Recetas van iguales. */}
+          {onMetodoCosto && (
+            <FiltroDesplegable
+              etiqueta="Costo"
+              valor={metodoCosto}
+              alCambiar={(v) => onMetodoCosto(v as CostoParaPrecios)}
+              opciones={COSTOS.map((c) => ({ valor: c.valor, texto: c.texto, detalle: c.detalle }))}
+            />
+          )}
           {(cats.length > 0 || haySinCategoria) && (
             <FiltroDesplegable
               etiqueta="Categoría"
@@ -165,20 +196,19 @@ export default function TablaMercancia({
               <tr>
                 <Th clave="nombre">Mercancía</Th>
                 <Th clave="stock" alinear="derecha">{nombre('inventario.stock')}</Th>
-                {/* Lo que no cabe en una pantalla angosta se esconde, de lo
-                    menos a lo más necesario: el mínimo (ya lo avisa la
-                    pastilla de "Hay"), lo aprovechable, el promedio. */}
-                <Th clave="minimo" alinear="derecha" className="hidden xl:table-cell">Mínimo</Th>
-                <Th clave="costo" alinear="derecha" className="hidden md:table-cell">{nombre('inventario.costo')}</Th>
-                <Th clave="reponer" alinear="derecha" className="hidden sm:table-cell">{nombre('inventario.reponer')}</Th>
+                {/* EL COSTO, uno solo, y el título dice cuál. El botón al lado
+                    abre las tres opciones; lo elegido se guarda en
+                    Configuración y cambia Menú y Recetas también. */}
+                <Th clave="costoElegido" alinear="derecha" className="hidden sm:table-cell">{costoActual.texto}</Th>
                 {esMateria ? (
                   <>
                     <Th clave="rendimiento" alinear="derecha" className="hidden lg:table-cell">{nombre('inventario.rendimiento')}</Th>
                     <Th clave="real" alinear="derecha">Costo real</Th>
                   </>
                 ) : (
-                  <Th clave="vale" alinear="derecha">Vale</Th>
+                  <Th clave="vende" alinear="derecha" className="hidden md:table-cell">Se vende a</Th>
                 )}
+                <Th clave="vale" alinear="derecha">Vale</Th>
                 <th aria-label="Abrir" className="w-8" />
               </tr>
             </thead>
@@ -225,24 +255,20 @@ export default function TablaMercancia({
                         </span>
                       )}
                     </td>
-                    <td className="hidden xl:table-cell text-right p-3 text-neutral-500 tabular-nums">
-                      {cantidad(ing.stock_minimo)} {unidadDe(ing.stock_minimo, ing.unidad)}
-                    </td>
-                    <td className="hidden md:table-cell text-right p-3 tabular-nums">
-                      {ing.costo_unitario ? dinero(ing.costo_unitario) : <span className="text-aviso-600 font-semibold">cargar</span>}
-                    </td>
                     <td className="hidden sm:table-cell text-right p-3 tabular-nums">
-                      {ing.costo_reposicion != null ? (
+                      {ing.costo_elegido || ing.costo_unitario ? (
                         <>
-                          <span className={ing.variacion_pct != null && ing.variacion_pct >= 15 ? 'text-aviso-600 font-semibold' : ''}>
-                            {dinero(ing.costo_reposicion)}
+                          <span className={metodoCosto !== 'promedio' && ing.variacion_pct != null && ing.variacion_pct >= 15 ? 'text-aviso-600 font-semibold' : ''}>
+                            {dinero(ing.costo_elegido ?? ing.costo_unitario)}
                           </span>
-                          {ing.variacion_pct != null && ing.variacion_pct >= 15 && (
-                            <span className="block text-[11px] text-aviso-600">+{ing.variacion_pct.toFixed(0)}%</span>
+                          {/* Con el último costo a la vista, el salto frente al promedio
+                              avisa que el proveedor subió. */}
+                          {metodoCosto !== 'promedio' && ing.variacion_pct != null && ing.variacion_pct >= 15 && (
+                            <span className="block text-[11px] text-aviso-600">+{ing.variacion_pct.toFixed(0)}% que el promedio</span>
                           )}
                         </>
                       ) : (
-                        <span className="text-neutral-300">—</span>
+                        <span className="text-aviso-600 font-semibold">cargar</span>
                       )}
                     </td>
                     {esMateria ? (
@@ -253,10 +279,22 @@ export default function TablaMercancia({
                         <td className="text-right p-3 tabular-nums font-semibold">{dinero(ing.costo_efectivo)}</td>
                       </>
                     ) : (
-                      <td className="text-right p-3 tabular-nums font-semibold">
-                        {dinero(Math.max(ing.stock_actual, 0) * (ing.costo_unitario || 0))}
+                      <td className="hidden md:table-cell text-right p-3 tabular-nums">
+                        {ing.precio_venta != null ? (
+                          <>
+                            <span className="font-medium">{dinero(ing.precio_venta)}</span>
+                            {ing.margen_pct != null && (
+                              <span className={`block text-[11px] ${ing.margen_pct < 0 ? 'text-peligro-600 font-semibold' : ing.margen_pct >= 50 ? 'text-exito-600' : 'text-aviso-600'}`}>
+                                {ing.margen_pct < 0 ? 'a pérdida' : `deja ${ing.margen_pct.toFixed(0)}% sin IVA`}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-neutral-300" title="No está en el menú tal cual">—</span>
+                        )}
                       </td>
                     )}
+                    <td className="text-right p-3 tabular-nums font-semibold">{dinero(vale(ing))}</td>
                     <td className="p-3 pr-4 text-right">
                       {archivado ? (
                         <span onClick={(e) => e.stopPropagation()}>

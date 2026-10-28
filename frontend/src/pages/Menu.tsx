@@ -742,7 +742,7 @@ function TarjetaProducto({
       info.costo_reposicion != null &&
       info.costo_reposicion > info.costo * 1.05
     const contexto = info?.costo
-      ? `\n\nProducirlo cuesta $${fmtNum(info.costo)}. A $${fmtNum(precioActual)} te deja ${info.margen_pct?.toFixed(0)}% de margen.` +
+      ? `\n\nProducirlo cuesta $${fmtNum(info.costo)}. A $${fmtNum(precioActual)} te deja ${info.margen_pct?.toFixed(0)}% de margen (sin el IVA, que es del SENIAT).` +
         (seEncarecio
           ? `\n\nOJO: con los precios de HOY cuesta $${fmtNum(info.costo_reposicion!)}, ` +
             `y a $${fmtNum(precioActual)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.`
@@ -868,7 +868,7 @@ function TarjetaProducto({
                   {bajoCosto
                     ? '¡a pérdida!'
                     : info?.margen_pct != null && !info.sin_receta
-                      ? `${info.margen_pct.toFixed(0)}% de ganancia`
+                      ? `${info.margen_pct.toFixed(0)}% de ganancia sin IVA`
                       : ''}
                 </span>
                 {/* LA RECETA SE TOCA DESDE AQUI. "sin receta" era una

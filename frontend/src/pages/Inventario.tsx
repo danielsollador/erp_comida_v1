@@ -25,6 +25,7 @@ import AccionFila from '../components/AccionFila'
 import type {
   Configuracion,
   ConteoResumen,
+  CostoParaPrecios,
   DatosIngrediente,
   FacturaCompra,
   ImpactoDeCompra,
@@ -167,6 +168,17 @@ export default function Inventario() {
     api.listarFacturasCompra(rango).then(setFacturas).catch(() => setFacturas([]))
     api.inflacionInsumos().then(setInflacion).catch(() => setInflacion(null))
     api.obtenerConfig().then(setConfig).catch(() => setConfig(null))
+  }
+
+  /** Qué costo mira la tabla: es el mismo ajuste del Menú y las Recetas. */
+  async function elegirMetodoCosto(m: CostoParaPrecios) {
+    try {
+      setConfig(await api.fijarCostoParaPrecios(m))
+      const l = await api.listarIngredientes()
+      setIngredientes(l)
+    } catch (e) {
+      dialogo.avisar({ titulo: 'No se pudo cambiar el costo', texto: e instanceof Error ? e.message : '' })
+    }
   }
 
   async function alternarVentaSinInventario() {
@@ -420,7 +432,8 @@ export default function Inventario() {
           mercancias: propios.length,
           bajoMinimo: a.destino === 'gasto' ? 0 : propios.filter((i) => i.stock_actual <= i.stock_minimo).length,
           sinCosto: propios.filter((i) => !i.costo_unitario).length,
-          plata: a.destino === 'gasto' ? gastoDesechables : propios.reduce((s, i) => s + Math.max(i.stock_actual, 0) * (i.costo_unitario || 0), 0),
+          // Al costo elegido en Configuración, igual que la columna "Vale".
+          plata: a.destino === 'gasto' ? gastoDesechables : propios.reduce((s, i) => s + Math.max(i.stock_actual, 0) * (i.costo_elegido ?? i.costo_unitario ?? 0), 0),
           preparaciones: a.valor === 'insumo' ? activos.filter((i) => i.tipo === 'preparacion').length : undefined,
         }
       }),
@@ -608,6 +621,8 @@ export default function Inventario() {
                   onReactivar={(ing) => archivar(ing, true)}
                   onNueva={() => setFicha({ nuevo: tipoActual })}
                   onCategorias={() => irA('categorias')}
+                  metodoCosto={config?.costo_para_precios ?? 'reposicion'}
+                  onMetodoCosto={(m) => void elegirMetodoCosto(m)}
                 />
               </>
             )}

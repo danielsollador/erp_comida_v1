@@ -157,7 +157,7 @@ export default function Recetas({
     costo: (r) => r.info?.costo ?? -1,
     precio: (r) => r.variante.precio,
     // Por la plata que deja, que es lo primero que dice la columna.
-    ganancia: (r) => (r.info?.sin_receta === false && r.info.costo != null ? r.variante.precio - r.info.costo : -1e9),
+    ganancia: (r) => (r.info?.sin_receta === false && r.info.costo != null ? (r.info.precio_neto ?? r.variante.precio) - r.info.costo : -1e9),
   })
   // Que productos estan desglosados en sus variantes. Buscando o filtrando
   // se abren todos: lo que se busca esta dentro.
@@ -598,7 +598,10 @@ function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombr
   const precio = r.variante.precio
   // La ganancia en plata y en porcentaje, las dos (Leider, 1-oct): lo que
   // deja cada uno y que parte del precio es. A perdida, en negativo y rojo.
-  const ganancia = costo != null ? precio - costo : null
+  // Sobre el precio SIN IVA (Leider, 28-oct): el IVA es del fisco, no deja
+  // nada. El servidor manda `precio_neto`; si no viene, el precio tal cual.
+  const neto = r.info?.precio_neto ?? precio
+  const ganancia = costo != null ? neto - costo : null
   return (
     <tr
       role="button"
@@ -647,7 +650,7 @@ function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombr
               {ganancia < 0 ? '−' : '+'}
               {fmt(Math.abs(ganancia))}
             </span>
-            <span className="block text-[11px]">{ganancia < 0 ? 'a pérdida' : `${margen.toFixed(0)}% del precio`}</span>
+            <span className="block text-[11px]">{ganancia < 0 ? 'a pérdida' : `${margen.toFixed(0)}% sin IVA`}</span>
           </>
         )}
       </td>
