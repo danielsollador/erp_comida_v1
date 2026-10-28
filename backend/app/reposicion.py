@@ -24,7 +24,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from . import models
+from . import impuestos, models
 
 # Por debajo de esto una subida es ruido de proveedor, no un cambio de precio.
 SALTO_QUE_IMPORTA_PCT = 15.0
@@ -232,6 +232,7 @@ def impacto_en_productos(
     # acaba de subir. Usando el promedio para los demas, este aviso y el menu
     # daban precios sugeridos distintos por unos centavos para el mismo plato.
     ultimos = costos_reposicion(db)
+    tasa_iva = impuestos.tasa_iva(db)
 
     afectados = []
     recetas = db.query(models.RecetaItem).filter_by(ingrediente_id=ingrediente_id).all()
@@ -250,10 +251,12 @@ def impacto_en_productos(
         costo_antes = 0.0
         costo_despues = 0.0
         costo_contable = 0.0
+        ingredientes_de_la_receta = []
         for linea in db.query(models.RecetaItem).filter_by(variante_id=variante.id).all():
             ing = linea.ingrediente
             if ing is None:
                 continue
+            ingredientes_de_la_receta.append(ing)
             costo_contable += linea.cantidad_por_unidad * (ing.costo_efectivo or 0)
             if ing.id == ingrediente_id:
                 costo_antes += linea.cantidad_por_unidad * (efectivo_anterior or 0)
@@ -269,8 +272,13 @@ def impacto_en_productos(
                 costo_despues += linea.cantidad_por_unidad * efectivo_hoy
 
         precio = variante.precio or 0
-        margen_antes = round((precio - costo_antes) / precio * 100, 1) if precio else None
-        margen_despues = round((precio - costo_despues) / precio * 100, 1) if precio else None
+        # El margen se mide contra lo que queda del precio SIN el IVA, igual
+        # que en /menu/costos: si no, el aviso de "a perdida" salia optimista.
+        # Exento = toda la receta es mercancia exenta.
+        exento = bool(ingredientes_de_la_receta) and all(bool(i.exento) for i in ingredientes_de_la_receta)
+        neto = impuestos.precio_neto(precio, tasa_iva, exento)
+        margen_antes = round((neto - costo_antes) / neto * 100, 1) if neto else None
+        margen_despues = round((neto - costo_despues) / neto * 100, 1) if neto else None
 
         producto = db.query(models.Producto).filter_by(id=variante.producto_id).first()
         # Misma regla que el mostrador: con una sola subseccion activa, su
