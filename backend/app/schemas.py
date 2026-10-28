@@ -455,6 +455,8 @@ class CompraDeInsumo(BaseModel):
     costo_unitario: float
     origen: str  # factura | compra suelta
     referencia: str = ""
+    # Solo en las compras sueltas: para poder anularla si se anoto mal.
+    compra_id: Optional[int] = None
 
 
 class ImpactoEnProducto(BaseModel):
@@ -580,6 +582,12 @@ class ComprarIngredienteRequest(BaseModel):
     # De donde salio la plata: Efectivo Bs | Efectivo $ | Banco (y sinonimos de
     # contabilidad.METODOS_DE_PAGO). Salia siempre de la gaveta de bolivares.
     metodo_pago: str = "Efectivo Bs"
+    # El precio se sale de lo de siempre y la persona dijo que si es asi.
+    confirmar: bool = False
+    # Si el stock esta en negativo (se vendio sin cargarlo): lo que hay
+    # despues de la compra es lo que llego, y lo vendido se anota como
+    # existencia que no estaba cargada.
+    regularizar_negativo: bool = False
 
 
 class MermaRequest(BaseModel):
@@ -1375,6 +1383,9 @@ class LineaMetodo(BaseModel):
     fondo_declarado: bool = False
     ventas: float = 0
     salidas: float = 0
+    # Lo que se pago desde el banco por esta forma de pago (sueldos,
+    # proveedores): ya esta en los libros y NO se resta del esperado.
+    pagos: float = 0
     # Lo que movio la cuenta sin ser venta, gasto ni retiro: pagarle a un
     # proveedor, cobrar un fiado. El ajuste de la apertura NO entra aqui: ese
     # ya esta dentro de `fondo`, y contarlo dos veces descuadraria la fila.

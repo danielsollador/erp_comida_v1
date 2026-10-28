@@ -1028,7 +1028,8 @@ function RenglonReceta({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {enChica ? `${fmt(ing.costo_efectivo / factor, 2)} por ${otra}` : `${fmt(ing.costo_efectivo, 2)} por ${ing.unidad}`}
+            {/* "$0,00 por g" no dice nada: menos de un centavo, se muestra por kilo. */}
+            {enChica && ing.costo_efectivo / factor >= 0.01 ? `${fmt(ing.costo_efectivo / factor, 2)} por ${otra}` : `${fmt(ing.costo_efectivo, 2)} por ${ing.unidad}`}
             {ing.categoria && ` · ${ing.categoria}`}
           </span>
         </span>

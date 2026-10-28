@@ -789,11 +789,13 @@ export const api = {
       headers: {},
     })
   },
-  registrarCompra: (id: number, cantidad: number, costo_total?: number, metodo_pago = 'Efectivo Bs') =>
+  registrarCompra: (id: number, cantidad: number, costo_total?: number, metodo_pago = 'Efectivo Bs', confirmar = false, regularizar_negativo = false) =>
     req<ImpactoDeCompra>(`/inventario/ingredientes/${id}/comprar`, {
       method: 'POST',
-      body: JSON.stringify({ cantidad, costo_total: costo_total ?? null, metodo_pago }),
+      body: JSON.stringify({ cantidad, costo_total: costo_total ?? null, metodo_pago, confirmar, regularizar_negativo }),
     }),
+  anularCompraSuelta: (compraId: number) =>
+    req<Ingrediente>(`/inventario/compras-sueltas/${compraId}/anular`, { method: 'POST' }),
   historialCostos: (id: number) =>
     req<CompraDeInsumo[]>(`/inventario/ingredientes/${id}/costos`),
   inflacionInsumos: (dias = 30) =>

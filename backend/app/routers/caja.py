@@ -133,6 +133,23 @@ def _salidas_por_metodo(db: Session, inicio, fin) -> dict:
     return por_metodo
 
 
+def _cobros_fiado_por_metodo(db: Session, inicio, fin) -> dict:
+    """Lo que entro ese dia por fiados cobrados, por forma de pago.
+
+    Es plata del dia: si la señora paga su fiado con el punto, el lote del
+    punto lo trae, y el cierre tiene que esperarlo en esa fila.
+    """
+    por_metodo: dict = {}
+    for a in (
+        db.query(models.AbonoFiado)
+        .filter(models.AbonoFiado.fecha >= inicio, models.AbonoFiado.fecha < fin)
+        .all()
+    ):
+        m = _normalizar(a.metodo_pago or "Efectivo Bs")
+        por_metodo[m] = round(por_metodo.get(m, 0.0) + a.monto, 2)
+    return por_metodo
+
+
 def _cuentas_de(metodo: str) -> str:
     return contabilidad.CUENTA_POR_METODO_PAGO.get(metodo, "1010")
 
@@ -162,6 +179,9 @@ for _m, _f in METODOS_DE_CIERRE:
 GAVETAS_DE_APERTURA = tuple(m for m, fisico in METODOS_DE_CIERRE if fisico)
 
 ORIGEN_APERTURA = "apertura_dia"
+# La nota con que queda la apertura que nadie declaro: al cerrar, esa gaveta
+# se da por abierta en cero.
+NOTA_SIN_DECLARAR = "No se declaró al abrir"
 
 
 def _aperturas_de(db: Session, dia: datetime.date) -> dict:
@@ -251,10 +271,20 @@ def _desglose(
     verificarlo, y lo que la gente hace entonces es llevar la caja en un
     cuaderno aparte.
 
-    EL FONDO. Si alguien abrio la caja contando, el fondo es lo que conto. Si
-    no, es lo que quedo de dias anteriores segun los libros. La diferencia
-    importa: lo contado es un hecho, el arrastre contable es una suposicion
-    que hereda cualquier error viejo.
+    EL FONDO. Es lo que se declaro al abrir la caja ese dia, y si no se
+    declaro, CERO (24-oct). Antes, sin declarar, arrancaba con lo que quedaba
+    de dias anteriores segun los libros: un arrastre que heredaba cualquier
+    error viejo y que nadie entendia ("¿por que debo tener $247 si hubo un
+    solo cobro de $4,50?"). Al cerrar, la gaveta que no se declaro queda
+    declarada en cero (`_asentar_apertura`), asi que los libros siguen a lo
+    que se ve aqui.
+
+    EL BANCO NO SE RESTA. Lo que se pago desde el banco o el pago movil (un
+    sueldo, un proveedor) ya esta en los libros con su gasto. En esas filas se
+    coteja solo lo que se cobro ese dia, que es lo que la cajera ve en el
+    telefono o en el lote; los pagos se muestran aparte (`pagos`). Restarlos
+    obligaba a teclear "lo cobrado menos los sueldos", y nadie lo hacia: el
+    24-oct salio un "sobran $167,49" que eran dos sueldos.
 
     LO QUE NO ES VENTA NI GASTO TAMBIEN CUENTA. Pagarle a un proveedor en
     efectivo o cobrar un fiado mueve la plata y los libros lo saben, pero no
@@ -269,6 +299,7 @@ def _desglose(
     """
     ventas = _ventas_por_metodo(db, inicio, fin)
     salidas = _salidas_por_metodo(db, inicio, fin)
+    fiados = _cobros_fiado_por_metodo(db, inicio, fin)
     aperturas = _aperturas_de(db, dia)
     # Lo que se reporto al cerrar, si el dia ya se cerro. Se normaliza el
     # nombre: un cierre viejo pudo guardar la fila como "Tarjeta".
@@ -294,6 +325,10 @@ def _desglose(
         if len(METODOS_POR_CUENTA.get(cuenta, [])) == 1:
             neto_libro = _movimiento_del_dia(db, inicio, fin, cuenta)
             otros = round(neto_libro - (entro - salio), 2)
+        else:
+            # En la cuenta compartida no se sabe por cual metodo entro algo,
+            # salvo el fiado cobrado, que guarda su metodo.
+            otros = round(fiados.get(metodo, 0.0), 2)
 
         # El ajuste de la apertura cae dentro del dia, asi que viene metido en
         # `otros`. Se le saca de ahi y se le suma al fondo, que es donde el
@@ -304,7 +339,11 @@ def _desglose(
             otros = round(otros - ajuste, 2)
             fondo = round(anterior + ajuste, 2)
         else:
-            fondo = round(anterior, 2)
+            fondo = 0.0
+        # Lo que salio por el banco ya esta en los libros: no se resta.
+        pagos = 0.0
+        if not fisico:
+            pagos, salio = salio, 0.0
 
         filas.append(
             schemas.LineaMetodo(
@@ -316,9 +355,10 @@ def _desglose(
                 se_cuadra=metodo != "Fiado",
                 saldo_anterior=round(anterior, 2),
                 fondo=fondo,
-                fondo_declarado=apertura is not None,
+                fondo_declarado=apertura is not None and not (apertura.nota or "").startswith(NOTA_SIN_DECLARAR),
                 ventas=round(entro, 2),
                 salidas=round(salio, 2),
+                pagos=round(pagos, 2),
                 otros=otros,
                 esperado=round(fondo + entro - salio + otros, 2),
                 contado=contados.get(metodo),
@@ -349,7 +389,7 @@ def _otros_movimientos(db: Session, inicio, fin, desglose) -> List[schemas.OtroM
             continue  # ya va dentro de su propia fila
         neto_libro = _movimiento_del_dia(db, inicio, fin, cuenta)
         explicado = round(
-            sum(l.ventas - l.salidas for l in desglose if l.cuenta == cuenta), 2
+            sum(l.ventas - l.salidas + l.otros for l in desglose if l.cuenta == cuenta), 2
         )
         resto = round(neto_libro - explicado, 2)
         if abs(resto) >= 0.01:
@@ -554,11 +594,20 @@ def estado_de_apertura(
 
     if abiertas:
         primera = next(iter(abiertas.values()))
+        # Al cerrar quedan aperturas en cero de lo que no se declaro: si la
+        # caja ya se cerro, eso es lo que hay que decir.
+        cerrada_ya = (
+            db.query(models.CierreCaja.id)
+            .filter(models.CierreCaja.fecha >= inicio, models.CierreCaja.fecha < fin,
+                    models.CierreCaja.anulado.is_(False))
+            .first()
+        )
         return schemas.EstadoApertura(
             fecha=dia.isoformat(),
             abierta=True,
             puede_abrir=False,
-            motivo="La caja de este día ya se abrió.",
+            motivo=("La caja de este día ya se cerró. Anula ese cierre si hay que rehacerlo." if cerrada_ya
+                    else "La caja de este día ya se abrió."),
             momento=primera.fecha.isoformat() if primera.fecha else None,
             operador=primera.operador,
             nota=primera.nota or "",
@@ -607,6 +656,82 @@ def estado_de_apertura(
             for m in GAVETAS_DE_APERTURA
         ],
     )
+
+
+def _asentar_apertura(db: Session, dia: datetime.date, inicio, metodo: str, fondo: float, momento,
+                      nota: str = "", desglose: str = "", operador_id: Optional[int] = None) -> schemas.FondoApertura:
+    """Una gaveta abierta con `fondo`: la fila de la apertura y, si los libros
+    decian otra cosa, el asiento que los pone en lo declarado."""
+    codigo = _cuentas_de(metodo)
+    libros = round(_saldo_anterior_de(db, codigo, inicio), 2)
+    diferencia = round(fondo - libros, 2)
+    # ANTES de agregar la fila: la consulta hace autoflush y se
+    # encontraria a si misma, y entonces ninguna apertura seria nunca la
+    # primera.
+    primera_vez = (
+        db.query(models.AperturaCaja)
+        .filter(models.AperturaCaja.metodo == metodo)
+        .first()
+        is None
+    )
+
+    db.add(
+        models.AperturaCaja(
+            fecha=momento,
+            dia=dia,
+            metodo=metodo,
+            cuenta=codigo,
+            fondo=fondo,
+            segun_libros=libros,
+            diferencia=diferencia,
+            nota=nota,
+            desglose=desglose,
+            operador_id=operador_id,
+        )
+    )
+
+    if abs(diferencia) >= 0.01:
+        contrapartida = "3010" if primera_vez else "6030"
+        sin_declarar = nota.startswith(NOTA_SIN_DECLARAR)
+        if diferencia > 0:
+            lineas = [(codigo, diferencia, 0.0), (contrapartida, 0.0, diferencia)]
+            texto = (
+                f"Apertura: {metodo} ya tenía {diferencia:.2f} sin declarar"
+                if primera_vez
+                else f"Sobrante de {metodo} al abrir"
+            )
+        else:
+            falta = abs(diferencia)
+            lineas = [(contrapartida, falta, 0.0), (codigo, 0.0, falta)]
+            texto = (
+                f"Apertura: {metodo} tenía {falta:.2f} menos de lo declarado"
+                if primera_vez
+                else f"{metodo} no se declaró al abrir: los libros traían {falta:.2f}"
+                if sin_declarar
+                else f"Faltante de {metodo} al abrir"
+            )
+        contabilidad.crear_asiento(
+            db,
+            f"{texto} ({dia.strftime('%d/%m')})",
+            lineas,
+            origen=ORIGEN_APERTURA,
+            referencia_id=int(codigo),
+            fecha=momento,
+        )
+    return schemas.FondoApertura(metodo=metodo, cuenta=codigo, fondo=fondo, segun_libros=libros, diferencia=diferencia)
+
+
+def _declarar_en_cero_lo_no_declarado(db: Session, dia: datetime.date, inicio) -> None:
+    """Al cerrar: la gaveta que nadie declaro al abrir arranco en cero. Se
+    deja asentado como una apertura en cero, para que los libros digan lo
+    mismo que el cuadre (y lo que arrastraban de antes no vuelva mas)."""
+    abiertas = _aperturas_de(db, dia)
+    for metodo in GAVETAS_DE_APERTURA:
+        if metodo in abiertas:
+            continue
+        _asentar_apertura(db, dia, inicio, metodo, 0.0, inicio + datetime.timedelta(minutes=1),
+                          f"{NOTA_SIN_DECLARAR}: arranca en cero")
+    db.flush()
 
 
 @router.post("/abrir", response_model=schemas.EstadoApertura)
@@ -669,70 +794,10 @@ def abrir_caja(
     for metodo in GAVETAS_DE_APERTURA:
         if metodo not in pedidos:
             continue
-        codigo = _cuentas_de(metodo)
-        fondo = pedidos[metodo]
-        libros = round(_saldo_anterior_de(db, codigo, inicio), 2)
-        diferencia = round(fondo - libros, 2)
-        # ANTES de agregar la fila: la consulta hace autoflush y se
-        # encontraria a si misma, y entonces ninguna apertura seria nunca la
-        # primera.
-        primera_vez = (
-            db.query(models.AperturaCaja)
-            .filter(models.AperturaCaja.metodo == metodo)
-            .first()
-            is None
-        )
-
-        db.add(
-            models.AperturaCaja(
-                fecha=momento,
-                dia=dia,
-                metodo=metodo,
-                cuenta=codigo,
-                fondo=fondo,
-                segun_libros=libros,
-                diferencia=diferencia,
-                nota=body.nota or "",
-                desglose=json.dumps(desgloses[metodo]) if metodo in desgloses else "",
-                operador_id=quien.id if quien else None,
-            )
-        )
-
-        if abs(diferencia) >= 0.01:
-            contrapartida = "3010" if primera_vez else "6030"
-            if diferencia > 0:
-                lineas = [(codigo, diferencia, 0.0), (contrapartida, 0.0, diferencia)]
-                texto = (
-                    f"Apertura: {metodo} ya tenía {diferencia:.2f} sin declarar"
-                    if primera_vez
-                    else f"Sobrante de {metodo} al abrir"
-                )
-            else:
-                falta = abs(diferencia)
-                lineas = [(contrapartida, falta, 0.0), (codigo, 0.0, falta)]
-                texto = (
-                    f"Apertura: {metodo} tenía {falta:.2f} menos de lo declarado"
-                    if primera_vez
-                    else f"Faltante de {metodo} al abrir"
-                )
-            contabilidad.crear_asiento(
-                db,
-                f"{texto} ({dia.strftime('%d/%m')})",
-                lineas,
-                origen=ORIGEN_APERTURA,
-                referencia_id=int(codigo),
-                fecha=momento,
-            )
-
-        resultado.append(
-            schemas.FondoApertura(
-                metodo=metodo,
-                cuenta=codigo,
-                fondo=fondo,
-                segun_libros=libros,
-                diferencia=diferencia,
-            )
-        )
+        resultado.append(_asentar_apertura(
+            db, dia, inicio, metodo, pedidos[metodo], momento, body.nota or "",
+            json.dumps(desgloses[metodo]) if metodo in desgloses else "", quien.id if quien else None,
+        ))
 
     db.commit()
     return schemas.EstadoApertura(
@@ -784,6 +849,7 @@ def cerrar_caja(
             "anula ese cierre y vuelve a cerrar.",
         )
 
+    _declarar_en_cero_lo_no_declarado(db, dia, inicio)
     resumen = resumen_caja(dia, db)
     esperados = {l.metodo: l for l in resumen.desglose}
 

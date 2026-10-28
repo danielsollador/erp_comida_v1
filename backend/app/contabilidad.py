@@ -149,6 +149,11 @@ METODOS_CON_REFERENCIA = set(CUENTA_POR_METODO_PAGO) - METODOS_DE_EFECTIVO - MET
 # salir, asi que 1011 solo crecia y la de bolivares mostraba faltantes cuando
 # al proveedor se le pagaba en dolares, que es lo normal en Venezuela.
 METODOS_DE_PAGO = {m: c for m, c in CUENTA_POR_METODO_PAGO.items() if m not in METODOS_SIN_PLATA}
+# Lo que el dueño paga con su plata (de su bolsillo o su cuenta): no sale de
+# ninguna gaveta ni del banco del negocio, es capital que pone (26-oct: una
+# factura quedo "en Efectivo Bs" por defecto y el cierre esperaba -$78).
+# Solo para pagar: no es una forma de cobrar una venta.
+METODOS_DE_PAGO["Plata del dueño"] = "3010"
 
 
 def cuenta_de_pago(metodo: Optional[str], por_defecto: str = "1010") -> str:
@@ -1314,6 +1319,55 @@ def registrar_existencia_declarada(db: Session, ingrediente, valor: float) -> No
         origen="alta_insumo",
         referencia_id=ingrediente.id,
     )
+
+
+def registrar_existencia_no_cargada(db: Session, ingrediente, valor: float) -> None:
+    """Lo que se vendio sin estar cargado: el stock quedo en negativo porque
+    la mercancia existia pero nunca entro al sistema (26-oct: la carne mechada
+    se vendio cinco dias sin cargarla). Es lo mismo que la existencia del alta
+    -algo que el dueño ya tenia-, asi que va contra su capital, no como
+    ganancia de un conteo."""
+    if valor <= 0:
+        return
+    crear_asiento(
+        db,
+        f"Existencia que no estaba cargada: {ingrediente.nombre}",
+        [("1040", valor, 0.0), ("3010", 0.0, valor)],
+        origen="existencia_no_cargada",
+        referencia_id=ingrediente.id,
+    )
+
+
+def registrar_ajuste_de_costo(db: Session, ingrediente, valor: float) -> None:
+    """Se corrigio a mano el costo de la ficha y lo que hay cambia de valor.
+
+    Pasa casi siempre con mercancia que se conto o se dio de alta sin costo y
+    se le puso despues (26-oct: 19 refrescos a $0 que valian $1). Es corregir
+    lo que se declaro, no ganar ni perder: va contra capital, igual que la
+    existencia del alta. Sin esto el inventario de los libros y el de las
+    fichas se separaban en silencio.
+    """
+    valor = round(valor, 2)
+    if abs(valor) < 0.01:
+        return
+    lineas = [("1040", valor, 0.0), ("3010", 0.0, valor)] if valor > 0 else [("3010", -valor, 0.0), ("1040", 0.0, -valor)]
+    crear_asiento(db, f"Corrección del costo de {ingrediente.nombre}", lineas, origen="ajuste_costo",
+                  referencia_id=ingrediente.id)
+
+
+def registrar_reverso_compra_insumo(db: Session, compra_id: int) -> None:
+    """El asiento de una compra suelta, al reves y por el mismo monto: lo que
+    se anulo no deja ni un centavo en los libros."""
+    original = (
+        db.query(models.AsientoContable)
+        .filter(models.AsientoContable.origen == "compra_insumo", models.AsientoContable.referencia_id == compra_id)
+        .first()
+    )
+    if original is None:
+        return  # compra sin costo: nunca tuvo asiento
+    lineas = [(m.cuenta.codigo, m.haber or 0.0, m.debe or 0.0) for m in original.movimientos]
+    crear_asiento(db, f"Anulación: {original.descripcion}", lineas, origen="reverso_compra_insumo",
+                  referencia_id=compra_id)
 
 
 def registrar_compra_insumo(

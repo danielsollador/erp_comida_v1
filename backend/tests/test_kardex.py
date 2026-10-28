@@ -62,7 +62,7 @@ def test_el_costo_queda_congelado_en_el_movimiento(client, insumo):
     """Si se anotara el costo de hoy, el libro dejaria de cuadrar con lo que se
     asento en su momento."""
     client.post("/api/inventario/ingredientes/{}/comprar".format(insumo.id),
-                json={"cantidad": 10, "costo_total": 10.0})
+                json={"cantidad": 10, "costo_total": 10.0, "confirmar": True})
     client.post("/api/inventario/ingredientes/{}/comprar".format(insumo.id),
                 json={"cantidad": 10, "costo_total": 50.0})
     compras = [m for m in extracto(client, insumo.id)["movimientos"] if m["tipo"] == "compra"]

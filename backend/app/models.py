@@ -781,6 +781,9 @@ class CompraSuelta(Base):
     cantidad = Column(Float, nullable=False)
     costo_unitario = Column(Float, nullable=False)
     fecha = Column(DateTime, default=ahora)
+    # Mal anotada y deshecha (26-oct): el stock y el asiento tienen su
+    # reverso, y ya no cuenta como "lo ultimo que se pago".
+    anulada = Column(Boolean, default=False)
 
     ingrediente = relationship("Ingrediente")
 
