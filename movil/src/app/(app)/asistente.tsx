@@ -15,6 +15,7 @@ import Sugerencias from '../../componentes/asistente/Sugerencias'
 import Fondo from '../../componentes/Fondo'
 import Icono from '../../componentes/Icono'
 import { apiIA } from '../../lib/api-ia'
+import { pedirConsentimientoAsistente } from '../../lib/consentimiento-asistente'
 import { LETRA, useModo, useTema } from '../../lib/tema'
 
 /**
@@ -40,6 +41,7 @@ export default function Asistente() {
   async function enviar(t: string, previos: Mensaje[] = mensajes) {
     const pregunta = t.trim()
     if (!pregunta || pensando) return
+    if (!(await pedirConsentimientoAsistente())) return
     const nuevos: Mensaje[] = [...previos, { rol: 'yo', texto: pregunta }]
     ponerMensajes(nuevos)
     setTexto('')

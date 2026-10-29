@@ -2,6 +2,12 @@ import { openURL } from 'expo-linking'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 import { apiCuenta } from '../../lib/api-cuenta'
+import {
+  darConsentimientoAsistente,
+  PROVEEDOR_ASISTENTE,
+  retirarConsentimientoAsistente,
+  tieneConsentimientoAsistente,
+} from '../../lib/consentimiento-asistente'
 import { darConsentimiento, PROVEEDOR_IA, retirarConsentimiento, tieneConsentimiento } from '../../lib/consentimiento-ia'
 import { confirmar } from '../../lib/dialogo'
 import { useSesion } from '../../lib/sesion'
@@ -29,7 +35,7 @@ const NOMBRE_ROL: Record<string, string> = {
   cocina: 'Cocina',
 }
 
-type Cual = 'nombre' | 'pin' | 'clave' | 'ia' | 'eliminar'
+type Cual = 'nombre' | 'pin' | 'clave' | 'ia' | 'asistente' | 'eliminar'
 
 export default function MiCuenta() {
   const t = useTema()
@@ -87,6 +93,7 @@ export default function MiCuenta() {
       )}
       <CambiarClave abierta={abierta === 'clave'} alAlternar={alternar('clave')} alTerminar={salir} />
       {acceso.puede.modulos?.includes('compras') ? <LecturaIA abierta={abierta === 'ia'} alAlternar={alternar('ia')} /> : null}
+      <AsistenteIA abierta={abierta === 'asistente'} alAlternar={alternar('asistente')} />
       <EliminarCuenta abierta={abierta === 'eliminar'} alAlternar={alternar('eliminar')} alTerminar={salir} />
       <Legales />
     </>
@@ -127,6 +134,48 @@ function LecturaIA({ abierta, alAlternar }: { abierta: boolean; alAlternar: () =
       </Nota>
       <Boton
         texto={permitido ? 'Retirar el permiso' : 'Permitir la lectura con IA'}
+        tono={permitido ? 'neutro' : 'acento'}
+        alTocar={() => void cambiar()}
+        deshabilitado={permitido === null}
+      />
+    </Tarjeta>
+  )
+}
+
+/**
+ * El permiso para mandar preguntas al asistente (Pregúntame, reportes con
+ * palabras, cambiar precios): como esta y como retirarlo. La primera vez se
+ * pregunta al usarlo (lib/consentimiento-asistente.ts).
+ */
+function AsistenteIA({ abierta, alAlternar }: { abierta: boolean; alAlternar: () => void }) {
+  const [permitido, setPermitido] = useState<boolean | null>(null)
+  useEffect(() => {
+    tieneConsentimientoAsistente()
+      .then(setPermitido)
+      .catch(() => setPermitido(false))
+  }, [])
+
+  async function cambiar() {
+    if (permitido) {
+      await retirarConsentimientoAsistente()
+      setPermitido(false)
+    } else {
+      await darConsentimientoAsistente()
+      setPermitido(true)
+    }
+  }
+
+  const resumen =
+    permitido === null ? '' : permitido ? `Permitido · ${PROVEEDOR_ASISTENTE}` : 'Sin permiso: se pedirá al usar el asistente'
+  return (
+    <Tarjeta titulo="Asistente con IA" plegable={{ abierta, alAlternar, resumen }}>
+      <Nota>
+        Al usar «Pregúntame», los reportes con palabras o cambiar precios diciéndolo, lo que escribes se envía a{' '}
+        {PROVEEDOR_ASISTENTE} con los datos del negocio que hagan falta para responder (ventas, productos, precios o
+        inventario). Sin este permiso, el resto de la app funciona igual.
+      </Nota>
+      <Boton
+        texto={permitido ? 'Retirar el permiso' : 'Permitir el asistente'}
         tono={permitido ? 'neutro' : 'acento'}
         alTocar={() => void cambiar()}
         deshabilitado={permitido === null}

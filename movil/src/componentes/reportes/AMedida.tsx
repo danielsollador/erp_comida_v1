@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { apiIA } from '../../lib/api-ia'
+import { pedirConsentimientoAsistente } from '../../lib/consentimiento-asistente'
 import { apiReportes } from '../../lib/api-reportes'
 import { descargar } from '../../lib/archivos'
 import { confirmar, avisar } from '../../lib/dialogo'
@@ -183,6 +184,7 @@ export default function AMedida({ periodo, alCambiarPeriodo }: { periodo: Period
   const pedir = async () => {
     const f = frase.trim()
     if (!f || pensando) return
+    if (!(await pedirConsentimientoAsistente())) return
     setPensando(true)
     setFalta('')
     setEntendi('')

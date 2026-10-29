@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics'
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { apiIA, type CambioPrecio, type CambioPropuesto, type PropuestaPrecios } from '../../lib/api-ia'
+import { pedirConsentimientoAsistente } from '../../lib/consentimiento-asistente'
 import { ErrorApi } from '../../lib/api'
 import { useMoneda } from '../../lib/moneda'
 import { LETRA, useTema } from '../../lib/tema'
@@ -64,6 +65,7 @@ export default function CambiarPrecios({
   async function ver(t0: string) {
     const instruccion = t0.trim()
     if (!instruccion || pensando) return
+    if (!(await pedirConsentimientoAsistente())) return
     setTexto(instruccion)
     setPensando(true)
     setFalla(null)

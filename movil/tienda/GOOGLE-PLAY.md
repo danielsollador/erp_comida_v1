@@ -43,9 +43,10 @@ Igual que la sección 3.4 de `APP-STORE.md`, más **dos** terceros que reciben d
 | Google Gemini | Foto o PDF de la factura de compra, nombre y RIF del negocio | Al tocar «Leer factura», tras el consentimiento |
 | Anthropic (Claude) | La pregunta y los datos del negocio que hagan falta para responderla (ventas, productos, precios) | Al usar «Pregúntale a Vertigo», reportes con palabras o cambiar precios con IA |
 
-Ojo: el consentimiento de la app (`lib/consentimiento-ia.ts`) hoy solo nombra a
-Google Gemini. El asistente con Anthropic llegó el 23-oct y no tiene su propio
-aviso; la ficha de Apple tampoco lo menciona.
+Cada uno tiene su permiso en la app, que se pide antes del primer envío y se
+ve y se retira en Configuración › Mi cuenta: `lib/consentimiento-ia.ts`
+(Gemini, facturas) y `lib/consentimiento-asistente.ts` (Anthropic, asistente,
+desde el 29-oct). Falta nombrar a Anthropic en la ficha de Apple.
 
 ## 5. La cuenta es personal: prueba cerrada obligatoria
 
