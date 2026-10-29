@@ -417,6 +417,24 @@ export default function FichaMercancia({
           )}
         </div>
         )}
+        {!nuevo && (
+          f.tipo === 'preparacion' ? (
+            <p className="sm:col-span-2 text-sm text-neutral-600">
+              <SelloTipo tipo="preparacion" icono /> Su receta y lo que rinde se editan en Materia prima → Preparado.
+            </p>
+          ) : (
+            <div className="sm:col-span-2">
+              <Selector etiqueta="Qué es" value={f.tipo} onChange={(e) => poner('tipo', e.target.value)}>
+                {TIPOS_ARTICULO.map((t) => (
+                  <option key={t.valor} value={t.valor}>
+                    {t.texto}
+                  </option>
+                ))}
+              </Selector>
+              <p className="mt-1 text-xs text-neutral-500">{TIPOS_ARTICULO.find((t) => t.valor === f.tipo)?.detalle}</p>
+            </div>
+          )
+        )}
         <div className="sm:col-span-2">
           <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Se mide en</span>
           <div className="flex flex-wrap gap-1.5">
@@ -544,23 +562,6 @@ export default function FichaMercancia({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{opcionales}</div>
       )}
 
-      {!nuevo && (
-        f.tipo === 'preparacion' ? (
-          <p className="text-sm text-neutral-600">
-            <SelloTipo tipo="preparacion" icono /> Su receta y lo que rinde se editan en Materia prima → Preparado.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Selector etiqueta="Qué es" value={f.tipo} onChange={(e) => poner('tipo', e.target.value)}>
-              {TIPOS_ARTICULO.map((t) => (
-                <option key={t.valor} value={t.valor}>
-                  {t.texto} · {t.detalle}
-                </option>
-              ))}
-            </Selector>
-          </div>
-        )
-      )}
 
       {!nuevo && (
         <div className="flex flex-wrap gap-x-5 gap-y-2">

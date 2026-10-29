@@ -119,14 +119,8 @@ export default function TablaMercancia({
           acciones comparten fila, y las cifras bajan a una franja delgada
           debajo (Leider, 8-oct: "el protagonista siempre son los registros"). */}
       <div className="flex flex-wrap xl:flex-nowrap items-stretch gap-2 xl:gap-3">
-        <div className="vp-losa p-2.5 flex flex-wrap items-center gap-2 flex-1 basis-full sm:basis-auto sm:min-w-[18rem]">
-          <input
-            type="search"
-            value={buscar}
-            onChange={(e) => setBuscar(e.target.value)}
-            placeholder={`Buscar en ${a.texto.toLowerCase()}…`}
-            className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full sm:w-44 shrink-0"
-          />
+        <div className="vp-losa p-2.5 flex flex-col gap-2 flex-1 basis-full sm:basis-auto sm:min-w-[18rem]">
+          <div className="flex flex-wrap items-center gap-2">
           <FiltroDesplegable
             etiqueta="Ver"
             valor={filtro}
@@ -162,9 +156,17 @@ export default function TablaMercancia({
               ]}
             />
           )}
+          </div>
+          <input
+            type="search"
+            value={buscar}
+            onChange={(e) => setBuscar(e.target.value)}
+            placeholder={`Buscar en ${a.texto.toLowerCase()}…`}
+            className="border border-neutral-300 rounded-lg px-3 py-2 text-sm w-full"
+          />
         </div>
         {resumen && (
-          <div className="vp-losa order-last xl:order-none basis-full xl:basis-auto p-1.5 xl:p-2.5 flex flex-wrap items-center gap-1 xl:grid xl:grid-cols-4 xl:gap-2 xl:flex-1 xl:min-w-[22rem]">
+          <div className="vp-losa order-last xl:order-none basis-full xl:basis-auto p-1.5 xl:p-2.5 flex flex-wrap items-center gap-1 xl:grid xl:grid-cols-2 xl:gap-1.5 xl:flex-1 xl:min-w-[22rem] xl:max-w-sm">
             <Cuadrito titulo="Mercancías" valor={String(visibles.length === activos.length ? activos.length : `${visibles.length} de ${activos.length}`)} />
             <Cuadrito titulo="En el inventario" valor={dinero(resumen.plata)} />
             <Cuadrito
@@ -183,7 +185,7 @@ export default function TablaMercancia({
             />
           </div>
         )}
-        {acciones && <div className="vp-losa p-2.5 flex items-center gap-2 shrink-0">{acciones}</div>}
+        {acciones && <div className="vp-losa p-2.5 flex items-center gap-2 shrink-0 xl:flex-col xl:items-stretch xl:justify-center xl:[&>*]:w-full xl:[&>*]:justify-center">{acciones}</div>}
       </div>
 
       <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined}>
