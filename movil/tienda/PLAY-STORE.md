@@ -1,4 +1,4 @@
-# Vertigo Pro en Google Play
+# Vertigo en Google Play
 
 Lo que pide Google para publicar la app, qué ya está hecho y qué falta. Es
 la misma app de App Store (`tienda/APP-STORE.md`): los textos, las páginas
@@ -17,7 +17,7 @@ legales y la demo del revisor se reutilizan.
 | Eliminar la cuenta (en la app y en la web) | Configuración › Mi cuenta › Eliminar mi cuenta · https://vertigopro.tech/eliminar-cuenta.html |
 | Política de privacidad | https://vertigopro.tech/privacidad.html |
 | Ícono de la tienda 512×512 | `tienda/play/icono-512.png` |
-| Imagen destacada 1024×500 | `tienda/play/destacada-1024x500.png` |
+| Imagen destacada 1024×500 | `tienda/play/destacada-vertigo-1024x500.png` |
 | Capturas de teléfono 1080×1920 (9:16) | `tienda/play/01…05-telefono-1080x1920.png` (se regeneran con `python tienda/play/generar.py`) |
 
 ## 2. La cuenta es personal: prueba cerrada obligatoria
@@ -39,7 +39,7 @@ familia: cualquiera con Android que instale la prueba y no se salga.
 
 Play Console › Crear aplicación:
 
-- **Nombre**: `Vertigo Pro`
+- **Nombre**: `Vertigo` (en Play se llama así; en App Store, Vertigo Pro)
 - **Idioma predeterminado**: Español (Latinoamérica) – es-419
 - **App o juego**: App · **Gratis o de pago**: Gratis
 - Aceptar las declaraciones (políticas y leyes de exportación de EE. UU.).
@@ -51,7 +51,7 @@ Play Console › Crear aplicación:
   `Punto de venta, cocina, inventario y caja de tu local, desde el teléfono.`
 - **Descripción completa** (4000): la misma de `APP-STORE.md` § 3.1.
 - **Ícono**: `tienda/play/icono-512.png`
-- **Imagen destacada**: `tienda/play/destacada-1024x500.png`
+- **Imagen destacada**: `tienda/play/destacada-vertigo-1024x500.png`
 - **Capturas de teléfono**: `tienda/play/01` a `05`, en ese orden.
 - **Categoría**: Empresa · **Etiquetas**: Punto de venta, Inventario, Restaurantes.
 - **Datos de contacto**: correo de soporte, sitio https://vertigopro.tech
@@ -155,3 +155,17 @@ Va a la pista de **prueba interna como borrador** (`eas.json` › `submit.produc
 - [ ] Confirmar en Play Console › Contenido de la app › Permisos que no
       aparezcan micrófono ni almacenamiento.
 - [ ] Revisar que la demo siga viva: `https://demo.vertigopro.tech/api/health`.
+
+## 8. Estado (29-oct-2026)
+
+App creada en Play Console (cuenta Vertigo.IA, `tech.vertigopro.app`, nombre **Vertigo**).
+Hecho: ficha (textos, ícono, destacada, 5 capturas), política de privacidad, anuncios (no),
+ID de publicidad (no; `AD_ID` bloqueado en `app.json`), apps gubernamentales, funciones
+financieras, salud, seguridad de los datos (borrador: falta guardar tras el público objetivo).
+Falta: contraseña del revisor en «Datos de inicio de sesión», público objetivo, clasificación
+de contenido (pide correo de contacto), categoría y correo en «Configuración de la tienda»,
+primera compilación AAB.
+
+**Micrófono**: el dictado vive en el ERP web (reconocimiento del navegador). Si pasa a la app,
+quitar `RECORD_AUDIO` de `blockedPermissions`, poner el texto del permiso y declarar «Audio»
+en seguridad de los datos.

@@ -61,10 +61,10 @@ def destacada():
     titulo = ImageFont.truetype(str(FUENTES / "sora" / "700Bold" / "Sora_700Bold.ttf"), 72)
     sub = ImageFont.truetype(str(FUENTES / "manrope" / "500Medium" / "Manrope_500Medium.ttf"), 34)
     tx = x0 + lado + 60
-    d.text((tx, 172), "Vertigo Pro", font=titulo, fill=(23, 24, 27))
+    d.text((tx, 172), "Vertigo", font=titulo, fill=(23, 24, 27))
     d.text((tx, 268), "Ventas, cocina e inventario", font=sub, fill=(90, 82, 76))
     d.text((tx, 312), "de tu local, en el teléfono", font=sub, fill=(90, 82, 76))
-    im.save(SALIDA / "destacada-1024x500.png", optimize=True)
+    im.save(SALIDA / "destacada-vertigo-1024x500.png", optimize=True)
 
 
 if __name__ == "__main__":
