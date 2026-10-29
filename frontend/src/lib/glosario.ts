@@ -100,9 +100,9 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo: '15 maltas a $0,69 son $10,37 parados en el depósito. La suma de la columna es lo que dice "En el inventario" arriba.',
   },
   'inventario.minimo': {
-    que: 'El punto en el que hay que volver a comprar.',
-    origen: 'Lo pones tú en la ficha de la mercancía.',
-    calculo: 'Cuando el stock cae a este número o por debajo, la mercancía se marca "Bajo" y entra en la lista de "Qué comprar".',
+    que: 'Lo que quieres tener siempre: por debajo avisa, y hasta ahí se repone.',
+    origen: 'Lo pones tú en la ficha de la mercancía ("Ten siempre al menos").',
+    calculo: 'Cuando el stock cae a este número o por debajo, la mercancía se marca "Bajo" y entra en "Qué comprar" con lo que falte para volver a este nivel (o dos semanas de consumo real, lo que sea más).',
     ejemplo:
       'Si gastas 3 kg de harina al día y al proveedor le toma dos días traerla, un mínimo de 6 kg te avisa justo a tiempo.',
   },

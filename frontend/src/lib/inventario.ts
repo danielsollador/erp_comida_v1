@@ -115,13 +115,13 @@ export function cuantoDura(dias: number): string {
   return `${d} ${d === 1 ? 'día' : 'días'}`
 }
 
-/** "Hoy tienes 10 kg: se te sugeriría comprar 5 kg", con lo que se escribe. */
-export function ejemploIdeal(ideal: number, hay: number, unidad: string): string {
-  if (!Number.isFinite(ideal) || ideal <= 0) return 'Al sugerir compras, se pide lo que falte para llegar a esto.'
-  const falta = ideal - (Number.isFinite(hay) ? hay : 0)
+/** Un solo número para avisar y reponer: "por debajo avisa; hoy hay 10 kg, pediría 5". */
+export function ejemploMinimo(minimo: number, hay: number, unidad: string): string {
+  if (!Number.isFinite(minimo) || minimo <= 0) return 'Por debajo de esto aparece en «Qué comprar», con lo que falte para volver a tenerlo.'
+  const falta = minimo - (Number.isFinite(hay) ? hay : 0)
   return falta > 0
-    ? `Hoy hay ${cantidad(hay)} ${unidad}: se sugeriría comprar ${cantidad(falta)} ${unidad} para llegar.`
-    : `Hoy hay ${cantidad(hay)} ${unidad}: ya estás en lo ideal.`
+    ? `Hoy hay ${cantidad(hay)} ${unidad}: está por debajo y «Qué comprar» pediría ${cantidad(falta)} ${unidad}.`
+    : `Hoy hay ${cantidad(hay)} ${unidad}: está cubierto. Si baja de ${cantidad(minimo)}, avisa.`
 }
 
 export const fechaCorta = (iso: string) =>

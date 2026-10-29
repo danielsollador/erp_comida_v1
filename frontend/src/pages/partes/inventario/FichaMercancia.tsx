@@ -13,7 +13,7 @@ import {
   cantidad,
   conVariacion,
   cuantoDura,
-  ejemploIdeal,
+  ejemploMinimo,
   ejemploRendimiento,
   estadoStock,
   fechaCorta,
@@ -116,7 +116,9 @@ export default function FichaMercancia({
     costo_unitario: ing ? String(ing.costo_unitario) : '',
     rendimiento_pct: ing ? String(ing.rendimiento_pct) : '100',
     exento: ing?.exento ?? false,
-    // Viene en empaque de N: con esto cada factura la carga por empaques.
+    // ¿Suelta o en empaque? Es una pregunta, no un número que se deja vacío
+    // (Leider, 29-oct). Si viene en empaque, abajo se dice cuántas trae.
+    llega: (ing?.empaque_trae ? 'empaque' : 'suelta') as 'suelta' | 'empaque',
     empaque_trae: ing?.empaque_trae ? String(ing.empaque_trae) : '',
     // Lo que se paga por UN empaque. Es como lo dice la gente: "el paquete de
     // 200 sobres me cuesta $3,60", no "cada sobre me cuesta $0,018".
@@ -256,9 +258,11 @@ export default function FichaMercancia({
   async function guardar() {
     setAviso('')
     if (!f.nombre.trim()) return setAviso('La mercancía necesita un nombre.')
+    // Un solo número: por debajo avisa, y hasta ahí se repone. Tener dos
+    // ("avísame" y "lo ideal") era la misma pregunta dos veces (Leider, 29-oct).
     const minimo = f.stock_minimo === '' ? 0 : num(f.stock_minimo)
-    const objetivo = f.stock_objetivo === '' ? 0 : num(f.stock_objetivo)
-    const empaque = f.empaque_trae === '' ? null : num(f.empaque_trae)
+    const objetivo = minimo
+    const empaque = f.llega === 'suelta' || f.empaque_trae === '' ? null : num(f.empaque_trae)
     // En empaque, el precio y lo que hay se escriben por empaque y se guardan
     // por unidad: el sistema cuenta sobres, la gente cuenta paquetes (26-oct:
     // "$3,60 por unidad" eran $3,60 el paquete de 200, y el inventario subio
@@ -272,7 +276,8 @@ export default function FichaMercancia({
     const inicial = (f.stock_actual === '' ? 0 : num(f.stock_actual)) * (porEmpaque ? empaque : 1)
     if ([minimo, objetivo, costo, inicial].some((n) => !Number.isFinite(n) || n < 0))
       return setAviso('Las cantidades y el costo tienen que ser números, y no negativos.')
-    if (empaque !== null && !(empaque > 0)) return setAviso('El empaque trae una cantidad mayor que cero, o se deja vacío si viene suelta.')
+    if (f.llega === 'empaque' && (empaque === null || !(empaque > 0)))
+      return setAviso('Di cuántas trae un empaque, o marca que viene suelta.')
     if (!Number.isFinite(rendimiento) || rendimiento <= 0 || rendimiento > 100)
       return setAviso('Lo que se aprovecha va de 1 a 100 %.')
     setGuardando(true)
@@ -310,7 +315,7 @@ export default function FichaMercancia({
 
   const perdidaTotal = mermas.reduce((s, m) => s + m.valor, 0)
   const u = ing?.unidad ?? f.unidad
-  const trae = f.empaque_trae === '' ? 0 : num(f.empaque_trae)
+  const trae = f.llega === 'empaque' && f.empaque_trae !== '' ? num(f.empaque_trae) : 0
   const enEmpaque = Number.isFinite(trae) && trae > 1
 
   // ── El formulario: crear, o cambiar los datos ──────────────────────────────
@@ -331,18 +336,11 @@ export default function FichaMercancia({
       </Selector>
       {f.tipo !== 'desechable' && (<>
       <CampoCantidad
-        etiqueta="Avísame cuando quede menos de"
+        etiqueta="Ten siempre al menos"
         unidad={f.unidad}
         valor={f.stock_minimo}
         alCambiar={(v) => poner('stock_minimo', v)}
-        ayuda="Por debajo de esto aparece en «Qué comprar»."
-      />
-      <CampoCantidad
-        etiqueta="Lo ideal tener en el inventario"
-        unidad={f.unidad}
-        valor={f.stock_objetivo}
-        alCambiar={(v) => poner('stock_objetivo', v)}
-        ayuda={ejemploIdeal(num(f.stock_objetivo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
+        ayuda={ejemploMinimo(num(f.stock_minimo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
       />
       </>)}
       {f.tipo === 'insumo' && (
@@ -402,6 +400,9 @@ export default function FichaMercancia({
             no la crees: usa esa.
           </p>
         )}
+        {/* AL CREAR, lo primero: decide las preguntas que siguen. Al editar
+            va al final: ya se decidió y casi nunca cambia (Leider, 29-oct). */}
+        {nuevo && (
         <div className="sm:col-span-2">
           <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Qué es</span>
           {f.tipo === 'preparacion' ? (
@@ -412,6 +413,7 @@ export default function FichaMercancia({
             <ElegirAlmacen valor={f.tipo} alElegir={(t) => poner('tipo', t)} compacto />
           )}
         </div>
+        )}
         <div className="sm:col-span-2">
           <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Se mide en</span>
           <div className="flex flex-wrap gap-1.5">
@@ -436,13 +438,35 @@ export default function FichaMercancia({
             de cada sobre. */}
         {f.tipo !== 'preparacion' && (
           <div className="sm:col-span-2">
-            <CampoCantidad
-        etiqueta="Viene en empaque de"
-        unidad={f.unidad}
-        valor={f.empaque_trae}
-        alCambiar={(v) => poner('empaque_trae', v)}
-        ayuda={f.empaque_trae === '' ? 'Vacío: viene suelta. Si el proveedor la trae en caja, bulto o paquete, pon cuántas trae uno y cada factura se carga por empaques.' : `Cada factura pide cuántos empaques vinieron y el sistema los pasa a ${f.unidad === 'unidad' ? 'unidades' : f.unidad}.`}
-      />
+            <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Cómo te llega</span>
+            <div className="flex flex-wrap gap-1.5">
+              {([['suelta', 'Suelta'], ['empaque', 'En empaque']] as const).map(([x, texto]) => (
+                <button
+                  key={x}
+                  type="button"
+                  onClick={() => poner('llega', x)}
+                  aria-pressed={f.llega === x}
+                  className={`rounded-lg border-2 px-3 py-1.5 text-sm font-semibold ${
+                    f.llega === x ? 'border-acento-500 bg-acento-500/8' : 'border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
+            {f.llega === 'empaque' ? (
+              <div className="mt-2">
+                <CampoCantidad
+                  etiqueta="Cuántas trae un empaque"
+                  unidad={f.unidad}
+                  valor={f.empaque_trae}
+                  alCambiar={(v) => poner('empaque_trae', v)}
+                  ayuda={`Caja, bulto o paquete. Cada factura pide cuántos empaques vinieron y el sistema los pasa a ${f.unidad === 'unidad' ? 'unidades' : f.unidad}.`}
+                />
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-neutral-500">Se compra y se cuenta por {f.unidad}.</p>
+            )}
           </div>
         )}
         {nuevo && f.tipo !== 'desechable' && (
@@ -504,6 +528,19 @@ export default function FichaMercancia({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{opcionales}</div>
+      )}
+
+      {!nuevo && (
+        <div>
+          <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Qué es</span>
+          {f.tipo === 'preparacion' ? (
+            <p className="text-sm text-neutral-600">
+              <SelloTipo tipo="preparacion" icono /> Su receta y lo que rinde se editan en Materia prima → Preparado.
+            </p>
+          ) : (
+            <ElegirAlmacen valor={f.tipo} alElegir={(t) => poner('tipo', t)} compacto />
+          )}
+        </div>
       )}
 
       {!nuevo && (
