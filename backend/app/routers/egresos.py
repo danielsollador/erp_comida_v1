@@ -205,6 +205,15 @@ def anular(pago_id: int, db: Session = Depends(get_db)):
                 status_code=409,
                 detail="Ese anticipo ya se descontó de un sueldo. Anula primero ese pago de sueldo.",
             )
+    # Lo retenido ya se le pago al SENIAT: anular devolveria al libro un ISLR
+    # que no se debe y el "por enterar" quedaba en negativo.
+    if (pago.retencion_islr or 0) > 0.004:
+        pendiente = round(contabilidad.saldo_de_cuenta(db, "2060"), 2)
+        if pago.retencion_islr > pendiente + 0.005:
+            raise HTTPException(
+                status_code=409,
+                detail="El ISLR retenido en ese pago ya se le pagó al SENIAT. No se puede anular: corrígelo con el contador.",
+            )
     try:
         contabilidad.asegurar_ejercicio_abierto(db, pago.fecha, "ese pago")
     except contabilidad.ErrorEjercicioCerrado as e:

@@ -50,7 +50,9 @@ export default function CuentasPorCobrar() {
     api.resumenCxC().then(setResumen).catch((e) => setError(e.message))
     api.listarCobrosClientes().then(setCobros).catch(() => setCobros([]))
   }
-  useEffect(cargar, [])
+  // Se recarga al cambiar de pestaña: los cobros se hacen dentro del detalle
+  // del cliente y la lista de "Cobros hechos" quedaba con la de al entrar.
+  useEffect(cargar, [seccion])
 
   return (
     <div className="min-h-screen bg-neutral-50">

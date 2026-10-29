@@ -84,6 +84,15 @@ def test_anular_deja_los_libros_como_antes(client, db, libros):
     libros_cuadrados(client, db)
 
 
+def test_no_se_anula_un_pago_cuyo_islr_ya_se_entero(client, db, libros):
+    pago = pagar(client, concepto="Honorarios", monto=50.0, retencion_islr_pct=3).json()
+    r = client.post("/api/egresos/islr/enterar", json={"metodo_pago": "Transferencia", "referencia": "PL-1"})
+    assert r.status_code == 200, r.text
+    assert client.post(f"/api/egresos/{pago['id']}/anular").status_code == 409
+    assert client.get("/api/egresos/resumen").json()["islr_por_enterar"] == 0.0
+    libros_cuadrados(client, db)
+
+
 def test_pago_fijo_se_confirma_y_pasa_a_la_proxima_fecha(client, db, libros):
     f = client.post("/api/egresos/fijos", json={
         "beneficiario": "Ana Pérez", "concepto": "Sueldos", "monto": 150.0,
