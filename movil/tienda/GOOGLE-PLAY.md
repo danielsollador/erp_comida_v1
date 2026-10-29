@@ -1,4 +1,4 @@
-# Vertigo en Google Play
+# Vertigo Pro en Google Play
 
 Complemento de `APP-STORE.md` para Android. Paquete: `tech.vertigopro.app`.
 
@@ -66,14 +66,14 @@ familia: cualquiera con Android que instale la prueba y no se salga.
 
 Play Console › Crear aplicación:
 
-- **Nombre**: `Vertigo` (en Play se llama así; en App Store, Vertigo Pro)
+- **Nombre**: `Vertigo Pro` (igual que en App Store)
 - **Idioma predeterminado**: Español (Latinoamérica) – es-419
 - **App o juego**: App · **Gratis o de pago**: Gratis
 - Aceptar las declaraciones (políticas y leyes de exportación de EE. UU.).
 
 ## 7. La ficha de la tienda (Crecimiento › Presencia en Play Store › Ficha principal)
 
-- **Nombre** (30): `Vertigo` (pendiente: Leider propone `Vertigo Pro`, igual que App Store)
+- **Nombre** (30): `Vertigo Pro`
 - **Descripción breve** (80):
   `Punto de venta, cocina, inventario y caja de tu local, desde el teléfono.`
 - **Descripción completa** (4000): la misma de `APP-STORE.md` § 3.1.
@@ -183,7 +183,7 @@ Va a la pista de **prueba interna como borrador** (`eas.json` › `submit.produc
 
 ## 11. Estado (29-oct-2026)
 
-App creada en Play Console (cuenta Vertigo.IA, `tech.vertigopro.app`, nombre **Vertigo**).
+App creada en Play Console (cuenta Vertigo.IA, `tech.vertigopro.app`, nombre **Vertigo Pro** desde el 29-oct; portada y 8 capturas de `tienda/google-play/`).
 **Todo el «Contenido de la aplicación» está completo**: privacidad, datos de inicio de sesión
 (usuario `revision` con su contraseña), anuncios (no), ID de publicidad (no; `AD_ID` bloqueado
 en `app.json`), clasificación IARC (contenido en línea: sí, por la IA; nada más), público
