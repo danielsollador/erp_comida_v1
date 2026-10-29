@@ -159,12 +159,14 @@ Va a la pista de **prueba interna como borrador** (`eas.json` › `submit.produc
 ## 8. Estado (29-oct-2026)
 
 App creada en Play Console (cuenta Vertigo.IA, `tech.vertigopro.app`, nombre **Vertigo**).
-Hecho: ficha (textos, ícono, destacada, 5 capturas), política de privacidad, anuncios (no),
-ID de publicidad (no; `AD_ID` bloqueado en `app.json`), apps gubernamentales, funciones
-financieras, salud, seguridad de los datos (borrador: falta guardar tras el público objetivo).
-Falta: contraseña del revisor en «Datos de inicio de sesión», público objetivo, clasificación
-de contenido (pide correo de contacto), categoría y correo en «Configuración de la tienda»,
-primera compilación AAB.
+**Todo el «Contenido de la aplicación» está completo**: privacidad, datos de inicio de sesión
+(usuario `revision` con su contraseña), anuncios (no), ID de publicidad (no; `AD_ID` bloqueado
+en `app.json`), clasificación IARC (contenido en línea: sí, por la IA; nada más), público
+18+, seguridad de los datos, apps gubernamentales, funciones financieras y salud (no).
+Ficha completa; categoría **Economía**; contacto daniel.sanabria.2017@gmail.com y vertigopro.tech.
+
+Falta: la primera compilación AAB (acceso al proyecto de Expo de Leider), subirla a prueba
+interna, armar la prueba cerrada con 12 probadores durante 14 días y pedir producción.
 
 **Micrófono**: el dictado vive en el ERP web (reconocimiento del navegador). Si pasa a la app,
 quitar `RECORD_AUDIO` de `blockedPermissions`, poner el texto del permiso y declarar «Audio»
