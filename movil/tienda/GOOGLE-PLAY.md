@@ -1,26 +1,53 @@
 # Vertigo en Google Play
 
-Lo que pide Google para publicar la app, qué ya está hecho y qué falta. Es
-la misma app de App Store (`tienda/APP-STORE.md`): los textos, las páginas
-legales y la demo del revisor se reutilizan.
+Complemento de `APP-STORE.md` para Android. Paquete: `tech.vertigopro.app`.
 
-## 1. Lo que ya está listo
+## 1. Material listo (`tienda/google-play/`)
 
-| Requisito de Google | Dónde quedó |
-|---|---|
-| Nombre del paquete | `tech.vertigopro.app` (`app.json` › `android.package`). **No se puede cambiar después de la primera subida.** |
-| Versión | 1.0.0; el código de versión lo lleva EAS solo (`appVersionSource: remote`, `autoIncrement`) |
-| Ícono adaptable | `assets/android-icon-*.png` (fondo, figura y monocromo para Android 13+) |
-| Permisos mínimos | `app.json` › `android.permissions` (cámara) y `blockedPermissions`: sin micrófono, sin almacenamiento, sin acceso a toda la galería, sin «mostrar sobre otras apps». Las fotos se eligen con el selector del sistema, que no pide permiso. |
-| Servidor de producción en la compilación | `eas.json` › `production` (`https://savora.vertigopro.tech`) |
-| Formato que pide Play | `production` compila **AAB** (por defecto en EAS) |
-| Eliminar la cuenta (en la app y en la web) | Configuración › Mi cuenta › Eliminar mi cuenta · https://vertigopro.tech/eliminar-cuenta.html |
-| Política de privacidad | https://vertigopro.tech/privacidad.html |
-| Ícono de la tienda 512×512 | `tienda/play/icono-512.png` |
-| Imagen destacada 1024×500 | `tienda/play/destacada-vertigo-1024x500.png` |
-| Capturas de teléfono 1080×1920 (9:16) | `tienda/play/01…05-telefono-1080x1920.png` (se regeneran con `python tienda/play/generar.py`) |
+| Pieza | Archivo | Medida |
+|---|---|---|
+| Ícono de la tienda | `icono-512.png` | 512×512, PNG 32 bits |
+| Imagen de portada | `portada-1024x500.png` | 1024×500, sin texto cerca de los bordes |
+| Capturas de teléfono | `capturas/01…08-android-1080x1920.png` | 1080×1920 (9:16) |
 
-## 2. La cuenta es personal: prueba cerrada obligatoria
+Las capturas salen de la app actual (rama `app-expo`, 28-oct-2026) contra una
+demo local llamada «La Despensa», con los datos inventados de `demo_data.py`.
+
+## 2. Firma
+
+La llave de Android (keystore) ya existe en EAS: se generó en la nube en la
+primera compilación de Android (14-oct-2026, perfil `publico`). Toda compilación
+de este proyecto la reutiliza. No crear otra. Antes de pasar el proyecto a una
+organización de Expo, descargar una copia: `npx eas-cli credentials -p android`
+→ Keystore → Download (la guarda Leider, fuera de git).
+
+## 3. Permisos (manifiesto final verificado con `expo config --type introspect`)
+
+- Declarados: `INTERNET`, `VIBRATE`, `CAMERA` (expo-image-picker),
+  `POST_NOTIFICATIONS` y `RECEIVE_BOOT_COMPLETED` (expo-notifications),
+  `ACCESS_NETWORK_STATE`.
+- Bloqueados en `app.json` → `android.blockedPermissions`: `READ_MEDIA_IMAGES`,
+  `READ_MEDIA_VIDEO`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`,
+  `SYSTEM_ALERT_WINDOW`, `RECORD_AUDIO`, `READ_MEDIA_AUDIO`,
+  `READ_MEDIA_VISUAL_USER_SELECTED` y `com.google.android.gms.permission.AD_ID`
+  (sin publicidad: así se declaró en Play Console).
+- La galería usa el selector del sistema (`launchImageLibraryAsync` →
+  PhotoPicker); la app nunca pide permiso de fotos.
+
+## 4. Seguridad de los datos
+
+Igual que la sección 3.4 de `APP-STORE.md`, más **dos** terceros que reciben datos:
+
+| Tercero | Qué recibe | Cuándo |
+|---|---|---|
+| Google Gemini | Foto o PDF de la factura de compra, nombre y RIF del negocio | Al tocar «Leer factura», tras el consentimiento |
+| Anthropic (Claude) | La pregunta y los datos del negocio que hagan falta para responderla (ventas, productos, precios) | Al usar «Pregúntale a Vertigo», reportes con palabras o cambiar precios con IA |
+
+Ojo: el consentimiento de la app (`lib/consentimiento-ia.ts`) hoy solo nombra a
+Google Gemini. El asistente con Anthropic llegó el 23-oct y no tiene su propio
+aviso; la ficha de Apple tampoco lo menciona.
+
+## 5. La cuenta es personal: prueba cerrada obligatoria
 
 La cuenta de Play Console es **personal** (Vertigo.IA). Para las cuentas
 personales nuevas Google exige, antes de dejar publicar en producción:
@@ -35,7 +62,7 @@ El reloj de los 14 días arranca cuando hay 12 dentro: conviene armar la
 lista de correos (Gmail) ya. Sirven el equipo del local, Leider, Daniel,
 familia: cualquiera con Android que instale la prueba y no se salga.
 
-## 3. Crear la app en Play Console
+## 6. Crear la app en Play Console
 
 Play Console › Crear aplicación:
 
@@ -44,22 +71,22 @@ Play Console › Crear aplicación:
 - **App o juego**: App · **Gratis o de pago**: Gratis
 - Aceptar las declaraciones (políticas y leyes de exportación de EE. UU.).
 
-## 4. La ficha de la tienda (Crecimiento › Presencia en Play Store › Ficha principal)
+## 7. La ficha de la tienda (Crecimiento › Presencia en Play Store › Ficha principal)
 
-- **Nombre** (30): `Vertigo Pro`
+- **Nombre** (30): `Vertigo` (pendiente: Leider propone `Vertigo Pro`, igual que App Store)
 - **Descripción breve** (80):
   `Punto de venta, cocina, inventario y caja de tu local, desde el teléfono.`
 - **Descripción completa** (4000): la misma de `APP-STORE.md` § 3.1.
-- **Ícono**: `tienda/play/icono-512.png`
-- **Imagen destacada**: `tienda/play/destacada-vertigo-1024x500.png`
-- **Capturas de teléfono**: `tienda/play/01` a `05`, en ese orden.
+- **Ícono**: `tienda/google-play/icono-512.png`
+- **Imagen destacada**: `tienda/google-play/portada-1024x500.png`
+- **Capturas de teléfono**: `tienda/google-play/capturas/01` a `08`, en ese orden.
 - **Categoría**: Empresa · **Etiquetas**: Punto de venta, Inventario, Restaurantes.
 - **Datos de contacto**: correo de soporte, sitio https://vertigopro.tech
 
 No hace falta subir capturas de tablet: si se dejan vacías, la app no se
 anuncia para tablets en la tienda (se instala igual).
 
-## 5. Contenido de la app (Política › Contenido de la app)
+## 8. Contenido de la app (Política › Contenido de la app)
 
 Todo se responde una sola vez; Google no deja enviar a revisión con algo pendiente.
 
@@ -87,7 +114,7 @@ Todo se responde una sola vez; Google no deja enviar a revisión con algo pendie
 - **Eliminación de cuenta**: URL https://vertigopro.tech/eliminar-cuenta.html ;
   se puede pedir que se borren los datos sin borrar la cuenta: No.
 
-### 5.1 Seguridad de los datos
+### 8.1 Seguridad de los datos (lo declarado en Play Console)
 
 - **¿Recopila o comparte datos?** Sí.
 - **¿Encriptados en tránsito?** Sí (solo HTTPS).
@@ -109,7 +136,7 @@ propósito «Funcionalidad de la app».
 
 Sin publicidad, sin analítica, sin rastreo, sin ubicación.
 
-## 6. Compilar y subir
+## 9. Compilar y subir
 
 En la carpeta `movil/`, con acceso al proyecto de Expo:
 
@@ -117,9 +144,7 @@ En la carpeta `movil/`, con acceso al proyecto de Expo:
 npx eas-cli@latest build --platform android --profile production
 ```
 
-La primera vez EAS pregunta si genera la **llave de firma de Android**: sí,
-que la guarde EAS. Esa llave (y la de subida que registra Google) es la que
-permite actualizar la app para siempre: no se borra el proyecto de Expo.
+La llave de firma ya existe en EAS (ver «Firma»): EAS la reutiliza, no se crea otra.
 
 1. **Primera subida, a mano**: Play Console › Pruebas › Prueba interna ›
    Crear versión › subir el `.aab` que dio EAS. (Google no deja que la
@@ -129,13 +154,13 @@ permite actualizar la app para siempre: no se borra el proyecto de Expo.
    promoverla), enviar a revisión. Mandarles el enlace de la prueba.
 3. **A los 14 días**: Solicitar acceso a producción.
 
-### 6.1 Que las siguientes versiones se suban solas
+### 9.1 Que las siguientes versiones se suban solas
 
 1. Google Cloud (el mismo proyecto o uno nuevo) › IAM › Cuentas de servicio ›
    crear `play-publicar`, y una **clave JSON**.
 2. Play Console › Usuarios y permisos › Invitar usuario › el correo de esa
    cuenta de servicio, con permiso para **lanzar versiones** en esta app.
-3. Guardar la clave como `tienda/play/play-cuenta-servicio.json`
+3. Guardar la clave como `tienda/google-play/play-cuenta-servicio.json`
    (está en `.gitignore`; **nunca** a git) o subirla a EAS
    (`npx eas-cli@latest credentials` › Android › Google Service Account).
 4. Desde entonces:
@@ -146,7 +171,7 @@ npx eas-cli@latest submit --platform android --latest
 
 Va a la pista de **prueba interna como borrador** (`eas.json` › `submit.production.android`); desde Play Console se promueve.
 
-## 7. Antes de mandar a revisión
+## 10. Antes de mandar a revisión
 
 - [ ] Instalar la versión de prueba interna en un Android y probar contra
       producción: entrar, vender, cocina, foto de factura (permiso de
@@ -156,7 +181,7 @@ Va a la pista de **prueba interna como borrador** (`eas.json` › `submit.produc
       aparezcan micrófono ni almacenamiento.
 - [ ] Revisar que la demo siga viva: `https://demo.vertigopro.tech/api/health`.
 
-## 8. Estado (29-oct-2026)
+## 11. Estado (29-oct-2026)
 
 App creada en Play Console (cuenta Vertigo.IA, `tech.vertigopro.app`, nombre **Vertigo**).
 **Todo el «Contenido de la aplicación» está completo**: privacidad, datos de inicio de sesión
@@ -165,7 +190,10 @@ en `app.json`), clasificación IARC (contenido en línea: sí, por la IA; nada m
 18+, seguridad de los datos, apps gubernamentales, funciones financieras y salud (no).
 Ficha completa; categoría **Economía**; contacto daniel.sanabria.2017@gmail.com y vertigopro.tech.
 
-Falta: la primera compilación AAB (acceso al proyecto de Expo de Leider), subirla a prueba
+Expo: el proyecto es de la cuenta personal `motaleider777`; para dar acceso hay que crear una
+organización en expo.dev, transferirle el proyecto e invitar con rol Developer.
+
+Falta: la primera compilación AAB, subirla a prueba
 interna, armar la prueba cerrada con 12 probadores durante 14 días y pedir producción.
 
 **Micrófono**: el dictado vive en el ERP web (reconocimiento del navegador). Si pasa a la app,
