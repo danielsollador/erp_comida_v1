@@ -179,6 +179,9 @@ export default function FichaMercancia({
   const [masDetalles, setMasDetalles] = useState(false)
   // El extracto completo, con filtro de fecha y descarga, detras de "Ver todo".
   const [todo, setTodo] = useState(false)
+  // EL HISTORIAL NO SE MUESTRA SOLO. Al abrir la ficha se viene a anotar
+  // algo o a mirar cuánto hay; la lista de movimientos se pide (Leider, 29-oct).
+  const [verHistorial, setVerHistorial] = useState(false)
   const [historial, setHistorial] = useState<CompraDeInsumo[] | null>(null)
   const [extracto, setExtracto] = useState<ExtractoInsumo | null>(null)
   // Para cuanto alcanza: el mismo calculo de Reportes > Inventario (consumo
@@ -630,8 +633,8 @@ export default function FichaMercancia({
 
       {/* Lo que se viene a hacer, con verbos. */}
       <div>
-        <p className="vp-etiqueta mb-2">Anotar</p>
-        <div className="grid grid-cols-2 gap-2">
+        <h3 className="font-display text-lg font-semibold tracking-tight mb-3">Anotar</h3>
+        <div className="grid grid-cols-2 gap-3">
           <BotonAnotar titulo="Llegó mercancía" detalle="Una compra sin factura" onClick={() => acciones.comprar(ing)} />
           <BotonAnotar titulo="Se dañó o se botó" detalle="Queda como pérdida" peligro onClick={() => acciones.merma(ing)} />
           <BotonAnotar titulo="La usó el personal" detalle="Comida de empleados: no es pérdida" onClick={() => acciones.consumoPersonal(ing)} />
@@ -639,15 +642,34 @@ export default function FichaMercancia({
         </div>
       </div>
 
-      {/* Lo ultimo que le paso, en frases. El extracto entero, detras. */}
+      {/* Lo ultimo que le paso, en frases. El extracto entero, detras. Todo
+          plegado hasta que se pida. */}
+      {!verHistorial ? (
+        <button
+          type="button"
+          onClick={() => setVerHistorial(true)}
+          className="vp-control vp-pulsable flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-4 text-left"
+        >
+          <span>
+            <span className="block text-base font-semibold">Ver lo que le pasó</span>
+            <span className="block text-sm text-neutral-500">Compras, ventas, conteos y pérdidas, una por una</span>
+          </span>
+          <span aria-hidden className="vp-flecha opacity-70" />
+        </button>
+      ) : (
       <div>
         <div className="flex items-baseline justify-between gap-2 mb-2">
           <p className="vp-etiqueta">{todo ? 'Todo lo que le pasó' : 'Lo último que le pasó'}</p>
-          {extracto && (todo || extracto.movimientos.length > 0) && (
-            <button type="button" onClick={() => setTodo((v) => !v)} className="text-sm font-medium text-acento-700 hover:underline">
-              {todo ? 'Ver menos' : 'Ver todo'}
+          <span className="flex items-baseline gap-3">
+            {extracto && (todo || extracto.movimientos.length > 0) && (
+              <button type="button" onClick={() => setTodo((v) => !v)} className="text-sm font-medium text-acento-700 hover:underline">
+                {todo ? 'Ver menos' : 'Ver todo'}
+              </button>
+            )}
+            <button type="button" onClick={() => { setVerHistorial(false); setTodo(false) }} className="text-sm font-medium text-neutral-500 hover:underline">
+              Ocultar
             </button>
-          )}
+          </span>
         </div>
         {extracto === null ? (
           <p className="text-sm text-neutral-400">Cargando…</p>
@@ -718,7 +740,7 @@ export default function FichaMercancia({
                         <Th clave="movimiento">Qué pasó</Th>
                         <Th clave="quien">Quién</Th>
                         <Th clave="cantidad" alinear="derecha">Cantidad</Th>
-                        <Th clave="valor" alinear="derecha">Vale</Th>
+                        <Th clave="valor" alinear="derecha">En plata</Th>
                         <Th clave="saldo" alinear="derecha">Quedó</Th>
                       </tr>
                     </thead>
@@ -805,6 +827,7 @@ export default function FichaMercancia({
           </div>
         )}
       </div>
+      )}
 
     </div>
   )
@@ -816,7 +839,7 @@ export default function FichaMercancia({
         nuevo
           ? 'Lo indispensable para empezar; lo demás se puede poner después.'
           : editando
-            ? 'Cambiar los datos de esta mercancía'
+            ? 'Configuración de esta mercancía'
             : `${ing.categoria || 'Sin categoría'} · ${ALMACEN_DE[ing.tipo].detalle}`
       }
       onCerrar={onCerrar}
@@ -836,7 +859,7 @@ export default function FichaMercancia({
             {/* AL PIE, SIEMPRE A LA VISTA. Al final de la ficha quedaba
                 debajo de cien movimientos y no se encontraba (Leider, 2-oct). */}
             <Boton tono="suave" onClick={() => setEditando(true)} className="mr-auto">
-              Cambiar los datos
+              Configurar la mercancía
             </Boton>
             <Boton tono="suave" onClick={onCerrar}>
               Cerrar
@@ -895,9 +918,9 @@ function BotonAnotar({
   onClick: () => void
 }) {
   return (
-    <button type="button" onClick={onClick} className="vp-control vp-pulsable rounded-xl px-3 py-2.5 text-left">
-      <span className={`block text-sm font-semibold ${peligro ? 'text-peligro-600' : ''}`}>{titulo}</span>
-      <span className="block text-xs text-neutral-500">{detalle}</span>
+    <button type="button" onClick={onClick} className="vp-control vp-pulsable rounded-2xl px-4 py-4 text-left">
+      <span className={`block text-base font-semibold ${peligro ? 'text-peligro-600' : ''}`}>{titulo}</span>
+      <span className="block text-sm text-neutral-500">{detalle}</span>
     </button>
   )
 }
@@ -987,7 +1010,7 @@ function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) 
             <th className="py-2 pl-3 text-left font-semibold">Qué pasó</th>
             <th className="py-2 text-right font-semibold">Veces</th>
             <th className="py-2 text-right font-semibold">Cantidad</th>
-            <th className="py-2 pr-3 text-right font-semibold">Vale</th>
+            <th className="py-2 pr-3 text-right font-semibold">En plata</th>
           </tr>
         </thead>
         <tbody>

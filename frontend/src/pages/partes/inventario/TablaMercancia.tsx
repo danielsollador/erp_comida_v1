@@ -19,7 +19,7 @@ import type { ResumenAlmacen } from './Almacenes'
  * costo lado a lado y nunca se sabía contra cuál medir el margen. Ahora hay
  * una columna "Costo" y el título dice cuál es; tocarlo cambia el ajuste de
  * Configuración ("Con qué costo fijar precios"), el mismo que usan el Menú y
- * las Recetas. "Vale" y el margen salen de ese mismo número.
+ * las Recetas. "Invertido" y el margen salen de ese mismo número.
  */
 
 const COSTOS: { valor: CostoParaPrecios; texto: string; detalle: string }[] = [
@@ -208,7 +208,7 @@ export default function TablaMercancia({
                 ) : (
                   <Th clave="vende" alinear="derecha" className="hidden md:table-cell">Se vende a</Th>
                 )}
-                <Th clave="vale" alinear="derecha">Vale</Th>
+                <Th clave="vale" alinear="derecha">Invertido</Th>
                 <th aria-label="Abrir" className="w-8" />
               </tr>
             </thead>

@@ -516,7 +516,7 @@ export default function Inventario() {
           mercancias: propios.length,
           bajoMinimo: a.destino === 'gasto' ? 0 : propios.filter((i) => i.stock_actual <= i.stock_minimo).length,
           sinCosto: propios.filter((i) => !i.costo_unitario).length,
-          // Al costo elegido en Configuración, igual que la columna "Vale".
+          // Al costo elegido en Configuración, igual que la columna "Invertido".
           plata: a.destino === 'gasto' ? gastoDesechables : propios.reduce((s, i) => s + Math.max(i.stock_actual, 0) * (i.costo_elegido ?? i.costo_unitario ?? 0), 0),
           preparaciones: a.valor === 'insumo' ? activos.filter((i) => i.tipo === 'preparacion').length : undefined,
         }

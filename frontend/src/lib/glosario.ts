@@ -94,7 +94,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
       'Jugo a $3,00 con costo $1,65: sin IVA quedan $2,59, y te deja $0,94 (36 %). Si compararas los $3 con el costo parecería 45 %, y no es verdad.',
   },
   'inventario.vale': {
-    que: 'Cuánta plata tienes guardada en esa mercancía, al costo con que la miras.',
+    que: 'Cuánta plata tienes invertida (parada) en lo que hay de esa mercancía, al costo con que la miras. No es a cuánto se vende.',
     origen: 'El sistema lo calcula; no se escribe.',
     calculo: 'Lo que hay × el costo elegido. Si cambias el costo en el desplegable "Costo" de arriba, cambia también esto.',
     ejemplo: '15 maltas a $0,69 son $10,37 parados en el depósito. La suma de la columna es lo que dice "En el inventario" arriba.',

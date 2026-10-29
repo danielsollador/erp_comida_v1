@@ -148,7 +148,7 @@ export default function Inventario({ datos, dinero, corto }: { datos: ReporteInv
                     <tr>
                       <Th clave="nombre" className="py-2 px-0">Mercancía</Th>
                       <Th clave="hay" alinear="derecha" className="py-2 px-0">Hay</Th>
-                      <Th clave="valor" alinear="derecha" className="py-2 px-0 hidden md:table-cell">Vale</Th>
+                      <Th clave="valor" alinear="derecha" className="py-2 px-0 hidden md:table-cell">Invertido</Th>
                       <Th clave="consumo" alinear="derecha" className="py-2 px-0 hidden sm:table-cell">Por día</Th>
                       <Th clave="dias" alinear="derecha" className="py-2 px-0">Días</Th>
                       <Th clave="estado" alinear="derecha" className="py-2 px-0">Estado</Th>
