@@ -10,7 +10,7 @@ import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { Aviso, Boton, Modal, Pagina, Seccion, Vacio } from '../components/ui'
 import { api, ErrorApi } from '../lib/api'
-import { cantidad, datosDe, unidadDe } from '../lib/inventario'
+import { cantidad, conUnidad, datosDe, unidadDe } from '../lib/inventario'
 import { useMoneda } from '../lib/moneda'
 import { ALMACENES, ALMACEN_DE } from '../lib/tiposArticulo'
 import Almacenes, { type ResumenAlmacen } from './partes/inventario/Almacenes'
@@ -85,7 +85,14 @@ const TIPO_DE: Record<string, TipoArticulo> = {
   desechables: 'desechable',
 }
 
-const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco', 'Plata del dueño']
+// Lo que se manda es el nombre que conoce el backend; lo que se lee dice la
+// moneda, porque de ahí sale en qué se escribió el monto.
+const METODOS_DE_PAGO = [
+  { valor: 'Efectivo Bs', texto: 'Efectivo en bolívares' },
+  { valor: 'Efectivo $', texto: 'Efectivo en dólares' },
+  { valor: 'Banco', texto: 'Banco, en bolívares' },
+  { valor: 'Plata del dueño', texto: 'Plata del dueño, en dólares' },
+]
 
 export default function Inventario() {
   const [seccion, irA] = useSeccion(SECCIONES)
@@ -223,21 +230,53 @@ export default function Inventario() {
   // Si viene en empaque se pregunta por empaques (como llega) y se guarda en
   // unidades (como se gasta). "Entraron 2" eran 2 paquetes de 200 sobres.
   const trae = (ing: Ingrediente) => (ing.empaque_trae && ing.empaque_trae > 1 ? ing.empaque_trae : 0)
-  const campoComo = (ing: Ingrediente) =>
-    trae(ing)
-      ? [{
-          nombre: 'como',
-          etiqueta: 'Cómo lo cuentas',
-          tipo: 'opciones' as const,
-          valor: 'empaque',
-          opciones: [
-            { valor: 'empaque', texto: `En empaques de ${cantidad(trae(ing))}` },
-            { valor: 'suelta', texto: `En ${ing.unidad} sueltas` },
-          ],
-        }]
-      : []
+  // PRIMERO LA PREGUNTA, DESPUÉS EL NÚMERO (Leider, 29-oct): si viene en
+  // paquete se pregunta "¿paquetes o sueltas?" y según eso "cuántos paquetes"
+  // (con el total en unidades debajo) o "cuántas sueltas". Si no viene en
+  // paquete, solo "cuántas compraste".
+  const camposCantidad = (ing: Ingrediente, verbo: string) => {
+    const n = trae(ing)
+    const sueltas = ing.unidad === 'unidad' ? 'Unidades sueltas' : `${ing.unidad} sueltos`
+    return [
+      ...(n
+        ? [
+            {
+              nombre: 'como',
+              etiqueta: `¿${verbo} paquetes o ${sueltas.toLowerCase()}?`,
+              tipo: 'opciones' as const,
+              valor: 'empaque',
+              opciones: [
+                { valor: 'empaque', texto: `Paquetes de ${conUnidad(n, ing.unidad)}` },
+                { valor: 'suelta', texto: sueltas },
+              ],
+            },
+            {
+              nombre: 'paquetes',
+              etiqueta: `Cuántos paquetes ${verbo.toLowerCase()}`,
+              tipo: 'numero' as const,
+              min: 0.0001,
+              cuando: (v: Record<string, string>) => v.como !== 'suelta',
+              ayuda: (v: Record<string, string>) => {
+                const p = Number(String(v.paquetes ?? '').replace(',', '.'))
+                return p > 0 ? `Son ${conUnidad(p * n, ing.unidad)}.` : `Cada paquete trae ${conUnidad(n, ing.unidad)}.`
+              },
+            },
+          ]
+        : []),
+      {
+        nombre: 'cantidad',
+        etiqueta: `${ing.unidad === 'unidad' ? 'Cuántas' : 'Cuánto'} ${verbo.toLowerCase()}`,
+        sufijo: ing.unidad,
+        tipo: 'numero' as const,
+        min: 0.0001,
+        cuando: (v: Record<string, string>) => !n || v.como === 'suelta',
+      },
+    ]
+  }
   const enUnidades = (ing: Ingrediente, r: Record<string, string>) =>
-    Number(r.cantidad) * (trae(ing) && r.como !== 'suelta' ? trae(ing) : 1)
+    r.paquetes ? Number(r.paquetes) * trae(ing) : Number(r.cantidad)
+  // La moneda la dice de dónde salió la plata: no es otra pregunta.
+  const monedaDe = (metodo: string) => (metodo === 'Efectivo Bs' || metodo === 'Banco' ? 'Bs' : '$')
 
   async function comprar(ing: Ingrediente) {
     const r = await dialogo.pedir({
@@ -254,34 +293,29 @@ export default function Inventario() {
         </>
       ),
       campos: [
-        ...campoComo(ing),
-        trae(ing)
-          ? { nombre: 'cantidad', etiqueta: 'Cuánto entra', tipo: 'numero', min: 0.0001, ayuda: `Empaques o ${ing.unidad}, según lo de arriba.` }
-          : { nombre: 'cantidad', etiqueta: 'Cuánto entra', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
+        ...camposCantidad(ing, 'Compraste'),
+        {
+          nombre: 'metodo',
+          etiqueta: 'De dónde salió la plata',
+          tipo: 'opciones',
+          opciones: METODOS_DE_PAGO.map((m) => ({ valor: m.valor, texto: m.texto })),
+        },
         {
           nombre: 'costo',
-          etiqueta: 'Cuánto pagaste en total, sin IVA',
+          etiqueta: (v) => `Cuánto pagaste en total, sin IVA (${monedaDe(v.metodo)})`,
           tipo: 'numero',
           opcional: true,
-          ayuda: 'Vacío = se mantiene el costo actual. El IVA no es parte del costo de la mercancía.',
+          ayuda: (v) =>
+            monedaDe(v.metodo) === 'Bs'
+              ? `Se pasa a dólares a la tasa BCV del día${tasa?.bcv ? ` (${tasa.bcv.toFixed(2)})` : ''}. Vacío = se mantiene el costo actual.`
+              : 'Vacío = se mantiene el costo actual. El IVA no es parte del costo de la mercancía.',
         },
-        {
-          nombre: 'moneda',
-          etiqueta: 'En qué moneda pagaste',
-          tipo: 'opciones',
-          valor: '$',
-          opciones: [
-            { valor: '$', texto: 'Dólares' },
-            { valor: 'Bs', texto: `Bolívares${tasa?.bcv ? ` (a ${tasa.bcv.toFixed(2)})` : ''}` },
-          ],
-        },
-        { nombre: 'metodo', etiqueta: 'De dónde salió la plata', tipo: 'opciones', opciones: METODOS_DE_PAGO.map((m) => ({ valor: m, texto: m })) },
         // En negativo: se vendio sin cargarlo. Sumarle la compra a un
         // negativo dejaba "cargué 7 y quedaron 4" (26-oct, carne mechada).
         ...(ing.stock_actual < 0
           ? [{
               nombre: 'negativo',
-              etiqueta: `El sistema tiene ${cantidad(ing.stock_actual)} ${ing.unidad}: se vendió sin estar cargado`,
+              etiqueta: `El sistema tiene ${conUnidad(ing.stock_actual, ing.unidad)}: se vendió sin estar cargado`,
               tipo: 'opciones' as const,
               valor: 'regularizar',
               opciones: [
@@ -294,11 +328,12 @@ export default function Inventario() {
       aceptar: 'Registrar compra',
     })
     if (!r) return
-    if (r.moneda === 'Bs' && !tasa?.bcv) {
-      setError('No se pudo obtener la tasa del día. Intenta de nuevo o registra en dólares.')
+    const moneda = monedaDe(r.metodo)
+    if (moneda === 'Bs' && !tasa?.bcv) {
+      setError('No se pudo obtener la tasa del día. Intenta de nuevo o paga en dólares.')
       return
     }
-    const costoUsd = r.costo && r.moneda === 'Bs' ? Number(r.costo) / (tasa!.bcv as number) : r.costo ? Number(r.costo) : undefined
+    const costoUsd = r.costo && moneda === 'Bs' ? Number(r.costo) / (tasa!.bcv as number) : r.costo ? Number(r.costo) : undefined
     // Un precio absurdo (en bolívares, con la coma corrida) el servidor lo
     // frena ANTES de guardar; aquí se pregunta y, si es así, se anota igual.
     const registrar = async (confirmar: boolean) => {
@@ -324,7 +359,7 @@ export default function Inventario() {
       titulo: `Merma de ${ing.nombre}`,
       texto: 'Lo que se dañó, se quemó o se botó. Es plata perdida y así queda registrada.',
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto se perdió', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${cantidad(ing.stock_actual)} ${ing.unidad}.` },
+        { nombre: 'cantidad', etiqueta: 'Cuánto se perdió', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${conUnidad(ing.stock_actual, ing.unidad)}.` },
         { nombre: 'motivo', etiqueta: 'Motivo', placeholder: 'Se quemó, se dañó, se cayó...', opcional: true },
       ],
       aceptar: 'Registrar merma',
@@ -356,7 +391,7 @@ export default function Inventario() {
       titulo: `Consumo del personal: ${ing.nombre}`,
       texto: 'Se lo comió un empleado. Es costo laboral, no pérdida: no ensucia el indicador de merma.',
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${cantidad(ing.stock_actual)} ${ing.unidad}.` },
+        { nombre: 'cantidad', etiqueta: 'Cuánto', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${conUnidad(ing.stock_actual, ing.unidad)}.` },
         { nombre: 'motivo', etiqueta: 'Para quién / qué turno', opcional: true },
       ],
       aceptar: 'Registrar',
@@ -372,7 +407,7 @@ export default function Inventario() {
     if (!(ing.stock_actual > 0) || nuevo < ing.stock_actual * 10) return true
     return dialogo.confirmar({
       titulo: '¿Contaste en otra unidad?',
-      texto: `El sistema dice ${cantidad(ing.stock_actual)} ${ing.unidad} y pusiste ${cantidad(nuevo)}: ${Math.round(nuevo / ing.stock_actual)} veces más. Si contaste paquetes, cajas o sobres en vez de ${ing.unidad}, corrígelo. Si de verdad hay eso, la diferencia entra al inventario al costo de ${ing.unidad}.`,
+      texto: `El sistema dice ${conUnidad(ing.stock_actual, ing.unidad)} y pusiste ${cantidad(nuevo)}: ${Math.round(nuevo / ing.stock_actual)} veces más. Si contaste paquetes, cajas o sobres en vez de ${ing.unidad}, corrígelo. Si de verdad hay eso, la diferencia entra al inventario al costo de ${ing.unidad}.`,
       aceptar: 'Sí, hay eso',
       cancelar: 'Corregir',
     })
@@ -383,11 +418,10 @@ export default function Inventario() {
       const empaques = ing.stock_actual / trae(ing)
       const r = await dialogo.pedir({
         titulo: `Contar ${ing.nombre}`,
-        texto: `El sistema dice ${cantidad(ing.stock_actual)} ${ing.unidad} (${cantidad(empaques)} empaques de ${cantidad(trae(ing))}). Lo que cuentes manda: la diferencia queda como merma o como sobrante.`,
-        campos: [
-          ...campoComo(ing),
-          { nombre: 'cantidad', etiqueta: 'Cuánto hay realmente', tipo: 'numero', min: 0, valor: cantidad(empaques) },
-        ],
+        texto: `El sistema dice ${conUnidad(ing.stock_actual, ing.unidad)} (${cantidad(empaques)} empaques de ${cantidad(trae(ing))}). Lo que cuentes manda: la diferencia queda como merma o como sobrante.`,
+        campos: camposCantidad(ing, 'Contaste').map((c) =>
+          c.nombre === 'paquetes' ? { ...c, valor: cantidad(empaques), min: 0 } : c.nombre === 'cantidad' ? { ...c, min: 0 } : c,
+        ),
         aceptar: 'Guardar conteo',
       })
       if (!r) return

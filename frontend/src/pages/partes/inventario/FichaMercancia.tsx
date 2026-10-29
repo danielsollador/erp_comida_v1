@@ -21,10 +21,12 @@ import {
   queLePaso,
   type CompraConVariacion,
   unidadDe,
+  conUnidad,
+  elLa,
 } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import { parecidos } from '../../../lib/parecidos'
-import { ALMACEN_DE } from '../../../lib/tiposArticulo'
+import { ALMACEN_DE, TIPOS_ARTICULO } from '../../../lib/tiposArticulo'
 import type {
   CategoriaInsumo,
   CompraDeInsumo,
@@ -268,8 +270,9 @@ export default function FichaMercancia({
     // "$3,60 por unidad" eran $3,60 el paquete de 200, y el inventario subio
     // $1.432 de mentira).
     const porEmpaque = empaque !== null && empaque > 1
+    // Sin precio de empaque escrito, se conserva el costo por unidad que había.
     const costo = porEmpaque
-      ? f.costo_empaque === '' ? 0 : num(f.costo_empaque) / empaque
+      ? f.costo_empaque === '' ? (f.costo_unitario === '' ? 0 : num(f.costo_unitario)) : num(f.costo_empaque) / empaque
       : f.costo_unitario === '' ? 0 : num(f.costo_unitario)
     // Solo la materia prima tiene merma de cocina que medir.
     const rendimiento = f.tipo === 'insumo' ? num(f.rendimiento_pct) : 100
@@ -336,7 +339,7 @@ export default function FichaMercancia({
       </Selector>
       {f.tipo !== 'desechable' && (<>
       <CampoCantidad
-        etiqueta="Ten siempre al menos"
+        etiqueta="Sería ideal siempre tener al menos"
         unidad={f.unidad}
         valor={f.stock_minimo}
         alCambiar={(v) => poner('stock_minimo', v)}
@@ -460,7 +463,18 @@ export default function FichaMercancia({
                   etiqueta="Cuántas trae un empaque"
                   unidad={f.unidad}
                   valor={f.empaque_trae}
-                  alCambiar={(v) => poner('empaque_trae', v)}
+                  alCambiar={(v) =>
+                    setF((a) => ({
+                      ...a,
+                      empaque_trae: v,
+                      // El precio del empaque arranca del costo por unidad que
+                      // ya tenía: si no, se guardaba vacío y el costo quedaba en $0.
+                      costo_empaque:
+                        a.costo_empaque === '' && a.costo_unitario !== '' && num(v) > 1
+                          ? String(Math.round(num(a.costo_unitario) * num(v) * 10000) / 10000)
+                          : a.costo_empaque,
+                    }))
+                  }
                   ayuda={`Caja, bulto o paquete. Cada factura pide cuántos empaques vinieron y el sistema los pasa a ${f.unidad === 'unidad' ? 'unidades' : f.unidad}.`}
                 />
               </div>
@@ -477,7 +491,7 @@ export default function FichaMercancia({
               value={f.stock_actual}
               onChange={(e) => poner('stock_actual', e.target.value)}
               placeholder="0"
-              ayuda={`${cantidad((num(f.stock_actual) || 0) * trae)} ${f.unidad} en total. Después se mueve solo con las compras, las ventas y los conteos.`}
+              ayuda={`${conUnidad((num(f.stock_actual) || 0) * trae, f.unidad)} en total. Después se mueve solo con las compras, las ventas y los conteos.`}
             />
           ) : (
             <CampoCantidad
@@ -531,16 +545,21 @@ export default function FichaMercancia({
       )}
 
       {!nuevo && (
-        <div>
-          <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Qué es</span>
-          {f.tipo === 'preparacion' ? (
-            <p className="text-sm text-neutral-600">
-              <SelloTipo tipo="preparacion" icono /> Su receta y lo que rinde se editan en Materia prima → Preparado.
-            </p>
-          ) : (
-            <ElegirAlmacen valor={f.tipo} alElegir={(t) => poner('tipo', t)} compacto />
-          )}
-        </div>
+        f.tipo === 'preparacion' ? (
+          <p className="text-sm text-neutral-600">
+            <SelloTipo tipo="preparacion" icono /> Su receta y lo que rinde se editan en Materia prima → Preparado.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Selector etiqueta="Qué es" value={f.tipo} onChange={(e) => poner('tipo', e.target.value)}>
+              {TIPOS_ARTICULO.map((t) => (
+                <option key={t.valor} value={t.valor}>
+                  {t.texto} · {t.detalle}
+                </option>
+              ))}
+            </Selector>
+          </div>
+        )
       )}
 
       {!nuevo && (
@@ -605,15 +624,15 @@ export default function FichaMercancia({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <CifraFicha
           titulo="Hay"
-          valor={`${cantidad(ing.stock_actual)} ${u}`}
+          valor={`${conUnidad(ing.stock_actual, u)}`}
           tono={estado?.tono}
           detalle={
             estado
               ? estado.tono === 'mal'
                 ? 'Se acabó'
-                : `Bajo el mínimo de ${cantidad(ing.stock_minimo)} ${u}`
+                : `Bajo el mínimo de ${conUnidad(ing.stock_minimo, u)}`
               : ing.stock_minimo > 0
-                ? `Avisa por debajo de ${cantidad(ing.stock_minimo)} ${u}`
+                ? `Avisa por debajo de ${conUnidad(ing.stock_minimo, u)}`
                 : 'Sin mínimo puesto'
           }
         />
@@ -636,7 +655,7 @@ export default function FichaMercancia({
         />
         <CifraFicha
           titulo="Te cuesta"
-          valor={`${dinero(ing.costo_efectivo)} el ${u}`}
+          valor={`${dinero(ing.costo_efectivo)} ${elLa(u)}`}
           detalle={
             ing.tipo !== 'reventa' && ing.rendimiento_pct < 100
               ? `Pagas ${dinero(ing.costo_unitario)} y se aprovecha el ${ing.rendimiento_pct}%`
@@ -730,7 +749,7 @@ export default function FichaMercancia({
                     {m.cantidad > 0 ? '+' : '−'}
                     {legible(m.cantidad, u)}
                   </span>
-                  <span className="block text-[11px] text-neutral-400">quedó {cantidad(m.saldo)} {u}</span>
+                  <span className="block text-[11px] text-neutral-400">quedó {conUnidad(m.saldo, u)}</span>
                 </span>
               </li>
             ))}
@@ -765,7 +784,7 @@ export default function FichaMercancia({
                 <ResumenDelExtracto e={extracto} desde={desdeExtracto} />
                 {!extracto.cuadra && (
                   <Aviso tono="mal">
-                    El libro suma {cantidad(extracto.saldo_segun_libro)} {u} y la existencia dice{' '}
+                    El libro suma {conUnidad(extracto.saldo_segun_libro, u)} y la existencia dice{' '}
                     {cantidad(extracto.stock_actual)}. Algo movió el stock sin anotarlo: avísale a quien mantiene el sistema.
                   </Aviso>
                 )}
@@ -792,7 +811,7 @@ export default function FichaMercancia({
                           <td className="p-2 text-neutral-500">{m.operador ?? '—'}</td>
                           <td className={`p-2 text-right tabular-nums font-medium ${m.cantidad < 0 ? 'text-peligro-600' : 'text-exito-700'}`}>
                             {m.cantidad > 0 ? '+' : ''}
-                            {cantidad(m.cantidad)} {u}
+                            {conUnidad(m.cantidad, u)}
                           </td>
                           {/* El equivalente en plata: sin esto, "-0.025" no dice
                               si eso que salio costo un centavo o un dolar. */}
@@ -800,7 +819,7 @@ export default function FichaMercancia({
                             {dinero(Math.abs(m.valor))}
                           </td>
                           <td className="p-2 text-right tabular-nums text-neutral-500">
-                            {cantidad(m.saldo)} {u}
+                            {conUnidad(m.saldo, u)}
                           </td>
                         </tr>
                       ))}
@@ -843,7 +862,7 @@ export default function FichaMercancia({
                             </span>
                           </td>
                           <td className="p-2 text-right text-neutral-500 tabular-nums">
-                            {cantidad(c.cantidad)} {u}
+                            {conUnidad(c.cantidad, u)}
                           </td>
                           <td className="p-2 text-right tabular-nums font-medium">{dinero(c.costo_unitario)}</td>
                           <td className="p-2 text-right tabular-nums">

@@ -8,7 +8,7 @@ import { Boton, FiltroDesplegable, Modal, Seccion, Vacio } from '../../../compon
 import { api, ErrorApi } from '../../../lib/api'
 import { useMoneda } from '../../../lib/moneda'
 import { colorFranja } from '../../../lib/paleta'
-import { datosDe, unidadDe } from '../../../lib/inventario'
+import { datosDe, elLa, unidadDe } from '../../../lib/inventario'
 import { ALMACEN_DE, vaEnPreparacion } from '../../../lib/tiposArticulo'
 import type { DatosPreparacion, Disponibilidad, Ingrediente, Preparacion, Produccion } from '../../../lib/types'
 
@@ -1163,7 +1163,7 @@ function Olla({
               <span className="text-[11px] text-neutral-500">Cuesta</span>
               <span className="block font-display text-lg font-semibold tabular-nums leading-tight">
                 {costoTanda > 0 ? dinero(costoTanda) : '—'}
-                <span className="text-xs font-normal text-neutral-500"> el {unidad}</span>
+                <span className="text-xs font-normal text-neutral-500"> {elLa(unidad)}</span>
               </span>
               <span className="block text-[11px] text-neutral-500 leading-tight">cada {unidadLarga} ya preparado</span>
             </div>

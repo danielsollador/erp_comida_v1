@@ -16,6 +16,15 @@ export function unidadDe(n: number, unidad: string): string {
   return unidad
 }
 
+/** La cantidad con su unidad bien dicha: "32 unidades", "1 unidad", "2.5 kg". */
+export const conUnidad = (n: number, unidad: string) => `${cantidad(n)} ${unidadDe(n, unidad)}`
+
+/** La unidad como título de columna o de casilla: "(unidades)", "(kg)". */
+export const etiquetaUnidad = (unidad: string) => (unidad === 'unidad' ? 'unidades' : unidad)
+
+/** "la unidad", "el kg", "el lt": para "$0,80 la unidad". */
+export const elLa = (unidad: string) => (unidad === 'unidad' ? 'la unidad' : `el ${unidad}`)
+
 export type CompraConVariacion = CompraDeInsumo & { cambio: number | null }
 
 /**
@@ -104,7 +113,7 @@ export function ejemploRendimiento(unidad: string, pct: number): string {
 export function legible(n: number, unidad: string): string {
   const chica = CHICA[unidad]
   if (chica && Math.abs(n) < 1 && n !== 0) return `${Math.round(Math.abs(n) * chica.factor)} ${chica.nombre}`
-  return `${cantidad(Math.abs(n))} ${unidad}`
+  return conUnidad(Math.abs(n), unidad)
 }
 
 /** "4 días", "3 meses", "más de un año": lo que dura, en lo que se entiende. */
@@ -120,8 +129,8 @@ export function ejemploMinimo(minimo: number, hay: number, unidad: string): stri
   if (!Number.isFinite(minimo) || minimo <= 0) return 'Por debajo de esto aparece en «Qué comprar», con lo que falte para volver a tenerlo.'
   const falta = minimo - (Number.isFinite(hay) ? hay : 0)
   return falta > 0
-    ? `Hoy hay ${cantidad(hay)} ${unidad}: está por debajo y «Qué comprar» pediría ${cantidad(falta)} ${unidad}.`
-    : `Hoy hay ${cantidad(hay)} ${unidad}: está cubierto. Si baja de ${cantidad(minimo)}, avisa.`
+    ? `Hoy hay ${conUnidad(hay, unidad)}: está por debajo y «Qué comprar» pediría ${conUnidad(falta, unidad)}.`
+    : `Hoy hay ${conUnidad(hay, unidad)}: está cubierto. Si baja de ${cantidad(minimo)}, avisa.`
 }
 
 export const fechaCorta = (iso: string) =>

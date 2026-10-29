@@ -101,7 +101,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
   'inventario.minimo': {
     que: 'Lo que quieres tener siempre: por debajo avisa, y hasta ahí se repone.',
-    origen: 'Lo pones tú en la ficha de la mercancía ("Ten siempre al menos").',
+    origen: 'Lo pones tú en la ficha de la mercancía ("Sería ideal siempre tener al menos").',
     calculo: 'Cuando el stock cae a este número o por debajo, la mercancía se marca "Bajo" y entra en "Qué comprar" con lo que falte para volver a este nivel (o dos semanas de consumo real, lo que sea más).',
     ejemplo:
       'Si gastas 3 kg de harina al día y al proveedor le toma dos días traerla, un mínimo de 6 kg te avisa justo a tiempo.',
