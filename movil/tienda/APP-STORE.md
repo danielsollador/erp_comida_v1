@@ -22,7 +22,7 @@ Las claves de la cuenta de demostración están en `tienda/REVISOR.local.txt`
 | Cómo eliminar la cuenta (página) | https://vertigopro.tech/eliminar-cuenta.html |
 | Cuenta de prueba para el revisor | Servidor de demostración `demo.vertigopro.tech`: local ficticio "La Despensa" (comida, producción y reventa), 45 días de ventas, compras y contabilidad inventadas |
 | Entrar a otro negocio | Entrar → "Otro negocio" (así entra el revisor a la demo, y sirve para varios locales) |
-| Capturas de iPhone 6,9" (1320×2868; ASC ya no acepta 1290×2796 en "iPhone con Dynamic Island") | `tienda/capturas/01…06-iphone-6.9.png` (30-oct: inicio, Pregúntame, punto de venta, horas, inventario, factura) |
+| Capturas de iPhone (1206×2622: lo que ASC acepta en "iPhone con Dynamic Island", junto con 1179×2556) | `tienda/capturas/01…06-iphone-6.9.png` (30-oct: inicio, Pregúntame, punto de venta, horas, inventario, factura) |
 | Notas para el revisor y App Privacy (con Anthropic) | `tienda/NOTAS-REVISOR.md` |
 
 El nombre de la empresa y el correo de las páginas legales se cambian en
