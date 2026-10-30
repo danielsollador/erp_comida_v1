@@ -22,7 +22,8 @@ Las claves de la cuenta de demostración están en `tienda/REVISOR.local.txt`
 | Cómo eliminar la cuenta (página) | https://vertigopro.tech/eliminar-cuenta.html |
 | Cuenta de prueba para el revisor | Servidor de demostración `demo.vertigopro.tech`: local ficticio "La Despensa" (comida, producción y reventa), 45 días de ventas, compras y contabilidad inventadas |
 | Entrar a otro negocio | Entrar → "Otro negocio" (así entra el revisor a la demo, y sirve para varios locales) |
-| Capturas de iPhone 6,9" (1290×2796) | `tienda/capturas/01…05-iphone-6.9.png` |
+| Capturas de iPhone 6,9" (1290×2796) | `tienda/capturas/01…06-iphone-6.9.png` (30-oct: inicio, Pregúntame, punto de venta, horas, inventario, factura) |
+| Notas para el revisor y App Privacy (con Anthropic) | `tienda/NOTAS-REVISOR.md` |
 
 El nombre de la empresa y el correo de las páginas legales se cambian en
 un solo archivo de la web: `frontend/public/legal-datos.js` (repo
@@ -130,8 +131,10 @@ Vertigo Pro es para negocios: el dueño del local crea el usuario de cada person
 ### 3.2 Capturas
 
 En App Store Connect → la versión → "iPhone 6,9 pulgadas": sube
-`tienda/capturas/01` a `05` en ese orden. Apple usa las mismas para las
-pantallas más chicas.
+`tienda/capturas/01` a `06` en ese orden. Apple usa las mismas para las
+pantallas más chicas. Se arman con `capturas_tienda.py` (en el scratchpad de
+la sesión del 30-oct) a partir de capturas reales del iPhone: pedirlas por
+WhatsApp **como documento**, no como foto, para que no pierdan resolución.
 
 ### 3.3 Clasificación por edad
 
@@ -139,6 +142,8 @@ Responde **Ninguno / No** a todo (violencia, apuestas, contenido médico,
 navegador web abierto, etc.). Resultado: **4+**.
 
 ### 3.4 Privacidad de la app (App Privacy)
+
+> Versión al día (con Anthropic) en `tienda/NOTAS-REVISOR.md`. Lo de abajo es la de octubre 12.
 
 "¿Recopilas datos?" → **Sí**. Ninguno se usa para rastrear. Todos están
 vinculados al usuario y su único uso es **Funcionalidad de la app**. Desde
@@ -166,8 +171,8 @@ Rastreo: **No**. Publicidad: **No**.
   aviso de IA al leer una factura, y Configuración → Mi cuenta (eliminar
   cuenta y los enlaces de privacidad). Súbela a Drive con enlace público y
   pégalo en `<URL>` de las notas.
-- **Notas** (en inglés, que es lo que lee el revisor; las seis secciones que
-  pide Apple para una app nueva). Cambia `<URL>` y `<date>`:
+- **Notas**: las vigentes están en `tienda/NOTAS-REVISOR.md` (incluyen el
+  asistente con Anthropic). Las de abajo son las de octubre 12. Cambia `<URL>` y `<date>`:
 
 ```
 1. SCREEN RECORDING
@@ -220,8 +225,10 @@ Not applicable.
 
 ## 6. El servidor de demostración
 
-- VPS de Hostinger (2.25.223.224), carpeta `/docker/demo`, junto al de
-  prueba. Dominio `demo.vertigopro.tech` en Cloud DNS.
+- Desde el 22-oct-2026 en la VM de GCP `vertigo-erp` (us-east1-b), carpeta
+  `/docker/demo`, servicios `demo-backend` / `demo-db`. Dominio
+  `demo.vertigopro.tech` en Cloud DNS. Usuarios: `revision` (dueño) y
+  `probador` (caja), claves en `REVISOR.local.txt`.
 - Lector de facturas en modo "prueba" (no gasta IA) y sin Pabilo.
 - Para volver a llenarlo desde cero: borrar el volumen `demo_pg`, levantar,
   copiar `demo_data.py` al contenedor y correrlo (ver el encabezado del
