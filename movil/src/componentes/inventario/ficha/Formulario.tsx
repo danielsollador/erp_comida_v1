@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { ejemploIdeal, ejemploRendimiento } from '../../../../../frontend/src/lib/inventario'
+import { ejemploMinimo, ejemploRendimiento } from '../../../../../frontend/src/lib/inventario'
 import { parecidos } from '../../../../../frontend/src/lib/parecidos'
 import { ALMACEN_DE, ALMACENES } from '../../../../../frontend/src/lib/tiposArticulo'
 import { aNumero } from '../../../lib/numeros'
@@ -36,7 +36,6 @@ export function estadoInicial(ing: Ingrediente | null, tipoInicial?: TipoArticul
     unidad: ing?.unidad ?? 'kg',
     stock_actual: '',
     stock_minimo: ing ? cantidad(ing.stock_minimo) : '',
-    stock_objetivo: ing ? cantidad(ing.stock_objetivo) : '',
     costo_unitario: ing ? String(ing.costo_unitario) : '',
     rendimiento_pct: ing ? String(ing.rendimiento_pct) : '100',
     exento: ing?.exento ?? false,
@@ -51,7 +50,7 @@ export function validar(f: Estado, ing: Ingrediente | null): { error: string } |
   const num = (v: string) => aNumero(v.trim())
   if (!f.nombre.trim()) return { error: 'La mercancía necesita un nombre.' }
   const minimo = f.stock_minimo === '' ? 0 : num(f.stock_minimo)
-  const objetivo = f.stock_objetivo === '' ? 0 : num(f.stock_objetivo)
+  const objetivo = minimo
   const costo = f.costo_unitario === '' ? 0 : num(f.costo_unitario)
   // Solo la materia prima tiene merma de cocina que medir.
   const rendimiento = f.tipo === 'insumo' ? num(f.rendimiento_pct) : 100
@@ -151,22 +150,13 @@ export default function Formulario({
       />
       {f.tipo !== 'desechable' ? (
         <>
-          {par(
-            <CampoCantidad
-              rotulo="Avísame cuando quede menos de"
-              unidad={f.unidad}
-              valor={f.stock_minimo}
-              alCambiar={(v) => poner('stock_minimo', v)}
-              ayuda="Por debajo de esto aparece en «Qué comprar»."
-            />,
-            <CampoCantidad
-              rotulo="Lo ideal tener en el inventario"
-              unidad={f.unidad}
-              valor={f.stock_objetivo}
-              alCambiar={(v) => poner('stock_objetivo', v)}
-              ayuda={ejemploIdeal(num(f.stock_objetivo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
-            />,
-          )}
+          <CampoCantidad
+            rotulo="Sería ideal siempre tener al menos"
+            unidad={f.unidad}
+            valor={f.stock_minimo}
+            alCambiar={(v) => poner('stock_minimo', v)}
+            ayuda={ejemploMinimo(num(f.stock_minimo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
+          />
           <CampoCantidad
             rotulo="Viene en empaque de"
             unidad={f.unidad}
