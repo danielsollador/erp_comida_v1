@@ -1,4 +1,4 @@
-import type { Dialogo } from '../components/dialogo'
+type PedirTexto = (d: { titulo: string; etiqueta?: string; placeholder?: string }) => Promise<string | null>
 
 // "Tarjeta" NO esta: es el mismo terminal que "Punto de venta" (Leider,
 // 21-sep: "punto de venta y tarjeta es el mismo ya que punto de ventas es
@@ -48,7 +48,7 @@ export const METODOS_CON_REFERENCIA = new Set(METODOS_PAGO.filter(necesitaRefere
  */
 export async function pedirReferencia(
   metodo: string,
-  pedirTexto: Dialogo['pedirTexto'],
+  pedirTexto: PedirTexto,
 ): Promise<string | null> {
   if (!necesitaReferencia(metodo)) return ''
   return await pedirTexto({
