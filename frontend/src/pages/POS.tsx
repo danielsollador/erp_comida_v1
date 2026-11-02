@@ -42,6 +42,8 @@ import type {
 // hay que saber si el cliente paga exacto o hay vuelto (ver el panel de
 // cobro), porque de eso depende cuanta plata queda en la gaveta.
 const METODOS_EFECTIVO = ['Efectivo Bs', 'Efectivo $']
+// Las formas que se cobran en bolivares (igual que en Caja.tsx).
+const EN_BOLIVARES = new Set(['Efectivo Bs', 'Punto de venta', 'Pago movil', 'Transferencia'])
 
 // Por donde puede SALIR el vuelto: las dos gavetas o un pago movil, que es
 // lo que se hace cuando no hay sencillo (Leider, 30-sep: "solo tres
@@ -193,7 +195,15 @@ export default function POS() {
   // falta se calcula solo.
   const [pagoMixto, setPagoMixto] = useState(false)
   const [partes, setPartes] = useState<
-    { metodo: string; monto: number; referencia: string; verificacion_id?: number; monto_bs?: number }[]
+    {
+      metodo: string
+      monto: number
+      referencia: string
+      verificacion_id?: number
+      monto_bs?: number
+      recibido?: number
+      vuelto_metodo?: string
+    }[]
   >([])
   // Si el local tiene Pabilo, un pago movil se comprueba contra el banco
   // antes de cobrarlo. Se consulta una vez al abrir; si no esta configurado
@@ -388,7 +398,23 @@ export default function POS() {
     else setEntregadosHoy(null)
   }
 
+  // Cuantas quedan de lo que se vende tal cual (helados, jugos): la cajera
+  // lo dice sin ir al congelador (2-nov). Se pide con cada refresco del
+  // mostrador, que es cuando algo pudo venderse.
+  const [quedan, setQuedan] = useState<Record<number, number>>({})
+  const refrescarExistencias = useCallback(() => {
+    api
+      .existenciasMenu()
+      .then((lista) => {
+        const nuevo: Record<number, number> = {}
+        for (const e of lista) nuevo[e.variante_id] = e.quedan
+        setQuedan((viejo) => (JSON.stringify(viejo) === JSON.stringify(nuevo) ? viejo : nuevo))
+      })
+      .catch(() => undefined)
+  }, [])
+
   function refrescarPedidos() {
+    refrescarExistencias()
     if (verEntregados.current) refrescarEntregados()
     Promise.all([
       api.listarPedidosEnCocina(),
@@ -1173,6 +1199,7 @@ export default function POS() {
    */
   async function agregarParte(metodo: string) {
     if (faltaMixto <= 0) return
+    if (EN_BOLIVARES.has(metodo) && tasaBcv > 0) return agregarParteEnBs(metodo)
     const monto = await dialogo.pedirNumero({
       titulo: `¿Cuánto paga con ${etiquetaMetodo(metodo)}?`,
       texto: `Faltan ${fmt(faltaMixto)} de ${fmt(aCobrar)}.`,
@@ -1194,6 +1221,74 @@ export default function POS() {
     // sobra va a propina, lo que falta sigue pendiente (o se perdona como
     // descuento). Igual que en el cobro de una sola forma.
     const r = await resolverPago(metodo, redondear(monto), pago)
+    if (r.propina) setPropina(String(redondear((Number(propina) || 0) + r.propina)))
+    if (r.descuento) {
+      setDescuento(String(redondear(descuentoNum + r.descuento)))
+      setMotivoDescuento((m) => m.trim() || r.motivo || 'Diferencia del pago móvil')
+    }
+    setPartes((p) => [...p, ...r.partes])
+  }
+
+  /**
+   * Una parte del pago mixto en bolivares se pide EN BOLIVARES: la cajera
+   * tiene en la mano un billete de Bs 500, no $0,56 (2-nov: habia que
+   * dividir entre la tasa a mano). Se convierte a la tasa del dia, que es
+   * como se guarda la venta. En efectivo el billete puede pasar de lo que
+   * falta: lo de mas es vuelto o, si el cliente no lo quiere, propina.
+   */
+  async function agregarParteEnBs(metodo: string) {
+    const faltaBs = redondear(faltaMixto * tasaBcv)
+    const bs = await dialogo.pedirNumero({
+      titulo: `¿Cuánto paga con ${etiquetaMetodo(metodo)}?`,
+      texto: `Faltan ${fmtBs(faltaBs)} (${fmt(faltaMixto)}) de ${fmt(aCobrar)}, a ${fmtNum(tasaBcv)} Bs por dólar.`,
+      etiqueta: 'Monto',
+      sufijo: 'Bs',
+      valor: faltaBs,
+      min: 0.01,
+    })
+    if (bs === null) return
+    // Los centimos de la conversion no dejan "falta $0,01": lo que cubre
+    // los bolivares que faltan, cubre la cuenta.
+    const cubre = bs >= faltaBs - 0.01
+    const usd = cubre ? faltaMixto : redondear(bs / tasaBcv)
+    if (bs > faltaBs + 0.01) {
+      if (metodo !== 'Efectivo Bs') {
+        setError(`Esa parte (${fmtBs(bs)}) pasa de lo que falta (${fmtBs(faltaBs)}).`)
+        return
+      }
+      const sobraBs = redondear(bs - faltaBs)
+      const r = await dialogo.pedir({
+        titulo: `Sobran ${fmtBs(sobraBs)}`,
+        texto: `Pagó ${fmtBs(bs)} y faltaban ${fmtBs(faltaBs)}.`,
+        campos: [
+          {
+            nombre: 'sobra',
+            etiqueta: '¿Qué se hace con lo que sobra?',
+            tipo: 'opciones',
+            valor: 'vuelto',
+            opciones: [
+              { valor: 'vuelto', texto: `Le doy ${fmtBs(sobraBs)} de vuelto`, detalle: 'Sale de la gaveta de bolívares' },
+              { valor: 'propina', texto: 'Se queda de propina', detalle: 'Entra a la gaveta y se le debe al personal' },
+            ],
+          },
+        ],
+        aceptar: 'Seguir',
+      })
+      if (!r) return
+      setError('')
+      const entregadoUsd = redondear(bs / tasaBcv)
+      if (r.sobra === 'propina') {
+        setPropina(String(redondear((Number(propina) || 0) + entregadoUsd - faltaMixto)))
+        setPartes((p) => [...p, { metodo, monto: entregadoUsd, referencia: '' }])
+      } else {
+        setPartes((p) => [...p, { metodo, monto: faltaMixto, referencia: '', recibido: entregadoUsd, vuelto_metodo: 'Efectivo Bs' }])
+      }
+      return
+    }
+    const pago = await pedirPago(metodo, usd)
+    if (pago === null) return
+    setError('')
+    const r = await resolverPago(metodo, usd, pago)
     if (r.propina) setPropina(String(redondear((Number(propina) || 0) + r.propina)))
     if (r.descuento) {
       setDescuento(String(redondear(descuentoNum + r.descuento)))
@@ -1580,6 +1675,7 @@ export default function POS() {
                 onQuitarTodo={quitarTodoEstable}
                 fmt={fmt}
                 envioId={categoriaEnvios?.id ?? null}
+                quedan={quedan}
               />
             </section>
           )}
@@ -2861,7 +2957,16 @@ export default function POS() {
                       </span>
                     )}
                   </span>
-                  <span className="font-semibold tabular-nums">{fmt(parte.monto)}</span>
+                  <span className="text-right">
+                    <span className="block font-semibold tabular-nums">{fmt(parte.monto)}</span>
+                    {EN_BOLIVARES.has(parte.metodo) && tasaBcv > 0 && (
+                      <span className="block text-[11px] text-neutral-500 tabular-nums">
+                        {parte.recibido
+                          ? `recibió ${fmtBs(parte.recibido * tasaBcv)} · vuelto ${fmtBs((parte.recibido - parte.monto) * tasaBcv)}`
+                          : fmtBs(parte.monto_bs ?? parte.monto * tasaBcv)}
+                      </span>
+                    )}
+                  </span>
                   <button
                     onClick={() => setPartes((p) => p.filter((_, x) => x !== i))}
                     aria-label={`Quitar el pago con ${etiquetaMetodo(parte.metodo)}`}
@@ -3021,6 +3126,7 @@ function MenuVariantes({
   variantes,
   cantidades,
   recienAgregado,
+  quedan,
   fmt,
   onAgregar,
   onQuitar,
@@ -3032,6 +3138,7 @@ function MenuVariantes({
   variantes: Variante[]
   cantidades: Record<number, number>
   recienAgregado: Set<number>
+  quedan: Record<number, number>
   fmt: (usd: number | null | undefined, decimales?: number) => string
   onAgregar: (v: Variante) => void
   onQuitar: (varianteId: number) => void
@@ -3099,7 +3206,10 @@ function MenuVariantes({
               onClick={() => onAgregar(v)}
               className="flex-1 min-w-0 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-neutral-500/8 active:bg-neutral-500/15"
             >
-              <span className="font-semibold text-[15px] text-neutral-900 [overflow-wrap:anywhere]">{v.nombre}</span>
+              <span className="min-w-0">
+                <span className="block font-semibold text-[15px] text-neutral-900 [overflow-wrap:anywhere]">{v.nombre}</span>
+                <Quedan n={quedan[v.id]} />
+              </span>
               <span className="shrink-0 font-bold text-neutral-700 tabular-nums">{fmt(v.precio)}</span>
             </button>
             {n > 0 && (
@@ -3135,11 +3245,23 @@ function MenuVariantes({
   )
 }
 
+/** "Quedan 3" o "Agotado" debajo del nombre; nada si no se lleva la cuenta. */
+function Quedan({ n }: { n?: number }) {
+  if (n === undefined) return null
+  if (n <= 0) return <span className="block text-xs font-semibold text-peligro-600">Agotado</span>
+  return (
+    <span className={`block text-xs tabular-nums ${n <= 3 ? 'font-semibold text-aviso-700' : 'text-neutral-500'}`}>
+      {n === 1 ? 'Queda 1' : `Quedan ${n}`}
+    </span>
+  )
+}
+
 /** Un producto de una sola variante: el renglon que suma uno por toque. */
 function RenglonVendible({
   nombre,
   precio,
   enCarrito,
+  quedan,
   pulsando,
   color,
   fmt,
@@ -3151,6 +3273,8 @@ function RenglonVendible({
   /** null = monto libre (los envios). */
   precio: number | null
   enCarrito: number
+  /** Cuantas quedan, si se vende tal cual se compra. */
+  quedan?: number
   pulsando: boolean
   color: ReturnType<typeof colorCategoria>
   fmt: (usd: number | null | undefined, decimales?: number) => string
@@ -3168,7 +3292,10 @@ function RenglonVendible({
         {/* Sin `truncate`: un nombre largo se acomoda en dos lineas. Cortarlo
             con puntos suspensivos deja dos productos distintos leyendose
             igual, y el cajero toca el que no era. */}
-        <span className="font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">{nombre}</span>
+        <span className="min-w-0">
+          <span className="block font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">{nombre}</span>
+          <Quedan n={quedan} />
+        </span>
         <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
           {precio == null ? <span className="text-xs font-medium text-neutral-500">monto libre</span> : fmt(precio)}
         </span>
@@ -3224,6 +3351,7 @@ const ListaProductos = memo(function ListaProductos({
   onQuitarTodo,
   fmt,
   envioId,
+  quedan,
 }: {
   categorias: Categoria[]
   vendibles: { categoria: Categoria; filas: { producto: Producto; variante: Variante }[] }[]
@@ -3236,6 +3364,7 @@ const ListaProductos = memo(function ListaProductos({
   onQuitarTodo: (varianteId: number) => void
   fmt: (usd: number | null | undefined, decimales?: number) => string
   envioId: number | null
+  quedan: Record<number, number>
 }) {
   // El producto cuyas variantes estan a la vista, en un menu flotante
   // pegado a su renglon: la lista no se mueve al abrirlo (Leider, 1-oct: "no
@@ -3336,6 +3465,7 @@ const ListaProductos = memo(function ListaProductos({
                       nombre={etiquetaVariante(p, v)}
                       precio={envioId !== null && p.categoria_id === envioId ? null : v.precio}
                       enCarrito={cantidades[v.id] ?? 0}
+                      quedan={quedan[v.id]}
                       pulsando={recienAgregado.has(v.id)}
                       color={color}
                       fmt={fmt}
@@ -3393,6 +3523,7 @@ const ListaProductos = memo(function ListaProductos({
                         variantes={variantes}
                         cantidades={cantidades}
                         recienAgregado={recienAgregado}
+                        quedan={quedan}
                         fmt={fmt}
                         onAgregar={(v) => onAgregar(p, v)}
                         onQuitar={onQuitar}

@@ -158,6 +158,11 @@ def costos_reposicion(db: Session) -> Dict[int, dict]:
     for suelta in db.query(models.CompraSuelta).filter(models.CompraSuelta.anulada.isnot(True)).all():
         considerar(suelta.ingrediente_id, suelta.fecha, suelta.costo_unitario)
 
+    # Un costo corregido a mano en la ficha despues de la ultima compra es lo
+    # que el dueño sabe que cuesta: manda sobre esa compra.
+    for mov in db.query(models.MovimientoInventario).filter(models.MovimientoInventario.origen == "ajuste_costo").all():
+        considerar(mov.ingrediente_id, mov.fecha, mov.costo_unitario)
+
     return ultimo
 
 

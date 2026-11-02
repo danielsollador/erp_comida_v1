@@ -156,3 +156,31 @@ def test_sin_ninguna_compra_con_precio_manda_la_ficha(client, db):
     ultimos = reposicion.costos_reposicion(db)
     assert ing["id"] not in ultimos
     assert reposicion.costo_reposicion_efectivo(masa, ultimos) == 0.08
+
+
+def test_corregir_el_costo_en_la_ficha_manda_sobre_la_compra_anterior(client, db):
+    """2-nov: la crema de leche entro a $1,00, se corrigio a $1,60 en la
+    ficha y el menu seguia con $1,00."""
+    ing = alta(client, nombre="Crema de Leche")
+    comprar(client, ing["id"], 48, 48.0)
+    r = client.put(f"/api/inventario/ingredientes/{ing['id']}", json={"nombre": ing["nombre"], "unidad": "kg", "costo_unitario": 1.6})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    crema = db.get(models.Ingrediente, ing["id"])
+    assert reposicion.costo_reposicion_efectivo(crema, reposicion.costos_reposicion(db)) == 1.6
+    # Y una compra que llegue despues vuelve a mandar.
+    comprar(client, ing["id"], 10, 17.0)
+    db.expire_all()
+    crema = db.get(models.Ingrediente, ing["id"])
+    assert reposicion.costo_reposicion_efectivo(crema, reposicion.costos_reposicion(db)) == 1.7
+
+
+def test_corregir_el_costo_sin_stock_tambien_queda(client, db):
+    ing = alta(client, nombre="Crema", stock=0)
+    comprar(client, ing["id"], 1, 1.0)
+    client.post(f"/api/inventario/ingredientes/{ing['id']}/merma", json={"cantidad": 1, "motivo": "se daño"})
+    client.put(f"/api/inventario/ingredientes/{ing['id']}", json={"nombre": ing["nombre"], "unidad": "kg", "costo_unitario": 1.6})
+    db.expire_all()
+    crema = db.get(models.Ingrediente, ing["id"])
+    assert reposicion.costos_reposicion(db)[ing["id"]]["costo"] == 1.6
+    assert crema.costo_unitario == 1.6

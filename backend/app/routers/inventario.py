@@ -560,11 +560,14 @@ def actualizar_ingrediente(
     # los libros tiene que seguirlo (antes solo cambiaba la ficha).
     stock = db_ingrediente.stock_actual or 0
     costo_nuevo = db_ingrediente.costo_unitario or 0
-    if not a_gasto and stock > 0 and abs(costo_nuevo - costo_antes) > 1e-9:
-        valor = round(stock * (costo_nuevo - costo_antes), 2)
+    # La correccion queda en el kardex AUNQUE no haya stock: con su fecha, el
+    # costo de reposicion sabe que es mas nueva que la ultima compra y la usa
+    # (2-nov: la crema de leche corregida a $1,60 seguia diciendo $1,00).
+    if not a_gasto and abs(costo_nuevo - costo_antes) > 1e-9:
+        valor = round(max(stock, 0) * (costo_nuevo - costo_antes), 2)
+        kardex.revaluar(db, db_ingrediente, valor if abs(valor) >= 0.01 else 0.0,
+                        nota=f"Costo corregido en la ficha: {costo_antes:.4f} → {costo_nuevo:.4f}")
         if abs(valor) >= 0.01:
-            kardex.revaluar(db, db_ingrediente, valor,
-                            nota=f"Costo corregido en la ficha: {costo_antes:.4f} → {costo_nuevo:.4f}")
             contabilidad.registrar_ajuste_de_costo(db, db_ingrediente, valor)
     if a_gasto:
         # Lo que quedaba en el deposito ya no se va a contar: pasa a gasto.

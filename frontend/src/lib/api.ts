@@ -425,6 +425,8 @@ export const api = {
   reactivarVariante: (id: number) =>
     req<Variante>(`/menu/variantes/${id}/reactivar`, { method: 'POST' }),
   costosVariantes: () => req<CostoVariante[]>('/menu/costos'),
+  /** Cuantas quedan de lo que se vende tal cual se compra (helados, jugos). */
+  existenciasMenu: () => req<{ variante_id: number; quedan: number }[]>('/menu/existencias'),
   /** Costo de 1 unidad utilizable de cada mercancía con el método elegido para precios, y el aceite por pieza. */
   costosParaPrecios: () =>
     req<{ metodo: string; por_ingrediente: Record<string, number>; indirecto_por_pieza: number }>('/menu/costos-para-precios'),
