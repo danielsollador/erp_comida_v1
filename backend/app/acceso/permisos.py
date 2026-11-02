@@ -141,8 +141,9 @@ MODULOS_POR_ROL: dict[str, tuple[str, ...]] = {
 SOLO_ADMINISTRA = ("/api/contabilidad", "/api/impuestos", "/api/respaldos",
                    "/api/usuarios", "/api/pagos/config")
 
-# La cartera de locales de Vertigo. Solo el equipo de la plataforma.
-SOLO_VERTIGO = ("/api/agencia",)
+# La cartera de locales de Vertigo y lo que le cuesta mantener la plataforma.
+# Solo el equipo de la plataforma.
+SOLO_VERTIGO = ("/api/agencia", "/api/gastos-vertigo")
 
 # Lecturas que no comprometen nada y que las pantallas piden al cargar, sea
 # quien sea: la tasa del dia y la configuracion (que hoy es solo la tasa).

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import inspect
 
 from . import models  # noqa: F401  (registra las tablas en Base)
 from . import settings
@@ -11,6 +12,7 @@ from .acceso import auth, permisos, usuarios
 from .backup import iniciar_respaldos_automaticos, respaldo_si_hace_falta
 from .contabilidad import seed_plan_de_cuentas
 from .database import Base, SessionLocal, engine, preparar_esquema
+from .hub_models import GastoVertigo, HubBase
 from .migrations import aplicar as aplicar_migraciones
 from .migrations import renombrar_tablas
 from .routers import (
@@ -26,6 +28,7 @@ from .routers import (
     compras_lectura,
     config,
     contabilidad as contabilidad_router,
+    gastos_vertigo,
     impuestos as impuestos_router,
     inventario,
     menu,
@@ -101,16 +104,31 @@ def _avisar_zona_horaria() -> None:
         log.info("zona horaria del negocio: %s (UTC%+d)", nombre, int(desfase_h))
 
 
+def _arrancar_tablas_del_hub() -> None:
+    """Esquema `HUB` y sus tablas. Los gastos conocidos se siembran SOLO si la
+    tabla no existia: una lista vaciada a proposito no se vuelve a llenar."""
+    preparar_esquema()
+    nueva = not inspect(engine).has_table(GastoVertigo.__tablename__)
+    HubBase.metadata.create_all(bind=engine)
+    if nueva:
+        with SessionLocal() as db:
+            gastos_vertigo.sembrar(db)
+        log.info("hub: tabla de gastos creada y sembrada")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Arranque: esquema y tablas, datos de ejemplo si la base esta vacia, y
     # respaldos. En PostgreSQL cada local vive en su propio esquema y hay que
     # crearlo antes de que `create_all` intente meter tablas en el.
     _avisar_zona_horaria()
-    # El hub no toca la base: cuentas, locales y pases viven en JSON. Sin este
-    # `if` le clonaba las 31 tablas del local, vacias, solo por compartir la
-    # imagen.
-    if not settings.ES_HUB:
+    # El hub no toca las tablas de los locales: cuentas, locales y pases viven
+    # en JSON. Sin este `if` le clonaba las 31 tablas del local, vacias, solo
+    # por compartir la imagen. Lo suyo propio (los gastos de Vertigo) va en
+    # `HubBase`, que solo se crea aqui.
+    if settings.ES_HUB:
+        _arrancar_tablas_del_hub()
+    else:
         preparar_esquema()
         # Los nombres viejos se renombran ANTES de `create_all`; despues seria
         # tarde: crearia las tablas nuevas vacias y las viejas quedarian al
@@ -177,8 +195,10 @@ app.add_middleware(
 # que la crean--, la salud, que la consulta Docker antes de que exista nadie, y
 # el formulario de demo del sitio publico (ver `routers/sitio.py`).
 SIN_SESION = ("/api/acceso/", "/api/health", "/api/sitio/")
-# Lo unico que el hub sirve. El resto ni existe ahi: el hub no tiene datos.
-SOLO_HUB = ("/api/acceso/", "/api/usuarios", "/api/agencia", "/api/health", "/api/sitio/")
+# Lo unico que el hub sirve. El resto ni existe ahi: el hub no tiene datos de
+# ningun local (los gastos son de Vertigo, en el esquema `HUB`).
+SOLO_HUB = ("/api/acceso/", "/api/usuarios", "/api/agencia", "/api/health", "/api/sitio/",
+            "/api/gastos-vertigo")
 
 
 @app.middleware("http")
@@ -229,6 +249,7 @@ app.include_router(acceso_router.router)
 app.include_router(usuarios_router.router)
 app.include_router(autorizaciones_router.router)
 app.include_router(agencia.router)
+app.include_router(gastos_vertigo.router)
 app.include_router(menu.router)
 app.include_router(operadores.router)
 app.include_router(operadores.puntos)
