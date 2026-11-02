@@ -236,7 +236,64 @@ export type DatosFacturaVenta = {
   razon_social_cliente?: string
 }
 
+/** Una vuelta del asistente (spike de IA). La guía, si viene, la recorre `Guia.tsx`. */
+export type RespuestaAsistente = {
+  texto: string
+  guia: { ruta: string; ancla: string; titulo: string; texto: string; accion?: 'tocar' | 'escribir' | 'mirar' }[] | null
+  consulto: string[]
+  /** Lo que encontró «buscar documentos»: cada uno con su enlace para abrirlo. */
+  documentos?: DocumentoEncontrado[]
+  ms: number
+  costo_usd: number
+}
+
+export type DocumentoEncontrado = {
+  tipo: 'compra' | 'venta' | 'gasto'
+  id: number
+  titulo: string
+  detalle: string
+  fecha: string
+  monto_usd: number
+  estado: string
+  enlace: string
+}
+
+/** La frase traducida a una definición de A medida (ya validada en el servidor). */
+export type ReporteHablado = {
+  definicion?: {
+    fuente: string
+    filas: string[]
+    columna: string | null
+    medidas: string[]
+    filtros: Record<string, string[]>
+  }
+  desde?: string
+  hasta?: string
+  entendi: string
+  no_se_puede: string | null
+}
+
+/** Los cambios de precio que propone el asistente: la cuenta la hizo el servidor. */
+export type CambioPropuesto = {
+  variante_id: number
+  nombre: string
+  categoria: string
+  precio_anterior: number
+  precio_nuevo: number
+}
+export type PropuestaPrecios = { cambios: CambioPropuesto[]; entendi: string; duda: string | null }
+
 export const api = {
+  // --- asistente ---
+  preguntarAsistente: (mensajes: { rol: 'yo' | 'asistente'; texto: string }[], pantalla: string) =>
+    req<RespuestaAsistente>('/asistente/preguntar', { method: 'POST', body: JSON.stringify({ mensajes, pantalla }) }),
+  reporteHablado: (frase: string) =>
+    req<ReporteHablado>('/asistente/reporte', { method: 'POST', body: JSON.stringify({ frase }) }),
+  proponerPrecios: (instruccion: string) =>
+    req<PropuestaPrecios>('/asistente/precios/proponer', { method: 'POST', body: JSON.stringify({ instruccion }) }),
+  aplicarPrecios: (cambios: { variante_id: number; precio_anterior: number; precio_nuevo: number }[]) =>
+    req<{ aplicados: number }>('/asistente/precios/aplicar', { method: 'POST', body: JSON.stringify({ cambios }) }),
+
   // --- acceso y usuarios ---
   estadoAcceso: () => req<EstadoAcceso>('/acceso/estado'),
   salir: () => req<{ ok: boolean }>('/acceso/logout', { method: 'POST' }),
@@ -292,6 +349,11 @@ export const api = {
   ponerMiPin: (clave_actual: string, pin: string) =>
     req<Usuario>('/usuarios/mi/pin', { method: 'POST', body: JSON.stringify({ clave_actual, pin }) }),
   quitarMiPin: () => req<Usuario>('/usuarios/mi/pin', { method: 'DELETE' }),
+  /** Borra la cuenta propia (App Store pide que se pueda desde la app; la web
+   *  queda igual). Pide la contraseña; 400 si es mala o si es el último
+   *  administrador. Al volver, la sesión ya no vale. */
+  eliminarMiCuenta: (clave: string) =>
+    req<{ ok: boolean }>('/usuarios/mi/eliminar', { method: 'POST', body: JSON.stringify({ clave }) }),
 
   // --- autorizaciones: pedir permiso desde la caja, resolverlo desde la app ---
   solicitarAutorizacion: (d: { accion: string; detalle?: string; monto?: number; pedido_id?: number | null }) =>
@@ -363,6 +425,8 @@ export const api = {
   reactivarVariante: (id: number) =>
     req<Variante>(`/menu/variantes/${id}/reactivar`, { method: 'POST' }),
   costosVariantes: () => req<CostoVariante[]>('/menu/costos'),
+  /** Cuantas quedan de lo que se vende tal cual se compra (helados, jugos). */
+  existenciasMenu: () => req<{ variante_id: number; quedan: number }[]>('/menu/existencias'),
   /** Costo de 1 unidad utilizable de cada mercancía con el método elegido para precios, y el aceite por pieza. */
   costosParaPrecios: () =>
     req<{ metodo: string; por_ingrediente: Record<string, number>; indirecto_por_pieza: number }>('/menu/costos-para-precios'),
@@ -422,6 +486,13 @@ export const api = {
   borrarCuentaPabilo: (id: string) => req<ConfigPabilo>(`/pagos/config/cuentas/${id}`, { method: 'DELETE' }),
   /** Cobradas y ya cocinadas, todavia en el mostrador esperando al cliente. */
   listarPedidosPorEntregar: () => req<Pedido[]>('/pedidos?por_entregar=true'),
+  /** Lo que ya salió hoy del mostrador (entregado o por la hora), para rescatar lo que no se llevaron. */
+  listarEntregadosHoy: () => req<Pedido[]>('/pedidos?entregados_hoy=true'),
+  /** "Ahora lo vengo a buscar": no sale solo. `quitar` = se lo lleva ya. */
+  marcarPorRetirar: (pedidoId: number, cliente = '', quitar = false) =>
+    req<Pedido>(`/pedidos/${pedidoId}/por-retirar`, { method: 'POST', body: JSON.stringify({ cliente, quitar }) }),
+  /** Salió del mostrador pero el cliente no se lo llevó: vuelve como "por retirar". */
+  marcarNoEntregado: (pedidoId: number) => req<Pedido>(`/pedidos/${pedidoId}/no-entregado`, { method: 'POST' }),
   /** Las ventas de hoy, para consultarlas sin salir del punto de venta. */
   ventasDelDia: () => req<Pedido[]>('/pedidos?del_dia=true'),
   crearPedido: (
@@ -530,6 +601,9 @@ export const api = {
       // Si va a cocina. Lo nuevo sin decirlo toma lo que sugiera su
       // categoría; lo que ya estaba sin decirlo queda como estaba.
       a_cocina?: boolean
+      // Solo las unidades que se suman a algo que ya estaba: van a un renglón
+      // aparte con este destino (el resto sigue con `a_cocina`).
+      a_cocina_agregado?: boolean
     }[],
     extra?: {
       nota?: string
@@ -717,11 +791,13 @@ export const api = {
       headers: {},
     })
   },
-  registrarCompra: (id: number, cantidad: number, costo_total?: number, metodo_pago = 'Efectivo Bs') =>
+  registrarCompra: (id: number, cantidad: number, costo_total?: number, metodo_pago = 'Efectivo Bs', confirmar = false, regularizar_negativo = false) =>
     req<ImpactoDeCompra>(`/inventario/ingredientes/${id}/comprar`, {
       method: 'POST',
-      body: JSON.stringify({ cantidad, costo_total: costo_total ?? null, metodo_pago }),
+      body: JSON.stringify({ cantidad, costo_total: costo_total ?? null, metodo_pago, confirmar, regularizar_negativo }),
     }),
+  anularCompraSuelta: (compraId: number) =>
+    req<Ingrediente>(`/inventario/compras-sueltas/${compraId}/anular`, { method: 'POST' }),
   historialCostos: (id: number) =>
     req<CompraDeInsumo[]>(`/inventario/ingredientes/${id}/costos`),
   inflacionInsumos: (dias = 30) =>

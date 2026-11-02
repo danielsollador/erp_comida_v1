@@ -77,6 +77,10 @@ class CambioClavePropia(BaseModel):
     clave_nueva: str = ""
 
 
+class EliminarPropia(BaseModel):
+    clave: str = ""
+
+
 class CambioNombre(BaseModel):
     nombre: str = ""
     apellido: str = ""
@@ -354,6 +358,28 @@ def cambiar_mi_clave(datos: CambioClavePropia, request: Request) -> dict:
         raise HTTPException(401, "La clave actual no es correcta.")
     try:
         usuarios.cambiar_clave(s["usuario"], datos.clave_nueva)
+    except (usuarios.ErrorUsuarios, usuarios.ErrorAlmacen) as e:
+        raise _traducir(e)
+    return {"ok": True}
+
+
+@router.post("/mi/eliminar")
+def eliminar_mi_cuenta(datos: EliminarPropia, request: Request) -> dict:
+    """Borrar la propia cuenta desde la app (App Store, guia 5.1.1(v): si la
+    app crea cuentas, cada quien tiene que poder eliminar la suya). Pide la
+    clave, como cambiarla: con el POS abierto, otro no puede borrar la cuenta
+    ajena. Al borrarla su sesion deja de valer (el usuario ya no existe). Lo
+    que hizo queda en el historial con su nombre de usuario: las ventas y los
+    asientos son registros contables y fiscales que la ley obliga a guardar."""
+    s = auth.sesion_actual(request)
+    auth.rate_limit(request, limit=auth.LOGIN_INTENTOS,
+                    window=auth.LOGIN_VENTANA, what="eliminar cuenta")
+    # 400 y no 401: un 401 hace que la app y la web cierren la sesion, y
+    # equivocarse al escribir la clave no es perder la sesion.
+    if not usuarios.verificar(s["usuario"], datos.clave):
+        raise HTTPException(400, "La clave no es correcta.")
+    try:
+        usuarios.borrar(s["usuario"])
     except (usuarios.ErrorUsuarios, usuarios.ErrorAlmacen) as e:
         raise _traducir(e)
     return {"ok": True}

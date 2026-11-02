@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { Pastilla } from '../components/ui'
+import { Boton, Pastilla } from '../components/ui'
 import { useDialogo } from '../components/dialogo'
 import {
   Numerico,
@@ -39,8 +39,9 @@ export function MiCuenta() {
   // nunca se cambia mas de uno (Leider, 1-oct, fight complexity). Cada
   // renglon dice como esta y se abre al tocarlo; abrir otro cierra el que
   // estaba abierto.
-  const [abierta, setAbierta] = useState<'nombre' | 'pin' | 'clave' | null>(null)
-  const alternar = (cual: 'nombre' | 'pin' | 'clave') => () => setAbierta((a) => (a === cual ? null : cual))
+  type Renglon = 'nombre' | 'pin' | 'clave' | 'eliminar'
+  const [abierta, setAbierta] = useState<Renglon | null>(null)
+  const alternar = (cual: Renglon) => () => setAbierta((a) => (a === cual ? null : cual))
 
   return (
     <>
@@ -72,6 +73,7 @@ export function MiCuenta() {
         <MiPin tienePin={estado.tiene_pin} onCambio={recargar} abierta={abierta === 'pin'} alAlternar={alternar('pin')} />
       )}
       <CambiarClave abierta={abierta === 'clave'} alAlternar={alternar('clave')} />
+      <EliminarCuenta abierta={abierta === 'eliminar'} alAlternar={alternar('eliminar')} />
     </>
   )
 }
@@ -423,6 +425,79 @@ function CambiarClave({ abierta, alAlternar }: { abierta: boolean; alAlternar: (
             </button>
           </>
         )}
+      </Tarjeta>
+    </form>
+  )
+}
+
+/**
+ * Eliminar mi cuenta. Apple lo exige en la app (guia 5.1.1(v)) y la web queda
+ * igual. Pide la contraseña, como cambiarla: con el POS abierto, otro no
+ * puede borrar la cuenta ajena. Lo que la persona registro se queda en el
+ * negocio: son registros contables y fiscales.
+ */
+function EliminarCuenta({ abierta, alAlternar }: { abierta: boolean; alAlternar: () => void }) {
+  const { salir } = useAcceso()
+  const [clave, setClave] = useState('')
+  const [error, setError] = useState('')
+  const [eliminando, setEliminando] = useState(false)
+  const dialogo = useDialogo()
+
+  async function eliminar(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (
+      !(await dialogo.confirmar({
+        titulo: '¿Eliminar tu cuenta?',
+        texto: 'No se puede deshacer. Para volver a entrar, el dueño tendrá que crearte un usuario nuevo.',
+        aceptar: 'Eliminar mi cuenta',
+        peligro: true,
+      }))
+    )
+      return
+    setEliminando(true)
+    try {
+      await api.eliminarMiCuenta(clave)
+    } catch (err) {
+      setError((err as Error).message)
+      setEliminando(false)
+      return
+    }
+    // La cuenta ya no existe: `salir` borra lo que la pantalla recordaba, el
+    // token si es la app y la cookie del hub, y termina en /login.html.
+    await salir()
+  }
+
+  return (
+    <form onSubmit={eliminar}>
+      <Tarjeta
+        titulo="Eliminar mi cuenta"
+        plegable={{ abierta, alAlternar, resumen: 'Borra tu usuario de este negocio' }}
+      >
+        <p className="text-sm text-neutral-600 leading-relaxed">
+          Se borra tu usuario y ya no podrás entrar. Lo que registraste (ventas, compras, cierres de caja) se queda en
+          el negocio con tu nombre de usuario: son registros contables que la ley obliga a guardar. Si eres el único
+          administrador, primero crea otro.
+        </p>
+        <Error_ texto={error} />
+        <label className="block text-sm">
+          <Rotulo>Tu contraseña</Rotulo>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={clave}
+            onChange={(e) => setClave(e.target.value)}
+            required
+            className={campo}
+          />
+        </label>
+        {/* Lo que destruye va aparte y se ve distinto: separado por una raya y
+            en rojo, nunca con la cara del boton de guardar de los otros renglones. */}
+        <div className="pt-3 border-t border-neutral-200">
+          <Boton type="submit" tono="peligro-fuerte" ancho className="min-h-11 rounded-xl" disabled={eliminando || !clave}>
+            {eliminando ? 'Eliminando...' : 'Eliminar mi cuenta'}
+          </Boton>
+        </div>
       </Tarjeta>
     </form>
   )

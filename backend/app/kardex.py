@@ -129,6 +129,26 @@ def anotar(
     return mov
 
 
+def revaluar(db: Session, ingrediente: models.Ingrediente, valor: float, nota: str = "") -> models.MovimientoInventario:
+    """Cambia lo que VALE lo que hay, sin mover cantidad: se corrigio el costo
+    en la ficha. Sin este rastro el extracto no explicaria por que el valor
+    del deposito salto sin que entrara ni saliera nada."""
+    mov = models.MovimientoInventario(
+        ingrediente_id=ingrediente.id,
+        fecha=ahora(),
+        tipo=AJUSTE,
+        cantidad=0.0,
+        costo_unitario=round(ingrediente.costo_unitario or 0, 4),
+        valor=round(valor, 2),
+        costo_promedio=round(ingrediente.costo_unitario or 0, 4),
+        saldo=ingrediente.stock_actual,
+        origen="ajuste_costo",
+        nota=nota,
+    )
+    db.add(mov)
+    return mov
+
+
 def movimientos_de(
     db: Session,
     ingrediente_id: int,
@@ -280,9 +300,30 @@ def costos_promedio_a(db: Session, fecha) -> dict:
     return {ing_id: costo for ing_id, costo in filas}
 
 
+def _primeros_movimientos(db: Session) -> dict:
+    """Desde cuando tiene historia cada insumo en el kardex."""
+    return dict(
+        db.query(models.MovimientoInventario.ingrediente_id, func.min(models.MovimientoInventario.fecha))
+        .group_by(models.MovimientoInventario.ingrediente_id)
+        .all()
+    )
+
+
+def dias_medidos(desde, hasta, primero) -> float:
+    """Los dias que de verdad se midieron, no los de la ventana.
+
+    "Los ultimos 30 dias" de algo que se empezo a vender hace 5 dividia lo de
+    5 dias entre 30: la carne mechada salia gastando 0,1 kg al dia en vez de
+    0,6, y 7 kg "alcanzaban para 2 meses" (26-oct). Un dia como minimo, para
+    que una venta de esta manana no se lea como un ritmo infinito.
+    """
+    inicio = max(desde, primero) if primero else desde
+    return max((hasta - inicio).total_seconds() / 86400, 1.0)
+
+
 def consumo_por_dia_de_todos(db: Session, desde, hasta) -> dict:
     """Consumo diario de cada insumo, en una consulta. Ver `consumo_por_dia`."""
-    dias = max((hasta - desde).days, 1)
+    primeros = _primeros_movimientos(db)
     filas = (
         db.query(
             models.MovimientoInventario.ingrediente_id,
@@ -296,7 +337,10 @@ def consumo_por_dia_de_todos(db: Session, desde, hasta) -> dict:
         .group_by(models.MovimientoInventario.ingrediente_id)
         .all()
     )
-    return {ing_id: round(abs(total or 0) / dias, 4) for ing_id, total in filas}
+    return {
+        ing_id: round(abs(total or 0) / dias_medidos(desde, hasta, primeros.get(ing_id)), 4)
+        for ing_id, total in filas
+    }
 
 
 def consumo_por_dia(db: Session, ingrediente_id: int, desde, hasta) -> float:
@@ -307,7 +351,12 @@ def consumo_por_dia(db: Session, ingrediente_id: int, desde, hasta) -> float:
     Es lo que deberia decidir cuanto pedir. El minimo a dedo se pone una vez y
     se queda viejo; el consumo real cambia solo.
     """
-    dias = max((hasta - desde).days, 1)
+    primero = (
+        db.query(func.min(models.MovimientoInventario.fecha))
+        .filter(models.MovimientoInventario.ingrediente_id == ingrediente_id)
+        .scalar()
+    )
+    dias = dias_medidos(desde, hasta, primero)
     salidas = (
         db.query(func.sum(models.MovimientoInventario.cantidad))
         .filter(

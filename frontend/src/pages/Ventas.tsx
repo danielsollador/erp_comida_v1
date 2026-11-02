@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useAbrirDeUrl } from '../lib/abrirDeUrl'
 import { nombre as termino } from '../lib/palabras'
 import EditarPedido from '../components/EditarPedido'
 import CorregirPago from '../components/CorregirPago'
@@ -10,7 +11,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Cifra, FiltroDesplegable, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
-import { useFiltrosUrl } from '../lib/filtros'
+import { useFiltrosUrl, llano } from '../lib/filtros'
 import { PALETA } from '../lib/paleta'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { SerieTiempo } from './partes/reportes/comunes'
@@ -244,7 +245,9 @@ function Historial({
 }) {
   const { fmtCongelado } = useMoneda()
   const [busqueda, setBusqueda] = useState('')
+  // Una venta que llega por enlace (?abrir=id, la búsqueda del asistente) entra desplegada.
   const [abierta, setAbierta] = useState<number | null>(null)
+  useAbrirDeUrl(setAbierta)
   const orden = useOrden<VentaFila>(
     {
       numero: (v) => v.numero,
@@ -259,7 +262,7 @@ function Historial({
   )
 
   const visibles = useMemo(() => {
-    const q = busqueda.trim().toLowerCase()
+    const q = llano(busqueda.trim())
     return lista.filas.filter((v) => {
       if (estado !== 'todas' && claveDeFila(v) !== estado) return false
       if (factura === 'si' && !v.facturado) return false
@@ -267,11 +270,11 @@ function Historial({
       if (!q) return true
       return (
         String(v.numero).includes(q) ||
-        v.cliente.toLowerCase().includes(q) ||
-        v.detalle.toLowerCase().includes(q) ||
-        v.operador.toLowerCase().includes(q) ||
-        v.pago.toLowerCase().includes(q) ||
-        (v.numero_factura ?? '').toLowerCase().includes(q)
+        llano(v.cliente).includes(q) ||
+        llano(v.detalle).includes(q) ||
+        llano(v.operador).includes(q) ||
+        llano(v.pago).includes(q) ||
+        llano(v.numero_factura ?? '').includes(q)
       )
     })
   }, [lista, estado, factura, busqueda])
@@ -390,6 +393,7 @@ function FilaVenta({
     <>
       <tr
         onClick={alTocar}
+        data-doc={v.id}
         className={`border-t border-neutral-100 cursor-pointer hover:bg-neutral-50 ${apagada ? 'text-neutral-400' : ''}`}
         aria-expanded={desplegada}
       >

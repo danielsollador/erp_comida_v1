@@ -78,6 +78,8 @@ class CostoVariante(BaseModel):
     # (reposicion / promedio / mayor), indirecto incluido, y su margen.
     costo_para_precio: Optional[float] = None
     margen_para_precio_pct: Optional[float] = None
+    # El precio sin el IVA: sobre este se miden todos los margenes de arriba.
+    precio_neto: Optional[float] = None
 
 
 class ProductoBase(BaseModel):
@@ -412,6 +414,15 @@ class Ingrediente(IngredienteBase):
     ultima_compra: Optional[datetime.datetime] = None
     # Cuanto subestima el promedio al costo de reponer, en %.
     variacion_pct: Optional[float] = None
+    # EL COSTO CON QUE SE MIRA ESTA MERCANCIA, segun Configuracion > Control
+    # ("Con que costo fijar precios": ultimo, promedio o el mayor). La tabla
+    # muestra uno solo, para que el margen y el costo digan lo mismo.
+    costo_elegido: Optional[float] = None
+    # Si se vende tal cual en el menu (reventa): su precio de venta (con IVA,
+    # como esta en el menu), lo que queda sin IVA, y el margen sobre eso.
+    precio_venta: Optional[float] = None
+    precio_neto: Optional[float] = None
+    margen_pct: Optional[float] = None
 
     @field_validator("categoria", mode="before")
     @classmethod
@@ -444,6 +455,8 @@ class CompraDeInsumo(BaseModel):
     costo_unitario: float
     origen: str  # factura | compra suelta
     referencia: str = ""
+    # Solo en las compras sueltas: para poder anularla si se anoto mal.
+    compra_id: Optional[int] = None
 
 
 class ImpactoEnProducto(BaseModel):
@@ -569,6 +582,12 @@ class ComprarIngredienteRequest(BaseModel):
     # De donde salio la plata: Efectivo Bs | Efectivo $ | Banco (y sinonimos de
     # contabilidad.METODOS_DE_PAGO). Salia siempre de la gaveta de bolivares.
     metodo_pago: str = "Efectivo Bs"
+    # El precio se sale de lo de siempre y la persona dijo que si es asi.
+    confirmar: bool = False
+    # Si el stock esta en negativo (se vendio sin cargarlo): lo que hay
+    # despues de la compra es lo que llego, y lo vendido se anota como
+    # existencia que no estaba cargada.
+    regularizar_negativo: bool = False
 
 
 class MermaRequest(BaseModel):
@@ -895,6 +914,12 @@ class PedidoItemCreate(BaseModel):
     # del pedido), que es como llegaban los pedidos antes de decidirse
     # renglon por renglon.
     a_cocina: Optional[bool] = None
+    # Al EDITAR: a donde van solo las unidades que se agregan a algo que ya
+    # estaba en el pedido. Leider (13-oct): con 2 pastelitos de vitrina,
+    # agregar 2 mas los sumaba al mismo renglon y la cocina o veia los 4 o no
+    # veia nada. Con esto lo agregado es un renglon aparte con su destino, y
+    # `a_cocina` sigue hablando solo de lo que ya estaba. None = como antes.
+    a_cocina_agregado: Optional[bool] = None
 
 
 class PedidoCreate(BaseModel):
@@ -1008,6 +1033,8 @@ class Pedido(BaseModel):
     a_cocina: bool = True
     # Cuando se le entrego al cliente. Nulo = sigue en la barra esperando.
     entregado_en: Optional[datetime.datetime] = None
+    # Desde cuando el cliente lo viene a buscar. Con esto no sale solo.
+    por_retirar_en: Optional[datetime.datetime] = None
     facturado: bool = False
     numero_factura: Optional[str] = None
     numero_control: str = ""
@@ -1228,6 +1255,13 @@ class Configuracion(BaseModel):
     costo_para_precios: str = "reposicion"
 
 
+class ExistenciaVariante(BaseModel):
+    """Cuantas quedan de una variante que se vende tal cual se compra."""
+
+    variante_id: int
+    quedan: int
+
+
 class CostosParaPrecios(BaseModel):
     """Costo de 1 unidad utilizable de cada mercancia, con el metodo elegido."""
 
@@ -1238,6 +1272,13 @@ class CostosParaPrecios(BaseModel):
 
 class CostoParaPreciosRequest(BaseModel):
     costo_para_precios: Literal["reposicion", "promedio", "mayor"]
+
+
+class PorRetirarRequest(BaseModel):
+    # Si la comanda no tenia nombre: es lo que se busca cuando el cliente vuelve.
+    cliente: str = ""
+    # True = ya no: el cliente se lo lleva ahora.
+    quitar: bool = False
 
 
 class VenderSinInventarioRequest(BaseModel):
@@ -1349,6 +1390,9 @@ class LineaMetodo(BaseModel):
     fondo_declarado: bool = False
     ventas: float = 0
     salidas: float = 0
+    # Lo que se pago desde el banco por esta forma de pago (sueldos,
+    # proveedores): ya esta en los libros y NO se resta del esperado.
+    pagos: float = 0
     # Lo que movio la cuenta sin ser venta, gasto ni retiro: pagarle a un
     # proveedor, cobrar un fiado. El ajuste de la apertura NO entra aqui: ese
     # ya esta dentro de `fondo`, y contarlo dos veces descuadraria la fila.

@@ -19,7 +19,7 @@ import type { Pedido } from './types'
  */
 export const MINUTOS_EDITANDO = 5
 
-function minutosDesde(iso: string | null): number | null {
+export function minutosDesde(iso: string | null): number | null {
   if (!iso) return null
   // El backend guarda hora local del local comercial, sin zona horaria: un ISO
   // sin offset se parsea como hora local, que es justo lo que queremos. Solo
@@ -27,6 +27,23 @@ function minutosDesde(iso: string | null): number | null {
   const fecha = new Date(iso.replace(/(\.\d{3})\d+$/, '$1'))
   if (Number.isNaN(fecha.getTime())) return null
   return Math.max(0, (Date.now() - fecha.getTime()) / 60000)
+}
+
+/** "hace 5 min", "hace 2 h", "desde ayer": cuanto lleva esperando un pedido. */
+export function haceCuanto(iso: string | null | undefined): string {
+  const m = minutosDesde(iso ?? null)
+  if (m === null) return ''
+  if (m < 1) return 'recién'
+  if (m < 60) return `hace ${Math.round(m)} min`
+  if (m < 24 * 60) return `hace ${Math.floor(m / 60)} h`
+  return 'desde ayer o antes'
+}
+
+/** La hora del dia de una fecha del backend (hora local, sin zona). */
+export function horaDe(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const fecha = new Date(iso.replace(/(\.\d{3})\d+$/, '$1'))
+  return Number.isNaN(fecha.getTime()) ? '' : fecha.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })
 }
 
 /** El punto de venta tiene la comanda abierta AHORA: la cocina no la toca. */

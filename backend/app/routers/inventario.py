@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from .. import contabilidad, costeo, kardex, models, reposicion, schemas
+from .. import contabilidad, costeo, impuestos, kardex, models, reposicion, schemas
 from . import operadores
 from ..database import get_db
 from ..exportar_csv import nombre_de_archivo, respuesta_csv
@@ -45,14 +45,47 @@ def listar_ingredientes(db: Session = Depends(get_db)):
     # trabajo: con 120 insumos eran 241 consultas y 695 ms para abrir la
     # pantalla principal del modulo.
     ultimos = reposicion.costos_reposicion(db)
-    return [_con_reposicion(i, ultimos) for i in ingredientes]
+    config = db.query(models.Configuracion).first()
+    metodo = (config.costo_para_precios if config else None) or "reposicion"
+    ventas = _precios_de_venta(db)
+    tasa = impuestos.tasa_iva(db)
+    return [_con_reposicion(i, ultimos, metodo, ventas.get(i.id), tasa) for i in ingredientes]
 
 
-def _con_reposicion(ingrediente: models.Ingrediente, ultimos: dict) -> schemas.Ingrediente:
-    """Le pega al insumo lo que costaria reponerlo hoy.
+def _precios_de_venta(db: Session) -> dict:
+    """{ingrediente_id: precio} de lo que se vende TAL CUAL en el menu.
+
+    Una mercancia de reventa (refresco, jugo) se vende como un producto con
+    receta de una sola linea de 1 unidad. Ese es su precio de venta; una que
+    entra en recetas con otras cosas no tiene precio propio.
+    """
+    filas = (
+        db.query(models.RecetaItem.ingrediente_id, models.Variante.precio)
+        .join(models.Variante, models.Variante.id == models.RecetaItem.variante_id)
+        .filter(models.Variante.activo.isnot(False), models.RecetaItem.cantidad_por_unidad == 1)
+        .all()
+    )
+    precios: dict = {}
+    for ingrediente_id, precio in filas:
+        # Varias variantes del mismo refresco: la mas barata es la referencia
+        # conservadora para el margen.
+        if ingrediente_id not in precios or precio < precios[ingrediente_id]:
+            precios[ingrediente_id] = precio
+    return precios
+
+
+def _con_reposicion(
+    ingrediente: models.Ingrediente,
+    ultimos: dict,
+    metodo: str = "reposicion",
+    precio_venta: Optional[float] = None,
+    tasa_iva: float = 0.0,
+) -> schemas.Ingrediente:
+    """Le pega al insumo lo que costaria reponerlo hoy, el costo con que se
+    mira (segun Configuracion) y, si se vende tal cual, su margen.
 
     `costo_unitario` es el promedio ponderado (lo que costo lo que hay en el
-    deposito); esto es lo que cuesta comprar mas. Mientras el promedio no se
+    deposito); reponer es lo que cuesta comprar mas. Mientras el promedio no se
     mueve, el dueno cree que su margen sigue igual.
     """
     salida = schemas.Ingrediente.model_validate(ingrediente)
@@ -63,6 +96,21 @@ def _con_reposicion(ingrediente: models.Ingrediente, ultimos: dict) -> schemas.I
         salida.variacion_pct = reposicion.variacion_pct(
             ultimo["costo"], ingrediente.costo_unitario
         )
+    promedio = ingrediente.costo_unitario or 0
+    reponer = salida.costo_reposicion if salida.costo_reposicion is not None else promedio
+    if metodo == "promedio":
+        elegido = promedio
+    elif metodo == "mayor":
+        elegido = max(promedio, reponer)
+    else:
+        elegido = reponer
+    salida.costo_elegido = round(elegido, 4)
+    if precio_venta is not None and ingrediente.tipo == "reventa":
+        salida.precio_venta = round(precio_venta, 2)
+        neto = impuestos.precio_neto(precio_venta, tasa_iva, bool(ingrediente.exento))
+        salida.precio_neto = round(neto, 4)
+        if neto > 0:
+            salida.margen_pct = round((neto - elegido) / neto * 100, 1)
     return salida
 
 
@@ -505,8 +553,22 @@ def actualizar_ingrediente(
     _sin_merma_si_es_preparacion(datos)
     confirmar = datos.pop("confirmar", False)
     a_gasto = _revisar_cambio_delicado(db, db_ingrediente, datos, confirmar)
+    costo_antes = db_ingrediente.costo_unitario or 0
     for key, value in datos.items():
         setattr(db_ingrediente, key, value)
+    # Corregir el costo a mano cambia lo que vale lo que hay: el inventario de
+    # los libros tiene que seguirlo (antes solo cambiaba la ficha).
+    stock = db_ingrediente.stock_actual or 0
+    costo_nuevo = db_ingrediente.costo_unitario or 0
+    # La correccion queda en el kardex AUNQUE no haya stock: con su fecha, el
+    # costo de reposicion sabe que es mas nueva que la ultima compra y la usa
+    # (2-nov: la crema de leche corregida a $1,60 seguia diciendo $1,00).
+    if not a_gasto and abs(costo_nuevo - costo_antes) > 1e-9:
+        valor = round(max(stock, 0) * (costo_nuevo - costo_antes), 2)
+        kardex.revaluar(db, db_ingrediente, valor if abs(valor) >= 0.01 else 0.0,
+                        nota=f"Costo corregido en la ficha: {costo_antes:.4f} → {costo_nuevo:.4f}")
+        if abs(valor) >= 0.01:
+            contabilidad.registrar_ajuste_de_costo(db, db_ingrediente, valor)
     if a_gasto:
         # Lo que quedaba en el deposito ya no se va a contar: pasa a gasto.
         valor = round(a_gasto * (db_ingrediente.costo_unitario or 0), 2)
@@ -780,6 +842,21 @@ def registrar_compra(
             costo_de_esta_compra = db_ingrediente.costo_unitario or 0
             valor = round(body.cantidad * costo_de_esta_compra, 2)
 
+        # Un precio que no tiene sentido se pregunta ANTES de guardar (26-oct:
+        # 10 kg de pernil por $0,08 entraron sin aviso, y la receta quedo en
+        # cero). Con "si, es asi" (`confirmar`), pasa.
+        absurdo = reposicion.precio_absurdo(costo_de_esta_compra, db_ingrediente.costo_unitario or 0)
+        # Sin lo que se pago y sin costo en la ficha entraria a $0, y el
+        # promedio de lo que ya habia se va hacia cero con ella (2-nov, la masa).
+        if costo_de_esta_compra <= 0:
+            absurdo = (
+                f"{db_ingrediente.nombre} todavía no tiene costo y no pusiste cuánto pagaste: "
+                "entraría a $0 y las recetas que la llevan quedarían más baratas de lo que son. "
+                "Pon lo que pagaste en total. Si de verdad fue gratis (una muestra, un regalo), confírmalo."
+            )
+        if absurdo and not body.confirmar:
+            raise HTTPException(status_code=409, detail=absurdo)
+
         # Se calcula ANTES de promediar: despues de mezclar, el costo anterior
         # ya no se puede reconstruir.
         costo_anterior = db_ingrediente.costo_unitario or 0
@@ -794,6 +871,11 @@ def registrar_compra(
         #
         # Se crea ANTES de mover el stock porque el movimiento del kardex apunta
         # a esta fila: sin id, el extracto diria "compra" sin decir cual.
+        # Estaba en negativo y se dijo que lo que hay es lo que llego: lo
+        # vendido sin cargar se anota primero como existencia, al costo que
+        # tenia (con ese costo salio en las ventas).
+        if body.regularizar_negativo:
+            _regularizar_negativo(db, db_ingrediente)
         compra = models.CompraSuelta(
             ingrediente_id=db_ingrediente.id,
             cantidad=body.cantidad,
@@ -837,6 +919,46 @@ def registrar_compra(
                 else []
             ),
         )
+
+
+@router.post("/compras-sueltas/{compra_id}/anular", response_model=schemas.Ingrediente)
+def anular_compra_suelta(compra_id: int, db: Session = Depends(get_db)):
+    """Deshacer una compra suelta mal anotada (26-oct).
+
+    No habia como: lo unico a mano era sacar la mercancia con un conteo, y eso
+    dejaba la compra mala como "lo ultimo que se pago" y una perdida falsa en
+    los libros. Aqui sale del stock lo que entro, el asiento lleva su reverso
+    exacto y la compra deja de contar para el costo de reposicion.
+    """
+    with costeo.bloqueo_inventario():
+        compra = db.query(models.CompraSuelta).filter(models.CompraSuelta.id == compra_id).first()
+        if not compra:
+            raise HTTPException(status_code=404, detail="Compra no encontrada")
+        if compra.anulada:
+            raise HTTPException(status_code=409, detail="Esa compra ya estaba anulada")
+        ingrediente = _ingrediente_para_actualizar(db, compra.ingrediente_id)
+        hay = ingrediente.stock_actual or 0
+        if hay + 1e-6 < compra.cantidad:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Hay {hay:g} {ingrediente.unidad} y la compra metió {compra.cantidad:g}: si ya los sacaste "
+                "con un conteo o una merma, revierte eso primero en Inventario › Control.",
+            )
+        # El promedio vuelve a ser el de antes de la compra.
+        resto = hay - compra.cantidad
+        if resto > 1e-6:
+            previo = (hay * (ingrediente.costo_unitario or 0) - compra.cantidad * compra.costo_unitario) / resto
+            if previo > 0:
+                ingrediente.costo_unitario = round(previo, 4)
+        kardex.anotar(
+            db, ingrediente, -compra.cantidad, kardex.REVERSO, costo_unitario=compra.costo_unitario,
+            origen="compra_suelta_anulada", referencia_id=compra.id, nota="Se anula una compra mal anotada",
+        )
+        contabilidad.registrar_reverso_compra_insumo(db, compra.id)
+        compra.anulada = True
+        db.commit()
+        db.refresh(ingrediente)
+        return _con_reposicion(ingrediente, reposicion.costos_reposicion(db))
 
 
 def _no_mas_de_lo_que_hay(ingrediente: models.Ingrediente, body: schemas.MermaRequest) -> None:
@@ -902,6 +1024,27 @@ def registrar_merma(
         return db_ingrediente
 
 
+def _regularizar_negativo(
+    db: Session, ingrediente: models.Ingrediente, hasta: float = 0.0, operador_id: Optional[int] = None,
+) -> float:
+    """Lleva un stock negativo hasta `hasta` como existencia que no estaba
+    cargada (capital, no ganancia). Negativo quiere decir que se vendio algo
+    que el sistema no sabia que habia."""
+    sistema = ingrediente.stock_actual or 0
+    if sistema >= 0 or hasta <= sistema:
+        return 0.0
+    cantidad = round(hasta - sistema, 4)
+    costo = ingrediente.costo_unitario or 0
+    kardex.anotar(
+        db, ingrediente, cantidad, kardex.AJUSTE, costo_unitario=costo,
+        origen="existencia_no_cargada", operador_id=operador_id,
+        nota="Se vendió antes de cargarlo: había mercancía que no estaba en el sistema",
+    )
+    contabilidad.registrar_existencia_no_cargada(db, ingrediente, round(cantidad * costo, 2))
+    db.flush()
+    return cantidad
+
+
 def _aplicar_conteo(
     db: Session, ingrediente: models.Ingrediente, stock_real: float, motivo: str,
     operador_id: Optional[int] = None,
@@ -913,6 +1056,19 @@ def _aplicar_conteo(
     inventario contable y el real no se separen sin dejar rastro.
     """
     sistema = ingrediente.stock_actual or 0
+    if sistema < 0 and stock_real > sistema:
+        # Estaba en negativo: lo contado nunca entro al sistema. No es un
+        # sobrante (ganancia), es mercancia que ya estaba y no se cargo.
+        _regularizar_negativo(db, ingrediente, hasta=stock_real, operador_id=operador_id)
+        return schemas.AjusteConteo(
+            ingrediente_id=ingrediente.id,
+            nombre=ingrediente.nombre,
+            unidad=ingrediente.unidad,
+            sistema=round(sistema, 4),
+            contado=stock_real,
+            diferencia=round(stock_real - sistema, 4),
+            valor=round((stock_real - sistema) * (ingrediente.costo_unitario or 0), 2),
+        )
     faltante = sistema - stock_real
     valor = round(abs(faltante) * (ingrediente.costo_unitario or 0), 2)
     if faltante > 0:
@@ -1760,7 +1916,11 @@ def _consumo_diario(db: Session, dias: int = 14) -> dict:
                 ) + costeo.consumo_bruto(receta, item.cantidad)
     # El guiso no se compra: lo que hay que reponer es su pollo y su cebolla.
     hojas = costeo.explotar_consumo(consumo, modo="receta")
-    return {ing.id: total / dias for ing, total in hojas.items()}
+    # Entre los dias que de verdad hubo ventas, no los de la ventana: con una
+    # semana vendiendo, dividir entre 14 pedia la mitad de lo que se gasta.
+    primero = min((p.cerrado_en for p in pedidos if p.cerrado_en), default=None)
+    medidos = kardex.dias_medidos(desde, ahora(), primero)
+    return {ing.id: total / medidos for ing, total in hojas.items()}
 
 
 @router.get("/sugerencias", response_model=List[schemas.SugerenciaCompra])

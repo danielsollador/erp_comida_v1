@@ -18,7 +18,7 @@ export const METODOS_PAGO = [
 // pedir: llega despues, cuando se salde. 'Fiado' es la venta a credito;
 // 'Credito' es como le llama Compras a lo mismo del otro lado.
 // 'Mixto' tampoco: la referencia la lleva cada parte, no el conjunto.
-const SIN_COMPROBANTE = new Set(['Fiado', 'Credito', 'Mixto'])
+const SIN_COMPROBANTE = new Set(['Fiado', 'Credito', 'Mixto', 'Plata del dueño'])
 
 /**
  * Si este metodo de pago tiene que traer su numero de confirmacion.

@@ -10,6 +10,7 @@ import {
 import { Boton, Campo, Modal, Selector } from './ui'
 import { CasillaConUnidad } from './Cantidad'
 import { convertirTexto, factorEntre, otraUnidad, sinRuido } from '../lib/unidades'
+import { etiquetaUnidad } from '../lib/inventario'
 
 /**
  * Las ventanas de pregunta del ERP: confirmar, elegir, pedir datos, avisar.
@@ -45,15 +46,19 @@ export type OpcionDialogo = {
 
 export type CampoDialogo = {
   nombre: string
-  etiqueta: string
+  /** Puede depender de lo escrito en los otros campos. */
+  etiqueta: string | ((valores: Record<string, string>) => string)
   tipo?: 'texto' | 'numero' | 'fecha' | 'opciones' | 'nota'
   valor?: string | number
   opciones?: OpcionDialogo[]
+  /** Solo se muestra (y se pide) cuando esto da verdadero. Si no, no viene
+      en la respuesta. Para "¿paquetes o sueltas?" → "cuántos paquetes". */
+  cuando?: (valores: Record<string, string>) => boolean
   /** La unidad, pegada a la etiqueta: "Cantidad (kg)". Si es kg, g, lt o ml
       la casilla lleva su interruptor (kg ⇄ g) y el valor vuelve SIEMPRE en
       esa unidad, se haya escrito en la que se haya escrito. */
   sufijo?: string
-  ayuda?: string
+  ayuda?: string | ((valores: Record<string, string>) => string)
   placeholder?: string
   /** Se puede dejar vacio. Por defecto todo campo es obligatorio. */
   opcional?: boolean
@@ -265,11 +270,15 @@ function Formulario({
   const [vistas, setVistas] = useState<Record<string, string>>({})
   const conUnidad = (c: CampoDialogo) => c.tipo === 'numero' && !!c.sufijo && otraUnidad(c.sufijo) !== null
   const vistaDe = (c: CampoDialogo) => vistas[c.nombre] ?? c.sufijo ?? ''
+  const visible = (c: CampoDialogo) => !c.cuando || c.cuando(valores)
+  const etiquetaDe = (c: CampoDialogo) => (typeof c.etiqueta === 'function' ? c.etiqueta(valores) : c.etiqueta)
+  const ayudaDe = (c: CampoDialogo) => (typeof c.ayuda === 'function' ? c.ayuda(valores) : c.ayuda)
 
   function validar(): Record<string, string> | null {
     const malos: Record<string, string> = {}
     const limpios: Record<string, string> = {}
     for (const c of campos) {
+      if (!visible(c)) continue
       const crudo = (valores[c.nombre] ?? '').trim()
       if (crudo === '') {
         if (c.opcional) {
@@ -338,7 +347,9 @@ function Formulario({
       <form id="vp-dialogo-form" onSubmit={enviar} className="space-y-3">
         <Texto>{texto}</Texto>
         {campos.map((c, i) => {
-          const etiqueta = c.sufijo && !conUnidad(c) ? `${c.etiqueta} (${c.sufijo})` : c.etiqueta
+          if (!visible(c)) return null
+          const etiqueta = c.sufijo && !conUnidad(c) ? `${etiquetaDe(c)} (${etiquetaUnidad(c.sufijo)})` : etiquetaDe(c)
+          const ayuda = ayudaDe(c)
           const error = errores[c.nombre]
           if (conUnidad(c)) {
             const vista = vistaDe(c)
@@ -356,12 +367,12 @@ function Formulario({
                   onChange={(e) => poner(c.nombre, e.target.value)}
                   placeholder={c.placeholder}
                   autoFocus={i === 0}
-                  etiqueta={`${c.etiqueta} (${vista})`}
+                  etiqueta={`${etiquetaDe(c)} (${etiquetaUnidad(vista)})`}
                   onFocus={(e) => e.currentTarget.select()}
                   claseCasilla={`border rounded-lg px-3 py-2 text-sm ${error ? 'border-peligro-400' : 'border-neutral-300'}`}
                 />
-                {(error || c.ayuda) && (
-                  <span className={`block text-xs mt-1 ${error ? 'text-peligro-600' : 'text-neutral-500'}`}>{error ?? c.ayuda}</span>
+                {(error || ayuda) && (
+                  <span className={`block text-xs mt-1 ${error ? 'text-peligro-600' : 'text-neutral-500'}`}>{error ?? ayuda}</span>
                 )}
               </label>
             )
@@ -376,7 +387,7 @@ function Formulario({
                     </option>
                   ))}
                 </Selector>
-                {c.ayuda && <p className="text-xs text-neutral-500 mt-1">{c.ayuda}</p>}
+                {ayuda && <p className="text-xs text-neutral-500 mt-1">{ayuda}</p>}
               </div>
             )
           }
@@ -392,7 +403,7 @@ function Formulario({
                   rows={3}
                   className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm"
                 />
-                {(error || c.ayuda) && <span className={`block text-xs mt-1 ${error ? 'text-peligro-600' : 'text-neutral-500'}`}>{error ?? c.ayuda}</span>}
+                {(error || ayuda) && <span className={`block text-xs mt-1 ${error ? 'text-peligro-600' : 'text-neutral-500'}`}>{error ?? ayuda}</span>}
               </label>
             )
           }
@@ -400,7 +411,7 @@ function Formulario({
             <Campo
               key={c.nombre}
               etiqueta={etiqueta}
-              ayuda={error ?? c.ayuda}
+              ayuda={error ?? ayuda}
               className={error ? '[&_span:last-child]:text-peligro-600 [&_input]:border-peligro-400' : ''}
               // Texto con teclado decimal, no `type=number`: acepta la coma,
               // no cambia el valor con la rueda del raton y no recorta ceros.

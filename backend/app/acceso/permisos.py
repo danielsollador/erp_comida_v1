@@ -70,10 +70,13 @@ MODULOS: dict[str, dict] = {
     },
     # Los reportes a medida se consultan por POST (la definicion viaja en el
     # cuerpo) y se guardan con nombre: quien ve Reportes los puede armar.
+    # El asistente de IA (chat y reportes hablados) es una forma de mirar los
+    # reportes: va con ellos. Solo lee; sus POST no escriben nada.
     "reportes": {"nombre": "Reportes", "rutas": (), "lectura": ("/api/reportes",),
-                 "escribe_solo": ("/api/reportes/dinamico",)},
+                 "escribe_solo": ("/api/reportes/dinamico", "/api/asistente/preguntar", "/api/asistente/reporte")},
     "ventas": {"nombre": "Ventas", "rutas": (), "lectura": ("/api/ventas",)},
-    "menu": {"nombre": "Menú", "rutas": ("/api/menu",), "lectura": ("/api/inventario",)},
+    # Cambiar precios diciéndolo (asistente de IA) es editar el menú.
+    "menu": {"nombre": "Menú", "rutas": ("/api/menu", "/api/asistente/precios"), "lectura": ("/api/inventario",)},
     "recetas": {
         "nombre": "Recetas",
         "rutas": ("/api/inventario/recetas",),
@@ -138,12 +141,15 @@ MODULOS_POR_ROL: dict[str, tuple[str, ...]] = {
 SOLO_ADMINISTRA = ("/api/contabilidad", "/api/impuestos", "/api/respaldos",
                    "/api/usuarios", "/api/pagos/config")
 
-# La cartera de locales de Vertigo. Solo el equipo de la plataforma.
-SOLO_VERTIGO = ("/api/agencia",)
+# La cartera de locales de Vertigo y lo que le cuesta mantener la plataforma.
+# Solo el equipo de la plataforma.
+SOLO_VERTIGO = ("/api/agencia", "/api/gastos-vertigo")
 
 # Lecturas que no comprometen nada y que las pantallas piden al cargar, sea
 # quien sea: la tasa del dia y la configuracion (que hoy es solo la tasa).
-LECTURA_LIBRE = ("/api/tasas", "/api/config")
+# `/api/app`: la portada y el punto de venta del telefono en una llamada
+# (routers/app_movil.py); cada pieza ya respeta el rol por su cuenta.
+LECTURA_LIBRE = ("/api/tasas", "/api/config", "/api/app/")
 
 # Los operadores y las cajas fisicas se LEEN desde el POS (para elegir caja),
 # pero se crean y desactivan desde la administracion.
@@ -305,6 +311,10 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
 
     # La clave y el PIN propios los cambia cada quien, sea el rol que sea.
     if ruta.startswith("/api/usuarios/mi/"):
+        return True
+    # Su propio telefono para los avisos push lo registra cada quien (push.py
+    # decide despues a quien le llega cada aviso).
+    if ruta.startswith("/api/push/"):
         return True
     if ruta.startswith(SOLO_VERTIGO):
         return r == "admin"

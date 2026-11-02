@@ -2,7 +2,7 @@
 
 El lector es UNA pieza pequena y reemplazable: recibe la foto o el PDF de la
 factura y devuelve un `BorradorFactura`. Un PDF puede traer varias paginas;
-el lector las lee todas (la API de Claude acepta PDF directamente). Todo lo
+el lector las lee todas (la API de Gemini acepta PDF directamente). Todo lo
 demas -guardar el archivo, prellenar el formulario, los controles de cuadre,
 duplicado y precio, y el guardado- es codigo normal del ERP que no sabe quien
 leyo. Asi se puede desarrollar y probar con el lector de

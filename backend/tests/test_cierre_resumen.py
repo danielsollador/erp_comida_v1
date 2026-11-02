@@ -105,15 +105,18 @@ def test_un_gasto_en_efectivo_solo_baja_el_efectivo(client, variante):
     assert linea(d, "Zelle")["esperado"] == 5.0
 
 
-def test_un_retiro_por_zelle_baja_el_zelle(client, variante):
-    """El dueño elige por donde saca la plata, y eso es lo que cuadra."""
+def test_un_retiro_por_zelle_se_muestra_pero_no_se_resta(client, variante):
+    """Lo que sale por el banco ya esta en los libros (24-oct): en esa fila se
+    coteja lo cobrado, que es lo que se ve en el telefono, y el retiro va
+    aparte. Restarlo obligaba a teclear "cobrado menos retiros"."""
     vender(client, variante, "Zelle")
     r = client.post("/api/caja/retiros", json={"monto": 3.0, "metodo_pago": "Zelle", "nota": ""})
     assert r.status_code == 200, r.text
 
     d = resumen(client)
     assert d["retiros"] == 3.0
-    assert linea(d, "Zelle")["esperado"] == 2.0
+    z = linea(d, "Zelle")
+    assert (z["esperado"], z["salidas"], z["pagos"]) == (5.0, 0, 3.0)
     assert linea(d, "Efectivo Bs")["esperado"] == 0
 
 

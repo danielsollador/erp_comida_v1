@@ -29,10 +29,13 @@ COPY --chown=nginx:nginx nginx.conf.template /etc/nginx/templates/default.conf.t
 # encuentre, y la plantilla esta llena de variables de nginx ($host, $uri,
 # $proxy_add_x_forwarded_for...) que se reemplazarian por cadena vacia. nginx
 # arrancaria igual y se perderian la IP real y las cabeceras de proxy.
-ENV NGINX_ENVSUBST_FILTER='(BACKEND_HOST|PAGINA_INICIO)'
+ENV NGINX_ENVSUBST_FILTER='(BACKEND_HOST|PAGINA_INICIO|AUTH_RAIZ)'
 
 # Que sirve la raiz: el ERP por defecto; `inicio.html` solo en el hub.
 ENV PAGINA_INICIO=/index.html
+# Si la raiz pide sesion: `/_auth` en los paneles; `off` en el hub, donde la
+# raiz es el sitio publico.
+ENV AUTH_RAIZ=/_auth
 # BACKEND_HOST sin valor por defecto A PROPOSITO: si falta, nginx no arranca y
 # se ve enseguida, en vez de hablar con el backend equivocado.
 

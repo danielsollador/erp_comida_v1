@@ -46,6 +46,9 @@ type Fila = {
   // Se escribe en la unidad chica (g en vez de kg, ml en vez de lt). La receta
   // se guarda siempre en la unidad de la mercancia; esto es solo como se ve.
   enChica?: boolean
+  // Lo que se va escribiendo en la unidad chica, tal cual: sin esto "2," se
+  // convertia a kg y volvia como "2" y no habia forma de poner 2,5 g (23-oct).
+  textoVisto?: string
 }
 
 /** La unidad "chica" de una grande, y al reves: kg⇄g, lt⇄ml. */
@@ -154,7 +157,7 @@ export default function Recetas({
     costo: (r) => r.info?.costo ?? -1,
     precio: (r) => r.variante.precio,
     // Por la plata que deja, que es lo primero que dice la columna.
-    ganancia: (r) => (r.info?.sin_receta === false && r.info.costo != null ? r.variante.precio - r.info.costo : -1e9),
+    ganancia: (r) => (r.info?.sin_receta === false && r.info.costo != null ? (r.info.precio_neto ?? r.variante.precio) - r.info.costo : -1e9),
   })
   // Que productos estan desglosados en sus variantes. Buscando o filtrando
   // se abren todos: lo que se busca esta dentro.
@@ -457,6 +460,7 @@ export default function Recetas({
         <button
           onClick={() => setSoloFaltan((v) => !v)}
           aria-pressed={soloFaltan}
+          data-guia="recetas.sin-receta"
           className={`rounded-xl px-3.5 py-2.5 text-sm font-medium border ${
             soloFaltan ? 'bg-aviso-500 text-white border-aviso-500' : 'bg-white border-neutral-300 hover:border-neutral-400'
           }`}
@@ -465,7 +469,7 @@ export default function Recetas({
         </button>
       </div>
 
-      <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined} className="vp-losa overflow-hidden">
+      <div ref={lista.ref} style={lista.alto ? { height: lista.alto } : undefined} className="vp-losa overflow-hidden" data-guia="recetas.lista">
         {visibles.length === 0 ? (
           <Vacio
             titulo={
@@ -520,6 +524,7 @@ export default function Recetas({
                         }
                         onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLElement).click()}
                         className="vp-celda cursor-pointer border-t border-neutral-100"
+                        data-guia="recetas.grupo"
                       >
                         <td colSpan={4} className="py-2.5 pl-4 pr-4">
                           <span className="flex items-center gap-2 min-w-0">
@@ -593,13 +598,18 @@ function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombr
   const precio = r.variante.precio
   // La ganancia en plata y en porcentaje, las dos (Leider, 1-oct): lo que
   // deja cada uno y que parte del precio es. A perdida, en negativo y rojo.
-  const ganancia = costo != null ? precio - costo : null
+  // Sobre el precio SIN IVA (Leider, 28-oct): el IVA es del fisco, no deja
+  // nada. El servidor manda `precio_neto`; si no viene, el precio tal cual.
+  const neto = r.info?.precio_neto ?? precio
+  const ganancia = costo != null ? neto - costo : null
   return (
     <tr
       role="button"
       tabIndex={0}
       onClick={onAbrir}
       onKeyDown={(e) => e.key === 'Enter' && onAbrir()}
+      // Las guías señalan la primera fila: "toca el producto".
+      data-guia="recetas.producto"
       className={`vp-celda cursor-pointer border-t border-neutral-100 ${sangria ? 'bg-neutral-50/60' : ''}`}
     >
       <td className={`py-2.5 pr-2 min-w-0 ${sangria ? 'pl-10' : 'pl-4'}`}>
@@ -640,7 +650,7 @@ function FilaReceta({ r, nombre, sangria = false, onAbrir }: { r: Renglon; nombr
               {ganancia < 0 ? '−' : '+'}
               {fmt(Math.abs(ganancia))}
             </span>
-            <span className="block text-[11px]">{ganancia < 0 ? 'a pérdida' : `${margen.toFixed(0)}% del precio`}</span>
+            <span className="block text-[11px]">{ganancia < 0 ? 'a pérdida' : `${margen.toFixed(0)}% sin IVA`}</span>
           </>
         )}
       </td>
@@ -791,7 +801,9 @@ function Compositor({
   const disponiblesPiezas = disponibles.filter(porUnidad)
 
   return (
-    <div className="space-y-3 lg:h-[calc(100dvh-11.25rem)] lg:flex lg:flex-col">
+    // Pantalla fija solo con `olla:` (PC y alto de sobra); en un portatil bajo
+    // «Agregar» quedaba aplastado y no se podia bajar. Ver Preparaciones.tsx.
+    <div className="space-y-3 olla:h-[calc(100dvh-11.25rem)] olla:flex olla:flex-col">
       <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <button type="button" onClick={onCerrar} className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Productos
@@ -800,7 +812,7 @@ function Compositor({
           <Boton tono="fantasma" onClick={onCerrar}>
             Cancelar
           </Boton>
-          <Boton onClick={onGuardar} disabled={guardando}>
+          <Boton onClick={onGuardar} disabled={guardando} data-guia="recetas.guardar">
             {guardando ? 'Guardando…' : 'Guardar receta'}
           </Boton>
         </div>
@@ -810,16 +822,16 @@ function Compositor({
       {/* EN UNA PANTALLA, sin desplazar la pagina (Leider, 29-sep): la
           cuadricula mide lo que queda de ventana y lo que no cabe se
           desplaza dentro de su columna. */}
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start lg:items-stretch lg:flex-1 lg:min-h-0">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start olla:items-stretch olla:flex-1 olla:min-h-0">
         {/* ── El producto ─────────────────────────────────────────────── */}
-        <section className="vp-losa p-4 sm:p-5 lg:flex lg:flex-col lg:min-h-0">
+        <section className="vp-losa p-4 sm:p-5 olla:flex olla:flex-col olla:min-h-0">
           <p className="text-xs text-neutral-500">{renglon.categoria}</p>
           <h2 className="font-display text-xl font-semibold tracking-tight leading-tight mb-2">{renglon.nombre}</h2>
           {/* El vaso ocupa lo que queda entre el titulo y el resumen: asi la
               tarjeta nunca es mas alta que la ventana. */}
-          <div className="lg:flex-1 lg:min-h-0 flex justify-center">
+          <div className="olla:flex-1 olla:min-h-0 flex justify-center">
           <Vaso
-            className="w-full max-w-[260px] lg:w-auto lg:max-w-none lg:h-full lg:min-h-0"
+            className="w-full max-w-[260px] olla:w-auto olla:max-w-none olla:h-full olla:min-h-0"
             tope={precio}
             topeTitulo="se vende a"
             partes={partes}
@@ -839,11 +851,12 @@ function Compositor({
           <EditorCombo combo={combo} setCombo={setCombo} productos={productos} costoDeVariante={costoDeVariante} />
         ) : (
         /* ── La mercancía ────────────────────────────────────────────── */
-        <section className="space-y-3 lg:flex lg:flex-col lg:min-h-0">
+        <section className="space-y-3 olla:flex olla:flex-col olla:min-h-0">
           {filas.length === 0 && (
             <button
               type="button"
               onClick={() => setCombo([])}
+              data-guia="recetas.combo"
               className="vp-losa w-full text-left px-4 py-3 text-sm text-neutral-600 hover:bg-neutral-500/5"
             >
               <span className="font-semibold text-neutral-900">¿Es un combo?</span> Ármalo con productos del menú (pastelito + jugo): su
@@ -851,7 +864,7 @@ function Compositor({
             </button>
           )}
           {filas.length > 0 && (
-            <div className="vp-losa overflow-hidden lg:shrink lg:min-h-0 lg:max-h-[45%] lg:overflow-y-auto">
+            <div className="vp-losa overflow-hidden olla:shrink olla:min-h-0 olla:max-h-[45%] olla:overflow-y-auto" data-guia="recetas.cantidad">
               {pesadas.length > 0 && (
                 <>
                   <h3 className="px-4 pt-3 pb-2 font-display font-semibold tracking-tight">Lleva</h3>
@@ -904,7 +917,7 @@ function Compositor({
             </div>
           )}
 
-          <div className="vp-losa overflow-hidden lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+          <div className="vp-losa overflow-hidden olla:flex-1 olla:min-h-0 olla:flex olla:flex-col">
             <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 shrink-0">
               <h3 className="font-display font-semibold tracking-tight mr-auto">
                 {filas.length === 0 ? 'Toca lo que lleva' : 'Agregar'}
@@ -917,6 +930,7 @@ function Compositor({
                   onKeyDown={(e) => e.key === 'Escape' && setBusqueda('')}
                   placeholder="Buscar mercancía"
                   aria-label="Buscar mercancía"
+                  data-guia="recetas.buscar-mercancia"
                   className="w-44 bg-white border border-neutral-300 rounded-xl pl-8 pr-3 py-1.5 text-sm"
                 />
                 <Lupa />
@@ -933,7 +947,7 @@ function Compositor({
                 {ingredientes.length === 0 ? 'No hay mercancía en el inventario todavía.' : 'Nada coincide.'}
               </p>
             ) : (
-              <div className="max-h-[30rem] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto">
+              <div className="max-h-[30rem] olla:max-h-none olla:flex-1 olla:min-h-0 overflow-y-auto" data-guia="recetas.agregar">
                 <CabeceraAgregar />
                 {disponiblesPesadas.length > 0 && (
                   <ul className="divide-y divide-neutral-100">
@@ -995,11 +1009,13 @@ function RenglonReceta({
   const enChica = Boolean(otra && (f.enChica ?? esGrande(ing.unidad)))
   const factor = enChica ? (esGrande(ing.unidad) ? 1000 : 1 / 1000) : 1
   const unidadVista = enChica ? otra : ing.unidad
-  const valorVisto = f.cantidad_por_unidad === '' ? '' : sinRuido((Number(f.cantidad_por_unidad) || 0) * factor)
+  const valorVisto = enChica && f.textoVisto !== undefined
+    ? f.textoVisto
+    : f.cantidad_por_unidad === '' ? '' : sinRuido((Number(f.cantidad_por_unidad) || 0) * factor)
   const escribir = (texto: string) => {
-    if (!enChica) return onCambio({ cantidad_por_unidad: texto })
+    if (!enChica) return onCambio({ cantidad_por_unidad: texto, textoVisto: undefined })
     const n = Number(String(texto).replace(',', '.'))
-    onCambio({ cantidad_por_unidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor) })
+    onCambio({ cantidad_por_unidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor), textoVisto: texto })
   }
   return (
     <li
@@ -1012,7 +1028,8 @@ function RenglonReceta({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">
-            {enChica ? `${fmt(ing.costo_efectivo / factor, 2)} por ${otra}` : `${fmt(ing.costo_efectivo, 2)} por ${ing.unidad}`}
+            {/* "$0,00 por g" no dice nada: menos de un centavo, se muestra por kilo. */}
+            {enChica && ing.costo_efectivo / factor >= 0.01 ? `${fmt(ing.costo_efectivo / factor, 2)} por ${otra}` : `${fmt(ing.costo_efectivo, 2)} por ${ing.unidad}`}
             {ing.categoria && ` · ${ing.categoria}`}
           </span>
         </span>
@@ -1021,7 +1038,7 @@ function RenglonReceta({
         <CasillaConUnidad
           unidad={ing.unidad}
           vista={unidadVista}
-          alCambiarVista={() => onCambio({ enChica: !enChica })}
+          alCambiarVista={() => onCambio({ enChica: !enChica, textoVisto: undefined })}
           rotulo={pieza ? (cantidad === 1 ? 'unidad' : 'unidades') : ing.unidad}
           value={valorVisto}
           onChange={(e) => escribir(e.target.value)}
@@ -1089,7 +1106,7 @@ function OpcionMercancia({ ing, onAgregar }: { ing: Ingrediente; onAgregar: () =
   const { fmt } = useMoneda()
   return (
     <li>
-      <button type="button" onClick={onAgregar} className="vp-celda w-full flex items-center gap-3 px-4 py-2.5 text-left">
+      <button type="button" onClick={onAgregar} data-guia="recetas.mercancia" className="vp-celda w-full flex items-center gap-3 px-4 py-2.5 text-left">
         <span className="min-w-0 flex-1">
           <span className="block text-sm truncate">{ing.nombre}</span>
           <span className="block text-[11px] text-neutral-400">{ing.categoria || 'Sin categoría'}</span>
@@ -1157,7 +1174,7 @@ function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number;
   const m = margenDe(precioNum)
   const costoPct = precioNum > 0 ? (costo / precioNum) * 100 : null
   return (
-    <div className="mt-3 rounded-2xl bg-neutral-500/6 p-3 space-y-2">
+    <div className="mt-3 rounded-2xl bg-neutral-500/6 p-3 space-y-2" data-guia="recetas.precio">
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <span className="block text-[11px] font-medium text-neutral-600 mb-0.5">Precio de venta ($)</span>

@@ -95,8 +95,10 @@ def test_el_menu_muestra_los_dos_margenes(client, db, insumo, variante):
     fila = costos[variante.id]
     assert fila["costo"] == 1.0, "el costo contable no se mueve solo"
     assert fila["costo_reposicion"] == 4.0, "reponer cuesta 4x"
-    assert fila["margen_pct"] == 80.0  # $5 de precio, $1 de costo promedio
-    assert fila["margen_reposicion_pct"] == 20.0  # $5 de precio, $4 de reponer
+    # Sobre el precio SIN IVA: $5 / 1,16 = $4,31 netos (el IVA es del fisco).
+    assert fila["precio_neto"] == 4.3103
+    assert fila["margen_pct"] == 76.8  # $4,31 netos, $1 de costo promedio
+    assert fila["margen_reposicion_pct"] == 7.2  # $4,31 netos, $4 de reponer
 
 
 def test_comprar_caro_avisa_en_el_momento(client, db, insumo, variante):
@@ -113,8 +115,9 @@ def test_comprar_caro_avisa_en_el_momento(client, db, insumo, variante):
     assert respuesta["costo_pagado"] == 32.0
 
     afectado = next(p for p in respuesta["productos"] if p["variante_id"] == variante.id)
-    assert afectado["margen_antes_pct"] == 80.0
-    assert afectado["margen_despues_pct"] == 20.0
+    # Sobre el precio sin IVA ($5 / 1,16 = $4,31), igual que el menu.
+    assert afectado["margen_antes_pct"] == 76.8
+    assert afectado["margen_despues_pct"] == 7.2
 
 
 def test_una_compra_al_mismo_precio_no_molesta(client, insumo):

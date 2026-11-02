@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from app import settings
 from app.acceso import permisos, roles, usuarios
 from app.database import get_db
-from app.main import app
+from app.main import SIN_SESION, app
 from tests.conftest import entrar
 
 MESONERO = ("mesonero", "clave-de-mesonero-larga")
@@ -364,8 +364,9 @@ def _rutas_reales():
     salida = set()
     for r in app.routes:
         ruta = getattr(r, "path", "")
-        if (not ruta.startswith("/api/") or ruta.startswith("/api/acceso")
-                or ruta == "/api/health" or ruta.startswith("/api/usuarios/mi/")):
+        if (not ruta.startswith("/api/") or ruta.startswith(SIN_SESION)
+                or ruta == "/api/health" or ruta.startswith("/api/usuarios/mi/")
+                or ruta.startswith("/api/push/")):
             continue
         concreta = re.sub(r"\{[^}]+\}", "1", ruta)
         for metodo in getattr(r, "methods", None) or ():

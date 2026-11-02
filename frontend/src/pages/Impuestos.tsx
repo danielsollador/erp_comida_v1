@@ -12,6 +12,7 @@ import { Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { fmtBs, fmtNum } from '../lib/moneda'
+import { llano } from '../lib/filtros'
 import type {
   ConfiguracionFiscal,
   DeclaracionIva,
@@ -343,11 +344,11 @@ export default function Impuestos() {
                   {ordenVentas
                     .ordenar(
                       ventas.filas.filter((f) => {
-                        const q = buscarVentas.trim().toLowerCase()
+                        const q = llano(buscarVentas.trim())
                         if (!q) return true
                         return (
-                          f.numero_factura.toLowerCase().includes(q) ||
-                          f.cliente.toLowerCase().includes(q)
+                          llano(f.numero_factura).includes(q) ||
+                          llano(f.cliente).includes(q)
                         )
                       }),
                     )
@@ -498,11 +499,11 @@ export default function Impuestos() {
                 {ordenCompras
                   .ordenar(
                     compras.filas.filter((f) => {
-                      const q = buscarCompras.trim().toLowerCase()
+                      const q = llano(buscarCompras.trim())
                       if (!q) return true
                       return (
-                        f.numero_factura.toLowerCase().includes(q) ||
-                        f.proveedor_nombre.toLowerCase().includes(q)
+                        llano(f.numero_factura).includes(q) ||
+                        llano(f.proveedor_nombre).includes(q)
                       )
                     }),
                   )

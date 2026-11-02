@@ -10,7 +10,7 @@ import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
 import { Aviso, Boton, Modal, Pagina, Seccion, Vacio } from '../components/ui'
 import { api, ErrorApi } from '../lib/api'
-import { cantidad, datosDe, unidadDe } from '../lib/inventario'
+import { cantidad, conUnidad, datosDe, unidadDe } from '../lib/inventario'
 import { useMoneda } from '../lib/moneda'
 import { ALMACENES, ALMACEN_DE } from '../lib/tiposArticulo'
 import Almacenes, { type ResumenAlmacen } from './partes/inventario/Almacenes'
@@ -25,6 +25,7 @@ import AccionFila from '../components/AccionFila'
 import type {
   Configuracion,
   ConteoResumen,
+  CostoParaPrecios,
   DatosIngrediente,
   FacturaCompra,
   ImpactoDeCompra,
@@ -84,7 +85,14 @@ const TIPO_DE: Record<string, TipoArticulo> = {
   desechables: 'desechable',
 }
 
-const METODOS_DE_PAGO = ['Efectivo Bs', 'Efectivo $', 'Banco']
+// Lo que se manda es el nombre que conoce el backend; lo que se lee dice la
+// moneda, porque de ahí sale en qué se escribió el monto.
+const METODOS_DE_PAGO = [
+  { valor: 'Efectivo Bs', texto: 'Efectivo en bolívares' },
+  { valor: 'Efectivo $', texto: 'Efectivo en dólares' },
+  { valor: 'Banco', texto: 'Banco, en bolívares' },
+  { valor: 'Plata del dueño', texto: 'Plata del dueño, en dólares' },
+]
 
 export default function Inventario() {
   const [seccion, irA] = useSeccion(SECCIONES)
@@ -169,8 +177,30 @@ export default function Inventario() {
     api.obtenerConfig().then(setConfig).catch(() => setConfig(null))
   }
 
+  /** Qué costo mira la tabla: es el mismo ajuste del Menú y las Recetas. */
+  async function elegirMetodoCosto(m: CostoParaPrecios) {
+    try {
+      setConfig(await api.fijarCostoParaPrecios(m))
+      const l = await api.listarIngredientes()
+      setIngredientes(l)
+    } catch (e) {
+      dialogo.avisar({ titulo: 'No se pudo cambiar el costo', texto: e instanceof Error ? e.message : '' })
+    }
+  }
+
   async function alternarVentaSinInventario() {
     if (!config) return
+    // Prenderlo cambia TODAS las ventas: se pregunta. Apagarlo es volver a lo normal.
+    if (
+      !config.vender_sin_inventario &&
+      !(await dialogo.confirmar({
+        titulo: '¿Vender sin stock?',
+        texto:
+          'Ninguna venta se va a trabar por falta de inventario, aunque el producto tenga receta. Lo vendido igual se descuenta y el stock puede quedar en negativo hasta que cargues la compra o hagas el conteo.',
+        aceptar: 'Sí, vender sin stock',
+      }))
+    )
+      return
     setCambiandoConfig(true)
     try {
       setConfig(await api.venderSinInventario(!config.vender_sin_inventario))
@@ -197,6 +227,57 @@ export default function Inventario() {
 
   // ── Movimientos ──────────────────────────────────────────────────────────
 
+  // Si viene en empaque se pregunta por empaques (como llega) y se guarda en
+  // unidades (como se gasta). "Entraron 2" eran 2 paquetes de 200 sobres.
+  const trae = (ing: Ingrediente) => (ing.empaque_trae && ing.empaque_trae > 1 ? ing.empaque_trae : 0)
+  // PRIMERO LA PREGUNTA, DESPUÉS EL NÚMERO (Leider, 29-oct): si viene en
+  // paquete se pregunta "¿paquetes o sueltas?" y según eso "cuántos paquetes"
+  // (con el total en unidades debajo) o "cuántas sueltas". Si no viene en
+  // paquete, solo "cuántas compraste".
+  const camposCantidad = (ing: Ingrediente, verbo: string) => {
+    const n = trae(ing)
+    const sueltas = ing.unidad === 'unidad' ? 'Unidades sueltas' : `${ing.unidad} sueltos`
+    return [
+      ...(n
+        ? [
+            {
+              nombre: 'como',
+              etiqueta: `¿${verbo} paquetes o ${sueltas.toLowerCase()}?`,
+              tipo: 'opciones' as const,
+              valor: 'empaque',
+              opciones: [
+                { valor: 'empaque', texto: `Paquetes de ${conUnidad(n, ing.unidad)}` },
+                { valor: 'suelta', texto: sueltas },
+              ],
+            },
+            {
+              nombre: 'paquetes',
+              etiqueta: `Cuántos paquetes ${verbo.toLowerCase()}`,
+              tipo: 'numero' as const,
+              min: 0.0001,
+              cuando: (v: Record<string, string>) => v.como !== 'suelta',
+              ayuda: (v: Record<string, string>) => {
+                const p = Number(String(v.paquetes ?? '').replace(',', '.'))
+                return p > 0 ? `Son ${conUnidad(p * n, ing.unidad)}.` : `Cada paquete trae ${conUnidad(n, ing.unidad)}.`
+              },
+            },
+          ]
+        : []),
+      {
+        nombre: 'cantidad',
+        etiqueta: `${ing.unidad === 'unidad' ? 'Cuántas' : 'Cuánto'} ${verbo.toLowerCase()}`,
+        sufijo: ing.unidad,
+        tipo: 'numero' as const,
+        min: 0.0001,
+        cuando: (v: Record<string, string>) => !n || v.como === 'suelta',
+      },
+    ]
+  }
+  const enUnidades = (ing: Ingrediente, r: Record<string, string>) =>
+    r.paquetes ? Number(r.paquetes) * trae(ing) : Number(r.cantidad)
+  // La moneda la dice de dónde salió la plata: no es otra pregunta.
+  const monedaDe = (metodo: string) => (metodo === 'Efectivo Bs' || metodo === 'Banco' ? 'Bs' : '$')
+
   async function comprar(ing: Ingrediente) {
     const r = await dialogo.pedir({
       titulo: `Compra de ${ing.nombre}`,
@@ -212,38 +293,65 @@ export default function Inventario() {
         </>
       ),
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto entra', sufijo: ing.unidad, tipo: 'numero', min: 0.0001 },
+        ...camposCantidad(ing, 'Compraste'),
+        {
+          nombre: 'metodo',
+          etiqueta: 'De dónde salió la plata',
+          tipo: 'opciones',
+          opciones: METODOS_DE_PAGO.map((m) => ({ valor: m.valor, texto: m.texto })),
+        },
         {
           nombre: 'costo',
-          etiqueta: 'Cuánto pagaste en total, sin IVA',
+          etiqueta: (v) => `Cuánto pagaste en total, sin IVA (${monedaDe(v.metodo)})`,
           tipo: 'numero',
           opcional: true,
-          ayuda: 'Vacío = se mantiene el costo actual. El IVA no es parte del costo de la mercancía.',
+          ayuda: (v) =>
+            monedaDe(v.metodo) === 'Bs'
+              ? `Se pasa a dólares a la tasa BCV del día${tasa?.bcv ? ` (${tasa.bcv.toFixed(2)})` : ''}. Vacío = se mantiene el costo actual.`
+              : 'Vacío = se mantiene el costo actual. El IVA no es parte del costo de la mercancía.',
         },
-        {
-          nombre: 'moneda',
-          etiqueta: 'En qué moneda pagaste',
-          tipo: 'opciones',
-          valor: '$',
-          opciones: [
-            { valor: '$', texto: 'Dólares' },
-            { valor: 'Bs', texto: `Bolívares${tasa?.bcv ? ` (a ${tasa.bcv.toFixed(2)})` : ''}` },
-          ],
-        },
-        { nombre: 'metodo', etiqueta: 'De dónde salió la plata', tipo: 'opciones', opciones: METODOS_DE_PAGO.map((m) => ({ valor: m, texto: m })) },
+        // En negativo: se vendio sin cargarlo. Sumarle la compra a un
+        // negativo dejaba "cargué 7 y quedaron 4" (26-oct, carne mechada).
+        ...(ing.stock_actual < 0
+          ? [{
+              nombre: 'negativo',
+              etiqueta: `El sistema tiene ${conUnidad(ing.stock_actual, ing.unidad)}: se vendió sin estar cargado`,
+              tipo: 'opciones' as const,
+              valor: 'regularizar',
+              opciones: [
+                { valor: 'regularizar', texto: 'Lo que hay ahora es lo que llegó', detalle: 'Lo vendido salió de mercancía que ya tenías y no estaba cargada' },
+                { valor: 'restar', texto: 'Restarle lo vendido a lo que llegó', detalle: 'Lo vendido salió de esta misma compra' },
+              ],
+            }]
+          : []),
       ],
       aceptar: 'Registrar compra',
     })
     if (!r) return
-    if (r.moneda === 'Bs' && !tasa?.bcv) {
-      setError('No se pudo obtener la tasa del día. Intenta de nuevo o registra en dólares.')
+    const moneda = monedaDe(r.metodo)
+    if (moneda === 'Bs' && !tasa?.bcv) {
+      setError('No se pudo obtener la tasa del día. Intenta de nuevo o paga en dólares.')
       return
     }
-    const costoUsd = r.costo && r.moneda === 'Bs' ? Number(r.costo) / (tasa!.bcv as number) : r.costo ? Number(r.costo) : undefined
-    await accion(async () => {
-      const resultado = await api.registrarCompra(ing.id, Number(r.cantidad), costoUsd, r.metodo)
+    const costoUsd = r.costo && moneda === 'Bs' ? Number(r.costo) / (tasa!.bcv as number) : r.costo ? Number(r.costo) : undefined
+    // Un precio absurdo (en bolívares, con la coma corrida) el servidor lo
+    // frena ANTES de guardar; aquí se pregunta y, si es así, se anota igual.
+    const registrar = async (confirmar: boolean) => {
+      const resultado = await api.registrarCompra(ing.id, enUnidades(ing, r), costoUsd, r.metodo, confirmar, r.negativo === 'regularizar')
       if (resultado.revisar_precios) setImpacto(resultado)
-    })
+    }
+    setError('')
+    try {
+      await registrar(false)
+      cargar()
+    } catch (e) {
+      if (e instanceof ErrorApi && e.status === 409) {
+        if (await dialogo.confirmar({ titulo: '¿Seguro que es ese precio?', texto: e.message, aceptar: 'Sí, es así', cancelar: 'Corregir' }))
+          await accion(() => registrar(true))
+        return
+      }
+      setError(e instanceof Error ? e.message : 'Ocurrió un error')
+    }
   }
 
   async function merma(ing: Ingrediente) {
@@ -251,7 +359,7 @@ export default function Inventario() {
       titulo: `Merma de ${ing.nombre}`,
       texto: 'Lo que se dañó, se quemó o se botó. Es plata perdida y así queda registrada.',
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto se perdió', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${cantidad(ing.stock_actual)} ${ing.unidad}.` },
+        { nombre: 'cantidad', etiqueta: 'Cuánto se perdió', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${conUnidad(ing.stock_actual, ing.unidad)}.` },
         { nombre: 'motivo', etiqueta: 'Motivo', placeholder: 'Se quemó, se dañó, se cayó...', opcional: true },
       ],
       aceptar: 'Registrar merma',
@@ -283,7 +391,7 @@ export default function Inventario() {
       titulo: `Consumo del personal: ${ing.nombre}`,
       texto: 'Se lo comió un empleado. Es costo laboral, no pérdida: no ensucia el indicador de merma.',
       campos: [
-        { nombre: 'cantidad', etiqueta: 'Cuánto', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${cantidad(ing.stock_actual)} ${ing.unidad}.` },
+        { nombre: 'cantidad', etiqueta: 'Cuánto', sufijo: ing.unidad, tipo: 'numero', min: 0.0001, ayuda: `Hay ${conUnidad(ing.stock_actual, ing.unidad)}.` },
         { nombre: 'motivo', etiqueta: 'Para quién / qué turno', opcional: true },
       ],
       aceptar: 'Registrar',
@@ -292,16 +400,70 @@ export default function Inventario() {
     void sacarConConfirmacion((forzar) => api.consumoPersonal(ing.id, Number(r.cantidad), r.motivo, forzar))
   }
 
+  // Contar 400 donde el sistema dice 2 casi nunca es mercancia nueva: es
+  // otra unidad (paquetes contra sobres). 26-oct: ese conteo subio el
+  // inventario $1.432 de mentira.
+  async function saltoCreible(ing: Ingrediente, nuevo: number) {
+    if (!(ing.stock_actual > 0) || nuevo < ing.stock_actual * 10) return true
+    return dialogo.confirmar({
+      titulo: '¿Contaste en otra unidad?',
+      texto: `El sistema dice ${conUnidad(ing.stock_actual, ing.unidad)} y pusiste ${cantidad(nuevo)}: ${Math.round(nuevo / ing.stock_actual)} veces más. Si contaste paquetes, cajas o sobres en vez de ${ing.unidad}, corrígelo. Si de verdad hay eso, la diferencia entra al inventario al costo de ${ing.unidad}.`,
+      aceptar: 'Sí, hay eso',
+      cancelar: 'Corregir',
+    })
+  }
+
   async function contar(ing: Ingrediente) {
+    if (trae(ing)) {
+      const empaques = ing.stock_actual / trae(ing)
+      const r = await dialogo.pedir({
+        titulo: `Contar ${ing.nombre}`,
+        texto: `El sistema dice ${conUnidad(ing.stock_actual, ing.unidad)} (${cantidad(empaques)} empaques de ${cantidad(trae(ing))}). Lo que cuentes manda: la diferencia queda como merma o como sobrante.`,
+        campos: camposCantidad(ing, 'Contaste').map((c) =>
+          c.nombre === 'paquetes' ? { ...c, valor: cantidad(empaques), min: 0 } : c.nombre === 'cantidad' ? { ...c, min: 0 } : c,
+        ),
+        aceptar: 'Guardar conteo',
+      })
+      if (!r) return
+      const nuevo = enUnidades(ing, r)
+      if (!(await saltoCreible(ing, nuevo))) return
+      // Paquetes o sueltas se confunde (2-nov: "1" en paquetes de 8 eran 8
+      // tortas, y al recontar quedaron 7 de perdida): antes de guardar se dice
+      // en unidades lo que queda y lo que eso anota.
+      const diferencia = nuevo - ing.stock_actual
+      if (Math.abs(diferencia) > 1e-9) {
+        const valor = Math.abs(diferencia) * (ing.costo_unitario || 0)
+        const ok = await dialogo.confirmar({
+          titulo: `¿Quedan ${conUnidad(nuevo, ing.unidad)}?`,
+          texto:
+            (r.como === 'suelta'
+              ? `Contaste ${conUnidad(nuevo, ing.unidad)} sueltas.`
+              : `Contaste ${cantidad(Number(r.paquetes))} paquete(s) de ${cantidad(trae(ing))}: son ${conUnidad(nuevo, ing.unidad)}.`) +
+            ` El sistema decía ${conUnidad(ing.stock_actual, ing.unidad)}, así que ` +
+            (diferencia < 0
+              ? `${conUnidad(-diferencia, ing.unidad)} quedan como pérdida${valor ? ` (${dinero(valor)})` : ''}.`
+              : `entran ${conUnidad(diferencia, ing.unidad)} como sobrante.`),
+          aceptar: 'Sí, guardar',
+          cancelar: 'Corregir',
+        })
+        if (!ok) return
+      }
+      accion(() => api.ajustarStock(ing.id, nuevo))
+      return
+    }
     const real = await dialogo.pedirNumero({
       titulo: `Contar ${ing.nombre}`,
-      texto: `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
+      texto:
+        ing.stock_actual < 0
+          ? `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}: se vendió sin estar cargado. Lo que cuentes queda como mercancía que ya tenías (no como ganancia).`
+          : `El sistema dice ${cantidad(ing.stock_actual)} ${unidadDe(ing.stock_actual, ing.unidad)}. Lo que diga la balanza manda: la diferencia queda como merma o como sobrante.`,
       etiqueta: 'Cuánto hay realmente',
       sufijo: ing.unidad,
       valor: cantidad(ing.stock_actual),
       aceptar: 'Guardar conteo',
     })
     if (real === null) return
+    if (!(await saltoCreible(ing, real))) return
     accion(() => api.ajustarStock(ing.id, real))
   }
 
@@ -409,7 +571,8 @@ export default function Inventario() {
           mercancias: propios.length,
           bajoMinimo: a.destino === 'gasto' ? 0 : propios.filter((i) => i.stock_actual <= i.stock_minimo).length,
           sinCosto: propios.filter((i) => !i.costo_unitario).length,
-          plata: a.destino === 'gasto' ? gastoDesechables : propios.reduce((s, i) => s + Math.max(i.stock_actual, 0) * (i.costo_unitario || 0), 0),
+          // Al costo elegido en Configuración, igual que la columna "Invertido".
+          plata: a.destino === 'gasto' ? gastoDesechables : propios.reduce((s, i) => s + Math.max(i.stock_actual, 0) * (i.costo_elegido ?? i.costo_unitario ?? 0), 0),
           preparaciones: a.valor === 'insumo' ? activos.filter((i) => i.tipo === 'preparacion').length : undefined,
         }
       }),
@@ -434,8 +597,8 @@ export default function Inventario() {
         {config?.vender_sin_inventario && (
           <div className="rounded-2xl bg-aviso-500/10 p-4 flex items-center justify-between gap-4">
             <div>
-              <h2 className="font-semibold text-aviso-900">Vender sin control de inventario</h2>
-              <p className="text-sm mt-0.5 text-aviso-800">Prendido: ninguna venta se traba por falta de stock, aunque un producto tenga receta.</p>
+              <h2 className="font-semibold text-aviso-900">Vendiendo sin stock</h2>
+              <p className="text-sm mt-0.5 text-aviso-800">Ninguna venta se traba por falta de inventario, aunque el producto tenga receta. Apágalo cuando cargues la compra.</p>
             </div>
             <button
               onClick={alternarVentaSinInventario}
@@ -452,23 +615,24 @@ export default function Inventario() {
           <>
             <div className="flex flex-wrap items-center justify-end gap-3">
               <div className="flex items-center gap-2">
-                <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
+                {/* A la vista y no dentro del "⋯" (17-oct): cuando se acaba
+                    algo en pleno servicio hay que encontrarlo ya. Prendido,
+                    lo apaga el aviso de arriba. */}
+                {config && !config.vender_sin_inventario && (
+                  <Boton tono="suave" onClick={() => void alternarVentaSinInventario()} disabled={cambiandoConfig}>
+                    Vender sin stock
+                  </Boton>
+                )}
+                <Boton tono="suave" data-guia="inventario.conteo" onClick={() => setContando(true)} disabled={activos.length === 0}>
                   Conteo físico
                 </Boton>
-                <Boton onClick={() => setFicha({ nuevo: 'insumo' })} icono="mas">
+                <Boton data-guia="inventario.nueva" onClick={() => setFicha({ nuevo: 'insumo' })} icono="mas">
                   Nueva mercancía
                 </Boton>
                 {config && (
                   <MenuAcciones
                     etiqueta="Más opciones del inventario"
                     opciones={[
-                      {
-                        texto: config.vender_sin_inventario ? 'Apagar la venta sin control de inventario' : 'Vender sin control de inventario',
-                        ayuda: config.vender_sin_inventario
-                          ? 'Las ventas vuelven a descontar y trabarse por stock'
-                          : 'Para arrancar sin mercancía ni recetas: ninguna venta se traba por stock',
-                        onElegir: () => void alternarVentaSinInventario(),
-                      },
                       { texto: 'Administrar categorías', onElegir: () => irA('categorias') },
                     ]}
                   />
@@ -518,7 +682,7 @@ export default function Inventario() {
               </div>
               {tipoActual === 'desechable' && (
                 <div className="ml-auto flex items-center gap-2">
-                  <Boton onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
+                  <Boton data-guia="inventario.nueva" onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
                     Nueva mercancía
                   </Boton>
                 </div>
@@ -582,10 +746,10 @@ export default function Inventario() {
                   resumen={resumenActual}
                   acciones={
                     <>
-                      <Boton tono="suave" onClick={() => setContando(true)} disabled={activos.length === 0}>
+                      <Boton tono="suave" data-guia="inventario.conteo" onClick={() => setContando(true)} disabled={activos.length === 0}>
                         Conteo físico
                       </Boton>
-                      <Boton onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
+                      <Boton data-guia="inventario.nueva" onClick={() => setFicha({ nuevo: tipoActual })} icono="mas">
                         Nueva mercancía
                       </Boton>
                     </>
@@ -596,6 +760,8 @@ export default function Inventario() {
                   onReactivar={(ing) => archivar(ing, true)}
                   onNueva={() => setFicha({ nuevo: tipoActual })}
                   onCategorias={() => irA('categorias')}
+                  metodoCosto={config?.costo_para_precios ?? 'reposicion'}
+                  onMetodoCosto={(m) => void elegirMetodoCosto(m)}
                 />
               </>
             )}

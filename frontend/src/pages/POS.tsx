@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import EditarPedido from '../components/EditarPedido'
 import Autorizar from '../components/Autorizar'
@@ -11,7 +11,7 @@ import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
 import { ivaRetenido } from '../lib/compras'
-import { enPreparacion, estadoCocina, porQueNoSeEdita } from '../lib/comandas'
+import { enPreparacion, estadoCocina, haceCuanto, horaDe, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { uuid } from '../lib/uuid'
@@ -42,6 +42,8 @@ import type {
 // hay que saber si el cliente paga exacto o hay vuelto (ver el panel de
 // cobro), porque de eso depende cuanta plata queda en la gaveta.
 const METODOS_EFECTIVO = ['Efectivo Bs', 'Efectivo $']
+// Las formas que se cobran en bolivares (igual que en Caja.tsx).
+const EN_BOLIVARES = new Set(['Efectivo Bs', 'Punto de venta', 'Pago movil', 'Transferencia'])
 
 // Por donde puede SALIR el vuelto: las dos gavetas o un pago movil, que es
 // lo que se hace cuando no hay sencillo (Leider, 30-sep: "solo tres
@@ -164,6 +166,10 @@ export default function POS() {
     claveComanda.current = null
   }, [carrito, libres])
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
+  // Lo que ya salio hoy del mostrador. Plegado: se pide solo al abrirlo, y
+  // mientras este abierto se refresca con el resto.
+  const [entregadosHoy, setEntregadosHoy] = useState<Pedido[] | null>(null)
+  const verEntregados = useRef(false)
   // Lo ultimo que se pinto, para no repintar cuando el servidor manda lo mismo.
   const firmaPedidos = useRef('')
   const [vista, irAVista] = useSeccion(SECCIONES_POS)
@@ -189,7 +195,15 @@ export default function POS() {
   // falta se calcula solo.
   const [pagoMixto, setPagoMixto] = useState(false)
   const [partes, setPartes] = useState<
-    { metodo: string; monto: number; referencia: string; verificacion_id?: number; monto_bs?: number }[]
+    {
+      metodo: string
+      monto: number
+      referencia: string
+      verificacion_id?: number
+      monto_bs?: number
+      recibido?: number
+      vuelto_metodo?: string
+    }[]
   >([])
   // Si el local tiene Pabilo, un pago movil se comprueba contra el banco
   // antes de cobrarlo. Se consulta una vez al abrir; si no esta configurado
@@ -374,7 +388,34 @@ export default function POS() {
    * antes de que salga es el flujo normal de un mostrador-- y por contar
    * estados el mostrador veia una cosa y la cocina otra.
    */
+  function refrescarEntregados() {
+    api.listarEntregadosHoy().then(setEntregadosHoy).catch(() => setEntregadosHoy([]))
+  }
+
+  function alternarEntregados() {
+    verEntregados.current = !verEntregados.current
+    if (verEntregados.current) refrescarEntregados()
+    else setEntregadosHoy(null)
+  }
+
+  // Cuantas quedan de lo que se vende tal cual (helados, jugos): la cajera
+  // lo dice sin ir al congelador (2-nov). Se pide con cada refresco del
+  // mostrador, que es cuando algo pudo venderse.
+  const [quedan, setQuedan] = useState<Record<number, number>>({})
+  const refrescarExistencias = useCallback(() => {
+    api
+      .existenciasMenu()
+      .then((lista) => {
+        const nuevo: Record<number, number> = {}
+        for (const e of lista) nuevo[e.variante_id] = e.quedan
+        setQuedan((viejo) => (JSON.stringify(viejo) === JSON.stringify(nuevo) ? viejo : nuevo))
+      })
+      .catch(() => undefined)
+  }, [])
+
   function refrescarPedidos() {
+    refrescarExistencias()
+    if (verEntregados.current) refrescarEntregados()
     Promise.all([
       api.listarPedidosEnCocina(),
       api.listarPedidos('listo'),
@@ -391,7 +432,10 @@ export default function POS() {
         // en cocina abajo) y con una fila de cobrados por entregar los pedidos
         // recien tomados quedaban tapados debajo (Leider, 28-sep). El color de
         // cada tarjeta ya dice en que va.
-        const lista = [...porId.values()].sort((a, b) => b.numero - a.numero)
+        // Por id y no por numero: el numero vuelve a 1 cada dia, y un #14 de
+        // ayer que seguia abierto quedaba encima del #3 de hoy. El pedido
+        // nuevo se iba al fondo y parecia que no se habia guardado (23-oct).
+        const lista = [...porId.values()].sort((a, b) => b.id - a.id)
         // Si llego exactamente lo mismo, no se toca el estado: repintar el
         // mostrador entero por nada es lo que traba a una tablet de 3 GB, y
         // el respaldo de cada minuto casi siempre trae lo mismo.
@@ -574,6 +618,10 @@ export default function POS() {
   // comanda, y un pedido con un refresco de la nevera y una empanada por
   // hacer no tenía respuesta correcta.
   const [destinos, setDestinos] = useState<Record<number, boolean> | null>(null)
+  // Editando: a dónde va LO AGREGADO a un producto que ya estaba, aparte de lo
+  // que ya estaba (Leider, 13-oct: 2 Granjero de vitrina + 2 nuevos, y la
+  // cocina veía los 4 o nada). Por variante; solo las que crecieron.
+  const [nuevos, setNuevos] = useState<Record<number, boolean>>({})
   // Corregir despues, renglon por renglon, que va a cocina en un pedido ya
   // tomado (el cliente, 29-sep: un toque de "vitrina" por error y la cocina
   // nunca vio unos pastelitos que habia que hacer).
@@ -602,6 +650,18 @@ export default function POS() {
     }
     setFaltaNombre(false)
 
+    // Sin caja abierta no se toman pedidos nuevos, y se dice: antes la
+    // comanda entraba igual y la franja de arriba pasaba desapercibida
+    // (Leider, 23-oct). Editar uno que ya existe sí se puede.
+    if (!enEdicion && apertura && !apertura.abierta) {
+      setError(
+        apertura.puede_abrir
+          ? 'La caja no se ha abierto: ábrela arriba (Abrir caja) antes de tomar pedidos.'
+          : 'La caja no se ha abierto: pídele a quien abre la caja que la abra antes de tomar pedidos.',
+      )
+      return
+    }
+
     // A cocina o de la vitrina, renglón por renglón. Leider (22-sep): "la
     // tienda va a tener ya comida de muestra... al darle al boton tiene que
     // generarte la opcion de si quieres mandarlo a cocina o no". Cada renglón
@@ -622,6 +682,30 @@ export default function POS() {
         Object.values(carrito).map((c) => [c.variante.id, cocinaActualDe(c.variante.id) ?? vaACocinaPorDefecto(c.variante.id)]),
       ),
     )
+    // Lo agregado a algo que ya estaba nace con lo que sugiere su categoría,
+    // no con lo que tenía lo de antes: que lo viejo fuera de vitrina no dice
+    // nada de lo nuevo.
+    setNuevos(
+      Object.fromEntries(
+        Object.values(carrito)
+          .filter((c) => agregadoDe(c.variante.id, c.cantidad, c.cortesia) > 0)
+          .map((c) => [c.variante.id, vaACocinaPorDefecto(c.variante.id)]),
+      ),
+    )
+  }
+
+  /** Editando: cuántas unidades de este producto ya tenía el pedido. */
+  function antesDe(varianteId: number, cortesia: boolean): number {
+    return (enEdicion?.items ?? [])
+      .filter((i) => i.variante_id === varianteId && Boolean(i.cortesia) === Boolean(cortesia))
+      .reduce((n, i) => n + i.cantidad, 0)
+  }
+
+  /** Editando: cuántas se le suman a algo que ya estaba (0 si es nuevo o bajó). */
+  function agregadoDe(varianteId: number, cantidad: number, cortesia: boolean): number {
+    if (!enEdicion) return 0
+    const antes = antesDe(varianteId, cortesia)
+    return antes > 0 && cantidad > antes ? cantidad - antes : 0
   }
 
   /** Editando: si este renglon YA ESTABA en el pedido, si iba a cocina. */
@@ -646,6 +730,9 @@ export default function POS() {
         // Sin decision en el cuadro: lo que ya tenia si estaba, si no lo que
         // sugiere su categoria.
         a_cocina: destinoDe[c.variante.id] ?? cocinaActualDe(c.variante.id) ?? vaACocinaPorDefecto(c.variante.id),
+        ...(c.variante.id in nuevos && agregadoDe(c.variante.id, c.cantidad, c.cortesia) > 0
+          ? { a_cocina_agregado: nuevos[c.variante.id] }
+          : {}),
       })),
       ...libres.map((l) =>
         l.variante_id !== undefined
@@ -675,6 +762,7 @@ export default function POS() {
   }
 
   function terminarEdicion() {
+    setNuevos({})
     recordarEdicion(null)
     setEnEdicion(null)
     setDiferencia(null)
@@ -1111,6 +1199,7 @@ export default function POS() {
    */
   async function agregarParte(metodo: string) {
     if (faltaMixto <= 0) return
+    if (EN_BOLIVARES.has(metodo) && tasaBcv > 0) return agregarParteEnBs(metodo)
     const monto = await dialogo.pedirNumero({
       titulo: `¿Cuánto paga con ${etiquetaMetodo(metodo)}?`,
       texto: `Faltan ${fmt(faltaMixto)} de ${fmt(aCobrar)}.`,
@@ -1132,6 +1221,74 @@ export default function POS() {
     // sobra va a propina, lo que falta sigue pendiente (o se perdona como
     // descuento). Igual que en el cobro de una sola forma.
     const r = await resolverPago(metodo, redondear(monto), pago)
+    if (r.propina) setPropina(String(redondear((Number(propina) || 0) + r.propina)))
+    if (r.descuento) {
+      setDescuento(String(redondear(descuentoNum + r.descuento)))
+      setMotivoDescuento((m) => m.trim() || r.motivo || 'Diferencia del pago móvil')
+    }
+    setPartes((p) => [...p, ...r.partes])
+  }
+
+  /**
+   * Una parte del pago mixto en bolivares se pide EN BOLIVARES: la cajera
+   * tiene en la mano un billete de Bs 500, no $0,56 (2-nov: habia que
+   * dividir entre la tasa a mano). Se convierte a la tasa del dia, que es
+   * como se guarda la venta. En efectivo el billete puede pasar de lo que
+   * falta: lo de mas es vuelto o, si el cliente no lo quiere, propina.
+   */
+  async function agregarParteEnBs(metodo: string) {
+    const faltaBs = redondear(faltaMixto * tasaBcv)
+    const bs = await dialogo.pedirNumero({
+      titulo: `¿Cuánto paga con ${etiquetaMetodo(metodo)}?`,
+      texto: `Faltan ${fmtBs(faltaBs)} (${fmt(faltaMixto)}) de ${fmt(aCobrar)}, a ${fmtNum(tasaBcv)} Bs por dólar.`,
+      etiqueta: 'Monto',
+      sufijo: 'Bs',
+      valor: faltaBs,
+      min: 0.01,
+    })
+    if (bs === null) return
+    // Los centimos de la conversion no dejan "falta $0,01": lo que cubre
+    // los bolivares que faltan, cubre la cuenta.
+    const cubre = bs >= faltaBs - 0.01
+    const usd = cubre ? faltaMixto : redondear(bs / tasaBcv)
+    if (bs > faltaBs + 0.01) {
+      if (metodo !== 'Efectivo Bs') {
+        setError(`Esa parte (${fmtBs(bs)}) pasa de lo que falta (${fmtBs(faltaBs)}).`)
+        return
+      }
+      const sobraBs = redondear(bs - faltaBs)
+      const r = await dialogo.pedir({
+        titulo: `Sobran ${fmtBs(sobraBs)}`,
+        texto: `Pagó ${fmtBs(bs)} y faltaban ${fmtBs(faltaBs)}.`,
+        campos: [
+          {
+            nombre: 'sobra',
+            etiqueta: '¿Qué se hace con lo que sobra?',
+            tipo: 'opciones',
+            valor: 'vuelto',
+            opciones: [
+              { valor: 'vuelto', texto: `Le doy ${fmtBs(sobraBs)} de vuelto`, detalle: 'Sale de la gaveta de bolívares' },
+              { valor: 'propina', texto: 'Se queda de propina', detalle: 'Entra a la gaveta y se le debe al personal' },
+            ],
+          },
+        ],
+        aceptar: 'Seguir',
+      })
+      if (!r) return
+      setError('')
+      const entregadoUsd = redondear(bs / tasaBcv)
+      if (r.sobra === 'propina') {
+        setPropina(String(redondear((Number(propina) || 0) + entregadoUsd - faltaMixto)))
+        setPartes((p) => [...p, { metodo, monto: entregadoUsd, referencia: '' }])
+      } else {
+        setPartes((p) => [...p, { metodo, monto: faltaMixto, referencia: '', recibido: entregadoUsd, vuelto_metodo: 'Efectivo Bs' }])
+      }
+      return
+    }
+    const pago = await pedirPago(metodo, usd)
+    if (pago === null) return
+    setError('')
+    const r = await resolverPago(metodo, usd, pago)
     if (r.propina) setPropina(String(redondear((Number(propina) || 0) + r.propina)))
     if (r.descuento) {
       setDescuento(String(redondear(descuentoNum + r.descuento)))
@@ -1178,6 +1335,53 @@ export default function POS() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo generar el ticket')
     }
+  }
+
+  /**
+   * "Ahora lo vengo a buscar" (17-oct): ese pedido no sale solo a la hora.
+   * Hace falta el nombre: es lo que se busca cuando el cliente vuelve.
+   */
+  async function dejarParaBuscar(pedido: Pedido) {
+    let nombre = ''
+    if (!(pedido.cliente || '').trim()) {
+      const escrito = await dialogo.pedirTexto({
+        titulo: `Pedido #${pedido.numero}: lo viene a buscar`,
+        texto: 'Se queda en «Por retirar» y no sale solo hasta que se lo lleve.',
+        etiqueta: '¿A nombre de quién?',
+        aceptar: 'Guardar',
+      })
+      if (escrito === null) return
+      nombre = escrito.trim()
+      if (!nombre) {
+        setError('Hace falta el nombre: es lo que se busca cuando el cliente vuelve.')
+        return
+      }
+    }
+    try {
+      await api.marcarPorRetirar(pedido.id, nombre)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar')
+    }
+    refrescarPedidos()
+  }
+
+  async function yaNoLoBusca(pedido: Pedido) {
+    try {
+      await api.marcarPorRetirar(pedido.id, '', true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cambiar')
+    }
+    refrescarPedidos()
+  }
+
+  /** Salió del mostrador y el cliente no se lo llevó: vuelve como «por retirar». */
+  async function noSeEntrego(pedido: Pedido) {
+    try {
+      await api.marcarNoEntregado(pedido.id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo devolver al mostrador')
+    }
+    refrescarPedidos()
   }
 
   /** Se le dio al cliente: la tarjeta sale del mostrador. */
@@ -1389,7 +1593,10 @@ export default function POS() {
   // Ya se cobro y ya se cocino: solo falta darsela a su dueño.
   const porEntregar = (p: Pedido) => p.estado === 'pagado' && !faltaCocina(p)
   const cuantosPorCobrar = pedidosActivos.filter((p) => !faltaCocina(p) && p.estado !== 'pagado').length
-  const cuantosPorEntregar = pedidosActivos.filter(porEntregar).length
+  // Lo que el cliente viene a buscar va primero y aparte: es lo que se pierde.
+  const porRetirar = pedidosActivos.filter((p) => p.por_retirar_en)
+  const ordenados = [...porRetirar, ...pedidosActivos.filter((p) => !p.por_retirar_en)]
+  const cuantosPorEntregar = pedidosActivos.filter((p) => porEntregar(p) && !p.por_retirar_en).length
   const cuantosEnCocina = pedidosActivos.filter((p) => faltaCocina(p) && p.estado !== 'pagado').length
   const cuantosCobradosEnCocina = pedidosActivos.filter((p) => faltaCocina(p) && p.estado === 'pagado').length
 
@@ -1468,6 +1675,7 @@ export default function POS() {
                 onQuitarTodo={quitarTodoEstable}
                 fmt={fmt}
                 envioId={categoriaEnvios?.id ?? null}
+                quedan={quedan}
               />
             </section>
           )}
@@ -1500,6 +1708,9 @@ export default function POS() {
                 <span className="w-2.5 h-2.5 rounded-full bg-acento-500" /> {cuantosPorEntregar} para entregar
               </span>
               <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-neutral-900" /> {porRetirar.length} por retirar
+              </span>
+              <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded-full bg-aviso-500" /> {cuantosEnCocina} en cocina sin cobrar
               </span>
               <span className="flex items-center gap-1">
@@ -1510,7 +1721,7 @@ export default function POS() {
           {/* Tres o cuatro comandas por fila en una laptop: con dos, cada
               fila era una pantalla. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-            {pedidosActivos.map((pedido) => {
+            {ordenados.map((pedido, indice) => {
               // Falta comida por hacer: la misma pregunta que responde la
               // pantalla de cocina, no el estado del pedido. Cobrar deja el
               // pedido en "pagado" aunque no se haya tocado la comida.
@@ -1519,6 +1730,7 @@ export default function POS() {
               const preparando = enPreparacion(pedido)
               const yaPagado = pedido.estado === 'pagado'
               const entregar = yaPagado && !falta
+              const retirar = Boolean(pedido.por_retirar_en)
               // Verde: hay que cobrarlo. Ambar: en cocina y todavia sin
               // cobrar. Gris: ya se cobro, solo espera la comida. Que alguien
               // la este preparando se dice con un anillo cobre ENCIMA del
@@ -1526,7 +1738,9 @@ export default function POS() {
               // uno sin cobrar volverian a verse iguales mientras se cocinan.
               // Cobre y con el nombre grande: la comida esta hecha, pagada, y
               // lo unico que falta es acertar de quien es.
-              const marco = entregar
+              const marco = retirar
+                ? 'border-dashed border-neutral-900 bg-white'
+                : entregar
                 ? 'border-acento-400 bg-acento-500/10'
                 : yaPagado
                   ? 'border-neutral-300 bg-neutral-100/70'
@@ -1534,8 +1748,23 @@ export default function POS() {
                     ? 'border-aviso-400 bg-aviso-500/5'
                     : 'border-exito-400 bg-exito-500/5'
               const anillo = preparando ? 'ring-2 ring-acento-500/50' : ''
+              // Los encabezados de las dos franjas: lo que viene a buscar el
+              // cliente, arriba y aparte, y el resto como siempre.
+              const encabezado =
+                porRetirar.length > 0 && (indice === 0 || indice === porRetirar.length) ? (
+                  <div className="col-span-full flex items-baseline gap-2 pt-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-neutral-700">
+                      {indice === 0 ? `Por retirar (${porRetirar.length})` : 'En curso'}
+                    </span>
+                    {indice === 0 && (
+                      <span className="text-xs text-neutral-400">Lo vienen a buscar: no salen solos hasta que se entreguen.</span>
+                    )}
+                  </div>
+                ) : null
               return (
-              <div key={pedido.id} className={`rounded-2xl border-2 p-3 ${marco} ${anillo}`}>
+              <Fragment key={pedido.id}>
+              {encabezado}
+              <div className={`rounded-2xl border-2 p-3 ${marco} ${anillo}`}>
                 <div className="flex justify-between items-start mb-2 gap-2">
                   {/* El numero y, debajo, de quien es. Entre ocho comandas
                       vivas el nombre es lo que las distingue; el numero solo
@@ -1545,11 +1774,22 @@ export default function POS() {
                       pastilla de estado ("Cobrado · en cocina") y un nombre
                       normal se cortaba en "Sra. Ca...". */}
                   <span className="min-w-0">
-                    <span className="block font-bold text-base leading-tight">#{pedido.numero}</span>
+                    {/* Con la hora en que se tomo: "el de las 5:40" es como se
+                        busca un pedido en el mostrador (Leider, 23-oct). */}
+                    <span className="block font-bold text-base leading-tight">
+                      #{pedido.numero}
+                      {horaDe(pedido.creado_en) && (
+                        <span className="ml-1.5 text-xs font-medium text-neutral-500 tabular-nums">{horaDe(pedido.creado_en)}</span>
+                      )}
+                    </span>
                     {pedido.cliente ? (
                       <span
                         className={`block truncate ${
-                          entregar ? 'text-sm font-bold text-acento-800' : 'text-[13px] font-semibold text-neutral-600'
+                          retirar
+                            ? 'text-base font-bold text-neutral-900'
+                            : entregar
+                              ? 'text-sm font-bold text-acento-800'
+                              : 'text-[13px] font-semibold text-neutral-600'
                         }`}
                       >
                         {pedido.cliente}
@@ -1579,7 +1819,7 @@ export default function POS() {
                     {/* Ya se le dio al cliente: fuera de la barra sin esperar
                         la hora. No borra la venta --la venta es la venta--,
                         solo saca la tarjeta del mostrador. */}
-                    {entregar && (
+                    {entregar && !retirar && (
                       <button
                         onClick={() => entregarPedido(pedido)}
                         title={`Ya le entregaste el pedido #${pedido.numero}${pedido.cliente ? ` a ${pedido.cliente}` : ''}`}
@@ -1598,7 +1838,9 @@ export default function POS() {
                     )}
                     <span
                       className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                        entregar
+                        retirar
+                          ? 'bg-neutral-900 text-white'
+                          : entregar
                           ? 'bg-acento-500 text-white'
                           : yaPagado
                             ? 'bg-neutral-200 text-neutral-700'
@@ -1611,7 +1853,9 @@ export default function POS() {
                           comida. "Cuenta abierta" sola (22-sep) se había
                           comido el "cocina terminó": la cajera no sabía si
                           ya podía entregar. */}
-                      {entregar
+                      {retirar
+                        ? `Por retirar · ${falta ? 'falta cocina' : haceCuanto(pedido.por_retirar_en)}`
+                        : entregar
                         ? 'Para entregar'
                         : yaPagado
                           ? 'Cobrado · falta cocina'
@@ -1703,6 +1947,33 @@ export default function POS() {
                     {/* Un pedido cobrado que sigue en cocina se queda a la
                         vista hasta que la comida salga -- pero no se vuelve a
                         cobrar ni se anula: para eso esta Devolver, en Ventas. */}
+                    {/* La excepcion, a un toque: el cliente dijo que vuelve. */}
+                    {yaPagado && !retirar && !pedido.devuelto && (
+                      <button
+                        onClick={() => void dejarParaBuscar(pedido)}
+                        title="El cliente vuelve luego: no sale solo del mostrador"
+                        className="text-acento-800 text-xs font-semibold"
+                      >
+                        Lo viene a buscar
+                      </button>
+                    )}
+                    {retirar && (
+                      <button
+                        onClick={() => void yaNoLoBusca(pedido)}
+                        title="Se lo lleva ya: vuelve a salir solo a la hora"
+                        className="text-neutral-500 text-xs font-medium"
+                      >
+                        Ya no
+                      </button>
+                    )}
+                    {retirar && !falta && (
+                      <button
+                        onClick={() => entregarPedido(pedido)}
+                        className="vp-pulsable bg-neutral-900 text-white text-sm px-4 py-2 rounded-xl font-medium"
+                      >
+                        Entregado
+                      </button>
+                    )}
                     {!yaPagado && (
                       <button
                         onClick={() => {
@@ -1720,12 +1991,57 @@ export default function POS() {
                   </div>
                 </div>
               </div>
+              </Fragment>
               )
             })}
             {pedidosActivos.length === 0 && (
               <p className="text-neutral-400 text-sm">
                 Nada en curso: ni pedidos por cobrar ni comida en cocina.
               </p>
+            )}
+          </div>
+
+          {/* Lo que ya salio hoy: si salio uno que el cliente no se llevo
+              (la equis en la que no era, o se cumplio la hora), de aqui
+              vuelve al mostrador. */}
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={alternarEntregados}
+              aria-expanded={entregadosHoy !== null}
+              className="text-sm font-medium text-neutral-600 hover:text-neutral-900 min-h-11"
+            >
+              {entregadosHoy !== null ? '▾' : '▸'} Entregados hoy
+              {entregadosHoy !== null && ` (${entregadosHoy.length})`}
+            </button>
+            {entregadosHoy !== null && (
+              <ul className="mt-1 divide-y divide-neutral-200 rounded-2xl border border-neutral-200 bg-white">
+                {entregadosHoy.length === 0 && (
+                  <li className="px-3 py-3 text-sm text-neutral-400">Todavía no ha salido nada hoy.</li>
+                )}
+                {entregadosHoy.map((p) => (
+                  <li key={p.id} className="flex items-center gap-3 px-3 py-2">
+                    <span className="min-w-0 flex-1">
+                      <span className="text-sm font-semibold">
+                        #{p.numero}
+                        {p.cliente && <span className="ml-1.5 font-medium text-neutral-700">{p.cliente}</span>}
+                      </span>
+                      <span className="block truncate text-xs text-neutral-500">
+                        {p.items.map((i) => `${i.cantidad}x ${i.nombre}`).join(' · ')}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs text-neutral-400 tabular-nums">
+                      {p.entregado_en ? `entregado ${horaDe(p.entregado_en)}` : 'salió por la hora'}
+                    </span>
+                    <button
+                      onClick={() => void noSeEntrego(p)}
+                      className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-acento-800 hover:bg-acento-500/10"
+                    >
+                      No se entregó
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 
@@ -2036,7 +2352,7 @@ export default function POS() {
               <Boton onClick={() => void mandarComanda(destinos)}>
                 {(() => {
                   // La cuenta en el boton: la decision se ve antes de enviar.
-                  const n = Object.values(destinos)
+                  const n = [...Object.values(destinos), ...Object.values(nuevos)]
                   const aCocina = n.filter(Boolean).length
                   const vitrina = n.length - aCocina
                   const verbo = enEdicion ? 'Guardar' : 'Enviar'
@@ -2054,11 +2370,12 @@ export default function POS() {
               vitrina se marca renglon por renglon. */}
           <div className="flex gap-2 mb-3">
             <button
-              onClick={() =>
+              onClick={() => {
                 setDestinos(
                   Object.fromEntries(Object.keys(destinos).map((k) => [k, cocinaLoTermino(Number(k)) ? destinos[Number(k)] : true])),
                 )
-              }
+                setNuevos(Object.fromEntries(Object.keys(nuevos).map((k) => [k, true])))
+              }}
               className="flex-1 text-xs font-medium rounded-lg border border-neutral-200 py-2 hover:bg-neutral-50"
             >
               Todo a cocina
@@ -2068,43 +2385,63 @@ export default function POS() {
             {Object.values(carrito).filter((c) => c.variante.id in destinos).map((c) => {
               const cocina = destinos[c.variante.id] ?? true
               const hecho = cocinaLoTermino(c.variante.id)
+              const agregado = agregadoDe(c.variante.id, c.cantidad, c.cortesia)
+              const nombre = etiquetaVariante(c.producto, c.variante)
               // Lo que por su categoria va a cocina y se marco de vitrina: se
               // resalta ESE renglon, que es donde suele estar el error.
-              const fueraDeLoNormal = !cocina && !hecho && vaACocinaPorDefecto(c.variante.id)
-              return (
-                <li key={c.variante.id}>
-                  <button
-                    disabled={hecho}
-                    onClick={() => setDestinos({ ...destinos, [c.variante.id]: !cocina })}
-                    aria-pressed={cocina}
-                    className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left disabled:opacity-60 ${
-                      fueraDeLoNormal
-                        ? 'border-peligro-400 bg-peligro-50'
-                        : cocina
-                          ? 'border-aviso-300 bg-aviso-50'
-                          : 'border-neutral-200 bg-white'
-                    }`}
-                  >
-                    <span className="min-w-0">
-                      <span className="block font-medium truncate">
-                        {c.cantidad}x {etiquetaVariante(c.producto, c.variante)}
-                      </span>
-                      {fueraDeLoNormal && (
-                        <span className="block text-xs font-medium text-peligro-700">
-                          Normalmente va a cocina: ¿ya está hecho en la vitrina?
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      className={`shrink-0 text-xs font-semibold rounded-full px-2.5 py-1 ${
-                        hecho ? 'bg-exito-100 text-exito-700' : cocina ? 'bg-aviso-500 text-white' : 'bg-neutral-800 text-white'
+              const renglon = (clave: string, texto: string, va: boolean, fijo: boolean, alTocar: () => void, nota?: string) => {
+                const fueraDeLoNormal = !va && !fijo && vaACocinaPorDefecto(c.variante.id)
+                return (
+                  <li key={clave}>
+                    <button
+                      disabled={fijo}
+                      onClick={alTocar}
+                      aria-pressed={va}
+                      className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left disabled:opacity-60 ${
+                        fueraDeLoNormal
+                          ? 'border-peligro-400 bg-peligro-50'
+                          : va
+                            ? 'border-aviso-300 bg-aviso-50'
+                            : 'border-neutral-200 bg-white'
                       }`}
                     >
-                      {hecho ? 'Cocina lo terminó' : cocina ? 'A cocina' : 'De vitrina'}
-                    </span>
-                  </button>
-                </li>
-              )
+                      <span className="min-w-0">
+                        <span className="block font-medium truncate">{texto}</span>
+                        {nota && <span className="block text-xs text-neutral-500">{nota}</span>}
+                        {fueraDeLoNormal && (
+                          <span className="block text-xs font-medium text-peligro-700">
+                            Normalmente va a cocina: ¿ya está hecho en la vitrina?
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className={`shrink-0 text-xs font-semibold rounded-full px-2.5 py-1 ${
+                          fijo && va ? 'bg-exito-100 text-exito-700' : va ? 'bg-aviso-500 text-white' : 'bg-neutral-800 text-white'
+                        }`}
+                      >
+                        {fijo && va ? 'Cocina lo terminó' : va ? 'A cocina' : 'De vitrina'}
+                      </span>
+                    </button>
+                  </li>
+                )
+              }
+              if (agregado === 0) {
+                return renglon(String(c.variante.id), `${c.cantidad}x ${nombre}`, cocina, hecho, () =>
+                  setDestinos({ ...destinos, [c.variante.id]: !cocina }),
+                )
+              }
+              // Creció: lo que ya estaba y lo agregado, cada uno con su destino.
+              const vaLoNuevo = nuevos[c.variante.id] ?? vaACocinaPorDefecto(c.variante.id)
+              return [
+                renglon(`${c.variante.id}-antes`, `${c.cantidad - agregado}x ${nombre}`, cocina, hecho, () =>
+                  setDestinos({ ...destinos, [c.variante.id]: !cocina }),
+                  'Lo que ya estaba en el pedido',
+                ),
+                renglon(`${c.variante.id}-nuevo`, `+${agregado} ${nombre}`, vaLoNuevo, false, () =>
+                  setNuevos({ ...nuevos, [c.variante.id]: !vaLoNuevo }),
+                  'Lo que se agregó ahora',
+                ),
+              ]
             })}
           </ul>
           {libres.length > 0 && (
@@ -2620,7 +2957,16 @@ export default function POS() {
                       </span>
                     )}
                   </span>
-                  <span className="font-semibold tabular-nums">{fmt(parte.monto)}</span>
+                  <span className="text-right">
+                    <span className="block font-semibold tabular-nums">{fmt(parte.monto)}</span>
+                    {EN_BOLIVARES.has(parte.metodo) && tasaBcv > 0 && (
+                      <span className="block text-[11px] text-neutral-500 tabular-nums">
+                        {parte.recibido
+                          ? `recibió ${fmtBs(parte.recibido * tasaBcv)} · vuelto ${fmtBs((parte.recibido - parte.monto) * tasaBcv)}`
+                          : fmtBs(parte.monto_bs ?? parte.monto * tasaBcv)}
+                      </span>
+                    )}
+                  </span>
                   <button
                     onClick={() => setPartes((p) => p.filter((_, x) => x !== i))}
                     aria-label={`Quitar el pago con ${etiquetaMetodo(parte.metodo)}`}
@@ -2780,6 +3126,7 @@ function MenuVariantes({
   variantes,
   cantidades,
   recienAgregado,
+  quedan,
   fmt,
   onAgregar,
   onQuitar,
@@ -2791,6 +3138,7 @@ function MenuVariantes({
   variantes: Variante[]
   cantidades: Record<number, number>
   recienAgregado: Set<number>
+  quedan: Record<number, number>
   fmt: (usd: number | null | undefined, decimales?: number) => string
   onAgregar: (v: Variante) => void
   onQuitar: (varianteId: number) => void
@@ -2858,7 +3206,10 @@ function MenuVariantes({
               onClick={() => onAgregar(v)}
               className="flex-1 min-w-0 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-neutral-500/8 active:bg-neutral-500/15"
             >
-              <span className="font-semibold text-[15px] text-neutral-900 [overflow-wrap:anywhere]">{v.nombre}</span>
+              <span className="min-w-0">
+                <span className="block font-semibold text-[15px] text-neutral-900 [overflow-wrap:anywhere]">{v.nombre}</span>
+                <Quedan n={quedan[v.id]} />
+              </span>
               <span className="shrink-0 font-bold text-neutral-700 tabular-nums">{fmt(v.precio)}</span>
             </button>
             {n > 0 && (
@@ -2894,11 +3245,23 @@ function MenuVariantes({
   )
 }
 
+/** "Quedan 3" o "Agotado" debajo del nombre; nada si no se lleva la cuenta. */
+function Quedan({ n }: { n?: number }) {
+  if (n === undefined) return null
+  if (n <= 0) return <span className="block text-xs font-semibold text-peligro-600">Agotado</span>
+  return (
+    <span className={`block text-xs tabular-nums ${n <= 3 ? 'font-semibold text-aviso-700' : 'text-neutral-500'}`}>
+      {n === 1 ? 'Queda 1' : `Quedan ${n}`}
+    </span>
+  )
+}
+
 /** Un producto de una sola variante: el renglon que suma uno por toque. */
 function RenglonVendible({
   nombre,
   precio,
   enCarrito,
+  quedan,
   pulsando,
   color,
   fmt,
@@ -2910,6 +3273,8 @@ function RenglonVendible({
   /** null = monto libre (los envios). */
   precio: number | null
   enCarrito: number
+  /** Cuantas quedan, si se vende tal cual se compra. */
+  quedan?: number
   pulsando: boolean
   color: ReturnType<typeof colorCategoria>
   fmt: (usd: number | null | undefined, decimales?: number) => string
@@ -2927,7 +3292,10 @@ function RenglonVendible({
         {/* Sin `truncate`: un nombre largo se acomoda en dos lineas. Cortarlo
             con puntos suspensivos deja dos productos distintos leyendose
             igual, y el cajero toca el que no era. */}
-        <span className="font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">{nombre}</span>
+        <span className="min-w-0">
+          <span className="block font-semibold text-[15px] leading-snug text-neutral-900 [overflow-wrap:anywhere]">{nombre}</span>
+          <Quedan n={quedan} />
+        </span>
         <span className="shrink-0 font-bold text-neutral-700 tabular-nums">
           {precio == null ? <span className="text-xs font-medium text-neutral-500">monto libre</span> : fmt(precio)}
         </span>
@@ -2983,6 +3351,7 @@ const ListaProductos = memo(function ListaProductos({
   onQuitarTodo,
   fmt,
   envioId,
+  quedan,
 }: {
   categorias: Categoria[]
   vendibles: { categoria: Categoria; filas: { producto: Producto; variante: Variante }[] }[]
@@ -2995,6 +3364,7 @@ const ListaProductos = memo(function ListaProductos({
   onQuitarTodo: (varianteId: number) => void
   fmt: (usd: number | null | undefined, decimales?: number) => string
   envioId: number | null
+  quedan: Record<number, number>
 }) {
   // El producto cuyas variantes estan a la vista, en un menu flotante
   // pegado a su renglon: la lista no se mueve al abrirlo (Leider, 1-oct: "no
@@ -3095,6 +3465,7 @@ const ListaProductos = memo(function ListaProductos({
                       nombre={etiquetaVariante(p, v)}
                       precio={envioId !== null && p.categoria_id === envioId ? null : v.precio}
                       enCarrito={cantidades[v.id] ?? 0}
+                      quedan={quedan[v.id]}
                       pulsando={recienAgregado.has(v.id)}
                       color={color}
                       fmt={fmt}
@@ -3152,6 +3523,7 @@ const ListaProductos = memo(function ListaProductos({
                         variantes={variantes}
                         cantidades={cantidades}
                         recienAgregado={recienAgregado}
+                        quedan={quedan}
                         fmt={fmt}
                         onAgregar={(v) => onAgregar(p, v)}
                         onQuitar={onQuitar}

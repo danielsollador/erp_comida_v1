@@ -101,6 +101,12 @@ export type Ingrediente = {
   ultima_compra: string | null
   /** Cuanto subestima el promedio al costo de reponer, en %. */
   variacion_pct: number | null
+  /** El costo con que se mira (Configuración: último, promedio o el mayor). */
+  costo_elegido?: number | null
+  /** Reventa que está en el menú: su precio (con IVA), lo que queda sin IVA y el margen sobre eso. */
+  precio_venta?: number | null
+  precio_neto?: number | null
+  margen_pct?: number | null
 }
 
 /** Lo que se escribe de un insumo (el resto lo calcula el sistema). */
@@ -199,6 +205,8 @@ export type CompraDeInsumo = {
   costo_unitario: number
   origen: string
   referencia: string
+  /** Solo en las compras sueltas: para anularla si se anotó mal. */
+  compra_id?: number | null
 }
 
 export type ImpactoEnProducto = {
@@ -300,6 +308,8 @@ export type CostoVariante = {
   /** El costo con que se decide el precio (segun Configuracion), indirecto incluido. */
   costo_para_precio?: number | null
   margen_para_precio_pct?: number | null
+  /** El precio sin el IVA: sobre este se miden los margenes. */
+  precio_neto?: number | null
 }
 
 /** Lo que la portada le dice al dueño sin que lo pregunte. `a` = adónde ir. */
@@ -485,6 +495,8 @@ export type Pedido = {
   a_cocina: boolean
   /** Cuando se le entregó al cliente. Null = sigue en la barra esperando. */
   entregado_en: string | null
+  /** Desde cuando el cliente lo viene a buscar. Con esto no sale solo del mostrador. */
+  por_retirar_en?: string | null
   facturado: boolean
   numero_factura: string | null
   /** Tasa a la que se cobro. Para montos historicos manda esta, no la de hoy. */
@@ -901,6 +913,8 @@ export type LineaMetodo = {
   fondo_declarado: boolean
   ventas: number
   salidas: number
+  /** Lo pagado hoy desde el banco por esta forma de pago: ya está en los libros, no se resta. */
+  pagos?: number
   /** Lo que movió la cuenta sin ser venta, gasto ni retiro. */
   otros: number
   esperado: number

@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
@@ -58,6 +58,7 @@ def listar_pedidos(
     en_cocina: Optional[bool] = None,
     por_entregar: Optional[bool] = None,
     del_dia: Optional[bool] = None,
+    entregados_hoy: Optional[bool] = None,
     db: Session = Depends(get_db),
 ):
     """`en_cocina=true` es lo que pregunta la pantalla de cocina: que falta por
@@ -73,6 +74,13 @@ def listar_pedidos(
     `por_entregar=true` es el otro lado: lo que ya se cobro Y ya se cocino,
     durante `MINUTOS_PARA_ENTREGAR`. Son las que estan en la barra esperando
     que el cliente las venga a buscar, y por eso las sigue viendo la caja.
+
+    Las que el cliente viene a buscar (`por_retirar_en`) no vencen: siguen
+    en `por_entregar` hasta que alguien las entregue, del dia que sean.
+
+    `entregados_hoy=true` es lo que ya salio del mostrador hoy, porque lo
+    entregaron o porque se cumplio la hora: de ahi se rescata con "No se
+    entrego" la que salio sin que el cliente se la llevara.
 
     `del_dia=true` son las ventas de hoy, para consultarlas desde el
     mostrador sin salir a otro modulo.
@@ -92,26 +100,45 @@ def listar_pedidos(
             models.Pedido.estado == "pagado",
             models.Pedido.cerrado_en >= inicio_del_dia(hoy()),
         )
-    if por_entregar:
-        # Ya cobrada, nada pendiente en cocina, y todavia reciente. El reloj es
-        # `listo_en`; para las que nunca pasaron por cocina --una botella-- no
-        # existe, y entonces vale la hora del cobro.
-        falta_cocinar = (
-            db.query(models.PedidoItem.id)
-            .filter(
-                models.PedidoItem.pedido_id == models.Pedido.id,
-                models.PedidoItem.preparado.is_(False),
-            )
-            .exists()
+    falta_cocinar = (
+        db.query(models.PedidoItem.id)
+        .filter(
+            models.PedidoItem.pedido_id == models.Pedido.id,
+            models.PedidoItem.preparado.is_(False),
         )
-        desde = ahora() - datetime.timedelta(minutes=MINUTOS_PARA_ENTREGAR)
+        .exists()
+    )
+    # El reloj del mostrador es `listo_en`; para las que nunca pasaron por
+    # cocina --una botella-- no existe, y entonces vale la hora del cobro.
+    reloj = func.coalesce(models.Pedido.listo_en, models.Pedido.cerrado_en)
+    desde = ahora() - datetime.timedelta(minutes=MINUTOS_PARA_ENTREGAR)
+    if por_entregar:
+        # Ya cobrada, nada pendiente en cocina, y todavia reciente... o la
+        # viene a buscar el cliente, que no vence.
         query = query.filter(
             models.Pedido.estado == "pagado",
             models.Pedido.devuelto.is_(False),
             models.Pedido.entregado_en.is_(None),
             ~falta_cocinar,
-            func.coalesce(models.Pedido.listo_en, models.Pedido.cerrado_en) >= desde,
+            or_(reloj >= desde, models.Pedido.por_retirar_en.isnot(None)),
         )
+    if entregados_hoy:
+        inicio = inicio_del_dia(hoy())
+        query = query.filter(
+            models.Pedido.estado == "pagado",
+            models.Pedido.devuelto.is_(False),
+            ~falta_cocinar,
+            or_(
+                models.Pedido.entregado_en >= inicio,
+                and_(
+                    models.Pedido.entregado_en.is_(None),
+                    models.Pedido.por_retirar_en.is_(None),
+                    reloj < desde,
+                    reloj >= inicio,
+                ),
+            ),
+        )
+        return query.order_by(models.Pedido.id.desc()).limit(80).all()
     if en_cocina:
         query = (
             query.filter(models.Pedido.estado != "anulado")
@@ -613,6 +640,52 @@ async def marcar_item_preparado(item_id: int, request: Request, db: Session = De
         db.commit()
         db.refresh(pedido)
 
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+@router.post("/{pedido_id}/por-retirar", response_model=schemas.Pedido)
+async def marcar_por_retirar(pedido_id: int, body: schemas.PorRetirarRequest, db: Session = Depends(get_db)):
+    """El cliente dijo "ahora lo vengo a buscar": no sale solo del mostrador.
+
+    Lo normal sigue igual --lo listo sale solo a la hora--; esto es el
+    boton para la excepcion (17-oct: "el pedido se pierde"). Hace falta un
+    nombre, porque es lo que se busca cuando el cliente vuelve.
+    """
+    pedido = _buscar(db, pedido_id)
+    if pedido.estado == "anulado" or pedido.devuelto:
+        raise HTTPException(status_code=400, detail="Ese pedido ya no está en curso.")
+    if body.quitar:
+        pedido.por_retirar_en = None
+    else:
+        nombre = body.cliente.strip()
+        if nombre:
+            pedido.cliente = nombre
+        if not (pedido.cliente or "").strip():
+            raise HTTPException(status_code=400, detail="Ponle el nombre de quien lo viene a buscar.")
+        pedido.entregado_en = None
+        if pedido.por_retirar_en is None:
+            pedido.por_retirar_en = ahora()
+    db.commit()
+    db.refresh(pedido)
+    resultado = schemas.Pedido.model_validate(pedido)
+    await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
+    return resultado
+
+
+@router.post("/{pedido_id}/no-entregado", response_model=schemas.Pedido)
+async def marcar_no_entregado(pedido_id: int, db: Session = Depends(get_db)):
+    """Salio del mostrador pero el cliente no se lo llevo: vuelve, y como
+    alguien lo tiene que venir a buscar, queda en "Por retirar" (no vence)."""
+    pedido = _buscar(db, pedido_id)
+    if pedido.estado != "pagado" or pedido.devuelto:
+        raise HTTPException(status_code=400, detail="Solo una venta cobrada vuelve al mostrador.")
+    pedido.entregado_en = None
+    if pedido.por_retirar_en is None:
+        pedido.por_retirar_en = ahora()
+    db.commit()
+    db.refresh(pedido)
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
     return resultado
@@ -1190,13 +1263,18 @@ async def editar_pedido(
         elif antes == 0:
             cambios.append(f"+{despues} {nombre}")
         else:
-            cambios.append(f"{nombre}: {antes} -> {despues}")
+            detalle = f"{nombre}: {antes} -> {despues}"
+            agregado = ejemplo[clave].a_cocina_agregado if clave in ejemplo else None
+            if despues > antes and agregado is not None:
+                detalle += f" (+{despues - antes} {'a cocina' if agregado else 'de vitrina'})"
+            cambios.append(detalle)
 
     if not cambios and (body.nota is None or body.nota == pedido.nota):
         raise HTTPException(status_code=400, detail="No hay ningún cambio que guardar")
 
     # -- se aplica
     cocina_ya_habia_terminado = cocina_termino(pedido)
+    agregado_a_cocina = False
     for clave, cantidad in pedidas.items():
         filas = actuales.get(clave)
         if filas:
@@ -1208,7 +1286,40 @@ async def editar_pedido(
                     f.a_cocina = False
                     f.preparado = True
             antes = sum(f.cantidad for f in filas)
-            if cantidad > antes:
+            destino_agregado = ejemplo[clave].a_cocina_agregado
+            if cantidad > antes and destino_agregado is not None:
+                # LO AGREGADO CON SU PROPIO DESTINO (Leider, 13-oct): 2 de
+                # vitrina + 2 nuevos que hay que hacer son dos renglones, y a
+                # la cocina solo le llegan los 2 nuevos. Se suma a un renglon
+                # que ya tenga ESE destino y siga abierto (el que espera en la
+                # cola, o el de vitrina); si no hay, uno nuevo al mismo precio.
+                extra = cantidad - antes
+                if destino_agregado:
+                    junto = next((f for f in filas if f.a_cocina is not False and not f.preparado), None)
+                else:
+                    junto = next((f for f in filas if f.a_cocina is False), None)
+                if junto is not None:
+                    junto.cantidad += extra
+                else:
+                    base = filas[0]
+                    db.add(
+                        models.PedidoItem(
+                            pedido_id=pedido.id,
+                            variante_id=base.variante_id,
+                            nombre=base.nombre,
+                            precio_unitario=base.precio_unitario,
+                            costo_unitario=base.costo_unitario,
+                            cantidad=extra,
+                            nota=base.nota,
+                            preparado=not destino_agregado,
+                            a_cocina=destino_agregado,
+                            cortesia=base.cortesia,
+                            precio_lista=base.precio_lista,
+                        )
+                    )
+                if destino_agregado:
+                    agregado_a_cocina = True
+            elif cantidad > antes:
                 # LO QUE YA SE HIZO NO VUELVE A LA COCINA. Leider (6-oct): con
                 # 4 pastelitos ya hechos, agregar 1 subia el renglon a 5 y lo
                 # devolvia entero a la cola: la cocina veia 5 por hacer. Lo
@@ -1401,7 +1512,7 @@ async def editar_pedido(
         # ahora. Lo que va a cocina lo pone la cocina al terminarlo.
         pedido.listo_en = None if any(not i.preparado for i in pedido.items) else ahora()
     if any(not i.preparado for i in pedido.items):
-        if cocina_ya_habia_terminado or mandar_a_cocina:
+        if cocina_ya_habia_terminado or mandar_a_cocina or agregado_a_cocina:
             pedido.cocinando_desde = None
             pedido.cocinando_por_id = None
             pedido.listo_en = None

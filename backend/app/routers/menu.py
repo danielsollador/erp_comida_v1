@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from .. import models, reposicion, schemas
+from .. import models, reposicion, schemas, impuestos
 from ..seed import SUBSECCION_INICIAL
 from ..database import get_db
 from ..timeutils import hoy, inicio_del_dia
@@ -281,6 +281,43 @@ def historial_precios(variante_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/existencias", response_model=List[schemas.ExistenciaVariante])
+def existencias(db: Session = Depends(get_db)):
+    """Cuantas quedan de lo que se vende tal cual se compra (helados, jugos,
+    refrescos), para que la caja lo diga sin ir al congelador (2-nov).
+
+    Solo las variantes cuya receta es TODA mercancia de reventa: ahi el
+    numero es exacto (lo que hay en el deposito). Un plato cocinado depende
+    de insumos que muchos locales no llevan al dia; decirle "agotado" a un
+    pastelito porque la masa no esta cargada frenaria la venta por nada.
+    """
+    from .. import costeo
+
+    items = (
+        db.query(models.RecetaItem)
+        .options(joinedload(models.RecetaItem.ingrediente))
+        .join(models.Variante, models.Variante.id == models.RecetaItem.variante_id)
+        .filter(models.Variante.activo.is_(True))
+        .all()
+    )
+    por_variante: dict = {}
+    for item in items:
+        por_variante.setdefault(item.variante_id, []).append(item)
+    salida = []
+    for variante_id, receta in por_variante.items():
+        if any((i.ingrediente.tipo or "") != "reventa" for i in receta):
+            continue
+        limites = []
+        for i in receta:
+            consumo = costeo.consumo_bruto(i, 1)
+            if consumo > 0:
+                limites.append(max(i.ingrediente.stock_actual or 0, 0) / consumo)
+        if not limites:
+            continue
+        salida.append(schemas.ExistenciaVariante(variante_id=variante_id, quedan=int(min(limites) + 1e-9)))
+    return salida
+
+
 @router.get("/costos-para-precios", response_model=schemas.CostosParaPrecios)
 def costos_para_precios(db: Session = Depends(get_db)):
     """Lo que cuesta 1 unidad utilizable de cada mercancia con el metodo que
@@ -322,10 +359,14 @@ def costos_por_variante(db: Session = Depends(get_db)):
     ultimos = reposicion.costos_reposicion(db)
     costos = {}
     reponer = {}
+    # Exento = toda su receta es mercancia exenta (harina, carne...). Con un
+    # solo insumo gravado el producto lleva IVA.
+    exentos = {}
     for receta in db.query(models.RecetaItem).all():
         ingrediente = receta.ingrediente
         aporte = receta.cantidad_por_unidad * (ingrediente.costo_efectivo or 0)
         costos[receta.variante_id] = costos.get(receta.variante_id, 0) + aporte
+        exentos[receta.variante_id] = exentos.get(receta.variante_id, True) and bool(ingrediente.exento)
 
         # Sin compras, el promedio es lo que hay. Una preparacion se repone
         # a lo que cuesta reponer su receta.
@@ -343,12 +384,17 @@ def costos_por_variante(db: Session = Depends(get_db)):
     )
     config = db.query(models.Configuracion).first()
     metodo = (config.costo_para_precios if config else None) or "reposicion"
+    tasa = impuestos.tasa_iva(db)
 
     filas = []
     for v in db.query(models.Variante).all():
         costo = costos.get(v.id)
         costo_hoy = reponer.get(v.id)
         indirecto = round(indirecto_pieza, 4) if v.se_frie else 0.0
+        # El margen se mide contra lo que queda del precio sin el IVA: un
+        # producto hecho solo de mercancia exenta no lleva IVA.
+        exento = bool(exentos.get(v.id))
+        neto = impuestos.precio_neto(v.precio, tasa, exento)
         if costo is None:
             para_precio = None
         elif metodo == "promedio":
@@ -358,8 +404,8 @@ def costos_por_variante(db: Session = Depends(get_db)):
         else:
             para_precio = (costo_hoy if costo_hoy is not None else costo) + indirecto
         margen = (
-            round((v.precio - costo) / v.precio * 100, 1)
-            if costo is not None and v.precio > 0
+            round((neto - costo) / neto * 100, 1)
+            if costo is not None and neto > 0
             else None
         )
         filas.append(
@@ -370,15 +416,16 @@ def costos_por_variante(db: Session = Depends(get_db)):
                 sin_receta=costo is None,
                 costo_reposicion=round(costo_hoy, 4) if costo_hoy is not None else None,
                 margen_reposicion_pct=(
-                    round((v.precio - costo_hoy) / v.precio * 100, 1)
-                    if costo_hoy is not None and v.precio > 0
+                    round((neto - costo_hoy) / neto * 100, 1)
+                    if costo_hoy is not None and neto > 0
                     else None
                 ),
+                precio_neto=neto,
                 costo_indirecto=indirecto,
                 costo_para_precio=round(para_precio, 4) if para_precio is not None else None,
                 margen_para_precio_pct=(
-                    round((v.precio - para_precio) / v.precio * 100, 1)
-                    if para_precio is not None and v.precio > 0
+                    round((neto - para_precio) / neto * 100, 1)
+                    if para_precio is not None and neto > 0
                     else None
                 ),
             )

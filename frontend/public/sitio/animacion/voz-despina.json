@@ -1,0 +1,126 @@
+{
+ "voz": "es-US-Chirp3-HD-Despina",
+ "duracion": 47.523,
+ "marcas": {
+  "vendes": {
+   "t": 0.7,
+   "fin": 1.401,
+   "texto": "Vendes,"
+  },
+  "compras": {
+   "t": 1.851,
+   "fin": 2.273,
+   "texto": "compras,"
+  },
+  "produces": {
+   "t": 2.723,
+   "fin": 4.13,
+   "texto": "produces o calculas,"
+  },
+  "cuadra": {
+   "t": 4.58,
+   "fin": 5.861,
+   "texto": "y todo cuadra solo."
+  },
+  "venezuela": {
+   "t": 6.661,
+   "fin": 8.335,
+   "texto": "Hecho para pymes venezolanas."
+  },
+  "tasas": {
+   "t": 8.935,
+   "fin": 10.309,
+   "texto": "Tasas automáticas."
+  },
+  "brecha": {
+   "t": 10.809,
+   "fin": 12.434,
+   "texto": "Pérdida por brecha cambiaria."
+  },
+  "pago": {
+   "t": 12.934,
+   "fin": 14.43,
+   "texto": "Pago móvil verificado,"
+  },
+  "vuelto": {
+   "t": 14.73,
+   "fin": 16.426,
+   "texto": "y vueltos automáticos."
+  },
+  "seniat": {
+   "t": 17.126,
+   "fin": 18.611,
+   "texto": "Homologado por el Seniat."
+  },
+  "ia": {
+   "t": 19.511,
+   "fin": 20.929,
+   "texto": "Y en el centro de todo,"
+  },
+  "ia2": {
+   "t": 21.179,
+   "fin": 22.129,
+   "texto": "la IA."
+  },
+  "foto": {
+   "t": 22.829,
+   "fin": 24.707,
+   "texto": "Lee tus facturas con una foto."
+  },
+  "que": {
+   "t": 25.407,
+   "fin": 26.853,
+   "texto": "Te predice qué comprar,"
+  },
+  "cuando": {
+   "t": 27.153,
+   "fin": 27.608,
+   "texto": "cuándo,"
+  },
+  "donde": {
+   "t": 27.908,
+   "fin": 29.324,
+   "texto": "y dónde te sale mejor."
+  },
+  "chat": {
+   "t": 29.924,
+   "fin": 31.884,
+   "texto": "Y responde todo lo que le preguntes."
+  },
+  "app": {
+   "t": 32.784,
+   "fin": 33.701,
+   "texto": "Y en tu teléfono,"
+  },
+  "vivo": {
+   "t": 34.001,
+   "fin": 35.071,
+   "texto": "tu negocio en vivo."
+  },
+  "alertas": {
+   "t": 35.671,
+   "fin": 36.546,
+   "texto": "Con alertas,"
+  },
+  "recomendaciones": {
+   "t": 36.946,
+   "fin": 38.238,
+   "texto": "recomendaciones,"
+  },
+  "permisos": {
+   "t": 38.638,
+   "fin": 40.728,
+   "texto": "y permisos, al instante."
+  },
+  "marca": {
+   "t": 41.628,
+   "fin": 42.525,
+   "texto": "Vértigo Pro."
+  },
+  "cierre": {
+   "t": 42.825,
+   "fin": 45.723,
+   "texto": "Todo, impulsado con inteligencia artificial."
+  }
+ }
+}

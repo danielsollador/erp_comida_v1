@@ -65,6 +65,23 @@ class Operador(Base):
     punto_venta = Column(String, default="")
 
 
+class DispositivoPush(Base):
+    """Un telefono que recibe notificaciones push de este local (ver push.py).
+
+    El token es el de Expo; es de quien entro por ultima vez en ese telefono.
+    """
+
+    __tablename__ = "DIM920_USU_DISPOSITIVO"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    usuario = Column(String, nullable=False, default="")
+    # ios | android: solo para saber que hay, no cambia como se manda.
+    plataforma = Column(String, default="")
+    creado = Column(DateTime, default=ahora)
+    actualizado = Column(DateTime, default=ahora)
+
+
 class SolicitudAutorizacion(Base):
     """Una autorizacion pedida desde la caja y resuelta desde la aplicacion.
 
@@ -764,6 +781,9 @@ class CompraSuelta(Base):
     cantidad = Column(Float, nullable=False)
     costo_unitario = Column(Float, nullable=False)
     fecha = Column(DateTime, default=ahora)
+    # Mal anotada y deshecha (26-oct): el stock y el asiento tienen su
+    # reverso, y ya no cuenta como "lo ultimo que se pago".
+    anulada = Column(Boolean, default=False)
 
     ingrediente = relationship("Ingrediente")
 
@@ -1704,6 +1724,10 @@ class Pedido(Base):
     # al entregarla, la cajera la quita con una equis y deja de estorbar sin
     # tener que esperar la hora (Leider, 22-sep).
     entregado_en = Column(DateTime, nullable=True)
+    # El cliente dijo "ahora lo vengo a buscar" (17-oct). Mientras no se
+    # entregue, NO sale solo del mostrador por la hora: se queda en "Por
+    # retirar" hasta que alguien diga que se lo llevo.
+    por_retirar_en = Column(DateTime, nullable=True)
 
     items = relationship("PedidoItem", back_populates="pedido", cascade="all, delete-orphan")
     operador_rel = relationship("Operador", foreign_keys=[operador_id])

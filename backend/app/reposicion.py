@@ -24,7 +24,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from . import models
+from . import impuestos, models
 
 # Por debajo de esto una subida es ruido de proveedor, no un cambio de precio.
 SALTO_QUE_IMPORTA_PCT = 15.0
@@ -60,6 +60,31 @@ def salto_sospechoso(costo_nuevo: float, costo_anterior: float) -> Optional[dict
     }
 
 
+# Una compra que cuesta menos de la quinta parte de lo de siempre casi nunca
+# es una oferta: es el monto en bolivares, la coma corrida o el total puesto
+# como precio por unidad (26-oct: 10 kg de pernil por $0,08, a $8 el kilo).
+BAJA_SOSPECHOSA = 0.2
+SUBIDA_ABSURDA = 10
+
+
+def precio_absurdo(costo_nuevo: float, referencia: float) -> Optional[str]:
+    """Un precio que no tiene sentido contra lo de siempre, hacia ARRIBA (la
+    unidad equivocada) o hacia ABAJO (bolivares, la coma). Devuelve el aviso
+    en criollo, o None si es un precio posible."""
+    if not referencia or not costo_nuevo or referencia <= 0:
+        return None
+    if costo_nuevo < referencia * BAJA_SOSPECHOSA:
+        return (f"Ese precio es {referencia / costo_nuevo:,.0f} veces MENOR que lo de siempre "
+                f"(${costo_nuevo:,.4f} contra ${referencia:,.2f}). ¿Pusiste el monto en bolívares o "
+                "con la coma corrida? El costo va en dólares y por el total de lo que llegó.")
+    # Hacia arriba solo frena lo que no puede ser inflacion: diez veces o mas.
+    # Un 3x o un 5x avisa despues de guardar (salto_sospechoso), como siempre.
+    if costo_nuevo >= referencia * SUBIDA_ABSURDA:
+        sospecha = salto_sospechoso(costo_nuevo, referencia)
+        return sospecha["mensaje"] if sospecha else None
+    return None
+
+
 def historial_de_costos(db: Session, ingrediente_id: int, limite: int = 24) -> List[dict]:
     """Cada compra de ese insumo, de la mas nueva a la mas vieja.
 
@@ -86,7 +111,8 @@ def historial_de_costos(db: Session, ingrediente_id: int, limite: int = 24) -> L
         )
 
     for suelta in (
-        db.query(models.CompraSuelta).filter_by(ingrediente_id=ingrediente_id).all()
+        db.query(models.CompraSuelta).filter_by(ingrediente_id=ingrediente_id)
+        .filter(models.CompraSuelta.anulada.isnot(True)).all()
     ):
         compras.append(
             {
@@ -95,6 +121,7 @@ def historial_de_costos(db: Session, ingrediente_id: int, limite: int = 24) -> L
                 "costo_unitario": suelta.costo_unitario,
                 "origen": "compra suelta",
                 "referencia": "",
+                "compra_id": suelta.id,
             }
         )
 
@@ -110,8 +137,11 @@ def costos_reposicion(db: Session) -> Dict[int, dict]:
     """
     ultimo: Dict[int, dict] = {}
 
+    # Una compra en $0 no es un precio: es el costo que se olvido poner (2-nov,
+    # la masa cargada sin factura dejo en cero todos los pastelitos, aunque
+    # despues se corrigio en la ficha). Lo ultimo pagado es lo ultimo con precio.
     def considerar(ingrediente_id, fecha, costo):
-        if ingrediente_id is None or fecha is None:
+        if ingrediente_id is None or fecha is None or not costo or costo <= 0:
             return
         actual = ultimo.get(ingrediente_id)
         if actual is None or fecha > actual["fecha"]:
@@ -125,8 +155,13 @@ def costos_reposicion(db: Session) -> Dict[int, dict]:
     for item, fecha in filas:
         considerar(item.ingrediente_id, fecha, item.costo_unitario)
 
-    for suelta in db.query(models.CompraSuelta).all():
+    for suelta in db.query(models.CompraSuelta).filter(models.CompraSuelta.anulada.isnot(True)).all():
         considerar(suelta.ingrediente_id, suelta.fecha, suelta.costo_unitario)
+
+    # Un costo corregido a mano en la ficha despues de la ultima compra es lo
+    # que el dueño sabe que cuesta: manda sobre esa compra.
+    for mov in db.query(models.MovimientoInventario).filter(models.MovimientoInventario.origen == "ajuste_costo").all():
+        considerar(mov.ingrediente_id, mov.fecha, mov.costo_unitario)
 
     return ultimo
 
@@ -149,6 +184,13 @@ def costo_reposicion_efectivo(ingrediente, ultimos: Dict[int, dict], _visitados=
     PREPARACION, su receta a ultimos precios: el guiso no se compra, asi que
     reponerlo cuesta lo que cuesta reponer su pollo y su cebolla.
     """
+    # Un ultimo precio absurdo (bolivares, la coma) no se toma: se usa el
+    # promedio de la ficha hasta que llegue una compra con precio de verdad
+    # (26-oct, el pernil a $0,0085 el kilo dejaba la receta en cero).
+    ultimo = ultimos.get(getattr(ingrediente, "id", None))
+    if (ultimo and getattr(ingrediente, "tipo", "") != "preparacion"
+            and precio_absurdo(ultimo.get("costo") or 0, getattr(ingrediente, "costo_unitario", 0) or 0)):
+        return costo_efectivo_de(ingrediente.costo_unitario, ingrediente.rendimiento_pct) or 0.0
     if ingrediente.tipo == "preparacion":
         if ingrediente.id in _visitados or not ingrediente.rinde_real:
             return 0.0
@@ -198,6 +240,7 @@ def impacto_en_productos(
     # acaba de subir. Usando el promedio para los demas, este aviso y el menu
     # daban precios sugeridos distintos por unos centavos para el mismo plato.
     ultimos = costos_reposicion(db)
+    tasa_iva = impuestos.tasa_iva(db)
 
     afectados = []
     recetas = db.query(models.RecetaItem).filter_by(ingrediente_id=ingrediente_id).all()
@@ -216,10 +259,12 @@ def impacto_en_productos(
         costo_antes = 0.0
         costo_despues = 0.0
         costo_contable = 0.0
+        ingredientes_de_la_receta = []
         for linea in db.query(models.RecetaItem).filter_by(variante_id=variante.id).all():
             ing = linea.ingrediente
             if ing is None:
                 continue
+            ingredientes_de_la_receta.append(ing)
             costo_contable += linea.cantidad_por_unidad * (ing.costo_efectivo or 0)
             if ing.id == ingrediente_id:
                 costo_antes += linea.cantidad_por_unidad * (efectivo_anterior or 0)
@@ -235,8 +280,13 @@ def impacto_en_productos(
                 costo_despues += linea.cantidad_por_unidad * efectivo_hoy
 
         precio = variante.precio or 0
-        margen_antes = round((precio - costo_antes) / precio * 100, 1) if precio else None
-        margen_despues = round((precio - costo_despues) / precio * 100, 1) if precio else None
+        # El margen se mide contra lo que queda del precio SIN el IVA, igual
+        # que en /menu/costos: si no, el aviso de "a perdida" salia optimista.
+        # Exento = toda la receta es mercancia exenta.
+        exento = bool(ingredientes_de_la_receta) and all(bool(i.exento) for i in ingredientes_de_la_receta)
+        neto = impuestos.precio_neto(precio, tasa_iva, exento)
+        margen_antes = round((neto - costo_antes) / neto * 100, 1) if neto else None
+        margen_despues = round((neto - costo_despues) / neto * 100, 1) if neto else None
 
         producto = db.query(models.Producto).filter_by(id=variante.producto_id).first()
         # Misma regla que el mostrador: con una sola subseccion activa, su
@@ -291,7 +341,7 @@ def compras_por_insumo(db: Session, desde=None) -> Dict[int, List[dict]]:
             }
         )
 
-    sueltas = db.query(models.CompraSuelta)
+    sueltas = db.query(models.CompraSuelta).filter(models.CompraSuelta.anulada.isnot(True))
     if desde is not None:
         sueltas = sueltas.filter(models.CompraSuelta.fecha >= desde)
     for suelta in sueltas.all():
@@ -302,6 +352,7 @@ def compras_por_insumo(db: Session, desde=None) -> Dict[int, List[dict]]:
                 "costo_unitario": suelta.costo_unitario,
                 "origen": "compra suelta",
                 "referencia": "",
+                "compra_id": suelta.id,
             }
         )
 

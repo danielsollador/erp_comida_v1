@@ -1,4 +1,5 @@
 import { type ComponentProps, useEffect, useState } from 'react'
+import { etiquetaUnidad } from '../lib/inventario'
 import { Numerico } from './Teclado'
 import { aBase, convertirTexto, otraUnidad } from '../lib/unidades'
 
@@ -126,7 +127,7 @@ export function CampoCantidad({
         }}
         placeholder={placeholder}
         autoFocus={autoFocus}
-        etiqueta={`${etiqueta} (${vista})`}
+        etiqueta={`${etiqueta} (${etiquetaUnidad(vista)})`}
         claseCasilla="border border-neutral-300 rounded-lg px-3 py-2 text-sm"
       />
       {ayuda && <span className="block text-xs text-neutral-500 mt-1">{ayuda}</span>}

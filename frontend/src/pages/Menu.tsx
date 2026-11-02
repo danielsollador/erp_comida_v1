@@ -6,6 +6,7 @@ import MenuAcciones from '../components/MenuAcciones'
 import Agarre from '../components/Agarre'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
+import CambiarPrecios from '../components/CambiarPrecios'
 import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina, Vacio } from '../components/ui'
 import Icono from '../components/Icono'
@@ -17,6 +18,7 @@ import { SUBSECCION_INICIAL } from '../lib/menu'
 import { COLORES, NOMBRES_COLOR, NOMBRE_COLOR, colorCategoria } from '../lib/theme'
 import Recetas from './partes/Recetas'
 import type { Categoria, CostoVariante, Producto } from '../lib/types'
+import { esVarianteSinNombre } from '../lib/variantes'
 
 /**
  * El menú: qué se vende, a cuánto, y qué lleva cada cosa.
@@ -143,6 +145,8 @@ function ElMenu({
   // crearia sin el precio". Un producto nace con su precio puesto.
   const [creando, setCreando] = useState<'categoria' | 'producto' | null>(null)
   const [aviso, setAviso] = useState('')
+  // Cambiar varios precios diciéndolo (spike de IA): ver CambiarPrecios.tsx.
+  const [cambiandoPrecios, setCambiandoPrecios] = useState(false)
 
   const activas = useMemo(() => categorias.filter((c) => c.activo), [categorias])
   // La primera vez, y cuando la elegida se retira, se cae en la primera.
@@ -285,7 +289,15 @@ function ElMenu({
 
   return (
     <>
-      <Buscador valor={busqueda} onCambio={setBusqueda} />
+      <div className="flex gap-2">
+        <div className="min-w-0 flex-1">
+          <Buscador valor={busqueda} onCambio={setBusqueda} />
+        </div>
+        <Boton tono="suave" className="min-h-11 shrink-0" data-guia="menu.cambiar-precios" onClick={() => setCambiandoPrecios(true)}>
+          Cambiar precios
+        </Boton>
+      </div>
+      {cambiandoPrecios && <CambiarPrecios onCerrar={() => setCambiandoPrecios(false)} onCambio={onCambio} />}
 
       {buscando ? (
         <div className="space-y-3">
@@ -553,6 +565,7 @@ function ProductosDe({
         <h2 className="font-semibold text-lg px-1 mr-auto">{categoria.nombre}</h2>
         <button
           onClick={onCrear}
+          data-guia="menu.nuevo-producto"
           className="bg-neutral-900 text-white px-3.5 py-2.5 rounded-xl text-sm font-medium"
         >
           + Producto
@@ -729,7 +742,7 @@ function TarjetaProducto({
       info.costo_reposicion != null &&
       info.costo_reposicion > info.costo * 1.05
     const contexto = info?.costo
-      ? `\n\nProducirlo cuesta $${fmtNum(info.costo)}. A $${fmtNum(precioActual)} te deja ${info.margen_pct?.toFixed(0)}% de margen.` +
+      ? `\n\nProducirlo cuesta $${fmtNum(info.costo)}. A $${fmtNum(precioActual)} te deja ${info.margen_pct?.toFixed(0)}% de margen (sin el IVA, que es del SENIAT).` +
         (seEncarecio
           ? `\n\nOJO: con los precios de HOY cuesta $${fmtNum(info.costo_reposicion!)}, ` +
             `y a $${fmtNum(precioActual)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.`
@@ -813,22 +826,26 @@ function TarjetaProducto({
           partia; en renglones cada dato tiene su columna y se lee de un
           vistazo que se toca: el precio para cambiarlo, la receta para
           armarla (Leider, 1-oct: "mucho mas fight complexity"). Con una sola
-          variante el renglon dice "Precio" y ya. */}
+          variante SIN NOMBRE PROPIO (la «Regular» que se crea con el producto)
+          el renglon dice "Precio" y ya. Si la que queda tiene nombre
+          --«Toronja» despues de quitar «Limón»-- se ve su nombre: antes decia
+          "Precio" y parecia que la variante habia desaparecido (Yeimer, 20-oct). */}
       <div className="pl-9">
         <ul className="divide-y divide-neutral-100">
           {variantes.map((v) => {
+            const sinNombre = variantes.length <= 1 && esVarianteSinNombre(v.nombre, producto.nombre)
             const info = costos.get(v.id)
             const bajoCosto = info?.costo != null && v.precio < info.costo
             return (
               <li key={v.id} className="flex flex-wrap items-center gap-x-3 py-0.5 text-sm">
                 <span className="min-w-0 flex-1 basis-[7rem] truncate text-neutral-700">
-                  {variantes.length <= 1 ? 'Precio' : v.nombre}
+                  {sinNombre ? 'Precio' : v.nombre}
                 </span>
                 {/* Se ve como lo que es: un control que se toca (lámina +
                     lápiz), no una cifra suelta con la pista en un `title`. */}
                 <button
                   onClick={() => cambiarPrecio(v.id, v.nombre, v.precio)}
-                  aria-label={`Cambiar el precio de ${variantes.length <= 1 ? producto.nombre : v.nombre}: ${fmt(v.precio)}`}
+                  aria-label={`Cambiar el precio de ${sinNombre ? producto.nombre : v.nombre}: ${fmt(v.precio)}`}
                   className={`vp-control shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 min-h-10 font-semibold tabular-nums ${
                     bajoCosto ? 'text-peligro-600 ring-1 ring-peligro-300' : ''
                   }`}
@@ -851,7 +868,7 @@ function TarjetaProducto({
                   {bajoCosto
                     ? '¡a pérdida!'
                     : info?.margen_pct != null && !info.sin_receta
-                      ? `${info.margen_pct.toFixed(0)}% de ganancia`
+                      ? `${info.margen_pct.toFixed(0)}% de ganancia sin IVA`
                       : ''}
                 </span>
                 {/* LA RECETA SE TOCA DESDE AQUI. "sin receta" era una
@@ -1325,7 +1342,7 @@ function CrearProducto({
           <Boton tono="fantasma" onClick={onCerrar}>
             Cancelar
           </Boton>
-          <Boton onClick={guardar} disabled={!listo || guardando}>
+          <Boton onClick={guardar} disabled={!listo || guardando} data-guia="producto.crear">
             {guardando ? 'Creando…' : precio === '' ? 'Crear y armar la receta' : 'Crear producto'}
           </Boton>
         </div>
@@ -1339,6 +1356,7 @@ function CrearProducto({
           value={nombre}
           onChange={(e) => setNombre(e.target.value)}
           placeholder="Ej. Empanada"
+          data-guia="producto.nombre"
           autoFocus
           className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-sm"
         />
@@ -1352,6 +1370,7 @@ function CrearProducto({
           value={precio}
           onChange={(e) => setPrecio(e.target.value)}
           placeholder="0.00"
+          data-guia="producto.precio"
           className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-lg font-semibold tabular-nums"
         />
       </label>

@@ -1,0 +1,1032 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vertigo Pro: el sistema administrativo con IA para pymes en Venezuela</title>
+<meta name="description" content="Vertigo Pro es el sistema administrativo de Vertigo para pymes de producción y retail en Venezuela, impulsado con inteligencia artificial: punto de venta, producción, compras por foto, inventario, caja y reportes.">
+<link rel="canonical" href="https://vertigopro.tech/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Vertigo Pro: el sistema administrativo con IA para pymes en Venezuela">
+<meta property="og:description" content="Punto de venta, producción, compras por foto, inventario, caja y reportes, con una IA que entiende tu negocio.">
+<meta property="og:image" content="https://vertigopro.tech/sitio/img/web-pedidos.webp">
+<meta property="og:url" content="https://vertigopro.tech/">
+<meta name="theme-color" content="#0b0c0f">
+<link rel="icon" href="/sitio/favicon.png" sizes="48x48">
+<link rel="icon" href="/sitio/v.svg" type="image/svg+xml">
+<link rel="icon" href="/sitio/icono-512.png" sizes="512x512" type="image/png">
+<!-- El iPhone usa este para la pantalla de inicio y la de bloqueado (el audio de la presentación). Cuadrado lleno: iOS redondea solo. -->
+<link rel="apple-touch-icon" href="/sitio/apple-touch-icon.png" sizes="180x180">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* ── Tokens: los mismos tonos de la app. Oscuro por defecto; claro con el
+   interruptor (html[data-tema="claro"]) o si el sistema lo prefiere. ── */
+:root {
+  --fondo: #0b0c0f;
+  --fondo-2: #101217;
+  --superficie: #161920;
+  --tinta: #efe9df;
+  --tinta-2: #a1a7b4;
+  --tinta-3: #6f7684;
+  --linea: rgba(255,255,255,.08);
+  --linea-2: rgba(255,255,255,.14);
+  /* la V y el boton principal: perla sobre negro */
+  --v-a: #f9f6ef; --v-b: #e9e2d6; --v-c: #cfc6b6; --v-brillo: rgba(255,255,255,.95); --v-brillo-2: rgba(255,255,255,.35);
+  --boton-a: #f7f3ea; --boton-b: #d9d1c3; --boton-texto: #0b0c0f; --boton-luz: rgba(255,255,255,.7);
+  --marco: rgba(255,255,255,.05); --marco-sombra: rgba(0,0,0,.8);
+  --halo: rgba(239,233,223,.10); --sombra-v: rgba(0,0,0,.6);
+  --tasa-a: #f4efe5; --tasa-b: #d9d1c3; --tasa-texto: #0b0c0f; --tasa-texto-2: #4a4740;
+  --vidrio: rgba(11,12,15,.72); --menu: rgba(11,12,15,.96);
+  --placa: #efe9df; --error: #ff8f80;
+  --grano: .035;
+  color-scheme: dark;
+  --sora: 'Sora', system-ui, sans-serif;
+  --manrope: 'Manrope', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --curva: cubic-bezier(.2,.7,.2,1);
+  --radio: 24px;
+  --ancho: 1180px;
+  --mx: 68%;
+  --my: 28%;
+}
+@property --mx { syntax: '<percentage>'; inherits: true; initial-value: 68%; }
+@property --my { syntax: '<percentage>'; inherits: true; initial-value: 28%; }
+/* Claro: el papel calido de la app, tinta grafito, y la V en grafito pulido */
+html[data-tema="claro"], html.sistema-claro:not([data-tema="oscuro"]) {
+  --fondo: #f6f4ef;
+  --fondo-2: #efece5;
+  --superficie: #ffffff;
+  --tinta: #17181b;
+  --tinta-2: #6d6b66;
+  --tinta-3: #98948b;
+  --linea: rgba(23,24,27,.09);
+  --linea-2: rgba(23,24,27,.16);
+  --v-a: #3a3d45; --v-b: #1f2126; --v-c: #0e0f12; --v-brillo: rgba(255,255,255,.55); --v-brillo-2: rgba(255,255,255,.12);
+  --boton-a: #2a2c33; --boton-b: #121317; --boton-texto: #f6f4ef; --boton-luz: rgba(255,255,255,.14);
+  --marco: rgba(23,24,27,.05); --marco-sombra: rgba(23,24,27,.28);
+  --halo: rgba(23,24,27,.06); --sombra-v: rgba(23,24,27,.35);
+  --tasa-a: #22242a; --tasa-b: #0e0f12; --tasa-texto: #efe9df; --tasa-texto-2: #a1a7b4;
+  --vidrio: rgba(246,244,239,.76); --menu: rgba(246,244,239,.97);
+  --placa: #ffffff; --error: #b3261e;
+  --grano: .05;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--fondo); color: var(--tinta);
+  font-family: var(--manrope); font-size: 17px; line-height: 1.55; font-weight: 400;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+img { display: block; max-width: 100%; height: auto; }
+a { color: inherit; text-decoration: none; }
+h1, h2, h3 { font-family: var(--sora); font-weight: 600; letter-spacing: -.025em; line-height: 1.08; margin: 0; color: var(--tinta); }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--tinta); outline-offset: 3px; border-radius: 6px; }
+.salto { position: absolute; left: -999px; top: 8px; background: var(--tinta); color: var(--fondo); padding: 8px 14px; border-radius: 999px; z-index: 50; }
+.salto:focus { left: 16px; }
+
+.cont { width: min(var(--ancho), 100% - 40px); margin-inline: auto; }
+@media (max-width: 640px) { .cont { width: calc(100% - 32px); } }
+
+/* grano fijo, muy leve: superficie, no plástico */
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: var(--grano);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Botones: píldora completa, una sola forma en toda la página ── */
+.boton {
+  display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 22px; border-radius: 999px;
+  font-family: var(--manrope); font-weight: 600; font-size: 15.5px; line-height: 1; white-space: nowrap; border: 1px solid transparent;
+  transition: transform .18s var(--curva), background-color .18s var(--curva), border-color .18s var(--curva);
+  cursor: pointer;
+}
+.boton:active { transform: scale(.98); }
+.boton[hidden] { display: none; }
+.boton.perla { background: linear-gradient(180deg, var(--boton-a), var(--boton-b)); color: var(--boton-texto); box-shadow: inset 0 1px 0 var(--boton-luz), 0 1px 2px rgba(0,0,0,.3); }
+.boton.perla:hover { filter: brightness(1.06); }
+.boton.borde { background: var(--marco); border-color: var(--linea-2); color: var(--tinta); }
+.boton.borde:hover { border-color: var(--tinta-3); }
+.boton svg { width: 18px; height: 18px; }
+
+/* ── Barra ── */
+.barra { position: fixed; inset: 0 0 auto 0; height: 64px; z-index: 20; transition: background-color .3s var(--curva), border-color .3s var(--curva); border-bottom: 1px solid transparent; }
+.barra.pegada { background: var(--vidrio); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); border-bottom-color: var(--linea); }
+.barra .cont { height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.marca { display: inline-flex; align-items: center; gap: 10px; font-family: var(--sora); font-weight: 600; font-size: 17px; letter-spacing: -.02em; }
+.marca .v-chica { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(180deg,#22242a,#121317); display: grid; place-items: center; box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+.marca .v-chica img { width: 20px; height: 20px; }
+.enlaces { display: flex; align-items: center; gap: 28px; font-weight: 500; font-size: 15px; color: var(--tinta-2); }
+.enlaces a { transition: color .18s; }
+.enlaces a:hover { color: var(--tinta); }
+.barra .acciones .tema, .tema { width: 40px; height: 40px; padding: 0; justify-content: center; flex: none; }
+.tema svg { width: 18px; height: 18px; flex: none; }
+.tema .sol { display: none; }
+html[data-tema="claro"] .tema .sol, html.sistema-claro:not([data-tema="oscuro"]) .tema .sol { display: block; }
+html[data-tema="claro"] .tema .luna, html.sistema-claro:not([data-tema="oscuro"]) .tema .luna { display: none; }
+.barra .acciones { display: flex; align-items: center; gap: 10px; }
+.barra .acciones .boton { min-height: 40px; padding: 0 16px; font-size: 14.5px; }
+.menu-boton { display: none; }
+@media (max-width: 900px) {
+  .enlaces, .barra .acciones .perla { display: none; }
+  .menu-boton { display: inline-flex; }
+}
+.menu { position: fixed; inset: 0; z-index: 30; background: var(--menu); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); padding: 96px 24px 32px; display: none; flex-direction: column; gap: 6px; }
+.menu[open] { display: flex; }
+.menu a { font-family: var(--sora); font-size: 30px; padding: 12px 0; border-bottom: 1px solid var(--linea); }
+.menu a.boton { margin-top: 24px; align-self: flex-start; font-family: var(--manrope); font-size: 15.5px; padding: 0 22px; border-bottom: 0; }
+.menu .cerrar { position: absolute; top: 12px; right: 16px; }
+
+/* ── Héroe ── */
+.heroe { position: relative; min-height: 100dvh; display: grid; align-items: center; padding: 96px 0 48px; overflow: hidden; }
+.heroe::before { content: ""; position: absolute; inset: auto -20% -40% -20%; height: 70%; background: radial-gradient(60% 60% at 70% 50%, var(--halo), transparent 70%); pointer-events: none; }
+.heroe .cont { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 40px; align-items: center; position: relative; }
+.heroe h1 { font-size: clamp(30px, 3.45vw, 50px); font-weight: 700; }
+.heroe h1 .l { display: block; overflow: hidden; white-space: nowrap; }
+.heroe h1 .l span { display: block; transform: translateY(110%); animation: subir .9s var(--curva) forwards; }
+.heroe h1 .l:nth-child(2) span { animation-delay: .08s; }
+.heroe h1 .l:nth-child(3) span { animation-delay: .16s; }
+.heroe .sub { margin-top: 24px; font-size: 18px; color: var(--tinta-2); max-width: 52ch; opacity: 0; animation: aparecer .8s var(--curva) .35s forwards; }
+.heroe .ctas { margin-top: 36px; display: flex; gap: 12px; flex-wrap: wrap; opacity: 0; animation: aparecer .8s var(--curva) .5s forwards; }
+@keyframes subir { to { transform: translateY(0); } }
+@keyframes aparecer { to { opacity: 1; } }
+
+/* La V como objeto: perla con un brillo que sigue el puntero */
+.escena { position: relative; aspect-ratio: 1; max-width: 520px; width: 100%; justify-self: center; opacity: 0; animation: aparecer 1.2s var(--curva) .2s forwards; }
+.escena .sombra { position: absolute; left: 18%; right: 18%; bottom: 10%; height: 14%; background: radial-gradient(50% 50% at 50% 50%, var(--sombra-v), transparent 70%); filter: blur(18px); }
+.escena .halo { position: absolute; inset: 8%; background: radial-gradient(50% 50% at 50% 55%, var(--halo), transparent 70%); filter: blur(30px); }
+.v-grande {
+  position: absolute; inset: 0;
+  -webkit-mask: url(/sitio/v.svg) center / contain no-repeat; mask: url(/sitio/v.svg) center / contain no-repeat;
+  background:
+    radial-gradient(circle at var(--mx) var(--my), var(--v-brillo) 0%, var(--v-brillo-2) 14%, rgba(255,255,255,0) 40%),
+    linear-gradient(170deg, var(--v-a) 0%, var(--v-b) 45%, var(--v-c) 100%);
+  animation: brillo 14s ease-in-out infinite;
+}
+.escena.vivo .v-grande { animation: none; }
+@keyframes brillo {
+  0% { --mx: 68%; --my: 28%; } 35% { --mx: 36%; --my: 40%; } 65% { --mx: 58%; --my: 70%; } 100% { --mx: 68%; --my: 28%; }
+}
+@media (max-width: 900px) {
+  .heroe { padding-top: 88px; }
+  .heroe .cont { grid-template-columns: 1fr; gap: 12px; }
+  .heroe h1 { font-size: clamp(27px, 7.6vw, 40px); }
+  .heroe h1 .l { white-space: normal; }
+  .escena { order: -1; max-width: 300px; }
+}
+
+/* ── Mostrador: tablet + teléfono con pantallas reales ── */
+.mostrador { padding: 8px 0 64px; }
+/* Más chico (Leider, 15-oct): se llevaba demasiado espacio. */
+.compo { position: relative; max-width: 760px; margin-inline: auto; padding-right: 110px; }
+.marco { background: var(--marco); border: 1px solid var(--linea-2); border-radius: 28px; padding: 10px; box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 40px 80px -30px var(--marco-sombra); }
+.marco img { border-radius: 19px; width: 100%; }
+.marco.tel { border-radius: 36px; padding: 8px; width: 240px; }
+.marco.tel img { border-radius: 29px; }
+.compo .marco.tel { position: absolute; right: 0; bottom: -28px; width: 170px; border-radius: 30px; padding: 6px; }
+.compo .marco.tel img { border-radius: 25px; }
+.mostrador .pie { margin: 48px auto 0; max-width: 760px; color: var(--tinta-2); font-size: 17px; }
+.mostrador .pie span { display: block; max-width: 54ch; }
+.mostrador .pie strong { color: var(--tinta); font-weight: 600; }
+@media (max-width: 900px) {
+  .compo { padding-right: 0; }
+  .compo .marco.tel { position: static; width: 150px; margin: -56px auto 0; }
+  .mostrador .pie { margin-top: 32px; }
+}
+
+/* ── Ya lo usan: en reposo, en el color de la tinta; al pasar el cursor (o al
+   tocarlo en el teléfono) cada logo enseña sus colores de verdad, sobre una
+   placa perla para que el café de Sávora se lea también en oscuro. ── */
+/* Sección propia, con su línea arriba como las demás: antes parecía la cola del mostrador. */
+.clientes { padding: 40px 0 48px; border-top: 1px solid var(--linea); text-align: center; }
+.clientes p { font-size: 12.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--tinta-3); margin-bottom: 14px; }
+.logos { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }
+.logo { position: relative; display: inline-block; box-sizing: content-box; width: var(--w); height: var(--h); padding: 14px 22px; border-radius: 20px; cursor: default; -webkit-tap-highlight-color: transparent; transition: background-color .35s var(--curva), box-shadow .35s var(--curva); }
+.logo::before, .logo::after { content: ""; position: absolute; inset: 14px 22px; transition: opacity .35s var(--curva); }
+.logo::before { background: var(--tinta); opacity: .9; -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
+.logo::after { background: var(--logo) center / contain no-repeat; opacity: 0; }
+.logo.color, .logo:focus-visible { background: var(--placa); box-shadow: 0 10px 30px -14px var(--marco-sombra); }
+.logo.color::before, .logo:focus-visible::before { opacity: 0; }
+.logo.color::after, .logo:focus-visible::after { opacity: 1; }
+@media (hover: hover) {
+  .logo:hover { background: var(--placa); box-shadow: 0 10px 30px -14px var(--marco-sombra); }
+  .logo:hover::before { opacity: 0; }
+  .logo:hover::after { opacity: 1; }
+}
+@media (max-width: 640px) { .logos { gap: 12px; } }
+/* En pantallas táctiles no hay cursor que mostrar, pero Safari de iPhone solo
+   avisa el toque en algo "clicable": ahí sí va pointer. */
+@media (hover: none) { .logo { cursor: pointer; } }
+
+/* ── Un día con Vertigo Pro: texto fijo, pantallas que cambian ── */
+.dia { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
+.dia h2 { font-size: clamp(32px, 3.8vw, 48px); max-width: 16ch; }
+.dia .intro { margin-top: 16px; color: var(--tinta-2); max-width: 48ch; font-size: 18px; }
+.relato { margin-top: 56px; display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); gap: 48px; align-items: start; }
+.momentos { display: flex; flex-direction: column; }
+.momento { padding: 36px 0; border-top: 1px solid var(--linea); min-height: 46vh; display: flex; flex-direction: column; justify-content: center; transition: opacity .4s var(--curva); opacity: .5; }
+.momento.activo { opacity: 1; }
+.momento .hora { font-family: var(--mono); font-size: 13px; color: var(--tinta-3); letter-spacing: .02em; }
+.momento h3 { font-size: 28px; margin-top: 10px; }
+.momento p { margin-top: 12px; color: var(--tinta-2); max-width: 40ch; }
+.momento .marco { display: none; margin-top: 24px; }
+.pantallas { position: sticky; top: 96px; }
+/* Con qué se mira: PC o teléfono. Cada pantalla tiene las dos versiones. */
+.selector { display: flex; gap: 4px; padding: 4px; width: max-content; margin: 0 auto 14px; border: 1px solid var(--linea-2); border-radius: 999px; background: var(--marco); }
+.selector button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: var(--tinta-2); font: 600 14px var(--manrope); cursor: pointer; transition: color .18s var(--curva), background-color .18s var(--curva); }
+.selector button[aria-pressed="true"] { background: var(--tinta); color: var(--fondo); }
+.pantallas .marco { position: relative; }
+.pantallas .marco img { position: absolute; inset: 10px; width: calc(100% - 20px); height: calc(100% - 20px); object-fit: cover; object-position: top left; opacity: 0; transition: opacity .6s var(--curva); }
+.pantallas .marco img.activa { opacity: 1; }
+.pantallas[data-disp="pc"] .marco { aspect-ratio: 16 / 10; }
+/* El teléfono emerge: recortado abajo con un degradado */
+.pantallas[data-disp="tel"] .marco { width: 290px; height: min(62vh, 580px); margin: 0 auto; border-radius: 40px 40px 0 0; border-bottom: 0; padding: 10px 10px 0; box-shadow: none;
+  -webkit-mask-image: linear-gradient(#000 78%, transparent); mask-image: linear-gradient(#000 78%, transparent); }
+.pantallas[data-disp="tel"] .marco img { inset: 10px 10px 0; width: calc(100% - 20px); height: calc(100% - 10px); border-radius: 31px 31px 0 0; object-position: top center; }
+@media (max-width: 900px) {
+  .dia { padding-bottom: 48px; }
+  .relato { display: flex; flex-direction: column; align-items: stretch; margin-top: 32px; }
+  /* El escenario: fijo bajo la barra, con el fondo de la pagina para que los
+     momentos pasen por debajo sin verse a traves. */
+  .pantallas { order: -1; position: sticky; top: 64px; z-index: 2; background: var(--fondo); padding: 10px 16px 0; margin: 0 -16px; }
+  .pantallas::after { content: ""; position: absolute; left: 0; right: 0; bottom: -28px; height: 28px; background: linear-gradient(var(--fondo), transparent); pointer-events: none; }
+  .selector { margin-bottom: 10px; }
+  .selector button { min-height: 32px; padding: 0 14px; font-size: 13.5px; }
+  .pantallas[data-disp="pc"] .marco { width: 100%; }
+  .pantallas[data-disp="tel"] .marco { width: min(236px, 60vw); height: min(40vh, 400px); border-radius: 34px 34px 0 0; padding: 8px 8px 0; }
+  .pantallas[data-disp="tel"] .marco img { inset: 8px 8px 0; width: calc(100% - 16px); height: calc(100% - 8px); border-radius: 27px 27px 0 0; }
+  .momentos { position: relative; z-index: 1; }
+  .momento { min-height: 0; padding: 22px 0; opacity: .5; }
+  .momento.activo { opacity: 1; }
+  .momento h3 { font-size: 24px; }
+  .momento .marco { display: none; }
+  .momentos::after { content: ""; display: block; height: 18vh; }
+}
+
+/* ── Lo que lo hace distinto: seis piezas, cuatro con pantalla ── */
+.distinto { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
+.distinto h2 { font-size: clamp(32px, 3.8vw, 48px); max-width: 16ch; }
+.bento {
+  margin-top: 48px; display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0,1fr)); grid-auto-rows: 250px;
+  grid-template-areas: "ia ia precios tasas" "ia ia recetas recetas" "foto foto flujo flujo";
+}
+.celda { position: relative; overflow: hidden; background: var(--superficie); border: 1px solid var(--linea); border-radius: var(--radio); padding: 24px; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; }
+.celda h3 { font-size: 20px; }
+.celda p { color: var(--tinta-2); font-size: 15px; max-width: 32ch; }
+.celda.ia { grid-area: ia; } .celda.precios { grid-area: precios; } .celda.tasas { grid-area: tasas; }
+.celda.recetas { grid-area: recetas; } .celda.foto { grid-area: foto; } .celda.flujo { grid-area: flujo; }
+/* celdas con pantalla: el texto arriba, la pantalla asoma por un borde */
+.celda.con-tapa { justify-content: flex-start; }
+.celda.con-tapa h3 { font-size: 22px; }
+.tapa { position: absolute; overflow: hidden; border: 1px solid var(--linea-2); background: var(--fondo-2); }
+.tapa img { max-width: none; }
+/* teléfono que asoma abajo a la derecha */
+.tapa.tel { right: 24px; bottom: -60px; width: 210px; border-radius: 30px 30px 0 0; border-bottom: 0; padding: 7px 7px 0; }
+.tapa.tel img { width: 100%; border-radius: 24px 24px 0 0; }
+.celda.ia .tapa.tel { width: 250px; bottom: -80px; right: 28px; }
+.celda.ia h3 { font-size: 26px; max-width: 12ch; }
+.celda.ia p { max-width: 30ch; }
+/* pantalla de PC que asoma por la derecha */
+.celda.lado { display: grid; grid-template-columns: minmax(0, 46%) minmax(0, 54%); align-items: start; gap: 16px; }
+.celda.lado p { max-width: none; }
+.tapa.der { position: absolute; left: 50%; right: -1px; top: 28px; bottom: -1px; border-radius: 16px 0 0 0; border-right: 0; border-bottom: 0; }
+.tapa.der img { width: 150%; object-position: top left; }
+/* la olla de la preparacion ya viene recortada: entera, no ampliada */
+.celda.recetas .tapa.der img { width: 100%; }
+.celda.precios, .celda.tasas { justify-content: flex-end; }
+.celda.tasas .cifras { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: auto; }
+.celda.tasas .cifras span { font-family: var(--mono); font-size: 12.5px; color: var(--tinta-2); border: 1px solid var(--linea-2); border-radius: 999px; padding: 5px 10px; }
+@media (max-width: 900px) {
+  .bento { grid-template-columns: 1fr; grid-auto-rows: auto; grid-template-areas: "ia" "precios" "tasas" "recetas" "foto" "flujo"; }
+  .celda { min-height: 160px; }
+  /* en el telefono, la pantalla va debajo del texto, nunca encima */
+  .celda.ia, .celda.foto { min-height: 0; }
+  .celda .tapa.tel, .celda.ia .tapa.tel { position: relative; right: auto; bottom: auto; width: 230px; height: 300px; margin: 20px auto -25px; }
+  .celda.lado { display: flex; }
+  .tapa.der { position: relative; left: auto; right: auto; top: auto; bottom: auto; margin: 16px -24px -24px 0; aspect-ratio: 16 / 10; }
+  .tapa.der img { width: 130%; }
+  .celda.recetas .tapa.der { aspect-ratio: auto; }
+  .celda.recetas .tapa.der img { width: 100%; }
+}
+
+/* ── Hecho para Venezuela: lista tipográfica, sin tarjetas ── */
+.venezuela { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
+.venezuela h2 { font-size: clamp(32px, 3.8vw, 48px); }
+.lineas { margin-top: 40px; display: grid; }
+.linea { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 32px; padding: 30px 0; border-top: 1px solid var(--linea); align-items: baseline; }
+.linea:last-child { border-bottom: 1px solid var(--linea); }
+.linea h3 { font-size: clamp(22px, 2.4vw, 30px); font-weight: 600; max-width: 22ch; }
+.linea p { color: var(--tinta-2); max-width: 40ch; }
+@media (max-width: 900px) { .linea { grid-template-columns: 1fr; gap: 10px; } }
+
+/* ── La app ── */
+.app { padding: 72px 0 96px; border-top: 1px solid var(--linea); }
+.app .cont { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 48px; align-items: center; }
+.telefonos { position: relative; height: 560px; }
+.telefonos .marco.tel { position: absolute; width: 250px; }
+.telefonos .atras { left: 6%; top: 0; transform: rotate(-4deg); opacity: .85; }
+.telefonos .frente { left: 38%; top: 60px; }
+.app h2 { font-size: clamp(32px, 3.8vw, 48px); max-width: 14ch; }
+.app .texto p { margin-top: 18px; color: var(--tinta-2); font-size: 18px; max-width: 44ch; }
+.app .disp { margin-top: 28px; display: flex; gap: 10px; flex-wrap: wrap; }
+.app .disp span { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--linea-2); font-size: 14.5px; font-weight: 500; color: var(--tinta-2); }
+.app .disp span.lista { color: var(--tinta); border-color: var(--tinta-3); }
+@media (max-width: 900px) {
+  .app .cont { grid-template-columns: 1fr; }
+  .telefonos { height: 480px; }
+  .telefonos .marco.tel { width: 210px; }
+  .telefonos .frente { left: 42%; }
+}
+
+/* ── Contacto ── */
+.contacto { padding: 96px 0; border-top: 1px solid var(--linea); position: relative; overflow: hidden; }
+.contacto::after { content: ""; position: absolute; right: -8%; top: -10%; width: 42%; aspect-ratio: 1; -webkit-mask: url(/sitio/v.svg) center / contain no-repeat; mask: url(/sitio/v.svg) center / contain no-repeat; background: linear-gradient(170deg, var(--halo), transparent); pointer-events: none; }
+.contacto h2 { font-size: clamp(36px, 5vw, 64px); max-width: 12ch; font-weight: 700; }
+.contacto .sub { margin-top: 18px; color: var(--tinta-2); font-size: 18px; max-width: 44ch; }
+.contacto .ctas { margin-top: 36px; display: flex; gap: 12px; flex-wrap: wrap; }
+.contacto .nota { margin-top: 28px; color: var(--tinta-3); font-size: 15px; }
+.contacto .nota a { color: var(--tinta-2); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── Pide una demo: un <dialog> nativo; en el teléfono sube como hoja ── */
+html:has(.demo[open]) { overflow: hidden; }
+.demo { width: min(580px, 100% - 32px); max-height: min(92dvh, 900px); padding: 0; border: 1px solid var(--linea-2); border-radius: 28px; background: var(--superficie); color: var(--tinta); box-shadow: 0 40px 120px -40px rgba(0,0,0,.7); overflow: auto; overscroll-behavior: contain; }
+.demo::backdrop { background: rgba(5,6,8,.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.demo[open] { animation: demo-entra .35s var(--curva); }
+@keyframes demo-entra { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+.demo .caja { padding: 28px 28px 26px; }
+.demo .cabeza { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.demo h2 { font-size: 28px; }
+.demo .intro { margin-top: 8px; color: var(--tinta-2); font-size: 15.5px; max-width: 40ch; }
+.demo .x { width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; flex: none; }
+.campos { margin-top: 20px; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px 14px; }
+.campo { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.campo.ancho { grid-column: 1 / -1; }
+.campo > label, .campo > legend { padding: 0; font-size: 13.5px; font-weight: 600; color: var(--tinta-2); }
+.campo .opcional { font-weight: 500; color: var(--tinta-3); }
+.campo input, .campo select, .campo textarea { width: 100%; min-height: 48px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--linea-2); background: var(--fondo); color: var(--tinta); font: 500 16px/1.3 var(--manrope); transition: border-color .18s var(--curva), box-shadow .18s var(--curva); }
+.campo textarea { min-height: 84px; resize: vertical; }
+.campo select { appearance: none; -webkit-appearance: none; padding-right: 42px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%23888' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 16px center; }
+.campo input::placeholder, .campo textarea::placeholder { color: var(--tinta-3); }
+.campo input:focus, .campo select:focus, .campo textarea:focus { outline: none; border-color: var(--tinta-2); box-shadow: 0 0 0 3px var(--halo); }
+.campo [aria-invalid="true"] { border-color: var(--error); }
+.campo .error { font-size: 13px; color: var(--error); }
+.campo .error:empty { display: none; }
+.rangos .opciones { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.rangos .op { position: relative; }
+.rangos .op input { position: absolute; inset: 0; opacity: 0; margin: 0; min-height: 0; cursor: pointer; }
+.rangos .op span { display: flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 8px; border: 1px solid var(--linea-2); border-radius: 14px; font-size: 14.5px; font-weight: 600; color: var(--tinta-2); text-align: center; transition: background-color .18s var(--curva), color .18s var(--curva), border-color .18s var(--curva); pointer-events: none; }
+.rangos .op input:checked + span { background: var(--tinta); color: var(--fondo); border-color: var(--tinta); }
+.rangos .op input:focus-visible + span { outline: 2px solid var(--tinta); outline-offset: 2px; }
+.rangos[aria-invalid="true"] .op span { border-color: var(--error); }
+.trampa { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.demo .envio { margin-top: 22px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.demo .envio .aviso { font-size: 13.5px; color: var(--tinta-3); flex: 1 1 200px; }
+.boton[disabled] { opacity: .65; cursor: progress; }
+.demo .fallo { margin-top: 16px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--error); font-size: 14.5px; color: var(--tinta); }
+.demo .fallo[hidden] { display: none; }
+.demo .fallo a { text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.demo .listo { text-align: center; padding: 28px 8px 6px; }
+.demo .listo .check { width: 60px; height: 60px; margin: 0 auto 18px; border-radius: 50%; display: grid; place-items: center; background: var(--tinta); color: var(--fondo); }
+.demo .listo .check svg { width: 28px; height: 28px; }
+.demo .listo p { margin: 10px auto 0; color: var(--tinta-2); max-width: 36ch; }
+.demo .listo .boton { margin-top: 24px; }
+@media (max-width: 640px) {
+  .demo { width: 100%; max-width: 100%; max-height: 94dvh; margin: auto 0 0; border-radius: 26px 26px 0 0; border-bottom: 0; }
+  .demo[open] { animation: demo-sube .4s var(--curva); }
+  .demo .caja { padding: 22px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .demo h2 { font-size: 24px; }
+  .campos { grid-template-columns: minmax(0,1fr); }
+  .rangos .opciones { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .demo .envio .boton { width: 100%; justify-content: center; }
+}
+@keyframes demo-sube { from { transform: translateY(100%); } }
+
+/* ── Pie ── */
+.pie-pagina { padding: 40px 0 48px; border-top: 1px solid var(--linea); color: var(--tinta-3); font-size: 14.5px; }
+.pie-pagina .cont { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: center; }
+.pie-pagina nav { display: flex; gap: 22px; }
+.pie-pagina a:hover { color: var(--tinta); }
+
+/* reveal suave, solo donde hace falta */
+.revela { opacity: 0; transform: translateY(18px); transition: opacity .8s var(--curva), transform .8s var(--curva); }
+.revela.visto { opacity: 1; transform: none; }
+
+::view-transition-old(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { animation: vp-barrido 640ms cubic-bezier(.4,0,.12,1); mix-blend-mode: normal; }
+@keyframes vp-barrido {
+  from { clip-path: polygon(100% 0%, 200% 0%, 200% 100%, 145% 100%); }
+  to { clip-path: polygon(-45% 0%, 200% 0%, 200% 100%, 0% 100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) { animation: none; }
+  html { scroll-behavior: auto; }
+  .heroe h1 .l span, .heroe .sub, .heroe .ctas, .escena { animation: none; transform: none; opacity: 1; }
+  .v-grande { animation: none; }
+  .revela { opacity: 1; transform: none; transition: none; }
+  .momento, .pantallas .marco img, .boton, .logo, .logo::before, .logo::after { transition: none; }
+  .demo[open] { animation: none; }
+}
+</style>
+<link rel="stylesheet" href="/sitio/animacion/vertigo-intro.css?v=20261015f">
+</head>
+<body>
+<a class="salto" href="#producto">Ir al contenido</a>
+
+<header class="barra" id="barra">
+  <div class="cont">
+    <a class="marca" href="/"><span class="v-chica"><img src="/sitio/v.svg" alt="" width="20" height="20"></span>Vertigo</a>
+    <nav class="enlaces" aria-label="Secciones">
+      <a href="#producto">Producto</a>
+      <a href="#dia">Un día</a>
+      <a href="#app">La app</a>
+      <a href="#contacto">Contacto</a>
+    </nav>
+    <div class="acciones">
+      <button class="boton borde tema" type="button" aria-label="Cambiar entre modo claro y oscuro" data-tema-boton><svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="luna" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg></button>
+      <a class="boton borde" href="/login.html">Entrar</a>
+      <a class="boton perla" href="mailto:leideriverson@gmail.com?subject=Demo%20de%20Vertigo%20Pro" data-correo>Pide una demo</a>
+      <button class="boton borde menu-boton" type="button" aria-controls="menu" aria-expanded="false" id="abrir-menu">Menú</button>
+    </div>
+  </div>
+</header>
+<div class="menu" id="menu">
+  <button class="boton borde cerrar" type="button" id="cerrar-menu">Cerrar</button>
+  <a href="#producto">Producto</a>
+  <a href="#dia">Un día</a>
+  <a href="#app">La app</a>
+  <a href="#contacto">Contacto</a>
+  <a class="boton perla" href="mailto:leideriverson@gmail.com?subject=Demo%20de%20Vertigo%20Pro" data-correo>Pide una demo</a>
+</div>
+
+<main>
+  <section class="heroe" id="inicio">
+    <div class="cont">
+      <div>
+        <h1>
+          <span class="l"><span>El sistema administrativo</span></span>
+          <span class="l"><span>para pymes en Venezuela,</span></span>
+          <span class="l"><span>impulsado con IA.</span></span>
+        </h1>
+        <p class="sub">Punto de venta, producción, compras, inventario, caja y reportes para pymes de producción y retail, con una inteligencia artificial que entiende tu negocio.</p>
+        <div class="ctas">
+          <a class="boton perla" href="mailto:leideriverson@gmail.com?subject=Demo%20de%20Vertigo%20Pro" data-correo>Pide una demo</a>
+          <a class="boton borde" href="#conoce">Ver cómo funciona</a>
+        </div>
+      </div>
+      <div class="escena" id="escena" aria-hidden="true">
+        <div class="halo"></div>
+        <div class="sombra"></div>
+        <div class="v-grande"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="vpi-seccion" id="conoce" aria-labelledby="conoce-titulo">
+    <div class="cont">
+      <div class="vpi-seccion-cab">
+        <h2 id="conoce-titulo">Conoce Vertigo Pro</h2>
+        <p>Todo lo que hace, en menos de lo que dura un café. Sube el volumen.</p>
+      </div>
+      <div data-vp-intro data-base="/sitio/animacion/" data-voz="despina"></div>
+    </div>
+  </section>
+
+  <section class="mostrador" id="producto">
+    <div class="cont">
+      <div class="compo revela">
+        <div class="marco"><img src="/sitio/img/web-pedidos.webp" data-oscuro="/sitio/img/web-pedidos.webp" data-claro="/sitio/img/web-pedidos-claro.webp" width="1800" height="1125" alt="Punto de venta de Vertigo Pro en la tablet: seis comandas en curso, tres cobradas y tres en cocina" loading="eager" fetchpriority="high"></div>
+        <div class="marco tel"><img src="/sitio/img/tel-cocina.webp" data-oscuro="/sitio/img/tel-cocina.webp" data-claro="/sitio/img/tel-cocina-claro.webp" width="780" height="1688" alt="La pantalla de Cocina en el teléfono, con las mismas comandas" loading="lazy"></div>
+      </div>
+      <p class="pie"><span><strong>En la tablet del mostrador y en el teléfono del dueño.</strong> La misma información, al mismo tiempo. Lo que la cajera comanda, cocina lo ve al instante y tú lo ves desde donde estés.</span></p>
+    </div>
+  </section>
+
+  <section class="clientes" id="clientes">
+    <div class="cont">
+      <p>Ya lo usan</p>
+      <div class="logos">
+        <span class="logo" role="img" tabindex="0" aria-label="Sávora, pastelitos y tradición" style="--logo: url(/sitio/img/cliente-savora.png); --w: 130px; --h: 46px;"></span>
+        <span class="logo" role="img" tabindex="0" aria-label="Licoteca" style="--logo: url(/sitio/img/cliente-licoteca.png); --w: 96px; --h: 90px;"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="dia" id="dia">
+    <div class="cont">
+      <h2>Un día con Vertigo Pro</h2>
+      <p class="intro">Seis momentos de un negocio cualquiera. Cada uno deja su rastro en el sistema, y al final del día todo cuadra solo.</p>
+      <div class="relato">
+        <div class="momentos" id="momentos">
+          <article class="momento activo" data-i="0">
+            <span class="hora">7:00 a. m.</span>
+            <h3>Abres el día</h3>
+            <p>Lo vendido, lo que hay en cocina y lo que falta cobrar, de un vistazo. El sistema te recuerda qué toca hacer hoy.</p>
+            <div class="marco"><img src="/sitio/img/web-inicio.webp" data-oscuro="/sitio/img/web-inicio.webp" data-claro="/sitio/img/web-inicio-claro.webp" width="1800" height="1125" alt="Inicio de Vertigo Pro: vendido hoy, comandas en cocina y el recorrido del negocio" loading="lazy"></div>
+          </article>
+          <article class="momento" data-i="1">
+            <span class="hora">8:30 a. m.</span>
+            <h3>Llega el proveedor</h3>
+            <p>Le tomas foto a la factura y el sistema la llena. Tú la revisas, y la mercancía entra al inventario con su costo.</p>
+            <div class="marco"><img src="/sitio/img/web-compras-nueva.webp" data-oscuro="/sitio/img/web-compras-nueva.webp" data-claro="/sitio/img/web-compras-nueva-claro.webp" width="1800" height="1125" alt="Cargar factura: elegir entre foto o archivo, o anotarla a mano" loading="lazy"></div>
+          </article>
+          <article class="momento" data-i="2">
+            <span class="hora">10:00 a. m.</span>
+            <h3>Produces / Calculas</h3>
+            <p>Si produces, armas la receta y el sistema descuenta la materia prima. Si revendes, cargas lo que te costó. En los dos casos ves cuánto cuesta y cuánto te deja cada producto antes de ponerle precio.</p>
+            <div class="marco"><img src="/sitio/img/web-receta.webp" data-oscuro="/sitio/img/web-receta.webp" data-claro="/sitio/img/web-receta-claro.webp" width="1800" height="1125" alt="La receta de una empanada como un vaso: cuánto del precio se lleva cada ingrediente y cuánto margen queda" loading="lazy"></div>
+          </article>
+          <article class="momento" data-i="3">
+            <span class="hora">12:30 p. m.</span>
+            <h3>Vendes</h3>
+            <p>La comanda llega a cocina al instante. Cobras en bolívares, dólares o euros, con vuelto, pago mixto y pago móvil verificado.</p>
+            <div class="marco"><img src="/sitio/img/web-cocina.webp" data-oscuro="/sitio/img/web-cocina.webp" data-claro="/sitio/img/web-cocina-claro.webp" width="1800" height="1125" alt="Cocina: las comandas del día, cada una con lo que falta preparar" loading="lazy"></div>
+          </article>
+          <article class="momento" data-i="4">
+            <span class="hora">6:00 p. m.</span>
+            <h3>Cierras la caja</h3>
+            <p>Cuentas la gaveta por forma de pago. El sistema te dice qué cuadra, qué no, y desde cuándo.</p>
+            <div class="marco"><img src="/sitio/img/web-caja.webp" data-oscuro="/sitio/img/web-caja.webp" data-claro="/sitio/img/web-caja-claro.webp" width="1800" height="1125" alt="Cierre de caja: ventas del día, gastos, retiros y el desglose por forma de pago" loading="lazy"></div>
+          </article>
+          <article class="momento" data-i="5">
+            <span class="hora">8:00 p. m.</span>
+            <h3>Miras los números</h3>
+            <p>Cuánto vendiste, cuánto te quedó, qué día y a qué hora vendes más. Desde el teléfono, donde estés.</p>
+            <div class="marco"><img src="/sitio/img/web-reportes-ventas.webp" data-oscuro="/sitio/img/web-reportes-ventas.webp" data-claro="/sitio/img/web-reportes-ventas-claro.webp" width="1800" height="1125" alt="Reportes de ventas: unidades y ventas por día, y a qué hora entran los clientes" loading="lazy"></div>
+          </article>
+        </div>
+        <div class="pantallas" id="escenario">
+          <div class="selector" role="group" aria-label="Ver las pantallas en">
+            <button type="button" data-disp="pc" aria-pressed="true">PC</button>
+            <button type="button" data-disp="tel" aria-pressed="false">Teléfono</button>
+          </div>
+          <div class="marco" aria-hidden="true">
+            <img class="activa" src="/sitio/img/web-inicio.webp" data-oscuro="/sitio/img/web-inicio.webp" data-claro="/sitio/img/web-inicio-claro.webp" data-tel="/sitio/img/tel-inicio.webp" data-tel-claro="/sitio/img/tel-inicio-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-compras-nueva.webp" data-oscuro="/sitio/img/web-compras-nueva.webp" data-claro="/sitio/img/web-compras-nueva-claro.webp" data-tel="/sitio/img/tel-compras-nueva.webp" data-tel-claro="/sitio/img/tel-compras-nueva-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-receta.webp" data-oscuro="/sitio/img/web-receta.webp" data-claro="/sitio/img/web-receta-claro.webp" data-tel="/sitio/img/tel-receta.webp" data-tel-claro="/sitio/img/tel-receta-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-cocina.webp" data-oscuro="/sitio/img/web-cocina.webp" data-claro="/sitio/img/web-cocina-claro.webp" data-tel="/sitio/img/tel-cocina.webp" data-tel-claro="/sitio/img/tel-cocina-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-caja.webp" data-oscuro="/sitio/img/web-caja.webp" data-claro="/sitio/img/web-caja-claro.webp" data-tel="/sitio/img/tel-caja.webp" data-tel-claro="/sitio/img/tel-caja-claro.webp" alt="" loading="lazy">
+            <img src="/sitio/img/web-reportes-ventas.webp" data-oscuro="/sitio/img/web-reportes-ventas.webp" data-claro="/sitio/img/web-reportes-ventas-claro.webp" data-tel="/sitio/img/tel-reportes-ventas.webp" data-tel-claro="/sitio/img/tel-reportes-ventas-claro.webp" alt="" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="distinto" id="distinto">
+    <div class="cont">
+      <h2>Lo que lo hace distinto</h2>
+      <div class="bento revela">
+        <div class="celda ia con-tapa">
+          <h3>Una IA que entiende tu negocio</h3>
+          <p>Lee tus facturas, te avisa cuando un proveedor sube el costo y te dice qué día vendes más. Aprende de lo que pasa en tu local, no en otro.</p>
+          <div class="tapa tel"><img src="/sitio/img/tel-inicio.webp" data-oscuro="/sitio/img/tel-inicio.webp" data-claro="/sitio/img/tel-inicio-claro.webp" width="780" height="1688" alt="El inicio en el teléfono: lo vendido hoy y un aviso de la IA sobre tu día fuerte" loading="lazy"></div>
+        </div>
+        <div class="celda precios">
+          <h3>Precios como los manejas tú</h3>
+          <p>Por variante, con descuentos y cortesías. La ganancia de cada producto, calculada sola.</p>
+        </div>
+        <div class="celda tasas">
+          <div class="cifras"><span>BCV $</span><span>BCV €</span><span>Binance</span></div>
+          <h3>Tres tasas, una cuenta</h3>
+          <p>La oficial en dólares y euros, y la de Binance para el paralelo. El sistema las consulta solo.</p>
+        </div>
+        <div class="celda recetas con-tapa lado">
+          <div>
+            <h3>Cuánto cuesta y cuánto deja, a la vista</h3>
+            <p>Si produces, armas la receta y la preparación por kilo y ves qué parte del precio se lleva cada ingrediente. Si revendes, el sistema calcula el margen de cada producto con lo que te costó.</p>
+          </div>
+          <div class="tapa der"><img src="/sitio/img/web-preparacion.webp" data-oscuro="/sitio/img/web-preparacion.webp" data-claro="/sitio/img/web-preparacion-claro.webp" width="670" height="628" alt="Una preparación como una olla de 1 kg: cuánto lleva de cada materia prima y cuánto cuesta el kilo" loading="lazy"></div>
+        </div>
+        <div class="celda foto con-tapa">
+          <h3>Compras por foto</h3>
+          <p>Le tomas foto a la factura y queda cargada: proveedor, renglones e IVA. Tú solo revisas.</p>
+          <div class="tapa tel"><img src="/sitio/img/tel-compras-nueva.webp" data-oscuro="/sitio/img/tel-compras-nueva.webp" data-claro="/sitio/img/tel-compras-nueva-claro.webp" width="780" height="1688" alt="Cargar factura en el teléfono: foto o archivo, o a mano" loading="lazy"></div>
+        </div>
+        <div class="celda flujo con-tapa lado">
+          <div>
+            <h3>Entiende tu flujo</h3>
+            <p>Lo que compras entra como materia prima, lo que preparas pasa a listo y lo que vendes sale. Cuatro almacenes que se mueven solos.</p>
+          </div>
+          <div class="tapa der"><img src="/sitio/img/web-inventario.webp" data-oscuro="/sitio/img/web-inventario.webp" data-claro="/sitio/img/web-inventario-claro.webp" width="1800" height="1125" alt="Inventario: materia prima, reventa, consumible y desechable" loading="lazy"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="venezuela" id="venezuela">
+    <div class="cont">
+      <h2>Hecho para Venezuela</h2>
+      <div class="lineas">
+        <div class="linea">
+          <h3>La tasa del BCV, todos los días, sin que nadie la cargue.</h3>
+          <p>El sistema la consulta solo. Si un día quieres fijarla a mano, también puedes.</p>
+        </div>
+        <div class="linea">
+          <h3>Cobras en bolívares, dólares o euros. El sistema hace la cuenta.</h3>
+          <p>Pago mixto, vuelto en otra moneda y cada venta guardada con la tasa de ese momento.</p>
+        </div>
+        <div class="linea">
+          <h3>Pago móvil verificado contra el banco antes de entregar.</h3>
+          <p>La referencia se comprueba al instante. Se acabó el "mándame la captura".</p>
+        </div>
+        <div class="linea">
+          <h3>Libro de compras, libro de ventas e IVA, como los pide el SENIAT.</h3>
+          <p>Salen del mismo sistema donde vendes. Nada que pasar a mano a fin de mes.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="app" id="app">
+    <div class="cont">
+      <div class="telefonos revela" aria-hidden="true">
+        <div class="marco tel atras"><img src="/sitio/img/tel-pedidos.webp" data-oscuro="/sitio/img/tel-pedidos.webp" data-claro="/sitio/img/tel-pedidos-claro.webp" width="780" height="1688" alt="" loading="lazy"></div>
+        <div class="marco tel frente"><img src="/sitio/img/tel-inicio.webp" data-oscuro="/sitio/img/tel-inicio.webp" data-claro="/sitio/img/tel-inicio-claro.webp" width="780" height="1688" alt="" loading="lazy"></div>
+      </div>
+      <div class="texto">
+        <h2>Tu negocio, en tu bolsillo</h2>
+        <p>La app para el teléfono tiene lo que necesitas fuera del local: las ventas del día, la cocina, compras con foto de factura, inventario y reportes.</p>
+        <p>Lo contable se queda en la computadora, donde se trabaja con calma.</p>
+        <div class="disp">
+          <span>Android, pronto</span>
+          <span>iPhone, pronto</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="contacto" id="contacto">
+    <div class="cont">
+      <h2>Hablemos de tu negocio</h2>
+      <p class="sub">Cuéntanos qué produces y qué vendes. Te mostramos Vertigo Pro con tus propios productos, sin compromiso.</p>
+      <div class="ctas">
+        <a class="boton perla" href="mailto:leideriverson@gmail.com?subject=Demo%20de%20Vertigo%20Pro" data-correo>Pide una demo</a>
+        <a class="boton borde" id="whatsapp" href="#" hidden>
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 1.8a8.2 8.2 0 1 1-4.2 15.3l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 0 1 12 3.8Zm-3.3 4.4c-.2 0-.5 0-.7.3-.3.3-.9.9-.9 2.2s.9 2.6 1 2.8c.2.2 1.9 3 4.6 4 2.2.9 2.7.7 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2l-.5-.3-1.7-.8c-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.8-1.4.1-.2 0-.4 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4Z"/></svg>
+          Escríbenos por WhatsApp
+        </a>
+      </div>
+      <p class="nota">Teléfono y WhatsApp: <a href="tel:+584148944748" data-tel>+58 414 894 4748</a></p>
+      <p class="nota">¿Ya eres cliente? <a href="/login.html">Entra a tu sistema</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="pie-pagina">
+  <div class="cont">
+    <p>Vertigo Pro es un producto de <span data-legal="empresa">Vertigo</span>. © <span id="anio">2026</span></p>
+    <nav aria-label="Legal">
+      <a href="/privacidad.html">Privacidad</a>
+      <a href="/soporte.html">Soporte</a>
+      <a href="/login.html">Entrar</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog class="demo" id="demo" aria-labelledby="demo-titulo">
+  <div class="caja">
+    <form id="demo-form" novalidate>
+      <div class="cabeza">
+        <div>
+          <h2 id="demo-titulo">Pide una demo</h2>
+          <p class="intro">Te mostramos Vertigo Pro con los productos de tu negocio. Te escribimos en menos de un día hábil.</p>
+        </div>
+        <button class="boton borde x" type="button" data-cerrar aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="campos">
+        <div class="campo">
+          <label for="d-nombre">Tu nombre</label>
+          <input id="d-nombre" name="nombre" autocomplete="name" maxlength="80" required aria-describedby="e-nombre">
+          <p class="error" id="e-nombre" aria-live="polite"></p>
+        </div>
+        <div class="campo">
+          <label for="d-negocio">Nombre del negocio</label>
+          <input id="d-negocio" name="negocio" autocomplete="organization" maxlength="120" required aria-describedby="e-negocio">
+          <p class="error" id="e-negocio" aria-live="polite"></p>
+        </div>
+        <div class="campo">
+          <label for="d-telefono">Teléfono o WhatsApp</label>
+          <input id="d-telefono" name="telefono" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder="0414 123 4567" required aria-describedby="e-telefono">
+          <p class="error" id="e-telefono" aria-live="polite"></p>
+        </div>
+        <div class="campo">
+          <label for="d-correo">Correo</label>
+          <input id="d-correo" name="correo" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" maxlength="120" placeholder="tu@negocio.com" required aria-describedby="e-correo">
+          <p class="error" id="e-correo" aria-live="polite"></p>
+        </div>
+        <div class="campo ancho">
+          <label for="d-tipo">Tipo de negocio</label>
+          <select id="d-tipo" name="tipo" required aria-describedby="e-tipo">
+            <option value="" selected disabled>Elige uno</option>
+            <option>Restaurante o comida rápida</option>
+            <option>Panadería, pastelería o café</option>
+            <option>Tienda o retail</option>
+            <option>Producción o distribución</option>
+            <option>Otro</option>
+          </select>
+          <p class="error" id="e-tipo" aria-live="polite"></p>
+        </div>
+        <fieldset class="campo ancho rangos" id="d-empleados" aria-describedby="e-empleados">
+          <legend>¿Cuántas personas trabajan en el negocio?</legend>
+          <div class="opciones">
+            <label class="op"><input type="radio" name="empleados" value="1 a 5"><span>1 a 5</span></label>
+            <label class="op"><input type="radio" name="empleados" value="6 a 15"><span>6 a 15</span></label>
+            <label class="op"><input type="radio" name="empleados" value="16 a 50"><span>16 a 50</span></label>
+            <label class="op"><input type="radio" name="empleados" value="Más de 50"><span>Más de 50</span></label>
+          </div>
+          <p class="error" id="e-empleados" aria-live="polite"></p>
+        </fieldset>
+        <div class="campo ancho">
+          <label for="d-mensaje">Mensaje <span class="opcional">(opcional)</span></label>
+          <textarea id="d-mensaje" name="mensaje" maxlength="1500" rows="3" placeholder="Qué vendes, cuántos locales tienes, qué te gustaría resolver…"></textarea>
+        </div>
+        <div class="trampa" aria-hidden="true">
+          <label for="d-sitio">No llenar</label>
+          <input id="d-sitio" name="sitio_web" tabindex="-1" autocomplete="off">
+        </div>
+      </div>
+      <p class="fallo" id="demo-fallo" role="alert" hidden></p>
+      <div class="envio">
+        <button class="boton perla" type="submit" id="demo-enviar">Enviar solicitud</button>
+        <p class="aviso">Solo usamos estos datos para contactarte sobre la demo.</p>
+      </div>
+    </form>
+    <div class="listo" id="demo-listo" hidden>
+      <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h2 tabindex="-1" id="demo-listo-titulo">Recibido</h2>
+      <p id="demo-listo-texto">Te escribimos en menos de un día hábil.</p>
+      <button class="boton borde" type="button" data-cerrar>Cerrar</button>
+    </div>
+  </div>
+</dialog>
+
+<script src="/legal-datos.js" defer></script>
+<script src="/sitio/animacion/vertigo-intro.js?v=20261015f" defer></script>
+<script>
+(function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Con que dispositivo se miran las pantallas de "Un dia": lo elegido se
+  // recuerda; sin eleccion, el del propio aparato (telefono en el telefono).
+  var escenario = document.querySelector('.pantallas');
+  var CLAVE_DISP = 'vertigo_sitio_disp', dispElegido = null;
+  try { var d0 = localStorage.getItem(CLAVE_DISP); if (d0 === 'pc' || d0 === 'tel') dispElegido = d0; } catch (e) {}
+  function dispActual() { return dispElegido || (window.matchMedia('(max-width: 900px)').matches ? 'tel' : 'pc'); }
+  function pintarDisp() {
+    var d = dispActual();
+    escenario.dataset.disp = d;
+    escenario.querySelectorAll('.selector button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.disp === d)); });
+  }
+  pintarDisp();
+
+  // Claro u oscuro: lo elegido se recuerda; sin eleccion, lo que prefiera el
+  // sistema. Las pantallas del producto cambian a su version del mismo tema.
+  var raiz = document.documentElement, CLAVE_TEMA = 'vertigo_sitio_tema';
+  var sistemaClaro = window.matchMedia('(prefers-color-scheme: light)');
+  function temaActual() {
+    var e = raiz.dataset.tema;
+    return e === 'claro' || e === 'oscuro' ? e : (sistemaClaro.matches ? 'claro' : 'oscuro');
+  }
+  function pintarTema() {
+    var t = temaActual();
+    raiz.classList.toggle('sistema-claro', sistemaClaro.matches);
+    var enTel = dispActual() === 'tel';
+    document.querySelectorAll('img[data-claro]').forEach(function (im) {
+      var quiere = enTel && im.dataset.tel
+        ? (t === 'claro' ? im.dataset.telClaro : im.dataset.tel)
+        : (t === 'claro' ? im.dataset.claro : im.dataset.oscuro);
+      if (im.getAttribute('src') !== quiere) im.setAttribute('src', quiere);
+    });
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = t === 'claro' ? '#f6f4ef' : '#0b0c0f';
+  }
+  function cambiarTema() {
+    var nuevo = temaActual() === 'claro' ? 'oscuro' : 'claro';
+    var aplicar = function () {
+      raiz.dataset.tema = nuevo;
+      try { localStorage.setItem(CLAVE_TEMA, nuevo); } catch (e) {}
+      pintarTema();
+    };
+    if (document.startViewTransition && !reduce) document.startViewTransition(aplicar); else aplicar();
+  }
+  try { var guardado = localStorage.getItem(CLAVE_TEMA); if (guardado === 'claro' || guardado === 'oscuro') raiz.dataset.tema = guardado; } catch (e) {}
+  pintarTema();
+  sistemaClaro.addEventListener('change', pintarTema);
+  document.querySelectorAll('[data-tema-boton]').forEach(function (b) { b.addEventListener('click', cambiarTema); });
+
+  // El correo y el WhatsApp salen de legal-datos.js: un solo sitio para editarlos.
+  function contacto() {
+    var d = window.VP_LEGAL || {};
+    if (d.correo) document.querySelectorAll('[data-correo]').forEach(function (a) {
+      a.href = 'mailto:' + d.correo + '?subject=' + encodeURIComponent('Demo de Vertigo Pro');
+    });
+    if (d.telefono) document.querySelectorAll('[data-tel]').forEach(function (a) {
+      a.textContent = d.telefono;
+      a.href = 'tel:+' + String(d.whatsapp || d.telefono).replace(/\D/g, '');
+    });
+    var wa = document.getElementById('whatsapp');
+    if (d.whatsapp && wa) {
+      wa.href = 'https://wa.me/' + String(d.whatsapp).replace(/\D/g, '') + '?text=' + encodeURIComponent('Hola, quiero una demo de Vertigo Pro.');
+      wa.hidden = false;
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', contacto); else contacto();
+  window.addEventListener('load', contacto);
+  document.getElementById('anio').textContent = new Date().getFullYear();
+
+  // La barra se vuelve translúcida en cuanto el héroe deja de estar arriba.
+  var barra = document.getElementById('barra');
+  var centinela = document.createElement('div');
+  centinela.style.cssText = 'position:absolute;top:72px;height:1px;width:1px;';
+  document.body.prepend(centinela);
+  new IntersectionObserver(function (e) { barra.classList.toggle('pegada', !e[0].isIntersecting); }).observe(centinela);
+
+  // Menú del teléfono.
+  var menu = document.getElementById('menu'), abrir = document.getElementById('abrir-menu');
+  function cerrarMenu() { menu.removeAttribute('open'); abrir.setAttribute('aria-expanded', 'false'); }
+  abrir.addEventListener('click', function () { menu.setAttribute('open', ''); abrir.setAttribute('aria-expanded', 'true'); });
+  document.getElementById('cerrar-menu').addEventListener('click', cerrarMenu);
+  menu.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', cerrarMenu); });
+
+  // Ya lo usan: en el teléfono no hay cursor, así que el toque enciende el
+  // color del logo (y apaga el otro); tocar fuera lo devuelve a la tinta.
+  var logos = document.querySelectorAll('.logo');
+  if (!window.matchMedia('(hover: hover)').matches) {
+    logos.forEach(function (l) {
+      l.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var encender = !l.classList.contains('color');
+        logos.forEach(function (o) { o.classList.remove('color'); });
+        l.classList.toggle('color', encender);
+      });
+    });
+    document.addEventListener('click', function () { logos.forEach(function (o) { o.classList.remove('color'); }); });
+  }
+
+  // Pide una demo: el formulario en un <dialog>. Sin JavaScript (o en un
+  // navegador sin <dialog>), el enlace sigue siendo el mailto de siempre.
+  var dlg = document.getElementById('demo'), form = document.getElementById('demo-form');
+  var listo = document.getElementById('demo-listo'), fallo = document.getElementById('demo-fallo');
+  var enviar = document.getElementById('demo-enviar'), intentado = false;
+  function wa() { var d = window.VP_LEGAL || {}; return d.whatsapp ? 'https://wa.me/' + String(d.whatsapp).replace(/\D/g, '') + '?text=' + encodeURIComponent('Hola, quiero una demo de Vertigo Pro.') : ''; }
+  function abrirDemo(ev) {
+    if (typeof dlg.showModal !== 'function') return;
+    ev.preventDefault();
+    cerrarMenu();
+    if (!listo.hidden) { form.reset(); form.hidden = false; listo.hidden = true; intentado = false; limpiarErrores(); }
+    dlg.showModal();
+    // En el teléfono no se abre el teclado solo: primero se lee de qué se trata.
+    if (window.matchMedia('(hover: hover)').matches) form.nombre.focus(); else dlg.querySelector('h2').focus({ preventScroll: true });
+  }
+  dlg.querySelector('h2').setAttribute('tabindex', '-1');
+  document.querySelectorAll('[data-correo]').forEach(function (a) { a.addEventListener('click', abrirDemo); });
+  dlg.querySelectorAll('[data-cerrar]').forEach(function (b) { b.addEventListener('click', function () { dlg.close(); }); });
+  // Un clic en el fondo oscuro (fuera de la caja) también cierra.
+  dlg.addEventListener('click', function (ev) { if (ev.target === dlg) dlg.close(); });
+
+  var REGLAS = {
+    nombre: function (v) { return v.trim().length >= 2 ? '' : 'Escribe tu nombre.'; },
+    negocio: function (v) { return v.trim().length >= 2 ? '' : 'Escribe el nombre del negocio.'; },
+    telefono: function (v) { var n = v.replace(/\D/g, '').length; return n >= 10 && n <= 15 ? '' : (n ? 'Escribe el número completo, con su código de área.' : 'Escribe un teléfono o WhatsApp.'); },
+    correo: function (v) { return /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(v.trim()) ? '' : (v.trim() ? 'Ese correo no parece válido.' : 'Escribe tu correo.'); },
+    tipo: function (v) { return v ? '' : 'Elige el tipo de negocio.'; },
+    empleados: function (v) { return v ? '' : 'Elige un rango.'; }
+  };
+  function marcar(nombre, mensaje) {
+    var el = nombre === 'empleados' ? document.getElementById('d-empleados') : form.elements[nombre];
+    el.setAttribute('aria-invalid', mensaje ? 'true' : 'false');
+    document.getElementById('e-' + nombre).textContent = mensaje;
+  }
+  function limpiarErrores() { Object.keys(REGLAS).forEach(function (n) { marcar(n, ''); }); fallo.hidden = true; }
+  function validar() {
+    var primero = null;
+    Object.keys(REGLAS).forEach(function (n) {
+      var m = REGLAS[n](form.elements[n].value || '');
+      marcar(n, m);
+      if (m && !primero) primero = n;
+    });
+    return primero;
+  }
+  // Tras el primer intento, cada campo se revisa mientras se corrige.
+  form.addEventListener('input', function (ev) { var n = ev.target.name; if (intentado && REGLAS[n]) marcar(n, REGLAS[n](form.elements[n].value || '')); });
+  form.addEventListener('change', function (ev) { var n = ev.target.name; if (intentado && REGLAS[n]) marcar(n, REGLAS[n](form.elements[n].value || '')); });
+
+  function mostrarFallo(texto) {
+    var enlace = wa();
+    fallo.textContent = texto;
+    if (enlace) {
+      var a = document.createElement('a');
+      a.href = enlace; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'escríbenos por WhatsApp';
+      fallo.appendChild(document.createTextNode(' O '));
+      fallo.appendChild(a);
+      fallo.appendChild(document.createTextNode('.'));
+    }
+    fallo.hidden = false;
+  }
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    intentado = true;
+    fallo.hidden = true;
+    var primero = validar();
+    if (primero) {
+      var el = primero === 'empleados' ? form.querySelector('[name="empleados"]') : form.elements[primero];
+      el.focus();
+      return;
+    }
+    var datos = {};
+    ['nombre', 'negocio', 'telefono', 'correo', 'tipo', 'empleados', 'mensaje', 'sitio_web'].forEach(function (n) { datos[n] = (form.elements[n].value || '').trim(); });
+    enviar.disabled = true; enviar.textContent = 'Enviando…';
+    var corte = new AbortController(), reloj = setTimeout(function () { corte.abort(); }, 30000);
+    fetch('/api/sitio/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos), signal: corte.signal })
+      .then(function (r) {
+        if (r.ok) return null;
+        return r.json().catch(function () { return {}; }).then(function (j) { j.status = r.status; return j; });
+      })
+      .then(function (err) {
+        if (!err) {
+          document.getElementById('demo-listo-titulo').textContent = 'Recibido, ' + datos.nombre.split(' ')[0] + '.';
+          document.getElementById('demo-listo-texto').textContent = 'Te escribimos en menos de un día hábil al correo o al WhatsApp que dejaste.';
+          form.hidden = true; listo.hidden = false;
+          document.getElementById('demo-listo-titulo').focus();
+          return;
+        }
+        // 422: el servidor encontró algo que aquí pasó; se marca en su campo.
+        if (err.status === 422 && Array.isArray(err.detail)) {
+          var marcado = false;
+          err.detail.forEach(function (d) { var n = d.loc && d.loc[d.loc.length - 1]; if (REGLAS[n]) { marcar(n, String(d.msg || '').replace(/^Value error, /, '')); marcado = true; } });
+          if (marcado) return;
+        }
+        mostrarFallo(err.status === 429 ? 'Ya recibimos varias solicitudes desde aquí en la última hora.' : 'No pudimos enviar tu solicitud. Intenta de nuevo en un momento.');
+      })
+      .catch(function () { mostrarFallo('No hay conexión o el servidor no respondió. Intenta de nuevo.'); })
+      .then(function () { clearTimeout(reloj); enviar.disabled = false; enviar.textContent = 'Enviar solicitud'; });
+  });
+
+  // El brillo de la V sigue el puntero (sin estado de React ni scroll: solo variables CSS).
+  var escena = document.getElementById('escena');
+  if (!reduce && window.matchMedia('(hover: hover)').matches) {
+    var pendiente = null;
+    escena.closest('.heroe').addEventListener('pointermove', function (ev) {
+      if (pendiente) return;
+      pendiente = requestAnimationFrame(function () {
+        pendiente = null;
+        var r = escena.getBoundingClientRect();
+        var x = ((ev.clientX - r.left) / r.width) * 100, y = ((ev.clientY - r.top) / r.height) * 100;
+        escena.classList.add('vivo');
+        escena.style.setProperty('--mx', Math.max(-20, Math.min(120, x)).toFixed(1) + '%');
+        escena.style.setProperty('--my', Math.max(-20, Math.min(120, y)).toFixed(1) + '%');
+      });
+    });
+  }
+
+  // Un día: el momento que está a la vista enciende su pantalla.
+  var momentos = document.querySelectorAll('.momento');
+  var pantallas = document.querySelectorAll('.pantallas img');
+  var obsMomentos = null;
+  function activar(i) {
+    momentos.forEach(function (m, k) { m.classList.toggle('activo', k === i); });
+    pantallas.forEach(function (p, k) { p.classList.toggle('activa', k === i); });
+  }
+  function armarRelato() {
+    if (obsMomentos) obsMomentos.disconnect();
+    var movil = window.matchMedia('(max-width: 900px)').matches;
+    // En PC, el momento que cruza el centro. En movil, el que entra en la
+    // franja justo debajo del escenario fijo (lo que queda a la vista).
+    var margen = '-45% 0px -45% 0px';
+    if (movil) {
+      // Una linea fina, 36 px bajo el escenario: solo un momento la cruza.
+      var alto = window.innerHeight, linea = 64 + escenario.offsetHeight + 36;
+      margen = '-' + linea + 'px 0px -' + Math.max(0, alto - linea - 24) + 'px 0px';
+    }
+    obsMomentos = new IntersectionObserver(function (entradas) {
+      entradas.forEach(function (e) { if (e.isIntersecting) activar(+e.target.dataset.i); });
+    }, { rootMargin: margen, threshold: 0 });
+    momentos.forEach(function (m) { obsMomentos.observe(m); });
+  }
+  armarRelato();
+  escenario.querySelectorAll('.selector button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      dispElegido = b.dataset.disp;
+      try { localStorage.setItem(CLAVE_DISP, dispElegido); } catch (e) {}
+      pintarDisp(); pintarTema(); armarRelato();
+    });
+  });
+  var temporizador = null;
+  window.addEventListener('resize', function () { clearTimeout(temporizador); temporizador = setTimeout(function () { pintarDisp(); pintarTema(); armarRelato(); }, 150); });
+
+  // Reveal: solo la composición del mostrador, el bento y los teléfonos.
+  var obsRevela = new IntersectionObserver(function (entradas) {
+    entradas.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('visto'); obsRevela.unobserve(e.target); } });
+  }, { threshold: .15 });
+  document.querySelectorAll('.revela').forEach(function (el) { obsRevela.observe(el); });
+})();
+</script>
+</body>
+</html>

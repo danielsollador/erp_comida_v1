@@ -19,13 +19,18 @@
 -->
 <style>
   /* Los mismos tokens del sistema de diseño del ERP (src/index.css): papel y
-     grafito, con el cobre del logo de Savora como unico acento (los mismos valores que `acento-600/700` y `acento-400/500` en src/index.css). */
+     grafito. El acento es el de Vertigo (grafito / perla); el cobre es la marca
+     de Sávora y solo sale cuando el local es Sávora (`data-marca`, abajo). */
   :root {
     --tinta: #17181b; --tinta-suave: #3e3d3a; --apagado: #6d6b66;
     --tenue: #98948b; --linea: #e2ded5; --fondo: #f6f4ef; --sup: #ffffff;
-    --acento: oklch(51% 0.119 42); --acento-txt: #ffffff; --acento-hover: oklch(44% 0.102 42);
-    --foco: color-mix(in oklab, oklch(51% 0.119 42) 24%, transparent); --error: #b91c1c; --error-lav: #fef2f2;
+    --acento: #17181b; --acento-txt: #ffffff; --acento-hover: #292927;
+    --foco: rgba(23,24,27,.22); --error: #b91c1c; --error-lav: #fef2f2;
     --error-linea: #fecaca; --textura: rgba(23,24,27,.05);
+  }
+  html[data-marca="savora"] {
+    --acento: oklch(51% 0.119 42); --acento-hover: oklch(44% 0.102 42);
+    --foco: color-mix(in oklab, oklch(51% 0.119 42) 24%, transparent);
   }
   /* El tema se elige con el interruptor y se recuerda; la preferencia del
      sistema solo decide el valor inicial (ver el script del <head>). Misma
@@ -33,9 +38,13 @@
   html[data-tema="oscuro"] {
     --tinta: #f1f3f7; --tinta-suave: #d1d5dd; --apagado: #a1a7b4;
     --tenue: #7c8290; --linea: #262a33; --fondo: #0e1014; --sup: #161920;
-    --acento: oklch(62% 0.106 42); --acento-txt: #0e0f12; --acento-hover: oklch(70% 0.119 42);
-    --foco: color-mix(in oklab, oklch(62% 0.106 42) 28%, transparent); --error: #fca5a5; --error-lav: #2a1414;
+    --acento: #e3e6ec; --acento-txt: #0e0f12; --acento-hover: #f1f3f7;
+    --foco: rgba(227,230,236,.28); --error: #fca5a5; --error-lav: #2a1414;
     --error-linea: #7f1d1d; --textura: rgba(255,255,255,.045);
+  }
+  html[data-tema="oscuro"][data-marca="savora"] {
+    --acento: oklch(62% 0.106 42); --acento-hover: oklch(70% 0.119 42);
+    --foco: color-mix(in oklab, oklch(62% 0.106 42) 28%, transparent);
   }
   html { color-scheme: light; }
   html[data-tema="oscuro"] { color-scheme: dark; }
@@ -221,6 +230,10 @@
     } catch (e) { document.documentElement.dataset.tema = "claro"; }
   })();
 </script>
+<script>
+  // La marca recordada del ultimo arranque, para no destellar con otro acento.
+  (function () { try { var m = localStorage.getItem("vertigo_marca"); if (m) document.documentElement.dataset.marca = m; } catch (e) {} })();
+</script>
 </head>
 <body>
   <main class="caja">
@@ -398,6 +411,10 @@
     .then(function (r) { if (!r.ok) throw new Error("sin estado"); return r.json(); })
     .then(function (d) {
       ES_HUB = !!(d && d.es_hub);
+      // El cobre solo para Sávora (ver el <style>); el hub y los demás, Vertigo.
+      var marca = (d && !ES_HUB && d.local && d.local.slug) || "";
+      document.documentElement.dataset.marca = marca;
+      try { localStorage.setItem("vertigo_marca", marca); } catch (e) {}
       // Ya hay sesion: no se pide otra vez.
       if (d && d.autenticado) {
         window.location.replace(ES_HUB ? "/inicio.html" : "/");

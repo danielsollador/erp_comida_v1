@@ -59,6 +59,7 @@ def _referencia(
             models.CompraSuelta.ingrediente_id == ingrediente_id,
             models.CompraSuelta.fecha <= factura.fecha,
             models.CompraSuelta.costo_unitario > 0,
+            models.CompraSuelta.anulada.isnot(True),
         )
         .all()
     )

@@ -131,6 +131,7 @@ export default function Caja() {
                 si se anula y se rehace, que los libros no se reescriben). */}
             <button
               onClick={() => setContando(true)}
+              data-guia="caja.cerrar"
               className="w-full bg-neutral-900 text-white rounded-xl py-3.5 font-medium"
             >
               {resumen.cerrada ? 'Corregir el conteo' : 'Hacer cierre de caja'}
@@ -337,7 +338,7 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <div className="flex items-baseline justify-between gap-2 mb-3">
         <h2 className="font-semibold">Gastos y retiros</h2>
-        <button onClick={irAMovimientos} className="text-xs font-medium text-acento-600 underline">
+        <button onClick={irAMovimientos} className="text-xs font-medium text-acento-600 underline" data-guia="caja.registrar-gasto">
           Registrar uno
         </button>
       </div>
@@ -400,10 +401,16 @@ function Desglose({ r }: { r: ResumenCaja }) {
   const bcv = tasa?.bcv ?? null
   const totalEntro = r.desglose.reduce((s, l) => s + entradaDe(l), 0)
   const totalSalio = r.desglose.reduce((s, l) => s + salidaDe(l), 0)
-  const totalCuadra = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + l.esperado, 0)
   // Las dos columnas del veredicto solo existen si ya se contó: antes del
   // cierre serían dos columnas vacías pidiendo que se llenen a mano.
   const cerrada = r.desglose.some((l) => l.contado !== null)
+  // Cerrado, el total de "debes tener" suma SOLO lo que se contó: comparar
+  // $443 contra $209 metiendo un efectivo que nadie contó parecía un faltante
+  // de $233 que no existía (19-oct).
+  const totalCuadra = r.desglose
+    .filter((l) => l.se_cuadra && (!cerrada || l.contado !== null))
+    .reduce((s, l) => s + l.esperado, 0)
+  const sinContar = cerrada && r.desglose.some((l) => l.se_cuadra && l.contado === null && Math.abs(l.esperado) >= 0.01)
   const totalContado = r.desglose.reduce((s, l) => s + (l.contado ?? 0), 0)
   const totalDif = r.desglose.reduce((s, l) => s + (l.diferencia ?? 0), 0)
   const columnas = cerrada ? 6 : 4
@@ -487,10 +494,13 @@ function Desglose({ r }: { r: ResumenCaja }) {
               {cerrada && (
                 <>
                   <Cifra monto={totalContado} bcv={bcv} />
+                  {/* Rojo solo si falta: un sobrante en rojo se leía como faltante. */}
                   <Cifra
                     monto={totalDif}
                     bcv={bcv}
-                    clase={Math.abs(totalDif) < 0.01 ? 'text-exito-600' : 'text-peligro-600'}
+                    clase={
+                      Math.abs(totalDif) < 0.01 ? 'text-exito-600' : totalDif > 0 ? 'text-aviso-700' : 'text-peligro-600'
+                    }
                   />
                 </>
               )}
@@ -498,6 +508,11 @@ function Desglose({ r }: { r: ResumenCaja }) {
           </tfoot>
         </table>
       </div>
+      {sinContar && (
+        <p className="mt-2 text-xs text-neutral-500">
+          El total de «Debes tener» solo suma lo que se contó al cerrar: lo que quedó «sin verificar» no entra en la comparación.
+        </p>
+      )}
     </div>
   )
 }
@@ -677,8 +692,19 @@ function FilaMetodo({
           {/* La columna del fondo se quito (Leider, 21-sep); lo que arranco
               en la gaveta se dice aqui, que es donde hace falta para que
               "debes tener" se entienda. */}
-          {l.fondo !== 0 &&
-            ` · arrancó con ${dinero(l.fondo)}${l.fondo_declarado ? ' contados al abrir' : ' de días anteriores'}`}
+          {/* Solo lo de HOY (24-oct): el fondo es lo declarado al abrir, y si
+              no se declaro, cero. Nada de arrastre de dias anteriores. */}
+          {l.fisico && l.se_cuadra &&
+            (l.fondo_declarado
+              ? ` · abrió con ${dinero(l.fondo)} declarados`
+              : ' · no se declaró al abrir: arranca en $0')}
+          {/* Lo pagado hoy desde el banco ya esta en los libros: se ve, pero
+              no se resta de lo que hay que cotejar. */}
+          {(l.pagos ?? 0) > 0 && (
+            <span className="block text-aviso-700">
+              Hoy se pagaron {dinero(l.pagos ?? 0)} por aquí (sueldos, gastos): ya están anotados, no los restes. Pon solo lo que se cobró.
+            </span>
+          )}
         </span>
       </td>
       <Cifra monto={entradaDe(l)} bcv={bcv} />
@@ -877,6 +903,15 @@ function CuadrarCaja({
   const [nota, setNota] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  // Lo que el cliente dijo que venia a buscar y no ha venido: al cerrar se
+  // dice, para que no se quede olvidado en la barra (17-oct).
+  const [sinRetirar, setSinRetirar] = useState<{ numero: number; cliente: string }[]>([])
+  useEffect(() => {
+    api
+      .listarPedidosPorEntregar()
+      .then((ps) => setSinRetirar(ps.filter((p) => p.por_retirar_en).map((p) => ({ numero: p.numero, cliente: p.cliente }))))
+      .catch(() => setSinRetirar([]))
+  }, [])
 
   const aCuadrar = resumen.desglose.filter((l) => l.se_cuadra)
 
@@ -934,6 +969,7 @@ function CuadrarCaja({
           <button
             onClick={cerrar}
             disabled={conteos.length === 0 || guardando}
+            data-guia="caja.conciliar"
             className="flex-1 rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white disabled:opacity-30"
           >
             {guardando ? 'Guardando…' : corregir ? 'Guardar el conteo' : 'Cerrar y conciliar'}
@@ -942,6 +978,12 @@ function CuadrarCaja({
       }
     >
       {error && <p className="text-peligro-600 text-sm mb-3">{error}</p>}
+      {!corregir && sinRetirar.length > 0 && (
+        <p className="text-xs text-aviso-800 bg-aviso-50 border border-aviso-200 rounded-lg px-3 py-2 mb-3">
+          {sinRetirar.length === 1 ? 'Queda 1 pedido por retirar' : `Quedan ${sinRetirar.length} pedidos por retirar`}:{' '}
+          {sinRetirar.map((p) => `#${p.numero} ${p.cliente}`).join(', ')}. Siguen en el punto de venta hasta que se entreguen.
+        </p>
+      )}
       {!resumen.es_hoy && (
         <p className="text-xs text-aviso-700 bg-aviso-50 border border-aviso-200 rounded-lg px-3 py-2 mb-3">
           Estás cuadrando el día {new Date(dia + 'T00:00:00').toLocaleDateString('es-VE')}, no hoy.
@@ -952,7 +994,7 @@ function CuadrarCaja({
           const enBs = EN_BOLIVARES.has(l.metodo)
           const escrito = Number((contados[l.metodo] ?? '').replace(',', '.'))
           return (
-            <div key={l.metodo} className="rounded-xl border border-neutral-200 p-3">
+            <div key={l.metodo} className="rounded-xl border border-neutral-200 p-3" data-guia="caja.conteo">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm">
                   {etiquetaMetodo(l.metodo)}

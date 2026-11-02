@@ -93,6 +93,12 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ERP_GEMINI_MODELO: ${ERP_GEMINI_MODELO:-}
       ERP_GEMINI_MODELO_RESPALDO: ${ERP_GEMINI_MODELO_RESPALDO:-}
+      # El asistente de IA (Pregúntame, guías, reportes hablados, precios,
+      # buscar documentos). Sin clave el botón aparece pero responde que no
+      # está configurado. Proveedor y modelo tienen valor de fábrica (Claude
+      # Sonnet 5.5); ERP_ASISTENTE_PROVEEDOR=gemini usa la clave de arriba.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ERP_ASISTENTE_PROVEEDOR: ${ERP_ASISTENTE_PROVEEDOR:-}
       TZ: ${TZ:-America/Caracas}
     volumes:
       # Respaldos (pg_dump) y estado: se puede reconstruir la imagen mil veces
