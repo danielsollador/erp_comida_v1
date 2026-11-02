@@ -9,6 +9,7 @@ import { nombre } from '../../../lib/palabras'
 import { ALMACEN_DE } from '../../../lib/tiposArticulo'
 import type { CategoriaInsumo, CostoParaPrecios, Ingrediente, TipoArticulo } from '../../../lib/types'
 import type { ResumenAlmacen } from './Almacenes'
+import { llano } from '../../../lib/filtros'
 
 /**
  * La mercancía de UN almacén, en una tabla que cabe en la pantalla. Un toque
@@ -94,7 +95,7 @@ export default function TablaMercancia({
   const cats = categorias.filter((c) => ingredientes.some((i) => i.categoria_id === c.id))
 
   const visibles = useMemo(() => {
-    const q = buscar.trim().toLowerCase()
+    const q = llano(buscar.trim())
     return ingredientes.filter((i) => {
       if (filtro === 'archivados') {
         if (i.activo !== false) return false
@@ -103,7 +104,7 @@ export default function TablaMercancia({
       if (filtro === 'sin-costo' && i.costo_unitario) return false
       if (categoria === SIN_CATEGORIA && i.categoria_id) return false
       if (categoria !== 'todas' && categoria !== SIN_CATEGORIA && String(i.categoria_id) !== categoria) return false
-      return !q || i.nombre.toLowerCase().includes(q)
+      return !q || llano(i.nombre).includes(q)
     })
   }, [ingredientes, filtro, buscar, categoria])
 

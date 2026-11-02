@@ -11,7 +11,7 @@ import { Tabla, Th, useOrden } from '../components/Tabla'
 import { Cifra, FiltroDesplegable, Pagina, Pastilla, Seccion, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, nombreRango, useRango } from '../lib/fechas'
-import { useFiltrosUrl } from '../lib/filtros'
+import { useFiltrosUrl, llano } from '../lib/filtros'
 import { PALETA } from '../lib/paleta'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { SerieTiempo } from './partes/reportes/comunes'
@@ -262,7 +262,7 @@ function Historial({
   )
 
   const visibles = useMemo(() => {
-    const q = busqueda.trim().toLowerCase()
+    const q = llano(busqueda.trim())
     return lista.filas.filter((v) => {
       if (estado !== 'todas' && claveDeFila(v) !== estado) return false
       if (factura === 'si' && !v.facturado) return false
@@ -270,11 +270,11 @@ function Historial({
       if (!q) return true
       return (
         String(v.numero).includes(q) ||
-        v.cliente.toLowerCase().includes(q) ||
-        v.detalle.toLowerCase().includes(q) ||
-        v.operador.toLowerCase().includes(q) ||
-        v.pago.toLowerCase().includes(q) ||
-        (v.numero_factura ?? '').toLowerCase().includes(q)
+        llano(v.cliente).includes(q) ||
+        llano(v.detalle).includes(q) ||
+        llano(v.operador).includes(q) ||
+        llano(v.pago).includes(q) ||
+        llano(v.numero_factura ?? '').includes(q)
       )
     })
   }, [lista, estado, factura, busqueda])

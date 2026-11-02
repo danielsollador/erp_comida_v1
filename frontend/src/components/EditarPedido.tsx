@@ -21,6 +21,7 @@ import { useMoneda } from '../lib/moneda'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO } from '../lib/pagos'
 import { etiquetaMetodo } from '../lib/pagos'
 import type { Autorizacion, Categoria, Pedido, Producto, Variante } from '../lib/types'
+import { llano } from '../lib/filtros'
 
 // La lista sale de lib/pagos y no de aquí: cada pantalla que aplicaba pagos
 // tenía su propia copia, y fue así como el cobro a crédito terminó aceptando
@@ -323,7 +324,7 @@ export default function EditarPedido({
         <div className="grid grid-cols-2 gap-2 mb-4 max-h-44 overflow-y-auto">
           {platos
             .filter(({ producto, variante }) =>
-              `${producto.nombre} ${variante.nombre}`.toLowerCase().includes(buscar.trim().toLowerCase()),
+              llano(`${producto.nombre} ${variante.nombre}`).includes(llano(buscar.trim())),
             )
             .slice(0, 12)
             .map(({ producto, variante }) => (

@@ -13,6 +13,7 @@
  * requisito para poder comprar.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { llano } from '../lib/filtros'
 
 export default function CampoSugerido({
   value,
@@ -37,11 +38,11 @@ export default function CampoSugerido({
   const lista = useRef<HTMLUListElement>(null)
 
   const sugeridas = useMemo(() => {
-    const q = value.trim().toLowerCase()
+    const q = llano(value.trim())
     // Con el campo ya lleno del valor exacto no se filtra a uno solo: quien
     // eligió y vuelve a abrir quiere ver la lista, no su propia respuesta.
-    const coincide = opciones.filter((o) => o.toLowerCase().includes(q))
-    return q && coincide.length === 1 && coincide[0].toLowerCase() === q ? opciones : coincide
+    const coincide = opciones.filter((o) => llano(o).includes(q))
+    return q && coincide.length === 1 && llano(coincide[0]) === q ? opciones : coincide
   }, [opciones, value])
 
   // Cerrar al tocar fuera. `mousedown` y no `click`: si se espera al click, el
