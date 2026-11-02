@@ -427,6 +427,27 @@ export default function Inventario() {
       if (!r) return
       const nuevo = enUnidades(ing, r)
       if (!(await saltoCreible(ing, nuevo))) return
+      // Paquetes o sueltas se confunde (2-nov: "1" en paquetes de 8 eran 8
+      // tortas, y al recontar quedaron 7 de perdida): antes de guardar se dice
+      // en unidades lo que queda y lo que eso anota.
+      const diferencia = nuevo - ing.stock_actual
+      if (Math.abs(diferencia) > 1e-9) {
+        const valor = Math.abs(diferencia) * (ing.costo_unitario || 0)
+        const ok = await dialogo.confirmar({
+          titulo: `¿Quedan ${conUnidad(nuevo, ing.unidad)}?`,
+          texto:
+            (r.como === 'suelta'
+              ? `Contaste ${conUnidad(nuevo, ing.unidad)} sueltas.`
+              : `Contaste ${cantidad(Number(r.paquetes))} paquete(s) de ${cantidad(trae(ing))}: son ${conUnidad(nuevo, ing.unidad)}.`) +
+            ` El sistema decía ${conUnidad(ing.stock_actual, ing.unidad)}, así que ` +
+            (diferencia < 0
+              ? `${conUnidad(-diferencia, ing.unidad)} quedan como pérdida${valor ? ` (${dinero(valor)})` : ''}.`
+              : `entran ${conUnidad(diferencia, ing.unidad)} como sobrante.`),
+          aceptar: 'Sí, guardar',
+          cancelar: 'Corregir',
+        })
+        if (!ok) return
+      }
       accion(() => api.ajustarStock(ing.id, nuevo))
       return
     }

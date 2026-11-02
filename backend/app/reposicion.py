@@ -137,8 +137,11 @@ def costos_reposicion(db: Session) -> Dict[int, dict]:
     """
     ultimo: Dict[int, dict] = {}
 
+    # Una compra en $0 no es un precio: es el costo que se olvido poner (2-nov,
+    # la masa cargada sin factura dejo en cero todos los pastelitos, aunque
+    # despues se corrigio en la ficha). Lo ultimo pagado es lo ultimo con precio.
     def considerar(ingrediente_id, fecha, costo):
-        if ingrediente_id is None or fecha is None:
+        if ingrediente_id is None or fecha is None or not costo or costo <= 0:
             return
         actual = ultimo.get(ingrediente_id)
         if actual is None or fecha > actual["fecha"]:

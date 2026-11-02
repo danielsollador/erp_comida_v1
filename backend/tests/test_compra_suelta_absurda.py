@@ -107,3 +107,52 @@ def test_la_reposicion_ignora_un_ultimo_precio_absurdo(client, db):
     pernil = db.get(models.Ingrediente, ing["id"])
     efectivo = reposicion.costo_reposicion_efectivo(pernil, reposicion.costos_reposicion(db))
     assert efectivo > 3, f"no puede quedar en cero: {efectivo}"
+
+
+def test_sin_costo_y_sin_costo_en_la_ficha_se_pregunta(client, db):
+    """2-nov: la masa entro sin costo y dejo los pastelitos en cero."""
+    ing = alta(client, nombre="Masa")
+    r = client.post(f"/api/inventario/ingredientes/{ing['id']}/comprar",
+                    json={"cantidad": 1000, "metodo_pago": "Efectivo Bs"})
+    assert r.status_code == 409
+    assert "$0" in r.json()["detail"]
+    db.expire_all()
+    assert db.query(models.CompraSuelta).count() == 0
+    r = client.post(f"/api/inventario/ingredientes/{ing['id']}/comprar",
+                    json={"cantidad": 1000, "metodo_pago": "Efectivo Bs", "confirmar": True})
+    assert r.status_code == 200, "un regalo de verdad se anota confirmandolo"
+
+
+def test_sin_costo_pero_con_costo_en_la_ficha_no_pregunta(client):
+    ing = alta(client, nombre="Masa", stock=10, costo=0.08)
+    r = client.post(f"/api/inventario/ingredientes/{ing['id']}/comprar",
+                    json={"cantidad": 1000, "metodo_pago": "Efectivo Bs"})
+    assert r.status_code == 200
+
+
+def test_una_compra_en_cero_no_es_lo_ultimo_que_se_pago(client, db):
+    """Corregido el costo en la ficha, el menu toma ese y no el cero."""
+    ing = alta(client, nombre="Masa")
+    comprar(client, ing["id"], 10, 1.0)
+    client.post(f"/api/inventario/ingredientes/{ing['id']}/comprar",
+                json={"cantidad": 1000, "metodo_pago": "Efectivo Bs", "confirmar": True})
+    db.expire_all()
+    masa = db.get(models.Ingrediente, ing["id"])
+    ultimos = reposicion.costos_reposicion(db)
+    assert ultimos[ing["id"]]["costo"] == 0.1, "lo ultimo CON precio"
+    masa.costo_unitario = 0.08
+    db.commit()
+    assert reposicion.costo_reposicion_efectivo(masa, ultimos) == 0.1
+
+
+def test_sin_ninguna_compra_con_precio_manda_la_ficha(client, db):
+    ing = alta(client, nombre="Masa")
+    client.post(f"/api/inventario/ingredientes/{ing['id']}/comprar",
+                json={"cantidad": 1000, "metodo_pago": "Efectivo Bs", "confirmar": True})
+    db.expire_all()
+    masa = db.get(models.Ingrediente, ing["id"])
+    masa.costo_unitario = 0.08
+    db.commit()
+    ultimos = reposicion.costos_reposicion(db)
+    assert ing["id"] not in ultimos
+    assert reposicion.costo_reposicion_efectivo(masa, ultimos) == 0.08

@@ -843,6 +843,14 @@ def registrar_compra(
         # 10 kg de pernil por $0,08 entraron sin aviso, y la receta quedo en
         # cero). Con "si, es asi" (`confirmar`), pasa.
         absurdo = reposicion.precio_absurdo(costo_de_esta_compra, db_ingrediente.costo_unitario or 0)
+        # Sin lo que se pago y sin costo en la ficha entraria a $0, y el
+        # promedio de lo que ya habia se va hacia cero con ella (2-nov, la masa).
+        if costo_de_esta_compra <= 0:
+            absurdo = (
+                f"{db_ingrediente.nombre} todavía no tiene costo y no pusiste cuánto pagaste: "
+                "entraría a $0 y las recetas que la llevan quedarían más baratas de lo que son. "
+                "Pon lo que pagaste en total. Si de verdad fue gratis (una muestra, un regalo), confírmalo."
+            )
         if absurdo and not body.confirmar:
             raise HTTPException(status_code=409, detail=absurdo)
 
