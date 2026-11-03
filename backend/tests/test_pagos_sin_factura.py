@@ -52,6 +52,33 @@ def test_en_bolivares_se_pasa_a_dolares_con_la_tasa_del_dia(client, db, libros):
     assert saldo(db, "6100") == 200.0
 
 
+def test_en_bolivares_con_la_tasa_que_se_elija(client, db, libros):
+    """3-nov: el pago se pacta a otra tasa (paralelo, euro) y no siempre a la BCV."""
+    db.add(models.TasaCambio(fecha=hoy(), bcv=40.0, paralelo=50.0))
+    db.commit()
+    r = pagar(client, concepto="Alquiler", monto=4000.0, moneda="Bs", metodo_pago="Transferencia", tasa=50.0)
+    assert r.status_code == 200, r.text
+    assert r.json()["monto"] == 80.0 and r.json()["monto_bs"] == 4000.0 and r.json()["tasa"] == 50.0
+    db.expire_all()
+    assert saldo(db, "6100") == 80.0
+    libros_cuadrados(client, db)
+
+
+def test_con_tasa_propia_no_hace_falta_la_bcv_del_dia(client):
+    r = pagar(client, concepto="Alquiler", monto=1000.0, moneda="Bs", metodo_pago="Transferencia", tasa=50.0)
+    assert r.status_code == 200, r.text
+    assert r.json()["monto"] == 20.0
+
+
+def test_una_tasa_en_cero_no_se_acepta(client):
+    assert pagar(client, monto=1000.0, moneda="Bs", metodo_pago="Transferencia", tasa=0).status_code == 422
+
+
+def test_en_dolares_la_tasa_no_cambia_nada(client):
+    r = pagar(client, monto=100.0, tasa=50.0)
+    assert r.json()["monto"] == 100.0 and r.json()["monto_bs"] is None
+
+
 def test_en_bolivares_sin_tasa_no_se_inventa(client):
     assert pagar(client, monto=8000.0, moneda="Bs").status_code == 409
 

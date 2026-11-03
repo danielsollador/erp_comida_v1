@@ -3836,9 +3836,11 @@ class PagoSinFacturaCreate(BaseModel):
     beneficiario: str
     concepto: str
     descripcion: str = ""
-    # En la moneda de `moneda`. En Bs se pasa a dolares con la tasa BCV del dia.
+    # En la moneda de `moneda`. En Bs se pasa a dolares con la tasa BCV del dia,
+    # o con `tasa` si se eligio otra (paralelo, euro, la pactada).
     monto: float = Field(gt=0)
     moneda: Literal["USD", "Bs"] = "USD"
+    tasa: Optional[float] = Field(default=None, gt=0)
     metodo_pago: str
     referencia: str = ""
     retencion_islr_pct: float = Field(default=0.0, ge=0, lt=100)

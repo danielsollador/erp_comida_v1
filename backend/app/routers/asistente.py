@@ -80,6 +80,8 @@ NOMBRES = {
     "perdidas": "mermas",
     "margenes": "márgenes",
     "avisos": "avisos del día",
+    "movimientos_de_caja": "movimientos de la caja",
+    "compras_de_mercancia": "compras de la mercancía",
     "armar_guia": "mapa de la aplicación",
     "leer_manual": "manual",
     "que_significa": "glosario",

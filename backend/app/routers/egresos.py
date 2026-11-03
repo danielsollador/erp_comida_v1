@@ -54,10 +54,13 @@ def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id:
         raise HTTPException(status_code=400, detail=f"Un pago por {datos['metodo_pago']} necesita su número de referencia")
     monto, monto_bs, tasa = datos["monto"], None, None
     if datos["moneda"] == "Bs":
-        t = tasas.tasa_al(db, fecha.date())
-        if t is None or not t.bcv:
-            raise HTTPException(status_code=409, detail="No hay tasa BCV para esa fecha: cárgala en Tasa de cambio")
-        monto_bs, tasa = round(monto, 2), t.bcv
+        tasa = datos.get("tasa")
+        if not tasa:
+            t = tasas.tasa_al(db, fecha.date())
+            if t is None or not t.bcv:
+                raise HTTPException(status_code=409, detail="No hay tasa BCV para esa fecha: cárgala en Tasa de cambio")
+            tasa = t.bcv
+        monto_bs = round(monto, 2)
         monto = round(monto_bs / tasa, 2)
     pct = datos.get("retencion_islr_pct") or 0.0
     if datos["concepto"] == "Anticipo" and pct:

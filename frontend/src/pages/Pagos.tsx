@@ -6,7 +6,7 @@ import { useDialogo } from '../components/dialogo'
 import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, useRango } from '../lib/fechas'
-import { fmtBs, fmtNum } from '../lib/moneda'
+import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { METODOS_PAGO, necesitaReferencia, pedirReferencia } from '../lib/pagos'
 import type { AnticipoPendiente, Frecuencia, NuevoPago, PagoFijo, PagoSinFactura, ResumenPagos } from '../lib/types'
 
@@ -266,6 +266,21 @@ function CamposDePago({
   adelantado?: number
 }) {
   const concepto = CONCEPTOS.find((c) => c.id === p.concepto)
+  const { tasa: delDia } = useMoneda()
+  const [cualTasa, setCualTasa] = useState<'bcv' | 'eur' | 'paralelo' | 'otra'>('bcv')
+  const [otraTasa, setOtraTasa] = useState('')
+  const opcionesTasa = [
+    { id: 'bcv', texto: 'BCV', valor: delDia?.bcv },
+    { id: 'eur', texto: 'Euro BCV', valor: delDia?.eur },
+    { id: 'paralelo', texto: 'Paralelo', valor: delDia?.paralelo },
+  ] as const
+  const tasaUsada = p.tasa || delDia?.bcv || 0
+  function elegirTasa(id: typeof cualTasa, escrita = otraTasa) {
+    setCualTasa(id)
+    const elegida = id === 'otra' ? numero(escrita) : opcionesTasa.find((o) => o.id === id)?.valor
+    // La BCV es lo que el servidor usa si no se le dice otra.
+    poner('tasa', id === 'bcv' ? 0 : elegida || 0)
+  }
   // El punto de venta solo cobra: no es de donde sale un pago.
   const deDondeSale = METODOS_PAGO.filter((m) => m !== 'Punto de venta')
   const metodos = p.moneda === 'Bs' ? deDondeSale.filter((m) => !SOLO_DOLARES.has(m)) : deDondeSale
@@ -318,8 +333,31 @@ function CamposDePago({
         inputMode="decimal"
         value={p.monto ? String(p.monto) : ''}
         onChange={(e) => poner('monto', numero(e.target.value) || 0)}
-        ayuda={p.moneda === 'Bs' ? 'Se pasa a dólares con la tasa BCV del día.' : undefined}
+        ayuda={p.moneda === 'Bs' && p.monto > 0 && tasaUsada > 0 ? `Son ${dinero(p.monto / tasaUsada)} a ${fmtNum(tasaUsada)} Bs por dólar.` : undefined}
       />
+      {/* En un pago fijo se confirma la tasa del día que toca: aquí no se elige. */}
+      {p.moneda === 'Bs' && conReferencia && (
+        <Selector etiqueta="Tasa" value={cualTasa} onChange={(e) => elegirTasa(e.target.value as typeof cualTasa)}>
+          {opcionesTasa.map((o) => (
+            <option key={o.id} value={o.id} disabled={!o.valor}>
+              {o.texto}
+              {o.valor ? ` · ${fmtNum(o.valor)}` : ' · sin dato hoy'}
+            </option>
+          ))}
+          <option value="otra">Otra (la escribo)</option>
+        </Selector>
+      )}
+      {p.moneda === 'Bs' && conReferencia && cualTasa === 'otra' && (
+        <Campo
+          etiqueta="Bs por dólar"
+          inputMode="decimal"
+          value={otraTasa}
+          onChange={(e) => {
+            setOtraTasa(e.target.value)
+            elegirTasa('otra', e.target.value)
+          }}
+        />
+      )}
       <Selector etiqueta="De dónde salió" value={p.metodo_pago} onChange={(e) => poner('metodo_pago', e.target.value)}>
         {metodos.map((m) => (
           <option key={m}>{m}</option>
@@ -371,17 +409,18 @@ function Formulario({ anticipos, alGuardar }: { anticipos: AnticipoPendiente[]; 
     setHecho('')
     if (!p.beneficiario.trim()) return setError('Falta a quién se le pagó.')
     if (!(p.monto > 0)) return setError('Falta el monto.')
+    if (p.moneda === 'Bs' && p.tasa !== undefined && p.tasa !== 0 && !(p.tasa > 0)) return setError('Revisa la tasa.')
     if (necesitaReferencia(p.metodo_pago) && !p.referencia.trim()) return setError(`Un pago por ${p.metodo_pago} necesita su referencia.`)
     const datos = p.concepto === 'Sueldos' ? conDescuento : { ...p, descontar_anticipo: 0 }
     try {
-      const r = await api.registrarPago(datos)
+      const r = await api.registrarPago({ ...datos, tasa: datos.moneda === 'Bs' && datos.tasa ? datos.tasa : undefined })
       setHecho(
         `Pago a ${r.beneficiario} registrado: ${dinero(r.monto)}` +
           (r.retencion_islr ? ` (${dinero(r.retencion_islr)} quedan retenidos de ISLR)` : '') +
           (r.anticipo_descontado ? ` (se descontaron ${dinero(r.anticipo_descontado)} de anticipo)` : '') +
           (r.neto !== r.monto ? `. Se le entregaron ${dinero(r.neto)}.` : '.'),
       )
-      setP({ ...VACIO, concepto: p.concepto, metodo_pago: p.metodo_pago, moneda: p.moneda })
+      setP({ ...VACIO, concepto: p.concepto, metodo_pago: p.metodo_pago, moneda: p.moneda, tasa: p.tasa })
       alGuardar()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar')

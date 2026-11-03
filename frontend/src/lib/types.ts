@@ -2527,6 +2527,8 @@ export type NuevoPago = {
   descripcion: string
   monto: number
   moneda: 'USD' | 'Bs'
+  /** Solo en Bs: la tasa elegida. Sin ella, la BCV del día. */
+  tasa?: number
   metodo_pago: string
   referencia: string
   retencion_islr_pct: number
