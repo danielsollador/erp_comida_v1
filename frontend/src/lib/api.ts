@@ -890,6 +890,8 @@ export const api = {
     nota: string
     fecha?: string
   }) => req<CobroCliente>('/cobranzas/cobros', { method: 'POST', body: JSON.stringify(datos) }),
+  abonarVentas: (datos: { pedido_ids: number[]; monto: number; metodo_pago: string; referencia: string; nota: string }) =>
+    req<CobroCliente>('/cobranzas/abonos', { method: 'POST', body: JSON.stringify(datos) }),
   abonarACuenta: (clienteId: number, datos: { monto: number; metodo_pago: string; referencia: string; nota: string }) =>
     req<CobroCliente>(`/cobranzas/clientes/${clienteId}/abono`, { method: 'POST', body: JSON.stringify(datos) }),
   darPorPerdida: (pedidoId: number, motivo: string) =>

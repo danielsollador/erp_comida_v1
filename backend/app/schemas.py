@@ -3737,6 +3737,10 @@ class ResumenCxC(BaseModel):
     # Fiados con un nombre escrito a mano que no es de ninguna ficha: hay que
     # asignarlos para que entren en la cuenta de alguien.
     sin_ficha: List[VentaPorCobrar]
+    # Todo lo que se debe, tenga o no ficha: es lo que se marca para cobrar.
+    ventas: List[VentaPorCobrar] = []
+    # Lo dado por perdido, para poder recuperarlo. `saldo` es lo que se perdio.
+    dadas_de_baja: List[VentaPorCobrar] = []
 
 
 class CobroClienteCreate(BaseModel):
@@ -3755,6 +3759,17 @@ class CobroClienteCreate(BaseModel):
     # Si el cliente es contribuyente especial y retuvo IVA al pagar: 75 o 100.
     # Se aplica a las ventas facturadas que no tienen ya su retencion.
     retencion_iva_pct: Optional[float] = None
+    nota: str = ""
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+
+
+class AbonoAVentas(BaseModel):
+    """Pago parcial de las ventas marcadas: de la mas vieja a la mas nueva."""
+    pedido_ids: List[int] = Field(min_length=1)
+    monto: float = Field(gt=0)
+    metodo_pago: str
+    referencia: str = ""
     nota: str = ""
     fecha: Optional[datetime.date] = None
     operador_id: Optional[int] = None

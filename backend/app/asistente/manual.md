@@ -357,17 +357,19 @@ Filtros «Qué pasó» (Cobradas, A crédito, Devueltas, «Anuladas: pérdida»,
 
 **Dónde está:** `/cobranzas`, pestañas «Quién me debe» y «Cobros hechos».
 
-Lo que se vendió «A crédito» en el punto de venta y falta cobrar, por cliente. Se crea la ficha del cliente (PedidosYa, una empresa) con su comisión y su plazo; los fiados a ese nombre entran solos en su cuenta. Los fiados con un nombre que no es de ninguna ficha salen en «A crédito sin ficha» para asignarlos.
+Lo que se vendió «A crédito» en el punto de venta y falta cobrar. No hay que crear nada antes: cada venta ya trae el nombre.
 
 ### Cobrar
-1. Toca el cliente: se ve lo que debe y su estado de cuenta.
-2. Marca las ventas que te pagan, elige «Cómo pagó», la referencia y **lo que entró de verdad**. La diferencia con lo que se debía queda como comisión de la plataforma.
-3. «Abonar a lo que debe»: un pago sin decir de cuál venta se aplica de la más vieja a la más nueva. Un pago con dos formas son dos abonos.
+1. En «Buscar cliente» escribe el nombre. Sin acentos también lo encuentra.
+2. Marca las ventas que te están pagando. Abajo se va sumando el total.
+3. Toca «Pagar o abonar», elige «Cómo pagó» y escribe «Cuánto pagó». Si la forma es en bolívares, el monto va en bolívares. Vacío significa que paga todo lo marcado.
 
 ### Reglas que confunden
-- **Perdida:** una venta que no se va a cobrar va a gasto de incobrables y deja de deberse. Si al final paga, «Recuperar» en el estado de cuenta.
-- **Retuvo IVA:** con facturas marcadas se elige si retuvo el 75 % o el 100 %; lo retenido no entra al banco, queda como crédito contra el IVA.
-- Un cobro mal anotado se anula desde «Cobros hechos» y las ventas vuelven a deberse.
+- **Paga menos de lo marcado:** se pregunta qué pasa con lo que falta. «Quedan debiendo» es un abono, y se aplica de la venta más vieja a la más nueva. «No se cobran» cierra la deuda y la diferencia queda como comisión o descuento.
+- **Paga de más:** se pregunta antes, y lo de más queda como otro ingreso.
+- **Dar de baja:** marca las ventas que no se van a cobrar. Pasan a gasto (incobrables) y dejan de deberse. Se recuperan en «Cobros hechos» › «Dadas de baja».
+- **Retuvo IVA:** con ventas facturadas marcadas se elige si retuvo el 75 % o el 100 %. Lo retenido no entra al banco, queda como crédito contra el IVA.
+- **Se anotó mal:** en «Cobros hechos», «Anular». Las ventas vuelven a deberse.
 
 ## Pagos
 

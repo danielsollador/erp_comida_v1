@@ -150,3 +150,71 @@ def test_vencido_segun_el_plazo(client, db, variante):
     db.commit()
     fila = next(x for x in client.get("/api/cobranzas/resumen").json()["clientes"] if x["id"] == c["id"])
     assert fila["vencido"] == 10.0 and fila["mas_vieja_dias"] >= 10
+
+
+def _abonar(client, pedidos, monto, **extra):
+    return client.post("/api/cobranzas/abonos", json={
+        "pedido_ids": [p["id"] for p in pedidos], "monto": monto, "metodo_pago": "Efectivo $", **extra,
+    })
+
+
+def test_el_resumen_trae_todas_las_ventas_que_se_deben_sin_crear_clientes(client, variante):
+    """3-nov: sin clientes creados no habia nada que seleccionar en la pantalla."""
+    fiar(client, variante, cliente="Ana")
+    fiar(client, variante, cliente="Luis")
+    r = client.get("/api/cobranzas/resumen").json()
+    assert r["clientes"] == []
+    assert sorted(v["cliente"] for v in r["ventas"]) == ["Ana", "Luis"]
+    assert r["total"] == 20.0
+
+
+def test_abonar_a_las_ventas_marcadas_empieza_por_la_mas_vieja(client, db, variante, libros):
+    vieja = fiar(client, variante, cliente="Ana")
+    nueva = fiar(client, variante, cliente="Ana")
+    otra = fiar(client, variante, cliente="Ana")
+    gaveta = saldo(db, "1011")
+    r = _abonar(client, [vieja, nueva], 12.0)
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert round(saldo(db, "1011") - gaveta, 2) == 12.0, "entra a la gaveta lo que pagó"
+    saldos = {v["pedido_id"]: v["saldo"] for v in client.get("/api/cobranzas/resumen").json()["ventas"]}
+    assert vieja["id"] not in saldos, "la vieja quedó pagada"
+    assert saldos[nueva["id"]] == 8.0, "a la nueva le queda el resto"
+    assert saldos[otra["id"]] == 10.0, "la no marcada no se toca"
+    libros_cuadrados(client, db)
+
+
+def test_abonar_mas_de_lo_marcado_no_se_puede(client, variante):
+    p = fiar(client, variante, cliente="Ana")
+    assert _abonar(client, [p], 10.01).status_code == 400
+
+
+def test_el_abono_por_banco_pide_referencia(client, variante):
+    p = fiar(client, variante, cliente="Ana")
+    assert _abonar(client, [p], 5.0, metodo_pago="Transferencia").status_code == 400
+
+
+def test_anular_el_abono_vuelve_a_deberse(client, db, variante, libros):
+    p = fiar(client, variante, cliente="Ana")
+    cobro = _abonar(client, [p], 10.0).json()
+    assert client.get("/api/cobranzas/resumen").json()["ventas"] == []
+    assert client.post(f"/api/cobranzas/cobros/{cobro['id']}/anular").status_code == 200
+    assert client.get("/api/cobranzas/resumen").json()["ventas"][0]["saldo"] == 10.0
+    libros_cuadrados(client, db)
+
+
+def test_el_cobro_sin_cliente_creado_lleva_el_nombre_de_la_venta(client, variante):
+    p = fiar(client, variante, cliente="Ana")
+    assert _abonar(client, [p], 5.0).json()["cliente"] == "Ana"
+
+
+def test_lo_dado_de_baja_se_ve_y_se_recupera(client, db, variante, libros):
+    p = fiar(client, variante, cliente="Ana")
+    assert client.post(f"/api/cobranzas/ventas/{p['id']}/perdida", json={"motivo": "no paga"}).status_code == 200
+    r = client.get("/api/cobranzas/resumen").json()
+    assert r["ventas"] == []
+    assert [(v["pedido_id"], v["saldo"]) for v in r["dadas_de_baja"]] == [(p["id"], 10.0)]
+    assert client.delete(f"/api/cobranzas/ventas/{p['id']}/perdida").status_code == 200
+    r = client.get("/api/cobranzas/resumen").json()
+    assert r["dadas_de_baja"] == [] and r["ventas"][0]["saldo"] == 10.0
+    libros_cuadrados(client, db)

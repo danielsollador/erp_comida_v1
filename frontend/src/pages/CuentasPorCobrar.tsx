@@ -1,33 +1,30 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
+import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { useDialogo } from '../components/dialogo'
 import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { api } from '../lib/api'
-import { fmtNum } from '../lib/moneda'
-import { METODOS_PAGO, necesitaReferencia } from '../lib/pagos'
-import type { ClienteConSaldo, ClienteCredito, CobroCliente, EstadoDeCuenta, ResumenCxC, TipoCliente, VentaPorCobrar } from '../lib/types'
+import { llano } from '../lib/filtros'
+import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
+import { EN_BOLIVARES, METODOS_PAGO, necesitaReferencia } from '../lib/pagos'
+import type { CobroCliente, ResumenCxC, VentaPorCobrar } from '../lib/types'
 
 /**
  * Cuentas por cobrar: lo que se vendió a crédito y falta cobrar.
  *
- * La venta a crédito nace en el punto de venta (el pago "A crédito"). Aquí se
- * ve quién debe, desde cuándo, y se cobra. Lo que esta pantalla agrega sobre
- * el cobro de a uno de Ventas es el COBRO AGRUPADO: PedidosYa paga la semana
- * de una vez y ya restada su comisión, así que se marcan las ventas, se pone
- * lo que entró al banco y la diferencia queda como comisión (un gasto), no
- * como una deuda que nunca se termina de pagar.
+ * Se busca al cliente, se marcan las ventas y se paga o se abona. No hace
+ * falta crear nada antes: la venta a crédito ya trae el nombre (3-nov: con
+ * fichas de cliente de por medio, sin clientes creados no se podía hacer nada).
  */
 const SECCIONES = [
   { id: 'deben', texto: 'Quién me debe' },
   { id: 'cobros', texto: 'Cobros hechos' },
 ]
 
-const TIPOS: { id: TipoCliente; texto: string }[] = [
-  { id: 'plataforma', texto: 'Plataforma de delivery' },
-  { id: 'empresa', texto: 'Empresa' },
-  { id: 'persona', texto: 'Persona' },
-]
+const redondear = (n: number) => Math.round(n * 100) / 100
+const cuantasVentas = (n: number) => (n === 1 ? '1 venta' : `${n} ventas`)
+const cuantosDias = (n: number) => (n === 0 ? 'hoy' : n === 1 ? 'hace 1 día' : `hace ${n} días`)
 
 function dinero(n: number) {
   return `${n < 0 ? '−' : ''}$${fmtNum(Math.abs(n))}`
@@ -41,8 +38,6 @@ export default function CuentasPorCobrar() {
   const [seccion, irA] = useSeccion(SECCIONES)
   const [resumen, setResumen] = useState<ResumenCxC | null>(null)
   const [cobros, setCobros] = useState<CobroCliente[]>([])
-  const [abierto, setAbierto] = useState<number | null>(null)
-  const [ficha, setFicha] = useState<Partial<ClienteCredito> | null>(null)
   const [error, setError] = useState('')
 
   function cargar() {
@@ -50,8 +45,6 @@ export default function CuentasPorCobrar() {
     api.resumenCxC().then(setResumen).catch((e) => setError(e.message))
     api.listarCobrosClientes().then(setCobros).catch(() => setCobros([]))
   }
-  // Se recarga al cambiar de pestaña: los cobros se hacen dentro del detalle
-  // del cliente y la lista de "Cobros hechos" quedaba con la de al entrar.
   useEffect(cargar, [seccion])
 
   return (
@@ -59,550 +52,358 @@ export default function CuentasPorCobrar() {
       <NavBar titulo="Cuentas por cobrar" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina ancho="media">
         {error && <Aviso>{error}</Aviso>}
-
-        {seccion === 'deben' && resumen && abierto == null && (
-          <QuienDebe
-            r={resumen}
-            alAbrir={setAbierto}
-            alNuevo={() => setFicha({ tipo: 'plataforma', comision_pct: 0, dias_credito: 7 })}
-            alCambiar={cargar}
-          />
-        )}
-        {seccion === 'deben' && abierto != null && (
-          <Detalle
-            clienteId={abierto}
-            alVolver={() => {
-              setAbierto(null)
-              cargar()
-            }}
-            alEditar={setFicha}
-          />
-        )}
+        {seccion === 'deben' && resumen && <QuienDebe r={resumen} alCambiar={cargar} />}
         {seccion === 'cobros' && <Cobros cobros={cobros} alCambiar={cargar} />}
+        {seccion === 'cobros' && resumen && resumen.dadas_de_baja.length > 0 && (
+          <DadasDeBaja ventas={resumen.dadas_de_baja} alCambiar={cargar} />
+        )}
       </Pagina>
-
-      {ficha && (
-        <FichaCliente
-          inicial={ficha}
-          alCerrar={() => setFicha(null)}
-          alGuardar={() => {
-            setFicha(null)
-            cargar()
-            if (abierto != null) setAbierto(abierto)
-          }}
-        />
-      )}
     </div>
   )
 }
 
-function QuienDebe({
-  r,
-  alAbrir,
-  alNuevo,
-  alCambiar,
-}: {
-  r: ResumenCxC
-  alAbrir: (id: number) => void
-  alNuevo: () => void
-  alCambiar: () => void
-}) {
-  const conDeuda = r.clientes.filter((c) => c.saldo > 0)
-  const sinDeuda = r.clientes.filter((c) => c.saldo <= 0)
-  return (
-    <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Cifra titulo="Por cobrar" valor={dinero(r.total)} detalle="todo lo vendido a crédito que falta" />
-        <Cifra
-          titulo="Vencido"
-          valor={dinero(r.vencido)}
-          detalle="pasó el plazo del cliente"
-          tono={r.vencido > 0 ? 'alerta' : 'normal'}
-        />
-        <Cifra titulo="Clientes que deben" valor={String(conDeuda.length + (r.sin_ficha.length ? 1 : 0))} />
-      </div>
-
-      <Seccion
-        titulo="Clientes"
-        ayuda="Toca uno para ver lo que debe, su estado de cuenta y cobrarle."
-        accion={
-          <Boton tono="suave" icono="mas" onClick={alNuevo}>
-            Nuevo cliente
-          </Boton>
-        }
-        plano
-      >
-        {r.clientes.length === 0 ? (
-          <Vacio
-            icono="cobrar"
-            titulo="Todavía no hay clientes a crédito"
-            detalle="Crea a PedidosYa (o a la empresa que te paga después) y las ventas a crédito a ese nombre entran solas en su cuenta."
-          />
-        ) : (
-          <ul className="divide-y divide-neutral-100">
-            {[...conDeuda, ...sinDeuda].map((c) => (
-              <FilaCliente key={c.id} c={c} alAbrir={() => alAbrir(c.id)} />
-            ))}
-          </ul>
-        )}
-      </Seccion>
-
-      {r.sin_ficha.length > 0 && <SinFicha ventas={r.sin_ficha} clientes={r.clientes} alCambiar={alCambiar} />}
-    </>
-  )
-}
-
-function FilaCliente({ c, alAbrir }: { c: ClienteConSaldo; alAbrir: () => void }) {
-  return (
-    <li>
-      <button onClick={alAbrir} className="w-full text-left px-4 sm:px-5 py-3 flex items-center gap-3 hover:bg-neutral-50">
-        <span className="min-w-0 flex-1">
-          <span className="font-medium">{c.nombre}</span>{' '}
-          {c.tipo === 'plataforma' && <Pastilla tono="acento">delivery</Pastilla>}
-          {!c.activo && <Pastilla>inactivo</Pastilla>}
-          <span className="block text-xs text-neutral-500">
-            {c.ventas > 0
-              ? `${c.ventas} venta(s) · la más vieja de hace ${c.mas_vieja_dias} día(s)`
-              : 'No debe nada'}
-            {c.dias_credito > 0 && ` · plazo ${c.dias_credito} días`}
-          </span>
-        </span>
-        {c.vencido > 0 && <Pastilla tono="ojo">vencido {dinero(c.vencido)}</Pastilla>}
-        <span className={`font-semibold tabular-nums ${c.saldo > 0 ? '' : 'text-neutral-400'}`}>{dinero(c.saldo)}</span>
-      </button>
-    </li>
-  )
-}
-
-/** Fiados hechos con un nombre que no es de ninguna ficha. */
-function SinFicha({ ventas, clientes, alCambiar }: { ventas: VentaPorCobrar[]; clientes: ClienteConSaldo[]; alCambiar: () => void }) {
-  const [error, setError] = useState('')
-  async function asignar(v: VentaPorCobrar, id: string) {
-    if (!id) return
-    try {
-      await api.asignarClienteAVenta(v.pedido_id, Number(id))
-      alCambiar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo asignar')
-    }
-  }
-  return (
-    <Seccion
-      titulo="A crédito sin ficha"
-      ayuda="Se fiaron con un nombre escrito a mano. Si son de un cliente, asígnalos para que entren en su cuenta; si no, se cobran igual desde Ventas."
-      plano
-    >
-      {error && <div className="px-4 pt-3"><Aviso>{error}</Aviso></div>}
-      <ul className="divide-y divide-neutral-100">
-        {ventas.map((v) => (
-          <li key={v.pedido_id} className="px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3 text-sm">
-            <span className="min-w-0 flex-1">
-              <span className="font-medium">{v.cliente}</span>
-              <span className="block text-xs text-neutral-500">
-                Venta #{v.numero} · {fecha(v.fecha)} · hace {v.dias} día(s)
-              </span>
-            </span>
-            <span className="font-semibold tabular-nums">{dinero(v.saldo)}</span>
-            {clientes.length > 0 && (
-              <select
-                defaultValue=""
-                onChange={(e) => void asignar(v, e.target.value)}
-                className="border border-neutral-300 rounded-lg px-2 py-1.5 text-sm"
-                aria-label={`Asignar la venta #${v.numero} a un cliente`}
-              >
-                <option value="">Asignar a…</option>
-                {clientes.filter((c) => c.activo).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}
-                  </option>
-                ))}
-              </select>
-            )}
-          </li>
-        ))}
-      </ul>
-    </Seccion>
-  )
-}
-
-/** Un cliente: lo que debe, el cobro agrupado y su estado de cuenta. */
-function Detalle({
-  clienteId,
-  alVolver,
-  alEditar,
-}: {
-  clienteId: number
-  alVolver: () => void
-  alEditar: (c: ClienteCredito) => void
-}) {
-  const [estado, setEstado] = useState<EstadoDeCuenta | null>(null)
-  const [marcadas, setMarcadas] = useState<Set<number>>(new Set())
-  const [metodo, setMetodo] = useState('Transferencia')
-  const [referencia, setReferencia] = useState('')
-  const [entro, setEntro] = useState('')
-  const [nota, setNota] = useState('')
-  const [retencion, setRetencion] = useState(0)
-  const [error, setError] = useState('')
-  const [hecho, setHecho] = useState('')
-  const [enviando, setEnviando] = useState(false)
+function QuienDebe({ r, alCambiar }: { r: ResumenCxC; alCambiar: () => void }) {
   const dialogo = useDialogo()
-
-  function cargar() {
-    api
-      .estadoDeCuenta(clienteId)
-      .then((e) => {
-        setEstado(e)
-        // Lo comun es cobrar todo lo pendiente: se arranca con todo marcado.
-        setMarcadas(new Set(e.pendientes.map((p) => p.pedido_id)))
-      })
-      .catch((e) => setError(e.message))
-  }
-  useEffect(cargar, [clienteId])
-
-  const total = useMemo(
-    () => Math.round((estado?.pendientes.filter((p) => marcadas.has(p.pedido_id)).reduce((s, p) => s + p.saldo, 0) ?? 0) * 100) / 100,
-    [estado, marcadas],
+  const [marcadas, setMarcadas] = useState<Set<number>>(new Set())
+  const [pagando, setPagando] = useState(false)
+  const [hecho, setHecho] = useState('')
+  const [error, setError] = useState('')
+  const orden = useOrden<VentaPorCobrar>(
+    {
+      cliente: (v) => v.cliente,
+      venta: (v) => v.numero,
+      fecha: (v) => new Date(v.fecha),
+      saldo: (v) => v.saldo,
+    },
+    'fecha',
   )
-  const pct = estado?.cliente.comision_pct ?? 0
-  const marcadasFacturadas = estado?.pendientes.filter((p) => marcadas.has(p.pedido_id) && p.facturado) ?? []
-  // El IVA que retiene el cliente especial, aproximado (16 % incluido en el
-  // precio). El exacto lo calcula el servidor con la tasa de cada factura.
-  const retenidoAprox =
-    Math.round(marcadasFacturadas.reduce((s, p) => s + (p.original * 16) / 116, 0) * (retencion / 100) * 100) / 100
-  // Lo que se espera que entre, con la comision pactada. Se puede cambiar:
-  // lo que manda es lo que de verdad llego al banco.
-  const sugerido = Math.round((total * (1 - pct / 100) - retenidoAprox) * 100) / 100
-  const recibido = entro.trim() === '' ? sugerido : Number(entro.replace(',', '.'))
-  const diferencia = Math.round((total - retenidoAprox - recibido) * 100) / 100
-  const comision = Math.max(diferencia, 0)
-  const sobra = Math.max(-diferencia, 0)
-
-  if (!estado) return error ? <Aviso>{error}</Aviso> : null
-  const c = estado.cliente
+  const buscador = useBuscador<VentaPorCobrar>((v) => [v.cliente], 'Buscar cliente')
+  const filas = orden.ordenar(buscador.filtrar(r.ventas))
+  const elegidas = r.ventas.filter((v) => marcadas.has(v.pedido_id))
+  const total = redondear(elegidas.reduce((s, v) => s + v.saldo, 0))
+  const todasVisibles = filas.length > 0 && filas.every((v) => marcadas.has(v.pedido_id))
+  const clientes = new Set(r.ventas.map((v) => llano(v.cliente.trim()))).size
 
   function alternar(id: number) {
     const n = new Set(marcadas)
     if (n.has(id)) n.delete(id)
     else n.add(id)
     setMarcadas(n)
-    setEntro('')
+    setHecho('')
   }
 
-  async function cobrar() {
-    setError('')
+  function alternarVisibles() {
+    const n = new Set(marcadas)
+    for (const v of filas) {
+      if (todasVisibles) n.delete(v.pedido_id)
+      else n.add(v.pedido_id)
+    }
+    setMarcadas(n)
     setHecho('')
-    if (!Number.isFinite(recibido) || recibido <= 0) return setError('Pon cuánto entró.')
-    if (necesitaReferencia(metodo) && !referencia.trim()) return setError(`Un cobro por ${metodo} necesita su referencia.`)
-    // Entró de más: propinas de la app o un ajuste a favor. Puede ser
-    // real, pero tambien es la forma tipica de un digito de mas.
-    if (sobra > 0) {
+  }
+
+  async function pagarOAbonar() {
+    setError('')
+    const nombres = new Set(elegidas.map((v) => llano(v.cliente.trim())))
+    if (nombres.size > 1) {
       const ok = await dialogo.confirmar({
-        titulo: 'Entró más de lo que se debía',
-        texto: `Se debían ${dinero(total)} y entraron ${dinero(recibido)}. Los ${dinero(sobra)} de más quedan como otro ingreso (propinas de la app, un ajuste a favor). ¿Es así?`,
+        titulo: 'Marcaste ventas de varios clientes',
+        texto: `Son ${nombres.size} nombres distintos. Sigue solo si las paga la misma persona; si no, cóbralas por separado.`,
+        aceptar: 'Las paga la misma persona',
+        cancelar: 'Revisar',
+      })
+      if (!ok) return
+    }
+    setPagando(true)
+  }
+
+  async function darDeBaja() {
+    setError('')
+    const motivo = await dialogo.pedirTexto({
+      titulo: `Dar de baja ${cuantasVentas(elegidas.length)}`,
+      texto: `Los ${dinero(total)} dejan de deberse y pasan a gasto (incobrables). La venta no se toca. Si al final pagan, se recupera en «Cobros hechos».`,
+      etiqueta: 'Por qué',
+      placeholder: 'Ej. El cliente no va a pagar',
+      aceptar: 'Dar de baja',
+      peligro: true,
+    })
+    if (motivo == null) return
+    const hechas: number[] = []
+    try {
+      for (const v of elegidas) {
+        await api.darPorPerdida(v.pedido_id, motivo)
+        hechas.push(v.pedido_id)
+      }
+      setHecho(`${hechas.length === 1 ? '1 venta dada' : `${hechas.length} ventas dadas`} de baja por ${dinero(total)}.`)
+    } catch (e) {
+      const texto = e instanceof Error ? e.message : 'No se pudo dar de baja'
+      setError(hechas.length ? `Se dieron de baja ${hechas.length} de ${elegidas.length}. ${texto}` : texto)
+    }
+    setMarcadas(new Set())
+    alCambiar()
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <Cifra titulo="Por cobrar" valor={dinero(r.total)} detalle={cuantasVentas(r.ventas.length)} />
+        <Cifra titulo="Clientes que deben" valor={String(clientes)} />
+      </div>
+
+      {hecho && <Aviso tono="bien">{hecho}</Aviso>}
+      {error && <Aviso>{error}</Aviso>}
+
+      {r.ventas.length === 0 ? (
+        <Vacio icono="cobrar" titulo="Nadie te debe" detalle="Lo que vendas con «A crédito» en el punto de venta aparece aquí." />
+      ) : (
+        <Tabla orden={orden} buscador={buscador} glosario="cobranzas" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
+              <tr>
+                <th className="p-3 w-10">
+                  <input type="checkbox" aria-label="Marcar todas las que se ven" checked={todasVisibles} onChange={alternarVisibles} />
+                </th>
+                <Th clave="cliente">Cliente</Th>
+                <Th clave="venta">Venta</Th>
+                <Th clave="fecha">Fecha</Th>
+                <Th clave="saldo" alinear="derecha">Debe</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((v) => (
+                <tr
+                  key={v.pedido_id}
+                  onClick={() => alternar(v.pedido_id)}
+                  className={`border-t border-neutral-100 cursor-pointer ${marcadas.has(v.pedido_id) ? 'bg-acento-500/10' : 'hover:bg-neutral-50'}`}
+                >
+                  <td className="p-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Marcar la venta #${v.numero} de ${v.cliente}`}
+                      checked={marcadas.has(v.pedido_id)}
+                      onChange={() => alternar(v.pedido_id)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </td>
+                  <td className="p-3 font-medium">{v.cliente}</td>
+                  <td className="p-3">
+                    #{v.numero}
+                    {v.abonado > 0 && <span className="block text-xs text-neutral-500">abonó {dinero(v.abonado)}</span>}
+                  </td>
+                  <td className="p-3 tabular-nums">
+                    {fecha(v.fecha)}
+                    <span className="block text-xs text-neutral-500">{cuantosDias(v.dias)}</span>
+                  </td>
+                  <td className="p-3 text-right font-semibold tabular-nums">{dinero(v.saldo)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Tabla>
+      )}
+
+      {elegidas.length > 0 && (
+        <div className="sticky bottom-0 sm:bottom-3 z-20 vp-menu -mx-4 sm:mx-0 max-sm:!rounded-none px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:py-3 flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[140px]">
+            <div className="text-xs text-neutral-500">{cuantasVentas(elegidas.length)}</div>
+            <div className="text-xl font-bold tabular-nums">{dinero(total)}</div>
+          </div>
+          <Boton tono="suave" onClick={() => void darDeBaja()}>
+            Dar de baja
+          </Boton>
+          <Boton onClick={() => void pagarOAbonar()}>Pagar o abonar</Boton>
+        </div>
+      )}
+
+      {pagando && (
+        <PagarOAbonar
+          ventas={elegidas}
+          alCerrar={() => setPagando(false)}
+          alHecho={(texto) => {
+            setPagando(false)
+            setHecho(texto)
+            setMarcadas(new Set())
+            alCambiar()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * Lo que sigue después de marcar. El monto dice qué pasa: igual a lo que se
+ * debe, se paga; menos, se abona de la más vieja a la más nueva (o se cierra
+ * si la diferencia es comisión); más, lo de más es otro ingreso.
+ */
+function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[]; alCerrar: () => void; alHecho: (texto: string) => void }) {
+  const dialogo = useDialogo()
+  const { tasa } = useMoneda()
+  const bcv = tasa?.bcv ?? 0
+  const [metodo, setMetodo] = useState('Efectivo $')
+  const [referencia, setReferencia] = useState('')
+  const [montoTexto, setMontoTexto] = useState('')
+  const [loQueFalta, setLoQueFalta] = useState<'abono' | 'cerrar'>('abono')
+  const [retencion, setRetencion] = useState(0)
+  const [nota, setNota] = useState('')
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  const total = redondear(ventas.reduce((s, v) => s + v.saldo, 0))
+  const facturadas = ventas.filter((v) => v.facturado)
+  // El IVA que retiene el contribuyente especial, aproximado (16 % incluido en
+  // el precio). El exacto lo calcula el servidor con la tasa de cada factura.
+  const retenido = redondear(facturadas.reduce((s, v) => s + (v.original * 16) / 116, 0) * (retencion / 100))
+  const esperado = redondear(total - retenido)
+  const enBs = EN_BOLIVARES.has(metodo) && bcv > 0
+  const esperadoBs = redondear(esperado * bcv)
+
+  const tecleado = Number(montoTexto.replace(',', '.'))
+  let recibido = esperado
+  if (montoTexto.trim() !== '') {
+    recibido = enBs ? (Math.abs(tecleado - esperadoBs) <= 0.01 ? esperado : redondear(tecleado / bcv)) : tecleado
+  }
+  const falta = Number.isFinite(recibido) ? redondear(esperado - recibido) : 0
+  const cierra = falta <= 0 || retencion > 0 || loQueFalta === 'cerrar'
+
+  async function confirmar() {
+    setError('')
+    if (!Number.isFinite(recibido) || recibido <= 0) return setError('Pon cuánto pagó.')
+    if (necesitaReferencia(metodo) && !referencia.trim()) return setError(`Un pago por ${metodo} necesita su referencia.`)
+    if (falta < 0) {
+      const ok = await dialogo.confirmar({
+        titulo: 'Pagó más de lo que debe',
+        texto: `Se debían ${dinero(esperado)} y entraron ${dinero(recibido)}. Los ${dinero(-falta)} de más quedan como otro ingreso. ¿Es así?`,
         aceptar: 'Sí, es así',
         cancelar: 'Corregir',
       })
       if (!ok) return
     }
     setEnviando(true)
+    const pedido_ids = ventas.map((v) => v.pedido_id)
     try {
-      const r = await api.cobrarVentas({
-        cliente_id: c.id,
-        pedido_ids: [...marcadas],
-        metodo_pago: metodo,
-        referencia: referencia.trim(),
-        recibido,
-        retencion_iva_pct: retencion || null,
-        nota: nota.trim(),
-      })
-      setHecho(
-        `Cobradas ${r.ventas.length} venta(s): entró ${dinero(r.recibido)}` +
-          (r.comision ? `, ${dinero(r.comision)} quedó como comisión` : '') +
-          (r.retencion_iva ? `, ${dinero(r.retencion_iva)} de IVA retenido (falta cargar el comprobante en Impuestos)` : '') +
-          (r.excedente ? `, ${dinero(r.excedente)} de más como otro ingreso` : '') +
-          '.',
-      )
-      setRetencion(0)
-      setReferencia('')
-      setEntro('')
-      setNota('')
-      cargar()
+      if (cierra) {
+        const fichas = new Set(ventas.map((v) => v.cliente_id))
+        const r = await api.cobrarVentas({
+          cliente_id: fichas.size === 1 ? [...fichas][0] : null,
+          pedido_ids,
+          metodo_pago: metodo,
+          referencia: referencia.trim(),
+          recibido,
+          retencion_iva_pct: retencion || null,
+          nota: nota.trim(),
+        })
+        alHecho(
+          `Cobrado: ${cuantasVentas(ventas.length)}, entraron ${dinero(r.recibido)}` +
+            (r.comision ? `, ${dinero(r.comision)} quedó como comisión` : '') +
+            (r.retencion_iva ? `, ${dinero(r.retencion_iva)} de IVA retenido (falta cargar el comprobante en Impuestos)` : '') +
+            (r.excedente ? `, ${dinero(r.excedente)} de más como otro ingreso` : '') +
+            '.',
+        )
+      } else {
+        await api.abonarVentas({ pedido_ids, monto: recibido, metodo_pago: metodo, referencia: referencia.trim(), nota: nota.trim() })
+        alHecho(`Abono de ${dinero(recibido)} registrado. Quedan ${dinero(falta)} por cobrar de esas ventas.`)
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo cobrar')
-    } finally {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar')
       setEnviando(false)
     }
   }
 
-  async function perder(p: VentaPorCobrar) {
-    const motivo = await dialogo.pedirTexto({
-      titulo: `Dar por perdida la venta #${p.numero}`,
-      texto: `Los ${dinero(p.saldo)} que faltan dejan de deberse y van a gasto (incobrables). La venta no se toca. Si al final paga, se recupera desde el estado de cuenta.`,
-      etiqueta: 'Por qué',
-      placeholder: 'Ej. PedidosYa no reconoció el pedido',
-      aceptar: 'Dar por perdida',
-      peligro: true,
-    })
-    if (motivo == null) return
-    try {
-      await api.darPorPerdida(p.pedido_id, motivo)
-      setHecho(`Venta #${p.numero} dada por perdida.`)
-      cargar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo')
-    }
-  }
-
-  async function recuperar(pedidoId: number) {
-    try {
-      await api.recuperarPerdida(pedidoId)
-      setHecho('La venta vuelve a deberse.')
-      cargar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo')
-    }
-  }
+  const textoBoton = !cierra ? `Abonar ${dinero(recibido)}` : falta > 0 ? `Cobrar ${dinero(recibido)} y cerrar` : `Pagar ${dinero(recibido)}`
 
   return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
-        <Boton tono="fantasma" icono="atras" onClick={alVolver}>
-          Clientes
+    <Modal
+      titulo="Pagar o abonar"
+      ayuda={`${cuantasVentas(ventas.length)} por ${dinero(total)}. Si paga menos, queda debiendo el resto.`}
+      onCerrar={alCerrar}
+      pie={
+        <Boton ancho onClick={() => void confirmar()} disabled={enviando}>
+          {textoBoton}
         </Boton>
-        <h1 className="font-display text-xl font-semibold tracking-tight flex-1 min-w-0">{c.nombre}</h1>
-        <Boton tono="suave" onClick={() => alEditar(c)}>
-          Editar ficha
-        </Boton>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Cifra titulo="Debe" valor={dinero(estado.saldo)} detalle={`${estado.pendientes.length} venta(s)`} />
-        <Cifra titulo="Comisión pactada" valor={`${fmtNum(pct, pct % 1 ? 1 : 0)} %`} detalle="se resta al cobrar" />
-        <Cifra titulo="Plazo" valor={c.dias_credito ? `${c.dias_credito} días` : 'Sin plazo'} />
-      </div>
-
-      {hecho && <Aviso tono="bien">{hecho}</Aviso>}
-
-      {estado.pendientes.length > 0 && (
-        <Seccion titulo="Cobrar" ayuda="Marca las ventas que te están pagando y pon lo que entró de verdad." plano>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-neutral-500 border-b border-neutral-100">
-                  <th className="px-4 py-2 w-8">
-                    <input
-                      type="checkbox"
-                      aria-label="Marcar todas"
-                      checked={marcadas.size === estado.pendientes.length}
-                      onChange={(e) => {
-                        setMarcadas(new Set(e.target.checked ? estado.pendientes.map((p) => p.pedido_id) : []))
-                        setEntro('')
-                      }}
-                    />
-                  </th>
-                  <th className="py-2">Venta</th>
-                  <th className="py-2">Fecha</th>
-                  <th className="py-2 text-right">Debe</th>
-                  <th className="py-2 pr-4" />
-                </tr>
-              </thead>
-              <tbody>
-                {estado.pendientes.map((p) => (
-                  <tr key={p.pedido_id} className="border-b border-neutral-50">
-                    <td className="px-4 py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={`Cobrar la venta #${p.numero}`}
-                        checked={marcadas.has(p.pedido_id)}
-                        onChange={() => alternar(p.pedido_id)}
-                      />
-                    </td>
-                    <td className="py-2">
-                      #{p.numero}
-                      {p.numero_factura && <span className="text-xs text-neutral-500"> · fact. {p.numero_factura}</span>}
-                      {p.abonado > 0 && <span className="text-xs text-neutral-500"> · abonó {dinero(p.abonado)}</span>}
-                    </td>
-                    <td className="py-2 tabular-nums">
-                      {fecha(p.fecha)} {p.vencida && <Pastilla tono="ojo">vencida</Pastilla>}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">{dinero(p.saldo)}</td>
-                    <td className="py-2 pr-4 text-right">
-                      <button onClick={() => void perder(p)} className="text-xs underline text-neutral-500 hover:text-peligro-600">
-                        Perdida
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="p-4 sm:p-5 grid gap-3 sm:grid-cols-2 border-t border-neutral-100">
-            <Selector etiqueta="Cómo pagó" value={metodo} onChange={(e) => setMetodo(e.target.value)}>
-              {METODOS_PAGO.map((m) => (
-                <option key={m}>{m}</option>
-              ))}
-            </Selector>
-            {necesitaReferencia(metodo) ? (
-              <Campo etiqueta="Referencia" value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Número del depósito" />
-            ) : (
-              <div />
-            )}
-            <Campo
-              etiqueta="Lo que entró ($)"
-              inputMode="decimal"
-              value={entro}
-              placeholder={fmtNum(sugerido)}
-              onChange={(e) => setEntro(e.target.value)}
-              ayuda={pct ? `Con ${fmtNum(pct, 1)} % de comisión deberían entrar ${dinero(sugerido)}.` : undefined}
-            />
-            <Campo etiqueta="Nota (opcional)" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej. semana del 19 al 25" />
-            {/* Solo aparece si hay facturas marcadas: un contribuyente
-                especial retiene el IVA al pagar, no al comprar. */}
-            {marcadasFacturadas.length > 0 && (
-              <Selector
-                etiqueta="¿Retuvo IVA?"
-                value={String(retencion)}
-                onChange={(e) => {
-                  setRetencion(Number(e.target.value))
-                  setEntro('')
-                }}
-              >
-                <option value="0">No retuvo</option>
-                <option value="75">Retuvo el 75 %</option>
-                <option value="100">Retuvo el 100 %</option>
-              </Selector>
-            )}
-          </div>
-          <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-3">
-            <div className="text-sm grid grid-cols-3 gap-2 tabular-nums">
-              <span>
-                Se debía <strong className="block text-base">{dinero(total)}</strong>
-              </span>
-              <span>
-                Entra <strong className="block text-base">{Number.isFinite(recibido) ? dinero(recibido) : '—'}</strong>
-              </span>
-              {sobra > 0 ? (
-                <span className="text-aviso-700">
-                  De más <strong className="block text-base">{dinero(sobra)}</strong>
-                </span>
-              ) : (
-                <span>
-                  Comisión <strong className="block text-base">{Number.isFinite(comision) ? dinero(comision) : '—'}</strong>
-                </span>
-              )}
-            </div>
-            {retenidoAprox > 0 && (
-              <p className="text-xs text-neutral-500">
-                IVA retenido ≈ {dinero(retenidoAprox)} (el exacto sale de cada factura). No entra al banco: se descuenta del IVA a pagar.
-              </p>
-            )}
-            {error && <Aviso>{error}</Aviso>}
-            <Boton ancho onClick={() => void cobrar()} disabled={enviando || marcadas.size === 0}>
-              Cobrar {marcadas.size} venta(s)
-            </Boton>
-          </div>
-        </Seccion>
-      )}
-
-      {estado.pendientes.length > 0 && (
-        <AbonoACuenta
-          cliente={c}
-          debe={estado.saldo}
-          alAbonar={(texto) => {
-            setHecho(texto)
-            cargar()
-          }}
-        />
-      )}
-
-      <Seccion titulo="Estado de cuenta" ayuda="Lo que se le vendió a crédito y lo que ha pagado, con el saldo de cada momento." plano>
-        {estado.movimientos.length === 0 ? (
-          <Vacio titulo="Sin movimientos" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-neutral-500 border-b border-neutral-100">
-                  <th className="px-4 py-2">Fecha</th>
-                  <th className="py-2">Detalle</th>
-                  <th className="py-2 text-right">Cargo</th>
-                  <th className="py-2 text-right">Pago</th>
-                  <th className="py-2 pr-4 text-right">Saldo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {estado.movimientos.map((m, i) => (
-                  <tr key={i} className="border-b border-neutral-50">
-                    <td className="px-4 py-2 tabular-nums">{fecha(m.fecha)}</td>
-                    <td className="py-2">
-                      {m.detalle}
-                      {m.tipo === 'perdida' && m.pedido_id != null && (
-                        <button onClick={() => void recuperar(m.pedido_id!)} className="ml-2 text-xs underline text-neutral-500">
-                          Recuperar
-                        </button>
-                      )}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">{m.cargo ? dinero(m.cargo) : ''}</td>
-                    <td className="py-2 text-right tabular-nums">{m.abono ? dinero(m.abono) : ''}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums font-medium">{dinero(m.saldo)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Seccion>
-    </>
-  )
-}
-
-/** "Abono a lo que debo": sin elegir venta, se aplica a la más vieja. Un
- * pago mitad Zelle y mitad pago móvil son dos abonos. */
-function AbonoACuenta({ cliente, debe, alAbonar }: { cliente: ClienteCredito; debe: number; alAbonar: (texto: string) => void }) {
-  const [monto, setMonto] = useState('')
-  const [metodo, setMetodo] = useState('Efectivo Bs')
-  const [referencia, setReferencia] = useState('')
-  const [error, setError] = useState('')
-  async function abonar() {
-    setError('')
-    const n = Number(monto.replace(',', '.'))
-    if (!(n > 0)) return setError('Pon el monto.')
-    if (n > debe + 0.005) return setError(`Debe ${dinero(debe)}. Si pagó de más, usa «Cobrar» arriba.`)
-    if (necesitaReferencia(metodo) && !referencia.trim()) return setError(`Un abono por ${metodo} necesita su referencia.`)
-    try {
-      await api.abonarACuenta(cliente.id, { monto: n, metodo_pago: metodo, referencia: referencia.trim(), nota: '' })
-      setMonto('')
-      setReferencia('')
-      alAbonar(`Abono de ${dinero(n)} aplicado a las ventas más viejas.`)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo abonar')
-    }
-  }
-  return (
-    <Seccion
-      titulo="Abonar a lo que debe"
-      ayuda="Cuando paga una parte sin decir de cuál venta: se aplica de la más vieja a la más nueva. Si paga con dos formas (mitad Zelle, mitad pago móvil), son dos abonos."
+      }
     >
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Campo etiqueta="Monto ($)" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} />
-        <Selector etiqueta="Cómo pagó" value={metodo} onChange={(e) => setMetodo(e.target.value)}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Selector
+          etiqueta="Cómo pagó"
+          value={metodo}
+          onChange={(e) => {
+            setMetodo(e.target.value)
+            setMontoTexto('')
+          }}
+        >
           {METODOS_PAGO.map((m) => (
             <option key={m}>{m}</option>
           ))}
         </Selector>
-        {necesitaReferencia(metodo) ? (
-          <Campo etiqueta="Referencia" value={referencia} onChange={(e) => setReferencia(e.target.value)} />
-        ) : (
-          <div />
+        <Campo
+          etiqueta={enBs ? 'Cuánto pagó (Bs)' : 'Cuánto pagó ($)'}
+          inputMode="decimal"
+          value={montoTexto}
+          placeholder={fmtNum(enBs ? esperadoBs : esperado)}
+          onChange={(e) => setMontoTexto(e.target.value)}
+          ayuda={enBs ? `Son ${dinero(Number.isFinite(recibido) ? recibido : 0)} a ${fmtNum(bcv)} Bs por dólar. Se deben ${fmtBs(esperadoBs)}.` : 'Vacío = paga todo lo marcado.'}
+        />
+        {necesitaReferencia(metodo) && (
+          <Campo etiqueta="Referencia" value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Número de la operación" />
+        )}
+        {facturadas.length > 0 && (
+          <Selector etiqueta="¿Retuvo IVA?" value={String(retencion)} onChange={(e) => setRetencion(Number(e.target.value))}>
+            <option value="0">No retuvo</option>
+            <option value="75">Retuvo el 75 %</option>
+            <option value="100">Retuvo el 100 %</option>
+          </Selector>
+        )}
+        <Campo etiqueta="Nota (opcional)" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej. semana del 19 al 25" />
+        {falta > 0 && retencion === 0 && (
+          <Selector
+            etiqueta={`¿Qué pasa con los ${dinero(falta)} que faltan?`}
+            value={loQueFalta}
+            onChange={(e) => setLoQueFalta(e.target.value as 'abono' | 'cerrar')}
+          >
+            <option value="abono">Quedan debiendo</option>
+            <option value="cerrar">No se cobran: son comisión o descuento, se cierra la deuda</option>
+          </Selector>
         )}
       </div>
+      {retenido > 0 && (
+        <p className="mt-3 text-xs text-neutral-500">
+          IVA retenido ≈ {dinero(retenido)} (el exacto sale de cada factura). No entra al banco: se descuenta del IVA a pagar.
+        </p>
+      )}
       {error && <div className="mt-3"><Aviso>{error}</Aviso></div>}
-      <div className="mt-3">
-        <Boton tono="suave" onClick={() => void abonar()}>
-          Abonar
-        </Boton>
-      </div>
+    </Modal>
+  )
+}
+
+function DadasDeBaja({ ventas, alCambiar }: { ventas: VentaPorCobrar[]; alCambiar: () => void }) {
+  const [error, setError] = useState('')
+  async function recuperar(v: VentaPorCobrar) {
+    setError('')
+    try {
+      await api.recuperarPerdida(v.pedido_id)
+      alCambiar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo recuperar')
+    }
+  }
+  return (
+    <Seccion titulo="Dadas de baja" ayuda="Dejaron de deberse y pasaron a gasto. Si al final pagan, recupéralas y vuelven a la lista." plano>
+      {error && <div className="px-4 pt-3"><Aviso>{error}</Aviso></div>}
+      <ul className="divide-y divide-neutral-100">
+        {ventas.map((v) => (
+          <li key={v.pedido_id} className="px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3 text-sm">
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">{v.cliente}</span>
+              <span className="block text-xs text-neutral-500">Venta #{v.numero} · {fecha(v.fecha)}</span>
+            </span>
+            <span className="font-semibold tabular-nums">{dinero(v.saldo)}</span>
+            <button onClick={() => void recuperar(v)} className="text-xs underline text-neutral-500 hover:text-neutral-900">
+              Recuperar
+            </button>
+          </li>
+        ))}
+      </ul>
     </Seccion>
   )
 }
@@ -613,7 +414,7 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
   async function anular(c: CobroCliente) {
     const ok = await dialogo.confirmar({
       titulo: 'Anular este cobro',
-      texto: `Las ${c.ventas.length} venta(s) vuelven a deberse y el asiento se reversa. Úsalo solo si el cobro se anotó mal.`,
+      texto: `${c.ventas.length === 1 ? 'La venta vuelve' : `Las ${c.ventas.length} ventas vuelven`} a deberse y el asiento se reversa. Úsalo solo si el cobro se anotó mal.`,
       aceptar: 'Anular cobro',
       peligro: true,
     })
@@ -626,7 +427,7 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
     }
   }
   return (
-    <Seccion titulo="Cobros hechos" ayuda="Los cobros agrupados. Los abonos sueltos de una sola venta se ven en Ventas." plano>
+    <Seccion titulo="Cobros hechos" ayuda="Lo que se ha cobrado desde aquí. Si uno se anotó mal, anúlalo y las ventas vuelven a deberse." plano>
       {error && <div className="px-4 pt-3"><Aviso>{error}</Aviso></div>}
       {cobros.length === 0 ? (
         <Vacio icono="cobrar" titulo="Todavía no hay cobros" />
@@ -635,7 +436,7 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
           {cobros.map((c) => (
             <li key={c.id} className={`px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3 text-sm ${c.anulado ? 'opacity-50' : ''}`}>
               <span className="min-w-0 flex-1">
-                <span className="font-medium">{c.cliente || 'Sin ficha'}</span> {c.anulado && <Pastilla tono="mal">anulado</Pastilla>}
+                <span className="font-medium">{c.cliente || 'Sin nombre'}</span> {c.anulado && <Pastilla tono="mal">anulado</Pastilla>}
                 <span className="block text-xs text-neutral-500">
                   {fecha(c.fecha)} · {c.metodo_pago}
                   {c.referencia && ` ref. ${c.referencia}`}
@@ -660,89 +461,5 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
         </ul>
       )}
     </Seccion>
-  )
-}
-
-function FichaCliente({
-  inicial,
-  alCerrar,
-  alGuardar,
-}: {
-  inicial: Partial<ClienteCredito>
-  alCerrar: () => void
-  alGuardar: () => void
-}) {
-  const [c, setC] = useState({
-    nombre: '',
-    tipo: 'persona' as TipoCliente,
-    rif: '',
-    telefono: '',
-    comision_pct: 0,
-    dias_credito: 0,
-    nota: '',
-    activo: true,
-    ...inicial,
-  })
-  const [error, setError] = useState('')
-  const poner = (k: keyof typeof c, v: unknown) => setC({ ...c, [k]: v })
-
-  async function guardar() {
-    setError('')
-    if (!c.nombre.trim()) return setError('Ponle un nombre.')
-    try {
-      const { id, ...datos } = c as typeof c & { id?: number }
-      await api.guardarClienteCredito(datos, id)
-      alGuardar()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar')
-    }
-  }
-
-  return (
-    <Modal
-      titulo={'id' in inicial ? 'Editar cliente' : 'Nuevo cliente a crédito'}
-      ayuda="Las ventas a crédito con este nombre entran solas en su cuenta, aunque se escriba distinto (PedidosYa, Pedidos ya)."
-      onCerrar={alCerrar}
-      pie={
-        <Boton ancho onClick={() => void guardar()}>
-          Guardar
-        </Boton>
-      }
-    >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Campo etiqueta="Nombre" value={c.nombre} onChange={(e) => poner('nombre', e.target.value)} placeholder="Ej. PedidosYa" className="sm:col-span-2" />
-        <Selector etiqueta="Tipo" value={c.tipo} onChange={(e) => poner('tipo', e.target.value)}>
-          {TIPOS.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.texto}
-            </option>
-          ))}
-        </Selector>
-        <Campo etiqueta="RIF o cédula" value={c.rif} onChange={(e) => poner('rif', e.target.value)} />
-        <Campo
-          etiqueta="Comisión (%)"
-          inputMode="decimal"
-          value={String(c.comision_pct)}
-          onChange={(e) => poner('comision_pct', Number(e.target.value.replace(',', '.')) || 0)}
-          ayuda="Lo que se queda de cada venta. Solo se propone al cobrar."
-        />
-        <Campo
-          etiqueta="Plazo (días)"
-          inputMode="numeric"
-          value={String(c.dias_credito)}
-          onChange={(e) => poner('dias_credito', Number(e.target.value) || 0)}
-          ayuda="Pasado el plazo, la deuda sale como vencida. 0 = sin plazo."
-        />
-        <Campo etiqueta="Teléfono" value={c.telefono} onChange={(e) => poner('telefono', e.target.value)} />
-        <Campo etiqueta="Nota" value={c.nota} onChange={(e) => poner('nota', e.target.value)} />
-        {'id' in inicial && (
-          <label className="flex items-center gap-2 text-sm sm:col-span-2">
-            <input type="checkbox" checked={c.activo} onChange={(e) => poner('activo', e.target.checked)} />
-            Activo (desmarca si ya no se le vende a crédito)
-          </label>
-        )}
-      </div>
-      {error && <div className="mt-3"><Aviso>{error}</Aviso></div>}
-    </Modal>
   )
 }

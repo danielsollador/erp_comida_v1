@@ -14,6 +14,9 @@ export const METODOS_PAGO = [
   'Zelle',
 ]
 
+// Las formas que se cobran en bolivares.
+export const EN_BOLIVARES = new Set(['Efectivo Bs', 'Punto de venta', 'Pago movil', 'Transferencia'])
+
 // Una deuda que nace no es plata que se mueve, asi que no hay comprobante que
 // pedir: llega despues, cuando se salde. 'Fiado' es la venta a credito;
 // 'Credito' es como le llama Compras a lo mismo del otro lado.

@@ -95,9 +95,11 @@ def resumen(db: Session) -> schemas.ResumenCxC:
     clientes = {c.id: c for c in db.query(models.Cliente).all()}
     por_cliente: dict = {}
     sin_ficha: List[schemas.VentaPorCobrar] = []
+    ventas_todas: List[schemas.VentaPorCobrar] = []
     for p in pedidos_por_cobrar(db):
         cliente = clientes.get(p.cliente_id)
         fila = venta_por_cobrar(p, cliente, hoy_)
+        ventas_todas.append(fila)
         if cliente is None:
             sin_ficha.append(fila)
         else:
@@ -122,7 +124,27 @@ def resumen(db: Session) -> schemas.ResumenCxC:
         vencido=round(sum(f.vencido for f in filas), 2),
         clientes=filas,
         sin_ficha=sin_ficha,
+        ventas=ventas_todas,
+        dadas_de_baja=_dadas_de_baja(db, clientes, hoy_),
     )
+
+
+def _dadas_de_baja(db: Session, clientes: dict, hoy_: datetime.datetime) -> List[schemas.VentaPorCobrar]:
+    pedidos = (
+        db.query(models.Pedido)
+        .filter(models.Pedido.fiado_castigado > 0, models.Pedido.devuelto.is_(False))
+        .order_by(models.Pedido.fecha_castigo.desc())
+        .limit(100)
+        .all()
+    )
+    filas = []
+    for p in pedidos:
+        fila = venta_por_cobrar(p, clientes.get(p.cliente_id), hoy_)
+        fila.fecha = p.fecha_castigo or fila.fecha
+        fila.saldo = p.fiado_castigado
+        fila.vencida = False
+        filas.append(fila)
+    return filas
 
 
 def _usd(monto: float) -> str:
@@ -337,16 +359,37 @@ def abonar_a_cuenta(db: Session, cliente: models.Cliente, body: schemas.AbonoACu
         raise ErrorCobro(409, f"{cliente.nombre} no debe nada")
     if monto > debe + 0.005:
         raise ErrorCobro(400, f"Debe {debe:.2f}: no se puede abonar {monto:.2f}. Si pagó de más, usa el cobro y marca «entró de más».")
+    return _aplicar_abono(db, pendientes, body, monto, referencia, cliente.id, cliente.nombre)
+
+
+def abonar_ventas(db: Session, body: schemas.AbonoAVentas) -> models.CobroCliente:
+    """Pago parcial de las ventas marcadas, sin necesidad de ficha de cliente.
+    No hace commit."""
+    referencia = _validar_forma(body.metodo_pago, body.referencia)
+    ids = set(body.pedido_ids)
+    marcadas = [p for p in pedidos_por_cobrar(db) if p.id in ids]
+    if len(marcadas) != len(ids):
+        raise ErrorCobro(409, "Alguna de esas ventas ya no debe nada: vuelve a cargar la lista.")
+    debe = round(sum(p.fiado_saldo for p in marcadas), 2)
+    monto = round(body.monto, 2)
+    if monto > debe + 0.005:
+        raise ErrorCobro(400, f"Las ventas marcadas deben {_usd(debe)}: no se puede abonar {_usd(monto)}.")
+    fichas = {p.cliente_id for p in marcadas}
+    cliente_id = fichas.pop() if len(fichas) == 1 else None
+    return _aplicar_abono(db, marcadas, body, monto, referencia, cliente_id, marcadas[0].cliente or "sin nombre")
+
+
+def _aplicar_abono(db, pedidos, body, monto, referencia, cliente_id, quien) -> models.CobroCliente:
     fecha = _fecha_cobro(body.fecha)
     cobro = models.CobroCliente(
-        cliente_id=cliente.id, fecha=fecha, metodo_pago=body.metodo_pago, referencia=referencia,
+        cliente_id=cliente_id, fecha=fecha, metodo_pago=body.metodo_pago, referencia=referencia,
         monto=monto, comision=0.0, recibido=monto, nota=body.nota.strip() or "Abono a cuenta",
         operador_id=body.operador_id,
     )
     db.add(cobro)
     db.flush()
     queda = monto
-    for p in pendientes:
+    for p in pedidos:
         if queda <= 0.004:
             break
         parte = round(min(p.fiado_saldo, queda), 2)
@@ -362,7 +405,7 @@ def abonar_a_cuenta(db: Session, cliente: models.Cliente, body: schemas.AbonoACu
             p.fecha_cobro_fiado = fecha
     db.flush()
     db.refresh(cobro)
-    contabilidad.registrar_cobro_cliente(db, cobro, cliente.nombre)
+    contabilidad.registrar_cobro_cliente(db, cobro, quien)
     return cobro
 
 
@@ -421,7 +464,7 @@ def cobro_a_esquema(cobro: models.CobroCliente) -> schemas.CobroCliente:
     return schemas.CobroCliente(
         id=cobro.id,
         cliente_id=cobro.cliente_id,
-        cliente=cobro.cliente.nombre if cobro.cliente else "",
+        cliente=cobro.cliente.nombre if cobro.cliente else next((a.pedido.cliente for a in cobro.abonos if a.pedido.cliente), ""),
         fecha=cobro.fecha,
         metodo_pago=cobro.metodo_pago,
         referencia=cobro.referencia or "",

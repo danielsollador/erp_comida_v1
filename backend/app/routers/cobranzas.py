@@ -99,6 +99,19 @@ def abonar(cliente_id: int, body: schemas.AbonoACuenta, db: Session = Depends(ge
     return cxc.cobro_a_esquema(cobro)
 
 
+@router.post("/abonos", response_model=schemas.CobroCliente)
+def abonar_ventas(body: schemas.AbonoAVentas, db: Session = Depends(get_db)):
+    """Pago parcial de las ventas marcadas: de la mas vieja a la mas nueva."""
+    try:
+        cobro = cxc.abonar_ventas(db, body)
+    except cxc.ErrorCobro as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=e.detalle)
+    db.commit()
+    db.refresh(cobro)
+    return cxc.cobro_a_esquema(cobro)
+
+
 @router.post("/ventas/{pedido_id}/perdida")
 def dar_por_perdida(pedido_id: int, body: schemas.DarPorPerdida, db: Session = Depends(get_db)):
     """El cliente no va a pagar (PedidosYa no reconocio el pedido): lo que

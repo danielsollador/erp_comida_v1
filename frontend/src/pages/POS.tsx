@@ -18,7 +18,7 @@ import { uuid } from '../lib/uuid'
 import { colorCategoria } from '../lib/theme'
 import { useModoLigero } from '../lib/ligero'
 import { etiquetaVariante, variantesParaVender } from '../lib/menu'
-import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
+import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo, pedirReferencia, EN_BOLIVARES } from '../lib/pagos'
 import VerificarPago, { type PagoVerificado } from '../components/VerificarPago'
 import VueltoPagoMovil, { type VueltoListo } from '../components/VueltoPagoMovil'
 import PedidoDeWhatsApp, { type RenglonElegido } from '../components/PedidoDeWhatsApp'
@@ -43,8 +43,6 @@ import type {
 // hay que saber si el cliente paga exacto o hay vuelto (ver el panel de
 // cobro), porque de eso depende cuanta plata queda en la gaveta.
 const METODOS_EFECTIVO = ['Efectivo Bs', 'Efectivo $']
-// Las formas que se cobran en bolivares (igual que en Caja.tsx).
-const EN_BOLIVARES = new Set(['Efectivo Bs', 'Punto de venta', 'Pago movil', 'Transferencia'])
 
 // Por donde puede SALIR el vuelto: las dos gavetas o un pago movil, que es
 // lo que se hace cuando no hay sencillo (Leider, 30-sep: "solo tres

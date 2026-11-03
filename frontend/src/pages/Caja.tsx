@@ -11,7 +11,7 @@ import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { api } from '../lib/api'
 import { Respuesta } from '../components/TextoConFormato'
-import { METODOS_CON_REFERENCIA, etiquetaMetodo } from '../lib/pagos'
+import { METODOS_CON_REFERENCIA, etiquetaMetodo, EN_BOLIVARES } from '../lib/pagos'
 import type {
   CierreCaja,
   CobroDelDia,
@@ -939,7 +939,6 @@ function Tile({
  * va en dolares. El sistema guarda todo en dolares, asi que lo tecleado en
  * bolivares se convierte a la tasa del dia antes de viajar.
  */
-const EN_BOLIVARES = new Set(['Efectivo Bs', 'Punto de venta', 'Pago movil', 'Transferencia'])
 
 function CuadrarCaja({
   resumen,

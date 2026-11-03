@@ -2460,6 +2460,8 @@ export type ResumenCxC = {
   vencido: number
   clientes: ClienteConSaldo[]
   sin_ficha: VentaPorCobrar[]
+  ventas: VentaPorCobrar[]
+  dadas_de_baja: VentaPorCobrar[]
 }
 
 export type CobroCliente = {
