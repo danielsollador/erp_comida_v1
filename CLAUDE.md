@@ -27,7 +27,7 @@ Crear un ERP web/movil donde nuestros cientes:
 
 La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank con un banco:
 
-- **Habla como el negocio, no como el sistema:** "lo que te quedó", no "utilidad neta del periodo".
+- **Habla como prefiere cada usuario:** en Configuración > Lenguaje elige sencillo ("te quedó") o técnico ("ganancia neta"). Todo texto nuevo con un término del negocio se escribe en las dos formas (`lib/palabras.ts`).
 - **Una cosa importante por pantalla,** y lo siguiente que hay que hacer, a la vista.
 - **Toda cifra se explica sola:** qué es, de dónde sale y cómo se calcula, con un ejemplo.
 - **Menos pasos:** lo que el sistema puede hacer solo (asientos, impuestos, tasa), lo hace sin preguntar.
@@ -37,7 +37,7 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 
 - Vertigo Pro es el producto; Savora, su primer cliente. Nada propio de un cliente (nombre, color, logo, reglas) va fijo en el código: va en `locales/<local>.json` o en su configuración.
 - El dinero manda: un cambio que toque cobros, caja, inventario, asientos o impuestos se explica antes de hacerlo y nunca cambia en silencio operaciones pasadas.
-- Producción tiene ventas reales: nada se despliega en horario de ventas ni sin Leider presente.
+- Producción tiene ventas reales: nada se despliega en horario de ventas sin Leider o Daniel presente.
 
 ## Cómo se trabaja
 

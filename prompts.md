@@ -110,3 +110,11 @@ Aparte, no me gusta que estás metiendo cosas de estrategia con modo de trabajar
 Alright, so borra todos los .md de planes y cosas así, porque ahorita solo nos vamos a basar en esta metodología de SpecKit. Necesito que añadas en un lugar una mierda que verga, siempre me jode. Y es para la creación de objetos visuales como tablas, gráficos, dentro del... de la aplicación. Yeah, que necesito que absolutamente todas las tablas se puedan exportar, tanto en CSV como Excel. Necesito que absolutamente todas las tablas se puedan ordenar por cada campo, que haya este botoncito en el campo en donde tú puedas ordenarlo. Y necesito que absolutamente todas las tablas al posar el cursor sobre el nombre del campo pueda mostrar su información, pueda decir qué está mostrando en ese campo y cómo se calcula de una forma fight complexity
 
 Creo que podríamos dejar en la parte de objetivos general como que una mini sección que diga qué coño es fight complexity, ¿te parece?
+
+## 21 (2026-11-02, Leider)
+
+- **Habla como el negocio, no como el sistema:** "lo que te quedó", no "utilidad neta del periodo".
+
+Esta parte cambiala, acuerdate que esto es configurable desde configuracion.
+
+Me puedes decir su nos falta agregar algo a nuestro spect kit como constitucion o hooks ?
