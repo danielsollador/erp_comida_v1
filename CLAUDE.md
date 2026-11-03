@@ -32,6 +32,7 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 - **Toda cifra se explica sola:** qué es, de dónde sale y cómo se calcula, con un ejemplo.
 - **Menos pasos:** lo que el sistema puede hacer solo (asientos, impuestos, tasa), lo hace sin preguntar.
 - **Ningún error sin salida:** cada aviso dice qué pasó y qué hacer.
+- **Solo afirma lo que sabe:** el sistema da por seguro únicamente lo que está en sus datos (cifras, lo anotado). Lo que deduce lo dice como probable, con lo demás que pudo ser y cómo confirmarlo. Ejemplo: "sobra lo mismo que la compra de huevos", nunca "la compra se pagó con otra plata". El agente igual: lo que no comprobó no lo da por cierto.
 
 ## Reglas de negocio que no se negocian
 
@@ -159,6 +160,14 @@ Sin excepciones, en todos los módulos, en la web y en la app:
 - Modular, legible y sencillo.
 - Mínimos comentarios y sin emojis; el porqué va en el mensaje de commit.
 - En el chat no se explica qué hace el código.
+
+## Cómo responde el agente
+
+Cuando cambió código, el mensaje final va en este orden y sin pegar código:
+
+1. **Archivos que cambiaron**, cada uno con su enlace.
+2. **Qué cambió**, en un bloque `diff` corto estilo git (verde lo nuevo, rojo lo que se fue): lo que el usuario ve o las líneas clave, nunca archivos enteros.
+3. **Resumen** de lo que pasó, el recibo y lo que falta decidir.
 
 ## Herramientas del agente
 
