@@ -5,7 +5,7 @@
 #   App movil:      http://localhost:8081 (la app de Expo en el navegador, contra el backend local)
 # Datos de prueba en .dev-data (SQLite, no se versiona). Para empezar de cero, borrar esa carpeta.
 # La primera vez:
-#   cd backend;  py -m venv .venv; .venv\Scripts\python -m pip install -r requirements.txt
+#   cd backend;  py -m venv .venv; .venv\Scripts\python -m pip install -r requirements.txt pytest
 #   cd frontend; npm ci
 #   cd movil;    npm ci
 
