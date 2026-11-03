@@ -124,3 +124,9 @@ Me puedes decir su nos falta agregar algo a nuestro spect kit como constitucion 
 implementa 3 y 4.
 
 y dime cual seria el comando que tengo que poner aqui en claude code para saber el contexto que tiene este chat
+
+## 23 (2026-11-02, Leider)
+
+(Salida de /context.) Aqui sale esto, necesito que agarres y depures cosas porque figma por ejemplo ni lo estamos utilizando ya.
+
+Otra cosa es que, este comando no me dice como el texto que tiene en memoria este agente, podria verlo ?
