@@ -638,7 +638,8 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
                 <span className="font-medium">{c.cliente || 'Sin ficha'}</span> {c.anulado && <Pastilla tono="mal">anulado</Pastilla>}
                 <span className="block text-xs text-neutral-500">
                   {fecha(c.fecha)} · {c.metodo_pago}
-                  {c.referencia && ` ref. ${c.referencia}`} · {c.ventas.length || '—'} venta(s)
+                  {c.referencia && ` ref. ${c.referencia}`}
+                  {c.ventas.length > 0 && ` · ${c.ventas.length === 1 ? '1 venta' : `${c.ventas.length} ventas`}`}
                   {c.comision > 0 && ` · comisión ${dinero(c.comision)}`}
                   {c.retencion_iva > 0 && ` · IVA retenido ${dinero(c.retencion_iva)}`}
                   {c.excedente > 0 && ` · de más ${dinero(c.excedente)}`}

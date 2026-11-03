@@ -415,8 +415,10 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
 function Desglose({ r }: { r: ResumenCaja }) {
   const { tasa } = useMoneda()
   const bcv = tasa?.bcv ?? null
-  const totalEntro = r.desglose.reduce((s, l) => s + entradaDe(l), 0)
-  const totalSalio = r.desglose.reduce((s, l) => s + salidaDe(l), 0)
+  // El credito no es plata: lo fiado y lo cobrado de esa deuda no entran al
+  // total, que es lo que paso por gavetas y banco.
+  const totalEntro = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + entradaDe(l), 0)
+  const totalSalio = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + salidaDe(l), 0)
   // Las dos columnas del veredicto solo existen si ya se contó: antes del
   // cierre serían dos columnas vacías pidiendo que se llenen a mano.
   const cerrada = r.desglose.some((l) => l.contado !== null)
@@ -755,7 +757,7 @@ function FilaMetodo({
         )}
         <span className="block text-[11px] text-neutral-400">
           {!l.se_cuadra
-            ? 'no entró plata: es una deuda'
+            ? 'no es plata: entró lo que se fió, salió lo que se cobró de la deuda'
             : l.fisico
               ? 'se cuenta: lo que hay en la gaveta'
               : 'se coteja: el movimiento del día'}
@@ -1319,20 +1321,25 @@ function Movimientos({
           borrar: () => borrarRetiro(r.id),
         }))}
       />
-      <ListaMovimientos
-        titulo="Depósitos y aportes"
-        etiqueta={etiquetaRango(rango)}
-        filas={traspasos
-          .filter((t) => !t.anulado && !oculto(`traspaso:${t.id}`))
-          .map((t) => ({
-            id: t.id,
-            fecha: t.fecha,
-            texto: t.tipo === 'aporte' ? 'Aporte del dueño' : `Depósito de ${t.desde}`,
-            detalle: `a ${t.hacia}${t.referencia ? ` · ref. ${t.referencia}` : ''}${t.nota ? ` · ${t.nota}` : ''}`,
-            monto: t.monto,
-            borrar: () => anularTraspaso(t.id),
-          }))}
-      />
+      {/* Separados: un deposito sale de la gaveta y un aporte entra. En una
+          sola lista el total sumaba las dos direcciones. */}
+      {(['deposito', 'aporte'] as const).map((tipo) => (
+        <ListaMovimientos
+          key={tipo}
+          titulo={tipo === 'aporte' ? 'Aportes del dueño' : 'Depósitos al banco'}
+          etiqueta={etiquetaRango(rango)}
+          filas={traspasos
+            .filter((t) => !t.anulado && !oculto(`traspaso:${t.id}`) && (t.tipo === 'aporte') === (tipo === 'aporte'))
+            .map((t) => ({
+              id: t.id,
+              fecha: t.fecha,
+              texto: t.tipo === 'aporte' ? 'Aporte del dueño' : `Depósito de ${t.desde}`,
+              detalle: `a ${t.hacia}${t.referencia ? ` · ref. ${t.referencia}` : ''}${t.nota ? ` · ${t.nota}` : ''}`,
+              monto: t.monto,
+              borrar: () => anularTraspaso(t.id),
+            }))}
+        />
+      ))}
       <AporteDelDueno alCambiar={alCambiar} />
     </>
   )

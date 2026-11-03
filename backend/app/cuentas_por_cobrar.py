@@ -125,19 +125,28 @@ def resumen(db: Session) -> schemas.ResumenCxC:
     )
 
 
-def _detalle_cobro(cobro: models.CobroCliente) -> str:
-    detalle = f"Pago · {cobro.metodo_pago}"
+def _usd(monto: float) -> str:
+    """$1.234,50: como se escribe la plata en pantalla, no 1234.50."""
+    return "$" + f"{monto:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def _ventas(n: int) -> str:
+    return "1 venta" if n == 1 else f"{n} ventas"
+
+
+def _detalle_cobro(cobro: models.CobroCliente, que: str = "Pago") -> str:
+    detalle = f"{que} · {cobro.metodo_pago}"
     if cobro.referencia:
         detalle += f" ref. {cobro.referencia}"
     partes = []
     if cobro.comision:
-        partes.append(f"comisión {cobro.comision:.2f}")
+        partes.append(f"comisión {_usd(cobro.comision)}")
     if cobro.retencion_iva:
-        partes.append(f"IVA retenido {cobro.retencion_iva:.2f}")
+        partes.append(f"IVA retenido {_usd(cobro.retencion_iva)}")
     if cobro.excedente:
-        partes.append(f"de más {cobro.excedente:.2f}")
+        partes.append(f"de más {_usd(cobro.excedente)}")
     if partes:
-        detalle += f" (entró {cobro.recibido:.2f}; " + ", ".join(partes) + ")"
+        detalle += f" (entró {_usd(cobro.recibido)}; " + ", ".join(partes) + ")"
     return detalle
 
 
@@ -180,7 +189,9 @@ def estado_de_cuenta(db: Session, cliente: models.Cliente) -> schemas.EstadoDeCu
         aplicado = round(sum(a.monto for a in cobro.abonos), 2)
         movs.append(schemas.MovimientoCuenta(
             fecha=cobro.fecha, tipo="cobro",
-            detalle=_detalle_cobro(cobro).replace("Pago", f"Pago de {len(cobro.abonos)} venta(s)", 1),
+            detalle=_detalle_cobro(
+                cobro, "Abono" if (cobro.nota or "").startswith("Abono") else f"Pago de {_ventas(len(cobro.abonos))}"
+            ),
             abono=aplicado, cobro_id=cobro.id,
         ))
     movs.sort(key=lambda m: (m.fecha, 0 if m.tipo == "venta" else 1))

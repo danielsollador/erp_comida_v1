@@ -87,6 +87,7 @@ export default function Pagos() {
   const [fijos, setFijos] = useState<PagoFijo[]>([])
   const [nombres, setNombres] = useState<string[]>([])
   const [anticipos, setAnticipos] = useState<AnticipoPendiente[]>([])
+  const [pagadoFijo, setPagadoFijo] = useState('')
   const [error, setError] = useState('')
 
   function cargar() {
@@ -113,7 +114,17 @@ export default function Pagos() {
           ))}
         </datalist>
 
-        {tocan.length > 0 && <TocaPagar fijos={tocan} anticipos={anticipos} alCambiar={cargar} />}
+        {pagadoFijo && <Aviso tono="bien">{pagadoFijo}</Aviso>}
+        {tocan.length > 0 && (
+          <TocaPagar
+            fijos={tocan}
+            anticipos={anticipos}
+            alPagar={(texto) => {
+              setPagadoFijo(texto)
+              cargar()
+            }}
+          />
+        )}
 
         {seccion === 'pagos' && (
           <>
@@ -196,7 +207,7 @@ function Resumen({ r, etiqueta, alCambiar }: { r: ResumenPagos; etiqueta: string
 }
 
 /** Los pagos fijos cuyo día ya llegó: se confirman con un toque. */
-function TocaPagar({ fijos, anticipos, alCambiar }: { fijos: PagoFijo[]; anticipos: AnticipoPendiente[]; alCambiar: () => void }) {
+function TocaPagar({ fijos, anticipos, alPagar }: { fijos: PagoFijo[]; anticipos: AnticipoPendiente[]; alPagar: (texto: string) => void }) {
   const dialogo = useDialogo()
   const [error, setError] = useState('')
   async function pagar(f: PagoFijo) {
@@ -216,7 +227,7 @@ function TocaPagar({ fijos, anticipos, alCambiar }: { fijos: PagoFijo[]; anticip
     if (referencia == null) return
     try {
       await api.pagarFijo(f.id, { monto: numero(monto) || undefined, referencia })
-      alCambiar()
+      alPagar(`Pagado a ${f.beneficiario}. El próximo queda para la fecha que le toca.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo pagar')
     }
@@ -255,7 +266,9 @@ function CamposDePago({
   adelantado?: number
 }) {
   const concepto = CONCEPTOS.find((c) => c.id === p.concepto)
-  const metodos = p.moneda === 'Bs' ? METODOS_PAGO.filter((m) => !SOLO_DOLARES.has(m)) : METODOS_PAGO
+  // El punto de venta solo cobra: no es de donde sale un pago.
+  const deDondeSale = METODOS_PAGO.filter((m) => m !== 'Punto de venta')
+  const metodos = p.moneda === 'Bs' ? deDondeSale.filter((m) => !SOLO_DOLARES.has(m)) : deDondeSale
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <Campo
@@ -266,7 +279,8 @@ function CamposDePago({
         placeholder="Nombre de la persona o empresa"
       />
       <Selector etiqueta="Concepto" value={p.concepto} onChange={(e) => poner('concepto', e.target.value)}>
-        {CONCEPTOS.map((c) => (
+        {/* Un anticipo es un adelanto suelto: no se repite como pago fijo. */}
+        {CONCEPTOS.filter((c) => conReferencia || c.id !== 'Anticipo').map((c) => (
           <option key={c.id} value={c.id}>
             {c.texto}
           </option>
