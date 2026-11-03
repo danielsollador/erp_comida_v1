@@ -11,18 +11,6 @@ Sincronizado el 2-nov-2026 sobre la rama `fase1`.
 - En GitHub quedan `app-expo` y `app-expo-play`, ya contenidas en `fase1`: se borran al fusionar.
 - No se versionan: `.env` (claves), `movil/.env` (apunta a **producción**), `movil/tienda/REVISOR.local.txt`, `.dev-data/` (datos de prueba y copias de `.env`) y las skills de terceros.
 
-## En local (sin Docker)
-
-`levantar-local.ps1` abre cinco servicios. Datos SQLite en `.dev-data/` (`local`, `hub` y `compartido`, con las cuentas).
-
-| Servicio | Puerto | Notas |
-|---|---|---|
-| Backend del local (Savora) | 8011 | `ERP_SEMBRAR_DEMO=1`, lector de facturas de prueba |
-| Backend del hub | 8012 | `ERP_ES_HUB=1` |
-| Web del ERP y sitio | 5181 | Vite, proxy a 8011 |
-| Web del hub | 5182 | Vite, proxy a 8012 |
-| App en el navegador | 8081 | Expo web con `EXPO_PUBLIC_API_BASE=http://localhost:8011` |
-
 ## Producción
 
 - VM `vertigo-erp` en Google Cloud (`e2-small`, `us-east1-b`), desde el 6-oct. Servicios de `docker-compose.gcp.yml`: Traefik, backend y frontend del local, hub y Let's Encrypt.
@@ -77,26 +65,6 @@ Norma `CAPA###_MOD_ENTIDAD` (cabecera de `models.py`). Centena = módulo: 1 vent
 
 Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compartido`), y la marca de cada local en `locales/<slug>.json`.
 
-## Dónde va cada cosa
-
-| Necesito... | Va en... |
-|---|---|
-| Un endpoint | `backend/app/routers/<modulo>.py` y declararlo en `acceso/permisos.py` |
-| Una tabla o columna | `models.py` + migración automática en `migrations.py` |
-| Un asiento contable | `contabilidad.crear_asiento` (invalida el día del mart). Nunca a mano. |
-| Fecha y hora del negocio | `timeutils.py`. Nunca `datetime.now()` suelto. Aún no hay día operativo. |
-| Mart diario | `consolidacion.py` (03:30, `VERSION`, `invalidar_dia`) |
-| Una cifra en pantalla | `Cifra` + su entrada en `lib/glosario.ts` |
-| Preguntar o avisar | `useDialogo()` (`components/dialogo.tsx`) |
-| Pantalla con secciones | `Secciones`, con la sección en la URL |
-| Restringir una pantalla | `Requiere modulo="..."` en `App.tsx` |
-| Tiempo real | `ws_manager.py` |
-| Aviso push | `push.py` |
-| Sesión y permisos | `backend/app/acceso/` |
-| IA | `backend/app/asistente/` |
-| App móvil | `movil/`. Lo que comparte con la web va en `frontend/src/lib/` y no importa componentes web. |
-| Sin conexión | `public/sw.js` (no guarda `/api/`) y `clave_cliente` en `crear_pedido` |
-
 ## Riesgos conocidos
 
 | Riesgo | Dónde | Lo resuelve |
@@ -111,7 +79,8 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
-- **2-nov** Un solo `CLAUDE.md` (reglas) y `fases.md` (qué se construye); toda la metodología en la raíz del repo; documentos recortados sin repetir información.
+- **2-nov** `CLAUDE.md` por áreas (cómo se trabaja, base de datos, backend, web, app); las fases pasan al plan; fuera `fases.md` y `ESTADO.md` (historia en git). Documentos recortados sin repetir información.
+- **2-nov** Toda la metodología en la raíz del repo, con un solo `CLAUDE.md`.
 - **2-nov** Plan revisado: bloques 1.2 (validar y subir) y 1.3 (errores QA); decisiones D10 y D11. Spec `ventas.md` en borrador.
 - **2-nov** Glosario: el chequeo vuelve a pasar (`a5035af`). Ficha de mercancía de la app igual a la web (`c038405`).
 - **2-nov** App móvil (`app-expo`) integrada (`0a7c6c5`) y APK de prueba con EAS. Ramas viejas borradas en GitHub.

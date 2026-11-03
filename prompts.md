@@ -98,3 +98,9 @@ No. Necesito que haya un solo CLAUDE.md y es con esta metodologia. Daniel si va 
 ## 18 (2026-11-02, Leider)
 
 Mira, varias cosas. En el cloud.md creo que no deberían estar esa parte de las fases. Deberían estar en otro lado, ¿no? Necesito que me escribas en el cloud.md una sección en donde cuando tú edites archivos, .md, sigas algunos principios que es que no dupliques información, que la información no se repita, no crees documentos larguísimos que nadie se va a leer, que la información sea lo más concisa posible, que la información sea lo más intuitiva posible para el humano. Cosas así. Lo llenas dentro del cloud.md y luego vas a corregir todos los .md que tenemos haciendo esto. Porque me has creado, por ejemplo, el spec de ventas, me creaste algo que la verdad nadie se va a leer. No me funciona así.
+
+## 19 (2026-11-02, Leider)
+
+Creaste cosas que se están duplicando y se están chocando. Como estado.md, o fases.md, eso debería estar dentro del plan de implementación y ya está. No entiendo por qué estás complicándote creando tantas cosas.
+
+Aparte, no me gusta que estás metiendo cosas de estrategia con modo de trabajar, requerimientos técnicos. En la misma estructura de cómo se trabaja, tienes que hacer cuando Mira, si esta parte, por ejemplo, de que tabla nueva es parte de base de datos, es de cómo se va a estructurar mi base de datos, el cloud.md tiene que tener un lugar específico para base de datos y cómo vamos a trabajar la base de datos. Ya sea en cómo se trabaja, haciendo una subsección o algo así, pero... No entiendo eso de definición de hecho, o sea, la verdad siento que está como que juntando varias cosas y no lo entiendo. También puedes agregar lo que tenía antes el Claude, lo que le pusiste, que si yo le doy clic se arma como una flechita para abajo, que yo le doy clic a cada cosa para abrir y bajar. Y así no ocupar la pantalla con tanto texto.

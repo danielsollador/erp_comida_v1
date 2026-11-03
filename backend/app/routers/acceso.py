@@ -169,7 +169,7 @@ def pase(datos: PidoPase, request: Request) -> dict:
 @router.get("/entrar")
 def entrar(request: Request, pase: Optional[str] = None):
     # `Optional` y no `str | None`: FastAPI evalua esta anotacion en tiempo de
-    # ejecucion y Daniel desarrolla con Python 3.8 (ver ESTADO.md).
+    # ejecucion y Daniel desarrolla con Python 3.8.
     """Canjea un pase por la sesion de ESTE dominio y entra.
 
     Redirige siempre: sin pase valido cae en el login, que es lo que toca al

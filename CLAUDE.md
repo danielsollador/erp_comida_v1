@@ -1,10 +1,8 @@
 # Vertigo Pro
 
-ERP web y móvil "fight complexity", impulsado con IA. Aquí están las reglas: cómo se trabaja y cómo se escriben el código y los documentos. Lo que se construye está en `fases.md`.
+ERP web y móvil "fight complexity", impulsado con IA. Este archivo dice cómo se trabaja; lo que se construye está en `plan-implementacion.md`.
 
-## Rol del agente
-
-Arquitecto de desarrollo con 12 años de experiencia. Habla en español.
+**Rol del agente:** arquitecto de desarrollo con 12 años de experiencia. Habla en español.
 
 ## Objetivo general
 
@@ -33,46 +31,65 @@ Crear un ERP web/movil donde nuestros cientes:
 
 ## Cómo se trabaja
 
-1. **Idea nueva:** `/nueva-funcionalidad` la escribe en `fases.md`, su spec, el plan y las tareas. Sin código.
-2. **Spec aprobada:** ningún bloque se programa sin que Leider apruebe su spec.
+1. **Idea nueva:** `/nueva-funcionalidad` la agrega al plan, con su spec y sus tareas. Sin código.
+2. **Spec aprobada:** ningún bloque se programa sin que Leider o Daniel apruebe su spec.
 3. **Implementar:** `/implementar`, en la rama de la fase (`fase<N>`), un commit por tarea.
-4. **Validar en local:** el agente deja todo levantado (`levantar-local.ps1`) y Leider valida con la spec.
-5. **Subir:** se sube la rama (GitHub corre las pruebas) y, en verde, se fusiona en `master`.
-6. **Desplegar:** solo cuando Leider lo pida (`gcp/README.md`).
-7. **Parar** al cerrar cada fase.
+4. **Comprobar que compila** (es lo único que prueba el agente; la suite completa la corre GitHub):
+   - Backend: `cd backend && py -m compileall -q app`
+   - Web: `cd frontend && npx tsc --noEmit && npm run build && npm run glosario`
+   - App, si se tocó: `cd movil && npx tsc --noEmit`
+5. **Validar en local:** el agente deja todo levantado y Leider valida con la spec.
+6. **Subir:** se sube la rama (GitHub corre las pruebas) y, en verde, se fusiona en `master`.
+7. **Desplegar:** solo cuando Leider o Daniel lo pida (`gcp/README.md`).
+8. **Parar** al cerrar cada fase.
 
+Además:
+
+- Al cerrar una tarea se marcan `tareas.md` y una línea en el registro de `project-map.md`.
 - Lo que falla se anota en `Apuntes/fixes.md` y se arregla con `/arreglar`.
 - Cada prompt nuevo se guarda en `prompts.md` (número, fecha y quién).
 - Ante una duda, se lee la spec; si no la resuelve, se asume lo más simple que no rompa nada. Las decisiones pendientes del plan siempre se preguntan.
 - Si algo se puede optimizar, se propone en el plan.
-- **En local:** ERP http://localhost:5181, sitio http://localhost:5181/sitio/, hub http://localhost:5182/inicio.html y app http://localhost:8081. La app local usa el backend local; `movil/.env` apunta a producción y solo sirve para los builds de las tiendas.
 
-## Definición de hecho
+**En local** (`levantar-local.ps1`, datos de prueba en `.dev-data/`):
 
-El agente solo comprueba que compila; la funcionalidad la valida Leider y la suite completa la corre GitHub.
+| Qué | Dirección | Notas |
+|---|---|---|
+| ERP | http://localhost:5181 | Backend en 8011, con datos de demostración |
+| Sitio público | http://localhost:5181/sitio/ | |
+| Hub | http://localhost:5182/inicio.html | Backend en 8012 |
+| App móvil | http://localhost:8081 | Usa el backend local. `movil/.env` apunta a producción y solo sirve para los builds de las tiendas |
 
-- Backend: `cd backend && py -m compileall -q app`
-- Web: `cd frontend && npx tsc --noEmit && npm run build && npm run glosario`
-- App, si se tocó: `cd movil && npx tsc --noEmit`
+## Base de datos
 
-Y siempre:
+- PostgreSQL 16 con un esquema por local (`SAVORA`) y el esquema `HUB`. SQLite solo en local y en pruebas.
+- Toda tabla sigue la norma `CAPA###_MOD_ENTIDAD` (explicada en la cabecera de `models.py`) y entra con su migración automática en `migrations.py`.
+- Un asiento contable solo se crea con `contabilidad.crear_asiento`; nunca se escribe en el libro a mano.
+- La fecha y la hora del negocio salen de `timeutils.py`, nunca de `datetime.now()`.
+- Un bloqueo de fila bloquea solo su tabla: `with_for_update(of=Tabla)`.
+- Si cambia lo que guarda el mart diario (`consolidacion.py`), sube `consolidacion.VERSION`.
 
+## Backend
+
+- FastAPI y SQLAlchemy. Un endpoint va en `backend/app/routers/<modulo>.py` y se declara en `acceso/permisos.py`; si no, queda cerrado.
 - Un test por cada regla de negocio nueva, con el caso real en el docstring.
-- Endpoint nuevo declarado en `acceso/permisos.py` (si no, queda cerrado).
-- Tabla nueva con la norma `CAPA###_MOD_ENTIDAD` y su migración en `migrations.py`.
-- Si cambia el mart diario, sube `consolidacion.VERSION`. Si cambia cómo se usa algo, se actualiza `backend/app/asistente/manual.md`.
-- `tareas.md` y `project-map.md` al día.
+- Tiempo real (POS y cocina) en `ws_manager.py`; avisos push en `push.py`.
+- IA en `backend/app/asistente/`: Claude para el asistente, Gemini para leer facturas. Si cambia cómo se usa algo, se actualiza `asistente/manual.md`.
 
-## Código
+## Web (ERP, hub y sitio)
 
-- Modular, legible y sencillo. Mínimos comentarios, sin emojis; el porqué va en el mensaje de commit.
-- Siempre `let` o `const`, nunca `var`.
+- React, Vite, TypeScript y Tailwind 4.
+- Siempre `let` o `const`, nunca `var`. `preventDefault` en los `submit` y `click` que lo necesiten.
 - Nunca `alert`, `confirm` ni `prompt`: `useDialogo()` y `Modal`, con el estilo de la web.
-- `preventDefault` en los `submit` y `click` que lo necesiten.
-- Se reutilizan las piezas de `components/ui.tsx`, `Tabla` y `Secciones`. Toda tabla se ordena, se vuelve ficha cuando no cabe y se exporta igual que las demás.
-- Toda cifra o columna se explica en `lib/glosario.ts`.
+- Se reutilizan `components/ui.tsx`, `Tabla` y `Secciones` (con la sección en la URL). Toda tabla se ordena, se vuelve ficha cuando no cabe y se exporta igual que las demás.
+- Toda cifra o columna se explica en `lib/glosario.ts` (`npm run glosario` lo revisa).
+- Una pantalla se restringe con `Requiere modulo="..."` en `App.tsx`.
 - El sitio público, optimizado para SEO.
-- En el chat no se explica qué hace el código.
+
+## App móvil
+
+- Expo (React Native) en `movil/`.
+- Comparte código con la web en `frontend/src/lib/`; esos archivos no importan componentes de la web.
 
 ## Diseño
 
@@ -80,33 +97,38 @@ Y siempre:
 - Todo cálculo que no se entiende a simple vista, el aplicativo lo explica.
 - La guía visual es la skill `estilo-vertigo`: se carga siempre que se toque una pantalla o componente.
 
-## Stack
+## Código en general
 
-FastAPI + SQLAlchemy + PostgreSQL 16 (un esquema por local; SQLite en pruebas) · React + Vite + TypeScript + Tailwind 4 · Expo (React Native) · WebSocket para POS y cocina · Claude (asistente) y Gemini (facturas) · Google Cloud: una VM con docker compose y respaldos en un bucket.
+- Modular, legible y sencillo.
+- Mínimos comentarios y sin emojis; el porqué va en el mensaje de commit.
+- En el chat no se explica qué hace el código.
 
-## Cómo se escriben los documentos (.md)
+## Servidor
 
-- **Un dato, un lugar.** Si otro documento lo necesita, lo enlaza; no lo copia.
-- **Corto.** Si nadie lo va a leer entero, sobra. Una spec cabe en dos pantallas (unas 60 líneas).
-- **Lo importante primero.** La respuesta arriba; el detalle, después.
-- **Para personas.** Lenguaje sencillo, frases cortas, listas y tablas. Nombres de archivos de código solo en el plan y el mapa.
-- **Se corrige, no se acumula.** Lo viejo se borra; la historia queda en git.
-- **Cada cosa en su documento:** el estado, solo en `tareas.md`; los cambios, una línea en el registro de `project-map.md`.
-- **Sin relleno.** Nada de introducciones, repeticiones ni "como se dijo arriba".
-- **Antes de crear un documento**, se busca si ya existe uno donde va.
+- Google Cloud: una VM con docker compose (Traefik, backend y frontend por local, hub).
+- Respaldos cada 6 h, copia horaria a un bucket y snapshot diario del disco.
+- Despliegue manual con `gcp/README.md`.
 
-## Documentos
+## Documentos (.md)
 
 | Documento | Qué tiene |
 |---|---|
-| `CLAUDE.md` | Las reglas (este) |
-| `fases.md` | Qué se construye, por fase |
-| `specs/<modulo>.md` | Detalle de un requisito y cómo se valida (molde: `specs/_plantilla.md`) |
-| `plan-implementacion.md` | Cómo y en qué orden se hace la fase en curso, y las decisiones pendientes |
+| `CLAUDE.md` | Cómo se trabaja (este) |
+| `plan-implementacion.md` | Qué se construye en cada fase, cómo se hace la fase en curso y las decisiones pendientes |
+| `specs/<modulo>.md` | El detalle de un requisito y cómo se valida (molde: `specs/_plantilla.md`) |
 | `tareas.md` | Qué toca y qué está hecho |
 | `project-map.md` | Cómo está el sistema hoy y registro de cambios |
 | `prompts.md` | Historial de prompts |
 | `Apuntes/` | Apuntes de la metodología y `fixes.md` |
-| `ESTADO.md` | Historial viejo, hasta el 19-sep (no se actualiza) |
 
-Si chocan, manda en este orden: `CLAUDE.md`, `fases.md`, la spec, el plan, el mapa. Si el código y el mapa no coinciden, manda el código.
+Si chocan, manda en este orden: `CLAUDE.md`, el plan, la spec, el mapa. Si el código y el mapa no coinciden, manda el código.
+
+Cómo se escriben:
+
+- **Un dato, un lugar.** Si otro documento lo necesita, lo enlaza; no lo copia.
+- **No se crean documentos nuevos** fuera de esta tabla y de una spec por módulo.
+- **Corto.** Si nadie lo va a leer entero, sobra. Una spec cabe en dos pantallas.
+- **Lo importante primero.** La respuesta arriba; el detalle, después.
+- **Para personas.** Lenguaje sencillo, frases cortas, listas y tablas.
+- **Se corrige, no se acumula.** Lo viejo se borra; la historia queda en git.
+- **Sin relleno.** Nada de introducciones ni repeticiones.
