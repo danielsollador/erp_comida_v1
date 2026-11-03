@@ -11,7 +11,6 @@ import Recorrido, { FilaReportes } from '../components/Recorrido'
 import AjustarAPantalla from '../components/AjustarAPantalla'
 import UsuarioMenu from '../components/UsuarioMenu'
 import Notificaciones from '../components/Notificaciones'
-import ChatAyuda from '../components/ChatAyuda'
 import { useAcceso } from '../lib/acceso'
 import { recordado, useRecordado } from '../lib/memoria'
 import { api, connectWs } from '../lib/api'
@@ -174,8 +173,6 @@ export default function Inicio() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {estado.puede.operar && <MonedaToggle />}
-            {/* La ayuda tambien aqui: es la primera pantalla y la que mas se mira. */}
-            <ChatAyuda />
             <Notificaciones />
             {/* El inicio no usa <NavBar>, tiene su propio encabezado: sin
                 esto seria la unica pantalla del ERP sin pantalla completa,

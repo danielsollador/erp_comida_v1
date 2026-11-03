@@ -10,7 +10,7 @@ import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { api } from '../lib/api'
-import { Respuesta } from '../components/ChatAyuda'
+import { Respuesta } from '../components/TextoConFormato'
 import { METODOS_CON_REFERENCIA, etiquetaMetodo } from '../lib/pagos'
 import type {
   CierreCaja,

@@ -3,14 +3,10 @@ import type {
   PropuestaCarga,
   ExplicacionCierre,
   PropuestaRevisada,
-  TurnoAyuda,
-  BorradorCaso,
-  CasoRegistrado,
   BorradorWhatsApp,
   DetalleExtracto,
   EstadoConciliacion,
   ReglaBanco,
-  RespuestaNegocio,
   PedidoProveedor,
   ResultadoCarga,
   Reclamo,
@@ -248,47 +244,6 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     throw new ErrorApi(mensaje, res.status)
   }
   return res.json()
-}
-
-/**
- * Una respuesta que llega en partes, un JSON por línea (NDJSON): el chat de
- * ayuda la muestra mientras se escribe. `alEvento` recibe cada parte.
- */
-export async function enVivo(path: string, cuerpo: unknown, alEvento: (e: Record<string, unknown>) => void): Promise<void> {
-  let res: Response
-  try {
-    res = await fetch(urlApi(`/api${path}`), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...cabecerasApp() },
-      body: JSON.stringify(cuerpo),
-      cache: 'no-store',
-      credentials: 'same-origin',
-    })
-  } catch {
-    throw new SinConexion()
-  }
-  recogerToken(res)
-  if (res.status === 401) {
-    window.location.replace('/login.html')
-    throw new Error('Sesión requerida.')
-  }
-  if (!res.ok || !res.body) throw new ErrorApi((await res.text()) || `Error ${res.status}`, res.status)
-  const lector = res.body.getReader()
-  const decodificador = new TextDecoder()
-  let resto = ''
-  for (;;) {
-    const { done, value } = await lector.read()
-    if (done) break
-    resto += decodificador.decode(value, { stream: true })
-    let fin = resto.indexOf('\n')
-    while (fin >= 0) {
-      const linea = resto.slice(0, fin).trim()
-      resto = resto.slice(fin + 1)
-      if (linea) alEvento(JSON.parse(linea))
-      fin = resto.indexOf('\n')
-    }
-  }
-  if (resto.trim()) alEvento(JSON.parse(resto))
 }
 
 /** Lo que el Libro de Ventas pide de una factura y no sale del cobro. Todo
@@ -1363,30 +1318,6 @@ export const api = {
   // se engancha a la factura que salio.
   estadoLectorFacturas: () => req<{ activo: boolean; lector: string }>('/compras/lectura'),
   /** Cargar el inventario con IA: si está prendido (mismo interruptor que las facturas). */
-  /** El chat de ayuda (ver backend/app/asistente_ayuda.py). */
-  estadoAyuda: () => req<{ activo: boolean; negocio: boolean }>('/ayuda'),
-  /** El caso para soporte, armado desde la conversación. No guarda nada. */
-  borradorCaso: (pantalla: string, historial: TurnoAyuda[]) =>
-    req<BorradorCaso>('/ayuda/caso/borrador', { method: 'POST', body: JSON.stringify({ pantalla, historial }) }),
-  registrarCaso: (caso: { tipo: string; titulo: string; resumen: string; pantalla: string; historial: TurnoAyuda[] }) =>
-    req<CasoRegistrado>('/ayuda/caso', { method: 'POST', body: JSON.stringify(caso) }),
-  casosDeSoporte: () => req<CasoRegistrado[]>('/ayuda/casos'),
-  /** El asistente que hace cosas: confirmar o cancelar lo que propuso (ver backend/app/agente.py). */
-  confirmarAccion: (propuesta_id: string) =>
-    req<{ ok: boolean; texto: string; nota: string }>('/ayuda/agente/confirmar', { method: 'POST', body: JSON.stringify({ propuesta_id }) }),
-  cancelarAccion: (propuesta_id: string) =>
-    req<{ ok: boolean }>('/ayuda/agente/cancelar', { method: 'POST', body: JSON.stringify({ propuesta_id }) }),
-  /** Pregúntale a tu negocio (ver backend/app/pregunta_negocio.py). */
-  preguntarNegocio: (pregunta: string, historial: TurnoAyuda[]) =>
-    req<RespuestaNegocio>('/ayuda/negocio', {
-      method: 'POST',
-      body: JSON.stringify({ pregunta, historial }),
-    }),
-  preguntarAyuda: (pregunta: string, pantalla: string, historial: TurnoAyuda[]) =>
-    req<{ texto: string; con_ia: boolean }>('/ayuda', {
-      method: 'POST',
-      body: JSON.stringify({ pregunta, pantalla, historial }),
-    }),
   estadoAsistenteInventario: () => req<{ activo: boolean; lector: string }>('/inventario/asistente'),
   /** Lo escrito o dictado y las fotos (ya achicadas): devuelve la propuesta revisada. */
   leerCargaInventario: async (texto: string, fotos: Blob[]) => {

@@ -19,7 +19,6 @@ from .routers import (
     agencia,
     app_movil,
     autorizaciones as autorizaciones_router,
-    ayuda,
     caja,
     compras,
     compras_alertas,
@@ -242,7 +241,6 @@ app.include_router(pagos.router)
 app.include_router(inventario.router)
 app.include_router(preparaciones.router)
 app.include_router(inventario_asistente.router)
-app.include_router(ayuda.router)
 app.include_router(config.router)
 app.include_router(caja.router)
 app.include_router(reportes_dinamicos.router)

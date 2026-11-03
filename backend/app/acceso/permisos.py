@@ -153,9 +153,9 @@ SOLO_ADMINISTRA = ("/api/contabilidad", "/api/impuestos", "/api/respaldos",
 # La cartera de locales de Vertigo. Solo el equipo de la plataforma.
 SOLO_VERTIGO = ("/api/agencia",)
 # Lo que puede cualquiera con sesion, sea el rol que sea: la clave y el PIN
-# propios, el chat de ayuda (la cocina tambien pregunta) y su propio telefono
-# para los avisos push (push.py decide despues a quien le llega cada aviso).
-PARA_TODOS = ("/api/usuarios/mi/", "/api/ayuda", "/api/push/")
+# propios y su propio telefono para los avisos push (push.py decide despues a
+# quien le llega cada aviso).
+PARA_TODOS = ("/api/usuarios/mi/", "/api/push/")
 
 # Lecturas que no comprometen nada y que las pantallas piden al cargar, sea
 # quien sea: la tasa del dia y la configuracion (que hoy es solo la tasa).

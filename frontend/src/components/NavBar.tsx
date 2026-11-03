@@ -11,7 +11,6 @@ import Marca from './Marca'
 import { Secciones, type Seccion } from './Secciones'
 import UsuarioMenu from './UsuarioMenu'
 import Notificaciones from './Notificaciones'
-import ChatAyuda from './ChatAyuda'
 
 /**
  * El encabezado de cada modulo. En escritorio la barra lateral ya dice donde
@@ -107,7 +106,6 @@ export default function NavBar({
         <div className="ml-auto flex items-center gap-2 max-sm:basis-full max-sm:justify-end">
           {acciones}
           {moneda && <MonedaToggle dark={dark} />}
-          <ChatAyuda dark={dark} />
           <Notificaciones dark={dark} />
           {/* Pantalla completa en TODOS los modulos, no solo en el mostrador
               y la cocina. Nacio ahi porque son las pantallas que se dejan
