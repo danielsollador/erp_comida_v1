@@ -130,3 +130,7 @@ y dime cual seria el comando que tengo que poner aqui en claude code para saber 
 (Salida de /context.) Aqui sale esto, necesito que agarres y depures cosas porque figma por ejemplo ni lo estamos utilizando ya.
 
 Otra cosa es que, este comando no me dice como el texto que tiene en memoria este agente, podria verlo ?
+
+## 24 (2026-11-02, Leider)
+
+bien, 100% seguro que cada vez que te haga un requerimiento tu vas a seguir el Spect kit ? en esta y en todas las conversaciones nada mas con ver el proyecto, ya ellas solas van a ubicar el CLAUDE.md y lo usaran como su principal ?
