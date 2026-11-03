@@ -148,15 +148,33 @@ Sin excepciones, en todos los módulos, en la web y en la app:
 
 ## Servidor y despliegue
 
-- Google Cloud: una VM con docker compose (Traefik, backend y frontend por local, hub). Respaldos cada 6 h, copia horaria a un bucket y snapshot diario del disco.
+Qué hay en producción: `project-map.md` > Producción. Todo se hace con `gcloud` (cuenta de Leider o de Daniel), en Git Bash y desde la raíz del repo.
 
-Un despliegue:
+### Un despliegue (unos 15 minutos)
 
 1. **Cuándo:** solo cuando Leider o Daniel lo pida, fuera del horario de ventas y con uno de los dos presente.
-2. **Antes:** lo que se despliega está en `master` con GitHub en verde. Si cambia la base de datos, un respaldo a mano justo antes (Contabilidad > Respaldos).
-3. **Cómo:** los comandos de `gcp/README.md` (construir las imágenes, fijar la versión y aplicar). No se corre la suite: ya la corrió GitHub.
-4. **Recibo:** `/api/health` responde en los dos dominios y se mira en producción lo que se desplegó, solo mirando (sin crear ventas, compras ni asientos de prueba).
-5. **Si algo falla:** se vuelve a la versión anterior poniendo su versión en el secreto `imagen-tag` y aplicando otra vez.
+2. **Antes:** lo que se despliega está en `master` con GitHub en verde. Si cambia la base de datos, un respaldo a mano justo antes (Contabilidad > Respaldos). No se corre la suite: ya la corrió GitHub.
+3. **Construir las dos imágenes a la vez** (~5 min):
+   ```bash
+   V=$(git rev-parse --short HEAD); R=us-east1-docker.pkg.dev/vertigo-erp-produccion/vertigo
+   gcloud builds submit backend --tag $R/backend:$V --region=us-east1 &
+   gcloud builds submit frontend --tag $R/frontend:$V --region=us-east1 &
+   wait
+   ```
+4. **Fijar la versión y aplicar** (~2 min; el backend tarda en arrancar por las migraciones):
+   ```bash
+   printf $V | gcloud secrets versions add imagen-tag --data-file=-
+   gcloud compute ssh vertigo-erp --zone=us-east1-b --tunnel-through-iap --command='sudo mv /tmp/docker-compose*.yml /docker/erp/ 2>/dev/null; sudo google_metadata_script_runner startup'
+   ```
+   Si cambió algún `docker-compose*.yml`, antes se copian: `gcloud compute scp docker-compose.yml docker-compose.prod.yml docker-compose.gcp.yml vertigo-erp:/tmp/ --zone=us-east1-b --tunnel-through-iap`.
+5. **Recibo:** `https://savora.vertigopro.tech/api/health` y `https://vertigopro.tech/api/health` responden, y se mira en producción lo que se desplegó, solo mirando (sin crear ventas, compras ni asientos de prueba).
+6. **Si algo falla:** `printf <versión anterior> | gcloud secrets versions add imagen-tag --data-file=-` y se repite el paso 4.
+
+### Operación
+
+- **Entrar a la VM:** `gcloud compute ssh vertigo-erp --zone=us-east1-b --tunnel-through-iap` (no hay puerto 22 abierto).
+- **Cambiar un secreto o un dominio:** `gcloud secrets versions add <nombre> --data-file=-` con el valor por la entrada estándar (nunca en el comando ni en el chat) y se repite el paso 4.
+- **Trampas que ya pasaron:** Traefik va en `v3` con `DOCKER_API_VERSION=1.44`; el backend tiene `start_period: 120s` porque las migraciones tardan; `docker cp` a un contenedor parado falla (los archivos de `compartido` se escriben en `/var/lib/docker/volumes/erp_comida_compartido/_data`, dueño `10001`).
 
 ## Documentos (.md)
 

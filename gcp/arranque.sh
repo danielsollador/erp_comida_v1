@@ -12,7 +12,7 @@
 #   4. Deja un temporizador que copia los respaldos al bucket cada hora.
 #
 # Lo que NO hace: traer el codigo. Los compose y `locales/` se copian con
-# `gcloud compute scp` (por IAP) a /docker/erp; ver gcp/README.md.
+# `gcloud compute scp` (por IAP) a /docker/erp; ver CLAUDE.md, Servidor y despliegue.
 set -euo pipefail
 
 PROYECTO=$(curl -sH 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/project/project-id)

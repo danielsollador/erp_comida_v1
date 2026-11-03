@@ -149,7 +149,7 @@ Orden: 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los errores 
 
 ### 1.9 · Cierre de la FASE 1
 
-Despliegue según `gcp/README.md`, lo terminado pasa a la FASE 0 y se etiqueta `v1.1`.
+Despliegue según `CLAUDE.md`, lo terminado pasa a la FASE 0 y se etiqueta `v1.1`.
 
 ## FASE 2 · El negocio en palabras (IA)
 
