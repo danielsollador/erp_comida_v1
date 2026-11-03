@@ -174,3 +174,17 @@ que carajo es Sentry, o sea, Sentry es como que una integración de nuestro apli
 ## 34 (2026-11-03, Leider)
 
 Perfecto. Entonces vamos a integrar context7 , playwrigth y serena. Hazlo. Y me avisas si tuviste q modificar algo nen nuestros ficheros
+
+## 35 (2026-11-03, Leider)
+
+puedes revisar si ya Daniel hizo el modulo de pagos ?
+
+## 36 (2026-11-03, Leider)
+
+Si Daniel, o yo. Usamos Claude en cualquier sesion en cualquier PC, mientras estemos dentro de este repositorio, los agentes se van a regir por la CLAUDE.md que creamos ?
+
+## 37 (2026-11-03, Leider)
+
+Como asi Claude no lee solo un CLAUDE.md , no puedes blindar para que solo se lea este?
+
+Porque se le puede pasar una regla si se supone que esta dentro del Claude.MD ?

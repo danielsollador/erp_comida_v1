@@ -84,6 +84,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **3-nov** Solo manda el `CLAUDE.md` del repo: `.claude/settings.json` ignora los personales y la memoria automática.
 - **3-nov** Herramientas del agente: Context7, Serena y Playwright en `.mcp.json` (Serena con `.serena/project.yml`, sin memorias).
 - **3-nov** Carril rápido en `CLAUDE.md` para cambios pequeños sin dinero, permisos ni base de datos (unos 15 min a producción); en un despliegue las imágenes se construyen mientras GitHub prueba.
 - **3-nov** El despliegue y la operación del servidor pasan a `CLAUDE.md` (imágenes construidas a la vez); `gcp/README.md` solo apunta ahí. Datos del servidor en Producción de este mapa.
