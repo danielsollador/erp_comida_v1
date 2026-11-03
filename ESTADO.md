@@ -1,7 +1,8 @@
 # Estado del proyecto
 
-> Documento de traspaso. Si vas a retomar este proyecto, lee esto primero — sobre
-> todo la sección de arriba, que es la que no se puede deducir leyendo el código.
+> **Historial de traspasos hasta el 19-sep. Ya no se actualiza.** Desde el 2-nov
+> las reglas del producto están en `CLAUDE.md` y el estado actual en
+> `docs/project-map.md`. Este archivo sirve para entender el porqué de reglas viejas.
 
 ---
 
