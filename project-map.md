@@ -79,6 +79,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **2-nov** Fuera los `.md` de planes y guías viejas (Hostinger, migración a Google, plan de compras, guías de la app); sus reglas vigentes pasaron a `CLAUDE.md`, que suma "Qué es fight complexity", "Tablas y gráficos" y "Palabras".
 - **2-nov** `CLAUDE.md` por áreas (cómo se trabaja, base de datos, backend, web, app); las fases pasan al plan; fuera `fases.md` y `ESTADO.md` (historia en git). Documentos recortados sin repetir información.
 - **2-nov** Toda la metodología en la raíz del repo, con un solo `CLAUDE.md`.
 - **2-nov** Plan revisado: bloques 1.2 (validar y subir) y 1.3 (errores QA); decisiones D10 y D11. Spec `ventas.md` en borrador.

@@ -1,6 +1,6 @@
 """Preparaciones, produccion y los numeros que salen de ellas.
 
-Ver docs/plan-compras-inventario-produccion.md (fases 2 a 4). En corto:
+En corto:
 
   - Una PREPARACION (el guiso de pollo) es una mercancia mas, de tipo
     "preparacion", con su receta POR UNO: lo que lleva 1 kg (o 1 lt, o 1

@@ -751,7 +751,7 @@ export type Configuracion = {
 
 export type CostoParaPrecios = 'reposicion' | 'promedio' | 'mayor'
 
-// ── Preparaciones y produccion (docs/plan-compras-inventario-produccion.md) ──
+// ── Preparaciones y produccion ──
 
 export type LineaPreparacion = {
   ingrediente_id: number

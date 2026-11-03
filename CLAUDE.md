@@ -23,6 +23,16 @@ Crear un ERP web/movil donde nuestros cientes:
 - Priorizar UX.
 - Priorizar reutilizacion de componentes
 
+### Qué es "fight complexity"
+
+La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank con un banco:
+
+- **Habla como el negocio, no como el sistema:** "lo que te quedó", no "utilidad neta del periodo".
+- **Una cosa importante por pantalla,** y lo siguiente que hay que hacer, a la vista.
+- **Toda cifra se explica sola:** qué es, de dónde sale y cómo se calcula, con un ejemplo.
+- **Menos pasos:** lo que el sistema puede hacer solo (asientos, impuestos, tasa), lo hace sin preguntar.
+- **Ningún error sin salida:** cada aviso dice qué pasó y qué hacer.
+
 ## Reglas de negocio que no se negocian
 
 - Vertigo Pro es el producto; Savora, su primer cliente. Nada propio de un cliente (nombre, color, logo, reglas) va fijo en el código: va en `locales/<local>.json` o en su configuración.
@@ -81,20 +91,36 @@ Además:
 - React, Vite, TypeScript y Tailwind 4.
 - Siempre `let` o `const`, nunca `var`. `preventDefault` en los `submit` y `click` que lo necesiten.
 - Nunca `alert`, `confirm` ni `prompt`: `useDialogo()` y `Modal`, con el estilo de la web.
-- Se reutilizan `components/ui.tsx`, `Tabla` y `Secciones` (con la sección en la URL). Toda tabla se ordena, se vuelve ficha cuando no cabe y se exporta igual que las demás.
-- Toda cifra o columna se explica en `lib/glosario.ts` (`npm run glosario` lo revisa).
+- Se reutilizan `components/ui.tsx`, `Tabla` y `Secciones` (con la sección en la URL).
 - Una pantalla se restringe con `Requiere modulo="..."` en `App.tsx`.
 - El sitio público, optimizado para SEO.
 
+## Tablas y gráficos
+
+Sin excepciones, en todos los módulos, en la web y en la app:
+
+- **Toda tabla se exporta a CSV y a Excel,** con el mismo botón y en el mismo lugar.
+- **Toda tabla se ordena por cualquier columna,** con el botón de orden en el encabezado de cada columna.
+- **Toda columna se explica al pasar el cursor** (o al tocarla en la tablet): qué muestra y cómo se calcula, en palabras del negocio y con un ejemplo. La explicación vive en `lib/glosario.ts` y `npm run glosario` falla si falta una.
+- Toda tabla se vuelve fichas cuando no cabe en la pantalla.
+- Toda tabla usa el componente `Tabla`; nunca un `<table>` suelto.
+- Todo gráfico y toda tarjeta con una cifra se explican igual que una columna.
+
 ## App móvil
 
-- Expo (React Native) en `movil/`.
+- Expo (React Native) en `movil/`. Expo cambia en cada versión: antes de tocar una API de Expo se lee la documentación de la versión instalada, y las dependencias se agregan con `npx expo install`.
+- La app es igual que la web: el mismo contenido, las mismas palabras, los mismos avisos y validaciones, adaptados al pulgar.
 - Comparte código con la web en `frontend/src/lib/`; esos archivos no importan componentes de la web.
+
+## Palabras
+
+- "Unidades", nunca "piezas". "Inventario", nunca "depósito".
+- En compras siempre "costo", nunca "precio". "Costo última compra".
+- Plural correcto (1 unidad, 2 unidades). En español de Venezuela, tuteando.
 
 ## Diseño
 
 - 100 % responsive (ERP, hub y sitio), en claro y oscuro, en tablet y teléfono.
-- Todo cálculo que no se entiende a simple vista, el aplicativo lo explica.
 - La guía visual es la skill `estilo-vertigo`: se carga siempre que se toque una pantalla o componente.
 
 ## Código en general
