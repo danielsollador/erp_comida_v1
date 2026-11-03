@@ -43,11 +43,12 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 
 1. **Idea nueva:** `/nueva-funcionalidad` la agrega al plan, con su spec y sus tareas. Sin código.
 2. **Spec aclarada y aprobada:** lo ambiguo se pregunta antes, y ningún bloque se programa sin que Leider o Daniel apruebe su spec.
-3. **Antes de tocar código:** se leen `project-map.md`, la spec y los archivos que se van a tocar (con su `git log`), y se **busca en todo el código** si ya existe algo que haga lo mismo (componente, función, endpoint, tabla, texto del glosario). Si existe, se reutiliza o se extiende; nunca dos piezas que hagan lo mismo.
+3. **Antes de tocar código:** se leen `project-map.md`, la spec y los archivos que se van a tocar (con su `git log`), y se **busca en todo el código** si ya existe algo que haga lo mismo (componente, función, endpoint, tabla, texto del glosario), con Serena para ver quién usa cada pieza. Si existe, se reutiliza o se extiende; nunca dos piezas que hagan lo mismo.
 4. **Implementar:** `/implementar`, en la rama de la fase (`fase<N>`), un commit por tarea. Si toca dinero (cobros, caja, inventario, asientos o impuestos), la prueba se escribe **antes** que el código, a partir de la spec.
 5. **Comprobar y dejar el recibo:**
    - Que compila. Backend: `cd backend && py -m compileall -q app`. Web: `cd frontend && npx tsc --noEmit && npm run build && npm run glosario`. App, si se tocó: `cd movil && npx tsc --noEmit`.
    - Que funciona: solo las pruebas de lo que cambió (la nueva y las del módulo tocado), por ejemplo `cd backend && .venv\Scripts\python -m pytest tests/test_caja.py -q` o `cd frontend && npx vitest run src/lib/<archivo>.test.ts`.
+   - Que se ve: si se tocó una pantalla, el agente la abre con Playwright, hace el flujo y revisa que la consola no tenga errores.
    - El **recibo** va en el mensaje final: qué se corrió y qué dio ("compila; 12 pruebas de caja pasan").
    - La suite completa nunca se corre en local: la corre GitHub sola al subir la rama (unos 3 minutos).
 6. **Validar en local:** el agente deja todo levantado y Leider valida con la spec.
@@ -75,7 +76,7 @@ Un pedido escrito sin comando sigue el mismo camino que si lo trajera. Primero s
 Para lo pequeño que no toca dinero, permisos ni la base de datos. Sin spec, sin plan y sin tareas:
 
 1. **Se hace directo**, en una rama `fix-<tema>` que sale de `master` (lo que está en producción).
-2. **Recibo:** compila y, si tiene prueba, pasa.
+2. **Recibo:** compila, pasa su prueba si la tiene y, si es una pantalla, se ve bien en Playwright.
 3. **Leider lo mira** en local con la dirección exacta que le da el agente (1 o 2 minutos).
 4. **A producción:** se fusiona en `master` y se despliega; las imágenes se construyen mientras GitHub prueba. Si hay varios arreglos pendientes, salen juntos en un solo despliegue.
 5. **Registro:** una línea en `Apuntes/fixes.md`, ya marcada como resuelta, y `master` se trae a la rama de la fase.
@@ -138,7 +139,7 @@ Sin excepciones, en todos los módulos, en la web y en la app:
 
 ## App móvil
 
-- Expo (React Native) en `movil/`. Expo cambia en cada versión: antes de tocar una API de Expo se lee la documentación de la versión instalada, y las dependencias se agregan con `npx expo install`.
+- Expo (React Native) en `movil/`. Expo cambia en cada versión: antes de tocar una API de Expo se lee la documentación de la versión instalada con Context7, y las dependencias se agregan con `npx expo install`.
 - La app es igual que la web: el mismo contenido, las mismas palabras, los mismos avisos y validaciones, adaptados al pulgar.
 - Comparte código con la web en `frontend/src/lib/`; esos archivos no importan componentes de la web.
 
@@ -158,6 +159,14 @@ Sin excepciones, en todos los módulos, en la web y en la app:
 - Modular, legible y sencillo.
 - Mínimos comentarios y sin emojis; el porqué va en el mensaje de commit.
 - En el chat no se explica qué hace el código.
+
+## Herramientas del agente
+
+Configuradas en `.mcp.json`: las tiene cualquiera que abra el repo con Claude Code. La primera vez se aprueban, y Serena necesita `py -m pip install uv`.
+
+- **Context7:** la documentación de la versión instalada de cada librería. Se consulta antes de usar una función de una librería que no esté ya en el código; nunca de memoria.
+- **Serena:** navega el código por funciones y componentes: dónde se define cada uno y quién lo usa. Sus "memorias" están apagadas: lo que se sepa del proyecto va en los documentos de siempre.
+- **Playwright:** abre la web (5181) o la app (8081) en un navegador para comprobar una pantalla antes de pasársela a Leider.
 
 ## Servidor y despliegue
 
