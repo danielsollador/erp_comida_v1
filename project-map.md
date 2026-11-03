@@ -14,11 +14,15 @@ Sincronizado el 2-nov-2026 sobre la rama `fase1`.
 
 ## Producción
 
-- VM `vertigo-erp` en Google Cloud (`e2-small`, `us-east1-b`), desde el 6-oct. Servicios de `docker-compose.gcp.yml`: Traefik, backend y frontend del local, hub y Let's Encrypt.
+- Proyecto de Google Cloud `vertigo-erp-produccion`, región `us-east1`, desde el 6-oct.
+- VM `vertigo-erp` (`e2-small`, 2 GB, `us-east1-b`, IP fija `35.231.43.80`). Código en `/docker/erp` (los tres compose y `locales/`). Servicios de `docker-compose.gcp.yml`: Traefik, backend y frontend del local, hub y Let's Encrypt.
+- Imágenes en Artifact Registry: `us-east1-docker.pkg.dev/vertigo-erp-produccion/vertigo/{backend,frontend}:<versión>`. La versión en uso es el secreto `imagen-tag`.
 - Dominios: `savora.vertigopro.tech` (ERP) y `vertigopro.tech` (hub y sitio).
 - PostgreSQL 16, base `vertigo`, un esquema por local (`SAVORA`) y el esquema `HUB`.
-- Respaldos: `pg_dump` cada 6 h, copia horaria al bucket y snapshot diario del disco (14 días).
-- Secretos en Secret Manager. Despliegue manual con `gcp/README.md`.
+- Respaldos: `pg_dump` cada 6 h, copia horaria a `gs://vertigo-erp-respaldos` y snapshot diario del disco (`vertigo-erp-diario`, 14 días).
+- Secretos en Secret Manager: `postgres-password`, `erp-session-secret`, `pabilo-api-key`, `pabilo-user-bank-id`, `acme-email`, `dominio-savora`, `dominio-hub`, `imagen-tag`, `erp-lector-facturas`, `gemini-api-key`, `erp-gemini-modelo` y `erp-gemini-modelo-respaldo`.
+- La cuenta de la VM (`vm-erp@…`) solo puede leer imágenes y secretos, escribir en el bucket y mandar logs y métricas.
+- Despliegue manual: `CLAUDE.md` > Servidor y despliegue.
 - CI: `pruebas.yml` (suite sobre SQLite en cada push) y `app-android.yml` (APK de Capacitor, a mano).
 - Las tablets usan hoy la app de Capacitor (`frontend/android`). La app de Expo (`movil/`) tiene una APK de prueba hecha con EAS.
 
@@ -80,6 +84,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **3-nov** El despliegue y la operación del servidor pasan a `CLAUDE.md` (imágenes construidas a la vez); `gcp/README.md` solo apunta ahí. Datos del servidor en Producción de este mapa.
 - **3-nov** CLAUDE.md: leer y buscar en el código antes de tocarlo; recibo (compila + pruebas solo de lo que cambió, nunca la suite en local); prueba primero en lo que toca dinero; spec "Implementada" queda como la verdad del módulo; sección "Servidor y despliegue". pytest en el entorno local.
 - **2-nov** La carpeta `Vertigopro` pasa a ser el repo (CLAUDE.md siempre se carga) y la metodología sube a `master`. CLAUDE.md dice qué hacer con los pedidos sin comando.
 - **2-nov** Comando `/revisar` (documentos repetidos, que chocan o viejos) y paso "aclarar" antes de aprobar una spec, en `/implementar` y `/nueva-funcionalidad`.
