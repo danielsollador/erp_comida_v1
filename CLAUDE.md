@@ -168,7 +168,7 @@ Toda respuesta a Leider o Daniel termina con estas secciones, en este orden y si
 1. **Herramientas que utilicé:** las que se usaron y para qué, en una línea cada una.
 2. **Módulos que toqué:** los del aplicativo (Cierre de caja, Inventario…) y la metodología, si cambió.
 3. **Ficheros que toqué:** cada uno con su enlace.
-4. **Textos agregados o modificados:** dentro de un desplegable (`<details>`), un bloque `diff` por fichero estilo git (verde lo nuevo, rojo lo que se fue). Lo que el usuario ve o las líneas clave, nunca archivos enteros.
+4. **Textos agregados o modificados:** el chat no pinta colores ni pliega texto, así que cada fichero cambiado se abre en el editor de comparación de VS Code, una pestaña por fichero, antes y después lado a lado (`code -r --diff <antes> <ahora>`; el "antes" sale de `git show`). En el chat va solo la lista, con cuántas líneas se agregaron y quitaron.
 5. **Resumen de lo que se hizo:** corto, con el recibo si hubo código.
 6. **Lo siguiente:** lo que necesita respuesta y lo que se puede hacer después.
 
