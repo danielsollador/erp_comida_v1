@@ -63,11 +63,24 @@ Un pedido escrito sin comando sigue el mismo camino que si lo trajera. Primero s
 | Si el pedido es... | Se hace |
 |---|---|
 | Una pregunta o una consulta | Se responde. No se toca código ni documentos. |
-| Algo que existe y falla, o un ajuste pequeño sin regla de negocio (un texto, un estilo) | Camino de `/arreglar`. |
+| Un ajuste pequeño que no toca dinero, permisos ni la base de datos (un texto, un estilo, una columna, un error visual) | **Carril rápido** (abajo). |
+| Algo que existe y falla, y toca dinero, permisos o la base de datos | Camino de `/arreglar`. |
 | Algo nuevo, o un cambio de cómo funciona algo | Camino de `/nueva-funcionalidad`: requisito, spec aclarada y aprobada. **Sin código hasta que se apruebe.** |
 | Una tarea que ya está en el plan ("haz la 1.4") | Camino de `/implementar`. |
 | Ordenar o corregir documentos | Camino de `/revisar`. |
 | No está claro cuál es | Se pregunta antes de hacer nada. |
+
+### Carril rápido (unos 15 minutos de la idea a producción)
+
+Para lo pequeño que no toca dinero, permisos ni la base de datos. Sin spec, sin plan y sin tareas:
+
+1. **Se hace directo**, en una rama `fix-<tema>` que sale de `master` (lo que está en producción).
+2. **Recibo:** compila y, si tiene prueba, pasa.
+3. **Leider lo mira** en local con la dirección exacta que le da el agente (1 o 2 minutos).
+4. **A producción:** se fusiona en `master` y se despliega; las imágenes se construyen mientras GitHub prueba. Si hay varios arreglos pendientes, salen juntos en un solo despliegue.
+5. **Registro:** una línea en `Apuntes/fixes.md`, ya marcada como resuelta, y `master` se trae a la rama de la fase.
+
+Si a mitad de camino resulta que toca dinero, permisos o la base de datos, se para y sigue el camino de `/arreglar`.
 
 Además:
 
@@ -153,8 +166,8 @@ Qué hay en producción: `project-map.md` > Producción. Todo se hace con `gclou
 ### Un despliegue (unos 15 minutos)
 
 1. **Cuándo:** solo cuando Leider o Daniel lo pida, fuera del horario de ventas y con uno de los dos presente.
-2. **Antes:** lo que se despliega está en `master` con GitHub en verde. Si cambia la base de datos, un respaldo a mano justo antes (Contabilidad > Respaldos). No se corre la suite: ya la corrió GitHub.
-3. **Construir las dos imágenes a la vez** (~5 min):
+2. **Antes:** lo que se despliega está en `master`. Si cambia la base de datos, un respaldo a mano justo antes (Contabilidad > Respaldos). La suite no se corre en local: la corre GitHub.
+3. **Construir las dos imágenes a la vez** (~5 min), mientras GitHub prueba; el paso 4 solo se hace con GitHub en verde:
    ```bash
    V=$(git rev-parse --short HEAD); R=us-east1-docker.pkg.dev/vertigo-erp-produccion/vertigo
    gcloud builds submit backend --tag $R/backend:$V --region=us-east1 &

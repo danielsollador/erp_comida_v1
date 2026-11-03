@@ -9,6 +9,7 @@ Pedido: $ARGUMENTS
 
 - Si ya estaba resuelto (`- [x]`), no lo investigues: di cuándo y en qué commit, y pregunta si no funciona (se reabre) o si es un cambio (se anota como nuevo).
 - Si no es un error sino algo que el plan no pide, sugiere `/nueva-funcionalidad` y para.
+- Si no toca dinero, permisos ni la base de datos, va por el **carril rápido** de `CLAUDE.md`, no por estos pasos.
 
 **Cómo.**
 1. Ubica el código con @project-map.md y lee su `git log`: el porqué de cada regla está en los commits.
