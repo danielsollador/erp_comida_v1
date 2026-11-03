@@ -80,6 +80,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **3-nov** CLAUDE.md: leer y buscar en el código antes de tocarlo; recibo (compila + pruebas solo de lo que cambió, nunca la suite en local); prueba primero en lo que toca dinero; spec "Implementada" queda como la verdad del módulo; sección "Servidor y despliegue". pytest en el entorno local.
 - **2-nov** La carpeta `Vertigopro` pasa a ser el repo (CLAUDE.md siempre se carga) y la metodología sube a `master`. CLAUDE.md dice qué hacer con los pedidos sin comando.
 - **2-nov** Comando `/revisar` (documentos repetidos, que chocan o viejos) y paso "aclarar" antes de aprobar una spec, en `/implementar` y `/nueva-funcionalidad`.
 - **2-nov** Fuera los `.md` de planes y guías viejas (Hostinger, migración a Google, plan de compras, guías de la app); sus reglas vigentes pasaron a `CLAUDE.md`, que suma "Qué es fight complexity", "Tablas y gráficos" y "Palabras".

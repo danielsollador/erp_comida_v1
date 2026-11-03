@@ -15,6 +15,6 @@ Pedido: $ARGUMENTS
 2. Si cambia un resultado de dinero, caja, inventario, asientos o impuestos, explícalo en dos líneas y espera el visto bueno.
 3. Rama `fix-<fecha>-<tema>` desde la rama de la fase en curso. Un commit por arreglo, con el porqué.
 4. Si hay una regla de negocio detrás, escribe el test con el caso real.
-5. Comprueba que compila (paso 4 de "Cómo se trabaja" en `CLAUDE.md`).
+5. Comprueba y deja el recibo (paso de `CLAUDE.md`): compila y pasan las pruebas de lo que cambió.
 
-**Al terminar.** Marca en `fixes.md`: `- [x] ... · resuelto AAAA-MM-DD, commit <hash>`; agrega una línea al registro de `project-map.md`; deja todo levantado y di dónde comprobar cada arreglo. Sin push, merge ni despliegue.
+**Al terminar.** Marca en `fixes.md`: `- [x] ... · resuelto AAAA-MM-DD, commit <hash>`; agrega una línea al registro de `project-map.md`; deja todo levantado, da el recibo y di dónde comprobar cada arreglo. Sin push, merge ni despliegue.

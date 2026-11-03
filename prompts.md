@@ -142,3 +142,7 @@ Pero tengo entendido justamente que cloud.md está hecho para no eliminar nada d
 ## 26 (2026-11-03, Leider)
 
 ¿Cuál es la diferencia entre lo que estamos haciendo y o DD? ¿Me recomiendas aplicar ODD y aparte de eso me recomiendas aplicar un framework como OpenSpec en lo que estamos haciendo o seguimos en la misma línea?
+
+## 27 (2026-11-03, Leider)
+
+Dale, vamos a agregar lo que vamos a copiarle. Y aparte de eso, también vamos a agregar una parte en el CloudMD si no está corrígeme si está de cómo se van a hacer los despliegues, porque cuando ahorita estoy haciendo un despliegue de producción, o bueno, como lo hacía antes con el anterior cloud.md que yo no hice, se hacían 1200 pruebas en backend antes de cualquier cambio. Esto no tiene sentido, necesito que cada cambio y cada cosa sea mucho más ágil. Y me gustaría que se hicieran solo pruebas de compilación y de asegurarse de que funcione algo por el estilo y quizás una que otra pruebita que me dé como que un recibo de que de verdad funcionó lo que él implementó. Algo así. Aparte, en el cloud.md me gustaría que con cada cambio primero debería leer todo el proyecto. O todo el código. Para asegurarse que no esté duplicando información. Y que esté siempre siguiendo buenas prácticas.

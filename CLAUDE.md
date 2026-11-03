@@ -43,15 +43,18 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 
 1. **Idea nueva:** `/nueva-funcionalidad` la agrega al plan, con su spec y sus tareas. Sin código.
 2. **Spec aclarada y aprobada:** lo ambiguo se pregunta antes, y ningún bloque se programa sin que Leider o Daniel apruebe su spec.
-3. **Implementar:** `/implementar`, en la rama de la fase (`fase<N>`), un commit por tarea.
-4. **Comprobar que compila** (es lo único que prueba el agente; la suite completa la corre GitHub):
-   - Backend: `cd backend && py -m compileall -q app`
-   - Web: `cd frontend && npx tsc --noEmit && npm run build && npm run glosario`
-   - App, si se tocó: `cd movil && npx tsc --noEmit`
-5. **Validar en local:** el agente deja todo levantado y Leider valida con la spec.
-6. **Subir:** se sube la rama (GitHub corre las pruebas) y, en verde, se fusiona en `master`.
-7. **Desplegar:** solo cuando Leider o Daniel lo pida (`gcp/README.md`).
-8. **Parar** al cerrar cada fase.
+3. **Antes de tocar código:** se leen `project-map.md`, la spec y los archivos que se van a tocar (con su `git log`), y se **busca en todo el código** si ya existe algo que haga lo mismo (componente, función, endpoint, tabla, texto del glosario). Si existe, se reutiliza o se extiende; nunca dos piezas que hagan lo mismo.
+4. **Implementar:** `/implementar`, en la rama de la fase (`fase<N>`), un commit por tarea. Si toca dinero (cobros, caja, inventario, asientos o impuestos), la prueba se escribe **antes** que el código, a partir de la spec.
+5. **Comprobar y dejar el recibo:**
+   - Que compila. Backend: `cd backend && py -m compileall -q app`. Web: `cd frontend && npx tsc --noEmit && npm run build && npm run glosario`. App, si se tocó: `cd movil && npx tsc --noEmit`.
+   - Que funciona: solo las pruebas de lo que cambió (la nueva y las del módulo tocado), por ejemplo `cd backend && .venv\Scripts\python -m pytest tests/test_caja.py -q` o `cd frontend && npx vitest run src/lib/<archivo>.test.ts`.
+   - El **recibo** va en el mensaje final: qué se corrió y qué dio ("compila; 12 pruebas de caja pasan").
+   - La suite completa nunca se corre en local: la corre GitHub sola al subir la rama (unos 3 minutos).
+6. **Validar en local:** el agente deja todo levantado y Leider valida con la spec.
+7. **Subir:** se sube la rama y, con GitHub en verde, se fusiona en `master`.
+8. **Cerrar el bloque:** su spec pasa a "Implementada" y se corrige para que diga cómo funciona hoy; queda como la verdad de ese módulo. Un cambio futuro edita esa misma spec, no crea otra.
+9. **Desplegar:** solo cuando se pida (ver "Servidor y despliegue").
+10. **Parar** al cerrar cada fase.
 
 ### Pedidos sin comando
 
@@ -96,7 +99,7 @@ Además:
 ## Backend
 
 - FastAPI y SQLAlchemy. Un endpoint va en `backend/app/routers/<modulo>.py` y se declara en `acceso/permisos.py`; si no, queda cerrado.
-- Un test por cada regla de negocio nueva, con el caso real en el docstring.
+- Una prueba por cada regla de negocio nueva, con el caso real en el docstring.
 - Tiempo real (POS y cocina) en `ws_manager.py`; avisos push en `push.py`.
 - IA en `backend/app/asistente/`: Claude para el asistente, Gemini para leer facturas. Si cambia cómo se usa algo, se actualiza `asistente/manual.md`.
 
@@ -143,11 +146,17 @@ Sin excepciones, en todos los módulos, en la web y en la app:
 - Mínimos comentarios y sin emojis; el porqué va en el mensaje de commit.
 - En el chat no se explica qué hace el código.
 
-## Servidor
+## Servidor y despliegue
 
-- Google Cloud: una VM con docker compose (Traefik, backend y frontend por local, hub).
-- Respaldos cada 6 h, copia horaria a un bucket y snapshot diario del disco.
-- Despliegue manual con `gcp/README.md`.
+- Google Cloud: una VM con docker compose (Traefik, backend y frontend por local, hub). Respaldos cada 6 h, copia horaria a un bucket y snapshot diario del disco.
+
+Un despliegue:
+
+1. **Cuándo:** solo cuando Leider o Daniel lo pida, fuera del horario de ventas y con uno de los dos presente.
+2. **Antes:** lo que se despliega está en `master` con GitHub en verde. Si cambia la base de datos, un respaldo a mano justo antes (Contabilidad > Respaldos).
+3. **Cómo:** los comandos de `gcp/README.md` (construir las imágenes, fijar la versión y aplicar). No se corre la suite: ya la corrió GitHub.
+4. **Recibo:** `/api/health` responde en los dos dominios y se mira en producción lo que se desplegó, solo mirando (sin crear ventas, compras ni asientos de prueba).
+5. **Si algo falla:** se vuelve a la versión anterior poniendo su versión en el secreto `imagen-tag` y aplicando otra vez.
 
 ## Documentos (.md)
 
@@ -155,7 +164,7 @@ Sin excepciones, en todos los módulos, en la web y en la app:
 |---|---|
 | `CLAUDE.md` | Cómo se trabaja (este) |
 | `plan-implementacion.md` | Qué se construye en cada fase, cómo se hace la fase en curso y las decisiones pendientes |
-| `specs/<modulo>.md` | El detalle de un requisito y cómo se valida (molde: `specs/_plantilla.md`) |
+| `specs/<modulo>.md` | El detalle de un requisito y cómo se valida (molde: `specs/_plantilla.md`). Implementada, dice cómo funciona hoy ese módulo |
 | `tareas.md` | Qué toca y qué está hecho |
 | `project-map.md` | Cómo está el sistema hoy y registro de cambios |
 | `prompts.md` | Historial de prompts |
@@ -172,3 +181,4 @@ Cómo se escriben:
 - **Para personas.** Lenguaje sencillo, frases cortas, listas y tablas.
 - **Se corrige, no se acumula.** Lo viejo se borra; la historia queda en git.
 - **Sin relleno.** Nada de introducciones ni repeticiones.
+- **La metodología vive en `master`.** Un cambio a `CLAUDE.md`, a los comandos o a la skill de estilo se sube también a `master` enseguida, para que todos trabajen igual en cualquier rama.
