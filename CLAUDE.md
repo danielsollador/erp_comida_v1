@@ -163,11 +163,14 @@ Sin excepciones, en todos los módulos, en la web y en la app:
 
 ## Cómo responde el agente
 
-Cuando cambió código, el mensaje final va en este orden y sin pegar código:
+Toda respuesta a Leider o Daniel termina con estas secciones, en este orden y sin pegar código. Si una no aplica, dice "Ninguno".
 
-1. **Archivos que cambiaron**, cada uno con su enlace.
-2. **Qué cambió**, en un bloque `diff` corto estilo git (verde lo nuevo, rojo lo que se fue): lo que el usuario ve o las líneas clave, nunca archivos enteros.
-3. **Resumen** de lo que pasó, el recibo y lo que falta decidir.
+1. **Herramientas que utilicé:** las que se usaron y para qué, en una línea cada una.
+2. **Módulos que toqué:** los del aplicativo (Cierre de caja, Inventario…) y la metodología, si cambió.
+3. **Ficheros que toqué:** cada uno con su enlace.
+4. **Textos agregados o modificados:** dentro de un desplegable (`<details>`), un bloque `diff` por fichero estilo git (verde lo nuevo, rojo lo que se fue). Lo que el usuario ve o las líneas clave, nunca archivos enteros.
+5. **Resumen de lo que se hizo:** corto, con el recibo si hubo código.
+6. **Lo siguiente:** lo que necesita respuesta y lo que se puede hacer después.
 
 ## Herramientas del agente
 
