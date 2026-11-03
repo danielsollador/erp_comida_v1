@@ -94,3 +94,7 @@ y porque metiste las spects en docs ? bueno, literalmente cambiaste todo y lo pa
 ## 17 (2026-11-02, Leider)
 
 No. Necesito que haya un solo CLAUDE.md y es con esta metodologia. Daniel si va a trabajar asi
+
+## 18 (2026-11-02, Leider)
+
+Mira, varias cosas. En el cloud.md creo que no deberían estar esa parte de las fases. Deberían estar en otro lado, ¿no? Necesito que me escribas en el cloud.md una sección en donde cuando tú edites archivos, .md, sigas algunos principios que es que no dupliques información, que la información no se repita, no crees documentos larguísimos que nadie se va a leer, que la información sea lo más concisa posible, que la información sea lo más intuitiva posible para el humano. Cosas así. Lo llenas dentro del cloud.md y luego vas a corregir todos los .md que tenemos haciendo esto. Porque me has creado, por ejemplo, el spec de ventas, me creaste algo que la verdad nadie se va a leer. No me funciona así.

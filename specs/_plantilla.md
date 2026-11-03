@@ -1,50 +1,25 @@
-# Spec: <Modulo>
+# Spec: [tema]
 
-> Requisitos de `CLAUDE.md` que cubre: <FASE N, bloque>.
-> Bloque del plan: <N.M>. Estado: borrador | aprobado | implementado.
+[Módulo] · bloque [N.M] · **Borrador** | Aprobada | Implementada
 
-## Para que sirve
+## Qué resuelve
 
-Una o dos frases: que problema del usuario resuelve y quien lo usa (dueno,
-caja, cocina, contador, equipo Vertigo).
+Una o dos frases: el problema y quién lo usa.
 
-## Requisitos
+## Hoy
 
-Cada uno se puede comprobar con un si o un no.
+Cómo funciona ahora. Solo si cambia algo que ya existe.
 
-- R1. ...
-- R2. ...
+## Qué tiene que pasar
 
-## Reglas de negocio
+Una línea por regla, que se pueda comprobar con un sí o un no. Incluye solo los casos borde que importan: dos usuarios a la vez, sin conexión, medianoche, bolívares y divisas, periodo cerrado.
 
-Calculos, limites, permisos por rol, que pasa con el dinero y con los asientos.
+## Por decidir
 
-- ...
+Decisiones abiertas, con su ID del plan.
 
-## Casos borde
+## Cómo se valida
 
-- Sin conexion:
-- Dos usuarios a la vez:
-- Pasada la medianoche:
-- Moneda (bolivares y divisas) y tasa:
-- Ejercicio cerrado o IVA declarado:
+Los pasos que sigue Leider en local.
 
-## Pantallas y textos
-
-Que ve el usuario, que dice cada boton y como se explica cada cifra (entrada en
-`lib/glosario.ts`).
-
-## Fuera de alcance
-
-Lo que este spec no cubre a proposito.
-
-## Decisiones pendientes
-
-Si alguna existe, va tambien en la seccion 3 del plan (D1, D2...) y bloquea su
-tarea hasta que el usuario responda.
-
-## Aceptacion
-
-Pasos concretos con los que el usuario valida en local que funciona.
-
-1. ...
+<!-- Máximo unas 60 líneas, en lenguaje sencillo y sin nombres de archivos de código. -->
