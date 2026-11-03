@@ -5,8 +5,9 @@ Sincronizado el 2-nov-2026 sobre la rama `fase1`.
 
 ## Repo y ramas
 
-- Remoto: `github.com/danielsollador/erp_comida_v1`. Rama principal `master`; la FASE 1 se trabaja en `fase1` (en GitHub, sin fusionar).
-- `fase1` = `origin/master` + gastos de Vertigo + app móvil (`app-expo`) + arreglos + metodología.
+- Remoto: `github.com/danielsollador/erp_comida_v1`. En la laptop de Leider, el repo es la carpeta `Desktop\Vertigopro`.
+- Rama principal `master`, que ya tiene la metodología (`CLAUDE.md`, plan, specs, comandos): toda rama nueva la trae.
+- `fase1` = `master` + gastos de Vertigo + app móvil (`app-expo`) + arreglos. En GitHub, sin fusionar.
 - `qa-auditoria-pruebas`: 58 pruebas que demuestran errores. Fuera de `master` a propósito (fallan mientras el error exista).
 - En GitHub quedan `app-expo` y `app-expo-play`, ya contenidas en `fase1`: se borran al fusionar.
 - No se versionan: `.env` (claves), `movil/.env` (apunta a **producción**), `movil/tienda/REVISOR.local.txt`, `.dev-data/` (datos de prueba y copias de `.env`) y las skills de terceros.
@@ -79,6 +80,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **2-nov** La carpeta `Vertigopro` pasa a ser el repo (CLAUDE.md siempre se carga) y la metodología sube a `master`. CLAUDE.md dice qué hacer con los pedidos sin comando.
 - **2-nov** Comando `/revisar` (documentos repetidos, que chocan o viejos) y paso "aclarar" antes de aprobar una spec, en `/implementar` y `/nueva-funcionalidad`.
 - **2-nov** Fuera los `.md` de planes y guías viejas (Hostinger, migración a Google, plan de compras, guías de la app); sus reglas vigentes pasaron a `CLAUDE.md`, que suma "Qué es fight complexity", "Tablas y gráficos" y "Palabras".
 - **2-nov** `CLAUDE.md` por áreas (cómo se trabaja, base de datos, backend, web, app); las fases pasan al plan; fuera `fases.md` y `ESTADO.md` (historia en git). Documentos recortados sin repetir información.
