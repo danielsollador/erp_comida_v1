@@ -134,3 +134,7 @@ Otra cosa es que, este comando no me dice como el texto que tiene en memoria est
 ## 24 (2026-11-02, Leider)
 
 bien, 100% seguro que cada vez que te haga un requerimiento tu vas a seguir el Spect kit ? en esta y en todas las conversaciones nada mas con ver el proyecto, ya ellas solas van a ubicar el CLAUDE.md y lo usaran como su principal ?
+
+## 25 (2026-11-02, Leider)
+
+Pero tengo entendido justamente que cloud.md está hecho para no eliminar nada de su contexto, aún así se resuman cosas del chat, ni nada de lo que está en este texto. Si se están resumiendo cosas de algún punto MD para alguna cosa, la verdad es que estamos implementando mal el spec kit. Y otra cosa que tienes que abarcar es que yo necesito que cloud.md se cargue solo el 100% de las veces cuando yo mando un requerimiento sobre Vertigopro. Eso no es algo que hay que discutir. Configura lo que tengas que configurar y es lo que tengas que hacer. Y también E también tienes que saber manejar los pedos sueltos. No es posible que te hagan un pedido sin un comando y no sepas qué hacer. En el CloudMD debería poder estar escrito qué hacer con los pedidos sueltos. Y Daniel debería poder usar el CloudMD siempre. No solo cuando esté en una rama u otra.

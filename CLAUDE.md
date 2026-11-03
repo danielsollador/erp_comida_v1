@@ -53,6 +53,19 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 7. **Desplegar:** solo cuando Leider o Daniel lo pida (`gcp/README.md`).
 8. **Parar** al cerrar cada fase.
 
+### Pedidos sin comando
+
+Un pedido escrito sin comando sigue el mismo camino que si lo trajera. Primero se clasifica y se dice en una línea cuál camino se toma:
+
+| Si el pedido es... | Se hace |
+|---|---|
+| Una pregunta o una consulta | Se responde. No se toca código ni documentos. |
+| Algo que existe y falla, o un ajuste pequeño sin regla de negocio (un texto, un estilo) | Camino de `/arreglar`. |
+| Algo nuevo, o un cambio de cómo funciona algo | Camino de `/nueva-funcionalidad`: requisito, spec aclarada y aprobada. **Sin código hasta que se apruebe.** |
+| Una tarea que ya está en el plan ("haz la 1.4") | Camino de `/implementar`. |
+| Ordenar o corregir documentos | Camino de `/revisar`. |
+| No está claro cuál es | Se pregunta antes de hacer nada. |
+
 Además:
 
 - Al cerrar una tarea se marcan `tareas.md` y una línea en el registro de `project-map.md`.
