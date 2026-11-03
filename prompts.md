@@ -278,3 +278,7 @@ Claude no se usa solo para lecturanos ayudara a hacer de todo.
 Y la A y la B no me gustan ni un poco, rompe con lo que acordamos de que el usuario lea y haga lo menos posible, como ya acordamos, y como veo que no estamos alineados me gustaria que vieras de donde sacaste ese pensamiento y lo modifiques.
 
 La C esta mejor, es algo que le pides a la IA que busque porque no cuadra, lo busque, y ya esta. No hay mas nada que hacer ni que investigar, el solo te dara las conclusiones y lo que recomienda hacer
+
+## 57 (2026-11-03, Leider)
+
+haz las 4 y me pasas el link para ver como se ve
