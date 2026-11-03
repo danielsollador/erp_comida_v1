@@ -78,10 +78,31 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Si la empanada lleva 0,05 kg de harina y vendes 10, bajan 0,5 kg sin que nadie toque nada. Cuando queda por debajo del mínimo aparece la etiqueta "Bajo".',
   },
+  'inventario.costoElegido': {
+    que: 'Lo que te cuesta una unidad, con el costo que elegiste mirar. Se cambia en el desplegable "Costo" de arriba.',
+    origen:
+      'Es el mismo ajuste de Configuración → Control, "Con qué costo fijar precios": último costo (lo que pagaste la última vez), promedio (lo que costó lo que tienes) o el mayor de los dos. Vale para el Menú, las Recetas y esta tabla, así el margen siempre sale del mismo número.',
+    ejemplo:
+      'Tenías 10 a $1 y compraste 10 a $2: el promedio dice $1,50; el último, $2. Con inflación, el último es el que te dice cuánto te costará reponerlo.',
+  },
+  'inventario.vende': {
+    que: 'A cuánto lo vendes en el menú, y qué parte de eso te queda.',
+    origen: 'El precio sale del menú (solo la mercancía que se vende tal cual). El margen compara lo que queda sin IVA contra el costo elegido.',
+    calculo:
+      'El precio del menú lleva el IVA adentro y ese IVA es del SENIAT. Se le quita (precio ÷ 1,16) y a eso se le resta el costo. Si la mercancía no paga IVA, el precio entero es tuyo.',
+    ejemplo:
+      'Jugo a $3,00 con costo $1,65: sin IVA quedan $2,59, y te deja $0,94 (36 %). Si compararas los $3 con el costo parecería 45 %, y no es verdad.',
+  },
+  'inventario.vale': {
+    que: 'Cuánta plata tienes invertida (parada) en lo que hay de esa mercancía, al costo con que la miras. No es a cuánto se vende.',
+    origen: 'El sistema lo calcula; no se escribe.',
+    calculo: 'Lo que hay × el costo elegido. Si cambias el costo en el desplegable "Costo" de arriba, cambia también esto.',
+    ejemplo: '15 maltas a $0,69 son $10,37 parados en el depósito. La suma de la columna es lo que dice "En el inventario" arriba.',
+  },
   'inventario.minimo': {
-    que: 'El punto en el que hay que volver a comprar.',
-    origen: 'Lo pones tú en la ficha de la mercancía.',
-    calculo: 'Cuando el stock cae a este número o por debajo, la mercancía se marca "Bajo" y entra en la lista de "Qué comprar".',
+    que: 'Lo que quieres tener siempre: por debajo avisa, y hasta ahí se repone.',
+    origen: 'Lo pones tú en la ficha de la mercancía ("Sería ideal siempre tener al menos").',
+    calculo: 'Cuando el stock cae a este número o por debajo, la mercancía se marca "Bajo" y entra en "Qué comprar" con lo que falte para volver a este nivel (o dos semanas de consumo real, lo que sea más).',
     ejemplo:
       'Si gastas 3 kg de harina al día y al proveedor le toma dos días traerla, un mínimo de 6 kg te avisa justo a tiempo.',
   },

@@ -13,7 +13,7 @@ import {
   cantidad,
   conVariacion,
   cuantoDura,
-  ejemploIdeal,
+  ejemploMinimo,
   ejemploRendimiento,
   estadoStock,
   fechaCorta,
@@ -21,10 +21,12 @@ import {
   queLePaso,
   type CompraConVariacion,
   unidadDe,
+  conUnidad,
+  elLa,
 } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import { parecidos } from '../../../lib/parecidos'
-import { ALMACEN_DE } from '../../../lib/tiposArticulo'
+import { ALMACEN_DE, TIPOS_ARTICULO } from '../../../lib/tiposArticulo'
 import type {
   CategoriaInsumo,
   CompraDeInsumo,
@@ -116,7 +118,9 @@ export default function FichaMercancia({
     costo_unitario: ing ? String(ing.costo_unitario) : '',
     rendimiento_pct: ing ? String(ing.rendimiento_pct) : '100',
     exento: ing?.exento ?? false,
-    // Viene en empaque de N: con esto cada factura la carga por empaques.
+    // ¿Suelta o en empaque? Es una pregunta, no un número que se deja vacío
+    // (Leider, 29-oct). Si viene en empaque, abajo se dice cuántas trae.
+    llega: (ing?.empaque_trae ? 'empaque' : 'suelta') as 'suelta' | 'empaque',
     empaque_trae: ing?.empaque_trae ? String(ing.empaque_trae) : '',
     // Lo que se paga por UN empaque. Es como lo dice la gente: "el paquete de
     // 200 sobres me cuesta $3,60", no "cada sobre me cuesta $0,018".
@@ -179,6 +183,9 @@ export default function FichaMercancia({
   const [masDetalles, setMasDetalles] = useState(false)
   // El extracto completo, con filtro de fecha y descarga, detras de "Ver todo".
   const [todo, setTodo] = useState(false)
+  // EL HISTORIAL NO SE MUESTRA SOLO. Al abrir la ficha se viene a anotar
+  // algo o a mirar cuánto hay; la lista de movimientos se pide (Leider, 29-oct).
+  const [verHistorial, setVerHistorial] = useState(false)
   const [historial, setHistorial] = useState<CompraDeInsumo[] | null>(null)
   const [extracto, setExtracto] = useState<ExtractoInsumo | null>(null)
   // Para cuanto alcanza: el mismo calculo de Reportes > Inventario (consumo
@@ -253,23 +260,27 @@ export default function FichaMercancia({
   async function guardar() {
     setAviso('')
     if (!f.nombre.trim()) return setAviso('La mercancía necesita un nombre.')
+    // Un solo número: por debajo avisa, y hasta ahí se repone. Tener dos
+    // ("avísame" y "lo ideal") era la misma pregunta dos veces (Leider, 29-oct).
     const minimo = f.stock_minimo === '' ? 0 : num(f.stock_minimo)
-    const objetivo = f.stock_objetivo === '' ? 0 : num(f.stock_objetivo)
-    const empaque = f.empaque_trae === '' ? null : num(f.empaque_trae)
+    const objetivo = minimo
+    const empaque = f.llega === 'suelta' || f.empaque_trae === '' ? null : num(f.empaque_trae)
     // En empaque, el precio y lo que hay se escriben por empaque y se guardan
     // por unidad: el sistema cuenta sobres, la gente cuenta paquetes (26-oct:
     // "$3,60 por unidad" eran $3,60 el paquete de 200, y el inventario subio
     // $1.432 de mentira).
     const porEmpaque = empaque !== null && empaque > 1
+    // Sin precio de empaque escrito, se conserva el costo por unidad que había.
     const costo = porEmpaque
-      ? f.costo_empaque === '' ? 0 : num(f.costo_empaque) / empaque
+      ? f.costo_empaque === '' ? (f.costo_unitario === '' ? 0 : num(f.costo_unitario)) : num(f.costo_empaque) / empaque
       : f.costo_unitario === '' ? 0 : num(f.costo_unitario)
     // Solo la materia prima tiene merma de cocina que medir.
     const rendimiento = f.tipo === 'insumo' ? num(f.rendimiento_pct) : 100
     const inicial = (f.stock_actual === '' ? 0 : num(f.stock_actual)) * (porEmpaque ? empaque : 1)
     if ([minimo, objetivo, costo, inicial].some((n) => !Number.isFinite(n) || n < 0))
       return setAviso('Las cantidades y el costo tienen que ser números, y no negativos.')
-    if (empaque !== null && !(empaque > 0)) return setAviso('El empaque trae una cantidad mayor que cero, o se deja vacío si viene suelta.')
+    if (f.llega === 'empaque' && (empaque === null || !(empaque > 0)))
+      return setAviso('Di cuántas trae un empaque, o marca que viene suelta.')
     if (!Number.isFinite(rendimiento) || rendimiento <= 0 || rendimiento > 100)
       return setAviso('Lo que se aprovecha va de 1 a 100 %.')
     setGuardando(true)
@@ -307,7 +318,7 @@ export default function FichaMercancia({
 
   const perdidaTotal = mermas.reduce((s, m) => s + m.valor, 0)
   const u = ing?.unidad ?? f.unidad
-  const trae = f.empaque_trae === '' ? 0 : num(f.empaque_trae)
+  const trae = f.llega === 'empaque' && f.empaque_trae !== '' ? num(f.empaque_trae) : 0
   const enEmpaque = Number.isFinite(trae) && trae > 1
 
   // ── El formulario: crear, o cambiar los datos ──────────────────────────────
@@ -328,18 +339,11 @@ export default function FichaMercancia({
       </Selector>
       {f.tipo !== 'desechable' && (<>
       <CampoCantidad
-        etiqueta="Avísame cuando quede menos de"
+        etiqueta="Sería ideal siempre tener al menos"
         unidad={f.unidad}
         valor={f.stock_minimo}
         alCambiar={(v) => poner('stock_minimo', v)}
-        ayuda="Por debajo de esto aparece en «Qué comprar»."
-      />
-      <CampoCantidad
-        etiqueta="Lo ideal tener en el inventario"
-        unidad={f.unidad}
-        valor={f.stock_objetivo}
-        alCambiar={(v) => poner('stock_objetivo', v)}
-        ayuda={ejemploIdeal(num(f.stock_objetivo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
+        ayuda={ejemploMinimo(num(f.stock_minimo), ing?.stock_actual ?? (f.stock_actual === '' ? 0 : num(f.stock_actual)), f.unidad)}
       />
       </>)}
       {f.tipo === 'insumo' && (
@@ -399,6 +403,9 @@ export default function FichaMercancia({
             no la crees: usa esa.
           </p>
         )}
+        {/* AL CREAR, lo primero: decide las preguntas que siguen. Al editar
+            va al final: ya se decidió y casi nunca cambia (Leider, 29-oct). */}
+        {nuevo && (
         <div className="sm:col-span-2">
           <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Qué es</span>
           {f.tipo === 'preparacion' ? (
@@ -409,6 +416,25 @@ export default function FichaMercancia({
             <ElegirAlmacen valor={f.tipo} alElegir={(t) => poner('tipo', t)} compacto />
           )}
         </div>
+        )}
+        {!nuevo && (
+          f.tipo === 'preparacion' ? (
+            <p className="sm:col-span-2 text-sm text-neutral-600">
+              <SelloTipo tipo="preparacion" icono /> Su receta y lo que rinde se editan en Materia prima → Preparado.
+            </p>
+          ) : (
+            <div className="sm:col-span-2">
+              <Selector etiqueta="Qué es" value={f.tipo} onChange={(e) => poner('tipo', e.target.value)}>
+                {TIPOS_ARTICULO.map((t) => (
+                  <option key={t.valor} value={t.valor}>
+                    {t.texto}
+                  </option>
+                ))}
+              </Selector>
+              <p className="mt-1 text-xs text-neutral-500">{TIPOS_ARTICULO.find((t) => t.valor === f.tipo)?.detalle}</p>
+            </div>
+          )
+        )}
         <div className="sm:col-span-2">
           <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Se mide en</span>
           <div className="flex flex-wrap gap-1.5">
@@ -433,13 +459,46 @@ export default function FichaMercancia({
             de cada sobre. */}
         {f.tipo !== 'preparacion' && (
           <div className="sm:col-span-2">
-            <CampoCantidad
-        etiqueta="Viene en empaque de"
-        unidad={f.unidad}
-        valor={f.empaque_trae}
-        alCambiar={(v) => poner('empaque_trae', v)}
-        ayuda={f.empaque_trae === '' ? 'Vacío: viene suelta. Si el proveedor la trae en caja, bulto o paquete, pon cuántas trae uno y cada factura se carga por empaques.' : `Cada factura pide cuántos empaques vinieron y el sistema los pasa a ${f.unidad === 'unidad' ? 'unidades' : f.unidad}.`}
-      />
+            <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">Cómo te llega</span>
+            <div className="flex flex-wrap gap-1.5">
+              {([['suelta', 'Suelta'], ['empaque', 'En empaque']] as const).map(([x, texto]) => (
+                <button
+                  key={x}
+                  type="button"
+                  onClick={() => poner('llega', x)}
+                  aria-pressed={f.llega === x}
+                  className={`rounded-lg border-2 px-3 py-1.5 text-sm font-semibold ${
+                    f.llega === x ? 'border-acento-500 bg-acento-500/8' : 'border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
+            {f.llega === 'empaque' ? (
+              <div className="mt-2">
+                <CampoCantidad
+                  etiqueta="Cuántas trae un empaque"
+                  unidad={f.unidad}
+                  valor={f.empaque_trae}
+                  alCambiar={(v) =>
+                    setF((a) => ({
+                      ...a,
+                      empaque_trae: v,
+                      // El precio del empaque arranca del costo por unidad que
+                      // ya tenía: si no, se guardaba vacío y el costo quedaba en $0.
+                      costo_empaque:
+                        a.costo_empaque === '' && a.costo_unitario !== '' && num(v) > 1
+                          ? String(Math.round(num(a.costo_unitario) * num(v) * 10000) / 10000)
+                          : a.costo_empaque,
+                    }))
+                  }
+                  ayuda={`Caja, bulto o paquete. Cada factura pide cuántos empaques vinieron y el sistema los pasa a ${f.unidad === 'unidad' ? 'unidades' : f.unidad}.`}
+                />
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-neutral-500">Se compra y se cuenta por {f.unidad}.</p>
+            )}
           </div>
         )}
         {nuevo && f.tipo !== 'desechable' && (
@@ -450,7 +509,7 @@ export default function FichaMercancia({
               value={f.stock_actual}
               onChange={(e) => poner('stock_actual', e.target.value)}
               placeholder="0"
-              ayuda={`${cantidad((num(f.stock_actual) || 0) * trae)} ${f.unidad} en total. Después se mueve solo con las compras, las ventas y los conteos.`}
+              ayuda={`${conUnidad((num(f.stock_actual) || 0) * trae, f.unidad)} en total. Después se mueve solo con las compras, las ventas y los conteos.`}
             />
           ) : (
             <CampoCantidad
@@ -502,6 +561,7 @@ export default function FichaMercancia({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{opcionales}</div>
       )}
+
 
       {!nuevo && (
         <div className="flex flex-wrap gap-x-5 gap-y-2">
@@ -565,15 +625,15 @@ export default function FichaMercancia({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <CifraFicha
           titulo="Hay"
-          valor={`${cantidad(ing.stock_actual)} ${u}`}
+          valor={`${conUnidad(ing.stock_actual, u)}`}
           tono={estado?.tono}
           detalle={
             estado
               ? estado.tono === 'mal'
                 ? 'Se acabó'
-                : `Bajo el mínimo de ${cantidad(ing.stock_minimo)} ${u}`
+                : `Bajo el mínimo de ${conUnidad(ing.stock_minimo, u)}`
               : ing.stock_minimo > 0
-                ? `Avisa por debajo de ${cantidad(ing.stock_minimo)} ${u}`
+                ? `Avisa por debajo de ${conUnidad(ing.stock_minimo, u)}`
                 : 'Sin mínimo puesto'
           }
         />
@@ -596,7 +656,7 @@ export default function FichaMercancia({
         />
         <CifraFicha
           titulo="Te cuesta"
-          valor={`${dinero(ing.costo_efectivo)} el ${u}`}
+          valor={`${dinero(ing.costo_efectivo)} ${elLa(u)}`}
           detalle={
             ing.tipo !== 'reventa' && ing.rendimiento_pct < 100
               ? `Pagas ${dinero(ing.costo_unitario)} y se aprovecha el ${ing.rendimiento_pct}%`
@@ -630,8 +690,8 @@ export default function FichaMercancia({
 
       {/* Lo que se viene a hacer, con verbos. */}
       <div>
-        <p className="vp-etiqueta mb-2">Anotar</p>
-        <div className="grid grid-cols-2 gap-2">
+        <h3 className="font-display text-lg font-semibold tracking-tight mb-3">Anotar</h3>
+        <div className="grid grid-cols-2 gap-3">
           <BotonAnotar titulo="Llegó mercancía" detalle="Una compra sin factura" onClick={() => acciones.comprar(ing)} />
           <BotonAnotar titulo="Se dañó o se botó" detalle="Queda como pérdida" peligro onClick={() => acciones.merma(ing)} />
           <BotonAnotar titulo="La usó el personal" detalle="Comida de empleados: no es pérdida" onClick={() => acciones.consumoPersonal(ing)} />
@@ -639,15 +699,34 @@ export default function FichaMercancia({
         </div>
       </div>
 
-      {/* Lo ultimo que le paso, en frases. El extracto entero, detras. */}
+      {/* Lo ultimo que le paso, en frases. El extracto entero, detras. Todo
+          plegado hasta que se pida. */}
+      {!verHistorial ? (
+        <button
+          type="button"
+          onClick={() => setVerHistorial(true)}
+          className="vp-control vp-pulsable flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-4 text-left"
+        >
+          <span>
+            <span className="block text-base font-semibold">Ver lo que le pasó</span>
+            <span className="block text-sm text-neutral-500">Compras, ventas, conteos y pérdidas, una por una</span>
+          </span>
+          <span aria-hidden className="vp-flecha opacity-70" />
+        </button>
+      ) : (
       <div>
         <div className="flex items-baseline justify-between gap-2 mb-2">
           <p className="vp-etiqueta">{todo ? 'Todo lo que le pasó' : 'Lo último que le pasó'}</p>
-          {extracto && (todo || extracto.movimientos.length > 0) && (
-            <button type="button" onClick={() => setTodo((v) => !v)} className="text-sm font-medium text-acento-700 hover:underline">
-              {todo ? 'Ver menos' : 'Ver todo'}
+          <span className="flex items-baseline gap-3">
+            {extracto && (todo || extracto.movimientos.length > 0) && (
+              <button type="button" onClick={() => setTodo((v) => !v)} className="text-sm font-medium text-acento-700 hover:underline">
+                {todo ? 'Ver menos' : 'Ver todo'}
+              </button>
+            )}
+            <button type="button" onClick={() => { setVerHistorial(false); setTodo(false) }} className="text-sm font-medium text-neutral-500 hover:underline">
+              Ocultar
             </button>
-          )}
+          </span>
         </div>
         {extracto === null ? (
           <p className="text-sm text-neutral-400">Cargando…</p>
@@ -671,7 +750,7 @@ export default function FichaMercancia({
                     {m.cantidad > 0 ? '+' : '−'}
                     {legible(m.cantidad, u)}
                   </span>
-                  <span className="block text-[11px] text-neutral-400">quedó {cantidad(m.saldo)} {u}</span>
+                  <span className="block text-[11px] text-neutral-400">quedó {conUnidad(m.saldo, u)}</span>
                 </span>
               </li>
             ))}
@@ -706,7 +785,7 @@ export default function FichaMercancia({
                 <ResumenDelExtracto e={extracto} desde={desdeExtracto} />
                 {!extracto.cuadra && (
                   <Aviso tono="mal">
-                    El libro suma {cantidad(extracto.saldo_segun_libro)} {u} y la existencia dice{' '}
+                    El libro suma {conUnidad(extracto.saldo_segun_libro, u)} y la existencia dice{' '}
                     {cantidad(extracto.stock_actual)}. Algo movió el stock sin anotarlo: avísale a quien mantiene el sistema.
                   </Aviso>
                 )}
@@ -718,7 +797,7 @@ export default function FichaMercancia({
                         <Th clave="movimiento">Qué pasó</Th>
                         <Th clave="quien">Quién</Th>
                         <Th clave="cantidad" alinear="derecha">Cantidad</Th>
-                        <Th clave="valor" alinear="derecha">Vale</Th>
+                        <Th clave="valor" alinear="derecha">En plata</Th>
                         <Th clave="saldo" alinear="derecha">Quedó</Th>
                       </tr>
                     </thead>
@@ -733,7 +812,7 @@ export default function FichaMercancia({
                           <td className="p-2 text-neutral-500">{m.operador ?? '—'}</td>
                           <td className={`p-2 text-right tabular-nums font-medium ${m.cantidad < 0 ? 'text-peligro-600' : 'text-exito-700'}`}>
                             {m.cantidad > 0 ? '+' : ''}
-                            {cantidad(m.cantidad)} {u}
+                            {conUnidad(m.cantidad, u)}
                           </td>
                           {/* El equivalente en plata: sin esto, "-0.025" no dice
                               si eso que salio costo un centavo o un dolar. */}
@@ -741,7 +820,7 @@ export default function FichaMercancia({
                             {dinero(Math.abs(m.valor))}
                           </td>
                           <td className="p-2 text-right tabular-nums text-neutral-500">
-                            {cantidad(m.saldo)} {u}
+                            {conUnidad(m.saldo, u)}
                           </td>
                         </tr>
                       ))}
@@ -784,7 +863,7 @@ export default function FichaMercancia({
                             </span>
                           </td>
                           <td className="p-2 text-right text-neutral-500 tabular-nums">
-                            {cantidad(c.cantidad)} {u}
+                            {conUnidad(c.cantidad, u)}
                           </td>
                           <td className="p-2 text-right tabular-nums font-medium">{dinero(c.costo_unitario)}</td>
                           <td className="p-2 text-right tabular-nums">
@@ -805,6 +884,7 @@ export default function FichaMercancia({
           </div>
         )}
       </div>
+      )}
 
     </div>
   )
@@ -816,7 +896,7 @@ export default function FichaMercancia({
         nuevo
           ? 'Lo indispensable para empezar; lo demás se puede poner después.'
           : editando
-            ? 'Cambiar los datos de esta mercancía'
+            ? 'Configuración de esta mercancía'
             : `${ing.categoria || 'Sin categoría'} · ${ALMACEN_DE[ing.tipo].detalle}`
       }
       onCerrar={onCerrar}
@@ -836,7 +916,7 @@ export default function FichaMercancia({
             {/* AL PIE, SIEMPRE A LA VISTA. Al final de la ficha quedaba
                 debajo de cien movimientos y no se encontraba (Leider, 2-oct). */}
             <Boton tono="suave" onClick={() => setEditando(true)} className="mr-auto">
-              Cambiar los datos
+              Configurar la mercancía
             </Boton>
             <Boton tono="suave" onClick={onCerrar}>
               Cerrar
@@ -895,9 +975,9 @@ function BotonAnotar({
   onClick: () => void
 }) {
   return (
-    <button type="button" onClick={onClick} className="vp-control vp-pulsable rounded-xl px-3 py-2.5 text-left">
-      <span className={`block text-sm font-semibold ${peligro ? 'text-peligro-600' : ''}`}>{titulo}</span>
-      <span className="block text-xs text-neutral-500">{detalle}</span>
+    <button type="button" onClick={onClick} className="vp-control vp-pulsable rounded-2xl px-4 py-4 text-left">
+      <span className={`block text-base font-semibold ${peligro ? 'text-peligro-600' : ''}`}>{titulo}</span>
+      <span className="block text-sm text-neutral-500">{detalle}</span>
     </button>
   )
 }
@@ -987,7 +1067,7 @@ function ResumenDelExtracto({ e, desde }: { e: ExtractoInsumo; desde: string }) 
             <th className="py-2 pl-3 text-left font-semibold">Qué pasó</th>
             <th className="py-2 text-right font-semibold">Veces</th>
             <th className="py-2 text-right font-semibold">Cantidad</th>
-            <th className="py-2 pr-3 text-right font-semibold">Vale</th>
+            <th className="py-2 pr-3 text-right font-semibold">En plata</th>
           </tr>
         </thead>
         <tbody>

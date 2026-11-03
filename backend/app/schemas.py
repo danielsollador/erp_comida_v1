@@ -78,6 +78,8 @@ class CostoVariante(BaseModel):
     # (reposicion / promedio / mayor), indirecto incluido, y su margen.
     costo_para_precio: Optional[float] = None
     margen_para_precio_pct: Optional[float] = None
+    # El precio sin el IVA: sobre este se miden todos los margenes de arriba.
+    precio_neto: Optional[float] = None
 
 
 class ProductoBase(BaseModel):
@@ -412,6 +414,15 @@ class Ingrediente(IngredienteBase):
     ultima_compra: Optional[datetime.datetime] = None
     # Cuanto subestima el promedio al costo de reponer, en %.
     variacion_pct: Optional[float] = None
+    # EL COSTO CON QUE SE MIRA ESTA MERCANCIA, segun Configuracion > Control
+    # ("Con que costo fijar precios": ultimo, promedio o el mayor). La tabla
+    # muestra uno solo, para que el margen y el costo digan lo mismo.
+    costo_elegido: Optional[float] = None
+    # Si se vende tal cual en el menu (reventa): su precio de venta (con IVA,
+    # como esta en el menu), lo que queda sin IVA, y el margen sobre eso.
+    precio_venta: Optional[float] = None
+    precio_neto: Optional[float] = None
+    margen_pct: Optional[float] = None
 
     @field_validator("categoria", mode="before")
     @classmethod

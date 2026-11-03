@@ -14,6 +14,7 @@ from .database import Base, SessionLocal, engine, preparar_esquema
 from .migrations import aplicar as aplicar_migraciones
 from .migrations import renombrar_tablas
 from .routers import (
+    asistente,
     acceso as acceso_router,
     agencia,
     app_movil,
@@ -260,6 +261,7 @@ app.include_router(proveedores.router)
 app.include_router(cobranzas.router)
 app.include_router(egresos.router)
 app.include_router(impuestos_router.router)
+app.include_router(asistente.router)
 app.include_router(push_router.router)
 app.include_router(app_movil.router)
 

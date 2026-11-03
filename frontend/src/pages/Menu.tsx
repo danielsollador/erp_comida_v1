@@ -6,6 +6,7 @@ import MenuAcciones from '../components/MenuAcciones'
 import Agarre from '../components/Agarre'
 import { useDialogo } from '../components/dialogo'
 import { useDeshacer } from '../components/Deshacer'
+import CambiarPrecios from '../components/CambiarPrecios'
 import { contiene, palabrasDe } from '../components/Tabla'
 import { Boton, Modal, Pagina, Vacio } from '../components/ui'
 import Icono from '../components/Icono'
@@ -144,6 +145,8 @@ function ElMenu({
   // crearia sin el precio". Un producto nace con su precio puesto.
   const [creando, setCreando] = useState<'categoria' | 'producto' | null>(null)
   const [aviso, setAviso] = useState('')
+  // Cambiar varios precios diciéndolo (spike de IA): ver CambiarPrecios.tsx.
+  const [cambiandoPrecios, setCambiandoPrecios] = useState(false)
 
   const activas = useMemo(() => categorias.filter((c) => c.activo), [categorias])
   // La primera vez, y cuando la elegida se retira, se cae en la primera.
@@ -286,7 +289,15 @@ function ElMenu({
 
   return (
     <>
-      <Buscador valor={busqueda} onCambio={setBusqueda} />
+      <div className="flex gap-2">
+        <div className="min-w-0 flex-1">
+          <Buscador valor={busqueda} onCambio={setBusqueda} />
+        </div>
+        <Boton tono="suave" className="min-h-11 shrink-0" data-guia="menu.cambiar-precios" onClick={() => setCambiandoPrecios(true)}>
+          Cambiar precios
+        </Boton>
+      </div>
+      {cambiandoPrecios && <CambiarPrecios onCerrar={() => setCambiandoPrecios(false)} onCambio={onCambio} />}
 
       {buscando ? (
         <div className="space-y-3">
@@ -554,6 +565,7 @@ function ProductosDe({
         <h2 className="font-semibold text-lg px-1 mr-auto">{categoria.nombre}</h2>
         <button
           onClick={onCrear}
+          data-guia="menu.nuevo-producto"
           className="bg-neutral-900 text-white px-3.5 py-2.5 rounded-xl text-sm font-medium"
         >
           + Producto
@@ -730,7 +742,7 @@ function TarjetaProducto({
       info.costo_reposicion != null &&
       info.costo_reposicion > info.costo * 1.05
     const contexto = info?.costo
-      ? `\n\nProducirlo cuesta $${fmtNum(info.costo)}. A $${fmtNum(precioActual)} te deja ${info.margen_pct?.toFixed(0)}% de margen.` +
+      ? `\n\nProducirlo cuesta $${fmtNum(info.costo)}. A $${fmtNum(precioActual)} te deja ${info.margen_pct?.toFixed(0)}% de margen (sin el IVA, que es del SENIAT).` +
         (seEncarecio
           ? `\n\nOJO: con los precios de HOY cuesta $${fmtNum(info.costo_reposicion!)}, ` +
             `y a $${fmtNum(precioActual)} eso deja solo ${info.margen_reposicion_pct?.toFixed(0)}%.`
@@ -856,7 +868,7 @@ function TarjetaProducto({
                   {bajoCosto
                     ? '¡a pérdida!'
                     : info?.margen_pct != null && !info.sin_receta
-                      ? `${info.margen_pct.toFixed(0)}% de ganancia`
+                      ? `${info.margen_pct.toFixed(0)}% de ganancia sin IVA`
                       : ''}
                 </span>
                 {/* LA RECETA SE TOCA DESDE AQUI. "sin receta" era una
@@ -1330,7 +1342,7 @@ function CrearProducto({
           <Boton tono="fantasma" onClick={onCerrar}>
             Cancelar
           </Boton>
-          <Boton onClick={guardar} disabled={!listo || guardando}>
+          <Boton onClick={guardar} disabled={!listo || guardando} data-guia="producto.crear">
             {guardando ? 'Creando…' : precio === '' ? 'Crear y armar la receta' : 'Crear producto'}
           </Boton>
         </div>
@@ -1344,6 +1356,7 @@ function CrearProducto({
           value={nombre}
           onChange={(e) => setNombre(e.target.value)}
           placeholder="Ej. Empanada"
+          data-guia="producto.nombre"
           autoFocus
           className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-sm"
         />
@@ -1357,6 +1370,7 @@ function CrearProducto({
           value={precio}
           onChange={(e) => setPrecio(e.target.value)}
           placeholder="0.00"
+          data-guia="producto.precio"
           className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 text-lg font-semibold tabular-nums"
         />
       </label>

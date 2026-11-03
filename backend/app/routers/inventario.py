@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from .. import contabilidad, costeo, kardex, models, reposicion, schemas
+from .. import contabilidad, costeo, impuestos, kardex, models, reposicion, schemas
 from . import operadores
 from ..database import get_db
 from ..exportar_csv import nombre_de_archivo, respuesta_csv
@@ -45,14 +45,47 @@ def listar_ingredientes(db: Session = Depends(get_db)):
     # trabajo: con 120 insumos eran 241 consultas y 695 ms para abrir la
     # pantalla principal del modulo.
     ultimos = reposicion.costos_reposicion(db)
-    return [_con_reposicion(i, ultimos) for i in ingredientes]
+    config = db.query(models.Configuracion).first()
+    metodo = (config.costo_para_precios if config else None) or "reposicion"
+    ventas = _precios_de_venta(db)
+    tasa = impuestos.tasa_iva(db)
+    return [_con_reposicion(i, ultimos, metodo, ventas.get(i.id), tasa) for i in ingredientes]
 
 
-def _con_reposicion(ingrediente: models.Ingrediente, ultimos: dict) -> schemas.Ingrediente:
-    """Le pega al insumo lo que costaria reponerlo hoy.
+def _precios_de_venta(db: Session) -> dict:
+    """{ingrediente_id: precio} de lo que se vende TAL CUAL en el menu.
+
+    Una mercancia de reventa (refresco, jugo) se vende como un producto con
+    receta de una sola linea de 1 unidad. Ese es su precio de venta; una que
+    entra en recetas con otras cosas no tiene precio propio.
+    """
+    filas = (
+        db.query(models.RecetaItem.ingrediente_id, models.Variante.precio)
+        .join(models.Variante, models.Variante.id == models.RecetaItem.variante_id)
+        .filter(models.Variante.activo.isnot(False), models.RecetaItem.cantidad_por_unidad == 1)
+        .all()
+    )
+    precios: dict = {}
+    for ingrediente_id, precio in filas:
+        # Varias variantes del mismo refresco: la mas barata es la referencia
+        # conservadora para el margen.
+        if ingrediente_id not in precios or precio < precios[ingrediente_id]:
+            precios[ingrediente_id] = precio
+    return precios
+
+
+def _con_reposicion(
+    ingrediente: models.Ingrediente,
+    ultimos: dict,
+    metodo: str = "reposicion",
+    precio_venta: Optional[float] = None,
+    tasa_iva: float = 0.0,
+) -> schemas.Ingrediente:
+    """Le pega al insumo lo que costaria reponerlo hoy, el costo con que se
+    mira (segun Configuracion) y, si se vende tal cual, su margen.
 
     `costo_unitario` es el promedio ponderado (lo que costo lo que hay en el
-    deposito); esto es lo que cuesta comprar mas. Mientras el promedio no se
+    deposito); reponer es lo que cuesta comprar mas. Mientras el promedio no se
     mueve, el dueno cree que su margen sigue igual.
     """
     salida = schemas.Ingrediente.model_validate(ingrediente)
@@ -63,6 +96,21 @@ def _con_reposicion(ingrediente: models.Ingrediente, ultimos: dict) -> schemas.I
         salida.variacion_pct = reposicion.variacion_pct(
             ultimo["costo"], ingrediente.costo_unitario
         )
+    promedio = ingrediente.costo_unitario or 0
+    reponer = salida.costo_reposicion if salida.costo_reposicion is not None else promedio
+    if metodo == "promedio":
+        elegido = promedio
+    elif metodo == "mayor":
+        elegido = max(promedio, reponer)
+    else:
+        elegido = reponer
+    salida.costo_elegido = round(elegido, 4)
+    if precio_venta is not None and ingrediente.tipo == "reventa":
+        salida.precio_venta = round(precio_venta, 2)
+        neto = impuestos.precio_neto(precio_venta, tasa_iva, bool(ingrediente.exento))
+        salida.precio_neto = round(neto, 4)
+        if neto > 0:
+            salida.margen_pct = round((neto - elegido) / neto * 100, 1)
     return salida
 
 

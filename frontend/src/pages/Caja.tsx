@@ -140,6 +140,7 @@ export default function Caja() {
                 si se anula y se rehace, que los libros no se reescriben). */}
             <button
               onClick={() => setContando(true)}
+              data-guia="caja.cerrar"
               className="w-full bg-neutral-900 text-white rounded-xl py-3.5 font-medium"
             >
               {resumen.cerrada ? 'Corregir el conteo' : 'Hacer cierre de caja'}
@@ -346,7 +347,7 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <div className="flex items-baseline justify-between gap-2 mb-3">
         <h2 className="font-semibold">Retiros de caja</h2>
-        <button onClick={irAMovimientos} className="text-xs font-medium text-acento-600 underline">
+        <button onClick={irAMovimientos} className="text-xs font-medium text-acento-600 underline" data-guia="caja.registrar-gasto">
           Registrar uno
         </button>
       </div>
@@ -1041,6 +1042,7 @@ function CuadrarCaja({
           <button
             onClick={cerrar}
             disabled={conteos.length === 0 || guardando}
+            data-guia="caja.conciliar"
             className="flex-1 rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white disabled:opacity-30"
           >
             {guardando ? 'Guardando…' : corregir ? 'Guardar el conteo' : 'Cerrar y conciliar'}
@@ -1065,7 +1067,7 @@ function CuadrarCaja({
           const enBs = EN_BOLIVARES.has(l.metodo)
           const escrito = Number((contados[l.metodo] ?? '').replace(',', '.'))
           return (
-            <div key={l.metodo} className="rounded-xl border border-neutral-200 p-3">
+            <div key={l.metodo} className="rounded-xl border border-neutral-200 p-3" data-guia="caja.conteo">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm">
                   {etiquetaMetodo(l.metodo)}

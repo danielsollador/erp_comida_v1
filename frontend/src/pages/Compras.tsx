@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useAbrirDeUrl } from '../lib/abrirDeUrl'
 import { AlertasAlGuardar, BandejaAlertas } from '../components/AlertasPrecio'
 import { MemoriaProveedores, VerSoporte } from '../components/FacturaDesdeFoto'
 import NavBar from '../components/NavBar'
@@ -99,7 +100,9 @@ export default function Compras() {
   const [error, setError] = useState('')
   const dialogo = useDialogo()
   const [verSoporte, setVerSoporte] = useState<number | null>(null)
+  // Una factura que llega por enlace (?abrir=id, la búsqueda del asistente) entra abierta.
   const [abierta, setAbierta] = useState<number | null>(null)
+  useAbrirDeUrl(setAbierta)
 
   // Con que forma de pago se va a saldar cada factura a credito pendiente.
   const [liquidacion, setLiquidacion] = useState<Record<number, string>>({})
@@ -648,7 +651,7 @@ function FilaFactura({
       {/* La fila entera responde al clic, pero el teclado y el lector de
           pantalla necesitan un botón de verdad: va en la primera celda, con
           `aria-expanded`, y frena el clic para no abrir y cerrar a la vez. */}
-      <tr className="border-t border-neutral-100 align-top cursor-pointer hover:bg-neutral-500/5" onClick={alAbrir}>
+      <tr className="border-t border-neutral-100 align-top cursor-pointer hover:bg-neutral-500/5" onClick={alAbrir} data-doc={f.id}>
         <td className="p-3 whitespace-nowrap">
           <button
             type="button"

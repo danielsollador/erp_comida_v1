@@ -300,7 +300,64 @@ export type DatosFacturaVenta = {
   razon_social_cliente?: string
 }
 
+/** Una vuelta del asistente (spike de IA). La guía, si viene, la recorre `Guia.tsx`. */
+export type RespuestaAsistente = {
+  texto: string
+  guia: { ruta: string; ancla: string; titulo: string; texto: string; accion?: 'tocar' | 'escribir' | 'mirar' }[] | null
+  consulto: string[]
+  /** Lo que encontró «buscar documentos»: cada uno con su enlace para abrirlo. */
+  documentos?: DocumentoEncontrado[]
+  ms: number
+  costo_usd: number
+}
+
+export type DocumentoEncontrado = {
+  tipo: 'compra' | 'venta' | 'gasto'
+  id: number
+  titulo: string
+  detalle: string
+  fecha: string
+  monto_usd: number
+  estado: string
+  enlace: string
+}
+
+/** La frase traducida a una definición de A medida (ya validada en el servidor). */
+export type ReporteHablado = {
+  definicion?: {
+    fuente: string
+    filas: string[]
+    columna: string | null
+    medidas: string[]
+    filtros: Record<string, string[]>
+  }
+  desde?: string
+  hasta?: string
+  entendi: string
+  no_se_puede: string | null
+}
+
+/** Los cambios de precio que propone el asistente: la cuenta la hizo el servidor. */
+export type CambioPropuesto = {
+  variante_id: number
+  nombre: string
+  categoria: string
+  precio_anterior: number
+  precio_nuevo: number
+}
+export type PropuestaPrecios = { cambios: CambioPropuesto[]; entendi: string; duda: string | null }
+
 export const api = {
+  // --- asistente ---
+  preguntarAsistente: (mensajes: { rol: 'yo' | 'asistente'; texto: string }[], pantalla: string) =>
+    req<RespuestaAsistente>('/asistente/preguntar', { method: 'POST', body: JSON.stringify({ mensajes, pantalla }) }),
+  reporteHablado: (frase: string) =>
+    req<ReporteHablado>('/asistente/reporte', { method: 'POST', body: JSON.stringify({ frase }) }),
+  proponerPrecios: (instruccion: string) =>
+    req<PropuestaPrecios>('/asistente/precios/proponer', { method: 'POST', body: JSON.stringify({ instruccion }) }),
+  aplicarPrecios: (cambios: { variante_id: number; precio_anterior: number; precio_nuevo: number }[]) =>
+    req<{ aplicados: number }>('/asistente/precios/aplicar', { method: 'POST', body: JSON.stringify({ cambios }) }),
+
   // --- acceso y usuarios ---
   estadoAcceso: () => req<EstadoAcceso>('/acceso/estado'),
   salir: () => req<{ ok: boolean }>('/acceso/logout', { method: 'POST' }),
