@@ -118,3 +118,9 @@ Creo que podríamos dejar en la parte de objetivos general como que una mini sec
 Esta parte cambiala, acuerdate que esto es configurable desde configuracion.
 
 Me puedes decir su nos falta agregar algo a nuestro spect kit como constitucion o hooks ?
+
+## 22 (2026-11-02, Leider)
+
+implementa 3 y 4.
+
+y dime cual seria el comando que tengo que poner aqui en claude code para saber el contexto que tiene este chat

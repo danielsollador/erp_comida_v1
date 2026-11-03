@@ -42,7 +42,7 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 ## Cómo se trabaja
 
 1. **Idea nueva:** `/nueva-funcionalidad` la agrega al plan, con su spec y sus tareas. Sin código.
-2. **Spec aprobada:** ningún bloque se programa sin que Leider o Daniel apruebe su spec.
+2. **Spec aclarada y aprobada:** lo ambiguo se pregunta antes, y ningún bloque se programa sin que Leider o Daniel apruebe su spec.
 3. **Implementar:** `/implementar`, en la rama de la fase (`fase<N>`), un commit por tarea.
 4. **Comprobar que compila** (es lo único que prueba el agente; la suite completa la corre GitHub):
    - Backend: `cd backend && py -m compileall -q app`
@@ -57,6 +57,7 @@ Además:
 
 - Al cerrar una tarea se marcan `tareas.md` y una línea en el registro de `project-map.md`.
 - Lo que falla se anota en `Apuntes/fixes.md` y se arregla con `/arreglar`.
+- `/revisar` busca documentos repetidos, que chocan o que ya no dicen la verdad. Se corre al cerrar cada bloque.
 - Cada prompt nuevo se guarda en `prompts.md` (número, fecha y quién).
 - Ante una duda, se lee la spec; si no la resuelve, se asume lo más simple que no rompa nada. Las decisiones pendientes del plan siempre se preguntan.
 - Si algo se puede optimizar, se propone en el plan.

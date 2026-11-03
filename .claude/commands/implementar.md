@@ -7,7 +7,10 @@ Alcance: $ARGUMENTS (si viene vacío, la primera tarea pendiente de @tareas.md).
 
 Lee @project-map.md, el bloque en @plan-implementacion.md y su spec.
 
-1. **Spec aprobada.** Si el bloque no tiene spec o está en borrador, escríbela o complétala con la plantilla, muéstrala y para hasta que Leider la apruebe.
+1. **Spec aprobada.** Si el bloque no tiene spec o está en borrador:
+   - escríbela o complétala con la plantilla;
+   - **aclara:** busca lo que quedó ambiguo o sin decidir (quién, cuánto, qué pasa si falla, dinero, sin conexión, dos usuarios a la vez) y pregúntalo con `AskUserQuestion` (máximo 4 preguntas, cada una con la opción recomendada primero). Las respuestas van a la spec, no al chat;
+   - muéstrala y para hasta que Leider o Daniel la apruebe.
 2. **Decisiones.** Si una tarea espera una decisión pendiente, márcala `[!]`, pregunta y no la implementes.
 3. **Implementar** las tareas en orden, sin replantear el plan, en la rama `fase<N>`, un commit por tarea. Solo pregunta ante un bloqueo técnico real.
 4. **Comprobar que compila** (paso 4 de "Cómo se trabaja" en `CLAUDE.md`). No corras la suite ni valides en el sistema.
