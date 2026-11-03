@@ -30,6 +30,7 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 - **Habla como prefiere cada usuario:** en Configuración > Lenguaje elige sencillo ("te quedó") o técnico ("ganancia neta"). Todo texto nuevo con un término del negocio se escribe en las dos formas (`lib/palabras.ts`).
 - **Una cosa importante por pantalla,** y lo siguiente que hay que hacer, a la vista.
 - **Toda cifra se explica sola:** qué es, de dónde sale y cómo se calcula, con un ejemplo.
+- **Resuelve, no explica:** el usuario no viene a entender, viene a terminar algo (cerrar la caja, cobrar, pedir). Antes de proponer o construir una pantalla o una ayuda, el agente se pregunta: ¿con esto lo termina aquí mismo? Gana la opción con menos toques, menos que escribir y menos que leer. Si solo explica, o lo manda a otra pantalla a buscar, todavía no está.
 - **Menos pasos:** lo que el sistema puede hacer solo (asientos, impuestos, tasa), lo hace sin preguntar.
 - **Ningún error sin salida:** cada aviso dice qué pasó y qué hacer.
 - **Solo afirma lo que sabe:** el sistema da por seguro únicamente lo que está en sus datos (cifras, lo anotado). Lo que deduce lo dice como probable, con lo demás que pudo ser y cómo confirmarlo. Ejemplo: "sobra lo mismo que la compra de huevos", nunca "la compra se pagó con otra plata". El agente igual: lo que no comprobó no lo da por cierto.
