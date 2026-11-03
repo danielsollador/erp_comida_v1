@@ -155,7 +155,7 @@ def pistas(resumen: schemas.ResumenCaja, cobros: List[schemas.CobroDelDia]) -> L
             texto = f"Faltan {_d(-f.diferencia)} en {f.metodo} y ningún cobro del día tiene ese monto: compara cobro por cobro con el banco."
         accion = ("Busca ese cobro en el banco o el lote; si no entró, cóbralo de nuevo o anótalo como pendiente."
                   if candidatos and not f.fisico else
-                  "Revisa si hubo un vuelto, un gasto o un retiro sin anotar (Caja › «Gastos y retiros») y vuelve a contar."
+                  "Revisa si hubo un vuelto, un pago menor o un retiro sin anotar (Caja › «Retiros de caja») y vuelve a contar."
                   if f.fisico else "Compara cobro por cobro contra el movimiento del banco.")
         salida.append(schemas.PistaCierre(tipo="faltante", texto=texto, pedidos=_pedidos(candidatos), monto=f.diferencia,
                                           peso=abs(f.diferencia), accion=accion))

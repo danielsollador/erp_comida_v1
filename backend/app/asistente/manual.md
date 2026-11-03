@@ -279,7 +279,7 @@ En cada tarjeta: **«Sobró hoy»** («Lo guardo» no mueve nada; «Lo boto» lo
 
 **Para qué sirve:** al final del día, contar lo que hay en cada gaveta y en el banco, y ver si cuadra con lo que se vendió.
 
-**Dónde está:** `/caja`, pestañas «Cierre de caja» (la portada), «Gastos y retiros» (`/caja/movimientos`) e «Historial» (`/caja/historial`).
+**Dónde está:** `/caja`, pestañas «Cierre de caja» (la portada), «Retiros de caja» (`/caja/movimientos`) e «Historial» (`/caja/historial`).
 
 ### Hacer el cierre
 1. En «Cuadrando el día», elige la fecha. Viene puesto hoy y se puede elegir un día pasado.
@@ -305,8 +305,8 @@ En cada tarjeta: **«Sobró hoy»** («Lo guardo» no mueve nada; «Lo boto» lo
 - **Vuelto:** se resta de la gaveta por donde salió. Si el cliente pagó en $ y se le dio vuelto en Bs, la gaveta de $ recibe el billete entero y la de Bs da el vuelto.
 - **A crédito:** no se cuenta, porque no entró plata.
 
-### Gastos y retiros
-En «Gastos y retiros», elige «Gasto» (con descripción, ej. «Bombona de gas», y categoría: Insumos, Servicios, Sueldos u Otros) o «Retiro del dueño». Elige de dónde sale («De Efectivo Bs», «De Efectivo $», «De Pago movil»…), escribe el monto **en dólares** y toca «Registrar»; queda con la hora de ese momento. La «x» lo borra (con «Deshacer»). La mercancía no va aquí: va por Compras.
+### Retiros de caja
+Todo billete que sale de la gaveta, para que el cierre cuadre: «Pago menor» (bombona, hielo, un mandado) o «Retiro del dueño», y de qué gaveta salió («De Efectivo Bs» o «De Efectivo $»). Baja lo que se debe tener en esa gaveta. «Depósito al banco»: el efectivo que se lleva al banco, con su referencia; no es gasto, solo cambia de sitio. «Entra plata del dueño»: cuando el dueño pone plata de su bolsillo; sube el capital y no es venta. Se anulan desde su lista. Los sueldos, el alquiler y lo que se paga por el banco van en **Pagos**; la mercancía, en Inventario › «Llegó mercancía» o en Compras.
 
 ### Corregir un cierre
 - **Se tecleó mal:** en el día cerrado, «Corregir el conteo» → cambiar → «Guardar el conteo». El cierre viejo queda anulado con su rastro.
@@ -353,6 +353,35 @@ Filtros «Qué pasó» (Cobradas, A crédito, Devueltas, «Anuladas: pérdida»,
 - **«Contra el período anterior»** compara con un tramo del mismo largo justo antes: del 1 al 22 de octubre contra los 22 días anteriores, no contra septiembre completo.
 - **Venta cobrada de otro día o facturada con cambio de monto:** no se edita; se devuelve y se vuelve a cobrar.
 
+## Cuentas por cobrar
+
+**Dónde está:** `/cobranzas`, pestañas «Quién me debe» y «Cobros hechos».
+
+Lo que se vendió «A crédito» en el punto de venta y falta cobrar, por cliente. Se crea la ficha del cliente (PedidosYa, una empresa) con su comisión y su plazo; los fiados a ese nombre entran solos en su cuenta. Los fiados con un nombre que no es de ninguna ficha salen en «A crédito sin ficha» para asignarlos.
+
+### Cobrar
+1. Toca el cliente: se ve lo que debe y su estado de cuenta.
+2. Marca las ventas que te pagan, elige «Cómo pagó», la referencia y **lo que entró de verdad**. La diferencia con lo que se debía queda como comisión de la plataforma.
+3. «Abonar a lo que debe»: un pago sin decir de cuál venta se aplica de la más vieja a la más nueva. Un pago con dos formas son dos abonos.
+
+### Reglas que confunden
+- **Perdida:** una venta que no se va a cobrar va a gasto de incobrables y deja de deberse. Si al final paga, «Recuperar» en el estado de cuenta.
+- **Retuvo IVA:** con facturas marcadas se elige si retuvo el 75 % o el 100 %; lo retenido no entra al banco, queda como crédito contra el IVA.
+- Un cobro mal anotado se anula desde «Cobros hechos» y las ventas vuelven a deberse.
+
+## Pagos
+
+**Dónde está:** `/pagos`, pestañas «Pagos» y «Pagos fijos». Solo lo ven el dueño y Vertigo.
+
+Lo que el negocio paga **sin factura**: sueldos, honorarios (el contador, la mensualidad del sistema), alquiler, servicios públicos, mantenimiento, impuestos municipales. Se pone a quién, el concepto, el monto en dólares o en bolívares (con la tasa BCV del día), de dónde salió y la referencia. Cada concepto va a su cuenta de gasto, sin IVA.
+
+### Reglas que confunden
+- **ISLR:** si toca retenerle, se pone el porcentaje: se le entrega el neto y lo retenido queda «por enterar». «Pagar al SENIAT» lo registra cuando se paga la planilla.
+- **Anticipo de sueldo:** no es gasto todavía; al pagar el sueldo de esa persona se descuenta solo.
+- **Pagos fijos:** la quincena, el alquiler. El día que tocan salen en «Toca pagar» y se confirman con un toque; nada se paga solo.
+- Si el servicio trae factura con IVA (CANTV, Corpoelec), va por Compras para recuperar el IVA.
+- Pagado en efectivo, el cierre de caja ya lo descuenta.
+
 ## Reportes
 
 **Para qué sirve:** ver cómo va el negocio: cuánto se vende, cuánto te queda, qué se pierde y qué hay en inventario.
@@ -395,10 +424,11 @@ Los reportes guardados los ven todos los que entran a Reportes. Solo los cambia 
 **Dónde está:** la portada `/contador` («Zona contable») junta tres módulos: Contabilidad, Impuestos y Tasa de cambio. De fábrica, Contabilidad e Impuestos solo los ve el dueño; Tasa la ven el dueño y Caja.
 
 ### Contabilidad (`/contabilidad`)
-**Pestañas:** «Plan de cuentas», «Asientos», «Balance de comprobación», «Estado de resultados», «Balance general», «Equipos» y «Respaldos». Todo va en dólares.
+**Pestañas:** «Plan de cuentas», «Asientos», «Conciliación bancaria», «Balance de comprobación», «Estado de resultados», «Balance general», «Equipos» y «Respaldos». Todo va en dólares.
 
 - **Plan de cuentas:** tocar una cuenta abre su libro mayor; «+ Nueva cuenta» crea una.
 - **Asientos:** el libro diario, con filtro de período, cuenta y origen. «Asiento manual» pide descripción y al menos dos cuentas con el debe igual al haber. Solo los manuales se pueden borrar, y se borran sin confirmar.
+- **Conciliación bancaria:** se sube el estado de cuenta del banco (PDF o Excel). Los cobros se reconocen solos; lo que se repite (comisiones, por ejemplo) se asigna con reglas, y «Registrar en contabilidad» lo asienta en dólares a la tasa BCV del día.
 - **Estado de resultados** sigue el período; **Balance de comprobación** y **Balance general** son a hoy. El general dice «Los libros cuadran» o «Los libros no cuadran – revisa los asientos manuales».
 - **Equipos:** nacen de los renglones «Equipo» de Compras; uno anterior al sistema se agrega con «+ ya lo tenia». También «Cambiar duración», «Dar de baja» y «Cerrar ejercicio» (cierra el año anterior).
 - **Respaldos:** ver Configuración.
@@ -495,7 +525,7 @@ Solo los maneja el dueño, o un rol al que se le dio Contabilidad.
 - Faltante grande y aislado: un cobro sin registrar, o registrado con otra forma (entró por pago móvil y se marcó efectivo). Revisa «Ver N cobros» de cada forma y corrige con «Editar pago» en Ventas (si el día ya se cerró, anula el cierre primero).
 - Sobrante repetido: una venta cobrada que nunca se cargó.
 - Se puso 0 en algo que no se contó: el 0 anota faltante por todo lo esperado. Lo no contado va en blanco; se arregla con «Corregir el conteo».
-- Un gasto pagado de la gaveta sin anotar: regístralo en «Gastos y retiros» con la gaveta de donde salió.
+- Un gasto pagado de la gaveta sin anotar: regístralo en Caja › «Retiros de caja» como «Pago menor», con la gaveta de donde salió.
 - No se abrió la caja: el sistema arranca de lo que traía la gaveta de días anteriores, con los descuadres viejos.
 
 **¿Por qué el margen sale 100 % (o la ganancia igual a las ventas)?**

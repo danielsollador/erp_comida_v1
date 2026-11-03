@@ -206,6 +206,8 @@ export default function POS() {
       monto_bs?: number
       recibido?: number
       vuelto_metodo?: string
+      /** Solo para mostrar: los Bs que de verdad entrego (en dolares se redondea a centavos). */
+      recibido_bs?: number
     }[]
   >([])
   // Si el local tiene Pabilo, un pago movil se comprueba contra el banco
@@ -1293,7 +1295,10 @@ export default function POS() {
         setPropina(String(redondear((Number(propina) || 0) + entregadoUsd - faltaMixto)))
         setPartes((p) => [...p, { metodo, monto: entregadoUsd, referencia: '' }])
       } else {
-        setPartes((p) => [...p, { metodo, monto: faltaMixto, referencia: '', recibido: entregadoUsd, vuelto_metodo: 'Efectivo Bs' }])
+        setPartes((p) => [
+          ...p,
+          { metodo, monto: faltaMixto, referencia: '', recibido: entregadoUsd, vuelto_metodo: 'Efectivo Bs', recibido_bs: bs },
+        ])
       }
       return
     }
@@ -3017,7 +3022,9 @@ export default function POS() {
                     {EN_BOLIVARES.has(parte.metodo) && tasaBcv > 0 && (
                       <span className="block text-[11px] text-neutral-500 tabular-nums">
                         {parte.recibido
-                          ? `recibió ${fmtBs(parte.recibido * tasaBcv)} · vuelto ${fmtBs((parte.recibido - parte.monto) * tasaBcv)}`
+                          ? `recibió ${fmtBs(parte.recibido_bs ?? parte.recibido * tasaBcv)} · vuelto ${fmtBs(
+                              (parte.recibido_bs ?? parte.recibido * tasaBcv) - parte.monto * tasaBcv,
+                            )}`
                           : fmtBs(parte.monto_bs ?? parte.monto * tasaBcv)}
                       </span>
                     )}
