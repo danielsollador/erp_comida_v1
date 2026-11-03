@@ -22,29 +22,29 @@ Todos viven en el repo, junto al código. Toda ruta de este plan es relativa a l
 | Documento | Qué responde | Prioridad si chocan |
 |---|---|---|
 | `CLAUDE.md` | Qué construir (requisitos y reglas) | 1 |
-| `docs/specs/<modulo>.md` | Con qué detalle: reglas, casos borde y aceptación | 2 |
-| `docs/plan-implementacion.md` | Cómo construirlo y en qué orden | 3 |
-| `docs/project-map.md` | Cómo está el sistema hoy | 4 |
-| `docs/tareas.md` | Qué tarea toca y cuáles están hechas | Sigue al plan |
+| `specs/<modulo>.md` | Con qué detalle: reglas, casos borde y aceptación | 2 |
+| `plan-implementacion.md` | Cómo construirlo y en qué orden | 3 |
+| `project-map.md` | Cómo está el sistema hoy | 4 |
+| `tareas.md` | Qué tarea toca y cuáles están hechas | Sigue al plan |
 
 - Si el código y `project-map.md` no coinciden, manda el código y se corrige el mapa.
 - `ESTADO.md` es el historial de traspasos hasta el 19-sep. Se consulta para entender el porqué de una regla, pero ya no se actualiza.
 
 Orden de lectura antes de cada tarea:
-1. `docs/project-map.md`
-2. La spec del módulo, la tarea en `docs/tareas.md` y su bloque en este plan
+1. `project-map.md`
+2. La spec del módulo, la tarea en `tareas.md` y su bloque en este plan
 3. `git log -- <archivo>` de los archivos que vayas a tocar: los commits explican el porqué de cada regla
 
 ### 0.2 Flujo por bloque (SDD)
 
-1. **Spec:** escribir o completar `docs/specs/<modulo>.md` (plantilla en `docs/specs/_plantilla.md`) con requisitos, casos borde y aceptación. **Leider la aprueba antes de programar.** Si el bloque depende de una decisión pendiente (sección 3), se pregunta y no se implementa.
-2. **Tareas:** el bloque se desglosa en `docs/tareas.md`.
+1. **Spec:** escribir o completar `specs/<modulo>.md` (plantilla en `specs/_plantilla.md`) con requisitos, casos borde y aceptación. **Leider la aprueba antes de programar.** Si el bloque depende de una decisión pendiente (sección 3), se pregunta y no se implementa.
+2. **Tareas:** el bloque se desglosa en `tareas.md`.
 3. **Implementar:** en la rama de la fase (`fase<N>`), un commit por tarea.
 4. **Comprobar que compila** (0.3).
 5. **Validar en local:** se levanta el sistema y Leider valida con la Aceptación de la spec.
 6. **Subir:** con la validación, se sube la rama a GitHub. Las pruebas corren solas (`pruebas.yml`); si fallan, se arregla antes de seguir.
 7. **Fusionar en `master`** con las pruebas en verde. Se despliega solo cuando Leider lo pida, fuera del horario de ventas y con él presente (`gcp/README.md`).
-8. **Actualizar** `docs/tareas.md` y `docs/project-map.md`.
+8. **Actualizar** `tareas.md` y `project-map.md`.
 9. **Parar** al cerrar cada fase.
 
 ### 0.3 Definición de Hecho
@@ -116,7 +116,7 @@ Bloquean su bloque hasta que Leider responda. La regla "asume la decisión más 
 | ID | Pregunta | Propuesta por defecto | Bloquea |
 |---|---|---|---|
 | D1 | ¿A qué día pertenece una venta hecha después de medianoche con la caja de ayer abierta? | **Día operativo con hora de corte por local** (por defecto 05:00) para caja, reportes y numeración. Libro de ventas e IVA usan la **fecha calendario real**, que es la que exige el SENIAT. Confirmarlo con el contador. | 1.6 |
-| D2 | Vender sin conexión: ¿también se cobra sin conexión? | **Decidida (2-nov):** se hace todo lo que no necesita al servidor en ese momento (ver `docs/specs/ventas.md`). | — |
+| D2 | Vender sin conexión: ¿también se cobra sin conexión? | **Decidida (2-nov):** se hace todo lo que no necesita al servidor en ese momento (ver `specs/ventas.md`). | — |
 | D3 | Cambio de turno: ¿arqueo de gavetas en cada turno o solo al cierre del día? | **Aplazada (2-nov)** a la FASE 3. Propuesta: arqueo por turno sin cerrar el día. | 3.6 |
 | D4 | Alta de local: ¿un backend por local (como hoy) o uno solo para todos? | Menos de 5 locales en 6 meses: script de alta. Más: un solo backend multi-local. | 3.1 |
 | D5 | Pagos de Vertigo: ¿registro manual o pasarela? ¿Se bloquea al moroso? | Registro manual. **Nunca se bloquea la venta.** | 3.2 |
@@ -124,7 +124,7 @@ Bloquean su bloque hasta que Leider responda. La regla "asume la decisión más 
 | D7 | Personalización: ¿qué reglas de negocio puede cambiar el cliente? | Lista inicial en 3.3. | 3.3 |
 | D8 | Impresora y gaveta: ¿qué modelo se compra? | Térmica de red de 80 mm con ESC/POS y gaveta conectada a la impresora. | 4.1 |
 | D9 | Vertigo Campus (WhatsApp): ¿qué debe poder hacer en el ERP? | Solo crear pedidos con un token de servicio. | 3.5 |
-| D10 | Dos tablets: ¿cada tablet es una caja con sus propias gavetas, o las dos cobran en la misma caja? | **Una caja por tablet**, cada una con sus dos gavetas, su apertura y su cierre. Las cuentas contables no cambian (1010 y 1011): cada movimiento dice de qué caja es. Detalle en `docs/specs/ventas.md`. | 1.4 |
+| D10 | Dos tablets: ¿cada tablet es una caja con sus propias gavetas, o las dos cobran en la misma caja? | **Una caja por tablet**, cada una con sus dos gavetas, su apertura y su cierre. Las cuentas contables no cambian (1010 y 1011): cada movimiento dice de qué caja es. Detalle en `specs/ventas.md`. | 1.4 |
 | D11 | ¿Cuánto tiempo se guardan los respaldos en el bucket? | 90 días, con una regla de ciclo de vida. | 1.7 |
 
 ---
@@ -149,20 +149,20 @@ La app está en `movil/` dentro de `fase1` y compila. APK de prueba hecha con EA
 - **Aceptación:** `master` de GitHub tiene todo lo de `fase1` con las pruebas en verde.
 
 ### 1.3 Errores de la auditoría QA (Opus)
-- Correr las pruebas de `qa-auditoria-pruebas` contra `fase1` y anotar en `docs/specs/qa.md` cuáles siguen fallando, qué error demuestra cada una y su riesgo (dinero, permisos u operación).
+- Correr las pruebas de `qa-auditoria-pruebas` contra `fase1` y anotar en `specs/qa.md` cuáles siguen fallando, qué error demuestra cada una y su riesgo (dinero, permisos u operación).
 - Leider aprueba la lista y el orden: primero dinero y permisos.
 - Cada arreglo que cambia un resultado de dinero se explica antes de tocarlo. Nunca cambia en silencio operaciones pasadas.
 - Cada prueba arreglada entra a la suite normal.
 - **Aceptación:** las pruebas QA pasan en GitHub y Leider valida en local los casos de dinero.
 
-### 1.4 Dos tablets cobrando a la vez (Opus). Spec: `docs/specs/ventas.md`. Requiere D10.
+### 1.4 Dos tablets cobrando a la vez (Opus). Spec: `specs/ventas.md`. Requiere D10.
 - **Numeración:** restricción única (`UQ_`) sobre (día, número) y asignación dentro de la transacción con bloqueo sobre una fila contador por día, con reintento si choca. Nunca `max + 1` sin bloqueo. Cuando exista el día operativo (1.6), la clave pasa a ser el día operativo.
 - Revisar el mismo patrón en cobro, descuento de inventario, abonos de fiado y edición concurrente.
 - **Caja por tablet** según D10: la caja física como entidad, apertura y cierre por caja, y cada cobro, gasto y retiro con su caja.
 - **CI con PostgreSQL:** servicio `postgres:16` en `pruebas.yml` y `tests/test_concurrencia_pg.py` (hilos contra la base real), que se salta en SQLite.
 - **Aceptación:** el protocolo con dos tablets de la spec.
 
-### 1.5 Vender sin conexión (Opus). Spec: `docs/specs/ventas.md`. D2 decidida.
+### 1.5 Vender sin conexión (Opus). Spec: `specs/ventas.md`. D2 decidida.
 Hoy la app abre sin conexión (`public/sw.js`), la comanda es idempotente (`clave_cliente`) y `components/Conexion.tsx` detecta el corte. Falta la cola.
 
 **Frontend**
@@ -183,7 +183,7 @@ Hoy la app abre sin conexión (`public/sw.js`), la comanda es idempotente (`clav
 - `timeutils.dia_operativo(momento)` con `hora_corte` por local.
 - Clasificar cada llamada a `hoy()` e `inicio_del_dia()` como **operativa** (caja, numeración, reportes por día, portada, mart) o **fiscal** (libro de ventas, IVA, declaraciones) y cambiar las operativas.
 - Subir `consolidacion.VERSION`.
-- Spec en `docs/specs/caja.md` antes de programar.
+- Spec en `specs/caja.md` antes de programar.
 - **Tests a escribir:** venta a las 00:30 con la caja de ayer abierta; cierre a la 01:00; la numeración se reinicia en la hora de corte; IVA del mes correcto en una venta del 31 hecha a las 00:30 del 1.
 - **Aceptación:** Leider simula un día que cruza la medianoche y el cierre, el reporte del día y el libro de ventas dan lo que espera según D1.
 
@@ -202,7 +202,7 @@ Hoy la app abre sin conexión (`public/sw.js`), la comanda es idempotente (`clav
 
 ### 1.9 Cierre de la FASE 1 (Sonnet)
 - Despliegue en la VM según `gcp/README.md`, a una hora sin ventas y con Leider presente.
-- Pasar lo terminado a FASE 0 en `CLAUDE.md`; actualizar `docs/tareas.md` y `docs/project-map.md`. Etiquetar la versión `v1.1`.
+- Pasar lo terminado a FASE 0 en `CLAUDE.md`; actualizar `tareas.md` y `project-map.md`. Etiquetar la versión `v1.1`.
 - Marcar la FASE 1 como completada en la tabla del inicio.
 - **PARAR:** Leider valida en el local.
 
@@ -269,7 +269,7 @@ FASE 4: 3.5 -> QR en la mesa -> kiosco; el resto según el hardware
 4. **Revisión de recetas con reglas fijas** y no con IA.
 5. **PostgreSQL en CI:** los errores de concurrencia y de migración solo salen ahí.
 6. **Alta de local en dos pasos** (script y luego multi-local).
-7. **`docs/project-map.md`** como fuente del estado real, para no explorar el repo entero en cada sesión.
+7. **`project-map.md`** como fuente del estado real, para no explorar el repo entero en cada sesión.
 8. **Errores QA antes que lo nuevo** (2-nov): las pruebas ya estaban escritas y demuestran errores de dinero en producción.
 9. **Documentos dentro del repo** (2-nov): la spec y su código viajan en la misma rama, y quien trabaje en el repo ve las mismas reglas.
 

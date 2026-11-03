@@ -1,7 +1,6 @@
 # ERP Fight Complexity, Impulsado con IA y 360: Vertigo Pro
 
-Reglas del producto para cualquiera que toque este repo (personas o agentes).
-Dice **que** se construye. El **como** y el **orden** estan en `docs/`.
+Reglas del producto y de la metodologia para cualquiera que trabaje en este repo (personas o agentes).
 
 ## Rol del Agente
 Arquitecto de desarrollo con 12 años de experiencia.
@@ -70,7 +69,7 @@ En el sistema interno se podran administrar:
 
 ## Funcionalidades de la aplicacion:
 
-La FASE 0 es lo que ya funciona en produccion: es contrato, no se cambia su comportamiento sin decirlo en el plan de implementacion. Si un requisito necesita mas detalle del que cabe aqui, va en `docs/specs/<modulo>.md`. El estado de cada cosa (hecha, en curso, pendiente) no va aqui: va en `docs/tareas.md` y `docs/project-map.md`.
+La FASE 0 es lo que ya funciona en produccion: es contrato, no se cambia su comportamiento sin decirlo en el plan de implementacion. Si un requisito necesita mas detalle del que cabe aqui, va en `specs/<modulo>.md`. El estado de cada cosa (hecha, en curso, pendiente) no va aqui: va en `tareas.md` y `project-map.md`.
 
 ### FASE 0 (base operativa):
 - Transversal, aplica a todos los modulos:
@@ -280,25 +279,22 @@ La FASE 0 es lo que ya funciona en produccion: es contrato, no se cambia su comp
 - No pongas en comentarios caracteres especiales como emojis, que dificulten la legibilidad del codigo
 - Si el angente duda, que revise las especificaciones del proyecto y si no, que pregunte al usuarios
 
-## Documentos
-
-| Documento | Para que sirve |
-|---|---|
-| `CLAUDE.md` (este) | Que se construye y con que reglas. Manda sobre todo lo demas. |
-| `docs/specs/<modulo>.md` | El detalle de un requisito: reglas, casos borde y como se valida. Se escribe y se aprueba antes de programar. |
-| `docs/plan-implementacion.md` | Como y en que orden se construye cada fase. |
-| `docs/tareas.md` | Las tareas de cada bloque y su estado. |
-| `docs/project-map.md` | Como esta el sistema hoy (lo saca del codigo). |
-| `ESTADO.md` | Historial de traspasos hasta el 19-sep. Ya no se actualiza. |
-
-- Jerarquia si chocan: 1. `CLAUDE.md`, 2. la spec del modulo, 3. `docs/plan-implementacion.md`, 4. `docs/project-map.md`. Si el codigo y el mapa no coinciden, manda el codigo y se corrige el mapa.
-- Al cerrar una tarea se actualizan `docs/tareas.md` y `docs/project-map.md` en el mismo commit o en el siguiente.
-
 ## Estructura del repo
 
+Este repo es la unica fuente de verdad: codigo y metodologia viven juntos. La sesion del agente se abre siempre en su raiz, para que cargue este archivo, los comandos y la skill de estilo.
+
 ```
-CLAUDE.md                que construir (este archivo)
-docs/                    specs, plan, tareas y mapa del sistema
+CLAUDE.md                que construir y como se trabaja (este archivo, el unico)
+specs/                   detalle por modulo (specs/<modulo>.md, plantilla en specs/_plantilla.md)
+plan-implementacion.md   como y en que orden
+tareas.md                tareas y su estado
+project-map.md           estado real del sistema
+prompts.md               historial de prompts
+Apuntes/                 apuntes de la metodologia y fixes.md
+.claude/commands/        /nueva-funcionalidad, /implementar, /arreglar
+.claude/skills/          estilo-vertigo (guia visual)
+levantar-local.ps1       levanta todo en local
+.dev-data/               datos de prueba locales (no se versiona)
 backend/app/             FastAPI: routers/, acceso/, asistente/, models.py, migrations.py
 backend/tests/           pruebas (pytest)
 frontend/src/            ERP web: pages/, components/, lib/
@@ -306,6 +302,7 @@ frontend/public/         sitio publico (sitio/), hub (inicio.html), login y lega
 movil/                   app Expo (iPhone y Android); comparte lib/ con la web
 locales/                 marca de cada local (<local>.json)
 gcp/, operaciones/       servidor, despliegue y procedimientos
+ESTADO.md                historial de traspasos hasta el 19-sep (ya no se actualiza)
 ```
 
 ## Fases del desarollo:
@@ -320,3 +317,18 @@ gcp/, operaciones/       servidor, despliegue y procedimientos
 - Responde en espanol si preguntas, pero en prompts usa Ingles / Espanol libremente.
 - Si hay ambiguedad, asume la decision mas simple que no rompa algo, salvo las decisiones pendientes de la seccion 3 del plan de implementacion: esas siempre se preguntan.
 - Las pruebas del agente son basicas: solo comprobar que compila (tipos y build). La suite completa la corre GitHub Actions al subir la rama, y la validacion de la funcionalidad la hace Leider.
+
+## Otras consideraciones:
+
+- Guarda el plan de implementacion en `plan-implementacion.md`, en la raiz del repo.
+- Guarda las tareas y su estado en `tareas.md`, en la raiz del repo, y cada vez que se cumpla una, modificalo para actualizarlas.
+- Guarda cada uno de los prompts nuevos en `prompts.md`, en la raiz del repo (todos ordenados uno detras de otro, con quien lo hizo y la fecha). Cada prompt aparte se guarda ahi.
+- Guarda el estado real del sistema en `project-map.md`, en la raiz del repo, y actualizalo despues de cada cambio relevante. Si el codigo y el mapa no coinciden, manda el codigo y se corrige el mapa.
+- El detalle de cada modulo va en `specs/<modulo>.md`. Se escribe antes de programar el bloque y Leider la aprueba.
+- Los documentos de la metodologia se versionan con el codigo, en la rama de la fase en curso: al cerrar cada tarea se actualizan `tareas.md` y `project-map.md` en el mismo commit o en el siguiente.
+- Para levantar el sistema en local se usa `levantar-local.ps1`: ERP en http://localhost:5181, sitio publico en http://localhost:5181/sitio/, hub en http://localhost:5182/inicio.html y app movil en el navegador en http://localhost:8081. La app movil en local siempre apunta al backend local; su `movil/.env` apunta a produccion y solo se usa para los builds de las tiendas.
+- Comandos de la metodologia (`.claude/commands/`):
+    - `/nueva-funcionalidad <idea>`: lleva una idea a este archivo, su spec, su bloque del plan y sus tareas. Para ahi, sin codigo.
+    - `/implementar [fase o tarea]`: construye las tareas del plan en orden.
+    - `/arreglar [lo que falla]`: arregla lo anotado en `Apuntes/fixes.md` y lo deja listo para validar en local.
+- Jerarquia en caso de conflicto: 1. `CLAUDE.md` (que construir), 2. la spec del modulo (con que detalle), 3. `plan-implementacion.md` (como construirlo), 4. `project-map.md` (estado actual).

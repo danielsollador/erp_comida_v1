@@ -6,7 +6,7 @@ sin acentos.
 
 - `CLAUDE.md` dice **que** se construye, en una linea por requisito.
 - El spec dice **con que detalle**: reglas, casos borde y como se valida.
-- El plan (`docs/plan-implementacion.md`) dice **como y en que orden**.
+- El plan (`plan-implementacion.md`) dice **como y en que orden**.
 
 Se escribe o se completa antes de programar el bloque, y Leider la aprueba
 (paso 1 del flujo, seccion 0.2 del plan). Estados: borrador, aprobado,

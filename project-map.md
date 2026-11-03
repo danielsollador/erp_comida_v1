@@ -15,19 +15,19 @@
 
 ## 2. Repositorio
 
-- **Código:** `C:\Users\Mota Leider\Desktop\Vertigopro\erp_comida_v1` (clon de GitHub del 2-nov)
+- **Repo:** `C:\Users\Mota Leider\Desktop\Vertigopro\erp_comida_v1`. Es la única fuente de verdad: código y metodología juntos. La sesión del agente se abre en su raíz.
 - **Remoto:** `https://github.com/danielsollador/erp_comida_v1.git`
 - **Rama principal:** `master`. El trabajo de la FASE 1 va en `fase1` (en GitHub, sin fusionar).
-- **Documentos del producto (en el repo):** `CLAUDE.md` (qué construir) y `docs/` (`specs/`, `plan-implementacion.md`, `tareas.md`, `project-map.md`). `docs/plan-compras-inventario-produccion.md` es un plan viejo de compras.
+- **Metodología (en la raíz del repo):** `CLAUDE.md` (el único), `specs/`, `plan-implementacion.md`, `tareas.md`, `project-map.md`, `prompts.md`, `Apuntes/` (apuntes y `fixes.md`), `.claude/commands/` (los tres comandos), `.claude/skills/estilo-vertigo` y `levantar-local.ps1`. `docs/plan-compras-inventario-produccion.md` es un plan viejo de compras.
 - **Documentos de operación:** `DESPLIEGUE.md`, `DOCKER.md`, `GCP.md`, `gcp/README.md`, `gcp/cambio.md`. `ESTADO.md` es historial hasta el 19-sep.
-- **Fuera del repo** (`Vertigopro/`, git propio): el `CLAUDE.md` personal de Leider (importa el del repo), `prompts.md`, `Apuntes/fixes.md`, los comandos, la skill `estilo-vertigo` y `levantar-local.ps1`.
+- **No se versiona:** `.dev-data/` (datos de prueba y lo rescatado del repo viejo, con copias de `.env`) y las skills de terceros en `.claude/skills/`.
 
-### Ramas en `Vertigopro/erp_comida_v1`
+### Ramas
 
 | Rama | Estado frente a master |
 |---|---|
 | `master` (local) | `origin/master` (`1a50624`) + gastos de Vertigo (`635a5c7`) + `fase1-app-expo` (`0a7c6c5`) |
-| `fase1` | `master` local + arreglos + documentos en `docs/`. Subida a GitHub el 2-nov; es la rama de trabajo de la FASE 1 |
+| `fase1` | `master` local + arreglos + metodología. En GitHub desde el 2-nov; es la rama de trabajo de la FASE 1 |
 | `gastos-vertigo-hub` | Ya en master local. Venía sin commitear de `erp_comida_v1-gastos` |
 | `fase1-app-expo` | Ya en master local. `origin/app-expo` + master + arreglos para que la app compile (tarea 1.1) |
 | `qa-auditoria-pruebas` | Fuera de master a propósito: 3 pruebas QA que demuestran bugs y fallan mientras existan. Venían sin commitear de `erp_qa` |
@@ -39,11 +39,11 @@ En GitHub quedan `master`, `fase1`, `app-expo` y `app-expo-play`. Las otras 11 r
 
 Sin seguimiento o ignorado: `.claude/` (skills `frontend-design` e `impeccable`), `.env` (claves de Gemini y Claude para correr sin Docker), `movil/.env` (apunta a **producción**) y `movil/tienda/REVISOR.local.txt` (acceso del revisor de las tiendas).
 
-El repo viejo del escritorio, sus carpetas de trabajo y `Desktop\SDD` se borraron el 2-nov. Lo ignorado que valía la pena está en `Vertigopro/.dev-data/rescate-repo-viejo`.
+El repo viejo del escritorio, sus carpetas de trabajo y `Desktop\SDD` se borraron el 2-nov. Lo ignorado que valía la pena está en `.dev-data/rescate-repo-viejo`.
 
 ### Entorno local (sin Docker)
 
-`levantar-local.ps1` en la raíz de Vertigopro. Backend con `.venv` de Python 3.13 y SQLite; datos en `Vertigopro/.dev-data` (`local`, `hub` y `compartido`, este último con las cuentas de los dos).
+`levantar-local.ps1` en la raíz del repo. Backend con `.venv` de Python 3.13 y SQLite; datos en `.dev-data` (`local`, `hub` y `compartido`, este último con las cuentas de los dos).
 
 | Servicio | Puerto | Notas |
 |---|---|---|
@@ -193,7 +193,13 @@ Formato de cada entrada:
 - Impacto en el sistema: ninguno en producción. El build de EAS salió de `0a7c6c5`, sin los dos arreglos.
 
 ### 2026-11-02 · Metodología · Documentos al repo, plan revisado y spec de ventas
-- Cambios realizados: `CLAUDE.md` del producto y `docs/` (specs, plan, tareas y este mapa) pasan al repo, en la rama `fase1`, subida a GitHub. En `Vertigopro/` queda un `CLAUDE.md` personal que importa el del repo. `ESTADO.md` queda como historial. Plan revisado: bloques nuevos 1.2 (validar y subir) y 1.3 (errores QA), el resto se renumera (dos tablets 1.4, sin conexión 1.5, medianoche 1.6, respaldo 1.7, apps 1.8, cierre 1.9); decisiones nuevas D10 (caja por tablet) y D11 (retención del bucket); las FASES 2 a 4 quedan solo con ideas generales. `docs/specs/ventas.md` en borrador. En `CLAUDE.md`: fuera el estado de las fases, requisito de errores QA en la FASE 1 y la FASE 0 corregida a "una caja por día con dos gavetas", que es lo que hace el código.
+- Cambios realizados: `CLAUDE.md` del producto y `docs/` (specs, plan, tareas y este mapa) pasan al repo, en la rama `fase1`, subida a GitHub. En `Vertigopro/` queda un `CLAUDE.md` personal que importa el del repo. `ESTADO.md` queda como historial. Plan revisado: bloques nuevos 1.2 (validar y subir) y 1.3 (errores QA), el resto se renumera (dos tablets 1.4, sin conexión 1.5, medianoche 1.6, respaldo 1.7, apps 1.8, cierre 1.9); decisiones nuevas D10 (caja por tablet) y D11 (retención del bucket); las FASES 2 a 4 quedan solo con ideas generales. `specs/ventas.md` en borrador. En `CLAUDE.md`: fuera el estado de las fases, requisito de errores QA en la FASE 1 y la FASE 0 corregida a "una caja por día con dos gavetas", que es lo que hace el código.
 - Nuevos módulos / rutas / entidades: ninguno en el código.
 - Decisiones técnicas: la spec y su código viajan en la misma rama. La app de Capacitor (`frontend/android`, `app-android.yml`) sigue hasta que las tablets usen la APK de Expo.
 - Impacto en el sistema: ninguno en producción. Subir `fase1` solo corre las pruebas en GitHub.
+
+### 2026-11-02 · Metodología · Un solo CLAUDE.md y todo dentro del repo
+- Cambios realizados: por pedido de Leider (un solo `CLAUDE.md`, y Daniel trabaja con la misma metodología), todo pasa a la raíz del repo: `CLAUDE.md` único (une el del producto y el personal), `specs/`, `plan-implementacion.md`, `tareas.md`, `project-map.md`, `prompts.md`, `Apuntes/`, los comandos, la skill `estilo-vertigo`, `levantar-local.ps1` y `.dev-data/`. La carpeta `Vertigopro/` queda solo como contenedor del repo; su git viejo guarda la historia de los documentos hasta hoy.
+- Nuevos módulos / rutas / entidades: ninguno en el código.
+- Decisiones técnicas: los documentos van en la raíz, como pedía la metodología original, no en `docs/`. `.dev-data/` y las skills de terceros no se versionan.
+- Impacto en el sistema: ninguno en producción. La sesión del agente se abre ahora en `erp_comida_v1/`.
