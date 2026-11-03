@@ -19,3 +19,10 @@ compartido/
 
 # Clave de la cuenta de servicio de GCP: llave maestra, nunca al repo.
 gcp-key*.json
+
+# Datos de prueba locales (levantar-local.ps1): bases SQLite y copias de .env
+.dev-data/
+# Skills de terceros que cada uno instala; la del proyecto (estilo-vertigo) si viaja
+.claude/skills/*
+!.claude/skills/estilo-vertigo/
+.claude/settings.local.json
