@@ -99,28 +99,6 @@ export const GLOSARIO: Record<string, Explicacion> = {
     calculo: 'Lo que hay × el costo elegido. Si cambias el costo en el desplegable "Costo" de arriba, cambia también esto.',
     ejemplo: '15 maltas a $0,69 son $10,37 parados en el depósito. La suma de la columna es lo que dice "En el inventario" arriba.',
   },
-  'inventario.minimo': {
-    que: 'Lo que quieres tener siempre: por debajo avisa, y hasta ahí se repone.',
-    origen: 'Lo pones tú en la ficha de la mercancía ("Sería ideal siempre tener al menos").',
-    calculo: 'Cuando el stock cae a este número o por debajo, la mercancía se marca "Bajo" y entra en "Qué comprar" con lo que falte para volver a este nivel (o dos semanas de consumo real, lo que sea más).',
-    ejemplo:
-      'Si gastas 3 kg de harina al día y al proveedor le toma dos días traerla, un mínimo de 6 kg te avisa justo a tiempo.',
-  },
-  'inventario.costo': {
-    que: 'Lo que te costó, en promedio, lo que tienes guardado. No es el último precio.',
-    origen: 'Se recalcula solo en cada compra; también lo puedes fijar a mano en la ficha.',
-    calculo:
-      'Promedio ponderado: (stock viejo × costo viejo + lo que entra × lo que pagaste) ÷ stock total. Por eso no salta de golpe cuando el proveedor sube el precio.',
-    ejemplo:
-      'Tenías 10 kg a $1 y compras 10 kg a $2: el costo queda en $1,50, no en $2. Es lo correcto para valorar el inventario, pero para poner precios mira "Costo última compra".',
-  },
-  'inventario.reponer': {
-    que: 'Lo que pagaste la última vez. Es lo que te va a costar comprar más.',
-    origen: 'La última compra registrada de esa mercancía, venga de una factura o de una compra suelta.',
-    calculo: 'El costo unitario de la compra más reciente. Si está muy por encima del promedio, sale el porcentaje en naranja.',
-    ejemplo:
-      'Con el promedio en $1,50 y la última compra en $2, un producto que parece dejarte 40% de margen en realidad te deja 25%. Para fijar precios manda este número, no el promedio.',
-  },
   'inventario.rendimiento': {
     que: 'Cuánto de lo que compras queda realmente utilizable después de limpiar, pelar o cocinar.',
     origen: 'Lo pones tú en la ficha. 100% = no se pierde nada (harina, azúcar). La mercancía de reventa no lo usa.',
@@ -135,13 +113,6 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Pollo a $4,50 el kilo con 88% de rendimiento cuesta en realidad $5,11 por kilo usable ($4,50 ÷ 0,88). Costear con $4,50 te haría creer que ganas 60 centavos de más en cada plato.',
   },
-  'inventario.acciones': {
-    que: 'Los movimientos que puedes registrar sobre esa mercancía.',
-    origen: 'Cada uno deja su asiento contable: nada mueve el stock en silencio.',
-    ejemplo:
-      '"+ Compra" entra mercancía y actualiza el costo promedio. "− Merma" registra lo que se dañó o se botó. En "Más" está la ficha: consumo del personal, conteo, historial y edición.',
-  },
-
   // ── Inventario: pérdidas registradas ─────────────────────────────────────
   // El extracto de una mercancía: el libro de movimientos del deposito.
   'movimientos.fecha': fecha(
@@ -242,24 +213,12 @@ export const GLOSARIO: Record<string, Explicacion> = {
     'La escribes al cargar la factura. Es la que manda para el Libro de Compras, no el día en que la cargaste.',
     'Una factura con fecha de otro mes entra en la declaración de ESE mes: por eso se carga la fecha real y no la de hoy.',
   ),
-  'compras.factura': {
-    que: 'El número de control de la factura del proveedor.',
-    origen: 'Lo escribes al cargarla, tal como viene impreso.',
-    ejemplo:
-      'Es lo que te permite encontrar el papel cuando el SENIAT pregunta por una compra. Sin número no hay crédito fiscal que defender.',
-  },
   'compras.proveedor': {
     que: 'A quién le compraste.',
     origen: 'Lo eliges o lo creas al cargar la factura, con su RIF.',
     ejemplo: 'Ordenando por proveedor ves cuánto le compras a cada uno: es el dato con el que se negocia un mejor precio.',
   },
-  'compras.detalle': {
-    que: 'Qué mercancías trajo esa factura y en qué cantidad.',
-    origen: 'Las líneas que cargaste. Cada una sumó stock y recalculó el costo promedio de su mercancía.',
-    ejemplo:
-      'Si el stock de una mercancía no cuadra, aquí se ve qué factura la movió y por cuánto. Una factura con líneas ya no se puede borrar: se corrige con una nota de crédito.',
-  },
-  ...Object.fromEntries(Object.entries(baseIvaTotal('compra')).map(([k, v]) => [`compras.${k}`, v])),
+  'compras.total': baseIvaTotal('compra').total,
   'compras.estado': {
     que: 'Si la factura ya se pagó o todavía se debe.',
     origen: 'Las de contado nacen pagadas; las de crédito quedan pendientes hasta que registres el pago.',
@@ -422,32 +381,6 @@ export const GLOSARIO: Record<string, Explicacion> = {
       'Café con 70% de confianza hacia el pastelito significa que 7 de cada 10 cafés se van con pastelito. A los 3 restantes les falta que el cajero se lo ofrezca: esa es la venta que estás dejando en el mostrador.',
   },
 
-  // ── Caja: historial de cierres ───────────────────────────────────────────
-  'cierres.fecha': fecha(
-    'Cuándo se cerró la caja, con quién y en qué punto de venta.',
-    'El momento en que alguien contó la gaveta y guardó el cierre.',
-    'Dos pisos son dos gavetas: cada una cierra la suya, y por eso aquí aparece el punto de venta.',
-  ),
-  'cierres.sistema': {
-    que: 'Cuánto efectivo debería haber en la gaveta según el sistema.',
-    origen: 'Lo calcula el ERP con todo lo que pasó desde el cierre anterior.',
-    calculo: 'Fondo inicial + cobros en efectivo − gastos pagados en efectivo − retiros del dueño.',
-    ejemplo: 'Es el número contra el que se compara el conteo. Si el sistema dice $250, eso es lo que debería aparecer al contar.',
-  },
-  'cierres.contado': {
-    que: 'Cuánto efectivo había de verdad al contar los billetes.',
-    origen: 'Lo escribe quien cierra la caja, después de contar.',
-    ejemplo:
-      'Se cuenta antes de mirar lo que dice el sistema. Contar sabiendo el resultado esperado es la manera más fácil de no encontrar nunca un faltante.',
-  },
-  'cierres.diferencia': {
-    que: 'Lo que sobró o faltó en la gaveta.',
-    origen: 'La resta de las dos columnas anteriores.',
-    calculo: 'Contado − sistema. Negativo = falta plata; positivo = sobra.',
-    ejemplo:
-      'Faltantes chicos y constantes suelen ser vueltos mal dados; uno grande y aislado, un cobro que no se registró. Un sobrante repetido casi siempre es una venta cobrada y nunca cargada.',
-  },
-
   // ── Contabilidad: plan de cuentas ────────────────────────────────────────
   'plan.codigo': {
     que: 'El número de la cuenta contable.',
@@ -503,30 +436,6 @@ export const GLOSARIO: Record<string, Explicacion> = {
     origen: 'Lo acumula el sistema línea por línea.',
     calculo: 'Saldo anterior ± el movimiento, con el signo que le toca según la naturaleza de la cuenta.',
     ejemplo: 'El último saldo de esta lista es el que aparece en el Balance para esa cuenta.',
-  },
-
-  // ── Contabilidad: libro diario ───────────────────────────────────────────
-  'diario.fecha': fecha(
-    'El día del asiento.',
-    'La fecha de la operación que lo generó, no la de carga.',
-    'El diario se lee en orden de fecha: es el relato cronológico de todo lo que pasó en el negocio.',
-  ),
-  'diario.descripcion': {
-    que: 'Qué se registró.',
-    origen: 'Lo arma el sistema con la operación de origen, o lo escribes tú en un asiento manual.',
-    ejemplo: '"Venta pedido #42" o "Compra de mercancía factura 0012": el asiento dice qué pasó, no solo cuánto.',
-  },
-  'diario.origen': {
-    que: 'Qué parte del ERP generó el asiento.',
-    origen: 'Lo marca el sistema: una venta del POS, una factura de compra, un cierre de caja, una merma, o un asiento manual.',
-    ejemplo:
-      'Casi todo debería decir que vino de una operación real. Muchos asientos manuales son señal de que algo se está corrigiendo a mano en vez de registrarse bien.',
-  },
-  'diario.movimientos': {
-    que: 'Las cuentas que tocó el asiento, con su Debe y su Haber.',
-    origen: 'Las líneas del asiento.',
-    calculo: 'La suma del Debe siempre es igual a la del Haber. Si no cuadra, el asiento no se guarda.',
-    ejemplo: 'Una venta a crédito mueve tres cuentas: Cuentas por cobrar, Ventas e IVA débito fiscal.',
   },
 
   // ── Contabilidad: balance de comprobación ────────────────────────────────
@@ -633,12 +542,6 @@ export const GLOSARIO: Record<string, Explicacion> = {
     calculo: 'Suma de las ventas cobradas de hoy. Lo pendiente de cobro no entra.',
     ejemplo: 'Es el pulso del día. Para saber cuánto GANASTE, ese número está en Reportes: esto es lo que entró, no lo que queda.',
   },
-  'kpi.pedidos_hoy': {
-    que: 'Cuántos pedidos se cobraron hoy.',
-    origen: 'El conteo de pedidos cerrados del día.',
-    ejemplo:
-      'Junto con lo vendido te da el ticket promedio de hoy. Si vendes igual con menos pedidos, estás vendiendo más caro; con más pedidos, estás vendiendo más barato.',
-  },
   'kpi.en_cocina': {
     que: 'Cuántas comandas están esperando que la cocina las prepare.',
     origen:
@@ -654,12 +557,6 @@ export const GLOSARIO: Record<string, Explicacion> = {
   },
 
   // Inventario
-  'kpi.insumos': {
-    que: 'Cuánta mercancía activa maneja el local.',
-    origen: 'La mercancía dada de alta que no está archivada.',
-    calculo: 'Se separan en materia prima (entra en recetas) y reventa (se vende tal cual).',
-    ejemplo: 'Si tienes veinte y el menú solo usa doce, hay ocho que compras sin saber bien para qué.',
-  },
   'kpi.bajo_minimo': {
     que: 'Cuánta mercancía ya cruzó su punto de reposición.',
     origen: 'La mercancía cuyo stock cayó al mínimo o por debajo.',
@@ -673,14 +570,6 @@ export const GLOSARIO: Record<string, Explicacion> = {
     ejemplo:
       'Es plata quieta: no está en la gaveta ni en el banco, está en el estante. Si crece mientras las ventas no, estás comprando de más.',
   },
-  'kpi.perdidas_30': {
-    que: 'Cuánto se perdió en el período elegido arriba (30 días si no tocaste el filtro).',
-    origen: 'Las mermas registradas y los faltantes que encontraron los conteos.',
-    calculo: 'Suma del valor de las mermas no revertidas del período.',
-    ejemplo:
-      'Comparado con las ventas del mes te da el % de merma. Por encima de 3-4% en comida, o se está botando mucho o se está yendo por la puerta.',
-  },
-
   // Reportes
   'kpi.ventas': {
     que: 'Todo lo que se cobró en el período.',

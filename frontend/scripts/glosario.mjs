@@ -26,32 +26,45 @@ for (const [, seccion] of glosario.matchAll(/\[`(\w+)\.\$\{k\}`/g)) {
 const faltan = []
 const usadas = new Set()
 
-/** Todas las pantallas, incluidas las piezas sueltas de `pages/partes`. */
+/** Todos los archivos .tsx de una carpeta, incluidas sus subcarpetas. */
 function pantallas(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? pantallas(join(dir, e.name)) : e.name.endsWith('.tsx') ? [join(dir, e.name)] : [],
   )
 }
 
+function usar(archivo, clave) {
+  usadas.add(clave)
+  if (!definidas.has(clave)) faltan.push(`${archivo}: ${clave}`)
+}
+
 for (const archivo of pantallas(join(raiz, 'pages'))) {
   const texto = readFileSync(archivo, 'utf8')
   let seccion = null
+  // `<Tabla` con sus atributos en varias lineas: el glosario puede venir abajo.
+  let abierta = false
   for (const linea of texto.split('\n')) {
-    const tabla = linea.match(/<Tabla\b[^>]*?glosario="([\w.]+)"/)
+    if (/<Tabla\b/.test(linea)) {
+      seccion = null
+      abierta = !/<Tabla\b[^>]*>/.test(linea)
+    }
+    const tabla = linea.match(/<Tabla\b[^>]*?glosario="([\w.]+)"/) ?? (abierta ? linea.match(/\bglosario="([\w.]+)"/) : null)
     if (tabla) seccion = tabla[1]
-    else if (/<Tabla\b/.test(linea)) seccion = null
+    if (abierta && /^\s*\/?>/.test(linea)) abierta = false
 
     const explicita = linea.match(/<Th\b[^>]*?\bayuda="([\w.]+)"/)
     const porClave = linea.match(/<Th\b[^>]*?\bclave="(\w+)"/)
     const clave = explicita ? explicita[1] : porClave && seccion ? `${seccion}.${porClave[1]}` : null
-    if (!clave) continue
-    usadas.add(clave)
-    if (!definidas.has(clave)) faltan.push(`${archivo}: ${clave}`)
+    if (clave) usar(archivo, clave)
   }
-  for (const [, clave] of texto.matchAll(/\bayuda="(kpi\.[\w]+)"/g)) {
-    usadas.add(clave)
-    if (!definidas.has(clave)) faltan.push(`${archivo}: ${clave}`)
-  }
+}
+
+// Fuera de las tablas: `ayuda="kpi.x"` en las cifras y `explicar('x')` donde
+// sea. La app movil tiene su propia copia (movil/src/componentes/reportes/glosario.ts).
+for (const archivo of pantallas(raiz)) {
+  const texto = readFileSync(archivo, 'utf8')
+  for (const [, clave] of texto.matchAll(/\bayuda="(kpi\.[\w]+)"/g)) usar(archivo, clave)
+  for (const [, clave] of texto.matchAll(/\bexplicar\('([\w.]+)'\)/g)) usar(archivo, clave)
 }
 
 const sobran = [...definidas].filter((c) => !usadas.has(c))
