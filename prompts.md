@@ -154,3 +154,23 @@ El readme cloud.md no debería llevar a readme. Readme debería llevar a cloud.m
 ## 29 (2026-11-03, Leider)
 
 no tiene sentido un arreglo pequeño para que se lleve de la idea de producción una hora es demasiado. Necesito ser más ágil.
+
+## 30 (2026-11-03, Leider)
+
+Hay otra cosa que deberíamos implementar, algo que se está haciendo para programar con tecnología de punta ahorita actualmente, con Claude y todo esto. O sea, ¿hay alguna otra metodología estilo SpecKit o alguna otra herramienta ahorita en este momento que podríamos implementar o que se está empezando a implementar para que tú programes con los menos bugs posibles?
+
+## 31 (2026-11-03, Leider)
+
+No, pero no me estás entendiendo. Estas son cosas que ya están dentro de spec, que yo hablo algo afuera. Algo, otra tecnología, otra herramienta, quizás otro programa que te ayude a ti como IA para que cometas muchos menos errores en el desarrollo.
+
+## 32 (2026-11-03, Leider)
+
+esa tabla le hace falta un campo que diga qué es, no sé si Sentry es un skill, una aplicación, no sé si será un skill, una aplicación, y cuál sería la complejidad de integrarlo dentro de este proyecto
+
+## 33 (2026-11-03, Leider)
+
+que carajo es Sentry, o sea, Sentry es como que una integración de nuestro aplicativo para que el usuario dé detalles del error que tiene y tú lo puedas leer. Algo así.
+
+## 34 (2026-11-03, Leider)
+
+Perfecto. Entonces vamos a integrar context7 , playwrigth y serena. Hazlo. Y me avisas si tuviste q modificar algo nen nuestros ficheros
