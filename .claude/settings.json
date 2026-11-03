@@ -1,0 +1,9 @@
+{
+  "claudeMdExcludes": [
+    "**/.claude/CLAUDE.md",
+    "**/.claude/rules/**",
+    "**/CLAUDE.local.md",
+    "**/AGENTS.md"
+  ],
+  "autoMemoryEnabled": false
+}

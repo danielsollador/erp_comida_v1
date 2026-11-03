@@ -281,6 +281,43 @@ def historial_precios(variante_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/existencias", response_model=List[schemas.ExistenciaVariante])
+def existencias(db: Session = Depends(get_db)):
+    """Cuantas quedan de lo que se vende tal cual se compra (helados, jugos,
+    refrescos), para que la caja lo diga sin ir al congelador (2-nov).
+
+    Solo las variantes cuya receta es TODA mercancia de reventa: ahi el
+    numero es exacto (lo que hay en el deposito). Un plato cocinado depende
+    de insumos que muchos locales no llevan al dia; decirle "agotado" a un
+    pastelito porque la masa no esta cargada frenaria la venta por nada.
+    """
+    from .. import costeo
+
+    items = (
+        db.query(models.RecetaItem)
+        .options(joinedload(models.RecetaItem.ingrediente))
+        .join(models.Variante, models.Variante.id == models.RecetaItem.variante_id)
+        .filter(models.Variante.activo.is_(True))
+        .all()
+    )
+    por_variante: dict = {}
+    for item in items:
+        por_variante.setdefault(item.variante_id, []).append(item)
+    salida = []
+    for variante_id, receta in por_variante.items():
+        if any((i.ingrediente.tipo or "") != "reventa" for i in receta):
+            continue
+        limites = []
+        for i in receta:
+            consumo = costeo.consumo_bruto(i, 1)
+            if consumo > 0:
+                limites.append(max(i.ingrediente.stock_actual or 0, 0) / consumo)
+        if not limites:
+            continue
+        salida.append(schemas.ExistenciaVariante(variante_id=variante_id, quedan=int(min(limites) + 1e-9)))
+    return salida
+
+
 @router.get("/costos-para-precios", response_model=schemas.CostosParaPrecios)
 def costos_para_precios(db: Session = Depends(get_db)):
     """Lo que cuesta 1 unidad utilizable de cada mercancia con el metodo que

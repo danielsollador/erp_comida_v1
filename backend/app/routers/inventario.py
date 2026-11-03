@@ -560,11 +560,14 @@ def actualizar_ingrediente(
     # los libros tiene que seguirlo (antes solo cambiaba la ficha).
     stock = db_ingrediente.stock_actual or 0
     costo_nuevo = db_ingrediente.costo_unitario or 0
-    if not a_gasto and stock > 0 and abs(costo_nuevo - costo_antes) > 1e-9:
-        valor = round(stock * (costo_nuevo - costo_antes), 2)
+    # La correccion queda en el kardex AUNQUE no haya stock: con su fecha, el
+    # costo de reposicion sabe que es mas nueva que la ultima compra y la usa
+    # (2-nov: la crema de leche corregida a $1,60 seguia diciendo $1,00).
+    if not a_gasto and abs(costo_nuevo - costo_antes) > 1e-9:
+        valor = round(max(stock, 0) * (costo_nuevo - costo_antes), 2)
+        kardex.revaluar(db, db_ingrediente, valor if abs(valor) >= 0.01 else 0.0,
+                        nota=f"Costo corregido en la ficha: {costo_antes:.4f} → {costo_nuevo:.4f}")
         if abs(valor) >= 0.01:
-            kardex.revaluar(db, db_ingrediente, valor,
-                            nota=f"Costo corregido en la ficha: {costo_antes:.4f} → {costo_nuevo:.4f}")
             contabilidad.registrar_ajuste_de_costo(db, db_ingrediente, valor)
     if a_gasto:
         # Lo que quedaba en el deposito ya no se va a contar: pasa a gasto.
@@ -843,6 +846,14 @@ def registrar_compra(
         # 10 kg de pernil por $0,08 entraron sin aviso, y la receta quedo en
         # cero). Con "si, es asi" (`confirmar`), pasa.
         absurdo = reposicion.precio_absurdo(costo_de_esta_compra, db_ingrediente.costo_unitario or 0)
+        # Sin lo que se pago y sin costo en la ficha entraria a $0, y el
+        # promedio de lo que ya habia se va hacia cero con ella (2-nov, la masa).
+        if costo_de_esta_compra <= 0:
+            absurdo = (
+                f"{db_ingrediente.nombre} todavía no tiene costo y no pusiste cuánto pagaste: "
+                "entraría a $0 y las recetas que la llevan quedarían más baratas de lo que son. "
+                "Pon lo que pagaste en total. Si de verdad fue gratis (una muestra, un regalo), confírmalo."
+            )
         if absurdo and not body.confirmar:
             raise HTTPException(status_code=409, detail=absurdo)
 

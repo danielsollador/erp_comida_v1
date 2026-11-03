@@ -8,6 +8,7 @@ import { cantidad, unidadDe } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
 import { convertirTexto, factorEntre } from '../../../lib/unidades'
 import type { ConteoDetalle, Ingrediente, PlanillaLeida, ResultadoConteo } from '../../../lib/types'
+import { llano } from '../../../lib/filtros'
 
 /**
  * Una planilla de conteo ya cargada, renglón por renglón.
@@ -173,9 +174,9 @@ export default function ConteoFisico({
 
   const num = (v: string) => Number(v.trim().replace(',', '.'))
   const lista = useMemo(() => {
-    const q = buscar.trim().toLowerCase()
+    const q = llano(buscar.trim())
     return [...ingredientes]
-      .filter((i) => !q || i.nombre.toLowerCase().includes(q))
+      .filter((i) => !q || llano(i.nombre).includes(q))
       .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
   }, [ingredientes, buscar])
 

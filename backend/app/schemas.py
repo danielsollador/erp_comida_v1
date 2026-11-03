@@ -1255,6 +1255,13 @@ class Configuracion(BaseModel):
     costo_para_precios: str = "reposicion"
 
 
+class ExistenciaVariante(BaseModel):
+    """Cuantas quedan de una variante que se vende tal cual se compra."""
+
+    variante_id: int
+    quedan: int
+
+
 class CostosParaPrecios(BaseModel):
     """Costo de 1 unidad utilizable de cada mercancia, con el metodo elegido."""
 

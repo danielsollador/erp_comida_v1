@@ -1,0 +1,63 @@
+# Tareas
+
+`[ ]` pendiente · `[~]` en curso · `[x]` hecha · `[!]` espera una decisión del plan
+
+## FASE 1 · En curso
+
+- [x] 1.0 Limpieza de carpetas de trabajo y ramas viejas
+- [x] 1.1 App móvil (`app-expo`) integrada y APK de prueba
+
+### 1.2 Validar y subir a `master`
+- [x] Arreglos de `fixes.md` y metodología en el repo, en la rama `fase1`
+- [x] Pruebas de GitHub en verde sobre `fase1`
+- [ ] Leider valida en local: gastos de Vertigo, app móvil y ficha de mercancía de la app
+- [ ] Fusionar en `master` y borrar `app-expo` y `app-expo-play`
+- [ ] Desplegar cuando Leider lo pida
+
+### 1.3 Errores de la auditoría QA
+- [ ] Correr las pruebas QA y escribir `specs/qa.md`
+- [ ] Leider aprueba la lista
+- [ ] Arreglar dinero y permisos
+- [ ] Arreglar operación
+- [ ] Pasar las pruebas a la suite
+
+### 1.4 Dos tablets
+- [~] Spec `specs/ventas.md` (borrador, falta aprobación)
+- [!] D10: caja por tablet o compartida
+- [ ] Numeración con bloqueo
+- [ ] Bloqueo en cobro, inventario y abonos de fiado
+- [ ] Caja por tablet
+- [ ] PostgreSQL en CI y prueba de concurrencia
+
+### 1.5 Sin conexión
+- [~] Spec `specs/ventas.md` (borrador)
+- [ ] Backend: operaciones con hora y tasa propias, y sus validaciones
+- [ ] Backend: pago móvil por verificar, venta tardía y fiado sobre el límite
+- [ ] Frontend: cola y caché en la tablet
+- [ ] Frontend: barra de pendientes, "Requiere atención" y botones con su motivo
+- [ ] Tests
+
+### 1.6 Medianoche
+- [!] D1: día de la venta pasada la medianoche
+- [ ] Spec `specs/caja.md`
+- [ ] Día operativo y hora de corte
+- [ ] Llamadas a `hoy()` clasificadas y cambiadas
+- [ ] Tests
+
+### 1.7 Respaldo externo
+- [!] D11: retención del bucket
+- [ ] Fecha del último respaldo en `/salud` y aviso en el hub
+- [ ] Restauración probada
+
+### 1.8 Apps en las tiendas
+- [ ] App Store
+- [ ] Google Play
+- [ ] APK para las tablets Fire
+- [ ] Retirar Capacitor cuando las tablets usen la APK nueva
+
+### 1.9 Cierre
+- [ ] Desplegar, pasar lo hecho a la FASE 0 y etiquetar `v1.1`
+
+## FASE 2 · Pendiente
+## FASE 3 · Pendiente
+## FASE 4 · Pendiente

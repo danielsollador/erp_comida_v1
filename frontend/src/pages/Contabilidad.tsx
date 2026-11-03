@@ -11,6 +11,7 @@ import Respaldos from './partes/Respaldos'
 import ConciliacionBancaria from './partes/contabilidad/ConciliacionBancaria'
 import { api } from '../lib/api'
 import { fmtNum } from '../lib/moneda'
+import { llano } from '../lib/filtros'
 import type {
   ActivoFijo,
   AsientoContable,
@@ -392,7 +393,7 @@ function Diario({ rango }: { rango: Rango }) {
   }, [asientos])
 
   const filtrados = useMemo(() => {
-    const q = texto.trim().toLowerCase().replace(/^#/, '')
+    const q = llano(texto.trim()).replace(/^#/, '')
     return asientos
       .filter((a) => !origen || a.origen === origen)
       .filter((a) => !cuenta || a.movimientos.some((m) => m.cuenta_codigo === cuenta))
@@ -401,8 +402,8 @@ function Diario({ rango }: { rango: Rango }) {
           !q ||
           String(a.id) === q ||
           String(a.referencia_id ?? '') === q ||
-          a.descripcion.toLowerCase().includes(q) ||
-          a.movimientos.some((m) => `${m.cuenta_codigo} ${m.cuenta_nombre}`.toLowerCase().includes(q)),
+          llano(a.descripcion).includes(q) ||
+          a.movimientos.some((m) => llano(`${m.cuenta_codigo} ${m.cuenta_nombre}`).includes(q)),
       )
       .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime() || b.id - a.id)
   }, [asientos, origen, cuenta, texto])
