@@ -150,3 +150,7 @@ Dale, vamos a agregar lo que vamos a copiarle. Y aparte de eso, también vamos a
 ## 28 (2026-11-03, Leider)
 
 El readme cloud.md no debería llevar a readme. Readme debería llevar a cloud.md. Y ahora también dime más o menos cuánto nos vamos a tardar entonces en desplegar una funcionalidad.
+
+## 29 (2026-11-03, Leider)
+
+no tiene sentido un arreglo pequeño para que se lleve de la idea de producción una hora es demasiado. Necesito ser más ágil.

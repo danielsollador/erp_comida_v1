@@ -84,6 +84,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **3-nov** Carril rápido en `CLAUDE.md` para cambios pequeños sin dinero, permisos ni base de datos (unos 15 min a producción); en un despliegue las imágenes se construyen mientras GitHub prueba.
 - **3-nov** El despliegue y la operación del servidor pasan a `CLAUDE.md` (imágenes construidas a la vez); `gcp/README.md` solo apunta ahí. Datos del servidor en Producción de este mapa.
 - **3-nov** CLAUDE.md: leer y buscar en el código antes de tocarlo; recibo (compila + pruebas solo de lo que cambió, nunca la suite en local); prueba primero en lo que toca dinero; spec "Implementada" queda como la verdad del módulo; sección "Servidor y despliegue". pytest en el entorno local.
 - **2-nov** La carpeta `Vertigopro` pasa a ser el repo (CLAUDE.md siempre se carga) y la metodología sube a `master`. CLAUDE.md dice qué hacer con los pedidos sin comando.
