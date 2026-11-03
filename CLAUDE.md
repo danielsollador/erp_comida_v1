@@ -212,6 +212,8 @@ Qué hay en producción: `project-map.md` > Producción. Todo se hace con `gclou
 
 Si chocan, manda en este orden: `CLAUDE.md`, el plan, la spec, el mapa. Si el código y el mapa no coinciden, manda el código.
 
+Este es el único archivo de reglas: `.claude/settings.json` hace que Claude ignore los `CLAUDE.md` personales de cada PC y su memoria automática.
+
 Cómo se escriben:
 
 - **Un dato, un lugar.** Si otro documento lo necesita, lo enlaza; no lo copia.
