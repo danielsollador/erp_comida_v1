@@ -307,7 +307,9 @@ export default function Inventario() {
           nombre: 'metodo',
           etiqueta: 'De dónde salió la plata',
           tipo: 'opciones',
-          opciones: METODOS_DE_PAGO.map((m) => ({ valor: m.valor, texto: m.texto })),
+          // Sin marcar: una compra solo toca una gaveta si alguien lo dice.
+          valor: '',
+          opciones: [{ valor: '', texto: 'Elige de dónde salió' }, ...METODOS_DE_PAGO.map((m) => ({ valor: m.valor, texto: m.texto }))],
         },
         {
           nombre: 'costo',

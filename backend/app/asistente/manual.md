@@ -57,7 +57,7 @@ No hay campo para notas por renglón («sin cebolla»). Hay que decírselo a la 
 5. **Dos formas:** «Paga con dos formas». Cada parte pregunta «¿Cuánto paga con X?» hasta cubrir el total; termina con «Cobrar $X en N forma(s)». Las partes en Efectivo $ y Zelle se escriben en dólares. Las de Efectivo Bs, Pago movil, Punto de venta y Transferencia se escriben **en bolívares**: dice cuántos faltan y convierte solo. Si un billete en bolívares pasa de lo que falta, pregunta «¿Qué se hace con lo que sobra?»: darle el vuelto en bolívares o que quede de propina.
 6. **«Descuento · propina»:** el descuento no puede pasar del total; la propina se cobra pero no es venta, es del empleado.
 7. **Facturar:** marca «Facturar esta venta» y llena «N.º de factura», «N.º de control», «RIF o cédula» y «Nombre o razón social» (todo opcional: sin datos va como consumidor final). Contribuyente especial: «El cliente retiene IVA». También se factura después desde Ventas con «Facturar ahora».
-8. **A crédito:** necesita el nombre del cliente; se confirma con «Fiar». Se cobra después desde Ventas.
+8. **A crédito:** necesita el nombre del cliente; se confirma con «Fiar». Se cobra después en Cuentas por cobrar.
 9. Sale «✓ Cobrado #N» con «Imprimir» unos 20 segundos.
 
 ### Verificar un pago móvil con el banco
@@ -196,7 +196,7 @@ Se entra a un almacén tocando su ficha. Para volver a la portada se toca el bot
 
 ### La ficha de una mercancía
 Se abre tocando el nombre. Muestra «Hay», «Te alcanza para» y «Te cuesta». En «Anotar»:
-- **«Llegó mercancía»:** compra sin factura o factura que se perdió. Es el camino más corto para eso. Se pone cuánto llegó, «De dónde salió la plata» y «Cuánto pagaste en total» (el TOTAL de la compra, no el precio de cada unidad; 48 unidades a $1,60 son $76,80). Si se deja vacío, usa el costo que ya tenía la ficha. Si la mercancía no tiene costo y queda vacío, pregunta antes de guardar.
+- **«Llegó mercancía»:** compra sin factura o factura que se perdió. Es el camino más corto para eso. Se pone cuánto llegó, «De dónde salió la plata» (no viene marcada: hay que elegir gaveta, banco o «Plata del dueño», que no toca ninguna gaveta) y «Cuánto pagaste en total» (el TOTAL de la compra, no el precio de cada unidad; 48 unidades a $1,60 son $76,80). Si se deja vacío, usa el costo que ya tenía la ficha. Si la mercancía no tiene costo y queda vacío, pregunta antes de guardar.
 - **«Se dañó o se botó»:** merma («Cuánto se perdió», «Motivo», «Registrar merma»).
 - **«La usó el personal»:** consumo de empleados; no cuenta como pérdida.
 - **«Contar lo que hay»:** conteo de esa sola mercancía. Si viene en paquetes, pregunta «¿Contaste paquetes o unidades sueltas?», y antes de guardar dice en unidades cuánto queda y qué anota.
@@ -339,6 +339,7 @@ Todo billete que sale de la gaveta, para que el cierre cuadre: «Pago menor» (b
 Filtros «Qué pasó» (Cobradas, A crédito, Devueltas, «Anuladas: pérdida», «Anuladas: sin tocar», Abiertas) y «Factura» (Con factura, Sin factura); el buscador encuentra por número, cliente, producto o quién cobró. Al tocar una venta se ven renglones, descuento, propina, tasa de ese día, cómo se pagó, quién cobró y la factura; «Imprimir ticket» la reimprime. Los números de comanda se repiten cada día: la #12 de hoy no es la de ayer.
 
 ### Cobrar un fiado (venta a crédito)
+Lo normal es hacerlo en Cuentas por cobrar: buscar al cliente, marcar las ventas y «Pagar o abonar». Desde Ventas también se puede, venta por venta:
 1. Filtra «Qué pasó» → «A crédito» y toca la venta.
 2. Junto a «Debe todavía», «Cobrar / abonar».
 3. En «Cuánto entrega», lo que paga hoy. Si es menos, queda abonado («Entregó $X y queda debiendo $Y»).

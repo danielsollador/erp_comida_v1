@@ -387,6 +387,7 @@ function Formulario({
                     </option>
                   ))}
                 </Selector>
+                {error && <p className="text-xs text-peligro-600 mt-1">{error}</p>}
                 {ayuda && <p className="text-xs text-neutral-500 mt-1">{ayuda}</p>}
               </div>
             )
