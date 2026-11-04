@@ -374,7 +374,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
             value={loQueFalta}
             onChange={(e) => setLoQueFalta(e.target.value as 'abono' | 'cerrar')}
           >
-            <option value="abono">{retiene ? 'Elige: con retención no pueden quedar debiendo' : 'Quedan debiendo'}</option>
+            <option value="abono">{retiene ? 'Elige qué son' : 'Quedan debiendo'}</option>
             <option value="cerrar">{retiene ? 'Es comisión: se cierra la deuda' : 'No se cobran: son comisión o descuento, se cierra la deuda'}</option>
           </Selector>
         )}
@@ -386,7 +386,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
       )}
       {faltaDecidir && (
         <div className="mt-3">
-          <Aviso tono="ojo">
+          <Aviso tono="info">
             Con retención de IVA todavía no pueden quedar debiendo. Cobra los {dinero(falta)} que faltan o, si son comisión, márcalo arriba.
           </Aviso>
         </div>
