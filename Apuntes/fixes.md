@@ -11,4 +11,6 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [x] El cuadre por banco esperaba lo que se debía, no lo que entró (Cierre de caja, Cobros del día, conciliación) · resuelto 2026-11-04, commit 18cfc32, sin desplegar
 - [ ] El tono de aviso `aviso-800` no cambia en oscuro y casi no se lee (`Aviso tono="ojo"`, en 6 lugares)
 - [ ] `npm run glosario` falla en `master` con 29 explicaciones sin usar: su arreglo (a5035af) está en `fase1`, que no se ha fusionado
+- [ ] En modo oscuro, el mensaje verde de éxito casi no se lee (Cuentas por cobrar, al cobrar o abonar)
+- [ ] El texto de la opción "Es comisión: se cierra la deuda" se corta (Cuentas por cobrar > Pagar o abonar, con retención)
 - [ ] Ninguna tabla se exporta a CSV ni a Excel desde el componente `Tabla` (solo hay descargas sueltas en Impuestos, Reportes a medida e Inventario), y hay tablas hechas con `<table>` suelto que no se ordenan ni explican sus columnas (todos los módulos)

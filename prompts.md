@@ -282,3 +282,62 @@ La C esta mejor, es algo que le pides a la IA que busque porque no cuadra, lo bu
 ## 57 (2026-11-03, Leider)
 
 haz las 4 y me pasas el link para ver como se ve
+
+## 58 (2026-11-04, Daniel)
+
+Lee CLAUDE.md, tareas.md y plan-implementacion.md. Explícame en 5 líneas en qué fase estamos y qué toca ahora, sin tocar nada.
+
+## 59 (2026-11-04, Daniel)
+
+Vamos a escribir la spec de lo que ya está hecho en cuentas por cobrar, en specs/cuentas-por-cobrar.md, a partir de specs/_plantilla.md. Déjala en estado Borrador y con el bloque sin asignar. Solo documenta: no cambies código, no hagas commit, no subas nada y no toques tareas.md ni plan-implementacion.md todavía.
+
+Lee el commit 58064e8, el módulo de cuentas por cobrar, sus pruebas y su pantalla. Después:
+
+1. En "Hoy", describe cómo funciona realmente, sin inventar nada. Lo que no compruebes, márcalo como no comprobado.
+2. En "Qué tiene que pasar", escribe reglas que se puedan responder con sí o no. Incluye fiar sin ficha de cliente, abono parcial, cobro con comisión, retención de IVA, anular un cobro, dar por perdida y recuperar.
+3. Revisa estos casos borde: dos usuarios cobrando a la vez, bolívares y divisas, período cerrado y sin conexión.
+4. En "Por decidir", incluye como mínimo:
+   - Un abono de ventas sin ficha, ¿puede mezclar deudores distintos en un mismo pago?
+   - Dos clientes distintos con el mismo nombre, ¿cómo se distinguen, si hoy se unen por nombre?
+   - Dos personas cobrando la misma venta a la vez: qué debe pasar y si corresponde al bloque 1.4.
+5. En "Cómo se valida", escribe los pasos para probarlo en pantalla, en local.
+
+Sigue las reglas de documentos de CLAUDE.md: máximo unas 60 líneas, lenguaje sencillo y sin nombres de archivos de código. Antes de darla por terminada, hazme las preguntas que falten con opciones, con tu recomendada primero. Yo decido las reglas del negocio; no las asumas.
+
+## 60 (2026-11-04, Daniel)
+
+Agrega a la spec: la tasa BCV de un cobro en bolívares es la de la fecha del cobro, no la del día en que se registra. Marca como "validar con el contador" el tratamiento de la retención en pagos parciales y la regla del mes de IVA declarado. Termina la spec en Borrador, sin arreglar nada ni hacer commit.
+
+## 61 (2026-11-04, Daniel)
+
+No hagas más rondas de preguntas: lo que siga abierto, déjalo en "Por decidir" con tu recomendación. Marca también como "validar con el contador" la base de la retención. Termina la spec en Borrador, en el límite de unas 60 líneas, sin arreglar nada ni hacer commit. Al final, separa en una lista corta cuáles son fallos de dinero que ya están en producción y cuáles son reglas nuevas para después.
+
+## 62 (2026-11-04, Daniel)
+
+Corrige la spec, sin tocar código ni hacer commit. Agrega en "Por decidir" que hoy ninguna pantalla crea fichas, y que la excepción de PedidosYa depende de tener una. Mi recomendación: que el aviso de nombre repetido permita guardar ese nombre como cliente fijo con un toque, para que no vuelva a preguntar. Agrega también que el cuadre debe esperar lo que entró, también con retención y con pago de más, no solo con comisión.
+
+## 63 (2026-11-04, Daniel)
+
+/arreglar Cinco fallos de dinero de cuentas por cobrar que ya están en producción, según specs/cuentas-por-cobrar.md, un commit por cada uno:
+1. Dos cobros cruzados de la misma venta pasan los dos: debe pasar solo uno, y hay que probarlo en PostgreSQL.
+2. Un abono reenviado se aplica dos veces: un reintento debe contar una sola vez.
+3. Retención con pago parcial: como medida temporal hasta que responda el contador, no permitirla y explicar por qué. No cerrar la deuda ni registrar comisión sin avisar.
+4. La pantalla debe calcular la retención igual que el sistema, sobre toda la factura, para que no nazca el ingreso falso.
+5. El cuadre debe esperar lo que entró, también con comisión, retención o pago de más.
+Excepción al comando: crea la rama desde master, porque este código no está en fase1. Antes de cambiar nada, explícame en dos líneas cómo cambia el resultado de dinero y espera mi visto bueno. No corrijas datos, no subas ni despliegues.
+
+## 64 (2026-11-04, Daniel)
+
+Visto bueno a los cinco arreglos, con estos ajustes:
+
+1. Días cerrados: no deben cambiar. Un día ya cerrado debe mostrar lo que se guardó en su cierre; el cálculo nuevo aplica a los días abiertos. Si eso exige un cambio grande, para y explícame antes de seguir.
+2. Retención: rechaza solo el caso en que pagan menos sin decir por qué. Si la cajera marca de forma explícita que la diferencia es comisión, se acepta, con la retención sobre toda la factura. Si el sistema no puede distinguirlo sin un cambio grande, para y explícame.
+3. Sí, incluye Ventas, "abonar a lo que debe" y la conciliación del banco, para que el mismo fallo no quede abierto por otra vía.
+4. Ya abrí Docker Desktop: úsalo para probar el cobro doble en PostgreSQL. Si no responde, avísame y no des ese arreglo por terminado.
+5. Fichas: anota en la spec que el cliente fijo guarda el dato en el nombre, como "José Pérez (del 5to)". Esa pantalla no se hace ahora; queda para después.
+
+Sigue sin subir, sin desplegar y sin corregir datos.
+
+## 65 (2026-11-04, Daniel)
+
+Validé los arreglos en local: la retención con pago parcial y el cuadre por pago móvil funcionan. Anota en Apuntes/fixes.md, como pendientes, dos detalles visuales que vi: en modo oscuro el mensaje verde de éxito de Cuentas por cobrar casi no se lee, y el texto de la opción "Es comisión: se cierra la deuda" se corta. Haz commit de eso y de specs/cuentas-por-cobrar.md en esta rama, sin incluir backend/evals, y registra estos prompts en prompts.md como pide CLAUDE.md. Después sube solo la rama fix-2026-11-04-cobros-cxc a GitHub con su propio nombre. No fusiones en master ni despliegues. Avísame cuando GitHub termine, con el resultado de las pruebas.
