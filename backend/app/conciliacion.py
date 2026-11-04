@@ -31,7 +31,7 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from . import models, schemas, tasas
+from . import cuentas_por_cobrar, models, schemas, tasas
 from .timeutils import inicio_del_dia
 
 # Hasta cuánto pueden diferir los Bs de un cobro y del banco: la tasa del
@@ -423,7 +423,8 @@ def _cobros(db: Session, desde: datetime.date, hasta: datetime.date) -> List[_Co
                 monto=round(pago.monto, 2), bs=round(bs, 2), referencia=(pago.referencia or "").strip(),
             ))
     tasa_de: Dict[datetime.date, float] = {}
-    for a in db.query(models.AbonoFiado).filter(models.AbonoFiado.fecha >= inicio, models.AbonoFiado.fecha < fin).all():
+    abonos = db.query(models.AbonoFiado).filter(models.AbonoFiado.fecha >= inicio, models.AbonoFiado.fecha < fin).all()
+    for a, entro in cuentas_por_cobrar.entradas_de_abonos(abonos):
         metodo = a.metodo_pago or ""
         if metodo not in INDIVIDUALES + PUNTO:
             continue
@@ -435,7 +436,7 @@ def _cobros(db: Session, desde: datetime.date, hasta: datetime.date) -> List[_Co
             metodo="Punto de venta" if metodo in PUNTO else ("Transferencia" if metodo == "Banco" else metodo),
             tipo="abono", pedido_id=a.pedido_id, numero=a.pedido.numero if a.pedido else 0,
             cliente=(a.pedido.cliente or "") if a.pedido else "", fecha=a.fecha,
-            monto=round(a.monto, 2), bs=round(a.monto * tasa_de[dia], 2), referencia=(a.referencia or "").strip(),
+            monto=round(entro, 2), bs=round(entro * tasa_de[dia], 2), referencia=(a.referencia or "").strip(),
         ))
     salida.sort(key=lambda c: c.fecha)
     return salida

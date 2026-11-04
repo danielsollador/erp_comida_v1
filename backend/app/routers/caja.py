@@ -169,21 +169,49 @@ def _salidas_por_metodo(db: Session, inicio, fin) -> dict:
     return por_metodo
 
 
+def _abonos_del_dia(db: Session, inicio, fin) -> list:
+    return (
+        db.query(models.AbonoFiado)
+        .filter(models.AbonoFiado.fecha >= inicio, models.AbonoFiado.fecha < fin)
+        .all()
+    )
+
+
 def _cobros_fiado_por_metodo(db: Session, inicio, fin) -> dict:
     """Lo que entro ese dia por fiados cobrados, por forma de pago.
 
     Es plata del dia: si la señora paga su fiado con el punto, el lote del
-    punto lo trae, y el cierre tiene que esperarlo en esa fila.
+    punto lo trae, y el cierre tiene que esperarlo en esa fila. Es lo que entro,
+    no lo que se dejo de deber: con comision, retencion o pago de mas no son
+    lo mismo, y la fila mostraba un descuadre que no existia.
     """
     por_metodo: dict = {}
-    for a in (
-        db.query(models.AbonoFiado)
-        .filter(models.AbonoFiado.fecha >= inicio, models.AbonoFiado.fecha < fin)
-        .all()
-    ):
+    for a, entro in cuentas_por_cobrar.entradas_de_abonos(_abonos_del_dia(db, inicio, fin)):
+        m = _normalizar(a.metodo_pago or "Efectivo Bs")
+        por_metodo[m] = round(por_metodo.get(m, 0.0) + entro, 2)
+    return por_metodo
+
+
+def _fiado_aplicado_por_metodo(db: Session, inicio, fin) -> dict:
+    """La cuenta con la que se cerraron los dias que ya estan cerrados: lo que se
+    dejo de deber. Solo para no mover esos dias (ver `_esperados_guardados`)."""
+    por_metodo: dict = {}
+    for a in _abonos_del_dia(db, inicio, fin):
         m = _normalizar(a.metodo_pago or "Efectivo Bs")
         por_metodo[m] = round(por_metodo.get(m, 0.0) + a.monto, 2)
     return por_metodo
+
+
+def _esperados_guardados(cierre: Optional[models.CierreCaja]) -> dict:
+    """Lo que el cierre congelo por forma de pago. Un dia cerrado muestra esto:
+    ni un cobro tardio ni una cuenta corregida despues mueven lo que se cuadro.
+    Las gavetas se guardan aunque no se cuenten; las demas, solo si se contaron."""
+    if cierre is None:
+        return {}
+    guardados = {"Efectivo Bs": cierre.efectivo_esperado, "Efectivo $": cierre.divisas_esperado}
+    for l in cierre.lineas:
+        guardados[_normalizar(l.metodo or "")] = l.esperado
+    return guardados
 
 
 def _cuentas_de(metodo: str) -> str:
@@ -335,7 +363,8 @@ def _desglose(
     """
     ventas = _ventas_por_metodo(db, inicio, fin)
     salidas = _salidas_por_metodo(db, inicio, fin)
-    fiados = _cobros_fiado_por_metodo(db, inicio, fin)
+    fiados = _fiado_aplicado_por_metodo(db, inicio, fin) if cierre else _cobros_fiado_por_metodo(db, inicio, fin)
+    guardados = _esperados_guardados(cierre)
     aperturas = _aperturas_de(db, dia)
     # Lo que se reporto al cerrar, si el dia ya se cerro. Se normaliza el
     # nombre: un cierre viejo pudo guardar la fila como "Tarjeta".
@@ -380,6 +409,10 @@ def _desglose(
         pagos = 0.0
         if not fisico:
             pagos, salio = salio, 0.0
+        # Dia cerrado: manda lo guardado, y `otros` absorbe lo que haya pasado
+        # despues para que la fila siga sumando a la vista.
+        if metodo in guardados:
+            otros = round(guardados[metodo] - fondo - entro + salio, 2)
 
         filas.append(
             schemas.LineaMetodo(
@@ -482,6 +515,18 @@ def _fecha_pedida(fecha: Optional[datetime.date]) -> datetime.date:
     return d
 
 
+def _cierre_del_dia(db: Session, inicio, fin) -> Optional[models.CierreCaja]:
+    return (
+        db.query(models.CierreCaja)
+        .filter(
+            models.CierreCaja.fecha >= inicio,
+            models.CierreCaja.fecha < fin,
+            models.CierreCaja.anulado.is_(False),
+        )
+        .first()
+    )
+
+
 @router.get("/resumen", response_model=schemas.ResumenCaja)
 def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(get_db)):
     """Todo lo que hace falta para cuadrar un dia.
@@ -503,15 +548,7 @@ def resumen_caja(fecha: Optional[datetime.date] = None, db: Session = Depends(ge
     # propina. Es contra esto que tiene que cuadrar el desglose.
     a_cobrar = round(vendido - descuentos + propinas, 2)
 
-    cierre = (
-        db.query(models.CierreCaja)
-        .filter(
-            models.CierreCaja.fecha >= inicio,
-            models.CierreCaja.fecha < fin,
-            models.CierreCaja.anulado.is_(False),
-        )
-        .first()
-    )
+    cierre = _cierre_del_dia(db, inicio, fin)
     desglose = _desglose(db, dia, inicio, fin, cierre)
     cobrado = round(sum(l.ventas for l in desglose), 2)
 
@@ -582,12 +619,14 @@ def cobros_del_dia(fecha: Optional[datetime.date] = None, db: Session = Depends(
                 referencia=(pago.referencia or "").strip(),
                 cobrado_por=nombres.get(pedido.operador_id, ""),
             ))
-    abonos = (
-        db.query(models.AbonoFiado)
-        .filter(models.AbonoFiado.fecha >= inicio, models.AbonoFiado.fecha < fin)
-        .all()
+    abonos = _abonos_del_dia(db, inicio, fin)
+    # Un dia cerrado sigue con lo que se dejo de deber, igual que su fila.
+    entradas = (
+        [(a, a.monto) for a in abonos]
+        if _cierre_del_dia(db, inicio, fin)
+        else cuentas_por_cobrar.entradas_de_abonos(abonos)
     )
-    for abono in abonos:
+    for abono, entro in entradas:
         cobros.append(schemas.CobroDelDia(
             metodo=_normalizar(abono.metodo_pago or "Efectivo Bs"),
             tipo="abono",
@@ -595,7 +634,7 @@ def cobros_del_dia(fecha: Optional[datetime.date] = None, db: Session = Depends(
             numero=abono.pedido.numero if abono.pedido else 0,
             cliente=(abono.pedido.cliente or "") if abono.pedido else "",
             fecha=abono.fecha,
-            monto=round(abono.monto, 2),
+            monto=round(entro, 2),
             referencia=(abono.referencia or "").strip(),
             cobrado_por=nombres.get(abono.operador_id, ""),
         ))

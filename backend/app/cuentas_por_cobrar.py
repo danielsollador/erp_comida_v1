@@ -85,6 +85,24 @@ def bloquear_pedidos(db: Session, ids) -> List[models.Pedido]:
     return pedidos
 
 
+def entradas_de_abonos(abonos) -> list:
+    """[(abono, lo que entro)]: lo que de verdad llego por estos abonos.
+
+    Un abono suelto entra por su monto. Un cobro agrupado es UN deposito, por lo
+    que recibio: sale una sola vez, en su primer abono. Sumar los abonos daria lo
+    que se dejo de deber, que con comision, retencion o pago de mas no es lo
+    que llego al banco."""
+    vistos = set()
+    salida = []
+    for a in abonos:
+        if not a.cobro_id:
+            salida.append((a, a.monto))
+        elif a.cobro_id not in vistos:
+            vistos.add(a.cobro_id)
+            salida.append((a, a.cobro.recibido))
+    return salida
+
+
 def cobro_por_clave(db: Session, clave: Optional[str]) -> Optional[models.CobroCliente]:
     """El cobro que ya entro con esta clave: un reintento lo recibe a el. Se
     pregunta DESPUES de bloquear, porque quien esperaba al primero tiene que
