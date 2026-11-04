@@ -84,6 +84,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **4-nov** Rama `fix-2026-11-04-cobros-cxc`, sin desplegar: cobros con bloqueo y reintentos sin duplicar (columna `clave_cliente` en `TRX130` y `TRX140`), retención parcial solo con comisión marcada, y el cuadre espera lo que entró; un día cerrado muestra lo guardado. `tests/test_concurrencia_pg.py` necesita `ERP_TEST_PG_URL`: la CI todavía se la salta.
 - **3-nov** Solo manda el `CLAUDE.md` del repo: `.claude/settings.json` ignora los personales y la memoria automática.
 - **3-nov** Herramientas del agente: Context7, Serena y Playwright en `.mcp.json` (Serena con `.serena/project.yml`, sin memorias).
 - **3-nov** Carril rápido en `CLAUDE.md` para cambios pequeños sin dinero, permisos ni base de datos (unos 15 min a producción); en un despliegue las imágenes se construyen mientras GitHub prueba.
