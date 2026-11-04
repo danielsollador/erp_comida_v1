@@ -377,7 +377,7 @@ Lo que se vendió «A crédito» en el punto de venta y falta cobrar. No hay que
 - **Paga menos de lo marcado:** se pregunta qué pasa con lo que falta. «Quedan debiendo» es un abono, y se aplica de la venta más vieja a la más nueva. «No se cobran» cierra la deuda y la diferencia queda como comisión o descuento.
 - **Paga de más:** se pregunta antes, y lo de más queda como otro ingreso.
 - **Dar de baja:** marca las ventas que no se van a cobrar. Pasan a gasto (incobrables) y dejan de deberse. Se recuperan en «Cobros hechos» › «Dadas de baja».
-- **Retuvo IVA:** con ventas facturadas marcadas se elige si retuvo el 75 % o el 100 %. Lo retenido no entra al banco, queda como crédito contra el IVA.
+- **Retuvo IVA:** con ventas facturadas marcadas se elige si retuvo el 75 % o el 100 %. Lo retenido no entra al banco, queda como crédito contra el IVA. Con retención todavía no se puede dejar parte debiendo: hay que cobrar lo que falta o, si es comisión, marcarlo como comisión.
 - **Se anotó mal:** en «Cobros hechos», «Anular». Las ventas vuelven a deberse.
 
 ## Pagos

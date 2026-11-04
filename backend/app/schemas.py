@@ -3758,6 +3758,8 @@ class CobroClienteCreate(BaseModel):
     # Lo que de verdad entro. Si viene, la comision o lo de mas se calculan
     # solos (despues de la retencion): es lo que la persona tiene delante.
     recibido: Optional[float] = Field(default=None, gt=0)
+    # Con retencion, lo que falta solo se cierra si alguien dijo que es comision.
+    diferencia_es_comision: bool = False
     # Si el cliente es contribuyente especial y retuvo IVA al pagar: 75 o 100.
     # Se aplica a las ventas facturadas que no tienen ya su retencion.
     retencion_iva_pct: Optional[float] = None

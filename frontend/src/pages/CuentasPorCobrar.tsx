@@ -266,12 +266,17 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
     recibido = enBs ? (Math.abs(tecleado - esperadoBs) <= 0.01 ? esperado : redondear(tecleado / bcv)) : tecleado
   }
   const falta = Number.isFinite(recibido) ? redondear(esperado - recibido) : 0
-  const cierra = falta <= 0 || retencion > 0 || loQueFalta === 'cerrar'
+  const retiene = retenido > 0
+  const cierra = falta <= 0 || loQueFalta === 'cerrar'
+  // Medida temporal hasta que responda el contador: con retencion no se deja
+  // parte debiendo. Lo que falta se cobra o se marca como comision.
+  const faltaDecidir = retiene && !cierra
 
   async function confirmar() {
     setError('')
     if (!Number.isFinite(recibido) || recibido <= 0) return setError('Pon cuánto pagó.')
     if (necesitaReferencia(metodo) && !referencia.trim()) return setError(`Un pago por ${metodo} necesita su referencia.`)
+    if (faltaDecidir) return
     if (falta < 0) {
       const ok = await dialogo.confirmar({
         titulo: 'Pagó más de lo que debe',
@@ -294,6 +299,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
           referencia: referencia.trim(),
           recibido,
           retencion_iva_pct: retencion || null,
+          diferencia_es_comision: retiene && falta > 0 && loQueFalta === 'cerrar',
           nota: nota.trim(),
           clave_cliente,
         })
@@ -314,7 +320,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
     }
   }
 
-  const textoBoton = !cierra ? `Abonar ${dinero(recibido)}` : falta > 0 ? `Cobrar ${dinero(recibido)} y cerrar` : `Pagar ${dinero(recibido)}`
+  const textoBoton = faltaDecidir ? `Faltan ${dinero(falta)}` : !cierra ? `Abonar ${dinero(recibido)}` : falta > 0 ? `Cobrar ${dinero(recibido)} y cerrar` : `Pagar ${dinero(recibido)}`
 
   return (
     <Modal
@@ -322,7 +328,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
       ayuda={`${cuantasVentas(ventas.length)} por ${dinero(total)}. Si paga menos, queda debiendo el resto.`}
       onCerrar={alCerrar}
       pie={
-        <Boton ancho onClick={() => void confirmar()} disabled={enviando}>
+        <Boton ancho onClick={() => void confirmar()} disabled={enviando || faltaDecidir}>
           {textoBoton}
         </Boton>
       }
@@ -352,21 +358,24 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
           <Campo etiqueta="Referencia" value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Número de la operación" />
         )}
         {facturadas.length > 0 && (
-          <Selector etiqueta="¿Retuvo IVA?" value={String(retencion)} onChange={(e) => setRetencion(Number(e.target.value))}>
+          <Selector etiqueta="¿Retuvo IVA?" value={String(retencion)} onChange={(e) => {
+            setRetencion(Number(e.target.value))
+            setLoQueFalta('abono')
+          }}>
             <option value="0">No retuvo</option>
             <option value="75">Retuvo el 75 %</option>
             <option value="100">Retuvo el 100 %</option>
           </Selector>
         )}
         <Campo etiqueta="Nota (opcional)" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej. semana del 19 al 25" />
-        {falta > 0 && retencion === 0 && (
+        {falta > 0 && (
           <Selector
             etiqueta={`¿Qué pasa con los ${dinero(falta)} que faltan?`}
             value={loQueFalta}
             onChange={(e) => setLoQueFalta(e.target.value as 'abono' | 'cerrar')}
           >
-            <option value="abono">Quedan debiendo</option>
-            <option value="cerrar">No se cobran: son comisión o descuento, se cierra la deuda</option>
+            <option value="abono">{retiene ? 'Elige: con retención no pueden quedar debiendo' : 'Quedan debiendo'}</option>
+            <option value="cerrar">{retiene ? 'Es comisión: se cierra la deuda' : 'No se cobran: son comisión o descuento, se cierra la deuda'}</option>
           </Selector>
         )}
       </div>
@@ -374,6 +383,13 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
         <p className="mt-3 text-xs text-neutral-500">
           IVA retenido ≈ {dinero(retenido)} (el exacto sale de cada factura). No entra al banco: se descuenta del IVA a pagar.
         </p>
+      )}
+      {faltaDecidir && (
+        <div className="mt-3">
+          <Aviso tono="ojo">
+            Con retención de IVA todavía no pueden quedar debiendo. Cobra los {dinero(falta)} que faltan o, si son comisión, márcalo arriba.
+          </Aviso>
+        </div>
       )}
       {error && <div className="mt-3"><Aviso>{error}</Aviso></div>}
     </Modal>

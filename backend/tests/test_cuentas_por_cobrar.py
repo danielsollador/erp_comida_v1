@@ -281,3 +281,71 @@ def test_sin_clave_se_sigue_aceptando(client, variante):
     assert _abonar(client, [p], 3.0).status_code == 200
     assert _abonar(client, [p], 3.0).status_code == 200
     assert client.get("/api/cobranzas/resumen").json()["ventas"][0]["saldo"] == 4.0
+
+
+def _venta_facturada(client, db, variante, numero="F-1", cliente="Empresa Sur"):
+    """Una venta de $10 a crédito, facturada. El IVA de la factura es $1,38 y
+    retener el 75 % son $1,04: entran $8,96."""
+    p = fiar(client, variante, cliente=cliente)
+    pedido = db.get(models.Pedido, p["id"])
+    pedido.facturado = True
+    pedido.numero_factura = numero
+    pedido.tasa_iva = 16
+    pedido.tasa_bcv = 100.0
+    db.commit()
+    return p
+
+
+def _retener(client, p, **extra):
+    return client.post("/api/cobranzas/cobros", json={
+        "pedido_ids": [p["id"]], "metodo_pago": "Transferencia", "referencia": "1",
+        "retencion_iva_pct": 75, **extra,
+    })
+
+
+def test_retencion_con_pago_parcial_sin_explicar_se_rechaza(client, db, variante, libros):
+    """4-nov: debía $10, retuvo y pagó $3. Cerraba la deuda y dejaba $5,96 de
+    comisión sin preguntar. Hasta que responda el contador no se deja parte
+    debiendo con retención, y se dice qué hacer."""
+    p = _venta_facturada(client, db, variante)
+    r = _retener(client, p, recibido=3.0)
+    assert r.status_code == 400
+    assert "$5,96" in r.json()["detail"] and "comisión" in r.json()["detail"]
+    db.expire_all()
+    pedido = db.get(models.Pedido, p["id"])
+    assert pedido.retencion_iva_usd is None, "no queda retención anotada"
+    assert db.query(models.CobroCliente).count() == 0
+    assert saldo(db, "1015") == 10.0 and saldo(db, "6130") == 0.0
+    libros_cuadrados(client, db)
+
+
+def test_retencion_con_comision_marcada_se_acepta(client, db, variante, libros):
+    """La cajera marca que lo que falta es comisión: se acepta, y la retención
+    va sobre toda la factura."""
+    p = _venta_facturada(client, db, variante)
+    r = _retener(client, p, recibido=8.0, diferencia_es_comision=True)
+    assert r.status_code == 200, r.text
+    c = r.json()
+    assert (c["retencion_iva"], c["comision"], c["recibido"]) == (1.04, 0.96, 8.0)
+    db.expire_all()
+    assert saldo(db, "1015") == 0.0 and saldo(db, "6130") == 0.96 and saldo(db, "1035") == 1.04
+    libros_cuadrados(client, db)
+
+
+def test_retencion_con_pago_completo_o_de_mas_no_pide_nada(client, db, variante, libros):
+    completo = _venta_facturada(client, db, variante, "F-1")
+    r = _retener(client, completo, recibido=8.96)
+    assert r.status_code == 200 and r.json()["comision"] == 0.0
+    de_mas = _venta_facturada(client, db, variante, "F-2")
+    r = _retener(client, de_mas, recibido=10.0)
+    assert r.status_code == 200 and r.json()["excedente"] == 1.04
+    libros_cuadrados(client, db)
+
+
+def test_sin_retencion_paga_menos_y_cierra_como_antes(client, variante):
+    """La medida temporal es solo con retención: PedidosYa sigue igual."""
+    p = fiar(client, variante)
+    r = client.post("/api/cobranzas/cobros", json={
+        "pedido_ids": [p["id"]], "metodo_pago": "Efectivo $", "recibido": 8.0,
+    })
+    assert r.status_code == 200 and r.json()["comision"] == 2.0

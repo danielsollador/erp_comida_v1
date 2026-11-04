@@ -235,7 +235,7 @@ def test_06_lo_que_entro_decide_la_comision_despues_de_la_retencion(client, db, 
     p = fiar_facturado(client, variante)
     r = client.post("/api/cobranzas/cobros", json={
         "cliente_id": c["id"], "pedido_ids": [p["id"]], "metodo_pago": "Transferencia",
-        "referencia": "3", "retencion_iva_pct": 75, "recibido": 8.0,
+        "referencia": "3", "retencion_iva_pct": 75, "recibido": 8.0, "diferencia_es_comision": True,
     })
     assert r.status_code == 200, r.text
     cobro = r.json()

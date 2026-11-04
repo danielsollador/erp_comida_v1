@@ -342,6 +342,15 @@ def cobrar(db: Session, body: schemas.CobroClienteCreate) -> models.CobroCliente
     retencion = round(sum(_retener(db, p, pct, fecha) for p in pedidos), 2) if pct else 0.0
     if body.recibido is not None:
         diferencia = round(monto - retencion - body.recibido, 2)
+        # Medida temporal hasta que responda el contador: con retencion no se
+        # deja parte debiendo, y lo que falta tampoco se vuelve comision sin
+        # que nadie lo diga (debia $10, pago $3: quedaban $5,96 de comision).
+        if retencion and diferencia > 0 and not body.diferencia_es_comision:
+            raise ErrorCobro(
+                400,
+                f"Con retención de IVA faltan {_usd(diferencia)} por pagar y todavía no se puede dejar "
+                "parte debiendo. Cobra lo que falta o, si es comisión, márcalo como comisión.",
+            )
         comision, excedente = max(diferencia, 0.0), max(-diferencia, 0.0)
     recibido = round(monto - comision - retencion + excedente, 2)
     if recibido <= 0:

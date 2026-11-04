@@ -887,6 +887,7 @@ export const api = {
     referencia: string
     recibido: number
     retencion_iva_pct: number | null
+    diferencia_es_comision?: boolean
     nota: string
     fecha?: string
     clave_cliente?: string
