@@ -889,10 +889,11 @@ export const api = {
     retencion_iva_pct: number | null
     nota: string
     fecha?: string
+    clave_cliente?: string
   }) => req<CobroCliente>('/cobranzas/cobros', { method: 'POST', body: JSON.stringify(datos) }),
-  abonarVentas: (datos: { pedido_ids: number[]; monto: number; metodo_pago: string; referencia: string; nota: string }) =>
+  abonarVentas: (datos: { pedido_ids: number[]; monto: number; metodo_pago: string; referencia: string; nota: string; clave_cliente?: string }) =>
     req<CobroCliente>('/cobranzas/abonos', { method: 'POST', body: JSON.stringify(datos) }),
-  abonarACuenta: (clienteId: number, datos: { monto: number; metodo_pago: string; referencia: string; nota: string }) =>
+  abonarACuenta: (clienteId: number, datos: { monto: number; metodo_pago: string; referencia: string; nota: string; clave_cliente?: string }) =>
     req<CobroCliente>(`/cobranzas/clientes/${clienteId}/abono`, { method: 'POST', body: JSON.stringify(datos) }),
   darPorPerdida: (pedidoId: number, motivo: string) =>
     req(`/cobranzas/ventas/${pedidoId}/perdida`, { method: 'POST', body: JSON.stringify({ motivo }) }),
@@ -1131,10 +1132,11 @@ export const api = {
     metodo_pago = 'Efectivo Bs',
     monto?: number,
     referencia?: string,
+    clave_cliente?: string,
   ) =>
     req<{ ok: boolean; cobrado: number; queda: number; saldado: boolean; cliente: string }>(
       `/caja/fiado/${pedidoId}/cobrar`,
-      { method: 'POST', body: JSON.stringify({ metodo_pago, monto, referencia }) },
+      { method: 'POST', body: JSON.stringify({ metodo_pago, monto, referencia, clave_cliente }) },
     ),
 
   /**

@@ -665,6 +665,9 @@ class AbonoFiado(Base):
     # Si entro en un cobro agrupado (PedidosYa paga la semana de una vez), el
     # cobro. Nulo = abono suelto desde Ventas.
     cobro_id = Column(Integer, ForeignKey("TRX140_VEN_COBRO.id"), nullable=True, index=True)
+    # Idempotencia del abono suelto: un reintento trae la misma clave y no se
+    # aplica otra vez. Nulo en los que entran por un cobro (la lleva el cobro).
+    clave_cliente = Column(String, nullable=True, unique=True, index=True)
 
     pedido = relationship("Pedido", back_populates="abonos")
     cobro = relationship("CobroCliente", back_populates="abonos")
@@ -728,6 +731,10 @@ class CobroCliente(Base):
     nota = Column(String, default="")
     anulado = Column(Boolean, default=False)
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    # Idempotencia: la clave que genero la pantalla para ESTE intento. Con mala
+    # senal la cajera reintenta sin saber si entro; el mismo abono se aplicaba
+    # dos veces.
+    clave_cliente = Column(String, nullable=True, unique=True, index=True)
 
     cliente = relationship("Cliente")
     abonos = relationship("AbonoFiado", back_populates="cobro")

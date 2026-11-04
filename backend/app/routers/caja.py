@@ -1153,6 +1153,20 @@ def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session =
     pedido = next(iter(cuentas_por_cobrar.bloquear_pedidos(db, [pedido_id])), None)
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    # Reintento de un abono que ya entro: se responde lo que quedo, sin aplicarlo otra vez.
+    ya = (
+        db.query(models.AbonoFiado).filter(models.AbonoFiado.clave_cliente == body.clave_cliente).first()
+        if body.clave_cliente
+        else None
+    )
+    if ya is not None:
+        return {
+            "ok": True,
+            "cobrado": ya.monto,
+            "queda": pedido.fiado_saldo,
+            "saldado": pedido.fiado_saldo <= 0,
+            "cliente": pedido.cliente,
+        }
     if pedido.fiado_saldado:
         raise HTTPException(status_code=409, detail="Esa cuenta a crédito ya fue cobrada")
     if pedido.devuelto:
@@ -1199,6 +1213,7 @@ def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session =
         referencia=referencia,
         operador_id=body.operador_id,
         fecha=ahora(),
+        clave_cliente=body.clave_cliente or None,
     ))
     contabilidad.registrar_cobro_fiado(db, pedido, monto, body.metodo_pago, saldo_restante=restante)
     if restante <= 0:

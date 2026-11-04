@@ -1300,6 +1300,8 @@ class SaldarFiadoRequest(BaseModel):
     # Obligatoria si el metodo no es efectivo, igual que al cobrar en el punto
     # de venta (ver contabilidad.METODOS_CON_REFERENCIA).
     referencia: Optional[str] = None
+    # La misma clave en un reintento: no se aplica otra vez.
+    clave_cliente: Optional[str] = None
 
 
 class CuentaPorCobrar(BaseModel):
@@ -3762,6 +3764,7 @@ class CobroClienteCreate(BaseModel):
     nota: str = ""
     fecha: Optional[datetime.date] = None
     operador_id: Optional[int] = None
+    clave_cliente: Optional[str] = None
 
 
 class AbonoAVentas(BaseModel):
@@ -3773,6 +3776,7 @@ class AbonoAVentas(BaseModel):
     nota: str = ""
     fecha: Optional[datetime.date] = None
     operador_id: Optional[int] = None
+    clave_cliente: Optional[str] = None
 
 
 class AbonoACuenta(BaseModel):
@@ -3784,6 +3788,7 @@ class AbonoACuenta(BaseModel):
     nota: str = ""
     fecha: Optional[datetime.date] = None
     operador_id: Optional[int] = None
+    clave_cliente: Optional[str] = None
 
 
 class DarPorPerdida(BaseModel):

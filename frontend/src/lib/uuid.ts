@@ -21,3 +21,20 @@ export function uuid(): string {
   const h = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
 }
+
+// La clave que hace que un reintento no se cuente dos veces: con mala senal la
+// cajera no sabe si el pago entro y le da otra vez.
+export function claveDeReintento() {
+  let ultima: { firma: string; clave: string } | null = null
+  return {
+    /** La misma operacion (misma firma) conserva su clave hasta que entre. */
+    para(firma: string): string {
+      if (!ultima || ultima.firma !== firma) ultima = { firma, clave: uuid() }
+      return ultima.clave
+    },
+    /** Ya entro: el proximo pago igual es otro pago, no un reintento. */
+    olvidar() {
+      ultima = null
+    },
+  }
+}

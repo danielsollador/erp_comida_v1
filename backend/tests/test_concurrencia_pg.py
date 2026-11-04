@@ -41,7 +41,17 @@ def Sesion():
     asegurar_categoria_envios(s)
     s.commit()
     s.close()
-    yield fabrica
+    abiertas = []
+
+    def nueva():
+        sesion = fabrica()
+        abiertas.append(sesion)
+        return sesion
+
+    yield nueva
+    # Una prueba que falla deja su sesion abierta, y el DROP la esperaria para siempre.
+    for sesion in abiertas:
+        sesion.close()
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
@@ -185,4 +195,24 @@ def test_dar_de_baja_dos_veces_a_la_vez_pasa_a_gasto_una_sola(Sesion):
     assert resultado.get("rechazo") == 409, f"debia rechazarse y paso esto: {resultado}"
     s = Sesion()
     assert contabilidad.saldo_de_cuenta(s, "6140") == 10.0
+    s.close()
+
+
+def test_dos_reintentos_del_mismo_abono_cuentan_uno(Sesion):
+    """Los dos llegan juntos con la misma clave: el segundo espera y recibe el
+    cobro del primero, sin error y sin aplicar otra vez."""
+    s = Sesion()
+    pid = _venta_fiada(s)
+    s.close()
+
+    def abono(sesion, _pid):
+        return cxc.abonar_ventas(sesion, schemas.AbonoAVentas(
+            pedido_ids=[pid], monto=3.0, metodo_pago="Efectivo $", clave_cliente="intento-1"))
+
+    resultado = _cruzar(Sesion, abono, abono, pid)
+
+    assert resultado.get("paso") is True, f"el reintento no debe dar error: {resultado}"
+    s = Sesion()
+    assert s.get(models.Pedido, pid).fiado_abonado == 3.0
+    assert s.query(models.CobroCliente).count() == 1
     s.close()

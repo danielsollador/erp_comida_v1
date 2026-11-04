@@ -4,6 +4,7 @@ agrupado. La logica vive en `cuentas_por_cobrar.py`."""
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import cuentas_por_cobrar as cxc
@@ -27,6 +28,20 @@ def _sin_duplicar(db: Session, nombre: str, excluir: int = 0) -> None:
     for c in db.query(models.Cliente).filter(models.Cliente.id != excluir).all():
         if cxc.clave_de_nombre(c.nombre) == clave:
             raise HTTPException(status_code=409, detail=f"Ya existe el cliente «{c.nombre}»")
+
+
+def _confirmar(db: Session, cobro: models.CobroCliente, clave) -> schemas.CobroCliente:
+    """Dos reintentos sobre ventas distintas no se esperan entre si: el indice
+    UNIQUE deja pasar uno y el otro recibe el cobro del que gano."""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        cobro = cxc.cobro_por_clave(db, clave)
+        if cobro is None:
+            raise
+    db.refresh(cobro)
+    return cxc.cobro_a_esquema(cobro)
 
 
 @router.get("/resumen", response_model=schemas.ResumenCxC)
@@ -94,9 +109,7 @@ def abonar(cliente_id: int, body: schemas.AbonoACuenta, db: Session = Depends(ge
     except cxc.ErrorCobro as e:
         db.rollback()
         raise HTTPException(status_code=e.status, detail=e.detalle)
-    db.commit()
-    db.refresh(cobro)
-    return cxc.cobro_a_esquema(cobro)
+    return _confirmar(db, cobro, body.clave_cliente)
 
 
 @router.post("/abonos", response_model=schemas.CobroCliente)
@@ -107,9 +120,7 @@ def abonar_ventas(body: schemas.AbonoAVentas, db: Session = Depends(get_db)):
     except cxc.ErrorCobro as e:
         db.rollback()
         raise HTTPException(status_code=e.status, detail=e.detalle)
-    db.commit()
-    db.refresh(cobro)
-    return cxc.cobro_a_esquema(cobro)
+    return _confirmar(db, cobro, body.clave_cliente)
 
 
 @router.post("/ventas/{pedido_id}/perdida")
@@ -155,9 +166,7 @@ def cobrar(body: schemas.CobroClienteCreate, db: Session = Depends(get_db)):
     except cxc.ErrorCobro as e:
         db.rollback()
         raise HTTPException(status_code=e.status, detail=e.detalle)
-    db.commit()
-    db.refresh(cobro)
-    return cxc.cobro_a_esquema(cobro)
+    return _confirmar(db, cobro, body.clave_cliente)
 
 
 @router.post("/cobros/{cobro_id}/anular", response_model=schemas.CobroCliente)

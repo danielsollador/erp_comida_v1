@@ -105,6 +105,8 @@ COLUMNAS = [
     ("TRX320_INV_MERMA", "operador_id", "INTEGER"),
     ("TRX620_CON_GASTO", "operador_id", "INTEGER"),
     ("TRX110_VEN_PEDIDO", "clave_cliente", "VARCHAR"),
+    ("TRX130_VEN_ABONO_FIADO", "clave_cliente", "VARCHAR"),
+    ("TRX140_VEN_COBRO", "clave_cliente", "VARCHAR"),
     ("TRX320_INV_MERMA", "por_conteo", "BOOLEAN DEFAULT 0"),
     ("TRX340_INV_MOVIMIENTO", "costo_promedio", "FLOAT DEFAULT 0"),
     ("DIM310_INV_INGREDIENTE", "exento", "BOOLEAN DEFAULT 0"),
@@ -208,6 +210,12 @@ INDICES = [
     ("TRX110_VEN_PEDIDO", "UQ_TRX110_VEN_PEDIDO_clave_cliente",
      'CREATE UNIQUE INDEX IF NOT EXISTS "UQ_TRX110_VEN_PEDIDO_clave_cliente" '
      'ON "TRX110_VEN_PEDIDO" (clave_cliente)'),
+    ("TRX130_VEN_ABONO_FIADO", "UQ_TRX130_VEN_ABONO_FIADO_clave_cliente",
+     'CREATE UNIQUE INDEX IF NOT EXISTS "UQ_TRX130_VEN_ABONO_FIADO_clave_cliente" '
+     'ON "TRX130_VEN_ABONO_FIADO" (clave_cliente)'),
+    ("TRX140_VEN_COBRO", "UQ_TRX140_VEN_COBRO_clave_cliente",
+     'CREATE UNIQUE INDEX IF NOT EXISTS "UQ_TRX140_VEN_COBRO_clave_cliente" '
+     'ON "TRX140_VEN_COBRO" (clave_cliente)'),
     # Dos proveedores con el mismo RIF son el mismo proveedor, y el directorio
     # existe justamente para que no se dupliquen. El router avisa con palabras
     # (409); esto es la red por debajo, para lo que entre por otro camino.

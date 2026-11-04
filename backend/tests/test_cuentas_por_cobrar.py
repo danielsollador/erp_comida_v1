@@ -218,3 +218,66 @@ def test_lo_dado_de_baja_se_ve_y_se_recupera(client, db, variante, libros):
     r = client.get("/api/cobranzas/resumen").json()
     assert r["dadas_de_baja"] == [] and r["ventas"][0]["saldo"] == 10.0
     libros_cuadrados(client, db)
+
+
+def test_un_abono_reenviado_cuenta_una_sola_vez(client, db, variante, libros):
+    """4-nov: un reintento con mala señal aplicó dos veces el mismo abono de $3
+    y una deuda de $10 quedó en $4."""
+    p = fiar(client, variante, cliente="Ana")
+    gaveta = saldo(db, "1011")
+    uno = _abonar(client, [p], 3.0, clave_cliente="intento-1")
+    dos = _abonar(client, [p], 3.0, clave_cliente="intento-1")
+    assert uno.status_code == dos.status_code == 200
+    assert uno.json()["id"] == dos.json()["id"], "devuelve el mismo cobro"
+    assert client.get("/api/cobranzas/resumen").json()["ventas"][0]["saldo"] == 7.0
+    db.expire_all()
+    assert round(saldo(db, "1011") - gaveta, 2) == 3.0
+    libros_cuadrados(client, db)
+
+
+def test_dos_abonos_de_verdad_cuentan_los_dos(client, variante):
+    """La señora abona $3 el martes y $3 el viernes: no es un reintento."""
+    p = fiar(client, variante, cliente="Ana")
+    assert _abonar(client, [p], 3.0, clave_cliente="martes").status_code == 200
+    assert _abonar(client, [p], 3.0, clave_cliente="viernes").status_code == 200
+    assert client.get("/api/cobranzas/resumen").json()["ventas"][0]["saldo"] == 4.0
+
+
+def test_un_cobro_reenviado_no_se_rechaza_ni_se_duplica(client, db, variante):
+    """El primero entró pero la respuesta se perdió: al reintentar no debe decir
+    "ya no debe nada" como si fuera un error, sino el cobro que quedó."""
+    p = fiar(client, variante, cliente="Ana")
+    cuerpo = {"pedido_ids": [p["id"]], "metodo_pago": "Efectivo $", "clave_cliente": "intento-1"}
+    uno = client.post("/api/cobranzas/cobros", json=cuerpo)
+    dos = client.post("/api/cobranzas/cobros", json=cuerpo)
+    assert uno.status_code == dos.status_code == 200
+    assert uno.json()["id"] == dos.json()["id"]
+    assert db.query(models.CobroCliente).count() == 1
+
+
+def test_abonar_a_lo_que_debe_reenviado_cuenta_una_vez(client, variante):
+    c = alta(client)
+    fiar(client, variante)
+    cuerpo = {"monto": 3.0, "metodo_pago": "Efectivo $", "clave_cliente": "intento-1"}
+    assert client.post(f"/api/cobranzas/clientes/{c['id']}/abono", json=cuerpo).status_code == 200
+    assert client.post(f"/api/cobranzas/clientes/{c['id']}/abono", json=cuerpo).status_code == 200
+    assert client.get("/api/cobranzas/resumen").json()["ventas"][0]["saldo"] == 7.0
+
+
+def test_cobrar_desde_ventas_reenviado_cuenta_una_vez(client, db, variante, libros):
+    p = fiar(client, variante, cliente="Ana")
+    cuerpo = {"metodo_pago": "Efectivo $", "monto": 3.0, "clave_cliente": "intento-1"}
+    uno = client.post(f"/api/caja/fiado/{p['id']}/cobrar", json=cuerpo)
+    dos = client.post(f"/api/caja/fiado/{p['id']}/cobrar", json=cuerpo)
+    assert uno.status_code == dos.status_code == 200
+    assert dos.json()["cobrado"] == 3.0 and dos.json()["queda"] == 7.0
+    assert db.query(models.AbonoFiado).count() == 1
+    libros_cuadrados(client, db)
+
+
+def test_sin_clave_se_sigue_aceptando(client, variante):
+    """Lo que llegue de una pantalla vieja, abierta antes de actualizar."""
+    p = fiar(client, variante, cliente="Ana")
+    assert _abonar(client, [p], 3.0).status_code == 200
+    assert _abonar(client, [p], 3.0).status_code == 200
+    assert client.get("/api/cobranzas/resumen").json()["ventas"][0]["saldo"] == 4.0

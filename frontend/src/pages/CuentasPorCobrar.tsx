@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
@@ -9,6 +9,7 @@ import { llano } from '../lib/filtros'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { EN_BOLIVARES, METODOS_PAGO, necesitaReferencia } from '../lib/pagos'
 import type { CobroCliente, ResumenCxC, VentaPorCobrar } from '../lib/types'
+import { claveDeReintento } from '../lib/uuid'
 
 /**
  * Cuentas por cobrar: lo que se vendió a crédito y falta cobrar.
@@ -248,6 +249,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
   const [nota, setNota] = useState('')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const claves = useRef(claveDeReintento())
 
   const total = redondear(ventas.reduce((s, v) => s + v.saldo, 0))
   const facturadas = ventas.filter((v) => v.facturado)
@@ -281,6 +283,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
     }
     setEnviando(true)
     const pedido_ids = ventas.map((v) => v.pedido_id)
+    const clave_cliente = claves.current.para(JSON.stringify([pedido_ids, metodo, recibido, cierra, retencion, referencia.trim()]))
     try {
       if (cierra) {
         const fichas = new Set(ventas.map((v) => v.cliente_id))
@@ -292,6 +295,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
           recibido,
           retencion_iva_pct: retencion || null,
           nota: nota.trim(),
+          clave_cliente,
         })
         alHecho(
           `Cobrado: ${cuantasVentas(ventas.length)}, entraron ${dinero(r.recibido)}` +
@@ -301,8 +305,8 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
             '.',
         )
       } else {
-        await api.abonarVentas({ pedido_ids, monto: recibido, metodo_pago: metodo, referencia: referencia.trim(), nota: nota.trim() })
-        alHecho(`Abono de ${dinero(recibido)} registrado. Quedan ${dinero(falta)} por cobrar de esas ventas.`)
+        const r = await api.abonarVentas({ pedido_ids, monto: recibido, metodo_pago: metodo, referencia: referencia.trim(), nota: nota.trim(), clave_cliente })
+        alHecho(`Abono de ${dinero(r.monto)} registrado. Quedan ${dinero(redondear(total - r.monto))} por cobrar de esas ventas.`)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar')

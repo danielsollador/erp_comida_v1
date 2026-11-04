@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAbrirDeUrl } from '../lib/abrirDeUrl'
 import { nombre as termino } from '../lib/palabras'
 import EditarPedido from '../components/EditarPedido'
@@ -16,6 +16,7 @@ import { PALETA } from '../lib/paleta'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { SerieTiempo } from './partes/reportes/comunes'
 import { METODOS_PAGO, etiquetaMetodo, pedirReferencia } from '../lib/pagos'
+import { claveDeReintento } from '../lib/uuid'
 import { imprimirTicket } from '../lib/ticket'
 import type {
   EstadoVenta,
@@ -523,6 +524,7 @@ function DetalleVenta({
   // Una venta a crédito no puede quedarse así para siempre: el cliente
   // vuelve a pagar (todo o en abonos) y esto tiene que poder cerrarse desde
   // el mismo lugar donde el dueño la está viendo, sin ir hasta Caja.
+  const clavesDeCobro = useRef(claveDeReintento())
   async function cobrarCredito() {
     const monto = await dialogo.pedirNumero({
       titulo: `Cobrar a ${v.cliente || 'cliente'}`,
@@ -544,7 +546,9 @@ function DetalleVenta({
     const referencia = await pedirReferencia(metodo, dialogo.pedirTexto)
     if (referencia === null) return
     try {
-      const r = await api.cobrarFiado(v.id, metodo, monto, referencia)
+      const clave = clavesDeCobro.current.para(JSON.stringify([v.id, metodo, monto, referencia]))
+      const r = await api.cobrarFiado(v.id, metodo, monto, referencia, clave)
+      clavesDeCobro.current.olvidar()
       if (!r.saldado) {
         await dialogo.avisar({
           titulo: 'Abono registrado',

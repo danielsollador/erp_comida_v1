@@ -85,6 +85,15 @@ def bloquear_pedidos(db: Session, ids) -> List[models.Pedido]:
     return pedidos
 
 
+def cobro_por_clave(db: Session, clave: Optional[str]) -> Optional[models.CobroCliente]:
+    """El cobro que ya entro con esta clave: un reintento lo recibe a el. Se
+    pregunta DESPUES de bloquear, porque quien esperaba al primero tiene que
+    ver lo que el primero dejo."""
+    if not clave:
+        return None
+    return db.query(models.CobroCliente).filter(models.CobroCliente.clave_cliente == clave).first()
+
+
 def _fecha(p: models.Pedido) -> datetime.datetime:
     return p.cerrado_en or p.creado_en
 
@@ -304,6 +313,9 @@ def cobrar(db: Session, body: schemas.CobroClienteCreate) -> models.CobroCliente
     referencia = _validar_forma(body.metodo_pago, body.referencia)
     ids = list(dict.fromkeys(body.pedido_ids))
     pedidos = bloquear_pedidos(db, ids)
+    ya = cobro_por_clave(db, body.clave_cliente)
+    if ya is not None:
+        return ya
     if len(pedidos) != len(ids):
         raise ErrorCobro(404, "Alguna de esas ventas no existe")
     cliente = _cliente(db, body.cliente_id)
@@ -348,6 +360,7 @@ def cobrar(db: Session, body: schemas.CobroClienteCreate) -> models.CobroCliente
         recibido=recibido,
         nota=body.nota.strip(),
         operador_id=body.operador_id,
+        clave_cliente=body.clave_cliente or None,
     )
     db.add(cobro)
     db.flush()
@@ -372,6 +385,9 @@ def abonar_a_cuenta(db: Session, cliente: models.Cliente, body: schemas.AbonoACu
     Un pago mitad Zelle y mitad pago movil son dos abonos. No hace commit."""
     referencia = _validar_forma(body.metodo_pago, body.referencia)
     bloquear_pedidos(db, [p.id for p in pedidos_por_cobrar(db) if p.cliente_id == cliente.id])
+    ya = cobro_por_clave(db, body.clave_cliente)
+    if ya is not None:
+        return ya
     pendientes = [p for p in pedidos_por_cobrar(db) if p.cliente_id == cliente.id]
     debe = round(sum(p.fiado_saldo for p in pendientes), 2)
     monto = round(body.monto, 2)
@@ -388,6 +404,9 @@ def abonar_ventas(db: Session, body: schemas.AbonoAVentas) -> models.CobroClient
     referencia = _validar_forma(body.metodo_pago, body.referencia)
     ids = set(body.pedido_ids)
     bloquear_pedidos(db, ids)
+    ya = cobro_por_clave(db, body.clave_cliente)
+    if ya is not None:
+        return ya
     marcadas = [p for p in pedidos_por_cobrar(db) if p.id in ids]
     if len(marcadas) != len(ids):
         raise ErrorCobro(409, "Alguna de esas ventas ya no debe nada: vuelve a cargar la lista.")
@@ -405,7 +424,7 @@ def _aplicar_abono(db, pedidos, body, monto, referencia, cliente_id, quien) -> m
     cobro = models.CobroCliente(
         cliente_id=cliente_id, fecha=fecha, metodo_pago=body.metodo_pago, referencia=referencia,
         monto=monto, comision=0.0, recibido=monto, nota=body.nota.strip() or "Abono a cuenta",
-        operador_id=body.operador_id,
+        operador_id=body.operador_id, clave_cliente=body.clave_cliente or None,
     )
     db.add(cobro)
     db.flush()
