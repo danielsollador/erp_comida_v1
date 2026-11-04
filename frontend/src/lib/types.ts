@@ -2453,6 +2453,8 @@ export type VentaPorCobrar = {
   facturado: boolean
   numero_factura: string | null
   vencida: boolean
+  retencion_75: number
+  retencion_100: number
 }
 
 export type ResumenCxC = {

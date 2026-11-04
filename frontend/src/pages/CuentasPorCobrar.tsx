@@ -253,9 +253,9 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
 
   const total = redondear(ventas.reduce((s, v) => s + v.saldo, 0))
   const facturadas = ventas.filter((v) => v.facturado)
-  // El IVA que retiene el contribuyente especial, aproximado (16 % incluido en
-  // el precio). El exacto lo calcula el servidor con la tasa de cada factura.
-  const retenido = redondear(facturadas.reduce((s, v) => s + (v.original * 16) / 116, 0) * (retencion / 100))
+  // Lo calcula el sistema, sobre toda la factura: repetir la cuenta aqui dejaba
+  // una diferencia que quedaba como "otro ingreso" que no existe.
+  const retenido = redondear(facturadas.reduce((s, v) => s + (retencion === 75 ? v.retencion_75 : retencion === 100 ? v.retencion_100 : 0), 0))
   const esperado = redondear(total - retenido)
   const enBs = EN_BOLIVARES.has(metodo) && bcv > 0
   const esperadoBs = redondear(esperado * bcv)
@@ -381,7 +381,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
       </div>
       {retenido > 0 && (
         <p className="mt-3 text-xs text-neutral-500">
-          IVA retenido ≈ {dinero(retenido)} (el exacto sale de cada factura). No entra al banco: se descuenta del IVA a pagar.
+          IVA retenido: {dinero(retenido)}, sobre toda la factura. No entra al banco: se descuenta del IVA a pagar.
         </p>
       )}
       {faltaDecidir && (

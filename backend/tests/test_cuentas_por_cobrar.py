@@ -349,3 +349,47 @@ def test_sin_retencion_paga_menos_y_cierra_como_antes(client, variante):
         "pedido_ids": [p["id"]], "metodo_pago": "Efectivo $", "recibido": 8.0,
     })
     assert r.status_code == 200 and r.json()["comision"] == 2.0
+
+
+def _parte_fiada(client, db, variante):
+    """Venta de $10: $5 en efectivo y $5 a crédito, facturada."""
+    p = client.post("/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 2}], "nota": ""}).json()
+    r = client.post(f"/api/pedidos/{p['id']}/cobrar", json={
+        "metodo_pago": "Mixto", "cliente": "Empresa Sur",
+        "pagos": [{"metodo": "Efectivo $", "monto": 5.0}, {"metodo": "Fiado", "monto": 5.0}],
+    })
+    assert r.status_code == 200, r.text
+    pedido = db.get(models.Pedido, p["id"])
+    pedido.facturado = True
+    pedido.numero_factura = "F-1"
+    pedido.tasa_iva = 16
+    db.commit()
+    return p
+
+
+def test_la_pantalla_recibe_la_retencion_que_calcula_el_sistema(client, db, variante, libros):
+    """4-nov: en una venta parte fiada la pantalla calculaba sobre lo fiado
+    ($0,52) y el sistema sobre toda la factura ($1,04): quedaban $0,52 de "otro
+    ingreso" que no existen. El resumen trae la cifra, para que no se calcule
+    dos veces, y pagar lo que dice la pantalla no deja ni comisión ni ingreso."""
+    p = _parte_fiada(client, db, variante)
+    fila = client.get("/api/cobranzas/resumen").json()["ventas"][0]
+    assert (fila["retencion_75"], fila["retencion_100"]) == (1.04, 1.38)
+    r = client.post("/api/cobranzas/cobros", json={
+        "pedido_ids": [p["id"]], "metodo_pago": "Transferencia", "referencia": "1",
+        "retencion_iva_pct": 75, "recibido": round(fila["saldo"] - fila["retencion_75"], 2),
+    })
+    assert r.status_code == 200, r.text
+    c = r.json()
+    assert (c["retencion_iva"], c["excedente"], c["comision"], c["recibido"]) == (1.04, 0.0, 0.0, 3.96)
+    libros_cuadrados(client, db)
+
+
+def test_sin_factura_o_ya_retenida_no_hay_retencion_que_ofrecer(client, db, variante):
+    fiar(client, variante, cliente="Ana")
+    p = _venta_facturada(client, db, variante)
+    pedido = db.get(models.Pedido, p["id"])
+    pedido.retencion_iva_usd = 1.04
+    db.commit()
+    for fila in client.get("/api/cobranzas/resumen").json()["ventas"]:
+        assert (fila["retencion_75"], fila["retencion_100"]) == (0.0, 0.0)

@@ -3730,6 +3730,10 @@ class VentaPorCobrar(BaseModel):
     facturado: bool = False
     numero_factura: Optional[str] = None
     vencida: bool = False
+    # Lo que se retendria de esta venta, calculado por el sistema: la pantalla
+    # lo lee en vez de repetir la cuenta. Cero si no hay factura o ya se retuvo.
+    retencion_75: float = 0.0
+    retencion_100: float = 0.0
 
 
 class ResumenCxC(BaseModel):

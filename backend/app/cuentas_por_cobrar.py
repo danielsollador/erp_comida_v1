@@ -98,7 +98,16 @@ def _fecha(p: models.Pedido) -> datetime.datetime:
     return p.cerrado_en or p.creado_en
 
 
-def venta_por_cobrar(p: models.Pedido, cliente: Optional[models.Cliente], hoy_: datetime.datetime) -> schemas.VentaPorCobrar:
+def _iva_a_retener(db: Session, p: models.Pedido, pct: float) -> float:
+    """La retencion va sobre el IVA de toda la factura, no sobre la parte que
+    quedo a credito. Una sola cuenta: la usan el cobro y lo que ve la pantalla."""
+    if not p.facturado or p.retencion_iva_usd:
+        return 0.0
+    _, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.tasa_iva(db))
+    return impuestos.porcentaje_de(iva, pct)
+
+
+def venta_por_cobrar(db: Session, p: models.Pedido, cliente: Optional[models.Cliente], hoy_: datetime.datetime) -> schemas.VentaPorCobrar:
     dias = (hoy_ - _fecha(p)).days
     plazo = cliente.dias_credito if cliente else 0
     return schemas.VentaPorCobrar(
@@ -115,6 +124,8 @@ def venta_por_cobrar(p: models.Pedido, cliente: Optional[models.Cliente], hoy_: 
         numero_factura=p.numero_factura,
         # Sin plazo pactado no hay "vencida": no se inventa una fecha.
         vencida=bool(plazo) and dias > plazo,
+        retencion_75=_iva_a_retener(db, p, 75),
+        retencion_100=_iva_a_retener(db, p, 100),
     )
 
 
@@ -126,7 +137,7 @@ def resumen(db: Session) -> schemas.ResumenCxC:
     ventas_todas: List[schemas.VentaPorCobrar] = []
     for p in pedidos_por_cobrar(db):
         cliente = clientes.get(p.cliente_id)
-        fila = venta_por_cobrar(p, cliente, hoy_)
+        fila = venta_por_cobrar(db, p, cliente, hoy_)
         ventas_todas.append(fila)
         if cliente is None:
             sin_ficha.append(fila)
@@ -167,7 +178,7 @@ def _dadas_de_baja(db: Session, clientes: dict, hoy_: datetime.datetime) -> List
     )
     filas = []
     for p in pedidos:
-        fila = venta_por_cobrar(p, clientes.get(p.cliente_id), hoy_)
+        fila = venta_por_cobrar(db, p, clientes.get(p.cliente_id), hoy_)
         fila.fecha = p.fecha_castigo or fila.fecha
         fila.saldo = p.fiado_castigado
         fila.vencida = False
@@ -249,7 +260,7 @@ def estado_de_cuenta(db: Session, cliente: models.Cliente) -> schemas.EstadoDeCu
     for m in movs:
         saldo = round(saldo + m.cargo - m.abono, 2)
         m.saldo = saldo
-    pendientes = [venta_por_cobrar(p, cliente, hoy_) for p in pedidos_por_cobrar(db) if p.cliente_id == cliente.id]
+    pendientes = [venta_por_cobrar(db, p, cliente, hoy_) for p in pedidos_por_cobrar(db) if p.cliente_id == cliente.id]
     return schemas.EstadoDeCuenta(
         cliente=schemas.Cliente.model_validate(cliente),
         saldo=round(sum(v.saldo for v in pendientes), 2),
@@ -296,10 +307,9 @@ def _retener(db: Session, p: models.Pedido, pct: float, fecha: datetime.datetime
     """El IVA que el cliente retuvo de esta venta, en dolares. Se guarda en el
     pedido igual que si se hubiera retenido al cobrar en el punto: el Libro de
     Ventas y la declaracion lo leen de ahi."""
-    if not p.facturado or p.retencion_iva_usd:
+    retenido = _iva_a_retener(db, p, pct)
+    if not retenido:
         return 0.0
-    _, iva = impuestos.desglosar(p.total, p.tasa_iva or impuestos.tasa_iva(db))
-    retenido = impuestos.porcentaje_de(iva, pct)
     p.retencion_iva_pct = pct
     p.retencion_iva_usd = retenido
     if p.tasa_bcv:
