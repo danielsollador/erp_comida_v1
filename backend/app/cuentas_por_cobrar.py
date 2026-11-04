@@ -66,6 +66,25 @@ def pedidos_por_cobrar(db: Session) -> List[models.Pedido]:
     return [p for p in pedidos if p.fiado_saldo > 0]
 
 
+def bloquear_pedidos(db: Session, ids) -> List[models.Pedido]:
+    """Toma las filas de estas ventas hasta el commit y las vuelve a leer.
+
+    Sin esto dos personas leen el mismo saldo y cobran las dos: la deuda queda
+    en negativo. Se llama ANTES de mirar el saldo; quien llega segundo espera y
+    ve lo que dejo el primero. En orden de id para que dos cobros que marcaron
+    las mismas ventas no se traben entre si."""
+    pedidos = (
+        db.query(models.Pedido)
+        .filter(models.Pedido.id.in_(list(ids)))
+        .order_by(models.Pedido.id)
+        .with_for_update(of=models.Pedido)
+        .all()
+    )
+    for p in pedidos:
+        db.expire(p)
+    return pedidos
+
+
 def _fecha(p: models.Pedido) -> datetime.datetime:
     return p.cerrado_en or p.creado_en
 
@@ -284,7 +303,7 @@ def cobrar(db: Session, body: schemas.CobroClienteCreate) -> models.CobroCliente
     """Salda de una vez las ventas marcadas. No hace commit."""
     referencia = _validar_forma(body.metodo_pago, body.referencia)
     ids = list(dict.fromkeys(body.pedido_ids))
-    pedidos = db.query(models.Pedido).filter(models.Pedido.id.in_(ids)).all()
+    pedidos = bloquear_pedidos(db, ids)
     if len(pedidos) != len(ids):
         raise ErrorCobro(404, "Alguna de esas ventas no existe")
     cliente = _cliente(db, body.cliente_id)
@@ -352,6 +371,7 @@ def abonar_a_cuenta(db: Session, cliente: models.Cliente, body: schemas.AbonoACu
     """"Abono a lo que debo": se aplica de la venta mas vieja a la mas nueva.
     Un pago mitad Zelle y mitad pago movil son dos abonos. No hace commit."""
     referencia = _validar_forma(body.metodo_pago, body.referencia)
+    bloquear_pedidos(db, [p.id for p in pedidos_por_cobrar(db) if p.cliente_id == cliente.id])
     pendientes = [p for p in pedidos_por_cobrar(db) if p.cliente_id == cliente.id]
     debe = round(sum(p.fiado_saldo for p in pendientes), 2)
     monto = round(body.monto, 2)
@@ -367,6 +387,7 @@ def abonar_ventas(db: Session, body: schemas.AbonoAVentas) -> models.CobroClient
     No hace commit."""
     referencia = _validar_forma(body.metodo_pago, body.referencia)
     ids = set(body.pedido_ids)
+    bloquear_pedidos(db, ids)
     marcadas = [p for p in pedidos_por_cobrar(db) if p.id in ids]
     if len(marcadas) != len(ids):
         raise ErrorCobro(409, "Alguna de esas ventas ya no debe nada: vuelve a cargar la lista.")
@@ -411,12 +432,15 @@ def _aplicar_abono(db, pedidos, body, monto, referencia, cliente_id, quien) -> m
 
 def anular_cobro(db: Session, cobro: models.CobroCliente) -> None:
     """Las ventas vuelven a deberse y el asiento se compensa. No hace commit."""
+    db.query(models.CobroCliente).filter(models.CobroCliente.id == cobro.id).with_for_update(of=models.CobroCliente).one()
+    db.expire(cobro)
     if cobro.anulado:
         raise ErrorCobro(409, "Ese cobro ya estaba anulado")
     try:
         contabilidad.asegurar_ejercicio_abierto(db, cobro.fecha, "ese cobro")
     except contabilidad.ErrorEjercicioCerrado as e:
         raise ErrorCobro(409, str(e))
+    bloquear_pedidos(db, [a.pedido_id for a in cobro.abonos])
     for a in list(cobro.abonos):
         p = a.pedido
         p.fiado_saldado = False
@@ -434,6 +458,7 @@ def anular_cobro(db: Session, cobro: models.CobroCliente) -> None:
 
 def dar_por_perdida(db: Session, p: models.Pedido, motivo: str) -> float:
     """Lo que falta de esta venta deja de deberse y va a gasto. No hace commit."""
+    bloquear_pedidos(db, [p.id])
     if p.devuelto:
         raise ErrorCobro(409, "Esa venta fue devuelta: ya no se debe")
     saldo = p.fiado_saldo
@@ -448,6 +473,7 @@ def dar_por_perdida(db: Session, p: models.Pedido, motivo: str) -> float:
 
 def recuperar_perdida(db: Session, p: models.Pedido) -> None:
     """Se dio por perdida y al final si va a pagar: vuelve a deberse."""
+    bloquear_pedidos(db, [p.id])
     if not p.fiado_castigado:
         raise ErrorCobro(409, "Esa venta no estaba dada por perdida")
     try:

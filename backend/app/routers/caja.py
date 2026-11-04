@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import contabilidad, models, schemas
+from .. import contabilidad, cuentas_por_cobrar, models, schemas
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
@@ -1150,7 +1150,7 @@ def listar_fiado(db: Session = Depends(get_db)):
 @router.post("/fiado/{pedido_id}/cobrar")
 def cobrar_fiado(pedido_id: int, body: schemas.SaldarFiadoRequest, db: Session = Depends(get_db)):
     """El cliente vino a pagar lo que debia."""
-    pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
+    pedido = next(iter(cuentas_por_cobrar.bloquear_pedidos(db, [pedido_id])), None)
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     if pedido.fiado_saldado:
