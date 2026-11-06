@@ -567,14 +567,12 @@ def test_exportar_no_mueve_nada(client, db, libros, variante):
     assert saldo(db, "1015") == 10.0
 
 
-def test_exportar_lo_puede_hacer_quien_ve_la_lista(fuera, variante):
+def test_exportar_lo_puede_hacer_quien_ve_la_lista(fuera, variante, monkeypatch, tmp_path):
     """La caja entra al módulo y exporta; cocina no entra; sin sesión, nadie."""
-    cuentas = (("cajera-cxc", "clave-de-caja-larga", "caja"), ("cocina-cxc", "clave-de-cocina-larga", "cocina"))
-    for usuario, clave, rol in cuentas:
-        try:
-            usuarios.crear(usuario, clave, rol=rol, locales=[settings.LOCAL_SLUG])
-        except usuarios.ErrorUsuarios:
-            pass
+    # Un almacén propio: otras pruebas cuentan cuántas cuentas hay por rol.
+    monkeypatch.setattr(usuarios, "USERS_FILE", tmp_path / "users.json")
+    usuarios.crear("cajera-cxc", "clave-de-caja-larga", rol="caja", locales=[settings.LOCAL_SLUG])
+    usuarios.crear("cocina-cxc", "clave-de-cocina-larga", rol="cocina", locales=[settings.LOCAL_SLUG])
     assert exportar(fuera, "csv", [1]).status_code == 401
     entrar(fuera, "cocina-cxc", "clave-de-cocina-larga")
     assert exportar(fuera, "csv", [1]).status_code == 403
