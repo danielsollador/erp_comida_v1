@@ -373,6 +373,9 @@ Lo que se vendió «A crédito» en el punto de venta y falta cobrar. No hay que
 2. Marca las ventas que te están pagando. Abajo se va sumando el total.
 3. Toca «Pagar o abonar», elige «Cómo pagó» y escribe «Cuánto pagó». Si la forma es en bolívares, el monto va en bolívares. Vacío significa que paga todo lo marcado.
 
+### Exportar la lista
+En «Quién me debe», toca «Exportar» junto al buscador y elige CSV o Excel. Baja las ventas que se ven, con el mismo buscador y el mismo orden; marcar ventas no cambia nada. Una venta que ya se cobró no sale. «Cobros hechos» y «Dadas de baja» no se exportan.
+
 ### Reglas que confunden
 - **Paga menos de lo marcado:** se pregunta qué pasa con lo que falta. «Quedan debiendo» es un abono, y se aplica de la venta más vieja a la más nueva. «No se cobran» cierra la deuda y la diferencia queda como comisión o descuento.
 - **Paga de más:** se pregunta antes, y lo de más queda como otro ingreso.
