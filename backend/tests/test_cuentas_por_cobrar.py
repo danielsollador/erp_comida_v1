@@ -588,7 +588,7 @@ def test_exportar_mil_ventas_en_los_dos_formatos(client, db):
     sale completo, en el orden pedido."""
     pedidos = []
     for n in range(1000):
-        p = models.Pedido(numero=n + 1, cliente=f"Cliente {n:04d}", pagado=True)
+        p = models.Pedido(numero=n + 1, cliente=f"Cliente {n:04d}")
         p.pagos.append(models.PagoPedido(metodo="Fiado", monto=1.5))
         pedidos.append(p)
     db.add_all(pedidos)
