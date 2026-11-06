@@ -10,7 +10,7 @@ Saber quién debe lo vendido a crédito y cobrarlo sin crear clientes antes. Lo 
 
 Comprobado el 4-nov en local, con pantalla y pruebas. **No comprobado:** PostgreSQL, producción, fiar en la pantalla del punto de venta (sí el mismo cobro por detrás) y teléfono.
 
-- **Lista:** una fila por venta, con buscador. Se marcan ventas y se paga, abona o da de baja. No se exporta. Ninguna pantalla crea fichas ni muestra estado de cuenta o vencidas.
+- **Lista:** una fila por venta, con buscador. Se marcan ventas y se paga, abona o da de baja. Se exporta a CSV y Excel (ver "Exportar la lista"). Ninguna pantalla crea fichas ni muestra estado de cuenta o vencidas.
 - **Paga menos:** "Quedan debiendo" abona de la venta más vieja a la más nueva; "No se cobran" deja lo que falta como comisión. **Paga de más:** pregunta, y es otro ingreso.
 - **Bolívares:** convierte a la tasa BCV de hoy y solo guarda dólares. La pantalla no deja elegir la fecha del cobro.
 - **Nombres y permisos:** "José Pérez" y "JOSE-PEREZ" son 2 clientes en la lista, pero una ficha los une. La cajera puede cobrar, anular, dar de baja y recuperar, y el cobro no guarda quién lo hizo.
@@ -69,7 +69,9 @@ En http://localhost:5181, con la caja abierta. Los pasos dicen cómo funciona ho
 
 ## Exportar la lista
 
-Bloque 1.2a. **Aprobada el 6-nov por Daniel.** Nada de esto existe todavía. El dueño o la caja sacan la lista de quién debe, para mandarla o trabajarla fuera del sistema: dos toques, sin escribir nada. Solo lee: no mueve saldos, asientos ni cierres. "Cobros hechos" y "Dadas de baja" no se exportan.
+Bloque 1.2a. **Implementada el 6-nov** en la rama `exportar-cuentas-por-cobrar`, sin desplegar. **Falta comprobarla en un Excel con configuración regional de Venezuela.** El dueño o la caja sacan la lista de quién debe, para mandarla o trabajarla fuera del sistema: dos toques, sin escribir nada. Solo lee: no mueve saldos, asientos ni cierres. "Cobros hechos" y "Dadas de baja" no se exportan.
+
+La pantalla pide las ventas por su id, no por su número, porque el número de comanda se reinicia cada día. Los montos los pone el sistema al exportar.
 
 **Qué tiene que pasar:**
 

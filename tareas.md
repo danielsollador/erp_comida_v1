@@ -16,11 +16,11 @@
 
 ### 1.2a Exportar Cuentas por cobrar
 - [x] Spec `specs/cuentas-por-cobrar.md` > Exportar la lista (aprobada el 6-nov)
-- [ ] Pruebas: columnas, orden, venta ya cobrada, permisos, separadores, fórmulas y 1.000 ventas
-- [ ] Backend: exportación a CSV y Excel
-- [ ] `descargar`: pedir por POST y guardar el archivo sin salir de la pantalla
-- [ ] `Tabla`: opción de exportar, activa solo en "Quién me debe"
-- [ ] Probar con Playwright la descarga de 1.000 ventas
+- [x] Pruebas: columnas, orden, venta ya cobrada, permisos, separadores, fórmulas y 1.000 ventas
+- [x] Backend: exportación a CSV y Excel
+- [x] `descargar`: pedir por POST y guardar el archivo sin salir de la pantalla
+- [x] `Tabla`: opción de exportar, activa solo en "Quién me debe"
+- [x] Probar con Playwright la descarga de 1.000 ventas
 - [ ] Validar en un Excel con configuración regional de Venezuela
 
 ### 1.3 Errores de la auditoría QA

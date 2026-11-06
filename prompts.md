@@ -363,3 +363,7 @@ Apruebo la sección "Exportar la lista", con el apóstrofo en el CSV y tus tres 
 Agrega una regla: exportar debe funcionar con al menos 1.000 ventas en pantalla, aunque los números no quepan en la dirección de la descarga. Inclúyela en las pruebas y ajusta el Cómo si hace falta.
 
 Crea la rama desde origin/master, haz el commit de estos documentos sin incluir backend/evals, y no subas nada ni empieces a programar.
+
+## 69 (2026-11-06, Daniel)
+
+/implementar 1.2a en la rama exportar-cuentas-por-cobrar, no en fase1, porque este módulo no está en esa rama. Si no estás en esa rama, cámbiate a ella antes de empezar.

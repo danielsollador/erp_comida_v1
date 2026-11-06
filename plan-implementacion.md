@@ -106,7 +106,7 @@ Orden: 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los errores 
 
 - `Tabla`: opción de exportar junto al buscador, apagada por defecto y activa solo en esta tabla.
 - Descarga: `descargar` acepta un cuerpo opcional. Con cuerpo, pide por POST también en la web y guarda el archivo recibido, sin salir de la pantalla; sin cuerpo, las descargas actuales siguen igual. En la app de Capacitor abre el menú de compartir, como hoy.
-- Backend: endpoint POST en `cobranzas.py`, cubierto por el permiso `cobranzas`, que solo lee. Recibe en el cuerpo el formato y los números de venta que se ven, en su orden, porque 1.000 números no se pueden garantizar en una dirección. Es la misma ruta para cualquier cantidad. Los montos salen de la base, y lo que ya no se debe se omite.
+- Backend: endpoint POST en `cobranzas.py`, cubierto por el permiso `cobranzas`, que solo lee. Recibe en el cuerpo el formato y los ids de las ventas que se ven, en su orden, porque 1.000 no se pueden garantizar en una dirección. Son ids y no números de venta porque el número de comanda se reinicia cada día. Es la misma ruta para cualquier cantidad. Los montos salen de la base, y lo que ya no se debe se omite.
 - CSV: se reutiliza `exportar_csv` con una opción nueva para usar `;`, coma decimal y BOM (es-VE usa `;` como separador de lista). Las otras exportaciones no cambian.
 - Excel: `.xlsx` real con `openpyxl`, con números y fechas de verdad.
 - Fórmulas: en el `.xlsx`, la celda del cliente se fuerza a texto, porque `openpyxl` convierte `=` en fórmula. En el CSV, un apóstrofo delante del texto que empiece con `=`, `+`, `-` o `@`.
