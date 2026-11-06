@@ -14,6 +14,15 @@
 - [ ] Fusionar en `master` y borrar `app-expo` y `app-expo-play`
 - [ ] Desplegar cuando Leider lo pida
 
+### 1.2a Exportar Cuentas por cobrar
+- [x] Spec `specs/cuentas-por-cobrar.md` > Exportar la lista (aprobada el 6-nov)
+- [ ] Pruebas: columnas, orden, venta ya cobrada, permisos, separadores, fórmulas y 1.000 ventas
+- [ ] Backend: exportación a CSV y Excel
+- [ ] `descargar`: pedir por POST y guardar el archivo sin salir de la pantalla
+- [ ] `Tabla`: opción de exportar, activa solo en "Quién me debe"
+- [ ] Probar con Playwright la descarga de 1.000 ventas
+- [ ] Validar en un Excel con configuración regional de Venezuela
+
 ### 1.3 Errores de la auditoría QA
 - [ ] Correr las pruebas QA y escribir `specs/qa.md`
 - [ ] Leider aprueba la lista
