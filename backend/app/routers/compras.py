@@ -399,6 +399,11 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
     )
     db.add(db_factura)
     db.flush()
+    # Proveedores se alimenta de las facturas (QA nov, hallazgo 18): en
+    # produccion el catalogo tenia uno solo aunque habia facturas de varios, y
+    # "cuanto le debo a cada uno" no servia.
+    if factura_rif and not db.query(models.Proveedor.id).filter(models.Proveedor.rif == factura_rif).first():
+        db.add(models.Proveedor(nombre=(factura.proveedor_nombre or factura_rif).strip(), rif=factura_rif))
 
     if es_mixto:
         # Las partes tienen que dar lo que se le paga al proveedor: ni mas

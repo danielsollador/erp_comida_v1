@@ -317,3 +317,13 @@ def test_una_factura_mal_cargada_se_anula_entera(client, db, insumo, libros):
     assert insumo.costo_unitario == pytest.approx(costo_antes, abs=1e-4), "el costo vuelve al de antes"
     assert saldo(db, "1020") == pytest.approx(banco)
     libros_cuadrados(client, db)
+
+
+def test_un_proveedor_nuevo_entra_a_proveedores_al_cargar_su_factura(client, db):
+    """Hallazgo 18: la factura de «Carnicería QA» no lo creaba en Proveedores."""
+    con_libros(db)
+    client.post("/api/compras/facturas", json={
+        "numero_factura": "P-1", "proveedor_nombre": "Carnicería QA", "proveedor_rif": "J-40000022-0",
+        "forma_pago": "Transferencia", "referencia_pago": "X1", "gastos": [{"concepto": "Servicio", "monto": 10}], "iva": 0,
+    })
+    assert db.query(models.Proveedor).filter_by(nombre="Carnicería QA").count() == 1
