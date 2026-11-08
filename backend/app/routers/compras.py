@@ -1025,6 +1025,8 @@ def _se_puede_deshacer(db: Session, f: models.FacturaCompra) -> Optional[str]:
     mezclado en el promedio: entonces el costo de antes se recupera exacto."""
     if f.notas_credito or f.reclamos:
         return "ya tiene notas de crédito o faltantes reclamados"
+    if f.abonos or (f.forma_pago == "Credito" and f.pagada):
+        return "ya tiene pagos al proveedor; anúlalos con él primero"
     for i in f.items:
         ing = i.ingrediente
         if ing is None or ing.tipo == "desechable":

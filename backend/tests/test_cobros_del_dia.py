@@ -12,7 +12,9 @@ def vender(client, variante, metodo, referencia=None, cliente="Ana", cantidad=1)
     cuerpo = {"metodo_pago": metodo}
     if referencia is not None:
         cuerpo["referencia"] = referencia
-    r = client.post(f"/api/pedidos/{p['id']}/cobrar", json=cuerpo)
+    # Una referencia ya usada pide confirmar (QA nov, hallazgo 23): aqui se
+    # confirma, que es justo lo que estas pruebas marcan despues.
+    r = client.post(f"/api/pedidos/{p['id']}/cobrar", json=cuerpo, headers={"X-Confirmado": "referencia_repetida"})
     assert r.status_code == 200, r.text
     return r.json()
 

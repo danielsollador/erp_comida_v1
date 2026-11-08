@@ -144,6 +144,9 @@ def test_un_dia_completo_deja_los_libros_cuadrados(client, libros, variante, ins
     assert cierre.json()["divisas_diferencia"] == 0.5
 
     libros_cuadrados(client, db)
+    # Desde el 1.10 (specs/caja.md) la diferencia entra a los libros al aprobarla.
+    client.post("/api/caja/diferencias/aprobar", json={"tipo": "cierre", "id": cierre.json()["id"], "motivo": "conteo"})
+    db.expire_all()
 
     # Y tras el cierre los libros dicen lo que se conto (CAJERO). El "debes
     # tener" sigue siendo el de antes de contar: el faltante no es una salida
@@ -255,6 +258,9 @@ def test_la_diferencia_de_divisas_del_cierre_tambien_va_a_los_libros(client, lib
     bs = gaveta(client, "1010")["esperado"]
     cierre = caja_cerrar(client, bs, 28.0).json()
     assert cierre["divisas_diferencia"] == -2.0
+    assert saldo(db, "1011") == 30.0, "hasta aprobarla, la diferencia no toca los libros (1.10)"
+    client.post("/api/caja/diferencias/aprobar", json={"tipo": "cierre", "id": cierre["id"], "motivo": "faltan 2"})
+    db.expire_all()
     assert saldo(db, "1011") == 28.0, "los libros tienen que decir lo que hay en la gaveta"
     assert saldo(db, "6030") == 2.0
     libros_cuadrados(client, db)
