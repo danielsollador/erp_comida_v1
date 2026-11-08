@@ -73,7 +73,7 @@ def test_la_declaracion_descuenta_lo_retenido(client, db, variante):
     fecha = p.cerrado_en.date()
     client.post(f"/api/impuestos/ventas/{v['id']}/retencion", json={"comprobante": comprobante(fecha), "fecha": fecha.isoformat()})
 
-    d = client.post("/api/impuestos/declaraciones", json={"anio": fecha.year, "mes": fecha.month}).json()
+    d = client.post("/api/impuestos/declaraciones", json={"anio": fecha.year, "mes": fecha.month}, headers={"X-Confirmado": "sin_rif,debito_cero"}).json()
     iva = iva_bs(db, v["id"])
     retenido = impuestos.porcentaje_de(iva, 75)
     assert d["iva_debito_bs"] == iva
@@ -162,7 +162,7 @@ def test_el_comprobante_toma_el_monto_retenido_y_la_declaracion_salda_1035(clien
     assert c.status_code == 200, c.text
     assert c.json()["iva_retenido_bs"] == ped.retencion_iva_bs
 
-    d = client.post("/api/impuestos/declaraciones", json={"anio": fecha.year, "mes": fecha.month}).json()
+    d = client.post("/api/impuestos/declaraciones", json={"anio": fecha.year, "mes": fecha.month}, headers={"X-Confirmado": "sin_rif,debito_cero"}).json()
     assert d["retenciones_usadas"] == v["retencion_iva_usd"]
     assert d["retenciones_usadas_bs"] == ped.retencion_iva_bs
     assert saldo(db, "1035") == 0

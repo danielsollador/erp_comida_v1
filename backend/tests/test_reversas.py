@@ -49,7 +49,9 @@ def test_el_cierre_mal_tecleado_se_puede_anular(client, db, variante):
 
     cierre = caja_cerrar(client, 1000.0, nota="dedo gordo").json()
     assert cierre["diferencia"] == 990.0
-    assert saldo(db, "1010") == 1000.0
+    # Desde el 1.10 el sobrante no entra solo: queda por aprobar.
+    assert cierre["estado_diferencia"] == "por_aprobar"
+    assert saldo(db, "1010") == caja_antes
 
     r = client.post(f"/api/caja/cierres/{cierre['id']}/anular", json={"motivo": "mal tecleado"})
     assert r.status_code == 200
@@ -246,7 +248,7 @@ def test_la_declaracion_mal_hecha_se_puede_anular(client, db, variante):
     _venta_en(client, db, variante, mes_pasado.year, mes_pasado.month, "00-1")
 
     dec = client.post(
-        "/api/impuestos/declaraciones", json={"anio": mes_pasado.year, "mes": mes_pasado.month}
+        "/api/impuestos/declaraciones", json={"anio": mes_pasado.year, "mes": mes_pasado.month}, headers={"X-Confirmado": "sin_rif,debito_cero"}
     ).json()
     assert dec["iva_debito"] > 0
     debito_declarado = saldo(db, "2030")
@@ -259,7 +261,7 @@ def test_la_declaracion_mal_hecha_se_puede_anular(client, db, variante):
     pendientes = client.get("/api/impuestos/periodos-pendientes").json()
     assert any(p["mes"] == mes_pasado.month and p["anio"] == mes_pasado.year for p in pendientes)
     otra = client.post(
-        "/api/impuestos/declaraciones", json={"anio": mes_pasado.year, "mes": mes_pasado.month}
+        "/api/impuestos/declaraciones", json={"anio": mes_pasado.year, "mes": mes_pasado.month}, headers={"X-Confirmado": "sin_rif,debito_cero"}
     )
     assert otra.status_code == 200
 
@@ -277,10 +279,12 @@ def test_no_se_anula_un_mes_si_hay_meses_posteriores_declarados(client, db, vari
     viejo = client.post(
         "/api/impuestos/declaraciones",
         json={"anio": fin_mes_anterior.year, "mes": fin_mes_anterior.month},
+        headers={"X-Confirmado": "sin_rif,debito_cero"},
     ).json()
     client.post(
         "/api/impuestos/declaraciones",
         json={"anio": fin_mes_pasado.year, "mes": fin_mes_pasado.month},
+        headers={"X-Confirmado": "sin_rif,debito_cero"},
     )
 
     r = client.post(f"/api/impuestos/declaraciones/{viejo['id']}/anular")
@@ -294,7 +298,7 @@ def test_anular_una_declaracion_pagada_devuelve_la_plata(client, db, variante):
     _venta_en(client, db, variante, mes_pasado.year, mes_pasado.month, "00-1")
 
     dec = client.post(
-        "/api/impuestos/declaraciones", json={"anio": mes_pasado.year, "mes": mes_pasado.month}
+        "/api/impuestos/declaraciones", json={"anio": mes_pasado.year, "mes": mes_pasado.month}, headers={"X-Confirmado": "sin_rif,debito_cero"}
     ).json()
     banco_antes = saldo(db, "1020")
     client.post(f"/api/impuestos/declaraciones/{dec['id']}/pagar", json={"forma_pago": "Banco"})

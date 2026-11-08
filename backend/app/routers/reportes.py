@@ -1638,8 +1638,50 @@ def _aviso_de_fiado(db: Session) -> Optional[schemas.Aviso]:
         tono="ojo",
         titulo=f"Te deben ${total:.2f} de {len(pedidos)} venta{'s' if len(pedidos) != 1 else ''} a crédito",
         detalle=f"La más vieja tiene {viejo} día{'s' if viejo != 1 else ''}." if viejo else "",
-        a="/ventas?e=fiada&r=90d",
+        a="/cobranzas",
     )
+
+
+def _avisos_de_caja(db: Session) -> List[schemas.Aviso]:
+    """Lo que el conteo no cuadro y sigue sin aprobar, y los dias con ventas
+    que nadie cerro (QA nov, hallazgos 3 y 19; specs/caja.md)."""
+    from .caja import diferencias_por_aprobar
+
+    out: List[schemas.Aviso] = []
+    pend = diferencias_por_aprobar(db)
+    if pend.filas:
+        n = len(pend.filas)
+        out.append(schemas.Aviso(
+            id="caja-por-aprobar",
+            tono="ojo" if pend.dias_mas_vieja > 3 else "info",
+            titulo=f"{n} diferencia{'s' if n != 1 else ''} de caja por aprobar ({'+' if pend.total > 0 else '−'}${abs(pend.total):.2f})",
+            detalle=(f"La más vieja tiene {pend.dias_mas_vieja} días. " if pend.dias_mas_vieja else "")
+            + "Hasta que la apruebes no entra a los libros.",
+            a="/caja/historial",
+        ))
+    desde = inicio_del_dia(hoy() - datetime.timedelta(days=30))
+    dias_venta = {
+        d.date() if isinstance(d, datetime.datetime) else d
+        for (d,) in db.query(models.Pedido.cerrado_en)
+        .filter(models.Pedido.estado == "pagado", models.Pedido.cerrado_en >= desde,
+                models.Pedido.cerrado_en < inicio_del_dia(hoy()))
+        .all()
+        if d
+    }
+    cerrados = {
+        c.date() for (c,) in db.query(models.CierreCaja.fecha)
+        .filter(models.CierreCaja.fecha >= desde, models.CierreCaja.anulado.is_(False)).all()
+    }
+    sin_cerrar = sorted(dias_venta - cerrados)
+    if len(sin_cerrar) > 1:
+        out.append(schemas.Aviso(
+            id="caja-sin-cerrar",
+            tono="ojo",
+            titulo=f"{len(sin_cerrar)} días con ventas y sin cierre de caja en el último mes",
+            detalle="El último: " + sin_cerrar[-1].strftime("%d/%m") + ". Sin cierre nadie contó la plata de ese día.",
+            a="/caja/historial",
+        ))
+    return out
 
 
 def _avisos_del_mes(db: Session) -> List[schemas.Aviso]:
@@ -1829,7 +1871,7 @@ def _paso_ventas(db: Session) -> schemas.PasoRecorrido:
             frase="Te deben {monto}",
             monto=deben,
             pendiente=True,
-            a="/ventas?e=fiada&r=90d",
+            a="/cobranzas",
             accion="Ver quién debe",
         )
     # Los mismos "pedidos" del panel de Hoy: lo cobrado desde la medianoche.
@@ -1875,7 +1917,13 @@ def _paso_caja(db: Session) -> schemas.PasoRecorrido:
 
     cerrada = cierre_de(hoy())
     if cerrada is not None:
-        dif = round(cerrada.diferencia or 0, 2)
+        # Todas las formas de pago, no solo la gaveta de bolivares: el 9-oct
+        # la portada habria dicho "cuadro" con $2.450 de faltante en dolares
+        # (QA nov, hallazgo 8). Los cierres viejos sin lineas: las dos gavetas.
+        if cerrada.lineas:
+            dif = round(sum(l.diferencia or 0 for l in cerrada.lineas), 2)
+        else:
+            dif = round((cerrada.diferencia or 0) + (cerrada.divisas_diferencia or 0), 2)
         if abs(dif) < 0.01:
             return schemas.PasoRecorrido(id="caja", frase="Cerrada: cuadró", a="/caja", accion="Ver el cierre")
         return schemas.PasoRecorrido(
@@ -1925,6 +1973,7 @@ def avisos(db: Session = Depends(get_db)):
     todos += alertas_explicadas.todas(db)
     todos += _avisos_de_deposito(db)
     todos += _avisos_de_cocina_y_proveedores(db)
+    todos += _avisos_de_caja(db)
     fiado = _aviso_de_fiado(db)
     if fiado:
         todos.append(fiado)

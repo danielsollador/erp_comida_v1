@@ -581,7 +581,7 @@ def _venta_facturada(client, db, variante, total_deseado, cuando):
 
 def test_no_se_puede_declarar_un_mes_que_no_termino(client):
     hoy_ = datetime.date.today()
-    r = client.post("/api/impuestos/declaraciones", json={"anio": hoy_.year, "mes": hoy_.month})
+    r = client.post("/api/impuestos/declaraciones", json={"anio": hoy_.year, "mes": hoy_.month}, headers={"X-Confirmado": "sin_rif,debito_cero"})
     assert r.status_code == 400
     assert "todavía no termina" in r.json()["detail"]
 
@@ -603,7 +603,7 @@ def test_declarar_cierra_el_iva_del_mes_contra_las_cuentas_fiscales(client, db, 
     debito_antes, credito_antes = saldo(db, "2030"), saldo(db, "1030")
     assert debito_antes == 160.0 and credito_antes == 16.0
 
-    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"}).json()
     assert d["iva_debito"] == 160.0
     assert d["iva_credito"] == 16.0
     assert d["credito_usado"] == 16.0
@@ -630,7 +630,7 @@ def test_el_credito_que_sobra_se_arrastra_al_mes_siguiente(client, db, variante)
               "fecha": datetime.datetime(anio_previo, mes_previo, 5).isoformat()},
     )
     d0 = client.post(
-        "/api/impuestos/declaraciones", json={"anio": anio_previo, "mes": mes_previo}
+        "/api/impuestos/declaraciones", json={"anio": anio_previo, "mes": mes_previo}, headers={"X-Confirmado": "sin_rif,debito_cero"}
     ).json()
     assert d0["iva_a_pagar"] == 0.0
     assert d0["credito_excedente"] == 80.0
@@ -638,7 +638,7 @@ def test_el_credito_que_sobra_se_arrastra_al_mes_siguiente(client, db, variante)
 
     # mes siguiente: una venta con $100 de IVA
     _venta_facturada(client, db, variante, 725.0, datetime.datetime(anio, mes, 15))
-    d1 = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    d1 = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"}).json()
     assert d1["credito_arrastrado"] == 80.0
     assert d1["iva_debito"] == 100.0
     assert d1["credito_usado"] == 80.0
@@ -661,7 +661,7 @@ def test_un_mes_con_solo_compras_tambien_se_declara(client, db):
     pendientes = client.get("/api/impuestos/periodos-pendientes").json()
     assert any(p["anio"] == anio and p["mes"] == mes for p in pendientes)
 
-    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"}).json()
     assert d["iva_credito"] == 48.0
     assert d["iva_a_pagar"] == 0.0
     assert d["credito_excedente"] == 48.0
@@ -670,15 +670,15 @@ def test_un_mes_con_solo_compras_tambien_se_declara(client, db):
 def test_no_se_declara_dos_veces_el_mismo_periodo(client, db, variante):
     anio, mes = _mes_pasado()
     _venta_facturada(client, db, variante, 116.0, datetime.datetime(anio, mes, 15))
-    client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes})
-    r = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes})
+    client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"})
+    r = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"})
     assert r.status_code == 409
 
 
 def test_pagar_el_iva_salda_la_deuda_y_saca_la_plata(client, db, variante):
     anio, mes = _mes_pasado()
     _venta_facturada(client, db, variante, 1160.0, datetime.datetime(anio, mes, 15))
-    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"}).json()
     assert saldo(db, "2020") == 160.0
 
     pagada = client.post(f"/api/impuestos/declaraciones/{d['id']}/pagar", json={"forma_pago": "Banco"}).json()
@@ -697,7 +697,7 @@ def test_la_salud_avisa_de_ventas_en_un_periodo_ya_declarado(client, db, variant
     ya se le presento al SENIAT."""
     anio, mes = _mes_pasado()
     _venta_facturada(client, db, variante, 116.0, datetime.datetime(anio, mes, 10))
-    client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes})
+    client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"})
     assert "ya declarado" not in str(client.get("/api/contabilidad/salud").json())
 
     _venta_facturada(client, db, variante, 58.0, datetime.datetime(anio, mes, 20))

@@ -3,11 +3,11 @@ import datetime
 import re
 from typing import List, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
-from .. import contabilidad, impuestos, models, schemas, tasas
+from .. import contabilidad, impuestos, models, salvaguardas, schemas, tasas
 from ..database import get_db
 from ..exportar_csv import nombre_de_archivo, respuesta_csv
 from ..rango import Rango
@@ -838,7 +838,7 @@ def periodos_pendientes(db: Session = Depends(get_db)):
 
 
 @router.post("/declaraciones", response_model=schemas.DeclaracionIva)
-def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)):
+def declarar_iva(body: schemas.DeclararIvaRequest, request: Request, db: Session = Depends(get_db)):
     if not 1 <= body.mes <= 12:
         raise HTTPException(status_code=400, detail="Mes inválido")
 
@@ -868,6 +868,28 @@ def declarar_iva(body: schemas.DeclararIvaRequest, db: Session = Depends(get_db)
             ),
         )
     debito, credito = t["debito"], t["credito"]
+    # Lo obvio se avisa antes de fijar el numero (QA nov, hallazgo 4):
+    # octubre se declaro con debito $0 teniendo 645 ventas sin facturar, y sin
+    # RIF ni razon social del negocio.
+    fiscal = db.query(models.ConfiguracionFiscal).first()
+    if not fiscal or not (fiscal.rif or "").strip() or not (fiscal.razon_social or "").strip():
+        salvaguardas.pedir_confirmacion(
+            request, "sin_rif",
+            "Faltan el RIF o la razón social del negocio: los libros salen sin cabecera. "
+            "Cárgalos en Impuestos › Configuración. ¿Declarar igual?",
+        )
+    sin_facturar = (
+        db.query(models.Pedido)
+        .filter(models.Pedido.estado == "pagado", models.Pedido.facturado.is_(False),
+                models.Pedido.devuelto.is_(False), models.Pedido.cerrado_en >= inicio, models.Pedido.cerrado_en < fin)
+        .count()
+    )
+    if sin_facturar and debito <= 0.005:
+        salvaguardas.pedir_confirmacion(
+            request, "debito_cero",
+            f"El IVA de ventas da $0 y hay {sin_facturar} ventas sin marcar como facturadas. Si se facturaron "
+            "con el talonario, márcalas antes con su número. ¿Declarar igual?",
+        )
     # Retenciones cobradas en caja (en dolares, en 1035) con comprobante de
     # este mes: las que el libro mayor descuenta.
     ret_usd = round(sum(
