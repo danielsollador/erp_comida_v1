@@ -398,6 +398,8 @@ export type FiltroDeposito = {
 export type ReporteResumen = {
   periodo: string
   etiqueta: string
+  /** False si quien mira no administra: viene sin ganancia, margen ni costo. */
+  ve_ganancia?: boolean
   /** El paso de `serie`: hora | dia | semana | mes. Lo decide el tamaño del rango. */
   granularidad: string
   ventas: number

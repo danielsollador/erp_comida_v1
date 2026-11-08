@@ -534,7 +534,7 @@ function Resumen({
           destacado
           delta={ant && <Variacion pct={ant.cambio_ventas_pct} texto={vs} />}
         />
-        {filtro ? (
+        {datos.ve_ganancia === false ? null : filtro ? (
           <Kpi
             titulo="Deja"
             ayuda="kpi.deja"
@@ -636,7 +636,8 @@ function Resumen({
         </Bloque>
       )}
 
-      {/* ── 4. El resultado ───────────────────────────────────────────── */}
+      {/* ── 4. El resultado (solo quien administra) ─────────────────── */}
+      {datos.ve_ganancia !== false && (
       <Bloque
         titulo={filtro ? `Qué deja ${de}` : 'Resultado'}
         descripcion={filtro ? 'Lo vendido menos su mercancía. Los gastos del local no son de un producto.' : 'Los mismos números del Estado de Resultados en Contabilidad.'}
@@ -685,6 +686,7 @@ function Resumen({
           </div>
         </div>
       </Bloque>
+      )}
     </>
   )
 }

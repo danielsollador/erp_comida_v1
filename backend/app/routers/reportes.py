@@ -1,12 +1,14 @@
 import datetime
+import re
 from typing import Dict, List, Optional, Set
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from .. import combos, consolidacion, contabilidad, kardex, models, reposicion, schemas, seed
 from ..consolidacion import Bloque, pedidos_pagados as _pedidos_pagados
+from ..acceso import auth, permisos
 from ..database import get_db
 from ..rango import Rango, anterior, granularidad, serie as serie_del_rango
 from ..timeutils import ahora, hoy, inicio_del_dia
@@ -799,7 +801,39 @@ def _insights(
     return insights
 
 
+SENSIBLE = re.compile(r"ganancia|margen|costo|gastos|utilidad")
+
+
+def _sin_lo_sensible(d):
+    """Ganancia, margen y costo en cero, en todo nivel del reporte, para quien
+    no administra (QA nov, hallazgo 9: la cajera veia la ganancia del mes)."""
+    if isinstance(d, dict):
+        return {k: (0 if SENSIBLE.search(k) and isinstance(v, (int, float)) else _sin_lo_sensible(v)) for k, v in d.items()}
+    if isinstance(d, list):
+        return [_sin_lo_sensible(x) for x in d]
+    return d
+
+
 @router.get("/resumen", response_model=schemas.ReporteResumen)
+def resumen_segun_quien(
+    request: Request,
+    rango: Rango = Depends(),
+    paso: Optional[str] = None,
+    categoria_id: List[int] = Query(default=[]),
+    producto_id: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+):
+    """El resumen; sin ganancia, margen ni costo si quien pregunta no
+    administra (lo mismo que A medida con sus medidas sensibles)."""
+    r = resumen(rango, paso, categoria_id, producto_id, db)
+    if permisos.administra(auth.sesion_actual(request).get("rol")):
+        return r
+    d = _sin_lo_sensible(r.model_dump())
+    d["insights"] = [i for i in d.get("insights", []) if not SENSIBLE.search(f"{i.get('titulo', '')} {i.get('detalle', '')}".lower())]
+    d["ve_ganancia"] = False
+    return schemas.ReporteResumen(**d)
+
+
 def resumen(
     rango: Rango = Depends(),
     paso: Optional[str] = None,

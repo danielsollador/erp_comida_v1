@@ -1708,6 +1708,8 @@ class ReporteResumen(BaseModel):
     # Con que paso viene `serie`: hora | dia | semana | mes. Depende del
     # tamaño del rango, no de que boton se toco.
     granularidad: str = "dia"
+    # False para quien no administra: viene sin ganancia, margen ni costo.
+    ve_ganancia: bool = True
     ventas: float  # bruto que entro por caja, incluido el IVA de lo facturado
     # Bolivares reales del periodo: cada venta a la tasa del dia en que se
     # cobro. No es `ventas` por la tasa de hoy.
