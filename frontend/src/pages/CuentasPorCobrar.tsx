@@ -449,7 +449,7 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
     }
   }
   return (
-    <Seccion titulo="Cobros hechos" ayuda="Lo que se ha cobrado desde aquí. Si uno se anotó mal, anúlalo y las ventas vuelven a deberse." plano>
+    <Seccion titulo="Cobros hechos" ayuda="Todo lo cobrado de deudas, aquí y desde Ventas o Caja. Si un cobro de aquí se anotó mal, anúlalo y las ventas vuelven a deberse; un abono se deshace donde se hizo." plano>
       {error && <div className="px-4 pt-3"><Aviso>{error}</Aviso></div>}
       {cobros.length === 0 ? (
         <Vacio icono="cobrar" titulo="Todavía no hay cobros" />
@@ -473,7 +473,7 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
                 <strong>{dinero(c.recibido)}</strong>
                 <span className="block text-xs text-neutral-500">de {dinero(c.monto)}</span>
               </span>
-              {!c.anulado && (
+              {!c.anulado && c.origen !== 'abono' && (
                 <button onClick={() => void anular(c)} className="text-xs underline text-neutral-500 hover:text-peligro-600">
                   Anular
                 </button>

@@ -3853,6 +3853,9 @@ class CobroCliente(BaseModel):
     nota: str
     anulado: bool
     ventas: List[int] = []
+    # "abono": un abono hecho desde Ventas o Caja (no se anula aqui, se
+    # deshace donde se hizo). "cobro": hecho desde Cuentas por cobrar.
+    origen: str = "cobro"
 
 
 class MovimientoCuenta(BaseModel):

@@ -158,8 +158,25 @@ def recuperar_perdida(pedido_id: int, db: Session = Depends(get_db)):
 
 @router.get("/cobros", response_model=List[schemas.CobroCliente])
 def listar_cobros(db: Session = Depends(get_db)):
-    cobros = db.query(models.CobroCliente).order_by(models.CobroCliente.fecha.desc()).limit(200).all()
-    return [cxc.cobro_a_esquema(c) for c in cobros]
+    """Todo lo cobrado de deudas: lo cobrado aqui y los abonos hechos desde
+    Ventas o Caja. Decia "Todavia no hay cobros" con 10 abonos hechos por
+    alla (QA nov, hallazgo 26)."""
+    cobros = [cxc.cobro_a_esquema(c) for c in
+              db.query(models.CobroCliente).order_by(models.CobroCliente.fecha.desc()).limit(200).all()]
+    for a in (
+        db.query(models.AbonoFiado)
+        .filter(models.AbonoFiado.cobro_id.is_(None))
+        .order_by(models.AbonoFiado.fecha.desc())
+        .limit(200)
+        .all()
+    ):
+        cobros.append(schemas.CobroCliente(
+            id=-a.id, cliente=a.pedido.cliente if a.pedido else "", fecha=a.fecha, metodo_pago=a.metodo_pago or "",
+            referencia=a.referencia or "", monto=a.monto, comision=0.0, recibido=a.monto,
+            nota="Abono hecho desde Ventas o Caja", anulado=False, ventas=[a.pedido_id], origen="abono",
+        ))
+    cobros.sort(key=lambda c: c.fecha, reverse=True)
+    return cobros[:200]
 
 
 @router.post("/cobros", response_model=schemas.CobroCliente)

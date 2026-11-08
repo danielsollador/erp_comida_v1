@@ -2490,6 +2490,8 @@ export type ResumenCxC = {
 }
 
 export type CobroCliente = {
+  /** 'abono': hecho desde Ventas o Caja; se deshace donde se hizo. */
+  origen?: 'cobro' | 'abono'
   id: number
   cliente_id: number | null
   cliente: string
