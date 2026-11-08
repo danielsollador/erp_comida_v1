@@ -35,6 +35,9 @@ PLAN_DE_CUENTAS = [
     # habia Bs 400.
     ("1011", "Caja en divisas (efectivo $)", "activo", "deudora"),
     ("1015", "Cuentas por cobrar a clientes", "activo", "deudora"),
+    # Lo que se le adelanta a un empleado: es plata que se le "presta" hasta
+    # descontarla del sueldo, no un gasto todavia.
+    ("1016", "Anticipos a empleados", "activo", "deudora"),
     ("1020", "Banco / pagos electronicos", "activo", "deudora"),
     # Zelle entra en dolares y no es efectivo -no hay billete que contar en el
     # arqueo-, asi que necesita su propia cuenta y no puede compartir la de
@@ -60,6 +63,9 @@ PLAN_DE_CUENTAS = [
     # El IVA que se le retiene al proveedor (agente de retencion) no es del
     # proveedor ni del negocio: se le debe al SENIAT hasta enterarlo.
     ("2050", "IVA retenido por enterar", "pasivo", "acreedora"),
+    # Lo mismo con el ISLR: lo que se le retiene a quien se le paga sin
+    # factura (honorarios, por ejemplo) es del SENIAT hasta enterarlo.
+    ("2060", "ISLR retenido por enterar", "pasivo", "acreedora"),
     ("3010", "Capital del propietario", "patrimonio", "acreedora"),
     ("3020", "Utilidades retenidas", "patrimonio", "acreedora"),
     # Contra-cuenta de patrimonio (ver CUENTAS_CONTRA): se debita, su saldo
@@ -95,6 +101,24 @@ PLAN_DE_CUENTAS = [
     # El flete que cobra el proveedor en la factura. Aparte de los gastos
     # operativos porque el transporte lleva retencion de ISLR propia.
     ("6060", "Fletes y transporte", "gasto", "deudora"),
+    # Lo que cobra el banco: comisiones, mantenimiento, el ITF. Sale de la
+    # conciliacion bancaria (reglas del estado de cuenta).
+    ("6070", "Comisiones y gastos bancarios", "gasto", "deudora"),
+    # Lo que entra sin ser venta: intereses del banco, reintegros.
+    ("4040", "Otros ingresos", "ingreso", "acreedora"),
+    # Lo que se paga sin factura (modulo Pagos), cada concepto en su cuenta:
+    # meterlo todo en 6010 hacia imposible decir cuanto cuesta la nomina.
+    ("6080", "Sueldos y salarios", "gasto", "deudora"),
+    ("6090", "Honorarios y servicios profesionales", "gasto", "deudora"),
+    ("6100", "Alquiler", "gasto", "deudora"),
+    ("6110", "Servicios publicos", "gasto", "deudora"),
+    ("6120", "Mantenimiento y reparaciones", "gasto", "deudora"),
+    # Lo que se queda la plataforma de delivery (PedidosYa) al pagar la semana.
+    ("6130", "Comisiones de plataformas de delivery", "gasto", "deudora"),
+    # Lo vendido a credito que se dio por perdido.
+    ("6140", "Cuentas incobrables", "gasto", "deudora"),
+    # Patente, aseo, tasas de la alcaldia: impuestos que no son IVA ni ISLR.
+    ("6150", "Impuestos y tasas municipales", "gasto", "deudora"),
 ]
 
 # Cuentas que viven dentro de un grupo pero con el saldo invertido a proposito:
@@ -178,6 +202,20 @@ CUENTA_POR_CATEGORIA_COMPRA = {
 # por mercancia: el usuario nunca elige cuenta.
 CUENTA_POR_TIPO_ARTICULO = {
     "desechable": "6050",
+}
+
+
+# Concepto de un pago sin factura (modulo Pagos) -> su cuenta de gasto.
+CUENTA_POR_CONCEPTO_PAGO = {
+    "Sueldos": "6080",
+    "Honorarios": "6090",
+    "Alquiler": "6100",
+    "Servicios publicos": "6110",
+    "Mantenimiento": "6120",
+    "Impuestos": "6150",
+    # No es gasto: es un adelanto que se descuenta del proximo sueldo.
+    "Anticipo": "1016",
+    "Otros": "6010",
 }
 
 
@@ -1098,6 +1136,123 @@ def registrar_cobro_fiado(
         [(cuenta, monto, 0.0), ("1015", 0.0, monto)],
         origen="cobro_fiado",
         referencia_id=pedido.id,
+    )
+
+
+def reversar_asiento(db: Session, origen: str, referencia_id: int, origen_reverso: str) -> None:
+    """El asiento de `origen` al reves, por el mismo monto y cuenta por cuenta.
+
+    Anular no borra: el asiento original queda y otro lo compensa, asi el
+    libro cuenta que paso y que se deshizo. Lleva la fecha del original: lo
+    que se anula es algo que no debio pasar ese dia, y dejar el reverso en
+    otro dia descuadraria las dos cajas."""
+    original = (
+        db.query(models.AsientoContable)
+        .filter(models.AsientoContable.origen == origen, models.AsientoContable.referencia_id == referencia_id)
+        .order_by(models.AsientoContable.id.desc())
+        .first()
+    )
+    if original is None:
+        return
+    lineas = [(m.cuenta.codigo, m.haber or 0.0, m.debe or 0.0) for m in original.movimientos]
+    crear_asiento(db, f"Anulación: {original.descripcion}", lineas, origen=origen_reverso,
+                  referencia_id=referencia_id, fecha=original.fecha)
+
+
+def registrar_cobro_cliente(db: Session, cobro: models.CobroCliente, quien: str) -> None:
+    """Un pago que salda varias ventas a credito de una vez.
+
+    Sale de 1015 todo lo que se dejo de deber; al banco entra lo recibido y
+    la diferencia es la comision de la plataforma, que es gasto. Sin la
+    comision, el cliente seguiria debiendo para siempre lo que PedidosYa se
+    quedo, o habria que inventar un descuento en una venta que se vendio
+    completa (y que en el Libro de Ventas sigue completa).
+    """
+    lineas = [(cuenta_de_pago(cobro.metodo_pago), cobro.recibido, 0.0)]
+    if cobro.comision:
+        lineas.append(("6130", cobro.comision, 0.0))
+    if cobro.retencion_iva:
+        lineas.append(("1035", cobro.retencion_iva, 0.0))
+    lineas.append(("1015", 0.0, cobro.monto))
+    if cobro.excedente:
+        lineas.append(("4040", 0.0, cobro.excedente))
+    n = len(cobro.abonos)
+    extra = ""
+    if cobro.comision:
+        extra += f", comisión {cobro.comision:.2f}"
+    if cobro.retencion_iva:
+        extra += f", IVA retenido {cobro.retencion_iva:.2f}"
+    if cobro.excedente:
+        extra += f", de más {cobro.excedente:.2f}"
+    crear_asiento(
+        db,
+        f"Cobro a {quien}: {n} venta(s) a crédito" + extra,
+        lineas,
+        origen="cobro_cliente",
+        referencia_id=cobro.id,
+        fecha=cobro.fecha,
+    )
+
+
+def registrar_pago_sin_factura(db: Session, pago: models.PagoSinFactura) -> None:
+    """Un pago sin factura: el gasto entero va a su concepto; sale de la caja o
+    del banco lo que se le entrego, y lo retenido de ISLR queda debiendose al
+    SENIAT. Sin factura no hay IVA que acreditar."""
+    cuenta_gasto = CUENTA_POR_CONCEPTO_PAGO.get(pago.concepto, "6010")
+    lineas = [(cuenta_gasto, pago.monto, 0.0)]
+    if pago.neto:
+        lineas.append((cuenta_de_pago(pago.metodo_pago), 0.0, pago.neto))
+    if pago.retencion_islr:
+        lineas.append(("2060", 0.0, pago.retencion_islr))
+    if pago.anticipo_descontado:
+        lineas.append(("1016", 0.0, pago.anticipo_descontado))
+    crear_asiento(
+        db,
+        f"Pago a {pago.beneficiario}: {pago.concepto}" + (f" ({pago.descripcion})" if pago.descripcion else ""),
+        lineas,
+        origen="pago_sin_factura",
+        referencia_id=pago.id,
+        fecha=pago.fecha,
+    )
+
+
+def registrar_castigo_fiado(db: Session, pedido: models.Pedido, monto: float, motivo: str) -> None:
+    """Un fiado que no se va a cobrar: sale de cuentas por cobrar a gasto.
+    La venta NO se toca (se vendio y se entrego; el Libro de Ventas sigue
+    igual): lo que se pierde es la plata, no la venta."""
+    crear_asiento(
+        db,
+        f"Incobrable: venta #{pedido.numero} ({pedido.cliente or 'sin nombre'})" + (f": {motivo}" if motivo else ""),
+        [("6140", monto, 0.0), ("1015", 0.0, monto)],
+        origen="castigo_fiado",
+        referencia_id=pedido.id,
+    )
+
+
+def registrar_traspaso(db: Session, t: models.TraspasoFondos) -> None:
+    """Un traspaso entre gaveta y banco, o un aporte del dueno. Ninguno es
+    ingreso ni gasto: el traspaso solo cambia la plata de sitio, y el aporte
+    es capital que entra."""
+    destino = cuenta_de_pago(t.hacia)
+    if t.tipo == "aporte":
+        lineas = [(destino, t.monto, 0.0), ("3010", 0.0, t.monto)]
+        texto = "Aporte del dueño"
+    else:
+        lineas = [(destino, t.monto, 0.0), (cuenta_de_pago(t.desde), 0.0, t.monto)]
+        texto = f"Traspaso de {t.desde} a {t.hacia}"
+    crear_asiento(db, texto + (f": {t.nota}" if t.nota else ""), lineas, origen=t.tipo,
+                  referencia_id=t.id, fecha=t.fecha)
+
+
+def registrar_entero_islr(db: Session, monto: float, metodo_pago: str, referencia: str, fecha=None) -> models.AsientoContable:
+    """El pago al SENIAT de lo retenido de ISLR: baja la deuda (2060) y sale
+    del banco. No es gasto: la plata nunca fue del negocio."""
+    return crear_asiento(
+        db,
+        "Entero de ISLR retenido" + (f" (ref. {referencia})" if referencia else ""),
+        [("2060", monto, 0.0), (cuenta_de_pago(metodo_pago), 0.0, monto)],
+        origen="entero_islr",
+        fecha=fecha,
     )
 
 

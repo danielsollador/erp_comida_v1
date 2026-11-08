@@ -1,5 +1,14 @@
 import type {
   ConceptoGasto,
+  PropuestaCarga,
+  ExplicacionCierre,
+  PropuestaRevisada,
+  BorradorWhatsApp,
+  DetalleExtracto,
+  EstadoConciliacion,
+  ReglaBanco,
+  PedidoProveedor,
+  ResultadoCarga,
   Reclamo,
   Sustitucion,
   ActivoFijo,
@@ -107,6 +116,16 @@ import type {
   CostoTeoricoFila,
   CostoIndirecto,
   CostoParaPrecios,
+  ClienteCredito,
+  CobroCliente,
+  EstadoDeCuenta,
+  NuevoPago,
+  PagoFijo,
+  PagoSinFactura,
+  ResumenCxC,
+  ResumenPagos,
+  AnticipoPendiente,
+  Traspaso,
 } from './types'
 import { abrirCanalEnVivo, cabecerasApp, recogerToken, urlApi } from './plataforma'
 import { queryRango, type Rango } from './fechas'
@@ -824,7 +843,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ stock_real, motivo: 'Conteo fisico' }),
     }),
+  /** El mensaje de un cliente como borrador de comanda. No crea el pedido. */
+  borradorWhatsApp: (texto: string) =>
+    req<BorradorWhatsApp>('/pedidos/whatsapp', { method: 'POST', body: JSON.stringify({ texto }) }),
+  /** Lo que la cajera eligió a mano: la próxima vez se reconoce solo. */
+  aprenderWhatsApp: (elecciones: { texto: string; variante_id: number }[]) =>
+    req<{ aprendidos: number }>('/pedidos/whatsapp/aprender', { method: 'POST', body: JSON.stringify({ elecciones }) }),
   sugerenciasCompra: () => req<SugerenciaCompra[]>('/inventario/sugerencias'),
+  /** Lo mismo, repartido por proveedor y con el mensaje para WhatsApp. */
+  pedidoProveedor: () => req<PedidoProveedor[]>('/inventario/pedido-proveedor'),
   listarMermas: (r?: Rango) => req<Merma[]>(`/inventario/mermas${conRango(r)}`),
   revertirMerma: (id: number) =>
     req<Ingrediente>(`/inventario/mermas/${id}/revertir`, { method: 'POST' }),
@@ -840,6 +867,61 @@ export const api = {
     req<{ variante_id: number; nombre: string; cantidad: number }[]>(`/inventario/combos/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
   actualizarReceta: (varianteId: number, items: { ingrediente_id: number; cantidad_por_unidad: number }[]) =>
     req<RecetaItem[]>(`/inventario/recetas/${varianteId}`, { method: 'PUT', body: JSON.stringify(items) }),
+
+  // Cuentas por cobrar
+  resumenCxC: () => req<ResumenCxC>('/cobranzas/resumen'),
+  listarClientesCredito: () => req<ClienteCredito[]>('/cobranzas/clientes'),
+  guardarClienteCredito: (c: Omit<ClienteCredito, 'id'>, id?: number) =>
+    req<ClienteCredito>(id ? `/cobranzas/clientes/${id}` : '/cobranzas/clientes', {
+      method: id ? 'PUT' : 'POST',
+      body: JSON.stringify(c),
+    }),
+  estadoDeCuenta: (clienteId: number) => req<EstadoDeCuenta>(`/cobranzas/clientes/${clienteId}/estado`),
+  asignarClienteAVenta: (pedidoId: number, clienteId: number) =>
+    req(`/cobranzas/ventas/${pedidoId}/cliente`, { method: 'POST', body: JSON.stringify({ cliente_id: clienteId }) }),
+  listarCobrosClientes: () => req<CobroCliente[]>('/cobranzas/cobros'),
+  cobrarVentas: (datos: {
+    cliente_id: number | null
+    pedido_ids: number[]
+    metodo_pago: string
+    referencia: string
+    recibido: number
+    retencion_iva_pct: number | null
+    diferencia_es_comision?: boolean
+    nota: string
+    fecha?: string
+    clave_cliente?: string
+  }) => req<CobroCliente>('/cobranzas/cobros', { method: 'POST', body: JSON.stringify(datos) }),
+  abonarVentas: (datos: { pedido_ids: number[]; monto: number; metodo_pago: string; referencia: string; nota: string; clave_cliente?: string }) =>
+    req<CobroCliente>('/cobranzas/abonos', { method: 'POST', body: JSON.stringify(datos) }),
+  abonarACuenta: (clienteId: number, datos: { monto: number; metodo_pago: string; referencia: string; nota: string; clave_cliente?: string }) =>
+    req<CobroCliente>(`/cobranzas/clientes/${clienteId}/abono`, { method: 'POST', body: JSON.stringify(datos) }),
+  darPorPerdida: (pedidoId: number, motivo: string) =>
+    req(`/cobranzas/ventas/${pedidoId}/perdida`, { method: 'POST', body: JSON.stringify({ motivo }) }),
+  recuperarPerdida: (pedidoId: number) => req(`/cobranzas/ventas/${pedidoId}/perdida`, { method: 'DELETE' }),
+  anularCobroCliente: (id: number) => req<CobroCliente>(`/cobranzas/cobros/${id}/anular`, { method: 'POST' }),
+
+  // Pagos sin factura
+  listarPagos: (r?: Rango) => req<PagoSinFactura[]>(`/egresos${conRango(r)}`),
+  resumenPagos: (r?: Rango) => req<ResumenPagos>(`/egresos/resumen${conRango(r)}`),
+  beneficiarios: () => req<string[]>('/egresos/beneficiarios'),
+  registrarPago: (p: NuevoPago) => req<PagoSinFactura>('/egresos', { method: 'POST', body: JSON.stringify(p) }),
+  anularPago: (id: number) => req<PagoSinFactura>(`/egresos/${id}/anular`, { method: 'POST' }),
+  listarPagosFijos: () => req<PagoFijo[]>('/egresos/fijos'),
+  guardarPagoFijo: (f: Omit<PagoFijo, 'id' | 'toca'>, id?: number) =>
+    req<PagoFijo>(id ? `/egresos/fijos/${id}` : '/egresos/fijos', {
+      method: id ? 'PUT' : 'POST',
+      body: JSON.stringify(f),
+    }),
+  anticipos: () => req<AnticipoPendiente[]>('/egresos/anticipos'),
+  enterarIslr: (datos: { monto?: number; metodo_pago: string; referencia: string }) =>
+    req<{ enterado: number; queda: number }>('/egresos/islr/enterar', { method: 'POST', body: JSON.stringify(datos) }),
+  listarTraspasos: (r?: Rango) => req<Traspaso[]>(`/caja/traspasos${conRango(r)}`),
+  crearTraspaso: (t: { tipo: 'traspaso' | 'aporte'; desde: string | null; hacia: string; monto: number; referencia: string; nota: string }) =>
+    req<Traspaso>('/caja/traspasos', { method: 'POST', body: JSON.stringify(t) }),
+  anularTraspaso: (id: number) => req<Traspaso>(`/caja/traspasos/${id}/anular`, { method: 'POST' }),
+  pagarFijo: (id: number, datos: { monto?: number; referencia: string; descontar_anticipo?: number }) =>
+    req<PagoSinFactura>(`/egresos/fijos/${id}/pagar`, { method: 'POST', body: JSON.stringify(datos) }),
 
   listarGastos: (r?: Rango) => req<Gasto[]>(`/caja/gastos${conRango(r)}`),
   crearGasto: (descripcion: string, categoria: string, monto: number, metodo_pago = 'Efectivo') =>
@@ -1005,6 +1087,28 @@ export const api = {
   resumenCaja: (fecha?: string) =>
     req<ResumenCaja>('/caja/resumen' + (fecha ? `?fecha=${fecha}` : '')),
   /** Cada cobro del día con su referencia: el detalle de la columna "Entró". */
+  /** ¿Por qué no cuadra? Solo lee: no cambia ningún cobro ni el cierre. */
+  // --- conciliación bancaria (Contabilidad) ---
+  conciliacion: () => req<EstadoConciliacion>('/contabilidad/conciliacion'),
+  extracto: (id: number) => req<DetalleExtracto>(`/contabilidad/conciliacion/extractos/${id}`),
+  subirExtracto: (archivo: File, cuenta = '1020') => {
+    const datos = new FormData()
+    datos.append('archivo', archivo)
+    datos.append('cuenta', cuenta)
+    return req<DetalleExtracto>('/contabilidad/conciliacion/extractos', { method: 'POST', body: datos, headers: {} })
+  },
+  registrarExtracto: (id: number, ids?: number[]) =>
+    req<DetalleExtracto>(`/contabilidad/conciliacion/extractos/${id}/registrar`, { method: 'POST', body: JSON.stringify({ ids }) }),
+  accionLinea: (id: number, accion: 'cuenta' | 'ignorar' | 'pendiente', cuenta = '') =>
+    req<DetalleExtracto>(`/contabilidad/conciliacion/lineas/${id}`, { method: 'POST', body: JSON.stringify({ accion, cuenta }) }),
+  crearReglaBanco: (r: { nombre: string; contiene: string; sentido: string; cuenta: string }) =>
+    req<ReglaBanco>('/contabilidad/conciliacion/reglas', { method: 'POST', body: JSON.stringify(r) }),
+  editarReglaBanco: (id: number, r: { nombre: string; contiene: string; sentido: string; cuenta: string }) =>
+    req<ReglaBanco>(`/contabilidad/conciliacion/reglas/${id}`, { method: 'PUT', body: JSON.stringify(r) }),
+  borrarExtracto: (id: number) => req<{ ok: boolean }>(`/contabilidad/conciliacion/extractos/${id}`, { method: 'DELETE' }),
+  borrarReglaBanco: (id: number) => req<{ ok: boolean }>(`/contabilidad/conciliacion/reglas/${id}`, { method: 'DELETE' }),
+  explicarCierre: (fecha?: string) =>
+    req<ExplicacionCierre>(`/caja/explicar${fecha ? `?fecha=${fecha}` : ''}`),
   cobrosDelDia: (fecha?: string) =>
     req<CobroDelDia[]>('/caja/cobros' + (fecha ? `?fecha=${fecha}` : '')),
   anularCierre: (id: number, motivo: string) =>
@@ -1029,10 +1133,11 @@ export const api = {
     metodo_pago = 'Efectivo Bs',
     monto?: number,
     referencia?: string,
+    clave_cliente?: string,
   ) =>
     req<{ ok: boolean; cobrado: number; queda: number; saldado: boolean; cliente: string }>(
       `/caja/fiado/${pedidoId}/cobrar`,
-      { method: 'POST', body: JSON.stringify({ metodo_pago, monto, referencia }) },
+      { method: 'POST', body: JSON.stringify({ metodo_pago, monto, referencia, clave_cliente }) },
     ),
 
   /**
@@ -1219,6 +1324,19 @@ export const api = {
   // formulario de siempre guarda con `crearFacturaCompra`, y despues la foto
   // se engancha a la factura que salio.
   estadoLectorFacturas: () => req<{ activo: boolean; lector: string }>('/compras/lectura'),
+  /** Cargar el inventario con IA: si está prendido (mismo interruptor que las facturas). */
+  estadoAsistenteInventario: () => req<{ activo: boolean; lector: string }>('/inventario/asistente'),
+  /** Lo escrito o dictado y las fotos (ya achicadas): devuelve la propuesta revisada. */
+  leerCargaInventario: async (texto: string, fotos: Blob[]) => {
+    const datos = new FormData()
+    datos.append('texto', texto)
+    fotos.forEach((f, i) => datos.append('fotos', f, `hoja-${i + 1}.jpg`))
+    return req<PropuestaRevisada>('/inventario/asistente/leer', { method: 'POST', body: datos, headers: {} })
+  },
+  revisarCargaInventario: (p: PropuestaCarga) =>
+    req<PropuestaRevisada>('/inventario/asistente/revisar', { method: 'POST', body: JSON.stringify(p) }),
+  guardarCargaInventario: (p: PropuestaCarga) =>
+    req<ResultadoCarga>('/inventario/asistente/guardar', { method: 'POST', body: JSON.stringify(p) }),
   /** La foto (ya achicada) o el PDF tal cual. */
   leerFacturaCompra: async (archivo: Blob) => {
     const datos = new FormData()

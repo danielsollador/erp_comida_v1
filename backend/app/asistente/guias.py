@@ -61,8 +61,8 @@ MAPA: dict = {
     "caja.cierre": ("/caja", "caja.cerrar", "caja", T, "Botón «Hacer cierre de caja», abajo en la portada de Caja. Abre el cuadro «Contar la caja»."),
     "caja.conteo": ("/caja", "caja.conteo", "caja", E, "En el cuadro «Contar la caja», una casilla por forma de pago (Efectivo Bs, Efectivo $, Punto, Pago móvil...): se escribe lo que hay de verdad, en la moneda que dice cada una. Se cuenta antes de mirar lo que dice el sistema; lo que no se contó se deja en blanco (un 0 cuenta como faltante)."),
     "caja.conciliar": ("/caja", "caja.conciliar", "caja", T, "Botón «Cerrar y conciliar» al pie del cuadro de conteo: cierra el día y muestra lo que sobró o faltó."),
-    "caja.registrar_gasto": ("/caja", "caja.registrar-gasto", "caja", T, "Enlace «Registrar uno» de Gastos y retiros en la portada de Caja: lleva a anotar un gasto pagado de la gaveta."),
-    "caja.gastos": ("/caja", "seccion.movimientos", "caja", T, "Pestaña «Gastos y retiros»: anotar un gasto pagado de la gaveta o un retiro del dueño. NO es parte del cierre."),
+    "caja.registrar_gasto": ("/caja", "caja.registrar-gasto", "caja", T, "Enlace «Registrar uno» de Retiros de caja en la portada de Caja: lleva a anotar un pago menor (bombona, hielo) o un retiro pagado de la gaveta. Sueldos, alquiler y lo que se paga por el banco van en Pagos."),
+    "caja.gastos": ("/caja", "seccion.movimientos", "caja", T, "Pestaña «Retiros de caja»: anotar un pago menor pagado de la gaveta, un retiro del dueño o un depósito al banco. NO es parte del cierre."),
     "caja.historial": ("/caja", "seccion.historial", "caja", T, "Pestaña «Historial» de cierres."),
     # Reportes
     "reportes.ventas": ("/reportes", "seccion.ventas", "reportes", T, "Reportes › Ventas."),

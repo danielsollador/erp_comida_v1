@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from ..acceso import permisos
 from ..rango import Rango
 from ..routers import reportes
-from .. import consolidacion
+from .. import consolidacion, contabilidad, models, reposicion, texto
 from ..timeutils import ahora, hoy, inicio_del_dia
 
 
@@ -174,6 +174,69 @@ def avisos(db: Session) -> dict:
     return {"avisos": [{"titulo": a.titulo, "detalle": a.detalle, "donde": a.a} for a in reportes.avisos(db=db)]}
 
 
+def movimientos_de_caja(db: Session, forma_de_pago: str, fecha: Optional[str] = None) -> dict:
+    """Todo lo que movio esa gaveta o cuenta ese dia, con su descripcion: lo
+    que explica un "salio" o un sobrante sin tener que adivinar."""
+    cuenta = contabilidad.CUENTA_POR_METODO_PAGO.get(forma_de_pago)
+    if not cuenta:
+        return {"error": f"Forma de pago desconocida: {forma_de_pago}"}
+    dia = datetime.date.fromisoformat(fecha) if fecha else hoy()
+    inicio = inicio_del_dia(dia)
+    filas = (
+        db.query(models.AsientoContable, models.MovimientoContable)
+        .join(models.MovimientoContable, models.MovimientoContable.asiento_id == models.AsientoContable.id)
+        .join(models.CuentaContable, models.CuentaContable.id == models.MovimientoContable.cuenta_id)
+        .filter(
+            models.CuentaContable.codigo == cuenta,
+            models.AsientoContable.fecha >= inicio,
+            models.AsientoContable.fecha < inicio + datetime.timedelta(days=1),
+        )
+        .order_by(models.AsientoContable.fecha)
+        .all()
+    )
+    return {
+        "fecha": dia.isoformat(),
+        "forma_de_pago": forma_de_pago,
+        "movimientos": [
+            {"hora": a.fecha.strftime("%H:%M"), "que": a.descripcion, "entro": _r(d.debe), "salio": _r(d.haber)}
+            for a, d in filas
+        ],
+        "total_entro": _r(sum(d.debe or 0 for _, d in filas)),
+        "total_salio": _r(sum(d.haber or 0 for _, d in filas)),
+    }
+
+
+def compras_de_mercancia(db: Session, nombre: str) -> dict:
+    """El costo de una mercancia y de donde sale: lo que dice su ficha, lo
+    ultimo que se pago y sus ultimas compras."""
+    buscado = texto.comparable(nombre)
+    ultimos = reposicion.costos_reposicion(db)
+    salida = []
+    for ing in db.query(models.Ingrediente).filter(models.Ingrediente.activo.is_(True)).all():
+        if buscado not in texto.comparable(ing.nombre):
+            continue
+        salida.append({
+            "nombre": ing.nombre,
+            "unidad": ing.unidad,
+            "hay": _r(ing.stock_actual),
+            "costo_en_la_ficha": ing.costo_unitario or 0,
+            "costo_que_usa_el_menu": reposicion.costo_reposicion_efectivo(ing, ultimos),
+            "ultimas_compras": [
+                {
+                    "fecha": c["fecha"].strftime("%Y-%m-%d %H:%M"),
+                    "cantidad": c["cantidad"],
+                    "costo_por_unidad": c["costo_unitario"],
+                    "total": _r(c["cantidad"] * c["costo_unitario"]),
+                    "como": c["origen"],
+                }
+                for c in reposicion.historial_de_costos(db, ing.id, limite=5)
+            ],
+        })
+        if len(salida) == 5:
+            break
+    return {"mercancias": salida} if salida else {"error": f"No hay mercancía que se llame como «{nombre}»."}
+
+
 HERRAMIENTAS: dict = {
     "ventas": Herramienta(
         {
@@ -215,6 +278,37 @@ HERRAMIENTAS: dict = {
         },
         margenes,
         modulos=("menu", "recetas", "reportes"),
+        plata=True,
+    ),
+    "movimientos_de_caja": Herramienta(
+        {
+            "name": "movimientos_de_caja",
+            "description": "Cada movimiento de una gaveta o cuenta en un día, con hora y descripción (compras, pagos, retiros, cobros). Úsala cuando pregunten de dónde sale un monto del cierre o por qué sobra o falta.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "forma_de_pago": {"type": "string", "enum": ["Efectivo Bs", "Efectivo $", "Banco", "Zelle"], "description": "La gaveta o cuenta."},
+                    "fecha": {"type": "string", "description": "AAAA-MM-DD. Sin esto, hoy."},
+                },
+                "required": ["forma_de_pago"],
+            },
+        },
+        movimientos_de_caja,
+        modulos=("caja",),
+        plata=True,
+    ),
+    "compras_de_mercancia": Herramienta(
+        {
+            "name": "compras_de_mercancia",
+            "description": "De una mercancía: cuánto hay, el costo de su ficha, el costo que usa el menú y sus últimas compras. Úsala cuando un costo salga raro o en cero.",
+            "parameters": {
+                "type": "object",
+                "properties": {"nombre": {"type": "string", "description": "Nombre o parte del nombre."}},
+                "required": ["nombre"],
+            },
+        },
+        compras_de_mercancia,
+        modulos=("inventario", "compras"),
         plata=True,
     ),
     "avisos": Herramienta(

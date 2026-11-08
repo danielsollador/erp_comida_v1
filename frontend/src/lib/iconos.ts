@@ -39,6 +39,9 @@ export type NombreIcono =
   | 'chispa'
   | 'camara'
   | 'imagen'
+  | 'pregunta'
+  | 'enviar'
+  | 'microfono'
   // Los cuatro almacenes de Compras (ver lib/tiposArticulo.ts) y lo que los
   // rodea: la caja en que llega la mercancia, el papel de la factura.
   | 'olla'
@@ -50,6 +53,8 @@ export type NombreIcono =
   | 'mas'
   | 'quitar'
   | 'buscar'
+  | 'cobrar'
+  | 'pagar'
 
 export const TRAZOS: Record<NombreIcono, string> = {
   inicio: 'M3 10.5 12 3l9 7.5M5 9.8V21h14V9.8M10 21v-6h4v6',
@@ -106,4 +111,11 @@ export const TRAZOS: Record<NombreIcono, string> = {
   mas: 'M12 5v14M5 12h14',
   quitar: 'M18 6 6 18M6 6l12 12',
   buscar: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5',
+  pregunta: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01',
+  enviar: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
+  microfono: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8',
+  // Lo que entra: la flecha que baja a la bandeja.
+  cobrar: 'M12 3v12M7 10l5 5 5-5M4 17v3h16v-3',
+  // Lo que sale: la flecha que sube de la bandeja.
+  pagar: 'M12 15V3M7 8l5-5 5 5M4 17v3h16v-3',
 }

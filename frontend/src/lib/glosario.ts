@@ -63,6 +63,28 @@ const fecha = (que: string, origen: string, ejemplo: string): Explicacion => ({
 })
 
 export const GLOSARIO: Record<string, Explicacion> = {
+  // ── Cuentas por cobrar ──
+  'cobranzas.cliente': {
+    que: 'A nombre de quién quedó la venta a crédito.',
+    origen: 'Del nombre que se escribió al cobrar con «A crédito» en el punto de venta.',
+    ejemplo: 'Si fiaste a Ana, escribe «ana» en el buscador y ves todo lo que debe.',
+  },
+  'cobranzas.venta': {
+    que: 'El número de la venta que quedó sin pagar.',
+    origen: 'Del punto de venta. Si ya abonó una parte, se dice al lado.',
+    ejemplo: 'Venta #12 · abonó $5,00.',
+  },
+  'cobranzas.fecha': {
+    que: 'Cuándo se hizo la venta a crédito y hace cuántos días.',
+    origen: 'Del momento en que se cobró con «A crédito».',
+    ejemplo: '03/11/26 · hace 2 días.',
+  },
+  'cobranzas.saldo': {
+    que: 'Lo que falta por cobrar de esa venta.',
+    origen: 'Del monto fiado y de los abonos registrados.',
+    calculo: 'Lo fiado menos lo abonado.',
+    ejemplo: 'Se fiaron $10 y abonó $4: debe $6.',
+  },
   // ── Inventario: la tabla de mercancía ──────────────────────────────────────
   'inventario.nombre': {
     que: 'La mercancía: la materia prima con la que cocinas, o lo que revendes tal cual.',

@@ -188,3 +188,156 @@ Si Daniel, o yo. Usamos Claude en cualquier sesion en cualquier PC, mientras est
 Como asi Claude no lee solo un CLAUDE.md , no puedes blindar para que solo se lea este?
 
 Porque se le puede pasar una regla si se supone que esta dentro del Claude.MD ?
+
+## 38 (2026-11-03, Leider)
+
+Bro, puedes revisar este cierre de caja de ayer? me dice el cliente savora "Muchachos esos 6,90$ no comprendo". Puedes validar si ese cierre estuvo bien o mal?
+(Adjunta foto del cierre del 2-nov: Entró $174,20, Salió −$6,90, Debes tener $197,23, Reportado $204,20, Diferencia +$6,97, Gastos y Retiros $0.)
+
+## 39 (2026-11-03, Leider)
+
+si por favor /arreglar, aplicalo porque necesito que cuando no cuadre caja esto se pueda explicar. Hazlo directo en produccion y dime, como saldria con respecto a ayer. Ya que yo ni siquiera entiendo de donde salieron esos 6,90 y no me lo supiste explicar
+
+## 40 (2026-11-03, Leider)
+
+esta pc si tiene gcloud, y si no lo puedes reconocer, pues activalo, yo tengo las credenciales
+
+## 41 (2026-11-03, Leider)
+
+sigue sin enttenderse a simple vista porque los 6,90$ y aparte nos estas guardando esta conversacion en prompts Verifica si estas siguiendo el flujo SDD
+
+## 42 (2026-11-03, Leider)
+
+Dale. Por favor, que se llame cierre_de_caja.md porque ese es el modulo. Y, dame la propuesta para ver
+
+## 43 (2026-11-03, Leider)
+
+Necesito que toques codigo esto es local. Se me hace mas facil ver la propuesta en vivo. De donde te estas basando para estructurar estas propuestas y estas respuestas ?
+
+## 44 (2026-11-03, Leider)
+
+La deberia ir arriba de la tarjeta de por que no cuadra. y eso de : es lo mismo de Compra de Huevos... no se entiende nada realmnete. Ni un poco, tienes que decir es a que venta pertenece el sobrante, porque sucede y que se puede hacer con eso. Eso no se esta explicando
+(Adjunta captura de las tarjetas Ventas y Gastos y retiros del cierre.)
+
+## 45 (2026-11-03, Leider)
+
+Esto habla con una seguridad que hasta asusta. Siempre el va a saber 100% porque no cuadra la caja ?
+(Adjunta captura de "Por qué no cuadra" con De dónde sale, Por qué pasa y Qué puedes hacer.)
+
+## 46 (2026-11-03, Leider)
+
+Dale hazlo. Y deberias esto anotar en algun lado de CLAUDE.md , que nunca hable como si tuviera toda la certeza al menos de que la vaya a tener siempre. Y tambien corrige en algun punto como me pasas las respuestas. Cuando codeas, no quiero que me muestres todo ese poco de codigo corregido, solo quiero que me digas, que archivos cambiaron, me des el link para ver que se anadio y hasta si puedes me lo muestres en verde contra lo que no, estilo GIT. Y luego tu resumen de lo que paso y toda la cosa. El codigo y todo lo demas que carga. No es relevante
+
+## 47 (2026-11-03, Leider)
+
+No me respondiste... No hay forma de que no me muestres esto ?
+(Adjunta captura de los bloques de herramientas Playwright y Bash en el chat.)
+
+## 48 (2026-11-03, Leider)
+
+ya. Le di click, esta listo ?
+
+## 49 (2026-11-03, Leider)
+
+Te dije que en todas las respuestas que me des a mi me tienes que dejar: Herramientas que utilizaste: Modulos que tocaste: Ficheros que tocaste Texto agregados o modificados en los ficheros (ve si en tu respuesta puedes agregarme una vista estilo la de git cuando se hace merge, o si no algo parecido y con lista desplegable porque necesito ocultar este texto si no lo necesito ver) Resumen de lo que se hizo: Lo siguiente (si algo necesita mi respuesta o que es lo otro que podemos hacer)
+
+## 50 (2026-11-03, Leider)
+
+Nahh esto se ve bien feo, modificalo. Ni siquiera hay lista desplegable para ocultarlo, ni se ve que estaba y que se quito, o que se agrego Por eso quiero vista estilo git merge
+(Adjunta captura: los desplegables y el diff salieron como texto plano en el chat.)
+
+## 51 (2026-11-03, Leider)
+
+No!!! eso esta malo, no quiero que me abras dos pestanas, quiero que se vea en tu mensaje de respuesta, en tu output. Porque si modificas 100 ficheros o modulos no me puedes mostrar todos
+
+## 52 (2026-11-03, Leider)
+
+Bien. Y esto si lo podemos hacer como lista desplegable ? ojo, esto es solo con ficheros no ? nada de codigo
+
+## 53 (2026-11-03, Leider)
+
+Al cerrar una caja y corregir la compra. Me sale este cuadro que es 0 fight complexity. Necesito que le apliques las normativas que tenemos /estilo-vertigo
+(Adjunta capturas: la ficha de Huevos que abre "Corregir la compra" y el cuadro "Por qué no cuadra".)
+
+## 54 (2026-11-03, Leider)
+
+vale pero una cosa que tenemos que agregar en estilo y todo eso. Es si, eso que estamos implementando ayuda en su cometido... porque quedo mucho mas facil de ver y entender pero... ayuda de verdad en la accion, porque yo usuario quiero resolver mi cierre de caja. Y en ningun momento ese cuadro flotante me esta ayudando a cerrar caja. Solo me llevo al inventario y me abrio la ficha de ese producto. Pero no me ayudo. Creo que deberiamos hacer otro cuadro especificamente para estos casos que ayude mucho mas en el tema.
+
+Y corregir los ficheros necesarios para que el agente se pregunte si lo que esta haciendo logra ayudar al cliente en la accion que quiere tomar de verdad, y no solo que lo ayude. Que sea la mejor ayuda posible casi que el no tenga que hacer casi nada y de la menor cantidad de clicks y escriba la menor cantidad de veces. Y lea lo menor posible
+
+## 55 (2026-11-03, Leider)
+
+Armame una propuesta de como la IA nos puede ayudar y como lo podemos implementar en el modulo de cierre de caja y mas que todo cuando una caja no cierra
+
+## 56 (2026-11-03, Leider)
+
+No! Gemini no lo estamos usando y de donde sacaste eso en el fichero que haya salido por favor quitalo.
+
+Claude no se usa solo para lecturanos ayudara a hacer de todo.
+
+Y la A y la B no me gustan ni un poco, rompe con lo que acordamos de que el usuario lea y haga lo menos posible, como ya acordamos, y como veo que no estamos alineados me gustaria que vieras de donde sacaste ese pensamiento y lo modifiques.
+
+La C esta mejor, es algo que le pides a la IA que busque porque no cuadra, lo busque, y ya esta. No hay mas nada que hacer ni que investigar, el solo te dara las conclusiones y lo que recomienda hacer
+
+## 57 (2026-11-03, Leider)
+
+haz las 4 y me pasas el link para ver como se ve
+
+## 58 (2026-11-04, Daniel)
+
+Lee CLAUDE.md, tareas.md y plan-implementacion.md. Explícame en 5 líneas en qué fase estamos y qué toca ahora, sin tocar nada.
+
+## 59 (2026-11-04, Daniel)
+
+Vamos a escribir la spec de lo que ya está hecho en cuentas por cobrar, en specs/cuentas-por-cobrar.md, a partir de specs/_plantilla.md. Déjala en estado Borrador y con el bloque sin asignar. Solo documenta: no cambies código, no hagas commit, no subas nada y no toques tareas.md ni plan-implementacion.md todavía.
+
+Lee el commit 58064e8, el módulo de cuentas por cobrar, sus pruebas y su pantalla. Después:
+
+1. En "Hoy", describe cómo funciona realmente, sin inventar nada. Lo que no compruebes, márcalo como no comprobado.
+2. En "Qué tiene que pasar", escribe reglas que se puedan responder con sí o no. Incluye fiar sin ficha de cliente, abono parcial, cobro con comisión, retención de IVA, anular un cobro, dar por perdida y recuperar.
+3. Revisa estos casos borde: dos usuarios cobrando a la vez, bolívares y divisas, período cerrado y sin conexión.
+4. En "Por decidir", incluye como mínimo:
+   - Un abono de ventas sin ficha, ¿puede mezclar deudores distintos en un mismo pago?
+   - Dos clientes distintos con el mismo nombre, ¿cómo se distinguen, si hoy se unen por nombre?
+   - Dos personas cobrando la misma venta a la vez: qué debe pasar y si corresponde al bloque 1.4.
+5. En "Cómo se valida", escribe los pasos para probarlo en pantalla, en local.
+
+Sigue las reglas de documentos de CLAUDE.md: máximo unas 60 líneas, lenguaje sencillo y sin nombres de archivos de código. Antes de darla por terminada, hazme las preguntas que falten con opciones, con tu recomendada primero. Yo decido las reglas del negocio; no las asumas.
+
+## 60 (2026-11-04, Daniel)
+
+Agrega a la spec: la tasa BCV de un cobro en bolívares es la de la fecha del cobro, no la del día en que se registra. Marca como "validar con el contador" el tratamiento de la retención en pagos parciales y la regla del mes de IVA declarado. Termina la spec en Borrador, sin arreglar nada ni hacer commit.
+
+## 61 (2026-11-04, Daniel)
+
+No hagas más rondas de preguntas: lo que siga abierto, déjalo en "Por decidir" con tu recomendación. Marca también como "validar con el contador" la base de la retención. Termina la spec en Borrador, en el límite de unas 60 líneas, sin arreglar nada ni hacer commit. Al final, separa en una lista corta cuáles son fallos de dinero que ya están en producción y cuáles son reglas nuevas para después.
+
+## 62 (2026-11-04, Daniel)
+
+Corrige la spec, sin tocar código ni hacer commit. Agrega en "Por decidir" que hoy ninguna pantalla crea fichas, y que la excepción de PedidosYa depende de tener una. Mi recomendación: que el aviso de nombre repetido permita guardar ese nombre como cliente fijo con un toque, para que no vuelva a preguntar. Agrega también que el cuadre debe esperar lo que entró, también con retención y con pago de más, no solo con comisión.
+
+## 63 (2026-11-04, Daniel)
+
+/arreglar Cinco fallos de dinero de cuentas por cobrar que ya están en producción, según specs/cuentas-por-cobrar.md, un commit por cada uno:
+1. Dos cobros cruzados de la misma venta pasan los dos: debe pasar solo uno, y hay que probarlo en PostgreSQL.
+2. Un abono reenviado se aplica dos veces: un reintento debe contar una sola vez.
+3. Retención con pago parcial: como medida temporal hasta que responda el contador, no permitirla y explicar por qué. No cerrar la deuda ni registrar comisión sin avisar.
+4. La pantalla debe calcular la retención igual que el sistema, sobre toda la factura, para que no nazca el ingreso falso.
+5. El cuadre debe esperar lo que entró, también con comisión, retención o pago de más.
+Excepción al comando: crea la rama desde master, porque este código no está en fase1. Antes de cambiar nada, explícame en dos líneas cómo cambia el resultado de dinero y espera mi visto bueno. No corrijas datos, no subas ni despliegues.
+
+## 64 (2026-11-04, Daniel)
+
+Visto bueno a los cinco arreglos, con estos ajustes:
+
+1. Días cerrados: no deben cambiar. Un día ya cerrado debe mostrar lo que se guardó en su cierre; el cálculo nuevo aplica a los días abiertos. Si eso exige un cambio grande, para y explícame antes de seguir.
+2. Retención: rechaza solo el caso en que pagan menos sin decir por qué. Si la cajera marca de forma explícita que la diferencia es comisión, se acepta, con la retención sobre toda la factura. Si el sistema no puede distinguirlo sin un cambio grande, para y explícame.
+3. Sí, incluye Ventas, "abonar a lo que debe" y la conciliación del banco, para que el mismo fallo no quede abierto por otra vía.
+4. Ya abrí Docker Desktop: úsalo para probar el cobro doble en PostgreSQL. Si no responde, avísame y no des ese arreglo por terminado.
+5. Fichas: anota en la spec que el cliente fijo guarda el dato en el nombre, como "José Pérez (del 5to)". Esa pantalla no se hace ahora; queda para después.
+
+Sigue sin subir, sin desplegar y sin corregir datos.
+
+## 65 (2026-11-04, Daniel)
+
+Validé los arreglos en local: la retención con pago parcial y el cuadre por pago móvil funcionan. Anota en Apuntes/fixes.md, como pendientes, dos detalles visuales que vi: en modo oscuro el mensaje verde de éxito de Cuentas por cobrar casi no se lee, y el texto de la opción "Es comisión: se cierra la deuda" se corta. Haz commit de eso y de specs/cuentas-por-cobrar.md en esta rama, sin incluir backend/evals, y registra estos prompts en prompts.md como pide CLAUDE.md. Después sube solo la rama fix-2026-11-04-cobros-cxc a GitHub con su propio nombre. No fusiones en master ni despliegues. Avísame cuando GitHub termine, con el resultado de las pruebas.

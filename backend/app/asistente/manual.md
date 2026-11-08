@@ -35,6 +35,9 @@ Cómo contestar: con las palabras del negocio («te quedó», «se botó», «lo
 - «Tomar pedido»: los productos a la izquierda y la «Comanda actual» a la derecha.
 - «Pedidos» (`/pos/pedidos`): los pedidos en curso, el botón «Ventas de hoy», el plegable «Entregados hoy» y, abajo, el selector «Caja».
 
+### Cuántos quedan
+Debajo de cada producto que se vende tal cual se compra (su receta es solo mercancía de Reventa: helados, jugos, refrescos) sale «Quedan N» o «Agotado». Lo cocinado no lo muestra. El número es lo que dice el inventario: para que sea cierto hay que registrar lo que llega y contar de vez en cuando.
+
 ### Tomar una comanda
 1. En «Tomar pedido», filtra por categoría con las pastillas de arriba. «Todas» viene marcada.
 2. Toca un producto para sumar 1. Si tiene tamaños, dice «N variantes»: al tocarlo se abre una lista y cada toque en una variante suma 1. La lista se cierra tocando fuera.
@@ -51,10 +54,10 @@ No hay campo para notas por renglón («sin cebolla»). Hay que decírselo a la 
 2. Elige: «Efectivo Bs», «Efectivo $», «Pago movil», «Punto de venta», «Transferencia», «Zelle» o «A crédito». La tarjeta se cobra con «Punto de venta» (es el mismo terminal).
 3. **Efectivo:** «Paga exacto» o «Paga con más: hay vuelto». Con vuelto, escribe el billete que dio el cliente y elige por dónde sale el vuelto («Efectivo $», «Efectivo Bs» o «Pago movil»). Si lo deja, «No quiere el vuelto» lo pasa a propina.
 4. **Pago movil, Punto de venta, Transferencia y Zelle** piden la referencia. Con el verificador activo, el pago móvil y la transferencia se verifican con el banco (abajo).
-5. **Dos formas:** «Paga con dos formas». Cada parte pregunta «¿Cuánto paga con X?» hasta cubrir el total; termina con «Cobrar $X en N forma(s)». En el mixto no hay vuelto.
+5. **Dos formas:** «Paga con dos formas». Cada parte pregunta «¿Cuánto paga con X?» hasta cubrir el total; termina con «Cobrar $X en N forma(s)». Las partes en Efectivo $ y Zelle se escriben en dólares. Las de Efectivo Bs, Pago movil, Punto de venta y Transferencia se escriben **en bolívares**: dice cuántos faltan y convierte solo. Si un billete en bolívares pasa de lo que falta, pregunta «¿Qué se hace con lo que sobra?»: darle el vuelto en bolívares o que quede de propina.
 6. **«Descuento · propina»:** el descuento no puede pasar del total; la propina se cobra pero no es venta, es del empleado.
 7. **Facturar:** marca «Facturar esta venta» y llena «N.º de factura», «N.º de control», «RIF o cédula» y «Nombre o razón social» (todo opcional: sin datos va como consumidor final). Contribuyente especial: «El cliente retiene IVA». También se factura después desde Ventas con «Facturar ahora».
-8. **A crédito:** necesita el nombre del cliente; se confirma con «Fiar». Se cobra después desde Ventas.
+8. **A crédito:** necesita el nombre del cliente; se confirma con «Fiar». Se cobra después en Cuentas por cobrar.
 9. Sale «✓ Cobrado #N» con «Imprimir» unos 20 segundos.
 
 ### Verificar un pago móvil con el banco
@@ -193,23 +196,27 @@ Se entra a un almacén tocando su ficha. Para volver a la portada se toca el bot
 
 ### La ficha de una mercancía
 Se abre tocando el nombre. Muestra «Hay», «Te alcanza para» y «Te cuesta». En «Anotar»:
-- **«Llegó mercancía»:** compra sin factura.
+- **«Llegó mercancía»:** compra sin factura o factura que se perdió. Es el camino más corto para eso. Se pone cuánto llegó, «De dónde salió la plata» (no viene marcada: hay que elegir gaveta, banco o «Plata del dueño», que no toca ninguna gaveta) y «Cuánto pagaste en total» (el TOTAL de la compra, no el precio de cada unidad; 48 unidades a $1,60 son $76,80). Si se deja vacío, usa el costo que ya tenía la ficha. Si la mercancía no tiene costo y queda vacío, pregunta antes de guardar.
 - **«Se dañó o se botó»:** merma («Cuánto se perdió», «Motivo», «Registrar merma»).
 - **«La usó el personal»:** consumo de empleados; no cuenta como pérdida.
-- **«Contar lo que hay»:** conteo de esa sola mercancía.
+- **«Contar lo que hay»:** conteo de esa sola mercancía. Si viene en paquetes, pregunta «¿Contaste paquetes o unidades sueltas?», y antes de guardar dice en unidades cuánto queda y qué anota.
 
-En «Cambiar los datos» están el mínimo, el empaque, «Venderla en el menú» (reventa), «Es la misma que otra: fusionarlas» y «Ya no la uso: archivarla».
+**«Ver lo que le pasó»** muestra compras, ventas, conteos y pérdidas, una por una. Ahí una compra sin factura se puede **«Anular»**: sale del inventario, la plata vuelve a donde salió y el costo queda como antes. No se puede si esa mercancía ya se usó; entonces se corrige el costo en «Configurar la mercancía».
+
+En «Configurar la mercancía» están el mínimo, el empaque, «Venderla en el menú» (reventa), «Es la misma que otra: fusionarlas» y «Ya no la uso: archivarla».
 
 ### Conteo físico
 «Conteo físico» → escribe lo que hay de verdad. «Contar a ciegas» viene encendido y esconde lo que dice el sistema. También sirve «Descargar planilla» y «Subir planilla llena» (con la columna «Contado»). Lo que quede en blanco no se toca. «Guardar conteo» y confirmar.
 
 ### Qué comprar y Control
 - **Qué comprar:** entra lo que está en el mínimo o por debajo, y lo que alcanza para 7 días o menos según lo vendido en los últimos 14 días. Sugiere completar lo ideal, el mínimo o 14 días de consumo (el mayor). «Llegó» registra la compra.
-- **Control:** «Debió salir vs. hay» (recetas contra conteo), «Pérdidas» (se pueden «Revertir»), «Conteos» y «Aceite y precios», donde está «Con qué costo fijar precios»: «Último costo» (por defecto), «Promedio» o «El mayor».
+- **Control:** «Debió salir vs. hay» (recetas contra conteo), «Pérdidas registradas» y «Conteos que sumaron stock» (los dos se pueden «Revertir»), «Conteos hechos» y «Aceite y precios», donde está «Con qué costo fijar precios»: «Último costo» (por defecto), «Promedio» o «El mayor».
 
 ### Reglas que confunden
 - **El stock no se escribe a mano:** sube con las compras y baja solo con cada comanda enviada (según la receta), las mermas, el consumo del personal y la producción de preparaciones. El conteo lo corrige.
 - **Conteo con menos de lo esperado:** la diferencia queda como merma «por conteo». No es que se botó comida ese día: el sistema venía mal.
+- **Un conteo hecho mal** (contó 1 paquete de 8 y era 1 unidad, y al recontar quedaron 7 de pérdida): en Inventario › Control se revierte lo que entró en «Conteos que sumaron stock» y lo que salió en «Pérdidas registradas», y se vuelve a tocar «Contar lo que hay» con lo que de verdad hay, eligiendo bien paquetes o unidades sueltas. Nada se borra: lo revertido queda marcado.
+- **Un costo que sale en cero o raro:** una compra en $0 no cuenta como «lo último que se pagó». Si se corrige el costo en «Configurar la mercancía», esa corrección manda hasta que llegue una compra nueva, y el menú la toma sin hacer nada más. Si el costo está mal porque la compra se anotó mal, se anula y se registra de nuevo con el total, así el banco o la gaveta también quedan bien.
 - **«Costo promedio» ≠ «Costo última compra»:** el promedio es lo que costó lo que tienes (10 kg a $1 más 10 kg a $2 dan $1,50). Para poner precios, mira la última compra.
 - **«Aprovechable»** es cuánto de lo comprado se puede usar (pollo con hueso: 88 %). El «Costo real» = costo promedio ÷ aprovechable; las recetas usan ese costo y al vender se descuenta un poco más del depósito.
 - **Stock en negativo:** «Vender sin stock» encendido, «Vender igual», una merma mayor que lo que había, o recetas con cantidades de más. Se arregla contando.
@@ -279,7 +286,7 @@ En cada tarjeta: **«Sobró hoy»** («Lo guardo» no mueve nada; «Lo boto» lo
 
 **Para qué sirve:** al final del día, contar lo que hay en cada gaveta y en el banco, y ver si cuadra con lo que se vendió.
 
-**Dónde está:** `/caja`, pestañas «Cierre de caja» (la portada), «Gastos y retiros» (`/caja/movimientos`) e «Historial» (`/caja/historial`).
+**Dónde está:** `/caja`, pestañas «Cierre de caja» (la portada), «Retiros de caja» (`/caja/movimientos`) e «Historial» (`/caja/historial`).
 
 ### Hacer el cierre
 1. En «Cuadrando el día», elige la fecha. Viene puesto hoy y se puede elegir un día pasado.
@@ -297,7 +304,8 @@ En cada tarjeta: **«Sobró hoy»** («Lo guardo» no mueve nada; «Lo boto» lo
 
 ### Cómo se calcula «Debes tener»
 - **Efectivo (Bs y $):** fondo + lo cobrado en esa gaveta − gastos y retiros pagados de esa gaveta ± otros movimientos de esa gaveta.
-  - Los otros movimientos son, por ejemplo, un fiado cobrado en efectivo, un pago a proveedor en efectivo o el vuelto que salió de otra gaveta.
+  - Los otros movimientos son, por ejemplo, un fiado cobrado en efectivo, una compra pagada desde esa gaveta (una factura o «Llegó mercancía» con «Efectivo Bs» o «Efectivo $»), un pago de la pantalla Pagos en efectivo o el vuelto que salió de otra gaveta.
+  - **Una compra solo toca la caja si se dijo que la plata salió de esa gaveta.** Si se pagó con otra plata, se elige «Plata del dueño» o «Banco» y la gaveta no se entera. Si quedó mal, se anula la compra y se registra de nuevo con la forma correcta; si el día ya se cerró, se anula el cierre, se corrige y se vuelve a cerrar.
   - El **fondo** es lo que se contó al abrir la caja. Si no se abrió, es lo que traía esa gaveta de días anteriores.
 - **Punto, pago móvil, transferencia y Zelle:** se coteja solo lo que entró ese día, sin fondo.
 - **Pago mixto:** cada parte cuenta en su forma.
@@ -305,8 +313,8 @@ En cada tarjeta: **«Sobró hoy»** («Lo guardo» no mueve nada; «Lo boto» lo
 - **Vuelto:** se resta de la gaveta por donde salió. Si el cliente pagó en $ y se le dio vuelto en Bs, la gaveta de $ recibe el billete entero y la de Bs da el vuelto.
 - **A crédito:** no se cuenta, porque no entró plata.
 
-### Gastos y retiros
-En «Gastos y retiros», elige «Gasto» (con descripción, ej. «Bombona de gas», y categoría: Insumos, Servicios, Sueldos u Otros) o «Retiro del dueño». Elige de dónde sale («De Efectivo Bs», «De Efectivo $», «De Pago movil»…), escribe el monto **en dólares** y toca «Registrar»; queda con la hora de ese momento. La «x» lo borra (con «Deshacer»). La mercancía no va aquí: va por Compras.
+### Retiros de caja
+Todo billete que sale de la gaveta, para que el cierre cuadre: «Pago menor» (bombona, hielo, un mandado) o «Retiro del dueño», y de qué gaveta salió («De Efectivo Bs» o «De Efectivo $»). Baja lo que se debe tener en esa gaveta. «Depósito al banco»: el efectivo que se lleva al banco, con su referencia; no es gasto, solo cambia de sitio. «Entra plata del dueño»: cuando el dueño pone plata de su bolsillo; sube el capital y no es venta. Se anulan desde su lista. Los sueldos, el alquiler y lo que se paga por el banco van en **Pagos**; la mercancía, en Inventario › «Llegó mercancía» o en Compras.
 
 ### Corregir un cierre
 - **Se tecleó mal:** en el día cerrado, «Corregir el conteo» → cambiar → «Guardar el conteo». El cierre viejo queda anulado con su rastro.
@@ -331,6 +339,7 @@ En «Gastos y retiros», elige «Gasto» (con descripción, ej. «Bombona de gas
 Filtros «Qué pasó» (Cobradas, A crédito, Devueltas, «Anuladas: pérdida», «Anuladas: sin tocar», Abiertas) y «Factura» (Con factura, Sin factura); el buscador encuentra por número, cliente, producto o quién cobró. Al tocar una venta se ven renglones, descuento, propina, tasa de ese día, cómo se pagó, quién cobró y la factura; «Imprimir ticket» la reimprime. Los números de comanda se repiten cada día: la #12 de hoy no es la de ayer.
 
 ### Cobrar un fiado (venta a crédito)
+Lo normal es hacerlo en Cuentas por cobrar: buscar al cliente, marcar las ventas y «Pagar o abonar». Desde Ventas también se puede, venta por venta:
 1. Filtra «Qué pasó» → «A crédito» y toca la venta.
 2. Junto a «Debe todavía», «Cobrar / abonar».
 3. En «Cuánto entrega», lo que paga hoy. Si es menos, queda abonado («Entregó $X y queda debiendo $Y»).
@@ -352,6 +361,39 @@ Filtros «Qué pasó» (Cobradas, A crédito, Devueltas, «Anuladas: pérdida»,
 - **En Ventas no se anula:** anular es para pedidos sin cobrar, en el Punto de venta.
 - **«Contra el período anterior»** compara con un tramo del mismo largo justo antes: del 1 al 22 de octubre contra los 22 días anteriores, no contra septiembre completo.
 - **Venta cobrada de otro día o facturada con cambio de monto:** no se edita; se devuelve y se vuelve a cobrar.
+
+## Cuentas por cobrar
+
+**Dónde está:** `/cobranzas`, pestañas «Quién me debe» y «Cobros hechos».
+
+Lo que se vendió «A crédito» en el punto de venta y falta cobrar. No hay que crear nada antes: cada venta ya trae el nombre.
+
+### Cobrar
+1. En «Buscar cliente» escribe el nombre. Sin acentos también lo encuentra.
+2. Marca las ventas que te están pagando. Abajo se va sumando el total.
+3. Toca «Pagar o abonar», elige «Cómo pagó» y escribe «Cuánto pagó». Si la forma es en bolívares, el monto va en bolívares. Vacío significa que paga todo lo marcado.
+
+### Reglas que confunden
+- **Paga menos de lo marcado:** se pregunta qué pasa con lo que falta. «Quedan debiendo» es un abono, y se aplica de la venta más vieja a la más nueva. «No se cobran» cierra la deuda y la diferencia queda como comisión o descuento.
+- **Paga de más:** se pregunta antes, y lo de más queda como otro ingreso.
+- **Dar de baja:** marca las ventas que no se van a cobrar. Pasan a gasto (incobrables) y dejan de deberse. Se recuperan en «Cobros hechos» › «Dadas de baja».
+- **Retuvo IVA:** con ventas facturadas marcadas se elige si retuvo el 75 % o el 100 %. Lo retenido no entra al banco, queda como crédito contra el IVA. Con retención todavía no se puede dejar parte debiendo: hay que cobrar lo que falta o, si es comisión, marcarlo como comisión.
+- **Se anotó mal:** en «Cobros hechos», «Anular». Las ventas vuelven a deberse.
+
+## Pagos
+
+**Dónde está:** `/pagos`, pestañas «Pagos» y «Pagos fijos». Solo lo ven el dueño y Vertigo.
+
+Lo que el negocio paga **sin factura**: sueldos, honorarios (el contador, la mensualidad del sistema), alquiler, servicios públicos, mantenimiento, impuestos municipales. Se pone a quién, el concepto, el monto en dólares o en bolívares, de dónde salió y la referencia. Cada concepto va a su cuenta de gasto, sin IVA.
+
+En bolívares se elige la **«Tasa»**: BCV (la de siempre), Euro BCV, Paralelo u «Otra» para escribirla. Debajo del monto dice cuántos dólares son.
+
+### Reglas que confunden
+- **ISLR:** si toca retenerle, se pone el porcentaje: se le entrega el neto y lo retenido queda «por enterar». «Pagar al SENIAT» lo registra cuando se paga la planilla.
+- **Anticipo de sueldo:** no es gasto todavía; al pagar el sueldo de esa persona se descuenta solo.
+- **Pagos fijos:** un recordatorio de lo que se repite, como la quincena o el alquiler. Se anota una vez con a quién, cuánto y cada cuánto. El día que toca sale arriba en «Toca pagar», se toca «Pagar», se confirma el monto y queda registrado. Nada se paga solo. En bolívares usa la tasa BCV del día.
+- Si el servicio trae factura con IVA (CANTV, Corpoelec), va por Compras para recuperar el IVA.
+- Pagado en efectivo, el cierre de caja ya lo descuenta.
 
 ## Reportes
 
@@ -395,10 +437,11 @@ Los reportes guardados los ven todos los que entran a Reportes. Solo los cambia 
 **Dónde está:** la portada `/contador` («Zona contable») junta tres módulos: Contabilidad, Impuestos y Tasa de cambio. De fábrica, Contabilidad e Impuestos solo los ve el dueño; Tasa la ven el dueño y Caja.
 
 ### Contabilidad (`/contabilidad`)
-**Pestañas:** «Plan de cuentas», «Asientos», «Balance de comprobación», «Estado de resultados», «Balance general», «Equipos» y «Respaldos». Todo va en dólares.
+**Pestañas:** «Plan de cuentas», «Asientos», «Conciliación bancaria», «Balance de comprobación», «Estado de resultados», «Balance general», «Equipos» y «Respaldos». Todo va en dólares.
 
 - **Plan de cuentas:** tocar una cuenta abre su libro mayor; «+ Nueva cuenta» crea una.
 - **Asientos:** el libro diario, con filtro de período, cuenta y origen. «Asiento manual» pide descripción y al menos dos cuentas con el debe igual al haber. Solo los manuales se pueden borrar, y se borran sin confirmar.
+- **Conciliación bancaria:** se sube el estado de cuenta del banco (PDF o Excel). Los cobros se reconocen solos; lo que se repite (comisiones, por ejemplo) se asigna con reglas, y «Registrar en contabilidad» lo asienta en dólares a la tasa BCV del día.
 - **Estado de resultados** sigue el período; **Balance de comprobación** y **Balance general** son a hoy. El general dice «Los libros cuadran» o «Los libros no cuadran – revisa los asientos manuales».
 - **Equipos:** nacen de los renglones «Equipo» de Compras; uno anterior al sistema se agrega con «+ ya lo tenia». También «Cambiar duración», «Dar de baja» y «Cerrar ejercicio» (cierra el año anterior).
 - **Respaldos:** ver Configuración.
@@ -495,8 +538,14 @@ Solo los maneja el dueño, o un rol al que se le dio Contabilidad.
 - Faltante grande y aislado: un cobro sin registrar, o registrado con otra forma (entró por pago móvil y se marcó efectivo). Revisa «Ver N cobros» de cada forma y corrige con «Editar pago» en Ventas (si el día ya se cerró, anula el cierre primero).
 - Sobrante repetido: una venta cobrada que nunca se cargó.
 - Se puso 0 en algo que no se contó: el 0 anota faltante por todo lo esperado. Lo no contado va en blanco; se arregla con «Corregir el conteo».
-- Un gasto pagado de la gaveta sin anotar: regístralo en «Gastos y retiros» con la gaveta de donde salió.
+- Sobra justo lo que costó una compra o un pago del día: lo más probable es que esa plata no haya salido de esa gaveta. Revisa con qué se pagó; si fue con otra plata, anula la compra y regístrala con la forma correcta.
+- Un gasto pagado de la gaveta sin anotar: regístralo en Caja › «Retiros de caja» como «Pago menor», con la gaveta de donde salió.
 - No se abrió la caja: el sistema arranca de lo que traía la gaveta de días anteriores, con los descuadres viejos.
+
+**Una mercancía tiene el costo en cero o mal.**
+Mira primero cómo entró. Si se cargó con «Llegó mercancía» sin poner cuánto se pagó, entró al costo que tenía la ficha, o a $0 si no tenía. Hay dos arreglos:
+- Solo está mal el costo: «Configurar la mercancía» › corrige «Lo que pagas por unidad» y guarda. El menú y las recetas lo toman solos, sin otra compra y sin conteo.
+- También está mal lo que salió de la gaveta o del banco: la ficha › «Ver lo que le pasó» › «Anular» esa compra, y regístrala de nuevo en «Llegó mercancía» con el TOTAL pagado.
 
 **¿Por qué el margen sale 100 % (o la ganancia igual a las ventas)?**
 El producto no tiene receta o su mercancía tiene costo 0. Arma la receta en Menú › Recetas («Sin receta (N)» dice cuáles faltan) y revisa el costo de la mercancía. Las ventas ya hechas conservan su costo: se arregla de ahí en adelante.
@@ -523,7 +572,7 @@ PIN mal escrito, o de alguien cuyo rol no autoriza. Tras 10 intentos fallidos ha
 Nada se guarda hasta «Guardar factura»: corrige a mano. Si dice «No cuadra con el papel», revisa cantidades y precios por renglón. Un año mal leído deja la fecha futura y no deja guardar. Una mercancía mal asociada se borra en Proveedores › «Lo que se recuerda de sus facturas» › «Olvidar». Foto borrosa: repetirla con luz, una hoja por foto. Si el lector no responde, «Mejor la anoto a mano».
 
 **Cargué una factura dos veces (o con un error).**
-Las facturas con mercancía no se borran: «Nota de crédito» → «Devolución» si sobra mercancía, «Descuento» si el precio quedó alto. Si el stock quedó mal, haz un conteo.
+Esto es para facturas de Compras; una compra de «Llegó mercancía» se anula desde su ficha. Las facturas con mercancía no se borran: «Nota de crédito» → «Devolución» si sobra mercancía, «Descuento» si el precio quedó alto. Si el stock quedó mal, haz un conteo.
 
 **No me deja entrar a un módulo / no veo un ícono.**
 Tu rol no tiene ese módulo: el ícono no sale y la dirección te devuelve al Inicio. El dueño lo agrega en Configuración › Roles; luego recarga la página. «Tu rol no tiene permiso para esto» es lo mismo dentro de una pantalla.
@@ -547,7 +596,7 @@ Ya cobró otro pedido. Pide otro comprobante.
 Lo primero: el dueño actualiza la clave en Configuración › Pago móvil › «Clave del banco». Lo segundo: avisar a Vertigo y, mientras, cobrar anotando la referencia.
 
 **El fiado de un cliente no aparece en la caja.**
-Los fiados se cobran en Ventas › Historial › filtro «A crédito» › «Cobrar / abonar».
+Lo fiado no es plata, así que la caja no lo espera. Se cobra en Cuentas por cobrar: se busca al cliente, se marcan las ventas y «Pagar o abonar». Lo que se cobre en efectivo sí entra a la gaveta ese día.
 
 **«La caja de ese día ya se cerró».**
 Cierre de caja › Historial › «Anular este cierre», corrige el pago en Ventas y vuelve a cerrar.

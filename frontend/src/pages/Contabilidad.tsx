@@ -8,6 +8,7 @@ import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
 import { Aviso, Boton, Campo, Modal, Pagina, Selector } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import Respaldos from './partes/Respaldos'
+import ConciliacionBancaria from './partes/contabilidad/ConciliacionBancaria'
 import { api } from '../lib/api'
 import { fmtNum } from '../lib/moneda'
 import { llano } from '../lib/filtros'
@@ -27,6 +28,7 @@ import type {
 const SECCIONES = [
   { id: 'plan', texto: 'Plan de cuentas' },
   { id: 'diario', texto: 'Asientos' },
+  { id: 'banco', texto: 'Conciliación bancaria' },
   { id: 'comprobacion', texto: 'Balance de comprobación' },
   { id: 'resultados', texto: 'Estado de resultados' },
   { id: 'general', texto: 'Balance general' },
@@ -52,6 +54,7 @@ export default function Contabilidad() {
         </Aviso>
         {seccion === 'plan' && <PlanCuentas />}
         {seccion === 'diario' && <Diario rango={rango} />}
+        {seccion === 'banco' && <ConciliacionBancaria />}
         {seccion === 'comprobacion' && <BalanceComprobacion />}
         {seccion === 'resultados' && <EstadoResultados rango={rango} />}
         {seccion === 'general' && <BalanceGeneralVista />}

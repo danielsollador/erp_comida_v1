@@ -325,7 +325,16 @@ export type PasoRecorrido = {
 }
 export type Recorrido = { pasos: PasoRecorrido[]; ultimos_7_dias: { fecha: string; ventas: number }[] }
 
-export type Aviso = { id: string; tono: 'ojo' | 'bien' | 'info'; titulo: string; detalle: string; a: string }
+export type Aviso = {
+  id: string
+  tono: 'ojo' | 'bien' | 'info'
+  titulo: string
+  detalle: string
+  a: string
+  /** Las alertas que se explican: por qué lo marca el sistema y qué hacer. */
+  por_que?: string
+  que_hacer?: string
+}
 
 /** Cuánto lleva armado el local: las misiones de arranque de la portada. */
 export type ArranqueLocal = { productos: number; con_receta: number; mercancias: number; ventas: number; cierres: number }
@@ -969,6 +978,7 @@ export type ResumenCaja = {
   devuelto_monto_hoy: number
   gastos: number
   retiros: number
+  pagos_efectivo: number
   desglose: LineaMetodo[]
   otros_movimientos: OtroMovimiento[]
   fiado_por_cobrar: number
@@ -2162,4 +2172,399 @@ export type ReporteGuardado = {
   periodo: string | null
   creado_por: string
   de_fabrica: boolean
+}
+
+// ── Cargar el inventario con IA (backend: asistente_inventario.py) ─────────
+// La IA propone por nombres; la revisión lo cruza con lo que existe y el
+// guardado lo convierte en fichas, preparaciones y recetas, todo o nada.
+
+export type UnidadDicha = 'kg' | 'g' | 'lt' | 'ml' | 'unidad'
+export type UnidadFicha = 'kg' | 'lt' | 'unidad'
+export type TipoCarga = 'insumo' | 'reventa' | 'consumible' | 'desechable'
+
+export interface LineaPropuesta {
+  mercancia: string
+  cantidad: number
+  unidad: UnidadDicha
+}
+
+export interface LineaRevisada extends LineaPropuesta {
+  se_usa: string
+  unidad_ficha: string
+  cantidad_ficha: number | null
+  problema: string
+}
+
+export interface MercanciaPropuesta {
+  nombre: string
+  tipo: TipoCarga
+  unidad: UnidadFicha
+  costo_unitario: number | null
+  exento: boolean
+}
+
+export interface MercanciaRevisada extends MercanciaPropuesta {
+  ya_existe: string | null
+  parecidas: string[]
+}
+
+export interface PreparacionPropuesta {
+  nombre: string
+  unidad: UnidadFicha
+  /** Cuánto sale de la tanda descrita, en su unidad. */
+  rinde: number
+  lineas: LineaPropuesta[]
+}
+
+export interface PreparacionRevisada extends Omit<PreparacionPropuesta, 'lineas'> {
+  lineas: LineaRevisada[]
+  ya_existe: string | null
+}
+
+export interface RecetaPropuesta {
+  producto: string
+  variante_id: number | null
+  lineas: LineaPropuesta[]
+}
+
+export interface RecetaRevisada extends Omit<RecetaPropuesta, 'lineas'> {
+  variante_nombre: string
+  tiene_receta: boolean
+  lineas: LineaRevisada[]
+}
+
+export interface PropuestaCarga {
+  mercancias: MercanciaPropuesta[]
+  preparaciones: PreparacionPropuesta[]
+  recetas: RecetaPropuesta[]
+  dudas: string[]
+}
+
+export interface PropuestaRevisada {
+  mercancias: MercanciaRevisada[]
+  preparaciones: PreparacionRevisada[]
+  recetas: RecetaRevisada[]
+  dudas: string[]
+  variantes: { id: number; nombre: string; tiene_receta: boolean }[]
+  mercancias_conocidas: string[]
+  lector: string
+}
+
+export interface ResultadoCarga {
+  mercancias: string[]
+  preparaciones: string[]
+  recetas: string[]
+  omitidas: string[]
+}
+
+/** ¿Por qué no cuadra la caja? Causas probables con reglas fijas, redactadas por la IA si está. */
+export interface PistaCierre {
+  tipo: string
+  texto: string
+  pedidos: number[]
+  monto: number
+}
+
+export interface ExplicacionCierre {
+  texto: string
+  con_ia: boolean
+  pistas: PistaCierre[]
+  pedidos: number[]
+}
+
+/** Un turno del chat de ayuda. */
+export interface TurnoAyuda {
+  rol: 'usuario' | 'asistente'
+  texto: string
+}
+
+/** La respuesta de «Mis números»: lo que dice la IA y la tabla del sistema. */
+export interface RespuestaNegocio {
+  texto: string
+  con_ia: boolean
+  titulo: string
+  columnas: string[]
+  filas: string[][]
+  total: string[]
+  /** Cuántas columnas del principio son nombres; el resto, números. */
+  agrupado: number
+  mas: number
+}
+
+/** Un renglón del pedido al proveedor (ver backend/app/pedido_proveedor.py). */
+export interface LineaPedidoProveedor {
+  ingrediente_id: number
+  nombre: string
+  cantidad: number
+  unidad: string
+  presentacion: string
+  cantidad_presentacion: number | null
+  factor: number | null
+  precio: number | null
+}
+
+/** «Qué comprar» de un proveedor, con el mensaje listo para WhatsApp. */
+export interface PedidoProveedor {
+  proveedor: string
+  rif: string
+  contacto: string
+  whatsapp: string
+  conocido: boolean
+  lineas: LineaPedidoProveedor[]
+  estimado: number
+  mensaje: string
+}
+
+/** Conciliación bancaria en Contabilidad (ver backend/app/conciliacion_bancaria.py). */
+export interface LineaConciliacion {
+  id: number
+  fecha: string
+  concepto: string
+  referencia: string
+  /** Bs: + abono, - cargo. */
+  monto: number
+  estado: 'pendiente' | 'cobro' | 'propuesta' | 'registrado' | 'ignorado'
+  detalle: string
+  pedidos: number[]
+  cuenta: string
+  asiento_id: number | null
+  monto_usd: number | null
+}
+
+export interface SugerenciaRegla {
+  contiene: string
+  sentido: string
+  veces: number
+  total_bs: number
+  ejemplo: string
+  cuenta: string
+}
+
+export interface DetalleExtracto {
+  id: number
+  banco: string
+  cuenta: string
+  archivo: string
+  desde: string | null
+  hasta: string | null
+  saldo_final: number | null
+  descuadres: number
+  movimientos: number
+  conciliado_pct: number
+  resumen: { estado: string; movimientos: number; total_bs: number }[]
+  lineas: LineaConciliacion[]
+  sugerencias: SugerenciaRegla[]
+  cuentas: Record<string, string>
+}
+
+export interface ReglaBanco {
+  id: number
+  nombre: string
+  contiene: string
+  sentido: string
+  cuenta: string
+  activa: boolean
+}
+
+export interface EstadoConciliacion {
+  extractos: {
+    id: number
+    banco: string
+    archivo: string
+    desde: string | null
+    hasta: string | null
+    movimientos: number
+    pendientes: number
+    cargado_en: string | null
+  }[]
+  reglas: ReglaBanco[]
+}
+
+/** Un mensaje de WhatsApp leído como borrador de comanda (ver backend/app/pedido_whatsapp.py). */
+export interface BorradorWhatsApp {
+  cliente: string
+  nota: string
+  lineas: {
+    texto: string
+    cantidad: number
+    variante_id: number | null
+    nombre: string
+    precio: number | null
+    opciones: { variante_id: number; nombre: string; precio: number }[]
+  }[]
+  total: number
+  con_ia: boolean
+  /** El menú entero, para elegir a mano lo que no se entendió. */
+  menu: { variante_id: number; nombre: string; precio: number }[]
+}
+
+/** Un caso para el equipo de soporte, armado desde el chat (ver backend/app/triaje.py). */
+export interface BorradorCaso {
+  tipo: string
+  titulo: string
+  resumen: string
+  con_ia: boolean
+}
+
+export interface CasoRegistrado {
+  id: number
+  creado_en: string
+  tipo: string
+  titulo: string
+  estado: string
+  issue_url: string
+  usuario: string
+  pantalla: string
+}
+
+// ── Cuentas por cobrar ─────────────────────────────────────────────────────
+
+export type TipoCliente = 'persona' | 'empresa' | 'plataforma'
+
+export type ClienteCredito = {
+  id: number
+  nombre: string
+  tipo: TipoCliente
+  rif: string
+  telefono: string
+  comision_pct: number
+  dias_credito: number
+  nota: string
+  activo: boolean
+}
+
+export type ClienteConSaldo = ClienteCredito & {
+  saldo: number
+  ventas: number
+  mas_vieja_dias: number | null
+  vencido: number
+}
+
+export type VentaPorCobrar = {
+  pedido_id: number
+  numero: number
+  cliente: string
+  cliente_id: number | null
+  fecha: string
+  dias: number
+  original: number
+  abonado: number
+  saldo: number
+  facturado: boolean
+  numero_factura: string | null
+  vencida: boolean
+  retencion_75: number
+  retencion_100: number
+}
+
+export type ResumenCxC = {
+  total: number
+  vencido: number
+  clientes: ClienteConSaldo[]
+  sin_ficha: VentaPorCobrar[]
+  ventas: VentaPorCobrar[]
+  dadas_de_baja: VentaPorCobrar[]
+}
+
+export type CobroCliente = {
+  id: number
+  cliente_id: number | null
+  cliente: string
+  fecha: string
+  metodo_pago: string
+  referencia: string
+  monto: number
+  comision: number
+  excedente: number
+  retencion_iva: number
+  recibido: number
+  nota: string
+  anulado: boolean
+  ventas: number[]
+}
+
+export type MovimientoCuenta = {
+  fecha: string
+  tipo: 'venta' | 'abono' | 'cobro' | 'perdida'
+  detalle: string
+  cargo: number
+  abono: number
+  saldo: number
+  pedido_id: number | null
+  cobro_id: number | null
+}
+
+export type EstadoDeCuenta = {
+  cliente: ClienteCredito
+  saldo: number
+  pendientes: VentaPorCobrar[]
+  movimientos: MovimientoCuenta[]
+}
+
+// ── Pagos sin factura ──────────────────────────────────────────────────────
+
+export type PagoSinFactura = {
+  id: number
+  fecha: string
+  beneficiario: string
+  concepto: string
+  descripcion: string
+  monto: number
+  moneda: 'USD' | 'Bs'
+  monto_bs: number | null
+  tasa: number | null
+  metodo_pago: string
+  referencia: string
+  retencion_islr_pct: number
+  retencion_islr: number
+  anticipo_descontado: number
+  neto: number
+  pago_fijo_id: number | null
+  anulado: boolean
+}
+
+export type NuevoPago = {
+  beneficiario: string
+  concepto: string
+  descripcion: string
+  monto: number
+  moneda: 'USD' | 'Bs'
+  /** Solo en Bs: la tasa elegida. Sin ella, la BCV del día. */
+  tasa?: number
+  metodo_pago: string
+  referencia: string
+  retencion_islr_pct: number
+  descontar_anticipo?: number
+  fecha?: string
+}
+
+export type Frecuencia = 'semanal' | 'quincenal' | 'mensual'
+
+export type PagoFijo = Omit<NuevoPago, 'referencia' | 'fecha' | 'descontar_anticipo'> & {
+  id: number
+  frecuencia: Frecuencia
+  proximo: string
+  activo: boolean
+  toca: boolean
+}
+
+export type ResumenPagos = {
+  total: number
+  por_concepto: Record<string, number>
+  islr_por_enterar: number
+  anticipos_pendientes: number
+}
+
+export type AnticipoPendiente = { beneficiario: string; saldo: number }
+
+export type Traspaso = {
+  id: number
+  tipo: 'traspaso' | 'aporte'
+  desde: string | null
+  hacia: string
+  monto: number
+  referencia: string
+  nota: string
+  fecha: string
+  anulado: boolean
 }

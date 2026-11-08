@@ -26,17 +26,21 @@ from .routers import (
     compras_alertas,
     compras_equivalencias,
     compras_lectura,
+    conciliacion as conciliacion_router,
     config,
     contabilidad as contabilidad_router,
     gastos_vertigo,
     impuestos as impuestos_router,
     inventario,
+    inventario_asistente,
     menu,
     operadores,
     pagos,
     pedidos,
     preparaciones,
     proveedores,
+    cobranzas,
+    egresos,
     push as push_router,
     reportes,
     reportes_dinamicos,
@@ -257,6 +261,7 @@ app.include_router(pedidos.router)
 app.include_router(pagos.router)
 app.include_router(inventario.router)
 app.include_router(preparaciones.router)
+app.include_router(inventario_asistente.router)
 app.include_router(config.router)
 app.include_router(caja.router)
 app.include_router(reportes_dinamicos.router)
@@ -266,11 +271,14 @@ app.include_router(respaldos.router)
 app.include_router(sitio.router)
 app.include_router(tasas.router)
 app.include_router(contabilidad_router.router)
+app.include_router(conciliacion_router.router)
 app.include_router(compras.router)
 app.include_router(compras_lectura.router)
 app.include_router(compras_equivalencias.router)
 app.include_router(compras_alertas.router)
 app.include_router(proveedores.router)
+app.include_router(cobranzas.router)
+app.include_router(egresos.router)
 app.include_router(impuestos_router.router)
 app.include_router(asistente.router)
 app.include_router(push_router.router)

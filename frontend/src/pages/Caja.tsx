@@ -10,15 +10,18 @@ import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { api } from '../lib/api'
-import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
+import { Respuesta } from '../components/TextoConFormato'
+import { METODOS_CON_REFERENCIA, etiquetaMetodo, EN_BOLIVARES } from '../lib/pagos'
 import type {
   CierreCaja,
   CobroDelDia,
   EstadoApertura,
+  ExplicacionCierre,
   Gasto,
   LineaMetodo,
   ResumenCaja,
   RetiroPropietario,
+  Traspaso,
 } from '../lib/types'
 
 /**
@@ -27,7 +30,7 @@ import type {
  * EL ORDEN ES EL DE LA CABEZA DEL DUEÑO, no el del modelo de datos:
  *
  *   1. Qué vendí.              (y qué se anuló, que es la otra mitad)
- *   2. Qué salió.              (gastos y retiros)
+ *   2. Qué salió.              (retiros de caja)
  *   3. Por dónde entró.        (desglose por forma de pago)
  *   4. ¿Cuadra?                (el desglose contra las ventas)
  *   5. Contar.                 (un número por forma de pago)
@@ -38,11 +41,15 @@ import type {
  */
 const SECCIONES = [
   { id: 'cierre', texto: 'Cierre de caja' },
-  { id: 'movimientos', texto: 'Gastos y retiros' },
+  { id: 'movimientos', texto: 'Retiros de caja' },
   { id: 'historial', texto: 'Historial' },
 ]
 
-const CATEGORIAS_GASTO = ['Insumos', 'Servicios', 'Sueldos', 'Otros']
+// Un retiro de caja sale de una gaveta. Lo que se paga por el banco (un
+// sueldo, el alquiler) va por Pagos, que tambien sabe a quien y por que.
+const GAVETAS = ['Efectivo Bs', 'Efectivo $']
+// A donde se lleva el efectivo que se deposita.
+const BANCOS = ['Transferencia', 'Zelle']
 
 function hoyISO() {
   const d = new Date()
@@ -66,6 +73,7 @@ export default function Caja() {
   const [rango, setRango] = useRango('30d')
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [retiros, setRetiros] = useState<RetiroPropietario[]>([])
+  const [traspasos, setTraspasos] = useState<Traspaso[]>([])
   const [cierres, setCierres] = useState<CierreCaja[]>([])
 
   const [contando, setContando] = useState(false)
@@ -87,6 +95,7 @@ export default function Caja() {
   function cargarPeriodo() {
     api.listarGastos(rango).then(setGastos).catch(() => setGastos([]))
     api.listarRetiros(rango).then(setRetiros).catch(() => setRetiros([]))
+    api.listarTraspasos(rango).then(setTraspasos).catch(() => setTraspasos([]))
     api.listarCierres(rango).then(setCierres).catch(() => setCierres([]))
   }
 
@@ -145,7 +154,7 @@ export default function Caja() {
         )}
 
         {seccion === 'movimientos' && (
-          <Movimientos gastos={gastos} retiros={retiros} rango={rango} alCambiar={recargar} />
+          <Movimientos gastos={gastos} retiros={retiros} traspasos={traspasos} rango={rango} alCambiar={recargar} />
         )}
 
         {seccion === 'historial' && (
@@ -333,20 +342,20 @@ function Ventas({ r }: { r: ResumenCaja }) {
 
 /** 2. Qué salió de la caja que no fue una venta. */
 function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => void }) {
-  const hay = r.gastos > 0 || r.retiros > 0 || r.otros_movimientos.length > 0
+  const hay = r.gastos > 0 || r.retiros > 0 || r.pagos_efectivo > 0 || r.otros_movimientos.length > 0
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
       <div className="flex items-baseline justify-between gap-2 mb-3">
-        <h2 className="font-semibold">Gastos y retiros</h2>
+        <h2 className="font-semibold">Retiros de caja</h2>
         <button onClick={irAMovimientos} className="text-xs font-medium text-acento-600 underline" data-guia="caja.registrar-gasto">
           Registrar uno
         </button>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Tile
-          titulo="Gastos"
+          titulo="Pagos menores"
           valor={r.gastos}
-          detalle="bombona, vasos, pitillos…"
+          detalle="bombona, hielo, un mandado…"
           tono={r.gastos > 0 ? 'malo' : 'apagado'}
         />
         <Tile
@@ -356,6 +365,13 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
           tono={r.retiros > 0 ? 'malo' : 'apagado'}
         />
       </div>
+      {/* Un sueldo o el alquiler pagado en efectivo desde Pagos tambien sale
+          de la gaveta: se dice aqui para que nadie lo anote dos veces. */}
+      {r.pagos_efectivo > 0 && (
+        <p className="text-xs text-neutral-500 mt-3">
+          Además salieron {dinero(r.pagos_efectivo)} en efectivo por Pagos (sueldos, alquiler…). Ya están descontados.
+        </p>
+      )}
       {/* Pagarle a un proveedor tambien mueve la caja, y no es ninguno de los
           dos. Si no se dijera, al contar apareceria como un descuadre sin
           explicacion. */}
@@ -399,8 +415,10 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
 function Desglose({ r }: { r: ResumenCaja }) {
   const { tasa } = useMoneda()
   const bcv = tasa?.bcv ?? null
-  const totalEntro = r.desglose.reduce((s, l) => s + entradaDe(l), 0)
-  const totalSalio = r.desglose.reduce((s, l) => s + salidaDe(l), 0)
+  // El credito no es plata: lo fiado y lo cobrado de esa deuda no entran al
+  // total, que es lo que paso por gavetas y banco.
+  const totalEntro = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + entradaDe(l), 0)
+  const totalSalio = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + salidaDe(l), 0)
   // Las dos columnas del veredicto solo existen si ya se contó: antes del
   // cierre serían dos columnas vacías pidiendo que se llenen a mano.
   const cerrada = r.desglose.some((l) => l.contado !== null)
@@ -508,11 +526,68 @@ function Desglose({ r }: { r: ResumenCaja }) {
           </tfoot>
         </table>
       </div>
+      {cerrada && r.desglose.some((l) => l.se_cuadra && ((l.diferencia ?? 0) !== 0 || (l.contado === null && Math.abs(l.esperado) >= 0.01))) && (
+        <PorQueNoCuadra fecha={r.fecha} />
+      )}
       {sinContar && (
         <p className="mt-2 text-xs text-neutral-500">
           El total de «Debes tener» solo suma lo que se contó al cerrar: lo que quedó «sin verificar» no entra en la comparación.
         </p>
       )}
+    </div>
+  )
+}
+
+/**
+ * ¿Por qué no cuadra? (IA, 20-oct). Al cerrar, el sistema dice CUÁNTO falta;
+ * esto dice lo más probable de POR QUÉ: un cobro anotado en la forma
+ * equivocada, el cobro que no entró al banco, céntimos de la tasa. Las causas
+ * salen de reglas fijas y la IA solo las redacta. Solo explica: la
+ * corrección se hace en Ventas con «Editar pago».
+ */
+function PorQueNoCuadra({ fecha }: { fecha: string }) {
+  const [explicacion, setExplicacion] = useState<ExplicacionCierre | null>(null)
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState('')
+  async function pedir() {
+    setCargando(true)
+    setError('')
+    try {
+      setExplicacion(await api.explicarCierre(fecha))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo explicar')
+    } finally {
+      setCargando(false)
+    }
+  }
+  if (!explicacion) {
+    return (
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => void pedir()}
+          disabled={cargando}
+          className="vp-control rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          {cargando ? 'Buscando la causa…' : '¿Por qué no cuadra?'}
+        </button>
+        {error && <p className="mt-1 text-xs text-peligro-600">{error}</p>}
+      </div>
+    )
+  }
+  return (
+    <div className="mt-3 rounded-xl bg-aviso-50 p-3 text-sm text-aviso-900">
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-aviso-800">Lo más probable</p>
+      {/* Viene en markdown corto: **negritas** y pasos numerados. */}
+      <Respuesta texto={explicacion.texto} />
+      {explicacion.pedidos.length > 0 && (
+        <p className="mt-2 text-xs text-aviso-800">
+          Pedidos a revisar: {explicacion.pedidos.map((n) => `#${n}`).join(', ')}. Se corrigen en Ventas con «Editar pago».
+        </p>
+      )}
+      <p className="mt-2 text-[11px] text-aviso-700">
+        {explicacion.con_ia ? 'Redactado por la IA a partir de las reglas del sistema.' : 'Calculado por el sistema.'} No cambia nada: solo explica.
+      </p>
     </div>
   )
 }
@@ -682,7 +757,7 @@ function FilaMetodo({
         )}
         <span className="block text-[11px] text-neutral-400">
           {!l.se_cuadra
-            ? 'no entró plata: es una deuda'
+            ? 'no es plata: entró lo que se fió, salió lo que se cobró de la deuda'
             : l.fisico
               ? 'se cuenta: lo que hay en la gaveta'
               : 'se coteja: el movimiento del día'}
@@ -864,7 +939,6 @@ function Tile({
  * va en dolares. El sistema guarda todo en dolares, asi que lo tecleado en
  * bolivares se convierte a la tasa del dia antes de viajar.
  */
-const EN_BOLIVARES = new Set(['Efectivo Bs', 'Punto de venta', 'Pago movil', 'Transferencia'])
 
 function CuadrarCaja({
   resumen,
@@ -1058,31 +1132,36 @@ function CuadrarCaja({
 }
 
 /**
- * Gastos y retiros.
+ * Retiros de caja: la plata que sale de la gaveta, para que el cierre cuadre.
  *
- * Los dos salen de la caja, y por eso hay que decir POR DONDE: si se cobro
- * 100 en efectivo y salieron 50 para una bombona, al contar tienen que
- * aparecer 50. Sin esa pregunta, el cierre siempre iba a dar faltante.
+ * Nada mas. Hay que decir de QUE gaveta: si se cobro 100 en efectivo y
+ * salieron 50 para una bombona, al contar tienen que aparecer 50. Antes esto
+ * se llamaba "Gastos" y el dueño buscaba aqui donde anotar la nomina o la
+ * mensualidad del sistema (26-oct): eso es Pagos, que sabe a quien y por que
+ * concepto, y sale casi siempre del banco.
  *
- * NADA DE MERCANCIA. Un gasto no mueve inventario: para eso estan Compras e
+ * NADA DE MERCANCIA. Un retiro no mueve inventario: para eso estan Compras e
  * Inventario, que si registran lo que entro al deposito y a que costo.
  */
 function Movimientos({
   gastos,
   retiros,
+  traspasos,
   rango,
   alCambiar,
 }: {
   gastos: Gasto[]
   retiros: RetiroPropietario[]
+  traspasos: Traspaso[]
   rango: ReturnType<typeof useRango>[0]
   alCambiar: () => void
 }) {
-  const [tipo, setTipo] = useState<'gasto' | 'retiro'>('gasto')
+  const [tipo, setTipo] = useState<'gasto' | 'retiro' | 'deposito'>('gasto')
   const [descripcion, setDescripcion] = useState('')
-  const [categoria, setCategoria] = useState(CATEGORIAS_GASTO[0])
   const [monto, setMonto] = useState('')
-  const [metodo, setMetodo] = useState(METODOS_PAGO[0])
+  const [metodo, setMetodo] = useState(GAVETAS[0])
+  const [banco, setBanco] = useState(BANCOS[0])
+  const [referencia, setReferencia] = useState('')
   const [error, setError] = useState('')
   const { deshacible, oculto } = useDeshacer()
 
@@ -1090,15 +1169,21 @@ function Movimientos({
     const n = Number(monto.replace(',', '.'))
     if (!Number.isFinite(n) || n <= 0) return
     if (tipo === 'gasto' && !descripcion.trim()) return
+    if (tipo === 'deposito' && !referencia.trim()) return setError('Pon la referencia del depósito.')
     setError('')
     try {
       if (tipo === 'gasto') {
-        await api.crearGasto(descripcion.trim(), categoria, n, metodo)
+        await api.crearGasto(descripcion.trim(), 'Otros', n, metodo)
+      } else if (tipo === 'deposito') {
+        // Llevar el efectivo al banco: sale de la gaveta y entra al banco.
+        // No es gasto, pero si no se anota el cierre da faltante.
+        await api.crearTraspaso({ tipo: 'traspaso', desde: metodo, hacia: banco, monto: n, referencia: referencia.trim(), nota: descripcion.trim() })
       } else {
         await api.crearRetiro(n, metodo, descripcion.trim())
       }
       setDescripcion('')
       setMonto('')
+      setReferencia('')
       alCambiar()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar')
@@ -1110,11 +1195,15 @@ function Movimientos({
   // servidor, asi que la orden espera esos segundos antes de salir.
   const alFallar = (e: unknown) => setError(e instanceof Error ? e.message : 'No se pudo borrar')
   function borrarGasto(id: number) {
-    deshacible({ clave: `gasto:${id}`, texto: 'Gasto borrado', ejecutar: () => api.eliminarGasto(id), alTerminar: alCambiar, alFallar })
+    deshacible({ clave: `gasto:${id}`, texto: 'Retiro borrado', ejecutar: () => api.eliminarGasto(id), alTerminar: alCambiar, alFallar })
   }
 
   function borrarRetiro(id: number) {
     deshacible({ clave: `retiro:${id}`, texto: 'Retiro borrado', ejecutar: () => api.eliminarRetiro(id), alTerminar: alCambiar, alFallar })
+  }
+
+  function anularTraspaso(id: number) {
+    deshacible({ clave: `traspaso:${id}`, texto: 'Movimiento anulado', ejecutar: () => api.anularTraspaso(id), alTerminar: alCambiar, alFallar })
   }
 
   const esGasto = tipo === 'gasto'
@@ -1122,15 +1211,16 @@ function Movimientos({
   return (
     <>
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-        <h2 className="font-semibold mb-1">Registrar</h2>
+        <h2 className="font-semibold mb-1">Sacar plata de la caja</h2>
         <p className="text-xs text-neutral-500 mb-3">
-          Un <strong>gasto</strong> es algo que el negocio pagó (bombona, vasos, pitillos). Un{' '}
-          <strong>retiro</strong> es plata que se lleva el dueño. Ninguno de los dos es mercancía:
-          eso va por Compras, que sí mueve el inventario.
+          Anota aquí todo billete que salga de la gaveta, para que el cierre cuadre: un{' '}
+          <strong>pago menor</strong> (bombona, hielo, un mandado), lo que se lleva el dueño o el
+          efectivo que se <strong>deposita en el banco</strong>. Los sueldos, el alquiler y lo que pagas
+          por el banco van en <strong>Pagos</strong>; la mercancía, en <strong>Compras</strong>.
         </p>
 
         <div className="flex gap-2 mb-3">
-          {(['gasto', 'retiro'] as const).map((t) => (
+          {(['gasto', 'retiro', 'deposito'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTipo(t)}
@@ -1140,7 +1230,7 @@ function Movimientos({
                   : 'border-neutral-300 text-neutral-600'
               }`}
             >
-              {t === 'gasto' ? 'Gasto' : 'Retiro del dueño'}
+              {t === 'gasto' ? 'Pago menor' : t === 'retiro' ? 'Retiro del dueño' : 'Depósito al banco'}
             </button>
           ))}
         </div>
@@ -1152,30 +1242,38 @@ function Movimientos({
             placeholder={esGasto ? 'Ej. Bombona de gas' : 'Nota (opcional)'}
             className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm"
           />
-          <div className="flex flex-wrap gap-2">
-            {esGasto && (
+          {tipo === 'deposito' && (
+            <div className="flex flex-wrap gap-2">
               <select
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-                className="border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+                value={banco}
+                onChange={(e) => setBanco(e.target.value)}
+                className="flex-1 min-w-[10rem] border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+                title="A dónde se deposita"
               >
-                {CATEGORIAS_GASTO.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                {BANCOS.map((m) => (
+                  <option key={m} value={m}>
+                    {m === 'Zelle' ? 'A la cuenta en dólares (Zelle)' : 'Al banco en bolívares'}
                   </option>
                 ))}
               </select>
-            )}
-            {/* POR DONDE sale la plata. Es lo que hace que el cierre cuadre:
-                sin esto, un sueldo pagado por transferencia bajaba igual el
-                efectivo esperado. */}
+              <input
+                value={referencia}
+                onChange={(e) => setReferencia(e.target.value)}
+                placeholder="Referencia del depósito"
+                className="flex-1 min-w-[10rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {/* DE QUE GAVETA sale la plata. Es lo que hace que el cierre
+                cuadre: los bolivares y los dolares se cuentan aparte. */}
             <select
               value={metodo}
               onChange={(e) => setMetodo(e.target.value)}
               className="flex-1 min-w-[10rem] border border-neutral-300 rounded-lg px-2 py-2 text-sm"
-              title="De dónde sale la plata"
+              title="De qué gaveta sale la plata"
             >
-              {METODOS_PAGO.map((m) => (
+              {GAVETAS.map((m) => (
                 <option key={m} value={m}>
                   De {m}
                 </option>
@@ -1199,13 +1297,13 @@ function Movimientos({
       </div>
 
       <ListaMovimientos
-        titulo="Gastos"
+        titulo="Pagos menores"
         etiqueta={etiquetaRango(rango)}
         filas={gastos.filter((g) => !oculto(`gasto:${g.id}`)).map((g) => ({
           id: g.id,
           fecha: g.fecha,
           texto: g.descripcion,
-          detalle: `${g.categoria} · de ${g.metodo_pago}`,
+          detalle: `de ${g.metodo_pago}`,
           monto: g.monto,
           borrar: () => borrarGasto(g.id),
         }))}
@@ -1222,7 +1320,98 @@ function Movimientos({
           borrar: () => borrarRetiro(r.id),
         }))}
       />
+      {/* Separados: un deposito sale de la gaveta y un aporte entra. En una
+          sola lista el total sumaba las dos direcciones. */}
+      {(['deposito', 'aporte'] as const).map((tipo) => (
+        <ListaMovimientos
+          key={tipo}
+          titulo={tipo === 'aporte' ? 'Aportes del dueño' : 'Depósitos al banco'}
+          etiqueta={etiquetaRango(rango)}
+          filas={traspasos
+            .filter((t) => !t.anulado && !oculto(`traspaso:${t.id}`) && (t.tipo === 'aporte') === (tipo === 'aporte'))
+            .map((t) => ({
+              id: t.id,
+              fecha: t.fecha,
+              texto: t.tipo === 'aporte' ? 'Aporte del dueño' : `Depósito de ${t.desde}`,
+              detalle: `a ${t.hacia}${t.referencia ? ` · ref. ${t.referencia}` : ''}${t.nota ? ` · ${t.nota}` : ''}`,
+              monto: t.monto,
+              borrar: () => anularTraspaso(t.id),
+            }))}
+        />
+      ))}
+      <AporteDelDueno alCambiar={alCambiar} />
     </>
+  )
+}
+
+/** Plata que el dueño pone de su bolsillo: no es venta, es capital. Sin
+ * anotarla, el cierre la cuenta como sobrante. */
+function AporteDelDueno({ alCambiar }: { alCambiar: () => void }) {
+  const [monto, setMonto] = useState('')
+  const [hacia, setHacia] = useState('Efectivo Bs')
+  const [referencia, setReferencia] = useState('')
+  const [nota, setNota] = useState('')
+  const [error, setError] = useState('')
+  async function registrar() {
+    const n = Number(monto.replace(',', '.'))
+    if (!Number.isFinite(n) || n <= 0) return
+    if (METODOS_CON_REFERENCIA.has(hacia) && !referencia.trim()) return setError('Pon la referencia de la transferencia.')
+    setError('')
+    try {
+      await api.crearTraspaso({ tipo: 'aporte', desde: null, hacia, monto: n, referencia: referencia.trim(), nota: nota.trim() })
+      setMonto('')
+      setReferencia('')
+      setNota('')
+      alCambiar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar')
+    }
+  }
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+      <h2 className="font-semibold mb-1">Entra plata del dueño</h2>
+      <p className="text-xs text-neutral-500 mb-3">
+        Cuando el dueño pone plata de su bolsillo (para el sencillo, para pagarle a un proveedor). No es venta: sube el capital.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <select
+          value={hacia}
+          onChange={(e) => setHacia(e.target.value)}
+          className="flex-1 min-w-[10rem] border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+          title="A dónde entra"
+        >
+          {['Efectivo Bs', 'Efectivo $', 'Transferencia', 'Zelle'].map((m) => (
+            <option key={m} value={m}>
+              A {m}
+            </option>
+          ))}
+        </select>
+        {METODOS_CON_REFERENCIA.has(hacia) && (
+          <input
+            value={referencia}
+            onChange={(e) => setReferencia(e.target.value)}
+            placeholder="Referencia"
+            className="flex-1 min-w-[8rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+          />
+        )}
+        <input
+          value={nota}
+          onChange={(e) => setNota(e.target.value)}
+          placeholder="Para qué (opcional)"
+          className="flex-1 min-w-[8rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
+        />
+        <Numerico
+          value={monto}
+          onChange={(e) => setMonto(e.target.value)}
+          placeholder="$"
+          className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
+        />
+        <button onClick={registrar} className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium">
+          Registrar
+        </button>
+      </div>
+      {error && <p className="text-peligro-600 text-sm mt-2">{error}</p>}
+    </div>
   )
 }
 

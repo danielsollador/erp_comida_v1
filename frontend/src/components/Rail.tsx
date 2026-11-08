@@ -37,6 +37,8 @@ import Icono, { type NombreIcono } from './Icono'
 export type Grupo = 'vender' | 'negocio' | 'numeros' | 'contador'
 
 export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcono; titulo: string; grupo: Grupo }[] = [
+  // El asistente es de todos: lo que cada quien puede HACER con el lo decide
+  // la API por la que pasan sus acciones (ver backend/app/agente.py).
   { to: '/pos', modulo: 'pos', icono: 'pos', titulo: 'Punto de venta', grupo: 'vender' },
   { to: '/cocina', modulo: 'cocina', icono: 'cocina', titulo: 'Cocina', grupo: 'vender' },
   // Dos permisos detras de un solo icono: quien tenga cualquiera de los dos
@@ -48,6 +50,8 @@ export const MODULOS: { to: string; modulo: string | string[]; icono: NombreIcon
   { to: '/menu', modulo: ['menu', 'recetas'], icono: 'menu', titulo: 'Menú', grupo: 'negocio' },
   { to: '/caja', modulo: 'caja', icono: 'caja', titulo: 'Cierre de caja', grupo: 'numeros' },
   { to: '/ventas', modulo: 'ventas', icono: 'ventas', titulo: 'Ventas', grupo: 'numeros' },
+  { to: '/cobranzas', modulo: 'cobranzas', icono: 'cobrar', titulo: 'Cuentas por cobrar', grupo: 'numeros' },
+  { to: '/pagos', modulo: 'egresos', icono: 'pagar', titulo: 'Pagos', grupo: 'numeros' },
   { to: '/reportes', modulo: 'reportes', icono: 'reportes', titulo: 'Reportes', grupo: 'numeros' },
   { to: '/contabilidad', modulo: 'contabilidad', icono: 'contabilidad', titulo: 'Contabilidad', grupo: 'contador' },
   { to: '/impuestos', modulo: 'impuestos', icono: 'impuestos', titulo: 'Impuestos', grupo: 'contador' },
@@ -71,6 +75,8 @@ export const PREGUNTA: Record<string, string> = {
   '/reportes': '¿Cómo va el negocio?',
   '/ventas': '¿Qué se vendió y cómo se pagó?',
   '/caja': '¿Cuadran las ventas del día?',
+  '/cobranzas': '¿Quién me debe?',
+  '/pagos': 'Nómina, alquiler y pagos sin factura',
   '/contabilidad': 'Libros y balances',
   '/impuestos': 'IVA y libros fiscales',
   '/tasa': 'Bolívares por dólar de cada día',
@@ -87,6 +93,8 @@ const DESCRIPCION_TECNICA: Record<string, string> = {
   '/reportes': 'Cómo va el negocio',
   '/ventas': 'Cada venta y qué pasó con ella',
   '/caja': 'Cuadrar el día',
+  '/cobranzas': 'Ventas a crédito y su cobro',
+  '/pagos': 'Pagos sin factura y pagos fijos',
   '/contabilidad': 'Libro, gastos y resultados',
   '/impuestos': 'IVA y libros fiscales',
   '/tasa': 'Bolívares por dólar de hoy',

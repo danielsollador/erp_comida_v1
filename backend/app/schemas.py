@@ -1300,6 +1300,8 @@ class SaldarFiadoRequest(BaseModel):
     # Obligatoria si el metodo no es efectivo, igual que al cobrar en el punto
     # de venta (ver contabilidad.METODOS_CON_REFERENCIA).
     referencia: Optional[str] = None
+    # La misma clave en un reintento: no se aplica otra vez.
+    clave_cliente: Optional[str] = None
 
 
 class CuentaPorCobrar(BaseModel):
@@ -1434,6 +1436,27 @@ class CobroDelDia(BaseModel):
     repetida: bool = False
 
 
+class PistaCierre(BaseModel):
+    """Una causa probable de un descuadre, sacada con reglas fijas (ver
+    explicar_cierre.py)."""
+
+    tipo: str  # cruce, faltante, sobrante, centimos, repetida, sin_referencia, sin_contar, ventas, fondo, sin_ventas, casi_nada
+    texto: str
+    pedidos: List[int] = []  # numeros de comanda a revisar
+    monto: float = 0
+    # Lo que hay que hacer, concreto y con el boton por su nombre.
+    accion: str = ""
+    # Cuanto pesa: lo que mueve mas plata va primero en la explicacion.
+    peso: float = 0
+
+
+class ExplicacionCierre(BaseModel):
+    texto: str
+    con_ia: bool = False
+    pistas: List[PistaCierre] = []
+    pedidos: List[int] = []
+
+
 class OtroMovimiento(BaseModel):
     """Lo que movio una gaveta sin ser venta, gasto ni retiro.
 
@@ -1471,6 +1494,8 @@ class ResumenCaja(BaseModel):
     # --- lo que salio ---
     gastos: float = 0
     retiros: float = 0
+    # Lo que se pago desde Pagos (sueldos, alquiler) en efectivo ese dia.
+    pagos_efectivo: float = 0
 
     desglose: List[LineaMetodo] = []
     otros_movimientos: List[OtroMovimiento] = []
@@ -1623,6 +1648,10 @@ class Aviso(BaseModel):
     detalle: str = ""
     # La pantalla que lo resuelve: "/inventario/comprar".
     a: str = ""
+    # Las alertas que se explican (alertas_explicadas.py): por que el sistema
+    # lo marca, con los numeros, y que hacer. Vacias en los avisos de siempre.
+    por_que: str = ""
+    que_hacer: str = ""
 
 
 class ArranqueLocal(BaseModel):
@@ -3250,4 +3279,684 @@ class VueltoEmitido(BaseModel):
 
 
 FaltanteRequest.model_rebuild()
+
+
+# ── Cargar el inventario con IA (ver asistente_inventario.py) ──────────────
+# La IA PROPONE, la persona GUARDA. Lo que llega del modelo es una propuesta
+# por nombres; la revision la cruza con lo que ya existe y el guardado la
+# convierte en fichas, preparaciones y recetas de verdad.
+
+UNIDADES_CARGA = ("kg", "g", "lt", "ml", "unidad")
+TIPOS_CARGA = ("insumo", "reventa", "consumible", "desechable")
+
+
+class LineaPropuesta(BaseModel):
+    mercancia: str
+    cantidad: float = Field(gt=0)
+    unidad: str  # la que se dijo ("50 g"); al guardar pasa a la de la ficha
+
+
+class MercanciaPropuesta(BaseModel):
+    nombre: str
+    tipo: Literal["insumo", "reventa", "consumible", "desechable"] = "insumo"
+    unidad: Literal["kg", "lt", "unidad"] = "kg"
+    costo_unitario: Optional[float] = Field(default=None, ge=0)
+    exento: bool = False
+
+
+class PreparacionPropuesta(BaseModel):
+    nombre: str
+    unidad: Literal["kg", "lt", "unidad"] = "kg"
+    # Cuanto sale de la tanda descrita, en la unidad de la preparacion
+    # ("con 1 kg de pollo salen 0,8 kg de guiso"). La receta se guarda por 1.
+    rinde: float = Field(gt=0)
+    lineas: List[LineaPropuesta]
+
+
+class RecetaPropuesta(BaseModel):
+    producto: str  # como lo dijo la persona; la revision busca la variante
+    variante_id: Optional[int] = None  # elegida en pantalla
+    lineas: List[LineaPropuesta]
+
+
+class PropuestaCarga(BaseModel):
+    mercancias: List[MercanciaPropuesta] = []
+    preparaciones: List[PreparacionPropuesta] = []
+    recetas: List[RecetaPropuesta] = []
+    dudas: List[str] = []
+
+
+class LineaRevisada(LineaPropuesta):
+    # Con que mercancia quedo (existente o nueva de esta carga), o "" si no
+    # se encontro.
+    se_usa: str = ""
+    unidad_ficha: str = ""
+    cantidad_ficha: Optional[float] = None  # ya en la unidad de la ficha
+    problema: str = ""
+
+
+class MercanciaRevisada(MercanciaPropuesta):
+    ya_existe: Optional[str] = None  # "Pollo (kg)": no se crea, se usa esa
+    parecidas: List[str] = []
+
+
+class PreparacionRevisada(BaseModel):
+    nombre: str
+    unidad: str
+    rinde: float
+    lineas: List[LineaRevisada]
+    ya_existe: Optional[str] = None
+
+
+class VarianteDelMenu(BaseModel):
+    id: int
+    nombre: str  # "Pastelito · Carne", o el producto solo si tiene una
+    tiene_receta: bool = False
+
+
+class RecetaRevisada(BaseModel):
+    producto: str
+    variante_id: Optional[int] = None
+    variante_nombre: str = ""
+    tiene_receta: bool = False
+    lineas: List[LineaRevisada]
+
+
+class PropuestaRevisada(BaseModel):
+    mercancias: List[MercanciaRevisada] = []
+    preparaciones: List[PreparacionRevisada] = []
+    recetas: List[RecetaRevisada] = []
+    dudas: List[str] = []
+    variantes: List[VarianteDelMenu] = []
+    # Para la pantalla: todo lo que se puede elegir en un renglon.
+    mercancias_conocidas: List[str] = []
+    lector: str = ""
+
+
+class ResultadoCarga(BaseModel):
+    mercancias: List[str] = []
+    preparaciones: List[str] = []
+    recetas: List[str] = []
+    omitidas: List[str] = []  # lo que no se guardo y por que
 FacturaCompra.model_rebuild()
+
+
+# ── Chat de ayuda (ver asistente_ayuda.py) ──────────────────────────────────
+
+class TurnoAyuda(BaseModel):
+    rol: str  # "usuario" o "asistente"
+    texto: str
+
+
+class PreguntaAyuda(BaseModel):
+    pregunta: str = Field(..., min_length=1, max_length=4000)
+    pantalla: str = Field("", max_length=200)
+    historial: List[TurnoAyuda] = Field(default_factory=list, max_length=40)
+
+
+class RespuestaAyuda(BaseModel):
+    texto: str
+    con_ia: bool
+
+
+class EstadoAyuda(BaseModel):
+    activo: bool
+    # Si quien pregunta entra a algun reporte: «Mis números» (pregunta_negocio.py).
+    negocio: bool = False
+
+
+class RespuestaNegocio(BaseModel):
+    """La respuesta de «Pregúntale a tu negocio»: lo que redacta la IA y,
+    debajo, la tabla que calculó el sistema, ya formateada."""
+    texto: str
+    con_ia: bool
+    titulo: str = ""
+    columnas: List[str] = Field(default_factory=list)
+    filas: List[List[str]] = Field(default_factory=list)
+    total: List[str] = Field(default_factory=list)
+    # Cuantas columnas del principio son nombres (producto, dia); el resto, numeros.
+    agrupado: int = 0
+    # Filas que no se muestran (las que siguen al tope).
+    mas: int = 0
+
+
+# ── Pedido al proveedor (ver pedido_proveedor.py) ──────────────────────────
+
+class LineaPedidoProveedor(BaseModel):
+    ingrediente_id: int
+    nombre: str
+    # En NUESTRA unidad; con presentacion, redondeada al bulto entero.
+    cantidad: float
+    unidad: str
+    # Como lo vende el proveedor: "bultos", 2, factor 20 (kg por bulto).
+    presentacion: str = ""
+    cantidad_presentacion: Optional[float] = None
+    factor: Optional[float] = None
+    # Lo que costo la ultima vez, por unidad nuestra (sin IVA).
+    precio: Optional[float] = None
+
+
+class PedidoProveedor(BaseModel):
+    proveedor: str
+    rif: str = ""
+    contacto: str = ""
+    # El numero para wa.me (58414...), si su ficha tiene telefono.
+    whatsapp: str = ""
+    # False: lo que nunca se ha comprado con factura, sin a quien pedirselo.
+    conocido: bool = True
+    lineas: List[LineaPedidoProveedor]
+    estimado: float = 0
+    mensaje: str = ""
+
+
+# ── Conciliar el banco (ver conciliacion.py) ───────────────────────────────
+
+class CobroConciliable(BaseModel):
+    metodo: str
+    tipo: str = "venta"  # venta | abono (de un fiado)
+    pedido_id: int
+    numero: int
+    cliente: str = ""
+    fecha: Optional[datetime.datetime] = None
+    monto: float  # en dolares, como en los libros
+    bs: float  # lo que tuvo que entrar al banco
+    referencia: str = ""
+
+
+class MovimientoBanco(BaseModel):
+    fecha: datetime.date
+    concepto: str
+    monto: float  # + abono, - cargo, en Bs
+    referencia: str = ""
+
+
+class ParConciliado(BaseModel):
+    cobro: CobroConciliable
+    movimiento: MovimientoBanco
+    # Si ademas del monto y la fecha coincidio la referencia.
+    por_referencia: bool = False
+
+
+class DiaPunto(BaseModel):
+    """Lo cobrado por el punto un dia contra los lotes que abono el banco."""
+    fecha: datetime.date
+    fecha_banco: Optional[datetime.date] = None
+    sistema_bs: float
+    banco_bs: float
+    diferencia_bs: float
+    lotes: int = 0
+
+
+class ResultadoConciliacion(BaseModel):
+    banco: str
+    desde: datetime.date
+    hasta: datetime.date
+    movimientos: int
+    # Renglones cuyo monto no cuadra con el saldo: la lectura no es fiable.
+    descuadres_lectura: int = 0
+    abonos_bs: float = 0
+    comisiones_bs: float = 0
+    conciliados: List[ParConciliado] = Field(default_factory=list)
+    sin_banco: List[CobroConciliable] = Field(default_factory=list)
+    sin_sistema: List[MovimientoBanco] = Field(default_factory=list)
+    puntos: List[DiaPunto] = Field(default_factory=list)
+    lotes_sin_ventas: List[MovimientoBanco] = Field(default_factory=list)
+
+
+# ── Pedido de WhatsApp como borrador (ver pedido_whatsapp.py) ──────────────
+
+class TextoWhatsApp(BaseModel):
+    texto: str = Field(..., min_length=1, max_length=6000)
+
+
+class OpcionMenu(BaseModel):
+    variante_id: int
+    nombre: str
+    precio: float
+
+
+class LineaBorrador(BaseModel):
+    texto: str  # lo que escribio el cliente
+    cantidad: int
+    # El producto del menu; None = no se entendio, la cajera elige.
+    variante_id: Optional[int] = None
+    nombre: str = ""
+    precio: Optional[float] = None
+    # Para corregir: la elegida y las mas parecidas.
+    opciones: List[OpcionMenu] = Field(default_factory=list)
+
+
+class BorradorWhatsApp(BaseModel):
+    cliente: str = ""
+    nota: str = ""
+    lineas: List[LineaBorrador] = Field(default_factory=list)
+    total: float = 0
+    con_ia: bool = False
+    # El menu entero, para elegir a mano lo que no se entendio.
+    menu: List[OpcionMenu] = Field(default_factory=list)
+
+
+class EleccionWhatsApp(BaseModel):
+    texto: str = Field(..., min_length=1, max_length=200)
+    variante_id: int
+
+
+class AprenderWhatsApp(BaseModel):
+    elecciones: List[EleccionWhatsApp] = Field(default_factory=list, max_length=40)
+
+
+# ── Casos de soporte (ver triaje.py) ───────────────────────────────────────
+
+class PedidoBorradorCaso(BaseModel):
+    pantalla: str = Field("", max_length=200)
+    historial: List[TurnoAyuda] = Field(default_factory=list, max_length=40)
+
+
+class BorradorCaso(BaseModel):
+    tipo: str  # duda | error | pedido | dato
+    titulo: str
+    resumen: str = ""
+    con_ia: bool = False
+
+
+class CasoNuevo(BaseModel):
+    tipo: str = "duda"
+    titulo: str = Field(..., min_length=1, max_length=200)
+    resumen: str = Field("", max_length=4000)
+    pantalla: str = Field("", max_length=200)
+    historial: List[TurnoAyuda] = Field(default_factory=list, max_length=40)
+
+
+class CasoRegistrado(BaseModel):
+    id: int
+    creado_en: datetime.datetime
+    tipo: str
+    titulo: str
+    estado: str
+    issue_url: str = ""
+    usuario: str = ""
+    pantalla: str = ""
+
+
+# ── Conciliacion bancaria en Contabilidad (ver conciliacion_bancaria.py) ────
+
+class LineaConciliacion(BaseModel):
+    id: int
+    fecha: datetime.date
+    concepto: str
+    referencia: str = ""
+    monto: float  # Bs: + abono, - cargo
+    estado: str  # pendiente | cobro | propuesta | registrado | ignorado
+    detalle: str = ""
+    pedidos: List[int] = Field(default_factory=list)
+    cuenta: str = ""
+    asiento_id: Optional[int] = None
+    monto_usd: Optional[float] = None
+
+
+class ResumenEstado(BaseModel):
+    estado: str
+    movimientos: int
+    total_bs: float
+
+
+class SugerenciaRegla(BaseModel):
+    contiene: str
+    sentido: str
+    veces: int
+    total_bs: float
+    ejemplo: str = ""
+    cuenta: str = ""  # la que se propone, si se adivina (comisiones -> 6070)
+
+
+class DetalleExtracto(BaseModel):
+    id: int
+    banco: str
+    cuenta: str
+    archivo: str = ""
+    desde: Optional[datetime.date] = None
+    hasta: Optional[datetime.date] = None
+    saldo_final: Optional[float] = None
+    descuadres: int = 0
+    movimientos: int
+    conciliado_pct: float
+    resumen: List[ResumenEstado]
+    lineas: List[LineaConciliacion]
+    sugerencias: List[SugerenciaRegla] = Field(default_factory=list)
+    # codigo -> nombre, para mostrar a que cuenta va cada cosa.
+    cuentas: Dict[str, str] = Field(default_factory=dict)
+
+
+class ExtractoResumen(BaseModel):
+    id: int
+    banco: str
+    archivo: str = ""
+    desde: Optional[datetime.date] = None
+    hasta: Optional[datetime.date] = None
+    movimientos: int
+    pendientes: int
+    cargado_en: Optional[datetime.datetime] = None
+
+
+class Regla(BaseModel):
+    id: int
+    nombre: str
+    contiene: str
+    sentido: str
+    cuenta: str
+    activa: bool = True
+
+
+class ReglaIn(BaseModel):
+    nombre: str = Field("", max_length=80)
+    contiene: str = Field(..., min_length=2, max_length=80)
+    sentido: Literal["cargo", "abono", "ambos"] = "cargo"
+    cuenta: str = Field(..., min_length=3, max_length=10)
+    activa: bool = True
+
+
+class EstadoConciliacion(BaseModel):
+    extractos: List[ExtractoResumen]
+    reglas: List[Regla]
+
+
+class RegistrarLineas(BaseModel):
+    # Sin ids: todo lo propuesto del extracto.
+    ids: Optional[List[int]] = None
+
+
+class AccionLinea(BaseModel):
+    accion: Literal["cuenta", "ignorar", "pendiente"]
+    cuenta: str = ""
+
+
+# ── El asistente que hace cosas (ver agente.py) ────────────────────────────
+
+class MensajeAgente(BaseModel):
+    mensaje: str = Field(..., min_length=1, max_length=4000)
+    historial: List[TurnoAyuda] = Field(default_factory=list, max_length=40)
+
+
+class ConfirmarAccion(BaseModel):
+    propuesta_id: str = Field(..., min_length=4, max_length=60)
+
+
+class ResultadoAccion(BaseModel):
+    ok: bool
+    texto: str
+    # Para el historial de la IA (el pedido_id de lo creado); no se muestra.
+    nota: str = ""
+
+
+# ── Cuentas por cobrar ──────────────────────────────────────────────────────
+
+class ClienteCreate(BaseModel):
+    nombre: str
+    tipo: Literal["persona", "empresa", "plataforma"] = "persona"
+    rif: str = ""
+    telefono: str = ""
+    comision_pct: float = Field(default=0.0, ge=0, lt=100)
+    dias_credito: int = Field(default=0, ge=0)
+    nota: str = ""
+    activo: bool = True
+
+
+class Cliente(ClienteCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ClienteConSaldo(Cliente):
+    """Una fila de la portada de cuentas por cobrar."""
+    saldo: float
+    ventas: int
+    # Dias de la venta mas vieja que sigue debiendose.
+    mas_vieja_dias: Optional[int] = None
+    vencido: float = 0.0
+
+
+class VentaPorCobrar(BaseModel):
+    pedido_id: int
+    numero: int
+    cliente: str
+    cliente_id: Optional[int] = None
+    fecha: datetime.datetime
+    dias: int
+    original: float
+    abonado: float
+    saldo: float
+    facturado: bool = False
+    numero_factura: Optional[str] = None
+    vencida: bool = False
+    # Lo que se retendria de esta venta, calculado por el sistema: la pantalla
+    # lo lee en vez de repetir la cuenta. Cero si no hay factura o ya se retuvo.
+    retencion_75: float = 0.0
+    retencion_100: float = 0.0
+
+
+class ResumenCxC(BaseModel):
+    total: float
+    vencido: float
+    clientes: List[ClienteConSaldo]
+    # Fiados con un nombre escrito a mano que no es de ninguna ficha: hay que
+    # asignarlos para que entren en la cuenta de alguien.
+    sin_ficha: List[VentaPorCobrar]
+    # Todo lo que se debe, tenga o no ficha: es lo que se marca para cobrar.
+    ventas: List[VentaPorCobrar] = []
+    # Lo dado por perdido, para poder recuperarlo. `saldo` es lo que se perdio.
+    dadas_de_baja: List[VentaPorCobrar] = []
+
+
+class CobroClienteCreate(BaseModel):
+    cliente_id: Optional[int] = None
+    pedido_ids: List[int] = Field(min_length=1)
+    metodo_pago: str
+    referencia: str = ""
+    # Lo que se quedo la plataforma. Lo que entro al banco es el saldo de las
+    # ventas marcadas menos esto.
+    comision: float = Field(default=0.0, ge=0)
+    # Lo que llego DE MAS: propinas de la app o un ajuste a favor.
+    excedente: float = Field(default=0.0, ge=0)
+    # Lo que de verdad entro. Si viene, la comision o lo de mas se calculan
+    # solos (despues de la retencion): es lo que la persona tiene delante.
+    recibido: Optional[float] = Field(default=None, gt=0)
+    # Con retencion, lo que falta solo se cierra si alguien dijo que es comision.
+    diferencia_es_comision: bool = False
+    # Si el cliente es contribuyente especial y retuvo IVA al pagar: 75 o 100.
+    # Se aplica a las ventas facturadas que no tienen ya su retencion.
+    retencion_iva_pct: Optional[float] = None
+    nota: str = ""
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+    clave_cliente: Optional[str] = None
+
+
+class AbonoAVentas(BaseModel):
+    """Pago parcial de las ventas marcadas: de la mas vieja a la mas nueva."""
+    pedido_ids: List[int] = Field(min_length=1)
+    monto: float = Field(gt=0)
+    metodo_pago: str
+    referencia: str = ""
+    nota: str = ""
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+    clave_cliente: Optional[str] = None
+
+
+class AbonoACuenta(BaseModel):
+    """Un pago "a lo que debo", sin decir de cual venta: se aplica de la mas
+    vieja a la mas nueva."""
+    monto: float = Field(gt=0)
+    metodo_pago: str
+    referencia: str = ""
+    nota: str = ""
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+    clave_cliente: Optional[str] = None
+
+
+class DarPorPerdida(BaseModel):
+    motivo: str = ""
+
+
+class CobroCliente(BaseModel):
+    id: int
+    cliente_id: Optional[int] = None
+    cliente: str = ""
+    fecha: datetime.datetime
+    metodo_pago: str
+    referencia: str
+    monto: float
+    comision: float
+    excedente: float = 0.0
+    retencion_iva: float = 0.0
+    recibido: float
+    nota: str
+    anulado: bool
+    ventas: List[int] = []
+
+
+class MovimientoCuenta(BaseModel):
+    """Una linea del estado de cuenta: una venta a credito (cargo) o un pago."""
+    fecha: datetime.datetime
+    tipo: Literal["venta", "abono", "cobro", "perdida"]
+    detalle: str
+    cargo: float = 0.0
+    abono: float = 0.0
+    saldo: float = 0.0
+    pedido_id: Optional[int] = None
+    cobro_id: Optional[int] = None
+
+
+class EstadoDeCuenta(BaseModel):
+    cliente: Cliente
+    saldo: float
+    pendientes: List[VentaPorCobrar]
+    movimientos: List[MovimientoCuenta]
+
+
+class AsignarCliente(BaseModel):
+    cliente_id: int
+
+
+# ── Pagos sin factura ───────────────────────────────────────────────────────
+
+class PagoSinFacturaCreate(BaseModel):
+    beneficiario: str
+    concepto: str
+    descripcion: str = ""
+    # En la moneda de `moneda`. En Bs se pasa a dolares con la tasa BCV del dia,
+    # o con `tasa` si se eligio otra (paralelo, euro, la pactada).
+    monto: float = Field(gt=0)
+    moneda: Literal["USD", "Bs"] = "USD"
+    tasa: Optional[float] = Field(default=None, gt=0)
+    metodo_pago: str
+    referencia: str = ""
+    retencion_islr_pct: float = Field(default=0.0, ge=0, lt=100)
+    # De un sueldo: cuanto de lo ya adelantado se descuenta ahora.
+    descontar_anticipo: float = Field(default=0.0, ge=0)
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+
+
+class PagoSinFactura(BaseModel):
+    id: int
+    fecha: datetime.datetime
+    beneficiario: str
+    concepto: str
+    descripcion: str
+    monto: float
+    moneda: str
+    monto_bs: Optional[float] = None
+    tasa: Optional[float] = None
+    metodo_pago: str
+    referencia: str
+    retencion_islr_pct: float
+    retencion_islr: float
+    anticipo_descontado: float = 0.0
+    neto: float
+    pago_fijo_id: Optional[int] = None
+    anulado: bool
+
+    class Config:
+        from_attributes = True
+
+
+class PagoFijoCreate(BaseModel):
+    beneficiario: str
+    concepto: str
+    descripcion: str = ""
+    monto: float = Field(gt=0)
+    moneda: Literal["USD", "Bs"] = "USD"
+    metodo_pago: str
+    retencion_islr_pct: float = Field(default=0.0, ge=0, lt=100)
+    frecuencia: Literal["semanal", "quincenal", "mensual"] = "mensual"
+    proximo: datetime.date
+    activo: bool = True
+
+
+class PagoFijo(PagoFijoCreate):
+    id: int
+    # El dia que toca ya llego (o paso) y no se ha pagado.
+    toca: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class PagarFijo(BaseModel):
+    """Confirmar un pago fijo: se puede corregir el monto (subio el alquiler)
+    y hay que poner la referencia si salio del banco."""
+    monto: Optional[float] = Field(default=None, gt=0)
+    referencia: str = ""
+    # De un sueldo: cuanto anticipo descontar. Sin dato, todo lo pendiente.
+    descontar_anticipo: Optional[float] = Field(default=None, ge=0)
+    fecha: Optional[datetime.date] = None
+    operador_id: Optional[int] = None
+
+
+class ResumenPagos(BaseModel):
+    total: float
+    por_concepto: Dict[str, float]
+    islr_por_enterar: float
+    anticipos_pendientes: float = 0.0
+
+
+class AnticipoPendiente(BaseModel):
+    beneficiario: str
+    saldo: float
+
+
+class EnterarIslr(BaseModel):
+    # Sin monto: todo lo retenido que falta por enterar.
+    monto: Optional[float] = Field(default=None, gt=0)
+    metodo_pago: str = "Transferencia"
+    referencia: str = ""
+    fecha: Optional[datetime.date] = None
+
+
+class TraspasoCreate(BaseModel):
+    tipo: Literal["traspaso", "aporte"]
+    desde: Optional[str] = None
+    hacia: str
+    monto: float = Field(gt=0)
+    referencia: str = ""
+    nota: str = ""
+    operador_id: Optional[int] = None
+
+
+class Traspaso(BaseModel):
+    id: int
+    tipo: str
+    desde: Optional[str] = None
+    hacia: str
+    monto: float
+    referencia: str
+    nota: str
+    fecha: datetime.datetime
+    anulado: bool
+
+    class Config:
+        from_attributes = True

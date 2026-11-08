@@ -93,6 +93,13 @@ MODULOS: dict[str, dict] = {
         "rutas": ("/api/caja", "/api/puntos-venta", "/api/autorizaciones", "/api/pagos"),
         "lectura": ("/api/pedidos", "/api/reportes"),
     },
+    # Lo que se vendio a credito y su cobro. La cajera cobra fiados desde
+    # Ventas; aqui se cobra la semana de PedidosYa de una vez.
+    "cobranzas": {"nombre": "Cuentas por cobrar", "rutas": ("/api/cobranzas",),
+                  "lectura": ("/api/ventas",)},
+    # Nomina, honorarios, alquiler: lo que se paga sin factura. Es del dueño
+    # (lo que gana cada quien), por eso no va en el rol de caja.
+    "egresos": {"nombre": "Pagos", "rutas": ("/api/egresos",), "lectura": ("/api/tasas",)},
     "tasa": {"nombre": "Tasa de cambio", "rutas": ("/api/tasas", "/api/config")},
     "contabilidad": {"nombre": "Contabilidad", "rutas": ("/api/contabilidad", "/api/respaldos")},
     "impuestos": {"nombre": "Impuestos", "rutas": ("/api/impuestos",)},
@@ -131,7 +138,7 @@ MODULOS_POR_ROL: dict[str, tuple[str, ...]] = {
     "admin": _TODOS,
     "dueno": _TODOS,
     "caja": ("pos", "cocina", "reportes", "ventas", "menu", "recetas", "inventario",
-             "compras", "caja", "tasa"),
+             "compras", "caja", "tasa", "cobranzas"),
     "cocina": ("cocina",),
 }
 
@@ -139,11 +146,17 @@ MODULOS_POR_ROL: dict[str, tuple[str, ...]] = {
 # impuestos son la utilidad real del negocio; los respaldos son la base
 # completa; los usuarios, las llaves.
 SOLO_ADMINISTRA = ("/api/contabilidad", "/api/impuestos", "/api/respaldos",
-                   "/api/usuarios", "/api/pagos/config")
+                   "/api/usuarios", "/api/pagos/config",
+                   # Lo que gana cada empleado y lo que se le paga a externos.
+                   "/api/egresos")
 
 # La cartera de locales de Vertigo y lo que le cuesta mantener la plataforma.
 # Solo el equipo de la plataforma.
 SOLO_VERTIGO = ("/api/agencia", "/api/gastos-vertigo")
+# Lo que puede cualquiera con sesion, sea el rol que sea: la clave y el PIN
+# propios y su propio telefono para los avisos push (push.py decide despues a
+# quien le llega cada aviso).
+PARA_TODOS = ("/api/usuarios/mi/", "/api/push/")
 
 # Lecturas que no comprometen nada y que las pantallas piden al cargar, sea
 # quien sea: la tasa del dia y la configuracion (que hoy es solo la tasa).
@@ -309,12 +322,7 @@ def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
     metodo = metodo.upper()
     escribe = metodo not in ("GET", "HEAD")
 
-    # La clave y el PIN propios los cambia cada quien, sea el rol que sea.
-    if ruta.startswith("/api/usuarios/mi/"):
-        return True
-    # Su propio telefono para los avisos push lo registra cada quien (push.py
-    # decide despues a quien le llega cada aviso).
-    if ruta.startswith("/api/push/"):
+    if ruta.startswith(PARA_TODOS):
         return True
     if ruta.startswith(SOLO_VERTIGO):
         return r == "admin"

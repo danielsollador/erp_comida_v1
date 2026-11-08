@@ -1923,6 +1923,15 @@ def _consumo_diario(db: Session, dias: int = 14) -> dict:
     return {ing.id: total / medidos for ing, total in hojas.items()}
 
 
+@router.get("/pedido-proveedor", response_model=List[schemas.PedidoProveedor])
+def pedido_al_proveedor(db: Session = Depends(get_db)):
+    """«Qué comprar» repartido por proveedor, con el mensaje para WhatsApp.
+    Solo arma el texto: no envia nada (ver pedido_proveedor.py)."""
+    from .. import pedido_proveedor
+
+    return pedido_proveedor.armar(db, sugerencias_compra(db))
+
+
 @router.get("/sugerencias", response_model=List[schemas.SugerenciaCompra])
 def sugerencias_compra(db: Session = Depends(get_db)):
     consumo_diario = _consumo_diario(db)
@@ -1951,16 +1960,19 @@ def sugerencias_compra(db: Session = Depends(get_db)):
         if cantidad <= 0:
             continue
 
+        from ..pedido_proveedor import _num, _plural
+
+        def cuanto(c):
+            return f"{_num(c)} {_plural(ing.unidad, c)}"
+
         if dias_restantes is not None:
+            dias = round(dias_restantes, 1)
             razon = (
-                f"Quedan {ing.stock_actual:g} {ing.unidad}. Al ritmo de las ultimas 2 semanas "
-                f"({por_dia:.2f} {ing.unidad}/dia) te duran {dias_restantes:.1f} dias."
+                f"Quedan {cuanto(ing.stock_actual)}. Al ritmo de las últimas 2 semanas "
+                f"({cuanto(por_dia)} al día) te duran {_num(dias)} {'día' if dias == 1 else 'días'}."
             )
         else:
-            razon = (
-                f"Quedan {ing.stock_actual:g} {ing.unidad}, por debajo del minimo de "
-                f"{ing.stock_minimo:g} {ing.unidad}."
-            )
+            razon = f"Quedan {cuanto(ing.stock_actual)}, por debajo del mínimo de {cuanto(ing.stock_minimo)}."
         sugerencias.append(
             schemas.SugerenciaCompra(
                 ingrediente_id=ing.id,

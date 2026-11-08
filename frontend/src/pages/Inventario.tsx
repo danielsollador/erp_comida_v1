@@ -21,6 +21,8 @@ import Control from './partes/inventario/Control'
 import FichaMercancia from './partes/inventario/FichaMercancia'
 import ConteoFisico, { DetalleConteo } from './partes/inventario/ConteoFisico'
 import SeccionCategorias from './partes/inventario/Categorias'
+import CargarConIA from './partes/inventario/CargarConIA'
+import PedirAProveedores from './partes/inventario/PedirAProveedores'
 import AccionFila from '../components/AccionFila'
 import type {
   Configuracion,
@@ -132,6 +134,13 @@ export default function Inventario() {
   // La ficha abierta: 'nuevo' (con el tipo del almacén en que se está) o el id.
   const [ficha, setFicha] = useState<{ nuevo: TipoArticulo } | number | null>(null)
   const [contando, setContando] = useState(false)
+  // Cargar con IA: el boton solo aparece si el lector esta prendido.
+  const [conIA, setConIA] = useState(false)
+  const [pidiendo, setPidiendo] = useState(false)
+  const [iaActiva, setIaActiva] = useState(false)
+  useEffect(() => {
+    api.estadoAsistenteInventario().then((e) => setIaActiva(e.activo)).catch(() => setIaActiva(false))
+  }, [])
   const [conteoAbierto, setConteoAbierto] = useState<number | null>(null)
   const [config, setConfig] = useState<Configuracion | null>(null)
   const [cambiandoConfig, setCambiandoConfig] = useState(false)
@@ -298,7 +307,9 @@ export default function Inventario() {
           nombre: 'metodo',
           etiqueta: 'De dónde salió la plata',
           tipo: 'opciones',
-          opciones: METODOS_DE_PAGO.map((m) => ({ valor: m.valor, texto: m.texto })),
+          // Sin marcar: una compra solo toca una gaveta si alguien lo dice.
+          valor: '',
+          opciones: [{ valor: '', texto: 'Elige de dónde salió' }, ...METODOS_DE_PAGO.map((m) => ({ valor: m.valor, texto: m.texto }))],
         },
         {
           nombre: 'costo',
@@ -614,7 +625,10 @@ export default function Inventario() {
         {seccion === 'almacenes' && (
           <>
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <div className="flex items-center gap-2">
+              {/* Con wrap: en el telefono los cuatro botones no caben en una
+                  fila, y sin envolver se salian por la IZQUIERDA (la fila va
+                  alineada a la derecha) sin poder desplazarse (23-oct). */}
+              <div className="flex flex-wrap items-center justify-end gap-2 [&>button]:whitespace-nowrap">
                 {/* A la vista y no dentro del "⋯" (17-oct): cuando se acaba
                     algo en pleno servicio hay que encontrarlo ya. Prendido,
                     lo apaga el aviso de arriba. */}
@@ -626,6 +640,11 @@ export default function Inventario() {
                 <Boton tono="suave" data-guia="inventario.conteo" onClick={() => setContando(true)} disabled={activos.length === 0}>
                   Conteo físico
                 </Boton>
+                {iaActiva && (
+                  <Boton tono="suave" onClick={() => setConIA(true)}>
+                    Cargar con IA
+                  </Boton>
+                )}
                 <Boton data-guia="inventario.nueva" onClick={() => setFicha({ nuevo: 'insumo' })} icono="mas">
                   Nueva mercancía
                 </Boton>
@@ -781,6 +800,11 @@ export default function Inventario() {
               </div>
             ) : (
               <Seccion titulo="Qué comprar" ayuda="Lo que está bajo mínimo o, al ritmo de venta de las últimas dos semanas, no llega a la próxima.">
+                <div className="flex justify-end mb-1">
+                  <Boton tono="suave" onClick={() => setPidiendo(true)}>
+                    Pedir a proveedores
+                  </Boton>
+                </div>
                 <ul className="divide-y divide-neutral-500/10">
                   {sugerencias.map((s) => {
                     const ing = ingredientes.find((i) => i.id === s.ingrediente_id)
@@ -892,6 +916,8 @@ export default function Inventario() {
         />
       ) : null}
 
+      {pidiendo && <PedirAProveedores onCerrar={() => setPidiendo(false)} />}
+      {conIA && <CargarConIA onCerrar={() => setConIA(false)} onGuardado={() => cargar()} />}
       {contando && <ConteoFisico ingredientes={activos} onCerrar={() => setContando(false)} onGuardado={conteoGuardado} />}
 
       {impacto && (

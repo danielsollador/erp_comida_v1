@@ -85,6 +85,8 @@ const Menu = perezoso(() => import('./pages/Menu'))
 const Caja = perezoso(() => import('./pages/Caja'))
 const Reportes = perezoso(() => import('./pages/Reportes'))
 const Ventas = perezoso(() => import('./pages/Ventas'))
+const CuentasPorCobrar = perezoso(() => import('./pages/CuentasPorCobrar'))
+const Pagos = perezoso(() => import('./pages/Pagos'))
 const Tasa = perezoso(() => import('./pages/Tasa'))
 const Contabilidad = perezoso(() => import('./pages/Contabilidad'))
 const Compras = perezoso(() => import('./pages/Compras'))
@@ -233,6 +235,8 @@ export default function App() {
               <Route path="/recetas" element={<Navigate to="/menu/recetas" replace />} />
               <Route path="/caja/:seccion?" element={<Requiere modulo="caja"><Caja /></Requiere>} />
               <Route path="/ventas/:seccion?" element={<Requiere modulo="ventas"><Ventas /></Requiere>} />
+              <Route path="/cobranzas/:seccion?" element={<Requiere modulo="cobranzas"><CuentasPorCobrar /></Requiere>} />
+              <Route path="/pagos/:seccion?" element={<Requiere modulo="egresos"><Pagos /></Requiere>} />
               <Route path="/reportes/:seccion?" element={<Requiere modulo="reportes"><Reportes /></Requiere>} />
               <Route path="/tasa/:seccion?" element={<Requiere modulo="tasa"><Tasa /></Requiere>} />
               <Route path="/compras/:seccion?" element={<Requiere modulo="compras"><Compras /></Requiere>} />

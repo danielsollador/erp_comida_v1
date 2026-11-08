@@ -12,6 +12,7 @@ from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
 from .. import consolidacion
+from .. import cuentas_por_cobrar
 from .. import seed
 from . import operadores
 
@@ -383,6 +384,25 @@ def _vender_sin_inventario(db: Session) -> bool:
     """
     fila = db.query(models.Configuracion).first()
     return bool(fila and fila.vender_sin_inventario)
+
+
+@router.post("/whatsapp", response_model=schemas.BorradorWhatsApp)
+def borrador_de_whatsapp(datos: schemas.TextoWhatsApp, db: Session = Depends(get_db)):
+    """El mensaje de un cliente, como borrador de comanda. NO crea el pedido:
+    el punto de venta lo carga para que la cajera lo revise (ver
+    pedido_whatsapp.py)."""
+    from .. import pedido_whatsapp
+
+    return pedido_whatsapp.borrador(db, datos.texto)
+
+
+@router.post("/whatsapp/aprender")
+def aprender_de_whatsapp(datos: schemas.AprenderWhatsApp, db: Session = Depends(get_db)):
+    """Lo que la cajera eligio a mano en el borrador: la proxima vez se
+    reconoce solo ("granjero" es tal producto en este local)."""
+    from .. import pedido_whatsapp
+
+    return {"aprendidos": pedido_whatsapp.aprender(db, datos.elecciones)}
 
 
 @router.post("", response_model=schemas.Pedido)
@@ -1650,6 +1670,8 @@ async def cobrar_pedido(
             status_code=400,
             detail="Para fiar hace falta el nombre del cliente: si no, no hay a quien cobrarle.",
         )
+    if any(p.metodo == "Fiado" for p in pagos):
+        cuentas_por_cobrar.vincular_pedido(db, pedido)
 
     # Quien cobro y desde que caja. Sin esto, con dos tablets no habia forma de
     # saber cuanto entro por cada gaveta ni quien atendio.
@@ -2215,6 +2237,19 @@ async def devolver_pedido(
         )
     if pedido.devuelto:
         raise HTTPException(status_code=409, detail="Este pedido ya fue devuelto")
+    # Cobrada dentro de un pago agrupado (la semana de PedidosYa): parte de
+    # esa plata es la comision, no esta en el banco. Devolverla sacaria del
+    # banco mas de lo que entro.
+    if pedido.fiado_castigado:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta venta se dio por perdida en Cuentas por cobrar. Recupérala primero.",
+        )
+    if any(a.cobro_id for a in pedido.abonos):
+        raise HTTPException(
+            status_code=409,
+            detail="Esta venta se cobró junto con otras en Cuentas por cobrar. Anula ese cobro primero.",
+        )
     if pedido.facturado and not body.nota_credito:
         raise HTTPException(
             status_code=400,

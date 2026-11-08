@@ -48,7 +48,7 @@ Un solo `h1`, HTML semántico, `title` y `description` únicos, Open Graph, `can
 ## Cómo se trabaja una pantalla
 
 1. Mirarla en local antes de tocarla: claro y oscuro, tablet (~1024 px) y teléfono (~390 px).
-2. Proponer en dos o tres líneas qué cambia. Si toca más de una pantalla, preguntar.
+2. Proponer en dos o tres líneas qué cambia y qué vino a terminar el usuario: en cuántos toques lo termina, qué escribe y qué lee (`CLAUDE.md` > Resuelve, no explica). Si toca más de una pantalla, preguntar.
 3. Reutilizar los componentes base; un patrón nuevo va en `components/` y se usa en todas las pantallas que lo necesiten.
 4. Volver a mirarla en los dos temas, con y sin modo ligero (`localStorage.setItem('vp-ligero','siempre')`), y con la marca de Savora y la de Vertigo.
 5. Lo que la cajera ya sabe usar (cobrar, enviar, volver) no cambia de lugar ni de nombre.
@@ -66,4 +66,4 @@ Un solo `h1`, HTML semántico, `title` y `description` únicos, Open Graph, `can
 | Sombra en reposo | `0 1px 2px rgb(0 0 0/.04), 0 8px 24px rgb(0 0 0/.06)` |
 | Transición | 180 a 260 ms, `cubic-bezier(.2, .7, .2, 1)` |
 
-**Salió mal si:** se ve "a plantilla", hay que leer dos veces para saber qué importa, el cobre de Savora aparece fuera del ERP de Savora, un tono cambió en un solo archivo, o hubo que agregar una fuente, un hex suelto o un `!important`.
+**Salió mal si:** se ve "a plantilla", hay que leer dos veces para saber qué importa, se entiende bien pero el usuario todavía tiene que ir a otra pantalla a resolverlo, el cobre de Savora aparece fuera del ERP de Savora, un tono cambió en un solo archivo, o hubo que agregar una fuente, un hex suelto o un `!important`.

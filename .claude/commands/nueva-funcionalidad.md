@@ -6,7 +6,7 @@ argument-hint: "<la idea, con tus palabras>"
 Idea: $ARGUMENTS (si viene vacía, pregunta cuál es y para).
 
 1. **Entender.** Busca en @plan-implementacion.md, @project-map.md y el código si ya existe; si existe, pregunta si es un cambio. Si falta algo para no inventar (quién la usa, módulo, efecto en dinero, sin conexión, dos usuarios), pregunta con `AskUserQuestion`. Lo que toque dinero, fiscalidad o arquitectura y no esté decidido va como decisión pendiente.
-2. **Proponer.** Muestra en el chat, corto: el requisito como quedaría en el plan, en qué fase va (nunca en la FASE 0), de qué depende y qué queda por decidir. Espera el visto bueno.
+2. **Proponer.** Muestra en el chat, corto: qué vino a terminar el usuario y en cuántos toques lo termina, qué escribe y qué lee (`CLAUDE.md` > Resuelve, no explica); el requisito como quedaría en el plan, en qué fase va (nunca en la FASE 0), de qué depende y qué queda por decidir. Espera el visto bueno.
 3. **Escribir**, siguiendo las reglas de documentos de `CLAUDE.md`:
    - `specs/<modulo>.md`: desde @specs/_plantilla.md, o una sección nueva si ya existe. Antes de darla por escrita, **aclara:** lo que quedó ambiguo se pregunta con `AskUserQuestion` (máximo 4 preguntas, con la opción recomendada primero) y la respuesta va a la spec.
    - `plan-implementacion.md`: el requisito en su fase, en una línea por punto. Si es de la fase en curso, como bloque con su **Qué** y su **Cómo**. Las decisiones pendientes, en su tabla.

@@ -268,3 +268,35 @@ def test_cocina_no_busca_compras_ni_ventas(db):
 
     _documentos(db)
     assert "error" in busqueda.buscar(db, "cocina", tipo="compra", texto="makro")
+
+
+def test_movimientos_de_caja_dice_que_movio_la_gaveta(client, db, libros):
+    """2-nov: -$6,90 en el cierre eran unos huevos; el asistente adivinó un vuelto."""
+    from app.asistente import herramientas
+    from app import models as m
+    ing = m.Ingrediente(nombre="Huevos", unidad="unidad", stock_actual=0, costo_unitario=0.23, tipo="insumo")
+    db.add(ing)
+    db.commit()
+    r = client.post(f"/api/inventario/ingredientes/{ing.id}/comprar",
+                    json={"cantidad": 30, "costo_total": 6.9, "metodo_pago": "Efectivo $"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    d = herramientas.movimientos_de_caja(db, "Efectivo $")
+    assert d["total_salio"] == 6.9
+    assert any("Huevos" in x["que"] and x["salio"] == 6.9 for x in d["movimientos"])
+    assert "error" in herramientas.movimientos_de_caja(db, "Inventada")
+
+
+def test_compras_de_mercancia_explica_de_donde_sale_el_costo(client, db, libros):
+    """2-nov: la crema de leche a $1,00: hay que ver la compra, no suponer."""
+    from app.asistente import herramientas
+    from app import models as m
+    ing = m.Ingrediente(nombre="Crema de Leche", unidad="unidad", stock_actual=0, costo_unitario=1.0, tipo="insumo")
+    db.add(ing)
+    db.commit()
+    client.post(f"/api/inventario/ingredientes/{ing.id}/comprar", json={"cantidad": 48, "metodo_pago": "Efectivo $"})
+    db.expire_all()
+    d = herramientas.compras_de_mercancia(db, "crema")["mercancias"][0]
+    assert d["costo_en_la_ficha"] == 1.0
+    assert d["ultimas_compras"][0]["total"] == 48.0
+    assert "error" in herramientas.compras_de_mercancia(db, "no existe")
