@@ -197,14 +197,86 @@ export function olvidarCompartidas() {
   COMPARTIDAS.clear()
 }
 
+/**
+ * LO QUE EL SERVIDOR PIDE ANTES DE GUARDAR (ver backend/app/salvaguardas.py).
+ * Un 428 trae una firma o una pregunta; quien las muestra se registra una vez
+ * (components/Salvaguardas.tsx) y la operacion se repite sola con la firma o
+ * la confirmacion, sin que cada pantalla tenga que saberlo.
+ */
+export type PideFirma = { codigo: 'firma'; accion: string; detalle: string; monto: number; mensaje: string }
+export type PideConfirmar = { codigo: 'confirmar'; clave: string; mensaje: string }
+type Manejadores = {
+  firma?: (p: PideFirma) => Promise<Autorizacion | null>
+  confirmar?: (p: PideConfirmar) => Promise<boolean>
+}
+let manejadores: Manejadores = {}
+export function registrarSalvaguardas(m: Manejadores) {
+  manejadores = m
+}
+
+/**
+ * EL DOBLE TOQUE SE MANDA UNA VEZ. Si la misma operacion (ruta y datos) ya va
+ * en camino, el segundo toque espera la respuesta del primero en vez de
+ * mandarla otra vez: un doble toque en "Pagar" pagaba dos veces (QA nov, R2).
+ */
+const EN_CAMINO = new Map<string, Promise<unknown>>()
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
+  const metodo = options?.method ?? 'GET'
+  if (metodo === 'GET') return reqUnaVez<T>(path, options)
+  const clave = `${metodo} ${path} ${typeof options?.body === 'string' ? options.body : ''}`
+  const hay = EN_CAMINO.get(clave)
+  if (hay) return hay as Promise<T>
+  const promesa = reqUnaVez<T>(path, options).finally(() => EN_CAMINO.delete(clave))
+  EN_CAMINO.set(clave, promesa)
+  return promesa
+}
+
+async function reqUnaVez<T>(path: string, options?: RequestInit): Promise<T> {
+  const confirmados: string[] = []
+  let firma: Autorizacion | null = null
+  for (let vuelta = 0; vuelta < 6; vuelta++) {
+    try {
+      return await reqCrudo<T>(path, options, {
+        ...(confirmados.length ? { 'X-Confirmado': confirmados.join(',') } : {}),
+        ...(firma ? { 'X-Autorizacion': JSON.stringify(firma) } : {}),
+      })
+    } catch (e) {
+      if (!(e instanceof PideAlgo)) throw e
+      const p = e.pide
+      if (p.codigo === 'confirmar' && manejadores.confirmar && !confirmados.includes(p.clave)) {
+        if (!(await manejadores.confirmar(p))) throw new ErrorApi(p.mensaje, 428)
+        confirmados.push(p.clave)
+        continue
+      }
+      if (p.codigo === 'firma' && manejadores.firma) {
+        firma = await manejadores.firma(p)
+        if (!firma) throw new ErrorApi(p.mensaje, 428)
+        continue
+      }
+      throw new ErrorApi(p.mensaje, 428)
+    }
+  }
+  throw new ErrorApi('No se pudo completar: vuelve a intentarlo.', 428)
+}
+
+class PideAlgo extends Error {
+  pide: PideFirma | PideConfirmar
+  constructor(pide: PideFirma | PideConfirmar) {
+    super(pide.mensaje)
+    this.pide = pide
+  }
+}
+
+async function reqCrudo<T>(path: string, options: RequestInit | undefined, extra: Record<string, string>): Promise<T> {
   // Quien escribe (cobra, compra, aprueba) cambia lo que se comparte.
   if (options?.method && options.method !== 'GET') olvidarCompartidas()
   let res: Response
   try {
     // En la app, la direccion del servidor y el token (ver lib/plataforma.ts).
+    const { headers: propias, ...resto } = options ?? {}
     res = await fetch(urlApi(`/api${path}`), {
-      headers: { 'Content-Type': 'application/json', ...cabecerasApp() },
+      headers: { 'Content-Type': 'application/json', ...cabecerasApp(), ...((propias as Record<string, string>) ?? {}), ...extra },
       // SIN CACHE. El API no manda `Cache-Control` ni `ETag`, asi que el
       // navegador puede decidir por su cuenta reutilizar la respuesta
       // anterior de un GET: se borraba algo, se volvia a pedir la lista y
@@ -216,7 +288,7 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
       // para que un despliegue con el API en otro origen no la pierda en
       // silencio.
       credentials: 'same-origin',
-      ...options,
+      ...resto,
     })
   } catch {
     // `fetch` solo rechaza cuando no hubo respuesta: wifi caida, servidor
@@ -238,7 +310,10 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     try {
       const cuerpo = JSON.parse(texto)
       if (typeof cuerpo?.detail === 'string') mensaje = cuerpo.detail
-    } catch {
+      else if (res.status === 428 && cuerpo?.detail?.codigo) throw new PideAlgo(cuerpo.detail)
+      else if (typeof cuerpo?.detail?.mensaje === 'string') mensaje = cuerpo.detail.mensaje
+    } catch (e) {
+      if (e instanceof PideAlgo) throw e
       // respuesta no-JSON: se usa el texto tal cual
     }
     throw new ErrorApi(mensaje, res.status)

@@ -15,6 +15,7 @@ import Solicitudes from './components/Solicitudes'
 import Asistente from './components/Asistente'
 import { GuiaProvider } from './components/Guia'
 import { DialogoProvider } from './components/dialogo'
+import Salvaguardas from './components/Salvaguardas'
 import { DeshacerProvider } from './components/Deshacer'
 import { TecladoProvider } from './components/Teclado'
 import { MonedaProvider } from './lib/moneda'
@@ -210,6 +211,7 @@ export default function App() {
             numero" tambien lo usan y tienen que verlo. */}
         <TecladoProvider>
         <DialogoProvider>
+        <Salvaguardas />
         <DeshacerProvider>
         <BrowserRouter>
           <GuiaProvider>

@@ -62,6 +62,15 @@ def _almacen_aislado(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _envios_de_cero():
+    """Cada prueba arranca sin envios recientes: el control de doble toque
+    (salvaguardas.py) no puede confundir la prueba de al lado con un repetido."""
+    from app import salvaguardas
+    salvaguardas._vistos.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _sin_limite_de_intentos():
     """El limite del login cuenta por IP y en memoria. Entre tests la IP es
     siempre la misma; sin esto empezarian a fallar por 429."""

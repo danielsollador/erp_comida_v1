@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import inspect
 
 from . import models  # noqa: F401  (registra las tablas en Base)
-from . import settings
+from . import salvaguardas, settings
 from .acceso import auth, permisos, usuarios
 from .backup import iniciar_respaldos_automaticos, respaldo_si_hace_falta
 from .contabilidad import seed_plan_de_cuentas
@@ -237,7 +237,24 @@ async def exigir_sesion(request: Request, call_next):
     # que se anota como operador en cada pedido, cierre, retiro y merma.
     request.state.sesion = s
 
-    respuesta = await call_next(request)
+    # El mismo pago mandado dos veces seguidas se registra una vez (ver
+    # `salvaguardas.py`): un doble toque con mala señal pagaba dos veces.
+    clave_envio = None
+    if salvaguardas.aplica(request.method, ruta) and "repetido" not in salvaguardas.confirmados(request):
+        clave_envio = salvaguardas.huella(s["usuario"], request.method, ruta, await request.body())
+        if not salvaguardas.tomar(clave_envio):
+            return JSONResponse(
+                {"detail": {"codigo": "confirmar", "clave": "repetido", "mensaje": salvaguardas.MENSAJE_REPETIDO}},
+                status_code=428,
+            )
+    try:
+        respuesta = await call_next(request)
+    except Exception:
+        if clave_envio:
+            salvaguardas.soltar(clave_envio, False)
+        raise
+    if clave_envio:
+        salvaguardas.soltar(clave_envio, respuesta.status_code < 400)
 
     # Y SE RENUEVA AQUI, que es por donde pasa todo. El POS es una SPA: nadie
     # recarga la pagina en un turno, asi que renovar solo al cargar mandaba a
