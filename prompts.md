@@ -341,3 +341,11 @@ Sigue sin subir, sin desplegar y sin corregir datos.
 ## 65 (2026-11-04, Daniel)
 
 Validé los arreglos en local: la retención con pago parcial y el cuadre por pago móvil funcionan. Anota en Apuntes/fixes.md, como pendientes, dos detalles visuales que vi: en modo oscuro el mensaje verde de éxito de Cuentas por cobrar casi no se lee, y el texto de la opción "Es comisión: se cierra la deuda" se corta. Haz commit de eso y de specs/cuentas-por-cobrar.md en esta rama, sin incluir backend/evals, y registra estos prompts en prompts.md como pide CLAUDE.md. Después sube solo la rama fix-2026-11-04-cobros-cxc a GitHub con su propio nombre. No fusiones en master ni despliegues. Avísame cuando GitHub termine, con el resultado de las pruebas.
+
+## 66 (2026-11-08, Daniel)
+
+ok yo quede con leider en que ambos hariamos QA a diferentes modulos armate un pdf completo con todos los hallazgos/errores/bug encotrados que sea breve como para mostrar lo que conseguimos
+
+## 67 (2026-11-08, Daniel)
+
+https://savora.35-229-89-43.sslip.io/ leider monto un ambiente de prueba. vamos a corregir todos esos hallasgos del pdf y para solo cuando hayas terminado importante que viajen a spec kit y que se cambien los ficheros y todo eso. entendido?

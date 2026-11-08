@@ -20,6 +20,23 @@
 - [ ] Arreglar dinero y permisos
 - [ ] Arreglar operación
 - [ ] Pasar las pruebas a la suite
+- [x] QA de noviembre: `specs/qa.md` con los 32 hallazgos (aprobada por Daniel)
+- [ ] R1 · Un solo lector de montos (web, app y tasa)
+- [ ] R2 · Nada se paga dos veces
+- [ ] R3 · Mes declarado congelado y avisos al declarar
+- [ ] R4 · Confirmar montos y fechas absurdas
+- [ ] R5 · Firma para anular, dar de baja, corregir y cambiar la tasa
+- [ ] Hallazgos sueltos de `specs/qa.md` (5 a 32)
+- [ ] Dona: cifras solo de herramientas y herramientas nuevas
+
+### 1.10 Cierre de caja como cuadre
+- [x] Spec `specs/caja.md` (aprobada; D12–D15 con la propuesta)
+- [ ] Fondo inicial = último cierre y apertura sin asientos
+- [ ] Cierre sin asientos; diferencias por aprobar
+- [ ] Aprobar diferencias (firma) y aviso en la portada
+- [ ] Día cerrado: firma para borrar y marca «por revisar»
+- [ ] Corregir y anular con firma
+- [ ] Diferencial cambiario en la gaveta Bs
 
 ### 1.4 Dos tablets
 - [~] Spec `specs/ventas.md` (borrador, falta aprobación)
