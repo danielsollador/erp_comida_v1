@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -248,6 +249,7 @@ ORIGEN_APERTURA = "apertura_dia"
 NOTA_SIN_DECLARAR = "No se declaró al abrir"
 
 
+SUELDO = re.compile(r"\b(sueldo|salario|n[oó]mina|quincena)s?\b", re.I)
 # D14: una diferencia de menos de esto se aprueba sola.
 APRUEBA_SOLA = 0.10
 # Abrir con un fondo que se aleja de lo esperado en mas de $20 Y mas de la
@@ -475,6 +477,7 @@ def _desglose(
                 saldo_anterior=round(anterior, 2),
                 fondo=fondo,
                 fondo_declarado=apertura is not None and not (apertura.nota or "").startswith(NOTA_SIN_DECLARAR),
+                diferencia_apertura=round(apertura.diferencia or 0, 2) if apertura is not None else 0.0,
                 ventas=round(entro, 2),
                 salidas=round(salio, 2),
                 pagos=round(pagos, 2),
@@ -1734,6 +1737,14 @@ def crear_gasto(gasto: schemas.GastoCreate, db: Session = Depends(get_db)):
             detail="El gasto sale de una gaveta (Efectivo Bs, Efectivo $) o del Banco",
         )
     _hay_en_la_gaveta(db, gasto.metodo_pago, gasto.monto, "el gasto")
+    # Un sueldo pagado como pago menor iba a gastos varios: Pagos y Dona
+    # decian que en octubre no hubo sueldos (QA nov, hallazgo 20).
+    if SUELDO.search(gasto.descripcion or ""):
+        raise HTTPException(
+            status_code=400,
+            detail="Los sueldos van en Pagos › Nuevo pago, con concepto «Sueldos»: ahí se descuentan los anticipos "
+            "y salen en el reporte de nómina. Puedes elegir que sale de la gaveta.",
+        )
     db_gasto = models.Gasto(**gasto.model_dump())
     db.add(db_gasto)
     db.flush()

@@ -1390,6 +1390,10 @@ class LineaMetodo(BaseModel):
     # True cuando ese fondo lo declaro una persona al abrir la caja, y no es
     # solo el arrastre contable. Cambia lo que la fila puede prometer.
     fondo_declarado: bool = False
+    # Cuanto se alejo el fondo contado al abrir de lo que quedo en el ultimo
+    # cierre: si el faltante de la noche es el mismo monto, el error fue de
+    # la mañana (QA nov, hallazgo 21).
+    diferencia_apertura: float = 0
     ventas: float = 0
     salidas: float = 0
     # Lo que se pago desde el banco por esta forma de pago (sueldos,

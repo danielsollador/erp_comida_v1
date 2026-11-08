@@ -327,3 +327,22 @@ def test_un_proveedor_nuevo_entra_a_proveedores_al_cargar_su_factura(client, db)
         "forma_pago": "Transferencia", "referencia_pago": "X1", "gastos": [{"concepto": "Servicio", "monto": 10}], "iva": 0,
     })
     assert db.query(models.Proveedor).filter_by(nombre="Carnicería QA").count() == 1
+
+
+def test_una_referencia_ya_usada_pide_confirmar_al_cobrar(client, db, variante):
+    """Hallazgo 23: la referencia 123456 ya estaba en dos ventas y se cobró
+    sin decir nada; el aviso salía después, en la portada."""
+    def cobrar(ref, **kw):
+        p = client.post("/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 1}]}).json()
+        return client.post(f"/api/pedidos/{p['id']}/cobrar", json={"metodo_pago": "Pago movil", "referencia": ref}, **kw)
+
+    assert cobrar("123456").status_code == 200
+    r = cobrar("123456")
+    assert r.status_code == 428 and r.json()["detail"]["clave"] == "referencia_repetida"
+
+
+def test_un_sueldo_no_entra_como_pago_menor(client, db):
+    con_libros(db)
+    r = client.post("/api/caja/gastos", json={"descripcion": "Sueldo de Richard", "monto": 87.5, "categoria": "Otros",
+                                              "metodo_pago": "Efectivo $"})
+    assert r.status_code == 400 and "Pagos" in r.json()["detail"]

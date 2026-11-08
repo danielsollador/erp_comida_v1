@@ -1662,6 +1662,24 @@ async def cobrar_pedido(
                 status_code=400,
                 detail=f"Falta el número de referencia del pago por {pago.metodo}.",
             )
+        # La misma referencia ya cobro otra venta: o es un error de tecleo o
+        # el cliente mostro un comprobante viejo. Se pregunta ANTES de cobrar,
+        # no despues en la portada (QA nov, hallazgo 23).
+        ref = (pago.referencia or "").strip()
+        if pago.metodo in contabilidad.METODOS_CON_REFERENCIA and len(ref) >= 4 and ref.isdigit():
+            otra = (
+                db.query(models.PagoPedido)
+                .join(models.Pedido, models.PagoPedido.pedido_id == models.Pedido.id)
+                .filter(models.PagoPedido.referencia == ref, models.PagoPedido.pedido_id != pedido.id,
+                        models.Pedido.estado == "pagado")
+                .first()
+            )
+            if otra is not None:
+                salvaguardas.pedir_confirmacion(
+                    request, "referencia_repetida",
+                    f"La referencia {ref} ya se usó para cobrar el pedido #{db.get(models.Pedido, otra.pedido_id).numero}. "
+                    "¿Es otro pago con la misma referencia? Revisa el comprobante antes de seguir.",
+                )
     if abs(round(sum(p.monto for p in pagos), 2) - round(a_cobrar, 2)) > 0.01:
         detalle = f"Los pagos suman ${sum(p.monto for p in pagos):.2f} y hay que cobrar ${a_cobrar:.2f}"
         if pedido.propina:
