@@ -32,6 +32,7 @@ Sincronizado el 2-nov-2026 sobre la rama `fase1`.
 |---|---|---|---|---|
 | Inicio | `/` | `Inicio.tsx` | varias | — |
 | Punto de venta | `/pos/:seccion?` | `POS.tsx` | `pedidos.py`, `pagos.py`, `autorizaciones.py` | `pos` |
+| Cuentas por cobrar | `/cobranzas/:seccion?` | `CuentasPorCobrar.tsx` | `cobranzas.py` | `cobranzas` |
 | Cocina | `/cocina` | `Cocina.tsx` | `pedidos.py` | `cocina` |
 | Ventas | `/ventas/:seccion?` | `Ventas.tsx` | `ventas.py` | `ventas` |
 | Compras | `/compras/:seccion?` | `Compras.tsx` | `compras*.py`, `proveedores.py` | `compras` |
@@ -84,6 +85,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **6-nov** Rama `exportar-cuentas-por-cobrar`, sin desplegar: "Quién me debe" se exporta a CSV y Excel. `Tabla` tiene la opción `exportar`, `descargar` acepta un cuerpo (POST) y `exportar_csv.py` suma `regional` y `respuesta_xlsx`.
 - **4-nov** Rama `fix-2026-11-04-cobros-cxc`, sin desplegar: cobros con bloqueo y reintentos sin duplicar (columna `clave_cliente` en `TRX130` y `TRX140`), retención parcial solo con comisión marcada, y el cuadre espera lo que entró; un día cerrado muestra lo guardado. `tests/test_concurrencia_pg.py` necesita `ERP_TEST_PG_URL`: la CI todavía se la salta.
 - **3-nov** Solo manda el `CLAUDE.md` del repo: `.claude/settings.json` ignora los personales y la memoria automática.
 - **3-nov** Herramientas del agente: Context7, Serena y Playwright en `.mcp.json` (Serena con `.serena/project.yml`, sin memorias).

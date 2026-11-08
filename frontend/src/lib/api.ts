@@ -124,12 +124,13 @@ import type {
   PagoFijo,
   PagoSinFactura,
   ResumenCxC,
+  FormatoExportar,
   ResumenPagos,
   AnticipoPendiente,
   Traspaso,
 } from './types'
-import { abrirCanalEnVivo, cabecerasApp, recogerToken, urlApi } from './plataforma'
-import { queryRango, type Rango } from './fechas'
+import { abrirCanalEnVivo, cabecerasApp, descargar, recogerToken, SinConexion, urlApi } from './plataforma'
+import { aIso, hoy, queryRango, type Rango } from './fechas'
 
 /** `?a=1&b=2` con lo que venga definido, o '' si nada. */
 function qs(params: Record<string, string | undefined>): string {
@@ -165,13 +166,7 @@ export class ErrorApi extends Error {
   }
 }
 
-/** Se cayo la red (no el servidor): `fetch` rechaza sin respuesta. */
-export class SinConexion extends Error {
-  constructor() {
-    super('Sin conexión. Revisa el wifi e intenta otra vez.')
-    this.name = 'SinConexion'
-  }
-}
+export { SinConexion }
 
 /**
  * LO QUE PIDEN VARIAS PANTALLAS A LA VEZ, UNA SOLA VEZ (Leider, 5-oct: "para
@@ -946,6 +941,8 @@ export const api = {
 
   // Cuentas por cobrar
   resumenCxC: () => req<ResumenCxC>('/cobranzas/resumen'),
+  exportarCuentasPorCobrar: (formato: FormatoExportar, pedido_ids: number[]) =>
+    descargar('/api/cobranzas/ventas/exportar', `cuentas-por-cobrar-${aIso(hoy())}.${formato}`, { formato, pedido_ids }),
   listarClientesCredito: () => req<ClienteCredito[]>('/cobranzas/clientes'),
   guardarClienteCredito: (c: Omit<ClienteCredito, 'id'>, id?: number) =>
     req<ClienteCredito>(id ? `/cobranzas/clientes/${id}` : '/cobranzas/clientes', {

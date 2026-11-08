@@ -5,8 +5,17 @@ tenia donde ir. Lo que se prueba es que los libros sigan diciendo la verdad:
 1015 baja por todo lo que se debia, el banco sube por lo que llego y la
 diferencia es gasto de comision, no una deuda eterna ni un descuento falso.
 """
-from app import models
-from tests.conftest import libros_cuadrados, saldo
+import csv
+import datetime
+import io
+
+from openpyxl import load_workbook
+
+from app import models, settings
+from app.acceso import usuarios
+from app.exportar_csv import csv_de
+from app.timeutils import hoy
+from tests.conftest import entrar, libros_cuadrados, saldo
 
 
 def fiar(client, variante, cantidad=2, cliente="PedidosYa"):
@@ -393,3 +402,202 @@ def test_sin_factura_o_ya_retenida_no_hay_retencion_que_ofrecer(client, db, vari
     db.commit()
     for fila in client.get("/api/cobranzas/resumen").json()["ventas"]:
         assert (fila["retencion_75"], fila["retencion_100"]) == (0.0, 0.0)
+
+
+# ------------------------------------------------------------ exportar la lista
+ENCABEZADOS_EXPORTAR = ["Cliente", "Venta", "Fecha", "Días", "Abonó ($)", "Debe ($)"]
+
+
+def exportar(client, formato, ids):
+    return client.post("/api/cobranzas/ventas/exportar", json={"formato": formato, "pedido_ids": ids})
+
+
+def hoja_de(r):
+    return load_workbook(io.BytesIO(r.content)).active
+
+
+def filas_csv(r):
+    texto = r.content.decode("utf-8-sig")
+    return list(csv.reader(io.StringIO(texto), delimiter=";"))
+
+
+def test_exportar_trae_las_ventas_pedidas_en_ese_orden(client, variante):
+    """El dueño ordena la lista en pantalla y el archivo sale igual: el orden lo
+    manda la pantalla, no la base."""
+    a = fiar(client, variante, cliente="Ana")
+    b = fiar(client, variante, cliente="Luis")
+    c = fiar(client, variante, cliente="Rosa")
+    orden = [c["id"], a["id"], b["id"]]
+    ws = hoja_de(exportar(client, "xlsx", orden))
+    assert [celda.value for celda in ws[1]] == ENCABEZADOS_EXPORTAR
+    assert [fila[0] for fila in ws.iter_rows(min_row=2, values_only=True)] == ["Rosa", "Ana", "Luis"]
+    filas = filas_csv(exportar(client, "csv", orden))
+    assert filas[0] == ENCABEZADOS_EXPORTAR
+    assert [f[0] for f in filas[1:]] == ["Rosa", "Ana", "Luis"]
+
+
+def test_exportar_solo_trae_lo_pedido_y_sin_fila_de_total(client, variante):
+    """Con el buscador puesto se ven dos de tres: salen esas y nada más."""
+    a = fiar(client, variante, cliente="Ana")
+    fiar(client, variante, cliente="Luis")
+    ws = hoja_de(exportar(client, "xlsx", [a["id"]]))
+    assert ws.max_row == 2 and ws.cell(2, 1).value == "Ana"
+    assert len(filas_csv(exportar(client, "csv", [a["id"]]))) == 2
+
+
+def test_exportar_trae_los_mismos_montos_de_la_pantalla(client, variante):
+    """Fió $10 y abonó $4: el archivo dice lo mismo que la lista, y la suma de la
+    columna Debe da el total de la pantalla."""
+    p = fiar(client, variante, cliente="Ana")
+    q = fiar(client, variante, cliente="Luis")
+    r = client.post("/api/cobranzas/abonos", json={"pedido_ids": [p["id"]], "monto": 4.0, "metodo_pago": "Efectivo $"})
+    assert r.status_code == 200, r.text
+    pantalla = client.get("/api/cobranzas/resumen").json()
+    fila = next(v for v in pantalla["ventas"] if v["pedido_id"] == p["id"])
+    ws = hoja_de(exportar(client, "xlsx", [p["id"], q["id"]]))
+    assert ws.cell(2, 2).value == fila["numero"]
+    assert ws.cell(2, 4).value == fila["dias"]
+    assert ws.cell(2, 5).value == fila["abonado"] == 4.0
+    assert ws.cell(2, 6).value == fila["saldo"] == 6.0
+    assert round(ws.cell(2, 6).value + ws.cell(3, 6).value, 2) == pantalla["total"]
+
+
+def test_exportar_en_excel_son_numeros_y_fechas_de_verdad(client, db, variante):
+    """Si el monto llega como texto, Excel no lo suma ni lo ordena bien."""
+    p = fiar(client, variante)
+    db.get(models.Pedido, p["id"]).cerrado_en = datetime.datetime(2026, 11, 2, 15, 30)
+    db.commit()
+    ws = hoja_de(exportar(client, "xlsx", [p["id"]]))
+    venta, cuando, dias, abono, debe = (ws.cell(2, n) for n in (2, 3, 4, 5, 6))
+    assert isinstance(venta.value, int) and isinstance(dias.value, int)
+    assert venta.data_type == dias.data_type == abono.data_type == debe.data_type == "n"
+    assert cuando.is_date and cuando.value.date() == datetime.date(2026, 11, 2)
+    assert cuando.number_format == "dd/mm/yyyy"
+    assert debe.number_format == "#,##0.00"
+
+
+def test_exportar_csv_abre_bien_con_la_region_de_venezuela(client, db, variante):
+    """En es-VE Excel separa con `;` y lee la coma como decimal: con `,` y `.`
+    todo cae en una sola columna, o 1234.50 se vuelve 123450."""
+    p = fiar(client, variante, cliente="José Ñáñez")
+    pedido = db.get(models.Pedido, p["id"])
+    next(x for x in pedido.pagos if x.metodo == "Fiado").monto = 1234.5
+    pedido.cerrado_en = datetime.datetime(2026, 11, 2, 15, 30)
+    db.commit()
+    r = exportar(client, "csv", [p["id"]])
+    assert r.content.startswith(b"\xef\xbb\xbf"), "sin BOM, las tildes salen rotas"
+    assert r.headers["content-type"].startswith("text/csv")
+    fila = filas_csv(r)[1]
+    assert fila[0] == "José Ñáñez"
+    assert fila[2] == "02/11/2026"
+    assert fila[4:] == ["0,00", "1234,50"]
+
+
+def test_exportar_cada_venta_se_identifica_aunque_el_numero_se_repita(client, db, variante):
+    """El número de comanda vuelve a 1 cada día: dos ventas pueden tener el mismo.
+    Se pide por id para que salga la que se ve y no su tocaya de otro día."""
+    a = fiar(client, variante, cliente="Ana")
+    b = fiar(client, variante, cliente="Luis")
+    db.get(models.Pedido, a["id"]).numero = 7
+    db.get(models.Pedido, b["id"]).numero = 7
+    db.commit()
+    ws = hoja_de(exportar(client, "xlsx", [b["id"]]))
+    assert ws.max_row == 2 and ws.cell(2, 1).value == "Luis"
+
+
+def test_exportar_omite_lo_que_ya_no_se_debe(client, variante):
+    """Se cobró en otra pestaña después de cargar la pantalla: el archivo no puede
+    decir que todavía debe. Tampoco sale lo que nunca se debió."""
+    a = fiar(client, variante, cliente="Ana")
+    b = fiar(client, variante, cliente="Luis")
+    r = client.post("/api/cobranzas/cobros", json={"pedido_ids": [a["id"]], "metodo_pago": "Efectivo $"})
+    assert r.status_code == 200, r.text
+    ids = [a["id"], b["id"], 999999]
+    ws = hoja_de(exportar(client, "xlsx", ids))
+    assert [fila[0] for fila in ws.iter_rows(min_row=2, values_only=True)] == ["Luis"]
+    assert [f[0] for f in filas_csv(exportar(client, "csv", ids))[1:]] == ["Luis"]
+
+
+def test_exportar_un_nombre_nunca_se_ejecuta_como_formula(client, variante):
+    """El nombre lo escribe cualquiera en el punto de venta. Abierto en Excel,
+    "=1+1" daría 2, y una fórmula peor podría sacar datos del equipo."""
+    nombres = ["=1+1", "+58412", "-5", "@Ana", "Ana"]
+    ids = [fiar(client, variante, cliente=n)["id"] for n in nombres]
+    ws = hoja_de(exportar(client, "xlsx", ids))
+    for fila, nombre in enumerate(nombres, start=2):
+        celda = ws.cell(fila, 1)
+        assert celda.value == nombre, "en el Excel se ve igual que en pantalla"
+        assert celda.data_type == "s"
+    filas = filas_csv(exportar(client, "csv", ids))[1:]
+    assert [f[0] for f in filas] == ["'=1+1", "'+58412", "'-5", "'@Ana", "Ana"]
+
+
+def test_exportar_un_nombre_con_caracteres_raros_no_rompe_el_excel(client, db, variante):
+    """openpyxl revienta con caracteres de control, y un nombre pegado de otro
+    lado los puede traer: sin esto, el archivo entero da error."""
+    p = fiar(client, variante, cliente="Ana")
+    db.get(models.Pedido, p["id"]).cliente = "Ana\x0b López"
+    db.commit()
+    r = exportar(client, "xlsx", [p["id"]])
+    assert r.status_code == 200, r.text
+    assert hoja_de(r).cell(2, 1).value == "Ana López"
+
+
+def test_exportar_el_archivo_dice_que_es_y_de_que_dia(client, variante):
+    p = fiar(client, variante)
+    for formato in ("csv", "xlsx"):
+        cabecera = exportar(client, formato, [p["id"]]).headers["content-disposition"]
+        assert f'cuentas-por-cobrar-{hoy().isoformat()}.{formato}"' in cabecera
+
+
+def test_exportar_formato_desconocido_o_lista_vacia_se_rechaza(client, variante):
+    p = fiar(client, variante)
+    assert exportar(client, "pdf", [p["id"]]).status_code == 422
+    assert exportar(client, "csv", []).status_code == 422
+
+
+def test_exportar_no_mueve_nada(client, db, libros, variante):
+    """Solo lee: ni saldos ni asientos."""
+    p = fiar(client, variante)
+    asientos = db.query(models.AsientoContable).count()
+    exportar(client, "xlsx", [p["id"]])
+    exportar(client, "csv", [p["id"]])
+    db.expire_all()
+    assert db.query(models.AsientoContable).count() == asientos
+    assert saldo(db, "1015") == 10.0
+
+
+def test_exportar_lo_puede_hacer_quien_ve_la_lista(fuera, variante, monkeypatch, tmp_path):
+    """La caja entra al módulo y exporta; cocina no entra; sin sesión, nadie."""
+    # Un almacén propio: otras pruebas cuentan cuántas cuentas hay por rol.
+    monkeypatch.setattr(usuarios, "USERS_FILE", tmp_path / "users.json")
+    usuarios.crear("cajera-cxc", "clave-de-caja-larga", rol="caja", locales=[settings.LOCAL_SLUG])
+    usuarios.crear("cocina-cxc", "clave-de-cocina-larga", rol="cocina", locales=[settings.LOCAL_SLUG])
+    assert exportar(fuera, "csv", [1]).status_code == 401
+    entrar(fuera, "cocina-cxc", "clave-de-cocina-larga")
+    assert exportar(fuera, "csv", [1]).status_code == 403
+    fuera.cookies.clear()
+    entrar(fuera, "cajera-cxc", "clave-de-caja-larga")
+    assert exportar(fuera, "csv", [1]).status_code == 200
+
+
+def test_exportar_mil_ventas_en_los_dos_formatos(client, db):
+    """Con 1.000 ventas los ids no caben en una dirección: por eso va por POST y
+    sale completo, en el orden pedido."""
+    pedidos = []
+    for n in range(1000):
+        p = models.Pedido(numero=n + 1, cliente=f"Cliente {n:04d}")
+        p.pagos.append(models.PagoPedido(metodo="Fiado", monto=1.5))
+        pedidos.append(p)
+    db.add_all(pedidos)
+    db.commit()
+    ids = [p.id for p in reversed(pedidos)]
+    esperados = [f"Cliente {n:04d}" for n in reversed(range(1000))]
+    ws = hoja_de(exportar(client, "xlsx", ids))
+    assert [fila[0] for fila in ws.iter_rows(min_row=2, values_only=True)] == esperados
+    assert [f[0] for f in filas_csv(exportar(client, "csv", ids))[1:]] == esperados
+
+
+def test_el_csv_de_las_otras_exportaciones_no_cambia():
+    """La opción regional es de esta lista: las demás siguen con coma y sin apóstrofo."""
+    assert csv_de(["A", "B"], [["=x", 1.5]]) == "﻿A,B\r\n=x,1.5\r\n"

@@ -2593,3 +2593,6 @@ export type Traspaso = {
   fecha: string
   anulado: boolean
 }
+
+/** Los formatos en que se descarga una tabla. */
+export type FormatoExportar = 'csv' | 'xlsx'

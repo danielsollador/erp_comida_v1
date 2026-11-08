@@ -10,8 +10,12 @@ from sqlalchemy.orm import Session
 from .. import cuentas_por_cobrar as cxc
 from .. import models, salvaguardas, schemas
 from ..database import get_db
+from ..exportar_csv import respuesta_csv, respuesta_xlsx
+from ..timeutils import hoy
 
 router = APIRouter(prefix="/api/cobranzas", tags=["cobranzas"])
+
+COLUMNAS_EXPORTAR = ("Cliente", "Venta", "Fecha", "Días", "Abonó ($)", "Debe ($)")
 
 
 def _cliente(db: Session, cliente_id: int) -> models.Cliente:
@@ -47,6 +51,16 @@ def _confirmar(db: Session, cobro: models.CobroCliente, clave) -> schemas.CobroC
 @router.get("/resumen", response_model=schemas.ResumenCxC)
 def resumen(db: Session = Depends(get_db)):
     return cxc.resumen(db)
+
+
+@router.post("/ventas/exportar")
+def exportar_ventas(body: schemas.ExportarCxC, db: Session = Depends(get_db)):
+    """Solo lee. Va por POST porque 1.000 ventas no caben en una direccion."""
+    nombre = f"cuentas-por-cobrar-{hoy().isoformat()}.{body.formato}"
+    filas = cxc.filas_para_exportar(db, body.pedido_ids)
+    if body.formato == "xlsx":
+        return respuesta_xlsx(nombre, COLUMNAS_EXPORTAR, filas, hoja="Cuentas por cobrar")
+    return respuesta_csv(nombre, COLUMNAS_EXPORTAR, filas, regional=True)
 
 
 @router.get("/clientes", response_model=List[schemas.Cliente])

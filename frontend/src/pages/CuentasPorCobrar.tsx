@@ -8,7 +8,7 @@ import { api } from '../lib/api'
 import { llano } from '../lib/filtros'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { EN_BOLIVARES, METODOS_PAGO, necesitaReferencia } from '../lib/pagos'
-import type { CobroCliente, ResumenCxC, VentaPorCobrar } from '../lib/types'
+import type { CobroCliente, FormatoExportar, ResumenCxC, VentaPorCobrar } from '../lib/types'
 import { claveDeReintento } from '../lib/uuid'
 import { leerMonto } from '../lib/montos'
 
@@ -81,6 +81,7 @@ function QuienDebe({ r, alCambiar }: { r: ResumenCxC; alCambiar: () => void }) {
   )
   const buscador = useBuscador<VentaPorCobrar>((v) => [v.cliente], 'Buscar cliente')
   const filas = orden.ordenar(buscador.filtrar(r.ventas))
+  const exportar = (formato: FormatoExportar) => api.exportarCuentasPorCobrar(formato, filas.map((v) => v.pedido_id))
   const elegidas = r.ventas.filter((v) => marcadas.has(v.pedido_id))
   const total = redondear(elegidas.reduce((s, v) => s + v.saldo, 0))
   const todasVisibles = filas.length > 0 && filas.every((v) => marcadas.has(v.pedido_id))
@@ -158,7 +159,7 @@ function QuienDebe({ r, alCambiar }: { r: ResumenCxC; alCambiar: () => void }) {
       {r.ventas.length === 0 ? (
         <Vacio icono="cobrar" titulo="Nadie te debe" detalle="Lo que vendas con «A crédito» en el punto de venta aparece aquí." />
       ) : (
-        <Tabla orden={orden} buscador={buscador} glosario="cobranzas" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+        <Tabla orden={orden} buscador={buscador} exportar={exportar} glosario="cobranzas" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
               <tr>

@@ -3786,6 +3786,12 @@ class ResumenCxC(BaseModel):
     dadas_de_baja: List[VentaPorCobrar] = []
 
 
+class ExportarCxC(BaseModel):
+    formato: Literal["csv", "xlsx"]
+    # Ids y no numeros de venta: el numero de comanda se reinicia cada dia.
+    pedido_ids: List[int] = Field(min_length=1, max_length=50000)
+
+
 class CobroClienteCreate(BaseModel):
     cliente_id: Optional[int] = None
     pedido_ids: List[int] = Field(min_length=1)

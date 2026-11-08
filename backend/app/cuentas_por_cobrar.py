@@ -147,6 +147,21 @@ def venta_por_cobrar(db: Session, p: models.Pedido, cliente: Optional[models.Cli
     )
 
 
+def filas_para_exportar(db: Session, pedido_ids: List[int]) -> list:
+    """Las ventas que se ven en pantalla, en su orden y con los montos de la base.
+    Lo que dejo de deberse desde que se cargo la pantalla no sale."""
+    hoy_ = ahora()
+    por_cobrar = {p.id: p for p in pedidos_por_cobrar(db)}
+    filas = []
+    for pedido_id in dict.fromkeys(pedido_ids):
+        p = por_cobrar.get(pedido_id)
+        if p is None:
+            continue
+        v = venta_por_cobrar(db, p, None, hoy_)
+        filas.append([v.cliente, v.numero, v.fecha.date(), v.dias, v.abonado, v.saldo])
+    return filas
+
+
 def resumen(db: Session) -> schemas.ResumenCxC:
     hoy_ = ahora()
     clientes = {c.id: c for c in db.query(models.Cliente).all()}

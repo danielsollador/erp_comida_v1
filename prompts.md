@@ -342,10 +342,36 @@ Sigue sin subir, sin desplegar y sin corregir datos.
 
 Validé los arreglos en local: la retención con pago parcial y el cuadre por pago móvil funcionan. Anota en Apuntes/fixes.md, como pendientes, dos detalles visuales que vi: en modo oscuro el mensaje verde de éxito de Cuentas por cobrar casi no se lee, y el texto de la opción "Es comisión: se cierra la deuda" se corta. Haz commit de eso y de specs/cuentas-por-cobrar.md en esta rama, sin incluir backend/evals, y registra estos prompts en prompts.md como pide CLAUDE.md. Después sube solo la rama fix-2026-11-04-cobros-cxc a GitHub con su propio nombre. No fusiones en master ni despliegues. Avísame cuando GitHub termine, con el resultado de las pruebas.
 
-## 66 (2026-11-08, Daniel)
+## 66 (2026-11-06, Daniel)
+
+/nueva-funcionalidad Botón para exportar a CSV y a Excel la tabla de Cuentas por cobrar. Este módulo está en master y no en fase1, así que al terminar no hagas commit todavía: muéstrame lo que escribiste y espera mi visto bueno.
+
+## 67 (2026-11-06, Daniel)
+
+Acepto tus cuatro recomendaciones: solo "Quién me debe"; el botón en Tabla y activo solo aquí; el número 1.2a; y una rama nueva desde origin/master.
+
+Agrega dos reglas a la spec:
+1. El CSV y el Excel se abren bien en un Excel con configuración regional de Venezuela: cada columna en su lugar, y acentos y montos correctos. Se comprueba al validar.
+2. Un texto que empiece con =, +, - o @ se exporta como texto y nunca se ejecuta como fórmula.
+
+Escribe la spec, el plan y las tareas. No programes ni hagas commit todavía: muéstrame la spec y espera mi visto bueno.
+
+## 68 (2026-11-06, Daniel)
+
+Apruebo la sección "Exportar la lista", con el apóstrofo en el CSV y tus tres reglas extra. El largo de la spec lo vemos después con /revisar.
+
+Agrega una regla: exportar debe funcionar con al menos 1.000 ventas en pantalla, aunque los números no quepan en la dirección de la descarga. Inclúyela en las pruebas y ajusta el Cómo si hace falta.
+
+Crea la rama desde origin/master, haz el commit de estos documentos sin incluir backend/evals, y no subas nada ni empieces a programar.
+
+## 69 (2026-11-06, Daniel)
+
+/implementar 1.2a en la rama exportar-cuentas-por-cobrar, no en fase1, porque este módulo no está en esa rama. Si no estás en esa rama, cámbiate a ella antes de empezar.
+
+## 70 (2026-11-08, Daniel)
 
 ok yo quede con leider en que ambos hariamos QA a diferentes modulos armate un pdf completo con todos los hallazgos/errores/bug encotrados que sea breve como para mostrar lo que conseguimos
 
-## 67 (2026-11-08, Daniel)
+## 71 (2026-11-08, Daniel)
 
 https://savora.35-229-89-43.sslip.io/ leider monto un ambiente de prueba. vamos a corregir todos esos hallasgos del pdf y para solo cuando hayas terminado importante que viajen a spec kit y que se cambien los ficheros y todo eso. entendido?

@@ -1,6 +1,6 @@
 # Spec: cuentas por cobrar
 
-Cuentas por cobrar · bloque sin asignar · **Borrador**
+Cuentas por cobrar · bloque sin asignar (exportar: bloque 1.2a) · **Borrador**
 
 ## Qué resuelve
 
@@ -10,7 +10,7 @@ Saber quién debe lo vendido a crédito y cobrarlo sin crear clientes antes. Lo 
 
 Comprobado el 4-nov en local, con pantalla y pruebas. **No comprobado:** PostgreSQL, producción, fiar en la pantalla del punto de venta (sí el mismo cobro por detrás) y teléfono.
 
-- **Lista:** una fila por venta, con buscador. Se marcan ventas y se paga, abona o da de baja. No se exporta. Ninguna pantalla crea fichas ni muestra estado de cuenta o vencidas.
+- **Lista:** una fila por venta, con buscador. Se marcan ventas y se paga, abona o da de baja. Se exporta a CSV y Excel (ver "Exportar la lista"). Ninguna pantalla crea fichas ni muestra estado de cuenta o vencidas.
 - **Paga menos:** "Quedan debiendo" abona de la venta más vieja a la más nueva; "No se cobran" deja lo que falta como comisión. **Paga de más:** pregunta, y es otro ingreso.
 - **Bolívares:** convierte a la tasa BCV de hoy y solo guarda dólares. La pantalla no deja elegir la fecha del cobro.
 - **Nombres y permisos:** "José Pérez" y "JOSE-PEREZ" son 2 clientes en la lista, pero una ficha los une. La cajera puede cobrar, anular, dar de baja y recuperar, y el cobro no guarda quién lo hizo.
@@ -66,3 +66,34 @@ En http://localhost:5181, con la caja abierta. Los pasos dicen cómo funciona ho
 3. **Bolívares y retención:** con "Efectivo Bs" el campo pide Bs y dice la tasa. En una venta facturada, "Retuvo el 75 %" y paga todo: el aviso dice cuánto se retuvo.
 4. **Anular, dar de baja y recuperar:** en "Cobros hechos", anula uno; da de baja otra venta y recupérala. Las dos vuelven a la lista.
 5. **Dos pestañas y sin conexión:** cobra la misma venta en dos pestañas: la segunda dice que ya no debe nada. Corta el wifi e intenta pagar: dice "Sin conexión" y no cobra.
+
+## Exportar la lista
+
+Bloque 1.2a. **Implementada el 6-nov** en la rama `exportar-cuentas-por-cobrar`, sin desplegar. **Falta comprobarla en un Excel con configuración regional de Venezuela.** El dueño o la caja sacan la lista de quién debe, para mandarla o trabajarla fuera del sistema: dos toques, sin escribir nada. Solo lee: no mueve saldos, asientos ni cierres. "Cobros hechos" y "Dadas de baja" no se exportan.
+
+La pantalla pide las ventas por su id, no por su número, porque el número de comanda se reinicia cada día. Los montos los pone el sistema al exportar.
+
+**Qué tiene que pasar:**
+
+- ¿"Quién me debe" tiene un botón Exportar junto al buscador, con las opciones CSV y Excel?
+- ¿El archivo trae las ventas que se ven, con el mismo buscador y el mismo orden, y marcar ventas no cambia nada?
+- ¿Trae las columnas Cliente, Venta, Fecha, Días, Abonó ($) y Debe ($), con los mismos montos de la pantalla y sin fila de total?
+- ¿Exportar funciona con al menos 1.000 ventas en pantalla, aunque sus números no quepan en la dirección de la descarga?
+- ¿El nombre del archivo dice qué es y de qué día, como `cuentas-por-cobrar-2026-11-06`?
+- ¿Si se cobró una venta después de cargar la pantalla, esa venta no sale en el archivo?
+- ¿Quien ve la lista puede exportarla, incluida la caja, y quien no entra al módulo no puede bajarla?
+- ¿Si ninguna fila coincide con la búsqueda, el botón queda apagado? ¿Si no hay nadie que deba, no aparece?
+- ¿Sin conexión no descarga, dice qué pasó y deja al usuario en la pantalla?
+- ¿El CSV y el Excel se abren bien en un Excel con configuración regional de Venezuela: cada columna en su lugar, y acentos y montos correctos? Se comprueba al validar.
+- ¿En el Excel, los montos, los días y la venta son números y la fecha es una fecha, de modo que se pueden sumar y ordenar?
+- ¿Un texto que empieza con =, +, - o @ se exporta como texto y nunca se ejecuta como fórmula? En el Excel se ve igual que en pantalla; en el CSV lleva un apóstrofo delante.
+
+**Cómo se valida:** en http://localhost:5181, en un Excel con configuración regional de Venezuela.
+
+1. Fía a "José Ñáñez" $1.234,50, a "=1+1" y a "@Ana", y abona $4 a una de esas ventas.
+2. Busca, ordena por Debe y baja el CSV y el Excel: traen esas mismas filas, en ese orden.
+3. Abre los dos con doble clic: cada dato en su columna, "José Ñáñez" bien escrito y el monto como 1.234,50 o 1234,50, nunca 1,2345 ni 123450.
+4. "=1+1" aparece como texto, sin dar 2, y "@Ana" no da error. En el Excel, suma la columna Debe: da lo mismo que la pantalla.
+5. Abre la pantalla en otra pestaña, cobra una venta y exporta desde la primera: esa venta no sale.
+6. Corta el wifi y exporta: lo dice y sigues en la pantalla. Repite en teléfono.
+7. Con 1.000 ventas de prueba en la lista, baja el CSV y el Excel: traen las 1.000, en el mismo orden.

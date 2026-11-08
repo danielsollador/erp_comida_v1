@@ -81,7 +81,7 @@ Ya funciona en producción: es contrato y no cambia sin decirlo aquí.
 
 ## FASE 1 · Cerrar lo abierto y blindar
 
-Orden: 1.2 → 1.3 → 1.10 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los errores QA van antes de lo nuevo porque son errores de dinero en producción. Dos tablets va antes de sin conexión porque la cola manda comandas en ráfaga y, sin numeración con bloqueo, se repiten números.
+Orden: 1.2 → 1.3 → 1.10 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los errores QA van antes de lo nuevo porque son errores de dinero en producción. Dos tablets va antes de sin conexión porque la cola manda comandas en ráfaga y, sin numeración con bloqueo, se repiten números. El 1.2a no depende de ninguno.
 
 ### 1.0 a 1.2 · Una sola rama viva
 
@@ -93,6 +93,24 @@ Orden: 1.2 → 1.3 → 1.10 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los
 - Solo lo ve el equipo de Vertigo.
 
 **Cómo:** Leider valida en local; con las pruebas de GitHub en verde, `fase1` se fusiona en `master` y se borran `app-expo` y `app-expo-play`.
+
+### 1.2a · Exportar Cuentas por cobrar (Sonnet)
+
+**Qué:** ver `specs/cuentas-por-cobrar.md` > Exportar la lista.
+
+- Botón Exportar en "Quién me debe", a CSV y a Excel, que respeta el buscador y el orden.
+- Abre bien en un Excel con configuración regional de Venezuela, y un texto nunca se ejecuta como fórmula.
+- Funciona con al menos 1.000 ventas en pantalla.
+
+**Cómo:** rama `exportar-cuentas-por-cobrar`, desde `origin/master`, porque el módulo no está en `fase1`.
+
+- `Tabla`: opción de exportar junto al buscador, apagada por defecto y activa solo en esta tabla.
+- Descarga: `descargar` acepta un cuerpo opcional. Con cuerpo, pide por POST también en la web y guarda el archivo recibido, sin salir de la pantalla; sin cuerpo, las descargas actuales siguen igual. En la app de Capacitor abre el menú de compartir, como hoy.
+- Backend: endpoint POST en `cobranzas.py`, cubierto por el permiso `cobranzas`, que solo lee. Recibe en el cuerpo el formato y los ids de las ventas que se ven, en su orden, porque 1.000 no se pueden garantizar en una dirección. Son ids y no números de venta porque el número de comanda se reinicia cada día. Es la misma ruta para cualquier cantidad. Los montos salen de la base, y lo que ya no se debe se omite.
+- CSV: se reutiliza `exportar_csv` con una opción nueva para usar `;`, coma decimal y BOM (es-VE usa `;` como separador de lista). Las otras exportaciones no cambian.
+- Excel: `.xlsx` real con `openpyxl`, con números y fechas de verdad.
+- Fórmulas: en el `.xlsx`, la celda del cliente se fuerza a texto, porque `openpyxl` convierte `=` en fórmula. En el CSV, un apóstrofo delante del texto que empiece con `=`, `+`, `-` o `@`.
+- Tests en `tests/test_cuentas_por_cobrar.py`: columnas, orden, venta ya cobrada, permisos, separadores, fórmulas y 1.000 ventas en los dos formatos. Con Playwright, la descarga real de 1.000 ventas en local.
 
 ### 1.3 · Errores de la auditoría QA (Opus)
 
@@ -250,3 +268,4 @@ Bloquean su bloque hasta que Leider responda.
 
 - Revisar recetas absurdas con reglas fijas, no con IA: más barato y comprobable (FASE 2).
 - Alta de locales primero con un script y, con más de 5 locales, un solo backend (FASE 3).
+- Activar el botón Exportar de `Tabla` en las demás tablas, que hoy incumplen la regla de `CLAUDE.md`, y revisar los CSV existentes con la configuración regional de Venezuela (después del 1.2a).
