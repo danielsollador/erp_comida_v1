@@ -1,11 +1,11 @@
 import datetime
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from .. import contabilidad, costeo, impuestos, kardex, models, schemas, tasas
+from .. import contabilidad, costeo, impuestos, kardex, models, salvaguardas, schemas, tasas
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
@@ -1013,8 +1013,48 @@ def _nota_a_schema(n: models.NotaCreditoCompra) -> schemas.NotaCreditoCompra:
     )
 
 
+def _se_puede_deshacer(db: Session, f: models.FacturaCompra) -> Optional[str]:
+    """Por que la mercancia de esta factura ya no se puede sacar limpia, o None.
+
+    Se puede mientras siga en el deposito y ninguna compra posterior la haya
+    mezclado en el promedio: entonces el costo de antes se recupera exacto."""
+    if f.notas_credito or f.reclamos:
+        return "ya tiene notas de crédito o faltantes reclamados"
+    for i in f.items:
+        ing = i.ingrediente
+        if ing is None or ing.tipo == "desechable":
+            continue
+        if (ing.stock_actual or 0) + 1e-6 < (i.cantidad or 0):
+            return f"de {ing.nombre} ya se usó parte (quedan {ing.stock_actual:g} de {i.cantidad:g})"
+        despues = (
+            db.query(models.MovimientoInventario.id)
+            .filter(models.MovimientoInventario.ingrediente_id == ing.id,
+                    models.MovimientoInventario.tipo.in_((kardex.COMPRA, kardex.PRODUCIDO)),
+                    models.MovimientoInventario.fecha > f.fecha,
+                    ~((models.MovimientoInventario.origen == "factura") & (models.MovimientoInventario.referencia_id == f.id)))
+            .first()
+        )
+        if despues:
+            return f"{ing.nombre} se volvió a comprar después y su costo ya se mezcló"
+    return None
+
+
+def _sacar_mercancia(db: Session, f: models.FacturaCompra) -> None:
+    for i in f.items:
+        ing = i.ingrediente
+        if ing is None or ing.tipo == "desechable" or not i.cantidad:
+            continue
+        stock, prom = ing.stock_actual or 0, ing.costo_unitario or 0
+        queda = stock - i.cantidad
+        if queda > 1e-6:
+            ing.costo_unitario = round(max(stock * prom - i.cantidad * (i.costo_unitario or 0), 0) / queda, 6)
+        kardex.anotar(db, ing, -i.cantidad, kardex.REVERSO, costo_unitario=i.costo_unitario or 0,
+                      origen="factura_anulada", referencia_id=f.id,
+                      nota=f"Se anuló la factura {f.numero_factura} de {f.proveedor_nombre}")
+
+
 @router.delete("/facturas/{factura_id}")
-def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
+def eliminar_factura(factura_id: int, request: Request, db: Session = Depends(get_db)):
     db_factura = (
         db.query(models.FacturaCompra)
         .options(joinedload(models.FacturaCompra.items))
@@ -1024,15 +1064,36 @@ def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
     if not db_factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
     if db_factura.items:
-        # Revertir esta factura significaria deshacer un promedio ponderado
-        # que ya se mezclo con compras posteriores - no es reversible sin
-        # arriesgar dejar el costo del insumo mal. Mas seguro bloquearlo,
-        # igual que ya hacemos con un pedido cobrado.
-        raise HTTPException(
-            status_code=409,
-            detail="Esta factura ya actualizó el stock y no se puede borrar. "
-            "Si fue un error, registra un ajuste de inventario para corregir el stock.",
-        )
+        # Una factura con mercancia se anula ENTERA si todavia se puede
+        # deshacer limpio (QA nov, hallazgo 17): sale la mercancia al costo al
+        # que entro, el promedio vuelve al de antes y se revierten la factura y
+        # su pago (IVA, banco o proveedor). Si ya se mezclo, queda la nota de
+        # credito por devolucion.
+        motivo = _se_puede_deshacer(db, db_factura)
+        if motivo:
+            raise HTTPException(
+                status_code=409,
+                detail=f"No se puede anular entera: {motivo}. Registra una nota de crédito por devolución "
+                "con lo que vuelve al proveedor.",
+            )
+        contabilidad.exigir_mes_abierto(db, db_factura.fecha, "esa factura")
+        salvaguardas.exigir_firma(db, request, "anular_compra",
+                                  f"Anular la factura {db_factura.numero_factura} de {db_factura.proveedor_nombre}",
+                                  monto=db_factura.total or 0)
+        with costeo.bloqueo_inventario():
+            _sacar_mercancia(db, db_factura)
+            # Igual que una factura sin mercancia: sus asientos (y los de su
+            # pago) se borran con ella; el kardex guarda la salida y por que.
+            for asiento in (
+                db.query(models.AsientoContable)
+                .filter(models.AsientoContable.origen.in_(("factura_compra", "pago_factura")),
+                        models.AsientoContable.referencia_id == factura_id)
+                .all()
+            ):
+                db.delete(asiento)
+            db.delete(db_factura)
+            db.commit()
+        return {"ok": True, "anulada": True}
     if db_factura.abonos:
         raise HTTPException(
             status_code=409,

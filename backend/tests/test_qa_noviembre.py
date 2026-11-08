@@ -18,7 +18,7 @@ from app import models, rates, settings
 from app.acceso import usuarios
 from app.database import get_db
 from app.main import app
-from tests.conftest import entrar, saldo
+from tests.conftest import entrar, libros, saldo  # noqa: F401
 
 LOCAL = settings.LOCAL_SLUG
 CAJERA = ("cajera_qa_nov", "clave-de-la-cajera-larga")
@@ -295,3 +295,25 @@ def test_un_pago_en_bs_a_la_paralela_saca_del_banco_lo_que_vale_a_la_bcv(client,
     assert round(banco - saldo(db, "1020"), 2) == round(10357 / 896.0, 2)
     assert saldo(db, "6110") == 10.0
     assert saldo(db, "6160") == pytest.approx(round(10357 / 896.0, 2) - 10.0, abs=0.01)
+
+
+def test_una_factura_mal_cargada_se_anula_entera(client, db, insumo, libros):
+    """Hallazgo 17: una factura con mercancía no se podía deshacer; el mensaje
+    mandaba a un ajuste de inventario, que no devuelve ni el IVA ni la plata.
+    Si la mercancía sigue ahí y nadie la volvió a comprar, se anula entera."""
+    from tests.conftest import libros_cuadrados
+
+    costo_antes, stock_antes, banco = insumo.costo_unitario, insumo.stock_actual, saldo(db, "1020")
+    f = client.post("/api/compras/facturas", json={
+        "numero_factura": "MAL-1", "proveedor_nombre": "Carnicería", "proveedor_rif": "J-40000011-0",
+        "forma_pago": "Transferencia", "referencia_pago": "T1",
+        "items": [{"ingrediente_id": insumo.id, "cantidad": 10, "costo_unitario": 0.002}], "iva": 0,
+    })
+    assert f.status_code == 200, f.text
+    r = client.delete(f"/api/compras/facturas/{f.json()['id']}")
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert insumo.stock_actual == pytest.approx(stock_antes)
+    assert insumo.costo_unitario == pytest.approx(costo_antes, abs=1e-4), "el costo vuelve al de antes"
+    assert saldo(db, "1020") == pytest.approx(banco)
+    libros_cuadrados(client, db)
