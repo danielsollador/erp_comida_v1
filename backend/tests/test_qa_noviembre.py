@@ -246,3 +246,35 @@ def test_un_gasto_despues_de_cerrar_marca_el_cierre_por_revisar(client, db):
                                                  "metodo_pago": "Efectivo $"}).status_code == 200
     cierre = next(x for x in client.get("/api/caja/cierres").json() if x["id"] == c["id"])
     assert cierre["por_revisar"] is True and "Hielo" in cierre["cambios_despues"]
+
+
+# ── Dona (hallazgos 13, 14 y 27) ────────────────────────────────────────────
+
+
+def test_dona_tiene_las_cifras_que_le_faltaban(client, db, variante):
+    """Examen de Dona: 15 de 40 respuestas fueron "no tengo ese dato". Cada
+    herramienta nueva responde con lo mismo que su pantalla."""
+    from app.asistente import herramientas as h
+
+    con_libros(db)
+    client.post("/api/egresos", json={"beneficiario": "Casero", "concepto": "Alquiler", "monto": 300,
+                                      "metodo_pago": "Transferencia", "referencia": "A1"})
+    er = client.get("/api/contabilidad/estado-resultados").json()
+    assert h.gastos(db)["gastos_usd"] == round(er["gastos"], 2), "los gastos son los del Estado de resultados"
+    assert h.saldos(db)["gaveta_dolares_usd"] == 200
+    assert "me_deben_usd" in h.cuentas(db)
+    assert h.iva(db)["declarado"] is False
+    assert h.cierres(db)["por_aprobar"] == 0
+    assert h.producto(db, variante.producto.nombre[:4])["productos"]
+
+
+def test_dona_le_da_las_ventas_a_la_cajera_sin_la_ganancia():
+    """Hallazgo 27: Dona le negaba a la cajera las ventas que Reportes le
+    mostraba. Ahora ve las ventas, como en la pantalla, pero no la ganancia."""
+    from app.acceso import permisos
+    from app.asistente import herramientas as h
+
+    if not permisos.puede_modulo("caja", "reportes"):
+        pytest.skip("en este local la cajera no entra a Reportes")
+    assert "ventas" in h.disponibles("caja")
+    assert "gastos" not in h.disponibles("caja")

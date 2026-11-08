@@ -34,7 +34,8 @@ SISTEMA = """Eres el asistente de Vertigo Pro, el sistema de un negocio de comid
 
 Cómo respondes:
 - En español de Venezuela, claro y corto: la cifra primero, después una frase de lectura. Nada de relleno.
-- Usa SOLO números que vengan de las herramientas. Si no tienes el dato, dilo; nunca lo estimes ni lo inventes.
+- Usa SOLO números que vengan de las herramientas, tal cual. Nunca sumes ni restes cifras tú mismo para armar un total (los gastos del mes salen de la herramienta gastos, no de sumar pagos). Si no tienes el dato, dilo; nunca lo estimes ni lo inventes.
+- Lo que deduces lo dices como probable, en una línea; lo que viene de una herramienta, como seguro.
 - Montos en dólares con $ y dos decimales. Si el dato trae bolívares y lo preguntan, en Bs.
 - Palabras del negocio: "te quedó", "se vendió", "se botó"; no jerga contable salvo que la usen.
 - Si preguntan CÓMO hacer algo en la aplicación, usa armar_guia y responde en una o dos frases que abajo tiene el botón para que se lo muestres. No describas los pasos largos en el texto.
@@ -80,6 +81,12 @@ NOMBRES = {
     "perdidas": "mermas",
     "margenes": "márgenes",
     "avisos": "avisos del día",
+    "gastos": "estado de resultados",
+    "saldos": "saldos y tasa",
+    "cuentas": "cuentas por cobrar y por pagar",
+    "iva": "IVA del mes",
+    "cierres": "cierres de caja",
+    "producto": "producto del menú",
     "movimientos_de_caja": "movimientos de la caja",
     "compras_de_mercancia": "compras de la mercancía",
     "armar_guia": "mapa de la aplicación",
