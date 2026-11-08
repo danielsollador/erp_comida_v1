@@ -22,6 +22,8 @@ import type {
   ResumenCaja,
   RetiroPropietario,
   Traspaso,
+  DiferenciaCaja,
+  DiferenciasPorAprobar,
 } from '../lib/types'
 import { leerMonto } from '../lib/montos'
 
@@ -1497,6 +1499,66 @@ const ESTILO_TIPO = {
   retiro: { etiqueta: 'Retiro', clase: 'bg-aviso-100 text-aviso-700' },
 } as const
 
+/** El descuadre de un cierre: todas las formas de pago, no solo las gavetas. */
+function difDe(c: CierreCaja): number {
+  return c.lineas.length ? c.lineas.reduce((s, l) => s + (l.diferencia || 0), 0) : c.diferencia + c.divisas_diferencia
+}
+
+/**
+ * Lo que el conteo no cuadró y todavía no entra a los libros (specs/caja.md).
+ * Quien autoriza lo aprueba con un motivo; si quien toca no autoriza, el
+ * sistema pide la firma en la misma pantalla.
+ */
+function PorAprobar({ alAprobar }: { alAprobar: () => void }) {
+  const [datos, setDatos] = useState<DiferenciasPorAprobar | null>(null)
+  const dialogo = useDialogo()
+  const cargar = () => api.diferenciasCaja().then(setDatos).catch(() => setDatos(null))
+  useEffect(() => {
+    cargar()
+  }, [])
+  if (!datos || datos.filas.length === 0) return null
+
+  async function aprobar(f: DiferenciaCaja) {
+    const motivo = await dialogo.pedirTexto({
+      titulo: `Aprobar ${f.monto < 0 ? 'faltante' : 'sobrante'} de ${dinero(Math.abs(f.monto))}`,
+      texto: 'Al aprobarla entra a los libros como faltante o sobrante de caja. Si fue un movimiento sin anotar, anótalo y la diferencia desaparece.',
+      etiqueta: 'Qué pasó (queda en los libros)',
+      aceptar: 'Aprobar',
+    })
+    if (!motivo) return
+    try {
+      setDatos(await api.aprobarDiferencia(f.tipo, f.id, motivo))
+      alAprobar()
+    } catch (e) {
+      await dialogo.avisar({ titulo: 'No se aprobó', texto: (e as Error).message, tono: 'mal' })
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-aviso-200 p-4">
+      <h2 className="font-semibold">
+        Por aprobar <span className="text-neutral-400 font-normal text-sm">· {dinero(datos.total)}</span>
+      </h2>
+      <p className="text-xs text-neutral-500 mb-3">Lo que el conteo no cuadró. Hasta que se apruebe, no toca la ganancia ni los libros.</p>
+      <div className="divide-y divide-neutral-100">
+        {datos.filas.map((f) => (
+          <div key={`${f.tipo}${f.id}`} className="flex items-center gap-3 py-2">
+            <span className="text-xs text-neutral-400 tabular-nums w-14 shrink-0">{f.dia.slice(8, 10)}/{f.dia.slice(5, 7)}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm truncate">{f.detalle}</span>
+              <span className="block text-[11px] text-neutral-400 truncate">{[f.quien, f.nota].filter(Boolean).join(' · ')}</span>
+            </span>
+            <span className={`text-sm font-medium tabular-nums ${f.monto < 0 ? 'text-peligro-600' : 'text-exito-600'}`}>{dinero(f.monto)}</span>
+            <button onClick={() => aprobar(f)} className="shrink-0 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium">
+              Aprobar
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function Historial({
   gastos,
   retiros,
@@ -1519,8 +1581,14 @@ function Historial({
       clave: `c${c.id}`,
       fecha: c.fecha,
       tipo: 'cierre' as const,
-      texto: c.anulado ? 'Cierre anulado' : 'Cierre de caja',
-      detalle: [c.operador, c.nota].filter(Boolean).join(' · ') || 'sin nota',
+      texto: c.anulado
+        ? 'Cierre anulado'
+        : c.estado_diferencia === 'por_aprobar'
+          ? 'Cierre · diferencia por aprobar'
+          : c.por_revisar
+            ? 'Cierre · por revisar'
+            : 'Cierre de caja',
+      detalle: [c.operador || c.cerrado_por, c.nota].filter(Boolean).join(' · ') || 'sin nota',
       monto: c.total_sistema,
       cierre: c,
     })),
@@ -1548,14 +1616,12 @@ function Historial({
   const totalRetiros = retiros.reduce((s, r) => s + r.monto, 0)
   // El descuadre acumulado: lo que sobró menos lo que faltó en los cierres
   // que de verdad cuentan. Es el número que dice si la caja se lleva bien.
-  const descuadre = cierres
-    .filter((c) => !c.anulado)
-    .reduce((s, c) => s + c.diferencia + c.divisas_diferencia, 0)
+  const descuadre = cierres.filter((c) => !c.anulado).reduce((s, c) => s + difDe(c), 0)
 
   async function anular(c: CierreCaja) {
     const motivo = await dialogo.pedirTexto({
       titulo: 'Anular este cierre',
-      texto: 'El cierre no se borra: se revierte su diferencia y el día se puede volver a cerrar.',
+      texto: 'El cierre no se borra: queda anulado con su motivo y el día se puede volver a cerrar. Si su diferencia ya se había aprobado, se revierte en los libros. Pide la firma de quien autoriza.',
       etiqueta: 'Por qué se anula (queda registrado)',
       aceptar: 'Anular cierre',
       peligro: true,
@@ -1567,6 +1633,7 @@ function Historial({
 
   return (
     <>
+      <PorAprobar alAprobar={alAnular} />
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
         <h2 className="font-semibold mb-3">
           Historial <span className="text-neutral-400 font-normal text-sm">· {etiquetaRango(rango)}</span>
@@ -1638,14 +1705,10 @@ function Historial({
                     {c && !c.anulado && (
                       <span
                         className={`block text-[11px] tabular-nums ${
-                          Math.abs(c.diferencia + c.divisas_diferencia) < 0.01
-                            ? 'text-exito-600'
-                            : 'text-peligro-600'
+                          Math.abs(difDe(c)) < 0.01 ? 'text-exito-600' : 'text-peligro-600'
                         }`}
                       >
-                        {Math.abs(c.diferencia + c.divisas_diferencia) < 0.01
-                          ? 'cuadró'
-                          : `descuadre ${dinero(c.diferencia + c.divisas_diferencia)}`}
+                        {Math.abs(difDe(c)) < 0.01 ? 'cuadró' : `descuadre ${dinero(difDe(c))}`}
                       </span>
                     )}
                   </span>
@@ -1659,6 +1722,18 @@ function Historial({
                     {c.anulado && (
                       <p className="text-xs text-peligro-600 mb-2">
                         Anulado{c.motivo_anulacion ? `: ${c.motivo_anulacion}` : ''}
+                        {c.autorizado_por ? ` · autorizó ${c.autorizado_por}` : ''}
+                      </p>
+                    )}
+                    {c.por_revisar && c.cambios_despues && (
+                      <p className="text-xs text-aviso-700 mb-2 whitespace-pre-line">
+                        Cambió después de cerrar:{'\n'}
+                        {c.cambios_despues.trim()}
+                      </p>
+                    )}
+                    {c.estado_diferencia === 'aprobada' && (
+                      <p className="text-xs text-neutral-500 mb-2">
+                        Diferencia aprobada por {c.aprobada_por}: {c.motivo_aprobacion}
                       </p>
                     )}
                     <div className="rounded-xl bg-neutral-50 divide-y divide-neutral-200">

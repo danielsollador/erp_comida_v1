@@ -64,6 +64,7 @@ import type {
   ListaUsuarios,
   Merma,
   Autorizacion,
+  DiferenciasPorAprobar,
   SolicitudAutorizacion,
   Pedido,
   PedidoItem,
@@ -1186,6 +1187,12 @@ export const api = {
     req<ExplicacionCierre>(`/caja/explicar${fecha ? `?fecha=${fecha}` : ''}`),
   cobrosDelDia: (fecha?: string) =>
     req<CobroDelDia[]>('/caja/cobros' + (fecha ? `?fecha=${fecha}` : '')),
+  diferenciasCaja: () => req<DiferenciasPorAprobar>('/caja/diferencias'),
+  aprobarDiferencia: (tipo: 'cierre' | 'apertura', id: number, motivo: string) =>
+    req<DiferenciasPorAprobar>('/caja/diferencias/aprobar', {
+      method: 'POST',
+      body: JSON.stringify({ tipo, id, motivo }),
+    }),
   anularCierre: (id: number, motivo: string) =>
     req<CierreCaja>(`/caja/cierres/${id}/anular`, {
       method: 'POST',

@@ -1017,7 +1017,28 @@ export type CierreCaja = {
   divisas_diferencia: number
   /** Una fila por destino verificado, congelada como estaba al cerrar. */
   lineas: LineaCierre[]
+  /** Cierre como cuadre (specs/caja.md): la diferencia entra a los libros al aprobarla. */
+  estado_diferencia?: 'por_aprobar' | 'aprobada' | 'sola' | 'sin_diferencia' | 'asentada'
+  aprobada_por?: string
+  motivo_aprobacion?: string
+  cerrado_por?: string
+  autorizado_por?: string
+  /** Algo cambio en el dia despues de cerrar. */
+  por_revisar?: boolean
+  cambios_despues?: string
 }
+
+export type DiferenciaCaja = {
+  tipo: 'cierre' | 'apertura'
+  id: number
+  dia: string
+  monto: number
+  detalle: string
+  quien: string
+  nota: string
+}
+
+export type DiferenciasPorAprobar = { filas: DiferenciaCaja[]; total: number; dias_mas_vieja: number }
 
 export type EstadoTasa = {
   fecha: string
