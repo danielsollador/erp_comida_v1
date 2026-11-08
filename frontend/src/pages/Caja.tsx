@@ -1168,9 +1168,15 @@ function Movimientos({
   const [referencia, setReferencia] = useState('')
   const [error, setError] = useState('')
   const { deshacible, oculto } = useDeshacer()
+  // La gaveta de bolivares se escribe en bolivares: la cajera tiene los
+  // billetes en Bs y convertirlos de cabeza es donde se cuela el error (QA
+  // nov, hallazgo 32). Se guarda en dolares, a la tasa de hoy.
+  const { tasa } = useMoneda()
+  const enBs = EN_BOLIVARES.has(metodo) && !!tasa?.bcv
 
   async function registrar() {
-    const n = leerMonto(monto)
+    const escrito = leerMonto(monto)
+    const n = enBs && tasa?.bcv ? Math.round((escrito / tasa.bcv) * 100) / 100 : escrito
     if (!Number.isFinite(n) || n <= 0) return
     if (tipo === 'gasto' && !descripcion.trim()) return
     if (tipo === 'deposito' && !referencia.trim()) return setError('Pon la referencia del depósito.')
@@ -1286,7 +1292,7 @@ function Movimientos({
             <Numerico monto
               value={monto}
               onChange={(e) => setMonto(e.target.value)}
-              placeholder="$"
+              placeholder={enBs ? 'Bs' : '$'}
               className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm"
             />
             <button

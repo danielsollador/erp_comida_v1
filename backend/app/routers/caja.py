@@ -461,6 +461,10 @@ def _desglose(
         pagos = 0.0
         if not fisico:
             pagos, salio = salio, 0.0
+        # La fila Fiado de un dia cerrado dice cuanto se fio ese dia: los
+        # abonos y las bajas de despues no la mueven (QA nov, hallazgo 32).
+        if cierre is not None and metodo == "Fiado":
+            otros, salio = 0.0, 0.0
         # Dia cerrado: manda lo guardado, y `otros` absorbe lo que haya pasado
         # despues para que la fila siga sumando a la vista.
         if metodo in guardados:

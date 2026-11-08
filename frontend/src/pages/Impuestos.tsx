@@ -8,7 +8,7 @@ import BarraFiltros from '../components/BarraFiltros'
 import { useRango, queryRango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
 import { Tabla, Th, useOrden } from '../components/Tabla'
-import { Pagina } from '../components/ui'
+import { Aviso, Pagina } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import { api } from '../lib/api'
 import { fmtBs, fmtNum } from '../lib/moneda'
@@ -76,7 +76,7 @@ export default function Impuestos() {
   const [compras, setCompras] = useState<LibroCompras | null>(null)
   const [resumen, setResumen] = useState<ResumenIva | null>(null)
   // El valor solo se usa via los campos; se guarda el setter para refrescarlo.
-  const [, setFiscal] = useState<ConfiguracionFiscal>({ tasa_iva: 16 })
+  const [fiscal, setFiscal] = useState<ConfiguracionFiscal | null>(null)
   const [tasaInput, setTasaInput] = useState('')
   // Quien lleva los libros: la cabecera de los libros del SENIAT.
   const [razonSocial, setRazonSocial] = useState('')
@@ -205,6 +205,14 @@ export default function Impuestos() {
       <NavBar titulo="Impuestos" secciones={SECCIONES} seccion={seccion} alCambiarSeccion={irA} />
       <Pagina>
         {seccion !== 'declaraciones' && <BarraFiltros rango={rango} alCambiar={setRango} />}
+        {/* QA nov, hallazgo 31: sin RIF ni razon social los libros SENIAT
+            salen sin cabecera, y se declaraba igual sin decir nada. */}
+        {fiscal && (!fiscal.rif?.trim() || !fiscal.razon_social?.trim()) && (
+          <Aviso tono="ojo">
+            Faltan el RIF o la razón social del negocio: los libros del SENIAT salen sin cabecera. Escríbelos aquí abajo y toca
+            Guardar.
+          </Aviso>
+        )}
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <h2 className="font-semibold mb-3">Datos fiscales</h2>
           <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_7rem] gap-3">

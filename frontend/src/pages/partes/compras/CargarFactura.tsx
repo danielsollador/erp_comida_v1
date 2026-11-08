@@ -39,6 +39,7 @@ import type {
   TipoArticulo,
 } from '../../../lib/types'
 import { montoO0 } from '../../../lib/montos'
+import { useRecordado } from '../../../lib/memoria'
 
 /**
  * Cargar una factura de proveedor, en tres pasos que se leen de arriba abajo:
@@ -196,19 +197,22 @@ export default function CargarFactura({
 }) {
   const dialogo = useDialogo()
   const hoyISO = new Date().toLocaleDateString('en-CA')
+  // LO TECLEADO SE QUEDA (QA nov, hallazgo 28): la factura a medio cargar
+  // vuelve tal cual al regresar a la pantalla, en esta pestaña, hasta que se
+  // guarda o se limpia. Los campos van con `useRecordado`.
 
   const [error, setError] = useState('')
   const [exito, setExito] = useState('')
   const [guardando, setGuardando] = useState(false)
 
-  const [numeroFactura, setNumeroFactura] = useState('')
+  const [numeroFactura, setNumeroFactura] = useRecordado('cargar-factura:numeroFactura', '')
   // La fecha impresa en el papel. Solo se muestra en el Libro de Compras: el
   // periodo lo decide la fecha de registro (hoy), que pone el backend.
-  const [fechaEmision, setFechaEmision] = useState('')
-  const [proveedor, setProveedor] = useState('')
-  const [rif, setRif] = useState('')
-  const [monedaCarga, setMonedaCarga] = useState<(typeof MONEDAS_DE_CARGA)[number]>('$')
-  const [numeroControl, setNumeroControl] = useState('')
+  const [fechaEmision, setFechaEmision] = useRecordado('cargar-factura:fechaEmision', '')
+  const [proveedor, setProveedor] = useRecordado('cargar-factura:proveedor', '')
+  const [rif, setRif] = useRecordado('cargar-factura:rif', '')
+  const [monedaCarga, setMonedaCarga] = useRecordado<(typeof MONEDAS_DE_CARGA)[number]>('cargar-factura:monedaCarga', '$')
+  const [numeroControl, setNumeroControl] = useRecordado('cargar-factura:numeroControl', '')
   // La tasa (Bs por $) con que esta factura pasa al Libro de Compras en Bs, y
   // con la que una factura en Bs se pasa a dolares. Es la de la FECHA DE LA
   // FACTURA, no la de hoy. Si el papel imprime su tasa, manda esa.
@@ -217,10 +221,10 @@ export default function CargarFactura({
   const [notaTasa, setNotaTasa] = useState('')
   // Retencion de IVA (si se es agente): '' = la del proveedor (75 si es nuevo).
   const [retencion, setRetencion] = useState<'' | '0' | '75' | '100'>('')
-  const [formaPago, setFormaPago] = useState('')
-  const [referenciaPago, setReferenciaPago] = useState('')
+  const [formaPago, setFormaPago] = useRecordado('cargar-factura:formaPago', '')
+  const [referenciaPago, setReferenciaPago] = useRecordado('cargar-factura:referenciaPago', '')
   // Pago mixto: con qué, cuánto y el comprobante de cada parte (Leider, 8-oct).
-  const [partesPago, setPartesPago] = useState<ParteDePago[]>(PARTES_INICIALES)
+  const [partesPago, setPartesPago] = useRecordado<ParteDePago[]>('cargar-factura:partesPago', PARTES_INICIALES)
   // Los servicios ya cargados (Internet, Luz): son fijos, se ofrecen de un
   // toque para no escribirlos distinto cada mes.
   const [servicios, setServicios] = useState<string[]>([])
@@ -230,11 +234,11 @@ export default function CargarFactura({
       .then(setServicios)
       .catch(() => undefined)
   }, [])
-  const [descripcion, setDescripcion] = useState('')
-  const [lineas, setLineas] = useState<Linea[]>([LINEA_VACIA])
-  const [recargo, setRecargo] = useState('')
-  const [descuentoFactura, setDescuentoFactura] = useState('')
-  const [fechaVencimiento, setFechaVencimiento] = useState('')
+  const [descripcion, setDescripcion] = useRecordado('cargar-factura:descripcion', '')
+  const [lineas, setLineas] = useRecordado<Linea[]>('cargar-factura:lineas', [LINEA_VACIA])
+  const [recargo, setRecargo] = useRecordado('cargar-factura:recargo', '')
+  const [descuentoFactura, setDescuentoFactura] = useRecordado('cargar-factura:descuentoFactura', '')
+  const [fechaVencimiento, setFechaVencimiento] = useRecordado('cargar-factura:fechaVencimiento', '')
   // El paso abierto. 0 = los tres plegados: queda el total y Guardar.
   const [paso, setPaso] = useState<Numero | 0>(1)
   // El paso del pago nace con "Efectivo" puesto, pero no está revisado hasta
@@ -253,7 +257,7 @@ export default function CargarFactura({
   // o archivo / a mano, y nada mas. Cada uno lleva a su camino y de ahi sigue
   // el flujo de siempre. Sin el lector de facturas activo no hay que elegir:
   // va directo a mano.
-  const [modo, setModo] = useState<'elegir' | 'foto' | 'manual'>('elegir')
+  const [modo, setModo] = useRecordado<'elegir' | 'foto' | 'manual'>('cargar-factura:modo', 'elegir')
   const [lectorActivo, setLectorActivo] = useState<boolean | null>(null)
   useEffect(() => {
     api
@@ -692,6 +696,7 @@ export default function CargarFactura({
     setNumeroControl('')
     setOrigenTasa('')
     setRetencion('')
+    setFormaPago('')
     setPaso(1)
     setLectura(null)
     setDocumento(null)
