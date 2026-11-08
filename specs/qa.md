@@ -1,6 +1,6 @@
 # Spec: Hallazgos del QA de noviembre
 
-Transversal · bloque 1.3 · **Aprobada** (Daniel, 8-nov-2026: «corregir todos los hallazgos del PDF»). Origen: `Savora-QA-resumen-noviembre.pdf` (32 hallazgos sobre la versión 5f39cf2, probados en una copia de producción). El cierre de caja tiene su propia spec: `specs/caja.md`.
+Transversal · bloque 1.3 · **Implementada** (8-nov-2026, rama `fix-2026-11-08-qa-noviembre`, sin desplegar), salvo el 22. Aprobada por Daniel el mismo día: «corregir todos los hallazgos del PDF». Origen: `Savora-QA-resumen-noviembre.pdf` (32 hallazgos sobre la versión 5f39cf2, probados en una copia de producción). El cierre de caja tiene su propia spec: `specs/caja.md`.
 
 ## Qué resuelve
 
@@ -19,33 +19,33 @@ Errores de dinero, permisos y operación que el dueño ya sufre: montos que se l
 
 | # | Qué tiene que pasar |
 |---|---|
-| 1 | R1 en cierre, Compras, cobro y pagos. |
-| 2 | R2 en pagar factura, pagar fijo, abonar y retirar. |
+| 1 | R1 en cierre, Compras, cobro, pagos, tasa y la app móvil. Las cantidades leen el punto como decimal («1.250» kg es kilo y cuarto). |
+| 2 | La web y la app no mandan dos veces lo mismo mientras va en camino; la factura y el fijo se bloquean al pagar; un retiro, gasto, pago, factura o asiento repetido a los 10 s pide confirmar. |
 | 3 | Ver `specs/caja.md`. |
 | 4 | R3. Declarar avisa antes si hay ventas sin facturar con débito $0 o faltan RIF y razón social, y pide confirmar. |
-| 5 | La tasa se lee con R1 («1.001,18» es mil). Un salto de más de 30 % contra la tasa anterior no se guarda solo: queda la anterior y se avisa. |
-| 6 | Balance y Estado de resultados dicen lo mismo que los asientos: el resumen de un día se rehace si no coincide. |
+| 5 | El BCV se lee con el punto de miles («1.001,18» es mil). Un salto de más de 30 % contra el día anterior no se guarda: queda la anterior. Fijar la tasa a mano con un salto así pide confirmar. |
+| 6 | La corrida de la noche compara el resumen de cada día con los asientos y rehace los que difieren. |
 | 7 | Un retiro o gasto de efectivo mayor a lo que hay en esa gaveta no se guarda. |
 | 8 | La portada dice el faltante o sobrante de todas las gavetas y bancos del día, no solo bolívares. |
 | 9 | La cajera no ve ganancia, margen ni costo en Reportes; no cambia la tasa sin firma; dar de baja, corregir y anular cierres y borrar de días cerrados piden firma (R5). |
 | 10, 11 | Ver `specs/caja.md`. |
 | 12 | R4. |
 | 13 | Dona nunca suma a mano: toda cifra sale de una herramienta; si no la tiene, dice que no lo sabe. Gastos del mes = Estado de resultados. |
-| 14 | Cada cierre, anulación y corrección guarda la persona de turno (operador con PIN) además del usuario. |
+| 14 | Cada cierre guarda el usuario que cerró además de la persona de turno, y quién autorizó anularlo o corregirlo. |
 | 15 | Los Bs de la gaveta no «faltan» al subir la tasa (ver `specs/caja.md`). |
 | 16 | Un pago en Bs a tasa distinta de la BCV se asienta a la BCV y la diferencia va a diferencial cambiario, para que el banco en libros cuadre con el real. |
-| 17 | Una factura con mercancía se puede anular entera: devuelve inventario, IVA y la plata (banco o proveedor), si su mes no está declarado. |
+| 17 | Una factura con mercancía se anula entera si la mercancía sigue ahí y nadie la volvió a comprar: el costo vuelve al de antes y se borran la factura y su pago. Si ya se mezcló, nota de crédito por devolución. Pide firma y mes abierto. |
 | 18 | Guardar una factura de un proveedor nuevo lo crea en Proveedores con su RIF. |
 | 19 | La portada avisa los días con ventas sin cierre del último mes. |
 | 20 | «Pago menor» no acepta sueldos: si el concepto parece sueldo, lo manda a Pagos como sueldo. |
 | 21 | El explicador del descuadre mira primero si la apertura tuvo la misma diferencia. |
-| 22 | El vuelto en dólares se redondea a billetes; los centavos se dan en Bs. |
+| 22 | **Pendiente.** El vuelto en dólares se redondea a billetes y los centavos se dan en Bs. Necesita guardar el vuelto en dos gavetas (Ventas, de Leider); está en `Apuntes/fixes.md`. |
 | 23 | Una referencia de pago móvil ya usada avisa al cobrar y pide confirmar. |
 | 24 | Producir una preparación tolera el redondeo (0,1 %). El «rinde» de la API se sigue ignorando: la receta es por uno desde el 8-oct (decisión de Leider). |
 | 25 | El botón kg / g queda separado de la cantidad en el teléfono. |
 | 26 | «Te deben…» lleva a Cuentas por cobrar; el historial de cobros muestra también los abonos hechos desde Ventas y Caja. |
 | 27 | Dona y Reportes dan a la cajera lo mismo: ventas sí, ganancia no. |
-| 28 | La factura a medio cargar se guarda como borrador en el aparato y vuelve al regresar. |
+| 28 | La factura a medio cargar vuelve al regresar a la pantalla, en la misma pestaña, hasta que se guarda o se limpia. |
 | 29 | Las tablas de Caja › Historial, Contabilidad, Pagos y Cuentas por cobrar se exportan a CSV y Excel. |
 | 30 | La portada responde en menos de medio segundo con un mes de datos. |
 | 31 | Si faltan RIF o razón social, Impuestos lo avisa arriba con el botón para cargarlos (es dato, no código). |

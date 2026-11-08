@@ -1,6 +1,6 @@
 # Spec: Cierre de caja como cuadre
 
-Cierre de caja · bloque 1.10 · **Aprobada** (Daniel, 8-nov-2026, al pedir arreglar todo el QA de noviembre; D12–D15 con la propuesta). La 1.6 (medianoche) agregará aquí su sección.
+Cierre de caja · bloque 1.10 · **Implementada** (8-nov-2026, rama `fix-2026-11-08-qa-noviembre`, sin desplegar). Aprobada por Daniel al pedir arreglar todo el QA de noviembre; D12–D15 con la propuesta. La 1.6 (medianoche) agregará aquí su sección.
 
 ## Qué resuelve
 
@@ -49,7 +49,7 @@ Nada abierto. D12–D15 se aplicaron con la propuesta del plan; cambiarlas es un
 ## Cómo se valida
 
 1. Sin abrir la caja, intentar vender: no deja y dice por qué.
-2. Abrir con lo que propone, vender en efectivo $, Bs y punto, y cerrar contando exacto: ningún asiento nuevo, diferencia cero.
+2. Abrir contando lo que hay, vender en efectivo $, Bs y punto, y cerrar contando exacto: ningún asiento nuevo, diferencia cero.
 3. Cerrar con $5 de menos: queda «por aprobar» y la ganancia del día no cambia.
 4. Aprobarla como dueño con un motivo: recién ahí aparece en los libros.
 5. Abrir con $2.500 cuando en el último cierre quedaron $130: pide confirmar.

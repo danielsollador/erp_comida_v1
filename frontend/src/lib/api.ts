@@ -241,7 +241,8 @@ async function reqUnaVez<T>(path: string, options?: RequestInit): Promise<T> {
       if (!(e instanceof PideAlgo)) throw e
       const p = e.pide
       if (p.codigo === 'confirmar' && manejadores.confirmar && !confirmados.includes(p.clave)) {
-        if (!(await manejadores.confirmar(p))) throw new ErrorApi(p.mensaje, 428)
+        if (!(await manejadores.confirmar(p)))
+          throw new ErrorApi(p.clave === 'repetido' ? 'No se registró otra vez: el primero ya quedó guardado.' : p.mensaje, 428)
         confirmados.push(p.clave)
         continue
       }

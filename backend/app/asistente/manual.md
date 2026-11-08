@@ -81,7 +81,7 @@ Con la franja «La caja no se ha abierto», toca «Abrir caja», cuenta los bill
 - **«Cocina»** en la tarjeta corrige qué va a cocina y qué sale de vitrina, sin mover plata ni inventario.
 
 ### Autorización con PIN
-Hace falta para editar una venta **ya cobrada** cuando cambia el total, y para corregir un pago que mueve plata de gaveta o de monto. Autorizan siempre el dueño y Vertigo; Caja y Cocina solo si el dueño lo activó en Roles. Si quien cobra ya autoriza, no se le pide nada.
+Hace falta para editar una venta **ya cobrada** cuando cambia el total, para corregir un pago que mueve plata de gaveta o de monto, para regalar (cortesía), para anular un pedido ya preparado, para anular o corregir un cierre, aprobar una diferencia de caja, borrar algo de un día cerrado, dar de baja una deuda, anular un pago o una factura de compra y fijar la tasa a mano. El cuadro de firma sale solo, en la misma pantalla. Autorizan siempre el dueño y Vertigo; Caja y Cocina solo si el dueño lo activó en Roles. Si quien cobra ya autoriza, no se le pide nada.
 
 - **«Con PIN»:** quien autoriza escribe su PIN (4 a 6 números).
 - **«Pedir permiso»** → «Enviar solicitud»: le llega una tarjeta con «Aprobar» y «Rechazar» (si no tiene la aplicación abierta, la ve al abrirla). Vence a los 15 minutos y sirve una sola vez.
@@ -306,7 +306,7 @@ En cada tarjeta: **«Sobró hoy»** («Lo guardo» no mueve nada; «Lo boto» lo
 - **Efectivo (Bs y $):** fondo + lo cobrado en esa gaveta − gastos y retiros pagados de esa gaveta ± otros movimientos de esa gaveta.
   - Los otros movimientos son, por ejemplo, un fiado cobrado en efectivo, una compra pagada desde esa gaveta (una factura o «Llegó mercancía» con «Efectivo Bs» o «Efectivo $»), un pago de la pantalla Pagos en efectivo o el vuelto que salió de otra gaveta.
   - **Una compra solo toca la caja si se dijo que la plata salió de esa gaveta.** Si se pagó con otra plata, se elige «Plata del dueño» o «Banco» y la gaveta no se entera. Si quedó mal, se anula la compra y se registra de nuevo con la forma correcta; si el día ya se cerró, se anula el cierre, se corrige y se vuelve a cerrar.
-  - El **fondo** es lo que se contó al abrir la caja. Si no se abrió, es lo que traía esa gaveta de días anteriores.
+  - El **fondo** es lo que se contó al abrir la caja. Si no se abrió, es lo que se contó en el último cierre (más lo que se movió después), nunca cero.
 - **Punto, pago móvil, transferencia y Zelle:** se coteja solo lo que entró ese día, sin fondo.
 - **Pago mixto:** cada parte cuenta en su forma.
 - **Propina:** entra con el pago, así que está en la gaveta.
@@ -316,18 +316,27 @@ En cada tarjeta: **«Sobró hoy»** («Lo guardo» no mueve nada; «Lo boto» lo
 ### Retiros de caja
 Todo billete que sale de la gaveta, para que el cierre cuadre: «Pago menor» (bombona, hielo, un mandado) o «Retiro del dueño», y de qué gaveta salió («De Efectivo Bs» o «De Efectivo $»). Baja lo que se debe tener en esa gaveta. «Depósito al banco»: el efectivo que se lleva al banco, con su referencia; no es gasto, solo cambia de sitio. «Entra plata del dueño»: cuando el dueño pone plata de su bolsillo; sube el capital y no es venta. Se anulan desde su lista. Los sueldos, el alquiler y lo que se paga por el banco van en **Pagos**; la mercancía, en Inventario › «Llegó mercancía» o en Compras.
 
+### Diferencias por aprobar
+- Abrir y cerrar **no tocan los libros**. Si el conteo no cuadra, la diferencia queda «por aprobar» y la ganancia no cambia.
+- En «Historial», arriba, «Por aprobar» lista cada diferencia. «Aprobar» pide qué pasó (queda en los libros) y la firma de quien autoriza; recién ahí entra como faltante o sobrante.
+- Si fue un movimiento sin anotar (un gasto, un cobro en otra forma de pago), mejor anotarlo: la diferencia desaparece sola.
+- Menos de $0,10 se aprueba sola. La portada avisa mientras haya diferencias sin aprobar.
+- Si la apertura tuvo una diferencia y el cierre la contraria del mismo monto, casi seguro fue el fondo tecleado en la mañana: se aprueban las dos con ese motivo y se anulan.
+
 ### Corregir un cierre
-- **Se tecleó mal:** en el día cerrado, «Corregir el conteo» → cambiar → «Guardar el conteo». El cierre viejo queda anulado con su rastro.
-- **Rehacerlo:** «Historial» → abrir el cierre → «Anular este cierre», motivo, «Anular cierre», y volver a cerrar.
+- **Se tecleó mal:** en el día cerrado, «Corregir el conteo» → cambiar → «Guardar el conteo». El cierre viejo queda anulado con su rastro. Pide la firma de quien autoriza.
+- **Rehacerlo:** «Historial» → abrir el cierre → «Anular este cierre», motivo, «Anular cierre», y volver a cerrar. Pide la firma de quien autoriza.
+- **Por revisar:** si después de cerrar entra una venta, un gasto o un retiro de ese día, el cierre queda «por revisar» y dice qué cambió.
 
 ### Reglas que confunden
 - **Un cierre por día para todo el local**, no por caja ni por cajera. No se cierra dos veces el mismo día.
 - **En blanco** = no se verificó. **0** = conté y no había nada: anota faltante por todo lo esperado.
 - **El día va de medianoche a medianoche** y la venta cuenta el día en que se *cobró*. Los pedidos sin cobrar no cuentan.
-- **Faltantes y sobrantes van a los libros** y afectan la ganancia de Reportes.
+- **Faltantes y sobrantes van a los libros solo al aprobarlos**, y recién ahí afectan la ganancia de Reportes.
+- **Un retiro o pago menor** no puede sacar más de lo que hay en la gaveta. Los sueldos no van como pago menor: van en Pagos.
 - **Retiros del dueño** bajan la gaveta pero no son gasto. **Propinas** están en la gaveta pero son del empleado.
 - **Pago mal registrado en un día ya cerrado:** anular el cierre, corregir el pago, volver a cerrar.
-- **Los bolívares contados** se pasan a dólares con la tasa de hoy.
+- **Los bolívares contados** se pasan a dólares con la tasa de hoy. Si subió la tasa, la parte que valen menos dólares es diferencial cambiario, no faltante.
 
 ## Ventas
 
@@ -615,3 +624,9 @@ Toca la pantalla de Cocina una vez, revisa que diga «Aviso activo» y el volume
 
 **No me deja declarar el IVA del mes / una venta no sale en el Libro de ventas.**
 No se declara el mes en curso, ni un mes con documentos sin tasa («cargar tasa»), ni uno ya declarado. Una venta no aparece en el libro si no se marcó «Facturar esta venta»: se factura después con «Facturar ahora» mientras el mes no esté declarado.
+
+## Lo que el sistema pregunta antes de guardar
+- **«¿Seguro?»** cuando algo se sale de lo normal: un pago cinco veces mayor que lo habitual, una fecha de hace más de un mes, un fondo de apertura lejos del último cierre, un faltante o sobrante de más de $20, una referencia de pago móvil ya usada, un salto de tasa de más de 30 %, declarar el IVA sin RIF o con débito en cero. Se confirma o se revisa.
+- **«¿Registrarlo otra vez?»** si se manda lo mismo dos veces en segundos (doble toque). «No, fue un doble toque» deja solo el primero.
+- **Mes declarado:** con el IVA de un mes declarado, nada de ese mes se crea, cambia ni borra; se registra con la fecha de hoy.
+- **Montos:** se escriben como en Venezuela: «17.922,45», «17922,45» o «5.000» se leen igual en toda la app.
