@@ -347,3 +347,18 @@ def test_un_sueldo_no_entra_como_pago_menor(client, db):
                                               "metodo_pago": "Efectivo $"})
     assert r.status_code == 400 and "Pagos" in r.json()["detail"]
 
+
+
+def test_un_dia_del_mart_que_no_cuadra_se_rehace_de_noche(client, db):
+    """Hallazgo 6: el Balance leía un resumen del 21 y 24-oct que no coincidía
+    con los asientos (datos corregidos directo en la base)."""
+    from app import consolidacion
+
+    con_libros(db)
+    hace_3 = datetime.date.today() - datetime.timedelta(days=3)
+    consolidacion.consolidar_dia(db, hace_3)
+    assert hace_3 not in consolidacion.dias_pendientes(db)
+    fila = db.query(models.DmCuentaDia).filter_by(fecha=hace_3).first()
+    fila.debe = (fila.debe or 0) + 87.42  # alguien tocó la base a mano
+    db.commit()
+    assert hace_3 in consolidacion.dias_pendientes(db)

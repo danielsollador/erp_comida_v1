@@ -668,6 +668,7 @@ def dias_pendientes(db: Session) -> List[datetime.date]:
         .all()
         if f.version == VERSION
     }
+    al_dia -= dias_que_no_cuadran(db, desde)
     pendientes = []
     d = desde
     while d < hoy():
@@ -675,6 +676,44 @@ def dias_pendientes(db: Session) -> List[datetime.date]:
             pendientes.append(d)
         d += datetime.timedelta(days=1)
     return pendientes
+
+
+def dias_que_no_cuadran(db: Session, desde: datetime.date) -> set:
+    """Los dias cuyo resumen guardado ya no dice lo mismo que los asientos.
+
+    Pasa cuando alguien corrige datos directo en la base sin pasar por
+    `crear_asiento`, que es lo que invalida el dia: el 21 y el 24-oct el
+    Balance decia $8.033,90 de banco y los asientos $7.946,48 (QA nov,
+    hallazgo 6). La corrida de la noche los compara y los rehace."""
+    dia = func.date(models.AsientoContable.fecha)
+    vivo: dict = {}
+    for d, cuenta_id, debe, haber in (
+        db.query(dia, models.MovimientoContable.cuenta_id,
+                 func.coalesce(func.sum(models.MovimientoContable.debe), 0.0),
+                 func.coalesce(func.sum(models.MovimientoContable.haber), 0.0))
+        .join(models.AsientoContable)
+        .filter(models.AsientoContable.fecha >= inicio_del_dia(desde), models.AsientoContable.fecha < inicio_del_dia(hoy()))
+        .group_by(dia, models.MovimientoContable.cuenta_id)
+        .all()
+    ):
+        fecha = d if isinstance(d, datetime.date) else datetime.date.fromisoformat(str(d)[:10])
+        vivo[(fecha, cuenta_id)] = (round(float(debe or 0), 2), round(float(haber or 0), 2))
+    guardado = {
+        (f.fecha, f.cuenta_id): (round(f.debe or 0, 2), round(f.haber or 0, 2))
+        for f in db.query(models.DmCuentaDia).filter(models.DmCuentaDia.fecha >= desde).all()
+    }
+    consolidados = dias_consolidados(db, desde, hoy())
+    malos = set()
+    for clave in set(vivo) | set(guardado):
+        if clave[0] not in consolidados:
+            continue
+        a, b = vivo.get(clave, (0.0, 0.0)), guardado.get(clave, (0.0, 0.0))
+        if abs(a[0] - b[0]) > 0.005 or abs(a[1] - b[1]) > 0.005:
+            malos.add(clave[0])
+    if malos:
+        log.warning("consolidacion: %d dia(s) del mart no cuadraban con los asientos: %s",
+                    len(malos), ", ".join(sorted(d.isoformat() for d in malos)))
+    return malos
 
 
 def consolidar_pendientes(db: Session) -> int:
