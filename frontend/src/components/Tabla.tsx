@@ -13,6 +13,7 @@ import MenuAcciones from './MenuAcciones'
 import { Aviso, Boton } from './ui'
 import { explicar } from '../lib/glosario'
 import type { FormatoExportar } from '../lib/types'
+import { descargar } from '../lib/plataforma'
 
 /**
  * Las tablas del ERP: se ordenan por cualquier columna y se ven completas.
@@ -193,7 +194,7 @@ export function useBuscador<T>(
 }
 
 /** El botón Exportar de una tabla: el mismo, en el mismo lugar, en todas. */
-function BotonExportar({
+export function BotonExportar({
   exportar,
   apagado,
   alFallar,
@@ -518,5 +519,27 @@ export function Th({
       </button>
       {panel}
     </th>
+  )
+}
+
+
+/**
+ * Exportar una lista por fechas que todavia no vive en una Tabla (Caja ›
+ * Historial, Pagos, el diario): el mismo boton, y el servidor arma el archivo
+ * con las filas del periodo (QA nov, hallazgo 29).
+ */
+export function ExportarPeriodo({ ruta, nombre, rango }: { ruta: string; nombre: string; rango: { desde: string; hasta: string } }) {
+  const [error, setError] = useState('')
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <BotonExportar
+        apagado={false}
+        alFallar={setError}
+        exportar={(formato) =>
+          descargar(ruta, `${nombre}-${rango.desde}-a-${rango.hasta}.${formato}`, { formato, desde: rango.desde, hasta: rango.hasta })
+        }
+      />
+      {error && <span className="text-xs text-peligro-600">{error}</span>}
+    </span>
   )
 }

@@ -362,3 +362,15 @@ def test_un_dia_del_mart_que_no_cuadra_se_rehace_de_noche(client, db):
     fila.debe = (fila.debe or 0) + 87.42  # alguien tocó la base a mano
     db.commit()
     assert hace_3 in consolidacion.dias_pendientes(db)
+
+
+def test_historial_pagos_y_diario_se_exportan(client, db):
+    """Hallazgo 29: solo se exportaba en Compras e Impuestos."""
+    con_libros(db)
+    client.post("/api/egresos", json={"beneficiario": "Casero", "concepto": "Alquiler", "monto": 300,
+                                      "metodo_pago": "Transferencia", "referencia": "A1"})
+    client.post("/api/caja/gastos", json={"descripcion": "Hielo", "monto": 3, "categoria": "Otros", "metodo_pago": "Efectivo $"})
+    for ruta in ("/api/egresos/exportar", "/api/caja/historial/exportar", "/api/contabilidad/asientos/exportar"):
+        for formato in ("csv", "xlsx"):
+            r = client.post(ruta, json={"formato": formato})
+            assert r.status_code == 200 and len(r.content) > 50, (ruta, formato, r.text[:200])

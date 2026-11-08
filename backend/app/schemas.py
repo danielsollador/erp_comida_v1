@@ -3786,6 +3786,14 @@ class ResumenCxC(BaseModel):
     dadas_de_baja: List[VentaPorCobrar] = []
 
 
+class ExportarRango(BaseModel):
+    """Exportar lo que se ve de una lista por fechas (Caja › Historial,
+    Pagos, el diario de Contabilidad): QA nov, hallazgo 29."""
+    formato: Literal["csv", "xlsx"]
+    desde: Optional[datetime.date] = None
+    hasta: Optional[datetime.date] = None
+
+
 class ExportarCxC(BaseModel):
     formato: Literal["csv", "xlsx"]
     # Ids y no numeros de venta: el numero de comanda se reinicia cada dia.

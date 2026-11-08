@@ -26,6 +26,7 @@ import type {
   DiferenciasPorAprobar,
 } from '../lib/types'
 import { leerMonto } from '../lib/montos'
+import { ExportarPeriodo } from '../components/Tabla'
 
 /**
  * Cierre de caja.
@@ -1635,9 +1636,12 @@ function Historial({
     <>
       <PorAprobar alAprobar={alAnular} />
       <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-        <h2 className="font-semibold mb-3">
-          Historial <span className="text-neutral-400 font-normal text-sm">· {etiquetaRango(rango)}</span>
-        </h2>
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <h2 className="font-semibold">
+            Historial <span className="text-neutral-400 font-normal text-sm">· {etiquetaRango(rango)}</span>
+          </h2>
+          <ExportarPeriodo ruta="/api/caja/historial/exportar" nombre="caja-historial" rango={rango} />
+        </div>
         <div className="grid grid-cols-3 gap-3">
           <Tile titulo="Gastos" valor={totalGastos} detalle={`${gastos.length} registro(s)`} tono={totalGastos > 0 ? 'malo' : 'apagado'} />
           <Tile titulo="Retiros" valor={totalRetiros} detalle={`${retiros.length} registro(s)`} tono={totalRetiros > 0 ? 'malo' : 'apagado'} />

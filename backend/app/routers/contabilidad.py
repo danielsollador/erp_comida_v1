@@ -745,3 +745,27 @@ def balance_general(db: Session = Depends(get_db)):
         total_patrimonio=total_patrimonio,
         cuadra=abs(total_activos - (total_pasivos + total_patrimonio)) < 0.02,
     )
+
+
+@router.post("/asientos/exportar")
+def exportar_asientos(body: schemas.ExportarRango, db: Session = Depends(get_db)):
+    """El diario del periodo, una fila por movimiento (QA nov, hallazgo 29)."""
+    from ..exportar_csv import respuesta_csv, respuesta_xlsx
+
+    inicio, fin, _ = Rango(desde=body.desde, hasta=body.hasta).resolver(periodo="mes")
+    asientos = (
+        db.query(models.AsientoContable)
+        .options(joinedload(models.AsientoContable.movimientos).joinedload(models.MovimientoContable.cuenta))
+        .filter(models.AsientoContable.fecha >= inicio, models.AsientoContable.fecha < fin)
+        .order_by(models.AsientoContable.fecha, models.AsientoContable.id)
+        .all()
+    )
+    filas = [
+        (a.fecha, a.id, a.descripcion, m.cuenta.codigo, m.cuenta.nombre, m.debe or 0, m.haber or 0)
+        for a in asientos for m in a.movimientos
+    ]
+    columnas = ("Fecha", "Asiento", "Descripción", "Cuenta", "Nombre de la cuenta", "Debe ($)", "Haber ($)")
+    nombre = f"diario-{hoy().isoformat()}.{body.formato}"
+    if body.formato == "xlsx":
+        return respuesta_xlsx(nombre, columnas, filas, hoja="Diario")
+    return respuesta_csv(nombre, columnas, filas, regional=True)

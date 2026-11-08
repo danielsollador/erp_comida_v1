@@ -10,6 +10,7 @@ import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { METODOS_PAGO, necesitaReferencia, pedirReferencia } from '../lib/pagos'
 import type { AnticipoPendiente, Frecuencia, NuevoPago, PagoFijo, PagoSinFactura, ResumenPagos } from '../lib/types'
 import { montoO0 } from '../lib/montos'
+import { ExportarPeriodo } from '../components/Tabla'
 
 /**
  * Pagos: lo que el negocio paga SIN factura.
@@ -131,7 +132,7 @@ export default function Pagos() {
           <>
             {resumen && <Resumen r={resumen} etiqueta={etiquetaRango(rango)} alCambiar={cargar} />}
             <Formulario anticipos={anticipos} alGuardar={cargar} />
-            <Lista pagos={pagos} etiqueta={etiquetaRango(rango)} alCambiar={cargar} />
+            <Lista pagos={pagos} etiqueta={etiquetaRango(rango)} alCambiar={cargar} rango={rango} />
           </>
         )}
         {seccion === 'fijos' && <Fijos fijos={fijos} alCambiar={cargar} />}
@@ -443,7 +444,17 @@ function Formulario({ anticipos, alGuardar }: { anticipos: AnticipoPendiente[]; 
   )
 }
 
-function Lista({ pagos, etiqueta, alCambiar }: { pagos: PagoSinFactura[]; etiqueta: string; alCambiar: () => void }) {
+function Lista({
+  pagos,
+  etiqueta,
+  alCambiar,
+  rango,
+}: {
+  pagos: PagoSinFactura[]
+  etiqueta: string
+  alCambiar: () => void
+  rango: { desde: string; hasta: string }
+}) {
   const dialogo = useDialogo()
   const [error, setError] = useState('')
   async function anular(p: PagoSinFactura) {
@@ -462,7 +473,7 @@ function Lista({ pagos, etiqueta, alCambiar }: { pagos: PagoSinFactura[]; etique
     }
   }
   return (
-    <Seccion titulo={`Pagos · ${etiqueta}`} plano>
+    <Seccion titulo={`Pagos · ${etiqueta}`} accion={<ExportarPeriodo ruta="/api/egresos/exportar" nombre="pagos" rango={rango} />} plano>
       {error && <div className="px-4 pt-3"><Aviso>{error}</Aviso></div>}
       {pagos.length === 0 ? (
         <Vacio icono="pagar" titulo="Sin pagos en este período" />

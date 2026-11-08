@@ -4,7 +4,7 @@ import { useSeccion } from '../components/Secciones'
 import BarraFiltros from '../components/BarraFiltros'
 import { useRango, type Rango } from '../lib/fechas'
 import { useDialogo } from '../components/dialogo'
-import { Tabla, Th, useBuscador, useOrden } from '../components/Tabla'
+import { Tabla, Th, useBuscador, useOrden, ExportarPeriodo } from '../components/Tabla'
 import { Aviso, Boton, Campo, Modal, Pagina, Selector } from '../components/ui'
 import { Numerico } from '../components/Teclado'
 import Respaldos from './partes/Respaldos'
@@ -436,6 +436,7 @@ function Diario({ rango }: { rango: Rango }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Buscar: #495, Zelle, proveedor…" aria-label="Buscar asiento" className={`${filtro} flex-1 basis-56`} />
+        <ExportarPeriodo ruta="/api/contabilidad/asientos/exportar" nombre="diario" rango={rango} />
         <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} aria-label="Cuenta" className={`${filtro} basis-48 flex-1 sm:flex-none`}>
           <option value="">Todas las cuentas</option>
           {cuentas.map((c) => (

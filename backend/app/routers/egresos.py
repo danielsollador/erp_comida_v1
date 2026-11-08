@@ -380,3 +380,28 @@ def pagar_fijo(fijo_id: int, body: schemas.PagarFijo, request: Request, db: Sess
     db.commit()
     db.refresh(pago)
     return pago
+
+
+@router.post("/exportar")
+def exportar(body: schemas.ExportarRango, db: Session = Depends(get_db)):
+    """Los pagos sin factura del periodo, en CSV o Excel (QA nov, hallazgo 29)."""
+    from ..exportar_csv import respuesta_csv, respuesta_xlsx
+
+    inicio, fin, _ = Rango(desde=body.desde, hasta=body.hasta).resolver(dias=30)
+    pagos = (
+        db.query(models.PagoSinFactura)
+        .filter(models.PagoSinFactura.fecha >= inicio, models.PagoSinFactura.fecha < fin)
+        .order_by(models.PagoSinFactura.fecha.desc())
+        .all()
+    )
+    columnas = ("Fecha", "A quién", "Concepto", "Detalle", "Monto ($)", "Monto (Bs)", "Tasa", "De dónde salió",
+                "Referencia", "ISLR retenido ($)", "Anulado")
+    filas = [
+        (p.fecha.date(), p.beneficiario, p.concepto, p.descripcion or "", p.monto, p.monto_bs, p.tasa, p.metodo_pago,
+         p.referencia or "", p.retencion_islr or 0, "Sí" if p.anulado else "")
+        for p in pagos
+    ]
+    nombre = f"pagos-{hoy().isoformat()}.{body.formato}"
+    if body.formato == "xlsx":
+        return respuesta_xlsx(nombre, columnas, filas, hoja="Pagos")
+    return respuesta_csv(nombre, columnas, filas, regional=True)

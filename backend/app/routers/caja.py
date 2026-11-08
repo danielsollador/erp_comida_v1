@@ -1776,3 +1776,26 @@ def eliminar_gasto(gasto_id: int, request: Request, db: Session = Depends(get_db
     db.delete(db_gasto)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/historial/exportar")
+def exportar_historial(body: schemas.ExportarRango, db: Session = Depends(get_db)):
+    """Cierres, gastos y retiros del periodo, en orden (QA nov, hallazgo 29)."""
+    from ..exportar_csv import respuesta_csv, respuesta_xlsx
+
+    inicio, fin, _ = Rango(desde=body.desde, hasta=body.hasta).resolver(dias=30)
+    filas = []
+    for c in db.query(models.CierreCaja).filter(models.CierreCaja.fecha >= inicio, models.CierreCaja.fecha < fin).all():
+        dif = round(sum(l.diferencia or 0 for l in c.lineas), 2) if c.lineas else round((c.diferencia or 0) + (c.divisas_diferencia or 0), 2)
+        estado = "Anulado" if c.anulado else {"por_aprobar": "Diferencia por aprobar", "aprobada": "Aprobada"}.get(c.estado_diferencia or "", "")
+        filas.append((c.fecha, "Cierre", c.nota or "", c.total_sistema, dif, c.cerrado_por or c.operador, estado))
+    for g in db.query(models.Gasto).filter(models.Gasto.fecha >= inicio, models.Gasto.fecha < fin).all():
+        filas.append((g.fecha, "Gasto", f"{g.descripcion} ({g.metodo_pago})", -g.monto, None, "", ""))
+    for r in db.query(models.RetiroPropietario).filter(models.RetiroPropietario.fecha >= inicio, models.RetiroPropietario.fecha < fin).all():
+        filas.append((r.fecha, "Retiro del dueño", f"{r.nota or ''} ({r.metodo_pago})".strip(), -r.monto, None, "", ""))
+    filas.sort(key=lambda f: f[0], reverse=True)
+    columnas = ("Fecha", "Tipo", "Detalle", "Monto ($)", "Descuadre ($)", "Quién cerró", "Estado")
+    nombre = f"caja-historial-{hoy().isoformat()}.{body.formato}"
+    if body.formato == "xlsx":
+        return respuesta_xlsx(nombre, columnas, filas, hoja="Historial de caja")
+    return respuesta_csv(nombre, columnas, filas, regional=True)
