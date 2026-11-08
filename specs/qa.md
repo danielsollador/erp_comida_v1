@@ -41,7 +41,7 @@ Errores de dinero, permisos y operación que el dueño ya sufre: montos que se l
 | 21 | El explicador del descuadre mira primero si la apertura tuvo la misma diferencia. |
 | 22 | El vuelto en dólares se redondea a billetes; los centavos se dan en Bs. |
 | 23 | Una referencia de pago móvil ya usada avisa al cobrar y pide confirmar. |
-| 24 | Producir una preparación tolera el redondeo (0,1 %) y usa el «rinde» que llega. |
+| 24 | Producir una preparación tolera el redondeo (0,1 %). El «rinde» de la API se sigue ignorando: la receta es por uno desde el 8-oct (decisión de Leider). |
 | 25 | El botón kg / g queda separado de la cantidad en el teléfono. |
 | 26 | «Te deben…» lleva a Cuentas por cobrar; el historial de cobros muestra también los abonos hechos desde Ventas y Caja. |
 | 27 | Dona y Reportes dan a la cajera lo mismo: ventas sí, ganancia no. |

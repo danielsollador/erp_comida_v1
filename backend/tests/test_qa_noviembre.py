@@ -346,3 +346,4 @@ def test_un_sueldo_no_entra_como_pago_menor(client, db):
     r = client.post("/api/caja/gastos", json={"descripcion": "Sueldo de Richard", "monto": 87.5, "categoria": "Otros",
                                               "metodo_pago": "Efectivo $"})
     assert r.status_code == 400 and "Pagos" in r.json()["detail"]
+

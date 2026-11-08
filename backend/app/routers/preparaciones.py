@@ -280,6 +280,12 @@ def registrar_produccion(body: schemas.ProduccionInput, request: Request, db: Se
             # entonces sale su materia prima.
             for hoja, q in costeo.explotar(ing, cantidad).items():
                 consumo[hoja] = consumo.get(hoja, 0) + q
+        # Un 0,1 % de redondeo no es que falte: 10 kg contra una tanda de
+        # 10,0002 kg decia "No alcanza" (QA nov, hallazgo 24). Se usa lo que hay.
+        for hoja, q in list(consumo.items()):
+            hay = hoja.stock_actual or 0
+            if hay < q <= hay + max(1e-6, abs(hay) * 0.001):
+                consumo[hoja] = hay
         faltan = [
             f"{hoja.nombre} (hay {max(hoja.stock_actual or 0, 0):g} {hoja.unidad}, la tanda usa {q:g})"
             for hoja, q in consumo.items()
