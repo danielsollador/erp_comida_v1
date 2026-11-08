@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
 from typing import Optional
@@ -34,6 +35,16 @@ from sqlalchemy.orm import Session
 from . import autorizaciones, schemas
 
 CABECERA_FIRMA = "X-Autorizacion"
+
+
+def numero(n: float) -> str:
+    """2.500,00: como se lee en Venezuela, en los mensajes al usuario."""
+    return f"{n:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def usd(n: float) -> str:
+    return "$" + numero(n)
+
 CABECERA_CONFIRMADO = "X-Confirmado"
 
 
@@ -88,11 +99,19 @@ def exigir_firma(
 
 # ── Un solo envio ────────────────────────────────────────────────────────────
 
-# Las rutas donde un segundo envio igual es casi siempre un error: pagos,
-# compras, cobros de deudas, caja e impuestos. Los pedidos no: dos clientes
-# seguidos piden el mismo cafe, y el cobro ya tiene su propia cerradura.
-RUTAS_DE_DINERO = ("/api/compras", "/api/egresos", "/api/cobranzas", "/api/caja", "/api/impuestos",
-                   "/api/contabilidad/asientos", "/api/inventario/compras")
+# Las rutas que CREAN un movimiento de plata sin otra defensa contra el
+# repetido: retirar, gastar, pagar, cargar una factura. Las que actuan sobre
+# algo que ya existe (pagar la factura 12, anular el cierre 5) ya tienen la
+# suya --el estado de la fila, bloqueada--; los cobros de deudas traen su
+# propia clave (`clave_cliente`), y los pedidos tambien: dos clientes seguidos
+# piden el mismo cafe.
+RUTAS_DE_DINERO = {
+    "/api/caja/retiros", "/api/caja/gastos", "/api/caja/traspasos",
+    "/api/egresos", "/api/egresos/islr/enterar",
+    "/api/compras/facturas", "/api/contabilidad/asientos", "/api/impuestos/retenciones-iva/enterar",
+}
+# La compra suelta de una mercancia (sin factura): su ruta lleva el id.
+COMPRA_SUELTA = re.compile(r"^/api/inventario/ingredientes/\d+/comprar$")
 VENTANA_SEGUNDOS = 10
 
 _lock = threading.Lock()
@@ -100,7 +119,8 @@ _vistos: dict[str, tuple[str, float]] = {}
 
 
 def aplica(metodo: str, ruta: str) -> bool:
-    return metodo in ("POST", "PUT", "PATCH", "DELETE") and ruta.startswith(RUTAS_DE_DINERO)
+    ruta = ruta.rstrip("/")
+    return metodo == "POST" and (ruta in RUTAS_DE_DINERO or bool(COMPRA_SUELTA.match(ruta)))
 
 
 def huella(usuario: str, metodo: str, ruta: str, cuerpo: bytes) -> str:

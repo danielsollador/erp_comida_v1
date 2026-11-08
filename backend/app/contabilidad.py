@@ -119,6 +119,9 @@ PLAN_DE_CUENTAS = [
     ("6140", "Cuentas incobrables", "gasto", "deudora"),
     # Patente, aseo, tasas de la alcaldia: impuestos que no son IVA ni ISLR.
     ("6150", "Impuestos y tasas municipales", "gasto", "deudora"),
+    # Los bolivares valen menos dolares cuando sube la tasa: no falto plata
+    # (gaveta de Bs al cerrar, pago en Bs a una tasa distinta de la BCV).
+    ("6160", "Diferencial cambiario", "gasto", "deudora"),
 ]
 
 # Cuentas que viven dentro de un grupo pero con el saldo invertido a proposito:
@@ -372,15 +375,44 @@ def ultimo_ejercicio_cerrado(db: Session) -> Optional[int]:
     )
 
 
+class ErrorMesDeclarado(ErrorEjercicioCerrado):
+    """Se intento crear, cambiar o borrar algo de un mes con el IVA declarado."""
+
+    def __init__(self, anio: int, mes: int, que: str = "eso"):
+        self.anio = anio
+        ValueError.__init__(
+            self,
+            f"El IVA de {mes:02d}/{anio} ya se declaró: {que} no puede entrar ni cambiar en ese mes, "
+            "porque los libros dejarían de decir lo que se le presentó al SENIAT. "
+            "Regístralo con la fecha de hoy.",
+        )
+
+
 def asegurar_ejercicio_abierto(db: Session, fecha: Optional[datetime.datetime], que: str) -> None:
-    """Para BORRAR: un asiento de un año cerrado no se toca. Los libros de un
-    ejercicio cerrado son inamovibles; si no, el resultado que ya se llevo a
-    Utilidades retenidas cambiaria sin que ningun asiento lo cuente."""
+    """Un asiento de un año cerrado o de un mes con el IVA declarado no se
+    crea, cambia ni borra. Los libros de un ejercicio cerrado son inamovibles
+    (el resultado ya se llevo a Utilidades retenidas), y los de un mes
+    declarado tienen que seguir diciendo lo que se declaro (QA nov, R3)."""
     if fecha is None:
         return
     cerrado = ultimo_ejercicio_cerrado(db)
     if cerrado is not None and fecha.year <= cerrado:
         raise ErrorEjercicioCerrado(fecha.year, que)
+    if db.query(models.DeclaracionIva).filter_by(anio=fecha.year, mes=fecha.month).first():
+        raise ErrorMesDeclarado(fecha.year, fecha.month, que)
+
+
+asegurar_mes_abierto = asegurar_ejercicio_abierto
+
+
+def exigir_mes_abierto(db: Session, fecha: Optional[datetime.datetime], que: str) -> None:
+    """Lo mismo, como respuesta HTTP 409 para los routers."""
+    from fastapi import HTTPException
+
+    try:
+        asegurar_ejercicio_abierto(db, fecha, que)
+    except ErrorEjercicioCerrado as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 def fecha_contable(db: Session, fecha: Optional[datetime.datetime], descripcion: str):
@@ -445,7 +477,33 @@ def crear_asiento(
                 asiento_id=asiento.id, cuenta_id=_cuenta(db, codigo).id, debe=debe, haber=haber
             )
         )
+    _marcar_cierre_por_revisar(db, asiento.fecha, descripcion, origen, [c for c, d, h in lineas if d or h])
     return asiento
+
+
+# Lo que el propio cuadre escribe no cambia lo que se conto.
+ORIGENES_DEL_CUADRE = ("cierre_caja", "reverso_cierre_caja", "aprobacion_caja", "diferencial_caja",
+                       "apertura_dia", "cierre_ejercicio", "depreciacion")
+CUENTAS_QUE_SE_CUENTAN = ("1010", "1011", "1020", "1021")
+
+
+def _marcar_cierre_por_revisar(db: Session, fecha, descripcion: str, origen: str, cuentas: List[str]) -> None:
+    """Si entra plata o sale de una gaveta o del banco en un dia ya cerrado,
+    el cierre de ese dia queda "por revisar" con lo que cambio: lo que se
+    cuadro ya no es lo que hay, y alguien tiene que saberlo (specs/caja.md)."""
+    if origen in ORIGENES_DEL_CUADRE or not fecha or not any(c in CUENTAS_QUE_SE_CUENTAN for c in cuentas):
+        return
+    inicio = datetime.datetime.combine(fecha.date(), datetime.time.min)
+    cierre = (
+        db.query(models.CierreCaja)
+        .filter(models.CierreCaja.fecha >= inicio, models.CierreCaja.fecha < inicio + datetime.timedelta(days=1),
+                models.CierreCaja.anulado.is_(False))
+        .first()
+    )
+    if cierre is None or (cierre.fecha and fecha <= cierre.fecha):
+        return
+    cierre.por_revisar = True
+    cierre.cambios_despues = ((cierre.cambios_despues or "") + f"{ahora():%d/%m %H:%M} {descripcion}" + chr(10))[-2000:]
 
 
 def _lineas_de_cobro(
@@ -1275,11 +1333,14 @@ def registrar_retiro(db: Session, retiro: models.RetiroPropietario) -> None:
     )
 
 
-def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
+def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja, fecha: Optional[datetime.datetime] = None,
+                              origen: str = "cierre_caja") -> None:
     """Lleva a los libros el faltante o sobrante del conteo fisico.
 
     Sin esto, `1010 Caja` nunca se concilia con lo que de verdad hay en la
     gaveta: la diferencia quedaba solo como una nota en la tabla de cierres.
+    Desde el 1.10 se llama al APROBAR la diferencia, no al cerrar
+    (specs/caja.md); `fecha` es la del cierre salvo que su mes este cerrado.
     """
     for codigo, nombre, diferencia in _diferencias_del_cierre(cierre):
         if abs(diferencia) < 0.01:
@@ -1294,9 +1355,9 @@ def registrar_diferencia_caja(db: Session, cierre: models.CierreCaja) -> None:
             db,
             f"{texto} del {cierre.fecha.date()}",
             lineas,
-            origen="cierre_caja",
+            origen=origen,
             referencia_id=cierre.id,
-            fecha=cierre.fecha,
+            fecha=fecha or cierre.fecha,
         )
 
 

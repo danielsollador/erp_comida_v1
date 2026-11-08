@@ -281,4 +281,7 @@ def caja_cerrar(client, efectivo=None, divisas=None, **extra):
         conteos.append({"metodo": "Efectivo Bs", "contado": efectivo})
     if divisas is not None:
         conteos.append({"metodo": "Efectivo $", "contado": divisas})
-    return client.post("/api/caja/cerrar", json={"conteos": conteos, **extra})
+    # Un conteo que no cuadra por mucho pide confirmar (QA nov, R4): aqui se
+    # confirma de entrada.
+    return client.post("/api/caja/cerrar", json={"conteos": conteos, **extra},
+                       headers={"X-Confirmado": "diferencia_grande"})

@@ -1874,12 +1874,43 @@ class CierreCaja(BaseModel):
     divisas_esperado: float = 0
     divisas_contado: float = 0
     divisas_diferencia: float = 0
+    # Cierre como cuadre (specs/caja.md): por_aprobar | aprobada | sola |
+    # sin_diferencia | asentada (de antes del 1.10).
+    estado_diferencia: str = "asentada"
+    aprobada_por: str = ""
+    motivo_aprobacion: str = ""
+    cerrado_por: str = ""
+    autorizado_por: str = ""
+    por_revisar: bool = False
+    cambios_despues: str = ""
     # El arqueo tal como quedo. Vacio en los cierres viejos, que solo tenian
     # las dos gavetas.
     lineas: List[LineaCierre] = []
 
     class Config:
         from_attributes = True
+
+
+class DiferenciaCaja(BaseModel):
+    tipo: str  # cierre | apertura
+    id: int
+    dia: str
+    monto: float
+    detalle: str = ""
+    quien: str = ""
+    nota: str = ""
+
+
+class DiferenciasPorAprobar(BaseModel):
+    filas: List[DiferenciaCaja] = []
+    total: float = 0
+    dias_mas_vieja: int = 0
+
+
+class AprobarDiferencia(BaseModel):
+    tipo: str = "cierre"
+    id: int
+    motivo: str = ""
 
 
 class AnularCierreRequest(BaseModel):

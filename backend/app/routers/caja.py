@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import contabilidad, cuentas_por_cobrar, models, schemas
+from .. import contabilidad, cuentas_por_cobrar, models, salvaguardas, schemas, tasas
 from ..database import get_db
 from ..rango import Rango
 from ..timeutils import ahora, hoy, inicio_del_dia
@@ -248,6 +248,51 @@ ORIGEN_APERTURA = "apertura_dia"
 NOTA_SIN_DECLARAR = "No se declaró al abrir"
 
 
+# D14: una diferencia de menos de esto se aprueba sola.
+APRUEBA_SOLA = 0.10
+# Abrir con un fondo que se aleja de lo esperado en mas de $20 Y mas de la
+# mitad pide confirmar (el 9-oct se abrio con $2.500 cuando habia $46).
+FONDO_RARO_USD, FONDO_RARO_PCT = 20.0, 0.5
+# Un faltante o sobrante de mas de esto pide confirmar antes de cerrar.
+DIFERENCIA_GRANDE_USD = 20.0
+
+
+def _ultimo_cierre_antes(db: Session, inicio) -> Optional[models.CierreCaja]:
+    return (
+        db.query(models.CierreCaja)
+        .filter(models.CierreCaja.fecha < inicio, models.CierreCaja.anulado.is_(False))
+        .order_by(models.CierreCaja.fecha.desc(), models.CierreCaja.id.desc())
+        .first()
+    )
+
+
+def _contado_en(cierre: models.CierreCaja, metodo: str) -> Optional[float]:
+    for l in cierre.lineas:
+        if _normalizar(l.metodo or "") == metodo and l.contado is not None:
+            return l.contado
+    if metodo == "Efectivo Bs":
+        return cierre.efectivo_contado
+    if metodo == "Efectivo $":
+        return cierre.divisas_contado
+    return None
+
+
+def fondo_esperado(db: Session, metodo: str, inicio) -> tuple[float, Optional[models.CierreCaja]]:
+    """Con cuanto deberia arrancar la gaveta: lo que se conto en el ultimo
+    cierre mas lo que se movio despues (un dia sin cerrar, un gasto de la
+    madrugada). No lo que dicen los libros: los libros arrastran diferencias
+    que todavia no se aprobaron, y empezar de ahi las contaria dos veces
+    (specs/caja.md, bloque 1.10). Sin ningun cierre, los libros."""
+    codigo = _cuentas_de(metodo)
+    ultimo = _ultimo_cierre_antes(db, inicio)
+    contado = _contado_en(ultimo, metodo) if ultimo else None
+    if contado is None:
+        return round(_saldo_anterior_de(db, codigo, inicio), 2), None
+    _, fin_ultimo = _rango_de(ultimo.fecha.date())
+    despues = _movimiento_del_dia(db, fin_ultimo, inicio, codigo) if fin_ultimo < inicio else 0.0
+    return round(contado + despues, 2), ultimo
+
+
 def _aperturas_de(db: Session, dia: datetime.date) -> dict:
     """Las gavetas que se abrieron ese dia, por forma de pago."""
     filas = db.query(models.AperturaCaja).filter(models.AperturaCaja.dia == dia).all()
@@ -281,7 +326,7 @@ def _ajuste_apertura(db: Session, dia: datetime.date, codigo: str) -> float:
     return round(sum((m.debe or 0) - (m.haber or 0) for m in filas), 2)
 
 
-ORIGENES_DEL_CIERRE = ("cierre_caja", "reverso_cierre_caja")
+ORIGENES_DEL_CIERRE = ("cierre_caja", "reverso_cierre_caja", "aprobacion_caja", "diferencial_caja")
 
 
 def _ajustes_de_cierre(db: Session, inicio, fin, codigo: str) -> float:
@@ -399,10 +444,15 @@ def _desglose(
         # `otros`. Se le saca de ahi y se le suma al fondo, que es donde el
         # cajero lo espera ver.
         apertura = aperturas.get(metodo)
-        if apertura is not None:
+        if apertura is not None and apertura.estado_diferencia is None:
+            # Apertura de antes del 1.10: su diferencia ya entro a los libros.
             ajuste = _ajuste_apertura(db, dia, cuenta)
             otros = round(otros - ajuste, 2)
             fondo = round(anterior + ajuste, 2)
+        elif apertura is not None:
+            fondo = round(apertura.fondo, 2)
+        elif fisico:
+            fondo = fondo_esperado(db, metodo, inicio)[0]
         else:
             fondo = 0.0
         # Lo que salio por el banco ya esta en los libros: no se resta.
@@ -736,7 +786,7 @@ def estado_de_apertura(
                 metodo=m,
                 cuenta=_cuentas_de(m),
                 fondo=0.0,
-                segun_libros=round(_saldo_anterior_de(db, _cuentas_de(m), inicio), 2),
+                segun_libros=fondo_esperado(db, m, inicio)[0],
             )
             for m in GAVETAS_DE_APERTURA
         ],
@@ -804,6 +854,72 @@ def _asentar_apertura(db: Session, dia: datetime.date, inicio, metodo: str, fond
             fecha=momento,
         )
     return schemas.FondoApertura(metodo=metodo, cuenta=codigo, fondo=fondo, segun_libros=libros, diferencia=diferencia)
+
+
+def _registrar_apertura(db: Session, dia: datetime.date, inicio, metodo: str, fondo: float, momento,
+                        nota: str = "", desglose: str = "", operador_id: Optional[int] = None) -> schemas.FondoApertura:
+    """Una gaveta abierta con `fondo`, SIN asientos (specs/caja.md, 1.10).
+
+    La diferencia es contra lo que quedo en el ultimo cierre y queda "por
+    aprobar": un tecleo de la mañana ya no entra a los libros como sobrante.
+    Las de menos de $0,10 se aprueban solas (D14)."""
+    codigo = _cuentas_de(metodo)
+    esperado = fondo_esperado(db, metodo, inicio)[0]
+    diferencia = round(fondo - esperado, 2)
+    estado = "sin_diferencia" if abs(diferencia) < 0.005 else "sola" if abs(diferencia) < APRUEBA_SOLA else "por_aprobar"
+    fila = models.AperturaCaja(
+        fecha=momento, dia=dia, metodo=metodo, cuenta=codigo, fondo=fondo, segun_libros=esperado,
+        diferencia=diferencia, nota=nota, desglose=desglose, operador_id=operador_id, estado_diferencia=estado,
+    )
+    db.add(fila)
+    db.flush()
+    if estado == "sola":
+        _asentar_diferencia_apertura(db, fila, "Se aprobó sola (menos de $0,10)", "sistema")
+    return schemas.FondoApertura(metodo=metodo, cuenta=codigo, fondo=fondo, segun_libros=esperado, diferencia=diferencia)
+
+
+def _asentar_diferencia_apertura(db: Session, fila: models.AperturaCaja, motivo: str, quien: str) -> None:
+    d = round(fila.diferencia or 0, 2)
+    fecha = fila.fecha or ahora()
+    if contabilidad.periodo_bloqueado(db, fecha):
+        fecha = ahora()
+    # La primera vez que se abre una gaveta, lo que habia ya era del dueño:
+    # va a su capital (3010), no a faltantes y sobrantes.
+    primera = (
+        db.query(models.AperturaCaja.id)
+        .filter(models.AperturaCaja.metodo == fila.metodo, models.AperturaCaja.id < fila.id)
+        .first() is None
+    )
+    contra = "3010" if primera else "6030"
+    if abs(d) >= 0.01:
+        lineas = [(fila.cuenta, d, 0.0), (contra, 0.0, d)] if d > 0 else [(contra, -d, 0.0), (fila.cuenta, 0.0, -d)]
+        contabilidad.crear_asiento(
+            db, f"{'Sobrante' if d > 0 else 'Faltante'} de {fila.metodo} al abrir ({fila.dia:%d/%m}): {motivo}",
+            lineas, origen="aprobacion_caja", referencia_id=fila.id, fecha=fecha,
+        )
+    if fila.estado_diferencia != "sola":
+        fila.estado_diferencia = "aprobada"
+    fila.aprobada_por = quien
+    fila.aprobada_en = ahora()
+    fila.motivo_aprobacion = motivo
+
+
+def _aperturas_por_defecto(db: Session, dia: datetime.date, inicio) -> None:
+    """Al cerrar: la gaveta que nadie declaro arranco con lo que quedo en el
+    ultimo cierre. Antes arrancaba en CERO y lo que habia pasaba a faltante
+    (QA nov: cerrar sin abrir mandaba $133 a perdida). Sin asiento."""
+    abiertas = _aperturas_de(db, dia)
+    for metodo in GAVETAS_DE_APERTURA:
+        if metodo in abiertas:
+            continue
+        esperado = fondo_esperado(db, metodo, inicio)[0]
+        db.add(models.AperturaCaja(
+            fecha=inicio + datetime.timedelta(minutes=1), dia=dia, metodo=metodo, cuenta=_cuentas_de(metodo),
+            fondo=esperado, segun_libros=esperado, diferencia=0.0,
+            nota=f"{NOTA_SIN_DECLARAR}: arranca con lo que quedó en el último cierre",
+            estado_diferencia="sin_diferencia",
+        ))
+    db.flush()
 
 
 def _declarar_en_cero_lo_no_declarado(db: Session, dia: datetime.date, inicio) -> None:
@@ -875,11 +991,21 @@ def abrir_caja(
         raise HTTPException(status_code=400, detail="El fondo no puede ser negativo")
 
     momento = ahora() if dia == hoy() else inicio + datetime.timedelta(hours=8)
+    contabilidad.exigir_mes_abierto(db, momento, "la apertura de la caja")
+    for metodo, fondo in pedidos.items():
+        esperado = fondo_esperado(db, metodo, inicio)[0]
+        distancia = abs(fondo - esperado)
+        if distancia > FONDO_RARO_USD and distancia > FONDO_RARO_PCT * max(esperado, 0.01):
+            salvaguardas.pedir_confirmacion(
+                request, f"fondo_raro_{metodo}",
+                f"En {metodo} contaste {salvaguardas.usd(fondo)} y en el último cierre quedaron {salvaguardas.usd(esperado)}. "
+                "¿Es correcto? Si fue un tecleo, corrígelo antes de abrir.",
+            )
     resultado = []
     for metodo in GAVETAS_DE_APERTURA:
         if metodo not in pedidos:
             continue
-        resultado.append(_asentar_apertura(
+        resultado.append(_registrar_apertura(
             db, dia, inicio, metodo, pedidos[metodo], momento, body.nota or "",
             json.dumps(desgloses[metodo]) if metodo in desgloses else "", quien.id if quien else None,
         ))
@@ -934,7 +1060,7 @@ def cerrar_caja(
             "anula ese cierre y vuelve a cerrar.",
         )
 
-    _declarar_en_cero_lo_no_declarado(db, dia, inicio)
+    _aperturas_por_defecto(db, dia, inicio)
     resumen = resumen_caja(dia, db)
     esperados = {l.metodo: l for l in resumen.desglose}
 
@@ -955,6 +1081,22 @@ def cerrar_caja(
     # el lunes la caja del domingo tiene que quedar archivado en el domingo, o
     # el historico miente y el dia siguiente arranca con el saldo equivocado.
     momento = ahora() if dia == hoy() else inicio + datetime.timedelta(hours=23, minutes=59)
+    contabilidad.exigir_mes_abierto(db, momento, "el cierre de la caja")
+
+    # La gaveta de bolivares vale menos dolares si subio la tasa desde el
+    # ultimo cierre: eso no es faltante (QA nov, hallazgo 15).
+    diferencial = _diferencial_bs(db, dia, inicio, esperados.get("Efectivo Bs"))
+    grandes = []
+    for metodo, contado in contados.items():
+        d = round(contado - esperados[metodo].esperado - (diferencial if metodo == "Efectivo Bs" else 0.0), 2)
+        if abs(d) > DIFERENCIA_GRANDE_USD:
+            grandes.append(f"{metodo}: {'sobran' if d > 0 else 'faltan'} {salvaguardas.usd(abs(d))}")
+    if grandes:
+        salvaguardas.pedir_confirmacion(
+            request, "diferencia_grande",
+            "El conteo no cuadra por mucho (" + "; ".join(grandes) + "). Revisa que no sobre o falte un cero. "
+            "Si está bien contado, ciérrala: la diferencia queda por aprobar y no toca los libros.",
+        )
 
     bolivares = esperados.get("Efectivo Bs")
     divisas = esperados.get("Efectivo $")
@@ -977,6 +1119,7 @@ def cerrar_caja(
         divisas_diferencia=round(contado_usd - esperado_usd, 2) if contado_usd is not None else 0.0,
         nota=body.nota,
         operador_id=quien.id if quien else None,
+        cerrado_por=_usuario(request),
     )
     db.add(db_cierre)
     db.flush()
@@ -985,6 +1128,7 @@ def cerrar_caja(
     # cerrar. Congelado aqui porque manana el esperado ya no sera el mismo.
     for metodo, contado in contados.items():
         linea = esperados[metodo]
+        cambiario = diferencial if metodo == "Efectivo Bs" else 0.0
         db.add(
             models.CierreCajaLinea(
                 cierre_id=db_cierre.id,
@@ -992,15 +1136,29 @@ def cerrar_caja(
                 metodo=metodo,
                 etiqueta=metodo,
                 metodos=metodo,
-                esperado=linea.esperado,
+                esperado=round(linea.esperado + cambiario, 2),
                 contado=contado,
-                diferencia=round(contado - linea.esperado, 2),
+                diferencia=round(contado - linea.esperado - cambiario, 2),
+                diferencial_cambiario=cambiario,
             )
         )
+    if contado_bs is not None and diferencial:
+        db_cierre.efectivo_esperado = round(esperado_bs + diferencial, 2)
+        db_cierre.diferencia = round(contado_bs - esperado_bs - diferencial, 2)
     db.flush()
-    # El faltante/sobrante tambien va a los libros: si no, la cuenta nunca se
-    # concilia con lo que de verdad hay en la gaveta.
-    contabilidad.registrar_diferencia_caja(db, db_cierre)
+    db.refresh(db_cierre)
+    if diferencial and contado_bs is not None:
+        _asentar_diferencial(db, db_cierre, diferencial)
+    # La diferencia NO va sola a los libros (specs/caja.md, 1.10): queda por
+    # aprobar. Las de menos de $0,10 se aprueban solas (D14).
+    mayor = max((abs(l.diferencia or 0) for l in db_cierre.lineas), default=0.0)
+    if mayor < 0.005:
+        db_cierre.estado_diferencia = "sin_diferencia"
+    elif mayor < APRUEBA_SOLA:
+        db_cierre.estado_diferencia = "sola"
+        _aprobar_cierre(db, db_cierre, "Se aprobó sola (menos de $0,10)", "sistema")
+    else:
+        db_cierre.estado_diferencia = "por_aprobar"
     db.commit()
     db.refresh(db_cierre)
     return _a_schema(db_cierre)
@@ -1008,7 +1166,7 @@ def cerrar_caja(
 
 @router.post("/cierres/{cierre_id}/anular", response_model=schemas.CierreCaja)
 def anular_cierre(
-    cierre_id: int, body: schemas.AnularCierreRequest, db: Session = Depends(get_db)
+    cierre_id: int, body: schemas.AnularCierreRequest, request: Request, db: Session = Depends(get_db)
 ):
     """Deshace un cierre mal contado.
 
@@ -1026,8 +1184,12 @@ def anular_cierre(
         raise HTTPException(status_code=404, detail="Cierre no encontrado")
     if cierre.anulado:
         raise HTTPException(status_code=409, detail="Ese cierre ya estaba anulado")
+    contabilidad.exigir_mes_abierto(db, cierre.fecha, "ese cierre")
+    cierre.autorizado_por = salvaguardas.exigir_firma(
+        db, request, "anular_cierre", f"Anular el cierre del {cierre.fecha:%d/%m/%Y}"
+    )
 
-    contabilidad.registrar_reverso_diferencia_caja(db, cierre)
+    _revertir_si_estaba_asentado(db, cierre)
     cierre.anulado = True
     cierre.fecha_anulacion = ahora()
     cierre.motivo_anulacion = body.motivo
@@ -1077,12 +1239,124 @@ def corregir_cierre(
             detail="Falta el conteo: hay que verificar al menos una forma de pago.",
         )
 
-    contabilidad.registrar_reverso_diferencia_caja(db, viejo)
+    contabilidad.exigir_mes_abierto(db, viejo.fecha, "ese cierre")
+    firma = salvaguardas.exigir_firma(
+        db, request, "corregir_cierre", f"Corregir el conteo del cierre del {viejo.fecha:%d/%m/%Y}"
+    )
+    _revertir_si_estaba_asentado(db, viejo)
+    viejo.autorizado_por = firma
     viejo.anulado = True
     viejo.fecha_anulacion = ahora()
     viejo.motivo_anulacion = (body.nota or "").strip() or "Se corrigio el conteo"
     db.flush()
     return cerrar_caja(body, request, db)
+
+
+def _usuario(request: Request) -> str:
+    s = getattr(request.state, "sesion", None) or {}
+    return s.get("usuario") or ""
+
+
+def _diferencial_bs(db: Session, dia: datetime.date, inicio, linea) -> float:
+    """Cuanto cambio en dolares el fondo de bolivares por la tasa desde el
+    ultimo cierre. Negativo si subio la tasa (valen menos dolares)."""
+    if linea is None or not linea.fondo:
+        return 0.0
+    _, ultimo = fondo_esperado(db, "Efectivo Bs", inicio)
+    if ultimo is None:
+        return 0.0
+    antes, ahora_t = tasas.tasa_al(db, ultimo.fecha.date()), tasas.tasa_al(db, dia)
+    if not antes or not ahora_t or not antes.bcv or not ahora_t.bcv or antes.bcv == ahora_t.bcv:
+        return 0.0
+    return round(linea.fondo * (antes.bcv / ahora_t.bcv - 1), 2)
+
+
+def _asentar_diferencial(db: Session, cierre: models.CierreCaja, monto: float) -> None:
+    lineas = [("6160", -monto, 0.0), ("1010", 0.0, -monto)] if monto < 0 else [("1010", monto, 0.0), ("6160", 0.0, monto)]
+    contabilidad.crear_asiento(
+        db, f"Diferencial cambiario de la gaveta de bolívares ({cierre.fecha:%d/%m})",
+        lineas, origen="diferencial_caja", referencia_id=cierre.id, fecha=cierre.fecha,
+    )
+
+
+def _aprobar_cierre(db: Session, cierre: models.CierreCaja, motivo: str, quien: str) -> None:
+    fecha = cierre.fecha
+    if contabilidad.periodo_bloqueado(db, fecha):
+        fecha = ahora()
+    contabilidad.registrar_diferencia_caja(db, cierre, fecha=fecha, origen="aprobacion_caja")
+    if cierre.estado_diferencia != "sola":
+        cierre.estado_diferencia = "aprobada"
+    cierre.aprobada_por = quien
+    cierre.aprobada_en = ahora()
+    cierre.motivo_aprobacion = motivo
+
+
+def _revertir_si_estaba_asentado(db: Session, cierre: models.CierreCaja) -> None:
+    """Anular o corregir solo revierte lo que llego a los libros: un cierre
+    viejo (asentado al cerrar) o una diferencia ya aprobada. La que estaba
+    por aprobar nunca entro, y no hay nada que deshacer."""
+    if cierre.estado_diferencia in (None, "aprobada", "sola"):
+        contabilidad.registrar_reverso_diferencia_caja(db, cierre)
+    for a in db.query(models.AsientoContable).filter_by(origen="diferencial_caja", referencia_id=cierre.id).all():
+        db.delete(a)
+
+
+@router.get("/diferencias", response_model=schemas.DiferenciasPorAprobar)
+def diferencias_por_aprobar(db: Session = Depends(get_db)):
+    """Lo que el conteo no cuadro y todavia no entro a los libros."""
+    filas = []
+    for c in (
+        db.query(models.CierreCaja)
+        .filter(models.CierreCaja.estado_diferencia == "por_aprobar", models.CierreCaja.anulado.is_(False))
+        .order_by(models.CierreCaja.fecha)
+        .all()
+    ):
+        filas.append(schemas.DiferenciaCaja(
+            tipo="cierre", id=c.id, dia=c.fecha.date().isoformat(),
+            monto=round(sum(l.diferencia or 0 for l in c.lineas), 2),
+            detalle="; ".join(f"{l.metodo}: {l.diferencia:+.2f}" for l in c.lineas if abs(l.diferencia or 0) >= 0.01),
+            quien=c.cerrado_por or c.operador, nota=c.nota or "",
+        ))
+    for a in (
+        db.query(models.AperturaCaja)
+        .filter(models.AperturaCaja.estado_diferencia == "por_aprobar")
+        .order_by(models.AperturaCaja.dia)
+        .all()
+    ):
+        filas.append(schemas.DiferenciaCaja(
+            tipo="apertura", id=a.id, dia=a.dia.isoformat(), monto=round(a.diferencia or 0, 2),
+            detalle=f"{a.metodo} al abrir: {a.diferencia:+.2f}", quien=a.operador, nota=a.nota or "",
+        ))
+    filas.sort(key=lambda f: f.dia)
+    dias = (hoy() - datetime.date.fromisoformat(filas[0].dia)).days if filas else 0
+    return schemas.DiferenciasPorAprobar(
+        filas=filas, total=round(sum(f.monto for f in filas), 2), dias_mas_vieja=dias,
+    )
+
+
+@router.post("/diferencias/aprobar", response_model=schemas.DiferenciasPorAprobar)
+def aprobar_diferencia(body: schemas.AprobarDiferencia, request: Request, db: Session = Depends(get_db)):
+    """Llevar a los libros una diferencia del conteo, con su motivo y la firma
+    de quien autoriza (D12, D13)."""
+    motivo = (body.motivo or "").strip()
+    if not motivo:
+        raise HTTPException(status_code=400, detail="Escribe el motivo: es lo que queda en los libros.")
+    if body.tipo == "cierre":
+        fila = db.get(models.CierreCaja, body.id)
+        if fila is None or fila.anulado or fila.estado_diferencia != "por_aprobar":
+            raise HTTPException(status_code=409, detail="Esa diferencia ya no está por aprobar.")
+        quien = salvaguardas.exigir_firma(db, request, "aprobar_diferencia", f"Aprobar la diferencia del {fila.fecha:%d/%m}",
+                                          monto=sum(l.diferencia or 0 for l in fila.lineas))
+        _aprobar_cierre(db, fila, motivo, quien)
+    else:
+        fila = db.get(models.AperturaCaja, body.id)
+        if fila is None or fila.estado_diferencia != "por_aprobar":
+            raise HTTPException(status_code=409, detail="Esa diferencia ya no está por aprobar.")
+        quien = salvaguardas.exigir_firma(db, request, "aprobar_diferencia", f"Aprobar la diferencia al abrir del {fila.dia:%d/%m}",
+                                          monto=fila.diferencia or 0)
+        _asentar_diferencia_apertura(db, fila, motivo, quien)
+    db.commit()
+    return diferencias_por_aprobar(db)
 
 
 def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
@@ -1113,6 +1387,13 @@ def _a_schema(c: models.CierreCaja) -> schemas.CierreCaja:
         divisas_esperado=round(c.divisas_esperado or 0, 2),
         divisas_contado=round(c.divisas_contado or 0, 2),
         divisas_diferencia=round(c.divisas_diferencia or 0, 2),
+        estado_diferencia=c.estado_diferencia or "asentada",
+        aprobada_por=c.aprobada_por or "",
+        motivo_aprobacion=c.motivo_aprobacion or "",
+        cerrado_por=c.cerrado_por or "",
+        autorizado_por=c.autorizado_por or "",
+        por_revisar=bool(c.por_revisar),
+        cambios_despues=c.cambios_despues or "",
     )
 
 
@@ -1333,6 +1614,39 @@ def listar_retiros(rango: Rango = Depends(), db: Session = Depends(get_db)):
     )
 
 
+def _hay_en_la_gaveta(db: Session, metodo: str, monto: float, que: str) -> None:
+    """Un retiro o gasto en efectivo no puede sacar mas de lo que hay (QA nov,
+    hallazgo 7: un retiro de $5.000 con $133 en la gaveta dejo -$4.900)."""
+    if metodo not in GAVETAS_DE_APERTURA:
+        return
+    inicio, fin = _rango_de(hoy())
+    fila = next((l for l in _desglose(db, hoy(), inicio, fin) if l.metodo == metodo), None)
+    hay = fila.esperado if fila else 0.0
+    if monto > hay + 0.005:
+        raise HTTPException(
+            status_code=400,
+            detail=f"En {metodo} hay {salvaguardas.usd(hay)} y {que} es de {salvaguardas.usd(monto)}. "
+            "Revisa el monto, o si salió de otro lado, cambia de dónde salió.",
+        )
+
+
+def _dia_cerrado(db: Session, fecha) -> Optional[models.CierreCaja]:
+    if fecha is None:
+        return None
+    inicio, fin = _rango_de(fecha.date())
+    return (
+        db.query(models.CierreCaja)
+        .filter(models.CierreCaja.fecha >= inicio, models.CierreCaja.fecha < fin, models.CierreCaja.anulado.is_(False))
+        .first()
+    )
+
+
+def _firma_si_dia_cerrado(db: Session, request: Request, fecha, que: str) -> None:
+    cierre = _dia_cerrado(db, fecha)
+    if cierre is not None:
+        salvaguardas.exigir_firma(db, request, "borrar_dia_cerrado", f"Borrar {que} del {fecha:%d/%m}, con la caja ya cerrada")
+
+
 @router.post("/retiros", response_model=schemas.RetiroPropietario)
 def crear_retiro(body: schemas.RetiroCreate, db: Session = Depends(get_db)):
     """El dueno se lleva plata del negocio.
@@ -1347,6 +1661,7 @@ def crear_retiro(body: schemas.RetiroCreate, db: Session = Depends(get_db)):
             status_code=400,
             detail="El retiro sale de una gaveta (Efectivo Bs, Efectivo $) o del Banco",
         )
+    _hay_en_la_gaveta(db, body.metodo_pago, body.monto, "el retiro")
 
     retiro = models.RetiroPropietario(
         monto=body.monto, metodo_pago=body.metodo_pago, nota=body.nota
@@ -1360,11 +1675,12 @@ def crear_retiro(body: schemas.RetiroCreate, db: Session = Depends(get_db)):
 
 
 @router.delete("/retiros/{retiro_id}")
-def eliminar_retiro(retiro_id: int, db: Session = Depends(get_db)):
+def eliminar_retiro(retiro_id: int, request: Request, db: Session = Depends(get_db)):
     retiro = db.query(models.RetiroPropietario).filter(models.RetiroPropietario.id == retiro_id).first()
     if not retiro:
         raise HTTPException(status_code=404, detail="Retiro no encontrado")
     _solo_si_el_ejercicio_esta_abierto(db, retiro.fecha, "ese retiro")
+    _firma_si_dia_cerrado(db, request, retiro.fecha, "un retiro")
     for asiento in (
         db.query(models.AsientoContable)
         .filter_by(origen="retiro", referencia_id=retiro_id)
@@ -1417,6 +1733,7 @@ def crear_gasto(gasto: schemas.GastoCreate, db: Session = Depends(get_db)):
             status_code=400,
             detail="El gasto sale de una gaveta (Efectivo Bs, Efectivo $) o del Banco",
         )
+    _hay_en_la_gaveta(db, gasto.metodo_pago, gasto.monto, "el gasto")
     db_gasto = models.Gasto(**gasto.model_dump())
     db.add(db_gasto)
     db.flush()
@@ -1427,11 +1744,12 @@ def crear_gasto(gasto: schemas.GastoCreate, db: Session = Depends(get_db)):
 
 
 @router.delete("/gastos/{gasto_id}")
-def eliminar_gasto(gasto_id: int, db: Session = Depends(get_db)):
+def eliminar_gasto(gasto_id: int, request: Request, db: Session = Depends(get_db)):
     db_gasto = db.query(models.Gasto).filter(models.Gasto.id == gasto_id).first()
     if not db_gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
     _solo_si_el_ejercicio_esta_abierto(db, db_gasto.fecha, "ese gasto")
+    _firma_si_dia_cerrado(db, request, db_gasto.fecha, "un gasto")
     # Uno por uno con db.delete(): un DELETE masivo sobre el query NO dispara el
     # cascade del ORM y dejaria vivos los movimientos del asiento, que el balance
     # de comprobacion sigue sumando aunque el asiento ya no exista.

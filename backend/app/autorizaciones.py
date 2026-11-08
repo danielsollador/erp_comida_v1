@@ -60,6 +60,16 @@ PIN_VENTANA = 5 * 60
 ACCIONES = {
     "editar_venta": "Editar una venta ya cobrada",
     "corregir_pago": "Corregir la forma de pago de una venta",
+    # QA de noviembre (R5): lo que deja la plata distinta de lo contado.
+    "anular_cierre": "Anular un cierre de caja",
+    "corregir_cierre": "Corregir el conteo de un cierre de caja",
+    "aprobar_diferencia": "Llevar a los libros una diferencia de caja",
+    "borrar_dia_cerrado": "Borrar algo de un día con la caja cerrada",
+    "dar_de_baja": "Dar de baja una deuda de un cliente",
+    "cambiar_tasa": "Cambiar la tasa del día a mano",
+    "anular_venta": "Anular un pedido ya preparado",
+    "cortesia": "Regalar productos (cortesía)",
+    "anular_pago": "Anular un pago ya registrado",
 }
 
 PENDIENTE, APROBADA, RECHAZADA, CANCELADA, USADA, VENCIDA = (

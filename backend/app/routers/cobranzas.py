@@ -3,12 +3,12 @@ agrupado. La logica vive en `cuentas_por_cobrar.py`."""
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import cuentas_por_cobrar as cxc
-from .. import models, schemas
+from .. import models, salvaguardas, schemas
 from ..database import get_db
 
 router = APIRouter(prefix="/api/cobranzas", tags=["cobranzas"])
@@ -124,12 +124,15 @@ def abonar_ventas(body: schemas.AbonoAVentas, db: Session = Depends(get_db)):
 
 
 @router.post("/ventas/{pedido_id}/perdida")
-def dar_por_perdida(pedido_id: int, body: schemas.DarPorPerdida, db: Session = Depends(get_db)):
+def dar_por_perdida(pedido_id: int, body: schemas.DarPorPerdida, request: Request, db: Session = Depends(get_db)):
     """El cliente no va a pagar (PedidosYa no reconocio el pedido): lo que
-    falta se lleva a gasto y deja de deberse. La venta no se toca."""
+    falta se lleva a gasto y deja de deberse. La venta no se toca. Pide la
+    firma de quien autoriza (QA nov: la cajera daba de baja deudas sola)."""
     p = db.get(models.Pedido, pedido_id)
     if p is None:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
+    salvaguardas.exigir_firma(db, request, "dar_de_baja", f"Dar de baja la deuda de la venta #{p.numero}",
+                              monto=p.fiado_saldo or 0, pedido_id=p.id)
     try:
         monto = cxc.dar_por_perdida(db, p, body.motivo)
     except cxc.ErrorCobro as e:

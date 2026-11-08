@@ -230,6 +230,7 @@ def _crear_factura(factura: schemas.FacturaCompraCreate, db: Session) -> schemas
             "porque cambiaría un Libro de Compras ya declarado. Regístrala con la fecha de hoy; "
             "la fecha del papel va aparte, en «fecha de la factura».",
         )
+    contabilidad.exigir_mes_abierto(db, factura.fecha, "una factura de compra")
     # La misma factura dos veces: se pregunta AQUI, dentro del candado, no
     # solo en la pantalla. Si dos tablets guardan a la vez, la segunda llega
     # cuando la primera ya entro y se rechaza en vez de duplicar el stock.
@@ -512,6 +513,7 @@ def pagar_factura(factura_id: int, pago: schemas.PagoFacturaRequest, db: Session
         db.query(models.FacturaCompra)
         .options(joinedload(models.FacturaCompra.items).joinedload(models.FacturaCompraItem.ingrediente))
         .filter(models.FacturaCompra.id == factura_id)
+        .with_for_update(of=models.FacturaCompra)
         .first()
     )
     if not db_factura:
@@ -541,7 +543,11 @@ def pagar_factura(factura_id: int, pago: schemas.PagoFacturaRequest, db: Session
 def abonar_factura(factura_id: int, body: schemas.AbonoFacturaRequest, db: Session = Depends(get_db)):
     """Un pago a cuenta de una factura a credito. Cuando lo abonado llega al
     total, la factura queda pagada sola."""
-    db_factura = db.query(models.FacturaCompra).filter(models.FacturaCompra.id == factura_id).first()
+    # Bloqueada: dos abonos a la vez no pagan mas de lo que se debe.
+    db_factura = (
+        db.query(models.FacturaCompra).filter(models.FacturaCompra.id == factura_id)
+        .with_for_update(of=models.FacturaCompra).first()
+    )
     if not db_factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
     if db_factura.forma_pago != "Credito":

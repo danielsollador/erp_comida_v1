@@ -9,10 +9,10 @@ import calendar
 import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import contabilidad, models, schemas, tasas
+from .. import contabilidad, models, salvaguardas, schemas, tasas
 from ..cuentas_por_cobrar import clave_de_nombre
 from ..database import get_db
 from ..rango import Rango
@@ -44,8 +44,50 @@ def _fecha(fecha: Optional[datetime.date]) -> datetime.datetime:
     return datetime.datetime.combine(fecha, datetime.time(12, 0))
 
 
-def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id: Optional[int] = None) -> models.PagoSinFactura:
+# Lo que se sale de lo normal pide confirmar (QA nov, R4): un alquiler de
+# $3.000 cuando siempre es de $300, o un pago fechado hace mas de un mes (un
+# tecleo del año).
+VECES_LO_NORMAL = 5
+DIAS_ATRAS_SIN_PREGUNTAR = 31
+
+
+def _lo_normal(db: Session, beneficiario: str, concepto: str) -> Optional[float]:
+    """La mediana de los ultimos pagos a esa persona por ese concepto, en $."""
+    montos = sorted(
+        m for (m,) in db.query(models.PagoSinFactura.monto)
+        .filter(
+            models.PagoSinFactura.beneficiario == beneficiario.strip(),
+            models.PagoSinFactura.concepto == concepto,
+            models.PagoSinFactura.anulado.is_(False),
+        )
+        .order_by(models.PagoSinFactura.fecha.desc())
+        .limit(6)
+        .all()
+        if m
+    )
+    return montos[len(montos) // 2] if montos else None
+
+
+def _revisar_lo_raro(db: Session, request: Request, datos: dict, monto_usd: float, fecha: datetime.datetime,
+                     habitual: Optional[float] = None) -> None:
+    if (ahora() - fecha).days > DIAS_ATRAS_SIN_PREGUNTAR:
+        salvaguardas.pedir_confirmacion(
+            request, "fecha_vieja",
+            f"La fecha del pago es {fecha:%d/%m/%Y}, hace más de un mes. ¿Es correcta, o se teclea mal el año?",
+        )
+    normal = habitual or _lo_normal(db, datos["beneficiario"], datos["concepto"])
+    if normal and monto_usd > normal * VECES_LO_NORMAL:
+        salvaguardas.pedir_confirmacion(
+            request, "monto_alto",
+            f"Son {salvaguardas.usd(monto_usd)} y a {datos['beneficiario'].strip()} por {datos['concepto'].lower()} "
+            f"normalmente se le pagan {salvaguardas.usd(normal)}. ¿Es correcto, o sobra un cero?",
+        )
+
+
+def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id: Optional[int] = None,
+               request: Optional[Request] = None, habitual: Optional[float] = None) -> models.PagoSinFactura:
     _validar(datos["concepto"], datos["metodo_pago"], datos["moneda"], datos["beneficiario"])
+    contabilidad.exigir_mes_abierto(db, fecha, "un pago")
     referencia = (datos.get("referencia") or "").strip()
     # Si todo el sueldo se cubre con lo adelantado no sale plata: no hay
     # comprobante que pedir.
@@ -62,6 +104,8 @@ def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id:
             tasa = t.bcv
         monto_bs = round(monto, 2)
         monto = round(monto_bs / tasa, 2)
+    if request is not None:
+        _revisar_lo_raro(db, request, datos, monto, fecha, habitual)
     pct = datos.get("retencion_islr_pct") or 0.0
     if datos["concepto"] == "Anticipo" and pct:
         raise HTTPException(status_code=400, detail="Un anticipo no lleva retención: se retiene al pagar el sueldo")
@@ -187,20 +231,21 @@ def beneficiarios(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.PagoSinFactura)
-def crear(body: schemas.PagoSinFacturaCreate, db: Session = Depends(get_db)):
-    pago = _registrar(db, body.model_dump(), _fecha(body.fecha))
+def crear(body: schemas.PagoSinFacturaCreate, request: Request, db: Session = Depends(get_db)):
+    pago = _registrar(db, body.model_dump(), _fecha(body.fecha), request=request)
     db.commit()
     db.refresh(pago)
     return pago
 
 
 @router.post("/{pago_id}/anular", response_model=schemas.PagoSinFactura)
-def anular(pago_id: int, db: Session = Depends(get_db)):
+def anular(pago_id: int, request: Request, db: Session = Depends(get_db)):
     pago = db.get(models.PagoSinFactura, pago_id)
     if pago is None:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
     if pago.anulado:
         raise HTTPException(status_code=409, detail="Ese pago ya estaba anulado")
+    salvaguardas.exigir_firma(db, request, "anular_pago", f"Anular el pago a {pago.beneficiario}", monto=pago.monto)
     if pago.concepto == "Anticipo":
         pendiente = anticipos_de(db).get(clave_de_nombre(pago.beneficiario), 0.0)
         if pago.monto > pendiente + 0.005:
@@ -229,6 +274,9 @@ def anular(pago_id: int, db: Session = Depends(get_db)):
 
 
 # ── Pagos fijos ─────────────────────────────────────────────────────────────
+
+MITAD_DEL_PERIODO = {"semanal": 3, "quincenal": 7, "mensual": 15}
+
 
 def siguiente_fecha(fecha: datetime.date, frecuencia: str) -> datetime.date:
     if frecuencia == "semanal":
@@ -280,12 +328,30 @@ def editar_fijo(fijo_id: int, body: schemas.PagoFijoCreate, db: Session = Depend
 
 
 @router.post("/fijos/{fijo_id}/pagar", response_model=schemas.PagoSinFactura)
-def pagar_fijo(fijo_id: int, body: schemas.PagarFijo, db: Session = Depends(get_db)):
+def pagar_fijo(fijo_id: int, body: schemas.PagarFijo, request: Request, db: Session = Depends(get_db)):
     """Confirmar el pago que toca: queda registrado y el fijo pasa a la
     proxima fecha."""
-    f = db.get(models.PagoFijo, fijo_id)
+    # Con la fila bloqueada: dos toques a la vez esperan en fila y el segundo
+    # ve el pago del primero (QA nov: el alquiler se pagaba dos veces).
+    f = db.query(models.PagoFijo).filter(models.PagoFijo.id == fijo_id).with_for_update(of=models.PagoFijo).first()
     if f is None or not f.activo:
         raise HTTPException(status_code=404, detail="Pago fijo no encontrado")
+    reciente = (
+        db.query(models.PagoSinFactura)
+        .filter(
+            models.PagoSinFactura.pago_fijo_id == f.id,
+            models.PagoSinFactura.anulado.is_(False),
+            models.PagoSinFactura.fecha >= ahora() - datetime.timedelta(days=MITAD_DEL_PERIODO.get(f.frecuencia, 15)),
+        )
+        .order_by(models.PagoSinFactura.fecha.desc())
+        .first()
+    )
+    if reciente:
+        salvaguardas.pedir_confirmacion(
+            request, "fijo_repetido",
+            f"{f.concepto} de {f.beneficiario} ya se pagó el {reciente.fecha:%d/%m} ({salvaguardas.usd(reciente.monto)}). "
+            "¿Quieres pagar también el siguiente?",
+        )
     datos = {
         "beneficiario": f.beneficiario,
         "concepto": f.concepto,
@@ -308,7 +374,8 @@ def pagar_fijo(fijo_id: int, body: schemas.PagarFijo, db: Session = Depends(get_
         tope = round(monto_usd * (1 - (f.retencion_islr_pct or 0) / 100), 2)
         pedido = pendiente if body.descontar_anticipo is None else body.descontar_anticipo
         datos["descontar_anticipo"] = round(min(pedido, tope), 2)
-    pago = _registrar(db, datos, _fecha(body.fecha), pago_fijo_id=f.id)
+    pago = _registrar(db, datos, _fecha(body.fecha), pago_fijo_id=f.id, request=request,
+                      habitual=f.monto / ((tasas.tasa_vigente(db).bcv if tasas.tasa_vigente(db) else 1) if f.moneda == "Bs" else 1))
     f.proximo = siguiente_fecha(f.proximo, f.frecuencia)
     db.commit()
     db.refresh(pago)

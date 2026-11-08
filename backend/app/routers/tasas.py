@@ -1,10 +1,10 @@
 import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import analisis_tasa, schemas, tasas
+from .. import analisis_tasa, salvaguardas, schemas, tasas
 from ..database import get_db
 from ..rango import Rango
 
@@ -35,10 +35,21 @@ def refrescar(forzar: bool = False, db: Session = Depends(get_db)):
 
 
 @router.put("", response_model=schemas.EstadoTasa)
-def fijar(body: schemas.TasaManual, db: Session = Depends(get_db)):
-    """Fija a mano la tasa con la que se cobra hoy. Manda sobre lo automatico."""
+def fijar(body: schemas.TasaManual, request: Request, db: Session = Depends(get_db)):
+    """Fija a mano la tasa con la que se cobra hoy. Manda sobre lo automatico.
+
+    Pide la firma de quien autoriza (QA nov, R5: la cajera la puso en 1 Bs) y
+    un salto de mas de 30 % contra la vigente pide confirmar."""
     if body.bcv <= 0:
         raise HTTPException(status_code=400, detail="La tasa debe ser mayor que cero")
+    vigente = tasas.tasa_vigente(db)
+    if vigente and tasas.salto(body.bcv, vigente.bcv) > tasas.SALTO_MAXIMO:
+        salvaguardas.pedir_confirmacion(
+            request, "tasa_salto",
+            f"La tasa vigente es {salvaguardas.numero(vigente.bcv)} Bs y escribiste {salvaguardas.numero(body.bcv)}: "
+            "es un salto de más de 30 %. ¿Es correcta, o falta o sobra un dígito?",
+        )
+    salvaguardas.exigir_firma(db, request, "cambiar_tasa", f"Fijar la tasa del día en {salvaguardas.numero(body.bcv)} Bs")
     tasas.fijar_manual(db, body.bcv, body.paralelo)
     return tasas.estado(db)
 

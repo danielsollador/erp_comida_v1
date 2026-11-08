@@ -720,6 +720,10 @@ def test_el_faltante_deja_la_caja_en_lo_que_se_conto(client, db, variante):
 
     cierre = caja_cerrar(client, 15.0, nota="faltaron 5").json()
     assert cierre["diferencia"] == -5.0
+    # Desde el 1.10 (specs/caja.md) entra a los libros al aprobarlo.
+    assert saldo(db, "6030") == 0
+    client.post("/api/caja/diferencias/aprobar", json={"tipo": "cierre", "id": cierre["id"], "motivo": "faltaron 5"})
+    db.expire_all()
     assert saldo(db, "6030") == 5.0  # el faltante es una perdida reconocida
     assert saldo(db, "1010") == 15.0  # la caja quedo en lo contado
 
@@ -735,7 +739,9 @@ def test_un_sobrante_netea_contra_los_faltantes(client, db, variante):
         "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
     ).json()
     client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
-    caja_cerrar(client, 23.0, nota="sobraron 3")
+    cierre = caja_cerrar(client, 23.0, nota="sobraron 3").json()
+    client.post("/api/caja/diferencias/aprobar", json={"tipo": "cierre", "id": cierre["id"], "motivo": "sobraron 3"})
+    db.expire_all()
     assert saldo(db, "6030") == -3.0  # un sobrante baja el gasto acumulado
     assert saldo(db, "1010") == 23.0
 
@@ -1285,7 +1291,9 @@ def test_fijar_la_tasa_a_mano_no_congela_el_euro(client, db, monkeypatch):
     rates._cache.update({"at": None, "ok_at": None, "anclas": None})
     client.post("/api/tasas/refrescar?forzar=true")
 
-    assert client.put("/api/tasas", json={"bcv": 1000.0}).status_code == 200
+    # La tasa de prueba de los libros es 40: el salto pide confirmar (QA nov).
+    r = client.put("/api/tasas", json={"bcv": 1000.0}, headers={"X-Confirmado": "tasa_salto"})
+    assert r.status_code == 200, r.text
 
     monkeypatch.setattr(
         rates, "_fetch", lambda: {"bcv": 810.0, "eur": 950.0, "paralelo": 920.0}

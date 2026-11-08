@@ -90,10 +90,15 @@ def refrescar(db: Session, forzar: bool = False) -> bool:
         db.commit()
         return True
 
-    # Cada valor cae al anterior si su fuente fallo, en vez de perderse.
-    bcv = anclas["bcv"]
-    eur = anclas.get("eur") or (fila.eur if fila else None)
+    # Cada valor cae al anterior si su fuente fallo, en vez de perderse. Y
+    # un salto absurdo no se guarda (QA nov: el euro paso de 999 a 6 de un dia
+    # para otro por leer mal el punto de los miles): queda el anterior.
+    previa = tasa_al(db, fecha - datetime.timedelta(days=1))
+    bcv = razonable(anclas["bcv"], previa.bcv if previa else None, "bcv")
+    eur = razonable(anclas.get("eur"), previa.eur if previa else None, "eur") or (fila.eur if fila else None)
     paralelo = anclas.get("paralelo") or (fila.paralelo if fila else None)
+    if not bcv:
+        return False
 
     if fila:
         fila.bcv = bcv
@@ -109,6 +114,28 @@ def refrescar(db: Session, forzar: bool = False) -> bool:
         )
     db.commit()
     return True
+
+
+# Mas que esto contra la tasa anterior no es un dia de mercado: es un error de
+# lectura o de tecleo.
+SALTO_MAXIMO = 0.30
+saltos_rechazados: dict = {}
+
+
+def salto(nuevo: Optional[float], anterior: Optional[float]) -> float:
+    if not nuevo or not anterior:
+        return 0.0
+    return abs(nuevo / anterior - 1)
+
+
+def razonable(nuevo: Optional[float], anterior: Optional[float], que: str) -> Optional[float]:
+    """El valor nuevo, o el anterior si el salto es absurdo (se anota)."""
+    if salto(nuevo, anterior) > SALTO_MAXIMO:
+        log.warning("Tasa %s descartada: %s contra %s el dia anterior", que, nuevo, anterior)
+        saltos_rechazados[que] = {"leida": nuevo, "anterior": anterior, "en": ahora().isoformat()}
+        return anterior
+    saltos_rechazados.pop(que, None)
+    return nuevo
 
 
 _MESES = {

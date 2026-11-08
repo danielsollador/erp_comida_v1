@@ -1485,6 +1485,14 @@ class AperturaCaja(Base):
     # que especificar en billetes de que o en monedas").
     desglose = Column(String, default="")
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
+    # LA DIFERENCIA NO VA SOLA A LOS LIBROS (specs/caja.md, bloque 1.10).
+    # `diferencia` es contra lo que quedo en el ultimo cierre; queda "por
+    # aprobar" hasta que alguien que autoriza la aprueba con un motivo. Nulo =
+    # apertura de antes del 1.10, cuya diferencia ya se asento al abrir.
+    estado_diferencia = Column(String, nullable=True)
+    aprobada_por = Column(String, default="")
+    aprobada_en = Column(DateTime, nullable=True)
+    motivo_aprobacion = Column(String, default="")
 
     operador_rel = relationship("Operador")
 
@@ -1517,6 +1525,20 @@ class CierreCaja(Base):
     divisas_esperado = Column(Float, default=0)
     divisas_contado = Column(Float, default=0)
     divisas_diferencia = Column(Float, default=0)
+    # El cierre cuenta y cuadra; la diferencia queda "por aprobar" hasta que
+    # alguien que autoriza la apruebe (specs/caja.md). Nulo = cierre de antes
+    # del 1.10, que ya la asento al cerrar. "sola" = menos de $0,10 (D14).
+    estado_diferencia = Column(String, nullable=True)
+    aprobada_por = Column(String, default="")
+    aprobada_en = Column(DateTime, nullable=True)
+    motivo_aprobacion = Column(String, default="")
+    # Quien cerro con su usuario (el operador es la persona de turno con PIN,
+    # que con el usuario compartido "caja" era lo unico que decia quien fue).
+    cerrado_por = Column(String, default="")
+    autorizado_por = Column(String, default="")
+    # Algo cambio en el dia despues de cerrar (una venta, un gasto, un retiro).
+    por_revisar = Column(Boolean, default=False)
+    cambios_despues = Column(String, default="")
     # Quien conto y que gaveta cerro. Con dos pisos son dos cierres distintos.
     operador_id = Column(Integer, ForeignKey("DIM910_USU_OPERADOR.id"), nullable=True)
     punto_venta_id = Column(Integer, ForeignKey("DIM110_VEN_PUNTO_VENTA.id"), nullable=True)
@@ -1564,6 +1586,9 @@ class CierreCajaLinea(Base):
     # Nulo = no se verifico. Distinto de cero, que es "conte y no habia nada".
     contado = Column(Float, nullable=True)
     diferencia = Column(Float, default=0)
+    # La parte de la diferencia de la gaveta de bolivares que viene de un
+    # cambio de tasa: no falto plata, valen menos dolares (specs/caja.md).
+    diferencial_cambiario = Column(Float, default=0)
 
     cierre = relationship("CierreCaja", back_populates="lineas")
 

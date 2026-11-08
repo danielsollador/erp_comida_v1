@@ -62,7 +62,8 @@ log = logging.getLogger("erp.consolidacion")
 # Sube cuando cambie QUE se guarda o COMO se calcula: los dias guardados con
 # una version vieja se vuelven a consolidar la noche siguiente.
 # 2: las unidades vendidas por dia y por hora (la serie de unidades, 30-sep).
-VERSION = 2
+# 3: una venta devuelta un mes despues se queda en su mes (QA nov, R3).
+VERSION = 3
 
 # A que hora del local corre la consolidacion nocturna.
 HORA_NOCTURNA = datetime.time(3, 30)
@@ -189,10 +190,23 @@ def _grupo(d: Dict[str, Grupo], clave: str, nombre: str = "") -> Grupo:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _mes(f: datetime.datetime) -> tuple[int, int]:
+    return (f.year, f.month)
+
+
+def sigue_siendo_venta(p: models.Pedido) -> bool:
+    """Una venta devuelta el mismo mes no cuenta: no hubo venta. Devuelta un
+    mes despues, se queda en su mes y la devolucion resta en el mes en que se
+    hizo, como su nota de credito: si no, devolver una venta de octubre ya
+    declarado cambiaba los reportes de octubre (QA de noviembre, R3)."""
+    if not p.devuelto:
+        return True
+    return bool(p.fecha_devolucion and p.cerrado_en and _mes(p.fecha_devolucion) > _mes(p.cerrado_en))
+
+
 def pedidos_pagados(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
-    """Ventas efectivas del periodo. Las devueltas no cuentan: el cliente
-    trajo la comida de vuelta, asi que no hubo venta."""
-    return (
+    """Ventas efectivas del periodo (ver `sigue_siendo_venta`)."""
+    filas = (
         db.query(models.Pedido)
         .options(
             selectinload(models.Pedido.items),
@@ -202,12 +216,12 @@ def pedidos_pagados(db: Session, inicio: datetime.datetime, fin: datetime.dateti
         )
         .filter(
             models.Pedido.estado == "pagado",
-            models.Pedido.devuelto.is_(False),
             models.Pedido.cerrado_en >= inicio,
             models.Pedido.cerrado_en < fin,
         )
         .all()
     )
+    return [p for p in filas if sigue_siendo_venta(p)]
 
 
 def devoluciones(db: Session, inicio: datetime.datetime, fin: datetime.datetime):

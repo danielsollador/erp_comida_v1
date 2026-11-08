@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
+from .. import combos, contabilidad, costeo, impuestos, kardex, models, salvaguardas, schemas, tasas
 from .. import autorizaciones
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
@@ -424,6 +424,11 @@ async def crear_pedido(
         )
         if ya is not None:
             return schemas.Pedido.model_validate(ya)
+
+    # Regalar es sacar comida sin cobrar: pide la firma de quien autoriza
+    # (Daniel, 8-nov: "anulaciones y cortesias que pida clave").
+    if any(i.cortesia for i in pedido.items):
+        salvaguardas.exigir_firma(db, request, "cortesia", "Regalar productos (cortesía)")
 
     # Venta libre: renglones que no estan en el menu. No mueven inventario
     # (no tienen receta) y su costo queda en cero, que es honesto: el sistema
@@ -2270,8 +2275,10 @@ async def devolver_pedido(
 
     pedido.devuelto = True
     pedido.fecha_devolucion = ahora()
-    # Deja de ser venta del dia en que se cobro: ese dia se recalcula.
-    consolidacion.invalidar_dia(db, pedido.cerrado_en)
+    # Devuelta el mismo mes, deja de ser venta del dia en que se cobro: ese
+    # dia se recalcula. Un mes despues no (ver `consolidacion.sigue_siendo_venta`).
+    if not consolidacion.sigue_siendo_venta(pedido):
+        consolidacion.invalidar_dia(db, pedido.cerrado_en)
     pedido.nota_credito = body.nota_credito
     pedido.motivo_devolucion = body.motivo
     db.commit()
@@ -2413,6 +2420,12 @@ async def anular_pedido(
     # el pedido estaba en cocina, recalcularla hacia aparecer o desaparecer
     # inventario de la nada.
     consumo = {c.ingrediente: c.cantidad for c in pedido.consumos}
+
+    # Anular comida ya hecha es botarla: pide la firma de quien autoriza.
+    # Antes de prepararse no se pierde nada y no se pide.
+    if preparada:
+        salvaguardas.exigir_firma(db, request, "anular_venta", f"Anular el pedido #{pedido.numero}, ya preparado",
+                                  pedido_id=pedido.id)
 
     if preparada:
         for ingrediente, cantidad in consumo.items():

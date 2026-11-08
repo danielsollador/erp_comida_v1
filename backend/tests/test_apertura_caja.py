@@ -13,8 +13,9 @@ convierte el cierre en la resta de un solo dia.
 Estas pruebas fijan las cuatro cosas de las que depende eso:
 
   1. El fondo contado manda sobre lo que digan los libros.
-  2. La diferencia se asienta, y la primera vez va al capital del dueno --no a
-     perdidas-- porque esa plata ya era suya.
+  2. La diferencia queda por aprobar (specs/caja.md, 1.10); al aprobarla, la
+     primera vez va al capital del dueno --no a perdidas-- porque esa plata ya
+     era suya.
   3. La fila del desglose SUMA A LA VISTA: fondo + entro - salio = esperado.
   4. No se abre dos veces, ni despues de cerrar.
 """
@@ -42,7 +43,12 @@ def abrir(client, bolivares=None, divisas=None, **extra):
         fondos.append({"metodo": "Efectivo Bs", "cuenta": "1010", "fondo": bolivares})
     if divisas is not None:
         fondos.append({"metodo": "Efectivo $", "cuenta": "1011", "fondo": divisas})
-    return client.post("/api/caja/abrir", json={"fondos": fondos, **extra})
+    return client.post("/api/caja/abrir", json={"fondos": fondos, **extra}, headers=CONFIRMADO)
+
+
+# Abrir con un fondo lejos de lo esperado pide confirmar (QA nov, R4): estas
+# pruebas lo confirman de entrada.
+CONFIRMADO = {"X-Confirmado": "fondo_raro_Efectivo Bs,fondo_raro_Efectivo $"}
 
 
 def linea(client, metodo="Efectivo Bs"):
@@ -74,13 +80,21 @@ def test_el_fondo_contado_manda_sobre_los_libros(client, variante):
 
 
 def test_la_primera_apertura_va_al_capital_no_a_perdidas(client):
-    """Esa plata ya era del dueno: meterla como ingreso inflaria la ganancia y
-    pagaria impuesto sobre algo que nunca se vendio."""
+    """Abrir no asienta nada: la diferencia queda por aprobar. Al aprobarla,
+    la primera vez va al capital: esa plata ya era del dueno, y meterla como
+    ingreso inflaria la ganancia (specs/caja.md, 1.10)."""
     abrir(client, bolivares=50)
     asientos = client.get("/api/contabilidad/asientos").json()
-    apertura = [a for a in asientos if a["origen"] == "apertura_dia"]
-    assert len(apertura) == 1
-    cuentas = {m["cuenta_codigo"]: m for m in apertura[0]["movimientos"]}
+    assert not [a for a in asientos if a["origen"] in ("apertura_dia", "aprobacion_caja")]
+    pendientes = client.get("/api/caja/diferencias").json()
+    assert pendientes["total"] == 50 and pendientes["filas"][0]["tipo"] == "apertura"
+    r = client.post("/api/caja/diferencias/aprobar",
+                    json={"tipo": "apertura", "id": pendientes["filas"][0]["id"], "motivo": "Fondo inicial"})
+    assert r.status_code == 200, r.text
+    asientos = client.get("/api/contabilidad/asientos").json()
+    aprobado = [a for a in asientos if a["origen"] == "aprobacion_caja"]
+    assert len(aprobado) == 1
+    cuentas = {m["cuenta_codigo"]: m for m in aprobado[0]["movimientos"]}
     assert cuentas["1010"]["debe"] == 50
     assert cuentas["3010"]["haber"] == 50
 
@@ -162,7 +176,7 @@ def test_el_fondo_en_dolares_se_declara_por_billete(client, db):
     r = client.post("/api/caja/abrir", json={"fondos": [
         {"metodo": "Efectivo $", "cuenta": "1011", "fondo": 50.0,
          "desglose": {"20": 2, "5": 1, "sueltos": 5.0}},
-    ]})
+    ]}, headers=CONFIRMADO)
     assert r.status_code == 200, r.text
     fila = db.query(models.AperturaCaja).filter_by(metodo="Efectivo $").first()
     assert json.loads(fila.desglose) == {"20": 2, "5": 1, "sueltos": 5.0}
@@ -176,22 +190,28 @@ def test_un_desglose_que_no_suma_el_fondo_se_rechaza(client):
     assert "suma 40.00" in r.json()["detail"]
 
 
-def test_sin_declarar_al_abrir_arranca_en_cero_y_los_libros_lo_siguen(client, db, variante):
-    """24-oct: "¿por qué debo tener $247 si hubo un solo cobro de $4,50?". El
-    cierre es solo de HOY: lo declarado al abrir (o cero), lo vendido y lo
-    pagado hoy. Lo que los libros traian de dias anteriores no se arrastra; al
-    cerrar, la gaveta queda declarada en cero y lo viejo sale con su asiento."""
+def test_sin_declarar_arranca_con_lo_del_ultimo_cierre_no_con_los_libros(client, db, variante):
+    """24-oct: "¿por qué debo tener $247 si hubo un solo cobro de $4,50?". Y
+    QA nov: arrancar en CERO mandaba a perdida lo que habia en la gaveta. La
+    gaveta que no se declaro arranca con lo que se conto en el ultimo cierre:
+    ni el arrastre viejo de los libros ni cero (specs/caja.md, 1.10)."""
     import datetime as dt
     from app import contabilidad
     from tests.conftest import saldo
-    ayer = dt.datetime.now() - dt.timedelta(days=2)
+    hace_dos = dt.datetime.now() - dt.timedelta(days=2)
     contabilidad.crear_asiento(db, "Saldo viejo de los libros", [("1010", 243.19, 0.0), ("3010", 0.0, 243.19)],
-                               origen="manual", fecha=ayer)
+                               origen="manual", fecha=hace_dos)
     db.commit()
-    assert linea(client)["fondo"] == 0, "sin declarar, el fondo es cero: nada de dias anteriores"
-    vender(client, variante, "Efectivo Bs")  # $5
-    assert linea(client)["esperado"] == 5
-    r = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo Bs", "contado": 5}]})
+    ayer = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    r = client.post("/api/caja/cerrar", json={"fecha": ayer, "conteos": [{"metodo": "Efectivo Bs", "contado": 4}]},
+                    headers={"X-Confirmado": "diferencia_grande"})
     assert r.status_code == 200, r.text
+    assert r.json()["estado_diferencia"] == "por_aprobar", "el faltante de ayer no va solo a los libros"
+    assert saldo(db, "1010") == pytest.approx(243.19)
+    assert linea(client)["fondo"] == 4, "arranca con lo contado ayer"
+    vender(client, variante, "Efectivo Bs")  # $5
+    assert linea(client)["esperado"] == 9
+    r = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo Bs", "contado": 9}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["estado_diferencia"] == "sin_diferencia"
     assert linea(client)["diferencia"] == 0
-    assert saldo(db, "1010") == pytest.approx(5), "los libros dicen lo que se conto"

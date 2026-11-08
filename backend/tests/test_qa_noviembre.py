@@ -1,0 +1,248 @@
+"""QA de noviembre (specs/qa.md y specs/caja.md): los casos reales que se
+reprodujeron en la copia de produccion, convertidos en reglas.
+
+  R2  nada que mueva plata se registra dos veces por un doble toque;
+  R3  un mes con el IVA declarado queda congelado;
+  R4  lo que se sale de lo normal pide confirmar;
+  R5  anular, dar de baja, corregir un cierre y cambiar la tasa piden firma;
+  1.10 el cierre cuenta y cuadra: la diferencia va a los libros al aprobarla.
+"""
+from __future__ import annotations
+
+import datetime
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import models, rates, settings
+from app.acceso import usuarios
+from app.database import get_db
+from app.main import app
+from tests.conftest import entrar, saldo
+
+LOCAL = settings.LOCAL_SLUG
+CAJERA = ("cajera_qa_nov", "clave-de-la-cajera-larga")
+DUENA = ("duena_qa_nov", "clave-de-la-duena-larga")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _gente():
+    for (u, c), rol in ((CAJERA, "caja"), (DUENA, "dueno")):
+        try:
+            usuarios.crear(u, c, rol=rol, locales=[LOCAL])
+        except usuarios.ErrorUsuarios:
+            pass
+    usuarios.poner_pin(DUENA[0], "8642")
+    yield
+    for u, _ in (CAJERA, DUENA):
+        try:
+            usuarios.borrar(u)
+        except usuarios.ErrorUsuarios:
+            pass
+
+
+@pytest.fixture()
+def cajera(db):
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as c:
+        entrar(c, *CAJERA)
+        yield c
+    app.dependency_overrides.pop(get_db, None)
+
+
+def con_libros(db, bs=200.0, usd=200.0, banco=2000.0):
+    from app import contabilidad
+
+    contabilidad.crear_asiento(
+        db, "Aporte inicial", [("1010", bs, 0.0), ("1011", usd, 0.0), ("1020", banco, 0.0), ("3010", 0.0, bs + usd + banco)],
+        origen="manual", fecha=datetime.datetime.now() - datetime.timedelta(days=3),
+    )
+    db.commit()
+
+
+# ── R2 · un solo envio ──────────────────────────────────────────────────────
+
+
+def test_un_retiro_repetido_a_los_segundos_pide_confirmar(client, db):
+    """QA nov: dos toques en «Registrar retiro» dejaban dos retiros de $15."""
+    con_libros(db)
+    cuerpo = {"monto": 15, "metodo_pago": "Efectivo $", "nota": "doble toque"}
+    assert client.post("/api/caja/retiros", json=cuerpo).status_code == 200
+    r = client.post("/api/caja/retiros", json=cuerpo)
+    assert r.status_code == 428 and r.json()["detail"]["clave"] == "repetido"
+    assert db.query(models.RetiroPropietario).count() == 1
+    r = client.post("/api/caja/retiros", json=cuerpo, headers={"X-Confirmado": "repetido"})
+    assert r.status_code == 200, "si de verdad es otro, confirmado entra"
+
+
+def test_el_alquiler_no_se_paga_dos_veces_el_mismo_mes(client, db):
+    """QA nov: «Pagar» dos veces en el alquiler de $300 registraba dos pagos."""
+    con_libros(db)
+    fijo = client.post("/api/egresos/fijos", json={
+        "beneficiario": "Casero", "concepto": "Alquiler", "monto": 300, "metodo_pago": "Transferencia",
+        "frecuencia": "mensual", "proximo": datetime.date.today().isoformat(),
+    }).json()
+    assert client.post(f"/api/egresos/fijos/{fijo['id']}/pagar", json={"referencia": "A1"}).status_code == 200
+    r = client.post(f"/api/egresos/fijos/{fijo['id']}/pagar", json={"referencia": "A2"})
+    assert r.status_code == 428 and r.json()["detail"]["clave"] == "fijo_repetido"
+    assert db.query(models.PagoSinFactura).count() == 1
+
+
+def test_una_factura_a_credito_no_se_paga_dos_veces(client, db):
+    con_libros(db)
+    f = client.post("/api/compras/facturas", json={
+        "numero_factura": "DT-1", "proveedor_nombre": "Prov", "proveedor_rif": "J-40000011-0", "forma_pago": "Credito",
+        "gastos": [{"concepto": "Servicio", "monto": 50}], "iva": 8,
+    }).json()
+    pago = {"forma_pago": "Transferencia", "referencia": "P1"}
+    assert client.post(f"/api/compras/facturas/{f['id']}/pagar", json=pago).status_code == 200
+    r = client.post(f"/api/compras/facturas/{f['id']}/pagar", json=pago, headers={"X-Confirmado": "repetido"})
+    assert r.status_code == 409
+
+
+# ── R3 · mes declarado congelado ────────────────────────────────────────────
+
+
+def _declarar_mes_pasado(db) -> datetime.date:
+    hoy = datetime.date.today()
+    pasado = (hoy.replace(day=1) - datetime.timedelta(days=1)).replace(day=15)
+    db.add(models.DeclaracionIva(anio=pasado.year, mes=pasado.month))
+    db.commit()
+    return pasado
+
+
+def test_con_el_mes_declarado_no_entra_una_factura_de_ese_mes(client, db):
+    """QA nov: con octubre declarado, una factura registrada en octubre entró al
+    libro de compras ya declarado."""
+    pasado = _declarar_mes_pasado(db)
+    r = client.post("/api/compras/facturas", json={
+        "numero_factura": "OCT-1", "proveedor_nombre": "Prov", "proveedor_rif": "J-40000009-0",
+        "forma_pago": "Transferencia", "referencia_pago": "O1", "fecha": f"{pasado.isoformat()}T10:00:00",
+        "gastos": [{"concepto": "Servicio", "monto": 100}], "iva": 16,
+    })
+    assert r.status_code == 409 and "ya se declaró" in r.json()["detail"]
+
+
+def test_con_el_mes_declarado_no_entra_un_pago_de_ese_mes(client, db):
+    pasado = _declarar_mes_pasado(db)
+    r = client.post("/api/egresos", json={
+        "beneficiario": "Gas", "concepto": "Servicios publicos", "monto": 15, "metodo_pago": "Transferencia",
+        "referencia": "G1", "fecha": pasado.isoformat(),
+    }, headers={"X-Confirmado": "fecha_vieja"})
+    assert r.status_code == 409 and "ya se declaró" in r.json()["detail"]
+
+
+# ── R4 · lo raro pide confirmar ─────────────────────────────────────────────
+
+
+def test_un_alquiler_con_un_cero_de_mas_pide_confirmar(client, db):
+    con_libros(db)
+    base = {"beneficiario": "Casero", "concepto": "Alquiler", "metodo_pago": "Transferencia"}
+    assert client.post("/api/egresos", json={**base, "monto": 300, "referencia": "R1"}).status_code == 200
+    r = client.post("/api/egresos", json={**base, "monto": 3000, "referencia": "R2"})
+    assert r.status_code == 428 and r.json()["detail"]["clave"] == "monto_alto"
+    assert client.post("/api/egresos", json={**base, "monto": 3000, "referencia": "R2"},
+                       headers={"X-Confirmado": "monto_alto"}).status_code == 200
+
+
+def test_un_pago_fechado_hace_un_anio_pide_confirmar(client, db):
+    con_libros(db)
+    hace_un_anio = (datetime.date.today() - datetime.timedelta(days=365)).isoformat()
+    r = client.post("/api/egresos", json={
+        "beneficiario": "Gas", "concepto": "Servicios publicos", "monto": 10, "metodo_pago": "Transferencia",
+        "referencia": "F1", "fecha": hace_un_anio,
+    })
+    assert r.status_code == 428 and r.json()["detail"]["clave"] == "fecha_vieja"
+
+
+def test_no_se_saca_de_la_gaveta_mas_de_lo_que_hay(client, db):
+    """QA nov: un retiro de $5.000 con $133 en la gaveta la dejó en −$4.900."""
+    con_libros(db, usd=133)
+    r = client.post("/api/caja/retiros", json={"monto": 5000, "metodo_pago": "Efectivo $", "nota": ""})
+    assert r.status_code == 400 and "hay" in r.json()["detail"]
+    r = client.post("/api/caja/gastos", json={"descripcion": "Hielo", "monto": 300, "categoria": "Otros",
+                                              "metodo_pago": "Efectivo $"})
+    assert r.status_code == 400
+
+
+# ── R5 · firma ──────────────────────────────────────────────────────────────
+
+
+def test_la_cajera_no_cambia_la_tasa_sin_firma(cajera, db):
+    """QA nov: la cajera puso la tasa en 1 Bs por dólar."""
+    db.add(models.TasaCambio(fecha=datetime.date.today(), bcv=897.54, origen="auto"))
+    db.commit()
+    r = cajera.put("/api/tasas", json={"bcv": 900})
+    assert r.status_code == 428 and r.json()["detail"]["codigo"] == "firma"
+    r = cajera.put("/api/tasas", json={"bcv": 900}, headers={"X-Autorizacion": '{"pin": "8642"}'})
+    assert r.status_code == 200, r.text
+    r = cajera.put("/api/tasas", json={"bcv": 1}, headers={"X-Autorizacion": '{"pin": "8642"}'})
+    assert r.status_code == 428 and r.json()["detail"]["clave"] == "tasa_salto"
+
+
+def test_la_cajera_no_anula_un_cierre_sin_firma(cajera, db):
+    con_libros(db)
+    c = cajera.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo $", "contado": 200}]}).json()
+    r = cajera.post(f"/api/caja/cierres/{c['id']}/anular", json={"motivo": "mal contado"})
+    assert r.status_code == 428 and r.json()["detail"]["accion"] == "anular_cierre"
+    r = cajera.post(f"/api/caja/cierres/{c['id']}/anular", json={"motivo": "mal contado"},
+                    headers={"X-Autorizacion": '{"pin": "8642"}'})
+    assert r.status_code == 200 and r.json()["autorizado_por"]
+
+
+def test_el_bcv_con_punto_de_miles_se_lee_completo():
+    """QA nov: el BCV publica el euro «1.001,18» y se guardaba 1,18."""
+    import re
+
+    html = '<div id="euro"><strong> 1.001,18245 </strong></div><div id="dolar"><strong> 897,54 </strong></div>'
+    patron = r'id="euro".{0,600}?([0-9]{1,3}(?:\.[0-9]{3})+,[0-9]{2,10}|[0-9]{1,6},[0-9]{2,10})'
+    assert rates._num_ve(re.search(patron, html, re.S).group(1)) == pytest.approx(1001.18245)
+
+
+# ── 1.10 · el cierre como cuadre ────────────────────────────────────────────
+
+
+def test_cerrar_con_un_faltante_no_toca_los_libros_hasta_aprobarlo(client, db):
+    """El cierre se anulaba casi a diario porque cada tecleo entraba a los
+    libros. Ahora el faltante queda por aprobar y la ganancia no cambia."""
+    con_libros(db, usd=100)
+    r = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo $", "contado": 95}]})
+    assert r.status_code == 200, r.text
+    cierre = r.json()
+    assert cierre["estado_diferencia"] == "por_aprobar"
+    assert saldo(db, "6030") == 0
+    pendientes = client.get("/api/caja/diferencias").json()
+    assert pendientes["total"] == -5
+    r = client.post("/api/caja/diferencias/aprobar", json={"tipo": "cierre", "id": cierre["id"], "motivo": "Vuelto mal dado"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert saldo(db, "6030") == pytest.approx(5)
+    assert client.get("/api/caja/diferencias").json()["total"] == 0
+
+
+def test_cerrar_sin_abrir_no_manda_la_gaveta_a_perdida(client, db):
+    """QA nov: sin declarar el fondo, la gaveta se daba por abierta en cero y
+    los $133 que habia pasaban a faltante."""
+    con_libros(db, usd=133)
+    r = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo $", "contado": 133}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["estado_diferencia"] == "sin_diferencia"
+    db.expire_all()
+    assert saldo(db, "6030") == 0
+
+
+def test_una_diferencia_de_centavos_se_aprueba_sola(client, db):
+    con_libros(db, usd=100)
+    r = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo $", "contado": 99.95}]})
+    assert r.json()["estado_diferencia"] == "sola"
+    db.expire_all()
+    assert saldo(db, "6030") == pytest.approx(0.05)
+
+
+def test_un_gasto_despues_de_cerrar_marca_el_cierre_por_revisar(client, db):
+    con_libros(db, usd=100)
+    c = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo $", "contado": 100}]}).json()
+    assert client.post("/api/caja/gastos", json={"descripcion": "Hielo", "monto": 3, "categoria": "Otros",
+                                                 "metodo_pago": "Efectivo $"}).status_code == 200
+    cierre = next(x for x in client.get("/api/caja/cierres").json() if x["id"] == c["id"])
+    assert cierre["por_revisar"] is True and "Hielo" in cierre["cambios_despues"]
