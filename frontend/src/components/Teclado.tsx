@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { normalizarTecleo } from '../lib/montos'
 
 /**
  * El teclado propio del ERP, para las tablets del mostrador.
@@ -776,6 +777,8 @@ type CambioComoEvento = { target: { value: string }; currentTarget: { value: str
  *
  *   oculto  muestra puntos en vez de digitos (el PIN).
  *   entero  sin coma decimal (cantidades, dias).
+ *   monto   lo tecleado se reescribe sin ambiguedad: «5.000» pasa a 5000
+ *           (ver lib/montos.ts). Para toda casilla de dinero.
  */
 export function Numerico({
   value,
@@ -783,6 +786,7 @@ export function Numerico({
   etiqueta,
   oculto = false,
   entero = false,
+  monto = false,
   onBlur,
   onFocus,
   placeholder,
@@ -795,14 +799,18 @@ export function Numerico({
   etiqueta?: string
   oculto?: boolean
   entero?: boolean
+  monto?: boolean
 }) {
   const ctx = useContext(TecladoCtx)
   const tactil = useMemo(usaTecladoPropio, [])
   const ref = useRef<HTMLInputElement>(null)
   const texto = value === undefined || value === null ? '' : String(value)
   const poner = useCallback(
-    (v: string) => onChange({ target: { value: v }, currentTarget: { value: v } }),
-    [onChange],
+    (v: string) => {
+      const w = monto ? normalizarTecleo(v) : v
+      onChange({ target: { value: w }, currentTarget: { value: w } })
+    },
+    [onChange, monto],
   )
 
   // Si la pantalla cambia el valor por su cuenta mientras el teclado esta
@@ -823,7 +831,7 @@ export function Numerico({
         inputMode={entero ? 'numeric' : 'decimal'}
         autoComplete="off"
         value={texto}
-        onChange={(e) => onChange(e)}
+        onChange={(e) => (monto ? poner(e.target.value) : onChange(e))}
         onBlur={onBlur}
         onFocus={onFocus}
         placeholder={placeholder}

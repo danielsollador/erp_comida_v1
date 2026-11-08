@@ -13,6 +13,7 @@ import { api } from '../lib/api'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { etiquetaMetodo } from '../lib/pagos'
 import type { AnalisisTasa, EstadoTasa, PuntoTasa } from '../lib/types'
+import { leerMonto } from '../lib/montos'
 
 // Los billetes con los que se cobra en el mostrador. La tasa a secas no le
 // dice nada a nadie; "20 dolares son 17.000" si.
@@ -120,7 +121,7 @@ export default function Tasa() {
   }
 
   function guardarManual() {
-    const valor = Number(manual.replace(',', '.'))
+    const valor = leerMonto(manual)
     if (!valor || valor <= 0) {
       setError('Escribe una tasa válida, por ejemplo 145,80')
       return
@@ -326,7 +327,7 @@ export default function Tasa() {
                 paralelo: estado?.paralelo,
                 eur: estado?.eur,
               }
-              const monto = Number(montoCalc.replace(',', '.'))
+              const monto = leerMonto(montoCalc)
               const valido = Number.isFinite(monto) && monto > 0
               // Todo pasa por bolivares, que es la unica moneda en la que un
               // monto significa lo mismo mire quien lo mire.
@@ -356,7 +357,7 @@ export default function Tasa() {
                       con las demás.
                     </p>
                     <div className="flex flex-wrap gap-2 mb-4">
-                      <Numerico
+                      <Numerico monto
                         etiqueta="Monto"
                         value={montoCalc}
                         onChange={(e) => setMontoCalc(e.target.value)}

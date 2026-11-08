@@ -11,6 +11,7 @@ import { Boton, Campo, Modal, Selector } from './ui'
 import { CasillaConUnidad } from './Cantidad'
 import { convertirTexto, factorEntre, otraUnidad, sinRuido } from '../lib/unidades'
 import { etiquetaUnidad } from '../lib/inventario'
+import { leerMonto } from '../lib/montos'
 
 /**
  * Las ventanas de pregunta del ERP: confirmar, elegir, pedir datos, avisar.
@@ -251,7 +252,7 @@ function Ventana({ pendiente, alTerminar }: { pendiente: Pendiente; alTerminar: 
 
 /** Un numero escrito a mano: acepta coma decimal, que es como se escribe aqui. */
 function aNumero(texto: string): number {
-  return Number(texto.trim().replace(',', '.'))
+  return leerMonto(texto)
 }
 
 function Formulario({

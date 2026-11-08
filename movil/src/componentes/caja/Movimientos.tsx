@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { METODOS_PAGO } from '../../../../frontend/src/lib/pagos'
 import { apiCaja } from '../../lib/api-caja'
 import { useMoneda } from '../../lib/moneda'
-import { aNumero } from '../../lib/numeros'
+import { aMonto } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
 import type { Gasto, RetiroPropietario } from '../../lib/tipos'
 import Icono from '../Icono'
@@ -52,7 +52,7 @@ export function Movimientos({
   const [guardando, setGuardando] = useState(false)
 
   const esGasto = tipo === 'gasto'
-  const n = aNumero(monto)
+  const n = aMonto(monto)
   // Las mismas condiciones de la web (que no registra sin monto, ni un gasto
   // sin decir que fue); aqui el boton se apaga en vez de no hacer nada.
   const listo = Number.isFinite(n) && n > 0 && (!esGasto || descripcion.trim() !== '')

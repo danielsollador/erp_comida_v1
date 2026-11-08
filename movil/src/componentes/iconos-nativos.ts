@@ -59,4 +59,9 @@ export const ICONOS_NATIVOS: Record<NombreIcono, IconoNativo> = {
   mas: { sf: 'plus', md: 'add' },
   quitar: { sf: 'xmark', md: 'close' },
   buscar: { sf: 'magnifyingglass', md: 'search' },
+  pregunta: { sf: 'questionmark.circle', md: 'help-outline' },
+  enviar: { sf: 'paperplane', md: 'send' },
+  microfono: { sf: 'mic', md: 'mic' },
+  cobrar: { sf: 'arrow.down.to.line', md: 'download' },
+  pagar: { sf: 'arrow.up.to.line', md: 'upload' },
 }

@@ -20,6 +20,7 @@ import { useMoneda } from '../lib/moneda'
 import { uuid } from '../lib/uuid'
 import { METODOS_CON_REFERENCIA, METODOS_PAGO, etiquetaMetodo } from '../lib/pagos'
 import type { Autorizacion, Pedido } from '../lib/types'
+import { montoO0 } from '../lib/montos'
 
 type Fila = {
   clave: string
@@ -72,7 +73,7 @@ export default function CorregirPago({
   }, [pedidoId])
 
   const cobrado = useMemo(() => redondo((pedido?.pagos ?? []).reduce((t, g) => t + g.monto, 0)), [pedido])
-  const suma = redondo(filas.reduce((t, f) => t + (Number(f.monto.replace(',', '.')) || 0), 0))
+  const suma = redondo(filas.reduce((t, f) => t + montoO0(f.monto), 0))
   const falta = redondo(cobrado - suma)
   // Si solo cambian referencias, la plata no se movió de ningún lado.
   const muevePlata = useMemo(() => {
@@ -81,7 +82,7 @@ export default function CorregirPago({
       xs.map((x) => `${x.metodo}:${redondo(x.monto)}`).sort().join('|')
     return (
       firmaDe(pedido.pagos) !==
-      firmaDe(filas.map((f) => ({ metodo: f.metodo, monto: Number(f.monto.replace(',', '.')) || 0 })))
+      firmaDe(filas.map((f) => ({ metodo: f.metodo, monto: montoO0(f.monto) })))
     )
   }, [pedido, filas])
 
@@ -109,7 +110,7 @@ export default function CorregirPago({
         filas.map((f) => ({
           id: f.id,
           metodo: f.metodo,
-          monto: redondo(Number(f.monto.replace(',', '.')) || 0),
+          monto: redondo(montoO0(f.monto)),
           referencia: f.referencia.trim(),
         })),
         { motivo, autorizacion: muevePlata && !autorizoYo && firma ? firma : undefined },

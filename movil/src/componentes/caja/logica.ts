@@ -1,5 +1,5 @@
 import { METODOS_CON_REFERENCIA } from '../../../../frontend/src/lib/pagos'
-import { aNumero, sinRuido } from '../../lib/numeros'
+import { aMonto, sinRuido } from '../../lib/numeros'
 import type { CobroDelDia, LineaMetodo } from '../../lib/tipos'
 import type { Conteo } from '../../lib/api-caja'
 
@@ -74,7 +74,7 @@ export function desgloseDe(filas: FilasGaveta | undefined): { desglose: Record<s
   const desglose: Record<string, number> = {}
   let total = 0
   for (const [clave, texto] of Object.entries(filas)) {
-    const n = aNumero(texto)
+    const n = aMonto(texto)
     if (!texto.trim() || !Number.isFinite(n) || n <= 0) continue
     desglose[clave] = n
     total += clave === 'sueltos' ? n : Number(clave) * n
@@ -94,7 +94,7 @@ export function conteosDe(lineas: LineaMetodo[], contados: Record<string, string
   return lineas.flatMap((l) => {
     const escrito = (contados[l.metodo] ?? '').trim()
     if (!escrito) return []
-    const tecleado = aNumero(escrito)
+    const tecleado = aMonto(escrito)
     if (!Number.isFinite(tecleado) || tecleado < 0) return []
     if (EN_BOLIVARES.has(l.metodo)) {
       if (bcv <= 0) return []

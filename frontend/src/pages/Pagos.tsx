@@ -3,12 +3,13 @@ import NavBar from '../components/NavBar'
 import { useSeccion } from '../components/Secciones'
 import BarraFiltros from '../components/BarraFiltros'
 import { useDialogo } from '../components/dialogo'
-import { Aviso, Boton, Campo, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
+import { Aviso, Boton, Campo, CampoMonto, Cifra, Modal, Pagina, Pastilla, Seccion, Selector, Vacio } from '../components/ui'
 import { api } from '../lib/api'
 import { etiquetaRango, useRango } from '../lib/fechas'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { METODOS_PAGO, necesitaReferencia, pedirReferencia } from '../lib/pagos'
 import type { AnticipoPendiente, Frecuencia, NuevoPago, PagoFijo, PagoSinFactura, ResumenPagos } from '../lib/types'
+import { montoO0 } from '../lib/montos'
 
 /**
  * Pagos: lo que el negocio paga SIN factura.
@@ -65,7 +66,7 @@ function fecha(s: string) {
 }
 
 function numero(s: string) {
-  return Number(s.replace(/\./g, '').replace(',', '.'))
+  return montoO0(s)
 }
 
 const VACIO: NuevoPago = {
@@ -328,11 +329,10 @@ function CamposDePago({
           ))}
         </div>
       </div>
-      <Campo
+      <CampoMonto
         etiqueta={p.moneda === 'Bs' ? 'Monto (Bs)' : 'Monto ($)'}
-        inputMode="decimal"
-        value={p.monto ? String(p.monto) : ''}
-        onChange={(e) => poner('monto', numero(e.target.value) || 0)}
+        valor={p.monto}
+        onValor={(n) => poner('monto', n)}
         ayuda={p.moneda === 'Bs' && p.monto > 0 && tasaUsada > 0 ? `Son ${dinero(p.monto / tasaUsada)} a ${fmtNum(tasaUsada)} Bs por dólar.` : undefined}
       />
       {/* En un pago fijo se confirma la tasa del día que toca: aquí no se elige. */}
@@ -350,6 +350,7 @@ function CamposDePago({
       {p.moneda === 'Bs' && conReferencia && cualTasa === 'otra' && (
         <Campo
           etiqueta="Bs por dólar"
+          monto
           inputMode="decimal"
           value={otraTasa}
           onChange={(e) => {
@@ -368,20 +369,18 @@ function CamposDePago({
       ) : (
         <div />
       )}
-      <Campo
+      <CampoMonto
         etiqueta="Retención ISLR (%)"
-        inputMode="decimal"
-        value={p.retencion_islr_pct ? String(p.retencion_islr_pct) : ''}
-        onChange={(e) => poner('retencion_islr_pct', numero(e.target.value) || 0)}
+        valor={p.retencion_islr_pct}
+        onValor={(n) => poner('retencion_islr_pct', n)}
         placeholder="0"
         ayuda="Solo si te toca retenerle (honorarios, por ejemplo). Pregúntale al contador el porcentaje."
       />
       {p.concepto === 'Sueldos' && adelantado > 0 && (
-        <Campo
+        <CampoMonto
           etiqueta="Descontar anticipo ($)"
-          inputMode="decimal"
-          value={p.descontar_anticipo != null ? String(p.descontar_anticipo) : ''}
-          onChange={(e) => poner('descontar_anticipo', numero(e.target.value) || 0)}
+          valor={p.descontar_anticipo}
+          onValor={(n) => poner('descontar_anticipo', n)}
           ayuda={`Se le adelantaron ${dinero(adelantado)}. Lo que pongas aquí se resta de lo que se le entrega.`}
         />
       )}

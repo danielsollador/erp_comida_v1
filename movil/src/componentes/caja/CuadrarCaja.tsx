@@ -5,7 +5,7 @@ import { apiCaja } from '../../lib/api-caja'
 import { bolivares, dolares } from '../../lib/formato'
 import { Ancla } from '../../lib/guia'
 import { useMoneda } from '../../lib/moneda'
-import { aNumero } from '../../lib/numeros'
+import { aMonto } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
 import type { CierreCaja, ResumenCaja } from '../../lib/tipos'
 import { CampoNumero, HojaFormulario } from '../kit'
@@ -110,7 +110,7 @@ export function CuadrarCaja({
       {aCuadrar.map((l) => {
         const enBs = EN_BOLIVARES.has(l.metodo)
         const texto = (contados[l.metodo] ?? '').trim()
-        const escrito = aNumero(texto)
+        const escrito = aMonto(texto)
         return (
           <View key={l.metodo} style={[c.forma, { borderColor: t.gris200, backgroundColor: t.superficie }]}>
             <View style={c.cabeza}>

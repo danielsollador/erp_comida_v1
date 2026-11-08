@@ -38,6 +38,7 @@ import type {
   SugerenciaRenglon,
   TipoArticulo,
 } from '../../../lib/types'
+import { montoO0 } from '../../../lib/montos'
 
 /**
  * Cargar una factura de proveedor, en tres pasos que se leen de arriba abajo:
@@ -365,7 +366,7 @@ export default function CargarFactura({
   }, [fechaDeTasa, origenTasa])
 
   // ── Revisión del servidor: duplicado, precios, RIF ──────────────────────
-  const tasaNum = Number(tasaFactura) > 0 ? Number(tasaFactura) : 0
+  const tasaNum = montoO0(tasaFactura) > 0 ? montoO0(tasaFactura) : 0
   const aUsdVista = (monto: number) => (monedaCarga === 'Bs' && tasaNum ? monto / tasaNum : monto)
   const revision = useRevision({
     proveedor_rif: rif.trim(),
@@ -1240,7 +1241,7 @@ export default function CargarFactura({
                         </label>
                         <label className="block">
                           <span className="block text-xs text-neutral-500 mb-0.5">Cuánto ({monedaCarga})</span>
-                          <Numerico value={p.monto} onChange={(e) => cambiarParte(i, { monto: e.target.value })} placeholder="0.00" aria-label={`Parte ${i + 1}: cuánto`} className={clase()} />
+                          <Numerico monto value={p.monto} onChange={(e) => cambiarParte(i, { monto: e.target.value })} placeholder="0.00" aria-label={`Parte ${i + 1}: cuánto`} className={clase()} />
                         </label>
                         <label className="block">
                           <span className="block text-xs text-neutral-500 mb-0.5">Referencia</span>
@@ -1915,7 +1916,7 @@ function Renglon({
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
             <label className="block">
               <span className="block text-xs text-neutral-500 mb-0.5">Monto sin IVA ({moneda})</span>
-              <Numerico value={l.costo_unitario} onChange={(e) => onCambiar({ costo_unitario: e.target.value, cantidad: '1' })} placeholder="0.00" className={clase()} />
+              <Numerico monto value={l.costo_unitario} onChange={(e) => onCambiar({ costo_unitario: e.target.value, cantidad: '1' })} placeholder="0.00" className={clase()} />
             </label>
             <label className="block">
               <span className="block text-xs text-neutral-500 mb-0.5">IVA</span>
@@ -2035,7 +2036,7 @@ function Renglon({
               </label>
               <label className="block">
                 <span className="block text-xs text-neutral-500 mb-0.5">Costo total ({moneda})</span>
-                <Numerico
+                <Numerico monto
                   value={l.costo_total}
                   onChange={(e) => onCambiar({ costo_total: e.target.value })}
                   placeholder="0.00"
@@ -2084,7 +2085,7 @@ function Renglon({
             </label>
             <label className="block">
               <span className="block text-xs text-neutral-500 mb-0.5">Costo total ({moneda})</span>
-              <Numerico
+              <Numerico monto
                 value={l.costo_total}
                 onChange={(e) => onCambiar({ costo_total: e.target.value })}
                 placeholder="0.00"
@@ -2209,7 +2210,7 @@ function Totales({
       <td className="py-1 text-right">
         <span className="inline-flex items-center justify-end gap-1">
           <span className="text-neutral-500 text-xs">{signo}</span>
-          <Numerico id={idCampo} value={valor} onChange={(e) => cambiar(e.target.value)} min="0" placeholder="0.00" className={`${clase()} !w-28 text-right tabular-nums !py-1.5`} />
+          <Numerico monto id={idCampo} value={valor} onChange={(e) => cambiar(e.target.value)} min="0" placeholder="0.00" className={`${clase()} !w-28 text-right tabular-nums !py-1.5`} />
         </span>
       </td>
       {delPapel(papelN)}

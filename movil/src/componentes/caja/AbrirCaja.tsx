@@ -7,7 +7,7 @@ import { LETRA, useTema } from '../../lib/tema'
 import type { EstadoApertura } from '../../lib/tipos'
 import { HojaFormulario, useDisposicion } from '../kit'
 import { Aviso, Boton, Campo } from '../ui'
-import { aNumero } from '../../lib/numeros'
+import { aMonto } from '../../lib/numeros'
 import { BILLETES_BS, BILLETES_USD, desgloseDe, redondear2, type FilasGaveta } from './logica'
 import { mensajeDe } from './piezas'
 
@@ -128,7 +128,7 @@ function Gaveta({
       </View>
       <View style={g.billetes}>
         {billetes.map((b) => {
-          const n = aNumero(filas[String(b)] ?? '') || 0
+          const n = aMonto(filas[String(b)] ?? '') || 0
           return (
             <View key={b} style={[g.billete, { width: tablet ? '48%' : '100%' }]}>
               <Text style={[g.billeteNombre, { color: t.suave }]}>

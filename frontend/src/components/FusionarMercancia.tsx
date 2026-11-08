@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { parecidos } from '../lib/parecidos'
 import type { Ingrediente } from '../lib/types'
 import { Boton, Modal } from './ui'
+import { leerNumero } from '../lib/unidades'
 
 /**
  * Fundir una mercancía duplicada en la que se queda.
@@ -38,7 +39,7 @@ export default function FusionarMercancia({
 
   const destino = otras.find((i) => i.id === destinoId)
   const otraUnidad = !!destino && destino.unidad !== origen.unidad
-  const factorNum = otraUnidad ? Number(factor.replace(',', '.')) : 1
+  const factorNum = otraUnidad ? leerNumero(factor) : 1
   const stock = origen.stock_actual || 0
   const fmt = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 2 })
 

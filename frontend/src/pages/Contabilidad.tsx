@@ -621,8 +621,8 @@ function AsientoManual({ cuentas, onCerrar, onCreado }: { cuentas: CuentaContabl
               </option>
             ))}
           </select>
-          <Numerico value={l.debe} onChange={(e) => actualizar(i, 'debe', e.target.value)} placeholder="Debe" className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm" />
-          <Numerico value={l.haber} onChange={(e) => actualizar(i, 'haber', e.target.value)} placeholder="Haber" className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm" />
+          <Numerico monto value={l.debe} onChange={(e) => actualizar(i, 'debe', e.target.value)} placeholder="Debe" className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm" />
+          <Numerico monto value={l.haber} onChange={(e) => actualizar(i, 'haber', e.target.value)} placeholder="Haber" className="w-24 border border-neutral-300 rounded-lg px-2 py-2 text-sm" />
         </div>
       ))}
       <div className="flex items-center gap-3 text-sm">

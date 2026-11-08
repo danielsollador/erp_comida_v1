@@ -10,6 +10,7 @@ import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { EN_BOLIVARES, METODOS_PAGO, necesitaReferencia } from '../lib/pagos'
 import type { CobroCliente, ResumenCxC, VentaPorCobrar } from '../lib/types'
 import { claveDeReintento } from '../lib/uuid'
+import { leerMonto } from '../lib/montos'
 
 /**
  * Cuentas por cobrar: lo que se vendió a crédito y falta cobrar.
@@ -260,7 +261,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
   const enBs = EN_BOLIVARES.has(metodo) && bcv > 0
   const esperadoBs = redondear(esperado * bcv)
 
-  const tecleado = Number(montoTexto.replace(',', '.'))
+  const tecleado = leerMonto(montoTexto)
   let recibido = esperado
   if (montoTexto.trim() !== '') {
     recibido = enBs ? (Math.abs(tecleado - esperadoBs) <= 0.01 ? esperado : redondear(tecleado / bcv)) : tecleado
@@ -348,6 +349,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
         </Selector>
         <Campo
           etiqueta={enBs ? 'Cuánto pagó (Bs)' : 'Cuánto pagó ($)'}
+          monto
           inputMode="decimal"
           value={montoTexto}
           placeholder={fmtNum(enBs ? esperadoBs : esperado)}

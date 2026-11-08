@@ -24,6 +24,7 @@ import type {
   ResumenIva,
   RetencionesQuincena,
 } from '../lib/types'
+import { leerMonto } from '../lib/montos'
 
 const SECCIONES = [
   { id: 'ventas', texto: 'Libro de ventas' },
@@ -126,7 +127,7 @@ export default function Impuestos() {
       await api.registrarRetencionRecibida(f.pedido_id, {
         comprobante: r.comprobante,
         fecha: r.fecha,
-        monto_bs: Number(String(r.monto).replace(',', '.')),
+        monto_bs: leerMonto(String(r.monto)),
       })
       cargarLibros()
     } catch (e) {
@@ -157,7 +158,7 @@ export default function Impuestos() {
       aceptar: 'Guardar',
     })
     if (!r) return
-    const tasa = Number(String(r.tasa).replace(',', '.'))
+    const tasa = leerMonto(String(r.tasa))
     try {
       if (tipo === 'compra') await api.cambiarTasaCompra(id, tasa)
       else await api.cambiarTasaVenta(id, tasa)
@@ -179,7 +180,7 @@ export default function Impuestos() {
   }, [])
 
   async function guardarFiscal() {
-    const valor = Number(tasaInput)
+    const valor = leerMonto(tasaInput)
     if (!Number.isFinite(valor) || valor < 0) return setErrorFiscal('La alícuota no es válida.')
     setErrorFiscal('')
     try {

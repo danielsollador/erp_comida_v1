@@ -40,6 +40,7 @@ import type {
   RenglonPorTipo,
   TipoArticulo,
 } from '../../../lib/types'
+import { leerNumero } from '../../../lib/unidades'
 
 // Las que se ofrecen al crear o cambiar una mercancia. El gramo y el
 // mililitro son el kilo y el litro en chico, y eso lo maneja el sistema.
@@ -253,7 +254,7 @@ export default function FichaMercancia({
       .catch(() => setRitmo(null))
   }, [ing])
 
-  const num = (v: string) => Number(v.trim().replace(',', '.'))
+  const num = (v: string) => leerNumero(v)
   const poner = (k: keyof typeof f, v: string | number | null | boolean) =>
     setF((a) => ({ ...a, [k]: v }))
 

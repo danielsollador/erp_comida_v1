@@ -4,6 +4,7 @@ import type { EstadoApertura } from '../lib/types'
 import { Modal } from './ui'
 import { Numerico } from './Teclado'
 import { useMoneda, fmtNum } from '../lib/moneda'
+import { montoO0 } from '../lib/montos'
 
 /**
  * Abrir la caja: contar el fondo antes de empezar a vender.
@@ -76,7 +77,7 @@ export function AbrirCaja({
     const desglose: Record<string, number> = {}
     let total = 0
     for (const [clave, texto] of Object.entries(filas)) {
-      const n = Number(String(texto).replace(',', '.'))
+      const n = montoO0(String(texto))
       if (!texto.trim() || !Number.isFinite(n) || n < 0) continue
       if (n === 0) continue
       desglose[clave] = n
@@ -180,7 +181,7 @@ export function AbrirCaja({
                   <span className="block text-[11px] font-semibold text-neutral-500">
                     Monedas y sueltos ({simbolo})
                   </span>
-                  <Numerico
+                  <Numerico monto
                     value={filas.sueltos ?? ''}
                     onChange={(e) => poner(f.metodo, 'sueltos', e.target.value)}
                     placeholder="0.00"

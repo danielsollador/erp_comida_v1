@@ -1,3 +1,5 @@
+import { leerMonto } from './montos'
+
 /**
  * EL KILO Y EL GRAMO, EL LITRO Y EL MILILITRO: LA MISMA MEDIDA EN DOS TAMAÑOS.
  *
@@ -32,9 +34,9 @@ export function sinRuido(n: number): string {
   return String(Number(n.toFixed(6)))
 }
 
-/** Lee lo que se escribio, con coma o con punto. */
+/** Lee una cantidad escrita con coma o con punto decimal (ver lib/montos.ts). */
 export function leerNumero(texto: string): number {
-  return Number(String(texto).trim().replace(',', '.'))
+  return leerMonto(texto, { miles: false })
 }
 
 /**

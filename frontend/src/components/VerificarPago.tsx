@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { fmtBs, fmtNum } from '../lib/moneda'
 import type { EstadoPabilo, VerificacionPago } from '../lib/types'
 import { Numerico } from './Teclado'
+import { leerMonto } from '../lib/montos'
 
 /**
  * Lo que devuelve el paso de pago movil: la referencia y, si el banco la
@@ -39,9 +40,7 @@ const enBs = (n: number) => n.toFixed(2).replace('.', ',')
 
 /** Lo que tecleo la cajera: acepta "1650,50", "1.650,50" y "1650.50". */
 function leerBs(texto: string): number {
-  const t = String(texto).trim()
-  const limpio = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
-  return Number(limpio)
+  return leerMonto(texto)
 }
 
 /**
@@ -205,7 +204,7 @@ export default function VerificarPago({
                 >
                   Bs
                 </span>
-                <Numerico
+                <Numerico monto
                   value={montoTexto}
                   onChange={(e) => setMontoTexto(e.target.value)}
                   placeholder={enBs(montoBs)}

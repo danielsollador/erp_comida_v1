@@ -23,6 +23,7 @@ import type {
   RetiroPropietario,
   Traspaso,
 } from '../lib/types'
+import { leerMonto } from '../lib/montos'
 
 /**
  * Cierre de caja.
@@ -995,7 +996,7 @@ function CuadrarCaja({
   const conteos = aCuadrar.flatMap((l) => {
     const escrito = (contados[l.metodo] ?? '').trim()
     if (!escrito) return []
-    const tecleado = Number(escrito.replace(',', '.'))
+    const tecleado = leerMonto(escrito)
     if (!Number.isFinite(tecleado) || tecleado < 0) return []
     // Lo que se teclea en bolivares se guarda en dolares, que es la moneda
     // de los libros. Sin tasa no hay como convertir: esa forma no viaja.
@@ -1066,7 +1067,7 @@ function CuadrarCaja({
       <div className="space-y-3">
         {aCuadrar.map((l) => {
           const enBs = EN_BOLIVARES.has(l.metodo)
-          const escrito = Number((contados[l.metodo] ?? '').replace(',', '.'))
+          const escrito = leerMonto(contados[l.metodo] ?? '')
           return (
             <div key={l.metodo} className="rounded-xl border border-neutral-200 p-3" data-guia="caja.conteo">
               <div className="flex items-baseline justify-between gap-2">
@@ -1086,7 +1087,7 @@ function CuadrarCaja({
               </div>
               <div className="mt-2 flex items-center gap-2">
                 <span className="text-sm font-semibold text-neutral-500 w-6">{enBs ? 'Bs' : '$'}</span>
-                <Numerico
+                <Numerico monto
                   value={contados[l.metodo] ?? ''}
                   onChange={(e) => setContados((c) => ({ ...c, [l.metodo]: e.target.value }))}
                   placeholder={enBs ? 'Cuánto, en bolívares' : 'Cuánto, en dólares'}
@@ -1166,7 +1167,7 @@ function Movimientos({
   const { deshacible, oculto } = useDeshacer()
 
   async function registrar() {
-    const n = Number(monto.replace(',', '.'))
+    const n = leerMonto(monto)
     if (!Number.isFinite(n) || n <= 0) return
     if (tipo === 'gasto' && !descripcion.trim()) return
     if (tipo === 'deposito' && !referencia.trim()) return setError('Pon la referencia del depósito.')
@@ -1279,7 +1280,7 @@ function Movimientos({
                 </option>
               ))}
             </select>
-            <Numerico
+            <Numerico monto
               value={monto}
               onChange={(e) => setMonto(e.target.value)}
               placeholder="$"
@@ -1353,7 +1354,7 @@ function AporteDelDueno({ alCambiar }: { alCambiar: () => void }) {
   const [nota, setNota] = useState('')
   const [error, setError] = useState('')
   async function registrar() {
-    const n = Number(monto.replace(',', '.'))
+    const n = leerMonto(monto)
     if (!Number.isFinite(n) || n <= 0) return
     if (METODOS_CON_REFERENCIA.has(hacia) && !referencia.trim()) return setError('Pon la referencia de la transferencia.')
     setError('')
@@ -1400,7 +1401,7 @@ function AporteDelDueno({ alCambiar }: { alCambiar: () => void }) {
           placeholder="Para qué (opcional)"
           className="flex-1 min-w-[8rem] border border-neutral-300 rounded-lg px-3 py-2 text-sm"
         />
-        <Numerico
+        <Numerico monto
           value={monto}
           onChange={(e) => setMonto(e.target.value)}
           placeholder="$"

@@ -6,7 +6,7 @@ import { abrirCanalEnVivo } from './api'
 import type { RenglonComanda } from './api-pos'
 import { miles } from './formato'
 import { fmtBs } from './moneda'
-import { aNumero } from './numeros'
+import { aMonto, aNumero } from './numeros'
 import type { Paleta } from './tema'
 import type { Categoria, Pedido, Producto, Ticket, Variante } from './tipos'
 
@@ -101,9 +101,7 @@ export function monto(v: string): number {
 
 /** Bs como los escribe la cajera: "1650,50", "1.650,50" o "1650.50". */
 export function leerBs(texto: string): number {
-  const t = String(texto).trim()
-  const limpio = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
-  return Number(limpio)
+  return aMonto(texto)
 }
 
 /** Bs con coma decimal, como se escribe en Venezuela: 1650,00. */

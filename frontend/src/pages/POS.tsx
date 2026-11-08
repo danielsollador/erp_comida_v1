@@ -34,6 +34,7 @@ import type {
   PuntoVenta,
   Variante,
 } from '../lib/types'
+import { montoO0 } from '../lib/montos'
 
 // METODOS_PAGO y METODOS_CON_REFERENCIA viven en lib/pagos porque la regla no
 // es del punto de venta: Caja y Ventas tambien aplican pagos y tenian su
@@ -57,7 +58,7 @@ const BILLETES_USD = [1, 5, 10, 20, 50, 100]
  *  pero el del telefono en español escribe coma: sin esto "20,50" era cero y
  *  el cobro se quedaba trancado diciendo que el billete no alcanza. */
 function monto(v: string): number {
-  return Number(String(v).replace(',', '.')) || 0
+  return montoO0(v)
 }
 const CLAVE_PUNTO = 'erp-punto-venta'
 
@@ -2874,7 +2875,7 @@ export default function POS() {
                   <div className="space-y-2">
                     <label className="block text-xs text-neutral-500">
                       {enBs ? '¿Con cuántos bolívares paga?' : '¿De cuánto es el billete?'}
-                      <Numerico
+                      <Numerico monto
                         value={billete}
                         onChange={(e) => setBillete(e.target.value)}
                         placeholder={enBs ? '0,00' : '20.00'}
@@ -3110,7 +3111,7 @@ export default function POS() {
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs text-neutral-500">
                       Descuento
-                      <Numerico
+                      <Numerico monto
                         value={descuento}
                         onChange={(e) => setDescuento(e.target.value)}
                         placeholder="0.00"
@@ -3121,7 +3122,7 @@ export default function POS() {
                         empleado hasta que se le entrega. */}
                     <label className="text-xs text-neutral-500">
                       Propina
-                      <Numerico
+                      <Numerico monto
                         value={propina}
                         onChange={(e) => setPropina(e.target.value)}
                         placeholder="0.00"

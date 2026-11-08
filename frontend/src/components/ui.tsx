@@ -6,6 +6,7 @@ import Icono, { type NombreIcono } from './Icono'
 import { Numerico } from './Teclado'
 import MenuAcciones from './MenuAcciones'
 import { llano } from '../lib/filtros'
+import { montoO0 } from '../lib/montos'
 
 /**
  * Las piezas del sistema de diseño de Vertigo Pro.
@@ -205,8 +206,9 @@ export function Campo({
   etiqueta,
   ayuda,
   className = '',
+  monto = false,
   ...resto
-}: { etiqueta: string; ayuda?: string; className?: string } & InputHTMLAttributes<HTMLInputElement>) {
+}: { etiqueta: string; ayuda?: string; className?: string; monto?: boolean } & InputHTMLAttributes<HTMLInputElement>) {
   // Un campo de numero (`type="number"` o `inputMode="decimal"/"numeric"`)
   // usa el teclado propio del ERP en las tablets (ver Teclado.tsx).
   const esNumero = resto.type === 'number' || resto.inputMode === 'decimal' || resto.inputMode === 'numeric'
@@ -221,6 +223,7 @@ export function Campo({
           {...(resto as Omit<typeof resto, 'onChange' | 'value' | 'type'>)}
           etiqueta={etiqueta}
           entero={resto.inputMode === 'numeric'}
+          monto={monto}
           // `type` no se puede pasar a <Numerico>, que lo decide el mismo:
           // sin esto un PIN (`type="password"` + teclado numerico) se
           // dibujaba en claro, a la vista de quien estuviera delante.
@@ -234,6 +237,37 @@ export function Campo({
       )}
       {ayuda && <span className="block text-xs text-neutral-500 mt-1">{ayuda}</span>}
     </label>
+  )
+}
+
+/**
+ * Un campo de dinero que entrega el numero ya leido (ver lib/montos.ts) y
+ * guarda lo tecleado mientras tanto: sin esto, al guardar el numero en cada
+ * tecla se perdia la coma y no se podian escribir centavos (Pagos, QA nov).
+ */
+export function CampoMonto({
+  valor,
+  onValor,
+  ...resto
+}: { etiqueta: string; ayuda?: string; className?: string; valor: number | null | undefined; onValor: (n: number) => void } & Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  'value' | 'onChange'
+>) {
+  const [texto, setTexto] = useState(valor ? String(valor) : '')
+  useEffect(() => {
+    setTexto((t) => (montoO0(t) === (valor || 0) ? t : valor ? String(valor) : ''))
+  }, [valor])
+  return (
+    <Campo
+      {...resto}
+      inputMode="decimal"
+      monto
+      value={texto}
+      onChange={(e) => {
+        setTexto(e.target.value)
+        onValor(montoO0(e.target.value))
+      }}
+    />
   )
 }
 

@@ -1,4 +1,5 @@
 import { hoyEnCaracas, inicioDelMes } from './formato'
+import { leerMonto } from '../../../frontend/src/lib/montos'
 
 /**
  * Lo que se escribe en un campo numerico, a numero. Acepta coma o punto
@@ -6,10 +7,15 @@ import { hoyEnCaracas, inicioDelMes } from './formato'
  * pone coma). Vacio o basura = NaN, para que quien llama decida.
  */
 export function aNumero(texto: string | number | null | undefined): number {
-  if (typeof texto === 'number') return texto
-  const limpio = String(texto ?? '').trim().replace(/\s/g, '').replace(',', '.')
-  if (limpio === '' || limpio === '.' || limpio === '-') return NaN
-  return Number(limpio)
+  return leerMonto(texto, { miles: false })
+}
+
+/**
+ * Un monto, como lo escribe la cajera: «5.000» y «17.922,45» son miles (la
+ * misma regla que la web, frontend/src/lib/montos.ts; QA de noviembre, R1).
+ */
+export function aMonto(texto: string | number | null | undefined): number {
+  return leerMonto(texto)
 }
 
 /** Sin los decimales que deja la coma flotante (0,1 + 0,2): hasta 6 cifras. */

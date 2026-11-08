@@ -5,7 +5,7 @@ import { type View } from 'react-native'
 import { apiBase, cabecerasDeSesion, ErrorApi } from './api'
 import { apiCompras, type PedidoRevision } from './api-compras'
 import { hoyEnCaracas, miles } from './formato'
-import { aNumero, fechaCorta, sinRuido } from './numeros'
+import { aMonto, aNumero, fechaCorta, sinRuido } from './numeros'
 import type {
   AlertaPrecio,
   ConceptoGasto,
@@ -136,7 +136,7 @@ export const LINEA_VACIA: Linea = { ingrediente_id: 0, cantidad: '', costo_total
 export function conCostoUnitario(l: Linea): Linea {
   if (l.concepto) return l
   const cantidad = num(l.cantidad)
-  const total = num(l.costo_total)
+  const total = aMonto(l.costo_total)
   const costo_unitario = l.costo_total !== '' && Number.isFinite(total) && cantidad > 0 ? sinRuido(total / cantidad) : ''
   return costo_unitario === l.costo_unitario ? l : { ...l, costo_unitario }
 }

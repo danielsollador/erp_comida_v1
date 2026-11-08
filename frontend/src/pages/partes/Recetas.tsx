@@ -16,6 +16,7 @@ import { Ayuda } from '../../components/Ayuda'
 import { explicar } from '../../lib/glosario'
 import type { Categoria, CostoVariante, Ingrediente, RecetaItem, Variante } from '../../lib/types'
 import { vaEnReceta } from '../../lib/tiposArticulo'
+import { leerMonto } from '../../lib/montos'
 
 /**
  * Qué lleva cada producto: la receta, y con ella el costo y el margen.
@@ -310,7 +311,7 @@ export default function Recetas({
   }
 
   /** Salir con cambios sin guardar pide confirmacion (Leider, 29-sep). */
-  const precioNum = Number(precio.replace(',', '.'))
+  const precioNum = leerMonto(precio)
   const cambioPrecio = abierta !== null && precio !== '' && Number.isFinite(precioNum) && Math.abs(precioNum - abierta.variante.precio) > 0.0001
   const hayCambios =
     abierta !== null && ((combo === null ? huella(filas) !== huellaGuardada : huellaDeCombo(combo) !== huellaCombo) || cambioPrecio)
@@ -721,7 +722,7 @@ function Compositor({
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('')
   const [resaltado, setResaltado] = useState<number | string | null>(null)
-  const precio = Number(precioTexto.replace(',', '.')) || 0
+  const precio = leerMonto(precioTexto) || 0
 
   const categoriasDeposito = useMemo(() => {
     const cuenta = new Map<string, number>()
@@ -1014,7 +1015,7 @@ function RenglonReceta({
     : f.cantidad_por_unidad === '' ? '' : sinRuido((Number(f.cantidad_por_unidad) || 0) * factor)
   const escribir = (texto: string) => {
     if (!enChica) return onCambio({ cantidad_por_unidad: texto, textoVisto: undefined })
-    const n = Number(String(texto).replace(',', '.'))
+    const n = leerMonto(String(texto))
     onCambio({ cantidad_por_unidad: texto === '' || !Number.isFinite(n) ? texto : sinRuido(n / factor), textoVisto: texto })
   }
   return (
@@ -1150,7 +1151,7 @@ function Margen({ precio, costoReal, vacio }: { precio: number; costoReal: numbe
  * escribe el precio y ve el margen, o escribe el margen y sale el precio.
  */
 function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number; precio: string; onPrecio: (p: string) => void; guardado: number }) {
-  const precioNum = Number(precio.replace(',', '.')) || 0
+  const precioNum = leerMonto(precio) || 0
   const margenDe = (p: number) => (p > 0 ? ((p - costo) / p) * 100 : null)
   const [margen, setMargen] = useState(() => {
     const m = margenDe(precioNum)
@@ -1165,7 +1166,7 @@ function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number;
 
   function desdeMargen(texto: string) {
     setMargen(texto)
-    const m = Number(texto.replace(',', '.'))
+    const m = leerMonto(texto)
     if (!(costo > 0) || !Number.isFinite(m) || m >= 100 || m < 0) return
     // Redondeado a la decena de centavo: $3,47 queda en $3,50.
     onPrecio(String(Math.ceil((costo / (1 - m / 100)) * 10) / 10))
@@ -1178,7 +1179,7 @@ function PrecioConMargen({ costo, precio, onPrecio, guardado }: { costo: number;
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <span className="block text-[11px] font-medium text-neutral-600 mb-0.5">Precio de venta ($)</span>
-          <Numerico value={precio} onChange={(e) => onPrecio(e.target.value)} placeholder="0.00" className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-base font-semibold tabular-nums bg-white" />
+          <Numerico monto value={precio} onChange={(e) => onPrecio(e.target.value)} placeholder="0.00" className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-base font-semibold tabular-nums bg-white" />
         </label>
         <label className="block">
           <span className="block text-[11px] font-medium text-neutral-600 mb-0.5">Margen (% del precio)</span>
