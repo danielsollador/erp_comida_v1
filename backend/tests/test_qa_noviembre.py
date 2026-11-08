@@ -278,3 +278,20 @@ def test_dona_le_da_las_ventas_a_la_cajera_sin_la_ganancia():
         pytest.skip("en este local la cajera no entra a Reportes")
     assert "ventas" in h.disponibles("caja")
     assert "gastos" not in h.disponibles("caja")
+
+
+def test_un_pago_en_bs_a_la_paralela_saca_del_banco_lo_que_vale_a_la_bcv(client, db):
+    """Hallazgo 16: 10.357 Bs a la paralela se anotaban como $10 de banco; a la
+    BCV son $11,56. El banco se lleva en Bs: sale lo que valen a la BCV y la
+    diferencia va a diferencial cambiario."""
+    con_libros(db)
+    db.add(models.TasaCambio(fecha=datetime.date.today(), bcv=896.0, paralelo=1035.7, origen="auto"))
+    db.commit()
+    banco = saldo(db, "1020")
+    r = client.post("/api/egresos", json={"beneficiario": "Gas", "concepto": "Servicios publicos", "monto": 10357,
+                                          "moneda": "Bs", "tasa": 1035.7, "metodo_pago": "Pago movil", "referencia": "P1"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert round(banco - saldo(db, "1020"), 2) == round(10357 / 896.0, 2)
+    assert saldo(db, "6110") == 10.0
+    assert saldo(db, "6160") == pytest.approx(round(10357 / 896.0, 2) - 10.0, abs=0.01)

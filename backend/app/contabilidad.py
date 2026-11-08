@@ -1259,7 +1259,22 @@ def registrar_pago_sin_factura(db: Session, pago: models.PagoSinFactura) -> None
     cuenta_gasto = CUENTA_POR_CONCEPTO_PAGO.get(pago.concepto, "6010")
     lineas = [(cuenta_gasto, pago.monto, 0.0)]
     if pago.neto:
-        lineas.append((cuenta_de_pago(pago.metodo_pago), 0.0, pago.neto))
+        # EL BANCO SE LLEVA EN BOLIVARES (Daniel, 8-nov): 10.357 Bs son $10 a
+        # la paralela pero $11,56 a la BCV. Lo que sale del banco se valora a
+        # la BCV del dia, como todo lo demas que tiene; la diferencia con la
+        # tasa elegida es diferencial cambiario (QA nov, hallazgo 16). Sin
+        # esto, el banco en libros quedaba con mas plata que el real.
+        sale = pago.neto
+        if pago.moneda == "Bs" and pago.tasa:
+            from . import tasas
+
+            t = tasas.tasa_al(db, (pago.fecha or ahora()).date())
+            if t and t.bcv and abs(t.bcv - pago.tasa) > 0.005:
+                sale = round(pago.neto * pago.tasa / t.bcv, 2)
+                dif = round(sale - pago.neto, 2)
+                if abs(dif) >= 0.01:
+                    lineas.append(("6160", dif, 0.0) if dif > 0 else ("6160", 0.0, -dif))
+        lineas.append((cuenta_de_pago(pago.metodo_pago), 0.0, sale))
     if pago.retencion_islr:
         lineas.append(("2060", 0.0, pago.retencion_islr))
     if pago.anticipo_descontado:
