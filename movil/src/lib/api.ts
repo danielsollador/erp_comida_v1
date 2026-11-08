@@ -1,4 +1,5 @@
 import * as almacen from './almacen'
+import { confirmar } from './dialogo'
 import { hoyEnCaracas, inicioDelMes } from './formato'
 import type {
   ArranqueLocal,
@@ -88,6 +89,8 @@ let token: string | null = null
 let alCaducar: (() => void) | null = null
 
 export class ErrorApi extends Error {
+  /** Lo que el servidor pide antes de guardar (428): una pregunta o una firma. */
+  pide?: { codigo: 'confirmar' | 'firma'; clave?: string; mensaje?: string }
   constructor(
     mensaje: string,
     public estado: number,
@@ -135,7 +138,50 @@ export function cuandoCaduque(fn: () => void) {
  * mismas reglas: token, renovacion, 401 = salir, errores en palabras.
  */
 export async function req<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
-  const cabeceras: Record<string, string> = { 'X-Vp-App': '1', Accept: 'application/json' }
+  const metodo = opciones.method ?? 'GET'
+  if (metodo === 'GET') return reqConPreguntas<T>(ruta, opciones)
+  // EL DOBLE TOQUE SE MANDA UNA VEZ, como en la web (QA nov, R2): si lo mismo
+  // ya va en camino, el segundo toque espera la misma respuesta.
+  const clave = `${metodo} ${ruta} ${typeof opciones.body === 'string' ? opciones.body : ''}`
+  const hay = enCamino.get(clave)
+  if (hay) return hay as Promise<T>
+  const promesa = reqConPreguntas<T>(ruta, opciones).finally(() => enCamino.delete(clave))
+  enCamino.set(clave, promesa)
+  return promesa
+}
+
+const enCamino = new Map<string, Promise<unknown>>()
+
+/**
+ * LO QUE EL SERVIDOR PREGUNTA ANTES DE GUARDAR (backend/app/salvaguardas.py):
+ * un 428 trae una pregunta ("es cinco veces lo normal") que se confirma aqui
+ * mismo y se repite, o la firma de quien autoriza. Quien autoriza ya firma
+ * con su sesion; a los demas se les dice que lo haga quien autoriza.
+ */
+async function reqConPreguntas<T>(ruta: string, opciones: RequestInit): Promise<T> {
+  const confirmados: string[] = []
+  for (let vuelta = 0; vuelta < 6; vuelta++) {
+    try {
+      return await reqCrudo<T>(ruta, opciones, confirmados.length ? { 'X-Confirmado': confirmados.join(',') } : {})
+    } catch (e) {
+      if (!(e instanceof ErrorApi) || e.estado !== 428 || !e.pide) throw e
+      if (e.pide.codigo === 'confirmar' && e.pide.clave && !confirmados.includes(e.pide.clave)) {
+        const ok = await confirmar({ titulo: '¿Seguro?', texto: e.message, aceptar: 'Sí, guardar', cancelar: 'Revisar', peligro: true })
+        if (!ok) throw new ErrorApi(e.message, 428)
+        confirmados.push(e.pide.clave)
+        continue
+      }
+      throw new ErrorApi(
+        e.pide.codigo === 'firma' ? `${e.message} Pídele a quien autoriza que lo haga desde su sesión.` : e.message,
+        428,
+      )
+    }
+  }
+  throw new ErrorApi('No se pudo completar: vuelve a intentarlo.', 428)
+}
+
+async function reqCrudo<T>(ruta: string, opciones: RequestInit, extra: Record<string, string>): Promise<T> {
+  const cabeceras: Record<string, string> = { 'X-Vp-App': '1', Accept: 'application/json', ...extra }
   // Un archivo (la foto de una factura) va como FormData: el limite de las
   // partes lo pone fetch solo. Con "application/json" encima no llega nada.
   if (opciones.body && !(opciones.body instanceof FormData)) cabeceras['Content-Type'] = 'application/json'
@@ -158,14 +204,21 @@ export async function req<T>(ruta: string, opciones: RequestInit = {}): Promise<
   }
   if (!res.ok) {
     let detalle = ''
+    let pide: ErrorApi['pide'] = undefined
     try {
       const cuerpo = await res.json()
       if (typeof cuerpo?.detail === 'string') detalle = cuerpo.detail
+      else if (cuerpo?.detail?.codigo) {
+        pide = cuerpo.detail
+        detalle = cuerpo.detail.mensaje ?? ''
+      }
     } catch {
       // Sin cuerpo JSON (un 502 del proxy, por ejemplo): queda el codigo.
     }
     if (res.status === 403 && !detalle) detalle = 'Tu rol no tiene acceso a esto.'
-    throw new ErrorApi(detalle || `El servidor respondió ${res.status}.`, res.status)
+    const error = new ErrorApi(detalle || `El servidor respondió ${res.status}.`, res.status)
+    error.pide = pide
+    throw error
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T)
 }

@@ -239,7 +239,7 @@ function Apertura({
         {Math.abs(descuadre) >= 0.01 && (
           <p className="text-xs text-aviso-700 mt-1.5">
             Al abrir {descuadre > 0 ? 'había' : 'faltaban'} {dinero(Math.abs(descuadre))}{' '}
-            respecto a lo que decían los libros. Ya quedó asentado: no se le cuenta a este turno.
+            respecto a lo que quedó en el último cierre. Queda por aprobar y no se le cuenta a este turno.
           </p>
         )}
       </div>

@@ -16,8 +16,8 @@ El cierre se anulaba o corregía casi a diario (28 de 66 en producción) porque,
 ## Qué tiene que pasar
 
 **Apertura**
-- Sin caja abierta no se toman pedidos, y el sistema dice por qué (pantalla y servidor).
-- Al abrir se propone lo que quedó en cada gaveta según el último cierre; la cajera escribe lo que cuenta.
+- Sin caja abierta la pantalla no toma pedidos y dice por qué.
+- Al abrir se cuenta a ciegas: lo esperado es lo que quedó en el último cierre y solo sirve para avisar si lo contado se aleja mucho.
 - Si lo contado difiere de lo esperado en más de $20 y más de un 50 %, se pide confirmar antes de guardar.
 - Abrir no crea asientos. La diferencia de la apertura queda «por aprobar».
 
@@ -25,7 +25,7 @@ El cierre se anulaba o corregía casi a diario (28 de 66 en producción) porque,
 - El fondo de cada gaveta nunca arranca en cero por defecto: es lo que quedó en el último cierre.
 - La cajera cuenta y cierra. Cerrar no crea asientos.
 - La diferencia de cada forma de pago queda «por aprobar», con quién cerró y a qué hora.
-- Un faltante o sobrante de más de $20 pide confirmar y una nota antes de cerrar.
+- Un faltante o sobrante de más de $20 pide confirmar antes de cerrar.
 - En la gaveta de bolívares, lo que viene de un cambio de tasa se separa como diferencial cambiario y no cuenta como faltante.
 
 **Diferencias a los libros**
@@ -52,6 +52,6 @@ Nada abierto. D12–D15 se aplicaron con la propuesta del plan; cambiarlas es un
 2. Abrir con lo que propone, vender en efectivo $, Bs y punto, y cerrar contando exacto: ningún asiento nuevo, diferencia cero.
 3. Cerrar con $5 de menos: queda «por aprobar» y la ganancia del día no cambia.
 4. Aprobarla como dueño con un motivo: recién ahí aparece en los libros.
-5. Abrir con $2.500 cuando se esperaban $130: pide confirmar.
+5. Abrir con $2.500 cuando en el último cierre quedaron $130: pide confirmar.
 6. Vender después de cerrar: el cierre queda «por revisar».
 7. Como cajera, anular un cierre: pide la firma del dueño.

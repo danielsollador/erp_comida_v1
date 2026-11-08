@@ -100,8 +100,8 @@ function Apertura({ estado, alAbrir }: { estado: EstadoApertura | null; alAbrir:
             impide que esta noche se le cargue al cajero de hoy. */}
         {!cuadra(descuadre) ? (
           <Nota style={{ color: t.aviso, marginTop: 6 }}>
-            Al abrir {descuadre > 0 ? 'había' : 'faltaban'} {fmt(Math.abs(descuadre))} respecto a lo que decían los libros. Ya
-            quedó asentado: no se le cuenta a este turno.
+            Al abrir {descuadre > 0 ? 'había' : 'faltaban'} {fmt(Math.abs(descuadre))} respecto a lo que quedó en el último
+            cierre. Queda por aprobar y no se le cuenta a este turno.
           </Nota>
         ) : null}
       </Ficha>
