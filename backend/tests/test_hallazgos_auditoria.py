@@ -354,7 +354,8 @@ def test_un_producto_sin_receta_no_pasa_por_margen_perfecto(client, db, variante
 
     for vid in (variante.id, sin_receta.id):
         pedido = client.post(
-            "/api/pedidos", json={"items": [{"variante_id": vid, "cantidad": 1}], "nota": ""}
+            "/api/pedidos", json={"items": [{"variante_id": vid, "cantidad": 1}], "nota": ""},
+            headers={"X-Confirmado": "venta_grande"},  # $100 contra una de $5
         ).json()
         client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
 

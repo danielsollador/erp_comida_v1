@@ -51,6 +51,8 @@ Errores de dinero, permisos y operación que el dueño ya sufre: montos que se l
 | 31 | Si faltan RIF o razón social, Impuestos lo avisa arriba con el botón para cargarlos (es dato, no código). |
 | 32 | El pago menor de la gaveta Bs se escribe en Bs; la fila «Fiado» del cierre guarda lo fiado ese día. |
 | 33 | La cocina ve solo sus comandas, sin montos, pagos ni RIF (en la pantalla, la portada de la app y el tiempo real); no abre una venta suelta ni el punto de venta. |
+| 34 | Datos mal escritos: una venta con cantidad 0 o negativa no entra (devolvía mercancía al inventario); NaN o infinito se rechaza sin caerse; un asiento manual no lleva negativos ni debe y haber en la misma línea; un traspaso no saca más de lo que hay en la gaveta. |
+| 35 | Una venta de más de 5 veces la más grande del último mes pregunta «¿sobra un cero?» antes de guardarse. |
 
 ## Por decidir
 
@@ -65,3 +67,4 @@ Nada abierto: los umbrales (5 veces, 31 días, 30 %, $20, $0,10) son la propuest
 5. Retirar $5.000 con $133 en la gaveta: no deja.
 6. Preguntar a Dona «¿cuánto fueron los gastos de octubre?»: misma cifra que el Estado de resultados.
 7. Entrar como cocina: solo las comandas pendientes, sin montos; la campana no pide nada que dé «sin permiso».
+8. Vender 100.000 unidades de algo de $3: pregunta antes de guardar; con «Revisar» no queda nada.

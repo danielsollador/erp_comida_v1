@@ -1,3 +1,4 @@
+import json
 import logging
 from contextlib import asynccontextmanager
 
@@ -205,6 +206,18 @@ SOLO_HUB = ("/api/acceso/", "/api/usuarios", "/api/agencia", "/api/health", "/ap
             "/api/gastos-vertigo")
 
 
+def _numero_invalido(cuerpo: bytes) -> bool:
+    def rechazar(_):
+        raise ValueError
+    try:
+        json.loads(cuerpo, parse_constant=rechazar)
+    except json.JSONDecodeError:
+        return False
+    except ValueError:
+        return True
+    return False
+
+
 @app.middleware("http")
 async def exigir_sesion(request: Request, call_next):
     """La cerradura del backend, sobre TODAS las rutas.
@@ -236,6 +249,14 @@ async def exigir_sesion(request: Request, call_next):
     # Para que los routers sepan quien es sin volver a leer la cookie: es lo
     # que se anota como operador en cada pedido, cierre, retiro y merma.
     request.state.sesion = s
+
+    # NaN e Infinity no son JSON valido, pero Python los lee como numeros y
+    # tumbaban el servidor (QA de entradas).
+    if request.method in ("POST", "PUT", "PATCH") and "json" in request.headers.get("content-type", ""):
+        cuerpo = await request.body()
+        if cuerpo and (b"NaN" in cuerpo or b"Infinity" in cuerpo) and _numero_invalido(cuerpo):
+            return JSONResponse({"detail": "Hay un número que no es un número (NaN o infinito). Revisa los montos y vuelve a guardar."},
+                                status_code=422)
 
     # El mismo pago mandado dos veces seguidas se registra una vez (ver
     # `salvaguardas.py`): un doble toque con mala señal pagaba dos veces.

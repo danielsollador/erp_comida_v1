@@ -1598,6 +1598,7 @@ def crear_traspaso(body: schemas.TraspasoCreate, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="¿De dónde sale la plata?")
         if contabilidad.cuenta_de_pago(body.desde) == contabilidad.cuenta_de_pago(body.hacia):
             raise HTTPException(status_code=400, detail="Sale y entra en el mismo sitio: no hay nada que mover")
+        _hay_en_la_gaveta(db, body.desde, body.monto, "el traspaso")
         desde = body.desde
     referencia = body.referencia.strip()
     if not referencia and body.hacia in contabilidad.METODOS_CON_REFERENCIA:

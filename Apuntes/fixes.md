@@ -46,3 +46,4 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [x] Pregúntame pasa a llamarse Dona en la web y la app · resuelto 2026-11-09, commit ed4a94a, sin desplegar
 - [x] QA regresión · Anular una declaración de IVA no pedía firma y reabría un mes ya presentado · resuelto 2026-11-09, sin desplegar
 - [x] QA permisos · La cocina leía todas las ventas del local con montos, pagos y RIF (lista, portada de la app y tiempo real); la campana pedía solicitudes que no le tocan · resuelto 2026-11-09, sin desplegar
+- [x] QA entradas · Cantidad 0 o negativa en una venta (la negativa subía el inventario), NaN que tumbaba el servidor, asiento manual con negativos, traspaso mayor que la gaveta y ventas absurdas sin preguntar · resuelto 2026-11-09, sin desplegar

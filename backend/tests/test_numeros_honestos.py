@@ -17,6 +17,8 @@ def comanda(client, variante, cantidad=1):
             # caso que se esta probando son los promedios, no el stock.
             "permitir_sin_stock": True,
         },
+        # Un catering pasa de 5 veces la venta mas grande: se confirma.
+        headers={"X-Confirmado": "venta_grande"},
     ).json()
 
 

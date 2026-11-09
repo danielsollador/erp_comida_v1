@@ -901,7 +901,8 @@ class PedidoItemCreate(BaseModel):
     """
 
     variante_id: Optional[int] = None
-    cantidad: int = 1
+    # Cero o negativo devolvia mercancia al inventario (QA de entradas).
+    cantidad: int = Field(default=1, ge=1)
     nota: str = ""
     nombre_libre: Optional[str] = None
     precio_libre: Optional[float] = None
@@ -2244,8 +2245,15 @@ class CuentaContable(CuentaContableBase):
 
 class LineaAsientoInput(BaseModel):
     cuenta_id: int
-    debe: float = 0
-    haber: float = 0
+    debe: float = Field(default=0, ge=0)
+    haber: float = Field(default=0, ge=0)
+
+    @field_validator("haber")
+    @classmethod
+    def _un_solo_lado(cls, v, info):
+        if v and info.data.get("debe"):
+            raise ValueError("Cada línea va al debe o al haber, no a los dos")
+        return v
 
 
 class AsientoCreate(BaseModel):

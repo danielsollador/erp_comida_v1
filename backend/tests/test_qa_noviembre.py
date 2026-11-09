@@ -462,3 +462,70 @@ def _cocina_sin_plata(client, fuera, vieja, nueva):
     assert listo["total"] == 0 and listo["pagos"] == []
     assert client.get("/api/pedidos?en_cocina=true").status_code == 200
     assert client.get(f"/api/pedidos/{nueva['id']}").json()["total"] == 4
+
+
+# ── Datos mal escritos (QA de entradas, 9-nov) ─────────────────────────────
+
+
+@pytest.mark.parametrize("cantidad", [0, -2])
+def test_una_venta_con_cantidad_cero_o_negativa_no_entra(client, db, variante, insumo, cantidad):
+    """QA: con cantidad -2 la comanda entraba y el inventario SUBÍA (descontaba
+    «menos dos»); con 0 se cobraba sola como cortesía en $0."""
+    antes = insumo.stock_actual
+    r = client.post("/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": cantidad}], "permitir_sin_stock": True})
+    assert r.status_code == 422
+    db.expire_all()
+    assert db.get(models.Ingrediente, insumo.id).stock_actual == antes
+    r = client.put("/api/pedidos/1", json={"items": [{"variante_id": variante.id, "cantidad": cantidad}]})
+    assert r.status_code == 422
+
+
+def test_un_numero_que_no_es_numero_se_rechaza_sin_error_500(client):
+    """QA: un precio NaN o Infinity tumbaba el servidor (500)."""
+    for malo in (b"NaN", b"Infinity", b"-Infinity"):
+        r = client.post("/api/pedidos", content=b'{"items":[{"nombre_libre":"QA","precio_libre":' + malo + b',"cantidad":1}],"permitir_sin_stock":true}',
+                        headers={"Content-Type": "application/json"})
+        assert r.status_code == 422, (malo, r.status_code, r.text)
+        assert "número" in r.json()["detail"]
+    r = client.post("/api/pedidos", json={"items": [{"nombre_libre": "NaN", "precio_libre": 2, "cantidad": 1}], "nota": "Infinity",
+                                          "permitir_sin_stock": True})
+    assert r.status_code == 200, "la palabra NaN dentro de un texto no es un número malo"
+
+
+def test_un_asiento_manual_no_acepta_negativos_ni_debe_y_haber_en_la_misma_linea(client, db):
+    """QA: un asiento con debe -1 / haber -1 o con debe y haber de 1 en la misma
+    línea entraba al libro."""
+    from app import contabilidad
+
+    contabilidad.seed_plan_de_cuentas(db)
+    cid = {c.codigo: c.id for c in db.query(models.CuentaContable).all()}
+    for lineas in ([{"cuenta_id": cid["6010"], "debe": -1}, {"cuenta_id": cid["1010"], "haber": -1}],
+                   [{"cuenta_id": cid["6010"], "debe": 1, "haber": 1}, {"cuenta_id": cid["1010"]}]):
+        r = client.post("/api/contabilidad/asientos", json={"descripcion": "QA", "lineas": lineas})
+        assert r.status_code == 422, r.text
+    assert db.query(models.AsientoContable).filter_by(origen="manual").count() == 0
+
+
+def test_un_traspaso_no_saca_mas_de_lo_que_hay_en_la_gaveta(client, db):
+    """QA: un traspaso de $1.000.000.000 desde una gaveta con $200 entraba y la
+    dejaba en negativo; el gasto y el retiro ya lo frenaban."""
+    con_libros(db, usd=200)
+    r = client.post("/api/caja/traspasos", json={"tipo": "traspaso", "desde": "Efectivo $", "hacia": "Banco", "referencia": "D1", "monto": 1e9})
+    assert r.status_code == 400 and "En Efectivo $ hay" in r.json()["detail"]
+    r = client.post("/api/caja/traspasos", json={"tipo": "traspaso", "desde": "Efectivo $", "hacia": "Banco", "referencia": "D1", "monto": 150})
+    assert r.status_code == 200
+
+
+def test_una_venta_mucho_mas_grande_que_lo_normal_pregunta(client, db):
+    """QA: una venta de 100.000 unidades ($300.000) o un precio de un billón se
+    cobraban sin preguntar. Si pasa de 5 veces la venta más grande del último
+    mes, pregunta si sobra un cero."""
+    item = lambda **k: {"items": [{"nombre_libre": "Combo", "precio_libre": 12, "cantidad": 1, **k}], "permitir_sin_stock": True, "a_cocina": False}
+    p = client.post("/api/pedidos", json=item()).json()
+    client.post(f"/api/pedidos/{p['id']}/cobrar", json={"metodo_pago": "Efectivo $"})
+    assert client.post("/api/pedidos", json=item(cantidad=5)).status_code == 200, "5 veces justas no pregunta"
+    r = client.post("/api/pedidos", json=item(cantidad=100000))
+    assert r.status_code == 428 and r.json()["detail"]["clave"] == "venta_grande"
+    assert "$1.200.000,00" in r.json()["detail"]["mensaje"] and "$12,00" in r.json()["detail"]["mensaje"]
+    r = client.post("/api/pedidos", json=item(cantidad=100000), headers={"X-Confirmado": "venta_grande"})
+    assert r.status_code == 200

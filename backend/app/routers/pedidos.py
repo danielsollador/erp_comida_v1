@@ -182,6 +182,31 @@ def listar_pedidos(
     return pedidos if ve_plata else [_comanda(p) for p in pedidos]
 
 
+VECES_LA_MAS_GRANDE = 5
+
+
+def _venta_grande(db: Session, request: Request, pedido: models.Pedido) -> None:
+    """Una venta de mas de 5 veces la mas grande del ultimo mes casi siempre es
+    un cero de mas (QA de entradas: 100.000 unidades entraban sin preguntar)."""
+    total = sum((i.precio_unitario or 0) * (i.cantidad or 0) for i in pedido.items)
+    importe = func.sum(models.PedidoItem.precio_unitario * models.PedidoItem.cantidad)
+    mayor = (
+        db.query(importe)
+        .join(models.Pedido, models.Pedido.id == models.PedidoItem.pedido_id)
+        .filter(models.Pedido.estado == "pagado", models.Pedido.cerrado_en >= ahora() - datetime.timedelta(days=30))
+        .group_by(models.PedidoItem.pedido_id)
+        .order_by(importe.desc())
+        .limit(1)
+        .scalar()
+    )
+    if mayor and total > mayor * VECES_LA_MAS_GRANDE + 0.005:
+        salvaguardas.pedir_confirmacion(
+            request, "venta_grande",
+            f"Esta venta es de {salvaguardas.usd(total)} y la más grande del último mes fue de "
+            f"{salvaguardas.usd(mayor)}. ¿Es correcta, o sobra un cero en la cantidad o el precio?",
+        )
+
+
 def _buscar(db: Session, pedido_id: int) -> models.Pedido:
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
@@ -566,6 +591,7 @@ async def crear_pedido(
     # ningun lado -- Leider (21-sep): "le doy a enviar y no se guarda ni en
     # pedidos ni llega a cocina".
     db.flush()
+    _venta_grande(db, request, db_pedido)
     # La comanda "va a cocina" si al menos un renglon va: es lo que la
     # pantalla usa para decir "Sin cocina".
     db_pedido.a_cocina = any(i.a_cocina for i in db_pedido.items)
