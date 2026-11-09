@@ -44,4 +44,5 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [x] QA regresión · Con un PIN equivocado el cuadro de firma se cerraba sin avisar · resuelto 2026-11-09, commit e9a2222, sin desplegar
 - [x] QA regresión · Cantidades con coma del teléfono leídas como cero; «1.250» kg en los cuadros leído como 1.250 · resuelto 2026-11-09, commit c43171e, sin desplegar
 - [x] Pregúntame pasa a llamarse Dona en la web y la app · resuelto 2026-11-09, commit ed4a94a, sin desplegar
+- [x] QA regresión · Anular una declaración de IVA no pedía firma y reabría un mes ya presentado · resuelto 2026-11-09, sin desplegar
 
