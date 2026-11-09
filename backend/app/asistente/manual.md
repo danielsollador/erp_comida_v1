@@ -310,7 +310,7 @@ En cada tarjeta: **«Sobró hoy»** («Lo guardo» no mueve nada; «Lo boto» lo
 - **Punto, pago móvil, transferencia y Zelle:** se coteja solo lo que entró ese día, sin fondo.
 - **Pago mixto:** cada parte cuenta en su forma.
 - **Propina:** entra con el pago, así que está en la gaveta.
-- **Vuelto:** se resta de la gaveta por donde salió. Si el cliente pagó en $ y se le dio vuelto en Bs, la gaveta de $ recibe el billete entero y la de Bs da el vuelto.
+- **Vuelto:** se resta de la gaveta por donde salió. Un vuelto en dólares con centavos sale en billetes por lo redondo y los centavos en bolívares, de la gaveta de Bs. Si el cliente pagó en $ y se le dio vuelto en Bs, la gaveta de $ recibe el billete entero y la de Bs da el vuelto.
 - **A crédito:** no se cuenta, porque no entró plata.
 
 ### Retiros de caja

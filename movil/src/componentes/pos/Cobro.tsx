@@ -239,7 +239,12 @@ export function Cobro({
       setVueltoMovil(true)
       return
     }
-    void cobrar(efectivo.metodo, [{ metodo: efectivo.metodo, monto: aCobrar, recibido: entregado, vuelto_metodo: vueltoMetodo }])
+    // Los centavos de un vuelto en dolares salen en bolivares, como en la web
+    // (QA nov, hallazgo 22).
+    const partido = vueltoMetodo === 'Efectivo $' && Math.round((vuelto % 1) * 100) > 0
+    void cobrar(efectivo.metodo, [
+      { metodo: efectivo.metodo, monto: aCobrar, recibido: entregado, vuelto_metodo: vueltoMetodo, ...(partido ? { vuelto_centavos_bs: true } : {}) },
+    ])
   }
 
   function cobrarConVueltoMovil(v: VueltoListo) {

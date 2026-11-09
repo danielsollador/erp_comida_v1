@@ -1752,6 +1752,11 @@ async def cobrar_pedido(
             recibido=round(pago.recibido, 2) if pago.recibido is not None else None,
             vuelto_metodo=(pago.vuelto_metodo or pago.metodo) if vuelto > 0 else None,
             vuelto_monto=vuelto,
+            vuelto_bs=(
+                round(vuelto - int(vuelto), 2)
+                if pago.vuelto_centavos_bs and vuelto > 0 and (pago.vuelto_metodo or pago.metodo) == "Efectivo $"
+                else 0.0
+            ),
             referencia=(pago.referencia or "").strip(),
             verificacion_id=verificacion.id if verificacion else None,
             monto_bs=round(pago.monto_bs, 2) if pago.monto_bs else None,
@@ -2384,6 +2389,7 @@ def ticket(pedido_id: int, db: Session = Depends(get_db)):
                 recibido=p.recibido,
                 vuelto_metodo=p.vuelto_metodo,
                 vuelto_monto=p.vuelto_monto or 0,
+                vuelto_bs=p.vuelto_bs or 0,
                 referencia=p.referencia or "",
             )
             for p in pedido.pagos

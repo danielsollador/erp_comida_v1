@@ -35,7 +35,7 @@
 - [x] R3 · Mes declarado congelado y avisos al declarar
 - [x] R4 · Confirmar montos y fechas absurdas
 - [x] R5 · Firma para anular, dar de baja, corregir y cambiar la tasa
-- [x] Hallazgos sueltos de `specs/qa.md` (5 a 32), salvo el 22 (vuelto partido, en `Apuntes/fixes.md`)
+- [x] Hallazgos sueltos de `specs/qa.md` (5 a 32)
 - [x] Dona: cifras solo de herramientas y herramientas nuevas
 
 ### 1.10 Cierre de caja como cuadre

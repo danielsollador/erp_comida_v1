@@ -726,6 +726,7 @@ export const api = {
       monto: number
       recibido?: number
       vuelto_metodo?: string
+      vuelto_centavos_bs?: boolean
       // Numero de confirmacion: del pago movil, el ticket del punto, el
       // comprobante del Zelle. El backend lo exige para todo lo que no sea
       // efectivo ni fiado.

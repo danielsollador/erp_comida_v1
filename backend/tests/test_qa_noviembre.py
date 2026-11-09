@@ -374,3 +374,23 @@ def test_historial_pagos_y_diario_se_exportan(client, db):
         for formato in ("csv", "xlsx"):
             r = client.post(ruta, json={"formato": formato})
             assert r.status_code == 200 and len(r.content) > 50, (ruta, formato, r.text[:200])
+
+
+def test_el_vuelto_en_dolares_con_centavos_da_los_centavos_en_bolivares(client, db, variante, libros):
+    """Hallazgo 22: el sistema pedía dar $3,08 en billetes de dólar; la cajera
+    da $3 y la gaveta de dólares quedaba con $0,08 de diferencia. Ahora salen
+    $3 de la gaveta de $ y los $0,08 en bolívares de la de Bs."""
+    from tests.conftest import libros_cuadrados
+
+    usd, bs = saldo(db, "1011"), saldo(db, "1010")
+    p = client.post("/api/pedidos", json={"items": [{"nombre_libre": "Combo QA", "precio_libre": 16.92, "cantidad": 1}],
+                                          "permitir_sin_stock": True}).json()
+    r = client.post(f"/api/pedidos/{p['id']}/cobrar", json={
+        "metodo_pago": "Efectivo $",
+        "pagos": [{"metodo": "Efectivo $", "monto": 16.92, "recibido": 20, "vuelto_metodo": "Efectivo $", "vuelto_centavos_bs": True}],
+    })
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert round(saldo(db, "1011") - usd, 2) == 17.0, "entró el billete de 20 y salieron 3 en billetes"
+    assert round(saldo(db, "1010") - bs, 2) == -0.08, "los centavos salieron en bolívares"
+    libros_cuadrados(client, db)

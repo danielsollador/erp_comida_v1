@@ -2024,6 +2024,9 @@ class PagoPedido(Base):
     recibido = Column(Float, nullable=True)
     vuelto_metodo = Column(String, nullable=True)
     vuelto_monto = Column(Float, default=0)
+    # La parte del vuelto que salio de la gaveta de bolivares aunque el vuelto
+    # fuera en dolares: los centavos de un vuelto de $3,08 (QA nov, hallazgo 22).
+    vuelto_bs = Column(Float, default=0)
     # Numero de confirmacion del pago movil, el ticket del punto, el
     # comprobante del Zelle. En efectivo no hay nada que anotar aca: un
     # billete no trae referencia.

@@ -854,6 +854,9 @@ class PagoInput(BaseModel):
     # el vuelto en bolivares mueve dos cajas distintas).
     recibido: Optional[float] = None
     vuelto_metodo: Optional[str] = None
+    # Vuelto en dolares con centavos: los billetes salen de la gaveta de $ y
+    # los centavos, en bolivares, de la de Bs (QA nov, hallazgo 22).
+    vuelto_centavos_bs: bool = False
     # Numero de confirmacion: del pago movil, el ticket del punto, el
     # comprobante del Zelle. Se exige para los metodos que de verdad tienen
     # uno (ver contabilidad.METODOS_CON_REFERENCIA); en efectivo se ignora.
@@ -878,6 +881,7 @@ class Pago(BaseModel):
     recibido: Optional[float] = None
     vuelto_metodo: Optional[str] = None
     vuelto_monto: float = 0
+    vuelto_bs: float = 0
     referencia: str = ""
     verificacion_id: Optional[int] = None
     monto_bs: Optional[float] = None

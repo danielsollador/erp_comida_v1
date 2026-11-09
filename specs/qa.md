@@ -1,6 +1,6 @@
 # Spec: Hallazgos del QA de noviembre
 
-Transversal · bloque 1.3 · **Implementada** (8-nov-2026, rama `fix-2026-11-08-qa-noviembre`, sin desplegar), salvo el 22. Aprobada por Daniel el mismo día: «corregir todos los hallazgos del PDF». Origen: `Savora-QA-resumen-noviembre.pdf` (32 hallazgos sobre la versión 5f39cf2, probados en una copia de producción). El cierre de caja tiene su propia spec: `specs/caja.md`.
+Transversal · bloque 1.3 · **Implementada** (8-nov-2026, rama `fix-2026-11-08-qa-noviembre`, sin desplegar). Aprobada por Daniel el mismo día: «corregir todos los hallazgos del PDF». Origen: `Savora-QA-resumen-noviembre.pdf` (32 hallazgos sobre la versión 5f39cf2, probados en una copia de producción). El cierre de caja tiene su propia spec: `specs/caja.md`.
 
 ## Qué resuelve
 
@@ -39,7 +39,7 @@ Errores de dinero, permisos y operación que el dueño ya sufre: montos que se l
 | 19 | La portada avisa los días con ventas sin cierre del último mes. |
 | 20 | «Pago menor» no acepta sueldos: si el concepto parece sueldo, lo manda a Pagos como sueldo. |
 | 21 | El explicador del descuadre mira primero si la apertura tuvo la misma diferencia. |
-| 22 | **Pendiente.** El vuelto en dólares se redondea a billetes y los centavos se dan en Bs. Necesita guardar el vuelto en dos gavetas (Ventas, de Leider); está en `Apuntes/fixes.md`. |
+| 22 | El vuelto en dólares con centavos sale en billetes de $ por lo redondo y los centavos en Bs, de la gaveta de bolívares (web y app). |
 | 23 | Una referencia de pago móvil ya usada avisa al cobrar y pide confirmar. |
 | 24 | Producir una preparación tolera el redondeo (0,1 %). El «rinde» de la API se sigue ignorando: la receta es por uno desde el 8-oct (decisión de Leider). |
 | 25 | El botón kg / g queda separado de la cantidad en el teléfono. |

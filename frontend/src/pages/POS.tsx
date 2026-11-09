@@ -344,6 +344,7 @@ export default function POS() {
       : 0
     : billeteNum
   const vuelto = Math.max(Math.round((entregado - aCobrar) * 100) / 100, 0)
+  const centavosDelVuelto = Math.round((vuelto - Math.floor(vuelto)) * 100) / 100
   // Lo que queda por cubrir en un pago mixto.
   const faltaMixto = Math.max(
     Math.round((aCobrar - partes.reduce((t, p) => t + p.monto, 0)) * 100) / 100,
@@ -972,6 +973,7 @@ export default function POS() {
       monto: number
       recibido?: number
       vuelto_metodo?: string
+      vuelto_centavos_bs?: boolean
       referencia?: string
       verificacion_id?: number
       monto_bs?: number
@@ -1166,8 +1168,17 @@ export default function POS() {
       setVueltoMovil(true)
       return
     }
+    // Un vuelto en dolares con centavos no se puede dar en billetes: salen
+    // los dolares redondos y los centavos en bolivares (QA nov, hallazgo 22).
+    const partido = vueltoMetodo === 'Efectivo $' && centavosDelVuelto > 0
     cobrar(efectivo.metodo, [
-      { metodo: efectivo.metodo, monto: aCobrar, recibido: entregado, vuelto_metodo: vueltoMetodo },
+      {
+        metodo: efectivo.metodo,
+        monto: aCobrar,
+        recibido: entregado,
+        vuelto_metodo: vueltoMetodo,
+        ...(partido ? { vuelto_centavos_bs: true } : {}),
+      },
     ])
   }
 
@@ -2917,6 +2928,11 @@ export default function POS() {
                               {m !== 'Efectivo $' && tasaBcv > 0 && (
                                 <span className="block text-[11px] text-neutral-500 tabular-nums">
                                   {fmtBs(vuelto * tasaBcv)}
+                                </span>
+                              )}
+                              {m === 'Efectivo $' && centavosDelVuelto > 0 && tasaBcv > 0 && (
+                                <span className="block text-[11px] text-neutral-500 tabular-nums">
+                                  ${Math.floor(vuelto)} + {fmtBs(centavosDelVuelto * tasaBcv)}
                                 </span>
                               )}
                             </button>

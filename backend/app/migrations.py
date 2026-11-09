@@ -210,6 +210,7 @@ COLUMNAS = [
     ("TRX510_CAJ_CIERRE", "por_revisar", "BOOLEAN DEFAULT 0"),
     ("TRX510_CAJ_CIERRE", "cambios_despues", "VARCHAR DEFAULT ''"),
     ("TRX511_CAJ_CIERRE_DET", "diferencial_cambiario", "FLOAT DEFAULT 0"),
+    ("TRX120_VEN_PAGO", "vuelto_bs", "FLOAT DEFAULT 0"),
 ]
 
 

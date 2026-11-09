@@ -547,6 +547,21 @@ def _lineas_de_cobro(
         cuenta = CUENTA_POR_METODO_PAGO.get(pago.metodo, "1010")
         vuelto = round(pago.vuelto_monto or 0, 2)
         cuenta_vuelto = CUENTA_POR_METODO_PAGO.get(pago.vuelto_metodo or pago.metodo, cuenta)
+        # Los centavos del vuelto en dolares salieron en bolivares (QA nov, 22):
+        # entra el billete entero, sale de $ lo redondo y de Bs los centavos.
+        centavos = round(getattr(pago, "vuelto_bs", 0) or 0, 2)
+        if vuelto > 0 and centavos > 0:
+            netos: dict = {}
+            for c, v in ((cuenta, pago.monto + vuelto), (cuenta_vuelto, -(vuelto - centavos)), ("1010", -centavos)):
+                netos[c] = round(netos.get(c, 0.0) + v, 2)
+            for c, v in netos.items():
+                if abs(v) < 0.005:
+                    continue
+                if (v > 0) == (signo > 0):
+                    lineas.append((c, abs(v), 0.0))
+                else:
+                    lineas.append((c, 0.0, abs(v)))
+            continue
 
         if vuelto > 0 and cuenta_vuelto != cuenta:
             entra = round(pago.monto + vuelto, 2)

@@ -36,5 +36,5 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [x] QA nov · No se exportaba en Caja › Historial, Pagos ni Contabilidad · resuelto 2026-11-08, commit 03f4fed, sin desplegar
 - [x] QA nov · Botón kg/g pegado a la cantidad, factura a medio cargar perdida, sin aviso de RIF, pago menor de Bs en $ y fila Fiado que cambiaba · resuelto 2026-11-08, commit 08fdd2d, sin desplegar
 - [x] QA nov · La app móvil no entendía lo que el servidor pregunta antes de guardar · resuelto 2026-11-08, commit 0703476, sin desplegar
-- [ ] QA nov · El vuelto en dólares con centavos ($3,08) no se puede dar partido en billetes de $ y centavos en Bs (Ventas). Necesita guardar el vuelto en dos gavetas: toca la tabla de pagos, el asiento del cobro, el cuadre y la corrección de pagos. Para Leider
+- [x] QA nov · El vuelto en dólares con centavos ($3,08) no se podía dar: ahora salen $3 de la gaveta de $ y los centavos en Bs (Ventas, web y app) · resuelto 2026-11-08, sin desplegar
 

@@ -44,6 +44,7 @@ export type PagoCobro = {
   monto: number
   recibido?: number
   vuelto_metodo?: string
+  vuelto_centavos_bs?: boolean
   /** El numero de confirmacion: el backend lo exige salvo en efectivo y fiado. */
   referencia?: string
   /** La consulta al banco que respaldo la referencia (Pabilo). */
