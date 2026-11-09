@@ -1054,6 +1054,8 @@ export type EstadoTasa = {
   minutos_sin_contacto: number | null
   fuente_actualizada: string | null
   desactualizada: boolean
+  /** La tasa del BCV que no se tomó por saltar más de 30 % (QA nov). */
+  salto_rechazado?: string | null
 }
 
 export type PuntoAnalisisTasa = {

@@ -95,7 +95,11 @@ def refrescar(db: Session, forzar: bool = False) -> bool:
     # para otro por leer mal el punto de los miles): queda el anterior.
     previa = tasa_al(db, fecha - datetime.timedelta(days=1))
     bcv = razonable(anclas["bcv"], previa.bcv if previa else None, "bcv")
-    eur = razonable(anclas.get("eur"), previa.eur if previa else None, "eur") or (fila.eur if fila else None)
+    # El euro se compara con el de ayer solo si el de ayer tenia sentido al
+    # lado del dolar: el que se guardo mal (1,18 con el dolar en 897) no puede
+    # impedir que entre el bueno.
+    eur_previo = previa.eur if previa and previa.eur and bcv and 0.8 < previa.eur / bcv < 1.6 else None
+    eur = razonable(anclas.get("eur"), eur_previo, "eur") or (fila.eur if fila else None)
     paralelo = anclas.get("paralelo") or (fila.paralelo if fila else None)
     if not bcv:
         return False
@@ -136,6 +140,15 @@ def razonable(nuevo: Optional[float], anterior: Optional[float], que: str) -> Op
         return anterior
     saltos_rechazados.pop(que, None)
     return nuevo
+
+
+def _texto_salto() -> Optional[str]:
+    s = saltos_rechazados.get("bcv")
+    if not s:
+        return None
+    return (f"El BCV publicó {s['leida']:,.2f} Bs y el día anterior era {s['anterior']:,.2f}: es un salto de más de 30 %, "
+            "así que se dejó la anterior. Si es correcto, fíjala a mano en Tasa de cambio."
+            ).replace(",", "_").replace(".", ",").replace("_", ".")
 
 
 _MESES = {
@@ -247,6 +260,7 @@ def estado(db: Session) -> dict:
         # miente aunque sea del mismo dia.
         "desactualizada": bool(fila and fila.fecha < hoy())
         or (minutos_sin_contacto is None or minutos_sin_contacto > rates.MINUTOS_PARA_CONSIDERAR_CAIDA),
+        "salto_rechazado": _texto_salto(),
     }
 
 

@@ -394,3 +394,32 @@ def test_el_vuelto_en_dolares_con_centavos_da_los_centavos_en_bolivares(client, 
     assert round(saldo(db, "1011") - usd, 2) == 17.0, "entró el billete de 20 y salieron 3 en billetes"
     assert round(saldo(db, "1010") - bs, 2) == -0.08, "los centavos salieron en bolívares"
     libros_cuadrados(client, db)
+
+
+def test_un_salto_de_tasa_descartado_se_avisa_y_el_euro_malo_no_bloquea_el_bueno(client, db):
+    """Regresión del QA: con el euro guardado mal (1,18 con el dólar en 897),
+    el freno de saltos rechazaba para siempre el euro bueno; y un salto del
+    BCV descartado no se le decía a nadie."""
+    from app import rates, tasas
+
+    ayer = datetime.date.today() - datetime.timedelta(days=1)
+    db.add(models.TasaCambio(fecha=ayer, bcv=897.54, eur=1.18, origen="auto"))
+    db.commit()
+    rates._cache.update({"at": datetime.datetime.now(), "ok_at": datetime.datetime.now(),
+                         "anclas": {"bcv": 1300.0, "eur": 1001.18, "paralelo": 1100.0, "actualizado": None}})
+    tasas.refrescar(db)
+    hoy_ = db.query(models.TasaCambio).filter_by(fecha=datetime.date.today()).first()
+    assert hoy_.eur == pytest.approx(1001.18), "el euro bueno entra aunque el de ayer estuviera mal"
+    assert hoy_.bcv == pytest.approx(897.54), "un salto de 45 % no se toma solo"
+    assert client.get("/api/tasas").json()["salto_rechazado"]
+    assert any(a["id"] == "tasa-salto" for a in client.get("/api/reportes/avisos").json())
+    tasas.saltos_rechazados.clear()
+
+
+def test_anular_un_cierre_hecho_sin_abrir_deja_abrir_con_el_fondo_real(client, db):
+    """Regresión E3c: tras anular, la caja decía «ya se abrió» y no dejaba
+    declarar el fondo real."""
+    con_libros(db, usd=100)
+    c = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo $", "contado": 100}]}).json()
+    client.post(f"/api/caja/cierres/{c['id']}/anular", json={"motivo": "rehacer"})
+    assert client.get("/api/caja/estado-apertura").json()["puede_abrir"] is True

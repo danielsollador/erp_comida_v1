@@ -175,6 +175,7 @@ export default function Tasa() {
               de hoy. Refresca o cárgala a mano.
             </p>
           )}
+          {estado?.salto_rechazado && <p className="text-aviso-600 text-sm mt-2">{estado.salto_rechazado}</p>}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-neutral-100">
             <Dato

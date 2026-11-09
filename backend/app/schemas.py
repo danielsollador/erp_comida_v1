@@ -1942,6 +1942,9 @@ class EstadoTasa(BaseModel):
     minutos_sin_contacto: Optional[float] = None
     fuente_actualizada: Optional[str]
     desactualizada: bool
+    # La tasa que se leyo del BCV y no se guardo por saltar mas de 30 %: si
+    # fue una devaluacion de verdad, hay que fijarla a mano (QA nov).
+    salto_rechazado: Optional[str] = None
 
 
 class PuntoAnalisisTasa(BaseModel):

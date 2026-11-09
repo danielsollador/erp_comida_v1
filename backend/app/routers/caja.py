@@ -1197,6 +1197,7 @@ def anular_cierre(
     )
 
     _revertir_si_estaba_asentado(db, cierre)
+    _soltar_aperturas_por_defecto(db, cierre)
     cierre.anulado = True
     cierre.fecha_anulacion = ahora()
     cierre.motivo_anulacion = body.motivo
@@ -1306,6 +1307,15 @@ def _revertir_si_estaba_asentado(db: Session, cierre: models.CierreCaja) -> None
         contabilidad.registrar_reverso_diferencia_caja(db, cierre)
     for a in db.query(models.AsientoContable).filter_by(origen="diferencial_caja", referencia_id=cierre.id).all():
         db.delete(a)
+
+
+def _soltar_aperturas_por_defecto(db: Session, cierre: models.CierreCaja) -> None:
+    """Las gavetas que el cierre dio por abiertas con lo del ultimo cierre (sin
+    que nadie las contara) se sueltan al anularlo: asi se puede abrir de nuevo
+    contando el fondo real (QA nov, regresion E3c)."""
+    for a in _aperturas_de(db, cierre.fecha.date()).values():
+        if a.estado_diferencia == "sin_diferencia" and (a.nota or "").startswith(NOTA_SIN_DECLARAR):
+            db.delete(a)
 
 
 @router.get("/diferencias", response_model=schemas.DiferenciasPorAprobar)

@@ -2008,6 +2008,11 @@ def avisos(db: Session = Depends(get_db)):
     todos += _avisos_de_deposito(db)
     todos += _avisos_de_cocina_y_proveedores(db)
     todos += _avisos_de_caja(db)
+    from .. import tasas as _tasas
+
+    if _tasas._texto_salto():
+        todos.append(schemas.Aviso(id="tasa-salto", tono="ojo", titulo="La tasa del BCV dio un salto y no se tomó",
+                                   detalle=_tasas._texto_salto(), a="/tasa"))
     fiado = _aviso_de_fiado(db)
     if fiado:
         todos.append(fiado)
