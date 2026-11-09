@@ -61,7 +61,8 @@ export default function Salvaguardas() {
       }
     >
       <p className="text-sm text-neutral-700 mb-3">{pedida.detalle}</p>
-      <Autorizar accion={pedida.accion} detalle={pedida.detalle} monto={pedida.monto} onCambio={setFirma} />
+      {pedida.error && <p className="text-sm text-peligro-600 mb-3">{pedida.error} Prueba otra vez.</p>}
+      <Autorizar key={pedida.error ?? 'primera'} accion={pedida.accion} detalle={pedida.detalle} monto={pedida.monto} onCambio={setFirma} />
     </Modal>
   )
 }

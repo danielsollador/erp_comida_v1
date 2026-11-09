@@ -1634,8 +1634,12 @@ function Historial({
       peligro: true,
     })
     if (motivo === null) return
-    await api.anularCierre(c.id, motivo)
-    alAnular()
+    try {
+      await api.anularCierre(c.id, motivo)
+      alAnular()
+    } catch (e) {
+      await dialogo.avisar({ titulo: 'No se anuló', texto: e instanceof Error ? e.message : 'Intenta otra vez.', tono: 'mal' })
+    }
   }
 
   return (

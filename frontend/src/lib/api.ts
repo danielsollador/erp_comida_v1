@@ -199,7 +199,7 @@ export function olvidarCompartidas() {
  * (components/Salvaguardas.tsx) y la operacion se repite sola con la firma o
  * la confirmacion, sin que cada pantalla tenga que saberlo.
  */
-export type PideFirma = { codigo: 'firma'; accion: string; detalle: string; monto: number; mensaje: string }
+export type PideFirma = { codigo: 'firma'; accion: string; detalle: string; monto: number; mensaje: string; error?: string }
 export type PideConfirmar = { codigo: 'confirmar'; clave: string; mensaje: string }
 type Manejadores = {
   firma?: (p: PideFirma) => Promise<Autorizacion | null>
@@ -231,6 +231,7 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
 async function reqUnaVez<T>(path: string, options?: RequestInit): Promise<T> {
   const confirmados: string[] = []
   let firma: Autorizacion | null = null
+  let pedida: PideFirma | null = null
   for (let vuelta = 0; vuelta < 6; vuelta++) {
     try {
       return await reqCrudo<T>(path, options, {
@@ -238,6 +239,13 @@ async function reqUnaVez<T>(path: string, options?: RequestInit): Promise<T> {
         ...(firma ? { 'X-Autorizacion': JSON.stringify(firma) } : {}),
       })
     } catch (e) {
+      // La firma no sirvio (PIN incorrecto, solicitud vencida): el cuadro se
+      // vuelve a abrir diciendo por que, en vez de cerrarse sin avisar.
+      if (e instanceof ErrorApi && e.status === 403 && firma && pedida && manejadores.firma) {
+        firma = await manejadores.firma({ ...pedida, error: e.message })
+        if (!firma) throw e
+        continue
+      }
       if (!(e instanceof PideAlgo)) throw e
       const p = e.pide
       if (p.codigo === 'confirmar' && manejadores.confirmar && !confirmados.includes(p.clave)) {
@@ -247,6 +255,7 @@ async function reqUnaVez<T>(path: string, options?: RequestInit): Promise<T> {
         continue
       }
       if (p.codigo === 'firma' && manejadores.firma) {
+        pedida = p
         firma = await manejadores.firma(p)
         if (!firma) throw new ErrorApi(p.mensaje, 428)
         continue
