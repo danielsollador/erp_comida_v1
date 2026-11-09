@@ -69,7 +69,7 @@ export default function Asistente() {
   return (
     <View style={{ flex: 1, backgroundColor: t.papel }}>
       <Fondo />
-      <Stack.Screen options={{ title: 'Pregúntame' }} />
+      <Stack.Screen options={{ title: 'Dona' }} />
       {/* El campo siempre encima del teclado. En iOS hay que descontar el
           encabezado nativo (la barra de estado mas los 44 del titulo): la
           vista mide su sitio desde el borde del encabezado, no de la pantalla. */}

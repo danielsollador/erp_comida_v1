@@ -143,7 +143,7 @@ function LecturaIA({ abierta, alAlternar }: { abierta: boolean; alAlternar: () =
 }
 
 /**
- * El permiso para mandar preguntas al asistente (Pregúntame, reportes con
+ * El permiso para mandar preguntas al asistente (Dona, reportes con
  * palabras, cambiar precios): como esta y como retirarlo. La primera vez se
  * pregunta al usarlo (lib/consentimiento-asistente.ts).
  */
@@ -170,7 +170,7 @@ function AsistenteIA({ abierta, alAlternar }: { abierta: boolean; alAlternar: ()
   return (
     <Tarjeta titulo="Asistente con IA" plegable={{ abierta, alAlternar, resumen }}>
       <Nota>
-        Al usar «Pregúntame», los reportes con palabras o cambiar precios diciéndolo, lo que escribes se envía a{' '}
+        Al usar «Dona», los reportes con palabras o cambiar precios diciéndolo, lo que escribes se envía a{' '}
         {PROVEEDOR_ASISTENTE} con los datos del negocio que hagan falta para responder (ventas, productos, precios o
         inventario). Sin este permiso, el resto de la app funciona igual.
       </Nota>

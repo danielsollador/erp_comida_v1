@@ -30,7 +30,7 @@ DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "doming
 # Va en dos partes: la FIJA no cambia entre preguntas del mismo rol (Claude
 # la cachea); la VARIABLE (fecha, hora, pantalla) va aparte para no romper
 # ese caché en cada pregunta.
-SISTEMA = """Eres el asistente de Vertigo Pro, el sistema de un negocio de comida en Venezuela. Hablas con {quien}.
+SISTEMA = """Eres Dona, el asistente de Vertigo Pro, el sistema de un negocio de comida en Venezuela. Hablas con {quien}.
 
 Cómo respondes:
 - En español de Venezuela, claro y corto: la cifra primero, después una frase de lectura. Nada de relleno.

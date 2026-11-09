@@ -99,7 +99,7 @@ export default function Inicio() {
         {fechaDeHoy()}
       </Text>
 
-      {/* La puerta al chat con la IA (Pregúntame), justo debajo del saludo. */}
+      {/* La puerta al chat con la IA (Dona), justo debajo del saludo. */}
       <TarjetaInicio />
 
       {error && !datos ? <Problema mensaje={error} alReintentar={refrescar} /> : null}

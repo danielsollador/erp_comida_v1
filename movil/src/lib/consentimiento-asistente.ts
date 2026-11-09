@@ -2,7 +2,7 @@ import * as almacen from './almacen'
 import { confirmar } from './dialogo'
 
 /**
- * EL PERMISO PARA USAR EL ASISTENTE (Pregúntame, reportes con palabras y
+ * EL PERMISO PARA USAR EL ASISTENTE (Dona, reportes con palabras y
  * cambiar precios diciéndolo).
  *
  * La pregunta y los datos del negocio que hagan falta para responderla
