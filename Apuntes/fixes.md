@@ -37,4 +37,11 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [x] QA nov · Botón kg/g pegado a la cantidad, factura a medio cargar perdida, sin aviso de RIF, pago menor de Bs en $ y fila Fiado que cambiaba · resuelto 2026-11-08, commit 08fdd2d, sin desplegar
 - [x] QA nov · La app móvil no entendía lo que el servidor pregunta antes de guardar · resuelto 2026-11-08, commit 0703476, sin desplegar
 - [x] QA nov · El vuelto en dólares con centavos ($3,08) no se podía dar: ahora salen $3 de la gaveta de $ y los centavos en Bs (Ventas, web y app) · resuelto 2026-11-08, sin desplegar
+- [x] QA regresión · El euro guardado mal (1,18) hacía que el freno de saltos rechazara siempre el bueno · resuelto 2026-11-09, commit 9bf61d7, sin desplegar
+- [x] QA regresión · Un salto de tasa descartado no se le decía a nadie · resuelto 2026-11-09, commit 9bf61d7, sin desplegar
+- [x] QA regresión · Tras anular un cierre hecho sin abrir no se podía abrir con el fondo real · resuelto 2026-11-09, commit 9bf61d7, sin desplegar
+- [x] QA regresión · Diferencial cambiario separado aunque la gaveta de Bs se contó al abrir, y la pantalla esperaba distinto que el cierre · resuelto 2026-11-09, commit d2c5e6d, sin desplegar
+- [x] QA regresión · Con un PIN equivocado el cuadro de firma se cerraba sin avisar · resuelto 2026-11-09, commit e9a2222, sin desplegar
+- [x] QA regresión · Cantidades con coma del teléfono leídas como cero; «1.250» kg en los cuadros leído como 1.250 · resuelto 2026-11-09, commit c43171e, sin desplegar
+- [x] Pregúntame pasa a llamarse Dona en la web y la app · resuelto 2026-11-09, commit ed4a94a, sin desplegar
 

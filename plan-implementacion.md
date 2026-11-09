@@ -266,6 +266,9 @@ Bloquean su bloque hasta que Leider responda.
 
 ## Optimizaciones propuestas
 
+- Un solo lugar para «todo lo que salió hoy» (gastos de caja, pagos sin factura y compras sueltas) y pago en dos formas en Pagos (QA de flujos, nov). Va por `/nueva-funcionalidad`.
+- Dona «ayúdame a cerrar»: que prellene el cierre con lo esperado y marque lo raro, en vez de dar un recorrido (QA de flujos, nov). Va por `/nueva-funcionalidad`.
+
 - Revisar recetas absurdas con reglas fijas, no con IA: más barato y comprobable (FASE 2).
 - Alta de locales primero con un script y, con más de 5 locales, un solo backend (FASE 3).
 - Activar el botón Exportar de `Tabla` en las demás tablas, que hoy incumplen la regla de `CLAUDE.md`, y revisar los CSV existentes con la configuración regional de Venezuela (después del 1.2a).
