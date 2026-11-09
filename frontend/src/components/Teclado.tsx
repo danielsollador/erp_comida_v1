@@ -807,10 +807,12 @@ export function Numerico({
   const texto = value === undefined || value === null ? '' : String(value)
   const poner = useCallback(
     (v: string) => {
-      const w = monto ? normalizarTecleo(v) : v
+      // Una cantidad con coma decimal (el teclado del telefono en español)
+      // pasa a punto: varias pantallas la leen con Number() y «1,5» era cero.
+      const w = monto ? normalizarTecleo(v) : !entero && !oculto ? v.replace(',', '.') : v
       onChange({ target: { value: w }, currentTarget: { value: w } })
     },
-    [onChange, monto],
+    [onChange, monto, entero, oculto],
   )
 
   // Si la pantalla cambia el valor por su cuenta mientras el teclado esta
@@ -831,7 +833,7 @@ export function Numerico({
         inputMode={entero ? 'numeric' : 'decimal'}
         autoComplete="off"
         value={texto}
-        onChange={(e) => (monto ? poner(e.target.value) : onChange(e))}
+        onChange={(e) => (oculto || entero ? onChange(e) : poner(e.target.value))}
         onBlur={onBlur}
         onFocus={onFocus}
         placeholder={placeholder}
