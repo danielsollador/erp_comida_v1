@@ -7,7 +7,7 @@ viva. Usuario y clave de `revision` van en los campos "Sign-in required"
 
 ```
 1. SCREEN RECORDING
-Recorded on a physical iPhone: <URL>. Shows the home screen, the AI assistant ("Pregúntame": asking a question about sales and getting an answer), the Reports screens and a custom report. The AI consent screen is shown the first time a user taps the assistant; the demo user already accepted it, so to see it again go to Configuración → Mi cuenta → "Retirar el permiso" and open Pregúntame again.
+Recorded on a physical iPhone: <URL>. Shows the home screen, the AI assistant ("Dona": asking a question about sales and getting an answer), the Reports screens and a custom report. The AI consent screen is shown the first time a user taps the assistant; the demo user already accepted it, so to see it again go to Configuración → Mi cuenta → "Retirar el permiso" and open Pregúntame again.
 
 2. APP PURPOSE
 Vertigo Pro is a B2B back-office app for food businesses and small retailers (point of sale, kitchen tickets, inventory, supplier purchases, cash closing, reports and an AI assistant that answers questions about the business's own numbers). It replaces paper tickets and spreadsheets; owners see sales and costs from the phone.
@@ -23,7 +23,7 @@ The demo account stays active through <date>. No remote feature flags gate any u
 
 4. EXTERNAL SERVICES
 - Google Cloud (US): hosts the servers and the database.
-- Anthropic (Claude): powers the in-app assistant ("Pregúntame", spoken reports and price suggestions). Only when the user sends a question, and only after an in-app consent screen that names Anthropic (shown before the first question; the permission can be withdrawn in Configuración → Mi cuenta). The request goes through our server and carries the question plus the business's own figures needed to answer it (sales, products, prices, inventory). Anthropic does not train on this data.
+- Anthropic (Claude): powers the in-app assistant ("Dona", spoken reports and price suggestions). Only when the user sends a question, and only after an in-app consent screen that names Anthropic (shown before the first question; the permission can be withdrawn in Configuración → Mi cuenta). The request goes through our server and carries the question plus the business's own figures needed to answer it (sales, products, prices, inventory). Anthropic does not train on this data.
 - Google Gemini (Generative Language API): reads a supplier invoice photo/PDF only when the user taps "Leer factura", after a separate in-app consent screen that names Google Gemini.
 - Pabilo: verifies Venezuelan "pago móvil" bank payments by reference number (business-level integration configured by the owner).
 No analytics, ads, tracking or payment SDKs. No in-app purchases; the service is contracted outside the app (B2B). Camera and photo access are only used to photograph supplier invoices when the user taps the button.

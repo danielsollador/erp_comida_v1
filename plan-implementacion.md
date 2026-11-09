@@ -179,7 +179,7 @@ Despliegue según `CLAUDE.md`, lo terminado pasa a la FASE 0 y se etiqueta `v1.1
 
 ## FASE 2 · El negocio en palabras (IA)
 
-- Asistente "Preguntame":
+- Asistente Dona (antes "Pregúntame"):
     - Responde con las cifras del negocio y dice exactamente que periodo compara.
     - Se abre desde el mismo boton en todos los modulos.
 - Reportes hablados (Reportes):
