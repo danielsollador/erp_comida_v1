@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import combos, contabilidad, costeo, impuestos, kardex, models, salvaguardas, schemas, tasas
 from .. import autorizaciones
+from ..acceso import permisos
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -52,6 +53,24 @@ MINUTOS_PARA_ENTREGAR = 60
 # guardar se vuelve a tomar el candado si nadie mas lo agarro.
 MINUTOS_EDITANDO = 5
 
+def _ve_plata(request: Request) -> bool:
+    sesion = getattr(request.state, "sesion", None) or {}
+    return permisos.opera(sesion.get("rol"))
+
+
+def _comanda(pedido) -> schemas.Pedido:
+    """El pedido como lo ve la cocina: que preparar, sin montos."""
+    return schemas.Pedido.model_validate(schemas.comanda_sin_plata(schemas.Pedido.model_validate(pedido).model_dump()))
+
+
+def _para_quien_mira(request: Request, pedido):
+    return pedido if _ve_plata(request) else _comanda(pedido)
+
+
+def _solo_quien_vende(request: Request) -> None:
+    if not _ve_plata(request):
+        raise HTTPException(403, "Tu rol solo ve las comandas de cocina.")
+
 
 @router.get("", response_model=List[schemas.Pedido])
 def listar_pedidos(
@@ -60,6 +79,7 @@ def listar_pedidos(
     por_entregar: Optional[bool] = None,
     del_dia: Optional[bool] = None,
     entregados_hoy: Optional[bool] = None,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """`en_cocina=true` es lo que pregunta la pantalla de cocina: que falta por
@@ -86,6 +106,10 @@ def listar_pedidos(
     `del_dia=true` son las ventas de hoy, para consultarlas desde el
     mostrador sin salir a otro modulo.
     """
+    # Quien no vende (cocina) solo ve lo que falta preparar, y sin montos.
+    ve_plata = request is None or _ve_plata(request)
+    if not ve_plata:
+        estado, en_cocina, por_entregar, del_dia, entregados_hoy = None, True, None, None, None
     # Sin esto, pintar 40 comandas dispara 120 consultas sueltas (renglones,
     # pagos y ediciones de cada una, una por una). `selectinload` las trae en
     # una consulta por relacion, y aguanta el `distinct()` de mas abajo.
@@ -154,7 +178,8 @@ def listar_pedidos(
             .filter(models.PedidoItem.preparado.is_(False))
             .distinct()
         )
-    return query.order_by(models.Pedido.id.desc()).all()
+    pedidos = query.order_by(models.Pedido.id.desc()).all()
+    return pedidos if ve_plata else [_comanda(p) for p in pedidos]
 
 
 def _buscar(db: Session, pedido_id: int) -> models.Pedido:
@@ -634,7 +659,7 @@ async def marcar_cocinando(pedido_id: int, request: Request, db: Session = Depen
 
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
-    return resultado
+    return _para_quien_mira(request, resultado)
 
 
 @router.post("/items/{item_id}/preparado", response_model=schemas.Pedido)
@@ -667,7 +692,7 @@ async def marcar_item_preparado(item_id: int, request: Request, db: Session = De
 
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
-    return resultado
+    return _para_quien_mira(request, resultado)
 
 
 @router.post("/{pedido_id}/por-retirar", response_model=schemas.Pedido)
@@ -761,7 +786,7 @@ async def marcar_pedido_listo(pedido_id: int, request: Request, db: Session = De
 
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
-    return resultado
+    return _para_quien_mira(request, resultado)
 
 
 # -- Editar una comanda ya tomada --------------------------------------------
@@ -2313,8 +2338,9 @@ async def devolver_pedido(
 
 
 @router.get("/olvidados", response_model=List[schemas.Pedido])
-def pedidos_olvidados(horas: int = 24, db: Session = Depends(get_db)):
+def pedidos_olvidados(request: Request, horas: int = 24, db: Session = Depends(get_db)):
     """Comandas abiertas hace demasiado. Su inventario ya salio."""
+    _solo_quien_vende(request)
     limite = ahora() - datetime.timedelta(hours=horas)
     return (
         db.query(models.Pedido)
@@ -2505,6 +2531,7 @@ def sugerencias(variantes: str = "", db: Session = Depends(get_db)):
 # Al final a proposito: `/{pedido_id}` casaria tambien con "/sugerencias" y
 # "/olvidados" si se declarara antes que ellas.
 @router.get("/{pedido_id}", response_model=schemas.Pedido)
-def ver_pedido(pedido_id: int, db: Session = Depends(get_db)):
+def ver_pedido(pedido_id: int, request: Request, db: Session = Depends(get_db)):
     """Un pedido con todo lo suyo: renglones, pagos y ediciones."""
+    _solo_quien_vende(request)
     return _buscar(db, pedido_id)

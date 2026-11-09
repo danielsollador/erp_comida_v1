@@ -38,12 +38,14 @@ export default function Notificaciones({ dark = false }: { dark?: boolean }) {
   const enTelefono = useAnchoDeTelefono(caja, abierto)
   const veAvisos = estado.puede.ve_kpis
   const veArranque = estado.puede.administrar
+  // Las solicitudes van con el punto de venta: la cocina no pide ni autoriza.
+  const veSolicitudes = estado.puede.operar
 
   const cargar = useCallback(() => {
-    api.historialAutorizaciones().then(setLista).catch(() => undefined)
+    if (veSolicitudes) api.historialAutorizaciones().then(setLista).catch(() => undefined)
     if (veAvisos) api.avisos().then(setAvisos).catch(() => undefined)
     if (veArranque) api.arranque().then(setArranque).catch(() => undefined)
-  }, [veAvisos, veArranque])
+  }, [veSolicitudes, veAvisos, veArranque])
 
   useEffect(() => {
     cargar()

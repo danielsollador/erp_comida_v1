@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -72,10 +72,12 @@ def inicio(request: Request, db: Session = Depends(get_db)):
     s = auth.sesion_actual(request)
     puede = permisos.resumen(s.get("rol"))
     d = hoy()
+    # Quien no vende (cocina) ve sus comandas, sin montos, y no las ventas.
+    vende = permisos.opera(s.get("rol"))
     return Inicio(
-        pedidos=pedidos_router.listar_pedidos(del_dia=True, db=db),
-        cocina=pedidos_router.listar_pedidos(en_cocina=True, db=db),
-        cobrar=pedidos_router.listar_pedidos(estado="listo", db=db),
+        pedidos=pedidos_router.listar_pedidos(del_dia=True, db=db) if vende else [],
+        cocina=pedidos_router.listar_pedidos(en_cocina=True, request=request, db=db),
+        cobrar=pedidos_router.listar_pedidos(estado="listo", db=db) if vende else [],
         resumen=_o_nada(lambda: reportes_router.resumen(rango=Rango(desde=d, hasta=d), paso=None, categoria_id=[], producto_id=[], db=db)) if puede["ve_kpis"] else None,
         avisos=_o_nada(lambda: reportes_router.avisos(db)) if puede["ve_kpis"] else None,
         recorrido=_o_nada(lambda: reportes_router.recorrido(db)) if puede["ve_kpis"] else None,
@@ -86,7 +88,8 @@ def inicio(request: Request, db: Session = Depends(get_db)):
 @router.get("/pos", response_model=ArranquePos)
 def pos(request: Request, db: Session = Depends(get_db)):
     """El punto de venta al abrir: el menu, lo que esta en el piso y la caja."""
-    auth.sesion_actual(request)
+    if not permisos.opera(auth.sesion_actual(request).get("rol")):
+        raise HTTPException(403, "Tu rol no usa el punto de venta.")
     return ArranquePos(
         categorias=menu_router.listar_categorias(db),
         en_cocina=pedidos_router.listar_pedidos(en_cocina=True, db=db),

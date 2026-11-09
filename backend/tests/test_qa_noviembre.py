@@ -423,3 +423,42 @@ def test_anular_un_cierre_hecho_sin_abrir_deja_abrir_con_el_fondo_real(client, d
     c = client.post("/api/caja/cerrar", json={"conteos": [{"metodo": "Efectivo $", "contado": 100}]}).json()
     client.post(f"/api/caja/cierres/{c['id']}/anular", json={"motivo": "rehacer"})
     assert client.get("/api/caja/estado-apertura").json()["puede_abrir"] is True
+
+
+def test_la_cocina_ve_solo_las_comandas_y_sin_plata(client, fuera):
+    """QA de permisos: con el rol de cocina, GET /api/pedidos devolvía las 1.032
+    ventas del local con totales, pagos y RIF de clientes, aunque la portada le
+    esconde a la cocina cuánto se vende."""
+    from app import settings
+    from app.acceso import usuarios
+    from tests.conftest import entrar
+
+    item = {"nombre_libre": "Arepa", "precio_libre": 4, "cantidad": 1}
+    vieja = client.post("/api/pedidos", json={"items": [item], "permitir_sin_stock": True, "a_cocina": False}).json()
+    client.post(f"/api/pedidos/{vieja['id']}/cobrar", json={"metodo_pago": "Efectivo $"})
+    nueva = client.post("/api/pedidos", json={"items": [item], "permitir_sin_stock": True, "rif_cliente": "V-12345678"}).json()
+    usuarios.crear("cocina-qa", "clave-de-cocina-larga", rol="cocina", locales=[settings.LOCAL_SLUG])
+    try:
+        _cocina_sin_plata(client, fuera, vieja, nueva)
+    finally:
+        usuarios.borrar("cocina-qa")
+
+
+def _cocina_sin_plata(client, fuera, vieja, nueva):
+    from tests.conftest import entrar
+
+    entrar(fuera, "cocina-qa", "clave-de-cocina-larga")
+    for url in ("/api/pedidos", "/api/pedidos?estado=pagado", "/api/pedidos?del_dia=true"):
+        ids = [p["id"] for p in fuera.get(url).json()]
+        assert vieja["id"] not in ids, f"{url}: la cocina no ve ventas ya preparadas"
+    comandas = fuera.get("/api/pedidos?en_cocina=true").json()
+    assert [p["id"] for p in comandas] == [nueva["id"]]
+    c = comandas[0]
+    assert c["items"] and c["items"][0]["nombre"]
+    assert c["total"] == 0 and c["a_cobrar"] == 0 and c["pagos"] == [] and c["rif_cliente"] == ""
+    assert fuera.get(f"/api/pedidos/{vieja['id']}").status_code == 403
+    assert fuera.get("/api/pedidos/olvidados").status_code == 403
+    listo = fuera.post(f"/api/pedidos/{nueva['id']}/marcar-listo").json()
+    assert listo["total"] == 0 and listo["pagos"] == []
+    assert client.get("/api/pedidos?en_cocina=true").status_code == 200
+    assert client.get(f"/api/pedidos/{nueva['id']}").json()["total"] == 4

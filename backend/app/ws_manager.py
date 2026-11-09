@@ -37,16 +37,29 @@ class ConnectionManager:
         self, event: str, data: dict, filtro: Optional[Callable[[dict], bool]] = None
     ):
         message = json.dumps({"event": event, "data": data}, default=str)
+        # La cocina recibe las comandas sin montos (QA nov, permisos).
+        sin_plata = None
+        if event.startswith("pedido") and isinstance(data, dict) and "items" in data:
+            from . import schemas
+            sin_plata = json.dumps({"event": event, "data": schemas.comanda_sin_plata(data)}, default=str)
         stale = []
         for ws, sesion in list(self.active.items()):
             if filtro and not filtro(sesion):
                 continue
             try:
-                await ws.send_text(message)
+                await ws.send_text(message if sin_plata is None or _vende(sesion) else sin_plata)
             except Exception:
                 stale.append(ws)
         for ws in stale:
             self.disconnect(ws)
+
+
+def _vende(sesion: dict) -> bool:
+    """Sin sesion (pruebas, procesos internos) se manda completo."""
+    if not sesion or not sesion.get("rol"):
+        return True
+    from .acceso import permisos
+    return permisos.opera(sesion.get("rol"))
 
 
 manager = ConnectionManager()

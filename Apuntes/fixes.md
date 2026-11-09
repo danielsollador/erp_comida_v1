@@ -45,4 +45,4 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [x] QA regresión · Cantidades con coma del teléfono leídas como cero; «1.250» kg en los cuadros leído como 1.250 · resuelto 2026-11-09, commit c43171e, sin desplegar
 - [x] Pregúntame pasa a llamarse Dona en la web y la app · resuelto 2026-11-09, commit ed4a94a, sin desplegar
 - [x] QA regresión · Anular una declaración de IVA no pedía firma y reabría un mes ya presentado · resuelto 2026-11-09, sin desplegar
-
+- [x] QA permisos · La cocina leía todas las ventas del local con montos, pagos y RIF (lista, portada de la app y tiempo real); la campana pedía solicitudes que no le tocan · resuelto 2026-11-09, sin desplegar

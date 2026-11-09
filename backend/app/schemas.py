@@ -1089,6 +1089,23 @@ class Pedido(BaseModel):
         from_attributes = True
 
 
+# Lo que la cocina no tiene por que ver de una comanda: cuanto vale, como se
+# pago y a quien se le facturo (QA nov, permisos).
+_PLATA_DEL_PEDIDO = {
+    "metodo_pago": None, "total": 0.0, "subtotal": 0.0, "descuento": 0.0, "motivo_descuento": "",
+    "propina": 0.0, "a_cobrar": 0.0, "pagos": [], "tasa_bcv": None, "rif_cliente": "",
+    "razon_social_cliente": "", "numero_factura": None, "numero_control": "", "retencion_iva_bs": None,
+    "retencion_iva_usd": None, "retencion_iva_pct": None, "comprobante_retencion_iva": "",
+    "fecha_retencion_iva": None, "nota_credito": None, "ediciones": [],
+}
+
+
+def comanda_sin_plata(pedido: dict) -> dict:
+    """Un pedido serializado, como lo ve quien no vende: que preparar, sin montos."""
+    items = [{**i, "precio_unitario": 0.0, "precio_lista": 0.0} for i in pedido.get("items", [])]
+    return {**pedido, **_PLATA_DEL_PEDIDO, "items": items}
+
+
 class Autorizacion(BaseModel):
     """La firma de quien autoriza mover plata de una venta ya cobrada.
 

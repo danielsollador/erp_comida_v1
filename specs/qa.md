@@ -50,6 +50,7 @@ Errores de dinero, permisos y operación que el dueño ya sufre: montos que se l
 | 30 | La portada responde en menos de medio segundo con un mes de datos. |
 | 31 | Si faltan RIF o razón social, Impuestos lo avisa arriba con el botón para cargarlos (es dato, no código). |
 | 32 | El pago menor de la gaveta Bs se escribe en Bs; la fila «Fiado» del cierre guarda lo fiado ese día. |
+| 33 | La cocina ve solo sus comandas, sin montos, pagos ni RIF (en la pantalla, la portada de la app y el tiempo real); no abre una venta suelta ni el punto de venta. |
 
 ## Por decidir
 
@@ -63,3 +64,4 @@ Nada abierto: los umbrales (5 veces, 31 días, 30 %, $20, $0,10) son la propuest
 4. Como cajera: Reportes sin ganancia, tasa y anulaciones piden firma.
 5. Retirar $5.000 con $133 en la gaveta: no deja.
 6. Preguntar a Dona «¿cuánto fueron los gastos de octubre?»: misma cifra que el Estado de resultados.
+7. Entrar como cocina: solo las comandas pendientes, sin montos; la campana no pide nada que dé «sin permiso».

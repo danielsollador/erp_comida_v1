@@ -86,6 +86,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **9-nov** Misma rama, QA de permisos: la cocina recibe las comandas sin montos (`schemas.comanda_sin_plata`, usada por `pedidos.py` y `ws_manager.py`) y no abre ventas sueltas ni `/api/app/pos`.
 - **8-nov** Rama `fix-2026-11-08-qa-noviembre` (sale de `fase1` con `master` y la exportación de Cuentas por cobrar), sin desplegar: los 32 hallazgos del QA de noviembre (`specs/qa.md`), y el cierre de caja como cuadre (`specs/caja.md`, bloque 1.10). Piezas nuevas: `lib/montos.ts` (un solo lector de montos, web y app), `backend/app/salvaguardas.py` (firma, confirmar y un solo envío: el servidor responde 428 y la web lo resuelve en `components/Salvaguardas.tsx`), cuenta 6160 «Diferencial cambiario», columnas de estado de la diferencia en `TRX505`, `TRX510` y `TRX511`, `consolidacion.VERSION` 3. Dona suma seis herramientas.
 
 - **6-nov** Rama `exportar-cuentas-por-cobrar`, sin desplegar: "Quién me debe" se exporta a CSV y Excel. `Tabla` tiene la opción `exportar`, `descargar` acepta un cuerpo (POST) y `exportar_csv.py` suma `regional` y `respuesta_xlsx`.
