@@ -1,6 +1,6 @@
 # Spec: Cierre de caja como cuadre
 
-Cierre de caja · bloque 1.10 · **Implementada** (8-nov-2026, rama `fix-2026-11-08-qa-noviembre`, sin desplegar). Aprobada por Daniel al pedir arreglar todo el QA de noviembre; D12–D15 con la propuesta. La 1.6 (medianoche) agregará aquí su sección.
+Cierre de caja · bloque 1.10 · **Implementada** (8-nov-2026, rama `fix-2026-11-08-qa-noviembre`, sin desplegar). Aprobada por Daniel al pedir arreglar todo el QA de noviembre; D12–D15 confirmadas por él. La 1.6 (medianoche) agregará aquí su sección.
 
 ## Qué resuelve
 
@@ -44,7 +44,7 @@ El cierre se anulaba o corregía casi a diario (28 de 66 en producción) porque,
 
 ## Por decidir
 
-Nada abierto. D12–D15 se aplicaron con la propuesta del plan; cambiarlas es un ajuste pequeño.
+Nada abierto. D12–D15 confirmadas por Daniel el 8-nov: diferencias cada día, aprueba el dueño y los roles que él marque, menos de $0,10 sola, y los $321,94 de sep–oct se revisan con el dueño.
 
 ## Cómo se valida
 

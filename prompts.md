@@ -375,3 +375,11 @@ ok yo quede con leider en que ambos hariamos QA a diferentes modulos armate un p
 ## 71 (2026-11-08, Daniel)
 
 https://savora.35-229-89-43.sslip.io/ leider monto un ambiente de prueba. vamos a corregir todos esos hallasgos del pdf y para solo cuando hayas terminado importante que viajen a spec kit y que se cambien los ficheros y todo eso. entendido?
+
+## 72 (2026-11-08, Daniel)
+
+sigue con los hallazgos
+
+## 73 (2026-11-08, Daniel)
+
+dale D12-D15 así están bien

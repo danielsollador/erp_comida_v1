@@ -167,7 +167,7 @@ Orden: 1.2 → 1.3 → 1.10 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los
 
 **Cómo:** builds de producción con EAS para las dos tiendas y APK `publico` para las tablets Fire. Cuando las tablets usen la APK de Expo, se borran Capacitor y `app-android.yml` (con el visto bueno de Leider).
 
-### 1.10 · Cierre de caja como cuadre (Opus) · D12–D15
+### 1.10 · Cierre de caja como cuadre (Opus)
 
 **Qué:** ver `specs/caja.md`. El cierre cuenta y cuadra; no escribe en los libros. Las diferencias van a los libros cuando quien autoriza las aprueba.
 
@@ -252,10 +252,10 @@ Bloquean su bloque hasta que Leider responda.
 | D1 | ¿De qué día es una venta hecha después de medianoche con la caja de ayer abierta? | Día operativo con hora de corte por local (05:00) para caja, reportes y numeración. IVA y libro de ventas, con la fecha real. Confirmar con el contador. | 1.6 |
 | D10 | ¿Cada tablet tiene su caja o las dos cobran en la misma? | Una caja por tablet (ver `specs/ventas.md`). | 1.4 |
 | D11 | ¿Cuánto tiempo se guardan los respaldos en el bucket? | 90 días. | 1.7 |
-| D12 | ¿Las diferencias de caja se aprueban cada día o al cerrar el mes? | **Aplicada:** cada día, con aviso si quedan más de 3 días sin aprobar. | 1.10 |
-| D13 | ¿Quién aprueba diferencias y anulaciones de cierre? | **Aplicada:** el dueño y los roles que él marque como «autoriza». | 1.10 |
-| D14 | ¿Desde cuánto una diferencia se aprueba sola? | **Aplicada:** menos de $0,10. | 1.10 |
-| D15 | ¿Qué se hace con los $321,94 de faltantes y sobrantes de sep–oct? | **Aplicada:** nada sin el dueño; se revisan con él. | 1.10 |
+| D12 | ¿Las diferencias de caja se aprueban cada día o al cerrar el mes? | **Confirmada por Daniel (8-nov):** cada día, con aviso si quedan más de 3 días sin aprobar. | 1.10 |
+| D13 | ¿Quién aprueba diferencias y anulaciones de cierre? | **Confirmada por Daniel (8-nov):** el dueño y los roles que él marque como «autoriza». | 1.10 |
+| D14 | ¿Desde cuánto una diferencia se aprueba sola? | **Confirmada por Daniel (8-nov):** menos de $0,10. | 1.10 |
+| D15 | ¿Qué se hace con los $321,94 de faltantes y sobrantes de sep–oct? | **Confirmada por Daniel (8-nov):** nada sin el dueño; se revisan con él. | 1.10 |
 | D3 | Cambio de turno: ¿arqueo en cada turno o solo al cierre? | Arqueo por turno sin cerrar el día. | FASE 3 |
 | D4 | Alta de local: ¿un backend por local o uno para todos? | Script de alta mientras haya menos de 5 locales. | FASE 3 |
 | D5 | Pagos de Vertigo: ¿manual o pasarela? ¿Se bloquea al moroso? | Manual. Nunca se bloquea la venta. | FASE 3 |
