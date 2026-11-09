@@ -1001,7 +1001,7 @@ def pagar_declaracion(
 
 
 @router.post("/declaraciones/{declaracion_id}/anular")
-def anular_declaracion(declaracion_id: int, db: Session = Depends(get_db)):
+def anular_declaracion(declaracion_id: int, request: Request, db: Session = Depends(get_db)):
     """Deshace una declaracion mal hecha y libera el periodo.
 
     Antes no habia salida: no existia borrar y volver a declarar el mismo mes
@@ -1018,6 +1018,9 @@ def anular_declaracion(declaracion_id: int, db: Session = Depends(get_db)):
     )
     if not declaracion:
         raise HTTPException(status_code=404, detail="Declaración no encontrada")
+    # Reabre un mes que ya se le presento al SENIAT: firma de quien autoriza
+    # (QA de regresion, nov).
+    salvaguardas.exigir_firma(db, request, "anular_declaracion", f"Anular la declaración de IVA de {declaracion.periodo}")
 
     posterior = (
         db.query(models.DeclaracionIva)

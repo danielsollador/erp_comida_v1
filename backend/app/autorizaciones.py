@@ -71,6 +71,7 @@ ACCIONES = {
     "cortesia": "Regalar productos (cortesía)",
     "anular_pago": "Anular un pago ya registrado",
     "anular_compra": "Anular una factura de compra con su mercancía",
+    "anular_declaracion": "Anular una declaración de IVA",
 }
 
 PENDIENTE, APROBADA, RECHAZADA, CANCELADA, USADA, VENCIDA = (
