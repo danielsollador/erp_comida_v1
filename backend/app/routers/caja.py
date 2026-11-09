@@ -461,6 +461,11 @@ def _desglose(
         pagos = 0.0
         if not fisico:
             pagos, salio = salio, 0.0
+        # Los bolivares valen otros dolares si cambio la tasa desde el ultimo
+        # cierre: eso va en "otros" para que "debes tener" sea lo que el
+        # cierre espera (y no salga un faltante que es diferencial).
+        if cierre is None and metodo == "Efectivo Bs":
+            otros = round(otros + _diferencial_bs(db, dia, inicio, fondo), 2)
         # La fila Fiado de un dia cerrado dice cuanto se fio ese dia: los
         # abonos y las bajas de despues no la mueven (QA nov, hallazgo 32).
         if cierre is not None and metodo == "Fiado":
@@ -1092,10 +1097,11 @@ def cerrar_caja(
 
     # La gaveta de bolivares vale menos dolares si subio la tasa desde el
     # ultimo cierre: eso no es faltante (QA nov, hallazgo 15).
-    diferencial = _diferencial_bs(db, dia, inicio, esperados.get("Efectivo Bs"))
+    bs_linea = esperados.get("Efectivo Bs")
+    diferencial = _diferencial_bs(db, dia, inicio, bs_linea.fondo if bs_linea else 0.0)
     grandes = []
     for metodo, contado in contados.items():
-        d = round(contado - esperados[metodo].esperado - (diferencial if metodo == "Efectivo Bs" else 0.0), 2)
+        d = round(contado - esperados[metodo].esperado, 2)
         if abs(d) > DIFERENCIA_GRANDE_USD:
             grandes.append(f"{metodo}: {'sobran' if d > 0 else 'faltan'} {salvaguardas.usd(abs(d))}")
     if grandes:
@@ -1143,15 +1149,12 @@ def cerrar_caja(
                 metodo=metodo,
                 etiqueta=metodo,
                 metodos=metodo,
-                esperado=round(linea.esperado + cambiario, 2),
+                esperado=linea.esperado,
                 contado=contado,
-                diferencia=round(contado - linea.esperado - cambiario, 2),
+                diferencia=round(contado - linea.esperado, 2),
                 diferencial_cambiario=cambiario,
             )
         )
-    if contado_bs is not None and diferencial:
-        db_cierre.efectivo_esperado = round(esperado_bs + diferencial, 2)
-        db_cierre.diferencia = round(contado_bs - esperado_bs - diferencial, 2)
     db.flush()
     db.refresh(db_cierre)
     if diferencial and contado_bs is not None:
@@ -1265,10 +1268,16 @@ def _usuario(request: Request) -> str:
     return s.get("usuario") or ""
 
 
-def _diferencial_bs(db: Session, dia: datetime.date, inicio, linea) -> float:
+def _diferencial_bs(db: Session, dia: datetime.date, inicio, fondo: float) -> float:
     """Cuanto cambio en dolares el fondo de bolivares por la tasa desde el
-    ultimo cierre. Negativo si subio la tasa (valen menos dolares)."""
-    if linea is None or not linea.fondo:
+    ultimo cierre. Negativo si subio la tasa (valen menos dolares).
+
+    Solo si el fondo se arrastra sin contar: si la gaveta se conto al abrir,
+    ya se conto a la tasa de hoy y no hay nada que separar (QA nov, D1c)."""
+    if not fondo:
+        return 0.0
+    apertura = _aperturas_de(db, dia).get("Efectivo Bs")
+    if apertura is not None and not (apertura.nota or "").startswith(NOTA_SIN_DECLARAR):
         return 0.0
     _, ultimo = fondo_esperado(db, "Efectivo Bs", inicio)
     if ultimo is None:
@@ -1276,7 +1285,7 @@ def _diferencial_bs(db: Session, dia: datetime.date, inicio, linea) -> float:
     antes, ahora_t = tasas.tasa_al(db, ultimo.fecha.date()), tasas.tasa_al(db, dia)
     if not antes or not ahora_t or not antes.bcv or not ahora_t.bcv or antes.bcv == ahora_t.bcv:
         return 0.0
-    return round(linea.fondo * (antes.bcv / ahora_t.bcv - 1), 2)
+    return round(fondo * (antes.bcv / ahora_t.bcv - 1), 2)
 
 
 def _asentar_diferencial(db: Session, cierre: models.CierreCaja, monto: float) -> None:
