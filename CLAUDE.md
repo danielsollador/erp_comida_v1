@@ -150,6 +150,7 @@ Sin excepciones, en todos los módulos, en la web y en la app:
 - "Unidades", nunca "piezas". "Inventario", nunca "depósito".
 - En compras siempre "costo", nunca "precio". "Costo última compra".
 - Plural correcto (1 unidad, 2 unidades). En español de Venezuela, tuteando.
+- Los dólares se muestran con punto decimal (`$1,234.50`) y los bolívares con coma (`Bs 1.234,50`), en la web, la app y los mensajes del servidor. En el backend, la API y la base un monto es solo un número, con punto y sin formato: el separador se pone al mostrarlo (`numUsd` y `fmtBs` en `lib/moneda.tsx`; `milesUsd` y `miles` en la app; `salvaguardas.usd` y `salvaguardas.bs` en el servidor).
 
 ## Diseño
 
