@@ -14,3 +14,4 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [ ] En modo oscuro, el mensaje verde de éxito casi no se lee (Cuentas por cobrar, al cobrar o abonar)
 - [ ] El texto de la opción "Es comisión: se cierra la deuda" se corta (Cuentas por cobrar > Pagar o abonar, con retención)
 - [ ] Ninguna tabla se exporta a CSV ni a Excel desde el componente `Tabla` (solo hay descargas sueltas en Impuestos, Reportes a medida e Inventario), y hay tablas hechas con `<table>` suelto que no se ordenan ni explican sus columnas (todos los módulos)
+- [x] Pedido grande en el punto de venta: los renglones salen juntos por categoría (los cafés juntos, los pastelitos juntos) en el orden del menú, para que el barista cuente de un vistazo · resuelto 2026-11-11, sin desplegar

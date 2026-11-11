@@ -11,7 +11,7 @@ import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
 import { ivaRetenido } from '../lib/compras'
-import { enPreparacion, estadoCocina, haceCuanto, horaDe, porQueNoSeEdita } from '../lib/comandas'
+import { enPreparacion, estadoCocina, haceCuanto, horaDe, porCategoria, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { uuid } from '../lib/uuid'
@@ -473,6 +473,7 @@ export default function POS() {
     (categoriaId: number) => categorias.find((c) => c.id === categoriaId)?.color ?? '',
     [categorias],
   )
+  const ordenCategorias = useMemo(() => categorias.map((c) => c.id), [categorias])
   const categoriaDeVariante = useMemo(() => {
     const m = new Map<number, number>()
     for (const c of categorias) {
@@ -1915,7 +1916,7 @@ export default function POS() {
                   </span>
                 </div>
                 <ul className="text-[13px] leading-snug text-neutral-600 mb-2 space-y-0">
-                  {pedido.items.map((i) => {
+                  {porCategoria(pedido.items, (v) => categoriaDeVariante.get(v), ordenCategorias).map((i) => {
                     const cat = categoriaDeVariante.get(i.variante_id ?? -1)
                     return (
                       <li key={i.id} className="flex items-center gap-2">
@@ -2549,7 +2550,7 @@ export default function POS() {
           }
         >
           <ul className="space-y-2">
-            {cocinaDe.pedido.items.map((i) => {
+            {porCategoria(cocinaDe.pedido.items, (v) => categoriaDeVariante.get(v), ordenCategorias).map((i) => {
               const cocina = cocinaDe.destino[i.id]
               const hecho = i.a_cocina !== false && i.preparado
               const preparando = i.a_cocina !== false && !i.preparado && enPreparacion(cocinaDe.pedido)
