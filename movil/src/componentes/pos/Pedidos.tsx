@@ -40,6 +40,7 @@ export function Pedidos({
   puntoId,
   alElegirPunto,
   tinteDeVariante,
+  ordenarRenglones,
   fmt,
   acciones,
   alVerVentas,
@@ -55,6 +56,7 @@ export function Pedidos({
   puntoId: number | null
   alElegirPunto: (id: number | null) => void
   tinteDeVariante: (varianteId: number | null) => Tinte | null
+  ordenarRenglones: (items: Pedido['items']) => Pedido['items']
   fmt: Fmt
   acciones: AccionesPedidos
   alVerVentas: () => void
@@ -86,7 +88,7 @@ export function Pedidos({
       <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
         {item.map((p) => (
           <View key={p.id} style={{ flex: 1, minWidth: 0 }}>
-            <TarjetaPedido pedido={p} yo={yo} fmt={fmt} tinteDeVariante={tinteDeVariante} acciones={acciones} />
+            <TarjetaPedido pedido={p} yo={yo} fmt={fmt} tinteDeVariante={tinteDeVariante} ordenarRenglones={ordenarRenglones} acciones={acciones} />
           </View>
         ))}
         {item.length < columnas ? <View style={{ flex: 1 }} /> : null}
@@ -168,12 +170,14 @@ const TarjetaPedido = memo(function TarjetaPedido({
   yo,
   fmt,
   tinteDeVariante,
+  ordenarRenglones,
   acciones,
 }: {
   pedido: Pedido
   yo: string
   fmt: Fmt
   tinteDeVariante: (varianteId: number | null) => Tinte | null
+  ordenarRenglones: (items: Pedido['items']) => Pedido['items']
   acciones: AccionesPedidos
 }) {
   const t = useTema()
@@ -258,7 +262,7 @@ const TarjetaPedido = memo(function TarjetaPedido({
           ) : null}
         </View>
         <View style={{ gap: 3 }}>
-          {pedido.items.map((i) => {
+          {ordenarRenglones(pedido.items).map((i) => {
             const tinte = tinteDeVariante(i.variante_id)
             return (
               <View key={i.id} style={e.item}>

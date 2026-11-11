@@ -3,7 +3,7 @@ import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, Pressable, Share, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { porQueNoSeEdita } from '../../../../frontend/src/lib/comandas'
+import { porCategoria, porQueNoSeEdita } from '../../../../frontend/src/lib/comandas'
 import { METODOS_PAGO } from '../../../../frontend/src/lib/pagos'
 import * as almacen from '../../lib/almacen'
 import { apiPos, type ArranquePos } from '../../lib/api-pos'
@@ -338,6 +338,12 @@ export default function PuntoDeVenta() {
       return cat === undefined ? null : (tintes.get(cat) ?? null)
     },
     [categoriaDeVariante, tintes],
+  )
+  // Los renglones de un pedido juntos por categoria, en el orden del menu: el
+  // barista cuenta los cafes de un vistazo (igual que la web).
+  const ordenarRenglones = useCallback(
+    (items: Pedido['items']) => porCategoria(items, (v) => categoriaDeVariante.get(v), lista.map((c) => c.id)),
+    [categoriaDeVariante, lista],
   )
 
   const cantidades = useMemo(() => {
@@ -1037,6 +1043,7 @@ export default function PuntoDeVenta() {
               puntoId={puntoId}
               alElegirPunto={elegirPunto}
               tinteDeVariante={tinteDeVariante}
+              ordenarRenglones={ordenarRenglones}
               fmt={fmt}
               acciones={accionesPedidos}
               alVerVentas={() => void verVentasDelDia()}
