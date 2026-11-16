@@ -92,7 +92,8 @@
 - [x] `tasa_de_cobro` en cobro, vuelto y pagos en bolívares
 - [x] Sección en Tasa de cambio, encabezado y línea en el cobro del POS (web y app)
 - [x] Glosario y manual de Dona
-- [ ] Validar en local con la spec (Daniel o Leider)
+- [x] Desplegado el 16-nov (`4132515`), con snapshot `antes-tasa-cobro-20261116`
+- [ ] Validar en producción con Yeimer: elegir Euro BCV y cobrar
 
 ### 1.9 Cierre
 - [ ] Desplegar, pasar lo hecho a la FASE 0 y etiquetar `v1.1`
