@@ -83,6 +83,16 @@
 - [ ] APK para las tablets Fire
 - [ ] Retirar Capacitor cuando las tablets usen la APK nueva
 
+### 1.11 Tasa de cobro
+- [x] Spec `specs/tasa.md` (borrador; falta que Leider o Daniel la aprueben)
+- [!] D16 a D19: contador (diferencial de compras, valoración de la gaveta, vencimiento de la manual, validez ante el SENIAT)
+- [ ] Pruebas con el caso real de $2,90 (2.650,66 y 2.930,62 Bs), Libro de Ventas, vuelto y pago a proveedor
+- [ ] Configuración de la tasa de cobro con firma, y la manual fuera de la casilla del dólar
+- [ ] `tasa_de_cobro` en cobro, vuelto y pagos en bolívares
+- [ ] Sección en Tasa de cambio, encabezado y línea en el cobro del POS (web y app)
+- [ ] Glosario y manual de Dona en las dos formas de lenguaje
+- [ ] Validar en local con la spec
+
 ### 1.9 Cierre
 - [ ] Desplegar, pasar lo hecho a la FASE 0 y etiquetar `v1.1`
 

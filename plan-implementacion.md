@@ -173,6 +173,21 @@ Orden: 1.2 → 1.3 → 1.10 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los
 
 **Cómo:** columnas de estado de la diferencia (por aprobar, aprobada, sola) en apertura y cierre; `registrar_diferencia_caja` se llama al aprobar, no al cerrar. Fondo inicial = lo que quedó en el último cierre. Firma (`autorizaciones.firmar`) para corregir, anular y borrar en días cerrados. Cambia la regla de la FASE 0 «diferencias de las dos gavetas a libros».
 
+### 1.11 · Tasa de cobro (Opus) · D16 a D19
+
+**Qué:** ver `specs/tasa.md`.
+
+- En Tasa de cambio, el dueño o quien tenga el permiso elige con qué tasa se cobra en bolívares: Dólar BCV, Euro BCV o Manual.
+- Los precios y costos siguen en divisa; los bolívares cobrados son los que viajan al SENIAT.
+- Lo ya cobrado no cambia, y el dólar y el euro del BCV nunca se pisan.
+
+**Cómo:**
+- La elección es una configuración del local (`CFG910_ADM_PARAMETRO`), con la firma de R5. `tasas.tasa_de_cobro` devuelve la tasa y se usa donde hoy se llama `tasa_vigente` para cobrar, dar vuelto y pagar en bolívares.
+- `fijar_manual` deja de escribir la casilla del dólar: la manual vive en la configuración.
+- La web y la app leen la tasa de cobro del estado de la tasa (`lib/moneda.tsx`); el encabezado y el cobro del POS dicen cuál es.
+- Pruebas primero, con el caso real de $2,90: 2.650,66 Bs al dólar y 2.930,62 Bs al euro, Libro de Ventas, vuelto y pago a proveedor.
+- Regla de la tasa histórica sin conexión (1.5) contra la tasa de cobro.
+
 ### 1.9 · Cierre de la FASE 1
 
 Despliegue según `CLAUDE.md`, lo terminado pasa a la FASE 0 y se etiqueta `v1.1`.
@@ -256,6 +271,10 @@ Bloquean su bloque hasta que Leider responda.
 | D13 | ¿Quién aprueba diferencias y anulaciones de cierre? | **Confirmada por Daniel (8-nov):** el dueño y los roles que él marque como «autoriza». | 1.10 |
 | D14 | ¿Desde cuánto una diferencia se aprueba sola? | **Confirmada por Daniel (8-nov):** menos de $0,10. | 1.10 |
 | D15 | ¿Qué se hace con los $321,94 de faltantes y sobrantes de sep–oct? | **Confirmada por Daniel (8-nov):** nada sin el dueño; se revisan con él. | 1.10 |
+| D16 | Factura de compra en $ (dólar BCV de su fecha) pagada en Bs a la tasa de cobro: ¿la diferencia va al diferencial cambiario? | Sí, a la 6160. Confirmar con el contador. | 1.11 |
+| D17 | ¿Cómo se valora la gaveta de Bs al cambiar la tasa a mitad del día? | Con la tasa con la que entró cada cobro, sin diferencial nuevo. | 1.11 |
+| D18 | ¿La tasa manual vence a medianoche? | No: dura hasta que se cambie y avisa si es vieja. | 1.11 |
+| D19 | ¿Cobrar y declarar a tasa euro es válido ante el SENIAT? | Lo responde el contador antes de usarlo en producción. | 1.11 |
 | D3 | Cambio de turno: ¿arqueo en cada turno o solo al cierre? | Arqueo por turno sin cerrar el día. | FASE 3 |
 | D4 | Alta de local: ¿un backend por local o uno para todos? | Script de alta mientras haya menos de 5 locales. | FASE 3 |
 | D5 | Pagos de Vertigo: ¿manual o pasarela? ¿Se bloquea al moroso? | Manual. Nunca se bloquea la venta. | FASE 3 |
