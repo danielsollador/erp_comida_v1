@@ -86,13 +86,13 @@
 ### 1.11 Tasa de cobro
 - [x] Spec `specs/tasa.md` (aprobada por Daniel el 16-nov)
 - [x] D16 a D19 resueltas; D16 y D19 las ve el contador y no bloquean
-- [ ] Pruebas con el caso real de $2,90 (2.650,66 y 2.930,62 Bs), Libro de Ventas, vuelto y pago a proveedor
-- [ ] El cierre de caja espera los Bs de cada cobro a su tasa (prueba: dos tasas el mismo día, gaveta exacta, sin diferencia)
-- [ ] Configuración de la tasa de cobro con firma, y la manual fuera de la casilla del dólar
-- [ ] `tasa_de_cobro` en cobro, vuelto y pagos en bolívares
-- [ ] Sección en Tasa de cambio, encabezado y línea en el cobro del POS (web y app)
-- [ ] Glosario y manual de Dona en las dos formas de lenguaje
-- [ ] Validar en local con la spec
+- [x] Pruebas con el caso real de $2,90 (2.650,66 y 2.930,62 Bs), Libro de Ventas, vuelto y pago a proveedor
+- [x] El cierre de caja espera los Bs de cada cobro a su tasa (prueba: dos tasas el mismo día, gaveta exacta, sin diferencia)
+- [x] Configuración de la tasa de cobro con firma, y la manual fuera de la casilla del dólar
+- [x] `tasa_de_cobro` en cobro, vuelto y pagos en bolívares
+- [x] Sección en Tasa de cambio, encabezado y línea en el cobro del POS (web y app)
+- [x] Glosario y manual de Dona
+- [ ] Validar en local con la spec (Daniel o Leider)
 
 ### 1.9 Cierre
 - [ ] Desplegar, pasar lo hecho a la FASE 0 y etiquetar `v1.1`

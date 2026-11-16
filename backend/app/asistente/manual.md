@@ -81,7 +81,7 @@ Con la franja «La caja no se ha abierto», toca «Abrir caja», cuenta los bill
 - **«Cocina»** en la tarjeta corrige qué va a cocina y qué sale de vitrina, sin mover plata ni inventario.
 
 ### Autorización con PIN
-Hace falta para editar una venta **ya cobrada** cuando cambia el total, para corregir un pago que mueve plata de gaveta o de monto, para regalar (cortesía), para anular un pedido ya preparado, para anular o corregir un cierre, aprobar una diferencia de caja, borrar algo de un día cerrado, dar de baja una deuda, anular un pago o una factura de compra y fijar la tasa a mano. El cuadro de firma sale solo, en la misma pantalla. Autorizan siempre el dueño y Vertigo; Caja y Cocina solo si el dueño lo activó en Roles. Si quien cobra ya autoriza, no se le pide nada.
+Hace falta para editar una venta **ya cobrada** cuando cambia el total, para corregir un pago que mueve plata de gaveta o de monto, para regalar (cortesía), para anular un pedido ya preparado, para anular o corregir un cierre, aprobar una diferencia de caja, borrar algo de un día cerrado, dar de baja una deuda, anular un pago o una factura de compra y cambiar la tasa con la que se cobra. El cuadro de firma sale solo, en la misma pantalla. Autorizan siempre el dueño y Vertigo; Caja y Cocina solo si el dueño lo activó en Roles. Si quien cobra ya autoriza, no se le pide nada.
 
 - **«Con PIN»:** quien autoriza escribe su PIN (4 a 6 números).
 - **«Pedir permiso»** → «Enviar solicitud»: le llega una tarjeta con «Aprobar» y «Rechazar» (si no tiene la aplicación abierta, la ve al abrirla). Vence a los 15 minutos y sirve una sola vez.
@@ -94,7 +94,7 @@ En «Para entregar», la «×» lo saca del mostrador. «Lo viene a buscar» lo 
 - **Si no alcanza el inventario** sale «No alcanza el inventario para: …», con el botón «Vender igual». Si en Inventario está encendido «Vender sin stock», no se pregunta nada y el stock puede quedar en negativo.
 - **Un producto con precio $0 no se puede vender.** Sale «todavía no tiene precio: pónselo en Recetas antes de venderlo». Esto no aplica a cortesías ni a envíos.
 - **Las comandas se numeran por día.** Cada día empiezan en #1.
-- **La tasa de cambio** es la del BCV más reciente hasta hoy. Se congela en la venta en el momento de cobrar.
+- **La tasa de cambio** oficial es la del BCV más reciente hasta hoy, y nadie la escribe a mano. Aparte está la **tasa de cobro**: con la que se pasan a bolívares los precios en dólares al cobrar (dólar BCV, euro BCV o una propia). Se congela en la venta en el momento de cobrar, y los bolívares cobrados son los que van al libro de ventas.
 - **La misma referencia no cobra dos pedidos.** Se compara por los últimos dígitos.
 - **Los mensajes de error de cobrar o editar salen en el panel de «Tomar pedido».** Si al cobrar «no pasa nada», hay que mirar esa pestaña.
 
@@ -336,7 +336,7 @@ Todo billete que sale de la gaveta, para que el cierre cuadre: «Pago menor» (b
 - **Un retiro o pago menor** no puede sacar más de lo que hay en la gaveta. Los sueldos no van como pago menor: van en Pagos.
 - **Retiros del dueño** bajan la gaveta pero no son gasto. **Propinas** están en la gaveta pero son del empleado.
 - **Pago mal registrado en un día ya cerrado:** anular el cierre, corregir el pago, volver a cerrar.
-- **Los bolívares contados** se pasan a dólares con la tasa de hoy. Si subió la tasa, la parte que valen menos dólares es diferencial cambiario, no faltante.
+- **Los bolívares contados** se pasan a dólares con la tasa de lo cobrado hoy: si se cobró a dos tasas el mismo día, a la tasa promedio de esos cobros, y la gaveta exacta no marca diferencia. Si subió la tasa desde el último cierre, la parte que valen menos dólares es diferencial cambiario, no faltante.
 
 ## Ventas
 
@@ -398,7 +398,7 @@ En «Quién me debe», toca «Exportar» junto al buscador y elige CSV o Excel. 
 
 Lo que el negocio paga **sin factura**: sueldos, honorarios (el contador, la mensualidad del sistema), alquiler, servicios públicos, mantenimiento, impuestos municipales. Se pone a quién, el concepto, el monto en dólares o en bolívares, de dónde salió y la referencia. Cada concepto va a su cuenta de gasto, sin IVA.
 
-En bolívares se elige la **«Tasa»**: BCV (la de siempre), Euro BCV, Paralelo u «Otra» para escribirla. Debajo del monto dice cuántos dólares son.
+En bolívares se elige la **«Tasa»**: «La de cobro» (la que se eligió en Tasa de cambio, viene puesta), Dólar BCV, Euro BCV, Paralelo u «Otra» para escribirla. Debajo del monto dice cuántos dólares son.
 
 ### Reglas que confunden
 - **ISLR:** si toca retenerle, se pone el porcentaje: se le entrega el neto y lo retenido queda «por enterar». «Pagar al SENIAT» lo registra cuando se paga la planilla.
@@ -481,8 +481,8 @@ Arriba de todas está **«Datos fiscales»**: razón social, RIF, «Alícuota IV
 ### Tasa de cambio (`/tasa`)
 **Pestañas:** «Tasa de hoy», «Calculadora», «Análisis» e «Historial».
 
-- **Se actualiza sola:** consulta el BCV cada 30 minutos (dólar y euro); el paralelo de referencia sale de Binance. La tasa de hoy dice «Automática» o «Cargada a mano». Si el BCV publica en la tarde la del día siguiente, se guarda con esa fecha y hoy se sigue cobrando con la de hoy.
-- **Cargar a mano:** en «Cargar la tasa a mano», escribe la «Tasa manual» y toca «Fijar». «Volver a la automática» la quita.
+- **Se actualiza sola:** consulta el BCV cada 30 minutos (dólar y euro); el paralelo de referencia sale de Binance. El dólar y el euro se guardan como los publica el BCV y nadie los pisa. Si el BCV publica en la tarde la del día siguiente, se guarda con esa fecha y hoy se sigue cobrando con la de hoy.
+- **Con qué tasa cobro en bolívares:** en «Con qué tasa cobro en bolívares» se elige «Dólar BCV» (la de siempre), «Euro BCV» o «Una tasa mía» (se escribe y se toca «Usar esta tasa»; dura hasta que se cambie y avisa si es de otro día). Cambiarla pide la firma de quien autoriza. Lo ya cobrado no cambia, y los vueltos y los pagos en bolívares de hoy usan esa misma tasa. Los precios siguen en dólares: $2,90 son 2.650,66 Bs al dólar BCV de 914,0218 y 2.930,63 Bs al euro BCV de 1.010,5608.
 - **Si hoy no hay tasa** se usa la última que haya (el lunes feriado, la del viernes). **Cada venta guarda la tasa de su día**, así que un reporte viejo no cambia.
 - **Calculadora** convierte entre bolívares, BCV, paralelo y euro, y dice cuánto pierdes si cobras al oficial y repones al paralelo. **Análisis** muestra la brecha y cuánto se llevó de lo cobrado en bolívares.
 
@@ -596,7 +596,7 @@ La sesión se cierra tras unas 4 horas sin uso o 12 horas en total, y cuando el 
 Revisa que el usuario esté en minúsculas y sin espacios. Si olvidaste la clave, el dueño pone una nueva en Configuración › Usuarios › «Editar». Tras muchos intentos hay que esperar unos minutos.
 
 **Al cobrar dice «Sin tasa de cambio cargada» o la tasa está vieja.**
-Tasa de cambio › «Tasa de hoy»: «Consultar BCV ahora», o cárgala con «Fijar». Si dice «Cargada a mano» y ya hay internet, «Volver a la automática».
+Tasa de cambio › «Tasa de hoy»: «Consultar BCV ahora», o elige con qué tasa cobrar en «Con qué tasa cobro en bolívares». Si el dólar de «Dólar BCV» no es el que publica el BCV, toca «Consultar BCV ahora».
 
 **Pago móvil: «El banco no lo encuentra».**
 El banco a veces tarda: espera y «Consultar otra vez», o revisa los dígitos. Si el comprobante es bueno y no aparece, «Cobrar sin verificar».

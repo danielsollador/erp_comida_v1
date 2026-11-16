@@ -1,6 +1,6 @@
 # Spec: Tasa de cobro
 
-Tasa de cambio · bloque 1.11 · **Aprobada** por Daniel (16-nov)
+Tasa de cambio · bloque 1.11 · **Implementada** (16-nov)
 
 ## Qué resuelve
 
@@ -27,6 +27,15 @@ Savora cobra en bolívares, pero con los precios en divisa. Yeimer quiere elegir
 - Vista en euros: con la tasa de cobro en euro, un precio de $2,90 se ve €2,90. Las ventas viejas se ven con su tasa congelada.
 - Sin conexión: la venta guardada lleva la tasa con la que se tomó, y la regla de la tasa histórica (bloque 1.5) compara contra la tasa de cobro de ese día.
 - Cada cifra y cada opción se explican en `lib/glosario.ts`, en las dos formas de lenguaje.
+
+## Cómo funciona hoy
+
+- La tasa de cobro es una configuración del local (`fuente`: dólar, euro o manual) aparte de la tasa oficial. El estado de la tasa trae `cobro` con la fuente, la tasa y los avisos; `tasas.tasa_de_cobro` la entrega al cobro, al vuelto y al pago en bolívares de hoy.
+- La tasa de cobro con euro usa el último euro guardado; si no hay ninguno, no se puede elegir. Si la manual falta, se cobra al dólar y lo dice.
+- El parche de antes (una fila del día marcada «manual») se pasa solo a tasa de cobro manual la primera vez que se refresca, y la fila vuelve a ser la oficial. Se sigue cobrando igual.
+- El cierre espera los bolívares que entraron: la línea del efectivo en bolívares trae `tasa_cobros`, los Bs por cada dólar cobrado hoy, y con ella la web y la app pasan a dólares lo contado. Límite conocido: un fondo declarado al abrir se convierte con esa misma tasa, no con la de la víspera.
+- Con la tasa del BCV con todos sus decimales (euro 1.010,56078), $2,90 son 2.930,63 Bs, no 2.930,62.
+- Pagos en bolívares de hoy: la tasa de cobro viene por defecto en el formulario; la diferencia con el dólar oficial va a la 6160, como ya pasaba.
 
 ## Por decidir
 

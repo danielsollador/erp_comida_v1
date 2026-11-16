@@ -86,6 +86,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **16-nov** Rama `tasa-de-cobro`, sin desplegar (bloque 1.11, `specs/tasa.md`): la tasa con la que se cobra en Bs se elige aparte de la oficial (dólar, euro o manual). `tasas.cobro` y `tasas.tasa_de_cobro` (columnas `tasa_cobro`, `tasa_cobro_manual` y `tasa_cobro_manual_en` en `CFG910`, ya en `migrations.py`), `PUT /api/tasas/cobro` con firma, `tasa_cobros` en el desglose de caja para el cierre con dos tasas el mismo día, `lib/tasaCobro.ts` y la sección nueva en Tasa de cambio (web y app). La fila manual de antes se pasa sola a tasa de cobro.
 - **16-nov** En producción `dfacbf4` (`master` + QA de noviembre): el lector del BCV acepta el punto de miles (el euro de 1.010,56 se leía 10,56), un salto de tasa de más de 30 % no se guarda y se avisa, y la tasa manual ya no estropea el euro. Antes de desplegar: snapshot `antes-qa-nov-20261116`. Rama `fix-2026-11-16-aviso-salto-tasa`, sin desplegar: el aviso del salto con su puntuación (`tasas._bs`).
 - **9-nov** Misma rama, QA de entradas: `cantidad` ≥ 1, el middleware de `main.py` rechaza NaN e infinito, `LineaAsientoInput` sin negativos, traspaso con `_hay_en_la_gaveta` y confirmación `venta_grande` en `pedidos.py`.
 - **9-nov** Misma rama, QA de permisos: la cocina recibe las comandas sin montos (`schemas.comanda_sin_plata`, usada por `pedidos.py` y `ws_manager.py`) y no abre ventas sueltas ni `/api/app/pos`.
