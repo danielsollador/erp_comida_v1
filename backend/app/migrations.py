@@ -196,6 +196,9 @@ COLUMNAS = [
     ("TRX411_COM_FACTURA_DET", "cuenta", "VARCHAR DEFAULT ''"),
     ("DIM230_MEN_VARIANTE", "se_frie", "BOOLEAN DEFAULT 0"),
     ("CFG910_ADM_PARAMETRO", "costo_para_precios", "VARCHAR DEFAULT 'reposicion'"),
+    ("CFG910_ADM_PARAMETRO", "tasa_cobro", "VARCHAR DEFAULT 'bcv'"),
+    ("CFG910_ADM_PARAMETRO", "tasa_cobro_manual", "FLOAT"),
+    ("CFG910_ADM_PARAMETRO", "tasa_cobro_manual_en", "TIMESTAMP"),
     # Cierre de caja como cuadre (specs/caja.md, bloque 1.10).
     ("TRX505_CAJ_APERTURA", "estado_diferencia", "VARCHAR"),
     ("TRX505_CAJ_APERTURA", "aprobada_por", "VARCHAR DEFAULT ''"),

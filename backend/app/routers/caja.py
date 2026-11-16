@@ -141,6 +141,22 @@ def _ventas_por_metodo(db: Session, inicio, fin) -> dict:
     return por_metodo
 
 
+def _tasa_de_cobros_por_metodo(db: Session, inicio, fin) -> dict:
+    """Los Bs que entraron por cada dolar cobrado, por forma de pago: la tasa
+    promedio de los cobros del dia, cada uno a la suya. Con dos tasas el mismo
+    dia es la que convierte lo contado en la gaveta sin inventar un faltante."""
+    dolares: dict = {}
+    bolivares: dict = {}
+    for pedido in _pedidos_pagados(db, inicio, fin):
+        if pedido.devuelto or not pedido.tasa_bcv:
+            continue
+        for pago in pedido.pagos:
+            m = _normalizar(pago.metodo)
+            dolares[m] = dolares.get(m, 0.0) + pago.monto
+            bolivares[m] = bolivares.get(m, 0.0) + pago.monto * pedido.tasa_bcv
+    return {m: bolivares[m] / dolares[m] for m in dolares if dolares[m] > 0}
+
+
 def _salidas_por_metodo(db: Session, inicio, fin) -> dict:
     """Lo que salio por cada forma de pago: gastos y retiros del dueno.
 
@@ -409,6 +425,7 @@ def _desglose(
     cual entro, asi que el resto se reporta aparte (ver `_otros_movimientos`).
     """
     ventas = _ventas_por_metodo(db, inicio, fin)
+    tasas_de_cobros = _tasa_de_cobros_por_metodo(db, inicio, fin)
     salidas = _salidas_por_metodo(db, inicio, fin)
     fiados = _fiado_aplicado_por_metodo(db, inicio, fin) if cierre else _cobros_fiado_por_metodo(db, inicio, fin)
     guardados = _esperados_guardados(cierre)
@@ -492,6 +509,7 @@ def _desglose(
                 pagos=round(pagos, 2),
                 otros=otros,
                 esperado=round(fondo + entro - salio + otros, 2),
+                tasa_cobros=round(tasas_de_cobros[metodo], 6) if metodo == "Efectivo Bs" and metodo in tasas_de_cobros else None,
                 contado=contados.get(metodo),
                 diferencia=(
                     round(contados[metodo] - (fondo + entro - salio + otros), 2)

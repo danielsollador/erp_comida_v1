@@ -97,6 +97,10 @@ def _registrar(db: Session, datos: dict, fecha: datetime.datetime, pago_fijo_id:
     monto, monto_bs, tasa = datos["monto"], None, None
     if datos["moneda"] == "Bs":
         tasa = datos.get("tasa")
+        if not tasa and fecha.date() == hoy():
+            # Hoy se paga a la tasa con la que se cobra (specs/tasa.md); la
+            # diferencia con el dolar oficial va a la 6160 al asentar.
+            tasa = tasas.tasa_de_cobro(db)
         if not tasa:
             t = tasas.tasa_al(db, fecha.date())
             if t is None or not t.bcv:
@@ -375,7 +379,7 @@ def pagar_fijo(fijo_id: int, body: schemas.PagarFijo, request: Request, db: Sess
         pedido = pendiente if body.descontar_anticipo is None else body.descontar_anticipo
         datos["descontar_anticipo"] = round(min(pedido, tope), 2)
     pago = _registrar(db, datos, _fecha(body.fecha), pago_fijo_id=f.id, request=request,
-                      habitual=f.monto / ((tasas.tasa_vigente(db).bcv if tasas.tasa_vigente(db) else 1) if f.moneda == "Bs" else 1))
+                      habitual=f.monto / ((tasas.tasa_de_cobro(db) or 1) if f.moneda == "Bs" else 1))
     f.proximo = siguiente_fecha(f.proximo, f.frecuencia)
     db.commit()
     db.refresh(pago)

@@ -1434,6 +1434,11 @@ class LineaMetodo(BaseModel):
     # (Leider, 21-sep).
     contado: Optional[float] = None
     diferencia: Optional[float] = None
+    # Solo el efectivo en bolivares: los bolivares que entraron por dolar
+    # cobrado, es decir, la tasa promedio de los cobros del dia. Con dos tasas
+    # el mismo dia es lo que convierte lo contado en la gaveta sin inventar un
+    # faltante (specs/tasa.md).
+    tasa_cobros: Optional[float] = None
 
 
 class CobroDelDia(BaseModel):
@@ -1946,6 +1951,24 @@ class AnularCierreRequest(BaseModel):
 
 
 # ------------------------------------------------------------------ tasas
+class CobroTasa(BaseModel):
+    """Con que tasa se cobra en bolivares hoy y de donde sale."""
+
+    fuente: str  # bcv | eur | manual
+    etiqueta: str
+    tasa: Optional[float] = None
+    # Solo la manual: cuando se escribio, y si ya es de otro dia.
+    manual_en: Optional[str] = None
+    vieja: bool = False
+    # Si lo elegido no se pudo cumplir (no hay euro del dia) y se cobra a otra.
+    aviso: Optional[str] = None
+
+
+class TasaCobroIn(BaseModel):
+    fuente: str
+    tasa: Optional[float] = None
+
+
 class EstadoTasa(BaseModel):
     fecha: str
     bcv: Optional[float]
@@ -1963,6 +1986,7 @@ class EstadoTasa(BaseModel):
     # La tasa que se leyo del BCV y no se guardo por saltar mas de 30 %: si
     # fue una devaluacion de verdad, hay que fijarla a mano (QA nov).
     salto_rechazado: Optional[str] = None
+    cobro: Optional[CobroTasa] = None
 
 
 class PuntoAnalisisTasa(BaseModel):

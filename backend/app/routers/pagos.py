@@ -128,7 +128,6 @@ def emitir_vuelto(body: schemas.VueltoRequest, request: Request, db: Session = D
         cuenta, cedula=cedula, telefono=telefono, banco=body.banco, monto_bs=body.monto_bs, factura=factura
     )
     operador = operadores.del_turno(db, request, None)
-    vigente = tasas.tasa_vigente(db)
     registro = models.VueltoPagoMovil(
         user_bank_id=cuenta.id,
         telefono=telefono,
@@ -136,7 +135,7 @@ def emitir_vuelto(body: schemas.VueltoRequest, request: Request, db: Session = D
         banco=body.banco,
         monto_bs=round(body.monto_bs, 2),
         monto_usd=body.monto_usd,
-        tasa=vigente.bcv if vigente else None,
+        tasa=tasas.tasa_de_cobro(db),
         factura=factura,
         resultado="enviado" if r.ok else ("error" if r.codigo in ("SIN_CONEXION", "TIEMPO_AGOTADO") else "rechazado"),
         codigo=r.codigo,
@@ -198,8 +197,7 @@ def verificar(body: schemas.VerificarPagoRequest, request: Request, db: Session 
         raise HTTPException(status_code=409, detail="La verificación de pagos no está configurada en este local.")
 
     operador = operadores.del_turno(db, request)
-    vigente = tasas.tasa_vigente(db)
-    tasa = float(vigente.bcv) if vigente else None
+    tasa = tasas.tasa_de_cobro(db)
     # Contra que se compara lo que diga el banco: lo que la cajera escribio
     # (el cliente dijo "te mande 1.700") o, si no toco nada, la cuenta a la
     # tasa. La diferencia con la cuenta real la resuelve la cajera al cobrar:

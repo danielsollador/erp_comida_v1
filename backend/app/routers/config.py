@@ -8,16 +8,7 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 
 
 def _fila(db: Session) -> models.Configuracion:
-    """La unica fila de parametros del local. Se crea la primera vez que se
-    pide: no hace falta sembrarla al arrancar, y asi nunca hay dos filas
-    peleando por ser "la" configuracion."""
-    fila = db.query(models.Configuracion).first()
-    if fila is None:
-        fila = models.Configuracion(vender_sin_inventario=False)
-        db.add(fila)
-        db.commit()
-        db.refresh(fila)
-    return fila
+    return tasas.config_fila(db)
 
 
 @router.get("", response_model=schemas.Configuracion)
@@ -25,12 +16,13 @@ def obtener_config(db: Session = Depends(get_db)):
     """Tasa vigente y parametros del local.
 
     La tasa se sirve desde la tabla de tasas y no desde esta fila: dos
-    lugares guardando "la tasa" terminan siempre discrepando.
+    lugares guardando "la tasa" terminan siempre discrepando. `tasa_bcv` es la
+    tasa con la que se cobra (specs/tasa.md), que es el dolar salvo que el
+    dueno haya elegido otra.
     """
-    vigente = tasas.tasa_vigente(db)
     fila = _fila(db)
     return schemas.Configuracion(
-        tasa_bcv=vigente.bcv if vigente else 0,
+        tasa_bcv=tasas.tasa_de_cobro(db) or 0,
         vender_sin_inventario=bool(fila.vender_sin_inventario),
         costo_para_precios=fila.costo_para_precios or "reposicion",
     )
@@ -49,9 +41,8 @@ def actualizar_config(body: schemas.Configuracion, db: Session = Depends(get_db)
     if body.tasa_bcv > 0:
         tasas.fijar_manual(db, body.tasa_bcv)
     fila = _fila(db)
-    vigente = tasas.tasa_vigente(db)
     return schemas.Configuracion(
-        tasa_bcv=vigente.bcv if vigente else 0,
+        tasa_bcv=tasas.tasa_de_cobro(db) or 0,
         vender_sin_inventario=bool(fila.vender_sin_inventario),
         costo_para_precios=fila.costo_para_precios or "reposicion",
     )
@@ -74,9 +65,8 @@ def actualizar_venta_sin_inventario(
     fila = _fila(db)
     fila.vender_sin_inventario = body.vender_sin_inventario
     db.commit()
-    vigente = tasas.tasa_vigente(db)
     return schemas.Configuracion(
-        tasa_bcv=vigente.bcv if vigente else 0,
+        tasa_bcv=tasas.tasa_de_cobro(db) or 0,
         vender_sin_inventario=bool(fila.vender_sin_inventario),
         costo_para_precios=fila.costo_para_precios or "reposicion",
     )
@@ -92,9 +82,8 @@ def actualizar_costo_para_precios(body: schemas.CostoParaPreciosRequest, db: Ses
     fila = _fila(db)
     fila.costo_para_precios = body.costo_para_precios
     db.commit()
-    vigente = tasas.tasa_vigente(db)
     return schemas.Configuracion(
-        tasa_bcv=vigente.bcv if vigente else 0,
+        tasa_bcv=tasas.tasa_de_cobro(db) or 0,
         vender_sin_inventario=bool(fila.vender_sin_inventario),
         costo_para_precios=fila.costo_para_precios,
     )

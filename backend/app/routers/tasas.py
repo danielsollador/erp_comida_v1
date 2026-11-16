@@ -54,6 +54,39 @@ def fijar(body: schemas.TasaManual, request: Request, db: Session = Depends(get_
     return tasas.estado(db)
 
 
+@router.put("/cobro", response_model=schemas.EstadoTasa)
+def elegir_cobro(body: schemas.TasaCobroIn, request: Request, db: Session = Depends(get_db)):
+    """Elige con que tasa se pasan a bolivares los precios en divisa al cobrar:
+    el dolar BCV, el euro BCV o una tasa manual (specs/tasa.md).
+
+    No toca la tasa oficial. Pide la firma de quien autoriza (R5), y una manual
+    con un salto de mas de 30 % contra la de cobro actual pide confirmar. Lo ya
+    cobrado conserva su tasa."""
+    if body.fuente not in tasas.ETIQUETAS_COBRO:
+        raise HTTPException(status_code=400, detail="Elige Dólar BCV, Euro BCV o Manual")
+    actual = tasas.cobro(db)
+    if body.fuente == "eur" and not tasas.euro_vigente(db):
+        raise HTTPException(
+            status_code=409,
+            detail="No hay euro del BCV guardado todavía. Espera a que se actualice o escribe la tasa a mano.",
+        )
+    if body.fuente == "manual":
+        if not body.tasa or body.tasa <= 0:
+            raise HTTPException(status_code=400, detail="Escribe la tasa manual: tiene que ser mayor que cero")
+        if actual["tasa"] and tasas.salto(body.tasa, actual["tasa"]) > tasas.SALTO_MAXIMO:
+            salvaguardas.pedir_confirmacion(
+                request, "tasa_salto",
+                f"Hoy se cobra a {salvaguardas.numero(actual['tasa'])} Bs y escribiste {salvaguardas.numero(body.tasa)}: "
+                "es un salto de más de 30 %. ¿Es correcta, o falta o sobra un dígito?",
+            )
+    detalle = f"Cobrar en bolívares a {tasas.ETIQUETAS_COBRO[body.fuente]}" + (
+        f" ({salvaguardas.numero(body.tasa)} Bs)" if body.fuente == "manual" else ""
+    )
+    salvaguardas.exigir_firma(db, request, "cambiar_tasa", detalle)
+    tasas.fijar_cobro(db, body.fuente, body.tasa if body.fuente == "manual" else None)
+    return tasas.estado(db)
+
+
 @router.get("/al", response_model=schemas.TasaDeUnaFecha)
 def tasa_de_una_fecha(fecha: datetime.date, db: Session = Depends(get_db)):
     """La tasa que valia ese dia, para pasar a Bs una factura de esa fecha."""

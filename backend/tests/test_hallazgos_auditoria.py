@@ -1280,10 +1280,11 @@ def test_el_euro_del_bcv_viaja_entero_y_no_se_deriva_del_dolar(client, db, monke
     assert historial[0]["eur"] == 935.5
 
 
-def test_fijar_la_tasa_a_mano_no_congela_el_euro(client, db, monkeypatch):
-    """Lo manual manda sobre la tasa de COBRO. El euro y el paralelo son
-    referencia: si se quedaran pegados al valor del dia en que se fijo la
-    tasa, el selector mostraria euros de la semana pasada sin avisar."""
+def test_fijar_la_tasa_a_mano_no_pisa_la_oficial_ni_congela_el_euro(client, db, monkeypatch):
+    """Lo manual manda sobre la tasa de COBRO y la oficial sigue al BCV
+    (specs/tasa.md). El euro y el paralelo se actualizan solos: si se
+    quedaran pegados al valor del dia en que se fijo la tasa, el selector
+    mostraria euros de la semana pasada sin avisar."""
     from app import rates
 
     monkeypatch.setattr(
@@ -1303,7 +1304,8 @@ def test_fijar_la_tasa_a_mano_no_congela_el_euro(client, db, monkeypatch):
     client.post("/api/tasas/refrescar")
 
     estado = client.get("/api/tasas").json()
-    assert estado["bcv"] == 1000.0, "la tasa de cobro es la que fijo el dueño"
+    assert estado["cobro"]["tasa"] == 1000.0, "la tasa de cobro es la que fijo el dueño"
+    assert estado["bcv"] == 810.0, "el dolar oficial sigue al BCV y no se pisa"
     assert estado["eur"] == 950.0, "el euro sigue actualizandose"
     assert estado["paralelo"] == 920.0
-    assert estado["origen"] == "manual"
+    assert estado["origen"] == "auto"

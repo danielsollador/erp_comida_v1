@@ -1,9 +1,10 @@
 """Gestion de la tasa de cambio del dia.
 
-Regla de oro: **lo manual manda**. El refresco automatico escribe la tasa del
-BCV y la del paralelo, pero si el dueno cargo una tasa a mano para hoy, no se
-toca. Muchos locales cobran a una tasa propia (BCV redondeado, un punto medio,
-la del proveedor) y el sistema tiene que respetar esa decision.
+Dos cosas aparte (specs/tasa.md): la tasa OFICIAL, que el refresco escribe tal
+como la publica el BCV (dolar, euro y paralelo) y nadie pisa, y la tasa de
+COBRO, que el dueno elige --dolar, euro o una propia-- y es con la que se pasan
+a bolivares los precios en divisa al cobrar. Muchos locales cobran a una tasa
+propia y el sistema tiene que respetar esa decision sin tocar la oficial.
 """
 
 import datetime
@@ -55,12 +56,98 @@ def tasa_al(db: Session, fecha: datetime.date) -> Optional[models.TasaCambio]:
     )
 
 
+ETIQUETAS_COBRO = {"bcv": "Dólar BCV", "eur": "Euro BCV", "manual": "Manual"}
+
+
+def config_fila(db: Session) -> models.Configuracion:
+    """La unica fila de parametros del local. Se crea la primera vez que se
+    pide: no hace falta sembrarla al arrancar, y asi nunca hay dos filas
+    peleando por ser "la" configuracion."""
+    fila = db.query(models.Configuracion).first()
+    if fila is None:
+        fila = models.Configuracion(vender_sin_inventario=False)
+        db.add(fila)
+        db.commit()
+        db.refresh(fila)
+    return fila
+
+
+def euro_vigente(db: Session) -> Optional[float]:
+    """El ultimo euro BCV guardado hasta hoy: si hoy el BCV no lo dio, se sigue
+    con el de ayer en vez de caer al dolar sin avisar."""
+    fila = (
+        db.query(models.TasaCambio)
+        .filter(models.TasaCambio.fecha <= hoy(), models.TasaCambio.eur.isnot(None))
+        .order_by(models.TasaCambio.fecha.desc())
+        .first()
+    )
+    return fila.eur if fila else None
+
+
+def cobro(db: Session) -> dict:
+    """Con que tasa se pasa a bolivares lo que se cobra: elegida por el dueno,
+    aparte de la tasa oficial.
+
+    bcv = el dolar de hoy; eur = el euro de hoy; manual = la que se escribio y
+    dura hasta que se cambie (avisa si es de otro dia). Si la elegida no se
+    puede cumplir (no hay euro, o falta la manual) cae al dolar y lo dice."""
+    oficial = tasa_vigente(db)
+    c = config_fila(db)
+    fuente = c.tasa_cobro if c.tasa_cobro in ETIQUETAS_COBRO else "bcv"
+    tasa, aviso = None, None
+    if fuente == "eur":
+        tasa = euro_vigente(db)
+        if not tasa:
+            fuente, aviso = "bcv", "No hay euro del BCV guardado: se cobra al dólar."
+    elif fuente == "manual":
+        tasa = c.tasa_cobro_manual
+        if not tasa:
+            fuente, aviso = "bcv", "Falta la tasa manual: se cobra al dólar."
+    if fuente == "bcv":
+        tasa = oficial.bcv if oficial else None
+    manual_en = c.tasa_cobro_manual_en if fuente == "manual" else None
+    return {
+        "fuente": fuente,
+        "etiqueta": ETIQUETAS_COBRO[fuente],
+        "tasa": tasa,
+        "manual_en": manual_en.isoformat() if manual_en else None,
+        "vieja": bool(manual_en and manual_en.date() < hoy()),
+        "aviso": aviso,
+    }
+
+
+def tasa_de_cobro(db: Session) -> Optional[float]:
+    """Bs por dolar con los que se cobra, se da el vuelto y se paga en bolivares."""
+    return cobro(db)["tasa"]
+
+
+def fijar_cobro(db: Session, fuente: str, manual: Optional[float] = None) -> dict:
+    """Elige la tasa de cobro. No toca el dolar ni el euro del BCV."""
+    c = config_fila(db)
+    c.tasa_cobro = fuente
+    if fuente == "manual":
+        c.tasa_cobro_manual = manual
+        c.tasa_cobro_manual_en = ahora()
+    db.commit()
+    return cobro(db)
+
+
+def _pasar_manual_a_cobro(db: Session, fila: models.TasaCambio) -> None:
+    """Una fila del dia marcada 'manual' es el parche de antes: el dueno pegaba
+    en la casilla del dolar la tasa con la que queria cobrar. Ese valor pasa a
+    ser la tasa de cobro manual, y la fila vuelve a ser la oficial."""
+    c = config_fila(db)
+    if (c.tasa_cobro or "bcv") == "bcv" and not c.tasa_cobro_manual:
+        c.tasa_cobro, c.tasa_cobro_manual, c.tasa_cobro_manual_en = "manual", fila.bcv, fila.actualizado_en or ahora()
+    fila.origen = "auto"
+
+
 def refrescar(db: Session, forzar: bool = False) -> bool:
     """Baja las tasas reales y las guarda en la fila de hoy.
 
-    Devuelve True si quedo con datos en vivo. No pisa una tasa manual salvo que
-    se pida explicitamente (`forzar`), que es lo que hace el boton "volver a la
-    tasa automatica".
+    Devuelve True si quedo con datos en vivo. Escribe siempre la tasa oficial;
+    la tasa con la que se cobra es otra cosa (`cobro`) y no se toca. `forzar`
+    solo se salta la cache de 10 minutos.
     """
     anclas = rates.obtener_anclas(forzar=forzar)
     if not anclas:
@@ -78,17 +165,8 @@ def refrescar(db: Session, forzar: bool = False) -> bool:
     fecha = hoy()
     fila = db.query(models.TasaCambio).filter(models.TasaCambio.fecha == fecha).first()
 
-    if fila and fila.origen == "manual" and not forzar:
-        # El dueno mando: se respeta SU tasa de cobro y solo se completan las
-        # de referencia --el paralelo y el euro--, que no deciden a que tasa se
-        # cobra. Sin esto, fijar la tasa a mano dejaba el euro congelado en el
-        # valor de ese dia para siempre.
-        if anclas.get("paralelo"):
-            fila.paralelo = anclas["paralelo"]
-        if anclas.get("eur"):
-            fila.eur = anclas["eur"]
-        db.commit()
-        return True
+    if fila and fila.origen == "manual":
+        _pasar_manual_a_cobro(db, fila)
 
     # Cada valor cae al anterior si su fuente fallo, en vez de perderse. Y
     # un salto absurdo no se guarda (QA nov: el euro paso de 999 a 6 de un dia
@@ -185,6 +263,13 @@ def _guardar_futura(db: Session, valor: datetime.date, anclas: dict) -> None:
         futura.actualizado_en = ahora()
 
     de_hoy = db.query(models.TasaCambio).filter(models.TasaCambio.fecha == hoy()).first()
+    if de_hoy is not None and de_hoy.origen == "manual":
+        # El parche de antes: la fila de hoy vuelve a ser la oficial (la ultima
+        # publicada) y lo que se habia escrito pasa a tasa de cobro.
+        previa = tasa_al(db, hoy() - datetime.timedelta(days=1))
+        _pasar_manual_a_cobro(db, de_hoy)
+        if previa is not None:
+            de_hoy.bcv, de_hoy.eur = previa.bcv, previa.eur or de_hoy.eur
     if de_hoy is None:
         # Un sabado o la tarde de un feriado: hoy vale la ultima publicada
         # hasta hoy. Se le hace su fila para que no se lea como desactualizada.
@@ -196,24 +281,20 @@ def _guardar_futura(db: Session, valor: datetime.date, anclas: dict) -> None:
     db.commit()
 
 
-def fijar_manual(db: Session, bcv: float, paralelo: Optional[float] = None) -> models.TasaCambio:
-    """El dueno fija la tasa con la que quiere cobrar hoy."""
-    fecha = hoy()
-    fila = db.query(models.TasaCambio).filter(models.TasaCambio.fecha == fecha).first()
-    if fila:
-        fila.bcv = bcv
-        if paralelo is not None:
-            fila.paralelo = paralelo
-        fila.origen = "manual"
-        fila.actualizado_en = ahora()
-    else:
-        fila = models.TasaCambio(
-            fecha=fecha, bcv=bcv, paralelo=paralelo, origen="manual"
-        )
-        db.add(fila)
-    db.commit()
-    db.refresh(fila)
-    return fila
+def fijar_manual(db: Session, bcv: float, paralelo: Optional[float] = None) -> dict:
+    """La tasa que el dueno escribe a mano con la que quiere cobrar hoy.
+
+    Es la tasa de cobro 'manual': ya no se guarda en la casilla del dolar, que
+    sigue siendo la oficial del BCV (specs/tasa.md). Solo si todavia no hay
+    ninguna tasa guardada se crea la fila del dia para que haya con que
+    convertir hasta que llegue la oficial."""
+    fila = tasa_vigente(db)
+    if fila is None:
+        db.add(models.TasaCambio(fecha=hoy(), bcv=bcv, paralelo=paralelo, origen="manual"))
+    elif paralelo is not None and fila.fecha == hoy():
+        fila.paralelo = paralelo
+    db.flush()
+    return fijar_cobro(db, "manual", bcv)
 
 
 def historial(db: Session, desde: datetime.date, hasta_exclusivo: datetime.date):
@@ -266,6 +347,7 @@ def estado(db: Session) -> dict:
         "desactualizada": bool(fila and fila.fecha < hoy())
         or (minutos_sin_contacto is None or minutos_sin_contacto > rates.MINUTOS_PARA_CONSIDERAR_CAIDA),
         "salto_rechazado": _texto_salto(),
+        "cobro": cobro(db),
     }
 
 

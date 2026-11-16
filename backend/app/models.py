@@ -570,6 +570,12 @@ class Configuracion(Base):
 
     id = Column(Integer, primary_key=True)
     tasa_bcv = Column(Float, default=0)
+    # Con que tasa se pasan a bolivares los precios en divisa al cobrar (specs/
+    # tasa.md): "bcv" (el dolar), "eur" (el euro) o "manual". Aparte de la tasa
+    # oficial, que nunca se pisa.
+    tasa_cobro = Column(String, default="bcv")
+    tasa_cobro_manual = Column(Float, nullable=True)
+    tasa_cobro_manual_en = Column(DateTime, nullable=True)
     # Interruptor para arrancar un local nuevo: el dueno todavia no cargo
     # insumos ni recetas, y sin esto CADA venta se traba con "no alcanza el
     # inventario" aunque en los hechos no haya nada que controlar todavia. Se

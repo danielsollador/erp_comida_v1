@@ -270,6 +270,7 @@ def saldos(db: Session) -> dict:
         "zelle_usd": _r(contabilidad.saldo_de_cuenta(db, "1021")),
         "tasa_bcv": t.bcv if t else None,
         "tasa_euro": t.eur if t else None,
+        "tasa_de_cobro": tasas.cobro(db),
         "tasa_del_dia": t.fecha.isoformat() if t else None,
         "ojo": "Son saldos de los libros. Si hay diferencias de caja por aprobar, la gaveta real difiere en ese monto.",
     }

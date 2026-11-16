@@ -1839,8 +1839,9 @@ async def cobrar_pedido(
     # semana pasada tiene que seguir mostrando los Bs que entraron entonces, no
     # los que darian los mismos dolares a la tasa de hoy. Igual con el IVA: si
     # sube la alicuota despues, un mes ya facturado no debe recalcularse solo.
-    vigente = tasas.tasa_vigente(db)
-    pedido.tasa_bcv = vigente.bcv if vigente else None
+    # Es la tasa de COBRO que eligio el dueno (el dolar BCV salvo que haya
+    # elegido otra): los Bs cobrados son los que van al Libro de Ventas.
+    pedido.tasa_bcv = tasas.tasa_de_cobro(db)
     pedido.tasa_iva = impuestos.tasa_iva(db) if body.facturado else None
     if retenido:
         # Lo retenido en Bs, como lo dira el comprobante: el % del IVA de la
@@ -2399,8 +2400,7 @@ def ticket(pedido_id: int, db: Session = Depends(get_db)):
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
-    vigente = tasas.tasa_vigente(db)
-    tasa = pedido.tasa_bcv or (vigente.bcv if vigente else None)
+    tasa = pedido.tasa_bcv or tasas.tasa_de_cobro(db)
     base = iva = None
     if pedido.facturado:
         base, iva = impuestos.desglosar(
