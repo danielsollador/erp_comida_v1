@@ -12,7 +12,19 @@ import { CampoNumero, HojaFormulario, Selector } from '../kit'
 import { Aviso, Boton, Campo, Cargando, Fila, Nota } from '../ui'
 import Autorizar from './Autorizar'
 
-type FilaPago = { clave: string; id: number | null; metodo: string; monto: string; referencia: string; fija: boolean }
+type FilaPago = {
+  clave: string
+  id: number | null
+  metodo: string
+  monto: string
+  referencia: string
+  /** Es la devolución de una edición: solo se le corrige la referencia. */
+  fija: boolean
+  /** Lo que se dio de vuelto al cobrar; se pierde si cambia la forma o el monto. */
+  vuelto: number
+  metodoOriginal: string
+  montoOriginal: number
+}
 
 const redondo = (x: number) => Math.round(x * 100) / 100
 const montoDe = (texto: string) => {
@@ -70,7 +82,10 @@ export default function CorregirPago({
             metodo: g.metodo,
             monto: String(g.monto).replace('.', ','),
             referencia: g.referencia || '',
-            fija: (g.vuelto_monto || 0) > 0 || g.monto < 0,
+            fija: g.monto < 0,
+            vuelto: g.vuelto_monto || 0,
+            metodoOriginal: g.metodo,
+            montoOriginal: g.monto,
           })),
         )
       })
@@ -84,10 +99,13 @@ export default function CorregirPago({
   const suma = redondo(filas.reduce((s, f) => s + montoDe(f.monto), 0))
   const falta = redondo(cobrado - suma)
   // Si solo cambian referencias, la plata no se movio de ningun lado.
+  // Perder el vuelto tambien mueve plata (lo que entro de mas y lo que salio).
+  const cambiaPlata = (f: FilaPago) =>
+    f.vuelto > 0 && (f.metodo !== f.metodoOriginal || Math.abs(montoDe(f.monto) - f.montoOriginal) > 0.009)
   const muevePlata = useMemo(() => {
     if (!pedido) return false
     const firmaDe = (xs: { metodo: string; monto: number }[]) => xs.map((x) => `${x.metodo}:${redondo(x.monto)}`).sort().join('|')
-    return firmaDe(pedido.pagos) !== firmaDe(filas.map((f) => ({ metodo: f.metodo, monto: montoDe(f.monto) })))
+    return firmaDe(pedido.pagos) !== firmaDe(filas.map((f) => ({ metodo: f.metodo, monto: montoDe(f.monto) }))) || filas.some(cambiaPlata)
   }, [pedido, filas])
 
   const cambiar = (clave: string, c: Partial<FilaPago>) => setFilas((fs) => fs.map((f) => (f.clave === clave ? { ...f, ...c } : f)))
@@ -172,9 +190,12 @@ export default function CorregirPago({
                   placeholder="Referencia: número del pago móvil, ticket del punto o comprobante"
                 />
               ) : null}
-              {f.fija ? (
+              {f.fija ? <Nota style={{ color: t.tenue }}>Es una devolución: solo se le corrige la referencia.</Nota> : null}
+              {f.vuelto > 0 ? (
                 <Nota style={{ color: t.tenue }}>
-                  Este pago tuvo vuelto (o es una devolución): movió dos gavetas y solo se le corrige la referencia.
+                  {cambiaPlata(f)
+                    ? `Se quita el vuelto de ${fmt(f.vuelto)}: con esta forma se recibió lo justo.`
+                    : `Tuvo vuelto de ${fmt(f.vuelto)}. Si cambias la forma o el monto, el vuelto se quita.`}
                 </Nota>
               ) : null}
             </View>
@@ -184,7 +205,17 @@ export default function CorregirPago({
             onPress={() =>
               setFilas((fs) => [
                 ...fs,
-                { clave: nuevaClave(), id: null, metodo: METODOS_PAGO[0], monto: falta > 0 ? String(falta).replace('.', ',') : '', referencia: '', fija: false },
+                {
+                  clave: nuevaClave(),
+                  id: null,
+                  metodo: METODOS_PAGO[0],
+                  monto: falta > 0 ? String(falta).replace('.', ',') : '',
+                  referencia: '',
+                  fija: false,
+                  vuelto: 0,
+                  metodoOriginal: '',
+                  montoOriginal: 0,
+                },
               ])
             }
             style={({ pressed }) => [e.otra, { borderColor: t.acento400, opacity: pressed ? 0.7 : 1 }]}

@@ -129,15 +129,43 @@ def test_con_la_caja_cerrada_no_se_corrige(client, variante):
     assert r.status_code == 409 and "ya se cerró" in r.json()["detail"]
 
 
-def test_el_pago_con_vuelto_no_se_mueve(client, variante):
+def test_el_pago_con_vuelto_se_corrige_y_el_vuelto_se_quita(client, variante, db):
+    """Savora, 16-nov: el pedido #4 se anoto "efectivo $14, recibio $20, vuelto
+    $6" y en realidad lo pagaron por Zelle. Antes era imposible corregirlo
+    (409 "tuvo vuelto"). Ahora se cambia como cualquier pago: como se recibio
+    lo justo, el vuelto se quita, y la plata vuelve de donde salio."""
+    v = cobrada(client, variante, metodo_pago="Efectivo $", pagos=[
+        {"metodo": "Efectivo $", "monto": 10.0, "recibido": 20.0, "vuelto_metodo": "Efectivo Bs"},
+    ])
+    divisas_antes, bs_antes, punto_antes = saldo(db, "1011"), saldo(db, "1010"), saldo(db, "1020")
+    pago = v["pagos"][0]
+    r = client.put(f"/api/pedidos/{v['id']}/pagos", json={"pagos": [
+        {"id": pago["id"], "metodo": "Punto de venta", "monto": 10.0, "referencia": "1"},
+    ]})
+    assert r.status_code == 200, r.text
+    nuevo = r.json()["pagos"][0]
+    assert nuevo["metodo"] == "Punto de venta" and nuevo["vuelto_monto"] == 0 and nuevo["recibido"] == 10.0
+    # Entraron $20 en divisas y salieron $10 en Bs: las dos gavetas vuelven atras.
+    assert round(saldo(db, "1011") - divisas_antes, 2) == -20.0
+    assert round(saldo(db, "1010") - bs_antes, 2) == 10.0
+    assert round(saldo(db, "1020") - punto_antes, 2) == 10.0
+    assert "vuelto" in r.json()["ediciones"][-1]["detalle"]
+    # El ajuste cuadra solo: una linea por cuenta, debe contra haber.
+    ajuste = db.query(models.AsientoContable).filter_by(origen="correccion_pago").one()
+    assert round(sum(l.debe for l in ajuste.movimientos), 2) == round(sum(l.haber for l in ajuste.movimientos), 2) == 20.0
+
+
+def test_corregir_solo_la_referencia_conserva_el_vuelto(client, variante, db):
     v = cobrada(client, variante, metodo_pago="Efectivo $", pagos=[
         {"metodo": "Efectivo $", "monto": 10.0, "recibido": 20.0, "vuelto_metodo": "Efectivo Bs"},
     ])
     pago = v["pagos"][0]
     r = client.put(f"/api/pedidos/{v['id']}/pagos", json={"pagos": [
-        {"id": pago["id"], "metodo": "Punto de venta", "monto": 10.0, "referencia": "1"},
+        {"id": pago["id"], "metodo": "Efectivo $", "monto": 10.0, "referencia": "nota"},
     ]})
-    assert r.status_code == 409 and "vuelto" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    assert r.json()["pagos"][0]["vuelto_monto"] == 10.0
+    assert db.query(models.AsientoContable).filter_by(origen="correccion_pago").count() == 0
 
 
 def test_el_fiado_no_se_corrige_aqui(client, variante):

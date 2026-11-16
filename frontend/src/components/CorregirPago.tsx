@@ -8,8 +8,13 @@
  * misma firma que editar una venta cobrada: mover un pago de efectivo al punto
  * es justo como se tapa un faltante. Corregir solo la referencia no pide nada.
  *
- * El servidor pone el resto de las reglas (caja del día ya cerrada, fiado,
- * pagos con vuelto) y las dice en palabras; aquí se muestran tal cual.
+ * Un pago que tuvo vuelto también se corrige (Sávora, 16-nov: "efectivo $14
+ * con $20 recibidos" que era Zelle): al cambiarle la forma o el monto, el
+ * vuelto se quita, porque se recibió lo justo. Lo único fijo es una
+ * devolución (monto negativo), que es la huella de una edición.
+ *
+ * El servidor pone el resto de las reglas (caja del día ya cerrada, fiado) y
+ * las dice en palabras; aquí se muestran tal cual.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Boton, Campo, Modal } from './ui'
@@ -28,8 +33,12 @@ type Fila = {
   metodo: string
   monto: string
   referencia: string
-  /** Tuvo vuelto, o es la devolución de una edición: movió dos gavetas. */
+  /** Es la devolución de una edición: solo se le corrige la referencia. */
   fija: boolean
+  /** Lo que se dio de vuelto al cobrar; se pierde si cambia la forma o el monto. */
+  vuelto: number
+  metodoOriginal: string
+  montoOriginal: number
 }
 
 const redondo = (x: number) => Math.round(x * 100) / 100
@@ -65,7 +74,10 @@ export default function CorregirPago({
             metodo: g.metodo,
             monto: String(g.monto),
             referencia: g.referencia || '',
-            fija: (g.vuelto_monto || 0) > 0 || g.monto < 0,
+            fija: g.monto < 0,
+            vuelto: g.vuelto_monto || 0,
+            metodoOriginal: g.metodo,
+            montoOriginal: g.monto,
           })),
         )
       })
@@ -82,7 +94,13 @@ export default function CorregirPago({
       xs.map((x) => `${x.metodo}:${redondo(x.monto)}`).sort().join('|')
     return (
       firmaDe(pedido.pagos) !==
-      firmaDe(filas.map((f) => ({ metodo: f.metodo, monto: montoO0(f.monto) })))
+        firmaDe(filas.map((f) => ({ metodo: f.metodo, monto: montoO0(f.monto) }))) ||
+      filas.some(
+        (f) =>
+          f.vuelto > 0 &&
+          (f.metodo !== f.metodoOriginal ||
+            Math.abs((montoO0(f.monto)) - f.montoOriginal) > 0.009),
+      )
     )
   }, [pedido, filas])
 
@@ -189,8 +207,14 @@ export default function CorregirPago({
                 )}
                 {f.fija && (
                   <p className="text-xs text-neutral-500">
-                    Este pago tuvo vuelto (o es una devolución): movió dos gavetas y solo se le corrige la
-                    referencia.
+                    Es una devolución: solo se le corrige la referencia.
+                  </p>
+                )}
+                {f.vuelto > 0 && (
+                  <p className="text-xs text-neutral-500">
+                    {f.metodo !== f.metodoOriginal || Math.abs((montoO0(f.monto)) - f.montoOriginal) > 0.009
+                      ? `Se quita el vuelto de ${fmt(f.vuelto)}: con esta forma se recibió lo justo.`
+                      : `Tuvo vuelto de ${fmt(f.vuelto)}. Si cambias la forma o el monto, el vuelto se quita.`}
                   </p>
                 )}
               </div>
@@ -209,6 +233,9 @@ export default function CorregirPago({
                   monto: falta > 0 ? String(falta) : '',
                   referencia: '',
                   fija: false,
+                  vuelto: 0,
+                  metodoOriginal: '',
+                  montoOriginal: 0,
                 },
               ])
             }

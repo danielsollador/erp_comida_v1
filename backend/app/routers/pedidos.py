@@ -2124,8 +2124,15 @@ async def corregir_pagos(
       - un dia cuya caja ya se cerro: el arqueo firmado diria una cosa y la
         venta otra. Se anula el cierre, se corrige, y se vuelve a cerrar;
       - el fiado: es una cuenta por cobrar con sus abonos, no una gaveta;
-      - un pago que tuvo vuelto, o una devolucion de una edicion: mueven dos
-        gavetas a la vez, y moverlos a medias descuadra las dos.
+      - una devolucion de una edicion (monto negativo): es la huella de esa
+        edicion y no se reescribe.
+
+    Un pago que tuvo vuelto se corrige como cualquier otro (Savora, 16-nov: el
+    #4 quedo "efectivo $14, recibio $20, vuelto $6" y era por Zelle; antes era
+    imposible arreglarlo). Si cambia de forma o de monto, el vuelto se quita:
+    se recibio lo justo y nada salio de la gaveta. El asiento de ajuste sale
+    solo de comparar las lineas de antes con las de despues, asi que las dos
+    gavetas que movio vuelven atras.
     """
     pedido = _buscar(db, pedido_id)
     if pedido.estado != "pagado":
@@ -2159,7 +2166,7 @@ async def corregir_pagos(
             detail="El fiado no se corrige aquí: es una cuenta por cobrar, no una forma de pago.",
         )
 
-    fijos = {p.id for p in pedido.pagos if (p.vuelto_monto or 0) > 0 or p.monto < 0}
+    fijos = {p.id for p in pedido.pagos if p.monto < 0}
     nuevos: List[tuple] = []  # (pago viejo o None, metodo, monto, referencia)
     for p in body.pagos:
         viejo = viejos.get(p.id) if p.id is not None else None
@@ -2171,8 +2178,8 @@ async def corregir_pagos(
             if p.metodo != viejo.metodo or abs(monto - round(viejo.monto, 2)) > 0.001:
                 raise HTTPException(
                     status_code=409,
-                    detail="Un pago que tuvo vuelto (o una devolución) no se cambia de forma ni de monto: "
-                    "movió dos gavetas a la vez. Solo se le corrige la referencia.",
+                    detail="Una devolución no se cambia de forma ni de monto: es la huella de una "
+                    "edición. Solo se le corrige la referencia.",
                 )
         else:
             if p.metodo not in contabilidad.CUENTA_POR_METODO_PAGO:
@@ -2185,14 +2192,11 @@ async def corregir_pagos(
             )
         nuevos.append((viejo, p.metodo, monto, referencia))
 
-    # Todo pago que tuvo vuelto sigue ahi: quitarlo borraria de los libros un
-    # vuelto que si se dio.
+    # Una devolucion sigue ahi: quitarla borraria de los libros plata que si
+    # salio.
     quedan = {v.id for v, *_ in nuevos if v is not None}
     if fijos - quedan:
-        raise HTTPException(
-            status_code=409,
-            detail="Un pago que tuvo vuelto (o una devolución) no se puede quitar.",
-        )
+        raise HTTPException(status_code=409, detail="Una devolución no se puede quitar.")
 
     antes = round(sum(p.monto for p in pedido.pagos), 2)
     despues = round(sum(m for _, _, m, _ in nuevos), 2)
@@ -2205,19 +2209,35 @@ async def corregir_pagos(
 
     def _describir(pagos) -> str:
         return ", ".join(
-            f"{etiqueta} ${monto:.2f}" + (f" (ref {ref})" if ref else "")
-            for etiqueta, monto, ref in pagos
+            f"{etiqueta} ${monto:.2f}"
+            + (f" (ref {ref})" if ref else "")
+            + (f" (vuelto ${vuelto:.2f})" if vuelto else "")
+            for etiqueta, monto, ref, vuelto in pagos
         )
 
-    antes_texto = _describir([(p.metodo, p.monto, p.referencia or "") for p in pedido.pagos])
-    despues_texto = _describir([(m, monto, ref) for _, m, monto, ref in nuevos])
+    def _pierde_el_vuelto(viejo, metodo, monto) -> bool:
+        return (
+            viejo is not None
+            and (viejo.vuelto_monto or 0) > 0
+            and (metodo != viejo.metodo or abs(monto - round(viejo.monto, 2)) > 0.001)
+        )
+
+    antes_texto = _describir(
+        [(p.metodo, p.monto, p.referencia or "", round(p.vuelto_monto or 0, 2)) for p in pedido.pagos]
+    )
+    despues_texto = _describir(
+        [
+            (m, monto, ref, 0.0 if _pierde_el_vuelto(v, m, monto) else round((v.vuelto_monto if v else 0) or 0, 2))
+            for v, m, monto, ref in nuevos
+        ]
+    )
     if antes_texto == despues_texto:
         raise HTTPException(status_code=400, detail="No hay ningún cambio que guardar")
 
     lineas_antes = contabilidad._lineas_de_cobro(pedido)
     mueve_plata = sorted((v.metodo, round(v.monto, 2)) for v in pedido.pagos) != sorted(
         (m, monto) for _, m, monto, _ in nuevos
-    )
+    ) or any(_pierde_el_vuelto(v, m, monto) for v, m, monto, _ in nuevos)
     autorizado_por = ""
     if mueve_plata:
         autorizado_por = autorizaciones.firma_propia(request) or ""
@@ -2238,6 +2258,13 @@ async def corregir_pagos(
             db.delete(v)
     for viejo, metodo, monto, referencia in nuevos:
         if viejo is not None:
+            if _pierde_el_vuelto(viejo, metodo, monto):
+                # Se recibio lo justo: ni billete de mas ni vuelto.
+                viejo.recibido = monto
+                viejo.vuelto_monto = 0
+                viejo.vuelto_metodo = None
+                viejo.vuelto_bs = 0
+                viejo.vuelto_referencia = ""
             viejo.metodo = metodo
             viejo.monto = monto
             viejo.referencia = referencia
