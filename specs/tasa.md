@@ -1,6 +1,6 @@
 # Spec: Tasa de cobro
 
-Tasa de cambio · bloque 1.11 · **Borrador**
+Tasa de cambio · bloque 1.11 · **Aprobada** por Daniel (16-nov)
 
 ## Qué resuelve
 
@@ -30,10 +30,10 @@ Savora cobra en bolívares, pero con los precios en divisa. Yeimer quiere elegir
 
 ## Por decidir
 
-- **D16:** una factura de compra en dólares se pasa a bolívares para el Libro de Compras con el dólar BCV de su fecha, pero su pago en bolívares sale a la tasa de cobro. La diferencia, ¿va al diferencial cambiario (6160)? Confirmar con el contador.
-- **D17:** al cambiar de tasa a mitad del día, la gaveta de bolívares queda a dos tasas. Hoy el cierre cuenta en dólares y la pantalla convierte con una sola tasa: probado en local con 5.581,28 Bs exactos, da un faltante falso de $0,28 por aprobar. Se propone que el cierre espere los Bs de cada cobro a su tasa; confirmar con Daniel.
+- **D16 (no bloquea):** los libros siguen en dólares y no cambian. Una factura de compra en dólares se pasa a bolívares para el Libro de Compras con el dólar BCV de su fecha, pero su pago en bolívares sale a la tasa de cobro. La diferencia, la ve el contador después; no se programa nada contable.
+- **D17 (resuelta, se programa):** al cambiar de tasa a mitad del día, la gaveta de bolívares queda a dos tasas. Hoy el cierre cuenta en dólares y la pantalla convierte con una sola tasa: probado en local con 5.581,28 Bs exactos, da un faltante falso de $0,28 por aprobar. El cierre espera los Bs de cada cobro a su tasa.
 - **D18:** ¿la tasa manual vence a medianoche o dura hasta que se cambie? Se asume que dura y avisa.
-- **D19:** ¿cobrar a tasa euro y declararlo así es válido ante el SENIAT? Lo responde el contador antes de usarlo en producción.
+- **D19 (del contador, no bloquea el código):** ¿cobrar a tasa euro y declararlo así es válido ante el SENIAT?
 
 ## Cómo se valida
 

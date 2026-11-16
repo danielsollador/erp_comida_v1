@@ -271,10 +271,10 @@ Bloquean su bloque hasta que Leider responda.
 | D13 | ¿Quién aprueba diferencias y anulaciones de cierre? | **Confirmada por Daniel (8-nov):** el dueño y los roles que él marque como «autoriza». | 1.10 |
 | D14 | ¿Desde cuánto una diferencia se aprueba sola? | **Confirmada por Daniel (8-nov):** menos de $0,10. | 1.10 |
 | D15 | ¿Qué se hace con los $321,94 de faltantes y sobrantes de sep–oct? | **Confirmada por Daniel (8-nov):** nada sin el dueño; se revisan con él. | 1.10 |
-| D16 | Factura de compra en $ (dólar BCV de su fecha) pagada en Bs a la tasa de cobro: ¿la diferencia va al diferencial cambiario? | Sí, a la 6160. Confirmar con el contador. | 1.11 |
-| D17 | Con dos tasas en el mismo día, el cierre da un faltante falso (probado: $0,28 con la plata exacta). ¿Cómo se cuadra la gaveta de Bs? | El cierre espera los Bs de cada cobro a su tasa. | 1.11 |
-| D18 | ¿La tasa manual vence a medianoche? | No: dura hasta que se cambie y avisa si es vieja. | 1.11 |
-| D19 | ¿Cobrar y declarar a tasa euro es válido ante el SENIAT? | Lo responde el contador antes de usarlo en producción. | 1.11 |
+| D16 | Factura de compra en $ pagada en Bs a la tasa de cobro: ¿el contador quiere algo más en el Libro de Compras? | **Daniel (16-nov):** nada contable por ahora; lo ve el contador. | — |
+| D17 | Con dos tasas en el mismo día, el cierre da un faltante falso (probado: $0,28 con la plata exacta). ¿Cómo se cuadra la gaveta de Bs? | **Daniel (16-nov):** el cierre espera los Bs de cada cobro a su tasa. | 1.11 |
+| D18 | ¿La tasa manual vence a medianoche? | **Daniel (16-nov):** no vence; dura hasta que se cambie y avisa si es vieja. | 1.11 |
+| D19 | ¿Cobrar y declarar a tasa euro es válido ante el SENIAT? | Lo responde el contador; no bloquea el código. | — |
 | D3 | Cambio de turno: ¿arqueo en cada turno o solo al cierre? | Arqueo por turno sin cerrar el día. | FASE 3 |
 | D4 | Alta de local: ¿un backend por local o uno para todos? | Script de alta mientras haya menos de 5 locales. | FASE 3 |
 | D5 | Pagos de Vertigo: ¿manual o pasarela? ¿Se bloquea al moroso? | Manual. Nunca se bloquea la venta. | FASE 3 |

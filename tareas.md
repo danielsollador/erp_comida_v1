@@ -84,8 +84,8 @@
 - [ ] Retirar Capacitor cuando las tablets usen la APK nueva
 
 ### 1.11 Tasa de cobro
-- [x] Spec `specs/tasa.md` (borrador; falta que Leider o Daniel la aprueben)
-- [!] D16 a D19: contador (diferencial de compras, valoración de la gaveta, vencimiento de la manual, validez ante el SENIAT)
+- [x] Spec `specs/tasa.md` (aprobada por Daniel el 16-nov)
+- [x] D16 a D19 resueltas; D16 y D19 las ve el contador y no bloquean
 - [ ] Pruebas con el caso real de $2,90 (2.650,66 y 2.930,62 Bs), Libro de Ventas, vuelto y pago a proveedor
 - [ ] El cierre de caja espera los Bs de cada cobro a su tasa (prueba: dos tasas el mismo día, gaveta exacta, sin diferencia)
 - [ ] Configuración de la tasa de cobro con firma, y la manual fuera de la casilla del dólar
