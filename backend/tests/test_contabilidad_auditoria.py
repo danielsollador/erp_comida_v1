@@ -35,7 +35,7 @@ from conftest import (  # noqa: F401  (`libros` se inyecta como fixture)
     inventario_fisico,
     libros_cuadrados,
 )
-from tests.conftest import saldo
+from tests.conftest import bs as en_bs, saldo, tasa_de_hoy
 
 
 
@@ -131,7 +131,8 @@ def test_un_dia_completo_deja_los_libros_cuadrados(client, libros, variante, ins
     # Gasto por banco, retiro del dueño, entrega de propinas.
     assert client.post("/api/caja/gastos", json={"descripcion": "Gas", "categoria": "Servicios",
                                                 "monto": 3, "metodo_pago": "Banco"}).status_code == 200
-    assert client.post("/api/caja/retiros", json={"monto": 4, "metodo_pago": "Efectivo"}).status_code == 200
+    tasa_de_hoy(db)
+    assert client.post("/api/caja/retiros", json={"monto_bs": en_bs(4), "metodo_pago": "Efectivo"}).status_code == 200
     assert client.post("/api/caja/propinas/entregar", json={"monto": 2, "metodo_pago": "Efectivo Bs"}).status_code == 200
 
     # Cierre: falta $1 en bolivares y sobran $0.50 en divisas.

@@ -102,6 +102,11 @@ COLUMNAS = [
     ("TRX510_CAJ_CIERRE", "operador_id", "INTEGER"),
     ("TRX510_CAJ_CIERRE", "punto_venta_id", "INTEGER"),
     ("TRX630_CON_RETIRO_PROPIETARIO", "operador_id", "INTEGER"),
+    # Lo que salio en bolivares se guarda en bolivares, con su tasa (16-nov).
+    ("TRX630_CON_RETIRO_PROPIETARIO", "monto_bs", "FLOAT"),
+    ("TRX630_CON_RETIRO_PROPIETARIO", "tasa", "FLOAT"),
+    ("TRX620_CON_GASTO", "monto_bs", "FLOAT"),
+    ("TRX620_CON_GASTO", "tasa", "FLOAT"),
     ("TRX320_INV_MERMA", "operador_id", "INTEGER"),
     ("TRX620_CON_GASTO", "operador_id", "INTEGER"),
     ("TRX110_VEN_PEDIDO", "clave_cliente", "VARCHAR"),

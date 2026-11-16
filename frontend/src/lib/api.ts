@@ -1008,10 +1008,11 @@ export const api = {
     req<PagoSinFactura>(`/egresos/fijos/${id}/pagar`, { method: 'POST', body: JSON.stringify(datos) }),
 
   listarGastos: (r?: Rango) => req<Gasto[]>(`/caja/gastos${conRango(r)}`),
-  crearGasto: (descripcion: string, categoria: string, monto: number, metodo_pago = 'Efectivo') =>
+  // De una gaveta en bolívares va `monto_bs` (y el servidor lo pasa a dólares a la tasa de cobro).
+  crearGasto: (descripcion: string, categoria: string, monto: number, metodo_pago = 'Efectivo', monto_bs?: number) =>
     req<Gasto>('/caja/gastos', {
       method: 'POST',
-      body: JSON.stringify({ descripcion, categoria, monto, metodo_pago }),
+      body: JSON.stringify({ descripcion, categoria, monto, metodo_pago, monto_bs }),
     }),
   eliminarGasto: (id: number) => req(`/caja/gastos/${id}`, { method: 'DELETE' }),
 
@@ -1306,10 +1307,10 @@ export const api = {
     }),
   listarCierres: (r?: Rango) => req<CierreCaja[]>(`/caja/cierres${conRango(r)}`),
   listarRetiros: (r?: Rango) => req<RetiroPropietario[]>(`/caja/retiros${conRango(r)}`),
-  crearRetiro: (monto: number, metodo_pago: string, nota = '') =>
+  crearRetiro: (monto: number, metodo_pago: string, nota = '', monto_bs?: number) =>
     req<RetiroPropietario>('/caja/retiros', {
       method: 'POST',
-      body: JSON.stringify({ monto, metodo_pago, nota }),
+      body: JSON.stringify({ monto, metodo_pago, nota, monto_bs }),
     }),
   eliminarRetiro: (id: number) => req(`/caja/retiros/${id}`, { method: 'DELETE' }),
 

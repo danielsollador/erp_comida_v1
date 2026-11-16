@@ -20,7 +20,7 @@ Estas pruebas fijan las cuatro cosas de las que depende eso:
   4. No se abre dos veces, ni despues de cerrar.
 """
 
-from conftest import caja_cerrar, caja_esperado
+from conftest import bs, caja_cerrar, caja_esperado, tasa_de_hoy
 
 
 def vender(client, variante, metodo="Efectivo Bs", cantidad=1):
@@ -99,15 +99,16 @@ def test_la_primera_apertura_va_al_capital_no_a_perdidas(client):
     assert cuentas["3010"]["haber"] == 50
 
 
-def test_la_fila_suma_a_la_vista(client, variante):
+def test_la_fila_suma_a_la_vista(client, variante, db):
     """fondo + entro - salio = esperado. Es el contrato del desglose: un total
     que no sale de las columnas de al lado obliga a creer en vez de verificar.
     """
     abrir(client, bolivares=20)
     vender(client, variante, "Efectivo Bs")
+    tasa_de_hoy(db)
     client.post(
         "/api/caja/gastos",
-        json={"descripcion": "Bombona", "monto": 3, "categoria": "Otros",
+        json={"descripcion": "Bombona", "monto_bs": bs(3), "categoria": "Otros",
               "metodo_pago": "Efectivo Bs"},
     )
 

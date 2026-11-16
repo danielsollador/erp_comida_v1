@@ -615,7 +615,12 @@ class Gasto(Base):
     id = Column(Integer, primary_key=True)
     descripcion = Column(String, nullable=False)
     categoria = Column(String, default="Operativo")  # Insumos | Servicios | Sueldos | Otros
+    # En dolares, como todos los libros. Si salio de una gaveta o cuenta en
+    # bolivares, `monto_bs` es lo que de verdad salio y `tasa` la de cobro de
+    # ese dia (Savora, 16-nov: un retiro de 1.000 Bs quedo como $1.000).
     monto = Column(Float, nullable=False)
+    monto_bs = Column(Float, nullable=True)
+    tasa = Column(Float, nullable=True)
     # De donde salio la plata. Sin esto un sueldo pagado por transferencia
     # bajaba igual el efectivo esperado del cierre de caja.
     metodo_pago = Column(String, default="Efectivo")  # Efectivo | Banco
@@ -635,7 +640,10 @@ class RetiroPropietario(Base):
     __tablename__ = "TRX630_CON_RETIRO_PROPIETARIO"
 
     id = Column(Integer, primary_key=True)
+    # En dolares; si salio en bolivares, `monto_bs` y `tasa` (ver Gasto).
     monto = Column(Float, nullable=False)
+    monto_bs = Column(Float, nullable=True)
+    tasa = Column(Float, nullable=True)
     metodo_pago = Column(String, default="Efectivo")  # Efectivo | Banco
     nota = Column(String, default="")
     fecha = Column(DateTime, default=ahora)

@@ -258,7 +258,10 @@ export type Gasto = {
   id: number
   descripcion: string
   categoria: string
+  /** En dólares, como los libros. Si salió en bolívares, `monto_bs` es lo que salió y `tasa` la de ese día. */
   monto: number
+  monto_bs: number | null
+  tasa: number | null
   metodo_pago: 'Efectivo' | 'Banco'
   fecha: string
 }
@@ -996,6 +999,8 @@ export type ResumenCaja = {
 export type RetiroPropietario = {
   id: number
   monto: number
+  monto_bs: number | null
+  tasa: number | null
   metodo_pago: 'Efectivo' | 'Banco'
   nota: string
   fecha: string

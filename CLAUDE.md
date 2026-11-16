@@ -39,6 +39,7 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 
 - Vertigo Pro es el producto; Savora, su primer cliente. Nada propio de un cliente (nombre, color, logo, reglas) va fijo en el código: va en `locales/<local>.json` o en su configuración.
 - El dinero manda: un cambio que toque cobros, caja, inventario, asientos o impuestos se explica antes de hacerlo y nunca cambia en silencio operaciones pasadas.
+- Cada moneda en su moneda: lo que entra o sale por una gaveta o cuenta en bolívares (Efectivo Bs, pago móvil, punto, transferencia) se escribe, se guarda (`monto_bs` y `tasa`) y se muestra en bolívares; lo de dólares, en dólares. Los libros siguen en dólares a la tasa de cobro del día, pero el usuario nunca convierte de cabeza, nunca ve un monto en la moneda equivocada, y el servidor rechaza un monto que llegue en la otra moneda en vez de convertirlo.
 - Producción tiene ventas reales: nada se despliega en horario de ventas sin Leider o Daniel presente.
 
 ## Cómo se trabaja

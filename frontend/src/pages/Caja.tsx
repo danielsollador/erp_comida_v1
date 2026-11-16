@@ -1186,26 +1186,28 @@ function Movimientos({
   const { deshacible, oculto } = useDeshacer()
   // La gaveta de bolivares se escribe en bolivares: la cajera tiene los
   // billetes en Bs y convertirlos de cabeza es donde se cuela el error (QA
-  // nov, hallazgo 32). Se guarda en dolares, a la tasa de hoy.
+  // nov, hallazgo 32; Savora 16-nov: 1.000 Bs anotados como $1.000). Los Bs
+  // van tal cual al servidor, que los guarda en Bs y los pasa a dolares con
+  // la tasa de cobro del dia.
   const { tasaCobro } = useMoneda()
-  const enBs = EN_BOLIVARES.has(metodo) && !!tasaCobro
+  const enBs = EN_BOLIVARES.has(metodo)
 
   async function registrar() {
     const escrito = leerMonto(monto)
     const n = enBs && tasaCobro ? Math.round((escrito / tasaCobro) * 100) / 100 : escrito
-    if (!Number.isFinite(n) || n <= 0) return
+    if (!Number.isFinite(escrito) || escrito <= 0) return
     if (tipo === 'gasto' && !descripcion.trim()) return
     if (tipo === 'deposito' && !referencia.trim()) return setError('Pon la referencia del depósito.')
     setError('')
     try {
       if (tipo === 'gasto') {
-        await api.crearGasto(descripcion.trim(), 'Otros', n, metodo)
+        await api.crearGasto(descripcion.trim(), 'Otros', enBs ? 0 : escrito, metodo, enBs ? escrito : undefined)
       } else if (tipo === 'deposito') {
         // Llevar el efectivo al banco: sale de la gaveta y entra al banco.
         // No es gasto, pero si no se anota el cierre da faltante.
         await api.crearTraspaso({ tipo: 'traspaso', desde: metodo, hacia: banco, monto: n, referencia: referencia.trim(), nota: descripcion.trim() })
       } else {
-        await api.crearRetiro(n, metodo, descripcion.trim())
+        await api.crearRetiro(enBs ? 0 : escrito, metodo, descripcion.trim(), enBs ? escrito : undefined)
       }
       setDescripcion('')
       setMonto('')
@@ -1331,6 +1333,7 @@ function Movimientos({
           texto: g.descripcion,
           detalle: `de ${g.metodo_pago}`,
           monto: g.monto,
+          bs: g.monto_bs,
           borrar: () => borrarGasto(g.id),
         }))}
       />
@@ -1343,6 +1346,7 @@ function Movimientos({
           texto: r.nota || 'Retiro',
           detalle: `de ${r.metodo_pago}`,
           monto: r.monto,
+          bs: r.monto_bs,
           borrar: () => borrarRetiro(r.id),
         }))}
       />
@@ -1446,7 +1450,10 @@ type FilaMovimiento = {
   fecha: string
   texto: string
   detalle: string
+  /** En dólares (es lo que suma el total). */
   monto: number
+  /** Si salió en bolívares, se muestra así; los dólares quedan chiquitos al lado. */
+  bs?: number | null
   borrar: () => void
 }
 
@@ -1479,7 +1486,14 @@ function ListaMovimientos({
               <span className="text-xs text-neutral-400"> ({f.detalle})</span>
             </span>
             <span className="flex items-center gap-2 shrink-0">
-              <span className="font-medium tabular-nums">{dinero(f.monto)}</span>
+              {f.bs ? (
+                <span className="text-right">
+                  <span className="font-medium tabular-nums">{fmtBs(f.bs)}</span>
+                  <span className="block text-xs text-neutral-400 tabular-nums">{dinero(f.monto)}</span>
+                </span>
+              ) : (
+                <span className="font-medium tabular-nums">{dinero(f.monto)}</span>
+              )}
               <button onClick={f.borrar} className="text-peligro-400 text-xs">
                 x
               </button>

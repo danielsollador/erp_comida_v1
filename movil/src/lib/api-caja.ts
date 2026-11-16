@@ -64,12 +64,13 @@ export const apiCaja = {
   listarCierres: (desde: string, hasta: string) => req<CierreCaja[]>(`/caja/cierres?${rango(desde, hasta)}`),
 
   listarGastos: (desde: string, hasta: string) => req<Gasto[]>(`/caja/gastos?${rango(desde, hasta)}`),
-  crearGasto: (descripcion: string, categoria: string, monto: number, metodo_pago: string) =>
-    req<Gasto>('/caja/gastos', { method: 'POST', body: cuerpo({ descripcion, categoria, monto, metodo_pago }) }),
+  // De una gaveta en bolívares va `monto_bs` (el servidor lo pasa a dólares a la tasa de cobro).
+  crearGasto: (descripcion: string, categoria: string, monto: number, metodo_pago: string, monto_bs?: number) =>
+    req<Gasto>('/caja/gastos', { method: 'POST', body: cuerpo({ descripcion, categoria, monto, metodo_pago, monto_bs }) }),
   eliminarGasto: (id: number) => req<{ ok: boolean }>(`/caja/gastos/${id}`, { method: 'DELETE' }),
 
   listarRetiros: (desde: string, hasta: string) => req<RetiroPropietario[]>(`/caja/retiros?${rango(desde, hasta)}`),
-  crearRetiro: (monto: number, metodo_pago: string, nota = '') =>
-    req<RetiroPropietario>('/caja/retiros', { method: 'POST', body: cuerpo({ monto, metodo_pago, nota }) }),
+  crearRetiro: (monto: number, metodo_pago: string, nota = '', monto_bs?: number) =>
+    req<RetiroPropietario>('/caja/retiros', { method: 'POST', body: cuerpo({ monto, metodo_pago, nota, monto_bs }) }),
   eliminarRetiro: (id: number) => req<{ ok: boolean }>(`/caja/retiros/${id}`, { method: 'DELETE' }),
 }

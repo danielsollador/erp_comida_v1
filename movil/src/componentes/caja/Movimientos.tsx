@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { METODOS_PAGO } from '../../../../frontend/src/lib/pagos'
+import { EN_BOLIVARES, METODOS_PAGO } from '../../../../frontend/src/lib/pagos'
 import { apiCaja } from '../../lib/api-caja'
-import { useMoneda } from '../../lib/moneda'
+import { fmtBs, useMoneda } from '../../lib/moneda'
 import { aMonto } from '../../lib/numeros'
 import { LETRA, useTema } from '../../lib/tema'
 import type { Gasto, RetiroPropietario } from '../../lib/tipos'
@@ -53,6 +53,9 @@ export function Movimientos({
 
   const esGasto = tipo === 'gasto'
   const n = aMonto(monto)
+  // Cada moneda en su moneda: de una gaveta en bolivares se escriben Bs y van
+  // tal cual al servidor (Savora, 16-nov: 1.000 Bs anotados como $1.000).
+  const enBs = EN_BOLIVARES.has(metodo)
   // Las mismas condiciones de la web (que no registra sin monto, ni un gasto
   // sin decir que fue); aqui el boton se apaga en vez de no hacer nada.
   const listo = Number.isFinite(n) && n > 0 && (!esGasto || descripcion.trim() !== '')
@@ -62,8 +65,8 @@ export function Movimientos({
     setError('')
     setGuardando(true)
     try {
-      if (esGasto) await apiCaja.crearGasto(descripcion.trim(), categoria, n, metodo)
-      else await apiCaja.crearRetiro(n, metodo, descripcion.trim())
+      if (esGasto) await apiCaja.crearGasto(descripcion.trim(), categoria, enBs ? 0 : n, metodo, enBs ? n : undefined)
+      else await apiCaja.crearRetiro(enBs ? 0 : n, metodo, descripcion.trim(), enBs ? n : undefined)
       setDescripcion('')
       setMonto('')
       alCambiar()
@@ -117,7 +120,7 @@ export function Movimientos({
           valor={metodo}
           alCambiar={setMetodo}
         />
-        <CampoNumero rotulo="Monto" prefijo="$" valor={monto} alCambiar={setMonto} placeholder="0,00" />
+        <CampoNumero rotulo={enBs ? 'Monto en bolívares' : 'Monto en dólares'} prefijo={enBs ? 'Bs' : '$'} valor={monto} alCambiar={setMonto} placeholder="0,00" />
         {error ? <Aviso texto={error} tono="peligro" /> : null}
         <Boton texto="Registrar" alTocar={registrar} ocupado={guardando} deshabilitado={!listo} />
       </Ficha>
@@ -133,6 +136,7 @@ export function Movimientos({
             texto: g.descripcion,
             detalle: `${g.categoria} · de ${g.metodo_pago}`,
             monto: g.monto,
+            bs: g.monto_bs,
             borrar: () => alBorrar('gasto', g.id),
           }))}
       />
@@ -147,6 +151,7 @@ export function Movimientos({
             texto: r.nota || 'Retiro',
             detalle: `de ${r.metodo_pago}`,
             monto: r.monto,
+            bs: r.monto_bs,
             borrar: () => alBorrar('retiro', r.id),
           }))}
       />
@@ -154,7 +159,8 @@ export function Movimientos({
   )
 }
 
-type FilaMovimiento = { id: number; fecha: string; texto: string; detalle: string; monto: number; borrar: () => void }
+/** `monto` en dólares (suma el total); si salió en bolívares, `bs` es lo que se muestra. */
+type FilaMovimiento = { id: number; fecha: string; texto: string; detalle: string; monto: number; bs?: number | null; borrar: () => void }
 
 function ListaMovimientos({ titulo, etiqueta, filas }: { titulo: string; etiqueta: string; filas: FilaMovimiento[] }) {
   const t = useTema()
@@ -178,7 +184,14 @@ function ListaMovimientos({ titulo, etiqueta, filas }: { titulo: string; etiquet
               {diaMes(f.fecha)} · {f.detalle}
             </Text>
           </View>
-          <Text style={[l.monto, { color: t.tinta }]}>{fmt(f.monto)}</Text>
+          {f.bs ? (
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={[l.monto, { color: t.tinta }]}>{fmtBs(f.bs)}</Text>
+              <Text style={[l.detalle, { color: t.suave }]}>{fmt(f.monto)}</Text>
+            </View>
+          ) : (
+            <Text style={[l.monto, { color: t.tinta }]}>{fmt(f.monto)}</Text>
+          )}
           <Pressable
             onPress={f.borrar}
             accessibilityRole="button"

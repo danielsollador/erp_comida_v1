@@ -5,7 +5,7 @@ equivocado o corrompian datos sin avisar. Son justo los que no se pueden
 detectar mirando la pantalla.
 """
 
-from conftest import caja_cerrar, caja_esperado, caja_ventas
+from conftest import bs, caja_cerrar, caja_esperado, caja_ventas, tasa_de_hoy
 
 import datetime
 import threading
@@ -205,11 +205,12 @@ def test_un_gasto_por_banco_no_toca_la_gaveta(client):
     assert caja_esperado(client) == antes
 
 
-def test_un_gasto_en_efectivo_si_baja_la_gaveta(client):
+def test_un_gasto_en_efectivo_si_baja_la_gaveta(client, db):
+    tasa_de_hoy(db)
     antes = caja_esperado(client)
     client.post(
         "/api/caja/gastos",
-        json={"descripcion": "Gas", "categoria": "Servicios", "monto": 12, "metodo_pago": "Efectivo"},
+        json={"descripcion": "Gas", "categoria": "Servicios", "monto_bs": bs(12), "metodo_pago": "Efectivo"},
     )
     assert round(antes - caja_esperado(client), 2) == 12.0
 
@@ -218,9 +219,10 @@ def test_un_gasto_en_efectivo_si_baja_la_gaveta(client):
 def test_borrar_un_gasto_no_deja_movimientos_huerfanos(client, db):
     """El DELETE masivo sobre el query no dispara el cascade del ORM: los
     movimientos quedaban vivos y el balance los seguia sumando."""
+    tasa_de_hoy(db)
     gasto = client.post(
         "/api/caja/gastos",
-        json={"descripcion": "Prueba", "categoria": "Otros", "monto": 99, "metodo_pago": "Efectivo"},
+        json={"descripcion": "Prueba", "categoria": "Otros", "monto_bs": bs(99), "metodo_pago": "Efectivo"},
     ).json()
     assert saldo(db, "6010") == 99.0
 
@@ -239,7 +241,8 @@ def test_borrar_un_gasto_no_deja_movimientos_huerfanos(client, db):
 
 
 # ---------------------------------------------------------------- C/Q: reportes
-def test_reportes_y_contabilidad_dan_el_mismo_resultado(client, variante):
+def test_reportes_y_contabilidad_dan_el_mismo_resultado(client, variante, db):
+    tasa_de_hoy(db)
     """Reportes contaba el IVA como ingreso propio e ignoraba las mermas: daba
     8.1% mas de ganancia que el Estado de Resultados por el mismo periodo."""
     pedido = client.post(
@@ -251,7 +254,7 @@ def test_reportes_y_contabilidad_dan_el_mismo_resultado(client, variante):
     )
     client.post(
         "/api/caja/gastos",
-        json={"descripcion": "Gas", "categoria": "Servicios", "monto": 3, "metodo_pago": "Efectivo"},
+        json={"descripcion": "Gas", "categoria": "Servicios", "monto_bs": bs(3), "metodo_pago": "Efectivo"},
     )
 
     r = client.get("/api/reportes/resumen?periodo=mes").json()
@@ -757,8 +760,9 @@ def test_el_retiro_del_dueno_no_es_un_gasto(client, db, variante):
     client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
     utilidad_antes = client.get("/api/contabilidad/estado-resultados?periodo=mes").json()["utilidad_neta"]
 
-    r = client.post("/api/caja/retiros", json={"monto": 12.0, "metodo_pago": "Efectivo"})
-    assert r.status_code == 200
+    tasa_de_hoy(db)
+    r = client.post("/api/caja/retiros", json={"monto_bs": bs(12.0), "metodo_pago": "Efectivo"})
+    assert r.status_code == 200, r.text
 
     er = client.get("/api/contabilidad/estado-resultados?periodo=mes").json()
     assert er["utilidad_neta"] == utilidad_antes  # la ganancia no se movio
@@ -777,7 +781,8 @@ def test_el_retiro_no_descuadra_el_balance(client, db, variante):
         "/api/pedidos", json={"items": [{"variante_id": variante.id, "cantidad": 4}], "nota": ""}
     ).json()
     client.post(f"/api/pedidos/{pedido['id']}/cobrar", json={"metodo_pago": "Efectivo"})
-    client.post("/api/caja/retiros", json={"monto": 12.0, "metodo_pago": "Efectivo"})
+    tasa_de_hoy(db)
+    client.post("/api/caja/retiros", json={"monto_bs": bs(12.0), "metodo_pago": "Efectivo"})
 
     bg = client.get("/api/contabilidad/balance-general").json()
     assert bg["cuadra"] is True

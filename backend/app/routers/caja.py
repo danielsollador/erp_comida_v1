@@ -1659,18 +1659,72 @@ def listar_retiros(rango: Rango = Depends(), db: Session = Depends(get_db)):
     )
 
 
-def _hay_en_la_gaveta(db: Session, metodo: str, monto: float, que: str) -> None:
+# Por donde la plata se cuenta en bolivares (la misma lista que EN_BOLIVARES
+# en lib/pagos.ts de la web). "Banco" y "Zelle" son cuentas en dolares.
+METODOS_EN_BOLIVARES = frozenset(
+    {"Efectivo", "Efectivo Bs", "Tarjeta", "Punto de venta", "Pago movil", "Transferencia"}
+)
+
+
+def _en_bolivares(metodo: str) -> bool:
+    """Si por esa gaveta o cuenta la plata se cuenta en bolivares."""
+    return metodo in METODOS_EN_BOLIVARES
+
+
+def _en_la_moneda_de_la_gaveta(
+    db: Session, metodo: str, monto: float, monto_bs: Optional[float], que: str
+) -> tuple[float, Optional[float], Optional[float]]:
+    """(monto en dolares, monto en bolivares, tasa) de lo que sale.
+
+    Cada moneda en su moneda (Savora, 16-nov: un retiro de 1.000 Bs se
+    escribio en la casilla de dolares y quedo como $1.000). De una gaveta en
+    bolivares se recibe `monto_bs` y se pasa a dolares con la tasa de cobro
+    del dia, que queda guardada al lado; de una en dolares, `monto`. Lo que
+    llegue en la moneda equivocada se rechaza: convertir "por si acaso" es
+    justo lo que escondia el error.
+    """
+    if _en_bolivares(metodo):
+        if monto_bs is None or monto_bs <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"En {metodo} la plata se anota en bolívares: escribe los Bs que salieron para {que}.",
+            )
+        tasa = tasas.tasa_de_cobro(db)
+        if not tasa or tasa <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No hay tasa de cobro de hoy para pasar los bolívares a dólares. Revísala en Tasa de cambio.",
+            )
+        return round(monto_bs / tasa, 2), round(monto_bs, 2), tasa
+    if monto_bs:
+        raise HTTPException(
+            status_code=400, detail=f"En {metodo} la plata se anota en dólares, no en bolívares."
+        )
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
+    return round(monto, 2), None, None
+
+
+def _hay_en_la_gaveta(
+    db: Session, metodo: str, monto: float, que: str, tasa: Optional[float] = None,
+    monto_bs: Optional[float] = None,
+) -> None:
     """Un retiro o gasto en efectivo no puede sacar mas de lo que hay (QA nov,
-    hallazgo 7: un retiro de $5.000 con $133 en la gaveta dejo -$4.900)."""
+    hallazgo 7: un retiro de $5.000 con $133 en la gaveta dejo -$4.900). El
+    aviso habla en la moneda de la gaveta."""
     if metodo not in GAVETAS_DE_APERTURA:
         return
     inicio, fin = _rango_de(hoy())
     fila = next((l for l in _desglose(db, hoy(), inicio, fin) if l.metodo == metodo), None)
     hay = fila.esperado if fila else 0.0
     if monto > hay + 0.005:
+        if tasa and monto_bs:
+            cifra_hay, cifra_sale = "Bs " + salvaguardas.numero(hay * tasa), "Bs " + salvaguardas.numero(monto_bs)
+        else:
+            cifra_hay, cifra_sale = salvaguardas.usd(hay), salvaguardas.usd(monto)
         raise HTTPException(
             status_code=400,
-            detail=f"En {metodo} hay {salvaguardas.usd(hay)} y {que} es de {salvaguardas.usd(monto)}. "
+            detail=f"En {metodo} hay {cifra_hay} y {que} es de {cifra_sale}. "
             "Revisa el monto, o si salió de otro lado, cambia de dónde salió.",
         )
 
@@ -1699,17 +1753,16 @@ def crear_retiro(body: schemas.RetiroCreate, db: Session = Depends(get_db)):
     Va contra patrimonio, no contra resultados: no es un gasto del negocio
     sino capital que sale, asi que no debe bajar la ganancia.
     """
-    if body.monto <= 0:
-        raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
     if not contabilidad.metodo_de_pago_valido(body.metodo_pago):
         raise HTTPException(
             status_code=400,
             detail="El retiro sale de una gaveta (Efectivo Bs, Efectivo $) o del Banco",
         )
-    _hay_en_la_gaveta(db, body.metodo_pago, body.monto, "el retiro")
+    monto, monto_bs, tasa = _en_la_moneda_de_la_gaveta(db, body.metodo_pago, body.monto, body.monto_bs, "el retiro")
+    _hay_en_la_gaveta(db, body.metodo_pago, monto, "el retiro", tasa, monto_bs)
 
     retiro = models.RetiroPropietario(
-        monto=body.monto, metodo_pago=body.metodo_pago, nota=body.nota
+        monto=monto, monto_bs=monto_bs, tasa=tasa, metodo_pago=body.metodo_pago, nota=body.nota
     )
     db.add(retiro)
     db.flush()
@@ -1771,14 +1824,14 @@ def _solo_si_el_ejercicio_esta_abierto(db: Session, fecha, que: str) -> None:
 
 @router.post("/gastos", response_model=schemas.Gasto)
 def crear_gasto(gasto: schemas.GastoCreate, db: Session = Depends(get_db)):
-    if gasto.monto <= 0:
-        raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
     if not contabilidad.metodo_de_pago_valido(gasto.metodo_pago):
         raise HTTPException(
             status_code=400,
             detail="El gasto sale de una gaveta (Efectivo Bs, Efectivo $) o del Banco",
         )
-    _hay_en_la_gaveta(db, gasto.metodo_pago, gasto.monto, "el gasto")
+    monto, monto_bs, tasa = _en_la_moneda_de_la_gaveta(db, gasto.metodo_pago, gasto.monto, gasto.monto_bs, "el gasto")
+    gasto.monto, gasto.monto_bs, gasto.tasa = monto, monto_bs, tasa
+    _hay_en_la_gaveta(db, gasto.metodo_pago, monto, "el gasto", tasa, monto_bs)
     # Un sueldo pagado como pago menor iba a gastos varios: Pagos y Dona
     # decian que en octubre no hubo sueldos (QA nov, hallazgo 20).
     if SUELDO.search(gasto.descripcion or ""):

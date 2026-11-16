@@ -86,14 +86,17 @@ def test_una_venta_vieja_con_tarjeta_cuadra_en_el_punto_de_venta(client, variant
     assert d["cuadra_ventas"] is True
 
 
-def test_un_gasto_en_efectivo_solo_baja_el_efectivo(client, variante):
+def test_un_gasto_en_efectivo_solo_baja_el_efectivo(client, variante, db):
+    from conftest import bs, tasa_de_hoy
+
+    tasa_de_hoy(db)
     """Si cobre 5 en efectivo y saque 2 para una bombona, al contar tienen que
     aparecer 3 -- y el Zelle no se entera."""
     vender(client, variante, "Efectivo Bs")
     vender(client, variante, "Zelle")
     client.post(
         "/api/caja/gastos",
-        json={"descripcion": "Bombona", "categoria": "Servicios", "monto": 2.0,
+        json={"descripcion": "Bombona", "categoria": "Servicios", "monto_bs": bs(2.0),
               "metodo_pago": "Efectivo Bs"},
     )
 

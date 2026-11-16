@@ -756,7 +756,12 @@ class PlanillaLeida(BaseModel):
 class GastoBase(BaseModel):
     descripcion: str
     categoria: str = "Operativo"
-    monto: float
+    # Cada moneda en su moneda: de una gaveta o cuenta en bolivares se manda
+    # `monto_bs` (el servidor lo pasa a dolares a la tasa de cobro); de una en
+    # dolares, `monto`. Mandar la otra es un error, no una conversion.
+    monto: float = 0
+    monto_bs: Optional[float] = None
+    tasa: Optional[float] = None
     metodo_pago: str = "Efectivo"  # Efectivo | Banco
 
 
@@ -1340,7 +1345,9 @@ class CuentaPorCobrar(BaseModel):
 
 
 class RetiroCreate(BaseModel):
-    monto: float
+    # `monto` en dolares o `monto_bs` en bolivares, segun la gaveta (ver GastoBase).
+    monto: float = 0
+    monto_bs: Optional[float] = None
     metodo_pago: str = "Efectivo"  # Efectivo | Banco
     nota: str = ""
     operador_id: Optional[int] = None
@@ -1349,6 +1356,8 @@ class RetiroCreate(BaseModel):
 class RetiroPropietario(BaseModel):
     id: int
     monto: float
+    monto_bs: Optional[float] = None
+    tasa: Optional[float] = None
     metodo_pago: str
     nota: str
     fecha: datetime.datetime

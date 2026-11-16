@@ -285,3 +285,21 @@ def caja_cerrar(client, efectivo=None, divisas=None, **extra):
     # confirma de entrada.
     return client.post("/api/caja/cerrar", json={"conteos": conteos, **extra},
                        headers={"X-Confirmado": "diferencia_grande"})
+
+
+TASA_DE_PRUEBA = 1000.0
+
+
+def tasa_de_hoy(db, tasa=TASA_DE_PRUEBA):
+    """Una tasa de cobro para hoy. Redonda, para que `bs(3)` vuelva a ser $3."""
+    from app import models
+    from app.timeutils import hoy
+
+    if db.get(models.TasaCambio, hoy()) is None:
+        db.add(models.TasaCambio(fecha=hoy(), bcv=tasa, eur=tasa * 1.15, paralelo=tasa, origen="auto"))
+        db.commit()
+
+
+def bs(usd):
+    """Los bolivares que son `usd` dolares a la tasa de prueba."""
+    return round(usd * TASA_DE_PRUEBA, 2)
