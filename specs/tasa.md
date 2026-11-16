@@ -20,6 +20,7 @@ Savora cobra en bolívares, pero con los precios en divisa. Yeimer quiere elegir
 - Lo que se cobra después del cambio congela la tasa elegida. Lo ya cobrado no cambia nunca.
 - Los precios, costos y recetas siguen en divisa. Ejemplo: $2,90 son 2.650,66 Bs con el dólar (914,0218) y 2.930,62 Bs con el euro (1.010,56).
 - Lo que va al SENIAT son los bolívares cobrados: el Libro de Ventas, el IVA, las retenciones y Cuentas por cobrar leen la tasa congelada del pedido.
+- El cierre de caja espera los bolívares que entraron de verdad, cada cobro a su tasa, no los dólares pasados a la tasa del momento. Con dos tasas en el mismo día y los $5,80 cobrados (5.581,28 Bs en la gaveta), el cierre no marca faltante ni sobrante.
 - Los vueltos en bolívares y los pagos en bolívares a proveedores usan la tasa de cobro vigente (decisión de Daniel, 16-nov).
 - Cambiarla pide la firma de quien autoriza (R5 de `specs/qa.md`) y queda en el historial con quién y cuándo. Un salto de más de 30 % pide confirmar.
 - El encabezado dice qué tasa se usa («Bs · Euro BCV 1.010,56»), y el cobro del punto de venta lo repite en una línea junto al total. La app móvil igual.
@@ -30,7 +31,7 @@ Savora cobra en bolívares, pero con los precios en divisa. Yeimer quiere elegir
 ## Por decidir
 
 - **D16:** una factura de compra en dólares se pasa a bolívares para el Libro de Compras con el dólar BCV de su fecha, pero su pago en bolívares sale a la tasa de cobro. La diferencia, ¿va al diferencial cambiario (6160)? Confirmar con el contador.
-- **D17:** cómo se valora la gaveta de bolívares al cambiar de tasa a mitad del día, sin crear un diferencial cambiario que no existe.
+- **D17:** al cambiar de tasa a mitad del día, la gaveta de bolívares queda a dos tasas. Hoy el cierre cuenta en dólares y la pantalla convierte con una sola tasa: probado en local con 5.581,28 Bs exactos, da un faltante falso de $0,28 por aprobar. Se propone que el cierre espere los Bs de cada cobro a su tasa; confirmar con Daniel.
 - **D18:** ¿la tasa manual vence a medianoche o dura hasta que se cambie? Se asume que dura y avisa.
 - **D19:** ¿cobrar a tasa euro y declararlo así es válido ante el SENIAT? Lo responde el contador antes de usarlo en producción.
 
@@ -41,4 +42,5 @@ Savora cobra en bolívares, pero con los precios en divisa. Yeimer quiere elegir
 3. En el Libro de Ventas, esa venta lleva 2.930,62 Bs con su IVA, y una venta de antes del cambio conserva su tasa.
 4. El dólar BCV de la pantalla sigue en 914,0218 mientras se cobra a euro.
 5. Dar un vuelto en bolívares y pagar a un proveedor en bolívares usan la tasa elegida.
-6. Con Manual, escribir una cifra con un salto de más de 30 % pide confirmar.
+6. Cobrar con las dos tasas el mismo día y cerrar la caja contando los bolívares reales: cuadra sin diferencia.
+7. Con Manual, escribir una cifra con un salto de más de 30 % pide confirmar.
