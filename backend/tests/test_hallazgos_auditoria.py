@@ -1285,8 +1285,12 @@ def test_fijar_la_tasa_a_mano_no_pisa_la_oficial_ni_congela_el_euro(client, db, 
     (specs/tasa.md). El euro y el paralelo se actualizan solos: si se
     quedaran pegados al valor del dia en que se fijo la tasa, el selector
     mostraria euros de la semana pasada sin avisar."""
-    from app import rates
+    from app import models, rates
 
+    # Sin la tasa de 40 de los libros de prueba: contra ella, 800 es un salto
+    # absurdo y el freno de saltos lo descartaria.
+    db.query(models.TasaCambio).delete()
+    db.commit()
     monkeypatch.setattr(
         rates, "_fetch", lambda: {"bcv": 800.0, "eur": 935.5, "paralelo": 900.0}
     )
