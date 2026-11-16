@@ -38,8 +38,8 @@ export function AbrirCaja({
   alCerrar: () => void
   alAbrir: () => void
 }) {
-  const { tasa } = useMoneda()
-  const bcv = tasa?.bcv ?? 0
+  const { tasaCobro } = useMoneda()
+  const bcv = tasaCobro ?? 0
   const [conteo, setConteo] = useState<Record<string, FilasGaveta>>({})
   const [nota, setNota] = useState('')
   const [error, setError] = useState('')

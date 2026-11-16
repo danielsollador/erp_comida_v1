@@ -32,6 +32,11 @@ const comoTexto = (n: number | null | undefined) => (n ? String(n).replace('.', 
  * Analisis e Historial; la tasa de hoy no tiene periodo. La seccion va en la
  * ruta: /tasa/analisis.
  */
+/** Lo que se muestra en el cuadro de la tasa propia: la guardada, si esa es la elegida. */
+function manualDe(e: EstadoTasa): string {
+  return e.cobro?.fuente === 'manual' && e.cobro.tasa ? comoTexto(e.cobro.tasa) : ''
+}
+
 export default function PantallaTasa() {
   const { recargar } = useMoneda()
   const { seccion: pedida } = useLocalSearchParams<{ seccion?: string }>()
@@ -78,7 +83,7 @@ export default function PantallaTasa() {
       apiTasa.estado().then((e) => {
         if (!vigente) return
         setEstado(e)
-        setManual(comoTexto(e.bcv))
+        setManual(manualDe(e))
       }),
       apiTasa
         .historial()
@@ -113,7 +118,7 @@ export default function PantallaTasa() {
     try {
       const e = await fn()
       setEstado(e)
-      setManual(comoTexto(e.bcv))
+      setManual(manualDe(e))
       setAviso(mensaje)
       // La moneda de toda la app (el selector de arriba) se pone al dia.
       recargar()
@@ -135,7 +140,7 @@ export default function PantallaTasa() {
       setError('Escribe una tasa válida, por ejemplo 145,80')
       return
     }
-    void accion(() => apiTasa.fijar(valor), 'Tasa fijada. Los cobros de hoy usan esta.')
+    void accion(() => apiTasa.elegirCobro('manual', valor), 'Listo: se cobra a tu tasa. Lo ya cobrado no cambia.')
   }
 
   return (
@@ -168,7 +173,12 @@ export default function PantallaTasa() {
           aviso={aviso}
           alFijar={guardarManual}
           alConsultar={() => void accion(() => apiTasa.refrescar(false), 'Tasas actualizadas.')}
-          alVolverAutomatica={() => void accion(() => apiTasa.refrescar(true), 'Volviste a la tasa automatica del BCV.')}
+          alElegir={(fuente) =>
+            void accion(
+              () => apiTasa.elegirCobro(fuente),
+              `Listo: se cobra al ${fuente === 'eur' ? 'Euro' : 'Dólar'} BCV. Lo ya cobrado no cambia.`,
+            )
+          }
         />
       ) : null}
       {seccion === 'calculadora' && estado ? <Calculadora estado={estado} /> : null}

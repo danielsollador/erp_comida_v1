@@ -14,7 +14,7 @@ export type VistaMoneda = 'usd' | 'bs' | 'usd_calle' | 'eur'
 
 export const VISTAS: { id: VistaMoneda; nombre: string; detalle: string }[] = [
   // Mismos nombres y orden que la web (frontend/src/lib/moneda.tsx).
-  { id: 'bs', nombre: 'Bolívares', detalle: 'A la tasa BCV de hoy' },
+  { id: 'bs', nombre: 'Bolívares', detalle: 'A la tasa con la que cobras' },
   { id: 'usd', nombre: 'Dólares BCV', detalle: 'Lo que dice el sistema' },
   { id: 'usd_calle', nombre: 'Dólares Paralelo', detalle: 'Convertidos a la tasa paralela' },
   { id: 'eur', nombre: 'Euro BCV', detalle: 'A la tasa BCV del euro' },
@@ -26,6 +26,8 @@ type Ctx = {
   vista: VistaMoneda
   setVista: (v: VistaMoneda) => void
   tasa: EstadoTasa | null
+  /** Bs por dolar con los que se cobra hoy (specs/tasa.md): la elegida, y si no hay, el dolar BCV. */
+  tasaCobro: number | null
   fmt: (usd: number | null | undefined, decimales?: number) => string
   recargar: () => void
 }
@@ -74,7 +76,7 @@ export function MonedaProvider({ children, activa }: { children: ReactNode; acti
     (usd: number | null | undefined, decimales?: number) => {
       if (usd === null || usd === undefined) return '—'
       const d = decimales ?? 2
-      const bcv = tasa?.bcv
+      const bcv = tasa?.cobro?.tasa ?? tasa?.bcv
       switch (vista) {
         case 'bs':
           return bcv ? fmtBs(usd * bcv, 2) : '…'
@@ -96,7 +98,11 @@ export function MonedaProvider({ children, activa }: { children: ReactNode; acti
     [vista, tasa],
   )
 
-  const valor = useMemo(() => ({ vista, setVista, tasa, fmt, recargar }), [vista, setVista, tasa, fmt, recargar])
+  const tasaCobro = tasa?.cobro?.tasa ?? tasa?.bcv ?? null
+  const valor = useMemo(
+    () => ({ vista, setVista, tasa, tasaCobro, fmt, recargar }),
+    [vista, setVista, tasa, tasaCobro, fmt, recargar],
+  )
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>
 }
 

@@ -10,6 +10,7 @@ import { LETRA, useTema } from '../../lib/tema'
 import type { CierreCaja, ResumenCaja } from '../../lib/tipos'
 import { CampoNumero, HojaFormulario } from '../kit'
 import { Aviso, Boton, Campo } from '../ui'
+import { tasaDeConteo } from '../../../../frontend/src/lib/tasaCobro'
 import { conteosDe, contadosIniciales, EN_BOLIVARES, fechaVE } from './logica'
 import { Enlace, mensajeDe } from './piezas'
 
@@ -45,8 +46,8 @@ export function CuadrarCaja({
   alListo: (c: CierreCaja) => void
 }) {
   const t = useTema()
-  const { tasa } = useMoneda()
-  const bcv = tasa?.bcv ?? 0
+  const { tasaCobro } = useMoneda()
+  const bcv = tasaCobro ?? 0
   const [contados, setContados] = useState<Record<string, string>>(() => contadosIniciales(resumen.desglose, bcv))
   const [verEsperado, setVerEsperado] = useState(Boolean(corregir))
   const [nota, setNota] = useState('')

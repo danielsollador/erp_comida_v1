@@ -2,6 +2,7 @@ import { METODOS_CON_REFERENCIA } from '../../../../frontend/src/lib/pagos'
 import { aMonto, sinRuido } from '../../lib/numeros'
 import type { CobroDelDia, LineaMetodo } from '../../lib/tipos'
 import type { Conteo } from '../../lib/api-caja'
+import { tasaDeConteo } from '../../../../frontend/src/lib/tasaCobro'
 
 /*
  * LAS REGLAS DEL CIERRE DE CAJA, sin pantalla: las mismas cuentas que hace
@@ -97,8 +98,10 @@ export function conteosDe(lineas: LineaMetodo[], contados: Record<string, string
     const tecleado = aMonto(escrito)
     if (!Number.isFinite(tecleado) || tecleado < 0) return []
     if (EN_BOLIVARES.has(l.metodo)) {
-      if (bcv <= 0) return []
-      return [{ metodo: l.metodo, contado: redondear2(tecleado / bcv) }]
+      // Con dos tasas el mismo dia, la de los cobros (lib/tasaCobro.ts).
+      const tasaDeEsta = tasaDeConteo(l, bcv)
+      if (tasaDeEsta <= 0) return []
+      return [{ metodo: l.metodo, contado: redondear2(tecleado / tasaDeEsta) }]
     }
     return [{ metodo: l.metodo, contado: tecleado }]
   })
@@ -115,7 +118,8 @@ export function contadosIniciales(lineas: LineaMetodo[], bcv: number): Record<st
       .filter((l) => l.contado !== null)
       .map((l) => {
         const contado = l.contado as number
-        const valor = EN_BOLIVARES.has(l.metodo) && bcv > 0 ? redondear2(contado * bcv) : contado
+        const tasaDeEsta = tasaDeConteo(l, bcv)
+        const valor = EN_BOLIVARES.has(l.metodo) && tasaDeEsta > 0 ? redondear2(contado * tasaDeEsta) : contado
         return [l.metodo, sinRuido(valor).replace('.', ',')]
       }),
   )

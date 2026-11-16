@@ -29,8 +29,8 @@ export function mensajeDe(e: unknown, siNo: string): string {
  * ayuda a cuadrar nada.
  */
 export function useDosMonedas() {
-  const { fmt, vista, tasa } = useMoneda()
-  const bcv = tasa?.bcv ?? null
+  const { fmt, vista, tasaCobro } = useMoneda()
+  const bcv = tasaCobro
   /** `tasaPropia`: la de un cobro ya hecho, que es lo que de verdad paso por el terminal. */
   const otra = (usd: number, tasaPropia?: number | null): string | null => {
     if (vista === 'bs') return dolares(usd)

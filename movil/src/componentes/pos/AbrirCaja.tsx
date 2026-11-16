@@ -35,7 +35,7 @@ export function AbrirCaja({
   alAbrir: () => void
 }) {
   const t = useTema()
-  const { tasa } = useMoneda()
+  const { tasaCobro } = useMoneda()
   const { ancho } = useDisposicion()
   const [conteo, setConteo] = useState<Record<string, Record<string, string>>>({})
   const [nota, setNota] = useState('')
@@ -69,8 +69,8 @@ export function AbrirCaja({
     const d = desgloseDe(f.metodo)
     if (!d) return []
     const enBs = f.metodo === 'Efectivo Bs'
-    if (enBs && !tasa?.bcv) return []
-    const fondo = enBs ? Math.round((d.total / (tasa?.bcv ?? 1)) * 100) / 100 : d.total
+    if (enBs && !tasaCobro) return []
+    const fondo = enBs ? Math.round((d.total / (tasaCobro ?? 1)) * 100) / 100 : d.total
     return [{ metodo: f.metodo, cuenta: f.cuenta, fondo, desglose: d.desglose }]
   })
 
@@ -169,7 +169,7 @@ export function AbrirCaja({
             {/* La gaveta de Bs se cuenta en Bs; la conversion va debajo para que nadie la haga de cabeza. */}
             {enBs && d ? (
               <Text style={[e.mini, { color: t.suave, textAlign: 'right' }]}>
-                {tasa?.bcv ? `son ${usdComa(d.total / tasa.bcv)} a la tasa de hoy` : 'sin tasa para convertir'}
+                {tasaCobro ? `son ${usdComa(d.total / tasaCobro)} a la tasa de hoy` : 'sin tasa para convertir'}
               </Text>
             ) : null}
           </View>

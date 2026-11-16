@@ -15,6 +15,9 @@ export const apiTasa = {
   /** `forzar`: ademas devuelve el dia a automatico, pisando la tasa cargada a mano. */
   refrescar: (forzar = false) => req<EstadoTasa>(`/tasas/refrescar?forzar=${forzar}`, { method: 'POST' }),
   fijar: (bcv: number) => req<EstadoTasa>('/tasas', { method: 'PUT', body: JSON.stringify({ bcv }) }),
+  /** La tasa con la que se cobra en bolivares (specs/tasa.md): dolar BCV, euro BCV o una propia. */
+  elegirCobro: (fuente: 'bcv' | 'eur' | 'manual', tasa?: number) =>
+    req<EstadoTasa>('/tasas/cobro', { method: 'PUT', body: JSON.stringify({ fuente, tasa }) }),
   /** Sin rango, los ultimos 30 dias con tasa. */
   historial: (r?: RangoFechas) => req<PuntoTasa[]>(`/tasas/historial${conRango(r)}`),
   analisis: (r?: RangoFechas) => req<AnalisisTasa>(`/tasas/analisis${conRango(r)}`),

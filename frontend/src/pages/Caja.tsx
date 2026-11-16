@@ -434,6 +434,20 @@ function Desglose({ r }: { r: ResumenCaja }) {
     .reduce((s, l) => s + l.esperado, 0)
   const sinContar = cerrada && r.desglose.some((l) => l.se_cuadra && l.contado === null && Math.abs(l.esperado) >= 0.01)
   const totalContado = r.desglose.reduce((s, l) => s + (l.contado ?? 0), 0)
+  // Los bolivares del total salen de las filas, cada una a su tasa: con dos
+  // tasas el mismo dia, convertir el total con una sola no coincide con lo que
+  // suman las filas de arriba.
+  const tasaDeFila = (l: LineaMetodo) => (EN_BOLIVARES.has(l.metodo) ? tasaDeConteo(l, bcv) || bcv : bcv)
+  const tasaDelTotal = (monto: (l: LineaMetodo) => number) => {
+    let usd = 0
+    let bs = 0
+    for (const l of r.desglose.filter((x) => x.se_cuadra)) {
+      const m = monto(l)
+      usd += m
+      bs += m * (tasaDeFila(l) ?? 0)
+    }
+    return usd !== 0 && bs !== 0 ? bs / usd : bcv
+  }
   const totalDif = r.desglose.reduce((s, l) => s + (l.diferencia ?? 0), 0)
   const columnas = cerrada ? 6 : 4
 
@@ -510,9 +524,9 @@ function Desglose({ r }: { r: ResumenCaja }) {
           <tfoot>
             <tr className="border-t-2 border-neutral-300 font-semibold">
               <td className="py-2">Total</td>
-              <Cifra monto={totalEntro} bcv={bcv} />
-              <Cifra monto={-totalSalio} bcv={bcv} clase="text-peligro-600" />
-              <Cifra monto={totalCuadra} bcv={bcv} />
+              <Cifra monto={totalEntro} bcv={tasaDelTotal(entradaDe)} />
+              <Cifra monto={-totalSalio} bcv={tasaDelTotal(salidaDe)} clase="text-peligro-600" />
+              <Cifra monto={totalCuadra} bcv={tasaDelTotal((l) => l.esperado)} />
               {cerrada && (
                 <>
                   <Cifra monto={totalContado} bcv={bcv} />

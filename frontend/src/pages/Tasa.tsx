@@ -146,7 +146,8 @@ export default function Tasa() {
   const esManual = fuenteCobro === 'manual'
   // La tasa de hoy como numero suelto: dentro de un `map` TypeScript ya no
   // sabe que `estado.bcv` no es null aunque el bloque entero dependa de eso.
-  const bcvHoy = estado?.bcv ?? 0
+  // Bs por dolar con los que se cobra hoy (la tasa de cobro elegida), no el dolar oficial.
+  const bcvHoy = estado?.cobro?.tasa ?? estado?.bcv ?? 0
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -267,8 +268,8 @@ export default function Tasa() {
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <h2 className="font-semibold mb-1">Para cobrar rápido</h2>
             <p className="text-xs text-neutral-500 mb-3">
-              Cuánto es cada billete a la tasa de hoy. El punto de venta ya convierte solo; esto es
-              para el que pregunta "¿cuánto es en bolívares?" antes de pedir.
+              Cuánto es cada billete a la tasa con la que cobras hoy ({estado.cobro?.etiqueta ?? 'Dólar BCV'}). El
+              punto de venta ya convierte solo; esto es para el que pregunta "¿cuánto es en bolívares?" antes de pedir.
             </p>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
               {BILLETES.map((usd) => (
@@ -280,10 +281,12 @@ export default function Tasa() {
                 </div>
               ))}
             </div>
-            {estado.paralelo && estado.brecha_pct != null && (
+            {estado.paralelo && (
               <p className="text-[11px] text-neutral-400 mt-3">
-                Al paralelo, $20 serían {fmtNum(20 * estado.paralelo, 0)}: la brecha de {estado.brecha_pct}% es lo
-                que se pierde al reponer comprando divisas con lo cobrado al oficial.
+                Al paralelo, $20 serían {fmtNum(20 * estado.paralelo, 0)}.{' '}
+                {estado.paralelo > bcvHoy
+                  ? `La brecha de ${(Math.round((estado.paralelo / bcvHoy - 1) * 1000) / 10).toLocaleString('es-VE')}% es lo que se pierde al reponer comprando divisas con lo que cobras a esta tasa.`
+                  : 'Cobras por encima del paralelo: al reponer comprando divisas no se pierde por la brecha.'}
               </p>
             )}
           </div>

@@ -29,7 +29,7 @@ export default function Hoy({
   aviso,
   alFijar,
   alConsultar,
-  alVolverAutomatica,
+  alElegir,
 }: {
   estado: EstadoTasa
   tendencia: PuntoTasa[]
@@ -40,29 +40,39 @@ export default function Hoy({
   aviso: string
   alFijar: () => void
   alConsultar: () => void
-  alVolverAutomatica: () => void
+  /** Elegir el dolar o el euro del BCV como la tasa con la que se cobra. */
+  alElegir: (fuente: 'bcv' | 'eur') => void
 }) {
   const t = useTema()
   const p = usePaletaDatos()
-  const esManual = estado.origen === 'manual'
-  const bcvHoy = estado.bcv ?? 0
+  const fuente = estado.cobro?.fuente ?? 'bcv'
+  const esManual = fuente === 'manual'
+  // Bs por dolar con los que se cobra hoy (la tasa de cobro elegida), no el dolar oficial.
+  const bcvHoy = estado.cobro?.tasa ?? estado.bcv ?? 0
 
   return (
     <>
       <Ficha>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
           <View style={{ flex: 1 }}>
-            <Cabeza titulo="Tasa con la que se cobra hoy" texto="Es la que convierte a bolívares en el punto de venta." />
+            <Cabeza titulo="Tasa con la que cobras hoy" texto="Es la que convierte a bolívares en el punto de venta." />
           </View>
-          <Pastilla texto={esManual ? 'Cargada a mano' : 'Automática'} tono={esManual ? 'ojo' : 'bien'} />
+          <Pastilla texto={estado.cobro?.etiqueta ?? 'Dólar BCV'} tono={esManual ? 'ojo' : 'bien'} />
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
           <Text style={{ fontFamily: LETRA.tituloFuerte, fontSize: 40, letterSpacing: -1.2, color: t.tinta }}>
-            {estado.bcv ? num(estado.bcv) : '—'}
+            {bcvHoy ? num(bcvHoy) : '—'}
           </Text>
           <Text style={[estilos.texto, { color: t.suave }]}>Bs por dólar</Text>
         </View>
+
+        {estado.cobro?.aviso ? <Text style={[estilos.texto, { color: t.aviso, marginTop: 6 }]}>{estado.cobro.aviso}</Text> : null}
+        {estado.cobro?.vieja ? (
+          <Text style={[estilos.texto, { color: t.aviso, marginTop: 6 }]}>
+            Tu tasa manual es de otro día. Si ya no aplica, elige otra abajo.
+          </Text>
+        ) : null}
 
         {estado.desactualizada ? (
           <Text style={[estilos.texto, { color: t.aviso, marginTop: 6 }]}>
@@ -72,11 +82,14 @@ export default function Hoy({
 
         <View style={{ gap: 16, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: t.gris100 }}>
           <ParDatos>
-            <Dato titulo="Paralelo" ayuda="kpi.paralelo" valor={estado.paralelo ? num(estado.paralelo) : '—'} nota="Binance P2P" />
+            <Dato titulo="Dólar BCV" ayuda="kpi.dolar_bcv" valor={estado.bcv ? num(estado.bcv) : '—'} nota="Bs por dólar, oficial" />
             <Dato titulo="Euro BCV" ayuda="kpi.euro" valor={estado.eur ? num(estado.eur) : '—'} nota="Bs por euro" />
           </ParDatos>
           <ParDatos>
+            <Dato titulo="Paralelo" ayuda="kpi.paralelo" valor={estado.paralelo ? num(estado.paralelo) : '—'} nota="Binance P2P" />
             <Dato titulo="Brecha" ayuda="kpi.brecha" valor={estado.brecha_pct != null ? pct(estado.brecha_pct) : '—'} nota="paralelo vs oficial" />
+          </ParDatos>
+          <ParDatos>
             <Dato
               titulo="Última semana"
               ayuda="kpi.variacion_semana"
@@ -113,7 +126,7 @@ export default function Hoy({
         <Ficha>
           <Cabeza
             titulo="Para cobrar rápido"
-            texto={'Cuánto es cada billete a la tasa de hoy. El punto de venta ya convierte solo; esto es para el que pregunta "¿cuánto es en bolívares?" antes de pedir.'}
+            texto={`Cuánto es cada billete a la tasa con la que cobras hoy (${estado.cobro?.etiqueta ?? 'Dólar BCV'}). El punto de venta ya convierte solo; esto es para el que pregunta "¿cuánto es en bolívares?" antes de pedir.`}
           />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
             {BILLETES.map((usd) => (
@@ -125,10 +138,12 @@ export default function Hoy({
               </View>
             ))}
           </View>
-          {estado.paralelo && estado.brecha_pct != null ? (
+          {estado.paralelo ? (
             <Text style={[estilos.nota, { color: t.tenue, marginTop: 12 }]}>
-              Al paralelo, $20 serían {num(20 * estado.paralelo, 0)}: la brecha de {pct(estado.brecha_pct)} es lo que se pierde al reponer comprando divisas
-              con lo cobrado al oficial.
+              Al paralelo, $20 serían {num(20 * estado.paralelo, 0)}.{' '}
+              {estado.paralelo > bcvHoy
+                ? `La brecha de ${pct((estado.paralelo / bcvHoy - 1) * 100)} es lo que se pierde al reponer comprando divisas con lo que cobras a esta tasa.`
+                : 'Cobras por encima del paralelo: al reponer comprando divisas no se pierde por la brecha.'}
             </Text>
           ) : null}
         </Ficha>
@@ -136,12 +151,27 @@ export default function Hoy({
 
       <Ficha style={{ gap: 14 }}>
         <Cabeza
-          titulo="Cargar la tasa a mano"
-          texto="Si cobras a una tasa propia -redondeada, la del proveedor, un punto medio- escríbela aquí. Manda sobre la automática y no se pisa hasta que la devuelvas a automático."
+          titulo="Con qué tasa cobro en bolívares"
+          texto="Los precios siguen en dólares. Aquí eliges a cuántos bolívares se pasa cada dólar al cobrar. Lo ya cobrado no cambia, y el dólar y el euro del BCV se siguen actualizando solos."
         />
+        <View style={{ gap: 10 }}>
+          <Boton
+            texto={`Dólar BCV${estado.bcv ? ` · ${num(estado.bcv)}` : ''}${fuente === 'bcv' ? ' ✓' : ''}`}
+            tono={fuente === 'bcv' ? 'acento' : 'neutro'}
+            alTocar={() => alElegir('bcv')}
+            deshabilitado={ocupado || fuente === 'bcv' || !estado.bcv}
+          />
+          <Boton
+            texto={`Euro BCV${estado.eur ? ` · ${num(estado.eur)}` : ''}${fuente === 'eur' ? ' ✓' : ''}`}
+            tono={fuente === 'eur' ? 'acento' : 'neutro'}
+            alTocar={() => alElegir('eur')}
+            deshabilitado={ocupado || fuente === 'eur' || !estado.eur}
+          />
+        </View>
+        <Text style={[estilos.nota, { color: t.suave }]}>O escribe una tasa tuya: dura hasta que la cambies.</Text>
         <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
           <CampoNumero
-            rotulo="Tasa manual (Bs por $)"
+            rotulo="Tu tasa (Bs por $)"
             valor={manual}
             alCambiar={alCambiarManual}
             placeholder="145,80"
@@ -150,12 +180,11 @@ export default function Hoy({
             onSubmitEditing={alFijar}
           />
           <View style={{ width: 110 }}>
-            <Boton texto="Fijar" alTocar={alFijar} ocupado={ocupado} />
+            <Boton texto={esManual ? 'Cambiar ✓' : 'Usar'} alTocar={alFijar} ocupado={ocupado} />
           </View>
         </View>
         <View style={{ gap: 10 }}>
           <Boton texto={ocupado ? 'Consultando...' : 'Consultar BCV ahora'} tono="neutro" alTocar={alConsultar} deshabilitado={ocupado} />
-          {esManual ? <Boton texto="Volver a la automática" tono="neutro" alTocar={alVolverAutomatica} deshabilitado={ocupado} /> : null}
         </View>
         {error ? <Aviso texto={error} tono="peligro" /> : null}
         {aviso ? <Aviso texto={aviso} /> : null}

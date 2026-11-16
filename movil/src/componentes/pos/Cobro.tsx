@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { ivaRetenido } from '../../../../frontend/src/lib/compras'
 import { etiquetaMetodo, METODOS_PAGO, necesitaReferencia } from '../../../../frontend/src/lib/pagos'
 import { apiPos, type PagoCobro } from '../../lib/api-pos'
+import { miles } from '../../lib/formato'
 import { fmtBs, useMoneda } from '../../lib/moneda'
 import {
   BILLETES_USD,
@@ -59,8 +60,8 @@ export function Cobro({
   alCerrar: () => void
 }) {
   const t = useTema()
-  const { tasa, fmt } = useMoneda()
-  const tasaBcv = tasa?.bcv ?? 0
+  const { tasa, tasaCobro, fmt } = useMoneda()
+  const tasaBcv = tasaCobro ?? 0
   const pregunta = usePregunta()
 
   const [facturar, setFacturar] = useState(false)
@@ -578,8 +579,7 @@ export function Cobro({
           <Text style={[e.bs, { color: t.suave }]}>
             {fmtBs(aCobrar * tasaBcv)}{' '}
             <Text style={e.nota}>
-              (tasa {tasaBcv}
-              {tasa?.origen === 'manual' ? ', manual' : ''})
+              (tasa {tasa?.cobro?.etiqueta ?? 'Dólar BCV'} {miles(tasaBcv)})
             </Text>
           </Text>
         ) : (
