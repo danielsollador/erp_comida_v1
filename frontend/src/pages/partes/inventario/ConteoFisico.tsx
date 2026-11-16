@@ -6,7 +6,7 @@ import { Aviso, Boton, Modal, Pastilla } from '../../../components/ui'
 import { api } from '../../../lib/api'
 import { cantidad, unidadDe } from '../../../lib/inventario'
 import { useMoneda } from '../../../lib/moneda'
-import { convertirTexto, factorEntre } from '../../../lib/unidades'
+import { convertirTexto, factorEntre, leerNumero } from '../../../lib/unidades'
 import type { ConteoDetalle, Ingrediente, PlanillaLeida, ResultadoConteo } from '../../../lib/types'
 import { llano } from '../../../lib/filtros'
 
@@ -172,7 +172,7 @@ export default function ConteoFisico({
     }
   }
 
-  const num = (v: string) => Number(v.trim().replace(',', '.'))
+  const num = (v: string) => leerNumero(v)
   const lista = useMemo(() => {
     const q = llano(buscar.trim())
     return [...ingredientes]

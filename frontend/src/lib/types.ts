@@ -398,6 +398,8 @@ export type FiltroDeposito = {
 export type ReporteResumen = {
   periodo: string
   etiqueta: string
+  /** False si quien mira no administra: viene sin ganancia, margen ni costo. */
+  ve_ganancia?: boolean
   /** El paso de `serie`: hora | dia | semana | mes. Lo decide el tamaño del rango. */
   granularidad: string
   ventas: number
@@ -760,7 +762,7 @@ export type Configuracion = {
 
 export type CostoParaPrecios = 'reposicion' | 'promedio' | 'mayor'
 
-// ── Preparaciones y produccion (docs/plan-compras-inventario-produccion.md) ──
+// ── Preparaciones y produccion ──
 
 export type LineaPreparacion = {
   ingrediente_id: number
@@ -1015,7 +1017,28 @@ export type CierreCaja = {
   divisas_diferencia: number
   /** Una fila por destino verificado, congelada como estaba al cerrar. */
   lineas: LineaCierre[]
+  /** Cierre como cuadre (specs/caja.md): la diferencia entra a los libros al aprobarla. */
+  estado_diferencia?: 'por_aprobar' | 'aprobada' | 'sola' | 'sin_diferencia' | 'asentada'
+  aprobada_por?: string
+  motivo_aprobacion?: string
+  cerrado_por?: string
+  autorizado_por?: string
+  /** Algo cambio en el dia despues de cerrar. */
+  por_revisar?: boolean
+  cambios_despues?: string
 }
+
+export type DiferenciaCaja = {
+  tipo: 'cierre' | 'apertura'
+  id: number
+  dia: string
+  monto: number
+  detalle: string
+  quien: string
+  nota: string
+}
+
+export type DiferenciasPorAprobar = { filas: DiferenciaCaja[]; total: number; dias_mas_vieja: number }
 
 export type EstadoTasa = {
   fecha: string
@@ -1031,6 +1054,8 @@ export type EstadoTasa = {
   minutos_sin_contacto: number | null
   fuente_actualizada: string | null
   desactualizada: boolean
+  /** La tasa del BCV que no se tomó por saltar más de 30 % (QA nov). */
+  salto_rechazado?: string | null
 }
 
 export type PuntoAnalisisTasa = {
@@ -2467,6 +2492,8 @@ export type ResumenCxC = {
 }
 
 export type CobroCliente = {
+  /** 'abono': hecho desde Ventas o Caja; se deshace donde se hizo. */
+  origen?: 'cobro' | 'abono'
   id: number
   cliente_id: number | null
   cliente: string
@@ -2568,3 +2595,6 @@ export type Traspaso = {
   fecha: string
   anulado: boolean
 }
+
+/** Los formatos en que se descarga una tabla. */
+export type FormatoExportar = 'csv' | 'xlsx'

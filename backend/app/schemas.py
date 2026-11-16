@@ -854,6 +854,9 @@ class PagoInput(BaseModel):
     # el vuelto en bolivares mueve dos cajas distintas).
     recibido: Optional[float] = None
     vuelto_metodo: Optional[str] = None
+    # Vuelto en dolares con centavos: los billetes salen de la gaveta de $ y
+    # los centavos, en bolivares, de la de Bs (QA nov, hallazgo 22).
+    vuelto_centavos_bs: bool = False
     # Numero de confirmacion: del pago movil, el ticket del punto, el
     # comprobante del Zelle. Se exige para los metodos que de verdad tienen
     # uno (ver contabilidad.METODOS_CON_REFERENCIA); en efectivo se ignora.
@@ -878,6 +881,7 @@ class Pago(BaseModel):
     recibido: Optional[float] = None
     vuelto_metodo: Optional[str] = None
     vuelto_monto: float = 0
+    vuelto_bs: float = 0
     referencia: str = ""
     verificacion_id: Optional[int] = None
     monto_bs: Optional[float] = None
@@ -897,7 +901,8 @@ class PedidoItemCreate(BaseModel):
     """
 
     variante_id: Optional[int] = None
-    cantidad: int = 1
+    # Cero o negativo devolvia mercancia al inventario (QA de entradas).
+    cantidad: int = Field(default=1, ge=1)
     nota: str = ""
     nombre_libre: Optional[str] = None
     precio_libre: Optional[float] = None
@@ -1083,6 +1088,23 @@ class Pedido(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Lo que la cocina no tiene por que ver de una comanda: cuanto vale, como se
+# pago y a quien se le facturo (QA nov, permisos).
+_PLATA_DEL_PEDIDO = {
+    "metodo_pago": None, "total": 0.0, "subtotal": 0.0, "descuento": 0.0, "motivo_descuento": "",
+    "propina": 0.0, "a_cobrar": 0.0, "pagos": [], "tasa_bcv": None, "rif_cliente": "",
+    "razon_social_cliente": "", "numero_factura": None, "numero_control": "", "retencion_iva_bs": None,
+    "retencion_iva_usd": None, "retencion_iva_pct": None, "comprobante_retencion_iva": "",
+    "fecha_retencion_iva": None, "nota_credito": None, "ediciones": [],
+}
+
+
+def comanda_sin_plata(pedido: dict) -> dict:
+    """Un pedido serializado, como lo ve quien no vende: que preparar, sin montos."""
+    items = [{**i, "precio_unitario": 0.0, "precio_lista": 0.0} for i in pedido.get("items", [])]
+    return {**pedido, **_PLATA_DEL_PEDIDO, "items": items}
 
 
 class Autorizacion(BaseModel):
@@ -1390,6 +1412,10 @@ class LineaMetodo(BaseModel):
     # True cuando ese fondo lo declaro una persona al abrir la caja, y no es
     # solo el arrastre contable. Cambia lo que la fila puede prometer.
     fondo_declarado: bool = False
+    # Cuanto se alejo el fondo contado al abrir de lo que quedo en el ultimo
+    # cierre: si el faltante de la noche es el mismo monto, el error fue de
+    # la mañana (QA nov, hallazgo 21).
+    diferencia_apertura: float = 0
     ventas: float = 0
     salidas: float = 0
     # Lo que se pago desde el banco por esta forma de pago (sueldos,
@@ -1708,6 +1734,8 @@ class ReporteResumen(BaseModel):
     # Con que paso viene `serie`: hora | dia | semana | mes. Depende del
     # tamaño del rango, no de que boton se toco.
     granularidad: str = "dia"
+    # False para quien no administra: viene sin ganancia, margen ni costo.
+    ve_ganancia: bool = True
     ventas: float  # bruto que entro por caja, incluido el IVA de lo facturado
     # Bolivares reales del periodo: cada venta a la tasa del dia en que se
     # cobro. No es `ventas` por la tasa de hoy.
@@ -1874,12 +1902,43 @@ class CierreCaja(BaseModel):
     divisas_esperado: float = 0
     divisas_contado: float = 0
     divisas_diferencia: float = 0
+    # Cierre como cuadre (specs/caja.md): por_aprobar | aprobada | sola |
+    # sin_diferencia | asentada (de antes del 1.10).
+    estado_diferencia: str = "asentada"
+    aprobada_por: str = ""
+    motivo_aprobacion: str = ""
+    cerrado_por: str = ""
+    autorizado_por: str = ""
+    por_revisar: bool = False
+    cambios_despues: str = ""
     # El arqueo tal como quedo. Vacio en los cierres viejos, que solo tenian
     # las dos gavetas.
     lineas: List[LineaCierre] = []
 
     class Config:
         from_attributes = True
+
+
+class DiferenciaCaja(BaseModel):
+    tipo: str  # cierre | apertura
+    id: int
+    dia: str
+    monto: float
+    detalle: str = ""
+    quien: str = ""
+    nota: str = ""
+
+
+class DiferenciasPorAprobar(BaseModel):
+    filas: List[DiferenciaCaja] = []
+    total: float = 0
+    dias_mas_vieja: int = 0
+
+
+class AprobarDiferencia(BaseModel):
+    tipo: str = "cierre"
+    id: int
+    motivo: str = ""
 
 
 class AnularCierreRequest(BaseModel):
@@ -1901,6 +1960,9 @@ class EstadoTasa(BaseModel):
     minutos_sin_contacto: Optional[float] = None
     fuente_actualizada: Optional[str]
     desactualizada: bool
+    # La tasa que se leyo del BCV y no se guardo por saltar mas de 30 %: si
+    # fue una devaluacion de verdad, hay que fijarla a mano (QA nov).
+    salto_rechazado: Optional[str] = None
 
 
 class PuntoAnalisisTasa(BaseModel):
@@ -2183,8 +2245,15 @@ class CuentaContable(CuentaContableBase):
 
 class LineaAsientoInput(BaseModel):
     cuenta_id: int
-    debe: float = 0
-    haber: float = 0
+    debe: float = Field(default=0, ge=0)
+    haber: float = Field(default=0, ge=0)
+
+    @field_validator("haber")
+    @classmethod
+    def _un_solo_lado(cls, v, info):
+        if v and info.data.get("debe"):
+            raise ValueError("Cada línea va al debe o al haber, no a los dos")
+        return v
 
 
 class AsientoCreate(BaseModel):
@@ -3749,6 +3818,20 @@ class ResumenCxC(BaseModel):
     dadas_de_baja: List[VentaPorCobrar] = []
 
 
+class ExportarRango(BaseModel):
+    """Exportar lo que se ve de una lista por fechas (Caja › Historial,
+    Pagos, el diario de Contabilidad): QA nov, hallazgo 29."""
+    formato: Literal["csv", "xlsx"]
+    desde: Optional[datetime.date] = None
+    hasta: Optional[datetime.date] = None
+
+
+class ExportarCxC(BaseModel):
+    formato: Literal["csv", "xlsx"]
+    # Ids y no numeros de venta: el numero de comanda se reinicia cada dia.
+    pedido_ids: List[int] = Field(min_length=1, max_length=50000)
+
+
 class CobroClienteCreate(BaseModel):
     cliente_id: Optional[int] = None
     pedido_ids: List[int] = Field(min_length=1)
@@ -3816,6 +3899,9 @@ class CobroCliente(BaseModel):
     nota: str
     anulado: bool
     ventas: List[int] = []
+    # "abono": un abono hecho desde Ventas o Caja (no se anula aqui, se
+    # deshace donde se hizo). "cobro": hecho desde Cuentas por cobrar.
+    origen: str = "cobro"
 
 
 class MovimientoCuenta(BaseModel):

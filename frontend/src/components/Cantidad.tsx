@@ -40,10 +40,13 @@ export function CasillaConUnidad({
 }) {
   const otra = otraUnidad(unidad)
   const siguiente = vista === unidad ? otra : unidad
-  return (
-    <span className={`relative block ${className}`}>
-      <Numerico {...numerico} className={`block w-full ${claseCasilla} pr-[4.5rem]`} />
-      {otra && siguiente ? (
+  // EL CAMBIO DE UNIDAD VA AL LADO, NO DENTRO DE LA CASILLA: en el telefono,
+  // tocar la cantidad caia en el boton y 10 kg pasaban a 10.000 g sin aviso
+  // (QA nov, hallazgo 25).
+  if (otra && siguiente) {
+    return (
+      <span className={`flex items-stretch gap-2 ${className}`}>
+        <Numerico {...numerico} className={`block w-full min-w-0 flex-1 ${claseCasilla}`} />
         <button
           type="button"
           // Sin quitarle el foco a la casilla: si el teclado esta abierto,
@@ -52,22 +55,22 @@ export function CasillaConUnidad({
           onClick={() => alCambiarVista(siguiente)}
           title={`Escribir en ${siguiente}`}
           aria-label={`Cambiar a ${siguiente}`}
-          // Todo el alto de la casilla se puede tocar; lo que se ve es la
-          // pastilla de adentro.
-          className="group absolute inset-y-0 right-0 flex items-center pl-1 pr-[5px] touch-manipulation"
+          className="shrink-0 min-w-[3.5rem] rounded-lg border border-neutral-300 bg-neutral-500/5 px-2 text-center text-xs font-semibold tabular-nums text-neutral-700 hover:bg-neutral-500/15 active:bg-neutral-500/25 touch-manipulation"
         >
-          <span className="min-w-[3.25rem] rounded-md bg-neutral-500/10 px-2 py-1 text-center text-xs font-semibold tabular-nums text-neutral-700 group-hover:bg-neutral-500/20 group-active:bg-neutral-500/25">
-            {vista} ⇄
-          </span>
+          {vista} ⇄
         </button>
-      ) : (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-xs font-semibold text-neutral-500"
-        >
-          {rotulo ?? unidad}
-        </span>
-      )}
+      </span>
+    )
+  }
+  return (
+    <span className={`relative block ${className}`}>
+      <Numerico {...numerico} className={`block w-full ${claseCasilla} pr-[4.5rem]`} />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-xs font-semibold text-neutral-500"
+      >
+        {rotulo ?? unidad}
+      </span>
     </span>
   )
 }

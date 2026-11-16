@@ -6,8 +6,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from .. import combos, contabilidad, costeo, impuestos, kardex, models, schemas, tasas
+from .. import combos, contabilidad, costeo, impuestos, kardex, models, salvaguardas, schemas, tasas
 from .. import autorizaciones
+from ..acceso import permisos
 from ..database import get_db
 from ..timeutils import ahora, hoy, inicio_del_dia
 from ..ws_manager import manager
@@ -52,6 +53,24 @@ MINUTOS_PARA_ENTREGAR = 60
 # guardar se vuelve a tomar el candado si nadie mas lo agarro.
 MINUTOS_EDITANDO = 5
 
+def _ve_plata(request: Request) -> bool:
+    sesion = getattr(request.state, "sesion", None) or {}
+    return permisos.opera(sesion.get("rol"))
+
+
+def _comanda(pedido) -> schemas.Pedido:
+    """El pedido como lo ve la cocina: que preparar, sin montos."""
+    return schemas.Pedido.model_validate(schemas.comanda_sin_plata(schemas.Pedido.model_validate(pedido).model_dump()))
+
+
+def _para_quien_mira(request: Request, pedido):
+    return pedido if _ve_plata(request) else _comanda(pedido)
+
+
+def _solo_quien_vende(request: Request) -> None:
+    if not _ve_plata(request):
+        raise HTTPException(403, "Tu rol solo ve las comandas de cocina.")
+
 
 @router.get("", response_model=List[schemas.Pedido])
 def listar_pedidos(
@@ -60,6 +79,7 @@ def listar_pedidos(
     por_entregar: Optional[bool] = None,
     del_dia: Optional[bool] = None,
     entregados_hoy: Optional[bool] = None,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """`en_cocina=true` es lo que pregunta la pantalla de cocina: que falta por
@@ -86,6 +106,10 @@ def listar_pedidos(
     `del_dia=true` son las ventas de hoy, para consultarlas desde el
     mostrador sin salir a otro modulo.
     """
+    # Quien no vende (cocina) solo ve lo que falta preparar, y sin montos.
+    ve_plata = request is None or _ve_plata(request)
+    if not ve_plata:
+        estado, en_cocina, por_entregar, del_dia, entregados_hoy = None, True, None, None, None
     # Sin esto, pintar 40 comandas dispara 120 consultas sueltas (renglones,
     # pagos y ediciones de cada una, una por una). `selectinload` las trae en
     # una consulta por relacion, y aguanta el `distinct()` de mas abajo.
@@ -154,7 +178,33 @@ def listar_pedidos(
             .filter(models.PedidoItem.preparado.is_(False))
             .distinct()
         )
-    return query.order_by(models.Pedido.id.desc()).all()
+    pedidos = query.order_by(models.Pedido.id.desc()).all()
+    return pedidos if ve_plata else [_comanda(p) for p in pedidos]
+
+
+VECES_LA_MAS_GRANDE = 5
+
+
+def _venta_grande(db: Session, request: Request, pedido: models.Pedido) -> None:
+    """Una venta de mas de 5 veces la mas grande del ultimo mes casi siempre es
+    un cero de mas (QA de entradas: 100.000 unidades entraban sin preguntar)."""
+    total = sum((i.precio_unitario or 0) * (i.cantidad or 0) for i in pedido.items)
+    importe = func.sum(models.PedidoItem.precio_unitario * models.PedidoItem.cantidad)
+    mayor = (
+        db.query(importe)
+        .join(models.Pedido, models.Pedido.id == models.PedidoItem.pedido_id)
+        .filter(models.Pedido.estado == "pagado", models.Pedido.cerrado_en >= ahora() - datetime.timedelta(days=30))
+        .group_by(models.PedidoItem.pedido_id)
+        .order_by(importe.desc())
+        .limit(1)
+        .scalar()
+    )
+    if mayor and total > mayor * VECES_LA_MAS_GRANDE + 0.005:
+        salvaguardas.pedir_confirmacion(
+            request, "venta_grande",
+            f"Esta venta es de {salvaguardas.usd(total)} y la más grande del último mes fue de "
+            f"{salvaguardas.usd(mayor)}. ¿Es correcta, o sobra un cero en la cantidad o el precio?",
+        )
 
 
 def _buscar(db: Session, pedido_id: int) -> models.Pedido:
@@ -425,6 +475,11 @@ async def crear_pedido(
         if ya is not None:
             return schemas.Pedido.model_validate(ya)
 
+    # Regalar es sacar comida sin cobrar: pide la firma de quien autoriza
+    # (Daniel, 8-nov: "anulaciones y cortesias que pida clave").
+    if any(i.cortesia for i in pedido.items):
+        salvaguardas.exigir_firma(db, request, "cortesia", "Regalar productos (cortesía)")
+
     # Venta libre: renglones que no estan en el menu. No mueven inventario
     # (no tienen receta) y su costo queda en cero, que es honesto: el sistema
     # no sabe cuanto costo producir algo que no tiene cargado.
@@ -536,6 +591,7 @@ async def crear_pedido(
     # ningun lado -- Leider (21-sep): "le doy a enviar y no se guarda ni en
     # pedidos ni llega a cocina".
     db.flush()
+    _venta_grande(db, request, db_pedido)
     # La comanda "va a cocina" si al menos un renglon va: es lo que la
     # pantalla usa para decir "Sin cocina".
     db_pedido.a_cocina = any(i.a_cocina for i in db_pedido.items)
@@ -629,7 +685,7 @@ async def marcar_cocinando(pedido_id: int, request: Request, db: Session = Depen
 
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
-    return resultado
+    return _para_quien_mira(request, resultado)
 
 
 @router.post("/items/{item_id}/preparado", response_model=schemas.Pedido)
@@ -662,7 +718,7 @@ async def marcar_item_preparado(item_id: int, request: Request, db: Session = De
 
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
-    return resultado
+    return _para_quien_mira(request, resultado)
 
 
 @router.post("/{pedido_id}/por-retirar", response_model=schemas.Pedido)
@@ -756,7 +812,7 @@ async def marcar_pedido_listo(pedido_id: int, request: Request, db: Session = De
 
     resultado = schemas.Pedido.model_validate(pedido)
     await manager.broadcast("pedido_actualizado", resultado.model_dump(mode="json"))
-    return resultado
+    return _para_quien_mira(request, resultado)
 
 
 # -- Editar una comanda ya tomada --------------------------------------------
@@ -1657,6 +1713,24 @@ async def cobrar_pedido(
                 status_code=400,
                 detail=f"Falta el número de referencia del pago por {pago.metodo}.",
             )
+        # La misma referencia ya cobro otra venta: o es un error de tecleo o
+        # el cliente mostro un comprobante viejo. Se pregunta ANTES de cobrar,
+        # no despues en la portada (QA nov, hallazgo 23).
+        ref = (pago.referencia or "").strip()
+        if pago.metodo in contabilidad.METODOS_CON_REFERENCIA and len(ref) >= 4 and ref.isdigit():
+            otra = (
+                db.query(models.PagoPedido)
+                .join(models.Pedido, models.PagoPedido.pedido_id == models.Pedido.id)
+                .filter(models.PagoPedido.referencia == ref, models.PagoPedido.pedido_id != pedido.id,
+                        models.Pedido.estado == "pagado")
+                .first()
+            )
+            if otra is not None:
+                salvaguardas.pedir_confirmacion(
+                    request, "referencia_repetida",
+                    f"La referencia {ref} ya se usó para cobrar el pedido #{db.get(models.Pedido, otra.pedido_id).numero}. "
+                    "¿Es otro pago con la misma referencia? Revisa el comprobante antes de seguir.",
+                )
     if abs(round(sum(p.monto for p in pagos), 2) - round(a_cobrar, 2)) > 0.01:
         detalle = f"Los pagos suman ${sum(p.monto for p in pagos):.2f} y hay que cobrar ${a_cobrar:.2f}"
         if pedido.propina:
@@ -1729,6 +1803,11 @@ async def cobrar_pedido(
             recibido=round(pago.recibido, 2) if pago.recibido is not None else None,
             vuelto_metodo=(pago.vuelto_metodo or pago.metodo) if vuelto > 0 else None,
             vuelto_monto=vuelto,
+            vuelto_bs=(
+                round(vuelto - int(vuelto), 2)
+                if pago.vuelto_centavos_bs and vuelto > 0 and (pago.vuelto_metodo or pago.metodo) == "Efectivo $"
+                else 0.0
+            ),
             referencia=(pago.referencia or "").strip(),
             verificacion_id=verificacion.id if verificacion else None,
             monto_bs=round(pago.monto_bs, 2) if pago.monto_bs else None,
@@ -2270,8 +2349,10 @@ async def devolver_pedido(
 
     pedido.devuelto = True
     pedido.fecha_devolucion = ahora()
-    # Deja de ser venta del dia en que se cobro: ese dia se recalcula.
-    consolidacion.invalidar_dia(db, pedido.cerrado_en)
+    # Devuelta el mismo mes, deja de ser venta del dia en que se cobro: ese
+    # dia se recalcula. Un mes despues no (ver `consolidacion.sigue_siendo_venta`).
+    if not consolidacion.sigue_siendo_venta(pedido):
+        consolidacion.invalidar_dia(db, pedido.cerrado_en)
     pedido.nota_credito = body.nota_credito
     pedido.motivo_devolucion = body.motivo
     db.commit()
@@ -2283,8 +2364,9 @@ async def devolver_pedido(
 
 
 @router.get("/olvidados", response_model=List[schemas.Pedido])
-def pedidos_olvidados(horas: int = 24, db: Session = Depends(get_db)):
+def pedidos_olvidados(request: Request, horas: int = 24, db: Session = Depends(get_db)):
     """Comandas abiertas hace demasiado. Su inventario ya salio."""
+    _solo_quien_vende(request)
     limite = ahora() - datetime.timedelta(hours=horas)
     return (
         db.query(models.Pedido)
@@ -2359,6 +2441,7 @@ def ticket(pedido_id: int, db: Session = Depends(get_db)):
                 recibido=p.recibido,
                 vuelto_metodo=p.vuelto_metodo,
                 vuelto_monto=p.vuelto_monto or 0,
+                vuelto_bs=p.vuelto_bs or 0,
                 referencia=p.referencia or "",
             )
             for p in pedido.pagos
@@ -2414,6 +2497,12 @@ async def anular_pedido(
     # inventario de la nada.
     consumo = {c.ingrediente: c.cantidad for c in pedido.consumos}
 
+    # Anular comida ya hecha es botarla: pide la firma de quien autoriza.
+    # Antes de prepararse no se pierde nada y no se pide.
+    if preparada:
+        salvaguardas.exigir_firma(db, request, "anular_venta", f"Anular el pedido #{pedido.numero}, ya preparado",
+                                  pedido_id=pedido.id)
+
     if preparada:
         for ingrediente, cantidad in consumo.items():
             valor = round(cantidad * (ingrediente.costo_unitario or 0), 2)
@@ -2468,6 +2557,7 @@ def sugerencias(variantes: str = "", db: Session = Depends(get_db)):
 # Al final a proposito: `/{pedido_id}` casaria tambien con "/sugerencias" y
 # "/olvidados" si se declarara antes que ellas.
 @router.get("/{pedido_id}", response_model=schemas.Pedido)
-def ver_pedido(pedido_id: int, db: Session = Depends(get_db)):
+def ver_pedido(pedido_id: int, request: Request, db: Session = Depends(get_db)):
     """Un pedido con todo lo suyo: renglones, pagos y ediciones."""
+    _solo_quien_vende(request)
     return _buscar(db, pedido_id)

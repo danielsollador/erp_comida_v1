@@ -19,6 +19,7 @@ import { COLORES, NOMBRES_COLOR, NOMBRE_COLOR, colorCategoria } from '../lib/the
 import Recetas from './partes/Recetas'
 import type { Categoria, CostoVariante, Producto } from '../lib/types'
 import { esVarianteSinNombre } from '../lib/variantes'
+import { leerMonto } from '../lib/montos'
 
 /**
  * El menú: qué se vende, a cuánto, y qué lleva cada cosa.
@@ -772,7 +773,7 @@ function TarjetaProducto({
   }
 
   async function agregarVariante() {
-    const precio = Number(String(nuevoPrecio).replace(',', '.'))
+    const precio = leerMonto(String(nuevoPrecio))
     if (!nuevaVariante.trim() || !Number.isFinite(precio) || precio < 0) return
     await api.crearVariante(producto.id, nuevaVariante.trim(), precio)
     setNuevaVariante('')
@@ -931,7 +932,7 @@ function TarjetaProducto({
               autoFocus
               className="w-36 min-h-11 border border-neutral-300 rounded-xl px-3 text-sm"
             />
-            <Numerico
+            <Numerico monto
               value={nuevoPrecio}
               onChange={(e) => setNuevoPrecio(e.target.value)}
               placeholder="Precio"
@@ -1319,7 +1320,7 @@ function CrearProducto({
   const [donde, setDonde] = useState(categoriaId)
   const [guardando, setGuardando] = useState(false)
 
-  const monto = precio === '' ? 0 : Number(String(precio).replace(',', '.'))
+  const monto = precio === '' ? 0 : leerMonto(String(precio))
   const listo = nombre.trim().length > 0 && Number.isFinite(monto) && monto >= 0
 
   async function guardar() {
@@ -1366,7 +1367,7 @@ function CrearProducto({
         <span className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
           Precio <span className="normal-case font-normal tracking-normal text-neutral-500">(opcional)</span>
         </span>
-        <Numerico
+        <Numerico monto
           value={precio}
           onChange={(e) => setPrecio(e.target.value)}
           placeholder="0.00"

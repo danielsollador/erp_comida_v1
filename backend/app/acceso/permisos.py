@@ -150,8 +150,9 @@ SOLO_ADMINISTRA = ("/api/contabilidad", "/api/impuestos", "/api/respaldos",
                    # Lo que gana cada empleado y lo que se le paga a externos.
                    "/api/egresos")
 
-# La cartera de locales de Vertigo. Solo el equipo de la plataforma.
-SOLO_VERTIGO = ("/api/agencia",)
+# La cartera de locales de Vertigo y lo que le cuesta mantener la plataforma.
+# Solo el equipo de la plataforma.
+SOLO_VERTIGO = ("/api/agencia", "/api/gastos-vertigo")
 # Lo que puede cualquiera con sesion, sea el rol que sea: la clave y el PIN
 # propios y su propio telefono para los avisos push (push.py decide despues a
 # quien le llega cada aviso).

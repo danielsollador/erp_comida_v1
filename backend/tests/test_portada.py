@@ -106,7 +106,7 @@ def test_avisa_lo_que_le_deben(client, db, insumo, variante):
     fiado = next((a for a in lista if a["id"] == "fiado"), None)
     assert fiado is not None, lista
     assert fiado["titulo"].startswith("Te deben $5.00")
-    assert fiado["a"] == "/ventas?e=fiada&r=90d"
+    assert fiado["a"] == "/cobranzas"  # QA nov, hallazgo 26
 
 
 def test_producto_sin_receta_vendido_este_mes(client, db):

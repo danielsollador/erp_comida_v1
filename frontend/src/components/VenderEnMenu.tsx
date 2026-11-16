@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import type { Categoria, Ingrediente } from '../lib/types'
 import { Boton, Modal } from './ui'
+import { leerMonto } from '../lib/montos'
 
 /**
  * Una mercancía de reventa (el refresco) pasa al menú de una vez: su producto,
@@ -36,7 +37,7 @@ export default function VenderEnMenu({
       .catch(() => setError('No se pudieron traer las categorías del menú.'))
   }, [])
 
-  const precioNum = Number(precio.replace(',', '.'))
+  const precioNum = leerMonto(precio)
   const margen = precioNum > 0 ? Math.round(((precioNum - (mercancia.costo_unitario || 0)) / precioNum) * 100) : null
 
   async function crear() {

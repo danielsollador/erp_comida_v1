@@ -64,6 +64,7 @@ import type {
   ListaUsuarios,
   Merma,
   Autorizacion,
+  DiferenciasPorAprobar,
   SolicitudAutorizacion,
   Pedido,
   PedidoItem,
@@ -123,12 +124,13 @@ import type {
   PagoFijo,
   PagoSinFactura,
   ResumenCxC,
+  FormatoExportar,
   ResumenPagos,
   AnticipoPendiente,
   Traspaso,
 } from './types'
-import { abrirCanalEnVivo, cabecerasApp, recogerToken, urlApi } from './plataforma'
-import { queryRango, type Rango } from './fechas'
+import { abrirCanalEnVivo, cabecerasApp, descargar, recogerToken, SinConexion, urlApi } from './plataforma'
+import { aIso, hoy, queryRango, type Rango } from './fechas'
 
 /** `?a=1&b=2` con lo que venga definido, o '' si nada. */
 function qs(params: Record<string, string | undefined>): string {
@@ -164,13 +166,7 @@ export class ErrorApi extends Error {
   }
 }
 
-/** Se cayo la red (no el servidor): `fetch` rechaza sin respuesta. */
-export class SinConexion extends Error {
-  constructor() {
-    super('Sin conexión. Revisa el wifi e intenta otra vez.')
-    this.name = 'SinConexion'
-  }
-}
+export { SinConexion }
 
 /**
  * LO QUE PIDEN VARIAS PANTALLAS A LA VEZ, UNA SOLA VEZ (Leider, 5-oct: "para
@@ -197,14 +193,96 @@ export function olvidarCompartidas() {
   COMPARTIDAS.clear()
 }
 
+/**
+ * LO QUE EL SERVIDOR PIDE ANTES DE GUARDAR (ver backend/app/salvaguardas.py).
+ * Un 428 trae una firma o una pregunta; quien las muestra se registra una vez
+ * (components/Salvaguardas.tsx) y la operacion se repite sola con la firma o
+ * la confirmacion, sin que cada pantalla tenga que saberlo.
+ */
+export type PideFirma = { codigo: 'firma'; accion: string; detalle: string; monto: number; mensaje: string; error?: string }
+export type PideConfirmar = { codigo: 'confirmar'; clave: string; mensaje: string }
+type Manejadores = {
+  firma?: (p: PideFirma) => Promise<Autorizacion | null>
+  confirmar?: (p: PideConfirmar) => Promise<boolean>
+}
+let manejadores: Manejadores = {}
+export function registrarSalvaguardas(m: Manejadores) {
+  manejadores = m
+}
+
+/**
+ * EL DOBLE TOQUE SE MANDA UNA VEZ. Si la misma operacion (ruta y datos) ya va
+ * en camino, el segundo toque espera la respuesta del primero en vez de
+ * mandarla otra vez: un doble toque en "Pagar" pagaba dos veces (QA nov, R2).
+ */
+const EN_CAMINO = new Map<string, Promise<unknown>>()
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
+  const metodo = options?.method ?? 'GET'
+  if (metodo === 'GET') return reqUnaVez<T>(path, options)
+  const clave = `${metodo} ${path} ${typeof options?.body === 'string' ? options.body : ''}`
+  const hay = EN_CAMINO.get(clave)
+  if (hay) return hay as Promise<T>
+  const promesa = reqUnaVez<T>(path, options).finally(() => EN_CAMINO.delete(clave))
+  EN_CAMINO.set(clave, promesa)
+  return promesa
+}
+
+async function reqUnaVez<T>(path: string, options?: RequestInit): Promise<T> {
+  const confirmados: string[] = []
+  let firma: Autorizacion | null = null
+  let pedida: PideFirma | null = null
+  for (let vuelta = 0; vuelta < 6; vuelta++) {
+    try {
+      return await reqCrudo<T>(path, options, {
+        ...(confirmados.length ? { 'X-Confirmado': confirmados.join(',') } : {}),
+        ...(firma ? { 'X-Autorizacion': JSON.stringify(firma) } : {}),
+      })
+    } catch (e) {
+      // La firma no sirvio (PIN incorrecto, solicitud vencida): el cuadro se
+      // vuelve a abrir diciendo por que, en vez de cerrarse sin avisar.
+      if (e instanceof ErrorApi && e.status === 403 && firma && pedida && manejadores.firma) {
+        firma = await manejadores.firma({ ...pedida, error: e.message })
+        if (!firma) throw e
+        continue
+      }
+      if (!(e instanceof PideAlgo)) throw e
+      const p = e.pide
+      if (p.codigo === 'confirmar' && manejadores.confirmar && !confirmados.includes(p.clave)) {
+        if (!(await manejadores.confirmar(p)))
+          throw new ErrorApi(p.clave === 'repetido' ? 'No se registró otra vez: el primero ya quedó guardado.' : p.mensaje, 428)
+        confirmados.push(p.clave)
+        continue
+      }
+      if (p.codigo === 'firma' && manejadores.firma) {
+        pedida = p
+        firma = await manejadores.firma(p)
+        if (!firma) throw new ErrorApi(p.mensaje, 428)
+        continue
+      }
+      throw new ErrorApi(p.mensaje, 428)
+    }
+  }
+  throw new ErrorApi('No se pudo completar: vuelve a intentarlo.', 428)
+}
+
+class PideAlgo extends Error {
+  pide: PideFirma | PideConfirmar
+  constructor(pide: PideFirma | PideConfirmar) {
+    super(pide.mensaje)
+    this.pide = pide
+  }
+}
+
+async function reqCrudo<T>(path: string, options: RequestInit | undefined, extra: Record<string, string>): Promise<T> {
   // Quien escribe (cobra, compra, aprueba) cambia lo que se comparte.
   if (options?.method && options.method !== 'GET') olvidarCompartidas()
   let res: Response
   try {
     // En la app, la direccion del servidor y el token (ver lib/plataforma.ts).
+    const { headers: propias, ...resto } = options ?? {}
     res = await fetch(urlApi(`/api${path}`), {
-      headers: { 'Content-Type': 'application/json', ...cabecerasApp() },
+      headers: { 'Content-Type': 'application/json', ...cabecerasApp(), ...((propias as Record<string, string>) ?? {}), ...extra },
       // SIN CACHE. El API no manda `Cache-Control` ni `ETag`, asi que el
       // navegador puede decidir por su cuenta reutilizar la respuesta
       // anterior de un GET: se borraba algo, se volvia a pedir la lista y
@@ -216,7 +294,7 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
       // para que un despliegue con el API en otro origen no la pierda en
       // silencio.
       credentials: 'same-origin',
-      ...options,
+      ...resto,
     })
   } catch {
     // `fetch` solo rechaza cuando no hubo respuesta: wifi caida, servidor
@@ -238,7 +316,10 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     try {
       const cuerpo = JSON.parse(texto)
       if (typeof cuerpo?.detail === 'string') mensaje = cuerpo.detail
-    } catch {
+      else if (res.status === 428 && cuerpo?.detail?.codigo) throw new PideAlgo(cuerpo.detail)
+      else if (typeof cuerpo?.detail?.mensaje === 'string') mensaje = cuerpo.detail.mensaje
+    } catch (e) {
+      if (e instanceof PideAlgo) throw e
       // respuesta no-JSON: se usa el texto tal cual
     }
     throw new ErrorApi(mensaje, res.status)
@@ -654,6 +735,7 @@ export const api = {
       monto: number
       recibido?: number
       vuelto_metodo?: string
+      vuelto_centavos_bs?: boolean
       // Numero de confirmacion: del pago movil, el ticket del punto, el
       // comprobante del Zelle. El backend lo exige para todo lo que no sea
       // efectivo ni fiado.
@@ -743,7 +825,7 @@ export const api = {
   /** `confirmar`: ya se dijo que sí a pasar a desechable con stock o a archivar algo que va en recetas. */
   actualizarIngrediente: (id: number, i: DatosIngrediente, confirmar = false) =>
     req<Ingrediente>(`/inventario/ingredientes/${id}`, { method: 'PUT', body: JSON.stringify({ ...i, confirmar }) }),
-  // ── Preparaciones, produccion y control (docs/plan-compras-...) ──
+  // ── Preparaciones, produccion y control ──
   listarPreparaciones: () => req<Preparacion[]>('/inventario/preparaciones'),
   crearPreparacion: (d: DatosPreparacion) =>
     req<Preparacion>('/inventario/preparaciones', { method: 'POST', body: JSON.stringify(d) }),
@@ -870,6 +952,8 @@ export const api = {
 
   // Cuentas por cobrar
   resumenCxC: () => req<ResumenCxC>('/cobranzas/resumen'),
+  exportarCuentasPorCobrar: (formato: FormatoExportar, pedido_ids: number[]) =>
+    descargar('/api/cobranzas/ventas/exportar', `cuentas-por-cobrar-${aIso(hoy())}.${formato}`, { formato, pedido_ids }),
   listarClientesCredito: () => req<ClienteCredito[]>('/cobranzas/clientes'),
   guardarClienteCredito: (c: Omit<ClienteCredito, 'id'>, id?: number) =>
     req<ClienteCredito>(id ? `/cobranzas/clientes/${id}` : '/cobranzas/clientes', {
@@ -1111,6 +1195,12 @@ export const api = {
     req<ExplicacionCierre>(`/caja/explicar${fecha ? `?fecha=${fecha}` : ''}`),
   cobrosDelDia: (fecha?: string) =>
     req<CobroDelDia[]>('/caja/cobros' + (fecha ? `?fecha=${fecha}` : '')),
+  diferenciasCaja: () => req<DiferenciasPorAprobar>('/caja/diferencias'),
+  aprobarDiferencia: (tipo: 'cierre' | 'apertura', id: number, motivo: string) =>
+    req<DiferenciasPorAprobar>('/caja/diferencias/aprobar', {
+      method: 'POST',
+      body: JSON.stringify({ tipo, id, motivo }),
+    }),
   anularCierre: (id: number, motivo: string) =>
     req<CierreCaja>(`/caja/cierres/${id}/anular`, {
       method: 'POST',

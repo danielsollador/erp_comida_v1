@@ -3,15 +3,19 @@ agrupado. La logica vive en `cuentas_por_cobrar.py`."""
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import cuentas_por_cobrar as cxc
-from .. import models, schemas
+from .. import models, salvaguardas, schemas
 from ..database import get_db
+from ..exportar_csv import respuesta_csv, respuesta_xlsx
+from ..timeutils import hoy
 
 router = APIRouter(prefix="/api/cobranzas", tags=["cobranzas"])
+
+COLUMNAS_EXPORTAR = ("Cliente", "Venta", "Fecha", "Días", "Abonó ($)", "Debe ($)")
 
 
 def _cliente(db: Session, cliente_id: int) -> models.Cliente:
@@ -47,6 +51,16 @@ def _confirmar(db: Session, cobro: models.CobroCliente, clave) -> schemas.CobroC
 @router.get("/resumen", response_model=schemas.ResumenCxC)
 def resumen(db: Session = Depends(get_db)):
     return cxc.resumen(db)
+
+
+@router.post("/ventas/exportar")
+def exportar_ventas(body: schemas.ExportarCxC, db: Session = Depends(get_db)):
+    """Solo lee. Va por POST porque 1.000 ventas no caben en una direccion."""
+    nombre = f"cuentas-por-cobrar-{hoy().isoformat()}.{body.formato}"
+    filas = cxc.filas_para_exportar(db, body.pedido_ids)
+    if body.formato == "xlsx":
+        return respuesta_xlsx(nombre, COLUMNAS_EXPORTAR, filas, hoja="Cuentas por cobrar")
+    return respuesta_csv(nombre, COLUMNAS_EXPORTAR, filas, regional=True)
 
 
 @router.get("/clientes", response_model=List[schemas.Cliente])
@@ -124,12 +138,15 @@ def abonar_ventas(body: schemas.AbonoAVentas, db: Session = Depends(get_db)):
 
 
 @router.post("/ventas/{pedido_id}/perdida")
-def dar_por_perdida(pedido_id: int, body: schemas.DarPorPerdida, db: Session = Depends(get_db)):
+def dar_por_perdida(pedido_id: int, body: schemas.DarPorPerdida, request: Request, db: Session = Depends(get_db)):
     """El cliente no va a pagar (PedidosYa no reconocio el pedido): lo que
-    falta se lleva a gasto y deja de deberse. La venta no se toca."""
+    falta se lleva a gasto y deja de deberse. La venta no se toca. Pide la
+    firma de quien autoriza (QA nov: la cajera daba de baja deudas sola)."""
     p = db.get(models.Pedido, pedido_id)
     if p is None:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
+    salvaguardas.exigir_firma(db, request, "dar_de_baja", f"Dar de baja la deuda de la venta #{p.numero}",
+                              monto=p.fiado_saldo or 0, pedido_id=p.id)
     try:
         monto = cxc.dar_por_perdida(db, p, body.motivo)
     except cxc.ErrorCobro as e:
@@ -155,8 +172,25 @@ def recuperar_perdida(pedido_id: int, db: Session = Depends(get_db)):
 
 @router.get("/cobros", response_model=List[schemas.CobroCliente])
 def listar_cobros(db: Session = Depends(get_db)):
-    cobros = db.query(models.CobroCliente).order_by(models.CobroCliente.fecha.desc()).limit(200).all()
-    return [cxc.cobro_a_esquema(c) for c in cobros]
+    """Todo lo cobrado de deudas: lo cobrado aqui y los abonos hechos desde
+    Ventas o Caja. Decia "Todavia no hay cobros" con 10 abonos hechos por
+    alla (QA nov, hallazgo 26)."""
+    cobros = [cxc.cobro_a_esquema(c) for c in
+              db.query(models.CobroCliente).order_by(models.CobroCliente.fecha.desc()).limit(200).all()]
+    for a in (
+        db.query(models.AbonoFiado)
+        .filter(models.AbonoFiado.cobro_id.is_(None))
+        .order_by(models.AbonoFiado.fecha.desc())
+        .limit(200)
+        .all()
+    ):
+        cobros.append(schemas.CobroCliente(
+            id=-a.id, cliente=a.pedido.cliente if a.pedido else "", fecha=a.fecha, metodo_pago=a.metodo_pago or "",
+            referencia=a.referencia or "", monto=a.monto, comision=0.0, recibido=a.monto,
+            nota="Abono hecho desde Ventas o Caja", anulado=False, ventas=[a.pedido_id], origen="abono",
+        ))
+    cobros.sort(key=lambda c: c.fecha, reverse=True)
+    return cobros[:200]
 
 
 @router.post("/cobros", response_model=schemas.CobroCliente)

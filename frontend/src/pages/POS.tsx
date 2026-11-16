@@ -11,7 +11,7 @@ import { Numerico } from '../components/Teclado'
 import { AbrirCaja, useApertura } from '../components/abrirCaja'
 import { api, connectWs } from '../lib/api'
 import { ivaRetenido } from '../lib/compras'
-import { enPreparacion, estadoCocina, haceCuanto, horaDe, porQueNoSeEdita } from '../lib/comandas'
+import { enPreparacion, estadoCocina, haceCuanto, horaDe, porCategoria, porQueNoSeEdita } from '../lib/comandas'
 import { fmtBs, useMoneda, fmtNum } from '../lib/moneda'
 import { imprimirTicket as ticket } from '../lib/ticket'
 import { uuid } from '../lib/uuid'
@@ -34,6 +34,7 @@ import type {
   PuntoVenta,
   Variante,
 } from '../lib/types'
+import { montoO0 } from '../lib/montos'
 
 // METODOS_PAGO y METODOS_CON_REFERENCIA viven en lib/pagos porque la regla no
 // es del punto de venta: Caja y Ventas tambien aplican pagos y tenian su
@@ -57,7 +58,7 @@ const BILLETES_USD = [1, 5, 10, 20, 50, 100]
  *  pero el del telefono en español escribe coma: sin esto "20,50" era cero y
  *  el cobro se quedaba trancado diciendo que el billete no alcanza. */
 function monto(v: string): number {
-  return Number(String(v).replace(',', '.')) || 0
+  return montoO0(v)
 }
 const CLAVE_PUNTO = 'erp-punto-venta'
 
@@ -343,6 +344,7 @@ export default function POS() {
       : 0
     : billeteNum
   const vuelto = Math.max(Math.round((entregado - aCobrar) * 100) / 100, 0)
+  const centavosDelVuelto = Math.round((vuelto - Math.floor(vuelto)) * 100) / 100
   // Lo que queda por cubrir en un pago mixto.
   const faltaMixto = Math.max(
     Math.round((aCobrar - partes.reduce((t, p) => t + p.monto, 0)) * 100) / 100,
@@ -473,6 +475,7 @@ export default function POS() {
     (categoriaId: number) => categorias.find((c) => c.id === categoriaId)?.color ?? '',
     [categorias],
   )
+  const ordenCategorias = useMemo(() => categorias.map((c) => c.id), [categorias])
   const categoriaDeVariante = useMemo(() => {
     const m = new Map<number, number>()
     for (const c of categorias) {
@@ -971,6 +974,7 @@ export default function POS() {
       monto: number
       recibido?: number
       vuelto_metodo?: string
+      vuelto_centavos_bs?: boolean
       referencia?: string
       verificacion_id?: number
       monto_bs?: number
@@ -1165,8 +1169,17 @@ export default function POS() {
       setVueltoMovil(true)
       return
     }
+    // Un vuelto en dolares con centavos no se puede dar en billetes: salen
+    // los dolares redondos y los centavos en bolivares (QA nov, hallazgo 22).
+    const partido = vueltoMetodo === 'Efectivo $' && centavosDelVuelto > 0
     cobrar(efectivo.metodo, [
-      { metodo: efectivo.metodo, monto: aCobrar, recibido: entregado, vuelto_metodo: vueltoMetodo },
+      {
+        metodo: efectivo.metodo,
+        monto: aCobrar,
+        recibido: entregado,
+        vuelto_metodo: vueltoMetodo,
+        ...(partido ? { vuelto_centavos_bs: true } : {}),
+      },
     ])
   }
 
@@ -1915,7 +1928,7 @@ export default function POS() {
                   </span>
                 </div>
                 <ul className="text-[13px] leading-snug text-neutral-600 mb-2 space-y-0">
-                  {pedido.items.map((i) => {
+                  {porCategoria(pedido.items, (v) => categoriaDeVariante.get(v), ordenCategorias).map((i) => {
                     const cat = categoriaDeVariante.get(i.variante_id ?? -1)
                     return (
                       <li key={i.id} className="flex items-center gap-2">
@@ -2549,7 +2562,7 @@ export default function POS() {
           }
         >
           <ul className="space-y-2">
-            {cocinaDe.pedido.items.map((i) => {
+            {porCategoria(cocinaDe.pedido.items, (v) => categoriaDeVariante.get(v), ordenCategorias).map((i) => {
               const cocina = cocinaDe.destino[i.id]
               const hecho = i.a_cocina !== false && i.preparado
               const preparando = i.a_cocina !== false && !i.preparado && enPreparacion(cocinaDe.pedido)
@@ -2874,7 +2887,7 @@ export default function POS() {
                   <div className="space-y-2">
                     <label className="block text-xs text-neutral-500">
                       {enBs ? '¿Con cuántos bolívares paga?' : '¿De cuánto es el billete?'}
-                      <Numerico
+                      <Numerico monto
                         value={billete}
                         onChange={(e) => setBillete(e.target.value)}
                         placeholder={enBs ? '0,00' : '20.00'}
@@ -2916,6 +2929,11 @@ export default function POS() {
                               {m !== 'Efectivo $' && tasaBcv > 0 && (
                                 <span className="block text-[11px] text-neutral-500 tabular-nums">
                                   {fmtBs(vuelto * tasaBcv)}
+                                </span>
+                              )}
+                              {m === 'Efectivo $' && centavosDelVuelto > 0 && tasaBcv > 0 && (
+                                <span className="block text-[11px] text-neutral-500 tabular-nums">
+                                  ${Math.floor(vuelto)} + {fmtBs(centavosDelVuelto * tasaBcv)}
                                 </span>
                               )}
                             </button>
@@ -3110,7 +3128,7 @@ export default function POS() {
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs text-neutral-500">
                       Descuento
-                      <Numerico
+                      <Numerico monto
                         value={descuento}
                         onChange={(e) => setDescuento(e.target.value)}
                         placeholder="0.00"
@@ -3121,7 +3139,7 @@ export default function POS() {
                         empleado hasta que se le entrega. */}
                     <label className="text-xs text-neutral-500">
                       Propina
-                      <Numerico
+                      <Numerico monto
                         value={propina}
                         onChange={(e) => setPropina(e.target.value)}
                         placeholder="0.00"

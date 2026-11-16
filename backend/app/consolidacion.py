@@ -62,7 +62,8 @@ log = logging.getLogger("erp.consolidacion")
 # Sube cuando cambie QUE se guarda o COMO se calcula: los dias guardados con
 # una version vieja se vuelven a consolidar la noche siguiente.
 # 2: las unidades vendidas por dia y por hora (la serie de unidades, 30-sep).
-VERSION = 2
+# 3: una venta devuelta un mes despues se queda en su mes (QA nov, R3).
+VERSION = 3
 
 # A que hora del local corre la consolidacion nocturna.
 HORA_NOCTURNA = datetime.time(3, 30)
@@ -189,10 +190,23 @@ def _grupo(d: Dict[str, Grupo], clave: str, nombre: str = "") -> Grupo:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _mes(f: datetime.datetime) -> tuple[int, int]:
+    return (f.year, f.month)
+
+
+def sigue_siendo_venta(p: models.Pedido) -> bool:
+    """Una venta devuelta el mismo mes no cuenta: no hubo venta. Devuelta un
+    mes despues, se queda en su mes y la devolucion resta en el mes en que se
+    hizo, como su nota de credito: si no, devolver una venta de octubre ya
+    declarado cambiaba los reportes de octubre (QA de noviembre, R3)."""
+    if not p.devuelto:
+        return True
+    return bool(p.fecha_devolucion and p.cerrado_en and _mes(p.fecha_devolucion) > _mes(p.cerrado_en))
+
+
 def pedidos_pagados(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
-    """Ventas efectivas del periodo. Las devueltas no cuentan: el cliente
-    trajo la comida de vuelta, asi que no hubo venta."""
-    return (
+    """Ventas efectivas del periodo (ver `sigue_siendo_venta`)."""
+    filas = (
         db.query(models.Pedido)
         .options(
             selectinload(models.Pedido.items),
@@ -202,12 +216,12 @@ def pedidos_pagados(db: Session, inicio: datetime.datetime, fin: datetime.dateti
         )
         .filter(
             models.Pedido.estado == "pagado",
-            models.Pedido.devuelto.is_(False),
             models.Pedido.cerrado_en >= inicio,
             models.Pedido.cerrado_en < fin,
         )
         .all()
     )
+    return [p for p in filas if sigue_siendo_venta(p)]
 
 
 def devoluciones(db: Session, inicio: datetime.datetime, fin: datetime.datetime):
@@ -654,6 +668,7 @@ def dias_pendientes(db: Session) -> List[datetime.date]:
         .all()
         if f.version == VERSION
     }
+    al_dia -= dias_que_no_cuadran(db, desde)
     pendientes = []
     d = desde
     while d < hoy():
@@ -661,6 +676,44 @@ def dias_pendientes(db: Session) -> List[datetime.date]:
             pendientes.append(d)
         d += datetime.timedelta(days=1)
     return pendientes
+
+
+def dias_que_no_cuadran(db: Session, desde: datetime.date) -> set:
+    """Los dias cuyo resumen guardado ya no dice lo mismo que los asientos.
+
+    Pasa cuando alguien corrige datos directo en la base sin pasar por
+    `crear_asiento`, que es lo que invalida el dia: el 21 y el 24-oct el
+    Balance decia $8.033,90 de banco y los asientos $7.946,48 (QA nov,
+    hallazgo 6). La corrida de la noche los compara y los rehace."""
+    dia = func.date(models.AsientoContable.fecha)
+    vivo: dict = {}
+    for d, cuenta_id, debe, haber in (
+        db.query(dia, models.MovimientoContable.cuenta_id,
+                 func.coalesce(func.sum(models.MovimientoContable.debe), 0.0),
+                 func.coalesce(func.sum(models.MovimientoContable.haber), 0.0))
+        .join(models.AsientoContable)
+        .filter(models.AsientoContable.fecha >= inicio_del_dia(desde), models.AsientoContable.fecha < inicio_del_dia(hoy()))
+        .group_by(dia, models.MovimientoContable.cuenta_id)
+        .all()
+    ):
+        fecha = d if isinstance(d, datetime.date) else datetime.date.fromisoformat(str(d)[:10])
+        vivo[(fecha, cuenta_id)] = (round(float(debe or 0), 2), round(float(haber or 0), 2))
+    guardado = {
+        (f.fecha, f.cuenta_id): (round(f.debe or 0, 2), round(f.haber or 0, 2))
+        for f in db.query(models.DmCuentaDia).filter(models.DmCuentaDia.fecha >= desde).all()
+    }
+    consolidados = dias_consolidados(db, desde, hoy())
+    malos = set()
+    for clave in set(vivo) | set(guardado):
+        if clave[0] not in consolidados:
+            continue
+        a, b = vivo.get(clave, (0.0, 0.0)), guardado.get(clave, (0.0, 0.0))
+        if abs(a[0] - b[0]) > 0.005 or abs(a[1] - b[1]) > 0.005:
+            malos.add(clave[0])
+    if malos:
+        log.warning("consolidacion: %d dia(s) del mart no cuadraban con los asientos: %s",
+                    len(malos), ", ".join(sorted(d.isoformat() for d in malos)))
+    return malos
 
 
 def consolidar_pendientes(db: Session) -> int:

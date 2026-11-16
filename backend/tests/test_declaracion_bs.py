@@ -71,7 +71,7 @@ def test_se_declara_en_bolivares_lo_que_dicen_los_libros(client, db, insumo):
     [p] = [x for x in client.get("/api/impuestos/periodos-pendientes").json() if (x["anio"], x["mes"]) == (anio, mes)]
     assert p["iva_credito_bs"] == 16.0 * TASA and p["sin_tasa"] == 0
 
-    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).json()
+    d = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"}).json()
     # Solo compras: todo el credito sobra y se arrastra, en Bs.
     assert d["iva_credito_bs"] == libro(client, anio, mes)["total_iva_bs"] == 800.0
     assert (d["iva_a_pagar_bs"], d["credito_excedente_bs"]) == (0, 800.0)
@@ -86,7 +86,7 @@ def test_sin_tasa_no_se_declara(client, db, insumo):
     db.query(models.TasaCambio).delete()
     db.commit()
 
-    r = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes})
+    r = client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"})
     assert r.status_code == 409 and "sin tasa" in r.json()["detail"]
 
 
@@ -104,13 +104,13 @@ def test_una_factura_sin_tasa_se_le_carga_y_el_mes_se_puede_declarar(client, db,
     assert r.status_code == 200, r.text
     assert (r.json()["gravado_bs"], r.json()["iva_bs"]) == (6000.0, 960.0)
     assert libro(client, anio, mes)["sin_tasa"] == 0
-    assert client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}).status_code == 200
+    assert client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"}).status_code == 200
 
 
 def test_en_un_mes_declarado_la_tasa_ya_no_se_cambia(client, db, insumo):
     anio, mes, cuando = mes_pasado()
     f = comprar(client, db, insumo, cuando)
-    client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes})
+    client.post("/api/impuestos/declaraciones", json={"anio": anio, "mes": mes}, headers={"X-Confirmado": "sin_rif,debito_cero"})
     r = client.put(f"/api/impuestos/compras/{f.id}/tasa", json={"tasa_bcv": 60.0})
     assert r.status_code == 409 and "declarado" in r.json()["detail"]
 

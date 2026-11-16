@@ -40,6 +40,7 @@ import type {
   CategoriaInsumo,
   TipoArticulo,
 } from '../lib/types'
+import { leerNumero } from '../lib/unidades'
 
 /**
  * El inventario: los cuatro almacenes de la pizarra (7-oct-2026).
@@ -266,7 +267,7 @@ export default function Inventario() {
               min: 0.0001,
               cuando: (v: Record<string, string>) => v.como !== 'suelta',
               ayuda: (v: Record<string, string>) => {
-                const p = Number(String(v.paquetes ?? '').replace(',', '.'))
+                const p = leerNumero(String(v.paquetes ?? ''))
                 return p > 0 ? `Son ${conUnidad(p * n, ing.unidad)}.` : `Cada paquete trae ${conUnidad(n, ing.unidad)}.`
               },
             },

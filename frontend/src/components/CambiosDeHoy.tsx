@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import type { Ingrediente, Sustitucion } from '../lib/types'
 import { Boton, Seccion } from './ui'
+import { leerNumero } from '../lib/unidades'
 
 /**
  * "Hoy no hay pollo, se usa pavo" (8-oct, caso 2).
@@ -39,7 +40,7 @@ export default function CambiosDeHoy() {
   async function guardar() {
     setError('')
     if (!original || !sustituto) return setError('Elige qué falta y con qué se reemplaza.')
-    const f = Number(factor.replace(',', '.'))
+    const f = leerNumero(factor)
     if (!(f > 0)) return setError('La proporción tiene que ser mayor que cero.')
     try {
       await api.crearSustitucion({ original_id: original, sustituto_id: sustituto, factor: f, nota: nota.trim() })

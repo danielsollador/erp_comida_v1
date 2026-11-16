@@ -226,7 +226,7 @@ export default function Asistente() {
           aria-label="Abrir el asistente"
         >
           <Chispa tam={20} />
-          <span className="hidden text-sm font-medium sm:inline">Pregúntame</span>
+          <span className="hidden text-sm font-medium sm:inline">Dona</span>
           {mensajes.length > 0 && (
             <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-[var(--vp-acento)] ring-2 ring-neutral-900 sm:static sm:ring-0" aria-hidden="true" />
           )}
@@ -260,7 +260,7 @@ export default function Asistente() {
                 <div className="flex items-center gap-3">
                   <SelloIA tam={36} />
                   <div className="min-w-0 flex-1">
-                    <h2 className="font-[Sora] text-[19px] font-semibold leading-tight tracking-[-0.01em]">Pregúntame</h2>
+                    <h2 className="font-[Sora] text-[19px] font-semibold leading-tight tracking-[-0.01em]">Dona</h2>
                     <p className="truncate text-[13px] text-neutral-500">
                       {modulo ? `Estás en ${modulo}` : 'Tus números, o cómo hacer algo'}
                     </p>

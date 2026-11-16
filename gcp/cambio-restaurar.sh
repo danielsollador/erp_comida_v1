@@ -3,9 +3,9 @@
 # con el volcado fresco de Hostinger y los usuarios/roles de `compartido`.
 #
 # Los datos que la VM tenia (las pruebas) se descartan: desde el 5-oct los dos
-# servidores divergen con los mismos ids (ver gcp/cambio.md). Antes de correr
+# servidores divergen con los mismos ids. Antes de correr
 # esto, el volcado y los json tienen que estar en /docker/erp/migracion
-# (los sube cambio.md, paso 3). Se puede correr dos veces: es idempotente.
+#. Se puede correr dos veces: es idempotente.
 set -euo pipefail
 DIR=/docker/erp
 M=$DIR/migracion

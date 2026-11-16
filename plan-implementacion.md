@@ -56,7 +56,7 @@ Ya funciona en producción: es contrato y no cambia sin decirlo aquí.
     - Historial de recetas.
 - Cierre de caja:
     - Una caja por dia con dos gavetas (bolivares y divisas) y monto declarado al abrir.
-    - Cierre solo con lo del dia, diferencias de las dos gavetas a libros y cierre reversible.
+    - Cierre solo con lo del dia, diferencias de las dos gavetas a libros y cierre reversible (cambia en 1.10: las diferencias van a libros al aprobarlas).
     - Gastos, retiros e historial de cierres.
 - Reportes:
     - Resumen, ventas, perdidas, inventario y reporte a medida, con filtros de seleccion multiple.
@@ -81,7 +81,7 @@ Ya funciona en producción: es contrato y no cambia sin decirlo aquí.
 
 ## FASE 1 · Cerrar lo abierto y blindar
 
-Orden: 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los errores QA van antes de lo nuevo porque son errores de dinero en producción. Dos tablets va antes de sin conexión porque la cola manda comandas en ráfaga y, sin numeración con bloqueo, se repiten números.
+Orden: 1.2 → 1.3 → 1.10 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los errores QA van antes de lo nuevo porque son errores de dinero en producción. Dos tablets va antes de sin conexión porque la cola manda comandas en ráfaga y, sin numeración con bloqueo, se repiten números. El 1.2a no depende de ninguno.
 
 ### 1.0 a 1.2 · Una sola rama viva
 
@@ -94,11 +94,31 @@ Orden: 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los errores 
 
 **Cómo:** Leider valida en local; con las pruebas de GitHub en verde, `fase1` se fusiona en `master` y se borran `app-expo` y `app-expo-play`.
 
+### 1.2a · Exportar Cuentas por cobrar (Sonnet)
+
+**Qué:** ver `specs/cuentas-por-cobrar.md` > Exportar la lista.
+
+- Botón Exportar en "Quién me debe", a CSV y a Excel, que respeta el buscador y el orden.
+- Abre bien en un Excel con configuración regional de Venezuela, y un texto nunca se ejecuta como fórmula.
+- Funciona con al menos 1.000 ventas en pantalla.
+
+**Cómo:** rama `exportar-cuentas-por-cobrar`, desde `origin/master`, porque el módulo no está en `fase1`.
+
+- `Tabla`: opción de exportar junto al buscador, apagada por defecto y activa solo en esta tabla.
+- Descarga: `descargar` acepta un cuerpo opcional. Con cuerpo, pide por POST también en la web y guarda el archivo recibido, sin salir de la pantalla; sin cuerpo, las descargas actuales siguen igual. En la app de Capacitor abre el menú de compartir, como hoy.
+- Backend: endpoint POST en `cobranzas.py`, cubierto por el permiso `cobranzas`, que solo lee. Recibe en el cuerpo el formato y los ids de las ventas que se ven, en su orden, porque 1.000 no se pueden garantizar en una dirección. Son ids y no números de venta porque el número de comanda se reinicia cada día. Es la misma ruta para cualquier cantidad. Los montos salen de la base, y lo que ya no se debe se omite.
+- CSV: se reutiliza `exportar_csv` con una opción nueva para usar `;`, coma decimal y BOM (es-VE usa `;` como separador de lista). Las otras exportaciones no cambian.
+- Excel: `.xlsx` real con `openpyxl`, con números y fechas de verdad.
+- Fórmulas: en el `.xlsx`, la celda del cliente se fuerza a texto, porque `openpyxl` convierte `=` en fórmula. En el CSV, un apóstrofo delante del texto que empiece con `=`, `+`, `-` o `@`.
+- Tests en `tests/test_cuentas_por_cobrar.py`: columnas, orden, venta ya cobrada, permisos, separadores, fórmulas y 1.000 ventas en los dos formatos. Con Playwright, la descarga real de 1.000 ventas en local.
+
 ### 1.3 · Errores de la auditoría QA (Opus)
 
 **Qué:** cada error que demuestran las pruebas de auditoría (dinero, permisos y operación) se corrige, y su prueba queda en la suite.
 
 **Cómo:** correr las 58 pruebas de la rama `qa-auditoria-pruebas` contra `fase1`. Las que fallan van a `specs/qa.md` con su riesgo; Leider aprueba el orden (primero dinero y permisos) y cada prueba arreglada entra a la suite.
+
+**QA de noviembre (8-nov):** los 32 hallazgos del QA sobre la copia de producción van en `specs/qa.md`, con cinco reglas generales: un solo lector de montos, nada se paga dos veces, mes declarado congelado, confirmar lo absurdo y firma para anular. Rama `fix-2026-11-08-qa-noviembre` (sale de `fase1` con `master` al día).
 
 ### 1.4 · Dos tablets cobrando a la vez (Opus) · D10
 
@@ -147,13 +167,19 @@ Orden: 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9. Los errores 
 
 **Cómo:** builds de producción con EAS para las dos tiendas y APK `publico` para las tablets Fire. Cuando las tablets usen la APK de Expo, se borran Capacitor y `app-android.yml` (con el visto bueno de Leider).
 
+### 1.10 · Cierre de caja como cuadre (Opus)
+
+**Qué:** ver `specs/caja.md`. El cierre cuenta y cuadra; no escribe en los libros. Las diferencias van a los libros cuando quien autoriza las aprueba.
+
+**Cómo:** columnas de estado de la diferencia (por aprobar, aprobada, sola) en apertura y cierre; `registrar_diferencia_caja` se llama al aprobar, no al cerrar. Fondo inicial = lo que quedó en el último cierre. Firma (`autorizaciones.firmar`) para corregir, anular y borrar en días cerrados. Cambia la regla de la FASE 0 «diferencias de las dos gavetas a libros».
+
 ### 1.9 · Cierre de la FASE 1
 
 Despliegue según `CLAUDE.md`, lo terminado pasa a la FASE 0 y se etiqueta `v1.1`.
 
 ## FASE 2 · El negocio en palabras (IA)
 
-- Asistente "Preguntame":
+- Asistente Dona (antes "Pregúntame"):
     - Responde con las cifras del negocio y dice exactamente que periodo compara.
     - Se abre desde el mismo boton en todos los modulos.
 - Reportes hablados (Reportes):
@@ -226,6 +252,10 @@ Bloquean su bloque hasta que Leider responda.
 | D1 | ¿De qué día es una venta hecha después de medianoche con la caja de ayer abierta? | Día operativo con hora de corte por local (05:00) para caja, reportes y numeración. IVA y libro de ventas, con la fecha real. Confirmar con el contador. | 1.6 |
 | D10 | ¿Cada tablet tiene su caja o las dos cobran en la misma? | Una caja por tablet (ver `specs/ventas.md`). | 1.4 |
 | D11 | ¿Cuánto tiempo se guardan los respaldos en el bucket? | 90 días. | 1.7 |
+| D12 | ¿Las diferencias de caja se aprueban cada día o al cerrar el mes? | **Confirmada por Daniel (8-nov):** cada día, con aviso si quedan más de 3 días sin aprobar. | 1.10 |
+| D13 | ¿Quién aprueba diferencias y anulaciones de cierre? | **Confirmada por Daniel (8-nov):** el dueño y los roles que él marque como «autoriza». | 1.10 |
+| D14 | ¿Desde cuánto una diferencia se aprueba sola? | **Confirmada por Daniel (8-nov):** menos de $0,10. | 1.10 |
+| D15 | ¿Qué se hace con los $321,94 de faltantes y sobrantes de sep–oct? | **Confirmada por Daniel (8-nov):** nada sin el dueño; se revisan con él. | 1.10 |
 | D3 | Cambio de turno: ¿arqueo en cada turno o solo al cierre? | Arqueo por turno sin cerrar el día. | FASE 3 |
 | D4 | Alta de local: ¿un backend por local o uno para todos? | Script de alta mientras haya menos de 5 locales. | FASE 3 |
 | D5 | Pagos de Vertigo: ¿manual o pasarela? ¿Se bloquea al moroso? | Manual. Nunca se bloquea la venta. | FASE 3 |
@@ -236,5 +266,9 @@ Bloquean su bloque hasta que Leider responda.
 
 ## Optimizaciones propuestas
 
+- Un solo lugar para «todo lo que salió hoy» (gastos de caja, pagos sin factura y compras sueltas) y pago en dos formas en Pagos (QA de flujos, nov). Va por `/nueva-funcionalidad`.
+- Dona «ayúdame a cerrar»: que prellene el cierre con lo esperado y marque lo raro, en vez de dar un recorrido (QA de flujos, nov). Va por `/nueva-funcionalidad`.
+
 - Revisar recetas absurdas con reglas fijas, no con IA: más barato y comprobable (FASE 2).
 - Alta de locales primero con un script y, con más de 5 locales, un solo backend (FASE 3).
+- Activar el botón Exportar de `Tabla` en las demás tablas, que hoy incumplen la regla de `CLAUDE.md`, y revisar los CSV existentes con la configuración regional de Venezuela (después del 1.2a).

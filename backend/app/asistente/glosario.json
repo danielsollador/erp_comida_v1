@@ -10,23 +10,22 @@
   "calculo": "Lo que entró menos lo que salió, desde el último conteo.",
   "ejemplo": "Si la empanada lleva 0,05 kg de harina y vendes 10, bajan 0,5 kg sin que nadie toque nada. Cuando queda por debajo del mínimo aparece la etiqueta \"Bajo\"."
  },
- "inventario.minimo": {
-  "que": "El punto en el que hay que volver a comprar.",
-  "origen": "Lo pones tú en la ficha de la mercancía.",
-  "calculo": "Cuando el stock cae a este número o por debajo, la mercancía se marca \"Bajo\" y entra en la lista de \"Qué comprar\".",
-  "ejemplo": "Si gastas 3 kg de harina al día y al proveedor le toma dos días traerla, un mínimo de 6 kg te avisa justo a tiempo."
+ "inventario.costoElegido": {
+  "que": "Lo que te cuesta una unidad, con el costo que elegiste mirar. Se cambia en el desplegable \"Costo\" de arriba.",
+  "origen": "Es el mismo ajuste de Configuración → Control, \"Con qué costo fijar precios\": último costo (lo que pagaste la última vez), promedio (lo que costó lo que tienes) o el mayor de los dos. Vale para el Menú, las Recetas y esta tabla, así el margen siempre sale del mismo número.",
+  "ejemplo": "Tenías 10 a $1 y compraste 10 a $2: el promedio dice $1,50; el último, $2. Con inflación, el último es el que te dice cuánto te costará reponerlo."
  },
- "inventario.costo": {
-  "que": "Lo que te costó, en promedio, lo que tienes guardado. No es el último precio.",
-  "origen": "Se recalcula solo en cada compra; también lo puedes fijar a mano en la ficha.",
-  "calculo": "Promedio ponderado: (stock viejo × costo viejo + lo que entra × lo que pagaste) ÷ stock total. Por eso no salta de golpe cuando el proveedor sube el precio.",
-  "ejemplo": "Tenías 10 kg a $1 y compras 10 kg a $2: el costo queda en $1,50, no en $2. Es lo correcto para valorar el inventario, pero para poner precios mira \"Costo última compra\"."
+ "inventario.vende": {
+  "que": "A cuánto lo vendes en el menú, y qué parte de eso te queda.",
+  "origen": "El precio sale del menú (solo la mercancía que se vende tal cual). El margen compara lo que queda sin IVA contra el costo elegido.",
+  "calculo": "El precio del menú lleva el IVA adentro y ese IVA es del SENIAT. Se le quita (precio ÷ 1,16) y a eso se le resta el costo. Si la mercancía no paga IVA, el precio entero es tuyo.",
+  "ejemplo": "Jugo a $3,00 con costo $1,65: sin IVA quedan $2,59, y te deja $0,94 (36 %). Si compararas los $3 con el costo parecería 45 %, y no es verdad."
  },
- "inventario.reponer": {
-  "que": "Lo que pagaste la última vez. Es lo que te va a costar comprar más.",
-  "origen": "La última compra registrada de esa mercancía, venga de una factura o de una compra suelta.",
-  "calculo": "El costo unitario de la compra más reciente. Si está muy por encima del promedio, sale el porcentaje en naranja.",
-  "ejemplo": "Con el promedio en $1,50 y la última compra en $2, un producto que parece dejarte 40% de margen en realidad te deja 25%. Para fijar precios manda este número, no el promedio."
+ "inventario.vale": {
+  "que": "Cuánta plata tienes invertida (parada) en lo que hay de esa mercancía, al costo con que la miras. No es a cuánto se vende.",
+  "origen": "El sistema lo calcula; no se escribe.",
+  "calculo": "Lo que hay × el costo elegido. Si cambias el costo en el desplegable \"Costo\" de arriba, cambia también esto.",
+  "ejemplo": "15 maltas a $0,69 son $10,37 parados en el depósito. La suma de la columna es lo que dice \"En el inventario\" arriba."
  },
  "inventario.rendimiento": {
   "que": "Cuánto de lo que compras queda realmente utilizable después de limpiar, pelar o cocinar.",
@@ -39,11 +38,6 @@
   "origen": "Lo calcula el sistema con las dos columnas anteriores.",
   "calculo": "Costo de compra ÷ rendimiento. Con 100% de rendimiento son iguales.",
   "ejemplo": "Pollo a $4,50 el kilo con 88% de rendimiento cuesta en realidad $5,11 por kilo usable ($4,50 ÷ 0,88). Costear con $4,50 te haría creer que ganas 60 centavos de más en cada plato."
- },
- "inventario.acciones": {
-  "que": "Los movimientos que puedes registrar sobre esa mercancía.",
-  "origen": "Cada uno deja su asiento contable: nada mueve el stock en silencio.",
-  "ejemplo": "\"+ Compra\" entra mercancía y actualiza el costo promedio. \"− Merma\" registra lo que se dañó o se botó. En \"Más\" está la ficha: consumo del personal, conteo, historial y edición."
  },
  "movimientos.fecha": {
   "que": "Cuándo se movió la mercancía.",
@@ -131,32 +125,10 @@
   "origen": "La escribes al cargar la factura. Es la que manda para el Libro de Compras, no el día en que la cargaste.",
   "ejemplo": "Una factura con fecha de otro mes entra en la declaración de ESE mes: por eso se carga la fecha real y no la de hoy."
  },
- "compras.factura": {
-  "que": "El número de control de la factura del proveedor.",
-  "origen": "Lo escribes al cargarla, tal como viene impreso.",
-  "ejemplo": "Es lo que te permite encontrar el papel cuando el SENIAT pregunta por una compra. Sin número no hay crédito fiscal que defender."
- },
  "compras.proveedor": {
   "que": "A quién le compraste.",
   "origen": "Lo eliges o lo creas al cargar la factura, con su RIF.",
   "ejemplo": "Ordenando por proveedor ves cuánto le compras a cada uno: es el dato con el que se negocia un mejor precio."
- },
- "compras.detalle": {
-  "que": "Qué mercancías trajo esa factura y en qué cantidad.",
-  "origen": "Las líneas que cargaste. Cada una sumó stock y recalculó el costo promedio de su mercancía.",
-  "ejemplo": "Si el stock de una mercancía no cuadra, aquí se ve qué factura la movió y por cuánto. Una factura con líneas ya no se puede borrar: se corrige con una nota de crédito."
- },
- "compras.base": {
-  "que": "El precio sin IVA. En la ley se llama \"base imponible\": es sobre este número que se calcula el impuesto.",
-  "origen": "Se toma de la factura del proveedor. Si la cargaste con el total, el sistema le quita el IVA hacia atrás.",
-  "calculo": "Total ÷ 1,16 cuando la alícuota es 16%. Al revés: base × 16% = IVA.",
-  "ejemplo": "Un saco facturado en $116 tiene $100 de base. Ese $100 es el costo real de la mercancía; los $16 no son costo, son impuesto que vas a descontar."
- },
- "compras.iva": {
-  "que": "El IVA que pagaste al proveedor. Es \"crédito fiscal\": se descuenta del que cobraste.",
-  "origen": "De la factura del proveedor, congelado con la alícuota vigente el día de la operación.",
-  "calculo": "Base × alícuota (16%). La alícuota se guarda en cada operación, así que cambiarla no altera los meses ya cerrados.",
-  "ejemplo": "Pagaste $16 de IVA en compras y cobraste $50 en ventas: al SENIAT le pagas $34, no $50."
  },
  "compras.total": {
   "que": "Lo que se pagó de verdad: base + IVA.",
@@ -339,28 +311,6 @@
   "calculo": "Veces que fueron juntos ÷ veces que se pidió el primero, en porcentaje.",
   "ejemplo": "Café con 70% de confianza hacia el pastelito significa que 7 de cada 10 cafés se van con pastelito. A los 3 restantes les falta que el cajero se lo ofrezca: esa es la venta que estás dejando en el mostrador."
  },
- "cierres.fecha": {
-  "que": "Cuándo se cerró la caja, con quién y en qué punto de venta.",
-  "origen": "El momento en que alguien contó la gaveta y guardó el cierre.",
-  "ejemplo": "Dos pisos son dos gavetas: cada una cierra la suya, y por eso aquí aparece el punto de venta."
- },
- "cierres.sistema": {
-  "que": "Cuánto efectivo debería haber en la gaveta según el sistema.",
-  "origen": "Lo calcula el ERP con todo lo que pasó desde el cierre anterior.",
-  "calculo": "Fondo inicial + cobros en efectivo − gastos pagados en efectivo − retiros del dueño.",
-  "ejemplo": "Es el número contra el que se compara el conteo. Si el sistema dice $250, eso es lo que debería aparecer al contar."
- },
- "cierres.contado": {
-  "que": "Cuánto efectivo había de verdad al contar los billetes.",
-  "origen": "Lo escribe quien cierra la caja, después de contar.",
-  "ejemplo": "Se cuenta antes de mirar lo que dice el sistema. Contar sabiendo el resultado esperado es la manera más fácil de no encontrar nunca un faltante."
- },
- "cierres.diferencia": {
-  "que": "Lo que sobró o faltó en la gaveta.",
-  "origen": "La resta de las dos columnas anteriores.",
-  "calculo": "Contado − sistema. Negativo = falta plata; positivo = sobra.",
-  "ejemplo": "Faltantes chicos y constantes suelen ser vueltos mal dados; uno grande y aislado, un cobro que no se registró. Un sobrante repetido casi siempre es una venta cobrada y nunca cargada."
- },
  "plan.codigo": {
   "que": "El número de la cuenta contable.",
   "origen": "Del plan de cuentas que trae el sistema, ordenado por grupos.",
@@ -411,27 +361,6 @@
   "origen": "Lo acumula el sistema línea por línea.",
   "calculo": "Saldo anterior ± el movimiento, con el signo que le toca según la naturaleza de la cuenta.",
   "ejemplo": "El último saldo de esta lista es el que aparece en el Balance para esa cuenta."
- },
- "diario.fecha": {
-  "que": "El día del asiento.",
-  "origen": "La fecha de la operación que lo generó, no la de carga.",
-  "ejemplo": "El diario se lee en orden de fecha: es el relato cronológico de todo lo que pasó en el negocio."
- },
- "diario.descripcion": {
-  "que": "Qué se registró.",
-  "origen": "Lo arma el sistema con la operación de origen, o lo escribes tú en un asiento manual.",
-  "ejemplo": "\"Venta pedido #42\" o \"Compra de mercancía factura 0012\": el asiento dice qué pasó, no solo cuánto."
- },
- "diario.origen": {
-  "que": "Qué parte del ERP generó el asiento.",
-  "origen": "Lo marca el sistema: una venta del POS, una factura de compra, un cierre de caja, una merma, o un asiento manual.",
-  "ejemplo": "Casi todo debería decir que vino de una operación real. Muchos asientos manuales son señal de que algo se está corrigiendo a mano en vez de registrarse bien."
- },
- "diario.movimientos": {
-  "que": "Las cuentas que tocó el asiento, con su Debe y su Haber.",
-  "origen": "Las líneas del asiento.",
-  "calculo": "La suma del Debe siempre es igual a la del Haber. Si no cuadra, el asiento no se guarda.",
-  "ejemplo": "Una venta a crédito mueve tres cuentas: Cuentas por cobrar, Ventas e IVA débito fiscal."
  },
  "balance.cuenta": {
   "que": "La cuenta contable con movimientos en el período.",
@@ -521,11 +450,6 @@
   "calculo": "Suma de las ventas cobradas de hoy. Lo pendiente de cobro no entra.",
   "ejemplo": "Es el pulso del día. Para saber cuánto GANASTE, ese número está en Reportes: esto es lo que entró, no lo que queda."
  },
- "kpi.pedidos_hoy": {
-  "que": "Cuántos pedidos se cobraron hoy.",
-  "origen": "El conteo de pedidos cerrados del día.",
-  "ejemplo": "Junto con lo vendido te da el ticket promedio de hoy. Si vendes igual con menos pedidos, estás vendiendo más caro; con más pedidos, estás vendiendo más barato."
- },
  "kpi.en_cocina": {
   "que": "Cuántas comandas están esperando que la cocina las prepare.",
   "origen": "Las mismas que ves en la pantalla de Cocina: pedidos con algún producto sin marcar como preparado, cobrados o no, de las últimas 12 horas. Que ya esté pagado no significa que esté hecho.",
@@ -535,12 +459,6 @@
   "que": "Pedidos ya listos que todavía no se han cobrado.",
   "origen": "Los pedidos que la cocina marcó listos y siguen sin pago registrado.",
   "ejemplo": "Al cerrar el día esto debería estar en cero. Un pedido que se queda aquí es comida que salió sin que entrara la plata."
- },
- "kpi.insumos": {
-  "que": "Cuánta mercancía activa maneja el local.",
-  "origen": "La mercancía dada de alta que no está archivada.",
-  "calculo": "Se separan en materia prima (entra en recetas) y reventa (se vende tal cual).",
-  "ejemplo": "Si tienes veinte y el menú solo usa doce, hay ocho que compras sin saber bien para qué."
  },
  "kpi.bajo_minimo": {
   "que": "Cuánta mercancía ya cruzó su punto de reposición.",
@@ -553,12 +471,6 @@
   "origen": "Todo lo que hay en el inventario, valorado al costo.",
   "calculo": "Suma de (stock × costo promedio) de cada mercancía, sin IVA.",
   "ejemplo": "Es plata quieta: no está en la gaveta ni en el banco, está en el estante. Si crece mientras las ventas no, estás comprando de más."
- },
- "kpi.perdidas_30": {
-  "que": "Cuánto se perdió en el período elegido arriba (30 días si no tocaste el filtro).",
-  "origen": "Las mermas registradas y los faltantes que encontraron los conteos.",
-  "calculo": "Suma del valor de las mermas no revertidas del período.",
-  "ejemplo": "Comparado con las ventas del mes te da el % de merma. Por encima de 3-4% en comida, o se está botando mucho o se está yendo por la puerta."
  },
  "kpi.ventas": {
   "que": "Todo lo que se cobró en el período.",

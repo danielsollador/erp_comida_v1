@@ -32,6 +32,7 @@ Sincronizado el 2-nov-2026 sobre la rama `fase1`.
 |---|---|---|---|---|
 | Inicio | `/` | `Inicio.tsx` | varias | — |
 | Punto de venta | `/pos/:seccion?` | `POS.tsx` | `pedidos.py`, `pagos.py`, `autorizaciones.py` | `pos` |
+| Cuentas por cobrar | `/cobranzas/:seccion?` | `CuentasPorCobrar.tsx` | `cobranzas.py` | `cobranzas` |
 | Cocina | `/cocina` | `Cocina.tsx` | `pedidos.py` | `cocina` |
 | Ventas | `/ventas/:seccion?` | `Ventas.tsx` | `ventas.py` | `ventas` |
 | Compras | `/compras/:seccion?` | `Compras.tsx` | `compras*.py`, `proveedores.py` | `compras` |
@@ -78,12 +79,18 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 | Dos cobros del mismo pedido al mismo instante pueden pasar | `pedidos.py`, `cobrar_pedido` | 1.4 |
 | La CI no prueba sobre PostgreSQL | `pruebas.yml` | 1.4 |
 | 58 pruebas QA demuestran errores de dinero, permisos y operación | rama `qa-auditoria-pruebas` | 1.3 |
+| El control de un solo envío (`salvaguardas.py`) vive en memoria: con más de un proceso de uvicorn no ve los repetidos del otro | `main.py`, `salvaguardas.py` | Llevarlo a una tabla si se pasa a varios procesos |
 | Nadie avisa si la copia al bucket deja de funcionar | `gcp/arranque.sh` | 1.7 |
 
 ## Registro de cambios
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **9-nov** Misma rama, QA de entradas: `cantidad` ≥ 1, el middleware de `main.py` rechaza NaN e infinito, `LineaAsientoInput` sin negativos, traspaso con `_hay_en_la_gaveta` y confirmación `venta_grande` en `pedidos.py`.
+- **9-nov** Misma rama, QA de permisos: la cocina recibe las comandas sin montos (`schemas.comanda_sin_plata`, usada por `pedidos.py` y `ws_manager.py`) y no abre ventas sueltas ni `/api/app/pos`.
+- **8-nov** Rama `fix-2026-11-08-qa-noviembre` (sale de `fase1` con `master` y la exportación de Cuentas por cobrar), sin desplegar: los 32 hallazgos del QA de noviembre (`specs/qa.md`), y el cierre de caja como cuadre (`specs/caja.md`, bloque 1.10). Piezas nuevas: `lib/montos.ts` (un solo lector de montos, web y app), `backend/app/salvaguardas.py` (firma, confirmar y un solo envío: el servidor responde 428 y la web lo resuelve en `components/Salvaguardas.tsx`), cuenta 6160 «Diferencial cambiario», columnas de estado de la diferencia en `TRX505`, `TRX510` y `TRX511`, `consolidacion.VERSION` 3. Dona suma seis herramientas.
+
+- **6-nov** Rama `exportar-cuentas-por-cobrar`, sin desplegar: "Quién me debe" se exporta a CSV y Excel. `Tabla` tiene la opción `exportar`, `descargar` acepta un cuerpo (POST) y `exportar_csv.py` suma `regional` y `respuesta_xlsx`.
 - **4-nov** Rama `fix-2026-11-04-cobros-cxc`, sin desplegar: cobros con bloqueo y reintentos sin duplicar (columna `clave_cliente` en `TRX130` y `TRX140`), retención parcial solo con comisión marcada, y el cuadre espera lo que entró; un día cerrado muestra lo guardado. `tests/test_concurrencia_pg.py` necesita `ERP_TEST_PG_URL`: la CI todavía se la salta.
 - **3-nov** Solo manda el `CLAUDE.md` del repo: `.claude/settings.json` ignora los personales y la memoria automática.
 - **3-nov** Herramientas del agente: Context7, Serena y Playwright en `.mcp.json` (Serena con `.serena/project.yml`, sin memorias).

@@ -8,8 +8,9 @@ import { api } from '../lib/api'
 import { llano } from '../lib/filtros'
 import { fmtBs, fmtNum, useMoneda } from '../lib/moneda'
 import { EN_BOLIVARES, METODOS_PAGO, necesitaReferencia } from '../lib/pagos'
-import type { CobroCliente, ResumenCxC, VentaPorCobrar } from '../lib/types'
+import type { CobroCliente, FormatoExportar, ResumenCxC, VentaPorCobrar } from '../lib/types'
 import { claveDeReintento } from '../lib/uuid'
+import { leerMonto } from '../lib/montos'
 
 /**
  * Cuentas por cobrar: lo que se vendió a crédito y falta cobrar.
@@ -80,6 +81,7 @@ function QuienDebe({ r, alCambiar }: { r: ResumenCxC; alCambiar: () => void }) {
   )
   const buscador = useBuscador<VentaPorCobrar>((v) => [v.cliente], 'Buscar cliente')
   const filas = orden.ordenar(buscador.filtrar(r.ventas))
+  const exportar = (formato: FormatoExportar) => api.exportarCuentasPorCobrar(formato, filas.map((v) => v.pedido_id))
   const elegidas = r.ventas.filter((v) => marcadas.has(v.pedido_id))
   const total = redondear(elegidas.reduce((s, v) => s + v.saldo, 0))
   const todasVisibles = filas.length > 0 && filas.every((v) => marcadas.has(v.pedido_id))
@@ -157,7 +159,7 @@ function QuienDebe({ r, alCambiar }: { r: ResumenCxC; alCambiar: () => void }) {
       {r.ventas.length === 0 ? (
         <Vacio icono="cobrar" titulo="Nadie te debe" detalle="Lo que vendas con «A crédito» en el punto de venta aparece aquí." />
       ) : (
-        <Tabla orden={orden} buscador={buscador} glosario="cobranzas" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+        <Tabla orden={orden} buscador={buscador} exportar={exportar} glosario="cobranzas" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-neutral-500/8 text-neutral-500 text-xs uppercase">
               <tr>
@@ -260,7 +262,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
   const enBs = EN_BOLIVARES.has(metodo) && bcv > 0
   const esperadoBs = redondear(esperado * bcv)
 
-  const tecleado = Number(montoTexto.replace(',', '.'))
+  const tecleado = leerMonto(montoTexto)
   let recibido = esperado
   if (montoTexto.trim() !== '') {
     recibido = enBs ? (Math.abs(tecleado - esperadoBs) <= 0.01 ? esperado : redondear(tecleado / bcv)) : tecleado
@@ -348,6 +350,7 @@ function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[];
         </Selector>
         <Campo
           etiqueta={enBs ? 'Cuánto pagó (Bs)' : 'Cuánto pagó ($)'}
+          monto
           inputMode="decimal"
           value={montoTexto}
           placeholder={fmtNum(enBs ? esperadoBs : esperado)}
@@ -447,7 +450,7 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
     }
   }
   return (
-    <Seccion titulo="Cobros hechos" ayuda="Lo que se ha cobrado desde aquí. Si uno se anotó mal, anúlalo y las ventas vuelven a deberse." plano>
+    <Seccion titulo="Cobros hechos" ayuda="Todo lo cobrado de deudas, aquí y desde Ventas o Caja. Si un cobro de aquí se anotó mal, anúlalo y las ventas vuelven a deberse; un abono se deshace donde se hizo." plano>
       {error && <div className="px-4 pt-3"><Aviso>{error}</Aviso></div>}
       {cobros.length === 0 ? (
         <Vacio icono="cobrar" titulo="Todavía no hay cobros" />
@@ -471,7 +474,7 @@ function Cobros({ cobros, alCambiar }: { cobros: CobroCliente[]; alCambiar: () =
                 <strong>{dinero(c.recibido)}</strong>
                 <span className="block text-xs text-neutral-500">de {dinero(c.monto)}</span>
               </span>
-              {!c.anulado && (
+              {!c.anulado && c.origen !== 'abono' && (
                 <button onClick={() => void anular(c)} className="text-xs underline text-neutral-500 hover:text-peligro-600">
                   Anular
                 </button>

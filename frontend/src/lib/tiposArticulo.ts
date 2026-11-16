@@ -1,4 +1,4 @@
-import type { NombreIcono } from '../components/Icono'
+import type { NombreIcono } from './iconos'
 import type { TipoArticulo } from './types'
 
 /**

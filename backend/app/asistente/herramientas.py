@@ -237,6 +237,153 @@ def compras_de_mercancia(db: Session, nombre: str) -> dict:
     return {"mercancias": salida} if salida else {"error": f"No hay mercancía que se llame como «{nombre}»."}
 
 
+# ── QA de noviembre (hallazgos 13, 14 y 27): lo que Dona no sabia ──────────
+# En el examen de 40 preguntas acerto 20 y 15 fueron "no tengo ese dato".
+# Cada herramienta lee lo mismo que su pantalla; ninguna suma a mano.
+
+
+def gastos(db: Session, desde: Optional[str] = None, hasta: Optional[str] = None) -> dict:
+    """Los gastos del periodo, cuenta por cuenta: el Estado de resultados."""
+    from ..routers.contabilidad import estado_resultados
+
+    er = estado_resultados(rango=_rango(desde, hasta), db=db)
+    return {
+        "periodo": er.etiqueta,
+        "gastos_usd": _r(er.gastos),
+        "costo_mercancia_usd": _r(er.costos),
+        "ingresos_usd": _r(er.ingresos),
+        "ganancia_neta_usd": _r(er.utilidad_neta),
+        "por_cuenta": [{"cuenta": f.nombre, "usd": _r(f.saldo)} for f in er.detalle_gastos],
+        "ojo": "El total de gastos es este; no lo armes sumando pagos sueltos.",
+    }
+
+
+def saldos(db: Session) -> dict:
+    """Lo que dicen los libros hoy de cada gaveta y cuenta, y la tasa."""
+    from .. import tasas
+
+    t = tasas.tasa_vigente(db)
+    return {
+        "gaveta_bolivares_usd": _r(contabilidad.saldo_de_cuenta(db, "1010")),
+        "gaveta_dolares_usd": _r(contabilidad.saldo_de_cuenta(db, "1011")),
+        "banco_usd": _r(contabilidad.saldo_de_cuenta(db, "1020")),
+        "zelle_usd": _r(contabilidad.saldo_de_cuenta(db, "1021")),
+        "tasa_bcv": t.bcv if t else None,
+        "tasa_euro": t.eur if t else None,
+        "tasa_del_dia": t.fecha.isoformat() if t else None,
+        "ojo": "Son saldos de los libros. Si hay diferencias de caja por aprobar, la gaveta real difiere en ese monto.",
+    }
+
+
+def cuentas(db: Session) -> dict:
+    """Quien me debe (cuentas por cobrar) y a quien le debo (proveedores)."""
+    from .. import cuentas_por_cobrar
+
+    cxc = cuentas_por_cobrar.resumen(db)
+    deudas = (
+        db.query(models.FacturaCompra)
+        .filter(models.FacturaCompra.forma_pago == "Credito", models.FacturaCompra.pagada.is_(False))
+        .all()
+    )
+    por_proveedor: dict = {}
+    for f in deudas:
+        por_proveedor[f.proveedor_nombre] = por_proveedor.get(f.proveedor_nombre, 0) + (f.saldo or 0)
+    return {
+        "me_deben_usd": _r(cxc.total),
+        "vencido_usd": _r(cxc.vencido),
+        "clientes": [{"cliente": c.nombre, "debe_usd": _r(c.saldo), "dias_de_la_mas_vieja": c.mas_vieja_dias}
+                     for c in sorted(cxc.clientes, key=lambda c: -c.saldo)[:10]],
+        "sin_ficha": [{"cliente": v.cliente, "debe_usd": _r(v.saldo)} for v in cxc.sin_ficha[:10]],
+        "le_debo_a_proveedores_usd": _r(sum(por_proveedor.values())),
+        "proveedores": [{"proveedor": k, "debo_usd": _r(v)} for k, v in sorted(por_proveedor.items(), key=lambda x: -x[1])[:10]],
+    }
+
+
+def iva(db: Session, anio: Optional[int] = None, mes: Optional[int] = None) -> dict:
+    """El IVA de un mes desde los mismos libros que se imprimen, y si ya se declaro."""
+    from ..routers.impuestos import _totales_iva_del_rango
+
+    h = hoy()
+    anio, mes = anio or h.year, mes or h.month
+    inicio = datetime.datetime(anio, mes, 1)
+    fin = datetime.datetime(anio + (mes == 12), mes % 12 + 1, 1)
+    t = _totales_iva_del_rango(db, inicio, min(fin, ahora()))
+    dec = db.query(models.DeclaracionIva).filter_by(anio=anio, mes=mes).first()
+    sin_facturar = (
+        db.query(models.Pedido)
+        .filter(models.Pedido.estado == "pagado", models.Pedido.facturado.is_(False),
+                models.Pedido.devuelto.is_(False), models.Pedido.cerrado_en >= inicio, models.Pedido.cerrado_en < fin)
+        .count()
+    )
+    return {
+        "mes": f"{mes:02d}/{anio}",
+        "iva_ventas_debito_usd": _r(t["debito"]),
+        "iva_compras_credito_usd": _r(t["credito"]),
+        "iva_ventas_debito_bs": _r(t["debito_bs"]),
+        "iva_compras_credito_bs": _r(t["credito_bs"]),
+        "ventas_sin_marcar_facturadas": sin_facturar,
+        "declarado": bool(dec),
+        "a_pagar_usd": _r(dec.iva_a_pagar) if dec else None,
+    }
+
+
+def cierres(db: Session, desde: Optional[str] = None, hasta: Optional[str] = None) -> dict:
+    """Los cierres de caja del periodo: cuadro o no, anulados (por quien y por
+    que) y las diferencias que esperan aprobacion."""
+    from ..routers.caja import diferencias_por_aprobar
+
+    rango = _rango(desde, hasta)
+    inicio, fin, etiqueta = rango.resolver()
+    filas = (
+        db.query(models.CierreCaja)
+        .filter(models.CierreCaja.fecha >= inicio, models.CierreCaja.fecha < fin)
+        .order_by(models.CierreCaja.fecha)
+        .all()
+    )
+    pend = diferencias_por_aprobar(db)
+
+    def dif(c):
+        return _r(sum(l.diferencia or 0 for l in c.lineas)) if c.lineas else _r((c.diferencia or 0) + (c.divisas_diferencia or 0))
+
+    return {
+        "periodo": etiqueta,
+        "cierres": [
+            {"dia": c.fecha.date().isoformat(), "diferencia_usd": dif(c), "anulado": bool(c.anulado),
+             "motivo_anulacion": c.motivo_anulacion or "", "autorizo": c.autorizado_por or "",
+             "cerro": c.cerrado_por or c.operador, "estado": c.estado_diferencia or "asentada"}
+            for c in filas
+        ],
+        "anulados": sum(1 for c in filas if c.anulado),
+        "por_aprobar_usd": pend.total,
+        "por_aprobar": len(pend.filas),
+    }
+
+
+def producto(db: Session, nombre: str) -> dict:
+    """Un producto del menu por su nombre: precio, costo de su receta y margen."""
+    clave = texto.comparable(nombre)
+    costos: dict = {}
+    for r in db.query(models.RecetaItem).all():
+        if r.ingrediente is not None:
+            costos[r.variante_id] = costos.get(r.variante_id, 0) + r.cantidad_por_unidad * (r.ingrediente.costo_efectivo or 0)
+    filas = []
+    for v in db.query(models.Variante).filter(models.Variante.activo.is_(True)).all():
+        completo = f"{v.producto.nombre if v.producto else ''} {v.nombre or ''}".strip()
+        if clave not in texto.comparable(completo):
+            continue
+        costo = costos.get(v.id)
+        filas.append({
+            "producto": completo,
+            "precio_usd": _r(v.precio),
+            "costo_receta_usd": _r(costo) if costo else None,
+            "margen_pct": round((v.precio - costo) / v.precio * 100, 1) if costo and v.precio else None,
+            "tiene_receta": bool(costo),
+        })
+        if len(filas) == 8:
+            break
+    return {"productos": filas} if filas else {"error": f"No hay producto del menú que se llame como «{nombre}»."}
+
+
 HERRAMIENTAS: dict = {
     "ventas": Herramienta(
         {
@@ -246,7 +393,6 @@ HERRAMIENTAS: dict = {
         },
         ventas,
         modulos=("reportes",),
-        plata=True,
     ),
     "inventario": Herramienta(
         {
@@ -311,6 +457,67 @@ HERRAMIENTAS: dict = {
         modulos=("inventario", "compras"),
         plata=True,
     ),
+    "gastos": Herramienta(
+        {
+            "name": "gastos",
+            "description": "Los gastos de un período cuenta por cuenta (sueldos, alquiler, faltantes de caja...), con ingresos y ganancia neta: el Estado de resultados. Úsala para cualquier pregunta de gastos; nunca sumes pagos sueltos.",
+            "parameters": {"type": "object", "properties": _FECHAS},
+        },
+        gastos,
+        modulos=("contabilidad", "reportes"),
+        plata=True,
+    ),
+    "saldos": Herramienta(
+        {
+            "name": "saldos",
+            "description": "Cuánto hay hoy según los libros en la gaveta de bolívares, la de dólares, el banco y Zelle, y la tasa BCV y euro del día.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        saldos,
+        modulos=("contabilidad", "caja", "reportes"),
+        plata=True,
+    ),
+    "cuentas": Herramienta(
+        {
+            "name": "cuentas",
+            "description": "Quién me debe y cuánto (cuentas por cobrar, por cliente) y a qué proveedores les debo facturas a crédito.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        cuentas,
+        modulos=("cobranzas", "compras", "reportes"),
+        plata=True,
+    ),
+    "iva": Herramienta(
+        {
+            "name": "iva",
+            "description": "El IVA de un mes (débito de ventas, crédito de compras, en $ y Bs), cuántas ventas faltan por marcar facturadas y si ya se declaró.",
+            "parameters": {"type": "object", "properties": {
+                "anio": {"type": "integer"}, "mes": {"type": "integer", "description": "1 a 12. Sin esto, el mes en curso."}}},
+        },
+        iva,
+        modulos=("impuestos", "contabilidad"),
+        plata=True,
+    ),
+    "cierres": Herramienta(
+        {
+            "name": "cierres",
+            "description": "Los cierres de caja de un período: si cuadraron, cuáles se anularon (quién autorizó y por qué) y las diferencias por aprobar.",
+            "parameters": {"type": "object", "properties": _FECHAS},
+        },
+        cierres,
+        modulos=("caja",),
+        plata=True,
+    ),
+    "producto": Herramienta(
+        {
+            "name": "producto",
+            "description": "Un producto del menú por su nombre (o parte): precio, costo de su receta y margen.",
+            "parameters": {"type": "object", "properties": {"nombre": {"type": "string"}}, "required": ["nombre"]},
+        },
+        producto,
+        modulos=("menu", "recetas", "reportes"),
+        plata=True,
+    ),
     "avisos": Herramienta(
         {
             "name": "avisos",
@@ -325,12 +532,24 @@ HERRAMIENTAS: dict = {
 
 
 def disponibles(rol: str) -> dict:
-    """Las herramientas que este rol puede usar (las demás no se le ofrecen)."""
+    """Las herramientas que este rol puede usar (las demás no se le ofrecen).
+
+    Las ventas son como en Reportes: quien entra a Reportes las ve, pero sin
+    ganancia, margen ni costo si no administra (QA nov, hallazgo 27: Dona le
+    negaba a la cajera lo que la pantalla si le mostraba)."""
     salida = {}
     for nombre, h in HERRAMIENTAS.items():
         if h.modulos and not any(permisos.puede_modulo(rol, m) for m in h.modulos):
             continue
         if h.plata and not permisos.ve_kpis(rol):
             continue
+        if nombre == "ventas" and not permisos.administra(rol):
+            h = Herramienta(h.declaracion, _sin_ganancia(h.ejecutar), h.modulos, h.plata)
         salida[nombre] = h
     return salida
+
+
+def _sin_ganancia(f):
+    def envuelta(db, **kw):
+        return reportes._sin_lo_sensible(f(db, **kw))
+    return envuelta

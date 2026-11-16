@@ -77,6 +77,24 @@ def pistas(resumen: schemas.ResumenCaja, cobros: List[schemas.CobroDelDia]) -> L
             accion="Confirma con quien estuvo en caja si se vendió sin registrar; si fue así, carga esas ventas con su fecha.",
         ))
     for l in contadas:
+        # El faltante de la noche es lo mismo que sobro al abrir (o al reves):
+        # el error fue el fondo tecleado en la mañana, no plata que se fue.
+        # El 9-oct se abrio con $2.500 cuando habia $130 y en la noche
+        # faltaron $2.369,92; la explicacion decia "un vuelto sin anotar".
+        hubo_movimiento = abs(l.ventas) >= CENTIMOS or abs(l.salidas) >= CENTIMOS or abs(l.otros) >= CENTIMOS
+        if (l.fisico and hubo_movimiento and abs(l.diferencia) >= 1 and abs(l.diferencia_apertura) >= 1
+                and l.diferencia * l.diferencia_apertura < 0
+                and abs(abs(l.diferencia) - abs(l.diferencia_apertura)) <= max(5.0, abs(l.diferencia) * 0.02)):
+            salida.append(schemas.PistaCierre(
+                tipo="fondo", monto=l.diferencia, peso=abs(l.diferencia) * 2,
+                texto=(f"En {l.metodo} se abrió con {_d(l.diferencia_apertura, signo=True)} respecto a lo que quedó en el "
+                       f"último cierre, y al cerrar {'faltan' if l.diferencia < 0 else 'sobran'} {_d(abs(l.diferencia))}: "
+                       "casi el mismo monto. Lo más probable es que el fondo se tecleara mal al abrir, no que falte la plata."),
+                accion="Pregunta con cuánto se abrió de verdad. Si fue el fondo, aprueba la diferencia de la apertura y la del "
+                       "cierre juntas con ese motivo: se anulan entre sí y los libros no cambian.",
+            ))
+            explicados.add(l.metodo)
+            continue
         # Contado casi en cero contra una gaveta con plata: no se conto.
         if l.fisico and l.diferencia <= -CENTIMOS and (l.contado or 0) <= 0.05 and l.esperado >= 1:
             salida.append(schemas.PistaCierre(

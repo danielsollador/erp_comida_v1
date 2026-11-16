@@ -1,4 +1,4 @@
-"""El flujo compras -> inventario -> produccion -> venta (docs/plan-compras-...).
+"""El flujo compras -> inventario -> produccion -> venta.
 
 Lo que fija, por fase:
 

@@ -76,7 +76,9 @@ def _fetch_bcv() -> dict:
 
     out = {}
     for clave, div in (("bcv", "dolar"), ("eur", "euro")):
-        mm = re.search(r'id="%s".{0,600}?([0-9]{1,4},[0-9]{2,10})' % div, html, re.S)
+        # Con el punto de los miles: desde el 5-nov el euro sale "1.001,18" y
+        # el patron viejo se quedaba con "001,18" (QA nov, hallazgo 5).
+        mm = re.search(r'id="%s".{0,600}?([0-9]{1,3}(?:\.[0-9]{3})+,[0-9]{2,10}|[0-9]{1,6},[0-9]{2,10})' % div, html, re.S)
         if mm:
             out[clave] = _num_ve(mm.group(1))
     mm = re.search(r"Fecha Valor.{0,300}?(\d{1,2}\s+\w+\s+\d{4})", html, re.S)

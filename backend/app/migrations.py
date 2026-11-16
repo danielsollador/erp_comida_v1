@@ -181,7 +181,7 @@ COLUMNAS = [
     ("TRX111_VEN_PEDIDO_DET", "a_cocina", "BOOLEAN DEFAULT 1"),
     # En 0 para todos: a igual puesto manda el id, que es el orden de siempre.
     ("DIM220_MEN_PRODUCTO", "orden", "INTEGER DEFAULT 0"),
-    # Rediseño compras -> inventario -> produccion (docs/plan-compras-...).
+    # Rediseño compras -> inventario -> produccion.
     ("DIM310_INV_INGREDIENTE", "rinde", "FLOAT DEFAULT 1"),
     ("DIM310_INV_INGREDIENTE", "modo_produccion", "VARCHAR DEFAULT 'descontar'"),
     ("DIM310_INV_INGREDIENTE", "vida_util_horas", "INTEGER"),
@@ -196,6 +196,21 @@ COLUMNAS = [
     ("TRX411_COM_FACTURA_DET", "cuenta", "VARCHAR DEFAULT ''"),
     ("DIM230_MEN_VARIANTE", "se_frie", "BOOLEAN DEFAULT 0"),
     ("CFG910_ADM_PARAMETRO", "costo_para_precios", "VARCHAR DEFAULT 'reposicion'"),
+    # Cierre de caja como cuadre (specs/caja.md, bloque 1.10).
+    ("TRX505_CAJ_APERTURA", "estado_diferencia", "VARCHAR"),
+    ("TRX505_CAJ_APERTURA", "aprobada_por", "VARCHAR DEFAULT ''"),
+    ("TRX505_CAJ_APERTURA", "aprobada_en", "DATETIME"),
+    ("TRX505_CAJ_APERTURA", "motivo_aprobacion", "VARCHAR DEFAULT ''"),
+    ("TRX510_CAJ_CIERRE", "estado_diferencia", "VARCHAR"),
+    ("TRX510_CAJ_CIERRE", "aprobada_por", "VARCHAR DEFAULT ''"),
+    ("TRX510_CAJ_CIERRE", "aprobada_en", "DATETIME"),
+    ("TRX510_CAJ_CIERRE", "motivo_aprobacion", "VARCHAR DEFAULT ''"),
+    ("TRX510_CAJ_CIERRE", "cerrado_por", "VARCHAR DEFAULT ''"),
+    ("TRX510_CAJ_CIERRE", "autorizado_por", "VARCHAR DEFAULT ''"),
+    ("TRX510_CAJ_CIERRE", "por_revisar", "BOOLEAN DEFAULT 0"),
+    ("TRX510_CAJ_CIERRE", "cambios_despues", "VARCHAR DEFAULT ''"),
+    ("TRX511_CAJ_CIERRE_DET", "diferencial_cambiario", "FLOAT DEFAULT 0"),
+    ("TRX120_VEN_PAGO", "vuelto_bs", "FLOAT DEFAULT 0"),
 ]
 
 

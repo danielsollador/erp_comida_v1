@@ -14,12 +14,40 @@
 - [ ] Fusionar en `master` y borrar `app-expo` y `app-expo-play`
 - [ ] Desplegar cuando Leider lo pida
 
+### 1.2a Exportar Cuentas por cobrar
+- [x] Spec `specs/cuentas-por-cobrar.md` > Exportar la lista (aprobada el 6-nov)
+- [x] Pruebas: columnas, orden, venta ya cobrada, permisos, separadores, fórmulas y 1.000 ventas
+- [x] Backend: exportación a CSV y Excel
+- [x] `descargar`: pedir por POST y guardar el archivo sin salir de la pantalla
+- [x] `Tabla`: opción de exportar, activa solo en "Quién me debe"
+- [x] Probar con Playwright la descarga de 1.000 ventas
+- [ ] Validar en un Excel con configuración regional de Venezuela
+
 ### 1.3 Errores de la auditoría QA
 - [ ] Correr las pruebas QA y escribir `specs/qa.md`
 - [ ] Leider aprueba la lista
 - [ ] Arreglar dinero y permisos
 - [ ] Arreglar operación
 - [ ] Pasar las pruebas a la suite
+- [x] QA de noviembre: `specs/qa.md` con los 32 hallazgos (aprobada por Daniel)
+- [x] R1 · Un solo lector de montos (web, app y tasa)
+- [x] R2 · Nada se paga dos veces
+- [x] R3 · Mes declarado congelado y avisos al declarar
+- [x] R4 · Confirmar montos y fechas absurdas
+- [x] R5 · Firma para anular, dar de baja, corregir y cambiar la tasa
+- [x] Hallazgos sueltos de `specs/qa.md` (5 a 32)
+- [x] Dona: cifras solo de herramientas y herramientas nuevas
+
+### 1.10 Cierre de caja como cuadre
+- [x] Spec `specs/caja.md` (aprobada; D12–D15 con la propuesta)
+- [x] Fondo inicial = último cierre y apertura sin asientos
+- [x] Cierre sin asientos; diferencias por aprobar
+- [x] Aprobar diferencias (firma) y aviso en la portada
+- [x] Día cerrado: firma para borrar y marca «por revisar»
+- [x] Corregir y anular con firma
+- [x] Diferencial cambiario en la gaveta Bs
+- [ ] Leider valida en local con `specs/caja.md` y `specs/qa.md`
+- [ ] Subir, GitHub en verde y fusionar
 
 ### 1.4 Dos tablets
 - [~] Spec `specs/ventas.md` (borrador, falta aprobación)

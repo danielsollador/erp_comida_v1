@@ -89,6 +89,26 @@ export function abrirCanalEnVivo(): WebSocket {
   return new WebSocket(`${proto}://${base.host}/ws`, token ? ['vp', token] : undefined)
 }
 
+/** Se cayo la red (no el servidor): `fetch` rechaza sin respuesta. */
+export class SinConexion extends Error {
+  constructor() {
+    super('Sin conexión. Revisa el wifi e intenta otra vez.')
+    this.name = 'SinConexion'
+  }
+}
+
+function guardarEnElNavegador(blob: Blob, nombre: string) {
+  const url = URL.createObjectURL(blob)
+  const enlace = document.createElement('a')
+  enlace.href = url
+  enlace.download = nombre
+  document.body.append(enlace)
+  enlace.click()
+  enlace.remove()
+  // No enseguida: el navegador todavia esta leyendo el archivo.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 /**
  * Descargar un archivo del servidor (CSV, planillas, respaldos).
  *
@@ -96,20 +116,43 @@ export function abrirCanalEnVivo(): WebSocket {
  * lleva el token, y un telefono no tiene "carpeta de descargas" a la vista:
  * se pide con el token, se guarda en la cache de la app y se abre el menu de
  * compartir del sistema, donde el dueño elige WhatsApp, Drive o Archivos.
+ *
+ * Con `cuerpo` se pide por POST, porque lo que se pide no cabe en una dirección.
+ * En la web el archivo se guarda sin salir de la pantalla, y si falla se dice.
  */
-export async function descargar(ruta: string, nombre: string) {
-  if (!esApp) {
+export async function descargar(ruta: string, nombre: string, cuerpo?: unknown) {
+  const conCuerpo = cuerpo !== undefined
+  if (!esApp && !conCuerpo) {
     window.location.href = ruta
     return
   }
-  const res = await fetch(urlApi(ruta), { headers: cabecerasApp(), cache: 'no-store' })
-  if (!res.ok) throw new Error('No se pudo descargar el archivo.')
+  let res: Response
+  try {
+    res = await fetch(urlApi(ruta), {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      ...(conCuerpo
+        ? { method: 'POST', headers: { 'Content-Type': 'application/json', ...cabecerasApp() }, body: JSON.stringify(cuerpo) }
+        : { headers: cabecerasApp() }),
+    })
+  } catch {
+    throw new SinConexion()
+  }
+  if (conCuerpo && res.status === 401) {
+    window.location.replace('/login.html')
+    throw new Error('Sesión requerida.')
+  }
+  if (!res.ok) throw new Error('No se pudo descargar el archivo. Intenta otra vez.')
   recogerToken(res)
   // El nombre que manda el servidor (`Content-Disposition`), si lo manda.
   const disposicion = res.headers.get('Content-Disposition') ?? ''
   const delServidor = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposicion)?.[1]
   if (delServidor) nombre = decodeURIComponent(delServidor)
   const blob = await res.blob()
+  if (!esApp) {
+    guardarEnElNavegador(blob, nombre)
+    return
+  }
   const base64 = await new Promise<string>((ok, mal) => {
     const lector = new FileReader()
     lector.onload = () => ok(String(lector.result).split(',')[1] ?? '')

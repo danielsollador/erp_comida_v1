@@ -9,7 +9,11 @@ import {
   type ThHTMLAttributes,
 } from 'react'
 import { useAyuda } from './Ayuda'
+import MenuAcciones from './MenuAcciones'
+import { Aviso, Boton } from './ui'
 import { explicar } from '../lib/glosario'
+import type { FormatoExportar } from '../lib/types'
+import { descargar } from '../lib/plataforma'
 
 /**
  * Las tablas del ERP: se ordenan por cualquier columna y se ven completas.
@@ -189,6 +193,51 @@ export function useBuscador<T>(
   }
 }
 
+/** El botón Exportar de una tabla: el mismo, en el mismo lugar, en todas. */
+export function BotonExportar({
+  exportar,
+  apagado,
+  alFallar,
+}: {
+  exportar: (formato: FormatoExportar) => Promise<void>
+  apagado: boolean
+  alFallar: (texto: string) => void
+}) {
+  const [bajando, setBajando] = useState(false)
+  async function bajar(formato: FormatoExportar) {
+    alFallar('')
+    setBajando(true)
+    try {
+      await exportar(formato)
+    } catch (e) {
+      alFallar(e instanceof Error ? e.message : 'No se pudo descargar el archivo. Intenta otra vez.')
+    } finally {
+      setBajando(false)
+    }
+  }
+  return (
+    <MenuAcciones
+      etiqueta="Exportar"
+      opciones={[
+        { texto: 'Descargar en CSV', onElegir: () => void bajar('csv') },
+        { texto: 'Descargar en Excel', onElegir: () => void bajar('xlsx') },
+      ]}
+      disparador={({ abierto, alternar }) => (
+        <Boton
+          tono="suave"
+          onClick={alternar}
+          disabled={apagado || bajando}
+          aria-haspopup="menu"
+          aria-expanded={abierto}
+          className="min-h-11"
+        >
+          {bajando ? 'Exportando…' : 'Exportar'}
+        </Boton>
+      )}
+    />
+  )
+}
+
 /**
  * El envoltorio de toda tabla.
  *
@@ -201,6 +250,7 @@ export function useBuscador<T>(
 export function Tabla({
   orden,
   buscador,
+  exportar,
   glosario,
   children,
   className = '',
@@ -208,6 +258,8 @@ export function Tabla({
   orden?: Orden
   /** De `useBuscador`: dibuja el campo de busqueda sobre la tabla. */
   buscador?: Buscador
+  /** Dibuja el botón Exportar. Baja las filas que se ven, en su orden. */
+  exportar?: (formato: FormatoExportar) => Promise<void>
   /** Seccion del glosario (`lib/glosario.ts`) de la que salen las ayudas. */
   glosario?: string
   children: ReactNode
@@ -215,6 +267,7 @@ export function Tabla({
 }) {
   const caja = useRef<HTMLDivElement>(null)
   const [apilada, setApilada] = useState(false)
+  const [errorExportar, setErrorExportar] = useState('')
   // De que columnas se puede ordenar. Se leen del `thead` --cada `Th` deja su
   // clave en un `data-clave`-- porque en modo ficha el `thead` no se ve y hace
   // falta otro sitio desde donde ordenar.
@@ -291,8 +344,9 @@ export function Tabla({
       <div ref={caja} className={`vp-tabla ${className}`}>
         {/* El buscador va ARRIBA de la tabla, siempre visible: es lo primero
             que se toca al entrar a una lista larga. */}
-        {buscador && (
+        {(buscador || exportar) && (
           <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-200">
+            {buscador && (
             <div className="relative flex-1 min-w-0">
               <svg
                 viewBox="0 0 24 24"
@@ -325,7 +379,8 @@ export function Tabla({
                 className="w-full bg-transparent border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 text-sm"
               />
             </div>
-            {buscador.texto && (
+            )}
+            {buscador?.texto && (
               <>
                 <span className="text-xs text-neutral-500 tabular-nums shrink-0">
                   {buscador.visibles} de {buscador.total}
@@ -339,6 +394,14 @@ export function Tabla({
                 </button>
               </>
             )}
+            {exportar && (
+              <BotonExportar exportar={exportar} apagado={buscador?.visibles === 0} alFallar={setErrorExportar} />
+            )}
+          </div>
+        )}
+        {errorExportar && (
+          <div className="px-3 pt-2">
+            <Aviso>{errorExportar}</Aviso>
           </div>
         )}
         {/* Cuando no queda ninguna, se dice aqui: la tabla vacia de abajo
@@ -456,5 +519,27 @@ export function Th({
       </button>
       {panel}
     </th>
+  )
+}
+
+
+/**
+ * Exportar una lista por fechas que todavia no vive en una Tabla (Caja ›
+ * Historial, Pagos, el diario): el mismo boton, y el servidor arma el archivo
+ * con las filas del periodo (QA nov, hallazgo 29).
+ */
+export function ExportarPeriodo({ ruta, nombre, rango }: { ruta: string; nombre: string; rango: { desde: string; hasta: string } }) {
+  const [error, setError] = useState('')
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <BotonExportar
+        apagado={false}
+        alFallar={setError}
+        exportar={(formato) =>
+          descargar(ruta, `${nombre}-${rango.desde}-a-${rango.hasta}.${formato}`, { formato, desde: rango.desde, hasta: rango.hasta })
+        }
+      />
+      {error && <span className="text-xs text-peligro-600">{error}</span>}
+    </span>
   )
 }

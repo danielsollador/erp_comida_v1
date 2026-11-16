@@ -351,8 +351,12 @@ export default function Ventas({
                       <Th clave="producto" className="py-2 px-0">Producto</Th>
                       <Th clave="uds" alinear="derecha" className="py-2 px-0">{nombre('productos.uds')}</Th>
                       <Th clave="ingresos" alinear="derecha" className="py-2 px-0">Ingresos</Th>
-                      <Th clave="ganancia" alinear="derecha" className="py-2 px-0">Ganancia</Th>
-                      <Th clave="margen" alinear="derecha" className="py-2 px-0">Margen</Th>
+                      {datos.ve_ganancia !== false && (
+                        <>
+                          <Th clave="ganancia" alinear="derecha" className="py-2 px-0">Ganancia</Th>
+                          <Th clave="margen" alinear="derecha" className="py-2 px-0">Margen</Th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -371,6 +375,8 @@ export default function Ventas({
                         </td>
                         <td className="text-right py-2 tabular-nums">{p.unidades}</td>
                         <td className="text-right py-2 tabular-nums">{dinero(p.ingresos)}</td>
+{datos.ve_ganancia !== false && (
+                          <>
                         {/* Sin receta no hay costo: la ganancia seria todo el
                             ingreso y el margen 100%, y eso no significa nada. */}
                         <td className="text-right py-2 tabular-nums">
@@ -389,6 +395,8 @@ export default function Ventas({
                         >
                           {p.sin_receta ? '?' : `${p.margen_pct.toFixed(0)}%`}
                         </td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>

@@ -11,6 +11,7 @@ import { colorFranja } from '../../../lib/paleta'
 import { datosDe, elLa, unidadDe } from '../../../lib/inventario'
 import { ALMACEN_DE, vaEnPreparacion } from '../../../lib/tiposArticulo'
 import type { DatosPreparacion, Disponibilidad, Ingrediente, Preparacion, Produccion } from '../../../lib/types'
+import { leerNumero } from '../../../lib/unidades'
 
 /**
  * PREPARADO: la segunda cara de la materia prima. El guiso, la mechada, la
@@ -903,7 +904,7 @@ function SobroHoy({ p, onCerrar, onHecho }: { p: Preparacion; onCerrar: () => vo
 
 // ── La olla: el editor de la receta ─────────────────────────────────────────
 
-const aNum = (t: string) => Number(String(t).replace(',', '.'))
+const aNum = (t: string) => leerNumero(String(t))
 const fmtCant = (n: number) => n.toLocaleString('es-VE', { maximumFractionDigits: 2 })
 const sinRuido = (n: number) => String(Math.round(n * 1e6) / 1e6)
 const clase = 'w-full border border-neutral-300 rounded-xl px-3 py-2 text-sm bg-white'

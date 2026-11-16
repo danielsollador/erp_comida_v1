@@ -14,7 +14,7 @@ def _sin_ia(monkeypatch):
 
 
 def cerrar(client, conteos):
-    r = client.post("/api/caja/cerrar", json={"conteos": conteos})
+    r = client.post("/api/caja/cerrar", json={"conteos": conteos}, headers={"X-Confirmado": "diferencia_grande"})
     assert r.status_code == 200, r.text
 
 
@@ -92,7 +92,8 @@ def test_el_cierre_del_23_de_octubre(client):
     salidas; se reporto plata en el punto sin ningun cobro por punto. La
     explicacion tiene que decir la causa (el fondo, ventas sin registrar) y
     que hacer, no repetir la tabla."""
-    r = client.post("/api/caja/abrir", json={"fondos": [{"metodo": "Efectivo $", "cuenta": "1011", "fondo": 2500}]})
+    r = client.post("/api/caja/abrir", json={"fondos": [{"metodo": "Efectivo $", "cuenta": "1011", "fondo": 2500}]},
+                    headers={"X-Confirmado": "fondo_raro_Efectivo $"})
     assert r.status_code == 200, r.text
     cerrar(client, [
         {"metodo": "Efectivo $", "contado": 50},
@@ -109,7 +110,8 @@ def test_el_cierre_del_23_de_octubre(client):
 
 
 def test_el_fondo_con_la_coma_corrida(client):
-    client.post("/api/caja/abrir", json={"fondos": [{"metodo": "Efectivo $", "cuenta": "1011", "fondo": 2500}]})
+    client.post("/api/caja/abrir", json={"fondos": [{"metodo": "Efectivo $", "cuenta": "1011", "fondo": 2500}]},
+                    headers={"X-Confirmado": "fondo_raro_Efectivo $"})
     cerrar(client, [{"metodo": "Efectivo $", "contado": 25}])
     [p] = por_tipo(explicar(client), "fondo")
     assert "100 veces" in p["texto"] and "coma" in p["texto"]

@@ -62,6 +62,15 @@ def _almacen_aislado(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _envios_de_cero():
+    """Cada prueba arranca sin envios recientes: el control de doble toque
+    (salvaguardas.py) no puede confundir la prueba de al lado con un repetido."""
+    from app import salvaguardas
+    salvaguardas._vistos.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _sin_limite_de_intentos():
     """El limite del login cuenta por IP y en memoria. Entre tests la IP es
     siempre la misma; sin esto empezarian a fallar por 429."""
@@ -272,4 +281,7 @@ def caja_cerrar(client, efectivo=None, divisas=None, **extra):
         conteos.append({"metodo": "Efectivo Bs", "contado": efectivo})
     if divisas is not None:
         conteos.append({"metodo": "Efectivo $", "contado": divisas})
-    return client.post("/api/caja/cerrar", json={"conteos": conteos, **extra})
+    # Un conteo que no cuadra por mucho pide confirmar (QA nov, R4): aqui se
+    # confirma de entrada.
+    return client.post("/api/caja/cerrar", json={"conteos": conteos, **extra},
+                       headers={"X-Confirmado": "diferencia_grande"})

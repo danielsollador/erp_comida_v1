@@ -133,6 +133,37 @@
   .aviso.bien { color: var(--ok); background: var(--ok-lav); }
   .aviso.mal { color: var(--mal); background: var(--mal-lav); }
   .muted { color: var(--apagado); font-size: 12px; }
+  /* Gastos de Vertigo */
+  .cifras { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .cifra { padding: 14px 16px; border-radius: 14px; background: var(--fondo); border: 1px solid var(--linea); }
+  .cifra .rotulo { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--apagado); font-weight: 600; }
+  .cifra .valor { font-family: "Sora", "Manrope", sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .cifra .valor small { font-size: 12px; font-weight: 600; color: var(--apagado); margin-left: 3px; }
+  .cifra .extra { font-size: 12px; color: var(--apagado); margin-top: 2px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.apagado td { opacity: .55; }
+  tr.historial td { background: var(--fondo); padding: 8px 10px 12px 22px; }
+  .historial ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .historial li { display: flex; gap: 10px; align-items: center; }
+  .historial li button { padding: 3px 8px; font-size: 11px; }
+  .enlace { border: none; padding: 0; background: none; color: var(--apagado); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
+  .form textarea { font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--linea); background: var(--sup); color: var(--tinta); resize: vertical; min-height: 38px; }
+  .desliza { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+  .solo-movil, .solo-movil-txt { display: none; }
+  .gastos .estado { white-space: nowrap; }
+  .filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .filtros .chip { padding: 6px 12px; font-size: 12px; }
+  .filtros .chip .cuenta { font-size: 11px; font-weight: 700; opacity: .7; margin-left: 2px; }
+  .gastos td .acciones { flex-wrap: nowrap; }
+  @media (max-width: 760px) { .cifras { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px) {
+    .tarjeta.gastos { padding: 14px 12px; }
+    .gastos td, .gastos th { padding: 8px 6px; }
+    .gastos .cifra { padding: 12px; }
+    .gastos .cifra .valor { font-size: 18px; }
+    .gastos .solo-movil { display: flex; justify-content: flex-start; margin-top: 8px; }
+    .gastos .solo-movil-txt { display: block; }
+  }
   @media (max-width: 640px) { .oculto-movil { display: none; } }
 </style>
 <script>
@@ -162,6 +193,7 @@
       <div class="tabs">
         <button type="button" data-tab="usuarios" class="activa">Cuentas</button>
         <button type="button" data-tab="locales">Locales</button>
+        <button type="button" data-tab="gastos">Gastos</button>
       </div>
       <div class="aviso" id="aviso" role="status"></div>
       <div class="tarjeta" id="panel"></div>
@@ -293,8 +325,230 @@
 
   function dibujarAdmin() {
     panel.innerHTML = '<span class="muted">Cargando…</span>';
+    panel.classList.remove("gastos");
     if (TAB === "locales") return dibujarLocales();
+    if (TAB === "gastos") return dibujarGastos();
     return dibujarUsuarios();
+  }
+
+  // ---------- gastos de Vertigo ----------
+  // Lo que cuesta mantener la plataforma. Los totales vienen por moneda y no
+  // se convierten: la tasa es cosa de cada local, no del hub.
+  var FRECUENCIA = { mensual: "al mes", trimestral: "cada 3 meses", semestral: "cada 6 meses", anual: "al año", unico: "una vez", a_demanda: "por consumo" };
+  // Que clase de costo es: lo que llega solo cada tanto, lo que se paga una
+  // vez, o lo que se paga cuando se gasta (credito prepago, sin fecha).
+  var CADA = { mensual: "cada mes", trimestral: "cada 3 meses", semestral: "cada 6 meses", anual: "cada año" };
+  function tipo(g) {
+    if (CADA[g.frecuencia]) return '<b>Recurrente</b><div class="muted">' + CADA[g.frecuencia] + '</div>';
+    if (g.frecuencia === "unico") return '<b>Único</b><div class="muted">se paga una vez</div>';
+    return '<b>Por consumo</b><div class="muted">sin fecha fija</div>';
+  }
+  var ESTADO_GASTO = {
+    activo: ["Activo", "ok"], por_contratar: ["Por contratar", "ojo"],
+    por_cancelar: ["Por cancelar", "mal"], cancelado: ["Cancelado", ""]
+  };
+  var SIMBOLO = { USD: "US$", EUR: "€", VES: "Bs" };
+  var EDITANDO = null;      // id del gasto que esta en el formulario, o null
+  var FILTRO_PAGO = "todos"; // todos | por_pagar | pagado (este mes)
+  var FILTRO_CAT = "";       // "" = todas
+  var ABIERTOS = {};        // historiales desplegados, por id
+
+  function dinero(v, moneda) {
+    return (SIMBOLO[moneda] || moneda) + " " + Number(v).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  // {USD: 12, EUR: 6} -> "US$ 12,00 · € 6,00". La primera moneda va grande.
+  function porMoneda(d) {
+    var claves = Object.keys(d || {});
+    if (!claves.length) return { grande: "—", resto: "" };
+    claves.sort(function (a, b) { return a === "USD" ? -1 : b === "USD" ? 1 : 0; });
+    return {
+      grande: esc(Number(d[claves[0]]).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + '<small>' + esc(SIMBOLO[claves[0]] || claves[0]) + '</small>',
+      resto: claves.slice(1).map(function (k) { return esc(dinero(d[k], k)); }).join(" · ")
+    };
+  }
+  function dias(desde, hasta) {
+    return Math.round((Date.parse(hasta + "T00:00:00") - Date.parse(desde + "T00:00:00")) / 86400000);
+  }
+  function fechaCorta(iso) {
+    return new Date(iso + "T00:00:00").toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric" });
+  }
+  function cuando(g, hoy) {
+    if (g.estado === "cancelado") return '<span class="muted">—</span>';
+    if (!g.proximo_pago) return '<span class="muted">' + (g.frecuencia === "a_demanda" ? "cuando se acabe"
+      : g.frecuencia === "unico" && g.pagos.length ? "pagado" : "sin fecha") + '</span>';
+    var n = dias(hoy, g.proximo_pago);
+    var txt = n < 0 ? "vencido hace " + (-n) + (n === -1 ? " día" : " días") : n === 0 ? "hoy" : n === 1 ? "mañana" : "en " + n + " días";
+    var clase = n < 0 ? "mal" : n <= 7 ? "ojo" : "";
+    return esc(fechaCorta(g.proximo_pago)) + '<div>' + (clase ? '<span class="estado ' + clase + '">' + txt + '</span>' : '<span class="muted">' + txt + '</span>') + '</div>';
+  }
+
+  function cifra(rotulo, partes, extra) {
+    return '<div class="cifra"><div class="rotulo">' + rotulo + '</div><div class="valor">' + partes.grande + '</div>'
+      + '<div class="extra">' + (partes.resto ? partes.resto + (extra ? " · " : "") : "") + (extra || "") + '</div></div>';
+  }
+
+  function dibujarGastos() {
+    pedir("/api/gastos-vertigo").then(function (d) {
+      var r = d.resumen, op = d.opciones, hoy = d.hoy;
+      var anio = hoy.slice(0, 4);
+      var mes = new Date(hoy + "T00:00:00").toLocaleDateString("es-VE", { month: "long" });
+      var nPorPagar = d.gastos.filter(function (g) { return g.por_pagar_mes; }).length;
+      var nPagado = d.gastos.filter(function (g) { return g.pagado_mes; }).length;
+      var anual = porMoneda(r.pagado_anio);
+      var cifras = '<div class="cifras">'
+        + cifra("Fijo al mes", porMoneda(r.mensual), "solo los recurrentes")
+        + cifra("Fijo al año", porMoneda(r.anual), r.activos + " gasto" + (r.activos === 1 ? "" : "s") + " activo" + (r.activos === 1 ? "" : "s"))
+        + cifra("Por pagar en " + mes, porMoneda(r.por_pagar_mes), nPorPagar + " pago" + (nPorPagar === 1 ? "" : "s") + ", vencidos incluidos")
+        + cifra("Pagado en " + mes, porMoneda(r.pagado_mes), "en " + anio + ": " + (anual.grande === "—" ? "—" : anual.grande.replace(/<[^>]+>/g, " ")))
+        + '</div>'
+        + (r.sin_monto ? '<p class="muted" style="margin:-6px 0 14px">' + r.sin_monto + ' gasto' + (r.sin_monto === 1 ? "" : "s") + ' activo' + (r.sin_monto === 1 ? "" : "s") + ' sin monto: no entran en los totales hasta que les pongas cuánto cuestan.</p>' : "");
+
+      // Las categorias que de verdad se usan, no la lista entera.
+      var usadas = op.categorias.filter(function (c) { return d.gastos.some(function (g) { return g.categoria === c; }); });
+      if (FILTRO_CAT && usadas.indexOf(FILTRO_CAT) === -1) FILTRO_CAT = "";
+      var visibles = d.gastos.filter(function (g) {
+        if (FILTRO_CAT && g.categoria !== FILTRO_CAT) return false;
+        if (FILTRO_PAGO === "por_pagar") return g.por_pagar_mes;
+        if (FILTRO_PAGO === "pagado") return g.pagado_mes;
+        return true;
+      });
+      var boton = function (valor, texto, n) {
+        return '<button type="button" class="chip' + (FILTRO_PAGO === valor ? " on" : "") + '" data-filtro-pago="' + valor + '">'
+          + texto + (n == null ? "" : ' <span class="cuenta">' + n + '</span>') + '</button>';
+      };
+      var filtros = '<div class="filtros">'
+        + '<div class="chips">' + boton("todos", "Todos", null) + boton("por_pagar", "Por pagar en " + mes, nPorPagar) + boton("pagado", "Pagado en " + mes, nPagado) + '</div>'
+        + '<select data-filtro-cat aria-label="Categoría"><option value="">Todas las categorías</option>'
+        + usadas.map(function (c) { return '<option' + (c === FILTRO_CAT ? " selected" : "") + '>' + esc(c) + '</option>'; }).join("")
+        + '</select></div>';
+
+      var filas = visibles.map(function (g) {
+        var est = ESTADO_GASTO[g.estado] || [g.estado, ""];
+        var pill = est[1] ? '<span class="estado ' + est[1] + '">' + est[0] + '</span>' : '<span class="pastilla">' + est[0] + '</span>';
+        var botones = (g.estado !== "cancelado" ? '<button type="button" data-pagar>Pagado</button>' : "")
+          + '<button type="button" data-editar>Editar</button>';
+        // Solo se pide el monto de lo que sigue: lo que se va a cancelar no.
+        var monto = g.monto == null ? (g.estado === "activo" ? '<span class="estado ojo">falta el monto</span>' : '<span class="muted">sin monto</span>')
+          : g.monto === 0 ? '<b>Gratis</b>' : '<b>' + esc(dinero(g.monto, g.moneda)) + '</b>';
+        var fila = '<tr data-g="' + g.id + '"' + (g.estado === "cancelado" ? ' class="apagado"' : "") + '>'
+          + '<td><b>' + esc(g.nombre) + '</b><div class="muted">' + esc([g.proveedor, g.categoria].filter(Boolean).join(" · "))
+          + (g.paga ? " · paga " + esc(g.paga) : "") + '</div>'
+          + (g.nota ? '<div class="muted" style="margin-top:2px">' + esc(g.nota) + '</div>' : "")
+          + (g.pagos.length ? '<button type="button" class="enlace" data-historial>' + g.pagos.length + ' pago' + (g.pagos.length === 1 ? "" : "s") + ' anotado' + (g.pagos.length === 1 ? "" : "s") + '</button>' : "")
+          + '<div class="acciones solo-movil">' + botones + '</div>'
+          + '</td>'
+          + '<td class="num">' + monto + '<div class="muted solo-movil-txt">' + esc(FRECUENCIA[g.frecuencia] || g.frecuencia) + '</div></td>'
+          + '<td class="oculto-movil">' + tipo(g) + '</td>'
+          + '<td>' + cuando(g, hoy) + '</td>'
+          + '<td class="oculto-movil">' + pill + '</td>'
+          + '<td class="oculto-movil"><div class="acciones">' + botones + '</div></td>'
+          + '</tr>';
+        if (ABIERTOS[g.id] && g.pagos.length) {
+          fila += '<tr class="historial" data-de="' + g.id + '"><td colspan="6"><ul>' + g.pagos.slice().reverse().map(function (p) {
+            return '<li><span>' + esc(fechaCorta(p.fecha)) + '</span><b>' + esc(dinero(p.monto, g.moneda)) + '</b>'
+              + (p.registrado_por ? '<span class="muted">' + esc(p.registrado_por) + '</span>' : "")
+              + '<button type="button" class="peligro" data-anular="' + p.id + '">Anular</button></li>';
+          }).join("") + '</ul></td></tr>';
+        }
+        return fila;
+      }).join("");
+
+      var g = EDITANDO != null ? d.gastos.filter(function (x) { return x.id === EDITANDO; })[0] : null;
+      if (EDITANDO != null && !g) EDITANDO = null;
+      var v = g || { nombre: "", proveedor: "", categoria: "Infraestructura", monto: null, moneda: "USD", frecuencia: "mensual", proximo_pago: null, paga: "", estado: "activo", nota: "" };
+      var opciones = function (lista, actual, nombres) {
+        return lista.map(function (x) { return '<option value="' + esc(x) + '"' + (x === actual ? " selected" : "") + '>' + esc(nombres ? (nombres[x] || x) : x) + '</option>'; }).join("");
+      };
+      var nombresEstado = {};
+      Object.keys(ESTADO_GASTO).forEach(function (k) { nombresEstado[k] = ESTADO_GASTO[k][0]; });
+      var nombresFrec = { mensual: "Mensual", trimestral: "Trimestral", semestral: "Semestral", anual: "Anual", unico: "Pago único", a_demanda: "Por consumo (sin fecha fija)" };
+
+      panel.classList.add("gastos");
+      var vacio = d.gastos.length ? "Nada con este filtro." : "Sin gastos todavía. Agrega el primero abajo.";
+      panel.innerHTML = cifras + filtros
+        + '<div class="desliza"><table><thead><tr><th>Gasto</th><th class="num">Monto</th><th class="oculto-movil">Tipo</th><th>Próximo pago</th><th class="oculto-movil">Estado</th><th class="oculto-movil"></th></tr></thead><tbody>'
+        + (filas || '<tr><td colspan="6" class="muted">' + vacio + '</td></tr>') + '</tbody></table></div>'
+        + '<form class="form" id="gasto">'
+        + '<div class="ancho"><h2 style="margin:0">' + (g ? "Editar «" + esc(g.nombre) + "»" : "Nuevo gasto") + '</h2></div>'
+        + '<label>Gasto<input name="nombre" required minlength="2" maxlength="80" value="' + esc(v.nombre) + '" placeholder="ej. Servidor de producción"></label>'
+        + '<label>Proveedor<input name="proveedor" maxlength="60" value="' + esc(v.proveedor) + '" placeholder="ej. Google Cloud"></label>'
+        + '<label>Categoría<select name="categoria">' + opciones(op.categorias, v.categoria) + '</select></label>'
+        + '<label>Monto<input name="monto" type="number" min="0" step="0.01" inputmode="decimal" value="' + (v.monto == null ? "" : esc(v.monto)) + '" placeholder="vacío si no se sabe"></label>'
+        + '<label>Moneda<select name="moneda">' + opciones(op.monedas, v.moneda, SIMBOLO) + '</select></label>'
+        + '<label>Se paga<select name="frecuencia">' + opciones(op.frecuencias, v.frecuencia, nombresFrec) + '</select></label>'
+        + '<label>Próximo pago<input name="proximo_pago" type="date" value="' + esc(v.proximo_pago || "") + '"></label>'
+        + '<label>Quién lo paga<input name="paga" maxlength="40" value="' + esc(v.paga) + '" placeholder="ej. Leider"></label>'
+        + '<label>Estado<select name="estado">' + opciones(op.estados, v.estado, nombresEstado) + '</select></label>'
+        + '<label class="ancho">Nota<textarea name="nota" maxlength="300" rows="2">' + esc(v.nota) + '</textarea></label>'
+        + '<div class="ancho acciones" style="justify-content:flex-start">'
+        + '<button type="submit" class="primario">' + (g ? "Guardar cambios" : "Agregar gasto") + '</button>'
+        + (g ? '<button type="button" data-cancelar>Cancelar</button><button type="button" class="peligro" data-borrar-gasto style="margin-left:auto">Borrar gasto</button>' : "")
+        + '</div></form>';
+
+      panel.querySelectorAll("[data-filtro-pago]").forEach(function (b) {
+        b.addEventListener("click", function () { FILTRO_PAGO = b.dataset.filtroPago; dibujarGastos(); });
+      });
+      panel.querySelector("[data-filtro-cat]").addEventListener("change", function (ev) { FILTRO_CAT = ev.target.value; dibujarGastos(); });
+
+      panel.querySelectorAll("tr[data-g]").forEach(function (tr) {
+        var id = Number(tr.dataset.g);
+        var gasto = d.gastos.filter(function (x) { return x.id === id; })[0];
+        // Los botones van dos veces (al lado en PC, bajo el nombre en el
+        // telefono): se cablean todos.
+        tr.querySelectorAll("[data-pagar]").forEach(function (b) { b.addEventListener("click", pagar); });
+        tr.querySelectorAll("[data-editar]").forEach(function (b) { b.addEventListener("click", editar); });
+        function pagar() {
+          var monto = gasto.monto;
+          var texto = window.prompt("¿Cuánto se pagó de «" + gasto.nombre + "»? (" + (SIMBOLO[gasto.moneda] || gasto.moneda) + ")", monto == null ? "" : String(monto));
+          if (texto === null) return;
+          var valor = Number(String(texto).replace(",", "."));
+          if (!texto.trim() || isNaN(valor) || valor < 0) { mostrar("Escribe un monto válido.", false); return; }
+          pedir("/api/gastos-vertigo/" + id + "/pago", { method: "POST", body: JSON.stringify({ monto: valor }) })
+            .then(function () { mostrar("Pago de «" + gasto.nombre + "» anotado.", true); dibujarGastos(); })
+            .catch(function (e) { mostrar(e.message, false); });
+        }
+        function editar() {
+          EDITANDO = id;
+          dibujarGastos();
+          setTimeout(function () { var f = document.getElementById("gasto"); if (f) { f.scrollIntoView({ behavior: "smooth", block: "center" }); f.nombre.focus({ preventScroll: true }); } }, 60);
+        }
+        var h = tr.querySelector("[data-historial]");
+        if (h) h.addEventListener("click", function () { ABIERTOS[id] = !ABIERTOS[id]; dibujarGastos(); });
+      });
+      panel.querySelectorAll("tr.historial [data-anular]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var gid = b.closest("tr").dataset.de;
+          if (!window.confirm("¿Anular este pago? La fecha del próximo pago no cambia sola: corrígela si hace falta.")) return;
+          pedir("/api/gastos-vertigo/" + gid + "/pago/" + b.dataset.anular, { method: "DELETE" })
+            .then(function () { mostrar("Pago anulado.", true); dibujarGastos(); })
+            .catch(function (e) { mostrar(e.message, false); });
+        });
+      });
+
+      var form = document.getElementById("gasto");
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var cuerpo = {
+          nombre: form.nombre.value, proveedor: form.proveedor.value, categoria: form.categoria.value,
+          monto: form.monto.value === "" ? null : Number(form.monto.value), moneda: form.moneda.value,
+          frecuencia: form.frecuencia.value, proximo_pago: form.proximo_pago.value || null,
+          paga: form.paga.value, estado: form.estado.value, nota: form.nota.value
+        };
+        var editando = EDITANDO;
+        pedir("/api/gastos-vertigo" + (editando != null ? "/" + editando : ""), { method: editando != null ? "PUT" : "POST", body: JSON.stringify(cuerpo) })
+          .then(function () { EDITANDO = null; mostrar(editando != null ? "Cambios guardados." : "Gasto agregado.", true); dibujarGastos(); })
+          .catch(function (e) { mostrar(e.message, false); });
+      });
+      var cancelar = form.querySelector("[data-cancelar]");
+      if (cancelar) cancelar.addEventListener("click", function () { EDITANDO = null; dibujarGastos(); });
+      var borrar = form.querySelector("[data-borrar-gasto]");
+      if (borrar) borrar.addEventListener("click", function () {
+        if (!window.confirm("¿Borrar «" + g.nombre + "» y sus " + g.pagos.length + " pagos anotados? Si solo dejó de pagarse, mejor márcalo como Cancelado.")) return;
+        pedir("/api/gastos-vertigo/" + g.id, { method: "DELETE" })
+          .then(function () { EDITANDO = null; mostrar("Gasto borrado.", true); dibujarGastos(); })
+          .catch(function (e) { mostrar(e.message, false); });
+      });
+    }).catch(function (e) { panel.innerHTML = '<span class="muted">' + esc(e.message) + '</span>'; });
   }
 
   function dibujarLocales() {
@@ -434,7 +688,7 @@
       document.getElementById("titulo").textContent = "Cartera";
       sub.textContent = locales.length + " local" + (locales.length === 1 ? "" : "es") + " · administracion de Vertigo Pro";
       admin.hidden = false;
-      var m = /^#admin\/(usuarios|locales)/.exec(location.hash || "");
+      var m = /^#admin\/(usuarios|locales|gastos)/.exec(location.hash || "");
       if (m) {
         TAB = m[1];
         document.querySelectorAll(".tabs button").forEach(function (x) { x.classList.toggle("activa", x.dataset.tab === TAB); });

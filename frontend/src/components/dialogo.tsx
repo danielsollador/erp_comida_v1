@@ -11,6 +11,7 @@ import { Boton, Campo, Modal, Selector } from './ui'
 import { CasillaConUnidad } from './Cantidad'
 import { convertirTexto, factorEntre, otraUnidad, sinRuido } from '../lib/unidades'
 import { etiquetaUnidad } from '../lib/inventario'
+import { leerMonto } from '../lib/montos'
 
 /**
  * Las ventanas de pregunta del ERP: confirmar, elegir, pedir datos, avisar.
@@ -249,9 +250,11 @@ function Ventana({ pendiente, alTerminar }: { pendiente: Pendiente; alTerminar: 
   }
 }
 
-/** Un numero escrito a mano: acepta coma decimal, que es como se escribe aqui. */
-function aNumero(texto: string): number {
-  return Number(texto.trim().replace(',', '.'))
+/** Un numero escrito a mano (ver lib/montos.ts). Una cantidad con unidad
+ *  (kg, g, lt, ml) lee el punto como decimal: «1.250» kg es kilo y cuarto. */
+const UNIDADES = new Set(['kg', 'g', 'lt', 'ml', 'unidad', 'unidades'])
+function aNumero(texto: string, sufijo?: string): number {
+  return leerMonto(texto, { miles: !(sufijo && UNIDADES.has(sufijo)) })
 }
 
 function Formulario({
@@ -289,7 +292,7 @@ function Formulario({
         continue
       }
       if (c.tipo === 'numero') {
-        const escrito = aNumero(crudo)
+        const escrito = aNumero(crudo, conUnidad(c) ? vistaDe(c) : c.sufijo)
         if (!Number.isFinite(escrito)) {
           malos[c.nombre] = 'Tiene que ser un número'
           continue

@@ -113,3 +113,27 @@ function esDeHoy(iso: string): boolean {
   if (Number.isNaN(fecha.getTime())) return true
   return fecha.toDateString() === new Date().toDateString()
 }
+
+/**
+ * Los renglones de un pedido, juntos por categoria y en el orden del menu.
+ *
+ * El barista cuenta los cafes de un vistazo para prepararlos: mezclados con
+ * los pastelitos, unos arriba y otros abajo, se le escapaba alguno (Daniel,
+ * 11-nov). Dentro de una categoria se respeta el orden en que se pidieron, y
+ * lo que no esta en el menu (venta libre, envios) va al final.
+ */
+export function porCategoria<T extends { variante_id?: number | null }>(
+  items: T[],
+  categoriaDe: (varianteId: number) => number | undefined,
+  orden: number[],
+): T[] {
+  const lugarDe = new Map(orden.map((id, n) => [id, n]))
+  const lugar = (i: T) => {
+    const c = i.variante_id == null ? undefined : categoriaDe(i.variante_id)
+    return c === undefined ? orden.length : (lugarDe.get(c) ?? orden.length)
+  }
+  return items
+    .map((item, n) => ({ item, n }))
+    .sort((a, b) => lugar(a.item) - lugar(b.item) || a.n - b.n)
+    .map((x) => x.item)
+}
