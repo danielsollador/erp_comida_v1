@@ -268,20 +268,24 @@ function CamposDePago({
   adelantado?: number
 }) {
   const concepto = CONCEPTOS.find((c) => c.id === p.concepto)
-  const { tasa: delDia } = useMoneda()
-  const [cualTasa, setCualTasa] = useState<'bcv' | 'eur' | 'paralelo' | 'otra'>('bcv')
+  const { tasa: delDia, tasaCobro } = useMoneda()
+  // Por defecto, la tasa con la que se cobra (specs/tasa.md): el servidor la usa si no se le dice otra.
+  const [cualTasa, setCualTasa] = useState<'cobro' | 'bcv' | 'eur' | 'paralelo' | 'otra'>('cobro')
   const [otraTasa, setOtraTasa] = useState('')
+  const fuenteDeCobro = delDia?.cobro?.fuente ?? 'bcv'
   const opcionesTasa = [
-    { id: 'bcv', texto: 'BCV', valor: delDia?.bcv },
-    { id: 'eur', texto: 'Euro BCV', valor: delDia?.eur },
+    { id: 'cobro', texto: `La de cobro (${delDia?.cobro?.etiqueta ?? 'Dólar BCV'})`, valor: tasaCobro },
+    // La que ya es la de cobro no se repite.
+    ...(fuenteDeCobro !== 'bcv' ? [{ id: 'bcv', texto: 'Dólar BCV', valor: delDia?.bcv }] : []),
+    ...(fuenteDeCobro !== 'eur' ? [{ id: 'eur', texto: 'Euro BCV', valor: delDia?.eur }] : []),
     { id: 'paralelo', texto: 'Paralelo', valor: delDia?.paralelo },
-  ] as const
-  const tasaUsada = p.tasa || delDia?.bcv || 0
+  ] as { id: 'cobro' | 'bcv' | 'eur' | 'paralelo'; texto: string; valor: number | null | undefined }[]
+  const tasaUsada = p.tasa || tasaCobro || 0
   function elegirTasa(id: typeof cualTasa, escrita = otraTasa) {
     setCualTasa(id)
     const elegida = id === 'otra' ? numero(escrita) : opcionesTasa.find((o) => o.id === id)?.valor
-    // La BCV es lo que el servidor usa si no se le dice otra.
-    poner('tasa', id === 'bcv' ? 0 : elegida || 0)
+    // La de cobro es lo que el servidor usa si no se le dice otra.
+    poner('tasa', id === 'cobro' ? 0 : elegida || 0)
   }
   // El punto de venta solo cobra: no es de donde sale un pago.
   const deDondeSale = METODOS_PAGO.filter((m) => m !== 'Punto de venta')

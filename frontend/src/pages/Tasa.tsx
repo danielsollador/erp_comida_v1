@@ -45,6 +45,11 @@ const TASAS: { id: string; nombre: string; ayuda: string }[] = [
   { id: 'eur', nombre: 'Euro BCV', ayuda: 'Al que cotizan algunos mayoristas' },
 ]
 
+/** Lo que se muestra en el cuadro de la tasa propia: la guardada, si esa es la elegida. */
+function manualDe(e: EstadoTasa): string {
+  return e.cobro?.fuente === 'manual' && e.cobro.tasa ? String(e.cobro.tasa).replace('.', ',') : ''
+}
+
 export default function Tasa() {
   const [seccion, irA] = useSeccion(SECCIONES)
   const [rango, setRango] = useRango('30d')
@@ -92,7 +97,7 @@ export default function Tasa() {
   function cargar() {
     api.estadoTasa().then((e) => {
       setEstado(e)
-      setManual(e.bcv ? String(e.bcv) : '')
+      setManual(manualDe(e))
     })
     api
       .historialTasa()
@@ -109,7 +114,7 @@ export default function Tasa() {
     try {
       const e = await fn()
       setEstado(e)
-      setManual(e.bcv ? String(e.bcv) : '')
+      setManual(manualDe(e))
       setAviso(mensaje)
       recargar()
       api.historialTasa(rango).then(setHistorial)
@@ -120,16 +125,25 @@ export default function Tasa() {
     }
   }
 
-  function guardarManual() {
+  function usarManual() {
     const valor = leerMonto(manual)
     if (!valor || valor <= 0) {
       setError('Escribe una tasa válida, por ejemplo 145,80')
       return
     }
-    accion(() => api.fijarTasa(valor), 'Tasa fijada. Los cobros de hoy usan esta.')
+    accion(() => api.elegirTasaDeCobro('manual', valor), 'Listo: se cobra a tu tasa. Lo ya cobrado no cambia.')
   }
 
-  const esManual = estado?.origen === 'manual'
+  function elegirCobro(fuente: 'bcv' | 'eur') {
+    accion(
+      () => api.elegirTasaDeCobro(fuente),
+      `Listo: se cobra al ${fuente === 'eur' ? 'Euro' : 'Dólar'} BCV. Lo ya cobrado no cambia.`,
+    )
+  }
+
+  const cobro = estado?.cobro ?? null
+  const fuenteCobro = cobro?.fuente ?? 'bcv'
+  const esManual = fuenteCobro === 'manual'
   // La tasa de hoy como numero suelto: dentro de un `map` TypeScript ya no
   // sabe que `estado.bcv` no es null aunque el bloque entero dependa de eso.
   const bcvHoy = estado?.bcv ?? 0
@@ -148,7 +162,9 @@ export default function Tasa() {
         <div className="bg-white rounded-2xl border border-neutral-200 p-5">
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
-              <h2 className="font-semibold">Tasa con la que se cobra hoy</h2>
+              <h2 className="font-semibold">
+                <Ayuda explica={explicar('kpi.tasa_cobro')}>Tasa con la que cobras hoy</Ayuda>
+              </h2>
               <p className="text-xs text-neutral-500 mt-0.5">
                 Es la que convierte a bolívares en el punto de venta.
               </p>
@@ -158,16 +174,24 @@ export default function Tasa() {
                 esManual ? 'bg-aviso-100 text-aviso-700' : 'bg-exito-100 text-exito-700'
               }`}
             >
-              {esManual ? 'Cargada a mano' : 'Automática'}
+              {cobro?.etiqueta ?? 'Dólar BCV'}
             </span>
           </div>
 
           <div className="flex items-baseline gap-2">
             <span className="text-4xl font-bold tabular-nums">
-              {estado?.bcv ? fmtNum(estado.bcv) : '—'}
+              {cobro?.tasa ? fmtNum(cobro.tasa) : estado?.bcv ? fmtNum(estado.bcv) : '—'}
             </span>
             <span className="text-neutral-500">Bs por dólar</span>
           </div>
+
+          {cobro?.aviso && <p className="text-aviso-600 text-sm mt-2">{cobro.aviso}</p>}
+          {cobro?.vieja && (
+            <p className="text-aviso-600 text-sm mt-2">
+              Tu tasa manual es del {new Date(cobro.manual_en as string).toLocaleDateString('es-VE')}. Si ya no
+              aplica, elige otra abajo.
+            </p>
+          )}
 
           {estado?.desactualizada && (
             <p className="text-aviso-600 text-sm mt-2">
@@ -177,7 +201,13 @@ export default function Tasa() {
           )}
           {estado?.salto_rechazado && <p className="text-aviso-600 text-sm mt-2">{estado.salto_rechazado}</p>}
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-neutral-100">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4 pt-4 border-t border-neutral-100">
+            <Dato
+              titulo="Dólar BCV"
+              ayuda="kpi.dolar_bcv"
+              valor={estado?.bcv ? fmtNum(estado.bcv) : '—'}
+              nota="Bs por dólar, oficial"
+            />
             <Dato
               titulo="Paralelo"
               ayuda="kpi.paralelo"
@@ -259,30 +289,70 @@ export default function Tasa() {
           </div>
         )}
 
-        {/* --------- controles --------- */}
+        {/* --------- con que tasa se cobra --------- */}
         <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
           <div>
-            <h2 className="font-semibold mb-1">Cargar la tasa a mano</h2>
+            <h2 className="font-semibold mb-1">
+              <Ayuda explica={explicar('kpi.tasa_cobro')}>Con qué tasa cobro en bolívares</Ayuda>
+            </h2>
             <p className="text-xs text-neutral-500">
-              Si cobras a una tasa propia -redondeada, la del proveedor, un punto medio- escríbela
-              aquí. Manda sobre la automática y no se pisa hasta que la devuelvas a automático.
+              Los precios siguen en dólares. Aquí eliges a cuántos bolívares se pasa cada dólar al cobrar.
+              Lo ya cobrado no cambia, y el dólar y el euro del BCV se siguen actualizando solos.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Numerico
-              etiqueta="Tasa manual (Bs por $)"
-              value={manual}
-              onChange={(e) => setManual(e.target.value)}
-              placeholder="145,80"
-              className="flex-1 border border-neutral-300 rounded-xl px-3 py-3 text-lg tabular-nums"
-            />
-            <button
-              onClick={guardarManual}
-              disabled={ocupado}
-              className="bg-neutral-900 text-white rounded-xl px-5 font-medium disabled:opacity-50"
+          <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Con qué tasa cobro en bolívares">
+            {([
+              { id: 'bcv', nombre: 'Dólar BCV', ayuda: 'La oficial de siempre.', tasa: estado?.bcv },
+              { id: 'eur', nombre: 'Euro BCV', ayuda: 'Cada $ se cobra a lo que vale el euro.', tasa: estado?.eur },
+            ] as const).map((o) => (
+              <button
+                key={o.id}
+                role="radio"
+                aria-checked={fuenteCobro === o.id}
+                disabled={ocupado || !o.tasa || fuenteCobro === o.id}
+                onClick={() => elegirCobro(o.id)}
+                className={`text-left rounded-xl border px-4 py-3 transition disabled:cursor-default ${
+                  fuenteCobro === o.id
+                    ? 'border-neutral-900 bg-neutral-50'
+                    : 'border-neutral-200 hover:border-neutral-400 disabled:opacity-50'
+                }`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{o.nombre}</span>
+                  {fuenteCobro === o.id && <span aria-hidden>✓</span>}
+                </span>
+                <span className="block text-lg font-semibold tabular-nums">{o.tasa ? fmtNum(o.tasa) : '—'}</span>
+                <span className="block text-xs text-neutral-500">
+                  {o.tasa ? `$10 son ${fmtBs(10 * o.tasa)}` : 'Sin dato de hoy'}
+                </span>
+                <span className="block text-[11px] text-neutral-400 mt-1">{o.ayuda}</span>
+              </button>
+            ))}
+            <div
+              role="radio"
+              aria-checked={esManual}
+              className={`rounded-xl border px-4 py-3 ${esManual ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200'}`}
             >
-              Fijar
-            </button>
+              <span className="flex items-center justify-between gap-2">
+                <span className="font-medium">Una tasa mía</span>
+                {esManual && <span aria-hidden>✓</span>}
+              </span>
+              <span className="block text-xs text-neutral-500 mb-2">La escribes y dura hasta que la cambies.</span>
+              <Numerico
+                etiqueta="Bs por $"
+                value={manual}
+                onChange={(e) => setManual(e.target.value)}
+                placeholder="145,80"
+                className="w-full border border-neutral-300 rounded-lg px-3 py-2 tabular-nums"
+              />
+              <button
+                onClick={usarManual}
+                disabled={ocupado || !manual}
+                className="mt-2 w-full bg-neutral-900 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+              >
+                Usar esta tasa
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 pt-1">
@@ -293,17 +363,6 @@ export default function Tasa() {
             >
               {ocupado ? 'Consultando...' : 'Consultar BCV ahora'}
             </button>
-            {esManual && (
-              <button
-                onClick={() =>
-                  accion(() => api.refrescarTasa(true), 'Volviste a la tasa automatica del BCV.')
-                }
-                disabled={ocupado}
-                className="bg-neutral-100 hover:bg-neutral-200 rounded-xl px-4 py-2.5 text-sm font-medium disabled:opacity-50"
-              >
-                Volver a la automática
-              </button>
-            )}
           </div>
         </div>
           </>

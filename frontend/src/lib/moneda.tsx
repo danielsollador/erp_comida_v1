@@ -12,7 +12,8 @@ import { useAnchoDeTelefono } from './desplegable'
  * se mueve la tasa). Esto decide como se MUESTRAN, y en Venezuela eso no es un
  * interruptor de dos posiciones:
  *
- *  - bs        -> bolivares a la tasa vigente. Es lo que el cliente paga.
+ *  - bs        -> bolivares a la tasa de COBRO (la que el dueño elige: dolar
+ *                 BCV, euro BCV o una propia). Es lo que el cliente paga.
  *  - usd       -> el dolar oficial: los precios tal como estan en el menu.
  *  - usd_calle -> lo que valen de verdad esos bolivares si hoy compras divisas
  *                 al paralelo: USD x (tasa / paralelo). Con 12% de brecha,
@@ -38,6 +39,9 @@ type Ctx = {
   vista: VistaMoneda
   setVista: (v: VistaMoneda) => void
   tasa: EstadoTasa | null
+  /** Bs por dolar con los que se cobra hoy: la tasa de cobro elegida, y si no
+   *  hay ninguna (servidor viejo), el dolar BCV. */
+  tasaCobro: number | null
   /** Convierte un monto en USD a la vista elegida y lo formatea. */
   fmt: (usd: number | null | undefined, decimales?: number) => string
   /**
@@ -58,6 +62,7 @@ const MonedaCtx = createContext<Ctx>({
   vista: 'usd',
   setVista: () => {},
   tasa: null,
+  tasaCobro: null,
   fmt: (v) => `$${fmtNum(v ?? 0)}`,
   fmtCongelado: (v) => `$${fmtNum(v ?? 0)}`,
   sufijo: 'USD',
@@ -117,6 +122,8 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
     setVistaState(v)
   }, [])
 
+  const tasaCobro = tasa?.cobro?.tasa ?? tasa?.bcv ?? null
+
   // `tasaBase` permite pasar la tasa congelada de un pedido viejo; si no se
   // pasa ninguna se usa la vigente, que es lo correcto para precios de menu.
   // Todo memorizado: las funciones cambian solo si cambia la vista o la tasa.
@@ -130,7 +137,7 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
   ) => {
     if (usd === null || usd === undefined) return '—'
     const d = decimales ?? 2
-    const bcv = tasaBase ?? tasa?.bcv
+    const bcv = tasaBase ?? tasaCobro
     switch (vista) {
       case 'bs':
         // Sin tasa no se convierte: mostrar un numero en dolares bajo etiqueta
@@ -152,7 +159,7 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
         // Con separador de miles, como los bolivares: $2.685,50 (Leider, 11-oct).
         return conSigno('$', usd, fmtNum(Math.abs(usd), d))
     }
-  }, [vista, tasa])
+  }, [vista, tasa, tasaCobro])
 
   const fmt = useCallback(
     (usd: number | null | undefined, decimales?: number) => formatear(usd, decimales, null),
@@ -169,8 +176,8 @@ export function MonedaProvider({ children }: { children: ReactNode }) {
   )
 
   const valor = useMemo(
-    () => ({ vista, setVista, tasa, fmt, fmtCongelado, sufijo: SUFIJOS[vista], recargar }),
-    [vista, setVista, tasa, fmt, fmtCongelado, recargar],
+    () => ({ vista, setVista, tasa, tasaCobro, fmt, fmtCongelado, sufijo: SUFIJOS[vista], recargar }),
+    [vista, setVista, tasa, tasaCobro, fmt, fmtCongelado, recargar],
   )
 
   return (
@@ -227,9 +234,9 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
       k: 'bs',
       simbolo: 'Bs',
       nombre: 'Bolívares',
-      detalleTasa: tasa?.bcv ? `tasa ${fmtNum(tasa.bcv)}` : null,
-      ayuda: 'Lo que el cliente paga en efectivo o pago móvil.',
-      lista: !!tasa?.bcv,
+      detalleTasa: tasa?.cobro?.tasa ? `${tasa.cobro.etiqueta} ${fmtNum(tasa.cobro.tasa)}` : tasa?.bcv ? `tasa ${fmtNum(tasa.bcv)}` : null,
+      ayuda: 'Lo que el cliente paga en efectivo o pago móvil, a la tasa con la que cobras.',
+      lista: !!(tasa?.cobro?.tasa ?? tasa?.bcv),
     },
     {
       k: 'usd',

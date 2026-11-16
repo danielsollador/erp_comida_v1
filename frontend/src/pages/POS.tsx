@@ -323,8 +323,9 @@ export default function POS() {
   // cuando y el punto de venta tiene que arrancar rapido.
   const [ventasHoy, setVentasHoy] = useState<Pedido[] | null>(null)
   const [cargandoVentas, setCargandoVentas] = useState(false)
-  const { tasa, fmt } = useMoneda()
-  const tasaBcv = tasa?.bcv ?? 0
+  const { tasa, tasaCobro, fmt } = useMoneda()
+  // Bs por dolar con los que se cobra: la tasa de cobro que eligio el dueño.
+  const tasaBcv = tasaCobro ?? 0
 
   // Lo que de verdad se recibe: la comida menos el descuento, mas la propina.
   const subtotalCobro = cobrando?.total ?? 0
@@ -2732,8 +2733,7 @@ export default function POS() {
             <p className="text-neutral-500 mb-3">
               {fmtBs(aCobrar * tasaBcv)}{' '}
               <span className="text-xs">
-                (tasa {tasaBcv}
-                {tasa?.origen === 'manual' ? ', manual' : ''})
+                (tasa {tasa?.cobro?.etiqueta ?? 'Dólar BCV'} {fmtNum(tasaBcv)})
               </span>
             </p>
           )}

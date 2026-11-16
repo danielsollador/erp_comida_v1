@@ -26,6 +26,7 @@ import type {
   DiferenciasPorAprobar,
 } from '../lib/types'
 import { leerMonto } from '../lib/montos'
+import { tasaDeConteo } from '../lib/tasaCobro'
 import { ExportarPeriodo } from '../components/Tabla'
 
 /**
@@ -417,8 +418,7 @@ function Salidas({ r, irAMovimientos }: { r: ResumenCaja; irAMovimientos: () => 
  * los errores.
  */
 function Desglose({ r }: { r: ResumenCaja }) {
-  const { tasa } = useMoneda()
-  const bcv = tasa?.bcv ?? null
+  const { tasaCobro: bcv } = useMoneda()
   // El credito no es plata: lo fiado y lo cobrado de esa deuda no entran al
   // total, que es lo que paso por gavetas y banco.
   const totalEntro = r.desglose.filter((l) => l.se_cuadra).reduce((s, l) => s + entradaDe(l), 0)
@@ -460,7 +460,7 @@ function Desglose({ r }: { r: ResumenCaja }) {
         pago móvil se mira en el banco. "Debes tener" es el fondo con el que arrancó más lo que
         entró menos lo que salió.{' '}
         {bcv ? (
-          <>Los bolívares van a {fmtBs(bcv, 2)} por dólar, la tasa de hoy.</>
+          <>Los bolívares van a {fmtBs(bcv, 2)} por dólar, la tasa con la que cobras hoy.</>
         ) : (
           <>Sin tasa del día no se pueden mostrar los bolívares.</>
         )}
@@ -489,7 +489,7 @@ function Desglose({ r }: { r: ResumenCaja }) {
                 <Fragment key={l.metodo}>
                   <FilaMetodo
                     l={l}
-                    bcv={bcv}
+                    bcv={EN_BOLIVARES.has(l.metodo) ? tasaDeConteo(l, bcv) || null : bcv}
                     cerrada={cerrada}
                     cuantos={suyos.length}
                     alertas={suyos.filter((c) => c.repetida || sinReferencia(c)).length}
@@ -958,8 +958,7 @@ function CuadrarCaja({
   alCerrar: () => void
   alListo: (c: CierreCaja) => void
 }) {
-  const { tasa } = useMoneda()
-  const bcv = tasa?.bcv ?? 0
+  const { tasaCobro } = useMoneda()
   // Al corregir se arranca con lo que se reporto, que es justo lo que hay que
   // arreglar: teclearlo todo otra vez para cambiar un digito es lo que hace
   // que nadie corrija nada. En la moneda de cada forma (ver EN_BOLIVARES).
@@ -969,8 +968,8 @@ function CuadrarCaja({
         .filter((l) => l.contado !== null)
         .map((l) => [
           l.metodo,
-          EN_BOLIVARES.has(l.metodo) && bcv > 0
-            ? String(Math.round((l.contado as number) * bcv * 100) / 100)
+          EN_BOLIVARES.has(l.metodo) && tasaDeConteo(l, tasaCobro) > 0
+            ? String(Math.round((l.contado as number) * tasaDeConteo(l, tasaCobro) * 100) / 100)
             : String(l.contado),
         ]),
     ),
@@ -1004,8 +1003,9 @@ function CuadrarCaja({
     // Lo que se teclea en bolivares se guarda en dolares, que es la moneda
     // de los libros. Sin tasa no hay como convertir: esa forma no viaja.
     if (EN_BOLIVARES.has(l.metodo)) {
-      if (bcv <= 0) return []
-      return [{ metodo: l.metodo, contado: Math.round((tecleado / bcv) * 100) / 100 }]
+      const tasaDeEsta = tasaDeConteo(l, tasaCobro)
+      if (tasaDeEsta <= 0) return []
+      return [{ metodo: l.metodo, contado: Math.round((tecleado / tasaDeEsta) * 100) / 100 }]
     }
     return [{ metodo: l.metodo, contado: tecleado }]
   })
@@ -1070,6 +1070,8 @@ function CuadrarCaja({
       <div className="space-y-3">
         {aCuadrar.map((l) => {
           const enBs = EN_BOLIVARES.has(l.metodo)
+          // Con dos tasas el mismo dia, la de los cobros: ver lib/tasaCobro.ts.
+          const bcv = tasaDeConteo(l, tasaCobro)
           const escrito = leerMonto(contados[l.metodo] ?? '')
           return (
             <div key={l.metodo} className="rounded-xl border border-neutral-200 p-3" data-guia="caja.conteo">
@@ -1171,12 +1173,12 @@ function Movimientos({
   // La gaveta de bolivares se escribe en bolivares: la cajera tiene los
   // billetes en Bs y convertirlos de cabeza es donde se cuela el error (QA
   // nov, hallazgo 32). Se guarda en dolares, a la tasa de hoy.
-  const { tasa } = useMoneda()
-  const enBs = EN_BOLIVARES.has(metodo) && !!tasa?.bcv
+  const { tasaCobro } = useMoneda()
+  const enBs = EN_BOLIVARES.has(metodo) && !!tasaCobro
 
   async function registrar() {
     const escrito = leerMonto(monto)
-    const n = enBs && tasa?.bcv ? Math.round((escrito / tasa.bcv) * 100) / 100 : escrito
+    const n = enBs && tasaCobro ? Math.round((escrito / tasaCobro) * 100) / 100 : escrito
     if (!Number.isFinite(n) || n <= 0) return
     if (tipo === 'gasto' && !descripcion.trim()) return
     if (tipo === 'deposito' && !referencia.trim()) return setError('Pon la referencia del depósito.')

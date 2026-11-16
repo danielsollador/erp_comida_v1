@@ -241,8 +241,8 @@ function QuienDebe({ r, alCambiar }: { r: ResumenCxC; alCambiar: () => void }) {
  */
 function PagarOAbonar({ ventas, alCerrar, alHecho }: { ventas: VentaPorCobrar[]; alCerrar: () => void; alHecho: (texto: string) => void }) {
   const dialogo = useDialogo()
-  const { tasa } = useMoneda()
-  const bcv = tasa?.bcv ?? 0
+  const { tasaCobro } = useMoneda()
+  const bcv = tasaCobro ?? 0
   const [metodo, setMetodo] = useState('Efectivo $')
   const [referencia, setReferencia] = useState('')
   const [montoTexto, setMontoTexto] = useState('')

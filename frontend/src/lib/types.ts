@@ -934,6 +934,8 @@ export type LineaMetodo = {
   contado: number | null
   /** En cuánto falló lo reportado contra lo que debía haber. */
   diferencia: number | null
+  /** Solo el efectivo en bolívares: los Bs que entraron por cada dólar cobrado hoy (specs/tasa.md). */
+  tasa_cobros?: number | null
 }
 
 /** Lo que movió una cuenta compartida sin poder atribuirse a una forma de pago. */
@@ -1040,6 +1042,18 @@ export type DiferenciaCaja = {
 
 export type DiferenciasPorAprobar = { filas: DiferenciaCaja[]; total: number; dias_mas_vieja: number }
 
+/** Con qué tasa se pasa a bolívares lo que se cobra (specs/tasa.md). */
+export type CobroTasa = {
+  fuente: 'bcv' | 'eur' | 'manual'
+  etiqueta: string
+  tasa: number | null
+  manual_en: string | null
+  /** La manual es de otro día. */
+  vieja: boolean
+  /** Si lo elegido no se pudo cumplir y se cobra a otra. */
+  aviso: string | null
+}
+
 export type EstadoTasa = {
   fecha: string
   bcv: number | null
@@ -1056,6 +1070,8 @@ export type EstadoTasa = {
   desactualizada: boolean
   /** La tasa del BCV que no se tomó por saltar más de 30 % (QA nov). */
   salto_rechazado?: string | null
+  /** La tasa con la que se cobra en bolívares, aparte de la oficial. */
+  cobro?: CobroTasa | null
 }
 
 export type PuntoAnalisisTasa = {

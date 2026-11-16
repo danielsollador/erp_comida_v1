@@ -56,7 +56,7 @@ export function AbrirCaja({
   alCerrar: () => void
   alAbrir: () => void
 }) {
-  const { tasa } = useMoneda()
+  const { tasaCobro } = useMoneda()
   // Por gaveta: cuantos billetes de cada uno, y los sueltos (monedas y lo
   // que no es un billete entero). Se cuenta por billete y no como un total
   // porque un total no se puede volver a contar: si la gaveta amanece
@@ -96,8 +96,8 @@ export function AbrirCaja({
     // que es la moneda de los libros. El desglose se guarda tal como se
     // conto, en su moneda: es para volver a contar, no para sumar.
     const enBs = f.metodo === 'Efectivo Bs'
-    if (enBs && !tasa?.bcv) return []
-    const fondo = enBs ? Math.round((d.total / (tasa?.bcv ?? 1)) * 100) / 100 : d.total
+    if (enBs && !tasaCobro) return []
+    const fondo = enBs ? Math.round((d.total / (tasaCobro ?? 1)) * 100) / 100 : d.total
     return [{ metodo: f.metodo, cuenta: f.cuenta, fondo, desglose: d.desglose }]
   })
 
@@ -201,8 +201,8 @@ export function AbrirCaja({
                   la haga de cabeza. */}
               {enBs && d && (
                 <p className="mt-0.5 text-right text-xs text-neutral-500 tabular-nums">
-                  {tasa?.bcv
-                    ? `son $${fmtNum((d.total / tasa.bcv))} a la tasa de hoy`
+                  {tasaCobro
+                    ? `son $${fmtNum((d.total / tasaCobro))} a la tasa de hoy`
                     : 'sin tasa para convertir'}
                 </p>
               )}

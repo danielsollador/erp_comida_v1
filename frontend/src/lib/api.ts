@@ -1164,6 +1164,8 @@ export const api = {
     req<EstadoTasa>(`/tasas/refrescar?forzar=${forzar}`, { method: 'POST' }),
   fijarTasa: (bcv: number, paralelo?: number) =>
     req<EstadoTasa>('/tasas', { method: 'PUT', body: JSON.stringify({ bcv, paralelo }) }),
+  elegirTasaDeCobro: (fuente: 'bcv' | 'eur' | 'manual', tasa?: number) =>
+    req<EstadoTasa>('/tasas/cobro', { method: 'PUT', body: JSON.stringify({ fuente, tasa }) }),
   tasaDeFecha: (fecha: string) => req<TasaDeUnaFecha>(`/tasas/al?fecha=${encodeURIComponent(fecha)}`),
   historialTasa: (r?: Rango) => req<PuntoTasa[]>(`/tasas/historial${conRango(r)}`),
   analisisTasa: (r?: Rango) => req<AnalisisTasa>(`/tasas/analisis${conRango(r)}`),

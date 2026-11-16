@@ -660,13 +660,28 @@ export const GLOSARIO: Record<string, Explicacion> = {
     origen: 'Binance P2P, consultado por el sistema.',
     ejemplo: 'No se factura con ella, pero es la que te va a costar reponer la mercancía.',
   },
+  'kpi.tasa_cobro': {
+    que: 'A cuántos bolívares se pasa cada dólar cuando cobras.',
+    origen:
+      'La eliges tú en esta pantalla: el dólar BCV, el euro BCV o una tasa tuya. Por defecto es el dólar BCV.',
+    calculo:
+      'Precio en dólares × la tasa elegida = bolívares que paga el cliente. Esos bolívares se guardan en la venta y son los que van al libro de ventas.',
+    ejemplo:
+      'Un pastelito de $2,90 son 2.650,66 Bs con el dólar BCV (914,0218) y 2.930,62 Bs con el euro BCV (1.010,56). Los precios del menú siguen en dólares; lo ya cobrado no cambia.',
+  },
+  'kpi.dolar_bcv': {
+    que: 'A cuántos bolívares está el dólar oficial hoy.',
+    origen: 'Del BCV, leído por el sistema. Nadie lo escribe a mano: se actualiza solo.',
+    ejemplo:
+      'Aunque cobres a otra tasa, esta sigue siendo la oficial. Es la que se usa para pasar a bolívares las facturas de compra en dólares.',
+  },
   'kpi.euro': {
     que: 'A cuántos bolívares está el euro oficial hoy.',
     origen: 'Del BCV, que publica el euro aparte del dólar.',
     calculo:
       'No sale de convertir el dólar: el BCV fija los dos por separado y no coinciden. Por eso se lee de la fuente.',
     ejemplo:
-      'Eligiendo "Euro BCV" arriba, todos los montos del sistema se ven en euros a esa tasa. Útil si cobras o pagas en euros; lo que se factura sigue siendo el dólar oficial.',
+      'Si eliges "Euro BCV" como tasa de cobro, cada dólar de tu menú se cobra a esta tasa. En el selector de arriba, "Euro BCV" muestra los montos en euros.',
   },
   'kpi.variacion_periodo': {
     que: 'Cuánto se movió el dólar oficial dentro del período que elegiste arriba.',
