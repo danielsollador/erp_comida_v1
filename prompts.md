@@ -383,3 +383,23 @@ sigue con los hallazgos
 ## 73 (2026-11-08, Daniel)
 
 dale D12-D15 así están bien
+
+## 74 (2026-11-16, Daniel)
+
+(nota de voz de Yeimer y diagnóstico pegados: el euro se lee 10,56 desde que pasó de mil, la tasa manual puso el euro en la casilla del dólar, producción sigue en 5f39cf2) La idea es que los montos en Bs se vean a tasa euro, con los precios y costos en divisa como siempre: un pastelito de 2,90 $ pasa de 2.650,65 Bs a 2.930,62 Bs.
+
+## 75 (2026-11-16, Daniel)
+
+ok ahora inspecciona a ver si lo que te dije es cierto y que más hay por ahí, solo consulta y diagnóstico. Quiero que Yeimer pueda cambiar la tasa de cálculo a placer, en una opción del módulo de tasa cambiaria. Piensa cómo afecta esto contablemente.
+
+## 76 (2026-11-16, Daniel)
+
+la moneda oficial es bolívares, así que a temas SENIAT debe viajar el monto en Bs. Sal con el despliegue grande, arregla y despliega todo de una vez
+
+## 77 (2026-11-16, Daniel)
+
+antes de eso haz QA con esta nueva funcionalidad, pero obvio hazlo en local
+
+## 78 (2026-11-16, Daniel)
+
+sí dale a todo eso

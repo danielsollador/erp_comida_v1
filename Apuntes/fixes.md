@@ -9,6 +9,7 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [x] Retención con pago parcial cerraba la deuda y dejaba comisión sin avisar (Cuentas por cobrar) · resuelto 2026-11-04, commits e4196a8 y 5115a5f, sin desplegar. Medida temporal hasta que responda el contador
 - [x] La pantalla calculaba la retención distinto que el sistema y nacía un ingreso falso (Cuentas por cobrar) · resuelto 2026-11-04, commit 8d1755f, sin desplegar
 - [x] El cuadre por banco esperaba lo que se debía, no lo que entró (Cierre de caja, Cobros del día, conciliación) · resuelto 2026-11-04, commit 18cfc32, sin desplegar
+- [x] El aviso de salto de tasa salía con la puntuación rota: «…30 %. así que se dejó la anterior, Si es correcto. fíjala…» (Tasa de cambio) · resuelto 2026-11-16, commit 35c3102, sin desplegar
 - [ ] El tono de aviso `aviso-800` no cambia en oscuro y casi no se lee (`Aviso tono="ojo"`, en 6 lugares)
 - [ ] `npm run glosario` falla en `master` con 29 explicaciones sin usar: su arreglo (a5035af) está en `fase1`, que no se ha fusionado
 - [ ] En modo oscuro, el mensaje verde de éxito casi no se lee (Cuentas por cobrar, al cobrar o abonar)
@@ -48,3 +49,4 @@ Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arregla
 - [x] QA permisos · La cocina leía todas las ventas del local con montos, pagos y RIF (lista, portada de la app y tiempo real); la campana pedía solicitudes que no le tocan · resuelto 2026-11-09, sin desplegar
 - [x] QA entradas · Cantidad 0 o negativa en una venta (la negativa subía el inventario), NaN que tumbaba el servidor, asiento manual con negativos, traspaso mayor que la gaveta y ventas absurdas sin preguntar · resuelto 2026-11-09, sin desplegar
 - [x] Pedido grande en el punto de venta: los renglones salen juntos por categoría (los cafés juntos, los pastelitos juntos) en el orden del menú, para que el barista cuente de un vistazo · resuelto 2026-11-11, sin desplegar
+- [ ] Con la tasa fijada a mano en el valor del euro, el encabezado dice «Dólares BCV · 1.010,56» y los pagos y vueltos leen esa misma tasa (Tasa de cambio, Pagos). Lo resuelve la opción «tasa de cobro» (spec en `specs/tasa.md`)
