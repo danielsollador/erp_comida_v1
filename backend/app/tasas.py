@@ -142,13 +142,18 @@ def razonable(nuevo: Optional[float], anterior: Optional[float], que: str) -> Op
     return nuevo
 
 
+def _bs(valor: float) -> str:
+    """1400.0 -> '1.400,00': miles con punto y decimales con coma, solo en la cifra."""
+    return f"{valor:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
 def _texto_salto() -> Optional[str]:
     s = saltos_rechazados.get("bcv")
     if not s:
         return None
-    return (f"El BCV publicó {s['leida']:,.2f} Bs y el día anterior era {s['anterior']:,.2f}: es un salto de más de 30 %, "
-            "así que se dejó la anterior. Si es correcto, fíjala a mano en Tasa de cambio."
-            ).replace(",", "_").replace(".", ",").replace("_", ".")
+    return (f"El BCV publicó {_bs(s['leida'])} Bs y el día anterior era {_bs(s['anterior'])}: "
+            "es un salto de más de 30 %, así que se dejó la anterior. "
+            "Si es correcto, fíjala a mano en Tasa de cambio.")
 
 
 _MESES = {

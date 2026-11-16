@@ -416,6 +416,22 @@ def test_un_salto_de_tasa_descartado_se_avisa_y_el_euro_malo_no_bloquea_el_bueno
     tasas.saltos_rechazados.clear()
 
 
+def test_el_aviso_del_salto_de_tasa_lleva_la_puntuacion_en_su_sitio():
+    """Caso real del 16-nov: el aviso cambiaba comas y puntos de TODA la frase
+    y salia '...30 %. asi que se dejo la anterior, Si es correcto. fijala...'.
+    Solo las cifras van en formato es-VE."""
+    from app import tasas
+
+    tasas.saltos_rechazados["bcv"] = {"leida": 1400.0, "anterior": 914.0, "en": "x"}
+    try:
+        assert tasas._texto_salto() == (
+            "El BCV publicó 1.400,00 Bs y el día anterior era 914,00: es un salto de más de 30 %, "
+            "así que se dejó la anterior. Si es correcto, fíjala a mano en Tasa de cambio."
+        )
+    finally:
+        tasas.saltos_rechazados.clear()
+
+
 def test_anular_un_cierre_hecho_sin_abrir_deja_abrir_con_el_fondo_real(client, db):
     """Regresión E3c: tras anular, la caja decía «ya se abrió» y no dejaba
     declarar el fondo real."""
