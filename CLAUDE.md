@@ -78,7 +78,7 @@ Un pedido escrito sin comando sigue el mismo camino que si lo trajera. Primero s
 
 Para lo pequeño que no toca dinero, permisos ni la base de datos. Sin spec, sin plan y sin tareas:
 
-1. **Se hace directo**, en una rama `fix-<tema>` que sale de `master` (lo que está en producción).
+1. **Se hace directo**, en una rama `fix-<tema>` que sale de `master` (lo que está en producción), en una copia aparte del repo (`git worktree`): cambiar de rama donde está levantado lo local deja la app mostrando la versión vieja.
 2. **Recibo:** compila, pasa su prueba si la tiene y, si es una pantalla, se ve bien en Playwright.
 3. **Leider lo mira en local** con la dirección exacta que le da el agente (1 o 2 minutos), con los datos que hagan falta para verlo ya armados ahí. Un arreglo no se sube a pruebas por sí solo: lo que espera validación va a pruebas en una sola tanda, cuando se pida o al cerrar el bloque, y se construye solo la imagen que cambió.
 4. **A producción:** se fusiona en `master` y se despliega; las imágenes se construyen mientras GitHub prueba. Si hay varios arreglos pendientes, salen juntos en un solo despliegue.
