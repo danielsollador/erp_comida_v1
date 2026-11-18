@@ -49,7 +49,7 @@ La complejidad la absorbe el sistema; el usuario solo ve lo simple. Como Nubank 
 3. **Antes de tocar código:** se leen `project-map.md`, la spec y los archivos que se van a tocar (con su `git log`), y se **busca en todo el código** si ya existe algo que haga lo mismo (componente, función, endpoint, tabla, texto del glosario), con Serena para ver quién usa cada pieza. Si existe, se reutiliza o se extiende; nunca dos piezas que hagan lo mismo.
 4. **Implementar:** `/implementar`, en la rama de la fase (`fase<N>`), un commit por tarea. Si toca dinero (cobros, caja, inventario, asientos o impuestos), la prueba se escribe **antes** que el código, a partir de la spec.
 5. **Comprobar y dejar el recibo:**
-   - Que compila. Backend: `cd backend && py -m compileall -q app`. Web: `cd frontend && npx tsc --noEmit && npm run build && npm run glosario`. App, si se tocó: `cd movil && npx tsc --noEmit`.
+   - Que compila. Backend: `cd backend && py -m compileall -q app`. Web: `cd frontend && npm run build && npm run glosario` (los tipos los revisa `npm run build`; `npx tsc --noEmit` suelto ahí no revisa nada). App, si se tocó: `cd movil && npx tsc --noEmit`.
    - Que funciona: solo las pruebas de lo que cambió (la nueva y las del módulo tocado), por ejemplo `cd backend && .venv\Scripts\python -m pytest tests/test_caja.py -q` o `cd frontend && npx vitest run src/lib/<archivo>.test.ts`.
    - Que se ve: si se tocó una pantalla, el agente la abre con Playwright, hace el flujo y revisa que la consola no tenga errores.
    - El **recibo** va en el mensaje final: qué se corrió y qué dio ("compila; 12 pruebas de caja pasan").
