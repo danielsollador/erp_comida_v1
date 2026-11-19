@@ -242,6 +242,7 @@ export default function VerificarPago({
             Referencia del pago
             <Numerico
               value={referencia}
+              identificador
               onChange={(e) => setReferencia(e.target.value)}
               entero
               autoFocus
@@ -255,6 +256,7 @@ export default function VerificarPago({
               Teléfono del que pagó
               <Numerico
                 value={telefono}
+                identificador
                 onChange={(e) => setTelefono(e.target.value)}
                 entero
                 placeholder="04141234567"
@@ -279,6 +281,7 @@ export default function VerificarPago({
               Banco del que pagó (código de 4 dígitos)
               <Numerico
                 value={bancoOrigen}
+                identificador
                 onChange={(e) => setBancoOrigen(e.target.value)}
                 entero
                 placeholder="0102"

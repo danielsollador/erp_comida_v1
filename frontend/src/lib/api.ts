@@ -282,7 +282,7 @@ async function reqCrudo<T>(path: string, options: RequestInit | undefined, extra
     // En la app, la direccion del servidor y el token (ver lib/plataforma.ts).
     const { headers: propias, ...resto } = options ?? {}
     res = await fetch(urlApi(`/api${path}`), {
-      headers: { 'Content-Type': 'application/json', ...cabecerasApp(), ...((propias as Record<string, string>) ?? {}), ...extra },
+      headers: { ...(resto.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...cabecerasApp(), ...((propias as Record<string, string>) ?? {}), ...extra },
       // SIN CACHE. El API no manda `Cache-Control` ni `ETag`, asi que el
       // navegador puede decidir por su cuenta reutilizar la respuesta
       // anterior de un GET: se borraba algo, se volvia a pedir la lista y

@@ -145,6 +145,7 @@ export default function VueltoPagoMovil({
             Referencia del pago móvil que mandaste
             <Numerico
               value={referencia}
+              identificador
               onChange={(e) => setReferencia(e.target.value)}
               entero
               autoFocus

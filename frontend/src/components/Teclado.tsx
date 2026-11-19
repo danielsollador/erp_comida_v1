@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { normalizarTecleo } from '../lib/montos'
+import { agregarDigito } from '../lib/digitos'
 
 /**
  * El teclado propio del ERP, para las tablets del mostrador.
@@ -50,6 +51,7 @@ type Objetivo =
       valor: string
       oculto: boolean
       entero: boolean
+      identificador: boolean
       poner: (v: string) => void
       listo: () => void
     }
@@ -505,7 +507,7 @@ function Numeros({
       return
     }
     // "0" solo es un marcador: la primera tecla lo pisa.
-    poner((valor === '0' ? '' : valor) + t)
+    poner(agregarDigito(valor, t, objetivo.identificador || objetivo.oculto))
   }
 
   function terminar() {
@@ -786,6 +788,7 @@ export function Numerico({
   etiqueta,
   oculto = false,
   entero = false,
+  identificador = false,
   monto = false,
   onBlur,
   onFocus,
@@ -799,6 +802,7 @@ export function Numerico({
   etiqueta?: string
   oculto?: boolean
   entero?: boolean
+  identificador?: boolean
   monto?: boolean
 }) {
   const ctx = useContext(TecladoCtx)
@@ -868,6 +872,7 @@ export function Numerico({
           valor: texto,
           oculto,
           entero,
+          identificador,
           poner,
           listo: () => ref.current?.blur(),
         })
