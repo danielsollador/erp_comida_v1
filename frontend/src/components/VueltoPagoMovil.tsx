@@ -84,6 +84,7 @@ export default function VueltoPagoMovil({
             Teléfono del cliente
             <Numerico
               value={telefono}
+              identificador
               onChange={(e) => setTelefono(e.target.value)}
               entero
               autoFocus

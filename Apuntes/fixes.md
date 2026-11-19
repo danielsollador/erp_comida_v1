@@ -1,5 +1,7 @@
 # Fixes
 
+- [x] 19-nov-2026: referencias, teléfonos y códigos de banco conservan los ceros iniciales en el teclado propio; el lector de facturas recibe la foto como multipart. Pruebas de regresión en `digitos.test.ts` y `api.archivos.test.ts`. Despliegue pendiente de comprobación.
+
 Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arreglar`.
 
 - [x] `npm run glosario` fallaba con 29 explicaciones sin usar · resuelto 2026-11-02, commit a5035af
