@@ -1,6 +1,6 @@
 # Fixes
 
-- [x] 19-nov-2026: referencias, teléfonos y códigos de banco conservan los ceros iniciales en el teclado propio; el lector de facturas recibe la foto como multipart. Pruebas de regresión en `digitos.test.ts` y `api.archivos.test.ts`. Despliegue pendiente de comprobación.
+- [x] 19-nov-2026: referencias, teléfonos y códigos de banco conservan los ceros iniciales en el teclado propio; el lector de facturas recibe la foto como multipart. Pruebas de regresión en `digitos.test.ts` y `api.archivos.test.ts`. Desplegado `f4565df`; GitHub en verde y health del ERP y hub en 200.
 
 Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arreglar`.
 
