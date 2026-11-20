@@ -1,5 +1,7 @@
 # Fixes
 
+- [x] 20-nov-2026: vista en euros mostraba puntos cuando hoy llegó dólar sin euro. El estado cambiario reutiliza el último euro vigente, igual que cobros; no modifica tasas guardadas ni ventas anteriores. Pendiente de despliegue.
+
 - [x] 19-nov-2026: referencias, teléfonos y códigos de banco conservan los ceros iniciales en el teclado propio; el lector de facturas recibe la foto como multipart. Pruebas de regresión en `digitos.test.ts` y `api.archivos.test.ts`. Desplegado `f4565df`; GitHub en verde y health del ERP y hub en 200.
 
 Lo que falla, un renglón por arreglo con dónde pasa. Se arreglan con `/arreglar`.

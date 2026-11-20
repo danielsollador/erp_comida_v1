@@ -20,6 +20,26 @@ DOLAR = 914.0218
 EURO = 1010.56
 
 
+def test_vista_euro_conserva_ultimo_euro_si_hoy_no_llego(client, db):
+    """Yeimer ve puntos en todos los montos si hoy llegó dólar pero no euro."""
+    db.add_all([
+        models.TasaCambio(fecha=hoy() - datetime.timedelta(days=1), bcv=DOLAR, eur=EURO, origen="auto"),
+        models.TasaCambio(fecha=hoy(), bcv=DOLAR + 1, eur=None, origen="auto"),
+        models.TasaCambio(fecha=hoy() + datetime.timedelta(days=1), bcv=DOLAR + 2, eur=EURO + 20, origen="auto"),
+    ])
+    db.commit()
+    e = client.get('/api/tasas').json()
+    assert e['bcv'] == pytest.approx(DOLAR + 1)
+    assert e['eur'] == pytest.approx(EURO)
+    assert db.query(models.TasaCambio).filter_by(fecha=hoy()).one().eur is None
+
+
+def test_vista_euro_no_inventa_tasa_si_nunca_hubo_euro(client, db):
+    db.add(models.TasaCambio(fecha=hoy(), bcv=DOLAR, eur=None, origen="auto"))
+    db.commit()
+    assert client.get('/api/tasas').json()['eur'] is None
+
+
 @pytest.fixture()
 def bcv_de_hoy(db):
     db.add(models.TasaCambio(fecha=hoy(), bcv=DOLAR, eur=EURO, paralelo=1068.4, origen="auto"))

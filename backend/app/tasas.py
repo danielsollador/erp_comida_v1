@@ -332,7 +332,7 @@ def estado(db: Session) -> dict:
     return {
         "fecha": fila.fecha.isoformat() if fila else hoy().isoformat(),
         "bcv": bcv,
-        "eur": fila.eur if fila else None,
+        "eur": euro_vigente(db),
         "paralelo": paralelo,
         "brecha_pct": brecha,
         "variacion_semana_pct": variacion,

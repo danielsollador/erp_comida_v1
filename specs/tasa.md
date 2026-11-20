@@ -30,6 +30,8 @@ Savora cobra en bolívares, pero con los precios en divisa. Yeimer quiere elegir
 
 ## Cómo funciona hoy
 
+- La vista en euros usa el último euro guardado hasta hoy, igual que la tasa de cobro. Si hoy no llegó euro, no se ocultan los montos ni se copia una tasa a la fila de hoy; si nunca hubo euro, no se inventa una conversión.
+
 - La tasa de cobro es una configuración del local (`fuente`: dólar, euro o manual) aparte de la tasa oficial. El estado de la tasa trae `cobro` con la fuente, la tasa y los avisos; `tasas.tasa_de_cobro` la entrega al cobro, al vuelto y al pago en bolívares de hoy.
 - La tasa de cobro con euro usa el último euro guardado; si no hay ninguno, no se puede elegir. Si la manual falta, se cobra al dólar y lo dice.
 - El parche de antes (una fila del día marcada «manual») se pasa solo a tasa de cobro manual la primera vez que se refresca, y la fila vuelve a ser la oficial. Se sigue cobrando igual.
