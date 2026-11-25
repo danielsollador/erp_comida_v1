@@ -83,7 +83,12 @@ export default function Hoy({
         <View style={{ gap: 16, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: t.gris100 }}>
           <ParDatos>
             <Dato titulo="Dólar BCV" ayuda="kpi.dolar_bcv" valor={estado.bcv ? num(estado.bcv) : '—'} nota="Bs por dólar, oficial" />
-            <Dato titulo="Euro BCV" ayuda="kpi.euro" valor={estado.eur ? num(estado.eur) : '—'} nota="Bs por euro" />
+            <Dato
+              titulo="Euro BCV"
+              ayuda="kpi.euro"
+              valor={estado.eur ? num(estado.eur) : '—'}
+              nota={estado.brecha_eur_pct != null ? `Bs por euro · brecha ${pct(estado.brecha_eur_pct)}` : 'Bs por euro'}
+            />
           </ParDatos>
           <ParDatos>
             <Dato titulo="Paralelo" ayuda="kpi.paralelo" valor={estado.paralelo ? num(estado.paralelo) : '—'} nota="Binance P2P" />

@@ -679,7 +679,7 @@ export const GLOSARIO: Record<string, Explicacion> = {
     que: 'A cuántos bolívares está el euro oficial hoy.',
     origen: 'Del BCV, que publica el euro aparte del dólar.',
     calculo:
-      'No sale de convertir el dólar: el BCV fija los dos por separado y no coinciden. Por eso se lee de la fuente.',
+      'No sale de convertir el dólar: el BCV fija los dos por separado y no coinciden. Por eso se lee de la fuente. La brecha que lo acompaña es cuánto más caro está el paralelo que el euro: (paralelo ÷ euro − 1) × 100.',
     ejemplo:
       'Si eliges "Euro BCV" como tasa de cobro, cada dólar de tu menú se cobra a esta tasa. En el selector de arriba, "Euro BCV" muestra los montos en euros.',
   },

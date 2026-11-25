@@ -335,6 +335,10 @@ def estado(db: Session) -> dict:
     bcv = fila.bcv if fila else None
     paralelo = fila.paralelo if fila else None
     brecha = round((paralelo / bcv - 1) * 100, 1) if bcv and paralelo else None
+    # La misma cuenta contra el euro: quien cobra en euro quiere saber cuanto
+    # le falta a su tasa para alcanzar al paralelo (Savora, 25-nov).
+    eur = euro_vigente(db)
+    brecha_eur = round((paralelo / eur - 1) * 100, 1) if eur and paralelo else None
     variacion = (
         round((bcv / semana.bcv - 1) * 100, 2) if bcv and semana and semana.bcv else None
     )
@@ -348,9 +352,10 @@ def estado(db: Session) -> dict:
     return {
         "fecha": fila.fecha.isoformat() if fila else hoy().isoformat(),
         "bcv": bcv,
-        "eur": euro_vigente(db),
+        "eur": eur,
         "paralelo": paralelo,
         "brecha_pct": brecha,
+        "brecha_eur_pct": brecha_eur,
         "variacion_semana_pct": variacion,
         "origen": fila.origen if fila else None,
         "actualizado_en": fila.actualizado_en.isoformat() if fila and fila.actualizado_en else None,

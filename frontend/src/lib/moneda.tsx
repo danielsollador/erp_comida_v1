@@ -267,7 +267,9 @@ export function MonedaToggle({ dark = false }: { dark?: boolean }) {
       k: 'eur',
       simbolo: '€',
       nombre: 'Euro BCV',
-      detalleTasa: tasa?.eur ? fmtNum(tasa.eur) : null,
+      detalleTasa: tasa?.eur
+        ? `${fmtNum(tasa.eur)}${tasa.brecha_eur_pct != null ? ` · brecha ${tasa.brecha_eur_pct}%` : ''}`
+        : null,
       ayuda: 'Al euro oficial. El BCV lo fija aparte: no es el dólar convertido.',
       lista: !!(tasa?.bcv && tasa?.eur),
     },

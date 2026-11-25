@@ -1984,6 +1984,8 @@ class EstadoTasa(BaseModel):
     eur: Optional[float]
     paralelo: Optional[float]
     brecha_pct: Optional[float]
+    # Cuanto mas caro esta el paralelo que el euro BCV.
+    brecha_eur_pct: Optional[float] = None
     variacion_semana_pct: Optional[float]
     origen: Optional[str]  # auto | manual
     actualizado_en: Optional[str]

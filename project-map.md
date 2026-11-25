@@ -86,6 +86,7 @@ Fuera de la base: cuentas y roles en `users.json` y `roles.json` (volumen `compa
 
 Una línea por cambio relevante; el detalle está en git.
 
+- **25-nov** En producción: la brecha entre el euro BCV y el paralelo (`brecha_eur_pct` en el estado de la tasa) se ve junto al euro en el selector de moneda y en Tasa de cambio, web y app (pedido de Sávora por nota de voz).
 - **25-nov** En producción: el servidor vuelve a leer al BCV (`rates._contexto_bcv`: el BCV cambió el 13-nov a un certificado OV de Sectigo y solo se tenía el intermedio DV; ahora van DV, OV y EV, con la validación activa), el euro tiene respaldo en DolarAPI igual que el dólar (`rates._fetch_dolarapi_eur`) y cobrar en euro con un euro de otro día lo avisa (`tasas.aviso_euro_viejo`). En la base se cargó el euro oficial del 13 al 25-nov.
 - **16-nov** En producción: cada moneda en su moneda en gastos y retiros (`caja._en_la_moneda_de_la_gaveta`): columnas `monto_bs` y `tasa` en `TRX620` y `TRX630` (migración), el aviso de «hay en la gaveta» en Bs, la web y la app piden Bs cuando la gaveta es de Bs y los muestran en Bs. Regla nueva en `CLAUDE.md`.
 - **16-nov** En producción: corregir el pago de una venta que tuvo vuelto (`pedidos.corregir_pagos`, `_pierde_el_vuelto`): se cambia como cualquier pago, el vuelto se quita y el asiento `correccion_pago` devuelve las dos gavetas; solo una devolución queda fija. Web y app (`CorregirPago.tsx`) muestran la nota del vuelto.

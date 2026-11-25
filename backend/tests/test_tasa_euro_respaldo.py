@@ -65,3 +65,18 @@ def test_cobrar_en_euro_con_el_euro_de_hoy_no_avisa(client, db):
     db.commit()
     tasas.fijar_cobro(db, "eur")
     assert client.get("/api/tasas").json()["cobro"]["aviso"] is None
+
+
+def test_la_brecha_tambien_se_calcula_contra_el_euro(client, db):
+    """Savora, 25-nov: junto al euro se ve cuanto le falta para el paralelo."""
+    db.add(models.TasaCambio(fecha=hoy(), bcv=922.5637, eur=1012.2184, paralelo=1105.73, origen="auto"))
+    db.commit()
+    e = client.get("/api/tasas").json()
+    assert e["brecha_pct"] == pytest.approx(19.9)
+    assert e["brecha_eur_pct"] == pytest.approx(9.2)
+
+
+def test_sin_euro_o_sin_paralelo_no_hay_brecha_del_euro(client, db):
+    db.add(models.TasaCambio(fecha=hoy(), bcv=922.5637, eur=None, paralelo=1105.73, origen="auto"))
+    db.commit()
+    assert client.get("/api/tasas").json()["brecha_eur_pct"] is None

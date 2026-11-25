@@ -1065,6 +1065,8 @@ export type EstadoTasa = {
   eur: number | null
   paralelo: number | null
   brecha_pct: number | null
+  /** Cuanto mas caro esta el paralelo que el euro BCV. */
+  brecha_eur_pct?: number | null
   variacion_semana_pct: number | null
   origen: 'auto' | 'manual' | null
   actualizado_en: string | null

@@ -107,7 +107,8 @@ export const GLOSARIO: Record<string, Explicacion> = {
   'kpi.euro': {
     que: 'A cuántos bolívares está el euro oficial hoy.',
     origen: 'Del BCV, que publica el euro aparte del dólar.',
-    calculo: 'No sale de convertir el dólar: el BCV fija los dos por separado y no coinciden. Por eso se lee de la fuente.',
+    calculo:
+      'No sale de convertir el dólar: el BCV fija los dos por separado y no coinciden. Por eso se lee de la fuente. La brecha que lo acompaña es cuánto más caro está el paralelo que el euro: (paralelo ÷ euro − 1) × 100.',
     ejemplo:
       'Eligiendo "Euro BCV" arriba, todos los montos del sistema se ven en euros a esa tasa. Útil si cobras o pagas en euros; lo que se factura sigue siendo el dólar oficial.',
   },

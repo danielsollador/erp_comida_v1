@@ -219,7 +219,7 @@ export default function Tasa() {
               titulo="Euro BCV"
               ayuda="kpi.euro"
               valor={estado?.eur ? fmtNum(estado.eur) : '—'}
-              nota="Bs por euro"
+              nota={estado?.brecha_eur_pct != null ? `Bs por euro · brecha ${estado.brecha_eur_pct}%` : 'Bs por euro'}
             />
             <Dato
               titulo="Brecha"
