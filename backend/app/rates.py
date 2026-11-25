@@ -7,7 +7,7 @@ restaurante. Fuentes, en orden de autoridad:
 - bcv.org.ve: USD y EUR oficiales, leidos de la fuente que los publica.
 - Binance P2P: mercado USDT/VES real, mediana de ambos lados del libro. Es la
   referencia de "dolar de la calle" con la que la gente compara precios.
-- DolarAPI: respaldo del USD oficial si el BCV no responde.
+- DolarAPI: respaldo del USD y del EUR oficiales si el BCV no responde.
 
 Cada fuente falla por separado: si se cae una, las demas siguen. Sin ninguna,
 el sistema sigue operando con la ultima tasa conocida o con la que el dueno
@@ -29,6 +29,7 @@ log = logging.getLogger("erp.rates")
 BCV = "https://www.bcv.org.ve/"
 BINANCE_P2P = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
 DOLARAPI = "https://ve.dolarapi.com/v1/dolares"
+DOLARAPI_EUR = "https://ve.dolarapi.com/v1/euros"
 TTL = timedelta(minutes=10)
 
 _INTERMEDIO = os.path.join(os.path.dirname(__file__), "certs", "sectigo_bcv_intermediate.pem")
@@ -130,6 +131,13 @@ def _fetch_dolarapi(client: httpx.Client) -> float:
     return float(por_fuente["oficial"]["promedio"])
 
 
+def _fetch_dolarapi_eur(client: httpx.Client) -> float:
+    r = client.get(DOLARAPI_EUR, timeout=10)
+    r.raise_for_status()
+    por_fuente = {d.get("fuente"): d for d in r.json()}
+    return float(por_fuente["oficial"]["promedio"])
+
+
 def _fetch():
     anclas = {"bcv": None, "eur": None, "paralelo": None, "actualizado": None}
     try:
@@ -147,6 +155,16 @@ def _fetch():
                 log.info("USD oficial tomado de DolarAPI (respaldo)")
             except Exception as e:
                 log.warning("DolarAPI tampoco respondio: %s", e)
+
+        # El euro tambien tiene respaldo: del 20 al 25-nov el BCV no se pudo
+        # leer, el dolar siguio llegando por aca y el euro se quedo cinco dias
+        # en el del 19 sin que nadie lo notara, con el local cobrando en euro.
+        if not anclas["eur"]:
+            try:
+                anclas["eur"] = _fetch_dolarapi_eur(client)
+                log.info("EUR oficial tomado de DolarAPI (respaldo)")
+            except Exception as e:
+                log.warning("DolarAPI no dio el euro: %s", e)
 
         try:
             anclas["paralelo"] = _fetch_binance(client)

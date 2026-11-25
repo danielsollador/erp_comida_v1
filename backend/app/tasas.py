@@ -72,16 +72,30 @@ def config_fila(db: Session) -> models.Configuracion:
     return fila
 
 
-def euro_vigente(db: Session) -> Optional[float]:
-    """El ultimo euro BCV guardado hasta hoy: si hoy el BCV no lo dio, se sigue
-    con el de ayer en vez de caer al dolar sin avisar."""
-    fila = (
+def _fila_del_euro(db: Session) -> Optional[models.TasaCambio]:
+    return (
         db.query(models.TasaCambio)
         .filter(models.TasaCambio.fecha <= hoy(), models.TasaCambio.eur.isnot(None))
         .order_by(models.TasaCambio.fecha.desc())
         .first()
     )
+
+
+def euro_vigente(db: Session) -> Optional[float]:
+    """El ultimo euro BCV guardado hasta hoy: si hoy el BCV no lo dio, se sigue
+    con el de ayer en vez de caer al dolar sin avisar."""
+    fila = _fila_del_euro(db)
     return fila.eur if fila else None
+
+
+def aviso_euro_viejo(db: Session) -> Optional[str]:
+    """El euro guardado es de un dia anterior al del dolar: se sigue cobrando
+    con el, pero se dice, para que alguien lo cargue a mano si hace falta."""
+    oficial, euro = tasa_vigente(db), _fila_del_euro(db)
+    if oficial is None or euro is None or euro.fecha >= oficial.fecha:
+        return None
+    return (f"El euro es del {euro.fecha.strftime('%d/%m')}: el BCV no ha dado uno más nuevo. "
+            "Si ya cambió, cárgalo a mano.")
 
 
 def cobro(db: Session) -> dict:
@@ -99,6 +113,8 @@ def cobro(db: Session) -> dict:
         tasa = euro_vigente(db)
         if not tasa:
             fuente, aviso = "bcv", "No hay euro del BCV guardado: se cobra al dólar."
+        else:
+            aviso = aviso_euro_viejo(db)
     elif fuente == "manual":
         tasa = c.tasa_cobro_manual
         if not tasa:
